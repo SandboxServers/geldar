@@ -1,6 +1,6 @@
 # Wave C7 plan: dependency graph, waves, migrations, live lane
 
-Written 2026-11-13, after the owner's rulings (decisions 0170 to 0172). Cards: [c7-user-management-packets.md](c7-user-management-packets.md) (C7-01 to C7-07, rulings, shared rules), [c7b-packets.md](c7b-packets.md) (C3-04s, C7-12, C7-08 to C7-11, C7-13a to c), [c7c-packets.md](c7c-packets.md) (C7-03b split into C7-03b1, C7-03b2, C7-03b3) and [c7d-packets.md](c7d-packets.md) (C7-04 split into C7-04a, C7-04b, C7-04c, with the OpenAPI draft). Process: the [campaign-packet skill](../../../../.claude/skills/campaign-packet/SKILL.md). Never edit the spec.
+Written 2026-11-13, after the owner's rulings (decisions 0170 to 0172). Cards: [c7-user-management-packets.md](c7-user-management-packets.md) (C7-01 to C7-07, rulings, shared rules), [c7b-packets.md](c7b-packets.md) (C3-04s, C7-12, C7-08 to C7-11, C7-13a to c), [c7c-packets.md](c7c-packets.md) (C7-03b split into C7-03b1, C7-03b2, C7-03b3) and [c7d-packets.md](c7d-packets.md) (C7-04 split into C7-04a, C7-04b, C7-04c, with the OpenAPI draft) and [c7e-packets.md](c7e-packets.md) (C7-03b4, the Body container spec). The card files for wave C7 are these five plus this plan. Process: the [campaign-packet skill](../../../../.claude/skills/campaign-packet/SKILL.md). Never edit the spec.
 
 Already merged on `main`: C7-01 (sessions, migration 0021) and C7-08 (consent and legal text v1, migration 0022). The highest migration is 0023. Not merged: C3-00 and C3-04 (no `mcp_roster`), so the first packet is the C3-04 slice.
 
@@ -28,7 +28,7 @@ C7-05, C7-06, C7-09, C7-13c, owner approval --> C7-11 sign-up gate
 
 - **One register-package packet at a time, except named pairs.** `threshold/register/` is one package. Packets that edit it run serially in this order: C7-12, C7-02a, C7-02b, C7-04a, C7-04b, C7-06, C7-04c, C7-07, C7-13a, C7-09, C7-13c. Allowed pairs with disjoint files, because the plan names their files: C7-02b with C7-05 (owner-keys files against `pages/onboarding*`, `static/onboarding.js`); C7-10 (`operator*.ts`) with C7-06 or C7-13a; C7-13a (`api/skins*`, `skin-validate.ts`) with C7-06 (`pages/account*`); C7-09 (`api/account-data*`, a confirm page) with C7-13c (`pages/skin*`). A pair never shares `server.ts` or `account*.ts`; the one-line route table entries in the C7-04 `api/` index (04a, 04b, 04c) are merged one at a time by ops.
 - **Not in the register package** (these run in parallel with the register lane): C3-04s, C7-03a, C7-03b1, C7-03b2, C7-03b3, C7-03b4, C7-13b. `tools/mcp-tokens/src/cli.ts` is edited by C3-04s, C7-12 and C7-10 (one registration line each); ops merges them in that order.
-- **Migrations are assigned here, so none collide.** A coder fetches `origin/main` at the start; if another wave has taken one of these numbers, the coder stops and asks, never renumbers silently. The registry holds 0024 to 0033 for C7.
+- **Migrations are assigned here, so none collide.** A coder fetches `origin/main` at the start; if another wave has taken one of these numbers, the coder stops and asks, never renumbers silently. The registry holds 0024 to 0033 for C7. 0032 is C7-02a (token lifecycle, orchestrator ruling) and 0033 is C7-03b3 (`sql/0033_supervisor_display_name.sql`, wave 2). Neither is a spare.
 
 | Packet | Migration |
 |---|---|
@@ -40,7 +40,9 @@ C7-05, C7-06, C7-09, C7-13c, owner approval --> C7-11 sign-up gate
 | C7-09 | 0029 deletion function and export view |
 | C7-10 | 0030 audit extension, ban reasons |
 | C7-13a | 0031 `skin_uploads` |
-| spare | 0032, 0033 (C7-02a if it needs a column; ask the orchestrator) |
+| C7-02a | 0032 `token_lifecycle` (ruled by the orchestrator; the plan had said none) |
+| C7-03b3 | 0033 `supervisor_display_name` (wave 2; not a spare) |
+| spare | none left; the next free number is 0034 |
 
 - **Compose.** Only C7-03b2 edits `compose/colo*.yml`, as a new service in the base file under profile supervisor (off by default). It needs contact with geldar-93 before dispatch and before the node change, and a plan that does not recreate the `geldar-colo` network (see the card). No other C7 packet touches compose.
 - **Fan-out rule.** Wave 1 starts with the two unblockers; fan-out packets start only after the unblockers are merged to the wave branch (conventions section 2). `contract/` is edited only by C7-03a, and only if the control messages need a schema.

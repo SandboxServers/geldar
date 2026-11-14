@@ -42,7 +42,7 @@ Shared facts for all three cards:
 - `nats-auth.test.ts`: `ROLES` and the expected table gain `supervisor` and `register`. `supervisor` may subscribe to `ctl.body.>` and may publish only `_INBOX.>`. `register` may publish only `ctl.body.>`. For `body`, `paper`, `kino` and `eventsink` (and `mcp`), a publish to `geldar.<s>.ctl.body.start` is denied. Revert: delete the body `PubDeny` line; the body-deny test fails.
 - `nats-auth.test.ts`: `supervisor` may not publish to `geldar.<s>.ctl.body.start` and `register` may not subscribe to `ctl.body.>`. Revert: widen `register` to `geldar.$s.>`; the deny test fails.
 - `supervisor/src/nats.test.ts` (fake connection): a request is decoded, the existing handler is called once, the reply goes to `msg.reply`. A request with no reply inbox is dropped without a handler call. A reply that throws (the connection closed) is counted and does not reject the loop.
-- `supervisor/src/nats.test.ts`, disconnect mid-request: the handler's runtime timer is cleared (fake timers, no pending timer after the disconnect). A retried request with the same body gets the handler's existing `noop`/`started` reply and counts nothing twice (fix E). Revert: remove the reply-failure catch; the disconnect test fails.
+- `supervisor/src/nats.test.ts`, disconnect mid-request: the handler's runtime timer is cleared (fake timers, no pending timer after the disconnect). A retried request with the same body gets the `started` reply (a repeat start replies `started`; `noop` is only the audit outcome) and counts nothing twice (fix E). Revert: remove the reply-failure catch; the disconnect test fails.
 - `threshold/register/src/nats-ctl.test.ts`: a reply within the timeout is returned. A timeout throws `BodyUnavailable` and clears the timer (fake timers). A disconnect mid-request rejects with `BodyUnavailable`, leaves no pending timer, and a second call after reconnect works (idempotent). A no-responders reply throws `BodyUnavailable`. A malformed reply throws a distinct error, not `BodyUnavailable`. Revert: map a timeout to a generic error; the 503 mapping test fails.
 - Revert check (the recipe): commit the fix, copy `geldar.ps1` to the scratchpad, delete the body `PubDeny` line, run `nats-auth.test.ts` (it must fail for the body-deny reason), restore from the backup, `git diff --stat` empty.
 
@@ -113,7 +113,7 @@ Shared facts for all three cards:
 
 ## C7-03b3: Postgres adapter and Docker client
 
-- **id / wave / lane.** C7-03b3, wave 2. Non-register lane (`supervisor/` only). **depends-on.** C7-03a, C3-04s, C7-12 (all merged). **branch.** `phase1/c7-03b3-adapters`. **migration.** none (the grants are in 0024, 0025 and 0027; if a grant is missing, stop: the spare migration 0033 is the orchestrator's to assign). **size.** L (the largest; it may be split by the orchestrator into an adapter card and a Docker card, but not by the coder).
+- **id / wave / lane.** C7-03b3, wave 2. Non-register lane (`supervisor/` only). **depends-on.** C7-03a, C3-04s, C7-12 (all merged). **branch.** `phase1/c7-03b3-adapters`. **migration.** none (the grants are in 0024, 0025 and 0027; if a grant is missing, stop: migration 0033 (`sql/0033_supervisor_display_name.sql`) is already assigned to C7-03b3; no spare is left, so a further migration needs the orchestrator to assign 0034). **size.** L (the largest; it may be split by the orchestrator into an adapter card and a Docker card, but not by the coder).
 
 ### Goal
 
