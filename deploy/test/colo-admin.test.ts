@@ -3,198 +3,30 @@
 // overlay it is given to <log>.overlay, and answers only `config`. The fake stat answers the POSIX mode of a file
 // from a fixture. No real docker, container, node or network is used. The token file is a sentinel fixture: the
 // tests check that its value never reaches stdout or stderr.
-import { spawnSync } from 'node:child_process';
-import {
-  chmodSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
-import { delimiter, dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  calls,
+  cleanupFixtures,
+  DEPLOY,
+  type Fixture,
+  fixture,
+  mintReal,
+  PROJECT_FILTER,
+  posix,
+  REAL,
+  release,
+  run,
+  SENTINEL,
+  SPAWN_TEST_TIMEOUT_MS,
+  setMode,
+  starts,
+} from './colo-admin-fixture';
 
-const DEPLOY = fileURLToPath(new URL('..', import.meta.url));
-const COMPOSE = resolve(DEPLOY, '..', 'compose', 'colo.yml');
-const PROJECT_FILTER = /-p geldar-colo|label=com\.docker\.compose\.project=geldar-colo/;
-const SENTINEL = 'sentinel-token-value-that-must-never-print';
-const ADMIN = `registry.example.invalid/geldar/admin@sha256:${'6'.repeat(64)}`;
-const BODY = `registry.example.invalid/geldar/body@sha256:${'1'.repeat(64)}`;
-const SECRET_FILES = ['postgres.txt', 'rcon.txt', 'velocity-forwarding.txt', 'nats-body.txt'];
-
-function findSh(): string {
-  if (process.env.GELDAR_TEST_SH) return process.env.GELDAR_TEST_SH;
-  if (process.platform !== 'win32') return 'sh';
-  const roots = [process.env.ProgramFiles, process.env['ProgramFiles(x86)']].filter(
-    (p): p is string => Boolean(p),
-  );
-  return (
-    roots.map((root) => join(root, 'Git', 'usr', 'bin', 'sh.exe')).find((p) => existsSync(p)) ??
-    'sh'
-  );
-}
-const SH = findSh();
-
-// Same bound as colo-deploy.test.ts: each test starts several sh processes on a Windows desktop. It is a limit for
-// real work, not a retry or a skip.
-const SPAWN_TEST_TIMEOUT_MS = 30_000;
 vi.setConfig({ testTimeout: SPAWN_TEST_TIMEOUT_MS });
 
-// The fake docker: records its arguments, copies each *.override.yml it is given, and answers `config`.
-const DOCKER_SHIM = `#!/bin/sh
-printf '%s\\n' "$*" >> "$DOCKER_CALLS_LOG"
-for a in "$@"; do case $a in *.override.yml) cp "$a" "$DOCKER_CALLS_LOG.overlay" ;; esac; done
-case "$*" in
-  "ps -a "*) [ -z "\${FAKE_PS_ALL:-}" ] || echo "$FAKE_PS_ALL"; exit 0 ;;
-  "ps "*) [ -z "\${FAKE_PS_RUN:-}" ] || echo "$FAKE_PS_RUN"; exit 0 ;;
-  "inspect "*) echo "\${FAKE_STATUS:-exited}"; exit 0 ;;
-  "update "*) if [ -n "\${FAKE_UPDATE_FAIL:-}" ]; then exit 1; fi; exit 0 ;;
-  *"config --quiet"*) exit 0 ;;
-  *"config"*) cat "$DOCKER_CONFIG_FIXTURE"; exit 0 ;;
-esac
-exit 0
-`;
-
-// The fake stat: `stat -c %a PATH` (the mode, from $FAKE_MODE_DIR/<file name>, default 600) and `stat -c %u PATH` (the
-// owner, from $FAKE_OWNER_DIR/<file name>, default 1000, the GELDAR_SERVICE_UID these tests use).
-const STAT_SHIM = `#!/bin/sh
-[ "$1" = "-c" ] || exit 2
-name=\${3##*/}
-case $2 in
-  %a) if [ -f "$FAKE_MODE_DIR/$name" ]; then read -r v <"$FAKE_MODE_DIR/$name"; else v=600; fi ;;
-  %u) if [ -f "$FAKE_OWNER_DIR/$name" ]; then read -r v <"$FAKE_OWNER_DIR/$name"; else v=1000; fi ;;
-  *) exit 2 ;;
-esac
-echo "$v"
-`;
-// The fake id: only `id -u`, the uid of the account running the deploy (FAKE_RUNNER_UID, default 1000: not root).
-const ID_SHIM = `#!/bin/sh
-[ "$1" = "-u" ] || exit 2
-echo "\${FAKE_RUNNER_UID:-1000}"
-`;
-
-const CONFIG = `name: geldar-colo
-services:
-  postgres:
-    image: pgvector/pgvector@sha256:${'5'.repeat(64)}
-  admin:
-    image: ${ADMIN}
-`;
-
-const release = (withAdmin = true) =>
-  `# test manifest\nGELDAR_BODY_IMAGE=${BODY}\n${withAdmin ? `GELDAR_ADMIN_IMAGE=${ADMIN}\n` : ''}`;
-// Paths reach sh as forward slashes: MSYS sh on Windows reads C:/ paths reliably.
-const posix = (p: string) => p.replace(/\\/g, '/');
-
-interface Fixture {
-  dir: string;
-  env: Record<string, string>;
-  callsLog: string;
-  tokens: string;
-  state: string;
-  modes: string;
-  releaseFile: string;
-}
-
-const dirs: string[] = [];
-
-function writeShim(bin: string, name: string, text: string) {
-  writeFileSync(join(bin, name), text);
-  chmodSync(join(bin, name), 0o755);
-}
-
-function fixture(): Fixture {
-  const dir = mkdtempSync(join(tmpdir(), 'geldar-colo-admin-test-'));
-  dirs.push(dir);
-  const bin = join(dir, 'bin');
-  mkdirSync(bin);
-  writeShim(bin, 'docker', DOCKER_SHIM);
-  writeShim(bin, 'stat', STAT_SHIM);
-  writeShim(bin, 'id', ID_SHIM);
-  const secrets = join(dir, 'secrets');
-  mkdirSync(secrets);
-  for (const f of SECRET_FILES) writeFileSync(join(secrets, f), `${f}-test-value\n`);
-  const modes = join(dir, 'modes');
-  mkdirSync(modes);
-  const repo = join(dir, 'repo');
-  mkdirSync(repo);
-  const tokens = join(dir, 'tokens');
-  mkdirSync(tokens);
-  const releaseFile = join(dir, 'release.env');
-  writeFileSync(releaseFile, release());
-  const config = join(dir, 'config.yml');
-  // The merged config declares the secrets the script checks (decision 0084): each NAME with its file.
-  const decls = ['postgres', 'rcon', 'velocity-forwarding', 'nats-body'];
-  const dirText = secrets.replace(/\\/g, '/');
-  const block = decls.map((n) => `  ${n}:\n    file: ${dirText}/${n}.txt\n`).join('');
-  writeFileSync(config, `${CONFIG}secrets:\n${block}`);
-  const callsLog = join(dir, 'calls.log');
-  const env: Record<string, string> = { ...(process.env as Record<string, string>) };
-  delete env.Path;
-  delete env.GELDAR_TOKENS_DIR;
-  Object.assign(env, {
-    // On Windows the spawn gets only Git for Windows' tools (usr/bin and mingw64/bin for curl), not the full Windows PATH: MSYS
-    // converts the whole PATH on every fork, so a long PATH made one deploy run cost over a minute (see the FX-DEPLOY-WIN note).
-    PATH: [
-      bin,
-      SH === 'sh' ? '' : dirname(SH),
-      process.platform === 'win32' ? join(dirname(SH), '..', '..', 'mingw64', 'bin') : '',
-      process.platform === 'win32' ? '' : (process.env.PATH ?? ''),
-    ]
-      .filter(Boolean)
-      .join(delimiter),
-    GELDAR_COLO_COMPOSE: posix(COMPOSE),
-    GELDAR_COLO_ROOT: posix(repo),
-    GELDAR_SECRETS_DIR: posix(secrets),
-    GELDAR_RELEASE_FILE: posix(releaseFile),
-    GELDAR_STATE_DIR: posix(join(dir, 'state')),
-    GELDAR_MIN_FREE_KB: '1',
-    DEPLOY_DRY_RUN: '1',
-    DOCKER_CALLS_LOG: posix(callsLog),
-    DOCKER_CONFIG_FIXTURE: posix(config),
-    FAKE_MODE_DIR: posix(modes),
-  });
-  return { dir, env, callsLog, tokens, state: join(dir, 'state'), modes, releaseFile };
-}
-
-function setMode(fx: Fixture, file: string, mode: string) {
-  writeFileSync(join(fx.modes, file), `${mode}\n`);
-}
-
-function run(fx: Fixture, extra: Record<string, string>, args: string[]) {
-  const r = spawnSync(SH, [posix(join(DEPLOY, 'colo-admin.sh')), ...args], {
-    env: { ...fx.env, ...extra },
-    encoding: 'utf8',
-  });
-  return { code: r.status ?? -1, out: `${r.stdout}${r.stderr}` };
-}
-
-function calls(fx: Fixture): string[] {
-  return existsSync(fx.callsLog)
-    ? readFileSync(fx.callsLog, 'utf8').split('\n').filter(Boolean)
-    : [];
-}
-
-// A container start: `run` (or `up`) in a compose call. config calls are not starts.
-const starts = (log: string[]) => log.filter((c) => / run | up /.test(c));
-const REAL = { DEPLOY_DRY_RUN: '0' };
-
-// A token-mint run in the real mode, with a sentinel token file already in the tokens directory (the container
-// would have written it through the mount).
-function mintReal(fx: Fixture, mode = '600') {
-  setMode(fx, 'tokens', '700');
-  writeFileSync(join(fx.tokens, 'alice.token'), `${SENTINEL}\n`);
-  if (mode !== '600') setMode(fx, 'alice.token', mode);
-  return run(fx, { ...REAL, GELDAR_TOKENS_DIR: posix(fx.tokens) }, ['token-mint', 'alice']);
-}
-
-afterEach(() => {
-  for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
-});
+afterEach(cleanupFixtures);
 
 describe('colo-admin.sh (decision 0133)', () => {
   it('refuses an unknown subcommand before any docker call', () => {
@@ -323,6 +155,7 @@ describe('colo-admin.sh (decision 0133)', () => {
   it.each([
     ['migrate', ['migrate', '--dry-run']],
     ['owner-add', ['owner-add', 'ag-jo-01', '--cap', '20']],
+    ['owner-set-cap', ['owner-set-cap', 'jason', '20']],
     ['token-revoke', ['token-revoke', 'tk_1']],
     ['players-status', ['players-status']],
   ])('runs %s in the admin container without mounting the tokens directory', (_name, args) => {
@@ -361,6 +194,62 @@ describe('colo-admin.sh (decision 0133)', () => {
     expect(r.code).not.toBe(0);
     expect(r.out).toContain('no GELDAR_ADMIN_IMAGE');
     expect(starts(calls(fx))).toEqual([]);
+  });
+
+  // The owner cap (decision 0052; set-cap takes 0 to 50 in the CLI, decision 0133 exposes it). The script checks the
+  // owner id and N before any container starts, so a bad value never reaches Docker.
+  describe('owner-set-cap verb (decisions 0052, 0133)', () => {
+    it('runs owner-set-cap as mcp-tokens owner set-cap, id and N passed as separate arguments', () => {
+      const fx = fixture();
+      const r = run(fx, REAL, ['owner-set-cap', 'jason', '20']);
+      expect(r.code).toBe(0);
+      expect(
+        calls(fx).some((c) => c.endsWith('--profile admin run --rm admin owner-set-cap jason 20')),
+      ).toBe(true);
+      expect(existsSync(`${fx.callsLog}.overlay`)).toBe(false);
+    });
+
+    it.each([
+      ['0', '0'],
+      ['50', '50'],
+    ])('accepts the cap %s at the edge of 0 to 50', (_name, n) => {
+      const fx = fixture();
+      const r = run(fx, REAL, ['owner-set-cap', 'jason', n]);
+      expect(r.code).toBe(0);
+      expect(calls(fx).some((c) => c.endsWith(`admin owner-set-cap jason ${n}`))).toBe(true);
+    });
+
+    it.each([
+      ['no N', ['owner-set-cap', 'jason'], 'owner-set-cap takes <owner id> <N>'],
+      ['no arguments', ['owner-set-cap'], 'owner-set-cap takes <owner id> <N>'],
+      [
+        'a third argument',
+        ['owner-set-cap', 'jason', '20', 'x'],
+        'owner-set-cap takes <owner id> <N>',
+      ],
+      [
+        'a non-numeric N',
+        ['owner-set-cap', 'jason', 'twenty'],
+        'N must be a whole number from 0 to 50',
+      ],
+      ['a fraction', ['owner-set-cap', 'jason', '2.5'], 'N must be a whole number from 0 to 50'],
+      ['a negative N', ['owner-set-cap', 'jason', '-1'], 'N must be a whole number from 0 to 50'],
+      ['N above 50', ['owner-set-cap', 'jason', '51'], 'N must be a whole number from 0 to 50'],
+      [
+        'N with a leading zero',
+        ['owner-set-cap', 'jason', '020'],
+        'N must be a whole number from 0 to 50',
+      ],
+      ['an owner id with a capital', ['owner-set-cap', 'Jason', '20'], 'owner id must be'],
+      ['an owner id with a space', ['owner-set-cap', 'jason x', '20'], 'owner id must be'],
+      ['an empty owner id', ['owner-set-cap', '', '20'], 'owner id must be'],
+    ])('refuses owner-set-cap with %s before any container starts', (_name, args, message) => {
+      const fx = fixture();
+      const r = run(fx, REAL, args);
+      expect(r.code).not.toBe(0);
+      expect(r.out).toContain(message);
+      expect(starts(calls(fx))).toEqual([]);
+    });
   });
 
   // The roster (decision 0108): roster-add and roster-list map to `mcp-tokens roster add|list` in the admin container.

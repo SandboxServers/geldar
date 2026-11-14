@@ -7,6 +7,13 @@ import { Vec3 } from 'vec3';
 export const STEP_BACK_BELOW = 1.5;
 /** The distance (blocks) the Body steps back to from a recipient that is too close. */
 export const STEP_BACK_TO = 2;
+/**
+ * The smallest gap (blocks) a toss is thrown at once the step back has been tried. The simulated
+ * toss (about 40 degrees down) lands in the recipient's pickup box 83-97% of the time at this gap,
+ * so it is the Body's limit, not a proof that items land past the box (the live check is open).
+ * Closer than this, the Body does not throw.
+ */
+export const TOSS_MIN_GAP = 1;
 
 /**
  * The point `distance` blocks from `recipient`, on the line from the recipient through `body`, at
@@ -31,7 +38,8 @@ export function stepBackPoint(
 
 /**
  * The turns (radians) the Body tries around the recipient when the straight-back spot is blocked:
- * 45 and 90 degrees either side. The straight-back turn comes first.
+ * 45, 90 and 135 degrees either side, then 180 degrees (the far side of the recipient). The
+ * straight-back turn comes first.
  */
 export const STEP_BACK_TURNS: readonly number[] = [
   0,
@@ -39,6 +47,9 @@ export const STEP_BACK_TURNS: readonly number[] = [
   -Math.PI / 4,
   Math.PI / 2,
   -Math.PI / 2,
+  (3 * Math.PI) / 4,
+  (-3 * Math.PI) / 4,
+  Math.PI,
 ];
 
 /**
@@ -64,6 +75,9 @@ export function stepBackSpots(
 
 /** The distances (blocks) from the recipient the Body tries a step back to, for each turn. */
 export const STEP_BACK_DISTANCES: readonly number[] = [2, 2.5, 3];
+
+/** The heights (blocks, from the Body's own) a step back may land on: level, one step up, one step down. */
+export const STEP_BACK_RISES: readonly number[] = [0, 1, -1];
 
 /** The part of a block the step back reads: its name and bounding box (or shapes, when no box is given). */
 export interface StepBlock {
@@ -104,12 +118,38 @@ function blockIndex(coord: number): number {
   return Math.floor(Number(coord.toFixed(6)));
 }
 
-/** A cell the Body can stand in: its feet and head cells do not block a body, and its floor is solid or a bed. */
+/** Blocks the Body must not stand in or on: fluids, fire, and the powder that drags it down. */
+const HAZARD_IN = new Set([
+  'water',
+  'lava',
+  'fire',
+  'soul_fire',
+  'powder_snow',
+  'sweet_berry_bush',
+]);
+/** Floors that hurt or hold fire: a Body on one takes damage, so it is no place to stop. */
+const HAZARD_FLOOR = new Set([
+  'water',
+  'lava',
+  'magma_block',
+  'cactus',
+  'campfire',
+  'soul_campfire',
+  'fire',
+  'soul_fire',
+  'powder_snow',
+]);
+
+/** A cell the Body can stand in: its feet and head cells do not block a body, its floor is solid or a bed, and no hazard. */
 function standable(cell: Vec3, blockAt: BlockLookup): boolean {
+  const feet = blockAt(cell);
+  const floor = blockAt(cell.offset(0, -1, 0));
+  if (HAZARD_IN.has(feet?.name ?? '') || HAZARD_FLOOR.has(floor?.name ?? '')) return false;
   return (
-    !blocksBody(blockAt(cell)) &&
+    !blocksBody(feet) &&
     !blocksBody(blockAt(cell.offset(0, 1, 0))) &&
-    isFloor(blockAt(cell.offset(0, -1, 0)))
+    isFloor(floor) &&
+    !HAZARD_IN.has(blockAt(cell.offset(0, 1, 0))?.name ?? '')
   );
 }
 
@@ -129,20 +169,23 @@ export function stepBackCells(
   const here = new Vec3(Math.floor(body.x), Math.floor(body.y), Math.floor(body.z));
   const seen = new Set<string>();
   const cells: Vec3[] = [];
-  for (const turn of STEP_BACK_TURNS) {
-    for (const distance of STEP_BACK_DISTANCES) {
-      const spot = turnedSpot(body, recipient, distance, turn);
-      if (!spot) return [];
-      const cell = new Vec3(blockIndex(spot.x), here.y, blockIndex(spot.z));
-      const key = `${cell.x},${cell.z}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      if (cell.x === here.x && cell.z === here.z) continue;
-      const centre = new Vec3(cell.x + 0.5, cell.y, cell.z + 0.5);
-      const gap = Math.hypot(centre.x - recipient.x, centre.z - recipient.z);
-      if (gap < STEP_BACK_BELOW || gap > reach) continue;
-      if (!standable(cell, blockAt)) continue;
-      cells.push(centre);
+  // The level cells of every spot come first (rise 0), then the steps up, then the steps down.
+  for (const rise of STEP_BACK_RISES) {
+    for (const turn of STEP_BACK_TURNS) {
+      for (const distance of STEP_BACK_DISTANCES) {
+        const spot = turnedSpot(body, recipient, distance, turn);
+        if (!spot) return [];
+        const cell = new Vec3(blockIndex(spot.x), here.y + rise, blockIndex(spot.z));
+        const key = `${cell.x},${cell.y},${cell.z}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        if (cell.x === here.x && cell.z === here.z) continue;
+        const centre = new Vec3(cell.x + 0.5, cell.y, cell.z + 0.5);
+        const gap = Math.hypot(centre.x - recipient.x, centre.z - recipient.z);
+        if (gap < STEP_BACK_BELOW || gap > reach) continue;
+        if (!standable(cell, blockAt)) continue;
+        cells.push(centre);
+      }
     }
   }
   return cells;

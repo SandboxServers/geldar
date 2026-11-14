@@ -1,89 +1,12 @@
-import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { moveNear } from './pathing.ts';
-import {
-  classifySleepError,
-  isNightOrStorm,
-  sleepAction,
-  sleepErrorText,
-  sleepFailure,
-} from './sleep.ts';
+import { BED, bed, fakeBot, OTHER_HALF, sleep } from './sleep.fakes.ts';
+import { classifySleepError, isNightOrStorm, sleepErrorText, sleepFailure } from './sleep.ts';
 
 vi.mock('./pathing.ts', () => ({
   moveNear: vi.fn(async () => ({ ok: true, distance: 0 })),
 }));
-
-interface FakeBlock {
-  name: string;
-  position: Vec3;
-}
-
-interface FakeOptions {
-  timeOfDay?: number;
-  thundering?: boolean;
-  /** The blocks in the world; `findBlocks` searches them in order. */
-  blocks?: FakeBlock[];
-  /** Messages `bot.sleep` rejects with, one per call, before it succeeds. */
-  sleepErrors?: string[];
-  /** True when the bot starts out in a bed. */
-  asleep?: boolean;
-}
-
-/** A fake bot with a clock, a set of blocks, and a `sleep` that can reject. */
-function fakeBot(options: FakeOptions = {}): Bot {
-  const blocks = options.blocks ?? [];
-  const errors = [...(options.sleepErrors ?? [])];
-  let sleeping = options.asleep ?? false;
-  const bot = {
-    time: { timeOfDay: options.timeOfDay ?? 1_000 },
-    thunderState: options.thundering ? 1 : 0,
-    entity: { position: new Vec3(0, 64, 0) },
-    get isSleeping() {
-      return sleeping;
-    },
-    findBlocks: ({
-      matching,
-      count,
-    }: {
-      matching: (block: FakeBlock) => boolean;
-      maxDistance: number;
-      count: number;
-    }) =>
-      blocks
-        .filter(matching)
-        .slice(0, count)
-        .map((block) => block.position),
-    blockAt: (position: Vec3) => blocks.find((block) => block.position.equals(position)) ?? null,
-    sleep: vi.fn(async (_bed: FakeBlock) => {
-      const error = errors.shift();
-      // The server says "already sleeping" only when the bot is in a bed.
-      if (error && /already sleeping/i.test(error)) sleeping = true;
-      if (error) throw new Error(error);
-      sleeping = true;
-    }),
-  };
-  return bot as unknown as Bot;
-}
-
-/** Runs the `sleep` handler with a fresh abort signal. */
-function sleep(bot: Bot) {
-  return sleepAction.run(
-    { bot, signal: new AbortController().signal, timeScale: 1 },
-    { do: 'sleep' },
-  );
-}
-
-const BED = { name: 'white_bed', position: new Vec3(5, 64, 0) };
-const OTHER_HALF = { name: 'white_bed', position: new Vec3(6, 64, 0) };
-
-/** A whole bed as the world holds it: two adjacent blocks along x, both named `name`. */
-function bed(name: string, x: number): FakeBlock[] {
-  return [
-    { name, position: new Vec3(x, 64, 0) },
-    { name, position: new Vec3(x + 1, 64, 0) },
-  ];
-}
 
 beforeEach(() => {
   vi.mocked(moveNear).mockClear();
@@ -216,6 +139,61 @@ describe('sleep', () => {
     const outcome = await sleep(bot);
     expect(outcome).toEqual({ status: 'completed', detail: { bed: { x: 6, y: 64, z: 0 } } });
     expect(moveNear).toHaveBeenNthCalledWith(2, bot, OTHER_HALF.position, 1, expect.anything());
+    expect(bot.sleep).toHaveBeenCalledTimes(2);
+  });
+
+  /** Runs the bed loop on a fake clock: each walk advances it by `walkMs`. Returns the outcome and the bot. */
+  async function sleepWithClock(walkMs: number, timeScale = 1) {
+    let now = 1_000_000;
+    const clock = vi.spyOn(Date, 'now').mockImplementation(() => now);
+    const slowWalk = async () => {
+      now += walkMs;
+      return { ok: true, distance: 0 };
+    };
+    vi.mocked(moveNear).mockImplementation(slowWalk as never);
+    const beds = [5, 9, 13, 17, 21, 25].flatMap((x) => bed('white_bed', x));
+    const bot = fakeBot({
+      timeOfDay: 13_000,
+      blocks: beds,
+      sleepErrors: Array(6).fill('Bed is occupied'),
+    });
+    try {
+      return { outcome: await sleep(bot, timeScale), bot };
+    } finally {
+      clock.mockRestore();
+      vi.mocked(moveNear).mockImplementation(async () => ({ ok: true, distance: 0 }) as never);
+    }
+  }
+
+  it('stops the bed loop after the 30 s budget and says the search time ran out', async () => {
+    // Each walk takes 12 s on a fake clock, so the budget ends the loop after the third bed.
+    const { outcome, bot } = await sleepWithClock(12_000);
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'blocked',
+      message: expect.stringMatching(/^tried 3 of 6 nearby beds; the search time ran out; last: /),
+    });
+    expect(bot.sleep).toHaveBeenCalledTimes(3);
+    expect(moveNear).toHaveBeenCalledTimes(3);
+  });
+
+  it('starts a bed at exactly the budget boundary: 30 s spent stops the loop', async () => {
+    // Each walk takes 10 s, so the third bed is started at 20 s and the fourth at exactly 30 s.
+    const { outcome, bot } = await sleepWithClock(10_000);
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      message: expect.stringMatching(/^tried 3 of 6 nearby beds; the search time ran out/),
+    });
+    expect(bot.sleep).toHaveBeenCalledTimes(3);
+  });
+
+  it('scales the budget by the time scale: at 0.5 the search stops at 15 s', async () => {
+    // Each walk takes 12 s: the second bed starts at 12 s (under 15 s), the third at 24 s (over).
+    const { outcome, bot } = await sleepWithClock(12_000, 0.5);
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      message: expect.stringMatching(/^tried 2 of 6 nearby beds; the search time ran out/),
+    });
     expect(bot.sleep).toHaveBeenCalledTimes(2);
   });
 

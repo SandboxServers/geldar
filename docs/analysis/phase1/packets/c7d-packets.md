@@ -63,7 +63,7 @@ Error body for every card: `application/problem+json`, fields `type`, `title`, `
 
 - **id / wave / lane.** C7-04b, wave 2 (after C7-04a merges). Register lane, serial after C7-04a. **branch.** `phase1/c7-04b-agents-tokens`. **migration.** none in this card (the session functions it calls are migration 0035, built in C7-04b-3). **size.** M (one session; the owner-key routes are the first thing to cut if it runs long, and go to a C7-04b2 card). **Status.** Built except PATCH; PATCH moved to C7-04e (its own card, because C7-06's may-edit cannot cover the route). The rest is built in C7-04b-1 to C7-04b-5 (branch `phase1/c7-04b5-wiring`, migrations 0035 and 0036); pending merge into wave 3. The PATCH spec in this card is not built here. Deviations and wording: `worknotes/C7-04b.md`.
 - **Goal.** The resource routes for agents, player tokens and owner keys, wired to the services that exist (`tokens-service.ts`, `owner-keys-service.ts`), with the Postgres adapter for the key store that C7-02b did not ship (built in C7-04b-3).
-- **Credential rule (decision 0173, API v1).** Two credentials: the cookie session (account page; CSRF on every write) and a Bearer owner key (scopes `read`, `body`, `manage`). Token rotate and revoke and all owner-key routes are cookie-session only; a Bearer key is refused there. Bearer-driven rotation and key management are candidate card C7-04d. The owner-key session functions (migration 0035, `mintOwnerKeyBySession`, `listOwnerKeysBySession`, `revokeOwnerKeyBySession`) are built in C7-04b-3.
+- **Credential rule (decision 0173, API v1).** Two credentials: the cookie session (account page; CSRF on every write) and a Bearer owner key (scopes `read`, `body`, `manage`). Token rotate and revoke and all owner-key routes are cookie-session only; a Bearer key is refused there. Bearer-driven rotation and key management are candidate card C7-04d2. The owner-key session functions (migration 0035, `mintOwnerKeyBySession`, `listOwnerKeysBySession`, `revokeOwnerKeyBySession`) are built in C7-04b-3.
 
 ### Files
 
@@ -77,7 +77,7 @@ Error body for every card: `application/problem+json`, fields `type`, `title`, `
 - `GET /agents` (scope `read`): own agents only, `Agent` shape from the draft (`playerId, displayName, status, body, creditsLeft, publicCamera, thoughtsDelayedPublic, createdAt`, plus `tokenExpiresAt, tokenLastUsedAt, lastSeenAt` when known). `body` is read from the stored state here; the live body state comes in 04c.
 - `GET /agents/{playerId}` (scope `read`): the same shape, through the 04a guard.
 - `PATCH /agents/{playerId}` (not built, see Status; the spec is in C7-04e) (cookie session only, CSRF; decision 0173): body `AgentPatch`. Accepts `publicCamera` and `thoughtsDelayedPublic` (booleans). A `displayName` field is refused with 422 `invalid` in this card, because rename is C7-07 and stays out. Any other field is 422 `invalid`. A foreign agent is 404.
-- `POST /agents/{playerId}/tokens` (cookie session only, CSRF; Bearer rotation is deferred to C7-04d, decision 0173): rotate through `tokens-service`. 201 `TokenOnce` (`token` matches `^gmcp-[0-9a-f]{64}$`, `expiresAt` 90 days out, 0170 point 1). The token is returned once. A `GET` of the agent never returns it. Hand-off: the response carries `Link: </register/...onboarding path from C7-05>; rel="next"` when C7-05 is merged, otherwise no Link and the report says so.
+- `POST /agents/{playerId}/tokens` (cookie session only, CSRF; Bearer rotation is deferred to C7-04d2, decision 0173): rotate through `tokens-service`. 201 `TokenOnce` (`token` matches `^gmcp-[0-9a-f]{64}$`, `expiresAt` 90 days out, 0170 point 1). The token is returned once. A `GET` of the agent never returns it. Hand-off: the response carries `Link: </register/...onboarding path from C7-05>; rel="next"` when C7-05 is merged, otherwise no Link and the report says so.
 - `POST /agents/{playerId}/tokens/revoke` (cookie session only, CSRF): 204. The revoked token fails on the next use.
 - `GET /owner-keys` (cookie session only; a read, so no CSRF): `KeyMeta` list (`keyId, label, scopes, expiresAt, lastUsedAt, createdAt`). Never a key value.
 - `POST /owner-keys` (cookie session only, CSRF): mint through `owner-keys-service` (session path, `mintOwnerKeyBySession`, migration 0035); 201 `KeyOnce` (`key` matches `^gowner-[0-9a-f]{64}$`, shown once). Requested scopes must each be one of `read`, `body`, `manage` (C7-02b `bad_scopes`, mapped to 422 `invalid`). A cookie session holds every scope, so no subset check against a presented key applies (decision 0173). Mint and revoke are windowed through the service's `charge`; an admin skips the window (0170 point 5). SQLSTATE mapping (fix J): `42501` (scope escalation, refused in SQL) is 403 `scope_missing`; `53400` (live key cap) is 409 `conflict`.
@@ -121,14 +121,14 @@ Credentials per route (decision 0173). A cookie session without the CSRF token o
 
 ---
 
-## C7-04c: body routes (start, stop, restart, status, log, retire) through the supervisor
+## C7-04c: body routes (start, stop, restart, status, log) through the supervisor
 
-- **id / wave / lane.** C7-04c, wave 3 (after C7-04a and C7-03b1 merge). Register lane, serial after C7-06 (the wave plan order), or beside it only if the files are disjoint (they are: `api/body*.ts`). **branch.** `phase1/c7-04c-body-routes`. **migration.** none. **size.** M, at the top of the range. If the retire route runs past 40k, split retire into C7-04d and report it.
+- **id / wave / lane.** C7-04c, wave 3 (after C7-04a and C7-03b1 merge). Register lane, serial after C7-06 (the wave plan order), or beside it only if the files are disjoint (they are: `api/body*.ts`). **branch.** `phase1/c7-04c-body-routes`. **migration.** none. **size.** M, at the top of the range. **Split (ruling, continuation 1).** Retire is not built here: it is card C7-04d. Production wiring (the NATS connection in register, mounting `bodyRoutes` through `deps.routes`, `server.ts` and `main.ts`) is card C7-04c2. This card builds the five body handlers (`body.ts`, `body-log.ts`) and their tests only.
 - **Goal.** The body routes of 0152 point 1, each a thin mapping over `requestBodyOp` (C7-03b1). The supervisor does the work and the counters. The register side maps replies and limits repeat starts.
 
 ### Files
 
-- may-edit: `threshold/register/src/api/body.ts` (start, stop, restart, status, log, retire), `threshold/register/src/api/body-log.ts` (the fixed-text table and the tail filter), the route-table lines in `server.ts`, their tests, `docs/analysis/phase1/worknotes/C7-04c.md`, `threshold/register/src/problem.ts`, `threshold/register/src/api/owner-api-v1.yaml` and `threshold/register/test/owner-api.test.ts` (for the two problem codes below only).
+- may-edit: `threshold/register/src/api/body.ts` (start, stop, restart, status, log), `threshold/register/src/api/body-log.ts` (the fixed-text table and the tail filter), their tests, `docs/analysis/phase1/worknotes/C7-04c.md`, `threshold/register/src/problem.ts`, `threshold/register/src/api/owner-api-v1.yaml` and `threshold/register/test/owner-api.test.ts` (for the two problem codes below only).
 - Problem codes (review fix M3, wave 3): this card adds `quota` (429) and `body_unavailable` (503) to `PROBLEM_CODES` in `problem.ts`, to the STATUS and TITLE maps there, to the `code` enum in `owner-api-v1.yaml`, and to the enum test in `owner-api.test.ts`. The `sendProblem` calls for 429 `quota` and 503 `body_unavailable` need both codes to compile.
 - must-not-edit: `supervisor/` (the counters are the supervisor's; the register does not count them), `nats-ctl.ts` (C7-03b1 owns it; read only), `contract/` (the `ctl.body.*` op list is C7-03b1's; this card uses ops it defines, no new op), `account*.ts`, `docs/spec.md`.
 - If the supervisor's op list has no log op, stop and report. Do not add one here.
@@ -136,15 +136,16 @@ Credentials per route (decision 0173). A cookie session without the CSRF token o
 
 ### Routes
 
-Credentials (decision 0173): start, stop and restart accept a Bearer owner key with scope `body` or a cookie session; the status and log reads accept scope `read` or a cookie session; retire is cookie-session only.
+Credentials (decision 0173): start, stop and restart accept a Bearer owner key with scope `body` or a cookie session; the status and log reads accept scope `read` or a cookie session.
 
 - `POST /agents/{playerId}/body/start` (scope `body`): 202 `BodyOp` (`opId`, `state` queued, done or refused). 429 `quota` (supervisor refusal) or `rate_limited` (the register limit on repeat starts) with `Retry-After`. 409 `conflict` only from the register's in-flight guard. Replies map by the table in the reply-mapping paragraph below.
 - `POST .../body/stop` (scope `body`): 202 `BodyOp`. 409 `conflict` from the in-flight guard only. 429 as above.
 - `POST .../body/restart` (scope `body`): 202 `BodyOp`. 429 as above.
 - `GET .../body/status` (scope `read`): 200 `BodyStatus` (`state` in running, starting, waiting, stopped, unavailable; `health` and `hunger` integers 0 to 20; `lastSeenAt`).
 - `GET .../body/log` (scope `read`): 200 `LogTail`. `limit` defaults to 200; a `limit` above 200 is 422 `invalid`. Only events of the owner's own agent (its life id), no older than 7 days (0170 point 4: the smaller of 200 events or 7 days). Each line is `{at, text}` where `text` is picked from a fixed table of codes. No model text, no digits from a model, no free text.
-- `POST .../retire` (cookie session only, CSRF; it revokes tokens, which is cookie-only in v1, decision 0173): stop the body through the supervisor, then revoke the tokens (C7-04b service), then retire the player; 202 `BodyOp`. A supervisor timeout on the stop leaves the agent not retired (the retry is safe).
+- `POST .../retire` (NOT BUILT here: split to C7-04d; cookie session only, CSRF; it revokes tokens, which is cookie-only in v1, decision 0173): stop the body through the supervisor, then revoke the tokens (C7-04b service), then retire the player; 202 `BodyOp`. A supervisor timeout on the stop leaves the agent not retired (the retry is safe).
 - Every body route: a foreign agent is 404 (including `/body/log`). A supervisor timeout or no-responders is 503 `body_unavailable` with `Retry-After`; no pending reply is kept in the process (the in-flight slot below is the only per-owner state).
+- Names and retired agents: the register enforces a display name of 3 to 16 characters (the Minecraft rule) before any supervisor call. A retired agent gets 404 on every body route, and PATCH on a retired agent gets 404 too.
 - **Reply mapping (fix L).** The table covers the real supervisor codes (`ReplyCode` and `Refusal` in `supervisor/src/ports.ts`). A repeat start replies `started`, so `noop` and `conflict` are not supervisor codes and are not in the table. `conflict` 409 comes only from the register's own in-flight guard (below).
 
   | Supervisor code | Route reply |
@@ -160,7 +161,7 @@ Credentials (decision 0173): start, stop and restart accept a Bearer owner key w
 
   No reply maps to 200 unless the table says 200. Tests: one per row, and an unknown code `zzz` gives 503, never 200. Revert: map unknown codes to 202; the unknown-code test fails.
 - **Op binding (fix J).** `requestBodyOp` (C7-03b1, `threshold/register/src/nats-ctl.ts`) fills the payload `op` from the subject and throws before anything is sent when the payload names another op. Each route passes only its own op. Tests: a route's request carries its own op; a payload naming another op is refused before the request is sent (the nats-ctl op-binding tests pin it). Revert: drop the mismatch check; the mismatch test fails.
-- **One in flight per owner (fix J).** At the register an owner has at most one body request in flight (start, stop, restart, retire). A second one while the first is pending gets 409 `conflict` and makes no supervisor call. It is 409, not 429, because it is a state conflict, not a rate. The slot is taken before the supervisor call and released in a `finally`. Tests: the first request (slot free) is accepted with 202; the last allowed request (the slot is freed by completion, then a new request takes it) is accepted; a concurrent request past the cap is 409 `conflict` and the supervisor fake is called once; a timeout releases the slot and the next request is accepted. Revert: remove the slot check; the past-cap test fails.
+- **One in flight per owner (fix J).** At the register an owner has at most one body request in flight (start, stop, restart; retire shares this slot, C7-04d). A second one while the first is pending gets 409 `conflict` and makes no supervisor call. It is 409, not 429, because it is a state conflict, not a rate. The slot is taken before the supervisor call and released in a `finally`. Tests: the first request (slot free) is accepted with 202; the last allowed request (the slot is freed by completion, then a new request takes it) is accepted; a concurrent request past the cap is 409 `conflict` and the supervisor fake is called once; a timeout releases the slot and the next request is accepted. Revert: remove the slot check; the past-cap test fails.
 
 ### Carry-forward from review-5 that lands here
 
@@ -179,9 +180,6 @@ Credentials (decision 0173): start, stop and restart accept a Bearer owner key w
 - Status: a `BodyStatus` fixture validates against the schema, `health` 21 is refused. Revert: drop the range check; the test fails.
 - Log: at most 200 lines; a `limit` of 201 is 422; a fixture with events of two owners never shows the other owner's line; an event 8 days old is absent. Revert: remove the 7-day filter; the age test fails. Revert: remove the owner filter; the cross-owner test fails.
 - Log text: every `text` value is one of the fixed table's strings; a fixture with a model-supplied string is rendered as the fixed code, never the string. Revert: pass the raw text through; the fixed-text test fails.
-- Retire: a supervisor timeout on the stop leaves the agent not retired; the retry retires it once. Revert: retire before stop; the not-retired test fails.
-- Retire credential (decision 0173): a Bearer key with any scope at retire answers 401 `unauthenticated` and revokes no token; a cookie-session retire without CSRF answers 403 `csrf_required`. Revert: let a Bearer key reach retire; the Bearer row fails.
-
 ### Re-slice note
 
 The counter exemption for admin starts (per-agent hourly, per-owner daily) is enforced in the supervisor, which reads the flag from the database on every request (0170). Its test belongs to the supervisor package (C7-03a and C7-03b1). This card tests the register mapping only. The black-box admin-start test runs in the live lane, not in this card. The wave review checks that both tests exist.
@@ -194,9 +192,28 @@ The counter exemption for admin starts (per-agent hourly, per-owner daily) is en
 
 ---
 
-## C7-04d: Bearer-driven token rotation and owner-key management (candidate)
+## C7-04d: retire (POST /agents/{playerId}/retire)
 
-- **id / wave / lane.** C7-04d, candidate (not scheduled in Phase 1; the orchestrator promotes it). Register lane, after C7-04b merges. **branch.** `phase1/c7-04d-bearer-keys` (proposed). **migration.** yes: definer functions keyed by owner id for token rotate and revoke, and for owner-key list, mint and revoke, numbered from the next free C7 number at dispatch (the registry, `decision-number-registry.md`, and `sql/` are checked then). **size.** M. **Status.** Candidate. **depends.** C7-04b (merged) and C7-04b-3 (the session functions it mirrors). Decision 0173, point 2.
+- **id / wave / lane.** C7-04d, wave 3, split out of C7-04c (ruling, continuation 1). Register lane, after C7-04c2 merges. **depends-on.** C7-04c (the body handler), C7-04c2 (creates the shared in-flight slot), C7-04b (the token revoke service). **branch.** `phase1/c7-04d-retire`. **migration.** none. **size.** S to M.
+- **Goal.** `POST /agents/{playerId}/retire`, cookie session only with CSRF (decision 0173: it revokes tokens, which is cookie-only in v1). Order: stop the body through the supervisor (`ctl.body.stop`), then revoke the agent's tokens through the C7-04b service, then retire the player. 202 `BodyOp`.
+- **Rules.** A supervisor timeout or no-responders on the stop is 503 `body_unavailable` with `Retry-After`, and leaves the agent not retired (the retry is safe). A foreign agent is 404 before any supervisor call. A Bearer key is refused (cookie only).
+- **In-flight slot (sharing rule).** The one-in-flight slot (C7-04c, fix J) is shared, not copied. C7-04c2 creates it with `createBodySlot()` (in `api/body-slot.ts`) and passes the same slot to `bodyRoutes` and to the retire handler through `BodyDeps.slot`. C7-04d takes the slot from `BodyDeps` and never creates a second one, so a retire and a stop cannot both reach the supervisor. Test: a retire while a stop is in flight is 409 `conflict` with no supervisor call.
+- **Files.** may-edit: `threshold/register/src/api/body-retire.ts` (new; the retire handler only), their tests, `docs/analysis/phase1/worknotes/C7-04d.md`. `server.ts` and `main.ts` are not in this card's may-edit: the retire routes are mounted by the C7-04c2 wiring (if C7-04d merges after C7-04c2, ops adds the one mount line). `body.ts` is read only.
+- must-not-edit: `supervisor/`, `nats-ctl.ts`, `contract/`, `account*.ts`, `docs/spec.md`.
+- **Tests (each fails on revert).** The 202 path calls stop, then revoke, then retire, in that order. A stop timeout is 503, with no revoke and no retire call. A foreign agent is 404 with no supervisor call. A CSRF-less cookie write is 403 `csrf_required`. A Bearer key is refused.
+
+## C7-04c2: body routes production wiring
+
+- **id / wave / lane.** C7-04c2, wave 3, split out of C7-04c (ruling, continuation 1). Register lane, Ready (C7-04c is merged), serial with it. **depends-on.** C7-04c. **branch.** `phase1/c7-04c2-wiring`. **migration.** none. **size.** S.
+- **Goal.** Make the body routes live: open the NATS connection in register (a `CtlConnection` from `nats-ctl.ts`), mount `bodyRoutes({ conn, shard, timeoutMs })` through `deps.routes`, and take the shard and reply wait from config. With NATS not configured, the body routes are not mounted and every body path answers 404 (on purpose, recorded in the C7-04c2 worknote); with NATS configured but unreachable they answer 503 `body_unavailable`.
+- **Files.** may-edit: `threshold/register/src/server.ts` and `threshold/register/src/main.ts` (the wiring lines only), the NATS connect helper (new file), `threshold/register/src/api/body-slot.ts` (new; `createBodySlot()`), `threshold/register/src/api/body.ts` (the `slot` field of `BodyDeps`, default `createBodySlot()`, and nothing else; a note in the worknote), config, their tests, `docs/analysis/phase1/worknotes/C7-04c2.md`. `api/body-log.ts` is read only.
+- **F1 fix note (from the C7-04c review).** The register sends the agent's display name as `playerName`, not the URL id; a display name outside `^[A-Za-z0-9_]{3,16}$` (3 to 16, the Minecraft rule) is a 422 before any supervisor call (C7-04c carries the code). The live check must therefore start a body for an `ag-` id, the register's player id, and must not use a player name chosen by hand.
+- must-not-edit: `account*.ts`, pages, `supervisor/`, `contract/`, `docs/spec.md`.
+- **Tests (each fails on revert).** Through the mounted router, start answers 202 with a fake connection. With no connection, start and status answer 503 `body_unavailable`. The config timeout reaches `requestBodyOp`. Leaving `bodyRoutes` unmounted gives 404 on start. Unreachable until wired: with `bodyRoutes` absent from `deps.routes`, every body path (start, stop, restart, status, log) answers 404 through the production router; with it mounted, the same paths reach the handler. Test: `createBodySlot()` is passed through `BodyDeps.slot`, and a second start while the first is in flight is 409 `conflict` through the mounted router with one slot shared.
+
+## C7-04d2: Bearer-driven token rotation and owner-key management (candidate)
+
+- **id / wave / lane.** C7-04d2, candidate (not scheduled in Phase 1; the orchestrator promotes it; renamed from C7-04d in continuation 1). Register lane, after C7-04b merges. **branch.** `phase1/c7-04d2-bearer-keys` (proposed). **migration.** yes: definer functions keyed by owner id for token rotate and revoke, and for owner-key list, mint and revoke, numbered from the next free C7 number at dispatch (the registry, `decision-number-registry.md`, and `sql/` are checked then). **size.** M. **Status.** Candidate. **depends.** C7-04b (merged) and C7-04b-3 (the session functions it mirrors). Decision 0173, point 2.
 - **Goal.** Let a Bearer owner key with scope `manage` do what 0173 keeps cookie-only in API v1: rotate and revoke player tokens, and list, mint and revoke owner keys.
 - **Why deferred.** Token rotation keys on the identity hash (`TokenStore` in `tokens-service.ts`). A Bearer credential carries only `ownerId` (`reg-` plus a 24-character prefix of the identity hash), so it cannot reach that store. Owner-key management needs the same owner-id path. Both need SQL keyed by owner id, which is a migration; no such function exists in 0026 or 0032 or 0035.
 - **Files (proposed).** `threshold/register/src/api/tokens.ts` and `api/owner-keys.ts` (a Bearer branch beside the cookie branch), `threshold/register/src/tokens-pg.ts`, the new migration and its check file, tests. The migration is not in this card's may-edit list until dispatch.
@@ -208,7 +225,7 @@ The counter exemption for admin starts (per-agent hourly, per-owner daily) is en
 
 ## C7-04e: PATCH /agents/{playerId} (agent visibility flags)
 
-- **id / wave / lane.** C7-04e, wave 3 (after C7-04b merges; before C7-06, which depends on it). Register lane, serial after C7-04b. **branch.** `phase1/c7-04e-agent-patch`. **migration.** none (`PgStore.setPublicCamera` and `PgStore.setThoughtsDelayedPublic` call definer functions that exist). **size.** S. **Status.** Ready. Split from C7-04b: the route was in the C7-04b card and was not built there. C7-06's may-edit cannot cover the route file, so the route has its own card (wave 3 review 2, fix note 1). **depends.** C7-04b (the cookie session path and the `production-api.ts` wiring). Decision 0173, point 1 (cookie session only).
+- **id / wave / lane.** C7-04e, wave 3 (after C7-04b merges; before C7-06, which depends on it). Register lane, serial after C7-04b. **branch.** `phase1/c7-04e-agent-patch`. **migration.** none (`PgStore.setPublicCamera` and `PgStore.setThoughtsDelayedPublic` call definer functions that exist). **size.** S. **Status.** Built (merged into wave 3); fix 2 in wave 4 (retired agent 404, body bounds tests). Split from C7-04b: the route was in the C7-04b card and was not built there. C7-06's may-edit cannot cover the route file, so the route has its own card (wave 3 review 2, fix note 1). **depends.** C7-04b (the cookie session path and the `production-api.ts` wiring). Decision 0173, point 1 (cookie session only).
 - **Goal.** The one agent route C7-04b left out. `PATCH /agents/{playerId}` sets the two visibility flags that the account page toggles (C7-06 calls it). Rename stays in C7-07.
 - **Files.**
   - may-edit: `threshold/register/src/api/agents.ts` (new; the PATCH handler only, the list and read stay in `agents-list.ts` and `agents-read.ts`), the route-table line in `threshold/register/src/api/index.ts`, `threshold/register/src/api/owner-api-v1.yaml` (the `patch` operation and the `AgentPatch` schema), their tests, `docs/analysis/phase1/worknotes/C7-04e.md`.
@@ -277,3 +294,48 @@ components:
     KeyMeta: { required: [keyId, scopes, createdAt], properties: { keyId: string, label: string, scopes: array, expiresAt: date-time, lastUsedAt: date-time } }
     Problem: { required: [type, title, status, code], properties: { type: uri, title: string, status: integer, code: { enum: [not_found, method_not_allowed, unauthenticated, csrf_required, scope_missing, invalid, conflict, rate_limited, unavailable, internal, quota, body_unavailable] }, retryAfter: integer } }
 ```
+
+## Wave 4 carry-forward
+
+Five cards from the wave 4 review (pass 3). None is scheduled; each waits for its trigger. Ledger rows CF-W4-1 to CF-W4-5 (ledger.md and c7-wave-plan.md).
+
+### CF-1 (CF-W4-1): split body.test.ts before more tests land in it
+
+- **Goal.** `threshold/register/test/body.test.ts` is 534 lines after wave 4 fix 3 (soft cap 500, hard cap 700). Move the name-shape tests, the retired-agent describe and the game-token describe to `body-name.test.ts`; keep the reply table, slot and window tests in place. No behaviour change.
+- **May-edit.** `threshold/register/test/body.test.ts`, `threshold/register/test/body-name.test.ts` (new), `docs/analysis/phase1/worknotes/C7-04c.md`.
+- **Test.** Every test name passes in the new layout; the count does not drop.
+- **Depends.** Lands before C7-04c2 or C7-04d, whichever merges first. Wave 4 code (C7-04c).
+- **Status.** Carry-forward, not scheduled.
+
+### CF-2 (CF-W4-2): PATCH write order for two turn-ons
+
+- **Goal.** `PATCH /agents/{playerId}` with both flags on writes the camera first; the thoughts write can then answer 429 (54000, 10 s window) with the camera already public. Among turn-ons, write the rate-limited thoughts toggle first, so a refusal leaves nothing changed. Turn-offs stay first; camera first among turn-offs.
+- **May-edit.** `threshold/register/src/api/agents.ts` (write order only), the PATCH test file (`owner-api-agent-patch-bounds.test.ts` or a sibling), `docs/analysis/phase1/worknotes/C7-04e.md`.
+- **Test.** Both on, thoughts refused: 429 and the camera stays private. Both off, thoughts refused: 429 and the camera stays off. Both on and accepted: both public.
+- **Depends.** C7-04e (wave 3 code; the turn-offs-first sort came in wave 4 fix B).
+- **Status.** Carry-forward, not scheduled.
+
+### CF-3 (CF-W4-3): owner id in the owner-agent SQL results
+
+- **Goal.** `owner-agents-pg.ts` stamps the requested owner id on every row, so the check in `guard.ts` cannot fail in production; isolation rests on the WHERE clause in SQL 0036 alone. Make `register_owner_list_players` and `register_owner_get_player` return `owner_id` (DROP and CREATE, the return type changes); the loader maps `ownerId: row.owner_id`; the schema check gets the column.
+- **May-edit.** A new migration, `threshold/register/src/owner-agents-pg.ts`, its test, `sql/test/check-schema-owner-agents.sql`, `docs/analysis/phase1/worknotes/` for this card.
+- **Migration.** Needs a migration number via decision-number-registry, taken at dispatch. This card does not reserve one.
+- **Test.** Loader: a fake row whose `owner_id` is another owner's yields null. Schema check: the column is in the return.
+- **Depends.** C7-04b (migration 0036). Origin: the C7-04b wiring, wave 2/3 merge.
+- **Status.** Carry-forward, not scheduled.
+
+### CF-4 (CF-W4-4): onboarding GET consumes the token on cross-site navigation
+
+- **Goal.** `GET /register/onboarding` takes the show-once token from the hand-off slot on any GET with a live session cookie. `gr_session` is SameSite=Lax, so a cross-site top-level GET sends it, and an attacker page can burn the display inside the 10-minute window (the owner mints again; no secret is disclosed). Serve the token only when `Sec-Fetch-Site` is `same-origin` or `none`, or the header is absent (old clients); otherwise render the empty page without calling `take`.
+- **May-edit.** `threshold/register/src/account.ts` (the onboarding GET only), its test, `docs/analysis/phase1/worknotes/C7-05.md`.
+- **Test.** `sec-fetch-site: cross-site` does not consume the slot; a following same-origin request still shows the token.
+- **Depends.** C7-05. Origin: wave 1/2 code (the hand-off in C7-05).
+- **Status.** Carry-forward, not scheduled.
+
+### CF-5 (CF-W4-5): `__Host-` prefix for the session cookies
+
+- **Goal.** Rename `gr_session` and `gr_state` to `__Host-gr_session` and `__Host-gr_state`; their attributes already satisfy the prefix (host-only, Secure, Path=/). `cookieOf` refuses a header that carries two cookies of the wanted name (answer as no session), so a planted `Domain=` cookie cannot shadow the owner's own. Clear the old names on logout for one release. Whether `gk_session` (shared with Glass) is renamed too is an orchestrator decision, not needed for this fix.
+- **May-edit.** `threshold/register/src/account.ts` and its cookie code, their tests, `docs/analysis/phase1/worknotes/` for this card.
+- **Test.** A header with two `__Host-gr_session` values is no session. The Set-Cookie starts with `__Host-` and has no Domain attribute. Logout clears the old and new names.
+- **Depends.** None. Origin: wave 1/2 code (cookie parser from wave 0 to 1, sessions from wave 2). Low to Medium, recommended before sign-up opens.
+- **Status.** Carry-forward, not scheduled.

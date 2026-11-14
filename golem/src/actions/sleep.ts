@@ -24,6 +24,15 @@ const HORIZONTAL = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), ne
 const BED_RANGE = 32;
 /** The most beds tried in one action, nearest first. */
 const MAX_BEDS = 8;
+/** The total time (wall ms at 1x, scaled by `timeScale`) after which the bed loop starts no new bed. */
+const SLEEP_BUDGET_MS = 30_000;
+/**
+ * The time (wall ms at 1x, scaled by `timeScale`) after which a walk or a sleep still running is cut, so the
+ * action reports its facts before the Body's 40 s action timeout.
+ */
+const SLEEP_HARD_STOP_MS = 35_000;
+/** The world ticks a walk to a bed may stall for before it gives up (moveNear's default is 600). */
+const BED_STALL_TICKS = 300;
 
 /** Sleeps in the nearest free bed, trying up to MAX_BEDS. The action does not wait for morning and does not wake the bot. */
 export const sleepAction: ActionHandler<'sleep'> = {
@@ -96,21 +105,51 @@ async function sleep(ctx: ActionContext): Promise<ActionOutcome> {
   }
 
   let last: ActionOutcome = failed('blocked', 'no bed was tried');
-  for (const bed of beds) {
-    const outcome = await sleepInBed(ctx, bed);
-    if (
-      outcome.status !== 'failed' ||
-      (outcome.reason !== 'blocked' && outcome.reason !== 'timeout') ||
-      ctx.signal.aborted
-    ) {
-      return outcome;
+  // The whole loop has a budget: no new bed starts after it, so the action ends with its facts.
+  const started = Date.now();
+  const budget = SLEEP_BUDGET_MS * ctx.timeScale;
+  // The hard stop cuts a walk or a sleep that is still running, so one slow bed cannot reach the action timeout.
+  const stop = new AbortController();
+  const stopTimer = setTimeout(() => stop.abort(), SLEEP_HARD_STOP_MS * ctx.timeScale);
+  const bedCtx: ActionContext = { ...ctx, signal: AbortSignal.any([ctx.signal, stop.signal]) };
+  let tried = 0;
+  let outOfTime = false;
+  try {
+    for (const bed of beds) {
+      if (Date.now() - started >= budget) {
+        outOfTime = true;
+        break;
+      }
+      tried += 1;
+      const outcome = await sleepInBed(bedCtx, bed);
+      if (outcome.status === 'cancelled' && stop.signal.aborted && !ctx.signal.aborted) {
+        // Only the hard stop cut this bed: the search time ran out, which is not a cancel from the Mind.
+        last = failed('blocked', 'the bed was cut off by the time limit');
+        outOfTime = true;
+        break;
+      }
+      if (
+        outcome.status !== 'failed' ||
+        (outcome.reason !== 'blocked' && outcome.reason !== 'timeout') ||
+        ctx.signal.aborted
+      ) {
+        return outcome;
+      }
+      last = outcome;
     }
-    last = outcome;
+  } finally {
+    clearTimeout(stopTimer);
   }
   const lastText = last.status === 'failed' ? last.message : '';
+  if (outOfTime) {
+    return failed(
+      'blocked',
+      `tried ${tried} of ${beds.length} nearby beds; the search time ran out; last: ${lastText}`,
+    );
+  }
   return failed(
     'blocked',
-    `tried ${beds.length} nearby beds, all occupied or blocked; last: ${lastText}`,
+    `tried ${tried} nearby beds, all occupied or blocked; last: ${lastText}`,
   );
 }
 
@@ -120,7 +159,7 @@ async function sleepInBed(ctx: ActionContext, bed: Block): Promise<ActionOutcome
   const near = await walkNear(ctx, bed);
   if (near) return near;
   let used = bed;
-  let attempt = await attemptSleep(bot, bed);
+  let attempt = await attemptSleep(bot, bed, ctx.signal);
   if (attempt?.status === 'failed' && attempt.reason === 'out_of_reach') {
     // The bed check is measured from the head block, and `findBlocks` may return the foot: stand by the other half.
     const other = otherHalf(bot, bed);
@@ -128,7 +167,7 @@ async function sleepInBed(ctx: ActionContext, bed: Block): Promise<ActionOutcome
       const moved = await walkNear(ctx, other);
       if (moved) return moved;
       used = other;
-      attempt = await attemptSleep(bot, other);
+      attempt = await attemptSleep(bot, other, ctx.signal);
     }
   }
   if (ctx.signal.aborted) return cancelled();
@@ -172,20 +211,46 @@ async function walkNear(ctx: ActionContext, block: Block): Promise<ActionOutcome
   const move = await moveNear(ctx.bot, block.position, 1, {
     signal: ctx.signal,
     timeScale: ctx.timeScale,
+    stallTicks: BED_STALL_TICKS,
   });
   if (move.ok) return ctx.signal.aborted ? cancelled() : null;
   return outcomeOfMove(move);
 }
 
-/** Calls `bot.sleep`; null when the call returned or the bot was already asleep, else the mapped failure. */
-async function attemptSleep(bot: Bot, bed: Block): Promise<ActionOutcome | null> {
+/**
+ * Calls `bot.sleep` unless `signal` aborts first; null when the call returned or the bot was already asleep,
+ * `cancelled` when the signal aborted, else the mapped failure. Mineflayer's sleep has no cancel: an abandoned
+ * call settles on its own, and the race has already handled its outcome.
+ */
+async function attemptSleep(
+  bot: Bot,
+  bed: Block,
+  signal: AbortSignal,
+): Promise<ActionOutcome | null> {
+  if (signal.aborted) return cancelled();
   try {
-    await bot.sleep(bed);
+    await untilAborted(bot.sleep(bed), signal);
     return null;
   } catch (error) {
+    if (signal.aborted) return cancelled();
     const message = errorText(error);
     if (ALREADY_SLEEPING.test(message)) return null;
     return sleepFailure(message);
+  }
+}
+
+/** Resolves with `work`, or rejects as soon as `signal` aborts. The abort listener is removed either way. */
+async function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  let cleanup = (): void => undefined;
+  const aborted = new Promise<never>((_, reject) => {
+    const onAbort = (): void => reject(new Error('aborted'));
+    signal.addEventListener('abort', onAbort, { once: true });
+    cleanup = () => signal.removeEventListener('abort', onAbort);
+  });
+  try {
+    return await Promise.race([work, aborted]);
+  } finally {
+    cleanup();
   }
 }
 

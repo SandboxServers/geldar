@@ -132,6 +132,8 @@ services:
       RCON_PASSWORD_FILE: /run/secrets/rcon
       GELDAR_NATS_URL: nats://nats:4222
       GELDAR_SHARD: colo
+      # Agent skin PNGs (<agent_id>.png) for the BlueMap skin provider (GX-07). Read-only mount below; the plugin falls back to its default skin when a file is missing.
+      GELDAR_AGENT_SKINS_DIR: /data/skins
       RCON_CMDS_STARTUP: "worldborder set 3000\ngamerule keep_inventory false\ngamerule immediate_respawn false\ngamerule show_advancement_messages false\ngamerule send_command_feedback false\ngamerule spectators_generate_chunks false"
     secrets: [rcon, velocity-forwarding]
     volumes:
@@ -140,6 +142,7 @@ services:
       - ../plugin/core/build/libs/geldar-core.jar:/plugins/geldar-core.jar:ro
       - {type: bind, source: '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/bluemap/bluemap.jar', target: /plugins/bluemap.jar, read_only: true} # BlueMap (C2-07o, R38): verified jar, read-only; web server on 8101, colo network only
       - ../plugins/bluemap/config:/plugins/BlueMap:ro
+      - {type: bind, source: ./secrets/kino-skins, target: /data/skins, read_only: true, bind: {create_host_path: false}} # Agent skin PNGs for the BlueMap skin provider (GX-07): the glass skins directory, read-only, never created by compose. A literal source: loopback-ports rejects interpolated host sources outside its allowlist.
       - {type: bind, source: '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/chunky/chunky.jar', target: /plugins/chunky.jar, read_only: true} # Chunky (pregeneration): verified jar, read-only. Its data dir plugins/Chunky is created by the plugin in the writable paper-data volume.
       - {type: bind, source: '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/coreprotect/coreprotect.jar', target: /plugins/coreprotect.jar, read_only: true} # CoreProtect (block owner records): verified jar, read-only. Its data dir plugins/CoreProtect is created by the plugin in the writable paper-data volume.
     # No ports: the game port and RCON are not published. Velocity is the only game listener.

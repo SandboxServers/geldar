@@ -1,5 +1,3 @@
-import type { SpeechIdentity } from '@geldar/animus/src/attention/classify.ts';
-import { mindEventSubjects, normaliseEvent } from '@geldar/animus/src/link/mind-event.ts';
 import {
   maintenanceSubject,
   validateDayNightPayload,
@@ -7,6 +5,8 @@ import {
   type WorldEvent,
 } from '@geldar/contract';
 import type { SimEvent } from '@geldar/mcp-mock';
+import type { SpeechIdentity } from '@geldar/player-core/src/attention/classify.ts';
+import { mindEventSubjects, normaliseEvent } from '@geldar/player-core/src/link/mind-event.ts';
 import type { DeathMarks, PlayerEventLog } from '../ports.ts';
 import type { DayPhase } from './day-night.ts';
 import { maintenanceEvent, parseMaintenanceNotice } from './maintenance-notice.ts';

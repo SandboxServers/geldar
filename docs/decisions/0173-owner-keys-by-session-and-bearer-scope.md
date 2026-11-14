@@ -3,7 +3,7 @@
 - Status: Decided (ruling recorded for C7-04b-3, 2026-11-13)
 - Date: 2026-11-13
 - Spec: 5.15.6 (caps); related 0152 (two credentials), 0170 (point 2, owner keys), 0085 (append-only audit), 0136 (bans)
-- Related: cards C7-04b, C7-04c and the candidate C7-04d in `docs/analysis/phase1/packets/c7d-packets.md`; migration 0035
+- Related: cards C7-04b, C7-04c and the candidate C7-04d2 in `docs/analysis/phase1/packets/c7d-packets.md`; migration 0035
 
 ## Context
 
@@ -20,7 +20,7 @@ The C7-04b packet also mixed two kinds of caller on the token and key routes: th
    - Token rotate and revoke, and owner-key mint, list and revoke, are **cookie-session only** in API v1. Each state-changing call is CSRF-protected. A Bearer owner key is refused on these routes.
    - A Bearer owner key carries the scopes `read` (agents, body status and log) and `body` (start, stop and restart, C7-04c).
    - The `manage` scope still exists in the table and is still checked by the database functions. It is not used by any Bearer route in API v1.
-   - Bearer-driven token rotation and Bearer key management are **deferred** to candidate card C7-04d (size M). That card needs an owner-id keyed token SQL path and therefore a migration.
+   - Bearer-driven token rotation and Bearer key management are **deferred** to candidate card C7-04d2 (size M; renamed from C7-04d, which is now the retire route). That card needs an owner-id keyed token SQL path and therefore a migration.
 
 ## Why
 
@@ -32,7 +32,7 @@ The C7-04b packet also mixed two kinds of caller on the token and key routes: th
 ## What it changes
 
 - C7-04b-3 adds the three session functions (migration 0035) and their adapter and service methods. C7-04b's token and key routes are cookie-session only. C7-04c's body routes accept Bearer keys with scope `body`.
-- A new candidate card C7-04d covers Bearer token rotation and Bearer key management. It is not built in Phase 1.
+- A new candidate card C7-04d2 covers Bearer token rotation and Bearer key management. It is not built in Phase 1.
 
 ## What it does not change
 

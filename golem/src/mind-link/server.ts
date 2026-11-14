@@ -213,12 +213,12 @@ export class MindLinkServer {
         currentPlan: this.currentPlan(),
       });
     } catch (error) {
-      this.log(`snapshot not built: ${String(error)}`);
+      this.log(`snapshot_unanswered reason=build_failed error=${String(error)}`);
       return;
     }
     const verdict = validateSnapshot(snapshot);
     if (!verdict.ok) {
-      this.log(`snapshot invalid: ${verdict.errors.join('; ')}`);
+      this.log(`snapshot_unanswered reason=invalid errors=${verdict.errors.join('; ')}`);
       return;
     }
     reply(JSON.stringify(snapshot));

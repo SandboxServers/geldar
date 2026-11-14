@@ -99,6 +99,8 @@ export class BodyRuntime {
    * while an old handler still drives the bot (a late `pathfinder.stop()`, a window close).
    */
   private winding: Promise<void> | null = null;
+  /** Runs of reflexes that hold the slot (`ReflexContext.holdSlot`); a Mind action is refused while any runs. */
+  private reflexHolds = 0;
   private stopped = false;
 
   constructor(options: BodyRuntimeOptions) {
@@ -114,6 +116,7 @@ export class BodyRuntime {
     const tracked = options.view === undefined ? createBodyView(options.bot) : null;
     this.ownedView = tracked;
     this.view = options.view ?? (tracked as BodyView);
+    tracked?.bindActionProbe(() => this.actionRunning);
     this.reflexRunner = new ReflexRunner({
       reflexes: options.reflexes ?? [],
       config: options.reflexConfig ?? allReflexesOn(),
@@ -160,12 +163,12 @@ export class BodyRuntime {
    */
   async runAction(action: unknown, signal?: AbortSignal): Promise<ActionRun> {
     if (this.stopped) throw new Error('body runtime stopped');
-    if (this.current) throw new ActionBusyError();
+    if (this.current || this.reflexHolds > 0) throw new ActionBusyError();
     if (this.winding) {
       // Only when a handler still winds down: an idle runtime fills the slot before the first await.
       await this.winding;
       if (this.stopped) throw new Error('body runtime stopped');
-      if (this.current) throw new ActionBusyError();
+      if (this.current || this.reflexHolds > 0) throw new ActionBusyError();
     }
     const controller = new AbortController();
     const forward = (): void => controller.abort();
@@ -239,6 +242,18 @@ export class BodyRuntime {
       timeScale: this.timeScale,
       signal: this.stopController.signal,
       cancelAction: () => this.cancelAction(),
+      holdSlot: () => this.holdSlot(),
+    };
+  }
+
+  /** Takes the slot for one reflex run; the returned function gives it back, once. */
+  private holdSlot(): () => void {
+    this.reflexHolds++;
+    let held = true;
+    return () => {
+      if (!held) return;
+      held = false;
+      this.reflexHolds--;
     };
   }
 }

@@ -27,14 +27,21 @@ public final class BlockOwnerSetup implements AutoCloseable {
     private final NatsBlockOwnerLink link;
     private final OwnerQueryService service;
     private final LookupDebugLog debug;
+    private final PlacementRecorder placements;
     private volatile boolean enabled = true;
 
     private BlockOwnerSetup(ExecutorService lookups, NatsBlockOwnerLink link, OwnerQueryService service,
-            LookupDebugLog debug) {
+            LookupDebugLog debug, PlacementRecorder placements) {
         this.lookups = lookups;
         this.link = link;
         this.service = service;
         this.debug = debug;
+        this.placements = placements;
+    }
+
+    /** Records the blocks the plugin places itself (gravestones) as owned by the system (decision 0195). */
+    public PlacementRecorder placements() {
+        return placements;
     }
 
     /** Starts the feature; call from {@code onEnable}. The config is read again by {@link #reload}. */
@@ -42,7 +49,8 @@ public final class BlockOwnerSetup implements AutoCloseable {
             Function<String, String> env) {
         Logger log = plugin.getLogger();
         LookupDebugLog debug = new LookupDebugLog(log, System::currentTimeMillis);
-        OwnerSource source = sourceFor(plugin.getServer().getPluginManager().getPlugin(COREPROTECT), log, debug);
+        Plugin coreProtect = plugin.getServer().getPluginManager().getPlugin(COREPROTECT);
+        OwnerSource source = sourceFor(coreProtect, log, debug);
         ExecutorService lookups = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS,
                 new ArrayBlockingQueue<>(LOOKUP_QUEUE), r -> {
                     Thread t = new Thread(r, "geldar-blockowner-lookup");
@@ -54,7 +62,8 @@ public final class BlockOwnerSetup implements AutoCloseable {
         service.attachDebug(debug);
         NatsBlockOwnerLink link = new NatsBlockOwnerLink(natsUrl, shard, env, log);
         BlockOwnerPublisher publisher = new BlockOwnerPublisher(link::changed, log);
-        BlockOwnerSetup setup = new BlockOwnerSetup(lookups, link, service, debug);
+        PlacementRecorder placements = new PlacementRecorder(cache, publisher, writerFor(coreProtect, debug), log);
+        BlockOwnerSetup setup = new BlockOwnerSetup(lookups, link, service, debug, placements);
         BlockOwnerResponder responder = new BlockOwnerResponder(service, link, () -> setup.enabled);
         link.start(responder::receive);
         plugin.getServer().getPluginManager().registerEvents(
@@ -84,6 +93,15 @@ public final class BlockOwnerSetup implements AutoCloseable {
             return unavailable("CoreProtect's API is not usable");
         }
         return new CoreProtectOwnerSource(api.get(), debug);
+    }
+
+    /** The CoreProtect writes for the system's placements: present only when the API is usable (see {@link #sourceFor}). */
+    static Optional<CoreProtectPort> writerFor(Plugin coreProtect, LookupDebugLog debug) {
+        if (coreProtect == null) {
+            // As in sourceFor: CoreProtectApi is not touched when CoreProtect is absent.
+            return Optional.empty();
+        }
+        return CoreProtectApi.connect(coreProtect, debug).<CoreProtectPort>map(api -> api);
     }
 
     private static OwnerSource unavailable(String reason) {
