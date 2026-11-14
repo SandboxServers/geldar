@@ -1,11 +1,11 @@
 import type { Bot } from 'mineflayer';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { completed, failed } from '../../actions/outcome.ts';
 import { ActionRegistry } from '../../actions/registry.ts';
 import { fakeBot, fakeView, manualTicks } from '../body.fakes.ts';
 import { MemorySink } from '../records.ts';
 import type { Reflex, ReflexContext, ReflexOutcome } from '../reflex.ts';
-import { BodyRuntime } from '../runtime.ts';
+import { ActionBusyError, BodyRuntime } from '../runtime.ts';
 import type { BodyView } from '../view.ts';
 import {
   IDLE_STUCK_DAMAGE_BACKOFF_TICKS,
@@ -245,5 +245,131 @@ describe('idle_stuck aborts when the Body takes damage (decision 0196, 2026-11-1
     expect(outcome.detail).toContain('the Body was hurt');
     expect(slot.probed).toEqual([true]);
     expect(bot.listenerCount('health')).toBe(0);
+  });
+
+  it('a runtime stop (the parent signal) cuts the run: the handler sees the abort', async () => {
+    const bot = fakeBot();
+    bot.health = 14;
+    const registry = new ActionRegistry();
+    let cut = false;
+    registry.register({
+      kind: 'unstick',
+      timeoutMs: 1000,
+      run: async (actx) => {
+        cut = await untilAbortOr500(actx.signal);
+        return failed('blocked', 'trapped');
+      },
+    });
+    const parent = new AbortController();
+    const { ctx } = runCtx(stuckView(100), registry, bot, 100);
+    (ctx as { signal: AbortSignal }).signal = parent.signal;
+    setTimeout(() => parent.abort(), 20);
+    await runUnstick(ctx, 'idle_stuck (ledge)');
+    expect(cut).toBe(true);
+    expect(bot.listenerCount('health')).toBe(0);
+  });
+
+  it('the parent abort listener is removed when the run ends', async () => {
+    const bot = fakeBot();
+    const registry = new ActionRegistry();
+    registry.register({
+      kind: 'unstick',
+      timeoutMs: 1000,
+      run: async () => completed({ method: 'step' }),
+    });
+    const parent = new AbortController();
+    const removed = vi.spyOn(parent.signal, 'removeEventListener');
+    const { ctx } = runCtx(stuckView(100), registry, bot, 100);
+    (ctx as { signal: AbortSignal }).signal = parent.signal;
+    await runUnstick(ctx, 'idle_stuck (ledge)');
+    expect(removed).toHaveBeenCalledWith('abort', expect.any(Function));
+  });
+
+  it('a health rise and then a drop is a hit: 10, 12, 11 aborts the run', async () => {
+    const bot = fakeBot();
+    bot.health = 10;
+    const registry = new ActionRegistry();
+    let cutShort = false;
+    registry.register({
+      kind: 'unstick',
+      timeoutMs: 1000,
+      run: async (actx) => {
+        bot.health = 12;
+        bot.emit('health');
+        bot.health = 11;
+        bot.emit('health');
+        cutShort = await untilAbortOr500(actx.signal);
+        return failed('blocked', 'trapped');
+      },
+    });
+    const { ctx } = runCtx(stuckView(100), registry, bot, 100);
+    const outcome = await runUnstick(ctx, 'idle_stuck (ledge)');
+    expect(cutShort).toBe(true);
+    expect(outcome.detail).toContain('the Body was hurt');
+  });
+
+  it('a hurt run is not a failed run: the next plain failure backs off 60 s, not 120 s', async () => {
+    const bot = fakeBot();
+    bot.health = 14;
+    const registry = new ActionRegistry();
+    let calls = 0;
+    registry.register({
+      kind: 'unstick',
+      timeoutMs: 1000,
+      run: async (actx) => {
+        calls++;
+        if (calls > 1) return failed('blocked', 'trapped');
+        bot.health = 10;
+        bot.emit('health');
+        await untilAbortOr500(actx.signal);
+        return failed('blocked', 'trapped');
+      },
+    });
+    const view = stuckView(1200);
+    const hurt = await runUnstick(runCtx(view, registry, bot, 1200).ctx, 'idle_stuck (ledge)');
+    expect(hurt.detail).toContain('the Body was hurt');
+    const later = 1200 + IDLE_STUCK_DAMAGE_BACKOFF_TICKS;
+    const plain = await runUnstick(runCtx(view, registry, bot, later).ctx, 'idle_stuck (ledge)');
+    expect(calls).toBe(2);
+    expect(plain.detail).toContain('found no way out; backoff 60s');
+  });
+
+  it('a second release of one hold does not free the slot while another hold stands', async () => {
+    const bot = fakeBot();
+    const ticks = manualTicks();
+    let busy: string | null = null;
+    let runtime!: BodyRuntime;
+    const reflex: Reflex = {
+      name: 'idle_stuck',
+      priority: 1,
+      cooldownTicks: 0,
+      check: () => ({}),
+      run: async (_trigger, ctx) => {
+        const first = ctx.holdSlot?.() ?? (() => {});
+        const second = ctx.holdSlot?.() ?? (() => {});
+        first();
+        first();
+        busy = await runtime.runAction({ do: 'unstick' }).then(
+          () => 'admitted',
+          (error: unknown) => (error instanceof ActionBusyError ? 'busy' : 'other'),
+        );
+        second();
+        return { result: 'handled', detail: 'slot test' };
+      },
+    };
+    runtime = new BodyRuntime({
+      lifeId: 'ag_test_01',
+      bodyGeneration: 1,
+      bot,
+      ticks: ticks.source,
+      sink: new MemorySink(),
+      reflexes: [reflex],
+      view: fakeView(),
+    });
+    runtime.start();
+    ticks.emit(100);
+    await runtime.reflexRunner.idle();
+    expect(busy).toBe('busy');
+    await runtime.stop();
   });
 });

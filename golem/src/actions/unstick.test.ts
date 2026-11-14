@@ -119,18 +119,26 @@ function eastWalkThenWall(): Grid {
   return grid;
 }
 
+/** The east walk fails at the wall, and the west walk is open floor: a second walk the time gate must stop. */
+function eastOrWestWalk(): Grid {
+  const grid = eastWalkThenWall();
+  grid.set(key(-1, 63, 0), 'stone');
+  for (const y of [64, 65, 66]) grid.delete(key(-1, y, 0));
+  return grid;
+}
+
 describe('unstick time budget per step (decision 0210)', () => {
   afterEach(() => {
     vi.useRealTimers();
   });
 
   /** Runs unstick on a frozen clock where each tick costs `msPerTick`; returns the outcome and the blocks dug. */
-  async function runWith(msPerTick: number) {
+  async function runWith(msPerTick: number, grid: () => Grid = eastWalkThenWall) {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(0);
     // The stone wall has no ownership record: a dig of it is allowed, so only the time decides.
     ownedBy(null);
-    const { bot, dug } = fakeBot(eastWalkThenWall());
+    const { bot, dug } = fakeBot(grid());
     const base = bot.waitForTicks;
     (bot as { waitForTicks: (n: number) => Promise<void> }).waitForTicks = async () => {
       vi.setSystemTime(Date.now() + msPerTick);
@@ -154,6 +162,16 @@ describe('unstick time budget per step (decision 0210)', () => {
     const { outcome, dug } = await runWith(0);
     expect(outcome.status).toBe('completed');
     expect(dug).toEqual(['stone', 'stone']);
+  });
+
+  it('starts no walk once the reserve is reached: a 28.8 s walk leaves no second walk and no dig', async () => {
+    // Each tick is 1.2 s: the first 24-tick walk costs 28.8 s, so less than 1.2 s of the 30 s limit is left.
+    // The west walk is open too: with the reserve spent it must not start.
+    const { outcome, dug } = await runWith(1200, eastOrWestWalk);
+    expect(dug).toEqual([]);
+    expect(outcome.status).toBe('failed');
+    if (outcome.status !== 'failed') return;
+    expect(outcome.message).toContain('29 s of the 30 s limit used');
   });
 });
 

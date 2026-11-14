@@ -7,7 +7,7 @@ import pathfinderPkg from 'mineflayer-pathfinder';
 import { Vec3 } from 'vec3';
 import { escapeLadder, inWater } from './escape-ladder.ts';
 import { applyDigRules, DigTally } from './goto-dig.ts';
-import { nearDoor, onPathUpdate } from './path-doors.ts';
+import { onPathUpdate } from './path-doors.ts';
 import { prefetchOwners } from './protected-blocks.ts';
 import { installSoftDig, NO_PATH_TEXT, PARTIAL_TEXT, SEARCH_TIMEOUT_TEXT } from './soft-dig.ts';
 import {
@@ -19,6 +19,13 @@ import {
   watchPathEvents,
 } from './stall-diag.ts';
 import {
+  ESCALATE_AFTER_REPLANS,
+  type EscalateTrigger,
+  escalateLine,
+  ladderSkip,
+  MAX_LADDERS,
+} from './stall-ladder.ts';
+import {
   digGraceTicks,
   isDigging,
   JUMP_TICKS,
@@ -28,6 +35,8 @@ import {
   setJump,
   stopDigIfDigging,
 } from './stall-recovery.ts';
+
+export { ESCALATE_AFTER_REPLANS, MAX_LADDERS };
 
 const { pathfinder, Movements, goals } = pathfinderPkg;
 
@@ -67,9 +76,6 @@ export type MoveResult =
       reason: 'blocked' | 'timeout' | 'interrupted' | 'cancelled' | 'needs_rescue';
       message: string;
     };
-
-/** Escape ladders one goto may run before the plain `blocked` result stands. */
-export const MAX_LADDERS = 2;
 
 /** The parts of a pathfinder `Movements` that the door rule reads and wraps. */
 interface DoorMovements {
@@ -238,16 +244,6 @@ function haltPathing(bot: Bot): void {
   bot.pathfinder.setGoal(null);
 }
 
-/**
- * Why the escape ladder must not run here, or null when it may. A door beside the bot or beside the
- * next path node is a doorway, which digging and pillaring only make worse. Nothing else skips: a
- * followPartial walk reports success even inside a pit, so the path status says nothing about a pit.
- */
-function ladderSkip(bot: Bot): string | null {
-  if (nearDoor(bot)) return 'door_adjacent';
-  return null;
-}
-
 /** A pathfinder node as `getPathTo` returns it. */
 interface PathNode {
   x: number;
@@ -361,6 +357,8 @@ export function moveNear(
     let replanPos = bot.entity.position.clone();
     let replanAge = bot.time.age;
     let replans = 0;
+    /** Replans since the Body last moved: identical replans on one spot (decision 0210). */
+    let stuckReplans = 0;
     let partial = false;
     let generation = 0;
     let escaping = false;
@@ -466,7 +464,7 @@ export function moveNear(
           if (
             reason === 'blocked' &&
             (inWater(bot) || bot.time.age - lastMovedAge >= RECOVERY_STALL_TICKS) &&
-            escalate(facts as StallFacts)
+            escalate(facts as StallFacts, 'blocked')
           ) {
             return;
           }
@@ -479,7 +477,7 @@ export function moveNear(
      * Runs the hard-stuck ladder (at most `MAX_LADDERS` per move). A rung that frees the bot
      * restarts the walk; all rungs failing settles `needs_rescue`. False when no ladder was run.
      */
-    const escalate = (facts: StallFacts): boolean => {
+    const escalate = (facts: StallFacts, trigger: EscalateTrigger): boolean => {
       // A body that cannot wait on ticks (a bare test fake) cannot run the timed rungs.
       if (done || escaping || ladders >= MAX_LADDERS) return false;
       if (typeof bot.waitForTicks !== 'function') return false;
@@ -488,6 +486,7 @@ export function moveNear(
         sink.log(JSON.stringify({ event: 'stall_diag', reason: 'ladder_skipped', why: skip }));
         return false;
       }
+      sink.log(escalateLine(trigger, stuckReplans));
       ladders++;
       escaping = true;
       // The ladder ends this goto itself (escapeLadder's setGoal(null)): that GoalChanged is not a
@@ -507,6 +506,7 @@ export function moveNear(
           lastMovedAt = sink.now();
           replanPos = lastPos.clone();
           replanAge = bot.time.age;
+          stuckReplans = 0;
           try {
             start(dryGoal(new goals.GoalNear(target.x, target.y, target.z, range), wetAt(bot)));
           } catch (error) {
@@ -554,6 +554,7 @@ export function moveNear(
       if (stopDigIfDigging(bot)) steps.push('stopDigging');
       haltPathing(bot);
       replans++;
+      stuckReplans++;
       replanAge = bot.time.age;
       replanPos = bot.entity.position.clone();
       // A stalled tier-1 walk tries tier 2 (digging, towers) on this recovery, to get past this spot.
@@ -613,7 +614,7 @@ export function moveNear(
       } else {
         const stalledTicks = bot.time.age - lastMovedAge;
         if (stalledTicks >= stallTicks && !youngDig) {
-          if (escalate(factsAt('stall', stalledTicks))) return;
+          if (escalate(factsAt('stall', stalledTicks), 'stall')) return;
           haltPathing(bot);
           settle(
             {
@@ -640,12 +641,22 @@ export function moveNear(
       if (bot.entity.position.distanceTo(replanPos) >= REPLAN_MOVED) {
         replanPos = bot.entity.position.clone();
         replanAge = bot.time.age;
+        stuckReplans = 0;
       } else if (
         !youngDig &&
         replans < MAX_REPLANS &&
         bot.time.age - replanAge >= REPLAN_STALL_TICKS
       ) {
+        // Identical replans have not moved the Body: the ladder runs in place of the next one, and a
+        // refused ladder (door, MAX_LADDERS) leaves the replan as it was (decision 0210).
+        if (
+          stuckReplans >= ESCALATE_AFTER_REPLANS &&
+          escalate(factsAt('replans', bot.time.age - lastMovedAge), 'replans')
+        ) {
+          return;
+        }
         replans++;
+        stuckReplans++;
         replanAge = bot.time.age;
         haltPathing(bot);
         try {

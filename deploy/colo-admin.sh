@@ -97,8 +97,25 @@ roster_name_ok() {
 }
 
 roster_owner_ok() {
-  case $1 in '' | *[!a-z0-9-]*) die "owner id must be 1 to 63 lower-case letters, digits or dashes" ;; esac
+  case $1 in '' | -* | *[!a-z0-9-]*) die "owner id must be 1 to 63 lower-case letters, digits or dashes" ;; esac
   [ "${#1}" -le 63 ] || die "owner id must be 1 to 63 lower-case letters, digits or dashes"
+}
+
+# player-flags <player id>: ag- then 1 to 40 lower-case letters, digits or dashes; looser than the CLI's PLAYER_ID, which
+# refuses the rest. Case patterns, so a newline or a space cannot pass.
+player_flags_id_ok() {
+  case $1 in ag-*) ;; *) return 1 ;; esac
+  case ${1#ag-} in '' | *[!a-z0-9-]*) return 1 ;; esac
+  [ "${#1}" -le 43 ]
+}
+
+# owner-admin set|unset <owner id> | owner-admin list: the admin flag (C7-12). The owner id as roster_owner_ok checks it.
+owner_admin_args() {
+  case ${1:-} in
+    set | unset) [ $# -eq 2 ] || die "owner-admin takes set|unset <owner id> or list"; roster_owner_ok "$2" ;;
+    list) [ $# -eq 1 ] || die "owner-admin takes set|unset <owner id> or list" ;;
+    *) die "owner-admin takes set|unset <owner id> or list" ;;
+  esac
 }
 
 # roster-add <name> --owner <owner>: sets roster_name and roster_owner.
@@ -235,8 +252,8 @@ run_hosts() {
 
 cmd=${1:-}
 case $cmd in
-  migrate | owner-add | owner-set-cap | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body | skin-import | player-start | player-stop | player-list | roster-add | roster-list | player-flags) shift ;;
-  *) die "unknown subcommand '$cmd'; use migrate, owner-add, owner-set-cap, player-add, token-mint, token-revoke, players-status, ensure-skins-bucket, whitelist-house-body, skin-import, player-start, player-stop, player-list, roster-add, roster-list or player-flags" ;;
+  migrate | owner-add | owner-set-cap | owner-admin | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body | skin-import | player-start | player-stop | player-list | roster-add | roster-list | player-flags) shift ;;
+  *) die "unknown subcommand '$cmd'; use migrate, owner-add, owner-set-cap, owner-admin, player-add, token-mint, token-revoke, players-status, ensure-skins-bucket, whitelist-house-body, skin-import, player-start, player-stop, player-list, roster-add, roster-list or player-flags" ;;
 esac
 if [ "$cmd" = token-mint ]; then
   mint_args "$@"
@@ -248,9 +265,10 @@ case $cmd in
   player-start | player-stop) host_args "$@" ;;
   player-list) [ $# -eq 0 ] || die "player-list takes no arguments" ;;
   owner-set-cap) owner_set_cap_args "$@" ;;
+  owner-admin) owner_admin_args "$@" ;;
   roster-add) roster_add_args "$@" ;;
   roster-list) roster_list_args "$@" ;;
-  player-flags) [ "$#" -ge 2 ] && printf '%s' "$1" | grep -Eq '^ag-[a-z0-9-]{1,40}$' || die "player-flags takes <player-id> (ag-...) and --public-camera on|off and/or --thoughts-delayed-public on|off" ;;
+  player-flags) [ "$#" -ge 2 ] && player_flags_id_ok "$1" || die "player-flags takes <player-id> (ag-...) and --public-camera on|off and/or --thoughts-delayed-public on|off" ;;
 esac
 
 plan_header
