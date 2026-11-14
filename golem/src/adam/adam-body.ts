@@ -15,6 +15,7 @@ import {
   type RestartOutcome,
   restartBody,
 } from '../body/restart.ts';
+import { placeFields } from '../body/where.ts';
 import { serveBodyImages } from '../body-image/image-serve.ts';
 import { ImageLimiter } from '../body-image/limiter.ts';
 import { RenderHost } from '../body-image/render-host.ts';
@@ -25,6 +26,7 @@ import { SnapshotRevision } from '../mind-link/revision.ts';
 import { MindLinkServer, type RequestServer } from '../mind-link/server.ts';
 import { heardSoundEvent } from '../perception/heard-sound-event.ts';
 import { HurtReporter } from '../perception/hurt.ts';
+import { hurtLogLine } from '../perception/hurt-log.ts';
 import { hurtWorldEvent, watchHurts } from '../perception/hurt-trigger.ts';
 import { createPerception } from '../perception/index.ts';
 import { watchSounds } from '../perception/sounds.ts';
@@ -210,6 +212,8 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     // The hurt event (PX-1): a loss of health, with the nearby attacker's bearing when there is one.
     let hurtSequence = 0;
     hurts = new HurtReporter((hurt, worldTick) => {
+      // One log line per hurt, with where the Body stood: the damage event carries no coordinates.
+      log(hurtLogLine(hurt, placeFields(bot.entity?.position, bot.game?.dimension), worldTick));
       hurtSequence += 1;
       const event = hurtWorldEvent(hurt, {
         shard: config.shard,

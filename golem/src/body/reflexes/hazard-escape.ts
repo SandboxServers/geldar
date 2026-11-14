@@ -1,7 +1,9 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { moveNear } from '../../actions/pathing.ts';
-import type { Reflex, ReflexOutcome } from '../reflex.ts';
+import { DEFAULT_DIAG_SINK, type DiagSink } from '../../actions/stall-diag.ts';
+import type { Reflex, ReflexContext, ReflexOutcome } from '../reflex.ts';
+import { placeFields } from '../where.ts';
 
 /** A block as the scan reads it: the prismarine fields it needs. */
 export interface ScanBlock {
@@ -239,6 +241,29 @@ export interface HazardEscapeOptions {
   mover?: EscapeMover;
   /** Used first when the Body is drowning: it swims up until air returns or the head is out. */
   swimmer?: EscapeMover;
+  /** Where the oxygen trace lines go (one at the start of a run, one at its end). Default: stdout. */
+  diag?: DiagSink;
+}
+
+/** True when the cell above the Body's feet holds water or lava. */
+function headInLiquid(bot: Bot, feet: { x: number; y: number; z: number }): boolean {
+  const head = bot.blockAt(
+    new Vec3(Math.floor(feet.x), Math.floor(feet.y) + 1, Math.floor(feet.z)),
+  );
+  return head?.name === 'water' || head?.name === 'lava';
+}
+
+/** One oxygen trace line: the given fields, then the head's liquid, the water flag and the place. */
+function traceLine(ctx: ReflexContext, phase: 'start' | 'end', fields: object): string {
+  const { bot, view } = ctx;
+  return JSON.stringify({
+    event: 'hazard_escape',
+    phase,
+    ...fields,
+    in_water: view.inFluid === 'water',
+    head_liquid: headInLiquid(bot, view.position),
+    ...placeFields(view.exactPosition, view.dimension),
+  });
 }
 
 /**
@@ -251,10 +276,11 @@ export function createHazardEscapeReflex(options: HazardEscapeOptions = {}): Ref
   const limitTicks = options.limitTicks ?? ESCAPE_LIMIT_TICKS;
   const mover = options.mover ?? walkOutOfHazard;
   const swimmer = options.swimmer ?? swimUp;
+  const diag = options.diag ?? DEFAULT_DIAG_SINK;
   // The tick a give-up opens the quiet window. Cooldown counts from the firing tick, and a run lasts
   // the whole limit, so a cooldown alone lets the reflex fire again the tick it gives up.
   let quietUntil = Number.NEGATIVE_INFINITY;
-  return {
+  const escapeReflex: Reflex = {
     name: 'hazard_escape',
     priority: 90,
     cooldownTicks: COOLDOWN_TICKS,
@@ -305,6 +331,29 @@ export function createHazardEscapeReflex(options: HazardEscapeOptions = {}): Ref
       if (target && !landed() && !expired()) await mover({ ...walk, target });
       if (landed()) return { result: 'handled', detail: `left ${String(trigger.hazard)}` };
       return giveUp(`still in ${String(trigger.hazard)} after ${limitTicks} ticks`);
+    },
+  };
+  return {
+    ...escapeReflex,
+    // Two lines per run, at its start and its end, with the air before and after. No periodic line.
+    async run(trigger, ctx): Promise<ReflexOutcome> {
+      const airBefore = ctx.view.air;
+      diag.log(traceLine(ctx, 'start', { hazard: trigger.hazard, air_before: airBefore }));
+      let outcome: ReflexOutcome | undefined;
+      try {
+        outcome = await escapeReflex.run(trigger, ctx);
+        return outcome;
+      } finally {
+        diag.log(
+          traceLine(ctx, 'end', {
+            hazard: trigger.hazard,
+            result: outcome?.result ?? 'failed',
+            detail: outcome?.detail ?? null,
+            air_before: airBefore,
+            air_after: ctx.view.air,
+          }),
+        );
+      }
     },
   };
 }

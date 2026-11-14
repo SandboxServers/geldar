@@ -5,6 +5,7 @@ import { targetOf } from '../actions/goto.ts';
 import { allActions } from '../actions/index.ts';
 import type { ActionRun } from '../actions/registry.ts';
 import { type BodyKv, CheckpointStore } from './checkpoint.ts';
+import { cancelForDeath } from './death-cancel.ts';
 import { type ExecutorOptions, IntentExecutor } from './executor.ts';
 import { InflightStore } from './inflight.ts';
 import type { ProgramRegistry } from './program.ts';
@@ -160,6 +161,10 @@ export function createBody(options: CreateBodyOptions): Body {
     resetIdleStuck(built.view);
   };
   if (typeof options.bot.on === 'function') options.bot.on('respawn', forgetOldBody);
+  // Death, not the respawn, ends the previous life's work: a step still running would walk the new body on.
+  if (typeof options.bot.on === 'function') {
+    options.bot.on('death', () => void cancelForDeath(executor, options.currentRevision));
+  }
   built.actions.onFinished((action, run) => {
     if (!isAction(action)) return;
     noteActionEnd(built.view);
