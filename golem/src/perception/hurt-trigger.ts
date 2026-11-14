@@ -1,15 +1,13 @@
 /**
  * The live trigger for the `hurt` event (PX-1). It watches the Body's own `entityHurt` and `health`
- * events, looks for an attacker standing near the Body, and passes each loss to a `HurtReporter`. A hurt
+ * events, takes the attacker from the damage cause (never from proximity), and passes each loss to a `HurtReporter`. A hurt
  * leaves the Body as a `damage` WorldEvent that carries `source`, `bearing` and `amount` (`hurtWorldEvent`).
  */
 import { validateWorldEvent, type WorldEvent } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { eventIdFor } from '../body/derived-id.ts';
+import { ALWAYS_HOSTILE } from './hostile-types.ts';
 import type { HurtEvent, HurtReporter } from './hurt.ts';
-
-/** An attacker counts when it stands within this many blocks of the Body (about melee reach). */
-export const ATTACKER_REACH = 4;
 
 const TICKS_PER_DAY = 24_000;
 
@@ -18,28 +16,41 @@ interface Point {
   z: number;
 }
 
-/** The nearest entity other than the Body within `ATTACKER_REACH` blocks, or null. */
-function nearbyAttacker(bot: Bot): Point | null {
-  const self = bot.entity;
-  if (self === undefined) return null;
-  const near = bot.nearestEntity(
-    (entity) =>
-      entity.id !== self.id && entity.position.distanceTo(self.position) <= ATTACKER_REACH,
-  );
-  return near === null ? null : { x: near.position.x, z: near.position.z };
+/** The fields of a mineflayer entity the attacker check reads. */
+interface CauseEntity {
+  id: number;
+  name?: string;
+  type?: string;
+  position: { x: number; z: number };
+}
+
+/**
+ * The attacker behind a hurt, from the server's damage cause: the entity the damage packet names
+ * (mineflayer passes it as the second argument of `entityHurt`; for a projectile it is the shooter).
+ * Only a hostile mob or a player counts. Nothing is attributed by proximity, so a passive mob next to
+ * a drowning Body names no attacker, and neither does an absent cause (a fall, fire, drowning).
+ */
+function attackerOf(cause: unknown, selfId: number | undefined): Point | null {
+  const entity = cause as CauseEntity | null | undefined;
+  if (!entity || entity.id === selfId) return null;
+  const hostile = entity.name !== undefined && ALWAYS_HOSTILE.has(entity.name);
+  return hostile || entity.type === 'player'
+    ? { x: entity.position.x, z: entity.position.z }
+    : null;
 }
 
 /**
  * Passes each loss of the Body's health to `reporter`, with `tick` as the world age. An `entityHurt` on
- * the Body sets the attacker for the next health drop only; a drop with no such event is a hurt with no
- * known cause (`other`). Returns the detach function.
+ * the Body sets the attacker for the next health drop only; a drop with no such event, or with a cause
+ * that is not a hostile mob or a player, is a hurt with no known cause (`other`, no bearing). Returns
+ * the detach function.
  */
 export function watchHurts(bot: Bot, reporter: HurtReporter, tick: () => number): () => void {
   let health: number | undefined = bot.health;
   let pending: { attacker: Point | null } | null = null;
-  const onEntityHurt = (entity: unknown): void => {
+  const onEntityHurt = (entity: unknown, cause?: unknown): void => {
     if (entity !== bot.entity) return;
-    pending = { attacker: nearbyAttacker(bot) };
+    pending = { attacker: attackerOf(cause, bot.entity?.id) };
   };
   const onHealth = (): void => {
     const before = health;

@@ -48,24 +48,83 @@ function harness(bot: ReturnType<typeof fakeBot>) {
 }
 
 describe('watchHurts: the live hurt trigger', () => {
-  it('a hit from a nearby attacker in front is a melee hurt with a bearing', () => {
+  it('a hit from a zombie in front is a melee hurt with a bearing', () => {
     const self = entityAt(1, 0, 0, 0);
-    const bot = fakeBot(self, [entityAt(2, 0, 2)]);
+    const zombie = Object.assign(entityAt(2, 0, 2), { name: 'zombie', type: 'hostile' });
+    const bot = fakeBot(self, [zombie]);
     const { seen } = harness(bot);
-    bot.emit('entityHurt', self);
+    bot.emit('entityHurt', self, zombie);
     bot.health = 16.4;
     bot.emit('health');
     expect(seen).toEqual([[{ type: 'hurt', source: 'melee', bearing: 'front', amount: 4 }, 77]]);
   });
 
-  it('an attacker behind the Body, with the Body facing +z, is behind', () => {
+  it('a zombie behind the Body, with the Body facing +z, is behind', () => {
     const self = entityAt(1, 0, 0, 0);
-    const bot = fakeBot(self, [entityAt(2, 0, -2)]);
+    const zombie = Object.assign(entityAt(2, 0, -2), { name: 'zombie', type: 'hostile' });
+    const bot = fakeBot(self, [zombie]);
     const { seen } = harness(bot);
-    bot.emit('entityHurt', self);
+    bot.emit('entityHurt', self, zombie);
     bot.health = 17;
     bot.emit('health');
     expect(seen).toEqual([[{ type: 'hurt', source: 'melee', bearing: 'behind', amount: 3 }, 77]]);
+  });
+
+  it('a player cause is a melee hurt', () => {
+    const self = entityAt(1, 0, 0, 0);
+    const player = Object.assign(entityAt(2, 0, 2), { name: 'tester', type: 'player' });
+    const bot = fakeBot(self, [player]);
+    const { seen } = harness(bot);
+    bot.emit('entityHurt', self, player);
+    bot.health = 16;
+    bot.emit('health');
+    expect(seen).toEqual([[{ type: 'hurt', source: 'melee', bearing: 'front', amount: 4 }, 77]]);
+  });
+
+  it('a skeleton that shot the Body (the cause of its arrow) is named', () => {
+    const self = entityAt(1, 0, 0, 0);
+    const skeleton = Object.assign(entityAt(2, 0, 9), { name: 'skeleton', type: 'hostile' });
+    const bot = fakeBot(self, [skeleton]);
+    const { seen } = harness(bot);
+    bot.emit('entityHurt', self, skeleton);
+    bot.health = 17;
+    bot.emit('health');
+    expect(seen).toEqual([[{ type: 'hurt', source: 'melee', bearing: 'front', amount: 3 }, 77]]);
+  });
+
+  it('a cause that is a passive mob (a llama) names no attacker', () => {
+    const self = entityAt(1, 0, 0);
+    const llama = Object.assign(entityAt(2, 0, 2), { name: 'llama', type: 'animal' });
+    const bot = fakeBot(self, [llama]);
+    const { seen } = harness(bot);
+    bot.emit('entityHurt', self, llama);
+    bot.health = 18;
+    bot.emit('health');
+    expect(seen).toEqual([[{ type: 'hurt', source: 'other', amount: 2 }, 77]]);
+    expect(seen[0]?.[0]).not.toHaveProperty('bearing');
+  });
+
+  it('drowning beside a llama, with no damage cause entity, names no attacker', () => {
+    const self = entityAt(1, 0, 0);
+    const llama = Object.assign(entityAt(2, 0, 1), { name: 'llama', type: 'animal' });
+    const bot = fakeBot(self, [llama]);
+    const { seen } = harness(bot);
+    bot.emit('entityHurt', self);
+    bot.health = 18;
+    bot.emit('health');
+    expect(seen).toEqual([[{ type: 'hurt', source: 'other', amount: 2 }, 77]]);
+    expect(seen[0]?.[0]).not.toHaveProperty('bearing');
+  });
+
+  it("a hostile mob beyond reach that is the cause is still named (the cause is the server's)", () => {
+    const self = entityAt(1, 0, 0);
+    const zombie = Object.assign(entityAt(2, 0, 10), { name: 'zombie', type: 'hostile' });
+    const bot = fakeBot(self, [zombie]);
+    const { seen } = harness(bot);
+    bot.emit('entityHurt', self, zombie);
+    bot.health = 18;
+    bot.emit('health');
+    expect(seen).toEqual([[{ type: 'hurt', source: 'melee', bearing: 'front', amount: 2 }, 77]]);
   });
 
   it('a drop with no entityHurt (a fall) is other with no bearing', () => {
@@ -140,9 +199,10 @@ describe('hurtWorldEvent: the damage event the Mind reads', () => {
 
   it('carries source, bearing and amount in a damage WorldEvent', () => {
     const self = entityAt(1, 0, 0);
-    const bot = fakeBot(self, [entityAt(2, 0, 2)]);
+    const zombie = Object.assign(entityAt(2, 0, 2), { name: 'zombie', type: 'hostile' });
+    const bot = fakeBot(self, [zombie]);
     const { seen } = harness(bot);
-    bot.emit('entityHurt', self);
+    bot.emit('entityHurt', self, zombie);
     bot.health = 16;
     bot.emit('health');
     const [hurt] = seen[0] ?? [];
