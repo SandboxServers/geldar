@@ -235,6 +235,17 @@ export interface CheckpointManifest {
       ];
 }
 
+export interface ChunkVisitedPayload {
+  /**
+   * Permanent identity of one life, such as ag_kestrel_01.
+   */
+  life_id: string;
+  dimension: string;
+  cx: number;
+  cz: number;
+  tick: number;
+}
+
 export type SnapshotId = string;
 
 export type ThoughtId = string;
@@ -9982,6 +9993,58 @@ export interface PresenceRecord {
    * When the MCP wrote this record.
    */
   at: string;
+}
+
+export interface ProficiencyLevelPayload {
+  /**
+   * Permanent identity of one life, such as ag_kestrel_01.
+   */
+  life_id: string;
+  domain: "combat" | "farming" | "mining" | "building" | "crafting" | "exploring" | "social";
+  level: number;
+  xp: number;
+  version: number;
+}
+
+export interface ProficiencyRequest {
+  /**
+   * Permanent identity of one life, such as ag_kestrel_01.
+   */
+  life_id: string;
+  /**
+   * The version the requester already holds. Optional.
+   */
+  have_version?: number;
+}
+
+export interface ProficiencyState {
+  /**
+   * Permanent identity of one life, such as ag_kestrel_01.
+   */
+  life_id: string;
+  /**
+   * Total XP across all domains.
+   */
+  version: number;
+  levels: {
+    combat: DomainLevel;
+    farming: DomainLevel;
+    mining: DomainLevel;
+    building: DomainLevel;
+    crafting: DomainLevel;
+    exploring: DomainLevel;
+    social: DomainLevel;
+  };
+  sheet?: CharacterSheet;
+  /**
+   * Lower-case hex SHA-256 of the canonical sheet JSON, computed by the writer (AN-04a); this schema checks only the shape.
+   */
+  sheet_hash?: string;
+}
+
+export interface DomainLevel {
+  level: number;
+  xp: number;
 }
 
 export interface Receipt {
