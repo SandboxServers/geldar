@@ -35,7 +35,7 @@ Literal loopback ports (the compose repo-check forbids interpolation for them); 
 
 ## 4. Test environment on node 3
 
-The owner wants a Hyper-V Debian VM on node 3 as the first non-production stamp, built from a fresh install with no dependencies pre-installed, ending with bodies connected and a real ranger on the test world. Plan: G3-04 creates the VM (PowerShell over SSH from an operator machine that holds the node 3 key; CI does not hold it); G3-01 bootstraps from bare Debian; G4 stamps it; G6 verifies it with the scripted test player; the owner then points a real ranger at it as acceptance (human step, scriptorium side).
+The owner wants a Hyper-V Debian VM on node 3 as the first non-production stamp, built from a fresh install with no dependencies pre-installed, ending with bodies connected and a real ranger on the test world. Plan: G3-04 creates the VM (PowerShell over SSH from an operator machine that holds the node 3 key; CI does not hold it; it reuses scriptorium's parameterised `New-HostVm.ps1` rather than a second script, see the card); G3-01 bootstraps from bare Debian; G4 stamps it; G6 verifies it with the scripted test player; the owner then points a real ranger at it as acceptance (human step, scriptorium side).
 
 ## 5. Principles
 
@@ -59,7 +59,15 @@ Idempotent everywhere (create-if-missing, upsert, no silent rotation); plan befo
 
 ## 7. Kit-facing contract (D-GN-06)
 
-Genesis provides, for each environment: the public MCP URL, the register and Glass URLs, a documented way to mint a world token and add a roster entry through `colo-admin.sh` verbs (or the owner API), and a stable health endpoint. scriptorium's fleet campaign consumes it to start ranger hosts. The final acceptance (a real ranger connected) is a human step recorded in G7-03.
+Genesis provides, for each environment, to scriptorium's fleet campaign (reviewed by scriptorium-orchestrator, 2026-11-14):
+
+1. **URLs.** The public MCP URL shape `https://<host>/p/<player id>` (the launcher writes it into each player's `mcp_url`), plus the register and Glass URLs. The kit's egress proxy allows only that hostname on port 443, so a test environment needs a **real hostname** (DNS from G2-06), not a bare address, or an explicit allow entry on the kit side.
+2. **Reachability.** The environment definition states which source networks its MCP endpoint accepts. The node 3 ranger host could not reach the production public MCP address until a gateway policy was added, so the stamp's verify step checks reachability from the declared source network, and the gateway rule stays a checked prerequisite.
+3. **Mint and roster verbs.** The exact `colo-admin.sh` verbs (or owner API calls) to add a roster entry and mint a world token, with the **token returned as a file path or on stdin, never in a workflow log**. A test ranger uses a **test id**, never a production ranger's id.
+4. **Health endpoint** that needs no token.
+5. **Optional skin** for the test id (signed skin JSON and PNG), placed by an operator step.
+
+The final acceptance (a real ranger connected) is a human step recorded in G7-02 and G6-05; the subscription login is the owner's on scriptorium's side.
 
 ## 8. Risks and mitigations
 
