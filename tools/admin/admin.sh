@@ -7,12 +7,13 @@ ROOT=/opt/geldar
 PG_PASSWORD_FILE=${GELDAR_ADMIN_PG_PASSWORD_FILE:-/run/secrets/postgres.txt}
 
 usage() {
-  echo "usage: admin <migrate|owner-add|player-add|token-mint|token-revoke|players-status> [args...]" >&2
+  echo "usage: admin <migrate|owner-add|player-add|token-mint|token-revoke|players-status|roster> [args...]" >&2
   echo "  migrate [--dry-run] | migrate --set-role-password geldar_mcp --password-file <file>" >&2
   echo "  owner-add <id> [--cap N] | player-add <id> --owner <o> --life <l> --name <n> --harness <h>" >&2
   echo "  token-mint <player> --out <file> | token-revoke <tk_id> | skin-import <player-id> <json under /run/skins> | players-status (lists tokens, no values)" >&2
   echo "  player-flags <player-id> [--public-camera on|off] [--thoughts-delayed-public on|off]" >&2
   echo "  notice <payload-json> (CD-1d: publishes one maintenance notice as the deploy NATS user; see deploy/colo-notice.sh)" >&2
+  echo "  roster add <name> --owner <o> | roster list [--owner <o>] (decision 0108: the roster of Minecraft names)" >&2
   exit 2
 }
 
@@ -26,9 +27,17 @@ if [ "$cmd" = notice ]; then
 fi
 
 case $cmd in
-  migrate | owner-add | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body | skin-import | player-flags) ;;
+  migrate | owner-add | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body | skin-import | player-flags | roster) ;;
   *) usage ;;
 esac
+
+# roster takes add or list (decision 0108). Checked before the password file is read; the CLI checks the other arguments.
+if [ "$cmd" = roster ]; then
+  case ${1:-} in
+    add | list) ;;
+    *) echo "admin: roster takes add or list (roster add <name> --owner <o>, roster list [--owner <o>])" >&2; exit 2 ;;
+  esac
+fi
 
 [ -f "$PG_PASSWORD_FILE" ] && [ -s "$PG_PASSWORD_FILE" ] || {
   echo "admin: the database password file is missing or empty" >&2
@@ -51,4 +60,5 @@ case $cmd in
   ensure-skins-bucket) exec node "$ROOT/golem/src/ensure-skins-bucket.ts" "$@" ;;
   whitelist-house-body) exec node "$ROOT/golem/src/whitelist-house-body.ts" "$@" ;;
   players-status) exec node "$ROOT/tools/mcp-tokens/src/cli.ts" token list "$@" ;;
+  roster) exec node "$ROOT/tools/mcp-tokens/src/cli.ts" roster "$@" ;;
 esac
