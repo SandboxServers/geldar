@@ -97,6 +97,35 @@ describe('Kino section cache: joining panes', () => {
     expect(b.got.at(-1)).toBe(upd(2, 'z'));
   });
 
+  it('hello and target_moved at feed start do not stop a joining pane being served from the cache', () => {
+    pane();
+    emit(hello);
+    emit(moved);
+    emit(snap(0, 'a'));
+    const b = pane();
+    expect(types()).toEqual(['start']);
+    expect(b.got).toEqual([hello, moved, snap(0, 'a')]);
+  });
+
+  it('after a later target_moved the joining pane gets the latest move, then the sections still in the window', () => {
+    pane();
+    emit(hello); // view radius 2
+    emit(moved); // chunk (0, -1)
+    emit(snap(0, 'a'));
+    emit(snap(5, 'b'));
+    const movedAway = JSON.stringify({
+      type: 'target_moved',
+      target_agent_id: AGENT,
+      x: 120.5,
+      y: 64,
+      z: -3,
+    }); // chunk (7, -1): chunk 0 is 7 away and goes, chunk 5 is 2 away and stays
+    emit(movedAway);
+    const b = pane();
+    expect(types()).toEqual(['start']);
+    expect(b.got).toEqual([hello, movedAway, snap(5, 'b')]);
+  });
+
   it('the first pane sends start and nothing else', () => {
     pane();
     expect(types()).toEqual(['start']);
@@ -132,28 +161,30 @@ describe('Kino section cache: joining panes', () => {
     expect(b.got).toEqual([hello, snap(0, 'a')]);
   });
 
-  it('a target_moved drops the cache: the next pane resyncs instead of seeing a stale window', () => {
+  it('a target_moved the cache cannot place drops it: the next pane resyncs instead of seeing a stale window', () => {
+    const unplaced = JSON.stringify({ type: 'target_moved', target_agent_id: AGENT, z: -3 });
     pane();
     emit(hello);
     emit(snap(0, 'a'));
-    emit(moved);
+    emit(unplaced);
     const b = pane();
     expect(types()).toEqual(['start', 'resync']);
-    expect(b.got).toEqual([hello, moved]);
+    expect(b.got).toEqual([hello, unplaced]);
   });
 
   it('a resync starts the cache over, and the next pane is served from the new window', () => {
+    const unplaced = JSON.stringify({ type: 'target_moved', target_agent_id: AGENT, z: -3 });
     pane();
     emit(hello);
     emit(snap(0, 'a'));
-    emit(moved);
+    emit(unplaced);
     pane(); // resync, the plugin answers with the window again
     emit(hello);
     emit(snap(0, 'b'));
     const c = pane();
     // Only the resync that the pane before it caused: the pane after it is served from the new window.
     expect(types()).toEqual(['start', 'resync']);
-    expect(c.got).toEqual([hello, moved, snap(0, 'b')]);
+    expect(c.got).toEqual([hello, unplaced, snap(0, 'b')]);
   });
 });
 
