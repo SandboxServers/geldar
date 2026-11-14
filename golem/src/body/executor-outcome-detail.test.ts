@@ -44,6 +44,35 @@ describe('action_outcome detail_text', () => {
     ).toBeUndefined();
   });
 
+  it.each([
+    [17, 20, 'bread: hunger 17 to 20'],
+    [19, 20, 'bread: hunger 19 to 20'],
+  ])('an ok eat carries its hunger change: %i to %i', (before, after, text) => {
+    const eaten = {
+      record: {
+        state: 'completed',
+        result: {
+          status: 'completed',
+          detail: { item: 'bread', food_before: before, food_after: after },
+        },
+      },
+    } as unknown as ActionReport;
+    const out = actionOutcomeOf('eat', 0, eaten);
+    expect(out.detail_text).toBe(text);
+    expect(out.ok).toBe(true);
+    expect(validateActionOutcomePayload(out).ok).toBe(true);
+  });
+
+  it('an ok verb other than eat carries no detail text', () => {
+    const done = {
+      record: {
+        state: 'completed',
+        result: { status: 'completed', detail: { item: 'bread', food_before: 17, food_after: 20 } },
+      },
+    } as unknown as ActionReport;
+    expect(actionOutcomeOf('mine', 0, done).detail_text).toBeUndefined();
+  });
+
   it('carries nothing for a success or an unrelated failure', () => {
     const done = { record: { state: 'completed', result: { status: 'completed' } } };
     expect(actionOutcomeOf('mine', 0, done as unknown as ActionReport).detail_text).toBeUndefined();
