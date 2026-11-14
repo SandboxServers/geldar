@@ -1,4 +1,4 @@
-import type { SpeechIdentity } from '@geldar/animus/src/attention/classify.ts';
+import type { SpeechIdentity } from '@geldar/player-core/src/attention/classify.ts';
 import type { Pool } from 'pg';
 import type { AgentProfile, AgentProfiles, SleepMark, SleepMarks } from '../ports.ts';
 

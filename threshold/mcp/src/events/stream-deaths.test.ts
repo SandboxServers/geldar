@@ -1,5 +1,5 @@
-import type { SpeechIdentity } from '@geldar/animus/src/attention/classify.ts';
-import { eventOf } from '@geldar/animus/src/link/link.fixtures.ts';
+import type { SpeechIdentity } from '@geldar/player-core/src/attention/classify.ts';
+import { eventOf } from '@geldar/player-core/src/link/link.fixtures.ts';
 import { describe, expect, it } from 'vitest';
 import type { DeathMarks } from '../ports.ts';
 import { RingEventLog } from './player-log.ts';

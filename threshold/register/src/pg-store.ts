@@ -87,12 +87,34 @@ export class PgStore implements Store, SessionStore {
       'SELECT player_id, display_name, harness, status FROM register_list_players($1)',
       [hex(identityHash)],
     );
-    return r.rows.map((row) => ({
-      playerId: String(row.player_id),
-      name: String(row.display_name),
-      harness: String(row.harness),
-      status: String(row.status),
-    }));
+    // The two visibility flags come from the owner-keyed definer function (0036), read with the owner id.
+    // register_list_players (0012) has no flags and no owner id, and this change adds no SQL.
+    const flags = new Map<string, { publicCamera: boolean; thoughtsDelayedPublic: boolean }>();
+    const owner = await this.findOwner(identityHash);
+    if (owner !== null && !owner.banned) {
+      const f = await this.pool.query(
+        'SELECT player_id, public_camera, thoughts_delayed_public FROM register_owner_list_players($1)',
+        [owner.ownerId],
+      );
+      for (const row of f.rows) {
+        flags.set(String(row.player_id), {
+          publicCamera: row.public_camera === true,
+          thoughtsDelayedPublic: row.thoughts_delayed_public === true,
+        });
+      }
+    }
+    return r.rows.map((row) => {
+      const playerId = String(row.player_id);
+      const f = flags.get(playerId);
+      return {
+        playerId,
+        name: String(row.display_name),
+        harness: String(row.harness),
+        status: String(row.status),
+        publicCamera: f?.publicCamera ?? false,
+        thoughtsDelayedPublic: f?.thoughtsDelayedPublic ?? false,
+      };
+    });
   }
 
   /** Sessions (C7-01): geldar_register reads and writes register_sessions directly (migration 0021). */
