@@ -4,8 +4,8 @@
  * `spoken: true` when the Body confirms, `reason: 'unconfirmed'` when no confirmation comes in time.
  */
 
-import type { OutputValidator } from '@geldar/animus/src/ports/index.ts';
 import type { SayResult, SovereignCallPayload } from '@geldar/contract';
+import type { OutputValidator } from '@geldar/player-core/src/ports/index.ts';
 import { batchCost } from '../budget/cost.ts';
 import {
   type BodyGateway,

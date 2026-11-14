@@ -9,6 +9,7 @@ WORKDIR /opt/geldar
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY contract ./contract
 COPY animus ./animus
+COPY player-core ./player-core
 # --ignore-scripts: no dependency runs an install script (no native module), so none runs in the image build.
 RUN pnpm install --frozen-lockfile --prod --ignore-scripts --filter "@geldar/animus..."
 

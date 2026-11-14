@@ -8,13 +8,13 @@
  */
 
 import { createHash } from 'node:crypto';
-import { newId } from '@geldar/animus/src/ids.ts';
 import {
   type SovereignCallPayload,
   validateSovereignCallPayload,
   validateWorldEvent,
   type WorldEvent,
 } from '@geldar/contract';
+import { newId } from '@geldar/player-core/src/ids.ts';
 import type { CallRecorder } from '../ports.ts';
 import type { WorldStamp } from './world-clock.ts';
 

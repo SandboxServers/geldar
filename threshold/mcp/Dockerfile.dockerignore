@@ -6,7 +6,7 @@
 !.nvmrc
 !**/package.json
 !contract
-!animus/src
+!player-core
 !threshold/mcp
 !threshold/mcp-mock
 # The runtime reads the shard file (cli.ts, config.ts) and imports one repo-checks module (main.ts). Nothing else

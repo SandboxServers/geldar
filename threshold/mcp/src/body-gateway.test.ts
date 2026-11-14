@@ -1,6 +1,6 @@
-import { planOf, snapshotOf } from '@geldar/animus/src/link/link.fixtures.ts';
-import type { RequestTransport } from '@geldar/animus/src/link/nats-body-link.ts';
-import { BodyLinkError } from '@geldar/animus/src/ports/index.ts';
+import { planOf, snapshotOf } from '@geldar/player-core/src/link/link.fixtures.ts';
+import type { RequestTransport } from '@geldar/player-core/src/link/nats-body-link.ts';
+import { BodyLinkError } from '@geldar/player-core/src/ports/index.ts';
 import { describe, expect, it } from 'vitest';
 import { BOOK_TIMEOUT_MS, NatsBodyGateway } from './body-gateway.ts';
 import { BodyUnavailable } from './ports.ts';

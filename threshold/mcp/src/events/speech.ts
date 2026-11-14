@@ -1,4 +1,4 @@
-import { classifySpeech, type SpeechIdentity } from '@geldar/animus/src/attention/classify.ts';
+import { classifySpeech, type SpeechIdentity } from '@geldar/player-core/src/attention/classify.ts';
 
 /**
  * Whether a line of speech is addressed to the agent (spec 5.3.2). The agent has no open

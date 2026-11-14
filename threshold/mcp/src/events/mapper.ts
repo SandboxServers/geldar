@@ -1,5 +1,5 @@
-import type { MindEvent } from '@geldar/animus/src/ports/body.ts';
 import type { SimEvent } from '@geldar/mcp-mock';
+import type { MindEvent } from '@geldar/player-core/src/ports/body.ts';
 import { MIND_HANDLERS } from './handlers/index.ts';
 import type { EventBase, MapContext, MindHandler } from './handlers/types.ts';
 

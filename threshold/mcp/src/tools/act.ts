@@ -5,10 +5,10 @@
  * atomic: one bad action rejects every action, the bad ones with their code, the rest `batch_rejected`.
  */
 
-import { newId } from '@geldar/animus/src/ids.ts';
-import { buildPlan } from '@geldar/animus/src/loop/plan.ts';
-import type { OutputError, OutputValidator } from '@geldar/animus/src/ports/index.ts';
 import type { ActResult, PlanAck, SovereignCallPayload, Thought } from '@geldar/contract';
+import { newId } from '@geldar/player-core/src/ids.ts';
+import { buildPlan } from '@geldar/player-core/src/loop/plan.ts';
+import type { OutputError, OutputValidator } from '@geldar/player-core/src/ports/index.ts';
 import { batchCost, type ChargedItem } from '../budget/cost.ts';
 import {
   type ActMeter,

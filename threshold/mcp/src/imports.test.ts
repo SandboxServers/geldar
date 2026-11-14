@@ -6,12 +6,12 @@ import { describe, expect, it } from 'vitest';
  * in animus or the mock fails here, not at the first tool call.
  */
 const PATHS = [
-  '@geldar/animus/src/validate/index.ts',
-  '@geldar/animus/src/loop/plan.ts',
-  '@geldar/animus/src/attention/classify.ts',
-  '@geldar/animus/src/link/mind-event.ts',
-  '@geldar/animus/src/link/nats-body-link.ts',
-  '@geldar/animus/src/ids.ts',
+  '@geldar/player-core/src/validate/index.ts',
+  '@geldar/player-core/src/loop/plan.ts',
+  '@geldar/player-core/src/attention/classify.ts',
+  '@geldar/player-core/src/link/mind-event.ts',
+  '@geldar/player-core/src/link/nats-body-link.ts',
+  '@geldar/player-core/src/ids.ts',
   '@geldar/mcp-mock',
 ] as const;
 
@@ -33,9 +33,9 @@ describe('animus and mock imports', () => {
   it(
     'exposes the names the wave uses',
     async () => {
-      const validate = await import('@geldar/animus/src/validate/index.ts');
-      const plan = await import('@geldar/animus/src/loop/plan.ts');
-      const classify = await import('@geldar/animus/src/attention/classify.ts');
+      const validate = await import('@geldar/player-core/src/validate/index.ts');
+      const plan = await import('@geldar/player-core/src/loop/plan.ts');
+      const classify = await import('@geldar/player-core/src/attention/classify.ts');
       const mock = await import('@geldar/mcp-mock');
 
       expect(typeof validate.createOutputValidator).toBe('function');

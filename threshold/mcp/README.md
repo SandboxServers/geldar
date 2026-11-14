@@ -22,7 +22,7 @@ threshold/mcp/
     ports.ts          the interfaces every store, gateway and clock sits behind
     play-view.ts      toPlayView: the look snapshot with world text moved to untrusted_world_text
     play-view.test.ts
-    imports.test.ts   the animus deep paths and @geldar/mcp-mock resolve
+    imports.test.ts   the player-core deep paths and @geldar/mcp-mock resolve
     fakes/
       stores.fakes.ts  in-memory versions of the stores and ports
       world.fakes.ts   FakeBody: scripted events, snapshots, plans and books
@@ -208,6 +208,6 @@ Every pin is exact. Ages are days between the registry's publish time and 2026-1
 | `@types/pg` (dev) | 8.23.1 | 2026-08-17 | 84 | types for `pg` |
 | `yaml` | 2.9.1 | 2026-09-11 | 59 | shard config |
 
-Workspace dependencies: `@geldar/contract`, `@geldar/mcp-mock`, `@geldar/animus`.
+Workspace dependencies: `@geldar/contract`, `@geldar/mcp-mock`, `@geldar/player-core`. Dev only: `@geldar/animus` (the jsonString parity test).
 `tools/{mcp-tokens,migrate,players-cli}` pin their own dependencies in the same lockfile; their
 ages are recorded in their package manifests.

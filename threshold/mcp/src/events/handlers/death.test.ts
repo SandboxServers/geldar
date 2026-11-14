@@ -1,4 +1,4 @@
-import type { MindEvent } from '@geldar/animus/src/ports/body.ts';
+import type { MindEvent } from '@geldar/player-core/src/ports/body.ts';
 import { describe, expect, it } from 'vitest';
 import { deathHandler } from './death.ts';
 import type { EventBase, MapContext } from './types.ts';

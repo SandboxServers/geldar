@@ -11,6 +11,7 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 # mcp-tokens declares @geldar/mcp, whose workspace closure is these packages. The migration files are the sql/ directory.
 COPY contract ./contract
 COPY animus ./animus
+COPY player-core ./player-core
 COPY threshold ./threshold
 COPY tools/repo-checks ./tools/repo-checks
 COPY tools/migrate ./tools/migrate
