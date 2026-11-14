@@ -9,6 +9,7 @@ import {
   nakDelayMs,
   type SinkMessage,
 } from './consumer.ts';
+import { isNonEventSubject } from './validate.ts';
 import { type EventWriter, isPermanentDbError } from './writer.ts';
 
 const EVENT: WorldEvent = {
@@ -203,6 +204,56 @@ describe('handleBatch', () => {
     await handleBatch([h.message('geldar.phase0.dlq', { reason: 'x' })], h.deps);
     expect(h.dlq).toHaveLength(0);
     expect(h.log).toEqual(['ack geldar.phase0.dlq']);
+  });
+});
+
+describe('non-event subjects', () => {
+  // A maintenance notice (geldar.<shard>.maintenance) is inside the stream's geldar.*.* filter but is
+  // not a WorldEvent: the deploy publishes it for the Paper plugin. It is acked and skipped, not
+  // dead-lettered, and counted by the skipped metric.
+  const NOTICE = { id: 'cd-pause-mcp-1', kind: 'pause', scope: 'mcp', seconds: 60 };
+
+  it('acks a maintenance notice without storing it or dead-lettering it', async () => {
+    const h = harness();
+    await handleBatch([h.message('geldar.phase0.maintenance', NOTICE)], h.deps);
+    expect(h.written).toEqual([]);
+    expect(h.dlq).toHaveLength(0);
+    expect(h.log).toEqual(['ack geldar.phase0.maintenance']);
+    expect(h.logged.join('\n')).not.toContain('ALERT');
+  });
+
+  it('acks a maintenance notice whose body is not an event, with no DLQ publish', async () => {
+    const h = harness();
+    await handleBatch([h.message('geldar.colo.maintenance', 'not json at all')], h.deps);
+    expect(h.dlq).toHaveLength(0);
+    expect(h.log).toEqual(['ack geldar.colo.maintenance']);
+  });
+
+  it('still dead-letters a notice-shaped body that arrives on a real event subject', async () => {
+    const h = harness();
+    await handleBatch(
+      [
+        h.message('geldar.phase0.sovereign_call', {
+          id: 'cd-pause-mcp-1',
+          kind: 'pause',
+          scope: 'mcp',
+        }),
+      ],
+      h.deps,
+    );
+    expect(h.dlq).toHaveLength(1);
+    expect(h.dlq[0]?.subject).toBe('geldar.phase0.dlq');
+    expect(h.written).toEqual([]);
+  });
+
+  it('matches only three-token geldar subjects whose type is maintenance', () => {
+    expect(isNonEventSubject('geldar.phase0.maintenance')).toBe(true);
+    expect(isNonEventSubject('geldar.colo-main.maintenance')).toBe(true);
+    expect(isNonEventSubject('geldar.phase0.damage')).toBe(false);
+    expect(isNonEventSubject('geldar.phase0.dlq')).toBe(false);
+    expect(isNonEventSubject('geldar.phase0.body.life1.maintenance')).toBe(false);
+    expect(isNonEventSubject('geldar.phase0.maintenance.extra')).toBe(false);
+    expect(isNonEventSubject('maintenance')).toBe(false);
   });
 });
 

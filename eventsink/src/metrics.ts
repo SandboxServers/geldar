@@ -181,6 +181,7 @@ export const WRITTEN = 'geldar_eventsink_written_total';
 export const FAILED = 'geldar_eventsink_failed_total';
 export const DLQ_WRITTEN = 'geldar_eventsink_dlq_written_total';
 export const PENDING = 'geldar_eventsink_consumer_pending';
+export const SKIPPED = 'geldar_eventsink_skipped_total';
 
 /** The eventsink's metrics: one registry, declared once, fed from the consumer's decisions. */
 export class EventsinkMetrics {
@@ -194,6 +195,16 @@ export class EventsinkMetrics {
     this.registry.declare('counter', FAILED, 'Events dead-lettered by failure reason', ['reason']);
     this.registry.declare('counter', DLQ_WRITTEN, 'Dead letters published to the DLQ subject');
     this.registry.declare('gauge', PENDING, 'Messages pending for the durable consumer');
+    this.registry.declare(
+      'counter',
+      SKIPPED,
+      'Messages on non-event subjects (the maintenance notice), acked and not stored',
+    );
+  }
+
+  /** One message on a non-event subject, acked and skipped without a dead letter. */
+  skipped(): void {
+    this.registry.add(SKIPPED);
   }
 
   /** One message handed to the sink. Its type is the subject's last segment, or `other`. */
