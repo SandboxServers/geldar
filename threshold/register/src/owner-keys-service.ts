@@ -2,6 +2,7 @@ import {
   hasScope,
   isOwnerKeyShape,
   type NewOwnerKey,
+  OWNER_KEY_SCOPES,
   type OwnerKeyScope,
   parseScopes,
 } from './owner-keys-policy.ts';
@@ -31,6 +32,25 @@ export interface OwnerKeyStore {
   revoke(presenterHash: Buffer, keyId: string): Promise<boolean | null>;
   /** The presenter owner's keys; null when refused or the presenter lacks read. */
   list(presenterHash: Buffer): Promise<OwnerKeyRow[] | null>;
+}
+
+/**
+ * The cookie-session side (migration 0035, decision 0173). The caller is the signed-in identity hash, not a
+ * presented key, so the first key can be minted from the account page. A refusal throws KeyDbRefusal
+ * (42501 or 53400) and is never returned as an empty list.
+ */
+export interface OwnerKeySessionStore {
+  /** The expiry of the new key row, or null when no row came back. */
+  mintBySession(
+    identityHash: Buffer,
+    keyId: string,
+    keyHash: Buffer,
+    scopes: OwnerKeyScope[],
+  ): Promise<Date | null>;
+  /** True when revoked, false when the target is not a live key of that owner, null when no row came back. */
+  revokeBySession(identityHash: Buffer, keyId: string): Promise<boolean | null>;
+  /** The owner's keys. Zero rows is an owner with no keys. */
+  listBySession(identityHash: Buffer): Promise<OwnerKeyRow[]>;
 }
 
 export interface OwnerKeyAuditEntry {
@@ -88,7 +108,7 @@ const AUDITED = new Set(['scope_missing', 'bad_scopes', 'not_found', 'limited'])
  * a read) and the database call. A database error is audited and rethrown, so no value is returned.
  */
 async function act(
-  deps: OwnerKeyDeps,
+  deps: Omit<OwnerKeyDeps, 'store'>,
   actor: Actor,
   options: {
     action: string;
@@ -203,5 +223,96 @@ export async function listOwnerKeys(
       const keys = await deps.store.list(actor.hash);
       return keys === null ? { status: 'refused' } : { status: 'listed', keys };
     },
+  );
+}
+
+/** The cookie-session dependencies: the owner is resolved from the identity hash before any action. */
+export interface SessionKeyDeps extends Omit<OwnerKeyDeps, 'store'> {
+  session: OwnerKeySessionStore;
+  /** The owner of a signed-in identity and whether it is banned; null when the identity is unknown. */
+  resolveOwner: (identityHash: Buffer) => Promise<{ ownerId: string; banned: boolean } | null>;
+}
+
+/**
+ * A cookie session is the owner itself, so it holds every owner-key scope (decision 0173: the scope gate applies
+ * to Bearer keys only). A banned or unknown identity is refused before the database is asked.
+ */
+async function sessionActor(deps: SessionKeyDeps, identityHash: Buffer): Promise<Actor | null> {
+  const owner = await deps.resolveOwner(identityHash);
+  if (owner === null || owner.banned) return null;
+  return { ownerId: owner.ownerId, scopes: [...OWNER_KEY_SCOPES], hash: identityHash };
+}
+
+/** Mints a key for the signed-in owner with the requested scopes (any subset of read, body, manage). */
+export async function mintOwnerKeyBySession(
+  deps: SessionKeyDeps,
+  identityHash: Buffer,
+  requested: readonly string[],
+): Promise<OwnerKeyResult> {
+  const actor = await sessionActor(deps, identityHash);
+  if (actor === null) return { status: 'refused' };
+  const scopes = parseScopes(requested);
+  return act(
+    deps,
+    actor,
+    {
+      action: 'key.mint',
+      target: '',
+      required: 'manage',
+      windowed: true,
+      invalid: scopes === null,
+    },
+    async () => {
+      const fresh = deps.issue();
+      const expiresAt = await deps.session.mintBySession(
+        actor.hash,
+        fresh.keyId,
+        deps.hash(fresh.value),
+        scopes ?? [],
+      );
+      if (expiresAt === null) return { status: 'refused' };
+      return {
+        status: 'minted',
+        keyId: fresh.keyId,
+        value: fresh.value,
+        scopes: scopes ?? [],
+        expiresAt,
+      };
+    },
+  );
+}
+
+/** Revokes one key of the signed-in owner. Another owner's key is not found. */
+export async function revokeOwnerKeyBySession(
+  deps: SessionKeyDeps,
+  identityHash: Buffer,
+  keyId: string,
+): Promise<OwnerKeyResult> {
+  const actor = await sessionActor(deps, identityHash);
+  if (actor === null) return { status: 'refused' };
+  return act(
+    deps,
+    actor,
+    { action: 'key.revoke', target: keyId, required: 'manage', windowed: true },
+    async () => {
+      const changed = await deps.session.revokeBySession(actor.hash, keyId);
+      if (changed === null) return { status: 'refused' };
+      return changed ? { status: 'revoked' } : { status: 'not_found' };
+    },
+  );
+}
+
+/** Lists the signed-in owner's keys. A read is not windowed. A refused identity is refused, never listed empty. */
+export async function listOwnerKeysBySession(
+  deps: SessionKeyDeps,
+  identityHash: Buffer,
+): Promise<OwnerKeyResult> {
+  const actor = await sessionActor(deps, identityHash);
+  if (actor === null) return { status: 'refused' };
+  return act(
+    deps,
+    actor,
+    { action: 'key.list', target: '', required: 'read', windowed: false },
+    async () => ({ status: 'listed', keys: await deps.session.listBySession(actor.hash) }),
   );
 }

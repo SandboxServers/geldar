@@ -142,7 +142,7 @@ export function onboardingEmptyPage(): string {
   return wrap(
     'Your token',
     `<h1>No token to show</h1>
-<p>A token is shown once, straight after it is made, and it is not shown again. To get a new one, renew the token on your account page.</p>
+<p>A token is shown once, straight after it is made, and it is not shown again. To get a new one, make a new token on your account page.</p>
 <p><a href="${BASE}/account">Back to your players</a></p>`,
   );
 }
