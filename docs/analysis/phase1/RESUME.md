@@ -66,11 +66,12 @@ Every brief carries the list in [packet-conventions.md](packet-conventions.md) s
 - **Agents must not learn they are watched** (decisions [0059](../../decisions/0059-identity-mode-is-about-human-observation-not-agent-belief.md) and [0068](../../decisions/0068-prompt-v4-and-agent-visible-text.md)). Agent-visible text, including prompts and wake strings, passes the scans in the packet cards and never shows operator, Glass, BlueMap or observer data.
 - **Prompts are versioned and released versions are never edited.** v1 to v5 are released and not edited; v6 is reserved by C3-03 and v7 by C4-06 (neither released); each creates a new version.
 
-## C7 status (2026-11-13)
+## C7 status (2026-11-14)
 
-- **Wave C7-1 done** (merge bbb5ed6b, PR #315): C3-04s, C7-12, C7-03a (package only), C7-02a (SQL and service only). Migrations 0024, 0025, 0027 and 0032 are applied on the node; 0033 is C7-03b3 (not a spare; no spare is left). Retro: [retro/wave-c7-1.md](retro/wave-c7-1.md). Plan and waves: [packets/c7-wave-plan.md](packets/c7-wave-plan.md).
-- **Wave C7-2 built, reviewed ship at pass 4; merge pending.** C7-02b, C7-05, C7-03b1, C7-03b3 (retro: [retro/wave-c7-2.md](retro/wave-c7-2.md)). The merge is held for geldar-93's metrics window until about 02:45Z. Next: merge PR #321, then wave 3: C7-03b4, C7-04a, C7-04b, C7-04c, C7-06 (order in [packets/c7-wave-plan.md](packets/c7-wave-plan.md)); then C7-03b2 (geldar-93 contact first; its node steps wait for C7-03b4, [c7e](packets/c7e-packets.md)), C7-13a, C7-10, C7-07. C7-04 is split in [packets/c7d-packets.md](packets/c7d-packets.md). Deploy: MERGE and DONE go to geldar-93 and geldar-ops; batch image-changing merges (they refresh the ranger hosts).
-- **Open owner items:** the erasure rule review (0171; gates C7-11 only); the geldar_supervisor Postgres password (an operator step, by hand, before C7-03b2 in wave 3); the C7-10 reason codes and its two count and index decisions.
+- **Waves 1, 2 and 3 merged and deployed** (PRs #315, #321, #336). Retros: [retro/wave-c7-1.md](retro/wave-c7-1.md), [retro/wave-c7-2.md](retro/wave-c7-2.md). Plan and waves: [packets/c7-wave-plan.md](packets/c7-wave-plan.md); cards: [packets/c7d-packets.md](packets/c7d-packets.md).
+- **Wave 4 on PR #346 (draft):** C7-04e PATCH `/agents/{playerId}`; C7-06 and C7-06b account page; C7-04c body routes built but unmounted.
+- **Unbuilt:** C7-04c2 wiring, C7-04d retire, C7-06c, C7-03b2 compose (needs geldar-93's plan), C7-07, C7-09, C7-10, C7-11, C7-13a-c skins. Sign-up closed. Carry-forward CF-1 to CF-5 (ledger CF-W4-1 to CF-W4-5, not scheduled) at the end of [packets/c7d-packets.md](packets/c7d-packets.md).
+- **Open owner items:** the erasure rule review (0171; gates C7-11 only); the geldar_supervisor Postgres password (an operator step, by hand, before C7-03b2); the C7-10 reason codes and its two count and index decisions.
 
 ## Open contradictions
 

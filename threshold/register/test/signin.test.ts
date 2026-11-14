@@ -120,9 +120,9 @@ describe('identity and controls', () => {
     for (const path of ['/register', '/register/login', '/register/callback?code=a&state=b']) {
       const res = await fetch(`${h.base}${path}`, { redirect: 'manual' });
       expect(res.status).toBe(503);
-      expect(await res.json()).toEqual({
-        error: { code: 'unavailable', message: 'Service unavailable' },
-      });
+      // C7-06b: the page routes answer the HTML 503 page; the JSON shape stays under /api/.
+      expect(res.headers.get('content-type')).toContain('text/html');
+      expect(await res.text()).toContain('Temporarily unavailable');
     }
   });
 
@@ -134,7 +134,9 @@ describe('identity and controls', () => {
     expect((await get('192.0.2.9')).status).toBe(200);
     const refused = await get('192.0.2.9');
     expect(refused.status).toBe(429);
-    expect(await refused.json()).toMatchObject({ error: { code: 'rate_limited' }, retryAfter: 60 });
+    // C7-06b: a page route answers the HTML 429 page with the wait in the header.
+    expect(refused.headers.get('content-type')).toContain('text/html');
+    expect(await refused.text()).toContain('Too many requests');
     expect(refused.headers.get('retry-after')).toBe('60');
     expect((await get('192.0.2.8')).status).toBe(200);
     await h.close();
@@ -149,7 +151,8 @@ describe('identity and controls', () => {
       expect((await fetch(`${h.base}/register/login`, { redirect: 'manual' })).status).toBe(302);
     const refused = await fetch(`${h.base}/register/login`, { redirect: 'manual' });
     expect(refused.status).toBe(429);
-    expect(await refused.json()).toMatchObject({ error: { code: 'rate_limited' } });
+    expect(refused.headers.get('content-type')).toContain('text/html');
+    expect(await refused.text()).toContain('Too many requests');
     // The callback shares the sign-in window; the home page does not.
     expect((await fetch(`${h.base}/register/callback?code=a&state=b`)).status).toBe(429);
     expect((await fetch(`${h.base}/register`)).status).toBe(200);
