@@ -4,6 +4,7 @@ import {
   type BodyRecord,
   type BodySpec,
   type ControlRequest,
+  LoginNameError,
   OPS,
   type Reply,
   type SupervisorDeps,
@@ -81,6 +82,8 @@ function bounded<T>(work: Promise<T>, ms: number): Promise<T> {
 
 function boundedCalls(runtime: SupervisorDeps['runtime'], ms: number) {
   return {
+    checkLogin: (ownerId: string, playerName: string) =>
+      bounded(runtime.checkLogin?.(ownerId, playerName) ?? Promise.resolve(), ms),
     inspect: (playerName: string) => bounded(runtime.inspect(playerName), ms),
     stop: (playerName: string) => bounded(runtime.stop(playerName), ms),
   };
@@ -217,6 +220,8 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
         return outcome({ ok: false, code: 'quota' }, admin, 'owner_day');
       }
     }
+    // The login name is checked before a running body stops: a refused restart leaves the body up.
+    await runtime.checkLogin(ownerId, playerName);
     if (record?.running) await runtime.stop(playerName);
     // A Docker error or timeout throws here: no row is inserted, so the failed start does not count.
     const token = await startBody({ ownerId, playerName, config: bodyContainerConfig() });
@@ -270,7 +275,10 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
     const admin = await isAdmin(request.ownerId);
     try {
       return await act(request, admin);
-    } catch {
+    } catch (error) {
+      // A login name outside the Minecraft shape is the owner's to fix: the reply says so. Nothing was
+      // inserted, so the refusal does not count against a quota.
+      if (error instanceof LoginNameError) return outcome({ ok: false, code: 'login_name' }, admin);
       // The Docker or database error is reported as a fixed code; the detail stays out of the reply.
       return outcome({ ok: false, code: 'error' }, admin, 'runtime');
     }

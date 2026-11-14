@@ -6,6 +6,7 @@ import type {
   StartRow,
   SupervisorDeps,
 } from './ports.ts';
+import { LoginNameError } from './ports.ts';
 
 // An in-memory world for the supervisor's tests: the clock is fixed and moved by the test.
 // Roster names and body keys are lower-cased, as the supervisor keys them (names are case-insensitive).
@@ -21,6 +22,8 @@ export class FakeWorld {
   specs: BodySpec[] = [];
   stops: string[] = [];
   startError: Error | null = null;
+  // When set, the runtime's login name check refuses the player (the name is outside the login shape).
+  loginNameBad = false;
   insertError: Error | null = null;
   auditError: Error | null = null;
   stopError: Error | null = null;
@@ -66,6 +69,9 @@ export class FakeWorld {
         },
       },
       runtime: {
+        checkLogin: async () => {
+          if (this.loginNameBad) throw new LoginNameError();
+        },
         inspect: async (playerName) => {
           const body = this.bodies.get(playerName);
           return body ? { ...body } : null;

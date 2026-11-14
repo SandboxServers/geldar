@@ -23,10 +23,21 @@ export interface LogEvent {
 export type ReplyCode = 'started' | 'restarted' | 'stopped' | 'running' | 'idle' | 'logs';
 // `unknown` covers a wrong owner, an unknown player and a body the caller does not hold: one reply
 // for all of them.
-export type Refusal = 'invalid' | 'unknown' | 'quota' | 'error';
+// `login_name` is the owner's to fix: the player's name is not in the Minecraft login shape. `busy`
+// is answered by the NATS wire, not by the service; it is listed so the type matches the wire.
+export type Refusal = 'invalid' | 'unknown' | 'quota' | 'error' | 'busy' | 'login_name';
 export type Reply =
   | { ok: true; code: ReplyCode; events?: LogEvent[] }
   | { ok: false; code: Refusal };
+
+// The Docker runtime throws this when the owner's login name is missing or outside the login shape.
+// The service maps it to the `login_name` refusal, which does not count against a quota.
+export class LoginNameError extends Error {
+  constructor() {
+    super('login name unknown');
+    this.name = 'LoginNameError';
+  }
+}
 
 export interface RosterPort {
   ownerOfPlayer(playerName: string): Promise<string | null>;
@@ -90,6 +101,9 @@ export interface BodyRecord {
 // `signal` aborts when the supervisor gives up on a start (its timeout). The adapter must then remove
 // the container it may have created, so a late start cannot run an uncounted body.
 export interface BodyRuntimePort {
+  // Refuses with LoginNameError when the owner's login name is missing or outside the login shape. The
+  // service calls it before a restart stops the running body, so a refused restart leaves the body up.
+  checkLogin?(ownerId: string, playerName: string): Promise<void>;
   inspect(playerName: string): Promise<BodyRecord | null>;
   start(spec: BodySpec, signal: AbortSignal): Promise<void>;
   stop(playerName: string): Promise<void>;

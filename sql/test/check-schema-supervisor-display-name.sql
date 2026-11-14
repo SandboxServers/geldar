@@ -8,14 +8,20 @@ INSERT INTO agents (agent_id, name, life_seq, game_account, shard, mode, owner, 
          ('ag_sdn_r2', 'sdnr2', 1, 'ag_sdn_r2', 'test', 'sovereign', 'sdn-a', 'claude-code', 'self-reported', 'declared:unverified', 'sovereign', 'seed', FALSE),
          ('ag_sdn_r3', 'sdnr3', 1, 'ag_sdn_r3', 'test', 'sovereign', 'sdn-a', 'claude-code', 'self-reported', 'declared:unverified', 'sovereign', 'seed', FALSE),
          ('ag_sdn_b1', 'sdnb1', 1, 'ag_sdn_b1', 'test', 'sovereign', 'sdn-b', 'claude-code', 'self-reported', 'declared:unverified', 'sovereign', 'seed', FALSE),
-         ('ag_sdn_b2', 'sdnb2', 1, 'ag_sdn_b2', 'test', 'sovereign', 'sdn-b', 'claude-code', 'self-reported', 'declared:unverified', 'sovereign', 'seed', FALSE);
-INSERT INTO mcp_roster (player_name, owner_id) VALUES ('ranger', 'sdn-a'), ('miner', 'sdn-a'), ('scout', 'sdn-b');
+         ('ag_sdn_b2', 'sdnb2', 1, 'ag_sdn_b2', 'test', 'sovereign', 'sdn-b', 'claude-code', 'self-reported', 'declared:unverified', 'sovereign', 'seed', FALSE),
+         ('ag_sdn_r4', 'sdnr4', 1, 'ag_sdn_r4', 'test', 'sovereign', 'sdn-a', 'claude-code', 'self-reported', 'declared:unverified', 'sovereign', 'seed', FALSE),
+         ('ag_sdn_r5', 'sdnr5', 1, 'ag_sdn_r5', 'test', 'sovereign', 'sdn-a', 'claude-code', 'self-reported', 'declared:unverified', 'sovereign', 'seed', FALSE);
+INSERT INTO mcp_roster (player_name, owner_id) VALUES ('ranger', 'sdn-a'), ('miner', 'sdn-a'), ('scout', 'sdn-b'), ('quiet', 'sdn-a');
 INSERT INTO mcp_players (player_id, owner_id, life_id, display_name, harness, status) VALUES
   ('ag-sdn-r1', 'sdn-a', 'ag_sdn_r1', 'Ranger', 'claude-code', 'active'),
   ('ag-sdn-r2', 'sdn-a', 'ag_sdn_r2', 'Miner', 'claude-code', 'active'),
   ('ag-sdn-r3', 'sdn-a', 'ag_sdn_r3', 'miner', 'claude-code', 'active'),
   ('ag-sdn-b1', 'sdn-b', 'ag_sdn_b1', 'RANGER', 'claude-code', 'active'),
-  ('ag-sdn-b2', 'sdn-b', 'ag_sdn_b2', 'Scout', 'claude-code', 'active');
+  ('ag-sdn-b2', 'sdn-b', 'ag_sdn_b2', 'Scout', 'claude-code', 'active'),
+  -- A retired player under the same owner: it must not change the answer for Ranger (status <> 'retired').
+  ('ag-sdn-r4', 'sdn-a', 'ag_sdn_r4', 'RANGER', 'claude-code', 'retired'),
+  -- The only player of roster name quiet is retired: the answer is NULL.
+  ('ag-sdn-r5', 'sdn-a', 'ag_sdn_r5', 'Quiet', 'claude-code', 'retired');
 
 DO $check$
 DECLARE
@@ -62,6 +68,16 @@ BEGIN
   step := 'display name: a foreign owner gets NULL for a name it does not hold';
   IF supervisor_player_display_name('sdn-b', 'ranger') IS NOT NULL THEN
     RAISE EXCEPTION 'schema check (%): owner sdn-b must get NULL for ranger', step;
+  END IF;
+
+  step := 'display name: a retired player under the same owner does not change the answer';
+  IF supervisor_player_display_name('sdn-a', 'ranger') IS DISTINCT FROM 'Ranger' THEN
+    RAISE EXCEPTION 'schema check (%): a retired RANGER must not change Ranger', step;
+  END IF;
+
+  step := 'display name: a roster name whose only player is retired gives NULL';
+  IF supervisor_player_display_name('sdn-a', 'quiet') IS NOT NULL THEN
+    RAISE EXCEPTION 'schema check (%): a retired-only roster name must give NULL', step;
   END IF;
 
   step := 'display name: two spellings of one owner name give NULL';
