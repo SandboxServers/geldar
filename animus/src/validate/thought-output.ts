@@ -21,6 +21,7 @@ const ACTION_POSITION_FIELD: Record<string, string> = {
   open: 'at',
   deposit: 'at',
   withdraw: 'at',
+  till: 'at',
 };
 
 /**

@@ -35,18 +35,20 @@ import {
 } from './world-text.ts';
 
 /**
- * The context window of the pinned models (`num_ctx` in `shards/phase0.yaml` `model_pins`, decision
- * 0051): the Ollama prompt and the output share it.
+ * The context window of the pinned models (`num_ctx` in `shards/phase0.yaml` and `shards/colo-mind.yaml`
+ * `model_pins`, decisions 0051 and 0181): the Ollama prompt and the output share it. Raised from 8192 to
+ * 8704 by the owner's ruling (decision 0181), so the till prompt fits with headroom.
  */
-export const CONTEXT_TOKENS = 8192;
+export const CONTEXT_TOKENS = 8704;
 
 /** The room kept for the output: above every `max_tokens` a job sends (600 and 1200 in `shards/phase0.yaml`). */
 export const OUTPUT_RESERVE_TOKENS = 2048;
 
 /**
  * The system message of thought v2 costs 3354 estimated tokens and the reflection's 773 (measured
- * with {@link promptCost} on the sample prompts). 2500 for the user message leaves
- * 8192 - 2048 - 3354 = 2790 at the top, so the sum fits with a margin of 290; the estimate charges
+ * with {@link promptCost} on the sample prompts; the till wording of thought v5 and the till schema
+ * make it 3748 now, see decision 0181). 2500 for the user message leaves
+ * 8704 - 2048 - 3748 = 2908 at the top, so the sum fits with a margin of 408; the estimate charges
  * one token per three ASCII characters, which a BPE tokenizer beats on English, and the schema is a
  * grammar Ollama does not send as prompt text. A larger budget needs a larger `num_ctx`.
  */
@@ -54,7 +56,7 @@ export const DEFAULT_THOUGHT_BUDGET_TOKENS = 2_500;
 
 /**
  * The default budget of the reflection's user message, in the same estimated tokens. Its system
- * message is 773 and its output cap 1200, so 4000 + 773 + 2048 = 6821 fits num_ctx 8192, with the
+ * message is 773 and its output cap 1200, so 4000 + 773 + 2048 = 6821 fits num_ctx 8704 (and 8192 before decision 0181), with the
  * same output reserve as the thought.
  */
 export const DEFAULT_REFLECTION_BUDGET_TOKENS = 4_000;
@@ -128,8 +130,8 @@ const REFLECTION_SLOTS: Record<number, string[]> = {
  */
 export const DEFAULT_THOUGHT_VERSION = 5;
 
-/** The body-api template a new Mind renders: `body-api/v6.json`. `v1` to `v5` stay loadable. */
-export const DEFAULT_BODY_API_VERSION = 6;
+/** The body-api template a new Mind renders: `body-api/v7.json`. `v1` to `v6` stay loadable. */
+export const DEFAULT_BODY_API_VERSION = 7;
 
 /** The reflection template a new Mind renders: `reflection/v2.md`. `reflection/v1.md` stays loadable. */
 export const DEFAULT_REFLECTION_VERSION = 2;
