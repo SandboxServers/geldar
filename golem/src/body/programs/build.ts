@@ -161,7 +161,7 @@ export class BuildProgram implements IntentProgram {
       if (reason !== 'blocked' && reason !== 'timeout') {
         return {
           status: 'failed',
-          message: `${this.progress(cells.length)} Stopped at step ${index + 1}: ${reason}: ${message}`,
+          message: `${reason}: ${this.progress(cells.length)} Stopped at step ${index + 1}: ${reason}: ${message}`,
         };
       }
       state.firstFailure ??= `${reason}: ${message}`;
@@ -272,7 +272,7 @@ export class BuildProgram implements IntentProgram {
     const subject = refusedSubject(state.refused, cells);
     return {
       status: 'failed',
-      message: `${progress} ${subject} could not be placed; first failure: ${state.firstFailure ?? 'unknown'}.`,
+      message: `not_possible: ${progress} ${subject} could not be placed; first failure: ${state.firstFailure ?? 'unknown'}.`,
     };
   }
 
@@ -301,7 +301,7 @@ export class BuildProgram implements IntentProgram {
     if (!free)
       return {
         status: 'failed',
-        message: `${this.progress(cells.length)} No room to step aside.`,
+        message: `not_possible: ${this.progress(cells.length)} No room to step aside.`,
       };
     const target = { x: feet.x + free.x, y: feet.y, z: feet.z + free.z };
     const run = await runStepAction(ctx, { do: 'goto', target });

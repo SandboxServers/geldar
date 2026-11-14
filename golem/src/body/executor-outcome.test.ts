@@ -48,7 +48,7 @@ describe('per-action outcome events (C5-02)', () => {
       reason: 'missing_materials',
       why: 'You lack the materials to craft that.',
     });
-    expect(sink.outcomes[1]?.reason).toBe('internal');
+    expect(sink.outcomes[1]?.reason).toBe('not_possible');
     expect(JSON.stringify(sink.outcomes)).not.toContain('ignore');
     for (const o of sink.outcomes) expect(validateActionOutcomePayload(o).ok).toBe(true);
   });

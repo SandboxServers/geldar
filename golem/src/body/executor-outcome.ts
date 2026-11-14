@@ -5,6 +5,7 @@ import {
   outcomeDetailText,
   outcomeMessage,
 } from '@geldar/contract';
+import { DEFAULT_DIAG_SINK } from '../actions/stall-diag.ts';
 import type { ActionReport } from './executor-types.ts';
 import type { RecordSink } from './records.ts';
 
@@ -69,7 +70,9 @@ export function emitActionOutcome(
 
 /**
  * Sends the outcome of an intent whose program failed. `message` is the program's failure text,
- * `<reason>: ...`; only its leading reason code is read, none of its words are sent on.
+ * `<reason>: ...`; only its leading reason code is read, none of its words are sent on. A prefix
+ * outside the contract reads as `not_possible` and logs `intent_reason_unknown`, so a new one shows
+ * up in the log. Every failure logs one `intent_failed` line (the message cut to 300 characters).
  */
 export function emitIntentFailure(
   sink: RecordSink,
@@ -77,8 +80,22 @@ export function emitIntentFailure(
   program: string,
   message: string,
 ): void {
-  const code = message.split(':', 1)[0] ?? '';
-  const reason = contractReason(code) ?? 'internal';
+  const prefix = message.split(':', 1)[0] ?? '';
+  const known = contractReason(prefix);
+  if (known === undefined) {
+    DEFAULT_DIAG_SINK.log(
+      JSON.stringify({ event: 'intent_reason_unknown', program, prefix: prefix.slice(0, 80) }),
+    );
+  }
+  const reason = known ?? 'not_possible';
+  DEFAULT_DIAG_SINK.log(
+    JSON.stringify({
+      event: 'intent_failed',
+      program,
+      reason,
+      message: message.slice(0, 300),
+    }),
+  );
   sink.actionOutcome?.(
     {
       verb: program,
