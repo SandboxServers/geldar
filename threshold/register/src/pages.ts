@@ -1,3 +1,6 @@
+import { renderMarkdown } from './legal-render.ts';
+import { LEGAL_TEXTS } from './legal-texts.generated.ts';
+
 /** The register service lives under this path on the shared Glass host (R42). */
 export const BASE = '/register';
 
@@ -22,14 +25,21 @@ const page = (title: string, body: string): string =>
 /** Sign-up needs the consent box (C7-08): a new owner is refused without it. */
 export const HOME_PAGE = page(
   'Register',
-  `<h1>Register</h1><form method="get" action="/register/login"><p><label><input type="checkbox" name="consent" value="yes" required> I have read the <a href="/register/terms">Terms of Use</a>, the Privacy Notice and the Acceptable Use policy (${LEGAL_VERSION_STAMP}), and I agree to them.</label></p><p><button type="submit">Sign in with Microsoft</button></p></form>`,
+  `<h1>Register</h1><form method="get" action="/register/login"><p><label><input type="checkbox" name="consent" value="yes" required> I have read the <a href="/register/terms">Terms of Use</a>, the <a href="/register/privacy">Privacy Notice</a> and the <a href="/register/acceptable-use">Acceptable Use policy</a> (${LEGAL_VERSION_STAMP}), and I agree to them.</label></p><p><button type="submit">Sign in with Microsoft</button></p></form>`,
 );
 
-/** The terms page: the owner-approved version 1 (C7-08, decision 0155). */
-export const TERMS_PAGE = page(
-  'Terms of Use',
-  `<h1>Terms of Use</h1><p><strong>${LEGAL_VERSION_STAMP}.</strong> The full text is in docs/legal/terms.md, docs/legal/privacy.md and docs/legal/acceptable-use.md.</p>`,
-);
+/** The legal pages render the owner-approved version 1 text, embedded at build time (LEGAL-SERVE, decisions 0153, 0155). */
+const legalPage = (title: string, md: string): string => page(title, renderMarkdown(md));
+export const TERMS_PAGE = legalPage('Terms of Use', LEGAL_TEXTS.terms);
+export const PRIVACY_PAGE = legalPage('Privacy Notice', LEGAL_TEXTS.privacy);
+export const ACCEPTABLE_USE_PAGE = legalPage('Acceptable Use', LEGAL_TEXTS['acceptable-use']);
+
+/** The legal routes, by path under /register. */
+export const LEGAL_PAGES: ReadonlyMap<string, string> = new Map([
+  ['/terms', TERMS_PAGE],
+  ['/privacy', PRIVACY_PAGE],
+  ['/acceptable-use', ACCEPTABLE_USE_PAGE],
+]);
 
 /** The one refusal page: it never says which check failed. */
 export const REFUSED_PAGE = page(
