@@ -1,5 +1,6 @@
-# Runs on every PR and on main. `main` requires one check, `ci gate`, which
-# passes only when every job below passed. A job whose part of the repo does
+# Runs on every PR, on main, and on every merge queue entry (merge_group, decision 0220). `main` requires one
+# check, `ci gate`, which passes only when every job below passed. merge_group has no paths filter, so the
+# queue always runs the whole suite. A job whose part of the repo does
 # not exist yet (plugin/, compose/) says so and passes; the packet that creates
 # that part makes the job do real work. Mirrors `./geldar.ps1 check`, except
 # the `sql` job, which has no local `check` counterpart.
@@ -7,6 +8,8 @@ name: ci
 
 on:
   pull_request:
+  merge_group:
+    types: [checks_requested]
   push:
     branches: [main]
   workflow_dispatch:
@@ -172,7 +175,7 @@ jobs:
       - name: check schema (Appendix D tables and pgvector)
         env:
           PGPASSWORD: ci
-        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f sql/test/check-schema.sql -f sql/test/check-schema-register-reads.sql -f sql/test/check-schema-kino-functions.sql -f sql/test/check-schema-glass-journal.sql -f sql/test/check-schema-mcp-roster.sql -f sql/test/check-schema-admin-flag.sql -f sql/test/check-schema-token-lifecycle.sql -f sql/test/check-schema-body-ops.sql -f sql/test/check-schema-owner-keys.sql -f sql/test/check-schema-session-owner-keys.sql -f sql/test/check-schema-supervisor-display-name.sql -f sql/test/check-schema-owner-agents.sql -f sql/test/check-schema-operator-flags.sql
+        run: psql -h localhost -U postgres -d postgres -v ON_ERROR_STOP=1 -f sql/test/check-schema.sql -f sql/test/check-schema-register-reads.sql -f sql/test/check-schema-kino-functions.sql -f sql/test/check-schema-glass-journal.sql -f sql/test/check-schema-mcp-roster.sql -f sql/test/check-schema-admin-flag.sql -f sql/test/check-schema-token-lifecycle.sql -f sql/test/check-schema-body-ops.sql -f sql/test/check-schema-owner-keys.sql -f sql/test/check-schema-session-owner-keys.sql -f sql/test/check-schema-supervisor-display-name.sql -f sql/test/check-schema-owner-agents.sql -f sql/test/check-schema-operator-flags.sql -f sql/test/check-schema-event-stamp.sql
 
   images:
     name: images

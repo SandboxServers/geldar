@@ -69,10 +69,6 @@ public final class GeldarCore extends JavaPlugin {
             getServer().getPluginManager().registerEvents(listener, this);
         }
         registerChannels(getServer().getMessenger(), this, registered);
-        // Gravestones (no loot): a marker block and sign where an agent character dies. Read once at enable.
-        getServer().getPluginManager().registerEvents(new GravestoneListener(
-                getConfig().getBoolean("gravestones.enabled", true),
-                Math.max(1, getConfig().getInt("gravestones.max_per_chunk", 4)), getLogger()), this);
 
         if (config.lakitu().enabled()) {
             dev.geldar.core.lakitu.LakituFeed.register(this, config.lakitu());
@@ -89,6 +85,29 @@ public final class GeldarCore extends JavaPlugin {
         dev.geldar.core.blockowner.BlockOwnerSetup owners = dev.geldar.core.blockowner.BlockOwnerSetup.register(
                 this, config.natsUrl(), config.shard(), System::getenv);
         blockOwner = owners;
+        // Gravestones (no loot): a marker block and sign where an agent character dies. Read once at enable. Registered
+        // after block ownership, because each gravestone is recorded as owned by the system through its recorder.
+        getServer().getPluginManager().registerEvents(new GravestoneListener(
+                getConfig().getBoolean("gravestones.enabled", true),
+                Math.max(1, getConfig().getInt("gravestones.max_per_chunk", 4)), getLogger(), owners.placements()),
+                this);
+        getCommand(GraveBackfillCommand.NAME).setExecutor(new GraveBackfillCommand(owners.placements()));
+        // Proximity (spec 5.8): speech and death messages reach only the players within 32 blocks.
+        getServer().getPluginManager().registerEvents(new dev.geldar.core.proximity.ProximityChatListener(), this);
+        getServer().getPluginManager().registerEvents(new dev.geldar.core.proximity.ProximityDeathListener(
+                () -> Bukkit.getOnlinePlayers(), line -> Bukkit.getConsoleSender().sendMessage(line), getLogger()), this);
+        // BlueMap skin provider (GX-07): never returns an empty skin, so BlueMap keeps the agents' head files.
+        try {
+            dev.geldar.core.skins.AgentSkinSetup.register(this, System::getenv);
+        } catch (LinkageError | RuntimeException e) {
+            getLogger().warning("agent skins are not set: " + e.getClass().getSimpleName());
+        }
+        // Speech bubbles on the BlueMap (decision 0197): agents' chat only, off unless BlueMap is enabled.
+        try {
+            dev.geldar.core.speech.SpeechSetup.register(this);
+        } catch (LinkageError | RuntimeException e) {
+            getLogger().warning("speech bubbles are off: " + e.getClass().getSimpleName());
+        }
         getServer().getScheduler().runTaskTimer(this, () -> {
             reloadConfig();
             dev.geldar.core.kino.KinoSetup.reload(kino, getConfig());

@@ -1,5 +1,5 @@
 import type { Bot } from 'mineflayer';
-import { Vec3 } from 'vec3';
+import type { Vec3 } from 'vec3';
 import type { Block } from './bot-types.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import {
@@ -11,136 +11,37 @@ import {
 } from './protected-blocks.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 import { DEFAULT_DIAG_SINK, emitStallDiag } from './stall-diag.ts';
+import {
+  type Drop,
+  dropAllowed,
+  EIGHT,
+  empty,
+  fallDamage,
+  HARMFUL,
+  isSoft,
+  MAX_DROP,
+  planMoves,
+  scanDrop,
+} from './unstick-plan.ts';
+import { ACTION_LIMIT_S, DIG_BUDGET_S, digSeconds, digUp, timeLeftS } from './unstick-up.ts';
 
-/** Health below this: the Body never drops on purpose (a fall could finish it). */
-export const MIN_HEALTH_TO_DROP = 12;
-/** Health the Body keeps after the worst fall it chooses. */
-const HEALTH_MARGIN = 8;
-/** The deepest drop the Body takes on purpose, in blocks. */
-export const MAX_DROP = 6;
-/** The lowest block row of the world; a column with no floor above it is a void. */
-const WORLD_BOTTOM = -64;
+export type { Drop, Move } from './unstick-plan.ts';
+export {
+  dropAllowed,
+  EIGHT,
+  fallDamage,
+  isSoft,
+  MAX_DROP,
+  MIN_HEALTH_TO_DROP,
+  planMoves,
+  scanDrop,
+} from './unstick-plan.ts';
+
 /** Ticks one move is tried, and the horizontal distance that counts as free. */
 const MOVE_TICKS = 24;
 const FREE_DISTANCE = 1.5;
 /** The most digs one call makes. */
 const MAX_DIGS = 6;
-
-/** Blocks the Body digs with bare hands to get out: leaves and loose or soft ground, never ore or wood. */
-const SOFT = new Set([
-  'dirt',
-  'grass_block',
-  'coarse_dirt',
-  'podzol',
-  'sand',
-  'red_sand',
-  'gravel',
-  'snow',
-  'snow_block',
-]);
-/** Blocks that hurt or kill whoever lands on them. */
-const HARMFUL = new Set(['lava', 'magma_block', 'cactus', 'fire', 'soul_fire', 'sweet_berry_bush']);
-
-/** The eight horizontal directions, nearest-first: the four axes, then the diagonals. */
-export const EIGHT: readonly Vec3[] = [
-  new Vec3(1, 0, 0),
-  new Vec3(-1, 0, 0),
-  new Vec3(0, 0, 1),
-  new Vec3(0, 0, -1),
-  new Vec3(1, 0, 1),
-  new Vec3(1, 0, -1),
-  new Vec3(-1, 0, 1),
-  new Vec3(-1, 0, -1),
-];
-
-type BlockAt = (cell: Vec3) => Block | null;
-
-/** Fall damage in half hearts for a drop of `blocks` (vanilla: one per block past three). */
-export function fallDamage(blocks: number): number {
-  return Math.max(0, Math.ceil(blocks - 3));
-}
-
-/** Where a fall from a cell ends, and how far it is. */
-export interface Drop {
-  blocks: number;
-  /** `water` cancels the damage; `unsafe` is lava, a cactus, a void or an unloaded column. */
-  lands: 'solid' | 'water' | 'unsafe';
-}
-
-/** Scans down from `start` (the first cell under the feet) until something stops the fall. */
-export function scanDrop(blockAt: BlockAt, start: Vec3): Drop {
-  for (let blocks = 0; blocks <= MAX_DROP; blocks++) {
-    const cell = start.offset(0, -blocks, 0);
-    if (cell.y < WORLD_BOTTOM) return { blocks, lands: 'unsafe' };
-    const block = blockAt(cell);
-    if (block === null) return { blocks, lands: 'unsafe' };
-    if (HARMFUL.has(block.name)) return { blocks, lands: 'unsafe' };
-    if (block.name === 'water') {
-      // Water breaks the fall, but not over lava or magma (the cell under the water is checked too).
-      const below = blockAt(cell.offset(0, -1, 0));
-      if (below === null || HARMFUL.has(below.name)) return { blocks, lands: 'unsafe' };
-      return { blocks, lands: 'water' };
-    }
-    if (block.boundingBox !== 'empty') return { blocks, lands: 'solid' };
-  }
-  return { blocks: MAX_DROP + 1, lands: 'unsafe' };
-}
-
-/**
- * The safe-drop rule (owner ruling 2026-11-14, decision 0183). A fall that cannot hurt (three blocks or
- * fewer, onto solid ground) and a fall into water (water takes the damage away) are taken at any health.
- * A fall that does damage needs `MIN_HEALTH_TO_DROP` and must leave `HEALTH_MARGIN`. Never into lava, a
- * void or an unloaded column, never deeper than `MAX_DROP`.
- */
-export function dropAllowed(health: number, drop: Drop): boolean {
-  if (drop.lands === 'unsafe' || drop.blocks > MAX_DROP) return false;
-  if (drop.lands === 'water') return true;
-  if (drop.lands === 'solid' && fallDamage(drop.blocks) === 0) return true;
-  if (health < MIN_HEALTH_TO_DROP) return false;
-  return fallDamage(drop.blocks) <= health - HEALTH_MARGIN;
-}
-
-/** One way off the spot: where to head, whether to jump, and how far it drops. */
-export interface Move {
-  dir: Vec3;
-  jump: boolean;
-  drop: number;
-}
-
-const empty = (block: Block | null): boolean => block !== null && block.boundingBox === 'empty';
-
-/**
- * The moves from `feet` that a bot may try: a level walk, a one-block step up (jump), or a walk off a
- * ledge that `dropAllowed` accepts. Level moves come first, then steps, then drops shallowest first.
- */
-export function planMoves(blockAt: BlockAt, feet: Vec3, health: number): Move[] {
-  const moves: Move[] = [];
-  const up = new Vec3(0, 1, 0);
-  for (const dir of EIGHT) {
-    const at = feet.plus(dir);
-    if (empty(blockAt(at)) && empty(blockAt(at.plus(up)))) {
-      const drop = scanDrop(blockAt, at.minus(up));
-      if (drop.blocks === 0 && drop.lands === 'solid') moves.push({ dir, jump: false, drop: 0 });
-      else if (dropAllowed(health, drop)) moves.push({ dir, jump: false, drop: drop.blocks });
-    } else if (
-      empty(blockAt(at.plus(up))) &&
-      empty(blockAt(at.plus(up).plus(up))) &&
-      empty(blockAt(feet.plus(up).plus(up)))
-    ) {
-      moves.push({ dir, jump: true, drop: 0 });
-    }
-  }
-  return moves.sort((a, b) => Number(a.drop > 0) - Number(b.drop > 0) || a.drop - b.drop);
-}
-
-/** True for a block bare hands can take out quickly: leaves and `SOFT`. */
-export function isSoft(block: Block | null): boolean {
-  return (
-    block !== null &&
-    block.diggable !== false &&
-    (block.name.endsWith('_leaves') || SOFT.has(block.name))
-  );
-}
 
 /** Heads for `dir` for up to `MOVE_TICKS` ticks; true once the bot is `FREE_DISTANCE` from where it began. */
 async function walk(ctx: ActionContext, dir: Vec3, jump: boolean): Promise<boolean> {
@@ -221,23 +122,12 @@ async function dig(
 }
 
 /**
- * Seconds a bare hand takes on a block: about 5 s per point of hardness (stone, 1.5, is about 7.5 s, decision
- * 0183), and at least half a second. An unknown hardness counts as the least.
+ * Hand-dig time one step may spend: at most `DIG_BUDGET_S`, and the step must end inside the call's 30 s
+ * limit counted from `started` (decision 0210). The walks and digs already spent are not free again.
  */
-function handSeconds(block: Block | null): number {
-  if (block === null || block.boundingBox === 'empty') return 0;
-  const hardness = (block as { hardness?: number | null }).hardness;
-  return Math.max(0.5, 5 * (typeof hardness === 'number' ? hardness : 0));
-}
-
-/**
- * Hand-dig time one stair step or sideways dig may spend. The action's 30 s limit (`unstickAction`) covers this
- * plus the walks and waits around it: a three-block stone stair step is about 22.5 s. A step that would need
- * more is refused before any block is broken.
- */
-const DIG_BUDGET_S = 25;
-function digTimeFits(blocks: readonly (Block | null)[]): boolean {
-  return blocks.reduce((sum, block) => sum + handSeconds(block), 0) <= DIG_BUDGET_S;
+function digTimeFits(bot: Bot, blocks: readonly (Block | null)[], started: number): boolean {
+  const cost = blocks.reduce((sum, block) => sum + digSeconds(bot, block), 0);
+  return cost <= DIG_BUDGET_S && cost <= timeLeftS(started);
 }
 
 /** Health the Body keeps after a controlled dig-down. */
@@ -299,12 +189,13 @@ function handFirst(bot: Bot, feet: Vec3, dirs: readonly Vec3[]): Vec3[] {
 }
 
 /** Digs the soft block under the feet when the fall that follows is allowed. `elevated` demands a drop below it. */
-async function digDown(
+export async function digDown(
   bot: Bot,
   signal: AbortSignal,
   feet: Vec3,
   elevated: boolean,
-  relaxed = false,
+  relaxed: boolean,
+  started: number,
 ): Promise<boolean> {
   const floor = feet.offset(0, -1, 0);
   const block = bot.blockAt(floor);
@@ -313,6 +204,7 @@ async function digDown(
   if (elevated && below.blocks === 0 && below.lands === 'solid') return false;
   const drop: Drop = { blocks: below.blocks + 1, lands: below.lands };
   if (!digDownAllowed(bot.health ?? 20, drop)) return false;
+  if (!digTimeFits(bot, [block], started)) return false;
   return dig(bot, signal, block, floor, relaxed);
 }
 
@@ -321,19 +213,27 @@ async function digDown(
  * so the bot walks in and lands `STAIR_STEP` lower. The block under the landing must be solid (not
  * water, lava or a void), or the step is refused.
  */
-async function digStair(
+export async function digStair(
   bot: Bot,
   signal: AbortSignal,
   feet: Vec3,
   dir: Vec3,
-  relaxed = false,
+  relaxed: boolean,
+  started: number,
 ): Promise<boolean> {
   const at = feet.plus(dir);
   const cells = [at.offset(0, 1, 0), at, at.offset(0, -STAIR_STEP, 0)];
   const blocks = cells.map((cell) => ({ cell, block: bot.blockAt(cell) }));
   if (!blocks.every(({ cell, block }) => empty(block) || digsCell(bot, block, cell, relaxed)))
     return false;
-  if (!digTimeFits(blocks.map(({ block }) => block))) return false;
+  if (
+    !digTimeFits(
+      bot,
+      blocks.map(({ block }) => block),
+      started,
+    )
+  )
+    return false;
   const landing = bot.blockAt(at.offset(0, -STAIR_STEP - 1, 0));
   if (landing === null || landing.boundingBox === 'empty' || HARMFUL.has(landing.name))
     return false;
@@ -356,7 +256,8 @@ async function digSideways(
   signal: AbortSignal,
   feet: Vec3,
   dir: Vec3,
-  relaxed = false,
+  relaxed: boolean,
+  started: number,
 ): Promise<boolean> {
   const at = feet.plus(dir);
   const cells = [at.offset(0, 1, 0), at];
@@ -364,7 +265,14 @@ async function digSideways(
   if (!blocks.every(({ cell, block }) => empty(block) || digsCell(bot, block, cell, relaxed)))
     return false;
   if (!blocks.some(({ cell, block }) => digsCell(bot, block, cell, relaxed))) return false;
-  if (!digTimeFits(blocks.map(({ block }) => block))) return false;
+  if (
+    !digTimeFits(
+      bot,
+      blocks.map(({ block }) => block),
+      started,
+    )
+  )
+    return false;
   if (
     !dropAllowed(
       bot.health ?? 20,
@@ -421,26 +329,31 @@ function escapePoints(feet: Vec3): Vec3[] {
  * `unstick` calls it, after every other way out failed; `goto` never reaches it. Returns true when a dig
  * freed the bot. `digs` is the count the earlier strategies already spent against `MAX_DIGS`.
  */
-async function lastResortDig(
+export async function lastResortDig(
   ctx: ActionContext,
   where: () => Vec3,
   digs: number,
+  started: number,
 ): Promise<boolean> {
   const { bot, signal } = ctx;
   let spent = digs;
   for (const dir of handFirst(bot, where(), EIGHT.slice(0, 4))) {
     if (signal.aborted || spent >= MAX_DIGS) break;
-    if (!(await digSideways(bot, signal, where(), dir, true))) continue;
+    if (!(await digSideways(bot, signal, where(), dir, true, started))) continue;
     spent++;
     if (await walk(ctx, dir, false)) return true;
   }
   for (const dir of handFirst(bot, where(), EIGHT)) {
     if (signal.aborted || spent >= MAX_DIGS) break;
-    if (!(await digStair(bot, signal, where(), dir, true))) continue;
+    if (!(await digStair(bot, signal, where(), dir, true, started))) continue;
     spent++;
     if (await walk(ctx, dir, false)) return true;
   }
-  if (!signal.aborted && spent < MAX_DIGS && (await digDown(bot, signal, where(), false, true))) {
+  if (
+    !signal.aborted &&
+    spent < MAX_DIGS &&
+    (await digDown(bot, signal, where(), false, true, started))
+  ) {
     await bot.waitForTicks(5);
     return true;
   }
@@ -453,6 +366,7 @@ async function lastResortDig(
  * (four directions) or down through soft blocks. At most `MAX_DIGS` digs and one try per direction.
  */
 export async function unstick(ctx: ActionContext): Promise<ActionOutcome> {
+  const started = Date.now();
   const { bot } = ctx;
   const where = (): Vec3 => bot.entity.position.floored();
   const health = (): number => bot.health ?? 20;
@@ -466,13 +380,15 @@ export async function unstick(ctx: ActionContext): Promise<ActionOutcome> {
   note('walk');
   for (const move of planMoves((cell) => bot.blockAt(cell), where(), health())) {
     if (ctx.signal.aborted) return cancelled();
+    // A walk costs up to 1.2 s of the limit: a walk that cannot end inside it is not started.
+    if (timeLeftS(started) < MOVE_TICKS / 20) break;
     tries++;
     if (await walk(ctx, move.dir, move.jump)) return done(move.drop > 0 ? 'drop' : 'step');
   }
   let digs = 0;
   // Elevated and boxed in (a canopy): get down first, one controlled block or one stair step at a time.
   note('dig_down');
-  if (!ctx.signal.aborted && (await digDown(bot, ctx.signal, where(), true))) {
+  if (!ctx.signal.aborted && (await digDown(bot, ctx.signal, where(), true, false, started))) {
     await bot.waitForTicks(5);
     return done('dig_down');
   }
@@ -481,7 +397,7 @@ export async function unstick(ctx: ActionContext): Promise<ActionOutcome> {
     let stepped = false;
     for (const dir of handFirst(bot, where(), EIGHT)) {
       if (ctx.signal.aborted) return cancelled();
-      if (!(await digStair(bot, ctx.signal, where(), dir))) continue;
+      if (!(await digStair(bot, ctx.signal, where(), dir, false, started))) continue;
       digs++;
       tries++;
       stepped = await walk(ctx, dir, false);
@@ -495,28 +411,52 @@ export async function unstick(ctx: ActionContext): Promise<ActionOutcome> {
   for (const dir of handFirst(bot, where(), EIGHT.slice(0, 4))) {
     if (ctx.signal.aborted) return cancelled();
     if (digs >= MAX_DIGS) break;
-    if (!(await digSideways(bot, ctx.signal, where(), dir))) continue;
+    if (!(await digSideways(bot, ctx.signal, where(), dir, false, started))) continue;
     digs++;
     tries++;
     if (await walk(ctx, dir, false)) return done('dig_sideways');
   }
-  if (!ctx.signal.aborted && digs < MAX_DIGS && (await digDown(bot, ctx.signal, where(), false))) {
+  if (
+    !ctx.signal.aborted &&
+    digs < MAX_DIGS &&
+    (await digDown(bot, ctx.signal, where(), false, false, started))
+  ) {
     await bot.waitForTicks(5);
     tries++;
     return done('dig_down');
   }
   if (ctx.signal.aborted) return cancelled();
+  // Upward rung (decision 0196): a pit wall is dug through and climbed, before the last resort.
+  note('dig_up');
+  let upBlocked: string | null = null;
+  if (digs < MAX_DIGS) {
+    const up = await digUp(bot, ctx.signal, where, EIGHT, started, MAX_DIGS - digs);
+    if (ctx.signal.aborted) return cancelled();
+    digs += up.dug;
+    upBlocked = up.blocked;
+    if (up.freed) {
+      tries++;
+      return completed({ method: 'dig_up', tries, tried: [...tried], hint: HINT, dug: up.dug });
+    }
+  }
   // Last resort (owner ruling 2026-11-13): every other way out failed, so the dig strategies run once more
   // with built blocks of a known-unowned record allowed. The ownership record is prefetched first.
   note('dig_unowned');
   await prefetchOwners(escapePoints(where()), ctx.signal);
   if (ctx.signal.aborted) return cancelled();
-  if (await lastResortDig(ctx, where, digs)) return done('dig_unowned');
+  if (await lastResortDig(ctx, where, digs, started)) return done('dig_unowned');
   reportNoWayOut(bot, tried);
-  return failed('blocked', `unstick: no way out found; tried ${tried.join(', ')}`, {
-    tries,
-    tried,
-  });
+  const upNote = upBlocked === null ? '' : `; dig_up: ${upBlocked}`;
+  const spentS = Math.round((Date.now() - started) / 1000);
+  const timeNote = `; ${spentS} s of the ${ACTION_LIMIT_S} s limit used`;
+  return failed(
+    'blocked',
+    `unstick: no way out found; tried ${tried.join(', ')}${upNote}${timeNote}`,
+    {
+      tries,
+      tried,
+    },
+  );
 }
 
 /** Fixed text in every unstick result: what the Mind should do next. */
@@ -525,6 +465,6 @@ const HINT = 'you are free; look around and use goto again';
 /** The `unstick` verb: see `unstick`. */
 export const unstickAction: ActionHandler<'unstick'> = {
   kind: 'unstick',
-  timeoutMs: 30_000,
+  timeoutMs: ACTION_LIMIT_S * 1000,
   run: (ctx) => unstick(ctx),
 };

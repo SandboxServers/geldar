@@ -33,7 +33,7 @@ export interface ActionOutcomePayload {
    */
   message: string;
   /**
-   * Optional plain-words facts about a failure, for example 'need 2 more planks; no crafting table within 32 blocks'. The Body sets it only for a few reasons (missing materials or station, no effect, needs rescue, a craft timeout, a refused mine). The MCP server cleans it (length, control characters, a character whitelist, the agent-text scan) before a character reads it. Facts only, never advice.
+   * On success, a few verbs send a plain fact: eat sends '<item>: hunger <before> to <after>' (read as 'You ate <item>: hunger <before> to <after>.'); sleep sends the sleepers count. On failure it names what blocked the action.
    */
   detail_text?: string;
   /**
@@ -333,6 +333,14 @@ export interface WorldEvent {
    * The Thinker that produced the event, when there is one.
    */
   thinker_id?: string;
+  /**
+   * The harness that produced the event (claude, chatgpt, local; working name, reconcile with kit HC-04). Absent on events no Body or MCP stamped.
+   */
+  harness?: string;
+  /**
+   * The model that produced the event, as declared (working name, reconcile with kit HC-04).
+   */
+  model?: string;
   /**
    * Event-specific fields. Free-form, so this object does not set additionalProperties.
    */

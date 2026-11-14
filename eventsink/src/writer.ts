@@ -14,9 +14,10 @@ export interface EventWriter {
  * `ON CONFLICT DO NOTHING` makes redelivery (and duplicates inside one batch) harmless.
  */
 const INSERT_SQL = `
-INSERT INTO events (source_event_id, at, world_day, world_tick, type, agent_id, thinker_id, payload)
+INSERT INTO events (source_event_id, at, world_day, world_tick, type, agent_id, thinker_id, payload, harness, model)
 SELECT * FROM unnest(
-  $1::text[], $2::timestamptz[], $3::int[], $4::bigint[], $5::text[], $6::text[], $7::text[], $8::jsonb[]
+  $1::text[], $2::timestamptz[], $3::int[], $4::bigint[], $5::text[], $6::text[], $7::text[], $8::jsonb[],
+  $9::text[], $10::text[]
 )
 ON CONFLICT (source_event_id) DO NOTHING`;
 
@@ -41,6 +42,8 @@ function insertParams(events: readonly WorldEvent[]): unknown[] {
     events.map((e) => e.agent_id ?? null),
     events.map((e) => e.thinker_id ?? null),
     events.map((e) => JSON.stringify(e.payload)),
+    events.map((e) => e.harness ?? null),
+    events.map((e) => e.model ?? null),
   ];
 }
 

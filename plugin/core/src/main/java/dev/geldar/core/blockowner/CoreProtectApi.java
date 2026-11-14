@@ -8,6 +8,7 @@ import net.coreprotect.CoreProtectAPI;
 import net.coreprotect.CoreProtectAPI.ParseResult;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.plugin.Plugin;
 
@@ -75,6 +76,18 @@ public final class CoreProtectApi implements CoreProtectPort {
                     p.getActionId() == ChunkLookupCall.ACTION_PLACE, p.getPlayer(), p.isRolledBack()));
         }
         return rows;
+    }
+
+    @Override
+    public void logPlacement(String user, String world, int x, int y, int z, String material) {
+        World bukkitWorld = Bukkit.getWorld(world);
+        Material type = Material.matchMaterial(material);
+        if (bukkitWorld == null || type == null) {
+            throw new IllegalStateException("cannot log a placement of " + material + " in " + world);
+        }
+        if (!api.logPlacement(user, new Location(bukkitWorld, x, y, z), type, type.createBlockData())) {
+            throw new IllegalStateException("CoreProtect did not log the placement of " + material);
+        }
     }
 
     /** One raw row for the debug log: its index, action, rollback flag, user kind, block type and position. No name. */

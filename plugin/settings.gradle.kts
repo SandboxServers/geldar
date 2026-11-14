@@ -24,6 +24,10 @@ dependencyResolutionManagement {
         maven("https://maven.playpro.com") {
             content { includeGroup("net.coreprotect") }
         }
+        // BlueMap's API (skin provider) comes from the BlueMap repository, for its group only.
+        maven("https://repo.bluecolored.de/releases") {
+            content { includeGroup("de.bluecolored") }
+        }
         mavenCentral()
     }
 }
