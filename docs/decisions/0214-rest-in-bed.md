@@ -31,6 +31,12 @@ The awake behaviour of every reflex is unchanged.
 
 - A Body that sleeps at hunger 5 or more does not eat until it wakes. The risk is accepted: the
   hunger reflex wakes at 4 or below, and a Body that is hurt wakes for the damage rule.
-- Unstick, blocked-path, idle-stuck and the night shelters do not act on a sleeping Body. A Body
-  that is stuck in bed is not freed by them until it wakes or takes damage.
+- Unstick, blocked-path and panic burrow do not act on a sleeping Body. Idle-stuck and the
+  dark-shelter unstick already require an awake Body (`mayUnstick`), so damage does not free a
+  sleeper through them. Damage frees a sleeper by lifting the suspension of the other reflexes
+  (for 20 ticks), and the unsuspended fight_or_flee, retreat and hazard_escape run regardless; either
+  one wakes the Body. A Body stuck in bed is freed when it wakes.
 - The Mind still wakes the Body with any action other than `sleep`, `wait` and `note`.
+- Idle-stuck's clock is no longer refreshed while the Body sleeps (the reflex is suspended). On
+  waking within half a block of its old anchor, it may fire up to a minute earlier than before.
+  Accepted: low severity, unconfirmed live.

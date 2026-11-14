@@ -4,7 +4,7 @@ import { MemorySink } from './records.ts';
 import { type Reflex, ReflexRunner } from './reflex.ts';
 import { allReflexesOn, type ReflexName } from './reflex-config.ts';
 import { basicContext, basicView } from './reflexes/basic.fakes.ts';
-import { blockedPathReflex } from './reflexes/blocked-path.ts';
+import { type BlockedReport, blockedPathReflex, reportBlocked } from './reflexes/blocked-path.ts';
 import { createEatReflex } from './reflexes/eat.ts';
 import { createFallStopReflex } from './reflexes/fall-stop.ts';
 import { fightOrFleeReflex } from './reflexes/fight-or-flee.ts';
@@ -13,7 +13,7 @@ import { idleStuckReflex } from './reflexes/idle-stuck.ts';
 import { panicBurrowReflex } from './reflexes/panic-burrow.ts';
 import { retreatReflex } from './reflexes/retreat.ts';
 import { darkShelterReflex } from './reflexes/shelter.ts';
-import { unstickReflex } from './reflexes/unstick.ts';
+import { noteGoto, unstickReflex } from './reflexes/unstick.ts';
 import type { BodyView } from './view.ts';
 
 /** A view over `base` that reports `asleep` and `ticksSinceHurt` as given; the other reads come from `base`. */
@@ -162,5 +162,88 @@ describe('rest in bed (decision 0214): eat while asleep', () => {
     const suspended = createEatReflex().suspendedWhileAsleep;
     expect(suspended?.(basicView({ hunger: 4 }).view)).toBe(false);
     expect(suspended?.(basicView({ hunger: 5 }).view)).toBe(true);
+  });
+});
+
+describe('rest in bed (decision 0214): the six real predicates', () => {
+  const real: [ReflexName, Reflex][] = [
+    ['eat', createEatReflex()],
+    ['blocked_path', blockedPathReflex],
+    ['unstick', unstickReflex],
+    ['idle_stuck', idleStuckReflex],
+    ['dark_shelter', darkShelterReflex],
+    ['panic_burrow', panicBurrowReflex],
+  ];
+
+  it.each(real)('%s is suspended while asleep on a basic view', (_name, reflex) => {
+    expect(reflex.suspendedWhileAsleep?.(basicView().view)).toBe(true);
+  });
+});
+
+describe('rest in bed (decision 0214): the real reflexes through the runner', () => {
+  it('eat at hunger 5 does not run asleep with no damage, and runs awake', async () => {
+    const { view } = basicView({ hunger: 5, foods: ['bread'] });
+    const asleep = runnerFor(createEatReflex(), restingView(view, true, null));
+    await asleep.runner.onTick(100);
+    expect(asleep.sink.reflexes).toHaveLength(0);
+
+    const awake = runnerFor(createEatReflex(), restingView(view, false, null));
+    await awake.runner.onTick(100);
+    expect(awake.sink.reflexes).toHaveLength(1);
+  });
+
+  it('blocked_path with a live report does not run asleep with no damage, and runs awake', async () => {
+    const report: BlockedReport = {
+      goal: { x: 14, y: 64, z: 0 },
+      range: 1,
+      intentId: 'int_1',
+      message: 'no path',
+    };
+    const base = basicView().view;
+    const asleep = restingView(base, true, null);
+    reportBlocked(asleep, report);
+    const sleeping = runnerFor(blockedPathReflex, asleep);
+    await sleeping.runner.onTick(100);
+    expect(sleeping.sink.reflexes).toHaveLength(0);
+
+    const awake = restingView(base, false, null);
+    reportBlocked(awake, report);
+    const waking = runnerFor(blockedPathReflex, awake);
+    await waking.runner.onTick(100);
+    expect(waking.sink.reflexes).toHaveLength(1);
+  });
+
+  it('unstick after two blocked stalls does not run asleep with no damage, and runs awake', async () => {
+    const base = basicView().view;
+    const asleep = restingView(base, true, null);
+    noteGoto(asleep, 'failed', 'blocked', undefined);
+    noteGoto(asleep, 'failed', 'blocked', undefined);
+    const sleeping = runnerFor(unstickReflex, asleep);
+    await sleeping.runner.onTick(100);
+    expect(sleeping.sink.reflexes).toHaveLength(0);
+
+    const awake = restingView(base, false, null);
+    noteGoto(awake, 'failed', 'blocked', undefined);
+    noteGoto(awake, 'failed', 'blocked', undefined);
+    const waking = runnerFor(unstickReflex, awake);
+    await waking.runner.onTick(100);
+    expect(waking.sink.reflexes).toHaveLength(1);
+  });
+
+  it('panic burrow at night with a hostile near does not run asleep with no damage, and runs awake', async () => {
+    const night = {
+      ...basicView().view,
+      isNight: true,
+      bedNearby: false,
+      enclosed: false,
+      nearbyHostiles: () => [{ name: 'zombie', distance: 3 }],
+    } as unknown as BodyView;
+    const sleeping = runnerFor(panicBurrowReflex, restingView(night, true, null));
+    await sleeping.runner.onTick(100);
+    expect(sleeping.sink.reflexes).toHaveLength(0);
+
+    const waking = runnerFor(panicBurrowReflex, restingView(night, false, null));
+    await waking.runner.onTick(100);
+    expect(waking.sink.reflexes).toHaveLength(1);
   });
 });
