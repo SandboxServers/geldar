@@ -79,7 +79,7 @@ function world() {
   return { clock, store, sessions, process };
 }
 
-/** Signs in and returns the gr_session cookie as the browser sends it back. */
+/** Signs in and returns the __Host-gr_session cookie as the browser sends it back. */
 async function signIn(account: Account): Promise<string> {
   const { res, out } = stubRes();
   await account.signedIn(identity, res, true);

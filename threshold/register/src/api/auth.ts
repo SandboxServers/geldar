@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage } from 'node:http';
+import { SESSION_COOKIE } from '../account.ts';
 import { isOwnerKeyShape, type OwnerKeyScope, parseScopes } from '../owner-keys-policy.ts';
 import { sessionHash } from '../session-store.ts';
 import type { ApiDeps } from './route.ts';
@@ -29,24 +30,30 @@ export function sameText(a: string, b: string): boolean {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
+/**
+ * The value of the one cookie of this name. Two or more of that name give '' (CF-5): the caller refuses
+ * it as an empty session, so a planted duplicate is no session and a Bearer key is not tried.
+ */
 function cookieOf(req: IncomingMessage, name: string): string | null {
+  const values: string[] = [];
   for (const part of (req.headers.cookie ?? '').split(';')) {
     const [k, ...v] = part.trim().split('=');
-    if (k === name) return v.join('=');
+    if (k === name) values.push(v.join('='));
   }
-  return null;
+  if (values.length === 0) return null;
+  return values.length === 1 ? (values[0] ?? '') : '';
 }
 
 /**
- * Resolves the caller. A gr_session cookie decides when present (an unknown or unreadable session is
- * refused, and a Bearer header is not tried). Otherwise a Bearer owner key is resolved through the
+ * Resolves the caller. A __Host-gr_session cookie decides when present (an unknown, unreadable or duplicated
+ * session is refused, and a Bearer header is not tried). Otherwise a Bearer owner key is resolved through the
  * C7-02b store. A player token, a banned owner's key, or no credentials is null (401 upstream).
  */
 export async function authenticate(
   req: IncomingMessage,
   deps: ApiDeps,
 ): Promise<Credential | null> {
-  const sid = cookieOf(req, 'gr_session');
+  const sid = cookieOf(req, SESSION_COOKIE);
   if (sid !== null) {
     if (!deps.sessions || sid === '') return null;
     try {

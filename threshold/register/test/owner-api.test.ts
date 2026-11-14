@@ -106,7 +106,7 @@ function harness(extra: Partial<ApiDeps> = {}) {
 }
 
 const bearer = (k: string) => ({ authorization: `Bearer ${k}` });
-const cookie = { cookie: `gr_session=${SID}`, 'x-csrf-token': CSRF };
+const cookie = { cookie: `__Host-gr_session=${SID}`, 'x-csrf-token': CSRF };
 
 describe('owner API route tree (C7-04a)', () => {
   const h = harness();
@@ -165,8 +165,32 @@ describe('owner API credentials and scope (C7-04a)', () => {
   });
 
   it('answers 401 for a session cookie whose session is unknown', async () => {
-    const r = await h.call('GET', '/api/v1/agents/p1', { cookie: 'gr_session=unknown' });
+    const r = await h.call('GET', '/api/v1/agents/p1', { cookie: '__Host-gr_session=unknown' });
     expect(r.status).toBe(401);
+  });
+
+  it('answers 401 for the old gr_session name and for two cookies of the session name (CF-5)', async () => {
+    const valid = await h.call('GET', '/api/v1/agents/p1', { cookie: `__Host-gr_session=${SID}` });
+    expect(valid.status).not.toBe(401);
+    const old = await h.call('GET', '/api/v1/agents/p1', { cookie: `gr_session=${SID}` });
+    expect(old.status).toBe(401);
+    const twice = await h.call('GET', '/api/v1/agents/p1', {
+      cookie: `__Host-gr_session=${SID}; __Host-gr_session=${SID}`,
+    });
+    expect(twice.status).toBe(401);
+  });
+
+  it('does not fall back to a valid Bearer key when the cookie is refused (CF-5)', async () => {
+    const twice = await h.call('GET', '/api/v1/agents/p1', {
+      ...bearer(KEY_ALL),
+      cookie: `__Host-gr_session=${SID}; __Host-gr_session=${SID}`,
+    });
+    expect(twice.status).toBe(401);
+    const unknown = await h.call('GET', '/api/v1/agents/p1', {
+      ...bearer(KEY_ALL),
+      cookie: '__Host-gr_session=unknown',
+    });
+    expect(unknown.status).toBe(401);
   });
 });
 
@@ -176,14 +200,14 @@ describe('owner API CSRF (C7-04a)', () => {
   afterAll(() => h.stop());
 
   it('refuses a cookie write without the token with 403 csrf_required', async () => {
-    const r = await h.call('POST', '/api/v1/write', { cookie: `gr_session=${SID}` });
+    const r = await h.call('POST', '/api/v1/write', { cookie: `__Host-gr_session=${SID}` });
     expect(r.status).toBe(403);
     expect(JSON.parse(r.body).code).toBe('csrf_required');
   });
 
   it('refuses a cookie write with a wrong token', async () => {
     const r = await h.call('POST', '/api/v1/write', {
-      cookie: `gr_session=${SID}`,
+      cookie: `__Host-gr_session=${SID}`,
       'x-csrf-token': 'wrong',
     });
     expect(r.status).toBe(403);
@@ -228,7 +252,7 @@ describe('owner API problem bodies (C7-04a)', () => {
     const paths: Array<[string, string, Record<string, string>]> = [
       ['GET', '/api/v1/nope', bearer(KEY_ALL)],
       ['GET', '/api/v1/agents/p1', {}],
-      ['POST', '/api/v1/write', { cookie: `gr_session=${SID}` }],
+      ['POST', '/api/v1/write', { cookie: `__Host-gr_session=${SID}` }],
       ['GET', '/api/v1/agents/p2', bearer(KEY_BODY)],
       ['DELETE', '/api/v1/write', bearer(KEY_ALL)],
     ];
@@ -333,5 +357,11 @@ describe('owner API OpenAPI source (C7-04a)', () => {
     const enumLine = text.indexOf('enum: [not_found');
     expect(detail).toBeGreaterThan(enumLine);
     expect(text.slice(enumLine, detail)).not.toContain('\n              detail:');
+  });
+
+  it('names the session cookie the way auth.ts reads it (CF-5)', () => {
+    const text = readFileSync(new URL('../src/api/owner-api-v1.yaml', import.meta.url), 'utf8');
+    const scheme = /cookieSession:\n(?:[^\n]*\n){1,6}?\s*name: (\S+)/.exec(text);
+    expect(scheme?.[1]).toBe('__Host-gr_session');
   });
 });

@@ -28,7 +28,8 @@ import {
 import type { PlayerRow, Store } from './store.ts';
 import { tokenExpiresAt } from './tokens-policy.ts';
 
-export const SESSION_COOKIE = 'gr_session';
+/** The session cookie name. The __Host- prefix makes the browser refuse a Domain= or non-Secure copy (CF-5). */
+export const SESSION_COOKIE = '__Host-gr_session';
 /** The idle window (C7-01). Kept under its old name for the tests that step the clock past it. */
 export const SESSION_TTL_MS = SESSION_IDLE_MS;
 /** The terms version an owner accepts at sign-up (C7-08). Version 1 is the owner-approved text (2026-11-11). Bump it when the approved text changes. */
@@ -64,16 +65,24 @@ export interface AccountDeps {
   readonly bodyState?: (playerId: string) => Promise<BodyState | undefined>;
 }
 
+/** The value of the one cookie of this name. Two or more of that name in the header give null: no session. */
 const cookieOf = (req: IncomingMessage, name: string): string | null => {
+  const values: string[] = [];
   for (const part of (req.headers.cookie ?? '').split(';')) {
     const [k, ...v] = part.trim().split('=');
-    if (k === name) return v.join('=');
+    if (k === name) values.push(v.join('='));
   }
-  return null;
+  return values.length === 1 ? (values[0] ?? null) : null;
 };
 
 const sessionCookie = (value: string, maxAge: number): string =>
   `${SESSION_COOKIE}=${value}; Max-Age=${maxAge}; Path=/; HttpOnly; Secure; SameSite=Lax`;
+
+/** The pre-CF-5 names, cleared on sign-in and logout for one release. Host-only, so no Domain attribute. */
+const LEGACY_CLEARS = [
+  'gr_session=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax',
+  'gr_state=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax',
+];
 
 /** The form token is derived from the session id, so the table holds no copy of it. */
 const csrfFor = (key: string, id: string): string =>
@@ -166,6 +175,7 @@ export class Account {
       location: `${BASE}/account`,
       'set-cookie': [
         clearState,
+        ...LEGACY_CLEARS,
         sessionCookie(id, SESSION_CAP_MS / 1000),
         kinoCookieHeader(
           signKinoSession(config.sessionKey, {
@@ -238,7 +248,9 @@ export class Account {
     }
     if (m[1] === 'account' || m[1] === 'onboarding') {
       if (req.method !== 'GET') return this.methodNotAllowed(res);
-      return m[1] === 'account' ? this.show(res, session) : this.onboarding(res, session.key);
+      return m[1] === 'account'
+        ? this.show(res, session)
+        : this.onboarding(res, session.key, req.headers['sec-fetch-site']);
     }
     if (req.method !== 'POST') return this.methodNotAllowed(res);
     const origin = req.headers.origin;
@@ -256,7 +268,7 @@ export class Account {
       await this.deps.sessions.delete(sessionHash(id));
       res.writeHead(302, {
         location: BASE,
-        'set-cookie': [sessionCookie('', 0), kinoCookieHeader('', 0)],
+        'set-cookie': [sessionCookie('', 0), ...LEGACY_CLEARS, kinoCookieHeader('', 0)],
         ...SECURITY_HEADERS,
       });
       res.end();
@@ -394,12 +406,15 @@ export class Account {
   }
 
   /** The once-only onboarding page: it takes the held token, so a second load shows none. */
-  private onboarding(res: ServerResponse, key: string): true {
-    const shown = this.handoff.take(key, this.deps.now());
+  private onboarding(res: ServerResponse, key: string, site: string | undefined): true {
+    // CF-4: a cross-site or same-site navigation renders the empty page and leaves the slot for the owner's
+    // own same-origin load. Absent (old clients) and none (typed or bookmarked) take the token as before.
+    const ownNavigation = site === undefined || site === 'same-origin' || site === 'none';
+    const shown = ownNavigation ? this.handoff.take(key, this.deps.now()) : null;
     const { publicUrl, mcpPublicUrl } = this.deps.config;
     const body = shown
       ? onboardingPage(shown, mcpBaseFor(publicUrl, mcpPublicUrl))
-      : onboardingEmptyPage();
+      : onboardingEmptyPage(!ownNavigation);
     html(res, 200, body, { 'content-security-policy': ONBOARDING_CSP });
     return true;
   }

@@ -15,7 +15,7 @@ export const SID = 'sid-alice';
 export const IDENT = 'cd'.repeat(32);
 export const CSRF = csrfFor('session-key', SID);
 export const bearer = (k: string) => ({ authorization: `Bearer ${k}` });
-export const cookie = { cookie: `gr_session=${SID}`, 'x-csrf-token': CSRF };
+export const cookie = { cookie: `__Host-gr_session=${SID}`, 'x-csrf-token': CSRF };
 
 export const sessions: SessionStore = {
   create: async () => undefined,
