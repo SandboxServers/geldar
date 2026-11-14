@@ -9,6 +9,8 @@ velocity = "3.5.1"
 coreprotect = "24.1"
 # The BlueMap 5.29 runtime's API artifact (bluemap-core 5.29 depends on it); BlueMap has no separate 5.x API version.
 bluemap-api = "2.8.2"
+# BlueMap's Vector3d type (its HtmlMarker takes one). Compile-only: BlueMap provides it at runtime; a 2016 artifact.
+flow-math = "1.0.3"
 
 [libraries]
 paper-api = { module = "io.papermc.paper:paper-api", version.ref = "paper" }
@@ -20,3 +22,4 @@ json-schema-validator = { module = "com.networknt:json-schema-validator", versio
 velocity-api = { module = "com.velocitypowered:velocity-api", version.ref = "velocity" }
 coreprotect = { module = "net.coreprotect:coreprotect", version.ref = "coreprotect" }
 bluemap-api = { module = "de.bluecolored:bluemap-api", version.ref = "bluemap-api" }
+flow-math = { module = "com.flowpowered:flow-math", version.ref = "flow-math" }
