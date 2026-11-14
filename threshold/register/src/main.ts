@@ -1,7 +1,7 @@
 import pg from 'pg';
 import { loadConfig } from './config.ts';
 import { dbUrl } from './db-url.ts';
-import { bodyWiring, mountBodyApi } from './nats-body.ts';
+import { mountBodyApi, productionBodyWiring } from './nats-body.ts';
 import { PgStore } from './pg-store.ts';
 import { productionApi } from './production-api.ts';
 import { microsoftProvider } from './providers.ts';
@@ -14,7 +14,8 @@ const store = new PgStore(connection, { shard: config.shard });
 const db = new pg.Pool({ connectionString: connection, max: 2 });
 const log = (line: string) => console.log(line);
 // The body routes mount only with NATS configured (C7-04c2); without it they answer 404 and the start is unaffected.
-const body = bodyWiring(config, log);
+// The retire route (C7-04d-mount) mounts with them, on the same slot and link, and uses the store's retirePlayer.
+const body = productionBodyWiring(config, store, log);
 const server = createRegisterServer({
   config,
   store,

@@ -5,9 +5,16 @@ import { bodyRoutes } from '../src/api/body.ts';
 import { createBodySlot } from '../src/api/body-slot.ts';
 import type { ApiRoute } from '../src/api/route.ts';
 import { loadConfig, type RegisterConfig } from '../src/config.ts';
-import { bodyWiring, type ConnectNats, mountBodyApi } from '../src/nats-body.ts';
+import {
+  bodyWiring,
+  type ConnectNats,
+  mountBodyApi,
+  productionBodyWiring,
+} from '../src/nats-body.ts';
 import { microsoftProvider } from '../src/providers.ts';
 import { createRegisterServer } from '../src/server.ts';
+import type { TokenDeps } from '../src/tokens-service.ts';
+import { baseDeps, cookie, serve as serveApi } from './owner-api-harness.ts';
 
 const KEY = `gowner-${'a1'.repeat(32)}`;
 const hash = (v: string): Buffer => createHash('sha256').update(v).digest();
@@ -365,5 +372,121 @@ describe('body mount in main (C7-04c2)', () => {
     const api = mountBodyApi({ marker: 'production' }, body);
     expect(api.marker).toBe('production');
     expect(api.routes).toBe(body.routes);
+  });
+});
+
+describe('retire route in the NATS wiring (C7-04d-mount)', () => {
+  const RETIRE = '/api/v1/agents/ag-one-01/retire';
+  const STOP_SUBJECT = `geldar.${SHARD}.ctl.body.stop`;
+  const retirePlayer = async (): Promise<boolean> => true;
+  /** The token service the retire revokes through: one token ends, so the retire goes on. */
+  const tokens: TokenDeps = {
+    store: {
+      renewToken: async () => {
+        throw new Error('not used by retire');
+      },
+      revokeTokens: async () => 1,
+      tokenInfo: async () => null,
+    },
+    isAdmin: async () => false,
+    charge: () => 0,
+    audit: async () => undefined,
+    issue: () => {
+      throw new Error('not used by retire');
+    },
+    now: () => new Date(0),
+  };
+  /** Serves the wired routes through the owner API harness (cookie session with CSRF). */
+  const serveWired = (wired: { routes: readonly ApiRoute[] }) =>
+    serveApi(
+      baseDeps({
+        tokens,
+        routes: wired.routes,
+        agents: async (owner, player) =>
+          player === 'ag-one-01' && owner === 'alice'
+            ? { ownerId: 'alice', playerId: player, displayName: 'Ranger' }
+            : null,
+      }),
+    );
+
+  it('unmounted by default: without NATS the retire path is 404 and no link opens', async () => {
+    const config = loadConfig(BASE_ENV, readSecret);
+    const fake = fakeConnect();
+    const srv = await serveWired(bodyWiring(config, () => undefined, fake.connect, retirePlayer));
+    try {
+      expect((await srv.call('POST', RETIRE, cookie)).status).toBe(404);
+      expect(fake.calls).toHaveLength(0);
+    } finally {
+      await srv.stop();
+    }
+  });
+
+  it('with NATS configured the retire path reaches the handler: the stop is sent, and a non-stopped reply is 503', async () => {
+    const config = loadConfig({ ...BASE_ENV, ...NATS_ENV }, readSecret);
+    const fake = fakeConnect();
+    const srv = await serveWired(bodyWiring(config, () => undefined, fake.connect, retirePlayer));
+    try {
+      const r = await srv.call('POST', RETIRE, cookie);
+      expect(r.status).toBe(503);
+      expect(JSON.parse(r.body).code).toBe('body_unavailable');
+      expect(fake.sent.map((s) => s.subject)).toEqual([STOP_SUBJECT]);
+    } finally {
+      await srv.stop();
+    }
+  });
+
+  it('the slot bodyWiring returns is the one the retire route takes: a held owner gets 409 with no supervisor call', async () => {
+    const config = loadConfig({ ...BASE_ENV, ...NATS_ENV }, readSecret);
+    const fake = fakeConnect();
+    const wired = bodyWiring(config, () => undefined, fake.connect, retirePlayer);
+    wired.slot.add('alice');
+    const srv = await serveWired(wired);
+    try {
+      const r = await srv.call('POST', RETIRE, cookie);
+      expect(r.status).toBe(409);
+      expect(JSON.parse(r.body).code).toBe('conflict');
+      expect(fake.sent).toHaveLength(0);
+    } finally {
+      await srv.stop();
+    }
+  });
+
+  it('with NATS configured but no retirePlayer, the retire route is not mounted (404)', async () => {
+    const config = loadConfig({ ...BASE_ENV, ...NATS_ENV }, readSecret);
+    const fake = fakeConnect();
+    const srv = await serveWired(bodyWiring(config, () => undefined, fake.connect));
+    try {
+      expect((await srv.call('POST', RETIRE, cookie)).status).toBe(404);
+      expect(fake.calls).toHaveLength(0);
+    } finally {
+      await srv.stop();
+    }
+  });
+
+  it('main composition: productionBodyWiring sends the retire to the store, and the route answers 202', async () => {
+    const config = loadConfig({ ...BASE_ENV, ...NATS_ENV }, readSecret);
+    const retired: [string, string][] = [];
+    const store = {
+      retirePlayer: async (identityHash: string, playerId: string) => {
+        retired.push([identityHash, playerId]);
+        return true;
+      },
+    };
+    const subjects: string[] = [];
+    const connect = (async () => ({
+      async request(subject: string) {
+        subjects.push(subject);
+        return { data: enc({ ok: true, code: 'stopped' }) };
+      },
+    })) as unknown as ConnectNats;
+    const srv = await serveWired(productionBodyWiring(config, store, () => undefined, connect));
+    try {
+      const r = await srv.call('POST', RETIRE, cookie);
+      expect(r.status).toBe(202);
+      expect(subjects).toEqual([STOP_SUBJECT]);
+      expect(retired).toEqual([[expect.any(String), 'ag-one-01']]);
+    } finally {
+      await srv.stop();
+    }
   });
 });
