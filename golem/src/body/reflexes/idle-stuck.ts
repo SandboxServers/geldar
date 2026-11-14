@@ -179,7 +179,10 @@ export async function runUnstick(ctx: ReflexContext, source: string): Promise<Re
   const end = ctx.view.tick ?? ctx.tick;
   state.anchor = spotOf(ctx.view);
   state.since = end;
-  if (run.state === 'completed') {
+  // A completed run frees the Body only when it now stands where it can step off (canStepOff true).
+  // A run that dug one block lower from a deep drop completes but leaves the Body on the ledge.
+  const freed = run.state === 'completed' && ctx.view.canStepOff === true;
+  if (freed) {
     state.failures = 0;
     state.until = 0;
     return { result: 'handled', detail: `${source}: unstick freed the body; backoff 0s at ${at}` };
@@ -190,6 +193,9 @@ export async function runUnstick(ctx: ReflexContext, source: string): Promise<Re
   const backoff = `backoff ${Math.round(period / TICKS_PER_SECOND)}s at ${at}`;
   if (run.state === 'cancelled') {
     return { result: 'abandoned', detail: `${source}: unstick cancelled; ${backoff}` };
+  }
+  if (run.state === 'completed') {
+    return { result: 'failed', detail: `${source}: unstick left the body on a ledge; ${backoff}` };
   }
   return { result: 'failed', detail: `${source}: unstick found no way out; ${backoff}` };
 }

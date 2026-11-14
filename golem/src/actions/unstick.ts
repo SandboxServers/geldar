@@ -11,6 +11,7 @@ import {
 } from './protected-blocks.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 import { DEFAULT_DIAG_SINK, emitStallDiag } from './stall-diag.ts';
+import { DIG_BUDGET_S, digUp, handSeconds } from './unstick-up.ts';
 
 /** Health below this: the Body never drops on purpose (a fall could finish it). */
 export const MIN_HEALTH_TO_DROP = 12;
@@ -220,22 +221,7 @@ async function dig(
   }
 }
 
-/**
- * Seconds a bare hand takes on a block: about 5 s per point of hardness (stone, 1.5, is about 7.5 s, decision
- * 0183), and at least half a second. An unknown hardness counts as the least.
- */
-function handSeconds(block: Block | null): number {
-  if (block === null || block.boundingBox === 'empty') return 0;
-  const hardness = (block as { hardness?: number | null }).hardness;
-  return Math.max(0.5, 5 * (typeof hardness === 'number' ? hardness : 0));
-}
-
-/**
- * Hand-dig time one stair step or sideways dig may spend. The action's 30 s limit (`unstickAction`) covers this
- * plus the walks and waits around it: a three-block stone stair step is about 22.5 s. A step that would need
- * more is refused before any block is broken.
- */
-const DIG_BUDGET_S = 25;
+/** Hand-dig time one stair step or sideways dig may spend (`DIG_BUDGET_S`, shared with the upward rung). */
 function digTimeFits(blocks: readonly (Block | null)[]): boolean {
   return blocks.reduce((sum, block) => sum + handSeconds(block), 0) <= DIG_BUDGET_S;
 }
@@ -506,6 +492,19 @@ export async function unstick(ctx: ActionContext): Promise<ActionOutcome> {
     return done('dig_down');
   }
   if (ctx.signal.aborted) return cancelled();
+  // Upward rung (decision 0196): a pit wall is dug through and climbed, before the last resort.
+  note('dig_up');
+  let upBlocked: string | null = null;
+  if (digs < MAX_DIGS) {
+    const up = await digUp(bot, ctx.signal, where, EIGHT);
+    if (ctx.signal.aborted) return cancelled();
+    digs += up.dug;
+    upBlocked = up.blocked;
+    if (up.freed) {
+      tries++;
+      return completed({ method: 'dig_up', tries, tried: [...tried], hint: HINT, dug: up.dug });
+    }
+  }
   // Last resort (owner ruling 2026-11-13): every other way out failed, so the dig strategies run once more
   // with built blocks of a known-unowned record allowed. The ownership record is prefetched first.
   note('dig_unowned');
@@ -513,7 +512,8 @@ export async function unstick(ctx: ActionContext): Promise<ActionOutcome> {
   if (ctx.signal.aborted) return cancelled();
   if (await lastResortDig(ctx, where, digs)) return done('dig_unowned');
   reportNoWayOut(bot, tried);
-  return failed('blocked', `unstick: no way out found; tried ${tried.join(', ')}`, {
+  const upNote = upBlocked === null ? '' : `; dig_up: ${upBlocked}`;
+  return failed('blocked', `unstick: no way out found; tried ${tried.join(', ')}${upNote}`, {
     tries,
     tried,
   });
