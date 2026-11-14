@@ -363,6 +363,95 @@ describe('colo-admin.sh (decision 0133)', () => {
     expect(starts(calls(fx))).toEqual([]);
   });
 
+  // The roster (decision 0108): roster-add and roster-list map to `mcp-tokens roster add|list` in the admin container.
+  describe('roster verbs (decision 0108)', () => {
+    it('runs roster-add as mcp-tokens roster add, name and owner passed as separate arguments', () => {
+      const fx = fixture();
+      const r = run(fx, REAL, ['roster-add', 'Picard', '--owner', 'steve']);
+      expect(r.code).toBe(0);
+      expect(
+        calls(fx).some((c) =>
+          c.endsWith('--profile admin run --rm admin roster add Picard --owner steve'),
+        ),
+      ).toBe(true);
+      expect(existsSync(`${fx.callsLog}.overlay`)).toBe(false);
+    });
+
+    it('runs roster-list as mcp-tokens roster list, with an owner filter only when given', () => {
+      const fx = fixture();
+      expect(run(fx, REAL, ['roster-list']).code).toBe(0);
+      expect(run(fx, REAL, ['roster-list', '--owner', 'steve']).code).toBe(0);
+      const log = calls(fx);
+      expect(log.some((c) => c.endsWith('--profile admin run --rm admin roster list'))).toBe(true);
+      expect(
+        log.some((c) => c.endsWith('--profile admin run --rm admin roster list --owner steve')),
+      ).toBe(true);
+    });
+
+    it('dry run of roster-add prints the roster command and starts no container', () => {
+      const fx = fixture();
+      const r = run(fx, { DEPLOY_DRY_RUN: '1' }, ['roster-add', 'Picard', '--owner', 'steve']);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain('dry-run, not run');
+      expect(r.out).toContain('admin roster add Picard --owner steve');
+      expect(starts(calls(fx))).toEqual([]);
+    });
+
+    it.each([
+      ['a player id with a hyphen', ['roster-add', 'ag-picard-01', '--owner', 'steve']],
+      ['a name with a semicolon', ['roster-add', 'Pic;ard', '--owner', 'steve']],
+      ['a command substitution', ['roster-add', '$(id)', '--owner', 'steve']],
+      ['a name of 17 letters', ['roster-add', 'a'.repeat(17), '--owner', 'steve']],
+      ['an empty name', ['roster-add', '', '--owner', 'steve']],
+      ['a path', ['roster-add', '../x', '--owner', 'steve']],
+    ])('refuses roster-add with %s before any container runs', (_name, args) => {
+      const fx = fixture();
+      const r = run(fx, REAL, args);
+      expect(r.code).not.toBe(0);
+      expect(r.out).toContain('a roster name is 1 to 16 letters, digits or _');
+      expect(starts(calls(fx))).toEqual([]);
+    });
+
+    it.each([
+      ['an owner with a capital', ['roster-add', 'Picard', '--owner', 'Steve']],
+      ['an owner with shell characters', ['roster-add', 'Picard', '--owner', 'st;eve']],
+      ['an owner of 64 characters', ['roster-add', 'Picard', '--owner', 'o'.repeat(64)]],
+    ])('refuses roster-add with %s before any container runs', (_name, args) => {
+      const fx = fixture();
+      const r = run(fx, REAL, args);
+      expect(r.code).not.toBe(0);
+      expect(r.out).toContain('owner id must be 1 to 63 lower-case letters, digits or dashes');
+      expect(starts(calls(fx))).toEqual([]);
+    });
+
+    it.each([
+      ['no owner', ['roster-add', 'Picard']],
+      ['--owner with no value', ['roster-add', 'Picard', '--owner']],
+      ['the owner as a positional', ['roster-add', 'Picard', 'steve']],
+      ['an extra flag', ['roster-add', 'Picard', '--owner', 'steve', '--max', '4']],
+      ['two names', ['roster-add', 'Picard', 'Other', '--owner', 'steve']],
+    ])('refuses roster-add with %s before any container runs', (_name, args) => {
+      const fx = fixture();
+      const r = run(fx, REAL, args);
+      expect(r.code).not.toBe(0);
+      expect(r.out).toContain('roster-add takes <name> --owner <owner>');
+      expect(starts(calls(fx))).toEqual([]);
+    });
+
+    it.each([
+      ['an owner with a capital', ['roster-list', '--owner', 'Steve'], 'owner id must be'],
+      ['a positional argument', ['roster-list', 'steve'], 'roster-list takes no arguments'],
+      ['--owner with no value', ['roster-list', '--owner'], 'roster-list takes no arguments'],
+      ['an unknown flag', ['roster-list', '--all'], 'roster-list takes no arguments'],
+    ])('refuses roster-list with %s before any container runs', (_name, args, message) => {
+      const fx = fixture();
+      const r = run(fx, REAL, args);
+      expect(r.code).not.toBe(0);
+      expect(r.out).toContain(message);
+      expect(starts(calls(fx))).toEqual([]);
+    });
+  });
+
   describe('per-player hosts (C1-10b)', () => {
     const SHARD_TEXT =
       'sovereign:\n  players:\n    - { player_id: ag-jason-01, life_id: ag_jason_01, name: Jason }\n    - { player_id: ag-clara-01, life_id: ag_clara_01, name: Clara }\n';
