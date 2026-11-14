@@ -1,5 +1,6 @@
 package dev.geldar.core;
 
+import dev.geldar.core.blockowner.PlacementRecorder;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -23,20 +24,35 @@ import org.bukkit.event.entity.PlayerDeathEvent;
  * Places a gravestone (a stone-brick block with a standing sign) near where an agent character dies.
  * It holds no items and touches no drops, XP, inventory or respawn (decision 0147). Ordinary blocks:
  * players can break them. Config: {@code gravestones.enabled}, {@code gravestones.max_per_chunk}.
+ * Each gravestone's two blocks are recorded as owned by the system, so the Body does not dig them (decision 0195).
  */
 public final class GravestoneListener implements Listener {
     static final String AGENT_PREFIX = "ag_";
+    /** The Bukkit material names of the two blocks, as CoreProtect logs them. */
+    static final String STONE_BRICKS = "STONE_BRICKS";
+    static final String OAK_SIGN = "OAK_SIGN";
 
     private final boolean enabled;
     private final int maxPerChunk;
     private final Logger log;
+    private final PlacementRecorder placements;
     /** Gravestones placed this run per chunk; not persisted, so a restart only makes the cap looser. */
     private final Map<String, Integer> perChunk = new HashMap<>();
 
-    public GravestoneListener(boolean enabled, int maxPerChunk, Logger log) {
+    public GravestoneListener(boolean enabled, int maxPerChunk, Logger log, PlacementRecorder placements) {
         this.enabled = enabled;
         this.maxPerChunk = maxPerChunk;
         this.log = log;
+        this.placements = placements;
+    }
+
+    /**
+     * Records a gravestone whose stone block is at (x, y, z) and whose sign is above it, as owned by the system.
+     * Shared by the death placement and the console backfill, so both record the same two blocks.
+     */
+    static void recordGrave(PlacementRecorder placements, String world, int x, int y, int z) {
+        placements.placedBySystem(world, x, y, z, STONE_BRICKS);
+        placements.placedBySystem(world, x, y + 1, z, OAK_SIGN);
     }
 
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
@@ -82,6 +98,7 @@ public final class GravestoneListener implements Listener {
             }
             sign.update();
         }
+        recordGrave(placements, world.getName(), s.x(), s.y(), s.z());
         perChunk.merge(chunk, 1, Integer::sum);
     }
 

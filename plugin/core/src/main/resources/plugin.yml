@@ -3,4 +3,8 @@ version: "${version}"
 main: dev.geldar.core.GeldarCore
 api-version: "26.1"
 softdepend: [CoreProtect]
+commands:
+  geldar-backfill-graves:
+    description: Records the gravestones in loaded chunks as owned by the system (console only, decision 0195).
+    usage: /geldar-backfill-graves
 description: Geldar-Core, event export to NATS and agent command block.
