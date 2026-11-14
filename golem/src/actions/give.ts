@@ -2,7 +2,7 @@ import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { canSeePoint } from '../perception/notable-blocks.ts';
 import { findVisibleAgent } from '../perception/visible-agent.ts';
-import { STEP_BACK_BELOW, stepBackCells } from './give-spot.ts';
+import { STEP_BACK_BELOW, STEP_BACK_DISTANCES, stepBackCells, TOSS_MIN_GAP } from './give-spot.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
@@ -244,20 +244,25 @@ function horizontalGap(a: Entity['position'], b: Entity['position']): number {
  * Steps the Body back from a recipient closer than `STEP_BACK_BELOW`, so the toss flies past them.
  * It walks, with digging off, to the standable blocks `stepBackCells` lists in order (the
  * straight-back one first), and a try counts only when the gap to the recipient then holds at
- * `STEP_BACK_BELOW`. It stops after `STEP_BACK_MS` (scaled by `timeScale`) or on an abort. When no
- * try holds, one `give_stepback_failed` diag line is logged; the caller checks the gap it ends at.
+ * `STEP_BACK_BELOW`. It stops after `STEP_BACK_MS` (scaled by `timeScale`) or on an abort. Returns
+ * null when a try held or the run was aborted; otherwise the fact of what blocked it (no standable
+ * cell in reach, or no walk reached one), which the give's refusal states. The caller checks the gap
+ * it ends at.
  */
 async function stepBackFrom(
   ctx: ActionContext,
   bot: Bot,
   recipient: Entity['position'],
-): Promise<void> {
+): Promise<string | null> {
   const cells = stepBackCells(
     bot.entity.position,
     recipient,
     (cell) => bot.blockAt(cell),
     GIVE_REACH,
   );
+  if (cells.length === 0) {
+    return `no standable cell within ${Math.max(...STEP_BACK_DISTANCES)} blocks to step back to`;
+  }
   // One signal for every try: the run's abort, or the whole-step cap, stops the walk in progress.
   const tries = new AbortController();
   const stop = (): void => tries.abort();
@@ -275,12 +280,12 @@ async function stepBackFrom(
         timeScale: ctx.timeScale,
         digTier: false,
       });
-      if (horizontalGap(bot.entity.position, recipient) >= STEP_BACK_BELOW) return;
+      if (horizontalGap(bot.entity.position, recipient) >= STEP_BACK_BELOW) return null;
     }
-    if (!ctx.signal.aborted) {
-      const gap = Math.round(horizontalGap(bot.entity.position, recipient) * 100) / 100;
-      DEFAULT_DIAG_SINK.log(JSON.stringify({ event: 'give_stepback_failed', tried, gap }));
-    }
+    if (ctx.signal.aborted) return null;
+    const gap = Math.round(horizontalGap(bot.entity.position, recipient) * 100) / 100;
+    DEFAULT_DIAG_SINK.log(JSON.stringify({ event: 'give_stepback_failed', tried, gap }));
+    return `the Body could not walk to any of ${tried} standable cells to step back to`;
   } finally {
     clearTimeout(cap);
     ctx.signal.removeEventListener('abort', stop);
@@ -385,10 +390,10 @@ async function settle(
  * so the verb cannot probe whether a player exists or where they are (decisions 0058 and 0068).
  * A name that is not in sight fails `not_found` with one fixed text. The Body walks up to
  * `WALK_RANGE` blocks from the recipient, checks again that it is in sight and within
- * `GIVE_REACH`, steps back to a standable block 2 to 3 blocks from the recipient if it is closer
- * than `STEP_BACK_BELOW` (and fails if it is still that close), faces the recipient at about 0.9 of
- * its height, looks at the `tossPitch` for the height difference and distance, waits two ticks for
- * the look to reach the server, and tosses.
+ * `GIVE_REACH`, and when it is closer than `STEP_BACK_BELOW` steps back to a standable block 2 to 3
+ * blocks from the recipient. It fails when it is still closer than `TOSS_MIN_GAP` after that, faces
+ * the recipient at about 0.9 of its height, looks at the `tossPitch` for the height difference and
+ * distance, waits two ticks for the look to reach the server, and tosses.
  * The give completes only when the
  * recipient picks up every tossed item within `PICKUP_WAIT_MS`. When the recipient picks up none,
  * the Body takes the items back and says so; if it cannot, it says where the items are, with no
@@ -426,14 +431,17 @@ export const giveAction: ActionHandler<'give'> = {
     if (target.distance > GIVE_REACH) return failed('out_of_reach', 'too far from the agent');
 
     if (target.distance < STEP_BACK_BELOW) {
-      await stepBackFrom(ctx, bot, target.position);
+      const stuck = await stepBackFrom(ctx, bot, target.position);
       if (ctx.signal.aborted) return cancelled();
       target = findVisibleAgent(bot, action.to);
       if (!target) return failed('not_found', NOT_IN_SIGHT);
       if (target.distance > GIVE_REACH) return failed('out_of_reach', 'too far from the agent');
-      // A toss from this close lands in the Body's own pickup box, so it is not thrown.
-      if (horizontalGap(bot.entity.position, target.position) < STEP_BACK_BELOW)
-        return failed('not_possible', 'too close to toss, and no room to step back');
+      // A toss closer than TOSS_MIN_GAP lands in the Body's own pickup box, so it is not thrown.
+      if (horizontalGap(bot.entity.position, target.position) < TOSS_MIN_GAP)
+        return failed(
+          'not_possible',
+          `too close to toss, and ${stuck ?? 'the Body is still too close to step back'}`,
+        );
     }
     // Too high to throw to from beyond the step's reach: a toss from there lands short (simulated).
     const rise = target.position.y - bot.entity.position.y;

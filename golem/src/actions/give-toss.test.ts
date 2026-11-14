@@ -8,7 +8,10 @@ import { DEFAULT_DIAG_SINK } from './stall-diag.ts';
 vi.mock('./pathing.ts', () => ({ moveNear: vi.fn() }));
 const walk = vi.mocked(moveNear);
 
-beforeEach(() => walk.mockReset());
+// A block body: an arrow would return the mock, and vitest would call the returned value as a teardown with no arguments.
+beforeEach(() => {
+  walk.mockReset();
+});
 
 describe('give', () => {
   it('tosses the items toward a visible agent within reach', async () => {
@@ -190,10 +193,62 @@ describe('give: stepping back, the pickup delay, and taking the items back', () 
     expect(await run('Pike')).toEqual({
       status: 'failed',
       reason: 'not_possible',
-      message: 'too close to toss, and no room to step back',
+      message:
+        'too close to toss, and the Body could not walk to any of 11 standable cells to step back to',
       detail: {},
     });
     expect(toss).not.toHaveBeenCalled();
+  });
+
+  it('refuses a recipient 0.9 blocks off, just under the 1.0 gap, when the step back fails', async () => {
+    // The Body is at (0.5, 0.5); Pike at (1.4, 0.5) is 0.9 out, so no toss is thrown.
+    const { world, run, toss } = setup(5, { dropped: [7], picked: [7] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(1.4, 64, 0.5) };
+    walk.mockResolvedValue({ ok: false, reason: 'blocked', message: 'no path' } as never);
+    expect(await run('Pike')).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message: expect.stringMatching(/^too close to toss, and the Body could not walk to any of/),
+    });
+    expect(toss).not.toHaveBeenCalled();
+  });
+
+  it('tosses from exactly 1.0 blocks off when the step back fails', async () => {
+    // The Body is at (0.5, 0.5); Pike at (1.5, 0.5) is exactly 1.0 out, the smallest gap that tosses.
+    const { world, run, toss } = setup(5, { dropped: [7], picked: [7] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(1.5, 64, 0.5) };
+    walk.mockResolvedValue({ ok: false, reason: 'blocked', message: 'no path' } as never);
+    expect(await run('Pike')).toMatchObject({ status: 'completed' });
+    expect(toss).toHaveBeenCalledOnce();
+  });
+
+  it('names the missing floor when no standable block lies within 3 blocks to step back to', async () => {
+    const { world, run, toss } = setup(5, { dropped: [7], picked: [7] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.6, 64, 0.5) };
+    // No solid floor at heights 62 or 63 within 4 blocks: no cell (level, one up or one down) stands.
+    for (let x = -4; x <= 4; x += 1) {
+      for (let z = -4; z <= 4; z += 1) {
+        world.clear(x, 63, z);
+        world.clear(x, 62, z);
+      }
+    }
+    expect(await run('Pike')).toEqual({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'too close to toss, and no standable cell within 3 blocks to step back to',
+      detail: {},
+    });
+    expect(walk).not.toHaveBeenCalled();
+    expect(toss).not.toHaveBeenCalled();
+  });
+
+  it('tosses when the step back fails but the recipient is 1.2 blocks away, which is far enough', async () => {
+    const { world, run, toss } = setup(5, { dropped: [7], picked: [7] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(1.7, 64, 0.5) };
+    walk.mockResolvedValue({ ok: false, reason: 'blocked', message: 'no path' } as never);
+    expect(await run('Pike')).toMatchObject({ status: 'completed' });
+    expect(walk).toHaveBeenCalled();
+    expect(toss).toHaveBeenCalledOnce();
   });
 
   it('fails not_possible and tosses nothing when the recipient is 1.0 blocks away and the step back fails', async () => {
@@ -203,11 +258,44 @@ describe('give: stepping back, the pickup delay, and taking the items back', () 
     expect(await run('Pike')).toMatchObject({
       status: 'failed',
       reason: 'not_possible',
-      message: 'too close to toss, and no room to step back',
+      message:
+        'too close to toss, and the Body could not walk to any of 10 standable cells to step back to',
     });
-    // Six standable blocks lie 1.5 to 3 blocks from the recipient, one per distinct cell.
-    expect(walk).toHaveBeenCalledTimes(6);
+    // Ten standable blocks lie at least 1.5 blocks from the recipient, one per distinct cell.
+    expect(walk).toHaveBeenCalledTimes(10);
     expect(toss).not.toHaveBeenCalled();
+  });
+
+  it('steps back to the block 135 degrees round from the straight-back spot, when that is the only one standable', async () => {
+    const { world, run, toss } = setup(5, { dropped: [7], picked: [7] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.6, 64, 0.5) };
+    // The 135 degree block is cell (2, 64, -1): its centre is (2.5, 64, -0.5).
+    const only = new Vec3(2.5, 64, -0.5);
+    walk.mockImplementation(async (_bot, spot) => {
+      if (!(spot as Vec3).equals(only))
+        return { ok: false, reason: 'blocked', message: 'no' } as never;
+      world.me.position = spot as Vec3;
+      return { ok: true, distance: 2 } as never;
+    });
+    expect(await run('Pike')).toMatchObject({ status: 'completed' });
+    expect(walk.mock.calls.at(-1)?.[1]).toEqual(only);
+    expect(toss).toHaveBeenCalledOnce();
+  });
+
+  it('steps back to the block on the far side of the recipient (180 degrees) when that is the only one standable', async () => {
+    const { world, run, toss } = setup(5, { dropped: [7], picked: [7] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.6, 64, 0.5) };
+    // The 180 degree block is cell (2, 64, 0): its centre is (2.5, 64, 0.5).
+    const only = new Vec3(2.5, 64, 0.5);
+    walk.mockImplementation(async (_bot, spot) => {
+      if (!(spot as Vec3).equals(only))
+        return { ok: false, reason: 'blocked', message: 'no' } as never;
+      world.me.position = spot as Vec3;
+      return { ok: true, distance: 2 } as never;
+    });
+    expect(await run('Pike')).toMatchObject({ status: 'completed' });
+    expect(walk.mock.calls.at(-1)?.[1]).toEqual(only);
+    expect(toss).toHaveBeenCalledOnce();
   });
 
   it('walks to the next standable block when the straight-back walk fails, then tosses', async () => {
@@ -227,16 +315,17 @@ describe('give: stepping back, the pickup delay, and taking the items back', () 
     expect(toss).toHaveBeenCalledOnce();
   });
 
-  it('refuses not_possible when all five spots are blocked, and tries each one', async () => {
+  it('refuses not_possible when every standable block is blocked, and tries each one', async () => {
     const { world, run, toss } = setup(5, { dropped: [7], picked: [7] });
     world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.6, 64, 0.5) };
     walk.mockResolvedValue({ ok: false, reason: 'blocked', message: 'no path' } as never);
     expect(await run('Pike')).toMatchObject({
       status: 'failed',
       reason: 'not_possible',
-      message: 'too close to toss, and no room to step back',
+      message:
+        'too close to toss, and the Body could not walk to any of 11 standable cells to step back to',
     });
-    expect(walk).toHaveBeenCalledTimes(5);
+    expect(walk).toHaveBeenCalledTimes(11);
     expect(world.me.position).toEqual(new Vec3(0.5, 64, 0.5));
     expect(toss).not.toHaveBeenCalled();
   });
@@ -304,8 +393,22 @@ describe('give: step-back candidates are standable blocks', () => {
     world.set('stone', -2, 64, 0);
     walk.mockImplementation(arrive(world) as never);
     expect(await run('Pike')).toMatchObject({ status: 'completed' });
+    // The straight-back level cell is blocked at its feet, and every level cell is tried before any
+    // step up. The 2 block 45 degree cell is inside the gap limit, so the first try is the 2.5 block
+    // 45 degree level cell, not the step up onto that stone.
     expect(walk.mock.calls[0]?.[1]).toEqual(new Vec3(-1.5, 64, -1.5));
     expect(walk.mock.calls.map((call) => call[1])).not.toContainEqual(new Vec3(-1.5, 64, 0.5));
+  });
+
+  it('takes a level block round the Body before any block one lower, when the straight-back level one has no floor', async () => {
+    const { world, run } = setup(5, { dropped: [7], picked: [7] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.6, 64, 0.5) };
+    world.clear(-2, 63, 0);
+    world.set('stone', -2, 62, 0);
+    walk.mockImplementation(arrive(world) as never);
+    expect(await run('Pike')).toMatchObject({ status: 'completed' });
+    expect(walk.mock.calls[0]?.[1]).toEqual(new Vec3(-1.5, 64, -1.5));
+    expect(walk.mock.calls.map((call) => call[1])).not.toContainEqual(new Vec3(-1.5, 63, 0.5));
   });
 
   it('skips a block whose floor is air', async () => {
@@ -334,14 +437,15 @@ describe('give: step-back candidates are standable blocks', () => {
     expect(await run('Pike')).toEqual({
       status: 'failed',
       reason: 'not_possible',
-      message: 'too close to toss, and no room to step back',
+      message:
+        'too close to toss, and the Body could not walk to any of 11 standable cells to step back to',
       detail: {},
     });
     expect(toss).not.toHaveBeenCalled();
     expect(log).toHaveBeenCalledOnce();
     expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toEqual({
       event: 'give_stepback_failed',
-      tried: 5,
+      tried: 11,
       gap: 0.1,
     });
     log.mockRestore();

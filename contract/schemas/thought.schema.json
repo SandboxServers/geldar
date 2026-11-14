@@ -371,6 +371,19 @@
           },
           "required": ["do", "at"],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "do": { "const": "edit_sign" },
+            "at": {
+              "description": "The position of the existing sign to edit. The Body must be in reach and the block must be a sign; it checks the rest.",
+              "$ref": "common.schema.json#/$defs/Position"
+            },
+            "text": { "type": "string", "maxLength": 60 }
+          },
+          "required": ["do", "at", "text"],
+          "additionalProperties": false
         }
       ]
     }

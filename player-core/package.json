@@ -1,0 +1,15 @@
+{
+  "name": "@geldar/player-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "The neutral home of the live player path: Body and Mind links, output validation, plan builder, speech classifier, ids. The animus stubs for these files are deprecated.",
+  "scripts": {
+    "typecheck": "tsc -p . --noEmit"
+  },
+  "dependencies": {
+    "@geldar/contract": "workspace:*",
+    "@nats-io/jetstream": "3.4.0",
+    "@nats-io/transport-node": "3.4.0"
+  }
+}

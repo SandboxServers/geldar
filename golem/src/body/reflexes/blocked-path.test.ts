@@ -160,6 +160,7 @@ describe('blocked path: geometry and registration', () => {
       'dark_shelter',
       'blocked_path',
       'unstick',
+      'idle_stuck',
     ]);
   });
 });
