@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { type ActionContext, type ActionHandler, ActionRegistry } from '../../actions/registry.ts';
 import { allReflexesOn, ReflexRunner } from '../index.ts';
 import { MemorySink } from '../records.ts';
+import { zombieAt } from './combat.fakes.ts';
 import { panicBurrowReflex, pickSeal, planBreakout, planBurrow } from './panic-burrow.ts';
 import {
   GridWorld,
@@ -30,6 +31,8 @@ function setup(world: GridWorld, drops?: Record<string, string>) {
   registry.register(gridMine(world, grid, drops));
   registry.register(gridPlace(world, grid));
   const view = settableView(grid);
+  // The run tests start from a threat (decision 0213): a zombie 5 blocks away.
+  view.nearbyHostiles = () => [zombieAt(5)];
   return { grid, registry, view, ctx: reflexContext(grid.bot, view, registry) };
 }
 
@@ -65,10 +68,12 @@ describe('panic burrow: planning', () => {
 });
 
 describe('panic burrow: check', () => {
-  it('fires only at night with no bed and no shelter', () => {
+  it('fires only at night with no bed, no shelter and a threat', () => {
     const view = settableView();
     expect(panicBurrowReflex.check(view)).toBeNull();
     view.isNight = true;
+    expect(panicBurrowReflex.check(view)).toBeNull();
+    view.nearbyHostiles = () => [zombieAt(5)];
     expect(panicBurrowReflex.check(view)).toMatchObject({ phase: 'night' });
     view.bedNearby = true;
     expect(panicBurrowReflex.check(view)).toBeNull();
@@ -77,6 +82,88 @@ describe('panic burrow: check', () => {
     expect(panicBurrowReflex.check(view)).toBeNull();
   });
 
+  it('night, no bed and no hostile is null, even with the Body in the open', () => {
+    const view = settableView();
+    view.isNight = true;
+    view.bedNearby = false;
+    view.enclosed = false;
+    expect(panicBurrowReflex.check(view)).toBeNull();
+  });
+});
+
+describe('panic burrow: the threat that starts it (decision 0213)', () => {
+  /** A night view with no bed and the Body in the open; the hostiles and the hurt are set by the test. */
+  function nightView() {
+    const view = settableView();
+    view.isNight = true;
+    view.bedNearby = false;
+    view.enclosed = false;
+    return view;
+  }
+
+  it('a zombie at 5 blocks starts it, and the trigger names the hostile and its distance', () => {
+    const view = nightView();
+    view.nearbyHostiles = () => [zombieAt(5)];
+    expect(panicBurrowReflex.check(view)).toMatchObject({
+      phase: 'night',
+      cause: 'hostile',
+      hostile: 'zombie',
+      distance: 5,
+    });
+  });
+
+  it('the trigger distance is a whole number: a zombie at 5.4 reads 5', () => {
+    const view = nightView();
+    view.nearbyHostiles = () => [zombieAt(5.4)];
+    expect(panicBurrowReflex.check(view)).toMatchObject({ cause: 'hostile', distance: 5 });
+  });
+
+  it('the hostile radius is 8: a zombie at 8 starts it, a zombie at 8.1 does not', () => {
+    const view = nightView();
+    view.nearbyHostiles = (radius = 16) => [zombieAt(8)].filter((h) => h.distance <= radius);
+    expect(panicBurrowReflex.check(view)).toMatchObject({ cause: 'hostile', distance: 8 });
+    view.nearbyHostiles = (radius = 16) => [zombieAt(8.1)].filter((h) => h.distance <= radius);
+    expect(panicBurrowReflex.check(view)).toBeNull();
+  });
+
+  it('a zombie beyond 8 blocks does not start it', () => {
+    const view = nightView();
+    view.nearbyHostiles = (radius = 16) => [zombieAt(9)].filter((h) => h.distance <= radius);
+    expect(panicBurrowReflex.check(view)).toBeNull();
+  });
+
+  it('an iron golem (neutral) does not start it', () => {
+    const view = nightView();
+    view.nearbyHostiles = () => [{ ...zombieAt(5), name: 'iron_golem' }];
+    expect(panicBurrowReflex.check(view)).toBeNull();
+  });
+
+  it('damage taken in the last 5 s starts it, and the trigger says damage', () => {
+    const view = nightView();
+    (view as { ticksSinceHurt: number | null }).ticksSinceHurt = 100;
+    expect(panicBurrowReflex.check(view)).toMatchObject({ phase: 'night', cause: 'damage' });
+  });
+
+  it('damage 6 s ago does not start it', () => {
+    const view = nightView();
+    (view as { ticksSinceHurt: number | null }).ticksSinceHurt = 120;
+    expect(panicBurrowReflex.check(view)).toBeNull();
+  });
+
+  it('a run started with no hostile still digs the burrow (the hibernation path does not need a threat)', async () => {
+    const world = wallWorld();
+    const { grid, view, ctx } = setup(world);
+    view.nearbyHostiles = () => [];
+    grid.inventory.set('dirt', 4);
+    const outcome = await panicBurrowReflex.run(
+      { phase: 'night', bed: false, shelter: false },
+      ctx,
+    );
+    expect(outcome).toMatchObject({ result: 'handled', detail: 'sealed in' });
+  });
+});
+
+describe('panic burrow: check without the night reads', () => {
   it('never fires on a view that has no night read', () => {
     const { isNight: _n, bedNearby: _b, enclosed: _e, ...bare } = settableView();
     expect(panicBurrowReflex.check(bare)).toBeNull();

@@ -12,7 +12,7 @@ export function challengeOf(verifier: string): string {
 }
 
 export const STATE_TTL_MS = 10 * 60 * 1000;
-export const STATE_COOKIE = 'gr_state';
+export const STATE_COOKIE = '__Host-gr_state';
 
 interface Pending {
   readonly verifier: string;

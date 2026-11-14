@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/proficiency-level.schema.json",
+  "title": "ProficiencyLevelPayload",
+  "description": "The body of the core NATS push on `geldar.<shard>.state.<life_id>.level` (AN-02b), published by the eventsink when a domain reaches a level from 1 to 3. `version` is the total XP after the award. It carries no sheet and no true value.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["life_id", "domain", "level", "xp", "version"],
+  "properties": {
+    "life_id": { "$ref": "common.schema.json#/$defs/LifeId" },
+    "domain": {
+      "type": "string",
+      "enum": ["combat", "farming", "mining", "building", "crafting", "exploring", "social"]
+    },
+    "level": { "type": "integer", "minimum": 1, "maximum": 3 },
+    "xp": { "type": "integer", "minimum": 0 },
+    "version": { "type": "integer", "minimum": 0 }
+  }
+}

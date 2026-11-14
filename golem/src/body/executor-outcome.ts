@@ -27,6 +27,20 @@ function contractReason(raw: unknown): string | undefined {
   return typeof raw === 'string' && Object.hasOwn(REASON_MAP, raw) ? REASON_MAP[raw] : undefined;
 }
 
+/**
+ * The plain fact an ok `eat` carries (decision 0216): `<item>: hunger <before> to <after>`, from the
+ * numbers the eat action recorded. Undefined for any other verb or a result without those numbers.
+ */
+function eatFactText(verb: string, result: unknown): string | undefined {
+  if (verb !== 'eat') return undefined;
+  const detail = (result as { detail?: Record<string, unknown> } | null)?.detail;
+  const { item, food_before: before, food_after: after } = detail ?? {};
+  if (typeof item !== 'string' || typeof before !== 'number' || typeof after !== 'number') {
+    return undefined;
+  }
+  return `${item}: hunger ${before} to ${after}`.slice(0, 160);
+}
+
 /** The payload for one finished plan action (C5-02): fixed text built from the verb and reason code only. */
 export function actionOutcomeOf(
   verb: string,
@@ -38,7 +52,7 @@ export function actionOutcomeOf(
   const raw = stopped ? 'cancelled' : (report.record.result as { reason?: unknown } | null)?.reason;
   const reason = ok ? undefined : (contractReason(raw) ?? 'internal');
   const text = ok
-    ? undefined
+    ? eatFactText(verb, report.record.result)
     : stopped
       ? STOPPED_TEXT
       : outcomeDetailText(

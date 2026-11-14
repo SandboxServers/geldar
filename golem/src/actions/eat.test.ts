@@ -1,6 +1,7 @@
 import type { Bot } from 'mineflayer';
 import { describe, expect, it, vi } from 'vitest';
-import { bestFood, eatAction, type FoodInfo } from './eat.ts';
+import { eatAction } from './eat.ts';
+import type { FoodInfo } from './eat-choice.ts';
 
 /** Food numbers for the fake registry; `chorus_fruit` would win on points but is banned. */
 const FOODS: Record<string, FoodInfo> = {
@@ -53,39 +54,6 @@ function eat(bot: Bot, timeScale = 1) {
   return eatAction.run({ bot, signal: new AbortController().signal, timeScale }, { do: 'eat' });
 }
 
-describe('bestFood', () => {
-  it('prefers the most food points', () => {
-    expect(bestFood(['apple', 'cooked_beef'], FOODS, [])).toBe('cooked_beef');
-  });
-
-  it('skips banned foods even when they rank highest', () => {
-    expect(
-      bestFood(['rotten_flesh', 'chorus_fruit', 'apple'], FOODS, ['rotten_flesh', 'chorus_fruit']),
-    ).toBe('apple');
-    expect(
-      bestFood(['rotten_flesh', 'chorus_fruit'], FOODS, ['rotten_flesh', 'chorus_fruit']),
-    ).toBeNull();
-  });
-
-  it('breaks a tie on points by saturation, then by name', () => {
-    const foods = {
-      bread: { foodPoints: 8, saturation: 6 },
-      cooked_porkchop: { foodPoints: 8, saturation: 12.8 },
-    };
-    expect(bestFood(['bread', 'cooked_porkchop'], foods, [])).toBe('cooked_porkchop');
-    const even = {
-      bread: { foodPoints: 8, saturation: 6 },
-      carrot: { foodPoints: 8, saturation: 6 },
-    };
-    expect(bestFood(['bread', 'carrot'], even, [])).toBe('bread');
-  });
-
-  it('ignores names with no food entry', () => {
-    expect(bestFood(['stone', 'apple'], FOODS, [])).toBe('apple');
-    expect(bestFood([], FOODS, [])).toBeNull();
-  });
-});
-
 describe('eat', () => {
   it('fails with not_possible when the bot is full', async () => {
     const outcome = await eat(fakeBot({ food: 20, items: ['apple'] }));
@@ -117,10 +85,47 @@ describe('eat', () => {
     expect(outcome).toMatchObject({ status: 'failed', reason: 'timeout' });
   });
 
+  it('fails with timeout and says how long it waited when the food never rises', async () => {
+    const outcome = await eat(fakeBot({ food: 10, items: ['apple'] }), 0.5);
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'timeout',
+      message: 'food did not rise within 1500 ms',
+    });
+  });
+
   it('fails with interrupted when consume is cancelled and the food never rises', async () => {
     const bot = fakeBot({ food: 10, items: ['apple'], consumeError: 'Consume was cancelled' });
     const outcome = await eat(bot, 0.01);
     expect(outcome).toMatchObject({ status: 'failed', reason: 'interrupted' });
+  });
+});
+
+describe('eat: not hungry wins over the refusals (decision 0216)', () => {
+  it.each([[['chicken']], [['rotten_flesh']], [['chicken', 'rotten_flesh']]])(
+    'says not hungry at 20 when %j is the only food carried',
+    async (items) => {
+      const bot = fakeBot({ food: 20, items });
+      const outcome = await eat(bot);
+      expect(outcome).toMatchObject({
+        status: 'failed',
+        reason: 'not_possible',
+        message: 'not hungry',
+      });
+      expect(bot.consume).not.toHaveBeenCalled();
+    },
+  );
+
+  it('refuses chicken with rotten flesh at hunger 10 with the mixed sentence', async () => {
+    const bot = fakeBot({ food: 10, items: ['chicken', 'rotten_flesh'] });
+    const outcome = await eat(bot);
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message:
+        'only raw chicken and rotten flesh are carried; they are eaten only when hunger is 6 or below',
+    });
+    expect(bot.consume).not.toHaveBeenCalled();
   });
 });
 

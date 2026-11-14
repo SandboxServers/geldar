@@ -77,12 +77,14 @@ function sendJson(
   res.end(JSON.stringify(body));
 }
 
+/** The value of the one cookie of this name. Two or more of that name in the header give null (CF-5). */
 function cookieOf(req: IncomingMessage, name: string): string | null {
+  const values: string[] = [];
   for (const part of (req.headers.cookie ?? '').split(';')) {
     const [k, ...v] = part.trim().split('=');
-    if (k === name) return v.join('=');
+    if (k === name) values.push(v.join('='));
   }
-  return null;
+  return values.length === 1 ? (values[0] ?? null) : null;
 }
 
 const stateCookie = (value: string, maxAge: number): string =>

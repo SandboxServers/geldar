@@ -91,7 +91,8 @@ public final class GeldarCore extends JavaPlugin {
                 getConfig().getBoolean("gravestones.enabled", true),
                 Math.max(1, getConfig().getInt("gravestones.max_per_chunk", 4)), getLogger(), owners.placements()),
                 this);
-        getCommand(GraveBackfillCommand.NAME).setExecutor(new GraveBackfillCommand(owners.placements()));
+        getCommand(GraveBackfillCommand.NAME).setExecutor(new GraveBackfillCommand(this, owners.placements(),
+                owners.source()));
         // Proximity (spec 5.8): speech and death messages reach only the players within 32 blocks.
         getServer().getPluginManager().registerEvents(new dev.geldar.core.proximity.ProximityChatListener(), this);
         getServer().getPluginManager().registerEvents(new dev.geldar.core.proximity.ProximityDeathListener(

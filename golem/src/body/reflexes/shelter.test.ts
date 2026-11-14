@@ -32,6 +32,10 @@ describe('dark_shelter trigger', () => {
     });
   });
 
+  it('the trigger distance is a whole number: a zombie at 5.4 reads 5', () => {
+    expect(darkShelterReflex.check(darkView(3, 5.4))).toMatchObject({ distance: 5 });
+  });
+
   it('does not fire when it is not dark', () => {
     expect(darkShelterReflex.check(darkView(12, 5))).toBeNull();
   });
@@ -81,6 +85,72 @@ describe('dark_shelter run', () => {
   });
 });
 
+describe('dark_shelter backoff holds at the abandoned spot (decision 0213)', () => {
+  const abandoned = { result: 'abandoned' as const, detail: 'no suitable block' };
+  const ctxFor = (view: BodyView) =>
+    ({ signal: new AbortController().signal, view, tick: 0 }) as unknown as ReflexContext;
+
+  /** A dark Body at tick 1000 whose shelter was abandoned at its spot, so the backoff runs to tick 1400. */
+  async function abandonedAtSpot(): Promise<BodyView> {
+    vi.spyOn(panicBurrowReflex, 'run').mockResolvedValue(abandoned);
+    const view = liveDark(3);
+    setTick(view, 1000);
+    const trigger = darkShelterReflex.check(view);
+    expect(trigger).not.toBeNull();
+    await darkShelterReflex.run(trigger ?? {}, ctxFor(view));
+    return view;
+  }
+
+  it('after an abandoned run, light 9 then 0 at the same spot is still backed off', async () => {
+    const view = await abandonedAtSpot();
+    setLight(view, 9);
+    setTick(view, 1100);
+    expect(darkShelterReflex.check(view)).toBeNull();
+    setLight(view, 0);
+    setTick(view, 1200);
+    expect(darkShelterReflex.check(view)).toBeNull();
+    // Once the backoff period has passed, the same spot may try again.
+    setTick(view, 1400);
+    expect(darkShelterReflex.check(view)).not.toBeNull();
+  });
+
+  it('moving away from the abandoned spot re-arms it', async () => {
+    const view = await abandonedAtSpot();
+    setLight(view, 9);
+    setTick(view, 1100);
+    setPosition(view, 20);
+    setLight(view, 0);
+    setTick(view, 1200);
+    expect(darkShelterReflex.check(view)).not.toBeNull();
+  });
+
+  it.each([
+    ['x -20', -20, 64, 0],
+    ['z +20', 0, 64, 20],
+    ['z -20', 0, 64, -20],
+    ['y +20', 0, 84, 0],
+    ['y -20', 0, 44, 0],
+  ])(
+    'moving %s from the abandoned spot re-arms it (the distance is 3-D)',
+    async (_name, x, y, z) => {
+      const view = await abandonedAtSpot();
+      setLight(view, 9);
+      setTick(view, 1100);
+      setPosition(view, x, y, z);
+      setLight(view, 0);
+      setTick(view, 1200);
+      expect(darkShelterReflex.check(view)).not.toBeNull();
+    },
+  );
+
+  it('a Body that stays within the move radius of the spot stays backed off', async () => {
+    const view = await abandonedAtSpot();
+    setPosition(view, 4);
+    setTick(view, 1200);
+    expect(darkShelterReflex.check(view)).toBeNull();
+  });
+});
+
 /** A dark Body view that lives across firings: its tick, position and light can be moved by the test. */
 function liveDark(light: number, hostile = zombieAt(5), isNight = true): BodyView {
   const scene = calmScene();
@@ -96,8 +166,8 @@ function setLight(view: BodyView, light: number): void {
   (view as { lightAtHead: number | null }).lightAtHead = light;
 }
 
-function setPosition(view: BodyView, x: number): void {
-  (view as { position: { x: number; y: number; z: number } }).position = { x, y: 64, z: 0 };
+function setPosition(view: BodyView, x: number, y = 64, z = 0): void {
+  (view as { position: { x: number; y: number; z: number } }).position = { x, y, z };
 }
 
 describe('dark_shelter hostile classification', () => {
@@ -149,14 +219,16 @@ describe('dark_shelter backoff after an abandoned run', () => {
     expect(await abandonAt(view, 12000)).toContain('backing off 300s');
   });
 
-  it('a light above the dark limit resets the backoff', async () => {
+  // Decision 0213: a light above the dark limit no longer resets the backoff at the same spot.
+  it('a light above the dark limit does not reset the backoff at the same spot', async () => {
     const view = liveDark(3);
     await abandonAt(view, 0);
     setLight(view, 12);
     setTick(view, 50);
     expect(darkShelterReflex.check(view)).toBeNull();
     setLight(view, 3);
-    expect(await abandonAt(view, 60)).toContain('backing off 20s');
+    setTick(view, 60);
+    expect(darkShelterReflex.check(view)).toBeNull();
   });
 
   it('a position change of more than 2 blocks does not reset the backoff', async () => {

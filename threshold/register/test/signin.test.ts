@@ -53,8 +53,19 @@ describe('Microsoft sign-in (mocked endpoints)', () => {
   it('refuses a state that does not match the cookie, or a missing cookie', async () => {
     h = await harness();
     const { state } = await h.begin();
-    expect((await h.callback(undefined, state, 'gr_state=other')).status).toBe(403);
+    expect((await h.callback(undefined, state, '__Host-gr_state=other')).status).toBe(403);
     expect((await h.callback(undefined, state, '')).status).toBe(403);
+  });
+
+  it('refuses a duplicate state cookie, even when one copy matches the state (CF-5)', async () => {
+    h = await harness();
+    const { state, cookie } = await h.begin();
+    expect((await h.callback(undefined, state, `${cookie}; ${cookie}`)).status).toBe(403);
+    expect((await h.callback(undefined, state, `${cookie}; __Host-gr_state=planted`)).status).toBe(
+      403,
+    );
+    expect(h.signedIn).toHaveLength(0);
+    expect((await h.callback(undefined, state, cookie)).status).toBe(200);
   });
 
   it('refuses when the PKCE verifier does not match the challenge', async () => {

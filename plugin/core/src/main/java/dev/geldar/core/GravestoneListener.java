@@ -58,7 +58,11 @@ public final class GravestoneListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onDeath(PlayerDeathEvent event) {
         Player player = event.getEntity();
-        if (!enabled || !player.getName().startsWith(AGENT_PREFIX)) {
+        if (!enabled) {
+            log.fine("gravestone skipped: gravestones are disabled");
+            return;
+        }
+        if (!player.getName().startsWith(AGENT_PREFIX)) {
             return;
         }
         try {
@@ -72,12 +76,14 @@ public final class GravestoneListener implements Listener {
     private void place(Player player) {
         World world = player.getWorld();
         if (world.getEnvironment() != World.Environment.NORMAL) {
+            log.fine("gravestone skipped: " + player.getName() + " died in " + world.getEnvironment() + ", not the overworld");
             return;
         }
         Location at = player.getLocation();
         Optional<Gravestone.Spot> spot = Gravestone.findSpot(new WorldGrid(world), at.getBlockX(), at.getBlockY(), at.getBlockZ());
         if (spot.isEmpty()) {
-            log.fine("no safe gravestone spot near the death of " + player.getName());
+            log.fine("gravestone skipped: no safe spot within " + Gravestone.RADIUS + " blocks of " + at.getBlockX() + ","
+                    + at.getBlockY() + "," + at.getBlockZ() + " in " + world.getName() + " for " + player.getName());
             return;
         }
         Gravestone.Spot s = spot.get();
