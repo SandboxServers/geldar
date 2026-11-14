@@ -107,11 +107,12 @@ export function bodyRetireRoutes(deps: BodyRetireDeps): readonly ApiRoute[] {
         const identityHash = ctx.identityHash;
         if (identityHash === null) return sendProblem(ctx.res, 'unauthenticated');
         const actor: TokenActor = { identityHash, ownerId: ctx.ownerId };
+        const svc = serviceDeps(ctx);
         if (deps.slot.has(ctx.ownerId)) return sendProblem(ctx.res, 'conflict');
         deps.slot.add(ctx.ownerId);
         try {
           if (!(await stopBody(ctx, deps, name))) return;
-          const revoked = await revokePlayerTokens(serviceDeps(ctx), actor, playerId);
+          const revoked = await revokePlayerTokens(svc, actor, playerId);
           if (revoked.status !== 'revoked') return sendRevokeRefusal(ctx, revoked);
           if (!(await deps.retirePlayer(identityHash, playerId))) {
             return sendProblem(ctx.res, 'not_found');

@@ -11,12 +11,16 @@ const enc = (o: unknown) => new TextEncoder().encode(JSON.stringify(o));
 
 type StopMode = 'stopped' | 'unknown' | 'busy' | 'unreachable';
 
-/** The agents of alice (p1 ok, p3 retired, p4 a bad display name) and bob (p2). p9 does not exist. */
+/**
+ * The agents of alice (p1 ok, p3 retired, p4 a bad display name, p5 retired with a bad display name) and bob (p2).
+ * p9 does not exist.
+ */
 const ROWS: Record<string, Record<string, unknown>> = {
   p1: { ownerId: 'alice', playerId: 'p1', displayName: 'Ranger' },
   p2: { ownerId: 'bob', playerId: 'p2', displayName: 'Scout' },
   p3: { ownerId: 'alice', playerId: 'p3', displayName: 'Ghost', status: 'retired' },
   p4: { ownerId: 'alice', playerId: 'p4', displayName: 'ab' },
+  p5: { ownerId: 'alice', playerId: 'p5', displayName: 'ab', status: 'retired' },
 };
 
 /**
@@ -25,7 +29,7 @@ const ROWS: Record<string, Record<string, unknown>> = {
  */
 async function withWorld(
   run: (w: ReturnType<typeof worldOf>) => Promise<void>,
-  opts: { mountRetire?: boolean } = {},
+  opts: { mountRetire?: boolean; noTokens?: boolean } = {},
 ): Promise<void> {
   const w = worldOf();
   const srv = await serve(
@@ -34,7 +38,7 @@ async function withWorld(
         const row = ROWS[player];
         return row && row.ownerId === owner ? row : null;
       },
-      tokens: w.tokens,
+      ...(opts.noTokens ? {} : { tokens: w.tokens }),
       routes: [
         ...bodyRoutes({ conn: w.conn, shard: 'phase0', timeoutMs: 1000, slot: w.slot }),
         ...(opts.mountRetire === false
@@ -63,9 +67,10 @@ function worldOf() {
   const mode: {
     stop: StopMode;
     hold: boolean;
-    revoke: 'ok' | 'none' | 'throw';
+    revoke: 'ok' | 'none' | 'zero' | 'throw';
     retire: 'true' | 'false' | 'throw';
-  } = { stop: 'stopped', hold: false, revoke: 'ok', retire: 'true' };
+    charge: number;
+  } = { stop: 'stopped', hold: false, revoke: 'ok', retire: 'true', charge: 0 };
   let arrive: () => void = () => undefined;
   let release: () => void = () => undefined;
   const held = new Promise<void>((ok) => {
@@ -96,6 +101,7 @@ function worldOf() {
     revokeTokens: async () => {
       log.push('revoke');
       if (mode.revoke === 'throw') throw new Error('db down');
+      if (mode.revoke === 'zero') return 0;
       return mode.revoke === 'none' ? null : 1;
     },
     tokenInfo: async () => null,
@@ -103,7 +109,7 @@ function worldOf() {
   const tokens: TokenDeps = {
     store,
     isAdmin: async () => false,
-    charge: () => 0,
+    charge: () => mode.charge,
     audit: async () => undefined,
     issue: () => {
       throw new Error('not used by retire');
@@ -204,6 +210,12 @@ describe('owner API retire route (C7-04d)', () => {
       const key = await w.srv.call('POST', RETIRE, bearer(KEY_ALL));
       expect(key.status).toBe(401);
       expect(JSON.parse(key.body).code).toBe('unauthenticated');
+      const foreignKey = await w.srv.call('POST', '/api/v1/agents/p2/retire', bearer(KEY_ALL));
+      expect(foreignKey.status).toBe(401);
+      expect(JSON.parse(foreignKey.body).code).toBe('unauthenticated');
+      const badNameKey = await w.srv.call('POST', '/api/v1/agents/p4/retire', bearer(KEY_ALL));
+      expect(badNameKey.status).toBe(401);
+      expect(JSON.parse(badNameKey.body).code).toBe('unauthenticated');
       const none = await w.srv.call('POST', RETIRE, { cookie: cookie.cookie });
       expect(none.status).toBe(403);
       expect(JSON.parse(none.body).code).toBe('csrf_required');
@@ -213,6 +225,16 @@ describe('owner API retire route (C7-04d)', () => {
       });
       expect(wrong.status).toBe(403);
       expect(JSON.parse(wrong.body).code).toBe('csrf_required');
+      expect(w.log).toEqual([]);
+    });
+  });
+
+  it('answers 404 for a retired agent whose display name is also outside the shape: retired is checked first, byte-equal to missing', async () => {
+    await withWorld(async (w) => {
+      const retiredBadName = await w.srv.call('POST', '/api/v1/agents/p5/retire', cookie);
+      const missing = await w.srv.call('POST', '/api/v1/agents/p9/retire', cookie);
+      expect(retiredBadName.status).toBe(404);
+      expect(retiredBadName.body).toBe(missing.body);
       expect(w.log).toEqual([]);
     });
   });
@@ -271,6 +293,41 @@ describe('owner API retire route (C7-04d)', () => {
       expect(r.status).toBe(404);
       expect(JSON.parse(r.body).code).toBe('not_found');
       expect(r.body).not.toContain('retired');
+    });
+  });
+
+  it('retries after the retire write throws: the second run stops, revokes (0 rows, not an error) and retires', async () => {
+    await withWorld(async (w) => {
+      w.mode.retire = 'throw';
+      expect((await w.srv.call('POST', RETIRE, cookie)).status).toBe(500);
+      w.mode.retire = 'true';
+      w.mode.revoke = 'zero';
+      const retry = await w.srv.call('POST', RETIRE, cookie);
+      expect(retry.status).toBe(202);
+      expect(w.log).toEqual(['stop', 'revoke', 'retire', 'stop', 'revoke', 'retire']);
+      expect(w.slot.size).toBe(0);
+    });
+  });
+
+  it('answers 500 internal before any supervisor call when the token services are not wired, and holds no slot', async () => {
+    await withWorld(
+      async (w) => {
+        const r = await w.srv.call('POST', RETIRE, cookie);
+        expect(r.status).toBe(500);
+        expect(JSON.parse(r.body).code).toBe('internal');
+        expect(w.log).toEqual([]);
+        expect(w.slot.size).toBe(0);
+      },
+      { noTokens: true },
+    );
+  });
+
+  it('charges the owner window once, at the router: a service charge of 5 does not limit the retire', async () => {
+    await withWorld(async (w) => {
+      w.mode.charge = 5;
+      const r = await w.srv.call('POST', RETIRE, cookie);
+      expect(r.status).toBe(202);
+      expect(w.log).toEqual(['stop', 'revoke', 'retire']);
     });
   });
 
