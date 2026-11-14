@@ -9,12 +9,36 @@ import { createBasicReflexes } from './basic.ts';
 import { createEatReflex } from './eat.ts';
 
 describe('eat reflex: check', () => {
-  it('fires at hunger 14 with food, not at 15', () => {
+  it('fires at hunger 6 with food, not at 7', () => {
     const reflex = createEatReflex();
-    const { view, state } = basicView({ hunger: 15, foods: ['bread'] });
+    const { view, state } = basicView({ hunger: 7, foods: ['bread'] });
     expect(reflex.check(view)).toBeNull();
-    state.hunger = 14;
-    expect(reflex.check(view)).toEqual({ hunger: 14, foods: 1 });
+    state.hunger = 6;
+    expect(reflex.check(view)).toEqual({ hunger: 6, foods: 1 });
+  });
+
+  it('does not eat on the way to a starving friend: hunger 16, health 9, food carried', () => {
+    const reflex = createEatReflex();
+    const { view } = basicView({ hunger: 16, health: 9, foods: ['bread'] });
+    expect(reflex.check(view)).toBeNull();
+  });
+
+  it('eats when badly hurt below hunger 18: hunger 17, health 5', () => {
+    const reflex = createEatReflex();
+    const { view } = basicView({ hunger: 17, health: 5, foods: ['bread'] });
+    expect(reflex.check(view)).toEqual({ hunger: 17, foods: 1 });
+  });
+
+  it('does not eat when badly hurt at hunger 18: hunger 18, health 5', () => {
+    const reflex = createEatReflex();
+    const { view } = basicView({ hunger: 18, health: 5, foods: ['bread'] });
+    expect(reflex.check(view)).toBeNull();
+  });
+
+  it('does not eat at full health above hunger 6: hunger 7, health 20', () => {
+    const reflex = createEatReflex();
+    const { view } = basicView({ hunger: 7, health: 20, foods: ['bread'] });
+    expect(reflex.check(view)).toBeNull();
   });
 
   it('does not fire without food, or with only foods the eat action refuses', () => {
@@ -79,7 +103,7 @@ describe('eat reflex: run', () => {
 
 describe('eat reflex: under the runner', () => {
   it('writes one reflex_fired record and respects its cooldown', async () => {
-    const { view } = basicView({ hunger: 8, foods: ['bread'] });
+    const { view } = basicView({ hunger: 6, foods: ['bread'] });
     const { registry, runs } = eatRegistry('completed');
     const { ctx } = basicContext(view, gridBot({}).bot, registry);
     const sink = new MemorySink();
