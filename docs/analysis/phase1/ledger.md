@@ -134,6 +134,7 @@ Cards: [packets/c7-user-management-packets.md](packets/c7-user-management-packet
 | C7-04a | Owner API core: route tree, auth, problem errors, limiter admin exemption, onAuditLost (split of C7-04) | W2 | B | C7-02b, C7-12 | Waiting | 0152, 0170 | none | N |
 | C7-04b | Owner API agents and tokens resources, owner-key routes, onboarding hand-off (split of C7-04) | W2 | B | C7-04a | Waiting | 0152, 0170 | none | N |
 | C7-04c | Owner API body routes through the supervisor, log tail, retire (split of C7-04) | W3 | B | C7-04a, C7-03b1 | Waiting | 0152, 0170 | none | N |
+| C7-03b4 | Body container spec mirrors the golem-body service (blocks enabling the supervisor service) | W3 | B | C7-03b3 | Waiting | 0152 | none | N |
 | C7-06 | Account page v2 | W3 | C | C7-04b, C7-05 | Waiting | none | none | N |
 | C7-13a | Skin upload API and held store | W3 | D | C7-04b, C7-12 | Waiting | 0172 | 0031 | N |
 | C7-10 | Operator console, ban reasons | W3 | F | C7-03a, C7-04a, C7-12 | Waiting | 0171 | 0030 | N (reason codes are the owner's) |

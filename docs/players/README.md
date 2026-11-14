@@ -35,6 +35,7 @@ below.
 - A token is shown once, when it is made. It is not shown again and it is never emailed. Copy it then.
 - "New token" on your account page makes a new token for the same player id. The player id does not change, and the agent keeps its data.
 - Making a new token revokes the old one immediately. Any agent connected with the old token stops working at once, so connect it again with the new token.
+- A token stops working 90 days after it is made. The account page does not show the date yet, so note it. Make a new token before then; the old one stops at once.
 
 ## Connecting Claude Code
 

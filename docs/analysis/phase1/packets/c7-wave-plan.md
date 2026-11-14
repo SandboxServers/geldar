@@ -11,7 +11,7 @@ C3-04s roster (0024) --------------------------+
                                                v
 C7-12 admin flag + audit base (0025) --+--> C7-03a supervisor (0027) --> C7-03b1 NATS binding, C7-03b3 adapters --> C7-03b2 compose wiring (geldar-93)
                                        |            |                          |
-                                       +--> C7-02a tokens --> C7-02b owner keys (0026) --> C7-04 API v1
+                                       +--> C7-02a tokens --> C7-02b owner keys (0026) --> C7-04a API core
                                                 |                                         |   |   |
                                                 +--> C7-05 onboarding                      |   |   +--> C7-10 operator console (0030)
                                                                                     C7-04a -> 04b (wave 2), 04c (wave 3, also needs C7-03b1)
@@ -78,7 +78,7 @@ Live lane: none in wave 2 (C7-03b1 and C7-03b3 touch no node). The C7-03b2 rollo
 
 ### Wave 3: account page, rename, operator console, skin upload API
 
-The packets below depend on the C7-04 cards (C7-04b for the resource routes, C7-04a for C7-10); C7-03b2 does not. C7-04c (body routes) is in this wave and needs C7-04a and C7-03b1. Serial order inside the register lane: C7-06, then C7-04c and C7-07; C7-13a and C7-10 run beside C7-06 on disjoint files.
+The packets below depend on the C7-04 cards (C7-04b for the resource routes, C7-04a for C7-10); C7-03b2 does not. C7-03b4 (c7e-packets.md, Body container spec) blocks enabling the supervisor service: the C7-03b2 node steps wait for it. C7-04c (body routes) is in this wave and needs C7-04a and C7-03b1. Serial order inside the register lane: C7-06, then C7-04c and C7-07; C7-13a and C7-10 run beside C7-06 on disjoint files.
 
 | Order | Packet | Depends | Branch | Migration | Size |
 |---|---|---|---|---|---|

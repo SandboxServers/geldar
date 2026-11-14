@@ -24,9 +24,9 @@ describe('docs/players/README.md', () => {
     expect(README).toMatch(/never run/i);
   });
 
-  it('says a new token revokes the old one at once, and promises no expiry date, 14 day warning or 10 minute grace yet', () => {
+  it('says a new token revokes the old one at once, states the 90 day lifetime, and promises no 14 day warning or 10 minute grace yet', () => {
     expect(README).toContain('revokes the old one immediately');
-    expect(README).not.toContain('90 days');
+    expect(README).toContain('A token stops working 90 days after it is made.');
     expect(README).not.toContain('14 days');
     expect(README).not.toContain('10 minutes');
   });

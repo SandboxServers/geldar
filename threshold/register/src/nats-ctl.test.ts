@@ -33,9 +33,47 @@ describe('register body control request', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('a body whose op names another operation throws before anything is sent', async () => {
+    const request = vi.fn(async () => ({ data: enc(JSON.stringify(OK)) }));
+    const conn: CtlConnection = { request };
+    await expect(requestBodyOp(conn, 'stop', 'phase0', BODY, { timeoutMs: 1000 })).rejects.toThrow(
+      /does not match the subject op stop/,
+    );
+    expect(request).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('a body with no op is sent with the subject op bound into the payload', async () => {
+    const request = vi.fn(async (_subject: string, _data: Uint8Array, _opts: unknown) => ({
+      data: enc(JSON.stringify(OK)),
+    }));
+    const conn: CtlConnection = { request };
+    const { op: _ignored, ...withoutOp } = BODY;
+    await expect(
+      requestBodyOp(conn, 'start', 'phase0', withoutOp, { timeoutMs: 1000 }),
+    ).resolves.toEqual(OK);
+    expect(request.mock.calls[0]?.[0]).toBe('geldar.phase0.ctl.body.start');
+    expect(JSON.parse(dec(request.mock.calls[0]?.[1] as Uint8Array))).toEqual(BODY);
+  });
+
+  it('a busy reply comes back as its code, so the caller can map it (not as a success)', async () => {
+    const conn: CtlConnection = {
+      request: async () => ({ data: enc('{"ok":false,"code":"busy"}') }),
+    };
+    await expect(
+      requestBodyOp(conn, 'start', 'phase0', BODY, { timeoutMs: 1000 }),
+    ).resolves.toEqual({ ok: false, code: 'busy' });
+  });
+
   it('a timeout throws BodyUnavailable and clears its timer', async () => {
     const conn: CtlConnection = { request: () => new Promise<never>(() => {}) };
-    const pending = requestBodyOp(conn, 'status', 'phase0', BODY, { timeoutMs: 1000 });
+    const pending = requestBodyOp(
+      conn,
+      'status',
+      'phase0',
+      { ...BODY, op: 'status' },
+      { timeoutMs: 1000 },
+    );
     const assertion = expect(pending).rejects.toBeInstanceOf(BodyUnavailable);
     await vi.advanceTimersByTimeAsync(1000);
     await assertion;

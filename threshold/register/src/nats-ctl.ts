@@ -52,19 +52,24 @@ function parseReply(data: Uint8Array): CtlReply {
 }
 
 /**
- * Sends `body` (JSON, with its `op`, `ownerId` and `playerName`) to the control subject of `op` and returns the
- * parsed reply. A timer bounds the wait and is cleared on every path, so a disconnect leaves no pending timer.
+ * Sends `body` (JSON, with `ownerId` and `playerName`) to the control subject of `op` and returns the parsed reply.
+ * The payload's `op` is bound to the subject: a missing `op` is filled in, and a body whose `op` names another
+ * operation throws before anything is sent (the supervisor refuses such a request as `invalid`).
+ * A timer bounds the wait and is cleared on every path, so a disconnect leaves no pending timer.
  */
 export async function requestBodyOp(
   conn: CtlConnection,
   op: string,
   shard: string,
-  body: unknown,
+  body: Readonly<Record<string, unknown>>,
   { timeoutMs }: { timeoutMs: number },
 ): Promise<CtlReply> {
   // The contract builder rejects a bad shard or op before anything is sent.
   const subject = ctlBodySubject(shard, op);
-  const data = new TextEncoder().encode(JSON.stringify(body));
+  if (body.op !== undefined && body.op !== op) {
+    throw new TypeError(`body op ${String(body.op)} does not match the subject op ${op}`);
+  }
+  const data = new TextEncoder().encode(JSON.stringify({ ...body, op }));
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new BodyUnavailable()), timeoutMs);
