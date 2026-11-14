@@ -1,7 +1,7 @@
-import type { Bot } from 'mineflayer';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { completed, failed } from '../../actions/outcome.ts';
 import { ActionRegistry } from '../../actions/registry.ts';
+import { fakeBot } from '../body.fakes.ts';
 import { MemorySink } from '../records.ts';
 import { type Reflex, type ReflexContext, ReflexRunner } from '../reflex.ts';
 import { allReflexesOn } from '../reflex-config.ts';
@@ -77,7 +77,7 @@ function ctxFor(view: BodyView, registry: ActionRegistry, tick: number): ReflexC
   // The world tick of the view moves with the call, so a run's end is read from the view.
   (view as unknown as Live).tick = tick;
   return {
-    bot: {} as Bot,
+    bot: fakeBot(),
     view,
     registry,
     tick,

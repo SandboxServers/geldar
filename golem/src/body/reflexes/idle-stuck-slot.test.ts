@@ -1,4 +1,3 @@
-import type { Bot } from 'mineflayer';
 import { describe, expect, it } from 'vitest';
 import { completed, failed } from '../../actions/outcome.ts';
 import { ActionRegistry } from '../../actions/registry.ts';
@@ -13,7 +12,7 @@ import { runUnstick } from './idle-stuck.ts';
 function slotCtx(view: BodyView, registry: ActionRegistry, signal: AbortSignal) {
   const slot = { holds: 0, releases: 0, held: false };
   const ctx = {
-    bot: {} as Bot,
+    bot: fakeBot(),
     view,
     registry,
     tick: 0,

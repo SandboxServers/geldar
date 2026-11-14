@@ -1,4 +1,5 @@
 import type { Action } from '@geldar/contract';
+import type { Bot } from 'mineflayer';
 import { type ActionRun, runAction } from '../../actions/registry.ts';
 import type { Reflex, ReflexContext, ReflexOutcome, Trigger } from '../reflex.ts';
 import type { BodyView } from '../view.ts';
@@ -20,6 +21,14 @@ export const SAME_REFUSAL_SPOT = 2;
 export const RUNS_PER_HOUR = 6;
 /** One hour of world time in ticks. */
 export const HOUR_TICKS = 72000;
+/**
+ * Ticks idle_stuck waits after a run the Body was hurt in, before it may run again: 15 s. A flee or
+ * fight reflex needs a few seconds to clear a hostile, so 15 s lets it act first; a Body still stuck
+ * then re-arms well inside the 60 s clock and the doubling backoff (decision 0196, 2026-11-14).
+ */
+export const IDLE_STUCK_DAMAGE_BACKOFF_TICKS = 300;
+/** How long a run waits for the unstick handler to wind down once the run ends: the runtime's 2 s grace. */
+const HANDLER_GRACE_MS = 2000;
 
 const TICKS_PER_SECOND = 20;
 
@@ -173,27 +182,47 @@ export async function runUnstick(ctx: ReflexContext, source: string): Promise<Re
   state.runs.push(ctx.tick);
   const action: Action = { do: 'unstick' };
   // The run holds the runtime's action slot, so a Mind action cannot start mid-dig (decision 0196).
+  // Damage aborts the run (decision 0196, 2026-11-14), and the slot is released only after the
+  // unstick handler has wound down.
+  const hurt = watchHurt(ctx.bot, ctx.signal);
   const release = ctx.holdSlot?.();
   let run: ActionRun;
   try {
+    let handlerEnded: Promise<void> = Promise.resolve();
     run = await runAction(ctx.registry, ctx.bot, action, {
-      signal: ctx.signal,
+      signal: hurt.signal,
       timeScale: ctx.timeScale,
+      onHandler: (ended) => {
+        handlerEnded = ended;
+      },
     });
+    await handlerWound(handlerEnded, ctx.timeScale);
   } finally {
+    hurt.stop();
     release?.();
   }
   const end = ctx.view.tick ?? ctx.tick;
   state.anchor = spotOf(ctx.view);
-  state.since = end;
   // A completed run frees the Body only when it now stands where it can step off (canStepOff true).
   // A run that dug one block lower from a deep drop completes but leaves the Body on the ledge.
   const freed = run.state === 'completed' && ctx.view.canStepOff === true;
   if (freed) {
+    state.since = end;
     state.failures = 0;
     state.until = 0;
     return { result: 'handled', detail: `${source}: unstick freed the body; backoff 0s at ${at}` };
   }
+  if (hurt.hurt()) {
+    // Hurt during the run is not a failed run: the failure count stays, and only the short damage
+    // backoff holds idle_stuck. The idle clock keeps the spell it had, so it re-arms when the backoff ends.
+    state.until = end + IDLE_STUCK_DAMAGE_BACKOFF_TICKS;
+    const wait = Math.round(IDLE_STUCK_DAMAGE_BACKOFF_TICKS / TICKS_PER_SECOND);
+    return {
+      result: 'abandoned',
+      detail: `${source}: unstick stopped, the Body was hurt; backoff ${wait}s at ${at}`,
+    };
+  }
+  state.since = end;
   state.failures++;
   const period = Math.min(BACKOFF_BASE_TICKS * 2 ** (state.failures - 1), BACKOFF_CAP_TICKS);
   state.until = end + period;
@@ -205,6 +234,48 @@ export async function runUnstick(ctx: ReflexContext, source: string): Promise<Re
     return { result: 'failed', detail: `${source}: unstick left the body on a ledge; ${backoff}` };
   }
   return { result: 'failed', detail: `${source}: unstick found no way out; ${backoff}` };
+}
+
+/**
+ * Watches the Body's health for a drop (the drop the view counts as hurt). `signal` aborts on the first
+ * drop, or when `parent` aborts; `hurt()` says whether a drop was seen. `stop` removes both listeners,
+ * so nothing outlives the run.
+ */
+function watchHurt(
+  bot: Bot,
+  parent: AbortSignal,
+): { signal: AbortSignal; hurt: () => boolean; stop: () => void } {
+  const controller = new AbortController();
+  let seen = false;
+  let last = bot.health;
+  const onHealth = (): void => {
+    if (bot.health < last) {
+      seen = true;
+      controller.abort();
+    }
+    last = bot.health;
+  };
+  const onParent = (): void => controller.abort();
+  bot.on('health', onHealth);
+  parent.addEventListener('abort', onParent, { once: true });
+  if (parent.aborted) controller.abort();
+  return {
+    signal: controller.signal,
+    hurt: () => seen,
+    stop: () => {
+      bot.off('health', onHealth);
+      parent.removeEventListener('abort', onParent);
+    },
+  };
+}
+
+/** Waits until the handler has ended, at most the grace (scaled by the time scale); clears its timer. */
+function handlerWound(ended: Promise<void>, timeScale: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const grace = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, HANDLER_GRACE_MS * timeScale);
+  });
+  return Promise.race([ended.catch(() => undefined), grace]).finally(() => clearTimeout(timer));
 }
 
 /** Shelter refusals (`no suitable block`) in a row at one spot, per view. */
