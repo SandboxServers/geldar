@@ -92,6 +92,12 @@ public final class GeldarCore extends JavaPlugin {
                 Math.max(1, getConfig().getInt("gravestones.max_per_chunk", 4)), getLogger(), owners.placements()),
                 this);
         getCommand(GraveBackfillCommand.NAME).setExecutor(new GraveBackfillCommand(owners.placements()));
+        // BlueMap skin provider (GX-07): never returns an empty skin, so BlueMap keeps the agents' head files.
+        try {
+            dev.geldar.core.skins.AgentSkinSetup.register(this, System::getenv);
+        } catch (LinkageError | RuntimeException e) {
+            getLogger().warning("agent skins are not set: " + e.getClass().getSimpleName());
+        }
         getServer().getScheduler().runTaskTimer(this, () -> {
             reloadConfig();
             dev.geldar.core.kino.KinoSetup.reload(kino, getConfig());
