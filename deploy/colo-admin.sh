@@ -148,7 +148,8 @@ run_hosts() {
         if [ -n "$(host_ps '' "geldar-colo-players-host-$id")" ]; then
           say "$id: running (geldar-colo-players-host-$id)"
         elif [ -n "$(host_ps -a "geldar-colo-players-host-$id")" ]; then
-          say "$id: exited (geldar-colo-players-host-$id)"
+          st=$(docker inspect -f '{{.State.Status}}' "geldar-colo-players-host-$id" 2>/dev/null || echo unknown)
+          say "$id: $st (geldar-colo-players-host-$id)"
         else
           say "$id: not running"
         fi
@@ -166,8 +167,13 @@ run_hosts() {
       if [ -n "$(host_ps -a "$hname")" ]; then docker rm -f "$hname" >/dev/null || die "cannot remove the stopped $hname"; fi
       GELDAR_PLAYER_ID=$player sov run -d --no-deps --name "$hname" -e "GELDAR_PLAYER_ID=$player" players-host --player "$player" ||
         die "cannot start $hname"
-      docker update --restart on-failure:5 "$hname" >/dev/null || die "started $hname but cannot set its restart policy"
-      say "started $hname"
+      # The host is up either way. A failed update leaves it without the policy (a crash is not restarted), so say so and
+      # exit 0: the CD must not treat a healthy host as failed and restore it.
+      if docker update --restart on-failure:5 "$hname" >/dev/null; then
+        say "started $hname"
+      else
+        say "started $hname, but cannot set its restart policy (docker update failed); a crash will not restart it"
+      fi
       ;;
     player-stop)
       if [ "$DRY_RUN" = 1 ]; then

@@ -28,6 +28,11 @@ host_status() {
   docker inspect -f '{{.State.Status}}' "$(host_name "$1")" 2>/dev/null || true
 }
 
+# The restart count of the container (docker counts the restarts of one container; a new container starts at 0).
+host_restarts() {
+  docker inspect -f '{{.RestartCount}}' "$(host_name "$1")" 2>/dev/null || true
+}
+
 # Prints the ids of the running player hosts, one per line. Returns 1 when the list cannot be read.
 running_hosts() {
   out=$(host_admin player-list) || return 1
@@ -35,12 +40,14 @@ running_hosts() {
   printf '%s\n' "$out" | sed -n 's/^\(colo: \)\{0,1\}\(ag-[a-z0-9-]*\): running.*/\2/p'
 }
 
-# Prints the ids the CD acts on, one listing of player-list: the running hosts, and the exited hosts whose last exit code was
-# not 0 (a crash that used up the five restarts), so a deploy brings a crashed host back. A clean exit (0) is not listed,
-# so a host that was stopped on purpose stays down. Returns 1 when the list cannot be read.
+# Prints the ids the CD acts on, one listing of player-list: the running hosts, and the stopped hosts whose last exit code was
+# not 0 (a crash that used up the five restarts, or a dead container), so a deploy brings a crashed host back. A clean exit (0)
+# is not listed, so a host that was stopped on purpose stays down. A created container has exit code 0, so it is not listed.
+# Returns 1 when the list cannot be read.
 acted_hosts() {
   out=$(host_admin player-list) || return 1
-  printf '%s\n' "$out" | sed -n 's/^\(colo: \)\{0,1\}\(ag-[a-z0-9-]*\): \(running\|exited\).*/\2 \3/p' |
+  # colo-admin prints each line through say, which prefixes "colo: ".
+  printf '%s\n' "$out" | sed -n 's/^\(colo: \)\{0,1\}\(ag-[a-z0-9-]*\): \(running\|exited\|created\|dead\).*/\2 \3/p' |
     while read -r id state; do
       if [ "$state" = running ]; then echo "$id"; continue; fi
       code=$(docker inspect -f '{{.State.ExitCode}}' "$(host_name "$id")" 2>/dev/null || echo 0)
@@ -49,12 +56,17 @@ acted_hosts() {
   return 0
 }
 
-# Prints "<id> stale|current" for each acted-on host, comparing its image with the body image ($1) of the new manifest.
+# True when the host is running the body image $2 of the new manifest. A host that is not running (exited, restarting) is not
+# current even on that image: a deploy refreshes it, which is how a crashed host comes back.
+host_current() {
+  [ "$(host_image "$1")" = "$2" ] && [ "$(host_status "$1")" = running ]
+}
+
+# Prints "<id> stale|current" for each acted-on host (see host_current), for the image $1 of the new manifest.
 host_states() {
   want=$1
   ids=$(acted_hosts) || return 1
   for id in $ids; do
-    have=$(host_image "$id")
-    if [ "$have" = "$want" ]; then echo "$id current"; else echo "$id stale"; fi
+    if host_current "$id" "$want"; then echo "$id current"; else echo "$id stale"; fi
   done
 }
