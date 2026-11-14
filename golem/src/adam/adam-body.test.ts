@@ -191,6 +191,24 @@ describe('startAdamBody', () => {
     await running.stop();
   });
 
+  it('writes the hurt as its own JSON line with event hurt and the place of the Body', async () => {
+    const r = rig();
+    const bot = fakeBot();
+    const lines: string[] = [];
+    const diag = { log: (line: string) => lines.push(line), now: () => 0 };
+    const running = await startAdamBody({ ...r.env, diag }, bot);
+    (bot as unknown as { health: number }).health = 15;
+    bot.emit('health' as never);
+    const parsed = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(parsed.find((o) => o.event === 'hurt')).toMatchObject({
+      event: 'hurt',
+      x: 0,
+      y: 64,
+      z: 0,
+    });
+    await running.stop();
+  });
+
   it('feeds the bot health event to the digest, and stops after stop()', async () => {
     const r = rig();
     const bot = fakeBot();

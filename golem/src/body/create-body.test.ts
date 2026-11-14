@@ -59,6 +59,24 @@ function stuckBody(view: object, tick: number): void {
   });
 }
 
+describe('createBody ends the previous life at death', () => {
+  it('cancels the running action when the bot dies, and a plan after the respawn is accepted', async () => {
+    const bot = fakeBot();
+    const made = body({ bot });
+    const cancel = vi.spyOn(made.runtime, 'cancelAction');
+    bot.emit('death');
+    expect(cancel).toHaveBeenCalledTimes(1);
+    bot.emit('respawn');
+    // Death happened at revision 5; a snapshot taken after the respawn is at revision 6.
+    const r = await made.executor.submit(
+      thought({ actions: [{ do: 'wait', seconds: 1 }] }),
+      planFor(1, { n: 4, snapshotRevision: 6 }),
+    );
+    expect(r.rejection).toBeNull();
+    expect(r.actions).toHaveLength(1);
+  });
+});
+
 describe('createBody clears the idle clock on respawn and restarts it after an action', () => {
   it('a respawn forgets the idle clock of the old body', () => {
     const bot = fakeBot();

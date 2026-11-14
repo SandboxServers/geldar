@@ -46,6 +46,7 @@ export class FakeRequestServer implements RequestServer {
 /** An executor stub: records what it is given, answers with `result`, and can be held open. */
 export class StubExecutor implements PlanExecutor {
   intentId: string | null = null;
+  deathFloor: number | null = null;
   intentState: PlanExecutor['intentState'] = null;
   /** Set by a started plan, as the real executor does; a test may set it for a resumed intent. */
   runningIntent: Intent | null = null;

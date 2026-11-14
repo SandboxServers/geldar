@@ -1,0 +1,152 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Geldar environment definition",
+  "description": "envs/<name>.yaml: the non-secret values of one environment. Secrets and operator inputs are named by path or by name, never valued. Validated by tools/genesis-env (a hand-typed validator, not generated from contract/). No IPv4 or IPv6 address other than 127.0.0.1 may appear in any value; the subnet is the one CIDR, and it must be an RFC 5737 documentation range.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "project_name",
+    "hostnames",
+    "ports",
+    "paths",
+    "subnet",
+    "docker_network_name",
+    "docker_gid",
+    "register_kill_switch",
+    "backup_destination"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,30}$",
+      "description": "The environment name, also the envs/ file name."
+    },
+    "project_name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{1,40}$",
+      "description": "The compose project name."
+    },
+    "hostnames": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/hostname" },
+      "description": "Public hostnames for the edge."
+    },
+    "ports": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,30}$" },
+      "additionalProperties": { "type": "integer", "minimum": 1, "maximum": 65535 },
+      "description": "Loopback port names to port numbers."
+    },
+    "paths": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,30}$" },
+      "additionalProperties": { "$ref": "#/definitions/path" },
+      "description": "Host path names to host paths."
+    },
+    "subnet": {
+      "type": "string",
+      "pattern": "^(192\\.0\\.2\\.0|198\\.51\\.100\\.0|203\\.0\\.113\\.0)/24$",
+      "description": "The compose subnet: an RFC 5737 documentation /24 only."
+    },
+    "docker_network_name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_.-]{1,62}$"
+    },
+    "docker_gid": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 2147483647,
+      "description": "The host group id of the docker socket."
+    },
+    "image_digests": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_-]{0,40}$" },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[a-z0-9./_-]+@sha256:[a-f0-9]{64}$"
+      },
+      "description": "Image references pinned by digest."
+    },
+    "versions": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[a-z][a-z0-9_-]{0,40}$" },
+      "additionalProperties": { "type": "string", "pattern": "^[A-Za-z0-9._+-]{1,64}$" }
+    },
+    "supervisor_enabled": {
+      "type": "boolean",
+      "default": false
+    },
+    "supervisor_live_check": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]{2,120}$",
+      "description": "The recorded live check that allows supervisor_enabled: true."
+    },
+    "register_enabled": {
+      "type": "boolean",
+      "default": false
+    },
+    "register_kill_switch": {
+      "const": true,
+      "description": "REGISTER_KILL_SWITCH: fixed true in every stamp."
+    },
+    "body_nats_secret_host_path": {
+      "$ref": "#/definitions/path",
+      "description": "Host path of the Body NATS secret. The file is never in the repo."
+    },
+    "body_shard_host_path": {
+      "$ref": "#/definitions/path"
+    },
+    "register_public_url": {
+      "type": "string",
+      "pattern": "^https://[a-z0-9.-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$"
+    },
+    "mcp_public_host": {
+      "$ref": "#/definitions/hostname"
+    },
+    "register_shard": {
+      "$ref": "#/definitions/name"
+    },
+    "register_trusted_peers": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/name" }
+    },
+    "roster_source": {
+      "$ref": "#/definitions/name"
+    },
+    "verification_profile": {
+      "$ref": "#/definitions/name"
+    },
+    "backup_destination": {
+      "$ref": "#/definitions/name",
+      "description": "The name of a backup destination. Never its address or credentials."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "supervisor_enabled": { "const": true } },
+        "required": ["supervisor_enabled"]
+      },
+      "then": { "required": ["supervisor_live_check"] }
+    }
+  ],
+  "definitions": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{0,40}$"
+    },
+    "hostname": {
+      "type": "string",
+      "pattern": "^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 300,
+      "pattern": "^[^\\s]+$"
+    }
+  }
+}

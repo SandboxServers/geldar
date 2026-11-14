@@ -471,6 +471,15 @@ importers:
         specifier: 8.23.1
         version: 8.23.1
 
+  tools/genesis-env:
+    dependencies:
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
+
   tools/glass-ctl: {}
 
   tools/kino-shot:
@@ -532,6 +541,9 @@ importers:
 
   tools/repo-checks:
     dependencies:
+      '@geldar/genesis-env':
+        specifier: workspace:*
+        version: link:../genesis-env
       yaml:
         specifier: 2.9.1
         version: 2.9.1

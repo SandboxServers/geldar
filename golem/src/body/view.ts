@@ -50,6 +50,13 @@ export interface BodyView {
   readonly hunger: number;
   /** Feet position in block coordinates. */
   readonly position: { x: number; y: number; z: number };
+  /**
+   * Feet position at full precision, for log lines (`position` is the block cell). Optional so a
+   * hand-built view may leave it out; a log line then gives null for it.
+   */
+  readonly exactPosition?: { x: number; y: number; z: number } | null;
+  /** The dimension the Body is in (`minecraft:overworld`), for log lines. Optional like `exactPosition`. */
+  readonly dimension?: string | null;
   /** Hostile mobs within `radius` blocks (default 16), nearest first. */
   nearbyHostiles(radius?: number): HostileView[];
   /**
@@ -281,6 +288,13 @@ export function createBodyView(bot: Bot): TrackedBodyView {
     get position() {
       const p = bot.entity.position;
       return { x: Math.floor(p.x), y: Math.floor(p.y), z: Math.floor(p.z) };
+    },
+    get exactPosition() {
+      const p = bot.entity.position;
+      return { x: p.x, y: p.y, z: p.z };
+    },
+    get dimension() {
+      return bot.game?.dimension ?? null;
     },
     nearbyHostiles(radius = DEFAULT_HOSTILE_RADIUS) {
       const here = bot.entity.position;
