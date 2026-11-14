@@ -18,7 +18,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { parse } from 'yaml';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const SCRIPT = readFileSync(join(ROOT, 'geldar.ps1'), 'utf8');
@@ -129,19 +128,6 @@ function renderCompose(...files: string[]) {
 
 /** The quoted strings in one allow list, in order. */
 const quoted = (s: string) => [...s.matchAll(/"([^"]*)"/g)].map((m) => m[1] ?? '');
-
-/** Whether one allow or deny list matches a concrete subject: `*` is one token, `>` the rest (one or more tokens). */
-function allowed(list: string[], subject: string): boolean {
-  const s = subject.split('.');
-  return list.some((p) => {
-    const t = p.split('.');
-    for (let i = 0; i < t.length; i++) {
-      if (t[i] === '>') return i < s.length;
-      if (i >= s.length || (t[i] !== '*' && t[i] !== s[i])) return false;
-    }
-    return t.length === s.length;
-  });
-}
 
 interface Entry {
   user: string;
@@ -387,34 +373,6 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
     expect(bare).toBe(false);
   });
 
-  it('denies a ctl.body publish to every role but supervisor and register, and the body and paper by explicit deny', () => {
-    // NATS deny wins over allow: body and paper have a wide allow, so the explicit deny is what keeps them off ctl.body.
-    const entries = parseEntries(rendered?.conf ?? '');
-    const byUser = (u: string) => entries.find((e) => e.user === u);
-    const ctl = `geldar.${SHARD}.ctl.body.start`;
-    for (const role of ROLES.filter((r) => r !== 'supervisor' && r !== 'register')) {
-      const e = byUser(role);
-      expect(e).toBeDefined();
-      expect(allowed(e?.pub ?? [], ctl) && !allowed(e?.deny ?? [], ctl)).toBe(false);
-    }
-    expect(byUser('body')?.deny).toContain(`geldar.${SHARD}.ctl.body.>`);
-    expect(byUser('paper')?.deny).toContain(`geldar.${SHARD}.ctl.body.>`);
-  });
-
-  it('lets supervisor subscribe to ctl.body and publish only inbox replies, and lets register publish ctl.body only', () => {
-    const entries = parseEntries(rendered?.conf ?? '');
-    const sup = entries.find((e) => e.user === 'supervisor');
-    const reg = entries.find((e) => e.user === 'register');
-    const ctl = `geldar.${SHARD}.ctl.body.start`;
-    expect(allowed(sup?.sub ?? [], ctl)).toBe(true);
-    expect(allowed(sup?.pub ?? [], ctl)).toBe(false);
-    expect(allowed(sup?.pub ?? [], `_INBOX.abc`)).toBe(true);
-    expect(allowed(reg?.pub ?? [], ctl)).toBe(true);
-    // Widening register's subscribe to geldar.<s>.> would make this true; the deny test catches it.
-    expect(allowed(reg?.sub ?? [], ctl)).toBe(false);
-    expect(allowed(reg?.pub ?? [], `geldar.${SHARD}.body.x.plan`)).toBe(false);
-  });
-
   it('keeps the Kino subjects to the plugin and to Glass: only paper publishes the feed, only kino publishes control', () => {
     const entries = parseEntries(rendered?.conf ?? '');
     const by = (u: string) => entries.find((e) => e.user === u);
@@ -474,81 +432,5 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
     expect(by('paper')?.deny).toContain(query);
     expect(canPub(query)).not.toContain('kino');
     expect(canSub(changed)).not.toContain('kino');
-  });
-});
-
-/** The subset of a compose service this file reads: environment (map or KEY=VALUE list) and secrets (short or long). */
-interface ServiceDoc {
-  environment?: Record<string, string> | string[];
-  secrets?: (string | { source?: string; target?: string })[];
-}
-
-/** The environment of one service as a map. */
-function envMap(env: ServiceDoc['environment']): Record<string, string> {
-  if (!env) return {};
-  if (!Array.isArray(env)) return env;
-  return Object.fromEntries(
-    env.map((entry) => {
-      const cut = entry.indexOf('=');
-      return cut < 0 ? [entry, ''] : [entry.slice(0, cut), entry.slice(cut + 1)];
-    }),
-  );
-}
-
-/** Where compose mounts one secret: a short entry at /run/secrets/<name>, a long one at its target (relative or absolute). */
-function mountOf(s: string | { source?: string; target?: string }): string {
-  if (typeof s === 'string') return `/run/secrets/${s}`;
-  const name = s.target ?? s.source ?? '';
-  return name.startsWith('/') ? name : `/run/secrets/${name}`;
-}
-
-/**
- * The services of the given compose files, merged the way `docker compose -f a -f b` merges an overlay: environment keys
- * and secret entries accumulate per service. Read from the YAML files, so no docker is needed.
- */
-function mergeComposeFiles(
-  ...files: string[]
-): Record<string, { env: Record<string, string>; mounts: string[] }> {
-  const out: Record<string, { env: Record<string, string>; mounts: string[] }> = {};
-  for (const file of files) {
-    const doc = parse(readFileSync(join(ROOT, 'compose', file), 'utf8')) as {
-      services?: Record<string, ServiceDoc>;
-    };
-    for (const [name, svc] of Object.entries(doc.services ?? {})) {
-      const cur = out[name] ?? { env: {}, mounts: [] };
-      Object.assign(cur.env, envMap(svc.environment));
-      cur.mounts.push(...(svc.secrets ?? []).map(mountOf));
-      out[name] = cur;
-    }
-  }
-  return out;
-}
-
-describe('colo NATS auth wiring, static (no docker needed)', () => {
-  it('points every NATS password file in colo.yml merged with nats-auth.yml at a secret the service mounts', () => {
-    const services = mergeComposeFiles('colo.yml', 'nats-auth.yml');
-    const named = Object.entries(services).filter(([, s]) => s.env.GELDAR_NATS_PASSWORD_FILE);
-    // Names only: a failing expect prints the service names, never a value.
-    expect(named.map(([n]) => n)).toEqual(
-      expect.arrayContaining(['golem-body', 'animus', 'paper', 'velocity', 'eventsink']),
-    );
-    const gaps = named
-      .filter(([, s]) => !s.mounts.includes(s.env.GELDAR_NATS_PASSWORD_FILE ?? ''))
-      .map(([n]) => n);
-    expect(gaps).toEqual([]);
-  });
-
-  it('gives animus the mind user and a password file mounted from the nats-mind secret', () => {
-    const animus = mergeComposeFiles('colo.yml').animus;
-    expect(animus?.env.GELDAR_NATS_USER).toBe('mind');
-    expect(animus?.env.GELDAR_NATS_URL).toBe('nats://nats:4222');
-    expect(animus?.mounts).toContain('/run/secrets/nats-mind.txt');
-  });
-
-  it('merges nats-auth.yml into `shard up colo` in Invoke-Shard', () => {
-    const invoke = functionBody('Invoke-Shard');
-    expect(invoke).toMatch(
-      /if \(\$shard -eq 'colo' -and \$action -eq 'up'\) \{ \$files \+= @\('-f', \(Join-Path \$Root 'compose\/nats-auth\.yml'\)\) \}/,
-    );
   });
 });

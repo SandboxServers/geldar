@@ -72,6 +72,7 @@ export interface ContainerConfig {
   NanoCpus: number;
   Memory: number;
   MemorySwap: number;
+  PidsLimit: number;
 }
 
 export interface BodySpec {
