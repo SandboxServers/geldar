@@ -136,7 +136,7 @@ Credentials per route (decision 0173). A cookie session without the CSRF token o
 
 ### Routes
 
-Credentials (decision 0173): start, stop and restart accept a Bearer owner key with scope `body` or a cookie session; the status and log reads accept scope `read` or a cookie session; retire is cookie-session only.
+Credentials (decision 0173): start, stop and restart accept a Bearer owner key with scope `body` or a cookie session; the status and log reads accept scope `read` or a cookie session.
 
 - `POST /agents/{playerId}/body/start` (scope `body`): 202 `BodyOp` (`opId`, `state` queued, done or refused). 429 `quota` (supervisor refusal) or `rate_limited` (the register limit on repeat starts) with `Retry-After`. 409 `conflict` only from the register's in-flight guard. Replies map by the table in the reply-mapping paragraph below.
 - `POST .../body/stop` (scope `body`): 202 `BodyOp`. 409 `conflict` from the in-flight guard only. 429 as above.
@@ -145,6 +145,7 @@ Credentials (decision 0173): start, stop and restart accept a Bearer owner key w
 - `GET .../body/log` (scope `read`): 200 `LogTail`. `limit` defaults to 200; a `limit` above 200 is 422 `invalid`. Only events of the owner's own agent (its life id), no older than 7 days (0170 point 4: the smaller of 200 events or 7 days). Each line is `{at, text}` where `text` is picked from a fixed table of codes. No model text, no digits from a model, no free text.
 - `POST .../retire` (NOT BUILT here: split to C7-04d; cookie session only, CSRF; it revokes tokens, which is cookie-only in v1, decision 0173): stop the body through the supervisor, then revoke the tokens (C7-04b service), then retire the player; 202 `BodyOp`. A supervisor timeout on the stop leaves the agent not retired (the retry is safe).
 - Every body route: a foreign agent is 404 (including `/body/log`). A supervisor timeout or no-responders is 503 `body_unavailable` with `Retry-After`; no pending reply is kept in the process (the in-flight slot below is the only per-owner state).
+- Names and retired agents: the register enforces a display name of 3 to 16 characters (the Minecraft rule) before any supervisor call. A retired agent gets 404 on every body route, and PATCH on a retired agent gets 404 too.
 - **Reply mapping (fix L).** The table covers the real supervisor codes (`ReplyCode` and `Refusal` in `supervisor/src/ports.ts`). A repeat start replies `started`, so `noop` and `conflict` are not supervisor codes and are not in the table. `conflict` 409 comes only from the register's own in-flight guard (below).
 
   | Supervisor code | Route reply |
@@ -160,7 +161,7 @@ Credentials (decision 0173): start, stop and restart accept a Bearer owner key w
 
   No reply maps to 200 unless the table says 200. Tests: one per row, and an unknown code `zzz` gives 503, never 200. Revert: map unknown codes to 202; the unknown-code test fails.
 - **Op binding (fix J).** `requestBodyOp` (C7-03b1, `threshold/register/src/nats-ctl.ts`) fills the payload `op` from the subject and throws before anything is sent when the payload names another op. Each route passes only its own op. Tests: a route's request carries its own op; a payload naming another op is refused before the request is sent (the nats-ctl op-binding tests pin it). Revert: drop the mismatch check; the mismatch test fails.
-- **One in flight per owner (fix J).** At the register an owner has at most one body request in flight (start, stop, restart, retire). A second one while the first is pending gets 409 `conflict` and makes no supervisor call. It is 409, not 429, because it is a state conflict, not a rate. The slot is taken before the supervisor call and released in a `finally`. Tests: the first request (slot free) is accepted with 202; the last allowed request (the slot is freed by completion, then a new request takes it) is accepted; a concurrent request past the cap is 409 `conflict` and the supervisor fake is called once; a timeout releases the slot and the next request is accepted. Revert: remove the slot check; the past-cap test fails.
+- **One in flight per owner (fix J).** At the register an owner has at most one body request in flight (start, stop, restart; retire shares this slot, C7-04d). A second one while the first is pending gets 409 `conflict` and makes no supervisor call. It is 409, not 429, because it is a state conflict, not a rate. The slot is taken before the supervisor call and released in a `finally`. Tests: the first request (slot free) is accepted with 202; the last allowed request (the slot is freed by completion, then a new request takes it) is accepted; a concurrent request past the cap is 409 `conflict` and the supervisor fake is called once; a timeout releases the slot and the next request is accepted. Revert: remove the slot check; the past-cap test fails.
 
 ### Carry-forward from review-5 that lands here
 
@@ -193,7 +194,7 @@ The counter exemption for admin starts (per-agent hourly, per-owner daily) is en
 
 ## C7-04d: retire (POST /agents/{playerId}/retire)
 
-- **id / wave / lane.** C7-04d, wave 3, split out of C7-04c (ruling, continuation 1). Register lane, Ready after C7-04c merges. **depends-on.** C7-04c (the body handler), C7-04c2 (creates the shared in-flight slot), C7-04b (the token revoke service). **branch.** `phase1/c7-04d-retire`. **migration.** none. **size.** S to M.
+- **id / wave / lane.** C7-04d, wave 3, split out of C7-04c (ruling, continuation 1). Register lane, after C7-04c2 merges. **depends-on.** C7-04c (the body handler), C7-04c2 (creates the shared in-flight slot), C7-04b (the token revoke service). **branch.** `phase1/c7-04d-retire`. **migration.** none. **size.** S to M.
 - **Goal.** `POST /agents/{playerId}/retire`, cookie session only with CSRF (decision 0173: it revokes tokens, which is cookie-only in v1). Order: stop the body through the supervisor (`ctl.body.stop`), then revoke the agent's tokens through the C7-04b service, then retire the player. 202 `BodyOp`.
 - **Rules.** A supervisor timeout or no-responders on the stop is 503 `body_unavailable` with `Retry-After`, and leaves the agent not retired (the retry is safe). A foreign agent is 404 before any supervisor call. A Bearer key is refused (cookie only).
 - **In-flight slot (sharing rule).** The one-in-flight slot (C7-04c, fix J) is shared, not copied. C7-04c2 creates it with `createBodySlot()` (in `api/body-slot.ts`) and passes the same slot to `bodyRoutes` and to the retire handler through `BodyDeps.slot`. C7-04d takes the slot from `BodyDeps` and never creates a second one, so a retire and a stop cannot both reach the supervisor. Test: a retire while a stop is in flight is 409 `conflict` with no supervisor call.
@@ -203,7 +204,7 @@ The counter exemption for admin starts (per-agent hourly, per-owner daily) is en
 
 ## C7-04c2: body routes production wiring
 
-- **id / wave / lane.** C7-04c2, wave 3, split out of C7-04c (ruling, continuation 1). Register lane, Ready after C7-04c merges, serial with it. **depends-on.** C7-04c. **branch.** `phase1/c7-04c2-wiring`. **migration.** none. **size.** S.
+- **id / wave / lane.** C7-04c2, wave 3, split out of C7-04c (ruling, continuation 1). Register lane, Ready (C7-04c is merged), serial with it. **depends-on.** C7-04c. **branch.** `phase1/c7-04c2-wiring`. **migration.** none. **size.** S.
 - **Goal.** Make the body routes live: open the NATS connection in register (a `CtlConnection` from `nats-ctl.ts`), mount `bodyRoutes({ conn, shard, timeoutMs })` through `deps.routes`, and take the shard and reply wait from config. With no connection, the body routes answer 503 `body_unavailable`.
 - **Files.** may-edit: `threshold/register/src/server.ts` and `threshold/register/src/main.ts` (the wiring lines only), the NATS connect helper (new file), `threshold/register/src/api/body-slot.ts` (new; `createBodySlot()`), `threshold/register/src/api/body.ts` (the `slot` field of `BodyDeps`, default `createBodySlot()`, and nothing else; a note in the worknote), config, their tests, `docs/analysis/phase1/worknotes/C7-04c2.md`. `api/body-log.ts` is read only.
 - **F1 fix note (from the C7-04c review).** The register sends the agent's display name as `playerName`, not the URL id; a display name outside `^[A-Za-z0-9_]{1,16}$` is a 422 before any supervisor call (C7-04c carries the code). The live check must therefore start a body for an `ag-` id, the register's player id, and must not use a player name chosen by hand.
