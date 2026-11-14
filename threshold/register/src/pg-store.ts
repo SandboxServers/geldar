@@ -251,6 +251,17 @@ export class PgStore implements Store, SessionStore {
     }
   }
 
+  /**
+   * Removes the account of the identity (register_account_delete, migration 0039). The bodies are stopped by the route
+   * before this call. True when the account was removed; false when there was nothing to remove (a second delete).
+   */
+  async eraseAccount(identityHash: string): Promise<boolean> {
+    const r = await this.pool.query('SELECT register_account_delete($1) AS ok', [
+      hex(identityHash),
+    ]);
+    return r.rows[0]?.ok === true;
+  }
+
   async retirePlayer(identityHash: string, playerId: string): Promise<boolean> {
     try {
       const r = await this.pool.query('SELECT register_retire_player($1, $2) AS ok', [

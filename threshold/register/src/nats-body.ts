@@ -2,7 +2,7 @@
 // body request, so an unreachable server is a 503 body_unavailable at request time, never a failed start.
 import { connectNats } from '@geldar/contract/nats';
 import { bodyRoutes } from './api/body.ts';
-import { bodyRetireRoutes } from './api/body-retire.ts';
+import { type BodyStopLink, bodyRetireRoutes } from './api/body-retire.ts';
 import { type BodySlot, createBodySlot } from './api/body-slot.ts';
 import type { ApiRoute } from './api/route.ts';
 import type { RegisterNats } from './config.ts';
@@ -72,7 +72,12 @@ export function bodyWiring(
   log: (line: string) => void,
   connect: ConnectNats = connectNats,
   retirePlayer: RetirePlayer | null = null,
-): { readonly routes: readonly ApiRoute[]; readonly slot: BodySlot } {
+): {
+  readonly routes: readonly ApiRoute[];
+  readonly slot: BodySlot;
+  /** The stop link the account delete uses (C7-09a); null without NATS. */
+  readonly link: BodyStopLink | null;
+} {
   const slot = createBodySlot();
   if (config.nats === null) {
     log(
@@ -80,7 +85,7 @@ export function bodyWiring(
         ? 'body routes unmounted: REGISTER_NATS_PASSWORD_FILE is unreadable or empty'
         : 'body routes unmounted: NATS is not configured',
     );
-    return { routes: [], slot };
+    return { routes: [], slot, link: null };
   }
   const shared = {
     conn: lazyCtlConnection(config.nats, log, connect),
@@ -93,7 +98,7 @@ export function bodyWiring(
     ...(retirePlayer ? bodyRetireRoutes({ ...shared, retirePlayer }) : []),
   ];
   log('body routes mounted');
-  return { routes, slot };
+  return { routes, slot, link: shared };
 }
 
 /**

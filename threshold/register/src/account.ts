@@ -1,8 +1,15 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { hashToken, mintToken } from '../../mcp/src/store/token-hash.ts';
+import { deleteAccountPage } from './account-delete-page.ts';
 import { accountPage, type BodyState } from './account-pages.ts';
 import { ACCOUNT_CSS } from './account-style.ts';
+import {
+  type AccountDeleteDeps,
+  DELETE_PHRASE,
+  deleteAccountData,
+} from './api/account-data-delete.ts';
+import { UNAVAILABLE_RETRY_SECONDS } from './api/body.ts';
 import type { RegisterConfig } from './config.ts';
 import { errorPage } from './errors.ts';
 import type { Identity } from './identity.ts';
@@ -63,6 +70,8 @@ export interface AccountDeps {
    * undefined for an agent, means the page shows no body line for it. A throw is treated the same way.
    */
   readonly bodyState?: (playerId: string) => Promise<BodyState | undefined>;
+  /** The account delete (C7-09a): the same shared delete the API route uses. Unset, the page action is a 404. */
+  readonly accountDelete?: AccountDeleteDeps | undefined;
 }
 
 /** The value of the one cookie of this name. Two or more of that name in the header give null: no session. */
@@ -82,6 +91,13 @@ const sessionCookie = (value: string, maxAge: number): string =>
 const LEGACY_CLEARS = [
   'gr_session=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax',
   'gr_state=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax',
+];
+
+/** The Set-Cookie values that end a session: the session cookie, the legacy names and the kino cookie (C7-09a). */
+export const signOutCookies = (): string[] => [
+  sessionCookie('', 0),
+  ...LEGACY_CLEARS,
+  kinoCookieHeader('', 0),
 ];
 
 /** The form token is derived from the session id, so the table holds no copy of it. */
@@ -223,7 +239,7 @@ export class Account {
       return true;
     }
     const m =
-      /^\/(account|players|logout|onboarding)(?:\/(ag-[a-z0-9-]+)\/(token|retire|public-camera|public-thoughts))?$/.exec(
+      /^\/(account\/delete|account|players|logout|onboarding)(?:\/(ag-[a-z0-9-]+)\/(token|retire|public-camera|public-thoughts))?$/.exec(
         url.pathname,
       );
     if (!m) return false;
@@ -244,6 +260,10 @@ export class Account {
     if (!session) {
       this.deps.log('session expired');
       html(res, 401, EXPIRED_PAGE, { 'set-cookie': sessionCookie('', 0) });
+      return true;
+    }
+    if (m[1] === 'account/delete' && req.method === 'GET') {
+      html(res, 200, deleteAccountPage(session.csrf));
       return true;
     }
     if (m[1] === 'account' || m[1] === 'onboarding') {
@@ -287,11 +307,58 @@ export class Account {
       html(res, 429, errorPage(429, wait), { 'retry-after': String(wait) });
       return true;
     }
+    if (m[1] === 'account/delete') return this.deleteOwnAccount(res, session, fields);
     if (m[1] === 'players' && m[2] === undefined) return this.create(res, session, fields);
     if (m[3] === 'public-camera') return this.camera(res, session, m[2] ?? '', fields);
     if (m[3] === 'public-thoughts') return this.thoughts(res, session, m[2] ?? '', fields);
     if (m[3] === 'token') return this.mint(res, session, m[2] ?? '');
     return this.retire(res, session, m[2] ?? '');
+  }
+
+  /**
+   * The account delete page action (C7-09a). CSRF, the origin and the ban were checked by the caller. The phrase is
+   * checked here, then the same shared delete the API route runs. Nothing is removed unless the outcome is 'deleted'.
+   */
+  private async deleteOwnAccount(
+    res: ServerResponse,
+    s: Session,
+    fields: URLSearchParams,
+  ): Promise<true> {
+    const deps = this.deps.accountDelete;
+    if (!deps) {
+      html(res, 404, errorPage(404));
+      return true;
+    }
+    if (fields.get('phrase') !== DELETE_PHRASE) {
+      html(res, 422, deleteAccountPage(s.csrf, 'The confirmation phrase does not match.'));
+      return true;
+    }
+    const outcome = await deleteAccountData(deps, s.identityHash, s.ownerId);
+    if (outcome === 'deleted') {
+      this.deps.log('account deleted');
+      res.writeHead(302, {
+        location: BASE,
+        'set-cookie': [...deps.clearCookies],
+        ...SECURITY_HEADERS,
+      });
+      res.end();
+      return true;
+    }
+    if (outcome === 'unauthenticated') {
+      refuse(res);
+      return true;
+    }
+    if (outcome === 'conflict') {
+      html(res, 409, deleteAccountPage(s.csrf, 'An agent is busy. Try again shortly.'));
+      return true;
+    }
+    html(
+      res,
+      503,
+      deleteAccountPage(s.csrf, 'An agent body could not be stopped. Nothing was deleted.'),
+      { 'retry-after': String(UNAVAILABLE_RETRY_SECONDS) },
+    );
+    return true;
   }
 
   private methodNotAllowed(res: ServerResponse): true {
