@@ -30,8 +30,8 @@ export const START_WINDOW_MAX = 5;
 export const QUOTA_RETRY_SECONDS = 3600;
 export const UNAVAILABLE_RETRY_SECONDS = 30;
 
-/** The login name the supervisor can use: the Minecraft player name shape. */
-const LOGIN_NAME = /^[A-Za-z0-9_]{1,16}$/;
+/** The login name the supervisor can use: the Minecraft player name shape, 3 to 16 characters. */
+const LOGIN_NAME = /^[A-Za-z0-9_]{3,16}$/;
 const LOGIN_NAME_DETAIL = "The player's name must be 3 to 16 letters, digits or underscore.";
 
 function sendJsonBody(
@@ -98,13 +98,14 @@ function mapReply(ctx: ApiContext, reply: SupervisorReply, limit: number, now: n
 }
 
 /**
- * The owner's agent as the supervisor's player name. A missing or another owner's agent is 404 with no supervisor
- * call. The supervisor keys a body by the agent's display name (the Minecraft name), never by the `ag-` player id;
- * a display name outside the player-name shape is 422 with the fixed text, and no supervisor call is made.
+ * The owner's agent as the supervisor's player name. A missing, another owner's or a retired agent is 404 with no
+ * supervisor call (the retired check runs before the name check). The supervisor keys a body by the agent's display
+ * name (the Minecraft name), never by the `ag-` player id; a display name outside the 3 to 16 player-name shape is
+ * 422 with the fixed text, and no supervisor call is made.
  */
 async function targetName(ctx: ApiContext, playerId: string): Promise<string | null> {
   const agent = await ownedAgent(ctx.deps, ctx.ownerId, playerId);
-  if (agent === null) {
+  if (agent === null || agent.status === 'retired') {
     sendProblem(ctx.res, 'not_found');
     return null;
   }

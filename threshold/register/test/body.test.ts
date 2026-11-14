@@ -18,10 +18,26 @@ const OWNERS = new Map<string, { ownerId: string; scopes: string[] }>([
   [hash(KEY_READ).toString('hex'), { ownerId: 'carol', scopes: ['read'] }],
 ]);
 /** Agents by player id. The display name is the supervisor's player name; the player id is `ag-` and never sent. */
-const AGENTS = new Map<string, { ownerId: string; playerId: string; displayName: string }>([
+const AGENTS = new Map<
+  string,
+  { ownerId: string; playerId: string; displayName: string; status?: string }
+>([
   ['ag-one-01', { ownerId: 'alice', playerId: 'ag-one-01', displayName: 'Ranger' }],
   ['ag-two-01', { ownerId: 'bob', playerId: 'ag-two-01', displayName: 'Scout' }],
   ['ag-odd-01', { ownerId: 'alice', playerId: 'ag-odd-01', displayName: 'My Agent' }],
+  ['ag-short-01', { ownerId: 'alice', playerId: 'ag-short-01', displayName: 'ab' }],
+  [
+    'ag-sixteen-01',
+    { ownerId: 'alice', playerId: 'ag-sixteen-01', displayName: 'abcdefghijklmnop' },
+  ],
+  [
+    'ag-seventeen-01',
+    { ownerId: 'alice', playerId: 'ag-seventeen-01', displayName: 'abcdefghijklmnopq' },
+  ],
+  [
+    'ag-retired-01',
+    { ownerId: 'alice', playerId: 'ag-retired-01', displayName: 'ab', status: 'retired' },
+  ],
 ]);
 const bearer = (k: string) => ({ authorization: `Bearer ${k}` });
 const enc = (o: unknown) => new TextEncoder().encode(JSON.stringify(o));
@@ -124,6 +140,67 @@ describe('body start (C7-04c reply mapping)', () => {
     );
     expect(fake.subjects.length).toBe(before);
   });
+  it.each(['ag-short-01', 'ag-seventeen-01'])(
+    '%s has a display name outside 3 to 16 characters: 422 with no supervisor call',
+    async (id) => {
+      const before = fake.subjects.length;
+      const r = await h.call('POST', `/api/v1/agents/${id}/body/start`, bearer(KEY_ALL));
+      expect(r.status).toBe(422);
+      expect(JSON.parse(r.body).code).toBe('invalid');
+      expect(fake.subjects.length).toBe(before);
+    },
+  );
+
+  it('a 16-character display name is accepted and sent as the player name', async () => {
+    const before = fake.subjects.length;
+    const r = await h.call('POST', '/api/v1/agents/ag-sixteen-01/body/start', bearer(KEY_ALL));
+    expect(r.status).toBe(202);
+    expect(fake.subjects.length).toBe(before + 1);
+    expect(fake.payloads.at(-1)).toMatchObject({ playerName: 'abcdefghijklmnop' });
+  });
+});
+
+describe('body retired agent (404 on every body route, before the name check)', () => {
+  const fake = fakeConn(() => reply('started', true));
+  const h = harness(fake.conn);
+  beforeAll(() => h.start());
+  afterAll(() => h.stop());
+
+  it.each([
+    ['POST', '/start'],
+    ['POST', '/stop'],
+    ['POST', '/restart'],
+    ['GET', '/status'],
+    ['GET', '/log'],
+  ])('%s on %s answers 404 not_found with no supervisor call', async (method, suffix) => {
+    // The retired agent's display name is 'ab', outside the name shape: 404 must win over 422.
+    const before = fake.subjects.length;
+    const r = await h.call(method, `/api/v1/agents/ag-retired-01/body${suffix}`, bearer(KEY_ALL));
+    expect(r.status).toBe(404);
+    expect(JSON.parse(r.body).code).toBe('not_found');
+    expect(fake.subjects.length).toBe(before);
+  });
+});
+
+describe('body refuses a game player token on the owner API', () => {
+  const fake = fakeConn(() => reply('started', true));
+  const h = harness(fake.conn);
+  beforeAll(() => h.start());
+  afterAll(() => h.stop());
+
+  it.each([
+    ['POST', START],
+    ['GET', STATUS],
+  ])(
+    'a gmcp- Bearer on %s %s is 401 unauthenticated, with no supervisor call',
+    async (method, path) => {
+      const before = fake.subjects.length;
+      const r = await h.call(method, path, bearer(`gmcp-${'d1'.repeat(32)}`));
+      expect(r.status).toBe(401);
+      expect(JSON.parse(r.body).code).toBe('unauthenticated');
+      expect(fake.subjects.length).toBe(before);
+    },
+  );
 });
 
 describe('body foreign agent (404 on every body route, no supervisor call)', () => {
@@ -217,6 +294,11 @@ describe('body stop, restart and status success codes', () => {
     expect(r.status).toBe(202);
     expect(JSON.parse(r.body)).toMatchObject({ state: 'done' });
     expect(fake.subjects.at(-1)).toBe('geldar.phase0.ctl.body.stop');
+    expect(fake.payloads.at(-1)).toMatchObject({
+      op: 'stop',
+      ownerId: 'alice',
+      playerName: 'Ranger',
+    });
   });
 
   it('a restarted reply to restart is 202 BodyOp done', async () => {
@@ -224,6 +306,11 @@ describe('body stop, restart and status success codes', () => {
     const r = await h.call('POST', RESTART, bearer(KEY_ALL));
     expect(r.status).toBe(202);
     expect(fake.subjects.at(-1)).toBe('geldar.phase0.ctl.body.restart');
+    expect(fake.payloads.at(-1)).toMatchObject({
+      op: 'restart',
+      ownerId: 'alice',
+      playerName: 'Ranger',
+    });
   });
 
   it('a running reply to status is 200 state running, and only state is returned', async () => {
@@ -231,6 +318,7 @@ describe('body stop, restart and status success codes', () => {
     const r = await h.call('GET', STATUS, bearer(KEY_ALL));
     expect(r.status).toBe(200);
     expect(JSON.parse(r.body)).toEqual({ state: 'running' });
+    expect(fake.payloads.at(-1)).toMatchObject({ ownerId: 'alice', playerName: 'Ranger' });
   });
 
   it('an idle reply to status is 200 state stopped', async () => {
@@ -386,6 +474,7 @@ describe('body status and log reads', () => {
     expect(r.status).toBe(200);
     const lines = JSON.parse(r.body).lines as { text: string }[];
     expect(lines.map((l) => l.text)).toEqual(['Body stopped.', 'Event.']);
+    expect(fake.payloads.at(-1)).toMatchObject({ ownerId: 'alice', playerName: 'Ranger' });
   });
 
   it('a read needs scope read: a body-only key is refused on the log', async () => {
