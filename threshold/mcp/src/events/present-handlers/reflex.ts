@@ -15,6 +15,7 @@ const REFLEX_TRIGGERS: Readonly<Record<string, string>> = {
   unstick: 'you were stuck, you tried to get free',
   blocked_path: 'your path was blocked, you looked for a way round',
   dark_shelter: 'it was dark and you were exposed, you took cover',
+  idle_stuck: 'you had not moved for a minute and had no way out, you tried to get free',
 };
 
 /** The reflex names that have a line; a test checks it covers every reflex the Body can fire. */

@@ -14,6 +14,7 @@ export const REFLEX_NAMES = [
   'panic_burrow',
   'dark_shelter',
   'unstick',
+  'idle_stuck',
 ] as const;
 
 /** One reflex's name, exactly as in the shard file and in `reflex_fired` records. */
