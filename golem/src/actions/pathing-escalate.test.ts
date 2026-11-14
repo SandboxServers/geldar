@@ -186,7 +186,7 @@ describe('decision 0210: a movement or a freed Body restarts the identical-repla
 });
 
 describe('decision 0210: the replan escalation has a wall-clock arm (low TPS)', () => {
-  it('at 2 TPS the escalation runs at 110 s of wall time, before the 240-tick arm and the 120 s goto timeout', async () => {
+  it('at 2 TPS the escalation fires when the third replan lands (about 95 s wall), before the 120 s goto timeout; the 15 s wall arm is not the binding gate there', async () => {
     vi.useFakeTimers();
     let wallMs = 0;
     const { bot, sink, ac, move } = stuckMove(pocket(), undefined, 2000, () => wallMs);

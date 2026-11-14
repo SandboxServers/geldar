@@ -20,6 +20,8 @@ Two clocks decide when the check is due:
 
 - The tick arm: the replan cadence is 60 world ticks (`REPLAN_STALL_TICKS`) with less than 0.03 block of movement. Three replans put the escalation at tick 240 of a still Body: 12 s at 20 TPS, 48 s at 5 TPS, 120 s at 2 TPS.
 - The wall-clock arm: `ESCALATE_WALL_MS` (15 s) of wall time since the Body last moved, with three replans behind it, is also due. It runs once per still spell. At 2 TPS it runs at about 90 to 95 s, before the 120 s goto timeout.
+- The wall-clock arm does not bind at very low TPS. The tick-paced `stuckReplans >= 3` gate still has to be met, and at 2 TPS the third replan lands at about 90 s. So Worf's case at about 2 TPS would escalate at about 95 s instead of 120 s, and the arm does little more than that. At 20 TPS it changes nothing.
+- OPEN (owner call): escalate once when `msSinceMove >= a fixed bound` (for example 30 s, matching the 20 TPS behaviour), with no replan-count gate, guarded by `nearDoor`, `youngDig` and `MAX_LADDERS`. Not implemented.
 
 The escalation follows decisions 0164 and 0183 exactly like unstick does: the same ownership record, the same hand-dig and refusal rules, and no dig through another player's work. This was agreed with geldar-93 on 2026-11-14.
 
@@ -43,4 +45,4 @@ These tests pin behaviour that already exists, with no behaviour change:
 - The 30 s limit: `timeoutMs` of `unstick` is derived from `ACTION_LIMIT_S` (`ACTION_LIMIT_S * 1000`), with a test that ties them.
 - The budget is an estimate checked before a step. `dig()` retries once on "aborted", and walks and digs count ticks, so at low TPS the wall time can stretch past the nominal seconds.
 - The climb rung (`digUp`) uses the same tool-aware estimate (`digSeconds`).
-- Test gaps: the budget gate at the unstick() call sites of the elevated dig-down and the main stair are pinned through the exported helpers, not through `unstick()` itself. `MAX_LADDERS` is pinned by its value, not by a two-ladder behaviour test.
+- Known gap (mutants M8 and M12 survive): the budget argument at the unstick() call sites of the elevated dig-down (unstick.ts ~391) and the main stair (unstick.ts ~400) is pinned only through the exported helpers, not through `unstick()` itself. Not attempted in this pass for lack of budget. `MAX_LADDERS` is pinned by its value, not by a two-ladder behaviour test.
