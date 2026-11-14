@@ -7,15 +7,26 @@
 -- Removed: every token (revoked, then deleted), every owner API key, every player of the owner, the owner's
 -- roster rows, its body_ops rows, the identity's register sessions, consents and kino admin row, the owner row.
 -- A life still alive (no died_at) is retired by this function: its mcp_journal, thoughts, sleep marks and budget
--- rows are removed. The agents row stays with owner NULL (a dead life's public thoughts, events and death records
--- stay with no owner link). Events are not owner-linked and stay (open point of 0171).
+-- rows are removed, and the agents row gets died_at = now(), death_cause 'owner-erased', public_camera and
+-- thoughts_delayed_public FALSE (so no public camera shows a life with no body and no owner). A dead life keeps
+-- its agents row, thoughts, sleep marks and budget, with owner NULL. Events are not owner-linked and stay
+-- (open point of 0171).
 -- Identity: an unbanned identity row is deleted. A banned identity keeps its hash and banned_at (the tombstone,
 -- 0136 and 0171 point 4) with owner_id set to NULL, so the owner row can go; a sign-in with it is refused by the
--- banned check before any owner is read.
+-- banned check before any owner is read. The tombstone keeps provider and created_at too (NOT NULL columns).
 -- Audit: one register_audit row, actor = a random erasure id (not derived from the owner id), target 'account'.
 -- Not referenced yet: skin upload rows (C7-13a adds them to this function; see the worknote).
 -- Owner id is never written to the audit row. The function runs as its owner with the pinned search_path; only
 -- geldar_register may execute it.
+--
+-- Locks (F2): lock_timeout is 3 s for this transaction. The ALTER TABLE ... DISABLE TRIGGER statements take a
+-- SHARE ROW EXCLUSIVE lock on mcp_journal and thoughts, which waits for every open writer of those tables and
+-- blocks new ones until the transaction ends. The window is kept as short as the work allows: the sleep marks and
+-- budget rows (not trigger-protected) go first, the window covers only the two journal/thought deletes, and the
+-- triggers are enabled as soon as those deletes are done. If the lock is not free within 3 s the call fails with
+-- 55P03 and nothing is removed: the register answers 500 and the owner may retry. A failure after the disable
+-- rolls the disable back too (DDL is transactional), so no trigger stays off. Enable is plain ENABLE TRIGGER, as
+-- 0007 installed; a future ENABLE ALWAYS hardening of 0007 must change this function too.
 
 ALTER TABLE mcp_identities ALTER COLUMN owner_id DROP NOT NULL;
 
@@ -31,6 +42,8 @@ DECLARE
   was_admin BOOLEAN;
   erasure_actor TEXT := left(replace(gen_random_uuid()::text, '-', ''), 16);
 BEGIN
+  PERFORM set_config('lock_timeout', '3s', true);
+
   SELECT i.owner_id, i.banned_at IS NOT NULL INTO who, was_banned
     FROM public.mcp_identities i
     WHERE i.identity_hash = p_identity_hash
@@ -42,17 +55,24 @@ BEGIN
   PERFORM 1 FROM public.mcp_owners o WHERE o.owner_id = who FOR UPDATE;
   was_admin := public.register_is_admin(who);
 
-  -- every token of the owner's players: revoked, then removed
+  -- sleep marks and budget of the living lives (not trigger-protected, so no lock window is needed)
+  DELETE FROM public.mcp_sleep_marks
+    WHERE life_id IN (SELECT p.life_id FROM public.mcp_players p JOIN public.agents a ON a.agent_id = p.life_id
+                      WHERE p.owner_id = who AND a.died_at IS NULL);
+  DELETE FROM public.mcp_budget
+    WHERE life_id IN (SELECT p.life_id FROM public.mcp_players p JOIN public.agents a ON a.agent_id = p.life_id
+                      WHERE p.owner_id = who AND a.died_at IS NULL);
+
+  -- every token of the owner's players: revoked (this fires mcp_token_revoked, which ends cached MCP sessions),
+  -- then removed
   UPDATE public.mcp_tokens SET revoked_at = now()
     WHERE revoked_at IS NULL
       AND player_id IN (SELECT p.player_id FROM public.mcp_players p WHERE p.owner_id = who);
   DELETE FROM public.mcp_tokens
     WHERE player_id IN (SELECT p.player_id FROM public.mcp_players p WHERE p.owner_id = who);
 
-  -- a life still alive is retired and its thoughts are removed. mcp_journal and thoughts are append-only (0007);
-  -- erasure is the one case that removes rows, so their append-only triggers are switched off for this
-  -- transaction only (DDL is transactional: a failure before the enable rolls the disable back too) and on again
-  -- below. The triggers stay enabled for every other caller.
+  -- the lock window: mcp_journal and thoughts are append-only (0007); erasure is the one case that removes rows,
+  -- so their append-only triggers are switched off for this transaction only and on again right after the deletes.
   ALTER TABLE public.mcp_journal DISABLE TRIGGER mcp_journal_append_only;
   ALTER TABLE public.thoughts DISABLE TRIGGER thoughts_append_only;
   DELETE FROM public.mcp_journal
@@ -63,12 +83,12 @@ BEGIN
                       WHERE p.owner_id = who AND a.died_at IS NULL);
   ALTER TABLE public.mcp_journal ENABLE TRIGGER mcp_journal_append_only;
   ALTER TABLE public.thoughts ENABLE TRIGGER thoughts_append_only;
-  DELETE FROM public.mcp_sleep_marks
-    WHERE life_id IN (SELECT p.life_id FROM public.mcp_players p JOIN public.agents a ON a.agent_id = p.life_id
-                      WHERE p.owner_id = who AND a.died_at IS NULL);
-  DELETE FROM public.mcp_budget
-    WHERE life_id IN (SELECT p.life_id FROM public.mcp_players p JOIN public.agents a ON a.agent_id = p.life_id
-                      WHERE p.owner_id = who AND a.died_at IS NULL);
+
+  -- a living life is retired: dead, with a cause, and no public camera or delayed public thoughts (F5)
+  UPDATE public.agents
+    SET died_at = now(), death_cause = 'owner-erased', public_camera = FALSE, thoughts_delayed_public = FALSE
+    WHERE died_at IS NULL
+      AND agent_id IN (SELECT p.life_id FROM public.mcp_players p WHERE p.owner_id = who);
 
   -- owner links on the rows that stay (the agents, dead or alive, and their world history)
   UPDATE public.agents SET owner = NULL WHERE owner = who;
