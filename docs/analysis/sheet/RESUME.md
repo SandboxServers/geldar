@@ -16,3 +16,11 @@ Plans: docs/analysis/character-sheet/ (62 candidates AN-00..AN-61, waves W0-W12)
 1. Handoffs from geldar-3b and scriptorium-orchestrator; agree the split.
 2. Owner choice of first waves (asked).
 3. Review AN-02b card, dispatch Haiku coder in worktree.
+
+## Update (handoffs received)
+- Owner chose first: foundations + Body/XP (W1-W2).
+- Split with geldar-3b: he keeps GX-01b/c, GX-05/HC-41, migration rules, runs contract slots; I take AN-02b onward, AN-03..AN-12, GX-06, content waves.
+- AN-02b: coded and reviewed by geldar-3b (branch phase1/an-02b-contract-proficiency); he opens and queues the PR, then it is mine. Do not regenerate contract/ before it merges; ask him for a slot.
+- Numbers: SQL 0050-0059 mine (0038-0049 registration, 0060-0069 3b); check origin/main first. Decision 0280-0289 (3b suggests ADR for AN-02b: write mine as 0280).
+- Open cards to write: ACL card (deny state.*.level and proficiency push to body/paper roles in Get-NatsUsers, plus nats-auth test); contract/src/index.ts near 500 lines, move AN-02b block to its own file.
+- GX-06: not started; thoughts table is append-only and glass-readable, so a new table with its own erasure path.
