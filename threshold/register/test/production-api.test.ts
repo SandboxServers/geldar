@@ -1,24 +1,48 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import type { FlagQuery } from '../src/admin.ts';
-import { AUDIT_LOST_CODE, productionApi } from '../src/production-api.ts';
+import { AUDIT_LOST_CODE, auditActor, productionApi } from '../src/production-api.ts';
 import type { Store } from '../src/store.ts';
+import type { TokenStore } from '../src/tokens-service.ts';
+import { cookie, serve, sessions } from './owner-api-harness.ts';
 
 const SECRET = 'pg-password-do-not-log';
-const noStore = {} as Store;
+const noStore = {} as Store & TokenStore;
 
 /** A fake pool client that answers each statement with the given result, or throws the given error. */
 function fakeDb(answer: { rows?: Record<string, unknown>[] } | Error): FlagQuery & {
   statements: string[];
+  values: unknown[][];
 } {
   const statements: string[] = [];
+  const values: unknown[][] = [];
   return {
     statements,
-    async query(text: string) {
+    values,
+    async query(text: string, params?: unknown[]) {
       statements.push(text);
+      values.push(params ?? []);
       if (answer instanceof Error) throw answer;
       return { rows: answer.rows ?? [] };
     },
   };
+}
+
+/** A token store fake: the database side of renew, revoke and info. The calls are recorded in order. */
+function fakeTokenStore(): Store & TokenStore & { calls: string[] } {
+  const calls: string[] = [];
+  return {
+    calls,
+    renewToken: async () => {
+      calls.push('renew');
+      return true;
+    },
+    revokeTokens: async () => {
+      calls.push('revoke');
+      return 1;
+    },
+    tokenInfo: async () => null,
+  } as unknown as Store & TokenStore & { calls: string[] };
 }
 
 function wiring(db: FlagQuery, log: (line: string) => void = () => undefined) {
@@ -89,5 +113,61 @@ describe('production owner API wiring (C7-04b-5)', () => {
     expect(api.ownerKeySessions?.hash('gowner-x')).toEqual(api.ownerKeys?.hash('gowner-x'));
     expect(typeof api.agents).toBe('function');
     expect(typeof api.listAgents).toBe('function');
+  });
+
+  it('returns the token services over the store, so the rotate and revoke routes are wired (H1)', () => {
+    const api = wiring(fakeDb({ rows: [] }));
+    expect(api.tokens?.store).toBe(noStore);
+    const minted = api.tokens?.issue();
+    expect(minted?.secret.length).toBeGreaterThan(0);
+    expect(minted?.tokenHash.length).toBe(32);
+  });
+
+  it('writes the audit actor as the SHA-256 prefix of the owner id, the form the SQL functions write (M1)', async () => {
+    const db = fakeDb({ rows: [{ admin: false }] });
+    await wiring(db).audit?.({
+      ownerId: 'reg-owner-x',
+      action: 'key.mint',
+      target: 'k1',
+      outcome: 'ok',
+      admin: false,
+    });
+    const at = db.statements.findIndex((s) => s.startsWith('INSERT INTO register_audit'));
+    const expected = createHash('sha256').update('reg-owner-x', 'utf8').digest('hex').slice(0, 16);
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(db.values[at]?.[0]).toBe(expected);
+    expect(auditActor('reg-owner-x')).toBe(expected);
+    expect(db.values[at]?.[0]).not.toBe('reg-owner-x');
+  });
+});
+
+describe('the production composition answers the token routes (H1)', () => {
+  it('rotates to 201 and revokes to 204 through the cookie API, not 500', async () => {
+    const store = fakeTokenStore();
+    const api = productionApi({
+      db: fakeDb({ rows: [{ admin: false }] }),
+      store,
+      tokenPepper: 'x'.repeat(32),
+      log: () => undefined,
+    });
+    // The router deps as server.ts composes them. Only the agent loader is a fixture; the token services are production's.
+    const srv = await serve({
+      ...api,
+      agents: async (owner, player) =>
+        owner === 'alice' && player === 'p1' ? { ownerId: 'alice', playerId: 'p1' } : null,
+      now: () => 0,
+      csrfKey: 'session-key',
+      sessions,
+      charge: () => 0,
+    });
+    try {
+      const renewed = await srv.call('POST', '/api/v1/agents/p1/tokens', cookie);
+      expect(renewed.status).toBe(201);
+      const revoked = await srv.call('POST', '/api/v1/agents/p1/tokens/revoke', cookie);
+      expect(revoked.status).toBe(204);
+      expect(store.calls).toEqual(['renew', 'revoke']);
+    } finally {
+      await srv.stop();
+    }
   });
 });

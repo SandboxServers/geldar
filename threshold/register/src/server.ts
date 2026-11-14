@@ -54,6 +54,7 @@ export interface RegisterDeps {
       | 'onAuditLost'
       | 'isAdmin'
       | 'routes'
+      | 'tokens'
     >
   >;
 }

@@ -5,6 +5,7 @@ info:
   description: >-
     Owner API under /register/api/v1/. Source for the generated types (generated types wait until
     contract/ is free, see C7-04a). Every error is application/problem+json with a code from the enum.
+    Only GET /agents/{playerId} is described yet; the list, token and owner-key routes are not in this file.
 servers:
   - url: /register/api/v1
 paths:

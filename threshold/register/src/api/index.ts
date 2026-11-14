@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { OwnerRefusedError } from '../owner-agents-pg.ts';
 import { hasScope } from '../owner-keys-policy.ts';
 import { sendProblem } from '../problem.ts';
 import { agentsListRoutes } from './agents-list.ts';
@@ -114,8 +115,10 @@ export async function handleApi(
   };
   try {
     await route.handler(ctx);
-  } catch {
+  } catch (err) {
+    // A banned owner (migration 0036 refuses it) is the same 401 as a refused key; any other error is 500.
     if (res.headersSent) res.end();
+    else if (err instanceof OwnerRefusedError) sendProblem(res, 'unauthenticated');
     else sendProblem(res, 'internal');
   }
   return true;

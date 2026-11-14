@@ -12,7 +12,7 @@ Shared facts (checked on `origin/main` c222d2b3 and the wave branch):
 - Not on `main` yet: `owner-keys-service.ts` and the `owner_api_keys` definer functions (C7-02b, wave branch `phase1/c7-wave2`, its worknote `worknotes/C7-02b.md`). `nats-ctl.ts` (`requestBodyOp`, `BodyUnavailable`) and the `ctl.body.*` subjects (C7-03b1). `worknotes/C7-05.md` exists on the wave branch only.
 - Owner key shape `gowner-` plus 64 hex; player token shape `gmcp-` plus 64 hex; both are refused by the other surface.
 
-Error body for every card: `application/problem+json`, fields `type`, `title`, `status`, `code`, optional `retryAfter`. The `code` enum is exactly: `unauthenticated, csrf_required, scope_missing, not_found, invalid, conflict, quota, rate_limited, body_unavailable, internal`.
+Error body for every card: `application/problem+json`, fields `type`, `title`, `status`, `code`, optional `retryAfter`. The `code` enum is exactly the twelve codes below. Ten are in `problem.ts` today: `not_found, method_not_allowed, unauthenticated, csrf_required, scope_missing, invalid, conflict, rate_limited, unavailable, internal`. Two are added by C7-04c: `quota` and `body_unavailable`.
 
 ---
 
@@ -61,7 +61,7 @@ Error body for every card: `application/problem+json`, fields `type`, `title`, `
 
 ## C7-04b: agents and tokens resources (owner-keys routes, token renew and revoke, onboarding hand-off)
 
-- **id / wave / lane.** C7-04b, wave 2 (after C7-04a merges). Register lane, serial after C7-04a. **branch.** `phase1/c7-04b-agents-tokens`. **migration.** none in this card (the session functions it calls are migration 0035, built in C7-04b-3). **size.** M (one session; the owner-key routes are the first thing to cut if it runs long, and go to a C7-04b2 card). **Status.** Built in C7-04b-1 to C7-04b-5 (branch `phase1/c7-04b5-wiring`, migrations 0035 and 0036); pending merge into wave 3. Deviations and wording: `worknotes/C7-04b.md`.
+- **id / wave / lane.** C7-04b, wave 2 (after C7-04a merges). Register lane, serial after C7-04a. **branch.** `phase1/c7-04b-agents-tokens`. **migration.** none in this card (the session functions it calls are migration 0035, built in C7-04b-3). **size.** M (one session; the owner-key routes are the first thing to cut if it runs long, and go to a C7-04b2 card). **Status.** Built except PATCH; PATCH moved to C7-06. The rest is built in C7-04b-1 to C7-04b-5 (branch `phase1/c7-04b5-wiring`, migrations 0035 and 0036); pending merge into wave 3. The PATCH spec in this card is not built here. Deviations and wording: `worknotes/C7-04b.md`.
 - **Goal.** The resource routes for agents, player tokens and owner keys, wired to the services that exist (`tokens-service.ts`, `owner-keys-service.ts`), with the Postgres adapter for the key store that C7-02b did not ship (built in C7-04b-3).
 - **Credential rule (decision 0173, API v1).** Two credentials: the cookie session (account page; CSRF on every write) and a Bearer owner key (scopes `read`, `body`, `manage`). Token rotate and revoke and all owner-key routes are cookie-session only; a Bearer key is refused there. Bearer-driven rotation and key management are candidate card C7-04d. The owner-key session functions (migration 0035, `mintOwnerKeyBySession`, `listOwnerKeysBySession`, `revokeOwnerKeyBySession`) are built in C7-04b-3.
 
@@ -128,7 +128,8 @@ Credentials per route (decision 0173). A cookie session without the CSRF token o
 
 ### Files
 
-- may-edit: `threshold/register/src/api/body.ts` (start, stop, restart, status, log, retire), `threshold/register/src/api/body-log.ts` (the fixed-text table and the tail filter), the route-table lines in `server.ts`, their tests, `docs/analysis/phase1/worknotes/C7-04c.md`.
+- may-edit: `threshold/register/src/api/body.ts` (start, stop, restart, status, log, retire), `threshold/register/src/api/body-log.ts` (the fixed-text table and the tail filter), the route-table lines in `server.ts`, their tests, `docs/analysis/phase1/worknotes/C7-04c.md`, `threshold/register/src/problem.ts`, `threshold/register/src/api/owner-api-v1.yaml` and `threshold/register/test/owner-api.test.ts` (for the two problem codes below only).
+- Problem codes (review fix M3, wave 3): this card adds `quota` (429) and `body_unavailable` (503) to `PROBLEM_CODES` in `problem.ts`, to the STATUS and TITLE maps there, to the `code` enum in `owner-api-v1.yaml`, and to the enum test in `owner-api.test.ts`. The `sendProblem` calls for 429 `quota` and 503 `body_unavailable` need both codes to compile.
 - must-not-edit: `supervisor/` (the counters are the supervisor's; the register does not count them), `nats-ctl.ts` (C7-03b1 owns it; read only), `contract/` (the `ctl.body.*` op list is C7-03b1's; this card uses ops it defines, no new op), `account*.ts`, `docs/spec.md`.
 - If the supervisor's op list has no log op, stop and report. Do not add one here.
 - A start the supervisor refuses with `login_name` (the display name is not a Minecraft login name) returns 422 `invalid`. The body tells the owner that the player's name must be 3 to 16 letters, digits or underscore. The register writes that text from a fixed string; the supervisor's error text never reaches the owner. Test the body text, and test that a supervisor error string is absent from the body. Revert: pass the supervisor text through; the body test fails.
@@ -245,5 +246,5 @@ components:
     TokenOnce: { required: [token, expiresAt], properties: { token: { pattern: "^gmcp-[0-9a-f]{64}$" }, expiresAt: date-time } }
     KeyOnce: { required: [key, keyId, scopes, expiresAt], properties: { key: { pattern: "^gowner-[0-9a-f]{64}$" } } }
     KeyMeta: { required: [keyId, scopes, createdAt], properties: { keyId: string, label: string, scopes: array, expiresAt: date-time, lastUsedAt: date-time } }
-    Problem: { required: [type, title, status, code], properties: { type: uri, title: string, status: integer, code: { enum: [unauthenticated, csrf_required, scope_missing, not_found, invalid, conflict, quota, rate_limited, body_unavailable, internal] }, retryAfter: integer } }
+    Problem: { required: [type, title, status, code], properties: { type: uri, title: string, status: integer, code: { enum: [not_found, method_not_allowed, unauthenticated, csrf_required, scope_missing, invalid, conflict, rate_limited, unavailable, internal, quota, body_unavailable] }, retryAfter: integer } }
 ```
