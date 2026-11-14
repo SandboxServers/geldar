@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/chunk-visited-event.schema.json",
+  "title": "ChunkVisitedPayload",
+  "description": "Payload of a WorldEvent of type `chunk_visited` (AN-02b): the first visit of a life to a chunk, the evidence for exploring XP. It carries the chunk index only, never block coordinates. It is a WorldEvent (three-token subject), so the sink sees it.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["life_id", "dimension", "cx", "cz", "tick"],
+  "properties": {
+    "life_id": { "$ref": "common.schema.json#/$defs/LifeId" },
+    "dimension": { "type": "string", "pattern": "^[a-z0-9_:.-]{1,64}$" },
+    "cx": { "type": "integer", "minimum": -2000000, "maximum": 2000000 },
+    "cz": { "type": "integer", "minimum": -2000000, "maximum": 2000000 },
+    "tick": { "$ref": "common.schema.json#/$defs/WorldTick" }
+  }
+}

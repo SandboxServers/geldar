@@ -135,3 +135,32 @@ export function ctlBodyWildcard(shard: string): string {
   if (!SHARD.test(shard)) throw new Error(`invalid shard name for a subject: ${shard}`);
   return `geldar.${shard}.ctl.body.>`;
 }
+
+/**
+ * Where a Body asks the eventsink for a life's `ProficiencyState` (AN-02b), a core NATS request/reply:
+ * `geldar.<shard>.state.<life_id>.proficiency`. Five tokens, so outside the sink's `geldar.*.*` filter.
+ * Throws on a shard or life id the contract rejects.
+ */
+export function proficiencyRequestSubject(shard: string, lifeId: string): string {
+  checked(shard, lifeId);
+  return `geldar.${shard}.state.${lifeId}.proficiency`;
+}
+
+/**
+ * Where the eventsink pushes a `ProficiencyLevelPayload` when a domain reaches a level (AN-02b), a core
+ * NATS publish: `geldar.<shard>.state.<life_id>.level`. Five tokens. Throws on a shard or life id the
+ * contract rejects.
+ */
+export function proficiencyPushSubject(shard: string, lifeId: string): string {
+  checked(shard, lifeId);
+  return `geldar.${shard}.state.${lifeId}.level`;
+}
+
+/**
+ * The state subtree of one shard, `geldar.<shard>.state.>`: every proficiency request and push. It is
+ * exactly the state subjects and nothing else. Throws on a shard name the contract rejects.
+ */
+export function stateWildcard(shard: string): string {
+  if (!SHARD.test(shard)) throw new Error(`invalid shard name for a subject: ${shard}`);
+  return `geldar.${shard}.state.>`;
+}
