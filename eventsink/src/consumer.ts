@@ -14,7 +14,7 @@ import {
 import type { NatsConnection } from '@nats-io/transport-node';
 import { CONSUMER_NAME, STREAM_CONFIG } from './config.ts';
 import { type EventsinkMetrics, type FailReason, samplePending } from './metrics.ts';
-import { DLQ_TYPE, shardOfSubject, validateMessage } from './validate.ts';
+import { DLQ_TYPE, isNonEventSubject, shardOfSubject, validateMessage } from './validate.ts';
 import { type EventWriter, isPermanentDbError } from './writer.ts';
 
 /** The slice of a JetStream message the batch logic uses. */
@@ -155,6 +155,7 @@ async function insertRowByRow(
 /**
  * Decides every message in the batch.
  * - Own dead letters (`geldar.<shard>.dlq` bodies without a `source_event_id`) are acked and skipped.
+ * - Non-event subjects (`geldar.<shard>.maintenance`) are acked and skipped, counted, never stored.
  * - Invalid messages are published to the DLQ with the reason, then acked; a DLQ failure naks.
  * - Valid ones are inserted in one transaction and acked only after it commits. A connection or
  *   timeout error naks them all, however many deliveries that takes. A permanent error (SQLSTATE
@@ -169,6 +170,12 @@ export async function handleBatch(
   for (const message of messages) {
     deps.metrics?.consumed(message.subject);
     if (isOwnDeadLetter(message)) {
+      message.ack();
+      continue;
+    }
+    if (isNonEventSubject(message.subject)) {
+      deps.metrics?.skipped();
+      log(`eventsink: skipped non-event message subject=${message.subject}`);
       message.ack();
       continue;
     }
