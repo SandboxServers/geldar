@@ -1,7 +1,8 @@
 import type { Reflex, ReflexContext, ReflexOutcome, Trigger } from '../reflex.ts';
 import type { BodyView } from '../view.ts';
 import { blockedPathReflex } from './blocked-path.ts';
-import { panicBurrowReflex } from './panic-burrow.ts';
+import { idleStuckReflex, mayUnstick, noteShelterRefusal, runUnstick } from './idle-stuck.ts';
+import { burrowPaused, panicBurrowReflex } from './panic-burrow.ts';
 import { dangers } from './threats.ts';
 import { unstickReflex } from './unstick.ts';
 
@@ -17,35 +18,14 @@ const BACKOFF_BASE_TICKS = 400;
 const BACKOFF_CAP_TICKS = 6000;
 /** Nominal world ticks per second, for the seconds shown in a log line. */
 const TICKS_PER_SECOND = 20;
-/** The Body counts as moved once it is this far (blocks) from where the shelter was abandoned. */
-const MOVED_BLOCKS = 2;
-
-/** Why the last shelter was abandoned, and what must change before the Body tries again. */
+/** Why the last shelter was abandoned, and when the Body may try again. */
 interface ShelterBackoff {
   failures: number;
   until: number;
-  x: number;
-  z: number;
-  signature: string;
 }
 
 /** One backoff per Body view (the runtime keeps one view per Body). */
 const backoffs = new WeakMap<BodyView, ShelterBackoff>();
-
-/** The dangers within the shelter radius, as a stable string: a change in the set is a relevant change. */
-function signatureOf(view: BodyView): string {
-  return dangers(view, DARK_HOSTILE_RADIUS)
-    .map((hostile) => hostile.name)
-    .sort()
-    .join(',');
-}
-
-/** True when the Body has moved more than MOVED_BLOCKS from where the shelter was abandoned. */
-function movedFrom(view: BodyView, backoff: ShelterBackoff): boolean {
-  const dx = view.position.x - backoff.x;
-  const dz = view.position.z - backoff.z;
-  return Math.hypot(dx, dz) > MOVED_BLOCKS;
-}
 
 /**
  * Dark shelter (PX-7): in the dark (head light at or below `DARK_LIGHT`) with a danger within
@@ -54,8 +34,8 @@ function movedFrom(view: BodyView, backoff: ShelterBackoff): boolean {
  * spider in daylight does not count. The shelter is the panic burrow's own dig and seal, so the run
  * hands over to `panicBurrowReflex` with a night trigger; its refusal and its failures come back as
  * they are. After an `abandoned` run the reflex backs off (20 s, doubling, capped at 5 min) until
- * the light rises above the dark limit, the dangers change, or the Body moves more than 2 blocks.
- * A missing light or enclosure read never fires it.
+ * the light rises above the dark limit, a later run is handled, or the Body respawns. A changed mob
+ * set or a move does not end it. A missing light or enclosure read never fires it.
  */
 export const darkShelterReflex: Reflex = {
   name: 'dark_shelter',
@@ -71,14 +51,10 @@ export const darkShelterReflex: Reflex = {
     if (view.enclosed !== false) return null;
     const hostile = dangers(view, DARK_HOSTILE_RADIUS)[0];
     if (!hostile) return null;
+    // The panic burrow's refusal pause covers this reflex too; a changed mob set or a small move does not end a backoff.
+    if (burrowPaused(view)) return null;
     const backoff = backoffs.get(view);
-    if (backoff) {
-      if (movedFrom(view, backoff) || signatureOf(view) !== backoff.signature) {
-        backoffs.delete(view);
-      } else if ((view.tick ?? 0) < backoff.until) {
-        return null;
-      }
-    }
+    if (backoff && (view.tick ?? 0) < backoff.until) return null;
     return {
       light,
       hostile: hostile.name,
@@ -91,22 +67,33 @@ export const darkShelterReflex: Reflex = {
       { phase: 'night', bed: false, shelter: false },
       ctx,
     );
-    if (outcome.result !== 'abandoned') return outcome;
-    return backOff(ctx.view, outcome);
+    if (outcome.result === 'handled') backoffs.delete(ctx.view);
+    const refused = outcome.detail?.startsWith('no suitable block') === true;
+    if (outcome.result !== 'abandoned') {
+      noteShelterRefusal(ctx.view, false);
+      return outcome;
+    }
+    const shelter = backOff(ctx.view, outcome);
+    // B2 (decision 0196): the third refusal in a row at one spot runs unstick once, through the same backoff.
+    const third = noteShelterRefusal(ctx.view, refused);
+    // The B1 guards (no Mind action, not asleep, not riding, no burrow) and the stuck test: a Body
+    // that can step off a ledge is not stuck, so B2 does not dig it out.
+    if (!third || !mayUnstick(ctx.view) || ctx.view.canStepOff !== false) return shelter;
+    const freed = await runUnstick(ctx, 'dark_shelter (3 refusals)');
+    return { ...shelter, detail: `${shelter.detail ?? ''}; ${freed.detail ?? ''}` };
   },
 };
+
+/** Forgets the backoff of a view (the Body died and respawned, so the old body's refusals do not hold). */
+export function forgetShelterBackoff(view: BodyView): void {
+  backoffs.delete(view);
+}
 
 /** Records an abandoned shelter: the next try waits for a doubled period, and the log line says so. */
 function backOff(view: BodyView, outcome: ReflexOutcome): ReflexOutcome {
   const failures = (backoffs.get(view)?.failures ?? 0) + 1;
   const period = Math.min(BACKOFF_BASE_TICKS * 2 ** (failures - 1), BACKOFF_CAP_TICKS);
-  backoffs.set(view, {
-    failures,
-    until: (view.tick ?? 0) + period,
-    x: view.position.x,
-    z: view.position.z,
-    signature: signatureOf(view),
-  });
+  backoffs.set(view, { failures, until: (view.tick ?? 0) + period });
   const seconds = Math.round(period / TICKS_PER_SECOND);
   return { ...outcome, detail: `${outcome.detail ?? 'abandoned'}; backing off ${seconds}s` };
 }
@@ -121,4 +108,5 @@ export const shelterReflexes: Reflex[] = [
   darkShelterReflex,
   blockedPathReflex,
   unstickReflex,
+  idleStuckReflex,
 ];
