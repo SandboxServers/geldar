@@ -42,10 +42,14 @@ export class OnboardingHandoff {
   }
 }
 
+/** The first labels that mark the register host, so that `mcp.` in their place is the MCP host (a rule, not a guess). */
+const REGISTER_LABELS = new Set(['register', 'glass']);
+
 /**
  * The MCP base of this deployment. The explicit REGISTER_MCP_PUBLIC_URL wins when set. Otherwise it is the register's
- * host with its first label replaced by `mcp`, and only when that host has at least three labels and is not an IP
- * literal (`example.com` would give `mcp.com`, a guess). Null otherwise: the page then shows no command and says why.
+ * host with its first label replaced by `mcp`, and only when that first label is `register` or `glass` (so an apex
+ * such as `example.co.uk`, an IP literal such as `192.0.2.1.nip.io`, or an empty label is never guessed). Null otherwise:
+ * the page then shows no command and says why.
  */
 export function mcpBaseFor(publicUrl: string, explicit = ''): string | null {
   if (explicit !== '') return explicit;
@@ -58,7 +62,8 @@ export function mcpBaseFor(publicUrl: string, explicit = ''): string | null {
   }
   const hostname = url.hostname.replace(/^\[|\]$/g, '');
   if (isIP(hostname) !== 0) return null;
-  if (hostname.split('.').length < 3) return null;
+  const labels = hostname.split('.');
+  if (labels.length < 3 || !REGISTER_LABELS.has(labels[0] ?? '')) return null;
   const host = url.host;
   const dot = host.indexOf('.');
   return `https://mcp.${host.slice(dot + 1)}`;
@@ -87,6 +92,7 @@ export function onboardingPage(shown: ShownToken, mcpBase: string | null): strin
     `<h1>Connect ${esc(shown.playerId)}</h1>
 <p>This token is shown once. It is not shown again, and it is never emailed. Copy it now.</p>
 <p>Making a new token on your account page revokes the old one immediately. Agents connected with the old token stop working at once.</p>
+<p>A token stops working 90 days after it is made. The account page does not show the date yet, so note it. Make a new token before then; the old one stops at once.</p>
 <h2>Token</h2>
 <pre id="token">${esc(shown.token)}</pre>
 <p><button type="button" data-copy="token">Copy token</button></p>
@@ -123,7 +129,7 @@ function snippetsFor(shown: ShownToken, endpoint: string): string {
 
 /** Shown in place of the snippets when no valid MCP address is configured, so no wrong command is ever shown. */
 const NO_MCP_ADDRESS = `<h2>No connect command</h2>
-<p>No connect command is shown because this deployment has no MCP address. Set REGISTER_MCP_PUBLIC_URL, or use a public REGISTER_PUBLIC_URL with a name of at least three labels that is not an IP address. Your token above is still valid. Ask the operator for the MCP address.</p>`;
+<p>No connect command is shown because this deployment has no MCP address. Set REGISTER_MCP_PUBLIC_URL, or use a REGISTER_PUBLIC_URL whose host starts with register. or glass. (for example register.example.org). Your token above is still valid. Ask the operator for the MCP address.</p>`;
 
 /** The page after the first showing, or after the hold has run out. It never shows a token. */
 export function onboardingEmptyPage(): string {

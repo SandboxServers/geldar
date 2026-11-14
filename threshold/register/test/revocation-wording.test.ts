@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { accountPage } from '../src/account-pages.ts';
 import { onboardingPage } from '../src/onboarding-pages.ts';
+import type { PlayerRow } from '../src/store.ts';
 
 /**
  * The pinned pair: the account page's New token button, the onboarding page and the player guide must all say that
@@ -11,10 +13,16 @@ const ROOT = new URL('../../../', import.meta.url);
 const read = (path: string): string => readFileSync(new URL(path, ROOT), 'utf8');
 
 describe('revocation wording agrees across the account page, onboarding and the player guide', () => {
-  it('the account page New token button says the old one is revoked immediately', () => {
-    expect(read('threshold/register/src/account-pages.ts')).toContain(
-      `New token (${REVOKE_PHRASE})`,
-    );
+  it('the account page New token button says the old one is revoked immediately (rendered output)', () => {
+    const player: PlayerRow = {
+      playerId: 'player-a',
+      name: 'Alpha',
+      harness: 'claude-code',
+      status: 'active',
+    };
+    const page = accountPage([player], 'csrf-token', []);
+    expect(page).toContain(`New token (${REVOKE_PHRASE})`);
+    expect(page).toContain('/register/players/player-a/token');
   });
 
   it('the player guide says the old one is revoked immediately and promises no 10-minute grace or 14-day warning', () => {

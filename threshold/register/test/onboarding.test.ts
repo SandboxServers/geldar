@@ -118,12 +118,12 @@ describe('onboarding after a token is made', () => {
     expect(html.split(token).length - 1).toBeGreaterThanOrEqual(3);
   });
 
-  it('shows no expiry date and no renewal promise, and says the old token is revoked at once', async () => {
+  it('states the 90 day lifetime, shows no expiry date and no renewal promise, and says the old token is revoked at once', async () => {
     const { s } = await created();
     const html = await (await onboarding(s)).text();
     expect(html).not.toContain(tokenExpiresAt(new Date(NOW)).toISOString().slice(0, 10));
     expect(html).not.toContain('10 minutes');
-    expect(html).not.toContain('90 days');
+    expect(html).toContain('A token stops working 90 days after it is made.');
     expect(html).toContain('revokes the old one immediately');
   });
 
@@ -227,6 +227,27 @@ describe('mcpBaseFor', () => {
     expect(mcpBaseFor('https://example.com/register')).toBeNull();
   });
 
+  it('derives only when the first label is register or glass (https://register.example.org is kept)', () => {
+    expect(mcpBaseFor('https://register.example.org')).toBe('https://mcp.example.org');
+    expect(mcpBaseFor('https://glass.geldar.example')).toBe('https://mcp.geldar.example');
+  });
+
+  it('gives null for a registrable apex with a country suffix (https://example.co.uk), not mcp.co.uk', () => {
+    expect(mcpBaseFor('https://example.co.uk')).toBeNull();
+  });
+
+  it('gives null for an IP-literal-shaped name (https://192.0.2.1.nip.io), not mcp.2.3.4.nip.io', () => {
+    expect(mcpBaseFor('https://192.0.2.1.nip.io')).toBeNull();
+  });
+
+  it('gives null for an empty label (https://a..b), not mcp..b', () => {
+    expect(mcpBaseFor('https://a..b')).toBeNull();
+  });
+
+  it('gives null for another first label, even with three labels (https://www.example.org)', () => {
+    expect(mcpBaseFor('https://www.example.org')).toBeNull();
+  });
+
   it('gives null for an IP literal, v4 or v6 (https://203.0.113.9)', () => {
     expect(mcpBaseFor('https://203.0.113.9')).toBeNull();
     expect(mcpBaseFor('https://203.0.113.9:8443')).toBeNull();
@@ -255,7 +276,7 @@ describe('onboarding page with no MCP address', () => {
     const html = onboardingPage(shown, mcpBaseFor('https://example.com'));
     expect(html).toContain(shown.token);
     expect(html).toContain('No connect command');
-    expect(html).toContain('at least three labels');
+    expect(html).toContain('starts with register. or glass.');
     expect(html).not.toContain('claude mcp add');
     expect(html).not.toContain('mcp.com');
   });
