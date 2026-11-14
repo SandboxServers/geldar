@@ -1,7 +1,7 @@
 import pg from 'pg';
 import { loadConfig } from './config.ts';
 import { dbUrl } from './db-url.ts';
-import { bodyWiring } from './nats-body.ts';
+import { bodyWiring, mountBodyApi } from './nats-body.ts';
 import { PgStore } from './pg-store.ts';
 import { productionApi } from './production-api.ts';
 import { microsoftProvider } from './providers.ts';
@@ -23,10 +23,7 @@ const server = createRegisterServer({
   fetch: (url, init) => fetch(url, init),
   now: () => Date.now(),
   log,
-  api: {
-    ...productionApi({ db, store, tokenPepper: config.tokenPepper, log }),
-    routes: body.routes,
-  },
+  api: mountBodyApi(productionApi({ db, store, tokenPepper: config.tokenPepper, log }), body),
 });
 server.listen(config.port, config.host, () => {
   log(`register listening killSwitch=${config.killSwitch}`);

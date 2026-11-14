@@ -8,6 +8,8 @@ import type { RegisterNats } from './config.ts';
 import type { CtlConnection } from './nats-ctl.ts';
 
 type NatsLink = Awaited<ReturnType<typeof connectNats>>;
+/** The connect function. Production passes connectNats; tests pass a fake. */
+export type ConnectNats = typeof connectNats;
 
 /**
  * A CtlConnection that opens its NATS link on the first request and reuses it. One connect attempt per request and no
@@ -18,11 +20,12 @@ type NatsLink = Awaited<ReturnType<typeof connectNats>>;
 export function lazyCtlConnection(
   settings: RegisterNats,
   log: (line: string) => void,
+  connect: ConnectNats = connectNats,
 ): CtlConnection {
   let link: Promise<NatsLink> | null = null;
   const open = (): Promise<NatsLink> => {
     if (link === null) {
-      const pending: Promise<NatsLink> = connectNats(
+      const pending: Promise<NatsLink> = connect(
         {
           name: 'geldar-register',
           servers: settings.url,
@@ -56,20 +59,40 @@ export function lazyCtlConnection(
  * path is 404 through the router. The slot is returned too, so the retire route (C7-04d) can share it.
  */
 export function bodyWiring(
-  config: { readonly nats: RegisterNats | null; readonly shard: string },
+  config: {
+    readonly nats: RegisterNats | null;
+    readonly natsPasswordUnreadable: boolean;
+    readonly shard: string;
+  },
   log: (line: string) => void,
+  connect: ConnectNats = connectNats,
 ): { readonly routes: readonly ApiRoute[]; readonly slot: BodySlot } {
   const slot = createBodySlot();
   if (config.nats === null) {
-    log('body routes unmounted: NATS is not configured');
+    log(
+      config.natsPasswordUnreadable
+        ? 'body routes unmounted: REGISTER_NATS_PASSWORD_FILE is unreadable or empty'
+        : 'body routes unmounted: NATS is not configured',
+    );
     return { routes: [], slot };
   }
   const routes = bodyRoutes({
-    conn: lazyCtlConnection(config.nats, log),
+    conn: lazyCtlConnection(config.nats, log, connect),
     shard: config.shard,
     timeoutMs: config.nats.timeoutMs,
     slot,
   });
   log('body routes mounted');
   return { routes, slot };
+}
+
+/**
+ * The API the register serves: the production members, with the routes replaced by the body routes (C7-04c2). main.ts
+ * calls this, so the mount is tested through this function and not only through the wiring behind it.
+ */
+export function mountBodyApi<A extends object>(
+  api: A,
+  body: { readonly routes: readonly ApiRoute[] },
+): A & { readonly routes: readonly ApiRoute[] } {
+  return { ...api, routes: body.routes };
 }

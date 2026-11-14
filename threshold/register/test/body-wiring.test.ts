@@ -5,7 +5,7 @@ import { bodyRoutes } from '../src/api/body.ts';
 import { createBodySlot } from '../src/api/body-slot.ts';
 import type { ApiRoute } from '../src/api/route.ts';
 import { loadConfig, type RegisterConfig } from '../src/config.ts';
-import { bodyWiring } from '../src/nats-body.ts';
+import { bodyWiring, type ConnectNats, mountBodyApi } from '../src/nats-body.ts';
 import { microsoftProvider } from '../src/providers.ts';
 import { createRegisterServer } from '../src/server.ts';
 
@@ -23,6 +23,7 @@ const SECRETS: Record<string, string> = {
   ms: 'm'.repeat(20),
   token: 't'.repeat(40),
   natspw: 'n'.repeat(20),
+  blank: ' \n',
 };
 const readSecret = (path: string): string => {
   const value = SECRETS[path];
@@ -141,6 +142,45 @@ describe('body wiring config (C7-04c2)', () => {
     expect(loadConfig(env, readSecret).nats).toBeNull();
   });
 
+  it('an empty password file leaves NATS off and says so', () => {
+    const env = { ...BASE_ENV, ...NATS_ENV, REGISTER_NATS_PASSWORD_FILE: 'blank' };
+    const config = loadConfig(env, readSecret);
+    expect(config.nats).toBeNull();
+    expect(config.natsPasswordUnreadable).toBe(true);
+  });
+
+  it('an unreadable password file is flagged, and an unset NATS is not', () => {
+    const env = { ...BASE_ENV, ...NATS_ENV, REGISTER_NATS_PASSWORD_FILE: 'missing' };
+    expect(loadConfig(env, readSecret).natsPasswordUnreadable).toBe(true);
+    expect(loadConfig(BASE_ENV, readSecret).natsPasswordUnreadable).toBe(false);
+  });
+
+  it('logs the unreadable password file by variable name, not as a NATS-off start', () => {
+    const lines: string[] = [];
+    const env = { ...BASE_ENV, ...NATS_ENV, REGISTER_NATS_PASSWORD_FILE: 'blank' };
+    bodyWiring(loadConfig(env, readSecret), (l) => lines.push(l));
+    expect(lines).toEqual([
+      'body routes unmounted: REGISTER_NATS_PASSWORD_FILE is unreadable or empty',
+    ]);
+    const off: string[] = [];
+    bodyWiring(loadConfig(BASE_ENV, readSecret), (l) => off.push(l));
+    expect(off).toEqual(['body routes unmounted: NATS is not configured']);
+  });
+
+  it.each([
+    ['0', true],
+    ['1', false],
+    ['60000', false],
+    ['60001', true],
+  ])('reply wait %s ms: refused when %s', (value, refused) => {
+    const env = { ...BASE_ENV, ...NATS_ENV, REGISTER_NATS_TIMEOUT_MS: value };
+    if (refused) {
+      expect(() => loadConfig(env, readSecret)).toThrow(/REGISTER_NATS_TIMEOUT_MS/);
+    } else {
+      expect(loadConfig(env, readSecret).nats?.timeoutMs).toBe(Number(value));
+    }
+  });
+
   it('refuses a NATS URL that is not nats://', () => {
     const env = { ...BASE_ENV, ...NATS_ENV, REGISTER_NATS_URL: 'http://127.0.0.1:4222' };
     expect(() => loadConfig(env, readSecret)).toThrow(/REGISTER_NATS_URL/);
@@ -240,5 +280,90 @@ describe('body wiring mount (C7-04c2)', () => {
     expect(other.sent.length).toBe(0);
     release();
     expect((await first).status).toBe(202);
+  });
+
+  it('the slot bodyWiring returns is the one the mounted routes use: a held owner gets 409', async () => {
+    const config = loadConfig({ ...BASE_ENV, ...NATS_ENV }, readSecret);
+    const wired = bodyWiring(config, () => undefined);
+    wired.slot.add('alice');
+    const base = await serve(config, wired.routes);
+    const start = await call(base, 'POST', START);
+    expect(start.status).toBe(409);
+    expect(start.body).toContain('conflict');
+  });
+});
+
+/** A fake connect function: the scripted outcome of each connect ('ok' by default) and the calls it saw. */
+function fakeConnect(script: ('ok' | 'refuse')[] = []) {
+  const calls: { opts: Parameters<ConnectNats>[0]; onFatal: () => void }[] = [];
+  const sent: { subject: string; timeout: number }[] = [];
+  const connect = (async (opts: Parameters<ConnectNats>[0], onFatal: () => void) => {
+    calls.push({ opts, onFatal });
+    if ((script.shift() ?? 'ok') === 'refuse') throw new Error('refused');
+    return {
+      async request(subject: string, _data: Uint8Array, o: { timeout: number }) {
+        sent.push({ subject, timeout: o.timeout });
+        return { data: enc({ ok: true, code: 'started' }) };
+      },
+    };
+  }) as unknown as ConnectNats;
+  return { connect, calls, sent };
+}
+
+describe('body wiring link (C7-04c2)', () => {
+  it('connects with the name, URL, user and password from the settings', async () => {
+    const config = loadConfig({ ...BASE_ENV, ...NATS_ENV }, readSecret);
+    const fake = fakeConnect();
+    const base = await serve(config, bodyWiring(config, () => undefined, fake.connect).routes);
+    await call(base, 'POST', START);
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls[0]?.opts).toEqual({
+      name: 'geldar-register',
+      servers: 'nats://127.0.0.1:1',
+      user: 'register',
+      pass: SECRETS.natspw,
+    });
+  });
+
+  it('a refused connect is a 503, and the next request connects again and succeeds', async () => {
+    const config = loadConfig({ ...BASE_ENV, ...NATS_ENV }, readSecret);
+    const fake = fakeConnect(['refuse', 'ok']);
+    const base = await serve(config, bodyWiring(config, () => undefined, fake.connect).routes);
+    const first = await call(base, 'POST', START);
+    expect(first.status).toBe(503);
+    expect(first.body).toContain('body_unavailable');
+    const second = await call(base, 'POST', START);
+    expect(second.status).toBe(202);
+    expect(fake.calls).toHaveLength(2);
+  });
+
+  it('a fatal close drops the link: the next request connects again', async () => {
+    const config = loadConfig({ ...BASE_ENV, ...NATS_ENV }, readSecret);
+    const fake = fakeConnect(['ok', 'ok']);
+    const lines: string[] = [];
+    const base = await serve(config, bodyWiring(config, (l) => lines.push(l), fake.connect).routes);
+    expect((await call(base, 'POST', START)).status).toBe(202);
+    fake.calls[0]?.onFatal();
+    expect(lines).toContain('body nats link closed');
+    expect((await call(base, 'POST', START)).status).toBe(202);
+    expect(fake.calls).toHaveLength(2);
+  });
+
+  it('the config reply wait reaches the link request through bodyWiring', async () => {
+    const env = { ...BASE_ENV, ...NATS_ENV, REGISTER_NATS_TIMEOUT_MS: '1234' };
+    const config = loadConfig(env, readSecret);
+    const fake = fakeConnect();
+    const base = await serve(config, bodyWiring(config, () => undefined, fake.connect).routes);
+    await call(base, 'POST', START);
+    expect(fake.sent[0]?.timeout).toBe(1234);
+  });
+});
+
+describe('body mount in main (C7-04c2)', () => {
+  it('mountBodyApi keeps the production members and sets the routes to the body routes', () => {
+    const body = bodyWiring(loadConfig(BASE_ENV, readSecret), () => undefined);
+    const api = mountBodyApi({ marker: 'production' }, body);
+    expect(api.marker).toBe('production');
+    expect(api.routes).toBe(body.routes);
   });
 });
