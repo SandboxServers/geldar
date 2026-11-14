@@ -49,3 +49,13 @@
 - `sheetOrStandard` returns the frozen `STANDARD_SHEET` object itself for a missing sheet, not a copy.
 - `STANDARD_SHEET` is typed `CharacterSheet` (as the card says), so the frozen check is runtime only.
 - Card line "a source scan test asserts no file in psyche/src imports anything not starting with ./": implemented as a scan of from and import( specifiers that requires ./<name>.ts.
+
+## Review fixes
+
+- Finding 3 decision: the engine validates the key. `decisionId` throws `RangeError` when `lifeId` or `fx` is empty or contains `:`, and when `generation`, `tick` or `decisionSeq` is not a non-negative safe integer. `seedFor` and `rngFor` throw the same way, since they hash the id. The id format stays as the card gives it (no escaping).
+- Callers: none outside `psyche/` (repo grep for `decisionId`, `DrawKey`, `seedFor`, `rngFor`). No existing psyche test key was refused; the colliding pair is now refused in both forms.
+- Import scan: single, double and backtick quotes for `from`, `import` and `import(`; `require(` fails; a non-literal `import(` fails. Three appended lines in `psyche/src/version.ts` each fail it (revert-check).
+- Score bound: `normalizeSheet` accepts every score at 1 and at 5. `score > 1` in `sheet.ts` fails it (revert-check).
+- Seed vectors for non-ASCII `lifeId` (`é`, and an emoji surrogate pair). `charCodeAt(i) & 0x7f` fails them (revert-check). `fnv1a32` now says ports must hash UTF-16 code units.
+- `eventsink/Dockerfile.dockerignore` excludes `psyche/test`, next to `eventsink/test`.
+- `Score` import and `export type { Score }` removed from `sheet.ts`; typecheck passes.

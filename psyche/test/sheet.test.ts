@@ -27,9 +27,9 @@ const SCORE_PATHS: string[][] = [
   ['op_modes', 'nitwit'],
 ];
 
-/** A fresh, mutable copy of the standard sheet with the value at path replaced. */
-function sheetWith(path: string[], value: unknown): Plain {
-  const copy = JSON.parse(JSON.stringify(STANDARD_SHEET)) as Plain;
+/** A fresh, mutable copy of the base sheet (the standard sheet by default) with the value at path replaced. */
+function sheetWith(path: string[], value: unknown, base: unknown = STANDARD_SHEET): Plain {
+  const copy = JSON.parse(JSON.stringify(base)) as Plain;
   let node = copy;
   for (const key of path.slice(0, -1)) node = node[key] as Plain;
   node[path[path.length - 1] ?? ''] = value;
@@ -63,6 +63,16 @@ describe('normalizeSheet', () => {
     if (!result.ok) return;
     expect(result.sheet).toEqual(STANDARD_SHEET);
     expect(result.sheet.attributes).not.toBe(input.attributes);
+  });
+
+  it.each([1, 5])('accepts every score at the bound %i', (bound) => {
+    let sheet: Plain = JSON.parse(JSON.stringify(STANDARD_SHEET)) as Plain;
+    for (const path of SCORE_PATHS) sheet = sheetWith(path, bound, sheet);
+    const result = normalizeSheet(sheet);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sheet.attributes.curiosity).toBe(bound);
+    expect(result.sheet.op_modes.nitwit).toBe(bound);
   });
 
   it('refuses each score at 0, 6 and 3.5', () => {
@@ -143,15 +153,25 @@ describe('canonicalSheetJson', () => {
 });
 
 describe('psyche/src imports', () => {
-  it('imports nothing but relative modules with a .ts extension', () => {
+  it('imports nothing but relative .ts modules, in any quote style, and never uses require', () => {
     const dir = new URL('../src/', import.meta.url);
+    // from '...' / import '...' with single, double or backtick quotes
+    const staticSpec = /\b(?:from|import)\s*(['"`])([^'"`]*)\1/g;
+    // import('...') with a literal specifier; every import( must be one of these
+    const literalDynamic = /\bimport\s*\(\s*(['"`])([^'"`]*)\1\s*\)/g;
+    const anyDynamic = /\bimport\s*\(/g;
     let specifiers = 0;
     for (const file of readdirSync(dir)) {
       const text = readFileSync(new URL(file, dir), 'utf8');
-      for (const match of text.matchAll(/\bfrom\s+'([^']+)'|\bimport\s*\(?\s*'([^']+)'/g)) {
-        const spec = match[1] ?? match[2] ?? '';
+      expect(text, `${file} uses require`).not.toMatch(/\brequire\s*\(/);
+      const literal = [...text.matchAll(literalDynamic)].map((m) => m[2] ?? '');
+      expect(literal.length, `${file} has a non-literal dynamic import`).toBe(
+        [...text.matchAll(anyDynamic)].length,
+      );
+      const statics = [...text.matchAll(staticSpec)].map((m) => m[2] ?? '');
+      for (const spec of [...statics, ...literal]) {
         specifiers += 1;
-        expect(spec, `${file} imports ${spec}`).toMatch(/^\.\/[^']+\.ts$/);
+        expect(spec, `${file} imports ${spec}`).toMatch(/^\.\/[^'"`]+\.ts$/);
       }
     }
     expect(specifiers).toBeGreaterThan(0);

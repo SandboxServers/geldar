@@ -9,5 +9,6 @@
 !eventsink
 **/node_modules
 eventsink/test
+psyche/test
 **/*.env
 **/.env*

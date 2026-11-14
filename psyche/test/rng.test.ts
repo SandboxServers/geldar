@@ -81,6 +81,77 @@ describe('decisionId and seeds', () => {
   });
 });
 
+/** Taken from the engine as it hashes UTF-16 code units: 'é' is one unit, the emoji is a surrogate pair. */
+const NON_ASCII_SEEDS = {
+  accent: 4225600484,
+  emoji: 4119312166,
+  emojiFirstDraw: 0.2253863390069455,
+};
+
+describe('decisionId validation', () => {
+  it('throws on the colliding pair, in either form', () => {
+    const first: DrawKey = {
+      lifeId: 'a',
+      producer: 'body',
+      generation: 1,
+      tick: 2,
+      fx: '3:x',
+      decisionSeq: 4,
+    };
+    const second: DrawKey = {
+      lifeId: 'a:1',
+      producer: 'body',
+      generation: 2,
+      tick: 3,
+      fx: 'x',
+      decisionSeq: 4,
+    };
+    expect(() => decisionId(first)).toThrow(RangeError);
+    expect(() => decisionId(second)).toThrow(RangeError);
+  });
+
+  it('refuses an empty or colon-bearing lifeId and fx', () => {
+    for (const change of [{ lifeId: '' }, { lifeId: 'a:b' }, { fx: '' }, { fx: 'x:y' }]) {
+      expect(() => decisionId({ ...BASE, ...change }), JSON.stringify(change)).toThrow(RangeError);
+    }
+  });
+
+  it.each(['generation', 'tick', 'decisionSeq'] as const)(
+    'refuses a %s that is not a non-negative safe integer',
+    (field) => {
+      for (const bad of [
+        Number.NaN,
+        1.5,
+        -1,
+        Number.MAX_SAFE_INTEGER + 1,
+        Number.POSITIVE_INFINITY,
+      ]) {
+        expect(() => decisionId({ ...BASE, [field]: bad }), `${field}=${bad}`).toThrow(RangeError);
+      }
+    },
+  );
+
+  it('accepts zero for each count and the largest safe integer', () => {
+    expect(() => decisionId({ ...BASE, generation: 0, tick: 0, decisionSeq: 0 })).not.toThrow();
+    expect(() => decisionId({ ...BASE, tick: Number.MAX_SAFE_INTEGER })).not.toThrow();
+  });
+
+  it('throws from seedFor and rngFor too, since they hash the id', () => {
+    expect(() => rngFor({ ...BASE, lifeId: '' })).toThrow(RangeError);
+    expect(() => seedFor({ ...BASE, decisionSeq: -1 })).toThrow(RangeError);
+  });
+});
+
+describe('non-ASCII seeds', () => {
+  it('hashes UTF-16 code units: an accented and an astral lifeId (seed vectors)', () => {
+    const accent = { ...BASE, lifeId: 'é' };
+    const emoji = { ...BASE, lifeId: '😀' };
+    expect(seedFor(accent)).toBe(NON_ASCII_SEEDS.accent);
+    expect(seedFor(emoji)).toBe(NON_ASCII_SEEDS.emoji);
+    expect(rngFor(emoji).next()).toBe(NON_ASCII_SEEDS.emojiFirstDraw);
+  });
+});
+
 describe('rng', () => {
   it('counts its draws and stays in [0, 1)', () => {
     const rng: Rng = rngFor(BASE);

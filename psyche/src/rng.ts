@@ -18,11 +18,37 @@ export interface Rng {
   readonly draws: number;
 }
 
+function requireText(name: string, value: string): void {
+  if (value === '' || value.includes(':')) {
+    throw new RangeError(
+      `${name} must be non-empty and must not contain ':': ${JSON.stringify(value)}`,
+    );
+  }
+}
+
+function requireCount(name: string, value: number): void {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new RangeError(`${name} must be a non-negative safe integer: ${value}`);
+  }
+}
+
+/**
+ * The engine validates the key: a colon in lifeId or fx would let two keys share one id, so both are refused.
+ * The id format itself is fixed by the card and not escaped.
+ */
 export function decisionId(key: DrawKey): string {
+  requireText('lifeId', key.lifeId);
+  requireText('fx', key.fx);
+  requireCount('generation', key.generation);
+  requireCount('tick', key.tick);
+  requireCount('decisionSeq', key.decisionSeq);
   return `${key.producer}:${key.lifeId}:${key.generation}:${key.tick}:${key.fx}:${key.decisionSeq}`;
 }
 
-/** FNV-1a, 32 bit, over the UTF-16 code units of the text. */
+/**
+ * FNV-1a, 32 bit, over the UTF-16 code units of the text. Ports must hash UTF-16 code units
+ * (JS string indices), not UTF-8 bytes or code points: 'é' is one unit, an emoji is two.
+ */
 function fnv1a32(text: string): number {
   let hash = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {

@@ -1,4 +1,4 @@
-import type { CharacterSheet, Score, SheetResult } from './types.ts';
+import type { CharacterSheet, SheetResult } from './types.ts';
 
 const TOP_KEYS = ['version', 'attributes', 'alignment', 'op_modes'];
 const ATTRIBUTE_KEYS = ['curiosity', 'common_sense', 'cleverness', 'aggression'];
@@ -97,5 +97,3 @@ function canonicalValue(value: unknown): string {
 export function canonicalSheetJson(sheet: CharacterSheet): string {
   return canonicalValue(sheet);
 }
-
-export type { Score };
