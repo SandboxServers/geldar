@@ -134,7 +134,7 @@ services:
       GELDAR_SHARD: colo
       # Agent skin PNGs (<agent_id>.png) for the BlueMap skin provider (GX-07). Read-only mount below; the plugin falls back to its default skin when a file is missing.
       GELDAR_AGENT_SKINS_DIR: /data/skins
-      RCON_CMDS_STARTUP: "worldborder set 3000\ngamerule keep_inventory false\ngamerule immediate_respawn false\ngamerule show_advancement_messages false\ngamerule send_command_feedback false\ngamerule spectators_generate_chunks false"
+      RCON_CMDS_STARTUP: "worldborder set 3000\ngamerule keep_inventory false\ngamerule players_sleeping_percentage 50\ngamerule immediate_respawn false\ngamerule show_advancement_messages false\ngamerule send_command_feedback false\ngamerule spectators_generate_chunks false"
     secrets: [rcon, velocity-forwarding]
     volumes:
       - paper-data:/data
@@ -231,6 +231,8 @@ services:
 
   # [C1-03] The Body (Adam's Golem; golem/Dockerfile, decision 0083). Built locally (the `build:` key is how the digest rule treats it).
   # GELDAR_BODY_IMAGE is the tag (default geldar-body:c1); the deploy tooling (C1-04) sets the published, digest-pinned reference. No published port.
+  # Decision 0212: the idle Adam is under the profile `adam`. A plain colo up does not start it; the CD restarts it only when it is running.
+  # Start it with: docker compose --profile adam up -d --wait golem-body
   golem-body:
     # Budget: 1 CPU, 2048m (no swap, 256 pids). Measured in C1-10.
     deploy:
@@ -270,6 +272,7 @@ services:
     depends_on:
       nats:
         condition: service_healthy
+    profiles: ["adam"]
     restart: unless-stopped
 
   # [C1-03] The Mind (Record/Mind host, decision 0078; animus/Dockerfile.mind). Built locally, as golem-body is; GELDAR_MIND_IMAGE

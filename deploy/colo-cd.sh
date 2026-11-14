@@ -4,7 +4,8 @@
 # files in the node's src extract (with .bak-<UTC> copies), a pg dump and the migrations when sql/ changed, and the
 # services whose image digest changed, one at a time, each with a health check. A failed health check rolls back: the
 # previous release is re-applied to the services already changed, the player hosts are recreated, and the script exits 1.
-# Never restarted: Paper, Velocity, Caddy, Postgres, NATS. Never started: mind. Plugin, compose and Caddy/NATS changes are
+# Never restarted: Paper, Velocity, Caddy, Postgres, NATS. Never started: mind, and golem-body (the idle Adam, profile adam,
+# decision 0212) unless it is already running. Plugin, compose and Caddy/NATS changes are
 # printed as "needs manual" and not applied. REGISTER_KILL_SWITCH is never read or written here.
 # Usage: colo-cd.sh [--dry-run] [<release.env path> <release sha> <export dir>]
 #   With no positional args, the inputs come from the environment: GELDAR_RELEASE_MANIFEST (a validated copy of the
@@ -56,6 +57,7 @@ LOCK=$STATE_DIR/cd.lock
 LOG=$STATE_DIR/cd.log
 LOCKED=0
 TOUCHED=
+BODY_CHANGED=
 CHANGED=
 SQL=no
 STALE_HOSTS=
@@ -95,6 +97,7 @@ profile_of() {
     admin) echo admin ;;
     animus) echo mind ;;
     players-host) echo sovereign ;;
+    golem-body) echo adam ;;
     *) echo "" ;;
   esac
 }
@@ -104,6 +107,14 @@ svc_compose() {
   shift
   p=$(profile_of "$svc")
   if [ -n "$p" ]; then dc --profile "$p" "$@" "$svc"; else dc "$@" "$svc"; fi
+}
+
+# True when the golem-body container (the idle Adam, profile adam, decision 0212) exists and is running. A stopped or absent
+# one is false: the CD never starts it.
+body_running() {
+  cid=$(svc_compose golem-body ps -q 2>/dev/null | head -n 1) || return 1
+  [ -n "$cid" ] || return 1
+  [ "$(docker inspect -f '{{.State.Running}}' "$cid")" = true ]
 }
 
 # True when the service's container is healthy, or running with no health check.
@@ -238,9 +249,10 @@ rollback() {
       log "rollback failed for $svc; check it by hand"
     fi
   done
-  case " $TOUCHED " in
-    *" golem-body "*) recreate_players || log "player hosts were not all recreated; check them by hand" ;;
-  esac
+  # BODY_CHANGED, not TOUCHED: a stopped Adam is not restarted (not in TOUCHED) but its image digest still drives the hosts.
+  if [ "$BODY_CHANGED" = 1 ]; then
+    recreate_players || log "player hosts were not all recreated; check them by hand"
+  fi
   close_scope
   die "rolled back after a failed health check on $bad; nothing else was changed (exit 1)"
 }
@@ -327,7 +339,13 @@ done <"$WORK/plan.txt"
 say "plan: migrations $SQL (a pg dump is taken first when yes)"
 for svc in $ORDER; do
   case " $CHANGED " in
-    *" $svc "*) say "plan: restart $svc" ;;
+    *" $svc "*)
+      if [ "$svc" = golem-body ]; then
+        say "plan: golem-body (adam) restarted only if running; not started otherwise (decision 0212)"
+      else
+        say "plan: restart $svc"
+      fi
+      ;;
     *) say "plan: $svc unchanged; not touched" ;;
   esac
 done
@@ -384,9 +402,17 @@ for svc in $ORDER; do
     *" $svc "*) ;;
     *) continue ;;
   esac
-  if [ "$svc" = golem-body ]; then pause_scope bodies; fi
+  if [ "$svc" = golem-body ]; then
+    pause_scope bodies
+    BODY_CHANGED=1
+  fi
   if [ "$svc" = geldar-mcp ]; then pause_scope mcp; fi
-  restart_one "$svc"
+  # The idle Adam (profile adam) is restarted only when it is running; otherwise the player hosts still get the new image.
+  if [ "$svc" != golem-body ] || body_running; then
+    restart_one "$svc"
+  else
+    log "golem-body is not running (the idle Adam, profile adam, decision 0212); not started"
+  fi
   if [ "$svc" = golem-body ]; then recreate_players || rollback golem-body; fi
   close_scope
 done

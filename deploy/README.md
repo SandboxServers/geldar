@@ -253,6 +253,9 @@ deploy/colo-admin.sh player-start ag-jason-01
 
 - The Adam Mind (`animus`) is under the compose profile `mind` (decision 0134). `colo-up.sh` does not start it; it cannot
   think until the C4 gateway exists.
+- The idle Adam Body (`golem-body`) is under the compose profile `adam` (decision 0212). `colo-up.sh` does not start it, and
+  `colo-cd.sh` restarts it only when it is already running; a new body digest still refreshes the player hosts. To start it:
+  `docker compose --profile adam up -d --wait golem-body`.
 - CoreProtect is mounted read-only into Paper: the verified jar from `state/coreprotect/coreprotect.jar`. Its config is set by hand after the first start (docs/runbooks/coreprotect.md).
 - BlueMap is mounted read-only into Paper (C2-07o): the verified jar from `state/bluemap/bluemap.jar` and `plugins/bluemap/config`. The owner accepted BlueMap's download of the Minecraft client resources under Mojang's EULA (2026-11-11), so `core.conf` has `accept-download: true`.
 - Postgres service roles are superuser for now (C2).

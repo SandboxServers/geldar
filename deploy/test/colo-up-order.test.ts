@@ -95,6 +95,8 @@ services:
   postgres:
     image: pgvector/pgvector@sha256:${'5'.repeat(64)}
   golem-body:
+    profiles:
+      - adam
     build:
       context: ..
     image: ${BODY}
@@ -242,7 +244,7 @@ describe('colo-up.sh order (decision 0084, decision 0133)', () => {
     expect(fullUp).toBeGreaterThan(whitelist);
   });
 
-  it('a failed whitelist step stops the deploy before golem-body can start', () => {
+  it('a failed whitelist step stops the deploy before the core start brings up the Body', () => {
     const fx = fixture();
     const shim = readFileSync(join(fx.env.PATH.split(delimiter)[0], 'docker'), 'utf8');
     writeFileSync(
