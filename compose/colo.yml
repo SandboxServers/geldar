@@ -133,7 +133,7 @@ services:
       GELDAR_NATS_URL: nats://nats:4222
       GELDAR_SHARD: colo
       # Agent skin PNGs (<agent_id>.png) for the BlueMap skin provider (GX-07). Read-only mount below; the plugin falls back to its default skin when a file is missing.
-      GELDAR_SKINS_DIR: /data/skins
+      GELDAR_AGENT_SKINS_DIR: /data/skins
       RCON_CMDS_STARTUP: "worldborder set 3000\ngamerule keep_inventory false\ngamerule immediate_respawn false\ngamerule show_advancement_messages false\ngamerule send_command_feedback false\ngamerule spectators_generate_chunks false"
     secrets: [rcon, velocity-forwarding]
     volumes:
