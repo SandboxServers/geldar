@@ -14,6 +14,8 @@ interface FakeOptions {
   failAudit?: boolean;
   /** The owner ids the flag SELECT returns. */
   flagged?: string[];
+  /** The owner ids that exist (the existence SELECT). Defaults to alice. */
+  owners?: string[];
 }
 
 /** A fake session that records every statement in order; BEGIN, COMMIT and ROLLBACK are recorded too. */
@@ -28,6 +30,11 @@ function fakeSql(options: FakeOptions = {}) {
       }
       if (text.startsWith('INSERT INTO register_audit') && options.failAudit) {
         throw new Error('audit write refused');
+      }
+      if (text.includes('WHERE owner_id = $1')) {
+        const id = String(values?.[0]);
+        const owners = options.owners ?? ['alice'];
+        return { rows: owners.includes(id) ? [{ owner_id: id }] : [] };
       }
       if (text.startsWith('SELECT owner_id FROM mcp_owners')) {
         return { rows: (options.flagged ?? []).map((owner_id) => ({ owner_id })) };
@@ -101,6 +108,53 @@ describe('setOwnerAdmin', () => {
     const { sql, calls } = fakeSql();
     await expect(setOwnerAdmin(sql, 'Not Valid', true)).rejects.toThrow('owner id must be');
     expect(calls).toHaveLength(0);
+  });
+});
+
+describe('runOwnerAdmin is a no-op when the flag already has the requested value', () => {
+  it('set twice writes one admin_set row: the second set finds the owner already admin', async () => {
+    const options: FakeOptions = { flagged: [] };
+    const { sql, calls } = fakeSql(options);
+    expect(await runOwnerAdmin(sql, { verb: 'set', id: 'alice' })).toEqual([
+      'owner alice admin set',
+    ]);
+    options.flagged = ['alice'];
+    expect(await runOwnerAdmin(sql, { verb: 'set', id: 'alice' })).toEqual([
+      'owner alice is already an admin; nothing changed',
+    ]);
+    expect(audits(calls)).toHaveLength(1);
+    expect(audits(calls)[0]?.values?.[1]).toBe('admin_set');
+  });
+
+  it('set on an owner that is already admin writes no row and no UPDATE', async () => {
+    const { sql, calls } = fakeSql({ flagged: ['alice'] });
+    expect(await runOwnerAdmin(sql, { verb: 'set', id: 'alice' })).toEqual([
+      'owner alice is already an admin; nothing changed',
+    ]);
+    expect(audits(calls)).toHaveLength(0);
+    expect(calls.some((c) => c.text.startsWith('UPDATE mcp_owners'))).toBe(false);
+  });
+
+  it('unset on an owner that is not admin is a no-op with no row', async () => {
+    const { sql, calls } = fakeSql({ flagged: [] });
+    expect(await runOwnerAdmin(sql, { verb: 'unset', id: 'alice' })).toEqual([
+      'owner alice is not an admin; nothing changed',
+    ]);
+    expect(audits(calls)).toHaveLength(0);
+    expect(calls.some((c) => c.text.startsWith('UPDATE mcp_owners'))).toBe(false);
+  });
+
+  it('unset or set on an unknown owner is refused with no row, even when it would be a no-op', async () => {
+    const unset = fakeSql({ flagged: [], owners: [] });
+    await expect(runOwnerAdmin(unset.sql, { verb: 'unset', id: 'ghost' })).rejects.toThrow(
+      'no owner ghost',
+    );
+    expect(audits(unset.calls)).toHaveLength(0);
+    const set = fakeSql({ flagged: ['ghost'], owners: [] });
+    await expect(runOwnerAdmin(set.sql, { verb: 'set', id: 'ghost' })).rejects.toThrow(
+      'no owner ghost',
+    );
+    expect(audits(set.calls)).toHaveLength(0);
   });
 });
 
