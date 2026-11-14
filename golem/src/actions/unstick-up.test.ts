@@ -12,17 +12,19 @@ const key = (x: number, y: number, z: number): string => `${x},${y},${z}`;
 
 /** Blocks a bare hand cannot drop: stone needs a pickaxe (the test has none). */
 const NEEDS_TOOL = new Set(['stone']);
+/** Cells the fake reads as empty-boxed: air, liquids and the underwater plant kelp. */
+const EMPTY_BOX = new Set(['air', 'water', 'lava', 'kelp']);
 
-/** A block grid: unlisted cells are air; `water` and `lava` are empty-boxed; the rest are solid. */
-function blockOf(grid: Grid, cell: Vec3): Block | null {
+/** A block grid: unlisted cells are air; `water`, `lava` and `kelp` are empty-boxed; the rest are solid. */
+function blockOf(grid: Grid, cell: Vec3, hardness = 1.5): Block | null {
   const name = grid.get(key(cell.x, cell.y, cell.z)) ?? 'air';
-  const boundingBox = name === 'air' || name === 'water' || name === 'lava' ? 'empty' : 'block';
+  const boundingBox = EMPTY_BOX.has(name) ? 'empty' : 'block';
   const harvestTools = NEEDS_TOOL.has(name) ? { 270: true } : undefined;
   return {
     name,
     boundingBox,
     diggable: true,
-    hardness: 1.5,
+    hardness,
     harvestTools,
     position: cell,
   } as unknown as Block;
@@ -30,17 +32,19 @@ function blockOf(grid: Grid, cell: Vec3): Block | null {
 
 /**
  * A fake Body. Walking moves 0.3 blocks a tick into open cells. A jump forward onto a solid cell whose
- * head room is open rises one block onto it, as a real hop does.
+ * head room is open rises one block onto it, as a real hop does. `hardness` is the grid's block hardness
+ * (0 makes a dig cost half a second, for the climb-count tests).
  */
-function fakeBot(grid: Grid, start: Vec3) {
+function fakeBot(grid: Grid, start: Vec3, hardness = 1.5) {
   const dug: string[] = [];
   let dir = new Vec3(0, 0, 0);
   const controls = new Set<string>();
   const bot = {
+    username: 'body_test',
     health: 6.83,
     game: { dimension: 'minecraft:overworld' },
     entity: { position: start, height: 1.62 },
-    blockAt: (cell: Vec3) => blockOf(grid, cell),
+    blockAt: (cell: Vec3) => blockOf(grid, cell, hardness),
     async lookAt(target: Vec3) {
       dir = new Vec3(
         target.x - bot.entity.position.x,
@@ -57,7 +61,7 @@ function fakeBot(grid: Grid, start: Vec3) {
       const here = bot.entity.position.floored();
       const step = new Vec3(Math.round(dir.x), 0, Math.round(dir.z));
       const next = here.plus(step);
-      const isBox = (cell: Vec3, box: string) => blockOf(grid, cell)?.boundingBox === box;
+      const isBox = (cell: Vec3, box: string) => blockOf(grid, cell, hardness)?.boundingBox === box;
       if (
         controls.has('jump') &&
         isBox(next, 'block') &&
@@ -91,6 +95,7 @@ function ctxOf(bot: unknown, signal = new AbortController().signal): ActionConte
 /** Zack's cell (decision 0196 fixture): feet (-265.5, 35, 196.5), so the feet cell is (-266, 35, 196). */
 const BASE = { x: -266, y: 35, z: 196 };
 const START = new Vec3(BASE.x + 0.5, BASE.y, BASE.z + 0.5);
+const WEST = [new Vec3(-1, 0, 0)];
 
 /**
  * The pit around Zack's cell: a stone floor one block under the feet, a stone wall two blocks high to the
@@ -121,9 +126,46 @@ function zackPit(wall = 'stone', above: string | null = null): Grid {
   return grid;
 }
 
+/**
+ * A 1x1 shaft: the Body's column is open, every other cell within eight blocks is stone, and the floor
+ * under the column is stone. The walls are six blocks high, so a climb must dig through them.
+ */
+function shaftPit(): Grid {
+  const grid: Grid = new Map();
+  for (let dx = -8; dx <= 8; dx++) {
+    for (let dz = -8; dz <= 8; dz++) {
+      grid.set(key(BASE.x + dx, BASE.y - 1, BASE.z + dz), 'stone');
+      if (dx === 0 && dz === 0) continue;
+      for (let dy = 0; dy < 6; dy++) grid.set(key(BASE.x + dx, BASE.y + dy, BASE.z + dz), 'stone');
+    }
+  }
+  return grid;
+}
+
+/** A wall top with a stone floor under the start cell and nothing around the wall's top. */
+function wallTop(): Grid {
+  return new Map([
+    [key(BASE.x, BASE.y - 1, BASE.z), 'stone'],
+    [key(BASE.x - 1, BASE.y, BASE.z), 'stone'],
+    [key(BASE.x - 1, BASE.y + 1, BASE.z), 'stone'],
+  ]);
+}
+
 const ownedBy = (owner: string | null) => setOwnerLookup(() => ({ known: true, owner }));
 /** The failure text of an outcome ('' when it has none). */
 const messageOf = (outcome: { status: string; message?: string }): string => outcome.message ?? '';
+
+/** Climbs west from the start cell with the given grid; returns the result, the digs and the Body. */
+async function climbWest(grid: Grid, hardness = 1.5) {
+  const { bot, dug } = fakeBot(grid, START, hardness);
+  const result = await digUp(
+    bot as unknown as Bot,
+    new AbortController().signal,
+    () => bot.entity.position.floored(),
+    WEST,
+  );
+  return { result, dug, bot };
+}
 
 describe('unstick upward hand-dig rung (decision 0196)', () => {
   afterEach(() => setOwnerLookup(null));
@@ -139,15 +181,41 @@ describe('unstick upward hand-dig rung (decision 0196)', () => {
     expect(bot.entity.position.y).toBeGreaterThanOrEqual(BASE.y + 1);
   });
 
-  it("does not dig another player's block above the Body", async () => {
-    ownedBy('other-player');
-    const grid = zackPit('oak_planks');
-    const { bot, dug } = fakeBot(grid, START);
-    const outcome = await unstick(ctxOf(bot));
-    expect(outcome.status).toBe('failed');
+  it('does not report free while the Body is still in a closed 1x1 shaft (decision 0196 FIX-1)', async () => {
+    const { result, dug, bot } = await climbWest(shaftPit(), 0);
+    // Every climb digs two cells and hops one block; the 4-climb cap ends the rung with no ledge.
+    expect(result.freed).toBe(false);
+    expect(result.blocked).toBe('the climb reached 4 blocks with no ledge');
+    expect(result.dug).toBe(8);
+    expect(dug).toHaveLength(8);
+    expect(bot.entity.position.y).toBe(BASE.y + 4);
+  });
+
+  it('does not report free on a wall top it cannot step off', async () => {
+    const { result, dug } = await climbWest(wallTop());
+    expect(dug).toEqual(['stone']);
+    expect(result.dug).toBe(1);
+    expect(result.freed).toBe(false);
+  });
+
+  it('refuses a climb whose wall is magma or cactus (the cell the Body would stand on)', async () => {
+    for (const name of ['magma_block', 'cactus']) {
+      const grid = zackPit();
+      grid.set(key(BASE.x - 1, BASE.y, BASE.z), name);
+      const { result, dug } = await climbWest(grid);
+      expect(result.freed).toBe(false);
+      expect(result.blocked).toContain(name);
+      expect(dug).toEqual([]);
+    }
+  });
+
+  it('does not climb into an underwater plant above the wall (not open air)', async () => {
+    const grid = zackPit();
+    grid.set(key(BASE.x - 1, BASE.y + 1, BASE.z), 'kelp');
+    const { result, dug } = await climbWest(grid);
+    expect(result.freed).toBe(false);
+    expect(result.blocked).toContain('kelp');
     expect(dug).toEqual([]);
-    expect(messageOf(outcome)).toContain("someone else's work");
-    expect(grid.get(key(BASE.x - 1, BASE.y + 1, BASE.z))).toBe('oak_planks');
   });
 
   it('refuses a climb with lava above the cell it digs', async () => {
@@ -171,35 +239,12 @@ describe('unstick upward hand-dig rung (decision 0196)', () => {
   it('refuses a climb whose wall cell is lava (the cell itself, not a hazard beside it)', async () => {
     const grid = zackPit();
     grid.set(key(BASE.x - 1, BASE.y + 1, BASE.z), 'lava');
-    const { bot, dug } = fakeBot(grid, START);
-    const result = await digUp(
-      bot as unknown as Bot,
-      new AbortController().signal,
-      () => bot.entity.position.floored(),
-      [new Vec3(-1, 0, 0)],
-    );
+    const { result, dug } = await climbWest(grid);
     expect(result.freed).toBe(false);
     expect(result.dug).toBe(0);
     expect(result.blocked).toContain('lava is above the wall');
     expect(dug).toEqual([]);
     expect(grid.get(key(BASE.x - 1, BASE.y + 1, BASE.z))).toBe('lava');
-  });
-
-  it('does not report free on a wall top it cannot step off', async () => {
-    const grid: Grid = new Map([
-      [key(BASE.x - 1, BASE.y, BASE.z), 'stone'],
-      [key(BASE.x - 1, BASE.y + 1, BASE.z), 'stone'],
-    ]);
-    const { bot, dug } = fakeBot(grid, START);
-    const result = await digUp(
-      bot as unknown as Bot,
-      new AbortController().signal,
-      () => bot.entity.position.floored(),
-      [new Vec3(-1, 0, 0)],
-    );
-    expect(dug).toEqual(['stone']);
-    expect(result.dug).toBe(1);
-    expect(result.freed).toBe(false);
   });
 
   it('stops digging when the signal aborts after the first dig', async () => {
@@ -235,5 +280,41 @@ describe('unstick upward hand-dig rung (decision 0196)', () => {
     );
     expect(result).toEqual({ freed: false, dug: 0, blocked: null });
     expect(dug).toEqual([]);
+  });
+});
+
+describe('unstick upward rung ownership (decision 0164)', () => {
+  afterEach(() => setOwnerLookup(null));
+
+  it("refuses a natural stone wall another player's record names", async () => {
+    ownedBy('other-player');
+    const grid = zackPit();
+    const { result, dug } = await climbWest(grid);
+    expect(result.dug).toBe(0);
+    expect(dug).toEqual([]);
+    expect(grid.get(key(BASE.x - 1, BASE.y + 1, BASE.z))).toBe('stone');
+  });
+
+  it('refuses a natural stone wall whose owner is unknown', async () => {
+    setOwnerLookup(() => ({ known: false }));
+    const grid = zackPit();
+    const { result, dug } = await climbWest(grid);
+    expect(result.dug).toBe(0);
+    expect(dug).toEqual([]);
+    expect(grid.get(key(BASE.x - 1, BASE.y + 1, BASE.z))).toBe('stone');
+  });
+
+  it("digs a natural stone wall the Body's own record names", async () => {
+    ownedBy('body_test');
+    const { result, dug } = await climbWest(zackPit());
+    expect(result.dug).toBe(1);
+    expect(dug).toEqual(['stone']);
+  });
+
+  it('digs a natural stone wall with no ownership record', async () => {
+    setOwnerLookup(null);
+    const { result, dug } = await climbWest(zackPit());
+    expect(result.dug).toBe(1);
+    expect(dug).toEqual(['stone']);
   });
 });

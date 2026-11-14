@@ -25,12 +25,22 @@ const HOP_TICKS = 20;
 const RISE = 0.9;
 
 const UP = new Vec3(0, 1, 0);
+/** Stands in for a cell the climb has already left: the shaft is solid for the step-off test. */
+const SHAFT_WALL = { name: 'stone', boundingBox: 'block' } as unknown as Block;
+/** Underwater plants: a Body in them is in water, so they are not open air. */
+const WATER_PLANTS = new Set(['seagrass', 'tall_seagrass', 'kelp', 'kelp_plant', 'bubble_column']);
+/** Blocks a climb never stands under: contact burns, pricks or sets the Body alight. */
+const HARMFUL_STAND = new Set(['magma_block', 'cactus', 'fire']);
 
 /** A block that stands solid for a hop: not water, lava or an open cell. */
 const solidBlock = (b: Block | null): b is Block => b !== null && b.boundingBox === 'block';
-/** An open cell the Body can enter: empty, and not a liquid. */
+/** An open cell the Body can enter: empty, and not a liquid or an underwater plant. */
 const openCell = (b: Block | null): boolean =>
-  b !== null && b.boundingBox === 'empty' && b.name !== 'water' && b.name !== 'lava';
+  b !== null &&
+  b.boundingBox === 'empty' &&
+  b.name !== 'water' &&
+  b.name !== 'lava' &&
+  !WATER_PLANTS.has(b.name);
 
 /** Where the upward rung ended: freed, the blocks it broke, and the facts that stopped it (or null). */
 export interface UpResult {
@@ -47,12 +57,12 @@ interface Step {
 }
 
 /**
- * Why one cell above the wall may not be dug, or null. Liquids, unbreakable blocks, refused names, a
- * liquid or falling block beside it (`hazardReason`) and someone else's work (`protectedReason`, decision
- * 0164) all refuse. Ownership unknown is allowed, as the other dig rungs allow it.
+ * Why one cell above the wall may not be dug, or null. Liquids and underwater plants, unbreakable blocks,
+ * refused names, a liquid or falling block beside it (`hazardReason`) and someone else's work
+ * (`protectedReason`, decision 0164) all refuse. Ownership unknown refuses too, as `isProtected` refuses it.
  */
 function cellRefusal(bot: Bot, block: Block, cell: Vec3, own: readonly Vec3[]): string | null {
-  if (block.name === 'water' || block.name === 'lava') {
+  if (block.name === 'water' || block.name === 'lava' || WATER_PLANTS.has(block.name)) {
     return `${block.name} is above the wall at ${cell.x},${cell.y},${cell.z}; the climb would meet it`;
   }
   const { hardness } = block as { hardness?: number | null };
@@ -68,13 +78,17 @@ function cellRefusal(bot: Bot, block: Block, cell: Vec3, own: readonly Vec3[]): 
 }
 
 /**
- * The climb step toward `dir`: the wall cell beside the Body must be solid, its two cells above must be open
- * or diggable, and the Body's head cell must be open. Returns the step, a refusal text, or null when there is
- * no wall that way.
+ * The climb step toward `dir`: the wall cell beside the Body must be solid and not harmful to stand on, its
+ * two cells above must be open or diggable, and the Body's head cell must be open. Returns the step, a
+ * refusal text, or null when there is no wall that way.
  */
 function planStep(bot: Bot, feet: Vec3, dir: Vec3): Step | string | null {
   const stand = feet.plus(dir);
-  if (!solidBlock(bot.blockAt(stand))) return null;
+  const wall = bot.blockAt(stand);
+  if (!solidBlock(wall)) return null;
+  if (HARMFUL_STAND.has(wall.name)) {
+    return `${wall.name} at ${stand.x},${stand.y},${stand.z} would hurt the Body on the climb`;
+  }
   if (!openCell(bot.blockAt(feet.plus(UP)))) return null;
   const own = [feet, feet.plus(UP)];
   const cells: { cell: Vec3; block: Block }[] = [];
@@ -136,8 +150,9 @@ async function hop(bot: Bot, signal: AbortSignal, dir: Vec3): Promise<boolean> {
  * The upward hand-dig rung (decision 0196): climbs out of a pit one block at a time. Each step digs the two
  * cells above a solid wall beside the Body, then hops onto the wall's top, the same shape as `stairs`
  * (escape-stairs.ts) but with the 25 s hand-dig budget and the refusals of `cellRefusal`. Stops once the
- * Body stands on a cell `canStepOff` accepts, when the budget runs out, when a dig is refused, or when
- * `signal` aborts. Every block broken is counted in `dug`.
+ * Body stands on a cell from which `canStepOff` finds a way out, with every cell it has climbed through
+ * counted as solid (the shaft it left is not a way out). Stops too when the budget runs out, when a dig is
+ * refused, or when `signal` aborts. Every block broken is counted in `dug`.
  */
 export async function digUp(
   bot: Bot,
@@ -148,6 +163,10 @@ export async function digUp(
   let dug = 0;
   let spent = 0;
   let blocked: string | null = null;
+  const left: Vec3[] = [];
+  // Any column the Body has climbed through is shaft at every height: the cells above it are not a way out.
+  const shaftAt = (at: Vec3): Block | null =>
+    left.some((c) => at.x === c.x && at.z === c.z) ? SHAFT_WALL : bot.blockAt(at);
   for (let climb = 0; climb < MAX_UP_STEPS; climb++) {
     if (signal.aborted) return { freed: false, dug, blocked: null };
     const feet = where();
@@ -184,8 +203,8 @@ export async function digUp(
     if (!(await hop(bot, signal, pick.dir))) {
       return { freed: false, dug, blocked: 'the Body did not rise onto the cleared wall' };
     }
-    if (canStepOff((cell) => bot.blockAt(cell), where()))
-      return { freed: true, dug, blocked: null };
+    left.push(feet);
+    if (canStepOff(shaftAt, where())) return { freed: true, dug, blocked: null };
   }
   return { freed: false, dug, blocked: `the climb reached ${MAX_UP_STEPS} blocks with no ledge` };
 }
