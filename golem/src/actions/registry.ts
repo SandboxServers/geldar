@@ -11,6 +11,7 @@ import {
   toResult,
 } from './outcome.ts';
 import { DEFAULT_DIAG_SINK, type DiagSink } from './stall-diag.ts';
+import type { TillHandler } from './till.ts';
 import { wakeBot } from './wake.ts';
 
 /** The contract verbs an action can name (`goto`, `mine`, ...). */
@@ -38,7 +39,8 @@ export interface ActionHandler<K extends ActionKind = ActionKind> {
  * verbs), so registries and lists hold this union instead; each typed handler still checks its own
  * action type.
  */
-export type AnyActionHandler = { [K in ActionKind]: ActionHandler<K> }[ActionKind];
+// TillHandler stays in the union until the contract's Action union has `till` (see till.ts).
+export type AnyActionHandler = { [K in ActionKind]: ActionHandler<K> }[ActionKind] | TillHandler;
 
 /** Maps each verb to its one handler. */
 export class ActionRegistry {
