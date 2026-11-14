@@ -57,8 +57,20 @@ export const FIRST_PAUSE_TICKS = 400;
 /** The longest pause between tries once the reflex keeps refusing (5 min at 20 TPS). */
 export const MAX_PAUSE_TICKS = 6000;
 
-/** The pause after refusals ("no suitable block"), by view: the tick it ends and the last length. */
-const pauses = new WeakMap<BodyView, { until: number; length: number }>();
+/** A block position, as the view reports it. */
+type Point = { x: number; y: number; z: number };
+
+/**
+ * The pause after a non-handled run, by view: the tick it ends, the last length, and (after an
+ * abandoned run only, a refusal) the position it began at.
+ */
+const pauses = new WeakMap<
+  BodyView,
+  { until: number; length: number; origin?: Point | undefined }
+>();
+
+/** A refusal pause ends early once the Body is more than this many blocks from where it began. */
+export const REFUSAL_MOVE_BLOCKS = 8;
 
 /** Forgets the burrow and the refusal pause of a view (the Body died and respawned). */
 export function forgetBurrow(view: BodyView): void {
@@ -66,11 +78,39 @@ export function forgetBurrow(view: BodyView): void {
   pauses.delete(view);
 }
 
-/** Starts or doubles the pause after a refusal at `tick`. */
-function pauseAfterRefusal(view: BodyView, tick: number): void {
+/** Starts or doubles the pause after a non-handled run at `tick`; `origin` is set after a refusal only. */
+function pauseAfterRefusal(view: BodyView, tick: number, origin?: Point): void {
   const last = pauses.get(view)?.length;
   const length = last === undefined ? FIRST_PAUSE_TICKS : Math.min(last * 2, MAX_PAUSE_TICKS);
-  pauses.set(view, { until: tick + length, length });
+  pauses.set(view, { until: tick + length, length, origin });
+}
+
+/** True when the Body stands more than `REFUSAL_MOVE_BLOCKS` from `origin` (3-D distance in blocks). */
+function movedFar(now: Point, origin: Point): boolean {
+  const d = Math.hypot(now.x - origin.x, now.y - origin.y, now.z - origin.z);
+  return d > REFUSAL_MOVE_BLOCKS;
+}
+
+/**
+ * True while the pause of a view runs. Other burrow-style reflexes (dark shelter) wait for it too.
+ * A pause that began at a refusal ends once the Body has moved more than `REFUSAL_MOVE_BLOCKS`.
+ */
+export function burrowPaused(view: BodyView): boolean {
+  const pause = pauses.get(view);
+  if (pause === undefined || (view.tick ?? 0) >= pause.until) return false;
+  if (pause.origin !== undefined && movedFar(view.position, pause.origin)) {
+    pauses.delete(view);
+    return false;
+  }
+  return true;
+}
+
+/** A non-handled run starts or doubles the pause, and its line says how long (one line per step, not per skipped tick). */
+function pausedOutcome(view: BodyView, tick: number, outcome: ReflexOutcome): ReflexOutcome {
+  const origin = outcome.result === 'abandoned' ? { ...view.position } : undefined;
+  pauseAfterRefusal(view, tick, origin);
+  const seconds = Math.round((pauses.get(view)?.length ?? FIRST_PAUSE_TICKS) / 20);
+  return { ...outcome, detail: `${outcome.detail ?? outcome.result}; backing off ${seconds}s` };
 }
 
 /** True for a block that is solid, can be dug, and does not fall. */
@@ -266,8 +306,7 @@ export const panicBurrowReflex: Reflex = {
     if (burrows.has(view)) {
       return view.isNight === false ? { phase: 'dawn' } : null;
     }
-    const pause = pauses.get(view);
-    if (pause !== undefined && (view.tick ?? 0) < pause.until) return null;
+    if (burrowPaused(view)) return null;
     if (view.isNight === false && view.enclosed === true) return { phase: 'dawn', orphan: true };
     if (view.isNight !== true || view.bedNearby !== false || view.enclosed !== false) return null;
     return { phase: 'night', bed: false, shelter: false };
@@ -275,10 +314,11 @@ export const panicBurrowReflex: Reflex = {
   async run(trigger, ctx) {
     const dug = burrows.get(ctx.view);
     if (dug && trigger.phase === 'dawn') return leave(ctx, ctx.view, dug);
-    if (trigger.orphan === true) return breakOut(ctx);
-    const outcome = await burrow(ctx, ctx.view);
-    if (outcome.result === 'abandoned') pauseAfterRefusal(ctx.view, ctx.tick);
-    else if (outcome.result === 'handled') pauses.delete(ctx.view);
-    return outcome;
+    const outcome = trigger.orphan === true ? await breakOut(ctx) : await burrow(ctx, ctx.view);
+    if (outcome.result === 'handled') {
+      pauses.delete(ctx.view);
+      return outcome;
+    }
+    return pausedOutcome(ctx.view, ctx.tick, outcome);
   },
 };
