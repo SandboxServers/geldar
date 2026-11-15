@@ -1,12 +1,39 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   type AdmitDeps,
   admitLifeId,
   admitMode,
+  defaultDeps,
   failureLine,
   MODE_REFUSAL,
   runAdmit,
 } from './admit-life.ts';
+
+// The whitelist commands are replaced by two spies, so the entry wiring can be checked without RCON.
+const spies = vi.hoisted(() => ({ admit: vi.fn(async () => {}), remove: vi.fn(async () => {}) }));
+vi.mock('./players/whitelist.ts', () => ({
+  admitLifeWithConfig: spies.admit,
+  removeLifeWithConfig: spies.remove,
+}));
+
+describe('admit-life: the entry wiring (BH-5a)', () => {
+  beforeEach(() => {
+    spies.admit.mockClear();
+    spies.remove.mockClear();
+  });
+
+  it('the add wiring calls admitLifeWithConfig only', async () => {
+    await defaultDeps.admit({} as never, 'ag_jason01');
+    expect(spies.admit).toHaveBeenCalledWith({}, 'ag_jason01');
+    expect(spies.remove).not.toHaveBeenCalled();
+  });
+
+  it('the remove wiring calls removeLifeWithConfig only', async () => {
+    await defaultDeps.remove({} as never, 'ag_jason01');
+    expect(spies.remove).toHaveBeenCalledWith({}, 'ag_jason01');
+    expect(spies.admit).not.toHaveBeenCalled();
+  });
+});
 
 describe('admit-life: the one life id from the environment', () => {
   it('accepts a managed life id of 1 to 12 lower-case letters or digits after ag_', () => {

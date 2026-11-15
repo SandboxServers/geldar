@@ -63,12 +63,15 @@ export function failureLine(error: unknown): string {
   return 'admit-life: admission or removal failed';
 }
 
+/** The real side effects the entry block runs with: the config reader and the one whitelist command per mode. */
+export const defaultDeps: AdmitDeps = {
+  loadConfig: loadStackConfig,
+  admit: (cfg, id) => admitLifeWithConfig(cfg, id),
+  remove: (cfg, id) => removeLifeWithConfig(cfg, id),
+};
+
 if (process.argv[1]?.endsWith('admit-life.ts')) {
-  runAdmit(process.env, {
-    loadConfig: loadStackConfig,
-    admit: (cfg, id) => admitLifeWithConfig(cfg, id),
-    remove: (cfg, id) => removeLifeWithConfig(cfg, id),
-  })
+  runAdmit(process.env, defaultDeps)
     .then((line) => console.log(line))
     .catch((error: unknown) => {
       console.error(failureLine(error));
