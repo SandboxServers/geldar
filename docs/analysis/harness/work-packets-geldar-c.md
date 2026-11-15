@@ -139,6 +139,8 @@ The lineage cards depend on Phase 1 C4, which proposed `lf_...` life ids; the co
 
 ### AN-54a: lineage contract unblocker
 
+Superseded by S10-01a in work-packets-sheet-w9-w12.md; do not dispatch.
+
 - **id:** AN-54a (UNBLOCKER). **wave:** W10. **branch:** `codex/an-54a-lineage-contract`. **status:** Writing.
 - **depends-on:** AN-02 (sheet shapes, `contract/schemas/character-sheet.schema.json`), AN-53 (wave order). D-CS-09 and D-CS-17 accepted (assumed).
 - **may-edit:** `contract/schemas/lineage-birth.schema.json` (new); `contract/src/index.ts` (one block `// --- AN-54 lineage ---`, now 422 lines, stays under 500); `contract/test/lineage-birth.test.ts` (new); `contract/src/generated/**` (regenerate only); `docs/decisions/ADR-<allocate via registry>-lineage-and-the-ag-life-id.md` (new); the worknote.
@@ -181,6 +183,8 @@ The lineage cards depend on Phase 1 C4, which proposed `lf_...` life ids; the co
 - **worknote:** `docs/analysis/character-sheet/worknotes/AN-54a.md`. **commit:** `feat(character): add the LineageBirth contract (two parents, 13 recorded fields, no proficiency)`. **on-cap:** common rule.
 
 ### AN-54b: lineage SQL (births, handoffs, `effective_sheet()`)
+
+Superseded by S10-01b in work-packets-sheet-w9-w12.md; do not dispatch.
 
 - **id:** AN-54b. **wave:** W10. **branch:** `codex/an-54b-lineage-sql`. **status:** Writing (`agents.character_sheet` name from AN-04 `(to confirm)`).
 - **depends-on:** AN-54a, AN-04.
@@ -229,6 +233,8 @@ INSERT INTO schema_migrations (version) VALUES ('SQL-<allocate via registry>') O
 
 ### AN-42: pure inherited-sheet factory
 
+Superseded by S10-02 in work-packets-sheet-w9-w12.md; do not dispatch.
+
 - **id:** AN-42. **wave:** W10. **branch:** `codex/an-42-inherit-factory`. **status:** Writing (psyche names `(to confirm)`).
 - **depends-on:** AN-54a (field list and types), AN-03 (`rngFor` primitives, `normalizeSheet`, `Score`).
 - **may-edit:** `psyche/src/lineage/inherit.ts` (new); `psyche/src/lineage/inherit.test.ts` (new); `psyche/src/index.ts` (one export line; sole W10 editor of the barrel `(to confirm barrel name from AN-03)`); the worknote.
@@ -259,6 +265,8 @@ export function inheritSheet(input: InheritInput,
 
 ### AN-55a: birth function and handoff transitions (SQL)
 
+Superseded by S10-03 in work-packets-sheet-w9-w12.md; do not dispatch.
+
 - **id:** AN-55a (world half of AN-55). **wave:** W10. **branch:** `codex/an-55a-birth-sql`. **status:** **BlockedDependency** on C4-00 and C4-05 merged and the D-CS-17 adapter ruling (see section above). The card is written so it unblocks the moment the prerequisite or the owner question 1 ruling lands; **no mocked birth completes it**.
 - **depends-on:** AN-54b, AN-04, AN-05.
 - **may-edit:** `sql/SQL-<allocate via registry>_lineage_birth.sql` (new); `sql/test/check-schema-lineage-birth.sql` (new); `.github/workflows/ci.yml` (one `-f` argument, `(to confirm)`); the worknote.
@@ -281,6 +289,8 @@ LANGUAGE plpgsql SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp 
 - **worknote:** `.../worknotes/AN-55a.md`. **commit:** `feat(character): add operator_lineage_birth and the handoff transitions`. **on-cap:** common rule.
 
 ### AN-55b: birth adapter and operator CLI
+
+Superseded by S10-03 in work-packets-sheet-w9-w12.md; do not dispatch.
 
 - **id:** AN-55b (world half of AN-55). **wave:** W10. **branch:** `codex/an-55b-birth-adapter`. **status:** **BlockedDependency** (same prerequisite as AN-55a).
 - **depends-on:** AN-55a, AN-42.
@@ -362,6 +372,8 @@ All W11 behaviour is D-CS-13 recommended, assumed, unmeasured. The evidence is *
 
 ### AN-58a: drift contract and policy config
 
+Superseded by S11-01 in work-packets-sheet-w9-w12.md; do not dispatch.
+
 - **id:** AN-58a (UNBLOCKER). **wave:** W11. **branch:** `codex/an-58a-drift-contract`. **status:** Writing.
 - **depends-on:** AN-57 (wave order; hard prerequisites AN-54a, AN-02), D-CS-13 accepted (assumed).
 - **may-edit:** `contract/schemas/sheet-revision.schema.json` (new, title `SheetRevision`); `contract/schemas/drift-evaluation.schema.json` (new, title `DriftEvaluation`); `contract/schemas/character-config.schema.json` (extend the `drift` object; **name is AN-02's `(to confirm)`**); `contract/src/subjects.ts` (add `lifeSheetSubject`, 137 lines now); `contract/src/index.ts` (block `// --- AN-58 drift ---`); `contract/test/drift.test.ts`, `contract/test/life-sheet-subject.test.ts` (new); `contract/src/generated/**` (regenerate); `docs/decisions/ADR-<allocate via registry>-behaviour-based-drift.md` (new); the worknote.
@@ -402,6 +414,8 @@ character:
 - **worknote:** `.../worknotes/AN-58a.md`. **commit:** `feat(character): add the drift contract, the life sheet subject and the default-off policy config`. **on-cap:** common rule.
 
 ### AN-58b: drift SQL
+
+Superseded by S11-02 in work-packets-sheet-w9-w12.md; do not dispatch.
 
 - **id:** AN-58b. **wave:** W11. **branch:** `codex/an-58b-drift-sql`. **status:** Writing.
 - **depends-on:** AN-58a, AN-54b.
@@ -444,6 +458,8 @@ CREATE OR REPLACE FUNCTION effective_sheet(p_life_id TEXT) RETURNS TABLE (revisi
 
 ### AN-59a: window math and evidence readers
 
+Superseded by S11-03 in work-packets-sheet-w9-w12.md; do not dispatch.
+
 - **id:** AN-59a (world-side evidence only). **wave:** W11. **branch:** `codex/an-59a-drift-windows`. **status:** Writing (`xp_evidence` columns `(to confirm)` with AN-04 and AN-09; `audit_gaps` with AN-06).
 - **depends-on:** AN-58b, AN-09.
 - **may-edit:** `psyche/src/drift/window.ts` and `window.test.ts` (new, pure); `eventsink/src/drift/evidence.ts` (new), `evidence.test.ts` (fake client), `evidence.it.test.ts` (new, gated by `GELDAR_IT`); `psyche/src/index.ts` (one export line, W11 serial editor); `eventsink/package.json` only if it lacks `@geldar/psyche` (then this card is the W11 manifest owner); the worknote.
@@ -474,6 +490,8 @@ SELECT count(*) FROM events WHERE type = 'action' AND agent_id = $1
 
 ### AN-59b: rule, decision and eligibility
 
+Superseded by S11-03 in work-packets-sheet-w9-w12.md; do not dispatch.
+
 - **id:** AN-59b. **wave:** W11. **branch:** `codex/an-59b-drift-eligibility`. **status:** Writing.
 - **depends-on:** AN-59a.
 - **may-edit:** `psyche/src/drift/rules.ts`, `psyche/src/drift/evaluate.ts` and their tests (new, pure); `psyche/src/index.ts` (one export line); the worknote.
@@ -499,6 +517,8 @@ export function evaluateWindow(input: { enabled: boolean; window: DriftWindow; n
 
 ### AN-43: bounded drift transition and revision record
 
+Superseded by S11-04 in work-packets-sheet-w9-w12.md; do not dispatch.
+
 - **id:** AN-43. **wave:** W11. **branch:** `codex/an-43-drift-transition`. **status:** Writing.
 - **depends-on:** AN-59b.
 - **may-edit:** `eventsink/src/drift/apply.ts`, `eventsink/src/drift/store.ts` (the SQL strings) and `apply.test.ts` (fake), `apply.it.test.ts` (gated by `GELDAR_IT`) (new); the worknote.
@@ -521,6 +541,8 @@ export async function evaluateAndApply(pool: Pool, cfg: DriftPolicy,
 
 ### AN-60a: revision publication, sleep trigger and ACL (eventsink side, world half of AN-60)
 
+Superseded by S11-04 in work-packets-sheet-w9-w12.md; do not dispatch.
+
 - **id:** AN-60a. **wave:** W11. **branch:** `codex/an-60a-drift-publish`. **status:** Writing (the eventsink config route is AN-07's `(to confirm)`).
 - **depends-on:** AN-43, AN-11 (the life-state request handler this card extends).
 - **may-edit:** `eventsink/src/drift/publish.ts`, `eventsink/src/drift/trigger.ts` and tests (new); `eventsink/src/writer.ts` (an optional `onCommitted(events)` hook, 79 lines now); `eventsink/src/main.ts` (wiring, 76 lines); AN-11's life-state handler file `(to confirm path)` so its reply carries `effective_revision` and the effective scores; `geldar.ps1` (NATS user table only: `eventsink` Pub `geldar.$s.life.*.sheet`; `body` Sub the same; `body` and `paper` PubDeny `geldar.$s.life.>`; the `mcp` and `mind` rows unchanged); `tools/repo-checks/src/nats-auth.test.ts` (rows for the new subject); the worknote. Live test `threshold/mcp/test/nats-auth.it.test.ts` is added to by ops, not the coder.
@@ -542,6 +564,8 @@ export async function publishPending(pool: Pool, nc: NatsLike, shard: string): P
 - **worknote:** `.../worknotes/AN-60a.md`. **commit:** `feat(character): publish effective-sheet revisions from eventsink and trigger drift on a completed sleep`. **on-cap:** common rule.
 
 ### AN-60b: Body cache reload (golem side, world half of AN-60)
+
+Superseded by S11-05 in work-packets-sheet-w9-w12.md; do not dispatch.
 
 - **id:** AN-60b. **wave:** W11. **branch:** `codex/an-60b-drift-body`. **status:** Writing (AN-11 and AN-12 module names `(to confirm)`).
 - **depends-on:** AN-58a, AN-11, AN-12.
@@ -574,6 +598,8 @@ D-CS-11 is assumed: four primary treatments (A off, B all 3s with d20 checks off
 **Harness and model at origin/main.** `agents.harness` and `agents.declared_model` exist per life (`sql/0001_init.sql`). The harness name is validated against `sovereign.harnesses` of the shard file (`tools/mcp-tokens/src/players.ts`); `claude` and `chatgpt` are enabled on the colo shard (ADR 0180), **`local` is enabled nowhere**, and the register service's own list defaults to `claude-code` (`REGISTER_HARNESSES`). The cohort tools treat harness as an opaque label, map `claude-code` to `claude`, and take per-event stamps from GX-01 `(to confirm field names)` when present, else from the life's `agents` row.
 
 ### AN-33a: export role and world exporter
+
+Superseded by S12-01 in work-packets-sheet-w9-w12.md; do not dispatch.
 
 - **id:** AN-33a. **wave:** W12. **branch:** `codex/an-33a-export-world`. **status:** Writing.
 - **depends-on:** AN-60a, AN-54b, AN-58b (every table exported exists).
@@ -609,6 +635,8 @@ GRANT SELECT ON lineage_births, sheet_revisions, drift_evaluations, life_profici
 
 ### AN-34a: cohort metrics core
 
+Superseded by S12-02 in work-packets-sheet-w9-w12.md; do not dispatch.
+
 - **id:** AN-34a. **wave:** W12. **branch:** `codex/an-34a-metrics-core`. **status:** Writing.
 - **depends-on:** AN-33a (run folder format).
 - **may-edit:** `tools/progress-metrics/src/cohort/read.ts`, `jsd.ts`, `programs.ts`, `survival.ts`, `xp.ts`, `audit.ts`, `cost.ts` and `*.test.ts` (new); `tools/progress-metrics/fixtures/cohort/` (new synthetic run folders); the worknote.
@@ -634,6 +662,8 @@ export function callCost(sovereignCalls: number, kitTurns: KitMeterRow[] | null,
 
 ### AN-34b: harness and model dimensions, H7 to H9, report
 
+Superseded by S12-02 in work-packets-sheet-w9-w12.md; do not dispatch.
+
 - **id:** AN-34b. **wave:** W12. **branch:** `codex/an-34b-metrics-harness`. **status:** Writing; real inputs wait on HC-37 (AN-33b).
 - **depends-on:** AN-34a, AN-33b (formats).
 - **may-edit:** `tools/progress-metrics/src/cohort/compare.ts`, `hypotheses.ts`, `lineage.ts`, `drift.ts`, `tom.ts`, `report.ts`, `cohort-cli.ts` and tests (new; a new entry so `cli.ts` is untouched); `tools/progress-metrics/package.json` (one script `"cohort": "node src/cohort/cohort-cli.ts"`, `(to confirm: shared manifest)`); `docs/runbooks/progress-metrics.md` (a new section, `(to confirm owner)`); the worknote.
@@ -650,6 +680,8 @@ export function callCost(sovereignCalls: number, kitTurns: KitMeterRow[] | null,
 - **worknote:** `.../worknotes/AN-34b.md`. **commit:** `feat(character): add harness and model comparison, hypotheses H7 to H9 and the cohort report`. **on-cap:** common rule.
 
 ### AN-35a: protocol, run-set validator and fixtures
+
+Superseded by S12-06 in work-packets-sheet-w9-w12.md; do not dispatch.
 
 - **id:** AN-35a. **wave:** W12. **branch:** `codex/an-35a-protocol`. **status:** Writing (D-CS-10 and D-CS-11 numbers accepted before any run).
 - **depends-on:** AN-34a.
@@ -672,6 +704,8 @@ export function validateRunSet(arms: Arm[], protocol: Protocol): RunSetFinding[]
 
 ### AN-35b: collection scripts, report protocol, run evidence
 
+Superseded by S12-06 in work-packets-sheet-w9-w12.md; do not dispatch.
+
 - **id:** AN-35b. **wave:** W12. **branch:** `codex/an-35b-collect`. **status:** **BlockedDependency**: HC-38 (kit cohort arms by harness), AN-60b merged, and the owner's acceptance of D-CS-10 and D-CS-11 numbers before the first run. The coder part (scripts and protocol document) can be built earlier; **runs are ops, serial, recorded raw, never rerun away; a missing run is incomplete, not a pass.**
 - **depends-on:** AN-35a, HC-38, AN-60b.
 - **may-edit:** `tools/cohort-export/src/collect.ts` and `.test.ts` (new; shells out to `node tools/cohort-export/src/cli.ts export` and `ingest` per arm, so the metrics package keeps no DB access); `docs/analysis/character-sheet/worknotes/AN-35-protocol.md` (the fixed report protocol, new); `docs/analysis/character-sheet/worknotes/AN-35-results.md` (ops writes raw results); the worknote.
@@ -684,6 +718,8 @@ export function validateRunSet(arms: Arm[], protocol: Protocol): RunSetFinding[]
 - **worknote:** `.../worknotes/AN-35b.md`. **commit:** `feat(character): add cohort collection scripts and the fixed report protocol`. **on-cap:** common rule.
 
 ### AN-36: campaign review and rollout close (world side)
+
+Superseded by S12-07 in work-packets-sheet-w9-w12.md; do not dispatch.
 
 - **id:** AN-36. **wave:** W12. **branch:** `codex/an-36-close`. **status:** **BlockedDependency**: AN-35b evidence, a fresh campaign review, and owner D-CS-12 (broader enablement, opt-in, tune or stop). A docs and config card, not a feature card.
 - **depends-on:** AN-35b; HC-39 (kit close) runs alongside.

@@ -1,5 +1,25 @@
 # Sheet cards, waves W9 to W12: moral hooks, lineage, drift, measurement and rollout
 
+## Number mapping (renumbered 2026-11-14)
+
+| Item | Number before this commit | Number now | Note |
+|---|---|---|---|
+| Decision: sheet erasure covers dead lives (S9-00) | 0282 | 0282 (kept) | The erasure ruling; 0282 is already written on phase1/an-04c-erase-comments |
+| Decision: property refusal (S9-01) | 0283 | 0283 (unchanged) | Already in card order; not on origin/main or any ref checked on 2026-11-14 |
+| Decision: lineage contract (S10-01a) | 0284 | 0284 (unchanged) | Same check |
+| Decision: attribute drift (S11-01) | 0285 | 0285 (unchanged) | Same check |
+| Decision: cohort export and protocol (S12-01) | 0286 | 0286 (unchanged) | Same check |
+| Decision: adopting existing agents (S12-04) | 0287 | 0287 (unchanged) | Same check |
+| Decision: rollout and rollback (S12-05) | 0288 | 0288 (unchanged) | Same check |
+| Decision: spare | 0289 | 0289 (unchanged) | Spare |
+| Decision overflow block | none used | 0320 to 0329 (not needed) | No card needs a ninth decision in this file |
+| SQL: sheet erasure (S9-00) | 0052 | 0053 | 0052 is taken by 0052_character_erase_comments |
+| SQL: lineage (S10-01b) | 0053 | 0054 | |
+| SQL: drift (S11-02) | 0054 | 0055 | |
+| SQL: exporter role (S12-01) | 0055 | 0056 | |
+| SQL: conversion (S12-04) | 0056 | 0057 | |
+| SQL: spare | 0057 to 0059 | 0058 and 0059 | 0059 is the end of the block |
+
 Status: **proposal, nothing dispatched.** Written 2026-11-14 against geldar `origin/main` = `280b8ea9` (read in the worktree `phase1/cards-w9-w12`). Coordinator: geldar-sheet (decisions 0280 to 0289, SQL 0050 to 0059).
 
 **What this file is.** A second, current pass over the W9 to W12 candidates in `docs/analysis/character-sheet/work-packets.md` (lines 369 to end). It differs from the older cards in [work-packets-geldar-b.md](work-packets-geldar-b.md) (W9) and [work-packets-geldar-c.md](work-packets-geldar-c.md) (W10 to W12) in four ways: (1) it uses the sheet campaign's own number ranges (those files recommended 0182+ and SQL 0037+, which other campaigns now hold); (2) every card says which **repo** it edits, and kit cards carry `HC-nn` ids; (3) anything that tells an agent who to be, or concerns birth, lineage, inheritance, moral hooks or drift, is marked **OWNER DECISION REQUIRED**, ships default-off and inactive, and names the exact question; (4) W12 adds the control-cohort design, staged enable, rollback and a separate roster-conversion card. Where an older card is still right, this file says "keep the shape of AN-xx in geldar-b/c" and states only the differences; where it is wrong or stale, the card here replaces it. The ids here are `S9-nn`, `S10-nn`, `S11-nn`, `S12-nn` (geldar) and `HC-41` and up (kit, **proposed**; the kit orchestrator owns kit numbering and confirms or renumbers). Old AN ids are cross-referenced in each card as `replaces`.
@@ -17,30 +37,30 @@ Status: **proposal, nothing dispatched.** Written 2026-11-14 against geldar `ori
 
 | Card | Repo | Depends on | Parallelizable now? |
 |---|---|---|---|
-| S9-00 erasure covers dead lives (SQL 0052, decision 0282) | geldar | none (0051 is merged) | **yes** |
+| S9-00 erasure covers dead lives (SQL 0053, decision 0282) | geldar | none (0051 is merged) | **yes** |
 | S9-01 refusal reason code and decision key (contract) | geldar | none for the code; OWNER decision 0283 before merge to a wave branch | **yes** (write now, merge gated) |
 | S9-02 property-refusal hook (Body) | geldar | S9-01, AN-07, AN-11b (sheet and proficiency cache), AN-06b (roll producer) | no |
 | S9-03 bind hook behind `morality_hooks` (Body wiring) | geldar | S9-02, AN-12 | no |
 | HC-41 reflection facts leakage test (kit) | kit | HC-32, HC-26 | no |
 | S9-04 W9 close (ops) | geldar | S9-02, S9-03, S9-00 | no |
 | S10-01a lineage contract | geldar | AN-02a/b merged; OWNER decision 0284 (ids, formula) | no (owner) |
-| S10-01b lineage SQL 0053 | geldar | S10-01a, S9-00 | no |
+| S10-01b lineage SQL 0054 | geldar | S10-01a, S9-00 | no |
 | S10-02 pure inherited-sheet factory (psyche 1.x) | geldar | S10-01a (field list) | no |
 | HC-42 re-mirror psyche with the factory (kit) | kit | S10-02 released and tagged, HC-17 | no |
 | S10-03 birth transaction and adapter | geldar | S10-01b, S10-02, C4 birth lifecycle (external) | no (BlockedDependency) |
 | HC-43 child text approval gate (kit) | kit | HC-34b, HC-35b; OWNER decision 0284 | no |
 | S10-04 W10 integration and ancestry query (ops) | geldar + kit | S10-03, HC-34c, HC-35c, HC-43 | no |
 | S11-01 drift contract and policy config | geldar | S10-04; OWNER decision 0285 | no (owner) |
-| S11-02 drift SQL 0054 | geldar | S11-01 | no |
+| S11-02 drift SQL 0055 | geldar | S11-01 | no |
 | S11-03 evidence windows and eligibility | geldar | S11-02, AN-09a, AN-10a | no |
 | S11-04 bounded transition and publication | geldar | S11-03 | no |
 | S11-05 Body cache reload | geldar | S11-04, AN-11b | no |
 | HC-44 persona refresh artifact and review gate (kit) | kit | S11-04, HC-25, HC-36a | no |
 | S11-06 W11 integration (ops) | geldar + kit | S11-05, HC-44 | no |
-| S12-01 exporter role and world exporter (SQL 0055) | geldar | S11-02 (every table exported exists), AN-04b | no (after S11-02) |
+| S12-01 exporter role and world exporter (SQL 0056) | geldar | S11-02 (every table exported exists), AN-04b | no (after S11-02) |
 | S12-02 cohort metrics core | geldar | S12-01 run-folder format | no |
 | S12-03 control equivalence proof (all-3 equals today's bot) | geldar | AN-12 | no |
-| S12-04 roster conversion of existing agents (SQL 0056) | geldar | AN-05, AN-04b; OWNER decision 0287 | **partly**: loader and dry-run yes after AN-05; any write is owner-gated |
+| S12-04 roster conversion of existing agents (SQL 0057) | geldar | AN-05, AN-04b; OWNER decision 0287 | **partly**: loader and dry-run yes after AN-05; any write is owner-gated |
 | HC-45 per-player sheet and instinct switch, stage and rollback (kit) | kit | HC-19, HC-26 | no |
 | S12-05 staged enable and rollback runbook (docs and config diff) | geldar | S12-03, S12-04, HC-45; OWNER decisions 0288 | no (owner) |
 | S12-06 run protocol, fixtures and run evidence (ops) | geldar + kit | S12-02, S12-03, HC-38, HC-37b; owner numbers | no |
@@ -88,7 +108,7 @@ export interface ParentRef { life_id: string; effective_revision: number }
 export interface DriftPolicy { enabled: boolean; fields: DriftField[]; window_days: 7; min_samples: number; margin: number; per_field_cap: 1; cooldown_windows: number }
 export interface EffectiveSheet { life_id: string; revision: number; sheet: InnerSheet; baseline_hash: string }  // revision 0 = adopted baseline
 // S12-04 tools/mcp-tokens
-export type AdoptionSource = 'config' | 'roster' | 'birth' | 'conversion';   // 'conversion' added by SQL 0056
+export type AdoptionSource = 'config' | 'roster' | 'birth' | 'conversion';   // 'conversion' added by SQL 0057
 ```
 
 **Shared files and who owns them** (a card that edits one lists it under `shared-files`):
@@ -100,13 +120,13 @@ export type AdoptionSource = 'config' | 'roster' | 'birth' | 'conversion';   // 
 | `golem/src/adam/adam-body.ts` (311 lines), `golem/src/character/character-config.ts` | S9-03, then S11-05; AN-12 and AN-60b-era edits elsewhere come first |
 | `golem/src/actions/mine.ts` (405), `golem/src/actions/container.ts` (365) | S9-02 only (one call line each) |
 | `eventsink/src/main.ts`, `eventsink/src/writer.ts` dispatch | S10-03, S11-04 (serial) |
-| `sql/` and `.github/workflows/ci.yml` psql line | S9-00 (0052), S10-01b (0053), S11-02 (0054), S12-01 (0055), S12-04 (0056): serial, one `-f sql/test/<file>` line each |
+| `sql/` and `.github/workflows/ci.yml` psql line | S9-00 (0053), S10-01b (0054), S11-02 (0055), S12-01 (0056), S12-04 (0057): serial, one `-f sql/test/<file>` line each |
 | `sql/README.md`, `docs/decisions/README.md`, ledger, RESUME, `tools/migrate` test list | orchestrator and ops, from "index line to add" in worknotes |
 | `psyche/package.json`, `psyche/RELEASE.json`, `psyche/src/index.ts` | S10-02, then any later psyche change; serial; tag by ops |
 | `pnpm-lock.yaml` and any `package.json` | S12-01 (new exporter package) only; others request an index line |
 | `geldar.ps1` (`Get-NatsUsers`), `compose/*.yml`, `shards/*.yaml` | none edits a production shard. S12-05 produces a diff for the owner; fixtures go in new non-live files |
 
-**Numbers.** Decisions: 0282 S9-00; 0283 S9-01; 0284 S10-01a; 0285 S11-01; 0286 S12-01 (cohort export and protocol); 0287 S12-04; 0288 S12-05 (rollout and rollback); 0289 spare. Decisions 0280 and 0281 are used. SQL: 0052 S9-00; 0053 S10-01b; 0054 S11-02; 0055 S12-01; 0056 S12-04; 0057 to 0059 spare. 0050 and 0051 are used. Re-check the registry (`docs/analysis/phase1/packets/decision-number-registry.md` and the remote branches) at dispatch; a coder never picks a number, the dispatch gives it. If a number moves, the card's text says `<allocate via registry>`.
+**Numbers.** Decisions: 0282 S9-00; 0283 S9-01; 0284 S10-01a; 0285 S11-01; 0286 S12-01 (cohort export and protocol); 0287 S12-04; 0288 S12-05 (rollout and rollback); 0289 spare. Decisions 0280 and 0281 are used. SQL: 0053 S9-00; 0054 S10-01b; 0055 S11-02; 0056 S12-01; 0057 S12-04; 0058 and 0059 spare. 0050 to 0052 are used (0052 is the comment-only erase migration on phase1/an-04c-erase-comments). Re-check the registry (`docs/analysis/phase1/packets/decision-number-registry.md` and the remote branches) at dispatch; a coder never picks a number, the dispatch gives it. If a number moves, the card's text says `<allocate via registry>`.
 
 ## Rules common to every card
 
@@ -129,18 +149,18 @@ export type AdoptionSource = 'config' | 'roster' | 'birth' | 'conversion';   // 
 
 W9 here is a trimmed world and kit wave: one Body hook, its contract, its wiring, a kit leakage test and the ops close. The due-commitment wake is deferred (see top).
 
-## S9-00: account erasure covers dead lives (SQL 0052, decision 0282)
+## S9-00: account erasure covers dead lives (SQL 0053, decision 0282)
 
 - **id** S9-00 **wave** W9 **repo** geldar **replaces** none (new) **depends-on** none **size** 30k. **branch** `phase1/s9-00-erase-dead-lives`.
 - **why.** `sheet_erase_life` (0051) says it is called only for a life alive when the owner deleted the account; dead lives' rows stay as world history (0171). The reserved ruling 0282 (decision 0262 of registration) says erasure now also covers the owner's dead lives. Every later table (R9) builds on the corrected contract, so this goes first. 0262 is not on `origin/main` at `280b8ea9`; the card cites the owner's ruling text from the dispatch and records it in decision 0282.
-- **may-edit** `docs/decisions/0282-sheet-erasure-covers-dead-lives.md` (new); `sql/0052_sheet_erase_dead_lives.sql` (new); `sql/test/check-schema-erase.sql` (new or the existing 0051 check file: name `(to confirm)`); `.github/workflows/ci.yml` (one `-f`); the worknote.
+- **may-edit** `docs/decisions/0282-sheet-erasure-covers-dead-lives.md` (new); `sql/0053_sheet_erase_dead_lives.sql` (new); `sql/test/check-schema-erase.sql` (new or the existing 0051 check file: name `(to confirm)`); `.github/workflows/ci.yml` (one `-f`); the worknote.
 - **must-not-edit** R6; `sql/0050`, `sql/0051` (merged); `threshold/register/**` (the caller; whether register must now pass dead lives too is a note for geldar-registration, not an edit here).
 - **decisions** 0282 (this card writes the record from the owner's ruling). **OD-12** confirms the open sub-question only.
-- **shape.** The function name, signature and grant stay: `sheet_erase_life(p_life_id TEXT) RETURNS void`, EXECUTE to `geldar_register` only. The body is the 0051 body (same six deletes, same `geldar.erase_life` setting) but the comment and every table `COMMENT` drop the phrase "for a life that was alive when its owner deleted the account" and say "any life of the deleted owner, alive or dead". The migration is `CREATE OR REPLACE` plus `COMMENT ON` statements only; additive, idempotent, ends with `INSERT INTO schema_migrations (version) VALUES ('0052') ON CONFLICT DO NOTHING;`.
+- **shape.** The function name, signature and grant stay: `sheet_erase_life(p_life_id TEXT) RETURNS void`, EXECUTE to `geldar_register` only. The body is the 0051 body (same six deletes, same `geldar.erase_life` setting) but the comment and every table `COMMENT` drop the phrase "for a life that was alive when its owner deleted the account" and say "any life of the deleted owner, alive or dead". The migration is `CREATE OR REPLACE` plus `COMMENT ON` statements only; additive, idempotent, ends with `INSERT INTO schema_migrations (version) VALUES ('0053') ON CONFLICT DO NOTHING;`.
 - **tests** (SQL check file, run by ops under GATE-S): seed a dead life (an `agents` row with `died_at` set) with one row in each of the six tables; `SELECT sheet_erase_life(<dead id>)` removes all six; a second life's rows stay; a call with NULL raises; `geldar_mcp` and `geldar_glass` cannot execute it; the append-only trigger still refuses `DELETE` outside the function.
 - **checks** GATE; GATE-S (ops).
 - **revert-checks** Re-add an `IF died_at IS NOT NULL THEN RETURN` guard: "dead life rows are erased" fails. Drop `proficiency_outbox` from the list: "all six tables empty after erase" fails.
-- **worknote** `S9-00.md`; index lines to add: `sql/README.md` 0052, decisions README 0282. **commit** `feat(sheet): account erasure covers the owner's dead lives (0282)`. **split line** none.
+- **worknote** `S9-00.md`; index lines to add: `sql/README.md` 0053, decisions README 0282. **commit** `feat(sheet): account erasure covers the owner's dead lives (0282)`. **split line** none.
 
 ## S9-01: refusal reason code and decision key (contract)
 
@@ -224,12 +244,12 @@ Nothing in W10 creates a child on its own. A mocked birth is not completion evid
 - **checks** GATE-C. **revert-checks** Remove `additionalProperties: false` from `InheritedSheet`: "child sheet rejects proficiency" fails. Allow three parents: "rejects three parents" fails.
 - **worknote** `S10-01a.md`. **commit** `feat(sheet): lineage birth contract (two parents, 13 recorded fields, no proficiency)`. **split line** none.
 
-## S10-01b: lineage SQL (0053)
+## S10-01b: lineage SQL (0054)
 
 - **id** S10-01b **wave** W10 **repo** geldar **replaces** AN-54b **depends-on** S10-01a, S9-00 **OWNER** gate as S10-01a **size** 45k. **branch** `phase1/s10-01b-lineage-sql`.
 - **shared-files** `sql/`, `ci.yml` psql line, `sql/README.md` index line (to add).
-- **may-edit** `sql/0053_lineage.sql` (new); `sql/test/check-schema-lineage.sql` (new); `.github/workflows/ci.yml` (one `-f`); the worknote.
-- **must-not-edit** R6; 0050, 0051, 0052.
+- **may-edit** `sql/0054_lineage.sql` (new); `sql/test/check-schema-lineage.sql` (new); `.github/workflows/ci.yml` (one `-f`); the worknote.
+- **must-not-edit** R6; 0050 to 0053.
 - **shape.** Two tables, both keyed by a life id and so both added to `sheet_erase_life` in this migration (R9; the function is re-created with the eight-table list):
   ```sql
   CREATE TABLE IF NOT EXISTS lineage_births (
@@ -251,7 +271,7 @@ Nothing in W10 creates a child on its own. A mocked birth is not completion evid
   A trigger refuses a birth whose two parents are the same life, a parent that is not an existing life, and a child that already has a sheet from another source. Zero learned proficiency is by construction: no `proficiency` row is written at birth. `child_life_id UNIQUE` and `birth_id` primary key make a second birth of the same child or the same request impossible. Erasure: `sheet_erase_life(x)` deletes `lineage_births` where `child_life_id = x` and every `lineage_parents` row where `parent_life_id = x` or whose birth was deleted (OD-12: a surviving child loses the edge to an erased parent). Append-only guard as the 0051 tables.
 - **tests** (GATE-S, ops): valid birth; duplicate birth id; duplicate child; same parent twice; missing parent; erase of a child deletes the birth and edges; erase of a parent keeps the child's sheet and birth but deletes the edge; role denial for `geldar_mcp`, `geldar_glass`.
 - **revert-checks** Remove `child_life_id UNIQUE`: "second birth for one child refused" fails. Leave `lineage_parents` out of the function: "erase deletes the edge" fails.
-- **worknote** `S10-01b.md`. **commit** `feat(sheet): lineage tables and their erase path (0053)`. **split line** `lineage_births` first, `lineage_parents` second.
+- **worknote** `S10-01b.md`. **commit** `feat(sheet): lineage tables and their erase path (0054)`. **split line** `lineage_births` first, `lineage_parents` second.
 
 ## S10-02: pure inherited-sheet factory (psyche)
 
@@ -323,11 +343,11 @@ Design (OD-8 recommendation, adopted by these cards if approved): behaviour-base
 - **revert-checks** Default `enabled` to true: "default is off" fails. Accept `op_modes.*` as a field: "op modes are not eligible" fails.
 - **worknote** `S11-01.md`. **commit** `feat(sheet): drift policy and effective-sheet contract (default off)`. **split line** schemas first, config parse second.
 
-## S11-02: drift SQL (0054)
+## S11-02: drift SQL (0055)
 
 - **id** S11-02 **wave** W11 **repo** geldar **replaces** AN-58b **depends-on** S11-01 **OWNER** gate as S11-01 **size** 45k. **branch** `phase1/s11-02-drift-sql`.
 - **shared-files** `sql/`, `ci.yml` psql line.
-- **may-edit** `sql/0054_drift.sql` (new); `sql/test/check-schema-drift.sql` (new); `ci.yml` (one `-f`); the worknote.
+- **may-edit** `sql/0055_drift.sql` (new); `sql/test/check-schema-drift.sql` (new); `ci.yml` (one `-f`); the worknote.
 - **shape.** Two tables keyed by life id, **both added to `sheet_erase_life`** (R9: the function is re-created with the ten-table list):
   ```sql
   CREATE TABLE IF NOT EXISTS sheet_revisions (            -- revision 0 is the adopted baseline copy; later rows are drift
@@ -346,7 +366,7 @@ Design (OD-8 recommendation, adopted by these cards if approved): behaviour-base
   Append-only guard as the 0051 tables. `agents.character_sheet` is never updated (the baseline is immutable; a trigger on `agents` refuses an update of `character_sheet` once set, `(to confirm it does not already exist in 0050)`). A function `effective_sheet(p_life)` returns the highest revision row, or the baseline.
 - **tests.** (GATE-S) duplicate evaluation key; revision gap refused; window length check; baseline update refused; erase removes both tables' rows; roles denied.
 - **revert-checks** Drop `UNIQUE (life_id, evaluation_key)`: "same-window duplicate refused" fails. Leave `sheet_revisions` out of the erase function: "erase removes revisions" fails.
-- **worknote** `S11-02.md`. **commit** `feat(sheet): drift evaluation and revision tables (0054)`. **split line** `drift_evaluations` first.
+- **worknote** `S11-02.md`. **commit** `feat(sheet): drift evaluation and revision tables (0055)`. **split line** `drift_evaluations` first.
 
 ## S11-03: seven-day evidence and eligibility
 
@@ -403,16 +423,16 @@ Design (OD-8 recommendation, adopted by these cards if approved): behaviour-base
 - **Cohorts.** Fresh lives per treatment, immutable world clone per run, distinct run and life ids, fresh RNG streams (generation in the stream key, 0281), no state from one run read by the next. Sizes, replicates, length and spend ceiling live in `protocol.json` (OD-11), accepted before the first run. A missing run is incomplete, not a pass.
 - **Staged enable per ranger** and **rollback** are S12-05.
 
-## S12-01: exporter role and world exporter (SQL 0055)
+## S12-01: exporter role and world exporter (SQL 0056)
 
 - **id** S12-01 **wave** W12 **repo** geldar **replaces** AN-33a (keep its run-folder design) **depends-on** S11-02, AN-04b **size** 50k. **branch** `phase1/s12-01-export`.
 - **shared-files** `pnpm-lock.yaml` and the new package's `package.json` (sole owner), `sql/`, `ci.yml`.
-- **may-edit** `tools/cohort-export/**` (new package `@geldar/cohort-export`, `pg` pinned exactly as `tools/mcp-tokens` does); `sql/0055_exporter_role.sql` (new); `sql/test/check-schema-exporter.sql` (new); `ci.yml` (one `-f`); `docs/decisions/0286-cohort-export-and-protocol.md` (new); `docs/runbooks/cohort-export.md` (new); the worknote.
+- **may-edit** `tools/cohort-export/**` (new package `@geldar/cohort-export`, `pg` pinned exactly as `tools/mcp-tokens` does); `sql/0056_exporter_role.sql` (new); `sql/test/check-schema-exporter.sql` (new); `ci.yml` (one `-f`); `docs/decisions/0286-cohort-export-and-protocol.md` (new); `docs/runbooks/cohort-export.md` (new); the worknote.
 - **must-not-edit** R6; `tools/progress-metrics/**`; `tools/admin/**`.
 - **shape.** `geldar_exporter NOLOGIN` role with column-level SELECT only on the tables listed in the run (events columns without owner data, `agents` columns without `owner`, the six sheet tables, `lineage_*`, `sheet_revisions`, `drift_evaluations`); never `thoughts.model_input`, `mcp_*`, `register_audit`, `personality_seed`. Run folder `<out>/<run-id>/` (an existing folder is refused), files mode 0600, NDJSON: `manifest.json`, `public/` (event facts, no owner link, no sheet), `owner/lives.ndjson` (life id, harness, model, mode; no owner id), `private/` (true sheets, rolls, decisions, lineage, drift: **offline scoring only**). Flags `--run-id --lives --since-tick --until-tick --max-rows` (exceeding the bound fails the run, never truncates). Every statement is `SELECT` inside `BEGIN READ ONLY`. Read-only, no agent or MCP exposure. No tables created, so R9 adds nothing; the migration states so.
 - **tests.** A spy asserts every statement starts with `SELECT` or `BEGIN READ ONLY`; out-of-scope lives yield no row; the row bound fails; no output contains a fixture owner id; public files have no `character_sheet` key; manifest marks `complete: false` on an audit gap; real read-role denial cases are ops under `GATE-S` (write fails, `SELECT owner FROM agents` fails).
 - **revert-checks** Add `owner` to the column list: "no owner in output" fails. Drop the read-only transaction: "write denied" fails. Replace the row-bound failure with `LIMIT`: "bound fails the run" fails.
-- **worknote** `S12-01.md`. **commit** `feat(sheet): operator cohort exporter and read-only role (0055)`. **split line** role and SQL first, exporter second.
+- **worknote** `S12-01.md`. **commit** `feat(sheet): operator cohort exporter and read-only role (0056)`. **split line** role and SQL first, exporter second.
 
 ## S12-02: cohort metrics core
 
@@ -432,12 +452,12 @@ Design (OD-8 recommendation, adopted by these cards if approved): behaviour-base
 - **revert-checks** Change the all-3 floor to 5 in the policy under test: "threat equals legacy over health 0 to 20" fails. Let `rolls: false` draw: "zero draws" fails.
 - **commit** `test(sheet): all-3 sheet with rolls off equals today's Body`. **split line** none.
 
-## S12-04: roster conversion of existing agents (one-time adoption; SQL 0056)
+## S12-04: roster conversion of existing agents (one-time adoption; SQL 0057)
 
 - **id** S12-04 **wave** W12 **repo** geldar **depends-on** AN-05 (loaders and roster adoption), AN-04b **OWNER DECISION REQUIRED** (OD-10; decision 0287) **size** 45k. **branch** `phase1/s12-04-roster-conversion`.
 - **why.** Lives created before the sheet campaign (Adam and the six rangers) have `agents.character_sheet` NULL. AN-05 adopts a sheet only at `player add`. This card converts existing agents once, without ever overwriting a baseline.
 - **shared-files** `tools/mcp-tokens/src/players.ts`, `cli.ts` (extends AN-05's edits; serial after it), `sql/`, `ci.yml`.
-- **may-edit** `tools/mcp-tokens/src/convert-sheets.ts` and `.test.ts` (new); `tools/mcp-tokens/src/cli.ts` (one verb `player adopt-sheets`); `sql/0056_adoption_source_conversion.sql` (new: widens the `character_sheet_adoptions.source` CHECK to add `'conversion'`; alternative if the owner prefers no migration: reuse `'config'`, then this migration is dropped and the number is spare); `sql/test/check-schema-conversion.sql` (new); `ci.yml` (one `-f`); `docs/decisions/0287-adopting-existing-agents.md` (new, Proposed); `docs/runbooks/sheet-conversion.md` (new); the worknote.
+- **may-edit** `tools/mcp-tokens/src/convert-sheets.ts` and `.test.ts` (new); `tools/mcp-tokens/src/cli.ts` (one verb `player adopt-sheets`); `sql/0057_adoption_source_conversion.sql` (new: widens the `character_sheet_adoptions.source` CHECK to add `'conversion'`; alternative if the owner prefers no migration: reuse `'config'`, then this migration is dropped and the number is spare); `sql/test/check-schema-conversion.sql` (new); `ci.yml` (one `-f`); `docs/decisions/0287-adopting-existing-agents.md` (new, Proposed); `docs/runbooks/sheet-conversion.md` (new); the worknote.
 - **must-not-edit** R6; ranger containers and scriptorium files (they are owned there); `agents.owner` (never read); production shard files (the candidate sheets come from a file the operator supplies, not from the repo).
 - **shape.**
   ```
