@@ -1653,6 +1653,10 @@ export interface WaitInput {
         "directly_addressed" | "intent_finished" | "damage" | "agent_approached" | "proposal" | "day_night"
       ];
   max_seconds: number;
+  /**
+   * Read-only wait: returns events after the cursor without marking them as seen.
+   */
+  peek?: boolean;
 }
 
 export interface WaitResult {
