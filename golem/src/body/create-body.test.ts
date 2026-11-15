@@ -29,6 +29,16 @@ function body(opts: { bot?: Bot } = {}) {
   return { ...made, ticks, view };
 }
 
+describe('the time since rest is wired in createBody (decision 0225)', () => {
+  it('asks the server for its statistics at once on a 26.1.2 bot that has spawned', () => {
+    const write = vi.fn();
+    const client = { write, on: vi.fn(), removeListener: vi.fn() };
+    const bot = Object.assign(fakeBot(), { version: '26.1.2', _client: client }) as unknown as Bot;
+    body({ bot });
+    expect(write).toHaveBeenCalledWith('client_command', { actionId: 1 });
+  });
+});
+
 const failedBlocked: ActionRun = {
   state: 'failed',
   result: {

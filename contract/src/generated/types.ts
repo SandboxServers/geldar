@@ -127,6 +127,10 @@ export interface OwnedBlock {
   y: BlockCoordinateY;
   z: BlockCoordinateXZ;
   owner: OwnerId;
+  /**
+   * An item ID without its namespace prefix, such as iron_ingot.
+   */
+  block?: string;
 }
 
 export interface BlockOwnerChanged {
@@ -14149,6 +14153,62 @@ export type Action =
        */
       entity?: string;
     };
+
+export interface TurnRecordPayload {
+  /**
+   * One id per model call, `tn_` and a 26-character ULID, as the other record ids.
+   */
+  turn_id: string;
+  /**
+   * The life whose Mind made the call. Erasure (0171) removes the rows by this id; the table has no owner link.
+   */
+  life_id: string;
+  /**
+   * The harness that made the call (claude, chatgpt, local; the same working name as the envelope field).
+   */
+  harness: string;
+  /**
+   * The model as declared, the same pattern as the envelope field.
+   */
+  model: string;
+  /**
+   * A SHA-256 hash, 64 lowercase hex characters, of the persona, skills and instructions the call used (the input set is HC-41 (to confirm)).
+   */
+  template_version: string;
+  /**
+   * Why the Mind was woken for this call: a WakePayload reason, or another short fixed code the kit sends.
+   */
+  wake_reason: string;
+  world_day: number;
+  world_tick: number;
+  /**
+   * The prompt as the harness received it, text. Capped at 32768 characters; a longer prompt is cut by the writer, which marks the cut.
+   */
+  model_input: string;
+  /**
+   * The model's output as the harness exposes it, including any reasoning the stream carries. Text. Capped at 32768 characters; a longer output is cut by the writer, which marks the cut.
+   */
+  raw_output: string;
+  tokens_in: number;
+  tokens_out: number;
+  /**
+   * Where the token counts came from: the provider's usage report, or an estimate when none came.
+   */
+  usage_source: "provider" | "estimated";
+  latency_ms: number;
+  /**
+   * The size of the context the call carried, in tokens.
+   */
+  context_tokens: number;
+  /**
+   * The model's context window, in tokens, so context_tokens can be read against it.
+   */
+  context_window: number;
+  /**
+   * The credits the call cost, when the harness reports them. Absent otherwise.
+   */
+  credits?: number;
+}
 
 export interface WakePayload {
   reason: string;

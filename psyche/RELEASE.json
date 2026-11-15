@@ -1,11 +1,11 @@
 {
   "format": 1,
   "name": "@geldar/psyche",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "engine_version": 1,
   "tree_hash_algorithm": "geldar-tree-v1",
-  "tree_hash": "b89848ab21240fbb2e33832d671a51d73e8393b3235807f19fa7a2355c5e4efe",
-  "tag": "psyche-v1.0.0",
+  "tree_hash": "f243f7c233c78f77fcf051b95a38635d84fde318c9a81301fea998b0720182cf",
+  "tag": "psyche-v1.1.0",
   "files": [
     {
       "path": "alignment.ts",
@@ -13,7 +13,7 @@
     },
     {
       "path": "index.ts",
-      "sha256": "c4d697cfabc004e34768cf2c268b05666e6b8a872c347f1e46aba2dde2f6a9d1"
+      "sha256": "fb3d8007af485e3dc2dfdc8803fbf60fd31fcf58f3812808d4736db8184b52d6"
     },
     {
       "path": "params.ts",
@@ -38,6 +38,10 @@
     {
       "path": "temperament.ts",
       "sha256": "4b7118c80ba39531d5808c8a92a6b338643cd044386e75d6bb7300b81d2ff270"
+    },
+    {
+      "path": "threat.ts",
+      "sha256": "e7496fe5328c98f51176fba5582cd8f6a6c8d431095fc9f8abdcb20d771f1f10"
     },
     {
       "path": "types.ts",

@@ -10,22 +10,19 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.plugin.Plugin;
 
 /**
- * Passes agents' chat to the speech bubbles. Only chat that stays uncancelled counts (a ghost's chat is cancelled).
- * Non-agent players are ignored. Chat is asynchronous, so the bubble is shown on the server thread. This never
- * throws: a failure is logged once, at fine level.
+ * Passes agents' chat to the live chat feed. Only chat that stays uncancelled counts (a ghost's chat is cancelled).
+ * Non-agent players are ignored. Chat is asynchronous and the feed is thread-safe, so the line is recorded at once,
+ * with no delay. This never throws: a failure is logged once, at fine level.
  */
 public final class SpeechChatListener implements Listener {
-    private final Plugin plugin;
-    private final SpeechBubbles bubbles;
+    private final ChatFeedWriter feed;
     private final Logger log;
     private final AtomicBoolean warned = new AtomicBoolean();
 
-    public SpeechChatListener(Plugin plugin, SpeechBubbles bubbles, Logger log) {
-        this.plugin = plugin;
-        this.bubbles = bubbles;
+    public SpeechChatListener(ChatFeedWriter feed, Logger log) {
+        this.feed = feed;
         this.log = log;
     }
 
@@ -37,11 +34,10 @@ public final class SpeechChatListener implements Listener {
                 return;
             }
             String text = PlainTextComponentSerializer.plainText().serialize(event.message());
-            long now = System.currentTimeMillis();
-            plugin.getServer().getScheduler().runTask(plugin, () -> bubbles.say(player, text, now));
+            feed.say(player.getUniqueId(), text, System.currentTimeMillis());
         } catch (RuntimeException e) {
             if (warned.compareAndSet(false, true)) {
-                log.log(Level.FINE, "speech bubble chat was not passed on; later failures are not logged", e);
+                log.log(Level.FINE, "chat feed line was not recorded; later failures are not logged", e);
             }
         }
     }

@@ -7,8 +7,16 @@ import java.util.List;
  * thread.
  */
 public interface OwnerSource {
-    /** One block of a chunk that has an owner. */
-    record OwnedBlock(int x, int y, int z, String owner) {}
+    /**
+     * One block of a chunk that has an owner. block is the block name of the placing row (such as farmland), or null
+     * when the record carries none; it is optional in the reply.
+     */
+    record OwnedBlock(int x, int y, int z, String owner, String block) {
+        /** An owned block with no block name. */
+        public OwnedBlock(int x, int y, int z, String owner) {
+            this(x, y, z, owner, null);
+        }
+    }
 
     /** The owned blocks of one chunk. {@code truncated} is true when the chunk holds more than the list. */
     record Owners(List<OwnedBlock> blocks, boolean truncated) {}
