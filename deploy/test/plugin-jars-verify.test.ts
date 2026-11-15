@@ -51,7 +51,10 @@ function publish(): void {
 // On Windows the PATH is the sh's own usr/bin only: with the full Windows PATH every MSYS fork is slow enough to time out.
 function runScript(args: string[]): SpawnSyncReturns<string> {
   const path = process.platform === 'win32' ? dirname(SH) : (process.env.PATH ?? '');
-  return spawnSync(SH, [SCRIPT, ...args], { encoding: 'utf8', env: { ...process.env, PATH: path } });
+  return spawnSync(SH, [SCRIPT, ...args], {
+    encoding: 'utf8',
+    env: { ...process.env, PATH: path },
+  });
 }
 
 function verify(target: string): { status: number | null; stdout: string; stderr: string } {
