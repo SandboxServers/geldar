@@ -3,6 +3,7 @@ import { Vec3 } from 'vec3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Block } from './bot-types.ts';
 import { digAllowed } from './goto-dig.ts';
+import { recordOwnPlacement } from './own-placements.ts';
 import { setOwnerLookup } from './protected-blocks.ts';
 import type { ActionContext } from './registry.ts';
 import { DEFAULT_DIAG_SINK } from './stall-diag.ts';
@@ -266,6 +267,46 @@ describe('decision 0210: every dig step is gated by the call budget, with the to
 
   it('the action timeout is the call limit in ms, so the two cannot drift apart', () => {
     expect(unstickAction.timeoutMs).toBe(ACTION_LIMIT_S * 1000);
+  });
+});
+
+describe('own placements are dug last (decision 0330)', () => {
+  const WEST = new Vec3(-1, 0, 0);
+  /** The boxed-in ring from `ring`; each built block it names as oak_planks is recorded as this bot's own. */
+  function ownRing(ring: (dir: Vec3) => string) {
+    const { bot, dug } = fakeBot(boxedIn(ring));
+    for (const dir of EIGHT) {
+      for (const y of [64, 65]) {
+        if (ring(dir) === 'oak_planks') {
+          recordOwnPlacement(bot as unknown as Bot, new Vec3(dir.x, y, dir.z), 'oak_planks');
+        }
+      }
+    }
+    return { bot, dug };
+  }
+
+  it('does not dig its own plank while a natural block is a way out', async () => {
+    ownedBy(null);
+    const { bot, dug } = ownRing((dir) => (dir.equals(EAST) ? 'stone' : 'oak_planks'));
+    await unstick({ ...ctxOf(bot), ownPlanksLast: true });
+    expect(dug).toContain('stone');
+    expect(dug).not.toContain('oak_planks');
+  });
+
+  it('digs its own plank only when no other way out exists', async () => {
+    ownedBy(null);
+    const { bot, dug } = ownRing(() => 'oak_planks');
+    const outcome = await unstick({ ...ctxOf(bot), ownPlanksLast: true });
+    expect(dug).toContain('oak_planks');
+    expect(JSON.stringify(outcome)).toContain('dig_own');
+  });
+
+  it('steps off onto an open cell before it digs its own plank', async () => {
+    ownedBy(null);
+    const { bot, dug } = ownRing((dir) => (dir.equals(WEST) ? 'air' : 'oak_planks'));
+    const outcome = await unstick({ ...ctxOf(bot), ownPlanksLast: true });
+    expect(dug).toEqual([]);
+    expect(JSON.stringify(outcome)).toContain('step');
   });
 });
 

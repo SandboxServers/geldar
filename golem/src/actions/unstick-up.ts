@@ -3,6 +3,7 @@ import { Vec3 } from 'vec3';
 import { canStepOff } from '../body/view.ts';
 import { hazardReason, unbreakableReason } from './bare-hand.ts';
 import type { Block } from './bot-types.ts';
+import { isOwnPlacement } from './own-placements.ts';
 import { protectedReason, refusedByName } from './protected-blocks.ts';
 
 /** Seconds a bare hand takes on a block: about 5 s per point of hardness, at least half a second. Unknown counts as least. */
@@ -89,7 +90,16 @@ interface Step {
  * refused names, a liquid or falling block beside it (`hazardReason`) and someone else's work
  * (`protectedReason`, decision 0164) all refuse. Ownership unknown refuses too, as `isProtected` refuses it.
  */
-function cellRefusal(bot: Bot, block: Block, cell: Vec3, own: readonly Vec3[]): string | null {
+function cellRefusal(
+  bot: Bot,
+  block: Block,
+  cell: Vec3,
+  own: readonly Vec3[],
+  refuseOwn: boolean,
+): string | null {
+  if (refuseOwn && isOwnPlacement(bot, cell)) {
+    return `${block.name} at ${cell.x},${cell.y},${cell.z} is the Body's own placement; it is dug last`;
+  }
   if (block.name === 'water' || block.name === 'lava' || WATER_PLANTS.has(block.name)) {
     return `${block.name} is above the wall at ${cell.x},${cell.y},${cell.z}; the climb would meet it`;
   }
@@ -110,7 +120,7 @@ function cellRefusal(bot: Bot, block: Block, cell: Vec3, own: readonly Vec3[]): 
  * two cells above must be open or diggable, and the Body's head cell must be open. Returns the step, a
  * refusal text, or null when there is no wall that way.
  */
-function planStep(bot: Bot, feet: Vec3, dir: Vec3): Step | string | null {
+function planStep(bot: Bot, feet: Vec3, dir: Vec3, refuseOwn = false): Step | string | null {
   const stand = feet.plus(dir);
   const wall = bot.blockAt(stand);
   if (!solidBlock(wall)) return null;
@@ -128,7 +138,7 @@ function planStep(bot: Bot, feet: Vec3, dir: Vec3): Step | string | null {
     }
     if (openCell(block)) continue;
     if (block === null) return `the cell at ${cell.x},${cell.y},${cell.z} is not loaded`;
-    const refusal = cellRefusal(bot, block, cell, own);
+    const refusal = cellRefusal(bot, block, cell, own, refuseOwn);
     if (refusal) return refusal;
     cells.push({ cell, block });
     cost += digSeconds(bot, block);
@@ -193,6 +203,7 @@ export async function digUp(
   dirs: readonly Vec3[],
   startedMs = Date.now(),
   digsLeft = Number.POSITIVE_INFINITY,
+  refuseOwn = false,
 ): Promise<UpResult> {
   let dug = 0;
   let spent = 0;
@@ -206,7 +217,7 @@ export async function digUp(
     const feet = where();
     const options: Step[] = [];
     for (const dir of dirs) {
-      const plan = planStep(bot, feet, dir);
+      const plan = planStep(bot, feet, dir, refuseOwn);
       if (typeof plan === 'string') blocked ??= plan;
       else if (plan !== null) options.push(plan);
     }

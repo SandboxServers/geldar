@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { Vec3 } from 'vec3';
 import type { Block } from './bot-types.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
+import { isOwnPlacement } from './own-placements.ts';
 import {
   digHazard,
   lastResortRefused,
@@ -165,7 +166,14 @@ function dropsByHand(block: Block): boolean {
  * hand can break, unless a refused name, a liquid or a falling block touches it, or it is someone else's
  * work (`protectedReason`). In the last-resort pass (`relaxed`) `lastResortRefused` decides instead.
  */
-function digsCell(bot: Bot, block: Block | null, cell: Vec3, relaxed: boolean): boolean {
+function digsCell(
+  bot: Bot,
+  block: Block | null,
+  cell: Vec3,
+  relaxed: boolean,
+  refuseOwn = false,
+): boolean {
+  if (refuseOwn && isOwnPlacement(bot, cell)) return false;
   if (isSoft(block)) return true;
   if (block === null || block.boundingBox === 'empty' || !handBreakable(block)) return false;
   if (refusedByName(block.name) || digHazard(bot, cell)) return false;
@@ -196,10 +204,11 @@ export async function digDown(
   elevated: boolean,
   relaxed: boolean,
   started: number,
+  refuseOwn = false,
 ): Promise<boolean> {
   const floor = feet.offset(0, -1, 0);
   const block = bot.blockAt(floor);
-  if (block === null || !digsCell(bot, block, floor, relaxed)) return false;
+  if (block === null || !digsCell(bot, block, floor, relaxed, refuseOwn)) return false;
   const below = scanDrop((cell) => bot.blockAt(cell), floor.offset(0, -1, 0));
   if (elevated && below.blocks === 0 && below.lands === 'solid') return false;
   const drop: Drop = { blocks: below.blocks + 1, lands: below.lands };
@@ -220,11 +229,16 @@ export async function digStair(
   dir: Vec3,
   relaxed: boolean,
   started: number,
+  refuseOwn = false,
 ): Promise<boolean> {
   const at = feet.plus(dir);
   const cells = [at.offset(0, 1, 0), at, at.offset(0, -STAIR_STEP, 0)];
   const blocks = cells.map((cell) => ({ cell, block: bot.blockAt(cell) }));
-  if (!blocks.every(({ cell, block }) => empty(block) || digsCell(bot, block, cell, relaxed)))
+  if (
+    !blocks.every(
+      ({ cell, block }) => empty(block) || digsCell(bot, block, cell, relaxed, refuseOwn),
+    )
+  )
     return false;
   if (
     !digTimeFits(
@@ -258,13 +272,19 @@ async function digSideways(
   dir: Vec3,
   relaxed: boolean,
   started: number,
+  refuseOwn = false,
 ): Promise<boolean> {
   const at = feet.plus(dir);
   const cells = [at.offset(0, 1, 0), at];
   const blocks = cells.map((cell) => ({ cell, block: bot.blockAt(cell) }));
-  if (!blocks.every(({ cell, block }) => empty(block) || digsCell(bot, block, cell, relaxed)))
+  if (
+    !blocks.every(
+      ({ cell, block }) => empty(block) || digsCell(bot, block, cell, relaxed, refuseOwn),
+    )
+  )
     return false;
-  if (!blocks.some(({ cell, block }) => digsCell(bot, block, cell, relaxed))) return false;
+  if (!blocks.some(({ cell, block }) => digsCell(bot, block, cell, relaxed, refuseOwn)))
+    return false;
   if (
     !digTimeFits(
       bot,
@@ -334,25 +354,26 @@ export async function lastResortDig(
   where: () => Vec3,
   digs: number,
   started: number,
+  refuseOwn = false,
 ): Promise<boolean> {
   const { bot, signal } = ctx;
   let spent = digs;
   for (const dir of handFirst(bot, where(), EIGHT.slice(0, 4))) {
     if (signal.aborted || spent >= MAX_DIGS) break;
-    if (!(await digSideways(bot, signal, where(), dir, true, started))) continue;
+    if (!(await digSideways(bot, signal, where(), dir, true, started, refuseOwn))) continue;
     spent++;
     if (await walk(ctx, dir, false)) return true;
   }
   for (const dir of handFirst(bot, where(), EIGHT)) {
     if (signal.aborted || spent >= MAX_DIGS) break;
-    if (!(await digStair(bot, signal, where(), dir, true, started))) continue;
+    if (!(await digStair(bot, signal, where(), dir, true, started, refuseOwn))) continue;
     spent++;
     if (await walk(ctx, dir, false)) return true;
   }
   if (
     !signal.aborted &&
     spent < MAX_DIGS &&
-    (await digDown(bot, signal, where(), false, true, started))
+    (await digDown(bot, signal, where(), false, true, started, refuseOwn))
   ) {
     await bot.waitForTicks(5);
     return true;
@@ -432,9 +453,14 @@ async function unstickSteps(
     if (await walk(ctx, move.dir, move.jump)) return done(move.drop > 0 ? 'drop' : 'step');
   }
   let digs = 0;
+  // Own placements are dug last (decision 0330): every pass before the last one refuses them.
+  const refuse = ctx.ownPlanksLast === true;
   // Elevated and boxed in (a canopy): get down first, one controlled block or one stair step at a time.
   note('dig_down');
-  if (!ctx.signal.aborted && (await digDown(bot, ctx.signal, where(), true, false, started))) {
+  if (
+    !ctx.signal.aborted &&
+    (await digDown(bot, ctx.signal, where(), true, false, started, refuse))
+  ) {
     await bot.waitForTicks(5);
     return done('dig_down');
   }
@@ -443,7 +469,7 @@ async function unstickSteps(
     let stepped = false;
     for (const dir of handFirst(bot, where(), EIGHT)) {
       if (ctx.signal.aborted) return cancelled();
-      if (!(await digStair(bot, ctx.signal, where(), dir, false, started))) continue;
+      if (!(await digStair(bot, ctx.signal, where(), dir, false, started, refuse))) continue;
       digs++;
       tries++;
       stepped = await walk(ctx, dir, false);
@@ -457,7 +483,7 @@ async function unstickSteps(
   for (const dir of handFirst(bot, where(), EIGHT.slice(0, 4))) {
     if (ctx.signal.aborted) return cancelled();
     if (digs >= MAX_DIGS) break;
-    if (!(await digSideways(bot, ctx.signal, where(), dir, false, started))) continue;
+    if (!(await digSideways(bot, ctx.signal, where(), dir, false, started, refuse))) continue;
     digs++;
     tries++;
     if (await walk(ctx, dir, false)) return done('dig_sideways');
@@ -465,7 +491,7 @@ async function unstickSteps(
   if (
     !ctx.signal.aborted &&
     digs < MAX_DIGS &&
-    (await digDown(bot, ctx.signal, where(), false, false, started))
+    (await digDown(bot, ctx.signal, where(), false, false, started, refuse))
   ) {
     await bot.waitForTicks(5);
     tries++;
@@ -476,7 +502,7 @@ async function unstickSteps(
   note('dig_up');
   let upBlocked: string | null = null;
   if (digs < MAX_DIGS) {
-    const up = await digUp(bot, ctx.signal, where, EIGHT, started, MAX_DIGS - digs);
+    const up = await digUp(bot, ctx.signal, where, EIGHT, started, MAX_DIGS - digs, refuse);
     if (ctx.signal.aborted) return cancelled();
     digs += up.dug;
     upBlocked = up.blocked;
@@ -490,7 +516,12 @@ async function unstickSteps(
   note('dig_unowned');
   await prefetchOwners(escapePoints(where()), ctx.signal);
   if (ctx.signal.aborted) return cancelled();
-  if (await lastResortDig(ctx, where, digs, started)) return done('dig_unowned');
+  if (await lastResortDig(ctx, where, digs, started, refuse)) return done('dig_unowned');
+  // Last of all (decision 0330): the Body's only way out is its own placed block, so that block is dug.
+  if (refuse) {
+    note('dig_own');
+    if (await lastResortDig(ctx, where, digs, started)) return done('dig_own');
+  }
   reportNoWayOut(bot, tried);
   const upNote = upBlocked === null ? '' : `; dig_up: ${upBlocked}`;
   const spentS = Math.round((Date.now() - started) / 1000);
