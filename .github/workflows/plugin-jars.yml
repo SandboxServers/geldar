@@ -1,0 +1,60 @@
+# Builds the two plugin jars (geldar-core and geldar-velocity-identity) on a push to main that changes plugin/, and on manual
+# dispatch. It publishes them as the GitHub Actions artifact `plugin-jars` (kept 30 days) with `plugin-jars.sha256`: the
+# commit and the sha256 of each jar. deploy/genesis/verify-plugin-jars.sh checks the digests before the upload. This
+# workflow deploys nothing, writes no release manifest (G1-04 does that once the config bundle exists), and needs no
+# secrets and no node access.
+name: plugin-jars
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - plugin/**
+      - .github/workflows/plugin-jars.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: plugin-jars-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  plugin-jars:
+    name: build and publish the plugin jars
+    if: github.repository == 'SandboxServers/geldar'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version-file: plugin/.java-version
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - name: gradle build
+        working-directory: plugin
+        run: ./gradlew build --no-daemon
+      - name: collect the jars and write plugin-jars.sha256
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir plugin-jars
+          cp plugin/core/build/libs/geldar-core.jar plugin/velocity-identity/build/libs/geldar-velocity-identity.jar plugin-jars/
+          {
+            echo "# Geldar plugin jars, built from commit $SHA. Checked by deploy/genesis/verify-plugin-jars.sh."
+            (cd plugin-jars && sha256sum geldar-core.jar geldar-velocity-identity.jar)
+          } > plugin-jars/plugin-jars.sha256
+      - name: self-check the digests
+        run: sh deploy/genesis/verify-plugin-jars.sh plugin-jars
+      - name: upload plugin-jars
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: plugin-jars
+          path: plugin-jars/
+          retention-days: 30
+          if-no-files-found: error
