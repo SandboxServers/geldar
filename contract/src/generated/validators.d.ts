@@ -102,4 +102,5 @@ export declare const validateCancelFrame: ValidateFunction;
 export declare const validateDrainFrame: ValidateFunction;
 export declare const validateThoughtEventPayload: ValidateFunction;
 export declare const validateThought: ValidateFunction;
+export declare const validateTurnRecordPayload: ValidateFunction;
 export declare const validateWakePayload: ValidateFunction;
