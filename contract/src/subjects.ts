@@ -67,9 +67,9 @@ export function viewSubject(shard: string, lifeId: string): string {
 
 /**
  * Where the plugin sends a muffled notice (`heard_muffled`, heard-muffled-event.schema.json, decision 0199):
- * `geldar.<shard>.body.<life_id>.hearing`. Five tokens, so outside the sink's `geldar.*.*` filter. The shared
- * body role can publish it too; the body-role PubDeny is a later nats-auth change. Throws on a shard or life id
- * the contract rejects.
+ * `geldar.<shard>.body.<life_id>.hearing`. Five tokens, so outside the sink's `geldar.*.*` filter. The body, mind
+ * and mcp roles can all publish it today; the PubDeny that stops that is a later nats-auth change (MH-CH) and
+ * must cover all three roles. Throws on a shard or life id the contract rejects.
  */
 export function hearingSubject(shard: string, lifeId: string): string {
   checked(shard, lifeId);
