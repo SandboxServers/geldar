@@ -334,8 +334,9 @@ describe('swimUp lateral: lakes, reach, nearest exit, hysteresis and competition
   it('goes west to the open lake when the nearer east shaft is cut off by stone', async () => {
     const note = vi.fn();
     const cells = capped(WEST, 6, 'lake');
-    // A dry shaft 7 east, not joined to the column: the corridor cells at x 1 to 6 stay stone.
-    for (let y = 60; y <= 63; y++) cells[`7,${y},0`] = AIR;
+    // A dry shaft 5 east, walled off: the corridor cells at x 1 to 4 stay stone, so it is nearer but unreachable.
+    // At 5 it is past the 4-block column search, so the walled shaft is not taken as a column.
+    for (let y = 60; y <= 63; y++) cells[`5,${y},0`] = AIR;
     const { bot, controls, state, pos } = swimmerIn(
       worldOf(cells),
       new Vec3(0.5, 60.2, 0.5),
@@ -377,9 +378,9 @@ describe('swimUp lateral: lakes, reach, nearest exit, hysteresis and competition
     expect(aims.every((aim, i) => aim.x > (froms[i] ?? 0))).toBe(true);
   });
 
-  it('drops the sideways target after a window that gains 0.3 blocks, counting game ticks', async () => {
-    // Look takes a tick (as in the game): the first 20-tick window ends at tick 20, the second at 40.
-    // Rising 0.02 a tick from tick 21 gains 0.4 in the second window, so the target is dropped.
+  it('keeps steering on the sideways target after a window that gains 0.3 blocks, drops it at the next', async () => {
+    // Look takes a tick (as in the game): windows end at ticks 20, 40, 60. Rising 0.02 a tick from tick 21
+    // gains 0.4 in each of windows 2 and 3: window 2 keeps the target (forward held), window 3 drops it.
     const { bot, state, isForward, pos } = swimmerIn(
       worldOf(capped(EAST, 6, 'shaft')),
       new Vec3(0.5, 60.2, 0.5),
@@ -394,18 +395,21 @@ describe('swimUp lateral: lakes, reach, nearest exit, hysteresis and competition
     };
     const inner = b.waitForTicks;
     let forwardAt45: boolean | null = null;
+    let forwardAt65: boolean | null = null;
     b.waitForTicks = async () => {
       await inner();
       if (state.ticks > 20) b.entity.position = pos().offset(0, 0.02, 0);
       if (state.ticks === 45) forwardAt45 = isForward();
+      if (state.ticks === 65) forwardAt65 = isForward();
     };
     b.lookAt = async () => {
       await b.waitForTicks();
     };
     await swimUp(
-      walkFor(bot, () => false, { expired: () => state.ticks >= 50, tick: () => state.ticks }),
+      walkFor(bot, () => false, { expired: () => state.ticks >= 70, tick: () => state.ticks }),
     );
-    expect(forwardAt45).toBe(false);
+    expect(forwardAt45).toBe(true);
+    expect(forwardAt65).toBe(false);
   });
 });
 
@@ -439,6 +443,155 @@ describe('findLateralExit: the nearest exit, kept while it is not 2 steps nearer
       direction: 'east',
       distance: 4,
     });
+  });
+});
+
+describe('findLateralExit: floors, walls and lava', () => {
+  const origin = new Vec3(0.5, 60.2, 0.5);
+  /** The cell reader of a fixed world, as findLateralExit takes it. */
+  const at =
+    (cells: Record<string, Block>) =>
+    (x: number, y: number, z: number): Block =>
+      worldOf(cells)(new Vec3(x, y, z));
+  const LAVA: Block = { name: 'lava', boundingBox: 'empty' };
+  const MAGMA: Block = { name: 'magma_block', boundingBox: 'block' };
+  const CACTUS: Block = { name: 'cactus', boundingBox: 'block' };
+  /** An east corridor to a dry shaft at 5, its floor cell set by the case: a lava or block floor, or a void. */
+  function eastOverFloor(floor: Block | 'void'): Record<string, Block> {
+    const cells = capped(EAST, 5, 'shaft');
+    if (floor === 'void') {
+      for (let y = 40; y <= 59; y++) cells[`5,${y},0`] = AIR;
+    } else {
+      cells['5,59,0'] = floor;
+    }
+    return cells;
+  }
+  const FLOORS: Array<[string, Block | 'void']> = [
+    ['lava', LAVA],
+    ['magma_block', MAGMA],
+    ['cactus', CACTUS],
+    ['a 20-block void', 'void'],
+  ];
+
+  it.each(FLOORS)('rejects a shaft over %s and takes the safe lake 6 west', (_name, floor) => {
+    const cells = eastOverFloor(floor);
+    Object.assign(cells, capped(WEST, 6, 'lake'));
+    const exit = findLateralExit(at(cells), origin);
+    expect(exit).toMatchObject({ x: -6, z: 0, direction: 'west', distance: 6 });
+  });
+
+  it.each(FLOORS)('finds no exit when the only shaft is over %s', (_name, floor) => {
+    expect(findLateralExit(at(eastOverFloor(floor)), origin)).toBeNull();
+  });
+
+  it('does not route through an air cell over lava: the corridor to the shaft is blocked there', () => {
+    const cells = capped(WEST, 6, 'lake');
+    cells['1,60,0'] = WATER;
+    cells['1,61,0'] = WATER;
+    cells['2,60,0'] = AIR;
+    cells['2,61,0'] = AIR;
+    cells['2,59,0'] = LAVA;
+    cells['3,60,0'] = WATER;
+    cells['3,61,0'] = WATER;
+    for (let y = 60; y <= 63; y++) cells[`4,${y},0`] = AIR;
+    const exit = findLateralExit(at(cells), origin);
+    expect(exit).toMatchObject({ x: -6, direction: 'west', distance: 6 });
+  });
+
+  it('does not enter lava at feet level: a shaft beyond it is out of reach', () => {
+    const cells = capped(WEST, 6, 'lake');
+    cells['1,60,0'] = LAVA;
+    cells['1,61,0'] = LAVA;
+    for (let y = 60; y <= 63; y++) cells[`2,${y},0`] = AIR;
+    const exit = findLateralExit(at(cells), origin);
+    expect(exit).toMatchObject({ x: -6, direction: 'west', distance: 6 });
+  });
+
+  it('routes round a one-cell stone bend: 5 steps, not the straight 3', () => {
+    const cells: Record<string, Block> = {};
+    for (let y = 58; y <= 61; y++) cells[`0,${y},0`] = WATER;
+    for (const y of [60, 61]) {
+      cells[`1,${y},0`] = WATER;
+      cells[`1,${y},1`] = WATER;
+      cells[`2,${y},1`] = WATER;
+      cells[`3,${y},1`] = WATER;
+    }
+    for (let y = 60; y <= 63; y++) cells[`3,${y},0`] = AIR;
+    const exit = findLateralExit(at(cells), origin);
+    expect(exit).toMatchObject({ x: 3, z: 0, direction: 'east', distance: 5 });
+    expect(exit?.path).toHaveLength(5);
+  });
+
+  it('keeps the tie: a column 3 blocks away and a lateral exit 3 steps away give the column', async () => {
+    const aims: Vec3[] = [];
+    const cells = capped(EAST, 3, 'shaft');
+    for (const y of [61, 62]) cells[`-3,${y},0`] = AIR;
+    const { bot, state, pos } = swimmerIn(worldOf(cells), origin, 0, EAST, 0);
+    (bot as unknown as { lookAt: (v: Vec3) => Promise<void> }).lookAt = async (v: Vec3) => {
+      aims.push(v);
+    };
+    await swimUp(
+      walkFor(bot, () => false, {
+        expired: () => state.ticks >= 30,
+        tick: () => state.ticks,
+      }),
+    );
+    expect(pos().x).toBeCloseTo(0.5);
+    expect(aims.at(-1)?.x).toBeLessThan(0.5);
+  });
+
+  it('takes the lateral exit 3 steps away over a column 4 blocks away', async () => {
+    const aims: Vec3[] = [];
+    const cells = capped(EAST, 3, 'shaft');
+    for (const y of [61, 62]) cells[`-4,${y},0`] = AIR;
+    const { bot, state } = swimmerIn(worldOf(cells), origin, 0, EAST, 0);
+    (bot as unknown as { lookAt: (v: Vec3) => Promise<void> }).lookAt = async (v: Vec3) => {
+      aims.push(v);
+    };
+    await swimUp(
+      walkFor(bot, () => false, {
+        expired: () => state.ticks >= 30,
+        tick: () => state.ticks,
+      }),
+    );
+    expect(aims.at(-1)?.x).toBeGreaterThan(0.5);
+  });
+
+  /** Runs a swim from the origin for 60 ticks; at tick 24 `change` edits the world. Returns the notes. */
+  async function swimWithChange(first: Record<string, Block>, change: Record<string, Block>) {
+    const note = vi.fn();
+    const cells = first;
+    const { bot, state } = swimmerIn(worldOf(cells), origin, 0, EAST, 0);
+    // The swim's own window tick needs the game clock: `tick` below is the state tick.
+    const b = bot as unknown as { waitForTicks: () => Promise<void> };
+    const inner = b.waitForTicks;
+    b.waitForTicks = async () => {
+      if (state.ticks === 24) Object.assign(cells, change);
+      await inner();
+    };
+    await swimUp(
+      walkFor(bot, () => false, {
+        expired: () => state.ticks >= 60,
+        tick: () => state.ticks,
+        note,
+      }),
+    );
+    return note;
+  }
+
+  it('keeps the engaged target when the nearest exit is only one step nearer', async () => {
+    // East shaft 5 engaged in window 1; a lake 4 west appears at tick 24: 4 + 2 > 5, so the target stays.
+    const note = await swimWithChange(capped(EAST, 5, 'shaft'), capped(WEST, 4, 'lake'));
+    expect(note).toHaveBeenCalledTimes(1);
+    expect(note).toHaveBeenCalledWith(expect.objectContaining({ event: 'engage', direction: 'east' }));
+  });
+
+  it('retargets to an exit 2 steps nearer, and labels the change "retarget"', async () => {
+    const note = await swimWithChange(capped(EAST, 5, 'shaft'), capped(WEST, 2, 'lake'));
+    expect(note).toHaveBeenCalledTimes(2);
+    expect(note).toHaveBeenLastCalledWith(
+      expect.objectContaining({ event: 'retarget', direction: 'west', distance: 2 }),
+    );
   });
 });
 

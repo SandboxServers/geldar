@@ -156,6 +156,26 @@ function breathableAt(read: BlockReader, x: number, feet: number, z: number): bo
 }
 
 /**
+ * True when a swimmer whose feet are in this cell is held safely: water at the feet is fine unless lava
+ * or magma lies within two blocks below it; air at the feet needs a solid floor under it that is not a
+ * hazard (no void, no lava, no cactus). Unloaded floors are not solid, so they do not count.
+ */
+function supported(read: BlockReader, x: number, feet: number, z: number): boolean {
+  if (read(x, feet, z)?.name === 'water') {
+    return ![read(x, feet - 1, z), read(x, feet - 2, z)].some(
+      (cell) => cell?.name === 'lava' || cell?.name === 'magma_block',
+    );
+  }
+  const floor = read(x, feet - 1, z);
+  return (
+    floor !== null &&
+    floor.boundingBox === 'block' &&
+    !HAZARD_CELLS.has(floor.name) &&
+    !HAZARD_FLOORS.has(floor.name)
+  );
+}
+
+/**
  * The nearest breathable cell a pinned swimmer can reach: a breadth-first search out to 8 steps
  * through water and air, so a solid block in the way is a wall and the route goes round it. A cell
  * is breathable when its head level is swimmable and the cell above is open air, which covers dry
@@ -178,7 +198,7 @@ export function findLateralExit(
   for (let at = 0; at < queue.length; at++) {
     const cell = queue[at] as { x: number; z: number };
     const reached = steps.get(key(cell.x, cell.z)) ?? 0;
-    if (reached > 0 && breathableAt(read, cell.x, feet, cell.z)) {
+    if (reached > 0 && breathableAt(read, cell.x, feet, cell.z) && supported(read, cell.x, feet, cell.z)) {
       found.push({ x: cell.x, z: cell.z, steps: reached });
     }
     if (reached === LATERAL_RADIUS) continue;
@@ -187,6 +207,7 @@ export function findLateralExit(
       const z = cell.z + side.dz;
       if (steps.has(key(x, z))) continue;
       if (!swimmable(read(x, feet, z)) || !swimmable(read(x, feet + 1, z))) continue;
+      if (!supported(read, x, feet, z)) continue;
       steps.set(key(x, z), reached + 1);
       parent.set(key(x, z), cell);
       queue.push({ x, z });
@@ -320,6 +341,8 @@ export const swimUp: EscapeMover = async (walk) => {
   const clock = (): number => walk.tick?.() ?? turns;
   let windowTick = clock();
   let sideways: LateralExit | null = null;
+  // A window that gains LATERAL_MIN_GAIN keeps the engaged target one more window; the next window decides.
+  let keepOneMore = false;
   let noted: { x: number; z: number } | null = null;
   bot.on('physicsTick', holdJump);
   try {
@@ -330,8 +353,15 @@ export const swimUp: EscapeMover = async (walk) => {
         const gained = here.y - windowStart;
         windowStart = here.y;
         windowTick = clock();
-        sideways =
-          gained < LATERAL_MIN_GAIN ? findLateralExit(read, here, sideways ?? undefined) : null;
+        if (gained < LATERAL_MIN_GAIN) {
+          sideways = findLateralExit(read, here, sideways ?? undefined);
+          keepOneMore = false;
+        } else if (sideways && !keepOneMore) {
+          keepOneMore = true;
+        } else {
+          sideways = null;
+          keepOneMore = false;
+        }
         if (sideways && (!noted || noted.x !== sideways.x || noted.z !== sideways.z)) {
           walk.note?.({
             event: noted ? 'retarget' : 'engage',
