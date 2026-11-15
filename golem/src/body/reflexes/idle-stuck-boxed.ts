@@ -2,6 +2,7 @@ import { Vec3 } from 'vec3';
 import { DEFAULT_DIAG_SINK } from '../../actions/stall-diag.ts';
 import type { BodyView } from '../view.ts';
 import { WATCH_REACH, type WatchProbe, watchProbe } from './idle-stuck-probe.ts';
+import { ownHoleWithin } from './panic-burrow.ts';
 import { failedWalksAt } from './unstick.ts';
 
 /**
@@ -11,6 +12,15 @@ import { failedWalksAt } from './unstick.ts';
 export const BOXED_TICKS = 2400;
 /** Still ticks for a Body on an owned roofed shelter (its own placed blocks, a roof above): 300 s (decision 0336). */
 export const BOXED_OWNED_TICKS = 6000;
+/**
+ * Still ticks for a Body boxed in at night: 600 s, on its own shelter or not (owner default, 2026-11-15,
+ * until geldar-93 says otherwise). A view that cannot say whether it is night counts as night.
+ */
+export const BOXED_NIGHT_TICKS = 12000;
+/** At night a hostile this close (blocks) holds the boxed trigger off. */
+export const BOXED_NIGHT_HOSTILE_RADIUS = 16;
+/** A Body's own hole (a panic burrow or dark shelter it dug) holds the boxed trigger off for this long: 15 min. */
+export const BOXED_HOLE_TICKS = 18000;
 /** Attempts (runs, and refused runs) a Body may make per hour of world time, per life: 6 (decision 0336). */
 export const BOXED_RUNS_PER_HOUR = 6;
 /**
@@ -72,9 +82,25 @@ export function isOwnedShelter(view: BodyView): boolean {
   return view.onOwnPlacement === true && view.roofWithin?.(3) === true;
 }
 
-/** The still ticks a boxed Body waits: 300 s on an owned shelter, 120 s otherwise. */
+/** True at night, or when the view cannot say (an unknown read counts as night for the boxed rules). */
+export function isNightForBoxed(view: BodyView): boolean {
+  return view.isNight !== false;
+}
+
+/** The still ticks a boxed Body waits: 600 s at night, 300 s on an owned shelter by day, 120 s otherwise. */
 export function boxedWaitTicks(view: BodyView): number {
+  if (isNightForBoxed(view)) return BOXED_NIGHT_TICKS;
   return isOwnedShelter(view) ? BOXED_OWNED_TICKS : BOXED_TICKS;
+}
+
+/**
+ * True while the boxed trigger is held off (decision 0336, owner default 2026-11-15): the Body dug its own
+ * hole less than `BOXED_HOLE_TICKS` ago (panic burrow or dark shelter, at any hour), or it is night and a
+ * hostile stands within `BOXED_NIGHT_HOSTILE_RADIUS` blocks.
+ */
+export function boxedHeld(view: BodyView, now: number): boolean {
+  if (ownHoleWithin(view, now, BOXED_HOLE_TICKS)) return true;
+  return isNightForBoxed(view) && view.nearbyHostiles(BOXED_NIGHT_HOSTILE_RADIUS).length > 0;
 }
 
 /** What the attempt gate says now: `ok`, the cooldown still holds, or the hour's cap is reached. */
@@ -211,13 +237,21 @@ export function caveMouth(view: BodyView, block: Vec3): boolean {
   const beyond = block.plus(dir);
   const air = (at: Vec3): boolean => read(at)?.boundingBox === 'empty';
   const noSky = (at: Vec3): boolean => air(at) && !((read(at)?.skyLight ?? 0) > 0);
+  // A cell the view has not loaded is unknown, and unknown refuses (owner rule, decision 0336).
+  const unknown = (at: Vec3): boolean => {
+    const cell = read(at);
+    return cell === null || cell === undefined;
+  };
+  if (unknown(beyond)) return true;
   if (!air(beyond)) return false;
-  if ([1, 2, 3].every((n) => air(beyond.offset(0, -n, 0)))) return true;
+  const below = [1, 2, 3].map((n) => beyond.offset(0, -n, 0));
+  if (below.some(unknown)) return true;
+  if (below.every(air)) return true;
   const [a, b] = planeAxes(dir);
   for (let u = -1; u <= 1; u++) {
     for (let v = -1; v <= 1; v++) {
       const at = beyond.offset(a.x * u + b.x * v, a.y * u + b.y * v, a.z * u + b.z * v);
-      if (noSky(at)) return true;
+      if (unknown(at) || noSky(at)) return true;
     }
   }
   return false;

@@ -5,6 +5,7 @@ import { hazardReason, unbreakableReason } from './bare-hand.ts';
 import type { Block } from './bot-types.ts';
 import { isOwnPlacement } from './own-placements.ts';
 import { protectedReason, refusedByName } from './protected-blocks.ts';
+import { digGuardRefuses } from './unstick-guard.ts';
 
 /** Seconds a bare hand takes on a block: about 5 s per point of hardness, at least half a second. Unknown counts as least. */
 export function handSeconds(block: Block | null): number {
@@ -146,8 +147,13 @@ function planStep(bot: Bot, feet: Vec3, dir: Vec3, refuseOwn = false): Step | st
   return { dir, cells, cost };
 }
 
-/** Breaks one block with the best tool held; false when the dig fails or the signal is aborted. */
+/**
+ * Breaks one block with the best tool held; false when the dig fails, the signal is aborted, or the bot's dig
+ * guard refuses the step (decision 0336). Every climb dig asks the guard first, so a cave mouth or liquid that
+ * an earlier dig revealed refuses the next one.
+ */
 async function digBlock(bot: Bot, signal: AbortSignal, block: Block): Promise<boolean> {
+  if (digGuardRefuses(bot, block)) return false;
   const loose = bot as unknown as {
     pathfinder?: { stop(): void; setGoal(g: null): void; bestHarvestTool?: (b: Block) => unknown };
     stopDigging?: () => void;

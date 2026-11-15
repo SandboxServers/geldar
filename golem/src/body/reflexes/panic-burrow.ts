@@ -73,6 +73,15 @@ const pauses = new WeakMap<
 /** A refusal pause ends early once the Body is more than this many blocks from where it began. */
 export const REFUSAL_MOVE_BLOCKS = 8;
 
+/** The world tick at which the Body last dug its own night hole (the panic burrow, or the dark shelter that runs it). */
+const holeTicks = new WeakMap<BodyView, number>();
+
+/** True when the Body dug its own hole less than `ticks` world ticks before `now` (the boxed-in trigger waits). */
+export function ownHoleWithin(view: BodyView, now: number, ticks: number): boolean {
+  const at = holeTicks.get(view);
+  return at !== undefined && now - at < ticks;
+}
+
 /** True while the Body sits in a burrow it dug (a shelter by choice, until dawn). */
 export function hasBurrow(view: BodyView): boolean {
   return burrows.has(view);
@@ -351,8 +360,14 @@ export const panicBurrowReflex: Reflex = {
     const outcome = trigger.orphan === true ? await breakOut(ctx) : await burrow(ctx, ctx.view);
     if (outcome.result === 'handled') {
       pauses.delete(ctx.view);
+      if (trigger.phase === 'night') holeTicks.set(ctx.view, ctx.tick);
       return outcome;
     }
     return pausedOutcome(ctx.view, ctx.tick, outcome);
   },
 };
+
+/** Test seam: records that a view dug its own hole at tick, without digging one. */
+export function markHoleForTest(view: BodyView, tick: number): void {
+  holeTicks.set(view, tick);
+}

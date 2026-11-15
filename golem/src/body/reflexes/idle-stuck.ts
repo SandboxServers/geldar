@@ -10,6 +10,7 @@ import {
   boxedDigGuard,
   boxedFromProbe,
   boxedGate,
+  boxedHeld,
   boxedWaitTicks,
   isBoxedIn,
   liquidNear,
@@ -242,6 +243,7 @@ function watchStill(view: BodyView, state: IdleState, now: number): void {
  */
 function boxedTrigger(view: BodyView, here: Spot, state: IdleState, now: number): boolean {
   if (now - state.since < boxedWaitTicks(view) || !isBoxedIn(view, here)) return false;
+  if (boxedHeld(view, now)) return false;
   const gate = boxedGate(view, now);
   if (gate === 'cap' && noteCapLogged(view)) {
     DEFAULT_DIAG_SINK.log(

@@ -14,6 +14,7 @@ import {
   MAX_DESCEND_DIGS,
   WALKABLE_DROP,
 } from './unstick-descend.ts';
+import { digGuardRefuses } from './unstick-guard.ts';
 import {
   type Drop,
   dropAllowed,
@@ -29,6 +30,7 @@ import { escapePoints, reportNoWayOut } from './unstick-report.ts';
 import { ACTION_LIMIT_S, DIG_BUDGET_S, digSeconds, digUp, timeLeftS } from './unstick-up.ts';
 import { MOVE_TICKS, walk } from './unstick-walk.ts';
 
+export { setDigGuard } from './unstick-guard.ts';
 export type { Drop, Move } from './unstick-plan.ts';
 export {
   dropAllowed,
@@ -43,13 +45,6 @@ export {
 
 /** The most digs one call makes. */
 const MAX_DIGS = 6;
-/** Per-bot dig guards (decision 0336): `dig` asks one before every step; true refuses the step. */
-const digGuards = new WeakMap<Bot, (block: Block) => boolean>();
-export function setDigGuard(bot: Bot, guard: ((block: Block) => boolean) | null): void {
-  if (guard) digGuards.set(bot, guard);
-  else digGuards.delete(bot);
-}
-
 /**
  * Digs one block, with the best tool held when the inventory has one; false on any failure. The
  * pathfinder is halted first (its own tick can stop a dig), and a dig that ends "aborted" is tried
@@ -66,7 +61,7 @@ export async function dig(
   if (signal.aborted) return false;
   const protectedBy = protectedReason(bot, block, at);
   if (protectedBy !== null && !(relaxed && !lastResortRefused(bot, block, at))) return false;
-  if (digGuards.get(bot)?.(block)) return false;
+  if (digGuardRefuses(bot, block)) return false;
   const loose = bot as unknown as {
     pathfinder?: { stop(): void; setGoal(g: null): void; bestHarvestTool?: (b: Block) => unknown };
     stopDigging?: () => void;
