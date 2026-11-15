@@ -37,6 +37,8 @@ describe('houseBodyName (C2-07k)', () => {
       'ag_worf_01',
       'ag_bcrusher_01',
       'ag_wcrusher_01',
+      'ag_lewis_01',
+      'ag_clark_01',
     ];
     expect(sovereignPlayerNames(shard)).toEqual(rangers);
     expect(whitelistNames(shard)).toEqual(['ag_colo_01', ...rangers]);
