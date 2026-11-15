@@ -136,6 +136,14 @@ async function call(
  * The body runtime served by the body helper. The owner is sent with every verb: the helper refuses a name
  * the roster does not give that owner (`refused`), which the service reports as `unknown`.
  */
+/**
+ * True when a NATS request failed on its own timeout. The pinned @nats-io/nats-core names that error class
+ * `TimeoutError` (lib/errors.js); the match is exact, so another error whose name only contains "timeout" is not one.
+ */
+export function isNatsTimeout(error: unknown): boolean {
+  return error instanceof Error && error.name === 'TimeoutError';
+}
+
 export function createHelperRuntime(opts: HelperClientOptions): HelperRuntime {
   return {
     async inspect(ownerId: string, playerName: string): Promise<HelperBody | null> {

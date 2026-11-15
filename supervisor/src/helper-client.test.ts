@@ -5,6 +5,7 @@ import {
   HELPER_TIMEOUT_MS,
   HelperFailure,
   type HelperRequest,
+  isNatsTimeout,
 } from './helper-client.ts';
 
 const decoder = new TextDecoder();
@@ -18,6 +19,26 @@ function fakeHelper(reply: unknown) {
   };
   return { calls, request };
 }
+
+function namedError(name: string, message = 'request failed'): Error {
+  const error = new Error(message);
+  error.name = name;
+  return error;
+}
+
+describe('isNatsTimeout (the NATS request timeout is the helper timeout kind)', () => {
+  it('matches the pinned library TimeoutError by its exact name', () => {
+    expect(isNatsTimeout(namedError('TimeoutError', 'timeout'))).toBe(true);
+  });
+
+  it('refuses other library errors, including names and messages that only mention a timeout', () => {
+    expect(isNatsTimeout(namedError('NoResponders'))).toBe(false);
+    expect(isNatsTimeout(namedError('RequestTimeout'))).toBe(false);
+    expect(isNatsTimeout(namedError('Error', 'timeout waiting for reply'))).toBe(false);
+    expect(isNatsTimeout('TimeoutError')).toBe(false);
+    expect(isNatsTimeout(undefined)).toBe(false);
+  });
+});
 
 async function kindOf(work: Promise<unknown>): Promise<string> {
   try {

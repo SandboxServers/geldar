@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@geldar/contract": "workspace:*",
+    "@nats-io/transport-node": "3.4.0",
     "pg": "8.23.1"
   },
   "devDependencies": {
