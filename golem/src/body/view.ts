@@ -124,6 +124,11 @@ export interface BodyView {
    */
   readonly noSafeExit?: boolean | null;
   /**
+   * Operator diagnostics only (the idle_stuck watch line, decision 0333): the block read the planner uses,
+   * at a cell. Missing or unloaded cells make the watch probe fields null; nothing acts on it.
+   */
+  readonly terrainAt?: (at: Vec3) => Block | null | undefined;
+  /**
    * True when the block under the Body's feet is one this Body placed itself (its own work, decision
    * 0164). Idle stuck and the B2 trigger do not fire on it (owner ruling 2026-11-14). Optional like
    * canStepOff; a missing value is not own work.
@@ -418,6 +423,7 @@ export function createBodyView(bot: Bot): TrackedBodyView {
     get canStepOff() {
       return canStepOff((at) => bot.blockAt(at), bot.entity.position.floored());
     },
+    terrainAt: (at: Vec3) => bot.blockAt(at),
     get noSafeExit() {
       return noSafeExit((at) => bot.blockAt(at), bot.entity.position.floored(), bot.health);
     },
