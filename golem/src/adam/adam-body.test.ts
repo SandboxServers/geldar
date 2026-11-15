@@ -1,9 +1,11 @@
 import { EventEmitter } from 'node:events';
 import { viewSubject } from '@geldar/contract';
+import { canonicalSheetJson, STANDARD_SHEET } from '@geldar/psyche';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { describe, expect, it, vi } from 'vitest';
 import type { RestartBodyOptions, RestartedBody } from '../body/restart.ts';
+import type { LifeCharacter } from '../character/character-config.ts';
 import { RecentEvents } from '../mind-link/recent-events.ts';
 import { planOf } from '../mind-link/server.fakes.ts';
 import type { RequestServer } from '../mind-link/server.ts';
@@ -23,6 +25,20 @@ vi.mock('../voice/voice.ts', async (importOriginal) => {
     }
   }
   return { ...real, BotVoice: SpyVoice };
+});
+
+const built = vi.hoisted(() => ({ audits: 0 }));
+
+// Counts the AuditPublisher a run builds (AN-07); the class stays real.
+vi.mock('../character/audit-publisher.ts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../character/audit-publisher.ts')>();
+  class CountedAudit extends real.AuditPublisher {
+    constructor(options: ConstructorParameters<typeof real.AuditPublisher>[0]) {
+      built.audits += 1;
+      super(options);
+    }
+  }
+  return { ...real, AuditPublisher: CountedAudit };
 });
 
 const linkOptions = vi.hoisted(() => [] as Array<{ publisher: unknown }>);
@@ -154,6 +170,146 @@ function rig(): Rig {
   };
   return { env, options, inner, addressed, stops, served, deliver };
 }
+
+/** Every number and string of a sheet, as text: a log line that carries one of them is a leak. */
+function sheetLeaves(value: unknown): string[] {
+  if (typeof value === 'number') return [String(value)];
+  if (typeof value === 'string') return [value];
+  if (typeof value !== 'object' || value === null) return [];
+  return Object.entries(value).flatMap(([key, inner]) => [key, ...sheetLeaves(inner)]);
+}
+
+const OFF: LifeCharacter = {
+  config: { mode: 'off', rolls: false, proficiency: { enabled: false, thresholds: [10, 20, 30] } },
+  sheet: null,
+  source: 'off',
+};
+const ADOPTED: LifeCharacter = {
+  config: {
+    mode: 'sheet',
+    rolls: false,
+    proficiency: { enabled: false, thresholds: [10, 20, 30] },
+  },
+  sheet: STANDARD_SHEET,
+  source: 'config',
+};
+
+describe('the character block in a Body (AN-07)', () => {
+  it('builds no AuditPublisher and emits no sheet_adopted when omitted or off', async () => {
+    for (const character of [undefined, OFF]) {
+      built.audits = 0;
+      const r = rig();
+      const publish = vi.fn(async (_subject: string, _data: string, _id?: string) => undefined);
+      const env: AdamBodyEnv = { ...r.env, publisher: { publish } };
+      if (character !== undefined) env.character = character;
+      const running = await startAdamBody(env, fakeBot());
+      await running.stop();
+      expect(built.audits).toBe(0);
+      expect(publish.mock.calls.map((call) => call[0])).not.toContain(
+        'geldar.phase0.sheet_adopted',
+      );
+    }
+  });
+
+  it('with a config sheet, emits one sheet_adopted at start, with source config', async () => {
+    built.audits = 0;
+    const r = rig();
+    const publish = vi.fn(async (_subject: string, _data: string, _id?: string) => undefined);
+    const running = await startAdamBody(
+      { ...r.env, publisher: { publish }, character: ADOPTED },
+      fakeBot(),
+    );
+    await vi.waitFor(() => expect(publish).toHaveBeenCalled());
+    await running.stop();
+    const adoptions = publish.mock.calls.filter(
+      (call) => call[0] === 'geldar.phase0.sheet_adopted',
+    );
+    expect(built.audits).toBe(1);
+    expect(adoptions).toHaveLength(1);
+    expect(adoptions[0]?.[1]).toContain('"source":"config"');
+  });
+
+  it('with the standard fallback sheet, builds nothing and emits no sheet_adopted', async () => {
+    built.audits = 0;
+    const r = rig();
+    const publish = vi.fn(async (_subject: string, _data: string, _id?: string) => undefined);
+    const standard: LifeCharacter = { ...ADOPTED, source: 'standard' };
+    const running = await startAdamBody(
+      { ...r.env, publisher: { publish }, character: standard },
+      fakeBot(),
+    );
+    await running.stop();
+    expect(built.audits).toBe(0);
+    expect(publish.mock.calls.map((call) => call[0])).not.toContain('geldar.phase0.sheet_adopted');
+  });
+
+  it('never writes the sheet into a log line', async () => {
+    const r = rig();
+    const log = vi.fn();
+    const publish = vi.fn(async (_subject: string, _data: string, _id?: string) => undefined);
+    const running = await startAdamBody(
+      { ...r.env, log, publisher: { publish }, character: ADOPTED },
+      fakeBot(),
+    );
+    await running.stop();
+    const lines = log.mock.calls.map((call) => String(call[0]));
+    expect(lines.some((line) => line.includes(canonicalSheetJson(STANDARD_SHEET)))).toBe(false);
+    for (const leaf of sheetLeaves(STANDARD_SHEET).filter((text) => text.length >= 2)) {
+      expect(lines.some((line) => line.includes(leaf))).toBe(false);
+    }
+  });
+
+  describe('the audit publisher is closed with the Body (AN-07)', () => {
+    /** An injected publisher: recordAdoption and close are spies, so the test reads the close count. */
+    function fakeAudit() {
+      const close = vi.fn();
+      const audit = { recordAdoption: vi.fn(), close } as unknown as NonNullable<
+        AdamBodyEnv['audit']
+      >;
+      return { audit, close };
+    }
+
+    it('closes the audit publisher when the Body stops', async () => {
+      const r = rig();
+      const { audit, close } = fakeAudit();
+      const running = await startAdamBody({ ...r.env, character: ADOPTED, audit }, fakeBot());
+      expect(close).not.toHaveBeenCalled();
+      await running.stop();
+      expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes the audit publisher when the start fails after the adoption', async () => {
+      const r = rig();
+      const { audit, close } = fakeAudit();
+      const bot = Object.assign(fakeBot(), { quit: vi.fn() });
+      r.env.server = {
+        serve: () => {
+          throw new Error('nats unavailable');
+        },
+      };
+      await expect(startAdamBody({ ...r.env, character: ADOPTED, audit }, bot)).rejects.toThrow(
+        'nats unavailable',
+      );
+      expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes the audit publisher even when an earlier stop step rejects', async () => {
+      const r = rig();
+      const { audit, close } = fakeAudit();
+      const restart = r.env.restart as NonNullable<AdamBodyEnv['restart']>;
+      r.env.restart = async (o) => {
+        const restarted = await restart(o);
+        restarted.body.executor.stop = async () => {
+          throw new Error('executor would not stop');
+        };
+        return restarted;
+      };
+      const running = await startAdamBody({ ...r.env, character: ADOPTED, audit }, fakeBot());
+      await expect(running.stop()).rejects.toThrow('executor would not stop');
+      expect(close).toHaveBeenCalledTimes(1);
+    });
+  });
+});
 
 describe('the ownership client in a Body (decisions 0164, 0165)', () => {
   it('a Body given a transport subscribes to the change subject, so goto reads the record', async () => {

@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import { errorText } from '../actions/outcome.ts';
 import type { ActionRegistry } from '../actions/registry.ts';
 import { DEFAULT_DIAG_SINK, type DiagSink } from '../actions/stall-diag.ts';
+import type { LifeCharacter } from '../character/character-config.ts';
 import type { RecordSink } from './records.ts';
 import { isReflexEnabled, type ReflexConfig, type ReflexName } from './reflex-config.ts';
 import type { BodyView } from './view.ts';
@@ -27,6 +28,8 @@ export interface ReflexContext {
   sink: RecordSink;
   lifeId: string;
   bodyGeneration: number;
+  /** The life's character (AN-07). Optional and unused until AN-08b reads it. */
+  character?: LifeCharacter;
   /** World age of the tick that fired this reflex. */
   tick: number;
   /** The runtime's time scale: pass it to every action and scale fixed wall-clock limits by it. */

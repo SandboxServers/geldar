@@ -114,6 +114,7 @@ export function playerBodyEnv(input: {
 }): AdamBodyEnv {
   return {
     config: input.config,
+    ...(input.config.character === undefined ? {} : { character: input.config.character }),
     kv: input.kv,
     publisher: input.publisher,
     server: input.server,
