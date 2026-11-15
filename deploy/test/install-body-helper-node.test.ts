@@ -119,6 +119,21 @@ describe('install-body-helper.sh: the pinned node (C7-03c5)', { timeout: 30_000 
     }
   });
 
+  it('BODY_HELPER_NODE_ENV is read only with a prefix: a dry run without one plans the real pin', () => {
+    const fx = fixture();
+    const evil = join(fx.root, 'evil.env');
+    writeFileSync(
+      evil,
+      `BODY_HELPER_NODE_VERSION=22.23.4\nBODY_HELPER_NODE_TARBALL=evil.tar.xz\nBODY_HELPER_NODE_SHA256_LINUX_X64=${'f'.repeat(64)}\n`,
+    );
+    const { status, out } = run(fx, [], {
+      env: { BODY_HELPER_PREFIX: undefined, BODY_HELPER_NODE_ENV: evil },
+    });
+    expect(status, out).toBe(0);
+    expect(out).toContain(TARBALL);
+    expect(out).not.toContain('evil.tar.xz');
+  });
+
   it('a tarball that does not match its pin is refused on --apply, and blocked in the dry run', () => {
     const fx = fixture();
     withBuild(fx);
@@ -171,10 +186,21 @@ describe('install-body-helper.sh: the pinned node (C7-03c5)', { timeout: 30_000 
   });
 
   it('the extraction passes --no-same-owner, and the chown runs only under root', () => {
-    expect(SCRIPT_SRC).toContain(
-      'tar -xJf "$NODE_TARBALL_PATH" -C "$NODE_DIR" --strip-components=1 --no-same-owner',
-    );
+    // Anchored on the tar command line, so a comment that repeats the flag cannot satisfy it.
+    expect(SCRIPT_SRC).toMatch(/^\s*tar -xJf .*--no-same-owner$/m);
     expect(SCRIPT_SRC).toContain('if [ "$(id -u)" = 0 ]; then chown -R root:root "$NODE_DIR"; fi');
+  });
+
+  it('xz is checked only on the extraction path: inside the not-pinned gate, before the tarball check', () => {
+    // A text check, not a run: the xz-less PATH cannot be built on this host (Git Bash keeps xz and tar in one
+    // directory). The runtime xz branch is untested; this pins the line's place in the script.
+    const xz = SCRIPT_SRC.indexOf('command -v xz >/dev/null 2>&1 || die');
+    const gate = SCRIPT_SRC.indexOf('if ! node_pinned_ok; then');
+    const tarballCheck = SCRIPT_SRC.indexOf(
+      'if [ -f "$NODE_TARBALL_PATH" ] && ! node_tarball_ok; then',
+    );
+    expect(xz).toBeGreaterThan(gate);
+    expect(xz).toBeLessThan(tarballCheck);
   });
 });
 

@@ -114,7 +114,7 @@ Batching: C7-03c2 and C7-03b2 change the image set, so they merge in one window 
 
 - **id / wave / lane.** C7-03c5, wave 5, Supervisor lane. **depends-on.** C7-03c1, C7-03c2. **branch.** `phase1/c7-03c5-helper-bundle`. **migration.** no. **size.** M.
 - **Decision.** 0260. node5 (geldar-worldops) has no Node. The helper ships as a CI artifact, not a registry pull.
-- **Status.** Built by the cont1 pass; node steps by geldar-93 (runbook Step 0a).
+- **Status.** Built by the cont1 pass; review pass 1 fixes (9680b0a2) and review pass 2 fixes (C7-03c5 fix 2: the bundle-env gate test, the xz placement, the anchored tar flag test, this card) applied. Node steps by geldar-93 (runbook Step 0a).
 - **Note.** `.nvmrc` pins 22.23.2 for the repo tooling; the helper runtime pin in `deploy/body-helper-node.env` is 22.23.4. They differ on purpose: the helper's node is the pinned tarball, not `.nvmrc`.
 
 ### Goal
@@ -127,14 +127,21 @@ Batching: C7-03c2 and C7-03b2 change the image set, so they merge in one window 
 
 ### Files
 
-`body-helper/scripts/bundle.mjs`, `body-helper/package.json` (esbuild exact), `pnpm-lock.yaml`, `body-helper/src/bundle.test.ts`, `deploy/body-helper-node.env`, `deploy/install-body-helper.sh`, `deploy/test/install-body-helper.test.ts`, `deploy/test/body-helper-artifacts.test.ts`, `.github/workflows/body-helper-bundle.yml`, `docs/runbooks/body-helper-node-steps.md`.
+`body-helper/scripts/bundle.mjs`, `body-helper/package.json` (esbuild exact), `pnpm-lock.yaml`, `body-helper/src/bundle.test.ts`, `deploy/body-helper-node.env`, `deploy/install-body-helper.sh`, `deploy/test/install-body-helper.test.ts`, `deploy/test/install-body-helper-fixture.ts`, `deploy/test/install-body-helper-node.test.ts`, `deploy/test/body-helper-artifacts.test.ts`, `.github/workflows/body-helper-bundle.yml`, `docs/runbooks/body-helper-node-steps.md`.
 
 ### Tests (each fails on revert)
 
 - `body-helper/src/bundle.test.ts`: the bundle builds, and its sha256 sidecar matches `main.js`. Revert: drop the sidecar write in `bundle.mjs`; the test fails.
 - `deploy/test/body-helper-artifacts.test.ts` (dry run): a bundle whose sha256 does not match `main.js.sha256` blocks `--apply` before any write, and the unit is not written. Revert: make the bundle sha256 mismatch not block in `install-body-helper.sh`; the dry-run test fails.
 - `deploy/test/body-helper-artifacts.test.ts`: the pin file has the Node version and the tarball sha256; the workflow pins every action by a 40-hex SHA and runs no deploy step. Revert: change a pin to a tag; the test fails.
-- Not yet tested (finding): a Node tarball sha256 mismatch blocks `--apply` before extraction. The script checks it (`node_tarball_ok`), but no test covers it.
+- `deploy/test/install-body-helper-node.test.ts` (pinned node): the unit's `ExecStart` is `/opt/geldar/node/bin/node`, never `/usr/bin/node` or a PATH `node`. Revert: `ExecStart=/usr/bin/node`; the test fails.
+- The same file (migrate): the migrate verb runs the pinned node and never the PATH node. Revert: call `node` from PATH; 3 tests fail.
+- The same file (stamp): a stale stamp, or none, does not count as pinned: `--apply` dies before any write, and the dry run names the unpinned node and plans no enable. Revert: drop the stamp comparison; 2 tests fail.
+- The same file (tarball): a Node tarball whose sha256 does not match the pin blocks `--apply` before extraction and blocks the dry run. Revert: `node_tarball_ok` checks file existence only; the test fails.
+- The same file (sidecar): a bundle that does not match `main.js.sha256` dies before any write; a missing sidecar blocks the dry run, and `--apply` dies before any write. Revert: `if false; then die`; the test fails.
+- The same file (extraction): a staged tarball with the pinned sha is extracted and stamped; a root run chowns the tree to `root:root`; the `tar -xJf` line carries `--no-same-owner` (matched on that line only). Revert: remove the flag; the test fails. This is a text match: no real tarball listing is run, so the uid result of a root extraction is not exercised.
+- The same file (env gate): `BODY_HELPER_NODE_ENV` is read only with `BODY_HELPER_PREFIX` set. Revert: drop `[ -n "$PREFIX" ] &&` on the override line; the dry run without a prefix plans the evil tarball and the test fails.
+- The same file (xz): `command -v xz` runs only on the extraction path (inside the not-pinned gate, before the tarball check). Revert: `true || die`; the text test fails. Untested at runtime: no PATH without xz is built on the test host, so the xz branch itself is not run.
 
 ### Must not
 

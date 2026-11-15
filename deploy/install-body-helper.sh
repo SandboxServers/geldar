@@ -87,8 +87,9 @@ node_tarball_ok() { [ -f "$NODE_TARBALL_PATH" ] && [ "$(sha256_of "$NODE_TARBALL
 node_pinned_ok() { [ -f "$NODE_BIN" ] && [ -f "$NODE_STAMP" ] && [ "$(cat "$NODE_STAMP")" = "$BODY_HELPER_NODE_SHA256_LINUX_X64" ]; }
 # Preflight, before any write: the migrate verb (step 4) runs the pinned node from the checkout.
 if [ "$APPLY" = 1 ]; then
-  command -v xz >/dev/null 2>&1 || die "--apply needs xz to unpack the node tarball (install xz-utils); nothing was changed"
   if ! node_pinned_ok; then
+    # xz is needed only to unpack the tarball, so it is checked only on the extraction path.
+    command -v xz >/dev/null 2>&1 || die "--apply needs xz to unpack the node tarball (install xz-utils); nothing was changed"
     if [ -f "$NODE_TARBALL_PATH" ] && ! node_tarball_ok; then
       die "the staged node tarball does not match its sha256 in deploy/body-helper-node.env; nothing was changed"
     fi
