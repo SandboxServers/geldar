@@ -8,7 +8,6 @@ import {
   errorText,
   type FailReason,
   failed,
-  type JsonValue,
 } from './outcome.ts';
 import { moveNear } from './pathing.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
@@ -23,6 +22,7 @@ import {
 import {
   type BedTry,
   observeMonsters,
+  sleepersDetail,
   sleepFailureDetail,
   withSleepDetail,
 } from './sleep-detail.ts';
@@ -39,7 +39,7 @@ import {
   NOT_SAFE_KEY,
   watchBedRefusal,
 } from './sleep-refusal.ts';
-import { type SleepersLine, type SleepersWatch, watchSleepers } from './sleepers.ts';
+import { type SleepersWatch, watchSleepers } from './sleepers.ts';
 import { DEFAULT_DIAG_SINK, type DiagSink } from './stall-diag.ts';
 
 /** The first world tick of the night window the Body checks (advisory: the server's window differs by one). */
@@ -383,14 +383,6 @@ async function bedOutcome(
 /** The bed block as the detail records it, with the reason the attempt gave. */
 function bedTry(bed: Block, reason: string): BedTry {
   return { block: { x: bed.position.x, y: bed.position.y, z: bed.position.z }, reason };
-}
-
-/** The sleepers fact the result carries: `sleepers` as `{asleep, needed}` or `skipped`; no key when no line was seen. */
-function sleepersDetail(line: SleepersLine | undefined): Record<string, JsonValue> {
-  if (line === undefined) return {};
-  return {
-    sleepers: line === 'skipped' ? 'skipped' : { asleep: line.asleep, needed: line.needed },
-  };
 }
 
 /** The beds the loop tries, in order, and how many of them the world holds occupied. */
