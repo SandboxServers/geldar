@@ -19,7 +19,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { parse, type Tag } from 'yaml';
+import { type CollectionTag, parse } from 'yaml';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const OVERLAY_TEXT = readFileSync(`${ROOT}compose/opt-in/scratch.yml`, 'utf8');
@@ -28,7 +28,7 @@ const SCRIPT = readFileSync(SCRIPT_PATH, 'utf8');
 const PHASE0_TEXT = readFileSync(`${ROOT}compose/phase0.yml`, 'utf8');
 
 /** compose replaces the list under !override instead of appending to it; the parsed value is marked. */
-const OVERRIDE: Tag = {
+const OVERRIDE: CollectionTag = {
   tag: '!override',
   collection: 'seq',
   resolve: (node: unknown) => ({ override: true, items: (node as { toJSON(): unknown }).toJSON() }),
