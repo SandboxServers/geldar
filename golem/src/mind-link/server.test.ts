@@ -105,7 +105,8 @@ describe('the muffled notices of a snapshot (MH-4): read, never consumed, shown 
     muffled: HeardMuffledInbox,
     build: (options: SnapshotOptions) => Snapshot,
     ears: FakeEars = new FakeEars(),
-  ): void {
+  ): string[] {
+    const logs: string[] = [];
     const server = new MindLinkServer({
       shard: SHARD,
       lifeId: LIFE,
@@ -120,9 +121,10 @@ describe('the muffled notices of a snapshot (MH-4): read, never consumed, shown 
       tick: () => 10,
       publisher: new MemoryPublisher(),
       muffled,
-      log: () => undefined,
+      log: (line) => logs.push(line),
     });
     server.start();
+    return logs;
   }
 
   function inboxWithTwo(): HeardMuffledInbox {
@@ -184,15 +186,15 @@ describe('the muffled notices of a snapshot (MH-4): read, never consumed, shown 
     inbox.receive(muffledNotice('e', 'mid'));
     const seen: SnapshotOptions[] = [];
     const { requests, call } = capturing();
-    serveWith(requests, inbox, (options) => {
+    const logs = serveWith(requests, inbox, (options) => {
       seen.push(options);
       return snapshotFrom(options);
     });
-    expect(() =>
-      call(request, () => {
-        throw new Error('connection closed');
-      }),
-    ).toThrow('connection closed');
+    await call(request, () => {
+      throw new Error('connection closed');
+    });
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toContain('connection closed');
     now = 5_000;
     await call(request, () => undefined);
     expect(seen.map((options) => options.muffled)).toEqual([
@@ -221,16 +223,23 @@ describe('the muffled notices of a snapshot (MH-4): read, never consumed, shown 
     expect(ears.peekEvents()).toEqual([]);
   });
 
-  it('keeps the notices when the reply cannot be sent', () => {
+  it('keeps the notices when the reply cannot be sent, logs it, and answers the next request', async () => {
     const inbox = inboxWithTwo();
     const { requests, call } = capturing();
-    serveWith(requests, inbox, snapshotFrom);
-    expect(() =>
+    const logs = serveWith(requests, inbox, snapshotFrom);
+    await expect(
       call(request, () => {
         throw new Error('connection closed');
       }),
-    ).toThrow('connection closed');
+    ).resolves.toBeUndefined();
     expect(inbox.peek()).toHaveLength(2);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toContain('connection closed');
+    let answered = '';
+    await call(request, (body) => {
+      answered = body;
+    });
+    expect(answered).toContain(LIFE);
   });
 
   it('keeps the notices when the snapshot cannot be built', async () => {

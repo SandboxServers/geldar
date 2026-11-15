@@ -45,6 +45,9 @@ const TICKS_PER_DAY = 24_000;
 /** Longest rejection detail the contract allows. */
 const DETAIL_LIMIT = 256;
 
+/** Longest error text a failed-request log line carries. */
+const FAILURE_LIMIT = 200;
+
 const THOUGHT_ID = /^th_[0-9A-HJKMNP-TV-Z]{26}$/;
 
 /** The view reply when a view is refused or cannot be read: a typed failure, never a bare throw. */
@@ -71,6 +74,17 @@ export interface RequestServer {
   ): () => void;
 }
 
+/** One line for a failed request: its subject and the error's name and message, never the payload. */
+function failureLine(subject: string, error: unknown): string {
+  const detail =
+    error instanceof Error
+      ? `${error.name}: ${error.message}`
+      : typeof error === 'string'
+        ? error
+        : 'non-error value';
+  return `request on ${subject} failed: ${detail.replace(/[\r\n]+/g, ' ').slice(0, FAILURE_LIMIT)}`;
+}
+
 /** A `RequestServer` over a NATS connection (core request/reply, no JetStream). */
 export function natsRequestServer(nc: NatsConnection): RequestServer {
   return {
@@ -78,9 +92,14 @@ export function natsRequestServer(nc: NatsConnection): RequestServer {
       const sub = nc.subscribe(subject);
       void (async () => {
         for await (const msg of sub) {
-          handler(msg.string(), (body) => msg.respond(body)).catch((error: unknown) => {
-            console.warn(`mind-link: handler for ${subject} failed: ${String(error)}`);
-          });
+          // A throw here would end the loop, so a failed request is logged and the next one is served.
+          try {
+            handler(msg.string(), (body) => msg.respond(body)).catch((error: unknown) => {
+              console.warn(`mind-link: ${failureLine(subject, error)}`);
+            });
+          } catch (error) {
+            console.warn(`mind-link: ${failureLine(subject, error)}`);
+          }
         }
       })();
       return () => sub.unsubscribe();
@@ -137,15 +156,32 @@ export class MindLinkServer {
   start(): void {
     if (this.stops.length > 0) return;
     const { server, shard, lifeId } = this.opts;
+    const snapshot = snapshotSubject(shard, lifeId);
+    const plan = planSubject(shard, lifeId);
+    const view = viewSubject(shard, lifeId);
     this.stops.push(
-      server.serve(snapshotSubject(shard, lifeId), (data, reply) =>
-        Promise.resolve(this.onSnapshotRequest(data, reply)),
+      server.serve(snapshot, (data, reply) =>
+        this.guarded(snapshot, () => this.onSnapshotRequest(data, reply)),
       ),
-      server.serve(planSubject(shard, lifeId), (data, reply) =>
-        Promise.resolve(this.onPlan(data, reply)),
+      server.serve(plan, (data, reply) => this.guarded(plan, () => this.onPlan(data, reply))),
+      server.serve(view, (data, reply) =>
+        this.guarded(view, () => this.onViewRequest(data, reply)),
       ),
-      server.serve(viewSubject(shard, lifeId), (data, reply) => this.onViewRequest(data, reply)),
     );
+  }
+
+  /**
+   * Runs one request's handler so that neither a synchronous throw (a reply to a closed connection)
+   * nor a rejection escapes: the failure is logged without the payload and the server keeps answering.
+   */
+  private guarded(subject: string, handle: () => void | Promise<void>): Promise<void> {
+    const fail = (error: unknown): void => this.log(failureLine(subject, error));
+    try {
+      return Promise.resolve(handle()).catch(fail);
+    } catch (error) {
+      fail(error);
+      return Promise.resolve();
+    }
   }
 
   /**
