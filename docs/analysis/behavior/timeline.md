@@ -30,3 +30,5 @@ Early read at 23:14Z (about 8 min after, too short to use): sleep not_possible 1
 2026-11-15 (geldar-worldops): 00:08:57-00:09:20 all 15 hosts recreated (32ad0e60, #396 ownership_lookups line); 00:29:55 #407 players-cli tooling, no behaviour change (deployed 00:31, beac5116); 00:39:35 #406 roster adds ag-lewis-01 (Meriwether) and ag-clark-01 (William), deploy 3b5c1df0; 01:21:43-45 skins imported; 01:21:56 whitelist; Body hosts started 01:22:00 (Lewis) and 01:22:50 (Clark); 01:23:40 Glass restarted. Minds start times pending from scriptorium; agent count 15 -> 17 once they run.
 
 geldar-93 (2026-11-15): Lewis and Clark are explorers on Haiku low, kit rc21; Minds start soon via scriptorium (time pending). 0218 use verb is queued behind a flag (off), so no agent change yet. Compare exploration distance, journals and village social change before and after the Mind start, per docs/analysis/residents/.
+
+Residents Minds started 2026-11-15: ag-lewis-01 01:24:28Z, ag-clark-01 01:25:30Z. This is the "after" marker for exploration distance, farming, building and social change (geldar-93, geldar-residents).
