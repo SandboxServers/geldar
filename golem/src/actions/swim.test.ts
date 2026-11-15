@@ -146,6 +146,21 @@ describe('startSwim air budget (decision 0194 a, b)', () => {
     expect(calls(bot, 'jump', true)).toBe(1);
   });
 
+  it.each([
+    ['-x', { x: -1, z: 0 }],
+    ['+z', { x: 0, z: 1 }],
+    ['-z', { x: 0, z: -1 }],
+  ])('does not abort at ABORT_AIR with a dry bank exit to the %s', (_side, bank) => {
+    // Feet in water at (0,64,0); a dry bank one step away with two free cells above it.
+    const cells = { ...HEAD_WATER, '0,64,0': WATER, [`${bank.x},64,${bank.z}`]: STONE };
+    const bot = swimBot(cells, ABORT_AIR);
+    const onAbort = vi.fn();
+    startSwim(bot, { onAbort });
+    bot.emit('physicsTick');
+    expect(onAbort).not.toHaveBeenCalled();
+    expect(calls(bot, 'jump', true)).toBe(1);
+  });
+
   it('calls onAbort once at ABORT_AIR with the head in water, and reports the air', () => {
     const bot = swimBot(HEAD_WATER, ABORT_AIR);
     const onAbort = vi.fn();
