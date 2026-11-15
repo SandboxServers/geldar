@@ -21,7 +21,7 @@ Plans: docs/analysis/character-sheet/ (AN-00..AN-61, waves W0-W12); cards: docs/
 5. W3-W5 kit cards HC-18.. (geldar-scriptorium): message scriptorium-orchestrator before touching shared files. Then W6+. Re-ask the owner for the W3-W12 coding order when W2 closes (its remaining ops evidence moves to the test shard).
 
 ## Open
-- GX-08 (non-advancing wait `peek` for the instinct; card in harness/work-packets-geldar-a.md) must land before GELDAR_INSTINCT is enabled on any life.
+- GX-08 (non-advancing wait `peek` for the instinct; card in harness/work-packets-geldar-a2.md) must land before GELDAR_INSTINCT is enabled on any life.
 - HC-19 (supervisor instinct step): sliced with scriptorium-orchestrator after hw0 CI and main merge. HC-L1 (key plumbing): after the rc22 roll. x-geldar-instinct-key not sent yet (world.ts has its own connector). psyche-v1.1.0 tag: not pushed (owner approval).
 
 ## Kit handoff (scriptorium-orchestrator, confirmed 2026-11-15)
