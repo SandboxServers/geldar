@@ -8,12 +8,32 @@
 import { readFileSync } from 'node:fs';
 import { DEFAULT_THRESHOLDS, type Domain } from '@geldar/psyche';
 import pg from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { isPermanentDbError } from '../src/writer.ts';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { eventOf } from '../src/projection.fakes.ts';
+import { isPermanentDbError, pgEventWriter } from '../src/writer.ts';
 import type { XpAward } from '../src/xp/awards.ts';
 import { applyAward } from '../src/xp/ledger.ts';
 import { pgXpStore } from '../src/xp/pg-xp-store.ts';
 import { assertConnectedToThrowaway } from './throwaway-db.ts';
+
+// The AN-09a stub throws, so the writer case needs real awards: here each event's payload `key` is its
+// evidence key, awarded in mining. Only the writer case reaches awardsFor; the other cases call applyAward.
+vi.mock('../src/xp/awards.ts', () => ({
+  awardsFor: (event: {
+    agent_id: string;
+    source_event_id: string;
+    world_tick: number;
+    payload: { key: string };
+  }) => [
+    {
+      lifeId: event.agent_id,
+      domain: 'mining',
+      evidenceKey: event.payload.key,
+      sourceEventId: event.source_event_id,
+      worldTick: event.world_tick,
+    },
+  ],
+}));
 
 const enabled = process.env.GELDAR_IT === '1';
 const NAME_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -93,6 +113,14 @@ describe.skipIf(!enabled)('XP ledger against the live database', () => {
 
   function awardInTx(a: XpAward) {
     return inTx((client) => applyAward(pgXpStore(client), a, DEFAULT_THRESHOLDS));
+  }
+
+  async function levelOf(life: string, domain: Domain = 'mining'): Promise<number> {
+    const { rows } = await pool.query(
+      'SELECT level FROM proficiency WHERE life_id = $1 AND domain = $2',
+      [life, domain],
+    );
+    return rows.length === 0 ? 0 : Number(rows[0].level);
   }
 
   async function count(sql: string, life: string): Promise<number> {
@@ -211,5 +239,66 @@ describe.skipIf(!enabled)('XP ledger against the live database', () => {
     expect(
       await count('SELECT count(*)::int AS n FROM xp_evidence WHERE life_id = $1', ghost),
     ).toBe(0);
+  });
+
+  it('setLevel stores the level in proficiency at each crossing (0, 1, 1, 2, 2, 3 at 9, 10, 29, 30, 69, 70)', async () => {
+    const life = await seedLife();
+    const stored: number[] = [];
+    for (let i = 1; i <= 70; i++) {
+      await awardInTx(awardOf(life, `k${i}`));
+      if ([9, 10, 29, 30, 69, 70].includes(i)) stored.push(await levelOf(life));
+    }
+    expect(stored).toEqual([0, 1, 1, 2, 2, 3]);
+  }, 60_000);
+
+  it('the outbox version is the life total across two domains (5 combat + 10 mining = 15)', async () => {
+    const life = await seedLife();
+    for (let i = 1; i <= 5; i++) {
+      await awardInTx(awardOf(life, `c${i}`, `ev_c${i}`, 'combat'));
+    }
+    for (let i = 1; i <= 10; i++) await awardInTx(awardOf(life, `m${i}`));
+    expect(await xpOf(life, 'combat')).toBe(5);
+    const { rows } = await pool.query(
+      'SELECT domain, level, xp, version FROM proficiency_outbox WHERE life_id = $1',
+      [life],
+    );
+    expect(rows.map((r) => [r.domain, r.level, r.xp, Number(r.version)])).toEqual([
+      ['mining', 1, 10, 15],
+    ]);
+  });
+
+  it('the writer with XP on awards each event once in the batch transaction; redelivery adds nothing', async () => {
+    const life = await seedLife();
+    const writer = pgEventWriter(pool, { enabled: true, thresholds: DEFAULT_THRESHOLDS });
+    const event = (n: number, key: string) => ({
+      ...eventOf('speech', { key }, n),
+      agent_id: life,
+      source_event_id: `${life}_w${n}`,
+    });
+    // Ten keys: k1 arrives from two sources in one batch, so the batch has eleven events and ten XP.
+    const batch = [
+      event(1, 'k1'),
+      event(2, 'k1'),
+      ...Array.from({ length: 9 }, (_, i) => event(i + 3, `k${i + 2}`)),
+    ];
+    await writer.insertBatch(batch);
+    expect(await xpOf(life)).toBe(10);
+    expect(await levelOf(life)).toBe(1);
+    expect(await count('SELECT count(*)::int AS n FROM xp_evidence WHERE life_id = $1', life)).toBe(
+      10,
+    );
+    expect(await count('SELECT count(*)::int AS n FROM events WHERE agent_id = $1', life)).toBe(11);
+    // Redelivery of the same batch: the events and the evidence conflict, so no XP and no new outbox row.
+    await writer.insertBatch(batch);
+    expect(await xpOf(life)).toBe(10);
+    expect(
+      await count('SELECT count(*)::int AS n FROM proficiency_outbox WHERE life_id = $1', life),
+    ).toBe(1);
+    expect(await count('SELECT count(*)::int AS n FROM events WHERE agent_id = $1', life)).toBe(11);
+    const { rows } = await pool.query(
+      'SELECT level, xp, version FROM proficiency_outbox WHERE life_id = $1',
+      [life],
+    );
+    expect(rows.map((r) => [r.level, r.xp, Number(r.version)])).toEqual([[1, 10, 10]]);
   });
 });

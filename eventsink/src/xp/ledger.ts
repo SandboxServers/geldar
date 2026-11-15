@@ -6,7 +6,10 @@ import type { XpAward } from './awards.ts';
 export interface XpStore {
   lifeExists(lifeId: string): Promise<boolean>;
   insertEvidence(a: XpAward): Promise<boolean>; // INSERT ... ON CONFLICT (life_id, domain, evidence_key) DO NOTHING RETURNING 1
-  bump(lifeId: string, domain: Domain, tick: number): Promise<{ xp: number }>; // INSERT ... ON CONFLICT (life_id, domain) DO UPDATE SET xp = proficiency.xp + 1, updated_tick = GREATEST(...) RETURNING xp
+  // INSERT ... ON CONFLICT (life_id, domain) DO UPDATE SET xp = proficiency.xp + 1, updated_tick = GREATEST(...)
+  // RETURNING xp, level. `level` is the stored level under the row lock: the UPDATE does not change it, so it is
+  // the level before this award (0 for a new row).
+  bump(lifeId: string, domain: Domain, tick: number): Promise<{ xp: number; level: number }>;
   setLevel(lifeId: string, domain: Domain, level: 1 | 2 | 3): Promise<void>;
   totalXp(lifeId: string): Promise<number>;
   enqueueLevel(
@@ -40,10 +43,11 @@ export async function applyAward(
     return { awarded: false, level: null };
   }
   if (!(await store.insertEvidence(award))) return { awarded: false, level: null };
-  const { xp } = await store.bump(award.lifeId, award.domain, award.worldTick);
+  const { xp, level: stored } = await store.bump(award.lifeId, award.domain, award.worldTick);
   const level = levelForXp(xp, thresholds);
-  const rose = level > levelForXp(xp - 1, thresholds);
-  if (level === 0 || !rose) return { awarded: true, level: null };
+  // The level rose when the threshold level is above the stored one. Tied thresholds can cross two levels at
+  // once: only the highest is stored and enqueued.
+  if (level === 0 || level <= stored) return { awarded: true, level: null };
   await store.setLevel(award.lifeId, award.domain, level);
   const version = await store.totalXp(award.lifeId);
   await store.enqueueLevel(award.lifeId, award.domain, level, xp, version);

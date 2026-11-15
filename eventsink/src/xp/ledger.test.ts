@@ -21,6 +21,7 @@ function memoryStore(known: readonly string[] = [LIFE]) {
   const outbox: OutboxRow[] = [];
   const bumps: string[] = [];
   const enqueues: number[] = [];
+  const levels = new Map<string, number>();
   const store: XpStore = {
     async lifeExists(life) {
       return known.includes(life);
@@ -36,9 +37,11 @@ function memoryStore(known: readonly string[] = [LIFE]) {
       const key = `${life}|${domain}`;
       const next = (xp.get(key) ?? 0) + 1;
       xp.set(key, next);
-      return { xp: next };
+      return { xp: next, level: levels.get(key) ?? 0 };
     },
-    async setLevel() {},
+    async setLevel(life, domain, level) {
+      levels.set(`${life}|${domain}`, level);
+    },
     async totalXp(life) {
       let total = 0;
       for (const [key, value] of xp) if (key.startsWith(`${life}|`)) total += value;
@@ -52,7 +55,7 @@ function memoryStore(known: readonly string[] = [LIFE]) {
       }
     },
   };
-  return { store, evidence, xp, outbox, bumps, enqueues };
+  return { store, evidence, xp, outbox, bumps, enqueues, levels };
 }
 
 function award(key: string, source = `ev_${key}`, domain: Domain = 'mining'): XpAward {
@@ -156,6 +159,66 @@ describe('applyAward', () => {
       'deadlock detected',
     );
     expect(m.enqueues).toEqual([]);
+  });
+
+  it('the stored level follows each crossing, so the next award compares with what is stored', async () => {
+    const m = memoryStore();
+    const stored: number[] = [];
+    for (let i = 1; i <= 71; i++) {
+      await applyAward(m.store, award(`k${i}`), DEFAULT_THRESHOLDS);
+      stored.push(m.levels.get(`${LIFE}|mining`) ?? 0);
+    }
+    expect(stored[8]).toBe(0);
+    expect(stored[9]).toBe(1);
+    expect(stored[28]).toBe(1);
+    expect(stored[29]).toBe(2);
+    expect(stored[68]).toBe(2);
+    expect(stored[69]).toBe(3);
+    expect(stored[70]).toBe(3);
+  });
+
+  it('a zero threshold reaches level 1 on the first award', async () => {
+    const m = memoryStore();
+    expect(await applyAward(m.store, award('k1'), [0, 30, 70])).toEqual({
+      awarded: true,
+      level: 1,
+    });
+    expect(m.levels.get(`${LIFE}|mining`)).toBe(1);
+    expect(m.outbox.map((r) => [r.level, r.xp, r.version])).toEqual([[1, 1, 1]]);
+  });
+
+  it('lowered thresholds after a restart reach the new level at the next award', async () => {
+    const m = memoryStore();
+    for (let i = 1; i <= 7; i++) await applyAward(m.store, award(`k${i}`), [10, 30, 70]);
+    expect(m.levels.get(`${LIFE}|mining`) ?? 0).toBe(0);
+    expect(await applyAward(m.store, award('k8'), [5, 30, 70])).toEqual({
+      awarded: true,
+      level: 1,
+    });
+    expect(m.levels.get(`${LIFE}|mining`)).toBe(1);
+    expect(m.outbox.map((r) => [r.level, r.xp, r.version])).toEqual([[1, 8, 8]]);
+  });
+
+  it('tied thresholds: one award that crosses two levels stores and enqueues only the highest', async () => {
+    const m = memoryStore();
+    const levels: Array<number | null> = [];
+    for (let i = 1; i <= 5; i++) {
+      levels.push((await applyAward(m.store, award(`k${i}`), [5, 5, 70])).level);
+    }
+    expect(levels).toEqual([null, null, null, null, 2]);
+    expect(m.levels.get(`${LIFE}|mining`)).toBe(2);
+    expect(m.enqueues).toEqual([2]);
+    expect(m.outbox.map((r) => [r.level, r.xp, r.version])).toEqual([[2, 5, 5]]);
+  });
+
+  it('the outbox version is the life total across domains, not the domain xp', async () => {
+    const m = memoryStore();
+    for (let i = 1; i <= 5; i++) {
+      await applyAward(m.store, award(`c${i}`, `ev_c${i}`, 'combat'), DEFAULT_THRESHOLDS);
+    }
+    for (let i = 1; i <= 10; i++) await applyAward(m.store, award(`m${i}`), DEFAULT_THRESHOLDS);
+    expect(m.xp.get(`${LIFE}|combat`)).toBe(5);
+    expect(m.outbox).toEqual([{ life: LIFE, domain: 'mining', level: 1, xp: 10, version: 15 }]);
   });
 });
 

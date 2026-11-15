@@ -25,10 +25,10 @@ export function pgXpStore(client: PoolClient): XpStore {
          ON CONFLICT (life_id, domain) DO UPDATE
            SET xp = proficiency.xp + 1,
                updated_tick = GREATEST(proficiency.updated_tick, EXCLUDED.updated_tick)
-         RETURNING xp`,
+         RETURNING xp, level`,
         [lifeId, domain, String(tick)],
       );
-      return { xp: Number(rows[0]?.xp) };
+      return { xp: Number(rows[0]?.xp), level: Number(rows[0]?.level) };
     },
     async setLevel(lifeId, domain, level) {
       await client.query('UPDATE proficiency SET level = $3 WHERE life_id = $1 AND domain = $2', [
