@@ -99,9 +99,9 @@ async function readWithin(
 
 /**
  * The reply for one life: the stored levels checked against the thresholds, `version` as the sum of
- * the XP (the store's own version is ignored), and the adopted sheet when there is one. Throws a
- * Refusal when the store answers for another life, a level does not match its XP, or the reply fails
- * the contract. Any other throw is a failed read.
+ * the XP (the store's own version is ignored). The reply carries no sheet: the adopted sheet is
+ * operator-readable only (geldar-93). Throws a Refusal when the store answers for another life, a level
+ * does not match its XP, or the reply fails the contract. Any other throw is a failed read.
  */
 async function replyFor(
   store: StateStore,
@@ -122,10 +122,6 @@ async function replyFor(
     version += row.xp;
   }
   const state: ProficiencyState = { life_id: lifeId, version, levels };
-  if (stored.sheet !== undefined && stored.sheet !== null) {
-    state.sheet = stored.sheet;
-    if (stored.sheet_hash !== undefined) state.sheet_hash = stored.sheet_hash;
-  }
   const checked = validateProficiencyState(state);
   if (!checked.ok) throw new Refusal('state reply invalid');
   return checked.value;

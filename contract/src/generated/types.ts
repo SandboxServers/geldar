@@ -10627,11 +10627,6 @@ export interface ProficiencyState {
     exploring: DomainLevel;
     social: DomainLevel;
   };
-  sheet?: CharacterSheet;
-  /**
-   * Lower-case hex SHA-256 of the canonical sheet JSON, computed by the writer (AN-04a); this schema checks only the shape.
-   */
-  sheet_hash?: string;
 }
 
 export interface DomainLevel {

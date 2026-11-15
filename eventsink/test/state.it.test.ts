@@ -108,7 +108,7 @@ describe.skipIf(!enabled)('proficiency state service against the live database a
     return new TextDecoder().decode(msg.data);
   }
 
-  it('replies with the life levels and the XP sum as version, and no sheet when none is adopted', async () => {
+  it('replies with the life levels and the XP sum as version, and no sheet', async () => {
     const life = freshLifeId();
     await seedLife(life, { mining: 40, combat: 5 });
     const body = JSON.parse(await ask(proficiencyRequestSubject(SHARD, life)));
@@ -131,13 +131,15 @@ describe.skipIf(!enabled)('proficiency state service against the live database a
     });
   });
 
-  it('a life with an adopted sheet replies the sheet and its hash', async () => {
+  it('a life with an adopted sheet replies its levels and version, never the sheet or its hash', async () => {
     const life = freshLifeId();
     await seedLife(life, { building: 1 }, true);
-    const body = JSON.parse(await ask(proficiencyRequestSubject(SHARD, life)));
-    expect(body.sheet).toEqual(STANDARD_SHEET);
-    expect(body.sheet_hash).toBe(HASH);
+    const reply = await ask(proficiencyRequestSubject(SHARD, life));
+    const body = JSON.parse(reply);
     expect(body.version).toBe(1);
+    expect(body).not.toHaveProperty('sheet');
+    expect(body).not.toHaveProperty('sheet_hash');
+    expect(reply).not.toContain(HASH);
   });
 
   it('an unknown life (no agents row) replies unknown_life', async () => {
