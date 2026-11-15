@@ -1,27 +1,44 @@
 # BlueMap campaign (geldar-bluemap) RESUME
 
-Decision block 0310-0319 (0310 used: live chat panel). Updated 2026-11-15 09:55Z.
+Decision block 0310-0319 (0310 used: live chat panel). Updated 2026-11-15 14:00Z.
 
 ## State
-- LIVE on the public map: chat panel (geldar-chat.json ring written by geldar-core, geldar-chat.js + geldar.css served by bluemap-web; main 186772f5). Bubbles removed. Verified headless on the live URL at 4 sizes (live3-*): no overlap with BlueMap controls, newest line visible, no `ag_`/UUID/markup in the feed.
-- Merged PRs: #459 BM-1 plugin, #461 panel+fixes, #485 runbook, #488 self-styling, #489 layout, #491 resume, #494 click-to-follow (hand-copied to node 09:46Z, verified live: follow, stop, drag-cancel, unknown agent, nether-to-overworld switch). Moving agent not yet tested live: check when one walks. Runbook: docs/runbooks/map-chat-panel.md.
-- Node facts: compose/* and web files on the node are hand-synced (colo-cd does not refresh them); settings.json is regenerated at each Paper restart (script entry must be re-checked; the script injects its own stylesheet).
-- Accepted by owner ruling: all speech public and live; agent first names and place coordinates in speech text stay (24/100 lines have coordinates). Owner FYI list holds the optional scrub.
+- LIVE on the public map: chat panel (geldar-chat.json written by geldar-core; geldar-chat.js, geldar-sky.js, geldar.css served by bluemap-web). Bubbles removed.
+- Click-to-follow (#494). Freshness dot (BM-12, #496): Live/Delayed/Offline, "still Nm", "last line Ns ago".
+- Day/night follows the world clock: BM-13 plugin (#500) writes `clock` into geldar-chat.json; BM-14 page (#501) sets sun lighting from it. Paper restarted 12:34Z with the new jar.
+- Time-of-day dial: BM-15 (#508), geldar-sky.js + gs- CSS, merged d850ec15, live on node 13:27Z, own mount and Caddy handler.
+- Merged PRs: #459, #461, #485, #488, #489, #491, #494, #496, #497, #500, #501, #508.
+
+## Live-verified on the public page (2026-11-15)
+- Dusk fade: sun 1 to 0.25 over world time 11800 to 13200. Dawn: 22800 to 24000, back to 1.
+- BlueMap's night button is a manual override; "Follow world time" resumes. Nether switch and back: sun and auto mode unaffected.
+- Dial at 1280x800, 768x1024, 400x800 (phone), 1920x1080: no overlap with chat panel, control bar or zoom buttons.
+- A headless sun jump came only from Edge throttling background timers, not a page bug. Use --disable-background-timer-throttling for long headless samples.
+
+## Not yet verified live
+- Following a moving agent; a still label resetting when an agent moves.
+- Delayed/Offline dot states (unit-tested only).
+- Sun and settings.json after the NEXT Paper/BlueMap restart: settings.json is regenerated; re-check scripts is ["assets/geldar-chat.js","assets/geldar-sky.js"], styles ["assets/geldar.css"].
+
+## Node facts
+- compose/* and web files are hand-synced (colo-cd does not refresh them).
+- bluemap-web is recreated alone, never the shared Caddy. A replaced single-file bind mount keeps the old inode.
+- plugins/bluemap/web/geldar-chat.js is exactly 700 lines (hard cap). The next web feature goes in a new file (geldar-sky.js was the first split); each new file needs a read-only mount, a Caddyfile handler, a hand copy, a bluemap-web recreate and a settings.json scripts re-check.
 
 ## In flight
 - nothing
 
 ## Next (owner order)
-1. (done) click-to-follow  2. grave and village markers (ASK geldar-93 first: coordinates become public)  3. freshness indicator (design paragraph to geldar-93 first)  4. day/night following the world clock (BlueMap web already has a manual day/night toggle).
-- Follow-ups: BM-7b empty geldar-speech marker set remains in markers.json (harmless; removal runs before maps load); split plugins/bluemap/test/chat-panel.test.ts (~610 lines, soft cap 500); mobile panel max-height smaller if phones complain; verify skin provider (0187) by head file mtime after a join (read-only); render time unmeasured (no render logs).
-- Perf: tiles 747M on /mnt/nvme (1.3T free), 1 render thread, full update 1440 min.
+- HELD: grave and village markers. Coordinates would become public; needs owner and geldar-93 go.
+- Follow-ups: BM-7b empty geldar-speech marker set in markers.json (harmless); split plugins/bluemap/test/chat-panel.test.ts (~637 lines, soft cap 500); read-only skin-provider check (0187); render time unmeasured (tiles 747M, 1 render thread, full update 1440 min).
+- Optional, only if the owner asks: bigger or fancier dial; smaller phone chat panel.
+- Not ours: docs/spec.md and decision 0199 wording about bubbles.
 
 ## For the owner
 - Decision 0197 acceptance (bubbles removed by 0310).
-- Coordinates in speech text: keep (default) or scrub.
-- Panel covers ~1/3 of a phone screen: fine or smaller?
-
-- Private screenshots page for the owner: https://claude.ai/artifact/DaFgZgrSHRSdm72XvqSw2V
+- Speech: all lines public and live; agent first names and coordinates stay (24/100 lines have coordinates). Keep or scrub.
+- Phone panel size: fine or smaller? Dial size and look: small now; say if you want it bigger or fancier.
+- Private screenshots page: https://claude.ai/artifact/DaFgZgrSHRSdm72XvqSw2V (share when you want to see it).
 
 ## Open questions
 - none blocking
