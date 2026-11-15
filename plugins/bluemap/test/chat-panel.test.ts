@@ -631,7 +631,9 @@ describe('chat panel: wiring', () => {
     expect(block).toContain('header Cache-Control no-store');
   });
 
-  it('the README loads the script through settings.json scripts', () => {
-    expect(read('plugins/bluemap/README.md')).toContain('"scripts": ["assets/geldar-chat.js"]');
+  it('the README loads the chat and sky scripts through settings.json scripts', () => {
+    expect(read('plugins/bluemap/README.md')).toContain(
+      '"scripts": ["assets/geldar-chat.js", "assets/geldar-sky.js"]',
+    );
   });
 });

@@ -119,15 +119,16 @@ live `players.json` of each map, joins each UUID to the alias name, and shows th
 links). An unknown speaker shows the neutral label `Ranger`. A speaker who has left keeps the name seen while they were
 listed. On a failed read the panel keeps what it shows and waits 10 seconds before the next try. A line shows within about 4 seconds of being said at worst: the plugin writes the file within 1 second and the panel polls every 3 seconds. Each fetch gives up after 8 seconds.
 
-The panel is loaded through the webroot's `settings.json`. That one `scripts` entry is all the panel needs:
+The panel is loaded through the webroot's `settings.json`. Its `scripts` entry is all the panel needs; the time-of-day dial
+(below) is a second entry in the same list:
 
-    "scripts": ["assets/geldar-chat.js"]
+    "scripts": ["assets/geldar-chat.js", "assets/geldar-sky.js"]
 
 The script adds its own stylesheet, `<link rel="stylesheet" href="assets/geldar.css">`, unless the page already links a
 `geldar.css`. So the panel still positions itself after a Paper restart, when BlueMap resets `settings.json` and its
 `styles` list. A `styles` entry for `assets/geldar.css` is still fine: the script sees the link and adds nothing.
 
-Caddy serves `/assets/geldar-chat.js` (GET and HEAD, from the read-only mount) and `/geldar-chat.json` with
+Caddy serves `/assets/geldar-chat.js` and `/assets/geldar-sky.js` (GET and HEAD, from the read-only mounts) and `/geldar-chat.json` with
 `Cache-Control: no-store`. The public map's Content-Security-Policy is `frame-ancestors 'none'` only
 (`deploy/caddy/map.caddy`), so the same-origin script and fetch are allowed without a change.
 

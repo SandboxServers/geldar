@@ -38,6 +38,14 @@
 		file_server
 	}
 
+	# The time-of-day dial script (BM-15), listed in the same "scripts" array. Same-origin only.
+	handle /assets/geldar-sky.js {
+		root * /etc/caddy
+		rewrite * /geldar-sky.js
+		header Content-Type "text/javascript; charset=utf-8"
+		file_server
+	}
+
 	# The chat feed the plugin writes into the webroot (decision 0310). It changes every few seconds: never cached.
 	@chat path /geldar-chat.json
 	handle @chat {
