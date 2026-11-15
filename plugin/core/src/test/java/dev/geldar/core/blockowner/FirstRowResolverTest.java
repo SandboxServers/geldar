@@ -114,6 +114,44 @@ class FirstRowResolverTest {
     }
 
     @Test
+    void theOwnedBlockCarriesTheBlockNameOfItsPlaceRow() {
+        // A farmland place by alice: the answer names her and the block, so a consumer can read the record's block.
+        List<LogRow> rows = List.of(new LogRow(WORLD, 11, 64, 11, true, "alice", false, "farmland"));
+
+        assertEquals(List.of(new OwnedBlock(11, 64, 11, "alice", "farmland")),
+                FirstRowResolver.resolve(rows, WORLD, 0, 0).blocks());
+    }
+
+    @Test
+    void theNewestPlaceDecidesTheBlockNameAsWellAsTheOwner() {
+        // bob's grass_block place is newest; alice's older farmland place no longer decides the block.
+        List<LogRow> rows = List.of(new LogRow(WORLD, 12, 64, 12, true, "bob", false, "grass_block"),
+                new LogRow(WORLD, 12, 64, 12, true, "alice", false, "farmland"));
+
+        assertEquals(List.of(new OwnedBlock(12, 64, 12, "bob", "grass_block")),
+                FirstRowResolver.resolve(rows, WORLD, 0, 0).blocks());
+    }
+
+    @Test
+    void aPlaceRowWithoutABlockNameGivesANullBlock() {
+        List<LogRow> rows = List.of(place(13, 64, 13, "alice"));
+
+        OwnedBlock owned = FirstRowResolver.resolve(rows, WORLD, 0, 0).blocks().get(0);
+
+        assertEquals("alice", owned.owner());
+        assertEquals(null, owned.block());
+    }
+
+    @Test
+    void aBreakRowWithABlockNameIsNotAnOwnedBlock() {
+        // The break is newest: the position has no owner, so no block name is reported for it.
+        List<LogRow> rows = List.of(new LogRow(WORLD, 14, 64, 14, false, "alice", false, "farmland"),
+                new LogRow(WORLD, 14, 64, 14, true, "alice", false, "farmland"));
+
+        assertTrue(FirstRowResolver.resolve(rows, WORLD, 0, 0).blocks().isEmpty());
+    }
+
+    @Test
     void nonPlayerBreakIsNotAnOwner() {
         List<LogRow> rows = List.of(breakRow(8, 64, 8, "#creeper"));
 

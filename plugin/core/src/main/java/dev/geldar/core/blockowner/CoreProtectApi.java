@@ -73,7 +73,8 @@ public final class CoreProtectApi implements CoreProtectPort {
             // The lookup is centred in the queried world and the API 12 result carries no world accessor, so the
             // queried world is the row's world.
             rows.add(new LogRow(world, p.getX(), p.getY(), p.getZ(),
-                    p.getActionId() == ChunkLookupCall.ACTION_PLACE, p.getPlayer(), p.isRolledBack()));
+                    p.getActionId() == ChunkLookupCall.ACTION_PLACE, p.getPlayer(), p.isRolledBack(),
+                    p.getType() == null ? null : p.getType().name().toLowerCase(java.util.Locale.ROOT)));
         }
         return rows;
     }

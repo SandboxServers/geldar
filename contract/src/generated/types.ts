@@ -127,6 +127,10 @@ export interface OwnedBlock {
   y: BlockCoordinateY;
   z: BlockCoordinateXZ;
   owner: OwnerId;
+  /**
+   * An item ID without its namespace prefix, such as iron_ingot.
+   */
+  block?: string;
 }
 
 export interface BlockOwnerChanged {
