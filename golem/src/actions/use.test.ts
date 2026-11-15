@@ -288,6 +288,27 @@ describe('use: sowing seeds and bone meal', () => {
   });
 });
 
+describe('use: refusal texts state the block, and point at no verb', () => {
+  it('refuses a bed with exactly the block fact, and clicks nothing', async () => {
+    const { bot, clicks } = fakeBot({ block: 'white_bed', held: 'wheat_seeds' });
+    const outcome = await use(bot);
+    expect(outcome).toEqual(failed('not_possible', 'that block is a bed'));
+    expect(clicks).toEqual([]);
+  });
+
+  it('names the block class for a sign, a container and a redstone device', () => {
+    expect(USE_MESSAGE.sign).toBe('that block is a sign');
+    expect(USE_MESSAGE.container).toBe('that block is a container');
+    expect(USE_MESSAGE.redstone).toBe('that block is a redstone device');
+  });
+
+  it('no USE_MESSAGE value names another verb, a harness word or the body', () => {
+    for (const text of Object.values(USE_MESSAGE)) {
+      expect(text).not.toMatch(/verb|edit_sign|sleep verb|body|not ready/);
+    }
+  });
+});
+
 describe('use: the refused block classes', () => {
   it.each([
     ['chest', USE_MESSAGE.container],
