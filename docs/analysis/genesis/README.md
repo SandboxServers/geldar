@@ -1,6 +1,6 @@
 # Genesis: stamp a whole Geldar environment from a GitHub Actions workflow
 
-Ledger for the campaign. Written 2026-11-14 by the geldar coordinator `geldar-3b` after interviews with geldar-93 (deploys and the node), geldar-ops (Body and the CD), geldar-registration (register, owner API, supervisor) and scriptorium-orchestrator (kit and player hosts), a read of the repo and the sibling repos, and online research. Status: **planned, nothing dispatched, nothing built.** The plan is in [plan.md](plan.md), the cards in [packets.md](packets.md), the architecture decision in [0188](../../decisions/0188-genesis-environment-stamp.md) (Proposed).
+Ledger for the campaign. Written 2026-11-14 by the geldar coordinator `geldar-3b` after interviews with geldar-93 (deploys and the node), geldar-ops (Body and the CD), geldar-registration (register, owner API, supervisor) and scriptorium-orchestrator (kit and player hosts), a read of the repo and the sibling repos, and online research. Status (2026-11-15): **wave G0 mostly merged, G1 in progress**; the card states are in the Ledger at the top of [packets.md](packets.md). The plan is in [plan.md](plan.md), the cards in [packets.md](packets.md), the architecture decision in [0188](../../decisions/0188-genesis-environment-stamp.md) (Proposed).
 
 ## The owner's goal
 
@@ -60,7 +60,7 @@ The campaign ends when the exit run in [plan.md](plan.md) section 9 passes, not 
 
 ## Packet ledger
 
-See [packets.md](packets.md) for the cards. Status values: **Ready**, **BlockedDependency**, **BlockedDecision**, **Writing**, **Review**, **Done**. At this date every card is `Writing` or `BlockedDecision`: the G0 spikes are the first cards that become Ready, because each is read-only or additive.
+See [packets.md](packets.md) for the cards. Status values: **Ready**, **BlockedDependency**, **BlockedDecision**, **Writing**, **Review**, **Done**. The state of each card is in the Ledger at the top of [packets.md](packets.md) (updated 2026-11-15).
 
 | Wave | Cards | Count |
 |---|---|---|
