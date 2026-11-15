@@ -164,10 +164,16 @@ export class PgStore implements Store, SessionStore {
     await this.pool.query('DELETE FROM register_sessions WHERE expires_ms <= $1', [nowMs]);
   }
 
-  async createPlayer(q: NewPlayerRequest): Promise<'ok' | 'cap' | 'limit' | 'taken'> {
+  async createPlayer(
+    q: NewPlayerRequest,
+  ): Promise<'ok' | 'cap' | 'limit' | 'taken' | 'name' | 'name_taken'> {
+    // One transaction (ROSTER-AUTO): the agent (0010, 0012) and its roster row (0061) commit together or not
+    // at all. A refused roster name rolls the agent back too, so no agent exists without its roster row.
+    const client = await this.pool.connect();
     try {
+      await client.query('BEGIN');
       // One definer function writes the life, the player, the budget and the token (0010).
-      await this.pool.query('SELECT register_create_player($1, $2, $3, $4, $5, $6, $7, $8)', [
+      await client.query('SELECT register_create_player($1, $2, $3, $4, $5, $6, $7, $8)', [
         hex(q.identityHash),
         q.playerId,
         q.lifeId,
@@ -177,14 +183,27 @@ export class PgStore implements Store, SessionStore {
         q.tokenId,
         q.tokenHash,
       ]);
+      // The roster row (0061): the owner's name, lower-cased as the key, the display name as sent.
+      await client.query('SELECT register_roster_add($1, $2)', [hex(q.identityHash), q.name]);
+      await client.query('COMMIT');
       return 'ok';
     } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
       const { code, message } = error as { code?: string; message?: string };
+      const text = String(message);
+      // The roster function names itself in its messages; the agent's own 23505 is a taken player id.
+      if (text.includes('register_roster_add')) {
+        if (code === '22023') return 'name';
+        if (code === '23505') return 'name_taken';
+        throw error;
+      }
       // The cap trigger (0006) says "is at the cap"; any other check violation is a real error.
-      if (code === '23514' && String(message).includes('is at the cap')) return 'cap';
+      if (code === '23514' && text.includes('is at the cap')) return 'cap';
       if (code === '54000') return 'limit';
       if (code === '23505') return 'taken';
       throw error;
+    } finally {
+      client.release();
     }
   }
   async mintToken(q: MintRequest): Promise<boolean> {

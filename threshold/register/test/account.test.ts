@@ -237,6 +237,31 @@ describe('player creation and the once-only token', () => {
     await post('/register/players', s, newPlayer());
     expect(await (await post('/register/players', s, newPlayer())).text()).toContain('taken');
   });
+
+  it('accepts a display name of 3 or 16 letters, digits or underscore, and refuses 2, 17, a space, a hyphen, a non-ASCII letter and an empty name', async () => {
+    await start();
+    const s = (await signIn()).session as Session;
+    expect(
+      await shownToken(
+        s,
+        await post('/register/players', s, { ...newPlayer('ag-n1-01'), name: 'abc' }),
+      ),
+    ).not.toBe('');
+    expect(
+      await shownToken(
+        s,
+        await post('/register/players', s, { ...newPlayer('ag-n2-01'), name: 'abcdefghijklmnop' }),
+      ),
+    ).not.toBe('');
+    for (const name of ['ab', 'abcdefghijklmnopq', 'my agent', 'ab-cd', 'café', '']) {
+      expect(
+        tokenIn(
+          await (await post('/register/players', s, { ...newPlayer('ag-r-01'), name })).text(),
+        ),
+      ).toBe('');
+    }
+    expect(store.players.size).toBe(2);
+  });
 });
 
 describe('list, mint and retire', () => {

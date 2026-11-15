@@ -1,18 +1,45 @@
 import { describe, expect, it } from 'vitest';
 import { PgStore } from '../src/pg-store.ts';
 
-/** A PgStore whose pool is a fake: every query rejects with `error`, and the statements are kept. */
-function storeFailingWith(error: unknown): { store: PgStore; sql: string[]; args: unknown[][] } {
+interface FakeDb {
+  store: PgStore;
+  /** Every non-transaction statement, in order. */
+  sql: string[];
+  args: unknown[][];
+  /** BEGIN, COMMIT and ROLLBACK, in order. */
+  tx: string[];
+}
+
+/**
+ * A PgStore whose pool is a fake. A statement whose text contains a key of `failures` rejects with that value;
+ * the key '' matches every statement. BEGIN, COMMIT and ROLLBACK always succeed and are kept in `tx`.
+ */
+function fakeDb(failures: Record<string, unknown>): FakeDb {
   const sql: string[] = [];
   const args: unknown[][] = [];
+  const tx: string[] = [];
+  const run = async (text: string, values?: unknown[]) => {
+    if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') {
+      tx.push(text);
+      return { rows: [] };
+    }
+    sql.push(text);
+    args.push(values ?? []);
+    const key = Object.keys(failures).find((k) => text.includes(k));
+    if (key !== undefined) throw failures[key];
+    return { rows: [] };
+  };
   const store = new PgStore('postgres://user@127.0.0.1:1/none', { shard: 's1' });
   (store as unknown as { pool: unknown }).pool = {
-    query: async (text: string, values: unknown[]) => {
-      sql.push(text);
-      args.push(values);
-      throw error;
-    },
+    query: run,
+    connect: async () => ({ query: run, release: () => undefined }),
   };
+  return { store, sql, args, tx };
+}
+
+/** A PgStore whose every statement rejects with `error`, and the statements are kept. */
+function storeFailingWith(error: unknown): { store: PgStore; sql: string[]; args: unknown[][] } {
+  const { store, sql, args } = fakeDb({ '': error });
   return { store, sql, args };
 }
 
@@ -50,6 +77,56 @@ describe('PgStore error mapping', () => {
     await store.createPlayer(request);
     expect(args[0]).toHaveLength(8);
     expect(args[0]).not.toContain(240);
+  });
+
+  it('createPlayer writes the agent and its roster row in one transaction, in that order', async () => {
+    const db = fakeDb({});
+    expect(await db.store.createPlayer({ ...request, name: 'Ranger' })).toBe('ok');
+    expect(db.tx).toEqual(['BEGIN', 'COMMIT']);
+    expect(db.sql).toHaveLength(2);
+    expect(db.sql[0]).toContain('register_create_player');
+    expect(db.sql[1]).toContain('register_roster_add');
+    // The display name goes as sent: the function lower-cases only the roster key.
+    expect(db.args[1]).toEqual([expect.anything(), 'Ranger']);
+  });
+
+  it('createPlayer rolls the agent back when the roster refuses the name held by another owner', async () => {
+    const db = fakeDb({
+      register_roster_add: {
+        code: '23505',
+        message: 'register_roster_add: the name is held by another owner',
+      },
+    });
+    expect(await db.store.createPlayer(request)).toBe('name_taken');
+    expect(db.tx).toEqual(['BEGIN', 'ROLLBACK']);
+  });
+
+  it('createPlayer rolls back and answers name for a roster name outside the login shape', async () => {
+    const db = fakeDb({
+      register_roster_add: { code: '22023', message: 'register_roster_add: bad display name' },
+    });
+    expect(await db.store.createPlayer(request)).toBe('name');
+    expect(db.tx).toEqual(['BEGIN', 'ROLLBACK']);
+  });
+
+  it('createPlayer refuses the fourth agent at the cap (last allowed is the third) and writes no roster row', async () => {
+    const db = fakeDb({
+      register_create_player: {
+        code: '23514',
+        message: 'owner o is at the cap of 3 sovereign players',
+      },
+    });
+    expect(await db.store.createPlayer(request)).toBe('cap');
+    expect(db.tx).toEqual(['BEGIN', 'ROLLBACK']);
+    expect(db.sql.some((s) => s.includes('register_roster_add'))).toBe(false);
+  });
+
+  it('createPlayer rethrows a roster error it does not map, and rolls back', async () => {
+    const db = fakeDb({
+      register_roster_add: { code: '42501', message: 'register_roster_add: banned' },
+    });
+    await expect(db.store.createPlayer(request)).rejects.toMatchObject({ code: '42501' });
+    expect(db.tx).toEqual(['BEGIN', 'ROLLBACK']);
   });
 
   it('retirePlayer and mintToken answer false for 42501 and rethrow the rest', async () => {
