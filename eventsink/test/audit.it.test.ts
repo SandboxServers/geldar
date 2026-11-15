@@ -2,12 +2,13 @@
  * The audit projection against a real Postgres (migration 0051). Skipped unless GELDAR_IT=1; ops runs it on
  * a throwaway database (assertConnectedToThrowaway refuses the dev database). Each test uses its own life id,
  * so it starts from no audit rows for its life; no test truncates, since the append-only triggers refuse it.
- * The agent row is seeded with its id only: the agents table's other NOT NULL columns are not checked here.
+ * The agent row is seeded with every NOT NULL column of sql/0001_init.sql; game_account is the fresh life id.
  */
 import { readFileSync } from 'node:fs';
-import type { WorldEvent } from '@geldar/contract';
+import type { CharacterSheet, WorldEvent } from '@geldar/contract';
 import pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { pgAuditStore } from '../src/audit/store.ts';
 import { pgEventWriter } from '../src/writer.ts';
 import { assertConnectedToThrowaway } from './throwaway-db.ts';
 
@@ -15,12 +16,13 @@ const enabled = process.env.GELDAR_IT === '1';
 const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 const HASH_A = 'a'.repeat(64);
 const HASH_B = 'b'.repeat(64);
-const SHEET = {
+const SHEET: CharacterSheet = {
   version: 1,
   attributes: { curiosity: 3, common_sense: 4, cleverness: 2, aggression: 5 },
   alignment: { law: 3, good: 4 },
   op_modes: { explorer: 3, farmer: 2, miner: 4, builder: 1, crafter: 3, warrior: 5, nitwit: 2 },
 };
+const OTHER_SHEET = { ...SHEET, attributes: { ...SHEET.attributes, curiosity: 1 } };
 
 /** A ULID-shaped id with the given prefix, unique per run. */
 function freshId(prefix: string): string {
@@ -63,8 +65,19 @@ function rollOf(life: string, extra: object = {}): object {
   };
 }
 
-function adoptionOf(life: string, sheetHash: string): object {
-  return { life_id: life, sheet: SHEET, sheet_hash: sheetHash, source: 'config' };
+function decisionOf(life: string): object {
+  return {
+    life_id: life,
+    decision_id: 'dec_pick_route_0007',
+    engine_version: 1,
+    producer: 'body',
+    fx: 'route',
+    kind: 'deterministic',
+  };
+}
+
+function adoptionOf(life: string, sheetHash: string, sheet: object = SHEET): object {
+  return { life_id: life, sheet, sheet_hash: sheetHash, source: 'config' };
 }
 
 describe.skipIf(!enabled)('audit projection against the live database', () => {
@@ -95,7 +108,13 @@ describe.skipIf(!enabled)('audit projection against the live database', () => {
 
   async function seedLife(): Promise<string> {
     const life = freshId('ag');
-    await pool.query('INSERT INTO agents (agent_id) VALUES ($1) ON CONFLICT DO NOTHING', [life]);
+    await pool.query(
+      `INSERT INTO agents (agent_id, name, life_seq, game_account, shard, mode, harness, declared_model,
+         model_config, tier)
+       VALUES ($1, 'It', 1, $1, 'phaseitaudit', 'sovereign', 'it-on', 'self-reported',
+         'declared:unverified', 'sovereign')`,
+      [life],
+    );
     return life;
   }
 
@@ -112,9 +131,21 @@ describe.skipIf(!enabled)('audit projection against the live database', () => {
     await writer.insertBatch([roll]);
     await writer.insertBatch([event('roll', life, rollOf(life))]);
     expect(await count('SELECT count(*)::int AS n FROM rolls WHERE life_id = $1', life)).toBe(1);
-    expect(
-      await count('SELECT count(*)::int AS n FROM events WHERE agent_id = $1', life),
-    ).toBeGreaterThanOrEqual(1);
+    // The redelivery is one events row (same source id); the retry is the second.
+    expect(await count('SELECT count(*)::int AS n FROM events WHERE agent_id = $1', life)).toBe(2);
+  });
+
+  it('a redelivered decision and a producer retry of the same decision are one row', async () => {
+    const life = await seedLife();
+    const writer = pgEventWriter(pool);
+    const decision = event('decision', life, decisionOf(life));
+    await writer.insertBatch([decision]);
+    await writer.insertBatch([decision]);
+    await writer.insertBatch([event('decision', life, decisionOf(life))]);
+    expect(await count('SELECT count(*)::int AS n FROM decisions WHERE life_id = $1', life)).toBe(
+      1,
+    );
+    expect(await count('SELECT count(*)::int AS n FROM events WHERE agent_id = $1', life)).toBe(2);
   });
 
   it('a batch that fails mid-transaction leaves no roll row and no event row', async () => {
@@ -149,17 +180,50 @@ describe.skipIf(!enabled)('audit projection against the live database', () => {
     ).toBe(0);
   });
 
-  it('a second adoption of another sheet is a conflict row and leaves the baseline', async () => {
+  it('a second adoption of another sheet is a conflict row and leaves the baseline sheet and hash', async () => {
     const life = await seedLife();
     const writer = pgEventWriter(pool);
     await writer.insertBatch([event('sheet_adopted', life, adoptionOf(life, HASH_A))]);
-    await writer.insertBatch([event('sheet_adopted', life, adoptionOf(life, HASH_B))]);
+    await writer.insertBatch([event('sheet_adopted', life, adoptionOf(life, HASH_B, OTHER_SHEET))]);
     const { rows } = await pool.query(
       'SELECT result FROM character_sheet_adoptions WHERE life_id = $1 ORDER BY adoption_id',
       [life],
     );
     expect(rows.map((row) => row.result)).toEqual(['adopted', 'conflict']);
-    const agent = await pool.query('SELECT sheet_hash FROM agents WHERE agent_id = $1', [life]);
+    const agent = await pool.query(
+      'SELECT sheet_hash, character_sheet FROM agents WHERE agent_id = $1',
+      [life],
+    );
     expect(agent.rows[0]?.sheet_hash).toBe(HASH_A);
+    expect(agent.rows[0]?.character_sheet).toEqual(SHEET);
+  });
+
+  it('an adoption that finds a baseline holds the agent row lock until its transaction ends', async () => {
+    const life = await seedLife();
+    const writer = pgEventWriter(pool);
+    const conflict = event('sheet_adopted', life, adoptionOf(life, HASH_B));
+    await writer.insertBatch([event('sheet_adopted', life, adoptionOf(life, HASH_A))]);
+    await writer.insertBatch([conflict]);
+    const holder = await pool.connect();
+    const other = await pool.connect();
+    try {
+      await holder.query('BEGIN');
+      // A redelivery of the conflicting event: the UPDATE changes no row, so the adopt path reads FOR UPDATE.
+      const result = await pgAuditStore(holder).adopt(
+        life,
+        SHEET,
+        HASH_B,
+        'config',
+        conflict.source_event_id,
+      );
+      expect(result).toBe('conflict');
+      await expect(
+        other.query('SELECT 1 FROM agents WHERE agent_id = $1 FOR UPDATE NOWAIT', [life]),
+      ).rejects.toMatchObject({ code: '55P03' });
+    } finally {
+      await holder.query('ROLLBACK');
+      holder.release();
+      other.release();
+    }
   });
 });

@@ -153,7 +153,80 @@ describe('other types', () => {
   });
 });
 
+/** A fake that enforces the decisions keys (PK source_event_id, UNIQUE life_id + decision_id) as Postgres does. */
+function decisionKeysDb() {
+  const keys: { source: unknown; life: unknown; decision: unknown }[] = [];
+  const db = {
+    query: async (text: string, params: unknown[] = []) => {
+      const source = params[0];
+      const life = params[1];
+      const decision = params[3];
+      const clash = keys.some(
+        (k) => k.source === source || (k.life === life && k.decision === decision),
+      );
+      if (!clash) keys.push({ source, life, decision });
+      else if (!/ON CONFLICT DO NOTHING\s*$/.test(text)) {
+        throw Object.assign(new Error('duplicate key value violates unique constraint'), {
+          code: '23505',
+        });
+      }
+      return { rows: [] };
+    },
+  };
+  return { db, keys };
+}
+
+/** A fake of one agents row: the adopt UPDATE writes only while its WHERE clause's `character_sheet IS NULL` holds. */
+function agentRowDb() {
+  const row: { sheet: unknown; hash: unknown } = { sheet: null, hash: null };
+  const db = {
+    query: async (text: string, params: unknown[] = []) => {
+      if (text.startsWith('UPDATE agents')) {
+        if (/character_sheet IS NULL/.test(text) && row.sheet !== null) return { rows: [] };
+        row.sheet = params[1];
+        row.hash = params[2];
+        return { rows: [{ agent_id: params[0] }] };
+      }
+      if (text.startsWith('SELECT sheet_hash')) return { rows: [{ sheet_hash: row.hash }] };
+      return { rows: [] };
+    },
+  };
+  return { db, row };
+}
+
 describe('pgAuditStore SQL', () => {
+  it('inserts a decision with ON CONFLICT DO NOTHING', async () => {
+    const memory = new MemoryAuditStore();
+    const event = decisionEvent(5);
+    await projectAudit(event, memory);
+    const row = memory.decisions.get(event.source_event_id);
+    if (row === undefined) throw new Error('the decision was not projected');
+    const sql: string[] = [];
+    const db = {
+      query: async (text: string) => {
+        sql.push(text);
+        return { rows: [] };
+      },
+    };
+    await pgAuditStore(db).insertDecision(row);
+    expect(sql[0]).toMatch(/^INSERT INTO decisions/);
+    expect(sql[0]).toMatch(/ON CONFLICT DO NOTHING\s*$/);
+  });
+
+  it('a decision redelivered, or retried under a new event id, is one row and no error', async () => {
+    const memory = new MemoryAuditStore();
+    const event = decisionEvent(6);
+    await projectAudit(event, memory);
+    const row = memory.decisions.get(event.source_event_id);
+    if (row === undefined) throw new Error('the decision was not projected');
+    const { db, keys } = decisionKeysDb();
+    const store = pgAuditStore(db);
+    await store.insertDecision(row);
+    await store.insertDecision(row);
+    await store.insertDecision({ ...row, source_event_id: 'ev_decision_retry' });
+    expect(keys.length).toBe(1);
+  });
+
   it('inserts a roll with ON CONFLICT DO NOTHING', async () => {
     const memory = new MemoryAuditStore();
     const event = rollEvent(1);
@@ -195,5 +268,29 @@ describe('pgAuditStore SQL', () => {
     await expect(
       pgAuditStore(db).adopt(LIFE_ID, SHEET, SHEET_HASH, 'roster', 'ev_y'),
     ).resolves.toBe('adopted');
+  });
+
+  it('a second adoption of another sheet is a conflict and the first sheet stays', async () => {
+    const { db, row } = agentRowDb();
+    const store = pgAuditStore(db);
+    const other = { ...SHEET, attributes: { ...SHEET.attributes, curiosity: 1 } };
+    expect(await store.adopt(LIFE_ID, SHEET, SHEET_HASH, 'config', 'ev_first')).toBe('adopted');
+    expect(await store.adopt(LIFE_ID, other, OTHER_HASH, 'config', 'ev_second')).toBe('conflict');
+    expect(row.sheet).toBe(JSON.stringify(SHEET));
+    expect(row.hash).toBe(SHEET_HASH);
+  });
+
+  it('reads the stored hash FOR UPDATE when the UPDATE changed no row (text only; the IT takes the lock)', async () => {
+    const sql: string[] = [];
+    const db = {
+      query: async (text: string) => {
+        sql.push(text);
+        if (text.startsWith('SELECT sheet_hash')) return { rows: [{ sheet_hash: SHEET_HASH }] };
+        return { rows: [] };
+      },
+    };
+    await pgAuditStore(db).adopt(LIFE_ID, SHEET, OTHER_HASH, 'config', 'ev_z');
+    const read = sql.find((text) => text.startsWith('SELECT sheet_hash'));
+    expect(read).toMatch(/FOR UPDATE$/);
   });
 });
