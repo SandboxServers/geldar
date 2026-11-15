@@ -1,5 +1,5 @@
 import type { OutputError } from '../ports/index.ts';
-import { ACTION_FIELDS } from './action-shapes.ts';
+import { ACTION_FIELDS, ACTION_OPTIONAL } from './action-shapes.ts';
 import { isObject, PHASE0_VERBS } from './bounds.ts';
 
 /** An error path that points into one action of `/actions`: the index is group 1. */
@@ -27,8 +27,9 @@ export function focusActionErrors(value: unknown, firstPath: string): OutputErro
   const fields = typeof action.do === 'string' ? ACTION_FIELDS[action.do] : undefined;
   if (fields === undefined) return [verbLine];
   const problems: OutputError[] = [];
+  const optional = ACTION_OPTIONAL[action.do as string] ?? [];
   for (const field of fields) {
-    if (!(field in action)) {
+    if (!(field in action) && !optional.includes(field)) {
       problems.push({
         code: 'schema',
         path: `/actions/${index}`,

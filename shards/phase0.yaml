@@ -19,7 +19,7 @@ reflexes:                        # one flag per spec 5.2 reflex; enabled: false 
   fight_or_flee: true
   blocked_path: true
   panic_burrow: true
-body_actions: { edit_sign: false }  # the Body's verb flags; a flag left out is off. edit_sign waits for 0195 (graves under the system owner)
+body_actions: { edit_sign: false, use: false }  # the Body's verb flags; a flag left out is off. edit_sign waits for 0195 (graves under the system owner). use (0218) is off until its Body deploy
 chat: { radius: 32, shout_enabled: false, rate_limit_seconds: 3, max_chars: 256 }
 memory: { working_window: 20, episodic_top_k: 8, fatigue_days: 3 }
 attention: { min_wakeup_spacing_s: 20, fallback_wakeup_ticks: 6000, overheard_to_digest: true }

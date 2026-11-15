@@ -4,7 +4,7 @@
  * engine's constrained decoder can compile them. They steer the engine; the validators in
  * `../validate/` are the control and check every output against the full contract schema.
  */
-import { ACTION_FIELDS } from '../validate/action-shapes.ts';
+import { ACTION_FIELDS, ACTION_OPTIONAL } from '../validate/action-shapes.ts';
 
 const POSITION = {
   type: 'object',
@@ -89,7 +89,9 @@ function actionUnion(): Record<string, unknown> {
       for (const field of fields) {
         if (field !== 'do') properties[field] = actionField(verb, field);
       }
-      return { type: 'object', properties, required: [...fields], additionalProperties: false };
+      const optional = ACTION_OPTIONAL[verb] ?? [];
+      const required = fields.filter((field) => !optional.includes(field));
+      return { type: 'object', properties, required, additionalProperties: false };
     }),
   };
 }
