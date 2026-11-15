@@ -89,6 +89,11 @@ export interface BodyView {
    * view was made. Optional so a hand-built view (a test fake) may leave it out.
    */
   readonly ticksSinceHurt?: number | null;
+  /**
+   * True when a solid block lies in one of the `blocks` cells straight above the Body's head (the
+   * operator phantom diagnostic reads it). Optional so a hand-built view may leave it out.
+   */
+  roofWithin?(blocks?: number): boolean;
   /** The bed or world spawn the Body treats as safe, or null when it knows none. */
   readonly safeSpot?: SafeSpot | null;
   /**
@@ -318,6 +323,15 @@ export function createBodyView(bot: Bot): TrackedBodyView {
         });
       }
       return found.sort((a, b) => a.distance - b.distance);
+    },
+    roofWithin(blocks = 3) {
+      const feet = bot.entity.position;
+      const headY = Math.floor(feet.y) + 1;
+      for (let i = 1; i <= blocks; i++) {
+        const block = bot.blockAt(new Vec3(Math.floor(feet.x), headY + i, Math.floor(feet.z)));
+        if (block && block.boundingBox === 'block') return true;
+      }
+      return false;
     },
     arrowsNear(radius = DEFAULT_ARROW_RADIUS) {
       const here = bot.entity.position;

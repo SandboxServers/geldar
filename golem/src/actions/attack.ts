@@ -6,6 +6,7 @@ import { type ActionOutcome, cancelled, completed, errorText, failed } from './o
 import { moveNear } from './pathing.ts';
 import { pickUpDrops, pickupNote } from './pickup.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
+import { DEFAULT_DIAG_SINK } from './stall-diag.ts';
 
 /** The entity type Mineflayer hands out in `bot.entities`. */
 type Entity = Bot['entities'][string];
@@ -103,6 +104,16 @@ export const attackAction: ActionHandler<'attack'> = {
     }
     const armed = weapon?.name ?? null;
     const targetKind = targetKindOf(first);
+    // Operator diagnostic (decision 0335): the entity the swings are aimed at, and how far it stands now.
+    DEFAULT_DIAG_SINK.log(
+      JSON.stringify({
+        event: 'attack_diag',
+        target: name,
+        entity: first.name ?? null,
+        distance: Math.round(first.position.distanceTo(bot.entity.position) * 10) / 10,
+        target_kind: targetKind,
+      }),
+    );
 
     let swings = 0;
     // World ticks spent out of reach of a flying target since it was last in reach.
