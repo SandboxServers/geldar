@@ -16,6 +16,7 @@ import {
   type BedCensus,
   bedKey,
   censusText,
+  isBedOccupied,
   otherHalfPosition,
   takeCensus,
 } from './sleep-census.ts';
@@ -257,7 +258,7 @@ async function sleepFromBeds(
   census: CensusRecord,
 ): Promise<ActionOutcome> {
   const { bot } = ctx;
-  const beds = nearbyBeds(bot);
+  const { beds, occupied } = nearbyBeds(bot);
   if (beds.length === 0) return failed('not_found', 'no bed');
   census.start = takeCensus(bot, BED_RANGE);
   if (!isNightOrStorm(bot.time.timeOfDay, bot.thunderState > 0)) {
@@ -308,10 +309,11 @@ async function sleepFromBeds(
   const lastText = last.status === 'failed' ? last.message : '';
   const ended = `; ${censusText(end, BED_RANGE)}; ended at ${roundedPosition(bot)}`;
   if (outOfTime) {
+    // The time limit ended the search: a factual timeout, not a blocked way (decision 0338).
     return failed(
-      'blocked',
+      'timeout',
       triedMessage(
-        `tried ${tried} of ${beds.length} nearby beds; the search time ran out`,
+        `tried ${tried} of ${beds.length} nearby beds, ${occupied} occupied; the time limit ended the search`,
         lastText,
         ended,
       ),
@@ -391,11 +393,19 @@ function sleepersDetail(line: SleepersLine | undefined): Record<string, JsonValu
   };
 }
 
+/** The beds the loop tries, in order, and how many of them the world holds occupied. */
+interface BedList {
+  beds: Block[];
+  occupied: number;
+}
+
 /**
- * The nearest beds within range, nearest first, at most MAX_BEDS. A bed is two blocks and `findBlocks`
- * returns both halves, so it asks for twice as many blocks and keeps one block per bed (bedKey pairs them).
+ * The nearest beds within range, at most MAX_BEDS. A bed is two blocks and `findBlocks` returns both halves, so
+ * it asks for twice as many blocks and keeps one block per bed (bedKey pairs them, decision 0226). A bed is
+ * occupied when either half says so. Free beds come first, nearest first, and occupied beds last, so the time
+ * budget goes to the beds that can take a sleeper first (decision 0338).
  */
-function nearbyBeds(bot: Bot): Block[] {
+function nearbyBeds(bot: Bot): BedList {
   const from = bot.entity.position;
   const positions = bot.findBlocks({
     matching: (block: Block) => block.name.endsWith('_bed'),
@@ -403,19 +413,21 @@ function nearbyBeds(bot: Bot): Block[] {
     count: 2 * MAX_BEDS,
   });
   const sorted = [...positions].sort((a, b) => a.distanceTo(from) - b.distanceTo(from));
-  const beds: Block[] = [];
+  const kept: { block: Block; occupied: boolean }[] = [];
   for (const position of sorted) {
-    if (beds.length === MAX_BEDS) break;
     const block = bot.blockAt(position);
-    if (block && !isHalfOfKeptBed(beds, block)) beds.push(block);
+    if (!block) continue;
+    const key = bedKey(block);
+    const bed = kept.find((candidate) => bedKey(candidate.block) === key);
+    if (bed) {
+      if (isBedOccupied(block)) bed.occupied = true;
+    } else if (kept.length < MAX_BEDS) {
+      kept.push({ block, occupied: isBedOccupied(block) });
+    }
   }
-  return beds;
-}
-
-/** True when a kept bed block is a half of the same bed as `block`: the same bedKey (decision 0226). */
-function isHalfOfKeptBed(beds: Block[], block: Block): boolean {
-  const key = bedKey(block);
-  return beds.some((bed) => bedKey(bed) === key);
+  const free = kept.filter((bed) => !bed.occupied).map((bed) => bed.block);
+  const taken = kept.filter((bed) => bed.occupied).map((bed) => bed.block);
+  return { beds: [...free, ...taken], occupied: taken.length };
 }
 
 /** Walks to within one block of `block`; null when the bot arrived, else the failure. */

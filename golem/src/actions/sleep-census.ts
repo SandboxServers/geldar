@@ -107,6 +107,11 @@ function bedShape(block: Block): BedShape | undefined {
   return { part, facing: vector };
 }
 
+/** True when a bed block's `occupied` state says a sleeper is in it (decision 0338). Unknown reads as free. */
+export function isBedOccupied(block: Block): boolean {
+  return occupiedState(block) === true;
+}
+
 /** The `occupied` state of a bed half, or undefined when the half's state cannot be read. */
 function occupiedState(block: Block): boolean | undefined {
   const occupied = blockProperties(block)?.occupied;

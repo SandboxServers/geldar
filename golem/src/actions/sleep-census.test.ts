@@ -203,9 +203,9 @@ describe('the bed census', () => {
     const outcome = await sleep(bot, 0);
     expect(outcome).toMatchObject({
       status: 'failed',
-      reason: 'blocked',
+      reason: 'timeout',
       message:
-        'tried 0 of 2 nearby beds; the search time ran out; last: no bed was tried; 2 beds within 32 blocks, 1 occupied; ended at 0, 64, 0',
+        'tried 0 of 2 nearby beds, 1 occupied; the time limit ended the search; last: no bed was tried; 2 beds within 32 blocks, 1 occupied; ended at 0, 64, 0',
       detail: { beds_in_range: 2, beds_occupied: 1, beds_unknown: 1 },
     });
   });
