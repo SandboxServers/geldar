@@ -8,6 +8,10 @@
 -- (tools/mcp-tokens and tools/admin connect as PGUSER). So both grants go to geldar, guarded like 0034 so a database
 -- without that role still migrates. No other role is granted anything, PUBLIC included.
 --
+-- WARNING: the eventsink currently stores every non-projected event type in events with its full payload, so a
+-- turn_record MUST NOT be emitted by anything until GX-05b gives the sink a drop-or-table path. NUL characters in text
+-- fields must be handled by the GX-05b writer (Postgres TEXT rejects them).
+--
 -- Additive only: IF NOT EXISTS everywhere, so a reapply of this file is a no-op. No trigger: the table is not
 -- append-only, because erasure deletes rows. Like every migration, it inserts its own schema_migrations row.
 
@@ -19,7 +23,7 @@ CREATE TABLE IF NOT EXISTS turn_records (
   template_version  TEXT NOT NULL CHECK (template_version ~ '^[0-9a-f]{64}$'),
   wake_reason       TEXT NOT NULL CHECK (length(wake_reason) BETWEEN 1 AND 64),
   world_day         INTEGER NOT NULL CHECK (world_day >= 0),
-  world_tick        INTEGER NOT NULL CHECK (world_tick >= 0),
+  world_tick        BIGINT   NOT NULL CHECK (world_tick >= 0),
   model_input       TEXT NOT NULL CHECK (length(model_input) <= 32768),
   raw_output        TEXT NOT NULL CHECK (length(raw_output) <= 32768),
   tokens_in         INTEGER NOT NULL CHECK (tokens_in >= 0),

@@ -20,6 +20,11 @@ BEGIN
       IF has_table_privilege(r, 'public.turn_records', p) THEN
         RAISE EXCEPTION 'schema check: % must not hold % on turn_records', r, p;
       END IF;
+      IF p <> 'DELETE' THEN -- column privileges exist for SELECT, INSERT, UPDATE only
+        IF has_any_column_privilege(r, 'public.turn_records', p) THEN
+          RAISE EXCEPTION 'schema check: % must not hold column % on turn_records', r, p;
+        END IF;
+      END IF;
     END LOOP;
   END LOOP;
 
@@ -33,6 +38,7 @@ BEGIN
     RAISE EXCEPTION 'schema check: turn_records is granted to PUBLIC or to a role other than geldar';
   END IF;
 
+  -- Production-only: CI has no geldar role (and must not create one), so this runs only when the role exists.
   step := 'sink and operator';
   IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'geldar') THEN
     IF NOT (has_table_privilege('geldar', 'public.turn_records', 'INSERT')
