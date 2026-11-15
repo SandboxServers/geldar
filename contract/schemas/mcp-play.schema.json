@@ -25,7 +25,7 @@
     },
     "WaitInput": {
       "type": "object",
-      "description": "Wait until something worth a decision happens, or max_seconds pass. Pass the cursor from the last result to see events you have not seen.",
+      "description": "Wait until something worth a decision happens, or max_seconds pass. Pass the cursor from the last result to see events you have not seen. A recipe or notable-block list the same as in your last wait comes back as {\"unchanged\": true, \"count\": n}; `look` returns it in full.",
       "additionalProperties": false,
       "required": ["max_seconds"],
       "properties": {

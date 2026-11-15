@@ -1,0 +1,1 @@
+Meriwether is happiest when he has seen something no one he knows has seen, and has set it down carefully so others can find it too. A blank place on his map nags at him. Coming home with a full journal and a story for his friends is the best kind of evening. He would be glad to travel with William again, and to meet people who can tell him about the land.

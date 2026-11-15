@@ -41,6 +41,24 @@ function eatFactText(verb: string, result: unknown): string | undefined {
   return `${item}: hunger ${before} to ${after}`.slice(0, 160);
 }
 
+/**
+ * The plain fact an ok `sleep` carries (decision 0215): `<asleep> of <needed> needed are asleep`, or
+ * `the night was skipped`, from the sleepers line the action read. Undefined when no line was seen.
+ */
+function sleepFactText(verb: string, result: unknown): string | undefined {
+  if (verb !== 'sleep') return undefined;
+  const sleepers = (result as { detail?: Record<string, unknown> } | null)?.detail?.sleepers;
+  if (sleepers === 'skipped') return 'the night was skipped';
+  const { asleep, needed } = (sleepers ?? {}) as Record<string, unknown>;
+  if (typeof asleep !== 'number' || typeof needed !== 'number') return undefined;
+  return `${asleep} of ${needed} needed are asleep`;
+}
+
+/** The fact an ok action carries, by verb: an eat's hunger change or a sleep's sleepers line. */
+function okFactText(verb: string, result: unknown): string | undefined {
+  return verb === 'sleep' ? sleepFactText(verb, result) : eatFactText(verb, result);
+}
+
 /** The payload for one finished plan action (C5-02): fixed text built from the verb and reason code only. */
 export function actionOutcomeOf(
   verb: string,
@@ -52,7 +70,7 @@ export function actionOutcomeOf(
   const raw = stopped ? 'cancelled' : (report.record.result as { reason?: unknown } | null)?.reason;
   const reason = ok ? undefined : (contractReason(raw) ?? 'internal');
   const text = ok
-    ? eatFactText(verb, report.record.result)
+    ? okFactText(verb, report.record.result)
     : stopped
       ? STOPPED_TEXT
       : outcomeDetailText(

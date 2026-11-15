@@ -86,6 +86,7 @@ export function stallCount(view: BodyView): number {
  */
 export const unstickReflex: Reflex = {
   name: 'unstick',
+  suspendedWhileAsleep: () => true,
   priority: 25,
   cooldownTicks: 400,
   check(view): Trigger | null {

@@ -260,6 +260,9 @@ importers:
       '@geldar/contract':
         specifier: workspace:*
         version: link:../contract
+      '@geldar/psyche':
+        specifier: workspace:*
+        version: link:../psyche
       '@nats-io/jetstream':
         specifier: 3.4.0
         version: 3.4.0
@@ -301,6 +304,9 @@ importers:
       '@geldar/contract':
         specifier: workspace:*
         version: link:../contract
+      '@geldar/psyche':
+        specifier: workspace:*
+        version: link:../psyche
       '@nats-io/jetstream':
         specifier: 3.4.0
         version: 3.4.0
@@ -360,6 +366,12 @@ importers:
       '@nats-io/transport-node':
         specifier: 3.4.0
         version: 3.4.0
+
+  psyche:
+    devDependencies:
+      '@geldar/contract':
+        specifier: workspace:*
+        version: link:../contract
 
   supervisor:
     dependencies:
@@ -484,6 +496,15 @@ importers:
         specifier: 8.23.1
         version: 8.23.1
 
+  tools/genesis-env:
+    dependencies:
+      ajv:
+        specifier: 8.20.0
+        version: 8.20.0
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
+
   tools/glass-ctl: {}
 
   tools/kino-shot:
@@ -500,6 +521,9 @@ importers:
       '@geldar/mcp':
         specifier: workspace:*
         version: link:../../threshold/mcp
+      '@geldar/psyche':
+        specifier: workspace:*
+        version: link:../../psyche
       pg:
         specifier: 8.23.1
         version: 8.23.1
@@ -545,6 +569,9 @@ importers:
 
   tools/repo-checks:
     dependencies:
+      '@geldar/genesis-env':
+        specifier: workspace:*
+        version: link:../genesis-env
       yaml:
         specifier: 2.9.1
         version: 2.9.1

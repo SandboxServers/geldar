@@ -11,6 +11,9 @@ export const EAT_LOW_HEALTH_AT = 6;
 /** Below this hunger a badly hurt Body eats too: natural regeneration needs 18 of 20. */
 export const EAT_REGEN_HUNGER = 18;
 
+/** A sleeping Body at hunger above this does not eat until it wakes (decision 0214); at or below it, it eats. */
+export const EAT_SLEEP_HUNGER_AT = 4;
+
 /** World ticks between firings: a failed meal is not retried at once. */
 const EAT_COOLDOWN_TICKS = 100;
 /** After consecutive failed meals the wait doubles each time, up to this many world ticks. */
@@ -31,6 +34,7 @@ export function createEatReflex(): Reflex {
     name: 'eat',
     priority: 30,
     cooldownTicks: EAT_COOLDOWN_TICKS,
+    suspendedWhileAsleep: (view) => view.hunger > EAT_SLEEP_HUNGER_AT,
     check(view) {
       const badlyHurtAndHungry = view.health <= EAT_LOW_HEALTH_AT && view.hunger < EAT_REGEN_HUNGER;
       if (view.hunger > EAT_HUNGER_AT && !badlyHurtAndHungry) return null;

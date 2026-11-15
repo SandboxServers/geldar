@@ -8,6 +8,7 @@ RUN corepack enable
 WORKDIR /opt/geldar
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY contract ./contract
+COPY psyche ./psyche
 COPY golem ./golem
 # --ignore-scripts: no dependency runs an install script (no native module), so none runs in the image build.
 RUN pnpm install --frozen-lockfile --prod --ignore-scripts --filter "@geldar/golem..."

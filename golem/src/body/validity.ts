@@ -33,6 +33,11 @@ export interface BodyIdentity {
   currentRevision: number;
   /** The current world tick. */
   tick: number;
+  /**
+   * The snapshot revision the Body was at when it last died, or null before any death. A plan at or
+   * below it was made before the death and is stale, whatever its window.
+   */
+  deathRevision?: number | null;
 }
 
 /**
@@ -64,6 +69,12 @@ export function checkValidity(
     return {
       reason: 'stale_generation',
       detail: `plan generation ${plan.bodyGeneration}, body generation ${body.bodyGeneration}`,
+    };
+  }
+  if (body.deathRevision != null && plan.snapshotRevision <= body.deathRevision) {
+    return {
+      reason: 'stale_snapshot',
+      detail: `plan revision ${plan.snapshotRevision} was made before the Body died at revision ${body.deathRevision}`,
     };
   }
   const behind = body.currentRevision - plan.snapshotRevision;

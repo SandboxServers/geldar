@@ -1,12 +1,17 @@
 import type { Bot } from 'mineflayer';
 import { errorText } from '../actions/outcome.ts';
 import type { ActionRegistry } from '../actions/registry.ts';
+import { DEFAULT_DIAG_SINK, type DiagSink } from '../actions/stall-diag.ts';
 import type { RecordSink } from './records.ts';
 import { isReflexEnabled, type ReflexConfig, type ReflexName } from './reflex-config.ts';
 import type { BodyView } from './view.ts';
+import { placeFields } from './where.ts';
 
 /** The values a `check` found, kept in the `reflex_fired` record (plain JSON scalars). */
 export type Trigger = Record<string, string | number | boolean | null>;
+
+/** Damage within this many ticks (inclusive) wakes a sleeping Body to its reflexes again (decision 0214). */
+export const SLEEP_DAMAGE_WINDOW_TICKS = 20;
 
 /** How a reflex run ended. `abandoned` means it gave up on purpose (for example no alternate route). */
 export interface ReflexOutcome {
@@ -51,6 +56,12 @@ export interface Reflex {
   readonly priority: number;
   /** World ticks after a firing before this reflex may fire again. */
   readonly cooldownTicks: number;
+  /**
+   * Rest in bed (decision 0214): when this returns true while the Body is asleep, the runner does not
+   * check the reflex, unless the Body took damage in the last `SLEEP_DAMAGE_WINDOW_TICKS` ticks. Absent:
+   * the reflex runs while asleep.
+   */
+  readonly suspendedWhileAsleep?: (view: BodyView) => boolean;
   /** The trigger values when the reflex should fire now, else null. */
   check(view: BodyView): Trigger | null;
   /** Does the work. A throw is recorded as a failed outcome, never propagated. */
@@ -67,6 +78,8 @@ export interface ReflexRunnerOptions {
   bodyGeneration: number;
   /** Builds the context for one firing. The runtime supplies the bot, registry and cancel hook. */
   context(tick: number): ReflexContext;
+  /** Where each firing's `reflex_fired` log line goes. Default: the diagnostic log on stdout. */
+  diag?: DiagSink;
 }
 
 /**
@@ -113,6 +126,7 @@ export class ReflexRunner {
       if (!isReflexEnabled(this.opts.config, reflex.name)) continue;
       const last = this.lastFired.get(reflex.name);
       if (last !== undefined && tick - last < reflex.cooldownTicks) continue;
+      if (this.restingSuspends(reflex)) continue;
       let trigger: Trigger | null;
       let checkError: unknown;
       try {
@@ -131,6 +145,15 @@ export class ReflexRunner {
       return run;
     }
     return Promise.resolve();
+  }
+
+  /** True when the Body sleeps, the reflex is suspended while asleep, and no damage came in the window. */
+  private restingSuspends(reflex: Reflex): boolean {
+    const { view } = this.opts;
+    if (!reflex.suspendedWhileAsleep || view.asleep !== true) return false;
+    const hurt = view.ticksSinceHurt;
+    if (typeof hurt === 'number' && hurt <= SLEEP_DAMAGE_WINDOW_TICKS) return false;
+    return reflex.suspendedWhileAsleep(view);
   }
 
   private async fire(
@@ -154,5 +177,20 @@ export class ReflexRunner {
       trigger,
       outcome,
     });
+    // One log line per firing, with where the Body was: the reflex rows carry no position.
+    const diag = this.opts.diag ?? DEFAULT_DIAG_SINK;
+    const { view } = this.opts;
+    diag.log(
+      JSON.stringify({
+        event: 'reflex_fired',
+        life_id: this.opts.lifeId,
+        name: reflex.name,
+        tick,
+        trigger,
+        result: outcome.result,
+        detail: outcome.detail ?? null,
+        ...placeFields(view.exactPosition, view.dimension),
+      }),
+    );
   }
 }
