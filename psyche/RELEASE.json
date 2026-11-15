@@ -1,0 +1,51 @@
+{
+  "format": 1,
+  "name": "@geldar/psyche",
+  "version": "1.0.0",
+  "engine_version": 1,
+  "tree_hash_algorithm": "geldar-tree-v1",
+  "tree_hash": "b89848ab21240fbb2e33832d671a51d73e8393b3235807f19fa7a2355c5e4efe",
+  "tag": "psyche-v1.0.0",
+  "files": [
+    {
+      "path": "alignment.ts",
+      "sha256": "fa9a417241d8077c538fd8259c34e6ed15ceffaac80b6b05d5079ff5a8273acc"
+    },
+    {
+      "path": "index.ts",
+      "sha256": "c4d697cfabc004e34768cf2c268b05666e6b8a872c347f1e46aba2dde2f6a9d1"
+    },
+    {
+      "path": "params.ts",
+      "sha256": "ca4e15780e1cd421d33e8e30a4a65ec9c6659dd965d0149202a326b7ebd694f6"
+    },
+    {
+      "path": "proficiency.ts",
+      "sha256": "d949be64972024fb6c83236bf38270e15699b9087c856e48d90abee79e155c73"
+    },
+    {
+      "path": "rng.ts",
+      "sha256": "0e6da90b9778cf75e046a9b8923bfa91bf7994badfeb19c95db4959fca8bd4d6"
+    },
+    {
+      "path": "roll.ts",
+      "sha256": "bd4b8e08e50fe3358877eb8e252feb68bc2614a3f22a67578f812ceae3983edd"
+    },
+    {
+      "path": "sheet.ts",
+      "sha256": "3e0b4c1d0e43bf3cf6f072b3305bf8885f1c13dfe6bc8580e89dcc178f6deec8"
+    },
+    {
+      "path": "temperament.ts",
+      "sha256": "4b7118c80ba39531d5808c8a92a6b338643cd044386e75d6bb7300b81d2ff270"
+    },
+    {
+      "path": "types.ts",
+      "sha256": "3730720dd972f696473637dab19ea87c5f4702876f3ba6c7fde279e358394d81"
+    },
+    {
+      "path": "version.ts",
+      "sha256": "fb7389f07923e3a8e3da224477796a2177d472a26a3f4987d713265e0bc6e308"
+    }
+  ]
+}
