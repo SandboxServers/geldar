@@ -20,6 +20,8 @@ export interface SweepDeps {
   roster: RosterPort;
   /** Names whose stop timed out and is not confirmed (the helper's set). A listed one still running is logged. */
   stopTimeouts?: ReadonlySet<string>;
+  /** Names of a late start the helper could not remove (the helper's set). A listed one still running is logged. */
+  orphanStarts?: ReadonlySet<string>;
   audit(line: string): void;
 }
 
@@ -53,6 +55,12 @@ export async function sweepStrays(deps: SweepDeps): Promise<number> {
   for (const name of deps.stopTimeouts ?? []) {
     if (bodies.some((body) => body.running && body.name === name)) {
       deps.audit(`body-helper stop_timed_out name=${name} outcome=report_only`);
+    }
+  }
+  // A late start that could not be undone and still runs: one stable line per pass until it is removed.
+  for (const name of deps.orphanStarts ?? []) {
+    if (bodies.some((body) => body.running && body.name === name)) {
+      deps.audit(`body-helper late_start_orphan name=${name} outcome=report_only`);
     }
   }
   return strays;

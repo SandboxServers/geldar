@@ -93,6 +93,63 @@ function hangingEngine(hung: string) {
   return { engine, created, release: (state: ContainerState | null) => release?.(state) };
 }
 
+/** An Engine whose first inspect is held until the test answers it; every later call runs on the fake. */
+function heldInspectEngine(seed: FakeContainer[]) {
+  const fake = createFakeEngine(seed);
+  const calls: string[] = [];
+  let held = true;
+  let answer: (state: ContainerState | null) => void = () => undefined;
+  const engine: BodyEngine = {
+    inspect: async (name) => {
+      calls.push('inspect');
+      if (!held) return fake.inspect(name);
+      held = false;
+      return new Promise<ContainerState | null>((resolve) => {
+        answer = resolve;
+      });
+    },
+    countCounted: fake.countCounted,
+    create: fake.create,
+    start: async (id) => {
+      calls.push('start');
+      return fake.start(id);
+    },
+    stop: async (name) => {
+      calls.push('stop');
+      return fake.stop(name);
+    },
+    remove: fake.remove,
+    logs: fake.logs,
+  };
+  return { engine, fake, calls, answer: (state: ContainerState | null) => answer(state) };
+}
+
+/** A start of ranger held past its deadline, then released, with `remove` replaced by the test. */
+async function lateStart(
+  remove: (id: string, real: (id: string) => Promise<void>) => Promise<void>,
+) {
+  vi.useFakeTimers();
+  const gate = gatedEngine(['start']);
+  const engine: BodyEngine = { ...gate.engine, remove: (id) => remove(id, gate.fake.remove) };
+  const audit: string[] = [];
+  const orphanStarts = new Set<string>();
+  const handle = createBodyHelper({
+    roster,
+    engine,
+    cap: 40,
+    template: TEMPLATE,
+    audit: (line) => audit.push(line),
+    requestDeadlineMs: 1000,
+    orphanStarts,
+  });
+  const first = handle(req('start', 'ranger'));
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(await first).toEqual({ ok: false, code: 'timeout', error: ENGINE_TIMEOUT });
+  gate.release();
+  await flush();
+  return { gate, audit, orphanStarts, handle };
+}
+
 const accepted = (audit: string[]) => audit.some((line) => line.includes('outcome=accepted'));
 
 afterEach(() => {
@@ -306,5 +363,166 @@ describe('body helper: the per-request deadline', () => {
     audit.length = 0;
     await sweep();
     expect(audit.some((line) => line.includes('stop_timed_out'))).toBe(false);
+  });
+
+  it('a late stop that lands clears its stopTimeouts entry, and is not audited accepted', async () => {
+    vi.useFakeTimers();
+    const gate = gatedEngine(['stop'], [bodyFixture('ranger', true)]);
+    const stopTimeouts = new Set<string>();
+    const audit: string[] = [];
+    const handle = createBodyHelper({
+      roster,
+      engine: gate.engine,
+      cap: 40,
+      template: TEMPLATE,
+      audit: (line) => audit.push(line),
+      requestDeadlineMs: 1000,
+      stopTimeouts,
+    });
+    const stopping = handle(req('stop', 'ranger'));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await stopping).toEqual({ ok: false, code: 'timeout', error: ENGINE_TIMEOUT });
+    expect(stopTimeouts.has('ranger')).toBe(true);
+    gate.release();
+    await flush();
+    expect(gate.fake.containers[0]?.running).toBe(false);
+    expect(stopTimeouts.has('ranger')).toBe(false);
+    expect(
+      audit.some(
+        (line) => line.startsWith('body-helper verb=stop') && line.includes('outcome=accepted'),
+      ),
+    ).toBe(false);
+  });
+
+  it('a late stop that throws still clears its stopTimeouts entry', async () => {
+    vi.useFakeTimers();
+    const gate = gatedEngine([], [bodyFixture('ranger', true)]);
+    let failStop: () => void = () => undefined;
+    const stopFails = new Promise<void>((resolve) => {
+      failStop = resolve;
+    });
+    const engine: BodyEngine = {
+      ...gate.engine,
+      stop: async () => {
+        await stopFails;
+        throw new Error('docker stop failed');
+      },
+    };
+    const stopTimeouts = new Set<string>();
+    const handle = createBodyHelper({
+      roster,
+      engine,
+      cap: 40,
+      template: TEMPLATE,
+      audit: () => undefined,
+      requestDeadlineMs: 1000,
+      stopTimeouts,
+    });
+    const stopping = handle(req('stop', 'ranger'));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await stopping).toEqual({ ok: false, code: 'timeout', error: ENGINE_TIMEOUT });
+    expect(stopTimeouts.has('ranger')).toBe(true);
+    failStop();
+    await flush();
+    expect(stopTimeouts.has('ranger')).toBe(false);
+  });
+
+  it('a stop whose inspect hangs past the deadline never stops a Body that a later start made', async () => {
+    vi.useFakeTimers();
+    const held = heldInspectEngine([bodyFixture('ranger', true)]);
+    const audit: string[] = [];
+    const stopTimeouts = new Set<string>();
+    const handle = createBodyHelper({
+      roster,
+      engine: held.engine,
+      cap: 40,
+      template: TEMPLATE,
+      audit: (line) => audit.push(line),
+      requestDeadlineMs: 1000,
+      stopTimeouts,
+    });
+    const stopping = handle(req('stop', 'ranger'));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await stopping).toEqual({ ok: false, code: 'timeout', error: ENGINE_TIMEOUT });
+    // The Body is stopped another way, and a new start of the name is accepted.
+    await held.fake.stop('ranger');
+    expect(await handle(req('start', 'ranger'))).toEqual({ ok: true, state: 'started' });
+    expect(stopTimeouts.size).toBe(0);
+    const before = audit.length;
+    // The hung inspect answers late, with the old Body running: the abandoned stop makes no further Engine call.
+    held.answer({ id: 'id-ranger', running: true, helperBody: true });
+    await flush();
+    expect(held.calls).not.toContain('stop');
+    expect(held.fake.containers.filter((c) => c.running).map((c) => c.name)).toEqual(['ranger']);
+    expect(audit.length).toBe(before);
+  });
+
+  it('a start whose inspect hangs past the deadline writes no refusal line after the engine timeout', async () => {
+    vi.useFakeTimers();
+    const held = heldInspectEngine([bodyFixture('ranger', true)]);
+    const audit: string[] = [];
+    const handle = createBodyHelper({
+      roster,
+      engine: held.engine,
+      cap: 40,
+      template: TEMPLATE,
+      audit: (line) => audit.push(line),
+      requestDeadlineMs: 1000,
+    });
+    const first = handle(req('start', 'ranger'));
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(await first).toEqual({ ok: false, code: 'timeout', error: ENGINE_TIMEOUT });
+    held.answer({ id: 'id-ranger', running: true, helperBody: true });
+    await flush();
+    expect(audit).toEqual([
+      'body-helper verb=start name=ranger outcome=refused reason=engine_timeout',
+    ]);
+    expect(held.calls).toEqual(['inspect']);
+  });
+
+  it('a late start whose first remove fails is removed by the one retry: no orphan and no failed audit', async () => {
+    let removes = 0;
+    const gate = await lateStart(async (id, real) => {
+      removes++;
+      if (removes === 1) throw new Error('docker blip');
+      await real(id);
+    });
+    expect(removes).toBe(2);
+    expect(gate.audit.some((line) => line.includes('late_start_remove_failed'))).toBe(false);
+    expect(gate.orphanStarts.size).toBe(0);
+    expect(gate.gate.fake.containers.length).toBe(0);
+  });
+
+  it('a late start whose remove fails twice is audited and reported as an orphan while it runs', async () => {
+    let removes = 0;
+    const late = await lateStart(async () => {
+      removes++;
+      throw new Error('docker down');
+    });
+    // The one retry, and no more: the last allowed attempt fails and the orphan is recorded.
+    expect(removes).toBe(2);
+    expect(late.audit).toContain(
+      'body-helper verb=start name=ranger outcome=failed reason=late_start_remove_failed',
+    );
+    expect(late.orphanStarts).toEqual(new Set(['ranger']));
+    expect(late.gate.fake.containers.filter((c) => c.running).length).toBe(1);
+    const lines: string[] = [];
+    await sweepStrays({
+      engine: late.gate.fake,
+      roster,
+      audit: (line) => lines.push(line),
+      orphanStarts: late.orphanStarts,
+    });
+    expect(lines).toEqual(['body-helper late_start_orphan name=ranger outcome=report_only']);
+  });
+
+  it('an orphan is cleared when a later inspect finds its container gone', async () => {
+    const late = await lateStart(async () => {
+      throw new Error('docker down');
+    });
+    expect(late.orphanStarts.size).toBe(1);
+    late.gate.fake.containers.length = 0;
+    expect(await late.handle(req('status', 'ranger'))).toEqual({ ok: true, state: 'absent' });
+    expect(late.orphanStarts.size).toBe(0);
   });
 });

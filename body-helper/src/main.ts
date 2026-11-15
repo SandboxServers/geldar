@@ -43,6 +43,8 @@ async function main(): Promise<void> {
   const roster = rosterFromQuery((sql, values) => pool.query(sql, [...values]));
   // The names whose stop timed out and is not confirmed: the helper adds and clears them, the sweep reports them.
   const stopTimeouts = new Set<string>();
+  // The names of a late start that could not be removed and still runs: the helper adds and clears them, the sweep reports them.
+  const orphanStarts = new Set<string>();
   const handle = createBodyHelper({
     roster,
     engine,
@@ -50,6 +52,7 @@ async function main(): Promise<void> {
     template: { image: config.image, wiring: config.wiring, limits: config.limits },
     requestDeadlineMs: config.requestDeadlineMs,
     stopTimeouts,
+    orphanStarts,
     audit: log,
   });
   // The helper's subscriptions, kept so a shutdown can end them before it closes the connection.
@@ -64,7 +67,10 @@ async function main(): Promise<void> {
       nc.publish(inbox, data);
     },
   };
-  const stopSweep = startSweep({ engine, roster, stopTimeouts, audit: log }, config.sweepMinutes);
+  const stopSweep = startSweep(
+    { engine, roster, stopTimeouts, orphanStarts, audit: log },
+    config.sweepMinutes,
+  );
   const stats = newHelperStats();
   const serving = serveHelper({ wire, shard: config.shard, handle, stats });
   log(

@@ -18,6 +18,8 @@ export const ENGINE_TIMEOUT = 'engine timeout';
 export const REQUEST_DEADLINE_MS = 120_000;
 /** The error an abandoned run ends with. It is never sent: the caller was answered at the deadline. */
 const ABANDONED = 'abandoned after deadline';
+/** The audit reason of a late start whose Body could not be removed after one retry (the Body is left running). */
+export const LATE_START_REMOVE_FAILED = 'late_start_remove_failed';
 
 export interface ContainerState {
   id: string;
@@ -52,6 +54,12 @@ export interface HelperDeps {
    * when the Engine stop lands. The sweep reports the names that are still listed.
    */
   stopTimeouts?: Set<string>;
+  /**
+   * Container names of a late start that the helper could not remove (after one retry) and that still run. The helper
+   * adds a name when that happens and clears it when a later inspect finds the container gone or a start is accepted.
+   * The sweep reports the names that are still listed running.
+   */
+  orphanStarts?: Set<string>;
   audit(line: string): void;
 }
 
@@ -69,9 +77,10 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
   let alerted = false;
   // Start and stop run after the previous one settles. A failed run does not stop the queue.
   // Each run also has a deadline, counted from when it starts. Past it the caller is answered ENGINE_TIMEOUT (code
-  // `timeout`) and the queue moves on. The abandoned run keeps going: `live()` is false from the deadline on. A
-  // start that completes after the deadline removes its own container, and it counts against the cap until its
-  // Engine calls settle (pendingStarts), so the queue never sees a slot free that is still taken.
+  // `timeout`) and the queue moves on. The abandoned run keeps going only as far as `live()` allows: from the deadline
+  // on it makes no create, start or stop, and it writes no audit line. Each await that can resume after the deadline is
+  // followed by a live() check. A start that completes after the deadline removes its own container, and it counts
+  // against the cap until its Engine calls settle (pendingStarts), so the queue never sees a slot free that is still taken.
   const deadlineMs = deps.requestDeadlineMs ?? REQUEST_DEADLINE_MS;
   let chain: Promise<unknown> = Promise.resolve();
   let pendingStarts = 0;
@@ -120,6 +129,25 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
     audit(verb, name, 'refused', 'name_taken');
     return { ok: false, code: 'refused', error: NAME_TAKEN };
   };
+  // A read of the container. A container found gone is no longer an orphan.
+  const inspectOf = async (container: string): Promise<ContainerState | null> => {
+    const state = await deps.engine.inspect(container);
+    if (state === null) deps.orphanStarts?.delete(container);
+    return state;
+  };
+  // Undoes a late start's Body: one retry (the remove forces the delete), then the name is recorded as an orphan.
+  const undoLateStart = async (id: string, name: string, container: string): Promise<void> => {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await deps.engine.remove(id);
+        return;
+      } catch {
+        // Tried again below; after the second failure the orphan is recorded.
+      }
+    }
+    deps.orphanStarts?.add(container);
+    audit('start', name, 'failed', LATE_START_REMOVE_FAILED);
+  };
 
   return async (raw) => {
     const parsed = parseRequest(raw);
@@ -136,7 +164,7 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
         return { ok: false, code: 'refused', error: 'not on roster' };
       }
       if (verb === 'status') {
-        const state = await deps.engine.inspect(container);
+        const state = await inspectOf(container);
         if (foreign(state)) return refuseNameTaken(verb, name);
         audit(verb, name, 'accepted');
         return {
@@ -145,7 +173,7 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
         };
       }
       if (verb === 'logtail') {
-        if (foreign(await deps.engine.inspect(container))) return refuseNameTaken(verb, name);
+        if (foreign(await inspectOf(container))) return refuseNameTaken(verb, name);
         const text = await deps.engine.logs(container);
         audit(verb, name, 'accepted');
         return { ok: true, state: 'logs', text };
@@ -168,15 +196,20 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
   };
 
   async function stop(container: string, name: string, live: () => boolean): Promise<Reply> {
-    const state = await deps.engine.inspect(container);
+    const state = await inspectOf(container);
+    // The deadline passed while the inspect was held: the caller was told `timeout`, so nothing is stopped now.
+    if (!live()) throw new Error(ABANDONED);
     if (state === null) {
       deps.stopTimeouts?.delete(container);
       audit('stop', name, 'not_running');
       return { ok: false, code: 'not_running', error: 'not running' };
     }
     if (foreign(state)) return refuseNameTaken('stop', name);
-    await deps.engine.stop(container);
-    deps.stopTimeouts?.delete(container);
+    try {
+      await deps.engine.stop(container);
+    } finally {
+      deps.stopTimeouts?.delete(container);
+    }
     // A stop that lands after its deadline was already answered with the timeout: it is not audited as accepted.
     if (live()) audit('stop', name, 'accepted');
     return { ok: true, state: 'stopped' };
@@ -189,7 +222,8 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
     loginName: string,
     live: () => boolean,
   ): Promise<Reply> {
-    const existing = await deps.engine.inspect(container);
+    const existing = await inspectOf(container);
+    if (!live()) throw new Error(ABANDONED);
     if (existing?.running) {
       audit('start', name, 'refused', 'already_running');
       return { ok: false, code: 'refused', error: ALREADY_RUNNING };
@@ -200,14 +234,13 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
       return { ok: false, code: 'refused', error: NAME_TAKEN };
     }
     const count = await deps.engine.countCounted();
+    if (!live()) throw new Error(ABANDONED);
     observe(count);
     // A start still in flight past its deadline is not running yet, so the count misses it: pendingStarts holds its slot.
     if (count + pendingStarts >= deps.cap) {
       audit('start', name, 'capacity');
       return { ok: false, code: 'capacity', error: CAP_REFUSAL };
     }
-    // An abandoned run (past its deadline) makes no further Engine call: the queue has moved on.
-    if (!live()) throw new Error(ABANDONED);
     if (existing) await deps.engine.remove(existing.id);
     if (!live()) throw new Error(ABANDONED);
     const config = bodyContainerConfig({ ...deps.template, name: container, owner, loginName });
@@ -223,10 +256,13 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
       }
       // The start answered after the deadline: the caller was refused, so the Body is undone and nothing is accepted.
       if (!live()) {
-        await deps.engine.remove(id).catch(() => undefined);
+        await undoLateStart(id, name, container);
         throw new Error(ABANDONED);
       }
       audit('start', name, 'accepted');
+      deps.orphanStarts?.delete(container);
+      // A start accepted now means no stop of this name still applies to a Body: the old one is gone.
+      deps.stopTimeouts?.delete(container);
       return { ok: true, state: 'started' };
     } finally {
       pendingStarts--;

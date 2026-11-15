@@ -182,6 +182,20 @@ describe('engine: the verbs', () => {
     );
     expect(await engine.bodies()).toEqual([{ name: 'stray1', owner: 'owner-1', running: false }]);
   });
+
+  it('bodies reads the State of each listed container: running gives running true, any other state false', async () => {
+    const labelled = (name: string) => ({ [BODY_LABEL]: name, 'geldar.owner': 'owner-1' });
+    const engine = createDockerEngine(async () =>
+      json(200, [
+        { Labels: labelled('up1'), State: 'running' },
+        { Labels: labelled('down1'), State: 'exited' },
+      ]),
+    );
+    expect(await engine.bodies()).toEqual([
+      { name: 'up1', owner: 'owner-1', running: true },
+      { name: 'down1', owner: 'owner-1', running: false },
+    ]);
+  });
 });
 
 describe('engine: log bounds', () => {

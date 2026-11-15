@@ -34,6 +34,27 @@ describe('stray sweep (report only)', () => {
     expect(audit).toEqual(['body-helper stray name=Stray1 outcome=report_only']);
   });
 
+  it('does not report a timed-out stop whose Body is no longer running, and reports one still running', async () => {
+    const stopped = createFakeEngine([bodyFixture('known', false)]);
+    const stoppedAudit: string[] = [];
+    await sweepStrays({
+      engine: stopped,
+      roster,
+      audit: (line) => stoppedAudit.push(line),
+      stopTimeouts: new Set(['known']),
+    });
+    expect(stoppedAudit).toEqual([]);
+    const running = createFakeEngine([bodyFixture('known', true)]);
+    const runningAudit: string[] = [];
+    await sweepStrays({
+      engine: running,
+      roster,
+      audit: (line) => runningAudit.push(line),
+      stopTimeouts: new Set(['known']),
+    });
+    expect(runningAudit).toEqual(['body-helper stop_timed_out name=known outcome=report_only']);
+  });
+
   it('logs SWEEP_FAILED and returns -1 when the listing fails, without throwing', async () => {
     const engine = createFakeEngine();
     engine.bodies = async () => {
