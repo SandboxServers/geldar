@@ -1,9 +1,11 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { type ActionRun, runAction } from '../../actions/registry.ts';
+import { DEFAULT_DIAG_SINK } from '../../actions/stall-diag.ts';
 import type { Reflex, ReflexContext, ReflexOutcome, Trigger } from '../reflex.ts';
 import type { BodyView } from '../view.ts';
 import { hasBurrow } from './panic-burrow.ts';
+import { failedWalksAt } from './unstick.ts';
 
 /** Ticks (20 per second) the Body must stay put, with no action, before it counts as idle: 60 s. */
 export const IDLE_TICKS = 1200;
@@ -57,6 +59,8 @@ interface IdleState {
   until: number;
   /** World ticks at which unstick runs started, for the hourly cap. */
   runs: number[];
+  /** World tick of the last operator watch line in this still spell; null before the first. */
+  watchedAt: number | null;
 }
 
 const idleStates = new WeakMap<BodyView, IdleState>();
@@ -64,7 +68,15 @@ const idleStates = new WeakMap<BodyView, IdleState>();
 function stateOf(view: BodyView): IdleState {
   let state = idleStates.get(view);
   if (!state) {
-    state = { anchor: null, since: 0, actionEnd: -1, failures: 0, until: 0, runs: [] };
+    state = {
+      anchor: null,
+      since: 0,
+      actionEnd: -1,
+      failures: 0,
+      until: 0,
+      runs: [],
+      watchedAt: null,
+    };
     idleStates.set(view, state);
   }
   return state;
@@ -142,6 +154,7 @@ export const idleStuckReflex: Reflex = {
       state.since = now;
       state.failures = 0;
       state.until = 0;
+      state.watchedAt = null;
       return null;
     }
     if (!idleGuards(view)) {
@@ -149,9 +162,10 @@ export const idleStuckReflex: Reflex = {
       return null;
     }
     if (state.actionEnd > state.since) state.since = state.actionEnd;
+    watchStill(view, state, now);
     const wait = view.onOwnPlacement === true ? IDLE_TICKS_ON_OWN : IDLE_TICKS;
     if (now - state.since < wait || now < state.until) return null;
-    const reason = stuckReason(view);
+    const reason = stuckReason(view) ?? noPathReason(view, here);
     if (reason === null) return null;
     return { reason, idle_seconds: Math.round((now - state.since) / TICKS_PER_SECOND) };
   },
@@ -165,6 +179,27 @@ export const idleStuckReflex: Reflex = {
 };
 
 /**
+ * Writes one operator line a minute while the Body stays still past its first minute (decision 0332):
+ * the idle seconds and the three facts the stuck tests read. It is the Body's own log, not agent text,
+ * and it fires no reflex. The minute restarts with each still spell.
+ */
+function watchStill(view: BodyView, state: IdleState, now: number): void {
+  const idle = now - state.since;
+  if (idle < IDLE_TICKS) return;
+  if (state.watchedAt !== null && now - state.watchedAt < IDLE_TICKS) return;
+  state.watchedAt = now;
+  DEFAULT_DIAG_SINK.log(
+    JSON.stringify({
+      event: 'idle_stuck_watch',
+      idle_seconds: Math.round(idle / TICKS_PER_SECOND),
+      enclosed: view.enclosed ?? null,
+      canStepOff: view.canStepOff ?? null,
+      onOwnPlacement: view.onOwnPlacement ?? null,
+    }),
+  );
+}
+
+/**
  * Why the Body is stuck, or null. Enclosed fires by day only: at night a sealed Body is in its shelter
  * (panic burrow leaves it alone too), and a view that cannot say whether it is night never fires it.
  * A ledge it cannot step off fires at any time.
@@ -172,6 +207,17 @@ export const idleStuckReflex: Reflex = {
 function stuckReason(view: BodyView): 'enclosed' | 'ledge' | null {
   if (view.enclosed === true) return view.isNight === false ? 'enclosed' : null;
   return view.canStepOff === false ? 'ledge' : null;
+}
+
+/**
+ * A pillar top the planner will not leave (decision 0332): the Body stands on its own placement, is not
+ * enclosed (the enclosure rules above decide that), and its last two goto outcomes ended `blocked` from
+ * this spot. A Body waiting in the open has no failed walk, so it is left alone. Its clock is the 120 s
+ * own-placement clock of decision 0330.
+ */
+function noPathReason(view: BodyView, here: Spot): 'no_path' | null {
+  if (view.onOwnPlacement !== true || view.enclosed === true) return null;
+  return failedWalksAt(view, here) ? 'no_path' : null;
 }
 
 /**
