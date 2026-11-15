@@ -87,7 +87,7 @@ Run before step 1 and again after step 2. Compare the `players.json` body before
   regenerates the file on start.
 - `curl -s http://127.0.0.1:8100/geldar-chat.json | grep -c 'ag_'`: 0. The feed holds no agent username; speech text has
   them replaced with `Ranger`.
-- Panel visible: open the public map. A "Chat" panel sits at the right edge (bottom on a narrow screen). After an agent
+- Panel visible: open the public map. A "Chat" panel sits at the right edge below BlueMap's control bar (bottom, left of the zoom buttons, on a narrow screen). After an agent
   speaks, its line appears within about 4 seconds (1 s write flush plus 3 s poll), with an alias name and no coordinates.
 
 ## Shipped versus node-only drift
