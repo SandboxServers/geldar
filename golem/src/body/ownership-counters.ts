@@ -2,8 +2,12 @@ import type { DiagSink } from '../actions/stall-diag.ts';
 
 /**
  * The ownership lookup counters (decision 0217): how the Body's block ownership client answers, so
- * `geldar-worldops` can see whether CoreProtect answers at all. Counts only: no coordinates, no names.
+ * `geldar-worldops` can see whether CoreProtect answers at all. Counts only: no coordinates and no
+ * player names. The block names of the interval are item IDs (decision 0219), counted per name.
  */
+
+/** Distinct block names the interval counts by name; any further name is counted under `other`. */
+export const BLOCK_NAMES_PER_INTERVAL = 8;
 
 /** The `ownership_lookups` line goes out at most once in this many ms, and only when a lookup or query happened. */
 export const OWNERSHIP_LOG_INTERVAL_MS = 60_000;
@@ -26,6 +30,11 @@ interface Tally {
   latency_samples: number;
   latency_total_ms: number;
   latency_max_ms: number;
+  /** Parsed owned cells that carried a block name (decision 0219). */
+  with_block: number;
+  /** Per block name, interval only: at most BLOCK_NAMES_PER_INTERVAL distinct names. */
+  block_names: Map<string, number>;
+  block_other: number;
 }
 
 const emptyTally = (): Tally => ({
@@ -39,6 +48,9 @@ const emptyTally = (): Tally => ({
   latency_samples: 0,
   latency_total_ms: 0,
   latency_max_ms: 0,
+  with_block: 0,
+  block_names: new Map(),
+  block_other: 0,
 });
 
 /** The counts one Body's ownership client keeps. */
@@ -49,6 +61,8 @@ export interface OwnershipCounters {
   query(): void;
   /** One chunk query that ended, with its latency in ms. */
   settled(outcome: QueryOutcome, latencyMs: number): void;
+  /** One parsed owned cell that carried this block name (decision 0219). */
+  block(name: string): void;
   /** Clears the timer: no further line. */
   stop(): void;
 }
@@ -67,6 +81,7 @@ const view = (tally: Tally) => ({
   truncated: tally.truncated,
   unknown: tally.unknown,
   errors: tally.errors,
+  with_block: tally.with_block,
   avg_latency_ms:
     tally.latency_samples === 0 ? null : Math.round(tally.latency_total_ms / tally.latency_samples),
   max_latency_ms: tally.latency_samples === 0 ? null : tally.latency_max_ms,
@@ -89,7 +104,11 @@ export function startOwnershipCounters(options: OwnershipCountersOptions): Owner
         event: 'ownership_lookups',
         interval_ms: intervalMs,
         total: view(total),
-        interval: view(current),
+        interval: {
+          ...view(current),
+          blocks: Object.fromEntries(current.block_names),
+          other: current.block_other,
+        },
       }),
     );
     current = emptyTally();
@@ -116,6 +135,16 @@ export function startOwnershipCounters(options: OwnershipCountersOptions): Owner
         tally.latency_total_ms += latencyMs;
         tally.latency_max_ms = Math.max(tally.latency_max_ms, latencyMs);
       });
+    },
+    block(name: string): void {
+      each((tally) => {
+        tally.with_block += 1;
+      });
+      const seen = current.block_names.get(name);
+      if (seen !== undefined) current.block_names.set(name, seen + 1);
+      else if (current.block_names.size < BLOCK_NAMES_PER_INTERVAL)
+        current.block_names.set(name, 1);
+      else current.block_other += 1;
     },
     stop(): void {
       clearInterval(timer);

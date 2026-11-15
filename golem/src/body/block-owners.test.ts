@@ -1,4 +1,6 @@
+import { Vec3 } from 'vec3';
 import { describe, expect, it } from 'vitest';
+import { ownerRecordAt } from '../actions/protected-blocks.ts';
 import {
   bukkitWorldOf,
   OWNER_CACHE_CHUNKS,
@@ -9,6 +11,7 @@ import {
   OWNER_TTL_MS,
   type OwnerTransport,
   startBlockOwners,
+  wireBlockOwners,
 } from './block-owners.ts';
 
 const WORLD = 'world';
@@ -322,5 +325,94 @@ describe('the Bukkit world a dimension asks about', () => {
     expect(bukkitWorldOf(bot('world'))).toBeNull();
     expect(bukkitWorldOf(bot(undefined))).toBeNull();
     expect(bukkitWorldOf({})).toBeNull();
+  });
+});
+
+describe('the recorded block of an owned cell (decision 0219)', () => {
+  it('a reply carries the block of an owned cell; a cell with no block has no block key', async () => {
+    const nats = fakeNats((q) =>
+      reply(q.chunk_x, q.chunk_z, [
+        { ...owned(1, 64, 2, 'ag_other_01'), block: 'farmland' },
+        owned(3, 64, 3, 'ag_other_01'),
+      ]),
+    );
+    const owners = startBlockOwners({ transport: nats.transport, shard: SHARD });
+    await owners.ensureChunk(WORLD, 0, 0);
+    expect(owners.ownerAt(WORLD, 1, 64, 2)).toEqual({
+      known: true,
+      owner: 'ag_other_01',
+      block: 'farmland',
+    });
+    expect(owners.ownerAt(WORLD, 3, 64, 3)).toEqual({ known: true, owner: 'ag_other_01' });
+    expect(owners.ownerAt(WORLD, 3, 64, 3)).not.toHaveProperty('block');
+  });
+
+  it('the cache keeps the block: a later lookup of the cached chunk still reads it, with no new query', async () => {
+    const nats = fakeNats((q) =>
+      reply(q.chunk_x, q.chunk_z, [{ ...owned(1, 64, 2, 'ag_other_01'), block: 'farmland' }]),
+    );
+    const owners = startBlockOwners({ transport: nats.transport, shard: SHARD });
+    await owners.ensureChunk(WORLD, 0, 0);
+    expect(owners.ownerAt(WORLD, 1, 64, 2)).toMatchObject({ block: 'farmland' });
+    expect(owners.ownerAt(WORLD, 1, 64, 2)).toMatchObject({ block: 'farmland' });
+    expect(nats.requests).toHaveLength(1);
+  });
+
+  it('a change to the cell drops its block: a stale block name never stands for a new owner', async () => {
+    const nats = fakeNats((q) =>
+      reply(q.chunk_x, q.chunk_z, [{ ...owned(1, 64, 2, 'ag_other_01'), block: 'farmland' }]),
+    );
+    const owners = startBlockOwners({ transport: nats.transport, shard: SHARD });
+    await owners.ensureChunk(WORLD, 0, 0);
+    nats.emit({ world: WORLD, x: 1, y: 64, z: 2, owner: 'ag_jason_01' });
+    expect(owners.ownerAt(WORLD, 1, 64, 2)).toEqual({ known: true, owner: 'ag_jason_01' });
+  });
+
+  it('a malformed block is treated as absent: the owner still reads and the chunk stays complete', async () => {
+    const nats = fakeNats((q) =>
+      reply(q.chunk_x, q.chunk_z, [
+        { ...owned(1, 64, 2, 'ag_other_01'), block: 7 },
+        { ...owned(2, 64, 2, 'ag_other_01'), block: 'Farmland!' },
+        { ...owned(4, 64, 4, 'ag_other_01'), block: 'x'.repeat(65) },
+      ]),
+    );
+    const owners = startBlockOwners({ transport: nats.transport, shard: SHARD });
+    await owners.ensureChunk(WORLD, 0, 0);
+    expect(owners.ownerAt(WORLD, 1, 64, 2)).toEqual({ known: true, owner: 'ag_other_01' });
+    expect(owners.ownerAt(WORLD, 2, 64, 2)).toEqual({ known: true, owner: 'ag_other_01' });
+    expect(owners.ownerAt(WORLD, 4, 64, 4)).toEqual({ known: true, owner: 'ag_other_01' });
+    expect(owners.ownerAt(WORLD, 9, 64, 9)).toEqual({ known: true, owner: null });
+  });
+
+  it('a block name the Body does not know is kept as given: it is a name, not a verdict', async () => {
+    const nats = fakeNats((q) =>
+      reply(q.chunk_x, q.chunk_z, [{ ...owned(1, 64, 2, 'ag_other_01'), block: 'no_such_block' }]),
+    );
+    const owners = startBlockOwners({ transport: nats.transport, shard: SHARD });
+    await owners.ensureChunk(WORLD, 0, 0);
+    expect(owners.ownerAt(WORLD, 1, 64, 2)).toEqual({
+      known: true,
+      owner: 'ag_other_01',
+      block: 'no_such_block',
+    });
+  });
+
+  it('wired into the goto planner, the recorded block reaches ownerRecordAt', async () => {
+    const nats = fakeNats((q) =>
+      reply(q.chunk_x, q.chunk_z, [{ ...owned(1, 64, 2, 'ag_other_01'), block: 'farmland' }]),
+    );
+    const bot = { game: { dimension: 'minecraft:overworld' } };
+    const wired = wireBlockOwners({ transport: nats.transport, shard: SHARD, bot });
+    try {
+      ownerRecordAt(new Vec3(1, 64, 2));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(ownerRecordAt(new Vec3(1, 64, 2))).toEqual({
+        known: true,
+        owner: 'ag_other_01',
+        block: 'farmland',
+      });
+    } finally {
+      wired.stop();
+    }
   });
 });
