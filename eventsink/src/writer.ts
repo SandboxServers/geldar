@@ -1,9 +1,22 @@
 /** Writes events to Postgres, idempotently. */
 import type { WorldEvent } from '@geldar/contract';
+import { DEFAULT_THRESHOLDS } from '@geldar/psyche';
 import type { Pool } from 'pg';
 import { AUDIT_TYPES, projectAudit } from './audit/projection.ts';
 import { pgAuditStore } from './audit/store.ts';
 import { isProjected, pgProjectionStore, projectEvent } from './projection.ts';
+import { awardsFor } from './xp/awards.ts';
+import { applyAward } from './xp/ledger.ts';
+import { pgXpStore } from './xp/pg-xp-store.ts';
+import type { XpThresholds } from './xp/xp-config.ts';
+
+/** XP counting in the writer. `enabled` is xpEnabled(env) from xp-config.ts; off means no award is read. */
+export interface XpWriting {
+  enabled: boolean;
+  thresholds: XpThresholds;
+}
+
+const XP_OFF: XpWriting = { enabled: false, thresholds: DEFAULT_THRESHOLDS };
 
 /** What the consumer needs from the database; tests substitute a fake. */
 export interface EventWriter {
@@ -58,13 +71,15 @@ function needsTransaction(event: WorldEvent): boolean {
  * The Postgres-backed writer. A single INSERT is atomic, so the batch is all or nothing. A batch
  * holding `intent`, `action`, `receipt`, `roll`, `decision` or `sheet_adopted` events runs in one
  * transaction: the INSERT, then the projection of those events into their tables (projection.ts for
- * the first three, audit/projection.ts for the rest), in batch order.
+ * the first three, audit/projection.ts for the rest), in batch order. With XP on (card AN-10a), every
+ * batch takes the transaction, and each event's awards (applyAward) run after its projection; with XP
+ * off the branch is never reached.
  */
-export function pgEventWriter(pool: Pool): EventWriter {
+export function pgEventWriter(pool: Pool, xp: XpWriting = XP_OFF): EventWriter {
   return {
     async insertBatch(events) {
       if (events.length === 0) return;
-      if (!events.some(needsTransaction)) {
+      if (!xp.enabled && !events.some(needsTransaction)) {
         await pool.query(INSERT_SQL, insertParams(events));
         return;
       }
@@ -76,9 +91,15 @@ export function pgEventWriter(pool: Pool): EventWriter {
         await client.query(INSERT_SQL, insertParams(events));
         const store = pgProjectionStore(client);
         const audit = pgAuditStore(client);
+        const xpStore = pgXpStore(client);
         for (const event of events) {
           await projectEvent(event, store);
           if (AUDIT_TYPES.has(event.type)) await projectAudit(event, audit);
+          if (xp.enabled) {
+            for (const award of awardsFor(event)) {
+              await applyAward(xpStore, award, xp.thresholds);
+            }
+          }
         }
         await client.query('COMMIT');
       } catch (error) {
