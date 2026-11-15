@@ -25,6 +25,31 @@ vi.mock('../voice/voice.ts', async (importOriginal) => {
   return { ...real, BotVoice: SpyVoice };
 });
 
+const linkOptions = vi.hoisted(() => [] as Array<{ publisher: unknown }>);
+const speechOptions = vi.hoisted(() => [] as Array<{ publish: (event: unknown) => void }>);
+
+// Record what the link and the speech events were built with; the classes stay real.
+vi.mock('../mind-link/server.ts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../mind-link/server.ts')>();
+  class SpyLink extends real.MindLinkServer {
+    constructor(options: ConstructorParameters<typeof real.MindLinkServer>[0]) {
+      linkOptions.push(options as never);
+      super(options);
+    }
+  }
+  return { ...real, MindLinkServer: SpyLink };
+});
+vi.mock('../voice/speech-event.ts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../voice/speech-event.ts')>();
+  class SpySpeech extends real.SpeechEvents {
+    constructor(options: ConstructorParameters<typeof real.SpeechEvents>[0]) {
+      speechOptions.push(options as never);
+      super(options);
+    }
+  }
+  return { ...real, SpeechEvents: SpySpeech };
+});
+
 const SHARD = {
   shard: 'phase0',
   tick_rate: 10,
@@ -150,6 +175,101 @@ describe('the ownership client in a Body (decisions 0164, 0165)', () => {
 });
 
 describe('startAdamBody', () => {
+  /** Drives a heard sound, a hurt, and a record through the NATS publisher the Body hands restartBody. */
+  async function publishSome(stamped: boolean): Promise<string[]> {
+    const r = rig();
+    const sent: string[] = [];
+    const bot = fakeBot();
+    const agent = stamped
+      ? { username: 'ag_adam_01', name: 'Adam', harness: 'animus', model: 'tier-large' }
+      : { username: 'ag_adam_01', name: 'Adam' };
+    const env: AdamBodyEnv = {
+      ...r.env,
+      config: parseAdamConfig({ ...SHARD, mind: { agent } }),
+      publisher: {
+        publish: async (_subject: string, body: string) => {
+          sent.push(body);
+        },
+      },
+    };
+    const running = await startAdamBody(env, bot);
+    // The heard sound (perception/heard-sound-event.ts), then the hurt (perception/hurt-trigger.ts).
+    bot.emit('soundEffectHeard' as never, 'entity.creeper.primed', { x: 2, y: 64, z: 0 } as never);
+    bot.emit('entityHurt' as never, bot.entity as never);
+    (bot as unknown as { health: number }).health = 15;
+    bot.emit('health' as never);
+    // The record sink's publisher (body/records-nats.ts), as restartBody was given it.
+    await r.options[0]?.nats?.publisher.publish(
+      'geldar.phase0.action_outcome',
+      JSON.stringify({
+        type: 'action_outcome',
+        agent_id: 'ag_adam_01',
+        source_event_id: 'ev-nats-1',
+      }),
+      'ev-nats-1',
+    );
+    await running.stop();
+    return sent;
+  }
+
+  it('every published event is stamped with the run harness and model', async () => {
+    const sent = await publishSome(true);
+    const events = sent.map((body) => JSON.parse(body) as Record<string, unknown>);
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['heard_sound', 'damage', 'action_outcome']),
+    );
+    for (const event of events) {
+      expect(event).toMatchObject({ harness: 'animus', model: 'tier-large' });
+    }
+  });
+
+  it('the speech and plan_result publishers are the stamping wrapper, not env.publisher', async () => {
+    const r = rig();
+    const sent: string[] = [];
+    const raw = {
+      publish: async (_subject: string, body: string) => {
+        sent.push(body);
+      },
+    };
+    const env: AdamBodyEnv = {
+      ...r.env,
+      config: parseAdamConfig({
+        ...SHARD,
+        mind: {
+          agent: { username: 'ag_adam_01', name: 'Adam', harness: 'animus', model: 'tier-large' },
+        },
+      }),
+      publisher: raw,
+    };
+    speechOptions.length = 0;
+    linkOptions.length = 0;
+    const running = await startAdamBody(env, fakeBot());
+    const link = linkOptions[0]?.publisher as AdamBodyEnv['publisher'];
+    expect(link).not.toBe(raw);
+    await link.publish(
+      'geldar.phase0.plan_result',
+      JSON.stringify({ type: 'plan_result', agent_id: 'ag_adam_01', source_event_id: 'ev-plan-1' }),
+      'ev-plan-1',
+    );
+    speechOptions[0]?.publish({
+      type: 'speech',
+      agent_id: 'ag_adam_01',
+      source_event_id: 'ev-speech-1',
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(sent).toHaveLength(2);
+    for (const body of sent) {
+      expect(JSON.parse(body)).toMatchObject({ harness: 'animus', model: 'tier-large' });
+    }
+    await running.stop();
+  });
+
+  it('an unstamped run publishes without the stamp fields', async () => {
+    const sent = await publishSome(false);
+    expect(sent.length).toBeGreaterThanOrEqual(3);
+    for (const body of sent) expect(body).not.toContain('"harness"');
+  });
+
   it('passes the life, the next generation source and the config to restartBody', async () => {
     const r = rig();
     const running = await startAdamBody(r.env, fakeBot());
