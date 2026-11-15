@@ -8,10 +8,10 @@ import { type Identity, identityHash } from './identity.ts';
 import {
   BASE,
   HOME_PAGE,
+  LEGAL_PAGES,
   REFUSED_PAGE,
   SECURITY_HEADERS,
   SIGNED_IN_PAGE,
-  TERMS_PAGE,
 } from './pages.ts';
 import { newVerifier, STATE_COOKIE, STATE_TTL_MS, StateStore } from './pkce.ts';
 import { sendProblem } from './problem.ts';
@@ -240,7 +240,8 @@ export function createRegisterServer(deps: RegisterDeps): Server {
           error: { code: 'method_not_allowed', message: 'Method not allowed' },
         });
       if (url.pathname === '/') return send(res, 200, HOME_PAGE);
-      if (url.pathname === '/terms') return send(res, 200, TERMS_PAGE);
+      const legal = LEGAL_PAGES.get(url.pathname);
+      if (legal) return send(res, 200, legal);
       const m = /^\/(login|callback)$/.exec(url.pathname);
       if (!m) return send(res, 404, errorPage(404));
       const signWait = signInLimiter.charge(clientAddress(req, config.trustedPeers));
