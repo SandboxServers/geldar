@@ -70,7 +70,7 @@ public final class ChatHearing {
                 }
             }
             MuffledNotice notice = cast.tier() == Tier.MUFFLED
-                    ? MuffledNotice.of(sx, sz, c.x(), c.z(), raw(c, sx, sy, sz))
+                    ? MuffledNotice.of(sx, sz, c.x(), c.z(), sy - c.y(), raw(c, sx, sy, sz))
                     : null;
             verdicts.add(new Verdict(c.key(), cast.tier(), notice));
         }

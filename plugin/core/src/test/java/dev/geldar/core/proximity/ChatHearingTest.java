@@ -203,6 +203,29 @@ class ChatHearingTest {
         assertEquals("far", v.get(0).notice().band());
     }
 
+    @Test
+    void aSpeakerDirectlyAboveAMuffledListenerGivesTheOverheadNotice() {
+        // Speaker at (0.5, 94, 0.5), listener at (0.5, 64, 0.5): raw 30, dy +30. Wool at (0, 80, 0) on the ray adds 3:
+        // effective 33, just inside muffled. Both offsets horizontal are zero, so the notice is overhead, not north.
+        ProbeWorld world = new ProbeWorld().set(0, 80, 0, ProbeWorld.solid("minecraft:white_wool"));
+        List<ChatHearing.Verdict> v = hearing(MuffleSettings.defaults()).judge(1, "s", 0.5, 94, 0.5,
+                List.of(new ChatHearing.Candidate("l", true, 0.5, FEET, 0.5)), world);
+        assertEquals(Tier.MUFFLED, v.get(0).tier());
+        assertEquals("overhead", v.get(0).notice().direction());
+        assertEquals("far", v.get(0).notice().band());
+    }
+
+    @Test
+    void aSpeakerDirectlyBelowAMuffledListenerGivesTheBelowNotice() {
+        // Speaker at (0.5, 34, 0.5), listener at (0.5, 64, 0.5): raw 30, dy -30. Wool at (0, 50, 0) adds 3.
+        ProbeWorld world = new ProbeWorld().set(0, 50, 0, ProbeWorld.solid("minecraft:white_wool"));
+        List<ChatHearing.Verdict> v = hearing(MuffleSettings.defaults()).judge(1, "s", 0.5, 34, 0.5,
+                List.of(new ChatHearing.Candidate("l", true, 0.5, FEET, 0.5)), world);
+        assertEquals(Tier.MUFFLED, v.get(0).tier());
+        assertEquals("below", v.get(0).notice().direction());
+        assertEquals("far", v.get(0).notice().band());
+    }
+
     /** Throws UnloadedBlock on the first read only, then reads air. */
     private static final class FirstReadUnloaded implements BlockReader {
         private boolean thrown;
