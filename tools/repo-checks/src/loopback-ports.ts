@@ -52,13 +52,47 @@ function networkModeProblem(mode: unknown): string | null {
 }
 
 /**
+ * The only interpolated host ports the repo accepts: `127.0.0.1:${GELDAR_PORT_<NAME>:-<default>}:<container>`,
+ * with NAME on this allowlist and the default equal to the value listed here. Each environment sets
+ * GELDAR_PORT_<NAME> to its own port; the default keeps today's colo ports byte for byte.
+ */
+export const PARAM_PORT_DEFAULTS: ReadonlyMap<string, number> = new Map([
+  ['BOT', 25567],
+  ['MCP', 8788],
+  ['REGISTER', 18090],
+  ['GLASS', 8787],
+  ['BLUEMAP', 8100],
+]);
+const PARAM_PORT = /^127\.0\.0\.1:\$\{GELDAR_PORT_([A-Z][A-Z0-9_]*):-(\d{1,5})\}:\d{1,5}$/;
+
+/** Why one parameterised host port is rejected, or null when it is on the allowlist. */
+function paramPortProblem(entry: string, shown: string): string | null {
+  const match = PARAM_PORT.exec(entry);
+  if (match === null) return `port ${shown} uses interpolation, which is rejected`;
+  const name = match[1] ?? '';
+  const dflt = Number(match[2]);
+  const allowed = PARAM_PORT_DEFAULTS.get(name);
+  if (allowed === undefined)
+    return `port ${shown} uses GELDAR_PORT_${name}, which is not an allowlisted port name`;
+  if (dflt !== allowed)
+    return `port ${shown} has default ${dflt}, not the allowlisted default ${allowed}`;
+  return null;
+}
+
+/** The default port of an allowlisted parameter host port (what the reserved-port check reads), or undefined. */
+function paramDefault(entry: string): string | undefined {
+  return PARAM_PORT.exec(entry)?.[2];
+}
+
+/**
  * Why one `ports:` entry is not loopback-only, or null when it is.
  * Short syntax must start with `127.0.0.1:`; long syntax needs `host_ip: 127.0.0.1`.
  * Any `$` (compose interpolation, `${VAR}`) is rejected, because the value that
- * compose would bind is not known here.
+ * compose would bind is not known here, except the allowlisted parameter form below.
  */
 function portProblem(entry: unknown): string | null {
   const shown = JSON.stringify(entry);
+  if (typeof entry === 'string' && entry.includes('$')) return paramPortProblem(entry, shown);
   if (shown.includes('$')) return `port ${shown} uses interpolation, which is rejected`;
   if (typeof entry === 'string') {
     return entry.startsWith(LOOPBACK_PREFIX)
@@ -372,7 +406,7 @@ export function findPublicPorts(path: string, text: string): PortFinding[] {
       // Short form is ip:published:target; long form has a published key. No published value means an ephemeral port.
       const published =
         typeof entry === 'string'
-          ? entry.split(':')[1]
+          ? (paramDefault(entry) ?? entry.split(':')[1])
           : isRecord(entry)
             ? entry.published
             : undefined;
