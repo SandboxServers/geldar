@@ -142,3 +142,16 @@ export function exitInReach(bot: Bot, at: { x: number; y: number; z: number }): 
   const node = { x: Math.floor(at.x), y: Math.floor(at.y), z: Math.floor(at.z) };
   return STEPS.some((dir) => isExitBank(bot, node, dir));
 }
+
+/** Each Body's `body_actions.swim` flag. Unset is off, so the 0194 swim code does not run. */
+const swimFlag = new WeakMap<Bot, boolean>();
+
+/** Sets the shard's `body_actions.swim` flag for this Body (decision 0194). Called once, at creation. */
+export function setSwimEnabled(bot: Bot, on: boolean): void {
+  swimFlag.set(bot, on);
+}
+
+/** True when the Body's swim flag is on: the goto swims, and the planner may climb a bank out of water. */
+export function swimEnabled(bot: Bot): boolean {
+  return swimFlag.get(bot) === true;
+}

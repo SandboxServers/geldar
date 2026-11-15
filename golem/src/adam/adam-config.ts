@@ -27,6 +27,8 @@ export interface AdamConfig {
   editSign: boolean;
   /** `body_actions.use`: whether the Body accepts the `use` verb (off when left out; decision 0218). */
   use: boolean;
+  /** `body_actions.swim`: whether the goto swims and climbs out of water (off when left out; decision 0194). */
+  swim: boolean;
   /** `20 / tick_rate`: the executor's time scale. */
   timeScale: number;
   /** `mind.agent.harness` and `mind.agent.model`, stamped on the Body's events; absent when neither is set. */
@@ -115,6 +117,7 @@ export function parseAdamConfig(doc: unknown, log?: CharacterLog): AdamConfig {
     reflexes: parseReflexConfig(root.reflexes),
     editSign: bodyActionFlag(root, 'edit_sign'),
     use: bodyActionFlag(root, 'use'),
+    swim: bodyActionFlag(root, 'swim'),
     timeScale: 20 / positive(root, 'tick_rate', 'shard file'),
   };
 }

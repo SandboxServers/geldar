@@ -3,7 +3,7 @@ import type { Bot } from 'mineflayer';
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { describe, expect, it, vi } from 'vitest';
 import { digMovements, ensurePathfinder } from './pathing.ts';
-import { allowWaterExit, EXIT_COST } from './water-rules.ts';
+import { allowWaterExit, EXIT_COST, setSwimEnabled } from './water-rules.ts';
 
 const { Movements } = pathfinderPkg;
 
@@ -152,6 +152,7 @@ describe('ensurePathfinder wires the exit into tier 1', () => {
       }),
     });
     const setMovements = vi.fn();
+    setSwimEnabled(bot as unknown as Bot, true);
     ensurePathfinder(bot as unknown as Bot);
     const given = setMovements.mock.calls[0]?.[0] as {
       getMoveJumpUp: (n: typeof feet, d: typeof EAST, o: unknown[]) => void;
@@ -163,13 +164,24 @@ describe('ensurePathfinder wires the exit into tier 1', () => {
 });
 
 describe('digMovements wires the exit into tier 2 (decision 0194 c)', () => {
-  it('the digging planner climbs out onto the bank, as tier 1 does', () => {
+  it('the digging planner climbs out onto the bank, as tier 1 does, with the swim flag on', () => {
     const bot = botWith(LAKE) as unknown as Bot;
+    setSwimEnabled(bot, true);
     const out: { x: number; y: number; z: number }[] = [];
     const planner = digMovements(bot) as unknown as {
       getMoveJumpUp: (n: typeof feet, d: typeof EAST, o: unknown[]) => void;
     };
     planner.getMoveJumpUp(feet, EAST, out);
     expect(out.map(({ x, y, z }) => ({ x, y, z }))).toEqual([{ x: 1, y: 65, z: 0 }]);
+  });
+
+  it('with the swim flag off (the default) the planner gets no bank exit: the pre-0194 walk', () => {
+    const bot = botWith(LAKE) as unknown as Bot;
+    const out: { x: number; y: number; z: number }[] = [];
+    const planner = digMovements(bot) as unknown as {
+      getMoveJumpUp: (n: typeof feet, d: typeof EAST, o: unknown[]) => void;
+    };
+    planner.getMoveJumpUp(feet, EAST, out);
+    expect(out).toEqual([]);
   });
 });

@@ -7,6 +7,7 @@ import { gotoAction, targetOf } from './goto.ts';
 import type { ActionOutcome } from './outcome.ts';
 import { moveNear } from './pathing.ts';
 import type { ActionContext } from './registry.ts';
+import { setSwimEnabled } from './water-rules.ts';
 
 vi.mock('./pathing.ts', () => ({ moveNear: vi.fn() }));
 
@@ -61,13 +62,25 @@ describe('gotoAction', () => {
     );
   });
 
-  it('runs the swim controller for the walk: moveNear gets swim: true (decision 0194 a)', async () => {
-    await runGoto(fakeBot(), { x: 20, y: 64, z: 30 });
+  it('runs the swim controller for the walk when the shard flag is on: swim: true (decision 0194 a)', async () => {
+    const bot = fakeBot();
+    setSwimEnabled(bot, true);
+    await runGoto(bot, { x: 20, y: 64, z: 30 });
     expect(moveNear).toHaveBeenCalledWith(
       expect.anything(),
       expect.anything(),
       1,
       expect.objectContaining({ swim: true }),
+    );
+  });
+
+  it('gives the walk swim: false with the shard flag off (the default): no swim code runs', async () => {
+    await runGoto(fakeBot(), { x: 20, y: 64, z: 30 });
+    expect(moveNear).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      1,
+      expect.objectContaining({ swim: false }),
     );
   });
 
