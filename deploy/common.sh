@@ -319,6 +319,21 @@ fetch_bluemap() {
   fi
 }
 
+# Checks a downloaded jar against the sha512 that its lock declares, after the sha256 check has passed. A lock with no
+# "sha512" key is checked by sha256 only, as before (bluemap.lock.json has no sha512). A declared sha512 must be 128
+# lowercase hex characters, and an empty value is refused. Hashes are public, so the message prints them.
+# Usage: check_lock_sha512 <name> <lock file> <downloaded file>
+check_lock_sha512() {
+  grep -Eq '"sha512"[[:space:]]*:' "$2" || return 0
+  need sha512sum
+  want512=$(sed -n 's/.*"sha512"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$2")
+  printf '%s' "$want512" | grep -Eq '^[0-9a-f]{128}$' || die "$1 lock: sha512 is not 128 lowercase hex characters"
+  got512=$(sha512sum "$3" | awk '{print $1}')
+  if [ "$got512" != "$want512" ]; then
+    die "$1: sha512 mismatch (lock says $want512, download is $got512); nothing installed"
+  fi
+}
+
 # Fetches the Chunky jar named by the lock file (plugins/chunky/chunky.lock.json, pregeneration; see plugins/chunky/README.md)
 # and checks its sha256 before anything uses it. A mismatch stops the deploy. Same rules as fetch_bluemap: https only,
 # and file:// only for the tests.
@@ -345,6 +360,7 @@ fetch_chunky() {
   if [ "$got" != "$want" ]; then
     die "chunky: sha256 mismatch (lock says $want, download is $got); nothing installed"
   fi
+  check_lock_sha512 chunky "$CHUNKY_LOCK" "$WORK/chunky.jar"
   if [ "$DRY_RUN" = 1 ]; then
     say "chunky: jar verified against the lock (dry run keeps nothing)"
   else
@@ -356,7 +372,7 @@ fetch_chunky() {
 
 # Fetches the CoreProtect jar named by the lock file (plugins/coreprotect/coreprotect.lock.json, block owner records; see
 # docs/runbooks/coreprotect.md) and checks its sha256 before anything uses it. A mismatch stops the deploy. Same rules as
-# fetch_chunky: https only, and file:// only for the tests. The lock also records a sha512; the helper checks sha256 only.
+# fetch_chunky: https only, and file:// only for the tests. The lock also records a sha512, which check_lock_sha512 checks too.
 fetch_coreprotect() {
   if [ ! -f "$COREPROTECT_LOCK" ]; then
     say "coreprotect: no lock file at $COREPROTECT_LOCK; skipped"
@@ -380,6 +396,7 @@ fetch_coreprotect() {
   if [ "$got" != "$want" ]; then
     die "coreprotect: sha256 mismatch (lock says $want, download is $got); nothing installed"
   fi
+  check_lock_sha512 coreprotect "$COREPROTECT_LOCK" "$WORK/coreprotect.jar"
   if [ "$DRY_RUN" = 1 ]; then
     say "coreprotect: jar verified against the lock (dry run keeps nothing)"
   else
