@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { cancelled, completed } from '../../actions/outcome.ts';
 import { moveNear } from '../../actions/pathing.ts';
-import type { ActionHandler } from '../../actions/registry.ts';
+import { type ActionHandler, ActionRegistry } from '../../actions/registry.ts';
 import { MemorySink } from '../records.ts';
 import { ReflexRunner } from '../reflex.ts';
 import { allReflexesOn } from '../reflex-config.ts';
@@ -68,6 +68,44 @@ describe('fight_or_flee check', () => {
     scene.ticksSinceHurt = 5;
     scene.hostiles = [zombieAt(4.5)];
     expect(fightOrFleeReflex.check(sceneView(scene))).toBeNull();
+  });
+});
+
+describe('fight_or_flee: a phantom in sight', () => {
+  /** An unhurt, armed Body at health 20 with a phantom `distance` blocks away on the x axis. */
+  function phantomScene(distance: number, armed = true): CombatScene {
+    const scene = calmScene();
+    scene.hostiles = [zombieAt(distance, 'phantom')];
+    scene.items = armed ? { iron_sword: 1 } : {};
+    return scene;
+  }
+
+  it('fires for an armed Body with a phantom 12 blocks away, fought in place', () => {
+    expect(fire(phantomScene(12))).toMatchObject({
+      hostile: 'phantom',
+      armed: true,
+      flyer: true,
+    });
+  });
+
+  it('stays quiet for an unarmed Body, a phantom beyond 16 blocks, or a ground mob at 12', () => {
+    expect(fightOrFleeReflex.check(sceneView(phantomScene(12, false)))).toBeNull();
+    expect(fightOrFleeReflex.check(sceneView(phantomScene(17)))).toBeNull();
+    const zombie = phantomScene(12);
+    zombie.hostiles = [zombieAt(12)];
+    expect(fightOrFleeReflex.check(sceneView(zombie))).toBeNull();
+  });
+
+  it('fights the phantom through the attack action and never walks to a flight point', async () => {
+    const registry = new ActionRegistry();
+    const attack = fakeAttack('kill');
+    registry.register(attack);
+    const scene = phantomScene(12);
+    const ctx = sceneContext(scene, { registry });
+    const outcome = await fightOrFleeReflex.run(fire(scene), ctx);
+    expect(attack.runs).toEqual(['phantom']);
+    expect(walk).not.toHaveBeenCalled();
+    expect(outcome.result).toBe('handled');
   });
 });
 
