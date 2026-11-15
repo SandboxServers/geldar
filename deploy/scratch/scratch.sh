@@ -154,12 +154,68 @@ set_env() {
   export GELDAR_WORLD_VOLUME SCRATCH_SECRETS_DIR
 }
 
+# The account running the script (ACCT_UID) and the uid the containers run as (CONTAINER_UID). Without
+# SCRATCH_CONTAINER_UID the account must be GELDAR_SERVICE_UID (default 1000). With it, any non-root account may run the
+# script and the secret files are made readable by CONTAINER_UID when the two uids differ.
+CONTAINER_UID=1000
 check_uid() {
+  ACCT_UID=$(id -u)
+  if [ -n "${SCRATCH_CONTAINER_UID+set}" ]; then
+    case "$SCRATCH_CONTAINER_UID" in
+      '' | *[!0-9]*)
+        echo "scratch: SCRATCH_CONTAINER_UID must be digits only (the uid the containers run as); nothing started" >&2
+        exit 2
+        ;;
+    esac
+    if [ "$SCRATCH_CONTAINER_UID" -eq 0 ]; then
+      echo "scratch: SCRATCH_CONTAINER_UID must not be 0 (root); nothing started" >&2
+      exit 2
+    fi
+    if [ "$ACCT_UID" = 0 ]; then
+      echo "scratch: run as a non-root account; nothing started" >&2
+      exit 1
+    fi
+    CONTAINER_UID=$SCRATCH_CONTAINER_UID
+    return 0
+  fi
   want=${GELDAR_SERVICE_UID:-1000}
-  if [ "$(id -u)" != "$want" ]; then
+  if [ "$ACCT_UID" != "$want" ]; then
     echo "scratch: run as uid $want (GELDAR_SERVICE_UID): the eventsink reads the 0600 secret files as that uid; nothing started" >&2
     exit 1
   fi
+}
+
+uids_differ() {
+  [ "$ACCT_UID" != "$CONTAINER_UID" ]
+}
+
+file_mode() {
+  stat -c %a "$1" 2>/dev/null
+}
+
+# With the uids apart, the containers read the caller's NATS files in place. The script does not change those files:
+# the caller grants CONTAINER_UID read (and the dir traverse) with ACLs, and no one else may have access.
+check_nats_acl() {
+  if [ -z "${SCRATCH_NATS_AUTH_DIR:-}" ] || ! uids_differ; then
+    return 0
+  fi
+  acl_dir=$(getfacl -p -c "$SCRATCH_NATS_AUTH_DIR" 2>/dev/null) || acl_dir=""
+  ok=1
+  printf '%s\n' "$acl_dir" | grep -q "^user:$CONTAINER_UID:..x$" || ok=0
+  printf '%s\n' "$acl_dir" | grep -q '^other::---$' || ok=0
+  for f in $NATS_FILES; do
+    acl_file=$(getfacl -p -c "$SCRATCH_NATS_AUTH_DIR/$f" 2>/dev/null) || acl_file=""
+    printf '%s\n' "$acl_file" | grep -q "^user:$CONTAINER_UID:r" || ok=0
+  done
+  if [ "$ok" = 1 ]; then
+    return 0
+  fi
+  echo "scratch: uid $CONTAINER_UID (SCRATCH_CONTAINER_UID) must read the NATS files in $SCRATCH_NATS_AUTH_DIR, and others must not." >&2
+  echo "scratch: fix, as the account that owns them (the script does not change your files):" >&2
+  echo "scratch:   setfacl -m u:$CONTAINER_UID:x $SCRATCH_NATS_AUTH_DIR" >&2
+  echo "scratch:   setfacl -m u:$CONTAINER_UID:r $(for f in $NATS_FILES; do printf '%s ' "$SCRATCH_NATS_AUTH_DIR/$f"; done)" >&2
+  echo "scratch: then check: getfacl -p $SCRATCH_NATS_AUTH_DIR. Nothing started." >&2
+  exit 2
 }
 
 check_plugins() {
@@ -255,6 +311,11 @@ ensure_state() {
     exit 1
   fi
   chmod 700 "$STATE_ROOT"
+  # The 0711 secrets dir is safe only inside this 0700 parent. A filesystem that ignores the mode refuses here.
+  if uids_differ && [ "$(file_mode "$STATE_ROOT")" != 700 ]; then
+    echo "scratch: $STATE_ROOT is not mode 0700, so the secrets cannot be made readable by uid $CONTAINER_UID safely; nothing started" >&2
+    exit 1
+  fi
 }
 
 # A 64-hex-digit random value. Written to files only, never printed.
@@ -295,6 +356,7 @@ do_up() {
   gate
   check_plugins
   check_uid
+  check_nats_acl
   ensure_state
   # Leftover containers are listed by the compose project label, so no compose project is loaded before the secrets exist.
   existing=$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT") || {
@@ -315,6 +377,14 @@ do_up() {
   }
   trap on_exit EXIT
   fill_secrets "$SECRETS"
+  # Same uid: the 0600 files stay as they are. Other uid: the dir is traverse-only (0711, inside the 0700 state dir) and
+  # the three secret files are 0644, so the containers' uid can read them. Nothing else in the dir changes.
+  if uids_differ; then
+    chmod 711 "$SECRETS"
+    for f in postgres.txt rcon.txt velocity-forwarding.txt; do
+      chmod 644 "$SECRETS/$f"
+    done
+  fi
   if [ -n "${SCRATCH_NATS_AUTH_DIR:-}" ]; then
     write_nats_override
   fi

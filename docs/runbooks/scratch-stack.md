@@ -15,8 +15,17 @@ Not approved for any run on the shared node: open NATS (see NATS auth below).
 1. Build the two plugin jars on the machine that runs the stack: `cd plugin; ./gradlew build`. The stack bind-mounts
    `plugin/core/build/libs/geldar-core.jar` and `plugin/velocity-identity/build/libs/geldar-velocity-identity.jar`.
    `up` refuses (exit 1) if either is missing, and does not create anything.
-2. Run as the account whose uid is `GELDAR_SERVICE_UID` (default 1000). The eventsink image runs as uid 1000 and reads
-   the secret files, which are mode 0600. `up` refuses (exit 1) under any other uid, including root.
+2. Run as the account whose uid is `GELDAR_SERVICE_UID` (default 1000), or as any non-root account when
+   `SCRATCH_CONTAINER_UID` is set. `up` refuses (exit 1) under any other uid, including root.
+   `SCRATCH_CONTAINER_UID` is the uid the containers run as (the Paper, NATS and eventsink images use 1000). Set it when
+   the account uid is not 1000, for example `SCRATCH_CONTAINER_UID=1000` on a node account of uid 1001. Digits only, not
+   0; anything else exits 2. Without a value the containers run as 1000. Why: the containers read the secret files as
+   their own uid, and a file owned by another account at mode 0600 gives `cat: /run/secrets/rcon: Permission denied`.
+   When the uids are equal the secret files stay 0600. When they differ, `up` makes the secrets dir 0711 (traverse
+   only) and the three secret files 0644, but only inside the 0700 per-user state dir; if that dir is not 0700 `up`
+   exits 1. The NATS files in `SCRATCH_NATS_AUTH_DIR` are not changed by the script. When the uids differ they must
+   give `SCRATCH_CONTAINER_UID` read on the files and traverse on the dir by ACL, and `other` nothing, or `up` exits 2
+   and prints the `setfacl` commands. Run as the caller: `setfacl -m u:1000:x DIR` and `setfacl -m u:1000:r DIR/nats-*`.
 3. Compose 2.24.4 or newer (the `!override` tag). `up` checks.
 4. Set up NATS auth (next section).
 
