@@ -1,0 +1,95 @@
+# Throwaway scratch stack overlay (sheet campaign validation). Not part of any default compose file set: it sits
+# outside compose/*.yml so the compose lane does not validate it standalone. Use only through deploy/scratch/scratch.sh:
+#   docker compose -p scratch-<suffix> -f compose/phase0.yml -f compose/nats-auth.yml -f compose/opt-in/scratch.yml ...
+# (the script adds compose/nats-auth.yml only when SCRATCH_NATS_AUTH_DIR is set; see docs/runbooks/scratch-stack.md).
+# It replaces every published port with a loopback-only one on a high default port (the !override tag), so it runs
+# beside the phase0 and Colo stacks without clashing. Every service gets hard memory and CPU caps (no swap beyond the
+# memory cap), restart "no", and the label geldar.scratch=true. Ports and memory come from the environment; the
+# defaults are the values the runbook names.
+services:
+  postgres:
+    ports: !override
+      - "127.0.0.1:${SCRATCH_PG_PORT:-15432}:5432"
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+          cpus: "0.5"
+    memswap_limit: 768m
+    labels:
+      geldar.scratch: "true"
+    restart: "no"
+
+  nats:
+    ports: !override
+      - "127.0.0.1:${SCRATCH_NATS_PORT:-14222}:4222"
+      - "127.0.0.1:${SCRATCH_NATS_MON_PORT:-18222}:8222"
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.25"
+    memswap_limit: 256m
+    labels:
+      geldar.scratch: "true"
+    restart: "no"
+
+  paper:
+    environment:
+      MEMORY: ${PAPER_MEMORY:-2G}
+    deploy:
+      resources:
+        limits:
+          memory: 3072m
+          cpus: "1.5"
+    memswap_limit: 3072m
+    labels:
+      geldar.scratch: "true"
+    restart: "no"
+
+  velocity:
+    ports: !override
+      - "127.0.0.1:${SCRATCH_MC_PORT:-35565}:25565"
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+          cpus: "0.5"
+    memswap_limit: 768m
+    labels:
+      geldar.scratch: "true"
+    restart: "no"
+
+  eventsink:
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+          cpus: "0.25"
+    memswap_limit: 384m
+    labels:
+      geldar.scratch: "true"
+    restart: "no"
+
+# Secret files live in the per-user state directory deploy/scratch/scratch.sh creates ($SCRATCH_SECRETS_DIR, mode 0700,
+# files 0600). The NATS auth files are read only when the caller passed SCRATCH_NATS_AUTH_DIR to up.
+secrets:
+  postgres:
+    file: ${SCRATCH_SECRETS_DIR:?set by deploy/scratch/scratch.sh}/postgres.txt
+  rcon:
+    file: ${SCRATCH_SECRETS_DIR:?set by deploy/scratch/scratch.sh}/rcon.txt
+  velocity-forwarding:
+    file: ${SCRATCH_SECRETS_DIR:?set by deploy/scratch/scratch.sh}/velocity-forwarding.txt
+  nats-auth.conf:
+    file: ${SCRATCH_NATS_AUTH_DIR:-${SCRATCH_SECRETS_DIR:?set by deploy/scratch/scratch.sh}}/nats-auth.conf
+  nats-paper.txt:
+    file: ${SCRATCH_NATS_AUTH_DIR:-${SCRATCH_SECRETS_DIR:?set by deploy/scratch/scratch.sh}}/nats-paper.txt
+  nats-velocity.txt:
+    file: ${SCRATCH_NATS_AUTH_DIR:-${SCRATCH_SECRETS_DIR:?set by deploy/scratch/scratch.sh}}/nats-velocity.txt
+  nats-eventsink.txt:
+    file: ${SCRATCH_NATS_AUTH_DIR:-${SCRATCH_SECRETS_DIR:?set by deploy/scratch/scratch.sh}}/nats-eventsink.txt
+
+# The world volume is named by the script (<project>_paper-data), never the live phase0 volume.
+volumes:
+  paper-data:
+    name: ${GELDAR_WORLD_VOLUME:?set by deploy/scratch/scratch.sh}
