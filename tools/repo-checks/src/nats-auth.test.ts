@@ -119,6 +119,18 @@ function expectedTable(s: string): Record<string, { pub: string[]; sub: string[]
   };
 }
 
+/** NATS subject match for one pattern: `*` is one token, a trailing `>` is one or more tokens. */
+function subjectMatches(pattern: string, subject: string): boolean {
+  const p = pattern.split('.');
+  const s = subject.split('.');
+  for (let i = 0; i < p.length; i++) {
+    if (p[i] === '>') return i === p.length - 1 && s.length > i;
+    if (i >= s.length) return false;
+    if (p[i] !== '*' && p[i] !== s[i]) return false;
+  }
+  return p.length === s.length;
+}
+
 /** The text of one top-level PowerShell function, from its keyword to the next top-level function. */
 function functionBody(name: string): string {
   const start = SCRIPT.indexOf(`function ${name}`);
@@ -360,6 +372,20 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
       /permissions: \{.*allow_responses: true \} \},?$/.test(e.raw),
     );
     expect(inPermissions).toEqual(entries.map(() => true));
+  });
+
+  it('lets body publish the audit subjects (AN-07), and mcp and mind cannot', () => {
+    // roll, decision, sheet_adopted and chunk_visited ride body's geldar.<shard>.> allow; no ACL line is added.
+    // Booleans only: the rendered config holds generated passwords.
+    const entries = parseEntries(rendered?.conf ?? '');
+    const publishAllowed = (user: string, subject: string) =>
+      (entries.find((e) => e.user === user)?.pub ?? []).some((p) => subjectMatches(p, subject));
+    for (const type of ['roll', 'decision', 'sheet_adopted', 'chunk_visited']) {
+      const subject = `geldar.${SHARD}.${type}`;
+      expect(publishAllowed('body', subject)).toBe(true);
+      expect(publishAllowed('mcp', subject)).toBe(false);
+      expect(publishAllowed('mind', subject)).toBe(false);
+    }
   });
 
   it('gives the deploy role the maintenance subject to publish and nothing else', () => {

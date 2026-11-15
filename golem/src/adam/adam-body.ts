@@ -5,6 +5,8 @@
  * Mind's snapshot requests and plans over NATS. `ended` settles when the bot leaves or the Body
  * reports a fault; the supervisor (`main.ts`) then stops this run and starts the next.
  */
+import { createHash } from 'node:crypto';
+import { canonicalSheetJson } from '@geldar/psyche';
 import type { Bot } from 'mineflayer';
 import { DEFAULT_DIAG_SINK, type DiagSink } from '../actions/stall-diag.ts';
 import { type OwnerTransport, wireBlockOwners } from '../body/block-owners.ts';
@@ -21,6 +23,8 @@ import { placeFields } from '../body/where.ts';
 import { serveBodyImages } from '../body-image/image-serve.ts';
 import { ImageLimiter } from '../body-image/limiter.ts';
 import { RenderHost } from '../body-image/render-host.ts';
+import { AuditPublisher } from '../character/audit-publisher.ts';
+import type { LifeCharacter } from '../character/character-config.ts';
 import { countingSink, type GolemMetrics } from '../metrics.ts';
 import { composeEars } from '../mind-link/compose-ears.ts';
 import { RecentEvents } from '../mind-link/recent-events.ts';
@@ -63,6 +67,13 @@ export interface AdamBodyEnv {
   noPlanWaitMs?: number;
   /** Telemetry (push only with a URL, see `metrics.ts`); absent in tests that do not check it. */
   metrics?: GolemMetrics;
+  /**
+   * The life's character (AN-07). Absent or mode off: nothing is built and nothing is emitted. With a
+   * sheet in force, one `sheet_adopted` is recorded at start. The sheet itself is never logged.
+   */
+  character?: LifeCharacter;
+  /** Replaces the AuditPublisher this run would build for the adoption (tests only). */
+  audit?: AuditPublisher;
 }
 
 /** A Body that is up. */
@@ -198,9 +209,26 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
   let link: MindLinkServer | undefined;
   let renders: RenderHost | undefined;
   let stopImages: (() => void) | undefined;
+  let audit: AuditPublisher | undefined;
   try {
     const digest = wrapped.recent;
     if (digest === null) throw new Error('the Body did not wrap its record sink');
+    // The character block (AN-07): off, or no sheet in force, builds no audit producer at all.
+    const sheet = env.character?.sheet ?? null;
+    if (sheet !== null) {
+      audit =
+        env.audit ??
+        new AuditPublisher({
+          publisher,
+          shard: config.shard,
+          lifeId: config.lifeId,
+          generation: restarted.generation,
+          tick,
+          log,
+        });
+      const hash = createHash('sha256').update(canonicalSheetJson(sheet)).digest('hex');
+      audit.recordAdoption(sheet, hash, 'config');
+    }
     const chatEars = new BotEars({
       username: config.lifeId,
       displayName: config.displayName,
@@ -276,6 +304,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     detachEars();
     stopImages?.();
     await renders?.close();
+    audit?.close();
     await restarted.stop().catch((stopError: unknown) => {
       log(`restarted Body did not stop after a failed start: ${String(stopError)}`);
     });
@@ -306,6 +335,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
       await link?.idle();
       await renders?.close();
       await restarted.stop();
+      audit?.close();
     },
   };
 }

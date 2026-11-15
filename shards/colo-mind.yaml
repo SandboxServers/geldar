@@ -160,3 +160,10 @@ embedding:
   digest: "sha256:0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f"
   dims: 768
   on_cpu: true                   # num_gpu 0, so it does not compete for the 24 GB card
+
+# Character block (AN-07, inactive). mode off builds nothing. No sheet values here: the real values wait on D-CS-10.
+# character:
+#   mode: off                    # off | sheet
+#   rolls: false                 # d20 checks; read only in sheet mode
+#   proficiency:
+#     enabled: false
