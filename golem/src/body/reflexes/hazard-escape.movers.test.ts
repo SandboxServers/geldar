@@ -122,6 +122,107 @@ describe('swimUp', () => {
   });
 });
 
+type Block = { name: string; boundingBox: string };
+const STONE: Block = { name: 'stone', boundingBox: 'block' };
+const WATER: Block = { name: 'water', boundingBox: 'empty' };
+const AIR: Block = { name: 'air', boundingBox: 'empty' };
+
+/** Stone everywhere except the listed cells, keyed "x,y,z". */
+function worldOf(cells: Record<string, Block>): (v: Vec3) => Block {
+  return (v) => cells[`${Math.floor(v.x)},${Math.floor(v.y)},${Math.floor(v.z)}`] ?? STONE;
+}
+
+/** A 1-wide water column at x 0, z 0 (y 58..61) under a stone cap at y 62. A water corridor at y 60..61 runs east to an open shaft at x 6. */
+function cappedWorld(): Record<string, Block> {
+  const cells: Record<string, Block> = {};
+  for (let y = 58; y <= 61; y++) cells[`0,${y},0`] = WATER;
+  for (let x = 1; x <= 5; x++) for (const y of [60, 61]) cells[`${x},${y},0`] = WATER;
+  for (let y = 60; y <= 63; y++) cells[`6,${y},0`] = AIR;
+  return cells;
+}
+
+/** A swimmer in a fixed world: held forward moves it 0.2 east, else held jump lifts it by `rise`. */
+function swimmerIn(world: (v: Vec3) => Block, at: Vec3, rise: number) {
+  const { bot, controls, state } = controlBot(at);
+  const held = new Set<string>();
+  const b = bot as unknown as {
+    setControlState: (name: string, on: boolean) => void;
+    blockAt: (v: Vec3) => Block;
+    waitForTicks: () => Promise<void>;
+    entity: { position: Vec3 };
+  };
+  b.setControlState = (name, on) => {
+    controls.push(`${name}:${on}`);
+    if (on) held.add(name);
+    else held.delete(name);
+  };
+  b.blockAt = (v) => world(v);
+  b.waitForTicks = async () => {
+    state.ticks += 1;
+    const p = b.entity.position;
+    if (held.has('forward')) b.entity.position = p.offset(0.2, 0, 0);
+    else if (held.has('jump')) b.entity.position = p.offset(0, rise, 0);
+  };
+  return { bot: bot as never, controls, state, pos: (): Vec3 => b.entity.position };
+}
+
+describe('swimUp lateral fallback', () => {
+  it('steers east along the corridor to the open shaft when the column is capped', async () => {
+    const note = vi.fn();
+    const { bot, controls, state, pos } = swimmerIn(
+      worldOf(cappedWorld()),
+      new Vec3(0.5, 60.2, 0.5),
+      0,
+    );
+    await swimUp(walkFor(bot, () => pos().x >= 6, { expired: () => state.ticks >= 80, note }));
+    expect(controls).toContain('forward:true');
+    expect(pos().x).toBeGreaterThanOrEqual(6);
+    expect(state.ticks).toBeLessThan(80);
+    expect(note).toHaveBeenCalledTimes(1);
+    expect(note).toHaveBeenCalledWith({
+      direction: 'east',
+      distance: 6,
+      dy_gained: 0,
+    });
+  });
+
+  it('releases forward and jump when it expires in the middle of the sideways swim', async () => {
+    const { bot, controls, state } = swimmerIn(worldOf(cappedWorld()), new Vec3(0.5, 60.2, 0.5), 0);
+    await swimUp(walkFor(bot, () => false, { expired: () => state.ticks >= 30 }));
+    expect(controls).toContain('forward:true');
+    expect(controls.slice(-2)).toEqual(['forward:false', 'jump:false']);
+  });
+
+  it('does not steer sideways when an open column rises 0.2 a tick', async () => {
+    const note = vi.fn();
+    const world = {
+      '0,58,0': WATER,
+      '0,59,0': WATER,
+      '0,60,0': WATER,
+      '0,61,0': WATER,
+      '0,62,0': AIR,
+    };
+    const { bot, controls, pos } = swimmerIn(worldOf(world), new Vec3(0.5, 58.2, 0.5), 0.2);
+    await swimUp(walkFor(bot, () => pos().y >= 61.5, { note }));
+    expect(controls).not.toContain('forward:true');
+    expect(note).not.toHaveBeenCalled();
+    expect(pos().y).toBeGreaterThanOrEqual(61.5);
+  });
+
+  it('does not engage when the Body gains 0.3 blocks or more in the 20-tick window', async () => {
+    const note = vi.fn();
+    // Pinned under the cap, but rising 0.02 a tick: 0.4 blocks in the window.
+    const { bot, controls, state } = swimmerIn(
+      worldOf(cappedWorld()),
+      new Vec3(0.5, 59.8, 0.5),
+      0.02,
+    );
+    await swimUp(walkFor(bot, () => false, { expired: () => state.ticks >= 21, note }));
+    expect(controls).not.toContain('forward:true');
+    expect(note).not.toHaveBeenCalled();
+  });
+});
+
 describe('walkOutOfHazard', () => {
   it('walks with the pathfinder at the time scale, then steers with jump held until out', async () => {
     const { bot, controls, state } = controlBot();
