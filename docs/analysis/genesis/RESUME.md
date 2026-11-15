@@ -4,7 +4,7 @@ Read this first, then [README.md](README.md) and [plan.md](plan.md). Keep it und
 
 ## Where it is (2026-11-15)
 
-- Wave G0 is mostly merged (G0-02 done, G0-03a to d, G0-04, G0-05). G0-06 is not started. Wave G1: G1-01 and G1-02 merged; G1-03 is open as #454.
+- Wave G0 is mostly merged (G0-02 done, G0-03a to d, G0-04, G0-05). G0-06 is not started. Wave G1: G1-01 and G1-02 merged; G1-03 is merged 2026-11-15 06:02Z (3c563c72) as #454.
 - Architecture decision [0188](../../decisions/0188-genesis-environment-stamp.md) is still Proposed. Decision numbers for this campaign: 0240-0249. The full-stack runner fit waits for G6-04.
 - Handed to the session `geldar-genesis`, one campaign per coordinator.
 
