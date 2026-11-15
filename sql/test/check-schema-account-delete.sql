@@ -92,6 +92,12 @@ BEGIN
     (decode(repeat('5b', 32), 'hex'), 'reg-del-b', hash_b, 1000, 1000, 9000000000000);
   INSERT INTO register_consents (identity_hash, terms_version) VALUES (hash_a, 'terms-1'), (hash_b, 'terms-1');
   INSERT INTO kino_admins (identity_hash) VALUES (hash_a), (hash_b);
+  -- 0040: kino_audit rows carry the identity hash as hex (glass loginHash returns the identity hash itself),
+  -- so owner a's two rows are erased and owner b's row is kept
+  INSERT INTO kino_audit (event, login_hash, agent_id, pane_id, mode, at) VALUES
+    ('pane_opened', encode(hash_a, 'hex'), 'ag_del_live', 'pn_' || repeat('0', 25) || '1', 'follow', now()),
+    ('pane_closed', encode(hash_a, 'hex'), 'ag_del_live', 'pn_' || repeat('0', 25) || '1', 'follow', now()),
+    ('pane_opened', encode(hash_b, 'hex'), 'ag_del_b', 'pn_' || repeat('0', 25) || '2', 'follow', now());
 
   -- 0040: one row in every table keyed by a life, for each of the four lives (a live and a dead life of owner a,
   -- owner b's live and dead lives). Owner a's four lives must leave no row; owner b's two lives keep one row each.
@@ -207,6 +213,8 @@ BEGIN
   IF n <> 1 THEN RAISE EXCEPTION 'account delete: a failed delete removed a living thought'; END IF;
   SELECT count(*) INTO n FROM mcp_tokens WHERE token_id = 'mtok-del-live' AND revoked_at IS NULL;
   IF n <> 1 THEN RAISE EXCEPTION 'account delete: a failed delete left a token revoked'; END IF;
+  SELECT count(*) INTO n FROM kino_audit WHERE login_hash = encode(hash_a, 'hex');
+  IF n <> 2 THEN RAISE EXCEPTION 'account delete: a failed delete removed a kino audit row'; END IF;
   BEGIN
     DELETE FROM thoughts WHERE thought_id = 'th-del-b';
   EXCEPTION WHEN others THEN
@@ -240,6 +248,8 @@ BEGIN
   IF n <> 0 THEN RAISE EXCEPTION 'account delete: consent of owner a kept'; END IF;
   SELECT count(*) INTO n FROM kino_admins WHERE identity_hash = hash_a;
   IF n <> 0 THEN RAISE EXCEPTION 'account delete: kino admin of owner a kept'; END IF;
+  SELECT count(*) INTO n FROM kino_audit WHERE login_hash = encode(hash_a, 'hex');
+  IF n <> 0 THEN RAISE EXCEPTION 'account delete: kino audit rows of owner a kept'; END IF;
   SELECT count(*) INTO n FROM mcp_journal WHERE life_id = 'ag_del_live';
   IF n <> 0 THEN RAISE EXCEPTION 'account delete: journal of a living life kept'; END IF;
   SELECT count(*) INTO n FROM thoughts WHERE thought_id = 'th-del-live';
@@ -302,6 +312,8 @@ BEGIN
   IF n <> 1 THEN RAISE EXCEPTION 'account delete: other owner consent removed'; END IF;
   SELECT count(*) INTO n FROM kino_admins WHERE identity_hash = hash_b;
   IF n <> 1 THEN RAISE EXCEPTION 'account delete: other owner kino admin row removed'; END IF;
+  SELECT count(*) INTO n FROM kino_audit WHERE login_hash = encode(hash_b, 'hex');
+  IF n <> 1 THEN RAISE EXCEPTION 'account delete: other owner kino audit row removed'; END IF;
   SELECT count(*) INTO n FROM mcp_budget WHERE life_id IN ('ag_del_b', 'ag_del_bdead');
   IF n <> 2 THEN RAISE EXCEPTION 'account delete: other owner budget removed'; END IF;
   SELECT count(*) INTO n FROM mcp_sleep_marks WHERE life_id IN ('ag_del_b', 'ag_del_bdead');

@@ -12,7 +12,7 @@ runs in one transaction:
 - every token of the owner's players: revoked first (this fires `mcp_token_revoked`, which ends cached MCP
   sessions), then deleted;
 - the owner's API keys, players, roster rows and body_ops rows;
-- the identity's register sessions, consents and kino admin row;
+- the identity's register sessions, consents, kino admin row and kino_audit rows;
 - sleep marks and budget rows of the living lives (not trigger-protected);
 - journal and thought rows of the living lives (the only rows removed from append-only tables);
 - the owner row, and the identity row (unbanned) or its tombstone (banned, see below).
@@ -31,7 +31,7 @@ no CHECK in any `sql/` file, so the value is legal without a schema change.
 A dead life keeps its agents row, with owner NULL (0171 point 2 as first written). Migration 0040 (C7-09a2, decision
 0262) supersedes that point: every life of the owner (dead or alive) loses its sheet rows, sleep marks, budget, death
 records, journal, thoughts, receipts, suppressed wakeups, actions, intents, skill runs, memories, goals, skill library,
-relationships, ledger, votes and events. Shared world objects, kino_audit, audit rows and the tombstone stay.
+relationships, ledger, votes and events. Shared world objects, other owners' kino_audit rows, audit rows and the tombstone stay.
 
 ## Lock behaviour (F2)
 

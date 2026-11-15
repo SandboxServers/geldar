@@ -76,7 +76,7 @@ Every brief carries the list in [packet-conventions.md](packet-conventions.md) s
 ## For the owner
 
 - (a) Kept agent rows may carry a typed real name: anonymise on deletion, or accept.
-- (b) `kino_audit` rows of the deleted identity: erase on deletion, or keep under retention.
+- (b) built (geldar-93 default, revertable before sign-up opens): `kino_audit` rows of the deleted identity are erased on deletion.
 - (c) Cleanup of accounts deleted before 0040 (under 0039): card `C7-09c`.
 
 ## Open contradictions

@@ -12,12 +12,13 @@
 --   mcp_sleep_marks, mcp_budget (dead lives too, 0039 did living lives only), mcp_life_deaths, mcp_death_events.
 --   actions, intents, skill_runs, memories, goals, skill_library, relationships (both sides), ledger, votes.
 --   events (agent_id or thinker_id): not append-only, no lock window.
+--   kino_audit rows of the identity (login_hash = the identity hash as hex; geldar-93 ruling, default, revertable
+--     before sign-up opens): not append-only (0015 has no trigger), so no lock window.
 --   mcp_journal, thoughts, receipts, suppressed_wakeups (dead lives too): these four are append-only (0007), so
 --     their triggers are switched off inside the same short window 0039 uses, and on again right after the deletes.
 --
 -- Kept, by design: the agents rows (0039 kept them; the owner link is removed, the sheet columns stay with the row
--- as geldar-sheet says), the ban tombstone, the register_audit row (erasure actor random, no owner id), kino_audit
--- (operator audit of Glass viewing, keyed by agent_id and login hash, kept under kino_audit_purge; open point),
+-- as geldar-sheet says), the ban tombstone, the register_audit row (erasure actor random, no owner id),
 -- and the shared world objects skills.author, books.author, proposals.proposer and laws, which other lives depend on
 -- through foreign keys (skill_library, books) or by enactment (laws). See the decision's open points.
 --
@@ -132,6 +133,9 @@ BEGIN
   DELETE FROM public.register_sessions WHERE identity_hash = p_identity_hash;
   DELETE FROM public.register_consents WHERE identity_hash = p_identity_hash;
   DELETE FROM public.kino_admins WHERE identity_hash = p_identity_hash;
+  -- glass writes the identity hash itself, as hex, into login_hash for a signed-in viewer (audit.ts loginHash);
+  -- only that value's rows go, and no other owner's rows
+  DELETE FROM public.kino_audit WHERE login_hash = encode(p_identity_hash, 'hex');
 
   IF was_banned THEN
     UPDATE public.mcp_identities SET owner_id = NULL WHERE identity_hash = p_identity_hash;

@@ -22,7 +22,7 @@
 3. **Kept, and why.**
    - The agents rows of the owner's lives stay, with the owner link removed. The sheet columns stay with the row (geldar-sheet). The player id, game account and name on the row are typed by the owner at sign-up and can carry a real name; nothing checks them against anyone's identity, so the row can name a person.
    - **Shared world objects are kept:** `skills.author`, `books.author`, `proposals.proposer` and `laws`. Other lives depend on them: skill library and books reference skills and books by foreign key, and laws stand by enactment. The author or proposer is an agent row whose owner link is removed, so nothing in the kept row ties the object to a person.
-   - **`kino_audit` is kept** under its existing 90-day retention (`kino_audit_purge`). It is operator audit of Glass viewing, keyed by agent id and a login hash. The login hash is the identity hash of the signed-in viewer (the same value as `mcp_identities.identity_hash`), so these rows stay joinable to the person's identity for 90 days, and for a banned owner they stay joinable to the kept tombstone. They are not erased by this decision. Open point: the owner may ask for erasure at deletion instead.
+   - **`kino_audit` rows of the deleted identity are erased** (C7-09a2, geldar-93 ruling, owner asleep: the recommended default, revertable before sign-up opens). The login hash of a signed-in viewer is the identity hash itself as hex (`glass/src/kino/audit.ts` `loginHash`), so `register_account_delete` removes exactly the rows whose `login_hash = encode(identity_hash, 'hex')`. Other owners' rows stay under their 90-day retention (`kino_audit_purge`). The table has no append-only trigger, so no lock window is needed.
    - **`register_audit` is kept** (0085): the single deletion row, with a random erasure actor and no owner id.
    - **The ban tombstone is kept** (0171 point 4, 0136): the identity hash and the ban, nothing else.
 4. **The rest of 0171 is unchanged**: identity, owner row, owner keys, consent rows, kino admin rows, sessions, roster and body operations are removed; a second call for the same identity finds no owner and returns false with no audit row.
@@ -40,7 +40,7 @@
 
 ## Open
 
-- `kino_audit` is kept under its 90-day retention; the owner may rule that it is erased at deletion instead (owner call (b): erase rows whose login hash is the identity hash, or keep under retention).
+- `kino_audit` rows of the identity: erased at deletion (owner call (b), built as the geldar-93 default, revertable before sign-up opens).
 - The shared world objects keep the agent id of their author; the owner may rule that the author column is nulled instead.
 - (a) Kept agent rows may carry a typed real name (player id, game account, name): anonymise on deletion, or accept.
 - (c) Accounts deleted under 0039, before 0040: their dead lives have no owner link and no player row, so 0040 cannot reach them. Cleanup is follow-up card `C7-09c`.

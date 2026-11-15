@@ -40,8 +40,7 @@ Exact list of what stays (decision 0262):
 - audit rows (`register_audit`), because the table is append-only (0025). The deletion writes one row with a random
   erasure id as actor and no owner id;
 - the ban tombstone (the identity hash and the ban, nothing else), when the identity is banned (0171, point 4);
-- `kino_audit` rows (operator audit of Glass viewing, keyed by agent id and a login hash; the login hash is the identity hash of the signed-in viewer, so these rows stay joinable to the person for 90 days, and for a banned owner to the kept tombstone), kept under their 90-day
-  retention (`kino_audit_purge`); open point: the owner may rule that they are erased at deletion;
+- `kino_audit` rows of the deleted identity (the viewer's own Glass pane audit; the login hash is the identity hash as hex) are erased at deletion (geldar-93 default, revertable before sign-up opens). Other owners' rows stay under their 90-day retention (`kino_audit_purge`);
 - shared world objects whose author lost the owner link: `skills.author`, `books.author`, `proposals.proposer` and
   `laws`. Other lives depend on them (skill library and books by foreign key; laws by enactment). The author is an agent
   row with no owner link, so nothing ties the object to a person;
