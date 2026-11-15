@@ -59,6 +59,15 @@ function bestHoe(items: ReturnType<ActionContext['bot']['inventory']['items']>) 
   return [...hoes].sort((a, b) => rank(a.name) - rank(b.name))[0];
 }
 
+/**
+ * True when the newest recorded place on the cell was farmland and the cell now reads as grass or
+ * dirt: farmland that decayed (dry, trampled or uncovered) is not anyone's work (decision 0219).
+ * Any other recorded block, or no recorded block, is still ownership.
+ */
+function isDecayedFarmland(record: { block?: string }, cellName: string): boolean {
+  return record.block === 'farmland' && (cellName === 'grass_block' || cellName === 'dirt');
+}
+
 /** Turns one tillable block into its result: walk in reach, look at its top face, click it with a hoe. */
 async function till(
   ctx: ActionContext,
@@ -77,10 +86,16 @@ async function till(
   if (above.name !== 'air') return failed('not_possible', TILL_MESSAGE.notClear);
 
   // Someone else's recorded block is refused; the bot's own placements and unknown or natural
-  // blocks are allowed (decision 0164: tilling is not breaking a build).
+  // blocks are allowed (decision 0164: tilling is not breaking a build). Decayed farmland is not
+  // ownership (decision 0219).
   if (!isOwnPlacement(bot, at)) {
     const record = ownerRecordAt(target);
-    if (record?.known && record.owner !== null && record.owner !== bot.username) {
+    if (
+      record?.known &&
+      record.owner !== null &&
+      record.owner !== bot.username &&
+      !isDecayedFarmland(record, cell.name)
+    ) {
       return failed('not_possible', TILL_MESSAGE.someoneElses);
     }
   }
