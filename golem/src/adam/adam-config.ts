@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parse } from 'yaml';
 import { parseReflexConfig, type ReflexConfig } from '../body/reflex-config.ts';
+import type { RunStamp } from '../body/stamped-publisher.ts';
 import { repoRoot } from '../config.ts';
 
 /** What Adam's Body reads from `shards/<shard>.yaml` (decisions 0050, 0051). */
@@ -22,7 +23,13 @@ export interface AdamConfig {
   use: boolean;
   /** `20 / tick_rate`: the executor's time scale. */
   timeScale: number;
+  /** `mind.agent.harness` and `mind.agent.model`, stamped on the Body's events; absent when neither is set. */
+  stamp?: RunStamp;
 }
+
+/** The contract's patterns for the envelope's `harness` and `model` (contract/schemas/event.schema.json). */
+const HARNESS_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
+const MODEL_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$/;
 
 function block(value: unknown, where: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -56,12 +63,34 @@ function bodyActionFlag(root: Record<string, unknown>, name: string): boolean {
   return value;
 }
 
+/** The optional `harness` and `model` under `mind.agent`; none when both are left out. */
+function runStamp(agent: Record<string, unknown>): RunStamp | undefined {
+  const { harness, model } = agent;
+  if (harness === undefined && model === undefined) return undefined;
+  const stamp: RunStamp = {};
+  if (harness !== undefined) {
+    if (typeof harness !== 'string' || !HARNESS_PATTERN.test(harness)) {
+      throw new Error('mind.agent.harness must be lower-case letters, digits and hyphens');
+    }
+    stamp.harness = harness;
+  }
+  if (model !== undefined) {
+    if (typeof model !== 'string' || !MODEL_PATTERN.test(model)) {
+      throw new Error('mind.agent.model must be 1 to 128 model-name characters');
+    }
+    stamp.model = model;
+  }
+  return stamp;
+}
+
 /** Builds the config from a parsed shard file; throws on the first missing or invalid key. */
 export function parseAdamConfig(doc: unknown): AdamConfig {
   const root = block(doc, 'shard file');
   const agent = block(block(root.mind, 'mind').agent, 'mind.agent');
   const chat = block(root.chat, 'chat');
+  const stamp = runStamp(agent);
   return {
+    ...(stamp === undefined ? {} : { stamp }),
     shard: text(root, 'shard', 'shard file'),
     lifeId: text(agent, 'username', 'mind.agent'),
     displayName: text(agent, 'name', 'mind.agent'),
