@@ -52,6 +52,12 @@ writes from the release env. Names, as read by `body-helper/src/helperConfig.ts`
 `GELDAR_BODY_PIDS_LIMIT`, `GELDAR_SWEEP_MINUTES`, `GELDAR_BODY_HELPER_DEADLINE_MS`,
 `GELDAR_GLOBAL_BODY_CAP` (default 40; the owner sets it, the helper never raises it).
 
+`GELDAR_NETWORK` (default `geldar-colo`) and `GELDAR_STACK` (default `colo`) are optional; an unset or empty
+value takes the default. `GELDAR_NETWORK` is a Docker network name of at most 63 characters, and the
+helper refuses `host`, `bridge` and `none` (also `default` and `container:<id>`, in any case). The helper
+does not start with a refused value. `GELDAR_STACK` is at most 63 lower-case letters, digits or hyphens,
+starting with a letter or digit.
+
 Two password files are the single source for the helper's logins. The install script (step 2) creates
 them if missing, mode 0600:
 
