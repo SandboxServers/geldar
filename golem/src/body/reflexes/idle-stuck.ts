@@ -4,6 +4,7 @@ import { type ActionRun, runAction } from '../../actions/registry.ts';
 import { DEFAULT_DIAG_SINK } from '../../actions/stall-diag.ts';
 import type { Reflex, ReflexContext, ReflexOutcome, Trigger } from '../reflex.ts';
 import type { BodyView } from '../view.ts';
+import { watchProbe } from './idle-stuck-probe.ts';
 import { hasBurrow } from './panic-burrow.ts';
 import { failedWalksAt } from './unstick.ts';
 
@@ -188,7 +189,8 @@ export const idleStuckReflex: Reflex = {
 
 /**
  * Writes one operator line a minute while the Body stays still past its first minute (decision 0332):
- * the idle seconds and the three facts the stuck tests read. It is the Body's own log, not agent text,
+ * the idle seconds, the stuck facts, and the high_ledge conditions (decision 0333): `still` is the 120 s
+ * clock, the other three are the trigger's own tests. It is the Body's own log, not agent text,
  * and it fires no reflex. The minute restarts with each still spell.
  */
 function watchStill(view: BodyView, state: IdleState, now: number): void {
@@ -203,6 +205,14 @@ function watchStill(view: BodyView, state: IdleState, now: number): void {
       enclosed: view.enclosed ?? null,
       canStepOff: view.canStepOff ?? null,
       onOwnPlacement: view.onOwnPlacement ?? null,
+      noSafeExit: view.noSafeExit ?? null,
+      high_ledge: {
+        still: idle >= IDLE_TICKS_ON_OWN,
+        notEnclosed: view.enclosed !== true,
+        noSafeExit: view.noSafeExit === true,
+        notInWater: view.inFluid !== 'water',
+      },
+      ...watchProbe(view.terrainAt, view.position, view.health),
     }),
   );
 }

@@ -1,0 +1,18 @@
+# Sheet driver step 0 scratch overlay, modelled on PR #507's harness (not yet on main). A throwaway, loopback-only
+# copy of the phase0 shard for the scratch shard (SHEET_PROJECT, scratch- prefix), so it never shares ports
+# or a world with phase0 or with a live shard. Used only by bench/sheet/run.sh up|down.
+# Host ports: Minecraft 127.0.0.1:26566, NATS 127.0.0.1:14223, RCON 127.0.0.1:26576, Postgres 127.0.0.1:15433.
+# The world volume is set by GELDAR_WORLD_VOLUME=<project>_paper-data, never the phase0 volume.
+services:
+  velocity:
+    ports: !override
+      - "127.0.0.1:26566:25565"
+  nats:
+    ports: !override
+      - "127.0.0.1:14223:4222"
+  paper:
+    ports: !override
+      - "127.0.0.1:26576:25575"
+  postgres:
+    ports: !override
+      - "127.0.0.1:15433:5432"

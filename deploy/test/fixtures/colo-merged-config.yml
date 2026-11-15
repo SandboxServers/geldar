@@ -367,7 +367,7 @@ services:
       ONLINE_MODE: "FALSE"
       PAPER_BUILD: "74"
       RCON_CMDS_STARTUP: |-
-        worldborder set 3000
+        worldborder set 19000
         gamerule keep_inventory false
         gamerule immediate_respawn false
         gamerule show_advancement_messages false

@@ -9,6 +9,7 @@ import { canSeePoint } from '../perception/notable-blocks.ts';
 import { worldAge } from '../world-clock.ts';
 import { ownAir } from './air.ts';
 import { lightAtHead } from './light.ts';
+import { FALL_STOP_DROP } from './reflexes/fall-stop.ts';
 import { type SafeSpot, trackSafeSpot } from './safe-spot.ts';
 
 /** A hostile mob near the Body. */
@@ -91,6 +92,11 @@ export interface BodyView {
    * view was made. Optional so a hand-built view (a test fake) may leave it out.
    */
   readonly ticksSinceHurt?: number | null;
+  /**
+   * True when a solid block lies in one of the `blocks` cells straight above the Body's head (the
+   * operator phantom diagnostic reads it). Optional so a hand-built view may leave it out.
+   */
+  roofWithin?(blocks?: number): boolean;
   /** The bed or world spawn the Body treats as safe, or null when it knows none. */
   readonly safeSpot?: SafeSpot | null;
   /**
@@ -117,6 +123,11 @@ export interface BodyView {
    * unknown. Optional like canStepOff; a missing value is not a known dead end (decision 0333).
    */
   readonly noSafeExit?: boolean | null;
+  /**
+   * Operator diagnostics only (the idle_stuck watch line, decision 0333): the block read the planner uses,
+   * at a cell. Missing or unloaded cells make the watch probe fields null; nothing acts on it.
+   */
+  readonly terrainAt?: (at: Vec3) => Block | null | undefined;
   /**
    * True when the block under the Body's feet is one this Body placed itself (its own work, decision
    * 0164). Idle stuck and the B2 trigger do not fire on it (owner ruling 2026-11-14). Optional like
@@ -164,6 +175,8 @@ export function canStepOff(
  * True when `planMoves` finds no move from `feet` (a dead end, decision 0333), false when one exists,
  * and null when the planner reads a cell the view does not have or health is unknown: an unread cell
  * is never a dead end, so the answer is only known when every cell it looked at was loaded.
+ * The drop cap is `FALL_STOP_DROP` for a solid landing: fall_stop stops a deeper one, so it is no exit. A
+ * water landing is not stopped by fall_stop (`dropAhead` reads 0 for water), so it stays an exit up to `MAX_DROP`.
  */
 export function noSafeExit(
   blockAt: (at: Vec3) => Block | null | undefined,
@@ -177,7 +190,7 @@ export function noSafeExit(
     if (!block) unknown = true;
     return block ?? null;
   };
-  const moves = planMoves(read, feet, health);
+  const moves = planMoves(read, feet, health, FALL_STOP_DROP);
   if (unknown) return null;
   return moves.length === 0;
 }
@@ -349,6 +362,15 @@ export function createBodyView(bot: Bot): TrackedBodyView {
       }
       return found.sort((a, b) => a.distance - b.distance);
     },
+    roofWithin(blocks = 3) {
+      const feet = bot.entity.position;
+      const headY = Math.floor(feet.y) + 1;
+      for (let i = 1; i <= blocks; i++) {
+        const block = bot.blockAt(new Vec3(Math.floor(feet.x), headY + i, Math.floor(feet.z)));
+        if (block && block.boundingBox === 'block') return true;
+      }
+      return false;
+    },
     arrowsNear(radius = DEFAULT_ARROW_RADIUS) {
       const here = bot.entity.position;
       const yaw = bot.entity.yaw ?? 0;
@@ -401,6 +423,7 @@ export function createBodyView(bot: Bot): TrackedBodyView {
     get canStepOff() {
       return canStepOff((at) => bot.blockAt(at), bot.entity.position.floored());
     },
+    terrainAt: (at: Vec3) => bot.blockAt(at),
     get noSafeExit() {
       return noSafeExit((at) => bot.blockAt(at), bot.entity.position.floored(), bot.health);
     },

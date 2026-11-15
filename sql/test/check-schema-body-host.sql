@@ -11,10 +11,10 @@ DECLARE
   hk TEXT;
   keys TEXT[];
   n INT;
-  h_own BYTEA := decode(repeat('b1', 32), 'hex');
-  h_other BYTEA := decode(repeat('b2', 32), 'hex');
-  h_ban BYTEA := decode(repeat('b3', 32), 'hex');
-  h_col BYTEA := decode(repeat('b4', 32), 'hex');
+  h_own BYTEA := decode(repeat('bc', 32), 'hex');
+  h_other BYTEA := decode(repeat('a0', 32), 'hex');
+  h_ban BYTEA := decode(repeat('a8', 32), 'hex');
+  h_col BYTEA := decode(repeat('a9', 32), 'hex');
   fn_sup TEXT := 'supervisor_player_life_id(text, text)';
   fn_cfg TEXT := 'player_host_config(text)';
   fn_mlid TEXT := 'managed_life_id(text)';
@@ -125,13 +125,13 @@ BEGIN
     PERFORM register_create_owner(h_other, 'microsoft', 'reg-bh-other', 'bh other');
     PERFORM register_create_owner(h_ban, 'microsoft', 'reg-bh-ban', 'bh ban');
     PERFORM register_create_owner(h_col, 'microsoft', 'reg-bh-col', 'bh col');
-    PERFORM register_create_player(h_own, 'ag-bh-one', 'ag_bh_one', 'BhOne', 'harness-x', 'main', 'bh_t1', decode(repeat('c1', 32), 'hex'));
+    PERFORM register_create_player(h_own, 'ag-bh-one', 'ag_bh_one', 'BhOne', 'harness-x', 'main', 'bh_t1', decode(repeat('aa', 32), 'hex'));
     PERFORM register_roster_add(h_own, 'BhOne');
-    PERFORM register_create_player(h_ban, 'ag-bh-ban', 'ag_bh_ban', 'BhBan', 'harness-x', 'main', 'bh_t2', decode(repeat('c2', 32), 'hex'));
+    PERFORM register_create_player(h_ban, 'ag-bh-ban', 'ag_bh_ban', 'BhBan', 'harness-x', 'main', 'bh_t2', decode(repeat('ac', 32), 'hex'));
     PERFORM register_roster_add(h_ban, 'BhBan');
-    PERFORM register_create_player(h_col, 'ag-cnsze3', 'ag_cnsze3', 'BhCol1', 'harness-x', 'main', 'bh_t3', decode(repeat('c3', 32), 'hex'));
+    PERFORM register_create_player(h_col, 'ag-cnsze3', 'ag_cnsze3', 'BhCol1', 'harness-x', 'main', 'bh_t3', decode(repeat('ae', 32), 'hex'));
     PERFORM register_roster_add(h_col, 'BhCol1');
-    PERFORM register_create_player(h_col, 'ag-cwl9s6', 'ag_cwl9s6', 'BhCol2', 'harness-x', 'main', 'bh_t4', decode(repeat('c4', 32), 'hex'));
+    PERFORM register_create_player(h_col, 'ag-cwl9s6', 'ag_cwl9s6', 'BhCol2', 'harness-x', 'main', 'bh_t4', decode(repeat('af', 32), 'hex'));
     PERFORM register_roster_add(h_col, 'BhCol2');
     UPDATE mcp_identities SET banned_at = now() WHERE owner_id = 'reg-bh-ban';
 
@@ -178,14 +178,14 @@ BEGIN
     END IF;
 
     step := 'a roster row of another owner for the name gives NULL (the roster join is by owner)';
-    PERFORM register_create_player(h_own, 'ag-bh-split', 'ag_bh_split', 'BhSplit2', 'harness-x', 'main', 'bh_t5', decode(repeat('c5', 32), 'hex'));
+    PERFORM register_create_player(h_own, 'ag-bh-split', 'ag_bh_split', 'BhSplit2', 'harness-x', 'main', 'bh_t5', decode(repeat('b0', 32), 'hex'));
     PERFORM register_roster_add(h_other, 'BhSplit2');
     IF supervisor_player_life_id('reg-bh-own', 'BhSplit2') IS NOT NULL THEN
       RAISE EXCEPTION 'schema check (%): bh-own got an id through bh-other roster row', step;
     END IF;
 
     step := 'two owners with the same display name: each gets its own id, never the other';
-    PERFORM register_create_player(h_other, 'ag-bh-twin', 'ag_bh_twin', 'BhOne', 'harness-x', 'main', 'bh_t6', decode(repeat('c6', 32), 'hex'));
+    PERFORM register_create_player(h_other, 'ag-bh-twin', 'ag_bh_twin', 'BhOne', 'harness-x', 'main', 'bh_t6', decode(repeat('b8', 32), 'hex'));
     -- roster names are unique across owners, so the twin has no roster row; the owner filter on the player
     -- is what keeps it out of bh-own's answer.
     IF supervisor_player_life_id('reg-bh-own', 'BhOne') IS DISTINCT FROM lid THEN
@@ -250,7 +250,7 @@ BEGIN
     step := 'two live players of one owner with one display name: the supervisor function gives NULL, not one of them';
     -- register does not refuse a second player with a name the owner already has; the roster row is what
     -- the supervisor function joins on, and it is the same for both. Only the count of live matches decides.
-    PERFORM register_create_player(h_own, 'ag-bh-dup', 'ag_bh_dup', 'BhOne', 'harness-x', 'main', 'bh_t7', decode(repeat('c7', 32), 'hex'));
+    PERFORM register_create_player(h_own, 'ag-bh-dup', 'ag_bh_dup', 'BhOne', 'harness-x', 'main', 'bh_t7', decode(repeat('bb', 32), 'hex'));
     IF supervisor_player_life_id('reg-bh-own', 'BhOne') IS NOT NULL THEN
       RAISE EXCEPTION 'schema check (%): one of two same-name players of one owner got an id', step;
     END IF;

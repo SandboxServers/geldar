@@ -1,6 +1,7 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ledgeCells } from '../body/ledge.fakes.ts';
 import type { Block } from './bot-types.ts';
 import { setOwnerLookup } from './protected-blocks.ts';
 import type { ActionContext } from './registry.ts';
@@ -406,6 +407,15 @@ describe('unstick last rung: the dig_descend gate (decision 0333)', () => {
     const outcome = await unstick(ctxOf(bot));
     expect(JSON.stringify(outcome)).not.toContain('dig_descend');
     expect(dug).toEqual([]);
+  });
+
+  it('an ordinary run on a real 6 block ledge at health 18.5 reaches dig_descend (noSafeExit read from the terrain)', async () => {
+    // Unbreakable walls and floor: the earlier rungs cannot dig a way off, so the run reaches the last rung.
+    noSafe.value = undefined;
+    const grid: Grid = new Map([...ledgeCells(6)].map((cell) => [cell, 'bedrock'] as const));
+    const { bot } = fakeBot(grid, 18.5);
+    const outcome = await unstick(ctxOf(bot));
+    expect(JSON.stringify(outcome)).toContain('dig_descend');
   });
 
   it('an ordinary dead end (noSafeExit true, no other rung applies) starts dig_descend', async () => {
