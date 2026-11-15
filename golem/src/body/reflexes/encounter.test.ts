@@ -173,6 +173,21 @@ describe('one courage decision per encounter', () => {
     expect(roller).toHaveBeenCalledTimes(1);
   });
 
+  it('a band roll held at floor+1 is not reused at exactly the floor: health 6 flees afresh', () => {
+    const { scene, view } = bodyAt(7, 0);
+    const roller = vi.fn((): Roll => rolled(true));
+    const policy = bandPolicy(roller);
+
+    expect(threatCallFor(view, policy, hit)).toMatchObject({ action: 'fight', why: 'band_roll' });
+    scene.tick = 10;
+    scene.health = 6;
+    expect(threatCallFor(view, policy, hit)).toMatchObject({
+      action: 'flee',
+      why: 'at_or_below_floor',
+    });
+    expect(roller).toHaveBeenCalledTimes(1);
+  });
+
   it('a null world tick keeps no memory: every hurt is decided afresh', () => {
     const { view } = bodyAt(8, null);
     const roller = vi.fn((): Roll => rolled(true));

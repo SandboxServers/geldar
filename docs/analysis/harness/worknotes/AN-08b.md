@@ -29,3 +29,6 @@ Not edited: `reflex.ts` (AN-12 wires the policy). The hiss, arrow sidestep and s
 Fight watch: `fightHostile` aborts at `policy.floor()` with the same `<=` comparison as before.
 
 For AN-12: the card names no audit hook, and none exists. `threatCallFor` returns the `ThreatCall` (with its `roll`) to the reflex, which reads only `action`. AN-12 can record rolls only inside the `rollAt` it supplies to `createThreatPolicy`; nothing else in the Body sees a roll.
+
+`create-body.ts` is edited, though the card says AN-12 owns it: one import and one call (`forgetThreatEncounter`) in the existing `respawn` handler, kept here as a two-line respawn hook and reviewed.
+The hook has no effect until AN-12 supplies a rolls policy; `create-body.test.ts` pins that a respawn forgets an open band-roll encounter.

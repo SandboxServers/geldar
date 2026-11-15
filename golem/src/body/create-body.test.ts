@@ -1,4 +1,5 @@
 import type { Action } from '@geldar/contract';
+import type { Roll } from '@geldar/psyche';
 import type { Bot } from 'mineflayer';
 import { describe, expect, it, vi } from 'vitest';
 import { STALL_TEXT } from '../actions/pathing.ts';
@@ -10,7 +11,9 @@ import { MemorySink } from './records.ts';
 import { NatsRecordSink } from './records-nats.ts';
 import { allReflexesOn, REFLEX_NAMES } from './reflex-config.ts';
 import { hasBlockedReport } from './reflexes/blocked-path.ts';
+import { threatCallFor } from './reflexes/encounter.ts';
 import { IDLE_TICKS, idleStuckReflex } from './reflexes/idle-stuck.ts';
+import { createThreatPolicy } from './reflexes/threat-policy.ts';
 
 const LIFE = 'ag_test_01';
 
@@ -86,6 +89,21 @@ describe('createBody clears the idle clock on respawn and restarts it after an a
     bot.emit('respawn');
     stuckBody(view, IDLE_TICKS);
     expect(idleStuckReflex.check(view)).toBeNull();
+  });
+
+  it('a respawn forgets the open band-roll encounter, so the same hostile rolls again', () => {
+    const bot = fakeBot();
+    const { view } = body({ bot });
+    Object.assign(view, { health: 8, tick: 0 });
+    const roller = vi.fn((): Roll => ({ success: true }) as Roll);
+    const policy = createThreatPolicy({ aggression: 3, combat: 0, rolls: true, rollAt: roller });
+    const hit = { hostile: 'zombie', armed: true, suicideMob: false };
+
+    expect(threatCallFor(view, policy, hit)).toMatchObject({ action: 'fight', why: 'band_roll' });
+    bot.emit('respawn');
+    Object.assign(view, { tick: 10 });
+    threatCallFor(view, policy, hit);
+    expect(roller).toHaveBeenCalledTimes(2);
   });
 
   it('a finished action restarts the idle clock from its end', async () => {
