@@ -183,7 +183,7 @@ host_args() {
   [ -f "$SHARD_FILE" ] || die "shard file not found: $SHARD_FILE"
   grep -Eq "player_id:[[:space:]]*$player[[:space:]]*[,}]" "$SHARD_FILE" ||
     die "player $player is not listed under sovereign.players in $SHARD_FILE; add it first"
-  hname=geldar-colo-players-host-$player
+  hname=$PROJECT-players-host-$player
 }
 
 # Project-labelled containers with exactly the name $2; $1 is -a to include stopped ones, or empty.
@@ -203,11 +203,11 @@ run_hosts() {
   case $cmd in
     player-list)
       for id in $(grep -Eo 'player_id:[[:space:]]*ag-[a-z0-9-]+' "$SHARD_FILE" | sed 's/.*:[[:space:]]*//'); do
-        if [ -n "$(host_ps '' "geldar-colo-players-host-$id")" ]; then
-          say "$id: running (geldar-colo-players-host-$id)"
-        elif [ -n "$(host_ps -a "geldar-colo-players-host-$id")" ]; then
-          st=$(docker inspect -f '{{.State.Status}}' "geldar-colo-players-host-$id" 2>/dev/null || echo unknown)
-          say "$id: $st (geldar-colo-players-host-$id)"
+        if [ -n "$(host_ps '' "$PROJECT-players-host-$id")" ]; then
+          say "$id: running ($PROJECT-players-host-$id)"
+        elif [ -n "$(host_ps -a "$PROJECT-players-host-$id")" ]; then
+          st=$(docker inspect -f '{{.State.Status}}' "$PROJECT-players-host-$id" 2>/dev/null || echo unknown)
+          say "$id: $st ($PROJECT-players-host-$id)"
         else
           say "$id: not running"
         fi
