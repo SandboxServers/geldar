@@ -71,8 +71,8 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0064](0064-exit-run-lives.md) | The exit runs use fresh lives (`ag_adam_03` 32B, `ag_adam_04` 8B) and fresh volumes; the smoke run has its own life (`ag_smoke_01`); journals are append-only | Accepted provisionally (orchestrator, owner may revise) |
 | [0065](0065-damage-wakes-the-mind.md) | Damage wakes the Mind when no intent is running; death still ends the life | Accepted provisionally (orchestrator, owner may revise) |
 | [0066](0066-phase0-closed-as-proof-of-life.md) | Phase 0 is closed as proof of life; the spec's section 10 exit criteria are waived by the owner and the exit runs are deferred | Accepted (owner) |
-| [0068](0068-prompt-v4-and-agent-visible-text.md) | Nothing an agent reads may say humans watch it or reveal the shard, harness or credits; prompt v4 is the default and released templates are immutable; persona lint with `--allow-meta` | Proposed (fix-c; owner amends the spec line ~1584) |
 | [0067](0067-nats-accounts-and-least-privilege.md) | NATS accounts and least-privilege users, opt-in until the stack is cut over | Accepted provisionally (orchestrator, owner may revise) |
+| [0068](0068-prompt-v4-and-agent-visible-text.md) | Nothing an agent reads may say humans watch it or reveal the shard, harness or credits; prompt v4 is the default and released templates are immutable; persona lint with `--allow-meta` | Proposed (fix-c; owner amends the spec line ~1584) |
 | [0069](0069-no-plan-wake-is-not-a-failure.md) | A no_plan wake with no intent is a neutral wake, not a failed intent; the player event type list gains `wake` | Accepted (fix-perception) |
 | [0070](0070-phase1-is-the-colo-first-shard.md) | Phase 1 is the colo-first shard: final environment, invite-only, not announced | Accepted (owner) |
 | [0071](0071-public-endpoints-and-ports.md) | The public Minecraft endpoint is a new TCP port with an SRV record; HTTPS ingress is the shared Caddy, reloaded and never restarted | Accepted (owner) |
@@ -121,10 +121,10 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0144](0144-death-is-an-event-and-a-dated-fact-and-there-is-no-revive.md) | Death is a distinct event with `died_at` and a cause; there is no revive | Proposed (owner confirmation pending) |
 | [0145](0145-agent-names-need-line-of-sight-and-proximity.md) | A target agent can be named only when seen and near | Accepted (owner 2026-11-12) |
 | [0146](0146-c5-open-questions-for-the-owner.md) | Wave C5 open questions: write_book stamping, Moot Stone governance, plugin item consumption | Open |
-| [0149](0149-act-budget-suspended-and-metered.md) | The act budget is suspended and every act is metered | Accepted, temporary |
-| [0150](0150-register-loopback-port-18090.md) | The register service publishes on loopback port 18090, not 8090 (held by another tenant on the shared node) | Accepted |
 | [0147](0147-death-is-knowable-while-permadeath-is-off.md) | Death is knowable to the player while permadeath is off; per-life fields are deferred | Accepted (owner direction, C6) |
 | [0148](0148-reflexes-are-never-silent.md) | Reflexes are never silent: every firing is news, logged, and rate-limited; retreat avoids canopy | Accepted in part (owner direction, C6) |
+| [0149](0149-act-budget-suspended-and-metered.md) | The act budget is suspended and every act is metered | Accepted, temporary |
+| [0150](0150-register-loopback-port-18090.md) | The register service publishes on loopback port 18090, not 8090 (held by another tenant on the shared node) | Accepted |
 | [0151](0151-bodies-run-only-in-the-colo.md) | Bodies run only in the Colo; there is no bring-your-own-body; the user's token talks to the Colo-hosted Body | Decided (owner ruling 2026-11-11) |
 | [0152](0152-programmatic-body-management-for-owners.md) | Every registered owner manages their agents' bodies by API; owner API keys separate from player tokens; a Colo supervisor behind a narrow control interface | Decided (owner ruling 2026-11-11) |
 | [0153](0153-terms-consent-and-deletion-before-sign-up.md) | Terms, privacy, consent, account deletion and export are required before sign-up opens; legal text is owner-reviewed, never self-approved | Decided (owner ruling 2026-11-11); text Draft |

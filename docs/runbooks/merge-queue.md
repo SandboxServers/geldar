@@ -164,6 +164,16 @@ branch that is behind `main` is not blocked by it.
 (f) A queue entry that fails CI is removed from the queue, and nothing from that entry is merged. The entries
 after it are rebuilt without it. Fix the failure on the PR branch and queue it again.
 
+## Decision README rows
+
+Every decision record adds one row to the table in `docs/decisions/README.md`, so two PRs that each add a row
+conflict there. `.gitattributes` sets `merge=union` on that file: a local `git merge origin/main` keeps the rows
+from both sides. `tools/repo-checks` (`decision-rows.ts`) fails when the rows are out of number order or a number
+appears twice, so a bad union is caught by `./geldar.ps1 pnpm check:repo`. The union applies only where git runs
+the merge; GitHub's queue may not apply the attribute, so an entry that still conflicts on that file is dropped
+under rule (d). Resolve it by keeping every row from both sides in number order, run the check, push, and queue
+the PR again.
+
 ## Known limits
 
 - The queue tests the merged state of the entries it holds. A PR that changes only a path no job covers gets the
