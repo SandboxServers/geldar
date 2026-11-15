@@ -53,6 +53,8 @@ export interface SovereignConfig {
   maxConnectionsPerAddress: number;
   /** The most seconds one `wait` may block; `wait`'s max_seconds is clamped to this. */
   waitCapSeconds: number;
+  /** `sovereign.mcp.show_unavailable_tools`: false leaves out the tools this world does not run. Default true. */
+  showUnavailableTools: boolean;
   /** The interval between keepalive notifications on an open wait. */
   keepaliveSeconds: number;
   /** The largest request body the MCP reads. */
@@ -267,6 +269,7 @@ function sovereignConfig(block: Doc, agentUsername: string): SovereignConfig {
     keepaliveSeconds: int(mcp, 'keepalive_seconds', 'sovereign.mcp', 1, 240),
     maxBodyBytes: int(mcp, 'max_body_bytes', 'sovereign.mcp', 1024, 1_048_576),
     maxResultBytes: int(mcp, 'max_result_bytes', 'sovereign.mcp', 1024, 65536),
+    showUnavailableTools: optionalFlag(mcp, 'show_unavailable_tools', 'sovereign.mcp', true),
     replayMinutes: replayWindow(mcp.replay_minutes),
     wake: {
       minSpacingSeconds: int(wake, 'min_spacing_seconds', 'sovereign.wake', 0, 3600),
@@ -392,6 +395,14 @@ function httpConfig(
 }
 
 /** GELDAR_MCP_IN_CONTAINER: unset or 0 is false, 1 is true, anything else is an error. */
+/** A true or false key that may be absent: absent gives the fallback, anything but a boolean is refused. */
+function optionalFlag(section: object, key: string, where: string, fallback: boolean): boolean {
+  const raw = (section as Record<string, unknown>)[key];
+  if (raw === undefined) return fallback;
+  if (typeof raw !== 'boolean') throw new Error(`${where}.${key} must be true or false`);
+  return raw;
+}
+
 function containerFlag(raw: string | undefined): boolean {
   if (raw === undefined || raw === '' || raw === '0') return false;
   if (raw === '1') return true;

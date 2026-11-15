@@ -18,10 +18,12 @@ import { allReflexesOn, isReflexEnabled, type ReflexConfig } from './reflex-conf
 import { createBasicReflexes } from './reflexes/basic.ts';
 import { reportBlocked } from './reflexes/blocked-path.ts';
 import { combatReflexes } from './reflexes/combat.ts';
+import { forgetThreatEncounter } from './reflexes/encounter.ts';
 import { noteActionEnd, resetIdleStuck } from './reflexes/idle-stuck.ts';
 import { forgetBurrow } from './reflexes/panic-burrow.ts';
 import { forgetShelterBackoff, shelterReflexes } from './reflexes/shelter.ts';
 import { noteGoto, resetStuck } from './reflexes/unstick.ts';
+import { watchRestStat } from './rest-stat.ts';
 import { BodyRuntime, type TickSource } from './runtime.ts';
 import type { BodyView } from './view.ts';
 import { WakeTap } from './wake-conditions.ts';
@@ -163,8 +165,14 @@ export function createBody(options: CreateBodyOptions): Body {
     forgetShelterBackoff(built.view);
     resetStuck(built.view);
     resetIdleStuck(built.view);
+    forgetThreatEncounter(built.view);
   };
   if (typeof options.bot.on === 'function') options.bot.on('respawn', forgetOldBody);
+  // The time since rest is an operator log line on 26.1 only (decision 0225); no reflex or Mind reads it.
+  watchRestStat(
+    options.bot,
+    options.timeScale === undefined ? {} : { timeScale: options.timeScale },
+  );
   // Death, not the respawn, ends the previous life's work: a step still running would walk the new body on.
   if (typeof options.bot.on === 'function') {
     options.bot.on('death', () => {

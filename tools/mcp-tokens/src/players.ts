@@ -1,4 +1,11 @@
+import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
+import {
+  type CharacterSheet,
+  canonicalSheetJson,
+  normalizeSheet,
+  STANDARD_SHEET,
+} from '@geldar/psyche';
 import { parse } from 'yaml';
 import { checkCap, checkOwnerId, type Sql } from './owners.ts';
 import { markText, personaMarks } from './persona-lint.ts';
@@ -10,9 +17,16 @@ export const IDENTITY_MAX_BYTES = 8192;
 /** A player's goals, in bytes of UTF-8. */
 export const GOALS_MAX_BYTES = 4096;
 
+/** A `--sheet-file`, in bytes of UTF-8; the sheet is a few lines of scores. */
+export const SHEET_FILE_MAX_BYTES = 16384;
+
 const PLAYER_ID = /^ag-[a-z0-9]+(-[a-z0-9]+)*$/;
 const LIFE_ID = /^ag_[a-z0-9]+(_[a-z0-9]+)*$/;
+/** The contract LifeId (contract/schemas/common.schema.json); players.sheet.test.ts checks the two agree. */
+export const SHEET_LIFE_ID = /^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$/;
 const HARNESS = /^[a-z][a-z0-9-]{0,31}$/;
+/** The contract's event.schema.json `model` pattern: the declared model of a life. */
+const MODEL = /^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$/;
 
 /** The part of shards/phase0.yaml that sovereign players read. */
 export interface SovereignShard {
@@ -25,6 +39,8 @@ export interface SovereignShard {
   ownerCapDefault: number | undefined;
   /** The most a `--cap` flag may grant (sovereign.owner_cap_owner, decision 0052); absent when the key is. */
   ownerCapOwner: number | undefined;
+  /** `character.mode`: sheet makes roster creation write the sheet and its adoption; off (the default) writes neither. */
+  characterMode: 'off' | 'sheet';
 }
 
 /** A player's persona: the identity (required, markdown) and the goals (optional, markdown). */
@@ -42,6 +58,10 @@ export interface NewPlayer {
   seed?: Seed;
   /** Keeps a persona the lint refuses (`--allow-meta`). */
   allowMeta?: boolean;
+  /** The declared model (`--model`); the placeholder `self-reported` when absent. */
+  model?: string;
+  /** The character sheet (`--sheet-file`), checked by addPlayer; only the sheet-mode shard takes one. */
+  characterSheet?: unknown;
 }
 
 export type PlayerAction = 'pause' | 'resume' | 'retire';
@@ -72,7 +92,21 @@ export function parseSovereignShard(text: string): SovereignShard {
     capCredits: budget.cap_credits,
     ownerCapDefault: readOptionalCap(sovereign.owner_cap_default, 'sovereign.owner_cap_default'),
     ownerCapOwner: readOptionalCap(sovereign.owner_cap_owner, 'sovereign.owner_cap_owner'),
+    characterMode: readCharacterMode(doc),
   };
+}
+
+/** `character.mode`: off or sheet. An omitted mode (or a `character:` with no value) is off; any other value throws. */
+function readCharacterMode(doc: Record<string, unknown>): 'off' | 'sheet' {
+  const block = doc.character;
+  if (block === undefined || block === null) return 'off';
+  if (typeof block !== 'object' || Array.isArray(block)) {
+    throw new Error('character must be a mapping');
+  }
+  const mode = (block as Record<string, unknown>).mode;
+  if (mode === undefined || mode === 'off') return 'off';
+  if (mode === 'sheet') return 'sheet';
+  throw new Error('character.mode must be off or sheet');
 }
 
 /** An absent cap key stays undefined (the caller refuses); a present one must be a valid cap. */
@@ -111,6 +145,32 @@ async function readLimited(path: string, maxBytes: number, what: string): Promis
 }
 
 /**
+ * Reads a `--sheet-file` (YAML or JSON) and returns its value. The caller checks the value with
+ * the sheet validator. Errors never echo the file's contents.
+ */
+export async function readSheetFile(path: string): Promise<unknown> {
+  const text = await readLimited(path, SHEET_FILE_MAX_BYTES, 'sheet');
+  try {
+    return parse(text);
+  } catch {
+    throw new Error('the sheet file is not valid YAML or JSON');
+  }
+}
+
+/** The lower-case hex SHA-256 of the canonical sheet JSON (psyche's canonicalSheetJson; sql 0050). */
+export function sheetHash(sheet: CharacterSheet): string {
+  return createHash('sha256').update(canonicalSheetJson(sheet), 'utf8').digest('hex');
+}
+
+/** The sheet a roster life adopts: the given one, refused field by field if malformed, or the standard one. */
+function adoptedSheet(given: unknown): CharacterSheet {
+  if (given === undefined) return STANDARD_SHEET;
+  const result = normalizeSheet(given);
+  if (!result.ok) throw new Error(`character sheet refused: ${result.errors.join('; ')}`);
+  return result.sheet;
+}
+
+/**
  * Refuses a persona that is empty or over its size, or that tells the character it is watched by
  * humans, that it is software, or names the harness, shard, colo or credits. `allowMeta` (the
  * `--allow-meta` flag) lets the persona through; the caller prints the warning.
@@ -137,6 +197,29 @@ export function seedText(seed: Seed): string {
   return seed.goals.trim() === '' ? seed.identity : `${seed.identity}\n\n## Goals\n\n${seed.goals}`;
 }
 
+/** The agents row in off mode: the statement as it was before the sheet columns existed. */
+const AGENTS_INSERT = `INSERT INTO agents (agent_id, name, life_seq, game_account, shard, mode, owner, harness,
+         declared_model, model_config, tier, personality_seed)
+       VALUES ($1, $2, 1, $1, $3, 'sovereign', $4, $5, $7, 'declared:unverified', 'sovereign', $6)`;
+
+/** The agents row in sheet mode: the sheet, its hash and the time it was adopted (sql 0050). */
+const AGENTS_SHEET_INSERT = `INSERT INTO agents (agent_id, name, life_seq, game_account, shard, mode, owner, harness,
+         declared_model, model_config, tier, personality_seed,
+         character_sheet, sheet_hash, sheet_adopted_at)
+       VALUES ($1, $2, 1, $1, $3, 'sovereign', $4, $5, $7, 'declared:unverified', 'sovereign', $6,
+         $8::jsonb, $9::text, CASE WHEN $9::text IS NULL THEN NULL ELSE now() END)`;
+
+/**
+ * Refuses a sheet life that the contract's LifeId does not take, before any write, so the
+ * sheet_adopted event row this add writes always passes the contract. The pattern is a copy of the
+ * schema's, held equal by a drift test (the contract validator threw under vitest here).
+ */
+function checkAdoptionLife(life: string): void {
+  if (!SHEET_LIFE_ID.test(life)) {
+    throw new Error(`life ${life} cannot take a sheet: its id must match ${SHEET_LIFE_ID.source}`);
+  }
+}
+
 /**
  * Adds a sovereign player: the agents row (mode sovereign), the mcp_players row and the first
  * budget, in one transaction. The owner row is locked so two adds cannot both pass the cap.
@@ -152,6 +235,23 @@ export async function addPlayer(sql: Sql, player: NewPlayer, shard: SovereignSha
     throw new Error(`harness ${player.harness} is not enabled on shard ${shard.shard}`);
   }
   if (player.seed !== undefined) checkSeed(player.seed, player.allowMeta === true);
+  if (player.model !== undefined) checkModel(player.model);
+  if (shard.characterMode === 'off' && player.characterSheet !== undefined) {
+    throw new Error('the shard has character mode off');
+  }
+  // Checked before any write: a malformed sheet is refused, never repaired.
+  const adopted = shard.characterMode === 'sheet' ? adoptedSheet(player.characterSheet) : null;
+  const hash = adopted === null ? null : sheetHash(adopted);
+  if (adopted !== null) checkAdoptionLife(player.life);
+  const agentValues = [
+    player.life,
+    player.name,
+    shard.shard,
+    player.owner,
+    player.harness,
+    player.seed ? seedText(player.seed) : null,
+    player.model ?? 'self-reported',
+  ];
   await transaction(sql, async () => {
     const owners = await sql.query(
       'SELECT player_cap FROM mcp_owners WHERE owner_id = $1 FOR UPDATE',
@@ -168,19 +268,13 @@ export async function addPlayer(sql: Sql, player: NewPlayer, shard: SovereignSha
     if (Number(used.rows[0]?.n) >= Number(owner.player_cap)) {
       throw new Error(`owner ${player.owner} is at the cap of ${owner.player_cap} players`);
     }
-    await sql.query(
-      `INSERT INTO agents (agent_id, name, life_seq, game_account, shard, mode, owner, harness,
-         declared_model, model_config, tier, personality_seed)
-       VALUES ($1, $2, 1, $1, $3, 'sovereign', $4, $5, 'self-reported', 'declared:unverified', 'sovereign', $6)`,
-      [
-        player.life,
-        player.name,
-        shard.shard,
-        player.owner,
-        player.harness,
-        player.seed ? seedText(player.seed) : null,
-      ],
-    );
+    // Off mode runs the original statement, so it works before sql 0050 is applied.
+    if (adopted === null || hash === null) {
+      await sql.query(AGENTS_INSERT, agentValues);
+    } else {
+      await sql.query(AGENTS_SHEET_INSERT, [...agentValues, JSON.stringify(adopted), hash]);
+      await recordAdoption(sql, player.life, adopted, hash);
+    }
     await sql.query(
       `INSERT INTO mcp_players (player_id, owner_id, life_id, display_name, harness, status)
        VALUES ($1, $2, $3, $4, $5, 'active')`,
@@ -191,6 +285,29 @@ export async function addPlayer(sql: Sql, player: NewPlayer, shard: SovereignSha
       [player.life, shard.capCredits],
     );
   });
+}
+
+/**
+ * The one adoption of a roster life, inside addPlayer's transaction: its sheet_adopted event, then
+ * the character_sheet_adoptions row that cites it (sql 0051 needs the events row first).
+ */
+async function recordAdoption(
+  sql: Sql,
+  life: string,
+  sheet: CharacterSheet,
+  hash: string,
+): Promise<void> {
+  const eventId = `roster:sheet_adopted:${life}`;
+  await sql.query(
+    `INSERT INTO events (source_event_id, at, type, agent_id, payload)
+     VALUES ($1, now(), 'sheet_adopted', $2, $3::jsonb)`,
+    [eventId, life, JSON.stringify({ life_id: life, sheet, sheet_hash: hash, source: 'roster' })],
+  );
+  await sql.query(
+    `INSERT INTO character_sheet_adoptions (source_event_id, life_id, sheet_hash, sheet, source, result)
+     VALUES ($1, $2, $3, $4::jsonb, 'roster', 'adopted')`,
+    [eventId, life, hash, JSON.stringify(sheet)],
+  );
 }
 
 /** Pauses, resumes or retires a player. Retiring also revokes every token the player holds. */
@@ -218,6 +335,33 @@ export async function setPlayerStatus(
     }
   });
   return life;
+}
+
+/** Refuses a declared model the contract pattern does not take. */
+function checkModel(model: string): void {
+  if (!MODEL.test(model)) {
+    throw new Error(
+      'model must be 1 to 128 letters, digits or . _ : @ / + - (start with a letter or digit)',
+    );
+  }
+}
+
+/**
+ * Sets the declared model of a live player's life (agents.declared_model). One row; a retired or
+ * unknown player is refused and nothing is written.
+ */
+export async function setPlayerModel(sql: Sql, playerId: string, model: string): Promise<string> {
+  if (!PLAYER_ID.test(playerId)) throw new Error('player id must look like ag-name-01');
+  checkModel(model);
+  const result = await sql.query(
+    `UPDATE agents SET declared_model = $2 FROM mcp_players
+     WHERE mcp_players.life_id = agents.agent_id AND mcp_players.player_id = $1
+       AND mcp_players.status <> 'retired'
+     RETURNING agents.agent_id`,
+    [playerId, model],
+  );
+  if (result.rows.length !== 1) throw new Error(`no live player ${playerId} to set the model of`);
+  return String((result.rows[0] as { agent_id: unknown }).agent_id);
 }
 
 /** Runs `work` between BEGIN and COMMIT, and rolls back if it throws. */

@@ -4,16 +4,14 @@ import { ActionRegistry, runAction } from '../../actions/registry.ts';
 import type { Reflex, ReflexContext, ReflexOutcome, Trigger } from '../reflex.ts';
 import type { BodyView, HostileView } from '../view.ts';
 import { deadline } from './deadline.ts';
+import { threatCallFor } from './encounter.ts';
+import { LEGACY_THREAT, type ThreatPolicy } from './threat-policy.ts';
 import { attackerOf, isSuicideMob } from './threats.ts';
 
 /** A hostile this close (blocks) that hurt the Body just now is the attacker. */
 const ATTACKER_RADIUS = 4;
 /** The hurt must be this fresh, in physics ticks (one second). */
 const HURT_WINDOW_TICKS = 20;
-/** At or below this health the Body does not fight: it flees (the retreat reflex shares the number). */
-const LOW_HEALTH = 6;
-/** Wall ms a fight may last. */
-const FIGHT_LIMIT_MS = 30_000;
 /** Wall ms a flight may last. */
 const FLIGHT_LIMIT_MS = 15_000;
 /** How far (blocks) one flight leg runs from the attacker. */
@@ -144,62 +142,73 @@ function isArmed(view: BodyView): boolean {
 /**
  * Fight or flee: a hostile hurts the Body (health dropped within the last second, and a hostile
  * that is not neutral stands within 4 blocks, in melee reach and facing the Body). Armed (a sword
- * or axe carried) with health above 6, it cancels what it was doing and
- * fights that hostile with the `attack` action until it is gone or health falls to 6; otherwise it
+ * or axe carried) with health above the policy floor (6 by default), it cancels what it was doing and
+ * fights that hostile with the `attack` action until it is gone or health falls to that floor; otherwise it
  * runs from it. A flight, and a fight that ends on low health, raise a `reflex_danger` wake.
  * Also: a creeper that hisses (fuse lit) within 5 blocks and in sight makes the Body run (cause `hiss`).
  */
-export const fightOrFleeReflex: Reflex = {
-  name: 'fight_or_flee',
-  priority: 60,
-  cooldownTicks: FLEE_COOLDOWN_TICKS,
-  check(view: BodyView): Trigger | null {
-    const hurt = view.ticksSinceHurt;
-    if (hurt !== null && hurt !== undefined && hurt <= HURT_WINDOW_TICKS) {
-      const hostile = attackerOf(view, ATTACKER_RADIUS);
-      if (hostile) {
-        return {
-          health: view.health,
-          hostile: hostile.name,
-          distance: Math.round(hostile.distance * 10) / 10,
-          // A creeper is never meleed: the Body runs from it.
-          armed: isArmed(view) && !isSuicideMob(hostile.name),
-        };
+export function createFightOrFleeReflex(policy: ThreatPolicy = LEGACY_THREAT): Reflex {
+  return {
+    name: 'fight_or_flee',
+    priority: 60,
+    cooldownTicks: FLEE_COOLDOWN_TICKS,
+    check(view: BodyView): Trigger | null {
+      const hurt = view.ticksSinceHurt;
+      if (hurt !== null && hurt !== undefined && hurt <= HURT_WINDOW_TICKS) {
+        const hostile = attackerOf(view, ATTACKER_RADIUS);
+        if (hostile) {
+          return {
+            health: view.health,
+            hostile: hostile.name,
+            distance: Math.round(hostile.distance * 10) / 10,
+            // A creeper is never meleed: the Body runs from it.
+            armed: isArmed(view) && !isSuicideMob(hostile.name),
+          };
+        }
       }
-    }
-    return hissTrigger(view) ?? arrowTrigger(view);
-  },
-  async run(trigger: Trigger, ctx: ReflexContext): Promise<ReflexOutcome> {
-    if (trigger.cause === 'arrow' && trigger.paused === true) return pauseArrows(ctx.view);
-    await ctx.cancelAction();
-    const name = String(trigger.hostile);
-    if (trigger.cause === 'hiss') return flee(ctx, name, 'hiss');
-    if (trigger.cause === 'arrow') {
-      noteSidestep(ctx.view);
-      return sidestep(ctx, String(trigger.bearing));
-    }
-    if (trigger.armed === true && ctx.view.health > LOW_HEALTH) {
-      const fight = await fightHostile(ctx, name);
-      if (fight.outcome.result === 'handled' || !fight.lowHealth) return fight.outcome;
-      // Health fell to the floor mid-fight: run, and tell the Mind.
-      return flee(ctx, name, 'health low mid-fight');
-    }
-    return flee(ctx, name, trigger.armed === true ? 'health low' : 'unarmed');
-  },
-};
+      return hissTrigger(view) ?? arrowTrigger(view);
+    },
+    async run(trigger: Trigger, ctx: ReflexContext): Promise<ReflexOutcome> {
+      if (trigger.cause === 'arrow' && trigger.paused === true) return pauseArrows(ctx.view);
+      await ctx.cancelAction();
+      const name = String(trigger.hostile);
+      if (trigger.cause === 'hiss') return flee(ctx, name, 'hiss');
+      if (trigger.cause === 'arrow') {
+        noteSidestep(ctx.view);
+        return sidestep(ctx, String(trigger.bearing));
+      }
+      const call = threatCallFor(ctx.view, policy, {
+        hostile: name,
+        armed: trigger.armed === true,
+        suicideMob: isSuicideMob(name),
+      });
+      if (call.action === 'fight') {
+        const fight = await fightHostile(ctx, name, policy);
+        if (fight.outcome.result === 'handled' || !fight.lowHealth) return fight.outcome;
+        // Health fell to the floor mid-fight: run, and tell the Mind.
+        return flee(ctx, name, 'health low mid-fight');
+      }
+      return flee(ctx, name, trigger.armed === true ? 'health low' : 'unarmed');
+    },
+  };
+}
+
+/** The fight-or-flee reflex with the legacy policy: the module's default. */
+export const fightOrFleeReflex: Reflex = createFightOrFleeReflex();
 
 /** Runs the `attack` action on the named hostile, aborting it when health reaches the floor. */
 async function fightHostile(
   ctx: ReflexContext,
   name: string,
+  policy: ThreatPolicy,
 ): Promise<{ outcome: ReflexOutcome; lowHealth: boolean }> {
-  const limit = deadline(ctx.signal, FIGHT_LIMIT_MS * ctx.timeScale);
+  const limit = deadline(ctx.signal, policy.fightLimitMs() * ctx.timeScale);
   const own = new AbortController();
   let lowHealth = false;
   const forward = (): void => own.abort();
   limit.signal.addEventListener('abort', forward, { once: true });
   const watch = setInterval(() => {
-    if (ctx.view.health <= LOW_HEALTH) {
+    if (ctx.view.health <= policy.floor()) {
       lowHealth = true;
       own.abort();
     }

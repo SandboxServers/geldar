@@ -12,7 +12,14 @@ import { addOwner, capForOwnerAdd, parseCap, type Sql, setOwnerCap } from './own
 import { exportPersona } from './persona-export.ts';
 import { markText, personaMarks } from './persona-lint.ts';
 import { parsePlayerFlags, setPlayerFlags } from './player-flags.ts';
-import { addPlayer, loadSovereignShard, readSeedFiles, setPlayerStatus } from './players.ts';
+import {
+  addPlayer,
+  loadSovereignShard,
+  readSeedFiles,
+  readSheetFile,
+  setPlayerModel,
+  setPlayerStatus,
+} from './players.ts';
 import {
   addRosterName,
   listRoster,
@@ -65,8 +72,10 @@ export const USAGE = `usage: node tools/mcp-tokens/src/cli.ts <command> [...]
   admin grant|revoke --provider microsoft --user-id <id> [--pepper-file <f>]
                                         the same, the id derived from the Microsoft subject
   identity unban <id>                   lift the ban (revoked tokens stay revoked)
-  player add <id> --owner <o> --life <ag_name_NN> --name <n> --harness <h>
+  player add <id> --owner <o> --life <ag_name_NN> --name <n> --harness <h> [--model <text>]
                                         [--identity-file <f> [--goals-file <f>]] [--allow-meta]
+                                        [--sheet-file <yaml|json>] (sheet-mode shards only)
+  player set-model <id> --model <text>  set the declared model of a live player's life
   player pause|resume|retire <id>
   player flags <id> --public-camera on|off --thoughts-delayed-public on|off
                                         set a flag (at least one; a thoughts change waits 10 seconds)
@@ -297,7 +306,13 @@ async function runPlayer(parsed: Parsed, io: Io, env: Env, args: string[]): Prom
     if (goalsPath !== undefined && identityPath === undefined)
       throw new Error('--goals-file needs --identity-file');
     const allowMeta = parsed.flags.has('--allow-meta');
+    const model = optionalFlag(parsed, '--model');
+    const sheetPath = optionalFlag(parsed, '--sheet-file');
     const player = {
+      ...(model === undefined ? {} : { model }),
+      ...(sheetPath === undefined
+        ? {}
+        : { characterSheet: await readSheetFile(resolve(sheetPath)) }),
       playerId: id,
       owner: requireFlag(parsed, '--owner'),
       life: requireFlag(parsed, '--life'),
@@ -321,6 +336,14 @@ async function runPlayer(parsed: Parsed, io: Io, env: Env, args: string[]): Prom
     if (allowMeta && marks.length > 0) io.err(`warning: kept a persona that ${markText(marks)}`);
     await withSql(env, (sql) => addPlayer(sql, player, shard));
     io.out(`added player ${id} (life ${player.life}, owner ${player.owner})`);
+    return;
+  }
+  if (verb === 'set-model' && id !== undefined && args.length === 2) {
+    const model = requireFlag(parsed, '--model');
+    await withSql(env, async (sql) => {
+      await setPlayerModel(sql, id, model);
+    });
+    io.out(`player ${id}: declared model ${model}`);
     return;
   }
   const action = verb === 'pause' || verb === 'resume' || verb === 'retire' ? verb : undefined;

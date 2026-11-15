@@ -51,7 +51,7 @@
       }
     },
     "OwnedBlock": {
-      "description": "One block of the chunk that has an owner.",
+      "description": "One block of the chunk that has an owner. block is optional and additive: it is the block name (without the namespace, such as farmland) of the placing row that set the owner. It is absent when the record carries no block name, and a consumer that ignores it still reads the owner.",
       "type": "object",
       "additionalProperties": false,
       "required": ["x", "y", "z", "owner"],
@@ -59,7 +59,8 @@
         "x": { "$ref": "#/$defs/BlockCoordinateXZ" },
         "y": { "$ref": "#/$defs/BlockCoordinateY" },
         "z": { "$ref": "#/$defs/BlockCoordinateXZ" },
-        "owner": { "$ref": "#/$defs/OwnerId" }
+        "owner": { "$ref": "#/$defs/OwnerId" },
+        "block": { "$ref": "common.schema.json#/$defs/ItemName" }
       }
     },
     "BlockOwnerReply": {

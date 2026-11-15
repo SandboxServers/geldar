@@ -6,8 +6,10 @@ import {
 } from '@geldar/contract';
 import { describe, expect, it } from 'vitest';
 import {
+  cachedStampOf,
   envelopeIdFor,
   SovereignCallRecorder,
+  type SovereignCallRecorderOptions,
   type SovereignCallSink,
   sovereignCallMsgId,
 } from './sovereign-call.ts';
@@ -42,13 +44,19 @@ function clockAt(tick: number): WorldClock {
   return clock;
 }
 
-function recorderFor(sink: CollectingSink, clock: WorldClock, drops: string[] = []) {
+function recorderFor(
+  sink: CollectingSink,
+  clock: WorldClock,
+  drops: string[] = [],
+  extra: Partial<SovereignCallRecorderOptions> = {},
+) {
   return new SovereignCallRecorder({
     sink,
     shard: 'colo',
     clock,
     drop: (reason) => drops.push(reason),
     now: () => AT,
+    ...extra,
   });
 }
 
@@ -134,5 +142,119 @@ describe('sovereign_call record', () => {
     await expect(recorder.record(BASE)).resolves.toBeUndefined();
     expect(sink.published).toHaveLength(0);
     expect(drops.join(' ')).toMatch(/envelope failed the contract/);
+  });
+});
+
+describe('sovereign_call stamp (GX-01c)', () => {
+  it('envelope carries harness and model', async () => {
+    const sink = new CollectingSink();
+    const stampOf = async () => ({ harness: 'claude', model: 'claude-sonnet-5.5' });
+    await recorderFor(sink, clockAt(1), [], { stampOf }).record(BASE);
+    const [sent] = sink.published;
+    expect(sent?.event.harness).toBe('claude');
+    expect(sent?.event.model).toBe('claude-sonnet-5.5');
+    expect(validateWorldEvent(sent?.event).ok).toBe(true);
+  });
+
+  it('asks the resolver for the calling player', async () => {
+    const asked: string[] = [];
+    const stampOf = async (playerId: string) => {
+      asked.push(playerId);
+      return { harness: 'claude' };
+    };
+    await recorderFor(new CollectingSink(), clockAt(1), [], { stampOf }).record(BASE);
+    expect(asked).toEqual(['ag-jason-01']);
+  });
+
+  it('a placeholder model is omitted, and the harness is kept', async () => {
+    const sink = new CollectingSink();
+    const stampOf = async () => ({ harness: 'claude', model: 'self-reported' });
+    await recorderFor(sink, clockAt(1), [], { stampOf }).record(BASE);
+    const [sent] = sink.published;
+    expect(sent?.event.harness).toBe('claude');
+    expect(sent?.event).not.toHaveProperty('model');
+  });
+
+  it('a resolver that throws publishes a stamp-less envelope and reports a drop', async () => {
+    const sink = new CollectingSink();
+    const drops: string[] = [];
+    const stampOf = async (): Promise<{ harness?: string }> => {
+      throw new Error('database is down');
+    };
+    await expect(
+      recorderFor(sink, clockAt(1), drops, { stampOf }).record(BASE),
+    ).resolves.toBeUndefined();
+    expect(sink.published).toHaveLength(1);
+    expect(sink.published[0]?.event).not.toHaveProperty('harness');
+    expect(sink.published[0]?.event).not.toHaveProperty('model');
+    expect(drops).toHaveLength(1);
+    expect(drops[0]).toMatch(/stamp/);
+    expect(drops.join(' ')).not.toMatch(/database is down/);
+  });
+
+  it('a resolver that answers nothing publishes a stamp-less envelope and reports nothing', async () => {
+    const sink = new CollectingSink();
+    const drops: string[] = [];
+    const stampOf = async () => undefined;
+    await recorderFor(sink, clockAt(1), drops, { stampOf }).record(BASE);
+    expect(sink.published).toHaveLength(1);
+    expect(sink.published[0]?.event).not.toHaveProperty('harness');
+    expect(drops).toEqual([]);
+  });
+});
+
+describe('cachedStampOf', () => {
+  it('serves a stamp from the cache for 60 seconds, then looks again', async () => {
+    let now = 0;
+    let calls = 0;
+    const cached = cachedStampOf(
+      async () => {
+        calls += 1;
+        return { harness: 'claude' };
+      },
+      60_000,
+      () => now,
+    );
+    await cached('ag-jason-01');
+    now = 59_999;
+    await cached('ag-jason-01');
+    expect(calls).toBe(1);
+    now = 60_000;
+    await cached('ag-jason-01');
+    expect(calls).toBe(2);
+  });
+
+  it('keeps each player stamp apart', async () => {
+    const seen: string[] = [];
+    const cached = cachedStampOf(
+      async (playerId) => {
+        seen.push(playerId);
+        return { harness: 'claude' };
+      },
+      60_000,
+      () => 0,
+    );
+    await cached('ag-jason-01');
+    await cached('ag-mara-02');
+    await cached('ag-jason-01');
+    expect(seen).toEqual(['ag-jason-01', 'ag-mara-02']);
+  });
+
+  it('does not cache a failed lookup, so the next call looks again', async () => {
+    let fail = true;
+    let calls = 0;
+    const cached = cachedStampOf(
+      async () => {
+        calls += 1;
+        if (fail) throw new Error('down');
+        return { harness: 'claude' };
+      },
+      60_000,
+      () => 0,
+    );
+    await expect(cached('ag-jason-01')).rejects.toThrow('down');
+    fail = false;
+    await expect(cached('ag-jason-01')).resolves.toEqual({ harness: 'claude' });
+    expect(calls).toBe(2);
   });
 });

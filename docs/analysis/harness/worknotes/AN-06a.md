@@ -15,7 +15,7 @@ Branch `phase1/an-06a-sink-audit` (from origin/main bdec86aa). Card: `docs/analy
 - `eventsink/src/audit/projection.test.ts` (new): 20 unit tests, including SQL-text tests and fake-database tests on `pgAuditStore` (the decision keys, the agents row).
 - `eventsink/src/writer.ts`: the batch transaction also runs for `AUDIT_TYPES`; after `projectEvent`, `projectAudit(event, pgAuditStore(client))` runs in the same transaction. `projection.ts` and `ProjectionStore` are unchanged.
 - `eventsink/src/writer.projection.test.ts`: 3 dispatch tests (roll and decision in one transaction; a failing roll insert rolls back; a `sheet_adopted` reaches the adoption path and is refused).
-- `eventsink/test/audit.it.test.ts` (new): real-DB test, skipped unless `GELDAR_IT=1`. Not run here (ops). The agent seed inserts every NOT NULL column of `agents` (`sql/0001_init.sql`), with `game_account` set to the fresh life id.
+- `eventsink/test/audit.it.test.ts` (new): real-DB test, skipped unless `GELDAR_IT=1`. Not run here (ops). The agent seed inserts every NOT NULL column of `agents` (`sql/0001_init.sql`), with `game_account` set to the fresh life id. Life ids come from `freshLifeId()`, which matches the LifeId pattern `^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$`.
 - `docs/analysis/harness/worknotes/AN-06a.md` (this note).
 
 ## Deviations from the card, and why
@@ -51,3 +51,6 @@ Each line names the test expected to fail.
 - The SQL-text tests check statement text, not behaviour. The fake-database tests check the decision keys and the adopt guard. Only the IT checks the real lock.
 - The malformed-roll and unknown-life cases check that the write is refused with its reason. The dead-letter route for 23514 and 23503 (`writer.ts`, permanent-error classing) is not exercised by a test in this card.
 - No live Mind, sink or NATS run.
+- CI lane: `eventsink/test/audit.it.test.ts` is in the explicit file list of the "integration tests that need Postgres or NATS" step in `.github/workflows/ci.yml`, after `projection.it.test.ts`.
+- It skips unless `GELDAR_IT=1` (as `projection.it.test.ts` does) and connects as `geldar` at 127.0.0.1 with the CI password file and the shared-DB guard (`GELDAR_IT_ALLOW_SHARED_DB`, `GITHUB_ACTIONS`), the same as the other ITs in that step; it runs after the step that applies `sql/[0-9]*.sql`, so migrations 0050 and 0051 are in place.
+- The first CI run of `audit.it.test.ts` failed 5 of 6 cases: the test's life ids (`freshId('ag')`, a ULID-shaped tail) do not match the LifeId pattern, so the payload validator refused every roll, decision and adoption. Fixed with `freshLifeId()`. Case 3 uses a pattern-valid id with no agents row, so it reaches the 23503 unknown-life path. The IT is still not run locally; the next CI run is its check.

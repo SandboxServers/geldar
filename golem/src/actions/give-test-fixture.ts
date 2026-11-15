@@ -65,13 +65,14 @@ export function setup(held = 5, pickups: Pickups = {}) {
   const pike = { type: 'player', username: pickups.by ?? 'Pike', position: new Vec3(0.5, 64, 2.5) };
   // The entities the toss spawned, by id, so a pickup is of the same entity.
   const spawned = new Map<number, unknown>();
-  const item = (id: number) => ({
+  const item = (id: number, at: Vec3) => ({
     id,
     name: 'item',
     type: 'other',
-    position: new Vec3(0.5, 64, 3.5),
+    position: at,
   });
-  const spawn = (id: number) => {
+  // A toss spawns its items at the Body's feet, as the server does (a claim needs that spawn spot).
+  const spawn = (id: number, at: Vec3) => {
     if (pickups.broken) {
       return {
         id,
@@ -82,12 +83,12 @@ export function setup(held = 5, pickups: Pickups = {}) {
         },
       };
     }
-    return pickups.real ? realItem(id, new Vec3(0.5, 64, 3.5)) : item(id);
+    return pickups.real ? realItem(id, at) : item(id, at);
   };
   const toss = vi.fn(async () => {
     order.push('toss');
     for (const id of pickups.dropped ?? [7]) {
-      const entity = spawn(id);
+      const entity = spawn(id, bot.entity.position.clone());
       spawned.set(id, entity);
       events.emit('entitySpawn', entity);
       if (pickups.real?.stack !== undefined) {
@@ -96,7 +97,7 @@ export function setup(held = 5, pickups: Pickups = {}) {
       }
     }
     for (const id of pickups.picked ?? [7]) {
-      const entity = spawned.get(id) ?? item(id);
+      const entity = spawned.get(id) ?? item(id, new Vec3(0.5, 64, 3.5));
       if (pickups.after === undefined) events.emit('playerCollect', pike, entity);
       else setTimeout(() => events.emit('playerCollect', pike, entity), pickups.after);
     }

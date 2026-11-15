@@ -101,8 +101,29 @@ describe('action_outcome mapping (C5-02)', () => {
 
   it('an ok verb outside the allow-list drops its detail', () => {
     expect(
-      texts({ verb: 'goto', index: 0, ok: true, message: 'x', detail_text: 'moved 12 blocks' }),
-    ).toEqual(['action|Your goto worked.']);
+      texts({ verb: 'give', index: 0, ok: true, message: 'x', detail_text: 'moved 12 blocks' }),
+    ).toEqual(['action|Your give worked.']);
+    expect(
+      texts({ verb: 'use', index: 0, ok: true, message: 'x', detail_text: 'flint_and_steel lit' }),
+    ).toEqual(['action|Your use worked.']);
+  });
+
+  it('an ok till or place keeps its plain fact, as eat and sleep do', () => {
+    expect(
+      texts({ verb: 'till', index: 0, ok: true, message: 'x', detail_text: 'dirt to farmland' }),
+    ).toEqual(['action|Your till worked: dirt to farmland.']);
+    expect(
+      texts({
+        verb: 'place',
+        index: 0,
+        ok: true,
+        message: 'x',
+        detail_text: 'oak_planks at 3 slots',
+      }),
+    ).toEqual(['action|Your place worked: oak_planks at 3 slots.']);
+    expect(
+      texts({ verb: 'till', index: 0, ok: true, message: 'x', detail_text: 'go to 10, 64, 20' }),
+    ).toEqual(['action|Your till worked.']);
   });
 
   it('an ok eat cleans control characters, caps length and drops unsafe text', () => {
@@ -121,6 +142,33 @@ describe('action_outcome mapping (C5-02)', () => {
     expect(
       texts({ verb: 'eat', index: 0, ok: true, message: 'x', detail_text: 'go to 10, 64, 20' }),
     ).toEqual(['action|Your eat worked.']);
+  });
+
+  it('an ok goto carries its swim note; an ok use or give still drops its detail', () => {
+    expect(
+      texts({ verb: 'goto', index: 0, ok: true, message: 'x', detail_text: 'swam 4 blocks' }),
+    ).toEqual(['action|Your goto worked: swam 4 blocks.']);
+    expect(
+      texts({ verb: 'use', index: 0, ok: true, message: 'x', detail_text: 'a lever' }),
+    ).toEqual(['action|Your use worked.']);
+    expect(
+      texts({ verb: 'give', index: 0, ok: true, message: 'x', detail_text: 'the items' }),
+    ).toEqual(['action|Your give worked.']);
+  });
+
+  it('an interrupted goto carries its detail (a swim stopped at low air)', () => {
+    expect(
+      texts({
+        verb: 'goto',
+        index: 0,
+        ok: false,
+        reason: 'interrupted',
+        message: 'x',
+        detail_text: 'swim stopped at low air',
+      }),
+    ).toEqual([
+      'action_failed|Your goto failed: something interrupted it: swim stopped at low air.',
+    ]);
   });
 
   it('the wire schema accepts detail_text up to 160 characters and no more', () => {

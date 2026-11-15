@@ -1,5 +1,6 @@
 import type { Action } from '@geldar/contract';
 import { Vec3 } from 'vec3';
+import { farmlandFact } from './farmland-water.ts';
 import { type ActionOutcome, cancelled, completed, failed } from './outcome.ts';
 import { isOwnPlacement } from './own-placements.ts';
 import { MESSAGE, reachTarget } from './place.ts';
@@ -29,7 +30,6 @@ const HOE_RANK = [
 /** Fixed failure texts for the till: facts only (decision 0154). */
 export const TILL_MESSAGE = {
   noHoe: 'no hoe in the inventory',
-  notTillable: 'that block cannot be tilled',
   notClear: 'the block above is not clear',
   someoneElses: "that block is someone else's work",
   unchanged: 'the block did not change',
@@ -59,6 +59,15 @@ function bestHoe(items: ReturnType<ActionContext['bot']['inventory']['items']>) 
   return [...hoes].sort((a, b) => rank(a.name) - rank(b.name))[0];
 }
 
+/**
+ * True when the newest recorded place on the cell was farmland and the cell now reads as grass or
+ * dirt: farmland that decayed (dry, trampled or uncovered) is not anyone's work (decision 0219).
+ * Any other recorded block, or no recorded block, is still ownership.
+ */
+function isDecayedFarmland(record: { block?: string }, cellName: string): boolean {
+  return record.block === 'farmland' && (cellName === 'grass_block' || cellName === 'dirt');
+}
+
 /** Turns one tillable block into its result: walk in reach, look at its top face, click it with a hoe. */
 async function till(
   ctx: ActionContext,
@@ -71,16 +80,22 @@ async function till(
   const cell = bot.blockAt(target);
   if (!cell) return failed('not_possible', MESSAGE.notLoaded);
   const result = TILLABLE.get(cell.name);
-  if (result === undefined) return failed('not_possible', TILL_MESSAGE.notTillable);
+  if (result === undefined) return failed('not_possible', `that block is ${cell.name}`);
   const above = bot.blockAt(target.offset(0, 1, 0));
   if (!above) return failed('not_possible', MESSAGE.notLoaded);
   if (above.name !== 'air') return failed('not_possible', TILL_MESSAGE.notClear);
 
   // Someone else's recorded block is refused; the bot's own placements and unknown or natural
-  // blocks are allowed (decision 0164: tilling is not breaking a build).
+  // blocks are allowed (decision 0164: tilling is not breaking a build). Decayed farmland is not
+  // ownership (decision 0219).
   if (!isOwnPlacement(bot, at)) {
     const record = ownerRecordAt(target);
-    if (record?.known && record.owner !== null && record.owner !== bot.username) {
+    if (
+      record?.known &&
+      record.owner !== null &&
+      record.owner !== bot.username &&
+      !isDecayedFarmland(record, cell.name)
+    ) {
       return failed('not_possible', TILL_MESSAGE.someoneElses);
     }
   }
@@ -102,7 +117,12 @@ async function till(
   for (let tick = 0; ; tick++) {
     if (ctx.signal.aborted) return cancelled();
     if (bot.blockAt(target)?.name === result) {
-      return completed({ block: result, at: { x: at.x, y: at.y, z: at.z } });
+      const fact = result === 'farmland' ? farmlandFact(bot, target) : undefined;
+      return completed({
+        block: result,
+        at: { x: at.x, y: at.y, z: at.z },
+        ...(fact === undefined ? {} : { fact }),
+      });
     }
     if (tick >= CONFIRM_TICKS) break;
     await bot.waitForTicks(1);

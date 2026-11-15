@@ -5,5 +5,12 @@ export { type DrawKey, d20, decisionId, type Rng, rngFor, seedFor } from './rng.
 export { DEFAULT_DCS, exactChance, type Mode, modeFor, type Roll, roll } from './roll.ts';
 export { canonicalSheetJson, normalizeSheet, STANDARD_SHEET, sheetOrStandard } from './sheet.ts';
 export { TEMPERAMENT_BANK, temperamentFor } from './temperament.ts';
+export {
+  decideThreat,
+  fightFloor,
+  fightLimitMs,
+  type ThreatCall,
+  type ThreatInput,
+} from './threat.ts';
 export type { CharacterSheet, Domain, Score, SheetResult } from './types.ts';
 export { ENGINE_VERSION } from './version.ts';

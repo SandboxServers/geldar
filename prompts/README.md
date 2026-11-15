@@ -19,7 +19,8 @@ prompts/
   body-api/v6.json    v5 with no new verb or program (the PX perception fields are in the snapshot, not in this list); kept loadable
   body-api/v7.json    v6 with the till verb (decision 0167); kept loadable
   body-api/v8.json    v7 with the edit_sign verb (decision 0192); kept loadable
-  body-api/v9.json    the default allow-list: v8 with the use verb (decision 0218)
+  body-api/v9.json    v8 with the use verb (decision 0218); kept loadable
+  body-api/v10.json   the default allow-list: v9 with only the use entry reworded (the summary names the doors, seeds and crops it works on, and what refuses); kept loadable
 ```
 
 ## Rules
@@ -39,4 +40,4 @@ When the Mind is on the degraded path the reflection keeps all six fields (the c
 
 The templates are read from this directory by the Mind (`animus/src/prompts/library.ts`) when it starts; there is nothing to build or serve. Start the Mind with `./geldar.ps1 adam up` (see [../animus/README.md](../animus/README.md)); its log is `.geldar/adam/animus.log`. Every thought the Mind records in the `thoughts` table carries the `prompt_template_version` (`<kind>@<n>+sha256:<12 hex>`) of the template it used, and the complete messages it sent in `model_input`, so a run can be checked against the files here. Agent-facing text (thought, reflection, body-api) must not name observers, watchers, the makers, the harness, the stream or credits: `animus/src/prompts/agent-text.test.ts` scans the default files and fails on a hit. Agent-facing text (thought, reflection, body-api) never names observers, watchers, the makers, the harness, the stream or credits: `animus/src/prompts/agent-text.test.ts` scans the default files and fails on a hit. A template change is a new `vN` file and takes effect on the next `adam up`; the running Mind keeps the version it loaded.
 
-What the run needs from this directory: `thought/v5.md` (the default; `thought/v1.md` to `v4.md` stay loadable and are chosen with `mind.thought_version` in `shards/phase0.yaml`), `reflection/v2.md` (the default), `body-api/v9.json` (the default) must exist and pass the library's slot check, or the Mind stops at start-up with the file name in the error. No port, no secret and no network access are involved.
+What the run needs from this directory: `thought/v5.md` (the default; `thought/v1.md` to `v4.md` stay loadable and are chosen with `mind.thought_version` in `shards/phase0.yaml`), `reflection/v2.md` (the default), `body-api/v10.json` (the default) must exist and pass the library's slot check, or the Mind stops at start-up with the file name in the error. No port, no secret and no network access are involved.

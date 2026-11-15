@@ -47,6 +47,22 @@ class BlockOwnerQueriesTest {
     }
 
     @Test
+    void replyCarriesTheBlockNameOnlyWhenTheRecordHasOne() {
+        Answer answer = new Answer("world", 1, -2,
+                List.of(new OwnedBlock(16, 64, -32, "alice", "farmland"), new OwnedBlock(17, 64, -32, "bob")),
+                false);
+
+        JsonArray blocks = JsonParser.parseString(BlockOwnerQueries.replyJson(answer))
+                .getAsJsonObject().getAsJsonArray("blocks");
+
+        JsonObject withBlock = blocks.get(0).getAsJsonObject();
+        JsonObject withoutBlock = blocks.get(1).getAsJsonObject();
+        assertEquals("farmland", withBlock.get("block").getAsString());
+        assertFalse(withoutBlock.has("block"));
+        assertEquals("bob", withoutBlock.get("owner").getAsString());
+    }
+
+    @Test
     void replyCarriesTheChunkBlocksAndTruncatedFlag() {
         Answer answer = new Answer("world", 1, -2,
                 List.of(new OwnedBlock(16, 64, -32, "alice")), true);

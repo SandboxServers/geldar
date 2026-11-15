@@ -2,7 +2,8 @@ import type { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { moveNear } from '../../actions/pathing.ts';
 import { calmScene, sceneContext, sceneView, zombieAt } from './combat.fakes.ts';
-import { retreatReflex } from './retreat.ts';
+import { createRetreatReflex, retreatReflex } from './retreat.ts';
+import { createThreatPolicy } from './threat-policy.ts';
 
 vi.mock('../../actions/pathing.ts', () => ({ moveNear: vi.fn() }));
 
@@ -165,5 +166,32 @@ describe('retreat: time scale', () => {
       sceneContext(scene, { timeScale: 3 }),
     );
     expect(walk.mock.calls[0]?.[3]).toMatchObject({ timeScale: 3 });
+  });
+});
+
+describe('retreat with a per-life policy', () => {
+  const never = () => {
+    throw new Error('no roll expected');
+  };
+
+  it('an aggression-1 Body retreats at 9 health, where the legacy Body does not', () => {
+    const scene = calmScene();
+    scene.health = 9;
+    scene.hostiles = [zombieAt(3)];
+    expect(retreatReflex.check(sceneView(scene))).toBeNull();
+    const policy = createThreatPolicy({ aggression: 1, combat: 0, rolls: false, rollAt: never });
+    expect(createRetreatReflex(policy).check(sceneView(scene))).toMatchObject({
+      health: 9,
+      hostile: 'zombie',
+    });
+  });
+
+  it('an aggression-5 Body does not retreat at 3 health, where the legacy Body does', () => {
+    const scene = calmScene();
+    scene.health = 3;
+    scene.hostiles = [zombieAt(3)];
+    expect(retreatReflex.check(sceneView(scene))).toMatchObject({ health: 3 });
+    const policy = createThreatPolicy({ aggression: 5, combat: 0, rolls: false, rollAt: never });
+    expect(createRetreatReflex(policy).check(sceneView(scene))).toBeNull();
   });
 });

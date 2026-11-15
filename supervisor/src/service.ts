@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
-import { bodyContainerConfig } from './limits.ts';
+import { HelperFailure } from './helper-client.ts';
 import {
   type BodyRecord,
   type BodySpec,
   type ControlRequest,
   LoginNameError,
   OPS,
+  type Refusal,
   type Reply,
   type SupervisorDeps,
 } from './ports.ts';
@@ -22,8 +23,9 @@ export interface Supervisor {
   handle(request: unknown): Promise<Reply>;
 }
 
-// Bound on one Docker call. A hung call must not hold the owner's queue (review fix B, F7).
-export const RUNTIME_TIMEOUT_MS = 15_000;
+// Bound on one body helper call. It sits above the helper client's 20 s bound, so the client's `timeout`
+// answers first; this is the backstop. A hung call must not hold the owner's queue (review fix B, F7).
+export const RUNTIME_TIMEOUT_MS = 25_000;
 
 // Status and logtail change nothing, so they are not audited: polling would grow the append-only
 // audit table without bound.
@@ -31,6 +33,9 @@ const READ_ONLY_OPS: ReadonlySet<string> = new Set(['status', 'logtail']);
 
 // A roster name is 1 to 16 letters, digits or underscores (tools/mcp-tokens/src/roster.ts).
 const PLAYER_NAME = /^[A-Za-z0-9_]{1,16}$/;
+
+// The Minecraft login name shape. A display name outside it cannot be a login, so the start is refused.
+const LOGIN_NAME = /^[A-Za-z0-9_]{3,16}$/;
 
 // What one attempt did, for the reply and for the audit row.
 interface Outcome {
@@ -72,6 +77,24 @@ function actorOf(ownerId: string): string {
   return createHash('sha256').update(ownerId).digest('hex').slice(0, 16);
 }
 
+// The helper's refusals map by the helper's stable string: a name already running, or a name whose Body another
+// owner holds (a roster move), is `busy`; any other refusal (a roster, name or another owner's body refusal) is
+// `unknown`. Capacity, timeout, an unreachable helper and failures are `error`, which the register answers as
+// body_unavailable (503). Raw helper text never leaves here.
+function helperRefusal(failure: HelperFailure): Refusal {
+  if (failure.kind !== 'refused') return 'error';
+  return failure.reason === 'already_running' || failure.reason === 'other_owner_body'
+    ? 'busy'
+    : 'unknown';
+}
+
+// A start the helper refused, or refused for the global cap, created and started nothing. A stop after it
+// would stop a body this call did not start (a running body the helper refused as `already running`). Only
+// a start whose outcome is unknown (a timeout, an unreachable helper, a failure mid-way) is compensated.
+function startNotMade(error: unknown): boolean {
+  return error instanceof HelperFailure && (error.kind === 'refused' || error.kind === 'capacity');
+}
+
 function bounded<T>(work: Promise<T>, ms: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const expired = new Promise<never>((_, reject) => {
@@ -82,10 +105,9 @@ function bounded<T>(work: Promise<T>, ms: number): Promise<T> {
 
 function boundedCalls(runtime: SupervisorDeps['runtime'], ms: number) {
   return {
-    checkLogin: (ownerId: string, playerName: string) =>
-      bounded(runtime.checkLogin(ownerId, playerName), ms),
-    inspect: (playerName: string) => bounded(runtime.inspect(playerName), ms),
-    stop: (playerName: string) => bounded(runtime.stop(playerName), ms),
+    inspect: (ownerId: string, playerName: string) =>
+      bounded(runtime.inspect(ownerId, playerName), ms),
+    stop: (ownerId: string, playerName: string) => bounded(runtime.stop(ownerId, playerName), ms),
   };
 }
 
@@ -116,9 +138,9 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
 
   // Best-effort stop after a failed start: it cannot throw, so the error the caller sees is the
   // one that caused the compensation.
-  async function compensate(playerName: string): Promise<void> {
+  async function compensate(ownerId: string, playerName: string): Promise<void> {
     try {
-      await runtime.stop(playerName);
+      await runtime.stop(ownerId, playerName);
       uncounted.delete(playerName);
     } catch {
       uncounted.add(playerName);
@@ -135,9 +157,9 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
     if (attempts.get(playerName) === token) attempts.delete(playerName);
   }
 
-  async function compensateLate(playerName: string, token: object): Promise<void> {
+  async function compensateLate(ownerId: string, playerName: string, token: object): Promise<void> {
     const holder = attempts.get(playerName);
-    if (holder === undefined || holder === token) await compensate(playerName);
+    if (holder === undefined || holder === token) await compensate(ownerId, playerName);
     forgetAttempt(playerName, token);
   }
 
@@ -145,7 +167,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
   // compensated. A start that completes after the timeout is stopped as soon as it lands unless a
   // newer attempt owns the name; the abort signal tells the adapter the caller has given up.
   async function startBody(spec: BodySpec): Promise<object> {
-    const { playerName } = spec;
+    const { ownerId, playerName } = spec;
     const token = {};
     attempts.set(playerName, token);
     const controller = new AbortController();
@@ -164,13 +186,14 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
     } catch (error) {
       if (expired) {
         void work.then(
-          () => compensateLate(playerName, token),
+          () => compensateLate(ownerId, playerName, token),
           () => forgetAttempt(playerName, token),
         );
       } else {
         forgetAttempt(playerName, token);
+        if (startNotMade(error)) throw error;
       }
-      await compensate(playerName);
+      await compensate(ownerId, playerName);
       throw error;
     } finally {
       clearTimeout(timer);
@@ -187,18 +210,21 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
     }
   }
 
+  // The login name is checked by the supervisor's own database read, before any helper call. A missing
+  // or out-of-shape display name is LoginNameError (`login_name`).
+  async function checkLogin(ownerId: string, playerName: string): Promise<void> {
+    const display = await deps.displayNames.displayName(ownerId, playerName);
+    if (display === null || !LOGIN_NAME.test(display)) throw new LoginNameError();
+  }
+
   async function startOrRestart(
     request: ControlRequest,
     record: BodyRecord | null,
     admin: boolean,
   ): Promise<Outcome> {
     const { ownerId, playerName, op } = request;
-    // The roster names the owner of the player. A body held by another owner stays theirs even when
-    // the roster has since moved the name to the caller.
-    const rosterOwner = await deps.roster.ownerOfPlayer(playerName);
-    if (rosterOwner !== ownerId) return outcome({ ok: false, code: 'unknown' }, admin);
     // Another owner's running body refuses the start. A stopped one does not: the roster owner may
-    // start the name, and the adapter replaces the stopped container (C7-03b).
+    // start the name, and the helper replaces the stopped container (C7-03b).
     if (record !== null && record.ownerId !== ownerId && record.running) {
       return outcome({ ok: false, code: 'unknown' }, admin);
     }
@@ -220,11 +246,9 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
         return outcome({ ok: false, code: 'quota' }, admin, 'owner_day');
       }
     }
-    // The login name is checked before a running body stops: a refused restart leaves the body up.
-    await runtime.checkLogin(ownerId, playerName);
-    if (record?.running) await runtime.stop(playerName);
-    // A Docker error or timeout throws here: no row is inserted, so the failed start does not count.
-    const token = await startBody({ ownerId, playerName, config: bodyContainerConfig() });
+    if (record?.running) await runtime.stop(ownerId, playerName);
+    // A helper error or timeout throws here: no row is inserted, so the failed start does not count.
+    const token = await startBody({ ownerId, playerName });
     const startOp = op === 'restart' ? 'restart' : 'start';
     try {
       await deps.starts.insert({ ownerId, playerName, op: startOp, at: deps.now() });
@@ -232,7 +256,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
     } catch (error) {
       // The body is up but no row counts it: stop it, so no body runs uncounted, then report.
       forgetAttempt(playerName, token);
-      await compensate(playerName);
+      await compensate(ownerId, playerName);
       throw error;
     }
     return outcome({ ok: true, code: startOp === 'restart' ? 'restarted' : 'started' }, admin);
@@ -246,7 +270,15 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
   }
 
   async function act(request: ControlRequest, admin: boolean): Promise<Outcome> {
-    const record = await runtime.inspect(request.playerName);
+    // A start or restart checks first that the roster gives the name to the caller (`unknown`), then the login
+    // name (`login_name`), both before the first helper call: a refused name never reaches the helper, and a
+    // refused restart leaves the body up. The roster owner is the pre-existing reply table for a foreign name.
+    if (request.op === 'start' || request.op === 'restart') {
+      const rosterOwner = await deps.roster.ownerOfPlayer(request.playerName);
+      if (rosterOwner !== request.ownerId) return outcome({ ok: false, code: 'unknown' }, admin);
+      await checkLogin(request.ownerId, request.playerName);
+    }
+    const record = await runtime.inspect(request.ownerId, request.playerName);
     if (request.op === 'start' || request.op === 'restart') {
       return startOrRestart(request, record, admin);
     }
@@ -257,7 +289,7 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
       return outcome({ ok: false, code: 'unknown' }, admin);
     }
     if (request.op === 'stop') {
-      await runtime.stop(request.playerName);
+      await runtime.stop(request.ownerId, request.playerName);
       // The owner stopped the name: no newer attempt owns it, so a late landing is compensated.
       attempts.delete(request.playerName);
       return outcome({ ok: true, code: 'stopped' }, admin);
@@ -279,7 +311,11 @@ export function createSupervisor(deps: SupervisorDeps): Supervisor {
       // A login name outside the Minecraft shape is the owner's to fix: the reply says so. Nothing was
       // inserted, so the refusal does not count against a quota.
       if (error instanceof LoginNameError) return outcome({ ok: false, code: 'login_name' }, admin);
-      // The Docker or database error is reported as a fixed code; the detail stays out of the reply.
+      if (error instanceof HelperFailure) {
+        const code = helperRefusal(error);
+        return outcome({ ok: false, code }, admin, code === 'error' ? 'runtime' : '');
+      }
+      // The database or other error is reported as a fixed code; the detail stays out of the reply.
       return outcome({ ok: false, code: 'error' }, admin, 'runtime');
     }
   }

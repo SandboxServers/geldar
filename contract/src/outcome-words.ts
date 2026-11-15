@@ -176,7 +176,10 @@ export function playerDetailText(raw: unknown): string | undefined {
   return cut === '' ? undefined : cut;
 }
 
-/** Reasons whose Body message the Body may send on as `detail_text`. */
+/**
+ * Reasons whose Body message the Body may send on as `detail_text` (interrupted: a swim stopped at low air,
+ * decision 0194). Any other reason's message is dropped. Extend here.
+ */
 const DETAIL_REASONS: readonly string[] = [
   'missing_materials',
   'missing_station',
@@ -185,10 +188,14 @@ const DETAIL_REASONS: readonly string[] = [
   'blocked',
   'not_found',
   'not_possible',
+  'interrupted',
 ];
 
-/** The verbs whose successful outcome may carry a plain fact (decisions 0215, 0216). Extend here. */
-export const PLAIN_FACT_VERBS: readonly string[] = ['eat', 'sleep'];
+/**
+ * The verbs whose successful outcome may carry a plain fact (decisions 0215, 0216, 0194): eat, sleep, till,
+ * place and goto (the swim note). Any other verb's success drops its detail. Extend here.
+ */
+export const PLAIN_FACT_VERBS: readonly string[] = ['eat', 'sleep', 'till', 'place', 'goto'];
 
 /** The cleaned plain fact of a successful outcome, or undefined for a verb outside `PLAIN_FACT_VERBS`. */
 function plainFactText(verb: string, raw: unknown): string | undefined {

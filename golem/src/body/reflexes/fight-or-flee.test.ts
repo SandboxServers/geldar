@@ -7,7 +7,8 @@ import { ReflexRunner } from '../reflex.ts';
 import { allReflexesOn } from '../reflex-config.ts';
 import type { BodyView } from '../view.ts';
 import { type CombatScene, calmScene, sceneContext, sceneView, zombieAt } from './combat.fakes.ts';
-import { fightOrFleeReflex } from './fight-or-flee.ts';
+import { createFightOrFleeReflex, fightOrFleeReflex } from './fight-or-flee.ts';
+import { createThreatPolicy } from './threat-policy.ts';
 
 vi.mock('../../actions/pathing.ts', () => ({ moveNear: vi.fn() }));
 
@@ -156,6 +157,89 @@ describe('fight_or_flee run', () => {
     expect(outcome.result).toBe('failed');
     expect(walk).toHaveBeenCalledTimes(3);
     expect(ctx.sink.wakes).toHaveLength(1);
+  });
+});
+
+describe('fight_or_flee: each policy floor and the suicide mob', () => {
+  const never = () => {
+    throw new Error('no roll expected');
+  };
+  /** An `attack` handler that completes after `ms`, so a health watch that fires earlier is seen. */
+  const slowKill = (ms: number) => {
+    const handler: ActionHandler<'attack'> & { runs: string[] } = {
+      kind: 'attack',
+      timeoutMs: 60_000,
+      runs: [],
+      run: async (_ctx, action) => {
+        handler.runs.push(action.target);
+        await new Promise<void>((resolve) => setTimeout(resolve, ms));
+        return completed({ killed: true });
+      },
+    };
+    return handler;
+  };
+
+  it('an aggression-5 Body (floor 2) keeps fighting at health 4: the watch uses its own floor', async () => {
+    const scene = attackedScene({ iron_sword: 1 });
+    const attack = slowKill(250);
+    const ctx = sceneContext(scene);
+    ctx.registry.register(attack);
+    walk.mockResolvedValue({ ok: true, distance: 14 });
+    setTimeout(() => {
+      scene.health = 4;
+    }, 30);
+    const policy = createThreatPolicy({ aggression: 5, combat: 0, rolls: false, rollAt: never });
+
+    const outcome = await createFightOrFleeReflex(policy).run(fire(scene), ctx);
+
+    expect(outcome.detail).toBe('killed zombie');
+    expect(walk).not.toHaveBeenCalled();
+  });
+
+  it('the legacy Body breaks off at exactly health 6, the floor itself', async () => {
+    const scene = attackedScene({ iron_sword: 1 });
+    const ctx = sceneContext(scene);
+    ctx.registry.register(slowKill(250));
+    walk.mockResolvedValue({ ok: true, distance: 14 });
+    setTimeout(() => {
+      scene.health = 6;
+    }, 30);
+
+    const outcome = await fightOrFleeReflex.run(fire(scene), ctx);
+
+    expect(outcome.detail).toContain('health low mid-fight');
+    expect(walk).toHaveBeenCalledTimes(1);
+  });
+
+  it('an aggression-1 Body (floor 10) breaks off at exactly health 10', async () => {
+    const scene = attackedScene({ iron_sword: 1 });
+    const ctx = sceneContext(scene);
+    ctx.registry.register(slowKill(250));
+    walk.mockResolvedValue({ ok: true, distance: 14 });
+    setTimeout(() => {
+      scene.health = 10;
+    }, 30);
+    const policy = createThreatPolicy({ aggression: 1, combat: 0, rolls: false, rollAt: never });
+
+    const outcome = await createFightOrFleeReflex(policy).run(fire(scene), ctx);
+
+    expect(outcome.detail).toContain('health low mid-fight');
+    expect(walk).toHaveBeenCalledTimes(1);
+  });
+
+  it('a creeper is never meleed by an aggression-5 Body (suicide mob): it runs', async () => {
+    const scene = attackedScene({ iron_sword: 1 });
+    scene.hostiles = [{ ...zombieAt(2), name: 'creeper' }];
+    const attack = fakeAttack('kill');
+    const ctx = sceneContext(scene);
+    ctx.registry.register(attack);
+    walk.mockResolvedValue({ ok: true, distance: 14 });
+    const policy = createThreatPolicy({ aggression: 5, combat: 0, rolls: false, rollAt: never });
+
+    await createFightOrFleeReflex(policy).run(fire(scene), ctx);
+
+    expect(attack.runs).toEqual([]);
+    expect(walk).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -314,5 +398,65 @@ describe('fight_or_flee: flee cooldown (2 s = 40 ticks)', () => {
     expect(walk).toHaveBeenCalledTimes(1);
     await runner.onTick(140);
     expect(walk).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('fight_or_flee with a per-life policy', () => {
+  const never = () => {
+    throw new Error('no roll expected');
+  };
+
+  it('an aggression-1 Body flees at health 9 where the legacy Body fights', async () => {
+    const scene = attackedScene({ iron_sword: 1 });
+    scene.health = 9;
+    walk.mockResolvedValue({ ok: true, distance: 14 });
+    const attack = fakeAttack('kill');
+    const ctx = sceneContext(scene);
+    ctx.registry.register(attack);
+    const policy = createThreatPolicy({ aggression: 1, combat: 0, rolls: false, rollAt: never });
+
+    const outcome = await createFightOrFleeReflex(policy).run(fire(scene), ctx);
+
+    expect(outcome.result).toBe('handled');
+    expect(attack.runs).toEqual([]);
+    expect(walk).toHaveBeenCalledTimes(1);
+  });
+
+  it('an aggression-5 Body fights at health 3 where the legacy Body flees', async () => {
+    const scene = attackedScene({ iron_sword: 1 });
+    scene.health = 3;
+    const attack = fakeAttack('kill');
+    const ctx = sceneContext(scene);
+    ctx.registry.register(attack);
+    const policy = createThreatPolicy({ aggression: 5, combat: 0, rolls: false, rollAt: never });
+
+    await createFightOrFleeReflex(policy).run(fire(scene), ctx);
+
+    expect(attack.runs).toEqual(['zombie']);
+    expect(walk).not.toHaveBeenCalled();
+  });
+
+  it('times the fight by the policy fight limit (24000 ms at aggression 2)', async () => {
+    vi.useFakeTimers();
+    try {
+      const scene = attackedScene({ iron_sword: 1 });
+      const ctx = sceneContext(scene);
+      ctx.registry.register(fakeAttack('hang'));
+      const policy = createThreatPolicy({ aggression: 2, combat: 0, rolls: false, rollAt: never });
+      let settled = false;
+      const run = createFightOrFleeReflex(policy)
+        .run(fire(scene), ctx)
+        .then((outcome) => {
+          settled = true;
+          return outcome;
+        });
+      await vi.advanceTimersByTimeAsync(23_999);
+      expect(settled).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(settled).toBe(true);
+      expect((await run).result).toBe('failed');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -20,28 +20,25 @@ describe('houseBodyName (C2-07k)', () => {
   });
 
   it('whitelists the house Body and every sovereign player of the colo shard file, nothing more', () => {
-    const shard = parse(readFileSync(join(repoRoot(), 'shards', 'colo-mind.yaml'), 'utf8'));
-    const rangers = [
+    const shard = parse(readFileSync(join(repoRoot(), 'shards', 'colo-mind.yaml'), 'utf8')) as {
+      mind: { agent: { username: string } };
+      sovereign: { players: { life_id: string }[] };
+    };
+    // Derived from the same file the verb reads: the sovereign life ids in file order, de-duplicated.
+    const rangers = [...new Set(shard.sovereign.players.map((p) => p.life_id))];
+    expect(sovereignPlayerNames(shard)).toEqual(rangers);
+    expect(whitelistNames(shard)).toEqual([shard.mind.agent.username, ...rangers]);
+    // Pinned sanity names: the test fails if the verb loses players or the file loses these entries.
+    for (const name of [
       'ag_jason_01',
-      'ag_clara_01',
-      'ag_kimberly_01',
-      'ag_tommy_01',
-      'ag_zack_01',
-      'ag_billy_01',
-      'ag_trini_01',
-      'ag_picard_01',
-      'ag_riker_01',
-      'ag_data_01',
-      'ag_troi_01',
-      'ag_laforge_01',
-      'ag_worf_01',
-      'ag_bcrusher_01',
-      'ag_wcrusher_01',
       'ag_lewis_01',
       'ag_clark_01',
-    ];
-    expect(sovereignPlayerNames(shard)).toEqual(rangers);
-    expect(whitelistNames(shard)).toEqual(['ag_colo_01', ...rangers]);
+      'ag_chapman_01',
+      'ag_macdonald_01',
+      'ag_leonardo_01',
+    ]) {
+      expect(whitelistNames(shard)).toContain(name);
+    }
   });
 
   it('handles no players, duplicates and bad entries', () => {

@@ -117,6 +117,7 @@ describe('activeToken', () => {
         displayName: 'Jason',
         harness: 'claude',
         status: 'active',
+        declaredModel: null,
       },
     });
   });

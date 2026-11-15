@@ -41,7 +41,7 @@ public final class FirstRowResolver {
                 truncated = true;
                 break;
             }
-            owned.add(new OwnedBlock(row.x(), row.y(), row.z(), row.user()));
+            owned.add(new OwnedBlock(row.x(), row.y(), row.z(), row.user(), row.block()));
         }
         return new Owners(List.copyOf(owned), truncated);
     }

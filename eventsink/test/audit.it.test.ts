@@ -24,11 +24,24 @@ const SHEET: CharacterSheet = {
 };
 const OTHER_SHEET = { ...SHEET, attributes: { ...SHEET.attributes, curiosity: 1 } };
 
-/** A ULID-shaped id with the given prefix, unique per run. */
+const NAME_CHARS = 'abcdefghijklmnopqrstuvwxyz0123456789';
+
+/** A ULID-shaped id with the given prefix, unique per run. Not a life id: see freshLifeId. */
 function freshId(prefix: string): string {
   let tail = '';
   for (let i = 0; i < 26; i++) tail += ALPHABET[Math.floor(Math.random() * 32)];
   return `${prefix}_${tail}`;
+}
+
+/**
+ * A life id that matches the contract's LifeId pattern, `^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$` (common.schema.json):
+ * `ag_`, a 12-character name that starts with a letter, `_`, and two digits. The name is random, so every call
+ * (each test, each CI run on a shared database) gives a new life that has no agents row.
+ */
+function freshLifeId(): string {
+  let name = 'aud';
+  for (let i = 0; i < 9; i++) name += NAME_CHARS[Math.floor(Math.random() * NAME_CHARS.length)];
+  return `ag_${name}_${10 + Math.floor(Math.random() * 90)}`;
 }
 
 /** A world event for `life` (the agent the event is about). */
@@ -107,7 +120,7 @@ describe.skipIf(!enabled)('audit projection against the live database', () => {
   });
 
   async function seedLife(): Promise<string> {
-    const life = freshId('ag');
+    const life = freshLifeId();
     await pool.query(
       `INSERT INTO agents (agent_id, name, life_seq, game_account, shard, mode, harness, declared_model,
          model_config, tier)
@@ -150,7 +163,8 @@ describe.skipIf(!enabled)('audit projection against the live database', () => {
 
   it('a batch that fails mid-transaction leaves no roll row and no event row', async () => {
     const life = await seedLife();
-    const ghost = freshId('ag');
+    // A pattern-valid life id with no agents row: the adoption reaches the unknown-life refusal (23503).
+    const ghost = freshLifeId();
     const roll = event('roll', life, rollOf(life));
     // The second event names a life with no agents row: its foreign key fails after the roll is projected.
     const unknown = event('sheet_adopted', ghost, adoptionOf(ghost, HASH_A));

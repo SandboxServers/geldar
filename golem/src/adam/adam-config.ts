@@ -3,6 +3,12 @@ import { join } from 'node:path';
 import { parse } from 'yaml';
 import { parseReflexConfig, type ReflexConfig } from '../body/reflex-config.ts';
 import type { RunStamp } from '../body/stamped-publisher.ts';
+import {
+  type CharacterLog,
+  type LifeCharacter,
+  lifeCharacter,
+  parseCharacterConfig,
+} from '../character/character-config.ts';
 import { repoRoot } from '../config.ts';
 
 /** What Adam's Body reads from `shards/<shard>.yaml` (decisions 0050, 0051). */
@@ -25,6 +31,8 @@ export interface AdamConfig {
   timeScale: number;
   /** `mind.agent.harness` and `mind.agent.model`, stamped on the Body's events; absent when neither is set. */
   stamp?: RunStamp;
+  /** `root.character` and this life's sheet (`mind.agent.character_sheet`); filled by the parser. */
+  character?: LifeCharacter;
 }
 
 /** The contract's patterns for the envelope's `harness` and `model` (contract/schemas/event.schema.json). */
@@ -84,15 +92,23 @@ function runStamp(agent: Record<string, unknown>): RunStamp | undefined {
 }
 
 /** Builds the config from a parsed shard file; throws on the first missing or invalid key. */
-export function parseAdamConfig(doc: unknown): AdamConfig {
+export function parseAdamConfig(doc: unknown, log?: CharacterLog): AdamConfig {
   const root = block(doc, 'shard file');
   const agent = block(block(root.mind, 'mind').agent, 'mind.agent');
   const chat = block(root.chat, 'chat');
   const stamp = runStamp(agent);
+  const lifeId = text(agent, 'username', 'mind.agent');
+  const character = lifeCharacter(
+    parseCharacterConfig(root.character, log),
+    agent.character_sheet,
+    lifeId,
+    log,
+  );
   return {
     ...(stamp === undefined ? {} : { stamp }),
     shard: text(root, 'shard', 'shard file'),
-    lifeId: text(agent, 'username', 'mind.agent'),
+    lifeId,
+    character,
     displayName: text(agent, 'name', 'mind.agent'),
     rateLimitSeconds: positive(chat, 'rate_limit_seconds', 'chat'),
     maxChars: positive(chat, 'max_chars', 'chat'),

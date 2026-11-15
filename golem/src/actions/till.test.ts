@@ -118,7 +118,11 @@ describe('till: the target', () => {
     const { bot } = fakeBot({ blocks: GRASS, items: ['wooden_hoe'], tilledAs: 'farmland' });
     expect(await till(bot)).toEqual({
       status: 'completed',
-      detail: { block: 'farmland', at: { x: 2, y: 63, z: 2 } },
+      detail: {
+        block: 'farmland',
+        at: { x: 2, y: 63, z: 2 },
+        fact: 'this farmland is dry: no water within 4 blocks',
+      },
     });
   });
 
@@ -149,12 +153,46 @@ describe('till: the target', () => {
     expect(await till(bot)).toMatchObject({ status: 'completed', detail: { block: 'dirt' } });
   });
 
-  it('says a stone block cannot be tilled', async () => {
+  it('says the farmland is moist when water is 4 blocks away on the same level', async () => {
+    const { bot } = fakeBot({
+      blocks: { ...GRASS, '6,63,2': 'water' },
+      items: ['wooden_hoe'],
+      tilledAs: 'farmland',
+    });
+    expect(await till(bot)).toMatchObject({
+      status: 'completed',
+      detail: { block: 'farmland', fact: 'this farmland is moist: water is within 4 blocks' },
+    });
+  });
+
+  it('says the farmland is dry when the nearest water is 5 blocks away', async () => {
+    const { bot } = fakeBot({
+      blocks: { ...GRASS, '7,63,2': 'water' },
+      items: ['wooden_hoe'],
+      tilledAs: 'farmland',
+    });
+    expect(await till(bot)).toMatchObject({
+      status: 'completed',
+      detail: { fact: 'this farmland is dry: no water within 4 blocks' },
+    });
+  });
+
+  it('gives no hydration fact when the till makes dirt, not farmland', async () => {
+    const { bot } = fakeBot({
+      blocks: { '2,63,2': 'coarse_dirt' },
+      items: ['wooden_hoe'],
+      tilledAs: 'dirt',
+    });
+    const outcome = (await till(bot)) as { detail?: Record<string, unknown> };
+    expect(outcome.detail?.fact).toBeUndefined();
+  });
+
+  it('says the block is stone when a stone block cannot be tilled', async () => {
     const { bot } = fakeBot({ blocks: { '2,63,2': 'stone' }, items: ['wooden_hoe'] });
     expect(await till(bot)).toMatchObject({
       status: 'failed',
       reason: 'not_possible',
-      message: 'that block cannot be tilled',
+      message: 'that block is stone',
     });
   });
 
@@ -222,6 +260,49 @@ describe('till: ownership (decision 0164)', () => {
     setOwnerLookup((): OwnerAnswer => ({ known: true, owner: null }));
     const natural = fakeBot({ blocks: GRASS, items: ['wooden_hoe'], tilledAs: 'farmland' });
     expect(await till(natural.bot)).toMatchObject({ status: 'completed' });
+  });
+
+  it('allows decayed farmland: a farmland place row by another player, the cell now grass', async () => {
+    setOwnerLookup((): OwnerAnswer => ({ known: true, owner: 'ag_other_01', block: 'farmland' }));
+    const { bot, fake } = fakeBot({ blocks: GRASS, items: ['wooden_hoe'], tilledAs: 'farmland' });
+    expect(await till(bot)).toMatchObject({ status: 'completed' });
+    expect(fake.activateBlock).toHaveBeenCalledTimes(1);
+  });
+
+  it('allows decayed farmland: a farmland place row by another player, the cell now dirt', async () => {
+    setOwnerLookup((): OwnerAnswer => ({ known: true, owner: 'ag_other_01', block: 'farmland' }));
+    const { bot } = fakeBot({
+      blocks: { '2,63,2': 'dirt' },
+      items: ['wooden_hoe'],
+      tilledAs: 'farmland',
+    });
+    expect(await till(bot)).toMatchObject({ status: 'completed' });
+  });
+
+  it('refuses a grass place row by another player: only farmland decays into ownerless ground', async () => {
+    setOwnerLookup(
+      (): OwnerAnswer => ({ known: true, owner: 'ag_other_01', block: 'grass_block' }),
+    );
+    const { bot, fake } = fakeBot({ blocks: GRASS, items: ['wooden_hoe'], tilledAs: 'farmland' });
+    expect(await till(bot)).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message: "that block is someone else's work",
+    });
+    expect(fake.activateBlock).not.toHaveBeenCalled();
+  });
+
+  it('refuses a farmland cell that now holds a crop, and a farmland cell under a build', async () => {
+    setOwnerLookup((): OwnerAnswer => ({ known: true, owner: 'ag_other_01', block: 'farmland' }));
+    const crop = fakeBot({
+      blocks: { '2,63,2': 'farmland', '2,64,2': 'wheat' },
+      items: ['wooden_hoe'],
+    });
+    expect(await till(crop.bot)).toMatchObject({ status: 'failed', reason: 'not_possible' });
+    expect(crop.fake.activateBlock).not.toHaveBeenCalled();
+    const build = fakeBot({ blocks: { '2,63,2': 'oak_planks' }, items: ['wooden_hoe'] });
+    expect(await till(build.bot)).toMatchObject({ status: 'failed', reason: 'not_possible' });
+    expect(build.fake.activateBlock).not.toHaveBeenCalled();
   });
 });
 

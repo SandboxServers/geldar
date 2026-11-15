@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/turn-record-event.schema.json",
+  "title": "TurnRecordPayload",
+  "description": "Payload of a WorldEvent of type `turn_record` (GX-05a, decision 0185): one row per model call of a kit Mind, with the prompt and the raw output the harness exposes. OPERATOR-ONLY and SINK-ONLY: the sink stores it in the `turn_records` table (no grant to geldar_glass, geldar_mcp, geldar_register or any player-facing role), and the MCP stream never carries it. The eventsink currently stores every non-projected type in `events` with its full payload, so a turn_record MUST NOT be emitted by anything until GX-05b gives the sink a drop-or-table path; NUL characters in text fields must be handled by the GX-05b writer. Inert: nothing emits it until GX-05b and HC-41b, which stay behind a flag that defaults off. model_input and raw_output are capped; a writer truncates before it sends and marks the cut, and the numeric fields are never dropped. source_event_id derives from turn_id, so a retry dedups.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "turn_id",
+    "life_id",
+    "harness",
+    "model",
+    "template_version",
+    "wake_reason",
+    "world_day",
+    "world_tick",
+    "model_input",
+    "raw_output",
+    "tokens_in",
+    "tokens_out",
+    "usage_source",
+    "latency_ms",
+    "context_tokens",
+    "context_window"
+  ],
+  "properties": {
+    "turn_id": {
+      "description": "One id per model call, `tn_` and a 26-character ULID, as the other record ids.",
+      "type": "string",
+      "pattern": "^tn_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "life_id": {
+      "description": "The life whose Mind made the call. Erasure (0171) removes the rows by this id; the table has no owner link.",
+      "$ref": "common.schema.json#/$defs/LifeId"
+    },
+    "harness": {
+      "description": "The harness that made the call (claude, chatgpt, local; the same working name as the envelope field).",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,31}$"
+    },
+    "model": {
+      "description": "The model as declared, the same pattern as the envelope field.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$"
+    },
+    "template_version": {
+      "description": "A SHA-256 hash, 64 lowercase hex characters, of the persona, skills and instructions the call used (the input set is HC-41 (to confirm)).",
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "wake_reason": {
+      "description": "Why the Mind was woken for this call: a WakePayload reason, or another short fixed code the kit sends.",
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9_]{0,63}$"
+    },
+    "world_day": { "type": "integer", "minimum": 0 },
+    "world_tick": { "$ref": "common.schema.json#/$defs/WorldTick" },
+    "model_input": {
+      "description": "The prompt as the harness received it, text. Capped at 32768 characters; a longer prompt is cut by the writer, which marks the cut.",
+      "type": "string",
+      "maxLength": 32768
+    },
+    "raw_output": {
+      "description": "The model's output as the harness exposes it, including any reasoning the stream carries. Text. Capped at 32768 characters; a longer output is cut by the writer, which marks the cut.",
+      "type": "string",
+      "maxLength": 32768
+    },
+    "tokens_in": { "type": "integer", "minimum": 0, "maximum": 100000000 },
+    "tokens_out": { "type": "integer", "minimum": 0, "maximum": 100000000 },
+    "usage_source": {
+      "description": "Where the token counts came from: the provider's usage report, or an estimate when none came.",
+      "type": "string",
+      "enum": ["provider", "estimated"]
+    },
+    "latency_ms": { "type": "integer", "minimum": 0, "maximum": 86400000 },
+    "context_tokens": {
+      "description": "The size of the context the call carried, in tokens.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100000000
+    },
+    "context_window": {
+      "description": "The model's context window, in tokens, so context_tokens can be read against it.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 100000000
+    },
+    "credits": {
+      "description": "The credits the call cost, when the harness reports them. Absent otherwise.",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100000000
+    }
+  }
+}
