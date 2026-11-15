@@ -74,6 +74,7 @@ Batching: C7-03c2 and C7-03b2 change the image set, so they merge in one window 
 ## C7-03c2: helper install script and runbook
 
 - **id / wave / lane.** C7-03c2, wave 5, Supervisor lane. **depends-on.** C7-03c1. **branch.** `phase1/c7-03c2-helper-install`. **migration.** no (the role migration is C7-03c1). **size.** M.
+- **Status.** Built; node steps by geldar-93; open: how the helper build reaches the node.
 
 ### Goal
 
