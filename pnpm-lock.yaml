@@ -378,9 +378,6 @@ importers:
       '@geldar/contract':
         specifier: workspace:*
         version: link:../contract
-      '@nats-io/transport-node':
-        specifier: 3.4.0
-        version: 3.4.0
       pg:
         specifier: 8.23.1
         version: 8.23.1

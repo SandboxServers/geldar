@@ -6,12 +6,8 @@ import { connectNats } from '@geldar/contract/nats';
 import pg from 'pg';
 import { buildSupervisorDeps } from './composition.ts';
 import { loadSupervisorConfig } from './config.ts';
-import {
-  createHelperRuntime,
-  HELPER_TIMEOUT_MS,
-  HelperFailure,
-  isNatsTimeout,
-} from './helper-client.ts';
+import { createHelperRuntime, natsHelperRequest } from './helper-client.ts';
+import { unexpectedEndLine } from './lifecycle.ts';
 import { type CtlStats, type CtlWire, serveCtl } from './nats.ts';
 import { createSupervisor } from './service.ts';
 
@@ -25,20 +21,13 @@ const config = (() => {
 })();
 
 const pool = new pg.Pool({ ...config.db, user: 'geldar_supervisor', max: 4 });
+// An idle client's error (for example a Postgres restart) names itself only; without a listener it would crash.
+pool.on('error', (error) => console.error(`supervisor: database pool error (${error.name})`));
 const nc = await connectNats({ name: 'geldar-supervisor', servers: config.natsServers });
 
 const runtime = createHelperRuntime({
   shard: config.shard,
-  // The library's own timeout closes the inbox; a library timeout is the helper's `timeout` kind, not `unavailable`.
-  request: async (subject, payload) => {
-    try {
-      const reply = await nc.request(subject, payload, { timeout: HELPER_TIMEOUT_MS });
-      return reply.data;
-    } catch (error) {
-      if (isNatsTimeout(error)) throw new HelperFailure('timeout');
-      throw error;
-    }
-  },
+  request: natsHelperRequest(nc),
 });
 
 const supervisor = createSupervisor(
@@ -67,13 +56,34 @@ const stats: CtlStats = {
   subscribeFailed: 0,
 };
 
+let stopping = false;
+// Declared before the signal handlers so a signal during connect cannot reach it in its dead zone.
+let served: Promise<void> = Promise.resolve();
+
+// A second signal is a no-op. The drain ends the subscription; serveCtl then waits for in-flight answers, and only
+// after that does the pool close and the process exit.
 const stop = async (): Promise<void> => {
-  await nc.drain();
-  await pool.end();
-  process.exit(0);
+  if (stopping) return;
+  stopping = true;
+  try {
+    await nc.drain();
+    await served;
+    await pool.end();
+    process.exit(0);
+  } catch {
+    console.error('supervisor: shutdown failed');
+    process.exit(1);
+  }
 };
 process.on('SIGTERM', () => void stop());
 process.on('SIGINT', () => void stop());
 
 console.log(`supervisor listening shard=${config.shard}`);
-await serveCtl({ wire, shard: config.shard, supervisor, stats });
+served = serveCtl({ wire, shard: config.shard, supervisor, stats });
+await served;
+// The subscription ended. During a stop that is the drain; otherwise the process would stay up answering nothing.
+const ended = unexpectedEndLine(stopping, stats);
+if (ended !== null) {
+  console.error(ended);
+  process.exit(1);
+}

@@ -53,4 +53,36 @@ describe('loadSupervisorConfig', () => {
       loadSupervisorConfig({ ...env, SUPERVISOR_DB_PASSWORD_FILE: undefined }, () => SECRET),
     ).toThrow('SUPERVISOR_DB_PASSWORD_FILE is not set');
   });
+
+  it('a shard id with a dot, a wildcard, whitespace or a capital is refused, naming the variable', () => {
+    for (const shard of ['a.>', 'a.b', '*', '>', ' ', 'Phase0', '0phase', 'a'.repeat(33)]) {
+      expect(() => loadSupervisorConfig({ ...env, SUPERVISOR_SHARD: shard }, () => SECRET)).toThrow(
+        'SUPERVISOR_SHARD is not a valid shard id',
+      );
+    }
+  });
+
+  it('the shard ids the shard configs name are accepted', () => {
+    for (const shard of ['phase0', 'colo', 'colo-mind']) {
+      expect(loadSupervisorConfig({ ...env, SUPERVISOR_SHARD: shard }, () => SECRET).shard).toBe(
+        shard,
+      );
+    }
+  });
+
+  it('a port that is not an integer from 1 to 65535 is refused, naming the variable', () => {
+    for (const port of ['abc', '0', '99999', '-1', '5432.5', '1e3', '54 32']) {
+      expect(() => loadSupervisorConfig({ ...env, POSTGRES_PORT: port }, () => SECRET)).toThrow(
+        'POSTGRES_PORT is not a valid port',
+      );
+    }
+  });
+
+  it('the port bounds 1 and 65535 are accepted and the default is 5432', () => {
+    expect(loadSupervisorConfig({ ...env, POSTGRES_PORT: '1' }, () => SECRET).db.port).toBe(1);
+    expect(loadSupervisorConfig({ ...env, POSTGRES_PORT: '65535' }, () => SECRET).db.port).toBe(
+      65535,
+    );
+    expect(loadSupervisorConfig(env, () => SECRET).db.port).toBe(5432);
+  });
 });
