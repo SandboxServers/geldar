@@ -66,7 +66,7 @@ function jumpUps(placed: Record<string, Spec>, wrapped: boolean) {
   const movements = new Movements(bot);
   if (wrapped) allowWaterExit(movements, bot);
   const out: { x: number; y: number; z: number; cost: number }[] = [];
-  movements.getMoveJumpUp(feet, EAST, out as never);
+  movements.getMoveJumpUp(feet as never, EAST, out as never);
   return out.map(({ x, y, z, cost }) => ({ x, y, z, cost }));
 }
 
@@ -111,7 +111,7 @@ describe('allowWaterExit (decision 0194 c)', () => {
     const movements = new Movements(bot);
     const before = movements.getBlock;
     allowWaterExit(movements, bot);
-    movements.getMoveJumpUp(feet, EAST, [] as never);
+    movements.getMoveJumpUp(feet as never, EAST, [] as never);
     expect(movements.getBlock).toBe(before);
   });
 });
@@ -129,7 +129,7 @@ describe('ensurePathfinder wires the exit into tier 1', () => {
       getMoveJumpUp: (n: typeof feet, d: typeof EAST, o: unknown[]) => void;
     };
     const out: { x: number; y: number; z: number }[] = [];
-    given.getMoveJumpUp(feet, EAST, out as never);
+    given.getMoveJumpUp(feet as never, EAST, out as never);
     expect(out.map(({ x, y, z }) => ({ x, y, z }))).toEqual([{ x: 1, y: 65, z: 0 }]);
   });
 });
