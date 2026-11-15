@@ -5,7 +5,7 @@ import type { JournalStore, SleepMarks } from '../ports.ts';
 export interface PendingSleep {
   /** The world day of the sleep. */
   day: number;
-  /** The event cursor the sleep digested up to, read at submit: the mark it writes on completion. */
+  /** The event cursor the sleep digested up to, read before submit: the mark it writes on completion. */
   cursor: number;
   /** The index of the sleep action in the plan's actions. */
   action: number;
@@ -44,6 +44,33 @@ export class PendingSleeps {
     thoughts.delete(thoughtId);
     if (thoughts.size === 0) this.lives.delete(lifeId);
   }
+
+  /** Drops every pending sleep of a life: its death ends the sleeps it held (decision 0227). */
+  clearLife(lifeId: string): void {
+    this.lives.delete(lifeId);
+  }
+}
+
+/**
+ * Submits a plan whose sleep is already pending. A refused or failed submit drops the entry, so
+ * nothing waits for an outcome that will never come. The entry must be added before this call: the
+ * Body may answer during the submit.
+ */
+export async function submitPending<A extends { accepted: boolean }>(
+  pending: PendingSleeps | undefined,
+  lifeId: string,
+  thoughtId: string,
+  submit: () => Promise<A>,
+): Promise<A> {
+  let ack: A;
+  try {
+    ack = await submit();
+  } catch (err) {
+    pending?.delete(lifeId, thoughtId);
+    throw err;
+  }
+  if (!ack.accepted) pending?.delete(lifeId, thoughtId);
+  return ack;
 }
 
 /** What settling a sleep writes, and the clock of its journal line. */
@@ -59,9 +86,11 @@ export interface SleepCompletionDeps {
 /**
  * Settles a sleep on the Body's `plan_result`. Only a `completed` sleep action, not cut short by an
  * earlier failure, sets the mark and appends the journal line. A failed, cancelled or unknown one
- * writes nothing. The entry is removed only once its writes are done: a store error keeps it, logs
- * one line and does not throw, so a redelivered outcome may settle it again. The mark is written
- * first and is idempotent; the journal line is the last write, so a retry never doubles it.
+ * writes nothing. The mark is written monotonically: it keeps the later of the stored and the pending
+ * day and cursor, so a sleep that settles late never lowers the mark. The entry is removed only after
+ * both writes; a store error keeps it, logs one line and does not throw, so the next outcome for the
+ * same thought retries both writes. The journal line is appended once, after the mark, and only the
+ * write that completes removes the entry, so a settled sleep writes nothing again.
  */
 export async function completeSleep(
   deps: SleepCompletionDeps,
@@ -79,7 +108,11 @@ export async function completeSleep(
     return;
   }
   try {
-    await deps.marks.write(lifeId, { lastSleepDay: sleep.day, cursor: sleep.cursor });
+    const stored = await deps.marks.read(lifeId);
+    await deps.marks.write(lifeId, {
+      lastSleepDay: Math.max(stored.lastSleepDay, sleep.day),
+      cursor: Math.max(stored.cursor, sleep.cursor),
+    });
     if (sleep.journal !== null) await deps.journal.append(lifeId, sleep.journal, deps.now());
   } catch (err) {
     deps.log({ event: 'sleep_settle_error', kind: err instanceof Error ? err.name : 'unknown' });

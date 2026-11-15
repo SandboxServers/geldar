@@ -44,8 +44,8 @@ import { lookTool, type ToolCall } from './tools/look.ts';
 import { readBookTool } from './tools/read-book.ts';
 import { sayTool } from './tools/say.ts';
 import { SEE_REFUSALS, type SeeDeps, type SeeOutcome, seeTool } from './tools/see.ts';
-import { registerSleep, type SleepDeps, sleepTool } from './tools/sleep.ts';
-import { PendingSleeps } from './tools/sleep-completion.ts';
+import { actSleepEntry, type SleepDeps, sleepTool } from './tools/sleep.ts';
+import type { PendingSleeps } from './tools/sleep-completion.ts';
 import { statusTool } from './tools/status.ts';
 import { type NotAvailableTool, notAvailableTool } from './tools/unavailable.ts';
 import { viewTool } from './tools/view.ts';
@@ -90,7 +90,7 @@ export interface WorldDeps {
   profiles: AgentProfiles;
   journal: JournalStore;
   /** Accepted sleeps awaiting their plan's outcome; one instance is shared with the stream (decision 0227). */
-  pendingSleeps?: PendingSleeps;
+  pendingSleeps: PendingSleeps;
   recorder: CallRecorder;
   events: PlayerEventLog;
   /** Presence per life; `settle` is called by the world's timer, `lifeIds` seeds it at start. */
@@ -354,12 +354,22 @@ export function createWorld(deps: WorldDeps): World {
   };
   const unavailable = (tool: NotAvailableTool): ToolHandler =>
     bound(wired, (call) => notAvailableTool(wired, call, tool));
-  const pending = deps.pendingSleeps ?? new PendingSleeps();
-  const sleepAccepted = async (lifeId: string, thoughtId: string, action: number) => {
-    const snapshot = await wired.body.snapshot(lifeId);
-    const mark = await wired.sleeps.read(lifeId);
-    const registry = { events: wired.events, failures: wired.failures, pending, now: wired.now };
-    await registerSleep(registry, lifeId, thoughtId, action, snapshot, mark);
+  const pending = deps.pendingSleeps;
+  // An act sleep's entry is read before its plan is sent; a failed read is logged and the plan is sent
+  // unregistered, so its mark is left unset (decision 0227).
+  const actSleep = {
+    pending,
+    entry: async (lifeId: string, snapshot: Snapshot) => {
+      try {
+        return await actSleepEntry(wired.sleeps, lifeId, snapshot);
+      } catch (err) {
+        wired.log?.({
+          event: 'sleep_register_error',
+          kind: err instanceof Error ? err.name : 'unknown',
+        });
+        return undefined;
+      }
+    },
   };
   const sleepDeps: SleepDeps = {
     pending,
@@ -374,7 +384,7 @@ export function createWorld(deps: WorldDeps): World {
   const stopSettle = startSettle(wired);
   const tools: ToolHandlers = {
     act: bound(wired, (call, input) =>
-      actTool({ ...wired, sleepAccepted }, call, input as ActArgs),
+      actTool({ ...wired, sleep: actSleep }, call, input as ActArgs),
     ),
     say: bound(wired, (call, input) => sayTool(wired, call, (input as SayInput).text)),
     sleep: bound(wired, (call) => sleepTool(sleepDeps, call)),

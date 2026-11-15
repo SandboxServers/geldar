@@ -5,7 +5,7 @@
  * atomic: one bad action rejects every action, the bad ones with their code, the rest `batch_rejected`.
  */
 
-import type { ActResult, PlanAck, SovereignCallPayload, Thought } from '@geldar/contract';
+import type { ActResult, PlanAck, Snapshot, SovereignCallPayload, Thought } from '@geldar/contract';
 import { newId } from '@geldar/player-core/src/ids.ts';
 import { buildPlan } from '@geldar/player-core/src/loop/plan.ts';
 import type { OutputError, OutputValidator } from '@geldar/player-core/src/ports/index.ts';
@@ -29,6 +29,7 @@ import {
 } from '../ports.ts';
 import { bestEffortPresence } from '../presence-write.ts';
 import { BATCH_REFUSAL, isVerbHint, type Refusal, refusalOf } from './refusal-detail.ts';
+import { type PendingSleep, type PendingSleeps, submitPending } from './sleep-completion.ts';
 
 /** A tool failure the player sees: a code and a fixed message, never echoing world text. */
 export class ActToolError extends Error {
@@ -58,11 +59,8 @@ export interface ActDeps {
   recorder: CallRecorder;
   validator: OutputValidator;
   clock: Clock;
-  /**
-   * Told of an accepted plan that holds a sleep: the life, the thought and the sleep's action index.
-   * The sleep's mark is written only when its plan completes (decision 0227).
-   */
-  sleepAccepted?: (lifeId: string, thoughtId: string, action: number) => Promise<void>;
+  /** The sleeps of `act` plans, registered before each plan is sent (decision 0227). */
+  sleep?: ActSleep;
   /** `plan.expires_after_ticks` from the config. */
   expiresAfterTicks: number;
   /** Receives the cause of a presence write that failed; the refusal stands without it. */
@@ -199,6 +197,7 @@ export async function submitThought(
   deps: Pick<ActDeps, 'body' | 'clock' | 'expiresAfterTicks'>,
   lifeId: string,
   thought: Thought,
+  sleep?: ActSleep & { action: number },
 ): Promise<{ ack: PlanAck; thoughtId: string }> {
   return withPlayerLock(lifeId, async () => {
     let ack: PlanAck | undefined;
@@ -212,7 +211,14 @@ export async function submitThought(
         snapshot,
         expiresAfterTicks: deps.expiresAfterTicks,
       });
-      ack = await deps.body.submitPlan(lifeId, plan);
+      // The entry is read before the send and added synchronously just before it: the Body may
+      // answer during the submit. A refused attempt drops its entry (submitPending).
+      const entry = sleep === undefined ? undefined : await sleep.entry(lifeId, snapshot);
+      if (sleep !== undefined && entry !== undefined)
+        sleep.pending.add(lifeId, thoughtId, { ...entry, action: sleep.action });
+      ack = await submitPending(sleep?.pending, lifeId, thoughtId, () =>
+        deps.body.submitPlan(lifeId, plan),
+      );
       if (ack.accepted || ack.rejection?.reason !== 'stale_snapshot') break;
     }
     if (ack === undefined) throw new BodyUnavailable('no plan was submitted');
@@ -225,23 +231,11 @@ async function recordCall(deps: ActDeps, call: SovereignCallPayload): Promise<vo
   await deps.recorder.record(call);
 }
 
-/**
- * Registers an accepted sleep with the world. A failure is logged as one payload-free line and
- * otherwise ignored: the plan stands, and its mark is left unset.
- */
-async function registerAcceptedSleep(
-  deps: ActDeps,
-  lifeId: string,
-  sleep: { thoughtId: string; action: number },
-): Promise<void> {
-  try {
-    await deps.sleepAccepted?.(lifeId, sleep.thoughtId, sleep.action);
-  } catch (err) {
-    deps.log?.({
-      event: 'sleep_register_error',
-      kind: err instanceof Error ? err.name : 'unknown',
-    });
-  }
+/** The sleeps of `act` plans: each one's entry is read from the snapshot its plan is built on. */
+export interface ActSleep {
+  pending: PendingSleeps;
+  /** The entry of a sleep plan, or undefined when it cannot be read: the plan is then sent unregistered. */
+  entry: (lifeId: string, snapshot: Snapshot) => Promise<Omit<PendingSleep, 'action'> | undefined>;
 }
 
 /** `act`: validates the thought, reserves its credits, sends the plan, and settles the charge. */
@@ -281,7 +275,6 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
   let thoughtId: string | undefined;
   let outcome: SovereignCallPayload['outcome'] = 'rejected';
   let reserved = false;
-  let acceptedSleep: { thoughtId: string; action: number } | undefined;
 
   try {
     const kinds = survivors.map((slot) => slot.kind);
@@ -302,13 +295,14 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
         if (refused[i] === undefined) reject(i, { reason: 'budget_exhausted' });
       });
     } else if (survivors.length > 0 && thought !== undefined) {
-      const sent = await submitThought(deps, caller.lifeId, thought);
+      // The plan's actions are the thought's actions in order, so this index is the plan's.
+      const sleepAt = (thought.actions ?? []).findIndex((a) => a.do === 'sleep');
+      const sleep =
+        sleepAt >= 0 && deps.sleep !== undefined ? { ...deps.sleep, action: sleepAt } : undefined;
+      const sent = await submitThought(deps, caller.lifeId, thought, sleep);
       thoughtId = sent.thoughtId;
       if (sent.ack.accepted) {
         deps.failures?.submitted(caller.lifeId, thought.actions ?? []);
-        // The plan's actions are the thought's actions in order, so this index is the plan's.
-        const sleepAt = (thought.actions ?? []).findIndex((a) => a.do === 'sleep');
-        if (sleepAt >= 0) acceptedSleep = { thoughtId: sent.thoughtId, action: sleepAt };
         slots.forEach((_, i) => {
           if (refused[i] === undefined) result.accepted.push(i);
         });
@@ -342,7 +336,6 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
   }
 
   // Outside the refund try: a failed registration must not refund credits of an accepted plan.
-  if (acceptedSleep !== undefined) await registerAcceptedSleep(deps, caller.lifeId, acceptedSleep);
   result.rejected.sort((a, b) => a.index - b.index);
   const metering = meterCall(
     deps,

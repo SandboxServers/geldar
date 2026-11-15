@@ -14,6 +14,7 @@ import {
 import { journalTool } from './tools/journal.ts';
 import { lookTool, type ToolCall, WORLD_TEXT_NOTE } from './tools/look.ts';
 import { sleepTool } from './tools/sleep.ts';
+import { PendingSleeps } from './tools/sleep-completion.ts';
 import { statusTool } from './tools/status.ts';
 import { NOT_AVAILABLE_MESSAGE } from './tools/unavailable.ts';
 import { BODY_UNAVAILABLE_MESSAGE, UNKNOWN_PLAYER_MESSAGE } from './world.ts';
@@ -193,6 +194,7 @@ describe('no tool or resource says or implies that humans are watching', () => {
             journal,
             marks: sleeps,
             now,
+            pending: new PendingSleeps(),
             buildSleepPlan: () => ({ thought_id: 'th_sleep' }) as never,
           },
           CALL,

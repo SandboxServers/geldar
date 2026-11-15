@@ -9,6 +9,7 @@ import {
   type PlayerRecord,
 } from '../ports.ts';
 import { KvPresenceStore, type PresenceBucket } from '../presence.ts';
+import { PendingSleeps } from '../tools/sleep-completion.ts';
 import type { WorldDeps } from '../world.ts';
 import {
   FakeBudgetLedger,
@@ -227,6 +228,7 @@ export function worldFixture(players: PlayerRecord[]): WorldFixture {
     wake,
     expiresAfterTicks: 200,
     laws: [],
+    pendingSleeps: new PendingSleeps(),
   };
   return {
     deps,

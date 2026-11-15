@@ -163,15 +163,16 @@ export class FailureTracker {
   }
 
   /**
-   * True when position, health and inventory equal those at the previous sleep. Records the
-   * snapshot for the next call either way.
+   * True when position, health and inventory equal those at the last accepted sleep. Pure: a sleep
+   * the Body refuses records nothing.
    */
   sameAsLastSleep(lifeId: string, snapshot: Snapshot): boolean {
-    const s = this.state(lifeId);
-    const signature = stateSignature(snapshot);
-    const same = s.lastSleep === signature;
-    s.lastSleep = signature;
-    return same;
+    return this.state(lifeId).lastSleep === stateSignature(snapshot);
+  }
+
+  /** Records the snapshot of an accepted sleep: the one the next sleep is compared with. */
+  recordSleep(lifeId: string, snapshot: Snapshot): void {
+    this.state(lifeId).lastSleep = stateSignature(snapshot);
   }
 }
 

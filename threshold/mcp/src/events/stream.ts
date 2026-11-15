@@ -110,6 +110,8 @@ export async function handleStreamMessage(
     const result = validatePlanResultPayload(world.payload);
     if (result.ok) await completeSleep(ctx.sleep, lifeId, result.value);
   }
+  // A death ends the sleeps the life held: their plans are dropped and will not settle (decision 0227).
+  if (n.event.type === 'death' && lifeId !== '') ctx.sleep?.pending.clearLife(lifeId);
   // Recorded before the log append: a retry of this message after a failed append records it again,
   // which the store's event id makes a no-op.
   if (n.event.type === 'death' && lifeId !== '' && ctx.deaths !== undefined) {

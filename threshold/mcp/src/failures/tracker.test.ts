@@ -96,9 +96,12 @@ describe('FailureTracker', () => {
     const snap = (x: number, health = 20) =>
       ({ self: { position: { x, y: 1, z: 1 }, health, inventory: [] } }) as never;
     expect(t.sameAsLastSleep(LIFE, snap(1))).toBe(false);
+    t.recordSleep(LIFE, snap(1));
     expect(t.sameAsLastSleep(LIFE, snap(1))).toBe(true);
     expect(t.sameAsLastSleep(LIFE, snap(2))).toBe(false);
     expect(t.sameAsLastSleep(LIFE, snap(2, 19))).toBe(false);
+    // Comparing records nothing: a refused sleep of another state leaves the accepted one matching.
+    expect(t.sameAsLastSleep(LIFE, snap(1))).toBe(true);
   });
 
   it('emits facts as events without advice', () => {

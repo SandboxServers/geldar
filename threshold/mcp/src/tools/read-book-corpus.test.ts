@@ -7,6 +7,7 @@ import type { SleepMark, SleepMarks } from '../ports.ts';
 import type { ToolCall } from './look.ts';
 import { readBookTool } from './read-book.ts';
 import { sleepTool } from './sleep.ts';
+import { PendingSleeps } from './sleep-completion.ts';
 
 /**
  * The world side of the malicious-book corpus, ported from the mock's corpus/world.test.ts: each
@@ -120,6 +121,7 @@ describe('the world side of the malicious-book corpus', () => {
               journal,
               marks: memoryMarks(),
               now: () => 0,
+              pending: new PendingSleeps(),
               buildSleepPlan: () => PLAN,
             },
             CALL,

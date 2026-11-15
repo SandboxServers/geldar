@@ -1,10 +1,11 @@
 import type { PlanMessage, PlanResultPayload } from '@geldar/contract';
 import { describe, expect, it } from 'vitest';
+import { FailureTracker } from '../failures/tracker.ts';
 import { FakeJournalStore, FakePlayerEventLog } from '../fakes/stores.fakes.ts';
 import { FakeBody } from '../fakes/world.fakes.ts';
 import type { SleepMark, SleepMarks } from '../ports.ts';
 import type { ToolCall } from './look.ts';
-import { type SleepDeps, sleepTool } from './sleep.ts';
+import { actSleepEntry, type SleepDeps, sleepTool } from './sleep.ts';
 import {
   completeSleep,
   PENDING_SLEEP_LIMIT,
@@ -25,7 +26,7 @@ class CountingMarks implements SleepMarks {
   failNext = false;
   private current: SleepMark = { lastSleepDay: BIRTH_DAY, cursor: 0 };
 
-  async read(): Promise<SleepMark> {
+  async read(_lifeId: string): Promise<SleepMark> {
     return this.current;
   }
 
@@ -36,6 +37,19 @@ class CountingMarks implements SleepMarks {
     }
     this.writes.push(mark);
     this.current = mark;
+  }
+}
+
+/** A journal whose next append throws a store error; the lines it keeps are the ones it accepted. */
+class FlakyJournal extends FakeJournalStore {
+  failNext = false;
+
+  override async append(...args: Parameters<FakeJournalStore['append']>): Promise<void> {
+    if (this.failNext) {
+      this.failNext = false;
+      throw new Error('journal down: secret detail');
+    }
+    await super.append(...args);
   }
 }
 
@@ -217,5 +231,127 @@ describe('sleep completion', () => {
     expect(held).toHaveLength(PENDING_SLEEP_LIMIT);
     pending.add('ag_other_01', 'th_0', sleep);
     expect(pending.get('ag_other_01', 'th_0')).toBeDefined();
+  });
+
+  it('a plan_result delivered during the submit still settles the sleep', async () => {
+    const w = world();
+    const pending = new PendingSleeps();
+    await w.body.emit(LIFE, { seq: 1, atMs: 1000, tick: 20, kind: 'damage' } as never);
+    const submit = w.body.submitPlan.bind(w.body);
+    w.body.submitPlan = async (lifeId: string, plan: PlanMessage) => {
+      await completeSleep(settleDeps(w, pending), lifeId, outcome(plan.thought_id, ['completed']));
+      return submit(lifeId, plan);
+    };
+    await sleepTool(sleepDeps(w, pending), CALL);
+    expect(w.marks.writes).toEqual([{ lastSleepDay: 1, cursor: 1 }]);
+    expect(await journalTexts(w)).toEqual([JOURNAL_LINE]);
+    expect(pending.get(LIFE, 'th_1')).toBeUndefined();
+  });
+
+  it('a refused sleep leaves no pending entry', async () => {
+    const w = world();
+    const pending = new PendingSleeps();
+    w.body.rejectNextPlan(LIFE, { reason: 'invalid_plan', detail: 'no' });
+    await expect(sleepTool(sleepDeps(w, pending), CALL)).rejects.toThrow();
+    expect(pending.get(LIFE, 'th_1')).toBeUndefined();
+  });
+
+  it('settles out of order: the mark keeps the later day and cursor', async () => {
+    const w = world();
+    const pending = new PendingSleeps();
+    pending.add(LIFE, 'th_a', { day: 1, cursor: 5, action: 0, journal: null });
+    pending.add(LIFE, 'th_b', { day: 2, cursor: 9, action: 0, journal: null });
+    await completeSleep(settleDeps(w, pending), LIFE, outcome('th_b', ['completed']));
+    await completeSleep(settleDeps(w, pending), LIFE, outcome('th_a', ['completed']));
+    expect(await w.marks.read(LIFE)).toEqual({ lastSleepDay: 2, cursor: 9 });
+  });
+
+  it('a journal write that fails after the mark keeps the entry; a retry journals once and never lowers the mark', async () => {
+    const w = world();
+    const pending = new PendingSleeps();
+    const journal = new FlakyJournal();
+    const settle = { ...settleDeps(w, pending), journal };
+    pending.add(LIFE, 'th_j', { day: 1, cursor: 1, action: 0, journal: JOURNAL_LINE });
+    journal.failNext = true;
+    await completeSleep(settle, LIFE, outcome('th_j', ['completed']));
+    expect(w.logged).toEqual([{ event: 'sleep_settle_error', kind: 'Error' }]);
+    expect(JSON.stringify(w.logged)).not.toContain('secret');
+    expect(pending.get(LIFE, 'th_j')).toBeDefined();
+    expect(await journal.recent(LIFE, 50)).toEqual([]);
+    await completeSleep(settle, LIFE, outcome('th_j', ['completed']));
+    await completeSleep(settle, LIFE, outcome('th_j', ['completed']));
+    expect(w.marks.writes).toEqual([
+      { lastSleepDay: 1, cursor: 1 },
+      { lastSleepDay: 1, cursor: 1 },
+    ]);
+    expect((await journal.recent(LIFE, 50)).map((line) => line.text)).toEqual([JOURNAL_LINE]);
+    expect(pending.get(LIFE, 'th_j')).toBeUndefined();
+  });
+
+  it('an act sleep takes its cursor from the stored mark and journals "asleep" with the day', async () => {
+    const marks = { read: async () => ({ lastSleepDay: 1, cursor: 7 }) };
+    const entry = await actSleepEntry(marks, LIFE, { world_time: { day: 3 } } as never);
+    expect(entry).toEqual({ day: 3, cursor: 7, journal: 'Day 3: asleep.' });
+  });
+
+  it('a quiet sleep, with nothing new since the last, has only the fixed event', async () => {
+    const w = world();
+    const deps = { ...sleepDeps(w, new PendingSleeps()), failures: new FailureTracker() };
+    await sleepTool(deps, CALL);
+    const quiet = await sleepTool(deps, CALL);
+    expect(quiet.events).toEqual([
+      {
+        seq: 1,
+        type: 'wake',
+        tick: 0,
+        text: 'Your body is going to sleep. The sleep has not finished.',
+      },
+    ]);
+    expect(quiet.event_counts).toEqual({});
+  });
+
+  it('a sleep with events and facts lists the digest, then the fixed event, then the facts', async () => {
+    const w = world();
+    const failures = new FailureTracker();
+    const deps = { ...sleepDeps(w, new PendingSleeps()), failures };
+    const goto = { do: 'goto', target: { x: 1, y: 1, z: 1 } };
+    for (let i = 0; i < 3; i++) failures.submitted(LIFE, [goto]);
+    await w.body.emit(LIFE, { seq: 1, atMs: 1000, tick: 20, kind: 'damage' } as never);
+    for (let seq = 2; seq <= 4; seq++) {
+      await w.body.emit(LIFE, {
+        seq,
+        atMs: 1000,
+        tick: 20,
+        kind: 'action_failed',
+        name: 'goto',
+        reason: 'blocked',
+      } as never);
+    }
+    const result = await sleepTool(deps, CALL);
+    expect(result.events).toEqual([
+      { seq: 1, type: 'damage', tick: 20, text: 'You were hurt.' },
+      {
+        seq: 4,
+        type: 'wake',
+        tick: 0,
+        text: 'Your body is going to sleep. The sleep has not finished.',
+      },
+      {
+        seq: 4,
+        type: 'action_failed',
+        tick: 0,
+        text: 'goto 1,1,1 has failed 3 times in a row (blocked).',
+      },
+    ]);
+  });
+
+  it('a death drops the pending sleeps of the life: a later plan_result writes nothing', async () => {
+    const w = world();
+    const pending = new PendingSleeps();
+    pending.add(LIFE, 'th_d', { day: 1, cursor: 1, action: 0, journal: JOURNAL_LINE });
+    pending.clearLife(LIFE);
+    await completeSleep(settleDeps(w, pending), LIFE, outcome('th_d', ['completed']));
+    expect(w.marks.writes).toEqual([]);
+    expect(await journalTexts(w)).toEqual([]);
   });
 });

@@ -13,7 +13,7 @@ import type { SleepMark, SleepMarks } from '../ports.ts';
 import { JOURNAL_LINE_LIMIT, journalTool } from './journal.ts';
 import { lookTool, type ToolCall, WORLD_TEXT_NOTE } from './look.ts';
 import { readBookTool } from './read-book.ts';
-import { NOTHING_NEW, SLEEP_EVENT_LIMIT, SLEEP_NOT_FINISHED, sleepTool } from './sleep.ts';
+import { SLEEP_EVENT_LIMIT, SLEEP_NOT_FINISHED, sleepTool } from './sleep.ts';
 import { completeSleep, PendingSleeps } from './sleep-completion.ts';
 import { STATUS_LAW_LIMIT, statusTool } from './status.ts';
 import { NOT_AVAILABLE_MESSAGE, type NotAvailableTool, notAvailableTool } from './unavailable.ts';
@@ -109,6 +109,7 @@ describe('sleep', () => {
     journal: w.journal,
     marks: w.marks,
     now: w.now,
+    pending: new PendingSleeps(),
     buildSleepPlan: () => PLAN,
   });
 
@@ -211,7 +212,7 @@ describe('sleep', () => {
     await settle(w, pending, 'th_sleep', ['completed']);
     const before = (await w.journal.recent(LIFE, 5)).length;
     const again = await sleepTool(d, CALL);
-    expect(again.events.map((e) => e.text)).toEqual([NOTHING_NEW, SLEEP_NOT_FINISHED]);
+    expect(again.events.map((e) => e.text)).toEqual([SLEEP_NOT_FINISHED]);
     await settle(w, pending, 'th_sleep', ['completed']);
     expect(await w.journal.recent(LIFE, 5)).toHaveLength(before);
   });
@@ -224,7 +225,9 @@ describe('sleep', () => {
     await settle(w, pending, 'th_sleep', ['completed']);
     await w.body.emit(LIFE, simEvent(1, 'damage'));
     const again = await sleepTool(d, CALL);
-    expect(again.events.map((e) => e.text)).not.toContain(NOTHING_NEW);
+    expect(again.events.map((e) => e.text)).not.toContain(
+      'Nothing has changed since you last slept: same place, same belongings, same health, no new events.',
+    );
     await settle(w, pending, 'th_sleep', ['completed']);
     expect((await w.journal.recent(LIFE, 5)).at(-1)?.text).toContain('1 events');
   });
