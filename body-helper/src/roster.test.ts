@@ -50,4 +50,17 @@ describe('roster life id port', () => {
     const roster = rosterFromQuery(fakeQuery([{ id: hostile }]).query);
     expect(await roster.lifeId('owner-1', 'Steve_01')).toBeNull();
   });
+
+  it.each([
+    ['a number', 5],
+    ['an array holding a valid id', ['ag_abc']],
+    ['an object whose toString gives a valid id', { toString: () => 'ag_a' }],
+    ['an object with an own id-like value', { id: 'ag_abc' }],
+    ['a boolean', true],
+    ['undefined', undefined],
+  ])('refuses a non-string id (%s) even when the text would match', async (_label, value) => {
+    const fake = fakeQuery([{ id: value as unknown as string }]);
+    const roster = rosterFromQuery(fake.query);
+    expect(await roster.lifeId('owner-1', 'Steve_01')).toBeNull();
+  });
 });

@@ -8,6 +8,7 @@ DECLARE
   step TEXT;
   cfg JSONB;
   lid TEXT;
+  hk TEXT;
   keys TEXT[];
   n INT;
   h_own BYTEA := decode(repeat('b1', 32), 'hex');
@@ -50,6 +51,12 @@ BEGIN
       RAISE EXCEPTION 'schema check (%): geldar_body_host can execute supervisor_player_life_id', step;
     END IF;
 
+    step := 'geldar_register, geldar_mcp, geldar_helper and geldar_body_host cannot execute managed_life_id';
+    IF has_function_privilege('geldar_register', fn_mlid, 'EXECUTE') OR has_function_privilege('geldar_mcp', fn_mlid, 'EXECUTE')
+       OR has_function_privilege('geldar_helper', fn_mlid, 'EXECUTE') OR has_function_privilege('geldar_body_host', fn_mlid, 'EXECUTE') THEN
+      RAISE EXCEPTION 'schema check (%): a role can execute managed_life_id', step;
+    END IF;
+
     step := 'geldar_register and geldar_mcp cannot execute either function';
     IF has_function_privilege('geldar_register', fn_sup, 'EXECUTE') OR has_function_privilege('geldar_register', fn_cfg, 'EXECUTE')
        OR has_function_privilege('geldar_mcp', fn_sup, 'EXECUTE') OR has_function_privilege('geldar_mcp', fn_cfg, 'EXECUTE') THEN
@@ -66,14 +73,30 @@ BEGIN
       END IF;
     END LOOP;
 
-    step := 'geldar_helper cannot read the roster, the players or the agents';
+    step := 'geldar_helper cannot read the roster, the players, the agents or the identities';
     IF has_table_privilege('geldar_helper', 'public.mcp_roster', 'SELECT')
        OR has_table_privilege('geldar_helper', 'public.mcp_players', 'SELECT')
-       OR has_table_privilege('geldar_helper', 'public.agents', 'SELECT') THEN
+       OR has_table_privilege('geldar_helper', 'public.agents', 'SELECT')
+       OR has_table_privilege('geldar_helper', 'public.mcp_identities', 'SELECT') THEN
       RAISE EXCEPTION 'schema check (%): geldar_helper can SELECT a table it must not read', step;
     END IF;
 
-    -- Fixtures. Owner reg-bh-own holds BhOne and BhCol1 (a colliding pair with BhCol2 under owner bh-col).
+    step := 'host_key is a NOT NULL uuid with a generated default, and no body-host or MCP role reads it';
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'public' AND table_name = 'mcp_players' AND column_name = 'host_key'
+                      AND data_type = 'uuid' AND is_nullable = 'NO' AND column_default LIKE 'gen_random_uuid()%') THEN
+      RAISE EXCEPTION 'schema check (%): mcp_players.host_key is not a NOT NULL uuid with gen_random_uuid()', step;
+    END IF;
+    IF has_any_column_privilege('geldar_helper', 'public.mcp_players', 'SELECT')
+       OR has_any_column_privilege('geldar_body_host', 'public.mcp_players', 'SELECT')
+       OR has_column_privilege('geldar_mcp', 'public.mcp_players', 'host_key', 'SELECT') THEN
+      RAISE EXCEPTION 'schema check (%): a helper, body or MCP role can read mcp_players.host_key', step;
+    END IF;
+    IF NOT has_column_privilege('geldar_mcp', 'public.mcp_players', 'player_id', 'SELECT') THEN
+      RAISE EXCEPTION 'schema check (%): geldar_mcp lost SELECT on mcp_players.player_id', step;
+    END IF;
+
+    -- Fixtures. Owner reg-bh-own holds BhOne and BhSplit2; reg-bh-col holds BhCol1 and BhCol2 (a colliding pair).
     PERFORM register_create_owner(h_own, 'microsoft', 'reg-bh-own', 'bh own');
     PERFORM register_create_owner(h_other, 'microsoft', 'reg-bh-other', 'bh other');
     PERFORM register_create_owner(h_ban, 'microsoft', 'reg-bh-ban', 'bh ban');
@@ -88,18 +111,24 @@ BEGIN
     PERFORM register_roster_add(h_col, 'BhCol2');
     UPDATE mcp_identities SET banned_at = now() WHERE owner_id = 'reg-bh-ban';
 
-    step := 'managed_life_id is ag_ plus 12 hex, 15 characters, and the sha256 prefix of the player id';
-    lid := managed_life_id('ag-bh-one');
+    step := 'managed_life_id is ag_ plus 12 hex, 15 characters, and the sha256 prefix of the host key text';
+    SELECT p.host_key::text INTO hk FROM mcp_players p WHERE p.player_id = 'ag-bh-one';
+    lid := managed_life_id(hk);
     IF lid !~ '^ag_[a-z0-9]{1,12}$' OR length(lid) <> 15 OR lid !~ '^ag_[0-9a-f]{12}$' THEN
       RAISE EXCEPTION 'schema check (%): % is not ag_ plus 12 hex', step, lid;
     END IF;
-    IF lid <> 'ag_' || left(encode(sha256(convert_to('ag-bh-one', 'UTF8')), 'hex'), 12) THEN
-      RAISE EXCEPTION 'schema check (%): % is not the sha256 prefix', step, lid;
+    IF lid <> 'ag_' || left(encode(sha256(convert_to(hk, 'UTF8')), 'hex'), 12) THEN
+      RAISE EXCEPTION 'schema check (%): % is not the sha256 prefix of the host key', step, lid;
+    END IF;
+
+    step := 'the life id does not depend on player_id: an owner-chosen player_id text cannot steer it';
+    IF lid = managed_life_id('ag-bh-one') THEN
+      RAISE EXCEPTION 'schema check (%): the id is the player_id hash, not the host key hash', step;
     END IF;
 
     step := 'supervisor_player_life_id returns the managed id for a roster name, the same id twice';
     lid := supervisor_player_life_id('reg-bh-own', 'BhOne');
-    IF lid IS NULL OR lid <> managed_life_id('ag-bh-one') THEN
+    IF lid IS NULL OR lid <> managed_life_id(hk) THEN
       RAISE EXCEPTION 'schema check (%): got % for BhOne', step, lid;
     END IF;
     IF supervisor_player_life_id('reg-bh-own', 'BhOne') IS DISTINCT FROM lid THEN
@@ -111,9 +140,12 @@ BEGIN
       RAISE EXCEPTION 'schema check (%): lower-case bhone did not find BhOne', step;
     END IF;
 
-    step := 'a name not on the roster gives NULL';
+    step := 'a name not on the roster gives NULL, and a NULL input gives NULL';
     IF supervisor_player_life_id('reg-bh-own', 'NoSuchName') IS NOT NULL THEN
       RAISE EXCEPTION 'schema check (%): a name not on the roster gave an id', step;
+    END IF;
+    IF supervisor_player_life_id(NULL, 'BhOne') IS NOT NULL OR supervisor_player_life_id('reg-bh-own', NULL) IS NOT NULL THEN
+      RAISE EXCEPTION 'schema check (%): a NULL input gave an id', step;
     END IF;
 
     step := 'another owner roster row gives NULL';
@@ -121,7 +153,30 @@ BEGIN
       RAISE EXCEPTION 'schema check (%): bh-other got an id for bh-own roster name BhOne', step;
     END IF;
 
-    step := 'player_host_config returns exactly the four fields and the right values';
+    step := 'a roster row of another owner for the name gives NULL (the roster join is by owner)';
+    PERFORM register_create_player(h_own, 'ag-bh-split', 'ag_bh_split', 'BhSplit2', 'harness-x', 'main', 'bh_t5', decode(repeat('c5', 32), 'hex'));
+    PERFORM register_roster_add(h_other, 'BhSplit2');
+    IF supervisor_player_life_id('reg-bh-own', 'BhSplit2') IS NOT NULL THEN
+      RAISE EXCEPTION 'schema check (%): bh-own got an id through bh-other roster row', step;
+    END IF;
+
+    step := 'two owners with the same display name: each gets its own id, never the other';
+    PERFORM register_create_player(h_other, 'ag-bh-twin', 'ag_bh_twin', 'BhOne', 'harness-x', 'main', 'bh_t6', decode(repeat('c6', 32), 'hex'));
+    -- roster names are unique across owners, so the twin has no roster row; the owner filter on the player
+    -- is what keeps it out of bh-own's answer.
+    IF supervisor_player_life_id('reg-bh-own', 'BhOne') IS DISTINCT FROM lid THEN
+      RAISE EXCEPTION 'schema check (%): bh-own lost BhOne when bh-other had the same name', step;
+    END IF;
+    IF supervisor_player_life_id('reg-bh-other', 'BhOne') IS NOT DISTINCT FROM lid THEN
+      RAISE EXCEPTION 'schema check (%): bh-other got bh-own id for the same name', step;
+    END IF;
+
+    step := 'a banned owner gives NULL from the supervisor function too';
+    IF supervisor_player_life_id('reg-bh-ban', 'BhBan') IS NOT NULL THEN
+      RAISE EXCEPTION 'schema check (%): a banned owner got a life id', step;
+    END IF;
+
+    step := 'player_host_config returns exactly the four fields, the right values, and no host key';
     cfg := player_host_config(lid);
     SELECT array_agg(k ORDER BY k) INTO keys FROM jsonb_object_keys(cfg) AS k;
     IF keys IS DISTINCT FROM ARRAY['character_sheet', 'display_name', 'harness', 'model'] THEN
@@ -130,25 +185,52 @@ BEGIN
     IF cfg->>'display_name' <> 'BhOne' OR cfg->>'harness' <> 'harness-x' THEN
       RAISE EXCEPTION 'schema check (%): wrong display name or harness: %', step, cfg;
     END IF;
+    IF position(hk IN cfg::text) > 0 OR position(hk IN lid) > 0 THEN
+      RAISE EXCEPTION 'schema check (%): the host key appears in the config or the id', step;
+    END IF;
 
     step := 'player_host_config gives NULL for an unknown id and for a banned owner';
     IF player_host_config('ag_000000000000') IS NOT NULL THEN
       RAISE EXCEPTION 'schema check (%): an unknown id gave a config', step;
     END IF;
-    IF player_host_config(managed_life_id('ag-bh-ban')) IS NOT NULL THEN
+    IF player_host_config(managed_life_id((SELECT host_key::text FROM mcp_players WHERE player_id = 'ag-bh-ban'))) IS NOT NULL THEN
       RAISE EXCEPTION 'schema check (%): a banned owner gave a config', step;
     END IF;
 
-    step := 'a retired player gives NULL from player_host_config';
-    UPDATE mcp_players SET status = 'retired' WHERE player_id = 'ag-bh-one';
+    step := 'a player whose roster row is gone gives NULL from player_host_config, and is back when re-added';
+    DELETE FROM mcp_roster WHERE owner_id = 'reg-bh-own' AND player_name = 'bhone';
     IF player_host_config(lid) IS NOT NULL THEN
-      RAISE EXCEPTION 'schema check (%): a retired player gave a config', step;
+      RAISE EXCEPTION 'schema check (%): a player with no roster row gave a config', step;
+    END IF;
+    PERFORM register_roster_add(h_own, 'BhOne');
+    IF player_host_config(lid) IS NULL THEN
+      RAISE EXCEPTION 'schema check (%): the re-added roster row did not restore the config', step;
+    END IF;
+
+    step := 'a retired player gives NULL from both functions';
+    UPDATE mcp_players SET status = 'retired' WHERE player_id = 'ag-bh-one';
+    IF player_host_config(lid) IS NOT NULL OR supervisor_player_life_id('reg-bh-own', 'BhOne') IS NOT NULL THEN
+      RAISE EXCEPTION 'schema check (%): a retired player gave an id or a config', step;
     END IF;
     UPDATE mcp_players SET status = 'active' WHERE player_id = 'ag-bh-one';
 
+    step := 'a display-name rename (with its roster row) leaves the life id unchanged';
+    UPDATE mcp_players SET display_name = 'BhOneRenamed' WHERE player_id = 'ag-bh-one';
+    UPDATE mcp_roster SET player_name = 'bhonerenamed' WHERE owner_id = 'reg-bh-own' AND player_name = 'bhone';
+    IF supervisor_player_life_id('reg-bh-own', 'BhOneRenamed') IS DISTINCT FROM lid THEN
+      RAISE EXCEPTION 'schema check (%): the rename changed the life id', step;
+    END IF;
+    UPDATE mcp_players SET display_name = 'BhOne' WHERE player_id = 'ag-bh-one';
+    UPDATE mcp_roster SET player_name = 'bhone' WHERE owner_id = 'reg-bh-own' AND player_name = 'bhonerenamed';
+
     step := 'two agents on one life id: both functions raise 23505 and never return an id';
-    IF managed_life_id('ag-cnsze3') <> managed_life_id('ag-cwl9s6') THEN
-      RAISE EXCEPTION 'schema check (%): the fixture pair does not collide', step;
+    -- Two host keys whose sha256 prefixes match (found offline, a Floyd search over the uuid tail):
+    -- both give ag_0a17d6416f79. Only the fixtures above are changed, and the run rolls back.
+    UPDATE mcp_players SET host_key = '00000000-0000-4000-8000-96221e8f6b0c' WHERE player_id = 'ag-cnsze3';
+    UPDATE mcp_players SET host_key = '00000000-0000-4000-8000-7f49fbabdc06' WHERE player_id = 'ag-cwl9s6';
+    IF managed_life_id('00000000-0000-4000-8000-96221e8f6b0c') <> 'ag_0a17d6416f79'
+       OR managed_life_id('00000000-0000-4000-8000-7f49fbabdc06') <> 'ag_0a17d6416f79' THEN
+      RAISE EXCEPTION 'schema check (%): the fixture pair does not collide on ag_0a17d6416f79', step;
     END IF;
     BEGIN
       PERFORM supervisor_player_life_id('reg-bh-col', 'BhCol1');
@@ -157,7 +239,7 @@ BEGIN
       NULL;
     END;
     BEGIN
-      PERFORM player_host_config(managed_life_id('ag-cnsze3'));
+      PERFORM player_host_config('ag_0a17d6416f79');
       RAISE EXCEPTION 'schema check (%): the config function returned on a collision', step;
     EXCEPTION WHEN SQLSTATE '23505' THEN
       NULL;

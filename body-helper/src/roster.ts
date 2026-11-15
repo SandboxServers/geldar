@@ -39,7 +39,7 @@ export function rosterFromQuery(query: Query): RosterLifePort {
     async lifeId(owner, name) {
       const result = await query(LIFE_ID_SQL, [owner, name]);
       const id = result.rows[0]?.id ?? null;
-      if (id === null || !LIFE_ID_PATTERN.test(id)) return null;
+      if (typeof id !== 'string' || !LIFE_ID_PATTERN.test(id)) return null;
       return id;
     },
   };
