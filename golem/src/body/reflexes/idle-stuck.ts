@@ -26,6 +26,8 @@ export const REFUSALS_TO_UNSTICK = 3;
 export const SAME_REFUSAL_SPOT = 2;
 /** Most unstick runs one Body may start in any hour of world time (decision 0196). */
 export const RUNS_PER_HOUR = 6;
+/** Most unstick runs a high_ledge spell may start in one hour: 12 (owner ruling via geldar-93, decision 0333). */
+export const HIGH_LEDGE_RUNS_PER_HOUR = 12;
 /** One hour of world time in ticks. */
 export const HOUR_TICKS = 72000;
 /**
@@ -165,8 +167,12 @@ export const idleStuckReflex: Reflex = {
     watchStill(view, state, now);
     const wait = view.onOwnPlacement === true ? IDLE_TICKS_ON_OWN : IDLE_TICKS;
     if (now - state.since < wait || now < state.until) return null;
-    const reason = stuckReason(view) ?? noPathReason(view, here);
-    if (reason === null) return null;
+    let reason = stuckReason(view) ?? noPathReason(view, here);
+    if (reason === null) {
+      // A high ledge (decision 0333) waits the 120 s own-placement clock, whatever the block under it.
+      if (!highLedgeReason(view) || now - state.since < IDLE_TICKS_ON_OWN) return null;
+      reason = 'high_ledge';
+    }
     return { reason, idle_seconds: Math.round((now - state.since) / TICKS_PER_SECOND) };
   },
   async run(trigger, ctx): Promise<ReflexOutcome> {
@@ -174,6 +180,7 @@ export const idleStuckReflex: Reflex = {
       ctx,
       `idle_stuck (${String(trigger.reason)})`,
       ctx.view.onOwnPlacement === true,
+      trigger.reason === 'high_ledge',
     );
   },
 };
@@ -210,6 +217,16 @@ function stuckReason(view: BodyView): 'enclosed' | 'ledge' | null {
 }
 
 /**
+ * A high ledge (decision 0333): no safe move leaves the Body's spot (`noSafeExit`, the planner's own
+ * safe-drop rule), it is not enclosed (the enclosure rules decide that), and it is not in water. A Body
+ * with a move available in the open is left alone; a null `noSafeExit` (an unread cell) never fires it.
+ */
+function highLedgeReason(view: BodyView): 'high_ledge' | null {
+  if (view.noSafeExit !== true || view.enclosed === true || view.inFluid === 'water') return null;
+  return 'high_ledge';
+}
+
+/**
  * A pillar top the planner will not leave (decision 0332): the Body stands on its own placement, is not
  * enclosed (the enclosure rules above decide that), and its last two goto outcomes ended `blocked` from
  * this spot. A Body waiting in the open has no failed walk, so it is left alone. Its clock is the 120 s
@@ -232,6 +249,7 @@ export async function runUnstick(
   ctx: ReflexContext,
   source: string,
   ownPlanksLast = false,
+  highLedge = false,
 ): Promise<ReflexOutcome> {
   const state = stateOf(ctx.view);
   const at = formatSpot(spotOf(ctx.view));
@@ -240,10 +258,12 @@ export async function runUnstick(
     return { result: 'abandoned', detail: `${source}: unstick backing off ${wait}s at ${at}` };
   }
   state.runs = state.runs.filter((started) => ctx.tick - started < HOUR_TICKS);
-  if (state.runs.length >= RUNS_PER_HOUR) {
+  // A high_ledge run has its own hourly cap (decision 0333); every other run keeps RUNS_PER_HOUR.
+  const cap = highLedge ? HIGH_LEDGE_RUNS_PER_HOUR : RUNS_PER_HOUR;
+  if (state.runs.length >= cap) {
     return {
       result: 'abandoned',
-      detail: `${source}: unstick capped at ${RUNS_PER_HOUR} runs an hour at ${at}`,
+      detail: `${source}: unstick capped at ${cap} runs an hour (cap reached) at ${at}`,
     };
   }
   state.runs.push(ctx.tick);
@@ -273,7 +293,11 @@ export async function runUnstick(
   state.anchor = spotOf(ctx.view);
   // A completed run frees the Body only when it now stands where it can step off (canStepOff true).
   // A run that dug one block lower from a deep drop completes but leaves the Body on the ledge.
-  const freed = run.state === 'completed' && ctx.view.canStepOff === true;
+  // A high_ledge run frees the Body only when a safe move now exists (noSafeExit false), not just a step.
+  const freed =
+    run.state === 'completed' &&
+    ctx.view.canStepOff === true &&
+    (!highLedge || ctx.view.noSafeExit === false);
   if (freed) {
     state.since = end;
     state.failures = 0;
