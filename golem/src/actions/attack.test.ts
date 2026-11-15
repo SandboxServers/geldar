@@ -139,6 +139,18 @@ describe('attack action', () => {
     expect(detailOf(player)).toMatchObject({ target: 'Alex', target_kind: 'player' });
   });
 
+  it.each(['animal', 'passive', 'object'])(
+    'records target_kind: mob for a %s entity, never player',
+    async (targetType) => {
+      const outcome = await attack(
+        fakeBot({ hitsToKill: 1, targetType, targetName: 'cow' }).bot,
+        'cow',
+      );
+      expect(outcome.status).toBe('completed');
+      expect(detailOf(outcome)).toMatchObject({ target: 'cow', target_kind: 'mob' });
+    },
+  );
+
   it('walks up to a target that is out of reach before it swings', async () => {
     const { bot, raw, zombie } = fakeBot({ zombieAt: new Vec3(8, 64, 0), hitsToKill: 1 });
     walk.mockImplementation(async () => {

@@ -195,4 +195,135 @@ describe('watchChunkVisits: stop and error paths', () => {
     expect(published).toHaveLength(1);
     stop();
   });
+
+  it('logs and does not publish an event the envelope schema rejects (empty shard)', () => {
+    const bot = fakeBot();
+    const { published, log, stop } = watch(bot, { shard: '' });
+    walkTo(bot, 0, 0);
+    expect(published).toHaveLength(0);
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('not recorded'));
+    stop();
+  });
+
+  it('emits nothing, logs nothing and does not throw for a non-finite position', () => {
+    const bot = fakeBot();
+    const { published, log, stop } = watch(bot);
+    expect(() => {
+      walkTo(bot, Number.NaN, 0);
+      walkTo(bot, Number.POSITIVE_INFINITY, 0);
+      walkTo(bot, 0, Number.NEGATIVE_INFINITY);
+    }).not.toThrow();
+    expect(published).toHaveLength(0);
+    expect(log).not.toHaveBeenCalled();
+    stop();
+  });
+});
+
+describe('watchChunkVisits: bounded failures and invalid input', () => {
+  it('gives up on a chunk after 3 failed publishes, however many moves follow', () => {
+    const bot = fakeBot();
+    const publish = vi.fn(() => {
+      throw new Error('nats down');
+    });
+    const { log, stop } = watch(bot, { publish });
+    for (let i = 0; i < 100; i++) walkTo(bot, i % 15, 0);
+    expect(publish).toHaveBeenCalledTimes(3);
+    expect(log).toHaveBeenCalledTimes(3);
+    expect(log).toHaveBeenLastCalledWith(expect.stringContaining('dropped'));
+    stop();
+  });
+
+  it('publishes on the last allowed attempt, then never again for that chunk', () => {
+    const bot = fakeBot();
+    let failures = 2;
+    let attempts = 0;
+    const { published, log, stop } = watch(bot, {
+      publish: (event) => {
+        attempts++;
+        if (failures > 0) {
+          failures--;
+          throw new Error('nats down');
+        }
+        published.push(event);
+      },
+    });
+    walkTo(bot, 0, 0);
+    walkTo(bot, 0, 0);
+    walkTo(bot, 0, 0);
+    expect(attempts).toBe(3);
+    expect(published).toHaveLength(1);
+    for (let i = 0; i < 10; i++) walkTo(bot, 1, 1);
+    expect(attempts).toBe(3);
+    expect(log).toHaveBeenCalledTimes(2);
+    stop();
+  });
+
+  it('handles an async publisher that rejects: retries, then gives up after 3 rejections', async () => {
+    const bot = fakeBot();
+    const publish = vi.fn(() => Promise.reject(new Error('nats down')));
+    const { log, stop } = watch(bot, { publish });
+    for (let i = 0; i < 10; i++) {
+      walkTo(bot, 0, 0);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    expect(publish).toHaveBeenCalledTimes(3);
+    expect(log).toHaveBeenCalledTimes(3);
+    stop();
+  });
+
+  it('logs an invalid dimension once across several moves in the same chunk', () => {
+    const bot = fakeBot('');
+    const { published, log, stop } = watch(bot);
+    for (let i = 0; i < 5; i++) walkTo(bot, i, 0);
+    expect(published).toHaveLength(0);
+    expect(log).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it('logs an out-of-range chunk index once and emits nothing', () => {
+    const bot = fakeBot();
+    const { published, log, stop } = watch(bot);
+    for (let i = 0; i < 4; i++) walkTo(bot, 16 * 2_000_001, 0);
+    expect(published).toHaveLength(0);
+    expect(log).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it('logs an invalid tick once and emits nothing', () => {
+    const bot = fakeBot();
+    const { published, log, stop } = watch(bot, { tick: () => Number.NaN });
+    for (let i = 0; i < 4; i++) walkTo(bot, 0, 0);
+    expect(published).toHaveLength(0);
+    expect(log).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it('does not throw into the move event when tick() throws, and logs once per chunk', () => {
+    const bot = fakeBot();
+    const { published, log, stop } = watch(bot, {
+      tick: () => {
+        throw new Error('no clock');
+      },
+    });
+    expect(() => {
+      walkTo(bot, 0, 0);
+      walkTo(bot, 1, 1);
+      walkTo(bot, 16, 0);
+      walkTo(bot, 16, 0);
+    }).not.toThrow();
+    expect(published).toHaveLength(0);
+    expect(log).toHaveBeenCalledTimes(2);
+    stop();
+  });
+
+  it('does not throw when the logger itself throws', () => {
+    const bot = fakeBot('');
+    const { stop } = watch(bot, {
+      log: () => {
+        throw new Error('log sink down');
+      },
+    });
+    expect(() => walkTo(bot, 0, 0)).not.toThrow();
+    stop();
+  });
 });
