@@ -41,7 +41,10 @@ export function newMineOnceIds(): MineOnceIds {
 }
 
 /** The SnapshotRequest body for one life. Throws when the contract refuses it. */
-export function buildSnapshotRequest(lifeId: string, reason: string): { life_id: string; reason: string } {
+export function buildSnapshotRequest(
+  lifeId: string,
+  reason: string,
+): { life_id: string; reason: string } {
   const value = { life_id: lifeId, reason };
   const checked = validateSnapshotRequest(value);
   if (!checked.ok) throw new Error(`snapshot request refused: ${checked.errors.join('; ')}`);

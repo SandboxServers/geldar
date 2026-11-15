@@ -14,7 +14,7 @@ the RCON recipe are NOT verified. Nothing here has been shown to produce a roll 
   words sheet, roll and experiment (case-insensitive, at a word start).
 - Evidence: `run.sh evidence` runs three read-only `psql` queries (rolls, xp_evidence, proficiency) in a
   read-only session, filtered to `SHEET_LIFE`, and prints them through `report.ts`.
-- Overlay: `bench/sheet/phase0-sheet.yml`, a copy of the mh8a pattern on other ports (26566, 14223, 26576,
+- Overlay: `bench/sheet/phase0-sheet.yml`, modelled on PR #507's harness (not yet on main) on other ports (26566, 14223, 26576,
   15433). Used only by `run.sh up|down`.
 - Shard file: `bench/sheet/scratch-shard.template.yaml` (a template, not a shard). The operator copies it to
   `shards/scratch-sheet0.yaml` in a scratch checkout and never commits the copy.
@@ -42,17 +42,19 @@ the RCON recipe are NOT verified. Nothing here has been shown to produce a roll 
    3, floor 6). `threatCallFor` in `golem/src/body/reflexes/encounter.ts` is the function to read; it was not run.
    The RCON steps in `run.sh rcon-roll` are CANDIDATES. `summon`, `give` and `damage` have not been checked on the
    scratch server's version, and `damage` (vanilla `/damage`) may not exist there.
-3. The leak check uses sheet value 3, which matches any standalone 3 in a capture. It is noisy. Use the real
-   values for a real run.
+3. The leak check has no default stat. `run.sh leak <file> <sheet numbers>` and `cli.ts leak` both require the
+   stat list (exit 2 without it), and a standalone number in the capture that equals one of the stats is a hit.
+   Pass the real sheet values for a real run; a stat of 3 would match any 3 in the capture and is noisy.
 
 ## Open questions
 
 - Does the scratch player Body reach a plan's expiry or source-snapshot check on the first try? Not run. The
   first `mine-once` may get `stale_snapshot` if the revision moved between the snapshot and the plan; rerun.
 - `proficiency` table columns (is there a `life_id`?) are unverified. The evidence query assumes it.
-- `LIVE_NAMES` in `guard.ts` is unreachable for a `scratch-` name: a scratch name can never equal a live name
-  (`geldar`, `geldar-colo`, ...), so the list only ever refuses names the prefix check already refused. The guard
-  is effectively the prefix check. Left as is; a fix would need a different live-name rule.
+- The live-name list (`LIVE_NAMES`) is gone. A `scratch-` name can never equal a live name (`geldar`,
+  `geldar-colo`, ...), so the list only refused names the prefix check already refused. The guard is the prefix
+  check alone: the name must match `scratch-` plus up to 23 more characters (32 in all), and the shard and the
+  project must both pass it.
 - Does the scratch Body need `GELDAR_XP=1` on the eventsink for the mining row? Assumed from the step brief; not
   checked in the compose files.
 

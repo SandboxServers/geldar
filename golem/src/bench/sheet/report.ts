@@ -30,7 +30,9 @@ export function formatSection(section: ReportSection): string {
   const out = [`== ${section.title} (${count} row${count === 1 ? '' : 's'}) ==`];
   if (count === 0) return [...out, '(none)'].join('\n');
   const all = [table.header, ...table.rows];
-  const widths = table.header.map((_, col) => Math.max(...all.map((row) => (row[col] ?? '').length)));
+  const widths = table.header.map((_, col) =>
+    Math.max(...all.map((row) => (row[col] ?? '').length)),
+  );
   for (const row of all) {
     out.push(row.map((cell, col) => cell.padEnd(widths[col] ?? 0)).join('  ').trimEnd());
   }

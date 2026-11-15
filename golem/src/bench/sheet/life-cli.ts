@@ -11,10 +11,10 @@
  * path, if any, comes from the contract's connectNats environment and is never printed.
  * Exit: 0 done, 1 refused, failed or timed out, 2 bad usage.
  */
-import { connectNats } from '@geldar/contract/nats';
-import { planSubject, snapshotSubject, type Snapshot } from '@geldar/contract';
-import type { NatsConnection } from '@nats-io/transport-node';
 import { pathToFileURL } from 'node:url';
+import { planSubject, type Snapshot, snapshotSubject } from '@geldar/contract';
+import { connectNats } from '@geldar/contract/nats';
+import type { NatsConnection } from '@nats-io/transport-node';
 import { checkScratch } from './guard.ts';
 import {
   buildMineOncePlan,
@@ -31,6 +31,8 @@ const SNAPSHOT_TIMEOUT_MS = 5_000;
 /** The Body's ack deadline is 2 s (spec 5.3.2); this wait is longer so a slow ack is still read. */
 const ACK_TIMEOUT_MS = 5_000;
 const DEFAULT_RESULT_TIMEOUT_MS = 60_000;
+/** The shortest result wait the CLI accepts: a plan_result takes a few ticks, so less is a typo. */
+const MIN_RESULT_TIMEOUT_MS = 1000;
 
 const USAGE =
   'usage: life-cli.ts snapshot <life_id> | mine-once <life_id> <block> <count> (env: SHEET_SHARD, SHEET_PROJECT)';
@@ -38,7 +40,11 @@ const USAGE =
 type Subscription = ReturnType<NatsConnection['subscribe']>;
 
 /** Asks the Body for a snapshot. A Body that does not serve this life sends no reply, so this times out. */
-async function requestSnapshot(nc: NatsConnection, shard: string, lifeId: string): Promise<Snapshot> {
+async function requestSnapshot(
+  nc: NatsConnection,
+  shard: string,
+  lifeId: string,
+): Promise<Snapshot> {
   const body = JSON.stringify(buildSnapshotRequest(lifeId, NAME));
   const reply = await nc.request(snapshotSubject(shard, lifeId), body, {
     timeout: SNAPSHOT_TIMEOUT_MS,
@@ -92,6 +98,11 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env)
     return 2;
   }
   const resultTimeoutMs = Number(env.SHEET_RESULT_TIMEOUT_MS ?? DEFAULT_RESULT_TIMEOUT_MS);
+  if (!Number.isInteger(resultTimeoutMs) || resultTimeoutMs < MIN_RESULT_TIMEOUT_MS) {
+    console.error('SHEET_RESULT_TIMEOUT_MS must be a whole number of milliseconds, 1000 or more');
+    console.error(USAGE);
+    return 2;
+  }
   const nc = await connectNats({ name: NAME, servers: env.SHEET_NATS_URL ?? DEFAULT_NATS_URL });
   try {
     const snapshot = await requestSnapshot(nc, shard, lifeId);
@@ -145,7 +156,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       process.exitCode = code;
     })
     .catch((error: unknown) => {
-      console.error(`sheet life-cli failed: ${error instanceof Error ? error.message : String(error)}`);
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`sheet life-cli failed: ${message}`);
       process.exitCode = 1;
     });
 }

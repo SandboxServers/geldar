@@ -1,17 +1,41 @@
 # Sheet driver step 0 scratch shard TEMPLATE. Not a shard file: nothing reads it from bench/sheet/. The operator
 # copies it to shards/scratch-sheet0.yaml in a scratch checkout only, and never commits the copy. The shard name
 # must start with scratch- (bench/sheet/run.sh and life-cli.ts refuse anything else).
+# golem/src/bench/sheet/scratch-template.test.ts parses this file with parsePlayerConfig, so it must stay loadable.
 # The sheet values are the innate scores of contract/schemas/character-sheet.schema.json (integers 1 to 5). The
 # player name is a placeholder: the operator sets the in-game name for the scratch account outside the repo.
 # Never copy these values into shards/colo-mind.yaml, shards/phase0.yaml or shards/colo.yaml.
 shard: scratch-sheet0
+tick_rate: 20
+chat: { radius: 32, shout_enabled: false, rate_limit_seconds: 3, max_chars: 256 }
+reflexes:
+  enabled: true
+  eat: true
+  retreat: true
+  hazard_escape: true
+  fall_stop: true
+  fight_or_flee: true
+  blocked_path: true
+  panic_burrow: true
+body_actions: { edit_sign: false, use: true, swim: true }
 character:
   mode: sheet
   rolls: true
   proficiency: { enabled: true, thresholds: [10, 30, 70] }
+# No Mind runs on the scratch shard. These keys satisfy the shard loader: `lives` keeps Adam's life ids apart from
+# the player's, and `agent` is the Mind's own placeholder (a player's Body reads its own entry, not this one).
+mind:
+  agent:
+    name: ScratchMind
+    username: ag_sheetmind_01
+    tier: strong
+  lives: { strong: ag_sheetmind_01 }
 sovereign:
+  allowed: true
+  presence:
+    start: on_demand
   players:
-    - player_id: sheet-sample
+    - player_id: ag-sheetdrv-01
       life_id: ag_sheetdrv_01
       name: SheetSample
       character_sheet: { version: 1, attributes: { curiosity: 3, common_sense: 3, cleverness: 3, aggression: 3 }, alignment: { law: 3, good: 3 }, op_modes: { explorer: 3, farmer: 3, miner: 3, builder: 3, crafter: 3, warrior: 3, nitwit: 3 } }

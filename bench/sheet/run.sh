@@ -8,7 +8,9 @@
 #   SHEET_SHARD=scratch-sheet0 SHEET_LIFE=<life> SHEET_PG_URL=<url without password> sh bench/sheet/run.sh evidence
 #   SHEET_SHARD=scratch-sheet0 SHEET_LIFE=<life> sh bench/sheet/run.sh mine-once [block] [count]
 #   SHEET_SHARD=scratch-sheet0 SHEET_LIFE=<life> sh bench/sheet/run.sh rcon-roll
-#   SHEET_SHARD=scratch-sheet0 sh bench/sheet/run.sh leak <capture file> [sheet numbers, e.g. 3,3]
+#   SHEET_SHARD=scratch-sheet0 sh bench/sheet/run.sh leak <capture file> <sheet numbers, e.g. 3,3>
+#
+# Exit codes: 0 ok, 1 refused by the guard (or a leak hit, or an evidence refusal), 2 usage error or a crash.
 #
 # mine-once sends one scripted plan (one mine action, no model) over NATS and prints the ids and the Body's reply.
 # It needs SHEET_NATS_URL (default nats://127.0.0.1:14223). rcon-roll prints an UNVERIFIED operator checklist for
@@ -56,7 +58,7 @@ case "$action" in
     esac
     # Read-only session. The three queries filter on the scratch life only; nothing is written.
     q() {
-      PGOPTIONS='-c default_transaction_read_only=on' psql "$SHEET_PG_URL" -v ON_ERROR_STOP=1 \
+      PGOPTIONS='-c default_transaction_read_only=on' psql -w "$SHEET_PG_URL" -v ON_ERROR_STOP=1 \
         -v "life=$SHEET_LIFE" --csv -f - <<SQL
 $1
 SQL
@@ -71,8 +73,8 @@ SQL
     ;;
   leak)
     guard
-    [ "$#" -ge 2 ] || { echo "usage: run.sh leak <capture file> [sheet numbers]" >&2; exit 2; }
-    "$SHEET_NODE" --experimental-strip-types "$CLI" leak "$2" "${3:-3}"
+    [ "$#" -eq 3 ] || { echo "usage: run.sh leak <capture file> <sheet numbers>" >&2; exit 2; }
+    "$SHEET_NODE" --experimental-strip-types "$CLI" leak "$2" "$3"
     ;;
   mine-once)
     guard
@@ -90,6 +92,7 @@ SQL
     # the password out of the repo.
     cat <<EOF
 UNVERIFIED operator checklist for the one roll (life: ${SHEET_LIFE:-<SHEET_LIFE>}, in-game name: <player name>)
+Scratch shard only. Never run these against a live shard (spec Principle 1).
   1. Summon one armed hostile next to the life (not a creeper). Candidate: summon minecraft:zombie <x> <y> <z>
   2. Give the life a weapon. Candidate: give <player name> minecraft:iron_sword 1
   3. Hurt the life to 7-10 of 20 health, so the band is reached. Candidate: damage <player name> 12
@@ -99,7 +102,7 @@ UNVERIFIED operator checklist for the one roll (life: ${SHEET_LIFE:-<SHEET_LIFE>
 EOF
     ;;
   *)
-    echo "usage: sh bench/sheet/run.sh guard|up|down|evidence|mine-once [block] [count]|rcon-roll|leak <capture file> [numbers]" >&2
+    echo "usage: sh bench/sheet/run.sh guard|up|down|evidence|mine-once [block] [count]|rcon-roll|leak <capture file> <numbers>" >&2
     exit 2
     ;;
 esac

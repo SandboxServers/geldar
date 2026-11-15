@@ -1,4 +1,4 @@
-# Sheet driver step 0 scratch overlay, modelled on bench/mh8a/phase0-bench.yml. A throwaway, loopback-only
+# Sheet driver step 0 scratch overlay, modelled on PR #507's harness (not yet on main). A throwaway, loopback-only
 # copy of the phase0 shard for the scratch shard (SHEET_PROJECT, scratch- prefix), so it never shares ports
 # or a world with phase0 or with a live shard. Used only by bench/sheet/run.sh up|down.
 # Host ports: Minecraft 127.0.0.1:26566, NATS 127.0.0.1:14223, RCON 127.0.0.1:26576, Postgres 127.0.0.1:15433.

@@ -5,7 +5,6 @@ import {
   newMineOnceIds,
   parseAck,
   parseSnapshotReply,
-  PLAN_TTL_TICKS,
   planResultFor,
 } from './life-payload.ts';
 
@@ -92,7 +91,7 @@ describe('buildMineOncePlan', () => {
   });
 
   it('sets the expiry a fixed number of ticks after the snapshot tick', () => {
-    expect(plan().expires_tick).toBe(5000 + PLAN_TTL_TICKS);
+    expect(plan().expires_tick).toBe(6200);
   });
 
   it('takes the block and count it is given', () => {
