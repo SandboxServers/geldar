@@ -174,6 +174,18 @@ class AbsorptionTest {
     }
 
     @Test
+    void aThirdsCornerTieIsTheSameBothWays() {
+        // Thirds are not dyadic: the x, y and z boundaries meet at one point in exact arithmetic, but the quotients
+        // round. The tolerance must still tie them so the corner cell (4,3,5) is read in both directions: raw 3 plus
+        // stone 2 = 5.
+        ProbeWorld world = new ProbeWorld().set(4, 3, 5, STONE);
+        Absorption.Effective f = cast(world, 16.0 / 3, 1.5, 17.0 / 3, 10.0 / 3, 2.5, 23.0 / 3, CAP);
+        Absorption.Effective r = cast(world, 10.0 / 3, 2.5, 23.0 / 3, 16.0 / 3, 1.5, 17.0 / 3, CAP);
+        assertEquals(5.0, f.distance(), 1e-9);
+        assertEquals(5.0, r.distance(), 1e-9);
+    }
+
+    @Test
     void twoHundredRandomRaysAreTheSameBothWays() {
         // A fixed random world over x and z from -4 to 8 and y from 0 to 7, about 30% stone and 10% wool, then 200
         // pairs of half-block feet (never on a boundary). Each pair is cast both ways and must agree in distance,
@@ -408,6 +420,25 @@ class AbsorptionTest {
         Absorption.Sealed s = sealed(world, 60, 5);
         assertEquals(MuffleConfig.SEALED_PENALTY, s.penalty(), 1e-9);
         assertEquals(3, s.reads());
+        assertFalse(s.truncated());
+    }
+
+    @Test
+    void aBudgetEndingExactlyAtTheBuildLimitIsNotTruncated() {
+        // Cells 61 and 62 are the two reads, and the build limit is 63: the budget ends exactly there, so the scan is
+        // complete, not truncated.
+        Absorption.Sealed s = Absorption.sealedPenalty(0, 60, 0, new ProbeWorld(), 63, 2);
+        assertEquals(2, s.reads());
+        assertFalse(s.truncated());
+    }
+
+    @Test
+    void aRoofAtTheFifthReadOfABudgetOfFiveIsFoundAndNotTruncated() {
+        // Cells 61 to 65 are the five reads; the roof at 65 is the fifth, so the penalty stands and the scan is complete.
+        ProbeWorld world = new ProbeWorld().set(0, 65, 0, STONE);
+        Absorption.Sealed s = sealed(world, 60, 5);
+        assertEquals(4.0, s.penalty(), 1e-9);
+        assertEquals(5, s.reads());
         assertFalse(s.truncated());
     }
 
