@@ -15,6 +15,12 @@
   const FOLLOW_WAIT_MS = 3000;
   const FOLLOW_STEP_MS = 200;
   const NOT_ON_MAP = 'Not on the map';
+  const LIVE_MS = 15000;
+  const DELAYED_MS = 60000;
+  const STILL_MS = 120000;
+  const MINUTE_MS = 60000;
+  const HOUR_MS = 3600000;
+  const LIVE_TEXT = { live: 'Live', delayed: 'Delayed', offline: 'Offline' };
 
   // The feed as {t, id, text} lines, oldest first. Null when the body is not {"v":1,"lines":[...]}. Bad entries are
   // skipped, and at most the last MAX_ROWS lines are kept.
@@ -42,8 +48,9 @@
   }
 
   // The {uuid, name} pairs of a live players.json. Null when the body is not {"players":[...]}.
-  // home, when given, gets the uuid of each entry with foreign false (the agent is on this map).
-  function parsePlayers(text, home) {
+  // home, when given, gets the uuid of each entry with foreign false (the agent is on this map). at, when given, gets
+  // {uuid, x, y, z} of those entries too, from their position.
+  function parsePlayers(text, home, at) {
     let doc;
     try {
       doc = JSON.parse(text);
@@ -55,7 +62,17 @@
     for (const p of doc.players) {
       if (p && typeof p.uuid === 'string' && typeof p.name === 'string')
         out.push({ uuid: p.uuid, name: p.name });
-      if (home && p && p.foreign === false && typeof p.uuid === 'string') home.push(p.uuid);
+      if (!(p && p.foreign === false && typeof p.uuid === 'string')) continue;
+      if (home) home.push(p.uuid);
+      const pos = p.position;
+      if (
+        at &&
+        pos &&
+        typeof pos.x === 'number' &&
+        typeof pos.y === 'number' &&
+        typeof pos.z === 'number'
+      )
+        at.push({ uuid: p.uuid, x: pos.x, y: pos.y, z: pos.z });
     }
     return out;
   }
@@ -110,8 +127,8 @@
     return out;
   }
 
-  // Appends one row: time, name in its colour, then the text as a text node. Nothing from the feed is parsed as markup.
-  // Returns the name element, so a name that arrives later can be written into it.
+  // Appends one row: time, name in its colour, the still suffix, then the text as a text node. Nothing from the feed is
+  // parsed as markup. Returns the name element, so a name that arrives later can be written into it.
   function appendRow(doc, list, line, name, onFollow = () => {}) {
     const row = doc.createElement('div');
     row.className = 'gc-row';
@@ -132,11 +149,16 @@
         onFollow(line.id);
       }
     });
+    const still = doc.createElement('span');
+    still.className = 'gc-still';
+    still.setAttribute('aria-hidden', 'true');
     row.speakerId = line.id;
     row.speakerEl = who;
+    row.stillEl = still;
     row.appendChild(time);
     row.appendChild(doc.createTextNode(' '));
     row.appendChild(who);
+    row.appendChild(still);
     row.appendChild(doc.createTextNode(': ' + line.text));
     list.appendChild(row);
     while (list.childNodes.length > MAX_ROWS) list.removeChild(list.childNodes[0]);
@@ -167,6 +189,75 @@
     return ok ? POLL_MS : BACKOFF_MS;
   }
 
+  // The header dot from the age of the last good fetch: live under 15 s, delayed under 60 s, else offline.
+  function freshState(ageMs) {
+    if (ageMs < LIVE_MS) return 'live';
+    return ageMs < DELAYED_MS ? 'delayed' : 'offline';
+  }
+
+  // A speaker's "still" suffix: '' under 2 min, whole minutes, then 'still 1h+' from an hour.
+  function stillLabel(ms) {
+    if (ms < STILL_MS) return '';
+    if (ms >= HOUR_MS) return 'still 1h+';
+    return 'still ' + Math.floor(ms / MINUTE_MS) + 'm';
+  }
+
+  // The age of the newest feed line. An age below 0 (a clock behind the server) counts as 0. The feed's t is the
+  // server's clock and now is the viewer's, so a skew between them shifts the age by that much; it is not corrected.
+  function ageLabel(ms) {
+    const s = Math.max(0, ms);
+    if (s < MINUTE_MS) return 'last line ' + Math.floor(s / 1000) + 's ago';
+    if (s < HOUR_MS) return Math.floor(s / MINUTE_MS) + 'm ago';
+    return '1h+ ago';
+  }
+
+  // Records an agent's home position, rounded to 0.1 on each axis. The timer restarts when any axis changes.
+  function trackPosition(state, a, now) {
+    const x = Math.round(a.x * 10) / 10;
+    const y = Math.round(a.y * 10) / 10;
+    const z = Math.round(a.z * 10) / 10;
+    const e = state.still.get(a.uuid);
+    if (!e || e.x !== x || e.y !== y || e.z !== z) state.still.set(a.uuid, { x, y, z, since: now });
+  }
+
+  // Drops the tracking of each agent that no players.json lists. A map whose fetch failed keeps its last list.
+  function pruneStill(state) {
+    for (const uuid of [...state.still.keys()]) {
+      if (![...state.here.values()].some((s) => s.has(uuid))) state.still.delete(uuid);
+    }
+  }
+
+  // The still suffix of a speaker: '' when no players.json has them.
+  function stillFor(state, uuid, now) {
+    const e = state.still.get(uuid);
+    return e ? stillLabel(now - e.since) : '';
+  }
+
+  // Writes a property only when it differs from the node's, so an unchanged repaint writes nothing.
+  function put(node, prop, value) {
+    if (node[prop] !== value) node[prop] = value;
+  }
+
+  // Paints the header dot, the last-line age and each row's still suffix. Run every second with the clock. A
+  // speaker's still label shows on their newest row only; their older rows are cleared.
+  function paintStatus(state, ui, now) {
+    const fresh = freshState(state.lastOk === null ? Infinity : now - state.lastOk);
+    const text = LIVE_TEXT[fresh];
+    put(ui.live, 'textContent', text);
+    ui.live.setAttribute('aria-label', text);
+    put(ui.live, 'className', 'gc-live gc-live-' + fresh);
+    const ago = state.newestT === null ? '' : ageLabel(now - state.newestT);
+    put(ui.foot, 'textContent', ago);
+    put(ui.foot, 'hidden', ago === '');
+    const newest = new Set();
+    for (const row of [...state.list.childNodes].reverse()) {
+      if (!row.stillEl) continue;
+      const label = newest.has(row.speakerId) ? '' : stillFor(state, row.speakerId, now);
+      newest.add(row.speakerId);
+      put(row.stillEl, 'textContent', label === '' ? '' : ` ${label}`);
+    }
+  }
+
   async function getText(fetchFn, url) {
     try {
       const r = await fetchFn(url, {
@@ -183,7 +274,9 @@
   // names seen, the name elements still showing the neutral label, and whether the viewer is pinned to the bottom.
   // Pinned starts true; only a scroll of the list changes it, since new rows do not scroll.
   // onFollow runs on a name click; mapOf is each agent's map (its players.json entry with foreign false).
-  function createFeedState(doc, list, onFollow = () => {}) {
+  // now is the clock. lastOk is the time of the last good fetch, newestT the newest feed line's t (null when the feed
+  // is empty), still each agent's {x, y, z, since}, and here each map's uuids from its last good players.json.
+  function createFeedState(doc, list, onFollow = () => {}, now = () => Date.now()) {
     const state = {
       doc,
       list,
@@ -193,6 +286,11 @@
       unnamed: [],
       pinned: true,
       onFollow,
+      now,
+      lastOk: null,
+      newestT: null,
+      still: new Map(),
+      here: new Map(),
     };
     list.addEventListener('scroll', () => {
       state.pinned = isPinned(list);
@@ -220,14 +318,23 @@
       MAPS.map(async (map) => {
         const text = await getText(fetchFn, '/maps/' + map + '/live/players.json');
         const home = [];
-        const players = text === null ? null : parsePlayers(text, home);
-        if (players) remember(state.names, players);
+        const at = [];
+        const players = text === null ? null : parsePlayers(text, home, at);
+        if (players) {
+          const now = state.now();
+          remember(state.names, players);
+          state.here.set(map, new Set(players.map((p) => p.uuid)));
+          state.lastOk = now;
+          for (const a of at) trackPosition(state, a, now);
+        }
         for (const uuid of home) state.mapOf.set(uuid, map);
       }),
     );
     const feedText = await feedP;
     const feed = feedText === null ? null : parseFeed(feedText);
     if (feed === null) return false;
+    state.lastOk = state.now();
+    state.newestT = feed.length > 0 ? Math.max(...feed.map((l) => l.t)) : null;
     const fresh = takeNew(feed, new Set(state.shown));
     if (fresh.length > 0) {
       const rows = renderLines(
@@ -245,16 +352,29 @@
       state.unnamed.splice(0, Math.max(0, state.unnamed.length - MAX_ROWS));
       followBottom(state);
     }
-    playersP.then(() => refreshNames(state));
+    playersP.then(() => {
+      try {
+        refreshNames(state);
+      } finally {
+        pruneStill(state);
+      }
+    });
     return true;
   }
 
-  // The poll loop. A poll that throws counts as a failed poll: the loop backs off and keeps going.
-  function runLoop(state, fetchFn, schedule) {
+  // The poll loop. A poll that throws counts as a failed poll: the loop backs off and keeps going. afterFirst, when
+  // given, runs once after the first poll settles, whatever its outcome.
+  function runLoop(state, fetchFn, schedule, afterFirst = null) {
+    let first = true;
     const loop = () => {
       pollOnce(state, fetchFn)
         .catch(() => false)
-        .then((ok) => schedule(loop, nextDelay(ok)));
+        .then((ok) => {
+          const once = first;
+          first = false;
+          schedule(loop, nextDelay(ok));
+          if (once && afterFirst) afterFirst();
+        });
     };
     loop();
   }
@@ -353,11 +473,21 @@
       clearTimeout(noteTimer);
       noteTimer = setTimeout(() => (note.textContent = ''), 3000);
     };
+    const live = doc.createElement('span');
+    live.className = 'gc-live gc-live-offline';
+    live.setAttribute('role', 'img');
+    live.setAttribute('aria-label', 'Offline');
+    live.textContent = 'Offline';
+    const foot = doc.createElement('div');
+    foot.className = 'gc-foot';
+    foot.hidden = true;
     head.appendChild(title);
+    title.appendChild(live);
     title.appendChild(note);
     head.appendChild(toggle);
     root.appendChild(head);
     root.appendChild(list);
+    root.appendChild(foot);
     const setCollapsed = (collapsed) => {
       root.classList.toggle('gc-collapsed', collapsed);
       toggle.textContent = collapsed ? 'Show' : 'Hide';
@@ -370,7 +500,7 @@
       writeCollapsed(collapsed);
       if (!collapsed && onExpand) onExpand();
     });
-    return { root, list, note: showNote };
+    return { root, list, note: showNote, live, foot };
   }
 
   // Adds the panel's stylesheet unless the page already links one. BlueMap rewrites settings.json on every Paper
@@ -391,6 +521,7 @@
     fetchFn = (url, opts) => fetch(url, opts),
     schedule = (fn, ms) => setTimeout(fn, ms),
     tick = null,
+    now = () => Date.now(),
   ) {
     ensureStyles(doc);
     let state = null;
@@ -399,11 +530,18 @@
     });
     doc.body.appendChild(panel.root);
     const bluemap = () => globalThis.window?.bluemap;
-    state = createFeedState(doc, panel.list, (uuid) =>
-      followAgent(uuid, { bluemap: bluemap(), mapOf: state.mapOf, note: panel.note }),
+    state = createFeedState(
+      doc,
+      panel.list,
+      (uuid) => followAgent(uuid, { bluemap: bluemap(), mapOf: state.mapOf, note: panel.note }),
+      now,
     );
-    runLoop(state, fetchFn, schedule);
-    if (tick) tick(() => syncHighlight(panel.list, bluemap()), 1000);
+    runLoop(state, fetchFn, schedule, () => paintStatus(state, panel, now()));
+    if (tick)
+      tick(() => {
+        syncHighlight(panel.list, bluemap());
+        paintStatus(state, panel, now());
+      }, 1000);
   }
 
   if (
@@ -422,6 +560,13 @@
       parsePlayers,
       remember,
       nameFor,
+      freshState,
+      stillLabel,
+      ageLabel,
+      trackPosition,
+      pruneStill,
+      stillFor,
+      paintStatus,
       colourFor,
       clock,
       takeNew,
