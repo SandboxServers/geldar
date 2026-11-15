@@ -4,33 +4,11 @@ import { moveNear } from '../../actions/pathing.ts';
 import { DEFAULT_DIAG_SINK, type DiagSink } from '../../actions/stall-diag.ts';
 import type { Reflex, ReflexContext, ReflexOutcome } from '../reflex.ts';
 import { placeFields } from '../where.ts';
+import { type BlockReader, HAZARD_FLOORS, isOpenCell } from './hazard-escape-cells.ts';
+import { findBreathingColumn, findLateralExit, type LateralExit } from './hazard-escape-lateral.ts';
 
-/** A block as the scan reads it: the prismarine fields it needs. */
-export interface ScanBlock {
-  name: string;
-  boundingBox: string;
-}
-
-/** Reads one block by coordinates; null when the chunk is not loaded. */
-export type BlockReader = (x: number, y: number, z: number) => ScanBlock | null;
-
-/** Blocks the Body must not stand in: they burn, drown, slow or hold it. */
-const HAZARD_CELLS = new Set([
-  'lava',
-  'water',
-  'fire',
-  'soul_fire',
-  'cobweb',
-  'powder_snow',
-  'sweet_berry_bush',
-  'bubble_column',
-  'seagrass',
-  'tall_seagrass',
-  'kelp',
-  'kelp_plant',
-]);
-/** Solid blocks that still hurt to stand on or against. */
-const HAZARD_FLOORS = new Set(['magma_block', 'cactus', 'campfire', 'soul_campfire']);
+export type { BlockReader, ScanBlock } from './hazard-escape-cells.ts';
+export { findBreathingColumn, findLateralExit, type LateralExit } from './hazard-escape-lateral.ts';
 
 /** Bubbles of air (of 20) at or below which water counts as drowning. */
 export const DROWNING_AIR = 8;
@@ -44,13 +22,10 @@ const SCAN_HEIGHT = 3;
 const COOLDOWN_TICKS = 40;
 /** The swim-up's share of the time limit; the rest is left for the walk out. */
 const SWIM_TICKS = 120;
-/** How far the swim-up looks for open water to steer to when a ceiling is over the head. */
-const BREATH_RADIUS = 4;
 
-/** True when the Body can stand in this cell: passable and not a hazard. Unloaded is not safe. */
-function isOpenCell(block: ScanBlock | null): boolean {
-  return block !== null && block.boundingBox === 'empty' && !HAZARD_CELLS.has(block.name);
-}
+/** Ticks over which a swim-up must gain height; less than LATERAL_MIN_GAIN blocks in one window is pinned. */
+const LATERAL_WINDOW_TICKS = 20;
+const LATERAL_MIN_GAIN = 0.3;
 
 /** True when a Body whose feet are in this cell is out of harm: open feet, open head, solid good floor. */
 export function isSafeStand(read: BlockReader, x: number, y: number, z: number): boolean {
@@ -84,38 +59,6 @@ export function findSafeBlock(
   return best;
 }
 
-/** A cell the Body can swim or stand in: no solid block (water and air are both `empty`). */
-function passable(block: ScanBlock | null): boolean {
-  return block !== null && block.boundingBox === 'empty';
-}
-
-/**
- * The nearest column within 4 blocks whose cells at the Body's head level and the one above are
- * passable, so a swimmer that steers there rises into air. Null when no such column is in range.
- */
-export function findBreathingColumn(
-  read: BlockReader,
-  from: { x: number; y: number; z: number },
-): { x: number; z: number } | null {
-  const feet = Math.floor(from.y);
-  const cx = Math.floor(from.x);
-  const cz = Math.floor(from.z);
-  let best: { x: number; z: number } | null = null;
-  let bestDistance = Number.POSITIVE_INFINITY;
-  for (let dx = -BREATH_RADIUS; dx <= BREATH_RADIUS; dx++) {
-    for (let dz = -BREATH_RADIUS; dz <= BREATH_RADIUS; dz++) {
-      const distance = dx * dx + dz * dz;
-      if (distance >= bestDistance) continue;
-      const x = cx + dx;
-      const z = cz + dz;
-      if (!passable(read(x, feet + 1, z)) || !passable(read(x, feet + 2, z))) continue;
-      best = { x, z };
-      bestDistance = distance;
-    }
-  }
-  return best;
-}
-
 /** What a walk is given: where to go, and how to tell it is over. */
 export interface EscapeWalk {
   bot: Bot;
@@ -127,6 +70,10 @@ export interface EscapeWalk {
   expired(): boolean;
   /** True once the Body stands out of the hazard. */
   reached(): boolean;
+  /** Writes one operator line (the lateral fallback engaging or changing target). Optional: a test walk need not set it. */
+  note?(fields: Record<string, unknown>): void;
+  /** The game tick now. The swim-up's 20-tick window counts these; without it the window counts loop turns. */
+  tick?(): number;
 }
 
 /** Moves the Body to the target; resolves when it arrived, gave up or was aborted. */
@@ -196,8 +143,11 @@ export function steerBlocked(bot: Bot, to: Vec3): boolean {
 /**
  * Swims up with jump held on every physics tick until the Body has air or is out of the water; the
  * way out of deep water with no stand block within range. When a solid block is directly above the
- * head (an undercut bank), it first steers to the nearest breathing column, then rises. The target
- * of the walk is not used.
+ * head (an undercut bank), it steers to the nearest breathing column, then rises. When the Body
+ * gains less than 0.3 blocks in 20 game ticks (pinned under a cap), it swims to the nearest
+ * breathable cell through water and air (a lake surface counts), re-picked every window and kept
+ * unless another is 2 steps nearer. Between a column and a lateral exit it takes the one with
+ * fewer blocks to swim. The target of the walk is not used.
  */
 export const swimUp: EscapeMover = async (walk) => {
   const { bot } = walk;
@@ -207,17 +157,66 @@ export const swimUp: EscapeMover = async (walk) => {
     bot.setControlState('jump', true);
   };
   let steering = false;
+  let windowStart = bot.entity.position.y;
+  // Loop turns count only when the walk has no game clock; the reflex always gives one.
+  let turns = 0;
+  const clock = (): number => walk.tick?.() ?? turns;
+  let windowTick = clock();
+  let sideways: LateralExit | null = null;
+  // A window that gains LATERAL_MIN_GAIN keeps the engaged target one more window; the next window decides.
+  let keepOneMore = false;
+  let noted: { x: number; z: number } | null = null;
   bot.on('physicsTick', holdJump);
   try {
     holdJump();
     while (!walk.signal.aborted && !walk.expired() && !walk.reached()) {
       const here = bot.entity.position;
+      if (clock() - windowTick >= LATERAL_WINDOW_TICKS) {
+        const gained = here.y - windowStart;
+        windowStart = here.y;
+        windowTick = clock();
+        if (gained < LATERAL_MIN_GAIN) {
+          sideways = findLateralExit(read, here, sideways ?? undefined);
+          keepOneMore = false;
+        } else if (sideways && !keepOneMore) {
+          keepOneMore = true;
+        } else {
+          sideways = null;
+          keepOneMore = false;
+        }
+        if (sideways && (!noted || noted.x !== sideways.x || noted.z !== sideways.z)) {
+          walk.note?.({
+            event: noted ? 'retarget' : 'engage',
+            direction: sideways.direction,
+            distance: sideways.distance,
+            dy_gained: Math.round(gained * 100) / 100,
+          });
+          noted = { x: sideways.x, z: sideways.z };
+        }
+      }
+      // A waypoint the Body has stepped into is done; the next one is the next step.
+      const waypoint = sideways?.path[0];
+      if (
+        sideways &&
+        waypoint &&
+        Math.floor(here.x) === waypoint.x &&
+        Math.floor(here.z) === waypoint.z
+      ) {
+        sideways.path.shift();
+      }
       const ceiling = read(Math.floor(here.x), Math.floor(here.y + 1.85), Math.floor(here.z));
       const column = ceiling?.boundingBox === 'block' ? findBreathingColumn(read, here) : null;
-      if (column) {
-        const centre = new Vec3(column.x + 0.5, here.y, column.z + 0.5);
-        await bot.lookAt(centre, true);
-        const wantForward = !steerBlocked(bot, centre);
+      // Both routes are swum at the same speed, so the one with fewer blocks is the faster; a tie keeps the column.
+      const lateral = sideways?.path[0] ?? null;
+      const columnBlocks = column
+        ? Math.hypot(column.x + 0.5 - here.x, column.z + 0.5 - here.z)
+        : Number.POSITIVE_INFINITY;
+      const lateralBlocks = sideways ? sideways.path.length : Number.POSITIVE_INFINITY;
+      const target = lateral && lateralBlocks < columnBlocks ? lateral : column;
+      const aim = target ? new Vec3(target.x + 0.5, here.y, target.z + 0.5) : null;
+      if (aim) {
+        await bot.lookAt(aim, true);
+        const wantForward = !steerBlocked(bot, aim);
         if (wantForward !== steering) {
           steering = wantForward;
           bot.setControlState('forward', steering);
@@ -227,6 +226,7 @@ export const swimUp: EscapeMover = async (walk) => {
         bot.setControlState('forward', false);
       }
       await bot.waitForTicks(1);
+      turns += 1;
     }
   } finally {
     bot.off('physicsTick', holdJump);
@@ -253,8 +253,27 @@ function headInLiquid(bot: Bot, feet: { x: number; y: number; z: number }): bool
   return head?.name === 'water' || head?.name === 'lava';
 }
 
+/** The names of the three blocks over the head and the two under the feet, and the nearest open column. */
+function surroundings(
+  bot: Bot,
+  feet: { x: number; y: number; z: number },
+): Record<string, unknown> {
+  const read: BlockReader = (x, y, z) => bot.blockAt(new Vec3(x, y, z));
+  const cx = Math.floor(feet.x);
+  const cz = Math.floor(feet.z);
+  const base = Math.floor(feet.y);
+  const names = (offsets: number[]): Array<string | null> =>
+    offsets.map((dy) => read(cx, base + dy, cz)?.name ?? null);
+  const exit = findLateralExit(read, feet);
+  return {
+    above_head: names([2, 3, 4]),
+    below_feet: names([-1, -2]),
+    nearest_air: exit ? { direction: exit.direction, distance: exit.distance } : null,
+  };
+}
+
 /** One oxygen trace line: the given fields, then the head's liquid, the water flag and the place. */
-function traceLine(ctx: ReflexContext, phase: 'start' | 'end', fields: object): string {
+function traceLine(ctx: ReflexContext, phase: 'start' | 'end' | 'lateral', fields: object): string {
   const { bot, view } = ctx;
   return JSON.stringify({
     event: 'hazard_escape',
@@ -327,14 +346,29 @@ export function createHazardEscapeReflex(options: HazardEscapeOptions = {}): Ref
       // Air back above the threshold is out of harm, even while the Body is still in the water.
       const recovered = (): boolean => drowning && view.air > DROWNING_AIR;
       const landed = (): boolean => standing() || recovered();
-      const walk = { bot, signal: ctx.signal, timeScale: ctx.timeScale, expired, reached: landed };
+      const walk = {
+        bot,
+        signal: ctx.signal,
+        timeScale: ctx.timeScale,
+        expired,
+        reached: landed,
+        tick: (): number => view.tick ?? ctx.tick,
+      };
       // Drowning always swims up first: with low air the way out is up, not along the bank.
       if (drowning) {
         const surfaced = (): boolean => recovered() || view.inFluid !== 'water';
         // With a safe block in reach the swim gets its share and the walk the rest; with none the swim has all of it.
         const swimLimit = target ? SWIM_TICKS : limitTicks;
         const swimExpired = (): boolean => (view.tick ?? ctx.tick) - startTick >= swimLimit;
-        await swimmer({ ...walk, target: view.position, reached: surfaced, expired: swimExpired });
+        const note = (fields: Record<string, unknown>): void =>
+          trace(() => traceLine(ctx, 'lateral', fields));
+        await swimmer({
+          ...walk,
+          target: view.position,
+          reached: surfaced,
+          expired: swimExpired,
+          note,
+        });
       }
       if (target && !landed() && !expired()) await mover({ ...walk, target });
       if (landed()) return { result: 'handled', detail: `left ${String(trigger.hazard)}` };
@@ -346,7 +380,15 @@ export function createHazardEscapeReflex(options: HazardEscapeOptions = {}): Ref
     // Two lines per run, at its start and its end, with the air before and after. No periodic line.
     async run(trigger, ctx): Promise<ReflexOutcome> {
       const airBefore = ctx.view.air;
-      trace(() => traceLine(ctx, 'start', { hazard: trigger.hazard, air_before: airBefore }));
+      const mover = trigger.hazard === 'drowning' ? 'swim_up' : 'walk_out';
+      trace(() =>
+        traceLine(ctx, 'start', {
+          hazard: trigger.hazard,
+          air_before: airBefore,
+          mover,
+          ...surroundings(ctx.bot, ctx.view.position),
+        }),
+      );
       let outcome: ReflexOutcome | undefined;
       try {
         outcome = await escapeReflex.run(trigger, ctx);

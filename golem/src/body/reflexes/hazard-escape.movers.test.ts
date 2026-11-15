@@ -1,8 +1,8 @@
 import { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { moveNear } from '../../actions/pathing.ts';
-import { fakeBot } from '../body.fakes.ts';
-import { type EscapeWalk, swimUp, walkOutOfHazard } from './hazard-escape.ts';
+import { controlBot, walkFor } from './hazard-escape.fakes.ts';
+import { type BlockReader, findBreathingColumn, swimUp, walkOutOfHazard } from './hazard-escape.ts';
 
 vi.mock('../../actions/pathing.ts', () => ({ moveNear: vi.fn() }));
 
@@ -12,32 +12,6 @@ beforeEach(() => {
   move.mockReset();
   move.mockResolvedValue({ ok: true, distance: 1 });
 });
-
-/** A bot that logs its control states and counts the ticks it waited. */
-function controlBot(at = new Vec3(0.5, 64, 0.5)) {
-  const bot = fakeBot() as unknown as Record<string, unknown>;
-  const controls: string[] = [];
-  const state = { ticks: 0 };
-  (bot.entity as { position: Vec3 }).position = at;
-  bot.setControlState = (name: string, on: boolean) => controls.push(`${name}:${on}`);
-  bot.lookAt = async () => undefined;
-  bot.waitForTicks = async () => {
-    state.ticks += 1;
-  };
-  return { bot: bot as never, controls, state };
-}
-
-function walkFor(bot: never, reachedAfter: () => boolean, extra: Partial<EscapeWalk> = {}) {
-  return {
-    bot,
-    target: { x: 3, y: 64, z: 0 },
-    signal: new AbortController().signal,
-    timeScale: 2,
-    expired: () => false,
-    reached: reachedAfter,
-    ...extra,
-  } as EscapeWalk;
-}
 
 describe('swimUp', () => {
   it('holds jump until the Body is out of the water, then lets go', async () => {
@@ -119,6 +93,28 @@ describe('swimUp', () => {
     await swimUp(walkFor(bot, () => state.ticks >= 3));
     expect(controls.filter((c) => c === 'jump:true').length).toBeGreaterThanOrEqual(3);
     expect(controls.at(-1)).toBe('jump:false');
+  });
+});
+describe('findBreathingColumn: a column counts only when the Body can swim to it', () => {
+  /** Water at feet and head, stone above, a stone wall across x 1 (z -6..6), and air over the given columns at y 66. */
+  function shaftWorld(columns: number[]): BlockReader {
+    return (x, y, z) => {
+      if (y === 66 && z === 0 && columns.includes(x)) return { name: 'air', boundingBox: 'empty' };
+      if (x === 1 && (y === 64 || y === 65) && Math.abs(z) <= 6) {
+        return { name: 'stone', boundingBox: 'block' };
+      }
+      if (y === 64 || y === 65) return { name: 'water', boundingBox: 'empty' };
+      return { name: 'stone', boundingBox: 'block' };
+    };
+  }
+  const from = { x: 0.5, y: 64, z: 0.5 };
+
+  it('skips a walled shaft 3 blocks away and takes the reachable column 4 blocks west', () => {
+    expect(findBreathingColumn(shaftWorld([3, -4]), from)).toEqual({ x: -4, z: 0 });
+  });
+
+  it('returns null when the only column in range is behind the wall', () => {
+    expect(findBreathingColumn(shaftWorld([3]), from)).toBeNull();
   });
 });
 
