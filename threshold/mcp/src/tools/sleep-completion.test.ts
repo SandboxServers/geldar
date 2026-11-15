@@ -154,6 +154,50 @@ describe('sleep completion', () => {
     }
   });
 
+  // The index of the sleep is the position of its action in the plan. The Body's actions[] holds only
+  // the actions that ran: the executor stops at the first failure, so these are the real shapes.
+  it('a sleep at index 1 after a completed action writes the mark and one journal line', async () => {
+    const w = world();
+    const pending = new PendingSleeps();
+    pending.add(LIFE, 'th_i1', { day: 1, cursor: 1, action: 1, journal: JOURNAL_LINE });
+    await completeSleep(settleDeps(w, pending), LIFE, outcome('th_i1', ['completed', 'completed']));
+    expect(w.marks.writes).toEqual([{ lastSleepDay: 1, cursor: 1 }]);
+    expect(await journalTexts(w)).toEqual([JOURNAL_LINE]);
+    expect(pending.get(LIFE, 'th_i1')).toBeUndefined();
+  });
+
+  it('a sleep at index 1 whose plan failed before it drops the entry and writes nothing', async () => {
+    const w = world();
+    const pending = new PendingSleeps();
+    pending.add(LIFE, 'th_i1f', { day: 1, cursor: 1, action: 1, journal: JOURNAL_LINE });
+    await completeSleep(settleDeps(w, pending), LIFE, outcome('th_i1f', ['failed'], 0));
+    expect(pending.get(LIFE, 'th_i1f')).toBeUndefined();
+    expect(w.marks.writes).toEqual([]);
+    expect(await journalTexts(w)).toEqual([]);
+  });
+
+  it('a completed sleep at index 0 with a later failure still writes', async () => {
+    const w = world();
+    const pending = new PendingSleeps();
+    pending.add(LIFE, 'th_i0', { day: 1, cursor: 1, action: 0, journal: JOURNAL_LINE });
+    await completeSleep(settleDeps(w, pending), LIFE, outcome('th_i0', ['completed', 'failed'], 1));
+    expect(w.marks.writes).toEqual([{ lastSleepDay: 1, cursor: 1 }]);
+    expect(await journalTexts(w)).toEqual([JOURNAL_LINE]);
+    expect(pending.get(LIFE, 'th_i0')).toBeUndefined();
+  });
+
+  it('a sleep at index 1 with only one action in the outcome drops and writes nothing', async () => {
+    const w = world();
+    const pending = new PendingSleeps();
+    pending.add(LIFE, 'th_i1c', { day: 1, cursor: 1, action: 1, journal: JOURNAL_LINE });
+    await completeSleep(settleDeps(w, pending), LIFE, outcome('th_i1c', ['completed']));
+    expect(pending.get(LIFE, 'th_i1c')).toBeUndefined();
+    expect(w.marks.writes).toEqual([]);
+    expect(await journalTexts(w)).toEqual([]);
+  });
+
+  // Defensive: the executor stops at the first failure, so a completed action cannot follow a failed one
+  // in actions[]. This shape cannot arise from the Body; the test guards the cutShort check.
   it('a completed sleep cut short by an earlier failure writes nothing', async () => {
     const w = world();
     const pending = new PendingSleeps();

@@ -91,16 +91,22 @@ describe('act: registering an accepted sleep', () => {
     expect(h.registered).toEqual([]);
   });
 
-  it('a throwing registration leaves the plan accepted, the credits spent, and logs one line', async () => {
-    const failing = harness(true);
-    const healthy = harness();
-    const failed = await run(failing, [GOTO, SLEEP]);
-    const ok = await run(healthy, [GOTO, SLEEP]);
-    expect(failed.accepted).toEqual([0, 1]);
-    expect(failed.rejected).toEqual([]);
-    expect(failed.budget_remaining_thoughts).toBe(ok.budget_remaining_thoughts);
-    expect(failing.logged).toEqual([{ event: 'sleep_register_error', kind: 'Error' }]);
-    expect(JSON.stringify(failing.logged)).not.toContain(ENTRY_SECRET);
+  it('a throwing registration leaves the plan accepted and the credits spent, and logs one line', async () => {
+    const h = harness(true);
+    // A refund of an accepted plan would be a second, wrong, charge back: the spy must see none.
+    const refunds: number[] = [];
+    const refund = h.budget.refund.bind(h.budget);
+    h.budget.refund = async (lifeId, credits) => {
+      refunds.push(credits);
+      return refund(lifeId, credits);
+    };
+    const result = await run(h, [GOTO, SLEEP]);
+    expect(result.accepted).toEqual([0, 1]);
+    expect(result.rejected).toEqual([]);
+    expect(refunds).toEqual([]);
+    expect(h.registered).toEqual([]);
+    expect(h.logged).toEqual([{ event: 'sleep_register_error', kind: 'Error' }]);
+    expect(JSON.stringify(h.logged)).not.toContain(ENTRY_SECRET);
   });
 });
 
