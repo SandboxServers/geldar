@@ -42,6 +42,8 @@ export interface ContainerState {
   helperBody: boolean;
   /** The `geldar.owner` label, or null when the container has none. */
   owner: string | null;
+  /** The validated `geldar.life` label of a managed Body (BH-5a), or null when absent or not a managed life id. Optional so older fakes compile. */
+  lifeId?: string | null;
 }
 
 export interface BodyEngine {
@@ -308,6 +310,7 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
           network: settings.wiring.network ?? DEFAULT_NETWORK,
           stack: settings.wiring.stack ?? DEFAULT_STACK,
           lifeId: plan.lifeId,
+          mode: 'add',
           rconSecretHostPath: plan.rconSecretHostPath,
         }),
       );

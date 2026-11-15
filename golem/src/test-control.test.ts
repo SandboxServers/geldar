@@ -383,8 +383,25 @@ describe('TestControl', () => {
     const fromWhitelist = text.match(/import\s*\{([^}]*)\}\s*from\s*'\.\/players\/whitelist\.ts'/);
     expect(fromWhitelist?.[1]?.split(',').map((name) => name.trim())).toEqual([
       'admitLifeWithConfig',
+      'removeLifeWithConfig',
     ]);
     expect(text.match(/admitLifeWithConfig\(/g)).toHaveLength(1);
+    expect(text.match(/removeLifeWithConfig\(/g)).toHaveLength(1);
+    expect(text).not.toMatch(/\bremoveLife\b|\badmitLife\b/);
+  });
+
+  it('pins CONTROL_USERS to the reviewed list: BH-5a adds no file (admit-life.ts already listed)', () => {
+    expect(CONTROL_USERS.map((user) => relative(import.meta.dirname, user))).toEqual([
+      'bench',
+      'arena.ts',
+      'rcon.ts',
+      'test-control.ts',
+      join('players', 'whitelist.ts'),
+      join('players', 'main.ts'),
+      join('players', 'life-removal.ts'),
+      'whitelist-house-body.ts',
+      'admit-life.ts',
+    ]);
   });
 
   it('pins the export list of players/whitelist.ts, so a new export forces a conscious edit here', async () => {
@@ -404,6 +421,7 @@ describe('TestControl', () => {
       'admitLifeWithConfig',
       'removeLife',
       'removeLifeOverRcon',
+      'removeLifeWithConfig',
     ]);
     expect(text).not.toMatch(/export\s*\{|export\s*\*/);
   });

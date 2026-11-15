@@ -18,10 +18,16 @@ export const ADMIT_ENTRYPOINT = ['node', 'src/admit-life.ts'];
 export const RCON_PASSWORD_FILE = '/run/secrets/rcon';
 /** Where a managed Body reads its database password inside its container. */
 export const MANAGED_DB_PASSWORD_FILE = '/run/secrets/db-password.txt';
-/** The label of an admit one-shot. It is not BODY_LABEL, so the cap never counts it. */
+/** The label of an admit one-shot. Its value names the mode (add or remove). It is not BODY_LABEL, so the cap never counts it. */
 export const ADMIT_LABEL = 'geldar.admit';
-/** The fixed prefix of an admit container's name; the validated life id follows it. */
+/** The fixed prefix of an add one-shot's container name; the validated life id follows it. */
 export const ADMIT_NAME_PREFIX = 'geldar-admit-';
+/** The fixed prefix of a remove one-shot's container name (BH-5a). It cannot start with ADMIT_NAME_PREFIX, so the two never collide. */
+export const UNADMIT_NAME_PREFIX = 'geldar-unadmit-';
+/** The label of a managed Body that carries its validated life id, so a later stop can find the id without the roster (BH-5a). */
+export const LIFE_LABEL = 'geldar.life';
+/** The two one-shot modes: add (admit before start) and remove (un-admit on stop). */
+export type AdmitMode = 'add' | 'remove';
 /** Paper's RCON host and port on the colo network (the same names the admin one-shot uses). */
 const RCON_HOST = 'paper';
 const RCON_PORT = '25575';
@@ -52,6 +58,8 @@ export interface AdmitInput {
   network: string;
   stack: string;
   lifeId: string;
+  /** add before a Body starts, remove when it stops. Sets GELDAR_ADMIT_MODE, which admit-life.ts requires. */
+  mode: AdmitMode;
   /** A Docker host path to the root-only RCON password file. Checked here as well as in the helper config. */
   rconSecretHostPath: string;
 }
@@ -60,16 +68,23 @@ function checkLifeId(lifeId: string): void {
   if (!LIFE_ID_PATTERN.test(lifeId)) throw new Error('not a managed life id');
 }
 
+/** The mode is one of two fixed strings; anything else never reaches a name, a label or an env line. */
+function checkMode(mode: string): AdmitMode {
+  if (mode !== 'add' && mode !== 'remove') throw new Error('admit mode is add or remove');
+  return mode;
+}
+
 /** A bind source must be an absolute path with no comma, colon or line break (each would split the bind string). */
 function checkBindSource(path: string): string {
   if (!/^\/[^,:\r\n]*$/.test(path)) throw new Error('bind source is not an absolute path');
   return path;
 }
 
-/** The admit container's name: the fixed prefix and the validated id. No caller value is in it. */
-export function admitName(lifeId: string): string {
+/** The admit container's name: a fixed prefix for the mode and the validated id. No caller value is in it. */
+export function admitName(lifeId: string, mode: AdmitMode = 'add'): string {
   checkLifeId(lifeId);
-  return `${ADMIT_NAME_PREFIX}${lifeId}`;
+  const prefix = checkMode(mode) === 'add' ? ADMIT_NAME_PREFIX : UNADMIT_NAME_PREFIX;
+  return `${prefix}${lifeId}`;
 }
 
 export function managedBodyConfig(input: ManagedBodyInput): Record<string, unknown> {
@@ -98,6 +113,7 @@ export function managedBodyConfig(input: ManagedBodyInput): Record<string, unkno
       'com.centurylinklabs.watchtower.enable': 'false',
       'com.geldar.stack': wiring.stack ?? 'colo',
       'geldar.owner': input.owner,
+      [LIFE_LABEL]: input.lifeId,
       [BODY_LABEL]: input.name,
     },
     HostConfig: {
@@ -123,12 +139,14 @@ export function managedBodyConfig(input: ManagedBodyInput): Record<string, unkno
 
 export function admitConfig(input: AdmitInput): Record<string, unknown> {
   checkLifeId(input.lifeId);
+  const mode = checkMode(input.mode);
   return {
     Image: input.image,
     User: `${input.uid}:${input.uid}`,
     Entrypoint: ADMIT_ENTRYPOINT,
     Env: [
       `GELDAR_ADMIT_LIFE_ID=${input.lifeId}`,
+      `GELDAR_ADMIT_MODE=${mode}`,
       `GELDAR_RCON_HOST=${RCON_HOST}`,
       `GELDAR_RCON_PORT=${RCON_PORT}`,
       `GELDAR_RCON_PASSWORD_FILE=${RCON_PASSWORD_FILE}`,
@@ -137,7 +155,7 @@ export function admitConfig(input: AdmitInput): Record<string, unknown> {
     Labels: {
       'com.centurylinklabs.watchtower.enable': 'false',
       'com.geldar.stack': input.stack,
-      [ADMIT_LABEL]: input.lifeId,
+      [ADMIT_LABEL]: mode,
     },
     HostConfig: {
       NetworkMode: input.network,
