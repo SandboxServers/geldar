@@ -7,7 +7,7 @@ import {
   DROWNING_AIR,
   steerBlocked,
 } from '../body/reflexes/hazard-escape.ts';
-import { WET_CELLS } from './water-rules.ts';
+import { exitInReach, WET_CELLS } from './water-rules.ts';
 
 /**
  * Air (0-20) at or below which a deliberate swim surfaces: held above the reflex line
@@ -114,7 +114,8 @@ export function startSwim(bot: Bot, options: SwimOptions): SwimController {
       return;
     }
     const air = ownAir(bot);
-    if (air <= ABORT_AIR && !aborted) {
+    // A bank exit one step away is the way out: the swim goes on to it instead of stopping (0194 a).
+    if (air <= ABORT_AIR && !aborted && !exitInReach(bot, here)) {
       aborted = true;
       options.onAbort(air);
       // onAbort ends the walk, which calls stop(): nothing below may hold a control after that.

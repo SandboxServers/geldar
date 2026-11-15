@@ -128,3 +128,17 @@ export function allowWaterExit(movements: unknown, bot: Bot): void {
     if (neighbors.length > before && exit) exit.cost = Math.max(exit.cost, EXIT_COST);
   };
 }
+
+/** The four steps out of a cell: +x, -x, +z, -z. */
+const STEPS = [
+  { x: 1, z: 0 },
+  { x: -1, z: 0 },
+  { x: 0, z: 1 },
+  { x: 0, z: -1 },
+];
+
+/** True when a bank exit (`isExitBank`) lies one step from the Body's feet cell (decision 0194 a, c). */
+export function exitInReach(bot: Bot, at: { x: number; y: number; z: number }): boolean {
+  const node = { x: Math.floor(at.x), y: Math.floor(at.y), z: Math.floor(at.z) };
+  return STEPS.some((dir) => isExitBank(bot, node, dir));
+}
