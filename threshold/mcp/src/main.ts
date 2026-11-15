@@ -18,6 +18,7 @@ import {
   streamSubjects,
 } from './events/stream.ts';
 import { createFrontDoor, type FrontDoor, type FrontDoorOptions } from './http/front.ts';
+import { loadInstinctKey } from './http/instinct-key.ts';
 import { ownerShare } from './http/limits.ts';
 import { safeLogLine } from './http/log.ts';
 import { declareMcpMetrics, MetricRegistry, recordToolCall, startTelemetry } from './metrics.ts';
@@ -195,6 +196,30 @@ export function tokenBucketLimiter(ruleOf: (bucket: string) => BucketRule): Rate
   };
 }
 
+/**
+ * The instinct key from the file named by GELDAR_MCP_INSTINCT_KEY_FILE (read as the pepper is). Unset
+ * or empty is no instinct class, with no log. An unreadable or short file logs one constant line and
+ * is also no instinct class. The key and the file's text are never logged.
+ */
+export async function instinctKeyOf(
+  path: string | undefined,
+  readSecret: (file: string) => Promise<string>,
+  log: (line: Record<string, unknown>) => void,
+): Promise<Buffer | undefined> {
+  if (path === undefined) return undefined;
+  let text: string;
+  try {
+    text = await readSecret(path);
+  } catch {
+    log({ event: 'instinct_key_unreadable' });
+    return undefined;
+  }
+  const loaded = loadInstinctKey(text);
+  if (loaded.outcome === 'ok') return loaded.key;
+  if (loaded.outcome === 'refused') log({ event: 'instinct_key_refused' });
+  return undefined;
+}
+
 /** The shortest HMAC pepper the server accepts; a shorter one is refused at startup. */
 export const PEPPER_MIN_BYTES = 32;
 
@@ -283,6 +308,11 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
     closers.push(async () => telemetry.stop());
     const password = postgresPassword(await ports.readSecret(config.postgres.passwordFile));
     const pepper = pepperBytes(await ports.readSecret(config.pepperFile));
+    const instinctKey = await instinctKeyOf(
+      config.instinctKeyFile,
+      (file) => ports.readSecret(file),
+      log,
+    );
     const { host, port, database, user } = config.postgres;
     const pgOptions: PgOptions = { host, port, database, user, password };
     const pool = ports.openPool(pgOptions);
@@ -403,13 +433,15 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       http: config.http,
       public: config.public,
       pepper,
+      instinctKey,
       store: tokens,
       limiter,
       agentShare: ownerShare(
         config.sovereign.rateLimits.ownerCallsPerMinute,
         config.sovereign.ownerCapOwner,
       ),
-      createSession: (playerId, signal) => createWorldSession(sessionDeps, playerId, signal),
+      createSession: (playerId, signal, connection) =>
+        createWorldSession(sessionDeps, playerId, signal, connection),
       log: (line) => ports.log(line),
       now,
     });

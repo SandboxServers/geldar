@@ -132,11 +132,19 @@ type Wired = WorldDeps & {
 type Run = (call: ToolCall, input: unknown, ctx: ToolContext) => unknown;
 
 /** The player comes from the bound session, never from the arguments. */
-async function callerOf(deps: Wired, ctx: ToolContext): Promise<ToolCall> {
+async function callerOf(
+  deps: Wired,
+  ctx: ToolContext,
+): Promise<ToolCall & { source?: 'instinct' }> {
   const player = await deps.players.find(ctx.playerId);
   if (player === null) throw new ToolError('unknown_player', UNKNOWN_PLAYER_MESSAGE);
   deps.lives.add(player.lifeId);
-  return { playerId: ctx.playerId, lifeId: player.lifeId };
+  // Only an instinct connection sets `source` (GX-06); a model call leaves the key absent.
+  return {
+    playerId: ctx.playerId,
+    lifeId: player.lifeId,
+    ...(ctx.source === 'instinct' ? { source: 'instinct' as const } : {}),
+  };
 }
 
 /** The fixed messages for the `see` codes that carry no detail (refusals come from SEE_REFUSALS). */

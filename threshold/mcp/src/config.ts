@@ -103,6 +103,8 @@ export interface McpConfig {
   };
   /** The HMAC pepper for token hashes; a file, never the value. */
   pepperFile: string;
+  /** The instinct key file (GX-06, GELDAR_MCP_INSTINCT_KEY_FILE). Unset or empty: no instinct class. Never the value. */
+  instinctKeyFile?: string | undefined;
   http: {
     /** 127.0.0.1 locally; 0.0.0.0 only inside the container (GELDAR_MCP_IN_CONTAINER=1). */
     bind: string;
@@ -216,6 +218,7 @@ export function parseMcpConfig(doc: unknown, options: LoadOptions = {}): McpConf
       passwordFile: requiredEnv(env, 'GELDAR_MCP_DB_PASSWORD_FILE'),
     },
     pepperFile: requiredEnv(env, 'GELDAR_MCP_PEPPER_FILE'),
+    instinctKeyFile: env.GELDAR_MCP_INSTINCT_KEY_FILE || undefined,
     http,
   };
 }
