@@ -42,6 +42,32 @@ describe('farmlandFact: water within 4 blocks, at the farmland height or one abo
     expect(farmlandFact(fakeBot(['0,64,0']), FARMLAND)).toBe(FARMLAND_FACT.moist);
   });
 
+  it('is moist when a waterlogged block is 4 blocks away (vanilla reads the fluid state)', () => {
+    const cell = {
+      name: 'oak_slab',
+      getProperties: () => ({ waterlogged: true }),
+      position: undefined,
+    };
+    const bot = {
+      blockAt: (p: Vec3) =>
+        p.x === 4 && p.y === 63 && p.z === 0 ? cell : { name: 'air', position: p },
+    } as unknown as Bot;
+    expect(farmlandFact(bot, FARMLAND)).toBe(FARMLAND_FACT.moist);
+  });
+
+  it('is dry when a dry block with a waterlogged=false property is 4 blocks away', () => {
+    const cell = {
+      name: 'oak_slab',
+      getProperties: () => ({ waterlogged: false }),
+      position: undefined,
+    };
+    const bot = {
+      blockAt: (p: Vec3) =>
+        p.x === 4 && p.y === 63 && p.z === 0 ? cell : { name: 'air', position: p },
+    } as unknown as Bot;
+    expect(farmlandFact(bot, FARMLAND)).toBe(FARMLAND_FACT.dry);
+  });
+
   it('gives no fact when a cell of the box is not loaded and no water is seen', () => {
     expect(farmlandFact(fakeBot([], ['2,63,2']), FARMLAND)).toBeUndefined();
   });

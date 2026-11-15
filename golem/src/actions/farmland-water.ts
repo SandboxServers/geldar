@@ -13,6 +13,18 @@ export const FARMLAND_FACT = {
 } as const;
 
 /**
+ * Water in a cell: a water block, or a waterlogged block (vanilla reads the fluid state, which a
+ * waterlogged slab or stair also holds).
+ */
+function holdsWater(cell: {
+  name: string;
+  getProperties?: () => Record<string, unknown>;
+}): boolean {
+  if (cell.name === 'water') return true;
+  return cell.getProperties?.().waterlogged === true;
+}
+
+/**
  * The hydration fact for the farmland block at `farmland`. Vanilla hydrates farmland from water within
  * 4 blocks horizontally, at its height or one above, so the box scanned is 9 by 2 by 9. Any water in
  * the box makes it moist. With no water seen and a cell of the box not loaded, there is no fact
@@ -26,7 +38,7 @@ export function farmlandFact(bot: Bot, farmland: Vec3): string | undefined {
         const cell = bot.blockAt(farmland.offset(dx, dy, dz));
         if (!cell) {
           unloaded = true;
-        } else if (cell.name === 'water') {
+        } else if (holdsWater(cell)) {
           return FARMLAND_FACT.moist;
         }
       }
