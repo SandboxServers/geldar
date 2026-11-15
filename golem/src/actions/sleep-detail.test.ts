@@ -42,7 +42,8 @@ describe('sleep failure detail: final_position and beds_tried', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
-      message: 'tried 2 nearby beds, all occupied or blocked; last: the bed is occupied',
+      message:
+        'tried 2 nearby beds, all occupied or blocked; last: the bed is occupied; ended at 0, 64, -4',
       detail: {
         final_position: { x: 0.3, y: 64.4, z: -4 },
         beds_tried: [
@@ -76,7 +77,8 @@ describe('sleep failure detail: final_position and beds_tried', () => {
       expect(outcome).toMatchObject({
         status: 'failed',
         reason: 'blocked',
-        message: expect.stringMatching(/^tried 3 of 6 nearby beds; the search time ran out/),
+        message:
+          'tried 3 of 6 nearby beds; the search time ran out; last: the bed is occupied; ended at 13, 64, 0',
         detail: {
           final_position: { x: 13, y: 64, z: 0 },
           beds_tried: [
@@ -110,6 +112,29 @@ describe('sleep failure detail: final_position and beds_tried', () => {
       },
     });
     expect(outcome.status === 'failed' ? outcome.detail.beds_tried : null).toHaveLength(1);
+  });
+
+  it('the longest tried-beds message is cut to 160 characters and still ends with the position', async () => {
+    // Eight beds, all occupied: the eighth walk times out with a text too long to fit after the head.
+    const blocks = Array.from({ length: 8 }, (_, i) => bed('white_bed', i * 3)).flat();
+    for (let i = 0; i < 7; i += 1)
+      vi.mocked(moveNear).mockResolvedValueOnce({ ok: true, distance: 0 });
+    vi.mocked(moveNear).mockResolvedValueOnce({
+      ok: false,
+      reason: 'timeout',
+      message: `the path search ran out of time ${'x'.repeat(200)}`,
+    } as never);
+    const bot = fakeBot({
+      timeOfDay: 13_000,
+      blocks,
+      sleepErrors: Array(7).fill('Bed is occupied'),
+    });
+    const outcome = await sleep(bot);
+    const message = outcome.status === 'failed' ? outcome.message : '';
+    expect(message).toHaveLength(160);
+    expect(message).toMatch(
+      /^tried 8 nearby beds, all occupied or blocked; last: the path search ran out of time x+\.\.\.; ended at 0, 64, 0$/,
+    );
   });
 });
 

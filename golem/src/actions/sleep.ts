@@ -243,19 +243,42 @@ async function sleepFromBeds(
     clearTimeout(stopTimer);
   }
   const lastText = last.status === 'failed' ? last.message : '';
+  const ended = `; ended at ${roundedPosition(bot)}`;
   if (outOfTime) {
     return failed(
       'blocked',
-      `tried ${tried} of ${beds.length} nearby beds; the search time ran out; last: ${lastText}`,
+      triedMessage(
+        `tried ${tried} of ${beds.length} nearby beds; the search time ran out; last: `,
+        lastText,
+        ended,
+      ),
     );
   }
   return failed(
     'blocked',
-    `tried ${tried} nearby beds, all occupied or blocked; last: ${lastText}`,
+    triedMessage(`tried ${tried} nearby beds, all occupied or blocked; last: `, lastText, ended),
   );
 }
 
-/** Walks to a bed and sleeps in it; completed when the bot is asleep, else the failure. */
+/** The most characters a failure message carries: the executor sends the message to the Mind, capped at 160. */
+const MESSAGE_MAX = 160;
+
+/**
+ * A tried-beds failure message: `head`, the last bed's text, `tail`. When the whole would pass MESSAGE_MAX, the
+ * last bed's text is cut and ends in `...`, so the head and the position (the tail) are always kept.
+ */
+function triedMessage(head: string, last: string, tail: string): string {
+  const room = MESSAGE_MAX - head.length - tail.length;
+  const text = last.length <= room ? last : `${last.slice(0, Math.max(0, room - 3))}...`;
+  return `${head}${text}${tail}`;
+}
+
+/** The bot's position in whole blocks, as `x, y, z`. */
+function roundedPosition(bot: Bot): string {
+  const { x, y, z } = bot.entity.position;
+  return `${Math.round(x)}, ${Math.round(y)}, ${Math.round(z)}`;
+}
+
 /**
  * Walks to a bed and sleeps in it. The outcome is completed when the bot is asleep, else the failure; `used` is
  * the bed block the outcome came from (the other half after an out_of_reach).

@@ -16,10 +16,11 @@ In the ops diagnosis, failed sleep walks ended at positions the action result di
    - The `raw` refusal record is kept.
 2. On a monsters refusal, the Body records per bot, by entity id, the world age (`bot.time.age`) when the hostile was first seen in the bed box. Each monsters refusal records new ids, and drops the ids that are not in its box, so a hostile that leaves the box starts again when it returns. The nearest counted hostile's dwell is added to the text of the nearest named hostile only: `there are monsters nearby: phantom 4 blocks away, in range for 6 minutes`. Minutes are whole ticks divided by 1200; under one minute the text says `under a minute`, which includes the first sighting. The raw record gains `dwell_ticks`.
 3. The bed order (nearest first) and the loop's stop rule are unchanged: a monsters refusal ends the loop at the first bed.
+4. The agent reads the failure `message`, not `detail`: the executor sends only the message to the Mind, capped at 160 characters. The tried-beds failures (all occupied or blocked, search time ran out, and the hard-stop cut) end their message with `; ended at X, Y, Z`, the bot's position in whole blocks. When the whole would pass 160 characters, the last bed's text is cut first and ends in `...`; the head and the position are kept. The action log keeps the full `beds_tried` list and `final_position` in `detail`.
 
 ## Consequences
 
-- The detail keys reach the Mind only once the contract describes them; that contract change follows in a separate session. The action outcome detail is a plain JSON record, so the keys pass the type as they are.
+- The agent sees the position and the failure text through the message only; `beds_tried` and `final_position` are for the action log, and the contract is not changed by this record.
 - The dwell is a count of world ticks the bot saw the entity in the box, not the time the entity was in the world; it resets when the entity id is absent from a monsters refusal's box.
 - Only the nearest of the up to three named hostiles carries the phrase; the others do not.
 - The dwell map is held per bot in a module-level WeakMap, so a dropped bot releases it.
