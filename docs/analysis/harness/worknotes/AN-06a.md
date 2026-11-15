@@ -51,3 +51,6 @@ Each line names the test expected to fail.
 - The SQL-text tests check statement text, not behaviour. The fake-database tests check the decision keys and the adopt guard. Only the IT checks the real lock.
 - The malformed-roll and unknown-life cases check that the write is refused with its reason. The dead-letter route for 23514 and 23503 (`writer.ts`, permanent-error classing) is not exercised by a test in this card.
 - No live Mind, sink or NATS run.
+- CI lane: `eventsink/test/audit.it.test.ts` is in the explicit file list of the "integration tests that need Postgres or NATS" step in `.github/workflows/ci.yml`, after `projection.it.test.ts`.
+- It skips unless `GELDAR_IT=1` (as `projection.it.test.ts` does) and connects as `geldar` at 127.0.0.1 with the CI password file and the shared-DB guard (`GELDAR_IT_ALLOW_SHARED_DB`, `GITHUB_ACTIONS`), the same as the other ITs in that step; it runs after the step that applies `sql/[0-9]*.sql`, so migrations 0050 and 0051 are in place.
+- No change to `audit.it.test.ts` was needed for the CI env. The lane has not run it yet; the first CI run is the first execution.
