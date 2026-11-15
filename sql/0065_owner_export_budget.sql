@@ -1,9 +1,11 @@
 -- Migration 0065 (C7-09b, owner export budget): CREATE OR REPLACE of register_owner_export from 0062. The per-table
 -- byte budget is lowered from 100000000 to 3000000 and is measured by TEXT size (octet_length of the row's text, plus
 -- one), not by pg_column_size, because a control character is six bytes in the JSON text. So each bulky table (thoughts,
--- mcp_journal) keeps at most 3 MB of text, and the export is under 8 MB by construction: <= 3 MB text per bulky table,
--- row caps and 200-character cuts on the other lists (players 150, tokens 150, roster 100, body_ops 500, consents 100,
--- lives 50), with a truncated flag per list. The route's 8 MB cap stays as a backstop. A larger export is a later card:
+-- mcp_journal) keeps at most 3 MB of text. Free-text fields are cut at 200 characters and every list and table is row-
+-- and byte-capped, so the document stays under 8 MB while identifiers (player ids, token ids, life ids) stay under about
+-- 1,000 characters (the operator writers keep them short); the 8 MB route cap is the backstop and answers 500 without
+-- content. Row caps: players 150, tokens 150, roster 100, body_ops 500, consents 100, lives 50, with a truncated flag per
+-- list. A larger export is a later card:
 -- streaming. Applied after 0062 (0064 is reserved for geldar-3b). The grants and the search_path pin are the 0062 ones.
 --
 -- Migration 0062 (C7-09b, owner data export): register_owner_export(p_identity_hash) returns the owner's own rows as one
@@ -66,6 +68,7 @@ BEGIN
 
   -- thoughts: one statement ranks the rows, keeps the prefix that fits the row cap and the byte budget, and sets the
   -- truncated flag from the same ranked set (one snapshot, so the flag always agrees with the rows)
+  -- the thoughts row cap (20000) cannot bind: the smallest thoughts row is about 439 bytes, so the 3,000,000-byte budget binds first
   th_part := (WITH src AS (
       SELECT x.at, x.thought_id AS sort_id, jsonb_build_object(
           'thought_id', x.thought_id, 'life_id', x.life_id, 'at', x.at, 'world_day', x.world_day,
@@ -237,7 +240,7 @@ BEGIN
     'lives', (SELECT COALESCE(jsonb_agg(x.row_json ORDER BY x.agent_id), '[]'::jsonb) FROM (
                   SELECT a.agent_id, jsonb_build_object(
                     'life_id', a.agent_id, 'name', left(a.name, 200), 'shard', left(a.shard, 200), 'mode', a.mode,
-                    'harness', a.harness, 'declared_model', left(a.declared_model, 200), 'tier', left(a.tier, 200),
+                    'harness', left(a.harness, 200), 'declared_model', left(a.declared_model, 200), 'tier', left(a.tier, 200),
                     'born_at', a.born_at, 'died_at', a.died_at, 'death_cause', left(a.death_cause, 200)) AS row_json
                   FROM public.agents a WHERE a.agent_id = ANY (lives) ORDER BY a.agent_id LIMIT 50) x),
     'records', jsonb_build_object('thoughts', th_part, 'mcp_journal', jr_part, 'counts', counts),

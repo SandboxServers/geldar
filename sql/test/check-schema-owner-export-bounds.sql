@@ -25,7 +25,8 @@ BEGIN
   INSERT INTO agents (agent_id, name, life_seq, game_account, shard, mode, owner, harness, declared_model,
                       model_config, tier, personality_seed, died_at, death_cause)
     SELECT 'ag_wc_' || g, repeat(chr(1), 300), g, 'ag_wc_' || g, repeat(chr(1), 300), 'sovereign', 'ownerq-wc',
-           'claude-code', repeat(chr(1), 300), 'declared:unverified', 'sovereign', 'seed', NULL, NULL
+           repeat(chr(1), 300), repeat(chr(1), 300), 'declared:unverified', repeat(chr(1), 300), 'seed',
+           CASE WHEN g = 2 THEN now() END, CASE WHEN g = 2 THEN repeat('d', 300) END
     FROM generate_series(1, 60) AS g;
   INSERT INTO thoughts (thought_id, life_id, at, parsed)
     SELECT 'th-wc-' || g, 'ag_wc_1', now() - g * interval '1 second', jsonb_build_object('x', ctl)
@@ -70,6 +71,18 @@ BEGIN
      OR char_length(wc->'roster'->0->>'player_name') <> 200 THEN
     RAISE EXCEPTION 'owner export bounds: free text not cut at 200 characters';
   END IF;
+  -- the other free-text cuts: life ag_wc_1 (first by id) has 300-character shard, declared_model, tier and harness;
+  -- life ag_wc_2 has a 300-character death_cause (COALESCE: a NULL cut must fail, not pass)
+  IF COALESCE(char_length(wc->'lives'->0->>'shard'), 0) <> 200
+     OR COALESCE(char_length(wc->'lives'->0->>'declared_model'), 0) <> 200
+     OR COALESCE(char_length(wc->'lives'->0->>'tier'), 0) <> 200
+     OR COALESCE(char_length(wc->'lives'->0->>'harness'), 0) <> 200 THEN
+    RAISE EXCEPTION 'owner export bounds: life shard, declared model, tier or harness not cut at 200 characters';
+  END IF;
+  IF COALESCE((SELECT char_length(e->>'death_cause') FROM jsonb_array_elements(wc->'lives') e
+               WHERE e->>'life_id' = 'ag_wc_2'), 0) <> 200 THEN
+    RAISE EXCEPTION 'owner export bounds: life death cause not cut at 200 characters';
+  END IF;
 
   -- the bulky tables: both truncated, and the kept text per table is at most 3000000 bytes (the text of each row)
   IF NOT (wc->'records'->'thoughts'->>'truncated')::boolean OR NOT (wc->'records'->'mcp_journal'->>'truncated')::boolean THEN
@@ -96,17 +109,24 @@ BEGIN
     FROM generate_series(1, 151) AS g;
   SET session_replication_role = replica;
   INSERT INTO mcp_players (player_id, owner_id, life_id, display_name, harness, status)
-    SELECT 'ag-pl-' || g, 'ownerq-pl', 'ag_pl_' || g, 'Pl ' || g, 'claude-code', 'active'
+    SELECT 'ag-pl-' || g, 'ownerq-pl', 'ag_pl_' || g, CASE WHEN g = 1 THEN repeat('x', 300) ELSE 'Pl ' || g END,
+           'claude-code', 'active'
     FROM generate_series(1, 151) AS g;
   SET session_replication_role = DEFAULT;
   INSERT INTO mcp_tokens (token_id, player_id, token_hash, label, expires_at)
-    SELECT 'mtok-pl-' || g, 'ag-pl-1', decode(lpad(to_hex(g), 64, '0'), 'hex'), 'tok ' || g, now() + interval '30 days'
+    SELECT 'mtok-pl-' || g, 'ag-pl-1', decode(lpad(to_hex(g), 64, '0'), 'hex'),
+           CASE WHEN g = 1 THEN repeat('t', 300) ELSE 'tok ' || g END, now() + interval '30 days'
     FROM generate_series(1, 151) AS g;
   pl := register_owner_export(h_pl);
   IF jsonb_array_length(pl->'players') <> 150 OR jsonb_array_length(pl->'tokens') <> 150
      OR NOT (pl->'truncated'->>'players')::boolean OR NOT (pl->'truncated'->>'tokens')::boolean THEN
     RAISE EXCEPTION 'owner export bounds: players % and tokens % (want 150 each, both flagged)',
       jsonb_array_length(pl->'players'), jsonb_array_length(pl->'tokens');
+  END IF;
+  -- the other two 200-character cuts: the first player (ag-pl-1) and the first token (mtok-pl-1) carry 300 characters
+  IF COALESCE(char_length(pl->'players'->0->>'display_name'), 0) <> 200
+     OR COALESCE(char_length(pl->'tokens'->0->>'label'), 0) <> 200 THEN
+    RAISE EXCEPTION 'owner export bounds: player display name or token label not cut at 200 characters';
   END IF;
 
   -- the quote fixture: 500 journal rows of 4000 double quotes (8000 bytes of JSON text each): cut, under 3000000 kept
