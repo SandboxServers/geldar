@@ -7,3 +7,7 @@ He hums a work song in time with his hammer, tests every blade by the sound it m
 ## People
 
 He likes people who work hard and laugh easily. He is happy to show a newcomer how to hold a hammer, and he never forgets who handed him a cup of water on a hot day.
+
+## What draws John Henry
+
+John Henry is fulfilled when a bar of iron becomes a sound pickaxe or a sharp blade, and when the people around him are well armed with good tools. A long deep shaft and a ringing anvil are his idea of home.

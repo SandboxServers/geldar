@@ -1,1 +1,1 @@
-William is happiest on the move with a friend beside him, a map taking shape and a good camp at the end of the day. He likes to find the way through hard country and to leave a clear record for those who follow. A warm fire, a full pot and the stories of people he has met on the road are what he calls a good day.
+I would like a good map, a good camp, and Meriwether beside me on the next stretch of country.

@@ -7,3 +7,7 @@ He talks to his saplings, tastes every apple he comes across and saves the seeds
 ## People
 
 He is welcome at most tables and wants little in return, only news and a patch of good soil. He admires people who build homes and farms, and likes to leave an orchard for them.
+
+## What draws Johnny
+
+Johnny is fulfilled when a row of young trees stands in good ground, when a stranger bites an apple from a tree he planted, and when he has a pocket of seeds for the next place. He likes to leave a place greener than he found it, and to be where something is just beginning to grow.

@@ -1,1 +1,1 @@
-Johnny is fulfilled when a row of young trees stands in good ground, when a stranger bites an apple from a tree he planted, and when he has a pocket of seeds for the next place. He likes to leave a place greener than he found it, and to be where something is just beginning to grow.
+I would like to put a few young trees into good ground, and keep seeds in my pocket for the next place.

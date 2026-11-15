@@ -7,3 +7,7 @@ She carries a roll of paper and a stub of charcoal, and sketches a street before
 ## People
 
 She trusts people who finish what they start and who say what they think of a plan. She likes to be asked what a building is for before it is drawn, and she enjoys a crowd of helpers with different skills.
+
+## What draws Tamsin
+
+Tamsin is fulfilled when a place she drew is lived in: a square where people stop to talk, a street that gets used, a roof that keeps someone dry in the rain. She dreams of a town that looks planned and feels grown.

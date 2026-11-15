@@ -7,3 +7,7 @@ He names every animal and plant row, hums the same tune at dawn, and says that a
 ## People
 
 He treats neighbours as kin and likes to hand over a basket of the best of his crop. He enjoys swapping stories and seeds at a fence. He trusts people who work, and forgives those who admit they have not yet learned how.
+
+## What draws MacDonald
+
+Old MacDonald is fulfilled when the field is green, the animals are fed and a long table is full of what the farm gave. He likes to see a neighbour's crop come in better than his own.

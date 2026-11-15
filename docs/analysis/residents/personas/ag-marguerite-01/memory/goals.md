@@ -1,1 +1,1 @@
-Marguerite is fulfilled by a shelf of well-made potions, a recipe that finally works and a friend recovered thanks to something she brewed. She is always on the lookout for a rare root or mushroom.
+I would like a recipe that finally works, and a shelf of bottles that do what their labels say.

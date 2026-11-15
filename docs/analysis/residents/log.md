@@ -21,9 +21,13 @@ All times UTC, 2026-11-15, as reported by geldar-93 (not re-measured by this ses
 | 03:44:14Z | Body started, ag-macdonald-01 |
 | 03:49:38Z | Mind started, ag-chapman-01 (scriptorium) |
 | 03:50:45Z | Mind started, ag-macdonald-01 (scriptorium) |
+| 07:52:18Z | Skin uploaded for Leonardo (unlisted requested; first try at 07:51:39Z got HTTP 500, nothing sent) |
+| 07:52:45Z | Skin imported, ag-leonardo-01; whitelisted 07:52:46Z |
+| 07:52:59Z | Glass alias Leonardo live |
+| 07:54:09Z | Body started, ag-leonardo-01 |
 
 Note: skin upload visibility (unlisted) is the CLI default and could not be confirmed through the MineSkin API; the owner accepted that.
 
 Open: none for the four live residents. Next: held residents start as their Body verbs ship.
 
-Held until their Body verb ships (owner ruling): Tamsin, John Henry, Leonardo, Marguerite, Walton, Ottoline. (Chapman and MacDonald were released on 2026-11-15 once `till`, seeds and `use` were live.)
+Held until their Body verb ships (owner ruling): Tamsin, John Henry, Marguerite, Walton, Ottoline. Leonardo started 2026-11-15 as the live placement test. (Chapman and MacDonald were released on 2026-11-15 once `till`, seeds and `use` were live.)
