@@ -247,6 +247,9 @@ importers:
       '@geldar/contract':
         specifier: workspace:*
         version: link:../contract
+      '@geldar/psyche':
+        specifier: workspace:*
+        version: link:../psyche
       '@nats-io/jetstream':
         specifier: 3.4.0
         version: 3.4.0
@@ -288,6 +291,9 @@ importers:
       '@geldar/contract':
         specifier: workspace:*
         version: link:../contract
+      '@geldar/psyche':
+        specifier: workspace:*
+        version: link:../psyche
       '@nats-io/jetstream':
         specifier: 3.4.0
         version: 3.4.0
@@ -347,6 +353,12 @@ importers:
       '@nats-io/transport-node':
         specifier: 3.4.0
         version: 3.4.0
+
+  psyche:
+    devDependencies:
+      '@geldar/contract':
+        specifier: workspace:*
+        version: link:../contract
 
   supervisor:
     dependencies:
@@ -496,6 +508,9 @@ importers:
       '@geldar/mcp':
         specifier: workspace:*
         version: link:../../threshold/mcp
+      '@geldar/psyche':
+        specifier: workspace:*
+        version: link:../../psyche
       pg:
         specifier: 8.23.1
         version: 8.23.1

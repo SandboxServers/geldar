@@ -2,6 +2,7 @@
 # packet that creates one is already listed here (spec section 6.6).
 packages:
   - contract
+  - psyche
   - golem
   - animus
   - player-core
