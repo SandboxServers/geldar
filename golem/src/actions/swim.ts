@@ -4,6 +4,7 @@ import { ownAir } from '../body/air.ts';
 import {
   type BlockReader,
   findBreathingColumn,
+  DROWNING_AIR,
   steerBlocked,
 } from '../body/reflexes/hazard-escape.ts';
 import { WET_CELLS } from './water-rules.ts';
@@ -50,6 +51,28 @@ export interface SwimController {
 
 /** Feet-level height of the head cell (eyes are 1.62 above the feet). */
 const EYE_HEIGHT = 1.62;
+
+/**
+ * After an abort the Body keeps its surface bias (decision 0194 b): jump is held on every physics
+ * tick while the head is in water. The head out of the water, or the air at `DROWNING_AIR`, ends
+ * the hold; `hazard_escape` takes over at that line.
+ */
+function holdSurfaceBias(bot: Bot): void {
+  const hold = (): void => {
+    const here = bot.entity.position;
+    const x = Math.floor(here.x);
+    const z = Math.floor(here.z);
+    const head = bot.blockAt(new Vec3(x, Math.floor(here.y + EYE_HEIGHT), z));
+    const wet = head !== null && WET_CELLS.has(head.name);
+    if (!wet || ownAir(bot) <= DROWNING_AIR) {
+      bot.off('physicsTick', hold);
+      bot.setControlState('jump', false);
+      return;
+    }
+    bot.setControlState('jump', true);
+  };
+  bot.on('physicsTick', hold);
+}
 
 /**
  * Watches the Body's own air on every physics tick while a goto swims. Air counts only with the
@@ -121,6 +144,7 @@ export function startSwim(bot: Bot, options: SwimOptions): SwimController {
       stopped = true;
       bot.off('physicsTick', tick);
       release();
+      if (aborted) holdSurfaceBias(bot);
       return tally;
     },
   };

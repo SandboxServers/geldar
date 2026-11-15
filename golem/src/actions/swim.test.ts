@@ -2,7 +2,8 @@ import { EventEmitter } from 'node:events';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { describe, expect, it, vi } from 'vitest';
-import { ABORT_AIR, SURFACE_AIR, startSwim } from './swim.ts';
+import { DROWNING_AIR } from '../body/reflexes/hazard-escape.ts';
+import { ABORT_AIR, SURFACE_AIR, type SwimController, startSwim } from './swim.ts';
 
 interface Cell {
   name: string;
@@ -93,6 +94,31 @@ describe('startSwim air budget (decision 0194 a, b)', () => {
     startSwim(bot, { onAbort: vi.fn() });
     bot.emit('physicsTick');
     expect(bot.lookAt).toHaveBeenCalledWith(new Vec3(1.5, 64.2, 0.5), true);
+  });
+
+  it('keeps jump held after an abort while the head is in water, and releases it once dry (0194 b)', () => {
+    const bot = swimBot(HEAD_WATER, ABORT_AIR);
+    const swim: SwimController = startSwim(bot, { onAbort: () => swim.stop() });
+    bot.emit('physicsTick');
+    bot.setControlState.mockClear();
+    bot.emit('physicsTick');
+    expect(calls(bot, 'jump', true)).toBe(1);
+    bot.entity.position = new Vec3(0.5, 66.2, 0.5);
+    bot.emit('physicsTick');
+    expect(calls(bot, 'jump', false)).toBe(1);
+    bot.setControlState.mockClear();
+    bot.emit('physicsTick');
+    expect(calls(bot, 'jump', true)).toBe(0);
+  });
+
+  it('hands the surface to the reflex at DROWNING_AIR and holds no jump there (0194 b)', () => {
+    const bot = swimBot(HEAD_WATER, ABORT_AIR);
+    const swim: SwimController = startSwim(bot, { onAbort: () => swim.stop() });
+    bot.emit('physicsTick');
+    bot.entity.metadata = [0, DROWNING_AIR * 15];
+    bot.setControlState.mockClear();
+    bot.emit('physicsTick');
+    expect(calls(bot, 'jump', true)).toBe(0);
   });
 
   it('calls onAbort once at ABORT_AIR with the head in water, and reports the air', () => {

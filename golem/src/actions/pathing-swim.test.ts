@@ -80,7 +80,7 @@ describe('moveNear runs the swim controller for a goto (decision 0194 a, b)', ()
     expect(bot.pathfinder.stop).toHaveBeenCalled();
   });
 
-  it('holds no jump on the abort tick once the walk has stopped', async () => {
+  it('keeps jump held after the abort while the head is in water (decision 0194 b)', async () => {
     const bot = swimBot(ABORT_AIR, true);
     void moveNear(bot, { x: 10, y: 64, z: 0 }, 1, {
       signal: new AbortController().signal,
@@ -88,9 +88,8 @@ describe('moveNear runs the swim controller for a goto (decision 0194 a, b)', ()
       swim: true,
     });
     bot.emit('physicsTick');
-    expect(jumpsOn(bot)).toBe(0);
     bot.emit('physicsTick');
-    expect(jumpsOn(bot)).toBe(0);
+    expect(jumpsOn(bot)).toBe(1);
   });
 
   it('surfaces with jump at SURFACE_AIR and does not stop the walk', async () => {
