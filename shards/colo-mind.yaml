@@ -59,6 +59,8 @@ sovereign:
     wait_cap_seconds: 240
     keepalive_seconds: 25
     max_result_bytes: 16384
+    # The Colo Mind advertises only the tools it runs: offer, propose, vote and the other unavailable tools stay hidden.
+    show_unavailable_tools: false
     trusted_proxies: []
     replay_minutes: 60
   wake:

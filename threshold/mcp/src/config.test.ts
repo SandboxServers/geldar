@@ -66,6 +66,27 @@ describe('loadMcpConfig', () => {
     );
   });
 
+  it('shows the unavailable tools when show_unavailable_tools is absent or true', () => {
+    expect(parseMcpConfig(shardDoc(), { env: ENV }).sovereign.showUnavailableTools).toBe(true);
+    const doc = shardDoc();
+    doc.sovereign.mcp.show_unavailable_tools = true;
+    expect(parseMcpConfig(doc, { env: ENV }).sovereign.showUnavailableTools).toBe(true);
+  });
+
+  it('hides the unavailable tools when show_unavailable_tools is false', () => {
+    const doc = shardDoc();
+    doc.sovereign.mcp.show_unavailable_tools = false;
+    expect(parseMcpConfig(doc, { env: ENV }).sovereign.showUnavailableTools).toBe(false);
+  });
+
+  it('refuses a show_unavailable_tools that is not a boolean', () => {
+    const doc = shardDoc();
+    doc.sovereign.mcp.show_unavailable_tools = 'no';
+    expect(() => parseMcpConfig(doc, { env: ENV })).toThrow(
+      'sovereign.mcp.show_unavailable_tools must be true or false',
+    );
+  });
+
   it('fails fast when the password file is not named', () => {
     expect(() => parseMcpConfig(shardDoc(), { env: { GELDAR_MCP_PEPPER_FILE: '/p' } })).toThrow(
       'GELDAR_MCP_DB_PASSWORD_FILE is required',
