@@ -79,6 +79,13 @@ writes from the release env. Names, as read by `body-helper/src/helperConfig.ts`
 `GELDAR_BODY_PIDS_LIMIT`, `GELDAR_SWEEP_MINUTES`, `GELDAR_BODY_HELPER_DEADLINE_MS`,
 `GELDAR_GLOBAL_BODY_CAP` (default 40; the owner sets it, the helper never raises it).
 
+Managed Body inputs (BH-3), all optional and off by default. Names only; the values go in the root-only config, never here:
+`GELDAR_MANAGED_BODIES` (default off; the managed flag, which stays off until geldar-93 flips it after the live check),
+`GELDAR_RCON_SECRET_HOST_PATH` (the root-only RCON password file, bound only into the admit one-shot),
+`GELDAR_MANAGED_PG_HOST`, `GELDAR_MANAGED_PG_PORT` and `GELDAR_MANAGED_PG_ROLE` (the managed Body's database wiring,
+the narrow role and never the helper's own role), and `GELDAR_MANAGED_DB_SECRET_HOST_PATH` (the root-only file that
+holds the managed Body's database password). A managed start is refused until the flag is on and all of these are set.
+
 `GELDAR_NETWORK` (default `geldar-colo`) and `GELDAR_STACK` (default `colo`) are optional; an unset or empty
 value takes the default. `GELDAR_NETWORK` is a Docker network name of at most 63 characters, and the
 helper refuses `host`, `bridge` and `none` (also `default` and `container:<id>`, in any case). The helper

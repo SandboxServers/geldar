@@ -16,6 +16,16 @@ export interface FakeContainer {
 export interface FakeEngine extends BodyEngine, SweepEngine {
   containers: FakeContainer[];
   created: string[];
+  /** Every Engine call in order: `oneshot:<name>`, `create:<name>`, `start:<id>`, `remove:<id>`. */
+  calls: string[];
+  /** The exit code a one-shot returns. A test sets it; 0 is a clean admit. */
+  oneShotExit: number;
+  /** When set, a one-shot throws instead of returning an exit code. */
+  oneShotThrows: boolean;
+  /** Runs while a one-shot's container is listed, before it exits: a test reads the counts here. */
+  oneShotHook?: () => Promise<void>;
+  /** The name and config of every one-shot, in order. */
+  oneShots: Array<{ name: string; config: Record<string, unknown> }>;
 }
 
 /** A Body container as the helper creates it (running or not). */
@@ -36,12 +46,18 @@ export function hostFixture(id: string, running = true): FakeContainer {
 export function createFakeEngine(seed: FakeContainer[] = []): FakeEngine {
   const containers = [...seed];
   const created: string[] = [];
+  const calls: string[] = [];
+  const oneShots: Array<{ name: string; config: Record<string, unknown> }> = [];
   const byName = (name: string) => containers.find((c) => c.name === name);
   const byId = (id: string) => containers.find((c) => c.id === id);
   let next = 0;
-  return {
+  const fake: FakeEngine = {
     containers,
     created,
+    calls,
+    oneShots,
+    oneShotExit: 0,
+    oneShotThrows: false,
     async inspect(name): Promise<ContainerState | null> {
       const found = byName(name);
       return found
@@ -59,6 +75,7 @@ export function createFakeEngine(seed: FakeContainer[] = []): FakeEngine {
       ).length;
     },
     async create(name, config) {
+      calls.push(`create:${name}`);
       next++;
       const labels = (config.Labels ?? {}) as Record<string, string>;
       const id = `new-${next}`;
@@ -67,6 +84,7 @@ export function createFakeEngine(seed: FakeContainer[] = []): FakeEngine {
       return id;
     },
     async start(id) {
+      calls.push(`start:${id}`);
       const found = byId(id);
       if (!found) throw new Error('docker start refused');
       found.running = true;
@@ -76,8 +94,26 @@ export function createFakeEngine(seed: FakeContainer[] = []): FakeEngine {
       if (found) found.running = false;
     },
     async remove(id) {
+      calls.push(`remove:${id}`);
       const index = containers.findIndex((c) => c.id === id);
       if (index >= 0) containers.splice(index, 1);
+    },
+    async runOneShot(name, config) {
+      calls.push(`oneshot:${name}`);
+      oneShots.push({ name, config });
+      next++;
+      const labels = (config.Labels ?? {}) as Record<string, string>;
+      const id = `oneshot-${next}`;
+      // Like the Engine, the one-shot is listed while it runs, and removed when it exits (AutoRemove).
+      containers.push({ name, id, running: true, labels });
+      try {
+        if (fake.oneShotHook) await fake.oneShotHook();
+        if (fake.oneShotThrows) throw new Error('engine refused one-shot');
+        return fake.oneShotExit;
+      } finally {
+        const index = containers.findIndex((c) => c.id === id);
+        if (index >= 0) containers.splice(index, 1);
+      }
     },
     async logs(name) {
       return `log of ${name}`;
@@ -92,4 +128,5 @@ export function createFakeEngine(seed: FakeContainer[] = []): FakeEngine {
         }));
     },
   };
+  return fake;
 }

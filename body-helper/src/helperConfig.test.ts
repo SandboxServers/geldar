@@ -109,6 +109,77 @@ describe('helper config', () => {
     expect(() => readSecret('GELDAR_PG_PASSWORD_FILE', '/p', empty)).toThrow('is empty');
   });
 
+  it('leaves managed Bodies off by default, with no managed DB wiring and no RCON path', () => {
+    const config = loadHelperConfig(env, fakeFs());
+    expect(config.managed).toEqual({
+      enabled: false,
+      db: undefined,
+      rconSecretHostPath: undefined,
+    });
+  });
+
+  it('refuses a managed flag that is not 1 or 0, and treats 0 and empty as off', () => {
+    expect(() => loadHelperConfig({ ...env, GELDAR_MANAGED_BODIES: 'yes' }, fakeFs())).toThrow(
+      'GELDAR_MANAGED_BODIES must be 1 or 0',
+    );
+    expect(loadHelperConfig({ ...env, GELDAR_MANAGED_BODIES: '0' }, fakeFs()).managed.enabled).toBe(
+      false,
+    );
+    expect(loadHelperConfig({ ...env, GELDAR_MANAGED_BODIES: '' }, fakeFs()).managed.enabled).toBe(
+      false,
+    );
+  });
+
+  it('refuses a relative or comma-split RCON or DB secret path, and names the variable only', () => {
+    const bad = 'relative,/x';
+    expect(() => loadHelperConfig({ ...env, GELDAR_RCON_SECRET_HOST_PATH: bad }, fakeFs())).toThrow(
+      'GELDAR_RCON_SECRET_HOST_PATH must be an absolute path',
+    );
+    expect(() =>
+      loadHelperConfig({ ...env, GELDAR_MANAGED_DB_SECRET_HOST_PATH: bad }, fakeFs()),
+    ).toThrow('GELDAR_MANAGED_DB_SECRET_HOST_PATH must be an absolute path');
+    try {
+      loadHelperConfig({ ...env, GELDAR_RCON_SECRET_HOST_PATH: bad }, fakeFs());
+    } catch (error) {
+      expect(String(error)).not.toContain(bad);
+    }
+  });
+
+  it('leaves the managed DB wiring unset when any of its host, role or secret path is missing', () => {
+    const partial = {
+      ...env,
+      GELDAR_MANAGED_PG_HOST: 'postgres',
+      GELDAR_MANAGED_PG_ROLE: 'geldar_body_host',
+    };
+    expect(loadHelperConfig(partial, fakeFs()).managed.db).toBeUndefined();
+    const noRole = { ...env, GELDAR_MANAGED_PG_HOST: 'postgres' };
+    expect(loadHelperConfig(noRole, fakeFs()).managed.db).toBeUndefined();
+  });
+
+  it('parses a complete managed config, with the port defaulting to 5432', () => {
+    const config = loadHelperConfig(
+      {
+        ...env,
+        GELDAR_MANAGED_BODIES: '1',
+        GELDAR_RCON_SECRET_HOST_PATH: '/host/secrets/rcon.txt',
+        GELDAR_MANAGED_PG_HOST: 'postgres',
+        GELDAR_MANAGED_PG_ROLE: 'geldar_body_host',
+        GELDAR_MANAGED_DB_SECRET_HOST_PATH: '/host/secrets/db-body-host.txt',
+      },
+      fakeFs(),
+    );
+    expect(config.managed).toEqual({
+      enabled: true,
+      rconSecretHostPath: '/host/secrets/rcon.txt',
+      db: {
+        host: 'postgres',
+        port: '5432',
+        role: 'geldar_body_host',
+        secretHostPath: '/host/secrets/db-body-host.txt',
+      },
+    });
+  });
+
   it('throws on a bad cap, so the helper exits before it connects', () => {
     expect(() => loadHelperConfig({ ...env, GELDAR_GLOBAL_BODY_CAP: '0' }, fakeFs())).toThrow(
       'GELDAR_GLOBAL_BODY_CAP must be a positive whole number',
