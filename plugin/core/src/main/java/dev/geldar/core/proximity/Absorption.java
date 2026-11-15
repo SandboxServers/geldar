@@ -5,6 +5,9 @@ package dev.geldar.core.proximity;
  * and the sealed-room penalty. Pure: blocks come only through {@link BlockReader}; no world, no Bukkit types.
  */
 public final class Absorption {
+    /** Two axes whose next cell boundaries lie within this many units of ray parameter t are tied (an edge or corner). */
+    private static final double TIE_EPSILON = 1e-9;
+
     private Absorption() {
     }
 
@@ -18,9 +21,11 @@ public final class Absorption {
 
     /**
      * The sealed-room scan of one listener: {@code penalty} is {@link MuffleConfig#SEALED_PENALTY} or 0, and
-     * {@code reads} is the number of blocks read to decide it.
+     * {@code reads} is the number of blocks read to decide it. {@code truncated} is true when the read budget stopped
+     * the scan before the build limit and no roof was found, so a spent line budget does not look like clear sky.
+     * MH-3 must treat a truncated scan as silent when the line budget is spent.
      */
-    public record Sealed(double penalty, int reads) {
+    public record Sealed(double penalty, int reads, boolean truncated) {
     }
 
     /**
@@ -29,7 +34,9 @@ public final class Absorption {
      * Woo). Cells are visited once each. Where two or three axes reach a cell boundary at the same point, the ray
      * passes exactly through an edge or corner, so the cells touched only at that corner (the other cells of the
      * 2x2 or 2x2x2 neighbourhood) are read too, each once, and every tied axis is then stepped together. The trace
-     * is therefore the same in both directions. The start and end cells add their absorption only when solid. At most
+     * is therefore the same in both directions. The direction-independence guarantee excludes an endpoint exactly on
+     * a block boundary (a whole-number coordinate): floor() puts such an endpoint in the cell above, so the cells it
+     * touches are read in one direction only. The start and end cells add their absorption only when solid. At most
      * {@code maxReads} blocks are read (the caller passes the per-ray cap or what the line budget has left). A read
      * that would go past it stops the ray, which reports cutShort. A non-finite coordinate returns infinite distance
      * and cutShort, which is the silent tier.
@@ -59,13 +66,6 @@ public final class Absorption {
         int remX = Math.abs(floor(x1) - cx);
         int remY = Math.abs(floor(y1) - cy);
         int remZ = Math.abs(floor(z1) - cz);
-        double tMaxX = firstCrossing(x0, cx, stepX, dx);
-        double tMaxY = firstCrossing(y0, cy, stepY, dy);
-        double tMaxZ = firstCrossing(z0, cz, stepZ, dz);
-        double tDeltaX = stepX == 0 ? Double.POSITIVE_INFINITY : 1.0 / Math.abs(dx);
-        double tDeltaY = stepY == 0 ? Double.POSITIVE_INFINITY : 1.0 / Math.abs(dy);
-        double tDeltaZ = stepZ == 0 ? Double.POSITIVE_INFINITY : 1.0 / Math.abs(dz);
-
         Walk walk = new Walk(reader, maxReads);
         boolean first = true;
         while (true) {
@@ -77,20 +77,15 @@ public final class Absorption {
             if (last) {
                 return new Effective(raw + walk.absorbed, false, walk.reads);
             }
-            // The axes that still have cells to cross, and the ones whose next boundary is the nearest. A tie is exact.
-            double best = Double.POSITIVE_INFINITY;
-            if (remX > 0) {
-                best = Math.min(best, tMaxX);
-            }
-            if (remY > 0) {
-                best = Math.min(best, tMaxY);
-            }
-            if (remZ > 0) {
-                best = Math.min(best, tMaxZ);
-            }
-            int tied = (remX > 0 && tMaxX == best ? 1 : 0)
-                    | (remY > 0 && tMaxY == best ? 2 : 0)
-                    | (remZ > 0 && tMaxZ == best ? 4 : 0);
+            // Each axis's next boundary is computed from its current cell, never accumulated, so a shared corner is
+            // evaluated the same way in both directions. An axis with no cells left is at infinity and never tied.
+            double tX = remX > 0 ? nextBoundary(x0, cx, stepX, dx) : Double.POSITIVE_INFINITY;
+            double tY = remY > 0 ? nextBoundary(y0, cy, stepY, dy) : Double.POSITIVE_INFINITY;
+            double tZ = remZ > 0 ? nextBoundary(z0, cz, stepZ, dz) : Double.POSITIVE_INFINITY;
+            double best = Math.min(tX, Math.min(tY, tZ));
+            int tied = (tX - best <= TIE_EPSILON ? 1 : 0)
+                    | (tY - best <= TIE_EPSILON ? 2 : 0)
+                    | (tZ - best <= TIE_EPSILON ? 4 : 0);
             if (Integer.bitCount(tied) > 1) {
                 // Corner-only cells: every proper non-empty subset of the tied axes, stepped from the current cell.
                 for (int corner = 1; corner < tied; corner++) {
@@ -108,17 +103,14 @@ public final class Absorption {
             if ((tied & 1) != 0) {
                 cx += stepX;
                 remX--;
-                tMaxX += tDeltaX;
             }
             if ((tied & 2) != 0) {
                 cy += stepY;
                 remY--;
-                tMaxY += tDeltaY;
             }
             if ((tied & 4) != 0) {
                 cz += stepZ;
                 remZ--;
-                tMaxZ += tDeltaZ;
             }
         }
     }
@@ -144,8 +136,8 @@ public final class Absorption {
      * The sealed-room penalty (decision 0199, step 3): {@link MuffleConfig#SEALED_PENALTY} when a solid block lies above
      * the listener's cell before open sky, else 0. The scan starts at y + 1, stops below {@code buildLimit} (the first y
      * above the world) and reads at most {@code maxReads} cells: the caller passes {@link MuffleConfig#PER_RAY_READ_CAP}
-     * or what the line budget has left. A roof past the read cap is not seen, so the penalty is 0. The reads are
-     * reported with the penalty.
+     * or what the line budget has left. A roof past the read cap is not seen, so the penalty is 0, and the scan is
+     * truncated when the budget ran out before the build limit. The reads are reported with the penalty.
      */
     public static Sealed sealedPenalty(int x, int y, int z, BlockReader reader, int buildLimit, int maxReads) {
         int reads = 0;
@@ -153,25 +145,25 @@ public final class Absorption {
             BlockProbe block = reader.at(x, above, z);
             reads++;
             if (block.solid()) {
-                return new Sealed(MuffleConfig.SEALED_PENALTY, reads);
+                return new Sealed(MuffleConfig.SEALED_PENALTY, reads, false);
             }
         }
-        return new Sealed(0.0, reads);
+        boolean truncated = reads >= maxReads && y + 1 + reads < buildLimit;
+        return new Sealed(0.0, reads, truncated);
     }
 
     private static int floor(double value) {
         return (int) Math.floor(value);
     }
 
-    /** The ray parameter t (0 at the start, 1 at the end) where it first leaves the start cell along one axis. */
-    private static double firstCrossing(double start, int cell, int step, double delta) {
-        if (step > 0) {
-            return (cell + 1 - start) / delta;
-        }
-        if (step < 0) {
-            return (start - cell) / -delta;
-        }
-        return Double.POSITIVE_INFINITY;
+    /**
+     * The ray parameter t (0 at the start, 1 at the end) where the ray reaches the boundary ahead of its current cell
+     * along one axis. The boundary is a whole number, so the quotient is one exact expression of the start and delta.
+     * Only called for an axis with cells left, so step is never 0.
+     */
+    private static double nextBoundary(double start, int cell, int step, double delta) {
+        double boundary = step > 0 ? cell + 1 : cell;
+        return (boundary - start) / delta;
     }
 
     /** The reads of one ray. Each read checks the budget first, so no read is made past it. */

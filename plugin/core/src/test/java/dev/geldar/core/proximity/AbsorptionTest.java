@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Random;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -156,6 +157,54 @@ class AbsorptionTest {
         assertEquals(forward.distance(), reverse.distance(), 1e-9);
         assertEquals(8, forward.reads());
         assertEquals(forward.reads(), reverse.reads());
+    }
+
+    @Test
+    void aNonDyadicCornerTieIsTheSameBothWays() {
+        // The reviewer's example: feet (5.5, 0.5, 0.5) to (2.5, 5.5, 7.5), eyes at y 2.12 and 7.12, so dx = -3, dy = 5,
+        // dz = 7. The x and z boundaries meet at t = 0.5 between cells (4,4,3) and (3,4,4), so the corner-only cells
+        // (3,4,3) and (4,4,4) are read. Stone on (3,4,3) counts both ways: raw sqrt(83) + 2.
+        ProbeWorld world = new ProbeWorld().set(3, 4, 3, STONE);
+        Absorption.Effective forward = cast(world, 5.5, 0.5, 0.5, 2.5, 5.5, 7.5, CAP);
+        Absorption.Effective reverse = cast(world, 2.5, 5.5, 7.5, 5.5, 0.5, 0.5, CAP);
+        assertEquals(Math.sqrt(83) + 2.0, forward.distance(), 1e-9);
+        assertEquals(forward.distance(), reverse.distance(), 1e-9);
+        assertEquals(forward.reads(), reverse.reads());
+        assertFalse(forward.cutShort());
+    }
+
+    @Test
+    void twoHundredRandomRaysAreTheSameBothWays() {
+        // A fixed random world over x and z from -4 to 8 and y from 0 to 7, about 30% stone and 10% wool, then 200
+        // pairs of half-block feet (never on a boundary). Each pair is cast both ways and must agree in distance,
+        // reads and cutShort.
+        Random random = new Random(42);
+        ProbeWorld world = new ProbeWorld();
+        for (int x = -4; x <= 8; x++) {
+            for (int y = 0; y <= 7; y++) {
+                for (int z = -4; z <= 8; z++) {
+                    int roll = random.nextInt(10);
+                    if (roll < 3) {
+                        world.set(x, y, z, STONE);
+                    } else if (roll < 4) {
+                        world.set(x, y, z, WOOL);
+                    }
+                }
+            }
+        }
+        for (int i = 0; i < 200; i++) {
+            double sx = random.nextInt(13) - 4 + 0.5;
+            double sy = random.nextInt(4) + 0.5;
+            double sz = random.nextInt(13) - 4 + 0.5;
+            double lx = random.nextInt(13) - 4 + 0.5;
+            double ly = random.nextInt(4) + 0.5;
+            double lz = random.nextInt(13) - 4 + 0.5;
+            Absorption.Effective forward = cast(world, sx, sy, sz, lx, ly, lz, CAP);
+            Absorption.Effective reverse = cast(world, lx, ly, lz, sx, sy, sz, CAP);
+            assertEquals(forward.distance(), reverse.distance(), 1e-9, "pair " + i);
+            assertEquals(forward.reads(), reverse.reads(), "pair " + i);
+            assertEquals(forward.cutShort(), reverse.cutShort(), "pair " + i);
+        }
     }
 
     @Test
@@ -331,6 +380,44 @@ class AbsorptionTest {
         Absorption.Sealed s = Absorption.sealedPenalty(0, 60, 0, world, 63, CAP);
         assertEquals(0.0, s.penalty(), 1e-9);
         assertEquals(2, s.reads());
+    }
+
+    @Test
+    void aZeroBudgetScanIsTruncated() {
+        // No read is made, and the scan has cells left below the build limit, so it is truncated, not clear sky.
+        Absorption.Sealed s = sealed(new ProbeWorld(), 60, 0);
+        assertEquals(0.0, s.penalty(), 1e-9);
+        assertEquals(0, s.reads());
+        assertTrue(s.truncated());
+    }
+
+    @Test
+    void aBudgetSpentUnderARoofIsTruncated() {
+        // The roof at 70 is ten up. The budget of five reads cells 61 to 65 and stops, so the scan is truncated.
+        ProbeWorld world = new ProbeWorld().set(0, 70, 0, STONE);
+        Absorption.Sealed s = sealed(world, 60, 5);
+        assertEquals(0.0, s.penalty(), 1e-9);
+        assertEquals(5, s.reads());
+        assertTrue(s.truncated());
+    }
+
+    @Test
+    void aRoofWithinTheBudgetIsNotTruncated() {
+        // The roof at 63 is the third read, inside a budget of five: the penalty stands and the scan is complete.
+        ProbeWorld world = new ProbeWorld().set(0, 63, 0, STONE);
+        Absorption.Sealed s = sealed(world, 60, 5);
+        assertEquals(MuffleConfig.SEALED_PENALTY, s.penalty(), 1e-9);
+        assertEquals(3, s.reads());
+        assertFalse(s.truncated());
+    }
+
+    @Test
+    void openSkyToTheBuildLimitIsNotTruncated() {
+        // Open sky reads cells 61 up to the build limit and stops there, which is a complete scan, not a truncated one.
+        Absorption.Sealed s = sealed(new ProbeWorld(), 60, 1000);
+        assertEquals(0.0, s.penalty(), 1e-9);
+        assertEquals(MuffleConfig.DEFAULT_BUILD_LIMIT - 61, s.reads());
+        assertFalse(s.truncated());
     }
 
     @Test
