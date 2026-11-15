@@ -156,7 +156,11 @@ export const idleStuckReflex: Reflex = {
     return { reason, idle_seconds: Math.round((now - state.since) / TICKS_PER_SECOND) };
   },
   async run(trigger, ctx): Promise<ReflexOutcome> {
-    return runUnstick(ctx, `idle_stuck (${String(trigger.reason)})`);
+    return runUnstick(
+      ctx,
+      `idle_stuck (${String(trigger.reason)})`,
+      ctx.view.onOwnPlacement === true,
+    );
   },
 };
 
@@ -178,7 +182,11 @@ function stuckReason(view: BodyView): 'enclosed' | 'ledge' | null {
  * when the run ends, so the run's own movement is not "movement" and does not clear the backoff.
  * Returns one outcome whose detail is the one log line of the run.
  */
-export async function runUnstick(ctx: ReflexContext, source: string): Promise<ReflexOutcome> {
+export async function runUnstick(
+  ctx: ReflexContext,
+  source: string,
+  ownPlanksLast = false,
+): Promise<ReflexOutcome> {
   const state = stateOf(ctx.view);
   const at = formatSpot(spotOf(ctx.view));
   if (ctx.tick < state.until) {
@@ -205,6 +213,7 @@ export async function runUnstick(ctx: ReflexContext, source: string): Promise<Re
     run = await runAction(ctx.registry, ctx.bot, action, {
       signal: hurt.signal,
       timeScale: ctx.timeScale,
+      ownPlanksLast,
       onHandler: (ended) => {
         handlerEnded = ended;
       },

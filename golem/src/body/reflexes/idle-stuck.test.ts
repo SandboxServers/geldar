@@ -388,6 +388,22 @@ describe('idle_stuck and the block underfoot (owner ruling 2026-11-14)', () => {
     await refuseAt(natural, naturalRegistry.registry, [ZACK, ZACK, ZACK]);
     expect(naturalRegistry.calls()).toBe(1);
   });
+
+  it('hands the own-placement flag to unstick only for the own-placement run (decision 0330)', async () => {
+    const seen: Array<boolean | undefined> = [];
+    const registry = new ActionRegistry();
+    registry.register({
+      kind: 'unstick',
+      timeoutMs: 1000,
+      run: async (ctx) => {
+        seen.push(ctx.ownPlanksLast);
+        return failed('blocked', 'trapped');
+      },
+    });
+    await runUnstick(ctxFor(stuck(), registry, IDLE_TICKS), 'idle_stuck (ledge)', true);
+    await runUnstick(ctxFor(stuck(), registry, IDLE_TICKS), 'idle_stuck (ledge)');
+    expect(seen).toEqual([true, false]);
+  });
 });
 
 describe('dark shelter refusals (B2)', () => {
