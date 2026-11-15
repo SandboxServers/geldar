@@ -9,10 +9,8 @@ const DOMAINS = ['combat', 'farming', 'mining', 'building', 'crafting', 'explori
 export function pgStateStore(pool: Pick<Pool, 'query'>): StateStore {
   return {
     async read(lifeId) {
-      const agent = await pool.query(
-        'SELECT character_sheet, sheet_hash FROM agents WHERE agent_id = $1',
-        [lifeId],
-      );
+      // Only the existence of the life is read: the reply carries no sheet (AN-11c, least data).
+      const agent = await pool.query('SELECT agent_id FROM agents WHERE agent_id = $1', [lifeId]);
       const row = agent.rows[0];
       if (row === undefined) return null;
       const prof = await pool.query(
@@ -26,12 +24,7 @@ export function pgStateStore(pool: Pick<Pool, 'query'>): StateStore {
         levels[r.domain as keyof typeof levels] = { level: Number(r.level), xp: Number(r.xp) };
       }
       // version is recomputed by the service from the XP; the 0 here is a placeholder.
-      const state: ProficiencyState = { life_id: lifeId, version: 0, levels };
-      if (row.character_sheet !== null && row.character_sheet !== undefined) {
-        state.sheet = row.character_sheet;
-        state.sheet_hash = row.sheet_hash;
-      }
-      return state;
+      return { life_id: lifeId, version: 0, levels };
     },
   };
 }
