@@ -100,8 +100,12 @@ class FakeSql implements Sql {
       return { rows: [{ player_id: player.player_id, life_id: player.life_id }] };
     }
     if (text.startsWith('UPDATE agents')) {
-      // Mirrors the SQL: one life of a player that is not retired.
-      const player = this.players.find((p) => p.player_id === values[0] && p.status !== 'retired');
+      // The retired refusal lives in the SQL text: without that clause the fake matches a retired
+      // player too, so removing the clause from players.ts fails the retired test.
+      const refusesRetired = text.includes("status <> 'retired'");
+      const player = this.players.find(
+        (p) => p.player_id === values[0] && (!refusesRetired || p.status !== 'retired'),
+      );
       if (player === undefined) return { rows: [] };
       this.declared.set(player.life_id, String(values[1]));
       return { rows: [{ agent_id: player.life_id }] };
