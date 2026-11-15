@@ -154,7 +154,7 @@ describe('give', () => {
       id,
       name: 'item',
       type: 'other',
-      position: new Vec3(0.5, 64, 3.5),
+      position: new Vec3(0.5, 64, 0.5),
     });
     toss.mockImplementationOnce(async () => {
       events.emit('entitySpawn', item(7));
@@ -179,7 +179,7 @@ describe('give', () => {
       id,
       name: 'item',
       type: 'other',
-      position: new Vec3(0.5, 64, 3.5),
+      position: new Vec3(0.5, 64, 0.5),
     });
     toss.mockImplementationOnce(async () => {
       events.emit('entitySpawn', item(7));
@@ -204,8 +204,8 @@ describe('give', () => {
       type: 'other',
       position: new Vec3(0.5, 64, z),
     });
-    const gone = item(7, 3.5);
-    const onGround = item(8, 4.5);
+    const gone = item(7, 0.5);
+    const onGround = item(8, 0.5);
     world.entities[7] = gone;
     world.entities[8] = onGround;
     toss.mockImplementationOnce(async () => {
@@ -246,7 +246,7 @@ describe('give', () => {
       id,
       name: 'item',
       type: 'other',
-      position: new Vec3(0.5, 64, 3.5),
+      position: new Vec3(0.5, 64, 0.5),
       getDroppedItem: () => ({ count }),
     });
     toss.mockImplementationOnce(async () => {
@@ -266,7 +266,7 @@ describe('give', () => {
       id,
       name: 'item',
       type: 'other',
-      position: new Vec3(0.5, 64, 3.5),
+      position: new Vec3(0.5, 64, 0.5),
       getDroppedItem: () => ({ count }),
     });
     // The real order: each toss spawns and announces a stack of 1; each merge re-announces the survivor.
@@ -292,12 +292,12 @@ describe('give', () => {
       id,
       name: 'item',
       type: 'other',
-      position: new Vec3(0.5, 64, 3.5),
+      position: new Vec3(0.5, 64, 0.5),
       getDroppedItem: () => ({ count }),
     });
     toss.mockImplementationOnce(async () => {
       // An older stack 3.5 blocks away: its metadata arrives, but it never spawns in this toss.
-      events.emit('itemDrop', stack(5, 5));
+      events.emit('itemDrop', { ...stack(5, 5), position: new Vec3(0.5, 64, 3.5) });
       events.emit('entitySpawn', stack(7, 1));
       events.emit('itemDrop', stack(7, 3));
       events.emit('playerCollect', pike, stack(7, 3));
@@ -316,14 +316,14 @@ describe('give', () => {
       position: new Vec3(0.5, 64, z),
       getDroppedItem: () => ({ count }),
     });
-    const remains = stack(9, 1, 4.5);
+    const remains = stack(9, 1, 0.5);
     world.entities[9] = remains;
     toss.mockImplementationOnce(async () => {
-      events.emit('entitySpawn', stack(7, 1, 3.5));
-      events.emit('entitySpawn', stack(8, 1, 3.5));
+      events.emit('entitySpawn', stack(7, 1, 0.5));
+      events.emit('entitySpawn', stack(8, 1, 0.5));
       events.emit('entitySpawn', remains);
-      events.emit('entityGone', stack(7, 1, 3.5));
-      events.emit('playerCollect', pike, stack(8, 2, 3.5));
+      events.emit('entityGone', stack(7, 1, 0.5));
+      events.emit('playerCollect', pike, stack(8, 2, 0.5));
     });
     walk.mockImplementation(async () => ({ ok: true, distance: 0 }) as never);
     expect(await run('Pike', 3, 'oak_log', 0.01)).toEqual({
@@ -469,7 +469,7 @@ describe('give: stepping back, the pickup delay, and taking the items back', () 
   it('says the recipient did not pick up when the Body collected its own toss', async () => {
     const { world, run, toss, events } = setup(5, { dropped: [7], picked: [] });
     world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
-    const item = { id: 7, name: 'item', type: 'other', position: new Vec3(0.5, 64, 3.5) };
+    const item = { id: 7, name: 'item', type: 'other', position: new Vec3(0.5, 64, 0.5) };
     world.entities[7] = item;
     // The Body's own pickup: the item is collected, so the server removes it from the world.
     toss.mockImplementationOnce(async () => {
@@ -484,6 +484,86 @@ describe('give: stepping back, the pickup delay, and taking the items back', () 
       detail: {},
     });
     expect(walk).not.toHaveBeenCalled();
+  });
+
+  it('takes the items back on the second walk when the first walk fails', async () => {
+    const { world, run, events } = setup(5, { dropped: [7], picked: [] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const item = { id: 7, name: 'item', type: 'other', position: new Vec3(0.5, 64, 0.5) };
+    world.entities[7] = item;
+    walk
+      .mockResolvedValueOnce({ ok: false, reason: 'blocked', message: 'no path' } as never)
+      .mockImplementationOnce(async (_bot, spot) => {
+        world.me.position = spot as Vec3;
+        events.emit('playerCollect', world.me, item);
+        return { ok: true, distance: 1 } as never;
+      });
+    expect(await run('Pike', 3, 'oak_log', 0.01)).toEqual({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'Pike did not pick the items up; you took them back',
+      detail: {},
+    });
+    expect(walk).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not fail a give over a leftover item of another type that lands near the recipient', async () => {
+    const { world, run, toss, events } = setup(5, { dropped: [], picked: [] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const pike = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const oak = {
+      id: 7,
+      name: 'item',
+      type: 'other',
+      position: new Vec3(0.5, 64, 0.5),
+      getDroppedItem: () => ({ name: 'oak_log', count: 3 }),
+    };
+    // A cobblestone leftover lands 2 blocks from the Body, by the recipient: outside the toss spot.
+    // Its metadata has not arrived in the window, so only its position can keep it out.
+    const leftover = {
+      id: 8,
+      name: 'item',
+      type: 'other',
+      position: new Vec3(0.5, 64, 2.5),
+      getDroppedItem: () => ({ name: 'cobblestone', count: 1 }),
+    };
+    toss.mockImplementationOnce(async () => {
+      events.emit('entitySpawn', oak);
+      events.emit('entitySpawn', leftover);
+      events.emit('itemDrop', oak);
+      events.emit('playerCollect', pike, oak);
+    });
+    expect(await run('Pike', 3, 'oak_log', 0.01)).toMatchObject({ status: 'completed' });
+  });
+
+  it('releases the claim on the second of two simultaneous tosses when its metadata names another item', async () => {
+    const { world, run, toss, events } = setup(5, { dropped: [], picked: [] });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const pike = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    const feet = new Vec3(0.5, 64, 0.5);
+    const oak = {
+      id: 7,
+      name: 'item',
+      type: 'other',
+      position: feet,
+      getDroppedItem: () => ({ name: 'oak_log', count: 3 }),
+    };
+    const cobble = {
+      id: 8,
+      name: 'item',
+      type: 'other',
+      position: feet,
+      getDroppedItem: () => ({ name: 'cobblestone', count: 2 }),
+    };
+    toss.mockImplementationOnce(async () => {
+      // Both tosses land at the Body's feet in the same tick, so the watch claims both at spawn.
+      events.emit('entitySpawn', oak);
+      events.emit('entitySpawn', cobble);
+      events.emit('itemDrop', oak);
+      events.emit('itemDrop', cobble);
+      events.emit('playerCollect', pike, oak);
+    });
+    expect(await run('Pike', 3, 'oak_log', 0.01)).toMatchObject({ status: 'completed' });
   });
 
   it('is cancelled when the run aborts while taking the items back', async () => {
