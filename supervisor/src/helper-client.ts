@@ -133,6 +133,43 @@ async function call(
 }
 
 /**
+ * True when a NATS request failed on its own timeout. The pinned @nats-io/nats-core names that error class
+ * `TimeoutError` (lib/errors.js); the match is exact, so another error whose name only contains "timeout" is not one.
+ */
+export function isNatsTimeout(error: unknown): boolean {
+  return error instanceof Error && error.name === 'TimeoutError';
+}
+
+/** The part of a NATS connection the helper request uses. */
+export interface NatsRequester {
+  request(
+    subject: string,
+    data: Uint8Array,
+    opts: { timeout: number },
+  ): Promise<{ data: Uint8Array }>;
+}
+
+/**
+ * The HelperRequest over a NATS connection. The library timeout is passed as a backstop; call() races its own
+ * deadline, so the caller sees the `timeout` kind either way. A library TimeoutError becomes `timeout` here; any
+ * other rejection is rethrown unchanged, and call() maps it to `unavailable`.
+ */
+export function natsHelperRequest(
+  nc: NatsRequester,
+  timeoutMs: number = HELPER_TIMEOUT_MS,
+): HelperRequest {
+  return async (subject, payload) => {
+    try {
+      const reply = await nc.request(subject, payload, { timeout: timeoutMs });
+      return reply.data;
+    } catch (error) {
+      if (isNatsTimeout(error)) throw new HelperFailure('timeout');
+      throw error;
+    }
+  };
+}
+
+/**
  * The body runtime served by the body helper. The owner is sent with every verb: the helper refuses a name
  * the roster does not give that owner (`refused`), which the service reports as `unknown`.
  */

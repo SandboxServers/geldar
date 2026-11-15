@@ -45,6 +45,19 @@ const IMAGES = [
   },
 ];
 
+/**
+ * The supervisor image (C7-03b5): pushed with the same tag and push steps as the body job, under the same
+ * first-party prefix. It is not in the release manifest yet, so it is not in IMAGES; C7-03b2 deploys it.
+ */
+const SUPERVISOR_IMAGE = {
+  job: 'supervisor',
+  file: 'supervisor/Dockerfile',
+  repository: 'geldar-supervisor',
+};
+
+/** Every image job that pushes to the registry: the seven release images and the supervisor image. */
+const PUSHED_IMAGES = [...IMAGES, SUPERVISOR_IMAGE];
+
 type Step = {
   name?: string;
   uses?: string;
@@ -148,8 +161,8 @@ describe('colo-images.yml pins and permissions', () => {
     expect(workflow.permissions).toEqual({ contents: 'read' });
   });
 
-  it('grants packages: write only to the seven image jobs, and each of them only to the upstream repository', () => {
-    const imageJobs = IMAGES.map((image) => image.job).sort();
+  it('grants packages: write only to the pushed image jobs, and each of them only to the upstream repository', () => {
+    const imageJobs = PUSHED_IMAGES.map((image) => image.job).sort();
     const writers = Object.entries(jobs)
       .filter(([, job]) => job.permissions?.packages === 'write')
       .map(([name]) => name)
@@ -167,7 +180,7 @@ describe('colo-images.yml pins and permissions', () => {
 describe('colo-images.yml images', () => {
   it('builds each image from its own Dockerfile and pushes it without provenance or SBOM', () => {
     expect(builds.map((step) => step.with?.file).sort()).toEqual(
-      IMAGES.map((image) => image.file).sort(),
+      PUSHED_IMAGES.map((image) => image.file).sort(),
     );
     for (const step of builds) {
       expect(step.with?.push).toBe(true);
@@ -177,7 +190,7 @@ describe('colo-images.yml images', () => {
   });
 
   it('keeps each image Dockerfile in the repository, digest-pinned, non-root, with a .env ignore', () => {
-    for (const image of IMAGES) {
+    for (const image of PUSHED_IMAGES) {
       expect(existsSync(new URL(`../../../${image.file}`, import.meta.url))).toBe(true);
       const dockerfile = readFileSync(new URL(`../../../${image.file}`, import.meta.url), 'utf8');
       const ignorePath = `${image.file}.dockerignore`;
@@ -216,7 +229,7 @@ describe('colo-images.yml images', () => {
     );
     const unique = [...new Set(repositories)].sort();
     expect(unique).toEqual(
-      IMAGES.map((image) => `ghcr.io/sandboxservers/${image.repository}`).sort(),
+      PUSHED_IMAGES.map((image) => `ghcr.io/sandboxservers/${image.repository}`).sort(),
     );
     for (const repository of unique) {
       expect(parsed.prefixes.some((prefix) => repository.startsWith(prefix))).toBe(true);
@@ -228,7 +241,7 @@ describe('colo-images.yml images', () => {
       expect(jobs[image.job]?.outputs?.digest).toBe(`\${{ steps.push.outputs.digest }}`);
     }
     expect(text).toContain(`\${GITHUB_SHA:0:12}`);
-    expect(text.match(/:main$/gm)?.length).toBe(IMAGES.length);
+    expect(text.match(/:main$/gm)?.length).toBe(PUSHED_IMAGES.length);
   });
 });
 

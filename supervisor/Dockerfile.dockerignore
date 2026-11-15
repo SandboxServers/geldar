@@ -1,0 +1,16 @@
+# Allowlist: nothing enters the build context unless named here.
+*
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!.nvmrc
+!**/package.json
+!contract
+!supervisor
+# The re-include above also matches every installed package.json; drop installed trees.
+**/node_modules/**
+**/node_modules
+**/*.test.ts
+**/.env*
+**/*tokens*.json
+**/secrets
