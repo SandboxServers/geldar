@@ -19,13 +19,13 @@ describe('sinkPlan: the environment read by eventsink main', () => {
     });
   });
 
-  it('a blank GELDAR_SHARD is unset, not a shard named ""', () => {
-    expect(sinkPlan({ GELDAR_SHARD: '' }).shard).toBeUndefined();
-    expect(sinkPlan({ GELDAR_SHARD: '   ' }).shard).toBeUndefined();
+  it('a blank GELDAR_SHEET_SHARD is unset, not a shard named ""', () => {
+    expect(sinkPlan({ GELDAR_SHEET_SHARD: '' }).shard).toBeUndefined();
+    expect(sinkPlan({ GELDAR_SHEET_SHARD: '   ' }).shard).toBeUndefined();
   });
 
   it('reads the shard name when it is set', () => {
-    expect(sinkPlan({ GELDAR_SHARD: 'colo' }).shard).toBe('colo');
+    expect(sinkPlan({ GELDAR_SHEET_SHARD: 'colo' }).shard).toBe('colo');
   });
 
   it('XP is on only for GELDAR_XP exactly 1', () => {
@@ -52,13 +52,13 @@ describe('sinkPlan: the environment read by eventsink main', () => {
 
   it('refuses custom thresholds next to the state service: the Body checks levels with the defaults', () => {
     const custom = {
-      GELDAR_SHARD: 'colo',
+      GELDAR_SHEET_SHARD: 'colo',
       GELDAR_XP: '1',
       GELDAR_PROFICIENCY_THRESHOLDS: '5,10,20',
     };
     expect(() => sinkPlan(custom)).toThrow(RangeError);
     // Custom thresholds with no shard run no state service, so they are allowed.
-    expect(() => sinkPlan({ ...custom, GELDAR_SHARD: undefined })).not.toThrow();
+    expect(() => sinkPlan({ ...custom, GELDAR_SHEET_SHARD: undefined })).not.toThrow();
   });
 });
 
@@ -71,9 +71,9 @@ describe('startShardServices: the unset path starts nothing', () => {
     expect(fake.startOutbox).not.toHaveBeenCalled();
   });
 
-  it('starts the state service and the outbox publisher, in that order, when GELDAR_SHARD is set', () => {
+  it('starts the state service and the outbox publisher, in that order, when GELDAR_SHEET_SHARD is set', () => {
     const fake = starters();
-    const handles = startShardServices(sinkPlan({ GELDAR_SHARD: 'colo' }), fake);
+    const handles = startShardServices(sinkPlan({ GELDAR_SHEET_SHARD: 'colo' }), fake);
     expect(handles).toHaveLength(2);
     expect(fake.startState).toHaveBeenCalledWith('colo');
     expect(fake.startOutbox).toHaveBeenCalledWith('colo');
@@ -87,9 +87,37 @@ describe('startShardServices: the unset path starts nothing', () => {
     vi.mocked(fake.startState).mockImplementation(() => {
       throw new RangeError('invalid shard name');
     });
-    expect(() => startShardServices(sinkPlan({ GELDAR_SHARD: 'Bad Shard' }), fake)).toThrow(
+    expect(() => startShardServices(sinkPlan({ GELDAR_SHEET_SHARD: 'Bad Shard' }), fake)).toThrow(
       RangeError,
     );
     expect(fake.startOutbox).not.toHaveBeenCalled();
+  });
+});
+
+describe('the activation config (AN-12b)', () => {
+  it('shard + XP on + default thresholds succeeds and starts both shard services', () => {
+    const plan = sinkPlan({ GELDAR_SHEET_SHARD: 'colo', GELDAR_XP: '1' });
+    expect(plan).toEqual({ shard: 'colo', xp: { enabled: true, thresholds: DEFAULT_THRESHOLDS } });
+    const stop = vi.fn(async () => undefined);
+    const starters = { startState: vi.fn(() => ({ stop })), startOutbox: vi.fn(() => ({ stop })) };
+    expect(startShardServices(plan, starters)).toHaveLength(2);
+    expect(starters.startState).toHaveBeenCalledWith('colo');
+    expect(starters.startOutbox).toHaveBeenCalledWith('colo');
+  });
+
+  it('shard + XP on + thresholds written as the defaults is allowed', () => {
+    expect(() =>
+      sinkPlan({
+        GELDAR_SHEET_SHARD: 'colo',
+        GELDAR_XP: '1',
+        GELDAR_PROFICIENCY_THRESHOLDS: '10,30,70',
+      }),
+    ).not.toThrow();
+  });
+
+  it('GELDAR_SHARD alone (the ambient operator variable) is inert: no shard, XP off', () => {
+    const plan = sinkPlan({ GELDAR_SHARD: 'colo' });
+    expect(plan.shard).toBeUndefined();
+    expect(plan.xp.enabled).toBe(false);
   });
 });

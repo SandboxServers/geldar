@@ -5,7 +5,7 @@ import type { XpWriting } from './writer.ts';
 import { type XpThresholds, xpEnabled, xpThresholds } from './xp/xp-config.ts';
 
 export interface SinkPlan {
-  /** GELDAR_SHARD, or undefined. Unset and blank both mean no state service and no outbox publisher. */
+  /** GELDAR_SHEET_SHARD, or undefined. Unset and blank both mean no state service and no outbox publisher. */
   shard: string | undefined;
   /** The writer's XP option. Thresholds are the defaults unless XP is on. */
   xp: XpWriting;
@@ -22,13 +22,13 @@ export interface ShardServiceStarters {
 }
 
 export function sinkPlan(env: NodeJS.ProcessEnv): SinkPlan {
-  const raw = env.GELDAR_SHARD?.trim();
+  const raw = env.GELDAR_SHEET_SHARD?.trim();
   const shard = raw === undefined || raw === '' ? undefined : raw;
   if (!xpEnabled(env)) return { shard, xp: { enabled: false, thresholds: DEFAULT_THRESHOLDS } };
   const thresholds: XpThresholds = xpThresholds(env);
   if (shard !== undefined && !sameAsDefaults(thresholds)) {
     throw new RangeError(
-      'GELDAR_PROFICIENCY_THRESHOLDS must be unset while GELDAR_SHARD runs the state service: the Body checks levels with the defaults',
+      'GELDAR_PROFICIENCY_THRESHOLDS must be unset while GELDAR_SHEET_SHARD runs the state service: the Body checks levels with the defaults',
     );
   }
   return { shard, xp: { enabled: true, thresholds } };

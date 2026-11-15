@@ -48,3 +48,15 @@ Proposed values only. Nothing in this table is in any shard file, compose file o
 ## Checks
 
 Recorded in the report for this packet (vitest on `eventsink/src` and `tools/repo-checks/src/nats-auth*` plus the new fixture test; tsc `--noEmit` for eventsink; biome; `git diff --check`; `pnpm check:repo`).
+
+## Fix pass (review of d047d6e8)
+
+This section supersedes the stale parts above (the fixture summary, the state.> grants, the GELDAR_SHARD switch and the compose lines).
+
+- Merge: origin/main is merged as a21434ac. The geldar.ps1 conflict is resolved as a union: the MH-CH hearing denies (body, mind, mcp) and the state grants both stay.
+- ACL narrowed (owner ruling): body Sub is `geldar.<s>.state.*.level` (was state.>); eventsink Sub is `geldar.<s>.state.*.proficiency` (was state.>). Pub lists are unchanged. Body keeps `_INBOX.>` in its Sub: replies to its request arrive there, and the generated config grants it. The exact table (nats-auth.test.ts), the bare-token check (one exception each for the two exact subjects) and nats-auth-state.test.ts are updated. Revert mutations that widen either grant back to state.> fail by name.
+- Sink switch: GELDAR_SHEET_SHARD, a dedicated variable. Deviation from the card: GELDAR_SHARD is the ambient operator variable (.env.example, deploy/colo-notice.sh, compose/colo.yml), so GELDAR_SHARD alone starts nothing (tested).
+- Compose: the three null keys are removed from compose/colo.yml and compose/phase0.yml (the golden test). The opt-in file is compose/sheet-sink.yml, in no default file set. Operator use: `docker compose -f compose/colo.yml -f compose/sheet-sink.yml up -d eventsink`. Apply the ACL first (`./geldar.ps1 shard nats-auth`, see the runbook).
+- Tests: the activation config (shard, XP on, default thresholds) succeeds and starts both services. eventsink/src/main.test.ts covers unset, ambient GELDAR_SHARD only, the activation path, and the SIGTERM order (consumer, state, outbox, drain). Mutations M-a (writer drops plan.xp), M-b (no service stop) and M-c (services with no shard), and S2 (guard always throws), each fail by name.
+- Known limitation (AN-12 follow-up): the outbox is not shard-filtered. A row of another shard publishes to its own shard's subject, the server drops it by ACL, and the row is marked published.
+- Ops note: pg.Pool has max 2, shared by the writer, the outbox pass and the state reads (2 s read timeout). A saturated pool answers unavailable. Watch for it during activation.

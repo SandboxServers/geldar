@@ -49,7 +49,7 @@ export async function main(): Promise<void> {
     service: 'eventsink',
     log: (line) => console.error('eventsink: telemetry', JSON.stringify(line)),
   });
-  // GELDAR_SHARD unset starts nothing here (sink-plan.ts); a bad shard name throws before the consumer runs.
+  // GELDAR_SHEET_SHARD unset starts nothing here (sink-plan.ts); a bad shard name throws before the consumer runs.
   const services = startShardServices(plan, {
     startState: (shard) =>
       serveProficiencyState({

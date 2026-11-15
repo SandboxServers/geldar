@@ -104,16 +104,23 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth: the state subtree (AN-12b)', ()
     expect(conf.length).toBeGreaterThan(0);
   });
 
-  it('eventsink may publish and subscribe on the state subtree', () => {
-    expect(by('eventsink')?.sub).toContain(`geldar.${SHARD}.state.>`);
+  it('eventsink may publish the level push and subscribe to the request only', () => {
+    expect(by('eventsink')?.sub).toContain(`geldar.${SHARD}.state.*.proficiency`);
     expect(canPub(level)).toEqual(['eventsink']);
     expect(canSub(request)).toContain('eventsink');
-    expect(canSub(level)).toContain('eventsink');
+  });
+
+  it('eventsink can NOT subscribe the level push, and body can NOT subscribe the request', () => {
+    expect(by('eventsink')?.sub).not.toContain(`geldar.${SHARD}.state.*.level`);
+    expect(canSub(level)).not.toContain('eventsink');
+    expect(canSub(request)).not.toContain('body');
+    expect(by('body')?.sub).not.toContain(`geldar.${SHARD}.state.*.proficiency`);
   });
 
   it('lets the body request the proficiency and hear the level push, and denies it publishing the push', () => {
     expect(canPub(request)).toContain('body');
-    expect(by('body')?.sub).toContain(`geldar.${SHARD}.state.>`);
+    expect(by('body')?.sub).toContain(`geldar.${SHARD}.state.*.level`);
+    expect(by('body')?.sub).toContain('_INBOX.>');
     expect(canSub(level)).toContain('body');
     expect(canPub(level)).not.toContain('body');
     expect(by('body')?.deny).toContain(`geldar.${SHARD}.state.*.level`);
