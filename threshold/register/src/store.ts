@@ -45,7 +45,9 @@ export interface Store {
   ): Promise<void>;
   listPlayers(identityHash: string): Promise<PlayerRow[]>;
   /** Creates the life, player, budget and first token in register_create_player; limit is the lifetime cap of 10 (R36). */
-  createPlayer(request: NewPlayerRequest): Promise<'ok' | 'cap' | 'limit' | 'taken'>;
+  createPlayer(
+    request: NewPlayerRequest,
+  ): Promise<'ok' | 'cap' | 'limit' | 'taken' | 'name' | 'name_taken'>;
   /** Mints a token through register_mint_token; false when the function refuses (not the owner's). */
   mintToken(request: MintRequest): Promise<boolean>;
   /** Sets public_camera on the owner's own agent through register_set_public_camera; false when it is not theirs. */
