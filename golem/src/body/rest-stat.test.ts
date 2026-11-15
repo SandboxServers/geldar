@@ -1,7 +1,6 @@
 import { EventEmitter } from 'node:events';
 import type { Bot } from 'mineflayer';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { DiagSink } from '../actions/stall-diag.ts';
 import { watchRestStat } from './rest-stat.ts';
 
 /** A fake bot with a protocol client that records its writes, as the server-facing side of mineflayer does. */
@@ -15,8 +14,8 @@ function fakeRestBot(version: string | undefined = '26.1.2', withClient = true) 
 }
 
 /** A sink that records the lines it is given. */
-function recordingSink(): DiagSink & { log: ReturnType<typeof vi.fn> } {
-  return { log: vi.fn(), now: () => 0 };
+function recordingSink() {
+  return { log: vi.fn((_line: string) => undefined), now: () => 0 };
 }
 
 /** The clientbound statistics packet with the given entries. */
