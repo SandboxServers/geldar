@@ -79,6 +79,8 @@ A listener beyond the cut never receives the chat packet, so the Body cannot lea
 
    **Deploy.** Option A needs no allow change, so the plugin and Body deploys suffice for it. The recommended body, mind and mcp PubDeny on `geldar.<s>.body.*.hearing` is a `nats-auth` generator change (`Get-NatsUsers` in `tools/geldar.ps1`) and reaches a node only in a geldar-93 deploy window (`deploy/README.md`: regenerate, copy, restart `nats`, which drops every client, after a notice). Per-life scoped credentials stay out of scope (0087).
 
+   Known limit (not verified live): the body, mind and mcp roles also hold $JS.API.>. A JetStream stream republish may emit to a subject without a publish-ACL check on that subject. If so, the PubDeny guards against mistakes and ordinary bugs, not against a hostile or compromised role. The existing Kino and state.*.level denies share this property.
+
 ## Heard_muffled event shape
 
 `heard_muffled` reuses the `heard_sound` shape:

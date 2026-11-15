@@ -214,3 +214,7 @@ Until the test records a result, plan the live change as if changed users are cl
 - A change in the repo lands first. The generator (`geldar.ps1`) must produce the same conf the node runs. Check that with the golden test before the node change.
 - Do not run `./geldar.ps1 shard nats-auth colo` on the node. It is a trusted-machine command; on the node it would write a conf the node did not review.
 - Do not edit `docs/spec.md` to match a live change.
+
+## Open questions
+
+- JetStream republish caveat (decision 0199, known limit, not verified live): the body, mind and mcp roles also hold $JS.API.>. A JetStream stream republish may emit to a subject without a publish-ACL check on that subject. If so, the PubDeny guards against mistakes and ordinary bugs, not against a hostile or compromised role. The existing Kino and state.*.level denies share this property. Applies to every PubDeny in the generated config; on the owner's morning list (geldar-93).

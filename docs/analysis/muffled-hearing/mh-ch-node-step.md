@@ -1,5 +1,7 @@
 # MH-CH node step: the hearing subject deny
 
+Status: held. Applied only in geldar-93's batched NATS auth step, with the owner's word; do not run on its own.
+
 Decision 0199, record decision 9 (the hearing subject ACL). Packet MH-CH. For geldar-93 and geldar-worldops.
 
 Status: this packet changes the generator in the repo only. Nothing is queued or applied to any node by it. The node change waits for a geldar-93 window and the owner go that the runbook requires. Scope: body, mind and mcp, as the owner instruction (geldar-93) asks; decision 0199 names body only.
@@ -35,12 +37,7 @@ The runbook `docs/runbooks/nats-auth-inplace.md` is the only procedure. It does 
 - Step 5: reload with SIGHUP, not a restart: `docker kill -s HUP <nats container>`. The log must show `Reloaded: authorization users`, `Reloaded: accounts` and `Reloaded server configuration`. The connection count returns to its pre-change value.
 - Step 6: verify (below).
 - Step 7: rollback (below).
-
-The brief named "regenerate, copy, restart". The runbook uses the staged copy in place of regeneration and SIGHUP in place of restart. A restart drops every NATS client (`deploy/README.md`) and is not needed for this change.
-
 ## Check after the change
-
-Run each check with the role's own client, never the admin account (runbook step 6).
 
 1. Body client publishes to `geldar.<s>.body.<probeLifeId>.hearing`. Expect refusal, logged as `Permissions Violation`: `docker logs --since 5m <nats container> | grep -i 'permissions violation'`.
 2. Mind client and mcp client: the same publish, the same refusal.
@@ -56,3 +53,7 @@ Run each check with the role's own client, never the admin account (runbook step
 ## Client impact
 
 The runbook says it is "Not verified" whether a reload closes sessions of changed users on nats-server 2.15.1. Plan as if mind and mcp sessions are closed. Body and mcp reconnect on their own; confirm it in their logs (runbook step 6). Do not restart them by hand unless they stay disconnected for more than five minutes.
+
+## Known limit
+
+The JetStream republish caveat of the hearing deny is in [decision 0199, decision 9](../../decisions/0199-muffled-hearing.md).
