@@ -13,7 +13,10 @@ interface Streak {
   attempts: number;
   /** Where the streak began. */
   at?: { x: number; y: number; z: number } | undefined;
-  /** Where the last goto outcomes ended `blocked` (newest last, at most two); any other outcome clears them. */
+  /**
+   * Where the last failed attempts ended (newest last, at most two): a goto blocked, a mine or an unstick run
+   * that failed. A goto that ends otherwise clears them (decision 0336).
+   */
   walks: { x: number; y: number; z: number }[];
 }
 
@@ -50,13 +53,10 @@ export function noteGoto(
   _message: string | undefined,
   stalled = false,
   at?: { x: number; y: number; z: number },
+  kind: WalkKind = 'goto',
 ): void {
   const streak = streakOf(view);
-  if (state === 'failed' && reason === 'blocked' && at) {
-    streak.walks = [...streak.walks.slice(-1), at];
-  } else {
-    streak.walks = [];
-  }
+  noteWalk(streak, kind, state, reason, at);
   const stall = (state === 'completed' && stalled) || (state === 'failed' && reason === 'blocked');
   if (stall) {
     if (at && streak.at) {
@@ -85,6 +85,60 @@ export function failedWalksAt(view: BodyView, here: { x: number; y: number; z: n
   const walks = streaks.get(view)?.walks ?? [];
   if (walks.length < 2) return false;
   return walks.every((w) => Math.hypot(w.x - here.x, w.y - here.y, w.z - here.z) <= SAME_SPOT);
+}
+
+/** What ran for a walk outcome: a `goto`, a `mine` (its walk to the block), or an `unstick` run. */
+export type WalkKind = 'goto' | 'mine' | 'unstick';
+
+type Spot = { x: number; y: number; z: number };
+
+function spotGap(a: Spot, b: Spot): number {
+  return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
+/**
+ * Notes one outcome in the walk record (decision 0336). A failed attempt at a spot is recorded: a `goto`
+ * blocked, a `mine` failed with any reason (`no_effect` too), an `unstick` run failed with any reason. Any
+ * other `goto` outcome clears the record. A `mine` that did not fail, a cancelled run, and an `unstick` that
+ * completes within `SAME_SPOT` of the last attempt leave it as it is. A completed `unstick` that ends further
+ * away is a move to another spot, and clears it.
+ */
+function noteWalk(
+  streak: Streak,
+  kind: WalkKind,
+  state: 'completed' | 'failed' | 'cancelled',
+  reason: string | undefined,
+  at?: Spot,
+): void {
+  if (state === 'failed' && at && (kind !== 'goto' || reason === 'blocked')) {
+    streak.walks = [...streak.walks.slice(-1), at];
+    return;
+  }
+  if (kind === 'goto') {
+    streak.walks = [];
+    return;
+  }
+  const last = streak.walks.at(-1);
+  if (kind === 'unstick' && state === 'completed' && at && last && spotGap(last, at) > SAME_SPOT) {
+    streak.walks = [];
+  }
+}
+
+/** Records an `unstick` run's outcome in the walk record (the Mind's or a reflex's run, decision 0336). */
+export function noteWalkOutcome(
+  view: BodyView,
+  kind: WalkKind,
+  state: 'completed' | 'failed' | 'cancelled',
+  reason: string | undefined,
+  at?: Spot,
+): void {
+  noteWalk(streakOf(view), kind, state, reason, at);
+}
+
+/** How many of the recorded failed attempts (at most two) were within `SAME_SPOT` blocks of `here`. */
+export function failedWalkCount(view: BodyView, here: Spot): number {
+  const walks = streaks.get(view)?.walks ?? [];
+  return walks.filter((w) => spotGap(w, here) <= SAME_SPOT).length;
 }
 
 /** Forgets the streak (the Body respawned, or the verb was called and freed the bot). */
