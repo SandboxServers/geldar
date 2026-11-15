@@ -3,7 +3,6 @@ import { buildSupervisorDeps } from './composition.ts';
 import type { AuditLostInfo, BodyRuntimePort } from './ports.ts';
 
 const runtime: BodyRuntimePort = {
-  checkLogin: async () => undefined,
   inspect: async () => null,
   start: async () => undefined,
   stop: async () => undefined,
@@ -22,13 +21,14 @@ describe('composition root', () => {
     expect(lost).toEqual([{ action: 'body_start', code: 'audit_lost' }]);
   });
 
-  it('wires the runtime it was given and a clock', () => {
+  it('wires the runtime it was given, a display-name port and a clock', () => {
     const deps = buildSupervisorDeps({
       query: async () => ({ rows: [] }),
       runtime,
       log: () => undefined,
     });
     expect(deps.runtime).toBe(runtime);
+    expect(typeof deps.displayNames.displayName).toBe('function');
     expect(deps.now()).toBeInstanceOf(Date);
   });
 });
