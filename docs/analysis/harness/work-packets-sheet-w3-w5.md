@@ -1,16 +1,18 @@
 # Sheet cards, waves W3 to W5: the instinct step, checks and prose (kit), and observed evidence (world)
 
+Corrections 2026-11-15: checked against the real engine (`psyche/src`) and the kit package `@geldar/scriptorium-psyche`. Changed: the kit package name and mirror layout; the export list (`TEMPERAMENT_BANK` and `temperamentFor` are not exported, so HC-25 stops blocked at that import); `rngFor` takes one DrawKey (`draw` returns `rngFor(key)`); proficiency levels come from the world state, never the sheet (OD-C); the HC-20 `exactChance` call (an undefined `level`); decision and SQL numbers. Every change is listed in `worknotes/cards-w3-w12-corrections.md`.
+
 Status: **proposal, nothing dispatched.** Written 2026-11-15 against geldar `origin/main` = `280b8ea9`. It continues [work-packets-geldar-a.md](work-packets-geldar-a.md) (W1, W2) and replaces, for these three waves only, the candidate sections AN-13 to AN-28 of [../character-sheet/work-packets.md](../character-sheet/work-packets.md). W5 refines the cards already drafted in [work-packets-geldar-b.md](work-packets-geldar-b.md); where they differ, this file wins. W2 (AN-08 to AN-12) is being coded and is not in this file.
 
 **Facts every card respects.**
 
 - The in-house Mind (`animus/`) is **frozen** (D-HC-01). The player kit (repo `geldar-scriptorium`, local path `C:\Users\Steve\source\projects\geldar-scriptorium`) is the one Mind. So every Mind-side candidate of W3 and W4 is a **kit card** (`HC-nn`, repo scriptorium) and every W5 card is a **world card** (`AN-nn`, repo geldar). Each card says `repo`.
-- `psyche/` is a pure, zero-import package (geldar) mirrored byte for byte into the kit (`packages/psyche`, HC-17a/b, pinned by tag `psyche-v1.0.0`, tree hash `b89848ab...`). **No card here edits `psyche/src/`**; if one needs a new export, stop and ask (a change means `--write`, a version bump and a new tag).
+- `psyche/` is a pure, zero-import package (geldar) mirrored byte for byte into the kit (HC-17a/b, pinned by tag `psyche-v1.0.0`, tree hash `b89848ab...`). In the kit the engine copy is `packages/psyche/engine/`; `packages/psyche/src/` is the kit's own package entry (`check.ts`, `sheet.ts`, `index.ts`), package name `@geldar/scriptorium-psyche`. **No card here edits `psyche/src/`**; if one needs a new export, stop and ask (a change means `--write`, a version bump and a new tag).
 - **The sheet scores never reach any model context.** Agents are never told they are watched, scored or coached. Anything an instinct step does reaches the model only as the world's normal results of a settled act, and no card adds text for it.
 - **OWNER APPROVAL REQUIRED** marks a card that produces agent-visible text (or text that tells an agent who to be). Such a card **ships inactive**: the text is data behind a switch that defaults off and a test proves off adds nothing. Approval of the wording is a separate owner act, recorded after review.
-- Decision numbers: only 0283 to 0289 remain in this campaign's range (0280, 0281 used; 0282 is reserved for the account-erasure sheet ruling). Every number below is `<allocate via registry>`. SQL numbers: 0050 and 0051 are used; **no card here needs SQL** (kit state is a file, D-HC-04; W5 evidence is NATS only).
+- Decision numbers: only 0283 to 0289 remain in this campaign's range, then the overflow block 0320 to 0329 (0280, 0281 used; 0282 is reserved for the account-erasure sheet ruling). Every number below is `<allocate via registry>`. SQL numbers: 0050 to 0052 are used or taken (0052 by PR #455's erasure comments); **no card here needs SQL** (kit state is a file, D-HC-04; W5 evidence is NATS only).
 - Contract regeneration is serial. Only **AN-24** touches `contract/` in these three waves (shapes listed on the card). Nothing in W3 or W4 touches `contract/`.
-- Already merged and available (geldar): psyche roll, params, proficiency, temperament; `AuditPublisher`; sink audit projection; character-config loaders. Exact psyche exports used: `rngFor`, `decisionId`, `DrawKey`, `d20`, `roll`, `exactChance`, `modeFor`, `DEFAULT_DCS`, `factor`, `step`, `levelForXp`, `temperamentFor`, `TEMPERAMENT_BANK`, `normalizeSheet`, `sheetOrStandard`, `canonicalSheetJson`, `STANDARD_SHEET`, `ENGINE_VERSION`.
+- Already merged and available (geldar): psyche roll, params, proficiency, temperament; `AuditPublisher`; sink audit projection; character-config loaders. Exact psyche exports used: `rngFor`, `decisionId`, `DrawKey`, `d20`, `roll`, `exactChance`, `modeFor`, `DEFAULT_DCS`, `factor`, `step`, `levelForXp`, `normalizeSheet`, `sheetOrStandard`, `canonicalSheetJson`, `STANDARD_SHEET`, `ENGINE_VERSION`. Not exported by the kit package, by design: `TEMPERAMENT_BANK` and `temperamentFor` (temperament is inactive).
 
 ## Dependency table
 
@@ -94,7 +96,7 @@ Owner decisions named above (D-CS ids are from [../character-sheet/decisions-bef
 
 # Wave W3: the instinct core (kit; replaces AN-13 to AN-17)
 
-Common shapes for W3 and W4 (created by HC-18, stated here so the other cards code in parallel). All in `packages/instinct/src/` (repo scriptorium). `Score`, `Level`, `Domain`, `CharacterSheet`, `Rng`, `Roll`, `DrawKey` come from `packages/psyche` (the byte mirror; import path `@geldar/psyche`, `to confirm` in HC-17a).
+Common shapes for W3 and W4 (created by HC-18, stated here so the other cards code in parallel). All in `packages/instinct/src/` (repo scriptorium). `Score`, `Level`, `Domain`, `CharacterSheet`, `Rng`, `Roll`, `DrawKey` come from the kit package `@geldar/scriptorium-psyche` (its entry exports these names one at a time; the types are type-only exports).
 
 ```ts
 // types.ts
@@ -145,9 +147,9 @@ export interface FxContext {
   lifeId: string; generation: number; tick: number; cycle: number;
   wake: WakeView; snapshot: SnapshotView; goal: string | null;           // goal = top adopted goal text, or null
   sheet: CharacterSheet; sheetStandard: boolean;                         // supervisor-only; never serialised toward the model
-  proficiency: Readonly<Record<Domain, Level>>; proficiencyDegraded: boolean;   // OD-C: all 0 and degraded in round one
+  proficiency: Readonly<Record<Domain, Level>>; proficiencyDegraded: boolean;   // OD-C: all 0 and degraded in round one; the levels come from the world state (Body cache or supervisor feed), never from the sheet
   config: InstinctConfig; store: InstinctStore;
-  draw(fx: string): { key: DrawKey; rng: Rng };                          // producer 'kit', generation, tick, decisionSeq counted per cycle
+  draw(fx: string): { key: DrawKey; rng: Rng };                          // key is one DrawKey object { producer: 'kit', lifeId, generation, tick, fx, decisionSeq }; rng = rngFor(key); decisionSeq counted per cycle
 }
 ```
 
@@ -230,14 +232,14 @@ Never settled in code (D-HC-09, tested in HC-18's `runStep`): speech addressed t
 - **may-edit** `packages/instinct/src/fx/failure.ts` (new, exports `failureFx: Fx`), `src/fx/variation.ts` (new, `variationFor(failed: FailedIntent, ctx: FxContext): Act | null`), `src/fx/failure.test.ts`, `src/fx/variation.test.ts` (new).
 - **must-not-edit** R6; everything else in `packages/instinct` (registration is HC-24).
 - **shared files edited** none (`index line to add: export { failureFx } from './fx/failure.ts'` goes in the worknote).
-- **decisions** D-CS-05. OD-C (proficiency is all 0 and degraded in round one; the roll reads the program's domain level from `ctx.proficiency`, so nothing changes when a source arrives).
+- **decisions** D-CS-05. OD-C (proficiency is all 0 and degraded in round one; the roll reads the program's domain level from `ctx.proficiency`, which the world state fills and never the sheet, so nothing changes when a source arrives).
 - **rules (exact order, so a coder cannot choose).**
   1. `applies`: `wake.reason` in `action_failed`, `precondition_failed`, `stuck`, and `wake.failed` present (not for `stuck`). `stuck` returns `escalate high tag 'stuck'` at once, no draw, no count.
   2. `key = problemKey(ctx.goal ?? '', failed.program)`. A null goal uses `''` (one shared key; documented).
   3. `n = store.bumpAttempts(key, failed.observationId)` **first** (this failure counts); `store.setLastIntent(key, {program, args})`.
   4. Economic programs (`give`, `deposit`, `withdraw`, `trade`, `sell`, `buy`) are never varied or replayed: `escalate minimal 'no_option'` after step 3.
   5. `n >= failure_hard_cap` (4): `escalate minimal 'cap'`, no draw.
-  6. `dc = max(8, 14 - n)`. Insight check: `rolls` true: `roll('insight', cleverness, dc, draw('insight').rng, ctx.proficiency[domainOf(failed.program)])`, kind `d20`; `rolls` false: kind `deterministic`, success iff `exactChance(cleverness, dc, level).wins * 2 >= total`.
+  6. `dc = max(8, 14 - n)`. Insight check: `rolls` true: `roll('insight', cleverness, dc, draw('insight').rng, ctx.proficiency[domainOf(failed.program)])`, kind `d20`; `rolls` false: kind `deterministic`, success iff `exactChance(cleverness, dc, ctx.proficiency[domainOf(failed.program)]).wins * 2 >= total`.
   7. Success: `escalate high 'insight'`. Failure: `variationFor`; non-null gives `act`, null gives `escalate minimal 'no_option'`.
   8. `variationFor` (first that applies): `travel` (`target`): next known waypoint toward the target from `store.remembered('place')` strictly closer than the current distance, else a remembered agent at the target; `gather` (`block`, `count`): `count` halved (floor, at least 1) when `count > 1`, else `travel` to a remembered block of that kind; `craft` (`item`, `count`): craft a missing ingredient only when it is in `snapshot.unlockedRecipes`, else `count` 1 when `count > 1`; `build` (`blueprint`, `block`): another carried block, else blueprint `pillar`; `follow` (`target`): `travel` to the target's last remembered position; `rest`, `flee`: null. Argument names must match the Body's current verb list (HC-18 records the list in its worknote; mismatch is a ruling, not a guess).
   9. A variation never equals the failed intent (deep compare) and never changes `program` except `gather`'s `travel` and `follow`'s `travel` (named above).
@@ -357,7 +359,7 @@ W4 contains the only kit cards that can produce agent-visible text. Both are mar
 - **must-not-edit** R6; `packages/psyche/**`; `template/**`; any existing identity file.
 - **shared files edited** `packages/instinct/src/cli.ts`, `packages/instinct/src/index.ts` (barrel, index line to add), both launchers (one line).
 - **decisions** OD-A, D-CS-10. ADR `<allocate via registry>` (route and wording, written after approval).
-- **shape** `temperamentText(sheet: CharacterSheet): string` returns `temperamentFor(sheet)` (psyche: one sentence per attribute or axis that is not 3, fixed order) joined with single spaces, or `''` for a standard sheet. `geldar-instinct persona --sheet <file> --persona-dir <dir>` appends one paragraph to `<dir>/identity.md` **only** when `temperament-approval.json` says `approved: true` **and** its `bank_hash` equals the SHA-256 of canonical JSON of `TEMPERAMENT_BANK`; it refuses an existing `identity.md` that already contains the paragraph marker; it refuses if the combined text exceeds the identity cap (value from the kit, `to confirm`; refuse, never truncate, request a decision). No numeric score, alignment label (LG, TN and so on), the words `sheet`, `score`, `roll` or `d20` may appear in the output (scan test), nor any word in the kit's marked-word list.
+- **shape** `temperamentText(sheet: CharacterSheet): string` returns the temperament sentences for the sheet (one per attribute or axis that is not 3, fixed order) joined with single spaces, or `''` for a standard sheet. **Correction:** `@geldar/scriptorium-psyche` does not export `temperamentFor` or `TEMPERAMENT_BANK` (temperament is inactive), so the card cannot import either. The route OD-A names must say how the bank is reached (`to confirm`); until it does, this card stops `blocked` at that import and writes no generator against a missing export. `geldar-instinct persona --sheet <file> --persona-dir <dir>` appends one paragraph to `<dir>/identity.md` **only** when `temperament-approval.json` says `approved: true` **and** its `bank_hash` equals the SHA-256 of canonical JSON of the bank (`TEMPERAMENT_BANK`, by the route to confirm above); it refuses an existing `identity.md` that already contains the paragraph marker; it refuses if the combined text exceeds the identity cap (value from the kit, `to confirm`; refuse, never truncate, request a decision). No numeric score, alignment label (LG, TN and so on), the words `sheet`, `score`, `roll` or `d20` may appear in the output (scan test), nor any word in the kit's marked-word list.
 - **tests** standard sheet writes nothing; the maximal sheet fits the cap; every bank sentence passes the scans; unapproved writes nothing and exits non-zero with a fixed message; an approved file with a stale `bank_hash` refuses; existing identity is never overwritten; the output is the same for the same sheet (deterministic); the shipped `temperament-approval.json` has `approved:false`.
 - **checks** `GATE-K`; `./scriptorium.ps1 pnpm vitest run packages/instinct/src/persona`.
 - **revert-checks** (1) ship `approved: true`: "ships inactive" fails. (2) skip the hash check: "stale bank refuses" fails. (3) append when the marker exists: "never overwrites" fails. (4) include `alignmentLabel` output: the label scan fails.
