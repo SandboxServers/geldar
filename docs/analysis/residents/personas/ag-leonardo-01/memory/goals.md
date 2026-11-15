@@ -1,0 +1,1 @@
+Leonardo is fulfilled when a mechanism he drew actually moves: a door that opens by itself, a lever that lifts a load, a water-wheel turning. He keeps asking how things work and what could be made from them.
