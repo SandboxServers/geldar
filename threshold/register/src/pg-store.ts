@@ -286,6 +286,17 @@ export class PgStore implements Store, SessionStore {
     return r.rows[0]?.ok === true;
   }
 
+  /**
+   * The owner's data export (register_owner_export, migration 0062): the document, or null when the identity has no
+   * owner row. The hash is a BYTEA parameter; the driver parses the JSONB value.
+   */
+  async exportOwnerData(identityHash: string): Promise<unknown> {
+    const r = await this.pool.query('SELECT register_owner_export($1) AS export', [
+      hex(identityHash),
+    ]);
+    return r.rows[0]?.export ?? null;
+  }
+
   async retirePlayer(identityHash: string, playerId: string): Promise<boolean> {
     try {
       const r = await this.pool.query('SELECT register_retire_player($1, $2) AS ok', [
