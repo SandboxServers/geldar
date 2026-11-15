@@ -282,6 +282,34 @@ describe('GET /account/export (C7-09b)', () => {
     expect(body).toContain('"code":"internal"');
   });
 
+  it('the cap is in bytes: 4,000,000 two-byte characters (8,000,000 bytes) are sent; 4,000,001 are a 500 problem', async () => {
+    const base = await start(withRoutes(fakeRoutes(async () => 'é'.repeat(4_000_000))));
+    const ok = await fetch(`${base}${EXPORT}`, { headers: cookie });
+    expect(ok.status).toBe(200);
+    expect(Buffer.byteLength(await ok.text())).toBe(EXPORT_MAX_BYTES);
+    const over = await start(withRoutes(fakeRoutes(async () => 'é'.repeat(4_000_001))));
+    const r = await fetch(`${over}${EXPORT}`, { headers: cookie });
+    expect(r.status).toBe(500);
+    expect(r.headers.get('content-type')).toBe('application/problem+json');
+  });
+
+  it('a store call that never settles frees the gate at the timeout: the first is 503, the next export is served', async () => {
+    let hang = true;
+    const fake = vi.fn(async () => (hang ? new Promise<string>(() => undefined) : PAYLOAD));
+    let clock = NOW;
+    const base = await start(
+      withRoutes(accountExportMount({ exportOwnerData: fake }, () => clock, 20)),
+    );
+    const first = await fetch(`${base}${EXPORT}`, { headers: cookie });
+    expect(first.status).toBe(503);
+    expect(first.headers.get('retry-after')).toBe('5');
+    hang = false;
+    clock += 61_000;
+    const second = await fetch(`${base}${EXPORT}`, { headers: cookie });
+    expect(second.status).toBe(200);
+    expect(fake).toHaveBeenCalledTimes(2);
+  });
+
   it('the router refuses a Bearer owner key before the handler runs (cookieOnly), so the handler is not reached', async () => {
     const reached = vi.fn();
     const routes = accountExportRoutes({
@@ -335,9 +363,10 @@ describe('GET /account/export (C7-09b)', () => {
     expect(fake).toHaveBeenCalledTimes(1);
     release(PAYLOAD);
     expect((await alice).status).toBe(200);
-    clock += 61_000;
+    // no clock advance: the busy answer did not spend Bob's one-per-minute window, so his retry is served at once
     const afterSuccess = await fetch(`${base}${EXPORT}`, { headers: bobHeaders });
     expect(afterSuccess.status).toBe(200);
+    clock += 61_000;
     throwNext = true;
     clock += 61_000;
     const failed = await fetch(`${base}${EXPORT}`, { headers: cookie });

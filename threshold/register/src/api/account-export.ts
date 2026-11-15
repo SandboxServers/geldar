@@ -16,6 +16,14 @@ export class ExportBusyError extends Error {
   }
 }
 
+/** Thrown by the export wiring when a store call does not settle in time: the route answers 503 (and frees the gate). */
+export class ExportTimeoutError extends Error {
+  constructor() {
+    super('an owner export did not finish in time');
+    this.name = 'ExportTimeoutError';
+  }
+}
+
 /**
  * The deps of the owner data export (C7-09b). The store's exportOwnerData is register_owner_export as text: the
  * document of the identity's owner, or null when the identity has no owner row. It is passed through as it is, with no
@@ -70,7 +78,7 @@ export function accountExportRoutes(deps: AccountExportDeps): readonly ApiRoute[
         try {
           payload = await deps.exportOwnerData(identityHash);
         } catch (err) {
-          if (err instanceof ExportBusyError) {
+          if (err instanceof ExportBusyError || err instanceof ExportTimeoutError) {
             return sendProblem(ctx.res, 'unavailable', { 'retry-after': '5' });
           }
           throw err;
