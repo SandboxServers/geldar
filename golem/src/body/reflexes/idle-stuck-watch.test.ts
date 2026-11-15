@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BodyView } from '../view.ts';
-import { IDLE_TICKS, idleStuckReflex } from './idle-stuck.ts';
+import { IDLE_TICKS, IDLE_TICKS_ON_OWN, idleStuckReflex } from './idle-stuck.ts';
 import { settableView } from './reflexes.fakes.ts';
 
 /** A still Body on open ground it can step off: no trigger fires, so only the watch line can speak. */
@@ -66,6 +66,8 @@ describe('idle_stuck operator watch line (decision 0332)', () => {
         enclosed: true,
         canStepOff: false,
         onOwnPlacement: true,
+        noSafeExit: null,
+        high_ledge: { still: false, notEnclosed: false, noSafeExit: false, notInWater: true },
       },
     ]);
     idleStuckReflex.check(at(view, IDLE_TICKS + IDLE_TICKS - 1));
@@ -73,6 +75,22 @@ describe('idle_stuck operator watch line (decision 0332)', () => {
     idleStuckReflex.check(at(view, IDLE_TICKS * 2));
     expect(watchLines(log)).toHaveLength(2);
     expect(watchLines(log)[1]?.idle_seconds).toBe(120);
+  });
+
+  it('logs noSafeExit and the high_ledge conditions; still turns true only at the 120 s clock', () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const view = still({ noSafeExit: true });
+    idleStuckReflex.check(view);
+    idleStuckReflex.check(at(view, IDLE_TICKS));
+    expect(watchLines(log)[0]).toMatchObject({
+      noSafeExit: true,
+      high_ledge: { still: false, notEnclosed: true, noSafeExit: true, notInWater: true },
+    });
+    idleStuckReflex.check(at(view, IDLE_TICKS_ON_OWN));
+    expect(watchLines(log)[1]).toMatchObject({
+      noSafeExit: true,
+      high_ledge: { still: true, notEnclosed: true, noSafeExit: true, notInWater: true },
+    });
   });
 
   it('writes nothing while a Mind action runs or the Body moves, and restarts the minute on a move', () => {
