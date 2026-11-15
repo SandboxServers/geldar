@@ -187,8 +187,11 @@ const DETAIL_REASONS: readonly string[] = [
   'not_possible',
 ];
 
-/** The verbs whose successful outcome may carry a plain fact (decisions 0215, 0216). Extend here. */
-export const PLAIN_FACT_VERBS: readonly string[] = ['eat', 'sleep'];
+/**
+ * The verbs whose successful outcome may carry a plain fact (decisions 0215, 0216): eat, sleep, till and
+ * place. Any other verb's success drops its detail. Extend here.
+ */
+export const PLAIN_FACT_VERBS: readonly string[] = ['eat', 'sleep', 'till', 'place'];
 
 /** The cleaned plain fact of a successful outcome, or undefined for a verb outside `PLAIN_FACT_VERBS`. */
 function plainFactText(verb: string, raw: unknown): string | undefined {

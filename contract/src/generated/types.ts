@@ -33,7 +33,7 @@ export interface ActionOutcomePayload {
    */
   message: string;
   /**
-   * On success, a few verbs send a plain fact: eat sends '<item>: hunger <before> to <after>' (read as 'You ate <item>: hunger <before> to <after>.'); sleep sends the sleepers count. On failure it names what blocked the action.
+   * On success, a few verbs send a plain fact: eat sends '<item>: hunger <before> to <after>' (read as 'You ate <item>: hunger <before> to <after>.'); sleep sends the sleepers count; till and place send their plain fact when the Body has one. On failure it names what blocked the action.
    */
   detail_text?: string;
   /**
