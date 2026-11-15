@@ -55,6 +55,7 @@ function player(playerId: string, status: PlayerRecord['status'] = 'active'): Pl
     displayName: playerId.toUpperCase(),
     harness: 'test',
     status,
+    declaredModel: null,
   };
 }
 

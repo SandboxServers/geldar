@@ -13,6 +13,8 @@ export const GOALS_MAX_BYTES = 4096;
 const PLAYER_ID = /^ag-[a-z0-9]+(-[a-z0-9]+)*$/;
 const LIFE_ID = /^ag_[a-z0-9]+(_[a-z0-9]+)*$/;
 const HARNESS = /^[a-z][a-z0-9-]{0,31}$/;
+/** The contract's event.schema.json `model` pattern: the declared model of a life. */
+const MODEL = /^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$/;
 
 /** The part of shards/phase0.yaml that sovereign players read. */
 export interface SovereignShard {
@@ -42,6 +44,8 @@ export interface NewPlayer {
   seed?: Seed;
   /** Keeps a persona the lint refuses (`--allow-meta`). */
   allowMeta?: boolean;
+  /** The declared model (`--model`); the placeholder `self-reported` when absent. */
+  model?: string;
 }
 
 export type PlayerAction = 'pause' | 'resume' | 'retire';
@@ -152,6 +156,7 @@ export async function addPlayer(sql: Sql, player: NewPlayer, shard: SovereignSha
     throw new Error(`harness ${player.harness} is not enabled on shard ${shard.shard}`);
   }
   if (player.seed !== undefined) checkSeed(player.seed, player.allowMeta === true);
+  if (player.model !== undefined) checkModel(player.model);
   await transaction(sql, async () => {
     const owners = await sql.query(
       'SELECT player_cap FROM mcp_owners WHERE owner_id = $1 FOR UPDATE',
@@ -171,7 +176,7 @@ export async function addPlayer(sql: Sql, player: NewPlayer, shard: SovereignSha
     await sql.query(
       `INSERT INTO agents (agent_id, name, life_seq, game_account, shard, mode, owner, harness,
          declared_model, model_config, tier, personality_seed)
-       VALUES ($1, $2, 1, $1, $3, 'sovereign', $4, $5, 'self-reported', 'declared:unverified', 'sovereign', $6)`,
+       VALUES ($1, $2, 1, $1, $3, 'sovereign', $4, $5, $7, 'declared:unverified', 'sovereign', $6)`,
       [
         player.life,
         player.name,
@@ -179,6 +184,7 @@ export async function addPlayer(sql: Sql, player: NewPlayer, shard: SovereignSha
         player.owner,
         player.harness,
         player.seed ? seedText(player.seed) : null,
+        player.model ?? 'self-reported',
       ],
     );
     await sql.query(
@@ -218,6 +224,33 @@ export async function setPlayerStatus(
     }
   });
   return life;
+}
+
+/** Refuses a declared model the contract pattern does not take. */
+function checkModel(model: string): void {
+  if (!MODEL.test(model)) {
+    throw new Error(
+      'model must be 1 to 128 letters, digits or . _ : @ / + - (start with a letter or digit)',
+    );
+  }
+}
+
+/**
+ * Sets the declared model of a live player's life (agents.declared_model). One row; a retired or
+ * unknown player is refused and nothing is written.
+ */
+export async function setPlayerModel(sql: Sql, playerId: string, model: string): Promise<string> {
+  if (!PLAYER_ID.test(playerId)) throw new Error('player id must look like ag-name-01');
+  checkModel(model);
+  const result = await sql.query(
+    `UPDATE agents SET declared_model = $2 FROM mcp_players
+     WHERE mcp_players.life_id = agents.agent_id AND mcp_players.player_id = $1
+       AND mcp_players.status <> 'retired'
+     RETURNING agents.agent_id`,
+    [playerId, model],
+  );
+  if (result.rows.length !== 1) throw new Error(`no live player ${playerId} to set the model of`);
+  return String((result.rows[0] as { agent_id: unknown }).agent_id);
 }
 
 /** Runs `work` between BEGIN and COMMIT, and rolls back if it throws. */

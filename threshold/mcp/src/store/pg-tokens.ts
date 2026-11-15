@@ -80,6 +80,7 @@ export function activeToken(
       displayName: row.display_name,
       harness: row.harness,
       status: 'active',
+      declaredModel: null,
     },
   };
 }

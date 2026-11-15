@@ -12,6 +12,7 @@ const PLAYER: PlayerRecord = {
   displayName: 'Jason',
   harness: 'claude-code',
   status: 'active',
+  declaredModel: null,
 };
 
 const flush = (): Promise<void> => new Promise((resolve) => setImmediate(resolve));

@@ -12,7 +12,7 @@ host_admin() {
 }
 
 host_name() {
-  echo "geldar-colo-players-host-$1"
+  echo "${PROJECT:-${GELDAR_PROJECT:-geldar-colo}}-players-host-$1"
 }
 
 # The image reference a running player host was started with (empty when the container is gone).

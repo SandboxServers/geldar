@@ -26,6 +26,7 @@ const PLAYER: PlayerRecord = {
   displayName: 'Jason',
   harness: 'claude-code',
   status: 'active',
+  declaredModel: null,
 };
 const OTHER: PlayerRecord = { ...PLAYER, playerId: 'ag-other-01', lifeId: 'ag_other_01' };
 const UNAVAILABLE = [
