@@ -9,6 +9,7 @@ import { canSeePoint } from '../perception/notable-blocks.ts';
 import { worldAge } from '../world-clock.ts';
 import { ownAir } from './air.ts';
 import { lightAtHead } from './light.ts';
+import { FALL_STOP_DROP } from './reflexes/fall-stop.ts';
 import { type SafeSpot, trackSafeSpot } from './safe-spot.ts';
 
 /** A hostile mob near the Body. */
@@ -164,6 +165,7 @@ export function canStepOff(
  * True when `planMoves` finds no move from `feet` (a dead end, decision 0333), false when one exists,
  * and null when the planner reads a cell the view does not have or health is unknown: an unread cell
  * is never a dead end, so the answer is only known when every cell it looked at was loaded.
+ * The drop cap is `FALL_STOP_DROP`: a drop deeper than that is stopped by fall_stop, so it is no exit.
  */
 export function noSafeExit(
   blockAt: (at: Vec3) => Block | null | undefined,
@@ -177,7 +179,7 @@ export function noSafeExit(
     if (!block) unknown = true;
     return block ?? null;
   };
-  const moves = planMoves(read, feet, health);
+  const moves = planMoves(read, feet, health, FALL_STOP_DROP);
   if (unknown) return null;
   return moves.length === 0;
 }

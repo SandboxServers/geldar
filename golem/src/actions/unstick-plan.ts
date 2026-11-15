@@ -84,8 +84,8 @@ export function scanDrop(blockAt: BlockAt, start: Vec3): Drop {
  * A fall that does damage needs `MIN_HEALTH_TO_DROP` and must leave `HEALTH_MARGIN`. Never into lava, a
  * void or an unloaded column, never deeper than `MAX_DROP`.
  */
-export function dropAllowed(health: number, drop: Drop): boolean {
-  if (drop.lands === 'unsafe' || drop.blocks > MAX_DROP) return false;
+export function dropAllowed(health: number, drop: Drop, maxDrop = MAX_DROP): boolean {
+  if (drop.lands === 'unsafe' || drop.blocks > maxDrop) return false;
   if (drop.lands === 'water') return true;
   if (drop.lands === 'solid' && fallDamage(drop.blocks) === 0) return true;
   if (health < MIN_HEALTH_TO_DROP) return false;
@@ -105,8 +105,15 @@ export const empty = (block: Block | null): boolean =>
 /**
  * The moves from `feet` that a bot may try: a level walk, a one-block step up (jump), or a walk off a
  * ledge that `dropAllowed` accepts. Level moves come first, then steps, then drops shallowest first.
+ * `maxDrop` caps the drop (default `MAX_DROP`); a caller whose fall is stopped at a shallower edge
+ * passes that depth, so the planner never offers a walk-off the Body will be stopped from (decision 0333).
  */
-export function planMoves(blockAt: BlockAt, feet: Vec3, health: number): Move[] {
+export function planMoves(
+  blockAt: BlockAt,
+  feet: Vec3,
+  health: number,
+  maxDrop = MAX_DROP,
+): Move[] {
   const moves: Move[] = [];
   const up = new Vec3(0, 1, 0);
   for (const dir of EIGHT) {
@@ -114,7 +121,8 @@ export function planMoves(blockAt: BlockAt, feet: Vec3, health: number): Move[] 
     if (empty(blockAt(at)) && empty(blockAt(at.plus(up)))) {
       const drop = scanDrop(blockAt, at.minus(up));
       if (drop.blocks === 0 && drop.lands === 'solid') moves.push({ dir, jump: false, drop: 0 });
-      else if (dropAllowed(health, drop)) moves.push({ dir, jump: false, drop: drop.blocks });
+      else if (dropAllowed(health, drop, maxDrop))
+        moves.push({ dir, jump: false, drop: drop.blocks });
     } else if (
       empty(blockAt(at.plus(up))) &&
       empty(blockAt(at.plus(up).plus(up))) &&

@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest';
 import { completed, failed } from '../../actions/outcome.ts';
 import { ActionRegistry } from '../../actions/registry.ts';
 import { fakeBot } from '../body.fakes.ts';
+import { FEET, ledge } from '../ledge.fakes.ts';
 import type { ReflexContext, Trigger } from '../reflex.ts';
-import type { BodyView } from '../view.ts';
+import { type BodyView, noSafeExit } from '../view.ts';
 import { IDLE_TICKS, IDLE_TICKS_ON_OWN, idleStuckReflex } from './idle-stuck.ts';
 import { settableView } from './reflexes.fakes.ts';
 
@@ -68,6 +69,17 @@ describe('idle_stuck high_ledge trigger (decision 0333)', () => {
     const view = highLedge();
     expect(idleStuckReflex.check(view)).toBeNull();
     expect(idleStuckReflex.check(at(view, IDLE_TICKS))).toBeNull();
+    expect(idleStuckReflex.check(at(view, IDLE_TICKS_ON_OWN - 1))).toBeNull();
+    expect(idleStuckReflex.check(at(view, IDLE_TICKS_ON_OWN))).toEqual({
+      reason: 'high_ledge',
+      idle_seconds: 120,
+    });
+  });
+
+  it('fires on a real 6 block ledge at health 18.5, with noSafeExit read from the terrain (not stubbed)', () => {
+    const view = highLedge({ noSafeExit: noSafeExit(ledge(6), FEET, 18.5) });
+    expect(view.noSafeExit).toBe(true);
+    expect(idleStuckReflex.check(view)).toBeNull();
     expect(idleStuckReflex.check(at(view, IDLE_TICKS_ON_OWN - 1))).toBeNull();
     expect(idleStuckReflex.check(at(view, IDLE_TICKS_ON_OWN))).toEqual({
       reason: 'high_ledge',

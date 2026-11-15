@@ -19,6 +19,8 @@ Two rulings from the owner, relayed by geldar-93:
 3. The `high_ledge` run is freed only when `noSafeExit` is false as well as `canStepOff` true, so a run that dug one block lower from a deep drop is not called free.
 4. The hourly cap for a `high_ledge` run is 12 (`HIGH_LEDGE_RUNS_PER_HOUR`). The refusal line says `capped at N runs an hour (cap reached)`. Other reasons keep 6.
 
+The drop cap for `noSafeExit` and for the unstick walk-off planner is now `FALL_STOP_DROP` (4 blocks), the limit the fall_stop reflex enforces. Before this change the planner offered a 5 or 6 block drop at a health of 12 or more, so `noSafeExit` read false on a ledge whose only exit fall_stop cancels at its edge, and the high_ledge trigger never fired there. With the same cap in the planner, the check and fall_stop agree. The planner's default cap (`MAX_DROP`, 6) stays for the dig_descend walk planner, whose walk is filtered by its own walkable-drop limit.
+
 ## The `dig_descend` rung (implemented)
 
 - The rung is the last unstick rung. It runs only after every other rung failed, for a `high_ledge` run or a Body with no safe move. Each step digs the block under the feet (with the 0164 ownership check) and the Body falls through the dug cell.
