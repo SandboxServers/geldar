@@ -12,9 +12,13 @@ describe('checkScratch', () => {
     expect(checkScratch('phase0', 'scratch-phase0').ok).toBe(false);
   });
 
-  it('refuses the live names even when they are otherwise well formed', () => {
+  it('accepts a scratch- name that spells a live word, because the prefix is the guard', () => {
     expect(checkScratch('scratch-geldar', 'scratch-geldar').ok).toBe(true);
+  });
+
+  it('refuses a bare live name, which has no scratch- prefix', () => {
     expect(checkScratch('geldar', 'geldar').ok).toBe(false);
+    expect(checkScratch('geldar-colo', 'geldar-colo').ok).toBe(false);
   });
 
   it('refuses an empty or unsafe name', () => {

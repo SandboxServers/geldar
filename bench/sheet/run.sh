@@ -6,7 +6,13 @@
 #   SHEET_SHARD=scratch-sheet0 SHEET_LIFE=<scratch life name> sh bench/sheet/run.sh guard
 #   SHEET_SHARD=scratch-sheet0 SHEET_PROJECT=scratch-sheet0 sh bench/sheet/run.sh up|down
 #   SHEET_SHARD=scratch-sheet0 SHEET_LIFE=<life> SHEET_PG_URL=<url without password> sh bench/sheet/run.sh evidence
+#   SHEET_SHARD=scratch-sheet0 SHEET_LIFE=<life> sh bench/sheet/run.sh mine-once [block] [count]
+#   SHEET_SHARD=scratch-sheet0 SHEET_LIFE=<life> sh bench/sheet/run.sh rcon-roll
 #   SHEET_SHARD=scratch-sheet0 sh bench/sheet/run.sh leak <capture file> [sheet numbers, e.g. 3,3]
+#
+# mine-once sends one scripted plan (one mine action, no model) over NATS and prints the ids and the Body's reply.
+# It needs SHEET_NATS_URL (default nats://127.0.0.1:14223). rcon-roll prints an UNVERIFIED operator checklist for
+# the one roll; it runs no RCON command itself.
 #
 # evidence needs PGPASSWORD (or a .pgpass the operator keeps outside the repo). It runs psql read-only
 # (default_transaction_read_only=on) and prints the rows the pipeline wrote for SHEET_LIFE.
@@ -68,8 +74,32 @@ SQL
     [ "$#" -ge 2 ] || { echo "usage: run.sh leak <capture file> [sheet numbers]" >&2; exit 2; }
     "$SHEET_NODE" --experimental-strip-types "$CLI" leak "$2" "${3:-3}"
     ;;
+  mine-once)
+    guard
+    case "$SHEET_LIFE" in
+      ''|*[!a-z0-9_]*) echo "refusing: SHEET_LIFE must be a life id such as ag_<name>_<nn>" >&2; exit 1 ;;
+    esac
+    SHEET_SHARD="$SHEET_SHARD" SHEET_PROJECT="$SHEET_PROJECT" \
+      "$SHEET_NODE" --experimental-strip-types "$ROOT/golem/src/bench/sheet/life-cli.ts" \
+      mine-once "$SHEET_LIFE" "${2:-stone}" "${3:-1}"
+    ;;
+  rcon-roll)
+    guard
+    # OPTIONAL OPERATOR STEP. Nothing here runs RCON. The command shapes are candidates, not verified against the
+    # scratch server's version. The operator runs each one with their own RCON client, reads the reply, and keeps
+    # the password out of the repo.
+    cat <<EOF
+UNVERIFIED operator checklist for the one roll (life: ${SHEET_LIFE:-<SHEET_LIFE>}, in-game name: <player name>)
+  1. Summon one armed hostile next to the life (not a creeper). Candidate: summon minecraft:zombie <x> <y> <z>
+  2. Give the life a weapon. Candidate: give <player name> minecraft:iron_sword 1
+  3. Hurt the life to 7-10 of 20 health, so the band is reached. Candidate: damage <player name> 12
+     (vanilla /damage; check it exists on this server version first; the trigger is unverified)
+  4. Wait for the reflex to fire, then read the roll: sh bench/sheet/run.sh evidence
+     Expect a rolls row with fx threat and dc 11. If there is none, the trigger did not fire: report it.
+EOF
+    ;;
   *)
-    echo "usage: sh bench/sheet/run.sh guard|up|down|evidence|leak <capture file> [numbers]" >&2
+    echo "usage: sh bench/sheet/run.sh guard|up|down|evidence|mine-once [block] [count]|rcon-roll|leak <capture file> [numbers]" >&2
     exit 2
     ;;
 esac
