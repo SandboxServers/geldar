@@ -21,20 +21,57 @@ const REFLEX_TRIGGERS: Readonly<Record<string, string>> = {
 /** The reflex names that have a line; a test checks it covers every reflex the Body can fire. */
 export const REFLEX_LINE_NAMES: readonly string[] = Object.keys(REFLEX_TRIGGERS);
 
+/** A hostile kind is world text: printed only as a plain lowercase name. */
+const HOSTILE_KIND = /^[a-z][a-z0-9_]{0,31}$/;
+
+/**
+ * The cause phrase from the Body's trigger, or null to keep the fixed phrase. A night burrow set off by
+ * damage says so; a hostile names its kind and whole-block distance, and only when both are safe to print.
+ */
+function causePhrase(
+  name: string | undefined,
+  trigger: Record<string, unknown> | undefined,
+): string | null {
+  if (name !== 'panic_burrow' && name !== 'dark_shelter') return null;
+  if (trigger?.cause === 'damage' && name === 'panic_burrow') {
+    return 'you took damage at night with no bed near, so you dug in';
+  }
+  const kind = trigger?.hostile;
+  const distance = trigger?.distance;
+  if (
+    trigger?.cause === 'hostile' &&
+    typeof kind === 'string' &&
+    HOSTILE_KIND.test(kind) &&
+    typeof distance === 'number' &&
+    Number.isInteger(distance) &&
+    distance >= 0
+  ) {
+    return `a ${kind} was ${distance} blocks away, so you dug in`;
+  }
+  return null;
+}
+
 /**
  * The fixed reflex line: the reflex's name, what set it off and, when it did not finish, that.
  * Only names in the table are printed; any other name reads as an unnamed reflex, never as world text.
+ * A trigger that says the cause replaces the fixed phrase for that reflex when its cause is safe to print.
  */
-export function reflexText(name: string | undefined, result: string | undefined): string {
+export function reflexText(
+  name: string | undefined,
+  result: string | undefined,
+  trigger?: Record<string, unknown>,
+): string {
   const known = name !== undefined && Object.hasOwn(REFLEX_TRIGGERS, name);
-  const trigger = known ? REFLEX_TRIGGERS[name] : 'you acted on your own';
+  const phrase = known
+    ? (causePhrase(name, trigger) ?? REFLEX_TRIGGERS[name])
+    : 'you acted on your own';
   const tail = result === 'handled' ? '' : ' It did not finish.';
-  return `Reflex ${known ? name : 'unknown'}: ${trigger}.${tail}`;
+  return `Reflex ${known ? name : 'unknown'}: ${phrase}.${tail}`;
 }
 
 /** A firing identical to the run before it, within the window, folds into that run's line with a count. */
 export const reflexPresenter = definePresentHandler('reflex', (e, base, call) => {
-  const text = reflexText(e.name, e.result);
+  const text = reflexText(e.name, e.result, e.trigger);
   const last = call.lastReflex;
   if (last && last.text === text && e.atMs - last.atMs <= REFLEX_REPEAT_MS) {
     last.count += 1;
