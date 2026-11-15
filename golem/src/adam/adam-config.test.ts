@@ -63,8 +63,8 @@ describe('shards/colo-mind.yaml, the file the colo Body reads', () => {
     expect(colo().use).toBe(true);
   });
 
-  it('turns the swim flag on: body_actions.swim is true', () => {
-    expect(colo().swim).toBe(true);
+  it('keeps the swim flag off: body_actions.swim is false (decision 0194)', () => {
+    expect(colo().swim).toBe(false);
   });
 
   it('keeps edit_sign off', () => {
