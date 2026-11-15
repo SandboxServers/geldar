@@ -35,6 +35,18 @@ A 64x32 legacy skin stays 64x32; do not resize it. Whether MineSkin accepts the 
 
 Decision [0140](../decisions/0140-agent-skins.md) approved MineSkin uploads for the six ranger skins only. Any further upload needs the owner's explicit approval, recorded before the upload runs.
 
+## Sign a skin: visibility and the JSON export
+
+`skin set` sends MineSkin's `visibility` field on every upload. The default is `unlisted`, because the owner approves unlisted uploads only (decision [0250](../decisions/0250-skin-upload-visibility-and-export.md)).
+
+- `--visibility unlisted|public`: `unlisted` is the default. `public` also needs `--confirm-public` in the same command. Any other value is refused before the key file is read and before anything is sent.
+- `--export-json <path>`: after a successful upload, writes the signed record in the `ranger-skins.json` format (`{"<player-id>": {"mineskin_uuid", "value", "signature", "model"}}`) to a new file. The path must be outside the repo and must not exist. The file is created with mode 0600 where the platform supports it. The command prints only the path and the byte count, never the value or the signature.
+- `--no-store`: skips the `geldar-skins` bucket write, so no NATS connection is needed. It requires `--export-json`.
+
+To put a skin on the node without uploading again: sign once on a machine with the key, with `--no-store --export-json <path outside the repo>`, then copy the file to the node's skins directory (see "Put the skins on the node") and run `skin-import` with that file. The export holds one player, so `--file` names the exported file. Delete the copy on your machine and on the node when the import has run.
+
+The MineSkin field and value were not checked against a live upload when this section was written. The reply's `skin.visibility` should read `unlisted` on the first upload.
+
 ## Verify a skin was applied
 
 The plugin keeps the `geldar-skins` bucket in memory through a live watch, so a key written while Velocity runs is used by the next login (no restart). Every login of a registered life writes one `skin:` line, with no texture value or signature:

@@ -42,10 +42,30 @@ describe('uploadSkin', () => {
   it('returns the signed texture from a well-formed reply, with the key only in the request header', async () => {
     const { fetchFn, calls } = fakeFetch(200, reply(textureValue(GOOD_URL)));
     const texture = await uploadSkin({ png: PNG, model: 'slim', apiKey: KEY, fetchFn });
-    expect(texture).toEqual({ value: textureValue(GOOD_URL), signature: SIGNATURE, model: 'slim' });
+    expect(texture).toEqual({
+      value: textureValue(GOOD_URL),
+      signature: SIGNATURE,
+      model: 'slim',
+      mineskinUuid: '9c7b6f5f285c4c5b9b1ca4be73fa857b',
+    });
     expect(calls).toHaveLength(1);
     expect(JSON.stringify(calls[0]?.init.headers)).toContain(KEY);
     expect(calls[0]?.url).toBe('https://api.mineskin.org/v2/generate');
+  });
+
+  it('sends visibility=unlisted in the multipart body by default', async () => {
+    const { fetchFn, calls } = fakeFetch(200, reply(textureValue(GOOD_URL)));
+    await uploadSkin({ png: PNG, model: 'classic', apiKey: KEY, fetchFn });
+    const body = calls[0]?.init.body as FormData;
+    expect(body.get('visibility')).toBe('unlisted');
+    expect(body.get('variant')).toBe('classic');
+  });
+
+  it('sends visibility=public only when the caller passes it', async () => {
+    const { fetchFn, calls } = fakeFetch(200, reply(textureValue(GOOD_URL)));
+    await uploadSkin({ png: PNG, model: 'classic', apiKey: KEY, fetchFn, visibility: 'public' });
+    const body = calls[0]?.init.body as FormData;
+    expect(body.get('visibility')).toBe('public');
   });
 
   it('refuses a texture hosted anywhere but the Mojang texture domain', async () => {
