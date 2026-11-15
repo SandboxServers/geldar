@@ -298,6 +298,9 @@ async function tossTo(
   const { bot } = ctx;
   const first = findVisibleAgent(bot, action.to);
   if (!first) return notInSight(bot, action.to);
+  // Resolved once: the walk and the checks after it follow this username, so a second agent that
+  // later matches the same loose name cannot change who the give is for.
+  const pinned = first.username;
 
   const info = bot.registry.itemsByName?.[action.item];
   const held = bot.inventory
@@ -317,15 +320,15 @@ async function tossTo(
   }
   if (ctx.signal.aborted) return cancelled();
 
-  // The agent may have moved or turned out of sight while walking: resolve again, from scratch.
-  let target = findVisibleAgent(bot, action.to);
+  // The agent may have moved or turned out of sight while walking: resolve the pinned username again.
+  let target = findVisibleAgent(bot, pinned);
   if (!target) return notInSight(bot, action.to);
   if (target.distance > GIVE_REACH) return failed('out_of_reach', 'too far from the agent');
 
   if (target.distance < STEP_BACK_BELOW) {
     const stuck = await stepBackFrom(ctx, bot, target.position);
     if (ctx.signal.aborted) return cancelled();
-    target = findVisibleAgent(bot, action.to);
+    target = findVisibleAgent(bot, pinned);
     if (!target) return notInSight(bot, action.to);
     if (target.distance > GIVE_REACH) return failed('out_of_reach', 'too far from the agent');
     // A toss closer than TOSS_MIN_GAP lands in the Body's own pickup box, so it is not thrown.

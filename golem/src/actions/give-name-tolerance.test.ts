@@ -1,8 +1,16 @@
 import { Vec3 } from 'vec3';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { REGISTRY_PLAYER_NAME } from '../perception/perception.fakes.ts';
 import { NOT_IN_SIGHT } from './give.ts';
 import { setup } from './give-test-fixture.ts';
+import { moveNear } from './pathing.ts';
+
+vi.mock('./pathing.ts', () => ({ moveNear: vi.fn() }));
+const walk = vi.mocked(moveNear);
+
+beforeEach(() => {
+  walk.mockReset();
+});
 
 /** Walls the Body's view of (x, 64, 2) with stone at z=1, x -1..1, two blocks high. */
 function wall(world: ReturnType<typeof setup>['world']): void {
@@ -109,6 +117,33 @@ describe('give: a recipient named loosely (decision 0334)', () => {
     };
     world.setPlayer('ag_kit_02', 'Kit');
     expect(await run('Kit')).not.toMatchObject({ message: NOT_IN_SIGHT });
+    expect(toss).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the agent resolved at the start when a second agent with the same name comes into sight on the walk', async () => {
+    const { world, run, toss } = setup(5, { by: 'ag_mara_01' });
+    world.entities[2] = {
+      type: 'player',
+      ...REGISTRY_PLAYER_NAME,
+      username: 'ag_mara_01',
+      position: new Vec3(4.5, 64, 2.5),
+    };
+    world.setPlayer('ag_mara_01', 'Mara');
+    // The walk brings the Body within reach, and a second Mara comes into sight beside the first.
+    walk.mockImplementation(async () => {
+      world.me.position = new Vec3(2.5, 64, 2.5);
+      world.entities[3] = {
+        type: 'player',
+        ...REGISTRY_PLAYER_NAME,
+        username: 'ag_mara_02',
+        position: new Vec3(0.5, 64, 2.5),
+      };
+      world.setPlayer('ag_mara_02', 'Mara');
+      return { ok: true, distance: 2 } as never;
+    });
+    const out = await run('mara');
+    expect(walk).toHaveBeenCalledOnce();
+    expect(out).toMatchObject({ status: 'completed', detail: { to: 'mara' } });
     expect(toss).toHaveBeenCalledTimes(1);
   });
 });

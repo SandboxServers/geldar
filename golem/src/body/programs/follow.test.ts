@@ -51,6 +51,28 @@ describe('follow', () => {
     expect(absent).toBe(walled);
   });
 
+  it('keeps the agent it started on when a second agent with the same name comes into sight', async () => {
+    const { sight, ctx, log } = setup();
+    sight.entities[2] = {
+      type: 'player',
+      username: 'ag_pike_01',
+      position: new Vec3(0.5, 64, 6.5),
+    };
+    sight.setPlayer('ag_pike_01', 'Pike');
+    const program = new FollowProgram();
+    await program.start({ target: 'pike_01' }, ctx);
+    expect(program.checkpoint()).toMatchObject({ target: 'ag_pike_01' });
+    // A second agent, nearer and also called pike_01 in the tab list, comes into sight mid-follow.
+    sight.entities[3] = {
+      type: 'player',
+      username: 'ag_pike_02',
+      position: new Vec3(0.5, 64, -3.5),
+    };
+    sight.setPlayer('ag_pike_02', 'pike_01');
+    await program.step(ctx);
+    expect(log).toEqual(['goto:{"x":0,"y":64,"z":6}']);
+  });
+
   it('walks to a far target, waits when near, and fails after the unseen limit', async () => {
     const { sight, ctx, log, wall } = setup();
     sight.entities[2] = pike(10.5);

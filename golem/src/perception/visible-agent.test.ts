@@ -97,6 +97,31 @@ describe('findVisibleAgent: loose names among the visible players (decision 0334
     expect(findVisibleAgent(bot(world), 'Kit')?.username).toBe('ag_kit_01');
   });
 
+  it('never resolves player or unknown in any case, even as one visible agent handle or display name', () => {
+    const handle = new FakeWorld();
+    handle.entities[2] = {
+      type: 'player',
+      username: 'ag_player',
+      position: new Vec3(0.5, 64, 2.5),
+    };
+    for (const name of ['player', 'Player', 'PLAYER']) {
+      expect(findVisibleAgent(bot(handle), name)).toBeNull();
+    }
+    const shown = new FakeWorld();
+    shown.entities[2] = {
+      type: 'player',
+      ...REGISTRY_PLAYER_NAME,
+      username: 'ag_scout_01',
+      position: new Vec3(0.5, 64, 2.5),
+    };
+    shown.setPlayer('ag_scout_01', 'Unknown');
+    for (const name of ['unknown', 'Unknown', 'UNKNOWN']) {
+      expect(findVisibleAgent(bot(shown), name)).toBeNull();
+    }
+    // The same one visible agent resolves by a name that is not generic, so the nulls are the guard's.
+    expect(findVisibleAgent(bot(shown), 'scout_01')?.username).toBe('ag_scout_01');
+  });
+
   it('fails when two visible players match, by handle or display name', () => {
     const world = new FakeWorld();
     world.entities[2] = {

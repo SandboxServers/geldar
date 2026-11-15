@@ -22,6 +22,8 @@ The rule applies to every verb that resolves a target with `findVisibleAgent`: `
 - A give to a loosely named recipient that is visible and unique now completes; the pickup watch counts that recipient by the resolved username.
 - The operator diag line (`not_in_sight`, written by the Body, never shown to the agent) names which check failed for a refusal, so the owner can tell a misspelt name from an out-of-sight one.
 - The Mind's prompt is not changed by this decision.
+- Today no Java plugin sets tab-list display names (nothing in the repo calls `setPlayerListName` or sets a display name), so in production the tab-list name equals the username and the loose rule effectively matches only the handle without the `ag_` prefix, compared case-insensitively. The display-name half applies only when the server provides a display name; the tests cover that path only with a fake tab list.
+- A loose name is resolved once per action. `give` pins the resolved username for its walk and checks, and `follow` stores the resolved username at `start`, so a second visible player with the same loose name does not change the target mid-action.
 
 ## Rollback
 
