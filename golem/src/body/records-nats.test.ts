@@ -157,6 +157,17 @@ describe('NatsRecordSink', () => {
     expect(sent[1]?.event.payload).not.toHaveProperty('goal');
   });
 
+  it('puts the program on a completed event, and on no event whose change has none (AN-09c)', async () => {
+    const { publisher, sent } = fakePublisher();
+    const { sink } = sinkWith(publisher);
+    const base = { intentId: INTENT, lifeId: LIFE, bodyGeneration: 1, tick: 48_100 };
+    sink.intentChanged({ ...base, state: 'completed', program: 'build', detail: 'Built X' });
+    sink.intentChanged({ ...base, state: 'interrupted', detail: 'body_restarted' });
+    await sink.flush();
+    expect(sent[0]?.event.payload).toMatchObject({ state: 'completed', program: 'build' });
+    expect(sent[1]?.event.payload).not.toHaveProperty('program');
+  });
+
   it('gives the same record the same source_event_id and a new state a new one', async () => {
     const { publisher, sent } = fakePublisher();
     const { sink } = sinkWith(publisher);

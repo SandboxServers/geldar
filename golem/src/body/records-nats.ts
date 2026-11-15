@@ -142,6 +142,8 @@ export class NatsRecordSink implements RecordSink {
 
   intentChanged(change: IntentChange): void {
     const intent = change.intent;
+    // The accepted change carries the whole intent, so its program is the same as `change.program`.
+    const program = change.program ?? intent?.program;
     this.emit(
       'intent',
       `intent:${change.intentId}:${change.state}:${change.tick}`,
@@ -153,11 +155,11 @@ export class NatsRecordSink implements RecordSink {
         state: change.state,
         tick: change.tick,
         ...(change.detail === undefined ? {} : { detail: clip(change.detail) }),
+        ...(program === undefined ? {} : { program }),
         ...(intent === undefined
           ? {}
           : {
               goal: intent.goal,
-              program: intent.program,
               arguments: structuredClone(intent.arguments),
               preconditions: [...(intent.preconditions ?? [])],
               wake_on: [...intent.wake_on],

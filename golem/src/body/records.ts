@@ -23,6 +23,11 @@ export interface IntentChange {
   /** Why, in plain text (for example the failure message). */
   detail?: string;
   /**
+   * The intent's program name, on every change of an intent the executor runs (AN-09c), so the
+   * completed event says what was built. Absent on a change that has no program (a lost intent).
+   */
+  program?: string;
+  /**
    * The intent as accepted: set on the `accepted` change, so the record can show what the intent
    * was (goal, program, arguments, preconditions, wake_on, limits). Absent on the other changes.
    */

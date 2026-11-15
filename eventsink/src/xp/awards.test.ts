@@ -187,17 +187,16 @@ describe('crafting row', () => {
 });
 
 describe('building row', () => {
-  it('no building award today: a real completed intent carries no program', () => {
-    expect(BUILDING_XP_SOURCE_AVAILABLE).toBe(false);
+  it('the building row is enabled: a completed build intent that carries its program awards', () => {
+    expect(BUILDING_XP_SOURCE_AVAILABLE).toBe(true);
+    const event = withPayload('build_completed', { program: 'build' });
+    expect(awardsFor(event).map((award) => award.evidenceKey)).toEqual([
+      `build:${(event.payload as { intent_id: string }).intent_id}`,
+    ]);
+  });
+  it('a completed build intent with no program awards nothing (an event from before AN-09c)', () => {
     expect(fixture('build_completed').payload).not.toHaveProperty('program');
     expect(keysOf('build_completed')).toEqual([]);
-  });
-  it('the building rule, gated by BUILDING_XP_SOURCE_AVAILABLE: one key per completed build intent', () => {
-    const event = withPayload('build_completed', { program: 'build' });
-    const expected = BUILDING_XP_SOURCE_AVAILABLE
-      ? [`build:${(event.payload as { intent_id: string }).intent_id}`]
-      : [];
-    expect(awardsFor(event).map((award) => award.evidenceKey)).toEqual(expected);
   });
   it('awards nothing for other programs or other states', () => {
     for (const name of ['wander_completed', 'build_accepted', 'build_failed', 'build_cancelled']) {
