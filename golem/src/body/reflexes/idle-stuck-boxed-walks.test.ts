@@ -130,6 +130,30 @@ describe('boxed-in walk record counts failed unstick and mine runs (decision 033
     expect(idleStuckReflex.check(at(view, BOXED_TICKS * 2))).toBeNull();
   });
 
+  it('a 1.7-block unstick inside the closed pocket does not reset the record (Tommy)', () => {
+    const view = bodyIn(pocketWorld());
+    blockedWalk(view);
+    blockedWalk(view);
+    noteWalkOutcome(view, 'unstick', 'completed', undefined, { x: 1.7, y: 64, z: 0 });
+    expect(isBoxedIn(view, SPOT)).toBe(true);
+  });
+
+  it('an unstick that leaves the pocket for open ground resets the record', () => {
+    const view = bodyIn(pocketWorld());
+    blockedWalk(view);
+    blockedWalk(view);
+    noteWalkOutcome(view, 'unstick', 'completed', undefined, { x: 5, y: 64, z: 0 });
+    expect(isBoxedIn(view, SPOT)).toBe(false);
+  });
+
+  it('an unstick more than 6 blocks from the first failure resets the record', () => {
+    const view = bodyIn(pocketWorld());
+    blockedWalk(view);
+    blockedWalk(view);
+    noteWalkOutcome(view, 'unstick', 'completed', undefined, { x: 7, y: 64, z: 0 });
+    expect(isBoxedIn(view, SPOT)).toBe(false);
+  });
+
   it('a Body with a Mind action running never fires, even with failed mine and unstick runs', () => {
     const view = bodyIn(pocketWorld(), { actionRunning: true });
     failedMine(view);
