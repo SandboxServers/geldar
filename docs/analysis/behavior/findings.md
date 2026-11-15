@@ -23,3 +23,5 @@ F8 evidence (2026-11-14 21:5xZ, 48 h journals, 24 h speech): "offer" (133 journa
 | F9 | fixed pending re-measure (0224 #424, merged 02:39Z; deploy time pending) | geldar-vitals | sleep retried while a named hostile stays within range (98 of 181 refusals in 90 min named a phantom at 4 blocks); proposal: a fact for how long the hostile has been in range |
 
 | F10 | open (not yet sent) | geldar-ops | agents avoid iron golems and mention them 549 times in 12 h journals, but no record shows a golem hurting anyone; damage events carry no attacker type. Proposal: record attacker type in damage events; check how the Body lists golems next to hostiles (facts only, e.g. not hostile) |
+
+| F11 | sent (geldar-ops scoped; geldar-93 approved facts-only) | geldar-ops | first wheat plots have no water nearby and till/place results say only "worked"; hydration fact on ok till and place, till refusal naming the cause, place-on-own-tile wording; ok detail_text needs the threshold allow-list extended (contract slot with geldar-93/3b); hurt log gets attacker (log only) for F10 |
