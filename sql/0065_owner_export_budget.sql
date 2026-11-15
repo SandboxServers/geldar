@@ -1,7 +1,10 @@
--- Migration 0065 (C7-09b, owner export budget): CREATE OR REPLACE of register_owner_export from 0062, with ONLY the
--- per-table byte budget lowered from 100000000 to 3000000 (about 3 MB of text per bulky table, so the export stays
--- inside the route's 8 MB cap). The body, the row cap (20000), the truncated flags, the grants and the search_path pin
--- are the 0062 ones. No table is changed. Applied after 0062 (0064 is reserved for geldar-3b).
+-- Migration 0065 (C7-09b, owner export budget): CREATE OR REPLACE of register_owner_export from 0062. The per-table
+-- byte budget is lowered from 100000000 to 3000000 and is measured by TEXT size (octet_length of the row's text, plus
+-- one), not by pg_column_size, because a control character is six bytes in the JSON text. So each bulky table (thoughts,
+-- mcp_journal) keeps at most 3 MB of text, and the export is under 8 MB by construction: <= 3 MB text per bulky table,
+-- row caps and 200-character cuts on the other lists (players 150, tokens 150, roster 100, body_ops 500, consents 100,
+-- lives 50), with a truncated flag per list. The route's 8 MB cap stays as a backstop. A larger export is a later card:
+-- streaming. Applied after 0062 (0064 is reserved for geldar-3b). The grants and the search_path pin are the 0062 ones.
 --
 -- Migration 0062 (C7-09b, owner data export): register_owner_export(p_identity_hash) returns the owner's own rows as one
 -- JSON document, or NULL when the hash has no owner (unknown hash, or a banned identity whose owner link is gone).
@@ -37,6 +40,7 @@ DECLARE
   owner_display TEXT;
   owner_cap INT;
   lives TEXT[];
+  life_list TEXT[];
   th_part JSONB;
   jr_part JSONB;
   counts JSONB;
@@ -56,6 +60,9 @@ BEGIN
   lives := ARRAY(SELECT a.agent_id FROM public.agents a WHERE a.owner = who
                  UNION
                  SELECT p.life_id FROM public.mcp_players p WHERE p.owner_id = who);
+  -- the exported lives (the lives list below): the first 50 by id; the per-life counts cover only these
+  life_list := ARRAY(SELECT a.agent_id FROM public.agents a WHERE a.agent_id = ANY (lives)
+                     ORDER BY a.agent_id LIMIT 50);
 
   -- thoughts: one statement ranks the rows, keeps the prefix that fits the row cap and the byte budget, and sets the
   -- truncated flag from the same ranked set (one snapshot, so the flag always agrees with the rows)
@@ -71,7 +78,7 @@ BEGIN
         FROM public.thoughts x WHERE x.life_id = ANY (lives)
     ), ranked AS (
       SELECT s.at, s.sort_id, s.row_json,
-             row_number() OVER w AS rn, sum(pg_column_size(s.row_json)) OVER w AS run
+             row_number() OVER w AS rn, sum(octet_length(s.row_json::text) + 1) OVER w AS run
         FROM src s WINDOW w AS (ORDER BY s.at, s.sort_id)
     ), kept AS (
       SELECT k.* FROM ranked k WHERE k.rn <= 20000 AND k.run <= 3000000
@@ -87,7 +94,7 @@ BEGIN
         FROM public.mcp_journal x WHERE x.life_id = ANY (lives)
     ), ranked AS (
       SELECT s.at, s.sort_id, s.row_json,
-             row_number() OVER w AS rn, sum(pg_column_size(s.row_json)) OVER w AS run
+             row_number() OVER w AS rn, sum(octet_length(s.row_json::text) + 1) OVER w AS run
         FROM src s WINDOW w AS (ORDER BY s.at, s.sort_id)
     ), kept AS (
       SELECT k.* FROM ranked k WHERE k.rn <= 20000 AND k.run <= 3000000
@@ -159,7 +166,7 @@ BEGIN
         'character_sheet_adoptions', COALESCE(c_character_sheet_adoptions.n, 0),
         'proficiency', COALESCE(c_proficiency.n, 0), 'proficiency_outbox', COALESCE(c_proficiency_outbox.n, 0)
       ) ORDER BY u.l), '[]'::jsonb)
-    FROM unnest(lives) AS u(l)
+    FROM unnest(life_list) AS u(l)
       LEFT JOIN c_events ON c_events.l = u.l
       LEFT JOIN c_memories ON c_memories.l = u.l
       LEFT JOIN c_goals ON c_goals.l = u.l
@@ -183,41 +190,56 @@ BEGIN
       LEFT JOIN c_proficiency ON c_proficiency.l = u.l
       LEFT JOIN c_proficiency_outbox ON c_proficiency_outbox.l = u.l);
 
+  -- the lists: a row cap per list (ranked by the key, LIMIT), and a truncated flag per list in the top-level
+  -- truncated object; free-text fields of the lists are cut at 200 characters (left), so one row is bounded
   out := jsonb_build_object(
     'format', 'geldar-owner-export/1',
     'exported_at', now(),
-    'owner', jsonb_build_object('display_name', owner_display, 'player_cap', owner_cap),
+    'owner', jsonb_build_object('display_name', left(owner_display, 200), 'player_cap', owner_cap),
     'identity', jsonb_build_object('provider', ident_provider, 'created_at', ident_created),
-    'players', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
-                  'player_id', p.player_id, 'life_id', p.life_id, 'display_name', p.display_name,
-                  'harness', p.harness, 'status', p.status) ORDER BY p.player_id), '[]'::jsonb)
-                FROM public.mcp_players p WHERE p.owner_id = who),
-    'tokens', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
-                  'token_id', t.token_id, 'player_id', t.player_id, 'label', t.label,
-                  'created_at', t.created_at, 'expires_at', t.expires_at, 'revoked_at', t.revoked_at,
-                  'last_used_at', t.last_used_at) ORDER BY t.token_id), '[]'::jsonb)
-               FROM public.mcp_tokens t
-               JOIN public.mcp_players p ON p.player_id = t.player_id
-               WHERE p.owner_id = who),
-    'roster', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
-                  'player_name', r.player_name, 'max_agents', r.max_agents, 'created_at', r.created_at)
-                  ORDER BY r.player_name), '[]'::jsonb)
-               FROM public.mcp_roster r WHERE r.owner_id = who),
-    'body_ops', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
-                  'at', b.at, 'player_name', b.player_name, 'op', b.op) ORDER BY b.at, b.id), '[]'::jsonb)
-                 FROM public.body_ops b WHERE b.owner_id = who),
-    'consents', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
-                  'terms_version', c.terms_version, 'accepted_at', c.accepted_at)
-                  ORDER BY c.accepted_at, c.terms_version), '[]'::jsonb)
-                 FROM public.register_consents c
-                 JOIN public.mcp_identities i ON i.identity_hash = c.identity_hash
-                 WHERE i.owner_id = who),
-    'lives', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
-                  'life_id', a.agent_id, 'name', a.name, 'shard', a.shard, 'mode', a.mode,
-                  'harness', a.harness, 'declared_model', a.declared_model, 'tier', a.tier,
-                  'born_at', a.born_at, 'died_at', a.died_at, 'death_cause', a.death_cause)
-                  ORDER BY a.agent_id), '[]'::jsonb)
-              FROM public.agents a WHERE a.agent_id = ANY (lives)),
+    'truncated', jsonb_build_object(
+      'players', (SELECT count(*) > 150 FROM public.mcp_players p WHERE p.owner_id = who),
+      'tokens', (SELECT count(*) > 150 FROM public.mcp_tokens t
+                 JOIN public.mcp_players p ON p.player_id = t.player_id WHERE p.owner_id = who),
+      'roster', (SELECT count(*) > 100 FROM public.mcp_roster r WHERE r.owner_id = who),
+      'body_ops', (SELECT count(*) > 500 FROM public.body_ops b WHERE b.owner_id = who),
+      'consents', (SELECT count(*) > 100 FROM public.register_consents c
+                   JOIN public.mcp_identities i ON i.identity_hash = c.identity_hash WHERE i.owner_id = who),
+      'lives', (SELECT count(*) > 50 FROM public.agents a WHERE a.agent_id = ANY (lives))),
+    'players', (SELECT COALESCE(jsonb_agg(x.row_json ORDER BY x.player_id), '[]'::jsonb) FROM (
+                  SELECT p.player_id, jsonb_build_object(
+                    'player_id', p.player_id, 'life_id', p.life_id, 'display_name', left(p.display_name, 200),
+                    'harness', p.harness, 'status', p.status) AS row_json
+                  FROM public.mcp_players p WHERE p.owner_id = who ORDER BY p.player_id LIMIT 150) x),
+    'tokens', (SELECT COALESCE(jsonb_agg(x.row_json ORDER BY x.token_id), '[]'::jsonb) FROM (
+                  SELECT t.token_id, jsonb_build_object(
+                    'token_id', t.token_id, 'player_id', t.player_id, 'label', left(t.label, 200),
+                    'created_at', t.created_at, 'expires_at', t.expires_at, 'revoked_at', t.revoked_at,
+                    'last_used_at', t.last_used_at) AS row_json
+                  FROM public.mcp_tokens t
+                  JOIN public.mcp_players p ON p.player_id = t.player_id
+                  WHERE p.owner_id = who ORDER BY t.token_id LIMIT 150) x),
+    'roster', (SELECT COALESCE(jsonb_agg(x.row_json ORDER BY x.player_name), '[]'::jsonb) FROM (
+                  SELECT r.player_name, jsonb_build_object(
+                    'player_name', left(r.player_name, 200), 'max_agents', r.max_agents,
+                    'created_at', r.created_at) AS row_json
+                  FROM public.mcp_roster r WHERE r.owner_id = who ORDER BY r.player_name LIMIT 100) x),
+    'body_ops', (SELECT COALESCE(jsonb_agg(x.row_json ORDER BY x.at, x.id), '[]'::jsonb) FROM (
+                  SELECT b.at, b.id, jsonb_build_object(
+                    'at', b.at, 'player_name', left(b.player_name, 200), 'op', b.op) AS row_json
+                  FROM public.body_ops b WHERE b.owner_id = who ORDER BY b.at, b.id LIMIT 500) x),
+    'consents', (SELECT COALESCE(jsonb_agg(x.row_json ORDER BY x.accepted_at, x.terms_version), '[]'::jsonb) FROM (
+                  SELECT c.accepted_at, c.terms_version, jsonb_build_object(
+                    'terms_version', left(c.terms_version, 200), 'accepted_at', c.accepted_at) AS row_json
+                  FROM public.register_consents c
+                  JOIN public.mcp_identities i ON i.identity_hash = c.identity_hash
+                  WHERE i.owner_id = who ORDER BY c.accepted_at, c.terms_version LIMIT 100) x),
+    'lives', (SELECT COALESCE(jsonb_agg(x.row_json ORDER BY x.agent_id), '[]'::jsonb) FROM (
+                  SELECT a.agent_id, jsonb_build_object(
+                    'life_id', a.agent_id, 'name', left(a.name, 200), 'shard', left(a.shard, 200), 'mode', a.mode,
+                    'harness', a.harness, 'declared_model', left(a.declared_model, 200), 'tier', left(a.tier, 200),
+                    'born_at', a.born_at, 'died_at', a.died_at, 'death_cause', left(a.death_cause, 200)) AS row_json
+                  FROM public.agents a WHERE a.agent_id = ANY (lives) ORDER BY a.agent_id LIMIT 50) x),
     'records', jsonb_build_object('thoughts', th_part, 'mcp_journal', jr_part, 'counts', counts),
     'not_included', to_jsonb(ARRAY[
       'shared world objects kept by design: skills you authored, books, proposals and laws, which other lives depend on',
@@ -230,7 +252,8 @@ BEGIN
       'skins: skin files and their bindings',
       'thoughts columns model_input, snapshot, raw_output and provider_usage: the prompts and world snapshots carry other residents words, and the rows are bulky; the life own output is exported in the thoughts rows',
       'turn_records (0060): the per-turn model input and raw output of a kit Mind; operator-only, no owner link; erasure is deferred to GX-05c',
-      'row counts only, not contents, per life, for: events, memories, goals, intents, actions, skill_runs, skill_library, relationships, ledger, votes, receipts, suppressed_wakeups, mcp_sleep_marks, mcp_budget, mcp_life_deaths, mcp_death_events, rolls, decisions, xp_evidence, character_sheet_adoptions, proficiency, proficiency_outbox'
+      'row counts only, not contents, per life, for: events, memories, goals, intents, actions, skill_runs, skill_library, relationships, ledger, votes, receipts, suppressed_wakeups, mcp_sleep_marks, mcp_budget, mcp_life_deaths, mcp_death_events, rolls, decisions, xp_evidence, character_sheet_adoptions, proficiency, proficiency_outbox',
+      'list rows past the caps are left out (players 150, tokens 150, roster 100, body_ops 500, consents 100, lives 50; the top-level truncated object says which list was cut); free-text fields over 200 characters are cut at 200 characters'
     ]::text[])
   );
 

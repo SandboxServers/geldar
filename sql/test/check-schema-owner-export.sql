@@ -239,7 +239,7 @@ BEGIN
      OR (j->'owner'->>'player_cap') <> '5' OR (j->'identity'->>'provider') <> 'github' THEN
     RAISE EXCEPTION 'owner export: % (owner or identity keys)', step;
   END IF;
-  IF NOT (j ?& ARRAY['format', 'exported_at', 'owner', 'identity', 'players', 'tokens', 'roster', 'body_ops',
+  IF NOT (j ?& ARRAY['format', 'exported_at', 'owner', 'identity', 'truncated', 'players', 'tokens', 'roster', 'body_ops',
                      'consents', 'lives', 'records', 'not_included']) THEN
     RAISE EXCEPTION 'owner export: % (top-level key missing)', step;
   END IF;
@@ -344,7 +344,7 @@ BEGIN
     RAISE EXCEPTION 'owner export: % (byte budget not applied)', step;
   END IF;
 
-  -- exact thoughts budget edge at 3000000: three rows of 1000000 bytes each (pg_column_size of the exported row) fill
+  -- exact thoughts budget edge at 3000000: three rows of 1000000 bytes each (octet_length of the exported row's text, plus one) fill
   -- the budget exactly. Owner bigc (no probe) keeps all three, not truncated: a budget under 3000000 truncates it.
   -- Owner bigb adds a latest probe row (about 430 bytes, over the budget): truncated, three kept: a budget of 4000000
   -- or more keeps four and fails. Budget 2000000 keeps two and fails both.
@@ -361,14 +361,14 @@ BEGIN
   -- is the latest row in time (the table is append-only, so it is not deleted), and it is never kept
   INSERT INTO thoughts (thought_id, life_id, at, parsed)
     VALUES ('th-bb-00', 'ag_pbigb', date_trunc('second', now()) + interval '1 day', jsonb_build_object('x', ''));
-  SELECT pg_column_size(jsonb_build_object(
+  SELECT octet_length(jsonb_build_object(
       'thought_id', x.thought_id, 'life_id', x.life_id, 'at', x.at, 'world_day', x.world_day,
       'world_tick', x.world_tick, 'wake_reason', x.wake_reason, 'parsed', x.parsed,
       'prompt_template_version', x.prompt_template_version, 'schema_version', x.schema_version,
       'mind_version', x.mind_version, 'body_version', x.body_version, 'model_config', x.model_config,
       'thinker_id', x.thinker_id, 'effort', x.effort, 'tokens_in_estimated', x.tokens_in_estimated,
       'tokens_out_estimated', x.tokens_out_estimated, 'latency_ms', x.latency_ms,
-      'credits_reserved', x.credits_reserved, 'credits_settled', x.credits_settled))
+      'credits_reserved', x.credits_reserved, 'credits_settled', x.credits_settled)::text) + 1
     INTO probe FROM public.thoughts x WHERE x.thought_id = 'th-bb-00';
   INSERT INTO thoughts (thought_id, life_id, at, parsed)
     SELECT 'th-bb-' || lpad(g::text, 2, '0'), 'ag_pbigb', date_trunc('second', now()) - g * interval '1 second',
