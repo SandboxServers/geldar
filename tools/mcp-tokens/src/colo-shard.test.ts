@@ -23,6 +23,7 @@ const RESIDENTS = [
   ['ag-clark-01', 'ag_clark_01', 'Clark'],
   ['ag-chapman-01', 'ag_chapman_01', 'Chapman'],
   ['ag-macdonald-01', 'ag_macdonald_01', 'MacDonald'],
+  ['ag-leonardo-01', 'ag_leonardo_01', 'Leonardo'],
 ] as const;
 
 describe('the colo shard TNG crew players', () => {
