@@ -34,3 +34,5 @@ geldar-93 (2026-11-15): Lewis and Clark are explorers on Haiku low, kit rc21; Mi
 Residents Minds started 2026-11-15: ag-lewis-01 01:24:28Z, ag-clark-01 01:25:30Z. This is the "after" marker for exploration distance, farming, building and social change (geldar-93, geldar-residents).
 
 2026-11-15 01:31:25Z deploy 977af076 (use verb 0218 step 1, flag body_actions.use OFF; prompt v8): all 17 hosts recreated; no behaviour change expected. Lewis shows use not_possible (verb not enabled): flag if it persists.
+
+2026-11-15 02:39:16Z: 0224 (#424, 4b12d717) merged (geldar-vitals); deploy instant pending from geldar-93, count from the deploy. Agent-visible facts: sleep failure after "tried N nearby beds" ends with "; ended at X, Y, Z"; monsters-nearby refusal adds how long the nearest hostile has been in range ("in range for 6 minutes", first sighting "under a minute"; resets when it leaves the bed box). Action log only: detail.final_position, detail.beds_tried [{x,y,z,reason}], raw.dwell_ticks. Baseline for sleep ok share: 16 of 141 (23:06-00:09Z). The bed.* server refusal text ("the bed could not be used", about 40 a day) is still open as 0215c.
