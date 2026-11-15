@@ -6,6 +6,7 @@
  */
 import { spawnSync } from 'node:child_process';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -240,7 +241,11 @@ function stubs(): { base: string; env: Env } {
       '',
     ].join('\n'),
   };
-  for (const [name, text] of Object.entries(files)) writeFileSync(join(bin, name), text);
+  for (const [name, text] of Object.entries(files)) {
+    const path = join(bin, name);
+    writeFileSync(path, text, { mode: 0o755 });
+    chmodSync(path, 0o755);
+  }
   const env: Env = {
     PATH: `${bin}${delimiter}${process.env.PATH ?? ''}`,
     HOME: slash(join(base, 'home')),
@@ -254,6 +259,34 @@ function stubs(): { base: string; env: Env } {
     STUB_FAIL_DOWN: '',
   };
   return { base, env };
+}
+
+/** The tools the stubs replace. On Linux sh skips a file without the exec bit and runs the real tool, so the guard checks
+ * that each one resolves inside the stub bin dir. */
+const STUBBED = ['docker', 'id', 'uname', 'df'];
+
+/** Throws before any script starts unless sh, with this PATH, resolves every stubbed tool inside the stub bin dir. */
+function assertStubsFirst(bin: string, env: Env): void {
+  // sh does the comparison in its own path form (MSYS maps Windows temp dirs to /tmp), so $1 is the bin dir as given.
+  const checks = STUBBED.map(
+    (t) => `p=$(command -v ${t}); case "$p" in "$B/${t}") echo OK ;; *) echo "$p" ;; esac`,
+  );
+  const probe = spawnSync(
+    SH as string,
+    ['-c', `B=$(cd "$1" && pwd); ${checks.join('; ')}`, 'guard', slash(bin)],
+    {
+      encoding: 'utf8',
+      env: { PATH: env.PATH ?? '', SYSTEMROOT: env.SYSTEMROOT ?? '' },
+    },
+  );
+  const lines = probe.stdout.trim().split('\n');
+  STUBBED.forEach((tool, i) => {
+    if (lines[i] !== 'OK') {
+      throw new Error(
+        `stub guard: sh resolves ${tool} to '${lines[i] ?? ''}', not inside ${bin}; refusing to run`,
+      );
+    }
+  });
 }
 
 /** A copy of the script in base/tree, with the plugin jars when asked. The script finds its root from its own path. */
@@ -286,6 +319,7 @@ function runScript(
   try {
     opts.prepare?.(s.base);
     const script = opts.tree ? makeTree(s.base, opts.tree.jars) : SCRIPT_PATH;
+    assertStubsFirst(join(s.base, 'bin'), env);
     const result = spawnSync(SH as string, [script, ...args], {
       encoding: 'utf8',
       env: env as Record<string, string>,
@@ -322,6 +356,16 @@ function authDir(): string {
 }
 
 describe.skipIf(!SH)('scratch script under sh', { timeout: 60_000 }, () => {
+  it('sh resolves docker, id, uname and df to the stubs, and the guard refuses when it does not', () => {
+    const s = stubs();
+    try {
+      expect(() => assertStubsFirst(join(s.base, 'bin'), s.env)).not.toThrow();
+      expect(() => assertStubsFirst(join(s.base, 'no-such-bin'), s.env)).toThrow(/stub guard/);
+    } finally {
+      rmSync(s.base, { recursive: true, force: true });
+    }
+  });
+
   it.each([
     ['no NATS auth', {}, 'NATS auth is required'],
     ['a relative NATS auth dir', { SCRATCH_NATS_AUTH_DIR: 'auth' }, 'must be an absolute path'],
