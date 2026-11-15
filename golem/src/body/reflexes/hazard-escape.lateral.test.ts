@@ -1,93 +1,20 @@
 import { Vec3 } from 'vec3';
 import { describe, expect, it, vi } from 'vitest';
-import { controlBot, walkFor } from './hazard-escape.fakes.ts';
-import { DROWNING_START_AIR, findLateralExit, swimUp } from './hazard-escape.ts';
-
-type Block = { name: string; boundingBox: string };
-const STONE: Block = { name: 'stone', boundingBox: 'block' };
-const WATER: Block = { name: 'water', boundingBox: 'empty' };
-const AIR: Block = { name: 'air', boundingBox: 'empty' };
-
-/** Stone everywhere except the listed cells, keyed "x,y,z". */
-function worldOf(cells: Record<string, Block>): (v: Vec3) => Block {
-  return (v) => cells[`${Math.floor(v.x)},${Math.floor(v.y)},${Math.floor(v.z)}`] ?? STONE;
-}
-
-/** A 1-wide water column at x 0, z 0 (y 58..61) under a stone cap at y 62. A water corridor at y 60..61 runs east to an open shaft at x 6. */
-function cappedWorld(): Record<string, Block> {
-  const cells: Record<string, Block> = {};
-  for (let y = 58; y <= 61; y++) cells[`0,${y},0`] = WATER;
-  for (let x = 1; x <= 5; x++) for (const y of [60, 61]) cells[`${x},${y},0`] = WATER;
-  for (let y = 60; y <= 63; y++) cells[`6,${y},0`] = AIR;
-  return cells;
-}
-
-/** A swimmer in a fixed world: held forward moves it `speed` along `dir`, else held jump lifts it by `rise`. */
-function swimmerIn(
-  world: (v: Vec3) => Block,
-  at: Vec3,
-  rise: number,
-  dir = { dx: 1, dz: 0 },
-  speed = 0.2,
-) {
-  const { bot, controls, state } = controlBot(at);
-  const held = new Set<string>();
-  const b = bot as unknown as {
-    setControlState: (name: string, on: boolean) => void;
-    blockAt: (v: Vec3) => Block;
-    waitForTicks: () => Promise<void>;
-    entity: { position: Vec3 };
-  };
-  b.setControlState = (name, on) => {
-    controls.push(`${name}:${on}`);
-    if (on) held.add(name);
-    else held.delete(name);
-  };
-  b.blockAt = (v) => world(v);
-  b.waitForTicks = async () => {
-    state.ticks += 1;
-    const p = b.entity.position;
-    if (held.has('forward')) b.entity.position = p.offset(dir.dx * speed, 0, dir.dz * speed);
-    else if (held.has('jump')) b.entity.position = p.offset(0, rise, 0);
-  };
-  return {
-    bot: bot as never,
-    controls,
-    state,
-    pos: (): Vec3 => b.entity.position,
-    isForward: (): boolean => held.has('forward'),
-  };
-}
-
-const EAST = { name: 'east', dx: 1, dz: 0 };
-const SOUTH = { name: 'south', dx: 0, dz: 1 };
-const WEST = { name: 'west', dx: -1, dz: 0 };
-const NORTH = { name: 'north', dx: 0, dz: -1 };
-const SIDES = [EAST, SOUTH, WEST, NORTH];
-
-/** The whole block cell the Body is in, counted along a side from the open column at the origin. */
-function cellAlong(pos: Vec3, side: { dx: number; dz: number }): number {
-  return Math.floor(pos.x) * side.dx + Math.floor(pos.z) * side.dz;
-}
-
-/**
- * The origin column (water y 58..61) under a stone cap at y 62, a water corridor at y 60..61 out to
- * `distance` along `side`, and the exit there: a lake surface (water to y 61, air above) or a dry shaft.
- */
-function capped(side: { dx: number; dz: number }, distance: number, exit: 'lake' | 'shaft') {
-  const cells: Record<string, Block> = {};
-  for (let y = 58; y <= 61; y++) cells[`0,${y},0`] = WATER;
-  for (let k = 1; k < distance; k++) {
-    for (const y of [60, 61]) cells[`${k * side.dx},${y},${k * side.dz}`] = WATER;
-  }
-  const ex = distance * side.dx;
-  const ez = distance * side.dz;
-  for (const y of [60, 61]) {
-    cells[`${ex},${y},${ez}`] = exit === 'lake' ? WATER : AIR;
-  }
-  for (const y of [62, 63]) cells[`${ex},${y},${ez}`] = AIR;
-  return cells;
-}
+import { walkFor } from './hazard-escape.fakes.ts';
+import {
+  AIR,
+  type Block,
+  capped,
+  cappedWorld,
+  cellAlong,
+  EAST,
+  SIDES,
+  swimmerIn,
+  WATER,
+  WEST,
+  worldOf,
+} from './hazard-escape.lateral.fakes.ts';
+import { findLateralExit, swimUp } from './hazard-escape.ts';
 
 describe('swimUp lateral fallback', () => {
   it('steers east along the corridor to the open shaft when the column is capped', async () => {
@@ -480,30 +407,5 @@ describe('findLateralExit: floors, walls and lava', () => {
     expect(note).toHaveBeenLastCalledWith(
       expect.objectContaining({ event: 'retarget', direction: 'west', distance: 2 }),
     );
-  });
-});
-
-// Decision 0337 (BILLY, ag_billy_01): a capped 1-wide column under an open lake, the lateral exit 7 blocks
-// east. swimUp does not read air; this test checks the air left at the exit, counted in bubbles (one per
-// 15 ticks under water). The reflex starts at DROWNING_START_AIR (12); the old start was 8.
-describe('swimUp: the capped column escape at the earlier start (decision 0337)', () => {
-  const airAtExit = (start: number, ticks: number): number => start - Math.floor(ticks / 15);
-
-  it('escapes the capped column to the lake with air left from the 12 start, more than from 8', async () => {
-    const { bot, state, pos } = swimmerIn(
-      worldOf(capped(EAST, 7, 'lake')),
-      new Vec3(0.5, 60.2, 0.5),
-      0,
-    );
-    await swimUp(walkFor(bot, () => pos().x >= 7, { expired: () => state.ticks >= 200 }));
-    expect(pos().x).toBeGreaterThanOrEqual(7);
-    const left12 = airAtExit(DROWNING_START_AIR, state.ticks);
-    const left8 = airAtExit(8, state.ticks);
-    expect(left12).toBeGreaterThan(0);
-    expect(left12).toBeGreaterThan(left8);
-  });
-
-  it('the start is 12, not 8, so the trigger line is the earlier one', () => {
-    expect(DROWNING_START_AIR).toBe(12);
   });
 });

@@ -177,6 +177,11 @@ describe('startSwim air budget (decision 0194 a, b)', () => {
     expect(onAbort).toHaveBeenCalledWith(ABORT_AIR);
   });
 
+  it('pins the hand-over at 8, below the abort line (0337: swim is off, the value is kept)', () => {
+    expect(SWIM_HAND_OVER_AIR).toBe(8);
+    expect(SWIM_HAND_OVER_AIR).toBeLessThan(ABORT_AIR);
+  });
+
   it('does not abort at ABORT_AIR + 1', () => {
     const bot = swimBot(HEAD_WATER, ABORT_AIR + 1);
     const onAbort = vi.fn();

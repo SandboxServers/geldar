@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { basicContext, basicView, floor, gridBot, gridReader } from './basic.fakes.ts';
 import {
   createHazardEscapeReflex,
+  DROWNING_RECOVERED_AIR,
   DROWNING_START_AIR,
   type EscapeMover,
   findSafeBlock,
@@ -119,6 +120,25 @@ describe('hazard-escape: drowning', () => {
     );
     expect(outcome).toEqual({ result: 'handled', detail: 'left drowning' });
     expect(order).toEqual(['swim']);
+  });
+
+  it('does not count air 12 as recovered: the run ends in water, and air 13 is out', async () => {
+    const runAt = (air: number) => {
+      const { view, state, bot } = pond(6);
+      const { ctx } = basicContext(view, bot);
+      const swimmer: EscapeMover = async () => {
+        state.air = air;
+      };
+      return createHazardEscapeReflex({ swimmer, mover: async () => undefined }).run(
+        { hazard: 'drowning', air: 6 },
+        ctx,
+      );
+    };
+    expect((await runAt(DROWNING_RECOVERED_AIR)).result).toBe('abandoned');
+    expect(await runAt(DROWNING_RECOVERED_AIR + 1)).toEqual({
+      result: 'handled',
+      detail: 'left drowning',
+    });
   });
 
   it('swims until the head is out of the water, then walks to dry land', async () => {
