@@ -61,7 +61,7 @@ describe('a completed goto that swam carries the swim fact (decision 0194 d)', (
     arrive();
     await expect(pending).resolves.toMatchObject({
       ok: true,
-      message: 'swam 2 blocks, came up for air 1 times',
+      message: 'swim: blocks in water 2, surfacings for air 1',
     });
   });
 });

@@ -36,7 +36,7 @@ describe('actionOutcomeOf: the farmland fact an ok till or seed planting carries
   });
 });
 
-const SWAM = 'swam 12 blocks, came up for air 2 times';
+const SWAM = 'swim: blocks in water 12, surfacings for air 2';
 const STOPPED_AT_10 = 'swim stopped at air 10 with your head in the water';
 
 /** A failed report whose result carries `reason` and `message` the way a failed walk's does. */

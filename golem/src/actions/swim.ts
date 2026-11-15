@@ -30,12 +30,13 @@ export interface SwimTally {
 }
 
 /**
- * The fact a completed goto adds to its note when it swam (decision 0194 d): blocks swum and times
- * it came up for air. Undefined when the head never was in water. Facts only, no advice (0154).
+ * The fact a completed goto adds to its note when it swam (decision 0194 d): blocks in water and
+ * surfacings for air, as labelled counts that read the same for 1 and many. Undefined when the head
+ * never was in water. Facts only, no advice (0154).
  */
 export function swimNote(tally: SwimTally): string | undefined {
   if (tally.blocksSwum === 0 && tally.surfaces === 0) return undefined;
-  return `swam ${Math.round(tally.blocksSwum)} blocks, came up for air ${tally.surfaces} times`;
+  return `swim: blocks in water ${Math.round(tally.blocksSwum)}, surfacings for air ${tally.surfaces}`;
 }
 
 export interface SwimOptions {

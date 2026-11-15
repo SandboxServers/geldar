@@ -3,7 +3,22 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { describe, expect, it, vi } from 'vitest';
 import { DROWNING_AIR } from '../body/reflexes/hazard-escape.ts';
-import { ABORT_AIR, SURFACE_AIR, type SwimController, startSwim } from './swim.ts';
+import { ABORT_AIR, SURFACE_AIR, type SwimController, startSwim, swimNote } from './swim.ts';
+
+describe('swimNote reads right for one block or many (decision 0194 d)', () => {
+  it('states the blocks in water and the surfacings as labelled counts, so 1 needs no plural', () => {
+    expect(swimNote({ blocksSwum: 1, surfaces: 1 })).toBe(
+      'swim: blocks in water 1, surfacings for air 1',
+    );
+    expect(swimNote({ blocksSwum: 12, surfaces: 2 })).toBe(
+      'swim: blocks in water 12, surfacings for air 2',
+    );
+  });
+
+  it('is undefined when the head never was in water', () => {
+    expect(swimNote({ blocksSwum: 0, surfaces: 0 })).toBeUndefined();
+  });
+});
 
 interface Cell {
   name: string;
