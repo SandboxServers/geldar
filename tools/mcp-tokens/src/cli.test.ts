@@ -209,6 +209,31 @@ describe('player retire', () => {
   });
 });
 
+describe('player set-model', () => {
+  it('refuses a model text that is not a model name and sends no UPDATE', async () => {
+    const h = await harness();
+    const calls: string[] = [];
+    const env = {
+      ...envOf(h),
+      connect: async () => ({
+        query: async (text: string) => {
+          calls.push(text);
+          return { rows: [] };
+        },
+        end: async () => {},
+      }),
+    };
+    const code = await run(
+      ['player', 'set-model', 'ag-jo-01', '--model', 'bad model; DROP'],
+      h.io,
+      env,
+    );
+    expect(code).not.toBe(0);
+    expect(calls.filter((text) => text.startsWith('UPDATE'))).toEqual([]);
+    expect(h.err.join('\n')).toContain('model must be');
+  });
+});
+
 describe('identity ban by provider account (F16)', () => {
   const PEPPER = 'p'.repeat(40);
 
