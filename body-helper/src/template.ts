@@ -8,13 +8,12 @@ const BODY_ENTRYPOINT = ['node', 'src/adam/main.ts'];
 export const BODY_NATS_PASSWORD_FILE = '/run/secrets/nats-body.txt';
 /** The directory the Body reads its shard file from: `<dir>/<shard>.yaml`. */
 export const BODY_SHARD_DIR = '/opt/geldar/shards';
-const COLO_NETWORK = 'geldar-colo';
+/** The network a Body joins when the wiring names none (the helper's GELDAR_NETWORK default). */
+export const DEFAULT_NETWORK = 'geldar-colo';
+/** The com.geldar.stack label when the wiring names none (the helper's GELDAR_STACK default). */
+export const DEFAULT_STACK = 'colo';
 /** The label every Body carries; the helper counts and lists Bodies by it (engine.ts, sweep.ts). */
 export const BODY_LABEL = 'geldar.player';
-const COLO_LABELS = {
-  'com.centurylinklabs.watchtower.enable': 'false',
-  'com.geldar.stack': 'colo',
-} as const;
 const BODY_IN_NETWORK_HOSTS = '1';
 const TMPFS_TMP = 'rw,noexec,nosuid,size=64m';
 
@@ -28,6 +27,10 @@ export interface BodyWiring {
   natsUser: string;
   natsSecretHostPath: string;
   shardHostPath: string;
+  /** The Docker network every Body joins; defaults to DEFAULT_NETWORK. */
+  network?: string;
+  /** The com.geldar.stack label value; defaults to DEFAULT_STACK. */
+  stack?: string;
 }
 
 export interface BodyLimits {
@@ -64,7 +67,8 @@ export function bodyContainerConfig(input: BodyTemplateInput): Record<string, un
       `GELDAR_NATS_PASSWORD_FILE=${BODY_NATS_PASSWORD_FILE}`,
     ],
     Labels: {
-      ...COLO_LABELS,
+      'com.centurylinklabs.watchtower.enable': 'false',
+      'com.geldar.stack': wiring.stack ?? DEFAULT_STACK,
       'geldar.owner': input.owner,
       [BODY_LABEL]: input.name,
     },
@@ -73,7 +77,7 @@ export function bodyContainerConfig(input: BodyTemplateInput): Record<string, un
       Memory: limits.memory,
       MemorySwap: limits.memory,
       PidsLimit: limits.pidsLimit,
-      NetworkMode: COLO_NETWORK,
+      NetworkMode: wiring.network ?? DEFAULT_NETWORK,
       Binds: [
         `${wiring.natsSecretHostPath}:${BODY_NATS_PASSWORD_FILE}:ro`,
         `${wiring.shardHostPath}:${BODY_SHARD_DIR}/${wiring.shard}.yaml:ro`,

@@ -6,7 +6,7 @@
 #      with `docker buildx imagetools inspect <ref> --format '{{json .}}'` (the workflow sets the label from github.sha).
 # A refusal names the image and the reason. It exits 1 through die before any container is restarted or any file is
 # copied. COLO_CD_IMAGE_INSPECT replaces the inspect command (the tests use a shim); it is read as command words.
-COLO_CD_IMAGE_PREFIX=ghcr.io/sandboxservers
+COLO_CD_IMAGE_PREFIX=${COLO_CD_IMAGE_PREFIX:-ghcr.io/sandboxservers}
 
 # The GHCR package name of each manifest key (the names colo-images.yml pushes).
 image_name_of() {
