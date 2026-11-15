@@ -46,13 +46,20 @@ export async function admitLifeOverRcon(
   }
 }
 
-/** Opens the RCON connection the admit one-shot uses; the caller passes it to `admitLifeOverRcon`, never sends on it. */
-export async function openAdmissionRcon(cfg: GolemConfig): Promise<AdmissionRcon> {
-  return RconClient.connect({
-    host: cfg.rconHost,
-    port: cfg.rconPort,
-    password: await readRconPassword(cfg),
-  });
+/**
+ * Admits `lifeId` over an RCON connection that this module opens from `cfg` and closes itself. The
+ * raw client never leaves this module, so no caller can send any command except the admission.
+ */
+export async function admitLifeWithConfig(cfg: GolemConfig, lifeId: string): Promise<void> {
+  await admitLifeOverRcon(
+    async () =>
+      RconClient.connect({
+        host: cfg.rconHost,
+        port: cfg.rconPort,
+        password: await readRconPassword(cfg),
+      }),
+    lifeId,
+  );
 }
 
 /** Removes `lifeId` from the whitelist. Resolves for "Removed" and "not whitelisted"; throws otherwise. */

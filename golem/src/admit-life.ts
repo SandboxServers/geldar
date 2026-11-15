@@ -3,7 +3,7 @@
 // from the file named by GELDAR_RCON_PASSWORD_FILE and is never printed. The command is pinned by admissionOnly, so this
 // process sends `whitelist add <id>` and nothing else (threat model rule 9).
 import { loadStackConfig } from './config.ts';
-import { admitLifeOverRcon, openAdmissionRcon } from './players/whitelist.ts';
+import { admitLifeWithConfig } from './players/whitelist.ts';
 
 /** A managed life id: ag_ plus 1 to 12 lower-case letters or digits (no underscore). The helper checks the same shape. */
 export const ADMIT_LIFE_PATTERN = /^ag_[a-z0-9]{1,12}$/;
@@ -20,7 +20,7 @@ export function admitLifeId(env: Readonly<Record<string, string | undefined>>): 
 async function main(): Promise<void> {
   const id = admitLifeId(process.env);
   const stack = loadStackConfig(process.env);
-  await admitLifeOverRcon(() => openAdmissionRcon(stack), id);
+  await admitLifeWithConfig(stack, id);
   console.log(`admit-life: ${id} admitted`);
 }
 

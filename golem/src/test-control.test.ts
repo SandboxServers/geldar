@@ -369,7 +369,7 @@ describe('TestControl', () => {
     SCAN_TIMEOUT_MS,
   );
 
-  it('lets admit-life reach RCON only through the admission-only path in whitelist.ts', async () => {
+  it('lets admit-life reach RCON only through admitLifeWithConfig in whitelist.ts', async () => {
     const admit = join(import.meta.dirname, 'admit-life.ts');
     expect(CONTROL_USERS).toContain(admit);
     const direct = await relativeImports(admit, realFiles);
@@ -379,7 +379,33 @@ describe('TestControl', () => {
     const text = await readFile(admit, 'utf8');
     expect(text).not.toMatch(/RconClient/);
     expect(text).not.toMatch(/\.command\s*\(/);
-    expect(text.match(/admitLifeOverRcon\(/g)).toHaveLength(1);
+    expect(text).not.toMatch(/\[\s*['"]command['"]\s*\]|\bcommand\b\s*[,}]/);
+    const fromWhitelist = text.match(/import\s*\{([^}]*)\}\s*from\s*'\.\/players\/whitelist\.ts'/);
+    expect(fromWhitelist?.[1]?.split(',').map((name) => name.trim())).toEqual([
+      'admitLifeWithConfig',
+    ]);
+    expect(text.match(/admitLifeWithConfig\(/g)).toHaveLength(1);
+  });
+
+  it('pins the export list of players/whitelist.ts, so a new export forces a conscious edit here', async () => {
+    const text = await readFile(join(import.meta.dirname, 'players', 'whitelist.ts'), 'utf8');
+    const exported = [
+      ...text.matchAll(
+        /^export\s+(?:async\s+)?(?:function|const|let|interface|type|class)\s+(\w+)/gm,
+      ),
+    ]
+      .map((match) => match[1])
+      .sort();
+    expect(exported).toEqual([
+      'AdmissionRcon',
+      'admissionOnly',
+      'admitLife',
+      'admitLifeOverRcon',
+      'admitLifeWithConfig',
+      'removeLife',
+      'removeLifeOverRcon',
+    ]);
+    expect(text).not.toMatch(/export\s*\{|export\s*\*/);
   });
 
   it('keeps the managed host files out of the allowlist, present or absent', () => {
