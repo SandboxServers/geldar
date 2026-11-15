@@ -145,15 +145,51 @@ describe('helper config', () => {
     }
   });
 
-  it('leaves the managed DB wiring unset when any of its host, role or secret path is missing', () => {
+  it('with the flag off, leaves the managed DB wiring unset when any of its host, role or secret path is missing', () => {
     const partial = {
       ...env,
+      GELDAR_MANAGED_BODIES: '0',
       GELDAR_MANAGED_PG_HOST: 'postgres',
       GELDAR_MANAGED_PG_ROLE: 'geldar_body_host',
     };
     expect(loadHelperConfig(partial, fakeFs()).managed.db).toBeUndefined();
-    const noRole = { ...env, GELDAR_MANAGED_PG_HOST: 'postgres' };
+    const noRole = { ...env, GELDAR_MANAGED_BODIES: '0', GELDAR_MANAGED_PG_HOST: 'postgres' };
     expect(loadHelperConfig(noRole, fakeFs()).managed.db).toBeUndefined();
+    const onlyPort = { ...env, GELDAR_MANAGED_BODIES: '0', GELDAR_MANAGED_PG_PORT: '6543' };
+    expect(loadHelperConfig(onlyPort, fakeFs()).managed.db).toBeUndefined();
+  });
+
+  it.each([
+    'GELDAR_RCON_SECRET_HOST_PATH',
+    'GELDAR_MANAGED_PG_HOST',
+    'GELDAR_MANAGED_PG_ROLE',
+    'GELDAR_MANAGED_DB_SECRET_HOST_PATH',
+  ])('with the flag on, a missing %s is a load error that names only that variable', (missing) => {
+    const full: Record<string, string> = {
+      ...env,
+      GELDAR_MANAGED_BODIES: '1',
+      GELDAR_RCON_SECRET_HOST_PATH: '/host/secrets/rcon.txt',
+      GELDAR_MANAGED_PG_HOST: 'postgres',
+      GELDAR_MANAGED_PG_ROLE: 'geldar_body_host',
+      GELDAR_MANAGED_DB_SECRET_HOST_PATH: '/host/secrets/db-body-host.txt',
+    };
+    delete full[missing];
+    let message = '';
+    try {
+      loadHelperConfig(full, fakeFs());
+    } catch (error) {
+      message = String(error);
+    }
+    expect(message).toContain(`${missing} is unset`);
+    expect(message).toContain('GELDAR_MANAGED_BODIES is 1');
+    expect(message).not.toContain('/host/secrets');
+  });
+
+  it('with the flag on, a managed port alone is not enough, and the port is the one optional value', () => {
+    const portOnly = { ...env, GELDAR_MANAGED_BODIES: '1', GELDAR_MANAGED_PG_PORT: '6543' };
+    expect(() => loadHelperConfig(portOnly, fakeFs())).toThrow(
+      'GELDAR_MANAGED_BODIES is 1 but GELDAR_RCON_SECRET_HOST_PATH is unset',
+    );
   });
 
   it('parses a complete managed config, with the port defaulting to 5432', () => {

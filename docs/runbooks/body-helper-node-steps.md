@@ -82,9 +82,18 @@ writes from the release env. Names, as read by `body-helper/src/helperConfig.ts`
 Managed Body inputs (BH-3), all optional and off by default. Names only; the values go in the root-only config, never here:
 `GELDAR_MANAGED_BODIES` (default off; the managed flag, which stays off until geldar-93 flips it after the live check),
 `GELDAR_RCON_SECRET_HOST_PATH` (the root-only RCON password file, bound only into the admit one-shot),
-`GELDAR_MANAGED_PG_HOST`, `GELDAR_MANAGED_PG_PORT` and `GELDAR_MANAGED_PG_ROLE` (the managed Body's database wiring,
-the narrow role and never the helper's own role), and `GELDAR_MANAGED_DB_SECRET_HOST_PATH` (the root-only file that
-holds the managed Body's database password). A managed start is refused until the flag is on and all of these are set.
+`GELDAR_MANAGED_PG_HOST` and `GELDAR_MANAGED_PG_ROLE` (the managed Body's database wiring, the narrow role and never the
+helper's own role), `GELDAR_MANAGED_DB_SECRET_HOST_PATH` (the root-only file that holds the managed Body's database
+password), and `GELDAR_MANAGED_PG_PORT` (optional, default 5432). With the flag on, the helper refuses to load if the RCON
+path or the host, role or secret path is missing, and the error names only that variable. A managed start is refused
+until the flag is on and the config is complete.
+The RCON and database secret files must be readable by the container user (owner `GELDAR_SERVICE_UID`, mode 0600 or
+0400): use the same owner and mode as the NATS secret for Bodies (see the NATS secret rule above).
+
+If an admit one-shot is left behind (a helper killed between create and start, or a create the client timed out on),
+the next start for that life is refused with `life admission failed`. Find it by label, then remove it by its exact
+name only: `docker ps -a --filter label=geldar.admit --format '{{.Names}}'`, then `docker rm -f geldar-admit-<life id>`
+for that one name. Never a wildcard or a `docker rm` with a pattern, and never touch any `geldar-player-ag-*` container.
 
 `GELDAR_NETWORK` (default `geldar-colo`) and `GELDAR_STACK` (default `colo`) are optional; an unset or empty
 value takes the default. `GELDAR_NETWORK` is a Docker network name of at most 63 characters, and the

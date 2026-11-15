@@ -110,14 +110,23 @@ function managedFlag(env: Env): boolean {
 }
 
 /**
- * The managed Body's database wiring. It needs a host, a role and a secret host path; a missing one leaves it unset, and
- * a start then refuses (fail closed). The role is the managed Body's narrow role, never the helper's own role.
+ * The managed Body's database wiring. It needs a host, a role and a secret host path. With the flag off a missing one
+ * leaves it unset. With the flag on it is a load error that names the missing variable, so the helper never starts with
+ * a half-wired flag. The role is the managed Body's narrow role, never the helper's own role.
  */
-function managedDb(env: Env): ManagedDbWiring | undefined {
+function managedDb(env: Env, enabled: boolean): ManagedDbWiring | undefined {
   const host = env.GELDAR_MANAGED_PG_HOST;
   const role = env.GELDAR_MANAGED_PG_ROLE;
   const secretHostPath = optionalHostPath(env, 'GELDAR_MANAGED_DB_SECRET_HOST_PATH');
-  if (!host || !role || !secretHostPath) return undefined;
+  if (!host || !role || !secretHostPath) {
+    if (!enabled) return undefined;
+    const missing = !host
+      ? 'GELDAR_MANAGED_PG_HOST'
+      : !role
+        ? 'GELDAR_MANAGED_PG_ROLE'
+        : 'GELDAR_MANAGED_DB_SECRET_HOST_PATH';
+    throw new Error(`GELDAR_MANAGED_BODIES is 1 but ${missing} is unset`);
+  }
   if (!PLAIN_NAME.test(host) || !PLAIN_NAME.test(role))
     throw new Error('GELDAR_MANAGED_PG_HOST and GELDAR_MANAGED_PG_ROLE must be plain names');
   return {
@@ -126,6 +135,18 @@ function managedDb(env: Env): ManagedDbWiring | undefined {
     role,
     secretHostPath,
   };
+}
+
+/**
+ * The managed Body wiring as one unit. With the flag on, the RCON host path and the DB wiring are required: a missing one
+ * is a load error, not a silent unset (the port alone stays optional, and defaults to 5432).
+ */
+function managedConfig(env: Env) {
+  const enabled = managedFlag(env);
+  const rconSecretHostPath = optionalHostPath(env, 'GELDAR_RCON_SECRET_HOST_PATH');
+  if (enabled && rconSecretHostPath === undefined)
+    throw new Error('GELDAR_MANAGED_BODIES is 1 but GELDAR_RCON_SECRET_HOST_PATH is unset');
+  return { enabled, db: managedDb(env, enabled), rconSecretHostPath };
 }
 
 /** Reads the whole config. Throws on the first missing or invalid value; never includes a secret in a message. */
@@ -190,10 +211,6 @@ export function loadHelperConfig(env: Env, fs: SecretFs): HelperConfig {
     // 35791 minutes is the most a sweep timer can hold (2147483647 ms).
     sweepMinutes: positive(env, 'GELDAR_SWEEP_MINUTES', 10, 35_791),
     requestDeadlineMs: positive(env, 'GELDAR_BODY_HELPER_DEADLINE_MS', 120_000, 2_147_483_647),
-    managed: {
-      enabled: managedFlag(env),
-      db: managedDb(env),
-      rconSecretHostPath: optionalHostPath(env, 'GELDAR_RCON_SECRET_HOST_PATH'),
-    },
+    managed: managedConfig(env),
   };
 }

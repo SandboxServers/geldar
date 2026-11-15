@@ -137,9 +137,13 @@ describe('admit one-shot template', () => {
     expect(BODY_LABEL in labels).toBe(false);
   });
 
-  it('is removed on exit, with no capability, a read-only root and no new privileges', () => {
+  it('is not auto-removed: the engine force-removes it after the wait, so an early exit cannot race the wait into a 404', () => {
     const host = admitConfig(admitInput).HostConfig as Record<string, unknown>;
-    expect(host.AutoRemove).toBe(true);
+    expect(host.AutoRemove).toBeUndefined();
+  });
+
+  it('has no capability, a read-only root and no new privileges', () => {
+    const host = admitConfig(admitInput).HostConfig as Record<string, unknown>;
     expect(host.CapDrop).toEqual(['ALL']);
     expect(host.ReadonlyRootfs).toBe(true);
     expect(host.SecurityOpt).toEqual(['no-new-privileges:true']);
@@ -157,4 +161,74 @@ describe('admit one-shot template', () => {
       expect(() => admitConfig({ ...admitInput, lifeId: id })).toThrow('not a managed life id');
     },
   );
+});
+
+// The full HostConfig of each template is pinned field by field: a mutation of any one line fails a named test.
+const ADMIT_HOST = {
+  NetworkMode: 'geldar-colo',
+  Binds: ['/root/secrets/rcon.txt:/run/secrets/rcon:ro'],
+  Tmpfs: { '/tmp': 'rw,noexec,nosuid,size=64m' },
+  ReadonlyRootfs: true,
+  LogConfig: { Type: 'json-file', Config: { 'max-size': '1m', 'max-file': '1' } },
+  CapDrop: ['ALL'],
+  SecurityOpt: ['no-new-privileges:true'],
+  Memory: 128 * 1024 * 1024,
+  MemorySwap: 128 * 1024 * 1024,
+  PidsLimit: 32,
+};
+
+const MANAGED_HOST = {
+  NanoCpus: 1_000_000_000,
+  Memory: 1024 * 1024 * 1024,
+  MemorySwap: 1024 * 1024 * 1024,
+  PidsLimit: 256,
+  NetworkMode: 'geldar-colo',
+  Binds: [
+    '/root/secrets/nats-body.txt:/run/secrets/nats-body.txt:ro',
+    '/root/shards/colo.yaml:/opt/geldar/shards/colo.yaml:ro',
+    '/root/secrets/db-body-host.txt:/run/secrets/db-password.txt:ro',
+  ],
+  Tmpfs: { '/tmp': 'rw,noexec,nosuid,size=64m' },
+  ReadonlyRootfs: true,
+  LogConfig: { Type: 'json-file', Config: { 'max-size': '10m', 'max-file': '3' } },
+  RestartPolicy: { Name: 'unless-stopped' },
+  CapDrop: ['ALL'],
+  SecurityOpt: ['no-new-privileges:true'],
+};
+
+describe('pinned HostConfig of both templates', () => {
+  const admit = admitConfig(admitInput);
+  const managed = managedBodyConfig(managedInput);
+
+  it('the admit one-shot has exactly the pinned HostConfig and nothing else', () => {
+    expect(admit.HostConfig).toEqual(ADMIT_HOST);
+    expect(admit.Image).toBe('golem-body:test');
+    expect(admit.User).toBe('1000:1000');
+  });
+
+  it('the managed Body has exactly the pinned HostConfig and nothing else', () => {
+    expect(managed.HostConfig).toEqual(MANAGED_HOST);
+    expect(managed.Image).toBe('golem-body:test');
+    expect(managed.User).toBe('1000:1000');
+  });
+
+  it.each(Object.entries(ADMIT_HOST))('admit HostConfig.%s is pinned', (key, value) => {
+    expect((admit.HostConfig as Record<string, unknown>)[key]).toEqual(value);
+  });
+
+  it.each(Object.entries(MANAGED_HOST))('managed Body HostConfig.%s is pinned', (key, value) => {
+    expect((managed.HostConfig as Record<string, unknown>)[key]).toEqual(value);
+  });
+
+  it.each(['Privileged', 'PidMode', 'AutoRemove', 'Devices', 'CapAdd'])(
+    'neither template sets %s',
+    (key) => {
+      expect((admit.HostConfig as Record<string, unknown>)[key]).toBeUndefined();
+      expect((managed.HostConfig as Record<string, unknown>)[key]).toBeUndefined();
+    },
+  );
+
+  it('the admit one-shot has no restart policy, since it runs once and is removed', () => {
+    expect((admit.HostConfig as Record<string, unknown>).RestartPolicy).toBeUndefined();
+  });
 });

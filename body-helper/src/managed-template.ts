@@ -1,7 +1,7 @@
 // The managed Body and the admit one-shot templates (BH-3). Both are fixed: the helper builds them from its root-only
 // config and from one validated life id, and no caller value reaches them. The managed Body keeps the Body label (the
 // global cap counts it), takes no RCON secret and no Docker socket. The admit one-shot takes only the RCON password file,
-// carries the admit label (the cap does not count it) and is removed when it exits.
+// carries the admit label (the cap does not count it) and is force-removed by the engine's runOneShot after it exits.
 import { LIFE_ID_PATTERN } from './roster.ts';
 import {
   BODY_LABEL,
@@ -27,6 +27,9 @@ const RCON_HOST = 'paper';
 const RCON_PORT = '25575';
 const IN_NETWORK_HOSTS = '1';
 const TMPFS_TMP = 'rw,noexec,nosuid,size=64m';
+/** The admit one-shot runs a TypeScript file under Node 22, which needs more than 64 MiB: a fixed 128 MiB (no swap) and 32 pids, so a runaway cannot take the node. */
+const ADMIT_MEMORY_BYTES = 128 * 1024 * 1024;
+const ADMIT_PIDS_LIMIT = 32;
 
 /** The database wiring of a managed Body: a host, a port, the narrow role name and a root-only password file on the host. */
 export interface ManagedDbWiring {
@@ -138,11 +141,13 @@ export function admitConfig(input: AdmitInput): Record<string, unknown> {
     },
     HostConfig: {
       NetworkMode: input.network,
+      Memory: ADMIT_MEMORY_BYTES,
+      MemorySwap: ADMIT_MEMORY_BYTES,
+      PidsLimit: ADMIT_PIDS_LIMIT,
       Binds: [`${checkBindSource(input.rconSecretHostPath)}:${RCON_PASSWORD_FILE}:ro`],
       Tmpfs: { '/tmp': TMPFS_TMP },
       ReadonlyRootfs: true,
       LogConfig: { Type: 'json-file', Config: { 'max-size': '1m', 'max-file': '1' } },
-      AutoRemove: true,
       CapDrop: ['ALL'],
       SecurityOpt: ['no-new-privileges:true'],
     },

@@ -237,3 +237,111 @@ describe('engine: log bounds', () => {
     expect(demuxLogs(Buffer.from('plain text')).toString()).toBe('plain text');
   });
 });
+
+const ONE_SHOT_NAME = 'geldar-admit-ag_0123456789ab';
+const ONE_SHOT_ROUTES: Record<string, EngineReply> = {
+  'POST /containers/create': json(201, { Id: 'abc123' }),
+  'POST /containers/abc123/start': empty(204),
+  'POST /containers/abc123/wait': json(200, { StatusCode: 0 }),
+  'DELETE /containers/abc123': empty(204),
+};
+
+/**
+ * A scripted Engine for runOneShot. Each route (method and path without the query) answers with its reply, or throws
+ * when the reply is an Error. A call with no scripted route throws, so an unexpected call fails the test.
+ */
+function oneShotFake(routes: Record<string, EngineReply | Error>) {
+  const calls: { method: string; path: string }[] = [];
+  const request: EngineRequest = async (method, path) => {
+    calls.push({ method, path });
+    const key = `${method} ${path.split('?')[0]}`;
+    const reply = routes[key];
+    if (reply === undefined) throw new Error(`unscripted ${key}`);
+    if (reply instanceof Error) throw reply;
+    return reply;
+  };
+  const run = (config: Record<string, unknown> = {}) =>
+    createDockerEngine(request).runOneShot(ONE_SHOT_NAME, config);
+  return { calls, run };
+}
+
+describe('engine: runOneShot', () => {
+  it('creates by name, starts, waits, force-removes, and returns the exit code', async () => {
+    const { calls, run } = oneShotFake({ ...ONE_SHOT_ROUTES });
+    expect(await run()).toBe(0);
+    expect(calls).toEqual([
+      { method: 'POST', path: `/containers/create?name=${ONE_SHOT_NAME}` },
+      { method: 'POST', path: '/containers/abc123/start' },
+      { method: 'POST', path: '/containers/abc123/wait' },
+      { method: 'DELETE', path: '/containers/abc123?force=true' },
+    ]);
+  });
+
+  it('returns a non-zero exit code as the code the one-shot exited with', async () => {
+    const { run } = oneShotFake({
+      ...ONE_SHOT_ROUTES,
+      'POST /containers/abc123/wait': json(200, { StatusCode: 3 }),
+    });
+    expect(await run()).toBe(3);
+  });
+
+  it.each([{}, { StatusCode: '0' }, { StatusCode: null }])(
+    'a wait reply with no numeric StatusCode (%j) is a refusal, -1, never 0',
+    async (waitBody) => {
+      const { calls, run } = oneShotFake({
+        ...ONE_SHOT_ROUTES,
+        'POST /containers/abc123/wait': json(200, waitBody),
+      });
+      expect(await run()).toBe(-1);
+      expect(calls.at(-1)).toEqual({ method: 'DELETE', path: '/containers/abc123?force=true' });
+    },
+  );
+
+  it.each([404, 500])(
+    'a wait answered %i throws, and the one-shot is still force-removed',
+    async (status) => {
+      const { calls, run } = oneShotFake({
+        ...ONE_SHOT_ROUTES,
+        'POST /containers/abc123/wait': empty(status),
+      });
+      await expect(run()).rejects.toThrow('docker wait refused');
+      expect(calls.at(-1)).toEqual({ method: 'DELETE', path: '/containers/abc123?force=true' });
+    },
+  );
+
+  it('a start answered 500 throws, never waits, and the created one-shot is still force-removed', async () => {
+    const { calls, run } = oneShotFake({
+      ...ONE_SHOT_ROUTES,
+      'POST /containers/abc123/start': empty(500),
+    });
+    await expect(run()).rejects.toThrow('docker start refused');
+    expect(calls.map((c) => c.path)).not.toContain('/containers/abc123/wait');
+    expect(calls.at(-1)).toEqual({ method: 'DELETE', path: '/containers/abc123?force=true' });
+  });
+
+  it('a create answered 409 throws and sends no remove, since no container was made', async () => {
+    const { calls, run } = oneShotFake({
+      ...ONE_SHOT_ROUTES,
+      'POST /containers/create': empty(409),
+    });
+    await expect(run()).rejects.toThrow('docker create refused');
+    expect(calls.map((c) => c.method)).toEqual(['POST']);
+  });
+
+  it('a wait body that is not JSON throws, and the one-shot is still force-removed', async () => {
+    const { calls, run } = oneShotFake({
+      ...ONE_SHOT_ROUTES,
+      'POST /containers/abc123/wait': { status: 200, body: Buffer.from('<html>') },
+    });
+    await expect(run()).rejects.toThrow('docker reply not json');
+    expect(calls.at(-1)).toEqual({ method: 'DELETE', path: '/containers/abc123?force=true' });
+  });
+
+  it('a failed force-remove after a good wait does not change the exit code', async () => {
+    const { run } = oneShotFake({
+      ...ONE_SHOT_ROUTES,
+      'DELETE /containers/abc123': new Error('daemon gone'),
+    });
+    expect(await run()).toBe(0);
+  });
+});
