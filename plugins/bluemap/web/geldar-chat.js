@@ -11,6 +11,7 @@
   const BACKOFF_MS = 10000;
   const FETCH_TIMEOUT_MS = 8000;
   const COLLAPSED_KEY = 'geldar-chat-collapsed';
+  const PIN_PX = 8;
 
   // The feed as {t, id, text} lines, oldest first. Null when the body is not {"v":1,"lines":[...]}. Bad entries are
   // skipped, and at most the last MAX_ROWS lines are kept.
@@ -125,14 +126,23 @@
     return who;
   }
 
-  // Appends the rows, then scrolls to the newest only if the viewer was already at the bottom. Returns the name
-  // element of each row.
+  // Appends the rows. Returns the name element of each row. The caller then runs followBottom, since a row that grows
+  // later (a name arriving) must pin again too.
   function renderLines(doc, list, lines, nameOf) {
-    const atBottom = list.scrollTop + list.clientHeight >= list.scrollHeight - 4;
     const names = [];
     for (const l of lines) names.push({ id: l.id, el: appendRow(doc, list, l, nameOf(l.id)) });
-    if (atBottom) list.scrollTop = list.scrollHeight;
     return names;
+  }
+
+  // True when the list is within PIN_PX of its bottom: the viewer is following the newest line.
+  function isPinned(list) {
+    return list.scrollHeight - list.scrollTop - list.clientHeight <= PIN_PX;
+  }
+
+  // Scrolls to the newest line while the viewer is pinned. Run after every step that changes the rows or their heights
+  // (new lines, a name filled in, the panel opened): a row that grows after the scroll pushes the newest out of view.
+  function followBottom(state) {
+    if (state.pinned) state.list.scrollTop = state.list.scrollHeight;
   }
 
   function nextDelay(ok) {
@@ -152,18 +162,24 @@
   }
 
   // The panel's state: the document and the list, the keys of the rows shown (oldest first, at most MAX_ROWS), the
-  // names seen, and the name elements still showing the neutral label.
+  // names seen, the name elements still showing the neutral label, and whether the viewer is pinned to the bottom.
+  // Pinned starts true; only a scroll of the list changes it, since new rows do not scroll.
   function createFeedState(doc, list) {
-    return { doc, list, shown: [], names: new Map(), unnamed: [] };
+    const state = { doc, list, shown: [], names: new Map(), unnamed: [], pinned: true };
+    list.addEventListener('scroll', () => {
+      state.pinned = isPinned(list);
+    });
+    return state;
   }
 
-  // Writes each name that has arrived into the rows that showed the neutral label.
+  // Writes each name that has arrived into the rows that showed the neutral label, then follows the bottom.
   function refreshNames(state) {
     state.unnamed = state.unnamed.filter((u) => {
       if (!state.names.has(u.id)) return true;
       u.el.textContent = state.names.get(u.id);
       return false;
     });
+    followBottom(state);
   }
 
   // One poll. The feed and the three players.json files are fetched in parallel. The feed is rendered as soon as it
@@ -191,6 +207,7 @@
       state.shown.push(...fresh.map(keyOf));
       state.shown.splice(0, Math.max(0, state.shown.length - MAX_ROWS));
       state.unnamed.splice(0, Math.max(0, state.unnamed.length - MAX_ROWS));
+      followBottom(state);
     }
     playersP.then(() => refreshNames(state));
     return true;
@@ -222,7 +239,8 @@
     }
   }
 
-  function buildPanel(doc) {
+  // onExpand runs when the viewer opens the panel: a list that was hidden loses its scroll position.
+  function buildPanel(doc, onExpand) {
     const root = doc.createElement('section');
     root.id = 'geldar-chat';
     root.className = 'gc-panel';
@@ -253,6 +271,7 @@
       const collapsed = !root.classList.contains('gc-collapsed');
       setCollapsed(collapsed);
       writeCollapsed(collapsed);
+      if (!collapsed && onExpand) onExpand();
     });
     return { root, list };
   }
@@ -263,9 +282,13 @@
     fetchFn = (url, opts) => fetch(url, opts),
     schedule = (fn, ms) => setTimeout(fn, ms),
   ) {
-    const panel = buildPanel(doc);
+    let state = null;
+    const panel = buildPanel(doc, () => {
+      if (state) followBottom(state);
+    });
     doc.body.appendChild(panel.root);
-    runLoop(createFeedState(doc, panel.list), fetchFn, schedule);
+    state = createFeedState(doc, panel.list);
+    runLoop(state, fetchFn, schedule);
   }
 
   if (
@@ -290,6 +313,8 @@
       keyOf,
       appendRow,
       renderLines,
+      isPinned,
+      followBottom,
       nextDelay,
       createFeedState,
       pollOnce,

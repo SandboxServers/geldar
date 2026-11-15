@@ -18,6 +18,15 @@ interface FakeNode {
   className: string;
   childNodes: FakeNode[];
   style: { color?: string };
+  scrollTop: number;
+  scrollHeight: number;
+  clientHeight: number;
+  classList: { toggle(name: string, force?: boolean): boolean; contains(name: string): boolean };
+  attrs: Record<string, string>;
+  setAttribute(name: string, value: string): void;
+  addEventListener(type: string, fn: () => void): void;
+  // Runs the listeners of an event, as the browser does for a click or a scroll.
+  fire(type: string): void;
   appendChild(c: FakeNode): FakeNode;
   removeChild(c: FakeNode): FakeNode;
 }
@@ -38,7 +47,8 @@ interface ChatModule {
   createFeedState(
     doc: FakeDoc,
     list: FakeNode,
-  ): { shown: string[]; names: Map<string, string>; unnamed: unknown[] };
+  ): { shown: string[]; names: Map<string, string>; unnamed: unknown[]; pinned: boolean };
+  buildPanel(doc: FakeDoc, onExpand?: () => void): { root: FakeNode; list: FakeNode };
   pollOnce(state: unknown, fetchFn: FetchFn): Promise<boolean>;
   runLoop(state: unknown, fetchFn: FetchFn, schedule: (fn: () => void, ms: number) => void): void;
   NEUTRAL: string;
@@ -57,12 +67,37 @@ function load(): ChatModule {
 const chat = load();
 
 function fakeNode(doc: { markupWrites: string[] }, tag: string): FakeNode {
+  const classes = new Set<string>();
+  const listeners: Record<string, Array<() => void>> = {};
   const node: FakeNode = {
     tagName: tag,
     textContent: '',
     className: '',
     childNodes: [],
     style: {},
+    scrollTop: 0,
+    scrollHeight: 0,
+    clientHeight: 0,
+    classList: {
+      toggle(name, force) {
+        const on = force ?? !classes.has(name);
+        if (on) classes.add(name);
+        else classes.delete(name);
+        return on;
+      },
+      contains: (name) => classes.has(name),
+    },
+    attrs: {},
+    setAttribute(name, value) {
+      node.attrs[name] = value;
+    },
+    addEventListener(type, fn) {
+      if (!listeners[type]) listeners[type] = [];
+      listeners[type].push(fn);
+    },
+    fire(type) {
+      for (const fn of listeners[type] ?? []) fn();
+    },
     appendChild(c) {
       node.childNodes.push(c);
       return c;
@@ -390,6 +425,116 @@ describe('chat panel: the poll loop', () => {
     await settle();
     expect(loop.delays).toEqual([10000, 3000]);
     expect(list.childNodes).toHaveLength(1);
+  });
+});
+
+describe('chat panel: the newest line stays in view', () => {
+  // A promise a test opens later: the player lists wait on it, so the feed renders first.
+  function gate() {
+    let open: () => void = () => {};
+    const wait = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    return { wait, open };
+  }
+
+  it('pins the newest line to the bottom after the first render', async () => {
+    const doc = fakeDoc();
+    const list = doc.createElement('div');
+    list.clientHeight = 100;
+    list.scrollHeight = 300;
+    const stub = stubFetch({ [FEED]: feedText([line(1, 'u1', 'hi')]) });
+    await chat.pollOnce(chat.createFeedState(doc, list), stub.fn);
+    expect(list.scrollTop).toBe(300);
+  });
+
+  it('re-pins after a name arrives and grows its row', async () => {
+    const doc = fakeDoc();
+    const list = doc.createElement('div');
+    list.clientHeight = 100;
+    list.scrollHeight = 300;
+    const state = chat.createFeedState(doc, list);
+    const names = gate();
+    const inner = stubFetch({
+      [FEED]: feedText([line(1, 'u1', 'hi')]),
+      [PLAYERS]: playersText([{ uuid: 'u1', name: 'Ash' }]),
+    }).fn;
+    const fetchFn: FetchFn = async (url, opts) => {
+      if (url === PLAYERS) {
+        await names.wait;
+        list.scrollHeight = 340;
+      }
+      return inner(url, opts);
+    };
+    await chat.pollOnce(state, fetchFn);
+    expect(list.scrollTop).toBe(300);
+    names.open();
+    await settle();
+    expect(rowName(list.childNodes[0] as FakeNode)).toBe('Ash');
+    expect(list.scrollTop).toBe(340);
+  });
+
+  it('does not pull a viewer who scrolled up back down, for new lines or names', async () => {
+    const doc = fakeDoc();
+    const list = doc.createElement('div');
+    list.clientHeight = 100;
+    list.scrollHeight = 300;
+    const state = chat.createFeedState(doc, list);
+    const names = gate();
+    let height = 300;
+    let body = feedText([line(1, 'u1', 'one')]);
+    const fetchFn: FetchFn = async (url) => {
+      if (url === FEED) {
+        list.scrollHeight = height;
+        return { ok: true, text: async () => body };
+      }
+      await names.wait;
+      list.scrollHeight = height + 40;
+      return { ok: true, text: async () => playersText([{ uuid: 'u1', name: 'Ash' }]) };
+    };
+    await chat.pollOnce(state, fetchFn);
+    expect(list.scrollTop).toBe(300);
+    list.scrollTop = 50;
+    list.fire('scroll');
+    expect(state.pinned).toBe(false);
+    height = 360;
+    body = feedText([line(1, 'u1', 'one'), line(2, 'u2', 'two')]);
+    await chat.pollOnce(state, fetchFn);
+    expect(list.childNodes).toHaveLength(2);
+    expect(list.scrollTop).toBe(50);
+    names.open();
+    await settle();
+    expect(rowName(list.childNodes[0] as FakeNode)).toBe('Ash');
+    expect(list.scrollTop).toBe(50);
+  });
+
+  it('counts a viewer within 8 px of the bottom as pinned, and one 9 px short as not', () => {
+    const doc = fakeDoc();
+    const list = doc.createElement('div');
+    list.clientHeight = 100;
+    list.scrollHeight = 300;
+    const state = chat.createFeedState(doc, list);
+    list.scrollTop = 192;
+    list.fire('scroll');
+    expect(state.pinned).toBe(true);
+    list.scrollTop = 191;
+    list.fire('scroll');
+    expect(state.pinned).toBe(false);
+  });
+
+  it('calls onExpand when the panel opens, and not when it closes', () => {
+    const doc = fakeDoc();
+    let expanded = 0;
+    const panel = chat.buildPanel(doc, () => {
+      expanded++;
+    });
+    const toggle = panel.root.childNodes[0]?.childNodes[1] as FakeNode;
+    toggle.fire('click');
+    expect(panel.root.classList.contains('gc-collapsed')).toBe(true);
+    expect(expanded).toBe(0);
+    toggle.fire('click');
+    expect(panel.root.classList.contains('gc-collapsed')).toBe(false);
+    expect(expanded).toBe(1);
   });
 });
 

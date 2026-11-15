@@ -25,9 +25,9 @@
   #geldar-chat {
     top: auto;
     bottom: 12px;
-    left: 8px;
+    left: auto;
     right: 8px;
-    width: auto;
+    width: min(300px, calc(100vw - 16px));
     max-height: 35vh;
   }
 }
@@ -45,7 +45,9 @@
   color: #eee;
   cursor: pointer;
   font: inherit;
-  padding: 0 6px;
+  min-height: 40px;
+  min-width: 44px;
+  padding: 0 12px;
 }
 #geldar-chat .gc-list {
   flex: 1 1 auto;
