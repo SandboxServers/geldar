@@ -43,7 +43,8 @@
 The owner can export their own data through `register_owner_export` (0062, C7-09b). Ruled 2026-11-15, revertable by the owner:
 
 - Roster reservations (`mcp_roster`), body operations (`body_ops`) and consent records (`register_consents`) ARE exported. They are the owner's own non-secret data, and the consent record is what a review asks for.
-- Thoughts and mcp_journal rows use an explicit column list. `model_input`, `snapshot`, `raw_output` and `provider_usage` are NOT exported: they carry other residents' words and are bulky. Each table is capped at 20000 rows and at 100000000 bytes, with a truncated flag.
+- Thoughts and mcp_journal rows use an explicit column list. `model_input`, `snapshot`, `raw_output` and `provider_usage` are NOT exported: they carry other residents' words and are bulky. Each table is capped at 20000 rows and at 3000000 bytes (migration 0065), with a truncated flag.
+- The export is bounded to about 8 MB of JSON (route cap) and 3 MB per bulky table (migration 0065); the per-table `truncated` flags say when a table was cut; a larger export is a later card (streaming).
 - Per-life row counts (no contents) are exported for the other per-life tables; `not_included` names every table or column left out, and it names `turn_records` (0060), which is not exported or counted. Note: `register_account_delete` (0040) does not erase `turn_records` either; GX-05c owns that, and it must be closed before outside players' agents run on kit Minds.
 
 Each successful call writes one audit row with a hashed actor and no name or id.
