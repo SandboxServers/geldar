@@ -221,14 +221,14 @@ describe('body helper: the per-request deadline', () => {
       {
         name: 'countCounted with a stopped Body of the name',
         hold: 'countCounted',
-        seed: [bodyFixture('ranger', false)],
+        seed: [bodyFixture('ranger', false, 'own-a')],
         calls: ['inspect', 'countCounted'],
         left: 1,
       },
       {
         name: 'remove',
         hold: 'remove',
-        seed: [bodyFixture('ranger', false)],
+        seed: [bodyFixture('ranger', false, 'own-a')],
         calls: ['inspect', 'countCounted', 'remove'],
         left: 0,
       },
@@ -317,7 +317,7 @@ describe('body helper: the per-request deadline', () => {
 
   it('a hung stop is answered engine timeout at the deadline, and the next queued start runs', async () => {
     vi.useFakeTimers();
-    const gate = gatedEngine(['stop'], [bodyFixture('ranger', true)]);
+    const gate = gatedEngine(['stop'], [bodyFixture('ranger', true, 'own-a')]);
     const handle = createBodyHelper({
       roster,
       engine: gate.engine,
@@ -338,7 +338,7 @@ describe('body helper: the per-request deadline', () => {
 
   it('the sweep lists a Body whose stop timed out while it still runs, and stops once the stop lands', async () => {
     vi.useFakeTimers();
-    const gate = gatedEngine(['stop'], [bodyFixture('ranger', true)]);
+    const gate = gatedEngine(['stop'], [bodyFixture('ranger', true, 'own-a')]);
     const stopTimeouts = new Set<string>();
     const audit: string[] = [];
     const handle = createBodyHelper({
@@ -367,7 +367,7 @@ describe('body helper: the per-request deadline', () => {
 
   it('a late stop that lands clears its stopTimeouts entry, and is not audited accepted', async () => {
     vi.useFakeTimers();
-    const gate = gatedEngine(['stop'], [bodyFixture('ranger', true)]);
+    const gate = gatedEngine(['stop'], [bodyFixture('ranger', true, 'own-a')]);
     const stopTimeouts = new Set<string>();
     const audit: string[] = [];
     const handle = createBodyHelper({
@@ -396,7 +396,7 @@ describe('body helper: the per-request deadline', () => {
 
   it('a late stop that throws still clears its stopTimeouts entry', async () => {
     vi.useFakeTimers();
-    const gate = gatedEngine([], [bodyFixture('ranger', true)]);
+    const gate = gatedEngine([], [bodyFixture('ranger', true, 'own-a')]);
     let failStop: () => void = () => undefined;
     const stopFails = new Promise<void>((resolve) => {
       failStop = resolve;
@@ -429,7 +429,7 @@ describe('body helper: the per-request deadline', () => {
 
   it('a stop whose inspect hangs past the deadline never stops a Body that a later start made', async () => {
     vi.useFakeTimers();
-    const held = heldInspectEngine([bodyFixture('ranger', true)]);
+    const held = heldInspectEngine([bodyFixture('ranger', true, 'own-a')]);
     const audit: string[] = [];
     const stopTimeouts = new Set<string>();
     const handle = createBodyHelper({
@@ -450,7 +450,7 @@ describe('body helper: the per-request deadline', () => {
     expect(stopTimeouts.size).toBe(0);
     const before = audit.length;
     // The hung inspect answers late, with the old Body running: the abandoned stop makes no further Engine call.
-    held.answer({ id: 'id-ranger', running: true, helperBody: true });
+    held.answer({ id: 'id-ranger', running: true, helperBody: true, owner: 'own-a' });
     await flush();
     expect(held.calls).not.toContain('stop');
     expect(held.fake.containers.filter((c) => c.running).map((c) => c.name)).toEqual(['ranger']);
@@ -459,7 +459,7 @@ describe('body helper: the per-request deadline', () => {
 
   it('a start whose inspect hangs past the deadline writes no refusal line after the engine timeout', async () => {
     vi.useFakeTimers();
-    const held = heldInspectEngine([bodyFixture('ranger', true)]);
+    const held = heldInspectEngine([bodyFixture('ranger', true, 'own-a')]);
     const audit: string[] = [];
     const handle = createBodyHelper({
       roster,
@@ -472,7 +472,7 @@ describe('body helper: the per-request deadline', () => {
     const first = handle(req('start', 'ranger'));
     await vi.advanceTimersByTimeAsync(1000);
     expect(await first).toEqual({ ok: false, code: 'timeout', error: ENGINE_TIMEOUT });
-    held.answer({ id: 'id-ranger', running: true, helperBody: true });
+    held.answer({ id: 'id-ranger', running: true, helperBody: true, owner: 'own-a' });
     await flush();
     expect(audit).toEqual([
       'body-helper verb=start name=ranger outcome=refused reason=engine_timeout',

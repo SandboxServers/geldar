@@ -45,7 +45,12 @@ export function createFakeEngine(seed: FakeContainer[] = []): FakeEngine {
     async inspect(name): Promise<ContainerState | null> {
       const found = byName(name);
       return found
-        ? { id: found.id, running: found.running, helperBody: BODY_LABEL in found.labels }
+        ? {
+            id: found.id,
+            running: found.running,
+            helperBody: BODY_LABEL in found.labels,
+            owner: found.labels['geldar.owner'] ?? null,
+          }
         : null;
     },
     async countCounted() {
