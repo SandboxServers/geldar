@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # The supervisor container on the Colo node (C7-03b2, decision 0260). It creates geldar-colo-supervisor with `docker create`
 # and starts it with `docker start`, as the `supervisor` service in compose/colo.yml describes it. It is never `docker compose up`:
 # on the node a compose up fails with "network geldar-colo has active endpoints" (the network's recorded config has drifted).
@@ -18,7 +18,7 @@
 #   GELDAR_NETWORK           the colo network (default geldar-colo)
 #   DOCKER                   the docker client (default docker; tests point it at a fake)
 #   STAT                     the stat command (default stat; tests point it at a fake)
-set -euo pipefail
+set -eu
 
 NAME="geldar-colo-supervisor"
 NETWORK="${GELDAR_NETWORK:-geldar-colo}"
@@ -35,7 +35,25 @@ case "$UID_VALUE" in
     ;;
 esac
 
-if [[ ! "$IMAGE" =~ ^[^-].*@sha256:[0-9a-f]{64}$ ]]; then
+# POSIX sh, so no [[ =~ ]]: the name is the text before the last @sha256:, the digest the text after it. The name must be
+# non-empty and must not start with -; the digest must be exactly 64 lowercase hex digits.
+digest_ok=1
+case "$IMAGE" in
+  *@sha256:*) ;;
+  *) digest_ok=0 ;;
+esac
+name="${IMAGE%@sha256:*}"
+digest="${IMAGE##*@sha256:}"
+case "$name" in
+  '' | -*) digest_ok=0 ;;
+esac
+case "$digest" in
+  *[!0-9a-f]*) digest_ok=0 ;;
+esac
+if [ "${#digest}" -ne 64 ]; then
+  digest_ok=0
+fi
+if [ "$digest_ok" -ne 1 ]; then
   echo "refusing: GELDAR_SUPERVISOR_IMAGE must be a digest reference (name@sha256:<64 lowercase hex>), not a tag" >&2
   exit 1
 fi

@@ -101,6 +101,32 @@ function run(env: Record<string, string>, opts: { secrets?: boolean; uid?: strin
 const created = (calls: string[]) => calls.filter((c) => c.startsWith('create '));
 const started = (calls: string[]) => calls.filter((c) => c === 'start geldar-colo-supervisor');
 
+// CI runs the deploy scripts under sh, which is dash on Linux. Git's bash accepts pipefail and [[ ]], so a bashism would pass
+// the behavioural tests on Windows. These checks read the source, so they catch one on any host.
+describe('deploy/colo-supervisor.sh is POSIX sh (C7-03b2)', () => {
+  const text = readFileSync(SCRIPT, 'utf8');
+  const code = text
+    .split('\n')
+    .filter((line) => !line.trimStart().startsWith('#'))
+    .join('\n');
+
+  it('starts with #!/bin/sh and sets -eu, with no pipefail', () => {
+    expect(text.split('\n')[0]).toBe('#!/bin/sh');
+    expect(code).toMatch(/^set -eu$/m);
+    expect(code).not.toMatch(/pipefail/);
+  });
+
+  it('uses no bash-only syntax: no [[ ]], no =~, no local, no process substitution, no echo -e', () => {
+    expect(code).not.toMatch(/\[\[|=~|\blocal\s|<\(|>\(|\bdeclare\s|\becho -e\b/);
+  });
+
+  it('parses under the shell the tests run it with (sh -n)', () => {
+    const parsed = spawnSync(SH, ['-n', SCRIPT], { encoding: 'utf8' });
+    expect(parsed.stderr).toBe('');
+    expect(parsed.status).toBe(0);
+  });
+});
+
 describe('deploy/colo-supervisor.sh: first run (C7-03b2, decision 0260)', () => {
   it('creates the container with docker create and then starts it with docker start', () => {
     const r = run({});
