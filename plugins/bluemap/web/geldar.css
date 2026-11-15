@@ -164,3 +164,54 @@
 #geldar-chat.gc-collapsed .gc-resume {
   display: none;
 }
+
+/* The time-of-day dial (BM-15, geldar-sky.js): a small horizon dial with a sun or a moon on its arc. Top right, below
+   BlueMap's control bar (y 8..40, so 56px), and left of the chat panel, which takes the top right (right 12px, 300px
+   wide, so right 324px). On a narrow screen the chat panel is at the bottom, so the dial takes the right 12px.
+   pointer-events none: it never takes a map click. Translucent, so it reads over bright and dark tiles. */
+#geldar-sky {
+  position: fixed;
+  top: calc(40px + 16px);
+  right: 324px;
+  width: 72px;
+  height: 40px;
+  z-index: 1000;
+  pointer-events: none;
+  background: rgba(20, 20, 24, 0.55);
+  border-radius: 6px;
+}
+#geldar-sky[hidden] {
+  display: none;
+}
+#geldar-sky .gs-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+#geldar-sky .gs-arc {
+  stroke: rgba(255, 255, 255, 0.45);
+  stroke-width: 1;
+}
+#geldar-sky .gs-horizon {
+  stroke: #aaa;
+  stroke-width: 1;
+}
+/* The icon below the horizon fades out (geldar-sky.js paint); reduced motion takes no fade. */
+#geldar-sky .gs-icon {
+  transition: opacity 0.4s ease;
+}
+#geldar-sky .gs-icon.gs-off {
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  #geldar-sky .gs-icon {
+    transition: none;
+  }
+}
+@media (max-width: 600px) {
+  #geldar-sky {
+    right: 12px;
+    width: 56px;
+    height: 32px;
+  }
+}

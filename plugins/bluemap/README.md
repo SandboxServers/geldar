@@ -141,4 +141,11 @@ long their position has been unchanged, to 0.1 block on each axis; it is compute
 `players.json` positions only, so no server state is added. The "last line" age under the list is the age of the newest
 feed line.
 
+The time-of-day dial (BM-15) is a second script, `web/geldar-sky.js`: a small horizon dial at the top right of the map,
+below BlueMap's control bar and left of the chat panel, with a sun on its arc from tick 0 (06:00) to 12000 and a moon from
+12000 to 24000. It reads the same `geldar-chat.json` clock every 5 s, reads no lines and no other file, and moves at 20
+ticks a second between reads. It hides when the clock has not moved for 60 s, on the nether and the end, and when BlueMap
+is missing. Its tooltip and accessible name read "World time HH:MM, Day" or "Night". It is click-through
+(`pointer-events: none`). Its node needs a read-only mount, a Caddy handler and a `scripts` entry, as in the runbook.
+
 The manual node steps, the checks and the rollback are in `docs/runbooks/map-chat-panel.md`.

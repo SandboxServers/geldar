@@ -23,6 +23,19 @@ The hand copy below covers `geldar-chat.js` and `geldar.css`. BM-11 changes both
 The freshness version (the header dot, the "still" label and the "last line" age) is two web files only, `geldar-chat.js`
 and `geldar.css`, deployed by the same hand copy as above. It adds no settings entry and no server change.
 
+The time-of-day dial (BM-15) is one more web file, `geldar-sky.js`, and one more `scripts` entry. Its node steps copy
+steps 2, 3, 4, 6 and 7 above for `geldar-sky.js`:
+
+- `compose/colo.yml`, in the `bluemap-web` service, directly after the `geldar-chat.js` mount:
+  `- ../plugins/bluemap/web/geldar-sky.js:/etc/caddy/geldar-sky.js:ro`
+- `compose/bluemap-web/Caddyfile`: a `handle /assets/geldar-sky.js` block that mirrors the `/assets/geldar-chat.js` block
+  (`root * /etc/caddy`, `rewrite * /geldar-sky.js`, `header Content-Type "text/javascript; charset=utf-8"`, `file_server`).
+- `settings.json`: `"scripts": ["assets/geldar-chat.js", "assets/geldar-sky.js"]`. The chat panel's entry stays as it is.
+- Check: `curl -sI http://127.0.0.1:8100/assets/geldar-sky.js` returns `HTTP/1.1 200` and `Content-Type: text/javascript`.
+
+Until the mount and the handler are on the node, `/assets/geldar-sky.js` is a 404 and the dial does not show; the chat
+panel is unaffected. Rollback: remove `"assets/geldar-sky.js"` from `scripts`, then undo the mount and the handler.
+
 The node's compose files are hand-synced. `colo-cd` refreshes the images and the config bundle, not `compose/*`
 (`deploy/colo-cd-plan.sh` skips them). A normal web deploy of PR #461 therefore did not change `bluemap-web` on the
 node: it kept the old mount and Caddyfile, and `/assets/geldar-chat.js` returned 404. The web step needs the sync below.
