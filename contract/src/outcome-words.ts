@@ -305,9 +305,24 @@ export function heardSoundSentence(input: { sound: unknown; dir: unknown; band: 
  * sends, so an unknown one is a bug, and it must not render as a guess.
  */
 export function heardMuffledSentence(direction: string, band: string): string {
+  const vertical = verticalMuffledWords(direction, band);
+  if (vertical !== undefined) return `You hear a muffled voice ${vertical}.`;
   const lead = lookup(HEARD_BAND_LEAD, band);
   const dir = lookup(HEARD_DIR_WORD, direction);
   if (lead === undefined || dir === undefined)
     throw new Error(`invalid muffled notice code: direction ${direction}, band ${band}`);
   return `You hear a muffled voice ${lead} the ${dir}.`;
+}
+
+/** The words for a muffled voice above or below the listener, per band (decision 0199, MH-1 follow-up). */
+const MUFFLED_VERTICAL: Readonly<Record<string, Readonly<Record<string, string>>>> = {
+  overhead: { near: 'close above you', mid: 'above you', far: 'far above you' },
+  below: { near: 'close below you', mid: 'below you', far: 'far below you' },
+};
+
+/** The vertical words for a direction and band, or undefined when the direction is not vertical or the band is unknown. */
+function verticalMuffledWords(direction: string, band: string): string | undefined {
+  if (!Object.hasOwn(MUFFLED_VERTICAL, direction)) return undefined;
+  const row = MUFFLED_VERTICAL[direction];
+  return row !== undefined && Object.hasOwn(row, band) ? row[band] : undefined;
 }

@@ -59,3 +59,40 @@ describe('heardMuffledSentence (decision 0199, MH-1)', () => {
     expect(() => heardMuffledSentence('constructor', 'near')).toThrow();
   });
 });
+
+/** The two vertical directions: a voice straight above or below the listener (dx and dz both about 0). */
+const VERTICAL = ['overhead', 'below'];
+
+describe('heard_muffled vertical directions (decision 0199, MH-1 follow-up)', () => {
+  it('accepts overhead and below in every band', () => {
+    for (const direction of VERTICAL) {
+      for (const band of BANDS) {
+        expect(validateHeardMuffledPayload({ ...event, direction, band })).toBe(true);
+      }
+    }
+  });
+
+  it('rejects above, and a vertical direction with an unknown band', () => {
+    expect(validateHeardMuffledPayload({ ...event, direction: 'above' })).toBe(false);
+    expect(validateHeardMuffledPayload({ ...event, direction: 'overhead', band: 'close' })).toBe(
+      false,
+    );
+  });
+
+  it('words an overhead or below voice by its band', () => {
+    expect(heardMuffledSentence('overhead', 'near')).toBe(
+      'You hear a muffled voice close above you.',
+    );
+    expect(heardMuffledSentence('overhead', 'mid')).toBe('You hear a muffled voice above you.');
+    expect(heardMuffledSentence('overhead', 'far')).toBe('You hear a muffled voice far above you.');
+    expect(heardMuffledSentence('below', 'near')).toBe('You hear a muffled voice close below you.');
+    expect(heardMuffledSentence('below', 'mid')).toBe('You hear a muffled voice below you.');
+    expect(heardMuffledSentence('below', 'far')).toBe('You hear a muffled voice far below you.');
+  });
+
+  it('refuses above, and a vertical direction with an unknown band', () => {
+    expect(() => heardMuffledSentence('above', 'near')).toThrow();
+    expect(() => heardMuffledSentence('overhead', 'close')).toThrow();
+    expect(() => heardMuffledSentence('below', 'constructor')).toThrow();
+  });
+});

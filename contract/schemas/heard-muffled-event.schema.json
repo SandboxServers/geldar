@@ -12,11 +12,14 @@
       "properties": {
         "kind": { "const": "heard_muffled" },
         "direction": {
-          "description": "World-fixed direction of the voice: n is -z, s is +z, e is +x, w is -x.",
-          "$ref": "common.schema.json#/$defs/CompassPoint"
+          "description": "World-fixed direction of the voice: n is -z, s is +z, e is +x, w is -x; one of the eight compass points. \"overhead\" means the speaker is above the listener and \"below\" means under the listener (dx and dz both about 0); neither states a horizontal direction.",
+          "anyOf": [
+            { "$ref": "common.schema.json#/$defs/CompassPoint" },
+            { "enum": ["overhead", "below"] }
+          ]
         },
         "band": {
-          "description": "Distance band of the voice, as heard_sound: near up to 8 blocks, mid up to 16, far up to 24.",
+          "description": "Distance band of the voice, as heard_sound: near up to 8 blocks, mid up to 16, far up to 32.",
           "type": "string",
           "enum": ["near", "mid", "far"]
         }

@@ -425,11 +425,11 @@ export interface WorldEvent {
 export interface HeardMuffledPayload {
   kind: "heard_muffled";
   /**
-   * World-fixed direction of the voice: n is -z, s is +z, e is +x, w is -x.
+   * World-fixed direction of the voice: n is -z, s is +z, e is +x, w is -x; one of the eight compass points. "overhead" means the speaker is above the listener and "below" means under the listener (dx and dz both about 0); neither states a horizontal direction.
    */
-  direction: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
+  direction: ("n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw") | ("overhead" | "below");
   /**
-   * Distance band of the voice, as heard_sound: near up to 8 blocks, mid up to 16, far up to 24.
+   * Distance band of the voice, as heard_sound: near up to 8 blocks, mid up to 16, far up to 32.
    */
   band: "near" | "mid" | "far";
 }
