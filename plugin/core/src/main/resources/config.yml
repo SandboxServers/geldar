@@ -59,4 +59,6 @@ chat:
     per_ray_cap: 64
     # BENCH ONLY (MH-8a): true logs one INFO line per chat line (muffle-bench: speaker, tick, listeners, reads, capHit,
     # ns). For the throwaway bench shard. It must stay false in production and in every Colo config. Re-read at start.
+    # capHit=true means the line budget (per_line_cap) ran out, or a listener was silenced by it. Reads that land
+    # exactly on the cap with nobody silenced also give capHit=true.
     bench_log: false

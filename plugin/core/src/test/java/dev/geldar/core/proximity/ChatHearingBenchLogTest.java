@@ -76,6 +76,23 @@ class ChatHearingBenchLogTest {
     }
 
     @Test
+    void readsLandingExactlyOnTheCapWithNoListenerSilencedLogCapHitTrue() {
+        // capHit means "the line budget is exhausted, or a listener was silenced by it". The 11-cell open-air ray spends
+        // exactly perLineCap=11 and nobody is silenced, so the budget is at 0 and capHit is true with the verdict CLEAR.
+        List<String> log = new ArrayList<>();
+        List<ChatHearing.Verdict> v = new ChatHearing(withBench(true, 11), log::add).judge(7, "s", 0.5, FEET, 0.5,
+                List.of(openAir("p", 10)), new ProbeWorld());
+        assertEquals(Tier.CLEAR, v.get(0).tier());
+        assertTrue(log.stream().noneMatch(line -> line.startsWith("chat: ")), log.toString());
+        List<String> lines = benchLines(log);
+        assertEquals(1, lines.size(), log.toString());
+        Matcher m = BENCH_LINE.matcher(lines.get(0));
+        assertTrue(m.matches(), lines.get(0));
+        assertEquals("11", m.group(4));
+        assertEquals("true", m.group(5));
+    }
+
+    @Test
     void aBudgetThatSilencesAListenerLogsCapHitTrueAndTheSpentReads() {
         // A cap of 5 cuts the 11-cell ray short, so the listener is silenced and the line budget is spent: reads=5.
         List<String> log = new ArrayList<>();
