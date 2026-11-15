@@ -38,6 +38,16 @@
 - The check `sql/test/check-schema-account-delete.sql` asserts the per-table result for four lives of one owner and two of another.
 - The runbook `docs/runbooks/account-deletion.md` lists "What stays" exactly.
 
+## Owner export
+
+The owner can export their own data through `register_owner_export` (0062, C7-09b). Ruled 2026-11-15, revertable by the owner:
+
+- Roster reservations (`mcp_roster`), body operations (`body_ops`) and consent records (`register_consents`) ARE exported. They are the owner's own non-secret data, and the consent record is what a review asks for.
+- Thoughts and mcp_journal rows use an explicit column list. `model_input`, `snapshot`, `raw_output` and `provider_usage` are NOT exported: they carry other residents' words and are bulky. Each table is capped at 20000 rows and at 100000000 bytes, with a truncated flag.
+- Per-life row counts (no contents) are exported for the other per-life tables; `not_included` names every table or column left out.
+
+Each successful call writes one audit row with a hashed actor and no name or id.
+
 ## Open
 
 - `kino_audit` rows of the identity: erased at deletion (owner call (b), built as the geldar-93 default, revertable before sign-up opens).

@@ -1,20 +1,23 @@
 -- Migration 0062 (C7-09b, owner data export): register_owner_export(p_identity_hash) returns the owner's own rows as one
 -- JSON document, or NULL when the hash has no owner (unknown hash, or a banned identity whose owner link is gone).
 -- Additive: no table and no existing function is changed. The owner is resolved from mcp_identities by the identity
--- hash (an exact match on the 32 bytes, never a prefix). Every other read is scoped by that owner: the players and
--- tokens by owner_id, the lives by the same derivation 0040 uses (agents.owner plus mcp_players.owner_id), and the
--- per-life records by those lives. There is no unfiltered select.
+-- hash (an exact match on the 32 bytes, never a prefix). Every other read is scoped by that owner: the players, tokens,
+-- roster reservations and body operations by owner_id, the consent records by the owner's identities, the lives by the
+-- same derivation 0040 uses (agents.owner plus mcp_players.owner_id), and the per-life records by those lives.
+-- There is no unfiltered select.
 --
 -- Output (format 'geldar-owner-export/1'): exported_at, owner (display_name, player_cap), identity (provider,
--- created_at), players, tokens (no token_hash and no secret), lives (no game account), records (thoughts and
--- mcp_journal rows in time order, each table capped at 20000 rows per export across the owner's lives, with a
--- truncated flag per table; counts per life for the other per-life tables that 0040 erases), and not_included.
+-- created_at), players, tokens (no token_hash, no secret), roster (reserved player names, max_agents), body_ops (start
+-- and restart operations: at, player_name, op), consents (terms_version, accepted_at), lives (no game account), records:
+-- thoughts (an explicit column list: model_input, snapshot, raw_output and provider_usage are NOT exported) and
+-- mcp_journal rows in time order, each table capped at 20000 rows and at a running budget of 100000000 bytes, with a
+-- truncated flag per table computed in the same statement as its rows; per-life row counts (no contents) for the other
+-- per-life tables that 0040 erases; and not_included, which names every table or column that is left out.
 -- The owner id, the identity hash and the token hashes never appear in the output.
---
 -- Writes: none, except ONE register_audit row per successful call. Its actor is the erasure-safe hash of the owner id
 -- (16 hex characters, as 0040 does), its target and detail carry no name and no id (decision 0261, ROSTER-AUTO
 -- ruling). An unknown hash writes no audit row. Locks: plain SELECTs only, no lock_timeout change.
--- The 20000 cap is a literal in this function (tested by inserting 20001 rows in the check file).
+-- The 20000 cap and the 100000000 byte budget are literals in this function (tested in the check file).
 
 CREATE OR REPLACE FUNCTION register_owner_export(p_identity_hash BYTEA)
 RETURNS JSONB
@@ -29,8 +32,9 @@ DECLARE
   owner_display TEXT;
   owner_cap INT;
   lives TEXT[];
-  th_truncated BOOLEAN;
-  jr_truncated BOOLEAN;
+  th_part JSONB;
+  jr_part JSONB;
+  counts JSONB;
   out JSONB;
 BEGIN
   SELECT i.owner_id, i.provider, i.created_at INTO who, ident_provider, ident_created
@@ -48,11 +52,131 @@ BEGIN
                  UNION
                  SELECT p.life_id FROM public.mcp_players p WHERE p.owner_id = who);
 
-  -- the cap: a row past the 20000th in time order means the table is truncated
-  th_truncated := EXISTS (SELECT 1 FROM public.thoughts x WHERE x.life_id = ANY (lives)
-                          ORDER BY x.at, x.thought_id OFFSET 20000);
-  jr_truncated := EXISTS (SELECT 1 FROM public.mcp_journal x WHERE x.life_id = ANY (lives)
-                          ORDER BY x.at, x.id OFFSET 20000);
+  -- thoughts: one statement ranks the rows, keeps the prefix that fits the row cap and the byte budget, and sets the
+  -- truncated flag from the same ranked set (one snapshot, so the flag always agrees with the rows)
+  th_part := (WITH src AS (
+      SELECT x.at, x.thought_id AS sort_id, jsonb_build_object(
+          'thought_id', x.thought_id, 'life_id', x.life_id, 'at', x.at, 'world_day', x.world_day,
+          'world_tick', x.world_tick, 'wake_reason', x.wake_reason, 'parsed', x.parsed,
+          'prompt_template_version', x.prompt_template_version, 'schema_version', x.schema_version,
+          'mind_version', x.mind_version, 'body_version', x.body_version, 'model_config', x.model_config,
+          'thinker_id', x.thinker_id, 'effort', x.effort, 'tokens_in_estimated', x.tokens_in_estimated,
+          'tokens_out_estimated', x.tokens_out_estimated, 'latency_ms', x.latency_ms,
+          'credits_reserved', x.credits_reserved, 'credits_settled', x.credits_settled) AS row_json
+        FROM public.thoughts x WHERE x.life_id = ANY (lives)
+    ), ranked AS (
+      SELECT s.at, s.sort_id, s.row_json,
+             row_number() OVER w AS rn, sum(pg_column_size(s.row_json)) OVER w AS run
+        FROM src s WINDOW w AS (ORDER BY s.at, s.sort_id)
+    ), kept AS (
+      SELECT k.* FROM ranked k WHERE k.rn <= 20000 AND k.run <= 100000000
+    )
+    SELECT jsonb_build_object(
+      'truncated', (SELECT count(*) FROM kept) < (SELECT count(*) FROM ranked),
+      'rows', COALESCE((SELECT jsonb_agg(k.row_json ORDER BY k.at, k.sort_id) FROM kept k), '[]'::jsonb)));
+
+  -- mcp_journal: the same shape (text is capped at 4000 characters by the table)
+  jr_part := (WITH src AS (
+      SELECT x.at, x.id AS sort_id, jsonb_build_object('id', x.id, 'life_id', x.life_id, 'at', x.at,
+                                                      'text', x.text) AS row_json
+        FROM public.mcp_journal x WHERE x.life_id = ANY (lives)
+    ), ranked AS (
+      SELECT s.at, s.sort_id, s.row_json,
+             row_number() OVER w AS rn, sum(pg_column_size(s.row_json)) OVER w AS run
+        FROM src s WINDOW w AS (ORDER BY s.at, s.sort_id)
+    ), kept AS (
+      SELECT k.* FROM ranked k WHERE k.rn <= 20000 AND k.run <= 100000000
+    )
+    SELECT jsonb_build_object(
+      'truncated', (SELECT count(*) FROM kept) < (SELECT count(*) FROM ranked),
+      'rows', COALESCE((SELECT jsonb_agg(k.row_json ORDER BY k.at, k.sort_id) FROM kept k), '[]'::jsonb)));
+
+  -- counts: one scan per table, grouped by life; a row that names two lives counts once for each of them
+  counts := (WITH
+    c_events AS (SELECT m.l, count(*) AS n FROM public.events e,
+                   LATERAL (SELECT x AS l FROM unnest(lives) AS x WHERE x = e.agent_id OR x = e.thinker_id) m
+                 WHERE e.agent_id = ANY (lives) OR e.thinker_id = ANY (lives) GROUP BY m.l),
+    c_relationships AS (SELECT m.l, count(*) AS n FROM public.relationships r,
+                   LATERAL (SELECT x AS l FROM unnest(lives) AS x WHERE x = r.agent_id OR x = r.other_id) m
+                 WHERE r.agent_id = ANY (lives) OR r.other_id = ANY (lives) GROUP BY m.l),
+    c_memories AS (SELECT x.agent_id AS l, count(*) AS n FROM public.memories x
+                   WHERE x.agent_id = ANY (lives) GROUP BY x.agent_id),
+    c_goals AS (SELECT x.agent_id AS l, count(*) AS n FROM public.goals x
+                WHERE x.agent_id = ANY (lives) GROUP BY x.agent_id),
+    c_intents AS (SELECT x.life_id AS l, count(*) AS n FROM public.intents x
+                  WHERE x.life_id = ANY (lives) GROUP BY x.life_id),
+    c_actions AS (SELECT x.life_id AS l, count(*) AS n FROM public.actions x
+                  WHERE x.life_id = ANY (lives) GROUP BY x.life_id),
+    c_skill_runs AS (SELECT x.life_id AS l, count(*) AS n FROM public.skill_runs x
+                     WHERE x.life_id = ANY (lives) GROUP BY x.life_id),
+    c_skill_library AS (SELECT x.agent_id AS l, count(*) AS n FROM public.skill_library x
+                        WHERE x.agent_id = ANY (lives) GROUP BY x.agent_id),
+    c_ledger AS (SELECT x.agent_id AS l, count(*) AS n FROM public.ledger x
+                 WHERE x.agent_id = ANY (lives) GROUP BY x.agent_id),
+    c_votes AS (SELECT x.agent_id AS l, count(*) AS n FROM public.votes x
+                WHERE x.agent_id = ANY (lives) GROUP BY x.agent_id),
+    c_receipts AS (SELECT x.life_id AS l, count(*) AS n FROM public.receipts x
+                   WHERE x.life_id = ANY (lives) GROUP BY x.life_id),
+    c_suppressed_wakeups AS (SELECT x.life_id AS l, count(*) AS n FROM public.suppressed_wakeups x
+                             WHERE x.life_id = ANY (lives) GROUP BY x.life_id),
+    c_mcp_sleep_marks AS (SELECT x.life_id AS l, count(*) AS n FROM public.mcp_sleep_marks x
+                          WHERE x.life_id = ANY (lives) GROUP BY x.life_id),
+    c_mcp_budget AS (SELECT x.life_id AS l, count(*) AS n FROM public.mcp_budget x
+                     WHERE x.life_id = ANY (lives) GROUP BY x.life_id),
+    c_mcp_life_deaths AS (SELECT x.life_id AS l, count(*) AS n FROM public.mcp_life_deaths x
+                          WHERE x.life_id = ANY (lives) GROUP BY x.life_id),
+    c_mcp_death_events AS (SELECT x.life_id AS l, count(*) AS n FROM public.mcp_death_events x
+                           WHERE x.life_id = ANY (lives) GROUP BY x.life_id),
+    c_rolls AS (SELECT x.life_id AS l, count(*) AS n FROM public.rolls x
+                WHERE x.life_id = ANY (lives) GROUP BY x.life_id),
+    c_decisions AS (SELECT x.life_id AS l, count(*) AS n FROM public.decisions x
+                    WHERE x.life_id = ANY (lives) GROUP BY x.life_id),
+    c_xp_evidence AS (SELECT x.life_id AS l, count(*) AS n FROM public.xp_evidence x
+                      WHERE x.life_id = ANY (lives) GROUP BY x.life_id),
+    c_character_sheet_adoptions AS (SELECT x.life_id AS l, count(*) AS n FROM public.character_sheet_adoptions x
+                                    WHERE x.life_id = ANY (lives) GROUP BY x.life_id),
+    c_proficiency AS (SELECT x.life_id AS l, count(*) AS n FROM public.proficiency x
+                      WHERE x.life_id = ANY (lives) GROUP BY x.life_id),
+    c_proficiency_outbox AS (SELECT x.life_id AS l, count(*) AS n FROM public.proficiency_outbox x
+                             WHERE x.life_id = ANY (lives) GROUP BY x.life_id)
+    SELECT COALESCE(jsonb_agg(jsonb_build_object(
+        'life_id', u.l,
+        'events', COALESCE(c_events.n, 0), 'memories', COALESCE(c_memories.n, 0),
+        'goals', COALESCE(c_goals.n, 0), 'intents', COALESCE(c_intents.n, 0),
+        'actions', COALESCE(c_actions.n, 0), 'skill_runs', COALESCE(c_skill_runs.n, 0),
+        'skill_library', COALESCE(c_skill_library.n, 0), 'relationships', COALESCE(c_relationships.n, 0),
+        'ledger', COALESCE(c_ledger.n, 0), 'votes', COALESCE(c_votes.n, 0),
+        'receipts', COALESCE(c_receipts.n, 0), 'suppressed_wakeups', COALESCE(c_suppressed_wakeups.n, 0),
+        'mcp_sleep_marks', COALESCE(c_mcp_sleep_marks.n, 0), 'mcp_budget', COALESCE(c_mcp_budget.n, 0),
+        'mcp_life_deaths', COALESCE(c_mcp_life_deaths.n, 0), 'mcp_death_events', COALESCE(c_mcp_death_events.n, 0),
+        'rolls', COALESCE(c_rolls.n, 0), 'decisions', COALESCE(c_decisions.n, 0),
+        'xp_evidence', COALESCE(c_xp_evidence.n, 0),
+        'character_sheet_adoptions', COALESCE(c_character_sheet_adoptions.n, 0),
+        'proficiency', COALESCE(c_proficiency.n, 0), 'proficiency_outbox', COALESCE(c_proficiency_outbox.n, 0)
+      ) ORDER BY u.l), '[]'::jsonb)
+    FROM unnest(lives) AS u(l)
+      LEFT JOIN c_events ON c_events.l = u.l
+      LEFT JOIN c_memories ON c_memories.l = u.l
+      LEFT JOIN c_goals ON c_goals.l = u.l
+      LEFT JOIN c_intents ON c_intents.l = u.l
+      LEFT JOIN c_actions ON c_actions.l = u.l
+      LEFT JOIN c_skill_runs ON c_skill_runs.l = u.l
+      LEFT JOIN c_skill_library ON c_skill_library.l = u.l
+      LEFT JOIN c_relationships ON c_relationships.l = u.l
+      LEFT JOIN c_ledger ON c_ledger.l = u.l
+      LEFT JOIN c_votes ON c_votes.l = u.l
+      LEFT JOIN c_receipts ON c_receipts.l = u.l
+      LEFT JOIN c_suppressed_wakeups ON c_suppressed_wakeups.l = u.l
+      LEFT JOIN c_mcp_sleep_marks ON c_mcp_sleep_marks.l = u.l
+      LEFT JOIN c_mcp_budget ON c_mcp_budget.l = u.l
+      LEFT JOIN c_mcp_life_deaths ON c_mcp_life_deaths.l = u.l
+      LEFT JOIN c_mcp_death_events ON c_mcp_death_events.l = u.l
+      LEFT JOIN c_rolls ON c_rolls.l = u.l
+      LEFT JOIN c_decisions ON c_decisions.l = u.l
+      LEFT JOIN c_xp_evidence ON c_xp_evidence.l = u.l
+      LEFT JOIN c_character_sheet_adoptions ON c_character_sheet_adoptions.l = u.l
+      LEFT JOIN c_proficiency ON c_proficiency.l = u.l
+      LEFT JOIN c_proficiency_outbox ON c_proficiency_outbox.l = u.l);
 
   out := jsonb_build_object(
     'format', 'geldar-owner-export/1',
@@ -70,57 +194,37 @@ BEGIN
                FROM public.mcp_tokens t
                JOIN public.mcp_players p ON p.player_id = t.player_id
                WHERE p.owner_id = who),
+    'roster', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                  'player_name', r.player_name, 'max_agents', r.max_agents, 'created_at', r.created_at)
+                  ORDER BY r.player_name), '[]'::jsonb)
+               FROM public.mcp_roster r WHERE r.owner_id = who),
+    'body_ops', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                  'at', b.at, 'player_name', b.player_name, 'op', b.op) ORDER BY b.at, b.id), '[]'::jsonb)
+                 FROM public.body_ops b WHERE b.owner_id = who),
+    'consents', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
+                  'terms_version', c.terms_version, 'accepted_at', c.accepted_at)
+                  ORDER BY c.accepted_at, c.terms_version), '[]'::jsonb)
+                 FROM public.register_consents c
+                 JOIN public.mcp_identities i ON i.identity_hash = c.identity_hash
+                 WHERE i.owner_id = who),
     'lives', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
                   'life_id', a.agent_id, 'name', a.name, 'shard', a.shard, 'mode', a.mode,
                   'harness', a.harness, 'declared_model', a.declared_model, 'tier', a.tier,
                   'born_at', a.born_at, 'died_at', a.died_at, 'death_cause', a.death_cause)
                   ORDER BY a.agent_id), '[]'::jsonb)
               FROM public.agents a WHERE a.agent_id = ANY (lives)),
-    'records', jsonb_build_object(
-      'thoughts', jsonb_build_object('truncated', th_truncated, 'rows',
-        (SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY t.at, t.thought_id), '[]'::jsonb)
-         FROM (SELECT * FROM public.thoughts x WHERE x.life_id = ANY (lives)
-               ORDER BY x.at, x.thought_id LIMIT 20000) t)),
-      'mcp_journal', jsonb_build_object('truncated', jr_truncated, 'rows',
-        (SELECT COALESCE(jsonb_agg(to_jsonb(j) ORDER BY j.at, j.id), '[]'::jsonb)
-         FROM (SELECT * FROM public.mcp_journal x WHERE x.life_id = ANY (lives)
-               ORDER BY x.at, x.id LIMIT 20000) j)),
-      'counts', (SELECT COALESCE(jsonb_agg(jsonb_build_object(
-                  'life_id', l,
-                  'events', (SELECT count(*) FROM public.events e WHERE e.agent_id = l OR e.thinker_id = l),
-                  'memories', (SELECT count(*) FROM public.memories m WHERE m.agent_id = l),
-                  'goals', (SELECT count(*) FROM public.goals g WHERE g.agent_id = l),
-                  'intents', (SELECT count(*) FROM public.intents n WHERE n.life_id = l),
-                  'actions', (SELECT count(*) FROM public.actions c WHERE c.life_id = l),
-                  'skill_runs', (SELECT count(*) FROM public.skill_runs s WHERE s.life_id = l),
-                  'skill_library', (SELECT count(*) FROM public.skill_library k WHERE k.agent_id = l),
-                  'relationships', (SELECT count(*) FROM public.relationships r
-                                    WHERE r.agent_id = l OR r.other_id = l),
-                  'ledger', (SELECT count(*) FROM public.ledger d WHERE d.agent_id = l),
-                  'votes', (SELECT count(*) FROM public.votes v WHERE v.agent_id = l),
-                  'receipts', (SELECT count(*) FROM public.receipts rc WHERE rc.life_id = l),
-                  'suppressed_wakeups', (SELECT count(*) FROM public.suppressed_wakeups sw WHERE sw.life_id = l),
-                  'mcp_sleep_marks', (SELECT count(*) FROM public.mcp_sleep_marks ms WHERE ms.life_id = l),
-                  'mcp_budget', (SELECT count(*) FROM public.mcp_budget mb WHERE mb.life_id = l),
-                  'mcp_life_deaths', (SELECT count(*) FROM public.mcp_life_deaths md WHERE md.life_id = l),
-                  'mcp_death_events', (SELECT count(*) FROM public.mcp_death_events me WHERE me.life_id = l),
-                  'rolls', (SELECT count(*) FROM public.rolls ro WHERE ro.life_id = l),
-                  'decisions', (SELECT count(*) FROM public.decisions de WHERE de.life_id = l),
-                  'xp_evidence', (SELECT count(*) FROM public.xp_evidence xe WHERE xe.life_id = l),
-                  'character_sheet_adoptions', (SELECT count(*) FROM public.character_sheet_adoptions ca
-                                                WHERE ca.life_id = l),
-                  'proficiency', (SELECT count(*) FROM public.proficiency pr WHERE pr.life_id = l),
-                  'proficiency_outbox', (SELECT count(*) FROM public.proficiency_outbox po WHERE po.life_id = l)
-                  ) ORDER BY l), '[]'::jsonb)
-                FROM unnest(lives) AS l)
-    ),
+    'records', jsonb_build_object('thoughts', th_part, 'mcp_journal', jr_part, 'counts', counts),
     'not_included', to_jsonb(ARRAY[
       'shared world objects kept by design: skills you authored, books, proposals and laws, which other lives depend on',
-      'audit rows: the register audit (this export is one of them, hashed) and the glass login audit',
+      'audit rows: the register audit (this export is one of them, hashed), the glass login audit and the kino audit (kino_audit)',
       'the ban tombstone of the identity, if one exists',
       'records of other players and other owners',
-      'secrets: token values and token hashes, the identity hash and any API keys',
-      'events, memories, goals, intents, actions, ledger, votes, receipts, suppressed wakeups and sheet rows of your lives: row counts only, not contents'
+      'secrets: token values and token hashes, the identity hash, and API keys (owner_api_keys)',
+      'login sessions (register_sessions)',
+      'admin records (kino_admins)',
+      'skins: skin files and their bindings',
+      'thoughts columns model_input, snapshot, raw_output and provider_usage: the prompts and world snapshots carry other residents words, and the rows are bulky; the life own output is exported in the thoughts rows',
+      'row counts only, not contents, per life, for: events, memories, goals, intents, actions, skill_runs, skill_library, relationships, ledger, votes, receipts, suppressed_wakeups, mcp_sleep_marks, mcp_budget, mcp_life_deaths, mcp_death_events, rolls, decisions, xp_evidence, character_sheet_adoptions, proficiency, proficiency_outbox'
     ]::text[])
   );
 
