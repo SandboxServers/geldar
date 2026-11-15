@@ -13,6 +13,7 @@ export declare const validateDayNightPayload: ValidateFunction;
 export declare const validateDeathPayload: ValidateFunction;
 export declare const validateDecisionEventPayload: ValidateFunction;
 export declare const validateWorldEvent: ValidateFunction;
+export declare const validateHeardMuffledPayload: ValidateFunction;
 export declare const validateHeardSoundPayload: ValidateFunction;
 export declare const validateHeardSoundEvent: ValidateFunction;
 export declare const validateHurtPayload: ValidateFunction;

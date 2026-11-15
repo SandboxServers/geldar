@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  hearingSubject,
   MAX_RESPONSE_FORMAT_BYTES,
   planSubject,
   snapshotSubject,
@@ -295,6 +296,15 @@ describe('Body-Mind subjects', () => {
   it('builds the five-token body subjects', () => {
     expect(snapshotSubject('phase0', 'ag_adam_01')).toBe('geldar.phase0.body.ag_adam_01.snapshot');
     expect(planSubject('phase0', 'ag_adam_01')).toBe('geldar.phase0.body.ag_adam_01.plan');
+  });
+
+  it('builds the hearing subject of one life and refuses what could widen it (decision 0199)', () => {
+    expect(hearingSubject('phase0', 'ag_adam_01')).toBe('geldar.phase0.body.ag_adam_01.hearing');
+    expect(hearingSubject('phase0', 'ag_adam_01').split('.').length).toBe(5);
+    expect(() => hearingSubject('s', 'L')).toThrow();
+    expect(() => hearingSubject('phase0', 'ag_adam_01.>')).toThrow();
+    expect(() => hearingSubject('phase0', '*')).toThrow();
+    expect(() => hearingSubject('a.b', 'ag_adam_01')).toThrow();
   });
 
   it('keeps the body subjects out of the geldar.*.* event filter but not event subjects', () => {

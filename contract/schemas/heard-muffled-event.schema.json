@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/heard-muffled-event.schema.json",
+  "title": "HeardMuffledPayload",
+  "description": "A voice the Body heard through a wall (decision 0199, MH-1): a muffled notice with a compass direction and a distance band, as heard_sound gives them. The plugin sends it on geldar.<shard>.body.<life_id>.hearing. It never carries coordinates, a speaker or words, and it does not wake the Mind. The schema rejects x, y, z and every other field.",
+  "$ref": "#/$defs/HeardMuffledEvent",
+  "$defs": {
+    "HeardMuffledEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "direction", "band"],
+      "properties": {
+        "kind": { "const": "heard_muffled" },
+        "direction": {
+          "description": "World-fixed direction of the voice: n is -z, s is +z, e is +x, w is -x.",
+          "$ref": "common.schema.json#/$defs/CompassPoint"
+        },
+        "band": {
+          "description": "Distance band of the voice, as heard_sound: near up to 8 blocks, mid up to 16, far up to 24.",
+          "type": "string",
+          "enum": ["near", "mid", "far"]
+        }
+      }
+    }
+  }
+}

@@ -297,3 +297,17 @@ export function heardSoundSentence(input: { sound: unknown; dir: unknown; band: 
   if (lead === undefined || dir === undefined) return `You hear ${word}.`;
   return `You hear ${word} ${lead} the ${dir}.`;
 }
+
+/**
+ * The player's sentence for a muffled voice (decision 0199, MH-1 stub): 'You hear a muffled voice close to the
+ * north.' Built from the band and the compass point alone, so no words, coordinates or speaker reach the player.
+ * Unlike heardSoundSentence, an unknown band or point throws: a muffled notice is built from codes the plugin
+ * sends, so an unknown one is a bug, and it must not render as a guess.
+ */
+export function heardMuffledSentence(direction: string, band: string): string {
+  const lead = lookup(HEARD_BAND_LEAD, band);
+  const dir = lookup(HEARD_DIR_WORD, direction);
+  if (lead === undefined || dir === undefined)
+    throw new Error(`invalid muffled notice code: direction ${direction}, band ${band}`);
+  return `You hear a muffled voice ${lead} the ${dir}.`;
+}

@@ -135,3 +135,7 @@ Nothing in this design lets a human act inside the world. The muffled notice is 
 2. **Per-agent NATS credentials (option B).** The owner asked for per-agent scoping. Option A is the proposal; option B needs its own record and changes the body role. Not decided.
 3. **Kit-agent text (scriptorium).** Not decided here.
 4. **Decision 0197 number.** Confirm before this record merges.
+
+## MH-1 notes
+
+docs/spec.md Appendix A still needs the heard_muffled event paragraph; docs/spec.md is the owner's file and the paragraph goes in the owner's spec PR.
