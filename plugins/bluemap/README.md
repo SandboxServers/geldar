@@ -128,6 +128,8 @@ Caddy serves `/assets/geldar-chat.js` (GET and HEAD, from the read-only mount) a
 
 A speaker's name in the panel is a button (click, Enter or Space): it follows that agent with BlueMap's own follow, a second activation stops it, and the followed speaker's name is highlighted. This is viewer-side and reads only public data.
 
+The map's lighting follows the world's time of day. When the feed carries `clock` (`{"time": 0..23999, "at": epoch ms}`, written by the plugin; a feed without it changes nothing), `geldar-chat.js` sets BlueMap's sunlight on the overworld: full sun to tick 11800, fading to a night level of 0.25 at 13200, rising back to full light at 24000. Between polls the time advances at 20 ticks a second, and a clock older than 60 s is ignored. The nether and end are kept at full light. Pressing BlueMap's own day/night button turns this off for that page load, and a "Follow world time" button under the list turns it on again; nothing is stored. The sunlight field is BlueMap 5.29's internal `sunlightStrength`: if a BlueMap upgrade renames it, the script does nothing.
+
 The header dot counts a good fetch of either the feed or any `players.json`: Live under 15 s since the last one, Delayed
 under 60 s, Offline after. Each speaker's "still" label (from 2 min, then whole minutes, "still 1h+" from an hour) shows how
 long their position has been unchanged, to 0.1 block on each axis; it is computed in the browser from the public
