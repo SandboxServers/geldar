@@ -22,6 +22,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const SHARD = 'phase0';
 const LIFE = 'life_1';
+// Built by hand: repo-checks does not depend on @geldar/contract. Keep in step with hearingSubject() in contract/src/subjects.ts.
 const HEARING = `geldar.${SHARD}.body.${LIFE}.hearing`;
 const HEARING_DENY = `geldar.${SHARD}.body.*.hearing`;
 /** The roles whose publish allow covers the hearing subject; paper is the only one allowed to publish it. */

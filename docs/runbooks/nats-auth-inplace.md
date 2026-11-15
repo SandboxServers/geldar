@@ -34,7 +34,7 @@ Other users match. Live has 8 users (body, mind, eventsink, mcp, velocity, paper
 Pending additions, none in the generator or the live file. Each needs its own decision-owner go:
 
 - Sheet state subjects (decision 0280 known gap): deny publish `geldar.<s>.state.*.level` for body and paper; eventsink publish `geldar.<s>.life.*.sheet`; body and paper PubDeny `geldar.<s>.life.>`.
-- Hearing subject (decision 0199 option A): body PubDeny `geldar.<s>.body.*.hearing`.
+- Hearing subject (decision 0199 option A): body, mind and mcp PubDeny `geldar.<s>.body.*.hearing`.
 - Provenance (`docs/analysis/harness/work-packets-geldar-b.md`, about line 34): body PubDeny and Sub on `provenance.>`.
 - Body control on the live node: `body` and `paper` PubDeny `geldar.<s>.ctl.body.>` (the generator on `main` has it, the live file does not), and the `register` user. The `register` user and its `REGISTER_NATS_*` env are the REG-NATS-COMPOSE row in `docs/analysis/phase1/ledger.md`, folded into C7-03b2.
 - The batch below (`helper` and `supervisor` users, `helper.body.>` denies) is pending the PR #415 merge and its own owner go.
