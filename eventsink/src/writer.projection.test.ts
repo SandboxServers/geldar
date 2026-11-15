@@ -1,5 +1,6 @@
 import type { Pool } from 'pg';
 import { describe, expect, it } from 'vitest';
+import { decisionEvent, rollEvent, sheetEvent } from './audit/projection.fakes.ts';
 import { actionEvent, eventOf, RECEIPT_A, receiptEvent } from './projection.fakes.ts';
 import { pgEventWriter } from './writer.ts';
 
@@ -70,6 +71,38 @@ describe('pgEventWriter projection', () => {
       .insertBatch([receiptEvent(RECEIPT_A, 'committed')])
       .catch(() => undefined);
     expect(ok.released()).toBe(1);
+  });
+
+  it('projects roll and decision events in the same transaction as their events row', async () => {
+    const { pool, sql, released } = fakePool();
+    await pgEventWriter(pool).insertBatch([rollEvent(1), decisionEvent(2)]);
+    expect(sql[0]).toBe('BEGIN');
+    expect(sql[1]).toContain('INSERT INTO events');
+    expect(sql).toContain('INSERT INTO rolls');
+    expect(sql).toContain('INSERT INTO decisions');
+    expect(sql.at(-1)).toBe('COMMIT');
+    expect(released()).toBe(1);
+  });
+
+  it('rolls the whole batch back when a roll insert fails', async () => {
+    const { pool, sql, released } = fakePool(/INSERT INTO rolls/);
+    await expect(pgEventWriter(pool).insertBatch([rollEvent(1)])).rejects.toMatchObject({
+      code: '23505',
+    });
+    expect(sql).toContain('INSERT INTO events');
+    expect(sql.at(-1)).toBe('ROLLBACK');
+    expect(sql).not.toContain('COMMIT');
+    expect(released()).toBe(1);
+  });
+
+  it('sends a sheet_adopted event to the adoption path inside the transaction', async () => {
+    const { pool, sql } = fakePool();
+    // The fake returns no rows, so the adoption finds no life and is refused: the batch rolls back.
+    await expect(pgEventWriter(pool).insertBatch([sheetEvent(3)])).rejects.toMatchObject({
+      code: '23503',
+    });
+    expect(sql).toContain('UPDATE agents SET');
+    expect(sql.at(-1)).toBe('ROLLBACK');
   });
 
   it('keeps a batch with no projected type on the single INSERT path', async () => {

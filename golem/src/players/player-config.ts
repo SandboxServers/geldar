@@ -61,9 +61,10 @@ export function parsePlayerConfig(doc: unknown, playerId: string): PlayerConfig 
   }
   const start = presence.start;
   // The shard's own `mind.agent` is replaced by the player's, so `parseAdamConfig` reads the player.
-  const config = parseAdamConfig({
-    ...root,
-    mind: { agent: { username: lifeId, name: entry.name } },
-  });
+  // The optional run stamp (harness, model) of the player's entry is passed on with it.
+  const agent: Record<string, unknown> = { username: lifeId, name: entry.name };
+  if (entry.harness !== undefined) agent.harness = entry.harness;
+  if (entry.model !== undefined) agent.model = entry.model;
+  const config = parseAdamConfig({ ...root, mind: { agent } });
   return { ...config, playerId, start };
 }

@@ -14,6 +14,8 @@ export interface SimEvent extends WakeEvent {
   amount?: number;
   /** For reflex: how the firing ended (handled, failed, abandoned, ...). */
   result?: string;
+  /** For reflex: the values the Body's check returned (cause, and for a hostile the kind and distance). */
+  trigger?: Readonly<Record<string, string | number | boolean | null>>;
   /** For death and damage: the fixed cause phrase (one of the mapper's templates, never world text). */
   cause?: string;
   /** For death: the coarse place, x and z only (the contract's `where`). Absent when the place is unknown. */
