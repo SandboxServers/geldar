@@ -19,23 +19,24 @@ An agent that read its journal saw a sleep it had not had, and a blocked attempt
 
 (a) The mark is written, and the "asleep" journal line appended, only on a `plan_result` whose sleep action is `completed`. A `failed`, `cancelled`, `running` or unknown outcome writes nothing; `accepted` and `running` keep the entry until the outcome is final. A sleep action cut short by an earlier failure in the same plan writes nothing.
 
-(b) The `sleep` tool's accept result carries the real `days_since_sleep` (from the stored mark, not from the pending sleep), and the fixed event `Your body is going to sleep. The sleep has not finished.` The quiet digest (nothing new since the last sleep) does not add the `Nothing has changed` line.
+(b) The `sleep` tool's accept result carries the real `days_since_sleep` (from the stored mark, not from the pending sleep), and the fixed event `Your body is going to sleep. The sleep has not finished.` The quiet digest (nothing new since the last sleep) does not add the `Nothing has changed` line. The quiet test (`sameAsLastSleep`) is pure: it reads the failure tracker and writes nothing. `recordSleep` runs when the Body accepts the plan, so "quiet" compares with the last accepted sleep, not the last completed one. A rare case follows: a sleep blocked, then a completed sleep at the same state with zero events since the mark, writes no `asleep` line, because the blocked attempt already counted as the last sleep.
 
 (c) The `act` sleep path registers its sleep the same way: the entry is read before the plan is sent, and the mark is written by the same handler, with the journal line `Day N: asleep.` and no digest. An `act` sleep is not reported in a digest.
 
 (d) The mark is monotonic: a settle keeps the later of the stored and the pending day and cursor, so a sleep that settles late never lowers it.
 
-(e) The pending sleeps are held in memory, by life and thought, capped at 16 per life (the oldest is evicted). A death of the life clears them. An entry is removed only after its mark and journal writes both succeed; a store error keeps it, logs one payload-free line, and the next outcome for the same thought retries.
+(e) The pending sleeps are held in memory, by life and thought, capped at 16 per life (the oldest is evicted). A death of the life clears them. An entry is removed only after its mark and journal writes both succeed; a store error keeps it, logs one payload-free line and rethrows, so the stream's retry loop runs the message again (up to 4 tries). The settle is idempotent, so a retry writes the mark and journal line once.
 
 (f) A refused or failed submit removes its entry, so nothing waits for an outcome that will not come. The entry is added before the submit, so a `plan_result` that arrives during the submit still settles it.
 
 ## What `completed` means
 
-`completed` means the Body lay down in a bed and was confirmed asleep at that moment (`golem/src/actions/sleep.ts:370-375`). It does not mean a full night, and it does not mean the agent woke. A later action in the same plan may wake it.
+`completed` means the bot lay down in a bed and `isSleeping` was true when checked at `golem/src/actions/sleep.ts:370`. It does not mean a full night, and it does not mean the agent woke. The action then waits up to `SLEEPERS_WAIT_MS` for the sleepers line and reports `completed` without re-checking, so the bot may be woken in between. A later action in the same plan may also wake it.
 
 ## Known limits
 
 - A `plan_result` that never arrives leaves the mark unset. This covers a Body restart (the pending map is in memory and is lost), a publish failure, and an invalid payload. The late outcome is then dropped. A persisted pending table would avoid this, but it needs a migration; it is not chosen here.
+- A settle whose store write fails rethrows into the stream's retry loop (4 tries, with a delay). If every try fails, the loop drops the message, and the sleep's mark and its journal line are lost: the entry stays in memory until the life dies or the process restarts, and no later outcome for it writes again.
 - The digest omits failures (F06). That is a separate issue and is not changed by this decision.
 - `rest_stat` (decision 0225) stays operator-only. It is an independent cross-check of the sleep outcome and is not read by the agent.
 
