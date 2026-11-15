@@ -49,8 +49,12 @@ const BREATH_RADIUS = 4;
 /** Ticks over which a swim-up must gain height; less than LATERAL_MIN_GAIN blocks in one window is pinned. */
 const LATERAL_WINDOW_TICKS = 20;
 const LATERAL_MIN_GAIN = 0.3;
-/** How far the sideways search looks for an open column, in blocks. */
+/** How far the sideways search looks for a breathable cell, in steps through water and air. */
 const LATERAL_RADIUS = 8;
+/** A sideways target is replaced in a later window only for an exit this many steps nearer. */
+const LATERAL_HYSTERESIS = 2;
+/** Cells a sideways swim will not enter: they burn. */
+const LATERAL_AVOID = new Set(['lava', 'fire', 'soul_fire']);
 
 /** True when the Body can stand in this cell: passable and not a hazard. Unloaded is not safe. */
 function isOpenCell(block: ScanBlock | null): boolean {
@@ -121,15 +125,19 @@ export function findBreathingColumn(
   return best;
 }
 
-/** An open column a pinned swimmer can leave by: where it is and which side, `distance` blocks off. */
+/** A breathable cell a pinned swimmer can swim to: where it is, how far, which way it starts, and the route. */
 export interface LateralExit {
   x: number;
   z: number;
+  /** The side the first step goes: east, south, west or north. */
   direction: string;
+  /** Steps from the Body to the exit, through water and air. */
   distance: number;
+  /** The cells to swim through in order, the exit last; the first is the next step. */
+  path: Array<{ x: number; z: number }>;
 }
 
-/** The four horizontal rays, in the order that breaks a tie: east, south, west, north. */
+/** The four horizontal sides, in the order that breaks a tie: east, south, west, north. */
 const SIDES = [
   { direction: 'east', dx: 1, dz: 0 },
   { direction: 'south', dx: 0, dz: 1 },
@@ -137,28 +145,75 @@ const SIDES = [
   { direction: 'north', dx: 0, dz: -1 },
 ];
 
+/** A cell a swimmer can pass: no solid block, and not lava or fire (water and air are both fine). */
+function swimmable(block: ScanBlock | null): boolean {
+  return block !== null && block.boundingBox === 'empty' && !LATERAL_AVOID.has(block.name);
+}
+
+/** A cell a Body can breathe in: its head level can be swum through and the cell above is open air. */
+function breathableAt(read: BlockReader, x: number, feet: number, z: number): boolean {
+  return swimmable(read(x, feet + 1, z)) && isOpenCell(read(x, feet + 2, z));
+}
+
 /**
- * The nearest open column along each horizontal ray out to 8 blocks: air (not water) at the head
- * level and the cell above it. The nearest ray wins. Null when no ray has one in range.
+ * The nearest breathable cell a pinned swimmer can reach: a breadth-first search out to 8 steps
+ * through water and air, so a solid block in the way is a wall and the route goes round it. A cell
+ * is breathable when its head level is swimmable and the cell above is open air, which covers dry
+ * air and the surface of a lake. `keep` (the last target) stays while it is no more than one step
+ * further than the nearest, so the target changes only for a gain of 2 steps. Null when none is in range.
  */
 export function findLateralExit(
   read: BlockReader,
   from: { x: number; y: number; z: number },
+  keep?: { x: number; z: number },
 ): LateralExit | null {
   const feet = Math.floor(from.y);
   const cx = Math.floor(from.x);
   const cz = Math.floor(from.z);
-  let best: LateralExit | null = null;
-  for (const side of SIDES) {
-    for (let distance = 1; distance <= LATERAL_RADIUS; distance++) {
-      const x = cx + side.dx * distance;
-      const z = cz + side.dz * distance;
-      if (!isOpenCell(read(x, feet + 1, z)) || !isOpenCell(read(x, feet + 2, z))) continue;
-      if (!best || distance < best.distance) best = { x, z, direction: side.direction, distance };
-      break;
+  const key = (x: number, z: number): string => `${x},${z}`;
+  const parent = new Map<string, { x: number; z: number } | null>([[key(cx, cz), null]]);
+  const steps = new Map<string, number>([[key(cx, cz), 0]]);
+  const queue: Array<{ x: number; z: number }> = [{ x: cx, z: cz }];
+  const found: Array<{ x: number; z: number; steps: number }> = [];
+  for (let at = 0; at < queue.length; at++) {
+    const cell = queue[at] as { x: number; z: number };
+    const reached = steps.get(key(cell.x, cell.z)) ?? 0;
+    if (reached > 0 && breathableAt(read, cell.x, feet, cell.z)) {
+      found.push({ x: cell.x, z: cell.z, steps: reached });
+    }
+    if (reached === LATERAL_RADIUS) continue;
+    for (const side of SIDES) {
+      const x = cell.x + side.dx;
+      const z = cell.z + side.dz;
+      if (steps.has(key(x, z))) continue;
+      if (!swimmable(read(x, feet, z)) || !swimmable(read(x, feet + 1, z))) continue;
+      steps.set(key(x, z), reached + 1);
+      parent.set(key(x, z), cell);
+      queue.push({ x, z });
     }
   }
-  return best;
+  const nearest = found[0];
+  if (!nearest) return null;
+  const kept = keep ? found.find((cell) => cell.x === keep.x && cell.z === keep.z) : undefined;
+  const chosen = kept && kept.steps < nearest.steps + LATERAL_HYSTERESIS ? kept : nearest;
+  const path: Array<{ x: number; z: number }> = [];
+  let step: { x: number; z: number } | null | undefined = { x: chosen.x, z: chosen.z };
+  while (step && (step.x !== cx || step.z !== cz)) {
+    path.unshift(step);
+    step = parent.get(key(step.x, step.z));
+  }
+  const first = path[0];
+  if (!first) return null;
+  const side = SIDES.find(
+    (s) => s.dx === Math.sign(first.x - cx) && s.dz === Math.sign(first.z - cz),
+  );
+  return {
+    x: chosen.x,
+    z: chosen.z,
+    direction: side?.direction ?? '',
+    distance: chosen.steps,
+    path,
+  };
 }
 
 /** What a walk is given: where to go, and how to tell it is over. */
@@ -172,8 +227,10 @@ export interface EscapeWalk {
   expired(): boolean;
   /** True once the Body stands out of the hazard. */
   reached(): boolean;
-  /** Writes one operator line (the lateral fallback engaging). Optional: a test walk need not set it. */
+  /** Writes one operator line (the lateral fallback engaging or changing target). Optional: a test walk need not set it. */
   note?(fields: Record<string, unknown>): void;
+  /** The game tick now. The swim-up's 20-tick window counts these; without it the window counts loop turns. */
+  tick?(): number;
 }
 
 /** Moves the Body to the target; resolves when it arrived, gave up or was aborted. */
@@ -243,9 +300,11 @@ export function steerBlocked(bot: Bot, to: Vec3): boolean {
 /**
  * Swims up with jump held on every physics tick until the Body has air or is out of the water; the
  * way out of deep water with no stand block within range. When a solid block is directly above the
- * head (an undercut bank), it first steers to the nearest breathing column, then rises. When the
- * Body gains less than 0.3 blocks in 20 ticks (pinned under a cap), it steers to the nearest open
- * column sideways instead, re-checking every window. The target of the walk is not used.
+ * head (an undercut bank), it steers to the nearest breathing column, then rises. When the Body
+ * gains less than 0.3 blocks in 20 game ticks (pinned under a cap), it swims to the nearest
+ * breathable cell through water and air (a lake surface counts), re-picked every window and kept
+ * unless another is 2 steps nearer. Between a column and a lateral exit it takes the one with
+ * fewer blocks to swim. The target of the walk is not used.
  */
 export const swimUp: EscapeMover = async (walk) => {
   const { bot } = walk;
@@ -256,34 +315,53 @@ export const swimUp: EscapeMover = async (walk) => {
   };
   let steering = false;
   let windowStart = bot.entity.position.y;
-  let waited = 0;
+  // Loop turns count only when the walk has no game clock; the reflex always gives one.
+  let turns = 0;
+  const clock = (): number => walk.tick?.() ?? turns;
+  let windowTick = clock();
   let sideways: LateralExit | null = null;
+  let noted: { x: number; z: number } | null = null;
   bot.on('physicsTick', holdJump);
   try {
     holdJump();
     while (!walk.signal.aborted && !walk.expired() && !walk.reached()) {
       const here = bot.entity.position;
-      if (waited >= LATERAL_WINDOW_TICKS) {
+      if (clock() - windowTick >= LATERAL_WINDOW_TICKS) {
         const gained = here.y - windowStart;
         windowStart = here.y;
-        waited = 0;
-        const next = gained < LATERAL_MIN_GAIN ? findLateralExit(read, here) : null;
-        if (next && !sideways) {
+        windowTick = clock();
+        sideways =
+          gained < LATERAL_MIN_GAIN ? findLateralExit(read, here, sideways ?? undefined) : null;
+        if (sideways && (!noted || noted.x !== sideways.x || noted.z !== sideways.z)) {
           walk.note?.({
-            direction: next.direction,
-            distance: next.distance,
+            event: noted ? 'retarget' : 'engage',
+            direction: sideways.direction,
+            distance: sideways.distance,
             dy_gained: Math.round(gained * 100) / 100,
           });
+          noted = { x: sideways.x, z: sideways.z };
         }
-        sideways = next;
+      }
+      // A waypoint the Body has stepped into is done; the next one is the next step.
+      const waypoint = sideways?.path[0];
+      if (
+        sideways &&
+        waypoint &&
+        Math.floor(here.x) === waypoint.x &&
+        Math.floor(here.z) === waypoint.z
+      ) {
+        sideways.path.shift();
       }
       const ceiling = read(Math.floor(here.x), Math.floor(here.y + 1.85), Math.floor(here.z));
       const column = ceiling?.boundingBox === 'block' ? findBreathingColumn(read, here) : null;
-      const aim = sideways
-        ? new Vec3(sideways.x + 0.5, here.y, sideways.z + 0.5)
-        : column
-          ? new Vec3(column.x + 0.5, here.y, column.z + 0.5)
-          : null;
+      // Both routes are swum at the same speed, so the one with fewer blocks is the faster; a tie keeps the column.
+      const lateral = sideways?.path[0] ?? null;
+      const columnBlocks = column
+        ? Math.hypot(column.x + 0.5 - here.x, column.z + 0.5 - here.z)
+        : Number.POSITIVE_INFINITY;
+      const lateralBlocks = sideways ? sideways.path.length : Number.POSITIVE_INFINITY;
+      const target = lateral && lateralBlocks < columnBlocks ? lateral : column;
+      const aim = target ? new Vec3(target.x + 0.5, here.y, target.z + 0.5) : null;
       if (aim) {
         await bot.lookAt(aim, true);
         const wantForward = !steerBlocked(bot, aim);
@@ -296,7 +374,7 @@ export const swimUp: EscapeMover = async (walk) => {
         bot.setControlState('forward', false);
       }
       await bot.waitForTicks(1);
-      waited += 1;
+      turns += 1;
     }
   } finally {
     bot.off('physicsTick', holdJump);
@@ -416,7 +494,14 @@ export function createHazardEscapeReflex(options: HazardEscapeOptions = {}): Ref
       // Air back above the threshold is out of harm, even while the Body is still in the water.
       const recovered = (): boolean => drowning && view.air > DROWNING_AIR;
       const landed = (): boolean => standing() || recovered();
-      const walk = { bot, signal: ctx.signal, timeScale: ctx.timeScale, expired, reached: landed };
+      const walk = {
+        bot,
+        signal: ctx.signal,
+        timeScale: ctx.timeScale,
+        expired,
+        reached: landed,
+        tick: (): number => view.tick ?? ctx.tick,
+      };
       // Drowning always swims up first: with low air the way out is up, not along the bank.
       if (drowning) {
         const surfaced = (): boolean => recovered() || view.inFluid !== 'water';

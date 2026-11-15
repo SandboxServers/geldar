@@ -2,7 +2,7 @@ import { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { moveNear } from '../../actions/pathing.ts';
 import { fakeBot } from '../body.fakes.ts';
-import { type EscapeWalk, swimUp, walkOutOfHazard } from './hazard-escape.ts';
+import { type EscapeWalk, findLateralExit, swimUp, walkOutOfHazard } from './hazard-escape.ts';
 
 vi.mock('../../actions/pathing.ts', () => ({ moveNear: vi.fn() }));
 
@@ -141,8 +141,14 @@ function cappedWorld(): Record<string, Block> {
   return cells;
 }
 
-/** A swimmer in a fixed world: held forward moves it 0.2 east, else held jump lifts it by `rise`. */
-function swimmerIn(world: (v: Vec3) => Block, at: Vec3, rise: number) {
+/** A swimmer in a fixed world: held forward moves it `speed` along `dir`, else held jump lifts it by `rise`. */
+function swimmerIn(
+  world: (v: Vec3) => Block,
+  at: Vec3,
+  rise: number,
+  dir = { dx: 1, dz: 0 },
+  speed = 0.2,
+) {
   const { bot, controls, state } = controlBot(at);
   const held = new Set<string>();
   const b = bot as unknown as {
@@ -160,10 +166,46 @@ function swimmerIn(world: (v: Vec3) => Block, at: Vec3, rise: number) {
   b.waitForTicks = async () => {
     state.ticks += 1;
     const p = b.entity.position;
-    if (held.has('forward')) b.entity.position = p.offset(0.2, 0, 0);
+    if (held.has('forward')) b.entity.position = p.offset(dir.dx * speed, 0, dir.dz * speed);
     else if (held.has('jump')) b.entity.position = p.offset(0, rise, 0);
   };
-  return { bot: bot as never, controls, state, pos: (): Vec3 => b.entity.position };
+  return {
+    bot: bot as never,
+    controls,
+    state,
+    pos: (): Vec3 => b.entity.position,
+    isForward: (): boolean => held.has('forward'),
+  };
+}
+
+const EAST = { name: 'east', dx: 1, dz: 0 };
+const SOUTH = { name: 'south', dx: 0, dz: 1 };
+const WEST = { name: 'west', dx: -1, dz: 0 };
+const NORTH = { name: 'north', dx: 0, dz: -1 };
+const SIDES = [EAST, SOUTH, WEST, NORTH];
+
+/** The whole block cell the Body is in, counted along a side from the open column at the origin. */
+function cellAlong(pos: Vec3, side: { dx: number; dz: number }): number {
+  return Math.floor(pos.x) * side.dx + Math.floor(pos.z) * side.dz;
+}
+
+/**
+ * The origin column (water y 58..61) under a stone cap at y 62, a water corridor at y 60..61 out to
+ * `distance` along `side`, and the exit there: a lake surface (water to y 61, air above) or a dry shaft.
+ */
+function capped(side: { dx: number; dz: number }, distance: number, exit: 'lake' | 'shaft') {
+  const cells: Record<string, Block> = {};
+  for (let y = 58; y <= 61; y++) cells[`0,${y},0`] = WATER;
+  for (let k = 1; k < distance; k++) {
+    for (const y of [60, 61]) cells[`${k * side.dx},${y},${k * side.dz}`] = WATER;
+  }
+  const ex = distance * side.dx;
+  const ez = distance * side.dz;
+  for (const y of [60, 61]) {
+    cells[`${ex},${y},${ez}`] = exit === 'lake' ? WATER : AIR;
+  }
+  for (const y of [62, 63]) cells[`${ex},${y},${ez}`] = AIR;
+  return cells;
 }
 
 describe('swimUp lateral fallback', () => {
@@ -180,6 +222,7 @@ describe('swimUp lateral fallback', () => {
     expect(state.ticks).toBeLessThan(80);
     expect(note).toHaveBeenCalledTimes(1);
     expect(note).toHaveBeenCalledWith({
+      event: 'engage',
       direction: 'east',
       distance: 6,
       dy_gained: 0,
@@ -220,6 +263,182 @@ describe('swimUp lateral fallback', () => {
     await swimUp(walkFor(bot, () => false, { expired: () => state.ticks >= 21, note }));
     expect(controls).not.toContain('forward:true');
     expect(note).not.toHaveBeenCalled();
+  });
+});
+
+describe('swimUp lateral: lakes, reach, nearest exit, hysteresis and competition', () => {
+  it.each(SIDES)('escapes a capped shaft to an open lake surface 6 blocks $name', async (side) => {
+    const note = vi.fn();
+    const { bot, controls, state, pos } = swimmerIn(
+      worldOf(capped(side, 6, 'lake')),
+      new Vec3(0.5, 60.2, 0.5),
+      0,
+      side,
+    );
+    await swimUp(
+      walkFor(bot, () => cellAlong(pos(), side) >= 6, { expired: () => state.ticks >= 80, note }),
+    );
+    expect(controls).toContain('forward:true');
+    expect(cellAlong(pos(), side)).toBeGreaterThanOrEqual(6);
+    expect(note).toHaveBeenCalledWith({
+      event: 'engage',
+      direction: side.name,
+      distance: 6,
+      dy_gained: 0,
+    });
+  });
+
+  it('finds no exit 9 blocks away: the search reaches 8 and no further', async () => {
+    const note = vi.fn();
+    const { bot, controls, state } = swimmerIn(
+      worldOf(capped(EAST, 9, 'lake')),
+      new Vec3(0.5, 60.2, 0.5),
+      0,
+    );
+    await swimUp(walkFor(bot, () => false, { expired: () => state.ticks >= 30, note }));
+    expect(controls).not.toContain('forward:true');
+    expect(note).not.toHaveBeenCalled();
+  });
+
+  it('engages when the Body gains 0.2 blocks in the 20-tick window, under the 0.3 gain', async () => {
+    const note = vi.fn();
+    const { bot, controls, state, pos } = swimmerIn(
+      worldOf(capped(EAST, 6, 'lake')),
+      new Vec3(0.5, 60.2, 0.5),
+      0.01,
+    );
+    await swimUp(
+      walkFor(bot, () => cellAlong(pos(), EAST) >= 6, { expired: () => state.ticks >= 80, note }),
+    );
+    expect(controls).toContain('forward:true');
+    expect(note).toHaveBeenCalledTimes(1);
+  });
+
+  it('takes the nearer of two reachable exits (east 3 before west 6)', async () => {
+    const note = vi.fn();
+    // Both exits sit beyond the 4-block breathing-column search, so only the lateral search sees them.
+    const cells = capped(WEST, 7, 'lake');
+    for (let x = 1; x <= 4; x++) for (const y of [60, 61]) cells[`${x},${y},0`] = WATER;
+    for (let y = 60; y <= 63; y++) cells[`5,${y},0`] = AIR;
+    const { bot, controls, state, pos } = swimmerIn(worldOf(cells), new Vec3(0.5, 60.2, 0.5), 0);
+    await swimUp(
+      walkFor(bot, () => cellAlong(pos(), EAST) >= 5, { expired: () => state.ticks >= 80, note }),
+    );
+    expect(controls).toContain('forward:true');
+    expect(note).toHaveBeenCalledTimes(1);
+    expect(note).toHaveBeenCalledWith(
+      expect.objectContaining({ event: 'engage', direction: 'east', distance: 5 }),
+    );
+  });
+
+  it('goes west to the open lake when the nearer east shaft is cut off by stone', async () => {
+    const note = vi.fn();
+    const cells = capped(WEST, 6, 'lake');
+    // A dry shaft 7 east, not joined to the column: the corridor cells at x 1 to 6 stay stone.
+    for (let y = 60; y <= 63; y++) cells[`7,${y},0`] = AIR;
+    const { bot, controls, state, pos } = swimmerIn(
+      worldOf(cells),
+      new Vec3(0.5, 60.2, 0.5),
+      0,
+      WEST,
+    );
+    await swimUp(
+      walkFor(bot, () => cellAlong(pos(), WEST) >= 6, { expired: () => state.ticks >= 80, note }),
+    );
+    expect(controls).toContain('forward:true');
+    expect(cellAlong(pos(), WEST)).toBeGreaterThanOrEqual(6);
+    expect(note).toHaveBeenCalledWith(expect.objectContaining({ direction: 'west', distance: 6 }));
+  });
+
+  it('keeps the undercut-bank column when it is closer than the lateral exit', async () => {
+    // Column at x 4 (water to y 62, so no air above it: not a lateral exit); a dry pocket 6 west.
+    const cells: Record<string, Block> = {};
+    for (let y = 58; y <= 61; y++) cells[`0,${y},0`] = WATER;
+    for (let x = 1; x <= 4; x++) for (const y of [60, 61]) cells[`${x},${y},0`] = WATER;
+    cells['4,62,0'] = WATER;
+    for (let x = -5; x <= -1; x++) for (const y of [60, 61]) cells[`${x},${y},0`] = WATER;
+    cells['-6,60,0'] = WATER;
+    cells['-6,61,0'] = AIR;
+    cells['-6,62,0'] = AIR;
+    const aims: Vec3[] = [];
+    // Speed 0.1 a tick (the swim speed): the first 20-tick window closes before the Body reaches the column.
+    const { bot, state, pos } = swimmerIn(worldOf(cells), new Vec3(0.5, 60.2, 0.5), 0, EAST, 0.1);
+    // Each aim is checked against the Body's x when it was given: the column is east of the Body, and a
+    // west lateral target would first step to a cell west of it.
+    const froms: number[] = [];
+    (bot as unknown as { lookAt: (v: Vec3) => Promise<void> }).lookAt = async (v: Vec3) => {
+      aims.push(v);
+      froms.push(pos().x);
+    };
+    await swimUp(
+      walkFor(bot, () => cellAlong(pos(), EAST) >= 4, { expired: () => state.ticks >= 60 }),
+    );
+    expect(aims.length).toBeGreaterThan(0);
+    expect(aims.every((aim, i) => aim.x > (froms[i] ?? 0))).toBe(true);
+  });
+
+  it('drops the sideways target after a window that gains 0.3 blocks, counting game ticks', async () => {
+    // Look takes a tick (as in the game): the first 20-tick window ends at tick 20, the second at 40.
+    // Rising 0.02 a tick from tick 21 gains 0.4 in the second window, so the target is dropped.
+    const { bot, state, isForward, pos } = swimmerIn(
+      worldOf(capped(EAST, 6, 'shaft')),
+      new Vec3(0.5, 60.2, 0.5),
+      0,
+      EAST,
+      0.05,
+    );
+    const b = bot as unknown as {
+      waitForTicks: () => Promise<void>;
+      lookAt: () => Promise<void>;
+      entity: { position: Vec3 };
+    };
+    const inner = b.waitForTicks;
+    let forwardAt45: boolean | null = null;
+    b.waitForTicks = async () => {
+      await inner();
+      if (state.ticks > 20) b.entity.position = pos().offset(0, 0.02, 0);
+      if (state.ticks === 45) forwardAt45 = isForward();
+    };
+    b.lookAt = async () => {
+      await b.waitForTicks();
+    };
+    await swimUp(
+      walkFor(bot, () => false, { expired: () => state.ticks >= 50, tick: () => state.ticks }),
+    );
+    expect(forwardAt45).toBe(false);
+  });
+});
+
+describe('findLateralExit: the nearest exit, kept while it is not 2 steps nearer', () => {
+  /** Origin column, east corridor to a dry shaft at `east`, west corridor to a lake at 6. */
+  function twoExits(east: number) {
+    const cells = capped(WEST, 6, 'lake');
+    for (let x = 1; x < east; x++) for (const y of [60, 61]) cells[`${x},${y},0`] = WATER;
+    for (let y = 60; y <= 63; y++) cells[`${east},${y},0`] = AIR;
+    const world = worldOf(cells);
+    return (x: number, y: number, z: number) => world(new Vec3(x, y, z));
+  }
+  const origin = new Vec3(0.5, 60.2, 0.5);
+
+  it('picks the nearest exit when there is no last target', () => {
+    expect(findLateralExit(twoExits(5), origin)).toMatchObject({ direction: 'east', distance: 5 });
+  });
+
+  it('keeps the last target when the nearest is only one step nearer', () => {
+    // West lake at 6 is kept against an east shaft at 5: 6 is less than 5 + 2.
+    expect(findLateralExit(twoExits(5), origin, { x: -6, z: 0 })).toMatchObject({
+      x: -6,
+      direction: 'west',
+      distance: 6,
+    });
+  });
+
+  it('switches to the nearest when it is 2 steps nearer than the last target', () => {
+    // East shaft at 4 against the west lake at 6: 6 is not less than 4 + 2, so the target changes.
+    expect(findLateralExit(twoExits(4), origin, { x: -6, z: 0 })).toMatchObject({
+      direction: 'east',
+      distance: 4,
+    });
   });
 });
 
