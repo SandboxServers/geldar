@@ -1,7 +1,13 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import type { Vec3 } from 'vec3';
-import { digTicks, handNote, hazardReason, unbreakableReason } from './bare-hand.ts';
+import {
+  digTicks,
+  fallOnBodyReason,
+  handNote,
+  hazardReason,
+  unbreakableReason,
+} from './bare-hand.ts';
 import type { Block, Item } from './bot-types.ts';
 import { feetCell } from './feet-cell.ts';
 import { outcomeOfMove } from './move-outcome.ts';
@@ -128,7 +134,8 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     // Any breakable block may be dug by hand; only an unbreakable or a dangerous one is refused.
     const refusal =
       unbreakableReason(block) ??
-      hazardReason(bot, block, at, [feetCell(bot), feetCell(bot).offset(0, 1, 0)], false);
+      hazardReason(bot, block, at, [feetCell(bot), feetCell(bot).offset(0, 1, 0)], false) ??
+      fallOnBodyReason(bot, block, at, feetCell(bot), feetCell(bot).offset(0, 1, 0));
     if (refusal) return failed('not_possible', refusal, { mined });
     if (tool) await bot.equip(tool, 'hand');
     const note = handNote(block, tool ?? null, digTicks(bot, block));

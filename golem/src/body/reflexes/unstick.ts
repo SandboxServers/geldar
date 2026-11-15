@@ -85,9 +85,20 @@ export function noteGoto(
  * `SAME_SPOT` blocks from `here` (decision 0332). An outcome without a position never counts.
  */
 export function failedWalksAt(view: BodyView, here: { x: number; y: number; z: number }): boolean {
-  const walks = streaks.get(view)?.walks ?? [];
-  if (walks.length < 2) return false;
-  return walks.every((w) => Math.hypot(w.x - here.x, w.y - here.y, w.z - here.z) <= SAME_SPOT);
+  const streak = streaks.get(view);
+  if (!streak || streak.walks.length < 2) return false;
+  return streak.walks.every((w) => sameSpot(streak, w, here));
+}
+
+/**
+ * Two failed attempts are one spot when they are within `SAME_SPOT` blocks, or when both lie inside the
+ * reach region (the pocket) of the record's first failure: a Body that moves about inside a closed pocket
+ * is still boxed in there (decision 0336).
+ */
+function sameSpot(streak: Streak, a: Spot, b: Spot): boolean {
+  if (spotGap(a, b) <= SAME_SPOT) return true;
+  const pocket = streak.pocket;
+  return pocket !== undefined && regionHas(pocket.cells, a) && regionHas(pocket.cells, b);
 }
 
 /** What ran for a walk outcome: a `goto`, a `mine` (its walk to the block), or an `unstick` run. */

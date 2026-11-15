@@ -98,6 +98,85 @@ describe('mineAction', () => {
     expect(bot.dig).not.toHaveBeenCalled();
   });
 
+  it('refuses a stone beside a 1x2 pit when gravel above it would fall on the Body', async () => {
+    const OAK = OAK_LOG;
+    const walls = [
+      block(OAK, new Vec3(-1, 64, 0), [OAK], undefined, 'oak_log'),
+      block(OAK, new Vec3(-1, 65, 0), [OAK], undefined, 'oak_log'),
+      block(OAK, new Vec3(0, 64, -1), [OAK], undefined, 'oak_log'),
+      block(OAK, new Vec3(0, 64, 1), [OAK], undefined, 'oak_log'),
+      block(OAK, new Vec3(0, 65, -1), [OAK], undefined, 'oak_log'),
+      block(OAK, new Vec3(0, 65, 1), [OAK], undefined, 'oak_log'),
+    ];
+    const stone = block(STONE, new Vec3(1, 64, 0), [], { 270: true }, 'stone');
+    const gravel = block(GRAVEL, new Vec3(1, 65, 0), [], undefined, 'gravel');
+    const bot = fakeBot([...walls, stone, gravel]);
+    expect(await mine(bot, 1, 'stone')).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'stone is unsafe to dig: gravel above it would fall on you',
+    });
+    expect(bot.dig).not.toHaveBeenCalled();
+  });
+
+  it('refuses gravel dug in a 1-wide pit with the Body walled in, and names no coordinates', async () => {
+    const OAK = OAK_LOG;
+    const walls = [
+      block(OAK, new Vec3(0, 63, 0), [OAK], undefined, 'oak_log'),
+      block(OAK, new Vec3(-1, 64, 0), [OAK], undefined, 'oak_log'),
+      block(OAK, new Vec3(-1, 65, 0), [OAK], undefined, 'oak_log'),
+      block(OAK, new Vec3(0, 64, -1), [OAK], undefined, 'oak_log'),
+      block(OAK, new Vec3(0, 64, 1), [OAK], undefined, 'oak_log'),
+      block(OAK, new Vec3(0, 65, -1), [OAK], undefined, 'oak_log'),
+      block(OAK, new Vec3(0, 65, 1), [OAK], undefined, 'oak_log'),
+      block(OAK, new Vec3(1, 65, 0), [OAK], undefined, 'oak_log'),
+    ];
+    const gravel = block(GRAVEL, new Vec3(1, 64, 0), [], undefined, 'gravel');
+    const bot = fakeBot([...walls, gravel]);
+    expect(await mine(bot, 1, 'gravel')).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'gravel falls when dug, and you have no open cell beside you',
+    });
+    expect(bot.dig).not.toHaveBeenCalled();
+  });
+
+  it('refuses each falling block type above a stone that the Body stands beside', async () => {
+    const types = [
+      'sand',
+      'red_sand',
+      'anvil',
+      'chipped_anvil',
+      'damaged_anvil',
+      'suspicious_sand',
+      'suspicious_gravel',
+      'pointed_dripstone',
+      'dragon_egg',
+      'white_concrete_powder',
+    ];
+    for (const name of types) {
+      const stone = block(STONE, new Vec3(1, 64, 0), [], { 270: true }, 'stone');
+      const falling = block(999, new Vec3(1, 65, 0), [], undefined, name);
+      const bot = fakeBot([stone, falling]);
+      expect(await mine(bot, 1, 'stone')).toMatchObject({
+        status: 'failed',
+        reason: 'not_possible',
+        message: `stone is unsafe to dig: ${name} above it would fall on you`,
+      });
+      expect(bot.dig).not.toHaveBeenCalled();
+    }
+  });
+
+  it('digs gravel and a stone with gravel above it in open ground, far from the Body', async () => {
+    const gravel = block(GRAVEL, new Vec3(3, 64, 0), [], undefined, 'gravel');
+    expect(await mine(fakeBot([gravel]), 1, 'gravel')).toMatchObject({ status: 'completed' });
+    const stone = block(STONE, new Vec3(5, 64, 0), [], { 270: true }, 'stone');
+    const above = block(GRAVEL, new Vec3(5, 65, 0), [], undefined, 'gravel');
+    const far = fakeBot([stone, above]);
+    expect(await mine(far, 1, 'stone')).toMatchObject({ status: 'completed' });
+    expect(far.dig).toHaveBeenCalledTimes(1);
+  });
+
   it('returns not_possible and never digs a block under the bot', async () => {
     const under = block(OAK_LOG, new Vec3(0, 63, 0), [OAK_LOG]);
     const bot = fakeBot([under]);
