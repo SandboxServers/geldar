@@ -71,3 +71,12 @@ The packet that implements this record does these steps in order. Each step is a
 - So the `swimIntent` WeakMap, the deliberate-swim exception, the air 18 start for a deliberate swim, and test 8 are not built. They are not deferred to a later step; they are dropped with this amendment.
 - Revisit if a re-entry cooldown is added: then the deliberate-swim exception and the air 18 start apply to it, and test 8 is written with it.
 - Every other rule of this record stands: the air budget, the thresholds (surface at 12, stop at 10, reflex at 8), the bank exit guards, and the swim facts in result lines.
+
+## Amendment 2026-11-15: facts reach the Mind
+
+- The "no contract changes" rule of this record (section (d) and "Not in this record") is amended. The reason enum and the schema shape stay as they are, but the swim facts need two additive allow-list entries before the Mind reads them.
+- `goto` joins `PLAIN_FACT_VERBS` in `contract/src/outcome-words.ts`, so a completed goto's swim note is sent as its plain fact.
+- `interrupted` joins `DETAIL_REASONS` in the same file, so a goto stopped at air 10 sends its fixed failure text as detail.
+- Both entries are additive allow-list changes, owner-approved via geldar-93 (2026-11-15). They ship in the contract PR phase1/swim-facts-contract, not in the phase1/swim-0194 commits.
+- The Body sends the text: `golem/src/body/executor-outcome.ts` reads a goto's note as its ok detail, and sends the swim stop text as the detail of an `interrupted` goto. Both are fixed text with the air value and no advice.
+- Until the contract PR is merged, the Body still sends the interrupted goto's text, because it is set before the `outcomeDetailText` gate, and the outcome handler keeps the detail of any failure. The ok note is held back by the handler's `PLAIN_FACT_VERBS` gate until the contract PR is merged.
