@@ -664,3 +664,16 @@ Checked at `907f5b8a`, `a1c6fb2a`, and the 308 remote branches (added files only
 - Self-registered creation (`register_create_player`, 0010 to 0012) leaves `agents.character_sheet` NULL; a NULL baseline is "not adopted" and the first Body start adopts its config or standard sheet. Changing the definer functions is a separate migration if the owner wants adoption at birth.
 - `pack` of a release tarball is not built; the artifact is the tag plus `psyche/RELEASE.json`.
 - Plugin-published events that carry an `agent_id` (the Java `EventExporter`: damage, death and the like) are **not** stamped by GX-01; the cohort report joins them on `agents.harness` and `declared_model`. A sink-side fill from the `agents` row is the follow-up (a GX-01d) if the owner wants every row stamped.
+
+## GX-08: non-advancing wait (`peek`) for the instinct (world)
+
+- **Repo** geldar. **Branch** `phase1/gx-08-wait-peek`. **Depends on** GX-06 (the instinct class is read from the connection). **Contract** serial slot from geldar-3b (regenerates `contract/src/generated`). **Size** about 35k. **Status** Proposed. **Number**: GX-07 is already the BlueMap card in `work-packets-turn-record.md`, so this card takes GX-08.
+- **Why.** `threshold/mcp/src/tools/wait.ts` calls `rememberDelivered` on every wait (about line 296), and a new wait replaces an open one (`state.open`, `'wait_replaced'`, about line 189). An instinct wait between model sessions therefore advances the life's shared delivered mark and ends an open model wait, which can hide events from the model's later cursorless wait.
+- **Do.**
+  - `contract/schemas/mcp-play.schema.json` (`WaitInput`): optional `peek`, boolean, default false, additive. Regenerate.
+  - `wait.ts`: when `peek` is true and the connection is the instinct class, the call returns events after the given cursor and has no side effects: no `rememberDelivered`, no `lastWakeMs`, no replace or end of an open wait.
+  - `threshold/mcp-mock/src/registry.ts`: the mock honours the same contract.
+- **Gate (decided here, owner or geldar-93 to confirm).** `peek` works only for the instinct class from GX-06's keyed header. A model cannot send the key, so it cannot use `peek` to skip delivered accounting. A model connection that sends `peek: true` gets an ordinary wait with no error, so no error text reveals the class (0059, 0068). Recommend no `peek` for the model class at all.
+- **Prove.** Tests that fail when the branch is reverted: an instinct peek leaves the delivered mark and an open wait untouched; a non-peek wait still advances the mark and replaces an open wait; a model-class `peek: true` acts as an ordinary wait; the peek returns the events after the cursor. Revert the `wait.ts` peek branch and the first test fails.
+- **Kit consequence.** HC-18 `observe.ts` then sends `peek: true` on instinct waits. That is a follow-up kit card for scriptorium-orchestrator, not part of GX-08.
+- **Must not.** Change the default of `peek`, the model wait semantics, or the GX-06 header check; edit `docs/spec.md`. **Needs geldar-93's go** (MCP change).
