@@ -35,6 +35,7 @@ const ROLES = [
   'deploy',
   'supervisor',
   'register',
+  'helper',
 ];
 const MIND_TYPES = [
   'wake',
@@ -102,8 +103,19 @@ function expectedTable(s: string): Record<string, { pub: string[]; sub: string[]
     // Deploy (CD-1d): the maintenance subject only; no JetStream API and no Kino subject.
     deploy: { pub: [`geldar.${s}.maintenance`], sub: ['_INBOX.>'] },
     // Body control (C7-03b1): the supervisor answers ctl.body and replies to inboxes; register requests and needs its inbox.
-    supervisor: { pub: ['_INBOX.>'], sub: [`geldar.${s}.ctl.body.>`] },
+    // Body helper (C7-03c1): the supervisor requests the four verbs on their exact subjects; the helper hears them.
+    supervisor: {
+      pub: [
+        '_INBOX.>',
+        ...['start', 'stop', 'status', 'logtail'].map((v) => `geldar.${s}.helper.body.${v}`),
+      ],
+      sub: [`geldar.${s}.ctl.body.>`, '_INBOX.>'],
+    },
     register: { pub: [`geldar.${s}.ctl.body.>`], sub: ['_INBOX.>'] },
+    helper: {
+      pub: ['_INBOX.>'],
+      sub: ['start', 'stop', 'status', 'logtail'].map((v) => `geldar.${s}.helper.body.${v}`),
+    },
   };
 }
 
@@ -414,12 +426,14 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
       `geldar.${SHARD}.kino.>`,
       `geldar.${SHARD}.blockowner.changed`,
       `geldar.${SHARD}.ctl.body.>`,
+      `geldar.${SHARD}.helper.body.>`,
       `geldar.${SHARD}.state.*.level`,
     ]);
     expect(by('paper')?.deny).toEqual([
       control,
       `geldar.${SHARD}.blockowner.query`,
       `geldar.${SHARD}.ctl.body.>`,
+      `geldar.${SHARD}.helper.body.>`,
       `geldar.${SHARD}.state.*.level`,
     ]);
     expect(by('kino')?.deny).toEqual([]);

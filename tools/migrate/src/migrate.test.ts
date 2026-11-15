@@ -49,6 +49,7 @@ describe('listMigrations', () => {
       '0035_owner_keys_by_session.sql',
       '0036_owner_agents_by_owner_id.sql',
       '0037_events_harness_model.sql',
+      '0038_body_helper_role.sql',
       '0039_account_deletion.sql',
       '0050_character_sheet_xp.sql',
       '0051_character_audit.sql',

@@ -226,6 +226,19 @@ importers:
         specifier: 8.18.2
         version: 8.18.2
 
+  body-helper:
+    dependencies:
+      '@geldar/contract':
+        specifier: workspace:*
+        version: link:../contract
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
+    devDependencies:
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
+
   contract:
     dependencies:
       '@nats-io/transport-node':
