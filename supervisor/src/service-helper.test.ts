@@ -138,6 +138,17 @@ describe('the login name is checked before any helper call', () => {
     });
     expect(helper.sent).toEqual([]);
   });
+
+  it('a foreign owner with a bad login is unknown, not login_name: the roster is checked first, no helper call', async () => {
+    const { world, helper, sup } = setup({});
+    world.loginNameBad = true;
+    expect(await sup.handle({ ...start, ownerId: 'owner-b' })).toEqual({
+      ok: false,
+      code: 'unknown',
+    });
+    expect(helper.sent).toEqual([]);
+    expect(world.startRows).toHaveLength(0);
+  });
 });
 
 const stopsSent = (helper: { sent: Sent[] }) => helper.sent.filter((s) => s.body.verb === 'stop');
@@ -205,11 +216,18 @@ describe('the label owner the helper holds, and its named refusals, at the regis
     expect(await sup.handle(status)).toEqual({ ok: false, code: 'unknown' });
   });
 
-  it("a start refused as another owner's body (a roster move) is busy, and gets no stop", async () => {
+  it("a start refused as another owner's body is busy only when the Body appears after the status (a race), and gets no stop", async () => {
     const { helper, sup } = setup({
       start: refusedReply("name in use by another owner's body"),
     });
     expect(await sup.handle(start)).toEqual({ ok: false, code: 'busy' });
+    expect(stopsSent(helper)).toEqual([]);
+  });
+
+  it("a roster move with the other owner's Body present is unknown: status is refused first, and no start or stop is sent", async () => {
+    const { helper, sup } = setup({ status: refusedReply('not your body') });
+    expect(await sup.handle(start)).toEqual({ ok: false, code: 'unknown' });
+    expect(helper.sent.some((s) => s.body.verb === 'start')).toBe(false);
     expect(stopsSent(helper)).toEqual([]);
   });
 

@@ -9,19 +9,24 @@ import { describe, expect, it } from 'vitest';
 const SUPERVISOR_ROOT = fileURLToPath(new URL('../../../supervisor/', import.meta.url));
 const SUPERVISOR_SRC = `${SUPERVISOR_ROOT}src/`;
 
-// A module reference: a static `from`, a dynamic `import(`, or a `require(`, with a quoted specifier.
-const MODULE_REF = /(?:from\s+|import\(\s*|require\(\s*)['"]/;
+// A module reference: a `from` (with or without spaces), a side-effect `import`, a dynamic `import(` or a
+// `require(` (spaces allowed before the paren), with a quoted specifier (single, double or template quotes).
+// The Docker patterns ignore case, so `./Docker.ts` and `DockerODE` are caught too.
+const MODULE_REF = /(?:\bfrom\s*|\bimport\s*\(\s*|\bimport\s*|\brequire\s*\(\s*)['"\x60]/;
 
 const FORBIDDEN: { name: string; pattern: RegExp }[] = [
-  { name: 'the Docker socket path', pattern: /docker\.sock/ },
-  { name: 'the Docker run directory', pattern: /\/var\/run\/docker/ },
+  { name: 'the Docker socket path', pattern: /docker\.sock/i },
+  { name: 'the Docker run directory', pattern: /\/var\/run\/docker/i },
   {
     name: 'a Docker client package',
-    pattern: new RegExp(`${MODULE_REF.source}[^'"]*docker(?:ode|-modem)[^'"]*['"]`),
+    pattern: new RegExp(
+      `${MODULE_REF.source}[^'"\\x60]*docker(?:ode|-modem)[^'"\\x60]*['"\\x60]`,
+      'i',
+    ),
   },
   {
     name: 'a local docker module',
-    pattern: new RegExp(`${MODULE_REF.source}(?:[^'"]*\\/)?docker[\\w.-]*['"]`),
+    pattern: new RegExp(`${MODULE_REF.source}(?:[^'"\\x60]*\\/)?docker[\\w.-]*['"\\x60]`, 'i'),
   },
 ];
 
@@ -83,6 +88,13 @@ describe('supervisor production code holds no Docker socket or client', () => {
     expect(dockerMention("const d = await import('dockerode');")).toBe('a Docker client package');
     expect(dockerMention("const d = require('dockerode');")).toBe('a Docker client package');
     expect(dockerMention("import { m } from 'docker-modem';")).toBe('a Docker client package');
+    expect(dockerMention("import 'dockerode';")).toBe('a Docker client package');
+    expect(dockerMention('import x from"dockerode";')).toBe('a Docker client package');
+    expect(dockerMention('const d = await import(`dockerode`);')).toBe('a Docker client package');
+    expect(dockerMention("const d = import  ( 'dockerode' );")).toBe('a Docker client package');
+    expect(dockerMention("import { Docker } from './Docker.ts';")).toBe('a local docker module');
+    expect(dockerMention("const s = '/VAR/RUN/DOCKER';")).toBe('the Docker run directory');
+    expect(dockerMention("const s = 'DOCKER.SOCK';")).toBe('the Docker socket path');
     expect(dockerMention("const ok = 'docker';")).toBeNull();
     expect(dockerMention('const ok = 1;')).toBeNull();
   });

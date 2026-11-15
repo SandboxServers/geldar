@@ -36,12 +36,12 @@ interface Fake extends BodyEngine {
 }
 
 // Seeded names are the helper's Bodies unless listed in `foreign`: those carry no Body label. A Body is labelled for
-// 'own-a' unless `owners` names another owner for it.
+// 'own-a' unless `owners` names another owner for it; `owners[name] = null` is a Body with the Body label and no owner label.
 function fakeEngine(
   running: Record<string, boolean> = {},
   sovereign = 0,
   foreign: string[] = [],
-  owners: Record<string, string> = {},
+  owners: Record<string, string | null> = {},
 ): Fake {
   const containers = new Map<string, ContainerState & { name: string }>();
   for (const [name, isRunning] of Object.entries(running)) {
@@ -50,7 +50,7 @@ function fakeEngine(
       name,
       running: isRunning,
       helperBody: !foreign.includes(name),
-      owner: owners[name] ?? 'own-a',
+      owner: name in owners ? (owners[name] ?? null) : 'own-a',
     });
   }
   const fake: Fake = {
@@ -211,6 +211,66 @@ describe('body helper verbs', () => {
         'body-helper verb=start name=ranger outcome=refused reason=other_owner',
       ]);
     }
+  });
+
+  it('refuses stop, status and logtail of a Body with the Body label and no owner label, for any owner', async () => {
+    const engine = fakeEngine({ nobody: true }, 0, [], { nobody: null });
+    const { handle, audit } = harness(engine);
+    for (const verb of ['stop', 'status', 'logtail']) {
+      expect(await handle(req(verb, 'nobody'))).toEqual({
+        ok: false,
+        code: 'refused',
+        error: NOT_YOUR_BODY,
+      });
+    }
+    expect(engine.stopped).toEqual([]);
+    expect(engine.containers.get('nobody')?.running).toBe(true);
+    expect(audit).toEqual([
+      'body-helper verb=stop name=nobody outcome=refused reason=not_your_body',
+      'body-helper verb=status name=nobody outcome=refused reason=not_your_body',
+      'body-helper verb=logtail name=nobody outcome=refused reason=not_your_body',
+    ]);
+  });
+
+  it('refuses a start over a stopped Body with the Body label and no owner label, and removes nothing', async () => {
+    const engine = fakeEngine({ ranger: false }, 0, [], { ranger: null });
+    const { handle, audit } = harness(engine);
+    expect(await handle(req('start'))).toEqual({
+      ok: false,
+      code: 'refused',
+      error: OTHER_OWNER_BODY,
+    });
+    expect(engine.created).toEqual([]);
+    expect(engine.removed).toEqual([]);
+    expect(engine.stopped).toEqual([]);
+    expect(engine.containers.get('ranger')).toMatchObject({ id: 'id-ranger', running: false });
+    expect(audit).toEqual([
+      'body-helper verb=start name=ranger outcome=refused reason=other_owner',
+    ]);
+  });
+
+  it('compares owner ids exactly: a Body labelled Own-A is not acted on by own-a', async () => {
+    const engine = fakeEngine({ nobody: true, ranger: true }, 0, [], {
+      nobody: 'Own-A',
+      ranger: 'Own-A',
+    });
+    const { handle } = harness(engine);
+    for (const verb of ['stop', 'status', 'logtail']) {
+      expect(await handle(req(verb, 'nobody'))).toEqual({
+        ok: false,
+        code: 'refused',
+        error: NOT_YOUR_BODY,
+      });
+    }
+    expect(await handle(req('start', 'ranger'))).toEqual({
+      ok: false,
+      code: 'refused',
+      error: OTHER_OWNER_BODY,
+    });
+    expect(engine.stopped).toEqual([]);
+    expect(engine.removed).toEqual([]);
+    expect(engine.containers.get('nobody')?.running).toBe(true);
+    expect(engine.containers.get('ranger')?.running).toBe(true);
   });
 
   it('creates a mixed-case rostered name under its lower-case container name', async () => {
