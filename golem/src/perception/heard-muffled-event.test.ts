@@ -1,8 +1,10 @@
-import { hearingSubject } from '@geldar/contract';
+import { heardMuffledSentence, hearingSubject } from '@geldar/contract';
 import { describe, expect, it } from 'vitest';
-import { HeardMuffledInbox, PENDING_LIMIT, watchHeardMuffled } from './heard-muffled-event.ts';
+import { HeardMuffledInbox, NOTICE_TTL_MS, watchHeardMuffled } from './heard-muffled-event.ts';
+import { renderMuffledLines } from './muffled.ts';
 
 const NOTICE = { kind: 'heard_muffled', direction: 'n', band: 'near' } as const;
+const notice = (direction: string, band: string) => ({ kind: 'heard_muffled', direction, band });
 const SHARD = 'dev';
 const LIFE = 'ag_ada_01';
 
@@ -70,12 +72,89 @@ describe('HeardMuffledInbox', () => {
     expect(inbox.refusedCount).toBe(1);
   });
 
-  it('keeps the last allowed notice and drops the one past PENDING_LIMIT', () => {
-    const inbox = new HeardMuffledInbox();
-    for (let i = 0; i < PENDING_LIMIT; i += 1) expect(inbox.receive(NOTICE)).toBe(true);
-    expect(inbox.receive(NOTICE)).toBe(false);
-    expect(inbox.overflowCount).toBe(1);
-    expect(inbox.take()).toHaveLength(PENDING_LIMIT);
+  it('a flood of far notices from n never evicts a near notice from e', () => {
+    const inbox = new HeardMuffledInbox({ now: () => 0 });
+    for (let i = 0; i < 64; i += 1) expect(inbox.receive(notice('n', 'far'))).toBe(true);
+    expect(inbox.receive(notice('e', 'near'))).toBe(true);
+    const taken = inbox.take();
+    expect(taken).toEqual([notice('e', 'near'), notice('n', 'far')]);
+    expect(renderMuffledLines(taken)[0]).toBe(heardMuffledSentence('e', 'near'));
+  });
+
+  it('keeps one entry per direction, at its nearest band, however many notices arrive', () => {
+    const inbox = new HeardMuffledInbox({ now: () => 0 });
+    inbox.receive(notice('n', 'far'));
+    inbox.receive(notice('n', 'mid'));
+    inbox.receive(notice('n', 'far'));
+    expect(inbox.take()).toEqual([notice('n', 'mid')]);
+  });
+
+  it('renders a notice that is exactly 60 seconds old, and drops one older', () => {
+    let now = 0;
+    const inbox = new HeardMuffledInbox({ now: () => now });
+    inbox.receive(NOTICE);
+    now = NOTICE_TTL_MS;
+    expect(inbox.take()).toEqual([NOTICE]);
+    inbox.receive(NOTICE);
+    now = NOTICE_TTL_MS * 2 + 1;
+    expect(inbox.take()).toEqual([]);
+    expect(inbox.staleCount).toBe(1);
+  });
+
+  it('a stale near entry does not hide a fresh far notice in the same direction', () => {
+    let now = 0;
+    const inbox = new HeardMuffledInbox({ now: () => now });
+    inbox.receive(notice('n', 'near'));
+    now = NOTICE_TTL_MS + 1;
+    inbox.receive(notice('n', 'far'));
+    expect(inbox.take()).toEqual([notice('n', 'far')]);
+  });
+
+  it('take clears the inbox', () => {
+    const inbox = new HeardMuffledInbox({ now: () => 0 });
+    inbox.receive(NOTICE);
+    expect(inbox.take()).toEqual([NOTICE]);
+    expect(inbox.take()).toEqual([]);
+  });
+
+  it('peek returns the notices without clearing them, and ack clears exactly those', () => {
+    const inbox = new HeardMuffledInbox({ now: () => 0 });
+    inbox.receive(NOTICE);
+    const peeked = inbox.peek();
+    expect(peeked.notices).toEqual([NOTICE]);
+    expect(inbox.peek().notices).toEqual([NOTICE]);
+    peeked.ack();
+    expect(inbox.take()).toEqual([]);
+  });
+
+  it('a notice that arrives between peek and ack survives the ack, in the same direction or another', () => {
+    const inbox = new HeardMuffledInbox({ now: () => 0 });
+    inbox.receive(notice('n', 'mid'));
+    const peeked = inbox.peek();
+    inbox.receive(notice('n', 'near'));
+    inbox.receive(notice('e', 'far'));
+    peeked.ack();
+    expect(inbox.take()).toEqual([notice('n', 'near'), notice('e', 'far')]);
+  });
+
+  it('writes at most one drop line a minute, with running counts and no payload content', () => {
+    let now = 0;
+    const lines: string[] = [];
+    const inbox = new HeardMuffledInbox({ now: () => now, log: (line) => lines.push(line) });
+    inbox.receive({ ...NOTICE, speaker: 'Ada' });
+    inbox.receive({ ...NOTICE, words: 'meet me' });
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('refused 1');
+    now = 59_999;
+    inbox.receive(NOTICE);
+    inbox.receive({ ...NOTICE, x: 10 });
+    expect(lines).toHaveLength(1);
+    now = 120_001;
+    expect(inbox.take()).toEqual([]);
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toContain('refused 3');
+    expect(lines[1]).toContain('stale 1');
+    expect(lines.join(' ')).not.toMatch(/Ada|meet|speaker|words/);
   });
 });
 

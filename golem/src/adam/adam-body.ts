@@ -33,7 +33,7 @@ import { composeEars } from '../mind-link/compose-ears.ts';
 import { RecentEvents } from '../mind-link/recent-events.ts';
 import { SnapshotRevision } from '../mind-link/revision.ts';
 import { MindLinkServer, type RequestServer } from '../mind-link/server.ts';
-import { watchHeardMuffled } from '../perception/heard-muffled-event.ts';
+import { type HearingTransport, watchHeardMuffled } from '../perception/heard-muffled-event.ts';
 import { heardSoundEvent } from '../perception/heard-sound-event.ts';
 import { HurtReporter } from '../perception/hurt.ts';
 import { hurtLogLine } from '../perception/hurt-log.ts';
@@ -63,7 +63,7 @@ export interface AdamBodyEnv {
    * Where muffled notices (`heard_muffled`, MH-4) arrive on the Body's hearing subject. Absent in tests and until the
    * host passes its connection; without it no notice is kept and nothing throws.
    */
-  hearing?: import('../perception/heard-muffled-event.ts').HearingTransport;
+  hearing?: HearingTransport;
   log: (line: string) => void;
   /**
    * Where the hurt line goes: one JSON line per hurt, written as its own line (not wrapped in `log`'s
@@ -241,6 +241,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     ]);
   } catch (error) {
     bot.off('end', onEnd);
+    hearing.stop();
     // A restart that finishes after the failure is stopped, so its timers do not outlive it.
     void restarting.then(
       (late) => {
@@ -368,6 +369,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     });
   } catch (error) {
     bot.off('end', onEnd);
+    hearing.stop();
     if (onHealth !== undefined) bot.off('health', onHealth);
     detachHurts();
     detachChunks();
@@ -389,9 +391,13 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     outcome: restarted.outcome,
     body: restarted.body,
     ended,
-    fail: (reason) => end(reason),
+    fail: (reason) => {
+      hearing.stop();
+      end(reason);
+    },
     async stop() {
       bot.off('end', onEnd);
+      hearing.stop();
       if (onHealth !== undefined) bot.off('health', onHealth);
       detachHurts();
       detachChunks();
