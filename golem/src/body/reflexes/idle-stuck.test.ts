@@ -9,6 +9,7 @@ import type { BodyView } from '../view.ts';
 import { createBasicReflexes } from './basic.ts';
 import {
   IDLE_TICKS,
+  IDLE_TICKS_ON_OWN,
   idleStuckReflex,
   noteActionEnd,
   noteShelterRefusal,
@@ -339,10 +340,41 @@ describe('idle_stuck and the block underfoot (owner ruling 2026-11-14)', () => {
     });
   });
 
-  it('does not fire on a ledge the Body stands on by its own placement', () => {
+  it('fires on a ledge under its own placement only after 120 s still and boxed in (decision 0330)', () => {
     const view = stuck({ enclosed: false, canStepOff: false, onOwnPlacement: true });
     idleStuckReflex.check(view);
-    expect(idleStuckReflex.check(at(view, IDLE_TICKS * 3))).toBeNull();
+    expect(idleStuckReflex.check(at(view, IDLE_TICKS))).toBeNull();
+    expect(idleStuckReflex.check(at(view, IDLE_TICKS_ON_OWN - 1))).toBeNull();
+    expect(idleStuckReflex.check(at(view, IDLE_TICKS_ON_OWN))).toEqual({
+      reason: 'ledge',
+      idle_seconds: 120,
+    });
+  });
+
+  it('does not fire on its own plank at 60 s still, boxed in (the 120 s clock applies)', () => {
+    const view = stuck({ onOwnPlacement: true });
+    idleStuckReflex.check(view);
+    expect(idleStuckReflex.check(at(view, IDLE_TICKS))).toBeNull();
+    expect(idleStuckReflex.check(at(view, IDLE_TICKS_ON_OWN))).toEqual({
+      reason: 'enclosed',
+      idle_seconds: 120,
+    });
+  });
+
+  it('restarts the 120 s own-placement clock on a move or a finished Mind action', () => {
+    const moved = stuck({ enclosed: false, canStepOff: false, onOwnPlacement: true });
+    idleStuckReflex.check(moved);
+    at(moved, 1800, { x: ZACK.x + 1, y: ZACK.y, z: ZACK.z });
+    expect(idleStuckReflex.check(moved)).toBeNull();
+    expect(idleStuckReflex.check(at(moved, 1800 + IDLE_TICKS_ON_OWN - 1))).toBeNull();
+    expect(idleStuckReflex.check(at(moved, 1800 + IDLE_TICKS_ON_OWN))).not.toBeNull();
+    const acted = stuck({ onOwnPlacement: true, actionRunning: true });
+    idleStuckReflex.check(acted);
+    at(acted, 3000);
+    acted.actionRunning = false;
+    noteActionEnd(acted);
+    expect(idleStuckReflex.check(at(acted, 3000 + IDLE_TICKS_ON_OWN - 1))).toBeNull();
+    expect(idleStuckReflex.check(at(acted, 3000 + IDLE_TICKS_ON_OWN))).not.toBeNull();
   });
 
   it('does not dig out a B2 refusal made on its own placement, and does on natural stone', async () => {
@@ -355,6 +387,22 @@ describe('idle_stuck and the block underfoot (owner ruling 2026-11-14)', () => {
     const naturalRegistry = unstickRegistry('trapped');
     await refuseAt(natural, naturalRegistry.registry, [ZACK, ZACK, ZACK]);
     expect(naturalRegistry.calls()).toBe(1);
+  });
+
+  it('hands the own-placement flag to unstick only for the own-placement run (decision 0330)', async () => {
+    const seen: Array<boolean | undefined> = [];
+    const registry = new ActionRegistry();
+    registry.register({
+      kind: 'unstick',
+      timeoutMs: 1000,
+      run: async (ctx) => {
+        seen.push(ctx.ownPlanksLast);
+        return failed('blocked', 'trapped');
+      },
+    });
+    await runUnstick(ctxFor(stuck(), registry, IDLE_TICKS), 'idle_stuck (ledge)', true);
+    await runUnstick(ctxFor(stuck(), registry, IDLE_TICKS), 'idle_stuck (ledge)');
+    expect(seen).toEqual([true, false]);
   });
 });
 

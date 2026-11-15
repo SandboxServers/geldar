@@ -7,6 +7,11 @@ import { hasBurrow } from './panic-burrow.ts';
 
 /** Ticks (20 per second) the Body must stay put, with no action, before it counts as idle: 60 s. */
 export const IDLE_TICKS = 1200;
+/**
+ * Ticks the Body must stay put, boxed in, before it counts as stuck while it stands on a block it placed
+ * itself: 120 s (decision 0330). Shorter stays on its own plank are its work (building, waiting).
+ */
+export const IDLE_TICKS_ON_OWN = 2400;
 /** A move of at least this many blocks from where the Body stood counts as movement. */
 export const MOVE_BLOCKS = 0.5;
 /** The first wait after an unstick run that did not free the Body: 60 s, doubling per failure. */
@@ -93,19 +98,25 @@ export function resetIdleStuck(view: BodyView): void {
 }
 
 /**
- * True when the unstick reflexes (B1 and B2) may run for this Body: no Mind action runs, the Body is
- * neither asleep nor riding, it is not in a burrow it dug, and it does not stand on a block it placed
- * itself (its own pillar is its own work, owner ruling 2026-11-14). A read the view cannot make (an
- * unknown action or sleep state) is not a yes.
+ * The guards the idle clock holds: no Mind action runs, the Body is neither asleep nor riding, and it is
+ * not in a burrow it dug. A read the view cannot make (an unknown action or sleep state) is not a yes.
  */
-export function mayUnstick(view: BodyView): boolean {
+function idleGuards(view: BodyView): boolean {
   return (
     view.actionRunning === false &&
     view.asleep === false &&
     view.riding === false &&
-    view.onOwnPlacement !== true &&
     !hasBurrow(view)
   );
+}
+
+/**
+ * True when the dark shelter unstick (B2) may run for this Body: the idle guards hold and it does not
+ * stand on a block it placed itself (its own pillar is its own work, owner ruling 2026-11-14). B1 does
+ * not use this: its own-placement clock is `IDLE_TICKS_ON_OWN` (decision 0330).
+ */
+export function mayUnstick(view: BodyView): boolean {
+  return idleGuards(view) && view.onOwnPlacement !== true;
 }
 
 /**
@@ -133,18 +144,23 @@ export const idleStuckReflex: Reflex = {
       state.until = 0;
       return null;
     }
-    if (!mayUnstick(view)) {
+    if (!idleGuards(view)) {
       state.since = now;
       return null;
     }
     if (state.actionEnd > state.since) state.since = state.actionEnd;
-    if (now - state.since < IDLE_TICKS || now < state.until) return null;
+    const wait = view.onOwnPlacement === true ? IDLE_TICKS_ON_OWN : IDLE_TICKS;
+    if (now - state.since < wait || now < state.until) return null;
     const reason = stuckReason(view);
     if (reason === null) return null;
     return { reason, idle_seconds: Math.round((now - state.since) / TICKS_PER_SECOND) };
   },
   async run(trigger, ctx): Promise<ReflexOutcome> {
-    return runUnstick(ctx, `idle_stuck (${String(trigger.reason)})`);
+    return runUnstick(
+      ctx,
+      `idle_stuck (${String(trigger.reason)})`,
+      ctx.view.onOwnPlacement === true,
+    );
   },
 };
 
@@ -166,7 +182,11 @@ function stuckReason(view: BodyView): 'enclosed' | 'ledge' | null {
  * when the run ends, so the run's own movement is not "movement" and does not clear the backoff.
  * Returns one outcome whose detail is the one log line of the run.
  */
-export async function runUnstick(ctx: ReflexContext, source: string): Promise<ReflexOutcome> {
+export async function runUnstick(
+  ctx: ReflexContext,
+  source: string,
+  ownPlanksLast = false,
+): Promise<ReflexOutcome> {
   const state = stateOf(ctx.view);
   const at = formatSpot(spotOf(ctx.view));
   if (ctx.tick < state.until) {
@@ -193,6 +213,7 @@ export async function runUnstick(ctx: ReflexContext, source: string): Promise<Re
     run = await runAction(ctx.registry, ctx.bot, action, {
       signal: hurt.signal,
       timeScale: ctx.timeScale,
+      ownPlanksLast,
       onHandler: (ended) => {
         handlerEnded = ended;
       },
