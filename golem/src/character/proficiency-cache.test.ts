@@ -441,6 +441,30 @@ describe('ProficiencyCache', () => {
     expect(transport.requests).toHaveLength(3);
   });
 
+  it('a degraded cache stopped in its retry wait leaves no pending timer and sends nothing after', async () => {
+    const c = make();
+    await c.start();
+    expect(c.degraded).toBe(true);
+    expect(vi.getTimerCount()).toBe(1);
+    c.stop();
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(transport.requests).toHaveLength(3);
+  });
+
+  it('the retry timer is unref-ed, so a missed stop cannot hold the process open', async () => {
+    const spy = vi.spyOn(globalThis, 'setTimeout');
+    const c = make();
+    await c.start();
+    const index = spy.mock.calls.findIndex((args) => args[1] === 15_000);
+    expect(index).toBeGreaterThanOrEqual(0);
+    const handle = spy.mock.results[index]?.value as { hasRef(): boolean };
+    expect(handle.hasRef()).toBe(false);
+    c.stop();
+    spy.mockRestore();
+  });
+
   it('a push delivered after stop changes nothing and sends nothing', async () => {
     transport.responder = () => Promise.resolve(stateBody(40, { combat: [1, 12] }));
     const c = make();

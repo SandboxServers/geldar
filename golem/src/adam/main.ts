@@ -12,6 +12,7 @@ import type { Bot } from 'mineflayer';
 import { type BackoffPolicy, DEFAULT_BACKOFF, nextDelayMs } from '../backoff.ts';
 import { jetStreamPublisher } from '../body/records-nats.ts';
 import { assertLoopbackNatsUrl, openRestartKv } from '../body/restart.ts';
+import { startProficiency } from '../character/proficiency-host.ts';
 import { loadStackConfig } from '../config.ts';
 import { ConnectionManager } from '../connection.ts';
 import { startGolemTelemetry } from '../metrics.ts';
@@ -206,8 +207,17 @@ export async function main(): Promise<void> {
     service: 'geldar-golem-adam',
     log: jsonLog,
   });
+  // The proficiency cache (AN-12a): started only for a config sheet; off and standard send no request.
+  const proficiency = startProficiency({
+    nc,
+    shard: config.shard,
+    lifeId: config.lifeId,
+    character: config.character,
+    log: (line) => jsonLog({ event: 'proficiency', life_id: config.lifeId, line }),
+  });
   const env: AdamBodyEnv = {
     config,
+    ...(proficiency === undefined ? {} : { proficiency }),
     // The character block as parsed (AN-05a); mode off, the default, builds nothing downstream.
     ...(config.character === undefined ? {} : { character: config.character }),
     kv: restartKv.kv,
@@ -243,6 +253,7 @@ export async function main(): Promise<void> {
   await telemetry.stop();
   if (supervisor.fatal) process.exitCode = 1;
   await manager.stop();
+  proficiency?.stop();
   await restartKv.close();
   await nc.close();
 }
