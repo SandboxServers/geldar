@@ -24,10 +24,19 @@ const limits = { nanoCpus: 1_000_000_000, memory: 512 * 1024 * 1024, pidsLimit: 
 function handleOver(engine: BodyEngine, cap = 40) {
   const audit: string[] = [];
   const handle = createBodyHelper({
-    roster: { displayName: async (_owner, name) => name },
+    roster: { displayName: async (_owner, name) => name, lifeId: async () => 'ag_0123456789ab' },
     engine,
     cap,
-    template: { image: 'geldar/body:test', wiring, limits },
+    template: {
+      image: 'geldar/body:test',
+      wiring,
+      limits,
+      managed: {
+        enabled: true,
+        db: { host: 'db', port: '5432', role: 'body', secretHostPath: '/root/secrets/db.txt' },
+        rconSecretHostPath: '/root/secrets/rcon.txt',
+      },
+    },
     audit: (line) => audit.push(line),
   });
   return { handle, audit };

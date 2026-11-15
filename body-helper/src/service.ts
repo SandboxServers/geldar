@@ -3,9 +3,15 @@
 // promise chain), so the count a start reads is never stale: concurrent starts cannot pass the cap together.
 // A refused start creates nothing, and a failed start leaves no container and reserves no slot. The verbs act
 // only on a container that carries the helper's Body label; a container of the name without it is left alone.
+import {
+  admitConfig,
+  admitName,
+  type ManagedDbWiring,
+  managedBodyConfig,
+} from './managed-template.ts';
 import { LOGIN_NAME, parseRequest } from './requests.ts';
-import type { RosterPort } from './roster.ts';
-import { type BodyTemplateInput, bodyContainerConfig } from './template.ts';
+import { LIFE_ID_PATTERN, type RosterLifePort } from './roster.ts';
+import { type BodyTemplateInput, DEFAULT_NETWORK, DEFAULT_STACK } from './template.ts';
 
 /** The count at which the helper writes one alert line (GLOBAL-CAP). */
 export const CAP_ALERT_AT = 30;
@@ -18,6 +24,10 @@ export const NOT_YOUR_BODY = 'not your body';
 export const OTHER_OWNER_BODY = "name in use by another owner's body";
 /** The reply for a start or stop that an Engine call held past its deadline (code `timeout`). */
 export const ENGINE_TIMEOUT = 'engine timeout';
+/** The refusal of a start while managed Bodies are off (GELDAR_MANAGED_BODIES) or not fully configured. */
+export const MANAGED_REFUSAL = 'managed bodies are not enabled';
+/** The refusal of a start whose life admission (the admit one-shot) did not exit 0. The reason is never sent. */
+export const ADMIT_REFUSAL = 'life admission failed';
 /** The most time one start or stop may hold the queue (config: GELDAR_BODY_HELPER_DEADLINE_MS). */
 export const REQUEST_DEADLINE_MS = 120_000;
 /** The error an abandoned run ends with. It is never sent: the caller was answered at the deadline. */
@@ -42,13 +52,35 @@ export interface BodyEngine {
   start(id: string): Promise<void>;
   stop(name: string): Promise<void>;
   remove(id: string): Promise<void>;
+  /**
+   * Creates, starts and waits for a one-shot container, removes it, and returns its exit code. It never counts toward
+   * the cap (its label is not the Body label). A create, start or wait failure throws.
+   */
+  runOneShot(name: string, config: Record<string, unknown>): Promise<number>;
   logs(name: string): Promise<string>;
 }
 
-export type TemplateSettings = Omit<BodyTemplateInput, 'name' | 'owner' | 'loginName'>;
+/** The managed settings from the helper's root-only config. `enabled` is GELDAR_MANAGED_BODIES, off until the live check. */
+export interface ManagedSettings {
+  enabled: boolean;
+  db?: ManagedDbWiring | undefined;
+  /** A Docker host path to the root-only RCON password file the admit one-shot binds. */
+  rconSecretHostPath?: string | undefined;
+}
+
+export type TemplateSettings = Omit<BodyTemplateInput, 'name' | 'owner' | 'loginName'> & {
+  managed?: ManagedSettings;
+};
+
+/** What a managed start needs beyond the template: the validated life id, the database wiring and the RCON file. */
+interface ManagedPlan {
+  lifeId: string;
+  db: ManagedDbWiring;
+  rconSecretHostPath: string;
+}
 
 export interface HelperDeps {
-  roster: RosterPort;
+  roster: RosterLifePort;
   engine: BodyEngine;
   /** The most running Bodies plus sovereign hosts a start may leave the node with (GLOBAL-CAP). */
   cap: number;
@@ -171,7 +203,7 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
     audit('start', name, 'failed', LATE_START_REMOVE_FAILED);
   };
 
-  return async (raw) => {
+  const handle: RequestHandler = async (raw) => {
     const parsed = parseRequest(raw);
     if (!parsed.ok) {
       audit('unknown', '-', 'refused', parsed.why.replace(/\s+/g, '_'));
@@ -208,12 +240,30 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
           },
         );
       }
+      // A start is refused before any roster or Engine call while managed Bodies are off (the flag is off by default).
+      const managed = deps.template.managed;
+      if (!managed?.enabled || !managed.db || !managed.rconSecretHostPath) {
+        audit(verb, name, 'refused', 'managed_off');
+        return { ok: false, code: 'refused', error: MANAGED_REFUSAL };
+      }
       const loginName = await deps.roster.displayName(owner, name);
       if (loginName === null || !LOGIN_NAME.test(loginName)) {
         audit(verb, name, 'refused', 'not_on_roster');
         return { ok: false, code: 'refused', error: 'not on roster' };
       }
-      return await exclusive(verb, name, (live) => start(container, name, owner, loginName, live));
+      const lifeId = await deps.roster.lifeId(owner, name);
+      if (lifeId === null || !LIFE_ID_PATTERN.test(lifeId)) {
+        audit(verb, name, 'refused', 'not_on_roster');
+        return { ok: false, code: 'refused', error: 'not on roster' };
+      }
+      const plan: ManagedPlan = {
+        lifeId,
+        db: managed.db,
+        rconSecretHostPath: managed.rconSecretHostPath,
+      };
+      return await exclusive(verb, name, (live) =>
+        start(container, name, owner, loginName, plan, live),
+      );
     } catch {
       audit(verb, name, 'failed');
       return { ok: false, code: 'failed', error: 'docker call failed' };
@@ -246,11 +296,32 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
     return { ok: true, state: 'stopped' };
   }
 
+  // The admit one-shot's exit code, or -1 when the one-shot could not run or did not finish (fail closed).
+  const runAdmit = async (plan: ManagedPlan): Promise<number> => {
+    try {
+      const settings = deps.template;
+      return await deps.engine.runOneShot(
+        admitName(plan.lifeId),
+        admitConfig({
+          image: settings.image,
+          uid: settings.wiring.uid,
+          network: settings.wiring.network ?? DEFAULT_NETWORK,
+          stack: settings.wiring.stack ?? DEFAULT_STACK,
+          lifeId: plan.lifeId,
+          rconSecretHostPath: plan.rconSecretHostPath,
+        }),
+      );
+    } catch {
+      return -1;
+    }
+  };
+
   async function start(
     container: string,
     name: string,
     owner: string,
     loginName: string,
+    plan: ManagedPlan,
     live: () => boolean,
   ): Promise<Reply> {
     const existing = await inspectOf(container);
@@ -277,11 +348,29 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
       audit('start', name, 'capacity');
       return { ok: false, code: 'capacity', error: CAP_REFUSAL };
     }
-    if (existing) await deps.engine.remove(existing.id);
-    if (!live()) throw new Error(ABANDONED);
-    const config = bodyContainerConfig({ ...deps.template, name: container, owner, loginName });
+    // The Body config is built before any Engine call, so a value the template refuses never starts an admit.
+    const settings = deps.template;
+    const config = managedBodyConfig({
+      image: settings.image,
+      wiring: settings.wiring,
+      limits: settings.limits,
+      name: container,
+      owner,
+      loginName,
+      lifeId: plan.lifeId,
+      db: plan.db,
+    });
     pendingStarts++;
     try {
+      // The admit one-shot runs before the Body is created. It is not counted (its label is geldar.admit).
+      const code = await runAdmit(plan);
+      if (!live()) throw new Error(ABANDONED);
+      if (code !== 0) {
+        audit('start', name, 'refused', 'admit_failed');
+        return { ok: false, code: 'refused', error: ADMIT_REFUSAL };
+      }
+      if (existing) await deps.engine.remove(existing.id);
+      if (!live()) throw new Error(ABANDONED);
       const id = await deps.engine.create(container, config);
       try {
         if (!live()) throw new Error(ABANDONED);
@@ -304,4 +393,6 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
       pendingStarts--;
     }
   }
+
+  return handle;
 }

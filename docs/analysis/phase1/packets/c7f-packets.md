@@ -366,3 +366,24 @@ Decision: [0261](../../../decisions/0261-open-signup-player-host-bodies-and-auto
 - Read the shard YAML for a database-only agent.
 - Start a live Body; the live check is the orchestrator's (C7-03b4-live).
 - Edit `docs/spec.md`.
+
+### BH-6: remove or stop a managed host whose roster row is gone
+
+- **id / wave / lane.** BH-6, after BH-5, helper lane (and the admin lane if the operator path is chosen). **size.** S to M.
+
+#### Goal
+
+1. A managed host whose roster row is gone exits 78. Its RestartPolicy is `unless-stopped`, so Docker restarts it forever. Nothing removes it today: `body-helper/src/sweep.ts` is report-only (BH-3).
+2. geldar-93 picks one path before dispatch: an operator verb that stops and removes a named managed Body, or a helper stop on exit 78 that the sweep applies to a managed Body whose roster row is gone.
+3. Either way the container ends and the cap count drops.
+
+#### Tests (each fails on revert)
+
+- A managed host that exits 78 is stopped and removed by the chosen path. Revert: leave it; the test fails.
+- A managed host whose roster row is still present is not touched. Revert: remove on any exit; the test fails.
+- Abort and error path: a failed remove is audited and the Body is retried on the next sweep, not forgotten. Revert: drop the failure; the test fails.
+
+#### Must not
+
+- Build this inside BH-3 (BH-3 only reports).
+- Let sign-up open before BH-6 is merged and live-checked (`docs/runbooks/open-signup.md`, row 25a).
