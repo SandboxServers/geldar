@@ -79,6 +79,9 @@ export function rollRecord(
   drawIndex: number,
   inputs?: RollEventPayload['inputs'],
 ): BuiltEvent {
+  if (!Number.isSafeInteger(drawIndex)) {
+    return { ok: false, errors: [`draw index must be a safe integer: ${drawIndex}`] };
+  }
   if (roll.fx !== key.fx) {
     return { ok: false, errors: [`roll fx ${roll.fx} does not match the key fx ${key.fx}`] };
   }

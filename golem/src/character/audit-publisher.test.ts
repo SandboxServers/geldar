@@ -1,6 +1,7 @@
 import type { CharacterSheet, WorldEvent } from '@geldar/contract';
 import { type DrawKey, rngFor, roll, STANDARD_SHEET } from '@geldar/psyche';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { eventIdFor } from '../body/derived-id.ts';
 import type { EventPublisher } from '../body/records-nats.ts';
 import { rollEventId } from './audit-events.ts';
 import { AuditPublisher, type AuditPublisherOptions } from './audit-publisher.ts';
@@ -17,6 +18,7 @@ const BASE: DrawKey = {
 const SHEET = STANDARD_SHEET as unknown as CharacterSheet;
 const H1 = 'a'.repeat(64);
 const H2 = 'b'.repeat(64);
+const DECISION = { fx: 'novelty', kind: 'uniform', result: { uniform: 0.25 } } as const;
 
 let clockTick = 15;
 
@@ -26,9 +28,13 @@ interface Sent {
   msgId: string;
 }
 
-/** Records every publish that gets through. `failNext` fails the next N calls; `failSubject` fails one subject. */
+/**
+ * Records every publish that gets through, and every attempt in `tried`. `failNext` fails the next N
+ * calls; `failSubject` fails one subject; `hold` delays every call until it resolves.
+ */
 class FakePublisher implements EventPublisher {
   readonly sent: Sent[] = [];
+  readonly tried: { subject: string; msgId: string }[] = [];
   attempts = 0;
   failNext = 0;
   failSubject: string | null = null;
@@ -36,6 +42,7 @@ class FakePublisher implements EventPublisher {
 
   publish(subject: string, body: string, msgId: string): Promise<void> {
     this.attempts++;
+    this.tried.push({ subject, msgId });
     if (this.failNext > 0) {
       this.failNext--;
       return Promise.reject(new Error('nats down'));
@@ -95,6 +102,7 @@ describe('stable ids', () => {
     await audit.flush();
     expect(first).toBe(second);
     expect(first).toBe(rollEventId(key, 0));
+    expect(first).toBe(eventIdFor('roll:body:ag_kestrel_01:1:10:novelty:0:0'));
     expect(pub.sent.map((s) => s.msgId)).toEqual([first, first]);
   });
 });
@@ -110,6 +118,20 @@ describe('retries and recovery', () => {
     expect(pub.sent.map((s) => s.msgId)).toEqual([a, b]);
     expect(pub.attempts).toBe(4);
     expect(audit.gaps).toBe(0);
+  });
+
+  it('doubles the wait between attempts up to the cap, then stays at the cap', async () => {
+    const pub = new FakePublisher();
+    pub.failNext = 5;
+    const spy = vi.spyOn(globalThis, 'setTimeout');
+    try {
+      const audit = make(pub, { retryDelayMs: 1, maxRetryDelayMs: 4 });
+      audit.recordRoll(keyAt(10), rollAt(keyAt(10)), 0);
+      await audit.flush();
+      expect(spy.mock.calls.map((call) => call[1])).toEqual([1, 2, 4, 4, 4]);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
@@ -174,10 +196,74 @@ describe('bounded queue and gap evidence', () => {
     expect(gap.payload.dropped).toBe(1);
     expect(gap.payload.since_tick).toBe(11);
   });
+
+  it('a failed gap report keeps its id when the clock has moved on and nothing new was dropped', async () => {
+    const pub = new FakePublisher();
+    let open: () => void = () => {};
+    pub.hold = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    const audit = make(pub, { maxPending: 1 });
+    audit.recordRoll(keyAt(10), rollAt(keyAt(10)), 0);
+    audit.recordRoll(keyAt(11), rollAt(keyAt(11)), 0);
+    audit.recordRoll(keyAt(12), rollAt(keyAt(12)), 0);
+    pub.failSubject = 'geldar.phase0.decision';
+    clockTick = 15;
+    open();
+    // flush() finds the gap still pending and makes one more attempt, which fails too.
+    expect(await audit.flush()).toBe(false);
+    clockTick = 16;
+    pub.failSubject = null;
+    expect(await audit.flush()).toBe(true);
+    const tries = pub.tried.filter((t) => t.subject === 'geldar.phase0.decision');
+    expect(tries.length).toBeGreaterThan(1);
+    expect(new Set(tries.map((t) => t.msgId)).size).toBe(1);
+    expect(pub.sent.map((s) => s.msgId)).toContain(tries[0]?.msgId);
+    const gap = JSON.parse(pub.sent[2]?.body ?? '{}') as WorldEvent;
+    expect(gap.payload.decision_id).toBe(`body:${LIFE}:1:15:audit_gap:1`);
+    expect(gap.world_tick).toBe(15);
+    expect(gap.payload.dropped).toBe(1);
+  });
+
+  it('a clock that throws while a gap is pending does not stop the loop, and the gap is reported later', async () => {
+    const pub = new FakePublisher();
+    let open: () => void = () => {};
+    pub.hold = new Promise<void>((resolve) => {
+      open = resolve;
+    });
+    let clockDown = true;
+    const log = vi.fn();
+    const audit = make(
+      pub,
+      {
+        maxPending: 1,
+        tick: () => {
+          if (clockDown) throw new Error('clock down');
+          return clockTick;
+        },
+      },
+      log,
+    );
+    const a = audit.recordRoll(keyAt(10), rollAt(keyAt(10)), 0);
+    audit.recordRoll(keyAt(11), rollAt(keyAt(11)), 0);
+    const c = audit.recordRoll(keyAt(12), rollAt(keyAt(12)), 0);
+    open();
+    expect(await audit.flush()).toBe(false);
+    expect(typesOf(pub)).toEqual(['roll', 'roll']);
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/gap evidence not sent/));
+    clockDown = false;
+    const d = audit.recordRoll(keyAt(13), rollAt(keyAt(13)), 0);
+    expect(await audit.flush()).toBe(true);
+    expect(pub.sent.map((s) => s.msgId).slice(0, 3)).toEqual([a, c, d]);
+    expect(typesOf(pub)).toEqual(['roll', 'roll', 'roll', 'decision']);
+    const gap = JSON.parse(pub.sent[3]?.body ?? '{}') as WorldEvent;
+    expect(gap.payload.dropped).toBe(1);
+    expect(gap.payload.since_tick).toBe(11);
+  });
 });
 
 describe('failing publishers', () => {
-  it('a closed or throwing publisher never throws to the caller', async () => {
+  it('a closed or throwing publisher never throws to the caller, and close stops it', async () => {
     const throwing: EventPublisher = {
       publish: () => {
         throw new Error('closed');
@@ -185,18 +271,91 @@ describe('failing publishers', () => {
     };
     const rejecting: EventPublisher = { publish: () => Promise.reject(new Error('closed')) };
     for (const publisher of [throwing, rejecting]) {
-      const audit = make(publisher);
+      const log = vi.fn();
+      const audit = make(publisher, {}, log);
       expect(() => {
         audit.recordRoll(keyAt(10), rollAt(keyAt(10)), 0);
-        audit.recordDecision(keyAt(10), {
-          fx: 'novelty',
-          kind: 'uniform',
-          result: { uniform: 0.25 },
-        });
+        audit.recordDecision(keyAt(10), DECISION);
         audit.recordAdoption(SHEET, H1, 'config');
       }).not.toThrow();
       expect(audit.gaps).toBe(0);
+      await expect(audit.flush(50)).resolves.toBe(false);
+      audit.close();
+      await expect(audit.flush(50)).resolves.toBe(false);
+      expect(log).toHaveBeenCalledWith(expect.stringMatching(/closed; 3 event\(s\) not sent/));
     }
+  });
+
+  it('flush with a timeout resolves false on an always-failing publisher, and close ends the retry loop', async () => {
+    const pub = new FakePublisher();
+    pub.failNext = Number.POSITIVE_INFINITY;
+    const log = vi.fn();
+    const audit = make(pub, {}, log);
+    audit.recordRoll(keyAt(10), rollAt(keyAt(10)), 0);
+    await expect(audit.flush(50)).resolves.toBe(false);
+    audit.close();
+    const before = pub.attempts;
+    await expect(audit.flush()).resolves.toBe(false);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(pub.attempts).toBe(before);
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/closed; 1 event\(s\) not sent/));
+    audit.recordRoll(keyAt(11), rollAt(keyAt(11)), 0);
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/dropped roll: publisher closed/));
+    expect(pub.sent).toEqual([]);
+  });
+
+  it('a key of another life, generation or producer is refused and logged, and nothing is published', async () => {
+    const others: [string, DrawKey][] = [
+      ['life', { ...BASE, tick: 10, lifeId: 'ag_someone_else' }],
+      ['generation', { ...BASE, tick: 10, generation: 2 }],
+      ['producer', { ...BASE, tick: 10, producer: 'kit' as const }],
+    ];
+    for (const [name, key] of others) {
+      const pub = new FakePublisher();
+      const log = vi.fn();
+      const audit = make(pub, {}, log);
+      const id = audit.recordRoll(key, rollAt(key), 0);
+      audit.recordDecision(key, DECISION);
+      await audit.flush();
+      expect(id, name).toBe('');
+      expect(pub.sent, name).toEqual([]);
+      expect(log, name).toHaveBeenCalledWith(expect.stringMatching(/dropped roll/));
+      expect(log, name).toHaveBeenCalledWith(expect.stringMatching(/dropped decision/));
+    }
+  });
+
+  it('a key the engine refuses is dropped: recordRoll returns an empty id and does not throw', () => {
+    const pub = new FakePublisher();
+    const log = vi.fn();
+    const audit = make(pub, {}, log);
+    const bad = keyAt(-1);
+    let id = 'unset';
+    expect(() => {
+      id = audit.recordRoll(bad, rollAt(keyAt(10)), 0);
+    }).not.toThrow();
+    expect(id).toBe('');
+    expect(() => audit.recordDecision(bad, DECISION)).not.toThrow();
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/dropped roll: RangeError/));
+  });
+
+  it('a roll with a draw index that is not a safe integer is dropped and logged', async () => {
+    const pub = new FakePublisher();
+    const log = vi.fn();
+    const audit = make(pub, {}, log);
+    audit.recordRoll(keyAt(10), rollAt(keyAt(10)), 1e21);
+    await audit.flush();
+    expect(pub.sent).toEqual([]);
+    expect(log).toHaveBeenCalledWith(expect.stringMatching(/draw index/));
+  });
+
+  it('a log line for a refused roll carries no sheet score value', () => {
+    const pub = new FakePublisher();
+    const log = vi.fn();
+    const audit = make(pub, {}, log);
+    const key = keyAt(10);
+    audit.recordRoll(key, { ...rollAt(key), score: 99 as never }, 0);
+    expect(log).toHaveBeenCalled();
+    for (const [line] of log.mock.calls) expect(String(line)).not.toMatch(/99/);
   });
 
   it('a malformed roll is dropped and logged, and nothing is published for it', async () => {
@@ -214,7 +373,7 @@ describe('failing publishers', () => {
   it('a decision and an adoption go out on their own subjects', async () => {
     const pub = new FakePublisher();
     const audit = make(pub);
-    audit.recordDecision(keyAt(10), { fx: 'novelty', kind: 'uniform', result: { uniform: 0.25 } });
+    audit.recordDecision(keyAt(10), DECISION);
     audit.recordAdoption(SHEET, H2, 'birth');
     await audit.flush();
     expect(pub.sent.map((s) => s.subject)).toEqual([

@@ -1,6 +1,7 @@
 import type { CharacterSheet } from '@geldar/contract';
 import { type DrawKey, decisionId, rngFor, roll, STANDARD_SHEET } from '@geldar/psyche';
 import { describe, expect, it } from 'vitest';
+import { eventIdFor } from '../body/derived-id.ts';
 import {
   type AuditEnvelope,
   adoptionRecord,
@@ -9,6 +10,7 @@ import {
   gapRecord,
   rollEventId,
   rollRecord,
+  sheetAdoptedEventId,
 } from './audit-events.ts';
 
 const LIFE = 'ag_kestrel_01';
@@ -117,5 +119,57 @@ describe('decision and gap records', () => {
     expect(built.ok).toBe(false);
     if (built.ok) return;
     expect(built.errors.join(' ')).toMatch(/source/);
+  });
+
+  it('refuses a decision whose fx is not the key fx', () => {
+    const built = decisionRecord(CTX, KEY, {
+      fx: 'other',
+      kind: 'uniform',
+      result: { uniform: 0.25 },
+    });
+    expect(built.ok).toBe(false);
+    if (built.ok) return;
+    expect(built.errors.join(' ')).toMatch(/does not match/);
+  });
+});
+
+describe('pinned ids and ticks', () => {
+  it('pins the id formats literally, so a replay after a deploy finds the same events', () => {
+    const decision = 'body:ag_kestrel_01:1:100:novelty:0';
+    expect(decisionId(KEY)).toBe(decision);
+    expect(rollEventId(KEY, 0)).toBe(eventIdFor(`roll:${decision}:0`));
+    expect(decisionEventId(decision)).toBe(eventIdFor(`decision:${decision}`));
+    expect(sheetAdoptedEventId(LIFE, 'a'.repeat(64))).toBe(
+      eventIdFor(`sheet_adopted:ag_kestrel_01:${'a'.repeat(64)}`),
+    );
+  });
+
+  it('takes the world tick of a decision from the draw, not from the publish context', () => {
+    const built = decisionRecord(CTX, KEY, {
+      fx: 'novelty',
+      kind: 'uniform',
+      result: { uniform: 0.25 },
+    });
+    expect(built.ok, JSON.stringify(built)).toBe(true);
+    if (!built.ok) return;
+    expect(built.event.world_tick).toBe(KEY.tick);
+    expect(built.event.world_tick).not.toBe(CTX.tick);
+    expect(built.event.world_day).toBe(0);
+  });
+
+  it('gives the world day of the draw tick (24000 ticks to a day)', () => {
+    const late = { ...KEY, tick: 30_000 };
+    const built = rollRecord(CTX, late, rollFor(late), 0);
+    expect(built.ok, JSON.stringify(built)).toBe(true);
+    if (!built.ok) return;
+    expect(built.event.world_tick).toBe(30_000);
+    expect(built.event.world_day).toBe(1);
+  });
+
+  it('refuses a draw index that is not a safe integer', () => {
+    const built = rollRecord(CTX, KEY, rollFor(), 1e21);
+    expect(built.ok).toBe(false);
+    if (built.ok) return;
+    expect(built.errors.join(' ')).toMatch(/draw index/);
   });
 });
