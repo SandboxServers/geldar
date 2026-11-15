@@ -67,7 +67,11 @@ function registerEnv(composeText: string): Map<string, string> {
 /** REGISTER_* names written in backticks. */
 function backticked(text: string): string[] {
   const names = new Set<string>();
-  for (const match of text.matchAll(/`(REGISTER_[A-Z0-9_]+)`/g)) names.add(match[1]);
+  for (const match of text.matchAll(/`(REGISTER_[A-Z0-9_]+)`/g)) {
+    const name = match[1];
+    if (name === undefined) throw new Error('backtick regex lost its capture group');
+    names.add(name);
+  }
   return [...names].sort();
 }
 
@@ -81,9 +85,10 @@ function classify(runbook: string): Lists | null {
   const lines = runbook.split('\n');
   const start = lines.findIndex((line) => line.includes(OPERATOR_HEADING));
   const end = lines.findIndex((line) => line.includes(FIXED_SENTENCE));
-  if (start < 0 || end <= start) return null;
+  const fixedLine = lines[end];
+  if (start < 0 || end <= start || fixedLine === undefined) return null;
   const bullets = lines.slice(start + 1, end).filter((line) => line.startsWith('- '));
-  return { operator: backticked(bullets.join('\n')), fixed: backticked(lines[end]) };
+  return { operator: backticked(bullets.join('\n')), fixed: backticked(fixedLine) };
 }
 
 function namingProblems(inputs: Inputs, notYet: readonly string[]): string[] {
