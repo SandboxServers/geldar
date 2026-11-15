@@ -430,13 +430,17 @@ services:
       REGISTER_DB_PASSWORD_FILE: /run/secrets/postgres-register.txt
       # Caddy (host network) reaches the publish as the docker bridge gateway: the deploy env sets it (default: the MCP's trusted proxy, the same gateway).
       REGISTER_TRUSTED_PEERS: "${REGISTER_TRUSTED_PEERS:-${GELDAR_MCP_TRUSTED_PROXIES:-127.0.0.1}}"
+      # NATS as the register user (C7-03b2, REG-NATS-COMPOSE). The three are set together: threshold/register/src/config.ts is off unless all three are set.
+      REGISTER_NATS_URL: nats://nats:4222
+      REGISTER_NATS_USER: register
+      REGISTER_NATS_PASSWORD_FILE: /run/secrets/nats-register.txt
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8090/').then((r)=>process.exit(r.status===200||r.status===503?0:1),()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
-    secrets: [postgres-register.txt, mcp-token-pepper.txt, register-pepper, register-ms-secret, register-session-key]
+    secrets: [postgres-register.txt, mcp-token-pepper.txt, register-pepper, register-ms-secret, register-session-key, { source: nats-register, target: nats-register.txt }]
     ports:
       # The loopback register port (decision 0150: 8090 is held on the shared node by another tenant). Literal: the loopback rule rejects interpolation. The container still listens on 8090.
       - "127.0.0.1:${GELDAR_PORT_REGISTER:-18090}:8090"
@@ -451,6 +455,52 @@ services:
       postgres:
         condition: service_healthy
     restart: unless-stopped
+  # [C7-03b2] The supervisor (decision 0260): the control responder for Body containers. It holds no Docker socket and no
+  # Docker group; the host body helper (C7-03c1) controls the containers over NATS. OFF BY DEFAULT: profile `supervisor`, so a
+  # plain up does not start it. Node steps: docs/runbooks/supervisor-node-steps.md (geldar-93). Colo network only, no published port, no Caddy site.
+  supervisor:
+    profiles: [supervisor]
+    # Budget: 0.25 CPU, 128m (no swap, 64 pids). Read-only root, as register runs. Hard memory limit: memswap equals memory.
+    deploy:
+      resources:
+        limits:
+          cpus: "${GELDAR_COLO_SUPERVISOR_CPUS:-0.25}"
+          memory: "${GELDAR_COLO_SUPERVISOR_MEM:-128m}"
+          pids: 64
+    memswap_limit: "${GELDAR_COLO_SUPERVISOR_MEM:-128m}"
+    pids_limit: 64
+    logging: *logging
+    labels: *colo-labels
+    build:
+      context: ..
+      dockerfile: supervisor/Dockerfile
+    image: ${GELDAR_SUPERVISOR_IMAGE:-geldar-supervisor:c7}
+    environment:
+      # The supervisor's settings (supervisor/src/config.ts). The Postgres password is a file; the NATS password is a file (the contract's connect).
+      SUPERVISOR_SHARD: colo
+      SUPERVISOR_NATS_URL: nats://nats:4222
+      SUPERVISOR_DB_PASSWORD_FILE: /run/secrets/postgres-supervisor.txt
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: geldar
+      GELDAR_NATS_USER: supervisor
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-supervisor.txt
+    secrets: [{ source: supervisor-postgres, target: postgres-supervisor.txt }, { source: supervisor-nats, target: nats-supervisor.txt }]
+    # No socket, no group_add, no host mount: the only mounts are the secret files above (decision 0260).
+    user: "${GELDAR_SERVICE_UID:-1000}:${GELDAR_SERVICE_UID:-1000}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [colo]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
+
   # [C2-07a2] Glass, the read-only public view (decisions 0072, 0093, 0094); image GELDAR_GLASS_IMAGE (C2-07a1). Postgres as geldar_glass.
   glass:
     deploy:
@@ -678,7 +728,7 @@ services:
       GELDAR_RCON_PASSWORD_FILE: /run/secrets/rcon
     # postgres: the superuser password (admin.sh). postgres-mcp.txt: the file `migrate --set-role-password geldar_mcp`
     # reads; postgres-glass.txt: the same for geldar_glass (C2-07d). mcp-token-pepper.txt: the pepper token-mint hashes with, at the path the CLI computes (repo root + compose/secrets).
-    secrets: [postgres, rcon, postgres-mcp.txt, postgres-glass.txt, postgres-register.txt, { source: nats-body, target: nats-body.txt }, { source: mcp-token-pepper.txt, target: /opt/geldar/compose/secrets/mcp-token-pepper.txt }]
+    secrets: [postgres, rcon, postgres-mcp.txt, postgres-glass.txt, postgres-register.txt, { source: supervisor-postgres, target: postgres-supervisor.txt }, { source: nats-body, target: nats-body.txt }, { source: mcp-token-pepper.txt, target: /opt/geldar/compose/secrets/mcp-token-pepper.txt }]
     volumes:
       # The colo shard file (the Mind's file, which carries sovereign), under the path GELDAR_SHARD_FILE names.
       - ../shards/colo-mind.yaml:/opt/geldar/shards/colo.yaml:ro
@@ -736,6 +786,14 @@ secrets:
     file: ${GELDAR_SECRETS_DIR:-./secrets}/register-ms-secret.txt
   register-session-key:
     file: ${GELDAR_SECRETS_DIR:-./secrets}/register-session-key.txt
+  # The register's NATS password (C7-03b2, REG-NATS-COMPOSE). Written on the node by geldar-93, never generated (gen-secrets.sh) and never in this repo.
+  nats-register:
+    file: ${GELDAR_SECRETS_DIR:-./secrets}/nats-register.txt
+  # The supervisor's Postgres password (gen-secrets.sh) and NATS password (node auth tooling, never generated here). C7-03b2.
+  supervisor-postgres:
+    file: ${GELDAR_SECRETS_DIR:-./secrets}/postgres-supervisor.txt
+  supervisor-nats:
+    file: ${GELDAR_SECRETS_DIR:-./secrets}/nats-supervisor.txt
 
 volumes:
   postgres-data:

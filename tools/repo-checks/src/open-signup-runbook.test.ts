@@ -1,11 +1,10 @@
 /**
  * The open sign-up runbook (docs/runbooks/open-signup.md) checked against the repo it names. Checks: every REGISTER_*
  * env name the register service sets in compose/colo.yml is in the runbook; every REGISTER_* name the runbook names is
- * set in compose, or is one card C7-03b2 adds; each compose name is filed under the list that matches how compose sets
- * it (the operator's env with a default, or a fixed value); the C7-03b2 allowlist and its pending sentence go once
- * compose sets the names; the runbook holds no UUID or token-like string; and deploy/README.md keeps no "Keep it off
- * until C2-08d" sentence. The inputs come through an injectable reader, so the tests run the same checks on modified
- * copies of compose and the runbook without editing them.
+ * set in compose; each compose name is filed under the list that matches how compose sets it (the operator's env with
+ * a default, or a fixed value); the runbook holds no UUID or token-like string; and deploy/README.md keeps no "Keep it
+ * off until C2-08d" sentence. The inputs come through an injectable reader, so the tests run the same checks on a
+ * modified copy of compose without editing it.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -16,22 +15,12 @@ import { parse } from 'yaml';
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const readRepo = (rel: string): string => readFileSync(join(ROOT, rel), 'utf8');
 
-type Reader = (rel: string) => string;
-
 interface Inputs {
   runbook: string;
   readme: string;
   composeText: string;
 }
 
-/** Names the runbook gives ahead of the compose change. Card C7-03b2 adds them: delete this list then. */
-const NOT_YET_IN_COMPOSE: readonly string[] = [
-  'REGISTER_NATS_URL',
-  'REGISTER_NATS_USER',
-  'REGISTER_NATS_PASSWORD_FILE',
-];
-
-const PENDING_MARKER = 'pending C7-03b2';
 const OPERATOR_HEADING = 'Deploy values the operator sets in the node env';
 const FIXED_SENTENCE = 'Compose sets these names itself';
 const UUID = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
@@ -39,17 +28,12 @@ const TOKEN_LIKE = /[A-Za-z0-9+/_-]{32,}/;
 /** A compose value the operator can set: a variable with a default, as in the register service's environment. */
 const OPERATOR_DEFAULT = /^\$\{[A-Z0-9_]+:-/;
 
-function loadInputs(read: Reader = readRepo): Inputs {
+function loadInputs(): Inputs {
   return {
-    runbook: read('docs/runbooks/open-signup.md'),
-    readme: read('deploy/README.md'),
-    composeText: read('compose/colo.yml'),
+    runbook: readRepo('docs/runbooks/open-signup.md'),
+    readme: readRepo('deploy/README.md'),
+    composeText: readRepo('compose/colo.yml'),
   };
-}
-
-/** A reader that serves the repo, except that compose/colo.yml is replaced by the given text. */
-function withCompose(composeText: string): Reader {
-  return (rel) => (rel === 'compose/colo.yml' ? composeText : readRepo(rel));
 }
 
 /** The register service's REGISTER_* environment: name to the raw compose value. */
@@ -91,21 +75,19 @@ function classify(runbook: string): Lists | null {
   return { operator: backticked(bullets.join('\n')), fixed: backticked(fixedLine) };
 }
 
-function namingProblems(inputs: Inputs, notYet: readonly string[]): string[] {
+function namingProblems(inputs: Inputs): string[] {
   const out: string[] = [];
   const env = registerEnv(inputs.composeText);
   for (const name of env.keys()) {
     if (!inputs.runbook.includes(`\`${name}\``)) out.push(`runbook must name ${name}`);
   }
   for (const name of backticked(inputs.runbook)) {
-    if (!env.has(name) && !notYet.includes(name)) {
-      out.push(`runbook names ${name}, which compose does not set`);
-    }
+    if (!env.has(name)) out.push(`runbook names ${name}, which compose does not set`);
   }
   return out;
 }
 
-function classificationProblems(inputs: Inputs, notYet: readonly string[]): string[] {
+function classificationProblems(inputs: Inputs): string[] {
   const lists = classify(inputs.runbook);
   if (!lists) {
     return ['runbook has no operator-heading block or no "Compose sets these names itself" line'];
@@ -119,8 +101,7 @@ function classificationProblems(inputs: Inputs, notYet: readonly string[]): stri
   }
   for (const name of lists.operator) {
     if (!env.has(name)) {
-      if (!notYet.includes(name))
-        out.push(`runbook lists ${name} as operator-set; compose does not set it`);
+      out.push(`runbook lists ${name} as operator-set; compose does not set it`);
       continue;
     }
     if (!OPERATOR_DEFAULT.test(env.get(name) ?? '')) {
@@ -131,7 +112,7 @@ function classificationProblems(inputs: Inputs, notYet: readonly string[]): stri
   }
   for (const name of lists.fixed) {
     if (!env.has(name)) {
-      if (!notYet.includes(name)) out.push(`runbook says compose sets ${name}; compose does not`);
+      out.push(`runbook says compose sets ${name}; compose does not`);
       continue;
     }
     if (OPERATOR_DEFAULT.test(env.get(name) ?? '')) {
@@ -143,60 +124,9 @@ function classificationProblems(inputs: Inputs, notYet: readonly string[]): stri
   return out;
 }
 
-function allowlistProblems(inputs: Inputs, notYet: readonly string[]): string[] {
-  const env = registerEnv(inputs.composeText);
-  const out: string[] = [];
-  const stale = notYet.filter((name) => env.has(name));
-  if (stale.length > 0 && (notYet.length > 0 || inputs.runbook.includes(PENDING_MARKER))) {
-    out.push(
-      `C7-03b2 merged (compose sets ${stale.join(', ')}): remove the allowlist and the pending sentence ` +
-        `("${PENDING_MARKER}") in docs/runbooks/open-signup.md`,
-    );
-  }
-  if (notYet.length > 0 && !inputs.runbook.includes(PENDING_MARKER)) {
-    out.push(`runbook must carry the "${PENDING_MARKER}" marker while the allowlist is not empty`);
-  }
-  return out;
-}
-
 /** Every problem the runbook has against compose; an empty list means the runbook matches compose. */
-function problems(inputs: Inputs, notYet: readonly string[] = NOT_YET_IN_COMPOSE): string[] {
-  return [
-    ...namingProblems(inputs, notYet),
-    ...classificationProblems(inputs, notYet),
-    ...allowlistProblems(inputs, notYet),
-  ];
-}
-
-/** The compose text after C7-03b2 has merged: the three NATS names are fixed values in the register environment. */
-function composeAfterC7_03b2(composeText: string): string {
-  const anchor = '      REGISTER_SHARD: colo\n';
-  if (!composeText.includes(anchor))
-    throw new Error('compose anchor for the register environment is missing');
-  return composeText.replace(
-    anchor,
-    `${anchor}      REGISTER_NATS_URL: nats://example.invalid:4222\n` +
-      '      REGISTER_NATS_USER: register\n' +
-      '      REGISTER_NATS_PASSWORD_FILE: /run/secrets/nats-register.txt\n',
-  );
-}
-
-/** The runbook as it reads once C7-03b2 has merged and its card has moved the names to the compose list. */
-function runbookAfterC7_03b2(runbook: string): string {
-  return runbook
-    .split('\n')
-    .filter((line) => !(line.startsWith('- ') && line.includes('`REGISTER_NATS_URL`')))
-    .map((line) =>
-      line.includes(FIXED_SENTENCE)
-        ? line.replace(
-            FIXED_SENTENCE,
-            `${FIXED_SENTENCE} (\`REGISTER_NATS_URL\`, \`REGISTER_NATS_USER\` and \`REGISTER_NATS_PASSWORD_FILE\`)`,
-          )
-        : line,
-    )
-    .join('\n')
-    .split(PENDING_MARKER)
-    .join('set by C7-03b2');
+function problems(inputs: Inputs): string[] {
+  return [...namingProblems(inputs), ...classificationProblems(inputs)];
 }
 
 /** The runbook with REGISTER_KILL_SWITCH moved from the operator list into the compose list (the pass-1 error). */
@@ -222,36 +152,24 @@ describe('open-signup runbook against compose/colo.yml', () => {
     }
   });
 
-  it('names no REGISTER_* env name that compose does not set (except the C7-03b2 names)', () => {
-    const inputs = loadInputs();
-    expect(namingProblems(inputs, NOT_YET_IN_COMPOSE)).toEqual([]);
+  it('names no REGISTER_* env name that compose does not set', () => {
+    expect(namingProblems(loadInputs())).toEqual([]);
   });
 
   it('files each compose name under the list that matches how compose sets it', () => {
-    expect(classificationProblems(loadInputs(), NOT_YET_IN_COMPOSE)).toEqual([]);
+    expect(classificationProblems(loadInputs())).toEqual([]);
   });
 
-  it('matches compose before C7-03b2 merges (allowlist and pending sentence in place)', () => {
+  it('matches compose: no allowlist and no pending sentence are left', () => {
     expect(problems(loadInputs())).toEqual([]);
-  });
-
-  it('fails with a clear message when C7-03b2 has merged but the allowlist and pending sentence stay', () => {
-    const inputs = loadInputs(withCompose(composeAfterC7_03b2(loadInputs().composeText)));
-    const found = problems(inputs);
-    expect(found.join('\n')).toContain('remove the allowlist and the pending sentence');
-  });
-
-  it('passes once C7-03b2 has merged and the names moved to the compose list', () => {
-    const base = loadInputs(withCompose(composeAfterC7_03b2(loadInputs().composeText)));
-    const merged: Inputs = { ...base, runbook: runbookAfterC7_03b2(base.runbook) };
-    expect(problems(merged, [])).toEqual([]);
+    expect(loadInputs().runbook).not.toContain('pending C7-03b2');
   });
 
   it('fails when REGISTER_KILL_SWITCH (a compose default) is filed under the compose list', () => {
     const base = loadInputs();
     const mutated: Inputs = { ...base, runbook: killSwitchMisfiled(base.runbook) };
     expect(mutated.runbook).not.toBe(base.runbook);
-    expect(classificationProblems(mutated, NOT_YET_IN_COMPOSE).join('\n')).toContain(
+    expect(classificationProblems(mutated).join('\n')).toContain(
       'runbook says compose fixes REGISTER_KILL_SWITCH',
     );
   });

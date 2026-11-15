@@ -145,11 +145,12 @@ const SHARED_CAPS: Record<string, [string, string, string, number]> = {
   glass: ['GLASS', '0.5', '256m', 128],
   'bluemap-web': ['BLUEMAP_WEB', '0.25', '64m', 64],
   register: ['REGISTER', '0.25', '128m', 64],
+  supervisor: ['SUPERVISOR', '0.25', '128m', 64],
   'bluemap-alias': ['BLUEMAP_ALIAS', '0.1', '64m', 32],
 };
 
 describe('compose/colo.yml: every service has its caps (decision 0082)', () => {
-  it('names exactly the fourteen services the budget totals cover', () => {
+  it('names exactly the fifteen services the budget totals cover', () => {
     expect(Object.keys(colo.services).sort()).toEqual(Object.keys(SHARED_CAPS).sort());
   });
 
@@ -246,6 +247,13 @@ describe('compose/colo.yml: the player host (C1-11a)', () => {
     expect(up).not.toMatch(/--profile mind|animus/);
     const status = readFileSync(`${ROOT}deploy/colo-status.sh`, 'utf8');
     expect(status).not.toMatch(/animus/);
+  });
+
+  it('the admin service mounts the geldar_supervisor password file the node runbook reads (C7-03b2)', () => {
+    expect(colo.services.admin?.secrets ?? []).toContainEqual({
+      source: 'supervisor-postgres',
+      target: 'postgres-supervisor.txt',
+    });
   });
 
   it('gives the admin service the body NATS secret for ensure-skins-bucket (C2-07j)', () => {
@@ -487,6 +495,19 @@ describe('shards/colo-mind.yaml: the public block (C2-07a2, decisions 0090 and 0
 // C2-08c: the register service is wired but off by default (decision 0135).
 const register = colo.services.register ?? {};
 
+// C7-03b2: the register NATS env names compose sets are the ones threshold/register/src/config.ts reads.
+describe('register NATS env (C7-03b2)', () => {
+  it('sets the REGISTER_NATS_* names config.ts reads, with the register user', () => {
+    const regEnv = (register.environment ?? {}) as Record<string, unknown>;
+    const config = readFileSync(`${ROOT}threshold/register/src/config.ts`, 'utf8');
+    for (const name of ['REGISTER_NATS_URL', 'REGISTER_NATS_USER', 'REGISTER_NATS_PASSWORD_FILE']) {
+      expect(config, name).toContain(`env.${name}`);
+      expect(regEnv[name], name).toBeDefined();
+    }
+    expect(regEnv.REGISTER_NATS_USER).toBe('register');
+  });
+});
+
 describe('sql: the register start credits (C2-R5 F3, F20)', () => {
   it('the newest start_credits constant in sql/ equals the shard cap_credits', () => {
     const shard = parse(readFileSync(`${ROOT}shards/colo-mind.yaml`, 'utf8')) as {
@@ -542,8 +563,12 @@ describe('compose/colo.yml: the register service (C2-08c)', () => {
       'register-ms-secret',
       'register-session-key',
     ];
-    expect(register.secrets).toEqual(names);
-    for (const name of names) expect(colo.secrets).toHaveProperty([name]);
+    // REG-NATS-COMPOSE (C7-03b2): the NATS password is mounted under its own target name, so it is an object entry.
+    expect(register.secrets).toEqual([
+      ...names,
+      { source: 'nats-register', target: 'nats-register.txt' },
+    ]);
+    for (const name of [...names, 'nats-register']) expect(colo.secrets).toHaveProperty([name]);
     expect(env(register).REGISTER_DB_PASSWORD_FILE).toBe('/run/secrets/postgres-register.txt');
     expect(env(register).REGISTER_TOKEN_PEPPER_FILE).toBe('/run/secrets/mcp-token-pepper.txt');
     expect(JSON.stringify(env(register))).not.toMatch(/SECRET["']?:\s*"[^/]/);

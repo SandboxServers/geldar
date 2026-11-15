@@ -10,7 +10,7 @@
 # overlay. register-ms-secret.txt (the Microsoft/Entra client secret) is owner-provided: it is never generated here.
 # The files this script can create. The list of secrets the deploy requires is not kept here: it comes from the
 # merged compose config (common.sh, check_secrets). The NATS files and nats-auth.conf are never created here.
-GENERATED="postgres.txt rcon.txt velocity-forwarding.txt nats-body.txt postgres-mcp.txt postgres-glass.txt postgres-register.txt register-pepper.txt mcp-token-pepper.txt register-session-key.txt"
+GENERATED="postgres.txt rcon.txt velocity-forwarding.txt nats-body.txt postgres-mcp.txt postgres-glass.txt postgres-register.txt postgres-supervisor.txt register-pepper.txt mcp-token-pepper.txt register-session-key.txt"
 set -eu
 . "$(dirname "$0")/common.sh"
 
