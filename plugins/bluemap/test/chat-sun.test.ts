@@ -68,26 +68,30 @@ const onSwitch = {
 };
 const elsewhere = { target: { closest: () => null } };
 
+const feedBody = (clock?: Clock) => JSON.stringify({ v: 1, lines: [], clock });
+
 // Mounts the real panel with a page bluemap in window, the feed carrying clock (or none), and the clock at T0. The
-// tick is the one that runs each second; the document's listeners are kept so a test can click the page.
+// tick is the one that runs each second. poll runs the loop's next poll (the feed is read again); setClock changes the
+// feed the next poll reads. The document's listeners are kept, with their options, so a test can click the page.
 async function mount(bm: unknown, clock?: Clock) {
   (globalThis as { window?: unknown }).window = { bluemap: bm };
-  const listeners: Array<{ type: string; fn: (ev: Ev) => void }> = [];
+  const listeners: Array<{ type: string; fn: (ev: Ev) => void; opts: unknown }> = [];
   const base = fakeDoc();
   const doc = {
     ...base,
     createElement: () => hooked(),
-    addEventListener: (type: string, fn: (ev: Ev) => void) => {
-      listeners.push({ type, fn });
+    addEventListener: (type: string, fn: (ev: Ev) => void, opts?: unknown) => {
+      listeners.push({ type, fn, opts });
     },
   };
   const now = { t: T0 };
   const ticks: Array<() => void> = [];
-  const routes = { [FEED]: JSON.stringify({ v: 1, lines: [], clock }) };
+  const polls: Array<() => void> = [];
+  const routes: Record<string, string> = { [FEED]: feedBody(clock) };
   chat.start(
     doc,
     fetchOf(routes),
-    () => {},
+    (fn) => polls.push(fn),
     (fn) => ticks.push(fn),
     () => now.t,
   );
@@ -99,7 +103,15 @@ async function mount(bm: unknown, clock?: Clock) {
   const click = (ev: Ev) => {
     for (const l of listeners) if (l.type === 'click') l.fn(ev);
   };
-  return { root, now, tick, click };
+  const poll = async () => {
+    polls.pop()?.();
+    await settle();
+  };
+  const setClock = (c: Clock) => {
+    routes[FEED] = feedBody(c);
+  };
+  const clickOpts = () => listeners.filter((l) => l.type === 'click').map((l) => l.opts);
+  return { root, now, tick, click, poll, setClock, clickOpts };
 }
 
 const allText = (n: FakeNode): string => [n.textContent, ...n.childNodes.map(allText)].join(' ');
@@ -117,6 +129,10 @@ describe('sunFor: the sunlight strength by tick of day', () => {
   it('fades linearly from 11800 and is 0.625 at 12500', () => {
     expect(sun.sunFor(11801)).toBeLessThan(1);
     expect(sun.sunFor(12500)).toBeCloseTo(0.625, 6);
+  });
+  it('is the linear fade just before 13200 (13100 and 13150)', () => {
+    expect(sun.sunFor(13100)).toBeCloseTo(1 - (0.75 * 1300) / 1400, 6);
+    expect(sun.sunFor(13150)).toBeCloseTo(1 - (0.75 * 1350) / 1400, 6);
   });
   it('is the night level 0.25 at 13200 and holds it to 22800', () => {
     expect(sun.sunFor(13200)).toBe(0.25);
@@ -274,6 +290,108 @@ describe('the sun on the page: applied on the tick, overworld only', () => {
     expect(resume?.hidden).toBe(true);
     m.tick();
     expect(u.writes).toBe(1);
+  });
+
+  it('keeps the sun advancing when the same clock is polled again inside the fade', async () => {
+    const u = counted(1);
+    const m = await mount(bmWith('overworld', { sunlightStrength: u }), { time: 12000, at: 1 });
+    for (let s = 0; s <= 9; s++) {
+      m.now.t = T0 + s * 1000;
+      if (s > 0 && s % 3 === 0) await m.poll();
+      m.tick();
+      expect(u.value).toBeCloseTo(sun.sunFor(12000 + 20 * s), 6);
+    }
+  });
+
+  it('ignores a clock that has not changed for 60 s, however often it is polled', async () => {
+    const u = counted(1);
+    const m = await mount(bmWith('overworld', { sunlightStrength: u }), { time: 12000, at: 1 });
+    m.tick();
+    expect(u.writes).toBe(1);
+    for (let t = 3000; t <= 63000; t += 3000) {
+      m.now.t = T0 + t;
+      await m.poll();
+    }
+    const before = u.writes;
+    m.now.t = T0 + 64000;
+    m.tick();
+    expect(u.writes).toBe(before);
+  });
+
+  it('keeps the sun live while the clock keeps changing', async () => {
+    const u = counted(1);
+    const m = await mount(bmWith('overworld', { sunlightStrength: u }), { time: 12000, at: 1 });
+    for (let t = 3000; t <= 63000; t += 3000) {
+      m.now.t = T0 + t;
+      m.setClock({ time: 12000, at: 1 + t });
+      await m.poll();
+    }
+    const before = u.writes;
+    m.now.t = T0 + 63000;
+    m.tick();
+    expect(u.writes).toBe(before + 1);
+  });
+
+  it('does not throw when the bluemap has no map yet (map null)', async () => {
+    const u = counted(0.5);
+    const bm = { mapViewer: { map: null, data: { uniforms: { sunlightStrength: u } } } };
+    const m = await mount(bm, { time: 12000, at: 0 });
+    expect(() => m.tick()).not.toThrow();
+  });
+
+  it('re-applies the sun when the map goes overworld, nether, overworld', async () => {
+    const u = counted(1);
+    const bm = bmWith('overworld', { sunlightStrength: u });
+    const m = await mount(bm, { time: 12000, at: 0 });
+    m.tick();
+    const sunNow = u.value;
+    bm.mapViewer.map.data.id = 'nether';
+    m.tick();
+    expect(u.value).toBe(1);
+    bm.mapViewer.map.data.id = 'overworld';
+    m.tick();
+    expect(u.value).toBeCloseTo(sunNow, 6);
+  });
+
+  it('registers the click listener in the capture phase', async () => {
+    const m = await mount(bmWith('overworld', {}), { time: 12000, at: 0 });
+    expect(m.clickOpts()).toEqual([true]);
+  });
+
+  it("the page's own first write does not turn auto mode off", async () => {
+    const u = counted(1);
+    const m = await mount(bmWith('overworld', { sunlightStrength: u }), { time: 12000, at: 0 });
+    m.tick();
+    expect(u.writes).toBe(1);
+    expect(find(m.root, 'gc-resume')?.hidden).toBe(true);
+    m.now.t = T0 + 1000;
+    m.tick();
+    expect(u.writes).toBe(2);
+  });
+
+  it("a sunlight value that differs from the page's last write turns auto mode off", async () => {
+    const u = counted(1);
+    const m = await mount(bmWith('overworld', { sunlightStrength: u }), { time: 12000, at: 0 });
+    m.tick();
+    u.value = 0.5; // a foreign write, as BlueMap's own night toggle would make
+    expect(u.writes).toBe(2);
+    m.now.t = T0 + 1000;
+    m.tick();
+    expect(u.value).toBe(0.5);
+    expect(u.writes).toBe(2);
+    expect(find(m.root, 'gc-resume')?.hidden).toBe(false);
+    m.now.t = T0 + 2000;
+    m.tick();
+    expect(u.value).toBe(0.5);
+  });
+
+  it('a difference of 0.01 or less from the last write is not foreign', async () => {
+    const u = counted(1);
+    const m = await mount(bmWith('overworld', { sunlightStrength: u }), { time: 12000, at: 0 });
+    m.tick();
+    u.value = u.value + 0.005;
+    m.tick();
+    expect(find(m.root, 'gc-resume')?.hidden).toBe(true);
   });
 
   it('the panel says "Follow world time" and nothing about watching or viewers', async () => {

@@ -40,7 +40,7 @@ interface FakeDoc {
   querySelector(selector: string): FakeNode | null;
 }
 interface ChatModule {
-  parseFeed(text: string): Line[] | null;
+  parseFeed(text: string): { lines: Line[] } | null;
   parsePlayers(text: string): Array<{ uuid: string; name: string }> | null;
   remember(names: Map<string, string>, players: Array<{ uuid: string; name: string }>): void;
   nameFor(names: Map<string, string>, id: string): string;

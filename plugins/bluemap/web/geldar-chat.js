@@ -249,20 +249,33 @@
     return (clock.time + Math.floor(elapsed / TICK_MS)) % DAY_TICKS;
   }
 
+  // Writes the sunlight and remembers the value, so a later value that differs from it shows a foreign write.
+  function writeSun(state, u, value) {
+    u.value = value;
+    state.sunWrote = value;
+  }
+
   // Sets BlueMap's sunlight from the clock, on each tick. Auto mode off (the viewer took the day-night button) writes
-  // nothing. On the overworld with a clock no older than 60 s, the sun is written when it moves by more than 0.01. Any
-  // other map gets 1 once, since its lighting has no day cycle. Every access is guarded: a missing field does nothing.
+  // nothing. On the overworld with a clock that has not changed for 60 s, the sun is written when it moves by more than
+  // 0.01. Any other map gets 1 once, since its lighting has no day cycle. A value that differs by more than 0.01 from
+  // the page's last write was set by someone else (BlueMap's own toggle): auto mode turns off, as for the button.
+  // Every access is guarded: a missing field does nothing.
   function applySun(state, bm, now) {
     if (!state.autoSun) return;
     const u = bm?.mapViewer?.data?.uniforms?.sunlightStrength;
     if (!u) return;
+    if (state.sunWrote !== null && Math.abs(u.value - state.sunWrote) > SUN_EPS) {
+      state.autoSun = false;
+      if (state.onManual) state.onManual();
+      return;
+    }
     if (bm.mapViewer.map?.data?.id !== 'overworld') {
-      if (u.value !== 1) u.value = 1;
+      if (u.value !== 1) writeSun(state, u, 1);
       return;
     }
     if (!state.clock || now - state.clockAt > CLOCK_MAX_MS) return;
     const want = sunFor(clockNow(state.clock, state.clockAt, now));
-    if (Math.abs(u.value - want) > SUN_EPS) u.value = want;
+    if (Math.abs(u.value - want) > SUN_EPS) writeSun(state, u, want);
   }
 
   // Records an agent's home position, rounded to 0.1 on each axis. The timer restarts when any axis changes.
@@ -348,6 +361,8 @@
       clock: null,
       clockAt: null,
       autoSun: true,
+      sunWrote: null,
+      onManual: null,
     };
     list.addEventListener('scroll', () => {
       state.pinned = isPinned(list);
@@ -392,8 +407,14 @@
     if (parsed === null) return false;
     const feed = parsed.lines;
     state.lastOk = state.now();
+    // The clock is re-anchored only when it changed, so a clock the server has not moved keeps its first arrival time.
+    const same =
+      state.clock &&
+      parsed.clock &&
+      parsed.clock.at === state.clock.at &&
+      parsed.clock.time === state.clock.time;
+    if (!same) state.clockAt = state.lastOk;
     state.clock = parsed.clock;
-    state.clockAt = state.lastOk;
     state.newestT = feed.length > 0 ? Math.max(...feed.map((l) => l.t)) : null;
     const fresh = takeNew(feed, new Set(state.shown));
     if (fresh.length > 0) {
@@ -616,6 +637,7 @@
         },
         true,
       );
+    state.onManual = () => setAutoSun(false);
     panel.resume.addEventListener('click', () => setAutoSun(true));
     runLoop(state, fetchFn, schedule, () => paintStatus(state, panel, now()));
     if (tick)
@@ -639,10 +661,8 @@
   if (typeof module !== 'undefined') {
     module.exports = {
       parseFeed,
-      parseClock,
       sunFor,
       clockNow,
-      applySun,
       parsePlayers,
       remember,
       nameFor,
