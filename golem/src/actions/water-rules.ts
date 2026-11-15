@@ -1,5 +1,6 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
+import { isFalling } from './dig-safety.ts';
 
 /** Block names that put the Body in water: plain water, and the plants and bubbles that grow in it. */
 export const WET_CELLS = new Set([
@@ -38,18 +39,6 @@ const HAZARD_FLOORS = new Set([
   'soul_campfire',
   'fire',
   'soul_fire',
-]);
-
-/** Blocks that fall when nothing holds them up; one over an exit cell lands on the Body. */
-const FALLING_BLOCKS = new Set([
-  'gravel',
-  'suspicious_gravel',
-  'sand',
-  'suspicious_sand',
-  'red_sand',
-  'anvil',
-  'chipped_anvil',
-  'damaged_anvil',
 ]);
 
 interface Cell {
@@ -91,7 +80,7 @@ function isExitBank(bot: Bot, node: Node, dir: { x: number; z: number }): boolea
   }
   for (const dy of [1, 2, 3]) {
     const name = cellAt(bot, x, node.y + dy, z)?.name;
-    if (name !== undefined && FALLING_BLOCKS.has(name)) return false;
+    if (isFalling(name)) return false;
   }
   return true;
 }

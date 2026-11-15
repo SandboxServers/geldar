@@ -1,6 +1,6 @@
 import { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { hazardReason } from './bare-hand.ts';
+import { type DigSafetyInput, digSafetyRefusal } from './dig-safety.ts';
 import { block, type FakeBlock, fakeBot, GRAVEL, mine, OAK_LOG, STONE } from './mine.fakes.ts';
 import { moveNear } from './pathing.ts';
 
@@ -231,13 +231,12 @@ describe('mine: a pointed dripstone above the stone', () => {
     const stone = block(STONE, new Vec3(1, 64, 0), [], { 270: true }, 'stone');
     const bot = fakeBot([stone, dripstone(new Vec3(1, 65, 0), 'up')]);
     const hazard = (cell: Vec3) =>
-      hazardReason(
-        bot as unknown as Parameters<typeof hazardReason>[0],
-        stone as unknown as Parameters<typeof hazardReason>[1],
-        cell,
-        [],
-        true,
-      );
+      digSafetyRefusal({
+        bot: bot as unknown as DigSafetyInput['bot'],
+        block: stone as unknown as DigSafetyInput['block'],
+        at: cell,
+        own: [],
+      });
     expect(hazard(new Vec3(1, 64, 0))).toBeNull();
   });
 });

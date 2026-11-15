@@ -1,5 +1,7 @@
 import type { Bot } from 'mineflayer';
 import type { Vec3 } from 'vec3';
+import { digSafetyRefusal } from '../../actions/dig-safety.ts';
+import { feetCell } from '../../actions/feet-cell.ts';
 import { protectedReason } from '../../actions/protected-blocks.ts';
 import type { ReflexContext } from '../reflex.ts';
 
@@ -72,6 +74,9 @@ export async function digCellWhy(
   // The owner's rule covers the Body's automatic digging too: someone else's work is not dug (review N8).
   const protectedBy = protectedReason(bot, block, cell);
   if (protectedBy !== null) return { ok: false, cause: protectedBy };
+  const feet = feetCell(bot);
+  const unsafe = digSafetyRefusal({ bot, block, at: cell, own: [feet, feet.offset(0, 1, 0)] });
+  if (unsafe !== null) return { ok: false, cause: unsafe };
   const eye = bot.entity.position.offset(0, bot.entity.height ?? 1.62, 0);
   if (eye.distanceTo(cell.offset(0.5, 0.5, 0.5)) > REACH)
     return { ok: false, cause: 'out of reach' };

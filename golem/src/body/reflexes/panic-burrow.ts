@@ -2,6 +2,8 @@ import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import type { Block } from '../../actions/bot-types.ts';
+import { isFalling } from '../../actions/dig-safety.ts';
+import { recordOwnPlacement } from '../../actions/own-placements.ts';
 import { runAction } from '../../actions/registry.ts';
 import type { Reflex, ReflexContext, ReflexOutcome, Trigger } from '../reflex.ts';
 import type { BodyView } from '../view.ts';
@@ -20,8 +22,6 @@ export const SEAL_BLOCKS: readonly string[] = [
   'granite',
   'deepslate',
 ];
-/** Blocks that fall when the block under them goes, so they are no safe wall, roof or floor. */
-const FALLING = new Set(['sand', 'red_sand', 'gravel']);
 /** The four horizontal directions, in the order a burrow is tried. */
 const DIRECTIONS: readonly Vec3[] = [
   new Vec3(1, 0, 0),
@@ -135,7 +135,7 @@ function pausedOutcome(view: BodyView, tick: number, outcome: ReflexOutcome): Re
 
 /** True for a block that is solid, can be dug, and does not fall. */
 function isWall(block: Block | null): boolean {
-  return block !== null && block.boundingBox === 'block' && !FALLING.has(block.name);
+  return block !== null && block.boundingBox === 'block' && !isFalling(block.name);
 }
 
 /** True for a block the Body may dig out: a wall block `digCell` will accept (the allowlist). */
@@ -241,6 +241,8 @@ async function burrow(ctx: ReflexContext, view: BodyView): Promise<ReflexOutcome
     if (!(await act(ctx, { do: 'place', block: seal, at }))) {
       return { result: 'failed', detail: `could not seal ${at.x} ${at.y} ${at.z}` };
     }
+    // The seal is the Body's own work: a later dig of it is not someone else's (review N8).
+    recordOwnPlacement(bot, at, seal);
   }
   burrows.set(view, { mouth: plan.mouth, seal });
   return { result: 'handled', detail: 'sealed in' };
