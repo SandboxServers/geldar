@@ -33,9 +33,23 @@ describe('parseMuffleBenchLine', () => {
     expect(parseMuffleBenchLine(GOOD.replace('capHit=false', 'capHit=yes'))).toBeNull();
   });
 
-  it('refuses a line with extra text before or after', () => {
-    expect(parseMuffleBenchLine(`[INFO] ${GOOD}`)).toBeNull();
-    expect(parseMuffleBenchLine(`${GOOD} extra`)).toBeNull();
+  it('accepts the docker compose prefix', () => {
+    const line = `paper-1  | [12:00:00 INFO]: [GeldarCore] ${GOOD}`;
+    expect(parseMuffleBenchLine(line)?.tick).toBe(1200);
+  });
+
+  it('accepts the server console format', () => {
+    const line = `[12:00:00 INFO]: [GeldarCore] ${GOOD}`;
+    expect(parseMuffleBenchLine(line)?.speaker).toBe('MuffleBench00');
+  });
+
+  it('accepts the latest.log format', () => {
+    const line = `[12:00:00] [Server thread/INFO]: [GeldarCore] ${GOOD}`;
+    expect(parseMuffleBenchLine(line)?.ns).toBe(5400);
+  });
+
+  it('refuses a negative ns', () => {
+    expect(parseMuffleBenchLine(GOOD.replace('ns=5400', 'ns=-5400'))).toBeNull();
   });
 
   it('refuses a different log line and an empty line', () => {

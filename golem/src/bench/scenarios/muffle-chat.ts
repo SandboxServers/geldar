@@ -14,7 +14,7 @@ import { type GolemConfig, readRconPassword } from '../../config.ts';
 import { ConnectionManager } from '../../connection.ts';
 import { RconClient } from '../../rcon.ts';
 import { registryFromConfig } from '../../registry.ts';
-import { type Pos, TestControl } from '../../test-control.ts';
+import { type CommandSource, type Pos, TestControl } from '../../test-control.ts';
 import { parseMspt, setTps } from '../tps.ts';
 
 /** The only RCON port the bench may run against without the throwaway flag. */
@@ -24,12 +24,17 @@ export const THROWAWAY_FLAG = '--i-know-this-is-a-throwaway';
 export const BENCH_SIZES = [9, 15] as const;
 export const CHAT_LINES = 20;
 export const CHAT_INTERVAL_MS = 2_000;
+/** A fill that reports `not loaded` is retried this many times, this far apart (as arena.ts does). */
+export const FILL_TRIES = 20;
+export const FILL_RETRY_MS = 250;
 
 /** Absolute x and z of the layout's origin (the speaker stands here); y is absolute. */
 export const ORIGIN = { x: 1000, z: 1000 };
 const FLOOR_Y = 64;
 const STAND_Y = 65;
 const CEILING_Y = 70;
+/** The layout box force-loaded before any fill, in layout coordinates (x -4..46, z -6..6). */
+const LOADED = { from: { x: -4, z: -6 }, to: { x: 46, z: 6 } };
 
 /**
  * Refuses unless the RCON port is the bench port or the throwaway flag is given. Throws before any
@@ -51,9 +56,9 @@ interface WallPlan {
 }
 
 /**
- * The walls, nearest first. Each spans z -3..3 from y 65. Block ids are plain (the fill command takes
- * no namespace or state). `stone_brick_slab` fills y 65..66 as bottom slabs, so y 67 is open there.
- * `white_carpet` at y 65 does not block sight: it is the non-blocking control.
+ * The walls, nearest first. Each spans z -3..3 from y 65 up to `top`. Block ids are plain (the fill command
+ * takes no namespace or state). The `stone_brick_slab` wall has top 66: only y 65..66 are filled there,
+ * and y 67 is left open. `white_carpet` at y 65 does not block sight: it is the non-blocking control.
  */
 export const WALLS: readonly WallPlan[] = [
   { x: 3, block: 'stone', top: 67 },
@@ -67,9 +72,15 @@ export const WALLS: readonly WallPlan[] = [
 
 /** Listener columns on the speaker's row (z 0), in blocks east of the speaker. */
 export const LINE_X = [2, 5, 9, 13, 17, 21, 25] as const;
-/** The sealed room's listener: east of every wall, inside a stone shell whose front is at x 37. */
-const SEALED_X = 40;
-const ROOM_FRONT_X = 37;
+/**
+ * The sealed room's listener, 31 blocks out so it is inside the 32-block raw hearing gate
+ * (ProximityRule.HEARING_RADIUS_BLOCKS). The room is a stone shell with its front wall at x 28 and its
+ * back wall at x 34, a roof at y 68 and an air hollow at x 29..33, y 65..67, z -1..1.
+ */
+const SEALED_X = 31;
+const ROOM_FRONT_X = 28;
+const ROOM_BACK_X = 34;
+const ROOM_ROOF_Y = 68;
 /**
  * The second row (N=15 only) is 2 blocks north, still inside the walls' z span, and takes the first six
  * columns: 1 speaker + 7 + 6 + the sealed listener = 15 bots.
@@ -151,8 +162,16 @@ export function muffleLayout(bots: number): Layout {
     { from: { x: -4, y: FLOOR_Y, z: -6 }, to: { x: 46, y: FLOOR_Y, z: 6 }, block: 'stone' },
     { from: { x: -4, y: STAND_Y, z: -6 }, to: { x: 46, y: CEILING_Y, z: 6 }, block: 'air' },
     ...wallBoxes(),
-    { from: { x: ROOM_FRONT_X, y: FLOOR_Y, z: -2 }, to: { x: 43, y: 68, z: 2 }, block: 'stone' },
-    { from: { x: 38, y: STAND_Y, z: -1 }, to: { x: 42, y: 67, z: 1 }, block: 'air' },
+    {
+      from: { x: ROOM_FRONT_X, y: FLOOR_Y, z: -2 },
+      to: { x: ROOM_BACK_X, y: ROOM_ROOF_Y, z: 2 },
+      block: 'stone',
+    },
+    {
+      from: { x: ROOM_FRONT_X + 1, y: STAND_Y, z: -1 },
+      to: { x: ROOM_BACK_X - 1, y: ROOM_ROOF_Y - 1, z: 1 },
+      block: 'air',
+    },
   ];
   return { bots, spots, boxes };
 }
@@ -163,6 +182,47 @@ export function parseSeq(message: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
+/** An RCON session: commands in, replies out, and a close. RconClient is one. */
+export interface RconSession extends CommandSource {
+  close(): Promise<void>;
+}
+
+/** One started bot and the way to stop it. */
+export interface BotSession {
+  bot: Bot;
+  stop(): Promise<void>;
+}
+
+/** The connections runMuffleChat opens. The default opens a real RCON client and real bots; tests pass fakes. */
+export interface MuffleDeps {
+  connect(cfg: GolemConfig): Promise<RconSession>;
+  startBot(spot: Spot, cfg: GolemConfig): Promise<BotSession>;
+}
+
+const DEFAULT_DEPS: MuffleDeps = {
+  connect: async (cfg) =>
+    RconClient.connect({
+      host: cfg.rconHost,
+      port: cfg.rconPort,
+      password: await readRconPassword(cfg),
+    }),
+  startBot: async (spot, cfg) => {
+    const manager = new ConnectionManager({
+      host: cfg.mcHost,
+      port: cfg.mcPort,
+      username: spot.name,
+      registry: registryFromConfig(cfg),
+      log: () => undefined,
+    });
+    try {
+      return { bot: await manager.start(), stop: () => manager.stop() };
+    } catch (err) {
+      await manager.stop().catch(() => undefined);
+      throw err;
+    }
+  },
+};
+
 export interface MuffleRunOptions {
   bots: number;
   cfg: GolemConfig;
@@ -170,6 +230,7 @@ export interface MuffleRunOptions {
   lines?: number;
   intervalMs?: number;
   log?: (line: string) => void;
+  deps?: MuffleDeps;
 }
 
 export interface MuffleRunResult {
@@ -182,41 +243,57 @@ export interface MuffleRunResult {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * Force-loads the layout, then runs every fill of the layout. A fill that reports `not loaded` is retried
+ * (the whole set, up to FILL_TRIES times). Throws unless every fill reply is a success.
+ */
+export async function buildLayout(ctl: TestControl, layout: Layout): Promise<void> {
+  const at = (p: Pos): Pos => ({ x: ORIGIN.x + p.x, y: p.y, z: ORIGIN.z + p.z });
+  await ctl.forceload(
+    ORIGIN.x + LOADED.from.x,
+    ORIGIN.z + LOADED.from.z,
+    ORIGIN.x + LOADED.to.x,
+    ORIGIN.z + LOADED.to.z,
+  );
+  for (let attempt = 1; ; attempt++) {
+    const replies: string[] = [];
+    for (const box of layout.boxes) {
+      replies.push(await ctl.fill(at(box.from), at(box.to), box.block));
+    }
+    if (!replies.some((r) => /not loaded/i.test(r))) {
+      const failed = replies.find((r) => !/Successfully filled|No blocks were filled/.test(r));
+      if (failed !== undefined) throw new Error(`layout fill failed: ${failed.trim()}`);
+      return;
+    }
+    if (attempt >= FILL_TRIES) {
+      throw new Error('layout did not build: its chunks stayed unloaded');
+    }
+    await sleep(FILL_RETRY_MS);
+  }
+}
+
 /** Builds the world with fill, admits and places the bots, sends the chat and tallies what each listener heard. */
 export async function runMuffleChat(opts: MuffleRunOptions): Promise<MuffleRunResult> {
   assertThrowawayTarget(opts.cfg.rconPort, opts.throwawayFlag);
   const layout = muffleLayout(opts.bots);
   const log = opts.log ?? (() => undefined);
-  const password = await readRconPassword(opts.cfg);
-  const rcon = await RconClient.connect({
-    host: opts.cfg.rconHost,
-    port: opts.cfg.rconPort,
-    password,
-  });
+  const deps = opts.deps ?? DEFAULT_DEPS;
+  const rcon = await deps.connect(opts.cfg);
   const ctl = new TestControl(rcon);
-  const managers: ConnectionManager[] = [];
+  const sessions: BotSession[] = [];
   const admitted: string[] = [];
   try {
     await setTps(ctl, 20);
-    for (const box of layout.boxes) {
-      const at = (p: Pos): Pos => ({ x: ORIGIN.x + p.x, y: p.y, z: ORIGIN.z + p.z });
-      await ctl.fill(at(box.from), at(box.to), box.block);
-    }
+    await buildLayout(ctl, layout);
     for (const spot of layout.spots) {
       await ctl.whitelistAdd(spot.name);
       admitted.push(spot.name);
     }
     const bots: Bot[] = [];
     for (const spot of layout.spots) {
-      const manager = new ConnectionManager({
-        host: opts.cfg.mcHost,
-        port: opts.cfg.mcPort,
-        username: spot.name,
-        registry: registryFromConfig(opts.cfg),
-        log: () => undefined,
-      });
-      managers.push(manager);
-      bots.push(await manager.start());
+      const session = await deps.startBot(spot, opts.cfg);
+      sessions.push(session);
+      bots.push(session.bot);
     }
     for (const spot of layout.spots) {
       await ctl.tp(spot.name, ORIGIN.x + spot.x, STAND_Y, ORIGIN.z + spot.z);
@@ -246,7 +323,7 @@ export async function runMuffleChat(opts: MuffleRunOptions): Promise<MuffleRunRe
       mspt,
     };
   } finally {
-    for (const manager of managers) await manager.stop().catch(() => undefined);
+    for (const session of sessions) await session.stop().catch(() => undefined);
     for (const name of admitted) await ctl.whitelistRemove(name).catch(() => undefined);
     await ctl.tickRate(20).catch(() => undefined);
     await rcon.close().catch(() => undefined);

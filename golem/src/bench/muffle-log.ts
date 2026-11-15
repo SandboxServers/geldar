@@ -3,8 +3,10 @@
  * chat line) and summarizes them for the MH-8a cost bench. Pure: no I/O, no server.
  */
 
+// Matched anywhere in the line, so the docker prefix (`paper-1  | [12:00:00 INFO]: [GeldarCore] `),
+// the console format and the latest.log format all parse. `ns=(\d+)\b` refuses a negative ns.
 const LINE =
-  /^muffle-bench line speaker=(\S+) tick=(\d+) listeners=(\d+) reads=(\d+) capHit=(true|false) ns=(\d+)$/;
+  /muffle-bench line speaker=(\S+) tick=(\d+) listeners=(\d+) reads=(\d+) capHit=(true|false) ns=(\d+)\b/;
 
 /** One parsed `muffle-bench line` record. */
 export interface MuffleBenchLine {
