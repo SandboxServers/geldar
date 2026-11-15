@@ -1,0 +1,73 @@
+#Requires -Version 7
+<#
+.SYNOPSIS
+Starts or stops the MH-8a cost bench stack: a throwaway, loopback-only shard, project geldar-mh8a.
+
+.DESCRIPTION
+  ./bench/mh8a/run.ps1 up     refuses to start below 10 GB free RAM or 20 GB free on C:, then starts the stack.
+  ./bench/mh8a/run.ps1 down   stops the stack and deletes its volumes (the bench world is throwaway).
+
+Both print free RAM and free C: first. Every compose call uses project geldar-mh8a and the three files
+compose/phase0.yml, compose/rcon-host.yml and compose/phase0-bench.yml, and sets GELDAR_WORLD_VOLUME to
+geldar-mh8a_paper-data, so the bench never reads or deletes the phase0 world (geldar-phase0_paper-data).
+Nothing here removes containers by name pattern or prunes: compose acts only on project geldar-mh8a.
+
+Bench ports (loopback only): Minecraft 26565, NATS 14222, RCON 26575. The bench is a test-harness target
+only; never use it for a real shard.
+#>
+param(
+  [Parameter(Mandatory, Position = 0)]
+  [ValidateSet('up', 'down')]
+  [string] $Action
+)
+
+$ErrorActionPreference = 'Stop'
+$Project = 'geldar-mh8a'
+$WorldVolume = 'geldar-mh8a_paper-data'
+$MinFreeRamGb = 10
+$MinFreeDiskGb = 20
+$Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+$ComposeFiles = @('-f', 'compose/phase0.yml', '-f', 'compose/rcon-host.yml', '-f', 'compose/phase0-bench.yml')
+
+function Get-FreeRamGb {
+  # FreePhysicalMemory is in KiB; 1 GiB is 1048576 KiB.
+  [math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1048576, 1)
+}
+
+function Get-FreeDiskGb {
+  [math]::Round((Get-PSDrive -Name C).Free / 1GB, 1)
+}
+
+function Write-Resources([string] $Label) {
+  Write-Host "$Label free RAM: $(Get-FreeRamGb) GB; free C: $(Get-FreeDiskGb) GB"
+}
+
+function Invoke-BenchCompose([string[]] $ComposeArgs) {
+  # The volume name is set for every call, so `down -v` cannot resolve to the phase0 world volume.
+  $env:GELDAR_WORLD_VOLUME = $WorldVolume
+  Push-Location $Root
+  try {
+    & docker compose -p $Project @ComposeFiles @ComposeArgs
+    if ($LASTEXITCODE -ne 0) { throw "docker compose $($ComposeArgs -join ' ') exited $LASTEXITCODE" }
+  } finally {
+    Pop-Location
+  }
+}
+
+Write-Resources 'before'
+
+if ($Action -eq 'up') {
+  $ram = Get-FreeRamGb
+  $disk = Get-FreeDiskGb
+  if ($ram -lt $MinFreeRamGb) {
+    throw "refusing to start: free RAM $ram GB is under $MinFreeRamGb GB"
+  }
+  if ($disk -lt $MinFreeDiskGb) {
+    throw "refusing to start: free C: $disk GB is under $MinFreeDiskGb GB"
+  }
+  Invoke-BenchCompose @('up', '-d')
+  Write-Host "bench up: Minecraft 127.0.0.1:26565, NATS 127.0.0.1:14222, RCON 127.0.0.1:26575"
+} else {
+  Invoke-BenchCompose @('down', '-v')
+  Write-Resources 'after'
+}
