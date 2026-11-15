@@ -81,3 +81,10 @@ The packet that implements this record does these steps in order. Each step is a
 - Both entries are additive allow-list changes, owner-approved via geldar-93 (2026-11-15). They ship in the contract PR phase1/swim-facts-contract, not in the phase1/swim-0194 commits.
 - The Body sends the text: `golem/src/body/executor-outcome.ts` reads a goto's note as its ok detail, and sends the swim stop text as the detail of an `interrupted` goto. Both are fixed text with the air value and no advice.
 - Until the contract PR is merged, the Body still sends the interrupted goto's text, because it is set before the `outcomeDetailText` gate, and the outcome handler keeps the detail of any failure. The ok note is held back by the handler's `PLAIN_FACT_VERBS` gate until the contract PR is merged.
+
+## Amendment 2026-11-15 (0337): the reflex starts at 12, not 8
+
+- Dated amendment; the text above is kept as written. Where it says the reflex is at 8, read 12: `DROWNING_START_AIR` = 12 (0337), the trigger, the "recovered" test (air above 12) and the `hazard_escape` run.
+- Test 7 of the plan reads: `check()` is null in water at air 13 to 20 and fires at air 12 or less. It is not "9 to 20" and "8 or less".
+- The threshold line of "Not in this record" (the reflex threshold, "(8)") and the threshold list of the cooldown amendment ("reflex at 8") now read 12 for the reflex. The quiet window (40 ticks) and the give-up (200 ticks) do not change.
+- The swim controller keeps its own hand-over line, `SWIM_HAND_OVER_AIR` = 8 (`golem/src/actions/swim.ts`). The swim abort at `ABORT_AIR` = 10 is dead while swim is off, because the reflex fires at 12 first.
