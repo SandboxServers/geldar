@@ -15,7 +15,6 @@ import { PRESENCE_BUCKET } from '@geldar/contract';
 import { connectNats } from '@geldar/contract/nats';
 import { jetstream } from '@nats-io/jetstream';
 import { type KV, Kvm } from '@nats-io/kv';
-import pg from 'pg';
 import { parse } from 'yaml';
 import { managerAcquire } from '../adam/main.ts';
 import { jetStreamPublisher } from '../body/records-nats.ts';
@@ -33,69 +32,10 @@ import {
 } from '../registry.ts';
 import { bookServe, installEntryHandlers, playerBodyEnv, startPlayerBody } from './body-host.ts';
 import { managedLifeId, NO_HOST_CONFIG_EXIT, parseManagedPlayerConfig } from './managed-config.ts';
+import { type HostDb, type HostDbOptions, openPgHostDb } from './managed-pg.ts';
 import type { PlayerConfig } from './player-config.ts';
 import { watchPresence } from './presence.ts';
 import { PlayerSession } from './session.ts';
-
-/** The connection options of the host database: the role is the narrow one from the environment. */
-export interface HostDbOptions {
-  host: string;
-  port: number;
-  database: string;
-  user: string;
-  password: string;
-}
-
-/** The database port of the host: one query, `player_host_config(life_id)`, and a close. */
-export interface HostDb {
-  /** The JSON row of the life, or null when the function answers NULL. */
-  hostConfig(lifeId: string): Promise<unknown>;
-  close(): Promise<void>;
-}
-
-/** The longest a read, a statement or the close of the host database may take (no stall at boot). */
-const DB_TIMEOUT_MS = 5_000;
-
-/**
- * Closes the client, or gives up after DB_TIMEOUT_MS. The client's own error text is never read or
- * logged: it can carry a connection string.
- */
-function endClient(client: pg.Client): Promise<void> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<void>((resolve) => {
-    timer = setTimeout(resolve, DB_TIMEOUT_MS);
-  });
-  return Promise.race([client.end().then(() => undefined), timeout]).finally(() =>
-    clearTimeout(timer),
-  );
-}
-
-/**
- * The pg adapter of HostDb: a single client, with no pool, opened for one read. The client has
- * timeouts on the connect, the query and the statement, and a no-op 'error' listener, so an idle
- * socket the server drops cannot crash the process as an unhandled event.
- */
-export async function openPgHostDb(options: HostDbOptions): Promise<HostDb> {
-  const client = new pg.Client({
-    host: options.host,
-    port: options.port,
-    database: options.database,
-    user: options.user,
-    password: options.password,
-    connectionTimeoutMillis: DB_TIMEOUT_MS,
-    query_timeout: DB_TIMEOUT_MS,
-    statement_timeout: DB_TIMEOUT_MS,
-  });
-  client.on('error', () => undefined);
-  await client.connect();
-  return {
-    async hostConfig(lifeId) {
-      const result = await client.query('SELECT player_host_config($1) AS cfg', [lifeId]);
-      return result.rows[0]?.cfg ?? null;
-    },
-    close: () => endClient(client),
-  };
-}
 
 /** The effects the host needs, so a test can replace each one. */
 export interface ManagedDeps {

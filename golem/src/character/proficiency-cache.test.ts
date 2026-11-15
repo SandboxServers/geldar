@@ -544,15 +544,23 @@ describe('ProficiencyCache', () => {
     ).toThrow(RangeError);
   });
 
-  it('golem/src has no pg import', () => {
+  // Decisions 0260 and 0261: the managed player host reaches Postgres only as the narrow role
+  // geldar_body_host (EXECUTE on one function, no table grants), and only through one adapter file.
+  // The allowlist is an explicit one-file list, and the file must be an importer, so it cannot go stale.
+  it('golem/src imports pg from the managed adapter file only', () => {
+    const PG_ADAPTER = 'players/managed-pg.ts';
     const root = join(import.meta.dirname, '..');
     const files = readdirSync(root, { recursive: true })
-      .map(String)
+      .map((f) => String(f).replaceAll('\\', '/'))
       .filter((f) => f.endsWith('.ts'));
     const pg = /from\s+['"]pg(\/[^'"]*)?['"]|require\(\s*['"]pg['"]\s*\)|import\(\s*['"]pg['"]/;
+    expect(files).toContain(PG_ADAPTER);
+    expect(readFileSync(join(root, PG_ADAPTER), 'utf8'), PG_ADAPTER).toMatch(pg);
     for (const f of files) {
-      expect(readFileSync(join(root, f), 'utf8'), f).not.toMatch(pg);
+      if (f !== PG_ADAPTER) expect(readFileSync(join(root, f), 'utf8'), f).not.toMatch(pg);
     }
+    const importers = files.filter((f) => pg.test(readFileSync(join(root, f), 'utf8')));
+    expect(importers).toEqual([PG_ADAPTER]);
   });
 });
 

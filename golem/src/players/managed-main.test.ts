@@ -4,14 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadStackConfig, repoRoot } from '../config.ts';
 import type { OpenedRegistry } from '../registry.ts';
 import { NO_HOST_CONFIG_EXIT } from './managed-config.ts';
-import {
-  type HostDb,
-  type HostDbOptions,
-  type ManagedDeps,
-  managedBotRegistry,
-  openPgHostDb,
-  runManagedPlayer,
-} from './managed-main.ts';
+import { type ManagedDeps, managedBotRegistry, runManagedPlayer } from './managed-main.ts';
+import { type HostDb, type HostDbOptions, openPgHostDb } from './managed-pg.ts';
 import type { PlayerConfig } from './player-config.ts';
 
 /** A fake of the `pg` module: one Client per open, a recorded query, and a close that can hang. */
@@ -467,6 +461,7 @@ describe('the managed host import graph', () => {
       join(PLAYERS_DIR, 'managed-config.ts'),
     ]);
     expect(graph.has(join(PLAYERS_DIR, 'body-host.ts'))).toBe(true);
+    expect(graph.has(join(PLAYERS_DIR, 'managed-pg.ts'))).toBe(true);
     const names = [...graph.keys()].map((file) => basename(file));
     expect(names.filter((name) => name === 'rcon.ts' || name === 'whitelist.ts')).toEqual([]);
     for (const [file, text] of graph) {
