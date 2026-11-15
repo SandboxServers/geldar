@@ -55,7 +55,9 @@ describe('shards/character-fixture.yaml (AN-12b)', () => {
       ][]) {
         for (const key of keys) {
           const value = s[block][key];
-          expect(Number.isInteger(value) && value >= 1 && value <= 5).toBe(true);
+          expect(
+            typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5,
+          ).toBe(true);
         }
       }
     }

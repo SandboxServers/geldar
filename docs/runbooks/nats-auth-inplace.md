@@ -224,3 +224,4 @@ Until the test records a result, plan the live change as if changed users are cl
 - body: Sub gains `geldar.<s>.state.*.level` (one life's level push). Not `state.>`.
 - eventsink: Sub gains `geldar.<s>.state.*.proficiency` (one life's request). Not `state.>`.
 - Apply `./geldar.ps1 shard nats-auth <shard>` on the live node before setting GELDAR_SHEET_SHARD, or the state service is refused.
+- Sink opt-in override: `compose/opt-in/sheet-sink.yml` (not in the default set). Use it as `docker compose -f compose/colo.yml -f compose/opt-in/sheet-sink.yml up -d eventsink`. It is outside `compose/*.yml` so the compose lane does not validate it standalone.
