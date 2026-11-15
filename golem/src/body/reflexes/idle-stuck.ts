@@ -4,6 +4,7 @@ import { type ActionRun, runAction } from '../../actions/registry.ts';
 import { DEFAULT_DIAG_SINK } from '../../actions/stall-diag.ts';
 import type { Reflex, ReflexContext, ReflexOutcome, Trigger } from '../reflex.ts';
 import type { BodyView } from '../view.ts';
+import { watchProbe } from './idle-stuck-probe.ts';
 import { hasBurrow } from './panic-burrow.ts';
 import { failedWalksAt } from './unstick.ts';
 
@@ -211,6 +212,7 @@ function watchStill(view: BodyView, state: IdleState, now: number): void {
         noSafeExit: view.noSafeExit === true,
         notInWater: view.inFluid !== 'water',
       },
+      ...watchProbe(view.terrainAt, view.position, view.health),
     }),
   );
 }

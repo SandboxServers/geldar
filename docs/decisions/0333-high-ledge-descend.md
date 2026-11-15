@@ -34,3 +34,7 @@ The drop cap for `noSafeExit` and for the unstick walk-off planner is now `FALL_
 
 - A `high_ledge` Body is run up to 12 times an hour, not 6. Each call is bounded by the rung's own 12-dig cap and the time budget; the rung checks every dig before it is made, and a fall that would land on an unsafe block or more than 3 blocks down is refused.
 - Ownership, liquid and falling-block checks for the rung are the 0164, 0183 and 0196 rules: they are not relaxed by this decision.
+
+## Diagnostic fields on the watch line
+
+The idle_stuck watch line (decision 0332, written once a minute while the Body stays still) carries three operator-only fields so a stuck Body can be read from its log: `moves` (the first four moves `planMoves` offers from the feet, each with its step `dx`, `dz`, `dy`, its `kind` (walk, jump or drop), its `drop` and the `landing` block name), `reach` (the cells reached by a depth-first walk over the planner's moves, capped at 40 cells) and `reach_exit` (true when that walk reaches a cell three blocks or more up, or twelve blocks across). They are read from `BodyView.terrainAt`, which is the planner's own block read, and they are null when no terrain is read. They change no behaviour, no trigger and no agent text, and the walk runs only when the line is written.

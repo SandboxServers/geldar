@@ -1,7 +1,9 @@
+import { Vec3 } from 'vec3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { Block } from '../../actions/bot-types.ts';
 import type { BodyView } from '../view.ts';
 import { IDLE_TICKS, IDLE_TICKS_ON_OWN, idleStuckReflex } from './idle-stuck.ts';
-import { settableView } from './reflexes.fakes.ts';
+import { GridWorld, settableView } from './reflexes.fakes.ts';
 
 /** A still Body on open ground it can step off: no trigger fires, so only the watch line can speak. */
 const SPOT = { x: -265.5, y: 35, z: 196.5 };
@@ -17,6 +19,8 @@ interface Live {
   riding: boolean | undefined;
   /** The planner's safe-drop test (BodyView.noSafeExit): true, false, or null for an unread cell. */
   noSafeExit?: boolean | null;
+  /** The block read the watch probe uses (BodyView.terrainAt); missing leaves the probe fields null. */
+  terrainAt?: BodyView['terrainAt'];
 }
 
 function still(over: Partial<Live> = {}): Live & BodyView {
@@ -70,6 +74,9 @@ describe('idle_stuck operator watch line (decision 0332)', () => {
         onOwnPlacement: true,
         noSafeExit: null,
         high_ledge: { still: false, notEnclosed: false, noSafeExit: false, notInWater: true },
+        moves: null,
+        reach: null,
+        reach_exit: null,
       },
     ]);
     idleStuckReflex.check(at(view, IDLE_TICKS + IDLE_TICKS - 1));
@@ -92,6 +99,28 @@ describe('idle_stuck operator watch line (decision 0332)', () => {
     expect(watchLines(log)[1]).toMatchObject({
       noSafeExit: true,
       high_ledge: { still: true, notEnclosed: true, noSafeExit: true, notInWater: true },
+    });
+  });
+
+  it('carries the first four planner moves, the reach and the exit flag for a closed pocket', () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const world = new GridWorld();
+    world.fill(new Vec3(-60, 63, -60), new Vec3(60, 63, 60), 'stone');
+    world.fill(new Vec3(-2, 64, -2), new Vec3(2, 66, 2), 'stone');
+    world.fill(new Vec3(-1, 64, -1), new Vec3(1, 65, 1), null);
+    const terrainAt = (cell: Vec3) => world.blockAt(cell) as unknown as Block;
+    const view = still({ position: { x: 0, y: 64, z: 0 }, terrainAt });
+    idleStuckReflex.check(view);
+    idleStuckReflex.check(at(view, IDLE_TICKS));
+    expect(watchLines(log)[0]).toMatchObject({
+      moves: [
+        { dx: 1, dz: 0, dy: 0, kind: 'walk', drop: 0, landing: 'stone' },
+        { dx: -1, dz: 0, dy: 0, kind: 'walk', drop: 0, landing: 'stone' },
+        { dx: 0, dz: 1, dy: 0, kind: 'walk', drop: 0, landing: 'stone' },
+        { dx: 0, dz: -1, dy: 0, kind: 'walk', drop: 0, landing: 'stone' },
+      ],
+      reach: 9,
+      reach_exit: false,
     });
   });
 
