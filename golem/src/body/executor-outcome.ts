@@ -6,6 +6,7 @@ import {
   outcomeMessage,
 } from '@geldar/contract';
 import { DEFAULT_DIAG_SINK } from '../actions/stall-diag.ts';
+import { isSwimStopText } from '../actions/swim.ts';
 import type { ActionReport } from './executor-types.ts';
 import type { RecordSink } from './records.ts';
 
@@ -67,17 +68,14 @@ function gotoNoteText(result: unknown): string | undefined {
 }
 
 /**
- * The fixed text of a goto stopped at the air line (decision 0194 d), sent as its detail. The
- * contract lists `interrupted` for no verb, so this is the Body's own fact for a goto alone.
+ * The detail of an interrupted action (decision 0194 d). The contract lets `interrupted` through for
+ * every verb, so the Body decides here: only a goto stopped at the air line sends its swim fact. Any
+ * other interrupted walk, or any other verb, sends no detail.
  */
-function gotoStoppedText(
-  verb: string,
-  reason: string | undefined,
-  result: unknown,
-): string | undefined {
-  if (verb !== 'goto' || reason !== 'interrupted') return undefined;
+function interruptedText(verb: string, result: unknown): string | undefined {
+  if (verb !== 'goto') return undefined;
   const message = (result as { message?: unknown } | null)?.message;
-  return typeof message === 'string' ? message.slice(0, 160) : undefined;
+  return typeof message === 'string' && isSwimStopText(message) ? message.slice(0, 160) : undefined;
 }
 
 /** The fact an ok action carries, by verb: an eat's hunger change, a sleep's sleepers line, a till's or planting's farmland fact, or a goto's swim note. */
@@ -101,12 +99,13 @@ export function actionOutcomeOf(
     ? okFactText(verb, report.record.result)
     : stopped
       ? STOPPED_TEXT
-      : (gotoStoppedText(verb, reason, report.record.result) ??
-        outcomeDetailText(
-          verb,
-          reason,
-          (report.record.result as { message?: unknown } | null)?.message,
-        ));
+      : reason === 'interrupted'
+        ? interruptedText(verb, report.record.result)
+        : outcomeDetailText(
+            verb,
+            reason,
+            (report.record.result as { message?: unknown } | null)?.message,
+          );
   return {
     verb,
     index,

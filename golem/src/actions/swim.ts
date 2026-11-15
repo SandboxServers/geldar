@@ -23,6 +23,13 @@ export function swimStopText(air: number): string {
   return `swim stopped at air ${air} with your head in the water`;
 }
 
+const SWIM_STOP = /^swim stopped at air \d+ with your head in the water$/;
+
+/** True when `text` is a swim stop's failure text, so a caller can tell a swim abort from any other interrupted walk. */
+export function isSwimStopText(text: string): boolean {
+  return SWIM_STOP.test(text);
+}
+
 /** What a swim did, for the result line (decision 0194 d). Facts only. */
 export interface SwimTally {
   blocksSwum: number;

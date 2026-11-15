@@ -67,7 +67,14 @@ describe('actionOutcomeOf: the swim facts a goto carries (decision 0194 d)', () 
     });
   });
 
-  it('keeps the detail of an interrupted goto that has no swim fact out of the Mind', () => {
+  it('carries no detail on an interrupted goto that was not a swim abort', () => {
+    expect(
+      actionOutcomeOf('goto', 0, failedWalk('interrupted', 'the path changed under the walk'))
+        .detail_text,
+    ).toBeUndefined();
+  });
+
+  it('keeps the swim wording of an interrupted action other than a goto out of the Mind', () => {
     expect(
       actionOutcomeOf('mine', 0, failedWalk('interrupted', STOPPED_AT_10)).detail_text,
     ).toBeUndefined();
