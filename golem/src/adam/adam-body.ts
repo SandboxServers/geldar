@@ -33,6 +33,7 @@ import { composeEars } from '../mind-link/compose-ears.ts';
 import { RecentEvents } from '../mind-link/recent-events.ts';
 import { SnapshotRevision } from '../mind-link/revision.ts';
 import { MindLinkServer, type RequestServer } from '../mind-link/server.ts';
+import { watchHeardMuffled } from '../perception/heard-muffled-event.ts';
 import { heardSoundEvent } from '../perception/heard-sound-event.ts';
 import { HurtReporter } from '../perception/hurt.ts';
 import { hurtLogLine } from '../perception/hurt-log.ts';
@@ -58,6 +59,11 @@ export interface AdamBodyEnv {
   server: RequestServer;
   /** The Body's NATS connection for the block ownership record (decision 0165); absent in tests. */
   owners?: OwnerTransport;
+  /**
+   * Where muffled notices (`heard_muffled`, MH-4) arrive on the Body's hearing subject. Absent in tests and until the
+   * host passes its connection; without it no notice is kept and nothing throws.
+   */
+  hearing?: import('../perception/heard-muffled-event.ts').HearingTransport;
   log: (line: string) => void;
   /**
    * Where the hurt line goes: one JSON line per hurt, written as its own line (not wrapped in `log`'s
@@ -146,6 +152,14 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
       .publish(`geldar.${config.shard}.heard_sound`, JSON.stringify(event), event.source_event_id)
       .catch((error: unknown) => log(`heard sound not published: ${String(error)}`));
   });
+  // Muffled notices (MH-4, decision 0199): received on the hearing subject and kept until the next snapshot takes
+  // them. A notice never wakes the Mind (step 7), so nothing here touches the wake path. Empty without a connection.
+  const hearing = watchHeardMuffled({
+    transport: env.hearing,
+    shard: config.shard,
+    lifeId: config.lifeId,
+    log,
+  });
   // Listens before the awaited restart, so a bot that ends during the start is seen.
   let gone = false;
   let end: (reason: string) => void = () => undefined;
@@ -161,6 +175,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
   const onEnd = (reason?: string): void => {
     gone = true;
     stopSounds();
+    hearing.stop();
     bot.off('time', onTime);
     end(`bot ended: ${reason ?? 'unknown'}`);
   };
