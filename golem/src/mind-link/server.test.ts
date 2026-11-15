@@ -9,7 +9,7 @@ import {
 } from '@geldar/contract';
 import { describe, expect, it } from 'vitest';
 import type { EventPublisher } from '../body/records-nats.ts';
-import { HeardMuffledInbox } from '../perception/heard-muffled-event.ts';
+import { HeardMuffledInbox, MUFFLED_WINDOW_MS } from '../perception/heard-muffled-event.ts';
 import type { SnapshotOptions } from '../snapshot.ts';
 import { SnapshotRevision } from './revision.ts';
 import { FakeEars, FakePerception, FakeVoice } from './senses.fakes.ts';
@@ -72,7 +72,7 @@ function rig(tick = 10, build: typeof snapshotFrom = snapshotFrom) {
   return { transport, executor, voice, ears, publisher, revision, logs, server, snapshot, plan };
 }
 
-describe('the muffled notices of a snapshot (MH-4): peeked, acked only after the reply', () => {
+describe('the muffled notices of a snapshot (MH-4): read, never consumed, shown for the window', () => {
   const muffledNotice = (direction: string, band: string) => ({
     kind: 'heard_muffled',
     direction,
@@ -104,6 +104,7 @@ describe('the muffled notices of a snapshot (MH-4): peeked, acked only after the
     requests: RequestServer,
     muffled: HeardMuffledInbox,
     build: (options: SnapshotOptions) => Snapshot,
+    ears: FakeEars = new FakeEars(),
   ): void {
     const server = new MindLinkServer({
       shard: SHARD,
@@ -113,7 +114,7 @@ describe('the muffled notices of a snapshot (MH-4): peeked, acked only after the
       server: requests,
       executor: new StubExecutor(),
       perception: new FakePerception(),
-      ears: new FakeEars(),
+      ears,
       voice: new FakeVoice(),
       buildSnapshot: build,
       tick: () => 10,
@@ -131,7 +132,7 @@ describe('the muffled notices of a snapshot (MH-4): peeked, acked only after the
     return inbox;
   }
 
-  it('hands the notices to the builder nearest first, and clears them once the reply is written', async () => {
+  it('hands the notices to the builder nearest first, and leaves them in the inbox after the reply', async () => {
     const inbox = inboxWithTwo();
     const seen: SnapshotOptions[] = [];
     const { requests, call } = capturing();
@@ -141,18 +142,83 @@ describe('the muffled notices of a snapshot (MH-4): peeked, acked only after the
     });
     await call(request, () => undefined);
     expect(seen[0]?.muffled).toEqual([muffledNotice('n', 'near'), muffledNotice('e', 'far')]);
-    expect(inbox.peek().notices).toEqual([]);
+    expect(inbox.peek()).toEqual([muffledNotice('n', 'near'), muffledNotice('e', 'far')]);
   });
 
-  it('keeps the notices until the reply is written', async () => {
+  it('keeps the notices while the reply is written', async () => {
     const inbox = inboxWithTwo();
     const { requests, call } = capturing();
     serveWith(requests, inbox, snapshotFrom);
     let stillThere = -1;
     await call(request, () => {
-      stillThere = inbox.peek().notices.length;
+      stillThere = inbox.peek().length;
     });
     expect(stillThere).toBe(2);
+  });
+
+  it('a notice survives a successful reply, shows in a second request within the window, and is gone after it', async () => {
+    let now = 0;
+    const inbox = new HeardMuffledInbox({ now: () => now });
+    inbox.receive(muffledNotice('n', 'near'));
+    const seen: SnapshotOptions[] = [];
+    const { requests, call } = capturing();
+    serveWith(requests, inbox, (options) => {
+      seen.push(options);
+      return snapshotFrom(options);
+    });
+    await call(request, () => undefined);
+    now = MUFFLED_WINDOW_MS;
+    await call(request, () => undefined);
+    now = MUFFLED_WINDOW_MS + 1;
+    await call(request, () => undefined);
+    expect(seen.map((options) => options.muffled)).toEqual([
+      [muffledNotice('n', 'near')],
+      [muffledNotice('n', 'near')],
+      [],
+    ]);
+  });
+
+  it('a notice survives a failed reply and shows in the next request within the window', async () => {
+    let now = 0;
+    const inbox = new HeardMuffledInbox({ now: () => now });
+    inbox.receive(muffledNotice('e', 'mid'));
+    const seen: SnapshotOptions[] = [];
+    const { requests, call } = capturing();
+    serveWith(requests, inbox, (options) => {
+      seen.push(options);
+      return snapshotFrom(options);
+    });
+    expect(() =>
+      call(request, () => {
+        throw new Error('connection closed');
+      }),
+    ).toThrow('connection closed');
+    now = 5_000;
+    await call(request, () => undefined);
+    expect(seen.map((options) => options.muffled)).toEqual([
+      [muffledNotice('e', 'mid')],
+      [muffledNotice('e', 'mid')],
+    ]);
+  });
+
+  it('a notice never wakes the Mind: it adds no event to the queue, and the snapshot carries none', async () => {
+    const inbox = inboxWithTwo();
+    const ears = new FakeEars();
+    const seen: SnapshotOptions[] = [];
+    const { requests, call } = capturing();
+    serveWith(
+      requests,
+      inbox,
+      (options) => {
+        seen.push(options);
+        return snapshotFrom(options);
+      },
+      ears,
+    );
+    await call(request, () => undefined);
+    expect(seen[0]?.muffled).toHaveLength(2);
+    expect(seen[0]?.events).toEqual([]);
+    expect(ears.peekEvents()).toEqual([]);
   });
 
   it('keeps the notices when the reply cannot be sent', () => {
@@ -164,7 +230,7 @@ describe('the muffled notices of a snapshot (MH-4): peeked, acked only after the
         throw new Error('connection closed');
       }),
     ).toThrow('connection closed');
-    expect(inbox.peek().notices).toHaveLength(2);
+    expect(inbox.peek()).toHaveLength(2);
   });
 
   it('keeps the notices when the snapshot cannot be built', async () => {
@@ -174,7 +240,7 @@ describe('the muffled notices of a snapshot (MH-4): peeked, acked only after the
       throw new Error('bot gone');
     });
     await call(request, () => undefined);
-    expect(inbox.peek().notices).toHaveLength(2);
+    expect(inbox.peek()).toHaveLength(2);
   });
 });
 

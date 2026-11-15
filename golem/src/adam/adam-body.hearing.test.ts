@@ -2,10 +2,24 @@ import { EventEmitter } from 'node:events';
 import type { Bot } from 'mineflayer';
 import { describe, expect, it, vi } from 'vitest';
 import type { RestartBodyOptions, RestartedBody } from '../body/restart.ts';
-import type { RequestServer } from '../mind-link/server.ts';
+import type { MindLinkServerOptions, RequestServer } from '../mind-link/server.ts';
 import type { HearingTransport } from '../perception/heard-muffled-event.ts';
 import { type AdamBodyEnv, startAdamBody } from './adam-body.ts';
 import { parseAdamConfig } from './adam-config.ts';
+
+/** The options each MindLinkServer was made with, so a test can read the muffled inbox the Body wired in. */
+const captured = vi.hoisted(() => ({ options: [] as MindLinkServerOptions[] }));
+
+vi.mock('../mind-link/server.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../mind-link/server.ts')>();
+  class CapturingServer extends actual.MindLinkServer {
+    constructor(options: MindLinkServerOptions) {
+      super(options);
+      captured.options.push(options);
+    }
+  }
+  return { ...actual, MindLinkServer: CapturingServer };
+});
 
 const SHARD = {
   shard: 'phase0',
@@ -26,17 +40,21 @@ function fakeBot(): Bot {
   return bot as unknown as Bot;
 }
 
-/** A hearing transport that counts its subscribes and the unsubscribes of what it handed out. */
+/** A hearing transport that counts its subscribes and the unsubscribes of what it handed out; `deliver` sends a message. */
 function fakeHearing(): {
   counts: { subscribes: number; unsubscribes: number };
   hearing: HearingTransport;
+  deliver: (data: Uint8Array) => void;
 } {
   const counts = { subscribes: 0, unsubscribes: 0 };
+  let callback: ((err: unknown, msg: { data: Uint8Array }) => void) | undefined;
   return {
     counts,
+    deliver: (data) => callback?.(null, { data }),
     hearing: {
-      subscribe() {
+      subscribe(_subject, opts) {
         counts.subscribes += 1;
+        callback = opts.callback;
         return {
           unsubscribe() {
             counts.unsubscribes += 1;
@@ -149,5 +167,22 @@ describe('the hearing subscription of a Body (MH-4): one unsubscribe per start, 
     await expect(startAdamBody(env, bot)).rejects.toThrow('nats unavailable');
     expect(h.counts).toEqual({ subscribes: 1, unsubscribes: 1 });
     expect(quit).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the muffled notices reach the Mind link (MH-4)', () => {
+  it('passes the hearing inbox as the muffled option, and a notice on the hearing subject is in it', async () => {
+    const h = fakeHearing();
+    const running = await startAdamBody(envWith(h.hearing), fakeBot());
+    h.deliver(
+      new TextEncoder().encode(
+        JSON.stringify({ kind: 'heard_muffled', direction: 'n', band: 'near' }),
+      ),
+    );
+    const options = captured.options.at(-1);
+    expect(options?.muffled?.peek()).toEqual([
+      { kind: 'heard_muffled', direction: 'n', band: 'near' },
+    ]);
+    await running.stop();
   });
 });

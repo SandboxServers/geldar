@@ -21,8 +21,8 @@ export interface SnapshotOptions {
   daysSinceSleep?: number;
   heard?: Snapshot['heard'];
   /**
-   * Muffled notices heard through a wall since the last snapshot (MH-4). Collapsed by direction and capped by
-   * `selectMuffledNotices`; `heard_muffled` is left out when none remain.
+   * Muffled notices heard through a wall within their window (MH-4): every snapshot shows them until the window
+   * ends. Collapsed by direction and capped by `selectMuffledNotices`; `heard_muffled` is left out when none remain.
    */
   muffled?: readonly { direction: string; band: string }[];
   events?: Snapshot['events_since_last_thought'];

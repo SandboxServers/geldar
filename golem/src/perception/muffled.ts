@@ -58,6 +58,7 @@ export function selectMuffledNotices(
     .slice(0, MUFFLED_NOTICE_CAP)
     .map(([direction, band]) => ({
       direction: direction as MuffledNotice['direction'],
-      band: (BAND_ORDER[band] ?? 'far') as MuffledNotice['band'],
+      // `band` is a valid index: the filter above skips every other band.
+      band: BAND_ORDER[band] as MuffledNotice['band'],
     }));
 }

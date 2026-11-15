@@ -152,8 +152,9 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
       .publish(`geldar.${config.shard}.heard_sound`, JSON.stringify(event), event.source_event_id)
       .catch((error: unknown) => log(`heard sound not published: ${String(error)}`));
   });
-  // Muffled notices (MH-4, decision 0199): received on the hearing subject and kept until the next snapshot takes
-  // them. A notice never wakes the Mind (step 7), so nothing here touches the wake path. Empty without a connection.
+  // Muffled notices (MH-4, decision 0199): received on the hearing subject and shown in every snapshot for their
+  // window (`MUFFLED_WINDOW_MS`). A notice never wakes the Mind (step 7), so nothing here touches the wake path.
+  // Empty without a connection.
   const hearing = watchHeardMuffled({
     transport: env.hearing,
     shard: config.shard,

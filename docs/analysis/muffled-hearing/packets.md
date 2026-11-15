@@ -102,7 +102,10 @@ This card REWRITES 0198's acceptance tests to gate on effective distance instead
 - **depends-on:** MH-3 merged
 - **owner:** geldar-ops (golem Body)
 - **size:** M
-- **files:** `golem/src/perception/heard-muffled-event.ts` (new, parallel to `heard-sound-event.ts`); `golem/src/perception/heard-muffled-event.test.ts`; `golem/src/perception/muffled.ts` (new; collapses notices by direction, at most three per snapshot); `golem/src/adam/adam-body.ts` (wiring only, the existing `heard_sound` path is not changed)
+- **files:** `golem/src/perception/heard-muffled-event.ts` (new, parallel to `heard-sound-event.ts`); `golem/src/perception/heard-muffled-event.test.ts`; `golem/src/perception/muffled.ts` (new; collapses notices by direction, at most three per snapshot); `golem/src/snapshot.ts` (the `heard_muffled` field); `golem/src/mind-link/server.ts` (peeks the inbox into the snapshot, never consumes it); `golem/src/mind-link/server.test.ts`; `golem/src/adam/adam-body.ts` (wiring only, the existing `heard_sound` path is not changed); `golem/src/adam/adam-body.hearing.test.ts`; `golem/src/adam/main.ts` and `golem/src/players/main.ts` (the Body wiring of the two runs)
+- **shape sent by the golem:** the snapshot's `heard_muffled` carries only `{direction, band}` per notice; no `kind`, coordinates, speaker or words.
+- **lifetime:** a notice uses a 20 s window (`MUFFLED_WINDOW_MS`), not a drain. Every snapshot (act, sleep, status, wait probes, look) shows it until the window ends, so a call that never shows it does not consume it. A same-direction arrival at an equal or farther band does not restart the window; a nearer one does.
+- **wording moved:** the sentence for a notice is made in threshold/mcp from `heardMuffledSentence` (MH-5 and MH-6 carry the wording items), not in golem.
 - **prove-it:**
   - a snapshot with five notices in one direction shows one line with the band of the nearest
   - a snapshot never contains a coordinate, a speaker name or a word (scan test over the rendered text)

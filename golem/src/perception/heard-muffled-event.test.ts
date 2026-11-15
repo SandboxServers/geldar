@@ -1,6 +1,7 @@
 import { hearingSubject } from '@geldar/contract';
 import { describe, expect, it } from 'vitest';
-import { HeardMuffledInbox, NOTICE_TTL_MS, watchHeardMuffled } from './heard-muffled-event.ts';
+import { HeardMuffledInbox, MUFFLED_WINDOW_MS, watchHeardMuffled } from './heard-muffled-event.ts';
+import { selectMuffledNotices } from './muffled.ts';
 
 const NOTICE = { kind: 'heard_muffled', direction: 'n', band: 'near' } as const;
 const notice = (direction: string, band: string) => ({ kind: 'heard_muffled', direction, band });
@@ -9,7 +10,7 @@ const LIFE = 'ag_ada_01';
 
 const bytes = (text: string): Uint8Array => new TextEncoder().encode(text);
 
-/** A transport the test drives by hand: `deliver` calls the callback the Body subscribed with. */
+/** A transport the test drives by hand: `deliver` and `fail` call the callback the Body subscribed with. */
 function fakeTransport(options: { throwOnSubscribe?: boolean } = {}) {
   const subjects: string[] = [];
   let callback: ((err: unknown, msg: { data: Uint8Array }) => void) | undefined;
@@ -37,20 +38,25 @@ function fakeTransport(options: { throwOnSubscribe?: boolean } = {}) {
     deliver(data: Uint8Array) {
       callback?.(null, { data });
     },
+    fail(err: unknown) {
+      callback?.(err, { data: new Uint8Array() });
+    },
   };
 }
 
 describe('HeardMuffledInbox', () => {
-  it('keeps a valid notice and clears it on take, so it renders in one snapshot only', () => {
-    const inbox = new HeardMuffledInbox();
+  it('keeps a valid notice and shows it again on every peek until its window ends', () => {
+    let now = 0;
+    const inbox = new HeardMuffledInbox({ now: () => now });
     expect(inbox.receive(NOTICE)).toBe(true);
-    expect(inbox.take()).toEqual([NOTICE]);
-    expect(inbox.take()).toEqual([]);
+    expect(inbox.peek()).toEqual([NOTICE]);
+    now = 1_000;
+    expect(inbox.peek()).toEqual([NOTICE]);
   });
 
   it('renders nothing and does not throw when no notice ever arrived', () => {
     const inbox = new HeardMuffledInbox();
-    expect(inbox.take()).toEqual([]);
+    expect(inbox.peek()).toEqual([]);
     expect(inbox.refusedCount).toBe(0);
   });
 
@@ -62,7 +68,7 @@ describe('HeardMuffledInbox', () => {
     expect(inbox.receive({ ...NOTICE, speaker: 'Ada' })).toBe(false);
     expect(inbox.receive({ ...NOTICE, words: 'meet me' })).toBe(false);
     expect(inbox.refusedCount).toBe(5);
-    expect(inbox.take()).toEqual([]);
+    expect(inbox.peek()).toEqual([]);
   });
 
   it('refuses bytes that are not JSON without throwing', () => {
@@ -75,8 +81,7 @@ describe('HeardMuffledInbox', () => {
     const inbox = new HeardMuffledInbox({ now: () => 0 });
     for (let i = 0; i < 64; i += 1) expect(inbox.receive(notice('n', 'far'))).toBe(true);
     expect(inbox.receive(notice('e', 'near'))).toBe(true);
-    const taken = inbox.take();
-    expect(taken).toEqual([notice('e', 'near'), notice('n', 'far')]);
+    expect(inbox.peek()).toEqual([notice('e', 'near'), notice('n', 'far')]);
   });
 
   it('keeps one entry per direction, at its nearest band, however many notices arrive', () => {
@@ -84,55 +89,82 @@ describe('HeardMuffledInbox', () => {
     inbox.receive(notice('n', 'far'));
     inbox.receive(notice('n', 'mid'));
     inbox.receive(notice('n', 'far'));
-    expect(inbox.take()).toEqual([notice('n', 'mid')]);
+    expect(inbox.peek()).toEqual([notice('n', 'mid')]);
   });
 
-  it('renders a notice that is exactly 60 seconds old, and drops one older', () => {
+  it('orders all ten directions at near in direction order, and the snapshot cap keeps the first three', () => {
+    const inbox = new HeardMuffledInbox({ now: () => 0 });
+    for (const direction of ['below', 'overhead', 'nw', 'w', 'sw', 's', 'se', 'e', 'ne', 'n']) {
+      inbox.receive(notice(direction, 'near'));
+    }
+    const peeked = inbox.peek();
+    expect(peeked.map((n) => n.direction)).toEqual([
+      'n',
+      'ne',
+      'e',
+      'se',
+      's',
+      'sw',
+      'w',
+      'nw',
+      'overhead',
+      'below',
+    ]);
+    expect(selectMuffledNotices(peeked).map((n) => n.direction)).toEqual(['n', 'ne', 'e']);
+  });
+
+  it('shows a notice that is exactly at the window edge, and drops one a millisecond older', () => {
     let now = 0;
     const inbox = new HeardMuffledInbox({ now: () => now });
     inbox.receive(NOTICE);
-    now = NOTICE_TTL_MS;
-    expect(inbox.take()).toEqual([NOTICE]);
-    inbox.receive(NOTICE);
-    now = NOTICE_TTL_MS * 2 + 1;
-    expect(inbox.take()).toEqual([]);
+    now = MUFFLED_WINDOW_MS;
+    expect(inbox.peek()).toEqual([NOTICE]);
+    now = MUFFLED_WINDOW_MS + 1;
+    expect(inbox.peek()).toEqual([]);
     expect(inbox.staleCount).toBe(1);
+  });
+
+  it('an equal-band arrival in the same direction does not restart the clock', () => {
+    let now = 0;
+    const inbox = new HeardMuffledInbox({ now: () => now });
+    inbox.receive(NOTICE);
+    now = 15_000;
+    inbox.receive(NOTICE);
+    now = 20_000;
+    expect(inbox.peek()).toEqual([NOTICE]);
+    now = 21_000;
+    expect(inbox.peek()).toEqual([]);
+  });
+
+  it('a farther arrival in the same direction does not restart the clock either', () => {
+    let now = 0;
+    const inbox = new HeardMuffledInbox({ now: () => now });
+    inbox.receive(notice('n', 'mid'));
+    now = 15_000;
+    inbox.receive(notice('n', 'far'));
+    now = MUFFLED_WINDOW_MS + 1;
+    expect(inbox.peek()).toEqual([]);
+  });
+
+  it('a nearer arrival replaces the entry and restarts the clock', () => {
+    let now = 0;
+    const inbox = new HeardMuffledInbox({ now: () => now });
+    inbox.receive(notice('n', 'mid'));
+    now = 15_000;
+    inbox.receive(NOTICE);
+    now = 30_000;
+    expect(inbox.peek()).toEqual([NOTICE]);
+    now = 35_001;
+    expect(inbox.peek()).toEqual([]);
   });
 
   it('a stale near entry does not hide a fresh far notice in the same direction', () => {
     let now = 0;
     const inbox = new HeardMuffledInbox({ now: () => now });
     inbox.receive(notice('n', 'near'));
-    now = NOTICE_TTL_MS + 1;
+    now = MUFFLED_WINDOW_MS + 1;
     inbox.receive(notice('n', 'far'));
-    expect(inbox.take()).toEqual([notice('n', 'far')]);
-  });
-
-  it('take clears the inbox', () => {
-    const inbox = new HeardMuffledInbox({ now: () => 0 });
-    inbox.receive(NOTICE);
-    expect(inbox.take()).toEqual([NOTICE]);
-    expect(inbox.take()).toEqual([]);
-  });
-
-  it('peek returns the notices without clearing them, and ack clears exactly those', () => {
-    const inbox = new HeardMuffledInbox({ now: () => 0 });
-    inbox.receive(NOTICE);
-    const peeked = inbox.peek();
-    expect(peeked.notices).toEqual([NOTICE]);
-    expect(inbox.peek().notices).toEqual([NOTICE]);
-    peeked.ack();
-    expect(inbox.take()).toEqual([]);
-  });
-
-  it('a notice that arrives between peek and ack survives the ack, in the same direction or another', () => {
-    const inbox = new HeardMuffledInbox({ now: () => 0 });
-    inbox.receive(notice('n', 'mid'));
-    const peeked = inbox.peek();
-    inbox.receive(notice('n', 'near'));
-    inbox.receive(notice('e', 'far'));
-    peeked.ack();
-    expect(inbox.take()).toEqual([notice('n', 'near'), notice('e', 'far')]);
+    expect(inbox.peek()).toEqual([notice('n', 'far')]);
   });
 
   it('writes at most one drop line a minute, with running counts and no payload content', () => {
@@ -148,7 +180,7 @@ describe('HeardMuffledInbox', () => {
     inbox.receive({ ...NOTICE, x: 10 });
     expect(lines).toHaveLength(1);
     now = 120_001;
-    expect(inbox.take()).toEqual([]);
+    expect(inbox.peek()).toEqual([]);
     expect(lines).toHaveLength(2);
     expect(lines[1]).toContain('refused 3');
     expect(lines[1]).toContain('stale 1');
@@ -167,7 +199,7 @@ describe('watchHeardMuffled', () => {
     });
     expect(fake.subjects).toEqual([hearingSubject(SHARD, LIFE)]);
     fake.deliver(bytes(JSON.stringify(NOTICE)));
-    expect(watch.inbox.take()).toEqual([NOTICE]);
+    expect(watch.inbox.peek()).toEqual([NOTICE]);
   });
 
   it('logs a refused message as a line with no payload content', () => {
@@ -180,8 +212,34 @@ describe('watchHeardMuffled', () => {
       log: (line) => lines.push(line),
     });
     fake.deliver(bytes(JSON.stringify({ ...NOTICE, speaker: 'Ada' })));
-    expect(watch.inbox.take()).toEqual([]);
+    expect(watch.inbox.peek()).toEqual([]);
     expect(lines).toHaveLength(1);
+    expect(lines.join(' ')).not.toContain('Ada');
+  });
+
+  it('logs a subscription error through the drop limiter: one line a minute, shared with the drops', () => {
+    let now = 0;
+    const fake = fakeTransport();
+    const lines: string[] = [];
+    watchHeardMuffled({
+      transport: fake.transport,
+      shard: SHARD,
+      lifeId: LIFE,
+      log: (line) => lines.push(line),
+      now: () => now,
+    });
+    fake.fail(new Error('connection lost'));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('subscription error');
+    expect(lines[0]).toContain('connection lost');
+    fake.deliver(bytes(JSON.stringify({ ...NOTICE, speaker: 'Ada' })));
+    now = 1_000;
+    fake.fail(new Error('connection lost'));
+    expect(lines).toHaveLength(1);
+    now = 60_000;
+    fake.fail(new Error('connection lost'));
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toContain('refused 1');
     expect(lines.join(' ')).not.toContain('Ada');
   });
 
@@ -193,7 +251,7 @@ describe('watchHeardMuffled', () => {
       lifeId: LIFE,
       log: (l) => lines.push(l),
     });
-    expect(watch.inbox.take()).toEqual([]);
+    expect(watch.inbox.peek()).toEqual([]);
     expect(() => watch.stop()).not.toThrow();
     expect(lines).toEqual([]);
   });
@@ -210,7 +268,7 @@ describe('watchHeardMuffled', () => {
         log: (l) => lines.push(l),
       });
     }).not.toThrow();
-    expect(watch?.inbox.take()).toEqual([]);
+    expect(watch?.inbox.peek()).toEqual([]);
     expect(lines).toHaveLength(1);
     expect(() => watch?.stop()).not.toThrow();
   });
@@ -226,7 +284,7 @@ describe('watchHeardMuffled', () => {
     watch.stop();
     watch.stop();
     fake.deliver(bytes(JSON.stringify(NOTICE)));
-    expect(watch.inbox.take()).toEqual([]);
+    expect(watch.inbox.peek()).toEqual([]);
     expect(fake.unsubscribes).toBe(1);
   });
 });

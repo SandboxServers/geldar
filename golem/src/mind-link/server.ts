@@ -116,7 +116,7 @@ export interface MindLinkServerOptions {
   publisher: EventPublisher;
   budgetRemainingThoughts?: () => number;
   daysSinceSleep?: () => number;
-  /** The muffled notices (MH-4) a snapshot takes. Absent: the snapshot carries no `heard_muffled`. */
+  /** The muffled notices (MH-4) a snapshot shows: read, never consumed; each stays for its window. Absent: none. */
   muffled?: HeardMuffledInbox;
   now?: () => Date;
   log?: (line: string) => void;
@@ -198,8 +198,8 @@ export class MindLinkServer {
     const revision = this.opts.revision.next();
     // Peeked, not drained: the events leave the queue only once the snapshot has been sent.
     const events = this.opts.ears.peekEvents();
-    // Peeked too (MH-4): the notices leave the inbox only once the reply has been written.
-    const muffled = this.opts.muffled?.peek();
+    // Peeked too (MH-4): a notice stays visible until its window ends, so no snapshot consumes it.
+    const muffled = this.opts.muffled?.peek() ?? [];
     let snapshot: Snapshot;
     try {
       snapshot = this.opts.buildSnapshot({
@@ -212,7 +212,7 @@ export class MindLinkServer {
           : {}),
         ...(this.opts.daysSinceSleep ? { daysSinceSleep: this.opts.daysSinceSleep() } : {}),
         heard: this.opts.ears.heard(),
-        muffled: muffled?.notices ?? [],
+        muffled,
         events,
         surroundings: this.opts.perception.surroundings(),
         unlockedRecipes: this.opts.perception.unlockedRecipes(),
@@ -229,7 +229,6 @@ export class MindLinkServer {
     }
     reply(JSON.stringify(snapshot));
     this.opts.ears.ackEvents(events.length);
-    muffled?.ack();
   }
 
   /** What the agent is doing now: the running intent, whether a plan started it or a restart resumed it. */
