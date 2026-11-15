@@ -14,6 +14,13 @@ describe('leakHits', () => {
     expect(leakHits('tick 13, ratio 3.5, id x3y', [3])).toEqual([]);
   });
 
+  it('counts a number that ends a sentence, and not 3d20, 3.5 or x3', () => {
+    expect(leakHits('I scored a 3.', [3])).toEqual(['number:3']);
+    expect(leakHits('3d20', [3])).toEqual([]);
+    expect(leakHits('3.5', [3])).toEqual([]);
+    expect(leakHits('x3', [3])).toEqual([]);
+  });
+
   it('finds the words sheet, roll and experiment at a word start, in any case', () => {
     expect(leakHits('Character Sheet', [1])).toEqual(['word:sheet']);
     expect(leakHits('he ROLLED twice', [1])).toEqual(['word:roll']);

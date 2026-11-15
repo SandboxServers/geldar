@@ -19,13 +19,14 @@ function checkedNumbers(sheetNumbers: readonly number[]): number[] {
 }
 
 /**
- * The hits in `text`, as `number:<n>` and `word:<w>` labels, in a fixed order. Empty when clean. The
- * number match needs a non-word, non-dot character on each side, so `13` and `3.5` do not count for `3`.
+ * The hits in `text`, as `number:<n>` and `word:<w>` labels, in a fixed order. Empty when clean. A number
+ * before it must not be a word character or a dot, and after it must not be a word character or a dot
+ * followed by a digit. So `13`, `x3`, `3d20` and `3.5` do not count for `3`, but `I scored a 3.` does.
  */
 export function leakHits(text: string, sheetNumbers: readonly number[]): string[] {
   const hits: string[] = [];
   for (const n of checkedNumbers(sheetNumbers)) {
-    if (new RegExp(`(?<![\\w.])${n}(?![\\w.])`).test(text)) hits.push(`number:${n}`);
+    if (new RegExp(`(?<![\\w.])(?<!\\d\\.)${n}(?!\\w|\\.\\d)`).test(text)) hits.push(`number:${n}`);
   }
   for (const word of LEAK_WORDS) {
     if (new RegExp(`\\b${word}`, 'i').test(text)) hits.push(`word:${word}`);

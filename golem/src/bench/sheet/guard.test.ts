@@ -27,4 +27,14 @@ describe('checkScratch', () => {
     expect(checkScratch('scratch-a/../b', 'scratch-x').ok).toBe(false);
     expect(checkScratch('scratch-X', 'scratch-x').ok).toBe(false);
   });
+
+  it('accepts a whole name of 32 characters and refuses 33, for the shard and the project', () => {
+    const at32 = `scratch-${'a'.repeat(24)}`;
+    const at33 = `scratch-${'a'.repeat(25)}`;
+    expect(at32.length).toBe(32);
+    expect(at33.length).toBe(33);
+    expect(checkScratch(at32, at32).ok).toBe(true);
+    expect(checkScratch(at33, 'scratch-x').ok).toBe(false);
+    expect(checkScratch('scratch-x', at33).ok).toBe(false);
+  });
 });
