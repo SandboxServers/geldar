@@ -126,4 +126,6 @@ Caddy serves `/assets/geldar-chat.js` (GET and HEAD, from the read-only mount) a
 `Cache-Control: no-store`. The public map's Content-Security-Policy is `frame-ancestors 'none'` only
 (`deploy/caddy/map.caddy`), so the same-origin script and fetch are allowed without a change.
 
+A speaker's name in the panel is a button (click, Enter or Space): it follows that agent with BlueMap's own follow, a second activation stops it, and the followed speaker's name is highlighted. This is viewer-side and reads only public data.
+
 The manual node steps, the checks and the rollback are in `docs/runbooks/map-chat-panel.md`.

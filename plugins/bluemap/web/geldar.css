@@ -69,4 +69,25 @@
 }
 #geldar-chat .gc-name {
   font-weight: 600;
+  cursor: pointer;
+  border-radius: 2px;
+}
+#geldar-chat .gc-name:hover,
+#geldar-chat .gc-name:focus-visible {
+  text-decoration: underline;
+}
+#geldar-chat .gc-name:focus-visible {
+  outline: 2px solid #ffd54a;
+  outline-offset: 2px;
+}
+#geldar-chat .gc-name.gc-following {
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.14);
+  outline: 1px solid #ffd54a;
+  outline-offset: 1px;
+}
+#geldar-chat .gc-note {
+  color: #ffd54a;
+  font-weight: 400;
+  margin-left: 8px;
 }
