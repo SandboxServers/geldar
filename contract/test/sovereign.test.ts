@@ -43,6 +43,15 @@ describe('sovereign call event payload', () => {
     expect(validateSovereignCallPayload({ ...call, outcome: 'maybe' }).ok).toBe(false);
   });
 
+  it('accepts each source value and refuses an unknown one; source is optional', () => {
+    expect(validateSovereignCallPayload(call).ok).toBe(true);
+    for (const source of ['model', 'instinct', 'operator']) {
+      expect(validateSovereignCallPayload({ ...call, source }).ok).toBe(true);
+    }
+    expect(validateSovereignCallPayload({ ...call, source: 'robot' }).ok).toBe(false);
+    expect(validateSovereignCallPayload({ ...call, source: 'Instinct' }).ok).toBe(false);
+  });
+
   it('carries a journal length and hash, never the journal text', () => {
     const withJournal = { ...call, journal_chars: 5, journal_sha256: '9e6651cf50e512da' };
     expect(validateSovereignCallPayload(withJournal).ok).toBe(true);

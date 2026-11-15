@@ -44,7 +44,13 @@ export interface Refusal {
 export interface MockHttpOptions {
   tokens: TokenTable;
   /** Builds the MCP server for one new session. `signal` aborts when the session ends or is superseded. */
-  createSession: (playerId: string, signal: AbortSignal) => McpServer;
+  createSession: (
+    playerId: string,
+    signal: AbortSignal,
+    ctx?: { source: 'model' | 'instinct' },
+  ) => McpServer;
+  /** The class of a connection, read once it is authenticated (GX-06). Default: every connection is a model one. */
+  connectionSource?: (req: IncomingMessage) => 'model' | 'instinct';
   /** One call per request outcome. Default: a JSON line on stderr. */
   log?: (line: Record<string, unknown>) => void;
   /** Replaces the bearer check of `tokens`. Runs after the Host and Origin checks, before the body is read. */
@@ -236,7 +242,9 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
     res: ServerResponse,
     body: unknown,
   ): Promise<void> {
-    const turn = (starting.get(playerId) ?? Promise.resolve()).then(() => prepareSession(playerId));
+    const turn = (starting.get(playerId) ?? Promise.resolve()).then(() =>
+      prepareSession(playerId, req),
+    );
     starting.set(
       playerId,
       turn.catch(() => undefined),
@@ -245,7 +253,7 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
     await dispatch(session, req, res, body);
   }
 
-  async function prepareSession(playerId: string): Promise<Session> {
+  async function prepareSession(playerId: string, req: IncomingMessage): Promise<Session> {
     if (closing) throw new Error('server is closing');
     const previous = byPlayer.get(playerId);
     if (previous !== undefined) {
@@ -261,7 +269,10 @@ export function createMockHttp(options: MockHttpOptions): MockHttp {
       inflight: 0,
       idle: undefined,
       ended: false,
-      mcp: options.createSession(playerId, controller.signal),
+      // Only startSession reaches here, after the bearer check, so the header is read on an authenticated connection.
+      mcp: options.createSession(playerId, controller.signal, {
+        source: options.connectionSource?.(req) ?? 'model',
+      }),
       transport: new StreamableHTTPServerTransport({
         sessionIdGenerator: randomUUID,
         onsessioninitialized: (id) => {

@@ -12,6 +12,8 @@ export interface ToolContext {
   signal: AbortSignal;
   /** The MCP session the call came in on: one id per session, never a token (world-session.ts). */
   session?: string | undefined;
+  /** Set only for an instinct connection (GX-06); a model connection leaves it unset. */
+  source?: 'instinct' | undefined;
 }
 
 /** One tool's behaviour: gets the validated input and the call context, returns the result (sync or async). Throw a `ToolError` for a failure the character should see. */

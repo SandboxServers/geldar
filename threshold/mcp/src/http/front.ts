@@ -15,6 +15,7 @@ import {
   trustedProxies,
   verifyBearer,
 } from './auth.ts';
+import { connectionSource } from './instinct-key.ts';
 import { FrontLimits } from './limits.ts';
 import { frontLog } from './log.ts';
 import { NegativeCache } from './negative-cache.ts';
@@ -31,8 +32,14 @@ export interface FrontDoorOptions {
   limiter: RateLimiter;
   /** One agent's fair share of the owner's calls a minute (`ownerShare`). Default 0: no sibling reserve. */
   agentShare?: number;
-  /** Builds the MCP server for one new session. */
-  createSession: (playerId: string, signal: AbortSignal) => McpServer;
+  /** The instinct key, from its file by the caller (main.ts). Unset: no connection is an instinct one. Never logged. */
+  instinctKey?: Buffer | undefined;
+  /** Builds the MCP server for one new session; `ctx.source` is the connection's class (GX-06). */
+  createSession: (
+    playerId: string,
+    signal: AbortSignal,
+    ctx?: { source: 'model' | 'instinct' },
+  ) => McpServer;
   /** Receives each log line after `frontLog` has cut it to safe fields. Default: JSON on stderr. */
   log?: (line: Record<string, string | number>) => void;
   /** Clock in milliseconds. Default Date.now. */
@@ -186,6 +193,8 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
     // The token store checks bearers; the mock's own table is not used on this path.
     tokens: new Map(),
     createSession: options.createSession,
+    // Read only for an authenticated connection: the session is made after `authenticate` has passed it.
+    connectionSource: (req) => connectionSource(req, options.instinctKey),
     log: frontLog(options.log ?? stderrSink),
     maxBodyBytes: options.http.maxBodyBytes ?? BODY_LIMIT_BYTES,
     limits: {

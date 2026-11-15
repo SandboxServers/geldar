@@ -45,6 +45,8 @@ export class ActToolError extends Error {
 export interface Caller {
   playerId: string;
   lifeId: string;
+  /** Set only for an instinct connection (GX-06). Absent means model; never from tool input. */
+  source?: 'instinct';
 }
 
 /** Everything `act` needs from the outside. */
@@ -422,5 +424,6 @@ function callPayload(
     ...(thoughtId === undefined ? {} : { thought_id: thoughtId }),
     ...(input.reasoning === undefined ? {} : { reasoning: input.reasoning }),
     ...(typeof input.say === 'string' ? { say: input.say } : {}),
+    ...(caller.source === 'instinct' ? { source: 'instinct' } : {}),
   } as SovereignCallPayload;
 }

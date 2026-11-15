@@ -89,7 +89,10 @@ export function createWorldSession(
   deps: WorldSessionDeps,
   playerId: string,
   sessionSignal: AbortSignal,
+  // The connection's class (GX-06). Only an instinct connection carries `source` into the calls.
+  connection?: { source: 'model' | 'instinct' },
 ): McpServer {
+  const source = connection?.source === 'instinct' ? 'instinct' : undefined;
   // A random id per MCP session. It keys what `wait` remembers about what this session was sent; it
   // carries no token, life id or secret, and is never logged.
   const session = newSessionId();
@@ -114,7 +117,7 @@ export function createWorldSession(
         deps.tools,
         request.params.name,
         request.params.arguments,
-        { playerId, signal, session },
+        { playerId, signal, session, source },
         (m) => deps.log?.({ event: 'tool_log', player_id: playerId, cause: m }),
         PLAYER_FAULT,
         deps.maxResultBytes,

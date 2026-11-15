@@ -18,6 +18,7 @@ import {
   streamSubjects,
 } from './events/stream.ts';
 import { createFrontDoor, type FrontDoor, type FrontDoorOptions } from './http/front.ts';
+import { INSTINCT_KEY_MIN_BYTES, loadInstinctKey } from './http/instinct-key.ts';
 import { ownerShare } from './http/limits.ts';
 import { safeLogLine } from './http/log.ts';
 import { declareMcpMetrics, MetricRegistry, recordToolCall, startTelemetry } from './metrics.ts';
@@ -195,6 +196,29 @@ export function tokenBucketLimiter(ruleOf: (bucket: string) => BucketRule): Rate
   };
 }
 
+/**
+ * The instinct key from the file named by GELDAR_MCP_INSTINCT_KEY_FILE, read as the pepper is. Unset
+ * is no instinct class. A set variable whose file is unreadable, empty, short or unusable refuses
+ * start-up (fail closed, as the pepper does) with one constant line that names only the variable.
+ * The key and the file's text and path are never in the message.
+ */
+export async function instinctKeyOf(
+  path: string | undefined,
+  readSecret: (file: string) => Promise<string>,
+): Promise<Buffer | undefined> {
+  if (path === undefined) return undefined;
+  const refusal = `GELDAR_MCP_INSTINCT_KEY_FILE names a file that is unreadable, empty, under ${INSTINCT_KEY_MIN_BYTES} bytes or not printable ASCII; the server will not start`;
+  let text: string;
+  try {
+    text = await readSecret(path);
+  } catch {
+    throw new ConfigRejected(refusal);
+  }
+  const loaded = loadInstinctKey(text);
+  if (loaded.outcome === 'refused') throw new ConfigRejected(refusal);
+  return loaded.key;
+}
+
 /** The shortest HMAC pepper the server accepts; a shorter one is refused at startup. */
 export const PEPPER_MIN_BYTES = 32;
 
@@ -283,6 +307,9 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
     closers.push(async () => telemetry.stop());
     const password = postgresPassword(await ports.readSecret(config.postgres.passwordFile));
     const pepper = pepperBytes(await ports.readSecret(config.pepperFile));
+    const instinctKey = await instinctKeyOf(config.instinctKeyFile, (file) =>
+      ports.readSecret(file),
+    );
     const { host, port, database, user } = config.postgres;
     const pgOptions: PgOptions = { host, port, database, user, password };
     const pool = ports.openPool(pgOptions);
@@ -403,13 +430,15 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       http: config.http,
       public: config.public,
       pepper,
+      instinctKey,
       store: tokens,
       limiter,
       agentShare: ownerShare(
         config.sovereign.rateLimits.ownerCallsPerMinute,
         config.sovereign.ownerCapOwner,
       ),
-      createSession: (playerId, signal) => createWorldSession(sessionDeps, playerId, signal),
+      createSession: (playerId, signal, connection) =>
+        createWorldSession(sessionDeps, playerId, signal, connection),
       log: (line) => ports.log(line),
       now,
     });
