@@ -339,7 +339,7 @@ describe('proficiency state service: the authority and the refusals', () => {
   it('a store error answers unavailable and logs a reason only', async () => {
     const failing: StateStore = {
       read: async () => {
-        throw new Error('connection refused at 10.0.0.9');
+        throw new Error('connection refused at the state host');
       },
     };
     const lines: string[] = [];
