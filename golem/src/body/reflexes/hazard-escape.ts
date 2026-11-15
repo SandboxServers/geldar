@@ -10,8 +10,10 @@ import { findBreathingColumn, findLateralExit, type LateralExit } from './hazard
 export type { BlockReader, ScanBlock } from './hazard-escape-cells.ts';
 export { findBreathingColumn, findLateralExit, type LateralExit } from './hazard-escape-lateral.ts';
 
-/** Bubbles of air (of 20) at or below which water counts as drowning. */
-export const DROWNING_AIR = 8;
+/** Bubbles of air (of 20) at or below which water counts as drowning (decision 0337: 12, was 8). */
+export const DROWNING_START_AIR = 12;
+/** Bubbles of air above which a Body in water counts as out of harm (the exit line of the drowning run). */
+export const DROWNING_RECOVERED_AIR = 12;
 /** World ticks the reflex tries before it gives up (10 s at 20 TPS). */
 export const ESCAPE_LIMIT_TICKS = 200;
 /** How far the search for a safe block reaches, in blocks. */
@@ -238,6 +240,8 @@ export const swimUp: EscapeMover = async (walk) => {
 /** Settings a test may change. */
 export interface HazardEscapeOptions {
   limitTicks?: number;
+  /** Test-only: the air at or below which drowning starts. Production never passes it (DROWNING_START_AIR). */
+  drowningStartAir?: number;
   mover?: EscapeMover;
   /** Used first when the Body is drowning: it swims up until air returns or the head is out. */
   swimmer?: EscapeMover;
@@ -287,12 +291,13 @@ function traceLine(ctx: ReflexContext, phase: 'start' | 'end' | 'lateral', field
 
 /**
  * Leaves lava, fire or deep water: it fires while the Body is in lava, on fire outside water, or
- * in water with air at or below 8 bubbles, where it swims up first. It walks to the nearest safe block
- * (air back above 8 counts as out) and gives up after
+ * in water with air at or below 12 bubbles, where it swims up first. It walks to the nearest safe block
+ * (air back above 12 counts as out) and gives up after
  * 200 world ticks, raising a `reflex_danger` wake so the Mind hears of it.
  */
 export function createHazardEscapeReflex(options: HazardEscapeOptions = {}): Reflex {
   const limitTicks = options.limitTicks ?? ESCAPE_LIMIT_TICKS;
+  const startAir = options.drowningStartAir ?? DROWNING_START_AIR;
   const mover = options.mover ?? walkOutOfHazard;
   const swimmer = options.swimmer ?? swimUp;
   const diag = options.diag ?? DEFAULT_DIAG_SINK;
@@ -314,7 +319,7 @@ export function createHazardEscapeReflex(options: HazardEscapeOptions = {}): Ref
     check(view) {
       if ((view.tick ?? 0) < quietUntil) return null;
       if (view.inFluid === 'lava') return { hazard: 'lava' };
-      if (view.inFluid === 'water' && view.air <= DROWNING_AIR) {
+      if (view.inFluid === 'water' && view.air <= startAir) {
         return { hazard: 'drowning', air: view.air };
       }
       if (view.onFire && view.inFluid !== 'water') return { hazard: 'fire' };
@@ -344,7 +349,7 @@ export function createHazardEscapeReflex(options: HazardEscapeOptions = {}): Ref
       if (!target && !drowning) return giveUp(`no safe block within ${SCAN_RADIUS} blocks`);
       await ctx.cancelAction();
       // Air back above the threshold is out of harm, even while the Body is still in the water.
-      const recovered = (): boolean => drowning && view.air > DROWNING_AIR;
+      const recovered = (): boolean => drowning && view.air > DROWNING_RECOVERED_AIR;
       const landed = (): boolean => standing() || recovered();
       const walk = {
         bot,
@@ -386,6 +391,7 @@ export function createHazardEscapeReflex(options: HazardEscapeOptions = {}): Ref
           hazard: trigger.hazard,
           air_before: airBefore,
           mover,
+          threshold: trigger.hazard === 'drowning' ? startAir : null,
           ...surroundings(ctx.bot, ctx.view.position),
         }),
       );

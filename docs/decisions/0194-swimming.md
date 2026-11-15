@@ -9,15 +9,16 @@
 A `goto` may cross water on purpose. A surface swim is the cheap way across a lake (tier-1 `liquidCost` stays 3, so a dry route is still preferred). While the goto swims, a controller in `golem/src/actions/swim.ts` watches the Body's own air (`ownAir` from `body/air.ts`, decision body-air-own; never `bot.oxygenLevel`):
 
 - Air counts down only while the head cell (floor of the feet y plus 1.62) is liquid. A surface swim with the head in air loses nothing and the controller does nothing.
-- At air 12 or less with the head in liquid, the controller surfaces: it holds jump on every physics tick, as `swimUp` does. Twelve is above the reflex line of 8, so a normal swim does not trip the reflex.
+- At air 12 or less with the head in liquid, the controller surfaces: it holds jump on every physics tick, as `swimUp` does. Twelve is also the reflex line (amended by 0337: the reflex starts at DROWNING_START_AIR = 12, was 8), so a swim that reaches 12 is handed to the reflex.
 - With a solid block over the head, the controller steers toward a breathing column (`findBreathingColumn`, the same search as the reflex, exported and shared) instead of holding jump into the roof.
 - At air 10 or less, with no bank exit in reach, the controller stops the goto. The stop is a fact result (section d), not a retry.
 
 ## (b) Stop at 10, steer at 12, reflex unchanged at 8
 
 - The controller's thresholds are: steer (surface) at air 12, stop the goto at air 10.
-- `hazard_escape` is unchanged: it fires only at air 8 or less (`DROWNING_AIR`), with the same 40-tick quiet window and 200-tick give-up. It is the failsafe. The controller must not read the reflex's quiet window, and the reflex does not read the controller.
-- A swim at air 9 to 20 is not a reflex event; a swim that reaches air 8 is caught by the reflex, which cancels the goto as it does today.
+- `hazard_escape` fires at air 12 or less (`DROWNING_START_AIR`, amended by 0337; was 8 as `DROWNING_AIR`), with the same 40-tick quiet window and 200-tick give-up. It is the failsafe. The controller must not read the reflex's quiet window, and the reflex does not read the controller.
+- A swim at air 13 to 20 is not a reflex event; a swim that reaches air 12 is caught by the reflex, which cancels the goto as it does today.
+- Amended by 0337 (2026-11-15): the reflex starts at DROWNING_START_AIR = 12, not 8. The swim abort at 10 is dead while swim is off (the reflex fires first); the reflex at 12 is live. Lines 12, 19 and 20 above now read as amended.
 
 ## (c) Planned exits and the re-entry cooldown
 
@@ -80,3 +81,10 @@ The packet that implements this record does these steps in order. Each step is a
 - Both entries are additive allow-list changes, owner-approved via geldar-93 (2026-11-15). They ship in the contract PR phase1/swim-facts-contract, not in the phase1/swim-0194 commits.
 - The Body sends the text: `golem/src/body/executor-outcome.ts` reads a goto's note as its ok detail, and sends the swim stop text as the detail of an `interrupted` goto. Both are fixed text with the air value and no advice.
 - Until the contract PR is merged, the Body still sends the interrupted goto's text, because it is set before the `outcomeDetailText` gate, and the outcome handler keeps the detail of any failure. The ok note is held back by the handler's `PLAIN_FACT_VERBS` gate until the contract PR is merged.
+
+## Amendment 2026-11-15 (0337): the reflex starts at 12, not 8
+
+- Dated amendment; the text above is kept as written. Where it says the reflex is at 8, read 12: `DROWNING_START_AIR` = 12 (0337), the trigger, the "recovered" test (air above 12) and the `hazard_escape` run.
+- Test 7 of the plan reads: `check()` is null in water at air 13 to 20 and fires at air 12 or less. It is not "9 to 20" and "8 or less".
+- The threshold line of "Not in this record" (the reflex threshold, "(8)") and the threshold list of the cooldown amendment ("reflex at 8") now read 12 for the reflex. The quiet window (40 ticks) and the give-up (200 ticks) do not change.
+- The swim controller keeps its own hand-over line, `SWIM_HAND_OVER_AIR` = 8 (`golem/src/actions/swim.ts`). The swim abort at `ABORT_AIR` = 10 is dead while swim is off, because the reflex fires at 12 first.
