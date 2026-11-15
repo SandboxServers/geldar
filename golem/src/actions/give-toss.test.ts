@@ -442,8 +442,12 @@ describe('give: step-back candidates are standable blocks', () => {
       detail: {},
     });
     expect(toss).not.toHaveBeenCalled();
-    expect(log).toHaveBeenCalledOnce();
-    expect(JSON.parse(String(log.mock.calls[0]?.[0]))).toEqual({
+    // The give also writes its one give_failed line, so only the step-back line is counted here.
+    const stepback = log.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.includes('give_stepback_failed'));
+    expect(stepback).toHaveLength(1);
+    expect(JSON.parse(stepback[0] ?? '')).toEqual({
       event: 'give_stepback_failed',
       tried: 11,
       gap: 0.1,
