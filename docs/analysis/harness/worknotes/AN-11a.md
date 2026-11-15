@@ -118,3 +118,8 @@ Mutation D (refuse when full) passes the cap test on purpose: the map still neve
 - `have_version` from decision 0280 item 2 is not honoured: the reply is always full.
 - The commit subject differs from the card (`feat(character): proficiency state service in the sink` against the card's `feat(character): sink service for proficiency state requests`).
 - Live IT and the ops role checks are not run.
+## Superseded (AN-11c)
+
+The reply no longer carries `sheet` or `sheet_hash`. The sheet is operator-readable only (owner rule, settled by
+geldar-93). The exposure notes above that list the sheet in the state reply no longer hold. See AN-11c for the
+schema, service and cache changes.

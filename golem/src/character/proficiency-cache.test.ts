@@ -41,10 +41,8 @@ function levelMap(
   return out;
 }
 
-function stateBody(version: number, over: Partial<Record<Domain, Pair>> = {}, sheet?: unknown) {
-  const body: Record<string, unknown> = { life_id: LIFE, version, levels: levelMap(over) };
-  if (sheet !== undefined) body.sheet = sheet;
-  return JSON.stringify(body);
+function stateBody(version: number, over: Partial<Record<Domain, Pair>> = {}) {
+  return JSON.stringify({ life_id: LIFE, version, levels: levelMap(over) });
 }
 
 function pushBody(domain: Domain, level: number, xp: number, version: number): string {
@@ -119,8 +117,8 @@ afterEach(() => {
 });
 
 describe('ProficiencyCache', () => {
-  it('cold start: a reply sets levels, version and the adopted baseline', async () => {
-    transport.responder = () => Promise.resolve(stateBody(40, { combat: [1, 12] }, SHEET));
+  it('cold start: a reply sets levels and version', async () => {
+    transport.responder = () => Promise.resolve(stateBody(40, { combat: [1, 12] }));
     const c = make();
     await c.start();
     expect(transport.requests[0]?.subject).toBe(REQUEST);
@@ -130,30 +128,28 @@ describe('ProficiencyCache', () => {
     expect(c.level('combat')).toBe(1);
     expect(c.level('mining')).toBe(0);
     expect(c.degraded).toBe(false);
-    expect(c.baseline?.sheet).toEqual(SHEET);
-    expect(c.baseline?.hash).toMatch(/^[0-9a-f]{64}$/);
     expect(logs).toEqual([]);
   });
 
-  it('first adoption: a cold reply at version 0 with a sheet fills the baseline', async () => {
-    transport.responder = () => Promise.resolve(stateBody(0, { combat: [1, 12] }, SHEET));
+  it('first adoption: a cold reply at version 0 fills the cache', async () => {
+    transport.responder = () => Promise.resolve(stateBody(0, { combat: [1, 12] }));
     const c = make();
     await c.start();
     expect(c.version).toBe(0);
     expect(c.level('combat')).toBe(1);
-    expect(c.baseline?.sheet).toEqual(SHEET);
     expect(c.degraded).toBe(false);
   });
 
-  it('a reply sheet_hash is kept as sent, not recomputed', async () => {
-    const hash = 'a'.repeat(64);
-    transport.responder = () =>
-      Promise.resolve(
-        JSON.stringify({ ...JSON.parse(stateBody(40, {}, SHEET)), sheet_hash: hash }),
-      );
+  it('a reply that carries a sheet is refused: the cache keeps no sheet and no baseline', async () => {
+    const withSheet = JSON.parse(stateBody(40, { combat: [1, 12] }));
+    transport.responder = () => Promise.resolve(JSON.stringify({ ...withSheet, sheet: SHEET }));
     const c = make();
     await c.start();
-    expect(c.baseline?.hash).toBe(hash);
+    expect(c.version).toBe(0);
+    expect(c.level('combat')).toBe(0);
+    expect(c.degraded).toBe(true);
+    expect('baseline' in c).toBe(false);
+    expect(logs.some((l) => /invalid/.test(l))).toBe(true);
   });
 
   it('level() answers from memory before start, without blocking', () => {
@@ -161,7 +157,6 @@ describe('ProficiencyCache', () => {
     expect(c.level('combat')).toBe(0);
     expect(c.version).toBe(0);
     expect(c.degraded).toBe(true);
-    expect(c.baseline).toBeNull();
   });
 
   it('no responder: zeros, degraded, three attempts, then a retry after retryMs, logged once', async () => {
@@ -171,7 +166,6 @@ describe('ProficiencyCache', () => {
     expect(c.degraded).toBe(true);
     expect(c.level('combat')).toBe(0);
     expect(c.version).toBe(0);
-    expect(c.baseline).toBeNull();
     expect(logs).toHaveLength(1);
 
     await vi.advanceTimersByTimeAsync(14_999);
@@ -266,7 +260,7 @@ describe('ProficiencyCache', () => {
 
   it('a failed refresh keeps the previously validated state and records degraded', async () => {
     const c = make();
-    transport.responder = () => Promise.resolve(stateBody(40, { combat: [1, 12] }, SHEET));
+    transport.responder = () => Promise.resolve(stateBody(40, { combat: [1, 12] }));
     await c.start();
     transport.responder = REFUSED;
     await c.refresh();
@@ -274,7 +268,6 @@ describe('ProficiencyCache', () => {
     expect(c.degraded).toBe(true);
     expect(c.version).toBe(40);
     expect(c.level('combat')).toBe(1);
-    expect(c.baseline?.sheet).toEqual(SHEET);
   });
 
   it('an equal-version reply is adopted; an older reply is ignored; an equal push changes nothing', async () => {
@@ -294,17 +287,16 @@ describe('ProficiencyCache', () => {
     expect(c.level('mining')).toBe(0);
   });
 
-  it('an equal-version reply after a push at that version fills the baseline and the other domains', async () => {
+  it('an equal-version reply after a push at that version fills the other domains', async () => {
     transport.responder = () => {
       transport.emit(PUSH, pushBody('combat', 2, 33, 40));
-      return Promise.resolve(stateBody(40, { mining: [2, 35] }, SHEET));
+      return Promise.resolve(stateBody(40, { mining: [2, 35] }));
     };
     const c = make();
     await c.start();
     expect(c.version).toBe(40);
     expect(c.level('mining')).toBe(2);
     expect(c.level('combat')).toBe(0);
-    expect(c.baseline?.sheet).toEqual(SHEET);
     expect(c.degraded).toBe(false);
   });
 
@@ -320,7 +312,6 @@ describe('ProficiencyCache', () => {
     await c.start();
     expect(c.version).toBe(0);
     expect(c.level('combat')).toBe(0);
-    expect(c.baseline).toBeNull();
     expect(c.degraded).toBe(true);
     expect(logs.some((l) => /invalid/.test(l))).toBe(true);
     expect(logs.join('\n')).not.toMatch(/aggression|xp|combat/);

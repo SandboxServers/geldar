@@ -44,7 +44,7 @@ describe('proficiency state', () => {
     expect(validateProficiencyState(max()).ok).toBe(true);
   });
 
-  it('accepts a state that carries the adopted sheet and its hash', () => {
+  it('refuses a reply that carries the adopted sheet or its hash', () => {
     const sheet = {
       version: 1,
       attributes: { curiosity: 3, common_sense: 3, cleverness: 3, aggression: 3 },
@@ -59,8 +59,16 @@ describe('proficiency state', () => {
         nitwit: 3,
       },
     };
-    const withSheet = { ...mid(), sheet, sheet_hash: 'a'.repeat(64) };
-    expect(validateProficiencyState(withSheet).ok).toBe(true);
+    expect(validateProficiencyState({ ...mid(), sheet }).ok).toBe(false);
+    expect(validateProficiencyState({ ...mid(), sheet_hash: 'a'.repeat(64) }).ok).toBe(false);
+    expect(validateProficiencyState({ ...mid(), sheet, sheet_hash: 'a'.repeat(64) }).ok).toBe(
+      false,
+    );
+  });
+
+  it('pins the reply to life_id, version and levels only', () => {
+    expect(Object.keys(zero()).sort()).toEqual(['levels', 'life_id', 'version']);
+    expect(validateProficiencyState(zero()).ok).toBe(true);
   });
 
   it('refuses a level of 4', () => {
@@ -88,7 +96,7 @@ describe('proficiency state', () => {
     expect(validateProficiencyState(bad).ok).toBe(false);
   });
 
-  it('refuses an unknown domain and a sheet hash that is not 64 lower-case hex', () => {
+  it('refuses an unknown domain and a sheet hash of any shape', () => {
     const extra = { ...mid(), levels: { ...mid().levels, fishing: { level: 0, xp: 0 } } };
     expect(validateProficiencyState(extra).ok).toBe(false);
     expect(validateProficiencyState({ ...mid(), sheet_hash: 'A'.repeat(64) }).ok).toBe(false);

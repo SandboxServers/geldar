@@ -1,4 +1,4 @@
-import type { ProficiencyState } from '@geldar/contract';
+import { type ProficiencyState, validateProficiencyState } from '@geldar/contract';
 import { type Domain, levelForXp, STANDARD_SHEET } from '@geldar/psyche';
 import type { NatsConnection } from '@nats-io/transport-node';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -165,9 +165,10 @@ function levelsOf(xp: Partial<Record<Domain, number>>): ProficiencyState['levels
 function stored(
   life: string,
   xp: Partial<Record<Domain, number>>,
-  extra: Partial<ProficiencyState> = {},
+  // `extra` models columns a store row might carry beyond the state (a sheet): the service must not reply them.
+  extra: Record<string, unknown> = {},
 ): ProficiencyState {
-  return { life_id: life, version: 0, levels: levelsOf(xp), ...extra };
+  return { life_id: life, version: 0, levels: levelsOf(xp), ...extra } as ProficiencyState;
 }
 
 function fixture(rows: Map<string, ProficiencyState | null>): {
@@ -216,7 +217,7 @@ afterEach(() => {
 });
 
 describe('proficiency state service: the reply', () => {
-  it('replies with the life own levels, version and adopted sheet', async () => {
+  it('replies with the life own levels and version, never the sheet', async () => {
     const rows = new Map([
       [LIFE, stored(LIFE, { combat: 5, mining: 40 }, { sheet: STANDARD_SHEET, sheet_hash: HASH })],
     ]);
@@ -235,13 +236,12 @@ describe('proficiency state service: the reply', () => {
         exploring: ZERO,
         social: ZERO,
       },
-      sheet: STANDARD_SHEET,
-      sheet_hash: HASH,
     });
+    expect(reply).not.toContain('sheet');
     await svc.stop();
   });
 
-  it('replies with zeros and version 0 for a life with no rows and no sheet', async () => {
+  it('replies with zeros and version 0 for a life with no rows', async () => {
     const rows = new Map([[LIFE, stored(LIFE, {})]]);
     const { nats, svc } = serve(fixture(rows).store);
     const body = JSON.parse(first(await ask(nats, subjectOf(LIFE))));
@@ -325,14 +325,12 @@ describe('proficiency state service: the authority and the refusals', () => {
     await svc.stop();
   });
 
-  it('reply validates against the contract', async () => {
-    const bad = stored(LIFE, { mining: 5 }, { sheet: STANDARD_SHEET, sheet_hash: 'not-hex' });
-    const lines: string[] = [];
-    const { nats, svc } = serve(fixture(new Map([[LIFE, bad]])).store, {
-      log: (l) => lines.push(l),
-    });
-    expect(await ask(nats, subjectOf(LIFE))).toEqual(['{"error":"unavailable"}']);
-    expect(lines).toEqual(['state reply invalid']);
+  it('reply validates against the contract, even when the row holds a sheet', async () => {
+    const withSheet = stored(LIFE, { mining: 5 }, { sheet: STANDARD_SHEET, sheet_hash: 'not-hex' });
+    const { nats, svc } = serve(fixture(new Map([[LIFE, withSheet]])).store);
+    const reply = JSON.parse(first(await ask(nats, subjectOf(LIFE))));
+    expect(validateProficiencyState(reply).ok).toBe(true);
+    expect(reply).not.toHaveProperty('sheet');
     await svc.stop();
   });
 
