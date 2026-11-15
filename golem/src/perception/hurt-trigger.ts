@@ -36,6 +36,17 @@ function attackerOf(cause: unknown, selfId: number | undefined): Point | null {
 }
 
 /**
+ * The name the hurt log gives the cause: `player` for a player (never its name), else the entity's own
+ * name (zombie, skeleton, iron_golem). Undefined when the damage names no entity, or only the Body.
+ */
+export function attackerNameOf(cause: unknown, selfId: number | undefined): string | undefined {
+  const entity = cause as { id?: number; type?: unknown; name?: unknown } | null | undefined;
+  if (!entity || entity.id === selfId) return undefined;
+  if (entity.type === 'player') return 'player';
+  return typeof entity.name === 'string' && entity.name !== '' ? entity.name : undefined;
+}
+
+/**
  * Passes each loss of the Body's health to `reporter`, with `tick` as the world age. An `entityHurt` on
  * the Body sets the attacker for the next health drop only; a drop with no such event, or with a cause
  * that names no entity other than the Body, is a hurt with no known cause (`other`, no bearing). Returns
@@ -43,10 +54,13 @@ function attackerOf(cause: unknown, selfId: number | undefined): Point | null {
  */
 export function watchHurts(bot: Bot, reporter: HurtReporter, tick: () => number): () => void {
   let health: number | undefined = bot.health;
-  let pending: { attacker: Point | null } | null = null;
+  let pending: { attacker: Point | null; name: string | undefined } | null = null;
   const onEntityHurt = (entity: unknown, cause?: unknown): void => {
     if (entity !== bot.entity) return;
-    pending = { attacker: attackerOf(cause, bot.entity?.id) };
+    pending = {
+      attacker: attackerOf(cause, bot.entity?.id),
+      name: attackerNameOf(cause, bot.entity?.id),
+    };
   };
   const onHealth = (): void => {
     const before = health;
@@ -60,6 +74,7 @@ export function watchHurts(bot: Bot, reporter: HurtReporter, tick: () => number)
       {
         cause: attack?.attacker ? 'ENTITY_ATTACK' : undefined,
         attacker: attack?.attacker ?? null,
+        attackerName: attack?.name,
         self: { x: self.position.x, z: self.position.z, yaw: self.yaw },
         healthBefore: before,
         rawDamage: before - now,

@@ -1,5 +1,6 @@
 import { Vec3 } from 'vec3';
 import type { Position } from './bot-types.ts';
+import { farmlandFact } from './farmland-water.ts';
 import { feetCell } from './feet-cell.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
@@ -69,6 +70,7 @@ export const MESSAGE = {
   noSpace: 'no free space next to you',
   insideBlock: 'you are inside a block',
   occupied: 'target is occupied',
+  standing: 'you are standing in that spot',
   noFarmland: 'seeds need farmland below',
   notLoaded: 'target is not loaded',
   noReference: 'no solid block to place against',
@@ -124,7 +126,9 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
   let target = named === null || atFeet ? feet : named;
   const targetCell = bot.blockAt(target);
   if (!targetCell) return failed('not_possible', MESSAGE.notLoaded);
-  if (!REPLACEABLE.has(targetCell.name)) return failed('blocked', MESSAGE.occupied);
+  if (!REPLACEABLE.has(targetCell.name)) {
+    return failed('blocked', inBody(bot, target) ? MESSAGE.standing : MESSAGE.occupied);
+  }
 
   // A solid block at feet is a pillar: the bot jumps and places it in the cell its feet were in
   // (decision 0160). A bed keeps the beside path.
@@ -253,7 +257,9 @@ async function sow(
   const target = at === 'feet' ? feetCell(bot) : new Vec3(at.x, at.y, at.z);
   const targetCell = bot.blockAt(target);
   if (!targetCell) return failed('not_possible', MESSAGE.notLoaded);
-  if (targetCell.name !== 'air') return failed('blocked', MESSAGE.occupied);
+  if (targetCell.name !== 'air') {
+    return failed('blocked', inBody(bot, target) ? MESSAGE.standing : MESSAGE.occupied);
+  }
   const farmland = bot.blockAt(target.offset(0, -1, 0));
   if (farmland?.name !== 'farmland') return failed('not_possible', MESSAGE.noFarmland);
 
@@ -294,7 +300,13 @@ async function sow(
   if (!confirmsPlacement(bot.blockAt(target)?.name ?? '', crop)) {
     return failed('blocked', MESSAGE.unconfirmed);
   }
-  return completed({ block: crop, at: spot(target), reference: spot(farmland.position) });
+  const fact = farmlandFact(bot, farmland.position);
+  return completed({
+    block: crop,
+    at: spot(target),
+    reference: spot(farmland.position),
+    ...(fact === undefined ? {} : { fact }),
+  });
 }
 
 /**

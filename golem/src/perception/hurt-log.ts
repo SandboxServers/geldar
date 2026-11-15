@@ -12,6 +12,7 @@ export function hurtLogLine(hurt: HurtEvent, place: Place, worldTick: number): s
     source: hurt.source,
     amount: hurt.amount,
     bearing: hurt.bearing ?? null,
+    ...(hurt.attacker === undefined ? {} : { attacker: hurt.attacker }),
     ...place,
   });
 }

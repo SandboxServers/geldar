@@ -23,6 +23,8 @@ export interface HurtEvent {
   source: HurtSource;
   bearing?: HurtBearing;
   amount: number;
+  /** The cause entity's log name (`player` for a player), when the damage names one. */
+  attacker?: string;
 }
 
 /** What the Body knows at a hurt: the cause code, who hit it (if known), its pose and the damage. */
@@ -37,6 +39,8 @@ export interface HurtInput {
   healthBefore: number;
   /** The raw damage in health points, before rounding. */
   rawDamage: number;
+  /** The cause entity's log name, from the trigger; absent when the damage names no entity. */
+  attackerName?: string | undefined;
 }
 
 const CAUSE_SOURCE: Readonly<Record<string, HurtSource>> = {
@@ -93,6 +97,7 @@ export function hurtEvent(input: HurtInput): HurtEvent | null {
   const attacker = input.attacker;
   const source = attacker === null && ATTACK_SOURCES.includes(sourced) ? 'other' : sourced;
   const event: HurtEvent = { type: 'hurt', source, amount };
+  if (input.attackerName !== undefined) event.attacker = input.attackerName;
   if (attacker !== null) event.bearing = bearingOf(input.self, attacker);
   return event;
 }

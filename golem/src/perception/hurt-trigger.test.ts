@@ -106,7 +106,9 @@ describe('watchHurts: the live hurt trigger', () => {
     bot.emit('entityHurt', self, zombie);
     bot.health = 16.4;
     bot.emit('health');
-    expect(seen).toEqual([[{ type: 'hurt', source: 'melee', bearing: 'front', amount: 4 }, 77]]);
+    expect(seen).toEqual([
+      [{ type: 'hurt', attacker: 'zombie', source: 'melee', bearing: 'front', amount: 4 }, 77],
+    ]);
   });
 
   it('a zombie behind the Body, with the Body facing +z, is behind', () => {
@@ -117,7 +119,9 @@ describe('watchHurts: the live hurt trigger', () => {
     bot.emit('entityHurt', self, zombie);
     bot.health = 17;
     bot.emit('health');
-    expect(seen).toEqual([[{ type: 'hurt', source: 'melee', bearing: 'behind', amount: 3 }, 77]]);
+    expect(seen).toEqual([
+      [{ type: 'hurt', attacker: 'zombie', source: 'melee', bearing: 'behind', amount: 3 }, 77],
+    ]);
   });
 
   it('a player cause is a melee hurt', () => {
@@ -128,7 +132,9 @@ describe('watchHurts: the live hurt trigger', () => {
     bot.emit('entityHurt', self, player);
     bot.health = 16;
     bot.emit('health');
-    expect(seen).toEqual([[{ type: 'hurt', source: 'melee', bearing: 'front', amount: 4 }, 77]]);
+    expect(seen).toEqual([
+      [{ type: 'hurt', attacker: 'player', source: 'melee', bearing: 'front', amount: 4 }, 77],
+    ]);
   });
 
   it('a skeleton that shot the Body (the cause of its arrow) is named', () => {
@@ -139,7 +145,9 @@ describe('watchHurts: the live hurt trigger', () => {
     bot.emit('entityHurt', self, skeleton);
     bot.health = 17;
     bot.emit('health');
-    expect(seen).toEqual([[{ type: 'hurt', source: 'melee', bearing: 'front', amount: 3 }, 77]]);
+    expect(seen).toEqual([
+      [{ type: 'hurt', attacker: 'skeleton', source: 'melee', bearing: 'front', amount: 3 }, 77],
+    ]);
   });
 
   it('a llama spit names the llama (the server says it caused the damage)', () => {
@@ -150,7 +158,9 @@ describe('watchHurts: the live hurt trigger', () => {
     bot.emit('entityHurt', self, llama);
     bot.health = 18;
     bot.emit('health');
-    expect(seen).toEqual([[{ type: 'hurt', source: 'melee', bearing: 'front', amount: 2 }, 77]]);
+    expect(seen).toEqual([
+      [{ type: 'hurt', attacker: 'llama', source: 'melee', bearing: 'front', amount: 2 }, 77],
+    ]);
   });
 
   it('an iron golem cause is named, not filtered out as a passive mob', () => {
@@ -161,7 +171,9 @@ describe('watchHurts: the live hurt trigger', () => {
     bot.emit('entityHurt', self, golem);
     bot.health = 15;
     bot.emit('health');
-    expect(seen).toEqual([[{ type: 'hurt', source: 'melee', bearing: 'front', amount: 5 }, 77]]);
+    expect(seen).toEqual([
+      [{ type: 'hurt', attacker: 'iron_golem', source: 'melee', bearing: 'front', amount: 5 }, 77],
+    ]);
   });
 
   it('drowning beside a llama, with no damage cause entity, names no attacker', () => {
@@ -184,7 +196,9 @@ describe('watchHurts: the live hurt trigger', () => {
     bot.emit('entityHurt', self, zombie);
     bot.health = 18;
     bot.emit('health');
-    expect(seen).toEqual([[{ type: 'hurt', source: 'melee', bearing: 'front', amount: 2 }, 77]]);
+    expect(seen).toEqual([
+      [{ type: 'hurt', attacker: 'zombie', source: 'melee', bearing: 'front', amount: 2 }, 77],
+    ]);
   });
 
   it('a drop with no entityHurt (a fall) is other with no bearing', () => {
