@@ -5,7 +5,7 @@ import type { Block } from './bot-types.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { lastResortRefused, prefetchOwners, protectedReason } from './protected-blocks.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
-import { DEFAULT_DIAG_SINK, emitStallDiag } from './stall-diag.ts';
+import { DEFAULT_DIAG_SINK } from './stall-diag.ts';
 import { digsCell, handFirst } from './unstick-cells.ts';
 import {
   type DescendResult,
@@ -24,6 +24,7 @@ import {
   planMoves,
   scanDrop,
 } from './unstick-plan.ts';
+import { escapePoints, reportNoWayOut } from './unstick-report.ts';
 import { ACTION_LIMIT_S, DIG_BUDGET_S, digSeconds, digUp, timeLeftS } from './unstick-up.ts';
 import { MOVE_TICKS, walk } from './unstick-walk.ts';
 
@@ -242,36 +243,6 @@ async function digSideways(
       return false;
   }
   return true;
-}
-
-/**
- * The `no_way_out` diag line, with the steps this call tried, the health, and the drop beside the feet in
- * each of the eight directions (`scanDrop`: blocks fallen and what lands). The shared diag line has no
- * field for them, so the line is built by `emitStallDiag` (same snapshot, same rate limit) and gets them added.
- */
-function reportNoWayOut(bot: Bot, tried: readonly string[]): void {
-  const feet = bot.entity.position.floored();
-  const drops = EIGHT.map((dir) => ({
-    dir: [dir.x, dir.z],
-    ...scanDrop((cell) => bot.blockAt(cell), feet.plus(dir).offset(0, -1, 0)),
-  }));
-  emitStallDiag(
-    bot,
-    { reason: 'no_way_out' },
-    {
-      now: () => DEFAULT_DIAG_SINK.now(),
-      log: (line) =>
-        DEFAULT_DIAG_SINK.log(
-          JSON.stringify({ ...JSON.parse(line), tried, health: bot.health ?? 20, drops }),
-        ),
-    },
-  );
-}
-
-/** The cells whose ownership the last-resort pass prefetches: the feet and head, and the eight neighbours. */
-function escapePoints(feet: Vec3): Vec3[] {
-  const ring = EIGHT.map((dir) => feet.plus(dir));
-  return [feet, feet.offset(0, 1, 0), ...ring, ...ring.map((cell) => cell.offset(0, 1, 0))];
 }
 
 /**

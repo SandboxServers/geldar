@@ -10,7 +10,7 @@ import type { Block } from './bot-types.ts';
 import { prefetchOwners, protectedReason, refusedByName } from './protected-blocks.ts';
 import { DEFAULT_DIAG_SINK } from './stall-diag.ts';
 import { handBreakable } from './unstick-cells.ts';
-import { EIGHT, fallDamage, isSoft, planMoves, scanDrop } from './unstick-plan.ts';
+import { EIGHT, fallDamage, HARMFUL, isSoft, planMoves, scanDrop } from './unstick-plan.ts';
 import { DIG_BUDGET_S, digSeconds, timeLeftS } from './unstick-up.ts';
 
 /** The most blocks one high_ledge call digs down. A ledge is about ten blocks; the rung never digs deeper than this. */
@@ -27,6 +27,20 @@ const FALL_TICKS = 5;
 const WORLD_BOTTOM = -64;
 /** Blocks that fall when the block under them is gone. */
 const FALLS_IF_UNSUPPORTED = /(sand|gravel|concrete_powder)$/;
+/** Blocks the Body must not land on (or in) from the dig: the harmful set of unstick plus the sticky, soft and flame blocks. */
+const UNSAFE_LANDING = new Set([
+  ...HARMFUL,
+  'campfire',
+  'soul_campfire',
+  'powder_snow',
+  'cobweb',
+  'slime_block',
+  'honey_block',
+  'hay_block',
+  'water',
+]);
+/** Block names that are open air: the fall passes through them. */
+const AIR_NAMES = new Set(['air', 'cave_air', 'void_air']);
 /** The four horizontal sides of a cell. */
 const SIDES: ReadonlyArray<readonly [number, number, number]> = [
   [1, 0, 0],
@@ -45,7 +59,8 @@ export const REFUSAL_TEXT = {
   hostile: `a hostile mob is within ${HOSTILE_RANGE} blocks`,
   gravel: 'gravel or sand is above the head',
   undiggable: 'the block cannot be dug by hand',
-  fall: 'the fall would leave the Body under its health margin',
+  fall: 'the fall would leave the Body under its health margin, or no landing is within three blocks',
+  landing: 'the fall would land on a block that is not safe to stand on',
   'cap reached': "this call's dig budget is spent",
 } as const;
 export type Refusal = keyof typeof REFUSAL_TEXT;
@@ -132,13 +147,35 @@ async function refusalAt(bot: Bot, feet: Vec3, signal: AbortSignal): Promise<Ref
   if (FALLS_IF_UNSUPPORTED.test(bot.blockAt(feet.offset(0, 2, 0))?.name ?? '')) return 'gravel';
   const column = columnRefusal(bot, feet);
   if (column !== null) return column;
-  // The Body falls through the dug cell into the column below: that fall must leave the health margin.
-  const below = scanDrop((cell) => bot.blockAt(cell), floor.offset(0, -1, 0));
-  if (fallDamage(below.blocks + 1) > (bot.health ?? 20) - DESCENT_MARGIN) return 'fall';
+  // The Body falls through the dug cell onto the first block below it. That landing must be solid and safe
+  // to stand on, within WALKABLE_DROP blocks of the floor (the fall is the landing's depth), and the fall
+  // must leave the health margin.
+  const landing = landingBelow(bot, floor);
+  if (landing === null) return 'fall';
+  if (!landing.solid || UNSAFE_LANDING.has(landing.name)) return 'landing';
+  if (fallDamage(landing.depth) > (bot.health ?? 20) - DESCENT_MARGIN) return 'fall';
   const digable = isSoft(block) || (handBreakable(block) && !refusedByName(block.name));
   if (block.boundingBox === 'empty' || !digable) return 'undiggable';
   await prefetchOwners([floor], signal);
   return protectedReason(bot, block, floor) === null ? null : 'ownership';
+}
+
+/**
+ * The first block that is not air, 1 to `WALKABLE_DROP` cells below the dug floor, with its depth below the
+ * floor (the fall in blocks) and whether it is solid. Null when every one of those cells is air or unloaded.
+ */
+function landingBelow(
+  bot: Bot,
+  floor: Vec3,
+): { depth: number; name: string; solid: boolean } | null {
+  for (let depth = 1; depth <= WALKABLE_DROP; depth++) {
+    const block = bot.blockAt(floor.offset(0, -depth, 0)) as Block | null;
+    if (block === null) return null;
+    if (!AIR_NAMES.has(block.name)) {
+      return { depth, name: block.name, solid: block.boundingBox !== 'empty' };
+    }
+  }
+  return null;
 }
 
 /**

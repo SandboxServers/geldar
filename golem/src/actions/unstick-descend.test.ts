@@ -10,7 +10,7 @@ import { digDescend, MAX_DESCEND_DIGS, REFUSAL_TEXT, type Refusal } from './unst
  * ground is stone to y 60 everywhere else, so a walk east off the pillar drops to y 61 (3 blocks at feet 64).
  */
 const TOP = 70;
-const EMPTY = new Set(['air', 'water', 'lava']);
+const EMPTY = new Set(['air', 'water', 'lava', 'fire', 'sweet_berry_bush']);
 
 const keyOf = (cell: Vec3): string => `${cell.x},${cell.y},${cell.z}`;
 
@@ -41,11 +41,13 @@ function fakeBot(feetY = TOP + 1) {
     async waitForTicks() {},
   };
   const digs: number[] = [];
-  /** Digging a block makes it air, and the Body falls into that cell (one block). */
+  /** Digging a block makes it air; the Body falls through air cells onto the first block that is not air. */
   const digOne = async (_block: unknown, at: Vec3): Promise<boolean> => {
     digs.push(at.y);
     cells.set(keyOf(at), 'air');
-    bot.entity.position = at;
+    let y = at.y;
+    while (bot.blockAt(new Vec3(at.x, y - 1, at.z))?.name === 'air') y--;
+    bot.entity.position = new Vec3(at.x, y, at.z);
     return true;
   };
   return { bot: bot as unknown as Bot, cells, entities, digs, digOne, raw: bot };
@@ -131,6 +133,11 @@ describe('dig_descend rung (decision 0333)', () => {
     ],
     ['gravel', (c: Map<string, string | null>) => c.set('0,73,0', 'gravel')],
     ['undiggable', (c: Map<string, string | null>) => c.set('0,70,0', 'bedrock')],
+    ['lava', (c: Map<string, string | null>) => c.set('1,71,0', 'lava')],
+    ['landing', (c: Map<string, string | null>) => c.set('0,69,0', 'magma_block')],
+    ['landing', (c: Map<string, string | null>) => c.set('0,69,0', 'cactus')],
+    ['landing', (c: Map<string, string | null>) => c.set('0,69,0', 'fire')],
+    ['landing', (c: Map<string, string | null>) => c.set('0,69,0', 'sweet_berry_bush')],
   ] as const)('refuses the dig when %s is in reach (no dig is made)', async (reason, setup) => {
     const log = vi.spyOn(DEFAULT_DIAG_SINK, 'log').mockImplementation(() => {});
     const fake = fakeBot();
@@ -139,6 +146,33 @@ describe('dig_descend rung (decision 0333)', () => {
     expect(fake.digs).toEqual([]);
     expect(result).toEqual({ dug: 0, walkable: false, stopped: REFUSAL_TEXT[reason as Refusal] });
     expect(logged(log)).toEqual([{ event: 'unstick_descend_refused', reason }]);
+  });
+
+  /** Air in the pillar's column from the cell under the floor down to a landing `depth` blocks below the floor. */
+  function hollowTo(fake: ReturnType<typeof fakeBot>, depth: number): void {
+    for (let y = TOP - 1; y > TOP - depth; y--) fake.cells.set(`0,${y},0`, 'air');
+  }
+
+  it.each([4, 7, 50])(
+    'refuses a 1-block floor over a hollow whose landing is %i blocks below it (fall, no dig)',
+    async (depth) => {
+      const log = vi.spyOn(DEFAULT_DIAG_SINK, 'log').mockImplementation(() => {});
+      const fake = fakeBot();
+      hollowTo(fake, depth);
+      const result = await digDescend(deps(fake));
+      expect(fake.digs).toEqual([]);
+      expect(result).toEqual({ dug: 0, walkable: false, stopped: REFUSAL_TEXT.fall });
+      expect(logged(log)).toEqual([{ event: 'unstick_descend_refused', reason: 'fall' }]);
+    },
+  );
+
+  it('allows a floor whose solid landing is 2 blocks below it (the fall is 2)', async () => {
+    vi.spyOn(DEFAULT_DIAG_SINK, 'log').mockImplementation(() => {});
+    const fake = fakeBot();
+    hollowTo(fake, 2);
+    const result = await digDescend(deps(fake));
+    expect(fake.digs[0]).toBe(TOP);
+    expect(result.stopped).not.toBe(REFUSAL_TEXT.fall);
   });
 
   it('refuses another player’s block (decision 0164) and digs nothing', async () => {
@@ -193,6 +227,32 @@ describe('dig_descend rung (decision 0333)', () => {
     expect(result.dug).toBeLessThan(7);
     expect(fake.raw.entity.position.y).toBe(TOP + 1 - result.dug);
   });
+
+  it('stops with the did-not-fall fact when a dig does not drop the Body', async () => {
+    const log = vi.spyOn(DEFAULT_DIAG_SINK, 'log').mockImplementation(() => {});
+    const fake = fakeBot();
+    const digInPlace = async (_block: unknown, at: Vec3): Promise<boolean> => {
+      fake.digs.push(at.y);
+      fake.cells.set(keyOf(at), 'air');
+      return true;
+    };
+    const result = await digDescend({ ...deps(fake), digOne: digInPlace });
+    expect(result).toEqual({ dug: 1, walkable: false, stopped: 'the Body did not fall' });
+    expect(fake.digs).toEqual([TOP]);
+    expect(logged(log)).toEqual([]);
+  });
+
+  it.each(['passive', 'player'])(
+    'does not refuse for a non-hostile %s entity within 8 blocks',
+    async (type) => {
+      vi.spyOn(DEFAULT_DIAG_SINK, 'log').mockImplementation(() => {});
+      const fake = fakeBot();
+      fake.entities.other = { type, position: new Vec3(3, 71, 0) };
+      const result = await digDescend(deps(fake));
+      expect(fake.digs[0]).toBe(TOP);
+      expect(result.stopped).not.toBe(REFUSAL_TEXT.hostile);
+    },
+  );
 
   it('stops at once when the call is already aborted', async () => {
     const fake = fakeBot();
