@@ -19,7 +19,14 @@ export interface ProtectBlock {
  * or null when no record holds the cell (world-generated); `known: false` when the record cannot
  * answer (not cached, truncated, a failed query). Unknown is protected (decision 0164).
  */
-export type OwnerAnswer = { known: false } | { known: true; owner: string | null };
+export type OwnerAnswer =
+  | { known: false }
+  | {
+      known: true;
+      owner: string | null;
+      /** The block the newest recorded place made, when the record carries it (decision 0219). */
+      block?: string;
+    };
 
 /**
  * The ownership record reader (the Body's cache, `body/block-owners.ts`). Off until a lookup is set
