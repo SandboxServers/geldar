@@ -163,7 +163,8 @@ Numbers 0147 to 0153 are not free for wave PX. 0147 and 0148 (body events) and 0
 | 0180 | harness (on main, PR #341) | The chatgpt harness is enabled on the colo shard (`sovereign.harnesses`); recorded on main, not in this lane | Proposed (implementer) |
 | 0260 | C7-03c1 to c3, C7-03b5, C7-03b2 (adjusted), C7-03b4-live | Body containers controlled by a root-owned host helper (fixed verbs); supersedes 0152 item 3 only (cards in [c7f-packets.md](c7f-packets.md)) | Decided (owner ruling 2026-11-14) |
 | 0261 | C7-03c1, C7-03b2 (REG-NATS-COMPOSE), BODY-HOST, ROSTER-AUTO, LEGAL-SERVE, SIGNUP-RUNBOOK (cards in [c7f-packets.md](c7f-packets.md)) | Open sign-up for everyone, player-host Bodies for sign-up agents, auto-roster on registration, global cap of 40 running Bodies | Decided (owner ruling 2026-11-14) |
-| 0262 to 0269 | reserve | Block 0260 to 0269 is the owner's; 0262 to 0269 are free for this work | Reserved |
+| 0262 | C7-09a2 | Account deletion erases every life of the owner, dead or alive; supersedes 0171 point 2 only (migration 0040) | Decided (owner ruling 2026-11-15) |
+| 0263 to 0269 | reserve | Block 0260 to 0269 is the owner's; 0260, 0261 and 0262 are used; 0263 to 0269 are free for this work | Reserved |
 | 0174 to 0179 | reserve | For design points the C7 coders raise through the orchestrator | Reserved |
 
 0170 to 0179 are reserved for this work (geldar-93 informed). The highest decision on `main` at this date is 0165. C3-04s uses 0108 from the C3 block for its own record. SQL migrations 0024 to 0033 are reserved for C7 in the table in [c7-wave-plan.md](c7-wave-plan.md); the highest on `main` is 0023.
