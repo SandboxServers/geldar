@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 // The live chat panel (decision 0310). The script is loaded in a function with no DOM, and its exported pure
 // functions run against a fake document that records every element made and every innerHTML write.
@@ -38,10 +38,12 @@ interface ChatModule {
   createFeedState(
     doc: FakeDoc,
     list: FakeNode,
-  ): { seen: Set<string>; last: Line | null; names: Map<string, string> };
+  ): { shown: string[]; names: Map<string, string>; unnamed: unknown[] };
   pollOnce(state: unknown, fetchFn: FetchFn): Promise<boolean>;
+  runLoop(state: unknown, fetchFn: FetchFn, schedule: (fn: () => void, ms: number) => void): void;
   NEUTRAL: string;
   MAX_ROWS: number;
+  FETCH_TIMEOUT_MS: number;
 }
 type FetchFn = (url: string, opts: unknown) => Promise<{ ok: boolean; text(): Promise<string> }>;
 
@@ -253,11 +255,141 @@ describe('chat panel: the feed shown as text', () => {
     expect(chat.nextDelay(true)).toBe(3000);
   });
 
-  it('fetches with cache no-store', async () => {
+  it('fetches with cache no-store and an 8 s timeout signal', async () => {
     const doc = fakeDoc();
+    const spy = vi.spyOn(AbortSignal, 'timeout');
     const stub = stubFetch({ [FEED]: feedText([]) });
     await chat.pollOnce(chat.createFeedState(doc, doc.createElement('div')), stub.fn);
-    expect(stub.calls[0]).toEqual({ url: FEED, opts: { cache: 'no-store' } });
+    expect(chat.FETCH_TIMEOUT_MS).toBe(8000);
+    expect(spy).toHaveBeenCalledWith(8000);
+    spy.mockRestore();
+    expect(stub.calls[0]?.url).toBe(FEED);
+    expect(stub.calls[0]?.opts).toMatchObject({ cache: 'no-store' });
+    const opts = stub.calls[0]?.opts as { signal?: unknown } | undefined;
+    expect(opts?.signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+const settle = () => new Promise<void>((resolve) => setImmediate(resolve));
+
+describe('chat panel: which lines are shown', () => {
+  it('shows new lines after the clock steps back', async () => {
+    const doc = fakeDoc();
+    const list = doc.createElement('div');
+    const state = chat.createFeedState(doc, list);
+    const routes: Record<string, string> = { [FEED]: feedText([line(5, 'u1', 'five')]) };
+    await chat.pollOnce(state, stubFetch(routes).fn);
+    routes[FEED] = feedText([line(5, 'u1', 'five'), line(1, 'u1', 'back')]);
+    await chat.pollOnce(state, stubFetch(routes).fn);
+    expect(list.childNodes).toHaveLength(2);
+    expect(rowText(list.childNodes[1] as FakeNode)).toBe(': back');
+  });
+
+  it('shows a late older line after the newer ones, in feed order', async () => {
+    const doc = fakeDoc();
+    const list = doc.createElement('div');
+    const state = chat.createFeedState(doc, list);
+    const routes: Record<string, string> = {
+      [FEED]: feedText([line(1, 'u1', 'one'), line(3, 'u2', 'three')]),
+    };
+    await chat.pollOnce(state, stubFetch(routes).fn);
+    routes[FEED] = feedText([line(1, 'u1', 'one'), line(2, 'u3', 'late'), line(3, 'u2', 'three')]);
+    await chat.pollOnce(state, stubFetch(routes).fn);
+    expect(list.childNodes).toHaveLength(3);
+    expect(rowText(list.childNodes[2] as FakeNode)).toBe(': late');
+  });
+
+  it('renders two speakers who share a time, one row each', async () => {
+    const doc = fakeDoc();
+    const list = doc.createElement('div');
+    const stub = stubFetch({ [FEED]: feedText([line(1, 'u1', 'a'), line(1, 'u2', 'b')]) });
+    await chat.pollOnce(chat.createFeedState(doc, list), stub.fn);
+    expect(list.childNodes).toHaveLength(2);
+    expect(rowText(list.childNodes[0] as FakeNode)).toBe(': a');
+    expect(rowText(list.childNodes[1] as FakeNode)).toBe(': b');
+  });
+
+  it('renders the feed while a player list is still pending or has failed', async () => {
+    const doc = fakeDoc();
+    const list = doc.createElement('div');
+    const state = chat.createFeedState(doc, list);
+    const pending: FetchFn = (url) =>
+      url === FEED
+        ? Promise.resolve({ ok: true, text: async () => feedText([line(1, 'u1', 'hi')]) })
+        : new Promise(() => {});
+    expect(await chat.pollOnce(state, pending)).toBe(true);
+    expect(list.childNodes).toHaveLength(1);
+    expect(rowName(list.childNodes[0] as FakeNode)).toBe('Ranger');
+  });
+
+  it('writes a name into a Ranger row once the player list arrives', async () => {
+    const doc = fakeDoc();
+    const list = doc.createElement('div');
+    const state = chat.createFeedState(doc, list);
+    const routes: Record<string, string | Error> = {
+      [FEED]: feedText([line(1, 'u1', 'hi')]),
+      [PLAYERS]: new Error('player list down'),
+    };
+    await chat.pollOnce(state, stubFetch(routes).fn);
+    await settle();
+    expect(rowName(list.childNodes[0] as FakeNode)).toBe('Ranger');
+    routes[PLAYERS] = playersText([{ uuid: 'u1', name: 'Ash' }]);
+    await chat.pollOnce(state, stubFetch(routes).fn);
+    await settle();
+    expect(list.childNodes).toHaveLength(1);
+    expect(rowName(list.childNodes[0] as FakeNode)).toBe('Ash');
+  });
+});
+
+describe('chat panel: the poll loop', () => {
+  // Runs the loop with a fake scheduler: the delays are recorded, and tick() runs the scheduled poll.
+  function fakeLoop(state: unknown, fetchFn: FetchFn) {
+    const delays: number[] = [];
+    let next: (() => void) | null = null;
+    chat.runLoop(state, fetchFn, (fn, ms) => {
+      delays.push(ms);
+      next = fn;
+    });
+    return {
+      delays,
+      tick: () => {
+        const run = next;
+        next = null;
+        run?.();
+      },
+    };
+  }
+
+  it('backs off to 10 s after a failed poll, and returns to 3 s after a good one', async () => {
+    const doc = fakeDoc();
+    const state = chat.createFeedState(doc, doc.createElement('div'));
+    const routes: Record<string, string | Error> = { [FEED]: new Error('network down') };
+    const loop = fakeLoop(state, stubFetch(routes).fn);
+    await settle();
+    expect(loop.delays).toEqual([10000]);
+    routes[FEED] = feedText([]);
+    loop.tick();
+    await settle();
+    expect(loop.delays).toEqual([10000, 3000]);
+  });
+
+  it('keeps polling when a poll throws, treating it as a failed poll', async () => {
+    const doc = fakeDoc();
+    const list = doc.createElement('div');
+    const state = chat.createFeedState(doc, list);
+    const routes: Record<string, string> = { [FEED]: feedText([line(1, 'u1', 'hi')]) };
+    const realCreate = doc.createElement;
+    doc.createElement = () => {
+      throw new Error('render failed');
+    };
+    const loop = fakeLoop(state, stubFetch(routes).fn);
+    await settle();
+    expect(loop.delays).toEqual([10000]);
+    doc.createElement = realCreate;
+    loop.tick();
+    await settle();
+    expect(loop.delays).toEqual([10000, 3000]);
+    expect(list.childNodes).toHaveLength(1);
   });
 });
 

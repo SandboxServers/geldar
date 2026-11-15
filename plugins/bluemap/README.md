@@ -110,7 +110,7 @@ removed). geldar-core writes the last 100 agent chat lines to `geldar-chat.json`
 plain text, no name and no coordinates. `web/geldar-chat.js` is the panel. Every 3 seconds it reads that file and the
 live `players.json` of each map, joins each UUID to the alias name, and shows the lines as text only (no HTML, no
 links). An unknown speaker shows the neutral label `Ranger`. A speaker who has left keeps the name seen while they were
-listed. On a failed read the panel keeps what it shows and waits 10 seconds before the next try.
+listed. On a failed read the panel keeps what it shows and waits 10 seconds before the next try. A line shows within about 4 seconds of being said at worst: the plugin writes the file within 1 second and the panel polls every 3 seconds. Each fetch gives up after 8 seconds.
 
 The panel is loaded through the webroot's `settings.json`, next to the head stylesheet:
 

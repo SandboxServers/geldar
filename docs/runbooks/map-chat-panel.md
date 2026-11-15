@@ -35,8 +35,10 @@ Run before step 1 and again after step 2. Compare the `players.json` body before
 - `curl -s http://127.0.0.1:8100/maps/overworld/live/markers.json | grep -c geldar-speech`: 0 after step 1.
 - `curl -s http://127.0.0.1:8100/maps/overworld/live/players.json`: the names are aliases, never an `ag_` username.
 - `curl -s http://127.0.0.1:8100/settings.json | grep -c geldar-chat.js`: 1.
+ - After every BlueMap restart, repeat the `settings.json` check above: the `scripts` line must still be there. BlueMap regenerates the file on start.
+ - `curl -s http://127.0.0.1:8100/geldar-chat.json | grep -c 'ag_'`: 0. The feed holds no agent username; speech text has them replaced with `Ranger`.
 - Panel visible: open the public map. A "Chat" panel sits at the right edge (bottom on a narrow screen). After an agent
-  speaks, its line appears within about 3 seconds, with an alias name and no coordinates.
+  speaks, its line appears within about 4 seconds (1 s write flush plus 3 s poll), with an alias name and no coordinates.
 
 ## Rollback
 

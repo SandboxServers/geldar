@@ -1,7 +1,7 @@
-// The Geldar live chat panel on the public map (decision 0310, packet BM-2). A plain script: no library, no build
-// step, no inline script. It polls the chat feed and the live player lists and shows the lines as text only:
+// The Geldar live chat panel on the public map (decision 0310, packets BM-2 and BM-3). A plain script: no library, no
+// build step, no inline script. It polls the chat feed and the live player lists and shows the lines as text only:
 // every line is written with textContent, never innerHTML, and no link is made. The speaker's name comes from the
-// alias-proxy's players.json (uuid to alias); an unknown speaker shows the neutral label.
+// alias-proxy's players.json (uuid to alias); an unknown speaker shows the neutral label until the name arrives.
 (() => {
   const FEED_URL = '/geldar-chat.json';
   const MAPS = ['overworld', 'nether', 'end'];
@@ -9,6 +9,7 @@
   const NEUTRAL = 'Ranger';
   const POLL_MS = 3000;
   const BACKOFF_MS = 10000;
+  const FETCH_TIMEOUT_MS = 8000;
   const COLLAPSED_KEY = 'geldar-chat-collapsed';
 
   // The feed as {t, id, text} lines, oldest first. Null when the body is not {"v":1,"lines":[...]}. Bad entries are
@@ -17,7 +18,7 @@
     let doc;
     try {
       doc = JSON.parse(text);
-    } catch (e) {
+    } catch {
       return null;
     }
     if (!doc || doc.v !== 1 || !Array.isArray(doc.lines)) return null;
@@ -41,7 +42,7 @@
     let doc;
     try {
       doc = JSON.parse(text);
-    } catch (e) {
+    } catch {
       return null;
     }
     if (!doc || !Array.isArray(doc.players)) return null;
@@ -83,19 +84,20 @@
     return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
   }
 
-  // A line's identity: its time and speaker together, since one speaker says many lines.
+  // A line's identity: its time and speaker together, since one speaker says many lines and two speakers can share a
+  // time. The clock may step back, so a key says nothing about order.
   function keyOf(l) {
     return l.t + ' ' + l.id;
   }
 
-  // The lines of a feed that are new: not in the previous feed, and not older than the last line shown.
-  function takeNew(feed, prevKeys, last) {
+  // The lines of a feed that are not shown yet, in feed order. A line is shown once, whatever its time: a clock that
+  // steps back or a late older line still shows. Shown is the Set of keys of the rows on screen.
+  function takeNew(feed, shown) {
     const out = [];
     const batch = new Set();
     for (const l of feed) {
       const key = keyOf(l);
-      if (prevKeys.has(key) || batch.has(key)) continue;
-      if (last && l.t < last.t) continue;
+      if (shown.has(key) || batch.has(key)) continue;
       batch.add(key);
       out.push(l);
     }
@@ -103,6 +105,7 @@
   }
 
   // Appends one row: time, name in its colour, then the text as a text node. Nothing from the feed is parsed as markup.
+  // Returns the name element, so a name that arrives later can be written into it.
   function appendRow(doc, list, line, name) {
     const row = doc.createElement('div');
     row.className = 'gc-row';
@@ -119,13 +122,17 @@
     row.appendChild(doc.createTextNode(': ' + line.text));
     list.appendChild(row);
     while (list.childNodes.length > MAX_ROWS) list.removeChild(list.childNodes[0]);
+    return who;
   }
 
-  // Appends the rows, then scrolls to the newest only if the viewer was already at the bottom.
+  // Appends the rows, then scrolls to the newest only if the viewer was already at the bottom. Returns the name
+  // element of each row.
   function renderLines(doc, list, lines, nameOf) {
     const atBottom = list.scrollTop + list.clientHeight >= list.scrollHeight - 4;
-    for (const l of lines) appendRow(doc, list, l, nameOf(l.id));
+    const names = [];
+    for (const l of lines) names.push({ id: l.id, el: appendRow(doc, list, l, nameOf(l.id)) });
     if (atBottom) list.scrollTop = list.scrollHeight;
+    return names;
   }
 
   function nextDelay(ok) {
@@ -134,41 +141,75 @@
 
   async function getText(fetchFn, url) {
     try {
-      const r = await fetchFn(url, { cache: 'no-store' });
+      const r = await fetchFn(url, {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      });
       return r.ok ? await r.text() : null;
-    } catch (e) {
+    } catch {
       return null;
     }
   }
 
+  // The panel's state: the document and the list, the keys of the rows shown (oldest first, at most MAX_ROWS), the
+  // names seen, and the name elements still showing the neutral label.
   function createFeedState(doc, list) {
-    return { doc, list, seen: new Set(), last: null, names: new Map() };
+    return { doc, list, shown: [], names: new Map(), unnamed: [] };
   }
 
-  // One poll: the names from every map's players.json, then the feed. Resolves to false when the feed failed, and the
-  // rows already shown stay. Returns true when the feed was read.
+  // Writes each name that has arrived into the rows that showed the neutral label.
+  function refreshNames(state) {
+    state.unnamed = state.unnamed.filter((u) => {
+      if (!state.names.has(u.id)) return true;
+      u.el.textContent = state.names.get(u.id);
+      return false;
+    });
+  }
+
+  // One poll. The feed and the three players.json files are fetched in parallel. The feed is rendered as soon as it
+  // arrives, with the names known so far; a player list that fails or is slow does not hold the rows back, and its
+  // names are written into the rows when they arrive. Resolves to false when the feed failed, and the rows already
+  // shown stay. Returns true when the feed was read.
   async function pollOnce(state, fetchFn) {
-    const feedText = await getText(fetchFn, FEED_URL);
-    for (const map of MAPS) {
-      const text = await getText(fetchFn, '/maps/' + map + '/live/players.json');
-      const players = text === null ? null : parsePlayers(text);
-      if (players) remember(state.names, players);
-    }
+    const feedP = getText(fetchFn, FEED_URL);
+    const playersP = Promise.all(
+      MAPS.map(async (map) => {
+        const text = await getText(fetchFn, '/maps/' + map + '/live/players.json');
+        const players = text === null ? null : parsePlayers(text);
+        if (players) remember(state.names, players);
+      }),
+    );
+    const feedText = await feedP;
     const feed = feedText === null ? null : parseFeed(feedText);
     if (feed === null) return false;
-    const fresh = takeNew(feed, state.seen, state.last);
+    const fresh = takeNew(feed, new Set(state.shown));
     if (fresh.length > 0) {
-      renderLines(state.doc, state.list, fresh, (id) => nameFor(state.names, id));
-      state.last = fresh[fresh.length - 1];
+      const rows = renderLines(state.doc, state.list, fresh, (id) => nameFor(state.names, id));
+      for (const r of rows) {
+        if (!state.names.has(r.id)) state.unnamed.push(r);
+      }
+      state.shown.push(...fresh.map(keyOf));
+      state.shown.splice(0, Math.max(0, state.shown.length - MAX_ROWS));
+      state.unnamed.splice(0, Math.max(0, state.unnamed.length - MAX_ROWS));
     }
-    state.seen = new Set(feed.map(keyOf));
+    playersP.then(() => refreshNames(state));
     return true;
+  }
+
+  // The poll loop. A poll that throws counts as a failed poll: the loop backs off and keeps going.
+  function runLoop(state, fetchFn, schedule) {
+    const loop = () => {
+      pollOnce(state, fetchFn)
+        .catch(() => false)
+        .then((ok) => schedule(loop, nextDelay(ok)));
+    };
+    loop();
   }
 
   function readCollapsed() {
     try {
       return localStorage.getItem(COLLAPSED_KEY) === '1';
-    } catch (e) {
+    } catch {
       return false;
     }
   }
@@ -176,7 +217,7 @@
   function writeCollapsed(collapsed) {
     try {
       localStorage.setItem(COLLAPSED_KEY, collapsed ? '1' : '0');
-    } catch (e) {
+    } catch {
       // Storage may be refused; the panel still works, it just opens expanded next time.
     }
   }
@@ -216,15 +257,15 @@
     return { root, list };
   }
 
-  function start(doc) {
+  // Builds the panel and starts the poll loop. The fetch and the timer are injectable for tests.
+  function start(
+    doc,
+    fetchFn = (url, opts) => fetch(url, opts),
+    schedule = (fn, ms) => setTimeout(fn, ms),
+  ) {
     const panel = buildPanel(doc);
     doc.body.appendChild(panel.root);
-    const state = createFeedState(doc, panel.list);
-    const fetchFn = (url, opts) => fetch(url, opts);
-    const loop = () => {
-      pollOnce(state, fetchFn).then((ok) => setTimeout(loop, nextDelay(ok)));
-    };
-    loop();
+    runLoop(createFeedState(doc, panel.list), fetchFn, schedule);
   }
 
   if (
@@ -252,11 +293,14 @@
       nextDelay,
       createFeedState,
       pollOnce,
+      runLoop,
+      start,
       buildPanel,
       NEUTRAL,
       MAX_ROWS,
       POLL_MS,
       BACKOFF_MS,
+      FETCH_TIMEOUT_MS,
     };
   }
 })();
