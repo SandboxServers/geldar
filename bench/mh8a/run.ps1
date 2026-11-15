@@ -4,10 +4,17 @@
 Starts or stops the MH-8a cost bench stack: a throwaway, loopback-only shard, project geldar-mh8a.
 
 .DESCRIPTION
-  ./bench/mh8a/run.ps1 up     refuses to start below 10 GB free RAM or 20 GB free on C:, then starts the stack.
+  ./bench/mh8a/run.ps1 up [-MinFreeRamGb <n>] [-AbortBelowRamGb <n>]
+                              refuses to start below -MinFreeRamGb GB free RAM (default 10; lowering it is allowed
+                              only when the orchestrator geldar-93 sets a lower gate) or below 20 GB free on C:
+                              (fixed, not overridable), then starts the stack. -AbortBelowRamGb (default 0 = off)
+                              aborts the Paper health wait if free RAM drops under that value.
   ./bench/mh8a/run.ps1 down   stops the stack and deletes its volumes (the bench world is throwaway).
+  ./bench/mh8a/run.ps1 ram [-AbortBelowRamGb <n>]
+                              starts nothing: prints free RAM and free C:, exits 1 if free RAM is under
+                              -AbortBelowRamGb (default 0 = off).
 
-Both print free RAM and free C: first. Every compose call uses project geldar-mh8a and the three files
+Up and down print free RAM and free C: first. Every compose call uses project geldar-mh8a and the three files
 compose/phase0.yml, compose/rcon-host.yml and bench/mh8a/phase0-bench.yml, and sets GELDAR_WORLD_VOLUME to
 geldar-mh8a_paper-data, so the bench never reads or deletes the phase0 world (geldar-phase0_paper-data).
 Nothing here removes containers by name pattern or prunes: compose acts only on project geldar-mh8a.
@@ -17,14 +24,17 @@ only; never use it for a real shard.
 #>
 param(
   [Parameter(Mandatory, Position = 0)]
-  [ValidateSet('up', 'down')]
-  [string] $Action
+  [ValidateSet('up', 'down', 'ram')]
+  [string] $Action,
+  [ValidateRange(0, 1000)]
+  [double] $MinFreeRamGb = 10,
+  [ValidateRange(0, 1000)]
+  [double] $AbortBelowRamGb = 0
 )
 
 $ErrorActionPreference = 'Stop'
 $Project = 'geldar-mh8a'
 $WorldVolume = 'geldar-mh8a_paper-data'
-$MinFreeRamGb = 10
 $MinFreeDiskGb = 20
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $ComposeFiles = @('-f', 'compose/phase0.yml', '-f', 'compose/rcon-host.yml', '-f', 'bench/mh8a/phase0-bench.yml')
@@ -41,6 +51,17 @@ function Get-FreeDiskGb {
 
 function Write-Resources([string] $Label) {
   Write-Host "$Label free RAM: $(Get-FreeRamGb) GB; free C: $(Get-FreeDiskGb) GB"
+}
+
+function Test-BenchRam([double] $FloorGb) {
+  # Prints free RAM and free C:, starts nothing. Returns $false when FloorGb is above 0 and free RAM is under it.
+  $ram = Get-FreeRamGb
+  Write-Host "free RAM: $ram GB; free C: $(Get-FreeDiskGb) GB"
+  if ($FloorGb -gt 0 -and $ram -lt $FloorGb) {
+    Write-Host "free RAM $ram GB is under the $FloorGb GB floor (-AbortBelowRamGb)"
+    return $false
+  }
+  return $true
 }
 
 function Invoke-BenchCompose([string[]] $ComposeArgs) {
@@ -84,6 +105,9 @@ function Wait-PaperHealthy {
   # Paper's compose healthcheck passes once the server is up and Geldar-Core is enabled. Bounded: 60 polls, 5 s apart.
   $health = ''
   for ($try = 1; $try -le 60; $try++) {
+    if ($AbortBelowRamGb -gt 0 -and (Get-FreeRamGb) -lt $AbortBelowRamGb) {
+      throw "aborting paper wait: free RAM is under $AbortBelowRamGb GB (project $Project)"
+    }
     $health = (Invoke-BenchCompose @('ps', '--format', '{{.Health}}', 'paper') | Out-String).Trim()
     if ($health -eq 'healthy') {
       Write-Host "paper is healthy (project $Project)"
@@ -92,6 +116,11 @@ function Wait-PaperHealthy {
     Start-Sleep -Seconds 5
   }
   throw "paper did not become healthy within 300 s (last health: '$health', project $Project)"
+}
+
+if ($Action -eq 'ram') {
+  if (Test-BenchRam $AbortBelowRamGb) { exit 0 }
+  exit 1
 }
 
 Write-Resources 'before'
