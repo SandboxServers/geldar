@@ -381,11 +381,13 @@ function Get-NatsUsers([string] $Shard) {
       PubDeny = @("geldar.$s.kino.>", "geldar.$s.blockowner.changed", "geldar.$s.ctl.body.>", "geldar.$s.helper.body.>", "geldar.$s.state.*.level");
       # Block ownership (decision 0165): the body queries geldar.<s>.blockowner.query (inside its geldar.<s>.> allow) and
       # hears blockowner.changed; it is denied publishing changed, so it cannot forge an owner.
-      Sub = @("geldar.$s.body.>", "geldar.$s.blockowner.changed", '_INBOX.>') }
+      # State (AN-12b): the body hears the level pushes (state.<life>.level) and may receive the subtree; its request is in its Pub.
+      Sub = @("geldar.$s.body.>", "geldar.$s.blockowner.changed", "geldar.$s.state.>", '_INBOX.>') }
     mind = @{ Pub = @($mindTypes | ForEach-Object { "geldar.$s.$_" }) + $js + @("geldar.$s.body.>");
       Sub = @('_INBOX.>') }
-    # State (0280, AN-02b): the eventsink publishes the level push (state.<life>.level). Its subscription to the request is AN-11a.
-    eventsink = @{ Pub = @("geldar.$s.dlq", "geldar.$s.state.>") + $js; Sub = @('_INBOX.>') }
+    # State (0280, AN-02b, AN-12b): the eventsink publishes the level push (state.<life>.level) and subscribes to the
+    # request (state.<life>.proficiency, queue group state-service) on the state subtree, and replies on the inbox.
+    eventsink = @{ Pub = @("geldar.$s.dlq", "geldar.$s.state.>") + $js; Sub = @("geldar.$s.state.>", '_INBOX.>') }
     mcp = @{ Pub = @("geldar.$s.sovereign_call", "geldar.$s.body.>", (& $kv 'geldar-presence')) + $js; Sub = @('_INBOX.>') }
     # Read-only (0137 item 3, 0087 correction): a KV watch and get on two buckets; no $KV publish, no $JS.API.>.
     velocity = @{ Pub = @(foreach ($b in 'geldar-life-registry', 'geldar-skins') { "`$JS.API.STREAM.INFO.KV_$b"; "`$JS.API.CONSUMER.CREATE.KV_$b"; "`$JS.API.CONSUMER.CREATE.KV_$b.>"; "`$JS.API.CONSUMER.INFO.KV_$b.>"; "`$JS.API.CONSUMER.DELETE.KV_$b.>" }) + @('$JS.FC.>', '_INBOX.>'); Sub = @('_INBOX.>') }

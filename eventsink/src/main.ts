@@ -6,7 +6,11 @@ import { loadConfig, type SinkConfig } from './config.ts';
 import { startConsumer } from './consumer.ts';
 import { type EventsinkTelemetry, eventsinkTelemetry } from './metrics.ts';
 import { eventsinkNatsAuth } from './nats-credentials.ts';
+import { sinkPlan, startShardServices } from './sink-plan.ts';
+import { pgStateStore } from './state/pg-state-store.ts';
+import { serveProficiencyState } from './state/service.ts';
 import { pgEventWriter } from './writer.ts';
+import { startOutboxPublisher } from './xp/outbox.ts';
 
 /**
  * The options for startConsumer. `metrics` is present only with telemetry on (decision 0088):
@@ -23,6 +27,8 @@ export function consumerOptions(
 /** Runs the sink until a signal, then stops the consumer and closes the connections. */
 export async function main(): Promise<void> {
   const config = loadConfig();
+  // Read before any connection: a malformed threshold list with XP on fails here, not mid-stream.
+  const plan = sinkPlan(process.env);
   const pool = new pg.Pool({
     ...config.pg,
     max: 2,
@@ -43,9 +49,25 @@ export async function main(): Promise<void> {
     service: 'eventsink',
     log: (line) => console.error('eventsink: telemetry', JSON.stringify(line)),
   });
+  // GELDAR_SHARD unset starts nothing here (sink-plan.ts); a bad shard name throws before the consumer runs.
+  const services = startShardServices(plan, {
+    startState: (shard) =>
+      serveProficiencyState({
+        nc,
+        store: pgStateStore(pool),
+        shard,
+        log: (line) => console.error('eventsink: state', line),
+      }),
+    startOutbox: () =>
+      startOutboxPublisher({
+        pool,
+        push: { publish: (subject, body) => nc.publish(subject, body) },
+        log: (line) => console.error('eventsink: outbox', line),
+      }),
+  });
   const consumer = await startConsumer(
     nc,
-    pgEventWriter(pool),
+    pgEventWriter(pool, plan.xp),
     consumerOptions(config, telemetry, (error) => {
       console.error('eventsink: giving up after repeated failures, exiting for a restart', error);
       process.exit(1);
@@ -58,6 +80,7 @@ export async function main(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     await consumer.stop();
+    for (const service of services) await service.stop();
     await telemetry?.stop();
     await nc.drain();
     await pool.end();

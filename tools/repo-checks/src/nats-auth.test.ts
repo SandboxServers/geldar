@@ -75,14 +75,22 @@ function expectedTable(s: string): Record<string, { pub: string[]; sub: string[]
         kv('geldar-body-generation'),
         kv('geldar-skins'),
       ],
-      sub: [`geldar.${s}.body.>`, `geldar.${s}.blockowner.changed`, '_INBOX.>'],
+      sub: [
+        `geldar.${s}.body.>`,
+        `geldar.${s}.blockowner.changed`,
+        `geldar.${s}.state.>`,
+        '_INBOX.>',
+      ],
     },
     mind: {
       pub: [...MIND_TYPES.map((t) => `geldar.${s}.${t}`), ...JS, `geldar.${s}.body.>`],
       sub: ['_INBOX.>'],
     },
     // State (0280, AN-02b): the eventsink publishes the level push on state.<life>.level.
-    eventsink: { pub: [`geldar.${s}.dlq`, `geldar.${s}.state.>`, ...JS], sub: ['_INBOX.>'] },
+    eventsink: {
+      pub: [`geldar.${s}.dlq`, `geldar.${s}.state.>`, ...JS],
+      sub: [`geldar.${s}.state.>`, '_INBOX.>'],
+    },
     mcp: {
       pub: [`geldar.${s}.sovereign_call`, `geldar.${s}.body.>`, kv('geldar-presence'), ...JS],
       sub: ['_INBOX.>'],

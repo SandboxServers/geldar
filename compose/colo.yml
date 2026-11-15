@@ -220,6 +220,11 @@ services:
       GELDAR_NATS_URL: nats://nats:4222
       POSTGRES_HOST: postgres
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres
+      # AN-12b: unset by default (a null value passes the host variable through only when it is set). GELDAR_SHARD
+      # starts the state service and outbox; GELDAR_XP=1 counts XP; GELDAR_PROFICIENCY_THRESHOLDS needs GELDAR_XP=1.
+      GELDAR_SHARD:
+      GELDAR_XP:
+      GELDAR_PROFICIENCY_THRESHOLDS:
     secrets: [postgres]
     networks: [colo]
     depends_on:
