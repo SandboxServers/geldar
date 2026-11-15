@@ -115,6 +115,7 @@ Batching: C7-03c2 and C7-03b2 change the image set, so they merge in one window 
 - **id / wave / lane.** C7-03c5, wave 5, Supervisor lane. **depends-on.** C7-03c1, C7-03c2. **branch.** `phase1/c7-03c5-helper-bundle`. **migration.** no. **size.** M.
 - **Decision.** 0260. node5 (geldar-worldops) has no Node. The helper ships as a CI artifact, not a registry pull.
 - **Status.** Built by the cont1 pass; node steps by geldar-93 (runbook Step 0a).
+- **Note.** `.nvmrc` pins 22.23.2 for the repo tooling; the helper runtime pin in `deploy/body-helper-node.env` is 22.23.4. They differ on purpose: the helper's node is the pinned tarball, not `.nvmrc`.
 
 ### Goal
 

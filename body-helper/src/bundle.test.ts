@@ -35,4 +35,14 @@ describe('body-helper bundle (C7-03c5)', () => {
       .digest('hex');
     expect(readFileSync(join(out, 'main.js.sha256'), 'utf8')).toBe(`${digest}  main.js\n`);
   });
+
+  it('loads: with no config it exits 1 on the config error, not on a require shim', () => {
+    const run = spawnSync(process.execPath, [join(out, 'main.js')], {
+      env: { PATH: process.env.PATH ?? '', SYSTEMROOT: process.env.SYSTEMROOT ?? '' },
+      encoding: 'utf8',
+    });
+    expect(run.status, run.stderr).toBe(1);
+    expect(run.stderr).toContain('missing GELDAR_SHARD');
+    expect(run.stderr).not.toContain('Dynamic require');
+  });
 });

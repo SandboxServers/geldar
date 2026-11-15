@@ -37,9 +37,16 @@ describe('pinned Node reference (C7-03c5)', () => {
     expect(pin.BODY_HELPER_NODE_SHA256_LINUX_X64).toBe(NODE_SHA);
     expect(readFileSync(PIN_FILE, 'utf8')).not.toMatch(/\r/);
   });
+
+  it('the workflow setup-node version is the pinned helper runtime (the same string, not .nvmrc)', () => {
+    const setup = /node-version:\s*(\S+)/.exec(readFileSync(WORKFLOW, 'utf8'));
+    expect(setup?.[1]).toBe(pins().BODY_HELPER_NODE_VERSION);
+  });
 });
 
-describe('install script checks the bundle sha256 before it installs (C7-03c5)', { timeout: 30_000 }, () => {
+describe('install script checks the bundle sha256 before it installs (C7-03c5)', {
+  timeout: 30_000,
+}, () => {
   it('dry run blocks, and writes nothing, when main.js does not match main.js.sha256', () => {
     const root = mkdtempSync(join(tmpdir(), 'geldar-ih5-'));
     dirs.push(root);
@@ -83,6 +90,13 @@ describe('build-only CI workflow for the bundle (C7-03c5)', () => {
     expect(text).toMatch(/permissions:\s*\n\s+contents: read\n/);
     expect(text).not.toMatch(/secrets\./);
     expect(text).not.toMatch(/\bssh\b|\bscp\b|docker compose/);
+  });
+
+  it('rebuilds when the lockfile, the workspace file or the contract it imports changes', () => {
+    const text = yaml();
+    expect(text).toContain('- pnpm-lock.yaml');
+    expect(text).toContain('- pnpm-workspace.yaml');
+    expect(text).toContain('- contract/**');
   });
 
   it('builds the bundle, writes its sha256, self-checks it, and uploads the artifact', () => {

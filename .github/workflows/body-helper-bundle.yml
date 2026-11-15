@@ -10,6 +10,9 @@ on:
     branches: [main]
     paths:
       - body-helper/**
+      - contract/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
       - deploy/body-helper-node.env
       - .github/workflows/body-helper-bundle.yml
   workflow_dispatch:

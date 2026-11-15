@@ -1,203 +1,42 @@
 // C7-03c2: deploy/install-body-helper.sh is dry-run by default, idempotent, never prints a secret and
-// refuses unknown flags. The shell tests run the script under a temp prefix with recording fakes of
-// systemctl, node and head on PATH. They need bash (Git Bash on Windows, or any Linux shell). The file
-// mode tests run on Linux only: Windows does not keep POSIX modes.
+// refuses unknown flags. The shell tests run the script under a temp prefix with recording fakes (see
+// install-body-helper-fixture.ts). They need bash (Git Bash on Windows, or any Linux shell). The file
+// mode tests run on Linux only: Windows does not keep POSIX modes. The pinned node and the bundle sha256
+// gate are in install-body-helper-node.test.ts.
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import {
   chmodSync,
   existsSync,
   lstatSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   rmSync,
-  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { delimiter, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import {
+  CANARY,
+  calls,
+  ENV_PATH,
+  fixture,
+  modeOf,
+  mutations,
+  NATS_PATH,
+  ON_WINDOWS,
+  PG_PATH,
+  REPO,
+  removeFixtures,
+  run,
+  SCRIPT_SRC,
+  SECRET_DIR_PATH,
+  UNIT_PATH,
+  withBuild,
+  withEnv,
+} from './install-body-helper-fixture';
 
-const DEPLOY = fileURLToPath(new URL('..', import.meta.url));
-const REPO = fileURLToPath(new URL('../..', import.meta.url))
-  .replaceAll('\\', '/')
-  .replace(/\/$/, '');
-const SCRIPT = join(DEPLOY, 'install-body-helper.sh');
-// On Windows, plain `bash` can be the WSL launcher, which cannot run this script. Set
-// GELDAR_SHELL_TESTS_BASH to a Git Bash binary there.
-const BASH = process.env.GELDAR_SHELL_TESTS_BASH ?? 'bash';
-const SCRIPT_SRC = readFileSync(SCRIPT, 'utf8');
-const CANARY = 'CANARY-SECRET-7f3a9c-do-not-print';
-// Paths are relative to the fixture root; the script runs there with the prefix "rt".
-const UNIT_PATH = 'rt/etc/systemd/system/geldar-body-helper.service';
-const BUILD_PATH = 'rt/opt/geldar/body-helper/dist/main.js';
-const ENV_PATH = 'rt/etc/geldar/body-helper.env';
-const SECRET_DIR_PATH = 'rt/etc/geldar/secrets';
-const PG_PATH = `${SECRET_DIR_PATH}/helper-postgres.txt`;
-const NATS_PATH = `${SECRET_DIR_PATH}/nats-helper.txt`;
-const ON_WINDOWS = process.platform === 'win32';
-
-const dirs: string[] = [];
-afterEach(() => {
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
-});
-
-interface Fixture {
-  root: string;
-  bin: string;
-  log: string;
-  state: string;
-  /** The fixture repo checkout (forward slashes: the script's path check refuses backslashes). */
-  repo: string;
-}
-
-/**
- * A temp root with fake systemctl, node and head on PATH, and a fake checkout that holds an empty
- * tools/migrate/node_modules. The fake systemctl and node append their argv to the log. The fake
- * head records the umask it runs under in state/head-umask; state/head-empty makes it print nothing.
- */
-function fixture(): Fixture {
-  const root = mkdtempSync(join(tmpdir(), 'geldar-ih-'));
-  dirs.push(root);
-  const bin = join(root, 'bin');
-  const state = join(root, 'state');
-  const repo = join(root, 'repo');
-  mkdirSync(bin);
-  mkdirSync(state);
-  mkdirSync(join(repo, 'tools/migrate/node_modules'), { recursive: true });
-  const record = 'echo "$(basename "$0") $*" >> "$FAKE_LOG"';
-  const systemctl = [
-    '#!/bin/sh',
-    record,
-    'case "$1" in',
-    '  is-enabled) [ -f "$FAKE_STATE/enabled" ]; exit $? ;;',
-    '  enable) touch "$FAKE_STATE/enabled" ;;',
-    'esac',
-    'exit 0',
-    '',
-  ].join('\n');
-  const head = [
-    '#!/bin/sh',
-    'echo "$(umask)" > "$FAKE_STATE/head-umask"',
-    '[ -f "$FAKE_STATE/head-empty" ] && exit 0',
-    '[ -f "$FAKE_STATE/head-short" ] && { printf "0123456789abcdef0123456789abcde"; exit 0; }',
-    "printf '0123456789abcdef0123456789abcdef'",
-    '',
-  ].join('\n');
-  // The fake id prints 0 when FAKE_ROOT is set (the root checks), else an ordinary user's uid.
-  const id = '#!/bin/sh\n[ -n "$FAKE_ROOT" ] && echo 0 || echo 1000\n';
-  writeFileSync(join(bin, 'systemctl'), systemctl);
-  writeFileSync(join(bin, 'node'), `#!/bin/sh\n${record}\nexit 0\n`);
-  writeFileSync(join(bin, 'head'), head);
-  writeFileSync(join(bin, 'id'), id);
-  for (const name of ['systemctl', 'node', 'head', 'id']) chmodSync(join(bin, name), 0o755);
-  return {
-    root,
-    bin,
-    log: join(root, 'calls.log'),
-    state,
-    repo: repo.replaceAll('\\', '/'),
-  };
-}
-
-/** Puts the helper build and its sha256 sidecar (dist/main.js.sha256, as the CI job writes it) where the script expects them. */
-function withBuild(fx: Fixture): void {
-  const file = join(fx.root, BUILD_PATH);
-  mkdirSync(join(file, '..'), { recursive: true });
-  const body = '// fake build\n';
-  writeFileSync(file, body);
-  const digest = createHash('sha256').update(body).digest('hex');
-  writeFileSync(`${file}.sha256`, `${digest}  main.js\n`);
-}
-
-/** Puts the env file where the script expects it. Names only, as geldar-93 writes it. */
-function withEnv(fx: Fixture): void {
-  const file = join(fx.root, ENV_PATH);
-  mkdirSync(join(file, '..'), { recursive: true });
-  writeFileSync(file, 'GELDAR_TEST_NAME=present\n');
-}
-
-interface RunOptions {
-  prefix?: string;
-  /** Runs with no directory on PATH that holds a node binary. */
-  noNode?: boolean;
-  /** Overrides of the run's environment; an undefined value removes that variable. */
-  env?: Record<string, string | undefined>;
-}
-
-/** The environment of one run: the PG* variables are set (the apply preflight needs them) and the test marker is set. */
-function testEnv(fx: Fixture, path: string, opts: RunOptions): NodeJS.ProcessEnv {
-  const env: Record<string, string | undefined> = {
-    ...process.env,
-    PATH: path,
-    FAKE_BIN: opts.noNode ? '' : fx.bin,
-    BODY_HELPER_PREFIX: opts.prefix ?? 'rt',
-    BODY_HELPER_REPO: fx.repo,
-    BODY_HELPER_TEST: '1',
-    PGHOST: 'localhost',
-    PGUSER: 'test_admin',
-    PGDATABASE: 'test_db',
-    FAKE_LOG: fx.log,
-    FAKE_STATE: fx.state,
-    ...opts.env,
-  };
-  for (const key of Object.keys(env)) if (env[key] === undefined) delete env[key];
-  return env;
-}
-
-/** PATH without any directory that holds a node binary. */
-function pathWithoutNode(): string {
-  return (process.env.PATH ?? '')
-    .split(delimiter)
-    .filter(
-      (dir) => dir !== '' && !existsSync(join(dir, 'node')) && !existsSync(join(dir, 'node.exe')),
-    )
-    .join(delimiter);
-}
-
-function run(fx: Fixture, args: string[], opts: RunOptions = {}): { status: number; out: string } {
-  // C7-03c5: the script runs the pinned node under <prefix>/opt/geldar/node/bin/node. A fake one stands
-  // there unless the case is noNode (then the pinned node is absent, as on a node with no Node).
-  const pinnedNode = join(fx.root, 'rt/opt/geldar/node/bin/node');
-  mkdirSync(join(fx.root, 'rt/opt/geldar/node/bin'), { recursive: true });
-  if (opts.noNode) rmSync(pinnedNode, { force: true });
-  else writeFileSync(pinnedNode, '#!/bin/sh\necho "node $*" >> "$FAKE_LOG"\nexit 0\n');
-  const path = opts.noNode ? pathWithoutNode() : `${fx.bin}${delimiter}${process.env.PATH ?? ''}`;
-  // Git Bash starts with /usr/bin ahead of PATH, which would hide the fake head. So the fake bin is
-  // put first inside the shell, after its startup, and the script then runs in that same shell.
-  const result = spawnSync(
-    BASH,
-    [
-      '-c',
-      'if [ -n "$FAKE_BIN" ]; then PATH="$FAKE_BIN:$PATH"; fi; exec bash "$0" "$@"',
-      SCRIPT,
-      ...args,
-    ],
-    {
-      cwd: fx.root,
-      encoding: 'utf8',
-      env: testEnv(fx, path, opts),
-    },
-  );
-  return { status: result.status ?? -1, out: `${result.stdout}${result.stderr}` };
-}
-
-function calls(fx: Fixture): string[] {
-  return existsSync(fx.log) ? readFileSync(fx.log, 'utf8').trim().split('\n').filter(Boolean) : [];
-}
-
-/** The calls that change something: `systemctl is-enabled` is a read and is left out. */
-function mutations(fx: Fixture): string[] {
-  return calls(fx).filter((c) => !c.startsWith('systemctl is-enabled'));
-}
-
-/** The mode bits of a file or directory under the fixture root (Linux only). */
-function modeOf(fx: Fixture, rel: string): number {
-  return statSync(join(fx.root, rel)).mode & 0o777;
-}
+afterEach(removeFixtures);
 
 describe('install-body-helper.sh: static checks (C7-03c2)', () => {
   it('is committed as mode 100755, so the runbook can run it directly', () => {
@@ -395,7 +234,9 @@ describe('install-body-helper.sh: apply, idempotence and secrets (C7-03c2)', {
     expect(log).toContain('systemctl daemon-reload');
     expect(log).toContain('systemctl enable --now geldar-body-helper.service');
     expect(
-      log.some((c) => c.startsWith('node ') && c.includes('--set-role-password geldar_helper')),
+      log.some(
+        (c) => c.startsWith('pinned-node ') && c.includes('--set-role-password geldar_helper'),
+      ),
     ).toBe(true);
   });
 
@@ -414,7 +255,9 @@ describe('install-body-helper.sh: apply, idempotence and secrets (C7-03c2)', {
     withBuild(fx);
     withEnv(fx);
     expect(run(fx, ['--apply']).status).toBe(0);
-    const line = calls(fx).find((c) => c.startsWith('node ') && c.includes('--set-role-password'));
+    const line = calls(fx).find(
+      (c) => c.startsWith('pinned-node ') && c.includes('--set-role-password'),
+    );
     expect(line).toBeDefined();
     expect(line).toMatch(/ --password-file (\S+)$/);
     expect(line?.match(/ --password-file (\S+)$/)?.[1]).toBe(PG_PATH);
@@ -475,7 +318,9 @@ describe('install-body-helper.sh: apply, idempotence and secrets (C7-03c2)', {
     expect(out).toContain('came out empty');
     expect(existsSync(join(fx.root, PG_PATH))).toBe(false);
     expect(existsSync(join(fx.root, NATS_PATH))).toBe(false);
-    expect(mutations(fx).some((c) => c.startsWith('node '))).toBe(false);
+    expect(
+      mutations(fx).some((c) => c.startsWith('pinned-node ') || c.startsWith('path-node ')),
+    ).toBe(false);
   });
 
   it('a second --apply changes nothing: no daemon-reload, no enable, the files stay', () => {
@@ -492,7 +337,7 @@ describe('install-body-helper.sh: apply, idempotence and secrets (C7-03c2)', {
     expect(
       second.some((c) => c.includes('daemon-reload') || c.startsWith('systemctl enable')),
     ).toBe(false);
-    expect(second.every((c) => c.startsWith('node '))).toBe(true);
+    expect(second.every((c) => c.startsWith('pinned-node '))).toBe(true);
   }, 30_000);
 
   it('a changed unit on an enabled service is reloaded and restarted', () => {

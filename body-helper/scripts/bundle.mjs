@@ -22,6 +22,10 @@ export async function bundle(outdir = join(PACKAGE, 'dist')) {
     legalComments: 'none',
     sourcemap: false,
     logLevel: 'warning',
+    // The bundle is ESM; a CJS dependency calls require(), which ESM does not provide. This banner supplies it.
+    banner: {
+      js: "import { createRequire as __geldarRequire } from 'node:module'; const require = __geldarRequire(import.meta.url);",
+    },
   });
   const digest = createHash('sha256').update(readFileSync(outfile)).digest('hex');
   writeFileSync(join(outdir, 'main.js.sha256'), `${digest}  main.js\n`);

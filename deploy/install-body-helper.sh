@@ -10,9 +10,8 @@
 # helper gets onto the node. This script does not fetch or copy code. It expects the build at
 # $INSTALL_DIR/dist/main.js; until that file exists it writes no unit and enables nothing.
 #
-# Carry-forward (C7-03c5): this node has no Node today. The unit's ExecStart and the migrate call in
-# step 4 use the node on PATH and the checkout's tools/migrate. C7-03c5 moves both to a pinned node
-# under /opt/geldar. Until then --apply refuses to start without node (the preflight below).
+# C7-03c5: the unit's ExecStart and the migrate call in step 4 run a pinned node under /opt/geldar/node
+# (deploy/body-helper-node.env), never a node on PATH. --apply refuses to start without it (the preflight below).
 #
 # Environment (names only):
 #   BODY_HELPER_PREFIX  root for every path below; empty on the node (tests set a temp root).
@@ -74,19 +73,26 @@ if [ "$APPLY" = 1 ] && [ -z "$PREFIX" ] && [ "$(id -u)" != 0 ]; then
   die "--apply on the node needs root (run with sudo)"
 fi
 # The pinned Node runtime (C7-03c5): extracted from the staged tarball only after its sha256 matches the pin.
-. "$SCRIPT_DIR/body-helper-node.env"
+# BODY_HELPER_NODE_ENV (test-only, like BODY_HELPER_PREFIX) names another pin file, and only with a prefix set.
+NODE_ENV_FILE="$SCRIPT_DIR/body-helper-node.env"
+if [ -n "$PREFIX" ] && [ -n "${BODY_HELPER_NODE_ENV:-}" ]; then NODE_ENV_FILE="$BODY_HELPER_NODE_ENV"; fi
+. "$NODE_ENV_FILE"
 NODE_DIR="$PREFIX/opt/geldar/node"
 NODE_BIN="$NODE_DIR/bin/node"
+NODE_STAMP="$NODE_DIR/.pinned-sha256"
 NODE_TARBALL_PATH="$NODE_DIR/$BODY_HELPER_NODE_TARBALL"
 sha256_of() { sha256sum "$1" | cut -d' ' -f1; }
 node_tarball_ok() { [ -f "$NODE_TARBALL_PATH" ] && [ "$(sha256_of "$NODE_TARBALL_PATH")" = "$BODY_HELPER_NODE_SHA256_LINUX_X64" ]; }
+# The node is trusted only when the stamp written after extraction names the pinned tarball sha256.
+node_pinned_ok() { [ -f "$NODE_BIN" ] && [ -f "$NODE_STAMP" ] && [ "$(cat "$NODE_STAMP")" = "$BODY_HELPER_NODE_SHA256_LINUX_X64" ]; }
 # Preflight, before any write: the migrate verb (step 4) runs the pinned node from the checkout.
 if [ "$APPLY" = 1 ]; then
-  if [ ! -f "$NODE_BIN" ]; then
+  command -v xz >/dev/null 2>&1 || die "--apply needs xz to unpack the node tarball (install xz-utils); nothing was changed"
+  if ! node_pinned_ok; then
     if [ -f "$NODE_TARBALL_PATH" ] && ! node_tarball_ok; then
       die "the staged node tarball does not match its sha256 in deploy/body-helper-node.env; nothing was changed"
     fi
-    node_tarball_ok || die "--apply needs node at $NODE_BIN, or the pinned tarball staged at $NODE_TARBALL_PATH; nothing was changed"
+    node_tarball_ok || die "--apply needs node $BODY_HELPER_NODE_VERSION (the pinned node) at $NODE_BIN, or the pinned tarball staged at $NODE_TARBALL_PATH; nothing was changed"
   fi
   [ -d "$REPO_DIR/tools/migrate/node_modules" ] || die "--apply needs $REPO_DIR/tools/migrate/node_modules (run pnpm install in the checkout); nothing was changed"
   # The password step (step 4) logs in with the PG* variables, and its login probe needs PGDATABASE.
@@ -125,6 +131,7 @@ if [ -f "$BUILD_MAIN" ]; then
   note "helper build present: $INSTALL_DIR/dist/main.js"
   # The bundle's sha256 (dist/main.js.sha256, written by the CI job) must match before anything is installed.
   if [ ! -f "$BUILD_MAIN.sha256" ]; then
+    if [ "$APPLY" = 1 ]; then die "bundle sha256 sidecar missing: $BUILD_MAIN.sha256; nothing was changed"; fi
     BLOCKED=1
     note "blocked: bundle sha256 sidecar missing: $BUILD_MAIN.sha256; no unit is written or enabled"
   elif [ "$(sha256_of "$BUILD_MAIN")" != "$(awk '{print $1}' "$BUILD_MAIN.sha256")" ]; then
@@ -141,16 +148,20 @@ fi
 
 # 1c. The pinned Node runtime. Without it the unit and the migrate verb cannot run, so the unit is not enabled.
 NODE_READY=0
-if [ -f "$NODE_BIN" ]; then
+if node_pinned_ok; then
   NODE_READY=1
-  note "pinned node present: $NODE_BIN"
+  note "pinned node present: $NODE_BIN (stamp $BODY_HELPER_NODE_VERSION)"
 elif node_tarball_ok; then
-  change "extract pinned node $BODY_HELPER_NODE_VERSION into $NODE_DIR (sha256 checked against deploy/body-helper-node.env)"
+  change "extract pinned node $BODY_HELPER_NODE_VERSION into $NODE_DIR (sha256 checked against deploy/body-helper-node.env; root-owned when run as root)"
   if [ "$APPLY" = 1 ]; then
-    tar -xJf "$NODE_TARBALL_PATH" -C "$NODE_DIR" --strip-components=1
+    tar -xJf "$NODE_TARBALL_PATH" -C "$NODE_DIR" --strip-components=1 --no-same-owner
     [ -f "$NODE_BIN" ] || die "the pinned node tarball did not unpack to $NODE_BIN"
+    if [ "$(id -u)" = 0 ]; then chown -R root:root "$NODE_DIR"; fi
+    printf '%s\n' "$BODY_HELPER_NODE_SHA256_LINUX_X64" >"$NODE_STAMP"
     NODE_READY=1
   fi
+elif [ -f "$NODE_BIN" ]; then
+  note "blocked: node at $NODE_BIN is not the pinned $BODY_HELPER_NODE_VERSION (no matching $NODE_STAMP); stage $BODY_HELPER_NODE_TARBALL in $NODE_DIR; the unit is not enabled"
 else
   note "blocked: pinned node $BODY_HELPER_NODE_VERSION missing: stage $BODY_HELPER_NODE_TARBALL in $NODE_DIR; the unit is not enabled"
 fi
