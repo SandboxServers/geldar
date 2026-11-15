@@ -8,7 +8,7 @@
 ## What changes
 
 1. `phantom_diag` operator line (`golem/src/body/reflexes/phantom-diag.ts`, called from the phantom trigger in `fight-or-flee.ts`). At each evaluation of the phantom trigger, when a phantom is listed within 24 blocks, one JSON line goes to the Body's own log, at most one per 5 s per Body. Fields: armed, health, armed_cutoff, reason (health_too_low, no_weapon, not_in_range, fired, other), weapon carried, phantoms_24, nearest_phantom, others_16 (non-phantom hostiles within 16), in_open (no block in the 3 cells above the head), tick.
-2. `attack_diag` operator line (`golem/src/actions/attack.ts`). When an attack starts on a found target, one JSON line: the target name, the entity name, its distance and the target kind.
+2. `attack_diag` operator line (`golem/src/actions/attack.ts`). When an attack starts on a found target, one JSON line: the target name (the name the attack was asked for), the entity name it matched, its distance and the target kind. At most one line per bot (one bot per Body connection) per 2 s; an attack call inside that window writes nothing, and a call that fails before the swing starts (for example an equip error) writes nothing and does not start the window.
 3. An optional view read, `roofWithin` (`golem/src/body/view.ts`), used only for in_open.
 
 ## What does NOT change
