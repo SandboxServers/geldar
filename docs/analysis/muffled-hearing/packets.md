@@ -91,6 +91,7 @@ This card REWRITES 0198's acceptance tests to gate on effective distance instead
 - **prove-it** (rule cases in `ProximityRuleTest`; the notice emit and the per-line cap in `ProximityChatListenerTest`):
   - a clear pair (no walls, raw 20): words delivered, no notice
   - a muffled pair (wall, `e` = 35): no words, one `heard_muffled` emit with the right direction and band
+  - a muffled speaker directly above (and one directly below) the listener: one `heard_muffled` emit with direction `overhead` (`below`), no words; at exactly 1.0 block horizontal offset the direction is a compass point
   - a silent pair (`e` = 50): neither
   - a sealed listener at `e` = 31 becomes muffled (sealed penalty 4 pushes it to 35)
   - a line whose casts exceed 512 reads gives silent to the rest and logs a counter, never the words
@@ -107,7 +108,7 @@ This card REWRITES 0198's acceptance tests to gate on effective distance instead
   - a snapshot never contains a coordinate, a speaker name or a word (scan test over the rendered text)
   - the sentence uses the fixed table; an unknown code is refused, not shown
   - revert the collapse and the three-line cap test fails
-- **note:** do not reuse golem's `bandOf`: the plugin sends `far` up to 32 blocks; the contract description that says 24 is a known mismatch, not this packet's to fix.
+- **note:** do not reuse golem's `bandOf`: the plugin sends `far` up to 32 blocks (the contract text says 32 since PR #499). Direction is one of the 8 compass points, `overhead` or `below` (overhead/below when the horizontal offset is under 1 block; decision 0199 step 6). Parse with `validateHeardMuffledPayload` from `@geldar/contract`, never a hand-written compass enum; the collapse keys are the 10 direction codes, so overhead and below are never merged into a compass point; word every notice from the fixed table (`heardMuffledSentence`). Add to prove-it: a snapshot with an `overhead` notice and an `n` notice shows two lines.
 
 ## MH-5: threshold handler and Body wiring
 
