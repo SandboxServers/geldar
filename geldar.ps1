@@ -378,17 +378,21 @@ function Get-NatsUsers([string] $Shard) {
       # Control (C7-03b1): the body never publishes a ctl.body request, so it cannot start or stop a body for an owner.
       # State (0280): the body never publishes a level push, so it cannot forge a domain level. It still requests the
       # proficiency subject (state.<life>.proficiency), which this deny does not match.
-      PubDeny = @("geldar.$s.kino.>", "geldar.$s.blockowner.changed", "geldar.$s.ctl.body.>", "geldar.$s.helper.body.>", "geldar.$s.state.*.level");
+      # Hearing (decision 0199, MH-CH): only the plugin publishes a hearing notice, so the body cannot forge one.
+      PubDeny = @("geldar.$s.kino.>", "geldar.$s.blockowner.changed", "geldar.$s.ctl.body.>", "geldar.$s.helper.body.>", "geldar.$s.state.*.level", "geldar.$s.body.*.hearing");
       # Block ownership (decision 0165): the body queries geldar.<s>.blockowner.query (inside its geldar.<s>.> allow) and
       # hears blockowner.changed; it is denied publishing changed, so it cannot forge an owner.
       # State (AN-12b): the body hears the level pushes (state.<life>.level) and may receive the subtree; its request is in its Pub.
       Sub = @("geldar.$s.body.>", "geldar.$s.blockowner.changed", "geldar.$s.state.>", '_INBOX.>') }
+    # Hearing (decision 0199, MH-CH): the mind's body.> allow would cover the hearing subject, so it is denied by name.
     mind = @{ Pub = @($mindTypes | ForEach-Object { "geldar.$s.$_" }) + $js + @("geldar.$s.body.>");
+      PubDeny = @("geldar.$s.body.*.hearing");
       Sub = @('_INBOX.>') }
     # State (0280, AN-02b, AN-12b): the eventsink publishes the level push (state.<life>.level) and subscribes to the
     # request (state.<life>.proficiency, queue group state-service) on the state subtree, and replies on the inbox.
     eventsink = @{ Pub = @("geldar.$s.dlq", "geldar.$s.state.>") + $js; Sub = @("geldar.$s.state.>", '_INBOX.>') }
-    mcp = @{ Pub = @("geldar.$s.sovereign_call", "geldar.$s.body.>", (& $kv 'geldar-presence')) + $js; Sub = @('_INBOX.>') }
+    # Hearing (decision 0199, MH-CH): mcp's body.> allow would cover the hearing subject, so it is denied by name.
+    mcp = @{ Pub = @("geldar.$s.sovereign_call", "geldar.$s.body.>", (& $kv 'geldar-presence')) + $js; PubDeny = @("geldar.$s.body.*.hearing"); Sub = @('_INBOX.>') }
     # Read-only (0137 item 3, 0087 correction): a KV watch and get on two buckets; no $KV publish, no $JS.API.>.
     velocity = @{ Pub = @(foreach ($b in 'geldar-life-registry', 'geldar-skins') { "`$JS.API.STREAM.INFO.KV_$b"; "`$JS.API.CONSUMER.CREATE.KV_$b"; "`$JS.API.CONSUMER.CREATE.KV_$b.>"; "`$JS.API.CONSUMER.INFO.KV_$b.>"; "`$JS.API.CONSUMER.DELETE.KV_$b.>" }) + @('$JS.FC.>', '_INBOX.>'); Sub = @('_INBOX.>') }
     # Kino: the plugin publishes the feed and reads the control subject, and cannot publish control (so it cannot forge a start).

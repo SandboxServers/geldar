@@ -6,13 +6,14 @@
   object-fit: contain;
 }
 
-/* The live chat panel (decision 0310, geldar-chat.js). Fixed at the right edge; bottom of the screen on a narrow one. */
+/* The live chat panel (decision 0310, geldar-chat.js). Fixed at the right edge, below BlueMap's control bar (y 8..40);
+   on a narrow screen, at the bottom, left of BlueMap's zoom buttons. */
 #geldar-chat {
   position: fixed;
-  top: 12px;
+  top: 56px;
   right: 12px;
   width: 300px;
-  max-height: 40vh;
+  max-height: min(40vh, calc(100vh - 68px));
   display: flex;
   flex-direction: column;
   z-index: 1000;
@@ -25,9 +26,9 @@
   #geldar-chat {
     top: auto;
     bottom: 12px;
-    left: auto;
-    right: 8px;
-    width: min(300px, calc(100vw - 16px));
+    left: 8px;
+    right: 68px;
+    width: auto;
     max-height: 35vh;
   }
 }
