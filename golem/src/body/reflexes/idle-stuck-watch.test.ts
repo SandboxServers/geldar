@@ -15,6 +15,8 @@ interface Live {
   actionRunning: boolean | undefined;
   asleep: boolean | undefined;
   riding: boolean | undefined;
+  /** The planner's safe-drop test (BodyView.noSafeExit): true, false, or null for an unread cell. */
+  noSafeExit?: boolean | null;
 }
 
 function still(over: Partial<Live> = {}): Live & BodyView {
