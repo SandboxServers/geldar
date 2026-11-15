@@ -133,10 +133,13 @@ export async function sleepTool(deps: SleepDeps, call: ToolCall): Promise<SleepR
   }
   deps.failures?.recordSleep(call.lifeId, snapshot);
   const facts = deps.failures?.observe(call.lifeId, events, placeOf(snapshot), deps.now()) ?? [];
-  // One slot of the limit is kept for the sleep-not-finished event, so the list stays within it.
-  const shown = digested.events.slice(-(SLEEP_EVENT_LIMIT - 1));
+  // The sleep-not-finished event and the facts take their slots first; the newest digest events fill
+  // the rest, so the list never exceeds the limit.
+  const factList = factEvents(facts, cursor, 0);
+  const room = Math.max(0, SLEEP_EVENT_LIMIT - 1 - factList.length);
+  const shown = room === 0 ? [] : digested.events.slice(-room);
   shown.push({ seq: Math.max(1, cursor), type: 'wake', tick: 0, text: SLEEP_NOT_FINISHED });
-  shown.push(...factEvents(facts, cursor, 0));
+  shown.push(...factList);
   return {
     day,
     days_since_sleep: day - mark.lastSleepDay,

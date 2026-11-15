@@ -88,9 +88,10 @@ export interface SleepCompletionDeps {
  * earlier failure, sets the mark and appends the journal line. A failed, cancelled or unknown one
  * writes nothing. The mark is written monotonically: it keeps the later of the stored and the pending
  * day and cursor, so a sleep that settles late never lowers the mark. The entry is removed only after
- * both writes; a store error keeps it, logs one line and does not throw, so the next outcome for the
- * same thought retries both writes. The journal line is appended once, after the mark, and only the
- * write that completes removes the entry, so a settled sleep writes nothing again.
+ * both writes. A store error keeps the entry, logs one payload-free line and rethrows, so the stream's
+ * retry loop runs the message again; the settle is idempotent, so a retry writes the mark and journal
+ * line once. The journal line is appended after the mark, and only the write that completes removes
+ * the entry, so a settled sleep writes nothing again.
  */
 export async function completeSleep(
   deps: SleepCompletionDeps,
@@ -116,7 +117,7 @@ export async function completeSleep(
     if (sleep.journal !== null) await deps.journal.append(lifeId, sleep.journal, deps.now());
   } catch (err) {
     deps.log({ event: 'sleep_settle_error', kind: err instanceof Error ? err.name : 'unknown' });
-    return;
+    throw err;
   }
   deps.pending.delete(lifeId, result.thought_id);
 }

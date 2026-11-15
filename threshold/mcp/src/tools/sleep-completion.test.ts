@@ -1,11 +1,12 @@
 import type { PlanMessage, PlanResultPayload } from '@geldar/contract';
+import { validateToolResult } from '@geldar/contract';
 import { describe, expect, it } from 'vitest';
 import { FailureTracker } from '../failures/tracker.ts';
 import { FakeJournalStore, FakePlayerEventLog } from '../fakes/stores.fakes.ts';
 import { FakeBody } from '../fakes/world.fakes.ts';
 import type { SleepMark, SleepMarks } from '../ports.ts';
 import type { ToolCall } from './look.ts';
-import { actSleepEntry, type SleepDeps, sleepTool } from './sleep.ts';
+import { actSleepEntry, SLEEP_EVENT_LIMIT, type SleepDeps, sleepTool } from './sleep.ts';
 import {
   completeSleep,
   PENDING_SLEEP_LIMIT,
@@ -251,7 +252,7 @@ describe('sleep completion', () => {
     w.marks.failNext = true;
     await expect(
       completeSleep(settleDeps(w, pending), LIFE, outcome('th_1', ['completed'])),
-    ).resolves.toBeUndefined();
+    ).rejects.toThrow('connection lost');
     expect(w.logged).toEqual([{ event: 'sleep_settle_error', kind: 'Error' }]);
     expect(JSON.stringify(w.logged)).not.toContain('secret');
     expect(pending.get(LIFE, 'th_1')).toBeDefined();
@@ -317,7 +318,9 @@ describe('sleep completion', () => {
     const settle = { ...settleDeps(w, pending), journal };
     pending.add(LIFE, 'th_j', { day: 1, cursor: 1, action: 0, journal: JOURNAL_LINE });
     journal.failNext = true;
-    await completeSleep(settle, LIFE, outcome('th_j', ['completed']));
+    await expect(completeSleep(settle, LIFE, outcome('th_j', ['completed']))).rejects.toThrow(
+      'journal down',
+    );
     expect(w.logged).toEqual([{ event: 'sleep_settle_error', kind: 'Error' }]);
     expect(JSON.stringify(w.logged)).not.toContain('secret');
     expect(pending.get(LIFE, 'th_j')).toBeDefined();
@@ -387,6 +390,33 @@ describe('sleep completion', () => {
         text: 'goto 1,1,1 has failed 3 times in a row (blocked).',
       },
     ]);
+  });
+
+  it('a sleep with 120 digest events and a repeated-failure fact stays within the event limit', async () => {
+    const w = world();
+    const failures = new FailureTracker();
+    const deps = { ...sleepDeps(w, new PendingSleeps()), failures };
+    const goto = { do: 'goto', target: { x: 1, y: 1, z: 1 } };
+    for (let i = 0; i < 3; i++) failures.submitted(LIFE, [goto]);
+    for (let seq = 1; seq <= 120; seq++) {
+      await w.body.emit(LIFE, { seq, atMs: 1000, tick: 20, kind: 'damage' } as never);
+    }
+    for (let seq = 121; seq <= 123; seq++) {
+      await w.body.emit(LIFE, {
+        seq,
+        atMs: 1000,
+        tick: 20,
+        kind: 'action_failed',
+        name: 'goto',
+        reason: 'blocked',
+      } as never);
+    }
+    const result = await sleepTool(deps, CALL);
+    expect(validateToolResult('sleep', result).ok).toBe(true);
+    expect(result.events.length).toBeLessThanOrEqual(SLEEP_EVENT_LIMIT);
+    expect(result.events.at(-1)?.text).toBe('goto 1,1,1 has failed 3 times in a row (blocked).');
+    expect(result.events.some((e) => e.type === 'wake')).toBe(true);
+    expect(result.events.some((e) => e.seq === 120 && e.type === 'damage')).toBe(true);
   });
 
   it('a death drops the pending sleeps of the life: a later plan_result writes nothing', async () => {
