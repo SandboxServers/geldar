@@ -258,6 +258,57 @@ describe('the character block in a Body (AN-07)', () => {
       expect(lines.some((line) => line.includes(leaf))).toBe(false);
     }
   });
+
+  describe('the audit publisher is closed with the Body (AN-07)', () => {
+    /** An injected publisher: recordAdoption and close are spies, so the test reads the close count. */
+    function fakeAudit() {
+      const close = vi.fn();
+      const audit = { recordAdoption: vi.fn(), close } as unknown as NonNullable<
+        AdamBodyEnv['audit']
+      >;
+      return { audit, close };
+    }
+
+    it('closes the audit publisher when the Body stops', async () => {
+      const r = rig();
+      const { audit, close } = fakeAudit();
+      const running = await startAdamBody({ ...r.env, character: ADOPTED, audit }, fakeBot());
+      expect(close).not.toHaveBeenCalled();
+      await running.stop();
+      expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes the audit publisher when the start fails after the adoption', async () => {
+      const r = rig();
+      const { audit, close } = fakeAudit();
+      const bot = Object.assign(fakeBot(), { quit: vi.fn() });
+      r.env.server = {
+        serve: () => {
+          throw new Error('nats unavailable');
+        },
+      };
+      await expect(startAdamBody({ ...r.env, character: ADOPTED, audit }, bot)).rejects.toThrow(
+        'nats unavailable',
+      );
+      expect(close).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes the audit publisher even when an earlier stop step rejects', async () => {
+      const r = rig();
+      const { audit, close } = fakeAudit();
+      const restart = r.env.restart as NonNullable<AdamBodyEnv['restart']>;
+      r.env.restart = async (o) => {
+        const restarted = await restart(o);
+        restarted.body.executor.stop = async () => {
+          throw new Error('executor would not stop');
+        };
+        return restarted;
+      };
+      const running = await startAdamBody({ ...r.env, character: ADOPTED, audit }, fakeBot());
+      await expect(running.stop()).rejects.toThrow('executor would not stop');
+      expect(close).toHaveBeenCalledTimes(1);
+    });
+  });
 });
 
 describe('the ownership client in a Body (decisions 0164, 0165)', () => {

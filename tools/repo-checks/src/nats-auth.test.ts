@@ -378,8 +378,14 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
     // roll, decision, sheet_adopted and chunk_visited ride body's geldar.<shard>.> allow; no ACL line is added.
     // Booleans only: the rendered config holds generated passwords.
     const entries = parseEntries(rendered?.conf ?? '');
-    const publishAllowed = (user: string, subject: string) =>
-      (entries.find((e) => e.user === user)?.pub ?? []).some((p) => subjectMatches(p, subject));
+    // Publishable only when an allow pattern matches and no deny pattern does (nats-server takes deny first).
+    const publishAllowed = (user: string, subject: string) => {
+      const entry = entries.find((e) => e.user === user);
+      return (
+        (entry?.pub ?? []).some((p) => subjectMatches(p, subject)) &&
+        !(entry?.deny ?? []).some((p) => subjectMatches(p, subject))
+      );
+    };
     for (const type of ['roll', 'decision', 'sheet_adopted', 'chunk_visited']) {
       const subject = `geldar.${SHARD}.${type}`;
       expect(publishAllowed('body', subject)).toBe(true);

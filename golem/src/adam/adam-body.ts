@@ -332,12 +332,16 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
       // plan the link awaits can finish; only after that is the link waited for.
       link?.stopServing();
       stopImages?.();
-      await executor.stop();
-      await runtime.cancelAction();
-      await link?.idle();
-      await renders?.close();
-      await restarted.stop();
-      audit?.close();
+      // The audit publisher closes even when an earlier step rejects: its retry loop must not outlive the Body.
+      try {
+        await executor.stop();
+        await runtime.cancelAction();
+        await link?.idle();
+        await renders?.close();
+        await restarted.stop();
+      } finally {
+        audit?.close();
+      }
     },
   };
 }
