@@ -54,6 +54,17 @@ describe('failure detail text', () => {
     );
   });
 
+  it('an ok till or place appends its plain fact after the fixed line', () => {
+    expect(playerOutcomeText({ verb: 'till', ok: true, detail: 'dirt to farmland' })).toBe(
+      'Your till worked: dirt to farmland.',
+    );
+    expect(playerOutcomeText({ verb: 'place', ok: true, detail: 'oak_planks at 3 slots' })).toBe(
+      'Your place worked: oak_planks at 3 slots.',
+    );
+    expect(playerOutcomeText({ verb: 'till', ok: true })).toBe('Your till worked.');
+    expect(playerOutcomeText({ verb: 'place', ok: true })).toBe('Your place worked.');
+  });
+
   it.each(BODY_SENTENCES)(
     'every Body sentence (%s, %s) passes the scan and is kept',
     (verb, reason, text) => {
