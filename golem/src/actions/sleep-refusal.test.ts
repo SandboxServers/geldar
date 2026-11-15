@@ -34,14 +34,20 @@ function rawOf(outcome: ActionOutcome): Record<string, unknown> {
   return outcome.status === 'failed' && outcome.raw ? JSON.parse(outcome.raw) : {};
 }
 
-/** Sends one message the way Mineflayer does for an action-bar line: `game_info`, with its json. */
+/**
+ * Sends one action-bar line the way mineflayer 4.39 does: a prismarine-chat message as arg 1 (its `translate` and
+ * `json.translate`), the position as arg 2 and a null sender as arg 3. A line with no key has neither.
+ */
 function emitKey(bot: Bot, key: string | undefined, position = 'game_info'): void {
-  const jsonMsg = key === undefined ? { text: 'no key here' } : { translate: key };
+  const message =
+    key === undefined
+      ? { json: { text: 'no key here' }, toString: () => 'no key here' }
+      : { json: { translate: key }, translate: key, toString: () => key };
   (bot as unknown as { emit: (...args: unknown[]) => boolean }).emit(
     'message',
-    { toString: () => 'line' },
+    message,
     position,
-    jsonMsg,
+    null,
   );
 }
 
@@ -99,7 +105,55 @@ describe('watchBedRefusal', () => {
   });
 });
 
+describe('watchBedRefusal reads the real message shape', () => {
+  /** Emits arg 1 as given, with `game_info` and a null sender (the shape mineflayer 4.39 sends). */
+  function emitShape(bot: Bot, message: unknown): void {
+    (bot as unknown as { emit: (...args: unknown[]) => boolean }).emit(
+      'message',
+      message,
+      'game_info',
+      null,
+    );
+  }
+
+  it('reads the key from json.translate alone', () => {
+    const bot = fakeBot();
+    const watch = watchBedRefusal(bot);
+    watch.arm();
+    emitShape(bot, { json: { translate: NOT_SAFE }, toString: () => NOT_SAFE });
+    expect(watch.latest()).toBe(NOT_SAFE);
+    watch.stop();
+  });
+
+  it('ignores a message with neither translate nor json.translate', () => {
+    const bot = fakeBot();
+    const watch = watchBedRefusal(bot);
+    watch.arm();
+    emitShape(bot, { json: { text: 'hello' }, toString: () => 'hello' });
+    emitShape(bot, { toString: () => 'hello' });
+    expect(watch.latest()).toBeUndefined();
+    watch.stop();
+  });
+});
+
 describe('bed refusal lines in sleep()', () => {
+  it('a key that arrives before the error is used, with no wait for a second key', async () => {
+    // Mineflayer's generic refusal settles 3 s after the click, so the server's key is already in hand.
+    const { outcome } = refuse([[20, `${BED_PREFIX}no_sleep`]], { sleepDelayMs: 100 });
+    expect(await outcome).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'it is not night',
+    });
+  });
+
+  it('the loop failure keeps the last refused bed key in raw (bed_key reaches the action log)', async () => {
+    const { outcome } = refuse([[20, `${BED_PREFIX}occupied`]]);
+    const result = await outcome;
+    expect(result).toMatchObject({ status: 'failed', reason: 'blocked' });
+    expect(rawOf(result)).toMatchObject({ bed_key: `${BED_PREFIX}occupied` });
+  });
+
   it('no_sleep reads as "it is not night", not_possible', async () => {
     const { outcome } = refuse([[20, `${BED_PREFIX}no_sleep`]]);
     expect(await outcome).toMatchObject({

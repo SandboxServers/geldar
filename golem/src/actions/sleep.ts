@@ -243,6 +243,8 @@ async function sleepFromBeds(
   }
 
   let last: ActionOutcome = failed('blocked', 'no bed was tried');
+  // The raw record of the last refused bed: it carries that bed's bed_key, which the loop's failure keeps (decision 0225).
+  let lastRaw: string | undefined;
   // The whole loop has a budget: no new bed starts after it, so the action ends with its facts.
   const started = Date.now();
   const budget = SLEEP_BUDGET_MS * ctx.timeScale;
@@ -275,6 +277,7 @@ async function sleepFromBeds(
       ) {
         return outcome;
       }
+      if (outcome.status === 'failed') lastRaw = outcome.raw;
       last = outcome;
     }
   } finally {
@@ -290,11 +293,15 @@ async function sleepFromBeds(
         lastText,
         ended,
       ),
+      {},
+      lastRaw,
     );
   }
   return failed(
     'blocked',
     triedMessage(`tried ${tried} nearby beds, all occupied or blocked; last: `, lastText, ended),
+    {},
+    lastRaw,
   );
 }
 

@@ -34,6 +34,7 @@ When a generic refusal arrives, the Body waits up to 300 ms x `timeScale` for on
 ## Consequences
 
 - Ticks since rest is a log line only. Whether agents should see it is a policy question for the owner and is not part of this decision.
-- The bed key facts reach the agent through the failure text. A loop that ends with a blocked bed reports the last bed's text; the `bed_key` on that loop failure is not kept in `raw` (only the bed outcome carries it), so the action log shows the key only when the refusal returned straight from the loop. This is a known gap, not changed here.
+- The bed key facts reach the agent through the failure text. A loop that ends with blocked beds reports the last bed's text, and its failure carries the last refused bed's `raw` record as its `raw`, so `bed_key` reaches the action log for the occupied, obstructed and unknown keys too. The key kept is the last refused bed's: an earlier bed's key is not kept when a later refusal has no key.
+- The ids and the statistics reply were confirmed live on 26.1.2 (probe 2): category 8, and ids 1 to 4 rose together; only id 4 fell, from 248 to 7, after the bot slept through the night. Id 4 is the time since rest.
 - The ids are pinned to 26.1.x registry order. A later version that reorders the statistics must change the ids with a new decision.
 - The three keys read from `language.json` (`.obstructed`, `.occupied`, `.too_far_away`) are not confirmed by a live capture; the first live refusal of each shows them in the log.

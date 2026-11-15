@@ -19,16 +19,13 @@ function asNode(value: unknown): Node | undefined {
 }
 
 /**
- * The bed key one message carries, read from its json (`jsonMsg`, then the message's own json and
- * translate). Only `game_info` lines count; a line without a `block.minecraft.bed.*` translate is ignored.
+ * The bed key one message carries: the message's `translate`, else its `json.translate` (mineflayer 4.39 passes a
+ * prismarine-chat ChatMessage as the first argument, with `game_info` and a null sender). Only `game_info` lines
+ * count; a line without a `block.minecraft.bed.*` translate is ignored.
  */
-function bedKeyOf(position: unknown, message: unknown, jsonMsg: unknown): string | undefined {
+function bedKeyOf(position: unknown, message: unknown): string | undefined {
   if (position !== 'game_info') return undefined;
-  const candidates = [
-    asNode(jsonMsg)?.translate,
-    asNode(message)?.translate,
-    asNode(asNode(message)?.json)?.translate,
-  ];
+  const candidates = [asNode(message)?.translate, asNode(asNode(message)?.json)?.translate];
   const key = candidates.find((value) => typeof value === 'string');
   return typeof key === 'string' && key.startsWith(BED_PREFIX) ? key : undefined;
 }
@@ -53,9 +50,9 @@ export function watchBedRefusal(bot: Bot): BedRefusalWatch {
   let armed = false;
   let latest: string | undefined;
   let wake: (() => void) | undefined;
-  const onMessage = (message: unknown, position: unknown, jsonMsg?: unknown): void => {
+  const onMessage = (message: unknown, position: unknown): void => {
     if (!armed) return;
-    const key = bedKeyOf(position, message, jsonMsg);
+    const key = bedKeyOf(position, message);
     if (key === undefined) return;
     latest = key;
     wake?.();
