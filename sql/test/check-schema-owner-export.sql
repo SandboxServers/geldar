@@ -4,8 +4,9 @@
 -- are ag_pa_live, ag_pa_dead, ag_pa_agonly (agents.owner only) and ag_pa_plonly (players only)); ownerq-b (a second
 -- owner, whose rows and cross rows that name a's lives may appear in a's export only as counts); ownerq-cap (20001
 -- thoughts and journal rows: the row cap); ownerq-exact (exactly 20000 of each: not truncated); ownerq-big (20001
--- thoughts with 6000 characters of parsed each: the byte budget). An identity banned with no owner link (orphan) must
--- return NULL.
+-- thoughts with 6000 characters of parsed each: the byte budget); ownerq-bigb (17 thoughts of 5882353 bytes: the exact
+-- thoughts budget edge, 16 kept); ownerq-bigj (20000 journal rows of 4000 characters: the journal budget). An identity
+-- banned with no owner link (orphan) must return NULL.
 
 DO $owner_export$
 DECLARE
@@ -23,6 +24,10 @@ DECLARE
     'prompt_template_version', 'schema_version', 'mind_version', 'body_version', 'model_config', 'thinker_id', 'effort',
     'tokens_in_estimated', 'tokens_out_estimated', 'latency_ms', 'credits_reserved', 'credits_settled'];
   journal_keys TEXT[] := ARRAY['id', 'life_id', 'at', 'text'];
+  lives_keys TEXT[] := ARRAY['life_id', 'name', 'shard', 'mode', 'harness', 'declared_model', 'tier', 'born_at',
+    'died_at', 'death_cause'];
+  hash_bigb BYTEA := decode(repeat('b9', 32), 'hex');
+  hash_bigj BYTEA := decode(repeat('ba', 32), 'hex');
   live_expected JSONB := '{"life_id": "ag_pa_live", "events": 3, "memories": 1, "goals": 1, "intents": 1, "actions": 1,
     "skill_runs": 1, "skill_library": 1, "relationships": 2, "ledger": 1, "votes": 1, "receipts": 1,
     "suppressed_wakeups": 1, "mcp_sleep_marks": 1, "mcp_budget": 1, "mcp_life_deaths": 0, "mcp_death_events": 0,
@@ -38,6 +43,9 @@ DECLARE
   jcap JSONB;
   jexact JSONB;
   jbig JSONB;
+  jbb JSONB;
+  jbj JSONB;
+  probe INT;
   cnt JSONB;
   txt TEXT;
   txt_b TEXT;
@@ -206,6 +214,10 @@ BEGIN
      <> (SELECT array_agg(k ORDER BY k) FROM unnest(journal_keys) k) THEN
     RAISE EXCEPTION 'owner export: % (journal keys)', step;
   END IF;
+  IF (SELECT array_agg(k ORDER BY k) FROM jsonb_object_keys(j->'lives'->0) k)
+     <> (SELECT array_agg(k ORDER BY k) FROM unnest(lives_keys) k) THEN
+    RAISE EXCEPTION 'owner export: % (lives keys: no game account, no personality seed)', step;
+  END IF;
 
   step := 'owner a: no rows of owner b anywhere in the export';
   IF txt LIKE '%th-pb-1%' OR txt LIKE '%ag_pb_live%' OR txt LIKE '%ag-pb-live%' OR txt LIKE '%mtok-pb-1%'
@@ -231,6 +243,9 @@ BEGIN
   END IF;
   IF jsonb_array_length(j->'not_included') < 1 THEN
     RAISE EXCEPTION 'owner export: % (not_included empty)', step;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements_text(j->'not_included') e WHERE e LIKE 'turn_records (0060)%') THEN
+    RAISE EXCEPTION 'owner export: % (not_included does not name turn_records)', step;
   END IF;
   IF (j->'records'->'thoughts'->>'truncated')::boolean OR (j->'records'->'mcp_journal'->>'truncated')::boolean
      OR jsonb_array_length(j->'records'->'thoughts'->'rows') <> 2 THEN
@@ -327,6 +342,58 @@ BEGIN
      OR jsonb_array_length(jbig->'records'->'thoughts'->'rows') < 1
      OR octet_length(jbig::text) > 110000000 THEN
     RAISE EXCEPTION 'owner export: % (byte budget not applied)', step;
+  END IF;
+
+  -- exact thoughts budget edge: 17 rows of 5882353 bytes each (pg_column_size of the exported row), so 16 fit under
+  -- 100000000 (16 x 5882353 = 94117648) and 17 would be 100000001. Pins both sides: 50000000 keeps 8, 100000001 keeps 17.
+  step := 'byte budget exact: 17 thoughts of 5882353 bytes keep exactly 16';
+  INSERT INTO mcp_owners (owner_id, display, player_cap) VALUES ('ownerq-bigb', 'Owner bigb display', 5);
+  INSERT INTO mcp_identities (identity_hash, provider, owner_id, banned_at) VALUES (hash_bigb, 'github', 'ownerq-bigb', NULL);
+  INSERT INTO agents (agent_id, name, life_seq, game_account, shard, mode, owner, harness, declared_model,
+                      model_config, tier, personality_seed, died_at, death_cause)
+    VALUES ('ag_pbigb', 'pbigb', 7, 'ag_pbigb', 'test', 'sovereign', 'ownerq-bigb', 'claude-code', 'self-reported',
+            'declared:unverified', 'sovereign', 'seed', NULL, NULL);
+  -- the probe row has the same columns, id length and at length as the rows below, so its size is the base size; it
+  -- is the latest row in time (the table is append-only, so it is not deleted), and it is never kept
+  INSERT INTO thoughts (thought_id, life_id, at, parsed)
+    VALUES ('th-bb-00', 'ag_pbigb', date_trunc('second', now()) + interval '1 day', jsonb_build_object('x', ''));
+  SELECT pg_column_size(jsonb_build_object(
+      'thought_id', x.thought_id, 'life_id', x.life_id, 'at', x.at, 'world_day', x.world_day,
+      'world_tick', x.world_tick, 'wake_reason', x.wake_reason, 'parsed', x.parsed,
+      'prompt_template_version', x.prompt_template_version, 'schema_version', x.schema_version,
+      'mind_version', x.mind_version, 'body_version', x.body_version, 'model_config', x.model_config,
+      'thinker_id', x.thinker_id, 'effort', x.effort, 'tokens_in_estimated', x.tokens_in_estimated,
+      'tokens_out_estimated', x.tokens_out_estimated, 'latency_ms', x.latency_ms,
+      'credits_reserved', x.credits_reserved, 'credits_settled', x.credits_settled))
+    INTO probe FROM public.thoughts x WHERE x.thought_id = 'th-bb-00';
+  INSERT INTO thoughts (thought_id, life_id, at, parsed)
+    SELECT 'th-bb-' || lpad(g::text, 2, '0'), 'ag_pbigb', date_trunc('second', now()) - g * interval '1 second',
+           jsonb_build_object('x', repeat('x', 5882353 - probe))
+    FROM generate_series(1, 17) AS g;
+  jbb := register_owner_export(hash_bigb);
+  IF jbb IS NULL OR NOT (jbb->'records'->'thoughts'->>'truncated')::boolean
+     OR jsonb_array_length(jbb->'records'->'thoughts'->'rows') <> 16 THEN
+    RAISE EXCEPTION 'owner export: % (probe %, rows kept not 16)', step, probe;
+  END IF;
+
+  -- journal budget: 20000 rows of 4000 characters (12000 bytes each) for a fresh owner: the budget binds, the export
+  -- is truncated, and the output stays bounded (without the budget the jsonb would exceed its size limit)
+  step := 'journal byte budget: 20000 rows of 4000 characters: truncated, fewer than 20000 rows, output bounded';
+  INSERT INTO mcp_owners (owner_id, display, player_cap) VALUES ('ownerq-bigj', 'Owner bigj display', 5);
+  INSERT INTO mcp_identities (identity_hash, provider, owner_id, banned_at) VALUES (hash_bigj, 'github', 'ownerq-bigj', NULL);
+  INSERT INTO agents (agent_id, name, life_seq, game_account, shard, mode, owner, harness, declared_model,
+                      model_config, tier, personality_seed, died_at, death_cause)
+    VALUES ('ag_pbigj', 'pbigj', 8, 'ag_pbigj', 'test', 'sovereign', 'ownerq-bigj', 'claude-code', 'self-reported',
+            'declared:unverified', 'sovereign', 'seed', NULL, NULL);
+  INSERT INTO mcp_journal (life_id, at, text)
+    SELECT 'ag_pbigj', date_trunc('second', now()) - g * interval '1 second', repeat(E'€', 4000)
+    FROM generate_series(1, 20000) AS g;
+  jbj := register_owner_export(hash_bigj);
+  IF jbj IS NULL OR NOT (jbj->'records'->'mcp_journal'->>'truncated')::boolean
+     OR jsonb_array_length(jbj->'records'->'mcp_journal'->'rows') >= 20000
+     OR jsonb_array_length(jbj->'records'->'mcp_journal'->'rows') < 1
+     OR octet_length(jbj::text) > 110000000 THEN
+    RAISE EXCEPTION 'owner export: % (journal byte budget not applied)', step;
   END IF;
 
   RAISE NOTICE 'check-schema-owner-export: all checks passed';

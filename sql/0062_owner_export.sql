@@ -12,7 +12,7 @@
 -- thoughts (an explicit column list: model_input, snapshot, raw_output and provider_usage are NOT exported) and
 -- mcp_journal rows in time order, each table capped at 20000 rows and at a running budget of 100000000 bytes, with a
 -- truncated flag per table computed in the same statement as its rows; per-life row counts (no contents) for the other
--- per-life tables that 0040 erases; and not_included, which names every table or column that is left out.
+-- per-life tables that 0040 erases; and not_included, which names every table or column that is left out (turn_records among them).
 -- The owner id, the identity hash and the token hashes never appear in the output.
 -- Writes: none, except ONE register_audit row per successful call. Its actor is the erasure-safe hash of the owner id
 -- (16 hex characters, as 0040 does), its target and detail carry no name and no id (decision 0261, ROSTER-AUTO
@@ -224,6 +224,7 @@ BEGIN
       'admin records (kino_admins)',
       'skins: skin files and their bindings',
       'thoughts columns model_input, snapshot, raw_output and provider_usage: the prompts and world snapshots carry other residents words, and the rows are bulky; the life own output is exported in the thoughts rows',
+      'turn_records (0060): the per-turn model input and raw output of a kit Mind; operator-only, no owner link; erasure is deferred to GX-05c',
       'row counts only, not contents, per life, for: events, memories, goals, intents, actions, skill_runs, skill_library, relationships, ledger, votes, receipts, suppressed_wakeups, mcp_sleep_marks, mcp_budget, mcp_life_deaths, mcp_death_events, rolls, decisions, xp_evidence, character_sheet_adoptions, proficiency, proficiency_outbox'
     ]::text[])
   );
