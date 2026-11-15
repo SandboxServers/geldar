@@ -23,6 +23,8 @@ export interface ActionContext {
   signal: AbortSignal;
   /** `20 / target TPS`, default 1. Wall-clock timeouts are multiplied by it. */
   timeScale: number;
+  /** Set only by idle_stuck's own-placement run (decision 0330): `unstick` digs its own planks last. */
+  ownPlanksLast?: boolean;
 }
 
 /** The code that carries out one verb. */
@@ -130,6 +132,8 @@ export interface ActionRunOptions {
   failureSink?: DiagSink;
   /** Check a completed action against the position, inventory and block it should have changed (`no_effect`). */
   receipts?: boolean;
+  /** Handed to the handler as `ActionContext.ownPlanksLast`. Default false. */
+  ownPlanksLast?: boolean;
   /**
    * Called once, before the first await, with a promise that settles when the handler itself has
    * ended. `runAction` may return earlier (an abort or a timeout wins the race), so a caller that
@@ -178,7 +182,12 @@ async function runUnobserved(
     };
     opts.signal?.addEventListener('abort', onExternal, { once: true });
   });
-  const ctx: ActionContext = { bot, signal: controller.signal, timeScale };
+  const ctx: ActionContext = {
+    bot,
+    signal: controller.signal,
+    timeScale,
+    ownPlanksLast: opts.ownPlanksLast === true,
+  };
   // Clocks are read before the handler starts: a handler may run synchronously up to its first await.
   const startedAt = now();
   const startAge = worldAge(bot);
