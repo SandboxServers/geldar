@@ -1,8 +1,14 @@
 #!/usr/bin/env node
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Pool } from 'pg';
-import { migrate, readPasswordFile, setRolePassword } from './migrate.ts';
+import { Client, Pool } from 'pg';
+import {
+  loginProbeOn,
+  migrate,
+  probeDatabase,
+  readPasswordFile,
+  setRolePassword,
+} from './migrate.ts';
 
 const USAGE = `usage: node tools/migrate/src/cli.ts [--dry-run] [--sql-dir <dir>]
        node tools/migrate/src/cli.ts --set-role-password geldar_mcp --password-file <file>
@@ -53,7 +59,14 @@ async function main(argv: readonly string[]): Promise<void> {
   try {
     if (options.role !== undefined && options.passwordFile !== undefined) {
       const password = await readPasswordFile(options.passwordFile);
-      await setRolePassword(pool, options.role, password, { dryRun: options.dryRun, log });
+      // Login first (C7-03c2): the role's own login with the file's password decides whether an ALTER runs.
+      // The probe reaches the same host, port and database as the pool (all from the PG* variables).
+      const database = probeDatabase(process.env);
+      await setRolePassword(pool, options.role, password, {
+        dryRun: options.dryRun,
+        log,
+        loginWorks: loginProbeOn(database, (config) => new Client(config)),
+      });
       return;
     }
     await migrate(pool, { sqlDir: options.sqlDir, dryRun: options.dryRun, log });

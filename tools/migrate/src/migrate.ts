@@ -130,13 +130,16 @@ function errorText(error: unknown): string {
 }
 
 /**
- * The only roles this tool sets a password for: the MCP's login (decision 0026) and the Glass's
- * read-only login (wave 6 item 10, migration 0005). Any other role is refused before connecting.
+ * The only roles this tool sets a password for: the MCP's login (decision 0026), the Glass's
+ * read-only login (wave 6 item 10, migration 0005), the register service, and the body helper and
+ * supervisor logins (C7-03c2). Any other role is refused before connecting.
  */
 const PASSWORD_ROLES: ReadonlySet<string> = new Set([
   'geldar_mcp',
   'geldar_glass',
   'geldar_register',
+  'geldar_helper',
+  'geldar_supervisor',
 ]);
 
 /**
@@ -168,6 +171,74 @@ export function passwordStatement(
   return `ALTER ROLE ${role} WITH LOGIN PASSWORD ${escapeLiteral(verifier)}`;
 }
 
+/** The part of a pg Client that the login probe uses. */
+export interface ProbeClient {
+  connect(): Promise<unknown>;
+  end(): Promise<unknown>;
+}
+
+/** SQLSTATE codes that mean the server refused the login: a wrong password (28P01) or no pg_hba entry (28000). */
+const LOGIN_REFUSED: ReadonlySet<string> = new Set(['28P01', '28000']);
+
+/**
+ * Login-first probe (C7-03c2): true when `role` logs in with `password` through `makeClient`.
+ * False only for a refused login (LOGIN_REFUSED). Any other failure, such as a refused connection
+ * or a timeout, is rethrown: the caller must not run ALTER ROLE on a database it could not reach.
+ */
+export async function probeLogin(
+  makeClient: (config: {
+    user: string;
+    password: string;
+    connectionTimeoutMillis: number;
+  }) => ProbeClient,
+  role: string,
+  password: string,
+): Promise<boolean> {
+  const probe = makeClient({ user: role, password, connectionTimeoutMillis: 5000 });
+  try {
+    await probe.connect();
+    return true;
+  } catch (error) {
+    const code =
+      typeof error === 'object' && error !== null ? (error as { code?: unknown }).code : undefined;
+    if (typeof code === 'string' && LOGIN_REFUSED.has(code)) return false;
+    throw error;
+  } finally {
+    await probe.end().catch(() => undefined);
+  }
+}
+
+/**
+ * The database the login probe reaches (C7-03c2): PGDATABASE, the same one the migrate verb's pool uses.
+ * Throws when it is unset or empty, before any connection is made.
+ */
+export function probeDatabase(env: Readonly<Record<string, string | undefined>>): string {
+  const database = env.PGDATABASE;
+  if (database === undefined || database === '') {
+    throw new Error(
+      '--set-role-password needs PGDATABASE: the login probe must reach the database the migrate verb uses',
+    );
+  }
+  return database;
+}
+
+/**
+ * The loginWorks check for setRolePassword (C7-03c2): the probe client is built with `database`, so the
+ * probe reaches the same database as the pool.
+ */
+export function loginProbeOn(
+  database: string,
+  makeClient: (config: {
+    user: string;
+    password: string;
+    connectionTimeoutMillis: number;
+    database: string;
+  }) => ProbeClient,
+): (role: string, password: string) => Promise<boolean> {
+  return (role, password) =>
+    probeLogin((config) => makeClient({ ...config, database }), role, password);
+}
+
 /**
  * Sets the password of a role in PASSWORD_ROLES and lets it log in. The client computes a
  * SCRAM-SHA-256 verifier and sends only that: the plaintext never reaches the server or the log.
@@ -178,7 +249,12 @@ export async function setRolePassword(
   pool: Pool,
   role: string,
   password: string,
-  options: { dryRun: boolean; log: (line: string) => void },
+  options: {
+    dryRun: boolean;
+    log: (line: string) => void;
+    /** Login-first probe (C7-03c2): true when the role already logs in with this password. */
+    loginWorks?: (role: string, password: string) => Promise<boolean>;
+  },
 ): Promise<void> {
   if (!PASSWORD_ROLES.has(role)) {
     throw new Error(`only ${[...PASSWORD_ROLES].join(' or ')} takes a password here`);
@@ -187,6 +263,12 @@ export async function setRolePassword(
   const verifier = scramVerifier(password);
   if (options.dryRun) {
     options.log(`dry run: the password of ${role} would be set; nothing was run`);
+    return;
+  }
+  if (options.loginWorks !== undefined && (await options.loginWorks(role, password))) {
+    options.log(
+      `password already set for role ${role}: the file's password logs in; nothing changed`,
+    );
     return;
   }
   const client = await pool.connect();
