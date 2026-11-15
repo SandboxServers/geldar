@@ -5,6 +5,7 @@ import type { Reflex, ReflexContext, ReflexOutcome, Trigger } from '../reflex.ts
 import type { BodyView, HostileView } from '../view.ts';
 import { deadline } from './deadline.ts';
 import { threatCallFor } from './encounter.ts';
+import { phantomDiag } from './phantom-diag.ts';
 import { LEGACY_THREAT, type ThreatPolicy } from './threat-policy.ts';
 import { attackerOf, flyerOf, isSuicideMob } from './threats.ts';
 
@@ -67,6 +68,13 @@ function hissTrigger(view: BodyView): Trigger | null {
  * the policy floor. Unhurt or hurt, the Body fights it in place (the attack action waits for it).
  */
 function flyerTrigger(view: BodyView, policy: ThreatPolicy): Trigger | null {
+  const trigger = armedFlyerTrigger(view, policy);
+  phantomDiag(view, policy, trigger !== null);
+  return trigger;
+}
+
+/** The armed and health-floor rules of the phantom trigger, without the operator line. */
+function armedFlyerTrigger(view: BodyView, policy: ThreatPolicy): Trigger | null {
   const flyer = flyerOf(view);
   if (!flyer || !isArmed(view) || view.health <= policy.floor()) return null;
   return {

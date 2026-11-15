@@ -9,6 +9,7 @@ import { canSeePoint } from '../perception/notable-blocks.ts';
 import { worldAge } from '../world-clock.ts';
 import { ownAir } from './air.ts';
 import { lightAtHead } from './light.ts';
+import { FALL_STOP_DROP } from './reflexes/fall-stop.ts';
 import { type SafeSpot, trackSafeSpot } from './safe-spot.ts';
 
 /** A hostile mob near the Body. */
@@ -91,6 +92,11 @@ export interface BodyView {
    * view was made. Optional so a hand-built view (a test fake) may leave it out.
    */
   readonly ticksSinceHurt?: number | null;
+  /**
+   * True when a solid block lies in one of the `blocks` cells straight above the Body's head (the
+   * operator phantom diagnostic reads it). Optional so a hand-built view may leave it out.
+   */
+  roofWithin?(blocks?: number): boolean;
   /** The bed or world spawn the Body treats as safe, or null when it knows none. */
   readonly safeSpot?: SafeSpot | null;
   /**
@@ -164,6 +170,8 @@ export function canStepOff(
  * True when `planMoves` finds no move from `feet` (a dead end, decision 0333), false when one exists,
  * and null when the planner reads a cell the view does not have or health is unknown: an unread cell
  * is never a dead end, so the answer is only known when every cell it looked at was loaded.
+ * The drop cap is `FALL_STOP_DROP` for a solid landing: fall_stop stops a deeper one, so it is no exit. A
+ * water landing is not stopped by fall_stop (`dropAhead` reads 0 for water), so it stays an exit up to `MAX_DROP`.
  */
 export function noSafeExit(
   blockAt: (at: Vec3) => Block | null | undefined,
@@ -177,7 +185,7 @@ export function noSafeExit(
     if (!block) unknown = true;
     return block ?? null;
   };
-  const moves = planMoves(read, feet, health);
+  const moves = planMoves(read, feet, health, FALL_STOP_DROP);
   if (unknown) return null;
   return moves.length === 0;
 }
@@ -348,6 +356,15 @@ export function createBodyView(bot: Bot): TrackedBodyView {
         });
       }
       return found.sort((a, b) => a.distance - b.distance);
+    },
+    roofWithin(blocks = 3) {
+      const feet = bot.entity.position;
+      const headY = Math.floor(feet.y) + 1;
+      for (let i = 1; i <= blocks; i++) {
+        const block = bot.blockAt(new Vec3(Math.floor(feet.x), headY + i, Math.floor(feet.z)));
+        if (block && block.boundingBox === 'block') return true;
+      }
+      return false;
     },
     arrowsNear(radius = DEFAULT_ARROW_RADIUS) {
       const here = bot.entity.position;

@@ -1,5 +1,6 @@
 import type { Bot } from 'mineflayer';
 import type { Vec3 } from 'vec3';
+import { FALL_STOP_DROP } from '../body/reflexes/fall-stop.ts';
 import { noSafeExit } from '../body/view.ts';
 import type { Block } from './bot-types.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
@@ -348,7 +349,7 @@ async function unstickSteps(
   const done = (method: string): ActionOutcome =>
     completed({ method, tries, tried: [...tried], hint: HINT });
   note('walk');
-  for (const move of planMoves((cell) => bot.blockAt(cell), where(), health())) {
+  for (const move of planMoves((cell) => bot.blockAt(cell), where(), health(), FALL_STOP_DROP)) {
     if (ctx.signal.aborted) return cancelled();
     // A walk costs up to 1.2 s of the limit: a walk that cannot end inside it is not started.
     if (timeLeftS(started) < MOVE_TICKS / 20) break;
@@ -444,7 +445,12 @@ async function unstickSteps(
     });
     if (ctx.signal.aborted) return cancelled();
     if (descent.walkable) {
-      for (const move of planMoves((cell) => bot.blockAt(cell), where(), health())) {
+      for (const move of planMoves(
+        (cell) => bot.blockAt(cell),
+        where(),
+        health(),
+        FALL_STOP_DROP,
+      )) {
         if (move.drop > WALKABLE_DROP) continue;
         if (timeLeftS(started) < MOVE_TICKS / 20) break;
         tries++;

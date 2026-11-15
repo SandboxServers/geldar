@@ -6,6 +6,7 @@ import { type ActionOutcome, cancelled, completed, errorText, failed } from './o
 import { moveNear } from './pathing.ts';
 import { pickUpDrops, pickupNote } from './pickup.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
+import { DEFAULT_DIAG_SINK } from './stall-diag.ts';
 
 /** The entity type Mineflayer hands out in `bot.entities`. */
 type Entity = Bot['entities'][string];
@@ -44,6 +45,10 @@ const FLYING_MOBS = new Set(['phantom', 'bat']);
 const FLYER_WAIT_TICKS = 200;
 /** One wait between two looks at a flying target, in world ticks. */
 const FLYER_POLL_TICKS = 2;
+/** At most one attack_diag line per bot in this many wall ms (2 s), whatever the call rate (decision 0335). */
+export const ATTACK_DIAG_INTERVAL_MS = 2_000;
+/** The last attack_diag line time per bot object (one bot per Body connection). */
+const lastAttackDiagAt = new WeakMap<Bot, number>();
 
 /** True for a flying mob (phantom, bat): an attack on it stands still and waits, it does not walk. */
 export function isFlyingMob(name: string): boolean {
@@ -103,6 +108,7 @@ export const attackAction: ActionHandler<'attack'> = {
     }
     const armed = weapon?.name ?? null;
     const targetKind = targetKindOf(first);
+    attackDiag(bot, name, first, targetKind);
 
     let swings = 0;
     // World ticks spent out of reach of a flying target since it was last in reach.
@@ -154,6 +160,26 @@ export const attackAction: ActionHandler<'attack'> = {
     });
   },
 };
+
+/**
+ * Operator diagnostic (decision 0335): the entity the swings are aimed at and how far it stands now.
+ * One line per bot per ATTACK_DIAG_INTERVAL_MS; a call inside that window writes nothing.
+ */
+function attackDiag(bot: Bot, name: string, first: Entity, targetKind: TargetKind): void {
+  const now = DEFAULT_DIAG_SINK.now();
+  const last = lastAttackDiagAt.get(bot);
+  if (last !== undefined && now - last < ATTACK_DIAG_INTERVAL_MS) return;
+  lastAttackDiagAt.set(bot, now);
+  DEFAULT_DIAG_SINK.log(
+    JSON.stringify({
+      event: 'attack_diag',
+      target: name,
+      entity: first.name ?? null,
+      distance: Math.round(first.position.distanceTo(bot.entity.position) * 10) / 10,
+      target_kind: targetKind,
+    }),
+  );
+}
 
 /** Whether the target is a player or any other mob. Mineflayer marks players with type `player`. */
 export type TargetKind = 'player' | 'mob';
