@@ -20,15 +20,18 @@ DECLARE
   fn_mlid TEXT := 'managed_life_id(text)';
 BEGIN
   BEGIN
-    step := 'functions are SECURITY DEFINER with a pinned search_path';
+    step := 'all three functions have a pinned search_path; the two body-host functions are SECURITY DEFINER';
     FOR r IN SELECT p.proname, p.prosecdef, p.proconfig FROM pg_proc p
-              WHERE p.oid IN (to_regprocedure(fn_sup), to_regprocedure(fn_cfg)) LOOP
-      IF NOT r.prosecdef OR r.proconfig IS NULL OR NOT ('search_path=pg_catalog, public, pg_temp' = ANY (r.proconfig)) THEN
-        RAISE EXCEPTION 'schema check (%): % is not a pinned definer', step, r.proname;
+              WHERE p.oid IN (to_regprocedure(fn_sup), to_regprocedure(fn_cfg), to_regprocedure(fn_mlid)) LOOP
+      IF r.proconfig IS NULL OR NOT ('search_path=pg_catalog, public, pg_temp' = ANY (r.proconfig)) THEN
+        RAISE EXCEPTION 'schema check (%): % has no pinned search_path', step, r.proname;
+      END IF;
+      IF r.proname <> 'managed_life_id' AND NOT r.prosecdef THEN
+        RAISE EXCEPTION 'schema check (%): % is not a definer', step, r.proname;
       END IF;
     END LOOP;
-    IF (SELECT count(*) FROM pg_proc p WHERE p.oid IN (to_regprocedure(fn_sup), to_regprocedure(fn_cfg))) <> 2 THEN
-      RAISE EXCEPTION 'schema check (%): one of the two functions is missing', step;
+    IF (SELECT count(*) FROM pg_proc p WHERE p.oid IN (to_regprocedure(fn_sup), to_regprocedure(fn_cfg), to_regprocedure(fn_mlid))) <> 3 THEN
+      RAISE EXCEPTION 'schema check (%): one of the three functions is missing', step;
     END IF;
 
     step := 'PUBLIC cannot execute any of the three functions';
@@ -81,16 +84,37 @@ BEGIN
       RAISE EXCEPTION 'schema check (%): geldar_helper can SELECT a table it must not read', step;
     END IF;
 
-    step := 'host_key is a NOT NULL uuid with a generated default, and no body-host or MCP role reads it';
+    step := 'host_key is a NOT NULL uuid with a generated default, and no role but the table owner reads or writes it';
     IF NOT EXISTS (SELECT 1 FROM information_schema.columns
                     WHERE table_schema = 'public' AND table_name = 'mcp_players' AND column_name = 'host_key'
                       AND data_type = 'uuid' AND is_nullable = 'NO' AND column_default LIKE 'gen_random_uuid()%') THEN
       RAISE EXCEPTION 'schema check (%): mcp_players.host_key is not a NOT NULL uuid with gen_random_uuid()', step;
     END IF;
-    IF has_any_column_privilege('geldar_helper', 'public.mcp_players', 'SELECT')
-       OR has_any_column_privilege('geldar_body_host', 'public.mcp_players', 'SELECT')
-       OR has_column_privilege('geldar_mcp', 'public.mcp_players', 'host_key', 'SELECT') THEN
-      RAISE EXCEPTION 'schema check (%): a helper, body or MCP role can read mcp_players.host_key', step;
+    -- every role except the built-in pg_ roles and the table owner, so a future register, glass or supervisor
+    -- grant is caught too; has_column_privilege also follows role membership
+    FOR r IN SELECT rolname FROM pg_roles
+              WHERE rolname !~ '^pg_' AND oid <> (SELECT relowner FROM pg_class WHERE oid = 'public.mcp_players'::regclass) LOOP
+      IF has_column_privilege(r.rolname, 'public.mcp_players', 'host_key', 'SELECT')
+         OR has_column_privilege(r.rolname, 'public.mcp_players', 'host_key', 'UPDATE')
+         OR has_column_privilege(r.rolname, 'public.mcp_players', 'host_key', 'INSERT')
+         OR has_column_privilege(r.rolname, 'public.mcp_players', 'host_key', 'REFERENCES') THEN
+        RAISE EXCEPTION 'schema check (%): role % can read or write mcp_players.host_key', step, r.rolname;
+      END IF;
+    END LOOP;
+    -- PUBLIC is not a role name, so its grants are read from the ACLs
+    IF EXISTS (SELECT 1 FROM pg_attribute a, aclexplode(a.attacl) x
+                WHERE a.attrelid = 'public.mcp_players'::regclass AND a.attname = 'host_key' AND x.grantee = 0
+                  AND x.privilege_type IN ('SELECT', 'UPDATE', 'INSERT', 'REFERENCES'))
+       OR EXISTS (SELECT 1 FROM pg_class c, aclexplode(c.relacl) x
+                   WHERE c.oid = 'public.mcp_players'::regclass AND x.grantee = 0
+                     AND x.privilege_type IN ('SELECT', 'UPDATE', 'INSERT', 'REFERENCES')) THEN
+      RAISE EXCEPTION 'schema check (%): PUBLIC can read or write mcp_players (host_key or the table)', step;
+    END IF;
+    -- a view runs with its owner's rights, so a column grant check does not see it: no view may show host_key
+    step := 'no view or materialized view in public shows host_key';
+    IF EXISTS (SELECT 1 FROM pg_views WHERE schemaname = 'public' AND definition ILIKE '%host_key%')
+       OR EXISTS (SELECT 1 FROM pg_matviews WHERE schemaname = 'public' AND definition ILIKE '%host_key%') THEN
+      RAISE EXCEPTION 'schema check (%): a view exposes host_key', step;
     END IF;
     IF NOT has_column_privilege('geldar_mcp', 'public.mcp_players', 'player_id', 'SELECT') THEN
       RAISE EXCEPTION 'schema check (%): geldar_mcp lost SELECT on mcp_players.player_id', step;
@@ -222,6 +246,14 @@ BEGIN
     END IF;
     UPDATE mcp_players SET display_name = 'BhOne' WHERE player_id = 'ag-bh-one';
     UPDATE mcp_roster SET player_name = 'bhone' WHERE owner_id = 'reg-bh-own' AND player_name = 'bhonerenamed';
+
+    step := 'two live players of one owner with one display name: the supervisor function gives NULL, not one of them';
+    -- register does not refuse a second player with a name the owner already has; the roster row is what
+    -- the supervisor function joins on, and it is the same for both. Only the count of live matches decides.
+    PERFORM register_create_player(h_own, 'ag-bh-dup', 'ag_bh_dup', 'BhOne', 'harness-x', 'main', 'bh_t7', decode(repeat('c7', 32), 'hex'));
+    IF supervisor_player_life_id('reg-bh-own', 'BhOne') IS NOT NULL THEN
+      RAISE EXCEPTION 'schema check (%): one of two same-name players of one owner got an id', step;
+    END IF;
 
     step := 'two agents on one life id: both functions raise 23505 and never return an id';
     -- Two host keys whose sha256 prefixes match (found offline, a Floyd search over the uuid tail):
