@@ -433,6 +433,8 @@ D-CS-02 (recommended: approve both hooks as explicit traits, `morality_hooks: fa
 
 ### AN-52: moral decision contract unblocker (trimmed)
 
+Partly superseded by S9-01 in work-packets-sheet-w9-w12.md: the refusal reason and decision-key contract stays; reflection shapes and commitment identity are dropped.
+
 - **id** AN-52. **wave** W9. **depends-on** AN-50. **decisions** D-CS-02, D-CS-05; ADR `<allocate via registry>` (the 0164 amendment: a deliberate `mine` or `withdraw` on another life's recorded property may be refused by trait; principle 5 reading; the starving exception). **Dropped from the original:** every reflection-input shape (kit-local now, HC-32), the commitment decision identity, and any reflection prompt (no `reflection/v3`).
 - **Deliver:**
   1. Reason code `declined` in `contract/schemas/action-outcome-event.schema.json` (enum), `contract/src/outcome-words.ts` (`REASON_PHRASE.declined = "you decided against taking what is someone else's"`, so the player reads `Your mine failed: you decided against taking what is someone else's.`; no name, no score, no operator text), `golem/src/actions/outcome.ts` (`FailReason` union), `golem/src/metrics.ts` (the reason list at line ~239), and `threshold/mcp/src/events/handlers/intent.ts` (`failureReason`: a `declined` prefix maps to the same fixed words). Name `declined` is a recommendation; the orchestrator may choose another fixed word, but it must be one code, agent-safe.
@@ -445,6 +447,8 @@ D-CS-02 (recommended: approve both hooks as explicit traits, `morality_hooks: fa
 - **revert-checks** (1) drop `declined` from the enum: "declined validates" fails. (2) include the day in neither key nor builder: "a new day is a new decision" fails. (3) put a name in `REASON_PHRASE.declined`: the no-name test fails.
 
 ### AN-37: trait-based deliberate property refusal (a Body action hook)
+
+Partly superseded by S9-02 in work-packets-sheet-w9-w12.md: the trait-based refusal design stays; the differences are listed in S9-02.
 
 - **id** AN-37. **wave** W9. **depends-on** AN-52. **decisions** D-CS-02, D-CS-05, D-CS-01 (a refusal is a trait of the agent; it never writes a goal).
 - **Read first (verified):** `till.ts` (decision 0167) already refuses another life's recorded block with the pattern `ownerRecordAt(pos)` + `isOwnPlacement`; `mine` stays free and `goto`'s protection is separate (0164, `protected-blocks.ts`) and is **unchanged** here. The hook goes in `mineBlocks` (`golem/src/actions/mine.ts`, after the `unbreakableReason`/`hazardReason` check and before `digOnce`, with `at` the target cell) and in `withdrawAction.run` (`golem/src/actions/container.ts`, before `withContainer`, using the action's `at`).
@@ -472,6 +476,8 @@ D-CS-02 (recommended: approve both hooks as explicit traits, `morality_hooks: fa
 - **revert-checks** (1) refuse for `known: false`: "unknown ownership is never refused" fails. (2) drop the cache: "same day, one decision" fails. (3) drop the starving exception: "good 2 and starving proceeds" fails. (4) ignore `rollsEnabled`: "d20-off is deterministic" fails. (5) set a policy default: "no policy keeps old behaviour" fails.
 
 ### AN-53: morality integration (world half)
+
+Partly superseded by S9-03 in work-packets-sheet-w9-w12.md: the ops run stays valid (now S9-04); the flag binding and fixture shard are replaced.
 
 - **id** AN-53. **wave** W9. **depends-on** AN-37. **decisions** D-CS-02, D-CS-10 (activation is its own gate; this card ships inactive). **Dropped from the original:** the commitment-wake binding, the reflection input and trust revision (AN-38 deferred; reflection is HC-32).
 - **Deliver:**

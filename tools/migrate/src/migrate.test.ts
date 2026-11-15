@@ -53,6 +53,7 @@ describe('listMigrations', () => {
       '0039_account_deletion.sql',
       '0050_character_sheet_xp.sql',
       '0051_character_audit.sql',
+      '0052_character_erase_comments.sql',
       '0060_turn_records.sql',
     ]);
   });

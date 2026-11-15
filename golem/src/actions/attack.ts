@@ -91,13 +91,21 @@ export const attackAction: ActionHandler<'attack'> = {
       }
     }
     const armed = weapon?.name ?? null;
+    const targetKind = targetKindOf(first);
 
     let swings = 0;
     for (let step = 0; step < MAX_STEPS && swings < MAX_SWINGS; step++) {
       if (signal.aborted) return cancelled({ target: name, swings });
       const entity = bot.entities[first.id];
       if (!entity || entity.isValid === false) {
-        return afterKill(ctx, { target: name, swings, weapon: armed, at: lastAt, start });
+        return afterKill(ctx, {
+          target: name,
+          swings,
+          weapon: armed,
+          at: lastAt,
+          start,
+          targetKind,
+        });
       }
       lastAt = entity.position.clone();
       if (entity.position.distanceTo(bot.entity.position) > REACH) {
@@ -122,6 +130,14 @@ export const attackAction: ActionHandler<'attack'> = {
   },
 };
 
+/** Whether the target is a player or any other mob. Mineflayer marks players with type `player`. */
+export type TargetKind = 'player' | 'mob';
+
+/** A player entity is `player`; every other entity the attack can reach is a `mob`. */
+export function targetKindOf(entity: Entity): TargetKind {
+  return entity.type === 'player' ? 'player' : 'mob';
+}
+
 /** What a kill leaves for the pickup: where the target was last seen, and the inventory before. */
 interface KillRecord {
   target: string;
@@ -129,6 +145,7 @@ interface KillRecord {
   weapon: string | null;
   at: Vec3;
   start: ItemStack[];
+  targetKind: TargetKind;
 }
 
 /**
@@ -136,12 +153,13 @@ interface KillRecord {
  * was picked up, or that drops were left. An abort during the pickup cancels the action.
  */
 async function afterKill(ctx: ActionContext, kill: KillRecord): Promise<ActionOutcome> {
-  const { target, swings, weapon, at, start } = kill;
+  const { target, swings, weapon, at, start, targetKind } = kill;
   const pickup = await pickUpDrops(ctx, at, start);
   if (pickup.aborted) return cancelled({ target, swings, killed: true, picked: pickup.picked });
   const note = pickupNote(pickup);
   return completed({
     target,
+    target_kind: targetKind,
     swings,
     killed: true,
     weapon,
