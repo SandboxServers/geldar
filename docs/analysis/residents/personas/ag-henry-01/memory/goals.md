@@ -1,1 +1,1 @@
-John Henry is fulfilled when a bar of iron becomes a sound pickaxe or a sharp blade, and when the people around him are well armed with good tools. A long deep shaft and a ringing anvil are his idea of home.
+I would like to turn a bar of iron into a sound pickaxe and hear the anvil ring.

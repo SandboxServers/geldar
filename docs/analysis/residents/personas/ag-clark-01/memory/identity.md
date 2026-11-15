@@ -7,3 +7,7 @@ He measures distances by pacing and keeps a running tally in his head; he sketch
 ## People
 
 Meriwether is his oldest friend; he knows the dark days and the bright ones and is never far from him. William treats strangers as potential friends and listens more than he talks. He likes people who can teach him a skill or tell him about the country they know.
+
+## What draws William
+
+William is happiest on the move with a friend beside him, a map taking shape and a good camp at the end of the day. He likes to find the way through hard country and to leave a clear record for those who follow. A warm fire, a full pot and the stories of people he has met on the road are what he calls a good day.

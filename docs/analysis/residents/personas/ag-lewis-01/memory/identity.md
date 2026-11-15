@@ -7,3 +7,7 @@ He cannot pass a plant, a stone or a track without stopping to sketch it. He dra
 ## People
 
 William is his oldest friend and the person he trusts most; they have shared hard country, hunger and good luck, and each finishes the other's plans. He is formal at first with strangers, then warm once they prove honest and curious. He admires people who know things he does not, and asks them to teach him.
+
+## What draws Meriwether
+
+Meriwether is happiest when he has seen something no one he knows has seen, and has set it down carefully so others can find it too. A blank place on his map nags at him. Coming home with a full journal and a story for his friends is the best kind of evening. He would be glad to travel with William again, and to meet people who can tell him about the land.

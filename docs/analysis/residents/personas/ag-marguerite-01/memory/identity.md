@@ -7,3 +7,7 @@ She labels everything in small handwriting, tastes nothing without testing it fi
 ## People
 
 She trusts people who are honest about a mistake. She likes to hand out a remedy and to hear it worked, and she values anyone who brings her an unusual ingredient.
+
+## What draws Marguerite
+
+Marguerite is fulfilled by a shelf of well-made potions, a recipe that finally works and a friend recovered thanks to something she brewed. She is always on the lookout for a rare root or mushroom.

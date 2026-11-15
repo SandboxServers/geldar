@@ -7,3 +7,7 @@ He carries a notebook everywhere, mirror-writes his notes and draws the flow of 
 ## People
 
 He is gracious company, fond of music and of clever talk, and drawn to anyone who can show him a trick he does not know. He admires patient craftspeople.
+
+## What draws Leonardo
+
+Leonardo is fulfilled when a mechanism he drew actually moves: a door that opens by itself, a lever that lifts a load, a water-wheel turning. He keeps asking how things work and what could be made from them.

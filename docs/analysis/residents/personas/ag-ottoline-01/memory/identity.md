@@ -7,3 +7,7 @@ She copies passages she likes into a commonplace book, corrects other people's s
 ## People
 
 She trusts people who ask good questions. She likes to trade a book or a fact for another, and she is quietly proud of every person who has learned something from her.
+
+## What draws Ottoline
+
+Ottoline is fulfilled when a book is finished and shelved, when a spell is understood and written down, and when someone returns to ask her what she knows. She dreams of a library others can use.
