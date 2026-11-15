@@ -58,6 +58,7 @@ export const gotoAction: ActionHandler<'goto'> = {
     const move = await moveNear(ctx.bot, aim, range, {
       signal: ctx.signal,
       timeScale: ctx.timeScale,
+      swim: true,
     });
     if (!move.ok) return outcomeOfMove(move);
     const at = ctx.bot.entity.position;

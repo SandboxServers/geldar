@@ -36,6 +36,7 @@ import {
   setJump,
   stopDigIfDigging,
 } from './stall-recovery.ts';
+import { type SwimController, startSwim, swimStopText } from './swim.ts';
 import { allowWaterExit, isWetNode, wetAt } from './water-rules.ts';
 
 export { ESCALATE_AFTER_REPLANS, MAX_LADDERS };
@@ -254,6 +255,8 @@ export interface MoveOptions {
   diag?: DiagSink;
   /** Tier 2 (digging and towers) may start after tier 1 fails. Default on; `false` for reflex walks. */
   digTier?: boolean;
+  /** Runs the swim controller (decision 0194 a, b) for this walk. Only the `goto` action sets it. */
+  swim?: boolean;
 }
 
 /**
@@ -300,10 +303,19 @@ export function moveNear(
     bot.pathfinder.thinkTimeout = SEARCH_BUDGET_MS;
   };
 
+  let swim: SwimController | undefined;
   return new Promise<MoveResult>((resolve, reject) => {
     if (opts.signal.aborted) {
       resolve({ ok: false, reason: 'cancelled', message: 'move cancelled before it started' });
       return;
+    }
+    if (opts.swim) {
+      swim = startSwim(bot, {
+        onAbort: (air) => {
+          haltPathing(bot);
+          settle({ ok: false, reason: 'interrupted', message: swimStopText(air) });
+        },
+      });
     }
     let done = false;
     let watchdog: ReturnType<typeof setInterval> | undefined;
@@ -322,6 +334,7 @@ export function moveNear(
       // Every exit (success, cancel, failure, throw) leaves tier 2: its budget must not outlive the walk.
       leaveDigTier();
       tally.stop();
+      swim?.stop();
       opts.signal.removeEventListener('abort', onAbort);
       releaseJump();
     };

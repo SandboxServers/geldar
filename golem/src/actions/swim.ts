@@ -17,6 +17,11 @@ export const SURFACE_AIR = 12;
 /** Air at or below which a goto swim stops, with the head still in water (decision 0194 a, b). */
 export const ABORT_AIR = 10;
 
+/** The failure text of a swim stopped at `ABORT_AIR`: a fact with the air value, no advice (0154, 0194 d). */
+export function swimStopText(air: number): string {
+  return `swim stopped at air ${air} with your head in the water`;
+}
+
 /** What a swim did, for the result line (decision 0194 d). Facts only. */
 export interface SwimTally {
   blocksSwum: number;
@@ -48,6 +53,7 @@ export function startSwim(bot: Bot, options: SwimOptions): SwimController {
   const read: BlockReader = (x, y, z) => bot.blockAt(new Vec3(x, y, z));
   let wasWet = false;
   let aborted = false;
+  let stopped = false;
   let held = false;
   let last: Vec3 | null = null;
 
@@ -63,6 +69,7 @@ export function startSwim(bot: Bot, options: SwimOptions): SwimController {
   };
 
   const tick = (): void => {
+    if (stopped) return;
     const here = bot.entity.position;
     const head = read(Math.floor(here.x), Math.floor(here.y + EYE_HEIGHT), Math.floor(here.z));
     const wet = head !== null && WET_CELLS.has(head.name);
@@ -78,6 +85,8 @@ export function startSwim(bot: Bot, options: SwimOptions): SwimController {
     if (air <= ABORT_AIR && !aborted) {
       aborted = true;
       options.onAbort(air);
+      // onAbort ends the walk, which calls stop(): nothing below may hold a control after that.
+      if (stopped) return;
     }
     if (air > SURFACE_AIR) {
       release();
@@ -100,6 +109,7 @@ export function startSwim(bot: Bot, options: SwimOptions): SwimController {
   return {
     tally,
     stop(): SwimTally {
+      stopped = true;
       bot.off('physicsTick', tick);
       release();
       return tally;
