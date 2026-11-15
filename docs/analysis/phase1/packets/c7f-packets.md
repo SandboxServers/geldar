@@ -25,7 +25,7 @@ Batching: C7-03c2 and C7-03b2 change the image set, so they merge in one window 
 
 1. **New workspace package `body-helper/`.** A small root-owned Node service on the Colo node, run as a systemd unit. It is NOT in a container and not in any compose file. It is built and installed by C7-03c2.
 2. **Four fixed verbs:** `start`, `stop`, `status`, `logtail`. Any other verb is refused and logged.
-3. **The roster name is validated by the helper, never trusted from the caller.** The helper reads the name's roster row from the database through `supervisor_player_display_name` (0033) and `mcp_roster`. It also checks the name against the regex `^[A-Za-z0-9_]{3,16}$` itself, so a valid name is required whether or not the supervisor checked it first. A name not on the roster is refused.
+3. **The roster name is validated by the helper, never trusted from the caller.** The helper reads the name's roster row from the database through `supervisor_player_display_name` (0033) and `mcp_roster`. It also checks the name against the regex `^[A-Za-z0-9_]{3,16}$` itself, so a valid name is required whether or not the supervisor checked it first. A name not on the roster is refused for `start`. `stop`, `status` and `logtail` need no roster row: they act on the container of that name that carries the caller's `geldar.owner` label (decision 0108), so a Body whose name left the roster stays stoppable by its owner.
 4. **The Body container is built from a FIXED TEMPLATE inside the helper.** The logic of `supervisor/src/docker.ts` moves here: hardening, capabilities dropped, no-new-privileges, read-only root, tmpfs, memory and CPU limits, binds (the secret files and the shard file only), restart policy, labels, log config, and network `geldar-colo`. The template is the C7-03b4 spec.
 5. **The caller supplies only the verb and the roster name.** The helper refuses any other field: no image, mounts, env, flags or command. The image comes from the helper's own config file, read from a root-only path.
 6. **One body per name.** A `start` for a name that already has a container returns "already running" and starts nothing new. A `stop` for a name with no container returns "not running".
@@ -112,7 +112,7 @@ Batching: C7-03c2 and C7-03b2 change the image set, so they merge in one window 
 
 ## C7-03c3: supervisor uses the helper
 
-- **id / wave / lane.** C7-03c3, wave 5, Supervisor lane. **depends-on.** C7-03c1 (the verbs and subjects). **branch.** `phase1/c7-03c3-supervisor-helper`. **migration.** no. **size.** M.
+- **id / wave / lane.** C7-03c3, wave 5, Supervisor lane. **depends-on.** C7-03c1 (the verbs and subjects). **branch.** `phase1/c7-03c3` (built; review pending; worknote `docs/analysis/phase1/worknotes/C7-03c3.md`). **migration.** no. **size.** M.
 
 ### Goal
 
@@ -157,6 +157,8 @@ Batching: C7-03c2 and C7-03b2 change the image set, so they merge in one window 
 - Add a Docker client, a Docker CLI or a socket path to the image.
 - Print secret values.
 - Edit `compose/colo.yml` (C7-03b2 owns it).
+- Review note (C7-03c3 review, fix 9): the real `HelperRequest` must call `nc.request(subject, payload, { timeout })` (the library closes the inbox on timeout) and take the shard from config, so the subject is `geldar.<shard>.helper.body.<verb>`. C7-03c3 ships no request adapter; the body helper's own run deadline is 120 s and the client bound is 20 s.
+
 
 ## C7-03b2 (adjusted): compose service, deploy script, budget and runbook
 
