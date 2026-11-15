@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { Account } from './account.ts';
+import type { AccountDeleteDeps } from './api/account-data-delete.ts';
 import { handleApi } from './api/index.ts';
 import type { ApiDeps } from './api/route.ts';
 import type { RegisterConfig } from './config.ts';
@@ -30,6 +31,8 @@ export interface RegisterDeps {
   readonly store?: Store;
   /** Sessions (C7-01). Sign-in and the account pages need both this and the store. */
   readonly sessions?: SessionStore;
+  /** The account delete (C7-09a): the page action and the API route share it. Unset, the page action is a 404. */
+  readonly accountDelete?: AccountDeleteDeps | undefined;
   /** Overrides the store-backed sign-in (tests of the sign-in alone). */
   readonly onSignedIn?: (
     identity: Identity,
@@ -162,6 +165,7 @@ export function createRegisterServer(deps: RegisterDeps): Server {
           now,
           log,
           ownerCharge: (id) => ownerLimiter.charge(id),
+          accountDelete: deps.accountDelete,
         })
       : null;
   const onSignedIn = deps.onSignedIn ?? account?.signedIn;

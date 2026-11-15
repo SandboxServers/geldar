@@ -84,6 +84,10 @@ describe('PgStore error mapping', () => {
       banned: false,
     });
     expect(await storeAnswering([]).findOwner('ab')).toBeNull();
+    // A tombstone (owner NULL, 0039) is refused like a ban and never becomes the owner 'null' (F4).
+    const tombstone = await storeAnswering([{ owner_id: null, banned: false }]).findOwner('ab');
+    expect(tombstone?.banned).toBe(true);
+    expect(tombstone?.ownerId).not.toBe('null');
   });
 
   it('createOwner goes through register_create_owner and maps nothing itself', async () => {

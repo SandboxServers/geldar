@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { signOutCookies } from '../src/account.ts';
 import { FakeStore } from './fake-store.ts';
 import { type Harness, harness, NOW, RAW_ID } from './fixture.ts';
 
@@ -135,6 +136,8 @@ describe('session cookie names (CF-5)', () => {
     expect(set.some((c) => c.startsWith('gr_session=;') && c.includes('Max-Age=0'))).toBe(true);
     expect(set.some((c) => c.startsWith('gr_state=;') && c.includes('Max-Age=0'))).toBe(true);
     for (const c of set) expect(c).not.toMatch(/;\s*domain=/i);
+    // logout and the account delete clear exactly the same list (signOutCookies), in the same order (review fix 2)
+    expect(set).toEqual(signOutCookies());
   });
 });
 

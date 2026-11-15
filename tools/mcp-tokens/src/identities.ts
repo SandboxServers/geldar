@@ -36,14 +36,23 @@ export async function banIdentity(sql: Sql, hash: string): Promise<number> {
   return revoked;
 }
 
-/** Lifts a ban. Tokens revoked by the ban stay revoked: the owner mints new ones. */
+/**
+ * Lifts a ban. Tokens revoked by the ban stay revoked: the owner mints new ones. A tombstone (a banned
+ * identity whose owner was erased by self-serve deletion, so owner_id is NULL) is removed instead: a row
+ * with no owner would read as signed in to no one, and removing it lets the person sign up as new.
+ */
 export async function unbanIdentity(sql: Sql, hash: string): Promise<void> {
   checkHash(hash);
   const result = await sql.query(
-    "UPDATE mcp_identities SET banned_at = NULL WHERE identity_hash = decode($1, 'hex') RETURNING owner_id",
+    "UPDATE mcp_identities SET banned_at = NULL WHERE identity_hash = decode($1, 'hex') AND owner_id IS NOT NULL RETURNING owner_id",
     [hash],
   );
-  if (result.rows.length === 0) throw new Error('no identity with that id');
+  if (result.rows.length > 0) return;
+  const tombstone = await sql.query(
+    "DELETE FROM mcp_identities WHERE identity_hash = decode($1, 'hex') AND owner_id IS NULL AND banned_at IS NOT NULL RETURNING 1 AS ok",
+    [hash],
+  );
+  if (tombstone.rows.length === 0) throw new Error('no identity with that id');
 }
 
 /** Makes a registered identity a Kino administrator (R42). The identity must exist; granting twice is a no-op. */

@@ -29,7 +29,10 @@ export class PgStore implements Store, SessionStore {
       hex(identityHash),
     ]);
     const row = r.rows[0];
-    return row ? { ownerId: String(row.owner_id), banned: row.banned === true } : null;
+    if (!row) return null;
+    // A tombstone (0039) has owner_id NULL. It is refused like a ban: never a session, and never the string 'null'.
+    if (row.owner_id === null || row.owner_id === undefined) return { ownerId: '', banned: true };
+    return { ownerId: String(row.owner_id), banned: row.banned === true };
   }
 
   async createOwner(
@@ -249,6 +252,17 @@ export class PgStore implements Store, SessionStore {
       if ((error as { code?: string }).code === '42501') return null;
       throw error;
     }
+  }
+
+  /**
+   * Removes the account of the identity (register_account_delete, migration 0039). The bodies are stopped by the route
+   * before this call. True when the account was removed; false when there was nothing to remove (a second delete).
+   */
+  async eraseAccount(identityHash: string): Promise<boolean> {
+    const r = await this.pool.query('SELECT register_account_delete($1) AS ok', [
+      hex(identityHash),
+    ]);
+    return r.rows[0]?.ok === true;
   }
 
   async retirePlayer(identityHash: string, playerId: string): Promise<boolean> {
