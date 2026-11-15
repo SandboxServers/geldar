@@ -35,3 +35,41 @@ describe('actionOutcomeOf: the farmland fact an ok till or seed planting carries
     expect(actionOutcomeOf('mine', 0, okReport({ fact: MOIST })).detail_text).toBeUndefined();
   });
 });
+
+const SWAM = 'swam 12 blocks, came up for air 2 times';
+const STOPPED_AT_10 = 'swim stopped at air 10 with your head in the water';
+
+/** A failed report whose result carries `reason` and `message` the way a failed walk's does. */
+function failedWalk(reason: string, message: string): ActionReport {
+  return {
+    record: { state: 'failed', result: { status: 'failed', reason, message, detail: {} } },
+    duplicate: false,
+  } as unknown as ActionReport;
+}
+
+describe('actionOutcomeOf: the swim facts a goto carries (decision 0194 d)', () => {
+  it('carries the swim note as detail_text on an ok goto that swam', () => {
+    expect(actionOutcomeOf('goto', 0, okReport({ note: SWAM }))).toMatchObject({
+      ok: true,
+      detail_text: SWAM,
+    });
+  });
+
+  it('has no detail_text on an ok goto that did not swim', () => {
+    expect(actionOutcomeOf('goto', 0, okReport({ position: {} })).detail_text).toBeUndefined();
+  });
+
+  it('carries the air fact as detail_text on a goto stopped at air 10', () => {
+    expect(actionOutcomeOf('goto', 0, failedWalk('interrupted', STOPPED_AT_10))).toMatchObject({
+      ok: false,
+      reason: 'interrupted',
+      detail_text: STOPPED_AT_10,
+    });
+  });
+
+  it('keeps the detail of an interrupted goto that has no swim fact out of the Mind', () => {
+    expect(
+      actionOutcomeOf('mine', 0, failedWalk('interrupted', STOPPED_AT_10)).detail_text,
+    ).toBeUndefined();
+  });
+});

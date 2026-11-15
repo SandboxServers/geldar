@@ -60,9 +60,30 @@ function farmlandFactText(result: unknown): string | undefined {
   return typeof fact === 'string' ? fact.slice(0, 160) : undefined;
 }
 
-/** The fact an ok action carries, by verb: an eat's hunger change, a sleep's sleepers line, or a till's or planting's farmland fact. */
+/** The swim fact a goto's note carries (decision 0194 d), cut to 160 characters. Undefined when it swam not at all. */
+function gotoNoteText(result: unknown): string | undefined {
+  const note = (result as { detail?: { note?: unknown } } | null)?.detail?.note;
+  return typeof note === 'string' ? note.slice(0, 160) : undefined;
+}
+
+/**
+ * The fixed text of a goto stopped at the air line (decision 0194 d), sent as its detail. The
+ * contract lists `interrupted` for no verb, so this is the Body's own fact for a goto alone.
+ */
+function gotoStoppedText(
+  verb: string,
+  reason: string | undefined,
+  result: unknown,
+): string | undefined {
+  if (verb !== 'goto' || reason !== 'interrupted') return undefined;
+  const message = (result as { message?: unknown } | null)?.message;
+  return typeof message === 'string' ? message.slice(0, 160) : undefined;
+}
+
+/** The fact an ok action carries, by verb: an eat's hunger change, a sleep's sleepers line, a till's or planting's farmland fact, or a goto's swim note. */
 function okFactText(verb: string, result: unknown): string | undefined {
   if (verb === 'till' || verb === 'place') return farmlandFactText(result);
+  if (verb === 'goto') return gotoNoteText(result);
   return verb === 'sleep' ? sleepFactText(verb, result) : eatFactText(verb, result);
 }
 
@@ -80,11 +101,12 @@ export function actionOutcomeOf(
     ? okFactText(verb, report.record.result)
     : stopped
       ? STOPPED_TEXT
-      : outcomeDetailText(
+      : (gotoStoppedText(verb, reason, report.record.result) ??
+        outcomeDetailText(
           verb,
           reason,
           (report.record.result as { message?: unknown } | null)?.message,
-        );
+        ));
   return {
     verb,
     index,
