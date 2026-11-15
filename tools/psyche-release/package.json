@@ -1,0 +1,12 @@
+{
+  "name": "@geldar/psyche-release",
+  "private": true,
+  "description": "The psyche release record: the geldar-tree-v1 tree hash of psyche/src and psyche/RELEASE.json (GX-02).",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p . --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5"
+  }
+}
