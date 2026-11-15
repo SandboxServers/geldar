@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { FakeWorld } from './fakes.ts';
-import { BODY_MEMORY_BYTES, BODY_NANO_CPUS } from './limits.ts';
+import { BODY_MEMORY_BYTES, BODY_NANO_CPUS, BODY_PIDS_LIMIT } from './limits.ts';
 import { type ControlRequest, type LogEvent, LoginNameError, type Op } from './ports.ts';
 import { DAY_MS, HOUR_MS, LOG_TAIL_LIMIT, LOG_TAIL_WINDOW_MS } from './quotas.ts';
 import { createSupervisor, RUNTIME_TIMEOUT_MS } from './service.ts';
@@ -331,18 +331,14 @@ describe('concurrency', () => {
   });
 });
 
-describe('container config carries the 0082 body limits', () => {
-  it('the started body gets 1 CPU and 2048m memory with no extra swap', async () => {
+describe('the start carries no container config (the helper owns the 0082 limits)', () => {
+  it('the start spec is the owner and the roster name, and the 0082 numbers stay the reference', async () => {
     const { world, handle } = setup();
     await handle(start('Ranger'));
-    expect(world.specs[0]?.config).toEqual({
-      NanoCpus: 1_000_000_000,
-      Memory: 2048 * 1024 * 1024,
-      MemorySwap: 2048 * 1024 * 1024,
-      PidsLimit: 256,
-    });
+    expect(world.specs[0]).toEqual({ ownerId: 'owner-a', playerName: 'ranger' });
     expect(BODY_NANO_CPUS).toBe(1_000_000_000);
     expect(BODY_MEMORY_BYTES).toBe(2048 * 1024 * 1024);
+    expect(BODY_PIDS_LIMIT).toBe(256);
   });
 });
 
@@ -402,8 +398,8 @@ describe('abort and error paths', () => {
     expect(await handle(start('Ranger'))).toEqual(STARTED);
   });
 
-  it('the default runtime timeout is 15 seconds', () => {
-    expect(RUNTIME_TIMEOUT_MS).toBe(15_000);
+  it('the default runtime timeout is 25 seconds', () => {
+    expect(RUNTIME_TIMEOUT_MS).toBe(25_000);
   });
 
   it('an audit failure on a refusal rejects the request, and the owner queue still drains', async () => {
