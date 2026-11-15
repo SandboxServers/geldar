@@ -80,6 +80,20 @@ function Enable-BenchLog {
   Write-Host "bench log check: bench_log: true is set in $PluginConfig (paper restarted)"
 }
 
+function Wait-PaperHealthy {
+  # Paper's compose healthcheck passes once the server is up and Geldar-Core is enabled. Bounded: 60 polls, 5 s apart.
+  $health = ''
+  for ($try = 1; $try -le 60; $try++) {
+    $health = (Invoke-BenchCompose @('ps', '--format', '{{.Health}}', 'paper') | Out-String).Trim()
+    if ($health -eq 'healthy') {
+      Write-Host "paper is healthy (project $Project)"
+      return
+    }
+    Start-Sleep -Seconds 5
+  }
+  throw "paper did not become healthy within 300 s (last health: '$health', project $Project)"
+}
+
 Write-Resources 'before'
 
 if ($Action -eq 'up') {
@@ -97,6 +111,7 @@ if ($Action -eq 'up') {
   }
   Invoke-BenchCompose @('up', '-d')
   Enable-BenchLog
+  Wait-PaperHealthy
   Write-Host "bench up: Minecraft 127.0.0.1:26565, NATS 127.0.0.1:14222, RCON 127.0.0.1:26575"
 } else {
   Invoke-BenchCompose @('down', '-v')

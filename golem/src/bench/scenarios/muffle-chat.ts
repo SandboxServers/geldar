@@ -1,7 +1,10 @@
 /**
- * MH-8a muffle-chat: N bots on a throwaway bench shard, K of them speakers (default 1, the control) and
- * N-K listeners. The bots stand at known distances behind known walls, and each listener records which
+ * MH-8a muffle-chat: N bots on a throwaway bench shard, K of them speakers (default 1, the control) and the
+ * rest listeners. The bots stand at known distances behind known walls, and each listener records which
  * (speaker, line) pairs it heard. The plugin's `muffle-bench` log lines are read separately (muffle-log.ts).
+ * The plugin judges N-1 viewers per line: every viewer except the speaker, including the other K-1 speakers,
+ * a few blocks away with no walls between them, so the log shows listeners=N-1. The `heard` counts here
+ * cover only the listeners.
  *
  * Speakers: speaker 0 stands at the origin (z 0), where the one-speaker layout always stood. Speakers 1..K-1
  * stand at x 0 on z 2, -2, 1, -1 (SPEAKER_ROWS). Each extra speaker takes the place of one of the nearest
@@ -15,6 +18,10 @@
  * Modes: `steady` staggers the speakers inside each chat interval (speaker k starts at k * interval / K).
  * `burst` has all K speakers send in the same server tick, back to back in one event-loop turn, once per
  * round, to find the worst per-tick cost. K=1 steady is the control: one line per interval, as before.
+ *
+ * Straddle: a burst's K lines are sent in one event-loop turn, but they can reach the server over a few ms, so
+ * a 50 ms tick boundary can split one burst across two ticks. Read `linesPerTick` max and p95 together with
+ * `worst` (the tick with the largest summed ns, from muffle-log.ts). Do not read `worst` alone as the burst cost.
  *
  * RCON whitelist/tp/fill here is a test-harness operator control on a throwaway bench shard only; it is
  * never used on a real shard. Principle 1 concerns the real world.

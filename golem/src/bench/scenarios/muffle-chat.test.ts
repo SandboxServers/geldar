@@ -26,16 +26,28 @@ interface FakeOptions {
   fillReply?: string;
   /** The 1-based bot start that throws. */
   startFailsAt?: number;
+  /** Runs before the `tick query` reply, so a test can drive the listeners' chat handlers there. */
+  beforeTickQuery?: (handlers: Map<string, ChatHandler>) => void;
 }
 
-/** A fake RCON source and bot starter. Records every command, in order. */
+type ChatHandler = (username: string, message: string) => void;
+
+/**
+ * A fake RCON source and bot starter. Records every command, in order. Each chat call appends `chat <name>` to
+ * `events` and queues a microtask that appends `turn`, so a test can tell whether another turn ran between sends.
+ * The chat handler each bot registers is kept in `handlers`, by bot name.
+ */
 function fakeDeps(opts: FakeOptions = {}): {
   deps: MuffleDeps;
   commands: string[];
   chats: { speaker: string; message: string }[];
+  events: string[];
+  handlers: Map<string, ChatHandler>;
 } {
   const commands: string[] = [];
   const chats: { speaker: string; message: string }[] = [];
+  const events: string[] = [];
+  const handlers = new Map<string, ChatHandler>();
   let fills = 0;
   let starts = 0;
   const deps: MuffleDeps = {
@@ -48,6 +60,7 @@ function fakeDeps(opts: FakeOptions = {}): {
           return opts.fillReply ?? 'Successfully filled 7 blocks';
         }
         if (cmd === 'tick query') {
+          opts.beforeTickQuery?.(handlers);
           return 'Target tick rate: 20.0 per second.\nAverage time per tick: 0.1ms (Target: 50.0ms)';
         }
         if (cmd.startsWith('whitelist add')) return 'Added to the whitelist';
@@ -58,12 +71,19 @@ function fakeDeps(opts: FakeOptions = {}): {
     startBot: async (spot): Promise<BotSession> => {
       starts += 1;
       if (opts.startFailsAt === starts) throw new Error('bot refused');
-      const chat = (message: string) => chats.push({ speaker: spot.name, message });
-      const bot = { username: spot.name, on: () => undefined, chat };
+      const chat = (message: string) => {
+        chats.push({ speaker: spot.name, message });
+        events.push(`chat ${spot.name}`);
+        queueMicrotask(() => events.push('turn'));
+      };
+      const on = (event: string, handler: ChatHandler) => {
+        if (event === 'chat') handlers.set(spot.name, handler);
+      };
+      const bot = { username: spot.name, on, chat };
       return { bot: bot as never, stop: async () => undefined };
     },
   };
-  return { deps, commands, chats };
+  return { deps, commands, chats, events, handlers };
 }
 
 const CFG = {
@@ -233,6 +253,13 @@ describe('runMuffleChat commands', () => {
     const boxes = muffleLayout(9).boxes.length;
     const { run, commands } = runFake(9, { notLoaded: Number.POSITIVE_INFINITY });
     await expect(run).rejects.toThrow(/did not build/);
+    expect(commands.filter((c) => c.startsWith('fill ')).length).toBe(FILL_TRIES * boxes);
+  }, 15_000);
+
+  it('builds the layout when only the last allowed attempt succeeds', async () => {
+    const boxes = muffleLayout(9).boxes.length;
+    const { run, commands } = runFake(9, { notLoaded: (FILL_TRIES - 1) * boxes });
+    await run;
     expect(commands.filter((c) => c.startsWith('fill ')).length).toBe(FILL_TRIES * boxes);
   }, 15_000);
 
@@ -416,6 +443,49 @@ describe('runMuffleChat with speakers', () => {
     expect(chats[5]?.message).toBe('mh8a L2 alpha bravo charlie');
   });
 
+  it('burst: all K chat calls of a round run in one turn, before any other turn', async () => {
+    // One round: with intervalMs 0 two rounds would share a send group, so one round is what this checks.
+    const { deps, events } = fakeDeps();
+    await runMuffleChat({
+      bots: 9,
+      speakers: 3,
+      mode: 'burst',
+      cfg: CFG_BENCH,
+      throwawayFlag: false,
+      lines: 1,
+      intervalMs: 0,
+      deps,
+    });
+    const firstTurn = events.indexOf('turn');
+    expect(events.slice(0, firstTurn)).toEqual([
+      'chat MuffleBench00',
+      'chat MuffleBench01',
+      'chat MuffleBench02',
+    ]);
+    expect(events.filter((e) => e.startsWith('chat '))).toHaveLength(3);
+  });
+
+  it('burst: two rounds a nonzero interval apart each run in their own turn', async () => {
+    const { deps, chats, events } = fakeDeps();
+    const started = Date.now();
+    await runMuffleChat({
+      bots: 9,
+      speakers: 3,
+      mode: 'burst',
+      cfg: CFG_BENCH,
+      throwawayFlag: false,
+      lines: 2,
+      intervalMs: 50,
+      deps,
+    });
+    expect(Date.now() - started).toBeGreaterThanOrEqual(100);
+    expect(events.slice(0, 3).every((e) => e.startsWith('chat '))).toBe(true);
+    expect(events.slice(3, 6)).toEqual(['turn', 'turn', 'turn']);
+    expect(events.slice(6, 9).every((e) => e.startsWith('chat '))).toBe(true);
+    expect(chats.slice(0, 3).every((c) => c.message.startsWith('mh8a L1 '))).toBe(true);
+    expect(chats.slice(3).every((c) => c.message.startsWith('mh8a L2 '))).toBe(true);
+  });
+
   it('steady: each speaker sends each of its lines once', async () => {
     const { deps, chats } = fakeDeps();
     const result = await runMuffleChat({
@@ -457,6 +527,38 @@ describe('runMuffleChat with speakers', () => {
       runMuffleChat({ bots: 9, speakers: 6, cfg: CFG_BENCH, throwawayFlag: false, deps }),
     ).rejects.toThrow(RangeError);
     expect(commands).toEqual([]);
+  });
+});
+
+describe('runMuffleChat heard count', () => {
+  it('counts distinct (speaker, line) pairs per listener, and only lines from speakers', async () => {
+    const { deps } = fakeDeps({
+      beforeTickQuery: (handlers) => {
+        // setTps asks for the tick rate before any bot starts: only the later query sees the handlers.
+        if (!handlers.has('MuffleBench02')) return;
+        const listener = handlers.get('MuffleBench02') as ChatHandler;
+        const other = handlers.get('MuffleBench03') as ChatHandler;
+        listener('MuffleBench00', 'mh8a L1 alpha bravo charlie');
+        listener('MuffleBench01', 'mh8a L1 alpha bravo charlie'); // the second speaker, same line number
+        listener('MuffleBench00', 'mh8a L1 alpha bravo charlie'); // a duplicate: not counted again
+        listener('Steve', 'mh8a L2 alpha bravo charlie'); // not a speaker
+        listener('MuffleBench02', 'mh8a L3 alpha bravo charlie'); // a listener is not a speaker either
+        listener('MuffleBench00', 'hello L2 alpha bravo charlie'); // malformed: no bench prefix
+        listener('MuffleBench00', 'mh8a L2 alpha bravo charlie'); // a distinct line
+        other('MuffleBench00', 'mh8a L1 alpha bravo charlie');
+      },
+    });
+    const result = await runMuffleChat({
+      bots: 9,
+      speakers: 2,
+      cfg: CFG,
+      throwawayFlag: false,
+      lines: 0,
+      intervalMs: 0,
+      deps,
+    });
+    expect(result.heard.MuffleBench02).toBe(3);
+    expect(result.heard.MuffleBench03).toBe(1);
   });
 });
 

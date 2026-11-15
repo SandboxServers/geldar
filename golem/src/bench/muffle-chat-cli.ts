@@ -7,6 +7,7 @@
  *     --mc-port 26565 --rcon-port 26575 --nats-url nats://127.0.0.1:14222
  *   node --experimental-strip-types golem/src/bench/muffle-chat-cli.ts --summarize <log file>
  *
+ * --summarize reads one run's log; restart the server between runs so tick numbers do not collide.
  * --speakers K (1 to 5, default 1: the control). --mode steady (default) or burst. See muffle-chat.ts.
  *
  * RCON whitelist/tp/fill here is a test-harness operator control on a throwaway bench shard only; it is
@@ -32,6 +33,12 @@ import {
 const USAGE =
   'usage: muffle-chat-cli (--bots <9|15> [--speakers <1-5>] [--mode <steady|burst>] [--mc-port <n>] ' +
   `[--rcon-port <n>] [--nats-url <url>] [${THROWAWAY_FLAG}] | --summarize <log file>)`;
+
+/** Printed with every summary: a burst's K lines can straddle a tick boundary, so `worst` alone misleads. */
+const SUMMARY_NOTE =
+  "A burst's K lines are sent in one turn but can arrive over a few ms, so a 50 ms tick boundary can split " +
+  'one burst across two ticks. Read perTick.linesPerTick max and p95 together with worst; do not read worst ' +
+  'alone as the burst cost.';
 
 /** Runs the command and returns the exit code: 0 ok, 1 refused or failed, 2 bad usage. */
 export async function main(argv: string[]): Promise<number> {
@@ -60,7 +67,15 @@ export async function main(argv: string[]): Promise<number> {
   if (typeof values.summarize === 'string') {
     const records = parseMuffleLog(await readFile(values.summarize, 'utf8'));
     console.log(
-      JSON.stringify({ ...summarizeMuffle(records), perTick: summarizeByTick(records) }, null, 2),
+      JSON.stringify(
+        {
+          ...summarizeMuffle(records),
+          perTick: summarizeByTick(records),
+          note: SUMMARY_NOTE,
+        },
+        null,
+        2,
+      ),
     );
     return 0;
   }
