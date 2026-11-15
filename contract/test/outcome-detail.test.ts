@@ -49,8 +49,8 @@ describe('failure detail text', () => {
       'Your sleep worked: 2 sleepers.',
     );
     expect(playerOutcomeText({ verb: 'eat', ok: true })).toBe('Your eat worked.');
-    expect(playerOutcomeText({ verb: 'goto', ok: true, detail: 'moved 12 blocks' })).toBe(
-      'Your goto worked.',
+    expect(playerOutcomeText({ verb: 'mine', ok: true, detail: 'moved 12 blocks' })).toBe(
+      'Your mine worked.',
     );
   });
 
@@ -65,6 +65,30 @@ describe('failure detail text', () => {
     expect(playerOutcomeText({ verb: 'place', ok: true })).toBe('Your place worked.');
   });
 
+  it('an ok goto appends its plain fact (the swim note) after the fixed line', () => {
+    expect(playerOutcomeText({ verb: 'goto', ok: true, detail: 'swam 4 blocks' })).toBe(
+      'Your goto worked: swam 4 blocks.',
+    );
+    expect(playerOutcomeText({ verb: 'goto', ok: true })).toBe('Your goto worked.');
+  });
+
+  it('an interrupted goto carries its detail (a swim stopped at low air) after the fixed line', () => {
+    expect(outcomeDetailText('goto', 'interrupted', 'swim stopped at low air')).toBe(
+      'swim stopped at low air',
+    );
+    expect(
+      playerOutcomeText({
+        verb: 'goto',
+        ok: false,
+        reason: 'interrupted',
+        detail: 'swim stopped at low air',
+      }),
+    ).toBe('Your goto failed: something interrupted it: swim stopped at low air.');
+    expect(playerOutcomeText({ verb: 'goto', ok: false, reason: 'interrupted' })).toBe(
+      'Your goto failed: something interrupted it.',
+    );
+  });
+
   it.each(BODY_SENTENCES)(
     'every Body sentence (%s, %s) passes the scan and is kept',
     (verb, reason, text) => {
@@ -74,7 +98,7 @@ describe('failure detail text', () => {
   );
 
   it('is sent only for the chosen cases', () => {
-    expect(outcomeDetailText('goto', 'interrupted', 'x')).toBeUndefined();
+    expect(outcomeDetailText('goto', 'unsupported', 'x')).toBeUndefined();
     expect(outcomeDetailText('mine', 'busy', 'x')).toBeUndefined();
     expect(outcomeDetailText('craft', undefined, 'x')).toBeUndefined();
   });
