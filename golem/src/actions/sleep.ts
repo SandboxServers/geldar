@@ -12,7 +12,13 @@ import {
 } from './outcome.ts';
 import { moveNear } from './pathing.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
-import { type BedCensus, censusText, HORIZONTAL, takeCensus } from './sleep-census.ts';
+import {
+  type BedCensus,
+  bedKey,
+  censusText,
+  otherHalfPosition,
+  takeCensus,
+} from './sleep-census.ts';
 import {
   type BedTry,
   observeMonsters,
@@ -250,9 +256,9 @@ async function sleepFromBeds(
   census: CensusRecord,
 ): Promise<ActionOutcome> {
   const { bot } = ctx;
-  census.start = takeCensus(bot, BED_RANGE);
   const beds = nearbyBeds(bot);
   if (beds.length === 0) return failed('not_found', 'no bed');
+  census.start = takeCensus(bot, BED_RANGE);
   if (!isNightOrStorm(bot.time.timeOfDay, bot.thunderState > 0)) {
     return failed('not_possible', 'it is not night');
   }
@@ -285,11 +291,9 @@ async function sleepFromBeds(
         break;
       }
       if (outcome.status === 'failed') tries.push(bedTry(used, outcome.message));
-      if (
-        outcome.status !== 'failed' ||
-        (outcome.reason !== 'blocked' && outcome.reason !== 'timeout') ||
-        ctx.signal.aborted
-      ) {
+      // A success needs no end census: withSleepDetail keeps the detail of a failure only.
+      if (outcome.status !== 'failed') return outcome;
+      if ((outcome.reason !== 'blocked' && outcome.reason !== 'timeout') || ctx.signal.aborted) {
         endCensus(bot, census);
         return outcome;
       }
@@ -408,7 +412,7 @@ function sleepersDetail(line: SleepersLine | undefined): Record<string, JsonValu
 
 /**
  * The nearest beds within range, nearest first, at most MAX_BEDS. A bed is two blocks and `findBlocks`
- * returns both halves, so it asks for twice as many blocks and keeps one block per bed.
+ * returns both halves, so it asks for twice as many blocks and keeps one block per bed (bedKey pairs them).
  */
 function nearbyBeds(bot: Bot): Block[] {
   const from = bot.entity.position;
@@ -427,13 +431,10 @@ function nearbyBeds(bot: Bot): Block[] {
   return beds;
 }
 
-/** True when a kept bed block of the same name is next to `block` on a horizontal side: the same bed. */
+/** True when a kept bed block is a half of the same bed as `block`: the same bedKey (decision 0226). */
 function isHalfOfKeptBed(beds: Block[], block: Block): boolean {
-  return beds.some(
-    (bed) =>
-      bed.name === block.name &&
-      HORIZONTAL.some((offset) => bed.position.plus(offset).equals(block.position)),
-  );
+  const key = bedKey(block);
+  return beds.some((bed) => bedKey(bed) === key);
 }
 
 /** Walks to within one block of `block`; null when the bot arrived, else the failure. */
@@ -500,11 +501,10 @@ async function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T
   }
 }
 
-/** The other half of a bed: the same bed block next to it on a horizontal side. */
+/** The other half of a bed: the block at the position its part and facing name, when it is the same bed. */
 function otherHalf(bot: Bot, bed: Block): Block | null {
-  for (const offset of HORIZONTAL) {
-    const cell = bot.blockAt(bed.position.plus(offset));
-    if (cell?.name === bed.name) return cell;
-  }
-  return null;
+  const position = otherHalfPosition(bed);
+  if (position === undefined) return null;
+  const cell = bot.blockAt(position);
+  return cell && cell.name === bed.name && bedKey(cell) === bedKey(bed) ? cell : null;
 }
