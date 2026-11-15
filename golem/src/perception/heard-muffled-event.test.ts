@@ -121,27 +121,53 @@ describe('HeardMuffledInbox', () => {
     expect(inbox.peek()).toEqual([NOTICE]);
     now = MUFFLED_WINDOW_MS + 1;
     expect(inbox.peek()).toEqual([]);
-    expect(inbox.staleCount).toBe(1);
   });
 
-  it('an equal-band arrival in the same direction does not restart the clock', () => {
+  it('an equal-band arrival in the same direction restarts the clock and keeps the band', () => {
     let now = 0;
     const inbox = new HeardMuffledInbox({ now: () => now });
     inbox.receive(NOTICE);
     now = 15_000;
     inbox.receive(NOTICE);
-    now = 20_000;
+    now = 35_000;
     expect(inbox.peek()).toEqual([NOTICE]);
-    now = 21_000;
+    now = 35_001;
     expect(inbox.peek()).toEqual([]);
   });
 
-  it('a farther arrival in the same direction does not restart the clock either', () => {
+  it('an equal arrival at exactly the window length after the first keeps the entry until 20 000 ms after the second', () => {
+    let now = 0;
+    const inbox = new HeardMuffledInbox({ now: () => now });
+    inbox.receive(NOTICE);
+    now = MUFFLED_WINDOW_MS;
+    inbox.receive(NOTICE);
+    now = MUFFLED_WINDOW_MS * 2;
+    expect(inbox.peek()).toEqual([NOTICE]);
+    now = MUFFLED_WINDOW_MS * 2 + 1;
+    expect(inbox.peek()).toEqual([]);
+  });
+
+  it('a farther arrival in the same direction changes nothing: neither the band nor the clock', () => {
     let now = 0;
     const inbox = new HeardMuffledInbox({ now: () => now });
     inbox.receive(notice('n', 'mid'));
     now = 15_000;
     inbox.receive(notice('n', 'far'));
+    now = 10_000;
+    expect(inbox.peek()).toEqual([notice('n', 'mid')]);
+    now = MUFFLED_WINDOW_MS;
+    expect(inbox.peek()).toEqual([notice('n', 'mid')]);
+    now = MUFFLED_WINDOW_MS + 1;
+    expect(inbox.peek()).toEqual([]);
+  });
+
+  it('a farther arrival exactly at the window edge does not replace the visible near entry', () => {
+    let now = 0;
+    const inbox = new HeardMuffledInbox({ now: () => now });
+    inbox.receive(NOTICE);
+    now = MUFFLED_WINDOW_MS;
+    inbox.receive(notice('n', 'far'));
+    expect(inbox.peek()).toEqual([NOTICE]);
     now = MUFFLED_WINDOW_MS + 1;
     expect(inbox.peek()).toEqual([]);
   });
@@ -167,7 +193,20 @@ describe('HeardMuffledInbox', () => {
     expect(inbox.peek()).toEqual([notice('n', 'far')]);
   });
 
-  it('writes at most one drop line a minute, with running counts and no payload content', () => {
+  it('an arrival after the window ended sets a new entry and writes no drop line for the expiry', () => {
+    let now = 0;
+    const lines: string[] = [];
+    const inbox = new HeardMuffledInbox({ now: () => now, log: (line) => lines.push(line) });
+    inbox.receive(NOTICE);
+    now = MUFFLED_WINDOW_MS + 1;
+    expect(inbox.receive(notice('n', 'far'))).toBe(true);
+    expect(inbox.peek()).toEqual([notice('n', 'far')]);
+    now = MUFFLED_WINDOW_MS * 3;
+    expect(inbox.peek()).toEqual([]);
+    expect(lines).toEqual([]);
+  });
+
+  it('writes at most one drop line a minute for refusals, with running counts and no payload content', () => {
     let now = 0;
     const lines: string[] = [];
     const inbox = new HeardMuffledInbox({ now: () => now, log: (line) => lines.push(line) });
@@ -180,10 +219,13 @@ describe('HeardMuffledInbox', () => {
     inbox.receive({ ...NOTICE, x: 10 });
     expect(lines).toHaveLength(1);
     now = 120_001;
-    expect(inbox.peek()).toEqual([]);
+    inbox.receive(NOTICE);
+    expect(inbox.peek()).toEqual([NOTICE]);
+    expect(lines).toHaveLength(1);
+    inbox.receive({ ...NOTICE, y: 10 });
     expect(lines).toHaveLength(2);
-    expect(lines[1]).toContain('refused 3');
-    expect(lines[1]).toContain('stale 1');
+    expect(lines[1]).toContain('refused 4');
+    expect(lines[1]).not.toContain('stale');
     expect(lines.join(' ')).not.toMatch(/Ada|meet|speaker|words/);
   });
 });
@@ -217,7 +259,7 @@ describe('watchHeardMuffled', () => {
     expect(lines.join(' ')).not.toContain('Ada');
   });
 
-  it('logs a subscription error through the drop limiter: one line a minute, shared with the drops', () => {
+  it('logs every subscription error on its own line, outside the drop limiter, with no counts', () => {
     let now = 0;
     const fake = fakeTransport();
     const lines: string[] = [];
@@ -228,19 +270,29 @@ describe('watchHeardMuffled', () => {
       log: (line) => lines.push(line),
       now: () => now,
     });
-    fake.fail(new Error('connection lost'));
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toContain('subscription error');
-    expect(lines[0]).toContain('connection lost');
     fake.deliver(bytes(JSON.stringify({ ...NOTICE, speaker: 'Ada' })));
-    now = 1_000;
-    fake.fail(new Error('connection lost'));
     expect(lines).toHaveLength(1);
-    now = 60_000;
     fake.fail(new Error('connection lost'));
     expect(lines).toHaveLength(2);
-    expect(lines[1]).toContain('refused 1');
+    expect(lines[1]).toBe('heard_muffled subscription error: Error: connection lost');
+    now = 1_000;
+    fake.fail(new Error('connection lost'));
+    expect(lines).toHaveLength(3);
+    expect(lines[2]).not.toMatch(/refused|stale|count/);
     expect(lines.join(' ')).not.toContain('Ada');
+  });
+
+  it('caps the subscription error detail at 200 characters and strips newlines', () => {
+    const fake = fakeTransport();
+    const lines: string[] = [];
+    watchHeardMuffled({
+      transport: fake.transport,
+      shard: SHARD,
+      lifeId: LIFE,
+      log: (line) => lines.push(line),
+    });
+    fake.fail(`line1\nline2\r${'x'.repeat(300)}`);
+    expect(lines).toEqual([`heard_muffled subscription error: line1line2${'x'.repeat(190)}`]);
   });
 
   it('stays empty and does not throw when there is no transport (plugin or NATS not present)', () => {

@@ -97,19 +97,21 @@ This card REWRITES 0198's acceptance tests to gate on effective distance instead
   - a line whose casts exceed 512 reads gives silent to the rest and logs a counter, never the words
   - revert the effective-distance change and the muffled-pair test fails (words delivered through a wall)
 
-## MH-4: golem Body receives, collapses and words the notice
+## MH-4: golem Body receives and collapses the notice
 
 - **depends-on:** MH-3 merged
 - **owner:** geldar-ops (golem Body)
 - **size:** M
 - **files:** `golem/src/perception/heard-muffled-event.ts` (new, parallel to `heard-sound-event.ts`); `golem/src/perception/heard-muffled-event.test.ts`; `golem/src/perception/muffled.ts` (new; collapses notices by direction, at most three per snapshot); `golem/src/snapshot.ts` (the `heard_muffled` field); `golem/src/mind-link/server.ts` (peeks the inbox into the snapshot, never consumes it); `golem/src/mind-link/server.test.ts`; `golem/src/adam/adam-body.ts` (wiring only, the existing `heard_sound` path is not changed); `golem/src/adam/adam-body.hearing.test.ts`; `golem/src/adam/main.ts` and `golem/src/players/main.ts` (the Body wiring of the two runs)
 - **shape sent by the golem:** the snapshot's `heard_muffled` carries only `{direction, band}` per notice; no `kind`, coordinates, speaker or words.
-- **lifetime:** a notice uses a 20 s window (`MUFFLED_WINDOW_MS`), not a drain. Every snapshot (act, sleep, status, wait probes, look) shows it until the window ends, so a call that never shows it does not consume it. A same-direction arrival at an equal or farther band does not restart the window; a nearer one does.
+- **lifetime:** a notice uses a 20 s window (`MUFFLED_WINDOW_MS`), not a drain. Every snapshot (act, sleep, status, wait probes, look) shows it until the window ends, so a call that never shows it does not consume it. An arrival in the same direction is judged against the entry still visible: a nearer band replaces it and restarts the window; an equal band keeps the band and restarts the window (refresh); a farther band changes nothing, neither the band nor the window.
 - **wording moved:** the sentence for a notice is made in threshold/mcp from `heardMuffledSentence` (MH-5 and MH-6 carry the wording items), not in golem.
 - **prove-it:**
   - a snapshot with five notices in one direction shows one line with the band of the nearest
-  - a snapshot never contains a coordinate, a speaker name or a word (scan test over the rendered text)
-  - the sentence uses the fixed table; an unknown code is refused, not shown
+  - a snapshot's `heard_muffled` has only `direction` and `band` per notice
+  - a notice shows in every snapshot for 20 s: visible at 20 000 ms, gone at 20 001 ms
+  - a nearer arrival restarts the window, an equal band refreshes it, a farther one does not
+  - a notice survives a failed build and a failed reply
   - revert the collapse and the three-line cap test fails
 - **note:** do not reuse golem's `bandOf`: the plugin sends `far` up to 32 blocks (the contract text says 32 since PR #499). Direction is one of the 8 compass points, `overhead` or `below` (overhead/below when the horizontal offset is under 1 block; decision 0199 step 6). Parse with `validateHeardMuffledPayload` from `@geldar/contract`, never a hand-written compass enum; the collapse keys are the 10 direction codes, so overhead and below are never merged into a compass point; word every notice from the fixed table (`heardMuffledSentence`). Add to prove-it: a snapshot with an `overhead` notice and an `n` notice shows two lines.
 
@@ -122,6 +124,7 @@ This card REWRITES 0198's acceptance tests to gate on effective distance instead
 - **prove-it:**
   - a `heard_muffled` event does not wake the Mind (wake interest test: no `wake` emitted with no `sound` interest set; revert the no-wake rule and the test fails)
   - with the `sound` interest set on, the event may wake; this path is tested so the default cannot drift
+  - the sentence uses the fixed table (`heardMuffledSentence`); an unknown code is refused, not shown
 
 ## MH-6: prompts version bump
 
