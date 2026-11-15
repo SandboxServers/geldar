@@ -36,7 +36,7 @@ import {
   setJump,
   stopDigIfDigging,
 } from './stall-recovery.ts';
-import { isWetNode, wetAt } from './water-rules.ts';
+import { allowWaterExit, isWetNode, wetAt } from './water-rules.ts';
 
 export { ESCALATE_AFTER_REPLANS, MAX_LADDERS };
 
@@ -145,6 +145,7 @@ function digMovements(bot: Bot): unknown {
   applyDigRules(digging, bot);
   forbidCornerCutting(digging);
   allowDoors(digging, bot);
+  allowWaterExit(digging, bot);
   return digging;
 }
 
@@ -167,6 +168,7 @@ export function ensurePathfinder(bot: Bot): void {
   movements.scafoldingBlocks = [];
   forbidCornerCutting(movements);
   allowDoors(movements, bot);
+  allowWaterExit(movements, bot);
   tierOne.set(bot, movements);
   bot.pathfinder.setMovements(movements);
   // Fake bodies in tests have no emitter; the trail and the door snap need one (as watchPathEvents).
