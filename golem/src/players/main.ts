@@ -19,6 +19,7 @@ import { managerAcquire } from '../adam/main.ts';
 import { jetStreamPublisher } from '../body/records-nats.ts';
 import { assertLoopbackNatsUrl, openRestartKv } from '../body/restart.ts';
 import { serveBooks } from '../books/book-server.ts';
+import { startProficiency } from '../character/proficiency-host.ts';
 import { loadStackConfig, readRconPassword, repoRoot } from '../config.ts';
 import { ConnectionManager } from '../connection.ts';
 import { natsRequestServer, type RequestServer } from '../mind-link/server.ts';
@@ -111,6 +112,7 @@ export function playerBodyEnv(input: {
   nc: PlayerNats;
   server: AdamBodyEnv['server'];
   log: AdamBodyEnv['log'];
+  proficiency?: AdamBodyEnv['proficiency'];
 }): AdamBodyEnv {
   return {
     config: input.config,
@@ -120,6 +122,7 @@ export function playerBodyEnv(input: {
     server: input.server,
     owners: input.nc,
     log: input.log,
+    ...(input.proficiency === undefined ? {} : { proficiency: input.proficiency }),
   };
 }
 
@@ -145,7 +148,16 @@ export async function runPlayer(
   const restartKv = await openRestartKv(natsUrl);
   const presence = await new Kvm(jetstream(nc)).open(PRESENCE_BUCKET);
   const server = natsRequestServer(nc);
+  // The proficiency cache (AN-12a): started only for a config sheet; off and standard send no request.
+  const proficiency = startProficiency({
+    nc,
+    shard: config.shard,
+    lifeId,
+    character: config.character,
+    log: (line) => log({ event: 'proficiency', line }),
+  });
   const bodyEnv = playerBodyEnv({
+    proficiency,
     config,
     kv: restartKv.kv,
     publisher: jetStreamPublisher(jetstream(nc)),
@@ -206,6 +218,7 @@ export async function runPlayer(
   });
   // The watch has ended, so no `up` is in progress: stop the Body, then the connections.
   await session.down();
+  proficiency?.stop();
   await restartKv.close();
   await nc.close();
   log({ event: 'player_stopped' });

@@ -11,6 +11,7 @@ import type { Bot } from 'mineflayer';
 import { DEFAULT_DIAG_SINK, type DiagSink } from '../actions/stall-diag.ts';
 import { type OwnerTransport, wireBlockOwners } from '../body/block-owners.ts';
 import type { Body } from '../body/create-body.ts';
+import { watchChunkVisits } from '../body/evidence/chunk-visits.ts';
 import type { EventPublisher } from '../body/records-nats.ts';
 import {
   type RestartBodyOptions,
@@ -25,6 +26,7 @@ import { ImageLimiter } from '../body-image/limiter.ts';
 import { RenderHost } from '../body-image/render-host.ts';
 import { AuditPublisher } from '../character/audit-publisher.ts';
 import type { LifeCharacter } from '../character/character-config.ts';
+import type { ProficiencyCache } from '../character/proficiency-cache.ts';
 import { lifeThreatPolicy } from '../character/runtime.ts';
 import { countingSink, type GolemMetrics } from '../metrics.ts';
 import { composeEars } from '../mind-link/compose-ears.ts';
@@ -76,6 +78,11 @@ export interface AdamBodyEnv {
   character?: LifeCharacter;
   /** Replaces the AuditPublisher this run would build for the adoption (tests only). */
   audit?: AuditPublisher;
+  /**
+   * The life's proficiency cache (AN-12a), started by the host only for a config sheet. Its combat level is read
+   * at each threat decision; absent, the level is 0.
+   */
+  proficiency?: ProficiencyCache;
 }
 
 /** A Body that is up. */
@@ -193,6 +200,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
         generation,
         tick,
         audit,
+        combatLevel: () => env.proficiency?.level('combat') ?? 0,
       });
     },
     nats: { publisher, shard: config.shard, log },
@@ -234,6 +242,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
   let onHealth: (() => void) | undefined;
   let hurts: HurtReporter | undefined;
   let detachHurts: () => void = () => undefined;
+  let detachChunks: () => void = () => undefined;
   let link: MindLinkServer | undefined;
   let renders: RenderHost | undefined;
   let stopImages: (() => void) | undefined;
@@ -256,6 +265,20 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
         });
       const hash = createHash('sha256').update(canonicalSheetJson(sheet)).digest('hex');
       audit.recordAdoption(sheet, hash, 'config');
+      // First-visit chunk evidence (AN-09b), for a config sheet only. The publisher's promise is handled by the watcher.
+      detachChunks = watchChunkVisits({
+        bot,
+        shard: config.shard,
+        lifeId: config.lifeId,
+        tick,
+        publish: (event) =>
+          publisher.publish(
+            `geldar.${config.shard}.${event.type}`,
+            JSON.stringify(event),
+            event.source_event_id,
+          ),
+        log,
+      });
     }
     const chatEars = new BotEars({
       username: config.lifeId,
@@ -328,6 +351,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     bot.off('end', onEnd);
     if (onHealth !== undefined) bot.off('health', onHealth);
     detachHurts();
+    detachChunks();
     hurts?.close();
     detachEars();
     stopImages?.();
@@ -351,6 +375,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
       bot.off('end', onEnd);
       if (onHealth !== undefined) bot.off('health', onHealth);
       detachHurts();
+      detachChunks();
       hurts?.close();
       detachEars();
       owners?.stop();
