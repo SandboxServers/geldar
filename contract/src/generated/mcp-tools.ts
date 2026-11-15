@@ -1242,7 +1242,7 @@ export const mcpToolSchemas: Record<
           }
         },
         "PlaySnapshot": {
-          "description": "The snapshot an agent sees: the Body's identifiers and counters are left out, as are heard lines, events and text on notable blocks. What was heard and written goes in untrusted_world_text. Muffled notices go in muffled as fixed sentences (decision 0199), nearest first, at most 3; they are not untrusted text.",
+          "description": "The snapshot an agent sees: the Body's identifiers and counters are left out, as are heard lines, events and text on notable blocks. What was heard and written goes in untrusted_world_text. Muffled notices go in muffled as fixed sentences (decision 0199), nearest first, at most 3.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -1277,12 +1277,13 @@ export const mcpToolSchemas: Record<
               "maxItems": 0
             },
             "muffled": {
-              "description": "The player's sentences for voices heard through a wall (heardMuffledSentence), nearest first, at most 3.",
+              "description": "Fixed sentences the server builds from direction and band codes, nearest first, at most 3. They never contain speech or text written by others.",
               "type": "array",
               "maxItems": 3,
               "items": {
                 "type": "string",
-                "maxLength": 64
+                "maxLength": 64,
+                "pattern": "^You hear a muffled voice (?:(?:close to the|to the|far off to the) (?:north|northeast|east|southeast|south|southwest|west|northwest)|(?:close above|above|far above|close below|below|far below) you)\\.$"
               }
             },
             "events_since_last_thought": {
@@ -3132,7 +3133,7 @@ export const mcpToolSchemas: Record<
           }
         },
         "PlaySnapshot": {
-          "description": "The snapshot an agent sees: the Body's identifiers and counters are left out, as are heard lines, events and text on notable blocks. What was heard and written goes in untrusted_world_text. Muffled notices go in muffled as fixed sentences (decision 0199), nearest first, at most 3; they are not untrusted text.",
+          "description": "The snapshot an agent sees: the Body's identifiers and counters are left out, as are heard lines, events and text on notable blocks. What was heard and written goes in untrusted_world_text. Muffled notices go in muffled as fixed sentences (decision 0199), nearest first, at most 3.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -3167,12 +3168,13 @@ export const mcpToolSchemas: Record<
               "maxItems": 0
             },
             "muffled": {
-              "description": "The player's sentences for voices heard through a wall (heardMuffledSentence), nearest first, at most 3.",
+              "description": "Fixed sentences the server builds from direction and band codes, nearest first, at most 3. They never contain speech or text written by others.",
               "type": "array",
               "maxItems": 3,
               "items": {
                 "type": "string",
-                "maxLength": 64
+                "maxLength": 64,
+                "pattern": "^You hear a muffled voice (?:(?:close to the|to the|far off to the) (?:north|northeast|east|southeast|south|southwest|west|northwest)|(?:close above|above|far above|close below|below|far below) you)\\.$"
               }
             },
             "events_since_last_thought": {

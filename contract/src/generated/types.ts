@@ -1548,7 +1548,7 @@ export interface PlaySnapshot {
    */
   heard: [];
   /**
-   * The player's sentences for voices heard through a wall (heardMuffledSentence), nearest first, at most 3.
+   * Fixed sentences the server builds from direction and band codes, nearest first, at most 3. They never contain speech or text written by others.
    *
    * @maxItems 3
    */
@@ -12894,7 +12894,7 @@ export interface Snapshot {
     age_seconds: number;
   }[];
   /**
-   * Notices heard through a wall since the last snapshot, nearest first. No words, speaker or coordinates. Absent when none were heard.
+   * Notices heard through a wall since the last snapshot, nearest first. No words, speaker or coordinates. Absent when none were heard. Collapsing by direction (one notice per direction, nearest band) is the producer's job; the schema does not check it.
    *
    * @maxItems 3
    */
