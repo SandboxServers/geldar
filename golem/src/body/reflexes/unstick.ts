@@ -13,6 +13,8 @@ interface Streak {
   attempts: number;
   /** Where the streak began. */
   at?: { x: number; y: number; z: number } | undefined;
+  /** Where the last goto outcomes ended `blocked` (newest last, at most two); any other outcome clears them. */
+  walks: { x: number; y: number; z: number }[];
 }
 
 /** The stuck streaks by view (one view per Body). */
@@ -21,7 +23,7 @@ const streaks = new WeakMap<BodyView, Streak>();
 function streakOf(view: BodyView): Streak {
   let streak = streaks.get(view);
   if (!streak) {
-    streak = { stalls: 0, attempts: 0 };
+    streak = { stalls: 0, attempts: 0, walks: [] };
     streaks.set(view, streak);
   }
   return streak;
@@ -50,6 +52,11 @@ export function noteGoto(
   at?: { x: number; y: number; z: number },
 ): void {
   const streak = streakOf(view);
+  if (state === 'failed' && reason === 'blocked' && at) {
+    streak.walks = [...streak.walks.slice(-1), at];
+  } else {
+    streak.walks = [];
+  }
   const stall = (state === 'completed' && stalled) || (state === 'failed' && reason === 'blocked');
   if (stall) {
     if (at && streak.at) {
@@ -68,6 +75,16 @@ export function noteGoto(
     streak.attempts = 0;
     streak.at = undefined;
   }
+}
+
+/**
+ * True when the last two goto outcomes of a view ended `blocked` (no path), and both were at most
+ * `SAME_SPOT` blocks from `here` (decision 0332). An outcome without a position never counts.
+ */
+export function failedWalksAt(view: BodyView, here: { x: number; y: number; z: number }): boolean {
+  const walks = streaks.get(view)?.walks ?? [];
+  if (walks.length < 2) return false;
+  return walks.every((w) => Math.hypot(w.x - here.x, w.y - here.y, w.z - here.z) <= SAME_SPOT);
 }
 
 /** Forgets the streak (the Body respawned, or the verb was called and freed the bot). */

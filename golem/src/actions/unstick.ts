@@ -2,16 +2,10 @@ import type { Bot } from 'mineflayer';
 import type { Vec3 } from 'vec3';
 import type { Block } from './bot-types.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
-import { isOwnPlacement } from './own-placements.ts';
-import {
-  digHazard,
-  lastResortRefused,
-  prefetchOwners,
-  protectedReason,
-  refusedByName,
-} from './protected-blocks.ts';
+import { lastResortRefused, prefetchOwners, protectedReason } from './protected-blocks.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 import { DEFAULT_DIAG_SINK, emitStallDiag } from './stall-diag.ts';
+import { digsCell, handFirst } from './unstick-cells.ts';
 import {
   type Drop,
   dropAllowed,
@@ -19,12 +13,12 @@ import {
   empty,
   fallDamage,
   HARMFUL,
-  isSoft,
   MAX_DROP,
   planMoves,
   scanDrop,
 } from './unstick-plan.ts';
 import { ACTION_LIMIT_S, DIG_BUDGET_S, digSeconds, digUp, timeLeftS } from './unstick-up.ts';
+import { MOVE_TICKS, walk } from './unstick-walk.ts';
 
 export type { Drop, Move } from './unstick-plan.ts';
 export {
@@ -38,31 +32,8 @@ export {
   scanDrop,
 } from './unstick-plan.ts';
 
-/** Ticks one move is tried, and the horizontal distance that counts as free. */
-const MOVE_TICKS = 24;
-const FREE_DISTANCE = 1.5;
 /** The most digs one call makes. */
 const MAX_DIGS = 6;
-
-/** Heads for `dir` for up to `MOVE_TICKS` ticks; true once the bot is `FREE_DISTANCE` from where it began. */
-async function walk(ctx: ActionContext, dir: Vec3, jump: boolean): Promise<boolean> {
-  const { bot } = ctx;
-  const start = bot.entity.position.clone();
-  try {
-    await bot.lookAt(start.offset(dir.x * 4, bot.entity.height ?? 1.62, dir.z * 4), true);
-    bot.setControlState('forward', true);
-    bot.setControlState('jump', jump);
-    for (let i = 0; i < MOVE_TICKS && !ctx.signal.aborted; i++) {
-      await bot.waitForTicks(1);
-      const at = bot.entity.position;
-      if (Math.hypot(at.x - start.x, at.z - start.z) >= FREE_DISTANCE) return true;
-    }
-    return false;
-  } finally {
-    bot.setControlState('forward', false);
-    bot.setControlState('jump', false);
-  }
-}
 
 /**
  * Digs one block, with the best tool held when the inventory has one; false on any failure. The
@@ -147,53 +118,6 @@ const MAX_STAIRS = 4;
 export function digDownAllowed(health: number, drop: Drop): boolean {
   if (drop.lands === 'unsafe' || drop.blocks > MAX_DROP) return false;
   return fallDamage(drop.blocks + 1) <= health - DIG_DOWN_MARGIN;
-}
-
-/** A block a bare hand can break: not bedrock, barrier and the like (hardness below zero or unknown). */
-function handBreakable(block: Block): boolean {
-  const { hardness, diggable } = block as { hardness?: number | null; diggable?: boolean };
-  return diggable !== false && typeof hardness === 'number' && hardness >= 0;
-}
-
-/** True when a bare hand drops the block itself: no harvest tool is listed for it (dirt, logs, planks). */
-function dropsByHand(block: Block): boolean {
-  const tools = (block as { harvestTools?: Record<number, boolean> }).harvestTools;
-  return !tools || Object.keys(tools).length === 0;
-}
-
-/**
- * A cell a dig may take (owner ruling 2026-11-14, decision 0183): soft ground always; any other block a
- * hand can break, unless a refused name, a liquid or a falling block touches it, or it is someone else's
- * work (`protectedReason`). In the last-resort pass (`relaxed`) `lastResortRefused` decides instead.
- */
-function digsCell(
-  bot: Bot,
-  block: Block | null,
-  cell: Vec3,
-  relaxed: boolean,
-  refuseOwn = false,
-): boolean {
-  if (refuseOwn && isOwnPlacement(bot, cell)) return false;
-  if (isSoft(block)) return true;
-  if (block === null || block.boundingBox === 'empty' || !handBreakable(block)) return false;
-  if (refusedByName(block.name) || digHazard(bot, cell)) return false;
-  return relaxed
-    ? !lastResortRefused(bot, block, cell)
-    : protectedReason(bot, block, cell) === null;
-}
-
-/** The directions whose feet and head cells a bare hand drops by hand come first; the rest keep their order. */
-function handFirst(bot: Bot, feet: Vec3, dirs: readonly Vec3[]): Vec3[] {
-  const needsTool = (dir: Vec3): number => {
-    const cells = [feet.plus(dir), feet.plus(dir).offset(0, 1, 0)];
-    return cells.some((cell) => {
-      const block = bot.blockAt(cell);
-      return block !== null && block.boundingBox !== 'empty' && !dropsByHand(block);
-    })
-      ? 1
-      : 0;
-  };
-  return [...dirs].sort((a, b) => needsTool(a) - needsTool(b));
 }
 
 /** Digs the soft block under the feet when the fall that follows is allowed. `elevated` demands a drop below it. */
