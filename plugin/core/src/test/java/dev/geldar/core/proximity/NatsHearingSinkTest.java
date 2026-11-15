@@ -60,10 +60,12 @@ class NatsHearingSinkTest {
     }
 
     @Test
-    void noConnectionYetDropsTheNoticeWithoutThrowing() {
+    void aNoticeWithNoConnectionIsCountedAsDroppedAndNeverThrown() {
         NatsHearingSink sink = new NatsHearingSink("phase0", null);
         sink.muffled(LIFE, "n", "near");
-        assertEquals(0, sink.dropped());
+        assertEquals(1, sink.dropped());
+        sink.muffled(LIFE, "s", "far");
+        assertEquals(2, sink.dropped());
     }
 
     @Test

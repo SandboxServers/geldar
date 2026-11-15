@@ -82,8 +82,8 @@ class ChatHearingTest {
 
     @Test
     void aLineThatExceedsTheBudgetSilencesTheRestAndLogsOneCounterLine() {
-        // Forty listeners in two rows inside the gate, each under a roof, so its sealed scan reads two cells and the
-        // ray reads spend the 512 budget. The farthest are silenced and one counter line is logged.
+        // Forty listeners in two rows inside the gate. Each keeps its tier with the sealed penalty, so no roof scan runs
+        // and only the ray reads spend the 512 budget. The farthest are silenced and one counter line is logged.
         ProbeWorld world = new ProbeWorld();
         List<ChatHearing.Candidate> listeners = new ArrayList<>();
         for (int i = 0; i < 40; i++) {
@@ -96,6 +96,139 @@ class ChatHearingTest {
         assertTrue(v.stream().anyMatch(x -> x.tier() == Tier.SILENT), "the budget must silence some listeners");
         assertEquals(1, logged.stream().filter(line -> line.contains("silenced by the read budget")).count());
         assertEquals(1, logged.size(), "one counter line per chat line, never the words");
+        // Nearest first: the silenced are the farthest. Sorting farthest first would silence the nearest and fail this.
+        double maxHeard = -1;
+        double minSilenced = Double.MAX_VALUE;
+        for (ChatHearing.Verdict verdict : v) {
+            int i = Integer.parseInt(verdict.key().substring(1));
+            double raw = Math.hypot(2 + (i % 25), i / 25);
+            if (verdict.tier() == Tier.SILENT) {
+                minSilenced = Math.min(minSilenced, raw);
+            } else {
+                maxHeard = Math.max(maxHeard, raw);
+            }
+        }
+        assertTrue(maxHeard >= 0, "some listener is heard");
+        assertTrue(maxHeard <= minSilenced, "heard up to " + maxHeard + " but silenced from " + minSilenced);
+    }
+
+    @Test
+    void aSealedScanCutByASpentLineBudgetIsSilent() {
+        // Raw 30 is clear with no roof but muffled with the sealed penalty, so the roof scan runs. The ray reads 31
+        // cells, exactly the 31-read line budget, so the scan is truncated with nothing left: silent, not clear.
+        MuffleSettings settings = new MuffleSettings(MuffleConfig.MARGIN, MuffleConfig.SEALED_PENALTY, 31,
+                MuffleConfig.PER_RAY_READ_CAP);
+        List<ChatHearing.Verdict> v = hearing(settings).judge(1, "s", 0.5, FEET, 0.5,
+                List.of(new ChatHearing.Candidate("l", true, 30.5, FEET, 0.5)), new ProbeWorld());
+        assertEquals(Tier.SILENT, v.get(0).tier());
+        assertNull(v.get(0).notice());
+    }
+
+    @Test
+    void aBudgetSilenceInTheRoofScanIsNotCachedForTheTick() {
+        // Line one: the roof scan is truncated by the spent budget, so the listener is silent for this line only.
+        MuffleSettings settings = new MuffleSettings(MuffleConfig.MARGIN, MuffleConfig.SEALED_PENALTY, 31,
+                MuffleConfig.PER_RAY_READ_CAP);
+        ChatHearing h = hearing(settings);
+        ProbeWorld empty = new ProbeWorld();
+        assertEquals(Tier.SILENT, h.judge(5, "s", 0.5, FEET, 0.5,
+                List.of(new ChatHearing.Candidate("l", true, 30.5, FEET, 0.5)), empty).get(0).tier());
+        // Line two, same tick, same speaker: a fresh budget reads 13 cells, and the listener is heard.
+        assertEquals(Tier.CLEAR, h.judge(5, "s", 0.5, FEET, 0.5,
+                List.of(new ChatHearing.Candidate("l", true, 12.5, FEET, 0.5)), empty).get(0).tier());
+    }
+
+    @Test
+    void aBudgetSilenceInTheRayIsNotCachedForTheTick() {
+        // Line one: "a" reads 11 cells, so "l" has 9 left against its 13 and is cut short by the budget.
+        MuffleSettings settings = new MuffleSettings(MuffleConfig.MARGIN, MuffleConfig.SEALED_PENALTY, 20,
+                MuffleConfig.PER_RAY_READ_CAP);
+        ChatHearing h = hearing(settings);
+        ProbeWorld empty = new ProbeWorld();
+        List<ChatHearing.Candidate> both = List.of(new ChatHearing.Candidate("a", true, 10.5, FEET, 0.5),
+                new ChatHearing.Candidate("l", true, 12.5, FEET, 0.5));
+        assertEquals(Tier.SILENT, h.judge(6, "s", 0.5, FEET, 0.5, both, empty).get(1).tier());
+        assertEquals(Tier.CLEAR, h.judge(6, "s", 0.5, FEET, 0.5,
+                List.of(new ChatHearing.Candidate("l", true, 12.5, FEET, 0.5)), empty).get(0).tier());
+    }
+
+    @Test
+    void anUnloadedRayReadIsSilentNotCachedAndSpendsOneRead() {
+        // "a" (raw 5) is cast first and its first read throws. "b" (raw 10) needs 11 reads; the throw spent one of
+        // the 11, so 10 are left, b's ray is cut short and b is silent.
+        ChatHearing h = hearing(new MuffleSettings(MuffleConfig.MARGIN, MuffleConfig.SEALED_PENALTY, 11,
+                MuffleConfig.PER_RAY_READ_CAP));
+        List<ChatHearing.Candidate> both = List.of(new ChatHearing.Candidate("a", true, 5.5, FEET, 0.5),
+                new ChatHearing.Candidate("b", true, 10.5, FEET, 0.5));
+        List<ChatHearing.Verdict> v = h.judge(9, "s", 0.5, FEET, 0.5, both, new FirstReadUnloaded());
+        assertEquals(Tier.SILENT, v.get(0).tier());
+        assertEquals(Tier.SILENT, v.get(1).tier());
+        // Not cached: the same speaker and listener in the same tick is cast again and heard.
+        assertEquals(Tier.CLEAR, h.judge(9, "s", 0.5, FEET, 0.5,
+                List.of(new ChatHearing.Candidate("a", true, 5.5, FEET, 0.5)), new ProbeWorld()).get(0).tier());
+    }
+
+    @Test
+    void anUnloadedRoofReadIsSilentAndSpendsOneRead() {
+        // "a" (raw 30) reads its 31-cell ray, then its roof scan throws at x=30 above y=65. The throw spent one of the
+        // 34 left, so 33 remain. "b" (raw 31, 32 cells) then needs a roof scan with 1 read left: its scan is truncated
+        // and b is silent. Without the spent read b would have 34 left, read its ray, and find the roof at (31, 66, 0).
+        ChatHearing h = hearing(new MuffleSettings(MuffleConfig.MARGIN, MuffleConfig.SEALED_PENALTY, 65,
+                MuffleConfig.PER_RAY_READ_CAP));
+        List<ChatHearing.Candidate> both = List.of(new ChatHearing.Candidate("a", true, 30.5, FEET, 0.5),
+                new ChatHearing.Candidate("b", true, 31.5, FEET, 0.5));
+        List<ChatHearing.Verdict> v = h.judge(9, "s", 0.5, FEET, 0.5, both, new RoofUnloaded());
+        assertEquals(Tier.SILENT, v.get(0).tier());
+        assertEquals(Tier.SILENT, v.get(1).tier());
+    }
+
+    @Test
+    void anUnloadedRoofReadIsNotCachedForTheTick() {
+        ChatHearing h = hearing(MuffleSettings.defaults());
+        List<ChatHearing.Candidate> one = List.of(new ChatHearing.Candidate("a", true, 30.5, FEET, 0.5));
+        assertEquals(Tier.SILENT, h.judge(9, "s", 0.5, FEET, 0.5, one, new RoofUnloaded()).get(0).tier());
+        assertEquals(Tier.CLEAR, h.judge(9, "s", 0.5, FEET, 0.5, one, new ProbeWorld()).get(0).tier());
+    }
+
+    @Test
+    void aNorthSpeakerOnTheZAxisGivesTheNorthNotice() {
+        // Listener at z=30.5, speaker at z=0.5 (north is -z). Stone and wool on the z axis make the voice muffled.
+        ProbeWorld world = new ProbeWorld()
+                .set(0, 65, 10, ProbeWorld.solid("minecraft:stone"))
+                .set(0, 65, 11, ProbeWorld.solid("minecraft:white_wool"));
+        List<ChatHearing.Verdict> v = hearing(MuffleSettings.defaults()).judge(1, "s", 0.5, FEET, 0.5,
+                List.of(new ChatHearing.Candidate("l", true, 0.5, FEET, 30.5)), world);
+        assertEquals(Tier.MUFFLED, v.get(0).tier());
+        assertEquals("n", v.get(0).notice().direction());
+        assertEquals("far", v.get(0).notice().band());
+    }
+
+    /** Throws UnloadedBlock on the first read only, then reads air. */
+    private static final class FirstReadUnloaded implements BlockReader {
+        private boolean thrown;
+
+        @Override
+        public BlockProbe at(int x, int y, int z) {
+            if (!thrown) {
+                thrown = true;
+                throw new UnloadedBlock();
+            }
+            return ProbeWorld.AIR;
+        }
+    }
+
+    /** Throws UnloadedBlock for the column x=30 at and above y=66, which only a roof scan reads; air elsewhere. */
+    private static final class RoofUnloaded implements BlockReader {
+        @Override
+        public BlockProbe at(int x, int y, int z) {
+            if (x == 30 && y >= 66) {
+                throw new UnloadedBlock();
+            }
+            if (x == 31 && y == 66) {
+                return ProbeWorld.solid("minecraft:stone");
+            }
+            return ProbeWorld.AIR;
+        }
     }
 
     @Test

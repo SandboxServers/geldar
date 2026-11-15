@@ -63,8 +63,13 @@ public final class NatsHearingSink implements HearingNoticeSink, AutoCloseable {
 
     @Override
     public void muffled(String lifeId, String direction, String band) {
+        if (!EventEnvelope.isLifeId(lifeId)) {
+            return;
+        }
         Connection nc = connection;
-        if (nc == null || !EventEnvelope.isLifeId(lifeId)) {
+        if (nc == null) {
+            // No connection yet: drop and count it, as a refused publish is counted. Nothing is queued or retried.
+            dropped.incrementAndGet();
             return;
         }
         String json = new MuffledNotice(direction, band).json();

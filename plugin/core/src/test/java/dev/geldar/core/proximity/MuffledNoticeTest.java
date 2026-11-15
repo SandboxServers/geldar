@@ -42,4 +42,16 @@ class MuffledNoticeTest {
         assertEquals("w", MuffledNotice.of(0, 0, 20, 0, 20).direction());
         assertEquals("far", MuffledNotice.of(0, 0, 20, 0, 20).band());
     }
+
+    @Test
+    void ofPointsNorthWhenTheSpeakerIsNorthOfTheListener() {
+        // Listener at (0, 20), speaker at (0, 0): north is -z, so the voice comes from the north.
+        assertEquals("n", MuffledNotice.of(0, 0, 0, 20, 20).direction());
+    }
+
+    @Test
+    void ofPointsSouthWhenTheSpeakerIsSouthOfTheListener() {
+        // Listener at (0, 0), speaker at (0, 20): south is +z, so the voice comes from the south.
+        assertEquals("s", MuffledNotice.of(0, 20, 0, 0, 20).direction());
+    }
 }
