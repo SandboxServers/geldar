@@ -10,20 +10,32 @@ public final class Absorption {
 
     /**
      * The result of one ray. {@code distance} is the raw 3D distance from eye to eye plus the absorption of every
-     * block the ray crosses. {@code cutShort} is true when the read cap stopped the ray before its end cell; the
+     * block the ray crosses. {@code cutShort} is true when the read budget stopped the ray before its end cell; the
      * caller treats that as the silent tier. {@code reads} is the number of blocks read.
      */
     public record Effective(double distance, boolean cutShort, int reads) {
     }
 
     /**
+     * The sealed-room scan of one listener: {@code penalty} is {@link MuffleConfig#SEALED_PENALTY} or 0, and
+     * {@code reads} is the number of blocks read to decide it.
+     */
+    public record Sealed(double penalty, int reads) {
+    }
+
+    /**
      * Effective distance from the speaker's feet (sx, sy, sz) to the listener's feet (lx, ly, lz). Both rays start at
      * the eye ({@link MuffleConfig#EYE_HEIGHT} above the feet). The ray is walked cell by cell (3D DDA, Amanatides and
-     * Woo). Cells are visited once each. The start and end cells add their absorption only when solid. A non-finite
-     * coordinate returns infinite distance and cutShort, which is the silent tier.
+     * Woo). Cells are visited once each. Where two or three axes reach a cell boundary at the same point, the ray
+     * passes exactly through an edge or corner, so the cells touched only at that corner (the other cells of the
+     * 2x2 or 2x2x2 neighbourhood) are read too, each once, and every tied axis is then stepped together. The trace
+     * is therefore the same in both directions. The start and end cells add their absorption only when solid. At most
+     * {@code maxReads} blocks are read (the caller passes the per-ray cap or what the line budget has left). A read
+     * that would go past it stops the ray, which reports cutShort. A non-finite coordinate returns infinite distance
+     * and cutShort, which is the silent tier.
      */
     public static Effective effectiveDistance(
-            double sx, double sy, double sz, double lx, double ly, double lz, BlockReader reader) {
+            double sx, double sy, double sz, double lx, double ly, double lz, BlockReader reader, int maxReads) {
         double x0 = sx;
         double y0 = sy + MuffleConfig.EYE_HEIGHT;
         double z0 = sz;
@@ -54,46 +66,56 @@ public final class Absorption {
         double tDeltaY = stepY == 0 ? Double.POSITIVE_INFINITY : 1.0 / Math.abs(dy);
         double tDeltaZ = stepZ == 0 ? Double.POSITIVE_INFINITY : 1.0 / Math.abs(dz);
 
-        int reads = 0;
-        double absorbed = 0.0;
+        Walk walk = new Walk(reader, maxReads);
         boolean first = true;
         while (true) {
-            if (reads == MuffleConfig.PER_RAY_READ_CAP) {
-                return new Effective(raw + absorbed, true, reads);
-            }
             boolean last = remX + remY + remZ == 0;
-            BlockProbe block = reader.at(cx, cy, cz);
-            reads++;
-            if (!(first || last) || block.solid()) {
-                absorbed += AbsorptionTable.of(block);
+            if (!walk.read(cx, cy, cz, first || last)) {
+                return new Effective(raw + walk.absorbed, true, walk.reads);
             }
             first = false;
             if (last) {
-                return new Effective(raw + absorbed, false, reads);
+                return new Effective(raw + walk.absorbed, false, walk.reads);
             }
-            // Step across the nearest boundary among the axes that still have cells to cross (ties: x, then y, z).
+            // The axes that still have cells to cross, and the ones whose next boundary is the nearest. A tie is exact.
             double best = Double.POSITIVE_INFINITY;
-            int axis = -1;
-            if (remX > 0 && tMaxX < best) {
-                best = tMaxX;
-                axis = 0;
+            if (remX > 0) {
+                best = Math.min(best, tMaxX);
             }
-            if (remY > 0 && tMaxY < best) {
-                best = tMaxY;
-                axis = 1;
+            if (remY > 0) {
+                best = Math.min(best, tMaxY);
             }
-            if (remZ > 0 && tMaxZ < best) {
-                axis = 2;
+            if (remZ > 0) {
+                best = Math.min(best, tMaxZ);
             }
-            if (axis == 0) {
+            int tied = (remX > 0 && tMaxX == best ? 1 : 0)
+                    | (remY > 0 && tMaxY == best ? 2 : 0)
+                    | (remZ > 0 && tMaxZ == best ? 4 : 0);
+            if (Integer.bitCount(tied) > 1) {
+                // Corner-only cells: every proper non-empty subset of the tied axes, stepped from the current cell.
+                for (int corner = 1; corner < tied; corner++) {
+                    if ((corner & ~tied) != 0) {
+                        continue;
+                    }
+                    int x = cx + ((corner & 1) != 0 ? stepX : 0);
+                    int y = cy + ((corner & 2) != 0 ? stepY : 0);
+                    int z = cz + ((corner & 4) != 0 ? stepZ : 0);
+                    if (!walk.read(x, y, z, false)) {
+                        return new Effective(raw + walk.absorbed, true, walk.reads);
+                    }
+                }
+            }
+            if ((tied & 1) != 0) {
                 cx += stepX;
                 remX--;
                 tMaxX += tDeltaX;
-            } else if (axis == 1) {
+            }
+            if ((tied & 2) != 0) {
                 cy += stepY;
                 remY--;
                 tMaxY += tDeltaY;
-            } else {
+            }
+            if ((tied & 4) != 0) {
                 cz += stepZ;
                 remZ--;
                 tMaxZ += tDeltaZ;
@@ -119,26 +141,22 @@ public final class Absorption {
     }
 
     /**
-     * The sealed-room penalty (decision 0199, step 3): {@link MuffleConfig#SEALED_PENALTY} when a solid block lies
-     * above the listener's cell before open sky, else 0. The scan starts at y + 1 and reads at most
-     * {@link MuffleConfig#PER_RAY_READ_CAP} cells, stopping below {@link MuffleConfig#DEFAULT_BUILD_LIMIT}. A roof
-     * past the read cap is not seen, so the penalty is 0.
+     * The sealed-room penalty (decision 0199, step 3): {@link MuffleConfig#SEALED_PENALTY} when a solid block lies above
+     * the listener's cell before open sky, else 0. The scan starts at y + 1, stops below {@code buildLimit} (the first y
+     * above the world) and reads at most {@code maxReads} cells: the caller passes {@link MuffleConfig#PER_RAY_READ_CAP}
+     * or what the line budget has left. A roof past the read cap is not seen, so the penalty is 0. The reads are
+     * reported with the penalty.
      */
-    public static double sealedPenalty(int x, int y, int z, BlockReader reader) {
-        return sealedPenalty(x, y, z, reader, MuffleConfig.DEFAULT_BUILD_LIMIT);
-    }
-
-    /** As {@link #sealedPenalty(int, int, int, BlockReader)}, with the build limit (first y above the world) given. */
-    public static double sealedPenalty(int x, int y, int z, BlockReader reader, int buildLimit) {
+    public static Sealed sealedPenalty(int x, int y, int z, BlockReader reader, int buildLimit, int maxReads) {
         int reads = 0;
-        for (int above = y + 1; above < buildLimit && reads < MuffleConfig.PER_RAY_READ_CAP; above++) {
+        for (int above = y + 1; above < buildLimit && reads < maxReads; above++) {
             BlockProbe block = reader.at(x, above, z);
             reads++;
             if (block.solid()) {
-                return MuffleConfig.SEALED_PENALTY;
+                return new Sealed(MuffleConfig.SEALED_PENALTY, reads);
             }
         }
-        return 0.0;
+        return new Sealed(0.0, reads);
     }
 
     private static int floor(double value) {
@@ -154,5 +172,34 @@ public final class Absorption {
             return (start - cell) / -delta;
         }
         return Double.POSITIVE_INFINITY;
+    }
+
+    /** The reads of one ray. Each read checks the budget first, so no read is made past it. */
+    private static final class Walk {
+        private final BlockReader reader;
+        private final int maxReads;
+        private int reads;
+        private double absorbed;
+
+        Walk(BlockReader reader, int maxReads) {
+            this.reader = reader;
+            this.maxReads = maxReads;
+        }
+
+        /**
+         * Reads the cell (x, y, z). An edge cell (the start or the end of the ray) adds its absorption only when solid.
+         * Returns false, reading nothing, when the budget is spent.
+         */
+        boolean read(int x, int y, int z, boolean edge) {
+            if (reads >= maxReads) {
+                return false;
+            }
+            BlockProbe block = reader.at(x, y, z);
+            reads++;
+            if (!edge || block.solid()) {
+                absorbed += AbsorptionTable.of(block);
+            }
+            return true;
+        }
     }
 }

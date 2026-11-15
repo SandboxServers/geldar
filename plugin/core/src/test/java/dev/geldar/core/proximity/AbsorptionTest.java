@@ -14,11 +14,22 @@ import org.junit.jupiter.api.Test;
 class AbsorptionTest {
     private static final double SPEAKER_X = 0.5;
     private static final double SPEAKER_Z = 0.5;
+    private static final int CAP = MuffleConfig.PER_RAY_READ_CAP;
     private static final BlockProbe STONE = ProbeWorld.solid("minecraft:stone");
     private static final BlockProbe WOOL = ProbeWorld.solid("minecraft:white_wool");
+    private static final BlockProbe TALL_GRASS = new BlockProbe("minecraft:tall_grass", false, false);
 
     private static Absorption.Effective ray(ProbeWorld world, double listenerX, double listenerZ) {
-        return Absorption.effectiveDistance(SPEAKER_X, 0, SPEAKER_Z, listenerX, 0, listenerZ, world);
+        return cast(world, SPEAKER_X, 0, SPEAKER_Z, listenerX, 0, listenerZ, CAP);
+    }
+
+    private static Absorption.Effective cast(ProbeWorld world, double sx, double sy, double sz,
+            double lx, double ly, double lz, int maxReads) {
+        return Absorption.effectiveDistance(sx, sy, sz, lx, ly, lz, world, maxReads);
+    }
+
+    private static Absorption.Sealed sealed(ProbeWorld world, int y, int maxReads) {
+        return Absorption.sealedPenalty(0, y, 0, world, MuffleConfig.DEFAULT_BUILD_LIMIT, maxReads);
     }
 
     @Test
@@ -79,6 +90,22 @@ class AbsorptionTest {
     }
 
     @Test
+    void anOpenIronDoorInTheWallAddsNothing() {
+        // Raw 10 + an open iron door at 0 = 10. Only the wood types of the old table could open to 0.
+        ProbeWorld world = new ProbeWorld().set(5, 1, 0, ProbeWorld.state("minecraft:iron_door", true));
+        assertEquals(10.0, ray(world, 10.5, 0.5).distance(), 1e-9);
+    }
+
+    @Test
+    void aNonSolidMeadowOfTallGrassAddsNothing() {
+        // Raw 10 + nine tall grass in the middle at 0 each = 10. The default 2 would give 28.
+        ProbeWorld world = new ProbeWorld().setRunX(1, 9, 1, 0, TALL_GRASS);
+        Absorption.Effective e = ray(world, 10.5, 0.5);
+        assertEquals(10.0, e.distance(), 1e-9);
+        assertEquals(11, e.reads());
+    }
+
+    @Test
     void aDiagonalRayCountsEachCrossedBlockOnce() {
         // Speaker cell (0,0), listener cell (2,1). The ray x = 0.5 + 2t, z = 0.5 + t crosses, in order, the cells
         // (0,0) own, (1,0), (1,1), (2,1) own. Stone at (1,1,0) adds 2, wool at (1,1,1) adds 3. The stone at (2,1,0)
@@ -87,9 +114,58 @@ class AbsorptionTest {
                 .set(1, 1, 0, STONE)
                 .set(1, 1, 1, WOOL)
                 .set(2, 1, 0, STONE);
-        Absorption.Effective e = Absorption.effectiveDistance(0.5, 0, 0.5, 2.5, 0, 1.5, world);
+        Absorption.Effective e = cast(world, 0.5, 0, 0.5, 2.5, 0, 1.5, CAP);
         assertEquals(Math.sqrt(5) + 5.0, e.distance(), 1e-9);
         assertFalse(e.cutShort());
+    }
+
+    @Test
+    void anExactDiagonalInXZIsTheSameBothWays() {
+        // Speaker cell (0,1,0), listener (2,1,2). The ray meets the corners (1,1,0) and (0,1,1) at t = 0.25, then
+        // (2,1,1) and (1,1,2) at t = 0.75. Stone on the corner (1,1,0) is read both ways: raw 2 sqrt(2) + 2.
+        ProbeWorld world = new ProbeWorld().set(1, 1, 0, STONE);
+        Absorption.Effective forward = cast(world, 0.5, 0, 0.5, 2.5, 0, 2.5, CAP);
+        Absorption.Effective reverse = cast(world, 2.5, 0, 2.5, 0.5, 0, 0.5, CAP);
+        assertEquals(2 * Math.sqrt(2) + 2.0, forward.distance(), 1e-9);
+        assertEquals(forward.distance(), reverse.distance(), 1e-9);
+        assertEquals(7, forward.reads());
+        assertEquals(forward.reads(), reverse.reads());
+    }
+
+    @Test
+    void anExactDiagonalInXYIsTheSameBothWays() {
+        // Feet at y = -1.12 and -0.12 put the eyes at exactly y = 0.5 and 1.5. The ray runs from cell (0,0,0) to
+        // (1,1,0) through the corner edge shared with (1,0,0) and (0,1,0). Stone on (1,0,0) is read both ways.
+        ProbeWorld world = new ProbeWorld().set(1, 0, 0, STONE);
+        Absorption.Effective forward = cast(world, 0.5, -1.12, 0.5, 1.5, -0.12, 0.5, CAP);
+        Absorption.Effective reverse = cast(world, 1.5, -0.12, 0.5, 0.5, -1.12, 0.5, CAP);
+        assertEquals(Math.sqrt(2) + 2.0, forward.distance(), 1e-9);
+        assertEquals(forward.distance(), reverse.distance(), 1e-9);
+        assertEquals(4, forward.reads());
+        assertEquals(forward.reads(), reverse.reads());
+    }
+
+    @Test
+    void anExactDiagonalInXYZIsTheSameBothWays() {
+        // Eyes at y = 0.5 and 1.5, x and z from 0.5 to 1.5: all three axes meet the vertex (1,1,1) at t = 0.5. The six
+        // corner-only cells are read on the way, and stone on (1,1,0) is one of them, so it counts both ways.
+        ProbeWorld world = new ProbeWorld().set(1, 1, 0, STONE);
+        Absorption.Effective forward = cast(world, 0.5, -1.12, 0.5, 1.5, -0.12, 1.5, CAP);
+        Absorption.Effective reverse = cast(world, 1.5, -0.12, 1.5, 0.5, -1.12, 0.5, CAP);
+        assertEquals(Math.sqrt(3) + 2.0, forward.distance(), 1e-9);
+        assertEquals(forward.distance(), reverse.distance(), 1e-9);
+        assertEquals(8, forward.reads());
+        assertEquals(forward.reads(), reverse.reads());
+    }
+
+    @Test
+    void aCornerReadCountsTowardTheBudget() {
+        // The XZ diagonal reads 7 cells. With a budget of 2 the start and the first corner are read, and the second
+        // corner is the one past the budget, so the ray stops there.
+        ProbeWorld world = new ProbeWorld().set(1, 1, 0, STONE);
+        Absorption.Effective e = cast(world, 0.5, 0, 0.5, 2.5, 0, 2.5, 2);
+        assertTrue(e.cutShort());
+        assertEquals(2, e.reads());
     }
 
     @Test
@@ -124,12 +200,137 @@ class AbsorptionTest {
     }
 
     @Test
+    void theLastAllowedReadIsNotCutShort() {
+        // A 10-block line of air is 11 reads: a budget of exactly 11 is the last allowed read.
+        Absorption.Effective e = cast(new ProbeWorld(), 0.5, 0, 0.5, 10.5, 0, 0.5, 11);
+        assertFalse(e.cutShort());
+        assertEquals(11, e.reads());
+    }
+
+    @Test
+    void oneReadPastTheBudgetIsCutShortAtTheBudget() {
+        Absorption.Effective e = cast(new ProbeWorld(), 0.5, 0, 0.5, 10.5, 0, 0.5, 10);
+        assertTrue(e.cutShort());
+        assertEquals(10, e.reads());
+        assertEquals(Tier.SILENT, Absorption.tier(e.distance(), e.cutShort()));
+    }
+
+    @Test
+    void aCastWithAShortBudgetStopsThere() {
+        Absorption.Effective e = cast(new ProbeWorld(), 0.5, 0, 0.5, 10.5, 0, 0.5, 5);
+        assertTrue(e.cutShort());
+        assertEquals(5, e.reads());
+    }
+
+    @Test
+    void aZeroBudgetReadsNothing() {
+        Absorption.Effective e = cast(new ProbeWorld(), 0.5, 0, 0.5, 10.5, 0, 0.5, 0);
+        assertTrue(e.cutShort());
+        assertEquals(0, e.reads());
+    }
+
+    @Test
     void aNonFiniteCoordinateIsSilentWithoutReads() {
         Absorption.Effective e = Absorption.effectiveDistance(
-                Double.NaN, 0, 0, 1, 0, 1, new ProbeWorld());
+                Double.NaN, 0, 0, 1, 0, 1, new ProbeWorld(), CAP);
         assertTrue(e.cutShort());
         assertEquals(0, e.reads());
         assertEquals(Tier.SILENT, Absorption.tier(e.distance(), e.cutShort()));
+    }
+
+    @Test
+    void aWallOfTwoStoneRunningWestAddsFourToTheRay() {
+        // Speaker at x = 10.5, listener at x = 0.5; stone at x = 5 and 4 on the ray: raw 10 + 2 + 2 = 14.
+        ProbeWorld world = new ProbeWorld().set(5, 1, 0, STONE).set(4, 1, 0, STONE);
+        assertEquals(14.0, cast(world, 10.5, 0, 0.5, 0.5, 0, 0.5, CAP).distance(), 1e-9);
+    }
+
+    @Test
+    void aWallOfTwoStoneRunningNorthAddsFourToTheRay() {
+        // Speaker at z = 10.5, listener at z = 0.5; stone at z = 5 and 4: raw 10 + 4 = 14.
+        ProbeWorld world = new ProbeWorld().set(0, 1, 5, STONE).set(0, 1, 4, STONE);
+        assertEquals(14.0, cast(world, 0.5, 0, 10.5, 0.5, 0, 0.5, CAP).distance(), 1e-9);
+    }
+
+    @Test
+    void aWallOfTwoStoneRunningSouthAddsFourToTheRay() {
+        // Speaker at z = 0.5, listener at z = 10.5; stone at z = 4 and 5: raw 10 + 4 = 14.
+        ProbeWorld world = new ProbeWorld().set(0, 1, 4, STONE).set(0, 1, 5, STONE);
+        assertEquals(14.0, cast(world, 0.5, 0, 0.5, 0.5, 0, 10.5, CAP).distance(), 1e-9);
+    }
+
+    @Test
+    void aWallOfTwoStoneRisingAddsFourToTheRay() {
+        // Eyes rise from cell y = 1 to cell y = 11; stone at y = 5 and 6 on the ray: raw 10 + 4 = 14.
+        ProbeWorld world = new ProbeWorld().set(0, 5, 0, STONE).set(0, 6, 0, STONE);
+        assertEquals(14.0, cast(world, 0.5, 0, 0.5, 0.5, 10, 0.5, CAP).distance(), 1e-9);
+    }
+
+    @Test
+    void aWallOfTwoStoneFallingAddsFourToTheRay() {
+        // Eyes fall from cell y = 11 to cell y = 1; stone at y = 5 and 6 on the ray: raw 10 + 4 = 14.
+        ProbeWorld world = new ProbeWorld().set(0, 5, 0, STONE).set(0, 6, 0, STONE);
+        assertEquals(14.0, cast(world, 0.5, 10, 0.5, 0.5, 0, 0.5, CAP).distance(), 1e-9);
+    }
+
+    @Test
+    void aWallOfTwoStoneAtNegativeCoordinatesAddsFourToTheRay() {
+        // Speaker at x = -0.5 (cell -1), listener at x = -10.5 (cell -11); stone at x = -4 and -5: raw 10 + 4 = 14.
+        ProbeWorld world = new ProbeWorld().set(-4, 1, -1, STONE).set(-5, 1, -1, STONE);
+        assertEquals(14.0, cast(world, -0.5, 0, -0.5, -10.5, 0, -0.5, CAP).distance(), 1e-9);
+    }
+
+    @Test
+    void aRoofOverTheListenerGivesTheSealedPenalty() {
+        // Stone at y = 63 above the listener at y = 60: the scan reads 61, 62, 63 and finds the roof.
+        ProbeWorld world = new ProbeWorld().set(0, 63, 0, STONE);
+        Absorption.Sealed s = sealed(world, 60, CAP);
+        assertEquals(MuffleConfig.SEALED_PENALTY, s.penalty(), 1e-9);
+        assertEquals(3, s.reads());
+    }
+
+    @Test
+    void anOpenSkyGivesNoSealedPenaltyAndReadsTheCap() {
+        // Open sky reads cells 61 to 124, the whole 64-read budget, and finds no roof.
+        Absorption.Sealed s = sealed(new ProbeWorld(), 60, CAP);
+        assertEquals(0.0, s.penalty(), 1e-9);
+        assertEquals(64, s.reads());
+    }
+
+    @Test
+    void aRoofAtTheLastAllowedReadIsStillFound() {
+        // The 64 reads are cells 61 to 124. A roof at 124 is the 64th read.
+        ProbeWorld world = new ProbeWorld().set(0, 124, 0, STONE);
+        Absorption.Sealed s = sealed(world, 60, CAP);
+        assertEquals(MuffleConfig.SEALED_PENALTY, s.penalty(), 1e-9);
+        assertEquals(64, s.reads());
+    }
+
+    @Test
+    void aRoofPastTheReadCapIsNotSeen() {
+        // A roof at 125 is the 65th cell: beyond the 64-read budget, so no penalty.
+        ProbeWorld world = new ProbeWorld().set(0, 125, 0, STONE);
+        Absorption.Sealed s = sealed(world, 60, CAP);
+        assertEquals(0.0, s.penalty(), 1e-9);
+        assertEquals(64, s.reads());
+    }
+
+    @Test
+    void aSealedScanStopsAtItsOwnBudget() {
+        // The roof at 63 is the third read, but the budget is two: the scan stops, so no penalty.
+        ProbeWorld world = new ProbeWorld().set(0, 63, 0, STONE);
+        Absorption.Sealed s = sealed(world, 60, 2);
+        assertEquals(0.0, s.penalty(), 1e-9);
+        assertEquals(2, s.reads());
+    }
+
+    @Test
+    void theScanStopsAtTheBuildLimit() {
+        // With the build limit at 63 the scan covers y = 61 and 62 only, so a roof at 63 is not reached.
+        ProbeWorld world = new ProbeWorld().set(0, 63, 0, STONE);
+        Absorption.Sealed s = Absorption.sealedPenalty(0, 60, 0, world, 63, CAP);
+        assertEquals(0.0, s.penalty(), 1e-9);
+        assertEquals(2, s.reads());
     }
 
     @Test
@@ -155,38 +356,5 @@ class AbsorptionTest {
     @Test
     void aCutShortRayIsSilentWhateverItsDistance() {
         assertEquals(Tier.SILENT, Absorption.tier(10.0, true));
-    }
-
-    @Test
-    void aRoofOverTheListenerGivesTheSealedPenalty() {
-        // Stone at y = 63 above the listener at y = 60: the scan reads 61, 62, 63 and finds the roof.
-        ProbeWorld world = new ProbeWorld().set(0, 63, 0, STONE);
-        assertEquals(MuffleConfig.SEALED_PENALTY, Absorption.sealedPenalty(0, 60, 0, world), 1e-9);
-    }
-
-    @Test
-    void anOpenSkyGivesNoSealedPenalty() {
-        assertEquals(0.0, Absorption.sealedPenalty(0, 60, 0, new ProbeWorld()), 1e-9);
-    }
-
-    @Test
-    void aRoofAtTheLastAllowedReadIsStillFound() {
-        // The 64 reads are cells 61 to 124. A roof at 124 is the 64th read.
-        ProbeWorld world = new ProbeWorld().set(0, 124, 0, STONE);
-        assertEquals(MuffleConfig.SEALED_PENALTY, Absorption.sealedPenalty(0, 60, 0, world), 1e-9);
-    }
-
-    @Test
-    void aRoofPastTheReadCapIsNotSeen() {
-        // A roof at 125 is the 65th cell: beyond the 64-read budget, so no penalty.
-        ProbeWorld world = new ProbeWorld().set(0, 125, 0, STONE);
-        assertEquals(0.0, Absorption.sealedPenalty(0, 60, 0, world), 1e-9);
-    }
-
-    @Test
-    void theScanStopsAtTheBuildLimit() {
-        // With the build limit at 63 the scan covers y = 61 and 62 only, so a roof at 63 is not reached.
-        ProbeWorld world = new ProbeWorld().set(0, 63, 0, STONE);
-        assertEquals(0.0, Absorption.sealedPenalty(0, 60, 0, world, 63), 1e-9);
     }
 }
