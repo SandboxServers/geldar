@@ -1,5 +1,24 @@
 # Genesis cards
 
+## Ledger
+
+State at 2026-11-15. PR numbers are GitHub pull requests on `main`.
+
+| Card | PR | State |
+|---|---|---|
+| G0-01 | none | Resolved by owner ruling (2026-11-14) |
+| G0-02 | #384 | Done (worknote) |
+| G0-03a | #432 | Merged |
+| G0-03b | #428 | Merged |
+| G0-03c | #436 | Merged |
+| G0-03d | #438 | Merged |
+| G0-04 | #390 | Merged |
+| G0-05 | #429 | Merged |
+| G1-01 | #446 | Merged (artifact `plugin-jars`) |
+| G1-02 | #445 | Merged |
+| G1-03 | #454 | merged 2026-11-15 06:02Z (3c563c72) |
+| All other cards (G0-06, G1-04, G2-01 to G2-07, G3-01 to G3-04, G4-01 to G4-05, G5-01 to G5-04, G6-01 to G6-05, G7-01 to G7-04) | none | Not started |
+
 Cards for the campaign in [README.md](README.md), built on [plan.md](plan.md). **Level of detail:** these are planning cards (goal, files to read or add, dependency, proof, who must be consulted). Before dispatch the coordinator turns each into a prescriptive packet (exact files, code shapes, revert-checks) against the then-current `main`; a card with a `(to confirm)` is not Ready. Numbers (ADR, SQL, prompt) are never taken here: `<allocate via registry>`. Branches are `phase1/gn-<id>-<slug>`, one worktree per card under `.claude/worktrees/`. Shared files with a single owner per wave: `compose/colo.yml` and `compose/*.yml` (G0-03, then G4), `.github/workflows/*` (G1-01, then G4-01, one owner at a time), `docs/decisions/README.md` (the session that merges last in a window resolves it).
 
 **Common rules.** Pin everything exactly (images by digest, actions by commit SHA, versions at least two weeks old). No secrets, account names or addresses in the repo. Every behaviour change has a test that fails when it is reverted. Files: soft cap 500 lines, hard cap 700. Nothing in a card touches the live node; anything that would is marked **node** and needs geldar-93's window. Coder size: Haiku, about 40k working tokens; a larger card is split before dispatch.
