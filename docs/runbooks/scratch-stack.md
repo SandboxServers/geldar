@@ -56,8 +56,9 @@ The flow, in order:
    Leave alone any file that was already there.
 4. After the review passes and the start gates are met, copy the temp dir to a node temp dir. Do not copy it
    anywhere else.
-5. On the node: `SCRATCH_NATS_AUTH_DIR=<node temp dir> sh deploy/scratch/scratch.sh up [suffix]`. The script checks
-   the four files, then points the `nats-auth.yml` secrets at that dir. It does not read, print or copy the files.
+5. On the node: `SCRATCH_NATS_AUTH_DIR=<absolute path of the node temp dir> sh deploy/scratch/scratch.sh up [suffix]`.
+   The path must be absolute and on one line; a relative path or a newline exits 2 with nothing started. The script
+   checks the four files, then points the `nats-auth.yml` secrets at that dir. It does not read, print or copy the files.
 6. At teardown run `sh deploy/scratch/scratch.sh down [suffix]`, then delete both copies: the desktop temp dir (if
    it still exists) and the node temp dir. `down` never removes `SCRATCH_NATS_AUTH_DIR`.
 
@@ -101,6 +102,8 @@ if other tenants, or the game server's TPS, show strain. The gates are a floor, 
 Run one scratch stack at a time. Its ports are 15432 (Postgres), 14222 and 18222 (NATS client and monitor) and
 35565 (Velocity). Override them with `SCRATCH_PG_PORT`, `SCRATCH_NATS_PORT`, `SCRATCH_NATS_MON_PORT` and `SCRATCH_MC_PORT`.
 The secrets directory is `${XDG_STATE_HOME:-$HOME/.local/state}/geldar-scratch/scratch-<suffix>`, mode 0700.
+`SCRATCH_NATS_AUTH_DIR` and `XDG_STATE_HOME` must be absolute paths on one line (`/...` on the node); the script exits 2
+on a relative path or a newline and starts nothing.
 
 ## Migrations
 

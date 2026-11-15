@@ -146,7 +146,10 @@ describe('scratch script: text', () => {
     const at = (needle: string) => up.indexOf(needle);
     expect(at('set_env')).toBeGreaterThanOrEqual(0);
     expect(at('set_env')).toBeLessThan(at('check_compose'));
-    expect(at('set_env')).toBeLessThan(at('compose_run ps -aq'));
+    expect(at('set_env')).toBeLessThan(
+      at('docker ps -aq --filter "label=com.docker.compose.project=$PROJECT"'),
+    );
+    expect(up).not.toContain('compose_run ps -aq');
     expect(at('check_nats')).toBeLessThan(at('  gate'));
     expect(at('  gate')).toBeLessThan(at('check_plugins'));
     expect(at('check_plugins')).toBeLessThan(at('compose_run up'));
@@ -200,8 +203,9 @@ const slash = (path: string) => path.replace(/\\/g, '/');
 
 /** The stub bin dir and the default environment. docker logs each call with the compose variables, fails compose calls
  * that lack them (as compose does for a required variable), answers compose version and info, and fails down when
- * STUB_FAIL_DOWN is set. df prints STUB_DOCKER_KB for the Docker root and STUB_DISK_KB for the repo; id says 1000;
- * uname says non-Linux; powershell.exe prints STUB_RAM_KB. */
+ * STUB_FAIL_DOWN is set. info prints no Docker root when STUB_NO_INFO is set; any ps -aq call fails when STUB_FAIL_PS
+ * is set. df prints STUB_DOCKER_KB for the Docker root and STUB_DISK_KB for the repo; id says 1000; uname says
+ * MINGW64_NT unless STUB_UNAME is set; powershell.exe prints STUB_RAM_KB. */
 function stubs(): { base: string; env: Env } {
   const base = mkdtempSync(join(tmpdir(), 'scratch-stub-'));
   const bin = join(base, 'bin');
@@ -216,14 +220,15 @@ function stubs(): { base: string; env: Env } {
       'fi',
       'case "$*" in',
       '  *"version --short"*) echo "$STUB_COMPOSE_VERSION" ;;',
+      '  *"ps -aq"*) [ -z "$STUB_FAIL_PS" ] || exit 1 ;;',
       '  *" down -v"*) [ -z "$STUB_FAIL_DOWN" ] || exit 1 ;;',
-      '  info*) echo /var/lib/docker ;;',
+      '  info*) [ -n "$STUB_NO_INFO" ] || echo /var/lib/docker ;;',
       'esac',
       'exit 0',
       '',
     ].join('\n'),
     id: '#!/bin/sh\necho 1000\n',
-    uname: '#!/bin/sh\necho MINGW64_NT\n',
+    uname: '#!/bin/sh\n[ -z "$STUB_UNAME" ] && echo MINGW64_NT || echo "$STUB_UNAME"\n',
     'powershell.exe': '#!/bin/sh\necho "$STUB_RAM_KB"\n',
     df: [
       '#!/bin/sh',
@@ -331,6 +336,16 @@ describe.skipIf(!SH)('scratch script under sh', { timeout: 60_000 }, () => {
       { ...OPEN, XDG_STATE_HOME: '/var/state\n/x' },
       'XDG_STATE_HOME must be an absolute path',
     ],
+    [
+      'a drive-letter XDG_STATE_HOME on Linux',
+      { ...OPEN, XDG_STATE_HOME: 'C:/state', STUB_UNAME: 'Linux' },
+      'XDG_STATE_HOME must be an absolute path',
+    ],
+    [
+      'a drive-letter NATS auth dir on Linux',
+      { SCRATCH_NATS_AUTH_DIR: 'C:/auth', STUB_UNAME: 'Linux' },
+      'must be an absolute path',
+    ],
   ])('up with %s exits 2 and makes no docker call', (_name, env, message) => {
     const run = runScript(['up'], env);
     expect(run.status).toBe(2);
@@ -358,6 +373,11 @@ describe.skipIf(!SH)('scratch script under sh', { timeout: 60_000 }, () => {
       { STUB_DISK_KB: 'abc' },
       'could not read free RAM or free disk as numbers',
     ],
+    [
+      'an unreadable Docker root figure',
+      { STUB_DOCKER_KB: 'abc' },
+      'could not read free RAM or free disk as numbers',
+    ],
     ['the Docker root figure', { STUB_DOCKER_KB: '1000' }, 'gate failed'],
     ['the repo disk when the Docker root is larger', { STUB_DISK_KB: '1000' }, 'gate failed'],
     ['free RAM just below 10 GB', { STUB_RAM_KB: '10485759' }, 'gate failed'],
@@ -365,6 +385,40 @@ describe.skipIf(!SH)('scratch script under sh', { timeout: 60_000 }, () => {
     const run = runScript(['up'], { ...OPEN, ...stub });
     expect(run.status).toBe(3);
     expect(run.stderr).toContain(message);
+    expect(started(run)).toBe(false);
+  });
+
+  it('up exits 3 with the Docker root unknown when docker info gives no root dir, before any compose call', () => {
+    const run = runScript(['up'], { ...OPEN, STUB_NO_INFO: '1' });
+    expect(run.status).toBe(3);
+    expect(run.stderr).toContain("Docker root: 'unknown'");
+    expect(started(run)).toBe(false);
+  });
+
+  it('up lists leftover containers with docker ps by the project label, before compose up, never with compose ps', () => {
+    const run = runScript(['up'], OPEN, JARS);
+    expect(run.status).toBe(0);
+    const list = run.calls.findIndex((c) =>
+      c.startsWith('ps -aq --filter label=com.docker.compose.project=scratch-a '),
+    );
+    const upAt = run.calls.findIndex((c) => c.startsWith('compose') && c.includes(' up -d'));
+    expect(list).toBeGreaterThanOrEqual(0);
+    expect(list).toBeLessThan(upAt);
+    expect(run.calls.some((c) => c.startsWith('compose') && c.includes(' ps -aq'))).toBe(false);
+  });
+
+  it('up exits 1 with the secrets directory never made when docker ps fails', () => {
+    const run = runScript(
+      ['up'],
+      { ...OPEN, STUB_FAIL_PS: '1' },
+      {
+        ...JARS,
+        watch: ['state/geldar-scratch/scratch-a'],
+      },
+    );
+    expect(run.status).toBe(1);
+    expect(run.stderr).toContain('docker ps failed');
+    expect(run.present['state/geldar-scratch/scratch-a']).toBe(false);
     expect(started(run)).toBe(false);
   });
 
@@ -422,13 +476,13 @@ describe.skipIf(!SH)('scratch script under sh', { timeout: 60_000 }, () => {
     }
   });
 
-  it('gives the very first compose call the compose variables (the stub fails it otherwise)', () => {
+  it('gives the compose up call the compose variables (the stub fails compose calls without them)', () => {
     const run = runScript(['up'], OPEN, JARS);
     expect(run.status).toBe(0);
-    const first = run.calls.find((c) => c.startsWith('compose'));
-    expect(first).toBeDefined();
-    expect(first).not.toMatch(/SECRETS=(\s|$)/);
-    expect(first).toContain('WORLD=scratch-a_paper-data');
+    const up = run.calls.find((c) => c.startsWith('compose') && c.includes(' up -d'));
+    expect(up).toBeDefined();
+    expect(up).not.toMatch(/SECRETS=(\s|$)/);
+    expect(up).toContain('WORLD=scratch-a_paper-data');
   });
 
   it('refuses a suffix outside [a-z0-9]{1,8} with exit 2 and no docker call', () => {

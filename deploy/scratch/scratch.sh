@@ -41,10 +41,16 @@ fi
 PROJECT="scratch-$suffix"
 
 # Paths the script uses must be absolute and one line: a relative or multi-line path would reach the compose files.
+# A drive-letter path counts only where uname does not say Linux: the Windows host runs this script under MSYS sh.
 is_abs() {
   case "$1" in
-    /* | [A-Za-z]:/* | [A-Za-z]:\\*) return 0 ;;
+    /*) return 0 ;;
   esac
+  if [ "$(uname -s)" != Linux ]; then
+    case "$1" in
+      [A-Za-z]:/* | [A-Za-z]:\\*) return 0 ;;
+    esac
+  fi
   return 1
 }
 
@@ -290,8 +296,9 @@ do_up() {
   check_plugins
   check_uid
   ensure_state
-  existing=$(compose_run ps -aq) || {
-    echo "scratch: docker compose ps failed (is docker running?); nothing started" >&2
+  # Leftover containers are listed by the compose project label, so no compose project is loaded before the secrets exist.
+  existing=$(docker ps -aq --filter "label=com.docker.compose.project=$PROJECT") || {
+    echo "scratch: docker ps failed (is docker running?); nothing started" >&2
     exit 1
   }
   if [ -n "$existing" ]; then
