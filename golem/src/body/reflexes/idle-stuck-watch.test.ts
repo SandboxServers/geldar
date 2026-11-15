@@ -77,6 +77,7 @@ describe('idle_stuck operator watch line (decision 0332)', () => {
         moves: null,
         reach: null,
         reach_exit: null,
+        boxed_in: false,
       },
     ]);
     idleStuckReflex.check(at(view, IDLE_TICKS + IDLE_TICKS - 1));

@@ -35,14 +35,46 @@ export class GridWorld {
     return this.cells.get(this.key(cell)) ?? 'air';
   }
 
+  /** Sky light set by hand for a cell (`setSkyLight`), which overrides the column read in `skyLight`. */
+  readonly skyOverrides = new Map<string, number>();
+
+  /** Sets the sky light a cell reads, for a test that needs a level other than the column's (null clears it). */
+  setSkyLight(cell: Vec3, level: number | null): void {
+    if (level === null) this.skyOverrides.delete(this.key(cell));
+    else this.skyOverrides.set(this.key(cell), level);
+  }
+
+  /**
+   * The sky light of a cell, as a loaded chunk reads it: 15 when no block stands above it in its column, 0
+   * under a roof. Scans up to 256 blocks, the world's height, so a roof higher up still darkens the cell.
+   */
+  skyLight(cell: Vec3): number {
+    const override = this.skyOverrides.get(this.key(cell));
+    if (override !== undefined) return override;
+    const x = Math.floor(cell.x);
+    const z = Math.floor(cell.z);
+    const base = Math.floor(cell.y);
+    for (let y = base + 1; y <= base + 256; y++) {
+      if (this.name(new Vec3(x, y, z)) !== 'air') return 0;
+    }
+    return 15;
+  }
+
   /** The block as the bot's `blockAt` returns it, or the air block. */
-  blockAt(cell: Vec3): { name: string; boundingBox: string; diggable: boolean; position: Vec3 } {
+  blockAt(cell: Vec3): {
+    name: string;
+    boundingBox: string;
+    diggable: boolean;
+    position: Vec3;
+    skyLight: number;
+  } {
     const name = this.name(cell);
     return {
       name,
       boundingBox: name === 'air' ? 'empty' : 'block',
       diggable: name !== 'bedrock',
       position: new Vec3(Math.floor(cell.x), Math.floor(cell.y), Math.floor(cell.z)),
+      skyLight: this.skyLight(cell),
     };
   }
 
