@@ -1,7 +1,7 @@
 import { Vec3 } from 'vec3';
 import { describe, expect, it } from 'vitest';
-import { FakeWorld } from './perception.fakes.ts';
-import { findVisibleAgent } from './visible-agent.ts';
+import { FakeWorld, REGISTRY_PLAYER_NAME } from './perception.fakes.ts';
+import { findVisibleAgent, isUsernameVisible } from './visible-agent.ts';
 
 /** A world with the Body at the origin and a stone wall between the eyes and the cell (0, 64, 2). */
 function walled(): FakeWorld {
@@ -40,9 +40,9 @@ describe('findVisibleAgent: exact usernames', () => {
     world.entities[3] = {
       type: 'player',
       username: 'ag_riker_01',
-      displayName: 'ag_troi_01',
       position: new Vec3(2.5, 64, 2.5),
     };
+    world.setPlayer('ag_riker_01', 'ag_troi_01');
     expect(findVisibleAgent(bot(world), 'ag_troi_01')).toBeNull();
   });
 });
@@ -58,26 +58,58 @@ describe('findVisibleAgent: loose names among the visible players (decision 0334
     expect(findVisibleAgent(bot(world), 'chapman_01')?.username).toBe('ag_chapman_01');
   });
 
-  it('resolves an in-world display name, case-insensitively', () => {
+  it('resolves the in-world name from the tab list, case-insensitively, not the registry name', () => {
     const world = new FakeWorld();
     world.entities[2] = {
       type: 'player',
+      ...REGISTRY_PLAYER_NAME,
       username: 'ag_zack_01',
-      displayName: 'Zack Ellison',
       position: new Vec3(0.5, 64, 2.5),
     };
+    world.setPlayer('ag_zack_01', 'Zack Ellison');
     expect(findVisibleAgent(bot(world), 'zack ELLISON')?.username).toBe('ag_zack_01');
+  });
+
+  it('resolves a short in-world name such as Chapman from the tab list', () => {
+    const world = new FakeWorld();
+    world.entities[2] = {
+      type: 'player',
+      ...REGISTRY_PLAYER_NAME,
+      username: 'ag_chapman_01',
+      position: new Vec3(0.5, 64, 2.5),
+    };
+    world.setPlayer('ag_chapman_01', 'Chapman');
+    expect(findVisibleAgent(bot(world), 'Chapman')?.username).toBe('ag_chapman_01');
+  });
+
+  it('never matches the registry word player, even with one visible agent', () => {
+    const world = new FakeWorld();
+    world.entities[2] = {
+      type: 'player',
+      ...REGISTRY_PLAYER_NAME,
+      username: 'ag_kit_01',
+      position: new Vec3(0.5, 64, 2.5),
+    };
+    world.setPlayer('ag_kit_01', 'Kit');
+    expect(findVisibleAgent(bot(world), 'player')).toBeNull();
+    expect(findVisibleAgent(bot(world), 'Player')).toBeNull();
+    expect(findVisibleAgent(bot(world), 'unknown')).toBeNull();
+    expect(findVisibleAgent(bot(world), 'Kit')?.username).toBe('ag_kit_01');
   });
 
   it('fails when two visible players match, by handle or display name', () => {
     const world = new FakeWorld();
-    world.entities[2] = { type: 'player', username: 'ag_troi', position: new Vec3(0.5, 64, 2.5) };
+    world.entities[2] = {
+      type: 'player',
+      username: 'ag_troi',
+      position: new Vec3(0.5, 64, 2.5),
+    };
     world.entities[3] = {
       type: 'player',
       username: 'Riker',
-      displayName: 'Troi',
       position: new Vec3(-1.5, 64, 2.5),
     };
+    world.setPlayer('Riker', 'Troi');
     expect(findVisibleAgent(bot(world), 'troi')).toBeNull();
   });
 
@@ -103,13 +135,17 @@ describe('findVisibleAgent: loose names among the visible players (decision 0334
 
   it('resolves to the one visible match when another match is out of sight', () => {
     const world = walled();
-    world.entities[2] = { type: 'player', username: 'ag_troi', position: new Vec3(0.5, 64, 2.5) };
+    world.entities[2] = {
+      type: 'player',
+      username: 'ag_troi',
+      position: new Vec3(0.5, 64, 2.5),
+    };
     world.entities[3] = {
       type: 'player',
       username: 'Riker',
-      displayName: 'Troi',
       position: new Vec3(-1.5, 64, 2.5),
     };
+    world.setPlayer('Riker', 'Troi');
     expect(findVisibleAgent(bot(world), 'Troi')?.username).toBe('Riker');
   });
 
@@ -122,5 +158,37 @@ describe('findVisibleAgent: loose names among the visible players (decision 0334
     };
     expect(findVisibleAgent(bot(world), 'Nobody')).toBeNull();
     expect(findVisibleAgent(bot(world), 'zack')).toBeNull();
+  });
+});
+
+describe('isUsernameVisible: the bystander check is exact only (decision 0145)', () => {
+  it('is true for an exact username that is visible', () => {
+    const world = new FakeWorld();
+    world.entities[2] = {
+      type: 'player',
+      username: 'ag_chapman_01',
+      position: new Vec3(0.5, 64, 2.5),
+    };
+    expect(isUsernameVisible(bot(world), 'ag_chapman_01')).toBe(true);
+  });
+
+  it('is false for a handle when the visible agent is ag_chapman_01 (loose names do not count)', () => {
+    const world = new FakeWorld();
+    world.entities[2] = {
+      type: 'player',
+      username: 'ag_chapman_01',
+      position: new Vec3(0.5, 64, 2.5),
+    };
+    expect(isUsernameVisible(bot(world), 'chapman_01')).toBe(false);
+  });
+
+  it('is false for an exact username that is behind a wall', () => {
+    const world = walled();
+    world.entities[2] = {
+      type: 'player',
+      username: 'ag_chapman_01',
+      position: new Vec3(0.5, 64, 2.5),
+    };
+    expect(isUsernameVisible(bot(world), 'ag_chapman_01')).toBe(false);
   });
 });

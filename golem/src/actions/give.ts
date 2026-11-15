@@ -1,7 +1,7 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { canSeePoint } from '../perception/notable-blocks.ts';
-import { findVisibleAgent } from '../perception/visible-agent.ts';
+import { findVisibleAgent, isUsernameVisible } from '../perception/visible-agent.ts';
 import { logNotInSight } from './give-not-in-sight.ts';
 import {
   allPicked,
@@ -178,11 +178,13 @@ async function takeBack(ctx: ActionContext, bot: Bot, watch: PickupWatch): Promi
 
 /**
  * Who else picked items up, as the agent can see them now: the names in sight, and whether anyone
- * out of sight did. A name is said only when the agent can see that player (decision 0145).
+ * out of sight did. A name is said only when the agent can see that exact username (decision 0145);
+ * a loose name (a handle or display name) never counts, so an unseen player is not named because a
+ * visible agent shares their handle.
  */
 function bystanders(bot: Bot, watch: PickupWatch): { names: string; unseen: boolean } {
   const all = [...new Set(watch.others.values())];
-  const seen = all.filter((name) => findVisibleAgent(bot, name) !== null);
+  const seen = all.filter((name) => isUsernameVisible(bot, name));
   return { names: seen.join(', '), unseen: seen.length < all.length };
 }
 

@@ -18,8 +18,6 @@ export interface FakeEntity {
   type: string;
   name?: string;
   username?: string;
-  /** A player's in-world display name, as the loose-name lookup reads it (decision 0334). */
-  displayName?: string;
   position: Vec3;
   height?: number;
   /** Body yaw in radians; mineflayer's convention (yaw 0 faces -z). */
@@ -27,6 +25,28 @@ export interface FakeEntity {
   heldItem?: { name: string } | null;
   /** Mineflayer's metadata by index; a dropped item's stack is in slot 8. */
   metadata?: unknown[];
+}
+
+/**
+ * What a real player entity carries as `displayName`: the registry type name, not the player's name.
+ * Mineflayer copies it from minecraft-data (`entities.json`, `"displayName":"Player"`) at
+ * `lib/plugins/entities.js:164`. Spread it into a player fixture so tests see the real shape.
+ */
+export const REGISTRY_PLAYER_NAME = { displayName: 'Player' } as const;
+
+/**
+ * A player as `bot.players` lists them. `displayName` has the shape of a prismarine-chat
+ * ChatMessage, as mineflayer builds it at `lib/plugins/entities.js:638`
+ * (`new ChatMessage({ text: '', extra: [{ text }] })`); its `toString()` is the plain text.
+ */
+export interface ListedPlayer {
+  username: string;
+  displayName: { json: unknown; toString(): string };
+}
+
+/** A tab-list entry for `username` shown as `text` in the world (decision 0334). */
+export function listedPlayer(username: string, text: string): ListedPlayer {
+  return { username, displayName: { json: { text: '', extra: [{ text }] }, toString: () => text } };
 }
 
 const NOT_SOLID = new Set(['water', 'lava', 'air']);
@@ -40,6 +60,8 @@ const NOT_SOLID = new Set(['water', 'lava', 'air']);
 export class FakeWorld {
   readonly blocks = new Map<string, FakeBlock>();
   readonly entities: Record<number, FakeEntity> = {};
+  /** Mineflayer's `bot.players`, the tab list keyed by username. Filled by `setPlayer`. */
+  readonly players: Record<string, unknown> = {};
   readonly me: { position: Vec3; eyeHeight: number } = {
     position: new Vec3(0.5, 64, 0.5),
     eyeHeight: 1.62,
@@ -58,6 +80,11 @@ export class FakeWorld {
     if (signText) block.getSignText = () => signText;
     this.blocks.set(`${x},${y},${z}`, block);
     return block;
+  }
+
+  /** Lists a player in the tab list with an in-world display name, as the server does. */
+  setPlayer(username: string, text: string): void {
+    this.players[username] = listedPlayer(username, text);
   }
 
   /** Removes the block at a position. */
@@ -90,6 +117,7 @@ export class FakeWorld {
       username: 'Kestrel',
       entity: this.me,
       entities: this.entities,
+      players: this.players,
       registry: { items: {} },
       // As in Mineflayer, a loaded chunk answers air with an air block, never null.
       blockAt: (point: Vec3) => this.blockOrAir(point),

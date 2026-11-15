@@ -10,12 +10,12 @@
 This clarifies 0145 and does not change its rule. The candidates for a target are only the agents the Body can see now (loaded, within `ENTITY_RANGE` of 24 blocks, with a clear line of sight). Among those candidates:
 
 1. An exact username resolves as before, and only to that player. A loose name never reaches an exact username that is loaded but not visible.
-2. A name that is not an exact username resolves loosely: the player's handle without the `ag_` prefix, or their in-world display name, compared case-insensitively.
+2. A name that is not an exact username resolves loosely: the player's handle without the `ag_` prefix, or their in-world display name, compared case-insensitively. The in-world name is read from the tab list: `bot.players[username].displayName`, a prismarine-chat ChatMessage whose plain text is its `toString()` (mineflayer `lib/plugins/entities.js:638` builds it; the type is in `index.d.ts`). It is read only for a player already visible, by that player's own username. The entity's `displayName` is never read: on a real player entity it is the registry type name `'Player'` (minecraft-data `entities.json`, copied at `entities.js:164`), so reading it would match the word `player` and no real name. The generic words `player` and `unknown` never match.
 3. It resolves only when exactly one visible player matches. Two matches, or none, fail.
 4. A name that matches a player who is out of sight, out of range or behind a wall is not a candidate. It fails the same way as an unseen or unknown name.
 5. The failure text is unchanged: `no such agent in sight`. No new wording is added, so an absent, unseen, unknown and ambiguous name all read the same (0145).
 
-The rule applies to every verb that resolves a target with `findVisibleAgent`: `give`, `goto`, `follow` and the bystander names in a give's outcome.
+The rule applies to every verb that resolves a target with `findVisibleAgent`: `give`, `goto`, `follow`. The bystander names in a give's outcome are the exception: they use exact usernames only (`isUsernameVisible`), so an unseen player is never named because a visible agent shares their handle (0145).
 
 ## Consequences
 
