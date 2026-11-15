@@ -51,6 +51,7 @@ describe('listMigrations', () => {
       '0037_events_harness_model.sql',
       '0039_account_deletion.sql',
       '0050_character_sheet_xp.sql',
+      '0051_character_audit.sql',
     ]);
   });
 
