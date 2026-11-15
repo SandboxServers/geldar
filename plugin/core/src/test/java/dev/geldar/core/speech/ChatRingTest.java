@@ -54,6 +54,17 @@ class ChatRingTest {
     }
 
     @Test
+    void agentUsernamesInTextAreReplacedBeforeTheLineIsKept() {
+        ChatRing ring = new ChatRing();
+        ring.add(AGENT, "hi ag_ash_01 and ag_bob_12!", 1L);
+        ring.add(AGENT, "tag_ash_01x", 2L);
+        String json = ring.toJson();
+        assertTrue(json.contains("\"text\":\"hi Ranger and Ranger!\""));
+        assertTrue(json.contains("\"text\":\"tag_ash_01x\""));
+        assertFalse(json.contains("ag_ash_01 "));
+    }
+
+    @Test
     void quoteAndBackslashAreEscaped() {
         assertEquals("\"say \\\"x\\\" \\\\ y\"", ChatRing.quote("say \"x\" \\ y"));
     }

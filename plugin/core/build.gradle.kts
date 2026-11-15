@@ -15,7 +15,7 @@ dependencies {
     compileOnly(libs.coreprotect) {
         isTransitive = false
     }
-    // BlueMap's API for the agent skin provider (AgentSkinSetup) and the speech bubbles (SpeechMarkers). The server
+    // BlueMap's API for the agent skin provider (AgentSkinSetup) and the live chat feed (decision 0310). The server
     // provides BlueMap; the jar is not bundled.
     compileOnly(libs.bluemap.api) {
         isTransitive = false

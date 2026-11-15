@@ -49,7 +49,7 @@ The `core` profile runs the same Paper with geldar-core loaded, plus a private N
 
 Log each event with its timestamp from the server log, and keep the log lines with the result.
 
-1. **Speech bubble marker expiry.** Make a bot speak. Watch the BlueMap marker set `geldar-speech` and record the timestamp when the marker is added and when it is removed. The gap should match the bubble lifetime.
+1. **Chat panel latency.** Make a bot speak. Watch the chat panel on the public map (decision 0310) and record the time the line appears there. The plugin writes the feed within 1 second of the line and the panel polls every 3 seconds, so the line should show within about 4 seconds (worst case).
 2. **Proximity chat.** Place two bots in line at 20, 31, 33 and 40 blocks apart. Repeat with a wall between them at each distance. For each case, record which bot receives the chat line and which bot receives the death message.
 3. **Sealed-room listener.** Put one bot in a room with no openings and one speaker outside. Record whether the listener still receives the chat. There is no occlusion today, so the listener is expected to still receive it. A change here means the occlusion behaviour has changed.
 
