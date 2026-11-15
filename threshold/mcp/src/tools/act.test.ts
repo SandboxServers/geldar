@@ -68,6 +68,21 @@ function harness(credits = 3, limiter = new ScriptedRateLimiter()): Harness {
 const act = (h: Harness, input: Record<string, unknown>) =>
   actTool(h.deps, CALLER, { reasoning: 'ok', ...input });
 
+describe('act: the source of a sovereign call (GX-06)', () => {
+  it('records source instinct for an instinct connection', async () => {
+    const h = harness();
+    await actTool(h.deps, { ...CALLER, source: 'instinct' }, { reasoning: 'ok', say: 'hi' });
+    expect(h.recorder.calls[0]?.source).toBe('instinct');
+  });
+
+  it('records nothing for a model connection, and never operator', async () => {
+    const h = harness();
+    await act(h, { say: 'hi' });
+    expect(h.recorder.calls[0]).not.toHaveProperty('source');
+    expect(JSON.stringify(h.recorder.calls)).not.toContain('operator');
+  });
+});
+
 describe('act: index mapping', () => {
   it('numbers say, then the actions in order, then the intent, and refuses only the bad action and its batch', async () => {
     const h = harness();
