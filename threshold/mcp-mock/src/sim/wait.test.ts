@@ -8,6 +8,33 @@ import { waitTool } from './wait.ts';
 
 const PLAYER = 'p1';
 
+// GX-08: a peek from the instinct class records no wake time and no suppression; a plain wait records both.
+describe('waitTool with a peek (GX-08)', () => {
+  it('an instinct peek leaves the wake time and the suppression memory unchanged', async () => {
+    const { clock, hub } = setup({ events: [say(300, null), say(900, 'Kestrel')] });
+    const sim = hub.player(PLAYER);
+    sim.startIntent(longIntent(['goal_completed']), clock.nowMs());
+    const p = waitTool(hub, { ...ctx(), source: 'instinct' }, { max_seconds: 60, peek: true });
+    await clock.advance(60000);
+    expect((await p).wake_reason).toBe('timeout');
+    expect(sim.lastWakeMs).toBeNull();
+    expect(sim.suppressedSeqs.size).toBe(0);
+    expect(hub.suppressed(PLAYER)).toEqual([]);
+  }, 30_000);
+
+  it('a plain wait (no class) records the wake time and the suppression', async () => {
+    const { clock, hub } = setup({ events: [say(300, null), say(900, 'Kestrel')] });
+    const sim = hub.player(PLAYER);
+    sim.startIntent(longIntent(['goal_completed']), clock.nowMs());
+    const p = waitTool(hub, ctx(), { max_seconds: 60 });
+    await clock.advance(60000);
+    expect((await p).wake_reason).toBe('timeout');
+    expect(sim.lastWakeMs).not.toBeNull();
+    expect(sim.suppressedSeqs.size).toBeGreaterThan(0);
+    expect(hub.suppressed(PLAYER).length).toBeGreaterThan(0);
+  }, 30_000);
+});
+
 // Day length 24 s gives 1000 ticks a second unless a case says otherwise.
 function setup(over: Record<string, unknown> = {}, dayLength = 24) {
   const scenario = parseScenario(

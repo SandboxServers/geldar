@@ -298,6 +298,12 @@ function schemaLeaks(node: unknown, out: string[]): void {
   }
 }
 
+/** The field names of a tool reply's first text block (a `wait` result is its JSON text). */
+function fieldsOf(reply: { content: unknown }): string[] {
+  const block = (reply.content as { text?: string }[])[0];
+  return Object.keys(JSON.parse(block?.text ?? '{}') as Record<string, unknown>).sort();
+}
+
 describe('the instinct class at the front door', () => {
   it('a right key on an authenticated connection gives the instinct class', async () => {
     const rig = await startRig(Buffer.from(KEY));
@@ -352,6 +358,61 @@ describe('the instinct class at the front door', () => {
     const modelLast = model.fx.recorder.calls.at(-1);
     expect(modelLast).toBeDefined();
     expect(modelLast).not.toHaveProperty('source');
+  });
+
+  it('a model peek is an ordinary wait; an instinct peek never ends a model wait', async () => {
+    const rig = await startRig(Buffer.from(KEY));
+    const model = await connectWith(rig, AUTH);
+    const instinct = await connectWith(rig, { ...AUTH, [HEADER]: KEY });
+    const second = await connectWith(rig, AUTH);
+    const pause = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 20));
+    const step = async (seconds: number): Promise<void> => {
+      for (let i = 0; i < seconds; i++) {
+        await pause();
+        await rig.fx.clock.advance(1000);
+      }
+      await pause();
+    };
+    const waitCall = (client: Client, args: Record<string, unknown>) =>
+      client.callTool({ name: 'wait', arguments: args });
+
+    // the model's long wait is open first; it is not awaited until it has ended
+    let openEnded = false;
+    const open = waitCall(model, { max_seconds: 60 }).then((reply) => {
+      openEnded = true;
+      return reply;
+    });
+    await pause();
+    // the instinct peek returns at its own 5 s and leaves the model's wait open
+    const peek = waitCall(instinct, { max_seconds: 5, peek: true });
+    await pause();
+    await step(5);
+    const peekReply = await peek;
+    expect(peekReply.isError).not.toBe(true);
+    expect(openEnded).toBe(false);
+
+    // a model's peek is an ordinary wait: it replaces the open model wait
+    const modelPeek = waitCall(second, { max_seconds: 5, peek: true });
+    await pause();
+    const replaced = await open;
+    expect(JSON.stringify(replaced)).toContain('wait_replaced');
+    await step(5);
+    const ordinary = await modelPeek;
+    expect(ordinary.isError).not.toBe(true);
+    expect(fieldsOf(ordinary)).toEqual(fieldsOf(peekReply));
+  });
+
+  it('the model is not advertised the wait peek field; the instinct class is', async () => {
+    const rig = await startRig(Buffer.from(KEY));
+    const model = await connectWith(rig, AUTH);
+    const instinct = await connectWith(rig, { ...AUTH, [HEADER]: KEY });
+    const waitFields = async (client: Client): Promise<string[]> => {
+      const listed = (await client.listTools()).tools.find((tool) => tool.name === 'wait');
+      return Object.keys((listed?.inputSchema.properties ?? {}) as Record<string, unknown>);
+    };
+    expect(await waitFields(model)).toContain('max_seconds');
+    expect(await waitFields(model)).not.toContain('peek');
+    expect(await waitFields(instinct)).toContain('peek');
   });
 
   it('no tool reply carries the key, the header name, a source field, or instinct as an actor', async () => {

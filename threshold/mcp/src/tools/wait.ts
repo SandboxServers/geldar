@@ -214,7 +214,9 @@ export async function wait(deps: WaitDeps, req: WaitRequest): Promise<WaitOutcom
   const stopKeepAlive = deps.keepAlive.start(deps.keepAliveMs ?? KEEPALIVE_MS, () =>
     req.onKeepAlive?.(),
   );
+  // GX-08: a peek is not Body liveness, so it never touches presence (and so never holds the Body).
   const touch = async (): Promise<void> => {
+    if (peek) return;
     try {
       await deps.touchPresence?.(lifeId);
     } catch (err) {
@@ -231,9 +233,13 @@ export async function wait(deps: WaitDeps, req: WaitRequest): Promise<WaitOutcom
   try {
     // A waking Body: ask for it, then hold until it answers or the deadline passes.
     if (!(await bodyAnswers(deps, lifeId))) {
-      await deps.wantBody?.(lifeId).catch((err: unknown) => {
-        deps.presenceLog?.({ event: 'presence_error', cause: causeOf(err) });
-      });
+      // GX-08: a peek does not ask for the Body; it still holds to the deadline and then reports
+      // body_unavailable, as a plain wait does.
+      if (!peek) {
+        await deps.wantBody?.(lifeId).catch((err: unknown) => {
+          deps.presenceLog?.({ event: 'presence_error', cause: causeOf(err) });
+        });
+      }
       for (;;) {
         if (end.error !== null) return { ok: false, error: end.error };
         now = clock.nowMs();

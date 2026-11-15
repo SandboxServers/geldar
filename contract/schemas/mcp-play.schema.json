@@ -40,7 +40,7 @@
         "max_seconds": { "type": "integer", "minimum": 5, "maximum": 240 },
         "peek": {
           "type": "boolean",
-          "description": "Honoured only for the instinct class (the keyed connection of GX-06); on any other connection it is ignored and the call is an ordinary wait. Default false. For the instinct class, a peek returns the events after the cursor and changes no delivered mark, wake time or open wait."
+          "description": "Read-only wait: returns events after the cursor without marking them as seen."
         }
       }
     },
