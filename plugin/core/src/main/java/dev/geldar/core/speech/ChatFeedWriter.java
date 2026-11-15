@@ -7,13 +7,10 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.util.List;
-import java.util.OptionalLong;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.LongSupplier;
-import java.util.function.Supplier;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.bukkit.Bukkit;
@@ -25,10 +22,11 @@ import org.bukkit.World;
  * attached; nothing is written before {@link #attach} or after {@link #detach}. Writes happen on an async task, at
  * most once a second (the task runs every 20 ticks), through a temporary file that is moved into place. A write
  * happens when the ring changed, and at least every {@link #REFRESH_SECONDS} seconds even when it did not, so the
- * clock in the file stays current. Every write carries the overworld's time of day ({@link #DAY_TICKS} ticks a day)
- * and the write time; with no world loaded the {@code clock} key is left out. After {@link #SLOW_AFTER_FAILURES}
- * failures in a row, retries come only every {@link #SLOW_RETRY_SECONDS} seconds. Never throws: the first failure is
- * logged once, at warning level.
+ * clock in the file stays current. Every write carries the latest {@link #sampleClock} sample of the overworld's time
+ * of day ({@link #DAY_TICKS} ticks a day) and the instant that sample was taken; the samples are taken on the main
+ * thread, so a write never calls Bukkit. With no sample yet the {@code clock} key is left out. After
+ * {@link #SLOW_AFTER_FAILURES} failures in a row, retries come only every {@link #SLOW_RETRY_SECONDS} seconds. Never
+ * throws: the first failure is logged once, at warning level.
  */
 public final class ChatFeedWriter {
     /** The file the panel page reads, in the BlueMap web root. */
@@ -47,35 +45,31 @@ public final class ChatFeedWriter {
     private final ChatRing ring = new ChatRing();
     private final Logger log;
     private final LongSupplier nanos;
-    private final Supplier<OptionalLong> worldTime;
-    private final LongSupplier epochMillis;
     private final AtomicBoolean dirty = new AtomicBoolean();
     private final AtomicBoolean warned = new AtomicBoolean();
     private volatile Path root;
+    private volatile ClockSample sample;
     private int failures;
     private long nextAttemptNanos;
     private long lastWriteNanos;
     private long writes;
 
     public ChatFeedWriter(Logger log) {
-        this(log, System::nanoTime, ChatFeedWriter::overworldTime, System::currentTimeMillis);
+        this(log, System::nanoTime);
+    }
+
+    /** The seam for tests: the nanosecond clock for retries and refreshes. Production uses the default above. */
+    ChatFeedWriter(Logger log, LongSupplier nanos) {
+        this.log = log;
+        this.nanos = nanos;
     }
 
     /**
-     * The seams for tests: the nanosecond clock for retries and refreshes, the world time (empty when no world is
-     * loaded), and the epoch-millisecond clock for the write time. Production uses the defaults above.
+     * Records the overworld's time of day in ticks and the epoch milliseconds at which it was read. Called on the main
+     * thread by {@link SpeechSetup}; the next write uses the latest sample. Safe on any thread.
      */
-    ChatFeedWriter(Logger log, LongSupplier nanos, Supplier<OptionalLong> worldTime, LongSupplier epochMillis) {
-        this.log = log;
-        this.nanos = nanos;
-        this.worldTime = worldTime;
-        this.epochMillis = epochMillis;
-    }
-
-    /** The first world's time in ticks, or empty when no world is loaded. */
-    static OptionalLong overworldTime() {
-        List<World> worlds = Bukkit.getWorlds();
-        return worlds.isEmpty() ? OptionalLong.empty() : OptionalLong.of(worlds.get(0).getTime());
+    public void sampleClock(long worldTicks, long atMillis) {
+        sample = new ClockSample(worldTicks, atMillis);
     }
 
     /** Records an agent's chat line. Safe on any thread; the file is written by the next flush. */
@@ -152,13 +146,13 @@ public final class ChatFeedWriter {
         return writes;
     }
 
-    /** The clock for this write: the world time modulo one day, and the write time; null when no world is loaded. */
+    /** The clock for this write: the sampled time modulo one day, and the sample instant; null before any sample. */
     private ChatRing.Clock clock() {
-        OptionalLong time = worldTime.get();
-        if (time.isEmpty()) {
+        ClockSample s = sample;
+        if (s == null) {
             return null;
         }
-        return new ChatRing.Clock((int) Math.floorMod(time.getAsLong(), DAY_TICKS), epochMillis.getAsLong());
+        return new ChatRing.Clock((int) Math.floorMod(s.ticks(), DAY_TICKS), s.atMillis());
     }
 
     private static void removeOldMarkerSets(BlueMapAPI api) {
@@ -177,4 +171,7 @@ public final class ChatFeedWriter {
                     + "); later failures are not logged", e);
         }
     }
+
+    /** One clock sample: the overworld's time in ticks, and the epoch milliseconds at which it was read. */
+    record ClockSample(long ticks, long atMillis) {}
 }

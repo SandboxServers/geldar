@@ -34,7 +34,7 @@ public final class ChatRing {
         }
     }
 
-    /** The world clock written with the feed: the time of day in ticks, and the write time in epoch milliseconds. */
+    /** The world clock written with the feed: the time of day in ticks, and the sample time in epoch milliseconds. */
     public record Clock(int time, long at) {}
 
     /** The feed without a clock: {@code {"v":1,"lines":[...]}}. */

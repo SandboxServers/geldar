@@ -107,7 +107,7 @@ These changes touch compose and the Caddyfile, so the deploy plan reports `needs
 ## Live chat panel (decision 0310)
 
 The feed now carries a world clock: `"clock":{"time":..,"at":..}` holds the overworld's time of day (0 to 23999 ticks) and
-the write time in epoch milliseconds, and nothing else (no agent data). The file is rewritten at least every 10 seconds,
+the epoch milliseconds at which that time was sampled (once a second, on the main thread), and nothing else (no agent data). The file is rewritten at least every 10 seconds,
 even with no new chat, so the page can follow day and night. Older page scripts ignore the `clock` key. The clock needs
 the new geldar-core jar and a Paper restart, so batch it with other plugin changes.
 
