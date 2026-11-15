@@ -33,10 +33,14 @@ An agent that read its journal saw a sleep it had not had, and a blocked attempt
 
 `completed` means the bot lay down in a bed and `isSleeping` was true when checked at `golem/src/actions/sleep.ts:370`. It does not mean a full night, and it does not mean the agent woke. The action then waits up to `SLEEPERS_WAIT_MS` for the sleepers line and reports `completed` without re-checking, so the bot may be woken in between. A later action in the same plan may also wake it.
 
+The journal line `Day N: asleep.` means the bot was confirmed asleep (lying in a bed) at that moment. It does not mean a full night.
+
+An action that starts with the bot already asleep (`golem/src/actions/sleep.ts:222`) reports `completed` without lying down. The mark and the journal line are written for it all the same.
+
 ## Known limits
 
 - A `plan_result` that never arrives leaves the mark unset. This covers a Body restart (the pending map is in memory and is lost), a publish failure, and an invalid payload. The late outcome is then dropped. A persisted pending table would avoid this, but it needs a migration; it is not chosen here.
-- A settle whose store write fails rethrows into the stream's retry loop (4 tries, with a delay). If every try fails, the loop drops the message, and the sleep's mark and its journal line are lost: the entry stays in memory until the life dies or the process restarts, and no later outcome for it writes again.
+- A settle whose store write fails rethrows into the stream's retry loop (4 tries, with a delay). If every try fails, the loop drops the message, and the sleep's mark and its journal line are lost: the entry stays in memory until the life dies, the 16-entry cap evicts it, or the process restarts. A later final `plan_result` for the same thought would still settle it, so a later outcome can write the mark and the line.
 - The digest omits failures (F06). That is a separate issue and is not changed by this decision.
 - `rest_stat` (decision 0225) stays operator-only. It is an independent cross-check of the sleep outcome and is not read by the agent.
 
