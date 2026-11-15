@@ -66,6 +66,9 @@ final class BlockOwnerQueries {
             entry.addProperty("y", b.y());
             entry.addProperty("z", b.z());
             entry.addProperty("owner", b.owner());
+            if (b.block() != null) {
+                entry.addProperty("block", b.block());
+            }
             blocks.add(entry);
         }
         o.add("blocks", blocks);

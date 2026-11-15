@@ -26,6 +26,21 @@ describe('BlockOwner schema (block-owner.schema.json)', () => {
     expect(validateBlockOwner({ ...changed, owner: null })).toBe(true);
   });
 
+  it('accepts a reply whose owned block carries its block name, and one without it', () => {
+    const withBlock = { ...block, block: 'farmland' };
+    expect(validateBlockOwner({ ...reply, blocks: [withBlock] })).toBe(true);
+    expect(validateBlockOwner({ ...reply, blocks: [block] })).toBe(true);
+    expect(validateBlockOwner({ ...reply, blocks: [{ ...block, block: null }] })).toBe(false);
+  });
+
+  it('rejects a block name that is not an item name, in an owned block', () => {
+    for (const name of ['', 'Farmland', 'minecraft:farmland', 'grass block', 'b'.repeat(65)]) {
+      expect(validateBlockOwner({ ...reply, blocks: [{ ...block, block: name }] }), name).toBe(
+        false,
+      );
+    }
+  });
+
   it('accepts a reply with the maximum of 4096 blocks and truncated true', () => {
     expect(validateBlockOwner({ ...reply, blocks: blocks(4096), truncated: true })).toBe(true);
   });
