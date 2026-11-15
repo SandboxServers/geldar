@@ -74,6 +74,8 @@ export interface BlockOwners {
 
 interface ChunkEntry {
   owners: Map<string, string>;
+  /** The recorded block name of an owned cell, when the reply carried one (decision 0219). */
+  blocks: Map<string, string>;
   /** False for a truncated reply: the owned list is partial, so every cell reads as unknown. */
   complete: boolean;
   /** True for a query that failed (no reply, bad reply): retried after OWNER_RETRY_MS. */
@@ -93,8 +95,30 @@ interface ReplyEvent {
   world: string;
   chunk_x: number;
   chunk_z: number;
-  blocks: Array<{ x: number; y: number; z: number; owner: string }>;
+  blocks: Array<{ x: number; y: number; z: number; owner: string; block?: string }>;
   truncated: boolean;
+}
+
+/** An item ID without its namespace, as the contract's ItemName pattern (common.schema.json). */
+const ITEM_NAME = /^[a-z0-9_]{1,64}$/;
+
+/**
+ * A reply with each malformed `block` name dropped from its entry: a malformed name is treated as
+ * absent, so it never fails the whole chunk and the owner in the entry still counts. Any other
+ * value passes through to the contract check.
+ */
+function withoutMalformedBlocks(reply: unknown): unknown {
+  if (typeof reply !== 'object' || reply === null || !Array.isArray((reply as ReplyEvent).blocks)) {
+    return reply;
+  }
+  const blocks = (reply as ReplyEvent).blocks.map((entry: unknown) => {
+    if (typeof entry !== 'object' || entry === null || !('block' in entry)) return entry;
+    const name = (entry as { block: unknown }).block;
+    if (typeof name === 'string' && ITEM_NAME.test(name)) return entry;
+    const { block: _malformed, ...rest } = entry as { block: unknown };
+    return rest;
+  });
+  return { ...reply, blocks };
 }
 
 const chunkOf = (block: number): number => Math.floor(block / 16);
@@ -121,10 +145,15 @@ export function bukkitWorldOf(bot: { game?: { dimension?: string } }): string | 
   return BUKKIT_WORLDS.get(name) ?? null;
 }
 
-const applyChange = (owners: Map<string, string>, change: ChangedEvent): void => {
+/**
+ * Applies one change to a chunk. A change names no block, so the cell's block name is dropped: a
+ * stale name must never stand for a new owner (the till rule then refuses, the safe side).
+ */
+const applyChange = (entry: Pick<ChunkEntry, 'owners' | 'blocks'>, change: ChangedEvent): void => {
   const cell = cellKey(change.x, change.y, change.z);
-  if (change.owner === null) owners.delete(cell);
-  else owners.set(cell, change.owner);
+  entry.blocks.delete(cell);
+  if (change.owner === null) entry.owners.delete(cell);
+  else entry.owners.set(cell, change.owner);
 };
 
 /** Starts one Body's ownership client: subscribes to the change events and answers lookups. */
@@ -179,7 +208,13 @@ export function startBlockOwners(options: BlockOwnersOptions): BlockOwners {
   const fetchChunk = async (world: string, cx: number, cz: number, key: string): Promise<void> => {
     const failed = (reason: string): void => {
       log(`block owner query for ${world} ${cx},${cz} failed: ${reason}`);
-      store(key, { owners: new Map(), complete: false, failed: true, fetchedAt: now() });
+      store(key, {
+        owners: new Map(),
+        blocks: new Map(),
+        complete: false,
+        failed: true,
+        fetchedAt: now(),
+      });
     };
     const started = now();
     counters.query();
@@ -198,7 +233,7 @@ export function startBlockOwners(options: BlockOwnersOptions): BlockOwners {
     }
     let reply: unknown;
     try {
-      reply = JSON.parse(decoder.decode(msg.data));
+      reply = withoutMalformedBlocks(JSON.parse(decoder.decode(msg.data)));
     } catch (error) {
       counters.settled('error', now() - started);
       failed(String(error));
@@ -218,11 +253,19 @@ export function startBlockOwners(options: BlockOwnersOptions): BlockOwners {
       return;
     }
     counters.settled(answer.truncated === true ? 'truncated' : 'answered', now() - started);
-    const owners = new Map<string, string>();
-    for (const block of answer.blocks) owners.set(cellKey(block.x, block.y, block.z), block.owner);
-    for (const change of racing.get(key) ?? []) applyChange(owners, change);
+    for (const block of answer.blocks) {
+      if (block.block !== undefined) counters.block(block.block);
+    }
+    const entry: Pick<ChunkEntry, 'owners' | 'blocks'> = { owners: new Map(), blocks: new Map() };
+    for (const block of answer.blocks) {
+      const cell = cellKey(block.x, block.y, block.z);
+      entry.owners.set(cell, block.owner);
+      if (block.block !== undefined) entry.blocks.set(cell, block.block);
+    }
+    for (const change of racing.get(key) ?? []) applyChange(entry, change);
     store(key, {
-      owners,
+      owners: entry.owners,
+      blocks: entry.blocks,
       complete: answer.truncated !== true,
       failed: false,
       fetchedAt: now(),
@@ -262,7 +305,10 @@ export function startBlockOwners(options: BlockOwnersOptions): BlockOwners {
     chunks.delete(key);
     chunks.set(key, entry);
     counters.lookup(true);
-    return { known: true, owner: entry.owners.get(cellKey(x, y, z)) ?? null };
+    const cell = cellKey(x, y, z);
+    const owner = entry.owners.get(cell) ?? null;
+    const block = owner === null ? undefined : entry.blocks.get(cell);
+    return block === undefined ? { known: true, owner } : { known: true, owner, block };
   };
 
   const onChanged = (err: unknown, msg: { data: Uint8Array }): void => {
@@ -278,7 +324,7 @@ export function startBlockOwners(options: BlockOwnersOptions): BlockOwners {
     const key = chunkKey(change.world, chunkOf(change.x), chunkOf(change.z));
     racing.get(key)?.push(change);
     const entry = chunks.get(key);
-    if (entry !== undefined) applyChange(entry.owners, change);
+    if (entry !== undefined) applyChange(entry, change);
   };
 
   const subscription = transport.subscribe(blockownerChangedSubject(options.shard), {

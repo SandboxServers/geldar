@@ -1,23 +1,14 @@
 // The Body's proficiency cache (AN-11b; decisions 0280, 0186 D-CS-04 and D-CS-07).
 // Until a valid reply arrives it serves zeros, records degraded and retries.
-// Only a valid reply changes what the cache holds (levels, xp, baseline, version). A reply is adopted when its version
-// is at least the cached one, so a reply that repeats the cached version still fills the baseline and the other
-// domains, and an older reply is ignored (a reconnect cannot undo a newer level).
+// Only a valid reply changes what the cache holds (levels, xp, version). The reply carries no sheet (AN-11c): the
+// adopted sheet is operator-readable only. A reply is adopted when its version is at least the cached one, so a reply
+// that repeats the cached version still fills the other domains, and an older reply is ignored (a reconnect cannot
+// undo a newer level).
 // A level push is an untrusted hint. 0280 records that the body role can publish on the level subject until the ACL
 // follow-up lands, so a push never changes the cache by itself. A valid push that is newer than the cache starts one
 // confirming request; repeated pushes while it is in flight start nothing more.
-// CharacterSheet and Score are psyche's types; the reply's sheet is converted at the boundary by normalizeSheet.
-import { createHash } from 'node:crypto';
 import { validateProficiencyLevelPayload, validateProficiencyState } from '@geldar/contract';
-import {
-  type CharacterSheet,
-  canonicalSheetJson,
-  DEFAULT_THRESHOLDS,
-  type Domain,
-  type Level,
-  levelForXp,
-  normalizeSheet,
-} from '@geldar/psyche';
+import { DEFAULT_THRESHOLDS, type Domain, type Level, levelForXp } from '@geldar/psyche';
 
 export interface StateTransport {
   request(subject: string, body: string, timeoutMs: number): Promise<string>; // rejects on timeout or no responders
@@ -26,11 +17,9 @@ export interface StateTransport {
 
 type DomainLevel = { level: Level; xp: number };
 type Levels = Record<Domain, DomainLevel>;
-type BaselineSheet = { sheet: CharacterSheet; hash: string };
 interface ParsedState {
   version: number;
   levels: Levels;
-  sheet: BaselineSheet | null;
 }
 
 const DOMAINS: readonly Domain[] = [
@@ -89,7 +78,6 @@ export class ProficiencyCache {
   #levels: Levels = zeroLevels();
   #version = 0;
   #adopted = false;
-  #sheet: BaselineSheet | null = null;
   #degraded = true;
   #loggedDegraded = false;
   #loggedInvalidReply = false;
@@ -147,10 +135,6 @@ export class ProficiencyCache {
 
   get degraded(): boolean {
     return this.#degraded;
-  }
-
-  get baseline(): { sheet: CharacterSheet; hash: string } | null {
-    return this.#sheet;
   }
 
   // Used on reconnect. Keeps what was adopted before if the request fails.
@@ -238,13 +222,12 @@ export class ProficiencyCache {
   }
 
   // Adopts a reply whose version is at least the cached one. The first adoption always wins, so a cold start at
-  // version 0 fills the baseline.
+  // version 0 fills the cache.
   #adoptReply(state: ParsedState): void {
     if (this.#adopted && state.version < this.#version) return;
     this.#adopted = true;
     this.#version = state.version;
     this.#levels = state.levels;
-    if (state.sheet) this.#sheet = state.sheet;
   }
 
   #parseState(body: string): ParsedState | null {
@@ -258,18 +241,7 @@ export class ProficiencyCache {
       if (!isCount(xp) || levelForXp(xp, this.#thresholds) !== level) return null;
       levels[d] = { level: level as Level, xp };
     }
-    let sheet: BaselineSheet | null = null;
-    if (value.sheet !== undefined) {
-      const normalized = normalizeSheet(value.sheet);
-      if (!normalized.ok) return null;
-      // The reply's sheet_hash is kept as sent, not recomputed: the sink computes it over the canonical sheet
-      // (AN-02b), and the Body does not re-derive it. Only when the reply has none is it computed here.
-      const hash =
-        value.sheet_hash ??
-        createHash('sha256').update(canonicalSheetJson(normalized.sheet)).digest('hex');
-      sheet = { sheet: normalized.sheet, hash };
-    }
-    return { version: value.version, levels, sheet };
+    return { version: value.version, levels };
   }
 
   // The log is the Body's; a log that throws must not stop the cache, so every line goes through here.

@@ -146,10 +146,60 @@ describe('ownership counters (decision 0217)', () => {
       'queries',
       'truncated',
       'unknown',
+      'with_block',
     ];
     const line = parse(lines[0]);
     expect(Object.keys(line.total).sort()).toEqual(documented);
-    expect(Object.keys(line.interval).sort()).toEqual(documented);
+    expect(Object.keys(line.interval).sort()).toEqual([...documented, 'blocks', 'other'].sort());
+    counters.stop();
+  });
+
+  it('counts the parsed block names: with_block in both, and a per-name count in the interval', () => {
+    const lines: string[] = [];
+    const counters = startOwnershipCounters({ diag: sink(lines) });
+    counters.query();
+    counters.block('farmland');
+    counters.block('farmland');
+    counters.block('dirt');
+    vi.advanceTimersByTime(OWNERSHIP_LOG_INTERVAL_MS);
+    const line = parse(lines[0]);
+    expect(line.total.with_block).toBe(3);
+    expect(line.interval.with_block).toBe(3);
+    expect(line.interval.blocks).toEqual({ farmland: 2, dirt: 1 });
+    expect(line.interval.other).toBe(0);
+    expect(line.total).not.toHaveProperty('blocks');
+    counters.stop();
+  });
+
+  it('caps the names at 8 per interval: a ninth distinct name counts under other, a known name still counts', () => {
+    const lines: string[] = [];
+    const counters = startOwnershipCounters({ diag: sink(lines) });
+    counters.query();
+    for (let i = 0; i < 10; i++) counters.block(`block_${i}`);
+    counters.block('block_0');
+    vi.advanceTimersByTime(OWNERSHIP_LOG_INTERVAL_MS);
+    const line = parse(lines[0]);
+    expect(Object.keys(line.interval.blocks ?? {})).toHaveLength(8);
+    expect(line.interval.blocks).toMatchObject({ block_0: 2, block_7: 1 });
+    expect(line.interval.blocks).not.toHaveProperty('block_8');
+    expect(line.interval.other).toBe(2);
+    expect(line.total.with_block).toBe(11);
+    counters.stop();
+  });
+
+  it('the next interval starts its names and other again; the total keeps with_block', () => {
+    const lines: string[] = [];
+    const counters = startOwnershipCounters({ diag: sink(lines) });
+    counters.query();
+    for (let i = 0; i < 9; i++) counters.block(`block_${i}`);
+    vi.advanceTimersByTime(OWNERSHIP_LOG_INTERVAL_MS);
+    counters.query();
+    counters.block('dirt');
+    vi.advanceTimersByTime(OWNERSHIP_LOG_INTERVAL_MS);
+    const second = parse(lines[1]);
+    expect(second.interval.blocks).toEqual({ dirt: 1 });
+    expect(second.interval.other).toBe(0);
+    expect(second.total.with_block).toBe(10);
     counters.stop();
   });
 

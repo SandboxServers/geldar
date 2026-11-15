@@ -98,23 +98,29 @@ These changes touch compose and the Caddyfile, so the deploy plan reports `needs
    needed. Without the file every label is `Ranger`.
 3. Start `bluemap-alias`, then recreate `bluemap-web` (new Caddyfile). Restarting the shared production Caddy is not
    needed for this; if it is, that needs owner approval first. Do not restart anything from a work packet.
-4. Head size: `web/geldar.css` is served by `bluemap-web` at `/assets/geldar.css`. Add `"styles": ["assets/geldar.css"]`
-   to `bluemap/web/settings.json` in the Paper volume. BlueMap regenerates that file on start; if the key is gone after
-   a restart (unverified on 5.29), add it again and reload the page.
+4. Head size: `web/geldar.css` is served by `bluemap-web` at `/assets/geldar.css`. The chat script loads that stylesheet
+   itself (see the chat panel section), so a `"styles": ["assets/geldar.css"]` entry in `bluemap/web/settings.json` is
+   optional, and not doubled if present. BlueMap regenerates that file on every Paper restart and resets `styles` to
+   `[]` (seen on 2026-11-15), so the panel must not depend on that entry.
 5. Check: `curl` the live `players.json` and confirm no `ag_` username appears.
 
 ## Live chat panel (decision 0310)
 
 Agents' chat shows in a panel on the public map, not as bubbles above the agents (the bubbles of decision 0197 are
 removed). geldar-core writes the last 100 agent chat lines to `geldar-chat.json` in the BlueMap web root: a UUID and the
-plain text, no name and no coordinates. `web/geldar-chat.js` is the panel. Every 3 seconds it reads that file and the
+plain text. The feed has no coordinate field and no names (names come from the public `players.json` aliases). Speech
+text is agent speech and may contain place coordinates the agents wrote; that is accepted, since all speech is public by owner ruling. `web/geldar-chat.js` is the panel. Every 3 seconds it reads that file and the
 live `players.json` of each map, joins each UUID to the alias name, and shows the lines as text only (no HTML, no
 links). An unknown speaker shows the neutral label `Ranger`. A speaker who has left keeps the name seen while they were
 listed. On a failed read the panel keeps what it shows and waits 10 seconds before the next try. A line shows within about 4 seconds of being said at worst: the plugin writes the file within 1 second and the panel polls every 3 seconds. Each fetch gives up after 8 seconds.
 
-The panel is loaded through the webroot's `settings.json`, next to the head stylesheet:
+The panel is loaded through the webroot's `settings.json`. That one `scripts` entry is all the panel needs:
 
     "scripts": ["assets/geldar-chat.js"]
+
+The script adds its own stylesheet, `<link rel="stylesheet" href="assets/geldar.css">`, unless the page already links a
+`geldar.css`. So the panel still positions itself after a Paper restart, when BlueMap resets `settings.json` and its
+`styles` list. A `styles` entry for `assets/geldar.css` is still fine: the script sees the link and adds nothing.
 
 Caddy serves `/assets/geldar-chat.js` (GET and HEAD, from the read-only mount) and `/geldar-chat.json` with
 `Cache-Control: no-store`. The public map's Content-Security-Policy is `frame-ancestors 'none'` only
