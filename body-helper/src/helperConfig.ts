@@ -3,7 +3,7 @@
 // that group or others can read, or that root does not own, is refused with a clear error. A bad cap is a start
 // failure like any other bad value: the helper exits before it connects.
 import { globalBodyCapFromEnv } from './config.ts';
-import type { BodyLimits, BodyWiring } from './template.ts';
+import { type BodyLimits, type BodyWiring, DEFAULT_NETWORK, DEFAULT_STACK } from './template.ts';
 
 export type Env = Readonly<Record<string, string | undefined>>;
 
@@ -52,6 +52,12 @@ function positive(env: Env, name: string, fallback?: number, max?: number): numb
   return Number(raw);
 }
 
+/** An unset or empty value takes the fallback (today's fixed value for the stack wiring). */
+function withDefault(env: Env, name: string, fallback: string): string {
+  const raw = env[name];
+  return raw === undefined || raw === '' ? fallback : raw;
+}
+
 /** A root-only secret file: no group or other bits, owned by root, not empty. Errors name the variable and path. */
 export function readSecret(name: string, path: string, fs: SecretFs): string {
   let mode: number;
@@ -78,6 +84,13 @@ export function loadHelperConfig(env: Env, fs: SecretFs): HelperConfig {
     throw new Error('GELDAR_SHARD must be lower-case letters, digits or hyphens');
   const uid = env.GELDAR_SERVICE_UID ?? '1000';
   if (!/^\d+$/.test(uid)) throw new Error('GELDAR_SERVICE_UID must be digits');
+  const network = withDefault(env, 'GELDAR_NETWORK', DEFAULT_NETWORK);
+  // A Docker network name: letters, digits, and the marks . _ - after the first character.
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(network))
+    throw new Error('GELDAR_NETWORK must be a Docker network name');
+  const stack = withDefault(env, 'GELDAR_STACK', DEFAULT_STACK);
+  if (!/^[a-z0-9-]+$/.test(stack))
+    throw new Error('GELDAR_STACK must be lower-case letters, digits or hyphens');
   return {
     shard,
     natsUrl: required(env, 'GELDAR_NATS_URL'),
@@ -105,6 +118,8 @@ export function loadHelperConfig(env: Env, fs: SecretFs): HelperConfig {
       natsUser: required(env, 'GELDAR_NATS_USER'),
       natsSecretHostPath: required(env, 'GELDAR_BODY_NATS_SECRET_HOST_PATH'),
       shardHostPath: required(env, 'GELDAR_BODY_SHARD_HOST_PATH'),
+      network,
+      stack,
     },
     limits: {
       nanoCpus: positive(env, 'GELDAR_BODY_NANO_CPUS'),
