@@ -27,6 +27,8 @@ function waterStack(): Record<string, string> {
   grid['0,66,0'] = 'stone';
   grid['0,67,0'] = 'oak_planks';
   grid['0,68,0'] = 'cobblestone';
+  // A solid floor under the cell to the east, so it is a safe air exit one step away (not a void).
+  grid['1,63,0'] = 'stone';
   return grid;
 }
 

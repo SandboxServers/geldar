@@ -98,9 +98,49 @@ function passable(block: ScanBlock | null): boolean {
   return block !== null && block.boundingBox === 'empty';
 }
 
+/** A cell a reachability search reached: its column and the steps from the Body's column to it. */
+interface ReachedCell {
+  x: number;
+  z: number;
+  steps: number;
+}
+
+/**
+ * Breadth-first search from the Body's column, out to `radius` steps through the cells `enter` admits.
+ * Returns the cells reached in search order (the Body's own column first) and the cell each was reached
+ * from. A solid block in the way is a wall, so a route goes round it. Shared by the undercut column
+ * search and the sideways exit search, so both count only cells the Body can swim to.
+ */
+function reachCells(
+  from: { x: number; y: number; z: number },
+  radius: number,
+  enter: (x: number, z: number) => boolean,
+): { cells: ReachedCell[]; parent: Map<string, { x: number; z: number } | null> } {
+  const cx = Math.floor(from.x);
+  const cz = Math.floor(from.z);
+  const key = (x: number, z: number): string => `${x},${z}`;
+  const parent = new Map<string, { x: number; z: number } | null>([[key(cx, cz), null]]);
+  const seen = new Set<string>([key(cx, cz)]);
+  const cells: ReachedCell[] = [{ x: cx, z: cz, steps: 0 }];
+  for (let at = 0; at < cells.length; at++) {
+    const cell = cells[at] as ReachedCell;
+    if (cell.steps === radius) continue;
+    for (const side of SIDES) {
+      const x = cell.x + side.dx;
+      const z = cell.z + side.dz;
+      if (seen.has(key(x, z)) || !enter(x, z)) continue;
+      seen.add(key(x, z));
+      parent.set(key(x, z), { x: cell.x, z: cell.z });
+      cells.push({ x, z, steps: cell.steps + 1 });
+    }
+  }
+  return { cells, parent };
+}
+
 /**
  * The nearest column within 4 blocks whose cells at the Body's head level and the one above are
- * passable, so a swimmer that steers there rises into air. Null when no such column is in range.
+ * passable, so a swimmer that steers there rises into air. The Body must be able to swim to it: a
+ * solid block in the way is a wall, and the route may go round it (up to 8 steps). Null when none is in reach.
  */
 export function findBreathingColumn(
   read: BlockReader,
@@ -109,18 +149,23 @@ export function findBreathingColumn(
   const feet = Math.floor(from.y);
   const cx = Math.floor(from.x);
   const cz = Math.floor(from.z);
+  const { cells } = reachCells(
+    from,
+    LATERAL_RADIUS,
+    (x, z) => passable(read(x, feet, z)) && passable(read(x, feet + 1, z)),
+  );
   let best: { x: number; z: number } | null = null;
   let bestDistance = Number.POSITIVE_INFINITY;
-  for (let dx = -BREATH_RADIUS; dx <= BREATH_RADIUS; dx++) {
-    for (let dz = -BREATH_RADIUS; dz <= BREATH_RADIUS; dz++) {
-      const distance = dx * dx + dz * dz;
-      if (distance >= bestDistance) continue;
-      const x = cx + dx;
-      const z = cz + dz;
-      if (!passable(read(x, feet + 1, z)) || !passable(read(x, feet + 2, z))) continue;
-      best = { x, z };
-      bestDistance = distance;
+  // A tie goes to the smaller x, then z, as a scan of the square in that order gives.
+  const ordered = [...cells].sort((a, b) => a.x - b.x || a.z - b.z);
+  for (const cell of ordered) {
+    const distance = (cell.x - cx) ** 2 + (cell.z - cz) ** 2;
+    if (distance > BREATH_RADIUS * BREATH_RADIUS || distance >= bestDistance) continue;
+    if (!passable(read(cell.x, feet + 1, cell.z)) || !passable(read(cell.x, feet + 2, cell.z))) {
+      continue;
     }
+    best = { x: cell.x, z: cell.z };
+    bestDistance = distance;
   }
   return best;
 }
@@ -191,28 +236,16 @@ export function findLateralExit(
   const cx = Math.floor(from.x);
   const cz = Math.floor(from.z);
   const key = (x: number, z: number): string => `${x},${z}`;
-  const parent = new Map<string, { x: number; z: number } | null>([[key(cx, cz), null]]);
-  const steps = new Map<string, number>([[key(cx, cz), 0]]);
-  const queue: Array<{ x: number; z: number }> = [{ x: cx, z: cz }];
-  const found: Array<{ x: number; z: number; steps: number }> = [];
-  for (let at = 0; at < queue.length; at++) {
-    const cell = queue[at] as { x: number; z: number };
-    const reached = steps.get(key(cell.x, cell.z)) ?? 0;
-    if (reached > 0 && breathableAt(read, cell.x, feet, cell.z) && supported(read, cell.x, feet, cell.z)) {
-      found.push({ x: cell.x, z: cell.z, steps: reached });
-    }
-    if (reached === LATERAL_RADIUS) continue;
-    for (const side of SIDES) {
-      const x = cell.x + side.dx;
-      const z = cell.z + side.dz;
-      if (steps.has(key(x, z))) continue;
-      if (!swimmable(read(x, feet, z)) || !swimmable(read(x, feet + 1, z))) continue;
-      if (!supported(read, x, feet, z)) continue;
-      steps.set(key(x, z), reached + 1);
-      parent.set(key(x, z), cell);
-      queue.push({ x, z });
-    }
-  }
+  const { cells, parent } = reachCells(from, LATERAL_RADIUS, (x, z) => {
+    if (!swimmable(read(x, feet, z)) || !swimmable(read(x, feet + 1, z))) return false;
+    return supported(read, x, feet, z);
+  });
+  const found = cells.filter(
+    (cell) =>
+      cell.steps > 0 &&
+      breathableAt(read, cell.x, feet, cell.z) &&
+      supported(read, cell.x, feet, cell.z),
+  );
   const nearest = found[0];
   if (!nearest) return null;
   const kept = keep ? found.find((cell) => cell.x === keep.x && cell.z === keep.z) : undefined;
