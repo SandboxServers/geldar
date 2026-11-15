@@ -361,17 +361,63 @@ export async function lastResortDig(
 }
 
 /**
+ * The call's own deadline in seconds at timeScale 1 (decision 0210 follow-up): the call returns its
+ * result this long after it starts, before the 30 s action limit ends it as a bare "timeout". Scaled by
+ * the time scale, as the action timeout is.
+ */
+export const UNSTICK_DEADLINE_S = 25;
+
+/**
  * Gets a stuck bot free, with bare hands and no blocks placed: first walks or jumps in each of the
  * eight directions (including a deliberate drop off a ledge when `dropAllowed`), then digs sideways
  * (four directions) or down through soft blocks. At most `MAX_DIGS` digs and one try per direction.
+ * The steps run against the call's deadline: at the deadline, or on a cancel, the steps are aborted
+ * and the call returns at once, even if a step is stalled and never ends. A deadline is a failed call;
+ * a cancel is cancelled.
  */
 export async function unstick(ctx: ActionContext): Promise<ActionOutcome> {
+  if (ctx.signal.aborted) return cancelled();
   const started = Date.now();
+  const tried: string[] = [];
+  const deadline = new AbortController();
+  let stopNow: (value: null) => void = () => undefined;
+  const stopped = new Promise<null>((resolve) => {
+    stopNow = resolve;
+  });
+  const onStop = (): void => {
+    deadline.abort();
+    stopNow(null);
+  };
+  const timer = setTimeout(onStop, UNSTICK_DEADLINE_S * 1000 * ctx.timeScale);
+  ctx.signal.addEventListener('abort', onStop, { once: true });
+  try {
+    const outcome = await Promise.race([
+      unstickSteps({ ...ctx, signal: deadline.signal }, started, tried),
+      stopped,
+    ]);
+    if (outcome !== null) return outcome;
+  } finally {
+    clearTimeout(timer);
+    ctx.signal.removeEventListener('abort', onStop);
+  }
+  if (ctx.signal.aborted) return cancelled();
+  return failed(
+    'blocked',
+    `unstick stopped after ${UNSTICK_DEADLINE_S} s; the way out was not cleared`,
+    { tried: [...tried] },
+  );
+}
+
+/** The steps of one `unstick` call. `tried` is the call's list of steps, shared with `unstick`. */
+async function unstickSteps(
+  ctx: ActionContext,
+  started: number,
+  tried: string[],
+): Promise<ActionOutcome> {
   const { bot } = ctx;
   const where = (): Vec3 => bot.entity.position.floored();
   const health = (): number => bot.health ?? 20;
   let tries = 0;
-  const tried: string[] = [];
   const note = (what: string): void => {
     if (!tried.includes(what)) tried.push(what);
   };
