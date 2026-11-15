@@ -76,9 +76,9 @@ describe('sleep failure detail: final_position and beds_tried', () => {
       const outcome = await sleep(bot);
       expect(outcome).toMatchObject({
         status: 'failed',
-        reason: 'blocked',
+        reason: 'timeout',
         message:
-          'tried 3 of 6 nearby beds; the search time ran out; last: the bed is occupied; 6 beds within 32 blocks, 0 occupied; ended at 13, 64, 0',
+          'tried 3 of 6 nearby beds, 0 occupied; the time limit ended the search; last: the bed is occupied; 6 beds within 32 blocks, 0 occupied; ended at 13, 64, 0',
         detail: {
           final_position: { x: 13, y: 64, z: 0 },
           beds_tried: [

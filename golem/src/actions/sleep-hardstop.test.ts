@@ -21,8 +21,10 @@ describe('sleep: the hard stop (decision 0190)', () => {
     const outcome = await sleep(bot, SCALE);
     expect(outcome).toMatchObject({
       status: 'failed',
-      reason: 'blocked',
-      message: expect.stringMatching(/^tried 1 of 3 nearby beds; the search time ran out; last: /),
+      reason: 'timeout',
+      message: expect.stringMatching(
+        /^tried 1 of 3 nearby beds, 0 occupied; the time limit ended the search; last: /,
+      ),
     });
     expect(bot.sleep).not.toHaveBeenCalled();
     expect(moveNear).toHaveBeenCalledWith(
@@ -47,9 +49,9 @@ describe('sleep: the hard stop (decision 0190)', () => {
       expect(vi.mocked(moveNear).mock.calls[0]?.[3].signal.aborted).toBe(true);
       expect(await outcome).toMatchObject({
         status: 'failed',
-        reason: 'blocked',
+        reason: 'timeout',
         message: expect.stringMatching(
-          /^tried 1 of 3 nearby beds; the search time ran out; last: /,
+          /^tried 1 of 3 nearby beds, 0 occupied; the time limit ended the search; last: /,
         ),
       });
     } finally {
@@ -65,8 +67,10 @@ describe('sleep: the hard stop (decision 0190)', () => {
     const outcome = await sleep(bot, SCALE);
     expect(outcome).toMatchObject({
       status: 'failed',
-      reason: 'blocked',
-      message: expect.stringMatching(/^tried 1 of 3 nearby beds; the search time ran out; last: /),
+      reason: 'timeout',
+      message: expect.stringMatching(
+        /^tried 1 of 3 nearby beds, 0 occupied; the time limit ended the search; last: /,
+      ),
     });
     expect(bot.sleep).toHaveBeenCalledTimes(1);
   });
@@ -83,8 +87,10 @@ describe('sleep: the hard stop (decision 0190)', () => {
     const outcome = await sleep(bot, SCALE);
     expect(outcome).toMatchObject({
       status: 'failed',
-      reason: 'blocked',
-      message: expect.stringMatching(/^tried 1 of 1 nearby beds; the search time ran out; last: /),
+      reason: 'timeout',
+      message: expect.stringMatching(
+        /^tried 1 of 1 nearby beds, 0 occupied; the time limit ended the search; last: /,
+      ),
     });
     expect(moveNear).toHaveBeenNthCalledWith(2, bot, OTHER_HALF.position, 1, expect.anything());
     expect(vi.mocked(moveNear).mock.calls[1]?.[3].signal.aborted).toBe(true);

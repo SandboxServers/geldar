@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import type { ActionOutcome, JsonValue } from './outcome.ts';
 import type { BedCensus } from './sleep-census.ts';
 import type { Hostile } from './sleep-hostiles.ts';
+import type { SleepersLine } from './sleepers.ts';
 
 /** One bed the bed loop tried: the bed block the attempt ended on, and the reason it gave. */
 export interface BedTry {
@@ -74,4 +75,12 @@ export function withSleepDetail(
   return outcome.status === 'failed'
     ? { ...outcome, detail: { ...outcome.detail, ...detail } }
     : outcome;
+}
+
+/** The sleepers fact the result carries: `sleepers` as `{asleep, needed}` or `skipped`; no key when no line was seen. */
+export function sleepersDetail(line: SleepersLine | undefined): Record<string, JsonValue> {
+  if (line === undefined) return {};
+  return {
+    sleepers: line === 'skipped' ? 'skipped' : { asleep: line.asleep, needed: line.needed },
+  };
 }

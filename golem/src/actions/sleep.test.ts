@@ -205,8 +205,10 @@ describe('sleep', () => {
     const { outcome, bot } = await sleepWithClock(12_000);
     expect(outcome).toMatchObject({
       status: 'failed',
-      reason: 'blocked',
-      message: expect.stringMatching(/^tried 3 of 6 nearby beds; the search time ran out; last: /),
+      reason: 'timeout',
+      message: expect.stringMatching(
+        /^tried 3 of 6 nearby beds, 0 occupied; the time limit ended the search; last: /,
+      ),
     });
     expect(bot.sleep).toHaveBeenCalledTimes(3);
     expect(moveNear).toHaveBeenCalledTimes(3);
@@ -217,7 +219,9 @@ describe('sleep', () => {
     const { outcome, bot } = await sleepWithClock(10_000);
     expect(outcome).toMatchObject({
       status: 'failed',
-      message: expect.stringMatching(/^tried 3 of 6 nearby beds; the search time ran out/),
+      message: expect.stringMatching(
+        /^tried 3 of 6 nearby beds, 0 occupied; the time limit ended the search/,
+      ),
     });
     expect(bot.sleep).toHaveBeenCalledTimes(3);
   });
@@ -227,7 +231,9 @@ describe('sleep', () => {
     const { outcome, bot } = await sleepWithClock(12_000, 0.5);
     expect(outcome).toMatchObject({
       status: 'failed',
-      message: expect.stringMatching(/^tried 2 of 6 nearby beds; the search time ran out/),
+      message: expect.stringMatching(
+        /^tried 2 of 6 nearby beds, 0 occupied; the time limit ended the search/,
+      ),
     });
     expect(bot.sleep).toHaveBeenCalledTimes(2);
   });
