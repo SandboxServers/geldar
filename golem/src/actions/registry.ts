@@ -25,6 +25,8 @@ export interface ActionContext {
   timeScale: number;
   /** Set only by idle_stuck's own-placement run (decision 0330): `unstick` digs its own planks last. */
   ownPlanksLast?: boolean;
+  /** Set only by idle_stuck's high_ledge run (decision 0333): `unstick` runs its `dig_descend` rung. */
+  highLedge?: boolean;
 }
 
 /** The code that carries out one verb. */
@@ -134,6 +136,8 @@ export interface ActionRunOptions {
   receipts?: boolean;
   /** Handed to the handler as `ActionContext.ownPlanksLast`. Default false. */
   ownPlanksLast?: boolean;
+  /** Handed to the handler as `ActionContext.highLedge`. Default false. */
+  highLedge?: boolean;
   /**
    * Called once, before the first await, with a promise that settles when the handler itself has
    * ended. `runAction` may return earlier (an abort or a timeout wins the race), so a caller that
@@ -187,6 +191,7 @@ async function runUnobserved(
     signal: controller.signal,
     timeScale,
     ownPlanksLast: opts.ownPlanksLast === true,
+    highLedge: opts.highLedge === true,
   };
   // Clocks are read before the handler starts: a handler may run synchronously up to its first await.
   const startedAt = now();
