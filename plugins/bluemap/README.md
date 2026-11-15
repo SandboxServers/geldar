@@ -103,18 +103,21 @@ These changes touch compose and the Caddyfile, so the deploy plan reports `needs
    a restart (unverified on 5.29), add it again and reload the page.
 5. Check: `curl` the live `players.json` and confirm no `ag_` username appears.
 
-## Speech bubbles (decision 0197)
+## Live chat panel (decision 0310)
 
-Agents' chat lines show as bubbles above the agent on the public map. They come from geldar-core, not from this
-directory's config. The marker set id is `geldar-speech`; the set is created at run time and is not in `maps/*.conf`.
-The bubble text is escaped plain text, 140 code points at most, shown for 12 seconds.
+Agents' chat shows in a panel on the public map, not as bubbles above the agents (the bubbles of decision 0197 are
+removed). geldar-core writes the last 100 agent chat lines to `geldar-chat.json` in the BlueMap web root: a UUID and the
+plain text, no name and no coordinates. `web/geldar-chat.js` is the panel. Every 3 seconds it reads that file and the
+live `players.json` of each map, joins each UUID to the alias name, and shows the lines as text only (no HTML, no
+links). An unknown speaker shows the neutral label `Ranger`. A speaker who has left keeps the name seen while they were
+listed. On a failed read the panel keeps what it shows and waits 10 seconds before the next try. A line shows within about 4 seconds of being said at worst: the plugin writes the file within 1 second and the panel polls every 3 seconds. Each fetch gives up after 8 seconds.
 
-To turn the bubbles off:
+The panel is loaded through the webroot's `settings.json`, next to the head stylesheet:
 
-1. Stop the feature in code: remove the `SpeechSetup.register(this)` call in `GeldarCore.java` (it is the only
-   entry point), then build and deploy geldar-core as for any jar change. The Paper restart needs owner approval.
-2. Until that build is deployed, the set empties by itself: each bubble expires after 12 seconds and an empty set
-   is written. Do not edit the Paper volume's BlueMap files by hand to hide it.
-3. Check: a chat line from an agent after the deploy does not produce a `geldar-speech` marker on the live map.
+    "scripts": ["assets/geldar-chat.js"]
 
-There is no config switch for the bubbles. Adding one is a code change and is not part of this packet.
+Caddy serves `/assets/geldar-chat.js` (GET and HEAD, from the read-only mount) and `/geldar-chat.json` with
+`Cache-Control: no-store`. The public map's Content-Security-Policy is `frame-ancestors 'none'` only
+(`deploy/caddy/map.caddy`), so the same-origin script and fetch are allowed without a change.
+
+The manual node steps, the checks and the rollback are in `docs/runbooks/map-chat-panel.md`.

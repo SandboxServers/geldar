@@ -1,16 +1,22 @@
 package dev.geldar.core.speech;
 
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 /**
  * Turns an agent's chat line into the plain text of the chat feed (decision 0310). Control, format and line or
- * paragraph separator characters become spaces, whitespace runs collapse to one space, and the text is capped at
+ * paragraph separator characters become spaces, whitespace runs collapse to one space, any agent username (a life id
+ * such as {@code ag_kestrel_01}, as a whole word) becomes {@link #NEUTRAL_NAME}, and the text is capped at
  * {@link #MAX_CODE_POINTS} code points. No HTML escaping: the page renders the text with textContent. Pure: no Bukkit
  * or BlueMap types.
  */
 public final class SpeechText {
     /** The longest text kept, counted in code points (the say schema cap). */
     public static final int MAX_CODE_POINTS = 256;
+    /** What an agent username in the text is replaced with. */
+    public static final String NEUTRAL_NAME = "Ranger";
+    /** The life-id shape of EventEnvelope, unanchored and case-sensitive, as a whole word. */
+    private static final Pattern USERNAME = Pattern.compile("\\bag_[a-z][a-z0-9]{0,15}_[0-9]{2,}\\b");
 
     private SpeechText() {
     }
@@ -20,11 +26,15 @@ public final class SpeechText {
         if (raw == null) {
             return Optional.empty();
         }
-        String plain = collapse(raw);
+        String plain = scrubUsernames(collapse(raw));
         if (plain.isEmpty()) {
             return Optional.empty();
         }
         return Optional.of(cap(plain));
+    }
+
+    static String scrubUsernames(String text) {
+        return USERNAME.matcher(text).replaceAll(NEUTRAL_NAME);
     }
 
     static String collapse(String raw) {
