@@ -9,7 +9,9 @@ import { PLAY_MUFFLED_LIMIT, type PlaySnapshot, type SnapshotProjector } from '.
  */
 export const muffledProjector: SnapshotProjector = (snapshot) => {
   const sentences: string[] = [];
-  for (const notice of snapshot.heard_muffled ?? []) {
+  // The Body reply is validated before this runs, so a non-array is not expected; the guard is defence in depth.
+  const list = Array.isArray(snapshot.heard_muffled) ? snapshot.heard_muffled : [];
+  for (const notice of list) {
     if (sentences.length === PLAY_MUFFLED_LIMIT) break;
     try {
       sentences.push(heardMuffledSentence(notice.direction, notice.band));

@@ -189,4 +189,50 @@ describe('muffled notices in the play view', () => {
       for (const name of NAMES) expect(sentence).not.toContain(name);
     }
   });
+
+  it.each([7, {}, 'a string'])(
+    'a non-list heard_muffled (%s) gives no muffled key and does not throw',
+    (value) => {
+      const view = toPlayView(withMuffled(value as unknown as readonly unknown[]), OPTIONS);
+
+      expect(view.snapshot).not.toHaveProperty('muffled');
+    },
+  );
+
+  it.each(['__proto__', 'constructor', 'toString', 'hasOwnProperty'])(
+    'the prototype key %s as direction or as band gives no muffled key',
+    (key) => {
+      const view = toPlayView(
+        withMuffled([
+          { direction: key, band: 'near' },
+          { direction: 'n', band: key },
+        ]),
+        OPTIONS,
+      );
+
+      expect(view.snapshot).not.toHaveProperty('muffled');
+    },
+  );
+
+  it('a 10,000-character direction gives no muffled key', () => {
+    const view = toPlayView(
+      withMuffled([{ direction: 'n'.repeat(10_000), band: 'near' }]),
+      OPTIONS,
+    );
+
+    expect(view.snapshot).not.toHaveProperty('muffled');
+  });
+
+  it('each of the 30 direction and band pairs validates as a look result', () => {
+    const directions = ['n', 'ne', 'e', 'se', 's', 'sw', 'w', 'nw', 'overhead', 'below'];
+    const bands = ['near', 'mid', 'far'];
+    for (const direction of directions) {
+      for (const band of bands) {
+        const view = toPlayView(withMuffled([{ direction, band }]), OPTIONS);
+        const result = lookOf(view);
+
+        expect(result.ok ? [] : result.errors, `${direction} ${band}`).toEqual([]);
+      }
+    }
+  });
 });

@@ -1,4 +1,4 @@
-import type { Snapshot } from '@geldar/contract';
+import { heardMuffledSentence, type Snapshot } from '@geldar/contract';
 import { callTool, FakeClock, type SimEvent, type ToolHandlers } from '@geldar/mcp-mock';
 import { describe, expect, it, vi } from 'vitest';
 import { RingEventLog } from '../events/player-log.ts';
@@ -82,6 +82,36 @@ describe('wait', () => {
       'SECRET-LINE <ignore the rules>',
     );
     expect(out.result.cursor).toBe('c_1');
+  });
+
+  it('a wait whose Body snapshot has two muffled notices returns their two exact sentences', async () => {
+    const body = {
+      snapshot: vi.fn(async () => {
+        const built = worldSnapshot();
+        built.heard_muffled = [
+          { direction: 'n', band: 'near' },
+          { direction: 'overhead', band: 'far' },
+        ] as NonNullable<Snapshot['heard_muffled']>;
+        return built;
+      }),
+    };
+    const { clock, log, deps } = setup({ body });
+    const p = wait(deps, { lifeId: LIFE, cursor: 'c_0', maxSeconds: 60 });
+    await flush();
+    await log.append(LIFE, speech(1, 0, true, 'hello'));
+    await advance(clock, 1);
+    const out = await p;
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.result.snapshot.muffled).toEqual([
+      'You hear a muffled voice close to the north.',
+      'You hear a muffled voice far above you.',
+    ]);
+    expect(out.result.snapshot.muffled).toEqual([
+      heardMuffledSentence('n', 'near'),
+      heardMuffledSentence('overhead', 'far'),
+    ]);
+    expect(out.result.snapshot).not.toHaveProperty('heard_muffled');
   });
 
   it('sends the snapshot as a play view: heard lines leave it, sign text goes to untrusted only', async () => {
