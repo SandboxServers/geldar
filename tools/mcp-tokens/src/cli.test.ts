@@ -209,6 +209,123 @@ describe('player retire', () => {
   });
 });
 
+const ADD_SHARD = `shard: phase0
+identity_mode: watched
+sovereign:
+  allowed: true
+  harnesses:
+    claude: { enabled: true }
+    codex: { enabled: false }
+  budget:
+    credits_per_real_hour: 30
+    cap_credits: 240
+`;
+
+describe('player add --model and set-model plumbing', () => {
+  it('player add --model puts the model in the agents INSERT', async () => {
+    const h = await harness();
+    const env = envOf(h);
+    await writeFile(env.shardFile, ADD_SHARD);
+    const inserts: unknown[][] = [];
+    const connect: Env['connect'] = async () => ({
+      query: async (text: string, values?: unknown[]) => {
+        if (text.startsWith('INSERT INTO agents')) inserts.push(values ?? []);
+        if (text.includes('FROM mcp_owners')) return { rows: [{ player_cap: 3 }] };
+        if (text.includes('FROM mcp_roster')) return { rows: [{ owner_id: 'jo', max_agents: 1 }] };
+        if (text.includes('count(*)')) return { rows: [{ n: 0 }] };
+        return { rows: [] };
+      },
+      end: async () => {},
+    });
+    const code = await run(
+      [
+        'player',
+        'add',
+        'ag-jo-01',
+        '--owner',
+        'jo',
+        '--life',
+        'ag_jo_01',
+        '--name',
+        'Jo',
+        '--harness',
+        'claude',
+        '--model',
+        'claude-sonnet-5.5',
+      ],
+      h.io,
+      { ...env, connect },
+    );
+    expect(h.err).toEqual([]);
+    expect(code).toBe(0);
+    expect(inserts).toHaveLength(1);
+    expect(inserts[0]).toContain('claude-sonnet-5.5');
+  });
+
+  it('set-model reports the declared model and runs one UPDATE', async () => {
+    const h = await harness();
+    const updates: { text: string; values: unknown[] | undefined }[] = [];
+    const connect: Env['connect'] = async () => ({
+      query: async (text: string, values?: unknown[]) => {
+        if (text.startsWith('UPDATE')) {
+          updates.push({ text, values });
+          return { rows: [{ agent_id: 'ag_jo_01' }] };
+        }
+        return { rows: [] };
+      },
+      end: async () => {},
+    });
+    const code = await run(['player', 'set-model', 'ag-jo-01', '--model', 'claude-x'], h.io, {
+      ...envOf(h),
+      connect,
+    });
+    expect(code).toBe(0);
+    expect(h.out.join('\n')).toContain('claude-x');
+    expect(updates).toHaveLength(1);
+    expect(updates[0]?.values).toEqual(['ag-jo-01', 'claude-x']);
+  });
+
+  it('set-model without --model exits non-zero and sends no UPDATE', async () => {
+    const h = await harness();
+    const calls: string[] = [];
+    const connect: Env['connect'] = async () => ({
+      query: async (text: string) => {
+        calls.push(text);
+        return { rows: [] };
+      },
+      end: async () => {},
+    });
+    const code = await run(['player', 'set-model', 'ag-jo-01'], h.io, { ...envOf(h), connect });
+    expect(code).not.toBe(0);
+    expect(calls.filter((t) => t.startsWith('UPDATE'))).toEqual([]);
+  });
+});
+
+describe('player set-model', () => {
+  it('refuses a model text that is not a model name and sends no UPDATE', async () => {
+    const h = await harness();
+    const calls: string[] = [];
+    const env = {
+      ...envOf(h),
+      connect: async () => ({
+        query: async (text: string) => {
+          calls.push(text);
+          return { rows: [] };
+        },
+        end: async () => {},
+      }),
+    };
+    const code = await run(
+      ['player', 'set-model', 'ag-jo-01', '--model', 'bad model; DROP'],
+      h.io,
+      env,
+    );
+    expect(code).not.toBe(0);
+    expect(calls.filter((text) => text.startsWith('UPDATE'))).toEqual([]);
+    expect(h.err.join('\n')).toContain('model must be');
+  });
+});
+
 describe('identity ban by provider account (F16)', () => {
   const PEPPER = 'p'.repeat(40);
 

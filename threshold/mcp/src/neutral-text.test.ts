@@ -14,6 +14,7 @@ const PLAYER: PlayerRecord = {
   displayName: 'Jason',
   harness: 'claude-code',
   status: 'active',
+  declaredModel: null,
 };
 
 /** Words a player must never read about the world's nature (decisions 0058 and 0059). */

@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { STANDARD_SHEET } from '@geldar/psyche';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 import { repoRoot } from '../config.ts';
@@ -86,5 +87,50 @@ describe('parsePlayerConfig', () => {
     const jason = players.find((p) => p.player_id === 'ag-jason-01');
     if (jason !== undefined) jason.name = ' ';
     expect(() => parsePlayerConfig(doc, 'ag-jason-01')).toThrow(/has no name/);
+  });
+});
+
+describe('the character block and the stored sheet', () => {
+  const SHEET = {
+    version: 1,
+    attributes: { curiosity: 5, common_sense: 2, cleverness: 4, aggression: 1 },
+    alignment: { law: 2, good: 4 },
+    op_modes: { explorer: 5, farmer: 2, miner: 3, builder: 4, crafter: 1, warrior: 2, nitwit: 3 },
+  };
+
+  function jasonOf(doc: Record<string, unknown>): Record<string, unknown> {
+    const players = sovereignOf(doc).players as Record<string, unknown>[];
+    return players.find((p) => p.player_id === 'ag-jason-01') as Record<string, unknown>;
+  }
+
+  it('carries the sheet into the replacement identity', async () => {
+    const doc = await shardDoc();
+    doc.character = { mode: 'sheet' };
+    jasonOf(doc).character_sheet = SHEET;
+    expect(parsePlayerConfig(doc, 'ag-jason-01').character?.sheet).toEqual(SHEET);
+  });
+
+  it('gives a sheet-mode player the standard sheet when it stores none', async () => {
+    const doc = await shardDoc();
+    doc.character = { mode: 'sheet' };
+    expect(parsePlayerConfig(doc, 'ag-jason-01').character?.sheet).toEqual(STANDARD_SHEET);
+  });
+
+  it('off yields no sheet even with a non-standard stored sheet', async () => {
+    const doc = await shardDoc();
+    doc.character = { mode: 'off' };
+    jasonOf(doc).character_sheet = SHEET;
+    const character = parsePlayerConfig(doc, 'ag-jason-01').character;
+    expect(character?.config.mode).toBe('off');
+    expect(character?.sheet).toBeNull();
+  });
+
+  it('refuses a malformed stored sheet and names the life and the field', async () => {
+    const doc = await shardDoc();
+    doc.character = { mode: 'sheet' };
+    jasonOf(doc).character_sheet = { ...SHEET, attributes: { ...SHEET.attributes, curiosity: 9 } };
+    expect(() => parsePlayerConfig(doc, 'ag-jason-01')).toThrow(
+      /ag_jason_01.*attributes\.curiosity/,
+    );
   });
 });

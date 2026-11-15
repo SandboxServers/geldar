@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { resolveComposePorts } from './compose-port-defaults.ts';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 type Service = Record<string, unknown>;
@@ -12,7 +13,7 @@ const colo = parse(readFileSync(`${ROOT}compose/colo.yml`, 'utf8'), { merge: tru
   services: Record<string, Service>;
 };
 
-const UID = '${GELDAR_SERVICE_UID:-1000}';
+const UID = `\${GELDAR_SERVICE_UID:-1000}`;
 // The official Postgres image reads POSTGRES_PASSWORD_FILE as root before it drops to its own postgres user.
 const ROOT_THEN_DROP = new Set(['postgres']);
 
@@ -64,6 +65,6 @@ describe('colo.yml services on the Caddy image', () => {
         'utf8',
       ),
     ).toMatch(/^:8100 \{/m);
-    expect(s.ports).toEqual(['127.0.0.1:8100:8100']);
+    expect(resolveComposePorts(s.ports)).toEqual(['127.0.0.1:8100:8100']);
   });
 });

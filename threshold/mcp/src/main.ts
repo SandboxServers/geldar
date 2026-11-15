@@ -23,7 +23,7 @@ import { safeLogLine } from './http/log.ts';
 import { declareMcpMetrics, MetricRegistry, recordToolCall, startTelemetry } from './metrics.ts';
 import type { KeepAlive, RateDecision, RateLimiter } from './ports.ts';
 import { type BucketManager, KvPresenceStore, openPresenceBucket } from './presence.ts';
-import { SovereignCallRecorder } from './record/sovereign-call.ts';
+import { cachedStampOf, SovereignCallRecorder } from './record/sovereign-call.ts';
 import { WorldClock } from './record/world-clock.ts';
 import { PgAgentStore } from './store/pg-agents.ts';
 import { PgBudgetLedger } from './store/pg-budget.ts';
@@ -327,11 +327,20 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       intentRunTooLongMs: config.sovereign.wake.intentRunTooLongSeconds * 1000,
     };
     const worldClock = new WorldClock();
+    const stampDirectory = new PgPlayerDirectory(pool);
     const recorder = new SovereignCallRecorder({
       sink: { publish: (id, event) => nats.publishCall(id, event) },
       shard: config.shard,
       clock: worldClock,
       drop: (reason) => log({ event: 'sovereign_call_dropped', reason }),
+      // The harness and declared model of the life, read at most once a minute per player.
+      stampOf: cachedStampOf(async (playerId) => {
+        const player = await stampDirectory.find(playerId);
+        if (player === null) return undefined;
+        return player.declaredModel === null
+          ? { harness: player.harness }
+          : { harness: player.harness, model: player.declaredModel };
+      }, 60_000),
     });
     const limiter = tokenBucketLimiter(
       bucketRules(config.sovereign.rateLimits, config.sovereign.ownerCapOwner),

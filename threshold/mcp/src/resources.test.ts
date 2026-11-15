@@ -28,6 +28,7 @@ const PLAYER: PlayerRecord = {
   displayName: 'Ranger',
   harness: 'claude-code',
   status: 'active',
+  declaredModel: null,
 };
 const SHARD = {
   chatRadius: 16,

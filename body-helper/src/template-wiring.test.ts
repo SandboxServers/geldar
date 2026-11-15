@@ -84,4 +84,94 @@ describe('network and stack wiring from the helper config', () => {
       'GELDAR_STACK must be lower-case letters, digits or hyphens',
     );
   });
+
+  // Docker's reserved modes, in any case: a start failure, never a spec.
+  it.each(['host', 'HOST', 'Host', 'bridge', 'BRIDGE', 'none', 'NONE', 'default', 'Default'])(
+    'refuses the reserved network mode %s',
+    (network) => {
+      expect(() => loadHelperConfig({ ...ENV, GELDAR_NETWORK: network }, FS)).toThrow(
+        /GELDAR_NETWORK must/,
+      );
+    },
+  );
+
+  // A container:<id> join is refused by the charset, which admits no colon. The exact charset message proves it.
+  // If the charset ever admits ':', these fail, because nothing else refuses container:<id>.
+  it.each(['container:abc', 'CONTAINER:abc', 'geldar:colo'])(
+    'refuses a colon in the network name %s',
+    (network) => {
+      expect(() => loadHelperConfig({ ...ENV, GELDAR_NETWORK: network }, FS)).toThrow(
+        'GELDAR_NETWORK must be a Docker network name',
+      );
+    },
+  );
+
+  // Look-alikes that a loose check would pass: a fullwidth h (U+FF48) and a trailing newline. Refused for both variables.
+  it.each(['ｈost', 'geldar-colo\n'])('refuses the look-alike network name %j', (network) => {
+    expect(() => loadHelperConfig({ ...ENV, GELDAR_NETWORK: network }, FS)).toThrow(
+      'GELDAR_NETWORK must be a Docker network name',
+    );
+  });
+
+  it.each(['ｈost', 'geldar-colo\n'])('refuses the look-alike stack value %j', (stack) => {
+    expect(() => loadHelperConfig({ ...ENV, GELDAR_STACK: stack }, FS)).toThrow(
+      'GELDAR_STACK must be lower-case letters, digits or hyphens',
+    );
+  });
+
+  // Length, shape and metacharacters: each is a start failure that names the variable.
+  it.each([
+    ['a'.repeat(64)],
+    ['a'.repeat(5000)],
+    [' '],
+    [' geldar'],
+    ['bad net'],
+    ['$(id)'],
+    ['`id`'],
+    ['a;b'],
+    ['"x"'],
+    ['{"a":1}'],
+    ['a\nb'],
+    ['a\n'],
+    ['../x'],
+    ['-'],
+    ['--'],
+    ['-leading'],
+  ])('refuses a bad network name (case %#)', (network) => {
+    expect(() => loadHelperConfig({ ...ENV, GELDAR_NETWORK: network }, FS)).toThrow(
+      /GELDAR_NETWORK must/,
+    );
+  });
+
+  it.each([
+    ['-'],
+    ['--'],
+    ['-x'],
+    ['a'.repeat(64)],
+    ['a'.repeat(5000)],
+    [' '],
+    ['a b'],
+    ['$(id)'],
+    ['a_b'],
+    ['a\n'],
+  ])('refuses a bad stack value (case %#)', (stack) => {
+    expect(() => loadHelperConfig({ ...ENV, GELDAR_STACK: stack }, FS)).toThrow(
+      /GELDAR_STACK must/,
+    );
+  });
+
+  it('accepts the boundary values: 63 characters, a name that only starts like a reserved mode', () => {
+    const net63 = 'n'.repeat(63);
+    const stack63 = 's'.repeat(63);
+    expect(loadHelperConfig({ ...ENV, GELDAR_NETWORK: 'hosts' }, FS).wiring.network).toBe('hosts');
+    const wiring = loadHelperConfig(
+      { ...ENV, GELDAR_NETWORK: net63, GELDAR_STACK: stack63 },
+      FS,
+    ).wiring;
+    expect(wiring.network).toBe(net63);
+    expect(wiring.stack).toBe(stack63);
+    expect(template({ ...ENV, GELDAR_NETWORK: net63 }).HostConfig).toMatchObject({
+      NetworkMode: net63,
+    });
+  });
 });

@@ -8,10 +8,16 @@ interface PlayerRow {
   display_name: string;
   harness: string;
   status: 'active' | 'paused' | 'retired';
+  declared_model: string | null;
 }
 
-const FIND_SQL = `SELECT player_id, life_id, owner_id, display_name, harness, status
-FROM mcp_players WHERE player_id = $1`;
+/** The placeholder that addPlayer and the register functions insert; it is not a declared model. */
+const PLACEHOLDER_MODEL = 'self-reported';
+
+const FIND_SQL = `SELECT mcp_players.player_id, mcp_players.life_id, mcp_players.owner_id,
+  mcp_players.display_name, mcp_players.harness, mcp_players.status, agents.declared_model
+FROM mcp_players LEFT JOIN agents ON agents.agent_id = mcp_players.life_id
+WHERE mcp_players.player_id = $1`;
 
 /** Sovereign players from `mcp_players`, looked up by launcher id. */
 export class PgPlayerDirectory implements PlayerDirectory {
@@ -32,6 +38,10 @@ export class PgPlayerDirectory implements PlayerDirectory {
       displayName: row.display_name,
       harness: row.harness,
       status: row.status,
+      declaredModel:
+        row.declared_model === null || row.declared_model === PLACEHOLDER_MODEL
+          ? null
+          : row.declared_model,
     };
   }
 }
