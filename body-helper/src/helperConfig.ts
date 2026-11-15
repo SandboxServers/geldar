@@ -93,12 +93,11 @@ export function loadHelperConfig(env: Env, fs: SecretFs): HelperConfig {
   if (!/^\d+$/.test(uid)) throw new Error('GELDAR_SERVICE_UID must be digits');
   const network = withDefault(env, 'GELDAR_NETWORK', DEFAULT_NETWORK);
   // A Docker network name: a letter or digit, then up to 62 of letters, digits and the marks . _ -.
+  // The charset is what refuses container:<id> (and every other ':'): ':' must stay outside NETWORK_NAME,
+  // or a container:<id> join would pass. No separate container: check is needed, and none is kept.
   if (!NETWORK_NAME.test(network)) throw new Error('GELDAR_NETWORK must be a Docker network name');
-  // Docker's own modes are not user networks: host shares the host's namespace, and container:<id> joins another container.
-  if (
-    network.toLowerCase().startsWith('container:') ||
-    RESERVED_NETWORKS.includes(network.toLowerCase())
-  )
+  // Docker's own modes are not user networks: host shares the host's namespace, bridge and none are not user networks.
+  if (RESERVED_NETWORKS.includes(network.toLowerCase()))
     throw new Error(
       'GELDAR_NETWORK must name a user network, not host, bridge, none, default or container:<id>',
     );
