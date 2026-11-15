@@ -164,6 +164,24 @@ export function createDockerEngine(request: EngineRequest): BodyEngine & SweepEn
     async remove(id): Promise<void> {
       expect(await request('DELETE', `${path(id)}?force=true`), [204, 404], 'remove');
     },
+    async runOneShot(name, config): Promise<number> {
+      const created = expect(
+        await request('POST', `/containers/create?name=${encodeURIComponent(name)}`, config),
+        [201],
+        'create',
+      );
+      const id = (parseJson(created) as { Id: string }).Id;
+      try {
+        expect(await request('POST', path(id, '/start')), [204, 304], 'start');
+        // The wait ends when the one-shot exits; the reply's own ENGINE_TIMEOUT_MS bounds it (the 30 s deadline).
+        const waited = expect(await request('POST', path(id, '/wait')), [200], 'wait');
+        const code = (parseJson(waited) as { StatusCode?: unknown }).StatusCode;
+        return typeof code === 'number' ? code : -1;
+      } finally {
+        // The one-shot is removed whatever happened; a failed remove leaves a name that the next admit refuses (fail closed).
+        await request('DELETE', `${path(id)}?force=true`).catch(() => undefined);
+      }
+    },
     async logs(name): Promise<string> {
       const query = `/logs?stdout=true&stderr=true&tail=${LOG_TAIL_LINES}`;
       const reply = expect(await request('GET', path(name, query)), [200], 'logs');

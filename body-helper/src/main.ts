@@ -49,7 +49,12 @@ async function main(): Promise<void> {
     roster,
     engine,
     cap: config.cap,
-    template: { image: config.image, wiring: config.wiring, limits: config.limits },
+    template: {
+      image: config.image,
+      wiring: config.wiring,
+      limits: config.limits,
+      managed: config.managed,
+    },
     requestDeadlineMs: config.requestDeadlineMs,
     stopTimeouts,
     orphanStarts,

@@ -24,7 +24,7 @@ import { noteActionEnd, resetIdleStuck } from './reflexes/idle-stuck.ts';
 import { forgetBurrow } from './reflexes/panic-burrow.ts';
 import { forgetShelterBackoff, shelterReflexes } from './reflexes/shelter.ts';
 import type { ThreatPolicy } from './reflexes/threat-policy.ts';
-import { noteGoto, resetStuck } from './reflexes/unstick.ts';
+import { noteGoto, noteWalkOutcome, resetStuck } from './reflexes/unstick.ts';
 import { watchRestStat } from './rest-stat.ts';
 import { BodyRuntime, type TickSource } from './runtime.ts';
 import type { BodyView } from './view.ts';
@@ -200,11 +200,23 @@ export function createBody(options: CreateBodyOptions): Body {
     if (!isAction(action)) return;
     noteActionEnd(built.view);
     // A `mine` counts only when its walk to the block was blocked (never as an arrival).
+    const p = options.bot.entity?.position;
+    const at = p ? { x: p.x, y: p.y, z: p.z } : undefined;
     if (action.do === 'goto' || (action.do === 'mine' && run.state === 'failed')) {
       const stalled = run.result.detail?.stalled === true;
-      const p = options.bot.entity?.position;
-      const at = p ? { x: p.x, y: p.y, z: p.z } : undefined;
-      noteGoto(built.view, run.state, run.result.reason, run.result.message, stalled, at);
+      noteGoto(
+        built.view,
+        run.state,
+        run.result.reason,
+        run.result.message,
+        stalled,
+        at,
+        action.do,
+      );
+    }
+    // An unstick run, the Mind's or a reflex's, is an attempt at its spot too (decision 0336).
+    if (action.do === 'unstick') {
+      noteWalkOutcome(built.view, 'unstick', run.state, run.result.reason, at);
     }
     // With the reflex off nothing would take the report, so a program must not wait for one.
     // Only a walk the intent's program ran: a plan's own goto is the Mind's to handle.

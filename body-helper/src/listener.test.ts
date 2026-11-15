@@ -46,7 +46,7 @@ function helper() {
   const engine = createFakeEngine();
   const audit: string[] = [];
   const handle = createBodyHelper({
-    roster: { displayName: async (_o, name) => name },
+    roster: { displayName: async (_o, name) => name, lifeId: async () => 'ag_0123456789ab' },
     engine,
     cap: 40,
     template: {

@@ -3,6 +3,9 @@
  * model rule 9: infrastructure use). `whitelist add` is idempotent; `TestControl` checks the
  * server's reply, so an unexpected reply fails the admission instead of passing silently.
  */
+import type { GolemConfig } from '../config.ts';
+import { readRconPassword } from '../config.ts';
+import { RconClient } from '../rcon.ts';
 import type { CommandSource } from '../test-control.ts';
 import { TestControl } from '../test-control.ts';
 
@@ -41,6 +44,22 @@ export async function admitLifeOverRcon(
   } finally {
     await rcon.close();
   }
+}
+
+/**
+ * Admits `lifeId` over an RCON connection that this module opens from `cfg` and closes itself. The
+ * raw client never leaves this module, so no caller can send any command except the admission.
+ */
+export async function admitLifeWithConfig(cfg: GolemConfig, lifeId: string): Promise<void> {
+  await admitLifeOverRcon(
+    async () =>
+      RconClient.connect({
+        host: cfg.rconHost,
+        port: cfg.rconPort,
+        password: await readRconPassword(cfg),
+      }),
+    lifeId,
+  );
 }
 
 /** Removes `lifeId` from the whitelist. Resolves for "Removed" and "not whitelisted"; throws otherwise. */

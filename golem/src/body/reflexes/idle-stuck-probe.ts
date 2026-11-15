@@ -55,7 +55,7 @@ function reachFrom(
   blockAt: BlockRead,
   start: Vec3,
   health: number,
-): { reach: number; exit: boolean } {
+): { seen: Set<string>; exit: boolean } {
   const seen = new Set<string>([cellKey(start)]);
   const stack: Vec3[] = [start];
   let exit = false;
@@ -76,7 +76,26 @@ function reachFrom(
       }
     }
   }
-  return { reach: seen.size, exit };
+  return { seen, exit };
+}
+
+type TerrainRead = ((at: Vec3) => Block | null | undefined) | undefined;
+
+/** The cells (as keys) the reach walk covers from the feet cell: the attempt record's pocket (decision 0336). Empty when no terrain is read. */
+export function reachRegion(
+  terrainAt: TerrainRead,
+  feet: { x: number; y: number; z: number },
+  health: number,
+): Set<string> {
+  if (!terrainAt) return new Set();
+  const blockAt: BlockRead = (at) => terrainAt(at) ?? null;
+  const cell = new Vec3(Math.floor(feet.x), Math.floor(feet.y), Math.floor(feet.z));
+  return reachFrom(blockAt, cell, health).seen;
+}
+
+/** True when the cell under the feet (floored) is one of the cells of a region from reachRegion. */
+export function regionHas(cells: Set<string>, feet: { x: number; y: number; z: number }): boolean {
+  return cells.has(cellKey(new Vec3(Math.floor(feet.x), Math.floor(feet.y), Math.floor(feet.z))));
 }
 
 /**
@@ -94,6 +113,6 @@ export function watchProbe(
   const moves = planMoves(blockAt, cell, health)
     .slice(0, WATCH_MOVES)
     .map((move) => watchMove(blockAt, cell, move));
-  const { reach, exit } = reachFrom(blockAt, cell, health);
-  return { moves, reach, reach_exit: exit };
+  const { seen, exit } = reachFrom(blockAt, cell, health);
+  return { moves, reach: seen.size, reach_exit: exit };
 }

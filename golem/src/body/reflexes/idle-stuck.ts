@@ -8,11 +8,14 @@ import type { BodyView } from '../view.ts';
 import {
   BOXED_RUNS_PER_HOUR,
   boxedDigGuard,
+  boxedFirstGate,
   boxedFromProbe,
   boxedGate,
   boxedHeld,
+  boxedHoldReason,
   boxedWaitTicks,
   isBoxedIn,
+  isNightForBoxed,
   liquidNear,
   noteBoxedAttempt,
   noteCapLogged,
@@ -20,7 +23,7 @@ import {
 } from './idle-stuck-boxed.ts';
 import { watchProbe } from './idle-stuck-probe.ts';
 import { hasBurrow } from './panic-burrow.ts';
-import { failedWalksAt } from './unstick.ts';
+import { failedWalkCount, failedWalksAt } from './unstick.ts';
 
 /** Ticks (20 per second) the Body must stay put, with no action, before it counts as idle: 60 s. */
 export const IDLE_TICKS = 1200;
@@ -211,6 +214,7 @@ export const idleStuckReflex: Reflex = {
  * and it fires no reflex. The minute restarts with each still spell.
  */
 function watchStill(view: BodyView, state: IdleState, now: number): void {
+  // The line's `boxed` object names the first gate that holds the boxed trigger (decision 0336, watch line).
   const idle = now - state.since;
   if (idle < IDLE_TICKS) return;
   if (state.watchedAt !== null && now - state.watchedAt < IDLE_TICKS) return;
@@ -232,6 +236,15 @@ function watchStill(view: BodyView, state: IdleState, now: number): void {
       },
       ...probe,
       boxed_in: boxedFromProbe(probe) && failedWalksAt(view, spotOf(view)),
+      boxed: {
+        reach: probe.reach,
+        reach_exit: probe.reach_exit,
+        failedWalks: failedWalkCount(view, spotOf(view)),
+        night: isNightForBoxed(view),
+        wait_s: Math.round(boxedWaitTicks(view) / TICKS_PER_SECOND),
+        held: boxedHoldReason(view, now),
+        gate: boxedFirstGate(view, spotOf(view), idle, now),
+      },
     }),
   );
 }

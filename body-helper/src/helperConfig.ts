@@ -3,6 +3,8 @@
 // that group or others can read, or that root does not own, is refused with a clear error. A bad cap is a start
 // failure like any other bad value: the helper exits before it connects.
 import { globalBodyCapFromEnv } from './config.ts';
+import type { ManagedDbWiring } from './managed-template.ts';
+import type { ManagedSettings } from './service.ts';
 import { type BodyLimits, type BodyWiring, DEFAULT_NETWORK, DEFAULT_STACK } from './template.ts';
 
 export type Env = Readonly<Record<string, string | undefined>>;
@@ -27,6 +29,8 @@ export interface HelperConfig {
   sweepMinutes: number;
   /** The most time one start or stop may hold the queue, in ms (GELDAR_BODY_HELPER_DEADLINE_MS, default 120 s). */
   requestDeadlineMs: number;
+  /** Managed Bodies: GELDAR_MANAGED_BODIES (off by default), the managed DB wiring and the RCON file (both optional). */
+  managed: ManagedSettings;
 }
 
 /** Group and other permission bits: a secret file must have none. */
@@ -38,6 +42,8 @@ const NETWORK_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/;
 const STACK_NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
 /** Docker's reserved network modes, matched case-insensitively. A Body must never join one of these. */
 const RESERVED_NETWORKS = ['host', 'bridge', 'none', 'default'];
+/** A plain name (a DNS host or a Postgres role): letters, digits and the marks . _ - only. */
+const PLAIN_NAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,62}$/;
 
 function required(env: Env, name: string): string {
   const value = env[name];
@@ -81,6 +87,66 @@ export function readSecret(name: string, path: string, fs: SecretFs): string {
   const value = fs.read(path).trim();
   if (!value) throw new Error(`${name} file is empty: ${path}`);
   return value;
+}
+
+/** An optional Docker host path: absolute, with no comma, colon or line break (each would split a bind string). */
+function optionalHostPath(env: Env, name: string): string | undefined {
+  const raw = env[name];
+  if (raw === undefined || raw === '') return undefined;
+  if (!/^\/[^,:\r\n]*$/.test(raw))
+    throw new Error(`${name} must be an absolute path with no comma, colon or line break`);
+  return raw;
+}
+
+/**
+ * GELDAR_MANAGED_BODIES: unset, empty or 0 is off. Off refuses every managed start before any Docker call. It is turned
+ * on only after the live check (the managed Body path is not proven until then).
+ */
+function managedFlag(env: Env): boolean {
+  const raw = env.GELDAR_MANAGED_BODIES;
+  if (raw === undefined || raw === '' || raw === '0') return false;
+  if (raw === '1') return true;
+  throw new Error('GELDAR_MANAGED_BODIES must be 1 or 0');
+}
+
+/**
+ * The managed Body's database wiring. It needs a host, a role and a secret host path. With the flag off a missing one
+ * leaves it unset. With the flag on it is a load error that names the missing variable, so the helper never starts with
+ * a half-wired flag. The role is the managed Body's narrow role, never the helper's own role.
+ */
+function managedDb(env: Env, enabled: boolean): ManagedDbWiring | undefined {
+  const host = env.GELDAR_MANAGED_PG_HOST;
+  const role = env.GELDAR_MANAGED_PG_ROLE;
+  const secretHostPath = optionalHostPath(env, 'GELDAR_MANAGED_DB_SECRET_HOST_PATH');
+  if (!host || !role || !secretHostPath) {
+    if (!enabled) return undefined;
+    const missing = !host
+      ? 'GELDAR_MANAGED_PG_HOST'
+      : !role
+        ? 'GELDAR_MANAGED_PG_ROLE'
+        : 'GELDAR_MANAGED_DB_SECRET_HOST_PATH';
+    throw new Error(`GELDAR_MANAGED_BODIES is 1 but ${missing} is unset`);
+  }
+  if (!PLAIN_NAME.test(host) || !PLAIN_NAME.test(role))
+    throw new Error('GELDAR_MANAGED_PG_HOST and GELDAR_MANAGED_PG_ROLE must be plain names');
+  return {
+    host,
+    port: String(positive(env, 'GELDAR_MANAGED_PG_PORT', 5432)),
+    role,
+    secretHostPath,
+  };
+}
+
+/**
+ * The managed Body wiring as one unit. With the flag on, the RCON host path and the DB wiring are required: a missing one
+ * is a load error, not a silent unset (the port alone stays optional, and defaults to 5432).
+ */
+function managedConfig(env: Env) {
+  const enabled = managedFlag(env);
+  const rconSecretHostPath = optionalHostPath(env, 'GELDAR_RCON_SECRET_HOST_PATH');
+  if (enabled && rconSecretHostPath === undefined)
+    throw new Error('GELDAR_MANAGED_BODIES is 1 but GELDAR_RCON_SECRET_HOST_PATH is unset');
+  return { enabled, db: managedDb(env, enabled), rconSecretHostPath };
 }
 
 /** Reads the whole config. Throws on the first missing or invalid value; never includes a secret in a message. */
@@ -145,5 +211,6 @@ export function loadHelperConfig(env: Env, fs: SecretFs): HelperConfig {
     // 35791 minutes is the most a sweep timer can hold (2147483647 ms).
     sweepMinutes: positive(env, 'GELDAR_SWEEP_MINUTES', 10, 35_791),
     requestDeadlineMs: positive(env, 'GELDAR_BODY_HELPER_DEADLINE_MS', 120_000, 2_147_483_647),
+    managed: managedConfig(env),
   };
 }

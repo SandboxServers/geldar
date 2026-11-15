@@ -23,9 +23,14 @@ const TEMPLATE = {
     shardHostPath: '/root/shards/colo.yaml',
   },
   limits: { nanoCpus: 1_000_000_000, memory: 1024 * 1024 * 1024, pidsLimit: 256 },
+  managed: {
+    enabled: true,
+    db: { host: 'db', port: '5432', role: 'body', secretHostPath: '/root/secrets/db.txt' },
+    rconSecretHostPath: '/root/secrets/rcon.txt',
+  },
 };
 
-const roster = { displayName: async () => 'Name' };
+const roster = { displayName: async () => 'Name', lifeId: async () => 'ag_0123456789ab' };
 const req = (verb: string, name: string) => ({ verb, name, owner: 'own-a' });
 
 type Call = 'countCounted' | 'create' | 'start' | 'stop' | 'remove';
@@ -51,6 +56,7 @@ function gatedEngine(hold: Call[], seed: FakeContainer[] = []) {
       return fake.inspect(name);
     },
     countCounted: gated('countCounted', fake.countCounted),
+    runOneShot: fake.runOneShot,
     create: gated('create', fake.create),
     start: gated('start', fake.start),
     stop: gated('stop', fake.stop),
@@ -77,6 +83,9 @@ function hangingEngine(hung: string) {
       });
     },
     async countCounted() {
+      return 0;
+    },
+    async runOneShot() {
       return 0;
     },
     async create(name) {
@@ -109,6 +118,7 @@ function heldInspectEngine(seed: FakeContainer[]) {
       });
     },
     countCounted: fake.countCounted,
+    runOneShot: fake.runOneShot,
     create: fake.create,
     start: async (id) => {
       calls.push('start');

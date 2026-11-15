@@ -1,12 +1,20 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { GolemConfig } from '../config.ts';
+import { RconClient } from '../rcon.ts';
 import {
   type AdmissionRcon,
   admissionOnly,
   admitLife,
   admitLifeOverRcon,
+  admitLifeWithConfig,
   removeLife,
   removeLifeOverRcon,
 } from './whitelist.ts';
+
+vi.mock('../rcon.ts', () => ({ RconClient: { connect: vi.fn() } }));
 
 /** A fake RCON that records each command and answers with `reply`. */
 function fakeRcon(reply: string): {
@@ -124,5 +132,62 @@ describe('removeLifeOverRcon', () => {
       /unexpected reply/,
     );
     expect(bad.state.closed).toBe(true);
+  });
+});
+
+describe('admitLifeWithConfig', () => {
+  const connect = vi.mocked(RconClient.connect);
+  let dir: string;
+
+  beforeEach(async () => {
+    connect.mockClear();
+    dir = await mkdtemp(join(tmpdir(), 'admit-config-'));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  /** A config whose password file holds `pass-word-1` with a trailing newline, as the secret files do. */
+  async function configWithPassword(): Promise<GolemConfig> {
+    const passwordFile = join(dir, 'rcon.txt');
+    await writeFile(passwordFile, 'pass-word-1\n', 'utf8');
+    return {
+      mcHost: 'mc.test',
+      mcPort: 25565,
+      rconHost: 'rcon-host.test',
+      rconPort: 25999,
+      rconPasswordFile: passwordFile,
+    };
+  }
+
+  it('connects to the configured host and port with the password read from the file, then admits', async () => {
+    const conn = fakeConnection('Added ag_jason_01 to the whitelist');
+    connect.mockResolvedValueOnce(conn.connection as unknown as RconClient);
+    await admitLifeWithConfig(await configWithPassword(), 'ag_jason_01');
+    expect(connect).toHaveBeenCalledWith({
+      host: 'rcon-host.test',
+      port: 25999,
+      password: 'pass-word-1',
+    });
+    expect(conn.sent).toEqual(['whitelist add ag_jason_01']);
+    expect(conn.state.closed).toBe(true);
+  });
+
+  it('closes the client when the command rejects', async () => {
+    const state = { closed: false };
+    const failing = {
+      async command(): Promise<string> {
+        throw new Error('socket reset');
+      },
+      async close() {
+        state.closed = true;
+      },
+    };
+    connect.mockResolvedValueOnce(failing as unknown as RconClient);
+    await expect(admitLifeWithConfig(await configWithPassword(), 'ag_jason_01')).rejects.toThrow(
+      'socket reset',
+    );
+    expect(state.closed).toBe(true);
   });
 });

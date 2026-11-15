@@ -23,6 +23,11 @@ const TEMPLATE = {
     shardHostPath: '/root/shards/colo.yaml',
   },
   limits: { nanoCpus: 1_000_000_000, memory: 1024 * 1024 * 1024, pidsLimit: 256 },
+  managed: {
+    enabled: true,
+    db: { host: 'db', port: '5432', role: 'body', secretHostPath: '/root/secrets/db.txt' },
+    rconSecretHostPath: '/root/secrets/rcon.txt',
+  },
 };
 
 interface Fake extends BodyEngine {
@@ -89,6 +94,9 @@ function fakeEngine(
       fake.removed.push(id);
       for (const [key, c] of containers) if (c.id === id) containers.delete(key);
     },
+    async runOneShot() {
+      return 0;
+    },
     async logs() {
       return 'line one';
     },
@@ -105,6 +113,11 @@ function harness(engine: Fake, cap = 40) {
         lookups.push([owner, name]);
         if (owner !== 'own-a') return null;
         return { ranger: 'Ranger', miner: 'Miner' }[name.toLowerCase()] ?? null;
+      },
+      async lifeId(owner, name) {
+        return owner === 'own-a' && ['ranger', 'miner'].includes(name.toLowerCase())
+          ? 'ag_0123456789ab'
+          : null;
       },
     },
     engine,
