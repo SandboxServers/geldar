@@ -4,7 +4,7 @@
 
 | Item | Number before this commit | Number now | Note |
 |---|---|---|---|
-| Decision: sheet erasure covers dead lives (S9-00) | 0282 | 0282 (kept) | The erasure ruling; 0282 is already written on phase1/an-04c-erase-comments |
+| Decision: sheet erasure covers dead lives (S9-00 cites it; no card writes it) | 0282 | 0282 (kept) | Written by PR #455 on phase1/an-04c-erase-comments (queued); S9-00 creates no decision |
 | Decision: property refusal (S9-01) | 0283 | 0283 (unchanged) | Already in card order; not on origin/main or any ref checked on 2026-11-14 |
 | Decision: lineage contract (S10-01a) | 0284 | 0284 (unchanged) | Same check |
 | Decision: attribute drift (S11-01) | 0285 | 0285 (unchanged) | Same check |
@@ -13,7 +13,7 @@
 | Decision: rollout and rollback (S12-05) | 0288 | 0288 (unchanged) | Same check |
 | Decision: spare | 0289 | 0289 (unchanged) | Spare |
 | Decision overflow block | none used | 0320 to 0329 (not needed) | No card needs a ninth decision in this file |
-| SQL: sheet erasure (S9-00) | 0052 | 0053 | 0052 is taken by 0052_character_erase_comments |
+| SQL: sheet erasure (S9-00) | 0052 | none; 0053 is free | 0052 is taken by 0052_character_erase_comments (PR #455). S9-00 is a gate with no migration, so 0053 is unused |
 | SQL: lineage (S10-01b) | 0053 | 0054 | |
 | SQL: drift (S11-02) | 0054 | 0055 | |
 | SQL: exporter role (S12-01) | 0055 | 0056 | |
@@ -37,7 +37,7 @@ Status: **proposal, nothing dispatched.** Written 2026-11-14 against geldar `ori
 
 | Card | Repo | Depends on | Parallelizable now? |
 |---|---|---|---|
-| S9-00 erasure covers dead lives (SQL 0053, decision 0282) | geldar | none (0051 is merged) | **yes** |
+| S9-00 erasure gate: every life_id table is erased with its life (no SQL, no decision) | geldar | none (0051 is merged; PR #455 is not an input) | **yes** |
 | S9-01 refusal reason code and decision key (contract) | geldar | none for the code; OWNER decision 0283 before merge to a wave branch | **yes** (write now, merge gated) |
 | S9-02 property-refusal hook (Body) | geldar | S9-01, AN-07, AN-11b (sheet and proficiency cache), AN-06b (roll producer) | no |
 | S9-03 bind hook behind `morality_hooks` (Body wiring) | geldar | S9-02, AN-12 | no |
@@ -87,7 +87,7 @@ Nothing below is approved. Each is a card gate: the card may be written, tested 
 | OD-9 | 0285: persona refresh text (HC-44) | When drift changes an agent's temperament, may a refreshed persona text reach a sovereign agent (text that tells it who to be)? Never overwritten silently; a reviewed artifact only. | Approve an operator-reviewed artifact; the agent's own `identity.md` is never edited by code. |
 | OD-10 | 0287: existing agents (S12-04) | Which sheet does each existing agent adopt (Adam and the six rangers)? The brief's Appendix A values are drafts read from prose. Also: does an existing agent adopt at all, or does only a new life get a sheet? | Adopt all-3 for every existing agent first (control equivalence), then owner-approved named sheets one ranger at a time (S12-05). |
 | OD-11 | 0286, 0288: measurement and rollout (S12-01 to S12-07) | Cohort sizes, replicates, run length, spend ceiling, numeric success bars, and after results: enable, opt-in, tune or stop. | Fixed in `protocol.json` before the first run; rollout decided only on its results. |
-| OD-12 | 0282: erasure covers dead lives (S9-00) | Reserved ruling (decision 0262 of registration): account erasure now also removes the sheet rows of that owner's **dead** lives. Open sub-question: when a deleted life is a parent, the child keeps its sheet but loses the ancestry edge (S10-01b deletes the edge rows). | Confirm. |
+| OD-12 | 0282: erasure covers dead lives (PR #455; gate in S9-00) | Reserved ruling (decision 0262 of registration): account erasure now also removes the sheet rows of that owner's **dead** lives. Open sub-question: when a deleted life is a parent, the child keeps its sheet but loses the ancestry edge (S10-01b deletes the edge rows). | Confirm. |
 
 ## The shared contract (names every card uses)
 
@@ -120,13 +120,13 @@ export type AdoptionSource = 'config' | 'roster' | 'birth' | 'conversion';   // 
 | `golem/src/adam/adam-body.ts` (311 lines), `golem/src/character/character-config.ts` | S9-03, then S11-05; AN-12 and AN-60b-era edits elsewhere come first |
 | `golem/src/actions/mine.ts` (405), `golem/src/actions/container.ts` (365) | S9-02 only (one call line each) |
 | `eventsink/src/main.ts`, `eventsink/src/writer.ts` dispatch | S10-03, S11-04 (serial) |
-| `sql/` and `.github/workflows/ci.yml` psql line | S9-00 (0053), S10-01b (0054), S11-02 (0055), S12-01 (0056), S12-04 (0057): serial, one `-f sql/test/<file>` line each |
+| `sql/` and `.github/workflows/ci.yml` psql line | S9-00 (`sql/test/check-schema-erase.sql`, no migration), S10-01b (0054), S11-02 (0055), S12-01 (0056), S12-04 (0057): serial, one `-f sql/test/<file>` line each |
 | `sql/README.md`, `docs/decisions/README.md`, ledger, RESUME, `tools/migrate` test list | orchestrator and ops, from "index line to add" in worknotes |
 | `psyche/package.json`, `psyche/RELEASE.json`, `psyche/src/index.ts` | S10-02, then any later psyche change; serial; tag by ops |
 | `pnpm-lock.yaml` and any `package.json` | S12-01 (new exporter package) only; others request an index line |
 | `geldar.ps1` (`Get-NatsUsers`), `compose/*.yml`, `shards/*.yaml` | none edits a production shard. S12-05 produces a diff for the owner; fixtures go in new non-live files |
 
-**Numbers.** Decisions: 0282 S9-00; 0283 S9-01; 0284 S10-01a; 0285 S11-01; 0286 S12-01 (cohort export and protocol); 0287 S12-04; 0288 S12-05 (rollout and rollback); 0289 spare. Decisions 0280 and 0281 are used. SQL: 0053 S9-00; 0054 S10-01b; 0055 S11-02; 0056 S12-01; 0057 S12-04; 0058 and 0059 spare. 0050 to 0052 are used (0052 is the comment-only erase migration on phase1/an-04c-erase-comments). Re-check the registry (`docs/analysis/phase1/packets/decision-number-registry.md` and the remote branches) at dispatch; a coder never picks a number, the dispatch gives it. If a number moves, the card's text says `<allocate via registry>`.
+**Numbers.** Decisions: 0282 is PR #455's record (no card writes it); 0283 S9-01; 0284 S10-01a; 0285 S11-01; 0286 S12-01 (cohort export and protocol); 0287 S12-04; 0288 S12-05 (rollout and rollback); 0289 spare. Decisions 0280 and 0281 are used. SQL: 0053 is free (S9-00 is a gate with no migration, and no card uses it); 0054 S10-01b; 0055 S11-02; 0056 S12-01; 0057 S12-04; 0058 and 0059 spare. 0050 to 0052 are used (0052 is the comment-only erase migration on phase1/an-04c-erase-comments). Re-check the registry (`docs/analysis/phase1/packets/decision-number-registry.md` and the remote branches) at dispatch; a coder never picks a number, the dispatch gives it. If a number moves, the card's text says `<allocate via registry>`.
 
 ## Rules common to every card
 
@@ -138,7 +138,7 @@ export type AdoptionSource = 'config' | 'roster' | 'birth' | 'conversion';   // 
 - **R6 must-not-edit baseline.** `docs/spec.md`, accepted decisions, merged migrations, merged prompts, hand edits to `contract/src/generated/`, other cards' worknotes, `pnpm-lock.yaml` and every `package.json` unless the card names them, any file not in may-edit, and always `animus/`. Never run `adam up`.
 - **R7 GATE** (coder, no database, no shard): `git diff --check`; `./geldar.ps1 pnpm format` then `lint`; `./geldar.ps1 pnpm --filter <pkg> typecheck` per touched package; `./geldar.ps1 pnpm check:repo` (file caps 500 soft, 700 hard); `git merge-tree --write-tree phase1/sheet-w<N> HEAD` shows no conflict. **GATE-C** adds `./geldar.ps1 pnpm --filter @geldar/contract generate` then `./geldar.ps1 pnpm check:generated`. **GATE-S** (ops): apply `sql/[0-9]*.sql` in order to a scratch DB, run the `sql/test/check-schema*.sql` files with `psql -v ON_ERROR_STOP=1`, repeat on a DB migrated from `origin/main` (upgrade lane) and re-apply the new file (reapply lane). Real-DB sink cases: `$env:GELDAR_IT = '1'; ./geldar.ps1 pnpm test eventsink` (ops). Kit GATE: the kit's own `pnpm check` (name `(to confirm)` in the dispatch) plus the psyche mirror-hash test.
 - **R8 inactive means inactive.** Every card in W9 to W11 adds behaviour behind a flag whose default is false, ships no production config change, and has a test that with the flag false (or `character` omitted, or `mode: off`) behaviour and bytes equal today's. Off draws no RNG, writes no row, emits no event, adds no prompt text.
-- **R9 erasure rule.** Any new table whose rows are keyed by a life id **must** be added to `sheet_erase_life` (sql/0051) by the card that creates the table: the same migration re-creates the function (`CREATE OR REPLACE`) with the full list including the new table, adds the table to the `sheet_append_only` guard (delete permitted only under `geldar.erase_life`), grants nothing to PUBLIC, `geldar_mcp`, `geldar_glass`, `geldar_register` (except EXECUTE on the function), and adds a `COMMENT ON TABLE` with export and retention text. A schema check in `sql/test/` asserts the function deletes from the new table. Tables not keyed by a life id say so on the card.
+- **R9 erasure rule.** Any new table whose rows are keyed by a life id **must** be added to `sheet_erase_life` (sql/0051) by the card that creates the table: the same migration re-creates the function (`CREATE OR REPLACE`) with the full list including the new table, adds the table to the `sheet_append_only` guard (delete permitted only under `geldar.erase_life`), grants nothing to PUBLIC, `geldar_mcp`, `geldar_glass`, `geldar_register` (except EXECUTE on the function), and adds a `COMMENT ON TABLE` with export and retention text. A schema check in `sql/test/` asserts the function deletes from the new table; the S9-00 gate runs a coverage check over every `life_id` table in the catalog. Tables not keyed by a life id say so on the card.
 - **R10 honesty.** No true score, sheet, label or drift event appears in any agent-visible text, MCP output, snapshot, Glass column, prompt or kit workspace file. No card tells an agent it is observed, measured or coached. Refusal text names no owner, score, roll or operator. Each card with agent-visible text lists the exact string and its owner decision.
 - **R11 revert-checks.** Every behaviour change has a test that fails when the change is reverted; the card names the reversal and the test. The coder runs each and records the failure in the worknote.
 - **R12 pins.** Exact versions, no ranges; Docker images by digest; GitHub Actions by SHA; new dependencies at least two weeks old.
@@ -149,18 +149,20 @@ export type AdoptionSource = 'config' | 'roster' | 'birth' | 'conversion';   // 
 
 W9 here is a trimmed world and kit wave: one Body hook, its contract, its wiring, a kit leakage test and the ops close. The due-commitment wake is deferred (see top).
 
-## S9-00: account erasure covers dead lives (SQL 0053, decision 0282)
+## S9-00: sheet erasure gate (no migration; decision 0282 is PR #455's)
 
-- **id** S9-00 **wave** W9 **repo** geldar **replaces** none (new) **depends-on** none **size** 30k. **branch** `phase1/s9-00-erase-dead-lives`.
-- **why.** `sheet_erase_life` (0051) says it is called only for a life alive when the owner deleted the account; dead lives' rows stay as world history (0171). The reserved ruling 0282 (decision 0262 of registration) says erasure now also covers the owner's dead lives. Every later table (R9) builds on the corrected contract, so this goes first. 0262 is not on `origin/main` at `280b8ea9`; the card cites the owner's ruling text from the dispatch and records it in decision 0282.
-- **may-edit** `docs/decisions/0282-sheet-erasure-covers-dead-lives.md` (new); `sql/0053_sheet_erase_dead_lives.sql` (new); `sql/test/check-schema-erase.sql` (new or the existing 0051 check file: name `(to confirm)`); `.github/workflows/ci.yml` (one `-f`); the worknote.
-- **must-not-edit** R6; `sql/0050`, `sql/0051` (merged); `threshold/register/**` (the caller; whether register must now pass dead lives too is a note for geldar-registration, not an edit here).
-- **decisions** 0282 (this card writes the record from the owner's ruling). **OD-12** confirms the open sub-question only.
-- **shape.** The function name, signature and grant stay: `sheet_erase_life(p_life_id TEXT) RETURNS void`, EXECUTE to `geldar_register` only. The body is the 0051 body (same six deletes, same `geldar.erase_life` setting) but the comment and every table `COMMENT` drop the phrase "for a life that was alive when its owner deleted the account" and say "any life of the deleted owner, alive or dead". The migration is `CREATE OR REPLACE` plus `COMMENT ON` statements only; additive, idempotent, ends with `INSERT INTO schema_migrations (version) VALUES ('0053') ON CONFLICT DO NOTHING;`.
-- **tests** (SQL check file, run by ops under GATE-S): seed a dead life (an `agents` row with `died_at` set) with one row in each of the six tables; `SELECT sheet_erase_life(<dead id>)` removes all six; a second life's rows stay; a call with NULL raises; `geldar_mcp` and `geldar_glass` cannot execute it; the append-only trigger still refuses `DELETE` outside the function.
-- **checks** GATE; GATE-S (ops).
-- **revert-checks** Re-add an `IF died_at IS NOT NULL THEN RETURN` guard: "dead life rows are erased" fails. Drop `proficiency_outbox` from the list: "all six tables empty after erase" fails.
-- **worknote** `S9-00.md`; index lines to add: `sql/README.md` 0053, decisions README 0282. **commit** `feat(sheet): account erasure covers the owner's dead lives (0282)`. **split line** none.
+- **id** S9-00 **wave** W9 **repo** geldar **replaces** none (new) **depends-on** none (0051 is merged; PR #455 changes comments only and is not an input) **size** 20k. **branch** `phase1/s9-00-erase-gate`.
+- **why.** The owner's ruling (geldar-registration decision 0262) says account erasure covers every life of the owner, alive or dead. Decision 0282 records it and migration 0052 corrects the 0051 comments; both are on `phase1/an-04c-erase-comments` (PR #455, queued). `sheet_erase_life` (0051) already deletes by life id with no alive-only condition, so dead lives need no SQL change. What later cards still need is a guarantee (R9): every table keyed by `life_id` is erased with its life, and a check fails when one is not. That is this card.
+- **may-edit** `sql/test/check-schema-erase.sql` (new); `.github/workflows/ci.yml` (one `-f`); `sql/README.md` (one index line, if it indexes its checks `(to confirm)`); the worknote.
+- **must-not-edit** R6; `sql/0050` to `sql/0052` and the `sheet_erase_life` body in `sql/0051` (no change here); `threshold/register/**` (the caller; whether register must pass dead lives is a note for geldar-registration, not an edit here); `docs/decisions/0282-*` (PR #455's).
+- **decisions** none written. Cites 0282 and the 0171 open question on events. **OD-12** is answered in S10-01b, where the child-edge question arises.
+- **shape.** No migration and no SQL number. The check file runs in CI with the other `sql/test/` files (one `-f` line) and has two parts:
+  1. **Behaviour.** Seed a dead life (an `agents` row with `died_at` set) with one row in each of the six sheet tables; `SELECT sheet_erase_life(<dead id>)` removes all six; a second life's rows stay; a call with NULL raises; `geldar_mcp` and `geldar_glass` cannot execute it; the append-only trigger still refuses `DELETE` outside the function.
+  2. **Coverage.** Read every table in schema `public` that has a column named `life_id` from `information_schema.columns`. For each, the body of `sheet_erase_life` (`pg_get_functiondef`) must contain `DELETE FROM <table>`. Any table that does not is reported by name and the check fails. The table list comes from the catalog, not a hard-coded list, so a later card cannot add a life-keyed table without the gate failing until it joins the function. The check matches the column name `life_id`; R9 makes that the name for every life-keyed table, and the card that adds one confirms it.
+- **tests.** The behaviour cases above, and a coverage probe: inside one transaction the check creates `public.erase_gate_probe (life_id TEXT)`, expects the coverage query to report it, and rolls back. The real catalog must report nothing missing.
+- **checks** GATE; GATE-S (ops, against the test database).
+- **revert-checks** In a scratch run (not merged), add `IF died_at IS NOT NULL THEN RETURN;` to the function: "dead life rows are erased" fails. Drop `proficiency_outbox` from the function body: "all six tables empty after erase" and the coverage check fail. Make the coverage query skip every table (`WHERE false`): the probe test fails because nothing is reported.
+- **worknote** `S9-00.md`; index line for `sql/README.md` if it applies. **commit** `test(sheet): gate that every life_id table is erased with its life`. **split line** none.
 
 ## S9-01: refusal reason code and decision key (contract)
 
@@ -249,7 +251,7 @@ Nothing in W10 creates a child on its own. A mocked birth is not completion evid
 - **id** S10-01b **wave** W10 **repo** geldar **replaces** AN-54b **depends-on** S10-01a, S9-00 **OWNER** gate as S10-01a **size** 45k. **branch** `phase1/s10-01b-lineage-sql`.
 - **shared-files** `sql/`, `ci.yml` psql line, `sql/README.md` index line (to add).
 - **may-edit** `sql/0054_lineage.sql` (new); `sql/test/check-schema-lineage.sql` (new); `.github/workflows/ci.yml` (one `-f`); the worknote.
-- **must-not-edit** R6; 0050 to 0053.
+- **must-not-edit** R6; 0050 to 0052 (0053 is free).
 - **shape.** Two tables, both keyed by a life id and so both added to `sheet_erase_life` in this migration (R9; the function is re-created with the eight-table list):
   ```sql
   CREATE TABLE IF NOT EXISTS lineage_births (
@@ -511,6 +513,6 @@ Targeted and whole-wave evidence; a fresh read-only review per card and one per 
 1. **Older cards exist for the same candidates** (geldar-b W9, geldar-c W10 to W12). The orchestrator should mark them superseded by this file or merge the two; the ids differ on purpose so neither set collides in the ledger.
 2. **Names I did not verify** (no code read beyond file listings): the `FailReason` union and `metrics.ts` reason list, `intent.ts` mapping, the roll-producer call from AN-06b, `ownerRecordAt`/`isOwnPlacement` signatures, whether the player Bodies are built through `adam-body.ts`, an existing `agents.character_sheet` update guard in 0050, the exact check-schema file names, `tools/admin` as the home of the ancestry query. Each is marked `(to confirm)`; a card holding one is not Ready until the orchestrator confirms it.
 3. **`contract/src/index.ts` is 534 lines** (soft cap 500). Cards add one export line each and put their code in new files; moving the AN-02b block out is still owed (RESUME follow-up).
-4. **Decision 0262 (registration) is not on `origin/main`** at `280b8ea9`; S9-00 relies on the owner's ruling text.
+4. **Decision 0262 (registration) is not on `origin/main`** at `280b8ea9`; decision 0282 (PR #455) records the ruling text, and S9-00 gates on the function, not on the ruling.
 5. **The refusal and temperament text** (OD-2, and the HC-25 wordings D-HC-13) are agent-visible and unapproved; no card enables either.
 6. **Kit numbering.** HC-41 to HC-45 are proposals; the kit orchestrator may renumber and may merge HC-44 with HC-36a/b.

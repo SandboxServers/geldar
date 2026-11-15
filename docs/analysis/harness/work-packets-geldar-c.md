@@ -139,7 +139,7 @@ The lineage cards depend on Phase 1 C4, which proposed `lf_...` life ids; the co
 
 ### AN-54a: lineage contract unblocker
 
-Superseded by S10-01a in work-packets-sheet-w9-w12.md; do not dispatch.
+Partly superseded by S10-01a in work-packets-sheet-w9-w12.md: the LineageBirth shape stays; the rest of the card is replaced.
 
 - **id:** AN-54a (UNBLOCKER). **wave:** W10. **branch:** `codex/an-54a-lineage-contract`. **status:** Writing.
 - **depends-on:** AN-02 (sheet shapes, `contract/schemas/character-sheet.schema.json`), AN-53 (wave order). D-CS-09 and D-CS-17 accepted (assumed).
@@ -599,7 +599,7 @@ D-CS-11 is assumed: four primary treatments (A off, B all 3s with d20 checks off
 
 ### AN-33a: export role and world exporter
 
-Superseded by S12-01 in work-packets-sheet-w9-w12.md; do not dispatch.
+Partly superseded by S12-01 in work-packets-sheet-w9-w12.md: the run-folder design stays.
 
 - **id:** AN-33a. **wave:** W12. **branch:** `codex/an-33a-export-world`. **status:** Writing.
 - **depends-on:** AN-60a, AN-54b, AN-58b (every table exported exists).
