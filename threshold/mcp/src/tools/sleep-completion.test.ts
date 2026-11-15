@@ -358,6 +358,42 @@ describe('sleep completion', () => {
     expect(quiet.event_counts).toEqual({});
   });
 
+  it('a sleep with no digest events but events lost before it writes an asleep line', async () => {
+    const w = world();
+    const pending = new PendingSleeps();
+    const events = {
+      since: async () => ({ events: [], dropped: 2 }),
+    } as unknown as SleepDeps['events'];
+    const deps = { ...sleepDeps(w, pending), events, failures: new FailureTracker() };
+    await sleepTool(deps, CALL);
+    await sleepTool(deps, CALL);
+    await completeSleep(settleDeps(w, pending), LIFE, outcome('th_2', ['completed']));
+    expect(await journalTexts(w)).toEqual([
+      'Day 1: asleep. 0 events since the last sleep, 2 lost before them.',
+    ]);
+  });
+
+  it('a sleep with no new events but a changed health writes an asleep line', async () => {
+    const w = world();
+    const pending = new PendingSleeps();
+    let health = 20;
+    const body = {
+      snapshot: async (id: string) => {
+        const s = await w.body.snapshot(id);
+        return { ...s, self: { ...s.self, health } };
+      },
+      submitPlan: (id: string, plan: PlanMessage) => w.body.submitPlan(id, plan),
+    } as unknown as SleepDeps['body'];
+    const deps = { ...sleepDeps(w, pending), body, failures: new FailureTracker() };
+    await sleepTool(deps, CALL);
+    health = 18;
+    await sleepTool(deps, CALL);
+    await completeSleep(settleDeps(w, pending), LIFE, outcome('th_2', ['completed']));
+    expect(await journalTexts(w)).toEqual([
+      'Day 1: asleep. 0 events since the last sleep, 0 lost before them.',
+    ]);
+  });
+
   it('a sleep with events and facts lists the digest, then the fixed event, then the facts', async () => {
     const w = world();
     const failures = new FailureTracker();
