@@ -145,8 +145,18 @@ export async function runPlayer(
     timeout: 5_000,
     ...golemNatsAuth(),
   });
-  const restartKv = await openRestartKv(natsUrl);
-  const presence = await new Kvm(jetstream(nc)).open(PRESENCE_BUCKET);
+  // A failure after the connection opens closes what is open, so no NATS connection leaks.
+  const restartKv = await openRestartKv(natsUrl).catch(async (error: unknown) => {
+    await nc.close();
+    throw error;
+  });
+  const presence = await new Kvm(jetstream(nc))
+    .open(PRESENCE_BUCKET)
+    .catch(async (error: unknown) => {
+      await restartKv.close();
+      await nc.close();
+      throw error;
+    });
   const server = natsRequestServer(nc);
   // The proficiency cache (AN-12a): started only for a config sheet; off and standard send no request.
   const proficiency = startProficiency({

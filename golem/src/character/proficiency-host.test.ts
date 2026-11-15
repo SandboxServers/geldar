@@ -124,6 +124,79 @@ describe('startProficiency (AN-12a)', () => {
     cache?.stop();
   });
 
+  it('validates replies against the config thresholds: a level 2 at xp 15 is adopted on [5,15,40]', async () => {
+    const reply = JSON.stringify({
+      life_id: LIFE,
+      version: 1,
+      levels: Object.fromEntries(
+        DOMAINS.map((d) => [d, d === 'combat' ? { level: 2, xp: 15 } : { level: 0, xp: 0 }]),
+      ),
+    });
+    const requests: string[] = [];
+    const nc: StateNats = {
+      async request(subject) {
+        requests.push(subject);
+        return { data: encoder.encode(reply) };
+      },
+      subscribe: () => ({ unsubscribe: () => undefined }),
+      status: () => (async function* () {})(),
+    };
+    const character: LifeCharacter = {
+      ...CONFIG,
+      config: { ...CONFIG.config, proficiency: { enabled: true, thresholds: [5, 15, 40] } },
+    };
+    const cache = startProficiency({
+      nc,
+      shard: SHARD,
+      lifeId: LIFE,
+      character,
+      log: () => undefined,
+    });
+    await flush();
+    expect(requests).toEqual([REQUEST]);
+    expect(cache?.level('combat')).toBe(2);
+    cache?.stop();
+  });
+
+  it('proficiency.enabled false: no cache is built and no request is sent', async () => {
+    const fake = fakeNats();
+    const character: LifeCharacter = {
+      ...CONFIG,
+      config: { ...CONFIG.config, proficiency: { enabled: false, thresholds: [10, 20, 30] } },
+    };
+    const cache = startProficiency({
+      nc: fake.nc,
+      shard: SHARD,
+      lifeId: LIFE,
+      character,
+      log: () => undefined,
+    });
+    await flush();
+    expect(cache).toBeUndefined();
+    expect(fake.requests).toEqual([]);
+  });
+
+  it('a malformed life id is logged once and gives no cache: no throw, no request', async () => {
+    const fake = fakeNats();
+    const lines: string[] = [];
+    let cache: ReturnType<typeof startProficiency>;
+    expect(() => {
+      cache = startProficiency({
+        nc: fake.nc,
+        shard: SHARD,
+        lifeId: 'Adam',
+        character: CONFIG,
+        log: (line) => lines.push(line),
+      });
+    }).not.toThrow();
+    await flush();
+    expect(cache).toBeUndefined();
+    expect(fake.requests).toEqual([]);
+    expect(lines).toEqual([
+      'proficiency cache not built: the shard or life id is not a valid subject token',
+    ]);
+  });
+
   it('refreshes on each reconnect and not on other status changes', async () => {
     const fake = fakeNats([{ type: 'disconnect' }, { type: 'reconnect' }]);
     const cache = startProficiency({

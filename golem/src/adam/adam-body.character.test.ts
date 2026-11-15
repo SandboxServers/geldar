@@ -140,6 +140,7 @@ describe('startAdamBody with the character block off or standard (AN-12a)', () =
       moveTo(bot, 16, 0);
       await flush();
       expect(built.audits).toBe(before);
+      expect(h.options).toHaveLength(1);
       expect(h.options[0]?.bindThreat?.(4)).toBeUndefined();
       expect(h.published).toEqual([]);
       await run.stop();

@@ -228,9 +228,13 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     bot.off('end', onEnd);
     // A restart that finishes after the failure is stopped, so its timers do not outlive it.
     void restarting.then(
-      (late) => late.stop(),
-      () => undefined,
+      (late) => {
+        late.stop();
+        audit?.close();
+      },
+      () => audit?.close(),
     );
+    audit?.close();
     if (!gone) bot.quit();
     throw error;
   }

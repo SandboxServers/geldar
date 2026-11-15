@@ -1,6 +1,19 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createThreatPolicy } from './reflexes/threat-policy.ts';
 import { boot, buckets } from './restart.fakes.ts';
+
+// Captures the options each createBody call receives; the real builder still runs.
+const created = vi.hoisted(() => [] as Array<Record<string, unknown>>);
+vi.mock('./create-body.ts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./create-body.ts')>();
+  return {
+    ...real,
+    createBody: (options: Parameters<typeof real.createBody>[0]) => {
+      created.push({ ...options });
+      return real.createBody(options);
+    },
+  };
+});
 
 const policy = () =>
   createThreatPolicy({
@@ -48,5 +61,36 @@ describe('restartBody and the threat policy (AN-12a)', () => {
     });
     expect(seen).toEqual([restarted.generation]);
     expect(restarted.body.runtime).toBeDefined();
+  });
+
+  beforeEach(() => {
+    created.length = 0;
+  });
+
+  it('passes the bound policy to createBody as threat, and no threat key without one', async () => {
+    const bound = policy();
+    await boot(buckets(), { restart: { bindThreat: () => bound } });
+    expect(created).toHaveLength(1);
+    expect(created[0]?.threat).toBe(bound);
+    expect(created[0]).toHaveProperty('threat', bound);
+
+    created.length = 0;
+    await boot(buckets(), {});
+    expect(created).toHaveLength(1);
+    expect(created[0]).not.toHaveProperty('threat');
+    expect(created[0]).not.toHaveProperty('bindThreat');
+  });
+
+  it('a throwing bindThreat rejects the restart and createBody is never called', async () => {
+    await expect(
+      boot(buckets(), {
+        restart: {
+          bindThreat: () => {
+            throw new Error('bind failed');
+          },
+        },
+      }),
+    ).rejects.toThrow('bind failed');
+    expect(created).toHaveLength(0);
   });
 });
