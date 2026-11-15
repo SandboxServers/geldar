@@ -80,6 +80,20 @@ export function newSessionId(): string {
   return randomUUID();
 }
 
+type ListedTool = ReturnType<typeof listTools>[number];
+
+/**
+ * GX-08: the instinct class is advertised wait's `peek` field; any other connection's list leaves it
+ * out. The server still validates a sent `peek` against the full contract, so a model's `peek: true`
+ * is an ordinary wait, never an error.
+ */
+function forConnection(tool: ListedTool, source: 'instinct' | undefined): ListedTool {
+  if (source === 'instinct' || tool.name !== 'wait') return tool;
+  const props = tool.inputSchema.properties as Record<string, unknown>;
+  const properties = Object.fromEntries(Object.entries(props).filter(([key]) => key !== 'peek'));
+  return { ...tool, inputSchema: { ...tool.inputSchema, properties } };
+}
+
 /**
  * One MCP server for one player's session. Tools, resources and prompts are answered from the
  * world; the player is the one the session was opened for. The server declares `logging`, so
@@ -101,7 +115,9 @@ export function createWorldSession(
     { name: 'geldar-mcp', version: '0.0.0' },
     { capabilities: { tools: {}, resources: {}, prompts: {}, logging: {} } },
   );
-  mcp.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: listTools(hidden) }));
+  mcp.server.setRequestHandler(ListToolsRequestSchema, () => ({
+    tools: listTools(hidden).map((tool) => forConnection(tool, source)),
+  }));
   mcp.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const refused = refuseHiddenCall(request.params.name, request.params.arguments, hidden);
     if (refused) return { ...refused };

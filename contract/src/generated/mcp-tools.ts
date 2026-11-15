@@ -2657,6 +2657,10 @@ export const mcpToolSchemas: Record<
           "type": "integer",
           "minimum": 5,
           "maximum": 240
+        },
+        "peek": {
+          "type": "boolean",
+          "description": "Read-only wait: returns events after the cursor without marking them as seen."
         }
       },
       "$defs": {

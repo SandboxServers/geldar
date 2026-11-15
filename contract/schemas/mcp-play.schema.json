@@ -37,7 +37,11 @@
           "description": "Event kinds that may end the wait. Default: all of them.",
           "items": { "$ref": "mcp-common.schema.json#/$defs/McpInterest" }
         },
-        "max_seconds": { "type": "integer", "minimum": 5, "maximum": 240 }
+        "max_seconds": { "type": "integer", "minimum": 5, "maximum": 240 },
+        "peek": {
+          "type": "boolean",
+          "description": "Read-only wait: returns events after the cursor without marking them as seen."
+        }
       }
     },
     "WaitResult": {

@@ -48,7 +48,13 @@ import { type SleepDeps, sleepTool } from './tools/sleep.ts';
 import { statusTool } from './tools/status.ts';
 import { type NotAvailableTool, notAvailableTool } from './tools/unavailable.ts';
 import { viewTool } from './tools/view.ts';
-import { createWaitState, type WaitError, type WaitState, wait } from './tools/wait.ts';
+import {
+  createWaitState,
+  peekHonoured,
+  type WaitError,
+  type WaitState,
+  wait,
+} from './tools/wait.ts';
 import type { WaitDeltaLives } from './tools/wait-delta.ts';
 
 /** The fixed messages the handlers add. None echoes world text or names an observer (decision 0059). */
@@ -250,6 +256,8 @@ async function waitTool(deps: Wired, call: ToolCall, input: WaitInput, ctx: Tool
       maxSeconds: input.max_seconds,
       signal: ctx.signal,
       session: ctx.session,
+      // GX-08: the class comes from the server-side key check (ctx.source), never from the input.
+      peek: peekHonoured(ctx.source, input.peek),
       ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
       ...(input.interests === undefined ? {} : { interests: input.interests }),
     },
