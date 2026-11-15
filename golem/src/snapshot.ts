@@ -4,6 +4,7 @@ import { Vec3 } from 'vec3';
 import { isEnclosed } from './body/view.ts';
 import { isEdibleItem } from './perception/edible-items.ts';
 import { wearOf } from './perception/item-wear.ts';
+import { selectMuffledNotices } from './perception/muffled.ts';
 import { selfProbes } from './perception/self/index.ts';
 import { ulid } from './ulid.ts';
 
@@ -19,6 +20,11 @@ export interface SnapshotOptions {
   budgetRemainingThoughts?: number;
   daysSinceSleep?: number;
   heard?: Snapshot['heard'];
+  /**
+   * Muffled notices heard through a wall since the last snapshot (MH-4). Collapsed by direction and capped by
+   * `selectMuffledNotices`; `heard_muffled` is left out when none remain.
+   */
+  muffled?: readonly { direction: string; band: string }[];
   events?: Snapshot['events_since_last_thought'];
   currentPlan?: Snapshot['current_plan'];
   stuck?: Snapshot['stuck'];
@@ -105,6 +111,8 @@ export function buildSnapshot(bot: Bot, opts: SnapshotOptions): Snapshot {
   const biome = biomeId(block?.biome?.name);
   if (biome !== undefined) position.biome = biome;
 
+  const muffled = selectMuffledNotices(opts.muffled ?? []);
+
   const snapshot = {
     snapshot_id: `sn_${ulid()}`,
     agent_id: opts.lifeId,
@@ -149,6 +157,7 @@ export function buildSnapshot(bot: Bot, opts: SnapshotOptions): Snapshot {
     },
     ...(opts.bodyGeneration !== undefined ? { body_generation: opts.bodyGeneration } : {}),
     heard: opts.heard ?? [],
+    ...(muffled.length > 0 ? { heard_muffled: muffled } : {}),
     events_since_last_thought: opts.events ?? [],
     ...(opts.currentPlan !== undefined ? { current_plan: opts.currentPlan } : {}),
     ...(opts.stuck !== undefined ? { stuck: opts.stuck } : {}),

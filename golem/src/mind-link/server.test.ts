@@ -9,6 +9,8 @@ import {
 } from '@geldar/contract';
 import { describe, expect, it } from 'vitest';
 import type { EventPublisher } from '../body/records-nats.ts';
+import { HeardMuffledInbox } from '../perception/heard-muffled-event.ts';
+import type { SnapshotOptions } from '../snapshot.ts';
 import { SnapshotRevision } from './revision.ts';
 import { FakeEars, FakePerception, FakeVoice } from './senses.fakes.ts';
 import {
@@ -20,7 +22,7 @@ import {
   StubExecutor,
   snapshotFrom,
 } from './server.fakes.ts';
-import { MindLinkServer } from './server.ts';
+import { MindLinkServer, type RequestServer } from './server.ts';
 
 class MemoryPublisher implements EventPublisher {
   readonly sent: Array<{ subject: string; event: WorldEvent; msgId: string }> = [];
@@ -69,6 +71,112 @@ function rig(tick = 10, build: typeof snapshotFrom = snapshotFrom) {
   };
   return { transport, executor, voice, ears, publisher, revision, logs, server, snapshot, plan };
 }
+
+describe('the muffled notices of a snapshot (MH-4): peeked, acked only after the reply', () => {
+  const muffledNotice = (direction: string, band: string) => ({
+    kind: 'heard_muffled',
+    direction,
+    band,
+  });
+  const request = JSON.stringify({ life_id: LIFE, reason: 'wake' });
+
+  /** A request server the test drives itself, so the reply can be made to fail. */
+  function capturing() {
+    const handlers = new Map<
+      string,
+      (data: string, reply: (body: string) => void) => Promise<void>
+    >();
+    const requests: RequestServer = {
+      serve(subject, handler) {
+        handlers.set(subject, handler);
+        return () => handlers.delete(subject);
+      },
+    };
+    const call = (data: string, reply: (body: string) => void) => {
+      const handler = handlers.get(snapshotSubject(SHARD, LIFE));
+      if (handler === undefined) throw new Error('no snapshot handler');
+      return handler(data, reply);
+    };
+    return { requests, call };
+  }
+
+  function serveWith(
+    requests: RequestServer,
+    muffled: HeardMuffledInbox,
+    build: (options: SnapshotOptions) => Snapshot,
+  ): void {
+    const server = new MindLinkServer({
+      shard: SHARD,
+      lifeId: LIFE,
+      bodyGeneration: GENERATION,
+      revision: new SnapshotRevision(),
+      server: requests,
+      executor: new StubExecutor(),
+      perception: new FakePerception(),
+      ears: new FakeEars(),
+      voice: new FakeVoice(),
+      buildSnapshot: build,
+      tick: () => 10,
+      publisher: new MemoryPublisher(),
+      muffled,
+      log: () => undefined,
+    });
+    server.start();
+  }
+
+  function inboxWithTwo(): HeardMuffledInbox {
+    const inbox = new HeardMuffledInbox({ now: () => 0 });
+    inbox.receive(muffledNotice('e', 'far'));
+    inbox.receive(muffledNotice('n', 'near'));
+    return inbox;
+  }
+
+  it('hands the notices to the builder nearest first, and clears them once the reply is written', async () => {
+    const inbox = inboxWithTwo();
+    const seen: SnapshotOptions[] = [];
+    const { requests, call } = capturing();
+    serveWith(requests, inbox, (options) => {
+      seen.push(options);
+      return snapshotFrom(options);
+    });
+    await call(request, () => undefined);
+    expect(seen[0]?.muffled).toEqual([muffledNotice('n', 'near'), muffledNotice('e', 'far')]);
+    expect(inbox.peek().notices).toEqual([]);
+  });
+
+  it('keeps the notices until the reply is written', async () => {
+    const inbox = inboxWithTwo();
+    const { requests, call } = capturing();
+    serveWith(requests, inbox, snapshotFrom);
+    let stillThere = -1;
+    await call(request, () => {
+      stillThere = inbox.peek().notices.length;
+    });
+    expect(stillThere).toBe(2);
+  });
+
+  it('keeps the notices when the reply cannot be sent', () => {
+    const inbox = inboxWithTwo();
+    const { requests, call } = capturing();
+    serveWith(requests, inbox, snapshotFrom);
+    expect(() =>
+      call(request, () => {
+        throw new Error('connection closed');
+      }),
+    ).toThrow('connection closed');
+    expect(inbox.peek().notices).toHaveLength(2);
+  });
+
+  it('keeps the notices when the snapshot cannot be built', async () => {
+    const inbox = inboxWithTwo();
+    const { requests, call } = capturing();
+    serveWith(requests, inbox, () => {
+      throw new Error('bot gone');
+    });
+    await call(request, () => undefined);
+    expect(inbox.peek().notices).toHaveLength(2);
+  });
+});
 
 describe('SnapshotRevision', () => {
   it('counts up from its start and the getter reads the live value', () => {

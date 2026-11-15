@@ -224,6 +224,7 @@ export async function main(): Promise<void> {
     publisher: jetStreamPublisher(jetstream(nc)),
     server: natsRequestServer(nc),
     owners: nc,
+    hearing: nc,
     log: (line) => jsonLog({ event: 'body', life_id: config.lifeId, line }),
     metrics: telemetry.metrics,
   };

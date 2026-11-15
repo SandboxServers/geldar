@@ -1,7 +1,6 @@
-import { heardMuffledSentence, hearingSubject } from '@geldar/contract';
+import { hearingSubject } from '@geldar/contract';
 import { describe, expect, it } from 'vitest';
 import { HeardMuffledInbox, NOTICE_TTL_MS, watchHeardMuffled } from './heard-muffled-event.ts';
-import { renderMuffledLines } from './muffled.ts';
 
 const NOTICE = { kind: 'heard_muffled', direction: 'n', band: 'near' } as const;
 const notice = (direction: string, band: string) => ({ kind: 'heard_muffled', direction, band });
@@ -78,7 +77,6 @@ describe('HeardMuffledInbox', () => {
     expect(inbox.receive(notice('e', 'near'))).toBe(true);
     const taken = inbox.take();
     expect(taken).toEqual([notice('e', 'near'), notice('n', 'far')]);
-    expect(renderMuffledLines(taken)[0]).toBe(heardMuffledSentence('e', 'near'));
   });
 
   it('keeps one entry per direction, at its nearest band, however many notices arrive', () => {

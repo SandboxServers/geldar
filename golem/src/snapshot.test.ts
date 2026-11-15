@@ -30,6 +30,64 @@ function fakeBot(over: Record<string, unknown> = {}): Bot {
 
 const opts: SnapshotOptions = { lifeId: 'ag_kestrel_01', shard: 'phase0', revision: 3 };
 
+const n = (direction: string, band: string) => ({ direction, band });
+
+describe('buildSnapshot heard_muffled (MH-4, decision 0199 step 8)', () => {
+  it('leaves the key out when there are no notices, so the snapshot is as before', () => {
+    expect(buildSnapshot(fakeBot(), opts)).not.toHaveProperty('heard_muffled');
+    expect(buildSnapshot(fakeBot(), { ...opts, muffled: [] })).not.toHaveProperty('heard_muffled');
+  });
+
+  it('carries the notices nearest band first', () => {
+    const snap = buildSnapshot(fakeBot(), {
+      ...opts,
+      muffled: [n('w', 'far'), n('n', 'mid'), n('e', 'near')],
+    });
+    expect(snap.heard_muffled).toEqual([n('e', 'near'), n('n', 'mid'), n('w', 'far')]);
+  });
+
+  it('carries at most three notices, the nearest three', () => {
+    const snap = buildSnapshot(fakeBot(), {
+      ...opts,
+      muffled: [n('n', 'far'), n('e', 'mid'), n('s', 'near'), n('w', 'near')],
+    });
+    expect(snap.heard_muffled).toEqual([n('s', 'near'), n('w', 'near'), n('e', 'mid')]);
+  });
+
+  it('collapses five notices in one direction to one entry with the nearest band', () => {
+    const snap = buildSnapshot(fakeBot(), {
+      ...opts,
+      muffled: [n('n', 'far'), n('n', 'far'), n('n', 'mid'), n('n', 'near'), n('n', 'far')],
+    });
+    expect(snap.heard_muffled).toEqual([n('n', 'near')]);
+  });
+
+  it('keeps overhead and n as two entries', () => {
+    const snap = buildSnapshot(fakeBot(), {
+      ...opts,
+      muffled: [n('overhead', 'near'), n('n', 'near')],
+    });
+    expect(snap.heard_muffled).toEqual([n('n', 'near'), n('overhead', 'near')]);
+  });
+
+  it('passes the contract, and each entry has only a direction and a band', () => {
+    // The notice carries a speaker and words in this input: neither may reach the snapshot.
+    const heard = {
+      kind: 'heard_muffled',
+      speaker: 'Ada',
+      text: 'meet at 100 64 -20',
+      direction: 'se',
+      band: 'mid',
+    };
+    const snap = buildSnapshot(fakeBot(), { ...opts, muffled: [heard] });
+    expect(validateSnapshot(snap).ok).toBe(true);
+    expect(snap.heard_muffled).toEqual([n('se', 'mid')]);
+    for (const notice of snap.heard_muffled ?? []) {
+      expect(Object.keys(notice).sort()).toEqual(['band', 'direction']);
+    }
+  });
+});
+
 describe('buildSnapshot', () => {
   it('produces a snapshot the contract accepts', () => {
     const snap = buildSnapshot(fakeBot(), opts);

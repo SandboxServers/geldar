@@ -121,6 +121,7 @@ export function playerBodyEnv(input: {
     publisher: input.publisher,
     server: input.server,
     owners: input.nc,
+    hearing: input.nc,
     log: input.log,
     ...(input.proficiency === undefined ? {} : { proficiency: input.proficiency }),
   };

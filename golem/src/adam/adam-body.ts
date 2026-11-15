@@ -352,6 +352,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
       executor,
       perception: createPerception(bot),
       ears: composeEars(chatEars, digest),
+      muffled: hearing.inbox,
       voice,
       buildSnapshot: (options) => buildSnapshot(bot, options),
       view: async (size) => viewTextFromBot(bot, size),

@@ -40,6 +40,19 @@ describe('the player host body env (decision 0165)', () => {
     });
     expect(env.owners).toBe(nc);
   });
+
+  it('hands the same connection to the Body as its hearing transport (MH-4)', () => {
+    const nc = {} as Parameters<typeof playerBodyEnv>[0]['nc'];
+    const env = playerBodyEnv({
+      config: {} as AdamBodyEnv['config'],
+      kv: {} as AdamBodyEnv['kv'],
+      publisher: { publish: async () => undefined },
+      nc,
+      server: new FakeRequestServer(),
+      log: () => {},
+    });
+    expect(env.hearing).toBe(nc);
+  });
 });
 
 describe('playerIdFromArgs', () => {
