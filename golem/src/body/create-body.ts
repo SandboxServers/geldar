@@ -18,11 +18,12 @@ import type { Reflex } from './reflex.ts';
 import { allReflexesOn, isReflexEnabled, type ReflexConfig } from './reflex-config.ts';
 import { createBasicReflexes } from './reflexes/basic.ts';
 import { reportBlocked } from './reflexes/blocked-path.ts';
-import { combatReflexes } from './reflexes/combat.ts';
+import { combatReflexes, createCombatReflexes } from './reflexes/combat.ts';
 import { forgetThreatEncounter } from './reflexes/encounter.ts';
 import { noteActionEnd, resetIdleStuck } from './reflexes/idle-stuck.ts';
 import { forgetBurrow } from './reflexes/panic-burrow.ts';
 import { forgetShelterBackoff, shelterReflexes } from './reflexes/shelter.ts';
+import type { ThreatPolicy } from './reflexes/threat-policy.ts';
 import { noteGoto, resetStuck } from './reflexes/unstick.ts';
 import { watchRestStat } from './rest-stat.ts';
 import { BodyRuntime, type TickSource } from './runtime.ts';
@@ -45,6 +46,11 @@ export interface CreateBodyOptions {
   use?: boolean;
   /** The shard's `body_actions.swim` flag; the goto swim and the bank exit are off while off. Default: off (decision 0194). */
   swim?: boolean;
+  /**
+   * The life's threat policy (AN-12a). Given, the combat reflexes are built on it; left out, the
+   * legacy combat reflexes are handed over as before.
+   */
+  threat?: ThreatPolicy;
   /**
    * Where records go. Given, the Body writes to JetStream through a `NatsRecordSink` (it fills in
    * `lifeId` and the world tick); left out, a `MemorySink` keeps them.
@@ -81,9 +87,13 @@ export interface Body {
   checkpoints: CheckpointStore | null;
 }
 
-/** The reflexes a shard config leaves on, from every reflex group. */
-export function enabledReflexes(config: ReflexConfig): Reflex[] {
-  return [...createBasicReflexes(), ...combatReflexes, ...shelterReflexes].filter((reflex) =>
+/**
+ * The reflexes a shard config leaves on, from every reflex group. With a threat policy the combat
+ * reflexes are built on it; without one the shared legacy `combatReflexes` are used.
+ */
+export function enabledReflexes(config: ReflexConfig, threat?: ThreatPolicy): Reflex[] {
+  const combat = threat === undefined ? combatReflexes : createCombatReflexes(threat);
+  return [...createBasicReflexes(), ...combat, ...shelterReflexes].filter((reflex) =>
     isReflexEnabled(config, reflex.name),
   );
 }
@@ -139,7 +149,7 @@ export function createBody(options: CreateBodyOptions): Body {
     ticks: options.ticks,
     sink: tap,
     ...(inflight === undefined ? {} : { inflight }),
-    reflexes: enabledReflexes(reflexConfig),
+    reflexes: enabledReflexes(reflexConfig, options.threat),
     reflexConfig,
     programs: options.programs ?? createProgramRegistry(),
     ...(options.view === undefined ? {} : { view: options.view }),

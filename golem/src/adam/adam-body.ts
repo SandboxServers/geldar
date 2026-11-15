@@ -11,6 +11,7 @@ import type { Bot } from 'mineflayer';
 import { DEFAULT_DIAG_SINK, type DiagSink } from '../actions/stall-diag.ts';
 import { type OwnerTransport, wireBlockOwners } from '../body/block-owners.ts';
 import type { Body } from '../body/create-body.ts';
+import { watchChunkVisits } from '../body/evidence/chunk-visits.ts';
 import type { EventPublisher } from '../body/records-nats.ts';
 import {
   type RestartBodyOptions,
@@ -25,6 +26,8 @@ import { ImageLimiter } from '../body-image/limiter.ts';
 import { RenderHost } from '../body-image/render-host.ts';
 import { AuditPublisher } from '../character/audit-publisher.ts';
 import type { LifeCharacter } from '../character/character-config.ts';
+import type { ProficiencyCache } from '../character/proficiency-cache.ts';
+import { lifeThreatPolicy } from '../character/runtime.ts';
 import { countingSink, type GolemMetrics } from '../metrics.ts';
 import { composeEars } from '../mind-link/compose-ears.ts';
 import { RecentEvents } from '../mind-link/recent-events.ts';
@@ -75,6 +78,11 @@ export interface AdamBodyEnv {
   character?: LifeCharacter;
   /** Replaces the AuditPublisher this run would build for the adoption (tests only). */
   audit?: AuditPublisher;
+  /**
+   * The life's proficiency cache (AN-12a), started by the host only for a config sheet. Its combat level is read
+   * at each threat decision; absent, the level is 0.
+   */
+  proficiency?: ProficiencyCache;
 }
 
 /** A Body that is up. */
@@ -158,6 +166,8 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
   };
   bot.once('end', onEnd);
   const wrapped: { recent: RecentEvents | null } = { recent: null };
+  // The audit producer is built when the Body's generation is bound (AN-12a), before the Body starts.
+  let audit: AuditPublisher | undefined;
   const restarting = (env.restart ?? restartBody)({
     lifeId: config.lifeId,
     bot,
@@ -169,6 +179,30 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     use: config.use,
     swim: config.swim,
     timeScale: config.timeScale,
+    // Only a sheet from config is bound (AN-07 and AN-12a): the standard fallback and off build no policy.
+    bindThreat: (generation) => {
+      const sheet = env.character?.sheet ?? null;
+      if (sheet === null || env.character?.source !== 'config') return undefined;
+      audit ??=
+        env.audit ??
+        new AuditPublisher({
+          publisher,
+          shard: config.shard,
+          lifeId: config.lifeId,
+          generation,
+          tick,
+          log,
+        });
+      return lifeThreatPolicy({
+        sheet,
+        rolls: env.character.config.rolls,
+        lifeId: config.lifeId,
+        generation,
+        tick,
+        audit,
+        combatLevel: () => env.proficiency?.level('combat') ?? 0,
+      });
+    },
     nats: { publisher, shard: config.shard, log },
     wrapRecords: (inner) => {
       const made = new RecentEvents(env.metrics ? countingSink(inner, env.metrics) : inner);
@@ -194,9 +228,13 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     bot.off('end', onEnd);
     // A restart that finishes after the failure is stopped, so its timers do not outlive it.
     void restarting.then(
-      (late) => late.stop(),
-      () => undefined,
+      (late) => {
+        late.stop();
+        audit?.close();
+      },
+      () => audit?.close(),
     );
+    audit?.close();
     if (!gone) bot.quit();
     throw error;
   }
@@ -208,10 +246,10 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
   let onHealth: (() => void) | undefined;
   let hurts: HurtReporter | undefined;
   let detachHurts: () => void = () => undefined;
+  let detachChunks: () => void = () => undefined;
   let link: MindLinkServer | undefined;
   let renders: RenderHost | undefined;
   let stopImages: (() => void) | undefined;
-  let audit: AuditPublisher | undefined;
   try {
     const digest = wrapped.recent;
     if (digest === null) throw new Error('the Body did not wrap its record sink');
@@ -219,7 +257,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     // fallback (never stored, so no baseline) builds no audit producer at all and emits nothing.
     const sheet = env.character?.sheet ?? null;
     if (sheet !== null && env.character?.source === 'config') {
-      audit =
+      audit ??=
         env.audit ??
         new AuditPublisher({
           publisher,
@@ -231,6 +269,20 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
         });
       const hash = createHash('sha256').update(canonicalSheetJson(sheet)).digest('hex');
       audit.recordAdoption(sheet, hash, 'config');
+      // First-visit chunk evidence (AN-09b), for a config sheet only. The publisher's promise is handled by the watcher.
+      detachChunks = watchChunkVisits({
+        bot,
+        shard: config.shard,
+        lifeId: config.lifeId,
+        tick,
+        publish: (event) =>
+          publisher.publish(
+            `geldar.${config.shard}.${event.type}`,
+            JSON.stringify(event),
+            event.source_event_id,
+          ),
+        log,
+      });
     }
     const chatEars = new BotEars({
       username: config.lifeId,
@@ -303,6 +355,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     bot.off('end', onEnd);
     if (onHealth !== undefined) bot.off('health', onHealth);
     detachHurts();
+    detachChunks();
     hurts?.close();
     detachEars();
     stopImages?.();
@@ -326,6 +379,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
       bot.off('end', onEnd);
       if (onHealth !== undefined) bot.off('health', onHealth);
       detachHurts();
+      detachChunks();
       hurts?.close();
       detachEars();
       owners?.stop();

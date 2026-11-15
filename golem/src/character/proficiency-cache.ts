@@ -264,10 +264,13 @@ export class ProficiencyCache {
 
   #scheduleRetry(): void {
     if (this.#stopped || this.#timer !== undefined) return;
-    this.#timer = setTimeout(() => {
+    const timer = setTimeout(() => {
       this.#timer = undefined;
       void this.#runCycle().catch(() => undefined);
     }, this.#retryMs);
+    // A missed stop() must not hold the process open: the retry is only useful while the host runs.
+    timer.unref();
+    this.#timer = timer;
   }
 
   #clearTimer(): void {

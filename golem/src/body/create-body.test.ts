@@ -148,6 +148,35 @@ describe('enabledReflexes', () => {
     expect(names).toHaveLength(REFLEX_NAMES.length - 2);
     expect(enabledReflexes({ ...allReflexesOn(), enabled: false })).toEqual([]);
   });
+
+  it('hands over the shared legacy combat reflexes when no threat policy is given', () => {
+    const legacy = enabledReflexes(allReflexesOn());
+    const again = enabledReflexes(allReflexesOn(), undefined);
+    const names = ['fight_or_flee', 'retreat'];
+    for (const name of names) {
+      const a = legacy.find((r) => r.name === name);
+      const b = again.find((r) => r.name === name);
+      expect(a).toBeDefined();
+      expect(b).toBe(a);
+    }
+  });
+
+  it('builds the combat reflexes on a given threat policy, not the legacy ones', () => {
+    const legacy = enabledReflexes(allReflexesOn());
+    const policy = createThreatPolicy({
+      aggression: 1,
+      combat: 0,
+      rolls: false,
+      rollAt: () => {
+        throw new Error('not called here');
+      },
+    });
+    const bound = enabledReflexes(allReflexesOn(), policy);
+    expect(bound.map((r) => r.name).sort()).toEqual(legacy.map((r) => r.name).sort());
+    for (const name of ['fight_or_flee', 'retreat']) {
+      expect(bound.find((r) => r.name === name)).not.toBe(legacy.find((r) => r.name === name));
+    }
+  });
 });
 
 describe('createBody composition', () => {
