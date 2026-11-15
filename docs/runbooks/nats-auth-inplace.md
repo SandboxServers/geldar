@@ -50,15 +50,15 @@ Names and subjects only:
 - **NEW user `helper`**
   - Sub: exactly four subjects, no wildcard: `geldar.<s>.helper.body.start`, `geldar.<s>.helper.body.stop`, `geldar.<s>.helper.body.status`, `geldar.<s>.helper.body.logtail`.
   - Pub: `_INBOX.>` only.
-  - Password file: `secrets/nats-helper.txt` (root-only).
+  - Password file: `secrets/nats-helper.txt` (root-only). The helper install script creates it before this change; this runbook only reads it.
 - **NEW user `supervisor`** (absent on the live file today)
-  - Pub: the same four `geldar.<s>.helper.body.*` subjects, plus `_INBOX.>`. The `_INBOX.>` stays because the supervisor answers `ctl.body.*` requests on inboxes (c7c); without it the replies to register fail.
+  - Pub: the same four exact subjects (`geldar.<s>.helper.body.start`, `.stop`, `.status`, `.logtail`), plus `_INBOX.>`. The `_INBOX.>` stays because the supervisor answers `ctl.body.*` requests on inboxes (c7c); without it the replies to register fail.
   - Sub: `geldar.<s>.ctl.body.>` and `_INBOX.>`.
   - Password file: `secrets/nats-supervisor.txt`.
 - **`register`**: unchanged by this batch (Pub `geldar.<s>.ctl.body.>`, Sub `_INBOX.>`). The live file has no `register` user. Adding it is the REG-NATS-COMPOSE step (`docs/analysis/phase1/ledger.md`), not this batch.
 - **`body` and `paper`**: add PubDeny `geldar.<s>.helper.body.>`. Nothing else changes in their lines.
 
-The password files must exist before step 2 (step 0 creates them). The new users go into the conf only after the files exist. A batch change that adds only these lines is the one the diff in step 3 must show.
+The password files must exist before step 2: `nats-supervisor.txt` is created by step 0, and `nats-helper.txt` by the helper install script. The new users go into the conf only after both files exist. A batch change that adds only these lines is the one the diff in step 3 must show.
 
 ## Procedure
 
@@ -68,17 +68,20 @@ Run on the Colo node, as the account that owns the secrets directory. Never prin
 
 - The owner go is recorded, and the window is agreed.
 - For the batch, PR #415 is merged to `main` and the node has the merged `geldar.ps1`.
-- Create the two new password files, root-only where the batch says so. Do it in a shell with `umask 077` and `set -C`, so an existing file is never overwritten. Never print the values, and never paste them into a log or chat:
+- The helper install script has run on the node, so `secrets/nats-helper.txt` exists and is non-empty. This runbook never creates, chowns or overwrites that file:
+  ```sh
+  test -s /mnt/nvme/geldar-colo/secrets/nats-helper.txt && echo "nats-helper.txt present"
+  ```
+  If the line prints nothing, stop: the install script has not run, and the NATS edit waits for it.
+- Create ONLY `nats-supervisor.txt`. Do it in a shell with `umask 077` and `set -C`, so an existing file is never overwritten. Never print the value, and never paste it into a log or chat:
   ```sh
   umask 077
   set -C
-  openssl rand -hex 32 > /mnt/nvme/geldar-colo/secrets/nats-helper.txt
   openssl rand -hex 32 > /mnt/nvme/geldar-colo/secrets/nats-supervisor.txt
   set +C
-  sudo chown root:root /mnt/nvme/geldar-colo/secrets/nats-helper.txt
-  stat -c '%U:%G %a %n' /mnt/nvme/geldar-colo/secrets/nats-helper.txt /mnt/nvme/geldar-colo/secrets/nats-supervisor.txt
+  stat -c '%U:%G %a %n' /mnt/nvme/geldar-colo/secrets/nats-supervisor.txt
   ```
-  The `stat` output must show mode `600` on both, and `root:root` on `nats-helper.txt`. If `set -C` refuses a file, the file exists: stop and check it with the owner, do not overwrite it.
+  The `stat` output must show mode `600`. If `set -C` refuses the file, it exists: stop and check it with the owner, do not overwrite it.
 - If clients may drop (any role that loses or gains permissions, or a restart), publish a maintenance notice first: `deploy/colo-notice.sh pause bodies <seconds>` (or `world`), and `back` after the change. The notice needs `nats-deploy.txt`; it warns and publishes nothing if the file is missing.
 - Record the container count and the connection count:
   ```sh
@@ -103,7 +106,7 @@ Record the two sha256 values. They must match.
 
 - Make a private staging directory outside `secrets/`: `install -d -m 0700 "$HOME/nats-stage"`. Do not use `secrets/nats-auth.conf.new`: it is a stale, unvalidated leftover. Do not use it, and do not delete it without the owner.
 - Write the new conf to `$HOME/nats-stage/nats-auth.conf` with `umask 077`, so it is `0600`.
-- Passwords come from the existing `secrets/nats-<user>.txt` files, one per user that already exists. This runbook creates no new password for an existing user. The two new users of the batch take their values from `nats-helper.txt` and `nats-supervisor.txt` (step 0). Copy the value into the staged conf with a script that reads the file. Never echo it, and never type it by hand.
+- Passwords come from the existing `secrets/nats-<user>.txt` files, one per user that already exists. This runbook creates no new password for an existing user. The helper's password is READ from `secrets/nats-helper.txt`, the file the helper install script already created; the helper's environment points at the same file, so both sides use one value. Never create or overwrite that file here. The supervisor's password is read from `nats-supervisor.txt` (step 0). Copy each value into the staged conf with a script that reads the file. Never echo it, and never type it by hand.
 - For the batch, add to the staged copy only the lines in the batch section: the `helper` and `supervisor` users, and one `geldar.<s>.helper.body.>` PubDeny each on `body` and `paper`.
 - Check the monitor line is unchanged:
   ```sh
