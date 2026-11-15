@@ -18,6 +18,8 @@ export interface FakeEntity {
   type: string;
   name?: string;
   username?: string;
+  /** A player's in-world display name, as the loose-name lookup reads it (decision 0334). */
+  displayName?: string;
   position: Vec3;
   height?: number;
   /** Body yaw in radians; mineflayer's convention (yaw 0 faces -z). */
