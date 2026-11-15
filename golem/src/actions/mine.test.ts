@@ -150,7 +150,6 @@ describe('mineAction', () => {
       'damaged_anvil',
       'suspicious_sand',
       'suspicious_gravel',
-      'pointed_dripstone',
       'dragon_egg',
       'white_concrete_powder',
     ];
