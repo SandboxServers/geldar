@@ -77,6 +77,55 @@ beforeEach(() => {
   walk.mockReset();
 });
 
+describe('attack on a flying mob', () => {
+  it('never paths to a phantom: it waits for the swoop, then swings once it is in reach', async () => {
+    const { bot, zombie, raw } = fakeBot({
+      targetName: 'phantom',
+      zombieAt: new Vec3(0, 70, 0),
+      hitsToKill: 2,
+    });
+    raw.waitForTicks.mockImplementation(async () => {
+      zombie.position = new Vec3(1, 64, 0);
+    });
+    walk.mockResolvedValue({ ok: false, reason: 'blocked', message: 'no path' });
+    const outcome = await attack(bot, 'phantom');
+    expect(walk).not.toHaveBeenCalled();
+    expect(outcome.status).toBe('completed');
+    expect(detailOf(outcome)).toMatchObject({ target: 'phantom', swings: 2, killed: true });
+  });
+
+  it.each(['phantom', 'bat'])(
+    'a %s that never comes within reach ends as out_of_reach after 10 s of waiting, not a path timeout',
+    async (name) => {
+      const { bot, raw } = fakeBot({ targetName: name, zombieAt: new Vec3(0, 70, 0) });
+      walk.mockResolvedValue({ ok: false, reason: 'timeout', message: 'ran out of time' });
+      const outcome = await attack(bot, name);
+      expect(walk).not.toHaveBeenCalled();
+      expect(outcome).toMatchObject({
+        status: 'failed',
+        reason: 'out_of_reach',
+        message: `the ${name} was not within reach`,
+      });
+      const waited = raw.waitForTicks.mock.calls.reduce(
+        (sum, call) => sum + Number((call as unknown[])[0]),
+        0,
+      );
+      expect(waited).toBe(200);
+    },
+  );
+
+  it('an abort while it waits for a flying mob cancels the attack', async () => {
+    const { bot, raw } = fakeBot({ targetName: 'phantom', zombieAt: new Vec3(0, 70, 0) });
+    const controller = new AbortController();
+    raw.waitForTicks.mockImplementation(async () => {
+      controller.abort();
+    });
+    const outcome = await attack(bot, 'phantom', controller.signal);
+    expect(walk).not.toHaveBeenCalled();
+    expect(outcome.status).toBe('cancelled');
+  });
+});
+
 describe('findTarget and bestWeapon', () => {
   it('finds the nearest entity by mob name and ignores the bot itself', () => {
     const { bot } = fakeBot();

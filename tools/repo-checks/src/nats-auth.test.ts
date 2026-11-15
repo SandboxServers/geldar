@@ -75,14 +75,22 @@ function expectedTable(s: string): Record<string, { pub: string[]; sub: string[]
         kv('geldar-body-generation'),
         kv('geldar-skins'),
       ],
-      sub: [`geldar.${s}.body.>`, `geldar.${s}.blockowner.changed`, '_INBOX.>'],
+      sub: [
+        `geldar.${s}.body.>`,
+        `geldar.${s}.blockowner.changed`,
+        `geldar.${s}.state.*.level`,
+        '_INBOX.>',
+      ],
     },
     mind: {
       pub: [...MIND_TYPES.map((t) => `geldar.${s}.${t}`), ...JS, `geldar.${s}.body.>`],
       sub: ['_INBOX.>'],
     },
     // State (0280, AN-02b): the eventsink publishes the level push on state.<life>.level.
-    eventsink: { pub: [`geldar.${s}.dlq`, `geldar.${s}.state.>`, ...JS], sub: ['_INBOX.>'] },
+    eventsink: {
+      pub: [`geldar.${s}.dlq`, `geldar.${s}.state.>`, ...JS],
+      sub: [`geldar.${s}.state.*.proficiency`, '_INBOX.>'],
+    },
     mcp: {
       pub: [`geldar.${s}.sovereign_call`, `geldar.${s}.body.>`, kv('geldar-presence'), ...JS],
       sub: ['_INBOX.>'],
@@ -442,7 +450,13 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
     // The one wildcard token is the agent id in Glass's feed subscription: geldar.<shard>.kino.*.feed.
     const bare = entries.some((e) =>
       [...e.pub, ...e.sub].some(
-        (s) => s.split('.').includes('*') && s !== `geldar.${SHARD}.kino.*.feed`,
+        // AN-12b: one life's level push (body) and one life's proficiency request (eventsink) are the two exact one-token grants
+        // of the state subtree; the table above pins each of them.
+        (s) =>
+          s.split('.').includes('*') &&
+          s !== `geldar.${SHARD}.kino.*.feed` &&
+          s !== `geldar.${SHARD}.state.*.level` &&
+          s !== `geldar.${SHARD}.state.*.proficiency`,
       ),
     );
     expect(bare).toBe(false);
@@ -460,6 +474,7 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
       `geldar.${SHARD}.ctl.body.>`,
       `geldar.${SHARD}.helper.body.>`,
       `geldar.${SHARD}.state.*.level`,
+      `geldar.${SHARD}.body.*.hearing`,
     ]);
     expect(by('paper')?.deny).toEqual([
       control,

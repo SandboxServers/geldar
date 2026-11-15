@@ -6,13 +6,14 @@
   object-fit: contain;
 }
 
-/* The live chat panel (decision 0310, geldar-chat.js). Fixed at the right edge; bottom of the screen on a narrow one. */
+/* The live chat panel (decision 0310, geldar-chat.js). Fixed at the right edge, below BlueMap's control bar (y 8..40);
+   on a narrow screen, at the bottom, left of BlueMap's zoom buttons. */
 #geldar-chat {
   position: fixed;
-  top: 12px;
+  top: 56px;
   right: 12px;
   width: 300px;
-  max-height: 40vh;
+  max-height: min(40vh, calc(100vh - 68px));
   display: flex;
   flex-direction: column;
   z-index: 1000;
@@ -25,9 +26,9 @@
   #geldar-chat {
     top: auto;
     bottom: 12px;
-    left: auto;
-    right: 8px;
-    width: min(300px, calc(100vw - 16px));
+    left: 8px;
+    right: 68px;
+    width: auto;
     max-height: 35vh;
   }
 }
@@ -68,4 +69,74 @@
 }
 #geldar-chat .gc-name {
   font-weight: 600;
+  cursor: pointer;
+  border-radius: 2px;
+}
+#geldar-chat .gc-name:hover,
+#geldar-chat .gc-name:focus-visible {
+  text-decoration: underline;
+}
+#geldar-chat .gc-name:focus-visible {
+  outline: 2px solid #ffd54a;
+  outline-offset: 2px;
+}
+#geldar-chat .gc-name.gc-following {
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.14);
+  outline: 1px solid #ffd54a;
+  outline-offset: 1px;
+}
+#geldar-chat .gc-note {
+  color: #ffd54a;
+  font-weight: 400;
+  margin-left: 8px;
+}
+/* The header's title row holds the live dot; a long note wraps inside it, so the toggle keeps its 44px. */
+#geldar-chat .gc-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* The live dot (geldar-chat.js freshState): green live, amber delayed, grey offline. Text is "Live", "Delayed" or
+   "Offline". The colours are the panel's own: the amber note, the grey border and the grey time. */
+#geldar-chat .gc-live {
+  color: #aaa;
+  font-size: 12px;
+  font-weight: 400;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+#geldar-chat .gc-live::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: #888;
+  vertical-align: middle;
+}
+#geldar-chat .gc-live.gc-live-live::before {
+  background: #7ddc7d;
+}
+#geldar-chat .gc-live.gc-live-delayed {
+  color: #ffd54a;
+}
+#geldar-chat .gc-live.gc-live-delayed::before {
+  background: #ffd54a;
+}
+/* A speaker's "still" suffix, after the name. */
+#geldar-chat .gc-still {
+  color: #aaa;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+/* The last line's age, under the list. Hidden by its hidden attribute when the feed is empty. */
+#geldar-chat .gc-foot {
+  color: #aaa;
+  font-size: 12px;
+  padding: 0 8px 4px;
+  flex: none;
+}
+#geldar-chat.gc-collapsed .gc-foot {
+  display: none;
 }

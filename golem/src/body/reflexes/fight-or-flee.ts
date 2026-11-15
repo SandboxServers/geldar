@@ -6,7 +6,7 @@ import type { BodyView, HostileView } from '../view.ts';
 import { deadline } from './deadline.ts';
 import { threatCallFor } from './encounter.ts';
 import { LEGACY_THREAT, type ThreatPolicy } from './threat-policy.ts';
-import { attackerOf, isSuicideMob } from './threats.ts';
+import { attackerOf, flyerOf, isSuicideMob } from './threats.ts';
 
 /** A hostile this close (blocks) that hurt the Body just now is the attacker. */
 const ATTACKER_RADIUS = 4;
@@ -59,6 +59,22 @@ function hissTrigger(view: BodyView): Trigger | null {
     distance: Math.round(creeper.distance * 10) / 10,
     armed: false,
     cause: 'hiss',
+  };
+}
+
+/**
+ * The trigger for a phantom in sight within 16 blocks, when the Body is armed and its health is above
+ * the policy floor. Unhurt or hurt, the Body fights it in place (the attack action waits for it).
+ */
+function flyerTrigger(view: BodyView, policy: ThreatPolicy): Trigger | null {
+  const flyer = flyerOf(view);
+  if (!flyer || !isArmed(view) || view.health <= policy.floor()) return null;
+  return {
+    health: view.health,
+    hostile: flyer.name,
+    distance: Math.round(flyer.distance * 10) / 10,
+    armed: true,
+    flyer: true,
   };
 }
 
@@ -166,12 +182,14 @@ export function createFightOrFleeReflex(policy: ThreatPolicy = LEGACY_THREAT): R
           };
         }
       }
-      return hissTrigger(view) ?? arrowTrigger(view);
+      return hissTrigger(view) ?? arrowTrigger(view) ?? flyerTrigger(view, policy);
     },
     async run(trigger: Trigger, ctx: ReflexContext): Promise<ReflexOutcome> {
       if (trigger.cause === 'arrow' && trigger.paused === true) return pauseArrows(ctx.view);
       await ctx.cancelAction();
       const name = String(trigger.hostile);
+      // A phantom flies: an armed Body fights it where it stands and never runs on foot (decision 0331).
+      if (trigger.flyer === true) return (await fightHostile(ctx, name, policy)).outcome;
       if (trigger.cause === 'hiss') return flee(ctx, name, 'hiss');
       if (trigger.cause === 'arrow') {
         noteSidestep(ctx.view);

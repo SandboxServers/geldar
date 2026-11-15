@@ -179,7 +179,8 @@ function stubFetch(routes: Record<string, string | Error>) {
 }
 
 const rowName = (row: FakeNode) => row.childNodes[2]?.textContent;
-const rowText = (row: FakeNode) => row.childNodes[3]?.data;
+// The text node is the row's last child: the still suffix now sits between the name and the text.
+const rowText = (row: FakeNode) => row.childNodes[row.childNodes.length - 1]?.data;
 
 describe('chat panel: parsing', () => {
   it('reads the feed and rejects a body that is not {"v":1,"lines":[...]}', () => {

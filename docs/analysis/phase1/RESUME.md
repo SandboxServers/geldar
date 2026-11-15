@@ -73,6 +73,12 @@ Every brief carries the list in [packet-conventions.md](packet-conventions.md) s
 - **Owner rulings 2026-11-14 (decision 0261):** sign-up is open for everyone, unannounced once M1 is ready (kill switch still ON); a sign-up agent's Body runs the player-host path with identity from the database; auto-roster on registration, per-owner cap 3; global cap 40 running Bodies (alert and review at 30). M1 = sign-up works; M2 = account-page start, stop and restart. Ordered plan: [packets/c7-wave-plan.md](packets/c7-wave-plan.md).
   - Still open: deletion and export (C7-09) and the sign-up gate (C7-11) before outside users (0153); MineSkin beyond the six rangers; the RCON whitelist verb and life key (BODY-HOST, geldar-93).
 
+## For the owner
+
+- (a) Kept agent rows may carry a typed real name: anonymise on deletion, or accept.
+- (b) built (geldar-93 default, revertable before sign-up opens): `kino_audit` rows of the deleted identity are erased on deletion.
+- (c) Cleanup of accounts deleted before 0040 (under 0039): card `C7-09c`.
+
 ## Open contradictions
 
 - The C3 cards and plan.md disagree on the soak length. Both are listed as O-soak; no packet states a duration as settled.

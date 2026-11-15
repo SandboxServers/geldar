@@ -68,7 +68,7 @@ A listener beyond the cut never receives the chat packet, so the Body cannot lea
    - Body role (`body`, one shared credential for every body): Pub `geldar.<s>.>` plus JetStream and KV; PubDeny `geldar.<s>.kino.>`, `geldar.<s>.blockowner.changed`, `geldar.<s>.ctl.body.>`; Sub `geldar.<s>.body.>`, `geldar.<s>.blockowner.changed`, `_INBOX.>`.
    - Plugin role (`paper`): Pub `geldar.<s>.>` plus JetStream, with PubDeny on `kino.control`, `blockowner.query`, `ctl.body.>`; Sub `kino.control`, `maintenance`, `blockowner.query`, `_INBOX.>`.
 
-   **So under the shared roles, the hearing subject needs no allow change.** The plugin may already publish it (inside `geldar.<s>.>`) and the Body may already subscribe to it (inside `geldar.<s>.body.>`). This is the proposal the packets use (option A), with one recommended change: the shared Body role can also publish the subject (its Pub is `geldar.<s>.>`), so a body could forge a notice for another life. Option A adds `geldar.<s>.body.*.hearing` to the body role's PubDeny. That is a one-line generator change, so it reaches nodes only in a geldar-93 window like any `nats-auth.conf` change; the owner decides whether to take it with option A or with option B.
+   **So under the shared roles, the hearing subject needs no allow change.** The plugin may already publish it (inside `geldar.<s>.>`) and the Body may already subscribe to it (inside `geldar.<s>.body.>`). This is the proposal the packets use (option A), with one recommended change: the shared Body role can also publish the subject (its Pub is `geldar.<s>.>`), so a body could forge a notice for another life. Option A adds `geldar.<s>.body.*.hearing` to the PubDeny of the body, mind and mcp roles, because mind and mcp also hold Pub `geldar.<s>.body.>`, so a deny on body alone would let them forge a notice. That is a one-line generator change, so it reaches nodes only in a geldar-93 window like any `nats-auth.conf` change; the owner decides whether to take it with option A or with option B.
 
    **The owner asked for per-agent scoping (option B), which the current design does not do.** `geldar.ps1` says no role is scoped to one life (decision 0087), because a life is not known when the file is written. Option B would need, as a proposal and not built:
    - A per-life Body user, minted when a body starts (through the supervisor and register path, 0152), not in `shard nats-auth`. Its Sub: `geldar.<s>.body.<lifeId>.hearing` only, plus the `blockowner.changed` and `_INBOX.>` it has today. If the Body needs more of its own life tree, `geldar.<s>.body.<lifeId>.>`; still no wildcard over other lives.
@@ -77,7 +77,9 @@ A listener beyond the cut never receives the chat packet, so the Body cannot lea
    - `tools/repo-checks/src/nats-auth.test.ts` pins the exact body deny list today and would change with option B.
    - Option B supersedes part of 0087 and needs its own record before any code. Option A ships first; option B is a follow-up if the owner still wants per-life credentials.
 
-   **Deploy.** Option A needs no allow change, so the plugin and Body deploys suffice for it. The recommended body-role PubDeny on `geldar.<s>.body.*.hearing` is a `nats-auth` generator change (`Get-NatsUsers` in `tools/geldar.ps1`) and reaches a node only in a geldar-93 deploy window (`deploy/README.md`: regenerate, copy, restart `nats`, which drops every client, after a notice). Per-life scoped credentials stay out of scope (0087).
+   **Deploy.** Option A needs no allow change, so the plugin and Body deploys suffice for it. The recommended body, mind and mcp PubDeny on `geldar.<s>.body.*.hearing` is a `nats-auth` generator change (`Get-NatsUsers` in `tools/geldar.ps1`) and reaches a node only in a geldar-93 deploy window (`deploy/README.md`: regenerate, copy, restart `nats`, which drops every client, after a notice). Per-life scoped credentials stay out of scope (0087).
+
+   Known limit (not verified live): the body, mind and mcp roles also hold $JS.API.>. A JetStream stream republish may emit to a subject without a publish-ACL check on that subject. If so, the PubDeny guards against mistakes and ordinary bugs, not against a hostile or compromised role. The existing Kino and state.*.level denies share this property.
 
 ## Heard_muffled event shape
 
@@ -111,14 +113,14 @@ Nothing in this design lets a human act inside the world. The muffled notice is 
 - **Gaming by standing in a sealed room.** A listener inside a sealed room hears less. A speaker can exploit this by enclosing the speaker, not the listener. The sealed-room penalty is one fixed step, so the gain is capped. Measure the gain in the bench; do not assume it is small.
 - **Consistency with spec 5.8.** Spec and code disagree until the amendment merges. The amendment (MH-7) lands before MH-3.
 - **Absorption values, margin and sealed penalty.** Proposals, not measured. MH-8 sets them. The table test pins each row; changing a value is a visible diff.
-- **Hearing subject ACL.** Under the shared body role, a body can publish `geldar.<s>.body.<lifeId>.hearing` and forge a notice for another life. The body-role PubDeny on `geldar.<s>.body.*.hearing` is recommended and needs a geldar-93 window; until it lands the forgery gap stays. Option B needs its own record (see decision 9).
+- **Hearing subject ACL.** Under the shared body role, a body can publish `geldar.<s>.body.<lifeId>.hearing` and forge a notice for another life. The body, mind and mcp PubDeny on `geldar.<s>.body.*.hearing` is recommended and needs a geldar-93 window; until it lands the forgery gap stays. Option B needs its own record (see decision 9).
 
 ## Consequences
 
 - Packets in `docs/analysis/muffled-hearing/packets.md` implement this record. Each packet names the step it implements. Order: 0198, then MH-7, then the rest.
 - Plugin: extends 0198's `ProximityRule`. Config constants (`chat.muffle`, see packets) are added to the spec's `chat` block at 5.9.
 - Body and contract: a new `heard_muffled` perception event in the Appendix A perception schema, a new contract schema, a new sentence function, a new threshold handler beside `heard-sound.ts`, and the `hearingSubject()` helper.
-- NATS: option A adds no allow. The recommended body-role PubDeny on `geldar.<s>.body.*.hearing` changes the generator in `tools/geldar.ps1` and `tools/repo-checks/src/nats-auth.test.ts`, and reaches a node only in a geldar-93 window. A test (MH-CH) pins that the existing plugin and Body allows cover the hearing subject, so a later narrowing fails it.
+- NATS: option A adds no allow. The recommended body, mind and mcp PubDeny on `geldar.<s>.body.*.hearing` changes the generator in `tools/geldar.ps1` and `tools/repo-checks/src/nats-auth.test.ts`, and reaches a node only in a geldar-93 window. A test (MH-CH) pins that the existing plugin and Body allows cover the hearing subject, so a later narrowing fails it.
 - Prompts: the Mind-facing text for muffled notices is added in `prompts/` with a version bump. No released template is edited in place (Appendix D).
 - Tests: each behavior change has a test that fails when reverted (repo rule). Every absorption row is pinned.
 

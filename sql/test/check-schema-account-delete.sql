@@ -1,5 +1,6 @@
--- Migration 0039 (C7-09a, decision 0171): behaviour of register_account_delete. Run after check-schema.sql and the
--- migrations through 0039. Fixtures are written by the superuser; the delete is called as the superuser (the
+-- Migrations 0039 (C7-09a, decision 0171) and 0040 (C7-09a2, decision 0262): behaviour of register_account_delete.
+-- Run after check-schema.sql and the migrations through 0040. Under 0040 every life of a deleted owner is erased,
+-- dead or alive; the table loop below asserts that per table. Fixtures are written by the superuser; the delete is called as the superuser (the
 -- privilege checks use has_function_privilege). Owners reg-del-a (unbanned, the one deleted), reg-del-b (a second
 -- owner that must keep every row) and reg-del-c (banned: the tombstone stays). Each owner has rows in every table the
 -- function touches, and a living and a dead life, so a missing or widened filter in the function shows up as a row
@@ -39,11 +40,16 @@ DECLARE
   audit_before BIGINT;
   owner_val TEXT;
   banned_val BOOLEAN;
-  hash_a BYTEA := decode(repeat('51', 32), 'hex');
-  hash_b BYTEA := decode(repeat('52', 32), 'hex');
+  -- hash_a has hex letters (a case error in the match shows); hash_b differs from hash_a only in the last byte (a
+  -- prefix match on the first 8 characters would take it)
+  hash_a BYTEA := decode(repeat('a1', 32), 'hex');
+  hash_b BYTEA := decode(repeat('a1', 31) || 'a2', 'hex');
   hash_c BYTEA := decode(repeat('53', 32), 'hex');
   actor_a TEXT := left(encode(sha256(convert_to('reg-del-a', 'UTF8')), 'hex'), 16);
   r RECORD;
+  tc TEXT;
+  tbl TEXT;
+  col TEXT;
 BEGIN
   step := 'fixture: owners a, b, c; identities a, b, c (c banned); lives, players, tokens, keys, rows per owner';
   INSERT INTO mcp_owners (owner_id, display, player_cap) VALUES
@@ -88,6 +94,97 @@ BEGIN
     (decode(repeat('5b', 32), 'hex'), 'reg-del-b', hash_b, 1000, 1000, 9000000000000);
   INSERT INTO register_consents (identity_hash, terms_version) VALUES (hash_a, 'terms-1'), (hash_b, 'terms-1');
   INSERT INTO kino_admins (identity_hash) VALUES (hash_a), (hash_b);
+  -- 0040: kino_audit rows carry the identity hash as hex (glass loginHash returns the identity hash itself),
+  -- so owner a's two rows are erased. Owner b's row on its own agent is kept, and so is a second viewer (b) whose row
+  -- sits on agent ag_del_live, one of a's agents: the delete matches the login hash, not the agent.
+  INSERT INTO kino_audit (event, login_hash, agent_id, pane_id, mode, at) VALUES
+    ('pane_opened', encode(hash_a, 'hex'), 'ag_del_live', 'pn_' || repeat('0', 25) || '1', 'follow', now()),
+    ('pane_closed', encode(hash_a, 'hex'), 'ag_del_live', 'pn_' || repeat('0', 25) || '1', 'follow', now()),
+    ('pane_opened', encode(hash_b, 'hex'), 'ag_del_b', 'pn_' || repeat('0', 25) || '2', 'follow', now()),
+    ('pane_opened', encode(hash_b, 'hex'), 'ag_del_live', 'pn_' || repeat('0', 25) || '3', 'follow', now());
+
+  -- 0040: one row in every table keyed by a life, for each of the four lives (a live and a dead life of owner a,
+  -- owner b's live and dead lives). Owner a's four lives must leave no row; owner b's two lives keep one row each.
+  INSERT INTO events (source_event_id, at, world_day, world_tick, type, agent_id, payload, thinker_id) VALUES
+    ('del-ev-ag_del_live', now(), 1, 1, 'test.life', 'ag_del_live', '{}', NULL),
+    ('del-ev-ag_del_dead', now(), 1, 1, 'test.life', 'ag_del_dead', '{}', NULL),
+    ('del-ev-ag_del_b', now(), 1, 1, 'test.life', 'ag_del_b', '{}', NULL),
+    ('del-ev-ag_del_bdead', now(), 1, 1, 'test.life', 'ag_del_bdead', '{}', NULL),
+    -- events keyed ONLY by thinker_id (agent_id NULL): the thinker arm of the events delete
+    ('del-ev-th-live', now(), 1, 1, 'test.thinker', NULL, '{}', 'ag_del_live'),
+    ('del-ev-th-dead', now(), 1, 1, 'test.thinker', NULL, '{}', 'ag_del_dead'),
+    ('del-ev-th-b', now(), 1, 1, 'test.thinker', NULL, '{}', 'ag_del_b');
+  INSERT INTO mcp_life_deaths (life_id, death_count, last_death_day) VALUES
+    ('ag_del_live', 1, 1), ('ag_del_dead', 1, 1), ('ag_del_b', 1, 1), ('ag_del_bdead', 1, 1);
+  INSERT INTO mcp_death_events (event_id, life_id) VALUES
+    ('del-death-live', 'ag_del_live'), ('del-death-dead', 'ag_del_dead'),
+    ('del-death-b', 'ag_del_b'), ('del-death-bdead', 'ag_del_bdead');
+  INSERT INTO intents (intent_id, life_id, state) VALUES
+    ('del-int-live', 'ag_del_live', 'completed'), ('del-int-dead', 'ag_del_dead', 'completed'),
+    ('del-int-b', 'ag_del_b', 'completed'), ('del-int-bdead', 'ag_del_bdead', 'completed');
+  INSERT INTO actions (action_id, intent_id, life_id, kind) VALUES
+    ('del-act-live', 'del-int-live', 'ag_del_live', 'noop'), ('del-act-dead', 'del-int-dead', 'ag_del_dead', 'noop'),
+    ('del-act-b', 'del-int-b', 'ag_del_b', 'noop'), ('del-act-bdead', 'del-int-bdead', 'ag_del_bdead', 'noop');
+  INSERT INTO receipts (receipt_id, action_id, life_id, kind) VALUES
+    ('del-rcpt-live', 'del-act-live', 'ag_del_live', 'final'), ('del-rcpt-dead', 'del-act-dead', 'ag_del_dead', 'final'),
+    ('del-rcpt-b', 'del-act-b', 'ag_del_b', 'final'), ('del-rcpt-bdead', 'del-act-bdead', 'ag_del_bdead', 'final');
+  INSERT INTO suppressed_wakeups (life_id, at, reason) VALUES
+    ('ag_del_live', now(), 'test'), ('ag_del_dead', now(), 'test'), ('ag_del_b', now(), 'test'), ('ag_del_bdead', now(), 'test');
+  INSERT INTO skills (skill_id, edition, name, author) VALUES ('sk-del-b', 1, 'b skill', 'ag_del_b');
+  INSERT INTO skill_runs (skill_id, edition, life_id, outcome) VALUES
+    ('sk-del-b', 1, 'ag_del_live', 'ok'), ('sk-del-b', 1, 'ag_del_dead', 'ok'),
+    ('sk-del-b', 1, 'ag_del_b', 'ok'), ('sk-del-b', 1, 'ag_del_bdead', 'ok');
+  INSERT INTO skill_library (agent_id, skill_id, edition, learned_day) VALUES
+    ('ag_del_live', 'sk-del-b', 1, 1), ('ag_del_dead', 'sk-del-b', 1, 1),
+    ('ag_del_b', 'sk-del-b', 1, 1), ('ag_del_bdead', 'sk-del-b', 1, 1);
+  INSERT INTO memories (agent_id, kind, provenance, text) VALUES
+    ('ag_del_live', 'episodic', 'observation', 'live memory'), ('ag_del_dead', 'episodic', 'observation', 'dead memory'),
+    ('ag_del_b', 'episodic', 'observation', 'b memory'), ('ag_del_bdead', 'episodic', 'observation', 'bdead memory');
+  INSERT INTO goals (agent_id, rank, goal, why) VALUES
+    ('ag_del_live', 1, 'g', 'w'), ('ag_del_dead', 1, 'g', 'w'), ('ag_del_b', 1, 'g', 'w'), ('ag_del_bdead', 1, 'g', 'w');
+  INSERT INTO relationships (agent_id, other_id, impression, trust, last_seen_day) VALUES
+    ('ag_del_dead', 'ag_del_b', 'x', 1, 1), ('ag_del_b', 'ag_del_dead', 'y', 1, 1), ('ag_del_b', 'ag_del_bdead', 'z', 1, 1);
+  INSERT INTO ledger (agent_id, item, count, world_day) VALUES
+    ('ag_del_live', 'bread', 1, 1), ('ag_del_dead', 'bread', 1, 1), ('ag_del_b', 'bread', 1, 1), ('ag_del_bdead', 'bread', 1, 1);
+  INSERT INTO votes (proposal_id, agent_id, vote, world_day) VALUES
+    ('del-prop-1', 'ag_del_live', 'yes', 1), ('del-prop-1', 'ag_del_dead', 'yes', 1),
+    ('del-prop-1', 'ag_del_b', 'no', 1), ('del-prop-1', 'ag_del_bdead', 'no', 1);
+  -- 0040 (decision 0262): a dead life with an owner link and no player row (only the agents arm finds it), and a dead
+  -- life with a player row and no owner link (only the player arm finds it)
+  INSERT INTO agents (agent_id, name, life_seq, game_account, shard, mode, owner, harness,
+                      declared_model, model_config, tier, personality_seed, thoughts_delayed_public, public_camera,
+                      died_at, death_cause)
+    VALUES ('ag_del_orphan', 'delorphan', 1, 'ag_del_orphan', 'test', 'sovereign', 'reg-del-a', 'claude-code', 'self-reported', 'declared:unverified', 'sovereign', 'seed', FALSE, FALSE, now(), 'test'),
+           ('ag_del_rel', 'delrel', 1, 'ag_del_rel', 'test', 'sovereign', NULL, 'claude-code', 'self-reported', 'declared:unverified', 'sovereign', 'seed', FALSE, FALSE, now(), 'test');
+  INSERT INTO mcp_players (player_id, owner_id, life_id, display_name, harness, status) VALUES
+    ('ag-del-rel', 'reg-del-a', 'ag_del_rel', 'delrel', 'claude-code', 'retired');
+  INSERT INTO memories (agent_id, kind, provenance, text) VALUES
+    ('ag_del_orphan', 'episodic', 'observation', 'orphan memory'), ('ag_del_rel', 'episodic', 'observation', 'rel memory');
+  INSERT INTO rolls (source_event_id, life_id, world_tick, decision_id, draw_index, engine_version, producer, fx,
+    score, dc, mode, dice, kept, bonus, total, success) VALUES
+    ('del-ev-ag_del_live', 'ag_del_live', 10, 'del-dec-live', 0, 1, 'body', 'mine', 3, 12, 'flat', '{7}', 7, 0, 7, false),
+    ('del-ev-ag_del_dead', 'ag_del_dead', 10, 'del-dec-dead', 0, 1, 'body', 'mine', 3, 12, 'flat', '{7}', 7, 0, 7, false),
+    ('del-ev-ag_del_b', 'ag_del_b', 10, 'del-dec-b', 0, 1, 'body', 'mine', 3, 12, 'flat', '{7}', 7, 0, 7, false),
+    ('del-ev-ag_del_bdead', 'ag_del_bdead', 10, 'del-dec-bdead', 0, 1, 'body', 'mine', 3, 12, 'flat', '{7}', 7, 0, 7, false);
+  INSERT INTO decisions (source_event_id, life_id, world_tick, decision_id, engine_version, producer, fx, kind) VALUES
+    ('del-ev-ag_del_live', 'ag_del_live', 10, 'del-dec-live', 1, 'body', 'mine', 'd20'),
+    ('del-ev-ag_del_dead', 'ag_del_dead', 10, 'del-dec-dead', 1, 'body', 'mine', 'd20'),
+    ('del-ev-ag_del_b', 'ag_del_b', 10, 'del-dec-b', 1, 'body', 'mine', 'd20'),
+    ('del-ev-ag_del_bdead', 'ag_del_bdead', 10, 'del-dec-bdead', 1, 'body', 'mine', 'd20');
+  INSERT INTO character_sheet_adoptions (source_event_id, life_id, sheet_hash, sheet, source, result) VALUES
+    ('del-ev-ag_del_live', 'ag_del_live', repeat('ab', 32), '{}'::jsonb, 'birth', 'adopted'),
+    ('del-ev-ag_del_dead', 'ag_del_dead', repeat('ab', 32), '{}'::jsonb, 'birth', 'adopted'),
+    ('del-ev-ag_del_b', 'ag_del_b', repeat('ab', 32), '{}'::jsonb, 'birth', 'adopted'),
+    ('del-ev-ag_del_bdead', 'ag_del_bdead', repeat('ab', 32), '{}'::jsonb, 'birth', 'adopted');
+  INSERT INTO xp_evidence (life_id, domain, evidence_key, source_event_id, world_tick) VALUES
+    ('ag_del_live', 'combat', 'del-k1', 'del-ev-ag_del_live', 10), ('ag_del_dead', 'combat', 'del-k1', 'del-ev-ag_del_dead', 10),
+    ('ag_del_b', 'combat', 'del-k1', 'del-ev-ag_del_b', 10), ('ag_del_bdead', 'combat', 'del-k1', 'del-ev-ag_del_bdead', 10);
+  INSERT INTO proficiency (life_id, domain, xp, level, updated_tick) VALUES
+    ('ag_del_live', 'combat', 5, 0, 10), ('ag_del_dead', 'combat', 5, 0, 10),
+    ('ag_del_b', 'combat', 5, 0, 10), ('ag_del_bdead', 'combat', 5, 0, 10);
+  INSERT INTO proficiency_outbox (life_id, domain, level, xp, version) VALUES
+    ('ag_del_live', 'combat', 1, 5, 1), ('ag_del_dead', 'combat', 1, 5, 1),
+    ('ag_del_b', 'combat', 1, 5, 1), ('ag_del_bdead', 'combat', 1, 5, 1);
 
   step := 'privilege: geldar_register may execute, PUBLIC may not, the definer runs with the pinned search_path';
   IF NOT has_function_privilege('geldar_register', 'register_account_delete(bytea)', 'EXECUTE') THEN
@@ -111,14 +208,17 @@ BEGIN
   END;
   IF NOT forced THEN RAISE EXCEPTION 'account delete: the forced audit failure was not raised'; END IF;
   SELECT count(*) INTO n FROM pg_trigger t
-    WHERE t.tgname IN ('mcp_journal_append_only', 'thoughts_append_only') AND t.tgenabled = 'O';
-  IF n <> 2 THEN RAISE EXCEPTION 'account delete: a failed delete left an append-only trigger disabled'; END IF;
+    WHERE t.tgname IN ('mcp_journal_append_only', 'thoughts_append_only', 'receipts_append_only', 'suppressed_wakeups_append_only')
+      AND t.tgenabled = 'O';
+  IF n <> 4 THEN RAISE EXCEPTION 'account delete: a failed delete left an append-only trigger disabled'; END IF;
   SELECT EXISTS (SELECT 1 FROM mcp_identities WHERE identity_hash = hash_a) INTO found;
   IF NOT found THEN RAISE EXCEPTION 'account delete: a failed delete removed the identity'; END IF;
   SELECT count(*) INTO n FROM thoughts WHERE thought_id = 'th-del-live';
   IF n <> 1 THEN RAISE EXCEPTION 'account delete: a failed delete removed a living thought'; END IF;
   SELECT count(*) INTO n FROM mcp_tokens WHERE token_id = 'mtok-del-live' AND revoked_at IS NULL;
   IF n <> 1 THEN RAISE EXCEPTION 'account delete: a failed delete left a token revoked'; END IF;
+  SELECT count(*) INTO n FROM kino_audit WHERE login_hash = encode(hash_a, 'hex');
+  IF n <> 2 THEN RAISE EXCEPTION 'account delete: a failed delete removed a kino audit row'; END IF;
   BEGIN
     DELETE FROM thoughts WHERE thought_id = 'th-del-b';
   EXCEPTION WHEN others THEN
@@ -144,6 +244,16 @@ BEGIN
   IF n <> 0 THEN RAISE EXCEPTION 'account delete: owner key kept'; END IF;
   SELECT count(*) INTO n FROM mcp_players WHERE owner_id = 'reg-del-a';
   IF n <> 0 THEN RAISE EXCEPTION 'account delete: player row kept'; END IF;
+  SELECT count(*) INTO n FROM body_ops WHERE owner_id = 'reg-del-a';
+  IF n <> 0 THEN RAISE EXCEPTION 'account delete: body op of owner a kept'; END IF;
+  SELECT count(*) INTO n FROM register_sessions WHERE identity_hash = hash_a;
+  IF n <> 0 THEN RAISE EXCEPTION 'account delete: register session of owner a kept'; END IF;
+  SELECT count(*) INTO n FROM register_consents WHERE identity_hash = hash_a;
+  IF n <> 0 THEN RAISE EXCEPTION 'account delete: consent of owner a kept'; END IF;
+  SELECT count(*) INTO n FROM kino_admins WHERE identity_hash = hash_a;
+  IF n <> 0 THEN RAISE EXCEPTION 'account delete: kino admin of owner a kept'; END IF;
+  SELECT count(*) INTO n FROM kino_audit WHERE login_hash = encode(hash_a, 'hex');
+  IF n <> 0 THEN RAISE EXCEPTION 'account delete: kino audit rows of owner a kept'; END IF;
   SELECT count(*) INTO n FROM mcp_journal WHERE life_id = 'ag_del_live';
   IF n <> 0 THEN RAISE EXCEPTION 'account delete: journal of a living life kept'; END IF;
   SELECT count(*) INTO n FROM thoughts WHERE thought_id = 'th-del-live';
@@ -160,15 +270,19 @@ BEGIN
     WHERE token_id IN ('mtok-del-live', 'mtok-del-dead') AND was_revoked AND lock_wait = '3s';
   IF n <> 2 THEN RAISE EXCEPTION 'account delete: % of a token rows were revoked with lock_timeout 3s, expected 2', n; END IF;
 
-  step := 'dead life keeps its journal, thought, sleep mark and budget; both agents rows keep their stored fields apart from the owner link';
+  step := 'dead life is erased too (decision 0262): journal, thought, sleep mark and budget gone; the agents row stays with no owner link';
   SELECT count(*) INTO n FROM mcp_journal WHERE life_id = 'ag_del_dead';
-  IF n <> 1 THEN RAISE EXCEPTION 'account delete: journal of a dead life removed'; END IF;
+  IF n <> 0 THEN RAISE EXCEPTION 'account delete: journal of a dead life kept'; END IF;
   SELECT count(*) INTO n FROM thoughts WHERE thought_id = 'th-del-dead';
-  IF n <> 1 THEN RAISE EXCEPTION 'account delete: thought of a dead life removed'; END IF;
+  IF n <> 0 THEN RAISE EXCEPTION 'account delete: thought of a dead life kept'; END IF;
   SELECT count(*) INTO n FROM mcp_sleep_marks WHERE life_id = 'ag_del_dead';
-  IF n <> 1 THEN RAISE EXCEPTION 'account delete: sleep mark of a dead life removed'; END IF;
+  IF n <> 0 THEN RAISE EXCEPTION 'account delete: sleep mark of a dead life kept'; END IF;
   SELECT count(*) INTO n FROM mcp_budget WHERE life_id = 'ag_del_dead';
-  IF n <> 1 THEN RAISE EXCEPTION 'account delete: budget of a dead life removed'; END IF;
+  IF n <> 0 THEN RAISE EXCEPTION 'account delete: budget of a dead life kept'; END IF;
+  SELECT count(*) INTO n FROM memories WHERE agent_id = 'ag_del_orphan';
+  IF n <> 0 THEN RAISE EXCEPTION 'account delete: memory of a dead life with an owner link and no player row kept'; END IF;
+  SELECT count(*) INTO n FROM memories WHERE agent_id = 'ag_del_rel';
+  IF n <> 0 THEN RAISE EXCEPTION 'account delete: memory of a dead life reached only by its player row kept'; END IF;
   SELECT owner INTO STRICT owner_val FROM agents WHERE agent_id = 'ag_del_dead';
   IF owner_val IS NOT NULL THEN RAISE EXCEPTION 'account delete: dead life keeps an owner link'; END IF;
   SELECT owner, died_at IS NOT NULL AS dead, death_cause, public_camera, thoughts_delayed_public
@@ -202,6 +316,8 @@ BEGIN
   IF n <> 1 THEN RAISE EXCEPTION 'account delete: other owner consent removed'; END IF;
   SELECT count(*) INTO n FROM kino_admins WHERE identity_hash = hash_b;
   IF n <> 1 THEN RAISE EXCEPTION 'account delete: other owner kino admin row removed'; END IF;
+  SELECT count(*) INTO n FROM kino_audit WHERE login_hash = encode(hash_b, 'hex');
+  IF n <> 2 THEN RAISE EXCEPTION 'account delete: other owner kino audit row removed (% left, expected 2)', n; END IF;
   SELECT count(*) INTO n FROM mcp_budget WHERE life_id IN ('ag_del_b', 'ag_del_bdead');
   IF n <> 2 THEN RAISE EXCEPTION 'account delete: other owner budget removed'; END IF;
   SELECT count(*) INTO n FROM mcp_sleep_marks WHERE life_id IN ('ag_del_b', 'ag_del_bdead');
@@ -223,6 +339,10 @@ BEGIN
   IF n <> 1 THEN RAISE EXCEPTION 'account delete: % audit rows written, expected 1', n; END IF;
   SELECT count(*) INTO n FROM register_audit WHERE id > audit_before AND actor = actor_a;
   IF n <> 0 THEN RAISE EXCEPTION 'account delete: audit row keyed by the owner id hash'; END IF;
+  -- the erasure actor is random: it is neither the owner id, nor its hash prefix, nor anything that contains either
+  SELECT count(*) INTO n FROM register_audit WHERE id > audit_before
+    AND (actor = 'reg-del-a' OR position('reg-del-a' IN actor) > 0 OR position(actor_a IN actor) > 0);
+  IF n <> 0 THEN RAISE EXCEPTION 'account delete: audit actor names the owner id or derives from it'; END IF;
 
   step := 'second delete of a is a no-op: false, and no audit row';
   IF register_account_delete(hash_a) THEN
@@ -246,10 +366,39 @@ BEGIN
   SELECT count(*) INTO n FROM register_find_owner(hash_a);
   IF n <> 0 THEN RAISE EXCEPTION 'account delete: unbanned hash left behind'; END IF;
 
-  step := 'triggers on: both append-only triggers are enabled after the delete';
+  step := 'every table keyed by a life (0040): no row of owner a lives left; owner b lives keep one row each';
+  FOREACH tc IN ARRAY ARRAY[
+    'mcp_journal:life_id', 'thoughts:life_id', 'mcp_budget:life_id', 'mcp_sleep_marks:life_id',
+    'mcp_life_deaths:life_id', 'mcp_death_events:life_id', 'intents:life_id', 'actions:life_id',
+    'receipts:life_id', 'suppressed_wakeups:life_id', 'skill_runs:life_id', 'memories:agent_id',
+    'goals:agent_id', 'skill_library:agent_id', 'ledger:agent_id', 'votes:agent_id', 'events:agent_id',
+    'rolls:life_id', 'decisions:life_id', 'character_sheet_adoptions:life_id', 'xp_evidence:life_id',
+    'proficiency:life_id', 'proficiency_outbox:life_id'] LOOP
+    tbl := split_part(tc, ':', 1);
+    col := split_part(tc, ':', 2);
+    EXECUTE format('SELECT count(*) FROM %I WHERE %I = ANY (ARRAY[''ag_del_live'', ''ag_del_dead''])', tbl, col) INTO n;
+    IF n <> 0 THEN RAISE EXCEPTION 'account delete: % row(s) of a life of owner a left in %', n, tbl; END IF;
+    EXECUTE format('SELECT count(*) FROM %I WHERE %I = ANY (ARRAY[''ag_del_b'', ''ag_del_bdead''])', tbl, col) INTO n;
+    IF n <> 2 THEN RAISE EXCEPTION 'account delete: owner b rows in % are % (expected 2)', tbl, n; END IF;
+  END LOOP;
+  -- events of owner a's lives keyed by thinker_id alone are erased (live and dead); owner b's is kept
+  SELECT count(*) INTO n FROM events WHERE source_event_id IN ('del-ev-th-live', 'del-ev-th-dead');
+  IF n <> 0 THEN RAISE EXCEPTION 'account delete: % event(s) keyed by thinker_id of a life of owner a left', n; END IF;
+  SELECT count(*) INTO n FROM events WHERE source_event_id = 'del-ev-th-b' AND thinker_id = 'ag_del_b';
+  IF n <> 1 THEN RAISE EXCEPTION 'account delete: owner b event keyed by thinker_id removed'; END IF;
+  SELECT count(*) INTO n FROM relationships
+    WHERE agent_id IN ('ag_del_live', 'ag_del_dead') OR other_id IN ('ag_del_live', 'ag_del_dead');
+  IF n <> 0 THEN RAISE EXCEPTION 'account delete: % relationship row(s) of a life of owner a left', n; END IF;
+  SELECT count(*) INTO n FROM relationships WHERE agent_id = 'ag_del_b' AND other_id = 'ag_del_bdead';
+  IF n <> 1 THEN RAISE EXCEPTION 'account delete: owner b relationship removed'; END IF;
+  SELECT count(*) INTO n FROM skills WHERE skill_id = 'sk-del-b';
+  IF n <> 1 THEN RAISE EXCEPTION 'account delete: shared skill of owner b removed'; END IF;
+
+  step := 'triggers on: the four append-only triggers are enabled after the delete';
   SELECT count(*) INTO n FROM pg_trigger t
-    WHERE t.tgname IN ('mcp_journal_append_only', 'thoughts_append_only') AND t.tgenabled = 'O';
-  IF n <> 2 THEN RAISE EXCEPTION 'account delete: an append-only trigger is not enabled after the delete'; END IF;
+    WHERE t.tgname IN ('mcp_journal_append_only', 'thoughts_append_only', 'receipts_append_only', 'suppressed_wakeups_append_only')
+      AND t.tgenabled = 'O';
+  IF n <> 4 THEN RAISE EXCEPTION 'account delete: an append-only trigger is not enabled after the delete'; END IF;
 END
 $account_delete$;
 

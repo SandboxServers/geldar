@@ -1,26 +1,45 @@
 # Genesis resume
 
-Read this first, then [README.md](README.md) and [plan.md](plan.md). Keep it under 40 lines; rewrite at each wave boundary.
+Read this first, then [README.md](README.md) and [plan.md](plan.md). Keep it under 40 lines; rewrite at each wave boundary. Card states are in the Ledger at the top of [packets.md](packets.md).
 
-## Where it is (2026-11-14)
+## Where it is (2026-11-15)
 
-- Planned, nothing built. 39 cards in waves G0 to G7 ([packets.md](packets.md)), architecture decision [0188](../../decisions/0188-genesis-environment-stamp.md) (Proposed).
-- Owner decisions taken: targets (production rebuild, second environment, ephemeral CI stamp); DNS and Entra automated, gateway firewall a checked prerequisite; start from a clean Debian host; secrets generated on the host (Key Vault only for secrets that outlive a host); the second environment is a new Hyper-V Debian VM on node 3 created by an operator-run script; ranger kit hosts out of scope (a real ranger on the test world is the owner's human acceptance); the Azure pieces live in this repo.
-- G0-02 is measured: the reduced boot (Postgres, NATS, Paper) fits the hosted runner with large headroom; the full-stack stamp awaits a second measurement in G6-04 ([g0-02-runner-spike.md](g0-02-runner-spike.md)).
-- Open: Azure DNS role and command (G2-06, first real run); full-stack runner fit (G6-04). G0-01 is resolved by the owner ruling (2026-11-14); the federated-identity use is verified at the first G2-05 run.
-- Review of this plan: geldar-ops, geldar-registration and scriptorium-orchestrator are folded in (branch head at the time of handoff: the latest commit on `phase1/genesis-plan`). geldar-93 reviews on the evening of 2026-11-14.
-- **Owner**: handed to the new session `geldar-genesis` (owner ruling: one campaign per coordinator). Decision numbers for this campaign: 0240-0249 (0188 is already used). Every migration card inherits the rule in G4-03.
+- Wave G0 is mostly merged (G0-02 done, G0-03a to d, G0-04, G0-05). G0-06 is not started. Wave G1: G1-01 and G1-02 merged; G1-03 is merged 2026-11-15 06:02Z (3c563c72) as #454.
+- Architecture decision [0188](../../decisions/0188-genesis-environment-stamp.md) is still Proposed. Decision numbers for this campaign: 0240-0249. The full-stack runner fit waits for G6-04.
+- Handed to the session `geldar-genesis`, one campaign per coordinator.
 
-## Coordinator log
+## Decisions taken
 
-- 2026-11-14: geldar-genesis took over. Asked geldar-3b for inventory; sent the plan and questions to geldar-93. The node-learned facts were added to plan.md section 8 (stale compose and jar hashes, hand-copied jars, "needs manual" list, no tested world backup, non-reproducible items); ask the owner for backup destination and VM sizing.
-- 2026-11-14: owner ruling on G0-01 (`OwnedBy` covers app operations on apps the bootstrap app created; stated by the owner, not run by us). geldar-worldops runbooks on main: docs/runbooks/node-only-config.md (15 node-only items with a reproduction order) and docs/runbooks/nats-auth-inplace.md (in-place NATS update; a reload closing live sessions on nats 2.15.1 is unverified). Genesis cards G2-02, G7-01 and G4-03 must use them; the node has no Node runtime and no /opt/geldar until helper delivery C7-03c5. Backup destination: another LAN node (owner, 2026-11-14). Test VM: 24 GB RAM, 8 vCPUs (owner).
+- Targets: rebuild production from nothing, a second environment, and an ephemeral CI stamp. DNS and Entra are automated; the gateway firewall stays a checked prerequisite.
+- Backups go to another LAN node (owner, 2026-11-14).
+- Test VM: Hyper-V Debian on node 3, 24 GB RAM and 8 vCPUs (owner).
+- OwnedBy ruling (owner, 2026-11-14, not run by us): `Application.ReadWrite.OwnedBy` covers redirect-URI and credential operations on apps the bootstrap app created.
 
-## Next action
+## Lessons
 
-1. Open the docs PR and queue it.
-2. G0-04 is in the merge queue as PR #390; next G0-03 and G0-05 (they depend on it), then G1 and G2 cards; G0-01 is resolved by the owner ruling; the first DNS and federated-identity run happens in G2-05/G2-06.
+- Paper's secret files must be readable by uid 1000. Compose ignores `uid` and `mode` on file secrets, so check readability inside a container.
+- Waits must fail hard: a timeout exits non-zero, never passes.
+- Test literals must resolve parameterised ports; do not hard-code the default port in an assertion.
+- Ops agents must not run the full local check on Windows. CI is the verdict.
+- Before queueing a PR, check for a running colo-deploy in its own step.
 
-## Rules
+## Rules for queueing
 
-Nothing reaches the live node outside geldar-93's window; production is never rebuilt in place; no secrets, account names or addresses in the repo; the workflow changes only through owner-approved PRs; cards that regenerate contract/ need a slot from geldar-3b.
+- Nothing reaches the live node outside geldar-93's deploy window. No deploy may be running when a PR is queued.
+- Tell geldar-93 for every deploy-path PR.
+- Workflow PRs say "touches .github/workflows" in the title or body.
+- Production is never rebuilt in place. The workflow changes only through owner-approved PRs.
+- No secrets, account names or addresses in the repo.
+
+## For the owner
+
+- The first DNS and federated-identity run (G2-05, G2-06) needs the owner's tenant.
+- The GitHub Environments and Azure identities in G2-04 are run by the owner.
+
+## Next actions
+
+1. G1-04 (release manifest v2).
+2. G2-01, then G2-02 (coordinate with geldar-vitals on Get-NatsUsers).
+3. G2-03, G2-04.
+4. G3-01 to G3-04.
+5. G4 (stamp workflow).
