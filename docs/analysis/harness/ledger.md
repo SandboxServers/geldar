@@ -47,6 +47,7 @@ Generated from the card files by `tools-ledger.mjs`, reading each card's heading
 | GX-01b | the Body stamps its events | geldar A | GX-01a | 40k | Writing |
 | GX-01c | the MCP stamps `sovereign_call`; the operator sets the declared model | geldar A | GX-01a | 40k | Writing |
 | GX-02 | release the `psyche/` engine so the kit can mirror it | geldar A | AN-03b | 30k | Writing |
+| GX-08 | non-advancing wait (`peek`) for the instinct | geldar A | GX-06 (the instinct class), contract slot from geldar-3b | 35k | Proposed |
 | GX-03 | operator read of an owner's own life sheet (for the kit's launcher) | geldar C | AN-04 (`agents.character_sheet`, `life_proficiency`), AN-05 (adoption), AN-58b if it is merged first (the function reads `effective_sheet()`; AN-54b c | about 45k | Writing |
 | GX-04 | Move the pieces of `animus/` that the live player path imports | extra | none (can run in W1) | about 45k, split into GX | Writing |
 | HC-00 | Record D-HC-01 to D-HC-11 as a decision (docs only, no code) | kit A | none |  | Writing |
