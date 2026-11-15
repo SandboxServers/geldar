@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://geldar.dev/schemas/heard-muffled-event.schema.json",
   "title": "HeardMuffledPayload",
-  "description": "A voice the Body heard through a wall (decision 0199, MH-1): a muffled notice with a compass direction and a distance band, as heard_sound gives them. The plugin sends it on geldar.<shard>.body.<life_id>.hearing. It never carries coordinates, a speaker or words, and it does not wake the Mind. The schema rejects x, y, z and every other field.",
+  "description": "A voice the Body heard through a wall (decision 0199, MH-1): a muffled notice with a direction (a compass point, or overhead or below for a voice straight above or below) and a distance band. The plugin sends it on geldar.<shard>.body.<life_id>.hearing. It never carries coordinates, a speaker or words, and it does not wake the Mind. The schema rejects x, y, z and every other field.",
   "$ref": "#/$defs/HeardMuffledEvent",
   "$defs": {
     "HeardMuffledEvent": {
@@ -12,11 +12,14 @@
       "properties": {
         "kind": { "const": "heard_muffled" },
         "direction": {
-          "description": "World-fixed direction of the voice: n is -z, s is +z, e is +x, w is -x.",
-          "$ref": "common.schema.json#/$defs/CompassPoint"
+          "description": "World-fixed direction of the voice: n is -z, s is +z, e is +x, w is -x; one of the eight compass points. \"overhead\" or \"below\" is used when the horizontal offset between speaker and listener is under 1 block (dx and dz both below 1 in absolute value): \"overhead\" when the speaker is level with or above the listener (dy >= 0, dy being the speaker's y minus the listener's y), \"below\" when under. Neither states a horizontal direction.",
+          "anyOf": [
+            { "$ref": "common.schema.json#/$defs/CompassPoint" },
+            { "enum": ["overhead", "below"] }
+          ]
         },
         "band": {
-          "description": "Distance band of the voice, as heard_sound: near up to 8 blocks, mid up to 16, far up to 24.",
+          "description": "Distance band of the voice: bands as heard_sound, except far runs to 32. Near is up to 8 blocks, mid up to 16.",
           "type": "string",
           "enum": ["near", "mid", "far"]
         }
