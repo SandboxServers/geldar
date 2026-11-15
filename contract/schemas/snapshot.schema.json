@@ -47,6 +47,12 @@
         }
       }
     },
+    "heard_muffled": {
+      "description": "Notices heard through a wall since the last snapshot, nearest first. No words, speaker or coordinates. Absent when none were heard.",
+      "type": "array",
+      "maxItems": 3,
+      "items": { "$ref": "#/$defs/MuffledNotice" }
+    },
     "events_since_last_thought": {
       "type": "array",
       "maxItems": 100,
@@ -257,6 +263,26 @@
               }
             }
           }
+        }
+      }
+    },
+    "MuffledNotice": {
+      "description": "A voice heard through a wall (decision 0199). The same direction values as heard-muffled-event.schema.json.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["direction", "band"],
+      "properties": {
+        "direction": {
+          "description": "A compass point, or overhead or below for a voice straight above or below the Body.",
+          "anyOf": [
+            { "$ref": "common.schema.json#/$defs/CompassPoint" },
+            { "enum": ["overhead", "below"] }
+          ]
+        },
+        "band": {
+          "description": "Distance band: near up to 8 blocks, mid up to 16, far up to 32.",
+          "type": "string",
+          "enum": ["near", "mid", "far"]
         }
       }
     },

@@ -1548,6 +1548,12 @@ export interface PlaySnapshot {
    */
   heard: [];
   /**
+   * The player's sentences for voices heard through a wall (heardMuffledSentence), nearest first, at most 3.
+   *
+   * @maxItems 3
+   */
+  muffled?: [] | [string] | [string, string] | [string, string, string];
+  /**
    * @maxItems 0
    */
   events_since_last_thought: [];
@@ -12888,6 +12894,12 @@ export interface Snapshot {
     age_seconds: number;
   }[];
   /**
+   * Notices heard through a wall since the last snapshot, nearest first. No words, speaker or coordinates. Absent when none were heard.
+   *
+   * @maxItems 3
+   */
+  heard_muffled?: [] | [MuffledNotice] | [MuffledNotice, MuffledNotice] | [MuffledNotice, MuffledNotice, MuffledNotice];
+  /**
    * @maxItems 100
    *
    * Items: Event payloads are typed in later packets, so this object only fixes its type name and allows other properties.
@@ -13422,6 +13434,17 @@ export interface SnapshotHazard {
    */
   dir: "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw";
   dist: number;
+}
+
+export interface MuffledNotice {
+  /**
+   * A compass point, or overhead or below for a voice straight above or below the Body.
+   */
+  direction: ("n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "nw") | ("overhead" | "below");
+  /**
+   * Distance band: near up to 8 blocks, mid up to 16, far up to 32.
+   */
+  band: "near" | "mid" | "far";
 }
 
 export interface SovereignCallPayload {
