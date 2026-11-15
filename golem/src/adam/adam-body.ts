@@ -167,6 +167,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     reflexConfig: config.reflexes,
     editSign: config.editSign,
     use: config.use,
+    swim: config.swim,
     timeScale: config.timeScale,
     nats: { publisher, shard: config.shard, log },
     wrapRecords: (inner) => {

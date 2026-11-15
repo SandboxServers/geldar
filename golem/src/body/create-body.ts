@@ -5,6 +5,7 @@ import { targetOf } from '../actions/goto.ts';
 import { allActions } from '../actions/index.ts';
 import type { ActionRun } from '../actions/registry.ts';
 import { useHandler } from '../actions/use.ts';
+import { setSwimEnabled } from '../actions/water-rules.ts';
 import { type BodyKv, CheckpointStore } from './checkpoint.ts';
 import { cancelForDeath } from './death-cancel.ts';
 import { type ExecutorOptions, IntentExecutor } from './executor.ts';
@@ -42,6 +43,8 @@ export interface CreateBodyOptions {
   editSign?: boolean;
   /** The shard's `body_actions.use` flag; the verb is refused while off. Default: off (decision 0218). */
   use?: boolean;
+  /** The shard's `body_actions.swim` flag; the goto swim and the bank exit are off while off. Default: off (decision 0194). */
+  swim?: boolean;
   /**
    * Where records go. Given, the Body writes to JetStream through a `NatsRecordSink` (it fills in
    * `lifeId` and the world tick); left out, a `MemorySink` keeps them.
@@ -143,6 +146,8 @@ export function createBody(options: CreateBodyOptions): Body {
     ...(options.timeScale === undefined ? {} : { timeScale: options.timeScale }),
   });
   runtime = built;
+  // The swim flag is read by goto and the planner at walk time; set it before the first walk.
+  setSwimEnabled(options.bot, options.swim ?? false);
   // edit_sign is registered with the shard's flag (`body_actions.edit_sign`, default off).
   for (const handler of allActions) {
     if (handler.kind !== 'edit_sign' && handler.kind !== 'use') built.actions.register(handler);

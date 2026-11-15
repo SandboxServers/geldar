@@ -7,6 +7,7 @@ import { type ActionOutcome, completed, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 import { reportStall } from './stall-diag.ts';
+import { swimEnabled } from './water-rules.ts';
 
 /** A `goto` that ends within this many blocks of where it began did not move the bot. */
 const FINISHED_STILL = 0.5;
@@ -58,6 +59,8 @@ export const gotoAction: ActionHandler<'goto'> = {
     const move = await moveNear(ctx.bot, aim, range, {
       signal: ctx.signal,
       timeScale: ctx.timeScale,
+      // The shard's `body_actions.swim` flag: off, the walk is the pre-0194 walk (decision 0194).
+      swim: swimEnabled(ctx.bot),
     });
     if (!move.ok) return outcomeOfMove(move);
     const at = ctx.bot.entity.position;

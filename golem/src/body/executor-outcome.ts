@@ -6,6 +6,7 @@ import {
   outcomeMessage,
 } from '@geldar/contract';
 import { DEFAULT_DIAG_SINK } from '../actions/stall-diag.ts';
+import { isSwimStopText } from '../actions/swim.ts';
 import type { ActionReport } from './executor-types.ts';
 import type { RecordSink } from './records.ts';
 
@@ -60,9 +61,27 @@ function farmlandFactText(result: unknown): string | undefined {
   return typeof fact === 'string' ? fact.slice(0, 160) : undefined;
 }
 
-/** The fact an ok action carries, by verb: an eat's hunger change, a sleep's sleepers line, or a till's or planting's farmland fact. */
+/** The swim fact a goto's note carries (decision 0194 d), cut to 160 characters. Undefined when it swam not at all. */
+function gotoNoteText(result: unknown): string | undefined {
+  const note = (result as { detail?: { note?: unknown } } | null)?.detail?.note;
+  return typeof note === 'string' ? note.slice(0, 160) : undefined;
+}
+
+/**
+ * The detail of an interrupted action (decision 0194 d). The contract lets `interrupted` through for
+ * every verb, so the Body decides here: only a goto stopped at the air line sends its swim fact. Any
+ * other interrupted walk, or any other verb, sends no detail.
+ */
+function interruptedText(verb: string, result: unknown): string | undefined {
+  if (verb !== 'goto') return undefined;
+  const message = (result as { message?: unknown } | null)?.message;
+  return typeof message === 'string' && isSwimStopText(message) ? message.slice(0, 160) : undefined;
+}
+
+/** The fact an ok action carries, by verb: an eat's hunger change, a sleep's sleepers line, a till's or planting's farmland fact, or a goto's swim note. */
 function okFactText(verb: string, result: unknown): string | undefined {
   if (verb === 'till' || verb === 'place') return farmlandFactText(result);
+  if (verb === 'goto') return gotoNoteText(result);
   return verb === 'sleep' ? sleepFactText(verb, result) : eatFactText(verb, result);
 }
 
@@ -80,11 +99,13 @@ export function actionOutcomeOf(
     ? okFactText(verb, report.record.result)
     : stopped
       ? STOPPED_TEXT
-      : outcomeDetailText(
-          verb,
-          reason,
-          (report.record.result as { message?: unknown } | null)?.message,
-        );
+      : reason === 'interrupted'
+        ? interruptedText(verb, report.record.result)
+        : outcomeDetailText(
+            verb,
+            reason,
+            (report.record.result as { message?: unknown } | null)?.message,
+          );
   return {
     verb,
     index,

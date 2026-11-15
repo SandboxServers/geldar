@@ -36,6 +36,8 @@ import {
   setJump,
   stopDigIfDigging,
 } from './stall-recovery.ts';
+import { type SwimController, startSwim, swimNote, swimStopText } from './swim.ts';
+import { allowWaterExit, isWetNode, swimEnabled, wetAt } from './water-rules.ts';
 
 export { ESCALATE_AFTER_REPLANS, MAX_LADDERS };
 
@@ -139,33 +141,12 @@ const tierOne = new WeakMap<Bot, unknown>();
  * Tier 2 movements (decision 0164): digging at cost 4, towers with scaffolding, and the safety
  * rules of `goto-dig.ts`. Built fresh per walk, with the same doors and corner rules as tier 1.
  */
-/** Block names that put the Body in water: plain water, and the plants and bubbles that grow in it. */
-const WET_CELLS = new Set([
-  'water',
-  'bubble_column',
-  'seagrass',
-  'tall_seagrass',
-  'kelp',
-  'kelp_plant',
-]);
-
-function wetAt(bot: Bot): (x: number, y: number, z: number) => boolean {
-  return (x, y, z) => {
-    const name = bot.blockAt(new Vec3(x, y, z))?.name;
-    return name !== undefined && WET_CELLS.has(name);
-  };
-}
-
-/** True when the node's feet cell is water: a walk must not end there. */
-function isWetNode(bot: Bot, node: { x: number; y: number; z: number } | undefined): boolean {
-  return node !== undefined && wetAt(bot)(node.x, node.y, node.z);
-}
-
-function digMovements(bot: Bot): unknown {
+export function digMovements(bot: Bot): unknown {
   const digging = new Movements(bot);
   applyDigRules(digging, bot);
   forbidCornerCutting(digging);
   allowDoors(digging, bot);
+  if (swimEnabled(bot)) allowWaterExit(digging, bot);
   return digging;
 }
 
@@ -188,6 +169,7 @@ export function ensurePathfinder(bot: Bot): void {
   movements.scafoldingBlocks = [];
   forbidCornerCutting(movements);
   allowDoors(movements, bot);
+  if (swimEnabled(bot)) allowWaterExit(movements, bot);
   tierOne.set(bot, movements);
   bot.pathfinder.setMovements(movements);
   // Fake bodies in tests have no emitter; the trail and the door snap need one (as watchPathEvents).
@@ -273,6 +255,8 @@ export interface MoveOptions {
   diag?: DiagSink;
   /** Tier 2 (digging and towers) may start after tier 1 fails. Default on; `false` for reflex walks. */
   digTier?: boolean;
+  /** Runs the swim controller (decision 0194 a, b) for this walk. Only the `goto` action sets it. */
+  swim?: boolean;
 }
 
 /**
@@ -319,10 +303,19 @@ export function moveNear(
     bot.pathfinder.thinkTimeout = SEARCH_BUDGET_MS;
   };
 
+  let swim: SwimController | undefined;
   return new Promise<MoveResult>((resolve, reject) => {
     if (opts.signal.aborted) {
       resolve({ ok: false, reason: 'cancelled', message: 'move cancelled before it started' });
       return;
+    }
+    if (opts.swim) {
+      swim = startSwim(bot, {
+        onAbort: (air) => {
+          haltPathing(bot);
+          settle({ ok: false, reason: 'interrupted', message: swimStopText(air) });
+        },
+      });
     }
     let done = false;
     let watchdog: ReturnType<typeof setInterval> | undefined;
@@ -341,6 +334,7 @@ export function moveNear(
       // Every exit (success, cancel, failure, throw) leaves tier 2: its budget must not outlive the walk.
       leaveDigTier();
       tally.stop();
+      swim?.stop();
       opts.signal.removeEventListener('abort', onAbort);
       releaseJump();
     };
@@ -404,7 +398,8 @@ export function moveNear(
             start(dryGoal(new goals.GoalNear(target.x, target.y, target.z, range), wetAt(bot)));
             return;
           }
-          const note = tally.note();
+          const swimFact = swim ? swimNote(swim.tally) : undefined;
+          const note = [tally.note(), swimFact].filter(Boolean).join('; ') || undefined;
           settle(
             partial
               ? {

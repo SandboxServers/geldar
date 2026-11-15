@@ -14,6 +14,23 @@ const SHARD = {
   reflexes: {},
 };
 
+describe('body_actions.swim', () => {
+  it('is off when the shard file has no body_actions block', () => {
+    expect(parseAdamConfig(SHARD).swim).toBe(false);
+  });
+
+  it('is on only when swim is true', () => {
+    expect(parseAdamConfig({ ...SHARD, body_actions: { swim: true } }).swim).toBe(true);
+    expect(parseAdamConfig({ ...SHARD, body_actions: { swim: false } }).swim).toBe(false);
+  });
+
+  it('refuses a swim flag that is not true or false', () => {
+    expect(() => parseAdamConfig({ ...SHARD, body_actions: { swim: 'yes' } })).toThrow(
+      'body_actions.swim must be true or false',
+    );
+  });
+});
+
 describe('body_actions.use', () => {
   it('is off when the shard file has no body_actions block', () => {
     expect(parseAdamConfig(SHARD).use).toBe(false);
@@ -44,6 +61,10 @@ describe('shards/colo-mind.yaml, the file the colo Body reads', () => {
 
   it('enables the use verb', () => {
     expect(colo().use).toBe(true);
+  });
+
+  it('keeps the swim flag off: body_actions.swim is false (decision 0194)', () => {
+    expect(colo().swim).toBe(false);
   });
 
   it('keeps edit_sign off', () => {
