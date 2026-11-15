@@ -52,7 +52,7 @@ The packet that implements this record does these steps in order. Each step is a
 
 1. `water-rules.ts`: `allowWaterExit` wraps `getMoveJumpUp`, with the bank guards of (c). Wire it in `ensurePathfinder` and `digMovements`. Pin the getBlock-height trick to pathfinder 2.4.5 with a test. Tests 1 and 2.
 2. `swim.ts`: the controller of (a) and (b): surface at air 12, breathing column, stop at air 10, counters. Start it inside `moveNear` beside `watchPathEvents(bot)` and tear it down in `cleanup()`. Export `findBreathingColumn` from `hazard-escape.ts`. Tests 3 to 5.
-3. Cooldown skip: the `swimIntent` WeakMap set in `onPathUpdate`; the re-entry cooldown reads it; deliberate start at air 18. Test 8.
+3. Cooldown skip: DROPPED (amendment below). The `swimIntent` WeakMap, the re-entry cooldown and its test 8 are not built.
 4. Note lines: `MoveResult.message` carries the swim fact into `goto.ts` `note`; the stop text is fixed. Test 6.
 5. Reflex: no code change; test 7 pins it.
 6. `pathing.ts` stays under 700 lines. It is 670 lines after the move in this packet (Step A, commit 1).
@@ -64,3 +64,10 @@ The packet that implements this record does these steps in order. Each step is a
 - No contract change, no prompt change, no world edit (the owner's terrain options are not decided here).
 - The night skeleton and creeper deaths in the lake box are not a swimming question; cover and light are separate.
 - The "path search ran out of time" reports are not reproduced here.
+
+## Amendment: the re-entry cooldown skip is dropped (2026-11-14, swim step E)
+
+- The "step 2 cooldown skip" of (c) and plan item 3 has nothing to skip: no re-entry cooldown exists in code after a `hazard_escape` give-up. `hazard-escape.ts` has only its 40-tick quiet window, which stops the reflex firing again and does not refuse water entry. Nothing in the planner or the walk refuses to re-enter water.
+- So the `swimIntent` WeakMap, the deliberate-swim exception, the air 18 start for a deliberate swim, and test 8 are not built. They are not deferred to a later step; they are dropped with this amendment.
+- Revisit if a re-entry cooldown is added: then the deliberate-swim exception and the air 18 start apply to it, and test 8 is written with it.
+- Every other rule of this record stands: the air budget, the thresholds (surface at 12, stop at 10, reflex at 8), the bank exit guards, and the swim facts in result lines.
