@@ -1,8 +1,10 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
+import type { Block } from '../actions/bot-types.ts';
 import { isOwnPlacement } from '../actions/own-placements.ts';
 import { ownerRecordAt } from '../actions/protected-blocks.ts';
 import { isNightOrStorm } from '../actions/sleep.ts';
+import { planMoves } from '../actions/unstick-plan.ts';
 import { canSeePoint } from '../perception/notable-blocks.ts';
 import { worldAge } from '../world-clock.ts';
 import { ownAir } from './air.ts';
@@ -110,6 +112,12 @@ export interface BodyView {
    */
   readonly canStepOff?: boolean | null;
   /**
+   * True when the unstick planner finds no safe move from the Body's feet (no level walk, step up, or
+   * drop it accepts: decision 0183). Null when a cell the planner reads is not loaded, or health is
+   * unknown. Optional like canStepOff; a missing value is not a known dead end (decision 0333).
+   */
+  readonly noSafeExit?: boolean | null;
+  /**
    * True when the block under the Body's feet is one this Body placed itself (its own work, decision
    * 0164). Idle stuck and the B2 trigger do not fire on it (owner ruling 2026-11-14). Optional like
    * canStepOff; a missing value is not own work.
@@ -150,6 +158,28 @@ export function canStepOff(
     }
   }
   return false;
+}
+
+/**
+ * True when `planMoves` finds no move from `feet` (a dead end, decision 0333), false when one exists,
+ * and null when the planner reads a cell the view does not have or health is unknown: an unread cell
+ * is never a dead end, so the answer is only known when every cell it looked at was loaded.
+ */
+export function noSafeExit(
+  blockAt: (at: Vec3) => Block | null | undefined,
+  feet: Vec3,
+  health: number | undefined,
+): boolean | null {
+  if (typeof health !== 'number') return null;
+  let unknown = false;
+  const read = (at: Vec3): Block | null => {
+    const block = blockAt(at);
+    if (!block) unknown = true;
+    return block ?? null;
+  };
+  const moves = planMoves(read, feet, health);
+  if (unknown) return null;
+  return moves.length === 0;
 }
 
 /** The deepest drop dropAhead measures, in blocks. */
@@ -370,6 +400,9 @@ export function createBodyView(bot: Bot): TrackedBodyView {
     },
     get canStepOff() {
       return canStepOff((at) => bot.blockAt(at), bot.entity.position.floored());
+    },
+    get noSafeExit() {
+      return noSafeExit((at) => bot.blockAt(at), bot.entity.position.floored(), bot.health);
     },
     get onOwnPlacement() {
       const cell = bot.entity.position.floored().offset(0, -1, 0);

@@ -133,6 +133,37 @@ describe('give', () => {
     expect(toss).toHaveBeenCalledOnce();
   });
 
+  it('names no one when the bystander is unseen and a visible agent has the same handle (decision 0145)', async () => {
+    const { world, run } = setup(5, { dropped: [7, 8], picked: [7, 8], by: 'chapman_01' });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    world.entities[3] = {
+      type: 'player',
+      username: 'ag_chapman_01',
+      position: new Vec3(-1.5, 64, 2.5),
+    };
+    const out = await run('Pike', 3, 'oak_log', 0.01);
+    expect(out).toMatchObject({
+      reason: 'not_possible',
+      message: 'someone else picked the items up',
+    });
+    expect(JSON.stringify(out)).not.toContain('chapman');
+  });
+
+  it('names a bystander by exact username when that player is in sight', async () => {
+    const { world, run } = setup(5, { dropped: [7, 8], picked: [7, 8], by: 'ag_chapman_01' });
+    world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
+    world.entities[3] = {
+      type: 'player',
+      username: 'ag_chapman_01',
+      position: new Vec3(-1.5, 64, 2.5),
+    };
+    const out = await run('Pike', 3, 'oak_log', 0.01);
+    expect(out).toMatchObject({
+      reason: 'not_possible',
+      message: 'the items went to ag_chapman_01',
+    });
+  });
+
   it('names no one when the bystander is out of sight, and says someone else picked them up', async () => {
     const { world, run } = setup(5, { dropped: [7, 8], picked: [7, 8], by: 'Other' });
     world.entities[2] = { type: 'player', username: 'Pike', position: new Vec3(0.5, 64, 2.5) };
