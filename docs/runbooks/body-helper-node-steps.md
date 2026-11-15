@@ -151,7 +151,7 @@ only the helper's lines below. The batch applies only after the PR that adds the
 
 In `nats-auth-inplace.md` step 0 create ONLY `nats-supervisor.txt`. Do NOT create `nats-helper.txt` there: it
 already exists at `/etc/geldar/secrets/nats-helper.txt` from step 2, and that file is the only source. Where that
-procedure gives a wildcard subject for the body helper, it means the four exact subjects below.
+procedure gives a wildcard subject for the body helper, it means the four exact subjects below. If `nats-supervisor.txt` already exists (created before the C7-03b2 merge, see `supervisor-node-steps.md` step 1), do not run step 0 for it: check mode 0600, owner GELDAR_SERVICE_UID and that it is not empty with stat, and go on.
 
 The helper's lines, by user (`<shard>` is `GELDAR_SHARD`):
 
@@ -164,7 +164,7 @@ The helper's lines, by user (`<shard>` is `GELDAR_SHARD`):
     the staged conf with a script that reads the file. Never echo it, never type it.
 - **`supervisor`**:
   - If the user is present, edit its entry. If it is missing, add it as a new user (its own owner go, and
-    `nats-supervisor.txt` mode 0600 from `nats-auth-inplace.md` step 0).
+    `nats-supervisor.txt` mode 0600 from `nats-auth-inplace.md` step 0). If `nats-supervisor.txt` already exists (created before the C7-03b2 merge, see `supervisor-node-steps.md` step 1), do not run step 0 for it: check mode 0600, owner GELDAR_SERVICE_UID and that it is not empty with stat, and go on.
   - Pub: `_INBOX.>` and the four helper subjects `geldar.<shard>.helper.body.start`,
     `geldar.<shard>.helper.body.stop`, `geldar.<shard>.helper.body.status`,
     `geldar.<shard>.helper.body.logtail`. The `_INBOX.>` stays because the supervisor replies to
