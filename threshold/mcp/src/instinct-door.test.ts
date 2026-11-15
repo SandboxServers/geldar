@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { MCP_TOOL_NAMES } from '@geldar/contract';
+import { MCP_TOOL_NAMES, type McpToolName, mcpToolSchemas } from '@geldar/contract';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -182,22 +182,121 @@ async function connectWith(rig: Rig, headers: Record<string, string>): Promise<C
   return client;
 }
 
+/** One tool call's reply: its first content block, and whether the server flagged it as an error. */
+async function replyOf(
+  client: Client,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<{ text: string; isError: boolean }> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const silent = new Promise<'silent'>((resolve) => {
+    timer = setTimeout(() => resolve('silent'), CALL_TIMEOUT_MS);
+  });
+  try {
+    const reply = await Promise.race([client.callTool({ name, arguments: args }), silent]);
+    if (reply === 'silent') return { text: `no reply within ${CALL_TIMEOUT_MS} ms`, isError: true };
+    const content = reply.content as { type: string; text?: string }[];
+    return { text: content[0]?.text ?? '', isError: reply.isError === true };
+  } catch (error) {
+    return { text: String(error), isError: true };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** The text of one tool call's first content block; a protocol error comes back as its message. */
 async function textOf(
   client: Client,
   name: string,
   args: Record<string, unknown>,
 ): Promise<string> {
-  try {
-    const result = await client.callTool({ name, arguments: args });
-    const content = result.content as { type: string; text?: string }[];
-    return content[0]?.text ?? '';
-  } catch (error) {
-    return String(error);
-  }
+  return (await replyOf(client, name, args)).text;
 }
 
 const AUTH = { Authorization: `Bearer ${TOKEN}` };
+
+/** A quick tool that has not answered by then is a finding, named by the scan; the test never waits on it. */
+const CALL_TIMEOUT_MS = 2_000;
+
+/** Valid minimal inputs (from each tool's own tests), so the scan runs the success path of these tools. */
+const QUICK_INPUTS: Partial<Record<McpToolName, Record<string, unknown>>> = {
+  act: ACT_ARGS,
+  journal: { text: 'Dusk.' },
+  look: {},
+  see: {},
+  status: {},
+  view: {},
+};
+
+/** Tools the runtime scan never calls, with the reason. The registry walk still covers them. */
+const NOT_CALLED: Partial<Record<McpToolName, string>> = {
+  wait: 'blocks until the world moves (max_seconds 1 ran past 60 s in the fake world)',
+  sleep: 'starts a sleep plan on the Body; the door rig has no quick fixture for it',
+};
+
+/** Tools with no quick valid input in this rig: called with {} only, so their validation error is scanned. */
+const NO_QUICK_INPUT: Partial<Record<McpToolName, string>> = {
+  read_book: 'a success needs a book the player holds; the door rig holds none',
+  say: 'a say waits for the Body to take the line; the door rig does not answer it',
+  define_skill: 'a success needs a skill fixture',
+  use_skill: 'a success needs a defined skill and a body',
+  offer: 'a success needs a shrine fixture',
+  propose: 'a success needs a law-making fixture',
+  vote: 'a success needs an open proposal fixture',
+  write_book: 'a success needs a book fixture',
+};
+
+/** A reply's text, parsed or raw, carrying the key, the header name, or the word instinct. */
+function leaksInText(text: string): string[] {
+  const found: string[] = [];
+  if (text.includes(KEY)) found.push('the key');
+  if (text.toLowerCase().includes(HEADER.toLowerCase())) found.push('the header name');
+  // Anchored on the quoted value: the fixture's agent id (ag_instinct_01) is not an actor.
+  if (/"(instinct|operator)"/.test(text)) found.push('instinct or operator as a quoted value');
+  try {
+    leaksInJson(JSON.parse(text), found);
+  } catch {
+    // Not JSON: the raw checks above are the whole scan.
+  }
+  return found;
+}
+
+/** Every key and value of a parsed reply: a `source` key, or instinct or operator as a value, is a leak. */
+function leaksInJson(node: unknown, out: string[]): void {
+  if (Array.isArray(node)) {
+    for (const item of node) leaksInJson(item, out);
+    return;
+  }
+  if (typeof node === 'string') {
+    if (node === 'instinct' || node === 'operator') out.push('instinct as an actor value');
+    return;
+  }
+  if (node === null || typeof node !== 'object') return;
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'source') out.push('a source field');
+    leaksInJson(value, out);
+  }
+}
+
+/** A result schema, every level: a property or key named source, or an enum with the class, is a leak. */
+function schemaLeaks(node: unknown, out: string[]): void {
+  if (Array.isArray(node)) {
+    for (const item of node) schemaLeaks(item, out);
+    return;
+  }
+  if (node === null || typeof node !== 'object') return;
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'source') out.push('a property or key named source');
+    if (
+      key === 'enum' &&
+      Array.isArray(value) &&
+      value.some((v) => v === 'instinct' || v === 'operator')
+    ) {
+      out.push('an enum with the instinct or operator class');
+    }
+    schemaLeaks(value, out);
+  }
+}
 
 describe('the instinct class at the front door', () => {
   it('a right key on an authenticated connection gives the instinct class', async () => {
@@ -255,19 +354,57 @@ describe('the instinct class at the front door', () => {
     expect(modelLast).not.toHaveProperty('source');
   });
 
-  it('no tool result or error text carries the key, the header name, or a source actor field', async () => {
+  it('no tool reply carries the key, the header name, a source field, or instinct as an actor', async () => {
     const rig = await startRig(Buffer.from(KEY));
     const client = await connectWith(rig, { ...AUTH, [HEADER]: KEY });
-    const texts: string[] = [];
+    const problems: string[] = [];
+    const called: string[] = [];
     for (const name of MCP_TOOL_NAMES) {
-      texts.push(await textOf(client, name, name === 'act' ? ACT_ARGS : {}));
+      if (name in NOT_CALLED) continue;
+      const quick = QUICK_INPUTS[name];
+      if (quick === undefined && !(name in NO_QUICK_INPUT)) {
+        problems.push(`${name}: neither a quick input nor a reason in the allowlist`);
+      }
+      const reply = await replyOf(client, name, quick ?? {});
+      called.push(name);
+      if (quick !== undefined && reply.isError) {
+        problems.push(`${name}: the success path did not run: ${reply.text.slice(0, 120)}`);
+      }
+      for (const found of leaksInText(reply.text)) problems.push(`${name}: ${found}`);
     }
-    expect(texts.length).toBe(MCP_TOOL_NAMES.length);
-    const joined = texts.join('\n');
-    expect(joined).not.toContain(KEY);
-    expect(joined.toLowerCase()).not.toContain(HEADER.toLowerCase());
-    expect(joined).not.toMatch(/"source"\s*:\s*"(instinct|model|operator)"/);
+    expect(called.length).toBe(MCP_TOOL_NAMES.length - Object.keys(NOT_CALLED).length);
+    expect(problems).toEqual([]);
     expect(rig.fx.recorder.calls.every((c) => c.source !== 'operator')).toBe(true);
+  });
+
+  it('the scan sees a source field, an actor value and the key when they are in a reply', () => {
+    const planted = JSON.stringify({ ok: true, source: 'instinct', nested: { actor: 'instinct' } });
+    const found = leaksInText(planted);
+    expect(found).toContain('instinct or operator as a quoted value');
+    expect(found).toContain('a source field');
+    expect(found).toContain('instinct as an actor value');
+    expect(leaksInText(`{"echo":"${KEY}"}`)).toContain('the key');
+    expect(leaksInText(`{"echo":"${HEADER.toLowerCase()}"}`)).toContain('the header name');
+  });
+
+  it('the registry result schemas declare no source property, no class enum, and no key or header text', () => {
+    const problems: string[] = [];
+    for (const name of MCP_TOOL_NAMES) {
+      const found: string[] = [];
+      schemaLeaks(mcpToolSchemas[name].result, found);
+      const raw = JSON.stringify(mcpToolSchemas[name].result);
+      if (raw.includes(KEY)) found.push('the key');
+      if (raw.toLowerCase().includes(HEADER.toLowerCase())) found.push('the header name');
+      if (/instinct|operator/i.test(raw)) found.push('the word instinct or operator');
+      for (const reason of found) problems.push(`${name}: ${reason}`);
+    }
+    expect(problems).toEqual([]);
+    const walked: string[] = [];
+    schemaLeaks({ properties: { source: { enum: ['model', 'instinct', 'operator'] } } }, walked);
+    expect(walked).toEqual([
+      'a property or key named source',
+      'an enum with the instinct or operator class',
+    ]);
   });
 
   it('an instinct initialize then a model initialize on the same door is the model class, and the reverse', async () => {
