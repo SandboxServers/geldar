@@ -28,6 +28,12 @@ const FALLING = (name: string | undefined): boolean =>
   name === 'red_sand' ||
   name === 'gravel' ||
   name === 'anvil' ||
+  name === 'chipped_anvil' ||
+  name === 'damaged_anvil' ||
+  name === 'suspicious_sand' ||
+  name === 'suspicious_gravel' ||
+  name === 'pointed_dripstone' ||
+  name === 'dragon_egg' ||
   (name?.endsWith('_concrete_powder') ?? false);
 
 /** Margin on top of the computed dig time: ticks, and a share of the time. */
@@ -76,6 +82,43 @@ export function hazardReason(
         return `${block.name} is unsafe to dig: ${next.name} above it would fall on you`;
       }
     }
+  }
+  return null;
+}
+
+/** Whether a cell is walled on all four sides at its own level (no open cell beside it). */
+function walledIn(bot: Bot, cell: Vec3): boolean {
+  return [
+    [1, 0],
+    [-1, 0],
+    [0, 1],
+    [0, -1],
+  ].every(([dx, dz]) => {
+    const next = bot.blockAt(cell.offset(dx ?? 0, 0, dz ?? 0));
+    return next !== null && next !== undefined && next.boundingBox !== 'empty';
+  });
+}
+
+/**
+ * Why digging `block` at `at` would bring a falling block onto the Body, or null. A falling block
+ * directly above `at` is refused when the Body's head is within one cell of that column and no
+ * higher than the falling block plus two (the cell it stands on). Digging a falling block while the
+ * Body is walled in at its feet and head is refused too: there is no open cell to step away into.
+ */
+export function fallOnBodyReason(
+  bot: Bot,
+  block: Block,
+  at: Vec3,
+  feet: Vec3,
+  head: Vec3,
+): string | null {
+  const above = bot.blockAt(at.offset(0, 1, 0));
+  const near = Math.abs(head.x - at.x) <= 1 && Math.abs(head.z - at.z) <= 1;
+  if (above && FALLING(above.name) && near && head.y <= at.y + 3) {
+    return `${block.name} is unsafe to dig: ${above.name} above it would fall on you`;
+  }
+  if (FALLING(block.name) && walledIn(bot, feet) && walledIn(bot, head)) {
+    return `${block.name} falls when dug, and you have no open cell beside you`;
   }
   return null;
 }

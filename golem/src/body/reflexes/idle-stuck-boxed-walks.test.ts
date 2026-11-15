@@ -5,7 +5,7 @@ import type { BodyView } from '../view.ts';
 import { idleStuckReflex } from './idle-stuck.ts';
 import { BOXED_TICKS, isBoxedIn } from './idle-stuck-boxed.ts';
 import { GridWorld, settableView } from './reflexes.fakes.ts';
-import { noteGoto, noteWalkOutcome } from './unstick.ts';
+import { failedWalksAt, noteGoto, noteWalkOutcome } from './unstick.ts';
 
 const SPOT = { x: 0, y: 64, z: 0 };
 
@@ -84,6 +84,28 @@ function failedUnstick(view: BodyView): void {
   noteWalkOutcome(view, 'unstick', 'failed', 'blocked', SPOT);
 }
 
+/** Open ground with a closed 3-cell pocket of feet cells: (0,64,0), (1,64,0), (1,64,1), roofed and walled in stone. */
+function threeCellWorld(): GridWorld {
+  const world = openGround();
+  world.fill(new Vec3(-2, 64, -2), new Vec3(2, 66, 2), 'stone');
+  for (const [x, y, z] of [
+    [0, 64, 0],
+    [1, 64, 0],
+    [1, 64, 1],
+    [0, 65, 0],
+    [1, 65, 0],
+    [1, 65, 1],
+  ] as const) {
+    world.fill(new Vec3(x, y, z), new Vec3(x, y, z), null);
+  }
+  return world;
+}
+
+/** Moves the Body's position on a view (the same view keeps its walk record). */
+function moveTo(view: BodyView, spot: { x: number; y: number; z: number }): void {
+  (view as unknown as { position: { x: number; y: number; z: number } }).position = spot;
+}
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -100,6 +122,32 @@ describe('boxed-in walk record counts failed unstick and mine runs (decision 033
       reason: 'boxed_in',
       idle_seconds: 120,
     });
+  });
+
+  it('two unstick failures 1.4 blocks apart in a 3-cell pocket are one spot: boxed in after the clock', () => {
+    const view = bodyIn(threeCellWorld());
+    failedUnstick(view);
+    const inside = { x: 1, y: 64, z: 1 };
+    moveTo(view, inside);
+    noteWalkOutcome(view, 'unstick', 'failed', 'blocked', inside);
+    expect(failedWalksAt(view, inside)).toBe(true);
+    idleStuckReflex.check(view);
+    expect(idleStuckReflex.check(at(view, BOXED_TICKS - 1))).toBeNull();
+    expect(idleStuckReflex.check(at(view, BOXED_TICKS))).toEqual({
+      reason: 'boxed_in',
+      idle_seconds: 120,
+    });
+  });
+
+  it('failures in two places, one inside the pocket and one far outside, do not accumulate', () => {
+    const view = bodyIn(threeCellWorld());
+    failedUnstick(view);
+    const far = { x: 10, y: 64, z: 10 };
+    moveTo(view, far);
+    noteWalkOutcome(view, 'unstick', 'failed', 'blocked', far);
+    expect(failedWalksAt(view, far)).toBe(false);
+    moveTo(view, SPOT);
+    expect(failedWalksAt(view, SPOT)).toBe(false);
   });
 
   it('a no_effect mine between two blocked walks does not clear the record', () => {
