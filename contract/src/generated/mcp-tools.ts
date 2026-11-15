@@ -1242,7 +1242,7 @@ export const mcpToolSchemas: Record<
           }
         },
         "PlaySnapshot": {
-          "description": "The snapshot an agent sees: the Body's identifiers and counters are left out, as are heard lines, events and text on notable blocks. What was heard and written goes in untrusted_world_text.",
+          "description": "The snapshot an agent sees: the Body's identifiers and counters are left out, as are heard lines, events and text on notable blocks. What was heard and written goes in untrusted_world_text. Muffled notices go in muffled as fixed sentences (decision 0199), nearest first, at most 3; they are not untrusted text.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -1275,6 +1275,15 @@ export const mcpToolSchemas: Record<
             "heard": {
               "type": "array",
               "maxItems": 0
+            },
+            "muffled": {
+              "description": "The player's sentences for voices heard through a wall (heardMuffledSentence), nearest first, at most 3.",
+              "type": "array",
+              "maxItems": 3,
+              "items": {
+                "type": "string",
+                "maxLength": 64
+              }
             },
             "events_since_last_thought": {
               "type": "array",
@@ -3123,7 +3132,7 @@ export const mcpToolSchemas: Record<
           }
         },
         "PlaySnapshot": {
-          "description": "The snapshot an agent sees: the Body's identifiers and counters are left out, as are heard lines, events and text on notable blocks. What was heard and written goes in untrusted_world_text.",
+          "description": "The snapshot an agent sees: the Body's identifiers and counters are left out, as are heard lines, events and text on notable blocks. What was heard and written goes in untrusted_world_text. Muffled notices go in muffled as fixed sentences (decision 0199), nearest first, at most 3; they are not untrusted text.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -3156,6 +3165,15 @@ export const mcpToolSchemas: Record<
             "heard": {
               "type": "array",
               "maxItems": 0
+            },
+            "muffled": {
+              "description": "The player's sentences for voices heard through a wall (heardMuffledSentence), nearest first, at most 3.",
+              "type": "array",
+              "maxItems": 3,
+              "items": {
+                "type": "string",
+                "maxLength": 64
+              }
             },
             "events_since_last_thought": {
               "type": "array",
