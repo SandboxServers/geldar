@@ -111,6 +111,20 @@ describe('use in the MCP act description and the body-api prompt', () => {
     expect(v8).not.toContain('"do": "use"');
   });
 
+  it('adds a v10 prompt with the reworded use summary, and leaves v9 unchanged', () => {
+    const v10 = JSON.parse(readRepoFile('prompts/body-api/v10.json'));
+    expect(v10.version).toBe(10);
+    const entry = v10.verbs.find((v: { do: string }) => v.do === 'use');
+    expect(entry.summary).toBe(
+      'Click a door, gate, trapdoor, button or lever; sow a seed on farmland; bone-meal a crop. Beds, containers and signs refuse.',
+    );
+    expect(validateThought(oneAction(entry.example)).ok).toBe(true);
+    const v9 = JSON.parse(readRepoFile('prompts/body-api/v9.json'));
+    expect(v9.version).toBe(9);
+    const v9Entry = v9.verbs.find((v: { do: string }) => v.do === 'use');
+    expect(v9Entry.summary).toBe('Click a block or entity with the item in hand.');
+  });
+
   it('keeps the use entry of v9 within the token margin (about 50 tokens, 200 characters)', () => {
     const v9 = JSON.parse(readRepoFile('prompts/body-api/v9.json'));
     const entry = v9.verbs.find((v: { do: string }) => v.do === 'use');
