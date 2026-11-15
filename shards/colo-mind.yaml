@@ -94,6 +94,8 @@ sovereign:
     - { player_id: ag-worf-01, life_id: ag_worf_01, name: Worf }
     - { player_id: ag-bcrusher-01, life_id: ag_bcrusher_01, name: BCrusher }
     - { player_id: ag-wcrusher-01, life_id: ag_wcrusher_01, name: WCrusher }
+    - { player_id: ag-lewis-01, life_id: ag_lewis_01, name: Lewis }
+    - { player_id: ag-clark-01, life_id: ag_clark_01, name: Clark }
 
 # The colo Mind (decision 0078): the Mind runs here; the Thinkers run on the owner's home GPUs and the api-minds
 # Thinker, reached through a Thinker gateway that does not exist yet. Until it does, the Thinker below is an

@@ -1,8 +1,10 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { hashToken, mintToken } from '../../mcp/src/store/token-hash.ts';
+import { deleteAccountPage, runAccountDelete } from './account-delete-page.ts';
 import { accountPage, type BodyState } from './account-pages.ts';
 import { ACCOUNT_CSS } from './account-style.ts';
+import type { AccountDeleteDeps } from './api/account-data-delete.ts';
 import type { RegisterConfig } from './config.ts';
 import { errorPage } from './errors.ts';
 import type { Identity } from './identity.ts';
@@ -63,6 +65,8 @@ export interface AccountDeps {
    * undefined for an agent, means the page shows no body line for it. A throw is treated the same way.
    */
   readonly bodyState?: (playerId: string) => Promise<BodyState | undefined>;
+  /** The account delete (C7-09a): the same shared delete the API route uses. Unset, the page action is a 404. */
+  readonly accountDelete?: AccountDeleteDeps | undefined;
 }
 
 /** The value of the one cookie of this name. Two or more of that name in the header give null: no session. */
@@ -82,6 +86,13 @@ const sessionCookie = (value: string, maxAge: number): string =>
 const LEGACY_CLEARS = [
   'gr_session=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax',
   'gr_state=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax',
+];
+
+/** The Set-Cookie values that end a session: the session cookie, the legacy names and the kino cookie (C7-09a). */
+export const signOutCookies = (): string[] => [
+  sessionCookie('', 0),
+  ...LEGACY_CLEARS,
+  kinoCookieHeader('', 0),
 ];
 
 /** The form token is derived from the session id, so the table holds no copy of it. */
@@ -223,7 +234,8 @@ export class Account {
       return true;
     }
     const m =
-      /^\/(account|players|logout|onboarding)(?:\/(ag-[a-z0-9-]+)\/(token|retire|public-camera|public-thoughts))?$/.exec(
+      // /account/delete is anchored: it takes no player suffix, so /account/delete/ag-x/retire is not the delete (C7-09a).
+      /^\/(account\/delete(?=$)|account|players|logout|onboarding)(?:\/(ag-[a-z0-9-]+)\/(token|retire|public-camera|public-thoughts))?$/.exec(
         url.pathname,
       );
     if (!m) return false;
@@ -244,6 +256,10 @@ export class Account {
     if (!session) {
       this.deps.log('session expired');
       html(res, 401, EXPIRED_PAGE, { 'set-cookie': sessionCookie('', 0) });
+      return true;
+    }
+    if (m[1] === 'account/delete' && req.method === 'GET') {
+      html(res, 200, deleteAccountPage(session.csrf));
       return true;
     }
     if (m[1] === 'account' || m[1] === 'onboarding') {
@@ -268,7 +284,7 @@ export class Account {
       await this.deps.sessions.delete(sessionHash(id));
       res.writeHead(302, {
         location: BASE,
-        'set-cookie': [sessionCookie('', 0), ...LEGACY_CLEARS, kinoCookieHeader('', 0)],
+        'set-cookie': signOutCookies(),
         ...SECURITY_HEADERS,
       });
       res.end();
@@ -285,6 +301,10 @@ export class Account {
     if (wait > 0 && m[3] !== 'retire') {
       this.deps.log('post refused reason=rate');
       html(res, 429, errorPage(429, wait), { 'retry-after': String(wait) });
+      return true;
+    }
+    if (m[1] === 'account/delete') {
+      await runAccountDelete(res, this.deps.accountDelete, session, fields, this.deps.log);
       return true;
     }
     if (m[1] === 'players' && m[2] === undefined) return this.create(res, session, fields);

@@ -58,6 +58,21 @@ describe('identity ban and unban', () => {
     expect(log[0]?.text).toContain('banned_at = NULL');
     await expect(unbanIdentity(fake([]).sql, HASH)).rejects.toThrow('no identity');
   });
+
+  it('unban of a tombstone (owner erased, owner_id NULL) removes the row so the person can sign up as new', async () => {
+    const log: string[] = [];
+    const sql: Sql = {
+      query: async (text) => {
+        log.push(text);
+        return { rows: text.startsWith('DELETE FROM mcp_identities') ? [{ ok: 1 }] : [] };
+      },
+    };
+    await unbanIdentity(sql, HASH);
+    expect(log).toHaveLength(2);
+    expect(log[0]).toContain('AND owner_id IS NOT NULL');
+    expect(log[1]).toContain('DELETE FROM mcp_identities');
+    expect(log[1]).toContain('AND owner_id IS NULL');
+  });
 });
 
 describe('Kino admin grant and revoke (R42)', () => {

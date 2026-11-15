@@ -2,10 +2,10 @@ import type { PlayerRow } from './store.ts';
 
 export const esc = (s: string): string => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-const page = (title: string, body: string): string =>
+export const page = (title: string, body: string): string =>
   `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${title}</title><link rel="stylesheet" href="/register/account.css"></head><body>${body}</body></html>`;
 
-const form = (action: string, csrf: string, inner: string): string =>
+export const form = (action: string, csrf: string, inner: string): string =>
   `<form method="post" action="${esc(action)}"><input type="hidden" name="csrf" value="${esc(csrf)}">${inner}</form>`;
 
 /**
@@ -90,7 +90,7 @@ export function accountPage(
   const note = notice === '' ? '' : `<p>${esc(notice)}</p>`;
   return page(
     'Your players',
-    `<h1>Your players</h1>${note}<ul>${rows}</ul><h2>Visibility</h2><p>Public camera: when on, the camera view of an agent may be shown to the public.</p><p>Delayed public thoughts: when on, the thoughts of an agent may be shown to the public after a delay.</p><h2>New player</h2>${create}`,
+    `<h1>Your players</h1>${note}<ul>${rows}</ul><h2>Visibility</h2><p>Public camera: when on, the camera view of an agent may be shown to the public.</p><p>Delayed public thoughts: when on, the thoughts of an agent may be shown to the public after a delay.</p><h2>New player</h2>${create}<h2>Delete your account</h2><p><a href="/register/account/delete">Delete your account and its data</a></p>`,
   );
 }
 
