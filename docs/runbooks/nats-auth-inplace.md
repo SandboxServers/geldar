@@ -19,25 +19,24 @@ Related: [0080 NATS auth cutover](../decisions/0080-nats-auth-cutover.md), [0087
 
 ## Drift to resolve first
 
-As of 2026-11-14 the live file and the generator on `main` differ (by user and permission line only; no secret values are recorded here). The helper column is the generator after PR #415, which is not merged yet (`git grep helper -- geldar.ps1` on `main` finds nothing).
+On 2026-11-15 14:31:12Z batch A was applied to the live file in place (SIGHUP; backup `nats-auth.conf.bak-20261115T143056Z`; no client was disconnected, connections 69 before and after). After batch A the live file's `body`, `paper`, `mind`, `mcp` and `eventsink` lines match the generator on `main`. The helper, supervisor and register users are still absent on the node: that is batch B, waiting for the body-helper install script that creates their password files. No secret values are recorded here. The helper column is the generator after PR #415, which is not merged yet (`git grep helper -- geldar.ps1` on `main` finds nothing).
 
 | Entry | Live node | Generator on `main` | Generator after #415 | Batch on the node |
 |---|---|---|---|---|
-| user `helper` | absent | absent | Sub the four helper subjects, Pub `_INBOX.>` | add |
-| user `supervisor` | absent | Pub `_INBOX.>`, Sub `geldar.<s>.ctl.body.>` | adds the four helper subjects to Pub, and `_INBOX.>` to Sub | add |
-| user `register` | absent | Pub `geldar.<s>.ctl.body.>`, Sub `_INBOX.>` | unchanged | not in this batch |
-| `body` PubDeny | `geldar.<s>.kino.>`, `geldar.<s>.blockowner.changed` | the same two, plus `geldar.<s>.ctl.body.>` and `geldar.<s>.state.*.level` | adds `geldar.<s>.helper.body.>` | add `geldar.<s>.helper.body.>` only |
-| `paper` PubDeny | `geldar.<s>.kino.control`, `geldar.<s>.blockowner.query` | the same two, plus `geldar.<s>.ctl.body.>` and `geldar.<s>.state.*.level` | adds `geldar.<s>.helper.body.>` | add `geldar.<s>.helper.body.>` only |
+| user `helper` | absent | absent | Sub the four helper subjects, Pub `_INBOX.>` | batch B |
+| user `supervisor` | absent | Pub `_INBOX.>`, Sub `geldar.<s>.ctl.body.>` | adds the four helper subjects to Pub, and `_INBOX.>` to Sub | batch B |
+| user `register` | absent | Pub `geldar.<s>.ctl.body.>`, Sub `_INBOX.>` | unchanged | not in batch B (REG-NATS-COMPOSE) |
+| `body` PubDeny | `geldar.<s>.kino.>`, `geldar.<s>.blockowner.changed`, `geldar.<s>.ctl.body.>`, `geldar.<s>.helper.body.>`, `geldar.<s>.state.*.level`, `geldar.<s>.body.*.hearing` | the same, plus `geldar.<s>.ctl.body.>`, `geldar.<s>.state.*.level` | adds `geldar.<s>.helper.body.>` | matches the generator |
+| `paper` PubDeny | `geldar.<s>.kino.control`, `geldar.<s>.blockowner.query`, `geldar.<s>.ctl.body.>`, `geldar.<s>.helper.body.>`, `geldar.<s>.state.*.level` | the same, plus `geldar.<s>.ctl.body.>`, `geldar.<s>.state.*.level` | adds `geldar.<s>.helper.body.>` | matches the generator |
 
-Other users match. Live has 8 users (body, mind, eventsink, mcp, velocity, paper, kino, deploy); after this batch it has 10. The node has no `nats-supervisor.txt`, `nats-helper.txt` or `nats-register.txt`, and no compose mapping for them. The live `body` and `paper` denies for `ctl.body.>` and `state.*.level` stay drift until their own change; this batch does not add them.
+Live now has 8 users (body, mind, eventsink, mcp, velocity, paper, kino, deploy). Batch B adds `helper` and `supervisor`, making 10. The node has no `nats-supervisor.txt`, `nats-helper.txt` or `nats-register.txt`, and no compose mapping for them.
 
 Pending additions, none in the generator or the live file. Each needs its own decision-owner go:
 
-- Sheet state subjects (decision 0280 known gap): deny publish `geldar.<s>.state.*.level` for body and paper; eventsink publish `geldar.<s>.life.*.sheet`; body and paper PubDeny `geldar.<s>.life.>`.
-- Hearing subject (decision 0199 option A): body, mind and mcp PubDeny `geldar.<s>.body.*.hearing`.
+- Sheet subjects (decision 0280 known gap): eventsink publish `geldar.<s>.life.*.sheet`; body and paper PubDeny `geldar.<s>.life.>`.
 - Provenance (`docs/analysis/harness/work-packets-geldar-b.md`, about line 34): body PubDeny and Sub on `provenance.>`.
-- Body control on the live node: `body` and `paper` PubDeny `geldar.<s>.ctl.body.>` (the generator on `main` has it, the live file does not), and the `register` user. The `register` user and its `REGISTER_NATS_*` env are the REG-NATS-COMPOSE row in `docs/analysis/phase1/ledger.md`, folded into C7-03b2.
-- The batch below (`helper` and `supervisor` users, `helper.body.>` denies) is pending the PR #415 merge and its own owner go.
+- The `register` user and its `REGISTER_NATS_*` env are the REG-NATS-COMPOSE row in `docs/analysis/phase1/ledger.md`, folded into C7-03b2.
+- Batch B (`helper` and `supervisor` users) is pending the PR #415 merge, the install script that creates the password files, and its own owner go.
 
 **Rule:** a change to the live file must land in `geldar.ps1` (the user list and the permission lines) in the same change, or the repo and the node drift again. Do not apply a live change that the generator does not produce. The change in the repo is reviewed like the live change.
 
@@ -190,24 +189,16 @@ The `sha256sum` must equal the backup's value from step 1. Then repeat the `Relo
 
 ## Client impact
 
-**Not verified:** whether a reload closes live sessions of changed or removed users on nats-server 2.15.1. Earlier reloads logged the three `Reloaded` lines (2026-11-12 16:08:53Z and 2026-11-13 16:29:14Z), but nothing shows what happened to the sessions. The repo test `threshold/mcp/test/nats-auth.it.test.ts` only asserts that a revoked user is refused on its next connection.
+**Tested (2026-11-15)** on a throwaway `nats:2.15.1-alpine` (same digest), on its own network, removed after the test. A SIGHUP reload logged the three `Reloaded` lines and closed no client. An unchanged user kept working. A changed user stayed connected: its subscription that was no longer allowed got `-ERR Permissions Violation for Subscription` and was dropped, and its newly denied publishes got `Permissions Violation for Publish`. Not covered: JetStream and `allow_responses` traffic, and a user removed outright.
 
-What to expect until this is tested:
+For a future change of a different kind, repeat the test first, briefly:
 
-- Users whose entries did not change should stay connected.
-- A client that loses permissions may be closed, or may get `Permissions Violation` errors on the next publish or subscribe.
-- Body hosts and MCP should reconnect on their own. Verify it in the logs.
-
-Test it once on a throwaway container before the live change:
-
-1. Start `nats:2.15.1-alpine` (digest above) with a two-user conf, on a loopback port, with its own monitor port. Use a separate test container name. Never use the live name.
-2. Connect one client as each user. Subscribe as one user to a subject it may read.
-3. Remove one permission from the second user in a copy of the conf. Replace the conf in place (`cat`, not `mv`).
+1. Start `nats:2.15.1-alpine` (digest above) with a two-user conf on a loopback port and its own monitor port. Use a separate test container name, never the live name.
+2. Connect one client as each user, and subscribe as one user to a subject it may read.
+3. Change the second user's permissions in a copy of the conf, replacing the conf in place (`cat`, not `mv`).
 4. Send `docker kill -s HUP` to the test container.
-5. Observe: is the first client still connected, is the second client closed, and what does its next publish get. Record the answer in this section.
+5. Observe whether each client stays connected and what its next publish or subscribe gets. Record the result here.
 6. Remove the test container and its temporary files.
-
-Until the test records a result, plan the live change as if changed users are closed.
 
 ## Notes
 
