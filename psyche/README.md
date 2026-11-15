@@ -32,7 +32,7 @@ The kit reimplements these rules (about 40 lines). Change them only under a new 
 
 - Files: every regular file under `psyche/src/`, recursively. Nothing is excluded. A symbolic link is refused.
 - Path: relative to `psyche/src`, with `/` separators.
-- Content: the bytes, with each `\r\n` turned into `\n`. A lone CR is kept.
+- Content: the bytes, with each `\r\n` turned into `\n`. A lone CR is kept. The kit's implementation must convert only CRLF, not a lone CR.
 - Order: entries sorted by the UTF-8 bytes of the path.
 - `sha256` per file: lower-case hex of that content.
 - `tree_hash`: the lower-case hex SHA-256 of the concatenation of `<path>\0<sha256>\n` for each entry, as UTF-8.

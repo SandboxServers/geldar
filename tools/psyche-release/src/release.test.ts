@@ -1,5 +1,13 @@
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +29,14 @@ const FIXTURE = fileURLToPath(new URL('../test/fixture', import.meta.url));
  */
 const PINNED_PATHS = ['alpha.txt', 'nested/beta.txt', '～.txt', '\u{1F600}.txt'];
 const PINNED_TREE_HASH = '593faa053405392920c2b41d9d64574b0a29f2faf78cdfaff6acf64e7c2a5a51';
+
+/**
+ * One file, `lone.txt`, with bytes `a\rb\r\nc\r\r\nd`. Only the two CRLFs become LF,
+ * so the content is `a\rb\nc\r\nd` (SHA-256 f37726c2...). The tree hash is the SHA-256
+ * of `lone.txt\0<that sha>\n`. Both were computed with PowerShell Get-FileHash over
+ * the exact bytes, not with Node.
+ */
+const LONE_CR_TREE_HASH = '838418ee0292c3a0fda6085dc3154e3feace0d64e96f054355fac477ad851f99';
 
 describe('psyche release record', () => {
   it('matches the recorded tree hash', () => {
@@ -85,6 +101,34 @@ describe('geldar-tree-v1 pinned vector', () => {
       expect(treeHash(copy).tree_hash).toBe(PINNED_TREE_HASH);
     } finally {
       rmSync(copy, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('geldar-tree-v1 edge rules', () => {
+  it('turns only CRLF into LF, so a lone CR is kept', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'psyche-release-cr-'));
+    try {
+      writeFileSync(join(dir, 'lone.txt'), Buffer.from('a\rb\r\nc\r\r\nd', 'latin1'));
+      expect(treeHash(dir).tree_hash).toBe(LONE_CR_TREE_HASH);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses a symlink instead of skipping it', (ctx) => {
+    const dir = mkdtempSync(join(tmpdir(), 'psyche-release-link-'));
+    try {
+      writeFileSync(join(dir, 'target.txt'), 'x');
+      try {
+        symlinkSync(join(dir, 'target.txt'), join(dir, 'link.txt'));
+      } catch (error) {
+        // Windows without developer mode or the symlink privilege refuses the link.
+        ctx.skip(`symlink creation is denied here: ${(error as Error).message}`);
+      }
+      expect(() => treeHash(dir)).toThrow(/not a regular file/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
