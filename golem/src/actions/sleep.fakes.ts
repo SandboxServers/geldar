@@ -9,6 +9,8 @@ export interface FakeBlock {
   position: Vec3;
   /** The block light the world model reports; absent reads as unknown. */
   light?: number;
+  /** The bed's `occupied` state; absent means the block's state cannot be read (no getProperties). */
+  occupied?: boolean | undefined;
 }
 
 /** An entity in the fake world: its minecraft-data name and its feet position. */
@@ -89,7 +91,10 @@ export function fakeBot(options: FakeOptions = {}): Bot {
         .filter(matching)
         .slice(0, count)
         .map((block) => block.position),
-    blockAt: (position: Vec3) => blocks.find((block) => block.position.equals(position)) ?? null,
+    blockAt: (position: Vec3) => {
+      const block = blocks.find((candidate) => candidate.position.equals(position));
+      return block ? withState(block) : null;
+    },
     sleep: vi.fn(async (_bed: FakeBlock) => {
       if (options.hangSleep) return new Promise<void>(() => undefined);
       if (options.sleepDelayMs) {
@@ -103,6 +108,13 @@ export function fakeBot(options: FakeOptions = {}): Bot {
     }),
   };
   return bot as unknown as Bot;
+}
+
+/** The block as `blockAt` returns it: a bed with an `occupied` state reads it through getProperties, as Mineflayer's blocks do. */
+function withState(block: FakeBlock): FakeBlock {
+  const { occupied } = block;
+  if (occupied === undefined) return block;
+  return { ...block, getProperties: () => ({ occupied }) } as FakeBlock;
 }
 
 /** Runs the `sleep` handler with a fresh abort signal, unless the test passes its own. */

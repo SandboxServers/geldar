@@ -240,7 +240,7 @@ describe('sleep', () => {
     const outcome = await sleep(bot);
     expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked' });
     expect(outcome.status === 'failed' && outcome.message).toBe(
-      'tried 2 nearby beds, all occupied or blocked; last: the bed could not be used; ended at 0, 64, 0',
+      'tried 2 nearby beds, all occupied or blocked; last: the bed could not be used; 2 beds within 32 blocks, 0 occupied; ended at 0, 64, 0',
     );
     expect(classifySleepError('cant click the bed')).toBe('blocked');
   });
@@ -254,7 +254,7 @@ describe('sleep', () => {
     const outcome = await sleep(bot);
     expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked' });
     expect(outcome.status === 'failed' && outcome.message).toBe(
-      'tried 2 nearby beds, all occupied or blocked; last: the bed is occupied; ended at 0, 64, 0',
+      'tried 2 nearby beds, all occupied or blocked; last: the bed is occupied; 2 beds within 32 blocks, 0 occupied; ended at 0, 64, 0',
     );
     expect(bot.sleep).toHaveBeenCalledTimes(2);
   });

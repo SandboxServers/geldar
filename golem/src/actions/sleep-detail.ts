@@ -1,5 +1,6 @@
 import type { Bot } from 'mineflayer';
 import type { ActionOutcome, JsonValue } from './outcome.ts';
+import type { BedCensus } from './sleep-census.ts';
 import type { Hostile } from './sleep-hostiles.ts';
 
 /** One bed the bed loop tried: the bed block the attempt ended on, and the reason it gave. */
@@ -43,14 +44,25 @@ function roundToTenth(value: number): number {
 }
 
 /**
- * The detail a failed sleep carries: the bot's final position (each axis to one decimal) and the beds the loop
- * tried, in the order tried. The beds are absent when none was tried.
+ * The detail a failed sleep carries: the bot's final position (each axis to one decimal), the beds the loop
+ * tried, in the order tried (absent when none was tried), and the bed census when the loop read one (decision 0226).
  */
-export function sleepFailureDetail(bot: Bot, tries: readonly BedTry[]): Record<string, JsonValue> {
+export function sleepFailureDetail(
+  bot: Bot,
+  tries: readonly BedTry[],
+  census?: BedCensus,
+): Record<string, JsonValue> {
   const { x, y, z } = bot.entity.position;
   return {
     final_position: { x: roundToTenth(x), y: roundToTenth(y), z: roundToTenth(z) },
     beds_tried: tries.map(({ block, reason }) => ({ ...block, reason })),
+    ...(census === undefined
+      ? {}
+      : {
+          beds_in_range: census.in_range,
+          beds_occupied: census.occupied,
+          beds_unknown: census.unknown,
+        }),
   };
 }
 
