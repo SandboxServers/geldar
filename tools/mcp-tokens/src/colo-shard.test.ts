@@ -17,6 +17,12 @@ const TNG_CREW = [
   ['ag-wcrusher-01', 'ag_wcrusher_01', 'WCrusher'],
 ] as const;
 
+// The residents added to the colo shard (docs/analysis/residents): the same shape as the TNG crew.
+const RESIDENTS = [
+  ['ag-lewis-01', 'ag_lewis_01', 'Lewis'],
+  ['ag-clark-01', 'ag_clark_01', 'Clark'],
+] as const;
+
 describe('the colo shard TNG crew players', () => {
   it('parses the real shard and lists all seven crew players, each id and life id once', () => {
     const text = readFileSync(COLO_SHARD, 'utf8');
@@ -30,8 +36,14 @@ describe('the colo shard TNG crew players', () => {
       expect(ids).toContain(playerId);
       expect(lives).toContain(lifeId);
     }
+    for (const [playerId, lifeId] of RESIDENTS) {
+      expect(ids).toContain(playerId);
+      expect(lives).toContain(lifeId);
+    }
     expect(new Set(ids).size).toBe(ids.length);
     expect(new Set(lives).size).toBe(lives.length);
+    // 15 before the residents were added, 17 with them. A change here is a deliberate roster change.
+    expect(players).toHaveLength(17);
   });
 });
 

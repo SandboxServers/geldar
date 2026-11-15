@@ -4,6 +4,7 @@ import { editSignHandler } from '../actions/edit-sign.ts';
 import { targetOf } from '../actions/goto.ts';
 import { allActions } from '../actions/index.ts';
 import type { ActionRun } from '../actions/registry.ts';
+import { useHandler } from '../actions/use.ts';
 import { type BodyKv, CheckpointStore } from './checkpoint.ts';
 import { cancelForDeath } from './death-cancel.ts';
 import { type ExecutorOptions, IntentExecutor } from './executor.ts';
@@ -37,6 +38,8 @@ export interface CreateBodyOptions {
   reflexConfig?: ReflexConfig;
   /** The shard's `body_actions.edit_sign` flag; the verb is refused while off. Default: off. */
   editSign?: boolean;
+  /** The shard's `body_actions.use` flag; the verb is refused while off. Default: off (decision 0218). */
+  use?: boolean;
   /**
    * Where records go. Given, the Body writes to JetStream through a `NatsRecordSink` (it fills in
    * `lifeId` and the world tick); left out, a `MemorySink` keeps them.
@@ -140,9 +143,10 @@ export function createBody(options: CreateBodyOptions): Body {
   runtime = built;
   // edit_sign is registered with the shard's flag (`body_actions.edit_sign`, default off).
   for (const handler of allActions) {
-    if (handler.kind !== 'edit_sign') built.actions.register(handler);
+    if (handler.kind !== 'edit_sign' && handler.kind !== 'use') built.actions.register(handler);
   }
   built.actions.register(editSignHandler(options.editSign ?? false));
+  built.actions.register(useHandler(options.use ?? false));
   const executor = new IntentExecutor({
     runtime: built,
     ticks: options.ticks,

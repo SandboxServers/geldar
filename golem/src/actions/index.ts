@@ -42,6 +42,9 @@ import { tillAction } from './till.ts';
 // --- body edit_sign (decision 0192) ---
 import { editSignAction } from './edit-sign.ts';
 
+// --- body use (decision 0218 step 1) ---
+import { useAction } from './use.ts';
+
 /** Every action handler the Body registers. Each action packet adds its handlers to its block. */
 export const allActions: AnyActionHandler[] = [
   // --- P0-08a goto, mine ---
@@ -83,6 +86,9 @@ export const allActions: AnyActionHandler[] = [
   // --- body edit_sign (decision 0192) ---
   editSignAction,
   // --- end body edit_sign ---
+  // --- body use (decision 0218 step 1) ---
+  useAction,
+  // --- end body use ---
 ];
 
 /** A registry with every handler in `allActions` registered. */

@@ -384,6 +384,27 @@
           },
           "required": ["do", "at", "text"],
           "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "do": { "const": "use" },
+            "item": {
+              "description": "The item to equip before the click. Absent means the item already in hand, which may be empty.",
+              "$ref": "common.schema.json#/$defs/ItemName"
+            },
+            "at": {
+              "description": "The position of the block to click. The Body chooses the face. Not with entity.",
+              "$ref": "common.schema.json#/$defs/Position"
+            },
+            "entity": {
+              "description": "The name or name:id of an entity in the perception snapshot to click. Not with at.",
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_:]{1,64}$"
+            }
+          },
+          "required": ["do"],
+          "additionalProperties": false
         }
       ]
     }

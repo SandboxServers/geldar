@@ -11,12 +11,21 @@ export const MAX_RESPONSE_BYTES = 64 * 1024;
 
 const UPLOAD_TIMEOUT_MS = 30_000;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
+const MINESKIN_UUID = /^[0-9a-f-]{1,64}$/i;
+
+/**
+ * Who can see an upload on MineSkin, sent as the form field `visibility` (V2 generate API). The owner approves
+ * unlisted uploads only (decision 0140), so unlisted is the default.
+ */
+export type Visibility = 'unlisted' | 'public';
 
 /** A signed texture property, as Velocity and Paper read it. */
 export interface SignedTexture {
   value: string;
   signature: string;
   model: 'classic' | 'slim';
+  /** The MineSkin uuid of the upload (V2 `skin.uuid`); kept for the JSON export, absent when the reply has none. */
+  mineskinUuid?: string | undefined;
 }
 
 /** A refusal or failure with a fixed message. It never carries the API key, the request or the response body. */
@@ -29,6 +38,8 @@ export interface UploadOptions {
   png: Buffer;
   model: 'classic' | 'slim';
   apiKey: string;
+  /** Defaults to unlisted; the form always carries the field, so MineSkin never picks the default for us. */
+  visibility?: Visibility | undefined;
   fetchFn?: FetchFn | undefined;
   endpoint?: string | undefined;
 }
@@ -42,6 +53,7 @@ export async function uploadSkin(options: UploadOptions): Promise<SignedTexture>
   const form = new FormData();
   form.append('file', new Blob([new Uint8Array(options.png)], { type: 'image/png' }), 'skin.png');
   form.append('variant', options.model);
+  form.append('visibility', options.visibility ?? 'unlisted');
   let response: Response;
   try {
     response = await fetchFn(options.endpoint ?? MINESKIN_ENDPOINT, {
@@ -58,7 +70,10 @@ export async function uploadSkin(options: UploadOptions): Promise<SignedTexture>
     throw new SigningError(`the signing service refused the upload (HTTP ${response.status})`);
   }
   const reply = parseReply(await readLimited(response));
-  return validateTexture(reply.value, reply.signature, options.model);
+  return {
+    ...validateTexture(reply.value, reply.signature, options.model),
+    mineskinUuid: reply.uuid,
+  };
 }
 
 /**
@@ -95,20 +110,25 @@ async function readLimited(response: Response): Promise<string> {
  * Takes `skin.texture.data.value` and `skin.texture.data.signature` out of a V2 reply (the V1 shape, with
  * `data.texture`, is refused); any other shape is refused.
  */
-function parseReply(text: string): { value: string; signature: string } {
+function parseReply(text: string): { value: string; signature: string; uuid: string | undefined } {
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
     throw new SigningError('the signing service reply is not JSON');
   }
-  const texture = (
-    parsed as { skin?: { texture?: { data?: { value?: unknown; signature?: unknown } } } } | null
-  )?.skin?.texture?.data;
+  const skin = (
+    parsed as {
+      skin?: { uuid?: unknown; texture?: { data?: { value?: unknown; signature?: unknown } } };
+    } | null
+  )?.skin;
+  const texture = skin?.texture?.data;
   if (typeof texture?.value !== 'string' || typeof texture.signature !== 'string') {
     throw new SigningError('the signing service reply has no signed texture');
   }
-  return { value: texture.value, signature: texture.signature };
+  const uuid =
+    typeof skin?.uuid === 'string' && MINESKIN_UUID.test(skin.uuid) ? skin.uuid : undefined;
+  return { value: texture.value, signature: texture.signature, uuid };
 }
 
 /**

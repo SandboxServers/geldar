@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { Account } from './account.ts';
+import type { AccountDeleteDeps } from './api/account-data-delete.ts';
 import { handleApi } from './api/index.ts';
 import type { ApiDeps } from './api/route.ts';
 import type { RegisterConfig } from './config.ts';
@@ -8,10 +9,10 @@ import { type Identity, identityHash } from './identity.ts';
 import {
   BASE,
   HOME_PAGE,
+  LEGAL_PAGES,
   REFUSED_PAGE,
   SECURITY_HEADERS,
   SIGNED_IN_PAGE,
-  TERMS_PAGE,
 } from './pages.ts';
 import { newVerifier, STATE_COOKIE, STATE_TTL_MS, StateStore } from './pkce.ts';
 import { sendProblem } from './problem.ts';
@@ -30,6 +31,8 @@ export interface RegisterDeps {
   readonly store?: Store;
   /** Sessions (C7-01). Sign-in and the account pages need both this and the store. */
   readonly sessions?: SessionStore;
+  /** The account delete (C7-09a): the page action and the API route share it. Unset, the page action is a 404. */
+  readonly accountDelete?: AccountDeleteDeps | undefined;
   /** Overrides the store-backed sign-in (tests of the sign-in alone). */
   readonly onSignedIn?: (
     identity: Identity,
@@ -162,6 +165,7 @@ export function createRegisterServer(deps: RegisterDeps): Server {
           now,
           log,
           ownerCharge: (id) => ownerLimiter.charge(id),
+          accountDelete: deps.accountDelete,
         })
       : null;
   const onSignedIn = deps.onSignedIn ?? account?.signedIn;
@@ -240,7 +244,8 @@ export function createRegisterServer(deps: RegisterDeps): Server {
           error: { code: 'method_not_allowed', message: 'Method not allowed' },
         });
       if (url.pathname === '/') return send(res, 200, HOME_PAGE);
-      if (url.pathname === '/terms') return send(res, 200, TERMS_PAGE);
+      const legal = LEGAL_PAGES.get(url.pathname);
+      if (legal) return send(res, 200, legal);
       const m = /^\/(login|callback)$/.exec(url.pathname);
       if (!m) return send(res, 404, errorPage(404));
       const signWait = signInLimiter.charge(clientAddress(req, config.trustedPeers));

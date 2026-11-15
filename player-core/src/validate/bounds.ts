@@ -19,6 +19,7 @@ export const PHASE0_VERBS: readonly string[] = [
   'write_sign',
   'till',
   'edit_sign',
+  'use',
 ];
 
 /** The programs an intent may name. Everything else (skills, `build`, `trade_wait`) is refused. */

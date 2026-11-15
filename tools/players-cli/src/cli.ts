@@ -7,10 +7,12 @@ import {
   type SignedTexture,
   SigningError,
   uploadSkin,
+  type Visibility,
   validateTexture,
 } from './mineskin.ts';
 import { MAX_SKIN_BYTES, SkinFileError, validateSkinPng } from './png.ts';
 import { checkSkinPath, findPlayer, RosterError } from './roster.ts';
+import { checkExportTarget, ExportError, writeSkinExport } from './skin-export.ts';
 import { writeHeads } from './skin-heads.ts';
 import { describeSkin, openSkinBucket, putSkin, type SkinKv } from './skin-store.ts';
 
@@ -28,14 +30,21 @@ export const SHARD_FILE = shardFilePath(process.env);
 export const KEY_FILE = join(REPO_ROOT, 'compose', 'secrets', 'mineskin.txt');
 
 export const USAGE = `usage: players-cli skin set <player-id> <png> [--model classic|slim] [--check-only]
+                             [--visibility unlisted|public] [--confirm-public]
+                             [--export-json <path>] [--no-store]
 
   skin set    validate the PNG (64x64 or 64x32, no extra chunks), sign it with MineSkin and store the
               signed texture in the geldar-skins bucket under the player's life id (needs GELDAR_NATS_URL)
   skin show   print the stored skin of a player (variant, texture host, signature length; never the value)
   skin heads  skin heads --skins-dir <dir> --out-dir <dir> [--map overworld]: write BlueMap player head
               PNGs (maps/<map>/assets/playerheads/<offline uuid>.png) from <agent_id>.png skin files
-  --check-only  validate the PNG and print the result; nothing is uploaded and no network call runs
-  --model       classic (default) or slim (the thin arms)
+  skin import <player-id> <json>: store the signed texture from a ranger-skins.json file (no upload)
+  --check-only       validate the PNG and print the result; nothing is uploaded and no network call runs
+  --model            classic (default) or slim (the thin arms)
+  --visibility       unlisted (default) or public; the owner approves unlisted uploads only
+  --confirm-public   required with --visibility public, so a public listing is never by accident
+  --export-json      also write the signed record as ranger-skins.json (mode 0600) to a new file outside the repo
+  --no-store         do not write the bucket; needs --export-json, then \`skin import\` on the node stores it
 `;
 
 /** `skin heads --skins-dir <dir> --out-dir <dir> [--map overworld]`: BlueMap player heads from skin files. */
@@ -66,7 +75,12 @@ export interface CliDeps {
   /** Reads a ranger-skins.json file (keyed by player id). Optional so older fakes still type-check. */
   readJson?: ((path: string) => Promise<string>) | undefined;
   readKey: () => Promise<string>;
-  upload: (png: Buffer, model: 'classic' | 'slim', apiKey: string) => ReturnType<typeof uploadSkin>;
+  upload: (
+    png: Buffer,
+    model: 'classic' | 'slim',
+    apiKey: string,
+    visibility: Visibility,
+  ) => ReturnType<typeof uploadSkin>;
   openBucket: (natsUrl: string) => Promise<{ kv: SkinKv; close: () => Promise<void> }>;
   natsUrl: () => string | undefined;
   now: () => Date;
@@ -94,12 +108,30 @@ export async function runCli(argv: readonly string[], deps: CliDeps): Promise<nu
     deps.out(USAGE);
     return 2;
   }
+  return runSet(player, file, rest, deps);
+}
+
+/**
+ * `skin set`: checks the flags and the export target before anything is read, validates the PNG, signs it (not with
+ * --check-only), stores it unless --no-store, and writes the JSON export when asked. Nothing is spent on a refusal.
+ */
+async function runSet(
+  player: string,
+  file: string,
+  rest: readonly string[],
+  deps: CliDeps,
+): Promise<number> {
   const flags = parseFlags(rest);
   if (flags === null) {
     deps.out(USAGE);
     return 2;
   }
   try {
+    const visibility = checkFlags(flags);
+    const exportPath =
+      flags.exportJson === undefined
+        ? undefined
+        : await checkExportTarget(flags.exportJson, deps.repoRoot);
     const roster = findPlayer(await deps.readShard(), player);
     const path = checkSkinPath(file, deps.repoRoot);
     const png = await deps.readSkin(path);
@@ -110,21 +142,33 @@ export async function runCli(argv: readonly string[], deps: CliDeps): Promise<nu
       );
       return 0;
     }
-    // NATS first: an unset URL or an unopenable bucket must not spend a MineSkin generation.
-    const url = deps.natsUrl();
-    if (url === undefined || url.trim() === '') {
-      throw new RosterError('GELDAR_NATS_URL is not set; nothing was uploaded or stored');
-    }
-    const { kv, close } = await deps.openBucket(url);
     let texture: SignedTexture;
-    try {
-      texture = await deps.upload(png, flags.model, await deps.readKey());
-      await putSkin(kv, roster.lifeId, texture, deps.now());
-    } finally {
-      await close();
+    if (flags.noStore) {
+      texture = await deps.upload(png, flags.model, await deps.readKey(), visibility);
+    } else {
+      // NATS first: an unset URL or an unopenable bucket must not spend a MineSkin generation.
+      const url = deps.natsUrl();
+      if (url === undefined || url.trim() === '') {
+        throw new RosterError('GELDAR_NATS_URL is not set; nothing was uploaded or stored');
+      }
+      const { kv, close } = await deps.openBucket(url);
+      try {
+        texture = await deps.upload(png, flags.model, await deps.readKey(), visibility);
+        await putSkin(kv, roster.lifeId, texture, deps.now());
+      } finally {
+        await close();
+      }
+    }
+    if (exportPath !== undefined) {
+      const bytes = await writeSkinExport(exportPath, roster.playerId, texture);
+      deps.out(
+        `exported the signed skin record for ${roster.playerId} to ${exportPath} (${bytes} bytes)`,
+      );
     }
     deps.out(
-      `stored the ${texture.model} skin for ${roster.playerId} (life ${roster.lifeId}) in geldar-skins`,
+      flags.noStore
+        ? `signed the ${texture.model} skin for ${roster.playerId} (life ${roster.lifeId}); not stored (--no-store)`
+        : `stored the ${texture.model} skin for ${roster.playerId} (life ${roster.lifeId}) in geldar-skins`,
     );
     return 0;
   } catch (error) {
@@ -198,32 +242,87 @@ async function runShow(player: string, deps: CliDeps): Promise<number> {
   }
 }
 
-/** Parses `--model` and `--check-only`; null for anything else. */
-function parseFlags(
-  args: readonly string[],
-): { model: 'classic' | 'slim'; checkOnly: boolean } | null {
-  let model: 'classic' | 'slim' = 'classic';
-  let checkOnly = false;
+/** The `skin set` flags as typed; checkFlags decides which combinations and values are allowed. */
+interface SetFlags {
+  model: 'classic' | 'slim';
+  checkOnly: boolean;
+  visibility: string;
+  confirmPublic: boolean;
+  exportJson: string | undefined;
+  noStore: boolean;
+}
+
+/** Parses the `skin set` flags; null for an unknown flag or a flag missing its value. Values are checked later. */
+function parseFlags(args: readonly string[]): SetFlags | null {
+  const flags: SetFlags = {
+    model: 'classic',
+    checkOnly: false,
+    visibility: 'unlisted',
+    confirmPublic: false,
+    exportJson: undefined,
+    noStore: false,
+  };
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
+    const value = args[i + 1];
     if (arg === '--check-only') {
-      checkOnly = true;
-    } else if (arg === '--model' && (args[i + 1] === 'classic' || args[i + 1] === 'slim')) {
-      model = args[i + 1] as 'classic' | 'slim';
+      flags.checkOnly = true;
+    } else if (arg === '--confirm-public') {
+      flags.confirmPublic = true;
+    } else if (arg === '--no-store') {
+      flags.noStore = true;
+    } else if (arg === '--model' && (value === 'classic' || value === 'slim')) {
+      flags.model = value;
+      i++;
+    } else if (arg === '--visibility' && value !== undefined) {
+      flags.visibility = value;
+      i++;
+    } else if (arg === '--export-json' && value !== undefined) {
+      flags.exportJson = value;
       i++;
     } else {
       return null;
     }
   }
-  return { model, checkOnly };
+  return flags;
 }
+
+/**
+ * The flag rules, before any read or network call: the visibility is unlisted or public; public needs
+ * --confirm-public (and --confirm-public needs public); --no-store needs --export-json, or the signed skin is lost.
+ */
+function checkFlags(flags: SetFlags): Visibility {
+  const { visibility } = flags;
+  if (visibility !== 'unlisted' && visibility !== 'public') {
+    throw new FlagError('--visibility must be unlisted or public; nothing was uploaded');
+  }
+  if (visibility === 'public' && !flags.confirmPublic) {
+    throw new FlagError('--visibility public needs --confirm-public; nothing was uploaded');
+  }
+  if (flags.confirmPublic && visibility !== 'public') {
+    throw new FlagError(
+      '--confirm-public only goes with --visibility public; nothing was uploaded',
+    );
+  }
+  if (flags.noStore && flags.exportJson === undefined) {
+    throw new FlagError(
+      '--no-store needs --export-json, or the signed skin would be lost; nothing was uploaded',
+    );
+  }
+  return visibility;
+}
+
+/** A flag combination this tool refuses on purpose. */
+class FlagError extends Error {}
 
 /** Only the errors this tool raises on purpose carry a message; anything else gets a fixed one. */
 function errorMessage(error: unknown): string {
   if (
     error instanceof SkinFileError ||
     error instanceof SigningError ||
-    error instanceof RosterError
+    error instanceof RosterError ||
+    error instanceof FlagError ||
+    error instanceof ExportError
   ) {
     return error.message;
   }
@@ -257,7 +356,8 @@ export function productionDeps(fetchFn?: FetchFn): CliDeps {
       }
       return key;
     },
-    upload: (png, model, apiKey) => uploadSkin({ png, model, apiKey, fetchFn }),
+    upload: (png, model, apiKey, visibility) =>
+      uploadSkin({ png, model, apiKey, visibility, fetchFn }),
     openBucket: openSkinBucket,
     natsUrl: () => process.env.GELDAR_NATS_URL,
     now: () => new Date(),

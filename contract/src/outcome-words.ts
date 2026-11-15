@@ -24,6 +24,14 @@ const REASON_PHRASE: Readonly<Record<string, string>> = {
   internal: 'something went wrong inside the body',
 };
 
+/** Plain words for a failed `use` (decision 0218), keyed by reason. A reason not listed reads as REASON_PHRASE. */
+const USE_PHRASE: Readonly<Record<string, string>> = {
+  invalid_args: 'use takes a block or an entity, not both',
+  not_possible: 'that cannot be used that way',
+  missing_materials: 'you lack the item to use',
+  not_found: 'there was nothing to use it on',
+};
+
 /** Intent failure wording, keyed by program then reason. Programs without an entry use the reason phrase. */
 const INTENT_WHY: Readonly<Record<string, Readonly<Record<string, string>>>> = {
   travel: {
@@ -71,11 +79,17 @@ export function isOutcomeReason(reason: unknown): reason is string {
   return typeof reason === 'string' && Object.hasOwn(REASON_PHRASE, reason);
 }
 
+/** The plain words of a failure reason for a verb: the `use` wording for `use`, else REASON_PHRASE. */
+function reasonPhrase(verb: string, reason: string): string {
+  if (verb === 'use' && Object.hasOwn(USE_PHRASE, reason)) return USE_PHRASE[reason] ?? '';
+  return REASON_PHRASE[reason] ?? '';
+}
+
 /** The event's `message` for an action that ended: 'Your <verb> failed: <reason>.' or 'Your <verb> worked.'. */
 export function outcomeMessage(verb: string, ok: boolean, reason?: string): string {
   const name = verb.replaceAll('_', ' ');
   if (ok) return `Your ${name} worked.`;
-  const phrase = isOutcomeReason(reason) ? REASON_PHRASE[reason] : 'it did not complete';
+  const phrase = isOutcomeReason(reason) ? reasonPhrase(verb, reason) : 'it did not complete';
   return `Your ${name} failed: ${phrase}.`;
 }
 
