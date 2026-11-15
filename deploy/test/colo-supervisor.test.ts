@@ -18,7 +18,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 const DEPLOY = fileURLToPath(new URL('..', import.meta.url));
 const ROOT = resolve(DEPLOY, '..');
 const SCRIPT = resolve(DEPLOY, 'colo-supervisor.sh');
-const IMAGE = 'registry.example.invalid/geldar/supervisor@sha256:' + 'a'.repeat(64);
+const IMAGE = `registry.example.invalid/geldar/supervisor@sha256:${'a'.repeat(64)}`;
 const posix = (p: string) => p.replace(/\\/g, '/');
 
 function findSh(): string {
@@ -46,6 +46,10 @@ const DOCKER_SHIM = [
   '',
 ].join('\n');
 
+// The fake stat: "stat -c %u PATH" prints FAKE_OWNER, or the uid the script runs as (GELDAR_SERVICE_UID) when it is unset.
+// biome-ignore lint/suspicious/noTemplateCurlyInString: this is shell source for the shim, not a JS template
+const STAT_SHIM = ['#!/bin/sh', 'echo "${FAKE_OWNER:-$GELDAR_SERVICE_UID}"', ''].join('\n');
+
 const dirs: string[] = [];
 afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
@@ -64,6 +68,9 @@ function run(env: Record<string, string>, opts: { secrets?: boolean; uid?: strin
   const bin = join(dir, 'docker');
   writeFileSync(bin, DOCKER_SHIM);
   chmodSync(bin, 0o755);
+  const statBin = join(dir, 'stat');
+  writeFileSync(statBin, STAT_SHIM);
+  chmodSync(statBin, 0o755);
   const secrets = join(dir, 'secrets');
   mkdirSync(secrets);
   if (opts.secrets !== false) {
@@ -79,6 +86,7 @@ function run(env: Record<string, string>, opts: { secrets?: boolean; uid?: strin
       PATH: process.env.PATH ?? '',
       HOME: dir,
       DOCKER: posix(bin),
+      STAT: posix(statBin),
       DOCKER_CALLS_LOG: posix(log),
       GELDAR_SUPERVISOR_IMAGE: IMAGE,
       GELDAR_SECRETS_DIR: posix(secrets),
@@ -119,6 +127,30 @@ describe('deploy/colo-supervisor.sh: first run (C7-03b2, decision 0260)', () => 
     expect(create).toContain(`${IMAGE}`);
   });
 
+  it('sets the env block the compose service sets, and no GELDAR_NATS_URL (the supervisor reads SUPERVISOR_NATS_URL)', () => {
+    const create = created(run({}).calls)[0] ?? '';
+    for (const env of [
+      '--env SUPERVISOR_SHARD=colo',
+      '--env SUPERVISOR_NATS_URL=nats://nats:4222',
+      '--env SUPERVISOR_DB_PASSWORD_FILE=/run/secrets/postgres-supervisor.txt',
+      '--env POSTGRES_HOST=postgres',
+      '--env POSTGRES_PORT=5432',
+      '--env POSTGRES_DB=geldar',
+      '--env GELDAR_NATS_USER=supervisor',
+      '--env GELDAR_NATS_PASSWORD_FILE=/run/secrets/nats-supervisor.txt',
+    ]) {
+      expect(create, env).toContain(env);
+    }
+    expect(create).not.toContain('GELDAR_NATS_URL');
+  });
+
+  it('sets the two labels and the json-file log options of the compose service', () => {
+    const create = created(run({}).calls)[0] ?? '';
+    expect(create).toContain('--label com.centurylinklabs.watchtower.enable=false');
+    expect(create).toContain('--label com.geldar.stack=colo');
+    expect(create).toContain('--log-driver json-file --log-opt max-size=10m --log-opt max-file=3');
+  });
+
   it('mounts only the two secret files, read-only, and passes no secret value in env', () => {
     const create = created(run({}).calls)[0] ?? '';
     expect(create).toMatch(/target=\/run\/secrets\/postgres-supervisor\.txt,readonly/);
@@ -152,7 +184,7 @@ describe('deploy/colo-supervisor.sh: re-runs and refusals (C7-03b2)', () => {
     const r = run({
       FAKE_EXISTS: '1',
       FAKE_RUNNING: 'true',
-      FAKE_IMAGE: 'other@sha256:' + 'b'.repeat(64),
+      FAKE_IMAGE: `other@sha256:${'b'.repeat(64)}`,
     });
     expect(r.status).toBe(1);
     expect(created(r.calls)).toHaveLength(0);
@@ -169,6 +201,44 @@ describe('deploy/colo-supervisor.sh: re-runs and refusals (C7-03b2)', () => {
     const r = run({}, { secrets: false });
     expect(r.status).toBe(1);
     expect(created(r.calls)).toHaveLength(0);
+  });
+
+  it('refuses an image that is a tag, or a value that starts with a dash, and creates nothing', () => {
+    for (const image of ['geldar-supervisor:c7', `-${IMAGE}`]) {
+      const r = run({ GELDAR_SUPERVISOR_IMAGE: image });
+      expect(r.status, image).toBe(1);
+      expect(r.stderr, image).toContain('must be a digest reference');
+      expect(created(r.calls), image).toHaveLength(0);
+    }
+  });
+
+  it('refuses a secrets dir that is relative, or has a comma in it, and creates nothing', () => {
+    const cases: [string, string][] = [
+      ['secrets', 'must be an absolute path'],
+      ['/var/lib/geldar,colo', 'must not contain a comma'],
+    ];
+    for (const [dir, message] of cases) {
+      const r = run({ GELDAR_SECRETS_DIR: dir });
+      expect(r.status, dir).toBe(1);
+      expect(r.stderr, dir).toContain(message);
+      expect(created(r.calls), dir).toHaveLength(0);
+    }
+  });
+
+  it('refuses a secret file whose owner is not the uid the container runs as, and creates nothing', () => {
+    const owned0 = run({ FAKE_OWNER: '0' });
+    expect(owned0.status).toBe(1);
+    expect(owned0.stderr).toContain('owned by uid 0');
+    expect(created(owned0.calls)).toHaveLength(0);
+    const owned1000 = run({ FAKE_OWNER: '1000' }, { uid: '4321' });
+    expect(owned1000.status).toBe(1);
+    expect(created(owned1000.calls)).toHaveLength(0);
+  });
+
+  it('accepts the files when their owner is the container uid (the owner check is not a blanket refusal)', () => {
+    const r = run({ FAKE_OWNER: '4321' }, { uid: '4321' });
+    expect(r.status, r.stderr).toBe(0);
+    expect(created(r.calls)).toHaveLength(1);
   });
 
   it('refuses uid 0 and a non-numeric uid', () => {

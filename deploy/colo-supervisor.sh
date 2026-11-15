@@ -8,12 +8,16 @@
 # It never creates, removes or recreates a network, never runs docker compose, down, rm or --force-recreate, and never
 # replaces a container. Run by ops only, after the runbook steps in docs/runbooks/supervisor-node-steps.md.
 #
-# Environment (the node's release env and secrets dir; none is read from the repo):
-#   GELDAR_SUPERVISOR_IMAGE  the digest reference of the supervisor image (required)
-#   GELDAR_SECRETS_DIR       the node secrets dir holding postgres-supervisor.txt and nats-supervisor.txt (required)
-#   GELDAR_SERVICE_UID    the non-root uid (default 1000)
+# Environment (the node's secrets dir and the image digest; none is read from the repo):
+#   GELDAR_SUPERVISOR_IMAGE  the digest reference of the supervisor image, name@sha256:<64 lowercase hex> (required; a tag is refused).
+#                            The digest is in the colo-images run log of the merge commit (the supervisor job's push step); it
+#                            is not in release.env or the manifest summary yet.
+#   GELDAR_SECRETS_DIR       the absolute node secrets dir holding postgres-supervisor.txt and nats-supervisor.txt (required;
+#                            no comma in the path)
+#   GELDAR_SERVICE_UID       the non-root uid the container runs as, and the owner of the secret files (default 1000)
 #   GELDAR_NETWORK           the colo network (default geldar-colo)
 #   DOCKER                   the docker client (default docker; tests point it at a fake)
+#   STAT                     the stat command (default stat; tests point it at a fake)
 set -euo pipefail
 
 NAME="geldar-colo-supervisor"
@@ -22,10 +26,31 @@ UID_VALUE="${GELDAR_SERVICE_UID:-1000}"
 IMAGE="${GELDAR_SUPERVISOR_IMAGE:?GELDAR_SUPERVISOR_IMAGE must be set to the image digest reference}"
 SECRETS_DIR="${GELDAR_SECRETS_DIR:?GELDAR_SECRETS_DIR must be set}"
 DOCKER="${DOCKER:-docker}"
+STAT="${STAT:-stat}"
 
 case "$UID_VALUE" in
   0 | '' | *[!0-9]*)
     echo "refusing: GELDAR_SERVICE_UID must be a non-root number" >&2
+    exit 1
+    ;;
+esac
+
+if [[ ! "$IMAGE" =~ ^[^-].*@sha256:[0-9a-f]{64}$ ]]; then
+  echo "refusing: GELDAR_SUPERVISOR_IMAGE must be a digest reference (name@sha256:<64 lowercase hex>), not a tag" >&2
+  exit 1
+fi
+
+case "$SECRETS_DIR" in
+  /* | [A-Za-z]:/*) ;; # a POSIX absolute path, or a drive path (the Windows test host)
+  *)
+    echo "refusing: GELDAR_SECRETS_DIR must be an absolute path" >&2
+    exit 1
+    ;;
+esac
+
+case "$SECRETS_DIR" in
+  *,*)
+    echo "refusing: GELDAR_SECRETS_DIR must not contain a comma (it would split the --mount flags)" >&2
     exit 1
     ;;
 esac
@@ -36,8 +61,14 @@ if ! "$DOCKER" network inspect "$NETWORK" >/dev/null 2>&1; then
 fi
 
 for file in postgres-supervisor.txt nats-supervisor.txt; do
-  if [ ! -f "$SECRETS_DIR/$file" ]; then
-    echo "refusing: $SECRETS_DIR/$file is missing (geldar-93 writes the NATS file; gen-secrets.sh the Postgres file)" >&2
+  path="$SECRETS_DIR/$file"
+  if [ ! -f "$path" ]; then
+    echo "refusing: $path is missing (geldar-93 writes the NATS file; gen-secrets.sh the Postgres file)" >&2
+    exit 1
+  fi
+  owner="$("$STAT" -c %u "$path")"
+  if [ "$owner" != "$UID_VALUE" ]; then
+    echo "refusing: $path is owned by uid $owner, but the container runs as uid $UID_VALUE (chown it to GELDAR_SERVICE_UID)" >&2
     exit 1
   fi
 done
@@ -75,7 +106,6 @@ fi
   --env POSTGRES_HOST=postgres \
   --env POSTGRES_PORT=5432 \
   --env POSTGRES_DB=geldar \
-  --env GELDAR_NATS_URL=nats://nats:4222 \
   --env GELDAR_NATS_USER=supervisor \
   --env GELDAR_NATS_PASSWORD_FILE=/run/secrets/nats-supervisor.txt \
   --mount "type=bind,source=$SECRETS_DIR/postgres-supervisor.txt,target=/run/secrets/postgres-supervisor.txt,readonly" \

@@ -249,6 +249,13 @@ describe('compose/colo.yml: the player host (C1-11a)', () => {
     expect(status).not.toMatch(/animus/);
   });
 
+  it('the admin service mounts the geldar_supervisor password file the node runbook reads (C7-03b2)', () => {
+    expect(colo.services.admin?.secrets ?? []).toContainEqual({
+      source: 'supervisor-postgres',
+      target: 'postgres-supervisor.txt',
+    });
+  });
+
   it('gives the admin service the body NATS secret for ensure-skins-bucket (C2-07j)', () => {
     const admin = colo.services.admin ?? {};
     expect(admin.secrets).toContainEqual({ source: 'nats-body', target: 'nats-body.txt' });
@@ -487,6 +494,19 @@ describe('shards/colo-mind.yaml: the public block (C2-07a2, decisions 0090 and 0
 
 // C2-08c: the register service is wired but off by default (decision 0135).
 const register = colo.services.register ?? {};
+
+// C7-03b2: the register NATS env names compose sets are the ones threshold/register/src/config.ts reads.
+describe('register NATS env (C7-03b2)', () => {
+  it('sets the REGISTER_NATS_* names config.ts reads, with the register user', () => {
+    const regEnv = (register.environment ?? {}) as Record<string, unknown>;
+    const config = readFileSync(`${ROOT}threshold/register/src/config.ts`, 'utf8');
+    for (const name of ['REGISTER_NATS_URL', 'REGISTER_NATS_USER', 'REGISTER_NATS_PASSWORD_FILE']) {
+      expect(config, name).toContain(`env.${name}`);
+      expect(regEnv[name], name).toBeDefined();
+    }
+    expect(regEnv.REGISTER_NATS_USER).toBe('register');
+  });
+});
 
 describe('sql: the register start credits (C2-R5 F3, F20)', () => {
   it('the newest start_credits constant in sql/ equals the shard cap_credits', () => {

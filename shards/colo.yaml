@@ -11,6 +11,6 @@
 # replay_minutes (C1-07): optional, default 60, clamped to 1 to 1440. It is not a key here: the shard-config schema
 # has no such key and geldar.ps1 refuses unknown keys. Add the key only with a schema change.
 cpu_limit: 10.85               # cores for the whole colo stack (the sum of the per-service CPU budgets)
-memory_limit: 20096m        # Docker form, whole m or g; the sum of the per-service memory budgets (19.5 GiB)
+memory_limit: 20096m        # Docker form, whole m or g; the sum of the per-service memory budgets (19.625 GiB)
 minecraft_port: 25567          # host port for the Minecraft listener; validated here, compose/colo.yml publishes the literal 25567 (decision 0082)
 bind_address: 127.0.0.1        # loopback only; geldar.ps1 refuses any other address

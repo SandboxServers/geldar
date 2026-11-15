@@ -2,7 +2,19 @@
 
 Status: operator runbook for C7-03b2 (decision 0260). It is the plan for geldar-93. Nothing here runs from the desktop or from CI.
 
-Scope: the `supervisor` service in `compose/colo.yml` (profile `supervisor`, off by default), its two secret files, the NATS user it connects as, and the container that `deploy/colo-supervisor.sh` creates. The NATS users and the password steps for the body helper are in `docs/runbooks/body-helper-node-steps.md` (C7-03c2). Follow that runbook's steps 1 to 4 first. The supervisor container is not enabled until they are DONE.
+Scope: the `supervisor` service in `compose/colo.yml` (profile `supervisor`, off by default), its secret files, the NATS users it needs, and the container that `deploy/colo-supervisor.sh` creates. The NATS batch for the body helper and the `supervisor` user is in `docs/runbooks/body-helper-node-steps.md` (C7-03c2). Follow that runbook's steps 1 to 4 first. The supervisor container is not enabled until they are DONE.
+
+## Before merge (read first)
+
+This branch must not reach the node's CD (`deploy/colo-up.sh`, `colo-cd.sh`, `colo-rollback.sh`) until these three files exist in `GELDAR_SECRETS_DIR`:
+
+- `postgres-supervisor.txt`
+- `nats-supervisor.txt`
+- `nats-register.txt`
+
+Each one: mode 0600, owned by `GELDAR_SERVICE_UID`, not empty. Compose declares all three as top-level secrets, and `check_secrets` in `deploy/common.sh` checks every top-level secret, including the ones behind a profile. Until the files exist, the deploy refuses to start with "secret file missing". `check_secrets` is not changed for this.
+
+Merge is held until geldar-93 has created the three secret files; the owner's word is needed. Step 1 below creates them and checks them with `stat`.
 
 ## Gates (all must hold before any step runs)
 
@@ -21,20 +33,26 @@ Scope: the `supervisor` service in `compose/colo.yml` (profile `supervisor`, off
 
 ## Steps
 
-1. **Password files.** Create the two files, mode 0600, in the node secrets directory (`GELDAR_SECRETS_DIR`):
-   - `postgres-supervisor.txt`: written by `deploy/gen-secrets.sh` (random; the same pattern as the other Postgres files).
-   - `nats-supervisor.txt`: written by geldar-93 from the trusted machine. The script never creates it, and no value goes on a command line or into the repo.
-   Check the modes and owner with `stat` only. Do not print the contents.
+1. **Secret files.** Owner uid first: `GELDAR_SERVICE_UID` is the node env value (default 1000, the uid every colo service runs as). Every secret file below must be owned by that uid, or the script and the deploy refuse it. Create the three files in `GELDAR_SECRETS_DIR`, mode 0600:
+   - `postgres-supervisor.txt`: written by `deploy/gen-secrets.sh` (random; it creates only missing files).
+   - `nats-supervisor.txt`: created on the node by the method in `docs/runbooks/nats-auth-inplace.md` step 0 (`umask 077`, `set -C`, random value). That is its only author. The script never creates it, and no value goes on a command line or into the repo.
+   - `nats-register.txt`: the same method (`umask 077`, `set -C`, so an existing file is never overwritten), then `chown` to `GELDAR_SERVICE_UID`. Its NATS user is added in step 3b.
+   Check the modes, sizes and owners with `stat -c '%a %u %s %n'` only. Do not print the contents.
 
 2. **Postgres role password.** Run the migrate verb with the password file, not a value:
-   `deploy/colo-admin.sh migrate --set-role-password geldar_supervisor --password-file <path to postgres-supervisor.txt>`
-   The verb logs in with the file's password first and changes nothing when that login works, so a second run is a no-op. The operator routes use the superuser `geldar` (`postgres.txt`), not this role.
+   `deploy/colo-admin.sh migrate --set-role-password geldar_supervisor --password-file /run/secrets/postgres-supervisor.txt`
+   The admin service mounts `postgres-supervisor.txt` at that path (compose `admin` secrets). The mount exists only once the merged compose is deployed, so this step waits for that deploy. The verb logs in with the file's password first and changes nothing when that login works, so a second run is a no-op. The operator routes use the superuser `geldar` (`postgres.txt`), not this role.
 
-3. **NATS user.** Apply the `supervisor` NATS user and the `register` publish permission to the live `nats-auth.conf`, as set out in `docs/runbooks/body-helper-node-steps.md`. A masked diff comes first, then `nats-server -t` on the edited copy, an in-place write (the file is a single-file bind mount, so `mv` does not reach the container), and a SIGHUP reload. Never a restart.
+3. **NATS users.** Two separate batches, each with its own backup, masked diff, `nats-server -t`, in-place write (the file is a single-file bind mount, so `mv` does not reach the container), SIGHUP and owner go. Never a restart.
+   - 3a. The `supervisor` user is not in this runbook. It is part of the body helper batch in `docs/runbooks/body-helper-node-steps.md` step 3 (C7-03c2).
+   - 3a-prerequisite. The open drift must be closed first, or accepted by the owner in writing: the live `body` and `paper` users lack the PubDeny for `geldar.<s>.ctl.body.>` and `geldar.<s>.state.*.level` (see `docs/runbooks/nats-auth-inplace.md`). It is its own batch.
+   - 3b. The `register` user, as in `docs/runbooks/open-signup.md` step 11: publish `geldar.<s>.ctl.body.>`, subscribe `_INBOX.>`, password from `nats-register.txt`. Its batch is separate from the helper batch. Never `./geldar.ps1 shard nats-auth colo` (see above). The diff must show only the `register` user.
+   `body-helper-node-steps.md` states that the register user is unchanged by its batch, so 3b is not in that runbook.
 
-4. **Start the container.** With the image digest from the release env file (`GELDAR_SUPERVISOR_IMAGE`; the digest, not a tag) and the secrets directory set:
-   `deploy/colo-supervisor.sh`
-   The script runs `docker create` and then `docker start` with the same flags, limits, read-only root, secret mounts and uid as the compose service (0.25 CPU, 128m memory with no swap, 64 pids, uid `GELDAR_SUPERVISOR_UID`, default 1000). It refuses, and changes nothing, when the `geldar-colo` network is missing, when a secret file is missing, or when a container with the name already exists. It never calls compose and never creates or removes a network.
+4. **Start the container.** `GELDAR_SUPERVISOR_IMAGE` is the digest reference of the supervisor image (`ghcr.io/sandboxservers/geldar-supervisor@sha256:` and 64 hex characters). It is taken from the colo-images run log of the merge commit (the supervisor job's push step). It is not in `release.env` or the manifest summary yet, so do not look for it there. A tag is refused, and so is a value that starts with `-`.
+   `GELDAR_SECRETS_DIR` must be an absolute path with no comma. `GELDAR_SERVICE_UID` must match the owner of the secret files.
+   `GELDAR_SUPERVISOR_IMAGE=<digest> GELDAR_SECRETS_DIR=<absolute secrets dir> GELDAR_SERVICE_UID=<uid> deploy/colo-supervisor.sh`
+   The script runs `docker create` and then `docker start` with the same flags, limits, labels, log options, read-only root, secret mounts and uid as the compose service (0.25 CPU, 128m memory with no swap, 64 pids). It refuses, and changes nothing, when the `geldar-colo` network is missing, when a secret file is missing or owned by another uid, when the image is not a digest, or when a container with the name already exists. It never calls compose and never creates or removes a network.
    The container has no healthcheck: it has no HTTP port. It exits with status 1 if its control subscription ends, and the restart policy `unless-stopped` starts it again.
 
 5. **Verify.** No body is started in this step.
@@ -47,7 +65,7 @@ Scope: the `supervisor` service in `compose/colo.yml` (profile `supervisor`, off
 
 - The supervisor container only: `docker stop geldar-colo-supervisor`, then `docker rm geldar-colo-supervisor`. Nothing else is removed.
 - Never a network remove, never `compose down`, never a volume removal.
-- NATS: restore the previous `nats-auth.conf` contents from the masked diff's backup, run `nats-server -t`, and SIGHUP again. Never a restart.
+- NATS: restore the previous `nats-auth.conf` contents from the masked diff's backup (`cat`, then check the sha), run `nats-server -t`, and SIGHUP again. Never a restart.
 - Passwords: leave the files in place; they are inert without the container. Remove them only on the owner's instruction.
 - After a rollback, the supervisor profile stays off. Nothing starts it by default: `colo-up.sh` and `colo-cd.sh` do not name the profile.
 

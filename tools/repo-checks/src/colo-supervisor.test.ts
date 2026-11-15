@@ -43,6 +43,7 @@ describe('compose/colo.yml: the supervisor service (C7-03b2, decision 0260)', ()
 
   it('runs read-only as a non-root uid with every capability dropped and no new privileges', () => {
     expect(supervisor.read_only).toBe(true);
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: compose variable syntax must reach the parser as written
     expect(supervisor.user).toBe('${GELDAR_SERVICE_UID:-1000}:${GELDAR_SERVICE_UID:-1000}');
     expect(supervisor.cap_drop).toEqual(['ALL']);
     expect(supervisor.cap_add).toBeUndefined();
@@ -54,7 +55,9 @@ describe('compose/colo.yml: the supervisor service (C7-03b2, decision 0260)', ()
 
   it('has the card budget: 0.25 CPU, 128m, memory swap equal to memory, and a pid cap', () => {
     const limits = limitsOf(supervisor);
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: compose variable syntax must reach the parser as written
     expect(limits.cpus).toBe('${GELDAR_COLO_SUPERVISOR_CPUS:-0.25}');
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: compose variable syntax must reach the parser as written
     expect(limits.memory).toBe('${GELDAR_COLO_SUPERVISOR_MEM:-128m}');
     expect(supervisor.memswap_limit).toBe(limits.memory);
     expect(supervisor.pids_limit).toBe(64);
@@ -62,6 +65,7 @@ describe('compose/colo.yml: the supervisor service (C7-03b2, decision 0260)', ()
 
   it('builds supervisor/Dockerfile from the repo root and takes its image from a deploy variable', () => {
     expect(supervisor.build).toEqual({ context: '..', dockerfile: 'supervisor/Dockerfile' });
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: compose variable syntax must reach the parser as written
     expect(supervisor.image).toBe('${GELDAR_SUPERVISOR_IMAGE:-geldar-supervisor:c7}');
   });
 

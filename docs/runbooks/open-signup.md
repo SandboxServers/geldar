@@ -61,7 +61,7 @@ Who runs each step: "Owner" means the owner of the Microsoft account and the rep
 | 19 | Live Body check, one run with an owner-owned test agent. Check that the started Body's container environment and binds hold no RCON secret | Orchestrator, on the node by geldar-93 | Owner-owned test agent, made by the operator roster path (`deploy/colo-admin.sh roster-add <name> --owner <owner>`, then player-add; see [mcp-tokens.md](mcp-tokens.md)). No sign-in is needed, so steps 20 and 21 are not needed | BLOCKED on steps 13 to 18, step 12, card C7-03b4-live and ROSTER-AUTO | Stop the test Body cleanly; managed flag off | Card C7-03b4-live; [body-helper-node-steps.md](body-helper-node-steps.md) |
 | 19a | Managed flag on for the agents the owner names | Node | Owner's written choice of timing; the default is after step 19 passed and the Body stopped cleanly, and before step 26 | Step 19 passed and stopped cleanly | Managed flag off | Step 15 (the flag) |
 | 20 | Register secret files and env | Node | Client id and secret from step 1 | Step 1 | Remove the env values; the kill switch stays `true` | Section 2 |
-| 21 | Start the register profile with the kill switch `true` | Node | Nothing | Step 20; ROSTER-AUTO migration; C7-09 route; steps 11 and 12 are not needed while register runs with NATS off (pending C7-03b2) | Recreate the register service only, with the kill switch `true` | Section 2 |
+| 21 | Start the register profile with the kill switch `true` | Node | Nothing | Step 20; ROSTER-AUTO migration; C7-09 route; steps 11 and 12 are not needed while register runs with NATS off (until C7-03b2 is deployed) | Recreate the register service only, with the kill switch `true` | Section 2 |
 | 22 | Public routes for Glass | Node | Nothing | Step 21; LEGAL-SERVE | Re-run the install with the upstream unset (503 block), then one `board-proxy` restart | Section 3 |
 | 23 | Roster seed (operator data) | Node | Go for the roster seed | Step 21 | Seeded rows are removed only with the owner's go | [mcp-tokens.md](mcp-tokens.md) |
 | 24 | Deletion follow-ups | Node | Decisions on kept agent rows and the kino audit | Card C7-09c | As [account-deletion.md](account-deletion.md) | [account-deletion.md](account-deletion.md) |
@@ -108,9 +108,8 @@ Deploy values the operator sets in the node env. Compose reads them; their compo
 - `REGISTER_KILL_SWITCH`: must be `true` in this section. Default `true`; only the exact value `false` opens sign-up (step 27).
 - `GELDAR_REGISTER_IMAGE`: the register image from the release env.
 - `GELDAR_COLO_REGISTER_CPUS` and `GELDAR_COLO_REGISTER_MEM`: optional; compose defaults apply if unset.
-- `REGISTER_NATS_URL`, `REGISTER_NATS_USER`, `REGISTER_NATS_PASSWORD_FILE`: added by card C7-03b2 (pending C7-03b2). Compose does not set them yet, so the register service runs with NATS off, and setting them on the node does nothing until C7-03b2 merges. Only the register service gets these.
 
-Compose sets these names itself. Do not set them on the node: `REGISTER_HOST`, `REGISTER_PORT`, `REGISTER_SHARD`, `REGISTER_MS_CLIENT_SECRET_FILE`, `REGISTER_SESSION_KEY_FILE`, `REGISTER_PEPPER_FILE`, `REGISTER_TOKEN_PEPPER_FILE`, `REGISTER_DB_PASSWORD_FILE`.
+Compose sets these names itself. Do not set them on the node: `REGISTER_NATS_URL`, `REGISTER_NATS_USER` and `REGISTER_NATS_PASSWORD_FILE` (C7-03b2 sets them; only the register service gets these), `REGISTER_HOST`, `REGISTER_PORT`, `REGISTER_SHARD`, `REGISTER_MS_CLIENT_SECRET_FILE`, `REGISTER_SESSION_KEY_FILE`, `REGISTER_PEPPER_FILE`, `REGISTER_TOKEN_PEPPER_FILE`, `REGISTER_DB_PASSWORD_FILE`.
 
 `GELDAR_REGISTER_UPSTREAM` is not a compose name. It is a key in the root-only `GELDAR_PUBLIC_ENV` file, set in Section 3.
 
@@ -189,7 +188,7 @@ Once the first owner has signed in, the sign-in creates the account. Make it the
 
 ## Pending (not yet on main)
 
-- REG-NATS-COMPOSE (steps 11 and 12) is folded into card C7-03b2 (pending C7-03b2). The `REGISTER_NATS_*` names are not yet in `compose/colo.yml`.
+- REG-NATS-COMPOSE (steps 11 and 12) is folded into card C7-03b2. The `REGISTER_NATS_*` names are in `compose/colo.yml` on the C7-03b2 branch; the merge is held until geldar-93 has created the three secret files (see the supervisor node steps).
 - PR #415 (steps 9 and 10) is not merged. Do not apply the NATS batch before it is.
 - NATS batch C (row 26a) is not built and has no card number yet. The JetStream republish caveat is in [nats-auth-inplace.md](nats-auth-inplace.md) Open questions.
 - BODY-HOST (cards BH-1 to BH-4, steps 13 to 18), BH-5 (step 25) and the card C7-03b4-live (step 19) are not built. BH-4 names the two root-only secret files that row 14 writes.
