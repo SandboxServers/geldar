@@ -18,6 +18,7 @@ import { allReflexesOn, isReflexEnabled, type ReflexConfig } from './reflex-conf
 import { createBasicReflexes } from './reflexes/basic.ts';
 import { reportBlocked } from './reflexes/blocked-path.ts';
 import { combatReflexes } from './reflexes/combat.ts';
+import { forgetThreatEncounter } from './reflexes/encounter.ts';
 import { noteActionEnd, resetIdleStuck } from './reflexes/idle-stuck.ts';
 import { forgetBurrow } from './reflexes/panic-burrow.ts';
 import { forgetShelterBackoff, shelterReflexes } from './reflexes/shelter.ts';
@@ -163,6 +164,7 @@ export function createBody(options: CreateBodyOptions): Body {
     forgetShelterBackoff(built.view);
     resetStuck(built.view);
     resetIdleStuck(built.view);
+    forgetThreatEncounter(built.view);
   };
   if (typeof options.bot.on === 'function') options.bot.on('respawn', forgetOldBody);
   // Death, not the respawn, ends the previous life's work: a step still running would walk the new body on.
