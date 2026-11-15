@@ -23,8 +23,8 @@ The hand copy below covers `geldar-chat.js` and `geldar.css`. BM-11 changes both
 The freshness version (the header dot, the "still" label and the "last line" age) is two web files only, `geldar-chat.js`
 and `geldar.css`, deployed by the same hand copy as above. It adds no settings entry and no server change.
 
-The time-of-day dial (BM-15) is one more web file, `geldar-sky.js`, and one more `scripts` entry. Its node steps copy
-steps 2, 3, 4, 6 and 7 above for `geldar-sky.js`:
+The time-of-day dial (BM-15) is one more web file, `geldar-sky.js`, and one more `scripts` entry. Its node steps are
+the numbered steps 2, 3, 4, 6 and 7 below, applied to `geldar-sky.js`; the bullets here give its lines:
 
 - `compose/colo.yml`, in the `bluemap-web` service, directly after the `geldar-chat.js` mount:
   `- ../plugins/bluemap/web/geldar-sky.js:/etc/caddy/geldar-sky.js:ro`
@@ -56,11 +56,13 @@ Run the commands below in the node's checkout, the one that holds `compose/colo.
          - ../plugins/bluemap/web/geldar-chat.js:/etc/caddy/geldar-chat.js:ro
          - ../plugins/bluemap/web/geldar-sky.js:/etc/caddy/geldar-sky.js:ro
    ```
-   Add only those two lines. Do not copy main's `colo.yml` over the node file: the node file holds node-only values
+   Add the `geldar-chat.js` line only if the node file does not already have it, then the `geldar-sky.js` line. A second
+   mount with the same target makes compose reject the file. Do not copy main's `colo.yml` over the node file: the node file holds node-only values
    (see "Shipped versus node-only drift" below).
 3. Replace the node's `compose/bluemap-web/Caddyfile` with main's `compose/bluemap-web/Caddyfile`. Copy over the file in
-   place (not `mv`), so the bind mount keeps the same file. Main's file adds the two handlers quoted below, from its
-   the `/assets/geldar-chat.js`, `/assets/geldar-sky.js` and `@chat` blocks. Tabs are the file's indentation.
+   place (not `mv`), so the bind mount keeps the same file. Main's file has three blocks the node needs, quoted below:
+   the `/assets/geldar-chat.js` handler, the `/assets/geldar-sky.js` handler and the `@chat` feed block. Tabs are the
+   file's indentation.
 
 
 ```
@@ -115,7 +117,8 @@ Run before step 1 and again after step 2. Compare the `players.json` body before
   Before any agent speaks the file may be absent: that is a 404, not an error.
 - `curl -s http://127.0.0.1:8100/maps/overworld/live/markers.json | grep -c geldar-speech`: 0 after step 1.
 - `curl -s http://127.0.0.1:8100/maps/overworld/live/players.json`: the names are aliases, never an `ag_` username.
-- `curl -s http://127.0.0.1:8100/settings.json | grep -c 'assets/geldar-\(chat\|sky\).js'`: 2.
+- `curl -s http://127.0.0.1:8100/settings.json | grep -o 'assets/geldar-\(chat\|sky\)\.js' | wc -l`: 2. `grep -o` prints
+  each match, so the one-line `scripts` array counts 2; `grep -c` counts lines and would give 1.
 - After every BlueMap restart, repeat the `settings.json` check above: the `scripts` line must still be there. BlueMap
   regenerates the file on start.
 - `curl -s http://127.0.0.1:8100/geldar-chat.json | grep -c 'ag_'`: 0. The feed holds no agent username; speech text has
@@ -124,6 +127,9 @@ Run before step 1 and again after step 2. Compare the `players.json` body before
 - Follow world time: with a feed that carries `clock`, the overworld's night matches the world's time (dim at night, full light by day), and the nether and end stay at full light. Pressing BlueMap's day/night button turns this off until the "Follow world time" button under the list is pressed. The button is `<div class="svg-button day-night-switch thin-hide" title="Day/Night">` in BlueMap 5.29 (tabindex -1, not a button, hidden on thin screens), so only a click turns it off; keyboard activation does not. A clock that has not changed for 60 s is ignored, and a sunlight value that differs by more than 0.01 from the page's last write also turns it off. A feed without `clock` (an older plugin) changes nothing.
 - Panel visible: open the public map. A "Chat" panel sits at the right edge below BlueMap's control bar (bottom, left of the zoom buttons, on a narrow screen). After an agent
   speaks, its line appears within about 4 seconds (1 s write flush plus 3 s poll), with an alias name and no coordinates.
+- Dial visible (BM-15): a small sun or moon dial sits under BlueMap's control bar on the overworld. On a wide screen it
+  is at the top right, left of the chat panel; on a phone it is at the top right, and the chat panel is at the bottom.
+  It takes no map click, and its accessible name reads `World time HH:MM, Day` or `Night`.
 
 ## Shipped versus node-only drift
 

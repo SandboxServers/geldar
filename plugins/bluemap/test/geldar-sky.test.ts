@@ -151,7 +151,7 @@ const dialOf = (r: Rig) => r.dial as El;
 const svgOf = (r: Rig) => dialOf(r).children[0];
 const iconOf = (r: Rig, cls: string) =>
   svgOf(r).children.find((c) => (c.attrs.class ?? '').split(' ').includes(cls)) as El;
-const titleOf = (r: Rig) => svgOf(r).children[0].textContent;
+const ariaOf = (r: Rig) => dialOf(r).attrs['aria-label'];
 
 describe('phase: which body is up and where it sits', () => {
   it.each([
@@ -228,6 +228,21 @@ describe('the clock: validation, the tick now and the label', () => {
     expect(sky.labelOf(8334)).toBe('World time 14:20, Day');
     expect(sky.labelOf(15000)).toBe('World time 21:00, Night');
   });
+
+  it('floors the label minutes to a 5-minute step', () => {
+    expect(sky.labelOf(3000)).toBe('World time 09:00, Day');
+    expect(sky.labelOf(3083)).toBe('World time 09:00, Day');
+    expect(sky.labelOf(3084)).toBe('World time 09:05, Day');
+    expect(sky.labelOf(8400)).toBe('World time 14:20, Day');
+    expect(sky.labelOf(8417)).toBe('World time 14:25, Day');
+    expect(sky.labelOf(23999)).toBe('World time 05:55, Night');
+    expect(sky.labelOf(0)).toBe('World time 06:00, Day');
+  });
+
+  it('keeps the exact minute for hhmm without a step', () => {
+    expect(sky.hhmm(3084)).toBe('09:05');
+    expect(sky.hhmm(8417)).toBe('14:25');
+  });
 });
 
 describe('the dial on the page', () => {
@@ -239,9 +254,9 @@ describe('the dial on the page', () => {
     expect(iconOf(r, 'gs-sun').attrs.transform).toBe('translate(16.2 12.2)');
     expect(iconOf(r, 'gs-moon').attrs.class).toBe('gs-icon gs-moon gs-off');
     expect(iconOf(r, 'gs-moon').attrs.transform).toBeUndefined();
-    expect(titleOf(r)).toBe('World time 09:00, Day');
-    expect(dialOf(r).attrs['aria-label']).toBe('World time 09:00, Day');
-    expect(dialOf(r).attrs.title).toBe('World time 09:00, Day');
+    expect(ariaOf(r)).toBe('World time 09:00, Day');
+    expect(dialOf(r).attrs.title).toBeUndefined();
+    expect(svgOf(r).children.some((c) => c.tag === 'title')).toBe(false);
   });
 
   it('shows the moon on the arc at tick 15000, with the sun faded out', async () => {
@@ -250,7 +265,7 @@ describe('the dial on the page', () => {
     expect(iconOf(r, 'gs-moon').attrs.class).toBe('gs-icon gs-moon gs-on');
     expect(iconOf(r, 'gs-moon').attrs.transform).toBe('translate(16.2 12.2)');
     expect(iconOf(r, 'gs-sun').attrs.class).toBe('gs-icon gs-sun gs-off');
-    expect(titleOf(r)).toBe('World time 21:00, Night');
+    expect(ariaOf(r)).toBe('World time 21:00, Night');
   });
 
   it('puts the sun on the east horizon at tick 0 and the west horizon at tick 12000', async () => {
@@ -266,13 +281,66 @@ describe('the dial on the page', () => {
     const r = await mount({ time: 1000, at: T0 });
     r.now.t = T0 + 1000;
     tick(r);
-    expect(titleOf(r)).toBe('World time 07:01, Day');
+    expect(ariaOf(r)).toBe('World time 07:00, Day');
     expect(iconOf(r, 'gs-sun').attrs.transform).toBe(
       'translate(' + sky.arcPoint(1020 / 12000).x + ' ' + sky.arcPoint(1020 / 12000).y + ')',
     );
     r.now.t = T0 + 5000;
     tick(r);
-    expect(titleOf(r)).toBe('World time 07:06, Day');
+    expect(ariaOf(r)).toBe('World time 07:05, Day');
+  });
+
+  it('is still live at exactly 60 s without a moved clock, and hidden one millisecond later', async () => {
+    const r = await mount({ time: 3000, at: T0 });
+    r.now.t = T0 + sky.CLOCK_MAX_MS;
+    tick(r);
+    expect(dialOf(r).hidden).toBe(false);
+    r.now.t = T0 + sky.CLOCK_MAX_MS + 1;
+    tick(r);
+    expect(dialOf(r).hidden).toBe(true);
+  });
+
+  it('paints the moon on the left horizon at tick 12001, just after the sun sets', async () => {
+    const r = await mount({ time: 12001, at: T0 });
+    tick(r);
+    expect(iconOf(r, 'gs-moon').attrs.class).toBe('gs-icon gs-moon gs-on');
+    expect(iconOf(r, 'gs-moon').attrs.transform).toBe('translate(8 32)');
+    expect(iconOf(r, 'gs-sun').attrs.class).toBe('gs-icon gs-sun gs-off');
+  });
+
+  it('wraps from tick 23999 to 0: the moon on the west horizon, then the sun on the east', async () => {
+    const r = await mount({ time: 23999, at: T0 });
+    tick(r);
+    expect(iconOf(r, 'gs-moon').attrs.transform).toBe('translate(64 32)');
+    expect(ariaOf(r)).toBe('World time 05:55, Night');
+    r.now.t = T0 + 50;
+    tick(r);
+    expect(iconOf(r, 'gs-sun').attrs.class).toBe('gs-icon gs-sun gs-on');
+    expect(iconOf(r, 'gs-sun').attrs.transform).toBe('translate(8 32)');
+    expect(iconOf(r, 'gs-moon').attrs.class).toBe('gs-icon gs-moon gs-off');
+    expect(ariaOf(r)).toBe('World time 06:00, Day');
+  });
+
+  it('writes no label on two repaints a second apart inside one 5-minute step', async () => {
+    const r = await mount({ time: 3000, at: T0 });
+    tick(r);
+    const before = dialOf(r).writes;
+    r.now.t = T0 + 1000;
+    tick(r);
+    r.now.t = T0 + 2000;
+    tick(r);
+    expect(ariaOf(r)).toBe('World time 09:00, Day');
+    expect(dialOf(r).writes).toBe(before);
+  });
+
+  it('writes the label once, when the repaint crosses into the next 5-minute step', async () => {
+    const r = await mount({ time: 3000, at: T0 });
+    tick(r);
+    const before = dialOf(r).writes;
+    r.now.t = T0 + 84 * 50;
+    tick(r);
+    expect(ariaOf(r)).toBe('World time 09:05, Day');
+    expect(dialOf(r).writes).toBe(before + 1);
   });
 
   it('is hidden with no clock in the feed', async () => {

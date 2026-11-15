@@ -18,6 +18,8 @@
   const CX = 36;
   const CY = 32;
   const RAYS = 8;
+  // The label's minutes are floored to this step, so the accessible name changes about every 4 s, not every second.
+  const LABEL_STEP_MIN = 5;
 
   const round1 = (v) => Math.round(v * 10) / 10;
   const pad = (n) => (n < 10 ? '0' + n : '' + n);
@@ -68,18 +70,19 @@
     return { x: round1(CX - DIAL_R * Math.cos(a)), y: round1(CY - DIAL_R * Math.sin(a)) };
   }
 
-  // HH:MM of a tick of day: hour = floor(ticks/1000 + 6) mod 24, minutes = floor(ticks % 1000 * 60 / 1000).
-  function hhmm(time) {
+  // HH:MM of a tick of day: hour = floor(ticks/1000 + 6) mod 24, minutes = floor(ticks % 1000 * 60 / 1000), floored
+  // to a multiple of step minutes (1 by default: the exact minute).
+  function hhmm(time, step = 1) {
     const t = ((time % DAY_TICKS) + DAY_TICKS) % DAY_TICKS;
     const h = (Math.floor(t / 1000) + 6) % 24;
-    const m = Math.floor(((t % 1000) * 60) / 1000);
+    const m = Math.floor(Math.floor(((t % 1000) * 60) / 1000) / step) * step;
     return pad(h) + ':' + pad(m);
   }
 
-  // The label for a tick of day, for the tooltip and the accessible name.
+  // The accessible name for a tick of day, with the minutes floored to LABEL_STEP_MIN.
   function labelOf(time) {
     const body = phaseOf(time).body;
-    return 'World time ' + hhmm(time) + ', ' + (body === 'sun' ? 'Day' : 'Night');
+    return 'World time ' + hhmm(time, LABEL_STEP_MIN) + ', ' + (body === 'sun' ? 'Day' : 'Night');
   }
 
   // True when BlueMap shows the overworld. A missing BlueMap or a missing field is not the overworld.
@@ -132,8 +135,6 @@
     root.setAttribute('role', 'img');
     root.hidden = true;
     const svg = svgNode(doc, 'svg', { viewBox: '0 0 72 40', class: 'gs-svg', focusable: 'false' });
-    const title = svgNode(doc, 'title', {});
-    svg.appendChild(title);
     svg.appendChild(
       svgNode(doc, 'path', { d: 'M8 32 A28 28 0 0 1 64 32', class: 'gs-arc', fill: 'none' }),
     );
@@ -143,7 +144,7 @@
     svg.appendChild(sun);
     svg.appendChild(moon);
     root.appendChild(svg);
-    return { root, title, sun, moon };
+    return { root, sun, moon };
   }
 
   // Sets a node's property or attribute only when its value differs from the last one written under its key, so an
@@ -166,9 +167,7 @@
     const ph = phaseOf(time);
     const pos = arcPoint(ph.p);
     const text = labelOf(time);
-    put(state, 'label', d.title, 'textContent', text);
     put(state, 'aria', d.root, 'aria-label', text);
-    put(state, 'tip', d.root, 'title', text);
     for (const body of ['sun', 'moon']) {
       const up = ph.body === body;
       const icon = d[body];

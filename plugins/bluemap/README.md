@@ -146,7 +146,7 @@ The time-of-day dial (BM-15) is a second script, `web/geldar-sky.js`: a small ho
 below BlueMap's control bar and left of the chat panel, with a sun on its arc from tick 0 (06:00) to 12000 and a moon from
 12000 to 24000. It reads the same `geldar-chat.json` clock every 5 s, reads no lines and no other file, and moves at 20
 ticks a second between reads. It hides when the clock has not moved for 60 s, on the nether and the end, and when BlueMap
-is missing. Its tooltip and accessible name read "World time HH:MM, Day" or "Night". It is click-through
+is missing. Its accessible name reads "World time HH:MM, Day" or "Night", with the minutes floored to 5. It is click-through
 (`pointer-events: none`). Its node needs a read-only mount, a Caddy handler and a `scripts` entry, as in the runbook.
 
 The manual node steps, the checks and the rollback are in `docs/runbooks/map-chat-panel.md`.
