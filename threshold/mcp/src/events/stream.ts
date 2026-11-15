@@ -1,6 +1,7 @@
 import {
   maintenanceSubject,
   validateDayNightPayload,
+  validatePlanResultPayload,
   validateWorldEvent,
   type WorldEvent,
 } from '@geldar/contract';
@@ -8,6 +9,7 @@ import type { SimEvent } from '@geldar/mcp-mock';
 import type { SpeechIdentity } from '@geldar/player-core/src/attention/classify.ts';
 import { mindEventSubjects, normaliseEvent } from '@geldar/player-core/src/link/mind-event.ts';
 import type { DeathMarks, PlayerEventLog } from '../ports.ts';
+import { completeSleep, type SleepCompletionDeps } from '../tools/sleep-completion.ts';
 import type { DayPhase } from './day-night.ts';
 import { maintenanceEvent, parseMaintenanceNotice } from './maintenance-notice.ts';
 import { type MapContext, mapMindEvent } from './mapper.ts';
@@ -47,6 +49,8 @@ export interface StreamContext {
   identityOf?: (lifeId: string) => Promise<SpeechIdentity>;
   /** Counts each death event once (migration 0023); a redelivered death is recorded once. */
   deaths?: Pick<DeathMarks, 'recordDeath'>;
+  /** Settles a pending sleep on its plan_result (decision 0227); absent means no sleep is settled. */
+  sleep?: SleepCompletionDeps;
   /** Told the day and tick of every valid WorldEvent, so a sovereign_call envelope can be stamped. */
   clock?: { observe(event: { world_day: number; world_tick: number }): void };
 }
@@ -101,6 +105,11 @@ export async function handleStreamMessage(
   }
   if (n.status === 'ignored') return;
   const lifeId = n.event.lifeId;
+  // A plan_result settles the sleep it answers, if one is pending: its mark and journal line, or nothing.
+  if (world.type === 'plan_result' && lifeId !== '' && ctx.sleep !== undefined) {
+    const result = validatePlanResultPayload(world.payload);
+    if (result.ok) await completeSleep(ctx.sleep, lifeId, result.value);
+  }
   // Recorded before the log append: a retry of this message after a failed append records it again,
   // which the store's event id makes a no-op.
   if (n.event.type === 'death' && lifeId !== '' && ctx.deaths !== undefined) {

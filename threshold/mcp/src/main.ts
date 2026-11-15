@@ -32,6 +32,7 @@ import { PgDeathStore } from './store/pg-deaths.ts';
 import { PgJournalStore } from './store/pg-journal.ts';
 import { PgPlayerDirectory } from './store/pg-players.ts';
 import { listenerConfig, PgTokenStore } from './store/pg-tokens.ts';
+import { PendingSleeps } from './tools/sleep-completion.ts';
 import { parseWaitDeltaLives } from './tools/wait-delta.ts';
 import { createWorld } from './world.ts';
 import { createWorldSession, type WorldSessionDeps } from './world-session.ts';
@@ -369,6 +370,8 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
           : { harness: player.harness, model: player.declaredModel };
       }, 60_000),
     });
+    // One instance: the world's sleeps register here, and the stream settles them on plan_result.
+    const pendingSleeps = new PendingSleeps();
     const limiter = tokenBucketLimiter(
       bucketRules(config.sovereign.rateLimits, config.sovereign.ownerCapOwner),
     );
@@ -381,6 +384,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       enforce: actBudgetEnforced(process.env),
       waitDelta: parseWaitDeltaLives(process.env.GELDAR_WAIT_DELTA_LIVES),
       sleeps: agents,
+      pendingSleeps,
       deaths: new PgDeathStore(pool),
       profiles: agents,
       journal: new PgJournalStore(pool),
@@ -406,6 +410,13 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       log: events,
       lives: () => registry.lives(),
       deaths: new PgDeathStore(pool),
+      sleep: {
+        pending: pendingSleeps,
+        marks: agents,
+        journal: new PgJournalStore(pool),
+        now,
+        log,
+      },
       clock: worldClock,
     };
     const replay = await nats.replay(

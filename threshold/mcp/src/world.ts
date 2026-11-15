@@ -44,7 +44,8 @@ import { lookTool, type ToolCall } from './tools/look.ts';
 import { readBookTool } from './tools/read-book.ts';
 import { sayTool } from './tools/say.ts';
 import { SEE_REFUSALS, type SeeDeps, type SeeOutcome, seeTool } from './tools/see.ts';
-import { type SleepDeps, sleepTool } from './tools/sleep.ts';
+import { registerSleep, type SleepDeps, sleepTool } from './tools/sleep.ts';
+import { PendingSleeps } from './tools/sleep-completion.ts';
 import { statusTool } from './tools/status.ts';
 import { type NotAvailableTool, notAvailableTool } from './tools/unavailable.ts';
 import { viewTool } from './tools/view.ts';
@@ -88,6 +89,8 @@ export interface WorldDeps {
   deaths: DeathMarks;
   profiles: AgentProfiles;
   journal: JournalStore;
+  /** Accepted sleeps awaiting their plan's outcome; one instance is shared with the stream (decision 0227). */
+  pendingSleeps?: PendingSleeps;
   recorder: CallRecorder;
   events: PlayerEventLog;
   /** Presence per life; `settle` is called by the world's timer, `lifeIds` seeds it at start. */
@@ -351,7 +354,15 @@ export function createWorld(deps: WorldDeps): World {
   };
   const unavailable = (tool: NotAvailableTool): ToolHandler =>
     bound(wired, (call) => notAvailableTool(wired, call, tool));
+  const pending = deps.pendingSleeps ?? new PendingSleeps();
+  const sleepAccepted = async (lifeId: string, thoughtId: string, action: number) => {
+    const snapshot = await wired.body.snapshot(lifeId);
+    const mark = await wired.sleeps.read(lifeId);
+    const registry = { events: wired.events, failures: wired.failures, pending, now: wired.now };
+    await registerSleep(registry, lifeId, thoughtId, action, snapshot, mark);
+  };
   const sleepDeps: SleepDeps = {
+    pending,
     body: wired.body,
     events: wired.events,
     journal: wired.journal,
@@ -362,7 +373,9 @@ export function createWorld(deps: WorldDeps): World {
   };
   const stopSettle = startSettle(wired);
   const tools: ToolHandlers = {
-    act: bound(wired, (call, input) => actTool(wired, call, input as ActArgs)),
+    act: bound(wired, (call, input) =>
+      actTool({ ...wired, sleepAccepted }, call, input as ActArgs),
+    ),
     say: bound(wired, (call, input) => sayTool(wired, call, (input as SayInput).text)),
     sleep: bound(wired, (call) => sleepTool(sleepDeps, call)),
     wait: bound(wired, (call, input, ctx) => waitTool(wired, call, input as WaitInput, ctx)),

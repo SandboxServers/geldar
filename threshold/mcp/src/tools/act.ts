@@ -58,6 +58,11 @@ export interface ActDeps {
   recorder: CallRecorder;
   validator: OutputValidator;
   clock: Clock;
+  /**
+   * Told of an accepted plan that holds a sleep: the life, the thought and the sleep's action index.
+   * The sleep's mark is written only when its plan completes (decision 0227).
+   */
+  sleepAccepted?: (lifeId: string, thoughtId: string, action: number) => Promise<void>;
   /** `plan.expires_after_ticks` from the config. */
   expiresAfterTicks: number;
   /** Receives the cause of a presence write that failed; the refusal stands without it. */
@@ -220,6 +225,25 @@ async function recordCall(deps: ActDeps, call: SovereignCallPayload): Promise<vo
   await deps.recorder.record(call);
 }
 
+/**
+ * Registers an accepted sleep with the world. A failure is logged as one payload-free line and
+ * otherwise ignored: the plan stands, and its mark is left unset.
+ */
+async function registerAcceptedSleep(
+  deps: ActDeps,
+  lifeId: string,
+  sleep: { thoughtId: string; action: number },
+): Promise<void> {
+  try {
+    await deps.sleepAccepted?.(lifeId, sleep.thoughtId, sleep.action);
+  } catch (err) {
+    deps.log?.({
+      event: 'sleep_register_error',
+      kind: err instanceof Error ? err.name : 'unknown',
+    });
+  }
+}
+
 /** `act`: validates the thought, reserves its credits, sends the plan, and settles the charge. */
 export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Promise<ActResult> {
   const started = deps.clock.nowMs();
@@ -257,6 +281,7 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
   let thoughtId: string | undefined;
   let outcome: SovereignCallPayload['outcome'] = 'rejected';
   let reserved = false;
+  let acceptedSleep: { thoughtId: string; action: number } | undefined;
 
   try {
     const kinds = survivors.map((slot) => slot.kind);
@@ -281,6 +306,9 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
       thoughtId = sent.thoughtId;
       if (sent.ack.accepted) {
         deps.failures?.submitted(caller.lifeId, thought.actions ?? []);
+        // The plan's actions are the thought's actions in order, so this index is the plan's.
+        const sleepAt = (thought.actions ?? []).findIndex((a) => a.do === 'sleep');
+        if (sleepAt >= 0) acceptedSleep = { thoughtId: sent.thoughtId, action: sleepAt };
         slots.forEach((_, i) => {
           if (refused[i] === undefined) result.accepted.push(i);
         });
@@ -313,6 +341,8 @@ export async function actTool(deps: ActDeps, caller: Caller, input: ActArgs): Pr
     );
   }
 
+  // Outside the refund try: a failed registration must not refund credits of an accepted plan.
+  if (acceptedSleep !== undefined) await registerAcceptedSleep(deps, caller.lifeId, acceptedSleep);
   result.rejected.sort((a, b) => a.index - b.index);
   const metering = meterCall(
     deps,

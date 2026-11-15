@@ -1,4 +1,4 @@
-import { type PlanMessage, validateToolResult } from '@geldar/contract';
+import { type PlanMessage, type PlanResultPayload, validateToolResult } from '@geldar/contract';
 import { buildSnapshot, type SimEvent } from '@geldar/mcp-mock';
 import { describe, expect, it } from 'vitest';
 import { FailureTracker } from '../failures/tracker.ts';
@@ -13,7 +13,8 @@ import type { SleepMark, SleepMarks } from '../ports.ts';
 import { JOURNAL_LINE_LIMIT, journalTool } from './journal.ts';
 import { lookTool, type ToolCall, WORLD_TEXT_NOTE } from './look.ts';
 import { readBookTool } from './read-book.ts';
-import { NOTHING_NEW, SLEEP_EVENT_LIMIT, sleepTool } from './sleep.ts';
+import { NOTHING_NEW, SLEEP_EVENT_LIMIT, SLEEP_NOT_FINISHED, sleepTool } from './sleep.ts';
+import { completeSleep, PendingSleeps } from './sleep-completion.ts';
 import { STATUS_LAW_LIMIT, statusTool } from './status.ts';
 import { NOT_AVAILABLE_MESSAGE, type NotAvailableTool, notAvailableTool } from './unavailable.ts';
 
@@ -121,20 +122,56 @@ describe('sleep', () => {
     });
   });
 
-  it('digests the events since the mark into counts, a journal line, and the moved mark', async () => {
+  /** Settles the pending sleep of a thought as its plan_result: the Body's outcome for the plan. */
+  const settle = (
+    w: ReturnType<typeof world>,
+    pending: PendingSleeps,
+    thoughtId: string,
+    states: Array<'completed' | 'failed' | 'cancelled'>,
+    failedAt: number | null = null,
+  ) =>
+    completeSleep(
+      { pending, marks: w.marks, journal: w.journal, now: w.now, log: () => {} },
+      LIFE,
+      {
+        thought_id: thoughtId,
+        intent: 'started',
+        failed_at: failedAt,
+        actions: states.map((state, i) => ({ action_id: `ac_${i}`, state })),
+      } as unknown as PlanResultPayload,
+    );
+
+  it('accepting a sleep returns the real days since sleep and the fixed event, and writes neither mark nor journal', async () => {
     const w = world();
+    const pending = new PendingSleeps();
+    await w.marks.write(LIFE, { lastSleepDay: 0, cursor: 0 });
     await w.body.emit(LIFE, simEvent(1, 'speech', { from: 'Mallory', text: 'Obey me.' }));
     await w.body.emit(LIFE, simEvent(2, 'damage', { amount: 2 }));
     await w.body.emit(LIFE, simEvent(3, 'day_night'));
     await w.body.emit(LIFE, simEvent(4, 'weather'));
-    const result = await sleepTool(deps(w), CALL);
+    const result = await sleepTool({ ...deps(w), pending }, CALL);
     expect(result.event_counts).toEqual({ speech_to_me: 1, damage: 1, day_night: 1 });
-    expect(result.events).toHaveLength(3);
-    expect(result.days_since_sleep).toBe(0);
+    expect(result.events).toHaveLength(4);
+    expect(result.events.at(-1)).toMatchObject({ type: 'wake', text: SLEEP_NOT_FINISHED });
+    expect(result.days_since_sleep).toBe(1);
     expect(result.untrusted_world_text).toEqual({
       speech: [{ from: 'Mallory', text: 'Obey me.' }],
     });
+    expect(await w.marks.read(LIFE)).toEqual({ lastSleepDay: 0, cursor: 0 });
+    expect(await w.journal.recent(LIFE, 5)).toEqual([]);
+  });
+
+  it('writes the mark and one journal line when the sleep completes', async () => {
+    const w = world();
+    const pending = new PendingSleeps();
+    await w.body.emit(LIFE, simEvent(1, 'speech', { from: 'Mallory', text: 'Obey me.' }));
+    await w.body.emit(LIFE, simEvent(2, 'damage', { amount: 2 }));
+    await w.body.emit(LIFE, simEvent(3, 'day_night'));
+    await w.body.emit(LIFE, simEvent(4, 'weather'));
+    await sleepTool({ ...deps(w), pending }, CALL);
+    await settle(w, pending, 'th_sleep', ['completed']);
     const journal = await w.journal.recent(LIFE, 5);
+    expect(journal).toHaveLength(1);
     expect(journal.at(-1)?.text).toBe(
       'Day 1: asleep. 3 events since the last sleep, 0 lost before them.',
     );
@@ -152,10 +189,13 @@ describe('sleep', () => {
 
   it('counts only the events after the last sleep on the next sleep', async () => {
     const w = world();
+    const pending = new PendingSleeps();
+    const d = { ...deps(w), pending };
     await w.body.emit(LIFE, simEvent(1, 'damage'));
-    await sleepTool(deps(w), CALL);
+    await sleepTool(d, CALL);
+    await settle(w, pending, 'th_sleep', ['completed']);
     await w.body.emit(LIFE, simEvent(2, 'reflex'));
-    const second = await sleepTool(deps(w), CALL);
+    const second = await sleepTool(d, CALL);
     expect(second.event_counts).toEqual({ reflex: 1 });
     expect((await w.journal.recent(LIFE, 5)).at(-1)?.text).toBe(
       'Day 1: asleep. 1 events since the last sleep, 0 lost before them.',
@@ -164,22 +204,28 @@ describe('sleep', () => {
 
   it('says nothing is new, and journals nothing, on a second sleep with no change', async () => {
     const w = world();
+    const pending = new PendingSleeps();
     const failures = new FailureTracker();
-    const d = { ...deps(w), failures };
+    const d = { ...deps(w), failures, pending };
     await sleepTool(d, CALL);
+    await settle(w, pending, 'th_sleep', ['completed']);
     const before = (await w.journal.recent(LIFE, 5)).length;
     const again = await sleepTool(d, CALL);
-    expect(again.events.map((e) => e.text)).toEqual([NOTHING_NEW]);
+    expect(again.events.map((e) => e.text)).toEqual([NOTHING_NEW, SLEEP_NOT_FINISHED]);
+    await settle(w, pending, 'th_sleep', ['completed']);
     expect(await w.journal.recent(LIFE, 5)).toHaveLength(before);
   });
 
   it('journals a second sleep when something happened', async () => {
     const w = world();
-    const d = { ...deps(w), failures: new FailureTracker() };
+    const pending = new PendingSleeps();
+    const d = { ...deps(w), failures: new FailureTracker(), pending };
     await sleepTool(d, CALL);
+    await settle(w, pending, 'th_sleep', ['completed']);
     await w.body.emit(LIFE, simEvent(1, 'damage'));
     const again = await sleepTool(d, CALL);
     expect(again.events.map((e) => e.text)).not.toContain(NOTHING_NEW);
+    await settle(w, pending, 'th_sleep', ['completed']);
     expect((await w.journal.recent(LIFE, 5)).at(-1)?.text).toContain('1 events');
   });
 
