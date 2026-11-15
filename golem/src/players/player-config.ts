@@ -52,13 +52,15 @@ export function buildPlayerConfig(input: {
   lifeId: string;
   fields: PlayerEntryFields;
   start: 'on_demand' | 'always';
+  /** The phrase that names the entry in the no-name error, e.g. `sovereign.players entry`. */
+  where: string;
   log?: CharacterLog;
 }): PlayerConfig {
-  const { root, playerId, lifeId, fields, start, log } = input;
+  const { root, playerId, lifeId, fields, start, where, log } = input;
   const adamLives = Object.values(record(record(root.mind, 'mind').lives, 'mind.lives'));
   if (adamLives.includes(lifeId)) throw new Error(`'${lifeId}' is Adam's life id, not a player`);
   if (typeof fields.name !== 'string' || fields.name.trim() === '') {
-    throw new Error(`player '${playerId}' has no name`);
+    throw new Error(`${where} '${playerId}' has no name`);
   }
   // The shard's own `mind.agent` is replaced by the player's, so `parseAdamConfig` reads the player.
   // The optional run stamp (harness, model) and the stored sheet (character_sheet) of the player's
@@ -108,6 +110,7 @@ export function parsePlayerConfig(
       character_sheet: entry.character_sheet,
     },
     start: presence.start,
+    where: 'sovereign.players entry',
     ...(log === undefined ? {} : { log }),
   });
 }

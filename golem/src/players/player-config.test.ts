@@ -86,7 +86,9 @@ describe('parsePlayerConfig', () => {
     const players = sovereignOf(doc).players as Record<string, string>[];
     const jason = players.find((p) => p.player_id === 'ag-jason-01');
     if (jason !== undefined) jason.name = ' ';
-    expect(() => parsePlayerConfig(doc, 'ag-jason-01')).toThrow(/has no name/);
+    expect(() => parsePlayerConfig(doc, 'ag-jason-01')).toThrow(
+      "sovereign.players entry 'ag-jason-01' has no name",
+    );
   });
 });
 

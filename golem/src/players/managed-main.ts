@@ -31,7 +31,7 @@ import {
   type OpenedRegistry,
   openRegistryBucket,
 } from '../registry.ts';
-import { bookServe, installEntryHandlers, playerBodyEnv, startPlayerBody } from './main.ts';
+import { bookServe, installEntryHandlers, playerBodyEnv, startPlayerBody } from './body-host.ts';
 import { managedLifeId, NO_HOST_CONFIG_EXIT, parseManagedPlayerConfig } from './managed-config.ts';
 import type { PlayerConfig } from './player-config.ts';
 import { watchPresence } from './presence.ts';
@@ -53,7 +53,28 @@ export interface HostDb {
   close(): Promise<void>;
 }
 
-/** The pg adapter of HostDb: a single client, with no pool, opened for one read. */
+/** The longest a read, a statement or the close of the host database may take (no stall at boot). */
+const DB_TIMEOUT_MS = 5_000;
+
+/**
+ * Closes the client, or gives up after DB_TIMEOUT_MS. The client's own error text is never read or
+ * logged: it can carry a connection string.
+ */
+function endClient(client: pg.Client): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, DB_TIMEOUT_MS);
+  });
+  return Promise.race([client.end().then(() => undefined), timeout]).finally(() =>
+    clearTimeout(timer),
+  );
+}
+
+/**
+ * The pg adapter of HostDb: a single client, with no pool, opened for one read. The client has
+ * timeouts on the connect, the query and the statement, and a no-op 'error' listener, so an idle
+ * socket the server drops cannot crash the process as an unhandled event.
+ */
 export async function openPgHostDb(options: HostDbOptions): Promise<HostDb> {
   const client = new pg.Client({
     host: options.host,
@@ -61,15 +82,18 @@ export async function openPgHostDb(options: HostDbOptions): Promise<HostDb> {
     database: options.database,
     user: options.user,
     password: options.password,
-    connectionTimeoutMillis: 5_000,
+    connectionTimeoutMillis: DB_TIMEOUT_MS,
+    query_timeout: DB_TIMEOUT_MS,
+    statement_timeout: DB_TIMEOUT_MS,
   });
+  client.on('error', () => undefined);
   await client.connect();
   return {
     async hostConfig(lifeId) {
       const result = await client.query('SELECT player_host_config($1) AS cfg', [lifeId]);
       return result.rows[0]?.cfg ?? null;
     },
-    close: () => client.end(),
+    close: () => endClient(client),
   };
 }
 
@@ -232,7 +256,7 @@ export async function runManagedPlayer(
   const shard = required(env, 'GELDAR_SHARD');
   if (!/^[a-z0-9-]{1,32}$/.test(shard)) throw new Error('GELDAR_SHARD must be a shard name');
   const shardDoc = parse(await deps.readText(join(repoRoot(), 'shards', `${shard}.yaml`)));
-  const password = (await deps.readText(required(env, 'GELDAR_DB_PASSWORD_FILE'))).trim();
+  const password = (await deps.readText(required(env, 'GELDAR_PG_PASSWORD_FILE'))).trim();
   if (password === '') throw new Error('the database password file is empty');
   const row = await readHostRow(env, deps, password, lifeId);
   if (row === null) {
@@ -244,6 +268,16 @@ export async function runManagedPlayer(
   return 0;
 }
 
+/** The database port: an integer from 1 to 65535 (default 5432), or a fixed error before any connection. */
+function hostDbPort(raw: string | undefined): number {
+  const value = raw ?? '5432';
+  const port = Number(value);
+  if (!/^[0-9]+$/.test(value) || !Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('GELDAR_PG_PORT must be an integer from 1 to 65535');
+  }
+  return port;
+}
+
 /** One read of the host row. Database errors are reported with a fixed message, never the cause text. */
 async function readHostRow(
   env: Record<string, string | undefined>,
@@ -251,13 +285,13 @@ async function readHostRow(
   password: string,
   lifeId: string,
 ): Promise<unknown> {
-  const port = Number(env.GELDAR_DB_PORT ?? '5432');
+  const port = hostDbPort(env.GELDAR_PG_PORT);
   const db = await deps
     .openDb({
-      host: required(env, 'GELDAR_DB_HOST'),
+      host: required(env, 'GELDAR_PG_HOST'),
       port,
-      database: env.GELDAR_DB_NAME ?? 'geldar',
-      user: required(env, 'GELDAR_DB_ROLE'),
+      database: env.GELDAR_PG_DATABASE ?? 'geldar',
+      user: required(env, 'GELDAR_PG_USER'),
       password,
     })
     .catch(() => {

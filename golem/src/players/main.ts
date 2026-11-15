@@ -12,72 +12,31 @@ import { PRESENCE_BUCKET } from '@geldar/contract';
 import { connectNats } from '@geldar/contract/nats';
 import { jetstream } from '@nats-io/jetstream';
 import { type KV, Kvm } from '@nats-io/kv';
-import type { Bot } from 'mineflayer';
 import { parse } from 'yaml';
-import { type AdamBodyEnv, type RunningAdamBody, startAdamBody } from '../adam/adam-body.ts';
 import { managerAcquire } from '../adam/main.ts';
 import { jetStreamPublisher } from '../body/records-nats.ts';
 import { assertLoopbackNatsUrl, openRestartKv } from '../body/restart.ts';
-import { serveBooks } from '../books/book-server.ts';
 import { startProficiency } from '../character/proficiency-host.ts';
 import { loadStackConfig, readRconPassword, repoRoot } from '../config.ts';
 import { ConnectionManager } from '../connection.ts';
-import { natsRequestServer, type RequestServer } from '../mind-link/server.ts';
+import { natsRequestServer } from '../mind-link/server.ts';
 import { golemNatsAuth } from '../nats-credentials.ts';
-import { installFatalHandlers } from '../process-fatal.ts';
 import { RconClient } from '../rcon.ts';
 import { registryFromConfig } from '../registry.ts';
+import {
+  bookServe,
+  type ExtraServe,
+  installEntryHandlers,
+  playerBodyEnv,
+  startPlayerBody,
+} from './body-host.ts';
 import { parsePlayerConfig } from './player-config.ts';
 import { watchPresence } from './presence.ts';
 import { PlayerSession } from './session.ts';
 import { admitLifeOverRcon } from './whitelist.ts';
 
-/** Serves more on the player's bot next to the Body (the book server, wired in WM-11). */
-export type ExtraServe = (bot: Bot) => { stop(): Promise<void> | void };
-
-const NO_EXTRA: ExtraServe = () => ({ stop() {} });
-
-/** The book subject of one life, served beside its Body (WM-07, spec 5.15.2). */
-export function bookServe(options: {
-  shard: string;
-  lifeId: string;
-  server: RequestServer;
-  log: (line: string) => void;
-}): ExtraServe {
-  return (bot) => {
-    const stop = serveBooks({ ...options, bot });
-    return { stop: () => stop() };
-  };
-}
-
-/**
- * Starts the Body on `bot` with `extraServe` beside it. A failed start leaves nothing running (the
- * Body's own cleanup runs first). `stop` ends `extraServe` first, so nothing new is served, then the Body.
- */
-export async function startPlayerBody(
-  env: AdamBodyEnv,
-  bot: Bot,
-  extraServe: ExtraServe = NO_EXTRA,
-): Promise<RunningAdamBody> {
-  const running = await startAdamBody(env, bot);
-  let extra: ReturnType<ExtraServe>;
-  try {
-    extra = extraServe(bot);
-  } catch (error) {
-    await running.stop();
-    throw error;
-  }
-  return {
-    ...running,
-    async stop() {
-      try {
-        await extra.stop();
-      } finally {
-        await running.stop();
-      }
-    },
-  };
-}
+// The Body wiring lives in body-host.ts (no RCON there); these names stay exported from this module.
+export { bookServe, type ExtraServe, installEntryHandlers, playerBodyEnv, startPlayerBody };
 
 /** The player id after `--player`; throws with the usage line when it is missing. */
 export function playerIdFromArgs(argv: string[]): string {
@@ -97,33 +56,6 @@ const jsonLog = (line: Record<string, unknown>): void => {
 async function* presenceEntries(kv: KV, lifeId: string): AsyncGenerator<string | null> {
   const watch = await kv.watch({ key: lifeId });
   for await (const entry of watch) yield entry.operation === 'PUT' ? entry.string() : null;
-}
-
-type PlayerNats = Awaited<ReturnType<typeof connectNats>>;
-
-/**
- * The Body's env in a player host. The host's own connection is the ownership transport (decision
- * 0165), so every ranger Body runs the ownership client, as Adam's Body does.
- */
-export function playerBodyEnv(input: {
-  config: AdamBodyEnv['config'];
-  kv: AdamBodyEnv['kv'];
-  publisher: AdamBodyEnv['publisher'];
-  nc: PlayerNats;
-  server: AdamBodyEnv['server'];
-  log: AdamBodyEnv['log'];
-  proficiency?: AdamBodyEnv['proficiency'];
-}): AdamBodyEnv {
-  return {
-    config: input.config,
-    ...(input.config.character === undefined ? {} : { character: input.config.character }),
-    kv: input.kv,
-    publisher: input.publisher,
-    server: input.server,
-    owners: input.nc,
-    log: input.log,
-    ...(input.proficiency === undefined ? {} : { proficiency: input.proficiency }),
-  };
 }
 
 /** Runs the player's Body until a signal; the presence record decides when it is up. */
@@ -240,11 +172,6 @@ export async function runPlayer(
   await restartKv.close();
   await nc.close();
   log({ event: 'player_stopped' });
-}
-
-/** Installs the host's fatal handlers (process-fatal.ts). The entry point calls it before the body starts. */
-export function installEntryHandlers(): void {
-  installFatalHandlers(jsonLog);
 }
 
 if (process.argv[1] !== undefined && import.meta.url === pathToFileURL(process.argv[1]).href) {

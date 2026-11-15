@@ -73,6 +73,7 @@ export function parseManagedPlayerConfig(
       character_sheet: row.character_sheet ?? undefined,
     },
     start: 'always',
+    where: 'managed player',
     ...(log === undefined ? {} : { log }),
   });
 }
