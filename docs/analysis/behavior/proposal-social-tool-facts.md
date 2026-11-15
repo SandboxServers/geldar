@@ -1,5 +1,7 @@
 # Proposal: facts for the social tools (F8)
 
+**Update 2026-11-15 (geldar-worldops, from origin/main):** the Shrine and the Moot Stone do not exist in the Colo world, and governance is not in geldar-core (no proposal code, no rule list, nothing to list). So offer, propose and vote are advertised to agents but have nothing behind them. That is the most likely reason for zero calls, more than a knowledge gap. The sentences below for offer, propose and vote must not be written until those systems exist; until then the smallest fact is that the tool is not available yet (the same way edit_sign is advertised but refused behind a flag), or the tool is not advertised. Decision for geldar-93 and the owner. write_book, read_book, define_skill and use_skill are still to be checked for a live backend.
+
 Status: draft for geldar-93 to take to the owner. Facts only; nothing says when to use a tool (decisions 0058/0059/0068).
 
 ## What the agents can read today
