@@ -40,9 +40,35 @@ if [ "${#suffix}" -gt 8 ]; then
 fi
 PROJECT="scratch-$suffix"
 
+# Paths the script uses must be absolute and one line: a relative or multi-line path would reach the compose files.
+is_abs() {
+  case "$1" in
+    /* | [A-Za-z]:/* | [A-Za-z]:\\*) return 0 ;;
+  esac
+  return 1
+}
+
+has_newline() {
+  nl=$(printf '\n_')
+  nl=${nl%_}
+  case "$1" in
+    *"$nl"*) return 0 ;;
+  esac
+  return 1
+}
+
+check_state_base() {
+  if ! is_abs "$STATE_BASE" || has_newline "$STATE_BASE"; then
+    echo "scratch: XDG_STATE_HOME must be an absolute path with no newline; nothing started" >&2
+    exit 2
+  fi
+}
+
 # Per-user state. The secrets of one project live in $STATE_ROOT/$PROJECT, created 0700 by mkdir (which fails on an
 # existing file or symlink). The NATS override that points at the caller's auth dir lives inside that directory too.
-STATE_ROOT="${XDG_STATE_HOME:-${HOME:?HOME must be set}/.local/state}/geldar-scratch"
+STATE_BASE="${XDG_STATE_HOME:-${HOME:?HOME must be set}/.local/state}"
+check_state_base
+STATE_ROOT="$STATE_BASE/geldar-scratch"
 SECRETS="$STATE_ROOT/$PROJECT"
 NATS_OVERRIDE="$SECRETS/nats-override.yml"
 STARTED=0
@@ -67,6 +93,10 @@ nats_dir_ok() {
 # The NATS gate. Runs first, before any file is written or any container is started.
 check_nats() {
   if [ -n "${SCRATCH_NATS_AUTH_DIR:-}" ]; then
+    if ! is_abs "$SCRATCH_NATS_AUTH_DIR" || has_newline "$SCRATCH_NATS_AUTH_DIR"; then
+      echo "scratch: SCRATCH_NATS_AUTH_DIR must be an absolute path with no newline; nothing started" >&2
+      exit 2
+    fi
     if ! nats_dir_ok; then
       echo "scratch: SCRATCH_NATS_AUTH_DIR must be a readable directory holding non-empty $NATS_FILES; nothing started" >&2
       exit 2
@@ -253,6 +283,7 @@ secrets_removable() {
 }
 
 do_up() {
+  set_env
   check_nats
   check_compose
   gate
@@ -280,7 +311,6 @@ do_up() {
   if [ -n "${SCRATCH_NATS_AUTH_DIR:-}" ]; then
     write_nats_override
   fi
-  set_env
   STARTED=1
   if ! compose_run up -d --wait --build; then
     echo "up failed; clean up with: sh deploy/scratch/scratch.sh down $suffix" >&2
@@ -293,8 +323,10 @@ do_status() {
   set_env
   if [ -f "$NATS_OVERRIDE" ]; then
     echo "NATS auth: the four files from the SCRATCH_NATS_AUTH_DIR given to up"
-  else
+  elif [ -d "$SECRETS" ]; then
     open_warning
+  else
+    echo "no scratch stack state for $PROJECT (never started, or down has run)"
   fi
   compose_run ps
   ids=$(compose_run ps -q)
