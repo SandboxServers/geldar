@@ -124,6 +124,12 @@ services:
         read_only: true
         bind:
           create_host_path: true
+      - type: bind
+        source: ../plugins/bluemap/web/geldar-sky.js
+        target: /etc/caddy/geldar-sky.js
+        read_only: true
+        bind:
+          create_host_path: true
   eventsink:
     build:
       context: ..

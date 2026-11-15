@@ -119,15 +119,16 @@ live `players.json` of each map, joins each UUID to the alias name, and shows th
 links). An unknown speaker shows the neutral label `Ranger`. A speaker who has left keeps the name seen while they were
 listed. On a failed read the panel keeps what it shows and waits 10 seconds before the next try. A line shows within about 4 seconds of being said at worst: the plugin writes the file within 1 second and the panel polls every 3 seconds. Each fetch gives up after 8 seconds.
 
-The panel is loaded through the webroot's `settings.json`. That one `scripts` entry is all the panel needs:
+The panel is loaded through the webroot's `settings.json`. Its `scripts` entry is all the panel needs; the time-of-day dial
+(below) is a second entry in the same list:
 
-    "scripts": ["assets/geldar-chat.js"]
+    "scripts": ["assets/geldar-chat.js", "assets/geldar-sky.js"]
 
 The script adds its own stylesheet, `<link rel="stylesheet" href="assets/geldar.css">`, unless the page already links a
 `geldar.css`. So the panel still positions itself after a Paper restart, when BlueMap resets `settings.json` and its
 `styles` list. A `styles` entry for `assets/geldar.css` is still fine: the script sees the link and adds nothing.
 
-Caddy serves `/assets/geldar-chat.js` (GET and HEAD, from the read-only mount) and `/geldar-chat.json` with
+Caddy serves `/assets/geldar-chat.js` and `/assets/geldar-sky.js` (GET and HEAD, from the read-only mounts) and `/geldar-chat.json` with
 `Cache-Control: no-store`. The public map's Content-Security-Policy is `frame-ancestors 'none'` only
 (`deploy/caddy/map.caddy`), so the same-origin script and fetch are allowed without a change.
 
@@ -140,5 +141,12 @@ under 60 s, Offline after. Each speaker's "still" label (from 2 min, then whole 
 long their position has been unchanged, to 0.1 block on each axis; it is computed in the browser from the public
 `players.json` positions only, so no server state is added. The "last line" age under the list is the age of the newest
 feed line.
+
+The time-of-day dial (BM-15) is a second script, `web/geldar-sky.js`: a small horizon dial at the top right of the map,
+below BlueMap's control bar and left of the chat panel, with a sun on its arc from tick 0 (06:00) to 12000 and a moon from
+12000 to 24000. It reads the same `geldar-chat.json` clock every 5 s, reads no lines and no other file, and moves at 20
+ticks a second between reads. It hides when the clock has not moved for 60 s, on the nether and the end, and when BlueMap
+is missing. Its accessible name reads "World time HH:MM, Day" or "Night", with the minutes floored to 5. It is click-through
+(`pointer-events: none`). Its node needs a read-only mount, a Caddy handler and a `scripts` entry, as in the runbook.
 
 The manual node steps, the checks and the rollback are in `docs/runbooks/map-chat-panel.md`.
