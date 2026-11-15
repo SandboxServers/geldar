@@ -51,6 +51,7 @@ plugins/bluemap/config/maps/nether.conf
 plugins/bluemap/config/maps/overworld.conf
 plugins/bluemap/config/plugin.conf
 plugins/bluemap/config/webserver.conf
+plugins/bluemap/web/geldar-chat.js
 plugins/bluemap/web/geldar.css
 plugins/chunky/chunky.lock.json
 plugins/coreprotect/coreprotect.lock.json
