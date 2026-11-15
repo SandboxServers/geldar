@@ -7,7 +7,7 @@
 shard: colo
 seed: 8675309                    # compose/colo.yml paper SEED must equal this; keep them equal
 tick_rate: 20                    # 20 TPS is the gate (decisions 0038 and 0047)
-world_border_radius: 1500        # spec 5.1: diameter 3000 in the world border command
+world_border_radius: 9500        # colo only: diameter 19000 in the world border command (moved 2026-11-15, spawn-town cutover)
 # The largest limits an intent may ask for: the output validator's bounds (animus validate/bounds.ts).
 max_world_ticks: 240000          # limits.max_world_ticks of an intent; the contract's own cap
 max_block_operations: 10000      # limits.max_block_operations of an intent; the contract's own cap
