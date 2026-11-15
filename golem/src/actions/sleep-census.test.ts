@@ -2,6 +2,7 @@ import { Vec3 } from 'vec3';
 import type { Mock } from 'vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { type FakeBlock, fakeBot, sleep } from './sleep.fakes.ts';
+import { triedMessage } from './sleep.ts';
 import { takeCensus } from './sleep-census.ts';
 
 vi.mock('./pathing.ts', () => ({
@@ -256,5 +257,30 @@ describe('the bed census', () => {
         'tried 1 nearby beds, all occupied or blocked; last: the bed is occupied; 1 bed within 32 blocks, 0 occupied; ended at 0, 64, 0',
       detail: { beds_tried: [{ x: 3 }] },
     });
+  });
+});
+
+describe('the tried-beds message', () => {
+  const base = 'tried 8 nearby beds, all occupied or blocked';
+  const tail = '; 20 beds within 32 blocks, 20 occupied; ended at 0, 64, 0';
+
+  it('keeps a last text that fits whole', () => {
+    expect(triedMessage(base, 'the bed is occupied', tail)).toBe(
+      `${base}; last: the bed is occupied${tail}`,
+    );
+  });
+
+  it('cuts a long last text to 160 characters, and keeps the census and the position', () => {
+    const message = triedMessage(base, 'x'.repeat(300), tail);
+    expect(message).toHaveLength(160);
+    expect(message.startsWith(`${base}; last: xx`)).toBe(true);
+    expect(message.endsWith(`...${tail}`)).toBe(true);
+  });
+
+  it('keeps a very long tail whole, and leaves the last text to its dots', () => {
+    const longTail = `; ${'9 beds within 32 blocks, 9 occupied; '.repeat(6)}ended at 0, 64, 0`;
+    expect(triedMessage(base, 'the bed is occupied', longTail)).toBe(
+      `${base}; last: ...${longTail}`,
+    );
   });
 });
