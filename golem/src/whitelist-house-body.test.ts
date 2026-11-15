@@ -35,6 +35,7 @@ describe('houseBodyName (C2-07k)', () => {
       'ag_clark_01',
       'ag_chapman_01',
       'ag_macdonald_01',
+      'ag_leonardo_01',
     ]) {
       expect(whitelistNames(shard)).toContain(name);
     }
