@@ -188,5 +188,6 @@ M2 is reachable when steps 1 to 9 are merged and the node steps are done (0261, 
 ### Order and parallel rules
 
 - Register-package cards run one at a time: CF-W4-5, LEGAL-SERVE, C7-04d-mount, ROSTER-AUTO, C7-06d, C7-09 and C7-11 (config only).
+- C7-09c operator erasure script (skins KV key and Velocity registry), S, after C7-09a.
 - M1 Docs and node steps can run beside M2 Golem steps. M1 and M2 share no card except C7-09 (conditional) and C7-06d.
 - geldar-93 owns the node steps and the sub-questions. The Entra app and the open step are the owner's.

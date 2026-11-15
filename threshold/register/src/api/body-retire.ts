@@ -21,7 +21,7 @@ export interface BodyRetireDeps extends Omit<BodyDeps, 'slot'> {
 }
 
 /** The same display-name rule as the body routes (body.ts): the Minecraft player name, 3 to 16 characters. */
-const LOGIN_NAME = /^[A-Za-z0-9_]{3,16}$/;
+export const LOGIN_NAME = /^[A-Za-z0-9_]{3,16}$/;
 const LOGIN_NAME_DETAIL = "The player's name must be 3 to 16 letters, digits or underscore.";
 
 /**
@@ -40,31 +40,40 @@ function serviceDeps(ctx: ApiContext): TokenDeps {
  * any other refusal (busy, error) is 503 body_unavailable with Retry-After, and the agent is not retired. Returns true when
  * the retire may continue; otherwise the answer is sent.
  */
-async function stopBody(
-  ctx: ApiContext,
-  deps: BodyRetireDeps,
+/** The body link and slot a stop needs (C7-09a shares it with the account delete). */
+export type BodyStopLink = Pick<BodyRetireDeps, 'conn' | 'shard' | 'timeoutMs' | 'slot'>;
+
+/**
+ * The stop of one player's body with no response written (C7-09a): true when the stop is `stopped` or `unknown`, false on
+ * a timeout, no responders, an unreadable reply or any other refusal. A non-timeout throw is rethrown.
+ */
+export async function stopPlayerBody(
+  link: BodyStopLink,
+  ownerId: string,
   playerName: string,
 ): Promise<boolean> {
   let reply: { ok: boolean; code: string };
   try {
     reply = await requestBodyOp(
-      deps.conn,
+      link.conn,
       'stop',
-      deps.shard,
-      { ownerId: ctx.ownerId, playerName },
-      { timeoutMs: deps.timeoutMs },
+      link.shard,
+      { ownerId, playerName },
+      { timeoutMs: link.timeoutMs },
     );
   } catch (error) {
-    if (error instanceof BodyUnavailable || error instanceof MalformedReply) {
-      sendProblem(ctx.res, 'body_unavailable', {
-        'retry-after': String(UNAVAILABLE_RETRY_SECONDS),
-      });
-      return false;
-    }
+    if (error instanceof BodyUnavailable || error instanceof MalformedReply) return false;
     throw error;
   }
-  if ((reply.ok && reply.code === 'stopped') || (!reply.ok && reply.code === 'unknown'))
-    return true;
+  return (reply.ok && reply.code === 'stopped') || (!reply.ok && reply.code === 'unknown');
+}
+
+export async function stopBody(
+  ctx: ApiContext,
+  deps: BodyRetireDeps,
+  playerName: string,
+): Promise<boolean> {
+  if (await stopPlayerBody(deps, ctx.ownerId, playerName)) return true;
   sendProblem(ctx.res, 'body_unavailable', { 'retry-after': String(UNAVAILABLE_RETRY_SECONDS) });
   return false;
 }
