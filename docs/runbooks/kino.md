@@ -36,7 +36,7 @@ To turn Kino back on, reverse the step you took. A pane that was closed does not
 
 ## Audit
 
-Pane opens, targets, mode changes and closes are recorded in `kino_audit` with a hashed login, kept 90 days (Glass purges older rows daily). If an audit write fails, the pane is closed (fail closed).
+Pane opens, targets, mode changes and closes are recorded in `kino_audit` with a hashed login, kept 90 days (Glass purges older rows daily), and removed when the signed-in viewer deletes the account (0262). If an audit write fails, the pane is closed (fail closed).
 
 ## Entry page and control path (K09)
 

@@ -52,12 +52,12 @@ Exact list of what stays (decision 0262):
 
 A deletion takes table locks on `mcp_journal`, `thoughts`, `receipts` and `suppressed_wakeups` for the length of its
 transaction, because it turns off their append-only triggers inside the transaction and turns them back on before it
-returns. While it runs, writes to those four tables from other owners wait. The rows to erase are collected before the window, under ordinary locks (that scan is not under the lock); the window itself deletes only those collected rows. The collection scans each of the four tables, and none of them is indexed by life id, so a large table makes the collection slow, though it does not hold the window. The function sets a 3 second `lock_timeout`: if the lock is not free in time the
+returns. While it runs, writes to those four tables from other owners wait. The rows to erase are collected before the window, under ordinary locks (that scan is not under the lock); the window itself deletes only those collected rows. The collection scans thoughts, receipts and suppressed_wakeups, which have no index on life id (mcp_journal has one), so a large table makes the collection slow, though it does not hold the window. The function sets a 3 second `lock_timeout`: if the lock is not free in time the
 deletion fails and nothing is removed. Retry it; that is safe, because a failed deletion removes nothing.
 
 Residual races (review F10, open): a journal write from a still-connected agent session can land after the commit, and
 a sign-in that races the deletion can leave a `register_sessions` row for the removed owner. Later writes refuse that
-owner (no owner row), so the row is inert, but it lingers until it expires.
+owner (no owner row), so the row is inert, but it lingers until it expires. A row of the owner's life that a writer commits while the function waits for one of the four table locks is not in the collected set, so it survives; a second call returns false and cannot erase it. A pane open at the deletion, or a `gk_session` cookie still valid (30 minutes), can write `kino_audit` rows with the deleted identity hash after the erase; those rows leave only at the 90-day purge.
 
 ## The tombstone
 

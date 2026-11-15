@@ -45,3 +45,4 @@
 - (a) Kept agent rows may carry a typed real name (player id, game account, name): anonymise on deletion, or accept.
 - (c) Accounts deleted under 0039, before 0040: their dead lives have no owner link and no player row, so 0040 cannot reach them. Cleanup is follow-up card `C7-09c`.
 - Also kept: `memories.source_agent` of other lives and other lives' event payloads that name an erased life.
+- Stale comments, not corrected here (0050 and 0051 are not edited): `sql/0051` (lines 10, 124-129, 155) and `sql/0050` (lines 133-134) still say that the rows of dead lives stay as world history with no owner link, which 0040 now contradicts (`sheet_erase_life` runs for dead lives too). The `rolls` table comment on a sorted-order database says the same. Follow-up needed to correct the comments and the export and retention map.

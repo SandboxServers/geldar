@@ -39,6 +39,10 @@ DECLARE
   was_banned BOOLEAN;
   was_admin BOOLEAN;
   lives TEXT[];
+  j_ids BIGINT[];
+  t_ids TEXT[];
+  r_ids TEXT[];
+  s_ids BIGINT[];
   erasure_actor TEXT := left(replace(gen_random_uuid()::text, '-', ''), 16);
 BEGIN
   PERFORM set_config('lock_timeout', '3s', true);
@@ -86,17 +90,14 @@ BEGIN
   DELETE FROM public.mcp_tokens
     WHERE player_id IN (SELECT p.player_id FROM public.mcp_players p WHERE p.owner_id = who);
 
-  -- the rows of the four append-only tables to erase are collected BEFORE the lock window, under ordinary locks
-  -- (the scan of a table without an index on life_id runs here, not under SHARE ROW EXCLUSIVE). The window deletes
-  -- by the ctid collected here, so it holds no sequential scan. This is safe because these tables are append-only
-  -- (0007): no row is updated, so a ctid names the same row for the rest of this transaction. The temp table is
-  -- dropped right after the window, so a second call in the same transaction can create it again.
-  CREATE TEMP TABLE erase_window_ids (src TEXT NOT NULL, row_ctid TID NOT NULL) ON COMMIT DROP;
-  INSERT INTO erase_window_ids SELECT 'mcp_journal', j.ctid FROM public.mcp_journal j WHERE j.life_id = ANY (lives);
-  INSERT INTO erase_window_ids SELECT 'thoughts', t.ctid FROM public.thoughts t WHERE t.life_id = ANY (lives);
-  INSERT INTO erase_window_ids SELECT 'receipts', r.ctid FROM public.receipts r WHERE r.life_id = ANY (lives);
-  INSERT INTO erase_window_ids SELECT 'suppressed_wakeups', s.ctid FROM public.suppressed_wakeups s
-    WHERE s.life_id = ANY (lives);
+  -- the primary keys of the rows of the four append-only tables to erase are collected BEFORE the lock window, under
+  -- ordinary locks (the scan of a table without an index on life_id runs here, not under SHARE ROW EXCLUSIVE). The
+  -- window deletes by these keys, so it holds no sequential scan and no temp table. Each table's own key is used, so
+  -- a key of one table can never name a row of another.
+  j_ids := ARRAY(SELECT j.id FROM public.mcp_journal j WHERE j.life_id = ANY (lives));
+  t_ids := ARRAY(SELECT t.thought_id FROM public.thoughts t WHERE t.life_id = ANY (lives));
+  r_ids := ARRAY(SELECT r.receipt_id FROM public.receipts r WHERE r.life_id = ANY (lives));
+  s_ids := ARRAY(SELECT s.id FROM public.suppressed_wakeups s WHERE s.life_id = ANY (lives));
 
   -- the lock window: mcp_journal, thoughts, receipts and suppressed_wakeups are append-only (0007); erasure is the
   -- one case that removes rows, so their triggers are switched off for this transaction only and on again right
@@ -105,16 +106,14 @@ BEGIN
   ALTER TABLE public.thoughts DISABLE TRIGGER thoughts_append_only;
   ALTER TABLE public.receipts DISABLE TRIGGER receipts_append_only;
   ALTER TABLE public.suppressed_wakeups DISABLE TRIGGER suppressed_wakeups_append_only;
-  DELETE FROM public.mcp_journal WHERE ctid = ANY (ARRAY(SELECT e.row_ctid FROM erase_window_ids e WHERE e.src = 'mcp_journal'));
-  DELETE FROM public.thoughts WHERE ctid = ANY (ARRAY(SELECT e.row_ctid FROM erase_window_ids e WHERE e.src = 'thoughts'));
-  DELETE FROM public.receipts WHERE ctid = ANY (ARRAY(SELECT e.row_ctid FROM erase_window_ids e WHERE e.src = 'receipts'));
-  DELETE FROM public.suppressed_wakeups WHERE ctid = ANY (ARRAY(SELECT e.row_ctid FROM erase_window_ids e
-    WHERE e.src = 'suppressed_wakeups'));
+  DELETE FROM public.mcp_journal WHERE id = ANY (j_ids);
+  DELETE FROM public.thoughts WHERE thought_id = ANY (t_ids);
+  DELETE FROM public.receipts WHERE receipt_id = ANY (r_ids);
+  DELETE FROM public.suppressed_wakeups WHERE id = ANY (s_ids);
   ALTER TABLE public.mcp_journal ENABLE TRIGGER mcp_journal_append_only;
   ALTER TABLE public.thoughts ENABLE TRIGGER thoughts_append_only;
   ALTER TABLE public.receipts ENABLE TRIGGER receipts_append_only;
   ALTER TABLE public.suppressed_wakeups ENABLE TRIGGER suppressed_wakeups_append_only;
-  DROP TABLE erase_window_ids;
 
   -- a living life is retired: dead, with a cause, and no public camera or delayed public thoughts (F5)
   UPDATE public.agents

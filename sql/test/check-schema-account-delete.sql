@@ -40,8 +40,10 @@ DECLARE
   audit_before BIGINT;
   owner_val TEXT;
   banned_val BOOLEAN;
-  hash_a BYTEA := decode(repeat('51', 32), 'hex');
-  hash_b BYTEA := decode(repeat('52', 32), 'hex');
+  -- hash_a has hex letters (a case error in the match shows); hash_b differs from hash_a only in the last byte (a
+  -- prefix match on the first 8 characters would take it)
+  hash_a BYTEA := decode(repeat('a1', 32), 'hex');
+  hash_b BYTEA := decode(repeat('a1', 31) || 'a2', 'hex');
   hash_c BYTEA := decode(repeat('53', 32), 'hex');
   actor_a TEXT := left(encode(sha256(convert_to('reg-del-a', 'UTF8')), 'hex'), 16);
   r RECORD;
@@ -93,11 +95,13 @@ BEGIN
   INSERT INTO register_consents (identity_hash, terms_version) VALUES (hash_a, 'terms-1'), (hash_b, 'terms-1');
   INSERT INTO kino_admins (identity_hash) VALUES (hash_a), (hash_b);
   -- 0040: kino_audit rows carry the identity hash as hex (glass loginHash returns the identity hash itself),
-  -- so owner a's two rows are erased and owner b's row is kept
+  -- so owner a's two rows are erased. Owner b's row on its own agent is kept, and so is a second viewer (b) whose row
+  -- sits on agent ag_del_live, one of a's agents: the delete matches the login hash, not the agent.
   INSERT INTO kino_audit (event, login_hash, agent_id, pane_id, mode, at) VALUES
     ('pane_opened', encode(hash_a, 'hex'), 'ag_del_live', 'pn_' || repeat('0', 25) || '1', 'follow', now()),
     ('pane_closed', encode(hash_a, 'hex'), 'ag_del_live', 'pn_' || repeat('0', 25) || '1', 'follow', now()),
-    ('pane_opened', encode(hash_b, 'hex'), 'ag_del_b', 'pn_' || repeat('0', 25) || '2', 'follow', now());
+    ('pane_opened', encode(hash_b, 'hex'), 'ag_del_b', 'pn_' || repeat('0', 25) || '2', 'follow', now()),
+    ('pane_opened', encode(hash_b, 'hex'), 'ag_del_live', 'pn_' || repeat('0', 25) || '3', 'follow', now());
 
   -- 0040: one row in every table keyed by a life, for each of the four lives (a live and a dead life of owner a,
   -- owner b's live and dead lives). Owner a's four lives must leave no row; owner b's two lives keep one row each.
@@ -313,7 +317,7 @@ BEGIN
   SELECT count(*) INTO n FROM kino_admins WHERE identity_hash = hash_b;
   IF n <> 1 THEN RAISE EXCEPTION 'account delete: other owner kino admin row removed'; END IF;
   SELECT count(*) INTO n FROM kino_audit WHERE login_hash = encode(hash_b, 'hex');
-  IF n <> 1 THEN RAISE EXCEPTION 'account delete: other owner kino audit row removed'; END IF;
+  IF n <> 2 THEN RAISE EXCEPTION 'account delete: other owner kino audit row removed (% left, expected 2)', n; END IF;
   SELECT count(*) INTO n FROM mcp_budget WHERE life_id IN ('ag_del_b', 'ag_del_bdead');
   IF n <> 2 THEN RAISE EXCEPTION 'account delete: other owner budget removed'; END IF;
   SELECT count(*) INTO n FROM mcp_sleep_marks WHERE life_id IN ('ag_del_b', 'ag_del_bdead');
