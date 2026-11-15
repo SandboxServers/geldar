@@ -65,9 +65,9 @@ const CAPTURED: Readonly<Record<string, string>> = {
   build_completed:
     '{"source_event_id":"ev_126ZFGTBMC5W4GTA1TY5KDVW9P","at":"2026-11-09T12:00:00.000Z","shard":"phase0","world_day":2,"world_tick":48500,"type":"intent","agent_id":"ag_kestrel_01","payload":{"intent_id":"in_01HZX3V9Q4M2K8R7T6Y5W4E3D5","life_id":"ag_kestrel_01","body_generation":1,"state":"completed","tick":48500}}',
   build_failed:
-    '{"source_event_id":"ev_0JZS47PTJM4NN7J7SNDCTYMAQY","at":"2026-11-09T12:00:00.000Z","shard":"phase0","world_day":2,"world_tick":48510,"type":"intent","agent_id":"ag_kestrel_01","payload":{"intent_id":"in_01HZX3V9Q4M2K8R7T6Y5W4E3D5","life_id":"ag_kestrel_01","body_generation":1,"state":"failed","tick":48510,"detail":"out of blocks"}}',
+    '{"source_event_id":"ev_0JZS47PTJM4NN7J7SNDCTYMAQY","at":"2026-11-09T12:00:00.000Z","shard":"phase0","world_day":2,"world_tick":48510,"type":"intent","agent_id":"ag_kestrel_01","payload":{"intent_id":"in_01HZX3V9Q4M2K8R7T6Y5W4E3D5","life_id":"ag_kestrel_01","body_generation":1,"program":"build","state":"failed","tick":48510,"detail":"out of blocks"}}',
   build_cancelled:
-    '{"source_event_id":"ev_QC5T7APBDHD5TYCHACQ32W3GJP","at":"2026-11-09T12:00:00.000Z","shard":"phase0","world_day":2,"world_tick":48520,"type":"intent","agent_id":"ag_kestrel_01","payload":{"intent_id":"in_01HZX3V9Q4M2K8R7T6Y5W4E3D5","life_id":"ag_kestrel_01","body_generation":1,"state":"cancelled","tick":48520}}',
+    '{"source_event_id":"ev_QC5T7APBDHD5TYCHACQ32W3GJP","at":"2026-11-09T12:00:00.000Z","shard":"phase0","world_day":2,"world_tick":48520,"type":"intent","agent_id":"ag_kestrel_01","payload":{"intent_id":"in_01HZX3V9Q4M2K8R7T6Y5W4E3D5","life_id":"ag_kestrel_01","body_generation":1,"program":"build","state":"cancelled","tick":48520}}',
   wander_completed:
     '{"source_event_id":"ev_MSA48R29XPJCFT8H7YRN1KRR4Z","at":"2026-11-09T12:00:00.000Z","shard":"phase0","world_day":2,"world_tick":48500,"type":"intent","agent_id":"ag_kestrel_01","payload":{"intent_id":"in_01HZX3V9Q4M2K8R7T6Y5W4E3D6","life_id":"ag_kestrel_01","body_generation":1,"state":"completed","tick":48500}}',
   action_outcome:

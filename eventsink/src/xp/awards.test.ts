@@ -204,6 +204,13 @@ describe('building row', () => {
     }
     expect(awardsFor(withPayload('build_completed', { program: 'wander' }))).toEqual([]);
   });
+  it('awards nothing for a build intent with program build in any state but completed', () => {
+    for (const state of ['failed', 'cancelled', 'interrupted', 'running', 'paused', 'accepted']) {
+      expect(awardsFor(withPayload('build_completed', { program: 'build', state })), state).toEqual(
+        [],
+      );
+    }
+  });
 });
 
 describe('social row', () => {

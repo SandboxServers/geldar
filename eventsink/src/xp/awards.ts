@@ -122,7 +122,8 @@ function actionAwards(payload: Fields, award: Award): XpAward[] {
 
 /**
  * One award per completed structure, keyed by its `intent_id`, when the completed intent's
- * `program` is `build`. Off while BUILDING_XP_SOURCE_AVAILABLE is false.
+ * `program` is `build`. Gated by BUILDING_XP_SOURCE_AVAILABLE, which is true; set it false to
+ * switch the row off.
  */
 function intentAwards(payload: Fields, award: Award): XpAward[] {
   if (!BUILDING_XP_SOURCE_AVAILABLE) return [];
