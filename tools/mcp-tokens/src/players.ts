@@ -22,6 +22,8 @@ export const SHEET_FILE_MAX_BYTES = 16384;
 
 const PLAYER_ID = /^ag-[a-z0-9]+(-[a-z0-9]+)*$/;
 const LIFE_ID = /^ag_[a-z0-9]+(_[a-z0-9]+)*$/;
+/** The contract LifeId (contract/schemas/common.schema.json); players.sheet.test.ts checks the two agree. */
+export const SHEET_LIFE_ID = /^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$/;
 const HARNESS = /^[a-z][a-z0-9-]{0,31}$/;
 /** The contract's event.schema.json `model` pattern: the declared model of a life. */
 const MODEL = /^[A-Za-z0-9][A-Za-z0-9._:@/+-]{0,127}$/;
@@ -195,6 +197,29 @@ export function seedText(seed: Seed): string {
   return seed.goals.trim() === '' ? seed.identity : `${seed.identity}\n\n## Goals\n\n${seed.goals}`;
 }
 
+/** The agents row in off mode: the statement as it was before the sheet columns existed. */
+const AGENTS_INSERT = `INSERT INTO agents (agent_id, name, life_seq, game_account, shard, mode, owner, harness,
+         declared_model, model_config, tier, personality_seed)
+       VALUES ($1, $2, 1, $1, $3, 'sovereign', $4, $5, $7, 'declared:unverified', 'sovereign', $6)`;
+
+/** The agents row in sheet mode: the sheet, its hash and the time it was adopted (sql 0050). */
+const AGENTS_SHEET_INSERT = `INSERT INTO agents (agent_id, name, life_seq, game_account, shard, mode, owner, harness,
+         declared_model, model_config, tier, personality_seed,
+         character_sheet, sheet_hash, sheet_adopted_at)
+       VALUES ($1, $2, 1, $1, $3, 'sovereign', $4, $5, $7, 'declared:unverified', 'sovereign', $6,
+         $8::jsonb, $9::text, CASE WHEN $9::text IS NULL THEN NULL ELSE now() END)`;
+
+/**
+ * Refuses a sheet life that the contract's LifeId does not take, before any write, so the
+ * sheet_adopted event row this add writes always passes the contract. The pattern is a copy of the
+ * schema's, held equal by a drift test (the contract validator threw under vitest here).
+ */
+function checkAdoptionLife(life: string): void {
+  if (!SHEET_LIFE_ID.test(life)) {
+    throw new Error(`life ${life} cannot take a sheet: its id must match ${SHEET_LIFE_ID.source}`);
+  }
+}
+
 /**
  * Adds a sovereign player: the agents row (mode sovereign), the mcp_players row and the first
  * budget, in one transaction. The owner row is locked so two adds cannot both pass the cap.
@@ -217,6 +242,16 @@ export async function addPlayer(sql: Sql, player: NewPlayer, shard: SovereignSha
   // Checked before any write: a malformed sheet is refused, never repaired.
   const adopted = shard.characterMode === 'sheet' ? adoptedSheet(player.characterSheet) : null;
   const hash = adopted === null ? null : sheetHash(adopted);
+  if (adopted !== null) checkAdoptionLife(player.life);
+  const agentValues = [
+    player.life,
+    player.name,
+    shard.shard,
+    player.owner,
+    player.harness,
+    player.seed ? seedText(player.seed) : null,
+    player.model ?? 'self-reported',
+  ];
   await transaction(sql, async () => {
     const owners = await sql.query(
       'SELECT player_cap FROM mcp_owners WHERE owner_id = $1 FOR UPDATE',
@@ -233,25 +268,13 @@ export async function addPlayer(sql: Sql, player: NewPlayer, shard: SovereignSha
     if (Number(used.rows[0]?.n) >= Number(owner.player_cap)) {
       throw new Error(`owner ${player.owner} is at the cap of ${owner.player_cap} players`);
     }
-    await sql.query(
-      `INSERT INTO agents (agent_id, name, life_seq, game_account, shard, mode, owner, harness,
-         declared_model, model_config, tier, personality_seed,
-         character_sheet, sheet_hash, sheet_adopted_at)
-       VALUES ($1, $2, 1, $1, $3, 'sovereign', $4, $5, $7, 'declared:unverified', 'sovereign', $6,
-         $8::jsonb, $9::text, CASE WHEN $9::text IS NULL THEN NULL ELSE now() END)`,
-      [
-        player.life,
-        player.name,
-        shard.shard,
-        player.owner,
-        player.harness,
-        player.seed ? seedText(player.seed) : null,
-        player.model ?? 'self-reported',
-        adopted === null ? null : JSON.stringify(adopted),
-        hash,
-      ],
-    );
-    if (adopted !== null && hash !== null) await recordAdoption(sql, player.life, adopted, hash);
+    // Off mode runs the original statement, so it works before sql 0050 is applied.
+    if (adopted === null || hash === null) {
+      await sql.query(AGENTS_INSERT, agentValues);
+    } else {
+      await sql.query(AGENTS_SHEET_INSERT, [...agentValues, JSON.stringify(adopted), hash]);
+      await recordAdoption(sql, player.life, adopted, hash);
+    }
     await sql.query(
       `INSERT INTO mcp_players (player_id, owner_id, life_id, display_name, harness, status)
        VALUES ($1, $2, $3, $4, $5, 'active')`,
