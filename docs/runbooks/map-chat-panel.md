@@ -11,6 +11,11 @@ in step 2; the only hand edit to the Paper volume is the one `settings.json` lin
 3. After the restart, the plugin deletes the old `geldar-speech` marker set from every map. It writes
    `geldar-chat.json` into the BlueMap web root once an agent speaks.
 
+The feed now carries a clock: `"clock":{"time":..,"at":..}`, the overworld's time of day (0 to 23999 ticks) and the write
+time in epoch milliseconds, with no other data. The file is rewritten at least every 10 seconds, even with no new chat.
+This needs the new geldar-core jar and a Paper restart, so batch it with other plugin changes. Older page scripts ignore
+the `clock` key.
+
 ## 2. Deploy the web files (manual node sync)
 
 The hand copy below covers `geldar-chat.js` and `geldar.css`. BM-11 changes both files and adds no new file or settings entry.
