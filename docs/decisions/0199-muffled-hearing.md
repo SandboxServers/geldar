@@ -52,7 +52,7 @@ A listener beyond the cut never receives the chat packet, so the Body cannot lea
    - Per chat line, at most 512 block reads in total. When the total is reached, remaining listeners get the silent tier, and the plugin logs a counter, not the words. The 512 and 64 caps are proposals, not measured.
    - Results are cached per tick per (speaker, listener) pair, so a line is cast once per listener.
 
-6. **Notice content.** Fixed text built from enumerated codes. No words, no coordinates, no speaker name. Two codes only: direction (one of eight compass points) and band (near, mid, far, as in 0154 ruling 3). The notice does not identify the speaker. A listener who hears a muffled voice knows only that someone spoke through a wall.
+6. **Notice content.** Fixed text built from enumerated codes. No words, no coordinates, no speaker name. Two codes only: direction and band (near, mid, far, as in 0154 ruling 3). Direction is one of eight compass points, or `overhead` or `below` for a voice straight above or below the listener. "About 0" means the horizontal offset is under 1 block (dx and dz both below 1 in absolute value). `overhead` is used when the speaker is level with or above the listener (dy >= 0, the speaker's y minus the listener's y), `below` when under. The notice does not identify the speaker. A listener who hears a muffled voice knows only that someone spoke through a wall.
 
 7. **Wake.** A `heard_muffled` event does not wake the Mind. This follows 0154 ruling 3. No new wake interest is added. See "Wait interests" below.
 
@@ -86,7 +86,7 @@ A listener beyond the cut never receives the chat packet, so the Body cannot lea
 `heard_muffled` reuses the `heard_sound` shape:
 
 - `kind`: `"heard_muffled"`
-- `direction`: one of eight compass points
+- `direction`: one of eight compass points, or `overhead` or `below` (step 6 defines them)
 - `band`: `near` | `mid` | `far`
 - no coordinates, no speaker, no words
 
