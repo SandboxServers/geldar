@@ -37,7 +37,8 @@ export const SESSION_TTL_MS = SESSION_IDLE_MS;
 /** The terms version an owner accepts at sign-up (C7-08). Version 1 is the owner-approved text (2026-11-11). Bump it when the approved text changes. */
 export const TERMS_VERSION = 'v1';
 const PLAYER_ID = /^ag-[a-z0-9]+(-[a-z0-9]+)*$/;
-const NAME = /^[A-Za-z0-9][A-Za-z0-9 _-]{0,31}$/;
+/** A Minecraft login (DISPLAYNAME-SHAPE, decision 0261 item 2c): 3 to 16 letters, digits or underscore. Also in SQL (0061). */
+const NAME = /^[A-Za-z0-9_]{3,16}$/;
 const MAX_BODY = 4096;
 /** The longest one body status call may take before the page shows no line for that agent (C7-06c). */
 const BODY_STATE_TIMEOUT_MS = 2000;
@@ -399,6 +400,9 @@ export class Account {
     if (result === 'limit')
       return this.show(res, s, 'You have reached the lifetime limit for creating players.');
     if (result === 'taken') return this.show(res, s, 'That player id is taken.');
+    if (result === 'name')
+      return this.show(res, s, 'The agent name must be 3 to 16 letters, digits or underscore.');
+    if (result === 'name_taken') return this.show(res, s, 'That agent name is already taken.');
     this.deps.log('player created');
     return this.handOff(res, s.key, playerId, value);
   }
