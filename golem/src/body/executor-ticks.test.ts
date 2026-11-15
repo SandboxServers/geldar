@@ -37,6 +37,22 @@ describe('ticks: program steps', () => {
     expect(h.sink.wakes[0]).toMatchObject({ reason: 'goal_completed', detail: 'Built X' });
   });
 
+  it('carries the program on the accepted and the completed change (AN-09c)', async () => {
+    const h = executorHarness({
+      script: [{ status: 'completed', detail: { message: 'Built X' } }],
+    });
+    await h.executor.submit(
+      thought({ intent: { program: 'fake', wake_on: ['goal_completed'] } }),
+      planFor(0),
+    );
+    await h.executor.onTick(1);
+    expect(h.sink.intents.map((c) => [c.state, c.program])).toEqual([
+      ['accepted', 'fake'],
+      ['running', 'fake'],
+      ['completed', 'fake'],
+    ]);
+  });
+
   it.each([[undefined], ['   '], [42]])(
     'completes with goal completed when the program gives no usable message (%s)',
     async (message) => {

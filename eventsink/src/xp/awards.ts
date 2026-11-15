@@ -3,12 +3,11 @@ import type { Domain } from '@geldar/psyche';
 import { CROP_BLOCKS, CROP_ITEMS, isMiningItem } from './matrix.ts';
 
 /**
- * Whether building XP can be awarded. The Body's completed intent event carries no `program`
- * (golem/src/body/executor.ts setState passes `intent` only when the state is `accepted`), so the
- * building row cannot fire against the real Body. Flip to `true` only when AN-09c carries `program`
- * on the completed intent event; the building tests then need their expectations changed.
+ * Whether building XP can be awarded. The Body's intent event carries `program` on every change
+ * (golem/src/body/executor.ts setState, AN-09c), so a completed build intent reads it here. An
+ * event with no `program` (from before AN-09c) awards nothing.
  */
-export const BUILDING_XP_SOURCE_AVAILABLE = false;
+export const BUILDING_XP_SOURCE_AVAILABLE = true;
 
 /** The longest evidence key the ledger takes (sql/0050, the xp_evidence key CHECK). */
 export const EVIDENCE_KEY_MAX = 200;
@@ -122,8 +121,9 @@ function actionAwards(payload: Fields, award: Award): XpAward[] {
 }
 
 /**
- * One award per completed structure, keyed by its `intent_id`. Off while
- * BUILDING_XP_SOURCE_AVAILABLE is false: a real completed intent has no `program` to read.
+ * One award per completed structure, keyed by its `intent_id`, when the completed intent's
+ * `program` is `build`. Gated by BUILDING_XP_SOURCE_AVAILABLE, which is true; set it false to
+ * switch the row off.
  */
 function intentAwards(payload: Fields, award: Award): XpAward[] {
   if (!BUILDING_XP_SOURCE_AVAILABLE) return [];
