@@ -21,7 +21,7 @@ const RESERVED_HOST_PORTS = [25565, 25566];
  */
 export const PUBLIC_OVERLAY_PATH = 'compose/colo-public.yml';
 export const PUBLIC_OVERLAY_SERVICE = 'velocity';
-export const PUBLIC_OVERLAY_PORT = '${GELDAR_MC_BIND:?}:${GELDAR_MC_PORT:?}:25565';
+export const PUBLIC_OVERLAY_PORT = `\${GELDAR_MC_BIND:?}:\${GELDAR_MC_PORT:?}:25565`;
 
 /** True for the compose files the rule applies to, by repo-relative, forward-slash path. */
 export function isComposeFile(path: string): boolean {
@@ -63,7 +63,7 @@ export const PARAM_PORT_DEFAULTS: ReadonlyMap<string, number> = new Map([
   ['GLASS', 8787],
   ['BLUEMAP', 8100],
 ]);
-const PARAM_PORT = /^127\.0\.0\.1:\$\{GELDAR_PORT_([A-Z][A-Z0-9_]*):-(\d{1,5})\}:\d{1,5}$/;
+export const PARAM_PORT = /^127\.0\.0\.1:\$\{GELDAR_PORT_([A-Z][A-Z0-9_]*):-(\d{1,5})\}:\d{1,5}$/;
 
 /** Why one parameterised host port is rejected, or null when it is on the allowlist. */
 function paramPortProblem(entry: string, shown: string): string | null {
@@ -158,12 +158,11 @@ const COLO_SOURCE_ALLOWLIST = [
   './bluemap-web',
   './secrets',
 ];
-const BLUEMAP_JAR_SOURCE = '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/bluemap/bluemap.jar';
-const CHUNKY_JAR_SOURCE = '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/chunky/chunky.jar';
-const COREPROTECT_JAR_SOURCE =
-  '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/coreprotect/coreprotect.jar';
+const BLUEMAP_JAR_SOURCE = `\${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/bluemap/bluemap.jar`;
+const CHUNKY_JAR_SOURCE = `\${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/chunky/chunky.jar`;
+const COREPROTECT_JAR_SOURCE = `\${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/coreprotect/coreprotect.jar`;
 /** Glass's private display-alias directory (docs/runbooks/glass-aliases.md): a directory, so the stack starts without the file. */
-const ALIASES_SOURCE = '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/aliases';
+const ALIASES_SOURCE = `\${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/aliases`;
 const NAMED_VOLUME = /^[A-Za-z0-9][A-Za-z0-9_.-]*$/;
 const DEFAULTED = /^\$\{[A-Za-z_][A-Za-z0-9_]*:-([^}]*)\}$/;
 
