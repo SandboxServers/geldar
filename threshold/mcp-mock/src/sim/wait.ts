@@ -39,6 +39,8 @@ export async function waitTool(
 ): Promise<WaitResult> {
   const clock = hub.clock;
   const sim = hub.player(ctx.playerId);
+  // GX-08: honoured only for the instinct class (the server's key check, never the input).
+  const peek = input.peek === true && ctx.source === 'instinct';
   let fromSeq = sim.log.lastSeq();
   if (input.cursor !== undefined) {
     const decoded = decodeCursor(input.cursor);
@@ -69,7 +71,8 @@ export async function waitTool(
       config: hub.config.wake,
       alreadySuppressed: sim.suppressedSeqs,
     });
-    for (const s of decision.suppressed) {
+    // A peek (GX-08) records nothing: no suppression, no spacing window.
+    for (const s of peek ? [] : decision.suppressed) {
       sim.suppressedSeqs.add(s.seq);
       hub.recordSuppressed({
         player_id: ctx.playerId,
@@ -101,7 +104,7 @@ export async function waitTool(
   }
 
   // A timeout starts the spacing window too.
-  sim.lastWakeMs = now;
+  if (!peek) sim.lastWakeMs = now;
   const since = sim.log.since(fromSeq);
   const life = hub.life(ctx.playerId);
   const result: WaitResult = {

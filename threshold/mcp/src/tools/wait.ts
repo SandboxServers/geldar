@@ -93,6 +93,22 @@ export interface WaitRequest {
   signal?: AbortSignal;
   /** Called on each keepalive tick, so the transport can write a progress line. */
   onKeepAlive?: () => void;
+  /**
+   * A non-advancing wait (GX-08). Set only through `peekHonoured`: when true, the wait changes no
+   * delivered mark, wake time, failure memory or open wait. It returns the events after the cursor.
+   */
+  peek?: boolean | undefined;
+}
+
+/**
+ * The GX-08 gate: `peek` is honoured only for the instinct class, whose class the server reads from
+ * the keyed header (GX-06). Any other class, or no class, gets an ordinary wait with the same fields.
+ */
+export function peekHonoured(
+  source: 'model' | 'instinct' | undefined,
+  peek: boolean | undefined,
+): boolean {
+  return source === 'instinct' && peek === true;
 }
 
 export type WaitError =
@@ -161,6 +177,7 @@ export function rememberDelivered(state: WaitState, lifeId: string, seq: number)
 export async function wait(deps: WaitDeps, req: WaitRequest): Promise<WaitOutcome> {
   const { clock, log, state } = deps;
   const { lifeId } = req;
+  const peek = req.peek === true;
   // max_seconds: an integer from MIN_WAIT_SECONDS up; NaN, a missing value and a fraction are refused
   if (!Number.isInteger(req.maxSeconds) || req.maxSeconds < MIN_WAIT_SECONDS) {
     return { ok: false, error: 'bad_max_seconds' };
@@ -186,8 +203,11 @@ export async function wait(deps: WaitDeps, req: WaitRequest): Promise<WaitOutcom
     end.error ??= why;
     control.abort();
   };
-  state.open.get(lifeId)?.('wait_replaced');
-  state.open.set(lifeId, stop);
+  // A peek neither replaces an open wait nor is one: it only reads the log.
+  if (!peek) {
+    state.open.get(lifeId)?.('wait_replaced');
+    state.open.set(lifeId, stop);
+  }
   const onSessionEnd = (): void => stop('session_superseded');
   if (req.signal?.aborted) onSessionEnd();
   req.signal?.addEventListener('abort', onSessionEnd, { once: true });
@@ -288,18 +308,22 @@ export async function wait(deps: WaitDeps, req: WaitRequest): Promise<WaitOutcom
     if (err instanceof BodyUnavailable) return { ok: false, error: 'body_unavailable' };
     throw err;
   }
-  state.lastWakeMs.set(lifeId, now);
+  if (!peek) state.lastWakeMs.set(lifeId, now);
   await touch();
 
   const since = await log.since(lifeId, from);
   // The events this result carries are shown; the next cursor-less wait starts after the newest one.
-  rememberDelivered(
-    state,
-    lifeId,
-    since.events.reduce((top, e) => Math.max(top, e.seq), from),
-  );
-  const facts =
-    deps.failures?.observe(lifeId, since.events, placeOf(bodySnapshot), clock.nowMs()) ?? [];
+  // A peek leaves the delivered mark where it was (GX-08).
+  if (!peek) {
+    rememberDelivered(
+      state,
+      lifeId,
+      since.events.reduce((top, e) => Math.max(top, e.seq), from),
+    );
+  }
+  const facts = peek
+    ? []
+    : (deps.failures?.observe(lifeId, since.events, placeOf(bodySnapshot), clock.nowMs()) ?? []);
   const situation = situationLine(bodySnapshot);
   const result: WaitResult = {
     ...(situation === undefined ? {} : { situation }),
@@ -320,17 +344,19 @@ export async function wait(deps: WaitDeps, req: WaitRequest): Promise<WaitOutcom
   };
   const fitted = fitResult(result, deps.maxResultBytes ?? MAX_RESULT_BYTES, wakingSeqs);
   // fitResult cuts events only, so no snapshot section is cut here; a cut one would never be unchanged.
-  applyWaitDelta(
-    state.sent,
-    {
-      lifeId,
-      session: req.session,
-      cursor: req.cursor,
-      resultCursor: result.cursor,
-      trimmed: { unlocked_recipes: false, notable_blocks: false },
-    },
-    fitted.snapshot,
-    waitDeltaOn(deps.waitDelta, lifeId),
-  );
+  if (!peek) {
+    applyWaitDelta(
+      state.sent,
+      {
+        lifeId,
+        session: req.session,
+        cursor: req.cursor,
+        resultCursor: result.cursor,
+        trimmed: { unlocked_recipes: false, notable_blocks: false },
+      },
+      fitted.snapshot,
+      waitDeltaOn(deps.waitDelta, lifeId),
+    );
+  }
   return { ok: true, result: fitted };
 }
