@@ -203,13 +203,27 @@ describe('deploy/colo-supervisor.sh: re-runs and refusals (C7-03b2)', () => {
     expect(created(r.calls)).toHaveLength(0);
   });
 
-  it('refuses an image that is a tag, or a value that starts with a dash, and creates nothing', () => {
-    for (const image of ['geldar-supervisor:c7', `-${IMAGE}`]) {
+  it('refuses an image that is a tag, a value that starts with a dash, or a digest that is not exactly 64 lowercase hex, and creates nothing', () => {
+    const digest = (hex: string) => `registry.example.invalid/geldar/supervisor@sha256:${hex}`;
+    const images = [
+      'geldar-supervisor:c7',
+      `-${IMAGE}`,
+      digest('a'.repeat(63)),
+      digest('a'.repeat(65)),
+      digest('A'.repeat(64)),
+      `${IMAGE}x`,
+    ];
+    for (const image of images) {
       const r = run({ GELDAR_SUPERVISOR_IMAGE: image });
       expect(r.status, image).toBe(1);
       expect(r.stderr, image).toContain('must be a digest reference');
       expect(created(r.calls), image).toHaveLength(0);
     }
+  });
+
+  it('reads the owner with stat -L, so a symlink is judged by its target and not by the link', () => {
+    const script = readFileSync(SCRIPT, 'utf8');
+    expect(script).toMatch(/"\$STAT" -L -c %u "\$path"/);
   });
 
   it('refuses a secrets dir that is relative, or has a comma in it, and creates nothing', () => {

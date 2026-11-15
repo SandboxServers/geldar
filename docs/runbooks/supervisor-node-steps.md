@@ -16,7 +16,9 @@ Each one: mode 0600, owned by `GELDAR_SERVICE_UID`, not empty. Compose declares 
 
 Merge is held until geldar-93 has created the three secret files; the owner's word is needed. Step 1 below creates them and checks them with `stat`.
 
-## Gates (all must hold before any step runs)
+## Gates (steps 2 to 5)
+
+Gates 1 to 4 apply to steps 2 to 5. Step 1 (the three secret files) is done before the merge and needs only geldar-93's DONE and the owner's word; it does not wait for these gates.
 
 1. The C7-03b4 live check has been run by the orchestrator, or the orchestrator has said the supervisor may start without it. The gate in the card is "must not be enabled before the C7-03b4 live check".
 2. geldar-93 has received this plan: the exact diff, the commands, the time window and the rollback. geldar-93 answers DONE per step. The orchestrator holds each step until DONE.
@@ -35,7 +37,7 @@ Merge is held until geldar-93 has created the three secret files; the owner's wo
 
 1. **Secret files.** Owner uid first: `GELDAR_SERVICE_UID` is the node env value (default 1000, the uid every colo service runs as). Every secret file below must be owned by that uid, or the script and the deploy refuse it. Create the three files in `GELDAR_SECRETS_DIR`, mode 0600:
    - `postgres-supervisor.txt`: written by `deploy/gen-secrets.sh` (random; it creates only missing files).
-   - `nats-supervisor.txt`: created on the node by the method in `docs/runbooks/nats-auth-inplace.md` step 0 (`umask 077`, `set -C`, random value). That is its only author. The script never creates it, and no value goes on a command line or into the repo.
+   - `nats-supervisor.txt`: created on the node by the method in `docs/runbooks/nats-auth-inplace.md` step 0 (`umask 077`, `set -C`, random value), then `chown` to `GELDAR_SERVICE_UID` (the owner check refuses another owner). That is its only author. The script never creates it, and no value goes on a command line or into the repo. Creating it by that method first needs `nats-helper.txt` to exist: step 0 stops without it, and the helper install script (C7-03c5) creates that file. If the helper is not installed yet, geldar-93 creates the file with the same `umask 077` / `set -C` / `openssl rand` pattern without that stop line, noting it in the change log.
    - `nats-register.txt`: the same method (`umask 077`, `set -C`, so an existing file is never overwritten), then `chown` to `GELDAR_SERVICE_UID`. Its NATS user is added in step 3b.
    Check the modes, sizes and owners with `stat -c '%a %u %s %n'` only. Do not print the contents.
 
@@ -49,7 +51,7 @@ Merge is held until geldar-93 has created the three secret files; the owner's wo
    - 3b. The `register` user, as in `docs/runbooks/open-signup.md` step 11: publish `geldar.<s>.ctl.body.>`, subscribe `_INBOX.>`, password from `nats-register.txt`. Its batch is separate from the helper batch. Never `./geldar.ps1 shard nats-auth colo` (see above). The diff must show only the `register` user.
    `body-helper-node-steps.md` states that the register user is unchanged by its batch, so 3b is not in that runbook.
 
-4. **Start the container.** `GELDAR_SUPERVISOR_IMAGE` is the digest reference of the supervisor image (`ghcr.io/sandboxservers/geldar-supervisor@sha256:` and 64 hex characters). It is taken from the colo-images run log of the merge commit (the supervisor job's push step). It is not in `release.env` or the manifest summary yet, so do not look for it there. A tag is refused, and so is a value that starts with `-`.
+4. **Start the container.** `GELDAR_SUPERVISOR_IMAGE` is the digest reference of the supervisor image (`ghcr.io/sandboxservers/geldar-supervisor@sha256:` and 64 hex characters). It is taken from the colo-images run log of the merge commit: the line `supervisor digest: <digest>` that the supervisor job's last step prints (C7-03b2 workflow change). It is not in `release.env` or the manifest summary yet, so do not look for it there. A tag is refused, and so is a value that starts with `-`.
    `GELDAR_SECRETS_DIR` must be an absolute path with no comma. `GELDAR_SERVICE_UID` must match the owner of the secret files.
    `GELDAR_SUPERVISOR_IMAGE=<digest> GELDAR_SECRETS_DIR=<absolute secrets dir> GELDAR_SERVICE_UID=<uid> deploy/colo-supervisor.sh`
    The script runs `docker create` and then `docker start` with the same flags, limits, labels, log options, read-only root, secret mounts and uid as the compose service (0.25 CPU, 128m memory with no swap, 64 pids). It refuses, and changes nothing, when the `geldar-colo` network is missing, when a secret file is missing or owned by another uid, when the image is not a digest, or when a container with the name already exists. It never calls compose and never creates or removes a network.

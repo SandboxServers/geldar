@@ -243,6 +243,15 @@ describe('colo-images.yml images', () => {
     expect(text).toContain(`\${GITHUB_SHA:0:12}`);
     expect(text.match(/:main$/gm)?.length).toBe(PUSHED_IMAGES.length);
   });
+
+  it('prints the supervisor digest in a run step, so the runbook can read it from the run log', () => {
+    const runs = (jobs.supervisor?.steps ?? []).map((step) => step.run ?? '');
+    expect(
+      runs.some((run) =>
+        run.includes(`echo "supervisor digest: \${{ steps.push.outputs.digest }}"`),
+      ),
+    ).toBe(true);
+  });
 });
 
 describe('colo-images.yml release manifest', () => {

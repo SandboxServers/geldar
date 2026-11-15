@@ -40,6 +40,7 @@ if [[ ! "$IMAGE" =~ ^[^-].*@sha256:[0-9a-f]{64}$ ]]; then
   exit 1
 fi
 
+# A relative path that starts with a drive letter is still refused by docker later (a relative bind source).
 case "$SECRETS_DIR" in
   /* | [A-Za-z]:/*) ;; # a POSIX absolute path, or a drive path (the Windows test host)
   *)
@@ -66,7 +67,7 @@ for file in postgres-supervisor.txt nats-supervisor.txt; do
     echo "refusing: $path is missing (geldar-93 writes the NATS file; gen-secrets.sh the Postgres file)" >&2
     exit 1
   fi
-  owner="$("$STAT" -c %u "$path")"
+  owner="$("$STAT" -L -c %u "$path")"
   if [ "$owner" != "$UID_VALUE" ]; then
     echo "refusing: $path is owned by uid $owner, but the container runs as uid $UID_VALUE (chown it to GELDAR_SERVICE_UID)" >&2
     exit 1

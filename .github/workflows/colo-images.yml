@@ -1,7 +1,7 @@
 # Publishes the Colo images (Body, Mind, Eventsink, MCP, admin, Glass, register) and the supervisor image to GHCR on a push to main that changes them, and on manual dispatch.
 # No pull_request trigger: pull requests and forks never publish. Each job also requires the upstream repository.
 # Each image is pushed, then its digest is read from the build-push output. The manifest job writes release.env
-# (the artifact `release.env`) with one digest reference per image: deploy/colo-up.sh reads it (decision 0084). The supervisor image is pushed but is not in release.env yet (C7-03b2 adds it).
+# (the artifact `release.env`) with one digest reference per image: deploy/colo-up.sh reads it (decision 0084). The supervisor image is pushed but is not in release.env yet; its last step prints the digest to the run log (see docs/runbooks/supervisor-node-steps.md).
 # Tags :main and :<12-char commit> are for humans; the deploy pins digests. Unsigned, no SBOM, no provenance
 # attestation (same as mcp-mock-image.yml). Packages are created private: making them public and linking them
 # to the repository are owner actions.
@@ -379,6 +379,9 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: print supervisor digest
+        run: |
+          echo "supervisor digest: ${{ steps.push.outputs.digest }}"
 
   manifest:
     name: release manifest
