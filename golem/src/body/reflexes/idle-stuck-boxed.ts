@@ -99,21 +99,64 @@ export function boxedWaitTicks(view: BodyView): number {
  * hostile stands within `BOXED_NIGHT_HOSTILE_RADIUS` blocks.
  */
 export function boxedHeld(view: BodyView, now: number): boolean {
-  if (ownHoleWithin(view, now, BOXED_HOLE_TICKS)) return true;
-  return isNightForBoxed(view) && view.nearbyHostiles(BOXED_NIGHT_HOSTILE_RADIUS).length > 0;
+  return boxedHoldReason(view, now) !== null;
+}
+
+/** Why the boxed trigger is held off: the Body's own hole, or a hostile at night; null when it is not held. */
+export type BoxedHold = 'own_hole' | 'hostile' | null;
+
+/** The hold reason of the boxed trigger at `now` (see `boxedHeld`). */
+export function boxedHoldReason(view: BodyView, now: number): BoxedHold {
+  if (ownHoleWithin(view, now, BOXED_HOLE_TICKS)) return 'own_hole';
+  // A view with no hostile read (a test fake, or a watch line on one) holds nothing for hostiles.
+  if (
+    isNightForBoxed(view) &&
+    (view.nearbyHostiles?.(BOXED_NIGHT_HOSTILE_RADIUS).length ?? 0) > 0
+  ) {
+    return 'hostile';
+  }
+  return null;
 }
 
 /** What the attempt gate says now: `ok`, the cooldown still holds, or the hour's cap is reached. */
 export type BoxedGate = 'ok' | 'cooldown' | 'cap';
 
+/** The gate's answer at `now`, read without changing any state. */
+function gateNow(view: BodyView, now: number): BoxedGate {
+  const state = boxedStateOf(view);
+  if (now < state.cooldownUntil) return 'cooldown';
+  const live = state.attempts.filter((started) => now - started < HOUR_TICKS);
+  return live.length >= BOXED_RUNS_PER_HOUR ? 'cap' : 'ok';
+}
+
 /** The attempt gate (decision 0336): the cooldown first, then the hour's cap. A gate that is open clears the cap line. */
 export function boxedGate(view: BodyView, now: number): BoxedGate {
   const state = boxedStateOf(view);
   state.attempts = state.attempts.filter((started) => now - started < HOUR_TICKS);
-  if (now < state.cooldownUntil) return 'cooldown';
-  if (state.attempts.length >= BOXED_RUNS_PER_HOUR) return 'cap';
-  state.capLogged = false;
-  return 'ok';
+  const gate = gateNow(view, now);
+  if (gate === 'ok') state.capLogged = false;
+  return gate;
+}
+
+/**
+ * The first gate the boxed trigger fails, checked in the trigger's own order (the watch line's `gate`):
+ * `wait` while the still spell is shorter than the boxed clock, `not_boxed` for a region that is not closed
+ * or no failed walks, `held` for a hold, `cooldown` or `cap` for the attempt gate, and `none` when all open.
+ * `idle` is the still spell in ticks at `now`.
+ */
+export type BoxedBlock = 'wait' | 'not_boxed' | 'held' | 'cooldown' | 'cap' | 'none';
+
+export function boxedFirstGate(
+  view: BodyView,
+  here: { x: number; y: number; z: number },
+  idle: number,
+  now: number,
+): BoxedBlock {
+  if (idle < boxedWaitTicks(view)) return 'wait';
+  if (!isBoxedIn(view, here)) return 'not_boxed';
+  if (boxedHoldReason(view, now) !== null) return 'held';
+  const gate = gateNow(view, now);
+  return gate === 'ok' ? 'none' : gate;
 }
 
 /** Notes one boxed attempt at `now` (a run or a refused run) and starts the cooldown. Returns the attempts this hour. */
