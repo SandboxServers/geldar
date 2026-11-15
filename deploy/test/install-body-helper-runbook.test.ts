@@ -7,7 +7,7 @@ const REPO = fileURLToPath(new URL('../..', import.meta.url));
 const CANARY = 'CANARY-SECRET-7f3a9c-do-not-print';
 
 // The node runbook's text checks. They live in their own file to keep install-body-helper.test.ts under 500 lines.
-const RUNBOOK =readFileSync(join(REPO, 'docs/runbooks/body-helper-node-steps.md'), 'utf8');
+const RUNBOOK = readFileSync(join(REPO, 'docs/runbooks/body-helper-node-steps.md'), 'utf8');
 const NATS_PROCEDURE = readFileSync(join(REPO, 'docs/runbooks/nats-auth-inplace.md'), 'utf8');
 
 describe('body-helper-node-steps.md: the node runbook (C7-03c2)', () => {

@@ -19,21 +19,46 @@ Related: [0080 NATS auth cutover](../decisions/0080-nats-auth-cutover.md), [0087
 
 ## Drift to resolve first
 
-As of 2026-11-14 the live file and the generator differ (by user name only; no secret values are recorded here):
+As of 2026-11-14 the live file and the generator on `main` differ (by user and permission line only; no secret values are recorded here). The helper column is the generator after PR #415, which is not merged yet (`git grep helper -- geldar.ps1` on `main` finds nothing).
 
-- Live has 8 users: body, mind, eventsink, mcp, velocity, paper, kino, deploy. The generator has 10: it adds `supervisor` and `register`. The node has no `nats-supervisor.txt` or `nats-register.txt`, and no compose mapping for them.
-- `body` publish deny: live denies `geldar.colo.kino.>` and `geldar.colo.blockowner.changed`; the generator denies `geldar.colo.ctl.body.>` instead.
-- `paper` publish deny: live denies `geldar.colo.kino.control` and `geldar.colo.blockowner.query`; the generator denies `geldar.colo.ctl.body.>`.
-- Other users match.
+| Entry | Live node | Generator on `main` | Generator after #415 | Batch on the node |
+|---|---|---|---|---|
+| user `helper` | absent | absent | Sub the four helper subjects, Pub `_INBOX.>` | add |
+| user `supervisor` | absent | Pub `_INBOX.>`, Sub `geldar.<s>.ctl.body.>` | adds the four helper subjects to Pub, and `_INBOX.>` to Sub | add |
+| user `register` | absent | Pub `geldar.<s>.ctl.body.>`, Sub `_INBOX.>` | unchanged | not in this batch |
+| `body` PubDeny | `geldar.<s>.kino.>`, `geldar.<s>.blockowner.changed` | the same two, plus `geldar.<s>.ctl.body.>` and `geldar.<s>.state.*.level` | adds `geldar.<s>.helper.body.>` | add `geldar.<s>.helper.body.>` only |
+| `paper` PubDeny | `geldar.<s>.kino.control`, `geldar.<s>.blockowner.query` | the same two, plus `geldar.<s>.ctl.body.>` and `geldar.<s>.state.*.level` | adds `geldar.<s>.helper.body.>` | add `geldar.<s>.helper.body.>` only |
+
+Other users match. Live has 8 users (body, mind, eventsink, mcp, velocity, paper, kino, deploy); after this batch it has 10. The node has no `nats-supervisor.txt`, `nats-helper.txt` or `nats-register.txt`, and no compose mapping for them. The live `body` and `paper` denies for `ctl.body.>` and `state.*.level` stay drift until their own change; this batch does not add them.
 
 Pending additions, none in the generator or the live file. Each needs its own decision-owner go:
 
 - Sheet state subjects (decision 0280 known gap): deny publish `geldar.<s>.state.*.level` for body and paper; eventsink publish `geldar.<s>.life.*.sheet`; body and paper PubDeny `geldar.<s>.life.>`.
 - Hearing subject (decision 0199 option A): body PubDeny `geldar.<s>.body.*.hearing`.
 - Provenance (`docs/analysis/harness/work-packets-geldar-b.md`, about line 34): body PubDeny and Sub on `provenance.>`.
-- Registration's `supervisor`, `register` and helper users.
+- Body control on the live node: `body` and `paper` PubDeny `geldar.<s>.ctl.body.>` (the generator on `main` has it, the live file does not), and the `register` user. The `register` user and its `REGISTER_NATS_*` env are the REG-NATS-COMPOSE row in `docs/analysis/phase1/ledger.md`, folded into C7-03b2.
+- The batch below (`helper` and `supervisor` users, `helper.body.>` denies) is pending the PR #415 merge and its own owner go.
 
 **Rule:** a change to the live file must land in `geldar.ps1` (the user list and the permission lines) in the same change, or the repo and the node drift again. Do not apply a live change that the generator does not produce. The change in the repo is reviewed like the live change.
+
+## Batch: body helper users and subjects
+
+This batch is the body helper's NATS wiring from the C7 registration session. The subjects and permissions are in `docs/analysis/phase1/packets/c7f-packets.md` (item 7) and `docs/analysis/phase1/packets/c7c-packets.md` (`supervisor` and `register`). `<s>` is the shard name, `colo` on the node. The generator lines are in PR #415 (`Get-NatsUsers` in `geldar.ps1`, pinned by `tools/repo-checks/src/nats-auth.test.ts`). Apply the batch only after #415 is merged, so that the node runs what the generator produces. `/opt/geldar` does not exist on the node yet; the install script (card C7-03c5) creates it (root, mode 0755) together with the pinned node binary and the bundled `dist/main.js`, both hash-checked, because the node has no Node runtime on PATH for any user.
+
+Names and subjects only:
+
+- **NEW user `helper`**
+  - Sub: exactly four subjects, no wildcard: `geldar.<s>.helper.body.start`, `geldar.<s>.helper.body.stop`, `geldar.<s>.helper.body.status`, `geldar.<s>.helper.body.logtail`.
+  - Pub: `_INBOX.>` only.
+  - Password file: `secrets/nats-helper.txt` (root-only). The helper install script creates it before this change; this runbook only reads it.
+- **NEW user `supervisor`** (absent on the live file today)
+  - Pub: the same four exact subjects (`geldar.<s>.helper.body.start`, `.stop`, `.status`, `.logtail`), plus `_INBOX.>`. The `_INBOX.>` stays because the supervisor answers `ctl.body.*` requests on inboxes (c7c); without it the replies to register fail.
+  - Sub: `geldar.<s>.ctl.body.>` and `_INBOX.>`.
+  - Password file: `secrets/nats-supervisor.txt`.
+- **`register`**: unchanged by this batch (Pub `geldar.<s>.ctl.body.>`, Sub `_INBOX.>`). The live file has no `register` user. Adding it is the REG-NATS-COMPOSE step (`docs/analysis/phase1/ledger.md`), not this batch.
+- **`body` and `paper`**: add PubDeny `geldar.<s>.helper.body.>`. Nothing else changes in their lines.
+
+The password files must exist before step 2: `nats-supervisor.txt` is created by step 0, and `nats-helper.txt` by the helper install script. The new users go into the conf only after both files exist. A batch change that adds only these lines is the one the diff in step 3 must show.
 
 ## Procedure
 
@@ -42,6 +67,21 @@ Run on the Colo node, as the account that owns the secrets directory. Never prin
 **0. Preconditions**
 
 - The owner go is recorded, and the window is agreed.
+- For the batch, PR #415 is merged to `main` and the node has the merged `geldar.ps1`.
+- The helper install script has run on the node, so `secrets/nats-helper.txt` exists and is non-empty. This runbook never creates, chowns or overwrites that file:
+  ```sh
+  test -s /mnt/nvme/geldar-colo/secrets/nats-helper.txt && echo "nats-helper.txt present"
+  ```
+  If the line prints nothing, stop: the install script has not run, and the NATS edit waits for it.
+- Create ONLY `nats-supervisor.txt`. Do it in a shell with `umask 077` and `set -C`, so an existing file is never overwritten. Never print the value, and never paste it into a log or chat:
+  ```sh
+  umask 077
+  set -C
+  openssl rand -hex 32 > /mnt/nvme/geldar-colo/secrets/nats-supervisor.txt
+  set +C
+  stat -c '%U:%G %a %n' /mnt/nvme/geldar-colo/secrets/nats-supervisor.txt
+  ```
+  The `stat` output must show mode `600`. If `set -C` refuses the file, it exists: stop and check it with the owner, do not overwrite it.
 - If clients may drop (any role that loses or gains permissions, or a restart), publish a maintenance notice first: `deploy/colo-notice.sh pause bodies <seconds>` (or `world`), and `back` after the change. The notice needs `nats-deploy.txt`; it warns and publishes nothing if the file is missing.
 - Record the container count and the connection count:
   ```sh
@@ -66,7 +106,8 @@ Record the two sha256 values. They must match.
 
 - Make a private staging directory outside `secrets/`: `install -d -m 0700 "$HOME/nats-stage"`. Do not use `secrets/nats-auth.conf.new`: it is a stale, unvalidated leftover. Do not use it, and do not delete it without the owner.
 - Write the new conf to `$HOME/nats-stage/nats-auth.conf` with `umask 077`, so it is `0600`.
-- Passwords come from the existing `secrets/nats-<user>.txt` files, one per user that already exists. This runbook creates no new password for an existing user. A new user (see the pending list) needs its own owner go and its password file made with `umask 077`; never print it.
+- Passwords come from the existing `secrets/nats-<user>.txt` files, one per user that already exists. This runbook creates no new password for an existing user. The helper's password is READ from `secrets/nats-helper.txt`, the file the helper install script already created; the helper's environment points at the same file, so both sides use one value. Never create or overwrite that file here. The supervisor's password is read from `nats-supervisor.txt` (step 0). Copy each value into the staged conf with a script that reads the file. Never echo it, and never type it by hand.
+- For the batch, add to the staged copy only the lines in the batch section: the `helper` and `supervisor` users, and one `geldar.<s>.helper.body.>` PubDeny each on `body` and `paper`.
 - Check the monitor line is unchanged:
   ```sh
   grep -n 'http:' /mnt/nvme/geldar-colo/secrets/nats-auth.conf "$HOME/nats-stage/nats-auth.conf"
@@ -93,6 +134,8 @@ diff "$HOME/nats-stage/old.redacted" "$HOME/nats-stage/new.redacted"
 ```
 
 Read the diff against the pending list and the decision. Only the expected users and subjects may change. Delete the two `.redacted` files afterwards.
+
+For the batch, the diff must show exactly: two added user blocks (`helper`, `supervisor`) with the subjects of the batch section, and one added `helper.body.>` PubDeny line each on `body` and `paper`. Any other line, including a `register` user, stops the change.
 
 **4. Apply in place**
 
@@ -127,6 +170,7 @@ It should return to the pre-change number, 54 on 2026-11-14, within a minute or 
 **6. Verify each changed role**
 
 - For each role whose permissions changed, check one denied publish is refused and one allowed publish still works. A refused publish is logged as a `Permissions Violation` line (`docker logs --since 5m geldar-colo-nats-1 | grep -i 'permissions violation'`). Do the allowed check with the role's own client, not the admin account.
+- For the batch, with each role's own client and never the admin account: `supervisor` publishes a `geldar.<s>.helper.body.status` request and is not refused; `body` publishing `geldar.<s>.helper.body.status` is refused (`Permissions Violation`); `helper` subscribing to `geldar.<s>.helper.body.>` is refused, and subscribing to `geldar.<s>.helper.body.status` is allowed. A request with no responder is still an allowed publish; the helper may not be running yet.
 - Check that `body`, `mcp` and `eventsink` are connected (the connection count, and their names in `GET /connz`, read through `docker exec ... wget`).
 - Check for dead letters: no new dead-letter messages in the logs of Body, MCP and eventsink since the change.
 - Body hosts and MCP reconnect on their own. Confirm it in their logs. Do not restart them by hand unless they stay disconnected for more than five minutes.
@@ -142,7 +186,7 @@ docker kill -s HUP geldar-colo-nats-1
 docker logs --since 2m geldar-colo-nats-1
 ```
 
-The `sha256sum` must equal the backup's value from step 1. Then repeat the `Reloaded` check and the connection count from step 5. Keep the backup until the change is confirmed for a day.
+The `sha256sum` must equal the backup's value from step 1. Then repeat the `Reloaded` check and the connection count from step 5. Keep the backup until the change is confirmed for a day. The two new password files stay after a rollback; remove them only with the owner.
 
 ## Client impact
 
