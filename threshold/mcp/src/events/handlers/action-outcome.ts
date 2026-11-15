@@ -3,7 +3,8 @@ import { defineMindHandler } from './types.ts';
 
 /**
  * An action's outcome. The fixed fields cross: the verb and reason code. A failure's cleaned `detail_text`
- * crosses too; a success's crosses only for a verb in `PLAIN_FACT_VERBS` (eat, sleep). The presenter rebuilds the text.
+ * crosses too; a success's crosses only for a verb in `PLAIN_FACT_VERBS` (eat, sleep, till, place). The presenter
+ * rebuilds the text.
  */
 export const actionOutcomeHandler = defineMindHandler('action_outcome', (event, base) => {
   const p = event.payload;

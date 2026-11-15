@@ -103,6 +103,27 @@ describe('action_outcome mapping (C5-02)', () => {
     expect(
       texts({ verb: 'goto', index: 0, ok: true, message: 'x', detail_text: 'moved 12 blocks' }),
     ).toEqual(['action|Your goto worked.']);
+    expect(
+      texts({ verb: 'use', index: 0, ok: true, message: 'x', detail_text: 'flint_and_steel lit' }),
+    ).toEqual(['action|Your use worked.']);
+  });
+
+  it('an ok till or place keeps its plain fact, as eat and sleep do', () => {
+    expect(
+      texts({ verb: 'till', index: 0, ok: true, message: 'x', detail_text: 'dirt to farmland' }),
+    ).toEqual(['action|Your till worked: dirt to farmland.']);
+    expect(
+      texts({
+        verb: 'place',
+        index: 0,
+        ok: true,
+        message: 'x',
+        detail_text: 'oak_planks at 3 slots',
+      }),
+    ).toEqual(['action|Your place worked: oak_planks at 3 slots.']);
+    expect(
+      texts({ verb: 'till', index: 0, ok: true, message: 'x', detail_text: 'go to 10, 64, 20' }),
+    ).toEqual(['action|Your till worked.']);
   });
 
   it('an ok eat cleans control characters, caps length and drops unsafe text', () => {
