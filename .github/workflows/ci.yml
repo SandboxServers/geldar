@@ -308,6 +308,7 @@ jobs:
           eventsink/test/eventsink.it.test.ts
           eventsink/test/projection.it.test.ts
           eventsink/test/audit.it.test.ts
+          eventsink/test/xp.it.test.ts
           golem/src/mind-link/server.it.test.ts
           threshold/mcp/test/nats-auth.it.test.ts
       - name: stop the eventsink and show its log
