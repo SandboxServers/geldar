@@ -96,6 +96,16 @@ describe('start runs the admit one-shot first', () => {
     expect(create).toBeGreaterThan(admit);
   });
 
+  it('creates the admit in add mode under its exact name, with the mode in Env and the label', async () => {
+    const { handle, engine } = setup();
+    await handle(start());
+    const admit = engine.oneShots[0];
+    expect(admit?.name).toBe(ADMIT_NAME);
+    const config = admit?.config as { Env: string[]; Labels: Record<string, string> };
+    expect(config.Env).toContain('GELDAR_ADMIT_MODE=add');
+    expect(config.Labels['geldar.admit']).toBe('add');
+  });
+
   it('binds exactly the RCON password file into the admit, read-only', async () => {
     const { handle, engine } = setup();
     await handle(start());

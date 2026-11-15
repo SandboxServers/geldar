@@ -12,6 +12,7 @@ import {
   admitLifeWithConfig,
   removeLife,
   removeLifeOverRcon,
+  removeLifeWithConfig,
 } from './whitelist.ts';
 
 vi.mock('../rcon.ts', () => ({ RconClient: { connect: vi.fn() } }));
@@ -84,6 +85,36 @@ describe('admissionOnly', () => {
     await expect(source.command('whitelist add ag_jason_01')).resolves.toBe('ok');
     expect(rcon.sent).toEqual(['whitelist add ag_jason_01']);
   });
+
+  it('in remove mode refuses whitelist add for this life and any remove for another life', async () => {
+    const rcon = fakeRcon('ok');
+    const source = admissionOnly(rcon.source, 'ag_jason_01', 'remove');
+    await expect(source.command('whitelist add ag_jason_01')).rejects.toThrow(
+      'admission sends only its own whitelist remove',
+    );
+    await expect(source.command('whitelist remove ag_billy_01')).rejects.toThrow();
+    await expect(source.command('op ag_jason_01')).rejects.toThrow();
+    await expect(source.command('stop')).rejects.toThrow();
+    expect(rcon.sent).toEqual([]);
+    await expect(source.command('whitelist remove ag_jason_01')).resolves.toBe('ok');
+    expect(rcon.sent).toEqual(['whitelist remove ag_jason_01']);
+  });
+
+  it('in add mode refuses whitelist remove for this life, and any other command', async () => {
+    const rcon = fakeRcon('ok');
+    const source = admissionOnly(rcon.source, 'ag_jason_01', 'add');
+    await expect(source.command('whitelist remove ag_jason_01')).rejects.toThrow();
+    await expect(source.command('whitelist list')).rejects.toThrow();
+    expect(rcon.sent).toEqual([]);
+  });
+
+  it('refuses a mode other than add or remove before it sends anything', () => {
+    const rcon = fakeRcon('ok');
+    expect(() => admissionOnly(rcon.source, 'ag_jason_01', 'op' as unknown as 'add')).toThrow(
+      'admission mode is add or remove',
+    );
+    expect(rcon.sent).toEqual([]);
+  });
 });
 
 describe('admitLifeOverRcon', () => {
@@ -132,6 +163,87 @@ describe('removeLifeOverRcon', () => {
       /unexpected reply/,
     );
     expect(bad.state.closed).toBe(true);
+  });
+});
+
+describe('removeLifeWithConfig', () => {
+  const connect = vi.mocked(RconClient.connect);
+  let dir: string;
+
+  beforeEach(async () => {
+    connect.mockClear();
+    dir = await mkdtemp(join(tmpdir(), 'remove-config-'));
+  });
+
+  afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+
+  async function configWithPassword(): Promise<GolemConfig> {
+    const passwordFile = join(dir, 'rcon.txt');
+    await writeFile(passwordFile, 'pass-word-1\n', 'utf8');
+    return {
+      mcHost: 'mc.test',
+      mcPort: 25565,
+      rconHost: 'rcon-host.test',
+      rconPort: 25999,
+      rconPasswordFile: passwordFile,
+    };
+  }
+
+  it('connects with the configured password, sends only whitelist remove for the id, and closes', async () => {
+    const conn = fakeConnection('Removed ag_jason_01 from the whitelist');
+    connect.mockResolvedValueOnce(conn.connection as unknown as RconClient);
+    await removeLifeWithConfig(await configWithPassword(), 'ag_jason_01');
+    expect(connect).toHaveBeenCalledWith({
+      host: 'rcon-host.test',
+      port: 25999,
+      password: 'pass-word-1',
+    });
+    expect(conn.sent).toEqual(['whitelist remove ag_jason_01']);
+    expect(conn.state.closed).toBe(true);
+  });
+
+  it('accepts not whitelisted as an idempotent success', async () => {
+    const conn = fakeConnection('Player is not whitelisted');
+    connect.mockResolvedValueOnce(conn.connection as unknown as RconClient);
+    await expect(
+      removeLifeWithConfig(await configWithPassword(), 'ag_jason_01'),
+    ).resolves.toBeUndefined();
+    expect(conn.state.closed).toBe(true);
+  });
+
+  it('closes the client and throws when the reply is unexpected', async () => {
+    const conn = fakeConnection('Unknown command');
+    connect.mockResolvedValueOnce(conn.connection as unknown as RconClient);
+    await expect(removeLifeWithConfig(await configWithPassword(), 'ag_jason_01')).rejects.toThrow(
+      /unexpected reply/,
+    );
+    expect(conn.state.closed).toBe(true);
+  });
+
+  it('closes the client when the command rejects', async () => {
+    const state = { closed: false };
+    const failing = {
+      async command(): Promise<string> {
+        throw new Error('socket reset');
+      },
+      async close() {
+        state.closed = true;
+      },
+    };
+    connect.mockResolvedValueOnce(failing as unknown as RconClient);
+    await expect(removeLifeWithConfig(await configWithPassword(), 'ag_jason_01')).rejects.toThrow(
+      'socket reset',
+    );
+    expect(state.closed).toBe(true);
+  });
+
+  it('refuses a malformed id before it sends anything', async () => {
+    const conn = fakeConnection('Removed');
+    connect.mockResolvedValueOnce(conn.connection as unknown as RconClient);
+    await expect(removeLifeWithConfig(await configWithPassword(), 'ag_x;op')).rejects.toThrow();
+    expect(conn.sent).toEqual([]);
   });
 });
 

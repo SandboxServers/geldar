@@ -45,6 +45,7 @@ const admitInput = {
   network: 'geldar-colo',
   stack: 'colo',
   lifeId: 'ag_0123456789ab',
+  mode: 'add' as const,
   rconSecretHostPath: '/root/secrets/rcon.txt',
 };
 
@@ -100,6 +101,26 @@ describe('managed Body template', () => {
     ]);
   });
 
+  it('labels the managed Body with its validated life id (geldar.life), next to the owner and the Body label', () => {
+    const labels = managedBodyConfig(managedInput).Labels as Record<string, string>;
+    expect(labels).toEqual({
+      'com.centurylinklabs.watchtower.enable': 'false',
+      'com.geldar.stack': 'colo',
+      'geldar.owner': 'own-a',
+      'geldar.life': 'ag_0123456789ab',
+      [BODY_LABEL]: 'ranger',
+    });
+  });
+
+  it.each(['ag_ABC', 'ag_a;rm', '', 'ag_0123456789abc'])(
+    'refuses the life label value %j, so no Body is created with a bad geldar.life',
+    (id) => {
+      expect(() => managedBodyConfig({ ...managedInput, lifeId: id })).toThrow(
+        'not a managed life id',
+      );
+    },
+  );
+
   it('refuses a life id that is not the managed shape, before any config is built', () => {
     expect(() => managedBodyConfig({ ...managedInput, lifeId: 'ag_A;rm' })).toThrow(
       'not a managed life id',
@@ -119,11 +140,63 @@ describe('admit one-shot template', () => {
     expect(config.Entrypoint).toEqual(ADMIT_ENTRYPOINT);
     expect(config.Env).toEqual([
       'GELDAR_ADMIT_LIFE_ID=ag_0123456789ab',
+      'GELDAR_ADMIT_MODE=add',
       'GELDAR_RCON_HOST=paper',
       'GELDAR_RCON_PORT=25575',
       'GELDAR_RCON_PASSWORD_FILE=/run/secrets/rcon',
       'GELDAR_IN_NETWORK_HOSTS=1',
     ]);
+  });
+
+  // The whole config of each mode, pinned. The modes differ only in the name, GELDAR_ADMIT_MODE and the admit label value.
+  const ADMIT_ENV = (mode: string) => [
+    'GELDAR_ADMIT_LIFE_ID=ag_0123456789ab',
+    `GELDAR_ADMIT_MODE=${mode}`,
+    'GELDAR_RCON_HOST=paper',
+    'GELDAR_RCON_PORT=25575',
+    'GELDAR_RCON_PASSWORD_FILE=/run/secrets/rcon',
+    'GELDAR_IN_NETWORK_HOSTS=1',
+  ];
+  it.each([
+    ['add', 'add'],
+    ['remove', 'remove'],
+  ] as const)('pins the full config of the %s one-shot', (mode, label) => {
+    expect(admitConfig({ ...admitInput, mode })).toEqual({
+      Image: 'golem-body:test',
+      User: '1000:1000',
+      Entrypoint: ADMIT_ENTRYPOINT,
+      Env: ADMIT_ENV(mode),
+      Labels: {
+        'com.centurylinklabs.watchtower.enable': 'false',
+        'com.geldar.stack': 'colo',
+        [ADMIT_LABEL]: label,
+      },
+      HostConfig: ADMIT_HOST,
+    });
+  });
+
+  it('gives the remove one-shot a name and label distinct from the add one-shot, and the same everything else', () => {
+    const add = admitConfig({ ...admitInput, mode: 'add' });
+    const remove = admitConfig({ ...admitInput, mode: 'remove' });
+    expect(admitName('ag_0123456789ab', 'remove')).toBe('geldar-unadmit-ag_0123456789ab');
+    expect(admitName('ag_0123456789ab', 'remove')).not.toBe(admitName('ag_0123456789ab', 'add'));
+    expect(admitName('ag_0123456789ab', 'remove').startsWith(ADMIT_NAME_PREFIX)).toBe(false);
+    expect((remove.Labels as Record<string, string>)[ADMIT_LABEL]).not.toBe(
+      (add.Labels as Record<string, string>)[ADMIT_LABEL],
+    );
+    expect(remove.Env).toEqual(ADMIT_ENV('remove'));
+    expect(remove.HostConfig).toEqual(add.HostConfig);
+    expect(remove.Entrypoint).toEqual(add.Entrypoint);
+    expect(remove.Image).toEqual(add.Image);
+  });
+
+  it('refuses any mode other than add or remove before any config exists', () => {
+    expect(() => admitConfig({ ...admitInput, mode: 'op' as unknown as 'add' })).toThrow(
+      'admit mode is add or remove',
+    );
+    expect(() => admitName('ag_0123456789ab', 'stop' as unknown as 'add')).toThrow(
+      'admit mode is add or remove',
+    );
   });
 
   it('binds only the RCON password file, read-only, and nothing else', () => {
@@ -133,7 +206,7 @@ describe('admit one-shot template', () => {
 
   it('carries the admit label and not the Body label, so the cap does not count it', () => {
     const labels = admitConfig(admitInput).Labels as Record<string, string>;
-    expect(labels[ADMIT_LABEL]).toBe('ag_0123456789ab');
+    expect(labels[ADMIT_LABEL]).toBe('add');
     expect(BODY_LABEL in labels).toBe(false);
   });
 

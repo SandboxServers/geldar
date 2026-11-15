@@ -19,12 +19,23 @@ export interface AdmissionRcon extends CommandSource {
   close(): Promise<void>;
 }
 
-/** Passes only `whitelist add <lifeId>` for this life to `rcon`; any other command is refused unsent. */
-export function admissionOnly(rcon: CommandSource, lifeId: string): CommandSource {
-  const allowed = `whitelist add ${lifeId}`;
+/** The two whitelist changes the admission-only wrapper can send: add (admit) and remove (BH-5a). */
+type AdmissionMode = 'add' | 'remove';
+
+/**
+ * Passes only `whitelist <mode> <lifeId>` for this life to `rcon`; any other command is refused unsent. The allowed
+ * command is built here from the mode and the id, never from a caller's string.
+ */
+export function admissionOnly(
+  rcon: CommandSource,
+  lifeId: string,
+  mode: AdmissionMode = 'add',
+): CommandSource {
+  if (mode !== 'add' && mode !== 'remove') throw new Error('admission mode is add or remove');
+  const allowed = `whitelist ${mode} ${lifeId}`;
   return {
     async command(cmd: string): Promise<string> {
-      if (cmd !== allowed) throw new Error('admission sends only its own whitelist add');
+      if (cmd !== allowed) throw new Error(`admission sends only its own whitelist ${mode}`);
       return rcon.command(cmd);
     },
   };
@@ -78,6 +89,23 @@ export async function removeLifeOverRcon(
   const rcon = await open();
   try {
     await removeLife(rcon, lifeId);
+  } finally {
+    await rcon.close();
+  }
+}
+
+/**
+ * Removes `lifeId` from the whitelist over an RCON connection this module opens from `cfg` and closes itself. Only
+ * `whitelist remove <lifeId>` can be sent through it (admissionOnly, mode remove): BH-5a's admit-life remove mode.
+ */
+export async function removeLifeWithConfig(cfg: GolemConfig, lifeId: string): Promise<void> {
+  const rcon = await RconClient.connect({
+    host: cfg.rconHost,
+    port: cfg.rconPort,
+    password: await readRconPassword(cfg),
+  });
+  try {
+    await removeLife(admissionOnly(rcon, lifeId, 'remove'), lifeId);
   } finally {
     await rcon.close();
   }

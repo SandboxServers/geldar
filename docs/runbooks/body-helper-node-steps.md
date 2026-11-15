@@ -92,8 +92,9 @@ The RCON and database secret files must be readable by the container user (owner
 
 If an admit one-shot is left behind (a helper killed between create and start, or a create the client timed out on),
 the next start for that life is refused with `life admission failed`. Find it by label, then remove it by its exact
-name only: `docker ps -a --filter label=geldar.admit --format '{{.Names}}'`, then `docker rm -f geldar-admit-<life id>`
-for that one name. Never a wildcard or a `docker rm` with a pattern, and never touch any `geldar-player-ag-*` container.
+name only: `docker ps -a --filter label=geldar.admit --format '{{.Names}}'`, then `docker rm -f geldar-admit-<life id>` for that one name. Never a wildcard or a `docker rm` with a pattern, and never touch any `geldar-player-ag-*` container.
+
+The admit one-shot has two fixed modes (BH-5a): `GELDAR_ADMIT_MODE=add` (start, container `geldar-admit-<life id>`) and `remove` (stop, container `geldar-unadmit-<life id>`). Both carry the `geldar.admit` label, whose value names the mode, so the label filter above lists both. A left-behind `geldar-unadmit-<life id>` is removed the same way, by its exact name only: `docker rm -f geldar-unadmit-<life id>`. Never a pattern.
 
 `GELDAR_NETWORK` (default `geldar-colo`) and `GELDAR_STACK` (default `colo`) are optional; an unset or empty
 value takes the default. `GELDAR_NETWORK` is a Docker network name of at most 63 characters, and the

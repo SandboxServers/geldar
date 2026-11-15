@@ -84,6 +84,7 @@ describe('engine: the verbs', () => {
       running: true,
       helperBody: false,
       owner: null,
+      lifeId: null,
     });
   });
 
@@ -102,18 +103,21 @@ describe('engine: the verbs', () => {
       running: true,
       helperBody: true,
       owner: null,
+      lifeId: null,
     });
     expect(await labelled(null).inspect('body1')).toEqual({
       id: 'abc',
       running: true,
       helperBody: false,
       owner: null,
+      lifeId: null,
     });
     expect(await labelled({ 'geldar.owner': 'x' }).inspect('body1')).toEqual({
       id: 'abc',
       running: true,
       helperBody: false,
       owner: 'x',
+      lifeId: null,
     });
   });
 
@@ -131,7 +135,24 @@ describe('engine: the verbs', () => {
       running: true,
       helperBody: true,
       owner: 'own-a',
+      lifeId: null,
     });
+  });
+
+  it('reports the geldar.life label as lifeId only when it is a managed life id', async () => {
+    const labelled = (life: string) =>
+      createDockerEngine(async () =>
+        json(200, {
+          Id: 'abc',
+          Name: '/body1',
+          State: { Running: true },
+          Config: { Labels: { [BODY_LABEL]: 'body1', 'geldar.life': life } },
+        }),
+      );
+    expect((await labelled('ag_0123456789ab').inspect('body1'))?.lifeId).toBe('ag_0123456789ab');
+    for (const bad of ['ag_ABC', 'ag_a;rm', '', 'ag_0123456789abc', 'ag_a/../b']) {
+      expect((await labelled(bad).inspect('body1'))?.lifeId).toBeNull();
+    }
   });
 
   it('treats a reply for another name as absent: an id prefix match is not the container asked for', async () => {
@@ -163,6 +184,7 @@ describe('engine: the verbs', () => {
       running: true,
       helperBody: true,
       owner: null,
+      lifeId: null,
     });
   });
 
