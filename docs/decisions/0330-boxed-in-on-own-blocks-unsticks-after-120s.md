@@ -9,6 +9,10 @@
 
 Once a Body has been stationary and boxed in for 120 s, the unstick reflex (idle_stuck B1) may act even when the block under its feet is one it placed itself. Before 120 s nothing changes: a Body only briefly on its own plank (building, waiting) does not fire. The 120 s clock starts fresh and resets on any movement of 0.5 block or more, and on any finished Mind action, as the 60 s clock already did.
 
+## Fallback
+
+When idle_stuck acts for a Body boxed in on its own placed blocks (after the 120 s), the unstick order is: a step-off route first, then unowned or natural blocks, and only if neither exists the Body's own placed block is broken. A boxed-in Body is therefore never left permanently trapped: the own block is the last resort, not a refusal.
+
 ## Facts
 
 - `IDLE_TICKS_ON_OWN` = 2400 ticks (120 s) in `golem/src/body/reflexes/idle-stuck.ts`. The still clock for a Body on any other block stays `IDLE_TICKS` (1200 ticks, 60 s).
