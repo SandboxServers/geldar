@@ -55,7 +55,7 @@ function setup(withSleep: boolean) {
     ...(withSleep ? { sleep } : {}),
   };
   const journalTexts = async () => (await journal.recent(LIFE, 50)).map((line) => line.text);
-  return { pending, writes, journalTexts, logged, ctx };
+  return { pending, writes, journal, journalTexts, logged, ctx };
 }
 
 describe('stream: a plan_result settles the pending sleep', () => {
@@ -107,5 +107,23 @@ describe('stream: a plan_result settles the pending sleep', () => {
     await handleStreamMessage(2, planResult(LIFE), s.ctx, { invalid: 0 });
     expect(s.writes).toEqual([]);
     expect(await s.journalTexts()).toEqual([]);
+  });
+
+  it("a death of one life leaves another life's pending sleep to settle", async () => {
+    const s = setup(true);
+    s.pending.add(OTHER, THOUGHT, { day: 1, cursor: 1, action: 0, journal: JOURNAL_LINE });
+    const ctx: StreamContext = { ...s.ctx, lives: () => [LIFE, OTHER] };
+    await handleStreamMessage(
+      1,
+      { ...eventOf('death', 5, LIFE), payload: { cause: 'FALL' } },
+      ctx,
+      { invalid: 0 },
+    );
+    expect(s.pending.get(LIFE, THOUGHT)).toBeUndefined();
+    expect(s.pending.get(OTHER, THOUGHT)).toBeDefined();
+    await handleStreamMessage(2, planResult(OTHER), ctx, { invalid: 0 });
+    expect(s.writes).toEqual([{ lastSleepDay: 1, cursor: 1 }]);
+    expect(await s.journal.recent(OTHER, 50)).toHaveLength(1);
+    expect(s.pending.get(OTHER, THOUGHT)).toBeUndefined();
   });
 });
