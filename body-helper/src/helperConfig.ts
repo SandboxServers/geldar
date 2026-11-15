@@ -32,6 +32,13 @@ export interface HelperConfig {
 /** Group and other permission bits: a secret file must have none. */
 const GROUP_OR_OTHER = 0o077;
 
+/** Docker network names, at most 63 characters, starting with a letter or digit. */
+const NETWORK_NAME = /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}$/;
+/** Stack label values, at most 63 characters, starting with a letter or digit (lower case only). */
+const STACK_NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
+/** Docker's reserved network modes, matched case-insensitively. A Body must never join one of these. */
+const RESERVED_NETWORKS = ['host', 'bridge', 'none', 'default'];
+
 function required(env: Env, name: string): string {
   const value = env[name];
   if (value === undefined || value === '') throw new Error(`missing ${name}`);
@@ -85,12 +92,21 @@ export function loadHelperConfig(env: Env, fs: SecretFs): HelperConfig {
   const uid = env.GELDAR_SERVICE_UID ?? '1000';
   if (!/^\d+$/.test(uid)) throw new Error('GELDAR_SERVICE_UID must be digits');
   const network = withDefault(env, 'GELDAR_NETWORK', DEFAULT_NETWORK);
-  // A Docker network name: letters, digits, and the marks . _ - after the first character.
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(network))
-    throw new Error('GELDAR_NETWORK must be a Docker network name');
+  // A Docker network name: a letter or digit, then up to 62 of letters, digits and the marks . _ -.
+  if (!NETWORK_NAME.test(network)) throw new Error('GELDAR_NETWORK must be a Docker network name');
+  // Docker's own modes are not user networks: host shares the host's namespace, and container:<id> joins another container.
+  if (
+    network.toLowerCase().startsWith('container:') ||
+    RESERVED_NETWORKS.includes(network.toLowerCase())
+  )
+    throw new Error(
+      'GELDAR_NETWORK must name a user network, not host, bridge, none, default or container:<id>',
+    );
   const stack = withDefault(env, 'GELDAR_STACK', DEFAULT_STACK);
-  if (!/^[a-z0-9-]+$/.test(stack))
-    throw new Error('GELDAR_STACK must be lower-case letters, digits or hyphens');
+  if (!STACK_NAME.test(stack))
+    throw new Error(
+      'GELDAR_STACK must be lower-case letters, digits or hyphens, starting with a letter or digit, at most 63',
+    );
   return {
     shard,
     natsUrl: required(env, 'GELDAR_NATS_URL'),
