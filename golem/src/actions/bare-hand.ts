@@ -32,9 +32,18 @@ const FALLING = (name: string | undefined): boolean =>
   name === 'damaged_anvil' ||
   name === 'suspicious_sand' ||
   name === 'suspicious_gravel' ||
-  name === 'pointed_dripstone' ||
   name === 'dragon_egg' ||
   (name?.endsWith('_concrete_powder') ?? false);
+
+/**
+ * Whether `block` is a pointed dripstone hanging from a ceiling (its tip points down). Only that
+ * falls when the block it hangs from goes; a stalagmite (tip up) never falls, so it is not listed
+ * in `FALLING`, which the staircase and pillar checks share.
+ */
+function hangingDripstone(block: Block): boolean {
+  const props = (block as { getProperties?: () => Record<string, unknown> }).getProperties?.();
+  return block.name === 'pointed_dripstone' && props?.vertical_direction === 'down';
+}
 
 /** Margin on top of the computed dig time: ticks, and a share of the time. */
 const DIG_MARGIN_TICKS = 40;
@@ -114,7 +123,7 @@ export function fallOnBodyReason(
 ): string | null {
   const above = bot.blockAt(at.offset(0, 1, 0));
   const near = Math.abs(head.x - at.x) <= 1 && Math.abs(head.z - at.z) <= 1;
-  if (above && FALLING(above.name) && near && head.y <= at.y + 3) {
+  if (above && (FALLING(above.name) || hangingDripstone(above)) && near && head.y <= at.y + 3) {
     return `${block.name} is unsafe to dig: ${above.name} above it would fall on you`;
   }
   if (FALLING(block.name) && walledIn(bot, feet) && walledIn(bot, head)) {

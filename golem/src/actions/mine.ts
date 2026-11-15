@@ -87,6 +87,9 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
   // Set when a candidate was the block under the feet and was skipped: when nothing else is left
   // in reach, the action fails as "would drop you".
   let skippedFloor = false;
+  // The refusal of the last candidate skipped as unsafe. A skipped candidate does not end the
+  // action: the next nearest is tried. When none is left, the action fails with this refusal.
+  let refused: string | null = null;
   let mined = 0;
   let lastMined = '';
   const handNotes: string[] = [];
@@ -100,6 +103,7 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     });
     const at = found[0];
     if (!at) {
+      if (refused) return failed('not_possible', refused, { mined });
       if (skippedFloor) return failed('not_possible', 'would drop you', { mined });
       return failed('not_found', `no ${action.block} within ${SEARCH_DISTANCE} blocks`, { mined });
     }
@@ -136,7 +140,11 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
       unbreakableReason(block) ??
       hazardReason(bot, block, at, [feetCell(bot), feetCell(bot).offset(0, 1, 0)], false) ??
       fallOnBodyReason(bot, block, at, feetCell(bot), feetCell(bot).offset(0, 1, 0));
-    if (refusal) return failed('not_possible', refusal, { mined });
+    if (refusal) {
+      // Unsafe to dig here: skip it, as above, and try the next nearest block.
+      refused = refusal;
+      continue;
+    }
     if (tool) await bot.equip(tool, 'hand');
     const note = handNote(block, tool ?? null, digTicks(bot, block));
     if (note) handNotes.push(note);
