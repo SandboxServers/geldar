@@ -150,7 +150,7 @@ const SHARED_CAPS: Record<string, [string, string, string, number]> = {
 };
 
 describe('compose/colo.yml: every service has its caps (decision 0082)', () => {
-  it('names exactly the fourteen services the budget totals cover', () => {
+  it('names exactly the fifteen services the budget totals cover', () => {
     expect(Object.keys(colo.services).sort()).toEqual(Object.keys(SHARED_CAPS).sort());
   });
 
