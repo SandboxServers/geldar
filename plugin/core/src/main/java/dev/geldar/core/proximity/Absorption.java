@@ -120,16 +120,7 @@ public final class Absorption {
      * MuffleConfig#CLEAR_LIMIT}; muffled runs to CLEAR_LIMIT + MARGIN inclusive; anything more is silent.
      */
     public static Tier tier(double effective, boolean cutShort) {
-        if (cutShort) {
-            return Tier.SILENT;
-        }
-        if (effective <= MuffleConfig.CLEAR_LIMIT) {
-            return Tier.CLEAR;
-        }
-        if (effective <= MuffleConfig.CLEAR_LIMIT + MuffleConfig.MARGIN) {
-            return Tier.MUFFLED;
-        }
-        return Tier.SILENT;
+        return ProximityRule.tier(effective, cutShort, MuffleConfig.MARGIN);
     }
 
     /**

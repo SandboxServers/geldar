@@ -46,7 +46,7 @@ A listener beyond the cut never receives the chat packet, so the Body cannot lea
 
    These values are proposals and are not measured. The packet that adds the table needs a test that pins each row, so the table cannot drift without a visible change. MH-8 (the bench with 9 and 15 agents) sets the final values, the margin `M` and the sealed penalty `S`, before MH-3 merges.
 
-5. **Cost cap.** The ray cast runs on the server thread, reading chunk snapshots, never live world calls.
+5. **Cost cap.** The ray cast runs on the server thread, reading chunk snapshots, never live world calls. As built (MH-3): the plugin reads loaded chunks on the server thread through `PaperBlockReader`, never forces a chunk load, and treats an unloaded block as silent; it does not take chunk snapshots. The hearing sink makes one connect attempt at plugin enable (shared limit with `NatsKinoSink`), so notices are dropped until the next restart (the counter is not read anywhere yet) if NATS was down then.
    - Only listeners already within 32 raw blocks are cast (step 2).
    - A ray stops after 64 block reads (safety cap; a 32-block ray needs at most 32).
    - Per chat line, at most 512 block reads in total. When the total is reached, remaining listeners get the silent tier, and the plugin logs a counter, not the words. The 512 and 64 caps are proposals, not measured.
