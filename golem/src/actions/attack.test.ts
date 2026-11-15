@@ -12,6 +12,7 @@ const walk = vi.mocked(moveNear);
 interface FakeEntity {
   id: number;
   name: string;
+  type: string;
   position: Vec3;
   height: number;
   isValid: boolean;
@@ -22,13 +23,17 @@ interface FakeOptions {
   /** Swings the zombie survives; it is gone after this many. */
   hitsToKill?: number;
   zombieAt?: Vec3;
+  /** Mineflayer's entity type: a zombie is `hostile`, a player is `player`. */
+  targetType?: string;
+  targetName?: string;
 }
 
 /** A bot with one zombie that dies after `hitsToKill` swings. */
 function fakeBot(options: FakeOptions = {}) {
   const zombie: FakeEntity = {
     id: 7,
-    name: 'zombie',
+    name: options.targetName ?? 'zombie',
+    type: options.targetType ?? 'hostile',
     position: options.zombieAt ?? new Vec3(2, 64, 0),
     height: 1.95,
     isValid: true,
@@ -120,6 +125,31 @@ describe('attack action', () => {
     expect(raw.equip).not.toHaveBeenCalled();
     expect(detailOf(outcome).weapon).toBeNull();
   });
+
+  it('records target_kind: mob for a zombie fixture and player for a player fixture', async () => {
+    const mob = await attack(fakeBot({ hitsToKill: 1 }).bot);
+    expect(mob.status).toBe('completed');
+    expect(detailOf(mob)).toMatchObject({ target: 'zombie', target_kind: 'mob' });
+
+    const player = await attack(
+      fakeBot({ hitsToKill: 1, targetType: 'player', targetName: 'Alex' }).bot,
+      'Alex',
+    );
+    expect(player.status).toBe('completed');
+    expect(detailOf(player)).toMatchObject({ target: 'Alex', target_kind: 'player' });
+  });
+
+  it.each(['animal', 'passive', 'object'])(
+    'records target_kind: mob for a %s entity, never player',
+    async (targetType) => {
+      const outcome = await attack(
+        fakeBot({ hitsToKill: 1, targetType, targetName: 'cow' }).bot,
+        'cow',
+      );
+      expect(outcome.status).toBe('completed');
+      expect(detailOf(outcome)).toMatchObject({ target: 'cow', target_kind: 'mob' });
+    },
+  );
 
   it('walks up to a target that is out of reach before it swings', async () => {
     const { bot, raw, zombie } = fakeBot({ zombieAt: new Vec3(8, 64, 0), hitsToKill: 1 });
