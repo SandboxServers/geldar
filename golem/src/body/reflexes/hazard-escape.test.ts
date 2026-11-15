@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { basicContext, basicView, floor, gridBot, gridReader } from './basic.fakes.ts';
 import {
   createHazardEscapeReflex,
-  DROWNING_AIR,
+  DROWNING_START_AIR,
   type EscapeMover,
   findSafeBlock,
   steerBlocked,
@@ -20,12 +20,23 @@ describe('hazard-escape: check', () => {
     expect(reflex.check(view)).toEqual({ hazard: 'lava' });
     state.inFluid = 'water';
     expect(reflex.check(view)).toBeNull();
-    state.air = DROWNING_AIR;
-    expect(reflex.check(view)).toEqual({ hazard: 'drowning', air: DROWNING_AIR });
+    state.air = DROWNING_START_AIR;
+    expect(reflex.check(view)).toEqual({ hazard: 'drowning', air: DROWNING_START_AIR });
     state.inFluid = null;
     state.air = 20;
     state.onFire = true;
     expect(reflex.check(view)).toEqual({ hazard: 'fire' });
+  });
+
+  it('starts the drowning reflex at DROWNING_START_AIR (12), not at 8 (decision 0337)', () => {
+    expect(DROWNING_START_AIR).toBe(12);
+    const { view, state } = basicView({ inFluid: 'water' });
+    state.air = 13;
+    expect(reflex.check(view)).toBeNull();
+    state.air = 12;
+    expect(reflex.check(view)).toEqual({ hazard: 'drowning', air: 12 });
+    state.air = 9;
+    expect(reflex.check(view)).toEqual({ hazard: 'drowning', air: 9 });
   });
 
   it('does not fire for a burning Body that is in water with air', () => {
@@ -96,7 +107,8 @@ describe('hazard-escape: drowning', () => {
     const order: string[] = [];
     const swimmer: EscapeMover = async () => {
       order.push('swim');
-      state.air = 12;
+      // Recovered means air above the trigger line (DROWNING_START_AIR, 12).
+      state.air = DROWNING_START_AIR + 1;
     };
     const mover: EscapeMover = async () => {
       order.push('walk');

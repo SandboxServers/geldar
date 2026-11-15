@@ -1,7 +1,7 @@
 import { Vec3 } from 'vec3';
 import { describe, expect, it, vi } from 'vitest';
 import { controlBot, walkFor } from './hazard-escape.fakes.ts';
-import { findLateralExit, swimUp } from './hazard-escape.ts';
+import { DROWNING_START_AIR, findLateralExit, swimUp } from './hazard-escape.ts';
 
 type Block = { name: string; boundingBox: string };
 const STONE: Block = { name: 'stone', boundingBox: 'block' };
@@ -480,5 +480,30 @@ describe('findLateralExit: floors, walls and lava', () => {
     expect(note).toHaveBeenLastCalledWith(
       expect.objectContaining({ event: 'retarget', direction: 'west', distance: 2 }),
     );
+  });
+});
+
+// Decision 0337 (BILLY, ag_billy_01): a capped 1-wide column under an open lake, the lateral exit 7 blocks
+// east. swimUp does not read air; this test checks the air left at the exit, counted in bubbles (one per
+// 15 ticks under water). The reflex starts at DROWNING_START_AIR (12); the old start was 8.
+describe('swimUp: the capped column escape at the earlier start (decision 0337)', () => {
+  const airAtExit = (start: number, ticks: number): number => start - Math.floor(ticks / 15);
+
+  it('escapes the capped column to the lake with air left from the 12 start, more than from 8', async () => {
+    const { bot, state, pos } = swimmerIn(
+      worldOf(capped(EAST, 7, 'lake')),
+      new Vec3(0.5, 60.2, 0.5),
+      0,
+    );
+    await swimUp(walkFor(bot, () => pos().x >= 7, { expired: () => state.ticks >= 200 }));
+    expect(pos().x).toBeGreaterThanOrEqual(7);
+    const left12 = airAtExit(DROWNING_START_AIR, state.ticks);
+    const left8 = airAtExit(8, state.ticks);
+    expect(left12).toBeGreaterThan(0);
+    expect(left12).toBeGreaterThan(left8);
+  });
+
+  it('the start is 12, not 8, so the trigger line is the earlier one', () => {
+    expect(DROWNING_START_AIR).toBe(12);
   });
 });

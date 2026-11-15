@@ -54,6 +54,7 @@ describe('hazard_escape: operator lines for the mover and the surroundings', () 
       event: 'hazard_escape',
       phase: 'start',
       mover: 'swim_up',
+      threshold: 12,
       above_head: ['stone', 'oak_planks', 'cobblestone'],
       below_feet: ['dirt', 'gravel'],
       nearest_air: { direction: 'east', distance: 1 },

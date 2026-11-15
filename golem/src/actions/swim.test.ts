@@ -2,8 +2,14 @@ import { EventEmitter } from 'node:events';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { describe, expect, it, vi } from 'vitest';
-import { DROWNING_AIR } from '../body/reflexes/hazard-escape.ts';
-import { ABORT_AIR, SURFACE_AIR, type SwimController, startSwim, swimNote } from './swim.ts';
+import {
+  ABORT_AIR,
+  SURFACE_AIR,
+  SWIM_HAND_OVER_AIR,
+  type SwimController,
+  startSwim,
+  swimNote,
+} from './swim.ts';
 
 describe('swimNote reads right for one block or many (decision 0194 d)', () => {
   it('states the blocks in water and the surfacings as labelled counts, so 1 needs no plural', () => {
@@ -126,11 +132,11 @@ describe('startSwim air budget (decision 0194 a, b)', () => {
     expect(calls(bot, 'jump', true)).toBe(0);
   });
 
-  it('hands the surface to the reflex at DROWNING_AIR and holds no jump there (0194 b)', () => {
+  it('hands the jump over at SWIM_HAND_OVER_AIR and holds no jump there (0194 b)', () => {
     const bot = swimBot(HEAD_WATER, ABORT_AIR);
     const swim: SwimController = startSwim(bot, { onAbort: () => swim.stop() });
     bot.emit('physicsTick');
-    Object.assign(bot.entity, { metadata: [0, DROWNING_AIR * 15] });
+    Object.assign(bot.entity, { metadata: [0, SWIM_HAND_OVER_AIR * 15] });
     bot.setControlState.mockClear();
     bot.emit('physicsTick');
     expect(calls(bot, 'jump', true)).toBe(0);
