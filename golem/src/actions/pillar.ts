@@ -1,7 +1,8 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
-import { hazardReason, unbreakableReason } from './bare-hand.ts';
+import { unbreakableReason } from './bare-hand.ts';
 import type { Block } from './bot-types.ts';
+import { digSafetyRefusal } from './dig-safety.ts';
 import { feetCell } from './feet-cell.ts';
 import { errorText } from './outcome.ts';
 import { placedCell, recordOwnPlacement } from './own-placements.ts';
@@ -210,7 +211,7 @@ function overheadRefusal(bot: Bot, feet: Vec3, at: Vec3): string | null {
   const own = [feet, feet.offset(0, 1, 0)];
   return (
     unbreakableReason(block) ??
-    hazardReason(bot, block, at, own, true) ??
+    digSafetyRefusal({ bot, block, at, own }) ??
     protectedReason(bot, block, at)
   );
 }
@@ -251,7 +252,7 @@ export function edgeCell(bot: Bot, feet: Vec3, needHeadroom = false): Vec3 | nul
 
 /**
  * True when `cell` may be dug for a crowded pillar: solid, not unbreakable, and digging it now is hazard-free
- * (`strictFalling`). `own` are the bot's cells, which do not count as a neighbour.
+ * (see `digSafetyRefusal`). `own` are the bot's cells, which do not count as a neighbour.
  */
 function sideDiggable(bot: Bot, cell: Vec3, own: readonly Vec3[]): boolean {
   const block = bot.blockAt(cell);
@@ -259,7 +260,7 @@ function sideDiggable(bot: Bot, cell: Vec3, own: readonly Vec3[]): boolean {
     block !== null &&
     solid(block) &&
     unbreakableReason(block) === null &&
-    hazardReason(bot, block, cell, own, true) === null &&
+    digSafetyRefusal({ bot, block, at: cell, own }) === null &&
     protectedReason(bot, block, cell) === null
   );
 }

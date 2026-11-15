@@ -1,7 +1,8 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
-import { digTicks, hazardReason, unbreakableReason } from './bare-hand.ts';
+import { digTicks, unbreakableReason } from './bare-hand.ts';
 import type { Block } from './bot-types.ts';
+import { digSafetyRefusal } from './dig-safety.ts';
 import { feetCell } from './feet-cell.ts';
 import { errorText } from './outcome.ts';
 import { isDoorLike } from './path-doors.ts';
@@ -117,7 +118,7 @@ export async function stairs(bot: Bot, o: StairOptions, refusals: string[]): Pro
       if (!solid(target) || target === null) continue;
       const refusal =
         unbreakableReason(target) ??
-        hazardReason(bot, target, at, own, true) ??
+        digSafetyRefusal({ bot, block: target, at, own }) ??
         protectedReason(bot, target, at);
       if (refusal) {
         refusals.push(refusal);

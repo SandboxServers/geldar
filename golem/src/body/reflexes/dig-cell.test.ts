@@ -49,3 +49,57 @@ describe('digCellWhy', () => {
     expect(await digCellWhy(air, CELL)).toEqual({ ok: true });
   });
 });
+
+/** A context over a grid of named cells (air elsewhere); the Body stands at (0,64,0); `dig` empties its cell. */
+function gridContext(named: Map<string, string>, dug: string[]) {
+  const key = (c: Vec3): string => `${c.x},${c.y},${c.z}`;
+  const bot = fakeBot() as unknown as Record<string, unknown>;
+  bot.entity = { position: new Vec3(0.5, 64, 0.5), height: 1.62 };
+  bot.blockAt = (cell: Vec3) => {
+    const name = named.get(key(cell)) ?? 'air';
+    return name === 'air'
+      ? { name, boundingBox: 'empty' }
+      : { name, boundingBox: 'block', diggable: true, position: cell };
+  };
+  bot.dig = async (block: { name: string; position: Vec3 }) => {
+    dug.push(block.name);
+    named.delete(key(block.position));
+  };
+  bot.stopDigging = () => undefined;
+  return reflexContext(bot as never, settableView(), new ActionRegistry());
+}
+
+describe('digCellWhy: the dig-safety guard', () => {
+  it('refuses to dig a cell with water on a face, and digs the same cell with stone beside it', async () => {
+    const dug: string[] = [];
+    const wet = new Map([
+      ['1,64,0', 'stone'],
+      ['1,64,1', 'water'],
+    ]);
+    const ctx = gridContext(wet, dug);
+    expect(await digCellWhy(ctx, CELL)).toEqual({
+      ok: false,
+      cause: 'stone is unsafe to dig: water would flow in on you',
+    });
+    expect(dug).toEqual([]);
+    const dry = gridContext(new Map([['1,64,0', 'stone']]), dug);
+    expect(await digCell(dry, CELL)).toBe(true);
+    expect(dug).toEqual(['stone']);
+  });
+
+  it('refuses to dig a cell with gravel above it while the Body stands under it', async () => {
+    const dug: string[] = [];
+    const capped = new Map([
+      ['1,64,0', 'stone'],
+      ['1,65,0', 'gravel'],
+    ]);
+    expect(await digCellWhy(gridContext(capped, dug), CELL)).toEqual({
+      ok: false,
+      cause: 'stone is unsafe to dig: gravel above it would fall on you',
+    });
+    expect(dug).toEqual([]);
+    // The same cell with nothing above it digs (the control).
+    expect(await digCell(gridContext(new Map([['1,64,0', 'stone']]), dug), CELL)).toBe(true);
+    expect(dug).toEqual(['stone']);
+  });
+});

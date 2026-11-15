@@ -4,7 +4,6 @@ import type { Block, Recipe } from './bot-types.ts';
 import { craftsPossible, FEWER_MESSAGE, pickUpSpareTable, placeSpareTable } from './craft-spare.ts';
 import { bookYield, craftFromBook, hasUnlockedDisplay } from './craft-table.ts';
 import { heldCount } from './inventory-count.ts';
-import { mineAction } from './mine.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';

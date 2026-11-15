@@ -1,6 +1,7 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
-import { hazardReason, unbreakableReason } from './bare-hand.ts';
+import { unbreakableReason } from './bare-hand.ts';
+import { digSafetyRefusal } from './dig-safety.ts';
 import { inPit, stairs } from './escape-stairs.ts';
 import { feetCell } from './feet-cell.ts';
 import { errorText } from './outcome.ts';
@@ -154,7 +155,7 @@ async function digAhead(bot: Bot, o: LadderOptions, refusals: string[]): Promise
     const at = feet.plus(dir).offset(0, dy, 0);
     const refusal =
       unbreakableReason(block) ??
-      hazardReason(bot, block, at, [feet, feet.offset(0, 1, 0)], false) ??
+      digSafetyRefusal({ bot, block, at, own: [feet, feet.offset(0, 1, 0)] }) ??
       protectedReason(bot, block, at);
     if (refusal) {
       refusals.push(refusal);

@@ -1,14 +1,9 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import type { Vec3 } from 'vec3';
-import {
-  digTicks,
-  fallOnBodyReason,
-  handNote,
-  hazardReason,
-  unbreakableReason,
-} from './bare-hand.ts';
+import { digTicks, handNote, unbreakableReason } from './bare-hand.ts';
 import type { Block, Item } from './bot-types.ts';
+import { digSafetyRefusal } from './dig-safety.ts';
 import { feetCell } from './feet-cell.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
@@ -138,8 +133,7 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     // Any breakable block may be dug by hand; only an unbreakable or a dangerous one is refused.
     const refusal =
       unbreakableReason(block) ??
-      hazardReason(bot, block, at, [feetCell(bot), feetCell(bot).offset(0, 1, 0)], false) ??
-      fallOnBodyReason(bot, block, at, feetCell(bot), feetCell(bot).offset(0, 1, 0));
+      digSafetyRefusal({ bot, block, at, own: [feetCell(bot), feetCell(bot).offset(0, 1, 0)] });
     if (refusal) {
       // Unsafe to dig here: skip it, as above, and try the next nearest block.
       refused = refusal;

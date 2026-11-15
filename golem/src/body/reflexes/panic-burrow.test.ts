@@ -61,6 +61,12 @@ describe('panic burrow: planning', () => {
     expect(planBurrow((cell) => world.blockAt(cell) as never, FEET)).toBeNull();
   });
 
+  it('refuses a stone wall with one falling flank cell, the pocket itself still stone', () => {
+    const world = wallWorld();
+    world.set(new Vec3(1, 64, 1), 'gravel');
+    expect(planBurrow((cell) => world.blockAt(cell) as never, FEET)).toBeNull();
+  });
+
   it('picks the first seal block it carries', () => {
     expect(pickSeal((item) => (item === 'cobblestone' ? 2 : 0))).toBe('cobblestone');
     expect(pickSeal(() => 0)).toBeNull();
@@ -200,6 +206,22 @@ describe('panic burrow: run', () => {
     expect(world.name(new Vec3(0, 65, 0))).toBe('air');
     expect(Math.floor(grid.bot.entity.position.x)).toBe(0);
     expect(panicBurrowReflex.check(view)).toBeNull();
+  });
+
+  it('leaves at dawn through a seal the Body placed itself, not someone else’s work', async () => {
+    // Cobblestone is a built name: the seal only opens if the Body recorded placing it.
+    const world = wallWorld();
+    const { grid, view, ctx } = setup(world);
+    grid.inventory.set('cobblestone', 4);
+    view.isNight = true;
+    const sealed = await panicBurrowReflex.run(panicBurrowReflex.check(view) ?? {}, ctx);
+    expect(sealed).toMatchObject({ result: 'handled', detail: 'sealed in' });
+    expect(world.name(new Vec3(0, 64, 0))).toBe('cobblestone');
+    view.isNight = false;
+    const left = await panicBurrowReflex.run({ phase: 'dawn' }, ctx);
+    expect(left).toMatchObject({ result: 'handled', detail: 'left at dawn' });
+    expect(world.name(new Vec3(0, 64, 0))).toBe('air');
+    expect(world.name(new Vec3(0, 65, 0))).toBe('air');
   });
 
   it('refuses when no wall can hold a pocket, and digs nothing', async () => {

@@ -1,8 +1,9 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { canStepOff } from '../body/view.ts';
-import { hazardReason, unbreakableReason } from './bare-hand.ts';
+import { unbreakableReason } from './bare-hand.ts';
 import type { Block } from './bot-types.ts';
+import { digSafetyRefusal } from './dig-safety.ts';
 import { isOwnPlacement } from './own-placements.ts';
 import { protectedReason, refusedByName } from './protected-blocks.ts';
 import { digGuardRefuses } from './unstick-guard.ts';
@@ -88,7 +89,7 @@ interface Step {
 
 /**
  * Why one cell above the wall may not be dug, or null. Liquids and underwater plants, unbreakable blocks,
- * refused names, a liquid or falling block beside it (`hazardReason`) and someone else's work
+ * refused names, a liquid or falling block beside it (`digSafetyRefusal`) and someone else's work
  * (`protectedReason`, decision 0164) all refuse. Ownership unknown refuses too, as `isProtected` refuses it.
  */
 function cellRefusal(
@@ -111,7 +112,7 @@ function cellRefusal(
   if (refusedByName(block.name)) return `${block.name} is not dug on the way out`;
   return (
     unbreakableReason(block) ??
-    hazardReason(bot, block, cell, own, true) ??
+    digSafetyRefusal({ bot, block, at: cell, own }) ??
     protectedReason(bot, block, cell)
   );
 }

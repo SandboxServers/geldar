@@ -1,5 +1,6 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
+import { isFalling } from './dig-safety.ts';
 import { placedCell, recordOwnPlacement } from './own-placements.ts';
 import { isProtected, refusedByName } from './protected-blocks.ts';
 import { MIN_DIG_HEALTH } from './soft-dig.ts';
@@ -22,19 +23,6 @@ export const LIQUID_COST = 3;
 export const MAX_DIG_TICKS = 60;
 /** The throwaway blocks a walk may place to climb. Only the held ones are used (the library checks). */
 export const SCAFFOLD_NAMES = ['dirt', 'cobblestone', 'cobbled_deepslate', 'netherrack'] as const;
-/** Blocks that fall when the cell under them is air: a dig beneath one lets it drop on the bot. */
-const FALLING_NAMES = new Set([
-  'sand',
-  'red_sand',
-  'suspicious_sand',
-  'gravel',
-  'suspicious_gravel',
-  'anvil',
-  'chipped_anvil',
-  'damaged_anvil',
-  'dragon_egg',
-  'pointed_dripstone',
-]);
 
 /** The parts of a pathfinder `Movements` that the tier-2 rules set or read. */
 interface DigMovements {
@@ -109,7 +97,8 @@ function dropRefused(bot: Bot, block: DigBlock): boolean {
 /** True for a block that falls when its support is dug: a name in the list, or concrete powder. */
 function isFallingName(name: string | undefined): boolean {
   if (!name) return false;
-  return FALLING_NAMES.has(name) || name.endsWith('_concrete_powder');
+  // The library sees only names, so a pointed dripstone (hanging or not) counts here as falling.
+  return isFalling(name) || name === 'pointed_dripstone';
 }
 
 /**

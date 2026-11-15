@@ -1,8 +1,10 @@
 import type { Bot } from 'mineflayer';
-import type { Vec3 } from 'vec3';
+import { Vec3 } from 'vec3';
 import { FALL_STOP_DROP } from '../body/reflexes/fall-stop.ts';
 import { noSafeExit } from '../body/view.ts';
 import type { Block } from './bot-types.ts';
+import { digSafetyRefusal } from './dig-safety.ts';
+import { feetCell } from './feet-cell.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { lastResortRefused, prefetchOwners, protectedReason } from './protected-blocks.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
@@ -62,6 +64,11 @@ export async function dig(
   const protectedBy = protectedReason(bot, block, at);
   if (protectedBy !== null && !(relaxed && !lastResortRefused(bot, block, at))) return false;
   if (digGuardRefuses(bot, block)) return false;
+  // Some callers pass a plain { x, y, z }: the guard needs a Vec3.
+  const cell = new Vec3(at.x, at.y, at.z);
+  const feet = feetCell(bot);
+  if (digSafetyRefusal({ bot, block, at: cell, own: [feet, feet.offset(0, 1, 0)] }) !== null)
+    return false;
   const loose = bot as unknown as {
     pathfinder?: { stop(): void; setGoal(g: null): void; bestHarvestTool?: (b: Block) => unknown };
     stopDigging?: () => void;

@@ -1,5 +1,6 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
+import { isFalling } from './dig-safety.ts';
 import { isOwnPlacement } from './own-placements.ts';
 
 /**
@@ -341,9 +342,6 @@ export function protectedReason(
   return "the block is someone else's work, and the way out does not dig it";
 }
 
-/** Blocks that fall when the block under them is gone: sand, gravel, concrete powder. */
-const FALLS_IF_UNSUPPORTED = /(sand|gravel|concrete_powder)$/;
-
 /** True when a liquid touches the cell on a face (a dig there lets the liquid in). */
 function liquidBeside(bot: Bot, cell: Vec3): boolean {
   return FACES.some(([dx, dy, dz]) => {
@@ -355,7 +353,7 @@ function liquidBeside(bot: Bot, cell: Vec3): boolean {
 /** True when a block that falls sits on the cell above (the dug cell would drop it on the bot). */
 function fallingAbove(bot: Bot, cell: Vec3): boolean {
   const above = bot.blockAt(cell.offset(0, 1, 0), false) as { name?: string } | null;
-  return above?.name !== undefined && FALLS_IF_UNSUPPORTED.test(above.name);
+  return isFalling(above?.name);
 }
 
 /** True when a liquid touches the cell or a falling block sits above it: a dig there is a hazard. */
