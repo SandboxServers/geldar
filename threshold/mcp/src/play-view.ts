@@ -11,6 +11,7 @@
 import type { Snapshot } from '@geldar/contract';
 import { headerProjector } from './play-view/header.ts';
 import { logAndPlanProjector } from './play-view/log-and-plan.ts';
+import { muffledProjector } from './play-view/muffled.ts';
 import { selfProjector } from './play-view/self.ts';
 import { surroundingsProjector } from './play-view/surroundings.ts';
 import type {
@@ -29,6 +30,7 @@ export type {
 } from './play-view/types.ts';
 export {
   PLAY_ENTITY_LIMIT,
+  PLAY_MUFFLED_LIMIT,
   PLAY_SIGN_LIMIT,
   PLAY_SPEECH_LIMIT,
 } from './play-view/types.ts';
@@ -39,6 +41,7 @@ export const SNAPSHOT_PROJECTORS: readonly SnapshotProjector[] = [
   selfProjector,
   surroundingsProjector,
   logAndPlanProjector,
+  muffledProjector,
 ];
 
 /**

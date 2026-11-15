@@ -9,6 +9,9 @@ export const PLAY_SIGN_LIMIT = 20;
 /** Entity records kept in the play view, nearest first (the Body's snapshot keeps more). */
 export const PLAY_ENTITY_LIMIT = 12;
 
+/** Muffled sentences kept in the play view, nearest first (the `muffled` maxItems of the contract). */
+export const PLAY_MUFFLED_LIMIT = 3;
+
 export type PlaySnapshot = LookResult['snapshot'];
 export type Signs = NonNullable<UntrustedWorldText['signs']>;
 
