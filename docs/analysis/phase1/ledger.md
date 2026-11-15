@@ -160,7 +160,7 @@ Cards: [packets/c7-user-management-packets.md](packets/c7-user-management-packet
 | C7-10 | Operator console, ban reasons | W3 | F | C7-03a, C7-04a, C7-12 | Waiting | 0171 | 0030 | N (reason codes are the owner's) |
 | C7-07 | Agent rename | W3 | D | C7-04b, C7-06 | Waiting | none | 0028 | N |
 | C7-13b | Skin moderation CLI, MineSkin, KV write | W4 | D | C7-13a | Waiting | 0172 | none | N (live: owner's MineSkin key, one call) |
-| C7-09 | Account deletion and data export | W4 | E | C7-02b, C7-03b2, C7-13a | C7-09a built, review fix in progress (delete half; export is C7-09b); route and account page mounted in main.ts; new dependency: the 0261 open question (does M1 wait for C7-09?) | 0171, 0261 | 0039 | N (legal review of the rule is the owner's, gates C7-11) |
+| C7-09 | Account deletion and data export | W4 | E | C7-02b, C7-03b2, C7-13a | C7-09a2 built (every life of the owner erased, dead or alive; decision 0262 supersedes 0171 point 2; export is C7-09b); route and account page mounted in main.ts; new dependency: the 0261 open question (does M1 wait for C7-09?) | 0171, 0261, 0262 | 0039, 0040 | N (legal review of the rule is the owner's, gates C7-11) |
 | C7-13c | Skin form and status on the account page | W4 | C | C7-06, C7-13a | Waiting | 0172 | none | N |
 | C7-09c | Operator erasure script (skins KV key and Velocity registry) | W4 | E | C7-09a | Waiting | 0171 | none | N |
 | C7-11 | Sign-up gate (not a code packet) | W4 | G | C7-05, C7-06, C7-09, C7-13c | Waiting; owner opens sign-up; new dependency: the 0261 open question (does M1 wait for C7-11?) | 0153, 0155, 0171, 0261 | none | Y |

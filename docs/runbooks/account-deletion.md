@@ -1,48 +1,63 @@
 # Account deletion (operator view)
 
-Scope: C7-09a, the delete half. The export half is C7-09b and is not built. Rule: decision 0171.
+Scope: C7-09a and C7-09a2, the delete half. The export half is C7-09b and is not built. Rules: decision 0171, with
+point 2 superseded by decision 0262 (every life of the owner is erased, dead or alive).
 
 ## What a deletion removes
 
 A signed-in owner deletes their account with `POST /api/v1/account/delete` (cookie session, CSRF header, body
 `{"confirm":"delete my account"}`), or from the account page at `/register/account/delete`. Both call one service
-(`deleteAccountData`). In one database transaction (`register_account_delete`, migration 0039):
+(`deleteAccountData`). In one database transaction (`register_account_delete`, migrations 0039 and 0040):
 
 - every token of the owner's players (revoked, then deleted);
 - every owner API key and the owner's register sessions, consents and kino admin row;
 - the owner's players and roster rows, and the owner's body operation rows;
-- every life still alive: its journal (`mcp_journal`), thoughts, sleep marks and budget rows are removed, and its
-  `agents` row is retired: `died_at` is set to now, `death_cause` is `owner-erased`, `public_camera` and
-  `thoughts_delayed_public` are FALSE, and the owner link is cleared;
+- every life of the owner, dead or alive (the set is the owner's players plus the `agents` rows whose owner link is
+  the owner). For each life: the character sheet rows (`sheet_erase_life`: rolls, decisions, xp evidence, sheet
+  adoptions, proficiency, proficiency outbox), sleep marks, budget, death records, journal, thoughts, receipts,
+  suppressed wakeups, actions, intents, skill runs, memories, goals, skill library, relationships (both sides), ledger,
+  votes and events (agent or thinker side);
+- every life still alive is retired: its `agents` row gets `died_at` set to now, `death_cause` `owner-erased`,
+  `public_camera` and `thoughts_delayed_public` FALSE; the owner link is cleared on every `agents` row of the owner;
 - the owner row, and the identity row, unless the identity is banned (see the tombstone).
 
 Before the transaction the register stops every non-retired player's body through the supervisor (the same stop the
 retire route uses). If a stop fails the route answers 503 and nothing is removed. With NATS not configured no managed
 body can exist, so the stop is skipped.
 
+## Accounts deleted under 0039 (before 0040)
+
+Deletions made under 0039 removed the owner link and the player rows of the owner's dead lives. Those dead lives
+no longer have an owner link or a player row, so 0040 cannot reach them: their thoughts, events and death records
+stay. An operator cleanup of these is follow-up card `C7-09c` (not done; the owner decides the cleanup).
+
 ## What stays, and why
 
-- Dead lives keep their public thoughts, events and death records, with the owner link (`agents.owner`) set to NULL.
-  They are facts about the world; after deletion nothing joins them to an owner or an identity (0171, point 2).
-- Events are not owner-linked and are not removed. Events of a life that was alive at deletion stay too; this is the
-  open point of 0171 and needs the owner's ruling.
-- Audit rows (`register_audit`) stay, because the table is append-only (0025). The deletion writes one row with a
-  random erasure id as actor. The owner id is not written to it, so the row cannot be joined back to the owner.
-- `kino_audit` rows (one login hash per identity, 90-day retention) are not removed by the function. They age out under
-  their own retention.
+Exact list of what stays (decision 0262):
+
+- the `agents` rows of the owner's lives, with the owner link (`agents.owner`) set to NULL. The sheet columns stay with
+  the row. the player id, game account and name on the row are typed by the owner and can carry a real name;
+- audit rows (`register_audit`), because the table is append-only (0025). The deletion writes one row with a random
+  erasure id as actor and no owner id;
+- the ban tombstone (the identity hash and the ban, nothing else), when the identity is banned (0171, point 4);
+- `kino_audit` rows of the deleted identity (the viewer's own Glass pane audit; the login hash is the identity hash as hex) are erased at deletion (geldar-93 default, revertable before sign-up opens). Other owners' rows stay under their 90-day retention (`kino_audit_purge`);
+- shared world objects whose author lost the owner link: `skills.author`, `books.author`, `proposals.proposer` and
+  `laws`. Other lives depend on them (skill library and books by foreign key; laws by enactment). The author is an agent
+  row with no owner link, so nothing ties the object to a person;
+- nothing else keyed by life.
 - Skin upload rows are not referenced by 0039. C7-13a adds them to the function. Until then a deletion does not remove
   skin uploads, and the PNG data under the `geldar-skins` KV key is not removed (see the manual steps below).
 
 ## What a deletion does to live writes
 
-A deletion takes table locks on `mcp_journal` and `thoughts` for the length of its transaction, because it turns off
-their append-only triggers inside the transaction and turns them back on before it returns. While it runs, journal and
-thought writes from other owners wait. The function sets a 3 second `lock_timeout`: if the lock is not free in time the
+A deletion takes table locks on `mcp_journal`, `thoughts`, `receipts` and `suppressed_wakeups` for the length of its
+transaction, because it turns off their append-only triggers inside the transaction and turns them back on before it
+returns. While it runs, writes to those four tables from other owners wait. The rows to erase are collected before the window, under ordinary locks (that scan is not under the lock); the window itself deletes only those collected rows. The collection scans thoughts, receipts and suppressed_wakeups, which have no index on life id (mcp_journal has one), so a large table makes the collection slow, though it does not hold the window. The function sets a 3 second `lock_timeout`: if the lock is not free in time the
 deletion fails and nothing is removed. Retry it; that is safe, because a failed deletion removes nothing.
 
 Residual races (review F10, open): a journal write from a still-connected agent session can land after the commit, and
 a sign-in that races the deletion can leave a `register_sessions` row for the removed owner. Later writes refuse that
-owner (no owner row), so the row is inert, but it lingers until it expires.
+owner (no owner row), so the row is inert, but it lingers until it expires. A row of the owner's life that a writer commits while the function waits for one of the four table locks is not in the collected set, so it survives; a second call returns false and cannot erase it. A pane open at the deletion, or a `gk_session` cookie still valid (30 minutes), can write `kino_audit` rows with the deleted identity hash after the erase; those rows leave only at the 90-day purge.
 
 ## The tombstone
 
@@ -101,7 +116,7 @@ self-serve deletion, and at once when that log line appears:
 ## Checks
 
 `sql/test/check-schema-account-delete.sql` covers the function: the second call is a no-op with no audit row, a banned
-identity keeps its tombstone, an unbanned identity leaves nothing, a living life is retired, a failure after the
+identity keeps its tombstone, an unbanned identity leaves nothing, a living life is retired, a dead life is erased too (0262), a failure after the
 trigger disable leaves the append-only triggers enabled, and the lock timeout is transaction-local (an autocommit call
 is followed by a check that `lock_timeout` is back at 0). The register unit tests cover the cookie clear on success and
 on logout (the same list), the body slot release on every path, the stop-before-erase order, the account page path,
