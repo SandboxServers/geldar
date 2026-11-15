@@ -12,6 +12,7 @@ import {
   readSeedFiles,
   type SovereignShard,
   seedText,
+  setPlayerModel,
   setPlayerStatus,
 } from './players.ts';
 import { ROSTER_LIMIT, ROSTER_NOT_LISTED } from './roster.ts';
@@ -34,6 +35,8 @@ class FakeSql implements Sql {
   budgets: string[] = [];
   revokedFor: string[] = [];
   log: string[] = [];
+  /** The declared_model of each life, as the agents insert and the model update leave it. */
+  declared = new Map<string, string>();
 
   async query(text: string, values: unknown[] = []): Promise<{ rows: Row[] }> {
     this.log.push(text);
@@ -72,6 +75,7 @@ class FakeSql implements Sql {
     }
     if (text.startsWith('INSERT INTO agents')) {
       this.agents.push(String(values[0]));
+      this.declared.set(String(values[0]), String(values[6]));
       return { rows: [] };
     }
     if (text.startsWith('INSERT INTO mcp_players')) {
@@ -94,6 +98,17 @@ class FakeSql implements Sql {
       if (player === undefined || !allowed.includes(player.status)) return { rows: [] };
       player.status = String(values[1]);
       return { rows: [{ player_id: player.player_id, life_id: player.life_id }] };
+    }
+    if (text.startsWith('UPDATE agents')) {
+      // The retired refusal lives in the SQL text: without that clause the fake matches a retired
+      // player too, so removing the clause from players.ts fails the retired test.
+      const refusesRetired = text.includes("status <> 'retired'");
+      const player = this.players.find(
+        (p) => p.player_id === values[0] && (!refusesRetired || p.status !== 'retired'),
+      );
+      if (player === undefined) return { rows: [] };
+      this.declared.set(player.life_id, String(values[1]));
+      return { rows: [{ agent_id: player.life_id }] };
     }
     if (text.startsWith('UPDATE mcp_tokens')) {
       this.revokedFor.push(String(values[0]));
@@ -310,6 +325,61 @@ describe('sovereign start checks the roster (sql 0024)', () => {
       code: ROSTER_LIMIT,
     });
     expect(sql.agents).toHaveLength(2);
+  });
+});
+
+describe('player model (GX-01c)', () => {
+  it('writes the declared model given with --model, and the placeholder when none is given', async () => {
+    const sql = new FakeSql();
+    sql.owners.set('jo', 20);
+    await addPlayer(sql, { ...player(1), model: 'claude-sonnet-5.5' }, SHARD);
+    expect(sql.declared.get('ag_jo_01')).toBe('claude-sonnet-5.5');
+    await addPlayer(sql, player(2), SHARD);
+    expect(sql.declared.get('ag_jo_02')).toBe('self-reported');
+  });
+
+  it('refuses a model the contract pattern does not take, before any write', async () => {
+    const sql = new FakeSql();
+    sql.owners.set('jo', 20);
+    await expect(addPlayer(sql, { ...player(1), model: 'bad model!' }, SHARD)).rejects.toThrow(
+      /model/,
+    );
+    expect(sql.agents).toHaveLength(0);
+    expect(sql.log).toHaveLength(0);
+  });
+
+  it('sets the declared model of the life of a live player', async () => {
+    const sql = new FakeSql();
+    sql.owners.set('jo', 20);
+    await addPlayer(sql, player(1), SHARD);
+    await setPlayerModel(sql, 'ag-jo-01', 'claude-sonnet-5.5');
+    expect(sql.declared.get('ag_jo_01')).toBe('claude-sonnet-5.5');
+  });
+
+  it('refuses a retired player and leaves its model alone', async () => {
+    const sql = new FakeSql();
+    sql.owners.set('jo', 20);
+    await addPlayer(sql, player(1), SHARD);
+    await setPlayerStatus(sql, 'ag-jo-01', 'retire');
+    await expect(setPlayerModel(sql, 'ag-jo-01', 'claude-sonnet-5.5')).rejects.toThrow(
+      /no live player/,
+    );
+    expect(sql.declared.get('ag_jo_01')).toBe('self-reported');
+  });
+
+  it('refuses an unknown player', async () => {
+    const sql = new FakeSql();
+    await expect(setPlayerModel(sql, 'ag-nobody-01', 'claude-sonnet-5.5')).rejects.toThrow(
+      /no live player/,
+    );
+  });
+
+  it('refuses a model with a space in it and writes nothing', async () => {
+    const sql = new FakeSql();
+    sql.owners.set('jo', 20);
+    await addPlayer(sql, player(1), SHARD);
+    await expect(setPlayerModel(sql, 'ag-jo-01', 'two words')).rejects.toThrow(/model/);
+    expect(sql.declared.get('ag_jo_01')).toBe('self-reported');
   });
 });
 

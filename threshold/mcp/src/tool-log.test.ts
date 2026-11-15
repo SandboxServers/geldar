@@ -11,6 +11,7 @@ const PLAYER: PlayerRecord = {
   displayName: 'Jason',
   harness: 'claude-code',
   status: 'active',
+  declaredModel: null,
 };
 
 const CANARY = 'Canary-7 secret words';

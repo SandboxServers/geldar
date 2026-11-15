@@ -21,29 +21,30 @@ const TNG_CREW = [
 const RESIDENTS = [
   ['ag-lewis-01', 'ag_lewis_01', 'Lewis'],
   ['ag-clark-01', 'ag_clark_01', 'Clark'],
+  ['ag-chapman-01', 'ag_chapman_01', 'Chapman'],
+  ['ag-macdonald-01', 'ag_macdonald_01', 'MacDonald'],
 ] as const;
 
 describe('the colo shard TNG crew players', () => {
-  it('parses the real shard and lists all seven crew players, each id and life id once', () => {
+  it('parses the real shard, lists every pinned crew player and resident with its life id and name, and keeps ids unique', () => {
     const text = readFileSync(COLO_SHARD, 'utf8');
     expect(parseSovereignShard(text).shard).toBe('colo');
     const players = (
-      parse(text) as { sovereign: { players: { player_id: string; life_id: string }[] } }
+      parse(text) as {
+        sovereign: { players: { player_id: string; life_id: string; name: string }[] };
+      }
     ).sovereign.players;
     const ids = players.map((p) => p.player_id);
     const lives = players.map((p) => p.life_id);
-    for (const [playerId, lifeId] of TNG_CREW) {
-      expect(ids).toContain(playerId);
-      expect(lives).toContain(lifeId);
-    }
-    for (const [playerId, lifeId] of RESIDENTS) {
-      expect(ids).toContain(playerId);
-      expect(lives).toContain(lifeId);
+    // No exact count is pinned: adding a resident does not edit this test, only RESIDENTS.
+    for (const [playerId, lifeId, name] of [...TNG_CREW, ...RESIDENTS]) {
+      const found = players.find((p) => p.player_id === playerId);
+      expect(found, playerId).toBeDefined();
+      expect(found?.life_id, playerId).toBe(lifeId);
+      expect(found?.name, playerId).toBe(name);
     }
     expect(new Set(ids).size).toBe(ids.length);
     expect(new Set(lives).size).toBe(lives.length);
-    // 15 before the residents were added, 17 with them. A change here is a deliberate roster change.
-    expect(players).toHaveLength(17);
   });
 });
 
