@@ -25,6 +25,7 @@ import { ImageLimiter } from '../body-image/limiter.ts';
 import { RenderHost } from '../body-image/render-host.ts';
 import { AuditPublisher } from '../character/audit-publisher.ts';
 import type { LifeCharacter } from '../character/character-config.ts';
+import { lifeThreatPolicy } from '../character/runtime.ts';
 import { countingSink, type GolemMetrics } from '../metrics.ts';
 import { composeEars } from '../mind-link/compose-ears.ts';
 import { RecentEvents } from '../mind-link/recent-events.ts';
@@ -158,6 +159,8 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
   };
   bot.once('end', onEnd);
   const wrapped: { recent: RecentEvents | null } = { recent: null };
+  // The audit producer is built when the Body's generation is bound (AN-12a), before the Body starts.
+  let audit: AuditPublisher | undefined;
   const restarting = (env.restart ?? restartBody)({
     lifeId: config.lifeId,
     bot,
@@ -169,6 +172,29 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     use: config.use,
     swim: config.swim,
     timeScale: config.timeScale,
+    // Only a sheet from config is bound (AN-07 and AN-12a): the standard fallback and off build no policy.
+    bindThreat: (generation) => {
+      const sheet = env.character?.sheet ?? null;
+      if (sheet === null || env.character?.source !== 'config') return undefined;
+      audit ??=
+        env.audit ??
+        new AuditPublisher({
+          publisher,
+          shard: config.shard,
+          lifeId: config.lifeId,
+          generation,
+          tick,
+          log,
+        });
+      return lifeThreatPolicy({
+        sheet,
+        rolls: env.character.config.rolls,
+        lifeId: config.lifeId,
+        generation,
+        tick,
+        audit,
+      });
+    },
     nats: { publisher, shard: config.shard, log },
     wrapRecords: (inner) => {
       const made = new RecentEvents(env.metrics ? countingSink(inner, env.metrics) : inner);
@@ -211,7 +237,6 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
   let link: MindLinkServer | undefined;
   let renders: RenderHost | undefined;
   let stopImages: (() => void) | undefined;
-  let audit: AuditPublisher | undefined;
   try {
     const digest = wrapped.recent;
     if (digest === null) throw new Error('the Body did not wrap its record sink');
@@ -219,7 +244,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     // fallback (never stored, so no baseline) builds no audit producer at all and emits nothing.
     const sheet = env.character?.sheet ?? null;
     if (sheet !== null && env.character?.source === 'config') {
-      audit =
+      audit ??=
         env.audit ??
         new AuditPublisher({
           publisher,

@@ -13,6 +13,7 @@ import {
 import { type Body, type CreateBodyOptions, createBody } from './create-body.ts';
 import { GENERATION_BUCKET, type GenerationOptions, nextGeneration } from './generation.ts';
 import { InflightStore } from './inflight.ts';
+import type { ThreatPolicy } from './reflexes/threat-policy.ts';
 
 /** Spec 5.2: how long a restarted Body waits for the Mind's plan before it says it has none. */
 export const NO_PLAN_WAIT_MS = 45_000;
@@ -50,6 +51,11 @@ export interface RestartBodyOptions
   /** Starts a timer and returns its cancel function; default `setTimeout`. */
   schedule?: (fire: () => void, ms: number) => () => void;
   generation?: GenerationOptions;
+  /**
+   * Gives the threat policy for the generation this start takes, before the Body is built (AN-12a).
+   * Left out or returning undefined, the Body keeps the legacy combat reflexes.
+   */
+  bindThreat?: (generation: number) => ThreatPolicy | undefined;
   log?: (line: string) => void;
   /** How long `stop` waits for the record sink to flush, in ms. Default 5000. */
   flushTimeoutMs?: number;
@@ -133,11 +139,14 @@ export async function restartBody(options: RestartBodyOptions): Promise<Restarte
     options.lifeId,
     options.generation,
   );
-  const { kv, noPlanWaitMs, schedule, generation: _g, log, ...bodyOptions } = options;
+  const { kv, noPlanWaitMs, schedule, generation: _g, log, bindThreat, ...bodyOptions } = options;
+  // The policy is bound to this generation's draws before the Body is built, so nothing decides first.
+  const threat = bindThreat?.(generation);
   const body = createBody({
     ...bodyOptions,
     bodyGeneration: generation,
     checkpoints: { kv: kv.checkpoints, ...(log === undefined ? {} : { log }) },
+    ...(threat === undefined ? {} : { threat }),
   });
   body.runtime.start();
   body.executor.start();
