@@ -36,6 +36,7 @@ import {
   setJump,
   stopDigIfDigging,
 } from './stall-recovery.ts';
+import { isWetNode, wetAt } from './water-rules.ts';
 
 export { ESCALATE_AFTER_REPLANS, MAX_LADDERS };
 
@@ -139,28 +140,6 @@ const tierOne = new WeakMap<Bot, unknown>();
  * Tier 2 movements (decision 0164): digging at cost 4, towers with scaffolding, and the safety
  * rules of `goto-dig.ts`. Built fresh per walk, with the same doors and corner rules as tier 1.
  */
-/** Block names that put the Body in water: plain water, and the plants and bubbles that grow in it. */
-const WET_CELLS = new Set([
-  'water',
-  'bubble_column',
-  'seagrass',
-  'tall_seagrass',
-  'kelp',
-  'kelp_plant',
-]);
-
-function wetAt(bot: Bot): (x: number, y: number, z: number) => boolean {
-  return (x, y, z) => {
-    const name = bot.blockAt(new Vec3(x, y, z))?.name;
-    return name !== undefined && WET_CELLS.has(name);
-  };
-}
-
-/** True when the node's feet cell is water: a walk must not end there. */
-function isWetNode(bot: Bot, node: { x: number; y: number; z: number } | undefined): boolean {
-  return node !== undefined && wetAt(bot)(node.x, node.y, node.z);
-}
-
 function digMovements(bot: Bot): unknown {
   const digging = new Movements(bot);
   applyDigRules(digging, bot);
