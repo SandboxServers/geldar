@@ -9,6 +9,12 @@ export interface FakeBlock {
   position: Vec3;
   /** The block light the world model reports; absent reads as unknown. */
   light?: number;
+  /** The bed's `occupied` state; absent means that state cannot be read. */
+  occupied?: boolean | undefined;
+  /** The bed block's `part` state; absent means it cannot be read, so the block keys only itself. */
+  part?: 'head' | 'foot';
+  /** The bed block's `facing` state; absent means it cannot be read. */
+  facing?: string;
 }
 
 /** An entity in the fake world: its minecraft-data name and its feet position. */
@@ -36,7 +42,7 @@ export interface FakeOptions {
   /** The world age in ticks (`bot.time.age`); a test may set it again between two sleeps. */
   age?: number;
   thundering?: boolean;
-  /** The blocks in the world; `findBlocks` searches them in order. */
+  /** The blocks in the world; `findBlocks` searches them in order, within `maxDistance` of the bot. */
   blocks?: FakeBlock[];
   /** The entities in the world, as `bot.entities` lists them. */
   entities?: FakeEntity[];
@@ -79,6 +85,7 @@ export function fakeBot(options: FakeOptions = {}): Bot {
     },
     findBlocks: ({
       matching,
+      maxDistance,
       count,
     }: {
       matching: (block: FakeBlock) => boolean;
@@ -87,9 +94,13 @@ export function fakeBot(options: FakeOptions = {}): Bot {
     }) =>
       blocks
         .filter(matching)
-        .slice(0, count)
-        .map((block) => block.position),
-    blockAt: (position: Vec3) => blocks.find((block) => block.position.equals(position)) ?? null,
+        .map((block) => block.position)
+        .filter((position) => position.distanceTo(bot.entity.position) <= maxDistance)
+        .slice(0, count),
+    blockAt: (position: Vec3) => {
+      const block = blocks.find((candidate) => candidate.position.equals(position));
+      return block ? withState(block) : null;
+    },
     sleep: vi.fn(async (_bed: FakeBlock) => {
       if (options.hangSleep) return new Promise<void>(() => undefined);
       if (options.sleepDelayMs) {
@@ -103,6 +114,15 @@ export function fakeBot(options: FakeOptions = {}): Bot {
     }),
   };
   return bot as unknown as Bot;
+}
+
+/**
+ * The block as `blockAt` returns it: its `getProperties` reports the bed states the fake holds (`part`, `facing`,
+ * `occupied`), as Mineflayer's blocks do. A state the fake does not hold reads as undefined.
+ */
+function withState(block: FakeBlock): FakeBlock {
+  const { occupied, part, facing } = block;
+  return { ...block, getProperties: () => ({ part, facing, occupied }) } as FakeBlock;
 }
 
 /** Runs the `sleep` handler with a fresh abort signal, unless the test passes its own. */
@@ -130,13 +150,25 @@ export const walkUntilAborted = (
     );
   });
 
-export const BED = { name: 'white_bed', position: new Vec3(5, 64, 0) };
-export const OTHER_HALF = { name: 'white_bed', position: new Vec3(6, 64, 0) };
+/** A white bed's head at (5, 64, 0) facing west, so its foot is at (6, 64, 0). */
+export const BED = {
+  name: 'white_bed',
+  position: new Vec3(5, 64, 0),
+  part: 'head',
+  facing: 'west',
+} as const;
+/** The foot of BED, at (6, 64, 0), facing west. */
+export const OTHER_HALF = {
+  name: 'white_bed',
+  position: new Vec3(6, 64, 0),
+  part: 'foot',
+  facing: 'west',
+} as const;
 
-/** A whole bed as the world holds it: two adjacent blocks along x, both named `name`. */
+/** A whole bed as the world holds it: a head at (x, 64, 0) facing west, and its foot at x + 1. */
 export function bed(name: string, x: number): FakeBlock[] {
   return [
-    { name, position: new Vec3(x, 64, 0) },
-    { name, position: new Vec3(x + 1, 64, 0) },
+    { name, position: new Vec3(x, 64, 0), part: 'head', facing: 'west' },
+    { name, position: new Vec3(x + 1, 64, 0), part: 'foot', facing: 'west' },
   ];
 }

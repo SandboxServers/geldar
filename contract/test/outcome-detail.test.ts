@@ -89,6 +89,11 @@ describe('failure detail text', () => {
     );
   });
 
+  it('an interrupted failure on any other verb drops its detail', () => {
+    expect(outcomeDetailText('give', 'interrupted', 'the items are on the ground')).toBeUndefined();
+    expect(outcomeDetailText('use', 'interrupted', 'a lever')).toBeUndefined();
+  });
+
   it.each(BODY_SENTENCES)(
     'every Body sentence (%s, %s) passes the scan and is kept',
     (verb, reason, text) => {
