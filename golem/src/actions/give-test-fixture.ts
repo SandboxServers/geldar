@@ -117,9 +117,9 @@ export function setup(held = 5, pickups: Pickups = {}) {
     order.push('waitForTicks');
   });
   // The server's full player list: a player listed here is known to the server, not to the agent.
-  const players: Record<string, unknown> = { Hidden: { entity: { position: new Vec3(0, 64, 5) } } };
+  // The tab list: the test's own players (`world.setPlayer`) and one loaded player with no entity.
+  world.players.Hidden = { entity: { position: new Vec3(0, 64, 5) } };
   const bot = Object.assign(world.bot, {
-    players,
     inventory: { items: () => [{ name: 'oak_log', count: held }] },
     registry: { items: {}, itemsByName: { oak_log: { id: 42 } } },
     on: events.on.bind(events),

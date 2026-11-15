@@ -1,7 +1,8 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { canSeePoint } from '../perception/notable-blocks.ts';
-import { findVisibleAgent } from '../perception/visible-agent.ts';
+import { findVisibleAgent, isUsernameVisible } from '../perception/visible-agent.ts';
+import { logNotInSight } from './give-not-in-sight.ts';
 import {
   allPicked,
   awaitUntil,
@@ -72,6 +73,12 @@ const STEP_BACK_MS = 3_000;
 
 /** The one text for a recipient the agent cannot see. It never says whether the name exists. */
 export const NOT_IN_SIGHT = 'no such agent in sight';
+
+/** The refusal for a recipient not in sight, with its operator-only diag line (never shown to the agent). */
+function notInSight(bot: Bot, to: string): ActionOutcome {
+  logNotInSight(bot, to);
+  return failed('not_found', NOT_IN_SIGHT);
+}
 
 /** The distance (blocks) between two points, counting only the x and z axes. */
 function horizontalGap(a: Entity['position'], b: Entity['position']): number {
@@ -171,11 +178,13 @@ async function takeBack(ctx: ActionContext, bot: Bot, watch: PickupWatch): Promi
 
 /**
  * Who else picked items up, as the agent can see them now: the names in sight, and whether anyone
- * out of sight did. A name is said only when the agent can see that player (decision 0145).
+ * out of sight did. A name is said only when the agent can see that exact username (decision 0145);
+ * a loose name (a handle or display name) never counts, so an unseen player is not named because a
+ * visible agent shares their handle.
  */
 function bystanders(bot: Bot, watch: PickupWatch): { names: string; unseen: boolean } {
   const all = [...new Set(watch.others.values())];
-  const seen = all.filter((name) => findVisibleAgent(bot, name) !== null);
+  const seen = all.filter((name) => isUsernameVisible(bot, name));
   return { names: seen.join(', '), unseen: seen.length < all.length };
 }
 
@@ -288,7 +297,10 @@ async function tossTo(
 ): Promise<ActionOutcome> {
   const { bot } = ctx;
   const first = findVisibleAgent(bot, action.to);
-  if (!first) return failed('not_found', NOT_IN_SIGHT);
+  if (!first) return notInSight(bot, action.to);
+  // Resolved once: the walk and the checks after it follow this username, so a second agent that
+  // later matches the same loose name cannot change who the give is for.
+  const pinned = first.username;
 
   const info = bot.registry.itemsByName?.[action.item];
   const held = bot.inventory
@@ -308,16 +320,16 @@ async function tossTo(
   }
   if (ctx.signal.aborted) return cancelled();
 
-  // The agent may have moved or turned out of sight while walking: resolve again, from scratch.
-  let target = findVisibleAgent(bot, action.to);
-  if (!target) return failed('not_found', NOT_IN_SIGHT);
+  // The agent may have moved or turned out of sight while walking: resolve the pinned username again.
+  let target = findVisibleAgent(bot, pinned);
+  if (!target) return notInSight(bot, action.to);
   if (target.distance > GIVE_REACH) return failed('out_of_reach', 'too far from the agent');
 
   if (target.distance < STEP_BACK_BELOW) {
     const stuck = await stepBackFrom(ctx, bot, target.position);
     if (ctx.signal.aborted) return cancelled();
-    target = findVisibleAgent(bot, action.to);
-    if (!target) return failed('not_found', NOT_IN_SIGHT);
+    target = findVisibleAgent(bot, pinned);
+    if (!target) return notInSight(bot, action.to);
     if (target.distance > GIVE_REACH) return failed('out_of_reach', 'too far from the agent');
     // A toss closer than TOSS_MIN_GAP lands in the Body's own pickup box, so it is not thrown.
     if (horizontalGap(bot.entity.position, target.position) < TOSS_MIN_GAP)
@@ -337,7 +349,8 @@ async function tossTo(
     return failed('blocked', 'something is in the way of the toss');
   }
 
-  const watch = watchPickup(bot, action.to, action.item);
+  // The pickup watch counts the recipient by the username resolved, which a loose name differs from.
+  const watch = watchPickup(bot, target.username, action.item);
   probe.watch = watch;
   try {
     // Aim at about the recipient's middle, not its feet, so the toss carries past the Body.

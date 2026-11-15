@@ -18,7 +18,8 @@ interface FollowState {
 /**
  * `follow`: stay near a named agent. Arguments: `{ target, max_unseen_seconds? }` (the name; 1 to
  * 120 seconds, default 10). The target is resolved only among the players in sight now
- * (`findVisibleAgent`); a name that is not in sight is refused at `start` with the same text
+ * (`findVisibleAgent`), once, at `start`; the program then follows that exact username. A name
+ * that is not in sight is refused at `start` with the same text
  * whether or not the player exists. Each step walks toward the target when it is further than
  * `CLOSE_ENOUGH`, or waits one second when it is near. A step with the target out of sight waits
  * one second and counts it; after `max_unseen_seconds` in a row the intent fails with
@@ -34,9 +35,11 @@ export class FollowProgram implements IntentProgram {
     const target = reader.playerName('target');
     const maxUnseenSeconds = reader.optionalInt('max_unseen_seconds', 1, 120, 10);
     reader.done();
-    if (!findVisibleAgent(ctx.bot, target))
-      throw new ProgramError('invalid_args', 'follow', NOT_IN_SIGHT);
-    this.state = { target, maxUnseenSeconds, unseen: 0 };
+    // Resolved once, here: the program then follows that exact username, so a second agent that
+    // later matches the loose name cannot take over the follow.
+    const seen = findVisibleAgent(ctx.bot, target);
+    if (!seen) throw new ProgramError('invalid_args', 'follow', NOT_IN_SIGHT);
+    this.state = { target: seen.username, maxUnseenSeconds, unseen: 0 };
   }
 
   async step(ctx: ProgramContext): Promise<StepResult> {
