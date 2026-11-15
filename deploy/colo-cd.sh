@@ -11,7 +11,7 @@
 #   With no positional args, the inputs come from the environment: GELDAR_RELEASE_MANIFEST (a validated copy of the
 #   release manifest), GELDAR_RELEASE_SHA (the 40-character main sha) and the working directory (the git-less export).
 # Env: COLO_CD_NOTICE_SECONDS (default 30; 0 skips the wait). The log is $STATE_DIR/cd.log (no secrets, no addresses).
-#   COLO_CD_RELEASE_FILE (the node's manifest copy), GELDAR_COLO_ROOT (the src extract, default /mnt/nvme/geldar-colo/src),
+#   COLO_CD_RELEASE_FILE (the node's manifest copy), GELDAR_COLO_ROOT (the src extract, default set below),
 #   COLO_CD_ENV_FILE (default /home/claude/colo-env.sh, sourced when present), COLO_CD_IMAGE_INSPECT (test shim).
 set -eu
 # The entrypoint runs this with a cleared environment: PATH and HOME are set here when they are empty. An inherited PATH
