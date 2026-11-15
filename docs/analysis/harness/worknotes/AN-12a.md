@@ -52,6 +52,40 @@ Gap (b'): the proficiency cache is started and stopped by the supervisor (`golem
 Also still open for ops: real NATS and scratch-stack fixtures.
 - `golem/src/adam/adam-body.test.ts` was already 591 lines, so the new adam wiring tests go in a separate file.
 
+## Close-out pass (review findings 2 to 7)
+
+Gap (b') above is closed by `golem/src/adam/main-stop.test.ts` (main() shutdown) and `golem/src/players/main-host.test.ts` (runPlayer shutdown and connections).
+
+New or changed tests:
+- `golem/src/adam/main-stop.test.ts` (new, 1): main() stops the proficiency cache after the connection manager and before the connections close.
+- `golem/src/players/main-host.test.ts` (new, 5): runPlayer stops the cache before the KV and the connection close; a KV open failure closes the connection; a presence failure closes the KV and the connection; a cache start failure closes both; `playerBodyEnv` passes the cache through.
+- `golem/src/adam/adam-body.character.test.ts` (+1): a bot that ends during start closes the publisher its bound policy built.
+- `golem/src/character/runtime.test.ts` (+2): an unarmed flee at aggression 5 is a d20 keyed `threat_unarmed` with the decision's fx equal to it; a NaN or infinite health records nothing and does not throw. The fake recorder now asserts `fields.fx === key.fx`, as the real publisher does.
+
+Source change: `golem/src/players/main.ts` wraps `startProficiency` so a throw closes the KV and the connection (finding 5, players side); `golem/src/character/runtime.ts` skips recording a decision when health is not finite (finding 6). The skip logs nothing because `ThreatRecorder` has no log; the decision is dropped silently.
+
+Mutation runs (one line each, the named test run, file restored from a scratchpad copy, `git diff --stat` empty after each):
+
+| id | mutation | result |
+| --- | --- | --- |
+| M1 | `adam/main.ts`: `proficiency?.stop();` removed | fails: `stops the proficiency cache after the connection manager and before the connections close` |
+| M2 | `players/main.ts`: `proficiency?.stop();` removed | fails: `stops the proficiency cache after the session, before the KV and the connection close` |
+| M3 | `players/main.ts`: KV-open catch `nc.close()` removed | fails: `closes the connection when the restart KV fails to open` |
+| M4 | `players/main.ts`: proficiency catch `nc.close()` removed | fails: `closes the KV and the connection when the proficiency cache fails to start` |
+| M5 | `players/main.ts`: `playerBodyEnv` drops `proficiency` | fails: `passes the host cache to the Body env as is` |
+| M6 | `adam-body.ts`: `audit?.close()` removed from the restart-failure catch | fails: `closes the publisher the bound policy built when the bot ends during start` |
+| M7 | `runtime.ts`: non-finite health guard removed | fails: `records nothing for a non-finite health, and does not throw` |
+| M8 | `runtime.ts`: decision fx replaced by `'zzz'` | fails 7 tests, including `draws an unarmed flee as a d20 keyed threat_unarmed` (the recorder's fx check) |
+| M9 | `runtime.ts`: deterministic key fx `'zzz'` | fails: `records a deterministic decision with no roll` and `takes the aggression and the roll switch` |
+| M10 | `runtime.ts`: `rolls` ignored (always draws) | fails: `records a deterministic decision with no roll` and `takes the aggression and the roll switch` |
+| M11 | `runtime.ts`: `rolls` forced false | fails 5 tests, including `records a d20 decision keyed like its roll` |
+| M12 | `runtime.ts`: DrawKey generation 0 | fails: `keys each draw by this generation, the tick and a sequence` and both decision-key tests |
+| M13 | `runtime.ts`: combat level never read (`() => 0`) | fails: `reads the combat level at each decision, not a fixed 0` |
+
+Not run in this pass (still open from the review): the adam-body `rolls` forced mutations (review M4, M12), the `bindThreat` generation 0 mutation (review M7), the `restart.ts` `threat` drop and swallowed `bindThreat` throw (review M3, M5), finding 3 (config thresholds not passed to the cache), finding 5 for the adam host (`startProficiency` throw before the supervisor), and the vacuous assertion in review finding 8.
+
+Also still open for ops: real NATS and scratch-stack fixtures.
+
 ## Not in this slice (deviations to be picked up later)
 
 - The sheet comes from the config only, not the cache's adopted baseline (ruling of the first pass, kept).

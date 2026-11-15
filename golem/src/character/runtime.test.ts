@@ -1,4 +1,10 @@
-import { type DrawKey, type Level, type Roll, STANDARD_SHEET } from '@geldar/psyche';
+import {
+  type CharacterSheet,
+  type DrawKey,
+  type Level,
+  type Roll,
+  STANDARD_SHEET,
+} from '@geldar/psyche';
 import { describe, expect, it } from 'vitest';
 import type { DecisionFields } from './audit-events.ts';
 import { lifeThreatPolicy, type ThreatRecorder } from './runtime.ts';
@@ -23,6 +29,8 @@ function recorder(): ThreatRecorder & {
       return 'id';
     },
     recordDecision(key, fields) {
+      // The real publisher drops a decision whose fx differs from its key's fx; this fake fails the test instead.
+      expect(fields.fx).toBe(key.fx);
       decisions.push({ key, fields });
     },
   };
@@ -30,6 +38,54 @@ function recorder(): ThreatRecorder & {
 
 // Armed, health 8: inside the band (floor 6, band to 10) at aggression 3, so the roll decides.
 const BAND = { health: 8, armed: true, suicideMob: false };
+
+const UNARMED_AGGRESSION_5 = {
+  ...STANDARD_SHEET,
+  attributes: {
+    ...STANDARD_SHEET.attributes,
+    aggression: 5 as CharacterSheet['attributes']['aggression'],
+  },
+};
+
+describe('lifeThreatPolicy keys, fx and inputs (AN-12a)', () => {
+  it('draws an unarmed flee as a d20 keyed threat_unarmed, and the decision carries that fx', () => {
+    const audit = recorder();
+    const policy = lifeThreatPolicy({
+      sheet: UNARMED_AGGRESSION_5,
+      rolls: true,
+      lifeId: LIFE,
+      generation: 7,
+      tick: () => 100,
+      audit,
+    });
+    policy.decide({ health: 8, armed: false, suicideMob: false });
+    const [key] = audit.keys;
+    const [decision] = audit.decisions;
+    expect(key?.fx).toBe('threat_unarmed');
+    expect(decision?.key).toEqual(key);
+    expect(decision?.fields.fx).toBe('threat_unarmed');
+    expect(decision?.fields.kind).toBe('d20');
+  });
+
+  it('records nothing for a non-finite health, and does not throw', () => {
+    const audit = recorder();
+    const policy = lifeThreatPolicy({
+      sheet: STANDARD_SHEET,
+      rolls: false,
+      lifeId: LIFE,
+      generation: 7,
+      tick: () => 100,
+      audit,
+    });
+    expect(() =>
+      policy.decide({ health: Number.NaN, armed: true, suicideMob: false }),
+    ).not.toThrow();
+    expect(() =>
+      policy.decide({ health: Number.POSITIVE_INFINITY, armed: true, suicideMob: false }),
+    ).not.toThrow();
+    expect(audit.decisions).toHaveLength(0);
+  });
+});
 
 describe('lifeThreatPolicy decisions and the combat level (AN-12a)', () => {
   it('records a deterministic decision with no roll, under this generation', () => {

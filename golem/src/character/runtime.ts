@@ -66,6 +66,8 @@ export function lifeThreatPolicy(options: LifePolicyOptions): ThreatPolicy {
     call: ThreatCall,
     facts: { health: number; armed: boolean; suicideMob: boolean },
   ) => {
+    // A non-finite health is not a valid decision input (the event schema rejects it): nothing is recorded.
+    if (!Number.isFinite(facts.health)) return;
     const fields: DecisionFields = {
       fx: call.roll === null ? 'threat' : call.roll.fx,
       kind: 'deterministic',

@@ -9,13 +9,17 @@ import { type AdamBodyEnv, startAdamBody } from './adam-body.ts';
 import { parseAdamConfig } from './adam-config.ts';
 
 // Counts the AuditPublisher a run builds (AN-07); the class stays real.
-const built = vi.hoisted(() => ({ audits: 0 }));
+const built = vi.hoisted(() => ({ audits: 0, closed: 0 }));
 vi.mock('../character/audit-publisher.ts', async (importOriginal) => {
   const real = await importOriginal<typeof import('../character/audit-publisher.ts')>();
   class CountedAudit extends real.AuditPublisher {
     constructor(options: ConstructorParameters<typeof real.AuditPublisher>[0]) {
       built.audits += 1;
       super(options);
+    }
+    override close(): void {
+      built.closed += 1;
+      super.close();
     }
   }
   return { ...real, AuditPublisher: CountedAudit };
@@ -123,6 +127,25 @@ function harness(
 }
 
 const chunkEvents = (h: Harness) => h.published.filter((e) => e.subject.endsWith('chunk_visited'));
+
+describe('the audit publisher when the restart does not finish (AN-12a)', () => {
+  it('closes the publisher the bound policy built when the bot ends during start', async () => {
+    const h = harness(CONFIG);
+    const bot = fakeBot();
+    const audits = built.audits;
+    const closed = built.closed;
+    h.env.restart = async (o): Promise<RestartedBody> => {
+      o.bindThreat?.(4);
+      bot.emit('end', 'kicked');
+      return new Promise<RestartedBody>(() => undefined);
+    };
+    await expect(startAdamBody(h.env, bot as unknown as Bot)).rejects.toThrow(
+      /bot ended during start/,
+    );
+    expect(built.audits).toBe(audits + 1);
+    expect(built.closed).toBe(closed + 1);
+  });
+});
 
 describe('startAdamBody with the character block off or standard (AN-12a)', () => {
   it.each([

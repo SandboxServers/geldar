@@ -159,13 +159,21 @@ export async function runPlayer(
     });
   const server = natsRequestServer(nc);
   // The proficiency cache (AN-12a): started only for a config sheet; off and standard send no request.
-  const proficiency = startProficiency({
-    nc,
-    shard: config.shard,
-    lifeId,
-    character: config.character,
-    log: (line) => log({ event: 'proficiency', line }),
-  });
+  // A failure here closes the connections opened above, as the KV and presence failures do.
+  let proficiency: ReturnType<typeof startProficiency>;
+  try {
+    proficiency = startProficiency({
+      nc,
+      shard: config.shard,
+      lifeId,
+      character: config.character,
+      log: (line) => log({ event: 'proficiency', line }),
+    });
+  } catch (error) {
+    await restartKv.close();
+    await nc.close();
+    throw error;
+  }
   const bodyEnv = playerBodyEnv({
     proficiency,
     config,
