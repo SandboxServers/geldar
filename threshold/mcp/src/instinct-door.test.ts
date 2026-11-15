@@ -1,222 +1,35 @@
 import { readdirSync, readFileSync } from 'node:fs';
-import { request } from 'node:http';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MCP_TOOL_NAMES, type McpToolName, mcpToolSchemas } from '@geldar/contract';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { McpConfig } from './config.ts';
-import { FakeKeepAlive, FakeTokenStore, ScriptedRateLimiter } from './fakes/stores.fakes.ts';
-import { worldFixture } from './fakes/world.fakes.ts';
-import { tokenDigest } from './http/auth.ts';
-import { createFrontDoor, type FrontDoor } from './http/front.ts';
+import {
+  ACT_ARGS,
+  AUTH,
+  closeRigs,
+  connectWith,
+  HEADER,
+  KEY,
+  postInitialize,
+  replyOf,
+  startRig,
+  textOf,
+  WRONG_KEY,
+} from './instinct-door-rig.fixture.ts';
 import { ConfigRejected, instinctKeyOf } from './main.ts';
-import type { PlayerRecord } from './ports.ts';
-import { createWorld } from './world.ts';
-import { createWorldSession, type WorldSessionDeps } from './world-session.ts';
 
 // The instinct class through the real front door on loopback, with the world and every store faked.
-// Keys are built here at runtime; none is a real secret.
+// The rig is in instinct-door-rig.fixture.ts; the GX-08 peek tests are in instinct-peek-door.test.ts.
 
-const PEPPER = new TextEncoder().encode('instinct-door-pepper-0123456789-stub');
-const TOKEN = `gmcp-${'cc'.repeat(32)}`;
-const KEY = 'k'.repeat(40);
-const WRONG_KEY = 'w'.repeat(40);
-const HEADER = 'X-Geldar-Instinct-Key';
-const FAR_FUTURE_MS = 10 ** 13;
-const START_BUDGET = 37;
+afterEach(closeRigs);
 
-const PLAYER: PlayerRecord = {
-  playerId: 'ag-instinct-01',
-  lifeId: 'ag_instinct_01',
-  ownerId: 'owner_03',
-  displayName: 'Ivo',
-  harness: 'claude-code',
-  status: 'active',
-  declaredModel: null,
+const INSTINCT = { ...AUTH, [HEADER]: KEY };
+
+/** Tools the runtime scan never calls, with the reason. The registry walk still covers them. */
+const NOT_CALLED: Partial<Record<McpToolName, string>> = {
+  wait: 'blocks until the world moves (max_seconds 1 ran past 60 s in the fake world)',
+  sleep: 'starts a sleep plan on the Body; the door rig has no quick fixture for it',
 };
-
-const CONFIG = {
-  bind: '127.0.0.1',
-  port: 0,
-  allowedHosts: ['localhost', '127.0.0.1'],
-  publicHost: null,
-} as McpConfig['http'];
-
-const ACT_ARGS = {
-  reasoning: 'walk to the wood and gather it',
-  intent: {
-    goal: 'collect_wood',
-    program: 'gather',
-    arguments: { block: 'oak_log', count: 12 },
-    wake_on: ['goal_completed'],
-    limits: { max_world_ticks: 6000, max_block_operations: 100 },
-  },
-  actions: [{ do: 'goto', target: { x: 1, y: 64, z: 1 } }],
-};
-
-interface Rig {
-  fx: ReturnType<typeof worldFixture>;
-  world: ReturnType<typeof createWorld>;
-  door: FrontDoor;
-  base: URL;
-  /** The class each new session was given, in order. */
-  sources: (string | undefined)[];
-  /** Every log line the front door wrote. */
-  logs: Record<string, unknown>[];
-  clients: Client[];
-}
-
-const rigs: Rig[] = [];
-
-async function startRig(instinctKey?: Buffer): Promise<Rig> {
-  const fx = worldFixture([PLAYER]);
-  fx.budget.seed(PLAYER.lifeId, START_BUDGET, 0);
-  const world = createWorld({ ...fx.deps, enforce: false });
-  const sessionDeps: WorldSessionDeps = {
-    tools: world.tools,
-    players: fx.players,
-    resources: {
-      profiles: { profile: async () => ({ personality_seed: 'calm and curious', born_day: 3 }) },
-      journal: fx.journal,
-      shard: {
-        chatRadius: 16,
-        waitCapSeconds: 240,
-        tickRate: 20,
-        maxBodyBytes: 65536,
-        maxResultBytes: 16384,
-        presence: { leaseSeconds: 60, hibernateAfterSeconds: 600 },
-      },
-    },
-    keepAlive: new FakeKeepAlive(),
-    keepaliveMs: 25_000,
-  };
-  const store = new FakeTokenStore();
-  store.add({
-    tokenId: 'tok_instinct',
-    tokenHash: tokenDigest(PEPPER, TOKEN),
-    player: PLAYER,
-    expiresAtMs: FAR_FUTURE_MS,
-    revoked: false,
-  });
-  const sources: (string | undefined)[] = [];
-  const logs: Record<string, unknown>[] = [];
-  const door = createFrontDoor({
-    http: CONFIG,
-    pepper: PEPPER,
-    store,
-    limiter: new ScriptedRateLimiter(),
-    instinctKey,
-    createSession: (playerId, signal, ctx) => {
-      sources.push(ctx?.source);
-      return createWorldSession(sessionDeps, playerId, signal, ctx);
-    },
-    log: (line) => logs.push(line),
-    now: () => fx.clock.nowMs(),
-  });
-  const port = await door.listen(0);
-  const rig: Rig = {
-    fx,
-    world,
-    door,
-    base: new URL(`http://127.0.0.1:${port}`),
-    sources,
-    logs,
-    clients: [],
-  };
-  rigs.push(rig);
-  return rig;
-}
-
-afterEach(async () => {
-  for (const rig of rigs.splice(0)) {
-    for (const client of rig.clients) await client.close().catch(() => undefined);
-    rig.world.close();
-    await rig.door.close();
-  }
-});
-
-/** A raw POST of `initialize` with the given headers. Resolves to the status once the reply has ended. */
-function postInitialize(rig: Rig, headers: Record<string, string | string[]>): Promise<number> {
-  const body = JSON.stringify({
-    jsonrpc: '2.0',
-    id: 1,
-    method: 'initialize',
-    params: {
-      protocolVersion: '2025-03-26',
-      capabilities: {},
-      clientInfo: { name: 'instinct-door', version: '0.0.0' },
-    },
-  });
-  return new Promise((resolve, reject) => {
-    const req = request(
-      new URL(`/p/${PLAYER.playerId}`, rig.base),
-      {
-        method: 'POST',
-        headers: {
-          Accept: 'application/json, text/event-stream',
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(body),
-          ...headers,
-        },
-      },
-      (res) => {
-        res.resume();
-        res.on('end', () => resolve(res.statusCode ?? 0));
-      },
-    );
-    req.on('error', reject);
-    req.end(body);
-  });
-}
-
-/** An SDK client on the player's path with the given headers on every request. */
-async function connectWith(rig: Rig, headers: Record<string, string>): Promise<Client> {
-  const client = new Client({ name: 'instinct-door', version: '0.0.0' });
-  const transport = new StreamableHTTPClientTransport(new URL(`/p/${PLAYER.playerId}`, rig.base), {
-    requestInit: { headers },
-  });
-  await client.connect(transport);
-  rig.clients.push(client);
-  return client;
-}
-
-/** One tool call's reply: its first content block, and whether the server flagged it as an error. */
-async function replyOf(
-  client: Client,
-  name: string,
-  args: Record<string, unknown>,
-): Promise<{ text: string; isError: boolean }> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const silent = new Promise<'silent'>((resolve) => {
-    timer = setTimeout(() => resolve('silent'), CALL_TIMEOUT_MS);
-  });
-  try {
-    const reply = await Promise.race([client.callTool({ name, arguments: args }), silent]);
-    if (reply === 'silent') return { text: `no reply within ${CALL_TIMEOUT_MS} ms`, isError: true };
-    const content = reply.content as { type: string; text?: string }[];
-    return { text: content[0]?.text ?? '', isError: reply.isError === true };
-  } catch (error) {
-    return { text: String(error), isError: true };
-  } finally {
-    clearTimeout(timer);
-  }
-}
-
-/** The text of one tool call's first content block; a protocol error comes back as its message. */
-async function textOf(
-  client: Client,
-  name: string,
-  args: Record<string, unknown>,
-): Promise<string> {
-  return (await replyOf(client, name, args)).text;
-}
-
-const AUTH = { Authorization: `Bearer ${TOKEN}` };
-
-/** A quick tool that has not answered by then is a finding, named by the scan; the test never waits on it. */
-const CALL_TIMEOUT_MS = 2_000;
 
 /** Valid minimal inputs (from each tool's own tests), so the scan runs the success path of these tools. */
 const QUICK_INPUTS: Partial<Record<McpToolName, Record<string, unknown>>> = {
@@ -226,12 +39,6 @@ const QUICK_INPUTS: Partial<Record<McpToolName, Record<string, unknown>>> = {
   see: {},
   status: {},
   view: {},
-};
-
-/** Tools the runtime scan never calls, with the reason. The registry walk still covers them. */
-const NOT_CALLED: Partial<Record<McpToolName, string>> = {
-  wait: 'blocks until the world moves (max_seconds 1 ran past 60 s in the fake world)',
-  sleep: 'starts a sleep plan on the Body; the door rig has no quick fixture for it',
 };
 
 /** Tools with no quick valid input in this rig: called with {} only, so their validation error is scanned. */
@@ -298,12 +105,6 @@ function schemaLeaks(node: unknown, out: string[]): void {
   }
 }
 
-/** The field names of a tool reply's first text block (a `wait` result is its JSON text). */
-function fieldsOf(reply: { content: unknown }): string[] {
-  const block = (reply.content as { text?: string }[])[0];
-  return Object.keys(JSON.parse(block?.text ?? '{}') as Record<string, unknown>).sort();
-}
-
 describe('the instinct class at the front door', () => {
   it('a right key on an authenticated connection gives the instinct class', async () => {
     const rig = await startRig(Buffer.from(KEY));
@@ -346,7 +147,7 @@ describe('the instinct class at the front door', () => {
 
   it('an act on the instinct connection records source instinct; a model act records none', async () => {
     const instinct = await startRig(Buffer.from(KEY));
-    const client = await connectWith(instinct, { ...AUTH, [HEADER]: KEY });
+    const client = await connectWith(instinct, INSTINCT);
     const reply = await textOf(client, 'act', ACT_ARGS);
     expect(reply).not.toContain('"isError":true');
     const last = instinct.fx.recorder.calls.at(-1);
@@ -360,64 +161,9 @@ describe('the instinct class at the front door', () => {
     expect(modelLast).not.toHaveProperty('source');
   });
 
-  it('a model peek is an ordinary wait; an instinct peek never ends a model wait', async () => {
-    const rig = await startRig(Buffer.from(KEY));
-    const model = await connectWith(rig, AUTH);
-    const instinct = await connectWith(rig, { ...AUTH, [HEADER]: KEY });
-    const second = await connectWith(rig, AUTH);
-    const pause = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 20));
-    const step = async (seconds: number): Promise<void> => {
-      for (let i = 0; i < seconds; i++) {
-        await pause();
-        await rig.fx.clock.advance(1000);
-      }
-      await pause();
-    };
-    const waitCall = (client: Client, args: Record<string, unknown>) =>
-      client.callTool({ name: 'wait', arguments: args });
-
-    // the model's long wait is open first; it is not awaited until it has ended
-    let openEnded = false;
-    const open = waitCall(model, { max_seconds: 60 }).then((reply) => {
-      openEnded = true;
-      return reply;
-    });
-    await pause();
-    // the instinct peek returns at its own 5 s and leaves the model's wait open
-    const peek = waitCall(instinct, { max_seconds: 5, peek: true });
-    await pause();
-    await step(5);
-    const peekReply = await peek;
-    expect(peekReply.isError).not.toBe(true);
-    expect(openEnded).toBe(false);
-
-    // a model's peek is an ordinary wait: it replaces the open model wait
-    const modelPeek = waitCall(second, { max_seconds: 5, peek: true });
-    await pause();
-    const replaced = await open;
-    expect(JSON.stringify(replaced)).toContain('wait_replaced');
-    await step(5);
-    const ordinary = await modelPeek;
-    expect(ordinary.isError).not.toBe(true);
-    expect(fieldsOf(ordinary)).toEqual(fieldsOf(peekReply));
-  });
-
-  it('the model is not advertised the wait peek field; the instinct class is', async () => {
-    const rig = await startRig(Buffer.from(KEY));
-    const model = await connectWith(rig, AUTH);
-    const instinct = await connectWith(rig, { ...AUTH, [HEADER]: KEY });
-    const waitFields = async (client: Client): Promise<string[]> => {
-      const listed = (await client.listTools()).tools.find((tool) => tool.name === 'wait');
-      return Object.keys((listed?.inputSchema.properties ?? {}) as Record<string, unknown>);
-    };
-    expect(await waitFields(model)).toContain('max_seconds');
-    expect(await waitFields(model)).not.toContain('peek');
-    expect(await waitFields(instinct)).toContain('peek');
-  });
-
   it('no tool reply carries the key, the header name, a source field, or instinct as an actor', async () => {
     const rig = await startRig(Buffer.from(KEY));
-    const client = await connectWith(rig, { ...AUTH, [HEADER]: KEY });
+    const client = await connectWith(rig, INSTINCT);
     const problems: string[] = [];
     const called: string[] = [];
     for (const name of MCP_TOOL_NAMES) {

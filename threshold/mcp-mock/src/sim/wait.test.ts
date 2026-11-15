@@ -199,7 +199,7 @@ describe('waitTool', () => {
   }, 30_000);
 
   it('reports dropped events for a cursor older than the log', async () => {
-    const { clock, hub } = setup();
+    const { hub } = setup();
     const log = hub.player(PLAYER).log;
     for (let i = 0; i < 1100; i++) {
       log.append({ kind: 'damage', amount: 1, tick: i, atMs: 0, wakeOn: null });
