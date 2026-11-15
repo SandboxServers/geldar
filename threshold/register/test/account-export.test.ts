@@ -3,18 +3,70 @@ import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mountAccountDelete } from '../src/account-delete-wiring.ts';
 import { accountExportMount } from '../src/account-export-wiring.ts';
-import { accountExportRoutes, exportFileName } from '../src/api/account-export.ts';
+import {
+  accountExportRoutes,
+  EXPORT_MAX_BYTES,
+  exportFileName,
+} from '../src/api/account-export.ts';
 import { handleApi } from '../src/api/index.ts';
-import type { ApiDeps, ApiRoute } from '../src/api/route.ts';
+import type { ApiContext, ApiDeps, ApiRoute } from '../src/api/route.ts';
 import { PgStore } from '../src/pg-store.ts';
 import { sendProblem } from '../src/problem.ts';
 import { type SessionStore, sessionHash } from '../src/session-store.ts';
 import { baseDeps, bearer, cookie, IDENT, KEY_ALL, sessions } from './owner-api-harness.ts';
 
 const SENTINEL = 'SENTINEL-EXPORT-PAYLOAD-7f3a';
-const PAYLOAD = { format: 'geldar-owner-export/1', records: { note: SENTINEL } };
+const PAYLOAD = JSON.stringify({ format: 'geldar-owner-export/1', records: { note: SENTINEL } });
 const NOW = Date.parse('2026-11-15T23:30:00Z');
 const EXPORT = '/api/v1/account/export';
+const BOB_IDENT = 'ab'.repeat(32);
+const BOB_SID = 'sid-bob';
+
+/** A JSON-looking text of exactly `bytes` bytes (ASCII, so characters are bytes). */
+function sized(bytes: number): string {
+  return `{"p":"${'x'.repeat(bytes - 8)}"}`;
+}
+
+/**
+ * A PgStore whose pool hands out one fake client. The client records every statement (sqls) and its params (params, by
+ * statement index) and counts releases; `reply` answers each statement or throws.
+ */
+function storeWithClient(reply: (sql: string) => Promise<{ rows: unknown[] }>) {
+  const sqls: string[] = [];
+  const params: (unknown[] | undefined)[] = [];
+  let releases = 0;
+  const client = {
+    query: async (sql: string, values?: unknown[]) => {
+      sqls.push(sql);
+      params.push(values);
+      return reply(sql);
+    },
+    release: () => {
+      releases += 1;
+    },
+  };
+  const store = new PgStore('postgres://127.0.0.1:1/unused', { shard: 'test' });
+  (store as unknown as { pool: unknown }).pool = { connect: async () => client };
+  return { store, sqls, params, released: () => releases };
+}
+
+/** The session store where BOB_SID is a second owner (BOB_IDENT); every other session is the default one. */
+function bobSessions(): SessionStore {
+  return {
+    ...sessions,
+    touch: async (h) =>
+      h.equals(sessionHash(BOB_SID))
+        ? {
+            sessionHash: h,
+            ownerId: 'bob',
+            identityHash: BOB_IDENT,
+            signedInMs: 0,
+            lastSeenMs: 0,
+            expiresMs: 1e15,
+          }
+        : sessions.touch(h),
+  };
+}
 
 const servers: Server[] = [];
 
@@ -56,7 +108,7 @@ describe('GET /account/export (C7-09b)', () => {
     );
     expect(r.headers.get('cache-control')).toBe('no-store');
     expect(r.headers.get('x-content-type-options')).toBe('nosniff');
-    expect(await r.text()).toBe(JSON.stringify(PAYLOAD));
+    expect(await r.text()).toBe(PAYLOAD);
     expect(fake).toHaveBeenCalledTimes(1);
     expect(fake).toHaveBeenCalledWith(IDENT);
   });
@@ -195,6 +247,107 @@ describe('GET /account/export (C7-09b)', () => {
     expect(JSON.stringify(logs)).not.toContain(SENTINEL);
   });
 
+  it('a store error still spends the owner window: the next export inside a minute is 429', async () => {
+    let clock = NOW;
+    let fails = true;
+    const fake = vi.fn(async () => {
+      if (fails) throw new Error(`database said ${SENTINEL}`);
+      return PAYLOAD;
+    });
+    const base = await start(
+      withRoutes(accountExportMount({ exportOwnerData: fake }, () => clock)),
+    );
+    const first = await fetch(`${base}${EXPORT}`, { headers: cookie });
+    expect(first.status).toBe(500);
+    fails = false;
+    clock += 1_000;
+    const second = await fetch(`${base}${EXPORT}`, { headers: cookie });
+    expect(second.status).toBe(429);
+    expect(fake).toHaveBeenCalledTimes(1);
+  });
+
+  it('a document of exactly 8,000,000 bytes is sent; one byte more is a 500 problem with no content', async () => {
+    const atCap = sized(EXPORT_MAX_BYTES);
+    const base = await start(withRoutes(fakeRoutes(async () => atCap)));
+    const ok = await fetch(`${base}${EXPORT}`, { headers: cookie });
+    expect(ok.status).toBe(200);
+    expect((await ok.text()).length).toBe(EXPORT_MAX_BYTES);
+    const over = await start(withRoutes(fakeRoutes(async () => sized(EXPORT_MAX_BYTES + 1))));
+    const r = await fetch(`${over}${EXPORT}`, { headers: cookie });
+    expect(r.status).toBe(500);
+    expect(r.headers.get('content-disposition')).toBeNull();
+    expect(r.headers.get('content-type')).toBe('application/problem+json');
+    const body = await r.text();
+    expect(body).not.toContain('xxxxxxxxxx');
+    expect(body).toContain('"code":"internal"');
+  });
+
+  it('the router refuses a Bearer owner key before the handler runs (cookieOnly), so the handler is not reached', async () => {
+    const reached = vi.fn();
+    const routes = accountExportRoutes({
+      exportOwnerData: async () => PAYLOAD,
+      charge: () => 0,
+      now: () => NOW,
+    }).map((route) => ({
+      ...route,
+      handler: async (ctx: ApiContext) => {
+        reached();
+        return route.handler(ctx);
+      },
+    }));
+    const base = await start(withRoutes(routes));
+    const r = await fetch(`${base}${EXPORT}`, { headers: bearer(KEY_ALL) });
+    expect(r.status).toBe(401);
+    expect(reached).not.toHaveBeenCalled();
+  });
+
+  it('one export at a time: a second owner is 503 busy while one runs; the gate frees after success and after an error', async () => {
+    let clock = NOW;
+    let holdFirst = true;
+    let throwNext = false;
+    let release: (value: string) => void = () => undefined;
+    const fake = vi.fn(async () => {
+      if (holdFirst) {
+        holdFirst = false;
+        return new Promise<string>((ok) => {
+          release = ok;
+        });
+      }
+      if (throwNext) {
+        throwNext = false;
+        throw new Error('database down');
+      }
+      return PAYLOAD;
+    });
+    const base = await start(
+      baseDeps({
+        now: () => NOW,
+        routes: accountExportMount({ exportOwnerData: fake }, () => clock),
+        sessions: bobSessions(),
+      }),
+    );
+    const bobHeaders = { cookie: `__Host-gr_session=${BOB_SID}` };
+    const alice = fetch(`${base}${EXPORT}`, { headers: cookie });
+    await vi.waitFor(() => expect(fake).toHaveBeenCalledTimes(1));
+    const busy = await fetch(`${base}${EXPORT}`, { headers: bobHeaders });
+    expect(busy.status).toBe(503);
+    expect(busy.headers.get('retry-after')).toBe('5');
+    expect(fake).toHaveBeenCalledTimes(1);
+    release(PAYLOAD);
+    expect((await alice).status).toBe(200);
+    clock += 61_000;
+    const afterSuccess = await fetch(`${base}${EXPORT}`, { headers: bobHeaders });
+    expect(afterSuccess.status).toBe(200);
+    throwNext = true;
+    clock += 61_000;
+    const failed = await fetch(`${base}${EXPORT}`, { headers: cookie });
+    expect(failed.status).toBe(500);
+    clock += 61_000;
+    const afterError = await fetch(`${base}${EXPORT}`, { headers: bobHeaders });
+    expect(afterError.status).toBe(200);
+    expect(fake).toHaveBeenCalledTimes(4);
+  });
+
   it('the file name is the UTC date only', () => {
     expect(exportFileName(NOW)).toBe('geldar-export-2026-11-15.json');
     expect(exportFileName(Date.parse('2026-01-02T00:00:00Z'))).toBe(
@@ -205,26 +358,39 @@ describe('GET /account/export (C7-09b)', () => {
 
 describe('the Pg adapter and the mount (C7-09b)', () => {
   it('exportOwnerData calls register_owner_export with the hash as a Buffer and returns the document', async () => {
-    const store = new PgStore('postgres://127.0.0.1:1/unused', { shard: 'test' });
-    const query = vi.fn(async (_sql: string, _params: unknown[]) => ({
-      rows: [{ export: PAYLOAD }],
-    }));
-    (store as unknown as { pool: { query: typeof query } }).pool = { query };
-    expect(await store.exportOwnerData(IDENT)).toEqual(PAYLOAD);
-    expect(query).toHaveBeenCalledTimes(1);
-    const [sql, params] = query.mock.calls[0] ?? [];
-    expect(sql).toBe('SELECT register_owner_export($1) AS export');
-    const param = params?.[0];
+    const { store, sqls, params, released } = storeWithClient(async (sql) =>
+      sql.includes('register_owner_export') ? { rows: [{ export: PAYLOAD }] } : { rows: [] },
+    );
+    expect(await store.exportOwnerData(IDENT)).toBe(PAYLOAD);
+    expect(sqls).toEqual([
+      'BEGIN',
+      "SET LOCAL statement_timeout = '60s'",
+      'SELECT register_owner_export($1)::text AS export',
+      'COMMIT',
+    ]);
+    const param = params[2]?.[0];
     expect(param).toBeInstanceOf(Buffer);
     expect(Buffer.isBuffer(param) && param.equals(Buffer.from(IDENT, 'hex'))).toBe(true);
+    expect(released()).toBe(1);
   });
 
-  it('a NULL row is null from the adapter', async () => {
-    const store = new PgStore('postgres://127.0.0.1:1/unused', { shard: 'test' });
-    (store as unknown as { pool: unknown }).pool = {
-      query: async () => ({ rows: [{ export: null }] }),
-    };
+  it('a NULL row is null from the adapter, and the transaction commits', async () => {
+    const { store, sqls, released } = storeWithClient(async () => ({ rows: [{ export: null }] }));
     expect(await store.exportOwnerData(IDENT)).toBeNull();
+    expect(sqls.at(-1)).toBe('COMMIT');
+    expect(released()).toBe(1);
+  });
+
+  it('a failing export rolls back, rethrows, and still releases the client', async () => {
+    const { store, sqls, released } = storeWithClient(async (sql) => {
+      if (sql.includes('register_owner_export')) throw new Error('statement timeout');
+      return { rows: [] };
+    });
+    await expect(store.exportOwnerData(IDENT)).rejects.toThrow('statement timeout');
+    expect(sqls).toContain("SET LOCAL statement_timeout = '60s'");
+    expect(sqls.at(-1)).toBe('ROLLBACK');
+    expect(sqls).not.toContain('COMMIT');
+    expect(released()).toBe(1);
   });
 
   it('the route is mounted only with the store port, and unmounted without it', () => {

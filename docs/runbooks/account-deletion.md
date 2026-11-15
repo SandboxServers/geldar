@@ -121,3 +121,6 @@ trigger disable leaves the append-only triggers enabled, and the lock timeout is
 is followed by a check that `lock_timeout` is back at 0). The register unit tests cover the cookie clear on success and
 on logout (the same list), the body slot release on every path, the stop-before-erase order, the account page path,
 the skip log line, and the production mount (the page deps and the delete route, from `mountAccountDelete`).
+## The owner export (C7-09b)
+
+`GET /api/v1/account/export` is a same-origin navigation. A cross-site or same-site request is answered 404. A request with no `Sec-Fetch-Site` header is allowed, because some older browsers and proxies strip it; such a browser can be made to spend the owner's one-per-minute export window by a cross-site link, so the owner's own click can get 429 for up to a minute. The export writes one audit row per successful call (`owner.export`); no other state changes. One export runs at a time per process: a second one while it runs is 503 with `retry-after: 5`. A document over 8,000,000 bytes is answered 500 internal and is never sent; the per-table budgets keep a normal export under that. The export has a 60 s statement timeout.
