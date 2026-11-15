@@ -54,8 +54,15 @@ function sleepFactText(verb: string, result: unknown): string | undefined {
   return `${asleep} of ${needed} needed are asleep`;
 }
 
-/** The fact an ok action carries, by verb: an eat's hunger change or a sleep's sleepers line. */
+/** The farmland fact an ok till or seed planting carries in its `detail.fact`, cut to 160 characters. */
+function farmlandFactText(result: unknown): string | undefined {
+  const fact = (result as { detail?: { fact?: unknown } } | null)?.detail?.fact;
+  return typeof fact === 'string' ? fact.slice(0, 160) : undefined;
+}
+
+/** The fact an ok action carries, by verb: an eat's hunger change, a sleep's sleepers line, or a till's or planting's farmland fact. */
 function okFactText(verb: string, result: unknown): string | undefined {
+  if (verb === 'till' || verb === 'place') return farmlandFactText(result);
   return verb === 'sleep' ? sleepFactText(verb, result) : eatFactText(verb, result);
 }
 

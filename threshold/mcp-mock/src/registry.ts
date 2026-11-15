@@ -64,17 +64,49 @@ export interface ToolResponse {
   )[];
 }
 
-/** The tool list, sorted by name, with a copy of the bundled contract input schema for each (callers may mutate it). */
-export function listTools(): {
+/**
+ * The tool list, sorted by name, with a copy of the bundled contract input schema for each (callers may
+ * mutate it). A tool named in `hidden` is left out, and so is each act action whose `do` names one.
+ */
+export function listTools(hidden: readonly string[] = []): {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
 }[] {
-  return [...MCP_TOOL_NAMES].sort().map((name) => ({
-    name,
-    description: mcpToolSchemas[name].description,
-    inputSchema: structuredClone(mcpToolSchemas[name].input),
-  }));
+  const off = new Set(hidden);
+  return [...MCP_TOOL_NAMES]
+    .filter((name) => !off.has(name))
+    .sort()
+    .map((name) => ({
+      name,
+      description: mcpToolSchemas[name].description,
+      inputSchema: withoutHiddenActions(structuredClone(mcpToolSchemas[name].input), off) as Record<
+        string,
+        unknown
+      >,
+    }));
+}
+
+/** Copies a schema node without the `oneOf` variants whose `do` names a hidden verb (act's actions). */
+function withoutHiddenActions(node: unknown, off: ReadonlySet<string>): unknown {
+  if (Array.isArray(node)) return node.map((item) => withoutHiddenActions(item, off));
+  if (node === null || typeof node !== 'object') return node;
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(node)) {
+    out[key] =
+      key === 'oneOf' && Array.isArray(value)
+        ? value
+            .filter((variant) => !isHiddenVariant(variant, off))
+            .map((variant) => withoutHiddenActions(variant, off))
+        : withoutHiddenActions(value, off);
+  }
+  return out;
+}
+
+function isHiddenVariant(variant: unknown, off: ReadonlySet<string>): boolean {
+  const verb = (variant as { properties?: { do?: { const?: unknown } } } | null)?.properties?.do
+    ?.const;
+  return typeof verb === 'string' && off.has(verb);
 }
 
 function failure(text: string): ToolResponse {

@@ -193,6 +193,16 @@ describe('place', () => {
     expect(fake.look).toHaveBeenCalledWith(-Math.PI / 2, 0, true);
   });
 
+  it('says you are standing in that spot when the target is the bot head cell', async () => {
+    const fake = fakeBot({ blocks: { '0,65,0': 'stone' }, items: ['dirt'] });
+    const outcome = await place(fake, 'dirt', { x: 0, y: 65, z: 0 });
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'blocked',
+      message: 'you are standing in that spot',
+    });
+  });
+
   it('refuses a target that is occupied', async () => {
     const fake = fakeBot({ blocks: { '2,63,0': 'stone', '2,64,0': 'stone' }, items: ['dirt'] });
     const outcome = await place(fake, 'dirt', { x: 2, y: 64, z: 0 });

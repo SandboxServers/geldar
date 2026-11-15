@@ -1,8 +1,69 @@
 import { describe, expect, it } from 'vitest';
 import type { Place } from '../body/where.ts';
+import { hurtEvent } from './hurt.ts';
 import { hurtLogLine } from './hurt-log.ts';
+import { attackerNameOf } from './hurt-trigger.ts';
 
 const overworld: Place = { x: 1.2, y: 70, z: -3.4, dimension: 'minecraft:overworld' };
+
+describe('hurtLogLine: the attacker field', () => {
+  const ground: Place = { x: 0, y: 64, z: 0, dimension: 'minecraft:overworld' };
+  const self = { x: 0, z: 0, yaw: 0 };
+
+  it('names the entity that hit the Body', () => {
+    const line = hurtLogLine(
+      { type: 'hurt', source: 'melee', amount: 4, attacker: 'zombie' },
+      ground,
+      5,
+    );
+    expect(JSON.parse(line)).toMatchObject({ attacker: 'zombie', source: 'melee' });
+  });
+
+  it('omits the attacker field when the cause is unknown', () => {
+    const line = hurtLogLine({ type: 'hurt', source: 'fall', amount: 2 }, ground, 5);
+    expect(JSON.parse(line)).not.toHaveProperty('attacker');
+  });
+
+  it('carries the attacker name from the damage input into the event', () => {
+    const hurt = hurtEvent({
+      cause: 'ENTITY_ATTACK',
+      attacker: { x: 1, z: 0 },
+      self,
+      healthBefore: 20,
+      rawDamage: 3,
+      attackerName: 'iron_golem',
+    });
+    expect(hurt).toMatchObject({ attacker: 'iron_golem', source: 'melee' });
+    const unnamed = hurtEvent({
+      cause: 'FALL',
+      attacker: null,
+      self,
+      healthBefore: 20,
+      rawDamage: 3,
+    });
+    expect(unnamed).not.toHaveProperty('attacker');
+  });
+});
+
+describe('attackerNameOf: the cause entity as the log names it', () => {
+  it('says player for a player, never the player name', () => {
+    expect(attackerNameOf({ id: 3, type: 'player', name: 'some_player' }, 7)).toBe('player');
+  });
+
+  it('names a hostile mob by its entity name', () => {
+    expect(attackerNameOf({ id: 4, type: 'hostile', name: 'skeleton' }, 7)).toBe('skeleton');
+  });
+
+  it('names an iron golem by its entity name', () => {
+    expect(attackerNameOf({ id: 5, type: 'hostile', name: 'iron_golem' }, 7)).toBe('iron_golem');
+  });
+
+  it('gives undefined with no cause entity, for the Body itself, or with no name', () => {
+    expect(attackerNameOf(null, 7)).toBeUndefined();
+    expect(attackerNameOf({ id: 7, type: 'player', name: 'ag_self' }, 7)).toBeUndefined();
+    expect(attackerNameOf({ id: 9, type: 'other' }, 7)).toBeUndefined();
+  });
+});
 
 describe('hurtLogLine: one hurt, one log line with where the Body stood', () => {
   it('a melee hit from in front carries its bearing and the place', () => {

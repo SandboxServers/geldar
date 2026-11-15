@@ -23,6 +23,7 @@ import {
   type ResourceDeps,
   readPlayerResource,
 } from './resources.ts';
+import { hiddenToolsFor, refuseHiddenCall } from './tools/unavailable.ts';
 
 /** The text a keepalive carries. It names no observer (decision 0059). */
 export const KEEPALIVE_TEXT = 'keepalive: the call is still running.' as const;
@@ -38,6 +39,8 @@ export interface WorldSessionDeps {
   keepaliveMs: number;
   /** `sovereign.mcp.max_result_bytes`: the largest tool result. Default 16384 (the mock's limit). */
   maxResultBytes?: number | undefined;
+  /** `sovereign.mcp.show_unavailable_tools`: false hides the tools this world does not run. Default true. */
+  showUnavailableTools?: boolean | undefined;
   log?: (line: Record<string, unknown>) => void;
 }
 
@@ -90,12 +93,15 @@ export function createWorldSession(
   // A random id per MCP session. It keys what `wait` remembers about what this session was sent; it
   // carries no token, life id or secret, and is never logged.
   const session = newSessionId();
+  const hidden = hiddenToolsFor(deps.showUnavailableTools ?? true);
   const mcp = new McpServer(
     { name: 'geldar-mcp', version: '0.0.0' },
     { capabilities: { tools: {}, resources: {}, prompts: {}, logging: {} } },
   );
-  mcp.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: listTools() }));
+  mcp.server.setRequestHandler(ListToolsRequestSchema, () => ({ tools: listTools(hidden) }));
   mcp.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
+    const refused = refuseHiddenCall(request.params.name, request.params.arguments, hidden);
+    if (refused) return { ...refused };
     const stop = startKeepAlive(
       deps.keepAlive,
       deps.keepaliveMs,

@@ -109,6 +109,41 @@ describe('seed items', () => {
     expect(face.equals(new Vec3(0, 1, 0))).toBe(true);
   });
 
+  it('says the farmland is moist when water is 4 blocks away on the same level', async () => {
+    const { bot } = fakeBot({
+      blocks: { ...FARMLAND, '4,63,0': 'water' },
+      items: ['wheat_seeds'],
+      placedAs: 'wheat',
+    });
+    const outcome = await place(bot, 'wheat_seeds', { x: 0, y: 64, z: 0 });
+    expect(outcome).toMatchObject({
+      status: 'completed',
+      detail: { block: 'wheat', fact: 'this farmland is moist: water is within 4 blocks' },
+    });
+  });
+
+  it('says the farmland is dry when the nearest water is 5 blocks away', async () => {
+    const { bot } = fakeBot({
+      blocks: { ...FARMLAND, '5,63,0': 'water' },
+      items: ['wheat_seeds'],
+      placedAs: 'wheat',
+    });
+    const outcome = await place(bot, 'wheat_seeds', { x: 0, y: 64, z: 0 });
+    expect(outcome).toMatchObject({
+      status: 'completed',
+      detail: { fact: 'this farmland is dry: no water within 4 blocks' },
+    });
+  });
+
+  it('says you are standing in that spot when the seed target is the bot head cell', async () => {
+    const { bot } = fakeBot({ blocks: { ...FARMLAND, '0,65,0': 'stone' }, items: ['wheat_seeds'] });
+    expect(await place(bot, 'wheat_seeds', { x: 0, y: 65, z: 0 })).toMatchObject({
+      status: 'failed',
+      reason: 'blocked',
+      message: 'you are standing in that spot',
+    });
+  });
+
   it('looks at the farmland top face before the click', async () => {
     const { bot, mock } = fakeBot({ blocks: FARMLAND, items: ['wheat_seeds'], placedAs: 'wheat' });
     await place(bot, 'wheat_seeds', { x: 0, y: 64, z: 0 });
@@ -130,7 +165,7 @@ describe('seed items', () => {
     expect(mock.placeBlock).not.toHaveBeenCalled();
   });
 
-  it('refuses a seed when the target cell is not air: target is occupied', async () => {
+  it('refuses a seed when the target cell is not air: standing in that spot at the feet', async () => {
     const { bot, mock } = fakeBot({
       blocks: { ...FARMLAND, '0,64,0': 'wheat' },
       items: ['wheat_seeds'],
@@ -139,7 +174,7 @@ describe('seed items', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'blocked',
-      message: 'target is occupied',
+      message: 'you are standing in that spot',
     });
     expect(mock.placeBlock).not.toHaveBeenCalled();
   });
