@@ -3,14 +3,30 @@ import { Vec3 } from 'vec3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { setOwnerLookup } from './protected-blocks.ts';
 import { DEFAULT_DIAG_SINK } from './stall-diag.ts';
-import { digDescend, MAX_DESCEND_DIGS, REFUSAL_TEXT, type Refusal } from './unstick-descend.ts';
+import {
+  digDescend,
+  MAX_DESCEND_DIGS,
+  NOT_LANDED_TEXT,
+  REFUSAL_TEXT,
+  type Refusal,
+} from './unstick-descend.ts';
 
 /**
  * A stone pillar one block wide at x 0, z 0 with its top at y 70 (the Body stands on it at feet 71). The
  * ground is stone to y 60 everywhere else, so a walk east off the pillar drops to y 61 (3 blocks at feet 64).
  */
 const TOP = 70;
-const EMPTY = new Set(['air', 'water', 'lava', 'fire', 'sweet_berry_bush']);
+/** Blocks with no collision box: the Body falls through them (vine, grass and ladder are not solid). */
+const EMPTY = new Set([
+  'air',
+  'water',
+  'lava',
+  'fire',
+  'sweet_berry_bush',
+  'vine',
+  'short_grass',
+  'ladder',
+]);
 
 const keyOf = (cell: Vec3): string => `${cell.x},${cell.y},${cell.z}`;
 
@@ -20,13 +36,39 @@ function baseCell(cell: Vec3): string {
 }
 
 /** A fake bot on the pillar. `cells` overrides the base world; a `null` override is an unloaded cell. */
-function fakeBot(feetY = TOP + 1) {
+function fakeBot(feetY = TOP + 1, landAfter?: number) {
   const cells = new Map<string, string | null>();
   const entities: Record<string, unknown> = {};
+  let airTicks = 0;
+  /** The top of the first non-air cell at or below the Body's column (the cells it has not passed). */
+  const groundTop = (p: Vec3): number => {
+    for (let c = Math.floor(p.y - 1); ; c--) {
+      const block = bot.blockAt(new Vec3(p.x, c, p.z));
+      if (block === null || block.boundingBox !== 'empty') return c + 1;
+    }
+  };
+  /** One physics tick of the fall: gravity 0.08 a tick and drag 0.98 (Minecraft's), or a landing after `landAfter` ticks. */
+  const stepTick = (): void => {
+    const { entity } = bot;
+    if (entity.onGround) return;
+    airTicks++;
+    const ground = groundTop(entity.position);
+    const speed = (entity.velocity.y - 0.08) * 0.98;
+    const next = entity.position.y + speed;
+    const lands = landAfter === undefined ? next <= ground : airTicks >= landAfter;
+    if (lands) {
+      entity.position = new Vec3(entity.position.x, ground, entity.position.z);
+      entity.onGround = true;
+      entity.velocity = new Vec3(0, 0, 0);
+    } else if (landAfter === undefined) {
+      entity.position = new Vec3(entity.position.x, next, entity.position.z);
+      entity.velocity = new Vec3(0, speed, 0);
+    }
+  };
   const bot = {
     health: 20,
     game: { dimension: 'minecraft:overworld' },
-    entity: { position: new Vec3(0, feetY, 0) },
+    entity: { position: new Vec3(0, feetY, 0), onGround: true, velocity: new Vec3(0, 0, 0) },
     entities,
     blockAt(cell: Vec3) {
       const name = cells.has(keyOf(cell)) ? cells.get(keyOf(cell)) : baseCell(cell);
@@ -38,16 +80,17 @@ function fakeBot(feetY = TOP + 1) {
         hardness: 1,
       };
     },
-    async waitForTicks() {},
+    async waitForTicks(ticks: number) {
+      for (let i = 0; i < ticks; i++) stepTick();
+    },
   };
   const digs: number[] = [];
-  /** Digging a block makes it air; the Body falls through air cells onto the first block that is not air. */
+  /** Digging the block under the feet makes it air, and the Body starts to fall (it lands in `stepTick`). */
   const digOne = async (_block: unknown, at: Vec3): Promise<boolean> => {
     digs.push(at.y);
     cells.set(keyOf(at), 'air');
-    let y = at.y;
-    while (bot.blockAt(new Vec3(at.x, y - 1, at.z))?.name === 'air') y--;
-    bot.entity.position = new Vec3(at.x, y, at.z);
+    bot.entity.onGround = false;
+    airTicks = 0;
     return true;
   };
   return { bot: bot as unknown as Bot, cells, entities, digs, digOne, raw: bot };
@@ -138,6 +181,9 @@ describe('dig_descend rung (decision 0333)', () => {
     ['landing', (c: Map<string, string | null>) => c.set('0,69,0', 'cactus')],
     ['landing', (c: Map<string, string | null>) => c.set('0,69,0', 'fire')],
     ['landing', (c: Map<string, string | null>) => c.set('0,69,0', 'sweet_berry_bush')],
+    ['landing', (c: Map<string, string | null>) => c.set('0,69,0', 'vine')],
+    ['landing', (c: Map<string, string | null>) => c.set('0,69,0', 'short_grass')],
+    ['landing', (c: Map<string, string | null>) => c.set('0,69,0', 'ladder')],
   ] as const)('refuses the dig when %s is in reach (no dig is made)', async (reason, setup) => {
     const log = vi.spyOn(DEFAULT_DIAG_SINK, 'log').mockImplementation(() => {});
     const fake = fakeBot();
@@ -173,6 +219,116 @@ describe('dig_descend rung (decision 0333)', () => {
     const result = await digDescend(deps(fake));
     expect(fake.digs[0]).toBe(TOP);
     expect(result.stopped).not.toBe(REFUSAL_TEXT.fall);
+  });
+
+  it('digs the next block once a 2-block fall has landed (the Body lands before the next dig)', async () => {
+    vi.spyOn(DEFAULT_DIAG_SINK, 'log').mockImplementation(() => {});
+    const fake = fakeBot();
+    hollowTo(fake, 2);
+    const result = await digDescend(deps(fake));
+    expect(fake.digs.slice(0, 2)).toEqual([TOP, TOP - 2]);
+    expect(result).toEqual({
+      dug: 6,
+      walkable: true,
+      stopped: 'a walk of 3 blocks or less is open',
+    });
+  });
+
+  it('digs on after a 3-block landing: the step completes and the rung continues', async () => {
+    vi.spyOn(DEFAULT_DIAG_SINK, 'log').mockImplementation(() => {});
+    const fake = fakeBot();
+    hollowTo(fake, 3);
+    const result = await digDescend(deps(fake));
+    expect(fake.digs).toEqual([TOP, TOP - 3, 66, 65, 64]);
+    expect(result).toEqual({
+      dug: 5,
+      walkable: true,
+      stopped: 'a walk of 3 blocks or less is open',
+    });
+    expect(fake.raw.entity.position.y).toBe(64);
+  });
+
+  it('a 3-block landing is not misread while the Body is still falling (landing on tick 9)', async () => {
+    const log = vi.spyOn(DEFAULT_DIAG_SINK, 'log').mockImplementation(() => {});
+    const fake = fakeBot(TOP + 1, 9);
+    hollowTo(fake, 3);
+    const result = await digDescend(deps(fake));
+    expect(fake.digs.slice(0, 2)).toEqual([TOP, TOP - 3]);
+    expect(result.stopped).not.toBe(REFUSAL_TEXT.undiggable);
+    expect(logged(log).filter((line) => line.event === 'unstick_descend_refused')).toEqual([]);
+  });
+
+  it('allows a floor whose solid landing is exactly 3 blocks below it (the last allowed fall)', async () => {
+    vi.spyOn(DEFAULT_DIAG_SINK, 'log').mockImplementation(() => {});
+    const fake = fakeBot();
+    hollowTo(fake, 3);
+    const result = await digDescend(deps(fake));
+    expect(fake.digs[0]).toBe(TOP);
+    expect(result.stopped).not.toBe(REFUSAL_TEXT.fall);
+  });
+
+  it('refuses the fall when the health would fall under the margin for it (health 1 refuses, 2 allows)', async () => {
+    const log = vi.spyOn(DEFAULT_DIAG_SINK, 'log').mockImplementation(() => {});
+    const low = fakeBot();
+    hollowTo(low, 3);
+    low.raw.health = 1;
+    expect(await digDescend(deps(low))).toEqual({
+      dug: 0,
+      walkable: false,
+      stopped: REFUSAL_TEXT.fall,
+    });
+    expect(low.digs).toEqual([]);
+    expect(logged(log)).toEqual([{ event: 'unstick_descend_refused', reason: 'fall' }]);
+    const margin = fakeBot();
+    hollowTo(margin, 3);
+    margin.raw.health = 2;
+    expect((await digDescend(deps(margin))).stopped).not.toBe(REFUSAL_TEXT.fall);
+    expect(margin.digs[0]).toBe(TOP);
+  });
+
+  it.each([
+    [20, 'accepted'],
+    [21, 'refused'],
+  ])('a fall that lands on tick %i is %s (the bound is 20 ticks)', async (landAfter, outcome) => {
+    vi.spyOn(DEFAULT_DIAG_SINK, 'log').mockImplementation(() => {});
+    const fake = fakeBot(TOP + 1, landAfter);
+    const result = await digDescend(deps(fake));
+    expect(fake.digs[0]).toBe(TOP);
+    if (outcome === 'accepted') {
+      expect(result.stopped).not.toBe(NOT_LANDED_TEXT);
+    } else {
+      expect(result).toEqual({ dug: 1, walkable: false, stopped: NOT_LANDED_TEXT });
+    }
+  });
+
+  it('the fall bound scales with the time scale (20 ticks at 1, 40 at 2)', async () => {
+    vi.spyOn(DEFAULT_DIAG_SINK, 'log').mockImplementation(() => {});
+    const fake = fakeBot(TOP + 1, 30);
+    const result = await digDescend({ ...deps(fake), timeScale: 2 });
+    expect(result.stopped).not.toBe(NOT_LANDED_TEXT);
+    const slow = fakeBot(TOP + 1, 30);
+    expect(await digDescend(deps(slow))).toEqual({
+      dug: 1,
+      walkable: false,
+      stopped: NOT_LANDED_TEXT,
+    });
+  });
+
+  it('a stop during the fall ends the call as stopped, not as not-landed', async () => {
+    vi.spyOn(DEFAULT_DIAG_SINK, 'log').mockImplementation(() => {});
+    const fake = fakeBot(TOP + 1, Number.POSITIVE_INFINITY);
+    const controller = new AbortController();
+    const digAndStop = async (block: unknown, at: Vec3) => {
+      const dug = await fake.digOne(block, at);
+      controller.abort();
+      return dug;
+    };
+    const result = await digDescend({
+      ...deps(fake),
+      signal: controller.signal,
+      digOne: digAndStop,
+    });
+    expect(result).toEqual({ dug: 1, walkable: false, stopped: 'the call was stopped' });
   });
 
   it('refuses another player’s block (decision 0164) and digs nothing', async () => {

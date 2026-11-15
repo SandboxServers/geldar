@@ -21,8 +21,10 @@ const DESCENT_MARGIN = 2;
 export const WALKABLE_DROP = 3;
 /** A hostile mob this close (in blocks) stops the descent. */
 const HOSTILE_RANGE = 8;
-/** Ticks the Body waits for each one-block fall (as `dig_down` does). */
-const FALL_TICKS = 5;
+/** Ticks (at timeScale 1) the Body may take to land after one dig: a 3-block fall takes about 9 ticks. */
+const FALL_MAX_TICKS = 20;
+/** Vertical speed (blocks a tick) under which a landed Body counts as at rest. */
+const LANDED_SPEED = 0.01;
 /** The lowest block row of the world. */
 const WORLD_BOTTOM = -64;
 /** Blocks that fall when the block under them is gone. */
@@ -64,6 +66,8 @@ export const REFUSAL_TEXT = {
   'cap reached': "this call's dig budget is spent",
 } as const;
 export type Refusal = keyof typeof REFUSAL_TEXT;
+/** The stop when the Body has not landed within the fall bound after a dig (a stop, not a refusal). */
+export const NOT_LANDED_TEXT = 'the Body had not landed within the fall bound';
 
 /** What the rung did: how many blocks it dug, whether a walk is open now, and a fact about the stop. */
 export interface DescendResult {
@@ -81,6 +85,8 @@ export interface DescendDeps {
   digOne: (block: Block, at: Vec3) => Promise<boolean>;
   /** The most blocks this call may dig: the call's own budget for an ordinary run; default `MAX_DESCEND_DIGS`. */
   maxDigs?: number;
+  /** The call's time scale (as `unstick` uses it for its deadline): scales the fall bound. Default 1. */
+  timeScale?: number;
 }
 
 /** Digs the floor under the feet one block at a time until a walk of `WALKABLE_DROP` or less is open. */
@@ -106,8 +112,11 @@ export async function digDescend(deps: DescendDeps): Promise<DescendResult> {
     if (!(await digOne(block, floor))) {
       return { dug, walkable: false, stopped: 'the dig did not complete' };
     }
-    await bot.waitForTicks(FALL_TICKS);
     dug++;
+    if (!(await waitForLanding(bot, signal, deps.timeScale ?? 1))) {
+      const stopped = signal.aborted ? 'the call was stopped' : NOT_LANDED_TEXT;
+      return { dug, walkable: false, stopped };
+    }
     const after = bot.entity.position.floored();
     if (after.y >= feet.y) return { dug, walkable: false, stopped: 'the Body did not fall' };
     const remaining = remainingDrop(bot, after);
@@ -115,6 +124,25 @@ export async function digDescend(deps: DescendDeps): Promise<DescendResult> {
       JSON.stringify({ event: 'unstick_descend_step', block: block.name, remaining, step: dug }),
     );
   }
+}
+
+/**
+ * Waits for the Body to land after a dig: at least one tick (the fall starts on the next physics tick), then one
+ * tick at a time until it is on the ground, up to the bound. False when it has not landed in time or the call
+ * was stopped. A tick in the air is never read as a refusal: the caller only looks at the cell after this.
+ */
+async function waitForLanding(bot: Bot, signal: AbortSignal, timeScale: number): Promise<boolean> {
+  const bound = Math.ceil(FALL_MAX_TICKS * timeScale);
+  for (let ticks = 1; ; ticks++) {
+    await bot.waitForTicks(1);
+    if (landed(bot)) return true;
+    if (ticks >= bound || signal.aborted) return false;
+  }
+}
+
+/** True when the Body stands on a block with no fall speed left. */
+function landed(bot: Bot): boolean {
+  return bot.entity.onGround === true && Math.abs(bot.entity.velocity?.y ?? 0) < LANDED_SPEED;
 }
 
 /** The shallowest drop from the feet to a landing, over the eight directions (capped by `scanDrop`). */

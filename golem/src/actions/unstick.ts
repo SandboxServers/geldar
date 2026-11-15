@@ -437,6 +437,7 @@ async function unstickSteps(
       bot,
       signal: ctx.signal,
       started,
+      timeScale: ctx.timeScale,
       // An ordinary run keeps the call's MAX_DIGS budget; a high_ledge run has the rung's own cap (decision 0333).
       maxDigs: ctx.highLedge === true ? MAX_DESCEND_DIGS : MAX_DIGS - digs,
       digOne: (block, at) => dig(bot, ctx.signal, block, at),
