@@ -116,7 +116,7 @@ describe('use in the MCP act description and the body-api prompt', () => {
     expect(v10.version).toBe(10);
     const entry = v10.verbs.find((v: { do: string }) => v.do === 'use');
     expect(entry.summary).toBe(
-      'Click a door, gate, trapdoor, button or lever; sow a seed on farmland; bone-meal a crop. Beds, containers and signs refuse.',
+      'Click a door, gate, trapdoor, button or lever; sow a seed on farmland; bone-meal a crop. Beds, containers and signs refuse; sleeping is the sleep verb.',
     );
     expect(validateThought(oneAction(entry.example)).ok).toBe(true);
     const v9 = JSON.parse(readRepoFile('prompts/body-api/v9.json'));

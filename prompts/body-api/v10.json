@@ -127,7 +127,7 @@
     },
     {
       "do": "use",
-      "summary": "Click a door, gate, trapdoor, button or lever; sow a seed on farmland; bone-meal a crop. Beds, containers and signs refuse.",
+      "summary": "Click a door, gate, trapdoor, button or lever; sow a seed on farmland; bone-meal a crop. Beds, containers and signs refuse; sleeping is the sleep verb.",
       "fields": { "item": "name", "at": "{x,y,z}", "entity": "name:id" },
       "example": { "do": "use", "at": { "x": 3, "y": 64, "z": 8 } }
     }
