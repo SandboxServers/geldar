@@ -177,8 +177,8 @@ export function playerDetailText(raw: unknown): string | undefined {
 }
 
 /**
- * Reasons whose Body message the Body may send on as `detail_text` (interrupted: a swim stopped at low air,
- * decision 0194). Any other reason's message is dropped. Extend here.
+ * Reasons whose Body message the Body may send on as `detail_text` for any verb. Any other reason's message
+ * is dropped. Extend here.
  */
 const DETAIL_REASONS: readonly string[] = [
   'missing_materials',
@@ -188,8 +188,16 @@ const DETAIL_REASONS: readonly string[] = [
   'blocked',
   'not_found',
   'not_possible',
-  'interrupted',
 ];
+
+/**
+ * Reasons whose Body message the Body may send on as `detail_text` for the listed verbs only (decision 0194:
+ * an interrupted goto carries its swim stop, at low air). Any other verb's message for that reason is dropped.
+ * Extend here.
+ */
+const DETAIL_VERBS_BY_REASON: ReadonlyMap<string, readonly string[]> = new Map([
+  ['interrupted', ['goto']],
+]);
 
 /**
  * The verbs whose successful outcome may carry a plain fact (decisions 0215, 0216, 0194): eat, sleep, till,
@@ -205,16 +213,20 @@ function plainFactText(verb: string, raw: unknown): string | undefined {
 /**
  * The `detail_text` for a failed action, or undefined. The reasons above carry the Body's plain sentence,
  * as does a timeout on any verb (a path search that ran out of time). A `not_possible` carries the Body's
- * reason on every verb (a give, a sleep, a mine). `message` is the action's own failure message; a text
- * that the sanitiser refuses reads as undefined, so the player hears the plain phrase.
+ * reason on every verb (a give, a sleep, a mine). An `interrupted` carries it on goto only (a swim stopped at
+ * low air). `message` is the action's own failure message; a text that the sanitiser refuses reads as
+ * undefined, so the player hears the plain phrase.
  */
 export function outcomeDetailText(
-  _verb: string,
+  verb: string,
   reason: string | undefined,
   message: unknown,
 ): string | undefined {
   if (reason === undefined) return undefined;
-  const wanted = DETAIL_REASONS.includes(reason) || reason === 'timeout';
+  const wanted =
+    DETAIL_REASONS.includes(reason) ||
+    reason === 'timeout' ||
+    DETAIL_VERBS_BY_REASON.get(reason)?.includes(verb) === true;
   return wanted ? playerDetailText(message) : undefined;
 }
 
