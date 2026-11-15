@@ -116,7 +116,9 @@ describe('sleep failure detail: final_position and beds_tried', () => {
 
   it('the longest tried-beds message is cut to 160 characters and still ends with the position', async () => {
     // Eight beds, all occupied: the eighth walk times out with a text too long to fit after the head.
-    const blocks = Array.from({ length: 8 }, (_, i) => bed('white_bed', i * 3)).flat();
+    // Bed 0 starts at x=3, out of the Body's reach (decision 0341): a bed within one block takes no walk,
+    // which would shift the walk mocks and leave the timeout queued for the next test.
+    const blocks = Array.from({ length: 8 }, (_, i) => bed('white_bed', (i + 1) * 3)).flat();
     for (let i = 0; i < 7; i += 1)
       vi.mocked(moveNear).mockResolvedValueOnce({ ok: true, distance: 0 });
     vi.mocked(moveNear).mockResolvedValueOnce({

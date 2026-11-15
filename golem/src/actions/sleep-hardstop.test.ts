@@ -11,22 +11,26 @@ beforeEach(() => {
 });
 
 describe('sleep: the hard stop (decision 0190)', () => {
-  // At timeScale 0.01 the 35 s hard stop is 350 ms of real time, so these tests run quickly.
+  // At timeScale 0.01 the 35 s hard stop is 350 ms of real time and the 7 s per-bed walk cap is 70 ms (decision 0341).
   const SCALE = 0.01;
   const THREE_BEDS = [5, 9, 13].flatMap((x) => bed('white_bed', x));
 
-  it('cuts a walk that never arrives and says the search time ran out, before the action timeout', async () => {
+  it('cuts each walk that never arrives at the per-bed cap, so the search goes on to every bed', async () => {
     const bot = fakeBot({ timeOfDay: 13_000, blocks: THREE_BEDS });
-    vi.mocked(moveNear).mockImplementationOnce(walkUntilAborted as never);
+    vi.mocked(moveNear)
+      .mockImplementationOnce(walkUntilAborted as never)
+      .mockImplementationOnce(walkUntilAborted as never)
+      .mockImplementationOnce(walkUntilAborted as never);
     const outcome = await sleep(bot, SCALE);
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'timeout',
       message: expect.stringMatching(
-        /^tried 1 of 3 nearby beds, 0 occupied; the time limit ended the search; last: /,
+        /^tried 3 nearby beds, every walk timed out; last: the walk to the bed took too long/,
       ),
     });
     expect(bot.sleep).not.toHaveBeenCalled();
+    expect(moveNear).toHaveBeenCalledTimes(3);
     expect(moveNear).toHaveBeenCalledWith(
       bot,
       THREE_BEDS[0]?.position,
@@ -37,16 +41,18 @@ describe('sleep: the hard stop (decision 0190)', () => {
     expect(vi.mocked(moveNear).mock.calls[0]?.[3].signal.aborted).toBe(true);
   });
 
-  it('cuts a walk at the 35 s hard stop, not before: 34.999 s is still running, 35 s is cut', async () => {
+  it('cuts a sleep at the 35 s hard stop, not before: 34.999 s is still running, 35 s is cut', async () => {
     vi.useFakeTimers();
     try {
-      const bot = fakeBot({ timeOfDay: 13_000, blocks: THREE_BEDS });
-      vi.mocked(moveNear).mockImplementationOnce(walkUntilAborted as never);
-      const outcome = sleep(bot, 1);
+      const bot = fakeBot({ timeOfDay: 13_000, blocks: THREE_BEDS, hangSleep: true });
+      let settled = false;
+      const outcome = sleep(bot, 1).then((result) => {
+        settled = true;
+        return result;
+      });
       await vi.advanceTimersByTimeAsync(34_999);
-      expect(vi.mocked(moveNear).mock.calls[0]?.[3].signal.aborted).toBe(false);
+      expect(settled).toBe(false);
       await vi.advanceTimersByTimeAsync(1);
-      expect(vi.mocked(moveNear).mock.calls[0]?.[3].signal.aborted).toBe(true);
       expect(await outcome).toMatchObject({
         status: 'failed',
         reason: 'timeout',
@@ -75,7 +81,7 @@ describe('sleep: the hard stop (decision 0190)', () => {
     expect(bot.sleep).toHaveBeenCalledTimes(1);
   });
 
-  it('bounds the out_of_reach retry: a second walk that never arrives is cut at the hard stop', async () => {
+  it('bounds the out_of_reach retry: a second walk that never arrives is cut by the per-bed cap', async () => {
     const bot = fakeBot({
       timeOfDay: 13_000,
       blocks: [{ ...BED }, { ...OTHER_HALF }],
@@ -89,7 +95,7 @@ describe('sleep: the hard stop (decision 0190)', () => {
       status: 'failed',
       reason: 'timeout',
       message: expect.stringMatching(
-        /^tried 1 of 1 nearby beds, 0 occupied; the time limit ended the search; last: /,
+        /^tried 1 nearby beds, every walk timed out; last: the walk to the bed took too long/,
       ),
     });
     expect(moveNear).toHaveBeenNthCalledWith(2, bot, OTHER_HALF.position, 1, expect.anything());
@@ -127,5 +133,37 @@ describe('sleep: the hard stop (decision 0190)', () => {
     expect(outcome.status).toBe('cancelled');
     expect(bot.sleep).toHaveBeenCalledTimes(2);
     expect(moveNear).toHaveBeenNthCalledWith(2, bot, OTHER_HALF.position, 1, expect.anything());
+  });
+
+  it('cuts a walk in progress at the 35 s hard stop, not at its scaled cap (32 blocks: 14.4 s, from 21 s it would end at 35.4 s)', async () => {
+    vi.useFakeTimers();
+    try {
+      const bot = fakeBot({
+        timeOfDay: 13_000,
+        blocks: [5, 9, 13, 32].flatMap((x) => bed('white_bed', x)),
+      });
+      vi.mocked(moveNear)
+        .mockImplementationOnce(walkUntilAborted as never)
+        .mockImplementationOnce(walkUntilAborted as never)
+        .mockImplementationOnce(walkUntilAborted as never)
+        .mockImplementationOnce(walkUntilAborted as never);
+      const outcome = sleep(bot, 1);
+      // Three walks cut at their 7 s cap start the fourth, to the bed 32 blocks away, at 21 s.
+      await vi.advanceTimersByTimeAsync(34_999);
+      expect(moveNear).toHaveBeenCalledTimes(4);
+      expect(vi.mocked(moveNear).mock.calls[3]?.[3].signal.aborted).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(vi.mocked(moveNear).mock.calls[3]?.[3].signal.aborted).toBe(true);
+      expect(await outcome).toMatchObject({
+        status: 'failed',
+        reason: 'timeout',
+        message: expect.stringMatching(
+          /^tried 4 of 4 nearby beds, 0 occupied; the time limit ended the search/,
+        ),
+      });
+      expect(bot.sleep).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

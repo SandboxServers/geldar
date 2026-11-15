@@ -15,6 +15,12 @@ export interface FakeBlock {
   part?: 'head' | 'foot';
   /** The bed block's `facing` state; absent means it cannot be read. */
   facing?: string;
+  /** The block's bounding box as Mineflayer reports it: `block` is solid, `empty` is passable; absent reads as unknown. */
+  boundingBox?: 'block' | 'empty';
+  /** The block's collision shapes as Mineflayer reports them, each `[minX, minY, minZ, maxX, maxY, maxZ]`; absent reads as unknown. */
+  shapes?: number[][];
+  /** True when light passes the block; absent reads as unknown. */
+  transparent?: boolean;
 }
 
 /** An entity in the fake world: its minecraft-data name and its feet position. */
