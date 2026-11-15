@@ -19,6 +19,14 @@ export interface PlayerConfig extends AdamConfig {
   start: 'on_demand' | 'always';
 }
 
+/** The fields of one player's entry that its config takes: the name and the optional stamp and sheet. */
+export interface PlayerEntryFields {
+  name: unknown;
+  harness?: unknown;
+  model?: unknown;
+  character_sheet?: unknown;
+}
+
 /** The life id of a player id, or null when the player id is malformed. */
 export function lifeIdForPlayer(playerId: string): string | null {
   if (!PLAYER_ID.test(playerId)) return null;
@@ -26,11 +34,41 @@ export function lifeIdForPlayer(playerId: string): string | null {
   return LIFE_ID.test(lifeId) ? lifeId : null;
 }
 
-function record(value: unknown, where: string): Record<string, unknown> {
+export function record(value: unknown, where: string): Record<string, unknown> {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
     throw new Error(`${where} is missing or is not a map`);
   }
   return value as Record<string, unknown>;
+}
+
+/**
+ * The tail shared by a sovereign player (parsePlayerConfig) and a managed player host
+ * (parseManagedPlayerConfig): refuses Adam's life id and a nameless player, then builds the
+ * `AdamConfig` from the shard file's world and mind settings with the player's own agent fields.
+ */
+export function buildPlayerConfig(input: {
+  root: Record<string, unknown>;
+  playerId: string;
+  lifeId: string;
+  fields: PlayerEntryFields;
+  start: 'on_demand' | 'always';
+  log?: CharacterLog;
+}): PlayerConfig {
+  const { root, playerId, lifeId, fields, start, log } = input;
+  const adamLives = Object.values(record(record(root.mind, 'mind').lives, 'mind.lives'));
+  if (adamLives.includes(lifeId)) throw new Error(`'${lifeId}' is Adam's life id, not a player`);
+  if (typeof fields.name !== 'string' || fields.name.trim() === '') {
+    throw new Error(`player '${playerId}' has no name`);
+  }
+  // The shard's own `mind.agent` is replaced by the player's, so `parseAdamConfig` reads the player.
+  // The optional run stamp (harness, model) and the stored sheet (character_sheet) of the player's
+  // entry are passed on with it; the sheet is what `character` reads for this life.
+  const agent: Record<string, unknown> = { username: lifeId, name: fields.name };
+  if (fields.harness !== undefined) agent.harness = fields.harness;
+  if (fields.model !== undefined) agent.model = fields.model;
+  if (fields.character_sheet !== undefined) agent.character_sheet = fields.character_sheet;
+  const config = parseAdamConfig({ ...root, mind: { agent } }, log);
+  return { ...config, playerId, start };
 }
 
 /**
@@ -55,23 +93,21 @@ export function parsePlayerConfig(
   if (entry.life_id !== lifeId) {
     throw new Error(`player '${playerId}' has life_id '${String(entry.life_id)}', not '${lifeId}'`);
   }
-  const adamLives = Object.values(record(record(root.mind, 'mind').lives, 'mind.lives'));
-  if (adamLives.includes(lifeId)) throw new Error(`'${lifeId}' is Adam's life id, not a player`);
-  if (typeof entry.name !== 'string' || entry.name.trim() === '') {
-    throw new Error(`sovereign.players entry '${playerId}' has no name`);
-  }
   const presence = record(sovereign.presence, 'sovereign.presence');
   if (presence.start !== 'on_demand' && presence.start !== 'always') {
     throw new Error('sovereign.presence.start must be on_demand or always');
   }
-  const start = presence.start;
-  // The shard's own `mind.agent` is replaced by the player's, so `parseAdamConfig` reads the player.
-  // The optional run stamp (harness, model) and the stored sheet (character_sheet) of the player's
-  // entry are passed on with it; the sheet is what `character` reads for this life.
-  const agent: Record<string, unknown> = { username: lifeId, name: entry.name };
-  if (entry.harness !== undefined) agent.harness = entry.harness;
-  if (entry.model !== undefined) agent.model = entry.model;
-  if (entry.character_sheet !== undefined) agent.character_sheet = entry.character_sheet;
-  const config = parseAdamConfig({ ...root, mind: { agent } }, log);
-  return { ...config, playerId, start };
+  return buildPlayerConfig({
+    root,
+    playerId,
+    lifeId,
+    fields: {
+      name: entry.name,
+      harness: entry.harness,
+      model: entry.model,
+      character_sheet: entry.character_sheet,
+    },
+    start: presence.start,
+    ...(log === undefined ? {} : { log }),
+  });
 }
