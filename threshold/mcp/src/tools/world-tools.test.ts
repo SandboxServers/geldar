@@ -225,8 +225,8 @@ describe('sleep', () => {
     await settle(w, pending, 'th_sleep', ['completed']);
     await w.body.emit(LIFE, simEvent(1, 'damage'));
     const again = await sleepTool(d, CALL);
-    expect(again.events.map((e) => e.text)).not.toContain(
-      'Nothing has changed since you last slept: same place, same belongings, same health, no new events.',
+    expect(again.events.map((e) => e.text)).toContain(
+      'Your body is going to sleep. The sleep has not finished.',
     );
     await settle(w, pending, 'th_sleep', ['completed']);
     expect((await w.journal.recent(LIFE, 5)).at(-1)?.text).toContain('1 events');
