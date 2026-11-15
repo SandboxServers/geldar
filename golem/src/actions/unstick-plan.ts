@@ -82,11 +82,13 @@ export function scanDrop(blockAt: BlockAt, start: Vec3): Drop {
  * The safe-drop rule (owner ruling 2026-11-14, decision 0183). A fall that cannot hurt (three blocks or
  * fewer, onto solid ground) and a fall into water (water takes the damage away) are taken at any health.
  * A fall that does damage needs `MIN_HEALTH_TO_DROP` and must leave `HEALTH_MARGIN`. Never into lava, a
- * void or an unloaded column, never deeper than `MAX_DROP`.
+ * void or an unloaded column, never deeper than `MAX_DROP`. `maxDrop` caps a solid landing only: fall_stop
+ * (its `dropAhead`) reads 0 for water, so it never stops a fall into water and a water landing keeps `MAX_DROP`.
  */
 export function dropAllowed(health: number, drop: Drop, maxDrop = MAX_DROP): boolean {
-  if (drop.lands === 'unsafe' || drop.blocks > maxDrop) return false;
+  if (drop.lands === 'unsafe' || drop.blocks > MAX_DROP) return false;
   if (drop.lands === 'water') return true;
+  if (drop.blocks > maxDrop) return false;
   if (drop.lands === 'solid' && fallDamage(drop.blocks) === 0) return true;
   if (health < MIN_HEALTH_TO_DROP) return false;
   return fallDamage(drop.blocks) <= health - HEALTH_MARGIN;
