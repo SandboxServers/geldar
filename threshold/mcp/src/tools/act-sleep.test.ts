@@ -1,15 +1,18 @@
+import type { PlanResultPayload } from '@geldar/contract';
 import { FakeClock } from '@geldar/mcp-mock';
 import { createOutputValidator } from '@geldar/player-core/src/validate/index.ts';
 import { describe, expect, it } from 'vitest';
 import {
   FakeBudgetLedger,
+  FakeJournalStore,
   FakePresenceStore,
   RecordingCallRecorder,
   ScriptedRateLimiter,
 } from '../fakes/stores.fakes.ts';
 import { FakeBody } from '../fakes/world.fakes.ts';
+import type { SleepMark } from '../ports.ts';
 import { type ActDeps, actTool, type Caller } from './act.ts';
-import { PendingSleeps } from './sleep-completion.ts';
+import { completeSleep, PendingSleeps, type SleepCompletionDeps } from './sleep-completion.ts';
 
 const CALLER: Caller = { playerId: 'ag-jason-01', lifeId: 'ag_jason_01' };
 const GOTO = { do: 'goto', target: { x: 1, y: 64, z: 1 } };
@@ -68,11 +71,25 @@ function harness(entryFails = false) {
       },
     },
   };
-  return { deps, budget, clock, logged, registered };
+  return { deps, budget, clock, logged, registered, pending };
 }
 
 const run = (h: ReturnType<typeof harness>, actions: unknown[]) =>
   actTool(h.deps, CALLER, { reasoning: 'ok', actions } as never);
+
+/** A completed plan_result for a two-action thought: the goto, then the sleep. */
+function completedOutcome(thoughtId: string) {
+  const actions = [
+    { action_id: 'ac_1', state: 'completed' },
+    { action_id: 'ac_2', state: 'completed' },
+  ];
+  return {
+    thought_id: thoughtId,
+    intent: 'started',
+    failed_at: null,
+    actions,
+  } as unknown as PlanResultPayload;
+}
 
 describe('act: registering an accepted sleep', () => {
   it('registers a sleep at its index in the plan, when it is not the first action', async () => {
@@ -118,6 +135,37 @@ describe('act: a refused sleep plan', () => {
       detail: 'no',
     });
     await run(h, [GOTO, SLEEP]);
+    expect(h.registered).toEqual([]);
+  });
+});
+
+describe('act: the race with the outcome', () => {
+  it('a plan_result delivered during the submit settles the act sleep', async () => {
+    const h = harness();
+    const body = h.deps.body as FakeBody;
+    const marks: SleepMark[] = [];
+    const journal = new FakeJournalStore();
+    const settle: SleepCompletionDeps = {
+      pending: h.pending,
+      marks: {
+        read: async () => ({ lastSleepDay: 0, cursor: 0 }),
+        write: async (_lifeId, mark) => {
+          marks.push(mark);
+        },
+      },
+      journal,
+      now: () => 0,
+      log: (line) => h.logged.push(line),
+    };
+    const submit = body.submitPlan.bind(body);
+    body.submitPlan = async (lifeId, plan) => {
+      await completeSleep(settle, lifeId, completedOutcome(plan.thought_id));
+      return submit(lifeId, plan);
+    };
+    const result = await run(h, [GOTO, SLEEP]);
+    expect(result.accepted).toEqual([0, 1]);
+    expect(marks).toHaveLength(1);
+    expect(await journal.recent(CALLER.lifeId, 50)).toHaveLength(1);
     expect(h.registered).toEqual([]);
   });
 });

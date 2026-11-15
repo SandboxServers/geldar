@@ -12,6 +12,7 @@ import {
   PENDING_SLEEP_LIMIT,
   PendingSleeps,
   type SleepCompletionDeps,
+  submitPending,
 } from './sleep-completion.ts';
 
 const LIFE = 'ag_ranger_01';
@@ -417,6 +418,17 @@ describe('sleep completion', () => {
     expect(result.events.at(-1)?.text).toBe('goto 1,1,1 has failed 3 times in a row (blocked).');
     expect(result.events.some((e) => e.type === 'wake')).toBe(true);
     expect(result.events.some((e) => e.seq === 120 && e.type === 'damage')).toBe(true);
+  });
+
+  it('a submit that throws drops the pending entry and rethrows the error', async () => {
+    const pending = new PendingSleeps();
+    pending.add(LIFE, 'th_x', { day: 1, cursor: 0, action: 0, journal: null });
+    await expect(
+      submitPending(pending, LIFE, 'th_x', async () => {
+        throw new Error('body down');
+      }),
+    ).rejects.toThrow('body down');
+    expect(pending.get(LIFE, 'th_x')).toBeUndefined();
   });
 
   it('a death drops the pending sleeps of the life: a later plan_result writes nothing', async () => {

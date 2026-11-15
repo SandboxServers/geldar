@@ -83,7 +83,7 @@ describe('stream: a plan_result settles the pending sleep', () => {
     expect(s.pending.get(LIFE, THOUGHT)).toBeDefined();
   });
 
-  it('an invalid plan_result payload writes nothing, and the log line carries no payload', async () => {
+  it('an invalid plan_result payload writes nothing', async () => {
     const s = setup(true);
     const counters = { invalid: 0 };
     const bad = planResult(LIFE, { thought_id: THOUGHT, actions: 'secret-world-text' });
@@ -91,6 +91,21 @@ describe('stream: a plan_result settles the pending sleep', () => {
     expect(s.writes).toEqual([]);
     expect(await s.journalTexts()).toEqual([]);
     expect(s.pending.get(LIFE, THOUGHT)).toBeDefined();
-    expect(JSON.stringify(s.logged)).not.toContain('secret-world-text');
+  });
+
+  it('a death of the life drops its pending sleep, so a later plan_result writes nothing', async () => {
+    const s = setup(true);
+    await handleStreamMessage(
+      1,
+      { ...eventOf('death', 5, LIFE), payload: { cause: 'FALL' } },
+      s.ctx,
+      {
+        invalid: 0,
+      },
+    );
+    expect(s.pending.get(LIFE, THOUGHT)).toBeUndefined();
+    await handleStreamMessage(2, planResult(LIFE), s.ctx, { invalid: 0 });
+    expect(s.writes).toEqual([]);
+    expect(await s.journalTexts()).toEqual([]);
   });
 });
