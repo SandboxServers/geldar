@@ -79,7 +79,12 @@ describe('engine: the verbs', () => {
     const present = createDockerEngine(async () =>
       json(200, { Id: 'abc', Name: '/body1', State: { Running: true } }),
     );
-    expect(await present.inspect('body1')).toEqual({ id: 'abc', running: true, helperBody: false });
+    expect(await present.inspect('body1')).toEqual({
+      id: 'abc',
+      running: true,
+      helperBody: false,
+      owner: null,
+    });
   });
 
   it('reads the Body label: a Body label gives helperBody true; no labels, or another label, gives false', async () => {
@@ -96,16 +101,36 @@ describe('engine: the verbs', () => {
       id: 'abc',
       running: true,
       helperBody: true,
+      owner: null,
     });
     expect(await labelled(null).inspect('body1')).toEqual({
       id: 'abc',
       running: true,
       helperBody: false,
+      owner: null,
     });
     expect(await labelled({ 'geldar.owner': 'x' }).inspect('body1')).toEqual({
       id: 'abc',
       running: true,
       helperBody: false,
+      owner: 'x',
+    });
+  });
+
+  it('reads the geldar.owner label as the owner of the container, with the Body label', async () => {
+    const owned = createDockerEngine(async () =>
+      json(200, {
+        Id: 'abc',
+        Name: '/body1',
+        State: { Running: true },
+        Config: { Labels: { [BODY_LABEL]: 'body1', 'geldar.owner': 'own-a' } },
+      }),
+    );
+    expect(await owned.inspect('body1')).toEqual({
+      id: 'abc',
+      running: true,
+      helperBody: true,
+      owner: 'own-a',
     });
   });
 
@@ -137,6 +162,7 @@ describe('engine: the verbs', () => {
       id: 'ffff',
       running: true,
       helperBody: true,
+      owner: null,
     });
   });
 

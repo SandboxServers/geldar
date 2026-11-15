@@ -25,6 +25,13 @@ export function streamSubjects(shard: string): string[] {
   ];
 }
 
+/**
+ * The WorldEvent types the agent-visible stream never carries. `sovereign_call` is not a player event.
+ * `turn_record` is operator-only and sink-only (GX-05a, decision 0185): its prompt and raw output stay in
+ * `turn_records` and never reach a Mind's log.
+ */
+export const SINK_ONLY_TYPES: ReadonlySet<string> = new Set(['sovereign_call', 'turn_record']);
+
 /** The start time of the consumer's replay: `replayMinutes` before now, as an ISO string. */
 export function replayStartIso(nowMs: number, replayMinutes: number): string {
   return new Date(nowMs - replayMinutes * 60_000).toISOString();
@@ -86,7 +93,7 @@ export async function handleStreamMessage(
     else for (const lifeId of await ctx.lives()) await ctx.log.append(lifeId, event);
     return;
   }
-  if (world.type === 'sovereign_call') return;
+  if (SINK_ONLY_TYPES.has(world.type)) return;
   const n = normaliseEvent(raw);
   if (n.status === 'invalid') {
     counters.invalid++;

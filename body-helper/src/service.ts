@@ -12,6 +12,10 @@ export const CAP_ALERT_AT = 30;
 export const CAP_REFUSAL = 'global body cap reached';
 export const ALREADY_RUNNING = 'already running';
 export const NAME_TAKEN = 'name taken by a container the helper did not create';
+/** A stop, status or logtail of a Body that another owner holds (decision 0108: only the label owner acts on it). */
+export const NOT_YOUR_BODY = 'not your body';
+/** A start of a name whose Body another owner holds (a roster move). The Body is never removed or stopped by it. */
+export const OTHER_OWNER_BODY = "name in use by another owner's body";
 /** The reply for a start or stop that an Engine call held past its deadline (code `timeout`). */
 export const ENGINE_TIMEOUT = 'engine timeout';
 /** The most time one start or stop may hold the queue (config: GELDAR_BODY_HELPER_DEADLINE_MS). */
@@ -26,6 +30,8 @@ export interface ContainerState {
   running: boolean;
   /** True only when the container carries the helper's Body label: the helper created it. */
   helperBody: boolean;
+  /** The `geldar.owner` label, or null when the container has none. */
+  owner: string | null;
 }
 
 export interface BodyEngine {
@@ -64,7 +70,7 @@ export interface HelperDeps {
 }
 
 export type Reply =
-  | { ok: true; state: string; text?: string }
+  | { ok: true; state: string; text?: string; owner?: string }
   | {
       ok: false;
       code: 'refused' | 'not_running' | 'capacity' | 'failed' | 'timeout';
@@ -123,11 +129,27 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
     deps.audit(`body-helper alert running=${count} threshold=${CAP_ALERT_AT}`);
   };
 
-  // A container of the name that the helper did not create. The verbs never stop, read or remove it.
-  const foreign = (state: ContainerState | null): boolean => state !== null && !state.helperBody;
+  // A container of the name that the helper did not create is never stopped, read or removed. A Body labelled for
+  // another owner is not acted on either (decision 0108: the label owner acts on it, roster or not).
   const refuseNameTaken = (verb: string, name: string): Reply => {
     audit(verb, name, 'refused', 'name_taken');
     return { ok: false, code: 'refused', error: NAME_TAKEN };
+  };
+  const refuseNotYourBody = (verb: string, name: string): Reply => {
+    audit(verb, name, 'refused', 'not_your_body');
+    return { ok: false, code: 'refused', error: NOT_YOUR_BODY };
+  };
+  // The refusal for a verb that acts on an existing container, or null when the caller may act on it.
+  const refusalFor = (
+    verb: string,
+    name: string,
+    state: ContainerState | null,
+    owner: string,
+  ): Reply | null => {
+    if (state === null) return null;
+    if (!state.helperBody) return refuseNameTaken(verb, name);
+    if (state.owner !== owner) return refuseNotYourBody(verb, name);
+    return null;
   };
   // A read of the container. A container found gone is no longer an orphan.
   const inspectOf = async (container: string): Promise<ContainerState | null> => {
@@ -158,22 +180,20 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
     const { verb, name, owner } = parsed;
     const container = name.toLowerCase();
     try {
-      const loginName = await deps.roster.displayName(owner, name);
-      if (loginName === null || !LOGIN_NAME.test(loginName)) {
-        audit(verb, name, 'refused', 'not_on_roster');
-        return { ok: false, code: 'refused', error: 'not on roster' };
-      }
+      // Only start needs a roster row: it creates a Body under the exact-case login name. stop, status and logtail act
+      // on the container that carries this owner's label, so a name that left the roster stays stoppable by its owner.
       if (verb === 'status') {
         const state = await inspectOf(container);
-        if (foreign(state)) return refuseNameTaken(verb, name);
+        const refusal = refusalFor(verb, name, state, owner);
+        if (refusal) return refusal;
         audit(verb, name, 'accepted');
-        return {
-          ok: true,
-          state: state === null ? 'absent' : state.running ? 'running' : 'stopped',
-        };
+        // Past the refusal the label owner is the caller, so the reply names the owner the Body really holds.
+        if (state === null) return { ok: true, state: 'absent' };
+        return { ok: true, state: state.running ? 'running' : 'stopped', owner };
       }
       if (verb === 'logtail') {
-        if (foreign(await inspectOf(container))) return refuseNameTaken(verb, name);
+        const refusal = refusalFor(verb, name, await inspectOf(container), owner);
+        if (refusal) return refusal;
         const text = await deps.engine.logs(container);
         audit(verb, name, 'accepted');
         return { ok: true, state: 'logs', text };
@@ -182,11 +202,16 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
         return await exclusive(
           verb,
           name,
-          (live) => stop(container, name, live),
+          (live) => stop(container, name, owner, live),
           () => {
             deps.stopTimeouts?.add(container);
           },
         );
+      }
+      const loginName = await deps.roster.displayName(owner, name);
+      if (loginName === null || !LOGIN_NAME.test(loginName)) {
+        audit(verb, name, 'refused', 'not_on_roster');
+        return { ok: false, code: 'refused', error: 'not on roster' };
       }
       return await exclusive(verb, name, (live) => start(container, name, owner, loginName, live));
     } catch {
@@ -195,7 +220,12 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
     }
   };
 
-  async function stop(container: string, name: string, live: () => boolean): Promise<Reply> {
+  async function stop(
+    container: string,
+    name: string,
+    owner: string,
+    live: () => boolean,
+  ): Promise<Reply> {
     const state = await inspectOf(container);
     // The deadline passed while the inspect was held: the caller was told `timeout`, so nothing is stopped now.
     if (!live()) throw new Error(ABANDONED);
@@ -204,7 +234,8 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
       audit('stop', name, 'not_running');
       return { ok: false, code: 'not_running', error: 'not running' };
     }
-    if (foreign(state)) return refuseNameTaken('stop', name);
+    const refusal = refusalFor('stop', name, state, owner);
+    if (refusal) return refusal;
     try {
       await deps.engine.stop(container);
     } finally {
@@ -224,6 +255,11 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
   ): Promise<Reply> {
     const existing = await inspectOf(container);
     if (!live()) throw new Error(ABANDONED);
+    // A Body of this name that another owner holds (a roster move) is neither removed nor stopped: the start is refused.
+    if (existing?.helperBody && existing.owner !== owner) {
+      audit('start', name, 'refused', 'other_owner');
+      return { ok: false, code: 'refused', error: OTHER_OWNER_BODY };
+    }
     if (existing?.running) {
       audit('start', name, 'refused', 'already_running');
       return { ok: false, code: 'refused', error: ALREADY_RUNNING };
