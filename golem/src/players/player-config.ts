@@ -5,6 +5,7 @@
  * player id with hyphens turned into underscores (`ag-jason-01` is `ag_jason_01`).
  */
 import { type AdamConfig, parseAdamConfig } from '../adam/adam-config.ts';
+import type { CharacterLog } from '../character/character-config.ts';
 
 /** The LifeId pattern of contract/schemas/common.schema.json (as registry.ts keeps it). */
 const LIFE_ID = /^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$/;
@@ -37,7 +38,11 @@ function record(value: unknown, where: string): Record<string, unknown> {
  * when its id or life id fails the patterns, when its life id is not the id's underscore form, or
  * when its life id is one of Adam's (`mind.lives`): Adam stays on his own process (decision 0050).
  */
-export function parsePlayerConfig(doc: unknown, playerId: string): PlayerConfig {
+export function parsePlayerConfig(
+  doc: unknown,
+  playerId: string,
+  log?: CharacterLog,
+): PlayerConfig {
   const root = record(doc, 'shard file');
   const lifeId = lifeIdForPlayer(playerId);
   if (lifeId === null) throw new Error(`player id '${playerId}' does not match the player pattern`);
@@ -61,10 +66,12 @@ export function parsePlayerConfig(doc: unknown, playerId: string): PlayerConfig 
   }
   const start = presence.start;
   // The shard's own `mind.agent` is replaced by the player's, so `parseAdamConfig` reads the player.
-  // The optional run stamp (harness, model) of the player's entry is passed on with it.
+  // The optional run stamp (harness, model) and the stored sheet (character_sheet) of the player's
+  // entry are passed on with it; the sheet is what `character` reads for this life.
   const agent: Record<string, unknown> = { username: lifeId, name: entry.name };
   if (entry.harness !== undefined) agent.harness = entry.harness;
   if (entry.model !== undefined) agent.model = entry.model;
-  const config = parseAdamConfig({ ...root, mind: { agent } });
+  if (entry.character_sheet !== undefined) agent.character_sheet = entry.character_sheet;
+  const config = parseAdamConfig({ ...root, mind: { agent } }, log);
   return { ...config, playerId, start };
 }
