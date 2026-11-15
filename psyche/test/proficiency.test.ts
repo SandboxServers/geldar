@@ -23,3 +23,35 @@ describe('levelForXp', () => {
     expect(levelForXp(0, [1, 5, 9])).toBe(0);
   });
 });
+
+describe('levelForXp threshold validation', () => {
+  it('throws RangeError when any threshold is not finite', () => {
+    const bad: Array<[number, number, number]> = [
+      [Number.NaN, 30, 70],
+      [Number.NEGATIVE_INFINITY, 30, 70],
+      [10, Number.NaN, 70],
+      [10, Number.POSITIVE_INFINITY, 70],
+      [10, 30, Number.NaN],
+      [10, 30, Number.POSITIVE_INFINITY],
+    ];
+    for (const thresholds of bad) {
+      expect(() => levelForXp(5, thresholds), String(thresholds)).toThrow(RangeError);
+    }
+  });
+
+  it('throws RangeError when the thresholds decrease', () => {
+    const bad: Array<[number, number, number]> = [
+      [30, 10, 70],
+      [10, 70, 30],
+      [10, 30, 20],
+    ];
+    for (const thresholds of bad) {
+      expect(() => levelForXp(5, thresholds), String(thresholds)).toThrow(RangeError);
+    }
+  });
+
+  it('accepts equal thresholds, which are non-decreasing', () => {
+    expect(levelForXp(9, [10, 10, 10])).toBe(0);
+    expect(levelForXp(10, [10, 10, 10])).toBe(3);
+  });
+});

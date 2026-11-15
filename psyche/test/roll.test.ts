@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_DCS,
   type DrawKey,
+  d20,
   exactChance,
   type Level,
   modeFor,
@@ -172,5 +173,126 @@ describe('exactChance', () => {
 
   it('exposes the default DCs', () => {
     expect(DEFAULT_DCS).toEqual({ easy: 8, standard: 11, hard: 14, veryHard: 17 });
+  });
+});
+
+describe('whole Roll record, one rigged roll per mode', () => {
+  it('disadvantage: score 1 keeps the lower die and takes the -2 bonus', () => {
+    expect(roll('novelty', 1, 8, rigged([17, 7]))).toEqual({
+      fx: 'novelty',
+      score: 1,
+      proficiency: 0,
+      dc: 8,
+      mode: 'dis',
+      dice: [17, 7],
+      kept: 7,
+      bonus: -2,
+      total: 5,
+      success: false,
+    });
+  });
+
+  it('flat: score 3 draws one die and keeps it', () => {
+    expect(roll('novelty', 3, 11, rigged([11]))).toEqual({
+      fx: 'novelty',
+      score: 3,
+      proficiency: 0,
+      dc: 11,
+      mode: 'flat',
+      dice: [11],
+      kept: 11,
+      bonus: 0,
+      total: 11,
+      success: true,
+    });
+  });
+
+  it('advantage: score 5 keeps the higher die and adds the +2 bonus and proficiency 1', () => {
+    expect(roll('novelty', 5, 19, rigged([3, 17]), 1)).toEqual({
+      fx: 'novelty',
+      score: 5,
+      proficiency: 1,
+      dc: 19,
+      mode: 'adv',
+      dice: [3, 17],
+      kept: 17,
+      bonus: 3,
+      total: 20,
+      success: true,
+    });
+  });
+});
+
+describe('golden novelty rolls from the fixed key', () => {
+  // Values taken from a run of the engine. The raw first draw of rngFor(KEY) is pinned in rng.test.ts;
+  // these pin its d20 mapping and the whole Roll it gives at scores 1, 3 and 5.
+  it('pins the first two d20 values of rngFor(KEY)', () => {
+    const rng = rngFor(KEY);
+    expect([d20(rng), d20(rng)]).toEqual([17, 7]);
+  });
+
+  it('pins the rolls at scores 1, 3 and 5 from rngFor(KEY), DC 11', () => {
+    expect(roll('novelty', 1, 11, rngFor(KEY))).toEqual({
+      fx: 'novelty',
+      score: 1,
+      proficiency: 0,
+      dc: 11,
+      mode: 'dis',
+      dice: [17, 7],
+      kept: 7,
+      bonus: -2,
+      total: 5,
+      success: false,
+    });
+    expect(roll('novelty', 3, 11, rngFor(KEY))).toEqual({
+      fx: 'novelty',
+      score: 3,
+      proficiency: 0,
+      dc: 11,
+      mode: 'flat',
+      dice: [17],
+      kept: 17,
+      bonus: 0,
+      total: 17,
+      success: true,
+    });
+    expect(roll('novelty', 5, 11, rngFor(KEY))).toEqual({
+      fx: 'novelty',
+      score: 5,
+      proficiency: 0,
+      dc: 11,
+      mode: 'adv',
+      dice: [17, 7],
+      kept: 17,
+      bonus: 2,
+      total: 19,
+      success: true,
+    });
+  });
+});
+
+// Source: the owner's brief, table 4.1, as whole percents. The brief is not in the repository;
+// these cells are copied from it and rounded there. Rows are scores 1 to 5, columns are DCs 8, 11, 14, 17.
+type TableDc = 8 | 11 | 14 | 17;
+const BRIEF_TABLE_4_1: Record<Score, Record<TableDc, number>> = {
+  1: { 8: 30, 11: 16, 14: 6, 17: 1 },
+  2: { 8: 42, 11: 25, 14: 12, 17: 4 },
+  3: { 8: 65, 11: 50, 14: 35, 17: 20 },
+  4: { 8: 88, 11: 75, 14: 58, 17: 36 },
+  5: { 8: 94, 11: 84, 14: 70, 17: 51 },
+};
+
+describe('table 4.1 fixture (proficiency 0)', () => {
+  it('each exact chance is within one percentage point of its brief cell', () => {
+    for (const score of [1, 2, 3, 4, 5] as const) {
+      for (const dc of [8, 11, 14, 17] as const) {
+        const { wins, total } = exactChance(score, dc);
+        const percent = (wins / total) * 100;
+        expect(
+          Math.abs(percent - BRIEF_TABLE_4_1[score][dc]),
+          `score ${score} DC ${dc}: ${percent}`,
+        ).toBeLessThanOrEqual(1);
+      }
+    }
   });
 });

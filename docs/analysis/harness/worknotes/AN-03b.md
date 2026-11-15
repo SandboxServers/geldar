@@ -7,9 +7,31 @@
 ## Deferred: AN-03c (temperament bank)
 
 - `psyche/src/temperament.ts` and `psyche/test/temperament.test.ts` are NOT in this commit.
-- Reason: the bank's wording needs the owner's approval (decisions 0058, 0059, 0068; ADR 0186 "Not decided here"; ADR 0281 item 8, D-HC-13).
+- Status: deferred. The bank's text now comes from the owner's brief 5.9 (the brief is not in the repository). It is to be built as inactive data after this merges. Earlier, the wording waited on an approval (decisions 0058, 0059, 0068; ADR 0186 "Not decided here"; ADR 0281 item 8, D-HC-13).
+- `ledger.md` has no AN-03c row. The orchestrator adds it.
 - AN-03c must add: the bank, the `temperament(sheet)` function, the marker-scan test (every sentence through `markedWords` from `@geldar/contract`, with "keep an eye on" in place of "watch for"), and the 245-character longest-sentence budget.
 - No prose an agent would read is in this commit. `alignmentLabel` returns labels for operators and Glass only.
+
+## Review fixes (second pass)
+
+- Base for this pass: `c94fa7fb` (the reviewed packet commit). This pass adds one commit on top; it does not amend or squash below `c94fa7fb`.
+- Whole-Roll pinning: `roll.test.ts` asserts the full `Roll` with `toEqual` for one rigged roll per mode (dis score 1, flat score 3, adv score 5 with proficiency 1). Every field is pinned: fx, score, proficiency, dc, mode, dice, kept, bonus, total, success.
+- Golden test: `roll('novelty', s, 11, rngFor(KEY))` for scores 1, 3 and 5, with KEY = life-a, body, generation 1, tick 100, novelty, decisionSeq 0. The first two d20 values are 17 and 7. Scores 1, 3 and 5 give (dis, kept 7, total 5, fail), (flat, 17, total 17, success), (adv, kept 17, bonus 2, total 19, success). The raw first draw is already pinned as a seed vector in `rng.test.ts`; this pins only the d20 mapping and the rolls.
+- `levelForXp` throws `RangeError` unless every threshold is finite and the thresholds are non-decreasing. Equal thresholds are accepted. Tests are in `proficiency.test.ts`.
+- Table 4.1 fixture (`roll.test.ts`): the owner's brief table 4.1, as whole percents, is copied into the test. The brief is not in the repository. Every cell is checked against `exactChance` within one percentage point. Exact values: score 1 is 30.25, 16.00, 6.25, 1.00; score 2 is 42.25, 25.00, 12.25, 4.00; score 3 is 65, 50, 35, 20; score 4 is 87.75, 75, 57.75, 36; score 5 is 93.75, 84, 69.75, 51 (DC 8, 11, 14, 17). No cell is off by more than one point, so nothing was stopped and the fixture was not changed.
+- `ENGINE_VERSION`: closed as **no bump (adding functions only, per AN-08a precedent)**. This pass adds functions and tests; no seed, sheet or existing roll rule changed.
+- Tests after this pass: `pnpm test psyche/test` gives 6 files, 71 tests, all passing. `tsc -p psyche` is clean.
+
+Revert-checks (each mutation changed one line, `git diff --stat` showed that line, the file was restored from a scratchpad backup and `git diff --stat` was empty after):
+
+| # | File and line | Mutation | Result |
+|---|---|---|---|
+| R1 | `roll.ts` return | `fx` set to `''` | 4 failed (whole-Roll dis, flat, adv and golden) |
+| R2 | `roll.ts` return | `dc` set to `0` | 4 failed |
+| R3 | `roll.ts` return | `score` set to `3` | 3 failed |
+| R4 | `rng.ts` d20 | faces 0 to 19 (no `+ 1`) | 13 failed (rng d20 tests, roll tests, whole-Roll tests) |
+| R5 | `proficiency.ts` validation | first threshold not checked for finite | 1 failed ("not finite") |
+| R6 | `proficiency.ts` validation | ordering drops the `second <= third` check | 1 failed ("decrease") |
 
 ## Files
 
@@ -50,9 +72,9 @@ Each mutation changed one line; `git diff --stat` showed that one line; `pnpm te
 
 - Test-first: tests and code were written in the same pass, so no red run preceded the code. The eight mutations are the evidence that the tests bite.
 - `bonus` includes the proficiency level (card: "every proficiency level shifts the bonus by the level"). `Roll.bonus` is the total bonus; the mode bonus alone is not stored.
-- `ENGINE_VERSION` stays at 1. No existing seed, sheet or roll rule changed; these are new functions. ADR 0281 item 3 says to bump on a change to "the roll rules". Adding rules is not a change to the existing ones, but the orchestrator should confirm.
+- `ENGINE_VERSION` stays at 1. Closed in the review fixes: **no bump (adding functions only, per AN-08a precedent)**. No existing seed, sheet or roll rule changed.
 - `DEFAULT_DCS` lives in `roll.ts` (the card lists it in the shapes without a file). `Level` type lives in `proficiency.ts`.
 - `roll` takes `proficiency` as an optional fifth argument, default 0, as the card's signature gives.
-- The brief's table 4.1 (25 cells "within rounding") is not in the repository. It was not checked; only the exact cells above were verified.
+- Table 4.1 is the owner's brief and is not in the repository. The review fixes record it as a fixture in `roll.test.ts` (see Review fixes above); all 20 cells are within one percentage point.
 - The card's "floors" wording for `step` is taken to mean the computed values 10, 8, 6, 4, 2.
 - No `geldar.ps1 check` run; the narrower checks in the brief were used.
