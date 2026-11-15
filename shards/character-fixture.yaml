@@ -1,0 +1,23 @@
+# Disposable character fixtures (AN-12b): three Bodies for the W12 cohort and the ranger activation proposal
+# (docs/analysis/harness/worknotes/AN-12b.md). Files only: nothing starts from this file unless a scratch stack is
+# pointed at it. Never copy these values into shards/colo-mind.yaml, shards/phase0.yaml or shards/colo.yaml.
+# The sheets are the innate scores of contract/schemas/character-sheet.schema.json (1 to 5); proficiency is not here.
+shard: character-fixture
+character:
+  mode: sheet
+  rolls: true
+  proficiency: { enabled: true, thresholds: [10, 30, 70] }
+sovereign:
+  players:
+    - player_id: fixture-all-3
+      life_id: ag_fixallthree_01
+      name: Fixture All3
+      character_sheet: { version: 1, attributes: { curiosity: 3, common_sense: 3, cleverness: 3, aggression: 3 }, alignment: { law: 3, good: 3 }, op_modes: { explorer: 3, farmer: 3, miner: 3, builder: 3, crafter: 3, warrior: 3, nitwit: 3 } }
+    - player_id: fixture-aggression-1
+      life_id: ag_fixaggr1_02
+      name: Fixture Aggression1
+      character_sheet: { version: 1, attributes: { curiosity: 3, common_sense: 3, cleverness: 3, aggression: 1 }, alignment: { law: 3, good: 3 }, op_modes: { explorer: 3, farmer: 3, miner: 3, builder: 3, crafter: 3, warrior: 3, nitwit: 3 } }
+    - player_id: fixture-aggression-5
+      life_id: ag_fixaggr5_03
+      name: Fixture Aggression5
+      character_sheet: { version: 1, attributes: { curiosity: 3, common_sense: 3, cleverness: 3, aggression: 5 }, alignment: { law: 3, good: 3 }, op_modes: { explorer: 3, farmer: 3, miner: 3, builder: 3, crafter: 3, warrior: 3, nitwit: 3 } }

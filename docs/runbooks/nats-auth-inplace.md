@@ -218,3 +218,10 @@ Until the test records a result, plan the live change as if changed users are cl
 ## Open questions
 
 - JetStream republish caveat (decision 0199, known limit, not verified live): the body, mind and mcp roles also hold $JS.API.>. A JetStream stream republish may emit to a subject without a publish-ACL check on that subject. If so, the PubDeny guards against mistakes and ordinary bugs, not against a hostile or compromised role. The existing Kino and state.*.level denies share this property. Applies to every PubDeny in the generated config; on the owner's morning list (geldar-93).
+
+## AN-12b: state subscriptions (AN-12b fix pass)
+
+- body: Sub gains `geldar.<s>.state.*.level` (one life's level push). Not `state.>`.
+- eventsink: Sub gains `geldar.<s>.state.*.proficiency` (one life's request). Not `state.>`.
+- Apply `./geldar.ps1 shard nats-auth <shard>` on the live node before setting GELDAR_SHEET_SHARD, or the state service is refused.
+- Sink opt-in override: `compose/opt-in/sheet-sink.yml` (not in the default set). Use it as `docker compose -f compose/colo.yml -f compose/opt-in/sheet-sink.yml up -d eventsink`. It is outside `compose/*.yml` so the compose lane does not validate it standalone.
