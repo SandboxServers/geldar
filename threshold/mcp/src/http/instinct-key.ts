@@ -10,20 +10,24 @@ export const INSTINCT_HEADER = 'x-geldar-instinct-key';
 /** A shorter instinct key is refused: the class stays off and the log says so, never the key. */
 export const INSTINCT_KEY_MIN_BYTES = 32;
 
-/** What the key file yields: no class (`off`), a key too short to use (`refused`), or a usable key. */
-export type InstinctKeyLoad = { outcome: 'off' | 'refused' } | { outcome: 'ok'; key: Buffer };
+/** What the key file yields: a usable key, or a file that cannot be one (the server then refuses to start). */
+export type InstinctKeyLoad = { outcome: 'refused' } | { outcome: 'ok'; key: Buffer };
+
+/**
+ * Printable ASCII with no edge space: a header value trims its edges, and a BOM, a control byte or a
+ * non-ASCII byte could never match the presented key, so such a key is refused, not loaded.
+ */
+const USABLE_KEY = /^[\x21-\x7e](?:[\x20-\x7e]*[\x21-\x7e])?$/;
 
 /**
  * The instinct key from the file's text, read as the pepper is: one trailing LF or CRLF removed and
- * nothing else. An empty file is off, as an unset variable is. The result never carries the text
- * in a message; the caller logs only the outcome.
+ * nothing else. Empty, short or unusable text is refused. The result never carries the text in a
+ * message; the caller names only the variable.
  */
 export function loadInstinctKey(text: string): InstinctKeyLoad {
   const key = text.replace(/\r?\n$/, '');
-  if (key === '') return { outcome: 'off' };
-  const bytes = Buffer.from(key, 'utf8');
-  if (bytes.length < INSTINCT_KEY_MIN_BYTES) return { outcome: 'refused' };
-  return { outcome: 'ok', key: bytes };
+  if (!USABLE_KEY.test(key) || key.length < INSTINCT_KEY_MIN_BYTES) return { outcome: 'refused' };
+  return { outcome: 'ok', key: Buffer.from(key, 'ascii') };
 }
 
 /** SHA-256 of a value. Both sides of the compare are digests, so their lengths always match. */

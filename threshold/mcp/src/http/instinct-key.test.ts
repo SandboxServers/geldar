@@ -24,9 +24,9 @@ function request(...pairs: string[]): Pick<IncomingMessage, 'rawHeaders'> {
 }
 
 describe('loadInstinctKey', () => {
-  it('is off for an empty file, with or without its line feed', () => {
-    expect(loadInstinctKey('')).toEqual({ outcome: 'off' });
-    expect(loadInstinctKey('\n')).toEqual({ outcome: 'off' });
+  it('refuses an empty file, with or without its line feed', () => {
+    expect(loadInstinctKey('')).toEqual({ outcome: 'refused' });
+    expect(loadInstinctKey('\n')).toEqual({ outcome: 'refused' });
   });
 
   it('refuses a key shorter than the minimum, one byte under the line', () => {
@@ -40,6 +40,21 @@ describe('loadInstinctKey', () => {
   it('removes one trailing LF or CRLF and nothing else', () => {
     expect(loadInstinctKey(`${KEY}\r\n`)).toEqual({ outcome: 'ok', key: KEY_BYTES });
     expect(loadInstinctKey(`${KEY}\n`)).toEqual({ outcome: 'ok', key: KEY_BYTES });
+  });
+
+  it('refuses a key that could never match: a second line feed, edge spaces, a BOM, a tab or non-ASCII', () => {
+    const unusable = [
+      `${KEY}\n\n`,
+      `${KEY}\r\n\r\n`,
+      ` ${KEY}`,
+      `${KEY} `,
+      `\t${KEY}`,
+      `﻿${KEY}`,
+      `${KEY}\t`,
+      'é'.repeat(INSTINCT_KEY_MIN_BYTES),
+      `${'k'.repeat(20)}é${'k'.repeat(20)}`,
+    ];
+    for (const text of unusable) expect(loadInstinctKey(text)).toEqual({ outcome: 'refused' });
   });
 });
 

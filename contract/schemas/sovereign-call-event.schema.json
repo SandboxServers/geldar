@@ -107,7 +107,7 @@
       "minimum": 0
     },
     "source": {
-      "description": "Which connection made the call: model (the agent's own session; also the meaning when absent), instinct (a routine act settled in code on the keyed instinct connection), or operator (reserved; no code path produces it). Set by the MCP server from the authenticated connection, never from tool input. `source` is ADVISORY until the kit's denial test passes.",
+      "description": "Which connection made the call: model (the agent's own session; also the meaning when absent), instinct (a routine act settled in code on the keyed instinct connection), or operator (reserved; no code path produces it). Only the `act` tool records it: say, journal, sleep and the other tools on an instinct connection carry no `source` and so read as model. Set by the MCP server from the authenticated connection, never from tool input. `source` is ADVISORY until the kit's denial test passes.",
       "type": "string",
       "enum": ["model", "instinct", "operator"]
     }

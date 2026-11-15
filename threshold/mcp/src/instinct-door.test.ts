@@ -11,7 +11,7 @@ import { FakeKeepAlive, FakeTokenStore, ScriptedRateLimiter } from './fakes/stor
 import { worldFixture } from './fakes/world.fakes.ts';
 import { tokenDigest } from './http/auth.ts';
 import { createFrontDoor, type FrontDoor } from './http/front.ts';
-import { instinctKeyOf } from './main.ts';
+import { ConfigRejected, instinctKeyOf } from './main.ts';
 import type { PlayerRecord } from './ports.ts';
 import { createWorld } from './world.ts';
 import { createWorldSession, type WorldSessionDeps } from './world-session.ts';
@@ -270,6 +270,16 @@ describe('the instinct class at the front door', () => {
     expect(rig.fx.recorder.calls.every((c) => c.source !== 'operator')).toBe(true);
   });
 
+  it('an instinct initialize then a model initialize on the same door is the model class, and the reverse', async () => {
+    const rig = await startRig(Buffer.from(KEY));
+    expect(await postInitialize(rig, { ...AUTH, [HEADER]: KEY })).toBe(200);
+    expect(await postInitialize(rig, { ...AUTH, [HEADER]: WRONG_KEY })).toBe(200);
+    expect(await postInitialize(rig, AUTH)).toBe(200);
+    expect(rig.sources).toEqual(['instinct', 'model', 'model']);
+    expect(await postInitialize(rig, { ...AUTH, [HEADER]: KEY })).toBe(200);
+    expect(rig.sources).toEqual(['instinct', 'model', 'model', 'instinct']);
+  });
+
   it('the log never carries the key or the header value, not even on a wrong key', async () => {
     const rig = await startRig(Buffer.from(KEY));
     await postInitialize(rig, { ...AUTH, [HEADER]: WRONG_KEY });
@@ -280,32 +290,33 @@ describe('the instinct class at the front door', () => {
     expect(logged).not.toContain(WRONG_KEY);
   });
 
-  it('the start-up key read logs one constant line and never the key', async () => {
-    const logs: Record<string, unknown>[] = [];
-    const log = (line: Record<string, unknown>) => logs.push(line);
+  it('the start-up key read loads a usable key, and refuses a set file that is not one with one constant line', async () => {
     const key = 'k'.repeat(40);
-    expect(await instinctKeyOf(undefined, async () => key, log)).toBeUndefined();
-    expect(await instinctKeyOf('/run/secrets/k', async () => `${key}\n`, log)).toEqual(
-      Buffer.from(key),
-    );
-    expect(await instinctKeyOf('/run/secrets/k', async () => '', log)).toBeUndefined();
-    expect(logs).toEqual([]);
-
-    const short = 'k'.repeat(5);
-    expect(await instinctKeyOf('/run/secrets/k', async () => short, log)).toBeUndefined();
-    expect(logs).toEqual([{ event: 'instinct_key_refused' }]);
-
-    const failed = await instinctKeyOf(
-      '/run/secrets/k',
+    expect(await instinctKeyOf(undefined, async () => key)).toBeUndefined();
+    expect(await instinctKeyOf('/run/secrets/k', async () => `${key}\n`)).toEqual(Buffer.from(key));
+    const unusable: (() => Promise<string>)[] = [
+      async () => '',
+      async () => 'k'.repeat(5),
+      async () => ` ${key}`,
+      async () => `${key}\n\n`,
+      async () => `﻿${key}`,
+      async () => 'é'.repeat(40),
       async () => {
         throw new Error('ENOENT: /run/secrets/k');
       },
-      log,
-    );
-    expect(failed).toBeUndefined();
-    expect(logs).toEqual([{ event: 'instinct_key_refused' }, { event: 'instinct_key_unreadable' }]);
-    expect(JSON.stringify(logs)).not.toContain('kkkkk');
-    expect(JSON.stringify(logs)).not.toContain('/run/secrets');
+    ];
+    for (const read of unusable) {
+      const error: unknown = await instinctKeyOf('/run/secrets/k', read).then(
+        () => undefined,
+        (caught: unknown) => caught,
+      );
+      expect(error).toBeInstanceOf(ConfigRejected);
+      const message = (error as Error).message;
+      expect(message).toMatch(/^GELDAR_MCP_INSTINCT_KEY_FILE names a file that is /);
+      expect(message).not.toContain('\n');
+      expect(message).not.toContain('/run/secrets');
+      expect(message).not.toContain('kkkkk');
+    }
   });
 
   it('no source file under threshold/mcp/src assigns the operator class', () => {
