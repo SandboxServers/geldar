@@ -43,7 +43,7 @@ Pending additions, none in the generator or the live file. Each needs its own de
 
 ## Batch: body helper users and subjects
 
-This batch is the body helper's NATS wiring from the C7 registration session. The subjects and permissions are in `docs/analysis/phase1/packets/c7f-packets.md` (item 7) and `docs/analysis/phase1/packets/c7c-packets.md` (`supervisor` and `register`). `<s>` is the shard name, `colo` on the node. The generator lines are in PR #415 (`Get-NatsUsers` in `geldar.ps1`, pinned by `tools/repo-checks/src/nats-auth.test.ts`). Apply the batch only after #415 is merged, so that the node runs what the generator produces.
+This batch is the body helper's NATS wiring from the C7 registration session. The subjects and permissions are in `docs/analysis/phase1/packets/c7f-packets.md` (item 7) and `docs/analysis/phase1/packets/c7c-packets.md` (`supervisor` and `register`). `<s>` is the shard name, `colo` on the node. The generator lines are in PR #415 (`Get-NatsUsers` in `geldar.ps1`, pinned by `tools/repo-checks/src/nats-auth.test.ts`). Apply the batch only after #415 is merged, so that the node runs what the generator produces. `/opt/geldar` does not exist on the node yet; the install script (card C7-03c5) creates it (root, mode 0755) together with the pinned node binary and the bundled `dist/main.js`, both hash-checked, because the node has no Node runtime on PATH for any user.
 
 Names and subjects only:
 
