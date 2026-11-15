@@ -6,7 +6,6 @@ import type {
   StartRow,
   SupervisorDeps,
 } from './ports.ts';
-import { LoginNameError } from './ports.ts';
 
 // An in-memory world for the supervisor's tests: the clock is fixed and moved by the test.
 // Roster names and body keys are lower-cased, as the supervisor keys them (names are case-insensitive).
@@ -15,22 +14,28 @@ export class FakeWorld {
   roster = new Map<string, string>();
   admins = new Set<string>();
   adminReadFails = false;
+  // The owner's display name (the exact-case login name) for a roster name, when the test sets one. A name
+  // with no entry is returned as the player name, which is in the login shape for the tests' names.
+  displayNames = new Map<string, string>();
   startRows: StartRow[] = [];
   auditRows: AuditRow[] = [];
   // Bodies are keyed by the roster player name, as the supervisor keys them.
   bodies = new Map<string, BodyRecord>();
   specs: BodySpec[] = [];
   stops: string[] = [];
+  // Every body helper call, in order: the verb, the owner and the roster name. A refused login name
+  // makes no call here.
+  calls: { verb: 'inspect' | 'start' | 'stop'; ownerId: string; playerName: string }[] = [];
   startError: Error | null = null;
-  // When set, the runtime's login name check refuses the player (the name is outside the login shape).
+  // When set, the login-name check refuses the player (the display name is missing or outside the login shape).
   loginNameBad = false;
   insertError: Error | null = null;
   auditError: Error | null = null;
   stopError: Error | null = null;
-  // When set, a runtime start never answers (a hung Docker call).
+  // When set, a runtime start never answers (a hung helper call).
   hangStart = false;
   // When set, a runtime start completes this many ms later and ignores the abort signal, as a
-  // Docker start that was already under way would. The body then runs unless the supervisor stops it.
+  // helper start that was already under way would. The body then runs unless the supervisor stops it.
   lateStartMs: number | null = null;
   logs = new Map<string, LogEvent[]>();
   // Every abort signal the runtime was given, in call order (review fix E).
@@ -51,6 +56,12 @@ export class FakeWorld {
           return this.admins.has(ownerId);
         },
       },
+      displayNames: {
+        displayName: async (_ownerId, playerName) => {
+          if (this.loginNameBad) return null;
+          return this.displayNames.get(playerName) ?? playerName;
+        },
+      },
       starts: {
         insert: async (row) => {
           if (this.insertError) throw this.insertError;
@@ -69,15 +80,14 @@ export class FakeWorld {
         },
       },
       runtime: {
-        checkLogin: async () => {
-          if (this.loginNameBad) throw new LoginNameError();
-        },
-        inspect: async (playerName) => {
+        inspect: async (ownerId, playerName) => {
+          this.calls.push({ verb: 'inspect', ownerId, playerName });
           const body = this.bodies.get(playerName);
           return body ? { ...body } : null;
         },
         start: async (spec, signal) => {
-          this.signals.push(signal);
+          this.calls.push({ verb: 'start', ownerId: spec.ownerId, playerName: spec.playerName });
+          if (signal) this.signals.push(signal);
           if (this.hangStart) return new Promise<void>(() => undefined);
           if (this.startError) throw this.startError;
           if (this.lateStartMs !== null) {
@@ -90,7 +100,8 @@ export class FakeWorld {
             running: true,
           });
         },
-        stop: async (playerName) => {
+        stop: async (ownerId, playerName) => {
+          this.calls.push({ verb: 'stop', ownerId, playerName });
           this.stops.push(playerName);
           if (this.stopError) throw this.stopError;
           const body = this.bodies.get(playerName);

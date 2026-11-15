@@ -6,6 +6,8 @@ import {
   createBodyHelper,
   type HelperDeps,
   NAME_TAKEN,
+  NOT_YOUR_BODY,
+  OTHER_OWNER_BODY,
 } from './service.ts';
 
 const TEMPLATE = {
@@ -33,11 +35,13 @@ interface Fake extends BodyEngine {
   failStart: boolean;
 }
 
-// Seeded names are the helper's Bodies unless listed in `foreign`: those carry no Body label.
+// Seeded names are the helper's Bodies unless listed in `foreign`: those carry no Body label. A Body is labelled for
+// 'own-a' unless `owners` names another owner for it; `owners[name] = null` is a Body with the Body label and no owner label.
 function fakeEngine(
   running: Record<string, boolean> = {},
   sovereign = 0,
   foreign: string[] = [],
+  owners: Record<string, string | null> = {},
 ): Fake {
   const containers = new Map<string, ContainerState & { name: string }>();
   for (const [name, isRunning] of Object.entries(running)) {
@@ -46,6 +50,7 @@ function fakeEngine(
       name,
       running: isRunning,
       helperBody: !foreign.includes(name),
+      owner: name in owners ? (owners[name] ?? null) : 'own-a',
     });
   }
   const fake: Fake = {
@@ -68,7 +73,7 @@ function fakeEngine(
       if (fake.failCreate) throw new Error('engine refused create');
       const id = `new-${name}`;
       fake.created.push(name);
-      containers.set(name, { id, name, running: false, helperBody: true });
+      containers.set(name, { id, name, running: false, helperBody: true, owner: 'own-a' });
       return id;
     },
     async start(id) {
@@ -139,18 +144,140 @@ describe('body helper verbs', () => {
     expect(lookups).toEqual([['own-a', 'nobody']]);
   });
 
-  it('refuses a stop for a name not on the roster and stops nothing', async () => {
+  it('stops a Body whose name left the roster, for its label owner (decision 0108)', async () => {
     const engine = fakeEngine({ nobody: true });
+    const { handle, audit, lookups } = harness(engine);
+    expect(await handle(req('stop', 'nobody'))).toEqual({ ok: true, state: 'stopped' });
+    expect(engine.stopped).toEqual(['nobody']);
+    expect(lookups).toEqual([]);
+    expect(audit).toEqual(['body-helper verb=stop name=nobody outcome=accepted']);
+  });
+
+  it('refuses a stop of a Body labelled for another owner, without that owner id, and stops nothing', async () => {
+    const engine = fakeEngine({ nobody: true }, 0, [], { nobody: 'own-b' });
     const { handle, audit } = harness(engine);
-    expect(await handle(req('stop', 'nobody'))).toEqual({
+    const reply = await handle(req('stop', 'nobody'));
+    expect(reply).toEqual({ ok: false, code: 'refused', error: NOT_YOUR_BODY });
+    expect(JSON.stringify(reply)).not.toContain('own-b');
+    expect(engine.stopped).toEqual([]);
+    expect(engine.containers.get('nobody')?.running).toBe(true);
+    expect(audit).toEqual([
+      'body-helper verb=stop name=nobody outcome=refused reason=not_your_body',
+    ]);
+  });
+
+  it('refuses a status and a logtail of another owner Body, and reads nothing', async () => {
+    const engine = fakeEngine({ nobody: true }, 0, [], { nobody: 'own-b' });
+    const { handle, audit } = harness(engine);
+    expect(await handle(req('status', 'nobody'))).toEqual({
       ok: false,
       code: 'refused',
-      error: 'not on roster',
+      error: NOT_YOUR_BODY,
+    });
+    expect(await handle(req('logtail', 'nobody'))).toEqual({
+      ok: false,
+      code: 'refused',
+      error: NOT_YOUR_BODY,
+    });
+    expect(audit).toEqual([
+      'body-helper verb=status name=nobody outcome=refused reason=not_your_body',
+      'body-helper verb=logtail name=nobody outcome=refused reason=not_your_body',
+    ]);
+  });
+
+  it('reports status for a Body whose name left the roster, with its label owner', async () => {
+    const { handle } = harness(fakeEngine({ nobody: true }));
+    expect(await handle(req('status', 'nobody'))).toEqual({
+      ok: true,
+      state: 'running',
+      owner: 'own-a',
+    });
+  });
+
+  it('refuses a start of a name whose Body another owner holds, running or stopped, and touches nothing', async () => {
+    for (const running of [true, false]) {
+      const engine = fakeEngine({ ranger: running }, 0, [], { ranger: 'own-b' });
+      const { handle, audit } = harness(engine);
+      expect(await handle(req('start'))).toEqual({
+        ok: false,
+        code: 'refused',
+        error: OTHER_OWNER_BODY,
+      });
+      expect(engine.created).toEqual([]);
+      expect(engine.removed).toEqual([]);
+      expect(engine.stopped).toEqual([]);
+      expect(engine.containers.get('ranger')).toMatchObject({ id: 'id-ranger', running });
+      expect(audit).toEqual([
+        'body-helper verb=start name=ranger outcome=refused reason=other_owner',
+      ]);
+    }
+  });
+
+  it('refuses stop, status and logtail of a Body with the Body label and no owner label, for any owner', async () => {
+    const engine = fakeEngine({ nobody: true }, 0, [], { nobody: null });
+    const { handle, audit } = harness(engine);
+    for (const verb of ['stop', 'status', 'logtail']) {
+      expect(await handle(req(verb, 'nobody'))).toEqual({
+        ok: false,
+        code: 'refused',
+        error: NOT_YOUR_BODY,
+      });
+    }
+    expect(engine.stopped).toEqual([]);
+    expect(engine.containers.get('nobody')?.running).toBe(true);
+    expect(audit).toEqual([
+      'body-helper verb=stop name=nobody outcome=refused reason=not_your_body',
+      'body-helper verb=status name=nobody outcome=refused reason=not_your_body',
+      'body-helper verb=logtail name=nobody outcome=refused reason=not_your_body',
+    ]);
+  });
+
+  it('refuses a start over a stopped Body with the Body label and no owner label, and removes nothing', async () => {
+    const engine = fakeEngine({ ranger: false }, 0, [], { ranger: null });
+    const { handle, audit } = harness(engine);
+    expect(await handle(req('start'))).toEqual({
+      ok: false,
+      code: 'refused',
+      error: OTHER_OWNER_BODY,
+    });
+    expect(engine.created).toEqual([]);
+    expect(engine.removed).toEqual([]);
+    expect(engine.stopped).toEqual([]);
+    expect(engine.containers.get('ranger')).toMatchObject({ id: 'id-ranger', running: false });
+    expect(audit).toEqual([
+      'body-helper verb=start name=ranger outcome=refused reason=other_owner',
+    ]);
+  });
+
+  it('compares owner ids exactly: a Body labelled Own-A is not acted on by own-a', async () => {
+    const engine = fakeEngine({ nobody: true, ranger: true }, 0, [], {
+      nobody: 'Own-A',
+      ranger: 'Own-A',
+    });
+    const { handle } = harness(engine);
+    for (const verb of ['stop', 'status', 'logtail']) {
+      expect(await handle(req(verb, 'nobody'))).toEqual({
+        ok: false,
+        code: 'refused',
+        error: NOT_YOUR_BODY,
+      });
+    }
+    expect(await handle(req('start', 'ranger'))).toEqual({
+      ok: false,
+      code: 'refused',
+      error: OTHER_OWNER_BODY,
     });
     expect(engine.stopped).toEqual([]);
-    expect(audit).toEqual([
-      'body-helper verb=stop name=nobody outcome=refused reason=not_on_roster',
-    ]);
+    expect(engine.removed).toEqual([]);
+    expect(engine.containers.get('nobody')?.running).toBe(true);
+    expect(engine.containers.get('ranger')?.running).toBe(true);
+  });
+
+  it('creates a mixed-case rostered name under its lower-case container name', async () => {
+    const engine = fakeEngine();
+    const { handle } = harness(engine);
+    expect(await handle(req('start', 'Ranger'))).toEqual({ ok: true, state: 'started' });
+    expect(engine.created).toEqual(['ranger']);
   });
 
   it('refuses a name outside the login shape without a database lookup', async () => {
@@ -231,11 +358,17 @@ describe('body helper verbs', () => {
   it('reports status as absent, stopped or running', async () => {
     const engine = fakeEngine({ miner: false, ranger: true });
     const { handle } = harness(engine);
-    expect(await handle(req('status', 'miner'))).toEqual({ ok: true, state: 'stopped' });
-    expect(await handle(req('status', 'ranger'))).toEqual({ ok: true, state: 'running' });
-    expect(await handle(req('status', 'miner'.replace('miner', 'nobody')))).toMatchObject({
-      ok: false,
+    expect(await handle(req('status', 'miner'))).toEqual({
+      ok: true,
+      state: 'stopped',
+      owner: 'own-a',
     });
+    expect(await handle(req('status', 'ranger'))).toEqual({
+      ok: true,
+      state: 'running',
+      owner: 'own-a',
+    });
+    expect(await handle(req('status', 'nobody'))).toEqual({ ok: true, state: 'absent' });
   });
 
   it('stops a running body and refuses a stop with no body as not running', async () => {

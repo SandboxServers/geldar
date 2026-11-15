@@ -17,3 +17,6 @@ Audit of 2026-11-14 (read-only, from code and docs; the Body was not run). Body 
 Cross-cutting: generic "use block or item" verb (fishing, doors, levers), equip/armor verb (decision 0157), inventory-full handling, ore perception beyond coal and iron, skills (`define_skill`/`use_skill` stubbed).
 
 Not checked: whether `craft` reaches an anvil, smithing table or brewing stand; exact notable-block list.
+
+## Status update 2026-11-15 (geldar-ops)
+Live on Colo: `till`, `place` (any block in inventory), `use` on doors, gates, trapdoors, non-iron buttons and levers, sowing and bone meal (flag on, prompt v9). Placement of lever, door, piston and redstone is not verified live; a read-only check is running. Not built: feed/shear/milk, rod, equip (0157), build plans, write_book, maps, anvil/repair, brewing, enchanting, trading. Chapman and MacDonald started 2026-11-15 on the live verbs; Leonardo is next (placement test).

@@ -138,6 +138,7 @@ export function createDockerEngine(request: EngineRequest): BodyEngine & SweepEn
         id: info.Id,
         running: info.State.Running === true,
         helperBody: BODY_LABEL in labels,
+        owner: labels['geldar.owner'] ?? null,
       };
     },
     async countCounted(): Promise<number> {
