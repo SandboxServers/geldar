@@ -31,17 +31,20 @@ const BUILD_REDSTONE: ReadonlySet<string> = new Set([
 /** Doors, fence gates, trapdoors and buttons: any player may use them, on a build of another player too. */
 const OPEN_TO_ALL = /(^|_)door$|_trapdoor$|_fence_gate$|_button$/;
 
-/** Fixed texts for the use: facts only (decision 0154). */
+/**
+ * Fixed texts for the use: facts only (decision 0154). A refused block is named by its class, so the
+ * text states what the block is and never points at another verb (decisions 0058, 0059, 0068).
+ */
 export const USE_MESSAGE = {
-  notYet: 'use is not ready on this body',
+  notYet: 'use is not available',
   both: 'use takes a block or an entity, not both',
-  entityNotYet: 'use on an entity is not ready on this body',
+  entityNotYet: 'use on an entity is not available',
   noTarget: 'use needs a block position',
   noItem: 'no such item in the inventory',
-  container: 'use open for containers',
-  bed: 'sleeping is the sleep verb',
-  sign: 'signs are edited with edit_sign',
-  redstone: 'that redstone device cannot be used that way',
+  container: 'that block is a container',
+  bed: 'that block is a bed',
+  sign: 'that block is a sign',
+  redstone: 'that block is a redstone device',
   notUsable: 'that block cannot be used that way',
   someoneElses: "that block is someone else's work",
   notClear: 'the block above is not clear',
