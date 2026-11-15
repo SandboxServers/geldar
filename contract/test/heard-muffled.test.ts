@@ -95,4 +95,24 @@ describe('heard_muffled vertical directions (decision 0199, MH-1 follow-up)', ()
     expect(() => heardMuffledSentence('overhead', 'close')).toThrow();
     expect(() => heardMuffledSentence('below', 'constructor')).toThrow();
   });
+
+  it('rejects coordinates, a speaker and words on an overhead or below notice', () => {
+    expect(validateHeardMuffledPayload({ ...event, direction: 'overhead', x: 1 })).toBe(false);
+    expect(validateHeardMuffledPayload({ ...event, direction: 'below', speaker: 'Sage' })).toBe(
+      false,
+    );
+    expect(validateHeardMuffledPayload({ ...event, direction: 'below', words: 'hello' })).toBe(
+      false,
+    );
+  });
+
+  it('words the six vertical sentences with no digits and no compass words', () => {
+    for (const direction of VERTICAL) {
+      for (const band of BANDS) {
+        const sentence = heardMuffledSentence(direction, band);
+        expect(sentence).not.toMatch(/\d/);
+        expect(sentence).not.toMatch(/north|south|east|west/i);
+      }
+    }
+  });
 });
