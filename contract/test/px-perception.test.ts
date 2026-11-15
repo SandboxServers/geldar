@@ -228,7 +228,13 @@ describe('generator picks up the schema files', () => {
     const loaded = (await loadSchemas()).map((schema) => schema.name).sort();
     expect(loaded).toEqual(onDisk);
     expect(loaded).toEqual(
-      expect.arrayContaining(['hurt-event', 'heard-sound-event', 'mcp-recall', 'mcp-reach']),
+      expect.arrayContaining([
+        'hurt-event',
+        'heard-sound-event',
+        'heard-muffled-event',
+        'mcp-recall',
+        'mcp-reach',
+      ]),
     );
 
     const tools = buildMcpTools(await loadSchemas());

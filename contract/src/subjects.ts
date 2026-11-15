@@ -65,6 +65,17 @@ export function viewSubject(shard: string, lifeId: string): string {
   return `geldar.${shard}.body.${lifeId}.view`;
 }
 
+/**
+ * Where the plugin sends a muffled notice (`heard_muffled`, heard-muffled-event.schema.json, decision 0199):
+ * `geldar.<shard>.body.<life_id>.hearing`. Five tokens, so outside the sink's `geldar.*.*` filter. The shared
+ * body role can publish it too; the body-role PubDeny is a later nats-auth change. Throws on a shard or life id
+ * the contract rejects.
+ */
+export function hearingSubject(shard: string, lifeId: string): string {
+  checked(shard, lifeId);
+  return `geldar.${shard}.body.${lifeId}.hearing`;
+}
+
 /** The KV bucket of presence records, one key per life id (`PresenceRecord`, WM-01 sovereign). */
 export const PRESENCE_BUCKET = 'geldar-presence';
 

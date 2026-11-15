@@ -59,7 +59,8 @@ export function validateWorldEvent(value: unknown): ValidationResult<WorldEvent>
 }
 
 /** Checks a heard_sound payload against heard-sound-event.schema.json (PX-4). Coordinates are rejected. */
-export { validateHeardSoundEvent } from './generated/validators.js';
+/** Checks a heard_muffled payload against heard-muffled-event.schema.json (decision 0199, MH-1). Coordinates are rejected. */
+export { validateHeardMuffledPayload, validateHeardSoundEvent } from './generated/validators.js';
 
 // --- P0-17 record events ---
 import type { IntentEventPayload, ReflexFiredPayload, WakePayload } from './generated/types.ts';
@@ -265,6 +266,7 @@ import {
 
 export type {
   ActionOutcomePayload,
+  HeardMuffledPayload,
   HeardSoundPayload,
   PlanAck,
   PlanMessage,
@@ -275,6 +277,7 @@ export type {
   ThoughtEventPayload,
 } from './generated/types.ts';
 export {
+  heardMuffledSentence,
   heardSoundSentence,
   hurtSentence,
   intentWhy,
@@ -372,6 +375,7 @@ export {
   CTL_BODY_OPS,
   ctlBodySubject,
   ctlBodyWildcard,
+  hearingSubject,
   kinoFeedSubject,
   maintenanceSubject,
   PRESENCE_BUCKET,
