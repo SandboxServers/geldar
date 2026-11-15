@@ -253,6 +253,19 @@ BEGIN
 END
 $account_delete$;
 
+-- The lock timeout must be transaction-local (set_config(..., true)). The DO block above is one transaction, so it
+-- cannot see a session-wide setting. This top-level call runs in its own autocommit transaction with an unknown hash
+-- (set_config runs first, then the function returns false); the next top-level statement is a new transaction and must
+-- see the default lock_timeout of 0.
+SELECT register_account_delete(decode(repeat('ee', 32), 'hex'));
+DO $lock_local$
+BEGIN
+  IF current_setting('lock_timeout') <> '0' THEN
+    RAISE EXCEPTION 'account delete: lock_timeout leaked out of the delete transaction (%)', current_setting('lock_timeout');
+  END IF;
+END
+$lock_local$;
+
 DROP TRIGGER check_account_delete_capture ON mcp_tokens;
 DROP FUNCTION check_account_delete_capture();
 DROP TABLE check_account_delete_capture;

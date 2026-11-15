@@ -2,7 +2,7 @@ import type { ServerResponse } from 'node:http';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { signOutCookies } from '../src/account.ts';
 import { runAccountDelete } from '../src/account-delete-page.ts';
-import { accountDeleteWiring } from '../src/account-delete-wiring.ts';
+import { accountDeleteWiring, mountAccountDelete } from '../src/account-delete-wiring.ts';
 import {
   type AccountDeleteDeps,
   DELETE_PHRASE,
@@ -10,6 +10,7 @@ import {
 } from '../src/api/account-data-delete.ts';
 import type { BodyStopLink } from '../src/api/body-retire.ts';
 import { createBodySlot } from '../src/api/body-slot.ts';
+import type { ApiRoute } from '../src/api/route.ts';
 import { requestBodyOp } from '../src/nats-ctl.ts';
 
 vi.mock('../src/nats-ctl.ts', () => ({
@@ -156,7 +157,59 @@ describe('the sign-out cookies and their wiring (F3)', () => {
         eraseAccount: async () => true,
       },
       null,
+      () => undefined,
     );
     expect(deps.clearCookies).toEqual(signOutCookies());
+  });
+});
+
+describe('the skip log (C7-09a review fix 2)', () => {
+  it('logs a skipped stop with its reason and no name or owner id', async () => {
+    vi.mocked(requestBodyOp).mockResolvedValue({ ok: false, code: 'unavailable' } as never);
+    const lines: string[] = [];
+    const deps = depsWith(linkWithSlot(), {
+      listPlayers: async () => [{ name: 'bad name!', status: 'live' }],
+      log: (line) => lines.push(line),
+    });
+    expect(await deleteAccountData(deps, IDENT, OWNER)).toBe('deleted');
+    expect(lines).toEqual(['account delete skipped body stop reason=login-name']);
+    expect(lines.join('\n')).not.toContain('bad name');
+    expect(lines.join('\n')).not.toContain(OWNER);
+  });
+});
+
+describe('the production mount (C7-09a review fix 2)', () => {
+  it('the page action runs with the mounted deps, and the delete route is in the mounted list', async () => {
+    const erased: string[] = [];
+    const store = {
+      findOwner: async () => ({ banned: false }),
+      listPlayers: async () => [],
+      eraseAccount: async () => {
+        erased.push('erase');
+        return true;
+      },
+    };
+    const body = { link: null, routes: [] as readonly ApiRoute[] };
+    const { accountDelete, api } = mountAccountDelete(
+      store,
+      body,
+      { name: 'api' },
+      () => undefined,
+    );
+    const { res, seen } = fakeRes();
+    await runAccountDelete(
+      res,
+      accountDelete,
+      { csrf: 'csrf-value', identityHash: IDENT, ownerId: OWNER },
+      new URLSearchParams({ phrase: DELETE_PHRASE }),
+      () => undefined,
+    );
+    expect(seen.status).toBe(302);
+    expect(erased).toEqual(['erase']);
+    expect(seen.headers['set-cookie']).toEqual(signOutCookies());
+    expect(api.name).toBe('api');
+    expect(api.routes.some((r) => r.method === 'POST' && r.pattern.test('/account/delete'))).toBe(
+      true,
+    );
   });
 });

@@ -284,7 +284,7 @@ export class Account {
       await this.deps.sessions.delete(sessionHash(id));
       res.writeHead(302, {
         location: BASE,
-        'set-cookie': [sessionCookie('', 0), ...LEGACY_CLEARS, kinoCookieHeader('', 0)],
+        'set-cookie': signOutCookies(),
         ...SECURITY_HEADERS,
       });
       res.end();

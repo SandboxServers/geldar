@@ -31,6 +31,8 @@ export interface AccountDeleteDeps {
    * managed body can exist, so the stop step is a no-op and the erase still runs.
    */
   readonly body: BodyStopLink | null;
+  /** One line per skipped body stop, with the reason and no name or id. Optional: a fake without it logs nothing. */
+  readonly log?: ((line: string) => void) | undefined;
 }
 
 /** What the shared delete did. Only 'deleted' removed anything. */
@@ -79,7 +81,11 @@ export async function deleteAccountData(
         if (player.status === 'retired') continue;
         // A stored name that is not a Body login (the retire route's rule) can never have been started by the
         // supervisor, so there is no body to stop. Skipping it keeps a bad stored name from blocking the deletion.
-        if (!LOGIN_NAME.test(player.name)) continue;
+        if (!LOGIN_NAME.test(player.name)) {
+          // An operator-started host is started by player id, not by name, so the operator must check for it (runbook).
+          deps.log?.('account delete skipped body stop reason=login-name');
+          continue;
+        }
         if (!(await stopPlayerBody(link, ownerId, player.name))) return 'body_unavailable';
       }
     }
@@ -93,7 +99,9 @@ export async function deleteAccountData(
 /**
  * POST /account/delete (C7-09a). Cookie session only, with the CSRF header (the router, decision 0173); a Bearer owner
  * key is refused 401 before this handler runs and can never delete an account. The typed phrase is checked first, then
- * the shared delete. A second delete finds no live owner (the banned tombstone) and is 401.
+ * the shared delete. A second POST never reaches this handler: the erase ended the session, so the router answers 401.
+ * If the handler is called again with the same hash, findOwner finds no live owner (no row, or the banned tombstone),
+ * the outcome is 'unauthenticated' and nothing is erased.
  * On success the session is ended by the erase (its register_sessions rows go) and both cookie names are cleared.
  */
 export function accountDeleteRoutes(deps: AccountDeleteDeps): readonly ApiRoute[] {
@@ -142,6 +150,7 @@ export function accountDeleteDeps(
   },
   body: BodyStopLink | null,
   clearCookies: readonly string[],
+  log?: (line: string) => void,
 ): AccountDeleteDeps {
   return {
     findOwner: (identityHash) => store.findOwner(identityHash),
@@ -149,5 +158,6 @@ export function accountDeleteDeps(
     eraseAccount: (identityHash) => store.eraseAccount(identityHash),
     clearCookies,
     body,
+    log,
   };
 }

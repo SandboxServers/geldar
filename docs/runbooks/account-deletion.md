@@ -11,7 +11,9 @@ A signed-in owner deletes their account with `POST /api/v1/account/delete` (cook
 - every token of the owner's players (revoked, then deleted);
 - every owner API key and the owner's register sessions, consents and kino admin row;
 - the owner's players and roster rows, and the owner's body operation rows;
-- every life still alive: its journal (`mcp_journal`), thoughts, sleep marks and budget rows are removed;
+- every life still alive: its journal (`mcp_journal`), thoughts, sleep marks and budget rows are removed, and its
+  `agents` row is retired: `died_at` is set to now, `death_cause` is `owner-erased`, `public_camera` and
+  `thoughts_delayed_public` are FALSE, and the owner link is cleared;
 - the owner row, and the identity row, unless the identity is banned (see the tombstone).
 
 Before the transaction the register stops every non-retired player's body through the supervisor (the same stop the
@@ -24,8 +26,6 @@ body can exist, so the stop is skipped.
   They are facts about the world; after deletion nothing joins them to an owner or an identity (0171, point 2).
 - Events are not owner-linked and are not removed. Events of a life that was alive at deletion stay too; this is the
   open point of 0171 and needs the owner's ruling.
-- The `agents` row of a life that was alive is not marked dead by the function: it stays with its name and public
-  flags and no owner. This is open (review F5) and needs the owner's ruling before C7-09 is final.
 - Audit rows (`register_audit`) stay, because the table is append-only (0025). The deletion writes one row with a
   random erasure id as actor. The owner id is not written to it, so the row cannot be joined back to the owner.
 - `kino_audit` rows (one login hash per identity, 90-day retention) are not removed by the function. They age out under
@@ -50,9 +50,10 @@ An identity that is banned keeps its hash, its ban and its `created_at` and `pro
 `mcp_identities` keeps the row, and `owner_id` becomes NULL. A banned person therefore cannot sign up again to get a
 fresh account. An unbanned identity leaves no row at all.
 
-A tombstone is refused at sign-in whether or not the ban is later lifted: `findOwner` treats a NULL owner as banned and
-never returns the owner `'null'`. `identity unban` on a tombstone changes the ban column only; the person stays
-refused. Changing that needs a decision (the identity hash is the primary key, so a fresh sign-up is impossible).
+A tombstone is refused at sign-in while its ban stands: `findOwner` treats a NULL owner as banned and never returns the
+owner `'null'`. `identity unban` on a tombstone DELETES the tombstone row (the hash and the ban go). The person can then
+sign up again as a new owner, with fresh quotas (the F7 reset, accepted). If the operator does not want that, do not
+unban.
 
 A banned owner cannot call the delete route (it is refused 401 like a banned sign-in).
 
@@ -82,9 +83,26 @@ on before it returns.
 
 C7-13a must extend `register_account_delete` (skin uploads) before C7-11 (the sign-up gate) is opened.
 
+## After a self-serve deletion
+
+The self-serve delete (the account page or the API) stops only the bodies the supervisor manages. A host an operator
+started by player id is not stopped, and a stored name that is not a Body login is skipped, so the register logs
+`account delete skipped body stop reason=login-name` (no name, no ids) when it skips one. Do this after every
+self-serve deletion, and at once when that log line appears:
+
+1. Run `./geldar.ps1 players status` and list the hosts that are running.
+2. For each host whose player id is no longer in `mcp_players` (the deleted owner's players are gone), stop it:
+   `./geldar.ps1 players down --player <player id>`. On the colo node the same stop is
+   `deploy/colo-admin.sh player-stop <player id>`. `player-stop` works only while the player id is still listed in the
+   shard file. If the id was already removed from the shard file, stop the container by hand:
+   `docker stop geldar-colo-players-host-<player id>`.
+3. Record the stop in the operator log by player id and date only.
+
 ## Checks
 
 `sql/test/check-schema-account-delete.sql` covers the function: the second call is a no-op with no audit row, a banned
-identity keeps its tombstone, an unbanned identity leaves nothing, and a failure after the trigger disable leaves the
-append-only triggers enabled. The register unit tests cover the cookie clear on success, the body slot release on every
-path, the stop-before-erase order and the account page path.
+identity keeps its tombstone, an unbanned identity leaves nothing, a living life is retired, a failure after the
+trigger disable leaves the append-only triggers enabled, and the lock timeout is transaction-local (an autocommit call
+is followed by a check that `lock_timeout` is back at 0). The register unit tests cover the cookie clear on success and
+on logout (the same list), the body slot release on every path, the stop-before-erase order, the account page path,
+the skip log line, and the production mount (the page deps and the delete route, from `mountAccountDelete`).

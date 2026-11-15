@@ -1,9 +1,8 @@
 import pg from 'pg';
-import { accountDeleteWiring } from './account-delete-wiring.ts';
-import { accountDeleteRoutes } from './api/account-data-delete.ts';
+import { mountAccountDelete } from './account-delete-wiring.ts';
 import { loadConfig } from './config.ts';
 import { dbUrl } from './db-url.ts';
-import { mountBodyApi, productionBodyWiring } from './nats-body.ts';
+import { productionBodyWiring } from './nats-body.ts';
 import { PgStore } from './pg-store.ts';
 import { productionApi } from './production-api.ts';
 import { microsoftProvider } from './providers.ts';
@@ -19,7 +18,13 @@ const log = (line: string) => console.log(line);
 // The retire route (C7-04d-mount) mounts with them, on the same slot and link, and uses the store's retirePlayer.
 const body = productionBodyWiring(config, store, log);
 // The account delete (C7-09a) mounts always: its body stop uses the body link, and is a no-op without NATS.
-const accountDelete = accountDeleteWiring(store, body.link);
+// mountAccountDelete gives the page action its deps and appends the delete route to the body routes.
+const { accountDelete, api } = mountAccountDelete(
+  store,
+  body,
+  productionApi({ db, store, tokenPepper: config.tokenPepper, log }),
+  log,
+);
 const server = createRegisterServer({
   config,
   store,
@@ -29,9 +34,7 @@ const server = createRegisterServer({
   now: () => Date.now(),
   log,
   accountDelete,
-  api: mountBodyApi(productionApi({ db, store, tokenPepper: config.tokenPepper, log }), {
-    routes: [...body.routes, ...accountDeleteRoutes(accountDelete)],
-  }),
+  api,
 });
 server.listen(config.port, config.host, () => {
   log(`register listening killSwitch=${config.killSwitch}`);
