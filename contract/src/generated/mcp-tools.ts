@@ -39,7 +39,7 @@ export const mcpToolSchemas: Record<
         "actions": {
           "type": "array",
           "maxItems": 6,
-          "description": "Immediate steps, at most 6, executed in order. Verbs (do): goto, mine, craft, place, attack, eat, sleep, unstick (get free when stuck; needs no blocks), give, write_sign, write_book, read_book, use_skill, define_skill, offer, propose, vote, note, wait, open, deposit, withdraw, till, edit_sign.",
+          "description": "Immediate steps, at most 6, executed in order. Verbs (do): goto, mine, craft, place, attack, eat, sleep, unstick (get free when stuck; needs no blocks), give, write_sign, write_book, read_book, use_skill, define_skill, offer, propose, vote, note, wait, open, deposit, withdraw, till, edit_sign, use.",
           "items": {
             "$ref": "#/$defs/Action"
           }
@@ -642,6 +642,31 @@ export const mcpToolSchemas: Record<
                 "do",
                 "at",
                 "text"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "do": {
+                  "const": "use"
+                },
+                "item": {
+                  "description": "The item to equip before the click. Absent means the item already in hand, which may be empty.",
+                  "$ref": "#/$defs/ItemName"
+                },
+                "at": {
+                  "description": "The position of the block to click. The Body chooses the face. Not with entity.",
+                  "$ref": "#/$defs/Position"
+                },
+                "entity": {
+                  "description": "The name or name:id of an entity in the perception snapshot to click. Not with at.",
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_:]{1,64}$"
+                }
+              },
+              "required": [
+                "do"
               ],
               "additionalProperties": false
             }

@@ -22,4 +22,14 @@ export const ACTION_FIELDS: Readonly<Record<string, readonly string[]>> = {
   write_sign: ['do', 'text'],
   till: ['do', 'at'],
   edit_sign: ['do', 'at', 'text'],
+  use: ['do', 'item', 'at', 'entity'],
+};
+
+/**
+ * The fields of `ACTION_FIELDS` a verb may leave out. Every other allowed field is required. `use`
+ * (decision 0218) takes an optional item, and a block position or an entity; the Body refuses both
+ * a position and an entity together, not the schema.
+ */
+export const ACTION_OPTIONAL: Readonly<Record<string, readonly string[]>> = {
+  use: ['item', 'at', 'entity'],
 };

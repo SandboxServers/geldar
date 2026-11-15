@@ -23,6 +23,7 @@ const ACTION_POSITION_FIELD: Record<string, string> = {
   withdraw: 'at',
   till: 'at',
   edit_sign: 'at',
+  use: 'at',
 };
 
 /**

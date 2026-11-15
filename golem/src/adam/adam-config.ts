@@ -18,6 +18,8 @@ export interface AdamConfig {
   reflexes: ReflexConfig;
   /** `body_actions.edit_sign`: whether the Body accepts the `edit_sign` verb (off when left out). */
   editSign: boolean;
+  /** `body_actions.use`: whether the Body accepts the `use` verb (off when left out; decision 0218). */
+  use: boolean;
   /** `20 / tick_rate`: the executor's time scale. */
   timeScale: number;
 }
@@ -67,6 +69,7 @@ export function parseAdamConfig(doc: unknown): AdamConfig {
     maxChars: positive(chat, 'max_chars', 'chat'),
     reflexes: parseReflexConfig(root.reflexes),
     editSign: bodyActionFlag(root, 'edit_sign'),
+    use: bodyActionFlag(root, 'use'),
     timeScale: 20 / positive(root, 'tick_rate', 'shard file'),
   };
 }

@@ -1,7 +1,7 @@
 import { validateThought } from '@geldar/contract';
 import { describe, expect, it } from 'vitest';
 import { thoughtDecodeSchema } from '../prompts/decode-schema.ts';
-import { ACTION_FIELDS } from './action-shapes.ts';
+import { ACTION_FIELDS, ACTION_OPTIONAL } from './action-shapes.ts';
 import { PHASE0_VERBS } from './index.ts';
 
 const POS = { x: 1, y: 64, z: 1 };
@@ -24,6 +24,7 @@ const EXAMPLES: Record<string, Record<string, unknown>> = {
   write_sign: { do: 'write_sign', text: 'Home' },
   till: { do: 'till', at: POS },
   edit_sign: { do: 'edit_sign', at: POS, text: 'Home' },
+  use: { do: 'use', item: 'oak_door', at: POS },
 };
 
 function accepts(action: Record<string, unknown>): boolean {
@@ -39,13 +40,21 @@ describe('the action table matches the contract', () => {
   it('accepts each example and rejects it without any one field or with an extra field', () => {
     for (const [verb, example] of Object.entries(EXAMPLES)) {
       expect(accepts(example), verb).toBe(true);
+      const optional = ACTION_OPTIONAL[verb] ?? [];
       for (const field of ACTION_FIELDS[verb] ?? []) {
-        if (field === 'do') continue;
+        if (field === 'do' || optional.includes(field)) continue;
         const { [field]: _dropped, ...rest } = example;
         expect(accepts(rest), `${verb} without ${field}`).toBe(false);
       }
       expect(accepts({ ...example, extra: 1 }), `${verb} with extra`).toBe(false);
     }
+  });
+
+  it('accepts a use with each optional field left out, and with the bare verb', () => {
+    expect(accepts({ do: 'use' })).toBe(true);
+    expect(accepts({ do: 'use', item: 'wheat_seeds' })).toBe(true);
+    expect(accepts({ do: 'use', entity: 'cow:123' })).toBe(true);
+    expect(accepts({ do: 'use', at: POS })).toBe(true);
   });
 
   it('gives the decode schema one variant per verb with the same required fields', () => {
@@ -58,7 +67,10 @@ describe('the action table matches the contract', () => {
     };
     for (const variant of schema.properties.actions.items.oneOf) {
       const verb = variant.properties.do.const;
-      expect(variant.required, verb).toEqual(ACTION_FIELDS[verb]);
+      const optional = ACTION_OPTIONAL[verb] ?? [];
+      expect(variant.required, verb).toEqual(
+        (ACTION_FIELDS[verb] ?? []).filter((field) => !optional.includes(field)),
+      );
     }
   });
 });

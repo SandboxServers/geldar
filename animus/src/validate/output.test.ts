@@ -489,8 +489,19 @@ describe('the body-api table', () => {
     programs: { program: string; example: unknown }[];
   };
 
-  it('lists exactly the allow-list', () => {
-    expect(file.verbs.map((v) => v.do).sort()).toEqual([...PHASE0_VERBS].sort());
+  it('lists exactly the allow-list, less the verbs v9 adds until its Body deploy (decision 0218)', () => {
+    const v8Verbs = PHASE0_VERBS.filter((verb) => verb !== 'use');
+    expect(file.verbs.map((v) => v.do).sort()).toEqual([...v8Verbs].sort());
+  });
+
+  it('lists exactly the allow-list in v9', () => {
+    const v9 = JSON.parse(
+      readFileSync(join(repoRoot(), 'prompts', 'body-api', 'v9.json'), 'utf8'),
+    ) as { verbs: { do: string }[] };
+    expect(v9.verbs.map((v) => v.do).sort()).toEqual([...PHASE0_VERBS].sort());
+  });
+
+  it('lists exactly the allow-list of programs', () => {
     expect(file.programs.map((p) => p.program).sort()).toEqual([...PHASE0_PROGRAMS].sort());
   });
 

@@ -499,6 +499,26 @@ describe('act: edit_sign takes a block position and the new text', () => {
   });
 });
 
+describe('act: use takes an optional item and a block position or an entity', () => {
+  it('accepts a use of an item at a block position, and sends it to the Body', async () => {
+    const h = harness();
+    const result = await act(h, {
+      actions: [{ do: 'use', item: 'oak_door', at: { x: 3, y: 64, z: 8 } }],
+    });
+    expect(result.accepted).toEqual([0]);
+    expect(result.rejected).toEqual([]);
+  });
+
+  it('accepts a use of an entity, and a bare use of the held item', async () => {
+    const h = harness();
+    const result = await act(h, {
+      actions: [{ do: 'use', item: 'wheat', entity: 'cow:123' }, { do: 'use' }],
+    });
+    expect(result.accepted).toEqual([0, 1]);
+    expect(result.rejected).toEqual([]);
+  });
+});
+
 describe('act: a refusal says which part was refused', () => {
   const TRAVEL = { ...INTENT, program: 'travel' };
 

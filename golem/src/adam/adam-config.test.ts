@@ -10,6 +10,30 @@ const SHARD = {
   reflexes: {},
 };
 
+describe('body_actions.use', () => {
+  it('is off when the shard file has no body_actions block', () => {
+    expect(parseAdamConfig(SHARD).use).toBe(false);
+  });
+
+  it('is off when body_actions leaves use out', () => {
+    expect(parseAdamConfig({ ...SHARD, body_actions: { edit_sign: true } }).use).toBe(false);
+  });
+
+  it('is off when use is false', () => {
+    expect(parseAdamConfig({ ...SHARD, body_actions: { use: false } }).use).toBe(false);
+  });
+
+  it('is on only when use is true', () => {
+    expect(parseAdamConfig({ ...SHARD, body_actions: { use: true } }).use).toBe(true);
+  });
+
+  it('refuses a use flag that is not true or false', () => {
+    expect(() => parseAdamConfig({ ...SHARD, body_actions: { use: 'yes' } })).toThrow(
+      'body_actions.use must be true or false',
+    );
+  });
+});
+
 describe('body_actions.edit_sign', () => {
   it('is off when the shard file has no body_actions block', () => {
     expect(parseAdamConfig(SHARD).editSign).toBe(false);

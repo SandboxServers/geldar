@@ -3,7 +3,7 @@ import { Vec3 } from 'vec3';
 import { describe, expect, it } from 'vitest';
 import { judge, snapshot } from './effect.ts';
 import { completed } from './outcome.ts';
-import type { ActionHandler, AnyActionHandler } from './registry.ts';
+import type { AnyActionHandler } from './registry.ts';
 import { ActionRegistry, runAction } from './registry.ts';
 
 type Stack = { name: string; count: number };
@@ -42,7 +42,7 @@ async function run(
       return completed({});
     },
   } as unknown as AnyActionHandler;
-  registry.register(handler as ActionHandler);
+  registry.register(handler);
   return runAction(registry, bot as Bot, { do: kind, ...action }, { receipts });
 }
 

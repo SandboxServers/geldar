@@ -19,6 +19,7 @@ prompts/
   body-api/v6.json    v5 with no new verb or program (the PX perception fields are in the snapshot, not in this list); kept loadable
   body-api/v7.json    v6 with the till verb (decision 0167); kept loadable
   body-api/v8.json    the default allow-list: v7 with the edit_sign verb (decision 0192)
+  body-api/v9.json    v8 with the use verb (decision 0218); not the default until it merges with the Body deploy
 ```
 
 ## Rules
