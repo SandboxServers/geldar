@@ -6,6 +6,7 @@ A throwaway vanilla Paper server for checking sign facts. It exists to check the
 
 - `compose/signcheck.yml`: by default one service, `paper`, from the same pinned Paper image as phase0. No Velocity, NATS, plugins or secrets. Survival mode.
 - Profile `core`: adds `nats` (internal only, no host ports) and `paper-core` (the same Paper with geldar-core loaded). Used for the bubble and proximity probes below.
+- Profile `rcon`: adds `paper-rcon` (the same Paper with RCON on, for the edit-sign live check fixture only). See the RCON section below.
 - Compose project `geldar-signcheck`, run on its own VM, separate from the phase0 shard and from Colo.
 - World volume `geldar-signcheck_paper-data` (override with `GELDAR_WORLD_VOLUME`).
 
@@ -19,7 +20,7 @@ Wait until `docker compose -p geldar-signcheck ps` shows the service healthy. Th
 
 ## Endpoint
 
-Minecraft on host port **25570** (container 25565). The server is in offline mode, with no whitelist and no RCON. The port is bound to `127.0.0.1` only, so clients must run on the VM itself (or tunnel to it).
+Minecraft on host port **25570** (container 25565). The server is in offline mode, with no whitelist. The default profile has no RCON; the `rcon` profile turns it on (see below). The port is bound to `127.0.0.1` only, so clients must run on the VM itself (or tunnel to it).
 
 ## Core profile (geldar-core probes)
 
@@ -60,6 +61,44 @@ docker compose -p geldar-signcheck -f compose/signcheck.yml --profile core down 
 
 `down -v` deletes the world volume and the NATS data. Nothing on this shard is kept.
 
+## RCON profile (edit-sign live check)
+
+The `rcon` profile runs `paper-rcon`: the same vanilla Paper as `paper`, with RCON on (container port 25575). The live test `golem/test/live/edit-sign.live.test.ts` uses RCON to place signs, give items, teleport its two bots and restore the arena on this throwaway world. RCON is for that fixture only. The bots are **GolemSign** and **GolemSignB**.
+
+`paper`, `paper-core` and `paper-rcon` share the `paper-data` world volume, and `paper-rcon` uses host port 25570 too. Run only one of them at a time. Stop `paper` before you start `paper-rcon`.
+
+1. Create the RCON password file by hand, outside git: `compose/secrets/signcheck-rcon.txt` (gitignored; or `GELDAR_RCON_FILE`). Use `umask 077` so only the operator can read it, and a random value:
+
+   ```sh
+   (umask 077; openssl rand -base64 24 | tr -d '\n' > compose/secrets/signcheck-rcon.txt)
+   ```
+
+   Never commit the file, and never print it or paste it into a log or chat.
+
+2. Start paper-rcon:
+
+   ```sh
+   docker compose -p geldar-signcheck -f compose/signcheck.yml --profile rcon up -d paper-rcon
+   ```
+
+   Wait until `paper-rcon` is healthy.
+
+3. Tunnel both ports from your workstation. Each is bound to `127.0.0.1` on the VM only, so forward each with its own `-L`:
+
+   ```sh
+   ssh -L 25570:127.0.0.1:25570 -L 25575:127.0.0.1:25575 <operator>@<shard-vm>
+   ```
+
+   Port 25570 is the game port (the bots connect there); port 25575 is RCON (the fixture connects there). Hosts stay `127.0.0.1`.
+
+### RCON teardown
+
+```sh
+docker compose -p geldar-signcheck -f compose/signcheck.yml --profile rcon down -v
+```
+
+Pass `--profile rcon` so compose also removes the `paper-rcon` container. `down -v` deletes the world volume. The password file stays on the VM; delete it with the shard if you no longer need it.
+
 ## Teardown
 
 ```powershell
@@ -72,4 +111,4 @@ docker compose -p geldar-signcheck -f compose/signcheck.yml down -v
 
 - Never set `GELDAR_WORLD_VOLUME` to the Colo or phase0 world volume. Never point this shard at either.
 - The flag `body_actions.edit_sign` stays **off** on Colo.
-- The default profile has no secrets. The `core` profile reads one RCON password file from `compose/secrets/` (gitignored). Create it by hand and never commit it.
+- The default profile has no secrets. The `core` and `rcon` profiles read one RCON password file from `compose/secrets/` (gitignored). Create it by hand and never commit it.
