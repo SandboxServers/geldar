@@ -566,6 +566,7 @@ services:
           subpath: bluemap/web
       - ./bluemap-web/Caddyfile:/etc/caddy/Caddyfile:ro
       - ../plugins/bluemap/web/geldar.css:/etc/caddy/geldar.css:ro
+      - ../plugins/bluemap/web/geldar-chat.js:/etc/caddy/geldar-chat.js:ro
     ports:
       # The loopback map port. Literal: the loopback rule rejects interpolation.
       - "127.0.0.1:8100:8100"

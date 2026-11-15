@@ -373,9 +373,10 @@ describe('compose/colo.yml: the BlueMap static server (C2-07c1, ruling R27)', ()
     const volumes = (bluemapWeb.volumes ?? []) as unknown as Array<
       Record<string, unknown> | string
     >;
-    expect(volumes).toHaveLength(3);
+    expect(volumes).toHaveLength(4);
     expect(volumes[1]).toBe('./bluemap-web/Caddyfile:/etc/caddy/Caddyfile:ro');
     expect(volumes[2]).toBe('../plugins/bluemap/web/geldar.css:/etc/caddy/geldar.css:ro');
+    expect(volumes[3]).toBe('../plugins/bluemap/web/geldar-chat.js:/etc/caddy/geldar-chat.js:ro');
     const mount = (volumes[0] ?? {}) as Record<string, unknown>;
     expect(typeof mount).toBe('object');
     expect(mount.source).toBe('paper-data');

@@ -103,11 +103,11 @@ public final class GeldarCore extends JavaPlugin {
         } catch (LinkageError | RuntimeException e) {
             getLogger().warning("agent skins are not set: " + e.getClass().getSimpleName());
         }
-        // Speech bubbles on the BlueMap (decision 0197): agents' chat only, off unless BlueMap is enabled.
+        // The live chat feed for the BlueMap panel (decision 0310): agents' chat only, off unless BlueMap is enabled.
         try {
             dev.geldar.core.speech.SpeechSetup.register(this);
         } catch (LinkageError | RuntimeException e) {
-            getLogger().warning("speech bubbles are off: " + e.getClass().getSimpleName());
+            getLogger().warning("chat feed is off: " + e.getClass().getSimpleName());
         }
         getServer().getScheduler().runTaskTimer(this, () -> {
             reloadConfig();

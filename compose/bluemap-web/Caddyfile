@@ -30,6 +30,22 @@
 		file_server
 	}
 
+	# The chat panel script (decision 0310), listed in the webroot's settings.json "scripts". Same-origin only.
+	handle /assets/geldar-chat.js {
+		root * /etc/caddy
+		rewrite * /geldar-chat.js
+		header Content-Type "text/javascript; charset=utf-8"
+		file_server
+	}
+
+	# The chat feed the plugin writes into the webroot (decision 0310). It changes every few seconds: never cached.
+	@chat path /geldar-chat.json
+	handle @chat {
+		header Cache-Control no-store
+		root * /srv
+		file_server
+	}
+
 	# BlueMap's file storage writes only textures.json.gz and tiles as *.prbm.gz (low-res tiles may be plain .png).
 	# The browser asks for the plain name, so serve the .gz under it with Content-Encoding: gzip, unconditionally, as
 	# BlueMap's nginx and apache examples do. (Caddy's `precompressed` needs the plain file to exist, so it cannot do it.)
