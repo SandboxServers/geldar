@@ -17,8 +17,10 @@ describe('bench/sheet/scratch-shard.template.yaml', () => {
     expect(config.shard).toBe('scratch-sheet0');
     expect(config.displayName).toBe('SheetSample');
     expect(config.start).toBe('on_demand');
-    expect(config.character.config.mode).toBe('sheet');
-    expect(config.character.sheet).not.toBeNull();
+    const character = config.character;
+    if (!character) throw new Error('template has no character block');
+    expect(character.config.mode).toBe('sheet');
+    expect(character.sheet).not.toBeNull();
   });
 
   it('refuses the Mind placeholder life id as a player', async () => {

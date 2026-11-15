@@ -149,7 +149,8 @@ describe('parseAck', () => {
   });
 
   it('throws on an ack for another thought, and on text that is not JSON', () => {
-    const other = JSON.stringify({ thought_id: ACTION, accepted: true, rejection: null });
+    const otherThought = 'th_01ARZ3NDEKTSV4RRFFQ69G5FAX';
+    const other = JSON.stringify({ thought_id: otherThought, accepted: true, rejection: null });
     expect(() => parseAck(other, THOUGHT)).toThrow(/another thought/);
     expect(() => parseAck('busy', THOUGHT)).toThrow(/not JSON/);
   });
