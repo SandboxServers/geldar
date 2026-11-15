@@ -1,0 +1,102 @@
+import { EventEmitter } from 'node:events';
+import type { Bot } from 'mineflayer';
+import { Vec3 } from 'vec3';
+import { describe, expect, it, vi } from 'vitest';
+import { ABORT_AIR, SURFACE_AIR, startSwim } from './swim.ts';
+
+interface Cell {
+  name: string;
+  boundingBox: 'block' | 'empty';
+}
+
+const WATER: Cell = { name: 'water', boundingBox: 'empty' };
+const STONE: Cell = { name: 'stone', boundingBox: 'block' };
+const AIR: Cell = { name: 'air', boundingBox: 'empty' };
+
+/** A fake bot in a world of air, with `cells` (keyed `x,y,z`) placed on it. Air is metadata index 1. */
+function swimBot(cells: Record<string, Cell>, air: number, at = new Vec3(0.5, 64.2, 0.5)) {
+  const bot = Object.assign(new EventEmitter(), {
+    entity: { position: at, metadata: [0, air * 15] },
+    blockAt: (pos: Vec3) => ({ ...(cells[`${pos.x},${pos.y},${pos.z}`] ?? AIR), position: pos }),
+    setControlState: vi.fn(),
+    lookAt: vi.fn(async () => undefined),
+  });
+  return bot as typeof bot & Bot;
+}
+
+/** Water in the head cell (0,65,0) of a body at feet y 64.2 (head = floor(64.2 + 1.62)). */
+const HEAD_WATER = { '0,65,0': WATER };
+
+function calls(bot: { setControlState: ReturnType<typeof vi.fn> }, name: string, on: boolean) {
+  return bot.setControlState.mock.calls.filter(([n, v]) => n === name && v === on).length;
+}
+
+describe('startSwim air budget (decision 0194 a, b)', () => {
+  it('holds jump on every physics tick with the head in water at SURFACE_AIR', () => {
+    const bot = swimBot(HEAD_WATER, SURFACE_AIR);
+    startSwim(bot, { onAbort: vi.fn() });
+    bot.emit('physicsTick');
+    bot.emit('physicsTick');
+    bot.emit('physicsTick');
+    expect(calls(bot, 'jump', true)).toBe(3);
+  });
+
+  it('does nothing above SURFACE_AIR: a swim at air 13 holds no jump', () => {
+    const bot = swimBot(HEAD_WATER, SURFACE_AIR + 1);
+    startSwim(bot, { onAbort: vi.fn() });
+    bot.emit('physicsTick');
+    expect(calls(bot, 'jump', true)).toBe(0);
+  });
+
+  it('does nothing with the head in air, however low the air', () => {
+    const bot = swimBot({}, 3);
+    const onAbort = vi.fn();
+    startSwim(bot, { onAbort });
+    bot.emit('physicsTick');
+    expect(calls(bot, 'jump', true)).toBe(0);
+    expect(onAbort).not.toHaveBeenCalled();
+  });
+
+  it('steers to a breathing column under a roof instead of holding jump into it', () => {
+    // Roof at (0,66,0) over the head cell; (1,64..66,0) is air, so the column is one block east.
+    const bot = swimBot({ ...HEAD_WATER, '0,66,0': STONE }, SURFACE_AIR);
+    startSwim(bot, { onAbort: vi.fn() });
+    bot.emit('physicsTick');
+    expect(bot.lookAt).toHaveBeenCalled();
+    expect(calls(bot, 'forward', true)).toBe(1);
+    expect(calls(bot, 'jump', true)).toBe(0);
+  });
+
+  it('calls onAbort once at ABORT_AIR with the head in water, and reports the air', () => {
+    const bot = swimBot(HEAD_WATER, ABORT_AIR);
+    const onAbort = vi.fn();
+    startSwim(bot, { onAbort });
+    bot.emit('physicsTick');
+    bot.emit('physicsTick');
+    expect(onAbort).toHaveBeenCalledTimes(1);
+    expect(onAbort).toHaveBeenCalledWith(ABORT_AIR);
+  });
+
+  it('does not abort at ABORT_AIR + 1', () => {
+    const bot = swimBot(HEAD_WATER, ABORT_AIR + 1);
+    const onAbort = vi.fn();
+    startSwim(bot, { onAbort });
+    bot.emit('physicsTick');
+    expect(onAbort).not.toHaveBeenCalled();
+  });
+
+  it('counts a surface when the head leaves the water; stop unhooks and adds no more calls', () => {
+    const bot = swimBot(HEAD_WATER, SURFACE_AIR);
+    const swim = startSwim(bot, { onAbort: vi.fn() });
+    bot.emit('physicsTick');
+    // Head now at floor(66.2 + 1.62) = 67, in air: the Body has surfaced and releases its jump.
+    bot.entity.position = new Vec3(0.5, 66.2, 0.5);
+    bot.emit('physicsTick');
+    expect(swim.tally.surfaces).toBe(1);
+    expect(calls(bot, 'jump', false)).toBeGreaterThan(0);
+    const count = bot.setControlState.mock.calls.length;
+    expect(swim.stop()).toBe(swim.tally);
+    bot.emit('physicsTick');
+    expect(bot.setControlState.mock.calls.length).toBe(count);
+  });
+});
