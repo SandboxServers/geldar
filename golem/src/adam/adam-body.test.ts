@@ -150,6 +150,60 @@ describe('the ownership client in a Body (decisions 0164, 0165)', () => {
 });
 
 describe('startAdamBody', () => {
+  /** Drives a heard sound, a hurt, and a record through the NATS publisher the Body hands restartBody. */
+  async function publishSome(stamped: boolean): Promise<string[]> {
+    const r = rig();
+    const sent: string[] = [];
+    const bot = fakeBot();
+    const agent = stamped
+      ? { username: 'ag_adam_01', name: 'Adam', harness: 'animus', model: 'tier-large' }
+      : { username: 'ag_adam_01', name: 'Adam' };
+    const env: AdamBodyEnv = {
+      ...r.env,
+      config: parseAdamConfig({ ...SHARD, mind: { agent } }),
+      publisher: {
+        publish: async (_subject: string, body: string) => {
+          sent.push(body);
+        },
+      },
+    };
+    const running = await startAdamBody(env, bot);
+    // The heard sound (perception/heard-sound-event.ts), then the hurt (perception/hurt-trigger.ts).
+    bot.emit('soundEffectHeard' as never, 'entity.creeper.primed', { x: 2, y: 64, z: 0 } as never);
+    bot.emit('entityHurt' as never, bot.entity as never);
+    (bot as unknown as { health: number }).health = 15;
+    bot.emit('health' as never);
+    // The record sink's publisher (body/records-nats.ts), as restartBody was given it.
+    await r.options[0]?.nats?.publisher.publish(
+      'geldar.phase0.action_outcome',
+      JSON.stringify({
+        type: 'action_outcome',
+        agent_id: 'ag_adam_01',
+        source_event_id: 'ev-nats-1',
+      }),
+      'ev-nats-1',
+    );
+    await running.stop();
+    return sent;
+  }
+
+  it('every published event is stamped with the run harness and model', async () => {
+    const sent = await publishSome(true);
+    const events = sent.map((body) => JSON.parse(body) as Record<string, unknown>);
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining(['heard_sound', 'damage', 'action_outcome']),
+    );
+    for (const event of events) {
+      expect(event).toMatchObject({ harness: 'animus', model: 'tier-large' });
+    }
+  });
+
+  it('an unstamped run publishes without the stamp fields', async () => {
+    const sent = await publishSome(false);
+    expect(sent.length).toBeGreaterThanOrEqual(3);
+    for (const body of sent) expect(body).not.toContain('"harness"');
+  });
+
   it('passes the life, the next generation source and the config to restartBody', async () => {
     const r = rig();
     const running = await startAdamBody(r.env, fakeBot());

@@ -16,6 +16,7 @@ import {
   type RestartOutcome,
   restartBody,
 } from '../body/restart.ts';
+import { stampedPublisher } from '../body/stamped-publisher.ts';
 import { placeFields } from '../body/where.ts';
 import { serveBodyImages } from '../body-image/image-serve.ts';
 import { ImageLimiter } from '../body-image/limiter.ts';
@@ -85,6 +86,8 @@ export interface RunningAdamBody {
 export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<RunningAdamBody> {
   const { config, log } = env;
   const diag = env.diag ?? DEFAULT_DIAG_SINK;
+  // Every event the Body publishes leaves through this seam, so the run's harness and model stamp it.
+  const publisher = stampedPublisher(env.publisher, config.stamp);
   // The ownership record for goto's digging (decisions 0164, 0165): on the Body's own connection.
   const owners =
     env.owners === undefined
@@ -94,7 +97,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
   const tick = (): number => worldAge(bot) ?? 0;
   const speech = new SpeechEvents({
     publish: (event) => {
-      env.publisher
+      publisher
         .publish(
           `geldar.${config.shard}.${event.type}`,
           JSON.stringify(event),
@@ -119,7 +122,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
       seq: heardCount,
     });
     if (event === null) return;
-    env.publisher
+    publisher
       .publish(`geldar.${config.shard}.heard_sound`, JSON.stringify(event), event.source_event_id)
       .catch((error: unknown) => log(`heard sound not published: ${String(error)}`));
   });
@@ -153,7 +156,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     editSign: config.editSign,
     use: config.use,
     timeScale: config.timeScale,
-    nats: { publisher: env.publisher, shard: config.shard, log },
+    nats: { publisher, shard: config.shard, log },
     wrapRecords: (inner) => {
       const made = new RecentEvents(env.metrics ? countingSink(inner, env.metrics) : inner);
       wrapped.recent = made;
@@ -236,7 +239,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
         log('hurt: dropped an event the contract refuses');
         return;
       }
-      env.publisher
+      publisher
         .publish(`geldar.${config.shard}.damage`, JSON.stringify(event), event.source_event_id)
         .catch((error: unknown) => log(`hurt event not published: ${String(error)}`));
     });
@@ -254,7 +257,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
       buildSnapshot: (options) => buildSnapshot(bot, options),
       view: async (size) => viewTextFromBot(bot, size),
       tick,
-      publisher: env.publisher,
+      publisher,
       log,
     });
     link.start();
