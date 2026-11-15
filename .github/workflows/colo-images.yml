@@ -1,7 +1,7 @@
-# Publishes the Colo images (Body, Mind, Eventsink, MCP, admin, Glass, register) to GHCR on a push to main that changes them, and on manual dispatch.
+# Publishes the Colo images (Body, Mind, Eventsink, MCP, admin, Glass, register) and the supervisor image to GHCR on a push to main that changes them, and on manual dispatch.
 # No pull_request trigger: pull requests and forks never publish. Each job also requires the upstream repository.
 # Each image is pushed, then its digest is read from the build-push output. The manifest job writes release.env
-# (the artifact `release.env`) with one digest reference per image: deploy/colo-up.sh reads it (decision 0084).
+# (the artifact `release.env`) with one digest reference per image: deploy/colo-up.sh reads it (decision 0084). The supervisor image is pushed but is not in release.env yet (C7-03b2 adds it).
 # Tags :main and :<12-char commit> are for humans; the deploy pins digests. Unsigned, no SBOM, no provenance
 # attestation (same as mcp-mock-image.yml). Packages are created private: making them public and linking them
 # to the repository are owner actions.
@@ -19,6 +19,7 @@ on:
       - tools/admin/**
       - glass/**
       - threshold/register/**
+      - supervisor/**
       - tools/mcp-tokens/**
       - tools/players-cli/**
       - tools/migrate/**
@@ -330,6 +331,50 @@ jobs:
           tags: |
             ghcr.io/sandboxservers/geldar-register:main
             ghcr.io/sandboxservers/geldar-register:${{ steps.sha.outputs.short }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Pushes the supervisor image with the same tag and push steps as the body job. It is not in release.env or the
+  # manifest yet (C7-03b2 deploys it with the compose service).
+  supervisor:
+    name: supervisor image
+    if: github.repository == 'SandboxServers/geldar'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: short commit
+        id: sha
+        run: echo "short=${GITHUB_SHA:0:12}" >> "$GITHUB_OUTPUT"
+      - name: build and push
+        id: push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
+        with:
+          context: .
+          file: supervisor/Dockerfile
+          push: true
+          provenance: false
+          sbom: false
+          tags: |
+            ghcr.io/sandboxservers/geldar-supervisor:main
+            ghcr.io/sandboxservers/geldar-supervisor:${{ steps.sha.outputs.short }}
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
           cache-from: type=gha

@@ -5,6 +5,8 @@ import {
   HELPER_TIMEOUT_MS,
   HelperFailure,
   type HelperRequest,
+  isNatsTimeout,
+  natsHelperRequest,
 } from './helper-client.ts';
 
 const decoder = new TextDecoder();
@@ -18,6 +20,120 @@ function fakeHelper(reply: unknown) {
   };
   return { calls, request };
 }
+
+function namedError(name: string, message = 'request failed'): Error {
+  const error = new Error(message);
+  error.name = name;
+  return error;
+}
+
+describe('isNatsTimeout (the NATS request timeout is the helper timeout kind)', () => {
+  it('matches the pinned library TimeoutError by its exact name', () => {
+    expect(isNatsTimeout(namedError('TimeoutError', 'timeout'))).toBe(true);
+  });
+
+  it('refuses other library errors, including names and messages that only mention a timeout', () => {
+    expect(isNatsTimeout(namedError('NoResponders'))).toBe(false);
+    expect(isNatsTimeout(namedError('RequestTimeout'))).toBe(false);
+    expect(isNatsTimeout(namedError('Error', 'timeout waiting for reply'))).toBe(false);
+    expect(isNatsTimeout('TimeoutError')).toBe(false);
+    expect(isNatsTimeout(undefined)).toBe(false);
+  });
+});
+
+interface NatsCall {
+  subject: string;
+  data: Uint8Array;
+  opts: { timeout: number };
+}
+
+// A fake NATS connection: records each request and answers with the given outcome.
+function fakeNats(outcome: () => Promise<{ data: Uint8Array }>) {
+  const calls: NatsCall[] = [];
+  const requester = {
+    request: (subject: string, data: Uint8Array, opts: { timeout: number }) => {
+      calls.push({ subject, data, opts });
+      return outcome();
+    },
+  };
+  return { calls, requester };
+}
+
+async function rejectionOf(work: Promise<unknown>): Promise<unknown> {
+  try {
+    await work;
+  } catch (error) {
+    return error;
+  }
+  throw new Error('expected a rejection');
+}
+
+describe('natsHelperRequest (the NATS request the helper client sends)', () => {
+  it('passes the subject and payload through and bounds the request by the helper timeout', async () => {
+    const reply = encoder.encode('{"ok":true}');
+    const fake = fakeNats(async () => ({ data: reply }));
+    const payload = encoder.encode('{"verb":"status"}');
+    const bytes = await natsHelperRequest(fake.requester)(
+      'geldar.phase0.helper.body.status',
+      payload,
+    );
+    expect(bytes).toBe(reply);
+    expect(fake.calls).toHaveLength(1);
+    expect(fake.calls[0]?.subject).toBe('geldar.phase0.helper.body.status');
+    expect(fake.calls[0]?.data).toBe(payload);
+    expect(fake.calls[0]?.opts).toEqual({ timeout: HELPER_TIMEOUT_MS });
+  });
+
+  it('a custom timeout is the one the request carries', async () => {
+    const fake = fakeNats(async () => ({ data: encoder.encode('{}') }));
+    await natsHelperRequest(fake.requester, 250)('s', encoder.encode('{}'));
+    expect(fake.calls[0]?.opts).toEqual({ timeout: 250 });
+  });
+
+  it('a library TimeoutError becomes the timeout kind', async () => {
+    const error = namedError('TimeoutError', 'timeout');
+    const fake = fakeNats(async () => Promise.reject(error));
+    const thrown = await rejectionOf(natsHelperRequest(fake.requester)('s', encoder.encode('{}')));
+    expect(thrown).toBeInstanceOf(HelperFailure);
+    expect((thrown as HelperFailure).kind).toBe('timeout');
+  });
+
+  it('a NoResponders rejection is rethrown unchanged, so the runtime reports unavailable', async () => {
+    const error = namedError('NoResponders', 'no responders');
+    const fake = fakeNats(async () => Promise.reject(error));
+    const request = natsHelperRequest(fake.requester);
+    expect(await rejectionOf(request('s', encoder.encode('{}')))).toBe(error);
+    const runtime = createHelperRuntime({ shard: 'phase0', request });
+    const kind = await rejectionOf(runtime.start({ ownerId: 'o', playerName: 'p' }));
+    expect((kind as HelperFailure).kind).toBe('unavailable');
+  });
+
+  it('the runtime sends start to the shard subject and maps a library timeout to timeout', async () => {
+    const fake = fakeNats(async () => Promise.reject(namedError('TimeoutError')));
+    const runtime = createHelperRuntime({
+      shard: 'phaseX',
+      request: natsHelperRequest(fake.requester),
+    });
+    const thrown = await rejectionOf(runtime.start({ ownerId: 'o', playerName: 'p' }));
+    expect(fake.calls[0]?.subject).toBe('geldar.phaseX.helper.body.start');
+    expect((thrown as HelperFailure).kind).toBe('timeout');
+  });
+
+  it('the runtime starts a body through the adapter when the helper answers ok', async () => {
+    const fake = fakeNats(async () => ({ data: encoder.encode('{"ok":true}') }));
+    const runtime = createHelperRuntime({
+      shard: 'phaseX',
+      request: natsHelperRequest(fake.requester),
+    });
+    await runtime.start({ ownerId: 'o', playerName: 'p' });
+    expect(fake.calls[0]?.subject).toBe('geldar.phaseX.helper.body.start');
+    expect(JSON.parse(decoder.decode(fake.calls[0]?.data))).toEqual({
+      verb: 'start',
+      name: 'p',
+      owner: 'o',
+    });
+  });
+});
 
 async function kindOf(work: Promise<unknown>): Promise<string> {
   try {
