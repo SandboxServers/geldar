@@ -72,9 +72,14 @@ describe('reflex_fired reads the result from outcome.result (0213 fix)', () => {
     expect(text).toContain('It did not finish.');
   });
 
-  it('a top-level result is not read: only outcome.result counts', () => {
-    const payload = { ...contractPayload('eat', undefined), result: 'handled' };
+  it('outcome.result wins over a top-level result', () => {
+    const payload = { ...contractPayload('eat', { result: 'failed' }), result: 'handled' };
     const text = textOf(reflexEvent(payload));
     expect(text).toContain('It did not finish.');
+  });
+
+  it('a top-level result is read only when outcome has none (pre-outcome fixtures)', () => {
+    const text = textOf(reflexEvent({ name: 'eat', result: 'handled' }));
+    expect(text).toBe('Reflex eat: your hunger was low, so you ate.');
   });
 });

@@ -6,17 +6,28 @@ import { defineMindHandler } from './types.ts';
  */
 const RESULTS: readonly string[] = ['handled', 'failed', 'abandoned'];
 
-/** The contract nests the result under outcome (ReflexFiredPayload.outcome.result); anything outside its enum is unknown. */
-const outcomeResult = (outcome: unknown): string => {
-  const r =
-    typeof outcome === 'object' && outcome !== null
-      ? (outcome as { result?: unknown }).result
+const enumResult = (v: unknown): string | undefined =>
+  typeof v === 'string' && RESULTS.includes(v) ? v : undefined;
+
+/**
+ * The contract nests the result under outcome (ReflexFiredPayload.outcome.result). A top-level result is
+ * read only when outcome gives none (the mapper fixtures still use that shape); anything else is unknown.
+ */
+const resultOf = (p: { outcome?: unknown; result?: unknown }): string => {
+  const outcome =
+    typeof p.outcome === 'object' && p.outcome !== null
+      ? (p.outcome as { result?: unknown }).result
       : undefined;
-  return typeof r === 'string' && RESULTS.includes(r) ? r : 'unknown';
+  return enumResult(outcome) ?? enumResult(p.result) ?? 'unknown';
 };
 
 export const reflexFiredHandler = defineMindHandler('reflex_fired', (event, base) => {
-  const p = event.payload as { name?: unknown; outcome?: unknown; trigger?: unknown };
+  const p = event.payload as {
+    name?: unknown;
+    result?: unknown;
+    outcome?: unknown;
+    trigger?: unknown;
+  };
   const t = p.trigger;
   const trigger =
     typeof t === 'object' && t !== null && !Array.isArray(t)
@@ -27,7 +38,7 @@ export const reflexFiredHandler = defineMindHandler('reflex_fired', (event, base
       ...base,
       kind: 'reflex',
       name: typeof p.name === 'string' ? p.name : 'unknown',
-      result: outcomeResult(p.outcome),
+      result: resultOf(p),
       ...(trigger ? { trigger } : {}),
     },
   ];
