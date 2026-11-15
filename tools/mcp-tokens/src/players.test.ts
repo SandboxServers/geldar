@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -131,6 +132,142 @@ sovereign:
 `;
 
 const SHARD: SovereignShard = parseSovereignShard(SHARD_YAML);
+
+const SHEET_SHARD = parseSovereignShard(
+  SHARD_YAML.replace('shard: phase0\n', 'shard: phase0\ncharacter:\n  mode: sheet\n'),
+);
+
+/** Canonical JSON (sorted keys, no whitespace) written out by hand, so the hash test does not reuse psyche. */
+const STANDARD_CANON =
+  '{"alignment":{"good":3,"law":3},"attributes":{"aggression":3,"cleverness":3,"common_sense":3,"curiosity":3},"op_modes":{"builder":3,"crafter":3,"explorer":3,"farmer":3,"miner":3,"nitwit":3,"warrior":3},"version":1}';
+const GIVEN_CANON =
+  '{"alignment":{"good":2,"law":4},"attributes":{"aggression":1,"cleverness":4,"common_sense":2,"curiosity":5},"op_modes":{"builder":3,"crafter":4,"explorer":5,"farmer":1,"miner":2,"nitwit":2,"warrior":1},"version":1}';
+/** A sheet whose keys are not in canonical order. */
+const GIVEN = {
+  version: 1,
+  attributes: { curiosity: 5, common_sense: 2, cleverness: 4, aggression: 1 },
+  alignment: { good: 2, law: 4 },
+  op_modes: { warrior: 1, nitwit: 2, miner: 2, farmer: 1, explorer: 5, crafter: 4, builder: 3 },
+};
+
+const sha = (text: string): string => createHash('sha256').update(text, 'utf8').digest('hex');
+
+/** A fake that also records the roster sheet statements: the agents sheet columns, events and adoptions. */
+class SheetSql extends FakeSql {
+  events: unknown[][] = [];
+  adoptions: unknown[][] = [];
+  sheets = new Map<string, { sheet: unknown; hash: unknown }>();
+  failAdoption = false;
+
+  constructor() {
+    super();
+    this.owners.set('jo', 3);
+  }
+
+  override async query(text: string, values: unknown[] = []): Promise<{ rows: Row[] }> {
+    if (text.startsWith('INSERT INTO agents')) {
+      this.sheets.set(String(values[0]), { sheet: values[7], hash: values[8] });
+    }
+    if (text.startsWith('INSERT INTO events')) {
+      this.log.push(text);
+      this.events.push(values);
+      return { rows: [] };
+    }
+    if (text.startsWith('INSERT INTO character_sheet_adoptions')) {
+      this.log.push(text);
+      if (this.failAdoption) throw new Error('adoption insert refused');
+      this.adoptions.push(values);
+      return { rows: [] };
+    }
+    return super.query(text, values);
+  }
+}
+
+describe('character.mode in the shard', () => {
+  it('reads sheet; an omitted mode, or mode off, is off; any other mode throws', () => {
+    expect(SHEET_SHARD.characterMode).toBe('sheet');
+    expect(SHARD.characterMode).toBe('off');
+    expect(parseSovereignShard(`${SHARD_YAML}character:\n  mode: off\n`).characterMode).toBe('off');
+    expect(parseSovereignShard(`${SHARD_YAML}character: {}\n`).characterMode).toBe('off');
+    expect(() => parseSovereignShard(`${SHARD_YAML}character:\n  mode: sometimes\n`)).toThrow(
+      'character.mode must be off or sheet',
+    );
+  });
+});
+
+describe('roster creation in a sheet-mode shard', () => {
+  it('writes the standard sheet, its hash and the adoption when no sheet is given', async () => {
+    const sql = new SheetSql();
+    const p = player(1);
+    await addPlayer(sql, p, SHEET_SHARD);
+    const stored = sql.sheets.get(p.life);
+    expect(JSON.parse(String(stored?.sheet))).toEqual(JSON.parse(STANDARD_CANON));
+    expect(stored?.hash).toBe(sha(STANDARD_CANON));
+    expect(sql.adoptions).toEqual([
+      [`roster:sheet_adopted:${p.life}`, p.life, sha(STANDARD_CANON), stored?.sheet],
+    ]);
+    expect(sql.events).toHaveLength(1);
+  });
+
+  it('records the adoption in the same transaction, between BEGIN and COMMIT', async () => {
+    const sql = new SheetSql();
+    await addPlayer(sql, player(1), SHEET_SHARD);
+    const at = (prefix: string): number => sql.log.findIndex((t) => t.startsWith(prefix));
+    const adoption = at('INSERT INTO character_sheet_adoptions');
+    expect(adoption).toBeGreaterThan(-1);
+    expect(sql.log.indexOf('BEGIN')).toBeLessThan(at('INSERT INTO agents'));
+    expect(at('INSERT INTO agents')).toBeLessThan(at('INSERT INTO events'));
+    expect(at('INSERT INTO events')).toBeLessThan(adoption);
+    expect(adoption).toBeLessThan(sql.log.indexOf('COMMIT'));
+  });
+
+  it('adopts a given sheet as given, and its hash is that of the canonical JSON', async () => {
+    const sql = new SheetSql();
+    const p = { ...player(2), characterSheet: GIVEN };
+    await addPlayer(sql, p, SHEET_SHARD);
+    expect(sql.sheets.get(p.life)?.hash).toBe(sha(GIVEN_CANON));
+    expect(JSON.parse(String(sql.sheets.get(p.life)?.sheet))).toEqual(GIVEN);
+  });
+
+  it('refuses a malformed sheet before any write, naming the field and not its value', async () => {
+    const sql = new SheetSql();
+    const bad = { ...GIVEN, attributes: { ...GIVEN.attributes, curiosity: 9 } };
+    const error = await addPlayer(sql, { ...player(3), characterSheet: bad }, SHEET_SHARD).catch(
+      (e: unknown) => e,
+    );
+    expect(String(error)).toContain('attributes.curiosity');
+    expect(String(error)).not.toContain('9');
+    expect(sql.log).toEqual([]);
+    expect(sql.agents).toEqual([]);
+  });
+
+  it('refuses a sheet in an off shard and writes nothing', async () => {
+    const sql = new SheetSql();
+    await expect(addPlayer(sql, { ...player(4), characterSheet: GIVEN }, SHARD)).rejects.toThrow(
+      'the shard has character mode off',
+    );
+    expect(sql.log).toEqual([]);
+  });
+
+  it('writes no sheet and no adoption in an off shard', async () => {
+    const sql = new SheetSql();
+    const p = player(5);
+    await addPlayer(sql, p, SHARD);
+    expect(sql.sheets.get(p.life)).toEqual({ sheet: null, hash: null });
+    expect(sql.adoptions).toEqual([]);
+    expect(sql.events).toEqual([]);
+  });
+
+  it('rolls the whole add back when the adoption insert fails', async () => {
+    const sql = new SheetSql();
+    sql.failAdoption = true;
+    await expect(addPlayer(sql, player(6), SHEET_SHARD)).rejects.toThrow('adoption insert refused');
+    expect(sql.log).toContain('ROLLBACK');
+    expect(sql.log).not.toContain('COMMIT');
+    expect(sql.players).toEqual([]);
+    expect(sql.budgets).toEqual([]);
+  });
+});
 
 function player(n: number, owner = 'jo'): NewPlayer {
   return {

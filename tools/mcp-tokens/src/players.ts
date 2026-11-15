@@ -1,4 +1,11 @@
+import { createHash } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
+import {
+  type CharacterSheet,
+  canonicalSheetJson,
+  normalizeSheet,
+  STANDARD_SHEET,
+} from '@geldar/psyche';
 import { parse } from 'yaml';
 import { checkCap, checkOwnerId, type Sql } from './owners.ts';
 import { markText, personaMarks } from './persona-lint.ts';
@@ -9,6 +16,9 @@ export const IDENTITY_MAX_BYTES = 8192;
 
 /** A player's goals, in bytes of UTF-8. */
 export const GOALS_MAX_BYTES = 4096;
+
+/** A `--sheet-file`, in bytes of UTF-8; the sheet is a few lines of scores. */
+export const SHEET_FILE_MAX_BYTES = 16384;
 
 const PLAYER_ID = /^ag-[a-z0-9]+(-[a-z0-9]+)*$/;
 const LIFE_ID = /^ag_[a-z0-9]+(_[a-z0-9]+)*$/;
@@ -27,6 +37,8 @@ export interface SovereignShard {
   ownerCapDefault: number | undefined;
   /** The most a `--cap` flag may grant (sovereign.owner_cap_owner, decision 0052); absent when the key is. */
   ownerCapOwner: number | undefined;
+  /** `character.mode`: sheet makes roster creation write the sheet and its adoption; off (the default) writes neither. */
+  characterMode: 'off' | 'sheet';
 }
 
 /** A player's persona: the identity (required, markdown) and the goals (optional, markdown). */
@@ -46,6 +58,8 @@ export interface NewPlayer {
   allowMeta?: boolean;
   /** The declared model (`--model`); the placeholder `self-reported` when absent. */
   model?: string;
+  /** The character sheet (`--sheet-file`), checked by addPlayer; only the sheet-mode shard takes one. */
+  characterSheet?: unknown;
 }
 
 export type PlayerAction = 'pause' | 'resume' | 'retire';
@@ -76,7 +90,21 @@ export function parseSovereignShard(text: string): SovereignShard {
     capCredits: budget.cap_credits,
     ownerCapDefault: readOptionalCap(sovereign.owner_cap_default, 'sovereign.owner_cap_default'),
     ownerCapOwner: readOptionalCap(sovereign.owner_cap_owner, 'sovereign.owner_cap_owner'),
+    characterMode: readCharacterMode(doc),
   };
+}
+
+/** `character.mode`: off or sheet. An omitted mode (or a `character:` with no value) is off; any other value throws. */
+function readCharacterMode(doc: Record<string, unknown>): 'off' | 'sheet' {
+  const block = doc.character;
+  if (block === undefined || block === null) return 'off';
+  if (typeof block !== 'object' || Array.isArray(block)) {
+    throw new Error('character must be a mapping');
+  }
+  const mode = (block as Record<string, unknown>).mode;
+  if (mode === undefined || mode === 'off') return 'off';
+  if (mode === 'sheet') return 'sheet';
+  throw new Error('character.mode must be off or sheet');
 }
 
 /** An absent cap key stays undefined (the caller refuses); a present one must be a valid cap. */
@@ -112,6 +140,32 @@ async function readLimited(path: string, maxBytes: number, what: string): Promis
   const info = await stat(path);
   if (info.size > maxBytes) throw new Error(`the ${what} file is over ${maxBytes} bytes`);
   return readFile(path, 'utf8');
+}
+
+/**
+ * Reads a `--sheet-file` (YAML or JSON) and returns its value. The caller checks the value with
+ * the sheet validator. Errors never echo the file's contents.
+ */
+export async function readSheetFile(path: string): Promise<unknown> {
+  const text = await readLimited(path, SHEET_FILE_MAX_BYTES, 'sheet');
+  try {
+    return parse(text);
+  } catch {
+    throw new Error('the sheet file is not valid YAML or JSON');
+  }
+}
+
+/** The lower-case hex SHA-256 of the canonical sheet JSON (psyche's canonicalSheetJson; sql 0050). */
+export function sheetHash(sheet: CharacterSheet): string {
+  return createHash('sha256').update(canonicalSheetJson(sheet), 'utf8').digest('hex');
+}
+
+/** The sheet a roster life adopts: the given one, refused field by field if malformed, or the standard one. */
+function adoptedSheet(given: unknown): CharacterSheet {
+  if (given === undefined) return STANDARD_SHEET;
+  const result = normalizeSheet(given);
+  if (!result.ok) throw new Error(`character sheet refused: ${result.errors.join('; ')}`);
+  return result.sheet;
 }
 
 /**
@@ -157,6 +211,12 @@ export async function addPlayer(sql: Sql, player: NewPlayer, shard: SovereignSha
   }
   if (player.seed !== undefined) checkSeed(player.seed, player.allowMeta === true);
   if (player.model !== undefined) checkModel(player.model);
+  if (shard.characterMode === 'off' && player.characterSheet !== undefined) {
+    throw new Error('the shard has character mode off');
+  }
+  // Checked before any write: a malformed sheet is refused, never repaired.
+  const adopted = shard.characterMode === 'sheet' ? adoptedSheet(player.characterSheet) : null;
+  const hash = adopted === null ? null : sheetHash(adopted);
   await transaction(sql, async () => {
     const owners = await sql.query(
       'SELECT player_cap FROM mcp_owners WHERE owner_id = $1 FOR UPDATE',
@@ -175,8 +235,10 @@ export async function addPlayer(sql: Sql, player: NewPlayer, shard: SovereignSha
     }
     await sql.query(
       `INSERT INTO agents (agent_id, name, life_seq, game_account, shard, mode, owner, harness,
-         declared_model, model_config, tier, personality_seed)
-       VALUES ($1, $2, 1, $1, $3, 'sovereign', $4, $5, $7, 'declared:unverified', 'sovereign', $6)`,
+         declared_model, model_config, tier, personality_seed,
+         character_sheet, sheet_hash, sheet_adopted_at)
+       VALUES ($1, $2, 1, $1, $3, 'sovereign', $4, $5, $7, 'declared:unverified', 'sovereign', $6,
+         $8::jsonb, $9::text, CASE WHEN $9::text IS NULL THEN NULL ELSE now() END)`,
       [
         player.life,
         player.name,
@@ -185,8 +247,11 @@ export async function addPlayer(sql: Sql, player: NewPlayer, shard: SovereignSha
         player.harness,
         player.seed ? seedText(player.seed) : null,
         player.model ?? 'self-reported',
+        adopted === null ? null : JSON.stringify(adopted),
+        hash,
       ],
     );
+    if (adopted !== null && hash !== null) await recordAdoption(sql, player.life, adopted, hash);
     await sql.query(
       `INSERT INTO mcp_players (player_id, owner_id, life_id, display_name, harness, status)
        VALUES ($1, $2, $3, $4, $5, 'active')`,
@@ -197,6 +262,29 @@ export async function addPlayer(sql: Sql, player: NewPlayer, shard: SovereignSha
       [player.life, shard.capCredits],
     );
   });
+}
+
+/**
+ * The one adoption of a roster life, inside addPlayer's transaction: its sheet_adopted event, then
+ * the character_sheet_adoptions row that cites it (sql 0051 needs the events row first).
+ */
+async function recordAdoption(
+  sql: Sql,
+  life: string,
+  sheet: CharacterSheet,
+  hash: string,
+): Promise<void> {
+  const eventId = `roster:sheet_adopted:${life}`;
+  await sql.query(
+    `INSERT INTO events (source_event_id, at, type, agent_id, payload)
+     VALUES ($1, now(), 'sheet_adopted', $2, $3::jsonb)`,
+    [eventId, life, JSON.stringify({ life_id: life, sheet, sheet_hash: hash, source: 'roster' })],
+  );
+  await sql.query(
+    `INSERT INTO character_sheet_adoptions (source_event_id, life_id, sheet_hash, sheet, source, result)
+     VALUES ($1, $2, $3, $4::jsonb, 'roster', 'adopted')`,
+    [eventId, life, hash, JSON.stringify(sheet)],
+  );
 }
 
 /** Pauses, resumes or retires a player. Retiring also revokes every token the player holds. */

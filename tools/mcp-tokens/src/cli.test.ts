@@ -221,6 +221,46 @@ sovereign:
     cap_credits: 240
 `;
 
+describe('player add --sheet-file', () => {
+  it('errors with the shard in character mode off, and sends no INSERT or UPDATE', async () => {
+    const h = await harness();
+    const env = envOf(h);
+    await writeFile(env.shardFile, ADD_SHARD);
+    const sheetFile = `${env.shardFile}.sheet.yaml`;
+    await writeFile(sheetFile, 'version: 1\n');
+    const texts: string[] = [];
+    const connect: Env['connect'] = async () => ({
+      query: async (text: string) => {
+        texts.push(text);
+        return { rows: [] };
+      },
+      end: async () => {},
+    });
+    const code = await run(
+      [
+        'player',
+        'add',
+        'ag-jo-01',
+        '--owner',
+        'jo',
+        '--life',
+        'ag_jo_01',
+        '--name',
+        'Jo',
+        '--harness',
+        'claude',
+        '--sheet-file',
+        sheetFile,
+      ],
+      h.io,
+      { ...env, connect },
+    );
+    expect(code).not.toBe(0);
+    expect(h.err.join('\n')).toContain('the shard has character mode off');
+    expect(texts.some((t) => /^(BEGIN|INSERT|UPDATE)/.test(t))).toBe(false);
+  });
+});
+
 describe('player add --model and set-model plumbing', () => {
   it('player add --model puts the model in the agents INSERT', async () => {
     const h = await harness();
