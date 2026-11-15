@@ -13701,6 +13701,10 @@ export interface SovereignCallPayload {
    * The running total of credits the accepted items of this life would have cost, including this call (decision 0149).
    */
   spent_this_life?: number;
+  /**
+   * Which connection made the call: model (the agent's own session; also the meaning when absent), instinct (a routine act settled in code on the keyed instinct connection), or operator (reserved; no code path produces it). Set by the MCP server from the authenticated connection, never from tool input. `source` is ADVISORY until the kit's denial test passes.
+   */
+  source?: "model" | "instinct" | "operator";
 }
 
 export interface SpeechPayload {
