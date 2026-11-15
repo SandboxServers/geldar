@@ -73,7 +73,8 @@ describe('the time since rest', () => {
         { categoryId: 8, statisticId: 4, value: 2_500 },
       ]),
     );
-    expect(sink.log).toHaveBeenCalledTimes(1);
+    const readings = sink.log.mock.calls.filter(([line]) => line.includes('"event":"rest_stat"'));
+    expect(readings).toHaveLength(1);
     expect(sink.log).toHaveBeenCalledWith(
       '{"event":"rest_stat","ticks_since_rest":2500,"minutes":2}',
     );
@@ -88,7 +89,7 @@ describe('the time since rest', () => {
     client.emit('statistics', statistics([{ categoryId: 7, statisticId: 4, value: 99 }]));
     client.emit('statistics', { entries: [] });
     client.emit('statistics', {});
-    expect(sink.log).not.toHaveBeenCalled();
+    expect(sink.log).not.toHaveBeenCalledWith(expect.stringContaining('"event":"rest_stat"'));
   });
 
   it('does nothing on version 1.21: no listener, no request, no line', () => {
@@ -100,7 +101,7 @@ describe('the time since rest', () => {
     client.emit('statistics', statistics([{ categoryId: 8, statisticId: 4, value: 5 }]));
     expect(client.write).not.toHaveBeenCalled();
     expect(client.listenerCount('statistics')).toBe(0);
-    expect(sink.log).not.toHaveBeenCalled();
+    expect(sink.log).not.toHaveBeenCalledWith(expect.stringContaining('"event":"rest_stat"'));
   });
 
   it('does nothing when the bot has no protocol client, and does not throw', () => {
@@ -108,6 +109,79 @@ describe('the time since rest', () => {
     expect(() => watchRestStat(bot, { sink: recordingSink() })).not.toThrow();
     expect(() => emitter.emit('spawn')).not.toThrow();
     expect(() => vi.advanceTimersByTime(10 * 60_000)).not.toThrow();
+  });
+
+  it('starts at once on a bot that has already spawned, then every five minutes, with one timer', () => {
+    const { bot, emitter, client } = fakeRestBot();
+    const sink = recordingSink();
+    Object.assign(bot, { entity: { position: { x: 0, y: 64, z: 0 } } });
+    watchRestStat(bot, { sink });
+    expect(client.write).toHaveBeenCalledTimes(1);
+    expect(client.write).toHaveBeenLastCalledWith('client_command', { actionId: 1 });
+    expect(sink.log).toHaveBeenCalledWith('{"event":"rest_stat_enabled"}');
+    vi.advanceTimersByTime(5 * 60_000 - 1);
+    expect(client.write).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(client.write).toHaveBeenCalledTimes(2);
+    emitter.emit('spawn');
+    expect(client.write).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(5 * 60_000);
+    expect(client.write).toHaveBeenCalledTimes(3);
+  });
+
+  it('with timeScale 0.5 requests every 150 s and 1 s after a sleep', () => {
+    const { bot, emitter, client } = fakeRestBot();
+    Object.assign(bot, { entity: { position: { x: 0, y: 64, z: 0 } } });
+    watchRestStat(bot, { sink: recordingSink(), timeScale: 0.5 });
+    expect(client.write).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(150_000 - 1);
+    expect(client.write).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(1);
+    expect(client.write).toHaveBeenCalledTimes(2);
+    emitter.emit('sleep');
+    vi.advanceTimersByTime(999);
+    expect(client.write).toHaveBeenCalledTimes(2);
+    vi.advanceTimersByTime(1);
+    expect(client.write).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(['26.1', '26.1.2'])('is enabled on %s', (version) => {
+    const { bot, client } = fakeRestBot(version);
+    const sink = recordingSink();
+    watchRestStat(bot, { sink });
+    expect(sink.log).toHaveBeenCalledWith('{"event":"rest_stat_enabled"}');
+    expect(sink.log).not.toHaveBeenCalledWith(expect.stringContaining('rest_stat_skipped'));
+    expect(client.listenerCount('statistics')).toBe(1);
+  });
+
+  it.each(['26.10', '26.2', '1.21'])('logs a version skip on %s', (version) => {
+    const { bot, client } = fakeRestBot(version);
+    const sink = recordingSink();
+    watchRestStat(bot, { sink });
+    expect(sink.log).toHaveBeenCalledTimes(1);
+    expect(sink.log).toHaveBeenCalledWith('{"event":"rest_stat_skipped","reason":"version"}');
+    expect(client.listenerCount('statistics')).toBe(0);
+  });
+
+  it('logs a no_client skip when the bot has no protocol client', () => {
+    const { bot } = fakeRestBot('26.1.2', false);
+    const sink = recordingSink();
+    watchRestStat(bot, { sink });
+    expect(sink.log).toHaveBeenCalledTimes(1);
+    expect(sink.log).toHaveBeenCalledWith('{"event":"rest_stat_skipped","reason":"no_client"}');
+  });
+
+  it('a write that throws logs rest_stat_error, does not throw, and the timer goes on', () => {
+    const { bot, emitter, client } = fakeRestBot();
+    client.write.mockImplementation(() => {
+      throw new Error('socket closed');
+    });
+    const sink = recordingSink();
+    watchRestStat(bot, { sink });
+    expect(() => emitter.emit('spawn')).not.toThrow();
+    expect(sink.log).toHaveBeenCalledWith('{"event":"rest_stat_error","message":"socket closed"}');
+    expect(() => vi.advanceTimersByTime(5 * 60_000)).not.toThrow();
+    expect(client.write).toHaveBeenCalledTimes(2);
   });
 
   it('stops its timers and listeners when the bot ends', () => {
@@ -123,6 +197,6 @@ describe('the time since rest', () => {
     expect(client.write).not.toHaveBeenCalled();
     expect(client.listenerCount('statistics')).toBe(0);
     client.emit('statistics', statistics([{ categoryId: 8, statisticId: 4, value: 5 }]));
-    expect(sink.log).not.toHaveBeenCalled();
+    expect(sink.log).not.toHaveBeenCalledWith(expect.stringContaining('"event":"rest_stat"'));
   });
 });
