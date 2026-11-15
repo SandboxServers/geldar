@@ -14,6 +14,8 @@ const KIND = /^[a-z_]+$/;
 
 /** One entity the scan reads: its minecraft-data name and where it stands. Mineflayer's entities fit. */
 export interface SceneEntity {
+  /** The entity id Mineflayer keys `bot.entities` by; the dwell time follows it across refusals. */
+  id?: number | undefined;
   name?: string | null;
   position: Vec3;
 }
@@ -27,6 +29,8 @@ export interface EntityRegistry {
 export interface Hostile {
   kind: string;
   blocks: number;
+  /** The entity id, when the entity has one: the key the dwell time is kept under. */
+  id?: number | undefined;
 }
 
 /**
@@ -59,22 +63,37 @@ export function hostilesAroundBed(
     }
     const exact = entity.position.distanceTo(head);
     found.push({
-      hostile: { kind: KIND.test(name) ? name : 'hostile', blocks: Math.round(exact) },
+      hostile: {
+        kind: KIND.test(name) ? name : 'hostile',
+        blocks: Math.round(exact),
+        id: entity.id,
+      },
       exact,
     });
   }
   return found.sort((a, b) => a.exact - b.exact).map((entry) => entry.hostile);
 }
 
+/** The dwell in words: whole minutes (1200 ticks each), or `under a minute` below one. */
+export function dwellFact(ticks: number): string {
+  const minutes = Math.floor(ticks / 1200);
+  if (minutes < 1) return 'under a minute';
+  return `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}`;
+}
+
 /**
  * The refusal text for Mineflayer's monsters-nearby error: the nearest hostiles, at most three, with their
- * distance in blocks; or `none in view` when the box holds no counted hostile. Facts only.
+ * distance in blocks; or `none in view` when the box holds no counted hostile. The nearest named hostile
+ * also carries how long it has been in range when `dwellTicks` is given. Facts only.
  */
-export function monstersFact(hostiles: readonly Hostile[]): string {
+export function monstersFact(hostiles: readonly Hostile[], dwellTicks?: number): string {
   const lead = 'there are monsters nearby';
   if (hostiles.length === 0) return `${lead}: none in view`;
-  const named = hostiles
-    .slice(0, MAX_NAMED_HOSTILES)
-    .map(({ kind, blocks }) => `${kind} ${blocks} ${blocks === 1 ? 'block' : 'blocks'} away`);
+  const named = hostiles.slice(0, MAX_NAMED_HOSTILES).map(({ kind, blocks }, index) => {
+    const away = `${kind} ${blocks} ${blocks === 1 ? 'block' : 'blocks'} away`;
+    return index === 0 && dwellTicks !== undefined
+      ? `${away}, in range for ${dwellFact(dwellTicks)}`
+      : away;
+  });
   return `${lead}: ${named.join(', ')}`;
 }

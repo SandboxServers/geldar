@@ -350,7 +350,7 @@ describe('sleep', () => {
     expect(outcome).toMatchObject({
       status: 'failed',
       reason: 'not_possible',
-      message: 'there are monsters nearby: zombie 6 blocks away',
+      message: 'there are monsters nearby: zombie 6 blocks away, in range for under a minute',
     });
   });
 
@@ -364,13 +364,24 @@ describe('sleep', () => {
     const outcome = await sleep(bot);
     expect(outcome.status).toBe('failed');
     if (outcome.status !== 'failed') return;
-    expect(outcome.detail).toEqual({});
+    expect(outcome.detail).toMatchObject({
+      final_position: { x: 0, y: 64, z: 0 },
+      beds_tried: [
+        {
+          x: 5,
+          y: 64,
+          z: 0,
+          reason: 'there are monsters nearby: zombie 6 blocks away, in range for under a minute',
+        },
+      ],
+    });
     expect(JSON.parse(outcome.raw ?? 'null')).toEqual({
       event: 'sleep_refusal',
       message: 'There are monsters nearby',
       hostiles: [{ kind: 'zombie', blocks: 6 }],
       count: 1,
       light: 12,
+      dwell_ticks: 0,
     });
   });
 

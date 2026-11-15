@@ -14,6 +14,12 @@ import {
 import { moveNear } from './pathing.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 import {
+  type BedTry,
+  observeMonsters,
+  sleepFailureDetail,
+  withSleepDetail,
+} from './sleep-detail.ts';
+import {
   type Hostile,
   hostilesAroundBed,
   MAX_NAMED_HOSTILES,
@@ -47,6 +53,9 @@ const BED_STALL_TICKS = 300;
  */
 const SLEEPERS_WAIT_MS = 300;
 
+/** The reason a bed reports when the hard stop cut its walk or sleep short. */
+const CUT_OFF = 'the bed was cut off by the time limit';
+
 /** Sleeps in the nearest free bed, trying up to MAX_BEDS. The action does not wait for morning and does not wake the bot. */
 export const sleepAction: ActionHandler<'sleep'> = {
   kind: 'sleep',
@@ -76,6 +85,14 @@ interface SleepError {
 export interface SleepScene {
   hostiles: readonly Hostile[];
   light: number | null;
+  /** The dwell in ticks of the nearest hostile, on a monsters refusal whose nearest hostile has an id. */
+  dwellTicks?: number | undefined;
+}
+
+/** What one bed of the loop gave: the outcome, and the bed block it ended on. */
+interface BedResult {
+  outcome: ActionOutcome;
+  used: Block;
 }
 
 /** The sleep errors, from Mineflayer's texts and the server's, in the order they are matched. */
@@ -122,10 +139,11 @@ export function sleepFailure(
       .slice(0, MAX_NAMED_HOSTILES)
       .map(({ kind, blocks }) => ({ kind, blocks })),
     count: scene.hostiles.length,
+    ...(scene.dwellTicks === undefined ? {} : { dwell_ticks: scene.dwellTicks }),
   };
   return failed(
     classifySleepError(message),
-    sleepErrorText(message, scene.hostiles),
+    sleepErrorText(message, scene.hostiles, scene.dwellTicks),
     {},
     JSON.stringify(record),
   );
@@ -135,17 +153,27 @@ export function sleepFailure(
  * The text the agent reads for a sleep error: the fact it states, or the message when no fact is known.
  * The monsters refusal names the hostiles in `hostiles` (none in view when the list is empty).
  */
-export function sleepErrorText(message: string, hostiles: readonly Hostile[] = []): string {
+export function sleepErrorText(
+  message: string,
+  hostiles: readonly Hostile[] = [],
+  dwellTicks?: number,
+): string {
   const known = matchSleepError(message);
-  if (known?.monsters) return monstersFact(hostiles);
+  if (known?.monsters) return monstersFact(hostiles, dwellTicks);
   return known?.fact ?? message;
 }
 
-/** What the bed the Body tried holds for a refusal: the counted hostiles around its position and its block light. */
-function refusalScene(bot: Bot, bed: Block): SleepScene {
+/**
+ * What the bed the Body tried holds for a refusal: the counted hostiles around its position and its block light.
+ * A monsters refusal also records the hostiles' dwell (sleep-detail.ts).
+ */
+function refusalScene(bot: Bot, bed: Block, message: string): SleepScene {
+  const hostiles = hostilesAroundBed(Object.values(bot.entities), bed.position, bot.registry);
+  const monsters = matchSleepError(message)?.monsters === true;
   return {
-    hostiles: hostilesAroundBed(Object.values(bot.entities), bed.position, bot.registry),
+    hostiles,
     light: bot.blockAt(bed.position)?.light ?? null,
+    dwellTicks: monsters ? observeMonsters(bot, hostiles) : undefined,
   };
 }
 
@@ -154,14 +182,21 @@ async function sleep(ctx: ActionContext): Promise<ActionOutcome> {
   if (ctx.bot.isSleeping) return completed();
   // The watch runs for the whole action: it stops on success, failure, cancel and throw alike.
   const sleepers = watchSleepers(ctx.bot);
+  // Every bed the loop tried, in order: a failure reports them with the bot's final position.
+  const tries: BedTry[] = [];
   try {
-    return await sleepFromBeds(ctx, sleepers);
+    const outcome = await sleepFromBeds(ctx, sleepers, tries);
+    return withSleepDetail(outcome, sleepFailureDetail(ctx.bot, tries));
   } finally {
     sleepers.stop();
   }
 }
 
-async function sleepFromBeds(ctx: ActionContext, sleepers: SleepersWatch): Promise<ActionOutcome> {
+async function sleepFromBeds(
+  ctx: ActionContext,
+  sleepers: SleepersWatch,
+  tries: BedTry[],
+): Promise<ActionOutcome> {
   const { bot } = ctx;
   const beds = nearbyBeds(bot);
   if (beds.length === 0) return failed('not_found', 'no bed');
@@ -186,13 +221,15 @@ async function sleepFromBeds(ctx: ActionContext, sleepers: SleepersWatch): Promi
         break;
       }
       tried += 1;
-      const outcome = await sleepInBed(bedCtx, bed, sleepers);
+      const { outcome, used } = await sleepInBed(bedCtx, bed, sleepers);
       if (outcome.status === 'cancelled' && stop.signal.aborted && !ctx.signal.aborted) {
         // Only the hard stop cut this bed: the search time ran out, which is not a cancel from the Mind.
-        last = failed('blocked', 'the bed was cut off by the time limit');
+        last = failed('blocked', CUT_OFF);
+        tries.push(bedTry(used, CUT_OFF));
         outOfTime = true;
         break;
       }
+      if (outcome.status === 'failed') tries.push(bedTry(used, outcome.message));
       if (
         outcome.status !== 'failed' ||
         (outcome.reason !== 'blocked' && outcome.reason !== 'timeout') ||
@@ -219,26 +256,41 @@ async function sleepFromBeds(ctx: ActionContext, sleepers: SleepersWatch): Promi
 }
 
 /** Walks to a bed and sleeps in it; completed when the bot is asleep, else the failure. */
+/**
+ * Walks to a bed and sleeps in it. The outcome is completed when the bot is asleep, else the failure; `used` is
+ * the bed block the outcome came from (the other half after an out_of_reach).
+ */
 async function sleepInBed(
   ctx: ActionContext,
   bed: Block,
   sleepers: SleepersWatch,
-): Promise<ActionOutcome> {
+): Promise<BedResult> {
   const { bot } = ctx;
   const near = await walkNear(ctx, bed);
-  if (near) return near;
+  if (near) return { outcome: near, used: bed };
   let used = bed;
   let attempt = await attemptSleep(bot, bed, ctx.signal, sleepers);
   if (attempt?.status === 'failed' && attempt.reason === 'out_of_reach') {
     // The bed check is measured from the head block, and `findBlocks` may return the foot: stand by the other half.
     const other = otherHalf(bot, bed);
     if (other) {
-      const moved = await walkNear(ctx, other);
-      if (moved) return moved;
       used = other;
+      const moved = await walkNear(ctx, other);
+      if (moved) return { outcome: moved, used };
       attempt = await attemptSleep(bot, other, ctx.signal, sleepers);
     }
   }
+  return { outcome: await bedOutcome(ctx, used, attempt, sleepers), used };
+}
+
+/** The outcome of a bed once its sleep call has run: cancelled, the refusal, or completed with the bed and sleepers facts. */
+async function bedOutcome(
+  ctx: ActionContext,
+  used: Block,
+  attempt: ActionOutcome | null,
+  sleepers: SleepersWatch,
+): Promise<ActionOutcome> {
+  const { bot } = ctx;
   if (ctx.signal.aborted) return cancelled();
   if (attempt) return attempt;
   if (!bot.isSleeping) return failed('blocked', 'the bot is not asleep after sleep');
@@ -250,6 +302,11 @@ async function sleepInBed(
     bed: { x: used.position.x, y: used.position.y, z: used.position.z },
     ...sleepersDetail(sleepers.latest()),
   });
+}
+
+/** The bed block as the detail records it, with the reason the attempt gave. */
+function bedTry(bed: Block, reason: string): BedTry {
+  return { block: { x: bed.position.x, y: bed.position.y, z: bed.position.z }, reason };
 }
 
 /** The sleepers fact the result carries: `sleepers` as `{asleep, needed}` or `skipped`; no key when no line was seen. */
@@ -322,7 +379,7 @@ async function attemptSleep(
     if (signal.aborted) return cancelled();
     const message = errorText(error);
     if (ALREADY_SLEEPING.test(message)) return null;
-    return sleepFailure(message, DEFAULT_DIAG_SINK, refusalScene(bot, bed));
+    return sleepFailure(message, DEFAULT_DIAG_SINK, refusalScene(bot, bed, message));
   }
 }
 
