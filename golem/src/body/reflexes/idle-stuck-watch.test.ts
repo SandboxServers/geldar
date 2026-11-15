@@ -4,6 +4,7 @@ import type { Block } from '../../actions/bot-types.ts';
 import type { BodyView } from '../view.ts';
 import { IDLE_TICKS, IDLE_TICKS_ON_OWN, idleStuckReflex } from './idle-stuck.ts';
 import { GridWorld, settableView } from './reflexes.fakes.ts';
+import { noteGoto } from './unstick.ts';
 
 /** A still Body on open ground it can step off: no trigger fires, so only the watch line can speak. */
 const SPOT = { x: -265.5, y: 35, z: 196.5 };
@@ -78,6 +79,15 @@ describe('idle_stuck operator watch line (decision 0332)', () => {
         reach: null,
         reach_exit: null,
         boxed_in: false,
+        boxed: {
+          reach: null,
+          reach_exit: null,
+          failedWalks: 0,
+          night: false,
+          wait_s: 120,
+          held: null,
+          gate: 'wait',
+        },
       },
     ]);
     idleStuckReflex.check(at(view, IDLE_TICKS + IDLE_TICKS - 1));
@@ -141,5 +151,39 @@ describe('idle_stuck operator watch line (decision 0332)', () => {
     expect(watchLines(log)).toHaveLength(0);
     idleStuckReflex.check(at(view, IDLE_TICKS * 2, { ...SPOT, x: SPOT.x + 2 }));
     expect(watchLines(log)).toHaveLength(1);
+  });
+
+  it('carries the boxed object: probe, failed walks, night, wait, hold and the first gate', () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const world = new GridWorld();
+    world.fill(new Vec3(-60, 63, -60), new Vec3(60, 63, 60), 'stone');
+    world.fill(new Vec3(-2, 64, -2), new Vec3(2, 66, 2), 'stone');
+    world.fill(new Vec3(-1, 64, -1), new Vec3(1, 65, 1), null);
+    const terrainAt = (cell: Vec3) => world.blockAt(cell) as unknown as Block;
+    const here = { x: 0, y: 64, z: 0 };
+    const view = Object.assign(still({ position: here, terrainAt }), { isNight: false });
+    noteGoto(view, 'failed', 'blocked', 'partial: goal unreachable', false, here);
+    noteGoto(view, 'failed', 'blocked', 'partial: goal unreachable', false, here);
+    idleStuckReflex.check(view);
+    idleStuckReflex.check(at(view, IDLE_TICKS));
+    expect(watchLines(log)[0]?.boxed).toEqual({
+      reach: 9,
+      reach_exit: false,
+      failedWalks: 2,
+      night: false,
+      wait_s: 120,
+      held: null,
+      gate: 'wait',
+    });
+    idleStuckReflex.check(at(view, IDLE_TICKS * 2));
+    expect(watchLines(log)[1]?.boxed).toEqual({
+      reach: 9,
+      reach_exit: false,
+      failedWalks: 2,
+      night: false,
+      wait_s: 120,
+      held: null,
+      gate: 'none',
+    });
   });
 });
