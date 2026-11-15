@@ -88,6 +88,23 @@ describe('ownership lookups are counted (decision 0217)', () => {
     owners.stop();
   });
 
+  it('counts the parsed reply cells that carry a block name (with_block, per name in the interval)', async () => {
+    const { owners, lines } = start(() => ({
+      ...reply(0, 0, [
+        { ...owned(1, 64, 2, 'Ann'), block: 'farmland' },
+        { ...owned(3, 64, 3, 'Ann'), block: 'farmland' },
+        owned(5, 64, 5, 'Ann'),
+      ]),
+    }));
+    await owners.ensureChunk(WORLD, 0, 0);
+    vi.advanceTimersByTime(60_000);
+    expect(lastLine(lines).total).toMatchObject({ with_block: 2, answered: 1 });
+    expect(lastLine(lines).interval).toMatchObject({ with_block: 2 });
+    expect(lastLine(lines).interval.blocks).toEqual({ farmland: 2 });
+    expect(lastLine(lines).interval.other).toBe(0);
+    owners.stop();
+  });
+
   it('counts a truncated reply as truncated, and its cells stay unknown', async () => {
     const { owners, lines } = start(() => reply(0, 0, [owned(1, 64, 2, 'Ann')], true));
     owners.ownerAt(WORLD, 1, 64, 2);
