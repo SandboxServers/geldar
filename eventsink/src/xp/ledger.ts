@@ -1,5 +1,6 @@
-// Interface scaffold from AN-S0. Owned by AN-10a; replace the body, keep the exported signatures unless the card owner records a change in the worknote.
-import type { Domain } from '@geldar/psyche';
+// The XP ledger (card AN-10a). applyAward runs inside the writer's transaction: the evidence row first, and
+// the increment only when that row was new, so a redelivered or second-source accomplishment adds nothing.
+import { type Domain, levelForXp } from '@geldar/psyche';
 import type { XpAward } from './awards.ts';
 
 export interface XpStore {
@@ -17,10 +18,34 @@ export interface XpStore {
   ): Promise<void>; // INSERT ... ON CONFLICT (life_id, domain, level) DO NOTHING
 }
 
+export type XpLog = (line: string) => void;
+
+const logWarn: XpLog = (line) => console.warn(line);
+
+/**
+ * Applies one award. Returns `awarded` (the evidence row was new) and the new `level` when this award
+ * crossed a threshold, else null. An unknown life is logged as `xp_skipped_unknown_life` and skipped;
+ * a store error rejects, so the writer's transaction rolls back.
+ */
 export async function applyAward(
   store: XpStore,
   award: XpAward,
   thresholds: readonly [number, number, number],
+  log: XpLog = logWarn,
 ): Promise<{ awarded: boolean; level: number | null }> {
-  throw new Error('AN-10a not implemented');
+  if (!(await store.lifeExists(award.lifeId))) {
+    log(
+      `xp_skipped_unknown_life life=${award.lifeId} domain=${award.domain} evidence=${award.evidenceKey}`,
+    );
+    return { awarded: false, level: null };
+  }
+  if (!(await store.insertEvidence(award))) return { awarded: false, level: null };
+  const { xp } = await store.bump(award.lifeId, award.domain, award.worldTick);
+  const level = levelForXp(xp, thresholds);
+  const rose = level > levelForXp(xp - 1, thresholds);
+  if (level === 0 || !rose) return { awarded: true, level: null };
+  await store.setLevel(award.lifeId, award.domain, level);
+  const version = await store.totalXp(award.lifeId);
+  await store.enqueueLevel(award.lifeId, award.domain, level, xp, version);
+  return { awarded: true, level };
 }
