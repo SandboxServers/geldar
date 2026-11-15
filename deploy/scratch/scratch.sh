@@ -2,7 +2,11 @@
 # Throwaway scratch stack for the sheet campaign validation (see docs/runbooks/scratch-stack.md).
 # Usage: sh deploy/scratch/scratch.sh up|status|down [suffix]
 # The project is always scratch-<suffix> (suffix [a-z0-9]{1,8}, default a). Nothing here touches a project that does
-# not start with scratch-. Exit codes: 2 usage, 3 resource gate failed (nothing started), 1 anything else.
+# not start with scratch-. Exit codes: 2 usage, 3 resource gate failed (nothing started), 4 NATS auth missing
+# (nothing started), 1 anything else.
+# NATS fails closed: up needs SCRATCH_NATS_AUTH_DIR, a readable directory holding nats-auth.conf (prepared on the
+# desktop with ./geldar.ps1 shard nats-auth). SCRATCH_ALLOW_OPEN_NATS=1 starts open NATS for a run that does not test
+# the NATS roles. The script never reads or prints the conf or the passwords, and never removes the caller's dir.
 set -u
 umask 077
 
@@ -38,12 +42,51 @@ case "$PROJECT" in
   *) exit 2 ;;
 esac
 POINTER="$TMP_BASE/scratch-$suffix.secretsdir"
+# Written by up when SCRATCH_NATS_AUTH_DIR is given: it repoints the secret files of nats-auth.yml at that directory.
+NATS_OVERRIDE="$TMP_BASE/scratch-$suffix.nats-auth.yml"
 
-# Compose with the phase0 base and the scratch overlay. nats-auth.yml joins only when the caller prepared its files.
+# The NATS gate. Up fails closed unless the caller's auth dir is a readable directory holding nats-auth.conf.
+# Exit 4 comes before any file is written or any container is started.
+check_nats() {
+  if [ -n "${SCRATCH_NATS_AUTH_DIR:-}" ] && [ -d "$SCRATCH_NATS_AUTH_DIR" ] && [ -r "$SCRATCH_NATS_AUTH_DIR" ] &&
+    [ -r "$SCRATCH_NATS_AUTH_DIR/nats-auth.conf" ]; then
+    case "$SCRATCH_NATS_AUTH_DIR" in
+      *'"'* | *'\'* | *'$'*)
+        echo "scratch: SCRATCH_NATS_AUTH_DIR must not contain quotes, backslashes or dollar signs; nothing started" >&2
+        exit 4
+        ;;
+    esac
+    return 0
+  fi
+  if [ "${SCRATCH_ALLOW_OPEN_NATS:-}" = 1 ]; then
+    if [ -n "${SCRATCH_NATS_AUTH_DIR:-}" ]; then
+      echo "scratch: SCRATCH_NATS_AUTH_DIR is set but is not a readable directory holding nats-auth.conf; nothing started" >&2
+      exit 4
+    fi
+    echo "scratch: NATS is OPEN (no role ACLs): this run cannot test item 5" >&2
+    return 0
+  fi
+  echo "scratch: SCRATCH_NATS_AUTH_DIR (a directory holding a prepared nats-auth.conf) is required; set SCRATCH_ALLOW_OPEN_NATS=1 only for a run that does not test the NATS roles" >&2
+  exit 4
+}
+
+write_nats_override() {
+  {
+    echo "# Written by deploy/scratch/scratch.sh. Points the nats-auth.yml secrets at the caller's auth dir."
+    echo "secrets:"
+    for f in nats-auth.conf nats-paper.txt nats-velocity.txt nats-eventsink.txt; do
+      echo "  $f:"
+      echo "    file: \"$SCRATCH_NATS_AUTH_DIR/$f\""
+    done
+  } >"$NATS_OVERRIDE"
+}
+
+# Compose with the phase0 base and the scratch overlay. nats-auth.yml joins only when the override exists (up wrote it
+# for a prepared auth dir); the override goes last so its file paths win.
 compose_run() {
-  if [ -n "${SCRATCH_NATS_AUTH_DIR:-}" ]; then
+  if [ -f "$NATS_OVERRIDE" ]; then
     docker compose -p "$PROJECT" -f "$ROOT/compose/phase0.yml" -f "$ROOT/compose/nats-auth.yml" \
-      -f "$ROOT/compose/opt-in/scratch.yml" "$@"
+      -f "$ROOT/compose/opt-in/scratch.yml" -f "$NATS_OVERRIDE" "$@"
   else
     docker compose -p "$PROJECT" -f "$ROOT/compose/phase0.yml" -f "$ROOT/compose/opt-in/scratch.yml" "$@"
   fi
@@ -105,8 +148,14 @@ fill_secrets() {
 }
 
 do_up() {
+  check_nats
   gate
   set_env
+  if [ -n "${SCRATCH_NATS_AUTH_DIR:-}" ]; then
+    write_nats_override
+  else
+    rm -f "$NATS_OVERRIDE"
+  fi
   existing=$(compose_run ps -aq)
   if [ -n "$existing" ]; then
     echo "project $PROJECT already has containers; run: sh deploy/scratch/scratch.sh down $suffix" >&2
@@ -143,6 +192,8 @@ do_down() {
   set_env
   compose_run down -v --remove-orphans
   rc=$?
+  # The caller's SCRATCH_NATS_AUTH_DIR is never removed here: the caller deletes it at teardown.
+  rm -f "$NATS_OVERRIDE"
   if [ -f "$POINTER" ]; then
     dir=$(cat "$POINTER")
     case "$dir" in

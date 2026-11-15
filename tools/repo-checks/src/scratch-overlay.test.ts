@@ -83,6 +83,24 @@ describe('scratch script', () => {
     expect(SCRIPT).toContain('down -v --remove-orphans');
   });
 
+  it('fails closed on NATS auth with the exact message and exit 4', () => {
+    expect(SCRIPT).toContain(
+      'scratch: SCRATCH_NATS_AUTH_DIR (a directory holding a prepared nats-auth.conf) is required; set SCRATCH_ALLOW_OPEN_NATS=1 only for a run that does not test the NATS roles',
+    );
+    expect(SCRIPT).toMatch(/exit 4\n/);
+  });
+
+  it('opens NATS only on SCRATCH_ALLOW_OPEN_NATS=1, with the one-line OPEN warning', () => {
+    expect(SCRIPT).toContain('SCRATCH_ALLOW_OPEN_NATS:-}" = 1');
+    expect(SCRIPT).toContain('scratch: NATS is OPEN (no role ACLs): this run cannot test item 5');
+  });
+
+  it('checks NATS auth in up before the resource gate', () => {
+    const up = SCRIPT.slice(SCRIPT.indexOf('do_up() {'));
+    expect(up.indexOf('check_nats')).toBeGreaterThanOrEqual(0);
+    expect(up.indexOf('check_nats')).toBeLessThan(up.indexOf('  gate'));
+  });
+
   it('gates on 10 GB free RAM and 20 GB free disk', () => {
     expect(SCRIPT).toContain('10 GB');
     expect(SCRIPT).toContain('20 GB');

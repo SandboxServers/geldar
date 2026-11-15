@@ -11,7 +11,44 @@ loopback-only ports on high defaults, and hard caps. Teardown removes everything
     sh deploy/scratch/scratch.sh down [suffix]     # down -v, removes the secrets dir, lists leftover volumes
 
 The suffix is `[a-z0-9]{1,8}`. Anything else exits 2. Exit 3 means a gate failed and nothing was started.
+Exit 4 means the NATS auth check failed and nothing was started (see below).
 `down` works after a failed `up`: run it to clean up.
+
+## NATS auth (fail closed)
+
+`up` refuses to start without a prepared NATS auth directory. Without one the NATS roles are not tested, so the
+stack would only look like a real run. The check comes first, before the gates, and prints:
+
+    scratch: SCRATCH_NATS_AUTH_DIR (a directory holding a prepared nats-auth.conf) is required; set SCRATCH_ALLOW_OPEN_NATS=1 only for a run that does not test the NATS roles
+
+Exit code 4. Nothing is created and nothing is started.
+
+The flow, in order:
+
+1. On the desktop, from the repo root: `./geldar.ps1 shard nats-auth phase0`. It writes into the repo's
+   `compose/secrets/` (git-ignored): `nats-auth.conf`, one `nats-<user>.txt` per NATS user, and `thinker-token.txt`.
+   It never overwrites a file that exists, so a file that was already there belongs to someone else's stack.
+2. Make a temp dir outside the repo. Copy only `nats-auth.conf`, `nats-paper.txt`, `nats-velocity.txt` and
+   `nats-eventsink.txt` into it. Those are the four files `compose/nats-auth.yml` mounts. Do not copy anything else.
+3. Delete the repo-side copies that step 1 created (the lines `created compose/secrets/...` in its output name them).
+   Leave alone any file that was already there.
+4. After the review passes and the start gates are met, copy the temp dir to a node temp dir. Do not copy it
+   anywhere else.
+5. On the node: `SCRATCH_NATS_AUTH_DIR=<node temp dir> sh deploy/scratch/scratch.sh up [suffix]`. The script checks
+   the dir holds a readable `nats-auth.conf`, then points the `nats-auth.yml` secrets at that dir. It does not read,
+   print or copy the files.
+6. At teardown run `sh deploy/scratch/scratch.sh down [suffix]`, then delete both copies: the desktop temp dir (if
+   it still exists) and the node temp dir. `down` never removes `SCRATCH_NATS_AUTH_DIR`. The coordinator checks that
+   both are gone.
+
+The conf and the passwords never go in the repo, in logs or in messages. Do not paste their contents into a
+terminal, a chat or a report.
+
+Opt-out: `SCRATCH_ALLOW_OPEN_NATS=1 sh deploy/scratch/scratch.sh up [suffix]` starts open NATS (no role ACLs). It
+prints `scratch: NATS is OPEN (no role ACLs): this run cannot test item 5`. Use it only for a run that does not test
+the NATS roles. A run with the opt-out cannot test item 5.
+
+`down` works without `SCRATCH_NATS_AUTH_DIR` and without the opt-out.
 
 ## Gates
 
