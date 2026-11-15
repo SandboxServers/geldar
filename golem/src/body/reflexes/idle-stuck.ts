@@ -2,8 +2,21 @@ import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { type ActionRun, runAction } from '../../actions/registry.ts';
 import { DEFAULT_DIAG_SINK } from '../../actions/stall-diag.ts';
+import { setDigGuard } from '../../actions/unstick.ts';
 import type { Reflex, ReflexContext, ReflexOutcome, Trigger } from '../reflex.ts';
 import type { BodyView } from '../view.ts';
+import {
+  BOXED_RUNS_PER_HOUR,
+  boxedDigGuard,
+  boxedFromProbe,
+  boxedGate,
+  boxedWaitTicks,
+  isBoxedIn,
+  liquidNear,
+  noteBoxedAttempt,
+  noteCapLogged,
+  resetBoxedIn,
+} from './idle-stuck-boxed.ts';
 import { watchProbe } from './idle-stuck-probe.ts';
 import { hasBurrow } from './panic-burrow.ts';
 import { failedWalksAt } from './unstick.ts';
@@ -110,6 +123,7 @@ export function noteActionEnd(view: BodyView): void {
 export function resetIdleStuck(view: BodyView): void {
   idleStates.delete(view);
   refusals.delete(view);
+  resetBoxedIn(view);
 }
 
 /**
@@ -168,16 +182,18 @@ export const idleStuckReflex: Reflex = {
     watchStill(view, state, now);
     const wait = view.onOwnPlacement === true ? IDLE_TICKS_ON_OWN : IDLE_TICKS;
     if (now - state.since < wait || now < state.until) return null;
-    let reason: 'enclosed' | 'ledge' | 'no_path' | 'high_ledge' | null =
+    let reason: 'enclosed' | 'ledge' | 'no_path' | 'high_ledge' | 'boxed_in' | null =
       stuckReason(view) ?? noPathReason(view, here);
     if (reason === null) {
       // A high ledge (decision 0333) waits the 120 s own-placement clock, whatever the block under it.
-      if (!highLedgeReason(view) || now - state.since < IDLE_TICKS_ON_OWN) return null;
-      reason = 'high_ledge';
+      if (highLedgeReason(view) && now - state.since >= IDLE_TICKS_ON_OWN) reason = 'high_ledge';
+      else if (boxedTrigger(view, here, state, now)) reason = 'boxed_in';
+      else return null;
     }
     return { reason, idle_seconds: Math.round((now - state.since) / TICKS_PER_SECOND) };
   },
   async run(trigger, ctx): Promise<ReflexOutcome> {
+    if (trigger.reason === 'boxed_in') return runBoxed(ctx);
     return runUnstick(
       ctx,
       `idle_stuck (${String(trigger.reason)})`,
@@ -198,6 +214,7 @@ function watchStill(view: BodyView, state: IdleState, now: number): void {
   if (idle < IDLE_TICKS) return;
   if (state.watchedAt !== null && now - state.watchedAt < IDLE_TICKS) return;
   state.watchedAt = now;
+  const probe = watchProbe(view.terrainAt, view.position, view.health);
   DEFAULT_DIAG_SINK.log(
     JSON.stringify({
       event: 'idle_stuck_watch',
@@ -212,9 +229,57 @@ function watchStill(view: BodyView, state: IdleState, now: number): void {
         noSafeExit: view.noSafeExit === true,
         notInWater: view.inFluid !== 'water',
       },
-      ...watchProbe(view.terrainAt, view.position, view.health),
+      ...probe,
+      boxed_in: boxedFromProbe(probe) && failedWalksAt(view, spotOf(view)),
     }),
   );
+}
+
+/**
+ * The boxed-in trigger (decision 0336): the Body is still for its boxed clock (120 s, 300 s on an owned
+ * shelter), boxed in by reachability with two failed walks from this spot, and the attempt gate is open.
+ * At the cap the gate logs one `cap reached` line and the trigger stays off until a window frees a slot.
+ */
+function boxedTrigger(view: BodyView, here: Spot, state: IdleState, now: number): boolean {
+  if (now - state.since < boxedWaitTicks(view) || !isBoxedIn(view, here)) return false;
+  const gate = boxedGate(view, now);
+  if (gate === 'cap' && noteCapLogged(view)) {
+    DEFAULT_DIAG_SINK.log(
+      JSON.stringify({
+        event: 'idle_stuck_boxed',
+        result: 'cap reached',
+        attempts_per_hour: BOXED_RUNS_PER_HOUR,
+        at: formatSpot(here),
+      }),
+    );
+  }
+  return gate === 'ok';
+}
+
+/**
+ * One boxed-in attempt (decision 0336). The attempt is counted first and starts the 10 min cooldown, so a
+ * refused attempt waits as long as a run does. Lava or water in the 3x3 column around the Body (below,
+ * beside or above) refuses the dig; `unread` terrain refuses too. Otherwise `unstick` runs with its own
+ * rungs, under the shared backoff and hourly cap (RUNS_PER_HOUR).
+ */
+async function runBoxed(ctx: ReflexContext): Promise<ReflexOutcome> {
+  const attempt = noteBoxedAttempt(ctx.view, ctx.tick);
+  const source = `idle_stuck (boxed_in) attempt ${attempt} of ${BOXED_RUNS_PER_HOUR} this hour`;
+  const liquid = liquidNear(ctx.view);
+  if (liquid !== null) {
+    return {
+      result: 'abandoned',
+      detail: `${source}: dig refused, ${liquid} beside the body at ${formatSpot(spotOf(ctx.view))}`,
+    };
+  }
+  // The dig guard is asked before every dig step of the rungs, not only before the run (decision 0336).
+  const bot = ctx.bot;
+  setDigGuard(bot, boxedDigGuard(ctx.view));
+  try {
+    return await runUnstick(ctx, source, ctx.view.onOwnPlacement === true, false);
+  } finally {
+    setDigGuard(bot, null);
+  }
 }
 
 /**

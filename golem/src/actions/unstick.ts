@@ -43,6 +43,12 @@ export {
 
 /** The most digs one call makes. */
 const MAX_DIGS = 6;
+/** Per-bot dig guards (decision 0336): `dig` asks one before every step; true refuses the step. */
+const digGuards = new WeakMap<Bot, (block: Block) => boolean>();
+export function setDigGuard(bot: Bot, guard: ((block: Block) => boolean) | null): void {
+  if (guard) digGuards.set(bot, guard);
+  else digGuards.delete(bot);
+}
 
 /**
  * Digs one block, with the best tool held when the inventory has one; false on any failure. The
@@ -50,7 +56,7 @@ const MAX_DIGS = 6;
  * once more, since nothing in this call stopped it. Every dig here goes through `protectedReason`
  * first: someone else's work is never dug on the way out (decision 0164).
  */
-async function dig(
+export async function dig(
   bot: Bot,
   signal: AbortSignal,
   block: Block,
@@ -60,6 +66,7 @@ async function dig(
   if (signal.aborted) return false;
   const protectedBy = protectedReason(bot, block, at);
   if (protectedBy !== null && !(relaxed && !lastResortRefused(bot, block, at))) return false;
+  if (digGuards.get(bot)?.(block)) return false;
   const loose = bot as unknown as {
     pathfinder?: { stop(): void; setGoal(g: null): void; bestHarvestTool?: (b: Block) => unknown };
     stopDigging?: () => void;
