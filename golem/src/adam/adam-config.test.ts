@@ -1,4 +1,8 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
+import { repoRoot } from '../config.ts';
 import { parseAdamConfig } from './adam-config.ts';
 
 /** The shard keys the Body reads, without `body_actions`: a shard file that leaves the flag out. */
@@ -31,6 +35,19 @@ describe('body_actions.use', () => {
     expect(() => parseAdamConfig({ ...SHARD, body_actions: { use: 'yes' } })).toThrow(
       'body_actions.use must be true or false',
     );
+  });
+});
+
+describe('shards/colo-mind.yaml, the file the colo Body reads', () => {
+  const colo = () =>
+    parseAdamConfig(parse(readFileSync(join(repoRoot(), 'shards', 'colo-mind.yaml'), 'utf8')));
+
+  it('enables the use verb', () => {
+    expect(colo().use).toBe(true);
+  });
+
+  it('keeps edit_sign off', () => {
+    expect(colo().editSign).toBe(false);
   });
 });
 

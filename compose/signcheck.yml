@@ -3,8 +3,9 @@
 # Used only to check sign facts for edit_sign (golem/test/live/edit-sign.live.test.ts). See docs/runbooks/signcheck-shard.md.
 # Run as its own project, on its own VM: docker compose -p geldar-signcheck -f compose/signcheck.yml up -d
 # Delete with: docker compose -p geldar-signcheck down -v
+# Profile `rcon` adds paper-rcon: the same Paper with RCON on, for the edit-sign live check fixture only.
 # Never point GELDAR_WORLD_VOLUME at the Colo or phase0 world volume. The default profile has no secrets; the core
-# profile reads one operator-made RCON password file (GELDAR_RCON_FILE, default compose/secrets/signcheck-rcon.txt).
+# and rcon profiles read one operator-made RCON password file (GELDAR_RCON_FILE, default compose/secrets/signcheck-rcon.txt).
 name: geldar-signcheck
 
 x-minecraft-healthcheck: &mc-health
@@ -90,8 +91,39 @@ services:
     restart: "no"
     mem_limit: 3g
 
+  # Profile rcon only: vanilla Paper like `paper`, with RCON on. The edit-sign live check fixture uses it to place signs,
+  # give items, teleport the two bots and restore the arena on this throwaway world. RCON is for that fixture only.
+  # paper, paper-core and paper-rcon share the paper-data world volume, so only one of them runs at a time.
+  paper-rcon:
+    profiles: [rcon]
+    image: itzg/minecraft-server:2026.10.1-java25@sha256:d12aed7e35981dfe259b60fbfee77d23a19b5898a7a31dca298d18b47b7b5776
+    environment:
+      EULA: "TRUE"
+      TYPE: PAPER
+      VERSION: "26.1.2"
+      PAPER_BUILD: "74"
+      MEMORY: "2G"
+      ONLINE_MODE: "FALSE"
+      ENABLE_WHITELIST: "FALSE"
+      MAX_PLAYERS: "10"
+      SPAWN_PROTECTION: "0"
+      ENABLE_RCON: "TRUE"
+      RCON_PASSWORD_FILE: /run/secrets/rcon
+    secrets: [rcon]
+    volumes:
+      - paper-data:/data
+    ports:
+      # Game port and RCON port, both on loopback only. Game port 25570 is the same host port as paper: they never run together.
+      - "127.0.0.1:25570:25565"
+      - "127.0.0.1:25575:25575"
+    healthcheck:
+      <<: *mc-health
+      test: ["CMD", "mc-health"]
+    restart: "no"
+    mem_limit: 3g
+
 secrets:
-  # Used only by paper-core. The file is operator-made and gitignored (compose/secrets/). Create it before `up` with the core profile.
+  # Used by paper-core and paper-rcon. The file is operator-made and gitignored (compose/secrets/). Create it before `up` with the core or rcon profile.
   rcon:
     file: ${GELDAR_RCON_FILE:-./secrets/signcheck-rcon.txt}
 

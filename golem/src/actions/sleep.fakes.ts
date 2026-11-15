@@ -15,6 +15,8 @@ export interface FakeBlock {
 export interface FakeEntity {
   name: string;
   position: Vec3;
+  /** The entity id Mineflayer keys `bot.entities` by; absent takes the entity's index in the list. */
+  id?: number;
 }
 
 /** The minecraft-data categories the fake registry knows: the hostile mobs and the passive ones the tests name. */
@@ -31,6 +33,8 @@ export const SCENE_REGISTRY = {
 
 export interface FakeOptions {
   timeOfDay?: number;
+  /** The world age in ticks (`bot.time.age`); a test may set it again between two sleeps. */
+  age?: number;
   thundering?: boolean;
   /** The blocks in the world; `findBlocks` searches them in order. */
   blocks?: FakeBlock[];
@@ -60,11 +64,14 @@ export function fakeBot(options: FakeOptions = {}): Bot {
     removeListener: emitter.removeListener.bind(emitter),
     emit: emitter.emit.bind(emitter),
     listenerCount: emitter.listenerCount.bind(emitter),
-    time: { timeOfDay: options.timeOfDay ?? 1_000 },
+    time: { timeOfDay: options.timeOfDay ?? 1_000, age: options.age ?? 0 },
     thunderState: options.thundering ? 1 : 0,
     entity: { position: new Vec3(0, 64, 0) },
     entities: Object.fromEntries(
-      (options.entities ?? []).map((entity, index) => [String(index), entity]),
+      (options.entities ?? []).map((entity, index) => [
+        String(index),
+        { ...entity, id: entity.id ?? index },
+      ]),
     ),
     registry: SCENE_REGISTRY,
     get isSleeping() {
