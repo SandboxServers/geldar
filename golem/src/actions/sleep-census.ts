@@ -107,6 +107,20 @@ function bedShape(block: Block): BedShape | undefined {
   return { part, facing: vector };
 }
 
+/** The position of the head block of a bed block, or undefined when its part or facing cannot be read. */
+export function headPosition(block: Block): Vec3 | undefined {
+  const shape = bedShape(block);
+  if (shape === undefined) return undefined;
+  return shape.part === 'head' ? block.position : block.position.plus(shape.facing);
+}
+
+/** The position of the foot block of a bed block, or undefined when its part or facing cannot be read. */
+export function footPosition(block: Block): Vec3 | undefined {
+  const shape = bedShape(block);
+  if (shape === undefined) return undefined;
+  return shape.part === 'foot' ? block.position : block.position.minus(shape.facing);
+}
+
 /** True when a bed block's `occupied` state says a sleeper is in it (decision 0338). Unknown reads as free. */
 export function isBedOccupied(block: Block): boolean {
   return occupiedState(block) === true;

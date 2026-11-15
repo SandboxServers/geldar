@@ -1,16 +1,17 @@
 import type { Bot } from 'mineflayer';
 import type { Block } from './bot-types.ts';
 import { outcomeOfMove } from './move-outcome.ts';
-import {
-  type ActionOutcome,
-  cancelled,
-  completed,
-  errorText,
-  type FailReason,
-  failed,
-} from './outcome.ts';
+import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
+import {
+  isBeside,
+  isObstructed,
+  isRefusalToRemember,
+  OBSTRUCTED_TEXT,
+  rememberRefusal,
+  wasRefused,
+} from './sleep-beds.ts';
 import {
   type BedCensus,
   bedKey,
@@ -21,26 +22,29 @@ import {
 } from './sleep-census.ts';
 import {
   type BedTry,
-  observeMonsters,
   sleepersDetail,
   sleepFailureDetail,
   withSleepDetail,
 } from './sleep-detail.ts';
-import {
-  type Hostile,
-  hostilesAroundBed,
-  MAX_NAMED_HOSTILES,
-  monstersFact,
-} from './sleep-hostiles.ts';
 import { roundedPosition, triedMessage } from './sleep-message.ts';
 import {
-  type BedRefusalWatch,
-  bedRefusalFact,
-  NOT_SAFE_KEY,
-  watchBedRefusal,
-} from './sleep-refusal.ts';
+  ALREADY_SLEEPING,
+  type BedResult,
+  COULD_NOT_BE_USED,
+  matchSleepError,
+  refusalScene,
+  sleepFailure,
+} from './sleep-outcome.ts';
+import { type BedRefusalWatch, watchBedRefusal } from './sleep-refusal.ts';
 import { type SleepersWatch, watchSleepers } from './sleepers.ts';
-import { DEFAULT_DIAG_SINK, type DiagSink } from './stall-diag.ts';
+import { DEFAULT_DIAG_SINK } from './stall-diag.ts';
+
+export {
+  classifySleepError,
+  type SleepScene,
+  sleepErrorText,
+  sleepFailure,
+} from './sleep-outcome.ts';
 
 /** The first world tick of the night window the Body checks (advisory: the server's window differs by one). */
 const NIGHT_START = 12_542;
@@ -69,11 +73,16 @@ const SLEEPERS_WAIT_MS = 300;
  * key comes with the refusal; without one the bed keeps "the bed could not be used".
  */
 const BED_KEY_WAIT_MS = 300;
-/** The text of the generic refusal when no bed key says more (decision 0224; facts in decision 0225). */
-const COULD_NOT_BE_USED = 'the bed could not be used';
-
 /** The reason a bed reports when the hard stop cut its walk or sleep short. */
 const CUT_OFF = 'the bed was cut off by the time limit';
+/**
+ * The wall ms (at 1x, scaled by `timeScale`) one walk to a bed may run before the loop tries the next bed: at least
+ * BED_WALK_CAP_MS, and BED_WALK_MS_PER_BLOCK for each block between the Body and the bed (decision 0341).
+ */
+const BED_WALK_CAP_MS = 7_000;
+const BED_WALK_MS_PER_BLOCK = 450;
+/** The reason a walk the per-bed cap cut short reports (decision 0341). Short, so it survives the 160-character cap. */
+const CUT_OFF_WALK = 'the walk to the bed took too long';
 
 /** Sleeps in the nearest free bed, trying up to MAX_BEDS. The action does not wait for morning and does not wake the bot. */
 export const sleepAction: ActionHandler<'sleep'> = {
@@ -85,137 +94,6 @@ export const sleepAction: ActionHandler<'sleep'> = {
 /** True at night (the advisory window) or in a thunderstorm. */
 export function isNightOrStorm(timeOfDay: number, thundering: boolean): boolean {
   return (timeOfDay >= NIGHT_START && timeOfDay <= NIGHT_END) || thundering;
-}
-
-/** Mineflayer's text when the bot is already in a bed. Treated as asleep, not as a failure. */
-const ALREADY_SLEEPING = /already sleeping/i;
-
-/** A sleep error the Body knows: the text it matches, its fail reason, and the fact it reports. */
-interface SleepError {
-  match: RegExp;
-  reason: FailReason;
-  /** The facts-only text the agent reads; absent when the message is kept as it came. */
-  fact?: string;
-  /** True for the monsters refusal: its text names the hostiles around the bed (sleep-hostiles.ts). */
-  monsters?: true;
-}
-
-/** What a refusal knows about the bed it was tried in: the hostiles the bed check counts and the block light. */
-export interface SleepScene {
-  hostiles: readonly Hostile[];
-  light: number | null;
-  /** The dwell in ticks of the nearest hostile, on a monsters refusal whose nearest hostile has an id. */
-  dwellTicks?: number | undefined;
-}
-
-/** What one bed of the loop gave: the outcome, and the bed block it ended on. */
-interface BedResult {
-  outcome: ActionOutcome;
-  used: Block;
-}
-
-/** The sleep errors, from Mineflayer's texts and the server's, in the order they are matched. */
-const SLEEP_ERRORS: readonly SleepError[] = [
-  { match: ALREADY_SLEEPING, reason: 'not_possible' },
-  { match: /monsters nearby/i, reason: 'not_possible', monsters: true },
-  { match: /not night|only sleep at night/i, reason: 'not_possible', fact: 'it is not night' },
-  { match: /too far/i, reason: 'out_of_reach', fact: 'the bed is too far away' },
-  { match: /occupied/i, reason: 'blocked', fact: 'the bed is occupied' },
-  { match: /obstructed/i, reason: 'blocked', fact: 'the bed is obstructed' },
-  { match: /not a bed|only half bed/i, reason: 'not_found' },
-  { match: /not sleeping|cant click/i, reason: 'blocked', fact: COULD_NOT_BE_USED },
-];
-
-/** The first sleep error whose text the message matches, or undefined. */
-function matchSleepError(message: string): SleepError | undefined {
-  return SLEEP_ERRORS.find((known) => known.match.test(message));
-}
-
-/** Maps a Mineflayer sleep error to a fail reason, by its text. Anything unknown is `not_possible`. */
-export function classifySleepError(message: string): FailReason {
-  return matchSleepError(message)?.reason ?? 'not_possible';
-}
-
-/**
- * The failed outcome for a sleep error. A text that no known error matches keeps its server text and
- * logs one `sleep_reason_unknown` line to the diag sink, so a new text shows up in the log. Every refusal
- * carries its record (the hostiles, the light, the message) in `raw`: the action log keeps it, the agent does not read it.
- */
-export function sleepFailure(
-  message: string,
-  diag: DiagSink = DEFAULT_DIAG_SINK,
-  scene: SleepScene = { hostiles: [], light: null },
-  bedKey?: string,
-): ActionOutcome {
-  if (matchSleepError(message) === undefined) {
-    diag.log(JSON.stringify({ event: 'sleep_reason_unknown', message }));
-  }
-  // The light comes before the hostiles: the action log clips the record to 200 characters.
-  const record = {
-    event: 'sleep_refusal',
-    message,
-    light: scene.light,
-    ...(bedKey === undefined ? {} : { bed_key: bedKey }),
-    hostiles: scene.hostiles
-      .slice(0, MAX_NAMED_HOSTILES)
-      .map(({ kind, blocks }) => ({ kind, blocks })),
-    count: scene.hostiles.length,
-    ...(scene.dwellTicks === undefined ? {} : { dwell_ticks: scene.dwellTicks }),
-  };
-  const fact = bedFact(message, bedKey, scene);
-  if (fact) return failed(fact.reason, fact.text, {}, JSON.stringify(record));
-  return failed(
-    classifySleepError(message),
-    sleepErrorText(message, scene.hostiles, scene.dwellTicks),
-    {},
-    JSON.stringify(record),
-  );
-}
-
-/**
- * The fact a bed key gives a generic refusal (the text that says only "could not be used"). The key `not_safe`
- * with a counted hostile keeps the named-hostile text; any other key reads its own fact (sleep-refusal.ts).
- */
-function bedFact(
-  message: string,
-  bedKey: string | undefined,
-  scene: SleepScene,
-): { text: string; reason: FailReason } | undefined {
-  if (bedKey === undefined || matchSleepError(message)?.fact !== COULD_NOT_BE_USED)
-    return undefined;
-  if (bedKey === NOT_SAFE_KEY && scene.hostiles.length > 0) {
-    return { text: monstersFact(scene.hostiles, scene.dwellTicks), reason: 'not_possible' };
-  }
-  return bedRefusalFact(bedKey, scene.hostiles.length > 0);
-}
-
-/**
- * The text the agent reads for a sleep error: the fact it states, or the message when no fact is known.
- * The monsters refusal names the hostiles in `hostiles` (none in view when the list is empty).
- */
-export function sleepErrorText(
-  message: string,
-  hostiles: readonly Hostile[] = [],
-  dwellTicks?: number,
-): string {
-  const known = matchSleepError(message);
-  if (known?.monsters) return monstersFact(hostiles, dwellTicks);
-  return known?.fact ?? message;
-}
-
-/**
- * What the bed the Body tried holds for a refusal: the counted hostiles around its position and its block light.
- * A monsters refusal also records the hostiles' dwell (sleep-detail.ts).
- */
-function refusalScene(bot: Bot, bed: Block, message: string, bedKey?: string): SleepScene {
-  const hostiles = hostilesAroundBed(Object.values(bot.entities), bed.position, bot.registry);
-  const monsters =
-    matchSleepError(message)?.monsters === true || (bedKey === NOT_SAFE_KEY && hostiles.length > 0);
-  return {
-    hostiles,
-    light: bot.blockAt(bed.position)?.light ?? null,
-    dwellTicks: monsters ? observeMonsters(bot, hostiles) : undefined,
-  };
 }
 
 async function sleep(ctx: ActionContext): Promise<ActionOutcome> {
@@ -277,6 +155,8 @@ async function sleepFromBeds(
   const bedCtx: ActionContext = { ...ctx, signal: AbortSignal.any([ctx.signal, stop.signal]) };
   let tried = 0;
   let outOfTime = false;
+  // The beds whose walk the per-bed cap cut short: when every tried bed is one of them, the search is a timeout.
+  let cut = 0;
   try {
     for (const bed of beds) {
       if (Date.now() - started >= budget) {
@@ -292,7 +172,11 @@ async function sleepFromBeds(
         outOfTime = true;
         break;
       }
-      if (outcome.status === 'failed') tries.push(bedTry(used, outcome.message));
+      if (outcome.status === 'failed') {
+        tries.push(bedTry(used, outcome.message));
+        if (outcome.message === CUT_OFF_WALK) cut += 1;
+        if (isRefusalToRemember(outcome.message)) rememberRefusal(bot, used);
+      }
       // A success needs no end census: withSleepDetail keeps the detail of a failure only.
       if (outcome.status !== 'failed') return outcome;
       if ((outcome.reason !== 'blocked' && outcome.reason !== 'timeout') || ctx.signal.aborted) {
@@ -321,6 +205,15 @@ async function sleepFromBeds(
       lastRaw,
     );
   }
+  if (tried > 0 && cut === tried) {
+    // Every bed's walk ran past its cap: the walks timed out, so the search is a timeout too (decision 0341).
+    return failed(
+      'timeout',
+      triedMessage(`tried ${tried} nearby beds, every walk timed out`, lastText, ended),
+      {},
+      lastRaw,
+    );
+  }
   return failed(
     'blocked',
     triedMessage(`tried ${tried} nearby beds, all occupied or blocked`, lastText, ended),
@@ -342,6 +235,8 @@ async function sleepInBed(
   refusals: BedRefusalWatch,
 ): Promise<BedResult> {
   const { bot } = ctx;
+  // A bed the Body's check finds obstructed is not walked to: the walk would end in the same refusal (decision 0341).
+  if (isObstructed(bot, bed)) return { outcome: failed('blocked', OBSTRUCTED_TEXT), used: bed };
   const near = await walkNear(ctx, bed);
   if (near) return { outcome: near, used: bed };
   let used = bed;
@@ -417,20 +312,42 @@ function nearbyBeds(bot: Bot): BedList {
       kept.push({ block, occupied: isBedOccupied(block) });
     }
   }
-  const free = kept.filter((bed) => !bed.occupied).map((bed) => bed.block);
-  const taken = kept.filter((bed) => bed.occupied).map((bed) => bed.block);
-  return { beds: [...free, ...taken], occupied: taken.length };
+  // A bed refused in the last ten minutes (as obstructed or with no path) ranks last, after the occupied ones (decision 0341).
+  const fresh = kept.filter((bed) => !wasRefused(bot, bed.block));
+  const free = fresh.filter((bed) => !bed.occupied).map((bed) => bed.block);
+  const taken = fresh.filter((bed) => bed.occupied).map((bed) => bed.block);
+  const refused = kept.filter((bed) => wasRefused(bot, bed.block)).map((bed) => bed.block);
+  // A free bed the Body already stands beside goes first: it needs no walk (decision 0341).
+  const beside = free.filter((block) => isBeside(bot, block));
+  const walk = free.filter((block) => !isBeside(bot, block));
+  const occupied = kept.filter((bed) => bed.occupied).length;
+  return { beds: [...beside, ...walk, ...taken, ...refused], occupied };
 }
 
-/** Walks to within one block of `block`; null when the bot arrived, else the failure. */
+/**
+ * Walks to within one block of `block`; null when the bot arrived, else the failure. A walk the per-bed cap cuts
+ * short is a timeout for this bed only, so the loop tries the next one (decision 0341).
+ */
 async function walkNear(ctx: ActionContext, block: Block): Promise<ActionOutcome | null> {
-  const move = await moveNear(ctx.bot, block.position, 1, {
-    signal: ctx.signal,
-    timeScale: ctx.timeScale,
-    stallTicks: BED_STALL_TICKS,
-  });
-  if (move.ok) return ctx.signal.aborted ? cancelled() : null;
-  return outcomeOfMove(move);
+  if (isBeside(ctx.bot, block)) return null;
+  const cap = new AbortController();
+  const reach = Math.max(
+    BED_WALK_CAP_MS,
+    ctx.bot.entity.position.distanceTo(block.position) * BED_WALK_MS_PER_BLOCK,
+  );
+  const capTimer = setTimeout(() => cap.abort(), reach * ctx.timeScale);
+  try {
+    const move = await moveNear(ctx.bot, block.position, 1, {
+      signal: AbortSignal.any([ctx.signal, cap.signal]),
+      timeScale: ctx.timeScale,
+      stallTicks: BED_STALL_TICKS,
+    });
+    if (move.ok) return ctx.signal.aborted ? cancelled() : null;
+    if (cap.signal.aborted && !ctx.signal.aborted) return failed('timeout', CUT_OFF_WALK);
+    return outcomeOfMove(move);
+  } finally {
+    clearTimeout(capTimer);
+  }
 }
 
 /**
