@@ -3,6 +3,7 @@
 // systemctl, node and head on PATH. They need bash (Git Bash on Windows, or any Linux shell). The file
 // mode tests run on Linux only: Windows does not keep POSIX modes.
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   chmodSync,
   existsSync,
@@ -102,11 +103,14 @@ function fixture(): Fixture {
   };
 }
 
-/** Puts the helper build where the script expects it. */
+/** Puts the helper build and its sha256 sidecar (dist/main.js.sha256, as the CI job writes it) where the script expects them. */
 function withBuild(fx: Fixture): void {
   const file = join(fx.root, BUILD_PATH);
   mkdirSync(join(file, '..'), { recursive: true });
-  writeFileSync(file, '// fake build\n');
+  const body = '// fake build\n';
+  writeFileSync(file, body);
+  const digest = createHash('sha256').update(body).digest('hex');
+  writeFileSync(`${file}.sha256`, `${digest}  main.js\n`);
 }
 
 /** Puts the env file where the script expects it. Names only, as geldar-93 writes it. */
@@ -155,6 +159,12 @@ function pathWithoutNode(): string {
 }
 
 function run(fx: Fixture, args: string[], opts: RunOptions = {}): { status: number; out: string } {
+  // C7-03c5: the script runs the pinned node under <prefix>/opt/geldar/node/bin/node. A fake one stands
+  // there unless the case is noNode (then the pinned node is absent, as on a node with no Node).
+  const pinnedNode = join(fx.root, 'rt/opt/geldar/node/bin/node');
+  mkdirSync(join(fx.root, 'rt/opt/geldar/node/bin'), { recursive: true });
+  if (opts.noNode) rmSync(pinnedNode, { force: true });
+  else writeFileSync(pinnedNode, '#!/bin/sh\necho "node $*" >> "$FAKE_LOG"\nexit 0\n');
   const path = opts.noNode ? pathWithoutNode() : `${fx.bin}${delimiter}${process.env.PATH ?? ''}`;
   // Git Bash starts with /usr/bin ahead of PATH, which would hide the fake head. So the fake bin is
   // put first inside the shell, after its startup, and the script then runs in that same shell.
@@ -230,7 +240,9 @@ describe('install-body-helper.sh: static checks (C7-03c2)', () => {
   });
 });
 
-describe('install-body-helper.sh: dry run and flags (C7-03c2)', () => {
+// Each run of the script under Git Bash takes several seconds on a loaded Windows host (many short
+// subprocesses), so the describe blocks that run it get the 30 s timeout the file already uses.
+describe('install-body-helper.sh: dry run and flags (C7-03c2)', { timeout: 30_000 }, () => {
   it('with no flag changes nothing and runs no command', () => {
     const fx = fixture();
     withBuild(fx);
@@ -306,7 +318,9 @@ describe('install-body-helper.sh: dry run and flags (C7-03c2)', () => {
   });
 });
 
-describe('install-body-helper.sh: the env file and the preflight (C7-03c2)', () => {
+describe('install-body-helper.sh: the env file and the preflight (C7-03c2)', {
+  timeout: 30_000,
+}, () => {
   it('with the build and no env file, --apply runs no systemctl enable and says why', () => {
     const fx = fixture();
     withBuild(fx);
@@ -352,7 +366,9 @@ describe('install-body-helper.sh: the env file and the preflight (C7-03c2)', () 
   });
 });
 
-describe('install-body-helper.sh: apply, idempotence and secrets (C7-03c2)', () => {
+describe('install-body-helper.sh: apply, idempotence and secrets (C7-03c2)', {
+  timeout: 30_000,
+}, () => {
   it('a first --apply writes the root-owned unit with the hardening and creates the secret files', () => {
     const fx = fixture();
     withBuild(fx);
@@ -535,7 +551,9 @@ describe('install-body-helper.sh: apply, idempotence and secrets (C7-03c2)', () 
   });
 });
 
-describe('install-body-helper.sh: test-only settings, preflight and secret length (C7-03c2 fix)', () => {
+describe('install-body-helper.sh: test-only settings, preflight and secret length (C7-03c2 fix)', {
+  timeout: 30_000,
+}, () => {
   it('refuses a prefix as root unless BODY_HELPER_TEST=1, and writes nothing', () => {
     const fx = fixture();
     withBuild(fx);

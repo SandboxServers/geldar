@@ -73,9 +73,21 @@ esac
 if [ "$APPLY" = 1 ] && [ -z "$PREFIX" ] && [ "$(id -u)" != 0 ]; then
   die "--apply on the node needs root (run with sudo)"
 fi
-# Preflight, before any write: the migrate verb (step 4) runs under node from the checkout.
+# The pinned Node runtime (C7-03c5): extracted from the staged tarball only after its sha256 matches the pin.
+. "$SCRIPT_DIR/body-helper-node.env"
+NODE_DIR="$PREFIX/opt/geldar/node"
+NODE_BIN="$NODE_DIR/bin/node"
+NODE_TARBALL_PATH="$NODE_DIR/$BODY_HELPER_NODE_TARBALL"
+sha256_of() { sha256sum "$1" | cut -d' ' -f1; }
+node_tarball_ok() { [ -f "$NODE_TARBALL_PATH" ] && [ "$(sha256_of "$NODE_TARBALL_PATH")" = "$BODY_HELPER_NODE_SHA256_LINUX_X64" ]; }
+# Preflight, before any write: the migrate verb (step 4) runs the pinned node from the checkout.
 if [ "$APPLY" = 1 ]; then
-  command -v node >/dev/null 2>&1 || die "--apply needs node on PATH for the migrate verb; nothing was changed"
+  if [ ! -f "$NODE_BIN" ]; then
+    if [ -f "$NODE_TARBALL_PATH" ] && ! node_tarball_ok; then
+      die "the staged node tarball does not match its sha256 in deploy/body-helper-node.env; nothing was changed"
+    fi
+    node_tarball_ok || die "--apply needs node at $NODE_BIN, or the pinned tarball staged at $NODE_TARBALL_PATH; nothing was changed"
+  fi
   [ -d "$REPO_DIR/tools/migrate/node_modules" ] || die "--apply needs $REPO_DIR/tools/migrate/node_modules (run pnpm install in the checkout); nothing was changed"
   # The password step (step 4) logs in with the PG* variables, and its login probe needs PGDATABASE.
   [ -n "${PGHOST:-}" ] || die "--apply needs PGHOST for the password step; nothing was changed"
@@ -111,9 +123,36 @@ note "migrate checkout: $REPO_DIR"
 # 1. The helper build. Without it the unit would crash-loop, so the unit is neither written nor enabled.
 if [ -f "$BUILD_MAIN" ]; then
   note "helper build present: $INSTALL_DIR/dist/main.js"
+  # The bundle's sha256 (dist/main.js.sha256, written by the CI job) must match before anything is installed.
+  if [ ! -f "$BUILD_MAIN.sha256" ]; then
+    BLOCKED=1
+    note "blocked: bundle sha256 sidecar missing: $BUILD_MAIN.sha256; no unit is written or enabled"
+  elif [ "$(sha256_of "$BUILD_MAIN")" != "$(awk '{print $1}' "$BUILD_MAIN.sha256")" ]; then
+    BLOCKED=1
+    note "blocked: bundle sha256 does not match main.js.sha256; no unit is written or enabled"
+    if [ "$APPLY" = 1 ]; then die "bundle sha256 does not match main.js.sha256; nothing was changed"; fi
+  else
+    note "bundle sha256 matches main.js.sha256"
+  fi
 else
   BLOCKED=1
   note "blocked: helper build missing at $INSTALL_DIR/dist/main.js (open question for geldar-93: how the build reaches the node); no unit is written or enabled"
+fi
+
+# 1c. The pinned Node runtime. Without it the unit and the migrate verb cannot run, so the unit is not enabled.
+NODE_READY=0
+if [ -f "$NODE_BIN" ]; then
+  NODE_READY=1
+  note "pinned node present: $NODE_BIN"
+elif node_tarball_ok; then
+  change "extract pinned node $BODY_HELPER_NODE_VERSION into $NODE_DIR (sha256 checked against deploy/body-helper-node.env)"
+  if [ "$APPLY" = 1 ]; then
+    tar -xJf "$NODE_TARBALL_PATH" -C "$NODE_DIR" --strip-components=1
+    [ -f "$NODE_BIN" ] || die "the pinned node tarball did not unpack to $NODE_BIN"
+    NODE_READY=1
+  fi
+else
+  note "blocked: pinned node $BODY_HELPER_NODE_VERSION missing: stage $BODY_HELPER_NODE_TARBALL in $NODE_DIR; the unit is not enabled"
 fi
 
 # 1b. The env file (names only; geldar-93 writes it from the release env). Without it the unit is
@@ -141,8 +180,8 @@ Type=simple
 # The supervisor and every Body run in containers without it.
 User=root
 EnvironmentFile=/etc/geldar/body-helper.env
-# Carry-forward (C7-03c5): ExecStart moves to a pinned node under /opt/geldar; node5 has no Node today.
-ExecStart=/usr/bin/node /opt/geldar/body-helper/dist/main.js
+# The pinned Node runtime (deploy/body-helper-node.env), extracted under /opt/geldar/node (C7-03c5). No PATH node.
+ExecStart=/opt/geldar/node/bin/node /opt/geldar/body-helper/dist/main.js
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
@@ -224,14 +263,14 @@ done
 if [ -e "$PG_SECRET" ] || [ "$APPLY" = 0 ]; then
   change "set geldar_helper password from $(basename "$PG_SECRET") if its login fails (migrate verb, login first)"
   if [ "$APPLY" = 1 ]; then
-    node "$MIGRATE_CLI" --set-role-password geldar_helper --password-file "$PG_SECRET"
+    "$NODE_BIN" "$MIGRATE_CLI" --set-role-password geldar_helper --password-file "$PG_SECRET"
   fi
 fi
 
 # 5. Reload, enable and restart. Enable and restart happen only when the build and the env file both
 #    exist. A changed unit that cannot be restarted yet is named in the plan.
 READY=0
-if [ "$BLOCKED" = 0 ] && [ "$ENV_MISSING" = 0 ]; then READY=1; fi
+if [ "$BLOCKED" = 0 ] && [ "$ENV_MISSING" = 0 ] && [ "$NODE_READY" = 1 ]; then READY=1; fi
 if [ "$UNIT_CHANGED" = 1 ]; then
   change "systemctl daemon-reload"
   if [ "$APPLY" = 1 ]; then systemctl daemon-reload; fi

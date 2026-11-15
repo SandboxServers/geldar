@@ -110,6 +110,36 @@ Batching: C7-03c2 and C7-03b2 change the image set, so they merge in one window 
 - Print or copy secret values, or touch `skins/`.
 - Run on the node. Node steps run only after geldar-93 DONE per step.
 
+## C7-03c5: helper bundle artifact with pinned Node and sha256
+
+- **id / wave / lane.** C7-03c5, wave 5, Supervisor lane. **depends-on.** C7-03c1, C7-03c2. **branch.** `phase1/c7-03c5-helper-bundle`. **migration.** no. **size.** M.
+- **Decision.** 0260. node5 (geldar-worldops) has no Node. The helper ships as a CI artifact, not a registry pull.
+- **Status.** Built by the cont1 pass; node steps by geldar-93 (runbook Step 0a).
+
+### Goal
+
+1. **Bundle artifact.** `body-helper/scripts/bundle.mjs` bundles `body-helper/src/main.ts` with esbuild 0.28.2 (exact pin) into `dist/main.js` and writes `dist/main.js.sha256` beside it (sha256sum format).
+2. **Node pin.** `deploy/body-helper-node.env` pins Node 22.23.4 (version, tarball name `node-v22.23.4-linux-x64.tar.xz`, its sha256 from the official SHASUMS256.txt). No install happens in the repo.
+3. **Build-only CI.** `.github/workflows/body-helper-bundle.yml` (workflow change; actions pinned by commit SHA) checks the pinned tarball against its sha256, builds the bundle, self-checks the digest, and uploads the artifact `body-helper-bundle`. No deploy, no node access, no secret reads.
+4. **Install script.** `deploy/install-body-helper.sh` verifies `main.js` against `main.js.sha256` and the staged tarball against the pin before any write, and extracts the pinned Node under `/opt/geldar/node`. The unit's `ExecStart` and the migrate call use `/opt/geldar/node/bin/node`. A mismatch blocks `--apply` with nothing changed.
+5. **Runbook.** `docs/runbooks/body-helper-node-steps.md` Step 0a: how to get the artifact from a CI run, check it, and stage it and the tarball on the node.
+
+### Files
+
+`body-helper/scripts/bundle.mjs`, `body-helper/package.json` (esbuild exact), `pnpm-lock.yaml`, `body-helper/src/bundle.test.ts`, `deploy/body-helper-node.env`, `deploy/install-body-helper.sh`, `deploy/test/install-body-helper.test.ts`, `deploy/test/body-helper-artifacts.test.ts`, `.github/workflows/body-helper-bundle.yml`, `docs/runbooks/body-helper-node-steps.md`.
+
+### Tests (each fails on revert)
+
+- `body-helper/src/bundle.test.ts`: the bundle builds, and its sha256 sidecar matches `main.js`. Revert: drop the sidecar write in `bundle.mjs`; the test fails.
+- `deploy/test/body-helper-artifacts.test.ts` (dry run): a bundle whose sha256 does not match `main.js.sha256` blocks `--apply` before any write, and the unit is not written. Revert: make the bundle sha256 mismatch not block in `install-body-helper.sh`; the dry-run test fails.
+- `deploy/test/body-helper-artifacts.test.ts`: the pin file has the Node version and the tarball sha256; the workflow pins every action by a 40-hex SHA and runs no deploy step. Revert: change a pin to a tag; the test fails.
+- Not yet tested (finding): a Node tarball sha256 mismatch blocks `--apply` before extraction. The script checks it (`node_tarball_ok`), but no test covers it.
+
+### Must not
+
+- Install Node or esbuild on the node, or run a docker build.
+- Change `docs/spec.md`, or add a card that is not in this file.
+
 ## C7-03c3: supervisor uses the helper
 
 - **id / wave / lane.** C7-03c3, wave 5, Supervisor lane. **depends-on.** C7-03c1 (the verbs and subjects). **branch.** `phase1/c7-03c3` (built; review pending; worknote `docs/analysis/phase1/worknotes/C7-03c3.md`). **migration.** no. **size.** M.
