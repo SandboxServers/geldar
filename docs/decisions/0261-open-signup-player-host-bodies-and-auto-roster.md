@@ -43,6 +43,10 @@ The owner was asked directly on 2026-11-14 and ruled as follows.
 - 0260: the helper holds the fixed verbs and the Docker socket, and no container mounts the socket.
 - The Body spec of C7-03b4 and the NATS least-privilege rules (0067, 0080).
 
+## Audit rows of the auto-roster
+
+Ruling (orchestrator, review of ROSTER-AUTO pass 1, F2), applying decision 0171 "no name": the `register_audit` row that `register_roster_add` writes carries no agent name after erasure. Its actor is the owner's hashed id (the 0032 expression, never the raw owner id), its action is `roster.add`, and its `target` is the fixed value `roster` with an empty `detail`. The roster row keeps the lower-cased name; account deletion removes it. The audit row is append-only, so it may remain after erasure, but it carries no name and no raw owner id. This is revertable: if the owner decides agent names may stay in audit rows, `target` and `detail` can take the name again, and the check in `sql/test/check-schema-roster-auto.sql` changes with it.
+
 ## Open sub-questions for geldar-93
 
 - The RCON whitelist verb: which verb the helper uses to add a sign-up agent's life to Paper's whitelist, given that the Body itself holds no RCON.
