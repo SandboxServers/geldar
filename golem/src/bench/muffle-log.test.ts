@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { parseMuffleBenchLine, parseMuffleLog, percentile, summarizeMuffle } from './muffle-log.ts';
+import {
+  parseMuffleBenchLine,
+  parseMuffleLog,
+  percentile,
+  summarizeByTick,
+  summarizeMuffle,
+} from './muffle-log.ts';
 
 const GOOD =
   'muffle-bench line speaker=MuffleBench00 tick=1200 listeners=14 reads=86 capHit=false ns=5400';
@@ -84,6 +90,57 @@ describe('percentile', () => {
   it('returns the only value of a one-item list for every p', () => {
     expect(percentile([7], 50)).toBe(7);
     expect(percentile([7], 95)).toBe(7);
+  });
+});
+
+/** One fixture log line, in the plugin's format, for a given speaker, tick, reads and ns. */
+const fixture = (speaker: number, tick: number, reads: number, ns: number): string =>
+  `[12:00:00 INFO]: [GeldarCore] muffle-bench line speaker=MuffleBench0${speaker} tick=${tick} ` +
+  `listeners=8 reads=${reads} capHit=false ns=${ns}`;
+
+describe('summarizeByTick', () => {
+  // Tick 100 holds a 3-speaker burst (3 lines), tick 101 one line, tick 102 two lines and the worst ns.
+  const text = [
+    fixture(0, 100, 10, 1000),
+    fixture(1, 100, 20, 2000),
+    fixture(2, 100, 30, 3000),
+    fixture(0, 101, 5, 500),
+    fixture(0, 102, 8, 4000),
+    fixture(1, 102, 8, 4000),
+  ].join('\n');
+
+  it('totals each tick: lines, summed reads and summed ns', () => {
+    const summary = summarizeByTick(parseMuffleLog(text));
+    expect(summary.ticks).toBe(3);
+    expect(summary.linesPerTick).toEqual({ p50: 2, p95: 3, max: 3 });
+    expect(summary.readsPerTick).toEqual({ p50: 16, p95: 60, max: 60 });
+    expect(summary.nsPerTick).toEqual({ p50: 6000, p95: 8000, max: 8000 });
+  });
+
+  it('reports the worst tick by summed ns', () => {
+    const summary = summarizeByTick(parseMuffleLog(text));
+    expect(summary.worst).toEqual({ tick: 102, lines: 2, reads: 16, ns: 8000 });
+  });
+
+  it('counts a burst tick as one tick with every speaker line in it', () => {
+    const burst = summarizeByTick(parseMuffleLog(text.split('\n').slice(0, 3).join('\n')));
+    expect(burst.ticks).toBe(1);
+    expect(burst.worst).toEqual({ tick: 100, lines: 3, reads: 60, ns: 6000 });
+  });
+
+  it('breaks an ns tie by the lowest tick number', () => {
+    const tied = [fixture(0, 205, 1, 700), fixture(0, 200, 1, 700), fixture(0, 210, 1, 100)];
+    expect(summarizeByTick(parseMuffleLog(tied.join('\n'))).worst?.tick).toBe(200);
+  });
+
+  it('is empty for no lines, with null stats and no worst tick', () => {
+    expect(summarizeByTick([])).toEqual({
+      ticks: 0,
+      linesPerTick: null,
+      readsPerTick: null,
+      nsPerTick: null,
+      worst: null,
+    });
   });
 });
 

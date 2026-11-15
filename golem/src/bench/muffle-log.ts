@@ -82,3 +82,53 @@ export function summarizeMuffle(records: readonly MuffleBenchLine[]): MuffleSumm
     capHit: records.filter((r) => r.capHit).length,
   };
 }
+
+/** One server tick: how many bench lines it logged, and their summed reads and ns. */
+export interface TickTotal {
+  tick: number;
+  lines: number;
+  reads: number;
+  ns: number;
+}
+
+/**
+ * Per-tick aggregation. The `*PerTick` stats are taken across ticks: p50, p95 and max of each tick's
+ * line count, summed reads and summed ns. `worst` is the tick with the largest summed ns (the lowest tick
+ * number wins a tie), so a burst that lands K lines in one tick shows up here.
+ */
+export interface TickSummary {
+  ticks: number;
+  linesPerTick: Stats | null;
+  readsPerTick: Stats | null;
+  nsPerTick: Stats | null;
+  worst: TickTotal | null;
+}
+
+/** Groups the records by tick and totals each tick. Pure. */
+export function totalsByTick(records: readonly MuffleBenchLine[]): TickTotal[] {
+  const byTick = new Map<number, TickTotal>();
+  for (const r of records) {
+    const total = byTick.get(r.tick) ?? { tick: r.tick, lines: 0, reads: 0, ns: 0 };
+    total.lines += 1;
+    total.reads += r.reads;
+    total.ns += r.ns;
+    byTick.set(r.tick, total);
+  }
+  return [...byTick.values()].sort((a, b) => a.tick - b.tick);
+}
+
+/** Per-tick aggregation of a log: the stats of each tick's totals, and the worst tick by summed ns. */
+export function summarizeByTick(records: readonly MuffleBenchLine[]): TickSummary {
+  const totals = totalsByTick(records);
+  let worst: TickTotal | null = null;
+  for (const t of totals) {
+    if (worst === null || t.ns > worst.ns) worst = t;
+  }
+  return {
+    ticks: totals.length,
+    linesPerTick: statsOf(totals.map((t) => t.lines)),
+    readsPerTick: statsOf(totals.map((t) => t.reads)),
+    nsPerTick: statsOf(totals.map((t) => t.ns)),
+    worst,
+  };
+}

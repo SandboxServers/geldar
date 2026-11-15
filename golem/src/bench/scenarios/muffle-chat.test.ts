@@ -5,11 +5,13 @@ import {
   BENCH_RCON_PORT,
   type BotSession,
   benchName,
+  chatSchedule,
   FILL_TRIES,
   type MuffleDeps,
   muffleLayout,
   parseSeq,
   runMuffleChat,
+  sendGroups,
   THROWAWAY_FLAG,
   WALLS,
 } from './muffle-chat.ts';
@@ -27,8 +29,13 @@ interface FakeOptions {
 }
 
 /** A fake RCON source and bot starter. Records every command, in order. */
-function fakeDeps(opts: FakeOptions = {}): { deps: MuffleDeps; commands: string[] } {
+function fakeDeps(opts: FakeOptions = {}): {
+  deps: MuffleDeps;
+  commands: string[];
+  chats: { speaker: string; message: string }[];
+} {
   const commands: string[] = [];
+  const chats: { speaker: string; message: string }[] = [];
   let fills = 0;
   let starts = 0;
   const deps: MuffleDeps = {
@@ -51,11 +58,12 @@ function fakeDeps(opts: FakeOptions = {}): { deps: MuffleDeps; commands: string[
     startBot: async (spot): Promise<BotSession> => {
       starts += 1;
       if (opts.startFailsAt === starts) throw new Error('bot refused');
-      const bot = { username: spot.name, on: () => undefined, chat: () => undefined };
+      const chat = (message: string) => chats.push({ speaker: spot.name, message });
+      const bot = { username: spot.name, on: () => undefined, chat };
       return { bot: bot as never, stop: async () => undefined };
     },
   };
-  return { deps, commands };
+  return { deps, commands, chats };
 }
 
 const CFG = {
@@ -239,6 +247,216 @@ describe('runMuffleChat commands', () => {
     for (const spot of muffleLayout(9).spots) {
       expect(commands).toContain(`whitelist remove ${spot.name}`);
     }
+  });
+});
+
+/** Straight-line distance between two layout points, to 2 places, as the layout reports it. */
+const between = (a: { x: number; z: number }, b: { x: number; z: number }) =>
+  Math.round(Math.hypot(a.x - b.x, a.z - b.z) * 100) / 100;
+
+describe('muffleLayout with speakers', () => {
+  it('places 9 bots as 3 speakers and 6 listeners: the origin, z 2 and z -2', () => {
+    const layout = muffleLayout(9, 3);
+    expect(layout.speakers).toBe(3);
+    expect(layout.spots).toHaveLength(9);
+    const speakers = layout.spots.filter((s) => s.role === 'speaker');
+    expect(speakers.map((s) => [s.x, s.z])).toEqual([
+      [0, 0],
+      [0, 2],
+      [0, -2],
+    ]);
+    expect(layout.spots.slice(0, 3).every((s) => s.role === 'speaker')).toBe(true);
+    expect(layout.spots.filter((s) => s.role === 'listener')).toHaveLength(6);
+  });
+
+  it('keeps the far listeners and the sealed one when 9 bots take 3 speakers', () => {
+    const listeners = muffleLayout(9, 3).spots.filter((s) => s.role === 'listener');
+    expect(listeners.map((s) => s.distance)).toEqual([9, 13, 17, 21, 25, 31]);
+    expect(listeners.at(-1)?.blocks).toEqual([...WALLS.map((w) => w.block), 'stone']);
+  });
+
+  it('places 15 bots as 5 speakers and 10 listeners: z 0, 2, -2, 1 and -1', () => {
+    const layout = muffleLayout(15, 5);
+    expect(layout.speakers).toBe(5);
+    expect(layout.spots).toHaveLength(15);
+    expect(layout.spots.slice(0, 5).map((s) => [s.x, s.z])).toEqual([
+      [0, 0],
+      [0, 2],
+      [0, -2],
+      [0, 1],
+      [0, -1],
+    ]);
+    expect(layout.spots.filter((s) => s.role === 'listener')).toHaveLength(10);
+  });
+
+  it('has exactly the requested number of speakers, for every count from 1 to 5', () => {
+    for (const bots of [9, 15] as const) {
+      for (let k = 1; k <= 5; k++) {
+        const layout = muffleLayout(bots, k);
+        expect(layout.spots.filter((s) => s.role === 'speaker')).toHaveLength(k);
+        expect(layout.spots.filter((s) => s.role === 'listener')).toHaveLength(bots - k);
+      }
+    }
+  });
+
+  it('is the control at one speaker: the same layout as the default', () => {
+    expect(muffleLayout(9, 1)).toEqual(muffleLayout(9));
+    expect(muffleLayout(15, 1)).toEqual(muffleLayout(15));
+  });
+
+  it('keeps every listener within the 32-block raw gate of every speaker', () => {
+    for (const bots of [9, 15] as const) {
+      for (let k = 1; k <= 5; k++) {
+        const spots = muffleLayout(bots, k).spots;
+        const speakers = spots.filter((s) => s.role === 'speaker');
+        for (const listener of spots.filter((s) => s.role === 'listener')) {
+          for (const speaker of speakers) {
+            expect(between(listener, speaker)).toBeLessThanOrEqual(HEARING_RADIUS);
+          }
+        }
+      }
+    }
+  });
+
+  it('gives every speaker and listener its own unique username', () => {
+    const names = muffleLayout(15, 5).spots.map((s) => s.name);
+    expect(new Set(names).size).toBe(15);
+  });
+
+  it('refuses a speaker count outside 1 to 5', () => {
+    expect(() => muffleLayout(9, 0)).toThrow(RangeError);
+    expect(() => muffleLayout(9, 6)).toThrow(RangeError);
+    expect(() => muffleLayout(9, 1.5)).toThrow(RangeError);
+  });
+});
+
+describe('chatSchedule', () => {
+  it('bursts: every speaker sends in the same round start, for each round', () => {
+    const events = chatSchedule(3, 2, 2000, 'burst');
+    expect(events.map((e) => e.atMs)).toEqual([0, 0, 0, 2000, 2000, 2000]);
+    const groups = sendGroups(events);
+    expect(groups).toHaveLength(2);
+    expect(groups.map((g) => g.map((e) => e.speaker))).toEqual([
+      [0, 1, 2],
+      [0, 1, 2],
+    ]);
+  });
+
+  it('steps K speakers through one interval, staggered: k * interval / K', () => {
+    const round = chatSchedule(3, 1, 2000, 'steady');
+    expect(round.map((e) => e.atMs)).toEqual([0, 667, 1333]);
+    expect(sendGroups(round)).toHaveLength(3);
+  });
+
+  it('staggers every round: the next round starts one interval after the first', () => {
+    const events = chatSchedule(5, 2, 2000, 'steady');
+    const second = events.filter((e) => e.seq === 2).map((e) => e.atMs);
+    expect(second).toEqual([2000, 2400, 2800, 3200, 3600]);
+  });
+
+  it('keeps the control: one speaker, steady, one line per interval at the round start', () => {
+    expect(chatSchedule(1, 3, 2000, 'steady')).toEqual([
+      { atMs: 0, speaker: 0, seq: 1 },
+      { atMs: 2000, speaker: 0, seq: 2 },
+      { atMs: 4000, speaker: 0, seq: 3 },
+    ]);
+  });
+
+  it('sends one line per speaker per round, no more and no fewer', () => {
+    expect(chatSchedule(5, 4, 2000, 'burst')).toHaveLength(20);
+    expect(chatSchedule(3, 20, 2000, 'steady')).toHaveLength(60);
+  });
+});
+
+describe('runMuffleChat with speakers', () => {
+  const CFG_BENCH = {
+    mcHost: '127.0.0.1',
+    mcPort: 26565,
+    rconHost: '127.0.0.1',
+    rconPort: BENCH_RCON_PORT,
+  } as GolemConfig;
+
+  it('teleports the extra speakers to z 2 and z -2 of the origin', async () => {
+    const { deps, commands } = fakeDeps();
+    await runMuffleChat({
+      bots: 9,
+      speakers: 3,
+      cfg: CFG_BENCH,
+      throwawayFlag: false,
+      lines: 0,
+      intervalMs: 0,
+      deps,
+    });
+    expect(commands).toContain('tp MuffleBench01 1000 65 1002');
+    expect(commands).toContain('tp MuffleBench02 1000 65 998');
+  });
+
+  it('burst: sends K chat calls per round, one speaker line each, all K speakers', async () => {
+    const { deps, chats } = fakeDeps();
+    const result = await runMuffleChat({
+      bots: 9,
+      speakers: 3,
+      mode: 'burst',
+      cfg: CFG_BENCH,
+      throwawayFlag: false,
+      lines: 2,
+      intervalMs: 0,
+      deps,
+    });
+    expect(result.sent).toBe(6);
+    expect(chats.map((c) => c.speaker)).toEqual([
+      'MuffleBench00',
+      'MuffleBench01',
+      'MuffleBench02',
+      'MuffleBench00',
+      'MuffleBench01',
+      'MuffleBench02',
+    ]);
+    expect(chats[0]?.message).toBe('mh8a L1 alpha bravo charlie');
+    expect(chats[5]?.message).toBe('mh8a L2 alpha bravo charlie');
+  });
+
+  it('steady: each speaker sends each of its lines once', async () => {
+    const { deps, chats } = fakeDeps();
+    const result = await runMuffleChat({
+      bots: 9,
+      speakers: 3,
+      cfg: CFG_BENCH,
+      throwawayFlag: false,
+      lines: 2,
+      intervalMs: 0,
+      deps,
+    });
+    expect(result.sent).toBe(6);
+    for (const name of ['MuffleBench00', 'MuffleBench01', 'MuffleBench02']) {
+      expect(chats.filter((c) => c.speaker === name)).toHaveLength(2);
+    }
+  });
+
+  it('control: one speaker sends its lines alone, as before', async () => {
+    const { deps, chats } = fakeDeps();
+    const result = await runMuffleChat({
+      bots: 9,
+      cfg: CFG_BENCH,
+      throwawayFlag: false,
+      lines: 3,
+      intervalMs: 0,
+      deps,
+    });
+    expect(result.sent).toBe(3);
+    expect(chats.map((c) => c.speaker)).toEqual([
+      'MuffleBench00',
+      'MuffleBench00',
+      'MuffleBench00',
+    ]);
+  });
+
+  it('refuses a speaker count outside 1 to 5 before it opens any connection', async () => {
+    const { deps, commands } = fakeDeps();
+    await expect(
+      runMuffleChat({ bots: 9, speakers: 6, cfg: CFG_BENCH, throwawayFlag: false, deps }),
+    ).rejects.toThrow(RangeError);
+    expect(commands).toEqual([]);
   });
 });
 

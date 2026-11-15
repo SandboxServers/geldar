@@ -1,7 +1,20 @@
 /**
- * MH-8a muffle-chat: one speaker and N-1 listener bots on a throwaway bench shard. The bots stand at
- * known distances behind known walls, the speaker sends chat at a fixed cadence, and each listener
- * records which lines it heard. The plugin's `muffle-bench` log lines are read separately (muffle-log.ts).
+ * MH-8a muffle-chat: N bots on a throwaway bench shard, K of them speakers (default 1, the control) and
+ * N-K listeners. The bots stand at known distances behind known walls, and each listener records which
+ * (speaker, line) pairs it heard. The plugin's `muffle-bench` log lines are read separately (muffle-log.ts).
+ *
+ * Speakers: speaker 0 stands at the origin (z 0), where the one-speaker layout always stood. Speakers 1..K-1
+ * stand at x 0 on z 2, -2, 1, -1 (SPEAKER_ROWS). Each extra speaker takes the place of one of the nearest
+ * listeners, so the listeners that remain keep their known distances and walls from the origin. The
+ * listeners are SHARED: every listener is judged against every speaker, not owned by one. A listener is
+ * then at most hypot(31, 2) = 31.06 blocks from a speaker (the sealed listener against a z 2 speaker), so
+ * every pair is inside the 32-block raw gate. Walls span z -3..3 and all speakers and listeners stand at
+ * |z| <= 2, so every wall between a speaker and a listener is crossed: the wall lists are the same for every
+ * speaker. Distances from the origin are the ones in `Spot.distance`; the extra speakers shift the others.
+ *
+ * Modes: `steady` staggers the speakers inside each chat interval (speaker k starts at k * interval / K).
+ * `burst` has all K speakers send in the same server tick, back to back in one event-loop turn, once per
+ * round, to find the worst per-tick cost. K=1 steady is the control: one line per interval, as before.
  *
  * RCON whitelist/tp/fill here is a test-harness operator control on a throwaway bench shard only; it is
  * never used on a real shard. Principle 1 concerns the real world.
@@ -20,8 +33,12 @@ import { parseMspt, setTps } from '../tps.ts';
 /** The only RCON port the bench may run against without the throwaway flag. */
 export const BENCH_RCON_PORT = 26575;
 export const THROWAWAY_FLAG = '--i-know-this-is-a-throwaway';
-/** Bot counts the layout supports: the speaker plus 8 or 14 listeners. */
+/** Bot counts the layout supports. With one speaker that is 8 or 14 listeners. */
 export const BENCH_SIZES = [9, 15] as const;
+/** z of each speaker, in the order they are used. Speaker 0 is the origin. All lie inside the wall span. */
+export const SPEAKER_ROWS = [0, 2, -2, 1, -1] as const;
+export const CHAT_MODES = ['steady', 'burst'] as const;
+export type ChatMode = (typeof CHAT_MODES)[number];
 export const CHAT_LINES = 20;
 export const CHAT_INTERVAL_MS = 2_000;
 /** A fill that reports `not loaded` is retried this many times, this far apart (as arena.ts does). */
@@ -106,6 +123,8 @@ export interface Spot {
 
 export interface Layout {
   bots: number;
+  /** How many of `spots` are speakers. They come first: spots[0..speakers-1]. */
+  speakers: number;
   spots: Spot[];
   boxes: Box[];
 }
@@ -127,13 +146,16 @@ function wallBoxes(): Box[] {
   }));
 }
 
-/** The fixed layout for 9 or 15 bots. Pure: the same input gives the same spots and boxes. */
-export function muffleLayout(bots: number): Layout {
-  if (!(BENCH_SIZES as readonly number[]).includes(bots)) {
-    throw new RangeError(`bots must be 9 or 15, got ${bots}`);
-  }
-  const places: { role: Spot['role']; x: number; z: number; blocks: string[] }[] = [
-    { role: 'speaker', x: 0, z: 0, blocks: [] },
+interface Place {
+  role: Spot['role'];
+  x: number;
+  z: number;
+  blocks: string[];
+}
+
+/** The listener places of an N-bot layout with one speaker, nearest first in the row, then the sealed one. */
+function listenerPlaces(bots: number): Place[] {
+  return [
     ...LINE_X.map((x) => ({ role: 'listener' as const, x, z: 0, blocks: blocksBefore(x) })),
     ...(bots === 15
       ? LINE_X.slice(0, -1).map((x) => ({
@@ -150,6 +172,36 @@ export function muffleLayout(bots: number): Layout {
       blocks: [...blocksBefore(SEALED_X), 'stone'],
     },
   ];
+}
+
+/**
+ * The fixed layout for 9 or 15 bots with `speakers` speakers (1 to 5, fewer than the bots). Pure: the same
+ * input gives the same spots and boxes. The K-1 extra speakers take the places of the K-1 listeners nearest
+ * the origin (ties keep list order), so the rest keep their known distances.
+ */
+export function muffleLayout(bots: number, speakers = 1): Layout {
+  if (!(BENCH_SIZES as readonly number[]).includes(bots)) {
+    throw new RangeError(`bots must be 9 or 15, got ${bots}`);
+  }
+  if (!Number.isInteger(speakers) || speakers < 1 || speakers > SPEAKER_ROWS.length) {
+    throw new RangeError(`speakers must be 1 to ${SPEAKER_ROWS.length}, got ${speakers}`);
+  }
+  const listeners = listenerPlaces(bots);
+  const nearest = listeners
+    .map((p, i) => ({ i, d: Math.hypot(p.x, p.z) }))
+    .sort((a, b) => a.d - b.d || a.i - b.i)
+    .slice(0, speakers - 1)
+    .map((e) => e.i);
+  const dropped = new Set(nearest);
+  const kept = listeners.filter((_, i) => !dropped.has(i));
+  const originSpeaker: Place = { role: 'speaker', x: 0, z: 0, blocks: [] };
+  const extraSpeakers: Place[] = SPEAKER_ROWS.slice(1, speakers).map((z) => ({
+    role: 'speaker',
+    x: 0,
+    z,
+    blocks: [],
+  }));
+  const places: Place[] = [originSpeaker, ...extraSpeakers, ...kept];
   const spots: Spot[] = places.map((p, i) => ({
     name: benchName(i),
     role: p.role,
@@ -173,7 +225,47 @@ export function muffleLayout(bots: number): Layout {
       block: 'air',
     },
   ];
-  return { bots, spots, boxes };
+  return { bots, speakers, spots, boxes };
+}
+
+/** One chat line to send: which speaker (index into the speakers), its sequence number, and when (ms from start). */
+export interface ChatEvent {
+  atMs: number;
+  speaker: number;
+  seq: number;
+}
+
+/**
+ * The chat schedule for `lines` rounds. Steady: every speaker sends once per interval, speaker k starts k * interval / K
+ * after the round starts, so the sends are staggered. Burst: every speaker sends at the round start, so they
+ * share one tick. Pure. With one speaker and steady, this is one line per interval at the round start.
+ */
+export function chatSchedule(
+  speakers: number,
+  lines: number,
+  intervalMs: number,
+  mode: ChatMode,
+): ChatEvent[] {
+  const events: ChatEvent[] = [];
+  for (let seq = 1; seq <= lines; seq++) {
+    const roundStart = (seq - 1) * intervalMs;
+    for (let speaker = 0; speaker < speakers; speaker++) {
+      const offset = mode === 'steady' ? Math.round((speaker * intervalMs) / speakers) : 0;
+      events.push({ atMs: roundStart + offset, speaker, seq });
+    }
+  }
+  return events;
+}
+
+/** Groups a schedule into the sends that share a start time: each group is one event-loop turn of chat calls. */
+export function sendGroups(events: readonly ChatEvent[]): ChatEvent[][] {
+  const groups: ChatEvent[][] = [];
+  for (const event of events) {
+    const last = groups[groups.length - 1];
+    if (last && last[0]?.atMs === event.atMs) last.push(event);
+    else groups.push([event]);
+  }
+  return groups;
 }
 
 /** A chat line's sequence number, or null when the message is not a bench line. */
@@ -225,8 +317,13 @@ const DEFAULT_DEPS: MuffleDeps = {
 
 export interface MuffleRunOptions {
   bots: number;
+  /** Speakers, 1 (the control) to 5. Default 1. */
+  speakers?: number;
+  /** Default steady. */
+  mode?: ChatMode;
   cfg: GolemConfig;
   throwawayFlag: boolean;
+  /** Lines per speaker. */
   lines?: number;
   intervalMs?: number;
   log?: (line: string) => void;
@@ -235,13 +332,16 @@ export interface MuffleRunOptions {
 
 export interface MuffleRunResult {
   layout: Layout;
+  /** Lines sent in total: lines per speaker times the speakers. */
   sent: number;
-  /** Distinct chat lines each listener heard, by bot name. */
+  /** Distinct (speaker, line) pairs each listener heard, by bot name. */
   heard: Record<string, number>;
   mspt: number | null;
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+/** Waits until the clock reads `at` (a Date.now() value). Returns at once when it has passed. */
+const sleepUntil = (at: number): Promise<void> => sleep(Math.max(0, at - Date.now()));
 
 /**
  * Force-loads the layout, then runs every fill of the layout. A fill that reports `not loaded` is retried
@@ -275,7 +375,8 @@ export async function buildLayout(ctl: TestControl, layout: Layout): Promise<voi
 /** Builds the world with fill, admits and places the bots, sends the chat and tallies what each listener heard. */
 export async function runMuffleChat(opts: MuffleRunOptions): Promise<MuffleRunResult> {
   assertThrowawayTarget(opts.cfg.rconPort, opts.throwawayFlag);
-  const layout = muffleLayout(opts.bots);
+  const layout = muffleLayout(opts.bots, opts.speakers ?? 1);
+  const mode = opts.mode ?? 'steady';
   const log = opts.log ?? (() => undefined);
   const deps = opts.deps ?? DEFAULT_DEPS;
   const rcon = await deps.connect(opts.cfg);
@@ -298,27 +399,36 @@ export async function runMuffleChat(opts: MuffleRunOptions): Promise<MuffleRunRe
     for (const spot of layout.spots) {
       await ctl.tp(spot.name, ORIGIN.x + spot.x, STAND_Y, ORIGIN.z + spot.z);
     }
-    const heard = new Map<string, Set<number>>();
-    const speaker = bots[0] as Bot;
-    layout.spots.slice(1).forEach((spot, i) => {
-      const seen = new Set<number>();
+    const heard = new Map<string, Set<string>>();
+    const speakers = bots.slice(0, layout.speakers);
+    const speakerNames = new Set(layout.spots.slice(0, layout.speakers).map((s) => s.name));
+    layout.spots.slice(layout.speakers).forEach((spot, i) => {
+      const seen = new Set<string>();
       heard.set(spot.name, seen);
-      (bots[i + 1] as Bot).on('chat', (username: string, message: string) => {
-        const seq = username === speaker.username ? parseSeq(message) : null;
-        if (seq !== null) seen.add(seq);
+      (bots[layout.speakers + i] as Bot).on('chat', (username: string, message: string) => {
+        const seq = speakerNames.has(username) ? parseSeq(message) : null;
+        if (seq !== null) seen.add(`${username}#${seq}`);
       });
     });
     const lines = opts.lines ?? CHAT_LINES;
-    for (let seq = 1; seq <= lines; seq++) {
-      speaker.chat(`mh8a L${seq} alpha bravo charlie`);
-      await sleep(opts.intervalMs ?? CHAT_INTERVAL_MS);
+    const interval = opts.intervalMs ?? CHAT_INTERVAL_MS;
+    const start = Date.now();
+    for (const group of sendGroups(chatSchedule(layout.speakers, lines, interval, mode))) {
+      await sleepUntil(start + (group[0]?.atMs ?? 0));
+      // One group is one event-loop turn: its chat calls are back to back, with no await between them.
+      for (const event of group) {
+        (speakers[event.speaker] as Bot).chat(`mh8a L${event.seq} alpha bravo charlie`);
+      }
     }
-    await sleep(opts.intervalMs ?? CHAT_INTERVAL_MS);
+    await sleepUntil(start + lines * interval + interval);
     const mspt = parseMspt(await ctl.tickQuery());
-    log(`sent ${lines} lines to ${layout.spots.length - 1} listeners`);
+    const sent = lines * layout.speakers;
+    log(
+      `sent ${sent} lines from ${layout.speakers} speakers (${mode}) to ${layout.spots.length - layout.speakers} listeners`,
+    );
     return {
       layout,
-      sent: lines,
+      sent,
       heard: Object.fromEntries([...heard].map(([name, seen]) => [name, seen.size])),
       mspt,
     };
