@@ -673,7 +673,7 @@ describe('findPublicPorts: the public Minecraft overlay (C2-07a2)', () => {
     expect(literal).toEqual([expect.stringContaining('must start with 127.0.0.1:')]);
     const other = reasons(
       PUBLIC_OVERLAY_PATH,
-      overlay('velocity', '${GELDAR_MC_BIND}:25565:25565'),
+      overlay('velocity', `\${GELDAR_MC_BIND}:25565:25565`),
     );
     expect(other.join('\n')).toContain('uses interpolation');
     const two = `${overlay('velocity', PUBLIC_OVERLAY_PORT)}      - "0.0.0.0:1:1"\n`;

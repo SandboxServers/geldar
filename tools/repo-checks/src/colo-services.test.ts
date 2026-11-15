@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
+import { resolveComposePorts } from './compose-port-defaults.ts';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
@@ -180,7 +181,7 @@ describe('compose/colo.yml: every service has its caps (decision 0082)', () => {
   it('publishes no database or NATS port; Velocity is the only listener and keeps 127.0.0.1:25567', () => {
     expect(colo.services.postgres).not.toHaveProperty('ports');
     expect(colo.services.nats).not.toHaveProperty('ports');
-    expect(colo.services.velocity?.ports).toEqual(['127.0.0.1:25567:25565']);
+    expect(resolveComposePorts(colo.services.velocity?.ports)).toEqual(['127.0.0.1:25567:25565']);
   });
 });
 
@@ -190,7 +191,7 @@ const players = colo.services['players-host'] ?? {};
 
 describe('compose/colo.yml: the MCP service (C1-11a)', () => {
   it('publishes only the loopback MCP port, as a literal (the loopback rule rejects interpolation)', () => {
-    expect(mcp.ports).toEqual(['127.0.0.1:8788:8788']);
+    expect(resolveComposePorts(mcp.ports)).toEqual(['127.0.0.1:8788:8788']);
   });
 
   it('takes its image from a deploy variable, built from threshold/mcp/Dockerfile offline', () => {
@@ -235,7 +236,7 @@ describe('compose/colo.yml: the MCP service (C1-11a)', () => {
 describe('compose/colo.yml: the player host (C1-11a)', () => {
   it('runs the player entry point of the Body image, with the player id as a compose variable', () => {
     expect(players.entrypoint).toEqual(['node', 'src/players/main.ts']);
-    expect(players.command).toEqual(['--player', '${GELDAR_PLAYER_ID:-}']);
+    expect(players.command).toEqual(['--player', `\${GELDAR_PLAYER_ID:-}`]);
     expect(players.image).toBe(composeDefault('GELDAR_BODY_IMAGE', 'geldar-body:c1'));
   });
 
@@ -266,7 +267,7 @@ describe('compose/colo.yml: the player host (C1-11a)', () => {
       { source: 'nats-deploy', target: 'nats-deploy.txt' },
     ]);
     expect(notice.secrets['nats-deploy']).toEqual({
-      file: '${GELDAR_SECRETS_DIR}/nats-deploy.txt',
+      file: `\${GELDAR_SECRETS_DIR}/nats-deploy.txt`,
     });
   });
 
@@ -295,7 +296,7 @@ const glass = colo.services.glass ?? {};
 
 describe('compose/colo.yml: the Glass service (C2-07a2)', () => {
   it('publishes only the loopback Glass port, as a literal', () => {
-    expect(glass.ports).toEqual(['127.0.0.1:8787:8787']);
+    expect(resolveComposePorts(glass.ports)).toEqual(['127.0.0.1:8787:8787']);
   });
 
   it('takes its image from GELDAR_GLASS_IMAGE (the release manifest value)', () => {
@@ -366,7 +367,7 @@ describe('compose/colo.yml: the BlueMap static server (C2-07c1, ruling R27)', ()
   });
 
   it('publishes only the literal loopback port', () => {
-    expect(bluemapWeb.ports).toEqual(['127.0.0.1:8100:8100']);
+    expect(resolveComposePorts(bluemapWeb.ports)).toEqual(['127.0.0.1:8100:8100']);
   });
 
   it('mounts only a read only subpath of the Paper volume under bluemap/, never the whole volume (R28)', () => {
@@ -508,11 +509,11 @@ describe('sql: the register start credits (C2-R5 F3, F20)', () => {
 describe('compose/colo.yml: the register service (C2-08c)', () => {
   it('is behind the register profile, so no default up starts it, and the kill switch defaults to on', () => {
     expect(register.profiles).toEqual(['register']);
-    expect(env(register).REGISTER_KILL_SWITCH).toBe('${REGISTER_KILL_SWITCH:-true}');
+    expect(env(register).REGISTER_KILL_SWITCH).toBe(`\${REGISTER_KILL_SWITCH:-true}`);
   });
 
   it('publishes only the loopback register port, as a literal', () => {
-    expect(register.ports).toEqual(['127.0.0.1:18090:8090']);
+    expect(resolveComposePorts(register.ports)).toEqual(['127.0.0.1:18090:8090']);
   });
 
   it('does not publish register on 8090, which another tenant holds on the shared node (decision 0150)', () => {
@@ -548,11 +549,11 @@ describe('compose/colo.yml: the register service (C2-08c)', () => {
 
   it('signs in with Microsoft only: the Entra app and the session key come from env and files, no GitHub or Discord', () => {
     const vars = env(register);
-    expect(vars.REGISTER_MS_CLIENT_ID).toBe('${REGISTER_MS_CLIENT_ID:-}');
+    expect(vars.REGISTER_MS_CLIENT_ID).toBe(`\${REGISTER_MS_CLIENT_ID:-}`);
     expect(vars.REGISTER_MS_CLIENT_SECRET_FILE).toBe('/run/secrets/register-ms-secret');
     expect(vars.REGISTER_SESSION_KEY_FILE).toBe('/run/secrets/register-session-key');
     expect(vars.REGISTER_PUBLIC_URL).toBe(
-      '${REGISTER_PUBLIC_URL:-https://register.example.invalid}',
+      `\${REGISTER_PUBLIC_URL:-https://register.example.invalid}`,
     );
     expect(Object.keys(vars).join(' ')).not.toMatch(/GITHUB|DISCORD/);
     expect((register.secrets as string[]).join(' ')).not.toMatch(/github|discord/i);
@@ -620,7 +621,7 @@ describe('compose/colo.yml: BlueMap in Paper (C2-07o)', () => {
   it('mounts the verified BlueMap jar and its config read-only', () => {
     expect(volumes).toContainEqual({
       type: 'bind',
-      source: '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/bluemap/bluemap.jar',
+      source: `\${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/bluemap/bluemap.jar`,
       target: '/plugins/bluemap.jar',
       read_only: true,
     });
@@ -634,7 +635,7 @@ describe('compose/colo.yml: Chunky in Paper (pregeneration)', () => {
   it('mounts the verified Chunky jar read-only and nothing else of Chunky', () => {
     expect(volumes).toContainEqual({
       type: 'bind',
-      source: '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/chunky/chunky.jar',
+      source: `\${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/chunky/chunky.jar`,
       target: '/plugins/chunky.jar',
       read_only: true,
     });
@@ -648,7 +649,7 @@ describe('compose/colo.yml: CoreProtect in Paper (block owner records)', () => {
   it('mounts the verified CoreProtect jar read-only and no CoreProtect data or config path', () => {
     expect(volumes).toContainEqual({
       type: 'bind',
-      source: '${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/coreprotect/coreprotect.jar',
+      source: `\${GELDAR_STATE_DIR:-/var/lib/geldar-colo}/coreprotect/coreprotect.jar`,
       target: '/plugins/coreprotect.jar',
       read_only: true,
     });
