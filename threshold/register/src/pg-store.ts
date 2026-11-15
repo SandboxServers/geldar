@@ -191,8 +191,10 @@ export class PgStore implements Store, SessionStore {
       await client.query('ROLLBACK').catch(() => undefined);
       const { code, message } = error as { code?: string; message?: string };
       const text = String(message);
-      // The roster function names itself in its messages; the agent's own 23505 is a taken player id.
-      if (text.includes('register_roster_add')) {
+      // The roster function names itself in its messages. Two owners racing for one new name: the second insert
+      // fails on the mcp_roster key (the database's own message), so that key is the roster signal too. The agent's
+      // own 23505 names the player key and stays a taken player id.
+      if (text.includes('register_roster_add') || text.includes('mcp_roster_pkey')) {
         if (code === '22023') return 'name';
         if (code === '23505') return 'name_taken';
         throw error;

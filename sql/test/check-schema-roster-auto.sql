@@ -12,6 +12,7 @@ DECLARE
   h_own BYTEA := decode(repeat('d1', 32), 'hex');
   h_other BYTEA := decode(repeat('d2', 32), 'hex');
   h_ban BYTEA := decode(repeat('d3', 32), 'hex');
+  h_erase BYTEA := sha256(convert_to('ra-erase-identity', 'UTF8'));
 BEGIN
   step := 'function exists, is SECURITY DEFINER, pins search_path';
   SELECT p.prosecdef, p.proconfig INTO r
@@ -27,6 +28,10 @@ BEGIN
   END IF;
   IF NOT has_function_privilege('geldar_register', 'register_roster_add(bytea, text)', 'EXECUTE') THEN
     RAISE EXCEPTION 'schema check (%): geldar_register cannot execute register_roster_add', step;
+  END IF;
+  IF has_function_privilege('geldar_mcp', 'register_roster_add(bytea, text)', 'EXECUTE')
+    OR has_function_privilege('geldar_supervisor', 'register_roster_add(bytea, text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'schema check (%): geldar_mcp or geldar_supervisor can execute register_roster_add', step;
   END IF;
 
   step := 'a display name outside 3 to 16 letters, digits or underscore is refused before any lookup';
@@ -86,9 +91,18 @@ BEGIN
   IF n <> 2 THEN
     RAISE EXCEPTION 'schema check (%): expected 2 roster rows for ra-own, found %', step, n;
   END IF;
-  SELECT count(*) INTO n FROM register_audit WHERE actor = 'ra-own' AND action = 'roster.add';
+  SELECT count(*) INTO n FROM register_audit WHERE actor = left(encode(sha256(convert_to('ra-own', 'UTF8')), 'hex'), 16) AND action = 'roster.add';
   IF n <> 3 THEN
-    RAISE EXCEPTION 'schema check (%): expected 3 roster.add audit rows for ra-own, found %', step, n;
+    RAISE EXCEPTION 'schema check (%): expected 3 roster.add audit rows for ra-own under the hashed actor, found %', step, n;
+  END IF;
+  SELECT count(*) INTO n FROM register_audit WHERE actor = 'ra-own';
+  IF n <> 0 THEN
+    RAISE EXCEPTION 'schema check (%): the raw owner id is the audit actor (%)', step, n;
+  END IF;
+  SELECT count(*) INTO n FROM register_audit WHERE action = 'roster.add' AND actor = left(encode(sha256(convert_to('ra-own', 'UTF8')), 'hex'), 16)
+    AND (target <> 'roster' OR detail <> '');
+  IF n <> 0 THEN
+    RAISE EXCEPTION 'schema check (%): a roster.add audit row carries a name (target or detail is not the fixed empty pair)', step;
   END IF;
 
   step := 'a name held by another owner is refused 23505, the row keeps its owner and nothing is audited for the other owner';
@@ -105,7 +119,7 @@ BEGIN
   IF owner_txt IS DISTINCT FROM 'ra-own' THEN
     RAISE EXCEPTION 'schema check (%): the held name changed owner to %', step, owner_txt;
   END IF;
-  SELECT count(*) INTO n FROM register_audit WHERE actor = 'ra-other';
+  SELECT count(*) INTO n FROM register_audit WHERE actor = left(encode(sha256(convert_to('ra-other', 'UTF8')), 'hex'), 16);
   IF n <> 0 THEN
     RAISE EXCEPTION 'schema check (%): a refused call wrote an audit row', step;
   END IF;
@@ -126,7 +140,7 @@ BEGIN
   END IF;
 
   step := 'names of 2, 17, with a space, a hyphen, a non-ASCII letter, or empty are refused 22023 for a valid owner';
-  FOREACH nm IN ARRAY ARRAY['ab', 'abcdefghijklmnopq', 'a b c', 'ab-cd', 'abc' || chr(233), ''] LOOP
+  FOREACH nm IN ARRAY ARRAY['ab', 'abcdefghijklmnopq', 'a b c', 'ab-cd', 'abc' || chr(233), '', ' abc', 'abc ', 'abc' || chr(10), NULL] LOOP
     refused := false;
     BEGIN
       PERFORM register_roster_add(h_own, nm);
@@ -201,6 +215,39 @@ BEGIN
   SELECT count(*) INTO n FROM agents WHERE owner = 'ra-other' AND name = 'abc';
   IF n <> 0 THEN
     RAISE EXCEPTION 'schema check (%): the refused create left an agent row', step;
+  END IF;
+
+  step := 'erasure (decision 0171, 0039 and 0040): a roster add then an account delete leaves no roster row, no raw owner id in the audit, and no name in any audit row (the hashed actor row may remain, append-only)';
+  INSERT INTO mcp_owners (owner_id, display, player_cap, is_admin) VALUES ('ra-erase', 'ra erase', 3, false);
+  INSERT INTO mcp_identities (identity_hash, provider, owner_id, banned_at) VALUES (h_erase, 'microsoft', 'ra-erase', NULL);
+  PERFORM register_create_player(h_erase, 'ag-ra-e1', 'ag_ra_e1', 'ra_erase', 'harness-x', 'main', 'ra_te1',
+    decode(repeat('e6', 32), 'hex'));
+  PERFORM register_roster_add(h_erase, 'ra_erase');
+  IF NOT register_account_delete(h_erase) THEN
+    RAISE EXCEPTION 'schema check (%): the delete of ra-erase returned false', step;
+  END IF;
+  SELECT count(*) INTO n FROM mcp_roster WHERE owner_id = 'ra-erase';
+  IF n <> 0 THEN
+    RAISE EXCEPTION 'schema check (%): the erased owner left % roster rows', step, n;
+  END IF;
+  SELECT count(*) INTO n FROM register_audit WHERE actor = 'ra-erase';
+  IF n <> 0 THEN
+    RAISE EXCEPTION 'schema check (%): the raw owner id is in the audit after erasure (%)', step, n;
+  END IF;
+  SELECT count(*) INTO n FROM register_audit
+    WHERE target ILIKE '%ra_erase%' OR detail ILIKE '%ra_erase%' OR target = 'ra-erase' OR detail = 'ra-erase';
+  IF n <> 0 THEN
+    RAISE EXCEPTION 'schema check (%): an audit row carries the name or the raw owner id (%)', step, n;
+  END IF;
+  SELECT count(*) INTO n FROM register_audit
+    WHERE actor = left(encode(sha256(convert_to('ra-erase', 'UTF8')), 'hex'), 16) AND (target <> 'roster' OR detail <> '');
+  IF n <> 0 THEN
+    RAISE EXCEPTION 'schema check (%): the hashed actor row of ra-erase carries a name', step;
+  END IF;
+  SELECT count(*) INTO n FROM register_audit
+    WHERE actor = left(encode(sha256(convert_to('ra-erase', 'UTF8')), 'hex'), 16) AND action = 'roster.add';
+  IF n <> 1 THEN
+    RAISE EXCEPTION 'schema check (%): expected the one roster.add row of ra-erase to remain under its hashed actor, found %', step, n;
   END IF;
 
   RAISE NOTICE 'check-schema-roster-auto: all steps passed';

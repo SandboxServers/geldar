@@ -8,7 +8,8 @@
 -- the roster row keyed on the lower-cased name. The display name keeps its case in mcp_players, not
 -- here. Idempotent: the same owner and name writes nothing and raises nothing. A name held by another
 -- owner raises 23505 and leaves the row as it was. One register_audit row per successful call, with
--- the owner id, the action and the name only. The per-owner agent cap is the existing trigger 0006
+-- the owner's hashed id (the 0032 expression, never the raw owner id), the action, and the fixed target
+-- 'roster' with an empty detail: no name (decision 0261, audit rows). The per-owner agent cap is the existing trigger 0006
 -- on mcp_players (player_cap, default 3); this migration does not change it.
 --
 -- Additive: it adds the function and its grants only. It drops and changes no column.
@@ -42,7 +43,7 @@ BEGIN
   END IF;
   -- One audit row per successful create, including the idempotent case. A refused call raised above and wrote nothing.
   INSERT INTO public.register_audit (actor, action, target, outcome, admin, detail)
-    VALUES (who, 'roster.add', key, 'ok', false, p_player_name);
+    VALUES (left(encode(sha256(convert_to(who, 'UTF8')), 'hex'), 16), 'roster.add', 'roster', 'ok', false, '');
 END
 $roster$;
 

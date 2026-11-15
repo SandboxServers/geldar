@@ -29,12 +29,13 @@ function fakeDb(failures: Record<string, unknown>): FakeDb {
     if (key !== undefined) throw failures[key];
     return { rows: [] };
   };
+  const releases: number[] = [];
   const store = new PgStore('postgres://user@127.0.0.1:1/none', { shard: 's1' });
   (store as unknown as { pool: unknown }).pool = {
     query: run,
-    connect: async () => ({ query: run, release: () => undefined }),
+    connect: async () => ({ query: run, release: () => releases.push(1) }),
   };
-  return { store, sql, args, tx };
+  return { store, sql, args, tx, releases };
 }
 
 /** A PgStore whose every statement rejects with `error`, and the statements are kept. */
@@ -99,6 +100,55 @@ describe('PgStore error mapping', () => {
     });
     expect(await db.store.createPlayer(request)).toBe('name_taken');
     expect(db.tx).toEqual(['BEGIN', 'ROLLBACK']);
+  });
+
+  it('createPlayer answers name_taken when two owners race for one new name (the mcp_roster key fails the second insert)', async () => {
+    const db = fakeDb({
+      register_roster_add: {
+        code: '23505',
+        message: 'duplicate key value violates unique constraint "mcp_roster_pkey"',
+      },
+    });
+    expect(await db.store.createPlayer(request)).toBe('name_taken');
+    expect(db.tx).toEqual(['BEGIN', 'ROLLBACK']);
+  });
+
+  it('createPlayer keeps taken for a 23505 on the agent key, not the roster key', async () => {
+    const db = fakeDb({
+      register_create_player: {
+        code: '23505',
+        message: 'duplicate key value violates unique constraint "mcp_players_pkey"',
+      },
+    });
+    expect(await db.store.createPlayer(request)).toBe('taken');
+    expect(db.tx).toEqual(['BEGIN', 'ROLLBACK']);
+  });
+
+  it('createPlayer releases the client once on every outcome, including a rethrown error', async () => {
+    const ok = fakeDb({});
+    expect(await ok.store.createPlayer(request)).toBe('ok');
+    expect(ok.releases).toEqual([1]);
+    const taken = fakeDb({
+      register_roster_add: {
+        code: '23505',
+        message: 'register_roster_add: the name is held by another owner',
+      },
+    });
+    expect(await taken.store.createPlayer(request)).toBe('name_taken');
+    expect(taken.releases).toEqual([1]);
+    const cap = fakeDb({
+      register_create_player: {
+        code: '23514',
+        message: 'owner o is at the cap of 3 sovereign players',
+      },
+    });
+    expect(await cap.store.createPlayer(request)).toBe('cap');
+    expect(cap.releases).toEqual([1]);
+    const rethrown = fakeDb({
+      register_roster_add: { code: '42501', message: 'register_roster_add: banned' },
+    });
+    await expect(rethrown.store.createPlayer(request)).rejects.toMatchObject({ code: '42501' });
+    expect(rethrown.releases).toEqual([1]);
   });
 
   it('createPlayer rolls back and answers name for a roster name outside the login shape', async () => {

@@ -262,6 +262,20 @@ describe('player creation and the once-only token', () => {
     }
     expect(store.players.size).toBe(2);
   });
+
+  it('answers the form with the taken-name text when the store refuses a name another owner holds, and no token for a name the database refuses', async () => {
+    await start();
+    const s = (await signIn()).session as Session;
+    const override = store as unknown as { createPlayer: () => Promise<string> };
+    override.createPlayer = async () => 'name_taken';
+    expect(await (await post('/register/players', s, newPlayer('ag-nt-01'))).text()).toContain(
+      'That agent name is already taken.',
+    );
+    override.createPlayer = async () => 'name';
+    expect(tokenIn(await (await post('/register/players', s, newPlayer('ag-nt-02'))).text())).toBe(
+      '',
+    );
+  });
 });
 
 describe('list, mint and retire', () => {

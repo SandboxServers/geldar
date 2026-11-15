@@ -83,7 +83,7 @@ export function accountPage(
     '/register/players',
     csrf,
     `<label>Player id <input name="player_id" pattern="ag-[a-z0-9]+(-[a-z0-9]+)*" required></label>
-<label>Display name <input name="name" maxlength="32" required></label>
+<label>Display name <input name="name" maxlength="16" pattern="[A-Za-z0-9_]{3,16}" title="3 to 16 letters, digits or underscore" required></label>
 <label>Harness <select name="harness">${options}</select></label>
 <button type="submit">Create player</button>`,
   );
