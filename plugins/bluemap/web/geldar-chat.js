@@ -276,12 +276,25 @@
     return { root, list };
   }
 
+  // Adds the panel's stylesheet unless the page already links one. BlueMap rewrites settings.json on every Paper
+  // restart and resets its "styles" list, so the script loads assets/geldar.css itself. Returns true when it added
+  // the link.
+  function ensureStyles(doc) {
+    if (doc.querySelector('link[href*="geldar.css"]')) return false;
+    const link = doc.createElement('link');
+    link.setAttribute('rel', 'stylesheet');
+    link.setAttribute('href', 'assets/geldar.css');
+    (doc.head || doc.body).appendChild(link);
+    return true;
+  }
+
   // Builds the panel and starts the poll loop. The fetch and the timer are injectable for tests.
   function start(
     doc,
     fetchFn = (url, opts) => fetch(url, opts),
     schedule = (fn, ms) => setTimeout(fn, ms),
   ) {
+    ensureStyles(doc);
     let state = null;
     const panel = buildPanel(doc, () => {
       if (state) followBottom(state);
@@ -321,6 +334,7 @@
       runLoop,
       start,
       buildPanel,
+      ensureStyles,
       NEUTRAL,
       MAX_ROWS,
       POLL_MS,
