@@ -6,13 +6,14 @@ import org.bukkit.Bukkit;
 import org.bukkit.plugin.Plugin;
 
 /**
- * Turns on the speech bubbles (decision 0197) when BlueMap is enabled: a chat listener, the expiry task and the
- * BlueMap marker writer. Without BlueMap nothing is registered. {@link #register} never throws; a missing BlueMap
- * class or any other failure leaves the feature off and logs why.
+ * Turns on the live chat feed (decision 0310) when BlueMap is enabled: a chat listener and the periodic async writer
+ * of the feed file into the BlueMap web root. It replaces the speech bubbles (decision 0197). Without BlueMap nothing
+ * is registered. {@link #register} never throws; a missing BlueMap class or any other failure leaves the feature off
+ * and logs why.
  */
 public final class SpeechSetup {
-    /** How often expired bubbles are removed, in ticks (one second). */
-    static final long SWEEP_TICKS = 20L;
+    /** How often the feed file is written if it changed, in ticks (one second). */
+    static final long FLUSH_TICKS = 20L;
 
     private SpeechSetup() {
     }
@@ -21,20 +22,19 @@ public final class SpeechSetup {
         Logger log = plugin.getLogger();
         try {
             if (!Bukkit.getPluginManager().isPluginEnabled("BlueMap")) {
-                log.info("BlueMap is not enabled; speech bubbles are off");
+                log.info("BlueMap is not enabled; the chat feed is off");
                 return;
             }
-            SpeechMarkers markers = new SpeechMarkers();
-            SpeechBubbles bubbles = new SpeechBubbles(new BubbleBook(), markers, log);
-            BlueMapAPI.onEnable(markers::attach);
-            BlueMapAPI.onDisable(api -> markers.detach());
-            plugin.getServer().getPluginManager().registerEvents(new SpeechChatListener(plugin, bubbles, log), plugin);
-            plugin.getServer().getScheduler().runTaskTimer(plugin,
-                    () -> bubbles.expire(System.currentTimeMillis()), SWEEP_TICKS, SWEEP_TICKS);
+            ChatFeedWriter feed = new ChatFeedWriter(log);
+            BlueMapAPI.onEnable(feed::attach);
+            BlueMapAPI.onDisable(api -> feed.detach());
+            plugin.getServer().getPluginManager().registerEvents(new SpeechChatListener(feed, log), plugin);
+            plugin.getServer().getScheduler().runTaskTimerAsynchronously(plugin, feed::flushIfDirty,
+                    FLUSH_TICKS, FLUSH_TICKS);
         } catch (LinkageError e) {
-            log.warning("BlueMap API is not on the classpath; speech bubbles are off");
+            log.warning("BlueMap API is not on the classpath; the chat feed is off");
         } catch (RuntimeException e) {
-            log.warning("speech bubbles are off: " + e.getClass().getSimpleName());
+            log.warning("chat feed is off: " + e.getClass().getSimpleName());
         }
     }
 }

@@ -16,6 +16,7 @@ import {
   addPlayer,
   loadSovereignShard,
   readSeedFiles,
+  readSheetFile,
   setPlayerModel,
   setPlayerStatus,
 } from './players.ts';
@@ -73,6 +74,7 @@ export const USAGE = `usage: node tools/mcp-tokens/src/cli.ts <command> [...]
   identity unban <id>                   lift the ban (revoked tokens stay revoked)
   player add <id> --owner <o> --life <ag_name_NN> --name <n> --harness <h> [--model <text>]
                                         [--identity-file <f> [--goals-file <f>]] [--allow-meta]
+                                        [--sheet-file <yaml|json>] (sheet-mode shards only)
   player set-model <id> --model <text>  set the declared model of a live player's life
   player pause|resume|retire <id>
   player flags <id> --public-camera on|off --thoughts-delayed-public on|off
@@ -305,8 +307,12 @@ async function runPlayer(parsed: Parsed, io: Io, env: Env, args: string[]): Prom
       throw new Error('--goals-file needs --identity-file');
     const allowMeta = parsed.flags.has('--allow-meta');
     const model = optionalFlag(parsed, '--model');
+    const sheetPath = optionalFlag(parsed, '--sheet-file');
     const player = {
       ...(model === undefined ? {} : { model }),
+      ...(sheetPath === undefined
+        ? {}
+        : { characterSheet: await readSheetFile(resolve(sheetPath)) }),
       playerId: id,
       owner: requireFlag(parsed, '--owner'),
       life: requireFlag(parsed, '--life'),

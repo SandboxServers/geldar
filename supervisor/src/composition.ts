@@ -1,6 +1,7 @@
 import {
   pgAdminFlags,
   pgAudit,
+  pgDisplayNames,
   pgLogs,
   pgRoster,
   pgStartCounts,
@@ -18,12 +19,13 @@ export interface CompositionInput {
   runtimeTimeoutMs?: number;
 }
 
-// The composition root for the supervisor's deps: the Postgres adapters, the Docker runtime and the
+// The composition root for the supervisor's deps: the Postgres adapters, the body helper runtime and the
 // audit-lost hook. Without the hook a lost audit row after an ok reply is silent (review fix E).
 export function buildSupervisorDeps(input: CompositionInput): SupervisorDeps {
   return {
     roster: pgRoster(input.query),
     admins: pgAdminFlags(input.query),
+    displayNames: pgDisplayNames(input.query),
     starts: pgStartCounts(input.query),
     audit: pgAudit(input.query),
     logs: pgLogs(input.query),

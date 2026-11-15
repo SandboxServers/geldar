@@ -145,3 +145,10 @@ sovereign:
     - { player_id: ag-kimberly-01, life_id: ag_kimberly_01, name: Kimberly }
     - { player_id: ag-tommy-01, life_id: ag_tommy_01, name: Tommy }
     - { player_id: ag-test-01, life_id: ag_test_01, name: Test }
+
+# Character block (AN-07, inactive). mode off builds nothing. No sheet values here: the real values wait on D-CS-10.
+# character:
+#   mode: off                    # off | sheet
+#   rolls: false                 # d20 checks; read only in sheet mode
+#   proficiency:
+#     enabled: false

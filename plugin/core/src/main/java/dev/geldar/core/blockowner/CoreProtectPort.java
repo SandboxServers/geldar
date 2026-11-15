@@ -7,8 +7,16 @@ import java.util.List;
  * the tests use a fake.
  */
 public interface CoreProtectPort {
-    /** One logged change: a place or a break at a position, by a user (a name starting with '#' is not a player). */
-    record LogRow(String world, int x, int y, int z, boolean place, String user, boolean rolledBack) {}
+    /**
+     * One logged change: a place or a break at a position, by a user (a name starting with '#' is not a player). block
+     * is the block name of the logged block (such as farmland), or null when the row carries none.
+     */
+    record LogRow(String world, int x, int y, int z, boolean place, String user, boolean rolledBack, String block) {
+        /** A row with no block name. */
+        public LogRow(String world, int x, int y, int z, boolean place, String user, boolean rolledBack) {
+            this(world, x, y, z, place, user, rolledBack, null);
+        }
+    }
 
     /**
      * The place and break rows of the columns around one chunk, newest first.

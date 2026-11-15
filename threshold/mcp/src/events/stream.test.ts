@@ -2,7 +2,7 @@ import type { SpeechIdentity } from '@geldar/player-core/src/attention/classify.
 import { eventOf } from '@geldar/player-core/src/link/link.fixtures.ts';
 import { describe, expect, it } from 'vitest';
 import { RingEventLog } from './player-log.ts';
-import { handleStreamMessage, replayStartIso, streamSubjects } from './stream.ts';
+import { handleStreamMessage, replayStartIso, SINK_ONLY_TYPES, streamSubjects } from './stream.ts';
 
 const LIVES = ['ag_jason_01', 'ag_mira_01'];
 const dayNight = (phase: string, tick: number) => ({
@@ -53,6 +53,17 @@ describe('stream', () => {
     const call = { ...eventOf('sovereign_call', 3, null), payload: {} };
     await handleStreamMessage(3, call, context(log), counters);
     expect(counters.invalid).toBe(2);
+    expect((await log.since(LIVES[0] as string, 0)).events).toEqual([]);
+  });
+
+  it('keeps turn_record out of the agent stream, as it keeps sovereign_call (decision 0185)', async () => {
+    expect(SINK_ONLY_TYPES.has('turn_record')).toBe(true);
+    expect(SINK_ONLY_TYPES.has('sovereign_call')).toBe(true);
+    const log = new RingEventLog();
+    const counters = { invalid: 0 };
+    const record = { ...eventOf('turn_record', 4, null), payload: {} };
+    await handleStreamMessage(4, record, context(log), counters);
+    expect(counters.invalid).toBe(0);
     expect((await log.since(LIVES[0] as string, 0)).events).toEqual([]);
   });
 

@@ -101,6 +101,7 @@ sovereign:
     - { player_id: ag-clark-01, life_id: ag_clark_01, name: Clark }
     - { player_id: ag-chapman-01, life_id: ag_chapman_01, name: Chapman }
     - { player_id: ag-macdonald-01, life_id: ag_macdonald_01, name: MacDonald }
+    - { player_id: ag-leonardo-01, life_id: ag_leonardo_01, name: Leonardo }
 
 # The colo Mind (decision 0078): the Mind runs here; the Thinkers run on the owner's home GPUs and the api-minds
 # Thinker, reached through a Thinker gateway that does not exist yet. Until it does, the Thinker below is an
@@ -162,3 +163,10 @@ embedding:
   digest: "sha256:0a109f422b47e3a30ba2b10eca18548e944e8a23073ee3f3e947efcf3c45e59f"
   dims: 768
   on_cpu: true                   # num_gpu 0, so it does not compete for the 24 GB card
+
+# Character block (AN-07, inactive). mode off builds nothing. No sheet values here: the real values wait on D-CS-10.
+# character:
+#   mode: off                    # off | sheet
+#   rolls: false                 # d20 checks; read only in sheet mode
+#   proficiency:
+#     enabled: false

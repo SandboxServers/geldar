@@ -391,6 +391,18 @@ BEGIN
   SELECT count(*) INTO n FROM rolls WHERE life_id = 'cau_life_b';
   IF n <> 1 THEN RAISE EXCEPTION 'step %: life b has % rolls after the second erase', step, n; END IF;
 
+  step := 'the 0052 erase comments say the erase covers lives alive or dead and drop the dead-life wording';
+  FOREACH tbl IN ARRAY life_tbls LOOP
+    cmt := obj_description(format('public.%I', tbl)::regclass, 'pg_class');
+    IF cmt IS NULL OR cmt NOT LIKE '%alive or dead%' OR cmt LIKE '%rows of dead lives stay%' THEN
+      RAISE EXCEPTION 'step %: % does not state the erase for lives alive or dead', step, tbl;
+    END IF;
+  END LOOP;
+  cmt := obj_description('sheet_erase_life(text)'::regprocedure, 'pg_proc');
+  IF cmt IS NULL OR cmt NOT LIKE '%alive or dead%' OR cmt LIKE '%rows of already dead lives stay%' THEN
+    RAISE EXCEPTION 'step %: the comment of sheet_erase_life does not state the erase for lives alive or dead', step;
+  END IF;
+
   RAISE NOTICE 'check-schema-character-audit: all steps passed';
 END
 $character_audit$;

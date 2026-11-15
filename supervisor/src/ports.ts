@@ -1,5 +1,5 @@
-// The supervisor's ports. Every side effect (roster, admin flag, start counters, audit, Docker, logs)
-// sits behind one of these, so the policy in service.ts runs against fakes in tests.
+// The supervisor's ports. Every side effect (roster, admin flag, display name, start counters, audit,
+// the body helper, logs) sits behind one of these, so the policy in service.ts runs against fakes in tests.
 
 export const OPS = ['start', 'stop', 'restart', 'status', 'logtail'] as const;
 export type Op = (typeof OPS)[number];
@@ -30,7 +30,7 @@ export type Reply =
   | { ok: true; code: ReplyCode; events?: LogEvent[] }
   | { ok: false; code: Refusal };
 
-// The Docker runtime throws this when the owner's login name is missing or outside the login shape.
+// The login-name check throws this when the owner's display name is missing or outside the login shape.
 // The service maps it to the `login_name` refusal, which does not count against a quota.
 export class LoginNameError extends Error {
   constructor() {
@@ -48,7 +48,7 @@ export interface AdminFlagPort {
 }
 
 // The exact-case login name of the owner's player for a roster name (0033), or null when no single
-// spelling is known. The Docker runtime refuses a start on null; a failed read throws.
+// spelling is known. The service refuses a start on null (`login_name`); a failed read throws.
 export interface DisplayNamePort {
   displayName(ownerId: string, playerName: string): Promise<string | null>;
 }
@@ -79,17 +79,9 @@ export interface AuditPort {
   append(row: AuditRow): Promise<void>;
 }
 
-export interface ContainerConfig {
-  NanoCpus: number;
-  Memory: number;
-  MemorySwap: number;
-  PidsLimit: number;
-}
-
 export interface BodySpec {
   ownerId: string;
   playerName: string;
-  config: ContainerConfig;
 }
 
 export interface BodyRecord {
@@ -98,15 +90,15 @@ export interface BodyRecord {
   running: boolean;
 }
 
-// `signal` aborts when the supervisor gives up on a start (its timeout). The adapter must then remove
-// the container it may have created, so a late start cannot run an uncounted body.
+// The body helper's verbs (`status`, `start`, `stop`), as the service uses them. Every call carries the
+// owner and the roster name: the helper checks the roster against the owner and refuses a name the owner
+// does not hold. Logs are read from the database through the LogPort, not from the helper.
+// `signal` aborts when the supervisor gives up on a start (its timeout); the helper client does not use it,
+// so a late start is compensated by a stop once it lands (service.ts).
 export interface BodyRuntimePort {
-  // Refuses with LoginNameError when the owner's login name is missing or outside the login shape. The
-  // service calls it before a restart stops the running body, so a refused restart leaves the body up.
-  checkLogin(ownerId: string, playerName: string): Promise<void>;
-  inspect(playerName: string): Promise<BodyRecord | null>;
-  start(spec: BodySpec, signal: AbortSignal): Promise<void>;
-  stop(playerName: string): Promise<void>;
+  inspect(ownerId: string, playerName: string): Promise<BodyRecord | null>;
+  start(spec: BodySpec, signal?: AbortSignal): Promise<void>;
+  stop(ownerId: string, playerName: string): Promise<void>;
 }
 
 // Fixed fields only: the lost row's error text never leaves the supervisor.
@@ -122,12 +114,14 @@ export interface LogPort {
 export interface SupervisorDeps {
   roster: RosterPort;
   admins: AdminFlagPort;
+  displayNames: DisplayNamePort;
   starts: StartCountsPort;
   audit: AuditPort;
   runtime: BodyRuntimePort;
   logs: LogPort;
   now: () => Date;
-  // Bound on each runtime (Docker) call; a call that does not answer in time is an error reply.
+  // Bound on each body helper call. It sits above the helper client's own 20 s bound, so the client's
+  // `timeout` answers first; this bound is the service's backstop.
   runtimeTimeoutMs?: number;
   // Called when a successful start or stop could not be audited, so the lost row is visible.
   onAuditLost?: (info: AuditLostInfo) => void;

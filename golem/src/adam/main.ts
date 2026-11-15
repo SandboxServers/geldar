@@ -208,6 +208,8 @@ export async function main(): Promise<void> {
   });
   const env: AdamBodyEnv = {
     config,
+    // The character block as parsed (AN-05a); mode off, the default, builds nothing downstream.
+    ...(config.character === undefined ? {} : { character: config.character }),
     kv: restartKv.kv,
     publisher: jetStreamPublisher(jetstream(nc)),
     server: natsRequestServer(nc),
