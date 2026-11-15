@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { loginProbeOn, type ProbeClient, probeDatabase, probeLogin } from './migrate.ts';
+import {
+  loginProbeFromEnv,
+  loginProbeOn,
+  type ProbeClient,
+  probeDatabase,
+  probeLogin,
+} from './migrate.ts';
 
 /** A fake pg Client whose connect() either succeeds or fails with the given error. */
 function fakeClient(connectError?: unknown): {
@@ -102,6 +108,34 @@ describe('the cli login wiring (C7-03c2)', () => {
     await expect(loginWorks('geldar_helper', 'pw')).resolves.toBe(true);
     expect(seen).toEqual([
       expect.objectContaining({ user: 'geldar_helper', password: 'pw', database: 'geldar' }),
+    ]);
+  });
+
+  it('loginProbeFromEnv throws with PGDATABASE unset or empty, and never constructs a client', () => {
+    const constructed = { count: 0 };
+    const make = () => {
+      constructed.count += 1;
+      return { connect: async () => undefined, end: async () => undefined };
+    };
+    expect(() => loginProbeFromEnv({}, make)).toThrow(/needs PGDATABASE/);
+    expect(() => loginProbeFromEnv({ PGDATABASE: '' }, make)).toThrow(/needs PGDATABASE/);
+    expect(constructed.count).toBe(0);
+  });
+
+  it('loginProbeFromEnv gives the probe client exactly the PGDATABASE value', async () => {
+    const seen: Array<{ database: string; user: string; password: string }> = [];
+    const loginWorks = loginProbeFromEnv({ PGDATABASE: 'geldar_app' }, (config) => {
+      seen.push(config);
+      return { connect: async () => undefined, end: async () => undefined };
+    });
+    await expect(loginWorks('geldar_helper', 'pw')).resolves.toBe(true);
+    expect(seen).toEqual([
+      {
+        user: 'geldar_helper',
+        password: 'pw',
+        connectionTimeoutMillis: 5000,
+        database: 'geldar_app',
+      },
     ]);
   });
 

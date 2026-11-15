@@ -240,6 +240,22 @@ export function loginProbeOn(
 }
 
 /**
+ * The loginWorks check the cli passes to setRolePassword (C7-03c2): PGDATABASE is read by probeDatabase, so an unset
+ * PGDATABASE throws here, before makeClient is called and before any connection.
+ */
+export function loginProbeFromEnv(
+  env: Readonly<Record<string, string | undefined>>,
+  makeClient: (config: {
+    user: string;
+    password: string;
+    connectionTimeoutMillis: number;
+    database: string;
+  }) => ProbeClient,
+): (role: string, password: string) => Promise<boolean> {
+  return loginProbeOn(probeDatabase(env), makeClient);
+}
+
+/**
  * Sets the password of a role in PASSWORD_ROLES and lets it log in. The client computes a
  * SCRAM-SHA-256 verifier and sends only that: the plaintext never reaches the server or the log.
  * With dryRun

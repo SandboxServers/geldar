@@ -79,6 +79,20 @@ function runbookSubjects(section: string, direction: 'Pub' | 'Sub'): string[] {
   return [...new Set(found)].sort();
 }
 
+/** The generator's PubDeny list of one NATS user, as written in geldar.ps1 (the `PubDeny = @(...)` text). */
+function generatorPubDeny(user: string): string {
+  const match = /PubDeny = @\([^)]*\)/.exec(userLine(user));
+  if (match === null) throw new Error(`no PubDeny list for NATS user ${user}`);
+  return match[0];
+}
+
+/** The helper.body subjects a text names, with `$s` and `<shard>` both written as `<shard>`. */
+function deniedHelperSubjects(text: string): string[] {
+  return [...text.matchAll(/geldar\.(?:\$s|<shard>)\.helper\.body\.[\w>*]+/g)].map((m) =>
+    m[0].replace('$s', '<shard>'),
+  );
+}
+
 describe('body helper runbook against the generator', () => {
   it('reads the four helper verbs from the generator, so the comparison is not empty', () => {
     const helper = subjectsIn(userLine('helper'));
@@ -116,6 +130,22 @@ describe('body helper runbook against the generator', () => {
       expect(userLine(user), user).toContain('"geldar.$s.helper.body.>"');
     }
     expect(RUNBOOK).toContain('geldar.<shard>.helper.body.>');
+  });
+
+  it('denies exactly geldar.<shard>.helper.body.> to body and paper, in the generator and the runbook', () => {
+    for (const user of ['body', 'paper']) {
+      expect(deniedHelperSubjects(generatorPubDeny(user)), user).toEqual([
+        'geldar.<shard>.helper.body.>',
+      ]);
+    }
+    // The runbook names the deny on one line (the body and paper bullet) and nowhere else as a deny.
+    const denyLines = RUNBOOK.split('\n').filter((line) => line.includes('PubDeny'));
+    expect(denyLines.length).toBeGreaterThan(0);
+    expect(denyLines.flatMap(deniedHelperSubjects)).toEqual(['geldar.<shard>.helper.body.>']);
+    const bullet = runbookSection('body');
+    expect(bullet).toContain('`body`');
+    expect(bullet).toContain('`paper`');
+    expect(bullet).toContain('PubDeny `geldar.<shard>.helper.body.>`');
   });
 
   it('gives each subject to the same user and direction (Pub or Sub) as the generator', () => {
