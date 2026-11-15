@@ -5,6 +5,7 @@
  */
 import { findControlChar, type IndexEntry } from './control-chars.ts';
 import { checkDecisionIndex } from './decision-index.ts';
+import { checkDecisionRows } from './decision-rows.ts';
 import { checkEnvDefinitions, ENV_SCHEMA } from './env-definitions.ts';
 import { checkFileCaps, HARD_CAP, SOFT_CAP } from './file-caps.ts';
 import { checkSovereignIdentity, isShardFile } from './identity-mode.ts';
@@ -209,6 +210,11 @@ export function runRepoChecks(port: RepoPort, now: Date): RepoChecksResult {
   }
 
   for (const problem of checkDecisionIndex(all)) {
+    log(`error: ${problem}`);
+    failed = true;
+  }
+
+  for (const problem of checkDecisionRows(all)) {
     log(`error: ${problem}`);
     failed = true;
   }
