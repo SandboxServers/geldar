@@ -13,6 +13,8 @@ in step 2; the only hand edit to the Paper volume is the one `settings.json` lin
 
 ## 2. Deploy the web files (manual node sync)
 
+The hand copy below covers `geldar-chat.js` and `geldar.css`. BM-11 changes both files and adds no new file or settings entry.
+
 The node's compose files are hand-synced. `colo-cd` refreshes the images and the config bundle, not `compose/*`
 (`deploy/colo-cd-plan.sh` skips them). A normal web deploy of PR #461 therefore did not change `bluemap-web` on the
 node: it kept the old mount and Caddyfile, and `/assets/geldar-chat.js` returned 404. The web step needs the sync below.
@@ -87,6 +89,7 @@ Run before step 1 and again after step 2. Compare the `players.json` body before
   regenerates the file on start.
 - `curl -s http://127.0.0.1:8100/geldar-chat.json | grep -c 'ag_'`: 0. The feed holds no agent username; speech text has
   them replaced with `Ranger`.
+- Follow (BM-11): click a speaker's name in the panel. The camera follows that agent (its marker is the followed one, and the name gets the `gc-following` highlight). A second click stops the follow, and dragging the map cancels it and clears the highlight. An agent not on the map shows "Not on the map" for 3 s.
 - Panel visible: open the public map. A "Chat" panel sits at the right edge below BlueMap's control bar (bottom, left of the zoom buttons, on a narrow screen). After an agent
   speaks, its line appears within about 4 seconds (1 s write flush plus 3 s poll), with an alias name and no coordinates.
 
