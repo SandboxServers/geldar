@@ -144,6 +144,39 @@ describe('sleep', () => {
     expect(bot.sleep).toHaveBeenCalledTimes(2);
   });
 
+  it('retries on the head after out_of_reach from the foot, when the foot is the nearer half', async () => {
+    const bot = fakeBot({
+      timeOfDay: 13_000,
+      blocks: [{ ...BED }, { ...OTHER_HALF }],
+      sleepErrors: ['You are too far away'],
+    });
+    // The bot stands east of the bed: the foot at x=6 is nearer than the head at x=5, so the foot is tried first.
+    bot.entity.position = new Vec3(10, 64, 0);
+    const outcome = await sleep(bot);
+    expect(moveNear).toHaveBeenNthCalledWith(1, bot, OTHER_HALF.position, 1, expect.anything());
+    expect(moveNear).toHaveBeenNthCalledWith(2, bot, BED.position, 1, expect.anything());
+    expect(outcome).toEqual({ status: 'completed', detail: { bed: { x: 5, y: 64, z: 0 } } });
+    expect(bot.sleep).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not walk onto the other-half position when the block there is not the same bed', async () => {
+    const bot = fakeBot({
+      timeOfDay: 13_000,
+      blocks: [
+        { ...OTHER_HALF },
+        // A foot at x=5 facing east: its head is at x=6, so it is a different bed that shares the cell.
+        { name: 'white_bed', position: new Vec3(5, 64, 0), part: 'foot', facing: 'east' },
+      ],
+      sleepErrors: ['You are too far away'],
+    });
+    bot.entity.position = new Vec3(10, 64, 0);
+    const outcome = await sleep(bot);
+    expect(outcome).toMatchObject({ status: 'failed', reason: 'out_of_reach' });
+    expect(moveNear).toHaveBeenCalledTimes(1);
+    expect(moveNear).not.toHaveBeenCalledWith(bot, new Vec3(5, 64, 0), 1, expect.anything());
+    expect(bot.sleep).toHaveBeenCalledTimes(1);
+  });
+
   /** Runs the bed loop on a fake clock: each walk advances it by `walkMs`. Returns the outcome and the bot. */
   async function sleepWithClock(walkMs: number, timeScale = 1) {
     let now = 1_000_000;
@@ -240,7 +273,7 @@ describe('sleep', () => {
     const outcome = await sleep(bot);
     expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked' });
     expect(outcome.status === 'failed' && outcome.message).toBe(
-      'tried 2 nearby beds, all occupied or blocked; last: the bed could not be used; ended at 0, 64, 0',
+      'tried 2 nearby beds, all occupied or blocked; last: the bed could not be used; 2 beds within 32 blocks, 0 occupied; ended at 0, 64, 0',
     );
     expect(classifySleepError('cant click the bed')).toBe('blocked');
   });
@@ -254,7 +287,7 @@ describe('sleep', () => {
     const outcome = await sleep(bot);
     expect(outcome).toMatchObject({ status: 'failed', reason: 'blocked' });
     expect(outcome.status === 'failed' && outcome.message).toBe(
-      'tried 2 nearby beds, all occupied or blocked; last: the bed is occupied; ended at 0, 64, 0',
+      'tried 2 nearby beds, all occupied or blocked; last: the bed is occupied; 2 beds within 32 blocks, 0 occupied; ended at 0, 64, 0',
     );
     expect(bot.sleep).toHaveBeenCalledTimes(2);
   });

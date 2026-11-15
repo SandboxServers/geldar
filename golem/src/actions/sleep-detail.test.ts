@@ -43,7 +43,7 @@ describe('sleep failure detail: final_position and beds_tried', () => {
       status: 'failed',
       reason: 'blocked',
       message:
-        'tried 2 nearby beds, all occupied or blocked; last: the bed is occupied; ended at 0, 64, -4',
+        'tried 2 nearby beds, all occupied or blocked; last: the bed is occupied; 2 beds within 32 blocks, 0 occupied; ended at 0, 64, -4',
       detail: {
         final_position: { x: 0.3, y: 64.4, z: -4 },
         beds_tried: [
@@ -78,7 +78,7 @@ describe('sleep failure detail: final_position and beds_tried', () => {
         status: 'failed',
         reason: 'blocked',
         message:
-          'tried 3 of 6 nearby beds; the search time ran out; last: the bed is occupied; ended at 13, 64, 0',
+          'tried 3 of 6 nearby beds; the search time ran out; last: the bed is occupied; 6 beds within 32 blocks, 0 occupied; ended at 13, 64, 0',
         detail: {
           final_position: { x: 13, y: 64, z: 0 },
           beds_tried: [
@@ -133,7 +133,7 @@ describe('sleep failure detail: final_position and beds_tried', () => {
     const message = outcome.status === 'failed' ? outcome.message : '';
     expect(message).toHaveLength(160);
     expect(message).toMatch(
-      /^tried 8 nearby beds, all occupied or blocked; last: the path search ran out of time x+\.\.\.; ended at 0, 64, 0$/,
+      /^tried 8 nearby beds, all occupied or blocked; last: the path search ran out of time x{17}\.\.\.; 8 beds within 32 blocks, 0 occupied; ended at 0, 64, 0$/,
     );
   });
 });

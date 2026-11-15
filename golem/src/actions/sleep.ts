@@ -1,5 +1,4 @@
 import type { Bot } from 'mineflayer';
-import { Vec3 } from 'vec3';
 import type { Block } from './bot-types.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import {
@@ -14,6 +13,13 @@ import {
 import { moveNear } from './pathing.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 import {
+  type BedCensus,
+  bedKey,
+  censusText,
+  otherHalfPosition,
+  takeCensus,
+} from './sleep-census.ts';
+import {
   type BedTry,
   observeMonsters,
   sleepFailureDetail,
@@ -25,6 +31,7 @@ import {
   MAX_NAMED_HOSTILES,
   monstersFact,
 } from './sleep-hostiles.ts';
+import { roundedPosition, triedMessage } from './sleep-message.ts';
 import {
   type BedRefusalWatch,
   bedRefusalFact,
@@ -38,8 +45,6 @@ import { DEFAULT_DIAG_SINK, type DiagSink } from './stall-diag.ts';
 const NIGHT_START = 12_542;
 /** The last world tick of the night window the Body checks. */
 const NIGHT_END = 23_459;
-/** The horizontal neighbors searched for the other half of a bed. */
-const HORIZONTAL = [new Vec3(1, 0, 0), new Vec3(-1, 0, 0), new Vec3(0, 0, 1), new Vec3(0, 0, -1)];
 /** How far from the bot the beds are searched for. */
 const BED_RANGE = 32;
 /** The most beds tried in one action, nearest first. */
@@ -220,13 +225,28 @@ async function sleep(ctx: ActionContext): Promise<ActionOutcome> {
   const refusals = watchBedRefusal(ctx.bot);
   // Every bed the loop tried, in order: a failure reports them with the bot's final position.
   const tries: BedTry[] = [];
+  // The census of the beds in range: the start, and the end the loop reads when it stops (decision 0226).
+  const census: CensusRecord = {};
   try {
-    const outcome = await sleepFromBeds(ctx, sleepers, refusals, tries);
-    return withSleepDetail(outcome, sleepFailureDetail(ctx.bot, tries));
+    const outcome = await sleepFromBeds(ctx, sleepers, refusals, tries, census);
+    return withSleepDetail(outcome, sleepFailureDetail(ctx.bot, tries, census.end ?? census.start));
   } finally {
     sleepers.stop();
     refusals.stop();
   }
+}
+
+/** The bed census of one sleep: read when the attempt starts, and again when the bed loop stops. */
+interface CensusRecord {
+  start?: BedCensus;
+  end?: BedCensus;
+}
+
+/** Reads the census now as the attempt's end census, and returns it. */
+function endCensus(bot: Bot, census: CensusRecord): BedCensus {
+  const end = takeCensus(bot, BED_RANGE);
+  census.end = end;
+  return end;
 }
 
 async function sleepFromBeds(
@@ -234,10 +254,12 @@ async function sleepFromBeds(
   sleepers: SleepersWatch,
   refusals: BedRefusalWatch,
   tries: BedTry[],
+  census: CensusRecord,
 ): Promise<ActionOutcome> {
   const { bot } = ctx;
   const beds = nearbyBeds(bot);
   if (beds.length === 0) return failed('not_found', 'no bed');
+  census.start = takeCensus(bot, BED_RANGE);
   if (!isNightOrStorm(bot.time.timeOfDay, bot.thunderState > 0)) {
     return failed('not_possible', 'it is not night');
   }
@@ -270,11 +292,10 @@ async function sleepFromBeds(
         break;
       }
       if (outcome.status === 'failed') tries.push(bedTry(used, outcome.message));
-      if (
-        outcome.status !== 'failed' ||
-        (outcome.reason !== 'blocked' && outcome.reason !== 'timeout') ||
-        ctx.signal.aborted
-      ) {
+      // A success needs no end census: withSleepDetail keeps the detail of a failure only.
+      if (outcome.status !== 'failed') return outcome;
+      if ((outcome.reason !== 'blocked' && outcome.reason !== 'timeout') || ctx.signal.aborted) {
+        endCensus(bot, census);
         return outcome;
       }
       if (outcome.status === 'failed') lastRaw = outcome.raw;
@@ -283,13 +304,14 @@ async function sleepFromBeds(
   } finally {
     clearTimeout(stopTimer);
   }
+  const end = endCensus(bot, census);
   const lastText = last.status === 'failed' ? last.message : '';
-  const ended = `; ended at ${roundedPosition(bot)}`;
+  const ended = `; ${censusText(end, BED_RANGE)}; ended at ${roundedPosition(bot)}`;
   if (outOfTime) {
     return failed(
       'blocked',
       triedMessage(
-        `tried ${tried} of ${beds.length} nearby beds; the search time ran out; last: `,
+        `tried ${tried} of ${beds.length} nearby beds; the search time ran out`,
         lastText,
         ended,
       ),
@@ -299,30 +321,13 @@ async function sleepFromBeds(
   }
   return failed(
     'blocked',
-    triedMessage(`tried ${tried} nearby beds, all occupied or blocked; last: `, lastText, ended),
+    triedMessage(`tried ${tried} nearby beds, all occupied or blocked`, lastText, ended),
     {},
     lastRaw,
   );
 }
 
-/** The most characters a failure message carries: the executor sends the message to the Mind, capped at 160. */
-const MESSAGE_MAX = 160;
-
-/**
- * A tried-beds failure message: `head`, the last bed's text, `tail`. When the whole would pass MESSAGE_MAX, the
- * last bed's text is cut and ends in `...`, so the head and the position (the tail) are always kept.
- */
-function triedMessage(head: string, last: string, tail: string): string {
-  const room = MESSAGE_MAX - head.length - tail.length;
-  const text = last.length <= room ? last : `${last.slice(0, Math.max(0, room - 3))}...`;
-  return `${head}${text}${tail}`;
-}
-
-/** The bot's position in whole blocks, as `x, y, z`. */
-function roundedPosition(bot: Bot): string {
-  const { x, y, z } = bot.entity.position;
-  return `${Math.round(x)}, ${Math.round(y)}, ${Math.round(z)}`;
-}
+export { triedMessage };
 
 /**
  * Walks to a bed and sleeps in it. The outcome is completed when the bot is asleep, else the failure; `used` is
@@ -388,7 +393,7 @@ function sleepersDetail(line: SleepersLine | undefined): Record<string, JsonValu
 
 /**
  * The nearest beds within range, nearest first, at most MAX_BEDS. A bed is two blocks and `findBlocks`
- * returns both halves, so it asks for twice as many blocks and keeps one block per bed.
+ * returns both halves, so it asks for twice as many blocks and keeps one block per bed (bedKey pairs them).
  */
 function nearbyBeds(bot: Bot): Block[] {
   const from = bot.entity.position;
@@ -407,13 +412,10 @@ function nearbyBeds(bot: Bot): Block[] {
   return beds;
 }
 
-/** True when a kept bed block of the same name is next to `block` on a horizontal side: the same bed. */
+/** True when a kept bed block is a half of the same bed as `block`: the same bedKey (decision 0226). */
 function isHalfOfKeptBed(beds: Block[], block: Block): boolean {
-  return beds.some(
-    (bed) =>
-      bed.name === block.name &&
-      HORIZONTAL.some((offset) => bed.position.plus(offset).equals(block.position)),
-  );
+  const key = bedKey(block);
+  return beds.some((bed) => bedKey(bed) === key);
 }
 
 /** Walks to within one block of `block`; null when the bot arrived, else the failure. */
@@ -480,11 +482,10 @@ async function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T
   }
 }
 
-/** The other half of a bed: the same bed block next to it on a horizontal side. */
+/** The other half of a bed: the block at the position its part and facing name, when it is the same bed. */
 function otherHalf(bot: Bot, bed: Block): Block | null {
-  for (const offset of HORIZONTAL) {
-    const cell = bot.blockAt(bed.position.plus(offset));
-    if (cell?.name === bed.name) return cell;
-  }
-  return null;
+  const position = otherHalfPosition(bed);
+  if (position === undefined) return null;
+  const cell = bot.blockAt(position);
+  return cell && cell.name === bed.name && bedKey(cell) === bedKey(bed) ? cell : null;
 }
