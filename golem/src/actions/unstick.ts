@@ -1,11 +1,18 @@
 import type { Bot } from 'mineflayer';
 import type { Vec3 } from 'vec3';
+import { noSafeExit } from '../body/view.ts';
 import type { Block } from './bot-types.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { lastResortRefused, prefetchOwners, protectedReason } from './protected-blocks.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 import { DEFAULT_DIAG_SINK, emitStallDiag } from './stall-diag.ts';
 import { digsCell, handFirst } from './unstick-cells.ts';
+import {
+  type DescendResult,
+  digDescend,
+  MAX_DESCEND_DIGS,
+  WALKABLE_DROP,
+} from './unstick-descend.ts';
 import {
   type Drop,
   dropAllowed,
@@ -315,7 +322,8 @@ export const UNSTICK_DEADLINE_S = 25;
 /**
  * Gets a stuck bot free, with bare hands and no blocks placed: first walks or jumps in each of the
  * eight directions (including a deliberate drop off a ledge when `dropAllowed`), then digs sideways
- * (four directions) or down through soft blocks. At most `MAX_DIGS` digs and one try per direction.
+ * (four directions) or down through soft blocks. At most `MAX_DIGS` digs and one try per direction, except
+ * the high_ledge run's last rung `dig_descend` (decision 0333), which has its own cap.
  * The steps run against the call's deadline: at the deadline, or on a cancel, the steps are aborted
  * and the call returns at once, even if a step is stalled and never ends. A deadline is a failed call;
  * a cancel is cancelled.
@@ -446,13 +454,49 @@ async function unstickSteps(
     note('dig_own');
     if (await lastResortDig(ctx, where, digs, started)) return done('dig_own');
   }
+  // Last of all (decision 0333): a high_ledge run, or a Body with no safe move, digs its own floor down.
+  // It runs only after every rung above failed, and then walks as soon as a walk of WALKABLE_DROP is open.
+  let descent: DescendResult | null = null;
+  if (
+    !ctx.signal.aborted &&
+    (ctx.highLedge === true || noSafeExit((cell) => bot.blockAt(cell), where(), health()) === true)
+  ) {
+    note('dig_descend');
+    descent = await digDescend({
+      bot,
+      signal: ctx.signal,
+      started,
+      // An ordinary run keeps the call's MAX_DIGS budget; a high_ledge run has the rung's own cap (decision 0333).
+      maxDigs: ctx.highLedge === true ? MAX_DESCEND_DIGS : MAX_DIGS - digs,
+      digOne: (block, at) => dig(bot, ctx.signal, block, at),
+    });
+    if (ctx.signal.aborted) return cancelled();
+    if (descent.walkable) {
+      for (const move of planMoves((cell) => bot.blockAt(cell), where(), health())) {
+        if (move.drop > WALKABLE_DROP) continue;
+        if (timeLeftS(started) < MOVE_TICKS / 20) break;
+        tries++;
+        if (await walk(ctx, move.dir, move.jump)) {
+          return completed({
+            method: 'dig_descend',
+            tries,
+            tried: [...tried],
+            hint: HINT,
+            dug: descent.dug,
+          });
+        }
+      }
+    }
+  }
   reportNoWayOut(bot, tried);
   const upNote = upBlocked === null ? '' : `; dig_up: ${upBlocked}`;
+  const descendNote =
+    descent === null ? '' : `; dig_descend: dug ${descent.dug}, ${descent.stopped}`;
   const spentS = Math.round((Date.now() - started) / 1000);
   const timeNote = `; ${spentS} s of the ${ACTION_LIMIT_S} s limit used`;
   return failed(
     'blocked',
-    `unstick: no way out found; tried ${tried.join(', ')}${upNote}${timeNote}`,
+    `unstick: no way out found; tried ${tried.join(', ')}${upNote}${descendNote}${timeNote}`,
     {
       tries,
       tried,

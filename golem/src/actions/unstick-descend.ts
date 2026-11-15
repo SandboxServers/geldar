@@ -10,11 +10,13 @@ import type { Block } from './bot-types.ts';
 import { prefetchOwners, protectedReason, refusedByName } from './protected-blocks.ts';
 import { DEFAULT_DIAG_SINK } from './stall-diag.ts';
 import { handBreakable } from './unstick-cells.ts';
-import { EIGHT, isSoft, planMoves, scanDrop } from './unstick-plan.ts';
+import { EIGHT, fallDamage, isSoft, planMoves, scanDrop } from './unstick-plan.ts';
 import { DIG_BUDGET_S, digSeconds, timeLeftS } from './unstick-up.ts';
 
-/** The most blocks one call digs down. A ledge is about ten blocks; the rung never digs deeper than this. */
+/** The most blocks one high_ledge call digs down. A ledge is about ten blocks; the rung never digs deeper than this. */
 export const MAX_DESCEND_DIGS = 12;
+/** Health the Body keeps after a descent (the controlled dig-down margin of unstick.ts). */
+const DESCENT_MARGIN = 2;
 /** A walk this shallow (or a level step) is open: the rung stops there and the walk rung takes it. */
 export const WALKABLE_DROP = 3;
 /** A hostile mob this close (in blocks) stops the descent. */
@@ -43,7 +45,8 @@ export const REFUSAL_TEXT = {
   hostile: `a hostile mob is within ${HOSTILE_RANGE} blocks`,
   gravel: 'gravel or sand is above the head',
   undiggable: 'the block cannot be dug by hand',
-  'cap reached': `the call dug ${MAX_DESCEND_DIGS} blocks`,
+  fall: 'the fall would leave the Body under its health margin',
+  'cap reached': "this call's dig budget is spent",
 } as const;
 export type Refusal = keyof typeof REFUSAL_TEXT;
 
@@ -61,11 +64,14 @@ export interface DescendDeps {
   started: number;
   /** Digs one block with unstick's `dig` (protection checked, abort honoured). */
   digOne: (block: Block, at: Vec3) => Promise<boolean>;
+  /** The most blocks this call may dig: the call's own budget for an ordinary run; default `MAX_DESCEND_DIGS`. */
+  maxDigs?: number;
 }
 
 /** Digs the floor under the feet one block at a time until a walk of `WALKABLE_DROP` or less is open. */
 export async function digDescend(deps: DescendDeps): Promise<DescendResult> {
   const { bot, signal, started, digOne } = deps;
+  const maxDigs = deps.maxDigs ?? MAX_DESCEND_DIGS;
   let dug = 0;
   for (;;) {
     if (signal.aborted) return { dug, walkable: false, stopped: 'the call was stopped' };
@@ -73,7 +79,7 @@ export async function digDescend(deps: DescendDeps): Promise<DescendResult> {
     if (openWalk(bot, feet)) {
       return { dug, walkable: true, stopped: `a walk of ${WALKABLE_DROP} blocks or less is open` };
     }
-    if (dug >= MAX_DESCEND_DIGS) return refuse('cap reached', dug);
+    if (dug >= maxDigs) return refuse('cap reached', dug);
     const refusal = await refusalAt(bot, feet, signal);
     if (refusal !== null) return refuse(refusal, dug);
     const floor = feet.offset(0, -1, 0);
@@ -126,6 +132,9 @@ async function refusalAt(bot: Bot, feet: Vec3, signal: AbortSignal): Promise<Ref
   if (FALLS_IF_UNSUPPORTED.test(bot.blockAt(feet.offset(0, 2, 0))?.name ?? '')) return 'gravel';
   const column = columnRefusal(bot, feet);
   if (column !== null) return column;
+  // The Body falls through the dug cell into the column below: that fall must leave the health margin.
+  const below = scanDrop((cell) => bot.blockAt(cell), floor.offset(0, -1, 0));
+  if (fallDamage(below.blocks + 1) > (bot.health ?? 20) - DESCENT_MARGIN) return 'fall';
   const digable = isSoft(block) || (handBreakable(block) && !refusedByName(block.name));
   if (block.boundingBox === 'empty' || !digable) return 'undiggable';
   await prefetchOwners([floor], signal);

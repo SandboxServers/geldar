@@ -167,7 +167,8 @@ export const idleStuckReflex: Reflex = {
     watchStill(view, state, now);
     const wait = view.onOwnPlacement === true ? IDLE_TICKS_ON_OWN : IDLE_TICKS;
     if (now - state.since < wait || now < state.until) return null;
-    let reason = stuckReason(view) ?? noPathReason(view, here);
+    let reason: 'enclosed' | 'ledge' | 'no_path' | 'high_ledge' | null =
+      stuckReason(view) ?? noPathReason(view, here);
     if (reason === null) {
       // A high ledge (decision 0333) waits the 120 s own-placement clock, whatever the block under it.
       if (!highLedgeReason(view) || now - state.since < IDLE_TICKS_ON_OWN) return null;
@@ -280,6 +281,7 @@ export async function runUnstick(
       signal: hurt.signal,
       timeScale: ctx.timeScale,
       ownPlanksLast,
+      highLedge,
       onHandler: (ended) => {
         handlerEnded = ended;
       },
