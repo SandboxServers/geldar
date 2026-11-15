@@ -34,9 +34,24 @@ public final class ChatRing {
         }
     }
 
-    /** The feed file's contents: {@code {"v":1,"lines":[{"t":..,"id":"..","text":".."}, ...]}}, oldest first. */
+    /** The world clock written with the feed: the time of day in ticks, and the sample time in epoch milliseconds. */
+    public record Clock(int time, long at) {}
+
+    /** The feed without a clock: {@code {"v":1,"lines":[...]}}. */
     public synchronized String toJson() {
-        StringBuilder out = new StringBuilder("{\"v\":").append(VERSION).append(",\"lines\":[");
+        return toJson(null);
+    }
+
+    /**
+     * The feed file's contents: {@code {"v":1,"clock":{"time":..,"at":..},"lines":[...]}}, with each line
+     * {@code {"t":..,"id":"..","text":".."}}, oldest first. A null {@code clock} omits the {@code "clock"} key.
+     */
+    public synchronized String toJson(Clock clock) {
+        StringBuilder out = new StringBuilder("{\"v\":").append(VERSION);
+        if (clock != null) {
+            out.append(",\"clock\":{\"time\":").append(clock.time()).append(",\"at\":").append(clock.at()).append('}');
+        }
+        out.append(",\"lines\":[");
         boolean first = true;
         for (Line line : lines) {
             if (!first) {

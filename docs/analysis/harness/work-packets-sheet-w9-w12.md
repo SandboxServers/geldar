@@ -1,5 +1,7 @@
 # Sheet cards, waves W9 to W12: moral hooks, lineage, drift, measurement and rollout
 
+Corrections 2026-11-15: `RefusalPolicy.check` takes a DrawKey and the Body's cached proficiency level, never a sheet value (the sheet has no proficiency); `inheritSheet` uses `CharacterSheet` (the engine's name; there is no `InnerSheet`) and `rngFor(DrawKey)`, not `rngFor(birthId, field)`; the S10-02 mirror copies into `packages/psyche/engine/`; the decision overflow block 0320 to 0329 is noted; SQL 0052 is taken by PR #455's erasure comments. Every change is listed in `worknotes/cards-w3-w12-corrections.md`.
+
 ## Number mapping (renumbered 2026-11-14)
 
 | Item | Number before this commit | Number now | Note |
@@ -126,7 +128,7 @@ export type AdoptionSource = 'config' | 'roster' | 'birth' | 'conversion';   // 
 | `pnpm-lock.yaml` and any `package.json` | S12-01 (new exporter package) only; others request an index line |
 | `geldar.ps1` (`Get-NatsUsers`), `compose/*.yml`, `shards/*.yaml` | none edits a production shard. S12-05 produces a diff for the owner; fixtures go in new non-live files |
 
-**Numbers.** Decisions: 0282 is PR #455's record (no card writes it); 0283 S9-01; 0284 S10-01a; 0285 S11-01; 0286 S12-01 (cohort export and protocol); 0287 S12-04; 0288 S12-05 (rollout and rollback); 0289 spare. Decisions 0280 and 0281 are used. SQL: 0053 is free (S9-00 is a gate with no migration, and no card uses it); 0054 S10-01b; 0055 S11-02; 0056 S12-01; 0057 S12-04; 0058 and 0059 spare. 0050 to 0052 are used (0052 is the comment-only erase migration on phase1/an-04c-erase-comments). Re-check the registry (`docs/analysis/phase1/packets/decision-number-registry.md` and the remote branches) at dispatch; a coder never picks a number, the dispatch gives it. If a number moves, the card's text says `<allocate via registry>`.
+**Numbers.** Decisions: 0282 is PR #455's record (no card writes it); 0283 S9-01; 0284 S10-01a; 0285 S11-01; 0286 S12-01 (cohort export and protocol); 0287 S12-04; 0288 S12-05 (rollout and rollback); 0289 spare; the overflow block 0320 to 0329 is unused by these cards. Decisions 0280 and 0281 are used. SQL: 0053 is free (S9-00 is a gate with no migration, and no card uses it); 0054 S10-01b; 0055 S11-02; 0056 S12-01; 0057 S12-04; 0058 and 0059 spare. 0050 to 0052 are used (0052 is the comment-only erase migration on phase1/an-04c-erase-comments). Re-check the registry (`docs/analysis/phase1/packets/decision-number-registry.md` and the remote branches) at dispatch; a coder never picks a number, the dispatch gives it. If a number moves, the card's text says `<allocate via registry>`.
 
 ## Rules common to every card
 
@@ -188,15 +190,15 @@ W9 here is a trimmed world and kit wave: one Body hook, its contract, its wiring
 - **shape.**
   ```ts
   export interface RefusalPolicy {
-    sheet(): { law: number; good: number; rolls: boolean; lawProficiency: 0 | 1 | 2 | 3 } | null;
-    check(decisionKey: string, score: number, proficiency: 0 | 1 | 2 | 3, dc: 11): { success: boolean }; // the engine call from AN-06b/psyche; records the roll
+    sheet(): { law: Score; good: Score; rolls: boolean } | null;   // the sheet holds no proficiency; rolls is the Body's config flag (D-CS-05), not a sheet field
+    check(key: DrawKey, score: Score, prof: Level, dc: 11): { success: boolean }; // prof is the Body's cached level (world state), never the sheet; the Body runs roll(fx, score, dc, rngFor(key), prof) from psyche/src (fx label to confirm) and records the roll under decisionId(key)
     starving(): boolean;                 // OD-3: hunger <= 6 and no edible food carried
     day(): number;
   }
   export function setRefusalPolicy(p: RefusalPolicy | null): void;     // default null = today's behaviour
   export function refuseProperty(ctx: ActionContext, verb: 'mine' | 'withdraw', cell: Vec3): ActionOutcome | null; // null = proceed
   ```
-  Refuses only when all hold: a policy is set; the cell is not the life's own placement; the recorded owner is known and is another life (**unknown ownership is never refused**; `goto`'s unknown-is-protected rule is a separate path); not (`good <= 2` and `starving()`); and `sheet.rolls` is true and `check(key, law, lawProficiency, 11).success`. **`rolls: false` never refuses (fail open, OD-4, D-HC-14).** The decision for a key is cached in a bounded map of 256 (oldest dropped) so a retry inside the day reuses it. A refusal returns the `declined` outcome with the S9-01 text, no detail beyond what existing failed outcomes carry, consumes no world time and leaves the cell untouched. The roll audit event (decision id = the key) is recorded by the engine call.
+  Refuses only when all hold: a policy is set; the cell is not the life's own placement; the recorded owner is known and is another life (**unknown ownership is never refused**; `goto`'s unknown-is-protected rule is a separate path); not (`good <= 2` and `starving()`); and the Body's `rolls` flag is true and `check(key, law, prof, 11).success`, where `prof` is the Body's cached level for the domain the card names (`to confirm`: no psyche Domain is law). **`rolls: false` never refuses (fail open, OD-4, D-HC-14).** The decision for a key is cached in a bounded map of 256 (oldest dropped) so a retry inside the day reuses it. A refusal returns the `declined` outcome with the S9-01 text, no detail beyond what existing failed outcomes carry, consumes no world time and leaves the cell untouched. The roll audit event (decision id = the key) is recorded by the engine call.
 - **tests.** Self, other, unknown ownership; law 1 to 5 with injected draws; `rolls: false` (policy returns no refusal and `check` is never called); `good <= 2` starving proceeds, not starving can refuse; same cell and verb twice in one day (one decision, one roll record); new day decides again; action cancelled mid-action leaves no stale decision; restart (new policy instance, same key, same seeded result); refusal text and detail contain no owner name or number; **no policy set**: the existing `mine` and `container` suites pass unchanged.
 - **checks** GATE; `./geldar.ps1 pnpm test golem/src/actions/property-refusal`, `golem/src/actions/mine`, `golem/src/actions/container`.
 - **revert-checks** Refuse for unknown ownership: "unknown is never refused" fails. Drop the cache: "one decision per day" fails. Drop the starving exception: "good 2 starving proceeds" fails. Make `rolls: false` call `check`: "rolls false never refuses" fails. Give `policy` a non-null default: "no policy keeps today's behaviour" fails.
@@ -278,15 +280,15 @@ Nothing in W10 creates a child on its own. A mocked birth is not completion evid
 ## S10-02: pure inherited-sheet factory (psyche)
 
 - **id** S10-02 **wave** W10 **repo** geldar (`psyche/`) **replaces** AN-42 **depends-on** S10-01a (the field list) **size** 40k. **branch** `phase1/s10-02-inherit`. Pure and inactive: nothing calls it yet.
-- **may-edit** `psyche/src/inherit.ts` (new); `psyche/src/index.ts` (exports); `psyche/package.json` (minor version); `psyche/RELEASE.json` (regenerated by the release tool); `psyche/test/inherit.test.ts` (new); the worknote. **`ENGINE_VERSION` is bumped to 2 only if the seed input or roll rules change; this adds a function, so it stays 1.** Zero imports outside the package (0281): no `node:` and no `@geldar/*`.
+- **may-edit** `psyche/src/inherit.ts` (new); `psyche/src/index.ts` (named exports, one per line; `export *` is refused); `psyche/package.json` (minor version); `psyche/RELEASE.json` (regenerated by the release tool); `psyche/test/inherit.test.ts` (new); the worknote. **`ENGINE_VERSION` is bumped to 2 only if the seed input or roll rules change; this adds a function, so it stays 1.** Zero imports outside the package (0281): no `node:` and no `@geldar/*`.
 - **must-not-edit** R6; `golem/*`, `eventsink/*`, `contract/*`.
 - **shape.**
   ```ts
-  export interface InheritInput { birthId: string; parentA: InnerSheet; parentB: InnerSheet; seed: string }   // parents' effective sheets as snapshotted at the request
+  export interface InheritInput { birthId: string; parentA: CharacterSheet; parentB: CharacterSheet; seed: string }   // parents' effective sheets as snapshotted at the request
   export interface InheritedField { field: string; parent_a: number; parent_b: number; mean_rounded: number; u: number; mutation: -1 | 0 | 1; child: number }
-  export function inheritSheet(i: InheritInput): { sheet: InnerSheet; fields: InheritedField[] };  // 13 fields, deterministic in (birthId, seed, parents)
+  export function inheritSheet(i: InheritInput): { sheet: CharacterSheet; fields: InheritedField[] };  // 13 fields, deterministic in (birthId, seed, parents)
   ```
-  Per field: `mean_rounded = round half up of (a + b) / 2`, `u` from `rngFor(birthId, field)`, mutation -1 if `u < 0.2`, +1 if `u >= 0.8`, else 0; `child = clamp(mean_rounded + mutation, 1, 5)`. The input type has no proficiency, learned-skill or relationship field, so none can enter by construction; the output has no proficiency.
+  Per field: `mean_rounded = round half up of (a + b) / 2`, `u` from `rngFor(key).next()` with `key: DrawKey = { producer: 'body', lifeId: birthId, generation: 0, tick: 0, fx: 'inherit_' + field, decisionSeq: 0 }` (`birthId` has no colon; the factory has no clock, so generation and tick are 0 and the key is unique per birth and field; `seed` is not a DrawKey field, so how the seed enters is `to confirm`), mutation -1 if `u < 0.2`, +1 if `u >= 0.8`, else 0; `child = clamp(mean_rounded + mutation, 1, 5)`. The input type has no proficiency, learned-skill or relationship field, so none can enter by construction; the output has no proficiency.
 - **tests.** 20/60/20 over an exhaustive sweep of `u` boundaries (0.19999, 0.2, 0.79999, 0.8); rounding of 2.5 to 3 and 3.5 to 4; clamp at 1 and 5; same input same output; different `birthId` different draws; all 13 fields recorded; a drifted parent's effective score is used, not its baseline (the caller snapshots; the test passes both).
 - **checks** GATE; `./geldar.ps1 pnpm test psyche/test/inherit`; the release check `node tools/psyche-release/src/cli.ts --check`; after merge ops tags `psyche-v<minor>`.
 - **revert-checks** Change `0.2` to `0.25`: the boundary test fails. Round half down: the 2.5 case fails. Remove the clamp: the extremes fail.
@@ -295,8 +297,8 @@ Nothing in W10 creates a child on its own. A mocked birth is not completion evid
 ## HC-42: re-mirror psyche with the factory (kit)
 
 - **id** HC-42 (proposed) **wave** W10 **repo** geldar-scriptorium **depends-on** S10-02 merged and tagged, HC-17 **size** 20k. **branch** `scriptorium/hc-42-remirror-inherit`.
-- **may-edit** `packages/psyche/src/**` (byte copy of `psyche/src/` at the tag); the pin file holding the tree hash; the mirror CI test fixture. Nothing else. Message the kit orchestrator first.
-- **shape.** Copy `psyche/src/` at tag `psyche-v<minor>` byte for byte; record the new `geldar-tree-v1` hash from `psyche/RELEASE.json`; the existing CI test fails when the mirror and pin differ.
+- **may-edit** `packages/psyche/engine/**` (byte copy of `psyche/src/` at the tag; the kit's `packages/psyche/src/` is its own entry and is not touched); the pin file holding the tree hash; the mirror CI test fixture. Nothing else. Message the kit orchestrator first.
+- **shape.** Copy `psyche/src/` at tag `psyche-v<minor>` byte for byte into `packages/psyche/engine/`; record the new `geldar-tree-v1` hash from `psyche/RELEASE.json`; the existing CI test fails when the mirror and pin differ.
 - **checks** the mirror-hash test. **revert-checks** Edit one byte in the mirror: the hash test fails. **commit** `chore(psyche): re-mirror psyche v<minor> with the inheritance factory`. **split line** none. The kit does not call `inheritSheet`; the world adapter (S10-03) does.
 
 ## S10-03: birth transaction and adapters

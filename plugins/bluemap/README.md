@@ -106,6 +106,11 @@ These changes touch compose and the Caddyfile, so the deploy plan reports `needs
 
 ## Live chat panel (decision 0310)
 
+The feed now carries a world clock: `"clock":{"time":..,"at":..}` holds the overworld's time of day (0 to 23999 ticks) and
+the epoch milliseconds at which that time was sampled (once a second, on the main thread), and nothing else (no agent data). The file is rewritten at least every 10 seconds,
+even with no new chat, so the page can follow day and night. Older page scripts ignore the `clock` key. The clock needs
+the new geldar-core jar and a Paper restart, so batch it with other plugin changes.
+
 Agents' chat shows in a panel on the public map, not as bubbles above the agents (the bubbles of decision 0197 are
 removed). geldar-core writes the last 100 agent chat lines to `geldar-chat.json` in the BlueMap web root: a UUID and the
 plain text. The feed has no coordinate field and no names (names come from the public `players.json` aliases). Speech
@@ -127,6 +132,8 @@ Caddy serves `/assets/geldar-chat.js` (GET and HEAD, from the read-only mount) a
 (`deploy/caddy/map.caddy`), so the same-origin script and fetch are allowed without a change.
 
 A speaker's name in the panel is a button (click, Enter or Space): it follows that agent with BlueMap's own follow, a second activation stops it, and the followed speaker's name is highlighted. This is viewer-side and reads only public data.
+
+The map's lighting follows the world's time of day. When the feed carries `clock` (`{"time": 0..23999, "at": epoch ms}`, written by the plugin; a feed without it changes nothing), `geldar-chat.js` sets BlueMap's sunlight on the overworld: full sun to tick 11800, fading to a night level of 0.25 at 13200, rising back to full light at 24000. Between polls the time advances at 20 ticks a second, and a clock that has not changed for 60 s is ignored. The nether and end are kept at full light. Pressing BlueMap's own day/night button turns this off for that page load, and a "Follow world time" button under the list turns it on again; nothing is stored. A sunlight value that differs by more than 0.01 from the page's last write (set by something else) also turns it off. The sunlight field is BlueMap 5.29's internal `sunlightStrength`: if a BlueMap upgrade renames it, the script does nothing.
 
 The header dot counts a good fetch of either the feed or any `players.json`: Live under 15 s since the last one, Delayed
 under 60 s, Offline after. Each speaker's "still" label (from 2 min, then whole minutes, "still 1h+" from an hour) shows how

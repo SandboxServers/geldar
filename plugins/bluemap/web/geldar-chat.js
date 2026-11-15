@@ -21,9 +21,29 @@
   const MINUTE_MS = 60000;
   const HOUR_MS = 3600000;
   const LIVE_TEXT = { live: 'Live', delayed: 'Delayed', offline: 'Offline' };
+  const DAY_TICKS = 24000;
+  const TICK_MS = 50;
+  const CLOCK_MAX_MS = 60000;
+  const SUN_FULL_END = 11800;
+  const SUN_DARK_START = 13200;
+  const SUN_DARK_END = 22800;
+  const SUN_NIGHT = 0.25;
+  const SUN_EPS = 0.01;
 
-  // The feed as {t, id, text} lines, oldest first. Null when the body is not {"v":1,"lines":[...]}. Bad entries are
-  // skipped, and at most the last MAX_ROWS lines are kept.
+  // The clock {time, at} of a feed, or null when absent or invalid: time an integer 0..23999, at a finite number.
+  function parseClock(c) {
+    const ok =
+      !!c &&
+      Number.isInteger(c.time) &&
+      c.time >= 0 &&
+      c.time < DAY_TICKS &&
+      typeof c.at === 'number' &&
+      Number.isFinite(c.at);
+    return ok ? { time: c.time, at: c.at } : null;
+  }
+
+  // The feed as {lines, clock}: lines are {t, id, text} oldest first, clock is parseClock's. Null when the body is not
+  // {"v":1,"lines":[...]}. Bad entries are skipped, and at most the last MAX_ROWS lines are kept.
   function parseFeed(text) {
     let doc;
     try {
@@ -44,7 +64,7 @@
         out.push({ t: l.t, id: l.id, text: l.text });
       }
     }
-    return out.slice(-MAX_ROWS);
+    return { lines: out.slice(-MAX_ROWS), clock: parseClock(doc.clock) };
   }
 
   // The {uuid, name} pairs of a live players.json. Null when the body is not {"players":[...]}.
@@ -211,6 +231,53 @@
     return '1h+ ago';
   }
 
+  // The sunlight strength for a tick of day (0 is 06:00 sunrise): full sun to tick 11800, a linear fade to the night
+  // level at 13200, the night level to 22800, then a linear rise back to 1 at 24000. Continuous at the wrap.
+  function sunFor(time) {
+    const t = ((time % DAY_TICKS) + DAY_TICKS) % DAY_TICKS;
+    if (t <= SUN_FULL_END) return 1;
+    if (t < SUN_DARK_START)
+      return 1 - ((1 - SUN_NIGHT) * (t - SUN_FULL_END)) / (SUN_DARK_START - SUN_FULL_END);
+    if (t <= SUN_DARK_END) return SUN_NIGHT;
+    return SUN_NIGHT + ((1 - SUN_NIGHT) * (t - SUN_DARK_END)) / (DAY_TICKS - SUN_DARK_END);
+  }
+
+  // The world's tick of day now: the feed's time plus the ticks since the feed arrived (20 a second), wrapped at a day.
+  // A clock behind the arrival time counts as no elapsed time.
+  function clockNow(clock, receivedAtMs, nowMs) {
+    const elapsed = Math.max(0, nowMs - receivedAtMs);
+    return (clock.time + Math.floor(elapsed / TICK_MS)) % DAY_TICKS;
+  }
+
+  // Writes the sunlight and remembers the value, so a later value that differs from it shows a foreign write.
+  function writeSun(state, u, value) {
+    u.value = value;
+    state.sunWrote = value;
+  }
+
+  // Sets BlueMap's sunlight from the clock, on each tick. Auto mode off (the viewer took the day-night button) writes
+  // nothing. On the overworld with a clock that has not changed for 60 s, the sun is written when it moves by more than
+  // 0.01. Any other map gets 1 once, since its lighting has no day cycle. A value that differs by more than 0.01 from
+  // the page's last write was set by someone else (BlueMap's own toggle): auto mode turns off, as for the button.
+  // Every access is guarded: a missing field does nothing.
+  function applySun(state, bm, now) {
+    if (!state.autoSun) return;
+    const u = bm?.mapViewer?.data?.uniforms?.sunlightStrength;
+    if (!u) return;
+    if (state.sunWrote !== null && Math.abs(u.value - state.sunWrote) > SUN_EPS) {
+      state.autoSun = false;
+      if (state.onManual) state.onManual();
+      return;
+    }
+    if (bm.mapViewer.map?.data?.id !== 'overworld') {
+      if (u.value !== 1) writeSun(state, u, 1);
+      return;
+    }
+    if (!state.clock || now - state.clockAt > CLOCK_MAX_MS) return;
+    const want = sunFor(clockNow(state.clock, state.clockAt, now));
+    if (Math.abs(u.value - want) > SUN_EPS) writeSun(state, u, want);
+  }
+
   // Records an agent's home position, rounded to 0.1 on each axis. The timer restarts when any axis changes.
   function trackPosition(state, a, now) {
     const x = Math.round(a.x * 10) / 10;
@@ -291,6 +358,11 @@
       newestT: null,
       still: new Map(),
       here: new Map(),
+      clock: null,
+      clockAt: null,
+      autoSun: true,
+      sunWrote: null,
+      onManual: null,
     };
     list.addEventListener('scroll', () => {
       state.pinned = isPinned(list);
@@ -331,9 +403,18 @@
       }),
     );
     const feedText = await feedP;
-    const feed = feedText === null ? null : parseFeed(feedText);
-    if (feed === null) return false;
+    const parsed = feedText === null ? null : parseFeed(feedText);
+    if (parsed === null) return false;
+    const feed = parsed.lines;
     state.lastOk = state.now();
+    // The clock is re-anchored only when it changed, so a clock the server has not moved keeps its first arrival time.
+    const same =
+      state.clock &&
+      parsed.clock &&
+      parsed.clock.at === state.clock.at &&
+      parsed.clock.time === state.clock.time;
+    if (!same) state.clockAt = state.lastOk;
+    state.clock = parsed.clock;
     state.newestT = feed.length > 0 ? Math.max(...feed.map((l) => l.t)) : null;
     const fresh = takeNew(feed, new Set(state.shown));
     if (fresh.length > 0) {
@@ -486,7 +567,14 @@
     title.appendChild(note);
     head.appendChild(toggle);
     root.appendChild(head);
+    // Shown only after the viewer takes the day-night button (auto mode off); it turns the page's sun back on.
+    const resume = doc.createElement('button');
+    resume.type = 'button';
+    resume.className = 'gc-resume';
+    resume.textContent = 'Follow world time';
+    resume.hidden = true;
     root.appendChild(list);
+    root.appendChild(resume);
     root.appendChild(foot);
     const setCollapsed = (collapsed) => {
       root.classList.toggle('gc-collapsed', collapsed);
@@ -500,7 +588,7 @@
       writeCollapsed(collapsed);
       if (!collapsed && onExpand) onExpand();
     });
-    return { root, list, note: showNote, live, foot };
+    return { root, list, note: showNote, live, foot, resume };
   }
 
   // Adds the panel's stylesheet unless the page already links one. BlueMap rewrites settings.json on every Paper
@@ -536,11 +624,27 @@
       (uuid) => followAgent(uuid, { bluemap: bluemap(), mapOf: state.mapOf, note: panel.note }),
       now,
     );
+    // The viewer's own day-night button (BlueMap's class) takes manual control; the resume control gives it back.
+    const setAutoSun = (on) => {
+      state.autoSun = on;
+      panel.resume.hidden = on;
+    };
+    if (doc.addEventListener)
+      doc.addEventListener(
+        'click',
+        (e) => {
+          if (e.target?.closest?.('.day-night-switch')) setAutoSun(false);
+        },
+        true,
+      );
+    state.onManual = () => setAutoSun(false);
+    panel.resume.addEventListener('click', () => setAutoSun(true));
     runLoop(state, fetchFn, schedule, () => paintStatus(state, panel, now()));
     if (tick)
       tick(() => {
         syncHighlight(panel.list, bluemap());
         paintStatus(state, panel, now());
+        applySun(state, bluemap(), now());
       }, 1000);
   }
 
@@ -557,6 +661,8 @@
   if (typeof module !== 'undefined') {
     module.exports = {
       parseFeed,
+      sunFor,
+      clockNow,
       parsePlayers,
       remember,
       nameFor,
