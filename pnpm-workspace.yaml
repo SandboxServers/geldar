@@ -23,6 +23,12 @@ saveExact: true
 # fresh release cannot enter the lockfile on a resolve. Minutes: 14 * 24 * 60.
 minimumReleaseAge: 20160
 
+# pnpm 10+ refuses to install with unapproved build scripts. esbuild's postinstall only checks the
+# platform binary from its @esbuild/<platform> optional dependency; body-helper's bundle runs without it,
+# so its script stays off (least privilege) and the install passes with --frozen-lockfile.
+allowBuilds:
+  esbuild: false
+
 overrides:
   # Transitives newer than the two-week floor (decision 0005): pin the newest older release.
   semver: 7.8.5

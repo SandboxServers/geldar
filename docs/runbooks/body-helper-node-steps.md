@@ -28,16 +28,43 @@ the NATS conf in place (step 3), verify (step 4). Do not change the NATS conf be
 
 ## Open questions for geldar-93 (block step 2)
 
-1. How the built helper reaches the node is NOT decided by C7-03c2. The install script does not fetch
-   or copy code. It expects the build at `/opt/geldar/body-helper/dist/main.js`. Until geldar-93
-   places that file, the script writes no unit and enables nothing, and it says so. Decide this (a
-   pinned release artifact, or a path from the release env) before step 2. Do not invent a registry.
+1. How the built helper reaches the node is decided by C7-03c5 (decision 0260): a CI artifact, not a registry.
+   The CI job `body-helper-bundle` (`.github/workflows/body-helper-bundle.yml`) builds one bundle, `main.js`, and
+   `main.js.sha256` beside it, and keeps them as the GitHub Actions artifact `body-helper-bundle` for 30 days.
+   geldar-93 downloads that artifact from a green run (see "Step 0a" below), checks it, and copies the two files to
+   `/opt/geldar/body-helper/dist/`. The install script does not fetch code. It verifies `main.js` against
+   `main.js.sha256` before it writes anything, and blocks if either file is missing or does not match.
 2. The PG* variables for the password step (step 2) are NOT set by this runbook. `sudo` drops them
    (env_reset), and `sudo -E` is refused by this runbook. geldar-93 decides how root's run gets them,
    and writes that decision into the change log. They must name the admin role (PGUSER), the host
    (PGHOST), the port (PGPORT) and the database (PGDATABASE).
 3. The tool that sends the step 4 `status` request as the `supervisor` user is not named here. Use a
    NATS client that reads the `supervisor` password file; do not put the password on a command line.
+
+## Step 0a: the helper bundle and the pinned Node (C7-03c5)
+
+Run by geldar-93 before step 2. Nothing here runs on the node except the copies and the checks named.
+
+1. Get the bundle from a green run of the `body-helper-bundle` workflow (build only; it touches no node). Pick the
+   run on `main` that built the commit being installed, then download its artifact on a machine with the GitHub
+   CLI, not on the node:
+   `gh run download <run-id> -n body-helper-bundle -D <empty-dir>`. The artifact holds `main.js` and `main.js.sha256`.
+2. Check the bundle where you downloaded it: `cd <empty-dir> && sha256sum --check main.js.sha256` must say `OK`.
+   On the node, first run `install -d -m 0755 -o root -g root /opt/geldar/body-helper/dist`. Then copy both files
+   to that directory with `scp`.
+3. Put both files in `/opt/geldar/body-helper/dist/` as root: `install -m 0644 -o root -g root main.js main.js.sha256 /opt/geldar/body-helper/dist/`.
+   The install script checks `main.js` against `main.js.sha256` on every `--apply` and blocks on a mismatch.
+4. Node: on the node run `install -d -m 0755 -o root -g root /opt/geldar/node` first. Download
+   `node-v22.23.4-linux-x64.tar.xz` from the official release (`https://nodejs.org/dist/v22.23.4/`) on the machine you
+   download to, then run `sha256sum node-v22.23.4-linux-x64.tar.xz` there. Its sum must equal the value of
+   `BODY_HELPER_NODE_SHA256_LINUX_X64` in `deploy/body-helper-node.env` (the public digest is kept in that file only,
+   so the two cannot drift). Do not copy a tarball whose sum differs. Copy the checked tarball to
+   `/opt/geldar/node/`. The install script's `--apply` checks its sha256 again, then extracts it so that
+   `/opt/geldar/node/bin/node` exists, and writes `/opt/geldar/node/.pinned-sha256` as the stamp that marks the node
+   as the pin. A bad sha256 stops the apply before any write; a bad tarball is never extracted.
+   Prerequisite: `--apply` needs `xz` on the node's PATH to unpack the tarball. If `command -v xz` finds nothing, install
+   the OS package `xz-utils` first (this is the only package install in this step; Node itself is never installed by a package manager).
+5. Never install Node from a package manager on the node. The pin in `deploy/body-helper-node.env` is the only Node.
 
 ## Step 0: inputs by name
 
@@ -91,13 +118,16 @@ Rollback: none needed; a dry run changes nothing.
    log in to a database named after the role, fail, and run `ALTER ROLE` on every run. Without a pg_hba entry the probe is refused (28000) and the script runs `ALTER ROLE` on every run; check
    the login by hand after step 2. The apply preflight refuses to start unless `PGHOST`, `PGUSER` and `PGDATABASE` are set.
 2. As root, with no `-E`: `sudo deploy/install-body-helper.sh --apply`. It writes the unit file (`/opt/geldar` is
-   created by card C7-03c5, not by the script), creates the two secret files if missing (step 0), runs the
+   created by card C7-03c5, not by the script; the bundle and the Node tarball are staged by Step 0a), creates the two secret files if missing (step 0), runs the
    password step, and enables the unit. A second `--apply` changes nothing. Only `--apply` changes
    anything; an unknown flag is refused.
-3. Node runtime, carry-forward: the unit's `ExecStart` and the password step's migrate call use `node`.
-   The node (geldar-worldops, node5) has no Node. Until card C7-03c5 places a pinned node binary under
-   `/opt/geldar`, `--apply` stops at its node preflight before it writes anything. Do not install Node
-   from a package manager on the node to get past it.
+3. Node runtime (decided by C7-03c5): the unit's `ExecStart` and the password step's migrate call use the
+   pinned Node 22.23.4 at `/opt/geldar/node/bin/node`, never a PATH `node`. The node (geldar-worldops, node5) has
+   no Node. The pin is `deploy/body-helper-node.env` (version, tarball name, sha256 of
+   `node-v22.23.4-linux-x64.tar.xz`). Stage the official tarball in `/opt/geldar/node/`; the script checks its
+   sha256 against the pin, then extracts it. If `/opt/geldar/node/bin/node` is absent and the tarball is not
+   staged, `--apply` stops at its node preflight before it writes anything. Do not install Node from a package
+   manager on the node to get past it.
 4. Until step 3 is DONE the helper cannot log in to NATS. It may restart under systemd (`Restart=on-failure`,
    at most 5 starts in 300 s). That is expected. If the unit is `failed` after step 3, restart it once.
 
