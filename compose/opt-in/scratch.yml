@@ -2,10 +2,10 @@
 # outside compose/*.yml so the compose lane does not validate it standalone. Use only through deploy/scratch/scratch.sh:
 #   docker compose -p scratch-<suffix> -f compose/phase0.yml -f compose/nats-auth.yml -f compose/opt-in/scratch.yml ...
 # (the script adds compose/nats-auth.yml only when SCRATCH_NATS_AUTH_DIR is set; see docs/runbooks/scratch-stack.md).
-# It replaces every published port with a loopback-only one on a high default port, so it runs beside the phase0 and
-# Colo stacks without clashing. Every service gets hard memory and CPU caps, restart "no", and the label geldar.scratch=true.
-# Ports and memory come from the environment; the defaults are the values the runbook names.
-# The secret files and the world volume come from the directory and volume name the script passes in.
+# It replaces every published port with a loopback-only one on a high default port (the !override tag), so it runs
+# beside the phase0 and Colo stacks without clashing. Every service gets hard memory and CPU caps (no swap beyond the
+# memory cap), restart "no", and the label geldar.scratch=true. Ports and memory come from the environment; the
+# defaults are the values the runbook names.
 services:
   postgres:
     ports: !override
@@ -15,6 +15,7 @@ services:
         limits:
           memory: 768m
           cpus: "0.5"
+    memswap_limit: 768m
     labels:
       geldar.scratch: "true"
     restart: "no"
@@ -28,6 +29,7 @@ services:
         limits:
           memory: 256m
           cpus: "0.25"
+    memswap_limit: 256m
     labels:
       geldar.scratch: "true"
     restart: "no"
@@ -40,6 +42,7 @@ services:
         limits:
           memory: 3072m
           cpus: "1.5"
+    memswap_limit: 3072m
     labels:
       geldar.scratch: "true"
     restart: "no"
@@ -52,6 +55,7 @@ services:
         limits:
           memory: 768m
           cpus: "0.5"
+    memswap_limit: 768m
     labels:
       geldar.scratch: "true"
     restart: "no"
@@ -62,12 +66,13 @@ services:
         limits:
           memory: 384m
           cpus: "0.25"
+    memswap_limit: 384m
     labels:
       geldar.scratch: "true"
     restart: "no"
 
-# Secret files live outside the repo, in the directory deploy/scratch/scratch.sh creates (umask 077, mktemp -d).
-# The NATS auth files are read only when the caller prepared them and passed SCRATCH_NATS_AUTH_DIR.
+# Secret files live in the per-user state directory deploy/scratch/scratch.sh creates ($SCRATCH_SECRETS_DIR, mode 0700,
+# files 0600). The NATS auth files are read only when the caller passed SCRATCH_NATS_AUTH_DIR to up.
 secrets:
   postgres:
     file: ${SCRATCH_SECRETS_DIR:?set by deploy/scratch/scratch.sh}/postgres.txt
