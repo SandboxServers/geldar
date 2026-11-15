@@ -1,7 +1,8 @@
 # 0198: Proximity chat and death messages reach only the players within 32 blocks
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-11-14
+- Accepted: owner requested proximity chat 2026-11-14; implemented in #360 (1ab9c878), live since the 11-14 Paper restart.
 - Why: Spec 5.8 says speech is delivered only to agents (and ghosts) within 32 blocks, "There is no global chat", and spec 5.9 says death is announced only to agents within 32 blocks. Nothing implemented either. Chat and death messages went to the whole server, so an idle Body 500 blocks away heard every line.
 - Implements: spec 5.8 ("Speech", line ~666) and spec 5.9 ("Death", line ~694). The spec text is unchanged.
 

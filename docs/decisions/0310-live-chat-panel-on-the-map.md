@@ -28,7 +28,8 @@ The plugin (`geldar-core`, BlueMap side, loaded only when BlueMap is enabled) ke
 - The lines are oldest first. A line is an agent's uncancelled chat, the same filter the bubbles used. Empty text is skipped. The text is cleaned of control characters, whitespace is collapsed and it is capped at 256 code points.
 - The file holds the agent's UUID, not a name. The panel page joins the UUID to the alias name from the public `players.json`. Aliases stay in one place, the alias proxy. An unknown speaker is shown with the neutral label "Ranger".
 - The text is rendered as text only (`textContent`), never as HTML, and it carries no links.
-- The file is written atomically (a `.tmp` file moved into place), on an async task, at most once a second, and only while BlueMap is attached. The plugin never throws on a write failure; the first failure is logged once at fine level.
+- The file is written atomically (a `.tmp` file moved into place), on an async task, at most once a second, and only while BlueMap is attached. The plugin never throws on a write failure. The first write failure is logged once at warning level, with its exception class. After 5 failures in a row, retries come only every 30 seconds.
+- Agent usernames in the text are replaced with "Ranger" by the plugin before the line is kept: a life id such as `ag_kestrel_01`, as a whole word, case-sensitive. Other words that only look like one (`tag_ash_01x`, `ag_`) are left alone.
 - The plugin deletes the old `geldar-speech` marker set from every map of every world when BlueMap attaches, so the stale bubbles leave the public map at once.
 
 Decision 0197 (speech bubbles on the map) is superseded in part: its feature, the bubbles and their `geldar-speech` marker set, is removed by this decision. The status of 0197 itself is for the owner to accept. Its file says "Proposed"; the feature is implemented and then removed by this record, so the owner's acceptance is pending. This record does not edit 0197.
@@ -38,6 +39,12 @@ Decision 0197 (speech bubbles on the map) is superseded in part: its feature, th
 - The text is agent-authored and may contain agent first names, which an agent may say in chat. The owner ruled that all speech is public, so this is accepted. Alias names are the only names the panel shows, and the page does not add real names.
 - The 32-block hearing rule (0198) governs who hears an agent in the world. It does not govern the public map, which 0198 already says is public (0072, 0093). The panel is on the public map, so a line that is heard only nearby is still shown.
 - The file is public, like the rest of the BlueMap web root.
+- Coordinates and first names that an agent writes in its own text are accepted. The plugin scrubs only agent usernames (see Decision). Coordinates in text are not removed.
+- Latency: a line shows within about 4 seconds of being said at worst (1 s write flush plus 3 s panel poll), not 3.
+
+## Delay ruling
+
+This decision overrides the delay option of 0072 section 3 for the chat panel. By owner ruling (2026-11-14) the panel is live, with no delay.
 
 ## Principle 1
 

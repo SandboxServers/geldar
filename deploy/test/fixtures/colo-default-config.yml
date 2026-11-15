@@ -118,6 +118,12 @@ services:
         read_only: true
         bind:
           create_host_path: true
+      - type: bind
+        source: ../plugins/bluemap/web/geldar-chat.js
+        target: /etc/caddy/geldar-chat.js
+        read_only: true
+        bind:
+          create_host_path: true
   eventsink:
     build:
       context: ..

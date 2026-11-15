@@ -25,6 +25,18 @@ class SpeechTextTest {
     }
 
     @Test
+    void replacesAgentUsernamesWithRanger() {
+        assertEquals(Optional.of("hi Ranger and Ranger!"), SpeechText.clean("hi ag_ash_01 and ag_bob_12!"));
+        assertEquals(Optional.of("Ranger"), SpeechText.clean("ag_kestrel_01"));
+    }
+
+    @Test
+    void leavesWordsThatOnlyLookLikeUsernamesAlone() {
+        String text = "ag_ tag_ash_01x ag_ash_1 ag_Ash_01 ag_ash_01x";
+        assertEquals(Optional.of(text), SpeechText.clean(text));
+    }
+
+    @Test
     void capsAtTwoHundredFiftySixCodePoints() {
         String shown = SpeechText.clean("a".repeat(300)).orElseThrow();
         assertEquals("a".repeat(256), shown);

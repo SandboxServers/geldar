@@ -311,6 +311,12 @@ jobs:
           eventsink/test/xp.it.test.ts
           golem/src/mind-link/server.it.test.ts
           threshold/mcp/test/nats-auth.it.test.ts
+      - name: xp outbox integration test (serial)
+        # Its own step, after the parallel one: the publisher claims every unpublished outbox row in the shared
+        # database, so it must not run beside xp.it.test.ts, which leaves unpublished rows.
+        env:
+          GELDAR_IT_ALLOW_SHARED_DB: '1'
+        run: pnpm vitest run eventsink/test/xp-outbox.it.test.ts
       - name: stop the eventsink and show its log
         if: always()
         run: |

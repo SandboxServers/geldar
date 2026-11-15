@@ -1,5 +1,7 @@
 # Muffled hearing packets
 
+Paths corrected 2026-11-15: the plugin is Java (package dev.geldar.core.proximity), not TypeScript.
+
 Written 2026-11-14. Record: [0199-muffled-hearing](../../decisions/0199-muffled-hearing.md) (Proposed). Spec: 5.2 (earshot), 5.8 (32-block speech rule, information bubbles), 5.9 (`chat` config). Related: 0154 (`heard_sound`), 0181 (prompt budget), 0198 (proximity chat, the cut these packets extend).
 
 Card fields follow [packet-conventions.md](../phase1/packet-conventions.md) section 1, with `owner` and `prove-it` added. The ids are `MH-n` until a wave id is assigned.
@@ -71,12 +73,12 @@ Order: 0198, MH-7, MH-1, MH-CH, MH-2, MH-3, MH-8a, MH-4, MH-5, MH-6, MH-8b (MH-0
 - **depends-on:** MH-1; 0198 merged to main (MH-2 constants are placeholders until MH-8a)
 - **owner:** geldar-93 via a packet-coder (plugin)
 - **size:** M
-- **files:** `plugin/core/src/chat/absorption.ts` (new; the material table and the pure function `effectiveDistance(speaker, listener, blockAt)`); `plugin/core/src/chat/absorption.test.ts` (new); `plugin/core/src/chat/absorption-table.ts` (new, the table only, so it can be read without the algorithm)
-- **prove-it:**
-  - a test per table row (every material in decision step 4 has a pinned value); changing one row fails its test
-  - a test that a straight wall of 3 stone blocks between speaker and listener at raw 10 gives `e = 10 + 6 = 16` and the muffled tier when `e` is pushed past 32 by a 15-block wool wall
-  - a test that the cast stops at 64 block reads and returns the silent tier, not an exception
-  - revert: the absorption add is removed, the wall test must fail
+- **files:** `plugin/core/src/main/java/dev/geldar/core/proximity/Absorption.java` (new; the pure `effectiveDistance(...)` over a block-material lookup, no Bukkit types); `plugin/core/src/main/java/dev/geldar/core/proximity/AbsorptionTable.java` (new, the material table only, so it can be read without the algorithm); `plugin/core/src/main/java/dev/geldar/core/proximity/MuffleConfig.java` (new; the constants: per-ray cap 64, per-line cap 512, margin 8, sealed penalty 4; placeholders until MH-8a); `plugin/core/src/test/java/dev/geldar/core/proximity/AbsorptionTest.java` and `AbsorptionTableTest.java` (new; JUnit 5, beside `ProximityRuleTest.java`)
+- **prove-it** (JUnit 5, run by the Gradle `test` task in `plugin/core`):
+  - a test per table row (every material in decision step 4 has a pinned value; `AbsorptionTableTest`); changing one row fails its test
+  - a test that a straight wall of 3 stone blocks between speaker and listener at raw 10 gives `e = 10 + 6 = 16` and the muffled tier when `e` is pushed past 32 by a 15-block wool wall (`AbsorptionTest`)
+  - a test that the cast stops at 64 block reads and returns the silent tier, not an exception (`AbsorptionTest`)
+  - revert: the absorption add in `Absorption.effectiveDistance` is removed, the wall test must fail
 
 ## MH-3: ProximityRule uses effective distance and emits the notice
 
@@ -85,8 +87,8 @@ This card REWRITES 0198's acceptance tests to gate on effective distance instead
 - **depends-on:** MH-2; MH-1; MH-7 merged (spec amendment); MH-8a done before the merge (the branch is built first, MH-8a runs on it and sets the values)
 - **owner:** geldar-93 via a packet-coder (plugin)
 - **size:** M
-- **files:** `plugin/core/src/chat/proximity-rule.ts` (0198's file, extended); `plugin/core/src/chat/muffle-config.ts` (new; `chat.muffle` constants: margin 8, sealed penalty 4, per-line cap 512, per-ray cap 64); `plugin/core/src/chat/proximity-rule.test.ts`; the plugin-to-Body emit (publishes on `hearingSubject()`, record decision 9)
-- **prove-it:**
+- **files:** `plugin/core/src/main/java/dev/geldar/core/proximity/ProximityRule.java` (0198's file, extended: effective distance in place of raw distance); `plugin/core/src/main/java/dev/geldar/core/proximity/ProximityChatListener.java` (0198's file, extended; the plugin-to-Body emit publishes on `hearingSubject()`, record decision 9); `plugin/core/src/test/java/dev/geldar/core/proximity/ProximityRuleTest.java` and `ProximityChatListenerTest.java` (0198's tests, rewritten to gate on effective distance); the constants come from `MuffleConfig.java` (MH-2), not a new file here
+- **prove-it** (rule cases in `ProximityRuleTest`; the notice emit and the per-line cap in `ProximityChatListenerTest`):
   - a clear pair (no walls, raw 20): words delivered, no notice
   - a muffled pair (wall, `e` = 35): no words, one `heard_muffled` emit with the right direction and band
   - a silent pair (`e` = 50): neither
@@ -121,7 +123,7 @@ This card REWRITES 0198's acceptance tests to gate on effective distance instead
 - **depends-on:** MH-5
 - **owner:** geldar-3b (prompts), geldar-93 reviews
 - **size:** S
-- **files:** `prompts/` (new version of the snapshot template that adds the muffled-notice line; the released template is not edited in place); `prompts/README` or the template index (version record)
+- **files:** `prompts/` (new version of the snapshot template that adds the muffled-notice line; the released template is not edited in place); `prompts/README.md` or the template index (version record)
 - **prove-it:**
   - a template test that renders the snapshot with and without a muffled notice and checks the rendered prompt stays within `mind.prompt_budget_tokens` (2500) at the 8704 context (decision 0181)
   - the old template version still renders the old output (no in-place edit): check against its frozen fixture
