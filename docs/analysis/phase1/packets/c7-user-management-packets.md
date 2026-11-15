@@ -188,6 +188,7 @@ Review fix (wave 3, L2 and the PATCH move). The web "New token" button revokes t
 ## C7-06d: account page body controls and live status (split of C7-06c)
 
 - **id / wave / lane.** C7-06d, Shelved until sign-up opens (with C7-03b2). Register lane. **depends-on.** C7-06c (status line, built partial), C7-04c2 (body routes wired), C7-04e (PATCH, built). **branch.** `phase1/c7-06d-account-controls`. **migration.** none. **size.** M.
+- **Deviation (fix 1, geldar-93).** Live PATCH visibility toggles deferred: Caddy allows only GET/HEAD/POST on /register paths (`deploy/caddy/glass.caddy`), so the toggles are removed; the existing POST visibility forms stay. Either add PATCH to `deploy/caddy/glass.caddy` in a deploy card with `validate.sh` and a Caddy pin test, or add a POST route for the flags.
 - **Goal.** The three C7-06c items that the status-line packet did not build (worknote `C7-06c.md`, "Not built").
   1. **Same-origin client script and CSP change** for the `x-csrf-token` header. The body routes (scope `body`) and PATCH read the CSRF token from that header; a plain HTML form cannot send it. The script is served from the register origin, and the CSP admits it.
   2. **Start, stop and restart buttons** calling `/agents/{id}/body/*`. Rendered only when the body routes are mounted.

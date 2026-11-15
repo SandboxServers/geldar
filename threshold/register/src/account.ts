@@ -1,6 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { hashToken, mintToken } from '../../mcp/src/store/token-hash.ts';
+import { ACCOUNT_PAGE_HEADERS, controlsOf, controlsRoute } from './account-controls-wiring.ts';
 import { deleteAccountPage, runAccountDelete } from './account-delete-page.ts';
 import { accountPage, type BodyState } from './account-pages.ts';
 import { ACCOUNT_CSS } from './account-style.ts';
@@ -61,13 +62,12 @@ export interface AccountDeps {
   readonly log: (line: string) => void;
   /** Per-owner limiter (R41): seconds to wait, or 0. */
   readonly ownerCharge?: (ownerId: string) => number;
-  /**
-   * The body state of one agent (C7-06c), from the body status route when the body routes are wired. Unset, or
-   * undefined for an agent, means the page shows no body line for it. A throw is treated the same way.
-   */
+  /** The body state of one agent (C7-06c). Unset, undefined or a throw shows no body line for it. */
   readonly bodyState?: (playerId: string) => Promise<BodyState | undefined>;
   /** The account delete (C7-09a): the same shared delete the API route uses. Unset, the page action is a 404. */
   readonly accountDelete?: AccountDeleteDeps | undefined;
+  /** True only when the body routes are mounted: the page then shows the start, stop and restart buttons (C7-06d). */
+  readonly bodyControls?: boolean;
 }
 
 /** The value of the one cookie of this name. Two or more of that name in the header give null: no session. */
@@ -225,6 +225,7 @@ export class Account {
       res.end(ONBOARDING_SCRIPT);
       return true;
     }
+    if (controlsRoute(url.pathname, req, res, () => this.methodNotAllowed(res))) return true;
     if (url.pathname === '/account.css') {
       if (req.method !== 'GET') return this.methodNotAllowed(res);
       res.writeHead(200, {
@@ -325,8 +326,15 @@ export class Account {
 
   private async show(res: ServerResponse, s: Session, notice = ''): Promise<true> {
     const players = await this.deps.store.listPlayers(s.identityHash);
-    const bodyStates = await this.bodyStatesOf(players);
-    html(res, 200, accountPage(players, s.csrf, this.deps.config.harnesses, notice, bodyStates));
+    const page = accountPage(
+      players,
+      s.csrf,
+      this.deps.config.harnesses,
+      notice,
+      await this.bodyStatesOf(players),
+      controlsOf(players, s.csrf, this.deps.bodyControls),
+    );
+    html(res, 200, page, ACCOUNT_PAGE_HEADERS);
     return true;
   }
 
