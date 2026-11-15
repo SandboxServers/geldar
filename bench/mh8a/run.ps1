@@ -19,6 +19,13 @@ compose/phase0.yml, compose/rcon-host.yml and bench/mh8a/phase0-bench.yml, and s
 geldar-mh8a_paper-data, so the bench never reads or deletes the phase0 world (geldar-phase0_paper-data).
 Nothing here removes containers by name pattern or prunes: compose acts only on project geldar-mh8a.
 
+  ./bench/mh8a/run.ps1 up|down|ram ... -ExtraComposeFile <path>
+                              optional run-time overlay (for example a network subnet override) appended as a
+                              fourth `-f <path>` after the three files below, on every compose call (up, down, ps,
+                              restart, exec), so teardown uses the same overlay. The file must exist and must be
+                              outside the repo worktree; a path inside the worktree is refused. The overlay is a
+                              run-time scratchpad file that must never be committed: keep it outside the repo.
+
 Bench ports (loopback only): Minecraft 26565, NATS 14222, RCON 26575. The bench is a test-harness target
 only; never use it for a real shard.
 #>
@@ -29,7 +36,8 @@ param(
   [ValidateRange(0, 1000)]
   [double] $MinFreeRamGb = 10,
   [ValidateRange(0, 1000)]
-  [double] $AbortBelowRamGb = 0
+  [double] $AbortBelowRamGb = 0,
+  [string] $ExtraComposeFile = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -39,6 +47,22 @@ $MinFreeDiskGb = 20
 $Root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $ComposeFiles = @('-f', 'compose/phase0.yml', '-f', 'compose/rcon-host.yml', '-f', 'bench/mh8a/phase0-bench.yml')
 $PluginConfig = '/data/plugins/GeldarCore/config.yml'
+$ExtraComposeFull = ''
+
+function Resolve-ExtraComposeFile {
+  # Sets $ExtraComposeFull to the absolute path of -ExtraComposeFile. Refuses a missing file and any file under the
+  # worktree root (the overlay must never be committed). Runs before any action, so `ram` also refuses.
+  if ([string]::IsNullOrEmpty($ExtraComposeFile)) { return }
+  if (-not (Test-Path -LiteralPath $ExtraComposeFile -PathType Leaf)) {
+    throw "refusing: -ExtraComposeFile '$ExtraComposeFile' does not exist or is not a file"
+  }
+  $full = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $ExtraComposeFile).Path)
+  $rootPrefix = [IO.Path]::GetFullPath($Root).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+  if ($full.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "refusing: -ExtraComposeFile '$full' is inside the repo worktree; put the overlay outside the repo (it must never be committed)"
+  }
+  $script:ExtraComposeFull = $full
+}
 
 function Get-FreeRamGb {
   # FreePhysicalMemory is in KiB; 1 GiB is 1048576 KiB.
@@ -69,9 +93,12 @@ function Invoke-BenchCompose([string[]] $ComposeArgs) {
   # The caller's value is put back afterwards (removed again when it was unset).
   $previousVolume = $env:GELDAR_WORLD_VOLUME
   $env:GELDAR_WORLD_VOLUME = $WorldVolume
+  # The optional overlay (-ExtraComposeFile) goes after the three files, on every call, so teardown uses it too.
+  $files = @($ComposeFiles)
+  if ($ExtraComposeFull) { $files += @('-f', $ExtraComposeFull) }
   Push-Location $Root
   try {
-    & docker compose -p $Project @ComposeFiles @ComposeArgs
+    & docker compose -p $Project @files @ComposeArgs
     if ($LASTEXITCODE -ne 0) { throw "docker compose $($ComposeArgs -join ' ') exited $LASTEXITCODE" }
   } finally {
     Pop-Location
@@ -117,6 +144,8 @@ function Wait-PaperHealthy {
   }
   throw "paper did not become healthy within 300 s (last health: '$health', project $Project)"
 }
+
+Resolve-ExtraComposeFile
 
 if ($Action -eq 'ram') {
   if (Test-BenchRam $AbortBelowRamGb) { exit 0 }
