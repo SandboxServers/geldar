@@ -145,6 +145,7 @@ const SHARED_CAPS: Record<string, [string, string, string, number]> = {
   glass: ['GLASS', '0.5', '256m', 128],
   'bluemap-web': ['BLUEMAP_WEB', '0.25', '64m', 64],
   register: ['REGISTER', '0.25', '128m', 64],
+  supervisor: ['SUPERVISOR', '0.25', '128m', 64],
   'bluemap-alias': ['BLUEMAP_ALIAS', '0.1', '64m', 32],
 };
 
@@ -542,8 +543,12 @@ describe('compose/colo.yml: the register service (C2-08c)', () => {
       'register-ms-secret',
       'register-session-key',
     ];
-    expect(register.secrets).toEqual(names);
-    for (const name of names) expect(colo.secrets).toHaveProperty([name]);
+    // REG-NATS-COMPOSE (C7-03b2): the NATS password is mounted under its own target name, so it is an object entry.
+    expect(register.secrets).toEqual([
+      ...names,
+      { source: 'nats-register', target: 'nats-register.txt' },
+    ]);
+    for (const name of [...names, 'nats-register']) expect(colo.secrets).toHaveProperty([name]);
     expect(env(register).REGISTER_DB_PASSWORD_FILE).toBe('/run/secrets/postgres-register.txt');
     expect(env(register).REGISTER_TOKEN_PEPPER_FILE).toBe('/run/secrets/mcp-token-pepper.txt');
     expect(JSON.stringify(env(register))).not.toMatch(/SECRET["']?:\s*"[^/]/);
