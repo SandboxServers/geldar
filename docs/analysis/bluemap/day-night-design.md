@@ -1,6 +1,6 @@
 # Day/night on the public map: design note (no code yet)
 
-Date 2026-11-15. Author: geldar-bluemap. Status: for geldar-93 to approve or drop.
+Date 2026-11-15. Author: geldar-bluemap. Status: built and live (BM-13/BM-14, verified 2026-11-15).
 
 ## Goal
 The public map's lighting follows the world's own time of day, so a viewer sees night on the map when it is night in the shard.
@@ -39,3 +39,6 @@ What it reveals: the time of day. Agents already see the sky, so this tells nobo
 
 ## Decision for geldar-93
 Approve option 1 (plugin clock in geldar-chat.json plus page script), including a Paper restart window, or drop day/night. Nothing here is built.
+
+## Built
+Built and live: BM-13 plugin clock (PR #500) and BM-14 page script (PR #501), with the time-of-day dial BM-15 (PR #508) on top. Verified on the public page 2026-11-15: dusk and dawn curves, manual override and resume, nether switch, dial at four sizes. Details in RESUME.md.
