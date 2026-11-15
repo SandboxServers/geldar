@@ -144,7 +144,7 @@ This card REWRITES 0198's acceptance tests to gate on effective distance instead
 - **depends-on:** MH-3 branch built (not merged); the shard up with the plugin jar
 - **owner:** ops (runs and reports; edits no code)
 - **size:** S
-- **files:** none edited; the bench output is recorded in the campaign's bench records
+- **files:** the bench needs a harness first (amended 2026-11-15 on geldar-93's OK): a bench-only log line in `ChatHearing.judge` behind `chat.muffle.bench_log` (off by default, never in the Colo config), `compose/phase0-bench.yml` and `bench/mh8a/run.ps1` (project geldar-mh8a, loopback ports 26565/14222/26575, `down -v`), and `golem/src/bench/scenarios/muffle-chat.ts` (9 and 15 bots; RCON whitelist, tp and fill are test-harness controls on the throwaway shard only). Ops edits no code; the bench output is recorded in the campaign's bench records. Gates at run time: free RAM above 10 GB and C: above 20 GB; known caveat: after a refused take `reads` shows the full cap.
 - **prove-it:**
   - the bench with 9 and then 15 agents chatting in one area at 20 TPS: per-line block reads, per-tick cost, and the count of lines that hit the 512-read cap
   - it must set the absorption values, margin `M` and sealed penalty `S` (all "not measured" proposals in the record) BEFORE MH-3 merges; the chosen values go back into the MH-3 branch and the MH-7 spec block
