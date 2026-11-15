@@ -24,6 +24,8 @@
 -- Locks (F2): as in 0039. lock_timeout is 3 s for this transaction. The window covers only the four append-only
 -- deletes. A failure after the disable rolls the disable back (DDL is transactional), so no trigger stays off.
 -- Enable is plain ENABLE TRIGGER, as 0007 installed.
+-- Depends at call time on public.sheet_erase_life(text) (0051): without it every deletion fails and rolls back,
+-- with nothing removed. Apply 0051 before any account is deleted.
 
 CREATE OR REPLACE FUNCTION register_account_delete(p_identity_hash BYTEA)
 RETURNS BOOLEAN
@@ -83,21 +85,35 @@ BEGIN
   DELETE FROM public.mcp_tokens
     WHERE player_id IN (SELECT p.player_id FROM public.mcp_players p WHERE p.owner_id = who);
 
+  -- the rows of the four append-only tables to erase are collected BEFORE the lock window, under ordinary locks
+  -- (the scan of a table without an index on life_id runs here, not under SHARE ROW EXCLUSIVE). The window deletes
+  -- by the ctid collected here, so it holds no sequential scan. This is safe because these tables are append-only
+  -- (0007): no row is updated, so a ctid names the same row for the rest of this transaction. The temp table is
+  -- dropped right after the window, so a second call in the same transaction can create it again.
+  CREATE TEMP TABLE erase_window_ids (src TEXT NOT NULL, row_ctid TID NOT NULL) ON COMMIT DROP;
+  INSERT INTO erase_window_ids SELECT 'mcp_journal', j.ctid FROM public.mcp_journal j WHERE j.life_id = ANY (lives);
+  INSERT INTO erase_window_ids SELECT 'thoughts', t.ctid FROM public.thoughts t WHERE t.life_id = ANY (lives);
+  INSERT INTO erase_window_ids SELECT 'receipts', r.ctid FROM public.receipts r WHERE r.life_id = ANY (lives);
+  INSERT INTO erase_window_ids SELECT 'suppressed_wakeups', s.ctid FROM public.suppressed_wakeups s
+    WHERE s.life_id = ANY (lives);
+
   -- the lock window: mcp_journal, thoughts, receipts and suppressed_wakeups are append-only (0007); erasure is the
   -- one case that removes rows, so their triggers are switched off for this transaction only and on again right
-  -- after the deletes.
+  -- after the deletes. Inside the window only the four ALTER and four DELETE statements run.
   ALTER TABLE public.mcp_journal DISABLE TRIGGER mcp_journal_append_only;
   ALTER TABLE public.thoughts DISABLE TRIGGER thoughts_append_only;
   ALTER TABLE public.receipts DISABLE TRIGGER receipts_append_only;
   ALTER TABLE public.suppressed_wakeups DISABLE TRIGGER suppressed_wakeups_append_only;
-  DELETE FROM public.mcp_journal WHERE life_id = ANY (lives);
-  DELETE FROM public.thoughts WHERE life_id = ANY (lives);
-  DELETE FROM public.receipts WHERE life_id = ANY (lives);
-  DELETE FROM public.suppressed_wakeups WHERE life_id = ANY (lives);
+  DELETE FROM public.mcp_journal WHERE ctid = ANY (ARRAY(SELECT e.row_ctid FROM erase_window_ids e WHERE e.src = 'mcp_journal'));
+  DELETE FROM public.thoughts WHERE ctid = ANY (ARRAY(SELECT e.row_ctid FROM erase_window_ids e WHERE e.src = 'thoughts'));
+  DELETE FROM public.receipts WHERE ctid = ANY (ARRAY(SELECT e.row_ctid FROM erase_window_ids e WHERE e.src = 'receipts'));
+  DELETE FROM public.suppressed_wakeups WHERE ctid = ANY (ARRAY(SELECT e.row_ctid FROM erase_window_ids e
+    WHERE e.src = 'suppressed_wakeups'));
   ALTER TABLE public.mcp_journal ENABLE TRIGGER mcp_journal_append_only;
   ALTER TABLE public.thoughts ENABLE TRIGGER thoughts_append_only;
   ALTER TABLE public.receipts ENABLE TRIGGER receipts_append_only;
   ALTER TABLE public.suppressed_wakeups ENABLE TRIGGER suppressed_wakeups_append_only;
+  DROP TABLE erase_window_ids;
 
   -- a living life is retired: dead, with a cause, and no public camera or delayed public thoughts (F5)
   UPDATE public.agents

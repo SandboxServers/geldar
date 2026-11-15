@@ -95,11 +95,15 @@ BEGIN
 
   -- 0040: one row in every table keyed by a life, for each of the four lives (a live and a dead life of owner a,
   -- owner b's live and dead lives). Owner a's four lives must leave no row; owner b's two lives keep one row each.
-  INSERT INTO events (source_event_id, at, world_day, world_tick, type, agent_id, payload) VALUES
-    ('del-ev-ag_del_live', now(), 1, 1, 'test.life', 'ag_del_live', '{}'),
-    ('del-ev-ag_del_dead', now(), 1, 1, 'test.life', 'ag_del_dead', '{}'),
-    ('del-ev-ag_del_b', now(), 1, 1, 'test.life', 'ag_del_b', '{}'),
-    ('del-ev-ag_del_bdead', now(), 1, 1, 'test.life', 'ag_del_bdead', '{}');
+  INSERT INTO events (source_event_id, at, world_day, world_tick, type, agent_id, payload, thinker_id) VALUES
+    ('del-ev-ag_del_live', now(), 1, 1, 'test.life', 'ag_del_live', '{}', NULL),
+    ('del-ev-ag_del_dead', now(), 1, 1, 'test.life', 'ag_del_dead', '{}', NULL),
+    ('del-ev-ag_del_b', now(), 1, 1, 'test.life', 'ag_del_b', '{}', NULL),
+    ('del-ev-ag_del_bdead', now(), 1, 1, 'test.life', 'ag_del_bdead', '{}', NULL),
+    -- events keyed ONLY by thinker_id (agent_id NULL): the thinker arm of the events delete
+    ('del-ev-th-live', now(), 1, 1, 'test.thinker', NULL, '{}', 'ag_del_live'),
+    ('del-ev-th-dead', now(), 1, 1, 'test.thinker', NULL, '{}', 'ag_del_dead'),
+    ('del-ev-th-b', now(), 1, 1, 'test.thinker', NULL, '{}', 'ag_del_b');
   INSERT INTO mcp_life_deaths (life_id, death_count, last_death_day) VALUES
     ('ag_del_live', 1, 1), ('ag_del_dead', 1, 1), ('ag_del_b', 1, 1), ('ag_del_bdead', 1, 1);
   INSERT INTO mcp_death_events (event_id, life_id) VALUES
@@ -319,6 +323,10 @@ BEGIN
   IF n <> 1 THEN RAISE EXCEPTION 'account delete: % audit rows written, expected 1', n; END IF;
   SELECT count(*) INTO n FROM register_audit WHERE id > audit_before AND actor = actor_a;
   IF n <> 0 THEN RAISE EXCEPTION 'account delete: audit row keyed by the owner id hash'; END IF;
+  -- the erasure actor is random: it is neither the owner id, nor its hash prefix, nor anything that contains either
+  SELECT count(*) INTO n FROM register_audit WHERE id > audit_before
+    AND (actor = 'reg-del-a' OR position('reg-del-a' IN actor) > 0 OR position(actor_a IN actor) > 0);
+  IF n <> 0 THEN RAISE EXCEPTION 'account delete: audit actor names the owner id or derives from it'; END IF;
 
   step := 'second delete of a is a no-op: false, and no audit row';
   IF register_account_delete(hash_a) THEN
@@ -357,6 +365,11 @@ BEGIN
     EXECUTE format('SELECT count(*) FROM %I WHERE %I = ANY (ARRAY[''ag_del_b'', ''ag_del_bdead''])', tbl, col) INTO n;
     IF n <> 2 THEN RAISE EXCEPTION 'account delete: owner b rows in % are % (expected 2)', tbl, n; END IF;
   END LOOP;
+  -- events of owner a's lives keyed by thinker_id alone are erased (live and dead); owner b's is kept
+  SELECT count(*) INTO n FROM events WHERE source_event_id IN ('del-ev-th-live', 'del-ev-th-dead');
+  IF n <> 0 THEN RAISE EXCEPTION 'account delete: % event(s) keyed by thinker_id of a life of owner a left', n; END IF;
+  SELECT count(*) INTO n FROM events WHERE source_event_id = 'del-ev-th-b' AND thinker_id = 'ag_del_b';
+  IF n <> 1 THEN RAISE EXCEPTION 'account delete: owner b event keyed by thinker_id removed'; END IF;
   SELECT count(*) INTO n FROM relationships
     WHERE agent_id IN ('ag_del_live', 'ag_del_dead') OR other_id IN ('ag_del_live', 'ag_del_dead');
   IF n <> 0 THEN RAISE EXCEPTION 'account delete: % relationship row(s) of a life of owner a left', n; END IF;

@@ -25,16 +25,22 @@ Before the transaction the register stops every non-retired player's body throug
 retire route uses). If a stop fails the route answers 503 and nothing is removed. With NATS not configured no managed
 body can exist, so the stop is skipped.
 
+## Accounts deleted under 0039 (before 0040)
+
+Deletions made under 0039 removed the owner link and the player rows of the owner's dead lives. Those dead lives
+no longer have an owner link or a player row, so 0040 cannot reach them: their thoughts, events and death records
+stay. An operator cleanup of these is follow-up card `C7-09c` (not done; the owner decides the cleanup).
+
 ## What stays, and why
 
 Exact list of what stays (decision 0262):
 
 - the `agents` rows of the owner's lives, with the owner link (`agents.owner`) set to NULL. The sheet columns stay with
-  the row. Nothing on the row names a person;
+  the row. the player id, game account and name on the row are typed by the owner and can carry a real name;
 - audit rows (`register_audit`), because the table is append-only (0025). The deletion writes one row with a random
   erasure id as actor and no owner id;
 - the ban tombstone (the identity hash and the ban, nothing else), when the identity is banned (0171, point 4);
-- `kino_audit` rows (operator audit of Glass viewing, keyed by agent id and a login hash), kept under their 90-day
+- `kino_audit` rows (operator audit of Glass viewing, keyed by agent id and a login hash; the login hash is the identity hash of the signed-in viewer, so these rows stay joinable to the person for 90 days, and for a banned owner to the kept tombstone), kept under their 90-day
   retention (`kino_audit_purge`); open point: the owner may rule that they are erased at deletion;
 - shared world objects whose author lost the owner link: `skills.author`, `books.author`, `proposals.proposer` and
   `laws`. Other lives depend on them (skill library and books by foreign key; laws by enactment). The author is an agent
@@ -47,7 +53,7 @@ Exact list of what stays (decision 0262):
 
 A deletion takes table locks on `mcp_journal`, `thoughts`, `receipts` and `suppressed_wakeups` for the length of its
 transaction, because it turns off their append-only triggers inside the transaction and turns them back on before it
-returns. While it runs, writes to those four tables from other owners wait. The function sets a 3 second `lock_timeout`: if the lock is not free in time the
+returns. While it runs, writes to those four tables from other owners wait. The rows to erase are collected before the window, under ordinary locks (that scan is not under the lock); the window itself deletes only those collected rows. The collection scans each of the four tables, and none of them is indexed by life id, so a large table makes the collection slow, though it does not hold the window. The function sets a 3 second `lock_timeout`: if the lock is not free in time the
 deletion fails and nothing is removed. Retry it; that is safe, because a failed deletion removes nothing.
 
 Residual races (review F10, open): a journal write from a still-connected agent session can land after the commit, and

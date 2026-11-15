@@ -1,6 +1,7 @@
 # 0171. Account erasure: what is removed and what stays as world history
 
 - Status: Decided (owner ruling, 2026-11-13); legal review stays with the owner and is not done by this record
+- Point 2 superseded by 0262 (2026-11-15): dead lives are erased too
 - Date: 2026-11-13
 - Spec: 5.15 (self-registration); related 0085 (append-only audit), 0136 (bans), 0138 (thoughts after death), 0153, 0155
 - Related: Q4 and Q5 in `docs/analysis/phase1/packets/c7-user-management-packets.md`; cards C7-09, C7-10
