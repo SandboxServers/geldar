@@ -48,7 +48,7 @@
       }
     },
     "heard_muffled": {
-      "description": "Notices heard through a wall since the last snapshot, nearest first. No words, speaker or coordinates. Absent when none were heard.",
+      "description": "Notices heard through a wall since the last snapshot, nearest first. No words, speaker or coordinates. Absent when none were heard. Collapsing by direction (one notice per direction, nearest band) is the producer's job; the schema does not check it.",
       "type": "array",
       "maxItems": 3,
       "items": { "$ref": "#/$defs/MuffledNotice" }
