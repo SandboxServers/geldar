@@ -100,6 +100,7 @@ public final class GeldarCore extends JavaPlugin {
                 getConfig().getDouble("chat.muffle.sealed_penalty", dev.geldar.core.proximity.MuffleConfig.SEALED_PENALTY),
                 getConfig().getInt("chat.muffle.per_line_cap", dev.geldar.core.proximity.MuffleConfig.PER_LINE_READ_CAP),
                 getConfig().getInt("chat.muffle.per_ray_cap", dev.geldar.core.proximity.MuffleConfig.PER_RAY_READ_CAP),
+                getConfig().getBoolean("chat.muffle.bench_log", false),
                 getLogger()::warning);
         hearingSink = new dev.geldar.core.proximity.NatsHearingSink(
                 config.natsUrl(), config.shard(), System::getenv, getLogger());

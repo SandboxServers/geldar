@@ -56,6 +56,7 @@ public final class ChatHearing {
         LineBudget budget = new LineBudget(settings.perLineCap());
         List<Verdict> verdicts = new ArrayList<>();
         int silencedByBudget = 0;
+        long started = settings.benchLog() ? System.nanoTime() : 0L;
         for (Candidate c : inGate) {
             String cacheKey = speaker + "\u0000" + c.key();
             Cast cast = cache.get(cacheKey);
@@ -75,6 +76,13 @@ public final class ChatHearing {
         }
         if (silencedByBudget > 0) {
             log.accept("chat: " + silencedByBudget + " listener(s) silenced by the read budget");
+        }
+        if (settings.benchLog()) {
+            long ns = System.nanoTime() - started;
+            int reads = settings.perLineCap() - budget.remaining();
+            boolean capHit = budget.remaining() == 0 || silencedByBudget > 0;
+            log.accept("muffle-bench line speaker=" + speaker + " tick=" + tick + " listeners=" + verdicts.size()
+                    + " reads=" + reads + " capHit=" + capHit + " ns=" + ns);
         }
         return verdicts;
     }

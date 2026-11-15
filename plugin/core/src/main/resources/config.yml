@@ -57,3 +57,6 @@ chat:
     per_line_cap: 512
     # Block reads allowed for one listener's ray or roof scan. Below 1 is set to 1.
     per_ray_cap: 64
+    # BENCH ONLY (MH-8a): true logs one INFO line per chat line (muffle-bench: speaker, tick, listeners, reads, capHit,
+    # ns). For the throwaway bench shard. It must stay false in production and in every Colo config. Re-read at start.
+    bench_log: false
