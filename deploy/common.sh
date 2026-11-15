@@ -3,7 +3,7 @@
 # account or secret value is set here or printed by any script. POSIX sh (dash on Debian 12, and bash in tests).
 
 DEPLOY_DIR=$(cd "$(dirname "$0")" && pwd)
-PROJECT=geldar-colo
+PROJECT=${GELDAR_PROJECT:-geldar-colo}
 ROOT=${GELDAR_COLO_ROOT:-$(cd "$DEPLOY_DIR/.." && pwd)}
 COMPOSE_FILE=${GELDAR_COLO_COMPOSE:-$ROOT/compose/colo.yml}
 SECRETS_OVERLAY=$DEPLOY_DIR/compose.secrets.yml
