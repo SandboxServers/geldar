@@ -54,7 +54,9 @@ describe('sheet cli dispatch', () => {
 
   it('exits 2 and prints the error when the leak capture file cannot be read', async () => {
     expect(await main(['leak', missingFile(), '3'])).toBe(2);
-    expect(vi.mocked(console.error)).toHaveBeenCalledWith(expect.stringContaining('sheet cli failed'));
+    expect(vi.mocked(console.error)).toHaveBeenCalledWith(
+      expect.stringContaining('sheet cli failed'),
+    );
   });
 
   it('exits 2 for a report section without a title, and 2 for an unreadable section file', async () => {

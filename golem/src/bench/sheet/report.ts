@@ -34,7 +34,12 @@ export function formatSection(section: ReportSection): string {
     Math.max(...all.map((row) => (row[col] ?? '').length)),
   );
   for (const row of all) {
-    out.push(row.map((cell, col) => cell.padEnd(widths[col] ?? 0)).join('  ').trimEnd());
+    out.push(
+      row
+        .map((cell, col) => cell.padEnd(widths[col] ?? 0))
+        .join('  ')
+        .trimEnd(),
+    );
   }
   return out.join('\n');
 }

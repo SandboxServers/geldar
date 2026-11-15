@@ -91,8 +91,7 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env)
   }
   const [command, lifeId, block, count] = argv;
   const wellFormed =
-    (command === 'snapshot' && argv.length === 2) ||
-    (command === 'mine-once' && argv.length === 4);
+    (command === 'snapshot' && argv.length === 2) || (command === 'mine-once' && argv.length === 4);
   if (!wellFormed || lifeId === undefined) {
     console.error(USAGE);
     return 2;
