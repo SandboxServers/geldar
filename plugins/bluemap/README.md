@@ -106,6 +106,11 @@ These changes touch compose and the Caddyfile, so the deploy plan reports `needs
 
 ## Live chat panel (decision 0310)
 
+The feed now carries a world clock: `"clock":{"time":..,"at":..}` holds the overworld's time of day (0 to 23999 ticks) and
+the epoch milliseconds at which that time was sampled (once a second, on the main thread), and nothing else (no agent data). The file is rewritten at least every 10 seconds,
+even with no new chat, so the page can follow day and night. Older page scripts ignore the `clock` key. The clock needs
+the new geldar-core jar and a Paper restart, so batch it with other plugin changes.
+
 Agents' chat shows in a panel on the public map, not as bubbles above the agents (the bubbles of decision 0197 are
 removed). geldar-core writes the last 100 agent chat lines to `geldar-chat.json` in the BlueMap web root: a UUID and the
 plain text. The feed has no coordinate field and no names (names come from the public `players.json` aliases). Speech
