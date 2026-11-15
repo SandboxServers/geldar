@@ -4,7 +4,7 @@
  * reasoning, never world text. The event is a WorldEvent envelope (contract event.schema.json): the
  * eventsink refuses a bare payload. The NATS message id is derived from the thought id, and the
  * envelope's source_event_id is derived from that message id, so a redelivered event dedups in the
- * stream and in Postgres.
+ * stream and in Postgres. The envelope carries the player's harness and declared model (GX-01c).
  */
 
 import { createHash } from 'node:crypto';
@@ -23,6 +23,15 @@ export interface SovereignCallSink {
   publish(msgId: string, event: WorldEvent): Promise<void>;
 }
 
+/** The harness and declared model that stamp a player's envelope. */
+export interface CallStamp {
+  harness?: string;
+  model?: string;
+}
+
+/** The model a player has when the operator never declared one (agents.declared_model, sql 0037). */
+export const PLACEHOLDER_MODEL = 'self-reported';
+
 /** What the recorder needs: the sink, the shard, the world clock and a drop report. */
 export interface SovereignCallRecorderOptions {
   sink: SovereignCallSink;
@@ -32,6 +41,8 @@ export interface SovereignCallRecorderOptions {
   drop: (reason: string) => void;
   /** Milliseconds since the epoch for `at`; the clock by default. */
   now?: () => number;
+  /** The stamp of a player's life. A throw publishes the envelope without a stamp and reports it. */
+  stampOf?: (playerId: string) => Promise<CallStamp | undefined>;
 }
 
 /**
@@ -67,9 +78,29 @@ export function envelopeIdFor(msgId: string): string {
 }
 
 /**
+ * Wraps a stamp lookup so each player's stamp is reused for `ttlMs`. A failed lookup is not cached,
+ * so the next call looks again.
+ */
+export function cachedStampOf(
+  lookup: (playerId: string) => Promise<CallStamp | undefined>,
+  ttlMs: number,
+  now: () => number = Date.now,
+): (playerId: string) => Promise<CallStamp | undefined> {
+  const entries = new Map<string, { at: number; stamp: CallStamp | undefined }>();
+  return async (playerId) => {
+    const hit = entries.get(playerId);
+    if (hit !== undefined && now() - hit.at < ttlMs) return hit.stamp;
+    const stamp = await lookup(playerId);
+    entries.set(playerId, { at: now(), stamp });
+    return stamp;
+  };
+}
+
+/**
  * Records each call through the sink as a WorldEvent envelope. A call whose audit cannot be built
  * (the payload or the envelope fails the contract, or no world clock has been seen yet) is dropped
- * and reported; it never throws, so the audit never fails the agent's call.
+ * and reported; it never throws, so the audit never fails the agent's call. A stamp that cannot be
+ * read is reported and the envelope goes out without it.
  */
 export class SovereignCallRecorder implements CallRecorder {
   private readonly options: SovereignCallRecorderOptions;
@@ -89,6 +120,7 @@ export class SovereignCallRecorder implements CallRecorder {
       this.options.drop('sovereign_call has no world clock yet');
       return;
     }
+    const stamp = await this.stampFor(call.player_id);
     const msgId = sovereignCallMsgId(call);
     const now = this.options.now ?? Date.now;
     const envelope = {
@@ -98,6 +130,7 @@ export class SovereignCallRecorder implements CallRecorder {
       world_day: world.world_day,
       world_tick: world.world_tick,
       type: 'sovereign_call',
+      ...stamp,
       payload: call,
     };
     const valid = validateWorldEvent(envelope);
@@ -106,5 +139,21 @@ export class SovereignCallRecorder implements CallRecorder {
       return;
     }
     await this.options.sink.publish(msgId, valid.value);
+  }
+
+  /** The harness and model to stamp, with the placeholder model left out. Empty when none can be read. */
+  private async stampFor(playerId: string): Promise<CallStamp> {
+    if (this.options.stampOf === undefined) return {};
+    let found: CallStamp | undefined;
+    try {
+      found = await this.options.stampOf(playerId);
+    } catch {
+      this.options.drop('sovereign_call stamp unavailable; published without harness and model');
+      return {};
+    }
+    const stamp: CallStamp = {};
+    if (found?.harness !== undefined) stamp.harness = found.harness;
+    if (found?.model !== undefined && found.model !== PLACEHOLDER_MODEL) stamp.model = found.model;
+    return stamp;
   }
 }

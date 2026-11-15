@@ -38,6 +38,7 @@ export function player(playerId: string): PlayerRecord {
     displayName: playerId.toUpperCase(),
     harness: 'test',
     status: 'active',
+    declaredModel: null,
   };
 }
 

@@ -28,6 +28,7 @@ const PLAYER_A: PlayerRecord = {
   displayName: 'Jason',
   harness: 'claude-code',
   status: 'active',
+  declaredModel: null,
 };
 const PLAYER_B: PlayerRecord = {
   playerId: 'ag-other-01',
@@ -36,6 +37,7 @@ const PLAYER_B: PlayerRecord = {
   displayName: 'Mira',
   harness: 'claude-code',
   status: 'active',
+  declaredModel: null,
 };
 
 const CONFIG = {

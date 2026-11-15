@@ -21,6 +21,8 @@ export interface PlayerRecord {
   displayName: string;
   harness: string;
   status: 'active' | 'paused' | 'retired';
+  /** The model the operator declared for the life (agents.declared_model); null for the placeholder. */
+  declaredModel: string | null;
 }
 
 /** The token a presented Bearer resolved to, and the player it belongs to. */

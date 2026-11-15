@@ -11,6 +11,7 @@ const PLAYER: PlayerRecord = {
   displayName: 'Jason',
   harness: 'claude-code',
   status: 'active',
+  declaredModel: null,
 };
 
 /** Inputs the mock's schema accepts for each tool, so the handler is reached. */

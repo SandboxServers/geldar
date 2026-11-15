@@ -21,6 +21,7 @@ const PLAYER: PlayerRecord = {
   displayName: 'Jason',
   harness: 'claude-code',
   status: 'active',
+  declaredModel: null,
 };
 const KEEPALIVE_MS = 25_000;
 
