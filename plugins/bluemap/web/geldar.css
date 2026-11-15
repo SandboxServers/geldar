@@ -140,3 +140,27 @@
 #geldar-chat.gc-collapsed .gc-foot {
   display: none;
 }
+/* The "Follow world time" control, under the list, shown only while the viewer's own day-night button has taken the
+   sun (geldar-chat.js applySun). Padded, so it is an easy target. */
+#geldar-chat .gc-resume {
+  align-self: flex-start;
+  background: none;
+  border: 1px solid #888;
+  border-radius: 3px;
+  color: #eee;
+  cursor: pointer;
+  font: inherit;
+  margin: 0 8px 4px;
+  min-height: 40px;
+  padding: 0 12px;
+}
+#geldar-chat .gc-resume:focus-visible {
+  outline: 2px solid #ffd54a;
+  outline-offset: 2px;
+}
+#geldar-chat .gc-resume[hidden] {
+  display: none;
+}
+#geldar-chat.gc-collapsed .gc-resume {
+  display: none;
+}

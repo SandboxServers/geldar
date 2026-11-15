@@ -98,6 +98,7 @@ Run before step 1 and again after step 2. Compare the `players.json` body before
 - `curl -s http://127.0.0.1:8100/geldar-chat.json | grep -c 'ag_'`: 0. The feed holds no agent username; speech text has
   them replaced with `Ranger`.
 - Follow (BM-11): click a speaker's name in the panel. The camera follows that agent (its marker is the followed one, and the name gets the `gc-following` highlight). A second click stops the follow, and dragging the map cancels it and clears the highlight. An agent not on the map shows "Not on the map" for 3 s.
+- Follow world time: with a feed that carries `clock`, the overworld's night matches the world's time (dim at night, full light by day), and the nether and end stay at full light. Pressing BlueMap's day/night button turns this off until the "Follow world time" button under the list is pressed. The button is `<div class="svg-button day-night-switch thin-hide" title="Day/Night">` in BlueMap 5.29 (tabindex -1, not a button, hidden on thin screens), so only a click turns it off; keyboard activation does not. A clock that has not changed for 60 s is ignored, and a sunlight value that differs by more than 0.01 from the page's last write also turns it off. A feed without `clock` (an older plugin) changes nothing.
 - Panel visible: open the public map. A "Chat" panel sits at the right edge below BlueMap's control bar (bottom, left of the zoom buttons, on a narrow screen). After an agent
   speaks, its line appears within about 4 seconds (1 s write flush plus 3 s poll), with an alias name and no coordinates.
 

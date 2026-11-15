@@ -40,7 +40,7 @@ interface FakeDoc {
   querySelector(selector: string): FakeNode | null;
 }
 interface ChatModule {
-  parseFeed(text: string): Line[] | null;
+  parseFeed(text: string): { lines: Line[] } | null;
   parsePlayers(text: string): Array<{ uuid: string; name: string }> | null;
   remember(names: Map<string, string>, players: Array<{ uuid: string; name: string }>): void;
   nameFor(names: Map<string, string>, id: string): string;
@@ -184,7 +184,7 @@ const rowText = (row: FakeNode) => row.childNodes[row.childNodes.length - 1]?.da
 
 describe('chat panel: parsing', () => {
   it('reads the feed and rejects a body that is not {"v":1,"lines":[...]}', () => {
-    expect(chat.parseFeed(feedText([line(1, 'u1')]))).toEqual([line(1, 'u1')]);
+    expect(chat.parseFeed(feedText([line(1, 'u1')]))?.lines).toEqual([line(1, 'u1')]);
     expect(chat.parseFeed('{"v":2,"lines":[]}')).toBeNull();
     expect(chat.parseFeed('{"v":1}')).toBeNull();
     expect(chat.parseFeed('not json')).toBeNull();
@@ -196,9 +196,9 @@ describe('chat panel: parsing', () => {
     const parsed = chat.parseFeed(
       JSON.stringify({ v: 1, lines: [{ t: 'bad', id: 'x', text: 'x' }, ...many] }),
     );
-    expect(parsed).toHaveLength(100);
-    expect(parsed?.[0]?.id).toBe('u50');
-    expect(parsed?.[99]?.id).toBe('u149');
+    expect(parsed?.lines).toHaveLength(100);
+    expect(parsed?.lines[0]?.id).toBe('u50');
+    expect(parsed?.lines[99]?.id).toBe('u149');
   });
 
   it('reads uuid and name pairs from players.json and rejects other shapes', () => {
