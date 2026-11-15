@@ -85,22 +85,37 @@ describe('network and stack wiring from the helper config', () => {
     );
   });
 
-  // Docker's reserved modes, in any case, and a container:<id> join: a start failure, never a spec.
-  it.each([
-    'host',
-    'HOST',
-    'Host',
-    'bridge',
-    'BRIDGE',
-    'none',
-    'NONE',
-    'default',
-    'Default',
-    'container:abc',
-    'CONTAINER:abc',
-  ])('refuses the reserved network mode %s', (network) => {
+  // Docker's reserved modes, in any case: a start failure, never a spec.
+  it.each(['host', 'HOST', 'Host', 'bridge', 'BRIDGE', 'none', 'NONE', 'default', 'Default'])(
+    'refuses the reserved network mode %s',
+    (network) => {
+      expect(() => loadHelperConfig({ ...ENV, GELDAR_NETWORK: network }, FS)).toThrow(
+        /GELDAR_NETWORK must/,
+      );
+    },
+  );
+
+  // A container:<id> join is refused by the charset, which admits no colon. The exact charset message proves it.
+  // If the charset ever admits ':', these fail, because nothing else refuses container:<id>.
+  it.each(['container:abc', 'CONTAINER:abc', 'geldar:colo'])(
+    'refuses a colon in the network name %s',
+    (network) => {
+      expect(() => loadHelperConfig({ ...ENV, GELDAR_NETWORK: network }, FS)).toThrow(
+        'GELDAR_NETWORK must be a Docker network name',
+      );
+    },
+  );
+
+  // Look-alikes that a loose check would pass: a fullwidth h (U+FF48) and a trailing newline. Refused for both variables.
+  it.each(['ｈost', 'geldar-colo\n'])('refuses the look-alike network name %j', (network) => {
     expect(() => loadHelperConfig({ ...ENV, GELDAR_NETWORK: network }, FS)).toThrow(
-      /GELDAR_NETWORK must/,
+      'GELDAR_NETWORK must be a Docker network name',
+    );
+  });
+
+  it.each(['ｈost', 'geldar-colo\n'])('refuses the look-alike stack value %j', (stack) => {
+    expect(() => loadHelperConfig({ ...ENV, GELDAR_STACK: stack }, FS)).toThrow(
+      'GELDAR_STACK must be lower-case letters, digits or hyphens',
     );
   });
 
