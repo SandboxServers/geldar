@@ -1,7 +1,7 @@
 # RESUME: behaviour analysis (geldar-behavior, decisions 0270-0279)
 
 Read-only standing review. Files here: timeline.md, findings.md, culture.md, report-<date-hour>.md.
-- Last report: 2026-11-15 01Z. Next due ~04Z. Residents Lewis (ag_lewis_01) and Clark (ag_clark_01): Minds 01:24:28Z and 01:25:30Z are the after markers.
+- Last report: 2026-11-15 01Z; next is overdue. Residents: Lewis 01:24:28Z, Clark 01:25:30Z, Chapman 03:49:38Z, MacDonald 03:50:45Z (Minds). Picard on gpt-6-astra from 03:31:03Z. Pending ships: hide of six unavailable tools, hydration fact and till/place cause lines, hurt attacker log line.
 - Last clean window: 20:57-21:15Z (after #363); 21:15/21:19Z deploys unknown contents.
 - Query recipe: ssh cimmeria-colo, docker exec geldar-colo-postgres-1 psql, SQL on stdin; exclude ag_colo_01 and ag_clara_01.
 - F1-F7 open and not yet sent: route in the next batch (ops: F2,F4,F6; vitals: F1,F3; 93: F5,F7).
