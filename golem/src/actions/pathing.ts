@@ -36,7 +36,7 @@ import {
   setJump,
   stopDigIfDigging,
 } from './stall-recovery.ts';
-import { type SwimController, startSwim, swimStopText } from './swim.ts';
+import { type SwimController, startSwim, swimNote, swimStopText } from './swim.ts';
 import { allowWaterExit, isWetNode, wetAt } from './water-rules.ts';
 
 export { ESCALATE_AFTER_REPLANS, MAX_LADDERS };
@@ -398,7 +398,8 @@ export function moveNear(
             start(dryGoal(new goals.GoalNear(target.x, target.y, target.z, range), wetAt(bot)));
             return;
           }
-          const note = tally.note();
+          const swimFact = swim ? swimNote(swim.tally) : undefined;
+          const note = [tally.note(), swimFact].filter(Boolean).join('; ') || undefined;
           settle(
             partial
               ? {

@@ -28,6 +28,15 @@ export interface SwimTally {
   surfaces: number;
 }
 
+/**
+ * The fact a completed goto adds to its note when it swam (decision 0194 d): blocks swum and times
+ * it came up for air. Undefined when the head never was in water. Facts only, no advice (0154).
+ */
+export function swimNote(tally: SwimTally): string | undefined {
+  if (tally.blocksSwum === 0 && tally.surfaces === 0) return undefined;
+  return `swam ${Math.round(tally.blocksSwum)} blocks, came up for air ${tally.surfaces} times`;
+}
+
 export interface SwimOptions {
   /** Called once when the air is at or below `ABORT_AIR` with the head in water. */
   onAbort: (air: number) => void;

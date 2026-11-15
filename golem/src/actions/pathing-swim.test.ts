@@ -33,6 +33,39 @@ function jumpsOn(bot: { setControlState: ReturnType<typeof vi.fn> }): number {
   return bot.setControlState.mock.calls.filter(([n, v]) => n === 'jump' && v === true).length;
 }
 
+describe('a completed goto that swam carries the swim fact (decision 0194 d)', () => {
+  it('adds blocks swum and times it came up for air to the note of an ok walk', async () => {
+    const bot = swimBot(17, true);
+    const water = new Set<number>([65]);
+    bot.blockAt = ((pos: Vec3) => {
+      const name = water.has(pos.y) ? 'water' : 'air';
+      return { name, boundingBox: 'empty', position: pos };
+    }) as never;
+    let arrive: () => void = () => undefined;
+    bot.pathfinder.goto = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          arrive = resolve;
+        }),
+    );
+    const pending = moveNear(bot, { x: 2, y: 64, z: 0 }, 1, {
+      signal: new AbortController().signal,
+      timeScale: 1,
+      swim: true,
+    });
+    bot.emit('physicsTick');
+    bot.entity.position = new Vec3(2.5, 64.2, 0.5);
+    bot.emit('physicsTick');
+    water.clear();
+    bot.emit('physicsTick');
+    arrive();
+    await expect(pending).resolves.toMatchObject({
+      ok: true,
+      message: 'swam 2 blocks, came up for air 1 times',
+    });
+  });
+});
+
 describe('moveNear runs the swim controller for a goto (decision 0194 a, b)', () => {
   it('stops the walk with the air fact when a swim reaches ABORT_AIR with the head in water', async () => {
     const bot = swimBot(ABORT_AIR, true);
