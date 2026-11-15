@@ -1,0 +1,95 @@
+# The Colo config bundle's allowlist (G1-03). deploy/genesis/build-config-bundle.sh packs exactly these files, one repo
+# path per line; `#` lines and blank lines are comments. A test (deploy/test/genesis-config-bundle.test.ts) compares
+# the archive's names with the paths here, so adding a file means adding its line here in the same change.
+#
+# Groups: the compose files merged by deploy/common.sh (colo.yml, nats-auth.yml) and the overlays the deploy scripts
+# merge (colo-public.yml, colo-notice.yml) or that run with colo (colo-kino.yml), and the files they mount; the shard
+# files the services read; the BlueMap, Chunky and CoreProtect config and lock files the deploy checks; the SQL
+# migrations colo-cd refreshes; the deploy scripts, their overlay, the release template and the Caddy snippets; and
+# this build's own script and list.
+#
+# Never listed: secrets (compose/secrets/, deploy/test/ and everything under a state directory), *.env, *.pem,
+# nats-auth.conf and node.env. The built plugin jars are not in git (plugin/*/build); the node pulls them through the
+# lock files. The CoreProtect config template does not exist yet; see docs/runbooks/node-only-config.md.
+compose/bluemap-web/Caddyfile
+compose/colo-kino.yml
+compose/colo-notice.yml
+compose/colo-public.yml
+compose/colo.yml
+compose/nats-auth.yml
+compose/paper/paper-entrypoint.sh
+compose/velocity/velocity.toml
+deploy/caddy/glass-off.caddy
+deploy/caddy/glass.caddy
+deploy/caddy/map-off.caddy
+deploy/caddy/map.caddy
+deploy/caddy/mcp-off.caddy
+deploy/caddy/mcp.caddy
+deploy/colo-admin.sh
+deploy/colo-cd-plan.sh
+deploy/colo-cd-players.sh
+deploy/colo-cd-verify.sh
+deploy/colo-cd.sh
+deploy/colo-down.sh
+deploy/colo-notice.sh
+deploy/colo-public.sh
+deploy/colo-rollback.sh
+deploy/colo-status.sh
+deploy/colo-up.sh
+deploy/common.sh
+deploy/compose.secrets.yml
+deploy/gen-secrets.sh
+deploy/genesis/build-config-bundle.sh
+deploy/genesis/config-bundle.list
+deploy/install-body-helper.sh
+deploy/release.env.example
+plugins/bluemap/alias-proxy/alias-proxy.ts
+plugins/bluemap/bluemap.lock.json
+plugins/bluemap/config/core.conf
+plugins/bluemap/config/maps/end.conf
+plugins/bluemap/config/maps/nether.conf
+plugins/bluemap/config/maps/overworld.conf
+plugins/bluemap/config/plugin.conf
+plugins/bluemap/config/webserver.conf
+plugins/bluemap/web/geldar.css
+plugins/chunky/chunky.lock.json
+plugins/coreprotect/coreprotect.lock.json
+shards/colo-mind.yaml
+shards/colo.yaml
+sql/0001_init.sql
+sql/0002_sovereign_mcp.sql
+sql/0003_mcp_sleep_marks.sql
+sql/0004_mcp_sleep_marks_grants.sql
+sql/0005_glass_reader.sql
+sql/0006_owner_cap_trigger.sql
+sql/0007_journals_append_only.sql
+sql/0008_register_identities.sql
+sql/0009_register_mint_function.sql
+sql/0010_register_definer_functions.sql
+sql/0011_register_signup_function.sql
+sql/0012_register_read_functions.sql
+sql/0013_register_daily_owner_cap.sql
+sql/0014_kino_access.sql
+sql/0015_kino_audit.sql
+sql/0016_thought_visibility.sql
+sql/0017_kino_scope_functions.sql
+sql/0018_kino_agent_list.sql
+sql/0019_kino_agent_list_no_owner.sql
+sql/0020_glass_journal_thoughts.sql
+sql/0021_register_sessions.sql
+sql/0022_register_consents.sql
+sql/0023_death_count.sql
+sql/0024_mcp_roster.sql
+sql/0025_admin_flag_and_register_audit.sql
+sql/0026_owner_api_keys.sql
+sql/0027_body_ops.sql
+sql/0032_token_lifecycle.sql
+sql/0033_supervisor_display_name.sql
+sql/0034_operator_player_flags.sql
+sql/0035_owner_keys_by_session.sql
+sql/0036_owner_agents_by_owner_id.sql
+sql/0037_events_harness_model.sql
+sql/0038_body_helper_role.sql
+sql/0039_account_deletion.sql
+sql/0050_character_sheet_xp.sql
+sql/0051_character_audit.sql
