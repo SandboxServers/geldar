@@ -26,6 +26,8 @@ const CONTROL_USERS = [
   join(import.meta.dirname, 'players', 'life-removal.ts'),
   // C2-07k: the admin one-shot whitelists the colo house Body over RCON before golem-body starts.
   join(import.meta.dirname, 'whitelist-house-body.ts'),
+  // BH-3 (decisions 0260/0261): the admit one-shot reaches RCON only through players/whitelist.ts's admissionOnly wrapper.
+  join(import.meta.dirname, 'admit-life.ts'),
 ];
 
 /** What actions must not reach: the RCON layer, the arena builder and the bench. */
@@ -366,6 +368,23 @@ describe('TestControl', () => {
     },
     SCAN_TIMEOUT_MS,
   );
+
+  it('lets admit-life reach RCON only through the admission-only path in whitelist.ts', async () => {
+    const admit = join(import.meta.dirname, 'admit-life.ts');
+    expect(CONTROL_USERS).toContain(admit);
+    const direct = await relativeImports(admit, realFiles);
+    expect(direct).not.toContain(join(import.meta.dirname, 'rcon.ts'));
+    expect(direct).not.toContain(join(import.meta.dirname, 'test-control.ts'));
+    expect(direct).toContain(join(import.meta.dirname, 'players', 'whitelist.ts'));
+    const text = await readFile(admit, 'utf8');
+    expect(text).not.toMatch(/RconClient/);
+    expect(text).not.toMatch(/\.command\s*\(/);
+    expect(text.match(/admitLifeOverRcon\(/g)).toHaveLength(1);
+  });
+
+  it('keeps the managed host files out of the allowlist, present or absent', () => {
+    expect(CONTROL_USERS.filter((user) => /players[\\/]managed-/.test(user))).toEqual([]);
+  });
 
   it(
     'keeps the arena and the bench out of src/actions as well',
