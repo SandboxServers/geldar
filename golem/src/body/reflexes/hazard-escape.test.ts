@@ -32,6 +32,17 @@ describe('hazard-escape: check', () => {
     const { view } = basicView({ onFire: true, inFluid: 'water', air: 20 });
     expect(reflex.check(view)).toBeNull();
   });
+
+  it('leaves a swim alone at air 9 to 20 in water, and fires at air 8 or less (decision 0194 b)', () => {
+    for (let air = DROWNING_AIR + 1; air <= 20; air++) {
+      const { view } = basicView({ inFluid: 'water', air });
+      expect(reflex.check(view), `air ${air}`).toBeNull();
+    }
+    for (const air of [DROWNING_AIR, 0]) {
+      const { view } = basicView({ inFluid: 'water', air });
+      expect(reflex.check(view), `air ${air}`).toEqual({ hazard: 'drowning', air });
+    }
+  });
 });
 
 describe('findSafeBlock', () => {
@@ -88,6 +99,20 @@ describe('hazard-escape: drowning', () => {
   it('does not trigger with full air in water', () => {
     const { view } = basicView({ inFluid: 'water', air: 20 });
     expect(createHazardEscapeReflex().check(view)).toBeNull();
+  });
+
+  it('a firing at air 8 mid-swim cancels the goto it interrupts (decision 0194 b)', async () => {
+    const { view, state, bot } = pond(DROWNING_AIR);
+    const { ctx, cancels } = basicContext(view, bot);
+    const swimmer: EscapeMover = async () => {
+      state.air = 20;
+    };
+    const outcome = await createHazardEscapeReflex({ swimmer }).run(
+      { hazard: 'drowning', air: DROWNING_AIR },
+      ctx,
+    );
+    expect(cancels()).toBe(1);
+    expect(outcome.result).toBe('handled');
   });
 
   it('swims up first and recovers air, with no walk to the bank', async () => {
