@@ -7,6 +7,7 @@
 import type { Bot } from 'mineflayer';
 import type { Vec3 } from 'vec3';
 import type { Block } from './bot-types.ts';
+import { isFalling } from './dig-safety.ts';
 import { prefetchOwners, protectedReason, refusedByName } from './protected-blocks.ts';
 import { DEFAULT_DIAG_SINK } from './stall-diag.ts';
 import { handBreakable } from './unstick-cells.ts';
@@ -27,8 +28,6 @@ const FALL_MAX_TICKS = 20;
 const LANDED_SPEED = 0.01;
 /** The lowest block row of the world. */
 const WORLD_BOTTOM = -64;
-/** Blocks that fall when the block under them is gone. */
-const FALLS_IF_UNSUPPORTED = /(sand|gravel|concrete_powder)$/;
 /** Blocks the Body must not land on (or in) from the dig: the harmful set of unstick plus the sticky, soft and flame blocks. */
 const UNSAFE_LANDING = new Set([
   ...HARMFUL,
@@ -172,7 +171,7 @@ async function refusalAt(bot: Bot, feet: Vec3, signal: AbortSignal): Promise<Ref
   const block = bot.blockAt(floor) as Block | null;
   if (block === null) return 'unloaded';
   if (hostileWithin(bot, feet)) return 'hostile';
-  if (FALLS_IF_UNSUPPORTED.test(bot.blockAt(feet.offset(0, 2, 0))?.name ?? '')) return 'gravel';
+  if (isFalling(bot.blockAt(feet.offset(0, 2, 0))?.name)) return 'gravel';
   const column = columnRefusal(bot, feet);
   if (column !== null) return column;
   // The Body falls through the dug cell onto the first block below it. That landing must be solid and safe

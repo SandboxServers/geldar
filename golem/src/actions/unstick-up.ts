@@ -89,7 +89,7 @@ interface Step {
 
 /**
  * Why one cell above the wall may not be dug, or null. Liquids and underwater plants, unbreakable blocks,
- * refused names, a liquid or falling block beside it (`hazardReason`) and someone else's work
+ * refused names, a liquid or falling block beside it (`digSafetyRefusal`) and someone else's work
  * (`protectedReason`, decision 0164) all refuse. Ownership unknown refuses too, as `isProtected` refuses it.
  */
 function cellRefusal(

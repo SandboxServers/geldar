@@ -78,7 +78,7 @@ export interface DigSafetyInput {
   block: Block;
   /** The cell the dig is made in. */
   at: Vec3;
-  /** The Body's cells: `own[0]` is its feet, `own[1]` its head, further cells the next cell it steps into. */
+  /** The Body's cells: `own[0]` is its feet, the last entry is its head (only the head is read). */
   own: readonly Vec3[];
 }
 

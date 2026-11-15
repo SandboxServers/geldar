@@ -235,7 +235,7 @@ describe('mine: a pointed dripstone above the stone', () => {
         bot: bot as unknown as DigSafetyInput['bot'],
         block: stone as unknown as DigSafetyInput['block'],
         at: cell,
-        own: [],
+        own: [new Vec3(0, 64, 0), new Vec3(0, 65, 0)],
       });
     expect(hazard(new Vec3(1, 64, 0))).toBeNull();
   });

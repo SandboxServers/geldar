@@ -61,6 +61,12 @@ describe('panic burrow: planning', () => {
     expect(planBurrow((cell) => world.blockAt(cell) as never, FEET)).toBeNull();
   });
 
+  it('refuses a stone wall with one falling flank cell, the pocket itself still stone', () => {
+    const world = wallWorld();
+    world.set(new Vec3(1, 64, 1), 'gravel');
+    expect(planBurrow((cell) => world.blockAt(cell) as never, FEET)).toBeNull();
+  });
+
   it('picks the first seal block it carries', () => {
     expect(pickSeal((item) => (item === 'cobblestone' ? 2 : 0))).toBe('cobblestone');
     expect(pickSeal(() => 0)).toBeNull();

@@ -252,7 +252,7 @@ export function edgeCell(bot: Bot, feet: Vec3, needHeadroom = false): Vec3 | nul
 
 /**
  * True when `cell` may be dug for a crowded pillar: solid, not unbreakable, and digging it now is hazard-free
- * (`strictFalling`). `own` are the bot's cells, which do not count as a neighbour.
+ * (see `digSafetyRefusal`). `own` are the bot's cells, which do not count as a neighbour.
  */
 function sideDiggable(bot: Bot, cell: Vec3, own: readonly Vec3[]): boolean {
   const block = bot.blockAt(cell);
