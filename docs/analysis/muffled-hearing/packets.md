@@ -107,6 +107,7 @@ This card REWRITES 0198's acceptance tests to gate on effective distance instead
   - a snapshot never contains a coordinate, a speaker name or a word (scan test over the rendered text)
   - the sentence uses the fixed table; an unknown code is refused, not shown
   - revert the collapse and the three-line cap test fails
+- **note:** do not reuse golem's `bandOf`: the plugin sends `far` up to 32 blocks; the contract description that says 24 is a known mismatch, not this packet's to fix.
 
 ## MH-5: threshold handler and Body wiring
 

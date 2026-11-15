@@ -42,3 +42,18 @@ blockowner:
   # (base owners, overlay change), at most 20 lines a minute. No player names. false (default) logs nothing extra.
   # Re-read every 5 seconds, so no restart is needed.
   debug: false
+chat:
+  # Muffled hearing (decision 0199). Chat words reach a listener by effective distance: clear to 32 blocks, muffled to
+  # 32 + margin (the words are removed and the agent gets a heard_muffled notice), silent beyond. Re-read at start only.
+  muffle:
+    # Blocks added on top of the 32-block clear limit that still count as muffled. A value below 0 is set to 0, and a
+    # value that is not a finite number is set to the default 8; each change is logged once.
+    margin: 8.0
+    # Blocks added to the effective distance of a listener inside a sealed room (a solid block above, before open sky).
+    # Below 0 is set to 0; not a finite number is set to the default 4.0.
+    sealed_penalty: 4.0
+    # Block reads allowed for one chat line, across every listener. Below 1 is set to 1. A listener silenced by the cap
+    # hears nothing; the cap is logged as a count, never with the words.
+    per_line_cap: 512
+    # Block reads allowed for one listener's ray or roof scan. Below 1 is set to 1.
+    per_ray_cap: 64

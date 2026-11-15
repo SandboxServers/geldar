@@ -8,22 +8,16 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
-import java.util.logging.Logger;
 import net.kyori.adventure.audience.Audience;
-import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.plugin.Plugin;
 
 /**
  * Speech reaches the players whose effective distance is within the clear tier (decision 0199, spec 5.8). Only the
@@ -52,24 +46,6 @@ public final class ProximityChatListener implements Listener {
         this.readers = readers;
         this.hearing = hearing;
         this.sink = sink;
-    }
-
-    /** The Bukkit hop: runs on the server thread, waits at most two seconds, and gives an empty set on failure. */
-    public static ServerHop bukkitHop(Plugin plugin, Logger log) {
-        return work -> {
-            if (Bukkit.isPrimaryThread()) {
-                return work.get();
-            }
-            try {
-                return Bukkit.getScheduler().callSyncMethod(plugin, work::get).get(2, TimeUnit.SECONDS);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return Set.of();
-            } catch (ExecutionException | TimeoutException e) {
-                log.warning("chat hearing skipped; no listener hears this line: " + e.getClass().getSimpleName());
-                return Set.of();
-            }
-        };
     }
 
     @EventHandler(priority = EventPriority.HIGH, ignoreCancelled = true)

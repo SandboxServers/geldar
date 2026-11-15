@@ -93,8 +93,12 @@ public final class ChatHearing {
         if (ray.cutShort()) {
             return new Cast(Tier.SILENT, false, budget.remaining() == 0);
         }
-        if (ProximityRule.tier(ray.distance(), false, settings.margin()) == Tier.SILENT) {
-            return new Cast(Tier.SILENT, true, false);
+        // The sealed penalty only matters when it moves the listener to another tier. An open-air listener whose
+        // penalised distance keeps the same tier skips the column scan, so it does not spend the line budget.
+        Tier open = ProximityRule.tier(ray.distance(), false, settings.margin());
+        Tier sealedTier = ProximityRule.tier(ray.distance() + settings.sealedPenalty(), false, settings.margin());
+        if (open == sealedTier) {
+            return new Cast(open, true, false);
         }
         int floorX = (int) Math.floor(c.x());
         int floorY = (int) Math.floor(c.y());

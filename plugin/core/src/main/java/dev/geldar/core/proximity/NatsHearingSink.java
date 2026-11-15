@@ -30,6 +30,12 @@ public final class NatsHearingSink implements HearingNoticeSink, AutoCloseable {
         t.start();
     }
 
+    /** A sink over a connection that already exists, for tests: no connect thread and no server. */
+    NatsHearingSink(String shard, Connection connection) {
+        this.shard = shard;
+        this.connection = connection;
+    }
+
     /** The per-life hearing subject; the life id must be a life id (checked by the caller and again here). */
     static String subject(String shard, String lifeId) {
         return "geldar." + shard + ".body." + lifeId + ".hearing";

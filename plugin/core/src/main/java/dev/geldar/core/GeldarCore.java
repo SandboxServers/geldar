@@ -95,15 +95,16 @@ public final class GeldarCore extends JavaPlugin {
         getCommand(GraveBackfillCommand.NAME).setExecutor(new GraveBackfillCommand(this, owners.placements(),
                 owners.source()));
         // Proximity (spec 5.8, decision 0199): chat is gated on effective distance; a muffled voice sends a notice.
-        dev.geldar.core.proximity.MuffleSettings muffle = new dev.geldar.core.proximity.MuffleSettings(
+        dev.geldar.core.proximity.MuffleSettings muffle = dev.geldar.core.proximity.MuffleSettings.clamped(
                 getConfig().getDouble("chat.muffle.margin", dev.geldar.core.proximity.MuffleConfig.MARGIN),
                 getConfig().getDouble("chat.muffle.sealed_penalty", dev.geldar.core.proximity.MuffleConfig.SEALED_PENALTY),
                 getConfig().getInt("chat.muffle.per_line_cap", dev.geldar.core.proximity.MuffleConfig.PER_LINE_READ_CAP),
-                getConfig().getInt("chat.muffle.per_ray_cap", dev.geldar.core.proximity.MuffleConfig.PER_RAY_READ_CAP));
+                getConfig().getInt("chat.muffle.per_ray_cap", dev.geldar.core.proximity.MuffleConfig.PER_RAY_READ_CAP),
+                getLogger()::warning);
         hearingSink = new dev.geldar.core.proximity.NatsHearingSink(
                 config.natsUrl(), config.shard(), System::getenv, getLogger());
         getServer().getPluginManager().registerEvents(new dev.geldar.core.proximity.ProximityChatListener(
-                dev.geldar.core.proximity.ProximityChatListener.bukkitHop(this, getLogger()),
+                dev.geldar.core.proximity.ChatHop.bukkit(this, getLogger()::warning),
                 org.bukkit.Bukkit::getCurrentTick,
                 dev.geldar.core.proximity.PaperBlockReader::new,
                 new dev.geldar.core.proximity.ChatHearing(muffle, getLogger()::info),
