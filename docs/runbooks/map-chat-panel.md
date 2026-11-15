@@ -68,8 +68,9 @@ Run the commands below in the node's checkout, the one that holds `compose/colo.
 7. Verify before step 8: `curl -sI http://127.0.0.1:8100/assets/geldar-chat.js` returns `HTTP/1.1 200` and
    `content-type: text/javascript; charset=utf-8`. If it does not, stop and go to the rollback below.
 8. Add the script to the webroot's settings: in `bluemap/web/settings.json` on the Paper volume, add
-   `"scripts": ["assets/geldar-chat.js"]` next to `"styles"`. BlueMap regenerates the file on start, so after a Paper
-   restart check it again and add the line back if it is gone.
+   `"scripts": ["assets/geldar-chat.js"]`. Only `scripts` is required. BlueMap resets `settings.json` on every Paper
+   restart (its `styles` became `[]` on 2026-11-15), so after a restart check the `scripts` line again and add it back
+   if it is gone. The script loads `assets/geldar.css` itself, so the panel still positions after such a reset.
 9. Reload the public map page once.
 
 ## 3. Checks (curl against the loopback port 127.0.0.1:8100)

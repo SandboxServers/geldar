@@ -33,8 +33,11 @@ interface FakeNode {
 interface FakeDoc {
   created: string[];
   markupWrites: string[];
+  head: FakeNode;
+  body: FakeNode;
   createElement(tag: string): FakeNode;
   createTextNode(data: string): FakeNode;
+  querySelector(selector: string): FakeNode | null;
 }
 interface ChatModule {
   parseFeed(text: string): Line[] | null;
@@ -51,6 +54,8 @@ interface ChatModule {
   buildPanel(doc: FakeDoc, onExpand?: () => void): { root: FakeNode; list: FakeNode };
   pollOnce(state: unknown, fetchFn: FetchFn): Promise<boolean>;
   runLoop(state: unknown, fetchFn: FetchFn, schedule: (fn: () => void, ms: number) => void): void;
+  ensureStyles(doc: FakeDoc): boolean;
+  start(doc: FakeDoc, fetchFn: FetchFn, schedule: (fn: () => void, ms: number) => void): void;
   NEUTRAL: string;
   MAX_ROWS: number;
   FETCH_TIMEOUT_MS: number;
@@ -115,10 +120,22 @@ function fakeNode(doc: { markupWrites: string[] }, tag: string): FakeNode {
   return node;
 }
 
+// The first <link> under node whose href contains href, searched depth first. Text nodes have no children.
+function findLink(node: FakeNode, href: string): FakeNode | null {
+  for (const c of node.childNodes ?? []) {
+    if (c.tagName === 'link' && (c.attrs.href ?? '').includes(href)) return c;
+    const hit = findLink(c, href);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 function fakeDoc(): FakeDoc {
   const doc: FakeDoc = {
     created: [],
     markupWrites: [],
+    head: undefined as unknown as FakeNode,
+    body: undefined as unknown as FakeNode,
     createElement(tag) {
       doc.created.push(tag);
       return fakeNode(doc, tag);
@@ -126,7 +143,15 @@ function fakeDoc(): FakeDoc {
     createTextNode(data) {
       return { data, textContent: data, textContentOwner: true } as unknown as FakeNode;
     },
+    querySelector(selector) {
+      // Only the form the script uses: link[href*="..."].
+      const want = /^link\[href\*="([^"]+)"\]$/.exec(selector)?.[1];
+      if (want === undefined) throw new Error(`unsupported selector ${selector}`);
+      return (doc.head && findLink(doc.head, want)) || findLink(doc.body, want);
+    },
   };
+  doc.head = fakeNode(doc, 'head');
+  doc.body = fakeNode(doc, 'body');
   return doc;
 }
 
@@ -535,6 +560,49 @@ describe('chat panel: the newest line stays in view', () => {
     toggle.fire('click');
     expect(panel.root.classList.contains('gc-collapsed')).toBe(false);
     expect(expanded).toBe(1);
+  });
+});
+
+describe('chat panel: its own stylesheet', () => {
+  it('injects the link once when absent', () => {
+    const doc = fakeDoc();
+    expect(chat.ensureStyles(doc)).toBe(true);
+    expect(chat.ensureStyles(doc)).toBe(false);
+    const links = doc.head.childNodes.filter((c) => c.tagName === 'link');
+    expect(links).toHaveLength(1);
+  });
+
+  it('does not inject when a geldar.css link is already present', () => {
+    const doc = fakeDoc();
+    const existing = doc.createElement('link');
+    existing.setAttribute('rel', 'stylesheet');
+    existing.setAttribute('href', 'assets/geldar.css');
+    doc.head.appendChild(existing);
+    expect(chat.ensureStyles(doc)).toBe(false);
+    expect(doc.head.childNodes).toHaveLength(1);
+  });
+
+  it('the injected link is rel=stylesheet with href assets/geldar.css', () => {
+    const doc = fakeDoc();
+    chat.ensureStyles(doc);
+    const link = findLink(doc.head, 'geldar.css');
+    expect(link?.tagName).toBe('link');
+    expect(link?.attrs.rel).toBe('stylesheet');
+    expect(link?.attrs.href).toBe('assets/geldar.css');
+  });
+
+  it('falls back to the body when the page has no head', () => {
+    const doc = fakeDoc();
+    (doc as { head: unknown }).head = null;
+    expect(chat.ensureStyles(doc)).toBe(true);
+    expect(findLink(doc.body, 'geldar.css')).not.toBeNull();
+  });
+
+  it('start() calls it, so the panel has its stylesheet', () => {
+    const doc = fakeDoc();
+    const { fn } = stubFetch({});
+    chat.start(doc, fn, () => {});
+    expect(findLink(doc.head, 'geldar.css')?.attrs.href).toBe('assets/geldar.css');
   });
 });
 
