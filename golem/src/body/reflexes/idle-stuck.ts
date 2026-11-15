@@ -4,6 +4,7 @@ import { type ActionRun, runAction } from '../../actions/registry.ts';
 import type { Reflex, ReflexContext, ReflexOutcome, Trigger } from '../reflex.ts';
 import type { BodyView } from '../view.ts';
 import { hasBurrow } from './panic-burrow.ts';
+import { failedWalksAt } from './unstick.ts';
 
 /** Ticks (20 per second) the Body must stay put, with no action, before it counts as idle: 60 s. */
 export const IDLE_TICKS = 1200;
@@ -151,7 +152,7 @@ export const idleStuckReflex: Reflex = {
     if (state.actionEnd > state.since) state.since = state.actionEnd;
     const wait = view.onOwnPlacement === true ? IDLE_TICKS_ON_OWN : IDLE_TICKS;
     if (now - state.since < wait || now < state.until) return null;
-    const reason = stuckReason(view);
+    const reason = stuckReason(view) ?? noPathReason(view, here);
     if (reason === null) return null;
     return { reason, idle_seconds: Math.round((now - state.since) / TICKS_PER_SECOND) };
   },
@@ -172,6 +173,17 @@ export const idleStuckReflex: Reflex = {
 function stuckReason(view: BodyView): 'enclosed' | 'ledge' | null {
   if (view.enclosed === true) return view.isNight === false ? 'enclosed' : null;
   return view.canStepOff === false ? 'ledge' : null;
+}
+
+/**
+ * A pillar top the planner will not leave (decision 0332): the Body stands on its own placement, is not
+ * enclosed (the enclosure rules above decide that), and its last two goto outcomes ended `blocked` from
+ * this spot. A Body waiting in the open has no failed walk, so it is left alone. Its clock is the 120 s
+ * own-placement clock of decision 0330.
+ */
+function noPathReason(view: BodyView, here: Spot): 'no_path' | null {
+  if (view.onOwnPlacement !== true || view.enclosed === true) return null;
+  return failedWalksAt(view, here) ? 'no_path' : null;
 }
 
 /**
