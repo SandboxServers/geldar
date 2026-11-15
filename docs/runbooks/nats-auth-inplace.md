@@ -34,7 +34,7 @@ Other users match. Live has 8 users (body, mind, eventsink, mcp, velocity, paper
 Pending additions, none in the generator or the live file. Each needs its own decision-owner go:
 
 - Sheet state subjects (decision 0280 known gap): deny publish `geldar.<s>.state.*.level` for body and paper; eventsink publish `geldar.<s>.life.*.sheet`; body and paper PubDeny `geldar.<s>.life.>`.
-- Hearing subject (decision 0199 option A): body PubDeny `geldar.<s>.body.*.hearing`.
+- Hearing subject (decision 0199 option A): body, mind and mcp PubDeny `geldar.<s>.body.*.hearing`.
 - Provenance (`docs/analysis/harness/work-packets-geldar-b.md`, about line 34): body PubDeny and Sub on `provenance.>`.
 - Body control on the live node: `body` and `paper` PubDeny `geldar.<s>.ctl.body.>` (the generator on `main` has it, the live file does not), and the `register` user. The `register` user and its `REGISTER_NATS_*` env are the REG-NATS-COMPOSE row in `docs/analysis/phase1/ledger.md`, folded into C7-03b2.
 - The batch below (`helper` and `supervisor` users, `helper.body.>` denies) is pending the PR #415 merge and its own owner go.
@@ -214,3 +214,7 @@ Until the test records a result, plan the live change as if changed users are cl
 - A change in the repo lands first. The generator (`geldar.ps1`) must produce the same conf the node runs. Check that with the golden test before the node change.
 - Do not run `./geldar.ps1 shard nats-auth colo` on the node. It is a trusted-machine command; on the node it would write a conf the node did not review.
 - Do not edit `docs/spec.md` to match a live change.
+
+## Open questions
+
+- JetStream republish caveat (decision 0199, known limit, not verified live): the body, mind and mcp roles also hold $JS.API.>. A JetStream stream republish may emit to a subject without a publish-ACL check on that subject. If so, the PubDeny guards against mistakes and ordinary bugs, not against a hostile or compromised role. The existing Kino and state.*.level denies share this property. Applies to every PubDeny in the generated config; on the owner's morning list (geldar-93).
