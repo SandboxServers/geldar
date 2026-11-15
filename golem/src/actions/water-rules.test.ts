@@ -2,7 +2,7 @@ import minecraftData from 'minecraft-data';
 import type { Bot } from 'mineflayer';
 import pathfinderPkg from 'mineflayer-pathfinder';
 import { describe, expect, it, vi } from 'vitest';
-import { ensurePathfinder } from './pathing.ts';
+import { digMovements, ensurePathfinder } from './pathing.ts';
 import { allowWaterExit, EXIT_COST } from './water-rules.ts';
 
 const { Movements } = pathfinderPkg;
@@ -59,20 +59,48 @@ const LAKE: Record<string, Spec> = {
 /** Feet at (0,64,0) in the water; the step goes towards +x. */
 const feet = { x: 0, y: 64, z: 0, remainingBlocks: 0 };
 const EAST = { x: 1, z: 0 };
+const WEST = { x: -1, z: 0 };
+const NORTH = { x: 0, z: -1 };
+const SOUTH = { x: 0, z: 1 };
+
+/** The same lake edge facing each other way: the bank is one block over the feet's neighbour. */
+const LAKE_WEST: Record<string, Spec> = { '0,64,0': WATER, '0,63,0': WATER, '-1,64,0': STONE };
+const LAKE_NORTH: Record<string, Spec> = { '0,64,0': WATER, '0,63,0': WATER, '0,64,-1': STONE };
+const LAKE_SOUTH: Record<string, Spec> = { '0,64,0': WATER, '0,63,0': WATER, '0,64,1': STONE };
 
 /** The cells the library's jump-up adds for one step, with the bot wrapped or not. */
-function jumpUps(placed: Record<string, Spec>, wrapped: boolean) {
+function jumpUps(placed: Record<string, Spec>, wrapped: boolean, dir = EAST) {
   const bot = botWith(placed) as unknown as Bot;
   const movements = new Movements(bot);
   if (wrapped) allowWaterExit(movements, bot);
   const out: { x: number; y: number; z: number; cost: number }[] = [];
-  movements.getMoveJumpUp(feet as never, EAST, out as never);
+  movements.getMoveJumpUp(feet as never, dir, out as never);
   return out.map(({ x, y, z, cost }) => ({ x, y, z, cost }));
 }
 
 describe('allowWaterExit (decision 0194 c)', () => {
   it('the library refuses a bank one block above the water without the wrap', () => {
     expect(jumpUps(LAKE, false)).toEqual([]);
+  });
+
+  it('climbs a bank to the west (dir -x) onto the cell beside it', () => {
+    expect(jumpUps(LAKE_WEST, true, WEST)).toMatchObject([{ x: -1, y: 65, z: 0 }]);
+  });
+
+  it('climbs a bank to the north (dir -z) onto the cell beside it', () => {
+    expect(jumpUps(LAKE_NORTH, true, NORTH)).toMatchObject([{ x: 0, y: 65, z: -1 }]);
+  });
+
+  it('gives no west exit for a bank on the east: the direction is not made positive', () => {
+    expect(jumpUps(LAKE, true, WEST)).toEqual([]);
+  });
+
+  it('gives no north exit for a bank on the south: the direction is not made positive', () => {
+    expect(jumpUps(LAKE_SOUTH, true, NORTH)).toEqual([]);
+  });
+
+  it('gives a south exit for a bank on the south (dir +z)', () => {
+    expect(jumpUps(LAKE_SOUTH, true, SOUTH)).toMatchObject([{ x: 0, y: 65, z: 1 }]);
   });
 
   it('with the wrap, a dry bank one block above the water is an exit onto the bank cell', () => {
@@ -130,6 +158,18 @@ describe('ensurePathfinder wires the exit into tier 1', () => {
     };
     const out: { x: number; y: number; z: number }[] = [];
     given.getMoveJumpUp(feet as never, EAST, out as never);
+    expect(out.map(({ x, y, z }) => ({ x, y, z }))).toEqual([{ x: 1, y: 65, z: 0 }]);
+  });
+});
+
+describe('digMovements wires the exit into tier 2 (decision 0194 c)', () => {
+  it('the digging planner climbs out onto the bank, as tier 1 does', () => {
+    const bot = botWith(LAKE) as unknown as Bot;
+    const out: { x: number; y: number; z: number }[] = [];
+    const planner = digMovements(bot) as unknown as {
+      getMoveJumpUp: (n: typeof feet, d: typeof EAST, o: unknown[]) => void;
+    };
+    planner.getMoveJumpUp(feet, EAST, out);
     expect(out.map(({ x, y, z }) => ({ x, y, z }))).toEqual([{ x: 1, y: 65, z: 0 }]);
   });
 });

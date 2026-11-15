@@ -67,6 +67,34 @@ describe('startSwim air budget (decision 0194 a, b)', () => {
     expect(calls(bot, 'jump', true)).toBe(0);
   });
 
+  it('steers west to a column one block west of the Body, aiming at its centre', () => {
+    // Roof over the head; the nearest passable column is (-1,0), so the centre is (-0.5, 64.2, 0.5).
+    const bot = swimBot({ ...HEAD_WATER, '0,66,0': STONE }, SURFACE_AIR);
+    startSwim(bot, { onAbort: vi.fn() });
+    bot.emit('physicsTick');
+    expect(bot.lookAt).toHaveBeenCalledWith(new Vec3(-0.5, 64.2, 0.5), true);
+  });
+
+  it('steers north to a column one block north, aiming at its centre', () => {
+    // Stone at (-1,65,0) closes the west column, so the nearest is (0,-1): the centre is (0.5, 64.2, -0.5).
+    const bot = swimBot({ ...HEAD_WATER, '0,66,0': STONE, '-1,65,0': STONE }, SURFACE_AIR);
+    startSwim(bot, { onAbort: vi.fn() });
+    bot.emit('physicsTick');
+    expect(bot.lookAt).toHaveBeenCalledWith(new Vec3(0.5, 64.2, -0.5), true);
+    expect(calls(bot, 'forward', true)).toBe(1);
+  });
+
+  it('steers east to a column one block east, aiming at its centre', () => {
+    // Stone at head level on the west, north and south closes those columns, so the east one is nearest.
+    const bot = swimBot(
+      { ...HEAD_WATER, '0,66,0': STONE, '-1,65,0': STONE, '0,65,-1': STONE, '0,65,1': STONE },
+      SURFACE_AIR,
+    );
+    startSwim(bot, { onAbort: vi.fn() });
+    bot.emit('physicsTick');
+    expect(bot.lookAt).toHaveBeenCalledWith(new Vec3(1.5, 64.2, 0.5), true);
+  });
+
   it('calls onAbort once at ABORT_AIR with the head in water, and reports the air', () => {
     const bot = swimBot(HEAD_WATER, ABORT_AIR);
     const onAbort = vi.fn();

@@ -141,7 +141,7 @@ const tierOne = new WeakMap<Bot, unknown>();
  * Tier 2 movements (decision 0164): digging at cost 4, towers with scaffolding, and the safety
  * rules of `goto-dig.ts`. Built fresh per walk, with the same doors and corner rules as tier 1.
  */
-function digMovements(bot: Bot): unknown {
+export function digMovements(bot: Bot): unknown {
   const digging = new Movements(bot);
   applyDigRules(digging, bot);
   forbidCornerCutting(digging);

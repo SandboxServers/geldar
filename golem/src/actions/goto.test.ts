@@ -61,6 +61,16 @@ describe('gotoAction', () => {
     );
   });
 
+  it('runs the swim controller for the walk: moveNear gets swim: true (decision 0194 a)', async () => {
+    await runGoto(fakeBot(), { x: 20, y: 64, z: 30 });
+    expect(moveNear).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      1,
+      expect.objectContaining({ swim: true }),
+    );
+  });
+
   it('reports the dig and place summary as the result note', async () => {
     vi.mocked(moveNear).mockResolvedValueOnce({
       ok: true,
