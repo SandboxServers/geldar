@@ -1,4 +1,5 @@
 import { signOutCookies } from './account.ts';
+import { accountExportMount, type ExportStorePort } from './account-export-wiring.ts';
 import {
   type AccountDeleteDeps,
   accountDeleteDeps,
@@ -27,14 +28,17 @@ export function accountDeleteWiring(
  * drops either wiring fails the test.
  */
 export function mountAccountDelete<A extends object>(
-  store: Parameters<typeof accountDeleteDeps>[0],
+  store: Parameters<typeof accountDeleteDeps>[0] & ExportStorePort,
   body: { readonly link: BodyStopLink | null; readonly routes: readonly ApiRoute[] },
   api: A,
   log: (line: string) => void,
 ): { accountDelete: AccountDeleteDeps; api: A & { readonly routes: readonly ApiRoute[] } } {
   const accountDelete = accountDeleteWiring(store, body.link, log);
+  const exportRoutes = accountExportMount(store);
   return {
     accountDelete,
-    api: mountBodyApi(api, { routes: [...body.routes, ...accountDeleteRoutes(accountDelete)] }),
+    api: mountBodyApi(api, {
+      routes: [...body.routes, ...accountDeleteRoutes(accountDelete), ...exportRoutes],
+    }),
   };
 }

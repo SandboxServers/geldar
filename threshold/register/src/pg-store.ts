@@ -286,6 +286,30 @@ export class PgStore implements Store, SessionStore {
     return r.rows[0]?.ok === true;
   }
 
+  /**
+   * The owner's data export (register_owner_export, migrations 0062 and 0065): the document as JSON text, or null when
+   * the identity has no owner row. The text is cast in SQL, so the driver does not parse it and the route writes it as
+   * it is. It runs on a dedicated client in one transaction with a 60 s statement_timeout (SET LOCAL), so a slow export
+   * cannot hold the shared pool for sign-in and session touches for longer than that; the client is always released.
+   */
+  async exportOwnerData(identityHash: string): Promise<string | null> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query("SET LOCAL statement_timeout = '60s'");
+      const r = await client.query('SELECT register_owner_export($1)::text AS export', [
+        hex(identityHash),
+      ]);
+      await client.query('COMMIT');
+      return r.rows[0]?.export ?? null;
+    } catch (err) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw err;
+    } finally {
+      client.release();
+    }
+  }
+
   async retirePlayer(identityHash: string, playerId: string): Promise<boolean> {
     try {
       const r = await this.pool.query('SELECT register_retire_player($1, $2) AS ok', [

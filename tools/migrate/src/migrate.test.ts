@@ -59,6 +59,7 @@ describe('listMigrations', () => {
       '0061_roster_auto.sql',
       '0062_owner_export.sql',
       '0063_body_host_roles.sql',
+      '0065_owner_export_budget.sql',
     ]);
   });
 
