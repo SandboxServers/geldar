@@ -91,3 +91,52 @@
   font-weight: 400;
   margin-left: 8px;
 }
+/* The header's title row holds the live dot; a long note wraps inside it, so the toggle keeps its 44px. */
+#geldar-chat .gc-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* The live dot (geldar-chat.js freshState): green live, amber delayed, grey offline. Text is "Live", "Delayed" or
+   "Offline". The colours are the panel's own: the amber note, the grey border and the grey time. */
+#geldar-chat .gc-live {
+  color: #aaa;
+  font-size: 12px;
+  font-weight: 400;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+#geldar-chat .gc-live::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 4px;
+  border-radius: 50%;
+  background: #888;
+  vertical-align: middle;
+}
+#geldar-chat .gc-live.gc-live-live::before {
+  background: #7ddc7d;
+}
+#geldar-chat .gc-live.gc-live-delayed {
+  color: #ffd54a;
+}
+#geldar-chat .gc-live.gc-live-delayed::before {
+  background: #ffd54a;
+}
+/* A speaker's "still" suffix, after the name. */
+#geldar-chat .gc-still {
+  color: #aaa;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+/* The last line's age, under the list. Hidden by its hidden attribute when the feed is empty. */
+#geldar-chat .gc-foot {
+  color: #aaa;
+  font-size: 12px;
+  padding: 0 8px 4px;
+  flex: none;
+}
+#geldar-chat.gc-collapsed .gc-foot {
+  display: none;
+}

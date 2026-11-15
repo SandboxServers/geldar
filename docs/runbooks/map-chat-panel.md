@@ -15,6 +15,9 @@ in step 2; the only hand edit to the Paper volume is the one `settings.json` lin
 
 The hand copy below covers `geldar-chat.js` and `geldar.css`. BM-11 changes both files and adds no new file or settings entry.
 
+The freshness version (the header dot, the "still" label and the "last line" age) is two web files only, `geldar-chat.js`
+and `geldar.css`, deployed by the same hand copy as above. It adds no settings entry and no server change.
+
 The node's compose files are hand-synced. `colo-cd` refreshes the images and the config bundle, not `compose/*`
 (`deploy/colo-cd-plan.sh` skips them). A normal web deploy of PR #461 therefore did not change `bluemap-web` on the
 node: it kept the old mount and Caddyfile, and `/assets/geldar-chat.js` returned 404. The web step needs the sync below.
