@@ -345,6 +345,8 @@ services:
       # Only inside the container may the server bind 0.0.0.0; the port is still published on loopback alone.
       GELDAR_MCP_IN_CONTAINER: "1"
       GELDAR_MCP_BIND: 0.0.0.0
+      # Lives whose `wait` returns unchanged recipe and notable-block lists (decision 0221): a comma list of life ids, or `all`. Empty is off.
+      GELDAR_WAIT_DELTA_LIVES: "${GELDAR_WAIT_DELTA_LIVES:-}"
       # The Host values local clients send to the loopback port. No public host (decision 0053 defers it).
       GELDAR_MCP_DEV_HOSTS: 127.0.0.1,localhost
       # Caddy (host network) may reach the publish as the docker bridge gateway: the node's deploy env sets the real peer

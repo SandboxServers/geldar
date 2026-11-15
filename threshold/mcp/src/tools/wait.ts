@@ -21,6 +21,7 @@ import type {
 } from '../ports.ts';
 import { BodyUnavailable } from '../ports.ts';
 import { causeOf } from '../presence-write.ts';
+import { applyWaitDelta, type SentMark, type WaitDeltaLives, waitDeltaOn } from './wait-delta.ts';
 
 /** The longest `wait` the Scriptorium constraint allows, in seconds (spec 5.15.3). */
 export const MAX_WAIT_SECONDS = 240;
@@ -67,6 +68,8 @@ export interface WaitDeps {
   runs: Map<string, RunState>;
   config: WakeConfig;
   state: WaitState;
+  /** The lives the unchanged-section feature is on for (GELDAR_WAIT_DELTA_LIVES, read at startup). */
+  waitDelta?: WaitDeltaLives | undefined;
   /** Repeated-failure memory: when set, a goal that failed three times in a row is stated as an event. */
   failures?: FailureTracker | undefined;
   touchPresence?: TouchPresence;
@@ -82,6 +85,8 @@ export interface WaitDeps {
 export interface WaitRequest {
   lifeId: string;
   cursor?: string;
+  /** The MCP session that asked (world-session.ts). Unset means no session: nothing is deduplicated. */
+  session?: string | undefined;
   interests?: readonly McpInterest[];
   maxSeconds: number;
   /** Aborted when the session ends (a revoke, say): the wait ends with `session_superseded`. */
@@ -128,10 +133,12 @@ export interface WaitState {
   open: Map<string, (why: WaitError) => void>;
   lastWakeMs: Map<string, number>;
   delivered: Map<string, number>;
+  /** Per life, what the last `wait` of its session carried (decision 0221). */
+  sent: Map<string, SentMark>;
 }
 
 export function createWaitState(): WaitState {
-  return { open: new Map(), lastWakeMs: new Map(), delivered: new Map() };
+  return { open: new Map(), lastWakeMs: new Map(), delivered: new Map(), sent: new Map() };
 }
 
 /** Records the newest sequence a life was given; the map keeps at most MAX_DELIVERED_LIVES lives. */
@@ -311,8 +318,19 @@ export async function wait(deps: WaitDeps, req: WaitRequest): Promise<WaitOutcom
     },
     note: WORLD_TEXT_NOTE,
   };
-  return {
-    ok: true,
-    result: fitResult(result, deps.maxResultBytes ?? MAX_RESULT_BYTES, wakingSeqs),
-  };
+  const fitted = fitResult(result, deps.maxResultBytes ?? MAX_RESULT_BYTES, wakingSeqs);
+  // fitResult cuts events only, so no snapshot section is cut here; a cut one would never be unchanged.
+  applyWaitDelta(
+    state.sent,
+    {
+      lifeId,
+      session: req.session,
+      cursor: req.cursor,
+      resultCursor: result.cursor,
+      trimmed: { unlocked_recipes: false, notable_blocks: false },
+    },
+    fitted.snapshot,
+    waitDeltaOn(deps.waitDelta, lifeId),
+  );
+  return { ok: true, result: fitted };
 }

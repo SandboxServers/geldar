@@ -4,6 +4,8 @@ import {
   validateBlockOwner,
 } from '@geldar/contract';
 import { type OwnerAnswer, setOwnerLookup, setOwnerPrefetch } from '../actions/protected-blocks.ts';
+import { DEFAULT_DIAG_SINK, type DiagSink } from '../actions/stall-diag.ts';
+import { type OwnershipCounters, startOwnershipCounters } from './ownership-counters.ts';
 
 /**
  * The Body's client of the block ownership record (decision 0165): one cache per Body, filled by
@@ -49,6 +51,8 @@ export interface BlockOwnersOptions {
   requestTimeoutMs?: number;
   prefetchWaitMs?: number;
   log?: (line: string) => void;
+  /** Where the `ownership_lookups` line goes (decision 0217): the top-level sink, as the hurt line. */
+  diag?: DiagSink;
 }
 
 /** The ownership client of one Body. */
@@ -130,6 +134,9 @@ export function startBlockOwners(options: BlockOwnersOptions): BlockOwners {
   const requestTimeout = options.requestTimeoutMs ?? OWNER_REQUEST_TIMEOUT_MS;
   const waitMs = options.prefetchWaitMs ?? OWNER_PREFETCH_WAIT_MS;
   const log = options.log ?? (() => undefined);
+  const counters: OwnershipCounters = startOwnershipCounters({
+    diag: options.diag ?? DEFAULT_DIAG_SINK,
+  });
   const encoder = new TextEncoder();
   const decoder = new TextDecoder();
   /** Insertion order is the LRU order: the first key is the least recently used. */
@@ -174,16 +181,26 @@ export function startBlockOwners(options: BlockOwnersOptions): BlockOwners {
       log(`block owner query for ${world} ${cx},${cz} failed: ${reason}`);
       store(key, { owners: new Map(), complete: false, failed: true, fetchedAt: now() });
     };
-    let reply: unknown;
+    const started = now();
+    counters.query();
+    let msg: { data: Uint8Array };
     try {
       const query = { world, chunk_x: cx, chunk_z: cz };
-      const msg = await transport.request(
+      msg = await transport.request(
         blockownerQuerySubject(options.shard),
         encoder.encode(JSON.stringify(query)),
         { timeout: requestTimeout },
       );
+    } catch (error) {
+      counters.settled('unknown', now() - started);
+      failed(String(error));
+      return;
+    }
+    let reply: unknown;
+    try {
       reply = JSON.parse(decoder.decode(msg.data));
     } catch (error) {
+      counters.settled('error', now() - started);
       failed(String(error));
       return;
     }
@@ -196,9 +213,11 @@ export function startBlockOwners(options: BlockOwnersOptions): BlockOwners {
       answer.chunk_x !== cx ||
       answer.chunk_z !== cz
     ) {
+      counters.settled('error', now() - started);
       failed('the reply does not match the contract');
       return;
     }
+    counters.settled(answer.truncated === true ? 'truncated' : 'answered', now() - started);
     const owners = new Map<string, string>();
     for (const block of answer.blocks) owners.set(cellKey(block.x, block.y, block.z), block.owner);
     for (const change of racing.get(key) ?? []) applyChange(owners, change);
@@ -236,9 +255,13 @@ export function startBlockOwners(options: BlockOwnersOptions): BlockOwners {
     // A no-op while the chunk is fresh or on its way; a miss or a stale chunk is asked for now.
     void ensureChunk(world, cx, cz);
     const entry = chunks.get(key);
-    if (entry === undefined || !entry.complete) return { known: false };
+    if (entry === undefined || !entry.complete) {
+      counters.lookup(false);
+      return { known: false };
+    }
     chunks.delete(key);
     chunks.set(key, entry);
+    counters.lookup(true);
     return { known: true, owner: entry.owners.get(cellKey(x, y, z)) ?? null };
   };
 
@@ -313,6 +336,7 @@ export function startBlockOwners(options: BlockOwnersOptions): BlockOwners {
         // The connection may already be closed; nothing is left to undo.
       }
       chunks.clear();
+      counters.stop();
     },
     chunkCount: () => chunks.size,
   };

@@ -5,6 +5,7 @@ WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY contract ./contract
+COPY psyche ./psyche
 COPY eventsink ./eventsink
 RUN pnpm install --frozen-lockfile --prod --filter @geldar/eventsink...
 USER node

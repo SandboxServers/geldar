@@ -139,6 +139,32 @@ describe('wait result', () => {
     expect(validateToolResult('wait', WAIT_RESULT).ok).toBe(true);
   });
 
+  it('takes the unchanged fact for recipes and notable blocks, and rejects a bad one (decision 0221)', () => {
+    const fact = structuredClone(WAIT_RESULT);
+    Object.assign(fact.snapshot.self as object, {
+      unlocked_recipes: { unchanged: true, count: 112 },
+    });
+    Object.assign(fact.snapshot.surroundings as object, {
+      notable_blocks: { unchanged: true, count: 14 },
+    });
+    expect(validateToolResult('wait', fact).ok).toBe(true);
+    const negative = structuredClone(fact);
+    Object.assign(negative.snapshot.self as object, {
+      unlocked_recipes: { unchanged: true, count: -1 },
+    });
+    expect(validateToolResult('wait', negative).ok).toBe(false);
+    const extra = structuredClone(fact);
+    Object.assign(extra.snapshot.surroundings as object, {
+      notable_blocks: { unchanged: true, count: 1, extra: 1 },
+    });
+    expect(validateToolResult('wait', extra).ok).toBe(false);
+    const notTrue = structuredClone(WAIT_RESULT);
+    Object.assign(notTrue.snapshot.surroundings as object, {
+      notable_blocks: { unchanged: false, count: 1 },
+    });
+    expect(validateToolResult('wait', notTrue).ok).toBe(false);
+  });
+
   it('rejects a missing or unknown wake_reason and another note', () => {
     const { wake_reason: _dropped, ...missing } = WAIT_RESULT;
     expectRejected(validateToolResult('wait', missing), 'wake_reason');

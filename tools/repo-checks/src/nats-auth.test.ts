@@ -80,7 +80,8 @@ function expectedTable(s: string): Record<string, { pub: string[]; sub: string[]
       pub: [...MIND_TYPES.map((t) => `geldar.${s}.${t}`), ...JS, `geldar.${s}.body.>`],
       sub: ['_INBOX.>'],
     },
-    eventsink: { pub: [`geldar.${s}.dlq`, ...JS], sub: ['_INBOX.>'] },
+    // State (0280, AN-02b): the eventsink publishes the level push on state.<life>.level.
+    eventsink: { pub: [`geldar.${s}.dlq`, `geldar.${s}.state.>`, ...JS], sub: ['_INBOX.>'] },
     mcp: {
       pub: [`geldar.${s}.sovereign_call`, `geldar.${s}.body.>`, kv('geldar-presence'), ...JS],
       sub: ['_INBOX.>'],
@@ -166,6 +167,9 @@ interface Rendered {
 
 let rendered: Rendered | undefined;
 
+/** pwsh and docker compose start slowly on loaded machines and can exceed vitest's 5 s test and 10 s hook defaults. */
+const GENERATOR_TIMEOUT_MS = 120_000;
+
 // Runs the real generator once for the phase0 shard, in a temp copy of the repo's generator inputs.
 beforeAll(() => {
   if (!hasPwsh) return;
@@ -184,7 +188,7 @@ beforeAll(() => {
   const confPath = join(dir, 'compose', 'secrets', 'nats-auth.conf');
   const conf = run.status === 0 ? readFileSync(confPath, 'utf8') : '';
   rendered = { dir, conf, status: run.status, stderr: (run.stderr ?? '').trim().slice(0, 1500) };
-});
+}, GENERATOR_TIMEOUT_MS);
 
 afterAll(() => {
   if (rendered) rmSync(rendered.dir, { recursive: true, force: true });
@@ -213,52 +217,76 @@ function natsPasswordGaps(...files: string[]) {
 }
 
 describe.skipIf(!hasDocker)('compose NATS auth overlays merge offline', () => {
-  it('merges colo.yml with nats-auth.yml, which adds no service of its own', () => {
-    const run = renderCompose('colo.yml', 'nats-auth.yml');
-    expect(run.status).toBe(0);
-  });
+  it(
+    'merges colo.yml with nats-auth.yml, which adds no service of its own',
+    () => {
+      const run = renderCompose('colo.yml', 'nats-auth.yml');
+      expect(run.status).toBe(0);
+    },
+    GENERATOR_TIMEOUT_MS,
+  );
 
-  it('points every NATS password file in the merged colo config at a secret its service mounts', () => {
-    const { status, checked, gaps } = natsPasswordGaps('colo.yml', 'nats-auth.yml');
-    expect(status).toBe(0);
-    expect(checked).toContain('golem-body');
-    expect(gaps).toEqual([]);
-  });
+  it(
+    'points every NATS password file in the merged colo config at a secret its service mounts',
+    () => {
+      const { status, checked, gaps } = natsPasswordGaps('colo.yml', 'nats-auth.yml');
+      expect(status).toBe(0);
+      expect(checked).toContain('golem-body');
+      expect(gaps).toEqual([]);
+    },
+    GENERATOR_TIMEOUT_MS,
+  );
 
-  it('points every NATS password file in the merged phase0 config at a secret its service mounts', () => {
-    const { status, checked, gaps } = natsPasswordGaps(
-      'phase0.yml',
-      'mcp.yml',
-      'nats-auth.yml',
-      'nats-auth-mcp.yml',
-    );
-    expect(status).toBe(0);
-    expect(checked).toEqual(
-      expect.arrayContaining(['paper', 'velocity', 'eventsink', 'geldar-mcp']),
-    );
-    expect(gaps).toEqual([]);
-  });
+  it(
+    'points every NATS password file in the merged phase0 config at a secret its service mounts',
+    () => {
+      const { status, checked, gaps } = natsPasswordGaps(
+        'phase0.yml',
+        'mcp.yml',
+        'nats-auth.yml',
+        'nats-auth-mcp.yml',
+      );
+      expect(status).toBe(0);
+      expect(checked).toEqual(
+        expect.arrayContaining(['paper', 'velocity', 'eventsink', 'geldar-mcp']),
+      );
+      expect(gaps).toEqual([]);
+    },
+    GENERATOR_TIMEOUT_MS,
+  );
 
-  it('keeps the -js -sd /data flags colo sets on nats when the overlay is merged', () => {
-    const run = renderCompose('colo.yml', 'nats-auth.yml');
-    const command = JSON.parse(run.stdout || '{}').services?.nats?.command ?? [];
-    expect(command).toEqual(expect.arrayContaining(['-js', '-sd', '/data']));
-  });
+  it(
+    'keeps the -js -sd /data flags colo sets on nats when the overlay is merged',
+    () => {
+      const run = renderCompose('colo.yml', 'nats-auth.yml');
+      const command = JSON.parse(run.stdout || '{}').services?.nats?.command ?? [];
+      expect(command).toEqual(expect.arrayContaining(['-js', '-sd', '/data']));
+    },
+    GENERATOR_TIMEOUT_MS,
+  );
 
-  it('sets the store dir once: -sd in the merged command of both stacks, no store_dir in the generator', () => {
-    for (const base of ['colo.yml', 'phase0.yml']) {
-      const merged = renderCompose(base, 'nats-auth.yml');
-      const command: string[] = JSON.parse(merged.stdout || '{}').services?.nats?.command ?? [];
-      expect(command.filter((a) => a === '-sd')).toHaveLength(1);
-      expect(command).toEqual(expect.arrayContaining(['-js', '-sd', '/data', '-c']));
-    }
-    expect(functionBody('Initialize-NatsAuth')).not.toContain('store_dir');
-  });
+  it(
+    'sets the store dir once: -sd in the merged command of both stacks, no store_dir in the generator',
+    () => {
+      for (const base of ['colo.yml', 'phase0.yml']) {
+        const merged = renderCompose(base, 'nats-auth.yml');
+        const command: string[] = JSON.parse(merged.stdout || '{}').services?.nats?.command ?? [];
+        expect(command.filter((a) => a === '-sd')).toHaveLength(1);
+        expect(command).toEqual(expect.arrayContaining(['-js', '-sd', '/data', '-c']));
+      }
+      expect(functionBody('Initialize-NatsAuth')).not.toContain('store_dir');
+    },
+    GENERATOR_TIMEOUT_MS,
+  );
 
-  it('merges phase0.yml with mcp.yml, nats-auth.yml and nats-auth-mcp.yml', () => {
-    const run = renderCompose('phase0.yml', 'mcp.yml', 'nats-auth.yml', 'nats-auth-mcp.yml');
-    expect(run.status).toBe(0);
-  });
+  it(
+    'merges phase0.yml with mcp.yml, nats-auth.yml and nats-auth-mcp.yml',
+    () => {
+      const run = renderCompose('phase0.yml', 'mcp.yml', 'nats-auth.yml', 'nats-auth-mcp.yml');
+      expect(run.status).toBe(0);
+    },
+    GENERATOR_TIMEOUT_MS,
+  );
 });
 
 describe('geldar.ps1 NATS auth generator: static wiring', () => {
@@ -386,11 +414,13 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
       `geldar.${SHARD}.kino.>`,
       `geldar.${SHARD}.blockowner.changed`,
       `geldar.${SHARD}.ctl.body.>`,
+      `geldar.${SHARD}.state.*.level`,
     ]);
     expect(by('paper')?.deny).toEqual([
       control,
       `geldar.${SHARD}.blockowner.query`,
       `geldar.${SHARD}.ctl.body.>`,
+      `geldar.${SHARD}.state.*.level`,
     ]);
     expect(by('kino')?.deny).toEqual([]);
     const reach = (subject: string, list: string[]) =>
@@ -435,5 +465,34 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
     expect(by('paper')?.deny).toContain(query);
     expect(canPub(query)).not.toContain('kino');
     expect(canSub(changed)).not.toContain('kino');
+  });
+
+  // 0280 (the ACL follow-up): a Body may not forge a level push. The body and paper roles hold a broad publish on
+  // geldar.<s>.>, so the state push is denied to them by name; the request (state.<life>.proficiency) stays theirs and
+  // the eventsink publishes the push. NATS matching: `*` is one token, `>` is the rest of the subject.
+  it('denies the body and paper roles a level push, keeps their proficiency request, and lets the eventsink publish the push', () => {
+    const entries = parseEntries(rendered?.conf ?? '');
+    const by = (u: string) => entries.find((e) => e.user === u);
+    const matches = (pattern: string, subject: string) => {
+      const p = pattern.split('.');
+      const t = subject.split('.');
+      for (let i = 0; i < p.length; i++) {
+        if (p[i] === '>') return i < t.length;
+        if (i >= t.length || (p[i] !== '*' && p[i] !== t[i])) return false;
+      }
+      return p.length === t.length;
+    };
+    const canPub = (subject: string) =>
+      entries
+        .filter(
+          (e) => e.pub.some((p) => matches(p, subject)) && !e.deny.some((p) => matches(p, subject)),
+        )
+        .map((e) => e.user);
+    const level = `geldar.${SHARD}.state.life_1.level`;
+    const request = `geldar.${SHARD}.state.life_1.proficiency`;
+    expect(by('body')?.deny).toContain(`geldar.${SHARD}.state.*.level`);
+    expect(by('paper')?.deny).toContain(`geldar.${SHARD}.state.*.level`);
+    expect(canPub(level)).toEqual(['eventsink']);
+    expect(canPub(request)).toContain('body');
   });
 });

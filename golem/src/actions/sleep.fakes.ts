@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { vi } from 'vitest';
@@ -6,30 +7,66 @@ import { sleepAction } from './sleep.ts';
 export interface FakeBlock {
   name: string;
   position: Vec3;
+  /** The block light the world model reports; absent reads as unknown. */
+  light?: number;
 }
+
+/** An entity in the fake world: its minecraft-data name and its feet position. */
+export interface FakeEntity {
+  name: string;
+  position: Vec3;
+}
+
+/** The minecraft-data categories the fake registry knows: the hostile mobs and the passive ones the tests name. */
+export const SCENE_REGISTRY = {
+  entitiesByName: {
+    zombie: { category: 'Hostile mobs' },
+    creeper: { category: 'Hostile mobs' },
+    enderman: { category: 'Hostile mobs' },
+    zombified_piglin: { category: 'Hostile mobs' },
+    iron_golem: { category: 'Passive mobs' },
+    snow_golem: { category: 'Passive mobs' },
+  },
+};
 
 export interface FakeOptions {
   timeOfDay?: number;
   thundering?: boolean;
   /** The blocks in the world; `findBlocks` searches them in order. */
   blocks?: FakeBlock[];
+  /** The entities in the world, as `bot.entities` lists them. */
+  entities?: FakeEntity[];
   /** Messages `bot.sleep` rejects with, one per call, before it succeeds. */
   sleepErrors?: string[];
   /** True when the bot starts out in a bed. */
   asleep?: boolean;
   /** True when `bot.sleep` never settles, as when the server stays silent. */
   hangSleep?: boolean;
+  /** Wall ms before `bot.sleep` settles, so a test can send messages while the Body is getting into the bed. */
+  sleepDelayMs?: number;
 }
 
-/** A fake bot with a clock, a set of blocks, and a `sleep` that can reject. */
+/**
+ * A fake bot with a clock, a set of blocks, and a `sleep` that can reject. It is also a message emitter:
+ * `emit` and `listenerCount` are its `message` events, so a test can send sleep lines and count subscribers.
+ */
 export function fakeBot(options: FakeOptions = {}): Bot {
   const blocks = options.blocks ?? [];
   const errors = [...(options.sleepErrors ?? [])];
   let sleeping = options.asleep ?? false;
+  const emitter = new EventEmitter();
   const bot = {
+    on: emitter.on.bind(emitter),
+    removeListener: emitter.removeListener.bind(emitter),
+    emit: emitter.emit.bind(emitter),
+    listenerCount: emitter.listenerCount.bind(emitter),
     time: { timeOfDay: options.timeOfDay ?? 1_000 },
     thunderState: options.thundering ? 1 : 0,
     entity: { position: new Vec3(0, 64, 0) },
+    entities: Object.fromEntries(
+      (options.entities ?? []).map((entity, index) => [String(index), entity]),
+    ),
+    registry: SCENE_REGISTRY,
     get isSleeping() {
       return sleeping;
     },
@@ -48,6 +85,9 @@ export function fakeBot(options: FakeOptions = {}): Bot {
     blockAt: (position: Vec3) => blocks.find((block) => block.position.equals(position)) ?? null,
     sleep: vi.fn(async (_bed: FakeBlock) => {
       if (options.hangSleep) return new Promise<void>(() => undefined);
+      if (options.sleepDelayMs) {
+        await new Promise<void>((resolve) => setTimeout(resolve, options.sleepDelayMs));
+      }
       const error = errors.shift();
       // The server says "already sleeping" only when the bot is in a bed.
       if (error && /already sleeping/i.test(error)) sleeping = true;

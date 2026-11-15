@@ -9,6 +9,7 @@
   "dependencies": {
     "@geldar/contract": "workspace:*",
     "@geldar/mcp": "workspace:*",
+    "@geldar/psyche": "workspace:*",
     "pg": "8.23.1",
     "yaml": "2.9.1"
   },

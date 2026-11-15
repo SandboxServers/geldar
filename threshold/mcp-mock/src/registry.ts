@@ -10,6 +10,8 @@ import {
 export interface ToolContext {
   playerId: string;
   signal: AbortSignal;
+  /** The MCP session the call came in on: one id per session, never a token (world-session.ts). */
+  session?: string | undefined;
 }
 
 /** One tool's behaviour: gets the validated input and the call context, returns the result (sync or async). Throw a `ToolError` for a failure the character should see. */

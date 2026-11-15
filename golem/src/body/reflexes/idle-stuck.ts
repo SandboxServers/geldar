@@ -118,6 +118,7 @@ export function mayUnstick(view: BodyView): boolean {
  */
 export const idleStuckReflex: Reflex = {
   name: 'idle_stuck',
+  suspendedWhileAsleep: () => true,
   priority: 10,
   cooldownTicks: 200,
   check(view): Trigger | null {
