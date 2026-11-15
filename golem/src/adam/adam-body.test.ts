@@ -211,7 +211,7 @@ describe('the character block in a Body (AN-07)', () => {
     }
   });
 
-  it('with a sheet in force, emits one sheet_adopted at start, with source config', async () => {
+  it('with a config sheet, emits one sheet_adopted at start, with source config', async () => {
     built.audits = 0;
     const r = rig();
     const publish = vi.fn(async (_subject: string, _data: string, _id?: string) => undefined);
@@ -227,6 +227,20 @@ describe('the character block in a Body (AN-07)', () => {
     expect(built.audits).toBe(1);
     expect(adoptions).toHaveLength(1);
     expect(adoptions[0]?.[1]).toContain('"source":"config"');
+  });
+
+  it('with the standard fallback sheet, builds nothing and emits no sheet_adopted', async () => {
+    built.audits = 0;
+    const r = rig();
+    const publish = vi.fn(async (_subject: string, _data: string, _id?: string) => undefined);
+    const standard: LifeCharacter = { ...ADOPTED, source: 'standard' };
+    const running = await startAdamBody(
+      { ...r.env, publisher: { publish }, character: standard },
+      fakeBot(),
+    );
+    await running.stop();
+    expect(built.audits).toBe(0);
+    expect(publish.mock.calls.map((call) => call[0])).not.toContain('geldar.phase0.sheet_adopted');
   });
 
   it('never writes the sheet into a log line', async () => {

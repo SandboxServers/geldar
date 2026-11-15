@@ -68,8 +68,9 @@ export interface AdamBodyEnv {
   /** Telemetry (push only with a URL, see `metrics.ts`); absent in tests that do not check it. */
   metrics?: GolemMetrics;
   /**
-   * The life's character (AN-07). Absent or mode off: nothing is built and nothing is emitted. With a
-   * sheet in force, one `sheet_adopted` is recorded at start. The sheet itself is never logged.
+   * The life's character (AN-07). Absent, mode off, or the standard fallback: nothing is built and
+   * nothing is emitted. With a sheet from config (`source` 'config'), one `sheet_adopted` is recorded
+   * at start. The sheet itself is never logged.
    */
   character?: LifeCharacter;
   /** Replaces the AuditPublisher this run would build for the adoption (tests only). */
@@ -213,9 +214,10 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
   try {
     const digest = wrapped.recent;
     if (digest === null) throw new Error('the Body did not wrap its record sink');
-    // The character block (AN-07): off, or no sheet in force, builds no audit producer at all.
+    // The character block (AN-07): only a sheet from config is adopted. Off, no sheet, or the standard
+    // fallback (never stored, so no baseline) builds no audit producer at all and emits nothing.
     const sheet = env.character?.sheet ?? null;
-    if (sheet !== null) {
+    if (sheet !== null && env.character?.source === 'config') {
       audit =
         env.audit ??
         new AuditPublisher({
