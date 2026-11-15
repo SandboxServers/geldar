@@ -33,6 +33,14 @@ export function dangers(view: BodyView, radius: number): HostileView[] {
   return view.nearbyHostiles(radius).filter((hostile) => isHostileNow(hostile, view));
 }
 
+/** How far (blocks) a visible phantom counts as a threat the Body fights where it stands. */
+const FLYER_RADIUS = 16;
+
+/** The nearest phantom in sight within FLYER_RADIUS, if any. Only phantoms: other flyers are not listed here. */
+export function flyerOf(view: BodyView): HostileView | undefined {
+  return dangers(view, FLYER_RADIUS).find((hostile) => hostile.name === 'phantom');
+}
+
 /**
  * The nearest danger that is hitting the Body: within melee reach and facing it. A view that does
  * not say (`attacking` missing) is read as attacking, so a hand-built view keeps working.

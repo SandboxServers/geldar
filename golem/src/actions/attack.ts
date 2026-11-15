@@ -38,6 +38,17 @@ const MAX_SWINGS = 80;
 const MAX_STEPS = 200;
 /** Stall limit for each approach, in world ticks: a target that moves is re-aimed often. */
 const APPROACH_STALL_TICKS = 60;
+/** Mobs that fly: the attack never paths to them (a walk to an airborne point fails), it waits for them. */
+const FLYING_MOBS = new Set(['phantom', 'bat']);
+/** Longest wait, in world ticks (10 s), for a flying target to come within reach before the attack gives up. */
+const FLYER_WAIT_TICKS = 200;
+/** One wait between two looks at a flying target, in world ticks. */
+const FLYER_POLL_TICKS = 2;
+
+/** True for a flying mob (phantom, bat): an attack on it stands still and waits, it does not walk. */
+export function isFlyingMob(name: string): boolean {
+  return FLYING_MOBS.has(name);
+}
 
 /** The nearest entity of that mob name or player name, other than the bot. Null when none is loaded. */
 export function findTarget(bot: Bot, name: string): Entity | null {
@@ -94,6 +105,8 @@ export const attackAction: ActionHandler<'attack'> = {
     const targetKind = targetKindOf(first);
 
     let swings = 0;
+    // World ticks spent out of reach of a flying target since it was last in reach.
+    let idle = 0;
     for (let step = 0; step < MAX_STEPS && swings < MAX_SWINGS; step++) {
       if (signal.aborted) return cancelled({ target: name, swings });
       const entity = bot.entities[first.id];
@@ -109,6 +122,17 @@ export const attackAction: ActionHandler<'attack'> = {
       }
       lastAt = entity.position.clone();
       if (entity.position.distanceTo(bot.entity.position) > REACH) {
+        if (isFlyingMob(name)) {
+          if (idle >= FLYER_WAIT_TICKS) {
+            return failed('out_of_reach', `the ${name} was not within reach`, {
+              target: name,
+              swings,
+            });
+          }
+          idle += FLYER_POLL_TICKS;
+          await bot.waitForTicks(FLYER_POLL_TICKS);
+          continue;
+        }
         const move = await moveNear(bot, entity.position, APPROACH_RANGE, {
           digTier: false,
           signal,
@@ -118,6 +142,7 @@ export const attackAction: ActionHandler<'attack'> = {
         if (!move.ok) return outcomeOfMove(move, { target: name, swings });
         continue;
       }
+      idle = 0;
       await bot.lookAt(entity.position.offset(0, (entity.height ?? 1) * 0.9, 0), true);
       bot.attack(entity);
       swings += 1;
