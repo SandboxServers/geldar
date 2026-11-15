@@ -68,11 +68,48 @@ describe('setRolePassword', () => {
     expect(sent[0]).not.toContain('hunter2-secret');
   });
 
-  it('refuses any role but the three, before connecting', async () => {
-    for (const role of ['postgres', 'geldar_historian', 'geldar_glass_admin']) {
+  it('sends a SCRAM-SHA-256 verifier for geldar_helper and geldar_supervisor (C7-03c2)', async () => {
+    for (const role of ['geldar_helper', 'geldar_supervisor']) {
+      const { pool, sent } = fakePool();
+      await setRolePassword(pool, role, 'hunter2-secret', QUIET);
+      expect(sent, role).toHaveLength(1);
+      expect(sent[0], role).toMatch(
+        new RegExp(`^ALTER ROLE ${role} WITH LOGIN PASSWORD 'SCRAM-SHA-256\\$4096:`),
+      );
+      expect(sent[0], role).not.toContain('hunter2-secret');
+    }
+  });
+
+  it('login first: when the file password already logs in, no ALTER runs (C7-03c2)', async () => {
+    const { pool, sent, connects } = fakePool();
+    const lines: string[] = [];
+    await setRolePassword(pool, 'geldar_helper', 'hunter2-secret', {
+      dryRun: false,
+      log: (line) => lines.push(line),
+      loginWorks: async (role, password) =>
+        role === 'geldar_helper' && password === 'hunter2-secret',
+    });
+    expect(sent, 'no statement').toEqual([]);
+    expect(connects.count, 'no pool connection').toBe(0);
+    expect(lines[0]).toContain('already set');
+  });
+
+  it('login first: when the login fails, the ALTER runs once (C7-03c2)', async () => {
+    const { pool, sent } = fakePool();
+    await setRolePassword(pool, 'geldar_helper', 'hunter2-secret', {
+      dryRun: false,
+      log: (): void => undefined,
+      loginWorks: async () => false,
+    });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatch(/^ALTER ROLE geldar_helper WITH LOGIN PASSWORD/);
+  });
+
+  it('refuses any role but the five, before connecting', async () => {
+    for (const role of ['postgres', 'geldar_historian', 'geldar_glass_admin', 'geldar_body']) {
       const { pool, sent, connects } = fakePool();
       await expect(setRolePassword(pool, role, 'hunter2-secret', QUIET)).rejects.toThrow(
-        'only geldar_mcp or geldar_glass or geldar_register',
+        'only geldar_mcp or geldar_glass or geldar_register or geldar_helper or geldar_supervisor',
       );
       expect(connects.count, role).toBe(0);
       expect(sent, role).toEqual([]);

@@ -1,6 +1,8 @@
 /** Writes events to Postgres, idempotently. */
 import type { WorldEvent } from '@geldar/contract';
 import type { Pool } from 'pg';
+import { AUDIT_TYPES, projectAudit } from './audit/projection.ts';
+import { pgAuditStore } from './audit/store.ts';
 import { isProjected, pgProjectionStore, projectEvent } from './projection.ts';
 
 /** What the consumer needs from the database; tests substitute a fake. */
@@ -47,16 +49,22 @@ function insertParams(events: readonly WorldEvent[]): unknown[] {
   ];
 }
 
+/** True for an event whose projection runs in the batch transaction with its INSERT. */
+function needsTransaction(event: WorldEvent): boolean {
+  return isProjected(event) || AUDIT_TYPES.has(event.type);
+}
+
 /**
  * The Postgres-backed writer. A single INSERT is atomic, so the batch is all or nothing. A batch
- * holding `intent`, `action` or `receipt` events runs in one transaction: the INSERT, then the
- * projection of those events into their tables (see projection.ts), in batch order.
+ * holding `intent`, `action`, `receipt`, `roll`, `decision` or `sheet_adopted` events runs in one
+ * transaction: the INSERT, then the projection of those events into their tables (projection.ts for
+ * the first three, audit/projection.ts for the rest), in batch order.
  */
 export function pgEventWriter(pool: Pool): EventWriter {
   return {
     async insertBatch(events) {
       if (events.length === 0) return;
-      if (!events.some(isProjected)) {
+      if (!events.some(needsTransaction)) {
         await pool.query(INSERT_SQL, insertParams(events));
         return;
       }
@@ -67,7 +75,11 @@ export function pgEventWriter(pool: Pool): EventWriter {
         await client.query('BEGIN');
         await client.query(INSERT_SQL, insertParams(events));
         const store = pgProjectionStore(client);
-        for (const event of events) await projectEvent(event, store);
+        const audit = pgAuditStore(client);
+        for (const event of events) {
+          await projectEvent(event, store);
+          if (AUDIT_TYPES.has(event.type)) await projectAudit(event, audit);
+        }
         await client.query('COMMIT');
       } catch (error) {
         await client.query('ROLLBACK').catch(() => {
