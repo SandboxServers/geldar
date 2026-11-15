@@ -3,8 +3,8 @@ import { Vec3 } from 'vec3';
 import { ownAir } from '../body/air.ts';
 import {
   type BlockReader,
-  findBreathingColumn,
   DROWNING_AIR,
+  findBreathingColumn,
   steerBlocked,
 } from '../body/reflexes/hazard-escape.ts';
 import { exitInReach, WET_CELLS } from './water-rules.ts';

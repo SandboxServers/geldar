@@ -115,7 +115,7 @@ describe('startSwim air budget (decision 0194 a, b)', () => {
     const bot = swimBot(HEAD_WATER, ABORT_AIR);
     const swim: SwimController = startSwim(bot, { onAbort: () => swim.stop() });
     bot.emit('physicsTick');
-    bot.entity.metadata = [0, DROWNING_AIR * 15];
+    Object.assign(bot.entity, { metadata: [0, DROWNING_AIR * 15] });
     bot.setControlState.mockClear();
     bot.emit('physicsTick');
     expect(calls(bot, 'jump', true)).toBe(0);
