@@ -29,19 +29,25 @@ export interface SinkMessage {
   nak(delayMs: number): void;
 }
 
-/** A W3C traceparent, version 00 only: `00-<32 hex trace id>-<16 hex parent id>-<2 hex flags>`. */
-const TRACEPARENT = /^00-([0-9a-f]{32})-[0-9a-f]{16}-[0-9a-f]{2}$/;
+/**
+ * A W3C traceparent: `<2 hex version><32 hex trace id>-<16 hex parent id>-<2 hex flags>`, optionally
+ * followed by more `-` segments (future versions). Version ff is invalid by W3C. Only lowercase hex.
+ */
+const TRACEPARENT = /^(?!ff)[0-9a-f]{2}-([0-9a-f]{32})-([0-9a-f]{16})-[0-9a-f]{2}(?:-.*)?$/;
 
 /**
  * The trace id from the message's `traceparent` header, or null when the header is absent,
- * malformed, or the all-zero id (which W3C defines as invalid). Read directly; no telemetry import.
+ * malformed, or its trace id or parent id is all zeros (which W3C defines as invalid).
+ * Read directly; no telemetry import.
  */
 export function traceIdOf(message: SinkMessage): string | null {
   const header = message.headers?.get('traceparent') ?? '';
   const match = TRACEPARENT.exec(header);
-  const id = match?.[1];
-  if (id === undefined || /^0+$/.test(id)) return null;
-  return id;
+  if (match === null) return null;
+  const trace = match[1] ?? '';
+  const parent = match[2] ?? '';
+  if (/^0+$/.test(trace) || /^0+$/.test(parent)) return null;
+  return trace;
 }
 
 /** What `handleBatch` needs besides the messages. */

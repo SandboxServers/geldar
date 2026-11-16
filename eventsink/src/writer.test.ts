@@ -1,4 +1,5 @@
 import type { WorldEvent } from '@geldar/contract';
+import { DEFAULT_THRESHOLDS } from '@geldar/psyche';
 import type { Pool } from 'pg';
 import { describe, expect, it } from 'vitest';
 import { loadConfig, STREAM_CONFIG } from './config.ts';
@@ -48,6 +49,31 @@ describe('pgEventWriter', () => {
     expect(calls[0]?.params[10]).toEqual([traced, null]);
     expect(calls[0]?.params[8]).toEqual([null, null]);
     expect(calls[0]?.params[9]).toEqual([null, null]);
+  });
+
+  it('binds trace ids on the transaction path too', async () => {
+    const texts: { sql: string; params: unknown[] }[] = [];
+    const client = {
+      query: async (sql: string, params?: unknown[]) => {
+        texts.push({ sql, params: params ?? [] });
+        if (/FROM agents/.test(sql)) return { rows: [{ '?column?': 1 }] };
+        if (/INSERT INTO xp_evidence/.test(sql)) return { rows: [{ '?column?': 1 }] };
+        if (/INSERT INTO proficiency /.test(sql)) return { rows: [{ xp: 1 }] };
+        if (/SUM\(xp\)/.test(sql)) return { rows: [{ total: 1 }] };
+        return { rows: [] };
+      },
+      release: () => undefined,
+    };
+    const pool = { connect: async () => client } as unknown as Pool;
+    const reflex: WorldEvent = { ...EVENT, type: 'reflex_fired', payload: { name: 'eat' } };
+    const traced = '4bf92f3577b34da6a3ce929d0e0e4736';
+    const xp = { enabled: true, thresholds: DEFAULT_THRESHOLDS };
+    await pgEventWriter(pool, xp).insertBatch(
+      [reflex, { ...reflex, source_event_id: 'ev_reflex_2' }],
+      [traced, null],
+    );
+    const insert = texts.find((t) => t.sql.includes('INSERT INTO events'));
+    expect(insert?.params[10]).toEqual([traced, null]);
   });
 
   it('binds harness and model per event, null when the envelope has none', async () => {

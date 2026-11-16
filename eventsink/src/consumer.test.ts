@@ -346,12 +346,19 @@ describe('trace ids', () => {
     };
   }
 
-  it('reads the trace id of a version 00 traceparent only', () => {
+  it('accepts future versions and trailing segments, rejects malformed, ff and all-zero ids', () => {
     expect(traceIdOf(withHeader(`00-${TRACE}-00f067aa0ba902b7-01`))).toBe(TRACE);
+    expect(traceIdOf(withHeader(`01-${TRACE}-00f067aa0ba902b7-01`))).toBe(TRACE);
+    expect(traceIdOf(withHeader(`fe-${TRACE}-00f067aa0ba902b7-01`))).toBe(TRACE);
+    expect(traceIdOf(withHeader(`00-${TRACE}-00f067aa0ba902b7-01-extra`))).toBe(TRACE);
+    expect(traceIdOf(withHeader(`00-${TRACE}-00f067aa0ba902b7-01x`))).toBeNull();
     expect(traceIdOf(withHeader(null))).toBeNull();
+    expect(traceIdOf(withHeader(` 00-${TRACE}-00f067aa0ba902b7-01`))).toBeNull();
     expect(traceIdOf(withHeader(`00-${TRACE.toUpperCase()}-00f067aa0ba902b7-01`))).toBeNull();
-    expect(traceIdOf(withHeader(`01-${TRACE}-00f067aa0ba902b7-01`))).toBeNull();
+    expect(traceIdOf(withHeader(`00-${TRACE.slice(1)}-00f067aa0ba902b7-01`))).toBeNull();
+    expect(traceIdOf(withHeader(`ff-${TRACE}-00f067aa0ba902b7-01`))).toBeNull();
     expect(traceIdOf(withHeader(`00-${'0'.repeat(32)}-00f067aa0ba902b7-01`))).toBeNull();
+    expect(traceIdOf(withHeader(`00-${TRACE}-${'0'.repeat(16)}-01`))).toBeNull();
     expect(traceIdOf(withHeader('not a traceparent'))).toBeNull();
     expect(traceIdOf({ ...withHeader(null), headers: undefined })).toBeNull();
   });
@@ -368,6 +375,28 @@ describe('trace ids', () => {
     const plain = withHeader(null, data);
     await handleBatch([traced, plain], { writer, publishDlq: async () => {} });
     expect(seen).toEqual([[TRACE, null]]);
+  });
+
+  it('row by row after a permanent batch error, each row keeps its own trace id', async () => {
+    const calls: (readonly (string | null)[] | undefined)[] = [];
+    const writer: EventWriter = {
+      async insertBatch(events, traceIds) {
+        calls.push(traceIds);
+        if (events.length > 1) throw Object.assign(new Error('duplicate key'), { code: '23505' });
+      },
+    };
+    const TRACE_B = '0af7651916cd43dd8448eb211c80319c';
+    const body = (id: string) =>
+      new TextEncoder().encode(JSON.stringify({ ...EVENT, source_event_id: id }));
+    const a = withHeader(`00-${TRACE}-00f067aa0ba902b7-01`, body('ev_01HZZZZZZZZZZZZZZZZZZZZZZA'));
+    const b = withHeader(
+      `00-${TRACE_B}-00f067aa0ba902b7-01`,
+      body('ev_01HZZZZZZZZZZZZZZZZZZZZZZB'),
+    );
+    const c = withHeader(null, body('ev_01HZZZZZZZZZZZZZZZZZZZZZZC'));
+    await handleBatch([a, b, c], { writer, publishDlq: async () => {} });
+    expect(calls[0]).toEqual([TRACE, TRACE_B, null]);
+    expect(calls.slice(1)).toEqual([[TRACE], [TRACE_B], [null]]);
   });
 });
 

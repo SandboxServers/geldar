@@ -1,5 +1,7 @@
 -- Migration 0066 (T-08): the W3C trace id of an event, on the events table. The sink reads the traceparent
--- header of each NATS message and writes its 32-hex trace id here; an event without one keeps NULL. The column
+-- header of each NATS message and writes its 32-hex trace id here; an event without one keeps NULL.
+-- Apply 0066 BEFORE the new eventsink image starts: until this column exists, every INSERT from the new sink
+-- fails with 42703 and is retried until the migration lands. The column
 -- is nullable with no default and no backfill, so the ALTER only changes metadata. The events table is large
 -- (570k+ messages in JetStream), so nothing in this file may rewrite or scan it: no default, no NOT NULL, no
 -- index. Rollback: the column stays and is harmless; nothing reads it, and dropping it is not needed to recover.

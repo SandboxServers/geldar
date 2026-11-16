@@ -10,7 +10,7 @@ sources: [sql, sql/README.md, sql/test, tools/migrate, .github/workflows/ci.yml,
 
 # Database schema
 
-Every table, column, role, grant, function and trigger the 44 migrations in `sql/` create, what each migration adds, and the retention and erasure rules the migrations and decisions state. Read from the migration files at 1b114276 on 2026-11-16. No database was queried (plan decision D8), so what a node has applied is unverified.
+Every table, column, role, grant, function and trigger the 45 migrations in `sql/` create, what each migration adds, and the retention and erasure rules the migrations and decisions state. Read from the migration files at 1b114276 on 2026-11-16. No database was queried (plan decision D8), so what a node has applied is unverified.
 
 Tables and functions that serve observation (thoughts, journals, the per-turn record, Kino) are marked **agents-never** and described at the level spec Appendix D and the decision titles state, with no visibility rule detail ([documentation style](../agents/documentation-style.md#agents-never-learn-they-are-watched)).
 
@@ -35,7 +35,7 @@ Re-derive the migration list and the gaps:
 git ls-files sql | ForEach-Object { if ($_ -match '^sql/(\d{4})_') { $Matches[1] } }
 ```
 
-On 2026-11-16 at 1b114276 this prints 44 numbers from 0001 to 0065. Numbers 0028 to 0031, 0041 to 0049, 0053 to 0059 and 0064 have no file; 0065's header says 0064 is reserved for another branch.
+On 2026-11-16 at 1b114276 this prints 45 numbers from 0001 to 0066. Numbers 0028 to 0031, 0041 to 0049, 0053 to 0059 and 0064 have no file; 0065's header says 0064 is reserved for another branch.
 
 ## Migrations
 
@@ -85,6 +85,7 @@ On 2026-11-16 at 1b114276 this prints 44 numbers from 0001 to 0065. Numbers 0028
 | 0062 | `0062_owner_export.sql` | `register_owner_export` | C7-09b |
 | 0063 | `0063_body_host_roles.sql` | `mcp_players.host_key`; role `geldar_body_host`; `managed_life_id`, `supervisor_player_life_id`, `player_host_config`; `geldar_mcp` narrowed to six `mcp_players` columns | 0260, 0261 (BH-1) |
 | 0065 | `0065_owner_export_budget.sql` | `register_owner_export` replaced with lower byte budget and row caps | C7-09b |
+| 0066 | `0066_events_trace_id.sql` | `events.trace_id TEXT` (nullable, no default, no index); hidden from `geldar_glass` and `geldar_mcp` | T-08 |
 
 ## Tables
 

@@ -215,6 +215,51 @@ describe('startConsumer', () => {
     await stopped;
   });
 
+  it('hands the traceparent trace id of a fetched message to the writer', async () => {
+    const TRACE = '4bf92f3577b34da6a3ce929d0e0e4736';
+    const message = {
+      subject: 'geldar.phase0.damage',
+      data: new TextEncoder().encode(JSON.stringify(EVENT)),
+      info: { deliveryCount: 1 },
+      headers: {
+        get: (name: string) => (name === 'traceparent' ? `00-${TRACE}-00f067aa0ba902b7-01` : ''),
+      },
+      ack: vi.fn(),
+      nak: vi.fn(),
+    };
+    fetch = async (n) => (n === 1 ? batchOf([message]) : idleBatch());
+    const running = await startConsumer({} as NatsConnection, writer, {
+      batchSize: 10,
+      fetchWaitMs: 1000,
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(writer.insertBatch).toHaveBeenLastCalledWith(expect.anything(), [TRACE]);
+    const stopped = running.stop();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await stopped;
+  });
+
+  it('hands null to the writer when the fetched message has no headers', async () => {
+    const message = {
+      subject: 'geldar.phase0.damage',
+      data: new TextEncoder().encode(JSON.stringify(EVENT)),
+      info: { deliveryCount: 1 },
+      headers: undefined,
+      ack: vi.fn(),
+      nak: vi.fn(),
+    };
+    fetch = async (n) => (n === 1 ? batchOf([message]) : idleBatch());
+    const running = await startConsumer({} as NatsConnection, writer, {
+      batchSize: 10,
+      fetchWaitMs: 1000,
+    });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(writer.insertBatch).toHaveBeenLastCalledWith(expect.anything(), [null]);
+    const stopped = running.stop();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await stopped;
+  });
+
   it('hands the metrics to the batch: one written damage counts as consumed and written', async () => {
     const metrics = new EventsinkMetrics();
     const message = {
