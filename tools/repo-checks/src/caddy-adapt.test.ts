@@ -23,6 +23,8 @@ type Handler = {
   routes?: Route[];
   request?: { delete?: string[]; set?: Record<string, string[]> };
   headers?: { request?: { set?: Record<string, string[]> } };
+  max_size?: number;
+  transport?: { dial_timeout?: number; response_header_timeout?: number };
 };
 type Route = { handle?: Handler[] };
 
@@ -49,6 +51,12 @@ function adapt(site: string): Handler[] {
       'GELDAR_MCP_UPSTREAM=mcp.example.test:8788',
       '-e',
       'GELDAR_REGISTER_UPSTREAM=register.example.test:18090',
+      '-e',
+      'GELDAR_INGEST_HOST=ingest.example.test',
+      '-e',
+      'GELDAR_INGEST_UPSTREAM=localhost:4320',
+      '-e',
+      'GELDAR_INGEST_TOKEN=not-a-real-token',
       '-v',
       `${dir}:/etc/caddy:ro`,
       IMAGE,
@@ -69,7 +77,7 @@ function adapt(site: string): Handler[] {
   return flatten(server.routes);
 }
 
-describe.each(['map', 'glass', 'mcp'])('caddy adapt: %s.caddy', (site) => {
+describe.each(['map', 'glass', 'mcp', 'otel'])('caddy adapt: %s.caddy', (site) => {
   it.skipIf(skip)(
     'runs the 405 before any proxy or 404 route, and strips then sets the client address',
     { timeout: 120_000 },
@@ -103,4 +111,31 @@ describe.each(['map', 'glass', 'mcp'])('caddy adapt: %s.caddy', (site) => {
       }
     },
   );
+});
+
+describe('caddy adapt: otel.caddy and otel-off.caddy', () => {
+  it.skipIf(skip)(
+    'caps the body at 8 MiB and sets per-site proxy timeouts, with 401 and 404 after the proxy',
+    { timeout: 120_000 },
+    () => {
+      const chain = adapt('otel');
+      const body = chain.find((h) => h.handler === 'request_body');
+      expect(body?.max_size).toBe(8 * 1024 * 1024);
+      const proxies = chain.filter((h) => h.handler === 'reverse_proxy');
+      expect(proxies.length).toBe(1);
+      expect(proxies[0]?.transport?.dial_timeout).toBe(5_000_000_000);
+      expect(proxies[0]?.transport?.response_header_timeout).toBe(60_000_000_000);
+      const firstProxy = chain.findIndex((h) => h.handler === 'reverse_proxy');
+      const at401 = chain.findIndex((h) => h.handler === 'static_response' && h.status_code === 401);
+      const at404 = chain.findIndex((h) => h.handler === 'static_response' && h.status_code === 404);
+      expect(at401).toBeGreaterThan(firstProxy);
+      expect(at404).toBeGreaterThan(at401);
+    },
+  );
+
+  it.skipIf(skip)('the kill switch answers 503 and proxies nothing', { timeout: 120_000 }, () => {
+    const chain = adapt('otel-off');
+    expect(chain.some((h) => h.handler === 'static_response' && h.status_code === 503)).toBe(true);
+    expect(chain.some((h) => h.handler === 'reverse_proxy')).toBe(false);
+  });
 });
