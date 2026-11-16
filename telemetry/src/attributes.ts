@@ -73,16 +73,26 @@ const IDENTITY_KEYS: ReadonlySet<string> = new Set([
   'token',
 ]);
 
-// Any key with one of these words as a segment (split on `.`, `_`, `-`) is dropped in every scope,
-// including content fields such as `geldar.content.password`.
-const FORBIDDEN_SEGMENTS: ReadonlySet<string> = new Set([
-  'token',
-  'secret',
+// Any key that names a credential is dropped in every scope, including content fields such as
+// `geldar.content.password`. `token` must be a whole word, so `gen_ai.usage.input_tokens` stays allowed.
+// The other stems also match inside joined names (`authtoken`, `apiKey`, `emailAddress`).
+const FORBIDDEN_WORD = 'token';
+const FORBIDDEN_STEMS: readonly string[] = [
+  'apikey',
+  'authtoken',
+  'accesstoken',
+  'passwd',
   'password',
+  'secret',
   'cookie',
   'authorization',
+  'bearer',
+  'credential',
+  'jwt',
+  'privatekey',
+  'sessionid',
   'email',
-]);
+];
 
 // Per-service log keys (createLogger extraKeys). Process-wide: one service runs one SDK.
 const extraLogKeys = new Set<string>();
@@ -99,11 +109,16 @@ export function allowLogKeys(keys: readonly string[]): void {
   for (const key of keys) extraLogKeys.add(key);
 }
 
+/** True when a key names a credential or an email, in camelCase, snake_case or joined spelling. */
 export function hasForbiddenSegment(key: string): boolean {
-  return key
+  const words = key
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
     .toLowerCase()
-    .split(/[._-]/)
-    .some((segment) => FORBIDDEN_SEGMENTS.has(segment));
+    .split(/[._-]/);
+  if (words.includes(FORBIDDEN_WORD)) return true;
+  const joined = words.join('');
+  return FORBIDDEN_STEMS.some((stem) => joined.includes(stem));
 }
 
 function classify(key: string, name: string, scope: TelemetryScope): DropReason | undefined {

@@ -64,6 +64,41 @@ describe('attribute allow-list', () => {
     expect(attributes).toEqual({ 'gen_ai.usage.input_tokens': 12 });
   });
 
+  it.each([
+    'accessToken',
+    'apiKey',
+    'api_key',
+    'authtoken',
+    'emailAddress',
+    'passwd',
+    'pass_word',
+    'bearer',
+    'credential',
+    'jwt',
+    'privateKey',
+    'sessionId',
+  ])('drops camelCase and joined forbidden form %s as forbidden', (key) => {
+    const { attributes, dropped } = filterAttributes({ [key]: 'x' }, 'log');
+    expect(attributes).toEqual({});
+    expect(dropped).toEqual([{ key, reason: 'forbidden' }]);
+  });
+
+  it('keeps plural gen_ai usage token counts and does not call them forbidden', () => {
+    const { attributes, dropped } = filterAttributes(
+      {
+        'gen_ai.usage.input_tokens': 12,
+        'gen_ai.usage.output_tokens': 3,
+        'gen_ai.usage.total_tokens': 15,
+      },
+      'trace',
+    );
+    expect(attributes).toEqual({
+      'gen_ai.usage.input_tokens': 12,
+      'gen_ai.usage.output_tokens': 3,
+    });
+    expect(dropped).toEqual([{ key: 'gen_ai.usage.total_tokens', reason: 'unknown' }]);
+  });
+
   it('drops null and undefined values silently', () => {
     const { attributes, dropped } = filterAttributes({ life_id: undefined, shard: null }, 'log');
     expect(attributes).toEqual({});
