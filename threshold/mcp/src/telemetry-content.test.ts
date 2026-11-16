@@ -1,4 +1,4 @@
-import { callTool, ImageToolResult, type ToolContext } from '@geldar/mcp-mock';
+import { ImageToolResult, type ToolContext } from '@geldar/mcp-mock';
 import { CONTENT_CAP_BYTES, startTelemetry, type TelemetryHandle } from '@geldar/telemetry';
 import { afterEach, describe, expect, it } from 'vitest';
 import { worldFixture } from './fakes/world.fakes.ts';
@@ -13,6 +13,7 @@ import {
   toolSpanRecorder,
 } from './telemetry.ts';
 import { createWorld } from './world.ts';
+import { runToolCall } from './world-session.ts';
 
 const PLAYER: PlayerRecord = {
   playerId: 'ag-ranger-01',
@@ -90,20 +91,24 @@ function ctx(): ToolContext {
 }
 
 /** The MCP tools for one player, with the budget seeded so `look` succeeds. */
-function worldTools(recorder?: (call: ToolCallSpan) => void) {
+function worldTools() {
   const fx = worldFixture([PLAYER]);
   fx.budget.seed(PLAYER.lifeId, 37, 0);
-  return createWorld(recorder ? { ...fx.deps, onToolSpan: recorder } : fx.deps).tools;
+  return createWorld(fx.deps).tools;
 }
 
-/** A tool called directly, so its wrapper runs; the rejection is returned as the error the agent sees. */
-async function failureOf(run: () => unknown): Promise<{ message: string; code: unknown }> {
-  try {
-    await run();
-  } catch (err) {
-    return { message: (err as Error).message, code: (err as { code?: unknown }).code };
-  }
-  throw new Error('the tool was expected to fail');
+/** One call through the session seam, where the call's span ends; the response is what the agent gets. */
+function call(
+  tools: ReturnType<typeof worldTools>,
+  recorder: ((call: ToolCallSpan) => void) | undefined,
+  name: string,
+  input: unknown = {},
+) {
+  return runToolCall({ tools, onToolSpan: recorder }, name, input, ctx());
+}
+
+function textOf(response: { content: { type: string; text?: string }[] }): string {
+  return response.content[0]?.text ?? '';
 }
 
 function eventText(span: ExportedSpan, name: string): unknown {
@@ -114,14 +119,14 @@ function eventText(span: ExportedSpan, name: string): unknown {
 describe('tool content as span events (T-06c)', () => {
   it('captures a call arguments and its result as span events', async () => {
     const { recorder, provider, spans } = startWithMemory();
-    const tools = worldTools(recorder);
+    const tools = worldTools();
 
-    const result = await tools.look({}, ctx());
+    const result = textOf(await call(tools, recorder, 'look'));
     await provider.forceFlush();
 
     expect(spans).toHaveLength(1);
     expect(eventText(spans[0] as ExportedSpan, TOOL_ARGUMENTS_EVENT)).toBe('{}');
-    expect(eventText(spans[0] as ExportedSpan, TOOL_RESULT_EVENT)).toBe(JSON.stringify(result));
+    expect(eventText(spans[0] as ExportedSpan, TOOL_RESULT_EVENT)).toBe(result);
   });
 
   it('carries a result under the cap whole, with no truncation mark', async () => {
@@ -130,7 +135,7 @@ describe('tool content as span events (T-06c)', () => {
       tool: 'look',
       outcome: 'ok',
       durationMs: 1,
-      content: { arguments: {}, result: 'short' },
+      content: { name: 'look', arguments: {}, result: 'short' },
     });
     await provider.forceFlush();
 
@@ -148,7 +153,7 @@ describe('tool content as span events (T-06c)', () => {
       tool: 'see',
       outcome: 'ok',
       durationMs: 1,
-      content: { arguments: {}, result: new ImageToolResult(png, 'a view of stone') },
+      content: { name: 'see', arguments: {}, result: new ImageToolResult(png, 'a view of stone') },
     });
     await provider.forceFlush();
 
@@ -170,7 +175,7 @@ describe('tool content as span events (T-06c)', () => {
       tool: 'look',
       outcome: 'ok',
       durationMs: 1,
-      content: { arguments: {}, result: big },
+      content: { name: 'look', arguments: {}, result: big },
     });
     await provider.forceFlush();
 
@@ -190,10 +195,10 @@ describe('tool content as span events (T-06c)', () => {
   it('a tool result returned to the agent is byte-identical with telemetry on and off', async () => {
     const { recorder, provider, spans } = startWithMemory();
     const off = worldTools();
-    const on = worldTools(recorder);
+    const on = worldTools();
 
-    const resultOff = await off.look({}, ctx());
-    const resultOn = await on.look({}, ctx());
+    const resultOff = await call(off, undefined, 'look');
+    const resultOn = await call(on, recorder, 'look');
     await provider.forceFlush();
 
     expect(spans).toHaveLength(1);
@@ -203,10 +208,10 @@ describe('tool content as span events (T-06c)', () => {
   it('a successful look is the same wire response with the recorder on and off, with no trace id in it', async () => {
     const { recorder, provider, spans } = startWithMemory();
     const off = worldTools();
-    const on = worldTools(recorder);
+    const on = worldTools();
 
-    const wireOff = await callTool(off, 'look', {}, ctx());
-    const wireOn = await callTool(on, 'look', {}, ctx());
+    const wireOff = await call(off, undefined, 'look');
+    const wireOn = await call(on, recorder, 'look');
     await provider.forceFlush();
 
     expect(spans).toHaveLength(1);
@@ -225,14 +230,14 @@ describe('tool content as span events (T-06c)', () => {
 
   it('no trace id or span id reaches the agent-visible result or the error response', async () => {
     const { recorder, provider, spans } = startWithMemory();
-    const tools = worldTools(recorder);
+    const tools = worldTools();
 
-    const response = await tools.look({}, ctx());
-    const failed = await failureOf(() => tools.write_book({}, ctx()));
+    const response = await call(tools, recorder, 'look');
+    const failed = await call(tools, recorder, 'write_book');
     await provider.forceFlush();
 
     expect(spans).toHaveLength(2);
-    expect(failed.code).toBeDefined();
+    expect(failed.isError).toBe(true);
     const visible = JSON.stringify([response, failed]);
     for (const span of spans) {
       expect(visible).not.toContain(span.traceId);
@@ -242,7 +247,7 @@ describe('tool content as span events (T-06c)', () => {
 
   it('redacts secret-named argument keys before capture, and never changes the input', async () => {
     const { recorder, provider, spans } = startWithMemory();
-    const tools = worldTools(recorder);
+    const tools = worldTools();
     // Built at runtime, so no secret literal sits in the source.
     const secret = ['fake', 'secret', 'value', Date.now().toString(36)].join('-');
     const input = {
@@ -252,7 +257,7 @@ describe('tool content as span events (T-06c)', () => {
       list: [{ cookie: secret }],
     };
 
-    await failureOf(() => tools.write_book(input, ctx()));
+    await call(tools, recorder, 'write_book', input);
     await provider.forceFlush();
 
     const span = spans[0] as ExportedSpan;
@@ -314,7 +319,12 @@ describe('tool content as span events (T-06c)', () => {
     const { recorder, provider, spans } = startWithMemory();
     const loop: Record<string, unknown> = { keep: 'visible' };
     loop.self = loop;
-    recorder({ tool: 'look', outcome: 'ok', durationMs: 1, content: { arguments: loop } });
+    recorder({
+      tool: 'look',
+      outcome: 'ok',
+      durationMs: 1,
+      content: { name: 'look', arguments: loop },
+    });
     await provider.forceFlush();
 
     expect(spans).toHaveLength(1);
@@ -349,7 +359,7 @@ describe('content failures never change the call (T-06c)', () => {
         tool: 'look',
         outcome: 'ok',
         durationMs: 1,
-        content: { arguments: {}, result: {} },
+        content: { name: 'look', arguments: {}, result: {} },
       }),
     ).not.toThrow();
     expect(ended).toBe(1);
@@ -370,18 +380,18 @@ describe('content failures never change the call (T-06c)', () => {
       tool: 'look',
       outcome: 'ok',
       durationMs: 1,
-      content: { arguments: { a: 1 }, result: { big: 10n } },
+      content: { name: 'look', arguments: { a: 1 }, result: { big: 10n } },
     });
     expect(events).toEqual([`geldar.content.${TOOL_ARGUMENTS_EVENT}`]);
   });
 
   it('a failed call captures its arguments and no result', async () => {
     const { recorder, provider, spans } = startWithMemory();
-    const tools = worldTools(recorder);
-    const failed = await failureOf(() => tools.write_book({ title: 'x' }, ctx()));
+    const tools = worldTools();
+    const failed = await call(tools, recorder, 'write_book', { title: 'x' });
     await provider.forceFlush();
 
-    expect(failed.code).toBeDefined();
+    expect(failed.isError).toBe(true);
     const span = spans[0] as ExportedSpan;
     expect(eventText(span, TOOL_ARGUMENTS_EVENT)).toBe('{"title":"x"}');
     expect(eventText(span, TOOL_RESULT_EVENT)).toBeUndefined();
@@ -409,9 +419,14 @@ describe('the content helper caps and serializes (T-06c)', () => {
       tool: 'look',
       outcome: 'ok',
       durationMs: 1,
-      content: { arguments: { big: 'é'.repeat(CONTENT_CAP_BYTES) } },
+      content: { name: 'look', arguments: { big: 'é'.repeat(CONTENT_CAP_BYTES) } },
     });
-    record({ tool: 'look', outcome: 'ok', durationMs: 1, content: { arguments: { small: 'x' } } });
+    record({
+      tool: 'look',
+      outcome: 'ok',
+      durationMs: 1,
+      content: { name: 'look', arguments: { small: 'x' } },
+    });
 
     const key = `geldar.content.${TOOL_ARGUMENTS_EVENT}`;
     expect(added.map((item) => item.name)).toEqual([key, key]);
@@ -425,7 +440,7 @@ describe('the content helper caps and serializes (T-06c)', () => {
       tool: 'look',
       outcome: 'ok',
       durationMs: 1,
-      content: { arguments: { a: 1n }, result: 'ok' },
+      content: { name: 'look', arguments: { a: 1n }, result: 'ok' },
     });
 
     expect(added.map((item) => item.name)).toEqual([`geldar.content.${TOOL_RESULT_EVENT}`]);

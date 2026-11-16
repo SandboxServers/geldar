@@ -1,15 +1,15 @@
-import { callTool, type ToolContext, ToolError } from '@geldar/mcp-mock';
+import { type ToolContext, ToolError } from '@geldar/mcp-mock';
 import { startTelemetry, type TelemetryHandle } from '@geldar/telemetry';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { worldFixture } from './fakes/world.fakes.ts';
 import type { BodyGateway, PlayerRecord } from './ports.ts';
 import {
   TOOL_SPAN_NAME,
-  type ToolCallSpan,
   toolSpanAttributes,
   toolSpanRecorder,
 } from './telemetry.ts';
 import { createWorld } from './world.ts';
+import { runToolCall } from './world-session.ts';
 
 const PLAYER: PlayerRecord = {
   playerId: 'ag-ranger-01',
@@ -96,12 +96,10 @@ describe('one span per MCP tool call', () => {
     if (!provider) throw new Error('telemetry should be on when the endpoint is set');
     const fx = worldFixture([PLAYER]);
     fx.budget.seed(PLAYER.lifeId, 37, 0);
-    const tools = createWorld({
-      ...fx.deps,
-      onToolSpan: toolSpanRecorder(provider.getTracer('geldar-mcp')),
-    }).tools;
+    const tools = createWorld(fx.deps).tools;
+    const spanning = { tools, onToolSpan: toolSpanRecorder(provider.getTracer('geldar-mcp')) };
 
-    await callTool(tools, 'look', {}, ctx());
+    await runToolCall(spanning, 'look', {}, ctx());
     await provider.forceFlush();
 
     expect(spans.map((span) => span.name)).toEqual([TOOL_SPAN_NAME]);
@@ -114,13 +112,11 @@ describe('one span per MCP tool call', () => {
     if (!provider) throw new Error('telemetry should be on when the endpoint is set');
     const fx = worldFixture([PLAYER]);
     fx.budget.seed(PLAYER.lifeId, 37, 0);
-    const tools = createWorld({
-      ...fx.deps,
-      onToolSpan: toolSpanRecorder(provider.getTracer('geldar-mcp')),
-    }).tools;
+    const tools = createWorld(fx.deps).tools;
+    const spanning = { tools, onToolSpan: toolSpanRecorder(provider.getTracer('geldar-mcp')) };
 
-    await callTool(tools, 'look', {}, ctx());
-    await callTool(tools, 'look', {}, ctx());
+    await runToolCall(spanning, 'look', {}, ctx());
+    await runToolCall(spanning, 'look', {}, ctx());
     await provider.forceFlush();
 
     expect(spans).toHaveLength(2);
@@ -155,7 +151,7 @@ describe('one span per MCP tool call', () => {
  * A world whose Body throws `error` on every method, so a `look` call (which reads the Body's snapshot
  * first, with no wrapping) fails with it. `view` is not usable here: viewTool turns any Body throw into BodyUnavailable.
  */
-function failingLook(error: unknown, onToolSpan?: ((call: ToolCallSpan) => void) | undefined) {
+function failingLook(error: unknown) {
   const fx = worldFixture([PLAYER]);
   fx.budget.seed(PLAYER.lifeId, 37, 0);
   const body = new Proxy({} as BodyGateway, {
@@ -163,7 +159,7 @@ function failingLook(error: unknown, onToolSpan?: ((call: ToolCallSpan) => void)
       throw error;
     },
   });
-  return createWorld({ ...fx.deps, body, onToolSpan }).tools;
+  return createWorld({ ...fx.deps, body }).tools;
 }
 
 /**
@@ -176,7 +172,13 @@ async function spansOfFailedLooks(errors: unknown[]): Promise<Captured[]> {
   if (!provider) throw new Error('telemetry should be on when the endpoint is set');
   const recorder = toolSpanRecorder(provider.getTracer('geldar-mcp'));
   for (const error of errors) {
-    await expect(failingLook(error, recorder).look({}, ctx())).rejects.toBeDefined();
+    const response = await runToolCall(
+      { tools: failingLook(error), onToolSpan: recorder },
+      'look',
+      {},
+      ctx(),
+    );
+    expect(response.isError).toBe(true);
   }
   await provider.forceFlush();
   return spans;
@@ -186,21 +188,22 @@ describe('recorder faults and failed calls', () => {
   it('a recorder that throws does not fail a successful call', async () => {
     const fx = worldFixture([PLAYER]);
     fx.budget.seed(PLAYER.lifeId, 37, 0);
-    const tools = createWorld({
-      ...fx.deps,
-      onToolSpan: () => {
-        throw new Error('recorder down');
-      },
-    }).tools;
-    const response = await callTool(tools, 'look', {}, ctx());
+    const tools = createWorld(fx.deps).tools;
+    const onToolSpan = () => {
+      throw new Error('recorder down');
+    };
+    const response = await runToolCall({ tools, onToolSpan }, 'look', {}, ctx());
     expect(response.isError).not.toBe(true);
   });
 
   it('keeps the tool error code when the recorder also throws', async () => {
-    const tools = failingLook(new ToolError('rate_limited', 'Slow down.'), () => {
+    const tools = failingLook(new ToolError('rate_limited', 'Slow down.'));
+    const onToolSpan = () => {
       throw new Error('recorder down');
-    });
-    await expect(tools.look({}, ctx())).rejects.toMatchObject({ code: 'rate_limited' });
+    };
+    const response = await runToolCall({ tools, onToolSpan }, 'look', {}, ctx());
+    expect(response.isError).toBe(true);
+    expect(response.content[0]).toMatchObject({ text: 'rate_limited: Slow down.' });
   });
 
   it('marks a ToolError with its code, and a plain Error as internal', async () => {

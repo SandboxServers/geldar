@@ -1,5 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import { callTool, listTools, type ToolHandlers } from '@geldar/mcp-mock';
+import {
+  callTool,
+  listTools,
+  type ToolContext,
+  type ToolHandlers,
+  type ToolResponse,
+} from '@geldar/mcp-mock';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   CallToolRequestSchema,
@@ -23,7 +29,9 @@ import {
   type ResourceDeps,
   readPlayerResource,
 } from './resources.ts';
+import type { ToolCallSpan } from './telemetry.ts';
 import { hiddenToolsFor, refuseHiddenCall } from './tools/unavailable.ts';
+import { type PendingCall, takePendingCall } from './world.ts';
 
 /** The text a keepalive carries. It names no observer (decision 0059). */
 export const KEEPALIVE_TEXT = 'keepalive: the call is still running.' as const;
@@ -31,6 +39,8 @@ export const KEEPALIVE_TEXT = 'keepalive: the call is still running.' as const;
 export const LOGGER_NAME = 'geldar-mcp' as const;
 
 export interface WorldSessionDeps {
+  /** Records the one span of each call, refused or not (T-06d2, telemetry.ts). Unset when telemetry is off. */
+  onToolSpan?: ((call: ToolCallSpan) => void) | undefined;
   tools: ToolHandlers;
   players: PlayerDirectory;
   resources: ResourceDeps;
@@ -80,6 +90,119 @@ export function newSessionId(): string {
   return randomUUID();
 }
 
+/** What one call needs from the session's deps. */
+export type ToolCallDeps = Pick<
+  WorldSessionDeps,
+  'tools' | 'onToolSpan' | 'log' | 'maxResultBytes'
+>;
+
+/** The outcome codes callTool writes itself, besides a ToolError's code. internal_error is the span's internal. */
+const CALLTOOL_CODES = new Set([
+  'unknown_tool',
+  'invalid_input',
+  'invalid_output',
+  'result_too_large',
+]);
+
+/** The text of a response: its text parts joined. */
+function responseText(response: ToolResponse): string {
+  return response.content.map((part) => (part.type === 'text' ? part.text : '')).join('');
+}
+
+/** The closed outcome of the final response: ok, or the code before the first colon, or internal. */
+function finalOutcome(response: ToolResponse, pending: PendingCall | undefined): string {
+  if (response.isError !== true) return 'ok';
+  const code = responseText(response).split(':', 1)[0] ?? '';
+  if (CALLTOOL_CODES.has(code)) return code;
+  if (pending?.code !== undefined && pending.code === code) return pending.handlerOutcome;
+  return 'internal';
+}
+
+/**
+ * Ends the one span of a call, from the final response and what the handler left behind. A recorder that
+ * fails loses the span only; the response is unchanged.
+ */
+function endToolSpan(
+  deps: Pick<WorldSessionDeps, 'onToolSpan'>,
+  name: string,
+  args: unknown,
+  ctx: ToolContext | undefined,
+  response: ToolResponse,
+  started: number,
+  forced?: string,
+): void {
+  if (deps.onToolSpan === undefined) return;
+  try {
+    const pending = ctx === undefined ? undefined : takePendingCall(ctx);
+    const outcome = forced ?? finalOutcome(response, pending);
+    const text = responseText(response);
+    const content: ToolCallSpan['content'] = { name, arguments: args };
+    if (pending?.result !== undefined) content.result = pending.result;
+    if (pending?.error !== undefined) content.error = pending.error;
+    else if (outcome !== 'ok') {
+      content.error = { 'exception.type': outcome, 'exception.message': text };
+    }
+    if (outcome !== 'ok') content.response = text;
+    deps.onToolSpan({
+      tool: name,
+      outcome,
+      durationMs: pending?.durationMs ?? Math.max(0, Date.now() - started),
+      content,
+    });
+  } catch {
+    // The span is lost; the call's own response stands.
+  }
+}
+
+/** The refusal of a hidden tool, with its one span (outcome 
+ot_available), or undefined when the call may run. */
+export function refuseHidden(
+  deps: Pick<WorldSessionDeps, 'onToolSpan'>,
+  name: string,
+  args: unknown,
+  hidden: readonly string[],
+): ToolResponse | undefined {
+  const refused = refuseHiddenCall(name, args, hidden);
+  if (refused) endToolSpan(deps, name, args, undefined, refused, Date.now(), 'not_available');
+  return refused;
+}
+
+/**
+ * Runs one call and ends its span once, whatever the result: a refusal by callTool (unknown tool, bad
+ * input, a result too large) and a throw out of it are seen as well as a handler's own failure.
+ */
+export async function runToolCall(
+  deps: ToolCallDeps,
+  name: string,
+  args: unknown,
+  base: ToolContext,
+): Promise<ToolResponse> {
+  const started = Date.now();
+  // Built here, not inline: the world's handler keys what it knew about the call by this object.
+  const ctx: ToolContext = { ...base };
+  let response: ToolResponse;
+  try {
+    response = await callTool(
+      deps.tools,
+      name,
+      args,
+      ctx,
+      (m) => deps.log?.({ event: 'tool_log', player_id: base.playerId, cause: m }),
+      PLAYER_FAULT,
+      deps.maxResultBytes,
+    );
+  } catch (error) {
+    const failed: ToolResponse = {
+      isError: true,
+      content: [{ type: 'text', text: `internal_error: ${PLAYER_FAULT}` }],
+    };
+    endToolSpan(deps, name, args, ctx, failed, started);
+    throw error;
+  }
+  endToolSpan(deps, name, args, ctx, response, started);
+  return response;
+}
+
 type ListedTool = ReturnType<typeof listTools>[number];
 
 /**
@@ -119,7 +242,8 @@ export function createWorldSession(
     tools: listTools(hidden).map((tool) => forConnection(tool, source)),
   }));
   mcp.server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
-    const refused = refuseHiddenCall(request.params.name, request.params.arguments, hidden);
+    const { name, arguments: args } = request.params;
+    const refused = refuseHidden(deps, name, args, hidden);
     if (refused) return { ...refused };
     const stop = startKeepAlive(
       deps.keepAlive,
@@ -129,16 +253,7 @@ export function createWorldSession(
     );
     try {
       const signal = AbortSignal.any([sessionSignal, extra.signal]);
-      const response = await callTool(
-        deps.tools,
-        request.params.name,
-        request.params.arguments,
-        { playerId, signal, session, source },
-        (m) => deps.log?.({ event: 'tool_log', player_id: playerId, cause: m }),
-        PLAYER_FAULT,
-        deps.maxResultBytes,
-      );
-      return { ...response };
+      return { ...(await runToolCall(deps, name, args, { playerId, signal, session, source })) };
     } finally {
       stop();
     }

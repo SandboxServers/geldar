@@ -33,7 +33,7 @@ import { PgDeathStore } from './store/pg-deaths.ts';
 import { PgJournalStore } from './store/pg-journal.ts';
 import { PgPlayerDirectory } from './store/pg-players.ts';
 import { listenerConfig, PgTokenStore } from './store/pg-tokens.ts';
-import { toolSpanRecorder } from './telemetry.ts';
+import { authRefusalRecorder, toolSpanRecorder } from './telemetry.ts';
 import { parseWaitDeltaLives } from './tools/wait-delta.ts';
 import { createWorld } from './world.ts';
 import { createWorldSession, type WorldSessionDeps } from './world-session.ts';
@@ -385,10 +385,8 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
     const limiter = tokenBucketLimiter(
       bucketRules(config.sovereign.rateLimits, config.sovereign.ownerCapOwner),
     );
+    const tracer = spans.tracerProvider?.getTracer('geldar-mcp');
     const world = createWorld({
-      onToolSpan: spans.tracerProvider
-        ? toolSpanRecorder(spans.tracerProvider.getTracer('geldar-mcp'))
-        : undefined,
       maxResultBytes: config.sovereign.maxResultBytes,
       waitCapSeconds: config.sovereign.waitCapSeconds,
       players: new PgPlayerDirectory(pool),
@@ -433,6 +431,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
     log({ event: 'replay_started' });
 
     const sessionDeps: WorldSessionDeps = {
+      onToolSpan: tracer ? toolSpanRecorder(tracer) : undefined,
       tools: world.tools,
       players: new PgPlayerDirectory(pool),
       resources: { profiles: agents, journal: new PgJournalStore(pool), shard: shardRules(config) },
@@ -456,6 +455,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       createSession: (playerId, signal, connection) =>
         createWorldSession(sessionDeps, playerId, signal, connection),
       log: (line) => ports.log(line),
+      onRefusal: tracer ? authRefusalRecorder(tracer) : undefined,
       now,
     });
     closers.push(() => front.close());

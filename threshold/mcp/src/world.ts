@@ -18,6 +18,7 @@ import {
 import { newId } from '@geldar/player-core/src/ids.ts';
 import { buildPlan } from '@geldar/player-core/src/loop/plan.ts';
 import type { OutputValidator } from '@geldar/player-core/src/ports/index.ts';
+import { type ErrorFields, errorFields } from '@geldar/telemetry';
 import type { RunState } from './events/mapper.ts';
 import { FailureTracker } from './failures/tracker.ts';
 import { TOOL_OUTCOMES } from './http/log.ts';
@@ -117,15 +118,6 @@ export interface WorldDeps {
   log?: (line: Record<string, unknown>) => void;
   /** Counts each tool call with its closed outcome code and duration (metrics, decision 0088). */
   onToolCall?: (tool: string, outcome: string, durationMs: number) => void;
-  /** Records one OpenTelemetry span per call (T-06, telemetry.ts). Unset when telemetry is off. */
-  onToolSpan?:
-    | ((call: {
-        tool: string;
-        outcome: string;
-        durationMs: number;
-        content?: { arguments: unknown; result?: unknown };
-      }) => void)
-    | undefined;
 }
 
 /** The world as the server uses it: the tool handlers, and a `close` that stops the settle timer. */
@@ -432,6 +424,31 @@ function outcomeOf(err: unknown): string {
   return 'internal';
 }
 
+/** What one handler run knew when it finished: the session handler turns it into the call's span. */
+export interface PendingCall {
+  tool: string;
+  /** The outcome as the handler left it: ok, a ToolError code, or internal. */
+  handlerOutcome: string;
+  durationMs: number;
+  /** The validated input the handler got. */
+  arguments: unknown;
+  /** The handler's raw result, before the size cap and the output check. */
+  result?: unknown;
+  error?: ErrorFields;
+  /** Set when the handler threw a ToolError. */
+  code?: string;
+}
+
+/** Keyed by the per-call context object: the session builds a fresh one per call and callTool passes it on unchanged. */
+const pending = new WeakMap<object, PendingCall>();
+
+/** The record the handler left for this call's context, if the handler ran. Removes it. */
+export function takePendingCall(ctx: object): PendingCall | undefined {
+  const call = pending.get(ctx);
+  pending.delete(ctx);
+  return call;
+}
+
 /** The last tool and outcome code per session (keyed by the session's abort signal). Operators only. */
 const lastCalls = new WeakMap<AbortSignal, { tool: string; outcome: string }>();
 const watched = new WeakSet<AbortSignal>();
@@ -459,16 +476,11 @@ function watchSessionEnd(deps: Wired, ctx: ToolContext): void {
 /**
  * Logs one `tool_call` line per call: the tool, the player, the outcome code and the duration. Never the
  * arguments, the result or any text. A logger that throws does not fail the call.
- * The span recorder gets the arguments and the result by reference (T-06c); it only reads them, so the
- * result returned to the agent is the same object with or without the recorder.
+ * What the span needs (the arguments, the raw result or the error) is stored for the session handler, which
+ * ends the one span per call after it sees the final response (T-06d2); see 	akePendingCall.
  */
 function logged(deps: Wired, tool: string, run: ToolHandler): ToolHandler {
-  const record = (
-    playerId: string,
-    outcome: string,
-    started: number,
-    content: { arguments: unknown; result?: unknown },
-  ): void => {
+  const record = (playerId: string, outcome: string, started: number): number => {
     const durationMs = deps.now() - started;
     try {
       deps.log?.({
@@ -486,23 +498,28 @@ function logged(deps: Wired, tool: string, run: ToolHandler): ToolHandler {
     } catch {
       // The count is lost; the call's own result stands.
     }
-    try {
-      deps.onToolSpan?.({ tool, outcome, durationMs, content });
-    } catch {
-      // The span is lost; the call's own result stands.
-    }
+    return durationMs;
   };
   return async (input, ctx) => {
     watchSessionEnd(deps, ctx);
     const started = deps.now();
     try {
       const result = await run(input, ctx);
-      record(ctx.playerId, 'ok', started, { arguments: input, result });
+      const durationMs = record(ctx.playerId, 'ok', started);
+      pending.set(ctx, { tool, handlerOutcome: 'ok', durationMs, arguments: input, result });
       lastCalls.set(ctx.signal, { tool, outcome: 'ok' });
       return result;
     } catch (err) {
       const outcome = outcomeOf(err);
-      record(ctx.playerId, outcome, started, { arguments: input });
+      const durationMs = record(ctx.playerId, outcome, started);
+      pending.set(ctx, {
+        tool,
+        handlerOutcome: outcome,
+        durationMs,
+        arguments: input,
+        error: errorFields(err),
+        ...(err instanceof ToolError ? { code: err.code } : {}),
+      });
       lastCalls.set(ctx.signal, { tool, outcome });
       throw err;
     }
