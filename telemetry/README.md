@@ -29,6 +29,16 @@ with trace context carried in NATS message headers.
   `geldar`), a per-start `service.instance.id` (a random UUID; tests may inject one), and
   `deployment.environment.name`. `geldar.shard` is set when the `shard` option is given. Life and
   player identifiers are never resource attributes.
+- **Signals option.** `startTelemetry({ signals: { traces, metrics, logs } })` turns each signal on
+  or off; each defaults to on. A signal set to `false` gets no provider, no exporter and no timer,
+  and its global API stays a no-op (`metrics: false` means no metric reader and no export at all).
+  The global check then looks only at the signals that are on, so a foreign owner of an off signal's
+  global does not block the start. With `traces` on, `tracerProvider` is set and `shutdown()` works
+  as usual. The context and propagator globals are always installed.
+- **All signals off.** `signals: { traces: false, metrics: false, logs: false }` still returns an
+  enabled handle, with `tracerProvider` undefined and no exporter, provider, reader or timer. The
+  context and propagator globals are still installed, so a foreign propagator or context manager
+  makes the call return off, as it does for any start. `shutdown()` is safe to call.
 
 ## Modules
 
