@@ -405,9 +405,16 @@ Files: `gateway.yaml` (collector config, first stage) and `compose.gateway.yml` 
 
 Scope of this stage: receiver `otlp` only (traces, logs, metrics). The `prometheus` (N10), `postgresql` (N11) and `host_metrics` receivers are commented placeholders in `gateway.yaml`. Content capture (decision 0350) means no truncation, size limit or sampling in the config; redaction is limited to IPv4 and IPv6 literals in log bodies and credential-looking attribute keys (not free text), as in collector-design section 5.
 
+### Limits (exact values)
+
+- Request size, gateway to SigNoz collector: the batch processor is capped at 256 items (`send_batch_size` and `send_batch_max_size`), and the exporter batches by bytes (`sending_queue.batch`, `sizer: bytes`, `min_size` 1048576, `max_size` 3145728, `flush_timeout` 5s): no exported request is larger than 3 MiB (OTLP proto size, before gzip). The SigNoz collector's gRPC receiver keeps the 4 MiB default unless raised, so `signoz-otelcol-config.yaml` now sets `max_recv_msg_size_mib: 32` on `receivers.otlp.protocols.grpc` (key accepted by the v0.144.6 image, a misspelt key makes it refuse to start). Both sides are set, so either one alone holds for normal traffic.
+- A single log record above 3 MiB cannot be split. The exporter's batcher drops it and logs one `warn` line: `Failed to split request ... single log record exceeds the max size limit, dropping items: 1`. This is the one remaining content loss path besides a full queue; the Caddy ingest cap is 8 MiB, so a record between 3 and 8 MiB is possible but would be a prompt of that size. Search the gateway log for `single log record exceeds`.
+- Retry: `retry_on_failure.max_elapsed_time: 0`, so a failed export is retried until it is delivered (owner decision 0350 item 7: loss only when the queue is full). A SigNoz collector or ClickHouse outage of any length does not drop data while the queue has room.
+- Queue: `sending_queue.sizer: bytes`, `queue_size: 1073741824` (1 GiB of queued request data, persisted by `file_storage` in `/mnt/nvme/geldar-telemetry/queue`). When it is full the exporter refuses new data and the gateway log shows `sending queue is full`. The size is counted on the proto size of the requests, not on disk bytes: the bbolt file carries overhead and does not shrink after a drain, so the directory can use more than 1 GiB. Worst case is about 2 GiB (a 1 GiB queue plus file overhead and free pages [UNV]). The directory is on the shared `/mnt/nvme`, not a fixed-size volume, so the `/mnt/nvme` filesystem alarm (collector-design section 8, not built yet) is required, and verification step 8 checks the size with `du`.
+
 ### Order dependencies
 
-- The SigNoz collector (N7, `geldar-signoz-otelcol`, OTLP gRPC on 4317) must be up before ingested data is useful. The gateway may start before it: the exporter retries (300 s) and the queue is persisted in `/mnt/nvme/geldar-telemetry/queue`.
+- The SigNoz collector (N7, `geldar-signoz-otelcol`, OTLP gRPC on 4317) must be up before ingested data is useful. The gateway may start before it: the exporter retries until delivered and the queue is persisted in `/mnt/nvme/geldar-telemetry/queue`.
 - The Caddy ingest route (N14) targets the gateway's loopback publish `127.0.0.1:4320`, so the gateway must run before the route is loaded.
 - `GELDAR_TELEMETRY_URL` on the Geldar services (a later batched Body redeploy, not applied now) is intended to be `http://otel-gateway:4318` (OTLP/HTTP, alias on `geldar-colo`).
 
@@ -447,4 +454,4 @@ Scope of this stage: receiver `otlp` only (traces, logs, metrics). The `promethe
 - G4: trace and metric label filtering behaviour: the span key deletion and the `datapoint` deletions (`geldar.life_id`, `player_id`) compile, but were not exercised with data. Check with a test metric.
 - G5: the gateway is reachable by the alias `otel-gateway` from containers on `geldar-colo` (verification step 10).
 - G6: the `/healthz` span filter route name (`http.route`) is unconfirmed.
-- G7: queue sizing (`queue_size: 400`, items not bytes) is the collector-design estimate; check against the real request size after traffic starts.
+- G7: queue sizing is by bytes (`queue_size: 1073741824`). Tested locally: 60 log records of 100 KB posted in one request arrived whole (29 + 31, two requests under 3 MiB) at a receiver left at the 4 MiB default, where the previous config lost all 60. The on-disk size of the persisted byte queue was not measured [UNV]; check with `du` after traffic starts.

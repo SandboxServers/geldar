@@ -64,7 +64,9 @@ processors:
           - 'delete_key(datapoint.attributes, "geldar.life_id")'
           - 'delete_key(datapoint.attributes, "player_id")'
   batch:
-    send_batch_size: 2048
+    # Item counts only (the batch processor cannot count bytes). The byte bound is the exporter's sending_queue.batch below.
+    send_batch_size: 256
+    send_batch_max_size: 256
     timeout: 5s   # PROPOSED; not tuned
 
 exporters:
@@ -78,12 +80,20 @@ exporters:
     timeout: 5s
     retry_on_failure:
       enabled: true
-      max_elapsed_time: 300s
+      max_elapsed_time: 0   # retry until delivered; the queue size above is the only limit (owner decision 0350 item 7: loss only when the queue is full)
     sending_queue:
       enabled: true
       storage: file_storage
-      queue_size: 400   # collector-design section 6: items, not bytes; about 1 GiB at 2.5 MB a request [UNV]
+      sizer: bytes
+      queue_size: 1073741824   # bytes (1 GiB of queued request data); the queue is full beyond this and new data is refused
       block_on_overflow: false
+      batch:
+        # Exporter-side batching, by bytes: every exported request is merged or split to at most 3 MiB (OTLP proto size, before gzip),
+        # under the 4 MiB gRPC default of any receiver that has not been raised. A single record above 3 MiB cannot be split.
+        sizer: bytes
+        min_size: 1048576
+        max_size: 3145728
+        flush_timeout: 5s
 
 extensions:
   health_check:
