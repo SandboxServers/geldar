@@ -20,16 +20,17 @@ Colo node (16 CPUs, 125 GB RAM at the 2026-11-15 sample)
     nats  <-- nats-exporter (network_mode: service:nats; metrics on the nats name)   [T-09]
     postgres <-- postgresql receiver, monitoring role                                 [T-10]
     geldar services, paper, velocity --OTLP/HTTP (colo network)--> otel-gateway:4318
-    otel-gateway --loopback publish 127.0.0.1:<port>:4318--> shared Caddy (host network)
+    otel-gateway --loopback publish 127.0.0.1:<port>:4318--> shared Caddy (host network)   [OPEN QUESTION, section 9: no Caddy change by owner ruling 2026-11-16]
   network <SigNoz network, owned by another tenant>  (joined by otel-gateway only)
     otel-gateway --OTLP gRPC--> signoz-otel-collector:4317 --> ClickHouse (shared)
   host /proc, /sys read-only (host_metrics)                                          [section 8]
+  SigNoz UI (Geldar stack, 0352): bound to 127.0.0.1 on the node only; operator reaches it by SSH tunnel (no Caddy route)
 
 Mind host (owner's desktop today)
-  otel-agent --HTTPS + bearer token--> https://otel.<domain> (Caddy) --> otel-gateway  [section 9]
+  otel-agent --HTTPS + bearer token--> https://otel.<domain> (Caddy) --> otel-gateway  [section 9, OPEN QUESTION, not decided]
 ```
 
-Rules this follows: no service publishes anything except the one loopback port the Caddy route needs (section 9); no container mounts the Docker socket (section 8); the other tenant's containers and config are untouched (0350 item 4).
+Rules this follows: no service publishes anything except the one loopback port the Caddy route needs (section 9); no container mounts the Docker socket (section 8); the other tenant's containers and config are untouched (0350 item 4). Owner ruling 2026-11-16: no change to, and no restart of, the shared Caddy; the SigNoz UI has no Caddy route. The Mind-host path in section 9 conflicts with that ruling and is open.
 
 ## 3. Image
 
@@ -185,6 +186,10 @@ Per-container: the contrib `docker_stats` receiver needs the socket and is ruled
 
 ## 9. Mind-host route through Caddy (T-15)
 
+**Status (owner ruling, 2026-11-16): OPEN QUESTION, NOT DECIDED.** The owner ruled that the shared Caddy is not changed or restarted. The route below needs a new Caddy site and a `caddy reload`, so it conflicts with that ruling. Until the owner decides, T-15 and N6 are not requested, and the amendments in section 10 apply only if the owner picks a Caddy route. The alternatives and a recommendation are at the end of this section. The UI is not part of this question: it has no Caddy route (section 2).
+
+The text below is the Caddy design as written on 2026-11-15, kept for the owner's comparison.
+
 Path: `otel-agent` on each Mind host (outside the player containers, 4.6) posts OTLP/HTTP protobuf to `https://otel.<domain>/v1/{traces,logs,metrics}` with `Authorization: Bearer <token>`. Caddy checks the token and forwards to the gateway's loopback publish. Only POST passes (other methods get 405); a missing or wrong token on the three OTLP paths gets 401; any other path gets 404.
 
 The site file is `deploy/caddy/otel.caddy` with a kill switch `deploy/caddy/otel-off.caddy` (the 0094 pattern in `deploy/caddy/README.md`). Load with `caddy validate` then `caddy reload` through `docker exec` (0096 item 1). Placeholders are env values (`GELDAR_DOMAIN`, `GELDAR_OTEL_UPSTREAM`, `GELDAR_OTEL_INGEST_TOKEN`); none is written in the file.
@@ -243,6 +248,16 @@ Points to settle before this is loaded (all **UNVERIFIED** until tested on the n
 - **F5, comparison.** The `header` matcher compares strings; it is not constant-time. The risk is low for a long random token over TLS, but the token must be at least 32 random bytes.
 - **F6, Mind host side.** The token is on the Mind host. The model child runs as another uid and does not inherit the supervisor's environment (4.6, T-14). That isolation is what keeps the token from the model; it is tested in T-14's HC-26 extension, not assumed.
 - **Public surface.** The route rides the shared Caddy's existing HTTPS ingress, so no new public port is added. It is a new public hostname, and 0096's list of public routes must name it (section 10).
+
+### 9.1 Open question for the owner: Mind-host ingest without a Caddy change
+
+The ruling of 2026-11-16 says no change to the shared Caddy. The route above needs one, so it is not used unless the owner decides otherwise. The options:
+
+- **A. SSH tunnel per Mind host to a loopback gateway port.** The Mind host runs a supervised `ssh -N -L 127.0.0.1:<local>:127.0.0.1:<gateway port> <node>`, and `otel-agent` posts to its local port. This uses SSH access the operator already has. The Mind host's key is dedicated and restricted in the node's `authorized_keys` (`restrict` and `permitopen="127.0.0.1:<gateway port>"`, so no shell, no other ports and no agent forwarding). Caddy is not touched, and the gateway keeps its loopback publish (F1). The bearer token and findings F4 to F6 fall away, unless the owner also wants a gateway-side check. Costs: the tunnel must be kept up under a supervisor, and a key on a Mind host can reach the node, so it must be dedicated and restricted.
+- **B. WireGuard between each Mind host and the Colo.** The gateway listens on the WireGuard address. This is strong, but it adds a network interface, a key per host and a new UDP listener on the node. A new listener needs its own decision (section 10). Heavier than the need.
+- **C. Ingest from the Colo only, for now.** No Mind-host telemetry is sent. The Mind side (the full `session-<n>.jsonl` transcript) stays in session files on the Mind host. This adds no exposure and needs no decision now, but the Mind side is missing from SigNoz, so a trace cannot be followed from a Mind-side thought or act.
+
+**Recommendation (for the owner, not decided): A with a dedicated restricted key; C as the interim until the owner approves A.** A keeps the trust path the operator already has and changes no shared proxy. C is the fallback if the owner will not allow a node key on a Mind host. B is not recommended unless the owner wants a VPN for other reasons. No node step, key or Caddy change is requested by this document.
 
 ## 10. Portscan, expected endpoints and decision amendments
 
@@ -315,7 +330,7 @@ Each manual node step below is a separate request to the orchestrator geldar-93,
 | N3 | Merge `compose/colo-otel.yml` and start `otel-gateway` through the normal deploy (`colo-up.sh` last step, gated by env) | 0.5 CPU, 512 MiB, 128 pids | low-load window, Paper not restarted | unset the gateway env and recreate the Geldar services through CD; the SDK goes off when the endpoint is unset (T-03); then remove the gateway service | yes (new network join, new loopback port) |
 | N4 | Start `nats-exporter` (NATS namespace) | 0.1 CPU, 64 MiB, 64 pids | any window (no NATS restart) | remove the service; NATS untouched | no (scope within `/varz` and `/jsz` already approved) |
 | N5 | Create the monitoring role (SQL, section 12) | none | low-load window | `DROP ROLE` after `REASSIGN OWNED` checks (none owned); revoke grants first | yes (database role) |
-| N6 | Caddy route: copy `deploy/caddy/otel.caddy`, add the import line, `caddy validate`, `caddy reload` through `docker exec` (never restart Caddy, 0071 item 6) | none | window with no Caddy reload in progress | put `otel-off.caddy` in place of the live file, validate, reload; the Mind host's exporter then fails silently (bounded, dropping) | yes (public route, 0071 and 0096 amendments, exact config; the survey's card T-15 and 0350 item 4) |
+| N6 | ON HOLD (owner ruling 2026-11-16: no change to the shared Caddy; section 9.1). Caddy route: copy `deploy/caddy/otel.caddy`, add the import line, `caddy validate`, `caddy reload` through `docker exec` (never restart Caddy, 0071 item 6) | none | window with no Caddy reload in progress | put `otel-off.caddy` in place of the live file, validate, reload; the Mind host's exporter then fails silently (bounded, dropping) | yes (public route, 0071 and 0096 amendments, exact config; the survey's card T-15 and 0350 item 4); not requested until the owner decides section 9.1 |
 | N7 | SigNoz retention change (section 13) | none on the node; storage grows | after the owner's sign-off | set the previous values back in the UI; data already ingested is not restored | yes (workspace-wide, affects the other tenant) |
 | N8 | SigNoz alert rules (Geldar share, `/mnt/nvme`, queue) | none | any | disable the rule | yes (alert channel not chosen) |
 | N9 | Mind-host `otel-agent` install (client side, owner's machine) | agent caps 0.25 CPU, 256 MiB | owner's session | stop and remove the agent; the supervisor's exporter goes silent | yes (token) |

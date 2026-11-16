@@ -14,7 +14,7 @@
 
 Survey of the node on 2026-11-15 (read-only; active parts from `system.parts`): `signoz_traces` 19.5 GB, `signoz_logs` 1.3 GB, `signoz_metrics` 0.15 GB, `signoz_metadata` 0.24 GB, `system` 38.6 GB. The current trace TTL is 15 days (`ttl_only_drop_parts=1`). Logs use a per-row `_retention_days`, default 15. The `system` database is larger than all SigNoz data and is not covered by any TTL we know of. Those values are the survey's and are not re-verified here.
 
-Constraints that stay: no change to the other tenant's retention or budget (0350 item 4; this record proposes none); the 100 GB budget with alarms at 70 GB and at 60% of `/mnt/nvme` (0350 item 5); readers are operators only (0350 item 6); a telemetry erasure gap stays open (0350 item 3).
+Constraints that stay: no change to the other tenant's retention or budget (0350 item 4; this record proposes none); the 100 GB budget with alarms at 70 GB and at 60% of `/mnt/nvme` (0350 item 5); readers are operators and operator Claude sessions only (0350 item 6, as clarified by the owner ruling of 2026-11-16); a telemetry erasure gap stays open (0350 item 3).
 
 ## Options
 
@@ -107,10 +107,10 @@ ORDER BY bytes DESC;
 
 ## Read path (B)
 
-- **Operator UI**: the Geldar SigNoz frontend behind an authenticated Caddy host. This publishes a web route, so it **needs owner approval** and an amendment to 0350 item 6 ("no public route serves SigNoz"). The route is authenticated (the owner chooses the scheme). The alternative with no public route is an SSH tunnel from the operator workstation to a loopback port on the node (`127.0.0.1`) that forwards to `geldar-signoz-ui`.
-- **SQL read-only user**: `geldar_reader` on `geldar-ch`, `GRANT SELECT` on the Geldar databases only, `readonly` 2 in its settings profile, `max_memory_usage` 1 GB, `max_execution_time` 30 s, `max_result_rows` 100000 with `result_overflow_mode` `break`, and a per-hour read quota. Reached from the operator workstation through the existing SSH access to the node: `ssh <node> docker exec -i geldar-ch clickhouse-client --user geldar_reader --query ...`. No ClickHouse port is published to any interface.
+- **Operator UI (owner ruling, 2026-11-16)**: the Geldar SigNoz frontend (`geldar-signoz-ui`) is bound to a loopback port on the node (`127.0.0.1` only, never published on an external interface). The operator workstation reaches it by an SSH tunnel: a local port forward over the existing SSH access to the node. There is no Caddy route for the UI, and no change to or restart of the shared Caddy. Item 6's "no public route" stands for this stack.
+- **SQL read-only user**: `geldar_reader` on `geldar-ch`, `GRANT SELECT` on the Geldar database only, `readonly` 2 in its settings profile, `max_memory_usage` 1 GB, `max_execution_time` 30 s, `max_result_rows` 100000 with `result_overflow_mode` `break`, and a per-hour read quota. Its password is in a node-only secrets file, never in the repo, on a Mind host or in any agent-readable file. Reached from the operator workstation in one of two ways: `ssh <node> docker exec -i geldar-ch clickhouse-client --user geldar_reader --query ...`, or the same SSH tunnel to a ClickHouse HTTP port bound to `127.0.0.1` on the node. No ClickHouse port is published to any external interface.
 - **Claude**: the SigNoz MCP server pinned to the version of the Geldar stack, with a viewer-role key held on the owner's workstation only (0350 item 6). The key is not in the repo, on the Colo or on any Mind host. Optionally, a read-only SQL wrapper on the workstation for the cookbook below.
-- **Open question for the owner**: 0350 item 7 says "Agents never see or infer telemetry". A Claude session that queries telemetry through MCP or SQL is a change to what agents may do. This record does not resolve that; it is for the owner's ruling before the Claude path is built.
+- **Ruled (2026-11-16)**: operator Claude sessions (never agents, Minds, Bodies or kits) MAY query the telemetry read-only, through MCP or SQL, as 0350 clarifies. 0350 item 7 still applies to every agent: no telemetry word or trace id reaches any agent-readable surface.
 
 ### Query cookbook (outline; table and attribute names unverified until the exporter schema is checked)
 
@@ -125,9 +125,9 @@ Attribute keys follow 0350 item 1: `life_id`, `player_id`, `thought_id`, `intent
 
 ## Amendments to 0350
 
-- **Item 4 (shared tenant).** Unchanged. Geldar data does not live in that tenant's stack under B, and nothing on that tenant changes. Mind hosts still reach Geldar through the Caddy route (T-15), which still needs owner approval (0350 item 4).
+- **Item 4 (shared tenant).** Unchanged. Geldar data does not live in that tenant's stack under B, and nothing on that tenant changes. Mind hosts' ingest route (T-15) is an open owner question, not decided here: a Caddy route conflicts with the 2026-11-16 ruling of no change to the shared Caddy (collector-design section 9 lists the alternatives).
 - **Item 5 (budget and retention).** The 100 GB budget, the 70 GB and 60% alarms, and the one-year retention stay. The budget is measured per server under B, and the retention is set on the Geldar stack. "The Geldar database" means the Geldar server's Geldar databases.
-- **Item 6 (readers).** The SigNoz MCP server and the viewer-role key point at the Geldar stack. The Geldar UI is a new authenticated route and needs owner approval, which amends "no public route serves SigNoz" for this stack only (see Read path).
+- **Item 6 (readers).** The SigNoz MCP server and the viewer-role key point at the Geldar stack. The Geldar UI is not a public route: it is bound to loopback and reached by SSH tunnel (see Read path). Operator Claude sessions may query read-only (owner ruling, 2026-11-16).
 
 ## Costs (estimates, unverified unless stated)
 
@@ -136,7 +136,7 @@ Attribute keys follow 0350 item 1: `life_id`, `player_id`, `thought_id`, `intent
 | RAM | 11.5 GiB long-running at caps (12.25 GiB with UI and migrator); node measured 29 GB used of 128 GB (fit check) |
 | CPU | 5.5 CPUs long-running at caps (6.25 with UI and migrator); about 5% typical use of 16 CPUs (fit check) |
 | Disk | Data about 37 to 55 GB a year (0350 survey estimate), plus keeper and metadata (small) |
-| Operator time | A new node stack and a new SigNoz version pin; one owner approval for the stack, one for the UI route |
+| Operator time | A new node stack and a new SigNoz version pin; one owner approval for the stack; no approval for the UI, which is loopback-only with an SSH tunnel |
 
 Owner-side budget: the node's `/mnt/nvme` data disk had 1.2 TB free at the survey. That was a sample, not a budget.
 
@@ -147,7 +147,7 @@ Owner-side budget: the node's `/mnt/nvme` data disk had 1.2 TB free at the surve
 3. Two ClickHouse or keeper sets on one host could collide on ports. Mitigation: no port published except loopback, checked free by `ss` in N1.
 4. The estimate could be wrong; the 70 GB alarm is the early warning.
 5. The migrator could overwrite a manual TTL. Mitigation: check TTL after each upgrade.
-6. The UI route widens the public surface. Mitigation: owner approval, authentication on the route, and the loopback alternative.
+6. A UI that is reachable from outside would widen the public surface. Mitigation: the UI is bound to `127.0.0.1` only, reached by SSH tunnel, and no Caddy change is made for it.
 
 ## Rollback
 
@@ -155,17 +155,17 @@ Owner-side budget: the node's `/mnt/nvme` data disk had 1.2 TB free at the surve
 
 ## Who decides
 
-- The owner decides: the node RAM and the extra containers, the 100 GB budget and the one-year retention (0350 owner ruling), the UI route, and every node step that changes the stack (T-02 section 14, N3 and N7).
+- The owner decides: the node RAM and the extra containers, the 100 GB budget and the one-year retention (0350 owner ruling), the UI access path (SSH tunnel only, ruled 2026-11-16), and every node step that changes the stack (T-02 section 14, N3 and N7).
 - The orchestrator decides which T-cards change and when (below).
 - Nothing in this record changes the other tenant's retention, budget, configuration or network.
 
 ## T-cards that change
 
-- **T-02 (collector)**: the gateway's exporter endpoint points at the Geldar SigNoz collector on the Geldar network. F9 goes away. Section 4 network row and the N3 step change with it. The loopback port rule for Caddy is unchanged.
+- **T-02 (collector)**: the gateway's exporter endpoint points at the Geldar SigNoz collector on the Geldar network. F9 goes away. Section 4 network row and the N3 step change with it. This record makes no Caddy change (owner ruling, 2026-11-16).
 - **T-17 (dashboards and alerts)**: the rules and dashboards target the Geldar stack. The "shared SigNoz at 0.135 or later" condition becomes a condition on the Geldar stack's own version.
 - **T-18 (Claude access)**: the SigNoz MCP server is pinned to the Geldar stack's version, with a viewer-role key for it.
 - **New card (number for the orchestrator to assign)**: the Geldar SigNoz stack and its ClickHouse server, with its caps, network, disk paths and node steps. Owner approval.
-- **Unchanged**: T-03, T-06, T-07, T-08 and T-20 (they send to the gateway's endpoint variable and do not care which stack is behind it). T-15 (Caddy route) is unchanged apart from the UI route, which needs its own owner approval.
+- **Unchanged**: T-03, T-06, T-07, T-08 and T-20 (they send to the gateway's endpoint variable and do not care which stack is behind it). T-15 (Mind-host ingest route) is not changed by this record; it is an open owner question (collector-design section 9). No Caddy route serves the UI.
 
 ## Unverified
 
