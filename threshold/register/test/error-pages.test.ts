@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { loadConfig } from '../src/config.ts';
 import { errorPage } from '../src/errors.ts';
 import { FakeStore } from './fake-store.ts';
 import { type Harness, harness, NOW } from './fixture.ts';
@@ -62,6 +63,34 @@ describe('HTML error pages on the page routes (C7-06b)', () => {
     const res = await fetch(`${h.base}/register/api/v1/agents`);
     expect(res.status).toBe(503);
     expect(res.headers.get('content-type')).toBe('application/problem+json');
+  });
+
+  it('serves the 503 page and the unavailable problem JSON when the sign-up gate holds the switch on', async () => {
+    // REGISTER_KILL_SWITCH=false, but terms version v1 is not in the approved list, so loadConfig forces the switch on.
+    const gated = loadConfig(
+      {
+        REGISTER_KILL_SWITCH: 'false',
+        REGISTER_PUBLIC_URL: 'https://glass.example.invalid',
+        REGISTER_MS_CLIENT_ID: 'ms-id',
+        REGISTER_MS_CLIENT_SECRET_FILE: 'ms',
+        REGISTER_SESSION_KEY_FILE: 'sessionkey',
+        REGISTER_PEPPER_FILE: 'pepper',
+        REGISTER_TOKEN_PEPPER_FILE: 'tokpepper',
+        REGISTER_SHARD: 'test',
+      },
+      () => 'k'.repeat(40),
+      ['v2'],
+    );
+    expect(gated.killSwitch).toBe(true);
+    h = await harness(gated);
+    const page = await fetch(`${h.base}/register/`);
+    expect(page.status).toBe(503);
+    expect(page.headers.get('content-type')).toContain('text/html');
+    expect(await page.text()).toBe(errorPage(503));
+    const api = await fetch(`${h.base}/register/api/v1/agents`);
+    expect(api.status).toBe(503);
+    expect(api.headers.get('content-type')).toBe('application/problem+json');
+    expect(((await api.json()) as { code: string }).code).toBe('unavailable');
   });
 
   it('answers an unknown page with the HTML 404 page', async () => {

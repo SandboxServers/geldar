@@ -17,7 +17,7 @@ describe('termsApproved (C7-11 sign-up gate)', () => {
     expect(termsApproved(' v1', ['v1'])).toBe(false);
   });
 
-  it('ships with version 1 approved (decision 0155)', () => {
-    expect(APPROVED_TERMS_VERSIONS).toContain('v1');
+  it('ships with exactly version 1 approved (decision 0155); widening the list fails here', () => {
+    expect(APPROVED_TERMS_VERSIONS).toEqual(['v1']);
   });
 });
