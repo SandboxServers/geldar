@@ -229,6 +229,28 @@ Run these in order. Each must pass before the next start.
 6. **No empty-string hash (M1).** `grep -c e3b0c442 /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env` must print `0`. `grep` exits 1 when the count is 0, so judge by the printed number. Do not print the file.
 7. The vendor reporting setting is found and disabled (item 26).
 8. The N4 request names the extra network `geldar-telemetry_geldar-telemetry-backend` (see "Networks").
+9. **Histogram binary (item 6).** Use a new empty scratch directory outside the repo, and keep the script that runs these steps out of it.
+    a. Download the pinned tarball only: `curl -fsSL -o hq.tar.gz https://github.com/SigNoz/signoz/releases/download/histogram-quantile%2Fv0.0.1/histogram-quantile_linux_amd64.tar.gz`.
+    b. `echo "33997073eb6d82b7be4f27f9fc8ec9e28a395e0f20674d5d54bb2fa28a75488d  hq.tar.gz" | sha256sum -c -`. **Abort on any mismatch**: delete the tarball and stop.
+    c. `tar -tzf hq.tar.gz` lists the contents. The release also ships license and readme files beside the binary; record the list in the N4 report.
+    d. `tar -xzf hq.tar.gz histogram-quantile` extracts only the binary (use the member name shown in step c).
+    e. `sha256sum histogram-quantile`: record the full value in the N4 report (the scratch run's prefix was `fc3168f9`).
+    f. `install -d -o 101 -g 101 -m 0755 /mnt/nvme/geldar-telemetry/clickhouse/user_scripts` then `install -o 101 -g 101 -m 0755 histogram-quantile /mnt/nvme/geldar-telemetry/clickhouse/user_scripts/histogramQuantile`.
+    g. Delete the tarball and the extracted copy from the scratch directory.
+    h. After `geldar-ch` is healthy (N4 step 3), run `docker exec geldar-ch clickhouse-client -q "SELECT name FROM system.functions WHERE name = 'histogramQuantile'"` (one row). Then run a value check with cumulative bucket counts that include a `+Inf` bucket (non-cumulative input gave `nan` in the scratch run, so do not use it). The scratch function query is not kept in the repo or the reports: write the query and its expected result into the N4 report before the check.
+10. **Migrator and tables (after start order step 3).**
+    a. `docker inspect -f '{{.State.ExitCode}} {{.State.OOMKilled}}' geldar-signoz-migrator` prints `0 false`.
+    b. `SELECT database, count() FROM system.tables WHERE startsWith(database, 'signoz_') GROUP BY database ORDER BY database` (run with `docker exec geldar-ch clickhouse-client`) must give `signoz_analytics` 4, `signoz_logs` 14, `signoz_metadata` 6, `signoz_meter` 7, `signoz_metrics` 66, `signoz_traces` 36 (133 in all). Any other count stops the start.
+    c. `SELECT engine, count() FROM system.tables WHERE startsWith(database, 'signoz_') GROUP BY engine ORDER BY engine` must give `Distributed` 54, `MaterializedView` 24, `ReplicatedAggregatingMergeTree` 7, `ReplicatedMergeTree` 16, `ReplicatedReplacingMergeTree` 31, `ReplicatedSummingMergeTree` 1. A plain `MergeTree` or `ReplacingMergeTree` here means the migrator ran with replication off.
+11. **End-to-end trace marker (through the collector).** The collector's ports are not published on the node, so send from a one-shot container on the `geldar-telemetry` network.
+    a. Make a 12-hex-character marker (`openssl rand -hex 6`) and keep it in the N4 report, not in the repo.
+    b. `docker run --rm --network geldar-telemetry curlimages/curl@sha256:<full digest> -sS -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '<minimal OTLP/HTTP JSON trace with the marker in the span name>' http://geldar-signoz-otelcol:4318/v1/traces`. Expected `200`. Pin the helper by the full digest recorded at pull time: the scratch run used `curlimages/curl:8.11.1`, digest starting `c1fe1679`, which is not in the repo.
+    c. After the collector's flush interval, count as the reader: `docker exec geldar-ch clickhouse-client --user geldar_reader --password "$(cat /mnt/nvme/geldar-telemetry/secrets/ch_reader_password)" -q "SELECT count() FROM signoz_traces.signoz_index_v3 WHERE <span name column> = '<marker>'"`. Expected `1`. The column name is not recorded in the reports, so run `DESCRIBE signoz_traces.signoz_index_v3` first. Count the local table `signoz_index_v3`, not the `distributed_` table.
+    d. Run the command with the password read from the file and not printed. Do not paste the value into a saved shell history.
+12. **Node-only checks (cannot be done on Docker Desktop).**
+    a. Secret owner and mode: `ls -ln /mnt/nvme/geldar-telemetry/secrets` matches the Secrets table (item 14). Then `test -r` as each service's uid through a one-shot container with the same user, read-only mount of that one file, and the same capability set as the service. For the writer, `--user 10001:10001`; for the reader, `--user 0:0 --cap-drop ALL`. Each must exit 0. The one-shot needs `/bin/sh` in the image (item 13).
+    b. The inferred uid 101 for the two ClickHouse images: run the `id` commands in "Owner uids" on the node and stop on any other output.
+    c. Real memory and CPU caps: with the 0352 caps in place (not the scratch override), run `docker stats --no-stream` once the stack is up and record the figures in the N4 report. The caps are `geldar-ch` 3.0 CPU and 8g, Keeper 0.5 and 1g, `geldar-signoz` 1.0 and 1g, the collector 0.5 and 1g, and the migrator 0.5 and 512m. The scratch figures (for example `geldar-ch` at 2 GiB) are from lowered caps and do not prove the 0352 values.
 
 ## Start order (for the scratch run, not this packet)
 
