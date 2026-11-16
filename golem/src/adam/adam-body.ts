@@ -6,12 +6,14 @@
  * reports a fault; the supervisor (`main.ts`) then stops this run and starts the next.
  */
 import { createHash } from 'node:crypto';
+import type { ActionRecord } from '@geldar/contract';
 import { canonicalSheetJson } from '@geldar/psyche';
 import type { Bot } from 'mineflayer';
 import { DEFAULT_DIAG_SINK, type DiagSink } from '../actions/stall-diag.ts';
 import { type OwnerTransport, wireBlockOwners } from '../body/block-owners.ts';
 import type { Body } from '../body/create-body.ts';
 import { watchChunkVisits } from '../body/evidence/chunk-visits.ts';
+import type { RecordSink } from '../body/records.ts';
 import type { EventPublisher } from '../body/records-nats.ts';
 import {
   type RestartBodyOptions,
@@ -28,7 +30,7 @@ import { AuditPublisher } from '../character/audit-publisher.ts';
 import type { LifeCharacter } from '../character/character-config.ts';
 import type { ProficiencyCache } from '../character/proficiency-cache.ts';
 import { lifeThreatPolicy } from '../character/runtime.ts';
-import { countingSink, type GolemMetrics } from '../metrics.ts';
+import { countingSink, type GolemMetrics, OUTCOME_STATUS_LABELS } from '../metrics.ts';
 import { composeEars } from '../mind-link/compose-ears.ts';
 import { RecentEvents } from '../mind-link/recent-events.ts';
 import { SnapshotRevision } from '../mind-link/revision.ts';
@@ -46,6 +48,95 @@ import { SpeechEvents } from '../voice/speech-event.ts';
 import { BotVoice } from '../voice/voice.ts';
 import { watchWorldTicks, worldAge } from '../world-clock.ts';
 import type { AdamConfig } from './adam-config.ts';
+
+/** The two span calls the Body makes. A tracer from the telemetry SDK satisfies this structurally. */
+export interface ActionSpan {
+  setAttribute(key: string, value: string): unknown;
+  end(): void;
+}
+export interface ActionTracer {
+  startSpan(name: string): ActionSpan;
+}
+
+/** The span name for one body action (T-07). */
+export const ACTION_SPAN_NAME = 'geldar.body.action';
+/** Spans open at once; an action that starts past this is not traced. */
+const MAX_OPEN_ACTION_SPANS = 256;
+
+/**
+ * Wraps a record sink so each action gets one span, from its first record to its terminal result.
+ * The span carries only `action_id` and `outcome` (a closed status label): never thought, chat,
+ * speech or prompt text. Every record still reaches `inner`, and a tracer failure is swallowed here.
+ */
+export function actionSpanSink(
+  inner: RecordSink,
+  tracer: ActionTracer,
+  log: (line: string) => void = () => undefined,
+): RecordSink {
+  const open = new Map<string, ActionSpan>();
+  let capLogged = false;
+  /** Sets the outcome and ends the span; the entry is removed by the caller before this runs. */
+  const finish = (span: ActionSpan, outcome: string): void => {
+    try {
+      span.setAttribute('outcome', outcome);
+    } finally {
+      span.end();
+    }
+  };
+  const observe = (record: ActionRecord): void => {
+    const id = record.action_id;
+    const result = record.result ?? null;
+    let span = open.get(id);
+    if (span === undefined) {
+      // A running action holds a slot, so at the cap the oldest open span is ended to make room. A
+      // terminal-only record is started and ended at once, so it needs no slot and never evicts.
+      if (result === null && open.size >= MAX_OPEN_ACTION_SPANS) {
+        const oldest = open.entries().next();
+        if (!oldest.done) {
+          const [oldestId, oldestSpan] = oldest.value;
+          open.delete(oldestId);
+          if (!capLogged) {
+            capLogged = true;
+            log(`action spans: ${MAX_OPEN_ACTION_SPANS} open; the oldest is ended as other`);
+          }
+          finish(oldestSpan, 'other');
+        }
+      }
+      span = tracer.startSpan(ACTION_SPAN_NAME);
+      try {
+        span.setAttribute('action_id', id);
+      } catch (error) {
+        span.end();
+        throw error;
+      }
+      if (result === null) open.set(id, span);
+    }
+    if (result !== null) {
+      // The entry goes before the span ends, so a failure below never leaves it open.
+      open.delete(id);
+      const status = String(result.status);
+      const outcome = (OUTCOME_STATUS_LABELS as readonly string[]).includes(status)
+        ? status
+        : 'other';
+      finish(span, outcome);
+    }
+  };
+  return {
+    intentChanged: (change) => inner.intentChanged(change),
+    actionChanged: (record) => {
+      try {
+        observe(record);
+      } catch {
+        // A span failure never reaches the Body.
+      }
+      inner.actionChanged(record);
+    },
+    receipt: (receipt) => inner.receipt(receipt),
+    reflexFired: (record) => inner.reflexFired(record),
+    wake: (request) => inner.wake(request),
+    actionOutcome: (payload, tick) => inner.actionOutcome?.(payload, tick),
+  };
+}
 
 /** What one run of the Body needs besides the bot. */
 export interface AdamBodyEnv {
@@ -70,6 +161,8 @@ export interface AdamBodyEnv {
   noPlanWaitMs?: number;
   /** Telemetry (push only with a URL, see `metrics.ts`); absent in tests that do not check it. */
   metrics?: GolemMetrics;
+  /** Action spans (T-07); absent when telemetry is off, so no span is made. */
+  tracer?: ActionTracer;
   /**
    * The life's character (AN-07). Absent, mode off, or the standard fallback: nothing is built and
    * nothing is emitted. With a sheet from config (`source` 'config'), one `sheet_adopted` is recorded
@@ -205,7 +298,8 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     },
     nats: { publisher, shard: config.shard, log },
     wrapRecords: (inner) => {
-      const made = new RecentEvents(env.metrics ? countingSink(inner, env.metrics) : inner);
+      const traced = env.tracer ? actionSpanSink(inner, env.tracer, log) : inner;
+      const made = new RecentEvents(env.metrics ? countingSink(traced, env.metrics) : traced);
       wrapped.recent = made;
       return made;
     },

@@ -91,4 +91,20 @@ describe('golem/Dockerfile.dockerignore', () => {
       ]),
     );
   });
+
+  it('re-includes every local COPY source, so the build context has what the image copies', () => {
+    const sources = lines
+      .filter((line) => line.startsWith('COPY ') && !line.includes('--from='))
+      .flatMap((line) => {
+        const args = line
+          .slice('COPY '.length)
+          .split(/\s+/)
+          .filter((arg) => !arg.startsWith('--'));
+        return args.slice(0, -1);
+      });
+    expect(sources).toContain('telemetry');
+    for (const source of sources) {
+      expect(ignoreLines, `COPY ${source} has no !${source} line`).toContain(`!${source}`);
+    }
+  });
 });

@@ -171,6 +171,39 @@ function rig(): Rig {
   return { env, options, inner, addressed, stops, served, deliver };
 }
 
+describe('the action span wiring in a Body (T-07)', () => {
+  const done = { action_id: 'w1', state: 'done', result: { status: 'completed' } };
+
+  it('wraps the record sink in the span sink when a tracer is set', async () => {
+    const r = rig();
+    const started: string[] = [];
+    r.env.tracer = {
+      startSpan: (name: string) => {
+        started.push(name);
+        return { setAttribute: () => undefined, end: () => undefined };
+      },
+    };
+    const running = await startAdamBody(r.env, fakeBot());
+    // The sink the restart was given is the digest, which forwards to the wrapped chain.
+    (
+      r.options[0] as unknown as { sink: { actionChanged(record: unknown): void } }
+    ).sink.actionChanged(done);
+    expect(started).toEqual(['geldar.body.action']);
+    expect(r.inner.actionChanged).toHaveBeenCalledTimes(1);
+    await running.stop();
+  });
+
+  it('forwards records to the inner sink with no span when no tracer is set', async () => {
+    const r = rig();
+    const running = await startAdamBody(r.env, fakeBot());
+    (
+      r.options[0] as unknown as { sink: { actionChanged(record: unknown): void } }
+    ).sink.actionChanged(done);
+    expect(r.inner.actionChanged).toHaveBeenCalledTimes(1);
+    await running.stop();
+  });
+});
+
 /** Every number and string of a sheet, as text: a log line that carries one of them is a leak. */
 function sheetLeaves(value: unknown): string[] {
   if (typeof value === 'number') return [String(value)];
