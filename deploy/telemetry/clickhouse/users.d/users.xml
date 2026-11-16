@@ -2,7 +2,8 @@
 <!--
   Authored for Geldar (0352 and 0370). [AUTH] Not upstream.
   Password hashes are NOT in git. Each hash is read from the container environment with from_env:
-  GELDAR_CH_WRITER_SHA256 and GELDAR_CH_READER_SHA256. Compose loads them from the node-only env file
+  GELDAR_CH_WRITER_SHA256, GELDAR_CH_READER_SHA256 and GELDAR_CH_SIGNOZ_ADMIN_SHA256 (THREE hashes; the last is used only in
+   the retention window but is required while geldar_signoz_admin is defined here). Compose loads them from the node-only env file
   /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env (README, "Password hashes"). from_env in config is [INF, unverified on 25.12.5].
   Limits from 0352: writer max_memory_usage 2 GB, max_threads 4, max_execution_time 60, max_insert_threads 2.
   Reader limits follow 0352 (Read path, B): readonly 2, 1 GB, max_execution_time 30, max_result_rows 100000 with break,
