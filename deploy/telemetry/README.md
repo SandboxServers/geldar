@@ -34,9 +34,17 @@ Why these tags: 25.12.5 (build 44) is the ClickHouse line SigNoz v0.148.1 tests 
 
 ## Host paths
 
-All host paths are under `/mnt/nvme/geldar-telemetry`. Nothing outside it is mounted. No `docker.sock` is mounted in any service.
+All writable host paths are under `/mnt/nvme/geldar-telemetry`. Besides them, the compose file has five read-only mounts from the repo checkout (relative paths, so they resolve to the CD checkout on the node, outside that root):
 
-- `/mnt/nvme/geldar-telemetry/clickhouse` (server data, logs, config as read-only mounts)
+- `./clickhouse/config.d` (ClickHouse config)
+- `./clickhouse/users.d` (ClickHouse users and profiles)
+- `./clickhouse/histogram_function.xml` (histogram UDF)
+- `./clickhouse/keeper/keeper.yaml` (Keeper config)
+- `./signoz-otelcol-config.yaml` (collector config)
+
+No `docker.sock` is mounted in any service.
+
+- `/mnt/nvme/geldar-telemetry/clickhouse` (server data and logs; config comes from the read-only repo mounts above)
 - `/mnt/nvme/geldar-telemetry/keeper` (Keeper data)
 - `/mnt/nvme/geldar-telemetry/query` (SigNoz SQLite directory)
 - `/mnt/nvme/geldar-telemetry/secrets` (password files, mode 0400 for uid 10001, see Secrets)
