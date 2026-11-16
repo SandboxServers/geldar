@@ -5,6 +5,7 @@ export {
   type DropReason,
   type FilteredAttributes,
   filterAttributes,
+  hasForbiddenSegment,
   type TelemetryScope,
 } from './attributes.ts';
 export {

@@ -118,7 +118,14 @@ export interface WorldDeps {
   /** Counts each tool call with its closed outcome code and duration (metrics, decision 0088). */
   onToolCall?: (tool: string, outcome: string, durationMs: number) => void;
   /** Records one OpenTelemetry span per call (T-06, telemetry.ts). Unset when telemetry is off. */
-  onToolSpan?: ((call: { tool: string; outcome: string; durationMs: number }) => void) | undefined;
+  onToolSpan?:
+    | ((call: {
+        tool: string;
+        outcome: string;
+        durationMs: number;
+        content?: { arguments: unknown; result?: unknown };
+      }) => void)
+    | undefined;
 }
 
 /** The world as the server uses it: the tool handlers, and a `close` that stops the settle timer. */
@@ -452,9 +459,16 @@ function watchSessionEnd(deps: Wired, ctx: ToolContext): void {
 /**
  * Logs one `tool_call` line per call: the tool, the player, the outcome code and the duration. Never the
  * arguments, the result or any text. A logger that throws does not fail the call.
+ * The span recorder gets the arguments and the result by reference (T-06c); it only reads them, so the
+ * result returned to the agent is the same object with or without the recorder.
  */
 function logged(deps: Wired, tool: string, run: ToolHandler): ToolHandler {
-  const record = (playerId: string, outcome: string, started: number): void => {
+  const record = (
+    playerId: string,
+    outcome: string,
+    started: number,
+    content: { arguments: unknown; result?: unknown },
+  ): void => {
     const durationMs = deps.now() - started;
     try {
       deps.log?.({
@@ -473,7 +487,7 @@ function logged(deps: Wired, tool: string, run: ToolHandler): ToolHandler {
       // The count is lost; the call's own result stands.
     }
     try {
-      deps.onToolSpan?.({ tool, outcome, durationMs });
+      deps.onToolSpan?.({ tool, outcome, durationMs, content });
     } catch {
       // The span is lost; the call's own result stands.
     }
@@ -483,12 +497,12 @@ function logged(deps: Wired, tool: string, run: ToolHandler): ToolHandler {
     const started = deps.now();
     try {
       const result = await run(input, ctx);
-      record(ctx.playerId, 'ok', started);
+      record(ctx.playerId, 'ok', started, { arguments: input, result });
       lastCalls.set(ctx.signal, { tool, outcome: 'ok' });
       return result;
     } catch (err) {
       const outcome = outcomeOf(err);
-      record(ctx.playerId, outcome, started);
+      record(ctx.playerId, outcome, started, { arguments: input });
       lastCalls.set(ctx.signal, { tool, outcome });
       throw err;
     }
