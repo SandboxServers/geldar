@@ -6,6 +6,8 @@ At the time these files were written, nothing was started or pulled. The only do
 
 ## Status after the local scratch run (2026-11-16)
 
+- T-24 (config only, not run): adds the retention user `geldar_signoz_admin` to `users.xml`, the override `compose.retention.yml` that swaps SigNoz's DSN to it for a retention window (D3, 0370), and the README section "Retention window (N6c)" with items 36 to 39 unverified.
+
 - The stack has now been started locally on a dev machine, in project `scratch-telemetry-local`, not on the node, with lowered memory caps.
 - The final passing round is report8, on config e6a08a4b (the scratch reports are in the campaign scratchpad, not in the repo). ClickHouse starts with the restricted `default` user (explicit grants; the stock `access_management` and `named_collection_control` keys removed).
 - The migrator exits 0 (4/14/6/7/66/36 tables). SigNoz health returns 200 with one non-fatal ERROR line (active-queries log directory), so it did not start fully clean. The collector had 0 error and warning lines, and one OTLP marker trace reached ClickHouse (1 row locally and through the distributed table). The reader is read-only and reads through the distributed table.

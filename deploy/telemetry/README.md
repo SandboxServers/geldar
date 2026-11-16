@@ -181,6 +181,10 @@ Each item says what it blocks. Nothing starts on the node until the items marked
 
 34. **DECIDED 2026-11-16 (owner): D1 APPROVED. `geldar_writer` keeps `GRANT REMOTE ON *.*` (`remote()` reach to any host from a container on the shared `geldar-telemetry` network); the migrator and the collector hold the writer password.** Original text: **DECISION (owner), not a blocker for the N4 start; needed for leaving the stack up: the writer's `GRANT REMOTE ON *.*`.** It lets `remote()` reach any host from a container on the shared `geldar-telemetry` network (the writer's password is held by the collector and the migrator). The owner's explicit acceptance is needed and none is recorded; item 32 calls it an owner acceptance. Whether REMOTE can be dropped was not isolated (item 32).
 35. **DECIDED 2026-11-16 (owner): D2 APPROVED. The `default` user keeps its SELECT and INSERT grants on the six `signoz_*` databases and SELECT on `system.*`. After the stack has run a day, run the check below and remove `default`'s grants if `default` never runs a shard query.** Original text: **DECISION (owner), not a blocker for the N4 start; needed for leaving the stack up: default's grants are an assumption.** The migrator passed in the scratch run, but whether `default` needs its SELECT and INSERT grants was not tested (item 9: the initiating user was not recorded). On the node, after a day: `docker exec geldar-ch clickhouse-client -q "SELECT initial_user, user, count() FROM system.query_log GROUP BY initial_user, user"`. If `default` never runs a shard query, remove its grants (that closes the `remote()` residual of item 32).
+36. **Reload versus restart of `users.d` (D3).** ClickHouse may reload `users.d` changes without a restart; not tested on 25.12.5. The plan is a recreate of `geldar-ch` (needed anyway for the new `ch-hashes.env` line). **Blocks nothing; a recreate is the safe path.** [UNV]
+37. **Grants sufficiency of `geldar_signoz_admin` for the retention call (D3).** The list (ALTER TTL, SELECT on three databases and `system.*`, CLUSTER) is reasoned from ClickHouse semantics and the SigNoz source, not run. If SigNoz takes the logs `_retention_days` path it may also need ALTER MODIFY COLUMN. The ALTER failure names the missing privilege. **Blocks the retention window until the first ALTER succeeds.** [UNV]
+38. **Effect of the `readonly=0` profile (D3).** The profile `geldar_signoz_admin` is not readonly, so beyond its grants it can change settings; grants, not the profile, bound it. Whether `ALTER ... ON CLUSTER` as this user reaches the replica with the same grants (the initiator's rights apply there) is not tested. **Blocks nothing.** [UNV]
+39. **Tables touched by the retention API (D3).** Whether the call touches `signoz_meter`, `signoz_analytics` or `signoz_metadata` is not known (the table names were not quoted in the research); the user has no grants there. If the call fails on one of them the error names it. **Blocks nothing.** [UNV]
 
 ## Scratch run results (local Docker Desktop, 2026-11-16; final run report8, config e6a08a4b)
 
@@ -383,6 +387,58 @@ Abort rule: if the block prints `ABORT` or exits non-zero, delete `ch-hashes.env
 9. Item 33 (outbound sockets of `geldar-signoz`): run the decode recipe from item 33 five times at 2 s intervals right after `up -d geldar-signoz` in step h.3 (start the loop in the same terminal session, before the collector start and before step h.4; the attempt was visible only at about 0 s), then again at 60 s and at 10 minutes. Step i is too late for the first samples. Record the port, private or not, the decoded address and the reverse-DNS name in the N4 report. If the connection persists, recurs or resolves to a vendor or analytics host, stop and ask the owner about egress. Until decided, do not leave `geldar-signoz` running unattended. This blocks unattended running, not the N4 start.
 
 **Step j. Rollback.** `docker compose -f deploy/telemetry/compose.yml down` stops and removes the containers and the backend network (data stays on the host, and the external `geldar-telemetry` is not removed). Check with `docker network ls` that `geldar-telemetry_geldar-telemetry-backend` is gone. Delete the data directories under `/mnt/nvme/geldar-telemetry` only on the owner's say.
+
+## Retention window (N6c)
+
+Why: SigNoz v0.148.1 sets retention through its own API, `POST /api/v1/settings/ttl?type=traces|logs|metrics&duration=<h>` (admin only). SigNoz then runs `ALTER TABLE ... ON CLUSTER ... MODIFY TTL` on 7 traces, 4 logs and 8 metrics tables over its own ClickHouse connection, which is the DSN in compose, `geldar_reader` (readonly=2, SELECT only, cannot run DDL). The owner ruled (D3, geldar-93, 2026-11-16, "temporary override accepted"): do not widen the reader; use the dedicated user `geldar_signoz_admin` (ALTER TTL, SELECT and CLUSTER grants only), swapped in by `compose.retention.yml` for the window, then removed. Source of the API facts: research on the SigNoz v0.148.1 source, not run against a server `[UNV]`.
+
+**Preconditions.** (1) N6b done: the first admin account exists in SigNoz (its credentials are held by the owner, not in the repo). (2) `geldar-signoz` is running on the reader (`docker inspect -f '{{.State.Health.Status}}' geldar-signoz` prints `healthy`). (3) D3 secrets are present: `ls -ln /mnt/nvme/geldar-telemetry/secrets/ch_signoz_admin_password` shows `0 0` and `-r--------`, `ch-hashes.env` has the third line (`grep -c '^GELDAR_CH_SIGNOZ_ADMIN_SHA256=' .../ch-hashes.env` prints `1`; do not print the file), `geldar-ch` was recreated after that (see "Password hashes", ordering), and `system.users` lists `geldar_signoz_admin`. (4) `docker compose version` is 2.24.0 or later (`!override` and `required: false`). (5) Nothing else is writing a retention change (SigNoz answers 409 while one is pending).
+
+**Steps, in order** (as root, from the repo checkout root):
+
+1. Before values (the default is 15 days for traces and logs, 30 for metrics `[UNV]`; record what you see):
+   ```
+   for t in signoz_traces.signoz_index_v3 signoz_logs.logs_v2 signoz_metrics.samples_v4 signoz_metrics.time_series_v4; do
+     docker exec geldar-ch clickhouse-client -q "SELECT '$t', extract(create_table_query, 'TTL [^\\n]*') FROM system.tables WHERE database = splitByChar('.', '$t')[1] AND name = splitByChar('.', '$t')[2]"
+   done
+   ```
+   The query runs as `default` (loopback, no password). If the local table name differs from the one above, list them with `SHOW TABLES FROM <db>` and use the local (non-`distributed_`) table; the Distributed tables carry no TTL.
+2. Swap the DSN: `docker compose -f deploy/telemetry/compose.yml -f deploy/telemetry/compose.retention.yml up -d geldar-signoz`. Wait for `healthy`. Check the user: `docker exec geldar-ch clickhouse-client -q "SELECT user, count() FROM system.query_log WHERE event_time > now() - 120 GROUP BY user"` lists `geldar_signoz_admin` (SigNoz queries run as it now).
+3. Get a token without putting a secret in argv. Work in a private directory and delete it at the end:
+   ```
+   umask 077; mkdir -p /mnt/nvme/geldar-telemetry/stage/ttl; cd /mnt/nvme/geldar-telemetry/stage/ttl
+   ```
+   Create `login.json` with an editor (`{"email":"<admin email>","password":"<admin password>","orgId":"<org id>"}`; the key names and the org id lookup `GET /api/v2/sessions/context` are `[UNV]`, read the response if the login fails). Then:
+   ```
+   curl -sS -X POST -H 'Content-Type: application/json' --data @login.json http://127.0.0.1:8095/api/v2/sessions/email_password > login.out
+   ```
+   Extract `accessToken` from `login.out` (`jq -r '.data.accessToken' login.out`, if `jq` exists; otherwise read it in an editor) and write a header file with an editor or `printf`'d from a variable that is not echoed: `Authorization: Bearer <token>` in `hdr.txt`. Calls below pass `-H @hdr.txt`, so the token is not in argv or shell history (needs curl 7.55 or later `[UNV]`).
+4. Set the retention (one call per type; `8760h` is 365 days, Go durations have no `d`). Each returns at once and the ALTER runs in the background:
+   ```
+   curl -sS -X POST -H @hdr.txt 'http://127.0.0.1:8095/api/v1/settings/ttl?type=traces&duration=8760h'
+   curl -sS -X POST -H @hdr.txt 'http://127.0.0.1:8095/api/v1/settings/ttl?type=logs&duration=8760h'
+   curl -sS -X POST -H @hdr.txt 'http://127.0.0.1:8095/api/v1/settings/ttl?type=metrics&duration=8760h'
+   ```
+   A 409 means a retention change of that type is still pending: wait (step 5) and send it again, once. Do not send the three in parallel.
+5. Wait for the async ALTER to finish: both of these return `0` and stay `0` for a minute:
+   ```
+   docker exec geldar-ch clickhouse-client -q "SELECT count() FROM system.distributed_ddl_queue WHERE status != 'Finished'"
+   docker exec geldar-ch clickhouse-client -q "SELECT count() FROM system.mutations WHERE NOT is_done"
+   ```
+   (`MODIFY TTL` is a metadata change plus a TTL merge in the background, so `system.mutations` may stay empty throughout; the queue is the main signal.) A failed ALTER shows `exception_code` in `system.distributed_ddl_queue` and the error names the missing privilege: add that grant to `geldar_signoz_admin` in `users.xml`, re-stage, recreate `geldar-ch`, and retry (item 37).
+6. Read back through the API (viewer is enough; same header file) and through ClickHouse:
+   ```
+   curl -sS -H @hdr.txt 'http://127.0.0.1:8095/api/v1/settings/ttl?type=traces'
+   ```
+   Repeat for `logs` and `metrics`. Then repeat the step 1 loop. Expected: each TTL expression is `TTL toDateTime(...) + toIntervalSecond(31536000)` (365 days). Also check the other tables of each type, not only the four above: `SELECT database, name, extract(engine_full, 'toIntervalSecond\\(\\d+\\)') FROM system.tables WHERE database IN ('signoz_traces','signoz_logs','signoz_metrics') AND engine LIKE 'Replicated%'` must show 31536000 on the 7, 4 and 8 tables SigNoz alters (tables without a TTL, such as `signoz_metadata` ones, are outside this call).
+7. Clean the token material: `cd /; rm -rf /mnt/nvme/geldar-telemetry/stage/ttl`. Ask the owner to end the admin session if it should not stay valid (`DELETE /api/v2/sessions`, `[UNV]`).
+8. End the window: remove the override and recreate `geldar-signoz` on the reader: `docker compose -f deploy/telemetry/compose.yml up -d --force-recreate geldar-signoz`. Check: `docker inspect geldar-signoz | grep -c ch_signoz_admin_password` prints `0`, and the next `system.query_log` rows for the SigNoz connection are `geldar_reader`. Then delete the secret file and its hash line if the owner does not want the user kept: the user then needs to be removed from `users.xml` too (otherwise it stays defined and usable with the old password). Until then it is idle, but a leftover live password is a standing risk; the default is to remove all three (file, hash line, `users.xml` entry) after the window.
+
+**Rollback.** Remove the override and recreate `geldar-signoz` on the reader (step 8). The TTLs stay as set; they are table metadata. To revert a TTL, open a new window and run the API with the old duration (record the old values in step 1). A half-applied ALTER (queue entry failed on one table) is repaired by repeating the same API call in a window.
+
+**Inventory change.** New: secret file `secrets/ch_signoz_admin_password` (0:0 0400) and the variable `GELDAR_CH_SIGNOZ_ADMIN_SHA256` in `ch-hashes.env`; new file `compose.retention.yml`; new user and profile `geldar_signoz_admin` in `users.xml`.
+
+**Checks that run off the node** (this repo): XML load of `users.xml`; `docker compose -f deploy/telemetry/compose.yml config --quiet`; the same with `-f deploy/telemetry/compose.retention.yml` added, where the rendered `geldar-signoz` command shows `geldar_signoz_admin` and the secret `ch_signoz_admin_password` only (no value appears; the file path is the only reference).
 
 ## Start order (for the scratch run, not this packet)
 
