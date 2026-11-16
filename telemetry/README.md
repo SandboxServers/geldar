@@ -50,6 +50,7 @@ with trace context carried in NATS message headers.
 | `src/attributes.ts` | Attribute allow-list, identity refusal for metrics, forbidden key names |
 | `src/sdk-processors.ts` | Span, log and metric-View processors that run the allow-list inside the SDK |
 | `src/cap-text.ts` | `capText()`: the UTF-8 byte cap for large text |
+| `src/redact.ts` | `redactContent()` (secret-named keys and secret-shaped string values), `scrubText()` (bearer strings, Authorization values, MCP tokens, URL userinfo) and `errorFields()` (scrubbed `exception.*` fields); run captured content through these before it is exported |
 | `src/content.ts` | `contentAttributes()`, `addContentEvent()` |
 
 ## Use
