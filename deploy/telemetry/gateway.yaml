@@ -4,8 +4,16 @@
 #
 # Content capture (decision 0350, full text, no opt-out): this gateway must NOT truncate or drop thoughts, speech, journals or prompts.
 # So there is NO attribute-size limit, NO log-body-length limit and NO sampling anywhere below. Do not add one.
-# Redaction here is narrow, per collector-design section 5: it masks IPv4 and IPv6 literals in the log body and deletes
-# credential-looking attribute KEYS. It does NOT scrub free text for secrets or personal data.
+# Redaction here is narrow, per collector-design section 5: it masks IPv4 and IPv6 literals (log bodies that are strings, the top-level
+# string values of map bodies, resource attributes and span event attributes) and deletes credential-looking attribute KEYS (resource,
+# scope, log, span, span event and datapoint attributes). It does NOT scrub free text for secrets or personal data. Known gaps (README, G1 to G4):
+# array and bytes bodies, nested map values, span link attributes and metric exemplar labels have no OTTL context here.
+#
+# Credential key rule, used by every delete_matching_keys below (case-insensitive, RE2):
+#   (?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)
+# A key is deleted when a segment (split on . _ -) is secret, password, passwd, authorization, cookie or api_key/api-key/apikey (anywhere),
+# or when the key ENDS in token (token, auth_token, access.token, accessToken, id_token, x-auth-token). Plural and count keys are kept:
+# gen_ai.usage.input_tokens, max_tokens, tokens, token_count, tokenizer.
 
 receivers:
   otlp:
@@ -43,26 +51,66 @@ processors:
     log_statements:
       - context: log
         statements:
-          # IPv4 (each octet 0-255, word boundaries so version-like or longer digit runs are not touched). [UNV] escaping: single-quoted YAML keeps \\ as two characters, OTTL turns them into one.
+          # IPv4 (each octet 0-255, word boundaries so version-like or longer digit runs are not touched). Escaping: single-quoted YAML keeps \\ as two characters, OTTL turns them into one.
           - 'replace_pattern(log.body, "\\b(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\b", "<addr>")'
           # IPv6, full form (8 groups).
           - 'replace_pattern(log.body, "\\b(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}\\b", "<addr>")'
-          # IPv6, compressed form: needs a "::", so clock times such as 12:30:45 are not touched.
-          - 'replace_pattern(log.body, "(?:[0-9A-Fa-f]{1,4}:){1,7}:(?:[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6})?|::(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4}", "<addr>")'
-          - 'delete_matching_keys(log.attributes, "(?i)(token|secret|password|passwd|authorization|cookie|api[_-]?key)")'
+          # IPv6, compressed form. It needs a "::". A leading "::" must not touch a word (\\B before it), a group before "::" must start on a word
+          # boundary, and "1::" must not run into a word (\\B after it), so Cache::get, std::vector and Foo::Bar::baz are kept, while ::1,
+          # fe80::1:2, 2001:db8::1 and 1:: are masked. Words made only of hex letters on both sides, such as a::b or face::cafe, ARE masked.
+          - 'replace_pattern(log.body, "\\B::(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4}\\b|\\b(?:[0-9A-Fa-f]{1,4}:){1,7}(?::[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6}\\b|:\\B)", "<addr>")'
+          # Map bodies (kvlist): the same masking on the top-level string values, and the credential keys. Nested maps, arrays and bytes bodies are not reached.
+          - 'replace_all_patterns(log.body, "value", "\\b(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\b", "<addr>") where IsMap(log.body)'
+          - 'replace_all_patterns(log.body, "value", "\\b(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}\\b", "<addr>") where IsMap(log.body)'
+          - 'replace_all_patterns(log.body, "value", "\\B::(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4}\\b|\\b(?:[0-9A-Fa-f]{1,4}:){1,7}(?::[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6}\\b|:\\B)", "<addr>") where IsMap(log.body)'
+          - 'delete_matching_keys(log.body, "(?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)") where IsMap(log.body)'
+          - 'delete_matching_keys(log.attributes, "(?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)")'
           - 'delete_key(log.attributes, "user.email")'
+      - context: resource
+        statements:
+          - 'delete_matching_keys(resource.attributes, "(?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)")'
+          - 'replace_all_patterns(resource.attributes, "value", "\\b(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\b", "<addr>")'
+          - 'replace_all_patterns(resource.attributes, "value", "\\b(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}\\b", "<addr>")'
+          - 'replace_all_patterns(resource.attributes, "value", "\\B::(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4}\\b|\\b(?:[0-9A-Fa-f]{1,4}:){1,7}(?::[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6}\\b|:\\B)", "<addr>")'
+      - context: scope
+        statements:
+          - 'delete_matching_keys(scope.attributes, "(?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)")'
     trace_statements:
+      - context: resource
+        statements:
+          - 'delete_matching_keys(resource.attributes, "(?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)")'
+          - 'replace_all_patterns(resource.attributes, "value", "\\b(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\b", "<addr>")'
+          - 'replace_all_patterns(resource.attributes, "value", "\\b(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}\\b", "<addr>")'
+          - 'replace_all_patterns(resource.attributes, "value", "\\B::(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4}\\b|\\b(?:[0-9A-Fa-f]{1,4}:){1,7}(?::[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6}\\b|:\\B)", "<addr>")'
+      - context: scope
+        statements:
+          - 'delete_matching_keys(scope.attributes, "(?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)")'
       - context: span
         statements:
-          - 'delete_matching_keys(span.attributes, "(?i)(token|secret|password|passwd|authorization|cookie|api[_-]?key)")'
+          - 'delete_matching_keys(span.attributes, "(?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)")'
+      - context: spanevent
+        statements:
+          - 'delete_matching_keys(spanevent.attributes, "(?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)")'
+          - 'replace_all_patterns(spanevent.attributes, "value", "\\b(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\b", "<addr>")'
+          - 'replace_all_patterns(spanevent.attributes, "value", "\\b(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}\\b", "<addr>")'
+          - 'replace_all_patterns(spanevent.attributes, "value", "\\B::(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4}\\b|\\b(?:[0-9A-Fa-f]{1,4}:){1,7}(?::[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6}\\b|:\\B)", "<addr>")'
   transform/metric_labels:
     error_mode: ignore
     metric_statements:
+      - context: resource
+        statements:
+          - 'delete_matching_keys(resource.attributes, "(?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)")'
+          - 'delete_key(resource.attributes, "geldar.life_id")'
+          - 'delete_key(resource.attributes, "player_id")'
+      - context: scope
+        statements:
+          - 'delete_matching_keys(scope.attributes, "(?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)")'
       - context: datapoint
         statements:
           # 0088 and 0350 item 1: metrics keep no life or player label
           - 'delete_key(datapoint.attributes, "geldar.life_id")'
           - 'delete_key(datapoint.attributes, "player_id")'
+          - 'delete_matching_keys(datapoint.attributes, "(?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)")'
   batch:
     # Item counts only (the batch processor cannot count bytes). The byte bound is the exporter's sending_queue.batch below.
     send_batch_size: 256
@@ -80,7 +128,7 @@ exporters:
     timeout: 5s
     retry_on_failure:
       enabled: true
-      max_elapsed_time: 0   # retry until delivered; the queue size above is the only limit (owner decision 0350 item 7: loss only when the queue is full)
+      max_elapsed_time: 0   # retry until delivered; the queue size below is the only limit (owner decision 0350 item 7: loss only when the queue is full)
     sending_queue:
       enabled: true
       storage: file_storage
@@ -89,7 +137,7 @@ exporters:
       block_on_overflow: false
       batch:
         # Exporter-side batching, by bytes: every exported request is merged or split to at most 3 MiB (OTLP proto size, before gzip),
-        # under the 4 MiB gRPC default of any receiver that has not been raised. A single record above 3 MiB cannot be split.
+        # under the 4 MiB gRPC default of any receiver that has not been raised. A single record above 3 MiB cannot be split and is dropped with a warn line.
         sizer: bytes
         min_size: 1048576
         max_size: 3145728
