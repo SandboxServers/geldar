@@ -49,7 +49,6 @@
             <networks>
                 <ip>::/0</ip>
             </networks>
-            <access_management>1</access_management>
         </geldar_writer>
         <geldar_reader>
             <password_sha256_hex from_env="GELDAR_CH_READER_SHA256"/>
