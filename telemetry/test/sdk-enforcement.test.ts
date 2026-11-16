@@ -98,6 +98,30 @@ describe('SDK-level enforcement of raw OpenTelemetry API calls', () => {
     expect(seen.logs[0]?.attributes.life_id).toBe('lf_9');
   });
 
+  it('filters span link attributes before export', async () => {
+    const { exporters, seen } = capturing();
+    const handle = startTelemetry({ ...BASE, exporters });
+    const tracer = trace.getTracer('raw');
+    const target = tracer.startSpan('target');
+    target.end();
+    const span = tracer.startSpan('linking', {
+      links: [
+        {
+          context: target.spanContext(),
+          attributes: { password: 'hunter2', random: 'x', life_id: 'lf_9' },
+        },
+      ],
+    });
+    span.end();
+    await handle.shutdown();
+    const exported = seen.spans.find((s) => s.name === 'linking');
+    const link = exported?.links[0];
+    expect(link).toBeDefined();
+    expect(link?.attributes).not.toHaveProperty('password');
+    expect(link?.attributes).not.toHaveProperty('random');
+    expect(link?.attributes?.life_id).toBe('lf_9');
+  });
+
   it('keeps life labels off exported metric series', async () => {
     const { exporters, seen } = capturing();
     const handle = startTelemetry({ ...BASE, exporters });

@@ -46,6 +46,11 @@ export class AllowListSpanProcessor implements SpanProcessor {
           typeof event.attributes
         >;
       }
+      for (const link of span.links) {
+        link.attributes = allowed(link.attributes ?? {}, 'trace') as NonNullable<
+          typeof link.attributes
+        >;
+      }
     } catch {
       // A failing filter must not break the caller; the span is still exported.
     }
