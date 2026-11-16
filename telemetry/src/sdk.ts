@@ -1,6 +1,7 @@
 // SDK setup for traces, logs and metrics over OTLP/HTTP (protobuf). No NodeSDK, no auto-instrumentation.
 // Off (no providers, no timers, no network, no-op API) when no endpoint is given.
 
+import { randomUUID } from 'node:crypto';
 import { context, logs, metrics, propagation, trace } from '@opentelemetry/api';
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
@@ -42,6 +43,10 @@ export interface TelemetryOptions {
   service: string;
   version: string;
   environment?: string;
+  /** Shard name, carried as the `geldar.shard` resource attribute. Unset or blank leaves it off. */
+  shard?: string;
+  /** Test seam: the `service.instance.id`. Unset means a fresh random UUID for each start. */
+  instanceId?: string;
   /** Base URL of the collector. Unset or blank turns telemetry off completely. */
   endpoint?: string | undefined;
   limits?: Partial<QueueLimits>;
@@ -112,10 +117,15 @@ export function startTelemetry(options: TelemetryOptions): TelemetryHandle {
     const base = endpoint.replace(/\/+$/, '');
     const limits = { ...DEFAULT_LIMITS, ...options.limits };
     const exporters = options.exporters ?? {};
+    // Resource attributes are shared by every signal, so they carry no life or player identifier.
+    const shard = options.shard?.trim();
     const resource = resourceFromAttributes({
       'service.name': options.service,
       'service.version': options.version,
+      'service.namespace': 'geldar',
+      'service.instance.id': options.instanceId ?? randomUUID(),
       'deployment.environment.name': options.environment ?? 'colo',
+      ...(shard ? { 'geldar.shard': shard } : {}),
     });
     const queue = {
       maxQueueSize: limits.maxQueueSize,

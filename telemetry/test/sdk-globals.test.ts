@@ -62,4 +62,44 @@ describe('resource attributes', () => {
       'service.version': '9.9.9',
     });
   });
+
+  it('sets service.namespace, the injected instance id and geldar.shard, never a life or player id', async () => {
+    const spans: ReadableSpan[] = [];
+    const handle = startTelemetry({
+      service: 'geldar-svc',
+      version: '9.9.9',
+      endpoint: ENDPOINT,
+      shard: 'shard-a',
+      instanceId: 'inst-1',
+      exporters: exporters(spans),
+    });
+    handle.tracerProvider?.getTracer('t').startSpan('turn').end();
+    await handle.shutdown();
+    const attrs = spans[0]?.resource.attributes ?? {};
+    expect(attrs).toMatchObject({
+      'service.namespace': 'geldar',
+      'service.instance.id': 'inst-1',
+      'geldar.shard': 'shard-a',
+    });
+    for (const key of ['life_id', 'geldar.life_id', 'player_id', 'geldar.player_id']) {
+      expect(attrs).not.toHaveProperty(key);
+    }
+  });
+
+  it('generates a UUID instance id per start and omits geldar.shard when no shard is given', async () => {
+    const spans: ReadableSpan[] = [];
+    const handle = startTelemetry({
+      service: 'geldar-svc',
+      version: '9.9.9',
+      endpoint: ENDPOINT,
+      exporters: exporters(spans),
+    });
+    handle.tracerProvider?.getTracer('t').startSpan('turn').end();
+    await handle.shutdown();
+    const attrs = spans[0]?.resource.attributes ?? {};
+    expect(String(attrs['service.instance.id'])).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+    expect(attrs).not.toHaveProperty('geldar.shard');
+  });
 });
