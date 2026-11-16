@@ -2,7 +2,8 @@
 <!--
   Authored for Geldar (0352 and 0370). [AUTH] Not upstream.
   Password hashes are NOT in git. Each hash is read from the container environment with from_env:
-  GELDAR_CH_WRITER_SHA256 and GELDAR_CH_READER_SHA256. Compose loads them from the node-only env file
+  GELDAR_CH_WRITER_SHA256, GELDAR_CH_READER_SHA256 and GELDAR_CH_SIGNOZ_ADMIN_SHA256 (THREE hashes; the last is used only in
+   the retention window but is required while geldar_signoz_admin is defined here). Compose loads them from the node-only env file
   /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env (README, "Password hashes"). from_env in config is [INF, unverified on 25.12.5].
   Limits from 0352: writer max_memory_usage 2 GB, max_threads 4, max_execution_time 60, max_insert_threads 2.
   Reader limits follow 0352 (Read path, B): readonly 2, 1 GB, max_execution_time 30, max_result_rows 100000 with break,
@@ -35,6 +36,15 @@
             <result_overflow_mode>break</result_overflow_mode>
             <load_balancing>in_order</load_balancing>
         </geldar_reader>
+        <!-- [AUTH] Retention window only (D3). Not readonly: ALTER ... MODIFY TTL is DDL. 600 s because the ALTER on a large table
+             can take longer than the reader's 30 s [UNV]. -->
+        <geldar_signoz_admin>
+            <readonly>0</readonly>
+            <max_memory_usage>2000000000</max_memory_usage>
+            <max_threads>4</max_threads>
+            <max_execution_time>600</max_execution_time>
+            <load_balancing>in_order</load_balancing>
+        </geldar_signoz_admin>
     </profiles>
     <users>
         <default>
@@ -58,7 +68,7 @@
                  clusterAllReplicas reach the shard as default. Its grants are limited to what that needs: SELECT and INSERT on the
                  six signoz_* databases and SELECT on system.*. Nothing else: no SOURCES, SYSTEM, FILE, URL, S3, REMOTE, ALTER,
                  CREATE, DROP, TABLE ENGINE or access management. Distributed DDL (ON CLUSTER) ran with these restricted grants in
-                 scratch report8; the initiating user was not recorded. Networks stay HOST LOCAL and the password stays
+                 scratch report8; which user the replica-side DDL ran as is not shown (README item 38). Networks stay HOST LOCAL and the password stays
                  empty. Residual: through remote() the writer can act as default, which gives SELECT and INSERT on the six signoz_*
                  databases and SELECT on system.*, no more than the writer already has on those databases. -->
             <grants>
@@ -124,5 +134,50 @@
                 <ip>::/0</ip>
             </networks>
         </geldar_reader>
+        <!-- [AUTH] D3: retention user (0370, ruled by geldar-93 on 2026-11-16 as "temporary override accepted"). SigNoz sets retention
+             through POST /api/v1/settings/ttl, which runs ALTER TABLE ... ON CLUSTER ... MODIFY TTL over SigNoz's own ClickHouse
+             connection. geldar_reader is readonly=2 and cannot run DDL, and it is NOT widened. This user is used only during a
+             retention window through deploy/telemetry/compose.retention.yml, which swaps SigNoz's DSN to it; the override is removed
+             afterwards (README, "Retention window (N6c)"). Its hash comes from GELDAR_CH_SIGNOZ_ADMIN_SHA256 in ch-hashes.env; with
+             the variable unset geldar-ch REFUSES to start ("Env variable is not set"), so the hash goes into ch-hashes.env BEFORE
+             this file reaches the node (README ordering).
+             Grants are explicit and nothing else sits next to them (no access_management keys: they cannot coexist with grants;
+             the stock keys apply only to default). ALTER TTL is the ClickHouse privilege (alias ALTER MODIFY TTL). Round 9
+             (single replica, single shard) logged only is_initial_query = 1 rows, so it does not show which user the
+             replica-side DDL ran as; it shows that ON CLUSTER MODIFY TTL succeeded for this user while default, the cluster
+             entry's user, has no ALTER grants. Behaviour on other replicas is not shown (README item 38). The Distributed tables are altered too, and
+             the grant is on whole databases so both are covered. SELECT on the three
+             databases and on system.* because SigNoz reads engine_full from system.tables for the TTL status call; system.*
+             is wider than system.tables, narrowing is untested [UNV]. CLUSTER is for ON CLUSTER.
+             Ruled in scratch round 9: the logs v2 call (POST /api/v2/settings/ttl, type logs) runs ALTER TABLE signoz_logs.logs_v2 ON
+             CLUSTER ... MODIFY COLUMN _retention_days and was refused with Code 497, so GRANT ALTER MODIFY COLUMN ON signoz_logs.* is
+             added (narrow: signoz_logs only; it is the child of ALTER COLUMN that the error names). Traces and metrics need only ALTER
+             TTL, as before. Existing rows keep their old _retention_days: v2 changes only the column default for new rows, and no
+             materialization (ALTER UPDATE) is granted. Acceptable because nothing is ingested yet.
+             NOT granted: INSERT, CREATE, DROP, TRUNCATE, SYSTEM, REMOTE, SOURCES, TABLE ENGINE, access management, ALTER UPDATE,
+             ALTER DELETE, ALTER COLUMN on other databases, ALTER of settings. No grants on signoz_metadata, signoz_meter or
+             signoz_analytics: whether the retention call touches them is not known [UNV]; the ALTER failure names the missing
+             privilege. Cold storage needs ALTER MODIFY SETTING; unused here [UNV].
+             Networks are all, as for the writer and the reader: the container reaches geldar-ch by name on the query network
+             (geldar-telemetry-query); nothing is published. -->
+        <geldar_signoz_admin>
+            <password_sha256_hex from_env="GELDAR_CH_SIGNOZ_ADMIN_SHA256"/>
+            <profile>geldar_signoz_admin</profile>
+            <quota>default</quota>
+            <grants>
+                <query>GRANT ALTER TTL ON signoz_traces.*</query>
+                <query>GRANT ALTER TTL ON signoz_logs.*</query>
+                <query>GRANT ALTER TTL ON signoz_metrics.*</query>
+                <query>GRANT ALTER MODIFY COLUMN ON signoz_logs.*</query>
+                <query>GRANT SELECT ON signoz_traces.*</query>
+                <query>GRANT SELECT ON signoz_logs.*</query>
+                <query>GRANT SELECT ON signoz_metrics.*</query>
+                <query>GRANT SELECT ON system.*</query>
+                <query>GRANT CLUSTER ON *.*</query>
+            </grants>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+        </geldar_signoz_admin>
     </users>
 </clickhouse>
