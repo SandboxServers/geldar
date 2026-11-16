@@ -23,11 +23,15 @@
          binds it on all interfaces, which would expose it on the shared network. -->
     <interserver_listen_host replace="replace">127.0.0.1</interserver_listen_host>
     <display_name>cluster</display_name>
+    <!-- [AUTH] The replica host is the alias geldar-ch-sql, which exists only on the geldar-telemetry network. ClickHouse reports this
+         address in system.clusters, so every client that uses the cluster (migrator, collector, SigNoz) and geldar-ch itself reach it on
+         the telemetry network. Using geldar-ch here could resolve to the backend IP, which is unroutable from those clients (scratch run
+         report4, step 4). The keeper hostname geldar-ch-keeper is unchanged and resolves only on the backend network. -->
     <remote_servers>
         <cluster>
             <shard>
                 <replica>
-                    <host>geldar-ch</host>
+                    <host>geldar-ch-sql</host>
                     <port>9000</port>
                 </replica>
             </shard>
