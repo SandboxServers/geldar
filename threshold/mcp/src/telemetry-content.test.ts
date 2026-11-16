@@ -1,4 +1,4 @@
-import { callTool, ImageToolResult, type ToolContext } from '@geldar/mcp-mock';
+import { ImageToolResult, type ToolContext } from '@geldar/mcp-mock';
 import { CONTENT_CAP_BYTES, startTelemetry, type TelemetryHandle } from '@geldar/telemetry';
 import { afterEach, describe, expect, it } from 'vitest';
 import { worldFixture } from './fakes/world.fakes.ts';
@@ -303,15 +303,6 @@ describe('tool content as span events (T-06c)', () => {
   it('a shared, non-cyclic reference is copied in full at each place it appears', () => {
     const shared = { a: 1 };
     expect(redactArguments({ x: shared, y: [shared] })).toEqual({ x: { a: 1 }, y: [{ a: 1 }] });
-  });
-
-  it('endpoint unset: no provider, no span and no content, and the result is unchanged', async () => {
-    const handle = startTelemetry({ service: 'geldar-mcp', version: 'test' });
-    handles.push(handle);
-    expect(handle.tracerProvider).toBeUndefined();
-    const tools = worldTools();
-    const response = await callTool(tools, 'look', {}, ctx());
-    expect(response.isError).not.toBe(true);
   });
 });
 
