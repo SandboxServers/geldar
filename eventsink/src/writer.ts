@@ -20,8 +20,11 @@ const XP_OFF: XpWriting = { enabled: false, thresholds: DEFAULT_THRESHOLDS };
 
 /** What the consumer needs from the database; tests substitute a fake. */
 export interface EventWriter {
-  /** Inserts the events in one transaction; rows whose `source_event_id` exists are skipped. Rejects on any DB error. */
-  insertBatch(events: readonly WorldEvent[]): Promise<void>;
+  /**
+   * Inserts the events in one transaction; rows whose `source_event_id` exists are skipped. Rejects on any DB error.
+   * `traceIds[i]` is the W3C trace id of `events[i]`, or null (or absent) when the message carried none.
+   */
+  insertBatch(events: readonly WorldEvent[], traceIds?: readonly (string | null)[]): Promise<void>;
 }
 
 /**
@@ -29,10 +32,11 @@ export interface EventWriter {
  * `ON CONFLICT DO NOTHING` makes redelivery (and duplicates inside one batch) harmless.
  */
 const INSERT_SQL = `
-INSERT INTO events (source_event_id, at, world_day, world_tick, type, agent_id, thinker_id, payload, harness, model)
+INSERT INTO events (source_event_id, at, world_day, world_tick, type, agent_id, thinker_id, payload, harness, model,
+                    trace_id)
 SELECT * FROM unnest(
   $1::text[], $2::timestamptz[], $3::int[], $4::bigint[], $5::text[], $6::text[], $7::text[], $8::jsonb[],
-  $9::text[], $10::text[]
+  $9::text[], $10::text[], $11::text[]
 )
 ON CONFLICT (source_event_id) DO NOTHING`;
 
@@ -47,7 +51,10 @@ export function isPermanentDbError(error: unknown): boolean {
 }
 
 /** Binds the event columns of a batch for INSERT_SQL. */
-function insertParams(events: readonly WorldEvent[]): unknown[] {
+function insertParams(
+  events: readonly WorldEvent[],
+  traceIds: readonly (string | null)[],
+): unknown[] {
   return [
     events.map((e) => e.source_event_id),
     events.map((e) => e.at),
@@ -59,6 +66,7 @@ function insertParams(events: readonly WorldEvent[]): unknown[] {
     events.map((e) => JSON.stringify(e.payload)),
     events.map((e) => e.harness ?? null),
     events.map((e) => e.model ?? null),
+    events.map((_, i) => traceIds[i] ?? null),
   ];
 }
 
@@ -77,10 +85,10 @@ function needsTransaction(event: WorldEvent): boolean {
  */
 export function pgEventWriter(pool: Pool, xp: XpWriting = XP_OFF): EventWriter {
   return {
-    async insertBatch(events) {
+    async insertBatch(events, traceIds = []) {
       if (events.length === 0) return;
       if (!xp.enabled && !events.some(needsTransaction)) {
-        await pool.query(INSERT_SQL, insertParams(events));
+        await pool.query(INSERT_SQL, insertParams(events, traceIds));
         return;
       }
       const client = await pool.connect();
@@ -88,7 +96,7 @@ export function pgEventWriter(pool: Pool, xp: XpWriting = XP_OFF): EventWriter {
       let broken = false;
       try {
         await client.query('BEGIN');
-        await client.query(INSERT_SQL, insertParams(events));
+        await client.query(INSERT_SQL, insertParams(events, traceIds));
         const store = pgProjectionStore(client);
         const audit = pgAuditStore(client);
         const xpStore = pgXpStore(client);
