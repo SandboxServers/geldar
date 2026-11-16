@@ -125,12 +125,12 @@ function jsonText(value: unknown): string | undefined {
 }
 
 /**
- * The shape of a result as captured: a picture (`see`) keeps its caption and the PNG's length, never the
- * base64 bytes (up to ~350 KB). Every other result is captured as it is.
+ * The shape of a result as captured: a picture (`see`) keeps its caption and the length of its base64
+ * text, never the base64 itself (up to ~350 KB). Every other result is captured as it is.
  */
 export function capturedResult(value: unknown): unknown {
   if (value instanceof ImageToolResult)
-    return { caption: value.caption, png_bytes: value.png.length };
+    return { caption: value.caption, png_base64_chars: value.png.length };
   return value;
 }
 

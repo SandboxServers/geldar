@@ -141,7 +141,7 @@ describe('tool content as span events (T-06c)', () => {
     expect(event?.attributes[key]).toBe(false);
   });
 
-  it('captures a picture result as its caption and PNG size, never the base64 bytes', async () => {
+  it('captures a picture result as its caption and base64 length, never the base64 itself', async () => {
     const { recorder, provider, spans } = startWithMemory();
     const png = 'A'.repeat(300_000);
     recorder({
@@ -154,7 +154,7 @@ describe('tool content as span events (T-06c)', () => {
 
     const span = spans[0] as ExportedSpan;
     const text = eventText(span, TOOL_RESULT_EVENT) as string;
-    expect(JSON.parse(text)).toEqual({ caption: 'a view of stone', png_bytes: 300_000 });
+    expect(JSON.parse(text)).toEqual({ caption: 'a view of stone', png_base64_chars: 300_000 });
     expect(text).toContain('a view of stone');
     expect(new TextEncoder().encode(text).byteLength).toBeLessThan(1024);
     const key = `geldar.content.${TOOL_RESULT_EVENT}`;

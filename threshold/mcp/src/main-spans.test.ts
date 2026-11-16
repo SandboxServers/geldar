@@ -21,8 +21,6 @@ const PASSWORD = 'canary-pg-password-7f3a';
 interface ExportedSpan {
   name: string;
   attributes: Record<string, unknown>;
-  events: { name: string }[];
-  spanContext(): { traceId: string; spanId: string };
 }
 
 /** In-memory span exporters: the traces one records what it is sent; logs and metrics are no-ops. */
@@ -108,15 +106,10 @@ async function startWithSpans(url: string | undefined) {
   await session.connect(serverSide);
   const client = new Client({ name: 'main-spans-test', version: '0.0.0' });
   await client.connect(clientSide);
-  const response = await client.callTool({ name: 'look', arguments: {} });
+  await client.callTool({ name: 'look', arguments: {} });
   await client.close();
   await running.stop();
-  return { spans, fetchCalls, response };
-}
-
-/** The names of every span event the exporter received, content events included. */
-function eventNames(spans: ExportedSpan[]): string[] {
-  return spans.flatMap((span) => span.events.map((event) => event.name));
+  return { spans, fetchCalls };
 }
 
 describe('the span wiring in startMcp (T-06)', () => {
@@ -130,6 +123,5 @@ describe('the span wiring in startMcp (T-06)', () => {
     const { spans, fetchCalls } = await startWithSpans(undefined);
     expect(spans).toEqual([]);
     expect(fetchCalls).toEqual([]);
-    expect(eventNames(spans).filter((name) => name.startsWith('geldar.content.'))).toEqual([]);
   });
 });
