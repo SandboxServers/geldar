@@ -140,6 +140,39 @@ describe('scrubText on large adversarial input', () => {
   });
 });
 
+describe('scrubText: credential forms', () => {
+  const R = REDACTED;
+  const b64 = ['dXNlcjpw', 'ZA=='].join('');
+  const cases: [string, string, string][] = [
+    ['JSON Basic', `{"Authorization":"Basic ${b64}"}`, `{"Authorization":"${R}"}`],
+    ['JSON Token lower key', '{"authorization": "Token abcdef"}', `{"authorization": "${R}"}`],
+    ['lower-case bearer with token', 'bearer abc12345', R],
+    ['Bearer colon', 'Bearer: abcdef', R],
+    ['Bearer quoted', 'Bearer "abcdef" next', `${'"'}${R}" next`],
+    ['password with @', 'https://u:p@ss@host/x', `https://${R}@host/x`],
+    ['Proxy-Authorization', 'Proxy-Authorization: Basic abc', R],
+    ['bare 16+ token', `Authorization: ${'ab12'.repeat(5)}`, R],
+  ];
+  it.each(cases)('redacts %s', (_name, input, expected) => {
+    expect(scrubText(input)).toBe(expected);
+  });
+
+  const kept: [string, string][] = [
+    ['curl keeps quote and url', 'curl -H "Authorization: Bearer abc" http://x'],
+    ['prose authorization', 'The authorization: grants access to everyone'],
+    ['bearer of bad news', 'Bearer of bad news'],
+    ['lower prose bearer', 'a bearer wisdom story'],
+    ['plain email', 'user@host and a@b'],
+  ];
+  it.each(kept)('keeps %s', (name, input) => {
+    if (name === 'curl keeps quote and url') {
+      expect(scrubText(input)).toBe(`curl -H "${REDACTED}" http://x`);
+    } else {
+      expect(scrubText(input)).toBe(input);
+    }
+  });
+});
+
 describe('errorFields', () => {
   it('hides a token in a thrown object message and its stack', () => {
     const err = new TypeError(`bad ${token}`);

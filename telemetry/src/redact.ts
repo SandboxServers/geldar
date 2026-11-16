@@ -15,21 +15,33 @@ const UNREADABLE_MARK = '[unreadable]';
 // Mirrors TOKEN_PATTERN in threshold/mcp/src/store/token-hash.ts (`^gmcp-[0-9a-f]{64}$`), unanchored
 // so it finds a token inside text. Not imported: this package does not depend on threshold.
 const MCP_TOKEN = /gmcp-[0-9a-f]{64}/g;
-// `Bearer <run>`: the word must start at a word boundary, and a non-space run must follow.
-// Case-sensitive on purpose: the scheme is written `Bearer`, and lower-case prose ("the bearer of") stays.
-const BEARER = /\b(?:Bearer|BEARER)\s+[^\s"',;]+/g;
-// An Authorization header value, up to the end of the line.
-const AUTH_HEADER = /\bAuthorization\s*:[^\r\n]*/gi;
-// URL userinfo: `scheme://user:pass@`. The password part is required, so a plain `a@b` is untouched.
-// The scheme is left-anchored (no letter, digit, + . - before it) and at most 32 characters, so a long
-// run with no `://` is rejected in constant time per start instead of rescanned from every position.
-const URL_USERINFO = /(?<![a-z0-9+.-])([a-z][a-z0-9+.-]{0,31}:\/\/)[^\s/@:]*:[^\s/@]*@/gi;
+// An Authorization or Proxy-Authorization header (also as a quoted JSON pair, `"Authorization":"..."`).
+// Group 1 is the head up to the value. The value is either a scheme (Basic, Bearer, Token, Digest,
+// Negotiate, NTLM) and the rest up to a quote or the end of the line, or a bare run of 16 or more
+// token characters with at least one digit or symbol. Prose such as `authorization: grants access` stays.
+const AUTH_HEADER =
+  /\b((?:Proxy-)?Authorization["']?[ \t]*[:=][ \t]*["']?)(?:(?:Basic|Bearer|Token|Digest|Negotiate|NTLM)[ \t]+[^\r\n"']*|(?=[A-Za-z0-9._~+/=-]{16})(?=[A-Za-z0-9._~+/=-]*[\d._~+/=-])[A-Za-z0-9._~+/=-]+)/gi;
+// `bearer <run>` (also `Bearer: <run>` and `Bearer "<run>"`), case-insensitive because HTTP schemes are.
+// The run is 6 or more characters and ends at a space, quote, comma or semicolon. `Bearer` or `BEARER`
+// redacts any such run; another case redacts only a run with a digit or `_~+/=` or one of 20+ characters,
+// so `the bearer of bad news` and `bearer wisdom` stay.
+const BEARER = /\b(bearer)(?:[ \t]*[:=][ \t]*|[ \t]+)(["']?)([^\s"',;]{6,})/gi;
+const BEARER_PROOF = /[\d_~+/=]/;
+// URL userinfo: `scheme://user:pass@`. The password part is required, so a plain `a@b` is untouched, and
+// it runs to the last `@` before the next `/` or space, so `u:p@ss@host` hides `ss` too. The scheme is
+// left-anchored (no letter, digit, + . - before it) and at most 32 characters, so a long run with no
+// `://` is rejected in constant time per start instead of rescanned from every position.
+const URL_USERINFO = /(?<![a-z0-9+.-])([a-z][a-z0-9+.-]{0,31}:\/\/)[^\s/@:]*:[^\s/]*@/gi;
 
-/** The text with bearer strings, Authorization values, MCP tokens and URL userinfo replaced. */
+/** The text with Authorization values, bearer strings, MCP tokens and URL userinfo replaced. */
 export function scrubText(text: string): string {
   return text
-    .replace(AUTH_HEADER, REDACTED)
-    .replace(BEARER, REDACTED)
+    .replace(AUTH_HEADER, (_match, head: string) => (/["']/.test(head) ? head + REDACTED : REDACTED))
+    .replace(BEARER, (match, word: string, quote: string, run: string) =>
+      word === 'Bearer' || word === 'BEARER' || BEARER_PROOF.test(run) || run.length >= 20
+        ? quote + REDACTED
+        : match,
+    )
     .replace(MCP_TOKEN, REDACTED)
     .replace(URL_USERINFO, `$1${REDACTED}@`);
 }
