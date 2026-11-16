@@ -15,6 +15,7 @@
     "@geldar/contract": "workspace:*",
     "@geldar/mcp-mock": "workspace:*",
     "@geldar/repo-checks": "workspace:*",
+    "@geldar/telemetry": "workspace:*",
     "@modelcontextprotocol/sdk": "1.32.2",
     "@nats-io/jetstream": "3.4.0",
     "@nats-io/kv": "3.4.0",
