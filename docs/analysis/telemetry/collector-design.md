@@ -1,72 +1,87 @@
 # Geldar Collector: design (T-02)
 
-Status: design only, written 2026-11-15 for card T-02 of the telemetry survey. Nothing here is built, merged or switched on. No compose overlay or deploy file is added by this document; those come in the T-02 implementation packet, after the owner approvals listed in section 14.
+Status: design only. Written 2026-11-15 for card T-02 of the telemetry survey; aligned on 2026-11-16 with decision 0352 option B. Nothing here is built, merged or switched on. No compose overlay or deploy file is added by this document; those come in the implementation packets, after the owner approvals in section 14.
 
-Governing records: [0350](../../decisions/0350-telemetry-scope-and-full-capture.md) (telemetry scope, full capture, one-year retention, 100 GB budget, operator-only readers), [0082](../../decisions/0082-colo-compose-network-and-limits.md) (compose layout, limits, loopback binds, log limits), [0071](../../decisions/0071-public-endpoints-and-ports.md) and [0096](../../decisions/0096-public-topology-as-built.md) (public endpoints, shared Caddy), [0260](../../decisions/0260-body-container-control-by-host-helper.md) (no Docker socket in containers), [0088](../../decisions/0088-metrics-exporters-and-replay-window.md) (metric labels, amended by 0350).
+Governing records: [0350](../../decisions/0350-telemetry-scope-and-full-capture.md) (scope, full capture, one-year retention, 100 GB budget, operator-only readers; clarified 2026-11-16), [0352](../../decisions/0352-telemetry-dedicated-clickhouse-database.md) (option B: Geldar-owned ClickHouse server and SigNoz stack on a Geldar-owned network; caps, budget, TTL, loopback UI, read-only user), [0082](../../decisions/0082-colo-compose-network-and-limits.md) (compose layout, limits, log limits), [0071](../../decisions/0071-public-endpoints-and-ports.md) and [0096](../../decisions/0096-public-topology-as-built.md) (public endpoints, shared Caddy), [0260](../../decisions/0260-body-container-control-by-host-helper.md) (no Docker socket in containers), [0088](../../decisions/0088-metrics-exporters-and-replay-window.md) (metric labels, amended by 0350).
 
-Source for the facts: the telemetry survey of 2026-11-15, sections 1.2, 1.3, 4.1, 4.2, 4.5, 6, 7 (cards T-02, T-04, T-09, T-10, T-15), 9.6 and 9.7. Anything not checked in this session is marked **UNVERIFIED**.
+Source for the facts: the telemetry survey of 2026-11-15 (sections 1.2, 1.3, 4.1, 4.2, 4.5, 6, 7, 9.6, 9.7) and the 0352 fit check (read-only node measurement, 2026-11-15). Anything not checked in this session is marked **UNVERIFIED**. Values this document proposes are marked **PROPOSED**.
 
 ## 1. Scope and non-goals
 
-In scope: the `otel-gateway` service on the Colo (the Geldar Collector), its image, its network placement, its pipelines, its caps, the host-metrics path without a socket, the NATS and Postgres scrape paths, the Mind-host route through Caddy, the budget and retention settings, the node steps with rollout and rollback, verification and risks.
+In scope: the Geldar Collector gateway on the Colo (`geldar-gateway`, formerly `otel-gateway`); the Geldar-owned SigNoz stack on the Geldar network (ClickHouse server, keeper if needed, migrator, query service, SigNoz-side collector, UI); host metrics; NATS and Postgres scrape paths; caps, budget, alarms, retention; rollout and rollback; verification; risks.
 
-Out of scope: the other tenant's SigNoz stack (its config is never changed by Geldar), the SDK package (T-03), the Paper agent (T-11), the Mind-side exporter (T-13), dashboards (T-17).
+Out of scope: the other tenant's SigNoz stack, ClickHouse, network and configuration (never changed, never joined; 0352, 0350 item 4); the SDK (T-03); the Paper agent (T-11); the Mind-side exporter (T-13); dashboards (T-17). The Mind-host ingest route (section 9) stays an open owner question.
 
 ## 2. Topology
 
 ```
-Colo node (16 CPUs, 125 GB RAM at the 2026-11-15 sample)
-  network geldar-colo (compose/colo.yml)
-    nats  <-- nats-exporter (network_mode: service:nats; metrics on the nats name)   [T-09]
+Colo node (16 CPUs, 128 GB RAM, /mnt/nvme 1.8 TB; fit check 2026-11-15, 0352)
+  network geldar-colo (compose/colo.yml and compose/colo-otel.yml)
+    nats <-- nats-exporter (network_mode: service:nats)                              [T-09]
     postgres <-- postgresql receiver, monitoring role                                 [T-10]
-    geldar services, paper, velocity --OTLP/HTTP (colo network)--> otel-gateway:4318
-    otel-gateway --loopback publish 127.0.0.1:<port>:4318--> shared Caddy (host network)   [OPEN QUESTION, section 9: no Caddy change by owner ruling 2026-11-16]
-  network <SigNoz network, owned by another tenant>  (joined by otel-gateway only)
-    otel-gateway --OTLP gRPC--> signoz-otel-collector:4317 --> ClickHouse (shared)
-  host /proc, /sys read-only (host_metrics)                                          [section 8]
-  SigNoz UI (Geldar stack, 0352): bound to 127.0.0.1 on the node only; operator reaches it by SSH tunnel (no Caddy route)
+    Geldar services, paper, velocity --OTLP/HTTP--> geldar-gateway:4318
+    geldar-gateway --127.0.0.1:<port>:4318--> Mind-host route, ONLY if section 9 is decided (no Caddy change by ruling 2026-11-16)
+  network geldar-telemetry (new, Geldar-owned; compose/colo-telemetry.yml)           [PROPOSED name]
+    geldar-gateway --OTLP gRPC--> geldar-signoz-otelcol:4317 --> geldar-ch (ClickHouse 26.3)
+    geldar-signoz-query --> geldar-ch;  geldar-signoz-ui --> geldar-signoz-query
+    geldar-signoz-migrator (one-shot) --> geldar-ch
+    geldar-ch-keeper (only if the keeper rule in section 4 needs it)
+    published: geldar-signoz-ui 127.0.0.1:<ui port>:<ui port inside>; geldar-ch 127.0.0.1:<http port>:8123 (optional read path)
+  host /proc, /sys, /mnt/nvme (read-only): hostmetrics (section 8)
 
-Mind host (owner's desktop today)
-  otel-agent --HTTPS + bearer token--> https://otel.<domain> (Caddy) --> otel-gateway  [section 9, OPEN QUESTION, not decided]
+Operator workstation: SSH local port forward to the node's 127.0.0.1 ports (UI; ClickHouse HTTP if used). No Caddy route.
+Other tenant's stack (its network, its ClickHouse, its collector): not joined, not published to, not changed (0352).
 ```
 
-Rules this follows: no service publishes anything except the one loopback port the Caddy route needs (section 9); no container mounts the Docker socket (section 8); the other tenant's containers and config are untouched (0350 item 4). Owner ruling 2026-11-16: no change to, and no restart of, the shared Caddy; the SigNoz UI has no Caddy route. The Mind-host path in section 9 conflicts with that ruling and is open.
+Rules: no service publishes a port except the loopback ports named here; no container mounts the Docker socket (section 8); the other tenant's containers and configuration are untouched; no change to, and no restart of, the shared Caddy (ruling 2026-11-16). Loopback port numbers are chosen at implementation and checked free by read-only `ss` (N1). **UNVERIFIED**: no free port has been checked.
 
-## 3. Image
+## 3. Images
 
-- Image: `otel/opentelemetry-collector-contrib:0.164.0`, pinned by digest.
-- Digest recorded by the survey on 2026-11-15: `sha256:340c9ca6a36617084c6661bdc4f0fe92b7cda5a805d61673ec8db375fddc522b`. **UNVERIFIED for this packet**: the digest must be read from the registry at implementation time, compared with the survey value, and the comparison recorded in the T-02 report. If they differ, stop and ask.
-- Release date of 0.164.0: 2026-10-27 (survey, 9.0). The survey lists 0.165.0 as newer and not yet two weeks old at the time of the survey; do not pick it.
-- Component names: use the snake_case names of 0.164 (`file_log`, `host_metrics`, `resource_detection`); the old names are deprecated aliases (survey 9.7).
-- Components not used: `docker_stats`, the Docker resource detector, `tail_sampling` (survey 4.5; 0350 keeps 100% of traces).
-- Image user, read-only root filesystem and `cap_drop: ALL` are wanted; whether the contrib image runs as a non-root user **UNVERIFIED** (check `docker inspect` of the pulled image before the implementation packet).
+- Gateway: `otel/opentelemetry-collector-contrib:0.164.0`, pinned by digest. The survey digest is `sha256:340c9ca6a36617084c6661bdc4f0fe92b7cda5a805d61673ec8db375fddc522b`. **UNVERIFIED for this packet**: read the digest from the registry at implementation time, compare, and record the comparison in the T-02 report. If they differ, stop and ask.
+- Release 0.164.0 dated 2026-10-27 (survey 9.0); do not pick 0.165.0 until its two-week window passes.
+- Use the snake_case component names of 0.164 (`file_log`, `host_metrics`, `resource_detection`); the old names are deprecated aliases (survey 9.7). Not used: `docker_stats`, the Docker resource detector, `tail_sampling` (0350 keeps 100% of traces).
+- Whether the contrib image runs as non-root is **UNVERIFIED** (check `docker inspect` of the pulled image).
+- Stack images (**PROPOSED**, all **UNVERIFIED**): ClickHouse server 26.3 (version named by 0352); one SigNoz release for query, UI, collector and migrator, at or above 0.135 if V2 dashboards are wanted (0352 risk 2). The exact tags and digests are chosen at N4 and N5, at least two weeks old, and must match the MCP server version (section 18).
 
-## 4. Services, network and ports
+## 4. Services, network, ports and caps
 
-| Service | Network | Published | Caps (0082 pattern) | Notes |
+Gateway and exporter:
+
+| Service | Networks | Published | Caps (cpus, mem, memswap, pids) | Notes |
 |---|---|---|---|---|
-| `otel-gateway` | `geldar-colo` and the SigNoz network | `127.0.0.1:<port>:4318` only (literal; section 9) | 0.5 CPU, 512m, 128 pids | `GOMEMLIMIT=400MiB`, read-only root, `cap_drop: ALL`, `no-new-privileges`, healthcheck on the in-container health extension |
-| `nats-exporter` | none of its own (`network_mode: service:nats`) | none | 0.1 CPU, 64m, 64 pids (pids **UNVERIFIED** choice) | scrapes NATS monitor on its loopback inside the NATS namespace; its metrics port is reached as `nats:<port>` on the colo network |
+| `geldar-gateway` | `geldar-colo`, `geldar-telemetry` | none, or one loopback port if section 9 is decided | 0.5, 512m, 512m, 256 | `GOMEMLIMIT=400MiB`, read-only root, `cap_drop: ALL`, healthcheck on the in-container health extension |
+| `nats-exporter` | `network_mode: service:nats` | none | 0.1, 64m, 64m, 64 (pids **UNVERIFIED** choice) | scrapes the NATS monitor on loopback inside the NATS namespace |
+
+Geldar stack (0352 table; all on `geldar-telemetry`; **PROPOSED** caps, not measured):
+
+| Container | Role | cpus | mem_limit | memswap | pids | Host disk path |
+|---|---|---|---|---|---|---|
+| `geldar-ch` | ClickHouse 26.3, Geldar server | 3.0 | 8g | 8g | 1024 | `/mnt/nvme/geldar-telemetry/clickhouse` (data, logs, config) |
+| `geldar-ch-keeper` | Keeper, only if needed (rule below) | 0.5 | 1g | 1g | 256 | `/mnt/nvme/geldar-telemetry/keeper` |
+| `geldar-signoz-migrator` | schema migrator, one-shot | 0.5 | 512m | 512m | 128 | none |
+| `geldar-signoz-query` | query service (MCP and UI back end) | 1.0 | 1g | 1g | 256 | `/mnt/nvme/geldar-telemetry/query` |
+| `geldar-signoz-otelcol` | SigNoz collector, writes to `geldar-ch` | 0.5 | 1g | 1g | 256 | none (bounded in-memory queue) |
+| `geldar-signoz-ui` | SigNoz frontend, loopback only | 0.25 | 256m | 256m | 64 | none |
 
 Rules:
-- The gateway's gRPC port 4317 is not published (the survey's 4.1 design, kept). 4318 is reachable from the colo network by name, and from the host only through the one loopback publish.
-- The loopback publish is a **change to T-02's text**. T-02 says "OTLP on the `colo` network only". Caddy runs in host networking (`deploy/caddy/README.md`, 0096 item 1), so it can reach a Geldar service only through a loopback publish, as MCP (8788) and Glass (8787) already do (0096 item 2). The loopback check (`tools/repo-checks/src/loopback-ports.ts`) must allow exactly that one entry in the new overlay, the same way it allows the public Minecraft entry in `compose/colo-public.yml`. **Owner decision** (finding F1).
-- The loopback port number is chosen at implementation time and checked free on the node (read-only `ss`), like 25567 in 0082. **UNVERIFIED**: no free port has been checked.
-- Logging for every service: the 0082 anchor (`json-file`, `max-size` 10m, `max-file` 3). No service uses the default logging driver.
-- Healthchecks: `restart: unless-stopped` (0082).
-- Compose file: a new overlay `compose/colo-otel.yml`, merged over `compose/colo.yml` the way `colo-kino.yml` is (its header says "Merge it over compose/colo.yml only when..."). It is gated by env (see section 15) so the default `colo.yml` stays as it is. Geldar's services get the endpoint variable from the overlay, and the SDK stays off when the variable is unset (T-03).
-- The gateway is on no default network: `networks: [colo, signoz]`, with `signoz` declared `external: true` and named by a variable (`GELDAR_SIGNOZ_NETWORK`). The name is not in the repo, and the script refuses to start when it is unset.
+- Totals: the long-running containers (ClickHouse, keeper if used, query, SigNoz collector, gateway) are 5.5 CPUs and 11.5 GiB at the caps. With the UI and the one-shot migrator: 6.25 CPUs and 12.25 GiB. These are ceilings, not usage (0352 fit check: 29 GB of 128 GB used on 2026-11-15).
+- **Conflict, F11**: 0350 item 9 and 0082 give the gateway 128 pids; the 0352 table gives 256. This design uses 256 (the 0352 table, as the brief directs). The orchestrator reconciles it.
+- Keeper rule (0352, **UNVERIFIED** until checked on SigNoz 0.135 or later and ClickHouse 26.3): prefer no keeper if the migrator's schema runs on one node; otherwise embedded ClickHouse Keeper inside `geldar-ch` if supported; use `geldar-ch-keeper` only if neither works. The other tenant's `signoz-zookeeper-1` is not used.
+- Every container: `json-file` log limits as in 0082 (this document's anchor is 10m and 3 files, **UNVERIFIED** against the 0082 text at implementation), `restart: unless-stopped` except the migrator, `memswap` equal to `mem_limit`.
+- Gateway networks: `geldar-colo` and `geldar-telemetry`, both Geldar-owned. No external network, so no network name is passed in by variable.
+- Gateway publish: `127.0.0.1:<port>:4318` only if section 9 is decided. Otherwise none.
+- `geldar-ch` publishes only `127.0.0.1` HTTP, and only if the optional SSH-tunnelled read path is used (0352). No ClickHouse native port is published.
 
 ## 5. Pipelines
 
-The Collector's `service.pipelines` (order matters; `memory_limiter` first in every pipeline; sketch below, not a final file):
+The Collector's `service.pipelines` (order matters; `memory_limiter` first in every pipeline; a sketch, not a final file):
 
 ```yaml
 receivers:
   otlp:
     protocols:
-      grpc: {endpoint: 0.0.0.0:4317}   # colo network only; not published
-      http: {endpoint: 0.0.0.0:4318}   # colo network; one loopback publish for Caddy
+      grpc: {endpoint: 0.0.0.0:4317}   # geldar-colo and geldar-telemetry only; not published
+      http: {endpoint: 0.0.0.0:4318}
   prometheus:
     config:
       scrape_configs:
@@ -100,18 +115,16 @@ processors:
     error_mode: ignore
     logs:
       log_record:
-        # Drop the RCON client lifecycle lines; keep the [Rcon: ...] command echoes (survey 5.2).
-        - 'IsMatch(body, ".*Thread RCON Client .*(started|shutting down).*")'
+        - 'IsMatch(body, ".*Thread RCON Client .*(started|shutting down).*")'   # keep [Rcon: ...] echoes
     traces:
       span:
-        - 'attributes["http.route"] == "/healthz"'   # health-check spans; route name to confirm
+        - 'attributes["http.route"] == "/healthz"'   # route name to confirm
   transform/redact:
     error_mode: ignore
     log_statements:
       - context: log
         statements:
-          - 'replace_pattern(body, "(?:\\d{1,3}\\.){3}\\d{1,3}", "<addr>")'   # IPv4 in Paper's "logged in with entity id ... [/<address>]" lines
-          # plus an IPv6 pattern; the exact expression is written and tested in T-02
+          - 'replace_pattern(body, "(?:\\d{1,3}\\.){3}\\d{1,3}", "<addr>")'   # IPv4 in Paper's login lines; IPv6 pattern written in T-02
           - 'delete_matching_keys(attributes, "(?i)(token|secret|password|passwd|authorization|cookie|api[_-]?key)")'
           - 'delete_key(attributes, "user.email")'
     trace_statements:
@@ -126,10 +139,10 @@ processors:
           # 0088 and 0350 item 1: metrics keep no life, player or token label
           - 'delete_key(attributes, "geldar.life_id")'
           - 'delete_key(attributes, "player_id")'
-  batch: {send_batch_size: 2048, timeout: 5s}   # proposal; not tuned
+  batch: {send_batch_size: 2048, timeout: 5s}   # PROPOSED; not tuned
 exporters:
-  otlp/signoz:
-    endpoint: ${env:GELDAR_SIGNOZ_OTLP_ENDPOINT}   # the SigNoz collector's gRPC name on that network; UNVERIFIED
+  otlp/geldar_signoz:
+    endpoint: ${env:GELDAR_SIGNOZ_OTLP_ENDPOINT}   # geldar-signoz-otelcol:4317 on geldar-telemetry; port UNVERIFIED
     tls: {insecure: true}
     compression: gzip
     timeout: 5s
@@ -141,52 +154,45 @@ extensions:
 service:
   extensions: [health_check, file_storage]
   pipelines:
-    traces:  {receivers: [otlp], processors: [memory_limiter, resource, filter/noise, transform/redact, batch], exporters: [otlp/signoz]}
-    logs:    {receivers: [otlp], processors: [memory_limiter, resource, filter/noise, transform/redact, batch], exporters: [otlp/signoz]}
-    metrics: {receivers: [otlp, prometheus, postgresql, hostmetrics], processors: [memory_limiter, resource, transform/metric_labels, batch], exporters: [otlp/signoz]}
+    traces:  {receivers: [otlp], processors: [memory_limiter, resource, filter/noise, transform/redact, batch], exporters: [otlp/geldar_signoz]}
+    logs:    {receivers: [otlp], processors: [memory_limiter, resource, filter/noise, transform/redact, batch], exporters: [otlp/geldar_signoz]}
+    metrics: {receivers: [otlp, prometheus, postgresql, hostmetrics], processors: [memory_limiter, resource, transform/metric_labels, batch], exporters: [otlp/geldar_signoz]}
 ```
 
 Notes:
-- OTTL function names and the escaping of regular expressions inside YAML are **UNVERIFIED** against 0.164.0; the T-02 packet checks each statement with the Collector's own config validation (`otelcol validate`, run inside the image) and a unit fixture that feeds a Paper log line with an address and a `Thread RCON Client` line through the pipeline.
-- `redaction` (alpha) is not used unless the `transform` version proves harder to read (survey 4.5).
-- The filter for health checks is kept as a placeholder until the health route name is read from the code.
-- Trace context is kept as is: the gateway forwards `traceparent` and `tracestate`, not Baggage (0350 item 7).
+- OTTL function names and regex escaping are **UNVERIFIED** against 0.164.0. T-02 checks each statement with `otelcol validate` (run inside the image) and a fixture that feeds a Paper address line and a `Thread RCON Client` line through the pipeline.
+- Trace context is forwarded as `traceparent` and `tracestate`, not Baggage (0350 item 7).
+- The exporter's only downstream is the Geldar collector. No other tenant's collector is named anywhere in this file.
 
 ## 6. Sending queue and disk cap
 
-- `file_storage` holds the persisted queue on a named volume, `/var/lib/otelcol/queue`. A restart of SigNoz loses nothing that is queued (survey 4.1).
-- Survey 9.7: the exporter queue holds `queue_size` requests (default 1,000) and, with `block_on_overflow: false`, drops when full. The survey's 1 GiB volume is a proposal.
-- **Finding F2**: `file_storage` and `sending_queue` in 0.164.0 cap items, not bytes (**UNVERIFIED** that no byte cap exists). The disk cap therefore needs a bound on the volume itself. Two options, pick one in T-02:
-  - a fixed-size filesystem for the queue (a loop-mounted image of 1 GiB under a directory the root operator creates; a node step, section 17);
-  - or a `queue_size` derived from the largest request: `queue_size = 1 GiB / largest request bytes`, with the largest request measured in the T-02 soak test (the proposal's 2,048-span batch at about 1.2 KB a span is about 2.5 MB, which gives about 400 items for 1 GiB; **UNVERIFIED** estimate).
-- The disk alarm in section 13 covers the node; a separate alarm on the queue directory is recommended (`system.filesystem.utilization` for its mount point).
+- `file_storage` holds the persisted queue on a named volume, `/var/lib/otelcol/queue`. A restart of the Geldar collector loses nothing that is queued (survey 4.1).
+- `queue_size` counts requests (default 1,000); with `block_on_overflow: false` the queue drops when full (survey 9.7).
+- **F2**: `file_storage` and `sending_queue` count items, not bytes, in 0.164.0 (**UNVERIFIED** that no byte cap exists). The disk cap is therefore a bound on the volume itself: a fixed-size volume (N2) with `queue_size = cap_bytes / largest_request_bytes` (about 400 items for 1 GiB at 2.5 MB a request; **UNVERIFIED** estimate). Options and their recommendation are in `collector-options.md` F2.
+- Alarm on the queue directory's `system.filesystem.utilization` (section 13).
 
 ## 7. Caps, logs and hardening
 
-- `deploy.resources.limits`: `cpus: "${GELDAR_COLO_OTEL_GATEWAY_CPUS:-0.5}"`, `memory: "${GELDAR_COLO_OTEL_GATEWAY_MEM:-512m}"`, `pids: 128` (0082 naming pattern; the loopback-ports check is updated for the new service in the same packet).
-- `GOMEMLIMIT=400MiB` (80% of 512 MiB, survey 9.7). The `memory_limiter` soft limit is 400 MiB with an 80 MiB spike; the Go limit is set so the runtime collects before the limiter refuses.
-- Log limits: the 0082 anchor (`json-file`, 10 MiB, 3 files). Survey 9.5 notes Paper and others already log heavily; the gateway's own logs are at `warn`.
+- `deploy.resources.limits`: `cpus: "${GELDAR_COLO_OTEL_GATEWAY_CPUS:-0.5}"`, `memory: "${GELDAR_COLO_OTEL_GATEWAY_MEM:-512m}"`, `pids: 256` (F11, section 4).
+- `GOMEMLIMIT=400MiB` (80% of 512 MiB). The `memory_limiter` soft limit is 400 MiB with an 80 MiB spike.
+- Gateway logs at `warn`. Log limits as section 4.
 - Read-only root, `tmpfs` for `/tmp`, the queue volume as the only writable path, `cap_drop: ALL`, `security_opt: [no-new-privileges:true]`.
-- The config directory is a read-only bind of `deploy/otel/gateway.yaml`, with the secrets directory bind read-only (`/run/secrets/otel-pg.txt`, the SigNoz network variable only in the environment).
-- No `docker.sock` mount in any Geldar telemetry container (0260 and 0350 item 9). The rule is checked by a repo test on the overlay, not left to review.
+- Config is a read-only bind of `deploy/otel/gateway.yaml`. Secrets are read-only binds; the gateway has no ClickHouse credential.
+- No `docker.sock` mount in any Geldar telemetry container (0260, 0350 item 9), checked by a repo test on the overlays.
 
 ## 8. Host metrics without the Docker socket
 
-The gateway needs two kinds of host data: node-wide (`hostmetrics`, read-only `/proc` and `/sys`, plus the root mount for filesystems) and per-container (CPU, memory and pids of each Geldar container, for the caps check in section 16).
+Node-wide: bind the host `/proc` and `/sys` read-only only as the options in `collector-options.md` F3 allow (recommended: container procfs for CPU, memory and load; `/mnt/nvme` bound read-only for the disk alarm; the process scraper disabled). **UNVERIFIED** that `hostmetrics` honours `root_path` for every scraper in 0.164.0, and whether the container's `/proc/net/dev` shows node values.
 
-Node-wide: mount the host's `/proc`, `/sys` and the root filesystem read-only under `/hostfs`, and set `root_path: /hostfs`. **Finding F3**: mounting host `/proc` gives the gateway the host's process list (command lines included). Disable the process scraper (it is not in the list above) and check that no other host file is reachable. **UNVERIFIED** that `hostmetrics` honours `root_path` for every scraper in 0.164.0 (survey 9.1 and the `hostmetrics` page say yes for the listed scrapers).
+Per-container (the caps check in section 16, for both Geldar projects): `docker_stats` needs the socket and is ruled out (0260, 0350 item 9). Two substitutes:
+- **Option A, read-only cgroup reads**: mount the host cgroup tree read-only and read `cpu.stat`, `memory.current` and `pids.current` under the per-container scopes (cgroup v2 `docker-<id>.scope`, **UNVERIFIED** on the node). Cost: a custom reader to review.
+- **Option B, a read-only stats route on the host helper**: the helper already holds the socket (0260). It adds one loopback-only `GET` route for the Geldar projects. The gateway scrapes it with the contrib `prometheus` receiver. Cost: a root-run unit change with its own review (N15).
 
-Per-container: the contrib `docker_stats` receiver needs the socket and is ruled out (0260, 0350 item 9). Two substitutes:
-
-- **Option A, read-only cgroup reads.** Mount the host cgroup tree read-only and read `cpu.stat`, `memory.current` and `pids.current` under the per-container scope directories (cgroup v2 layout `system.slice/docker-<full container id>.scope`, **UNVERIFIED** on the node). The container id is mapped to a service name by a file the deploy script writes from `docker compose ps` run by the operator, not by the container. Cost: a small custom reader that is not a contrib receiver; more code to review.
-- **Option B, a read-only stats endpoint on the host helper.** The host helper already holds the Docker socket (0260 names it the only holder). It adds one loopback-only route that answers `GET` of container stats for the Geldar project, and nothing else. The gateway scrapes it with the `prometheus` receiver, which is contrib code. Cost: a change to a root-run unit, which needs its own review and a packet of its own.
-- **Option C (not recommended)**: a socket proxy container. It is a second holder of the socket, which breaks 0260's single-holder rule.
-
-**Recommendation: Option B.** The helper is already the designated holder, the gateway gets no socket and no custom parser, and the new route is read-only and limited to one project. Option A is the fallback if the owner rules that the helper must not grow. The choice is an owner decision; this document does not make it for the owner. (Operator checks with `docker stats` need no change; the operator uses the socket from the workstation shell, not from a container.)
+**Recommendation: Option B**, with Option A as the fallback if the owner rules that the helper must not grow. The owner decides. Operator checks with `docker stats` need no change: they run from the workstation shell, not from a container.
 
 ## 9. Mind-host route through Caddy (T-15)
 
-**Status (owner ruling, 2026-11-16): OPEN QUESTION, NOT DECIDED.** The owner ruled that the shared Caddy is not changed or restarted. The route below needs a new Caddy site and a `caddy reload`, so it conflicts with that ruling. Until the owner decides, T-15 and N6 are not requested, and the amendments in section 10 apply only if the owner picks a Caddy route. The alternatives and a recommendation are at the end of this section. The UI is not part of this question: it has no Caddy route (section 2).
+**Status (owner ruling, 2026-11-16): OPEN QUESTION, NOT DECIDED.** The owner ruled that the shared Caddy is not changed or restarted. The route below needs a new Caddy site and a `caddy reload`, so it conflicts with that ruling. Until the owner decides, T-15 and the Caddy step are not requested (section 14 has no Caddy step), and the amendments in section 10 apply only if the owner picks a Caddy route. The alternatives and a recommendation are at the end of this section. The UI is not part of this question: it has no Caddy route (section 2).
 
 The text below is the Caddy design as written on 2026-11-15, kept for the owner's comparison.
 
@@ -259,23 +265,21 @@ The ruling of 2026-11-16 says no change to the shared Caddy. The route above nee
 
 **Recommendation (for the owner, not decided): A with a dedicated restricted key; C as the interim until the owner approves A.** A keeps the trust path the operator already has and changes no shared proxy. C is the fallback if the owner will not allow a node key on a Mind host. B is not recommended unless the owner wants a VPN for other reasons. No node step, key or Caddy change is requested by this document.
 
-## 10. Portscan, expected endpoints and decision amendments
+## 10. Portscan, loopback allow-list and decision amendments
 
-- `tools/portscan`: the expected open-port list does not change if the route rides the existing HTTPS listener (0071). Confirm by running the scan after the Caddy reload; a new listener would be a new port and needs its own decision.
-- The expected public hostname list changes: add `otel.<domain>` (owner-held value, not in the repo). Where the list lives in the repo is named in the T-15 packet; **UNVERIFIED** location.
-- The loopback-ports check changes: allow exactly one new publish, `127.0.0.1:<port>:4318` on `otel-gateway` in `compose/colo-otel.yml`; allow `otel-gateway` with limits; refuse any other publish. This is the same pattern as `compose/colo-public.yml` (0096 item 5).
-- **Amend 0071** (public endpoints and ports): the OTLP ingest is an additional public hostname on the existing HTTPS ingress, authenticated by bearer token; no new TCP port.
-- **Amend 0096** (public topology as built): add the `otel` route to the list of Caddy sites, with its kill switch.
-- **0350** already records the amendments of 0088 (labels, content) and the public ingress; this document adds no further 0350 change, but 0350's open item "owner approvals still needed" stays open until section 14 is approved.
+- `tools/portscan`: the expected open-port list does not change while no Caddy route is added. If section 9 is decided as a Caddy route, confirm by scan after the reload; a new listener would need its own decision.
+- The loopback-ports check (`tools/repo-checks/src/loopback-ports.ts`) allows exactly these publishes, each named in its overlay and nothing else: the gateway's loopback port (only if section 9 is decided), the SigNoz UI's `127.0.0.1` port, and the optional ClickHouse HTTP `127.0.0.1` port. Each entry carries a limits check. **UNVERIFIED** port numbers.
+- Amend 0071 and 0096 only if section 9 picks a Caddy route; the expected public hostname list then gains `otel.<domain>` (owner-held value, not in the repo).
+- 0350 needs no further amendment for this design: item 4 is unchanged (no change to the other tenant), and 0352 records the stack decision.
 - The spec is not edited (0073).
 
 ## 11. NATS monitor (T-09)
 
-- The `nats-exporter` runs in the NATS network namespace (`network_mode: service:nats`) and reads the monitor on loopback there. It is scraped by the gateway as `nats:<exporter port>` on the colo network.
-- Scope: `/varz` and `/jsz` only. The exporter's flags must enable only those endpoints (**UNVERIFIED** flag names for the pinned release, 0.20.3 per the survey); `/subsz`, `/connz` and `/routez` stay off, because `/subsz` reveals which agents are watched (0350 item 9, `docs/runbooks/kino.md`).
-- The NATS monitor port is not published (the exporter reads it inside the namespace). The exporter's own port is also not published.
-- Image: `natsio/prometheus-nats-exporter:0.20.3`, digest `sha256:4b8ddc1c86fec360b5cd3d5e1fbc6fb52bdafd5805bba3901cc52926538af255` (survey 9.0; re-read at implementation time, **UNVERIFIED** for this packet).
-- Adding this service does not restart NATS when the NATS service itself is unchanged; the T-09 packet confirms with `docker compose` dry run (**UNVERIFIED**).
+- The `nats-exporter` runs in the NATS network namespace (`network_mode: service:nats`) and reads the monitor on loopback there. It is scraped by the gateway as `nats:<exporter port>` on `geldar-colo`.
+- Scope: `/varz` and `/jsz` only. The exporter's flags must enable only those endpoints (**UNVERIFIED** flag names for the pinned release, 0.20.3 per the survey). `/subsz`, `/connz` and `/routez` stay off (0350 item 9, `docs/runbooks/kino.md`).
+- Neither the NATS monitor port nor the exporter port is published.
+- Image: `natsio/prometheus-nats-exporter:0.20.3`, digest `sha256:4b8ddc1c86fec360b5cd3d5e1fbc6fb52bdafd5805bba3901cc52926538af255` (survey 9.0; re-read at implementation, **UNVERIFIED** for this packet).
+- Adding this service does not restart NATS (**UNVERIFIED**; the T-09 packet confirms with a `docker compose` dry run).
 
 ## 12. Postgres monitoring role (T-10)
 
@@ -289,126 +293,151 @@ GRANT pg_monitor TO <monitoring role>;
 GRANT CONNECT ON DATABASE <application database> TO <monitoring role>;
 ```
 
-- `pg_monitor` lets the role read other sessions' query text in `pg_stat_activity` (**UNVERIFIED** effect on literal values). That is a content path, and 0350 allows content in telemetry, so this is recorded, not a blocker. It is listed as a risk.
+- `pg_monitor` lets the role read other sessions' query text in `pg_stat_activity` (**UNVERIFIED** effect on literal values). That is a content path, and 0350 allows content in telemetry; it is a listed risk, not a blocker.
 - The role has no write grant, no `CREATE`, and is not a superuser.
-- `pg_stat_statements` is not part of T-02 or T-10 by default: it needs `shared_preload_libraries` and a Postgres restart (survey card T-10), which is its own node request.
-- The postgres receiver's query samples are off (they need `pg_monitor` and a parent span link; survey 9.8).
+- `pg_stat_statements` is not part of T-02 or T-10: it needs a Postgres restart, which is its own node request.
 
-## 13. Budget, alarms and retention
+## 13. Budget, alarms, retention and TTL
 
-Budget (0350 item 5): 100 GB for Geldar's telemetry in ClickHouse; alarm at 70 GB; node-wide alarm when `/mnt/nvme` passes 60%; stop and ask the operator if the estimate passes 100 GB.
+Budget (0350 item 5, 0352): 100 GB for Geldar's telemetry on `geldar-ch`. Alarm at 70 GB. The budget is measured per server, which is exact because `geldar-ch` holds only Geldar's data (0352, F7 resolved). The 100 GB figure is the owner's ruling and is not raised by an agent.
 
-**Finding F7, the budget cannot be enforced per tenant as written.** 0350 says "the Geldar database holds only Geldar's data". It does not. SigNoz writes into one ClickHouse with the other tenant's data (survey 1.2: the `signoz-clickhouse` volume is 60 GB, about 345 MB a day from the other tenants). Geldar data is identifiable only by resource attributes (`service.namespace=geldar`, `deployment.environment.name=colo`). Options:
-- measure Geldar's share by a scheduled query on the SigNoz ClickHouse, filtered by those attributes (**UNVERIFIED** table and column names; SigNoz keeps traces, logs and metrics in separate databases);
-- or ask the owner for a separate ClickHouse for Geldar (a new node stack, a separate packet, not in T-02).
+```sql
+SELECT database, sum(bytes_on_disk) AS bytes
+FROM system.parts
+WHERE active AND database NOT IN ('system', 'INFORMATION_SCHEMA', 'information_schema')
+GROUP BY database ORDER BY bytes DESC;
+```
 
-The 70 GB alarm is therefore an alarm on the measured Geldar share, and the 100 GB stop is a rule for the operator. Both are owner-level choices and are listed in section 14.
+Run once a day on `geldar-ch` by the operator's cron or the query service (**PROPOSED** schedule; **UNVERIFIED** that the query service can run it).
 
-Alarms:
-- **Geldar share 70 GB**: a SigNoz alert (metrics or a scheduled query) on the measured value above; the channel is not chosen (0350 open item), so the alert goes to operators only (0350 item 8).
-- **Node `/mnt/nvme` above 60%**: `system.filesystem.utilization` from `hostmetrics` for that mount point, alarm at 0.6 (survey 1.2: the NVMe data disk has 1.2 TB free as of the sample). This is node-wide, so it covers other tenants too.
+Alarms (operators only, 0350 item 8; the channel is not chosen, 0350 open item):
+- **Geldar 70 GB**: the sum above is at or above 70 x 10^9 bytes.
+- **Budget stop**: the sum passes 100 x 10^9, or the estimate passes 100 GB. The operator stops and tells the owner.
+- **Node `/mnt/nvme` above 60%**: `system.filesystem.utilization` from `hostmetrics`, node-wide. It covers the other tenant's data too; it is the only alarm that does.
 - **Queue volume**: a separate alarm (section 6).
 
-Retention (0350 item 5, one year):
-- SigNoz's retention is one setting per signal for the whole workspace (survey 9.6; Settings, Workspace, Retention). Setting it to 365 days for traces, logs and metrics changes the other tenant's retention too.
-- The setting applies only to newly ingested data.
-- Current values are **UNVERIFIED** (the metadata directory is root-only, survey 1.2). Read them in the UI before any change and record them in the T-02 report.
-- Steps (owner-approved, workspace-level): open the workspace retention page, set traces, logs and metrics to 365 days, save; then check the ClickHouse TTL on the three tables after the next merge, using the read-only query in section 16. The API path (`/api/v1/settings/ttl` or similar) **UNVERIFIED**; use the UI unless the API is checked.
-- "Hard TTL" for Geldar data (0350 item 5) is not achievable per tenant inside a shared ClickHouse; it is a workspace setting. This is finding F8, for the owner.
-- Retention is not a per-life erasure (0350 item 3, known gap); section 14 keeps it open.
+Retention and TTL (0350 item 5, 0352):
+- **Hard TTL of one year (365 days)** on every telemetry table in `geldar-ch`, set in two places: the Geldar stack's SigNoz retention for traces, logs and metrics (it is a setting of the Geldar workspace, so it does not touch the other tenant), and a ClickHouse TTL on each table. Check the TTL after the first merge and again after each SigNoz upgrade, because the migrator may overwrite it (0352 risk 5).
+- Table names, the TTL column and the migrator's behaviour on upgrade are **UNVERIFIED**.
+- **System-log TTL (our server)**: the `system` log tables of `geldar-ch` (`query_log`, `part_log`, and the rest) get a TTL so they do not grow without limit. **PROPOSED** 30 days; the config keys are **UNVERIFIED** on 26.3.
 
-Size estimate (0350 item 5 and survey 5.5): about 0.1 to 0.15 GB a day after compression, which is about 37 to 55 GB for a year. That is inside 100 GB, but only if the estimate holds; measure it in the first week of data.
+Size and disk growth:
+- Estimate: 0.1 to 0.15 GB a day after compression, about 37 to 55 GB a year (0350 survey estimate, not re-verified). Measure in the first week and record it daily.
+- Merges need free disk on the same volume while they run (**UNVERIFIED** peak). The Docker data root on the node's root filesystem had 20 GB free at the sample (0352); whether the data root is on the root filesystem is **UNVERIFIED**.
+- Per-life erasure is still a KNOWN GAP (0350 item 3): a ClickHouse mutation on one server, heavy and operator-run. Section 14 keeps it open.
 
-## 14. Owner approvals and the geldar-93 requests
+## 14. Owner approvals and rollout requests
 
-Each manual node step below is a separate request to the orchestrator geldar-93, with its own caps, window and rollback. Nothing here is run by this document.
+Each node step is a separate request to the orchestrator geldar-93, with its own caps, window and rollback. Nothing here is run by this document. Steps N1 to N9 build the Geldar stack and gateway; N10 to N15 are later cards.
 
 | # | Node step | Caps | Window | Rollback | Owner approval |
 |---|---|---|---|---|---|
-| N1 | Read-only checks: free loopback port (`ss`), SigNoz network name, containers on that network (names only), Caddy version, cgroup layout, NATS monitor port, current SigNoz retention values | read-only; no writes | any time | none needed | no |
-| N2 | Create the queue directory (or loop-mounted fixed-size image) for `file_storage` | 1 GiB | low-load window | remove the mount, then the directory | no |
-| N3 | Merge `compose/colo-otel.yml` and start `otel-gateway` through the normal deploy (`colo-up.sh` last step, gated by env) | 0.5 CPU, 512 MiB, 128 pids | low-load window, Paper not restarted | unset the gateway env and recreate the Geldar services through CD; the SDK goes off when the endpoint is unset (T-03); then remove the gateway service | yes (new network join, new loopback port) |
-| N4 | Start `nats-exporter` (NATS namespace) | 0.1 CPU, 64 MiB, 64 pids | any window (no NATS restart) | remove the service; NATS untouched | no (scope within `/varz` and `/jsz` already approved) |
-| N5 | Create the monitoring role (SQL, section 12) | none | low-load window | `DROP ROLE` after `REASSIGN OWNED` checks (none owned); revoke grants first | yes (database role) |
-| N6 | ON HOLD (owner ruling 2026-11-16: no change to the shared Caddy; section 9.1). Caddy route: copy `deploy/caddy/otel.caddy`, add the import line, `caddy validate`, `caddy reload` through `docker exec` (never restart Caddy, 0071 item 6) | none | window with no Caddy reload in progress | put `otel-off.caddy` in place of the live file, validate, reload; the Mind host's exporter then fails silently (bounded, dropping) | yes (public route, 0071 and 0096 amendments, exact config; the survey's card T-15 and 0350 item 4); not requested until the owner decides section 9.1 |
-| N7 | SigNoz retention change (section 13) | none on the node; storage grows | after the owner's sign-off | set the previous values back in the UI; data already ingested is not restored | yes (workspace-wide, affects the other tenant) |
-| N8 | SigNoz alert rules (Geldar share, `/mnt/nvme`, queue) | none | any | disable the rule | yes (alert channel not chosen) |
-| N9 | Mind-host `otel-agent` install (client side, owner's machine) | agent caps 0.25 CPU, 256 MiB | owner's session | stop and remove the agent; the supervisor's exporter goes silent | yes (token) |
-| N10 | Helper read-only stats route (Option B, section 8) | helper unit as is | separate window | remove the route and redeploy the helper | yes (root-run unit change) |
+| N1 | Read-only checks: free loopback ports (`ss`), the Geldar network name free, the node's Docker data root, Caddy version, cgroup layout, NATS monitor port | read-only | any | none needed | no |
+| N2 | Create the Geldar network `geldar-telemetry` (`docker network create`); no published ports | none | low-load | remove the network after its containers are gone | yes (new Geldar network) |
+| N3 | Create the volumes and directories `/mnt/nvme/geldar-telemetry/{clickhouse,keeper,query}` and the gateway queue (1 GiB, fixed-size) with the owner uids of the images (**UNVERIFIED**) | queue 1 GiB; no quota on ClickHouse | low-load | remove the empty directories; keep any data until the owner decides | yes (new data path, disk) |
+| N4 | Start `geldar-ch` (and `geldar-ch-keeper` only if the keeper rule needs it), with the writer and reader users and the settings profiles (0352) | 3.0 CPU, 8g; keeper 0.5, 1g | low-load, Paper not restarted | `docker compose rm -s geldar-ch`; keep the data directory | yes (new server, RAM) |
+| N5 | Run `geldar-signoz-migrator` (one-shot) against `geldar-ch`; set the 365-day retention on the Geldar stack | 0.5 CPU, 512m | low-load | drop the Geldar database the migrator created (empty at this point; checked first); remove the container | yes (schema, retention) |
+| N6 | Start `geldar-signoz-query` and `geldar-signoz-ui` (UI on loopback only) | query 1.0 CPU, 1g; UI 0.25, 256m | low-load | `rm -s` the two containers; remove the UI loopback publish | yes (UI access path, 0352) |
+| N7 | Start `geldar-signoz-otelcol` (writer to `geldar-ch`) | 0.5 CPU, 1g | low-load | `rm -s` the container | yes (new writer) |
+| N8 | Start `geldar-gateway` with `GELDAR_OTEL_ENABLED` set, Geldar services still on endpoint unset | 0.5 CPU, 512m, 256 pids | low-load, Paper not restarted | unset `GELDAR_OTEL_ENABLED` and recreate the Geldar services through CD (SDK goes off, T-03); `rm -s geldar-gateway` | yes (gateway on the Geldar network) |
+| N9 | Verify (section 16): a scratch run first, then one test event on the node | read-only checks; one test event | owner's window | as N8 | yes (test event and stack in use) |
+| N10 | Start `nats-exporter` (NATS namespace) | 0.1 CPU, 64m | any | remove the service; NATS untouched | no (within `/varz` and `/jsz`, already approved) |
+| N11 | Create the monitoring role (section 12) | none | low-load | revoke grants, then `DROP ROLE` (none owned) | yes (database role) |
+| N12 | SigNoz alert rules (Geldar share, `/mnt/nvme`, queue) | none | any | disable the rule | yes (alert channel not chosen) |
+| N13 | Mind-host `otel-agent` install (owner's machine) | agent 0.25 CPU, 256m | owner's session | stop and remove the agent | yes (token or key; section 9) |
+| N14 | Caddy route for Mind hosts (section 9) | none | none requested | `otel-off.caddy` in place, validate, reload | ON HOLD: the 2026-11-16 ruling forbids it until the owner decides |
+| N15 | Helper read-only stats route (section 8, Option B) | helper unit as is | separate window | remove the route; redeploy the helper | yes (root-run unit change) |
 
-Each request carries: the step number, the exact command or file, the caps above, the window, the rollback, and the verification in section 16. Steps N2 to N4 are needed for T-02 itself; N5 to N10 are needed by later cards and can wait.
+Each request carries the step number, the exact command or file, the caps, the window, the rollback and the verification in section 16.
 
-## 15. Compose and deploy files (for the implementation packet only)
+## 15. Compose and deploy files (for the implementation packets only)
 
-- `compose/colo-otel.yml`: the overlay (service, networks, caps, loopback publish, env gating). Merged over `colo.yml` only when `GELDAR_OTEL_ENABLED` is set, as `colo-kino.yml` is merged only when Kino is on.
-- `deploy/otel/gateway.yaml`: the Collector config in section 5, read-only bind.
-- `deploy/caddy/otel.caddy` and `deploy/caddy/otel-off.caddy` (section 9).
-- `deploy/colo-up.sh` and `deploy/common.sh`: add the overlay merge gated by env, with a refusal when the SigNoz network variable is missing (the same style as the public overlay, 0096).
-- `tools/repo-checks`: the loopback allow-list entry (section 10) and a test that no overlay mounts `docker.sock`.
-- Env names only (values stay out of the repo and the Mind host's files): `GELDAR_OTEL_ENABLED`, `GELDAR_SIGNOZ_NETWORK`, `GELDAR_SIGNOZ_OTLP_ENDPOINT`, `GELDAR_OTEL_UPSTREAM`, `GELDAR_OTEL_INGEST_TOKEN`, `GELDAR_OTEL_ENDPOINT` (the Geldar services' endpoint, `http://otel-gateway:4318`), `GELDAR_COLO_OTEL_GATEWAY_CPUS`, `GELDAR_COLO_OTEL_GATEWAY_MEM`, `GELDAR_OTEL_PG_PASSWORD_FILE` (the secret file's path, under the secrets directory).
+- `compose/colo-telemetry.yml`: the Geldar stack and the `geldar-telemetry` network. Merged only when `GELDAR_OTEL_ENABLED` is set.
+- `compose/colo-otel.yml`: the gateway and `nats-exporter`, with caps, `geldar-colo` and `geldar-telemetry` networks, and the loopback publishes named in section 10. Merged the same way.
+- `deploy/otel/gateway.yaml`: the Collector config in section 5, read-only bind. Stack configs under `deploy/clickhouse/` and `deploy/signoz/` (the T-17 dashboards directory); **UNVERIFIED** names.
+- `deploy/caddy/otel.caddy` and `deploy/caddy/otel-off.caddy`: only if section 9 is decided.
+- `deploy/colo-up.sh` and `deploy/common.sh`: the overlay merges, gated by env.
+- `tools/repo-checks`: the loopback allow-list (section 10) and a test that no overlay mounts `docker.sock`.
+- Env names only (values stay out of the repo): `GELDAR_OTEL_ENABLED`, `GELDAR_SIGNOZ_OTLP_ENDPOINT`, `GELDAR_OTEL_ENDPOINT` (the Geldar services' endpoint, `http://geldar-gateway:4318`), `GELDAR_CH_WRITER_PASSWORD_FILE`, `GELDAR_CH_READER_PASSWORD_FILE` (secret file paths; the reader password is never on a Mind host), `GELDAR_COLO_OTEL_GATEWAY_CPUS`, `GELDAR_COLO_OTEL_GATEWAY_MEM`, `GELDAR_OTEL_PG_PASSWORD_FILE`. `GELDAR_OTEL_INGEST_TOKEN` and `GELDAR_OTEL_UPSTREAM` only if section 9 is decided.
 
 ## 16. Verification checklist
 
-SigNoz (read through the viewer-role key on the workstation only; no change to the other tenant's views):
+Scratch run first (before N8 on the node): the same stack shapes in a scratch compose project, with no player Bodies. **UNVERIFIED**: the scratch host is not named in the repo; the owner names it.
+
+SigNoz (read through the viewer-role key on the workstation, or the UI through the SSH tunnel; no change to the other tenant's views):
 - Services `geldar-*` appear with `service.namespace=geldar` and `deployment.environment.name=colo`.
-- A Geldar trace has `geldar.life_id` (or `life_id`, per the T-03 name) on the span, and no life or player label on any metric series. Query metric label names: none of `geldar.life_id`, `player_id`, `token`, `email`.
-- Logs contain no IPv4 or IPv6 literal in the body where Paper logs `logged in with entity id ... [/<address>]`: search for the literal `[/` followed by digits; expect zero hits.
+- A Geldar trace has `life_id` (or the T-03 name) on the span, and no life or player label on any metric series. None of `geldar.life_id`, `player_id`, `token`, `email` appears as a metric label.
+- Logs contain no IPv4 or IPv6 literal where Paper logs `[/<address>]`: search for `[/` followed by digits; expect zero hits.
 - No `Thread RCON Client ... started|shutting down` lines; `[Rcon:` echoes present.
 - No attribute named `user.email`, `*token*`, `*password*`, `*authorization*`, `*cookie*`.
-- Queue: `otelcol_exporter_queue_size` below capacity under normal load; `otelcol_exporter_send_failed_*` flat; `otelcol_processor_refused_*` zero (memory limiter not triggering).
-- `nats` series present (`/varz`, `/jsz`) and no `subsz` or connection series.
-- `postgresql` series present; the monitoring role cannot write (negative test with a `psql` `INSERT` as that role, expecting permission denied).
-- Retention: the values read in N1 and the value set in N7, recorded.
-- Geldar share of ClickHouse bytes (the measured value from section 13) recorded daily for the first week.
+- Queue: `otelcol_exporter_queue_size` below capacity under normal load; `otelcol_exporter_send_failed_*` flat; `otelcol_processor_refused_*` zero.
+- `nats` series present (`/varz`, `/jsz`); no `subsz` or connection series. `postgresql` series present; the monitoring role cannot write (a `psql` `INSERT` as that role, expecting permission denied).
 
-Docker stats (operator, from the workstation or the host shell; read-only verbs only):
-- `docker stats --no-stream` for `geldar-colo-otel-gateway` (or the project's name): CPU at or below 0.5, memory at or below 512 MiB, PIDs at or below 128.
-- The same for `nats-exporter` (0.1 CPU, 64 MiB).
-- `docker inspect` of the gateway: no `docker.sock` in `Mounts`; `ReadonlyRootfs` true; `CapDrop` contains ALL; the logging driver is `json-file` with 10 MiB and 3 files.
-- Node load: `docker stats` of the Paper and Body containers before and after N3, with the same window, to show no regression (the survey's sample: 1 of 16 CPUs in use).
-- The `/mnt/nvme` utilisation reading (`df`), and the queue directory's use, after the first day.
+Docker stats (operator, read-only verbs only), for every Geldar container against its caps in section 4:
+- `docker stats --no-stream`: each container at or below its CPU and memory caps; PIDs at or below its limit.
+- `docker inspect` of the gateway and the stack: no `docker.sock` in `Mounts`; `ReadonlyRootfs` true for the gateway; `CapDrop` contains ALL; `json-file` log driver.
+- `docker port geldar-ch` and `docker port geldar-signoz-ui`: only the loopback entries named in section 10. No other publish.
+- The other tenant's containers: no change. Compare `docker ps` names before and after N2 to show no change.
 
-Negative tests (T-02 implementation):
-- Caddy: a request without the token gets 401; with a wrong token 401; a GET gets 405; a path other than the three gets 404; a body over 8 MiB gets 413.
+ClickHouse (the query in section 13 and the read-only user only):
+- `system.parts` for the Geldar database: bytes after the first day and after the first week, recorded against the 70 GB alarm.
+- TTL on each telemetry table after the first merge (`SHOW CREATE TABLE`, read-only).
+- The writer user cannot read `system` tables it does not need; the reader user cannot write (negative tests, 0352).
+
+Paper tick unchanged during merges:
+- `tick query` on Paper in a baseline window and in a window where `system.merges` on `geldar-ch` is non-empty, at the same player load. TPS and MSPT match within the noise of the baseline (**PROPOSED** tolerance: to be set from the baseline run).
+- Node load: `docker stats` of the Paper and Body containers before and after N8, same window.
+
+End-to-end test event (scratch stack, then the node):
+- One test log and one test span with a known marker value sent to `geldar-gateway`; found in the SigNoz UI through the tunnel and in `system.parts` growth. The marker is not an agent-readable string (0350 item 7).
+
+Negative tests:
+- The UI is not reachable from any interface but loopback (`ss -ltn` shows `127.0.0.1` only for its port).
+- If section 9 is decided: the Caddy checks in section 9 (401, 405, 404, 413).
 - Config: `otelcol validate` passes; the RCON and address fixtures behave as in section 5.
 
 ## 17. Rollout and rollback summary
 
-Order: N1, N2, N3 (gateway, with Geldar services still on their default and their endpoint unset, so no change for them), then Geldar services switched on one by one by the T-03 and T-06 to T-08 cards (each its own change), then N4, N5, N6 (Caddy, after the owner approves), then N7 and N8 (after data flows), N9 at the owner's pace.
+Order: N1; N2 (network); N3 (volumes); N4 (ClickHouse, plus keeper if the keeper rule needs it); N5 (migrator, retention); N6 (query and UI); N7 (SigNoz collector); N8 (gateway, Geldar services still on endpoint unset); N9 (verify). Then the Geldar services are switched on one by one by the T-03 and T-06 to T-08 cards (each its own change). Then N10 to N12. N13 at the owner's pace. N14 only if the owner decides section 9.
 
-Rollback for the whole T-02 stack, in order: unset `GELDAR_OTEL_ENABLED` and recreate the Geldar services through CD (their SDKs go off); stop and remove `otel-gateway` and `nats-exporter` (only those two services, `docker compose ... rm -s`); put `otel-off.caddy` in place and reload; drop the monitoring role; restore the retention values; remove the queue directory. Each step leaves the other services running.
+Rollback for the whole stack, in order: unset `GELDAR_OTEL_ENABLED` and recreate the Geldar services through CD (SDKs go off); `docker compose ... rm -s` for `geldar-gateway`, `geldar-signoz-otelcol`, `geldar-signoz-ui`, `geldar-signoz-query`, `geldar-signoz-migrator` and `geldar-ch` (and `geldar-ch-keeper` if used); remove `nats-exporter` and the monitoring role if they were added; remove the `geldar-telemetry` network once empty; keep the Geldar data directories until the owner decides. The shared Caddy is not touched, and the other tenant is not touched at any step.
 
 ## 18. Risks
 
-1. **Shared SigNoz.** Another tenant's stack has no CPU or memory limit and no `memory_limiter`, and its OTLP ports are published on all interfaces without a key (survey 1.2). If the gateway's network join puts it next to other tenants' containers, any container on that network can write into Geldar's data or the other tenant's. Mitigation: the join is recorded; the other tenant's containers on that network are listed in N1; the owner decides (F9).
-2. **Shared ClickHouse budget and retention** (F7, F8).
-3. **Docker-network coupling.** Joining the other tenant's network couples the stacks (survey 4.1). The alternative is `host-gateway` to the published 4317, which uses the all-interfaces port; that depends on the node firewall, which is unverified (survey 1.2). Not chosen here.
-4. **Host `/proc` and `/sys` read-only mounts** expose host process data (F3); mitigated by disabling the process scraper.
-5. **Disk cap** (F2): no native byte cap; a volume or a derived queue size is needed.
-6. **Token on Mind hosts** (F6, F4); a leaked token lets anyone write telemetry into Geldar's data (not read it). Rotation is a manual step; a rotation procedure is needed before N9.
-7. **Public hostname** (section 10); the expected list must be updated before the first scan after N6.
-8. **Trace-context leakage to the model.** No telemetry word or trace id may reach a model-readable surface (0350 item 7, T-19). The gateway is not in the model's path, so it is not a leak by itself; the SDK and the kit's env handling (T-14) are.
-9. **Image pin drift**: the digest recorded here is a survey value (section 3); a newer contrib release is not used until its own two-week window.
-10. **Content in SigNoz** (0350 items 2 and 3): the one-year, full-content policy applies to telemetry; erasure per life is a KNOWN GAP (0350 item 3) and must be closed before any outside player's agent runs.
-11. **`pg_monitor` reads query text** (section 12).
-12. **Gateway down**: the SDK drops silently after its bounded queue (T-03). Data loss during an outage is accepted by design (0350 item 7), and the start-record and absence alerts (survey 4.7) detect it.
-13. **Operator error**: a wrong `caddy reload` (without the token variable) would route all traffic to 401. The reload is validated first, and the kill switch is one file swap.
+1. **ClickHouse merges vs the Paper tick.** Merges use CPU and disk on the host Paper runs on. Mitigation: the caps in section 4, the tick check in section 16, and a merge-time limit set from the scratch run (**PROPOSED**).
+2. **Disk growth.** The estimate (section 13) may be wrong; merges need headroom; the root filesystem's free space is small. Mitigation: the 70 GB alarm, the 60% node alarm, the 100 GB stop, and the system-log TTL.
+3. **SigNoz version vs the MCP server.** The Geldar stack, the Geldar gateway and the MCP server (T-18) must use compatible SigNoz releases. Mitigation: one pin for the stack, and T-18 pinned to it (0352 risk 2). Compatibility is **UNVERIFIED**.
+4. **Unverified single-node support without keeper.** Whether SigNoz 0.135 or later runs one ClickHouse node without ZooKeeper or keeper is **UNVERIFIED** (0352). The keeper rule in section 4 is the plan until it is checked.
+5. **RAM overcommit.** The sum of set container limits on the node is 185 GB (0352 fit check). Real use was 29 GB. The caps are ceilings. Mitigation: the caps; the owner's approval at N4.
+6. **Host `/proc` and `/sys` mounts** expose host process data (F3); mitigated by the options in `collector-options.md` F3.
+7. **Disk cap for the queue** (F2): no native byte cap; a volume or a derived queue size is needed.
+8. **Mind-host token** (F6, F4): a leaked token lets anyone write telemetry into Geldar's own server (not read it). Rotation is manual; a procedure is needed before N13. Conditional on section 9.
+9. **Public hostname** (section 10): conditional on section 9. The expected list is updated before the first scan after any Caddy route.
+10. **Trace-context leakage to the model.** No telemetry word or trace id may reach a model-readable surface (0350 item 7, T-19). The gateway is not in the model's path; the SDK and the kit's env handling (T-14) are.
+11. **Image pin drift.** The digests recorded here are survey values or unset (sections 3 and 11); a newer release waits for its own two-week window.
+12. **Content in SigNoz** (0350 items 2 and 3): the one-year, full-content policy applies to telemetry; per-life erasure is a KNOWN GAP (0350 item 3), to close before any outside player's agent runs.
+13. **`pg_monitor` reads query text** (section 12).
+14. **Gateway down**: the SDK drops silently after its bounded queue (T-03). Data loss during an outage is accepted (0350 item 7); the absence alerts detect it.
+15. **UI and tunnel access.** The UI is loopback-only and reached by SSH tunnel (0352). A holder of the operator's SSH key can reach it. Mitigation: no Caddy route, no published external port, the operator's key kept as it is.
+16. **Operator error**: a wrong `caddy reload` would route all traffic to 401. Conditional on section 9; the reload is validated first, and the kill switch is one file swap.
 
 ## 19. Findings for the orchestrator
 
-- **F1**: T-02 says "OTLP on the colo network only"; Caddy needs a loopback publish (section 4 and 9). Owner to confirm the exception.
-- **F2**: the file queue has no native byte cap in 0.164.0 (**UNVERIFIED**); section 6 gives two options.
+- **F1**: the gateway's loopback publish for Caddy. Conditional on section 9 (owner ruling 2026-11-16).
+- **F2**: the file queue has no native byte cap in 0.164.0 (**UNVERIFIED**); section 6 gives the options.
 - **F3**: host `/proc` mount exposes the process list; the process scraper is off.
-- **F4**: the Caddy token would enter the reload environment; choose the placeholder mechanism after checking the Caddy version.
-- **F5**: header comparison is not constant-time (low risk; token length rule).
-- **F6**: the Mind host holds the ingest token; isolation by uid is the control, tested in T-14.
-- **F7**: 0350's "Geldar database" is not a separate database; the 100 GB budget is measured from a shared ClickHouse (section 13).
-- **F8**: retention is a workspace setting; the one-year rule changes the other tenant's retention. Owner decision.
-- **F9**: joining the other tenant's network is a trust decision; the alternative is `host-gateway`. Owner decision.
+- **F4**: the Caddy token would enter the reload environment; conditional on section 9.
+- **F5**: header comparison is not constant-time; conditional on section 9.
+- **F6**: the Mind host holds the ingest token; isolation by uid is the control, tested in T-14; conditional on section 9.
+- **F7 and F8**: resolved by 0352 option B. The budget is measured per server; the retention is the Geldar workspace's.
+- **F9**: resolved by 0352 option B. No Geldar container joins the other tenant's network, and no port of the other tenant changes.
+- **F10**: Mind-host ingest conflicts with the no-Caddy-change ruling (section 9.1). Owner decision, open.
+- **F11**: gateway pids: 128 in 0350 item 9 and 0082, 256 in the 0352 table. This design uses 256. Orchestrator to reconcile.
 
 ## 20. Sources
 
-- Telemetry survey, 2026-11-15: sections 1.2, 1.3, 4.1, 4.2, 4.5, 4.6, 4.7, 5.5, 6, 7 (T-02, T-04, T-09, T-10, T-15), 9.0, 9.6, 9.7.
-- Decisions: 0350 (accepted 2026-11-15), 0082 (proposed, 2026-11-10), 0071 (accepted 2026-11-10), 0096 (proposed 2026-11-11), 0260, 0088.
-- Repo: `compose/colo.yml` (anchors and limits, 0082 pattern), `compose/colo-kino.yml` (overlay pattern), `compose/colo-public.yml` (single-publish overlay pattern, 0096 item 5), `deploy/caddy/mcp.caddy` and `deploy/caddy/README.md` (site-file pattern, reload rule, kill switch).
-- Not checked in this session: the registry digest, the node's network names, cgroup layout, Caddy version, SigNoz retention values, the exporter flag names, and the OTTL function names. Each is marked **UNVERIFIED** above and is a read-only check in N1 or a test in T-02.
+- Telemetry survey, 2026-11-15: sections 1.2, 1.3, 4.1, 4.2, 4.5, 4.6, 4.7, 5.5, 6, 7, 9.0, 9.6, 9.7.
+- 0352 fit check, 2026-11-15 (read-only node measurement); 0352 option B and the 0350 clarification of 2026-11-16.
+- Decisions: 0350, 0352, 0082, 0071, 0096, 0260, 0088.
+- Repo: `compose/colo.yml`, `compose/colo-kino.yml`, `compose/colo-public.yml`, `deploy/caddy/mcp.caddy`, `deploy/caddy/README.md`.
+- Not checked in this session: the registry digests, the node's network and volume names, cgroup layout, Caddy version, SigNoz version and retention values, the exporter flag names, the OTTL function names, the ClickHouse 26.3 TTL and async-insert keys. Each is marked **UNVERIFIED** above and is a read-only check in N1 or a test in the implementation packets.
