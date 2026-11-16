@@ -13,6 +13,7 @@ At the time these files were written, nothing was started or pulled. The only do
 - Item 33 stays open: one outbound SYN_SENT from `geldar-signoz` to a public address on port 80 right after start with analytics off, gone after 60 s, no reverse DNS, purpose unknown. It blocks unattended running, not the N4 start. The decode recipe is in the README.
 - Owner ruling 2026-11-16, D1 (README item 34): approved, `geldar_writer` keeps `GRANT REMOTE ON *.*`, and the migrator and the collector hold the writer password.
 - Owner ruling 2026-11-16, D2 (README item 35): approved, `default` keeps its grants on the six `signoz_*` databases and SELECT on `system.*`, to be checked after a day of running via `system.query_log` and removed if `default` never runs a shard query.
+- The gateway (OpenTelemetry Collector contrib 0.164.0) config and compose overlay are in `deploy/telemetry/gateway.yaml` and `compose.gateway.yml` (T-25, files only, not started on the node); see the README section "Gateway (N8)".
 - The full table of verified and open items is in `deploy/telemetry/README.md`, section "Scratch run results".
 - Node-only items still open: secret owner and mode, uid check, real caps, histogram binary install (checked only on Docker Desktop with a named volume), the 4320 and 6060 listeners (item 15), the system-log TTL check after 10 minutes (item 25), and the item 22 after-a-day check. The N4 procedure is in the README section "N4 checks".
 
