@@ -4,7 +4,7 @@
 // the id a create returned.
 import { request as httpRequest } from 'node:http';
 import type { Readable } from 'node:stream';
-import { LIFE_LABEL } from './managed-template.ts';
+import { LIFE_LABEL, MANAGED_LABEL } from './managed-template.ts';
 import { LIFE_ID_PATTERN } from './roster.ts';
 import type { BodyEngine, ContainerState } from './service.ts';
 import type { SweepBody, SweepEngine } from './sweep.ts';
@@ -130,7 +130,7 @@ export function createDockerEngine(request: EngineRequest): BodyEngine & SweepEn
       const info = parseJson(expect(reply, [200], 'inspect')) as {
         Id: string;
         Name?: string;
-        State: { Running: boolean };
+        State: { Running: boolean; ExitCode?: number };
         Config?: { Labels?: Record<string, string> | null };
       };
       // Docker also resolves a unique id prefix: a container of any other name is not the one this verb asked for.
@@ -144,6 +144,8 @@ export function createDockerEngine(request: EngineRequest): BodyEngine & SweepEn
         owner: labels['geldar.owner'] ?? null,
         // A label that is not the managed shape is reported as absent, so no caller can smuggle a value through it.
         lifeId: life !== undefined && LIFE_ID_PATTERN.test(life) ? life : null,
+        exitCode: typeof info.State.ExitCode === 'number' ? info.State.ExitCode : null,
+        managed: labels[MANAGED_LABEL] === '1',
       };
     },
     async countCounted(): Promise<number> {

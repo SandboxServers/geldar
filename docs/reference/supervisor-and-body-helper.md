@@ -122,7 +122,7 @@ A configuration error names the variable or path, never a value (`config.ts` hea
 
 ### Purpose
 
-`body-helper/src/main.ts` reads the config (environment names and root-only secret files), connects to NATS as the `helper` user, serves the four body subjects, runs the report-only stray sweep, and shuts down on SIGTERM or SIGINT. It logs names and counts only. Every attempt writes one audit line (verb, name, outcome, a fixed reason), never the request body, a template or a secret (`service.ts` header).
+`body-helper/src/main.ts` reads the config (environment names and root-only secret files), connects to NATS as the `helper` user, serves the four body subjects, runs the stray sweep (report-only; with managed Bodies on it also removes a managed orphan, BH-6), and shuts down on SIGTERM or SIGINT. It logs names and counts only. Every attempt writes one audit line (verb, name, outcome, a fixed reason), never the request body, a template or a secret (`service.ts` header).
 
 ### Files
 
@@ -137,7 +137,7 @@ A configuration error names the variable or path, never a value (`config.ts` hea
 | `template.ts` | The house Body template and the Body label `geldar.player` |
 | `managed-template.ts` | The managed Body template (entry `golem/src/players/managed-main.ts`, label `geldar.life`, no RCON secret, no Docker socket) and the admit one-shot (entry `golem/src/admit-life.ts`, label `geldar.admit`, not counted by the cap) |
 | `engine.ts` | Docker Engine API over the unix socket with `node:http`; no Docker CLI; `ENGINE_TIMEOUT_MS` 30 s |
-| `sweep.ts` | Lists Body containers and logs each one not on the roster; never stops or removes |
+| `sweep.ts` | Lists Body containers and logs each one not on the roster; stops nothing. With managed Bodies on, removes a managed Body whose roster row is gone after exit 78 on two consecutive passes (whitelist entry first, then the container; BH-6) |
 | `shutdown.ts` | End subscriptions, await in-flight answers (`SHUTDOWN_WAIT_MS` 10 s), close NATS, end the pool |
 
 ### Verbs and subjects
@@ -206,7 +206,7 @@ What each piece is; the install steps are in the runbooks only.
 
 | Topic | Fact | Evidence |
 |---|---|---|
-| Stray Bodies | The sweep only reports Body containers not on the roster; an operator reap path is a later card (C7-03c4) | `sweep.ts` |
+| Stray Bodies | The sweep reports Body containers not on the roster. With managed Bodies on, it removes only a managed Body whose roster row is gone after exit 78 on two consecutive passes (BH-6); every other stray is reported only. An operator reap path is a later card (C7-03c4) | `sweep.ts` |
 | Timed-out start | The supervisor's 20 s bound answers `timeout` and records no row; the helper may still land the start within its 120 s deadline and removes what it made on its own timeout; the register's retry must read `status` first | `supervisor/src/helper-client.ts` header |
 | Restart of the services | Both drain in-flight replies before closing NATS (shutdown orders above) | `run.ts`, `shutdown.ts` |
 | Retiring an agent | Decision 0152 item 1: retire stops the Body, revokes tokens and keeps the row; the [retire-an-agent](../runbooks/retire-an-agent.md) runbook holds the steps | decision 0152 |

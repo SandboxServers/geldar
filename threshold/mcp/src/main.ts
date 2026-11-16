@@ -4,6 +4,7 @@ import type { SpeechIdentity } from '@geldar/player-core/src/attention/classify.
 import type { RequestTransport } from '@geldar/player-core/src/link/nats-body-link.ts';
 import { createOutputValidator } from '@geldar/player-core/src/validate/index.ts';
 import { checkSovereignIdentity } from '@geldar/repo-checks/src/identity-mode.ts';
+import { startTelemetry as startSpanTelemetry } from '@geldar/telemetry';
 import type { Client, ClientConfig, Pool } from 'pg';
 import { parse } from 'yaml';
 import { NatsBodyGateway } from './body-gateway.ts';
@@ -32,6 +33,7 @@ import { PgDeathStore } from './store/pg-deaths.ts';
 import { PgJournalStore } from './store/pg-journal.ts';
 import { PgPlayerDirectory } from './store/pg-players.ts';
 import { listenerConfig, PgTokenStore } from './store/pg-tokens.ts';
+import { toolSpanRecorder } from './telemetry.ts';
 import { parseWaitDeltaLives } from './tools/wait-delta.ts';
 import { createWorld } from './world.ts';
 import { createWorldSession, type WorldSessionDeps } from './world-session.ts';
@@ -81,6 +83,8 @@ export interface McpPorts {
   frontDoor?: (options: FrontDoorOptions) => FrontDoor;
   /** Metrics push (decision 0088). Off when `url` is unset (cli.ts reads GELDAR_TELEMETRY_URL). */
   telemetry?: TelemetryPorts;
+  /** Test-only (T-06): in-memory exporters for the span SDK. Unset in production, where the OTLP exporters run. */
+  spanExporters?: Parameters<typeof startSpanTelemetry>[0]['exporters'] | undefined;
 }
 
 export interface TelemetryPorts {
@@ -305,6 +309,15 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       intervalMs: ports.telemetry?.intervalMs ?? TELEMETRY_INTERVAL_MS,
     });
     closers.push(async () => telemetry.stop());
+    // The span SDK (T-06): on only when the telemetry URL is set; otherwise no provider, no timer, no call.
+    const spans = startSpanTelemetry({
+      service: 'geldar-mcp',
+      version: process.env.GELDAR_VERSION ?? 'dev',
+      endpoint: ports.telemetry?.url,
+      shard: config.shard,
+      ...(ports.spanExporters ? { exporters: ports.spanExporters } : {}),
+    });
+    closers.push(() => spans.shutdown());
     const password = postgresPassword(await ports.readSecret(config.postgres.passwordFile));
     const pepper = pepperBytes(await ports.readSecret(config.pepperFile));
     const instinctKey = await instinctKeyOf(config.instinctKeyFile, (file) =>
@@ -373,6 +386,9 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       bucketRules(config.sovereign.rateLimits, config.sovereign.ownerCapOwner),
     );
     const world = createWorld({
+      onToolSpan: spans.tracerProvider
+        ? toolSpanRecorder(spans.tracerProvider.getTracer('geldar-mcp'))
+        : undefined,
       maxResultBytes: config.sovereign.maxResultBytes,
       waitCapSeconds: config.sovereign.waitCapSeconds,
       players: new PgPlayerDirectory(pool),

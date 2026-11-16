@@ -48,6 +48,10 @@ export interface ContainerState {
   owner: string | null;
   /** The validated `geldar.life` label of a managed Body (BH-5a), or null when absent or not a managed life id. Optional so older fakes compile. */
   lifeId?: string | null;
+  /** The exit code of a stopped or restarting container (BH-6 sweep reads it), or null. Optional so older fakes compile. */
+  exitCode?: number | null;
+  /** True when the container carries the managed label `geldar.managed` (BH-6). Optional so older fakes compile. */
+  managed?: boolean;
 }
 
 export interface BodyEngine {
@@ -116,6 +120,31 @@ export type Reply =
     };
 
 export type RequestHandler = (raw: unknown) => Promise<Reply>;
+
+/** The remove one-shot for a life id (BH-5b): the add one-shot's fixed template in mode remove. Any failure is -1. */
+export async function runLifeRemove(
+  engine: Pick<BodyEngine, 'runOneShot'>,
+  settings: Parameters<typeof createBodyHelper>[0]['template'],
+  lifeId: string,
+): Promise<number> {
+  try {
+    const rconSecretHostPath = settings.managed?.rconSecretHostPath;
+    if (rconSecretHostPath === undefined) return -1;
+    return await engine.runOneShot(
+      removeName(lifeId),
+      removeConfig({
+        image: settings.image,
+        uid: settings.wiring.uid,
+        network: settings.wiring.network ?? DEFAULT_NETWORK,
+        stack: settings.wiring.stack ?? DEFAULT_STACK,
+        lifeId,
+        rconSecretHostPath,
+      }),
+    );
+  } catch {
+    return -1;
+  }
+}
 
 export function createBodyHelper(deps: HelperDeps): RequestHandler {
   let alerted = false;
@@ -276,27 +305,9 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
     }
   };
 
-  // The remove one-shot for a life id (BH-5b): the add one-shot's fixed template in mode remove. Any failure is -1.
-  const runRemove = async (lifeId: string): Promise<number> => {
-    try {
-      const settings = deps.template;
-      const rconSecretHostPath = settings.managed?.rconSecretHostPath;
-      if (rconSecretHostPath === undefined) return -1;
-      return await deps.engine.runOneShot(
-        removeName(lifeId),
-        removeConfig({
-          image: settings.image,
-          uid: settings.wiring.uid,
-          network: settings.wiring.network ?? DEFAULT_NETWORK,
-          stack: settings.wiring.stack ?? DEFAULT_STACK,
-          lifeId,
-          rconSecretHostPath,
-        }),
-      );
-    } catch {
-      return -1;
-    }
-  };
+  // The remove one-shot for a life id (BH-5b, shared with the BH-6 sweep). Any failure is -1.
+  const runRemove = (lifeId: string): Promise<number> =>
+    runLifeRemove(deps.engine, deps.template, lifeId);
 
   // A stop whose life removal failed is reported, never answered as stopped: the delete path then erases nothing.
   const removalFailed = (name: string): Reply => {

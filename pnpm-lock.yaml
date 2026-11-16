@@ -436,6 +436,9 @@ importers:
       '@geldar/repo-checks':
         specifier: workspace:*
         version: link:../../tools/repo-checks
+      '@geldar/telemetry':
+        specifier: workspace:*
+        version: link:../../telemetry
       '@modelcontextprotocol/sdk':
         specifier: 1.32.2
         version: 1.32.2(zod@4.6.7)

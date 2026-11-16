@@ -85,6 +85,48 @@ describe('engine: the verbs', () => {
       helperBody: false,
       owner: null,
       lifeId: null,
+      exitCode: null,
+      managed: false,
+    });
+  });
+
+  it('reports the exit code and the managed label (BH-6): a number exit code, and managed only for the value 1', async () => {
+    const exited = (labels: Record<string, string>) =>
+      createDockerEngine(async () =>
+        json(200, {
+          Id: 'abc',
+          Name: '/body1',
+          State: { Running: false, ExitCode: 78 },
+          Config: { Labels: labels },
+        }),
+      );
+    expect(await exited({ 'geldar.managed': '1' }).inspect('body1')).toMatchObject({
+      running: false,
+      exitCode: 78,
+      managed: true,
+    });
+    expect(await exited({ 'geldar.managed': 'yes' }).inspect('body1')).toMatchObject({
+      managed: false,
+    });
+    const noCode = createDockerEngine(async () =>
+      json(200, { Id: 'abc', Name: '/body1', State: { Running: true } }),
+    );
+    expect(await noCode.inspect('body1')).toMatchObject({ exitCode: null, managed: false });
+  });
+
+  it('reads a restarting orphan (BH-6): Running true with Restarting true and exit 78 keeps the exit code 78 and managed true', async () => {
+    const restarting = createDockerEngine(async () =>
+      json(200, {
+        Id: 'abc',
+        Name: '/body1',
+        State: { Running: true, Restarting: true, ExitCode: 78 },
+        Config: { Labels: { 'geldar.managed': '1' } },
+      }),
+    );
+    expect(await restarting.inspect('body1')).toMatchObject({
+      running: true,
+      exitCode: 78,
+      managed: true,
     });
   });
 
@@ -104,6 +146,8 @@ describe('engine: the verbs', () => {
       helperBody: true,
       owner: null,
       lifeId: null,
+      exitCode: null,
+      managed: false,
     });
     expect(await labelled(null).inspect('body1')).toEqual({
       id: 'abc',
@@ -111,6 +155,8 @@ describe('engine: the verbs', () => {
       helperBody: false,
       owner: null,
       lifeId: null,
+      exitCode: null,
+      managed: false,
     });
     expect(await labelled({ 'geldar.owner': 'x' }).inspect('body1')).toEqual({
       id: 'abc',
@@ -118,6 +164,8 @@ describe('engine: the verbs', () => {
       helperBody: false,
       owner: 'x',
       lifeId: null,
+      exitCode: null,
+      managed: false,
     });
   });
 
@@ -136,6 +184,8 @@ describe('engine: the verbs', () => {
       helperBody: true,
       owner: 'own-a',
       lifeId: null,
+      exitCode: null,
+      managed: false,
     });
   });
 
@@ -185,6 +235,8 @@ describe('engine: the verbs', () => {
       helperBody: true,
       owner: null,
       lifeId: null,
+      exitCode: null,
+      managed: false,
     });
   });
 

@@ -108,6 +108,7 @@ describe('managed Body template', () => {
       'com.geldar.stack': 'colo',
       'geldar.owner': 'own-a',
       'geldar.life': 'ag_0123456789ab',
+      'geldar.managed': '1',
       [BODY_LABEL]: 'ranger',
     });
   });
