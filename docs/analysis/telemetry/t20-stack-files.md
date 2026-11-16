@@ -40,7 +40,7 @@ The full list with numbers is in the README (section "Unverified, check in the s
 - **Collector and migrator shell wrapper (items 13, 14).** The wrapper ran in the scratch run (migrator exit 0, collector started), so both images have `/bin/sh`. The secret mode and uid still need checking on the node. Blocks both until then.
 - **Collector config (item 16).** The collector started with this config in the scratch run. Validate it again on the node, before the collector starts there.
 - **SQLite env names (item 1).** Blocks `geldar-signoz` start.
-- **Collector healthcheck (item 3).** The collector image has no `wget` (verified in the scratch run). The healthcheck stays off, so it blocks only that healthcheck.
+- **Collector healthcheck (item 3).** The collector image has no `wget`: observed once (exit 127), not repeated (see README item 3). The healthcheck stays off, so it blocks only that healthcheck.
 - **ON CLUSTER with the `default` user (item 9).** Blocks the decision to remove `default`. The current plan keeps `default` on loopback.
 - **Reader and retention (item 4).** Blocks retention changes made from the SigNoz UI. Does not block start.
 - Items 2, 5, 12, 15 do not block start (JWT names not needed with the opaque provider; async insert is tuning; the SigNoz health check blocks nothing because no service depends on it).
