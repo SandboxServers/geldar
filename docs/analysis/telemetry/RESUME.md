@@ -47,7 +47,7 @@ Owner: freeze exemption for this session; full-text capture, no opt-out, 1-year 
 ## Next (each needs geldar-93 go + owner narrow exemption outside telemetry/)
 - Node steps N1-N15 and the Caddy ingest window (see Still held).
 - T-06d (not started).
-- T-13/14 scriptorium.
+- T-13/14 scriptorium: cards written in docs/analysis/telemetry/scriptorium/README.md (T-28); wave 1 can start now (TM-01, TM-16, TM-24, TM-26, TM-30, TM-35, TM-21 code, TM-02 held for the batch window).
 - PT cards (Paper plugin) after scratch test.
 
 ## Rules
