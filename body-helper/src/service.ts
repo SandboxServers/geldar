@@ -315,6 +315,8 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
     if (!live()) throw new Error(ABANDONED);
     if (state === null) {
       deps.stopTimeouts?.delete(container);
+      // Race only: the container vanished between the status the supervisor read and this stop. The supervisor answers
+      // unknown for an absent status and sends no stop, so a container lost earlier is cleaned up by the BH-6 sweep.
       // The Body is gone, so its life id comes from the roster row (the stop runs before any erase). No row: nothing to remove.
       // With managed Bodies off or without the rcon file no Body could have been admitted, so the roster is not read and
       // the stop answers not_running as before (a failed remove here would block every account delete while off).

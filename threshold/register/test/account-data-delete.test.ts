@@ -125,14 +125,10 @@ describe('POST /account/delete', () => {
     expect(calls).not.toContain('erase');
   });
 
-  it('a stop whose life removal failed (code failed) answers 503 and nothing is erased', async () => {
+  it('a stop answered error (a helper failure, incl. a failed life removal) answers 503 and nothing is erased', async () => {
     const h = fakeCtx({ confirm: DELETE_PHRASE });
     const calls: string[] = [];
-    vi.mocked(requestBodyOp).mockResolvedValue({
-      ok: false,
-      code: 'failed',
-      error: 'life removal failed',
-    });
+    vi.mocked(requestBodyOp).mockResolvedValue({ ok: false, code: 'error' });
     await handler(accountDeleteRoutes(fakeDeps(calls, { body: bodyDeps() })))(h.ctx);
     expect(h.status()).toBe(503);
     expect(calls).not.toContain('erase');

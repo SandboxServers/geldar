@@ -162,7 +162,7 @@ Before this section, every step from 1 to 25, and row 19a, is recorded in the ch
 1. Owner confirms C7-09 (deletion and export) is deployed and live-checked.
 2. Owner confirms C7-11 (sign-up gate) is deployed, and that terms version 1 is approved in the committed file.
 3. Owner confirms C7-13a is deployed: `register_account_delete` removes skin uploads.
-4. Owner confirms BH-5 is deployed: retire and delete unwhitelist the Body.
+4. Owner confirms BH-5 is deployed: retire and delete unwhitelist the Body. Known gap (BH-5b review 3): a managed container lost while its life stays admitted is not removed by the stop, because the supervisor sends no stop for an absent container. Its whitelist entry is cleaned up by the BH-6 sweep (whitelist remove when no roster row). With the managed flag off, a lost container likewise leaves its life admitted until BH-6.
 5. Owner confirms the `body`/`paper` PubDeny drift (Section 2 note) is closed, or accepts it in writing.
 6. Owner gives the word on NATS batch C (row 26a), or accepts the JetStream republish risk in writing.
 7. Owner answers the open 0261 question in writing.
