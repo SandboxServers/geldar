@@ -253,6 +253,40 @@ describe('tool content as span events (T-06c)', () => {
     expect(input.PassWord).toBe(secret);
   });
 
+  it('keeps a __proto__ key as an own key of the copy, with its value redacted or kept', () => {
+    const input = JSON.parse('{"__proto__":{"a":1},"keep":2}');
+    const out = redactArguments(input);
+    expect(JSON.stringify(out)).toBe('{"__proto__":{"a":1},"keep":2}');
+    expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
+  });
+
+  it('stops copying at depth 32 with a [truncated] mark, and copies up to that depth', () => {
+    let deep: unknown = 'leaf';
+    for (let i = 0; i < 40; i += 1) deep = { n: deep };
+    const text = JSON.stringify(redactArguments(deep));
+    expect(text.split('{"n":').length - 1).toBe(32);
+    expect(text).toContain('"[truncated]"');
+    expect(text).not.toContain('leaf');
+  });
+
+  it('a cyclic argument still captures its arguments event, with a [cycle] mark at the repeat', async () => {
+    const { recorder, provider, spans } = startWithMemory();
+    const loop: Record<string, unknown> = { keep: 'visible' };
+    loop.self = loop;
+    recorder({ tool: 'look', outcome: 'ok', durationMs: 1, content: { arguments: loop } });
+    await provider.forceFlush();
+
+    expect(spans).toHaveLength(1);
+    expect(eventText(spans[0] as ExportedSpan, TOOL_ARGUMENTS_EVENT)).toBe(
+      '{"keep":"visible","self":"[cycle]"}',
+    );
+  });
+
+  it('a shared, non-cyclic reference is copied in full at each place it appears', () => {
+    const shared = { a: 1 };
+    expect(redactArguments({ x: shared, y: [shared] })).toEqual({ x: { a: 1 }, y: [{ a: 1 }] });
+  });
+
   it('endpoint unset: no provider, no span and no content, and the result is unchanged', async () => {
     const handle = startTelemetry({ service: 'geldar-mcp', version: 'test' });
     handles.push(handle);

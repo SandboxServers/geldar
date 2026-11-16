@@ -82,15 +82,37 @@ export function toolSpanAttributes(call: ToolCallSpan): Record<string, AttrValue
  * arrays are copied too; the input is never changed.
  */
 export function redactArguments(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map((item) => redactArguments(item));
-  if (value !== null && typeof value === 'object') {
+  return redactAt(value, 0, new WeakSet<object>());
+}
+
+/** The deepest level copied; an object below it is replaced by TRUNCATED_MARK. */
+const MAX_REDACT_DEPTH = 32;
+const TRUNCATED_MARK = '[truncated]';
+const CYCLE_MARK = '[cycle]';
+
+/** One level of redactArguments; `ancestors` holds the objects on the path to this value (a cycle guard). */
+function redactAt(value: unknown, depth: number, ancestors: WeakSet<object>): unknown {
+  if (value === null || typeof value !== 'object') return value;
+  if (ancestors.has(value)) return CYCLE_MARK;
+  if (depth >= MAX_REDACT_DEPTH) return TRUNCATED_MARK;
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) return value.map((item) => redactAt(item, depth + 1, ancestors));
     const copy: Record<string, unknown> = {};
     for (const [key, inner] of Object.entries(value)) {
-      copy[key] = SECRET_KEY.test(key) ? REDACTED : redactArguments(inner);
+      const kept = SECRET_KEY.test(key) ? REDACTED : redactAt(inner, depth + 1, ancestors);
+      // defineProperty, not assignment: a key named __proto__ stays an own key and never sets the prototype.
+      Object.defineProperty(copy, key, {
+        value: kept,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
     }
     return copy;
+  } finally {
+    ancestors.delete(value);
   }
-  return value;
 }
 
 /** The JSON text of a value, or undefined when it cannot be serialized (a capture never fails a call). */
