@@ -134,7 +134,7 @@ Each item says what it blocks. Nothing starts on the node until the items marked
 17. **ClickHouse capabilities.** `geldar-ch` has `cap_drop: [ALL]` and `cap_add: [CHOWN, DAC_OVERRIDE, SETUID, SETGID]` (compose). That set is what the entrypoint's uid drop is assumed to need `[INF]`; no smaller set has been tested. A binary in the image with file capabilities outside the bounding set fails to exec with EPERM. Whether the image's binaries carry file capabilities is not checked (`getcap` in the scratch run). **Blocks start of geldar-ch.** [VER on Docker Desktop with a named volume; node check still needed] geldar-ch started healthy with restarts 0 under this cap set (report 6, step A). `getcap` was not run.
 18. **ClickHouse `<grants>` syntax and `from_env` on 25.12.5.** The reader's grants use `<grants><query>GRANT SELECT ON ...</query></grants>` in `users.xml`, and the hashes are read with `from_env` (see "Password hashes"). Both are `[INF]` for 25.12.5. A malformed grant or an unsupported `from_env` stops ClickHouse from loading users, so it fails to start. **Blocks start of geldar-ch.** [VER] Users loaded with the env hashes: the reader's `SELECT` works with the secret and an empty password is refused (report 4, step 3; report 6, steps B and F).
 19. **Reader quota.** 0352 gives no per-hour read quota value, so `geldar_reader` has no quota of its own and uses `quota default` (`users.xml`). 0352 (its line 104) also asks for a per-hour quota on the writer; `geldar_writer` uses `quota default` too (item 28). This is an owner decision, not a check. **Blocks nothing.**
-20. **Node-only hash file.** `/mnt/nvme/geldar-telemetry/secrets/ch-hashes.env` (`GELDAR_CH_WRITER_SHA256`, `GELDAR_CH_READER_SHA256`) must exist on the node before `geldar-ch` starts. Compose marks it `required: false` so that `docker compose config` runs off the node. On the node, a missing file leaves the variables unset and ClickHouse fails to start. Nothing has checked the file on the node. **Blocks start of geldar-ch.** Whether an unset `from_env` is an error or an empty hash is `[UNV]`; if ClickHouse accepts an empty hash, the start succeeds and the N4 check below (geldar-ch must refuse to start without the file) fails. The `required: false` form needs Compose 2.24.0 or later `[INF]`, not checked on the node. Partly seen in the scratch run: the file was written and geldar-ch came up healthy with it; the refusal without the file was not run.
+20. **Node-only hash file.** `/mnt/nvme/geldar-telemetry/secrets/ch-hashes.env` (`GELDAR_CH_WRITER_SHA256`, `GELDAR_CH_READER_SHA256`) must exist on the node before `geldar-ch` starts. Compose marks it `required: false` so that `docker compose config` runs off the node. On the node, a missing file leaves the variables unset and ClickHouse fails to start. Nothing has checked the file on the node. **Blocks start of geldar-ch.** Whether an unset `from_env` is an error or an empty hash is `[UNV]`; if ClickHouse accepts an empty hash, the start succeeds and the refusal test in N4 step g.1 (geldar-ch must refuse to start without the file) fails. The `required: false` form needs Compose 2.24.0 or later `[INF]`, not checked on the node. Partly seen in the scratch run: the file was written and geldar-ch came up healthy with it; the refusal without the file was not run.
 21. **`default` user network restriction (B1).** `users.xml` sets `replace="replace"` on `<networks>` and on each `<ip>`, so the stock `::/0` should not be kept. The merge semantics of `replace` on 25.12.5 are `[INF]`. If the merge appends instead, `default` (no password, no `access_management`) is reachable from every container on `geldar-telemetry`, including `geldar-gateway`. Negative test, from a second container on the external network. It must fail (non-zero exit, an authentication or address error, and no `1` printed):
 
     ```
@@ -181,7 +181,7 @@ Scratch reports 2 to 8 are in the campaign scratchpad, not in the repo. The runs
 - report4 (round 3): FAIL at step 4. The migrator could not reach `geldar-ch` because the name resolved to the backend-network address (item 29).
 - report5 (round 4): FAIL at step C. The writer lacked `TABLE ENGINE` on Distributed and the `USAGE` privilege the error named, so the migrator exited 1. Steps D to G were not run.
 - report6 (config b5020016): PASS for steps A to H. The migrator exited 0 after the explicit TABLE ENGINE grants and `GRANT REMOTE` for `geldar_writer` (item 32).
-- report8 (config e6a08a4b, final): PASS for steps A to H. ClickHouse starts on this config with the restricted `default` user (explicit grants; the stock `access_management` and `named_collection_control` keys removed). The migrator exited 0 with 4/14/6/7/66/36 tables and the engine mix in N4 step 10. SigNoz health returned 200, with one non-fatal ERROR line (no active-queries log directory). The collector had no error or warning lines, and the marker trace landed: 1 row in `signoz_index_v3` and 1 through `distributed_signoz_index_v3`. The reader reads through the distributed table; its INSERT, `system.query_log` and `remote()` were refused. The writer reaches `default` through `remote()` (item 32). One outbound SYN_SENT was seen (item 33).
+- report8 (config e6a08a4b, final): PASS for steps A to H. ClickHouse starts on this config with the restricted `default` user (explicit grants; the stock `access_management` and `named_collection_control` keys removed). The migrator exited 0 with 4/14/6/7/66/36 tables and the engine mix in N4 step h.2. SigNoz health returned 200, with one non-fatal ERROR line (no active-queries log directory). The collector had no error or warning lines, and the marker trace landed: 1 row in `signoz_index_v3` and 1 through `distributed_signoz_index_v3`. The reader reads through the distributed table; its INSERT, `system.query_log` and `remote()` were refused. The writer reaches `default` through `remote()` (item 32). One outbound SYN_SENT was seen (item 33).
 
 Status key: **VERIFIED** = the item's claim was exercised and held; **PARTIAL** = part of it was exercised, the rest is in the note; **OPEN** = a finding with no answer yet; **NOT-CHECKED** = not exercised in the scratch run.
 
@@ -223,53 +223,136 @@ Status key: **VERIFIED** = the item's claim was exercised and held; **PARTIAL** 
 
 report5 (round 4) reported the error as `Missing permissions: USAGE ON *.*`, not `REMOTE`, so that run did not name the REMOTE grant as the missing privilege. The REMOTE grant was added together with the explicit engine grants in the same fix, and the two were not tested apart.
 
-## Checks before the first compose up (N4)
+## N4 checks
 
-Run these in order. Each must pass before the next start.
+Run on the node as root, from the repo checkout that CD placed (so `deploy/telemetry/compose.yml` resolves). Do the steps in order. Each step must pass before the next. The commands marked "written for this README" were not run in the scratch runs; the expected outputs marked "report8" come from the final passing local run (Docker Desktop, scratch reports are not in the repo). `<digest>` placeholders appear only for helper images that are not pinned in the repo; record the digest you pulled in the N4 report.
 
-1. Create the secret and hash files per "Secrets", then `ls -ln /mnt/nvme/geldar-telemetry/secrets` matches the table (item 14).
-2. **Hash file refusal (runs first, before any N4 network check).** The backend network exists only while the project is up.
-    a. `mv /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env.aside`
-    b. `docker compose -f deploy/telemetry/compose.yml up -d geldar-ch`. This starts `geldar-ch-keeper` first and creates the backend network.
-    c. Wait 2 minutes, then `docker inspect -f '{{.State.Health.Status}}' geldar-ch`. Expected: not `healthy`. A restart loop is the expected refusal, so `starting`, `unhealthy` or `restarting` all pass. `docker logs geldar-ch` shows a missing-variable error for `GELDAR_CH_WRITER_SHA256` or `GELDAR_CH_READER_SHA256`. If the status is `healthy`, stop and resolve item 20.
-    d. `docker compose -f deploy/telemetry/compose.yml down`. Expected: exit 0. This removes the backend network.
-    e. `mv /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env.aside /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env`, then repeat step 1's `ls -ln` check (mode `0400`).
-3. **Bring geldar-ch up with the hash file restored.** `docker compose -f deploy/telemetry/compose.yml up -d geldar-ch`. Wait up to 3 minutes until `docker inspect -f '{{.State.Health.Status}}' geldar-ch` prints `healthy` and `docker inspect -f '{{.State.Health.Status}}' geldar-ch-keeper` prints `healthy`. If either stays unhealthy, stop.
-4. **Network (geldar-ch is up).**
-    a. `docker network inspect geldar-telemetry_geldar-telemetry-backend --format '{{.Internal}}'` prints `true`.
-    b. `docker network inspect geldar-telemetry --format '{{range .Containers}}{{.Name}} {{end}}'` lists `geldar-ch` and does not list `geldar-ch-keeper`.
-5. **Negative and positive tests (geldar-ch is healthy).** Run the `docker run --rm --network geldar-telemetry --entrypoint /usr/bin/clickhouse clickhouse/clickhouse-server@sha256:cacf32d6884291dc2ff5e0156a97f46fc53ff7c929a7906d114e268a929dfd3a client --host geldar-ch ...` form from item 21 for each line below. Negative lines must exit non-zero with an authentication or address error and print no `1`. Record the exact error text in the report.
-    a. `--user default --query "SELECT 1"`: negative (item 21). Must fail.
-    b. `--user geldar_writer --password '' --query "SELECT 1"`: negative (item 7, M1). Must fail.
-    c. `--user geldar_reader --password '' --query "SELECT 1"`: negative (item 7, M1). Must fail.
-    d. Positive control: `--user geldar_reader --password "$(cat /mnt/nvme/geldar-telemetry/secrets/ch_reader_password)" --query "SELECT 1"`, run as host root with the password not printed. Expected: prints `1`. This shows the network path and client work, so the negatives above fail for the right reason.
-    e. Positive check from inside geldar-ch: `docker exec geldar-ch clickhouse-client -q "SHOW CREATE USER default"` shows `HOST LOCAL` (item 21).
-6. **No empty-string hash (M1).** `grep -c e3b0c442 /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env` must print `0`. `grep` exits 1 when the count is 0, so judge by the printed number. Do not print the file.
-7. The vendor reporting setting is found and disabled (item 26).
-8. The N4 request names the extra network `geldar-telemetry_geldar-telemetry-backend` (see "Networks").
-9. **Histogram binary (item 6).** Use a new empty scratch directory outside the repo, and keep the script that runs these steps out of it.
-    a. Download the pinned tarball only: `curl -fsSL -o hq.tar.gz https://github.com/SigNoz/signoz/releases/download/histogram-quantile%2Fv0.0.1/histogram-quantile_linux_amd64.tar.gz`.
-    b. `echo "33997073eb6d82b7be4f27f9fc8ec9e28a395e0f20674d5d54bb2fa28a75488d  hq.tar.gz" | sha256sum -c -`. **Abort on any mismatch**: delete the tarball and stop.
-    c. `tar -tzf hq.tar.gz` lists the contents. The release also ships license and readme files beside the binary; record the list in the N4 report.
-    d. `tar -xzf hq.tar.gz histogram-quantile` extracts only the binary (use the member name shown in step c).
-    e. `sha256sum histogram-quantile`: record the full value in the N4 report (the scratch run's prefix was `fc3168f9`).
-    f. `install -d -o 101 -g 101 -m 0755 /mnt/nvme/geldar-telemetry/clickhouse/user_scripts` then `install -o 101 -g 101 -m 0755 histogram-quantile /mnt/nvme/geldar-telemetry/clickhouse/user_scripts/histogramQuantile`.
-    g. Delete the tarball and the extracted copy from the scratch directory.
-    h. After `geldar-ch` is healthy (N4 step 3), run `docker exec geldar-ch clickhouse-client -q "SELECT name FROM system.functions WHERE name = 'histogramQuantile'"` (one row). Then run a value check with cumulative bucket counts that include a `+Inf` bucket (non-cumulative input gave `nan` in the scratch run, so do not use it). The scratch function query is not kept in the repo or the reports: write the query and its expected result into the N4 report before the check.
-10. **Migrator and tables (after start order step 3).**
-    a. `docker inspect -f '{{.State.ExitCode}} {{.State.OOMKilled}}' geldar-signoz-migrator` prints `0 false`.
-    b. `SELECT database, count() FROM system.tables WHERE startsWith(database, 'signoz_') GROUP BY database ORDER BY database` (run with `docker exec geldar-ch clickhouse-client`) must give `signoz_analytics` 4, `signoz_logs` 14, `signoz_metadata` 6, `signoz_meter` 7, `signoz_metrics` 66, `signoz_traces` 36 (133 in all). Any other count stops the start.
-    c. `SELECT engine, count() FROM system.tables WHERE startsWith(database, 'signoz_') GROUP BY engine ORDER BY engine` must give `Distributed` 54, `MaterializedView` 24, `ReplicatedAggregatingMergeTree` 7, `ReplicatedMergeTree` 16, `ReplicatedReplacingMergeTree` 31, `ReplicatedSummingMergeTree` 1. A plain `MergeTree` or `ReplacingMergeTree` here means the migrator ran with replication off.
-11. **End-to-end trace marker (through the collector).** The collector's ports are not published on the node, so send from a one-shot container on the `geldar-telemetry` network.
-    a. Make a 12-hex-character marker (`openssl rand -hex 6`) and keep it in the N4 report, not in the repo.
-    b. `docker run --rm --network geldar-telemetry curlimages/curl@sha256:<full digest> -sS -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '<minimal OTLP/HTTP JSON trace with the marker in the span name>' http://geldar-signoz-otelcol:4318/v1/traces`. Expected `200`. Pin the helper by the full digest recorded at pull time: the scratch run used `curlimages/curl:8.11.1`, digest starting `c1fe1679`, which is not in the repo.
-    c. After the collector's flush interval, count as the reader: `docker exec geldar-ch clickhouse-client --user geldar_reader --password "$(cat /mnt/nvme/geldar-telemetry/secrets/ch_reader_password)" -q "SELECT count() FROM signoz_traces.signoz_index_v3 WHERE <span name column> = '<marker>'"`. Expected `1`. The column name is not recorded in the reports, so run `DESCRIBE signoz_traces.signoz_index_v3` first. Count the local table `signoz_index_v3`, not the `distributed_` table.
-    d. Run the command with the password read from the file and not printed. Do not paste the value into a saved shell history.
-12. **Node-only checks (cannot be done on Docker Desktop).**
-    a. Secret owner and mode: `ls -ln /mnt/nvme/geldar-telemetry/secrets` matches the Secrets table (item 14). Then `test -r` as each service's uid through a one-shot container with the same user, read-only mount of that one file, and the same capability set as the service. For the writer, `--user 10001:10001`; for the reader, `--user 0:0 --cap-drop ALL`. Each must exit 0. The one-shot needs `/bin/sh` in the image (item 13).
-    b. The inferred uid 101 for the two ClickHouse images: run the `id` commands in "Owner uids" on the node and stop on any other output.
-    c. Real memory and CPU caps: with the 0352 caps in place (not the scratch override), run `docker stats --no-stream` once the stack is up and record the figures in the N4 report. The caps are `geldar-ch` 3.0 CPU and 8g, Keeper 0.5 and 1g, `geldar-signoz` 1.0 and 1g, the collector 0.5 and 1g, and the migrator 0.5 and 512m. The scratch figures (for example `geldar-ch` at 2 GiB) are from lowered caps and do not prove the 0352 values.
-13. **Outbound connections of geldar-signoz (item 33).** Before the stack is left up, observe its outbound sockets: `docker exec geldar-signoz cat /proc/net/tcp` (or `ss -tn` if the image has it) about 60 seconds after start and again after 10 minutes. Look for state `02` (SYN_SENT) or `01` (ESTABLISHED) to any address that is not on the Docker networks. Record the destination in the N4 report. Reverse-lookup that address on the node and record the hostname in the N4 report only, not in the repo. Then decide with the owner whether to block egress for `geldar-signoz`. If no outbound socket appears in either sample, record that too, and item 33 stays open until the owner accepts the result.
+**Step a. Preconditions.**
+
+1. The network exists (N2): `docker network inspect geldar-telemetry --format '{{.Name}}'` prints `geldar-telemetry`. If not, stop.
+2. The directories exist (N3): `ls -ld /mnt/nvme/geldar-telemetry/clickhouse /mnt/nvme/geldar-telemetry/keeper /mnt/nvme/geldar-telemetry/query /mnt/nvme/geldar-telemetry/queue` lists all four. (`queue` is not mounted by this compose file.)
+3. Create the secrets directory: `install -d -m 0700 /mnt/nvme/geldar-telemetry/secrets`.
+4. The loopback port 8095 is free: `ss -ltn | grep -c ':8095 '` prints `0`.
+5. The vendor reporting variable is set in compose (item 26): `grep -c SIGNOZ_ANALYTICS_ENABLED deploy/telemetry/compose.yml` prints at least `1`.
+
+**Step b. Pull the four images by digest** (the compose references; the migrator uses the collector image):
+
+```
+docker pull clickhouse/clickhouse-keeper@sha256:525b8b0f93ccb371131c46f22a066ea43d33d74aba314203e8044609945d8524
+docker pull clickhouse/clickhouse-server@sha256:cacf32d6884291dc2ff5e0156a97f46fc53ff7c929a7906d114e268a929dfd3a
+docker pull signoz/signoz@sha256:a7d1a968a1f7f65c518106150ac05424ca8e91c52d7076077dfce034980e9c34
+docker pull signoz/signoz-otel-collector@sha256:7e4e539a73f1f88fbc1cd7e659ab3950908e83ce1f2a37a297452f910d072174
+docker image inspect --format '{{.RepoDigests}}' clickhouse/clickhouse-keeper@sha256:525b8b0f93ccb371131c46f22a066ea43d33d74aba314203e8044609945d8524 clickhouse/clickhouse-server@sha256:cacf32d6884291dc2ff5e0156a97f46fc53ff7c929a7906d114e268a929dfd3a signoz/signoz@sha256:a7d1a968a1f7f65c518106150ac05424ca8e91c52d7076077dfce034980e9c34 signoz/signoz-otel-collector@sha256:7e4e539a73f1f88fbc1cd7e659ab3950908e83ce1f2a37a297452f910d072174
+```
+
+Expected: each pull succeeds and each inspect line contains the same digest as the pull. Compare against the Pins table. Any difference stops the start.
+
+**Step c. uid check, before any `chown` and before Keeper starts (items 8 and 17).**
+
+```
+docker run --rm --entrypoint id clickhouse/clickhouse-server@sha256:cacf32d6884291dc2ff5e0156a97f46fc53ff7c929a7906d114e268a929dfd3a clickhouse
+docker run --rm --entrypoint id clickhouse/clickhouse-keeper@sha256:525b8b0f93ccb371131c46f22a066ea43d33d74aba314203e8044609945d8524 clickhouse
+```
+
+Expected on both: `uid=101(clickhouse) gid=101(clickhouse)`. **Stop on any other output.** Only then:
+
+```
+chown 101:101 /mnt/nvme/geldar-telemetry/clickhouse /mnt/nvme/geldar-telemetry/keeper
+chown 0:0 /mnt/nvme/geldar-telemetry/query
+ls -ldn /mnt/nvme/geldar-telemetry/clickhouse /mnt/nvme/geldar-telemetry/keeper /mnt/nvme/geldar-telemetry/query
+```
+
+The listing shows `101 101` for the first two and `0 0` for `query`.
+
+**Step d. Create the secret files and check owner, mode and readability (item 14).** Passwords are written by shell builtins, so they never appear in a process argument list:
+
+```
+cd /mnt/nvme/geldar-telemetry/secrets
+(umask 277; printf %s "$(openssl rand -hex 32)" > ch_writer_password; printf %s "$(openssl rand -hex 32)" > ch_reader_password)
+chown 10001:10001 ch_writer_password
+chown 0:0 ch_reader_password
+ls -ln
+```
+
+Expected: `ch_writer_password` is `10001 10001` mode `-r--------`, `ch_reader_password` is `0 0` mode `-r--------`. `ch-hashes.env` does not exist yet (step e). Then read each file as its container uid through a one-shot container, with a read-only mount of that one file and `--cap-drop ALL` (as the service):
+
+```
+docker run --rm --user 10001:10001 --cap-drop ALL -v /mnt/nvme/geldar-telemetry/secrets/ch_writer_password:/run/secrets/ch_writer_password:ro --entrypoint sh signoz/signoz-otel-collector@sha256:7e4e539a73f1f88fbc1cd7e659ab3950908e83ce1f2a37a297452f910d072174 -c 'test -r /run/secrets/ch_writer_password && echo readable'
+docker run --rm --user 0:0 --cap-drop ALL -v /mnt/nvme/geldar-telemetry/secrets/ch_reader_password:/run/secrets/ch_reader_password:ro --entrypoint sh signoz/signoz@sha256:a7d1a968a1f7f65c518106150ac05424ca8e91c52d7076077dfce034980e9c34 -c 'test -r /run/secrets/ch_reader_password && echo readable'
+docker run --rm --user 10001:10001 --cap-drop ALL -v /mnt/nvme/geldar-telemetry/secrets/ch_reader_password:/run/secrets/ch_reader_password:ro --entrypoint sh signoz/signoz-otel-collector@sha256:7e4e539a73f1f88fbc1cd7e659ab3950908e83ce1f2a37a297452f910d072174 -c 'test -r /run/secrets/ch_reader_password && echo readable'
+```
+
+Expected: the first two print `readable`; the third (the wrong uid, a negative control) prints nothing. Written for this README. If an image has no `/bin/sh`, stop and resolve item 13.
+
+**Step e. Hash file (guarded; the passwords stay out of argv).** One block, run in a subshell so a failure aborts all of it:
+
+```
+(
+set -eu
+cd /mnt/nvme/geldar-telemetry/secrets
+umask 277
+empty=e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+h() { pw=$(cat "$1"); [ "${#pw}" -eq 64 ] || { echo "ABORT: $1 is not 64 characters" >&2; exit 1; }; printf %s "$pw" | sha256sum | cut -d' ' -f1; }
+w=$(h ch_writer_password)
+r=$(h ch_reader_password)
+if [ -z "$w" ] || [ -z "$r" ] || [ "$w" = "$empty" ] || [ "$r" = "$empty" ] || [ "$w" = "$r" ]; then echo "ABORT: empty, empty-string or equal hash" >&2; exit 1; fi
+printf 'GELDAR_CH_WRITER_SHA256=%s\nGELDAR_CH_READER_SHA256=%s\n' "$w" "$r" > ch-hashes.env
+)
+```
+
+Abort rule: if the block prints `ABORT` or exits non-zero, delete `ch-hashes.env` if it exists and start again. Then `ls -ln ch-hashes.env` shows mode `-r--------` and `grep -c e3b0c442 ch-hashes.env` prints `0` (grep exits 1 when the count is 0; judge by the number). Do not print the file. Do not put password values in a command line or shell history.
+
+**Step f. Histogram binary (item 6), before `geldar-ch` starts.** Use a new empty scratch directory outside the repo, and keep any script out of it.
+
+1. `curl -fsSL -o hq.tar.gz https://github.com/SigNoz/signoz/releases/download/histogram-quantile%2Fv0.0.1/histogram-quantile_linux_amd64.tar.gz`
+2. `echo "33997073eb6d82b7be4f27f9fc8ec9e28a395e0f20674d5d54bb2fa28a75488d  hq.tar.gz" | sha256sum -c -` must print `hq.tar.gz: OK`. **On any mismatch delete the tarball and stop. Do not extract.**
+3. `tar -tzf hq.tar.gz` lists the contents; record the list in the N4 report (the release ships license and readme files beside the binary).
+4. `tar -xzf hq.tar.gz histogram-quantile` extracts only the binary (use the member name from step 3).
+5. `sha256sum histogram-quantile`: record the full value in the N4 report. The round 1 value began `fc3168f9`; a different value is a finding to report before install.
+6. `install -d -o 101 -g 101 -m 0755 /mnt/nvme/geldar-telemetry/clickhouse/user_scripts` then `install -o 101 -g 101 -m 0755 histogram-quantile /mnt/nvme/geldar-telemetry/clickhouse/user_scripts/histogramQuantile`; `ls -ln /mnt/nvme/geldar-telemetry/clickhouse/user_scripts` shows `101 101` and `-rwxr-xr-x`.
+7. Delete the tarball and the extracted copy from the scratch directory.
+8. Value check, after `geldar-ch` is healthy (step g): `docker exec geldar-ch clickhouse-client -q "SELECT histogramQuantile([0.5,1,2,inf],[1,3,6,6],0.9)"` expects `1.8000000000000003`, and `... histogramQuantile([0.5,1,2,inf],[1,3,6,6],0.5)` expects `1`. Both are cumulative inputs with a `+Inf` bucket. Also `SELECT name FROM system.functions WHERE name = 'histogramQuantile'` returns one row (item 24).
+
+**Step g. Hash-file refusal, Keeper and ClickHouse, network tests.**
+
+1. Refusal first (item 20): `mv /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env.aside`, then `docker compose -f deploy/telemetry/compose.yml up -d geldar-ch` (starts `geldar-ch-keeper` first and creates the backend network). Wait 2 minutes. `docker inspect -f '{{.State.Health.Status}}' geldar-ch` must not print `healthy` (`starting`, `unhealthy` or `restarting` all pass), and `docker logs geldar-ch` names a missing `GELDAR_CH_WRITER_SHA256` or `GELDAR_CH_READER_SHA256`. If it is `healthy`, stop and resolve item 20 (this refusal was not run in the scratch runs).
+2. `docker compose -f deploy/telemetry/compose.yml down` exits 0 (removes the backend network). Then `mv /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env.aside /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env` and repeat `ls -ln` (mode `-r--------`).
+3. `docker compose -f deploy/telemetry/compose.yml up -d geldar-ch`. Within 3 minutes both `docker inspect -f '{{.State.Health.Status}}' geldar-ch` and the same for `geldar-ch-keeper` print `healthy`. If either stays unhealthy, stop. Expected restarts: `docker inspect -f '{{.RestartCount}}' geldar-ch geldar-ch-keeper` prints `0` twice.
+4. Network: `docker network inspect geldar-telemetry_geldar-telemetry-backend --format '{{.Internal}}'` prints `true`; `docker network inspect geldar-telemetry --format '{{range .Containers}}{{.Name}} {{end}}'` lists `geldar-ch` and not `geldar-ch-keeper`.
+5. Run step f.8 (value check) now.
+6. Negative and positive tests, from a one-shot container on the external network. Base form (item 21): `docker run --rm --network geldar-telemetry --entrypoint /usr/bin/clickhouse clickhouse/clickhouse-server@sha256:cacf32d6884291dc2ff5e0156a97f46fc53ff7c929a7906d114e268a929dfd3a client --host geldar-ch <options>`. Negative lines must exit non-zero with an authentication or address error and print no `1`; record the error text.
+    - `--user default --query "SELECT 1"` must fail (report8: refused for the second container).
+    - `--user geldar_writer --password '' --query "SELECT 1"` must fail.
+    - `--user geldar_reader --password '' --query "SELECT 1"` must fail.
+    - Positive control: `docker run ... -e CLICKHOUSE_PASSWORD ... client --host geldar-ch --user geldar_reader --query "SELECT 1"` with `CLICKHOUSE_PASSWORD="$(cat /mnt/nvme/geldar-telemetry/secrets/ch_reader_password)"` set in the calling shell for that one command (the `-e` form without a value passes it without putting it in argv). Expected `1`. Whether the client reads `CLICKHOUSE_PASSWORD` is not confirmed; if it prints a login error, use `--ask-password` interactively.
+    - `docker exec geldar-ch clickhouse-client -q "SHOW CREATE USER default"` shows `HOST LOCAL`.
+
+**Step h. Migrator, SigNoz, collector, end-to-end, reader and writer checks.**
+
+1. Migrator: `docker compose -f deploy/telemetry/compose.yml up -d geldar-signoz-migrator`, wait for exit, then `docker inspect -f '{{.State.ExitCode}} {{.State.OOMKilled}}' geldar-signoz-migrator` prints `0 false` (report8: exit 0).
+2. Tables: `docker exec geldar-ch clickhouse-client -q "SELECT database, count() FROM system.tables WHERE startsWith(database, 'signoz_') GROUP BY database ORDER BY database"` gives `signoz_analytics` 4, `signoz_logs` 14, `signoz_metadata` 6, `signoz_meter` 7, `signoz_metrics` 66, `signoz_traces` 36 (report8). Engines: `... SELECT engine, count() ... GROUP BY engine ORDER BY engine` gives `Distributed` 54, `MaterializedView` 24, `ReplicatedAggregatingMergeTree` 7, `ReplicatedMergeTree` 16, `ReplicatedReplacingMergeTree` 31, `ReplicatedSummingMergeTree` 1. Any other count stops the start; a plain `MergeTree` means replication was off.
+3. Start SigNoz and the collector, in that order, as separate starts: `docker compose -f deploy/telemetry/compose.yml up -d geldar-signoz`, then `docker compose -f deploy/telemetry/compose.yml up -d geldar-signoz-otelcol`.
+4. SigNoz health: `docker inspect -f '{{.State.Health.Status}}' geldar-signoz` prints `healthy` and `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8095/api/v1/health` prints `200`. Report8 saw one non-fatal ERROR line in the SigNoz log (a missing active-queries log directory); any other ERROR line is a finding. `docker inspect geldar-signoz --format '{{range .Config.Env}}{{println .}}{{end}}' | grep SIGNOZ_ANALYTICS_ENABLED` prints `SIGNOZ_ANALYTICS_ENABLED=false`.
+5. Collector: `docker logs geldar-signoz-otelcol 2>&1 | grep -ciE 'error|warn'` prints `0` (report8: 0 error and warn lines); the process listens on 4317, 4318 and 13133 inside (`docker run --rm --net container:geldar-signoz-otelcol busybox netstat -ltn`). No collector port is published.
+6. No password in the environment or command of the three services: `docker inspect geldar-signoz-migrator geldar-signoz geldar-signoz-otelcol | grep -cFf /mnt/nvme/geldar-telemetry/secrets/ch_writer_password` prints `0`, and the same with `ch_reader_password`. (`-f` reads the pattern from the file, so it is not in argv. Report8 found none; the only hashes are the two sha256 values in the `geldar-ch` environment.)
+7. End-to-end marker (the collector has no published port, so send from a one-shot container on `geldar-telemetry`): make a marker `openssl rand -hex 6` and keep it in the N4 report only. `docker run --rm --network geldar-telemetry curlimages/curl@sha256:<digest> -sS -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '<minimal OTLP/HTTP JSON trace with the marker as span name>' http://geldar-signoz-otelcol:4318/v1/traces` prints `200` (report8: HTTP 200). The scratch run used `curlimages/curl:8.11.1`; its digest is not in the repo.
+8. After the collector's flush interval, run `DESCRIBE signoz_traces.signoz_index_v3` to find the span-name column (not recorded in the reports), then count the marker as `default` inside geldar-ch: `docker exec geldar-ch clickhouse-client -q "SELECT count() FROM signoz_traces.signoz_index_v3 WHERE <span name column> = '<marker>'"` expects `1` (local table, report8), and the same through `signoz_traces.distributed_signoz_index_v3` expects `1` (report8 used the distributed table).
+9. Reader (read the password as in step g.6, via `CLICKHOUSE_PASSWORD` in the calling shell and `docker exec -e CLICKHOUSE_PASSWORD geldar-ch clickhouse-client --user geldar_reader ...`). Expected (report8): `SELECT count()` through the distributed table works, a filter on the marker works, an INSERT is refused (code 497), `SELECT count() FROM system.query_log` is refused, and `SELECT * FROM remote('127.0.0.1:9000', system, one)` is refused (needs READ ON REMOTE). The exact query text was not recorded; these were written for this README.
+10. Writer through `remote()` (item 32, same method with `--user geldar_writer`). Expected (report8): `SELECT currentUser() FROM remote('127.0.0.1:9000', system, one)` prints `default` (the writer acts as `default`); `url()` and `s3()` wrapped in `remote(... view(...))` are refused (READ ON URL, READ ON S3), `file()` is refused by the path restriction (code 291); `SELECT count() FROM remote('127.0.0.1:9000', system, query_log)` is allowed (accepted residual). Directly as the writer: `url()`, `s3()`, `SYSTEM FLUSH LOGS` and `KILL QUERY` are each refused. Record the exact query text you used in the N4 report; the reports do not keep it. As `default` inside geldar-ch, `SHOW GRANTS FOR geldar_writer` is refused (needs SHOW USERS, report8), so the grant list is read from `users.xml`, and `SHOW GRANTS` as `default` is not part of the check.
+
+**Step i. Node-only checks and the remaining unverified items.**
+
+1. Real caps (item 17 and the compose caps): with the 0352 caps in place, `docker stats --no-stream` once the stack is up; record the figures. The caps are `geldar-ch` 3.0 CPU and 8g, Keeper 0.5 and 1g, `geldar-signoz` 1.0 and 1g, the collector 0.5 and 1g, the migrator 0.5 and 512m. The scratch figures came from lowered caps and prove nothing about these.
+2. Secret owner and mode, and the uid check: steps c and d, done on the node.
+3. Item 29 (cluster alias): `docker exec geldar-ch clickhouse-client -q "SELECT host_name, host_address FROM system.clusters WHERE cluster='cluster'"` shows `geldar-ch-sql` and the telemetry-network address (not the backend address); the migrator already reached it in step h.1.
+4. Items 30 and 31 (listeners): `docker run --rm --net container:geldar-ch busybox netstat -ltn` shows 8123 and 9000 on `0.0.0.0`, 9009 on `127.0.0.1`, and no 9004 or 9005. Record any other listener.
+5. Item 32: see step h.10. Also `docker exec geldar-ch clickhouse-client -q "SELECT count() FROM system.grants WHERE user_name = 'default'"` is not evidence for REMOTE (report8: the REMOTE grant does not appear as a row there), so do not use it.
+6. Item 25 and the system-log TTL check. After the stack has run 10 minutes: `docker exec geldar-ch clickhouse-client -q "SELECT name FROM system.tables WHERE database = 'system' AND name LIKE '%\_log' AND create_table_query NOT LIKE '%TTL%'"`. The file `system-log-ttl.xml` has 23 sections. Decision rule: any table listed without a TTL gets a section in `system-log-ttl.xml` before the stack is left up unattended. A table with its TTL in the engine (for example `opentelemetry_span_log`) can show `TTL` only in `engine_full`; check that column for a listed name before adding a section.
+7. Item 22: after a day, `docker exec geldar-ch ls -la /var/log/clickhouse-server` shows no growing files. The `Not found: logger.log` notices at startup are not failures.
+8. Item 15: `docker port geldar-signoz` prints only `8080/tcp -> 127.0.0.1:8095`; `docker run --rm --net container:geldar-signoz busybox netstat -ltn` shows 4320 and 6060 on all interfaces (rounds 1 and 8). Decide at N4 whether to accept their reach from `geldar-telemetry` containers; record the decision.
+9. Item 33 (outbound sockets of `geldar-signoz`): run the decode recipe from item 33 about 60 seconds after start and again after 10 minutes. Record only the port, public or private, and the reverse-DNS name in the N4 report. If the connection persists, recurs or resolves to a vendor or analytics host, stop and ask the owner about egress. Until decided, do not leave `geldar-signoz` running unattended. This blocks unattended running, not the N4 start.
+
+**Step j. Rollback.** `docker compose -f deploy/telemetry/compose.yml down` stops and removes the containers and the backend network (data stays on the host, and the external `geldar-telemetry` is not removed). Check with `docker network ls` that `geldar-telemetry_geldar-telemetry-backend` is gone. Delete the data directories under `/mnt/nvme/geldar-telemetry` only on the owner's say.
 
 ## Start order (for the scratch run, not this packet)
 
