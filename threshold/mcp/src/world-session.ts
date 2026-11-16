@@ -6,6 +6,7 @@ import {
   type ToolHandlers,
   type ToolResponse,
 } from '@geldar/mcp-mock';
+import { errorFields } from '@geldar/telemetry';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   CallToolRequestSchema,
@@ -119,6 +120,16 @@ function finalOutcome(response: ToolResponse, pending: PendingCall | undefined):
 }
 
 /**
+ * What the SDK sends the agent when a request handler throws: a JSON-RPC error whose message is the
+ * thrown error's own message, or `Internal error` when it has none (shared/protocol.js, the handler's catch).
+ */
+function thrownText(error: unknown): string {
+  const message =
+    typeof error === 'object' && error !== null ? Reflect.get(error, 'message') : undefined;
+  return message === undefined || message === null ? 'Internal error' : String(message);
+}
+
+/**
  * Ends the one span of a call, from the final response and what the handler left behind. A recorder that
  * fails loses the span only; the response is unchanged.
  */
@@ -130,15 +141,17 @@ function endToolSpan(
   response: ToolResponse,
   started: number,
   forced?: string,
+  thrown?: { error: unknown },
 ): void {
   if (deps.onToolSpan === undefined) return;
   try {
     const pending = ctx === undefined ? undefined : takePendingCall(ctx);
     const outcome = forced ?? finalOutcome(response, pending);
-    const text = responseText(response);
+    const text = thrown ? thrownText(thrown.error) : responseText(response);
     const content: ToolCallSpan['content'] = { name, arguments: args };
     if (pending?.result !== undefined) content.result = pending.result;
-    if (pending?.error !== undefined) content.error = pending.error;
+    if (thrown) content.error = errorFields(thrown.error);
+    else if (pending?.error !== undefined) content.error = pending.error;
     else if (outcome !== 'ok') {
       content.error = { 'exception.type': outcome, 'exception.message': text };
     }
@@ -191,11 +204,9 @@ export async function runToolCall(
       deps.maxResultBytes,
     );
   } catch (error) {
-    const failed: ToolResponse = {
-      isError: true,
-      content: [{ type: 'text', text: `internal_error: ${PLAYER_FAULT}` }],
-    };
-    endToolSpan(deps, name, args, ctx, failed, started);
+    // The agent gets the SDK's own JSON-RPC error for a throw, not a tool response: the span keeps the real error.
+    const unseen: ToolResponse = { isError: true, content: [] };
+    endToolSpan(deps, name, args, ctx, unseen, started, 'internal', { error });
     throw error;
   }
   endToolSpan(deps, name, args, ctx, response, started);

@@ -4,11 +4,7 @@ import { ScriptedRateLimiter } from './fakes/stores.fakes.ts';
 import { worldFixture } from './fakes/world.fakes.ts';
 import type { BodyGateway, PlayerRecord } from './ports.ts';
 import { PLAYER_FAULT } from './resources.ts';
-import {
-  authRefusalRecorder,
-  type SpanTracer,
-  toolSpanRecorder,
-} from './telemetry.ts';
+import { authRefusalRecorder, type SpanTracer, toolSpanRecorder } from './telemetry.ts';
 import { hiddenToolsFor } from './tools/unavailable.ts';
 import { createWorld, takePendingCall } from './world.ts';
 import { refuseHidden, runToolCall } from './world-session.ts';
@@ -98,6 +94,58 @@ describe('every call ends in one span (T-06d2)', () => {
     expect(spans[0]?.attributes.outcome).toBe('rate_limited');
     expect(spans[0]?.status).toEqual({ code: 2 });
     expect(eventText(spans[0], 'tool_error')).toContain('Slow down now.');
+    // Only the handler's own stored error carries these; the response-text fallback has neither.
+    expect(eventText(spans[0], 'tool_error')).toContain('exception.stacktrace');
+    expect(eventText(spans[0], 'tool_error')).toContain('"exception.type":"Error"');
+  });
+
+  it('(a2) a throw out of callTool records the real error and the text the SDK sends', async () => {
+    const token = `gmcp-${'cd'.repeat(32)}`;
+    const failure = new TypeError(`validator broke ${token}`);
+    const log = (): never => {
+      throw failure;
+    };
+    const { deps, spans } = recorded(fixture().tools, { log });
+    // An unknown tool reaches the logger inside callTool, outside its handler try: the one way it throws.
+    await expect(runToolCall(deps, 'nope', {}, ctx())).rejects.toBe(failure);
+    expect(spans).toHaveLength(1);
+    expect(spans[0]?.attributes.outcome).toBe('internal');
+    const stored = eventText(spans[0], 'tool_error');
+    expect(stored).toContain('"exception.type":"TypeError"');
+    expect(stored).toContain('validator broke');
+    expect(stored).toContain('exception.stacktrace');
+    expect(stored).not.toContain(token);
+    // What the agent receives is the SDK's JSON-RPC error message: the thrown message, not an invented text.
+    const response = eventText(spans[0], 'tool_response');
+    expect(response).toContain('validator broke');
+    expect(response).not.toContain('internal_error');
+    expect(response).not.toContain(token);
+  });
+
+  it('(a3) a thrown value with no message is sent as Internal error', async () => {
+    const log = (): never => {
+      throw 'plain';
+    };
+    const { deps, spans } = recorded(fixture().tools, { log });
+    await expect(runToolCall(deps, 'nope', {}, ctx())).rejects.toBe('plain');
+    expect(eventText(spans[0], 'tool_response')).toBe('Internal error');
+    expect(eventText(spans[0], 'tool_error')).toContain('plain');
+  });
+
+  it('(k) a 60,000-character unknown tool name and say text add under 100 ms of capture', async () => {
+    const run = async (recorder: boolean): Promise<number> => {
+      const tools = fixture().tools;
+      const deps = recorder ? recorded(tools).deps : { tools };
+      const t0 = performance.now();
+      await runToolCall(deps, 'a'.repeat(60_000), { x: 'a'.repeat(60_000) }, ctx());
+      await runToolCall(deps, 'say', { text: 'a'.repeat(60_000) }, ctx());
+      return performance.now() - t0;
+    };
+    await run(true);
+    const off = await run(false);
+    const on = await run(true);
+    console.info(`capture timing: on ${on.toFixed(1)} ms, off ${off.toFixed(1)} ms`);
+    expect(on - off).toBeLessThan(100);
   });
 
   it('(b) an unknown tool name gives one span with the raw arguments and an error', async () => {
