@@ -7,7 +7,8 @@
 #   docker compose -f deploy/telemetry/compose.yml up -d --force-recreate geldar-signoz
 # Merge: command and secrets are sequences, which Compose would append or merge; `!override` replaces them, so the reader secret
 # is not mounted during the window and only the one command runs. `!override` needs Compose 2.24 or later (README, compose version).
-# Every cap, port, health and security setting of geldar-signoz stays as in compose.yml (they are not mentioned here).
+# Every cap, port, health, security, network (geldar-telemetry-query only) and environment setting of geldar-signoz stays as in
+# compose.yml (they are not mentioned here, so the merge keeps them; checked with `docker compose config`).
 # The password stays out of argv and docker inspect Env, as for the reader: it is read from the secret file inside the shell.
 # Secret file: root 0:0 0400 like ch_reader_password (SigNoz runs as uid 0 without DAC_OVERRIDE, so owner root is required).
 
