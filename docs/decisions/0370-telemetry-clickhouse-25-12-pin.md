@@ -1,4 +1,4 @@
-# 0370. ClickHouse 25.12.5.44 pin, and Keeper required, for the Geldar stack
+# 0370. ClickHouse 25.12.5 (build 44) pin, and Keeper required, for the Geldar stack
 
 - Status: Accepted (owner ruling relayed by the orchestrator, geldar-93, 2026-11-16)
 - Date: 2026-11-16
@@ -15,7 +15,7 @@ Research on 2026-11-16 (`docs/analysis/telemetry/t20-stack-files.md`, and the st
 
 ## Decision
 
-1. The Geldar ClickHouse server and the Geldar ClickHouse Keeper are pinned to `25.12.5.44`, the version SigNoz v0.148.1 tests in its CI. Not 26.3. Moving to 26.3 waits until SigNoz tests it.
+1. The Geldar ClickHouse server and the Geldar ClickHouse Keeper are pinned to `25.12.5 (build 44)`, the version SigNoz v0.148.1 tests in its CI. Not 26.3. Moving to 26.3 waits until SigNoz tests it. The exact registry tag is listed with its digests in deploy/telemetry/README.md.
 2. `geldar-ch-keeper` is required. It runs at the 0352 caps: 0.5 CPU, 1g memory (memswap equal), 256 pids.
 3. The SigNoz pins are `signoz/signoz` v0.148.1, and `signoz/signoz-otel-collector` and `signoz/signoz-schema-migrator` v0.144.6. v0.144.6 is the version the v0.148.1 `go.mod` pins for the collector. The exact image digests are in `deploy/telemetry/README.md`.
 4. The one-shot migrator and the collector run as uid 10001 (image `User`). The ClickHouse server and Keeper start as root and drop to uid 101 (gid 101). That drop is inferred from upstream and is checked on the node before any `chown` (see the README).
@@ -28,4 +28,4 @@ Research on 2026-11-16 (`docs/analysis/telemetry/t20-stack-files.md`, and the st
 
 ## Amendment scope
 
-This record amends 0352 only for the ClickHouse version (26.3 becomes 25.12.5.44) and the Keeper rule (conditional becomes required). The Mind-host ingest decision, the SigNoz UI access path (SSH tunnel only), the retention and the budget in 0352 are not changed.
+This record amends 0352 only for the ClickHouse version (26.3 becomes 25.12.5 (build 44)) and the Keeper rule (conditional becomes required). The Mind-host ingest decision, the SigNoz UI access path (SSH tunnel only), the retention and the budget in 0352 are not changed.

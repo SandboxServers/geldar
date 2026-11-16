@@ -3,7 +3,7 @@
 - Status: Accepted, chosen option B (Geldar-owned ClickHouse server and SigNoz stack). The owner's ruling was relayed by the orchestrator on 2026-11-16. An earlier relay chose option A; the owner changed the answer before this record was committed, so option A is not the decision. **Ingest (owner ruling, geldar-93, 2026-11-16):** the Mind-host OTLP ingest gets a Caddy route on the shared Caddy. This supersedes the earlier no-shared-Caddy wording for ingest only (0350 clarification 3). The SigNoz UI stays SSH-tunnel only, with no Caddy route.
 - Date: 2026-11-15
 - Spec: section 7 (monitoring). Amends 0350 items 4, 5 and 6 (shared SigNoz, budget and retention, readers). Builds on 0130 (SigNoz on the node). Does not edit 0350 (it stays Accepted), `docs/spec.md` (0073), or the other tenant's configuration.
-- Note (2026-11-16): the ClickHouse version and the keeper rule are superseded by 0370 (25.12.5.44, keeper required).
+- Note (2026-11-16): the ClickHouse version and the keeper rule are superseded by 0370 (25.12.5 (build 44), keeper required).
 
 ## Context
 

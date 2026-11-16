@@ -26,7 +26,7 @@ The full list with numbers is in the README (section "Unverified, check in the s
 - **Keeper user and command (README item 8).** Keeper runs as 101:101 with the entrypoint overridden. Blocks `geldar-ch-keeper` until the `id` check on the node and the chown are done.
 - **ClickHouse uid drop (README "Owner uids").** The server and keeper images start as root and drop to 101 [INF]. Blocks any chown of `/mnt/nvme/geldar-telemetry/clickhouse` or `/keeper`. Stop on any `id` output other than `uid=101(clickhouse) gid=101(clickhouse)`.
 - **Histogram binary (item 6).** Blocks SigNoz metrics queries that use `histogramQuantile`.
-- **Migrator with ClickHouse 25.12.5.44 (item 7).** Blocks the collector: run the migrator once and check its exit code first.
+- **Migrator with ClickHouse 25.12.5 (build 44) (item 7).** Blocks the collector: run the migrator once and check its exit code first.
 - **Collector and migrator shell wrapper (items 13, 14).** The wrapper needs `/bin/sh` in the collector and migrator images, and the secret mode and uid to work on the node. Blocks both.
 - **Collector config (item 16).** Blocks the collector. Validate the config in the scratch run.
 - **SQLite env names (item 1).** Blocks `geldar-signoz` start.
