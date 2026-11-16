@@ -1,7 +1,12 @@
 import { startTelemetry, type TelemetryHandle } from '@geldar/telemetry';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MemorySink, type RecordSink } from '../body/records.ts';
-import { ACTION_SPAN_NAME, type ActionTracer, actionSpanSink } from './adam-body.ts';
+import {
+  ACTION_SPAN_NAME,
+  type ActionSpan,
+  type ActionTracer,
+  actionSpanSink,
+} from './adam-body.ts';
 
 interface ExportedSpan {
   name: string;
@@ -133,6 +138,21 @@ describe('actionSpanSink: one span per body action', () => {
     handle = startTelemetry({ service: 'geldar-golem-test', version: 'test' });
     expect(handle.enabled).toBe(false);
     expect(handle.tracerProvider).toBeUndefined();
+  });
+
+  it('with GELDAR_TELEMETRY_URL unset, main.ts passes no endpoint and gets no tracer', () => {
+    const saved = process.env.GELDAR_TELEMETRY_URL;
+    Reflect.deleteProperty(process.env, 'GELDAR_TELEMETRY_URL');
+    try {
+      handle = startTelemetry({
+        service: 'geldar-golem-test',
+        version: 'test',
+        endpoint: process.env.GELDAR_TELEMETRY_URL,
+      });
+      expect(handle.tracerProvider).toBeUndefined();
+    } finally {
+      if (saved !== undefined) process.env.GELDAR_TELEMETRY_URL = saved;
+    }
   });
 });
 
