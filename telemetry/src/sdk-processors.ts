@@ -1,6 +1,7 @@
 // SDK-level enforcement: every span and log record passes the allow-list before it reaches a batch
 // processor, so raw OpenTelemetry API calls are filtered the same as the helpers' output.
-// Processors never throw into the caller.
+// Processors never throw into the caller. A filter that fails clears the record (fail closed), and a
+// record that cannot be cleared either is dropped.
 
 import type { Attributes, Context } from '@opentelemetry/api';
 import type { LogRecordProcessor } from '@opentelemetry/sdk-logs';
@@ -26,6 +27,33 @@ function replaceKeys(target: Record<string, unknown>, next: Record<string, unkno
   Object.assign(target, next);
 }
 
+/** Filters span, span-event and span-link attributes (scope `trace`) in place. Throws if a filter fails. */
+function filterSpan(span: ReadableSpan): void {
+  replaceKeys(span.attributes, allowed(span.attributes, 'trace'));
+  for (const event of span.events) {
+    event.attributes = allowed(event.attributes ?? {}, 'trace') as NonNullable<
+      typeof event.attributes
+    >;
+  }
+  for (const link of span.links) {
+    link.attributes = allowed(link.attributes ?? {}, 'trace') as NonNullable<
+      typeof link.attributes
+    >;
+  }
+}
+
+/** Empties span, event and link attributes. Returns false when even that fails, so the span is dropped. */
+function clearSpan(span: ReadableSpan): boolean {
+  try {
+    replaceKeys(span.attributes, {});
+    for (const event of span.events) event.attributes = {};
+    for (const link of span.links) link.attributes = {};
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** Filters span and span-event attributes (scope `trace`) before the wrapped processor sees the span. */
 export class AllowListSpanProcessor implements SpanProcessor {
   private readonly inner: SpanProcessor;
@@ -40,19 +68,10 @@ export class AllowListSpanProcessor implements SpanProcessor {
 
   onEnd(span: ReadableSpan): void {
     try {
-      replaceKeys(span.attributes, allowed(span.attributes, 'trace'));
-      for (const event of span.events) {
-        event.attributes = allowed(event.attributes ?? {}, 'trace') as NonNullable<
-          typeof event.attributes
-        >;
-      }
-      for (const link of span.links) {
-        link.attributes = allowed(link.attributes ?? {}, 'trace') as NonNullable<
-          typeof link.attributes
-        >;
-      }
+      filterSpan(span);
     } catch {
-      // A failing filter must not break the caller; the span is still exported.
+      // Fail closed: a span whose filter failed keeps no attributes; if even clearing fails, it is dropped.
+      if (!clearSpan(span)) return;
     }
     this.inner.onEnd(span);
   }
@@ -78,7 +97,12 @@ export class AllowListLogProcessor implements LogRecordProcessor {
     try {
       replaceKeys(record.attributes, allowed(record.attributes, 'log'));
     } catch {
-      // A failing filter must not break the caller; the record is still emitted.
+      // Fail closed: keep no attributes; a record that cannot even be cleared is dropped.
+      try {
+        replaceKeys(record.attributes, {});
+      } catch {
+        return;
+      }
     }
     this.inner.onEmit(record, context);
   }
