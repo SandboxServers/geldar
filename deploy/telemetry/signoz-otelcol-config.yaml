@@ -1,0 +1,65 @@
+# SigNoz collector config for geldar-signoz-otelcol (v0.144.6, 0370). [AUTH] written from the SigNoz devenv config at v0.148.1 [SRC].
+# No OpAMP manager: the compose command omits --manager-config, so the collector runs this file as-is [SRC facts section 3].
+# Writer DSN: the password is NOT here. The compose command exports CLICKHOUSE_DSN_BASE from the secret file at start.
+# The exporters read ${env:CLICKHOUSE_DSN_BASE} [INF: exporter DSNs come from this config file].
+# Unverified (README item 16): components below are checked against v0.144.6 only by pairing [INF]. Run the collector's config
+# validation in the scratch run before start. Foundry's newer components (signozmeter, metadataexporter, signozclickhousemeter,
+# signozspanmapper, signozllmpricing) are NOT copied here, because they were not checked at v0.144.6.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+processors:
+  batch:
+    send_batch_size: 10000
+    send_batch_max_size: 11000
+    timeout: 10s
+  signozspanmetrics/delta:
+    metrics_exporter: signozclickhousemetrics
+    metrics_flush_interval: 60s
+    latency_histogram_buckets: [100us, 1ms, 2ms, 6ms, 10ms, 50ms, 100ms, 250ms, 500ms, 1000ms, 1400ms, 2000ms, 5s, 10s, 20s, 40s, 60s]
+    dimensions_cache_size: 100000
+    aggregation_temporality: AGGREGATION_TEMPORALITY_DELTA
+    enable_exp_histogram: true
+    dimensions:
+      - {name: service.namespace, default: default}
+      - {name: deployment.environment, default: default}
+      - name: signoz.collector.id
+      - name: service.version
+      # The devenv list also has browser.platform, browser.mobile, k8s.*, host.name, host.type, container.name. Not copied [AUTH].
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+exporters:
+  clickhousetraces:
+    datasource: ${env:CLICKHOUSE_DSN_BASE}/signoz_traces
+    # Devenv sets this from an env var; the value is false (the packet and the facts file) [SRC facts, literal here].
+    low_cardinal_exception_grouping: false
+    use_new_schema: true
+  signozclickhousemetrics:
+    dsn: ${env:CLICKHOUSE_DSN_BASE}/signoz_metrics
+  clickhouselogsexporter:
+    dsn: ${env:CLICKHOUSE_DSN_BASE}/signoz_logs
+    timeout: 10s
+    use_new_schema: true
+service:
+  telemetry:
+    logs:
+      encoding: json
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [signozspanmetrics/delta, batch]
+      exporters: [clickhousetraces]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [signozclickhousemetrics]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [clickhouselogsexporter]
