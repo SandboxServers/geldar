@@ -316,12 +316,17 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
     if (state === null) {
       deps.stopTimeouts?.delete(container);
       // The Body is gone, so its life id comes from the roster row (the stop runs before any erase). No row: nothing to remove.
-      const lifeId = await deps.roster.lifeId(owner, name);
-      if (!live()) throw new Error(ABANDONED);
-      if (lifeId !== null) {
-        const code = await runRemove(lifeId);
+      // With managed Bodies off or without the rcon file no Body could have been admitted, so the roster is not read and
+      // the stop answers not_running as before (a failed remove here would block every account delete while off).
+      const removal = deps.template.managed;
+      if (removal?.enabled && removal.rconSecretHostPath) {
+        const lifeId = await deps.roster.lifeId(owner, name);
         if (!live()) throw new Error(ABANDONED);
-        if (code !== 0) return removalFailed(name);
+        if (lifeId !== null) {
+          const code = await runRemove(lifeId);
+          if (!live()) throw new Error(ABANDONED);
+          if (code !== 0) return removalFailed(name);
+        }
       }
       audit('stop', name, 'not_running');
       return { ok: false, code: 'not_running', error: 'not running' };

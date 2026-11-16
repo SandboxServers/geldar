@@ -60,7 +60,11 @@ function managedFixture(name: string, running: boolean, owner = 'own-a'): FakeCo
 
 interface SetupOptions {
   engine?: FakeEngine;
-  managed?: ManagedSettings;
+  /** Given as undefined, the template carries no managed settings at all (the flag-off default). */
+  managed?: ManagedSettings | undefined;
+  /** Replaces the roster's life id lookup (a throw, or a malformed id). */
+  lifeId?: (owner: string, name: string) => Promise<string | null>;
+  requestDeadlineMs?: number;
 }
 
 /** A helper over the shared fake. The roster answers LIFE for own-a's ranger and null for everyone else. */
@@ -68,6 +72,8 @@ function setup(options: SetupOptions = {}) {
   const engine = options.engine ?? createFakeEngine();
   const audit: string[] = [];
   const rosterCalls: string[] = [];
+  const managed = 'managed' in options ? options.managed : MANAGED;
+  const template = managed === undefined ? TEMPLATE : { ...TEMPLATE, managed };
   const deps: HelperDeps = {
     roster: {
       async displayName(owner, name) {
@@ -75,13 +81,17 @@ function setup(options: SetupOptions = {}) {
       },
       async lifeId(owner, name) {
         rosterCalls.push(`lifeId:${owner}:${name}`);
+        if (options.lifeId) return options.lifeId(owner, name);
         return owner === 'own-a' && name.toLowerCase() === 'ranger' ? LIFE : null;
       },
     },
     engine,
     cap: 40,
-    template: { ...TEMPLATE, managed: options.managed ?? MANAGED },
+    template,
     audit: (line) => audit.push(line),
+    ...(options.requestDeadlineMs === undefined
+      ? {}
+      : { requestDeadlineMs: options.requestDeadlineMs }),
   };
   return { handle: createBodyHelper(deps), engine, audit, rosterCalls };
 }
@@ -154,6 +164,14 @@ describe('house and Adam Bodies are not managed and are never touched by the rem
     expect(rosterCalls).toHaveLength(0);
   });
 
+  it('an unlabelled Body named ranger under a roster row stops with no one-shot and no roster read', async () => {
+    const engine = createFakeEngine([bodyFixture('ranger', true, 'own-a')]);
+    const { handle, rosterCalls } = setup({ engine });
+    expect(await handle(stop())).toMatchObject({ ok: true, state: 'stopped' });
+    expect(engine.oneShots).toHaveLength(0);
+    expect(rosterCalls).toHaveLength(0);
+  });
+
   it('a stopped house Body with no managed label runs no one-shot', async () => {
     const engine = createFakeEngine([bodyFixture('house', false, 'own-a')]);
     const { handle } = setup({ engine });
@@ -181,6 +199,33 @@ describe('a missing container resolves the life id from the roster and removes i
     engine.oneShotExit = 1;
     const { handle } = setup({ engine });
     expect(await handle(stop())).toEqual({ ok: false, code: 'failed', error: LIFE_REMOVAL_FAILED });
+  });
+});
+
+describe('a missing container reads the roster only when managed Bodies are configured', () => {
+  const NOT_RUNNING = { ok: false, code: 'not_running', error: 'not running' };
+
+  it('answers not_running with no roster read and no one-shot when managed Bodies are not configured', async () => {
+    const { handle, engine, rosterCalls } = setup({ managed: undefined });
+    expect(await handle(stop())).toEqual(NOT_RUNNING);
+    expect(rosterCalls).toHaveLength(0);
+    expect(engine.oneShots).toHaveLength(0);
+  });
+
+  it('answers not_running with no roster read and no one-shot when managed Bodies are off', async () => {
+    const { handle, engine, rosterCalls } = setup({ managed: { ...MANAGED, enabled: false } });
+    expect(await handle(stop())).toEqual(NOT_RUNNING);
+    expect(rosterCalls).toHaveLength(0);
+    expect(engine.oneShots).toHaveLength(0);
+  });
+
+  it('answers not_running with no roster read and no one-shot when the rcon file is not configured', async () => {
+    const { handle, engine, rosterCalls } = setup({
+      managed: { ...MANAGED, rconSecretHostPath: undefined },
+    });
+    expect(await handle(stop())).toEqual(NOT_RUNNING);
+    expect(rosterCalls).toHaveLength(0);
+    expect(engine.oneShots).toHaveLength(0);
   });
 });
 
@@ -218,5 +263,37 @@ describe('a failed remove is reported, never swallowed', () => {
     engine.oneShotExit = 0;
     expect(await handle(stop())).toMatchObject({ ok: true, state: 'stopped' });
     expect(engine.oneShots).toHaveLength(2);
+  });
+});
+
+describe('the roster lookup, the life id and the deadline on the remove path', () => {
+  it('a roster lookup that throws replies failed, runs no one-shot, and audits no accepted or not_running stop', async () => {
+    const engine = createFakeEngine();
+    const { handle, audit } = setup({
+      engine,
+      lifeId: async () => {
+        throw new Error('roster unavailable');
+      },
+    });
+    expect(await handle(stop())).toMatchObject({ ok: false, code: 'failed' });
+    expect(engine.oneShots).toHaveLength(0);
+    expect(audit.some((line) => /outcome=(accepted|not_running)/.test(line))).toBe(false);
+  });
+
+  it('a roster life id that is not a managed life id replies failed with no one-shot', async () => {
+    const engine = createFakeEngine();
+    const { handle } = setup({ engine, lifeId: async () => 'ag_NOT-VALID' });
+    expect(await handle(stop())).toEqual({ ok: false, code: 'failed', error: LIFE_REMOVAL_FAILED });
+    expect(engine.oneShots).toHaveLength(0);
+  });
+
+  it('a remove that fails after the deadline is answered timeout, and audits neither accepted nor failed', async () => {
+    const engine = createFakeEngine([managedFixture('ranger', true)]);
+    engine.oneShotExit = 1;
+    engine.oneShotHook = () => new Promise((resolve) => setTimeout(resolve, 60));
+    const { handle, audit } = setup({ engine, requestDeadlineMs: 10 });
+    expect(await handle(stop())).toMatchObject({ ok: false, code: 'timeout' });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(audit.some((line) => /outcome=(accepted|failed)/.test(line))).toBe(false);
   });
 });
