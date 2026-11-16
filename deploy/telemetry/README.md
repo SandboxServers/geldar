@@ -32,7 +32,7 @@ Why these tags: 25.12.5 (build 44) is the ClickHouse line SigNoz v0.148.1 tests 
   ```
 
   Expected: `uid=101(clickhouse) gid=101(clickhouse)`. **Stop on any other output** and do not chown. (The check runs a container and is a scratch-run step, not part of this packet.)
-- **signoz-otel-collector** (also the migrator, which runs its `migrate` subcommands from the same image): uid 10001 [SRC, image `User`]. The secret files are mounted for uid 10001 (see the compose file).
+- **signoz-otel-collector** (also the migrator, which runs its `migrate` subcommands from the same image): uid 10001 [SRC, image `User`]. The writer secret file is owned by 10001 and read by it; the owner and mode of each secret file are in the table under "Secrets" (compose sets neither uid nor mode).
 - **signoz**: root [SRC]. Data dir `/mnt/nvme/geldar-telemetry/query` is owned by root.
 
 ## Host paths
