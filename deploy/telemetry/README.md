@@ -31,7 +31,7 @@ Why these tags: 25.12.5 (build 44) is the ClickHouse line SigNoz v0.148.1 tests 
   docker run --rm --entrypoint id clickhouse/clickhouse-keeper@sha256:525b8b0f93ccb371131c46f22a066ea43d33d74aba314203e8044609945d8524 clickhouse
   ```
 
-  Expected: `uid=101(clickhouse) gid=101(clickhouse)`. **Stop on any other output** and do not chown. (The check runs a container and is a scratch-run step, not part of this packet.)
+  Expected: the output has `uid=101` and `gid=101` (the Keeper image prints the supplementary group twice, `groups=101(clickhouse),101(clickhouse)`, a listing quirk observed on the node at N4a on 2026-11-16; the server image prints it once). **Stop on any other uid or gid** and do not chown. (The check runs a container and is a scratch-run step, not part of this packet.)
 - **signoz-otel-collector** (also the migrator, which runs its `migrate` subcommands from the same image): uid 10001 [SRC, image `User`]. The writer secret file is owned by 10001 and read by it; the owner and mode of each secret file are in the table under "Secrets" (compose sets neither uid nor mode).
 - **signoz**: root [SRC]. Data dir `/mnt/nvme/geldar-telemetry/query` is owned by root.
 
@@ -259,7 +259,7 @@ docker run --rm --entrypoint id clickhouse/clickhouse-server@sha256:cacf32d68842
 docker run --rm --entrypoint id clickhouse/clickhouse-keeper@sha256:525b8b0f93ccb371131c46f22a066ea43d33d74aba314203e8044609945d8524 clickhouse
 ```
 
-Expected on both: `uid=101(clickhouse) gid=101(clickhouse)`. **Stop on any other output.** Only then:
+Expected on both: the output has `uid=101` and `gid=101` (the Keeper image prints the supplementary group twice, `groups=101(clickhouse),101(clickhouse)`, a listing quirk observed on the node at N4a on 2026-11-16; the server image prints it once). **Stop on any other uid or gid.** Only then:
 
 ```
 chown 101:101 /mnt/nvme/geldar-telemetry/clickhouse /mnt/nvme/geldar-telemetry/keeper
