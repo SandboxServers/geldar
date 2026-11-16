@@ -191,6 +191,33 @@ describe('redactContent: plain JSON-safe output', () => {
   });
 });
 
+describe('redactContent: shared sub-objects and thrown values', () => {
+  it('returns quickly on a shared-DAG object (exponential without a node budget)', () => {
+    let node: Record<string, unknown> = { leaf: 'x' };
+    for (let i = 0; i < 22; i++) node = { l: node, r: node };
+    const start = performance.now();
+    const out = redactContent(node);
+    expect(performance.now() - start).toBeLessThan(1000);
+    expect(out).toBeTypeOf('object');
+  });
+
+  it('scrubs error.name', () => {
+    const err = new Error('m');
+    err.name = `Bearer ${'q'.repeat(10)}`;
+    expect(errorFields(err)['exception.type']).toBe(REDACTED);
+  });
+
+  it('gives a thrown plain object its redacted fields as JSON', () => {
+    const fields = errorFields({ code: 7, message: `hi ${token}`, [word]: 'x' });
+    expect(fields['exception.type']).toBe('object');
+    expect(JSON.parse(fields['exception.message'])).toEqual({
+      code: 7,
+      message: `hi ${REDACTED}`,
+      [word]: REDACTED,
+    });
+  });
+});
+
 describe('scrubText: credential forms', () => {
   const R = REDACTED;
   const b64 = ['dXNlcjpw', 'ZA=='].join('');

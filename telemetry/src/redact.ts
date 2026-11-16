@@ -12,6 +12,13 @@ const TRUNCATED_MARK = '[truncated]';
 const CYCLE_MARK = '[cycle]';
 /** The most entries copied from one Map or Set; the rest is replaced by TRUNCATED_MARK. */
 const MAX_COLLECTION_ENTRIES = 1000;
+/** The most objects visited in one redactContent call, so a shared sub-object (a DAG) cannot blow up the copy. */
+const MAX_REDACT_NODES = 100_000;
+
+interface Walk {
+  ancestors: WeakSet<object>;
+  nodes: number;
+}
 const UNREADABLE_MARK = '[unreadable]';
 
 // Mirrors TOKEN_PATTERN in threshold/mcp/src/store/token-hash.ts (`^gmcp-[0-9a-f]{64}$`), unanchored
@@ -73,30 +80,30 @@ export function scrubText(text: string): string {
  */
 export function redactContent(value: unknown): unknown {
   try {
-    return redactAt(value, 0, new WeakSet<object>());
+    return redactAt(value, 0, { ancestors: new WeakSet<object>(), nodes: 0 });
   } catch {
     return UNREADABLE_MARK;
   }
 }
 
 /** One property or element read that may run user code (a getter or a Proxy trap); a throw becomes a mark. */
-function redactRead(read: () => unknown, depth: number, ancestors: WeakSet<object>): unknown {
+function redactRead(read: () => unknown, depth: number, walk: Walk): unknown {
   try {
-    return redactAt(read(), depth, ancestors);
+    return redactAt(read(), depth, walk);
   } catch {
     return UNREADABLE_MARK;
   }
 }
 
-/** One level of redactContent; `ancestors` holds the objects on the path to this value (a cycle guard). */
-function redactAt(value: unknown, depth: number, ancestors: WeakSet<object>): unknown {
+/** One level of redactContent; `walk` holds the objects on the path to this value (a cycle guard) and a node count. */
+function redactAt(value: unknown, depth: number, walk: Walk): unknown {
   if (typeof value === 'string') return scrubText(value);
   // JSON-safe plain data out: a bigint, symbol or function becomes text, never a value JSON.stringify rejects.
   if (typeof value === 'bigint') return value.toString();
   if (typeof value === 'symbol' || typeof value === 'function') return scrubText(String(value));
   if (value === null || typeof value !== 'object') return value;
-  if (ancestors.has(value)) return CYCLE_MARK;
-  if (depth >= MAX_REDACT_DEPTH) return TRUNCATED_MARK;
+  if (walk.ancestors.has(value)) return CYCLE_MARK;
+  if (depth >= MAX_REDACT_DEPTH || ++walk.nodes > MAX_REDACT_NODES) return TRUNCATED_MARK;
   if (value instanceof Date) {
     return Number.isNaN(value.getTime()) ? 'Invalid Date' : value.toISOString();
   }
@@ -113,15 +120,15 @@ function redactAt(value: unknown, depth: number, ancestors: WeakSet<object>): un
         : { stack: fields['exception.stacktrace'] }),
     };
   }
-  ancestors.add(value);
+  walk.ancestors.add(value);
   try {
     if (value instanceof Map) {
       const entries: unknown[] = [];
       for (const [k, v] of Array.from(value).slice(0, MAX_COLLECTION_ENTRIES)) {
         const keyed = typeof k === 'string' && hasForbiddenSegment(k);
         entries.push([
-          redactAt(k, depth + 1, ancestors),
-          keyed ? REDACTED : redactAt(v, depth + 1, ancestors),
+          redactAt(k, depth + 1, walk),
+          keyed ? REDACTED : redactAt(v, depth + 1, walk),
         ]);
       }
       if (value.size > MAX_COLLECTION_ENTRIES) entries.push(TRUNCATED_MARK);
@@ -130,14 +137,14 @@ function redactAt(value: unknown, depth: number, ancestors: WeakSet<object>): un
     if (value instanceof Set) {
       const items = Array.from(value)
         .slice(0, MAX_COLLECTION_ENTRIES)
-        .map((item) => redactAt(item, depth + 1, ancestors));
+        .map((item) => redactAt(item, depth + 1, walk));
       if (value.size > MAX_COLLECTION_ENTRIES) items.push(TRUNCATED_MARK);
       return items;
     }
     if (Array.isArray(value)) {
       const items: unknown[] = [];
       for (let i = 0; i < value.length; i++) {
-        items.push(redactRead(() => value[i], depth + 1, ancestors));
+        items.push(redactRead(() => value[i], depth + 1, walk));
       }
       return items;
     }
@@ -146,7 +153,7 @@ function redactAt(value: unknown, depth: number, ancestors: WeakSet<object>): un
       // A key that names a credential (the package's forbidden-name rule): whole words or joined stems.
       const kept = hasForbiddenSegment(key)
         ? REDACTED
-        : redactRead(() => (value as Record<string, unknown>)[key], depth + 1, ancestors);
+        : redactRead(() => (value as Record<string, unknown>)[key], depth + 1, walk);
       // defineProperty, not assignment: a key named __proto__ stays an own key and never sets the prototype.
       Object.defineProperty(copy, key, {
         value: kept,
@@ -157,7 +164,7 @@ function redactAt(value: unknown, depth: number, ancestors: WeakSet<object>): un
     }
     return copy;
   } finally {
-    ancestors.delete(value);
+    walk.ancestors.delete(value);
   }
 }
 
@@ -173,13 +180,17 @@ export function errorFields(error: unknown): ErrorFields {
   try {
     if (error instanceof Error) {
       const fields: ErrorFields = {
-        'exception.type': error.name || 'Error',
+        'exception.type': scrubText(String(error.name || 'Error')),
         'exception.message': scrubText(String(error.message)),
       };
       if (typeof error.stack === 'string') fields['exception.stacktrace'] = scrubText(error.stack);
       return fields;
     }
-    return { 'exception.type': typeof error, 'exception.message': scrubText(String(error)) };
+    const text = String(error);
+    // A thrown plain object (String gives `[object Object]`): its redacted fields as JSON instead.
+    const message =
+      text === '[object Object]' ? JSON.stringify(redactContent(error)) : scrubText(text);
+    return { 'exception.type': typeof error, 'exception.message': message };
   } catch {
     return { 'exception.type': 'unknown', 'exception.message': '' };
   }
