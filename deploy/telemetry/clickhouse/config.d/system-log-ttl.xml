@@ -58,7 +58,7 @@
     <zookeeper_log>
         <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
     </zookeeper_log>
-    <!-- [AUTH] The 10 live *_log tables that had no section (scratch run, report2 step 6). Same form as the sections above. -->
+    <!-- [AUTH] These sections were added for tables found live without one in the scratch run (report2 step 6). Observed total on 25.12.5 (build 44): 11 system *_log tables (round 4). The file has sections for all of them, plus any the stock config creates later. Re-check after each upgrade. Same form as the sections above. -->
     <aggregated_zookeeper_log>
         <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
     </aggregated_zookeeper_log>
