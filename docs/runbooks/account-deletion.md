@@ -41,8 +41,10 @@ body can exist, so the stop is skipped.
 
 Deletions made under 0039 removed the owner link and the player rows of the owner's dead lives. Those dead lives
 no longer have an owner link or a player row, so 0040 cannot reach them: their thoughts, events and death records
-stay. The skins and registry keys of these lives are removed by the operator script `tools/players-cli/src/erase-owner.ts`
-(manual step 5). The database cleanup of the 0039 dead lives is not done; the owner decides it.
+stay. The operator script `tools/players-cli/src/erase-owner.ts` can remove the skins and registry keys of these lives
+only if the operator has their life ids and login names from another record: step 3a cannot find them, because 0039
+cleared `agents.owner` and removed the player rows. The database cleanup of the 0039 dead lives is not done; the owner
+decides it.
 
 ## What stays, and why
 
@@ -103,7 +105,8 @@ subject in a shared channel.
 3a. Capture the lives list BEFORE step 4, and save it as the JSON file that step 5 reads. Run
    `SELECT a.agent_id, a.game_account FROM agents a WHERE a.owner = '<owner id>' UNION SELECT a.agent_id, a.game_account FROM agents a JOIN mcp_players p ON p.life_id = a.agent_id WHERE p.owner_id = '<owner id>';`
    and write one entry per row: `lifeId` is `agent_id`, and `username` is `game_account` (the Body's login name). Check the
-   file against the output of this query. The file cannot be rebuilt after step 4. Then run the script with no flags
+   file against the output of this query. The file cannot be rebuilt after step 4. Then, with `GELDAR_NATS_URL` set as in
+   step 5, run the script with no flags
    (`node tools/players-cli/src/erase-owner.ts --owner <owner id> --lives <file>`, a dry run that prints counts only).
    The registry key of each life is its username, lowercased, and it must equal the Body's `game_account`. 0 present
    on a dry run before step 4 means the username is wrong or the Body never registered: check before going on.

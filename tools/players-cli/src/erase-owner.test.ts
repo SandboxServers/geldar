@@ -380,7 +380,7 @@ describe('malformed lives', () => {
   });
 });
 
-describe('exit codes and main', () => {
+describe('exit codes, and main refuses before any NATS connect', () => {
   it('maps a dry run and a purge to 0, and a failed or refused run to 1', () => {
     expect(exitCodeFor('dry-run')).toBe(0);
     expect(exitCodeFor('purged')).toBe(0);
@@ -395,6 +395,8 @@ describe('exit codes and main', () => {
     const savedUrl = process.env.GELDAR_NATS_URL;
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
+      // A closed loopback port: without main's refusal the run would reach openErasureKvs and return 1.
+      process.env.GELDAR_NATS_URL = 'nats://127.0.0.1:1';
       expect(
         await main(['--owner', OWNER, '--lives', lives, '--execute', '--confirm', 'owner-773']),
       ).toBe(2);
