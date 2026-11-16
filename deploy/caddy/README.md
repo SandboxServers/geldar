@@ -60,15 +60,42 @@ Differences from the sites above (the doc is followed where it differs from `mcp
 Every step below needs the owner's approval at the time. Record the exact commands run.
 
 1. Precheck, read-only. Confirm the import line (`import /config/geldar/*.caddy`) in the node's Caddyfile, and that the env file the shared Caddy container (`board-proxy`) reads (`azure.env`, root-only) exists. Do not print its contents.
-2. Place the three variables in that env file. The file is root-only, so this needs `sudo` beyond a mkdir/chown scope (geldar-93 allows sudo where the work needs it); record the exact commands. The owner sets `GELDAR_INGEST_HOST` and `GELDAR_INGEST_UPSTREAM`. For the token, generate it on the node, never print it, never put it on a command line or in the repo; keep the file mode and owner it already has:
+2. Place the three variables in that env file (`<env-file>` is its path on the node, given by the owner; its contents are never printed). This step needs `sudo` beyond the earlier mkdir/chown scope; the owner and geldar-93 have now allowed sudo for work that needs it, and these are the exact commands for the record. If the file is the owner's hand-edited credential file, a bad append can break the shared Caddy's certificate renewal for every site, so the order is backup, guarded append, check, and nothing else.
+
+   The values are provided by the owner (or geldar-93's vault pipe), not generated on the node (see "Token route" below). `GELDAR_INGEST_HOST` is the owner's public hostname; `GELDAR_INGEST_UPSTREAM` is `localhost:4320`, the gateway's loopback publish (`127.0.0.1:4320:4318` in `compose.gateway.yml` on the telemetry/t25-gateway branch; it is not on main until that branch merges); `GELDAR_INGEST_TOKEN` is the ingest token, at least 64 hex characters. The same token value is what the Mind hosts' otel-agent gets, placed there by the owner.
+
+   a. Record owner and mode (names and digits only): `sudo stat -c '%U:%G %a' <env-file>`.
+
+   b. Back up first, root-only, same directory, with a timestamp (use the same name in the failed-recreate path of step 3):
 
    ```bash
-   # Appends one line. The value is never echoed. Run once; do not run it if the line exists.
-   sudo grep -q '^GELDAR_INGEST_TOKEN=' <env-file> \
-     || { printf 'GELDAR_INGEST_TOKEN=%s\n' "$(openssl rand -hex 32)" | sudo tee -a <env-file> >/dev/null; }
+   sudo sh -c 'cp -p "$1" "$2" && chmod 0600 "$2"' _ <env-file> <env-file>.bak-<UTC timestamp>
    ```
 
-   `openssl rand -hex 32` is 32 random bytes as 64 hex characters. Check by length only, for example `sudo awk -F= '/^GELDAR_INGEST_TOKEN=/{print length($2)}' <env-file>` (expect at least 64, not the value), and that `GELDAR_INGEST_HOST` and `GELDAR_INGEST_UPSTREAM` are set. An empty token would make the match `Bearer ` and admit that header, so any failure here stops the procedure.
+   c. Guarded append. The three values arrive on STDIN only, one per line in this order: host, upstream, token, each line ending in a newline. They are never in argv, in a here-doc in the repo, in the shell history or echoed (`printf` is a shell builtin). The script refuses an empty host, an upstream other than `localhost:4320`, an empty, short (under 64) or non-hex token, and a name that already exists in the file; it adds a newline first when the last byte of the file is not one, so the token cannot be glued onto an existing line:
+
+   ```bash
+   <the owner's vault pipe, printing host, upstream and token as three lines> | sudo sh -c '
+   set -eu
+   f=$1
+   read -r host; read -r up; read -r tok
+   case $host in ""|*[!A-Za-z0-9.-]*) echo "bad host" >&2; exit 1;; esac
+   [ "$up" = localhost:4320 ] || { echo "upstream must be localhost:4320" >&2; exit 1; }
+   [ "${#tok}" -ge 64 ] || { echo "token empty or shorter than 64" >&2; exit 1; }
+   case $tok in *[!0-9a-fA-F]*) echo "token is not hex" >&2; exit 1;; esac
+   for n in GELDAR_INGEST_HOST GELDAR_INGEST_UPSTREAM GELDAR_INGEST_TOKEN; do
+     if grep -q "^$n=" "$f"; then echo "$n already in the file" >&2; exit 1; fi
+   done
+   [ -z "$(tail -c1 "$f")" ] || echo >> "$f"
+   printf "GELDAR_INGEST_HOST=%s\nGELDAR_INGEST_UPSTREAM=%s\nGELDAR_INGEST_TOKEN=%s\n" "$host" "$up" "$tok" >> "$f"
+   ' _ <env-file>
+   ```
+
+   d. Check, printing counts and names only: (1) `sudo stat -c '%U:%G %a' <env-file>` equals the line from a; (2) `sudo grep -vcE '^[A-Za-z_][A-Za-z0-9_]*=' <env-file>` equals the same command on the backup (no new malformed line; the count may be non-zero only if it was before); (3) each of `sudo grep -c '^GELDAR_INGEST_HOST=' <env-file>`, `...UPSTREAM=` and `...TOKEN=` prints `1`; (4) `sudo grep -c '' <env-file>` is the backup's count plus 3; (5) `sudo cmp -n "$(sudo stat -c %s <backup>)" <backup> <env-file>` prints nothing (the old bytes are unchanged). Any failure: restore with `sudo cp -p <backup> <env-file>`, stop, report.
+
+   e. The recreate (step 3) runs only after the validate in step 3 passes against this file. The other two variables stay valid on their own; do not remove any `GELDAR_INGEST_*` line while a live `otel.caddy` or `otel-off.caddy` is in `config/geldar/` (Caddy then fails to start and every site is down): remove the live file first, restart, then edit the env file.
+
+   Not verified without the node: the file's actual owner and mode, whether its lines are plain `KEY=VALUE` (docker `--env-file` and compose read it that way), and whether the file has comment or blank lines (check d.2 compares against the backup for that reason).
 3. The one recreate of the shared Caddy container, to load the new variables (a running Caddy cannot see a new environment value, and `docker restart` keeps the old one, so only a recreate loads them). Its own approved window. Cost: every site on the node is down while the container is recreated (a few seconds, plus start time), and the long-lived `mcp.caddy` SSE streams drop and their clients reconnect. Rotating the token needs the same recreate.
    - Validate the new env file before the recreate, in a throwaway container of the running container's own image, so a bad file never takes the shared Caddy down: `sudo docker run --rm --env-file <env-file> -v <host Caddyfile>:/etc/caddy/Caddyfile:ro -v <host config dir>:/config:ro "$(docker inspect -f '{{.Config.Image}}' board-proxy)" caddy validate --config /etc/caddy/Caddyfile` (the env file is read by docker and not printed; `GELDAR_PUBLIC_ENV`-style host paths come from the owner, as in `deploy/colo-public.sh`). Unverified on the node: whether `validate` of a build with the DNS module needs more than the env file.
    - Recreate, from the compose project directory of `board-proxy` (the owner supplies the project and file names; the repo does not know them): `sudo docker compose up -d --force-recreate board-proxy`.
