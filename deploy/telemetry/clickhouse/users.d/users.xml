@@ -13,7 +13,7 @@
   signoz_analytics (left as is; a gap to decide, not changed here).
   default: kept because the cluster entry in cluster.xml has no user (README unverified list). Its grants are in the default block.
   Networks for default are loopback only (127.0.0.1, ::1). Both <networks> and each <ip> carry replace="replace" so the stock ::/0
-  is not kept by the merge [INF, unverified on 25.12.5; README item 21]. default has no access_management (N2).
+  is not kept by the merge [INF, unverified on 25.12.5; README item 21]. access_management and named_collection_control are removed from default explicitly in the default block, because the stock config sets them.
   Nothing is published. Widen only if the scratch run shows ON CLUSTER refused.
 -->
 <clickhouse>
@@ -49,7 +49,7 @@
                  and 92). They must be removed here because ClickHouse refuses explicit <grants> next to any access-control key
                  (Code 347, "Any other access control settings can't be specified with grants"). show_named_collections and
                  show_named_collections_secrets are removed too, as belt and braces. Effect: default can no longer manage access or
-                 named collections [UNV until scratch round 6 confirms startup]. -->
+                 named collections. ClickHouse starts on this config (scratch report8). -->
             <access_management remove="remove"/>
             <named_collection_control remove="remove"/>
             <show_named_collections remove="remove"/>
@@ -57,8 +57,8 @@
             <!-- [AUTH] default exists because the cluster entry in cluster.xml has no <user>, so Distributed tables and
                  clusterAllReplicas reach the shard as default. Its grants are limited to what that needs: SELECT and INSERT on the
                  six signoz_* databases and SELECT on system.*. Nothing else: no SOURCES, SYSTEM, FILE, URL, S3, REMOTE, ALTER,
-                 CREATE, DROP, TABLE ENGINE or access management. Distributed DDL (ON CLUSTER) is expected to run as the initiating
-                 user (geldar_writer), not as default [UNV until scratch round 6]. Networks stay HOST LOCAL and the password stays
+                 CREATE, DROP, TABLE ENGINE or access management. Distributed DDL (ON CLUSTER) ran with these restricted grants in
+                 scratch report8; the initiating user was not recorded. Networks stay HOST LOCAL and the password stays
                  empty. Residual: through remote() the writer can act as default, which gives SELECT and INSERT on the six signoz_*
                  databases and SELECT on system.*, no more than the writer already has on those databases. -->
             <grants>
@@ -75,14 +75,14 @@
             <password_sha256_hex from_env="GELDAR_CH_WRITER_SHA256"/>
             <profile>geldar_writer</profile>
             <quota>default</quota>
-            <!-- [AUTH] Authored, not verified as minimal. Scratch round 5 passed with this list; a missing privilege fails with an
+            <!-- [AUTH] Authored, not verified as minimal. The migrator passed with this list (scratch report8); a missing privilege fails with an
                  error that names it. Not granted on purpose: SYSTEM, FILE,
                  URL, S3, MYSQL, POSTGRES, SOURCES, KILL QUERY, dictGet, INTROSPECTION. CREATE DATABASE is not granted on *.*;
                  the CREATE grants below are on the six signoz_* databases only. CREATE on a database covers CREATE TABLE, CREATE VIEW
                  (materialized views) and CREATE DICTIONARY, so no separate VIEW grant is listed. ALTER covers ALTER UPDATE (the migration
                  status mutation). Table engines are granted one query each, because the Distributed engine's source is REMOTE.
                  REMOTE gives the writer the remote() and cluster() table functions to any host reachable from geldar-ch. That network
-                 is shared with geldar-gateway, so it is not private. Through remote() the writer can also act as default (see the
+                 is shared with geldar-gateway, so it is not private. Observed in report8: through remote() the writer runs as default. Through remote() the writer can also act as default (see the
                  default block). The writer's password is held only by the migrator and the collector. Whether REMOTE is needed for
                  the Distributed engine is not tested apart from the other grants (README unverified list). [AUTH] -->
             <grants>

@@ -4,13 +4,14 @@
   Key names and the TTL expression come from Foundry config-0-0.yaml [SRC]. The facts file gives a one-day TTL there; this file
   sets 30 days (INTERVAL 30 DAY) because the packet asks for 30 days.
   Coverage: the file covers the system *_log tables observed on ClickHouse 25.12.5 (build 44) in the local scratch run.
-  That run found 11 such tables, all with a TTL after this file was loaded (report 5, round 4). The file has 23 sections.
+  Observed live: 24 tables after a workload in round 1, and 11 in round 4 before the migrator and collector ran, all with a TTL at
+  that moment (report 5). The file has 23 sections.
   opentelemetry_span_log has its TTL inside its engine, because the stock config sets an engine for that table.
-  The scratch run started the server with this file (report 6). A new ClickHouse version may add or rename log tables,
+  The scratch run started the server with this file (reports 6 and 8). A new ClickHouse version may add or rename log tables,
   so check the system.tables list of *_log tables after each upgrade (README item 25).
 -->
 <clickhouse>
-    <!-- Other tables in this list are assumed to use event_date; verified at startup in scratch round 5; re-check after each upgrade. -->
+    <!-- Other tables in this list are assumed to use event_date; the server started with them in scratch report8; re-check after each upgrade and after the stack has run 10 minutes (README item 25). -->
     <query_log>
         <database>system</database>
         <table>query_log</table>
@@ -58,7 +59,7 @@
     <zookeeper_log>
         <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
     </zookeeper_log>
-    <!-- [AUTH] These sections were added for tables found live without one in the scratch run (report2 step 6). Observed total on 25.12.5 (build 44): 11 system *_log tables (round 4). The file has sections for all of them, plus any the stock config creates later. Re-check after each upgrade. Same form as the sections above. -->
+    <!-- [AUTH] These sections were added for tables found live without one in the scratch run (report2 step 6). Observed on 25.12.5 (build 44): 24 system *_log tables after a workload (round 1) and 11 before the migrator and collector ran (round 4). The file has 23 sections; a table created later may have none. Re-check after each upgrade. Same form as the sections above. -->
     <aggregated_zookeeper_log>
         <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
     </aggregated_zookeeper_log>

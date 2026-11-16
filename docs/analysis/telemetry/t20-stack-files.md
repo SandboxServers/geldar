@@ -7,10 +7,12 @@ At the time these files were written, nothing was started or pulled. The only do
 ## Status after the local scratch run (2026-11-16)
 
 - The stack has now been started locally on a dev machine, in project `scratch-telemetry-local`, not on the node, with lowered memory caps.
-- The migrator exits 0 with the restricted writer grants, the explicit engine grants and REMOTE.
-- SigNoz and the collector start clean, and one OTLP test trace reached ClickHouse. The reader is read-only.
+- The final passing round is report8, on config e6a08a4b (the scratch reports are in the campaign scratchpad, not in the repo). ClickHouse starts with the restricted `default` user (explicit grants; the stock `access_management` and `named_collection_control` keys removed).
+- The migrator exits 0 (4/14/6/7/66/36 tables). SigNoz health returns 200 with one non-fatal ERROR line (active-queries log directory), so it did not start fully clean. The collector had 0 error and warning lines, and one OTLP marker trace reached ClickHouse (1 row locally and through the distributed table). The reader is read-only and reads through the distributed table.
+- Writer residual: through `remote()` the writer acts as `default` (SELECT and INSERT on the six `signoz_*` databases, SELECT on `system.*`), which is no more than the writer already has on those databases. `url()`, `s3()` and `file()` are refused through `remote()`; reading `system.query_log` is allowed (accepted residual). The REMOTE grant does not show as a row in `system.grants`.
+- Item 33 stays open: one outbound SYN_SENT from `geldar-signoz` to a public address on port 80 right after start with analytics off, gone after 60 s, no reverse DNS, purpose unknown. It blocks unattended running, not the N4 start. The decode recipe is in the README.
 - The full table of verified and open items is in `deploy/telemetry/README.md`, section "Scratch run results".
-- The open blockers are item 33 (SigNoz outbound connection attempt, an unattended-run blocker) and the node-only checks (secret owner and mode, uid check, real caps, histogram binary install).
+- Node-only items still open: secret owner and mode, uid check, real caps, histogram binary install (checked only on Docker Desktop with a named volume), the 4320 and 6060 listeners (item 15), the system-log TTL check after 10 minutes (item 25), and the item 22 after-a-day check. The N4 procedure is in the README section "N4 checks".
 
 ## Files added
 

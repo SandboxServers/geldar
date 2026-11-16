@@ -4,7 +4,8 @@
   One shard, one replica, Keeper at geldar-ch-keeper. Needed for the SigNoz migrator's ON CLUSTER DDL [SRC manager.go].
   S-A: Keeper is on geldar-telemetry-backend only (internal). geldar-ch joins it, so the name resolves there, not on geldar-telemetry.
   Base shape from the SigNoz devenv sample and Foundry config-0-0.yaml [SRC]; hostnames are Geldar's.
-  Unverified: the cluster entry has no user, so which user runs ON CLUSTER DDL is not confirmed (see README unverified list).
+  The cluster entry has no user. The DDL ran with the restricted grants (scratch report8); the initiating user was not recorded
+  (see README unverified list, item 9). Through remote() the writer acts as default (README item 32).
   default is loopback-only in users.d.
 -->
 <clickhouse>
