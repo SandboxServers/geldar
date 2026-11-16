@@ -22,7 +22,8 @@ export {
   type ErrorFields,
   errorFields,
   MAX_ERROR_TEXT_CHARS,
-  REDACTED,   redactContent,
+  REDACTED,
+  redactContent,
   scrubText,
 } from './redact.ts';
 export {

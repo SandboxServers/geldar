@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { errorFields, MAX_ERROR_TEXT_CHARS, REDACTED, redactContent, scrubText } from '../src/redact.ts';
+import {
+  errorFields,
+  MAX_ERROR_TEXT_CHARS,
+  REDACTED,
+  redactContent,
+  scrubText,
+} from '../src/redact.ts';
 
 // Fixtures are built at run time so no literal credential-shaped string sits in the source.
 const token = ['gmcp', 'a1'.repeat(32)].join('-');

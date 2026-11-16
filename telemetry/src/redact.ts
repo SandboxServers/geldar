@@ -51,17 +51,15 @@ const KEY_VALUE = /(?<![\w.-])([A-Za-z][\w.-]{0,63})(["']?[ \t]*[=:][ \t]*["']?)
 const KEY_HINT = /token|pass|pwd|secret|key|cookie|auth|cred|jwt|session|bearer/i;
 
 function credentialKey(key: string): boolean {
-  return (
-    KEY_HINT.test(key) &&
-    !/email|authorization/i.test(key) &&
-    hasForbiddenSegment(key)
-  );
+  return KEY_HINT.test(key) && !/email|authorization/i.test(key) && hasForbiddenSegment(key);
 }
 
 /** The text with Authorization values, bearer strings, MCP tokens, URL userinfo and secret key=value pairs replaced. */
 export function scrubText(text: string): string {
   return text
-    .replace(AUTH_HEADER, (_match, head: string) => (/["']/.test(head) ? head + REDACTED : REDACTED))
+    .replace(AUTH_HEADER, (_match, head: string) =>
+      /["']/.test(head) ? head + REDACTED : REDACTED,
+    )
     .replace(BEARER, (match, word: string, quote: string, run: string) =>
       word === 'Bearer' || word === 'BEARER' || BEARER_PROOF.test(run) || run.length >= 20
         ? quote + REDACTED
@@ -197,7 +195,8 @@ export function errorFields(error: unknown): ErrorFields {
         'exception.type': scrubBounded(String(error.name || 'Error')),
         'exception.message': scrubBounded(String(error.message)),
       };
-      if (typeof error.stack === 'string') fields['exception.stacktrace'] = scrubBounded(error.stack);
+      if (typeof error.stack === 'string')
+        fields['exception.stacktrace'] = scrubBounded(error.stack);
       return fields;
     }
     const text = String(error);
