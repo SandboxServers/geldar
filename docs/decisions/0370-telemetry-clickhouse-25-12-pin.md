@@ -18,7 +18,7 @@ Research on 2026-11-16 (`docs/analysis/telemetry/t20-stack-files.md`, and the st
 1. The Geldar ClickHouse server and the Geldar ClickHouse Keeper are pinned to `25.12.5 (build 44)`, the version SigNoz v0.148.1 tests in its CI. Not 26.3. Moving to 26.3 waits until SigNoz tests it. The exact registry tag is listed with its digests in deploy/telemetry/README.md.
 2. `geldar-ch-keeper` is required. It runs at the 0352 caps: 0.5 CPU, 1g memory (memswap equal), 256 pids.
 3. The SigNoz pins are `signoz/signoz` v0.148.1, and `signoz/signoz-otel-collector` and `signoz/signoz-schema-migrator` v0.144.6. v0.144.6 is the version the v0.148.1 `go.mod` pins for the collector. The exact image digests are in `deploy/telemetry/README.md`.
-4. The one-shot migrator and the collector run as uid 10001 (image `User`). The ClickHouse server and Keeper start as root and drop to uid 101 (gid 101). That drop is inferred from upstream and is checked on the node before any `chown` (see the README).
+4. The one-shot migrator and the collector run as uid 10001 (image `User`). The ClickHouse server starts as root and its entrypoint drops to uid 101 (gid 101). The Keeper runs as uid 101 (gid 101) directly: compose sets `user: "101:101"` and overrides the entrypoint, so there is no drop. Both uid 101 facts are inferred from upstream and are checked on the node before any `chown` (see the README).
 
 ## Consequences
 

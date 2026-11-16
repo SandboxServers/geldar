@@ -10,15 +10,18 @@ Compose references every image as `repo@sha256:<index digest>` (digest only, no 
 
 | Image | Tag | Index digest | linux/amd64 digest | Push date (UTC) | Runtime user |
 |---|---|---|---|---|---|
-| clickhouse/clickhouse-server | 25.12.5 (build 44) | sha256:cacf32d6884291dc2ff5e0156a97f46fc53ff7c929a7906d114e268a929dfd3a | sha256:10f54f04de6c61b756c4eaf9f1d17464a4ac3e1f94b5b410e0dec92a24dbeda8 | 2026-02-02 | starts as root, drops to 101:101 [INF, see Owner uids] |
-| clickhouse/clickhouse-keeper | 25.12.5 (build 44) | sha256:525b8b0f93ccb371131c46f22a066ea43d33d74aba314203e8044609945d8524 | sha256:5493b0fba2fdfc3bf51115db4fb378fac8b0a953c116db442fd4297a8f49a9d7 | 2026-02-02 | starts as root, drops to 101:101 [INF, see Owner uids] |
+| clickhouse/clickhouse-server | 25.12.5 (build 44) | sha256:cacf32d6884291dc2ff5e0156a97f46fc53ff7c929a7906d114e268a929dfd3a | sha256:10f54f04de6c61b756c4eaf9f1d17464a4ac3e1f94b5b410e0dec92a24dbeda8 | 2026-02-02 | starts as root; its entrypoint drops to 101:101 [INF, see Owner uids] |
+| clickhouse/clickhouse-keeper | 25.12.5 (build 44) | sha256:525b8b0f93ccb371131c46f22a066ea43d33d74aba314203e8044609945d8524 | sha256:5493b0fba2fdfc3bf51115db4fb378fac8b0a953c116db442fd4297a8f49a9d7 | 2026-02-02 | runs as 101:101 directly (compose `user:`, entrypoint overridden, no drop) [INF, see Owner uids] |
 | signoz/signoz | v0.148.1 | sha256:a7d1a968a1f7f65c518106150ac05424ca8e91c52d7076077dfce034980e9c34 | sha256:909443fb98d16048df866d49f6efe5e8b19dd60e20821bee2c45c46090700027 | 2026-10-29 | root (no drop) [SRC] |
 | signoz/signoz-otel-collector | v0.144.6 | sha256:7e4e539a73f1f88fbc1cd7e659ab3950908e83ce1f2a37a297452f910d072174 | sha256:13fca6050f79c49a0bdc644ccdc65a9248f22f3b4337d1e0680da026a764d77e | 2026-07-14 | 10001 [SRC] |
 Why these tags: 25.12.5 (build 44) is the ClickHouse line SigNoz v0.148.1 tests in CI. v0.144.6 is the collector version the v0.148.1 `go.mod` pins. The newer 25.12.11 (build 4) and 26.3.62 (build 3) are not used (see 0370). The digests were read from the Docker Hub registry API on 2026-11-16 and were not pulled.
 
 ## Owner uids
 
-- **clickhouse-server and clickhouse-keeper**: the image config `User` is empty, so the container starts as root. The entrypoint then chowns the data directory and drops to `clickhouse` (uid 101, gid 101). The drop is inferred from upstream `docker/server` and `docker/keeper` (`groupadd -r clickhouse --gid=101`) and is **not checked in the image**. Check on the node before any `chown` of `/mnt/nvme/geldar-telemetry/clickhouse` or `/keeper`:
+- **clickhouse-server**: the image config `User` is empty, so the container starts as root. Its entrypoint then chowns the data directory and drops to `clickhouse` (uid 101, gid 101). The drop is inferred from upstream `docker/server` (`groupadd -r clickhouse --gid=101`) and is **not checked in the image**.
+- **clickhouse-keeper**: compose sets `user: "101:101"` and overrides the entrypoint with `/usr/bin/clickhouse-keeper`, so the Keeper process never runs as root and the `/entrypoint.sh` drop is not used. The uid 101 is inferred and **not checked in the image**. The Keeper data directory `/mnt/nvme/geldar-telemetry/keeper` must be owned by 101:101 before start.
+
+  Check both images on the node before any `chown` of `/mnt/nvme/geldar-telemetry/clickhouse` or `/keeper`:
 
   ```
   docker run --rm --entrypoint id clickhouse/clickhouse-server@sha256:cacf32d6884291dc2ff5e0156a97f46fc53ff7c929a7906d114e268a929dfd3a clickhouse
