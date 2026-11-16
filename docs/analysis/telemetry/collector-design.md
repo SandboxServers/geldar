@@ -10,7 +10,7 @@ Source for the facts: the telemetry survey of 2026-11-15 (sections 1.2, 1.3, 4.1
 
 In scope: the Geldar Collector gateway on the Colo (`geldar-gateway`, formerly `otel-gateway`); the Geldar-owned SigNoz stack on the Geldar network (ClickHouse server, keeper if needed, migrator, query service, SigNoz-side collector, UI); host metrics; NATS and Postgres scrape paths; caps, budget, alarms, retention; rollout and rollback; verification; risks.
 
-Out of scope: the other tenant's SigNoz stack, ClickHouse, network and configuration (never changed, never joined; 0352, 0350 item 4); the SDK (T-03); the Paper agent (T-11); the Mind-side exporter (T-13); dashboards (T-17). The Mind-host ingest route (section 9) stays an open owner question.
+Out of scope: the other tenant's SigNoz stack, ClickHouse, network and configuration (never changed, never joined; 0352, 0350 item 4); the SDK (T-03); the Paper agent (T-11); the Mind-side exporter (T-13); dashboards (T-17). The Mind-host ingest route is decided for ingest only: a Caddy route (section 9, caddy-ingest-route.md), owner ruling 2026-11-16.
 
 ## 2. Topology
 
@@ -20,7 +20,7 @@ Colo node (16 CPUs, 128 GB RAM, /mnt/nvme 1.8 TB; fit check 2026-11-15, 0352)
     nats <-- nats-exporter (network_mode: service:nats)                              [T-09]
     postgres <-- postgresql receiver, monitoring role                                 [T-10]
     Geldar services, paper, velocity --OTLP/HTTP--> geldar-gateway:4318
-    geldar-gateway --127.0.0.1:<port>:4318--> Mind-host route, ONLY if section 9 is decided (no Caddy change by ruling 2026-11-16)
+    geldar-gateway --127.0.0.1:<port>:4318--> Mind-host route on the shared Caddy (section 9; decided 2026-11-16 for ingest only)
   network geldar-telemetry (new, Geldar-owned; compose/colo-telemetry.yml)           [PROPOSED name]
     geldar-gateway --OTLP gRPC--> geldar-signoz-otelcol:4317 --> geldar-ch (ClickHouse 26.3)
     geldar-signoz-query --> geldar-ch;  geldar-signoz-ui --> geldar-signoz-query
@@ -33,7 +33,7 @@ Operator workstation: SSH local port forward to the node's 127.0.0.1 ports (UI; 
 Other tenant's stack (its network, its ClickHouse, its collector): not joined, not published to, not changed (0352).
 ```
 
-Rules: no service publishes a port except the loopback ports named here; no container mounts the Docker socket (section 8); the other tenant's containers and configuration are untouched; no change to, and no restart of, the shared Caddy (ruling 2026-11-16). Loopback port numbers are chosen at implementation and checked free by read-only `ss` (N1). **UNVERIFIED**: no free port has been checked.
+Rules: no service publishes a port except the loopback ports named here; no container mounts the Docker socket (section 8); the other tenant's containers and configuration are untouched; no change to the shared Caddy except the ingest route (section 9, ruling 2026-11-16), and no restart of it except the one owner-approved recreate for the ingest token. Loopback port numbers are chosen at implementation and checked free by read-only `ss` (N1). **UNVERIFIED**: no free port has been checked.
 
 ## 3. Images
 
@@ -65,11 +65,11 @@ Geldar stack (0352 table; all on `geldar-telemetry`; **PROPOSED** caps, not meas
 
 Rules:
 - Totals: the long-running containers (ClickHouse, keeper if used, query, SigNoz collector, gateway) are 5.5 CPUs and 11.5 GiB at the caps. With the UI and the one-shot migrator: 6.25 CPUs and 12.25 GiB. These are ceilings, not usage (0352 fit check: 29 GB of 128 GB used on 2026-11-15).
-- **Conflict, F11**: 0350 item 9 and 0082 give the gateway 128 pids; the 0352 table gives 256. This design uses 256 (the 0352 table, as the brief directs). The orchestrator reconciles it.
+- **F11, gateway pids**: 0350 item 9 and 0082 give the gateway 128 pids; the 0352 table gives 256. This design uses 256 (the 0352 table, as the brief directs). The orchestrator reconciles it.
 - Keeper rule (0352, **UNVERIFIED** until checked on SigNoz 0.135 or later and ClickHouse 26.3): prefer no keeper if the migrator's schema runs on one node; otherwise embedded ClickHouse Keeper inside `geldar-ch` if supported; use `geldar-ch-keeper` only if neither works. The other tenant's `signoz-zookeeper-1` is not used.
 - Every container: `json-file` log limits as in 0082 (this document's anchor is 10m and 3 files, **UNVERIFIED** against the 0082 text at implementation), `restart: unless-stopped` except the migrator, `memswap` equal to `mem_limit`.
 - Gateway networks: `geldar-colo` and `geldar-telemetry`, both Geldar-owned. No external network, so no network name is passed in by variable.
-- Gateway publish: `127.0.0.1:<port>:4318` only if section 9 is decided. Otherwise none.
+- Gateway publish: `127.0.0.1:<port>:4318` for the section 9 Caddy ingest route (decided 2026-11-16, ingest only).
 - `geldar-ch` publishes only `127.0.0.1` HTTP, and only if the optional SSH-tunnelled read path is used (0352). No ClickHouse native port is published.
 
 ## 5. Pipelines
@@ -190,86 +190,56 @@ Per-container (the caps check in section 16, for both Geldar projects): `docker_
 
 **Recommendation: Option B**, with Option A as the fallback if the owner rules that the helper must not grow. The owner decides. Operator checks with `docker stats` need no change: they run from the workstation shell, not from a container.
 
-## 9. Mind-host route through Caddy (T-15)
+## 9. Mind-host ingest through the shared Caddy (T-15)
 
-**Status (owner ruling, 2026-11-16): OPEN QUESTION, NOT DECIDED.** The owner ruled that the shared Caddy is not changed or restarted. The route below needs a new Caddy site and a `caddy reload`, so it conflicts with that ruling. Until the owner decides, T-15 and the Caddy step are not requested (section 14 has no Caddy step), and the amendments in section 10 apply only if the owner picks a Caddy route. The alternatives and a recommendation are at the end of this section. The UI is not part of this question: it has no Caddy route (section 2).
+**Status (owner ruling, geldar-93, 2026-11-16): APPROVED IN PRINCIPLE, FOR OTLP INGEST ONLY.** The owner ruled that the OTLP ingest gets a Caddy route on the shared Caddy, authenticated with the ingest token the owner already holds. This replaces the earlier interim "option C, Colo-only" and the earlier "no shared-Caddy change" ruling, for the ingest route only. The SigNoz UI is not affected: it stays SSH-tunnel only with no Caddy route (section 2, 0352 read path). The exact config is in `docs/analysis/telemetry/caddy-ingest-route.md`. Nothing is loaded by this document. Each node change to Caddy (the first env secret and recreate, each load, any rollback) needs the owner's approval at the time.
 
-The text below is the Caddy design as written on 2026-11-15, kept for the owner's comparison.
+Path: the `otel-agent` on each Mind host (outside the player containers, 4.6) posts OTLP/HTTP protobuf to `https://{$GELDAR_INGEST_HOST}/v1/{traces,logs,metrics}` with `Authorization: Bearer <ingest token>`. The shared Caddy terminates TLS, checks the token, applies the body and rate limits, and reverse-proxies to the gateway's loopback publish `127.0.0.1:<port>` (the port is chosen at N1). The gateway then exports to the Geldar SigNoz collector on the Geldar network (section 5).
 
-Path: `otel-agent` on each Mind host (outside the player containers, 4.6) posts OTLP/HTTP protobuf to `https://otel.<domain>/v1/{traces,logs,metrics}` with `Authorization: Bearer <token>`. Caddy checks the token and forwards to the gateway's loopback publish. Only POST passes (other methods get 405); a missing or wrong token on the three OTLP paths gets 401; any other path gets 404.
+Route rules (each is tested in T-15; the checks are in section 14 and in `caddy-ingest-route.md`):
+- **Hostname**: one new public hostname, given only as an env placeholder. The value is owner-held and not in the repo. It is added to the public route list by the amendments in section 10.
+- **TLS**: Caddy's automatic certificate for that hostname. No plain-HTTP listener is added for it.
+- **Methods**: only POST passes; any other method gets 405.
+- **Paths**: only `/v1/traces`, `/v1/metrics` and `/v1/logs`. A missing or wrong token on those three gets 401. Any other path gets 404.
+- **Token check**: a header matcher on `Authorization: Bearer <token>`, with the token read from the Caddy environment. **Constant-time compare: Caddy does not provide one for this check.** The `header` matcher compares strings with ordinary equality, and stock Caddy has no bearer-token directive with a constant-time compare. Used instead: a token of at least 32 random bytes, generated by the owner, so a timing probe over TLS gains nothing usable in practice. Unverified against the node's Caddy version; check at N1. The token must not be empty: an unset variable would make the matcher `Bearer ` (see the validation step in `caddy-ingest-route.md`).
+- **Body limit**: `request_body` `max_size 8MiB` at site level. A 2048-span batch is about 2.5 MB (section 6); a larger post gets 413.
+- **Rate limit**: **stock Caddy has no rate-limit directive.** The route needs a third-party `rate_limit` module compiled into a custom Caddy image, pinned by version and digest and reviewed like any other pin. There are two zones: one for authenticated OTLP posts and one for requests that fail the token check, so token guessing is limited too. The numbers are PROPOSED in `caddy-ingest-route.md`. If the node's Caddy has no such module, the route is not loaded.
+- **Logs**: Caddy must not log the `Authorization` header. The site's `log` block uses the filter encoder to delete that field before the line is written. The T-15 test sends a request with a test token (never the real one) and checks the access log.
+- **Headers**: the route drops any client-sent address header and sets the one Caddy vouches for, as `deploy/caddy/mcp.caddy` does. The upstream Host is `localhost`, because the gateway accepts only loopback names.
+- **Surface**: a new public ingress, named in the amendments to 0071 and 0096 (section 10).
 
-The site file is `deploy/caddy/otel.caddy` with a kill switch `deploy/caddy/otel-off.caddy` (the 0094 pattern in `deploy/caddy/README.md`). Load with `caddy validate` then `caddy reload` through `docker exec` (0096 item 1). Placeholders are env values (`GELDAR_DOMAIN`, `GELDAR_OTEL_UPSTREAM`, `GELDAR_OTEL_INGEST_TOKEN`); none is written in the file.
+Token handling. The owner places the ingest token; its value is never written in the repo, a compose file, a log or a chat:
+- on the node, as a Caddy environment secret, read by the Caddy process through `{$GELDAR_INGEST_TOKEN}`;
+- in the gateway and exporter environment, for the gateway-side check if T-02 uses one;
+- on each Mind host, as the OTEL headers environment of the `otel-agent` only.
 
-```caddyfile
-# OTLP/HTTP ingest for Mind hosts (T-15; decisions 0071, 0096, 0350). Load this file, then `caddy validate` and `caddy reload`.
-# Placeholders: GELDAR_DOMAIN, GELDAR_OTEL_UPSTREAM (the gateway's loopback publish, host:port), GELDAR_OTEL_INGEST_TOKEN (bearer token).
-otel.{$GELDAR_DOMAIN} {
-	# Only OTLP posts pass.
-	@not_post not method POST
-	handle @not_post {
-		respond 405
-	}
+It is kept out of the repo, the compose files and the logs, and Caddy must not log the header (above). The Caddy environment is visible to root on the node (through `docker inspect`); that is the same trust as the node's root and is accepted. A running Caddy process sees a new or rotated environment secret only after its container is recreated, so each such change is one restart of the shared Caddy, with the owner's approval at the time.
 
-	# Drop any address header a client sent; Caddy sets the one it vouches for.
-	request_header -x-geldar-client-ip
-	request_header -X-Forwarded-For
-	request_header -CF-Connecting-IP
+Findings carried from the 2026-11-15 draft:
+- **F1, gateway loopback publish**: needed by this route, `127.0.0.1:<port>:4318` only.
+- **F4, token in the reload environment**: resolved by the environment secret. `caddy validate` and `caddy reload` run in the Caddy container, which already holds the variable, so the token is not typed on a command line or into shell history. `docker exec -e` is not used.
+- **F5, comparison**: see the token check above; accepted with a 32-byte token.
+- **F6, Mind host side**: the token is on the Mind host. The model child runs as another uid and does not inherit the supervisor's environment (4.6, T-14). That isolation is tested in T-14's HC-26 extension, not assumed.
 
-	header {
-		-Server
-		X-Content-Type-Options nosniff
-	}
+The kill switch is `deploy/caddy/otel-off.caddy`, the 0094 pattern in `deploy/caddy/README.md`.
 
-	# Authenticated ingest: the three OTLP/HTTP paths with the bearer token.
-	@ingest {
-		path /v1/traces /v1/logs /v1/metrics
-		header Authorization "Bearer {$GELDAR_OTEL_INGEST_TOKEN}"
-	}
-	handle @ingest {
-		# 8 MiB: a 2048-span batch is about 2.5 MB (section 6); the cap stops oversize posts.
-		request_body {
-			max_size 8MiB
-		}
-		reverse_proxy {$GELDAR_OTEL_UPSTREAM} {
-			header_up Host localhost
-			header_up x-geldar-client-ip {remote_host}
-		}
-	}
+### 9.1 Decision record: Mind-host ingest
 
-	# The same paths without a valid token.
-	@signal path /v1/traces /v1/logs /v1/metrics
-	handle @signal {
-		respond 401
-	}
-
-	# Every other path is 404.
-	handle {
-		respond 404
-	}
-}
-```
-
-Points to settle before this is loaded (all **UNVERIFIED** until tested on the node):
-- **F4, token in the reload environment.** Caddy substitutes `{$VAR}` when the CLI parses the file. `caddy reload` runs in a `docker exec`, so the token must be in that exec's environment (`docker exec -e GELDAR_OTEL_INGEST_TOKEN ...`), which is visible to root on the node and in shell history if typed. The alternative is a file placeholder (`{file./path}` in Caddy 2) read by the Caddy process; check the node's Caddy version before choosing. Either way the token stays out of the repo.
-- **F5, comparison.** The `header` matcher compares strings; it is not constant-time. The risk is low for a long random token over TLS, but the token must be at least 32 random bytes.
-- **F6, Mind host side.** The token is on the Mind host. The model child runs as another uid and does not inherit the supervisor's environment (4.6, T-14). That isolation is what keeps the token from the model; it is tested in T-14's HC-26 extension, not assumed.
-- **Public surface.** The route rides the shared Caddy's existing HTTPS ingress, so no new public port is added. It is a new public hostname, and 0096's list of public routes must name it (section 10).
-
-### 9.1 Open question for the owner: Mind-host ingest without a Caddy change
-
-The ruling of 2026-11-16 says no change to the shared Caddy. The route above needs one, so it is not used unless the owner decides otherwise. The options:
-
-- **A. SSH tunnel per Mind host to a loopback gateway port.** The Mind host runs a supervised `ssh -N -L 127.0.0.1:<local>:127.0.0.1:<gateway port> <node>`, and `otel-agent` posts to its local port. This uses SSH access the operator already has. The Mind host's key is dedicated and restricted in the node's `authorized_keys` (`restrict` and `permitopen="127.0.0.1:<gateway port>"`, so no shell, no other ports and no agent forwarding). Caddy is not touched, and the gateway keeps its loopback publish (F1). The bearer token and findings F4 to F6 fall away, unless the owner also wants a gateway-side check. Costs: the tunnel must be kept up under a supervisor, and a key on a Mind host can reach the node, so it must be dedicated and restricted.
-- **B. WireGuard between each Mind host and the Colo.** The gateway listens on the WireGuard address. This is strong, but it adds a network interface, a key per host and a new UDP listener on the node. A new listener needs its own decision (section 10). Heavier than the need.
-- **C. Ingest from the Colo only, for now.** No Mind-host telemetry is sent. The Mind side (the full `session-<n>.jsonl` transcript) stays in session files on the Mind host. This adds no exposure and needs no decision now, but the Mind side is missing from SigNoz, so a trace cannot be followed from a Mind-side thought or act.
-
-**Recommendation (for the owner, not decided): A with a dedicated restricted key; C as the interim until the owner approves A.** A keeps the trust path the operator already has and changes no shared proxy. C is the fallback if the owner will not allow a node key on a Mind host. B is not recommended unless the owner wants a VPN for other reasons. No node step, key or Caddy change is requested by this document.
+- **Decided (owner ruling, geldar-93, 2026-11-16)**: the Caddy route in section 9, for OTLP ingest only.
+- **Superseded for ingest**: the interim "option C, Colo-only" (no Mind-host telemetry) and the "no shared-Caddy change" ruling. Neither is in force for ingest. Both still hold for the SigNoz UI, which has no Caddy route.
+- **Not chosen, not built**: the per-host SSH tunnel and the WireGuard alternatives in the 2026-11-15 draft of this section. They are not part of T-15.
+- **Still open, for the owner**:
+  1. The rate-limit module: its choice, pin and custom image build (section 9, rate limit).
+  2. The node's Caddy version and build (read-only, N1). These decide whether the rate-limit module and the token comparison are as described.
+  3. Each change to the shared Caddy at the time: the environment secret with one recreate, the load (validate, then reload), and any rollback.
+- The UI is unchanged: no Caddy route (section 2).
+- For the owner's decision: the rate limit needs a pinned third-party Caddy module in a custom image, and the ingest token secret needs one approved recreate of the shared Caddy container.
 
 ## 10. Portscan, loopback allow-list and decision amendments
 
 - `tools/portscan`: the expected open-port list does not change while no Caddy route is added. If section 9 is decided as a Caddy route, confirm by scan after the reload; a new listener would need its own decision.
-- The loopback-ports check (`tools/repo-checks/src/loopback-ports.ts`) allows exactly these publishes, each named in its overlay and nothing else: the gateway's loopback port (only if section 9 is decided), the SigNoz UI's `127.0.0.1` port, and the optional ClickHouse HTTP `127.0.0.1` port. Each entry carries a limits check. **UNVERIFIED** port numbers.
-- Amend 0071 and 0096 only if section 9 picks a Caddy route; the expected public hostname list then gains `otel.<domain>` (owner-held value, not in the repo).
+- The loopback-ports check (`tools/repo-checks/src/loopback-ports.ts`) allows exactly these publishes, each named in its overlay and nothing else: the gateway's loopback port (for the section 9 Caddy ingest route), the SigNoz UI's `127.0.0.1` port, and the optional ClickHouse HTTP `127.0.0.1` port. Each entry carries a limits check. **UNVERIFIED** port numbers.
+- Amend 0071 and 0096 for the section 9 Caddy ingest route (decided 2026-11-16); the expected public hostname list then gains `otel.<domain>` (owner-held value, not in the repo).
 - 0350 needs no further amendment for this design: item 4 is unchanged (no change to the other tenant), and 0352 records the stack decision.
 - The spec is not edited (0073).
 
@@ -345,7 +315,7 @@ Each node step is a separate request to the orchestrator geldar-93, with its own
 | N11 | Create the monitoring role (section 12) | none | low-load | revoke grants, then `DROP ROLE` (none owned) | yes (database role) |
 | N12 | SigNoz alert rules (Geldar share, `/mnt/nvme`, queue) | none | any | disable the rule | yes (alert channel not chosen) |
 | N13 | Mind-host `otel-agent` install (owner's machine) | agent 0.25 CPU, 256m | owner's session | stop and remove the agent | yes (token or key; section 9) |
-| N14 | Caddy route for Mind hosts (section 9) | none | none requested | `otel-off.caddy` in place, validate, reload | ON HOLD: the 2026-11-16 ruling forbids it until the owner decides |
+| N14 | Caddy route for Mind hosts (section 9, ingest only): one env secret and one recreate of the shared Caddy for the token, then `otel.caddy` validate and reload | one recreate of the shared Caddy; reload | low-load, owner's window | remove the `otel.caddy` snippet and reload (`otel-off.caddy`); the token can stay until the next recreate | yes: owner-approved at the time (ruling 2026-11-16) |
 | N15 | Helper read-only stats route (section 8, Option B) | helper unit as is | separate window | remove the route; redeploy the helper | yes (root-run unit change) |
 
 Each request carries the step number, the exact command or file, the caps, the window, the rollback and the verification in section 16.
@@ -355,10 +325,10 @@ Each request carries the step number, the exact command or file, the caps, the w
 - `compose/colo-telemetry.yml`: the Geldar stack and the `geldar-telemetry` network. Merged only when `GELDAR_OTEL_ENABLED` is set.
 - `compose/colo-otel.yml`: the gateway and `nats-exporter`, with caps, `geldar-colo` and `geldar-telemetry` networks, and the loopback publishes named in section 10. Merged the same way.
 - `deploy/otel/gateway.yaml`: the Collector config in section 5, read-only bind. Stack configs under `deploy/clickhouse/` and `deploy/signoz/` (the T-17 dashboards directory); **UNVERIFIED** names.
-- `deploy/caddy/otel.caddy` and `deploy/caddy/otel-off.caddy`: only if section 9 is decided.
+- `deploy/caddy/otel.caddy` and `deploy/caddy/otel-off.caddy`: for the section 9 Caddy ingest route (N14).
 - `deploy/colo-up.sh` and `deploy/common.sh`: the overlay merges, gated by env.
 - `tools/repo-checks`: the loopback allow-list (section 10) and a test that no overlay mounts `docker.sock`.
-- Env names only (values stay out of the repo): `GELDAR_OTEL_ENABLED`, `GELDAR_SIGNOZ_OTLP_ENDPOINT`, `GELDAR_OTEL_ENDPOINT` (the Geldar services' endpoint, `http://geldar-gateway:4318`), `GELDAR_CH_WRITER_PASSWORD_FILE`, `GELDAR_CH_READER_PASSWORD_FILE` (secret file paths; the reader password is never on a Mind host), `GELDAR_COLO_OTEL_GATEWAY_CPUS`, `GELDAR_COLO_OTEL_GATEWAY_MEM`, `GELDAR_OTEL_PG_PASSWORD_FILE`. `GELDAR_OTEL_INGEST_TOKEN` and `GELDAR_OTEL_UPSTREAM` only if section 9 is decided.
+- Env names only (values stay out of the repo): `GELDAR_OTEL_ENABLED`, `GELDAR_SIGNOZ_OTLP_ENDPOINT`, `GELDAR_OTEL_ENDPOINT` (the Geldar services' endpoint, `http://geldar-gateway:4318`), `GELDAR_CH_WRITER_PASSWORD_FILE`, `GELDAR_CH_READER_PASSWORD_FILE` (secret file paths; the reader password is never on a Mind host), `GELDAR_COLO_OTEL_GATEWAY_CPUS`, `GELDAR_COLO_OTEL_GATEWAY_MEM`, `GELDAR_OTEL_PG_PASSWORD_FILE`. `GELDAR_OTEL_INGEST_TOKEN` and `GELDAR_OTEL_UPSTREAM` for the section 9 Caddy ingest route.
 
 ## 16. Verification checklist
 
@@ -398,7 +368,7 @@ Negative tests:
 
 ## 17. Rollout and rollback summary
 
-Order: N1; N2 (network); N3 (volumes); N4 (ClickHouse, plus keeper if the keeper rule needs it); N5 (migrator, retention); N6 (query and UI); N7 (SigNoz collector); N8 (gateway, Geldar services still on endpoint unset); N9 (verify). Then the Geldar services are switched on one by one by the T-03 and T-06 to T-08 cards (each its own change). Then N10 to N12. N13 at the owner's pace. N14 only if the owner decides section 9.
+Order: N1; N2 (network); N3 (volumes); N4 (ClickHouse, plus keeper if the keeper rule needs it); N5 (migrator, retention); N6 (query and UI); N7 (SigNoz collector); N8 (gateway, Geldar services still on endpoint unset); N9 (verify). Then the Geldar services are switched on one by one by the T-03 and T-06 to T-08 cards (each its own change). Then N10 to N12. N13 at the owner's pace. N14 is a normal owner-approved step: one Caddy reload, or one recreate for the token, each with the owner's approval at the time. Rollback = remove the snippet and reload.
 
 Rollback for the whole stack, in order: unset `GELDAR_OTEL_ENABLED` and recreate the Geldar services through CD (SDKs go off); `docker compose ... rm -s` for `geldar-gateway`, `geldar-signoz-otelcol`, `geldar-signoz-ui`, `geldar-signoz-query`, `geldar-signoz-migrator` and `geldar-ch` (and `geldar-ch-keeper` if used); remove `nats-exporter` and the monitoring role if they were added; remove the `geldar-telemetry` network once empty; keep the Geldar data directories until the owner decides. The shared Caddy is not touched, and the other tenant is not touched at any step.
 
@@ -431,7 +401,7 @@ Rollback for the whole stack, in order: unset `GELDAR_OTEL_ENABLED` and recreate
 - **F6**: the Mind host holds the ingest token; isolation by uid is the control, tested in T-14; conditional on section 9.
 - **F7 and F8**: resolved by 0352 option B. The budget is measured per server; the retention is the Geldar workspace's.
 - **F9**: resolved by 0352 option B. No Geldar container joins the other tenant's network, and no port of the other tenant changes.
-- **F10**: Mind-host ingest conflicts with the no-Caddy-change ruling (section 9.1). Owner decision, open.
+- **F10**: Mind-host ingest needed a Caddy route, which the earlier no-Caddy-change ruling ruled out. Decided by the owner on 2026-11-16 for ingest only (section 9.1); the UI stays without a Caddy route.
 - **F11**: gateway pids: 128 in 0350 item 9 and 0082, 256 in the 0352 table. This design uses 256. Orchestrator to reconcile.
 
 ## 20. Sources
