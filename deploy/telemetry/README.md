@@ -68,6 +68,8 @@ No `docker.sock` is mounted in any service.
 
 ## Secrets
 
+Sudo scope for the node steps: `mkdir` and `chown` inside `/mnt/nvme/geldar-telemetry` only. Anything else (including `sudo stat`, `sudo cat`, and files in `/tmp`) must be asked for first.
+
 Passwords are never inline. Compose mounts them as file secrets from `/mnt/nvme/geldar-telemetry/secrets/`:
 
 - `ch_writer_password`: the writer password. Used by the migrator and the collector.
@@ -232,6 +234,7 @@ Run on the node as root, from the repo checkout that CD placed (so `deploy/telem
 
 **Step a. Preconditions.**
 
+0. Sudo scope for the node steps is `mkdir` and `chown` inside `/mnt/nvme/geldar-telemetry` only. Anything else (including `sudo stat`, `sudo cat`, and files in `/tmp`) must be asked for first.
 1. The network exists (N2): `docker network inspect geldar-telemetry --format '{{.Name}}'` prints `geldar-telemetry`. If not, stop.
 2. The directories exist (N3): `ls -ld /mnt/nvme/geldar-telemetry/clickhouse /mnt/nvme/geldar-telemetry/keeper /mnt/nvme/geldar-telemetry/query /mnt/nvme/geldar-telemetry/queue` lists all four. (`queue` is not mounted by this compose file.)
 3. Create the secrets directory: `install -d -m 0700 /mnt/nvme/geldar-telemetry/secrets`.
@@ -318,7 +321,11 @@ Abort rule: if the block prints `ABORT` or exits non-zero, delete `ch-hashes.env
 3. `tar -tzf hq.tar.gz` lists the contents; record the list in the N4 report (the release ships license and readme files beside the binary).
 4. `tar -xzf hq.tar.gz histogram-quantile` extracts only the binary (use the member name from step 3).
 5. `sha256sum histogram-quantile`: record the full value in the N4 report. The round 1 value began `fc3168f9`; a different value is a finding to report before install.
-6. `install -d -o 101 -g 101 -m 0755 /mnt/nvme/geldar-telemetry/clickhouse/user_scripts` then `install -o 101 -g 101 -m 0755 histogram-quantile /mnt/nvme/geldar-telemetry/clickhouse/user_scripts/histogramQuantile`; `ls -ln /mnt/nvme/geldar-telemetry/clickhouse/user_scripts` shows `101 101` and `-rwxr-xr-x`.
+6. Install the binary. `mkdir` and `chown` alone were not enough at N4b (2026-11-16): after the data-dir chown (step c), `clickhouse/` is 750 101:101 and the ssh user cannot reach into it. All sudo use stays inside the sudo scope (`mkdir` and `chown` inside `/mnt/nvme/geldar-telemetry` only; no other sudo verbs).
+    - Preferred: install the binary BEFORE the chown of `clickhouse/` to 101:101 (as the scratch run did). Create `clickhouse/user_scripts`, copy the binary in as `histogramQuantile`, set mode 755 (`install -m 0755 histogram-quantile /mnt/nvme/geldar-telemetry/clickhouse/user_scripts/histogramQuantile`), then `sudo -n chown 101:101` the `user_scripts` directory, the binary and `clickhouse/`.
+    - If the data dir was already chowned: `sudo -n chown <ssh user> /mnt/nvme/geldar-telemetry/clickhouse /mnt/nvme/geldar-telemetry/clickhouse/user_scripts` (create `user_scripts` first with `sudo -n mkdir` and the same chown if it does not exist), run the `install -m 0755` above, then `sudo -n chown 101:101` both directories and the binary back.
+    - Either way, verify the final owner and mode with `stat -c '%u:%g %a %n'` on `/mnt/nvme/geldar-telemetry/clickhouse`, `/mnt/nvme/geldar-telemetry/clickhouse/user_scripts` and `/mnt/nvme/geldar-telemetry/clickhouse/user_scripts/histogramQuantile`: `101:101` for all three, `750` for `clickhouse` and `755` for the other two. Once `clickhouse/` is 750 101:101 the ssh user cannot stat the inner two (and `sudo stat` is outside the sudo scope): take their stat while the ssh user still owns `clickhouse/` (after the chown back to 101:101 of the inner two, before the last chown of `clickhouse/`), and stat `clickhouse/` itself last. Or ask first for the extra sudo verb.
+    - Record in the N4 report: at N4b the detour was needed, and `clickhouse/` was briefly owned by the ssh user while it was empty.
 7. Delete the tarball and the extracted copy from the scratch directory.
 8. Value check, after `geldar-ch` is healthy (step g): `docker exec geldar-ch clickhouse-client -q "SELECT histogramQuantile([0.5,1,2,inf],[1,3,6,6],0.9)"` expects `1.8000000000000003`, and `... histogramQuantile([0.5,1,2,inf],[1,3,6,6],0.5)` expects `1`. Both are cumulative inputs with a `+Inf` bucket. Also `SELECT name FROM system.functions WHERE name = 'histogramQuantile'` returns one row (item 24).
 
