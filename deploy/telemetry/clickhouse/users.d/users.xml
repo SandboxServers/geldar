@@ -45,6 +45,15 @@
             </networks>
             <profile>default</profile>
             <quota>default</quota>
+            <!-- [AUTH] The stock config sets access_management and named_collection_control on default (image users.xml, lines 89
+                 and 92). They must be removed here because ClickHouse refuses explicit <grants> next to any access-control key
+                 (Code 347, "Any other access control settings can't be specified with grants"). show_named_collections and
+                 show_named_collections_secrets are removed too, as belt and braces. Effect: default can no longer manage access or
+                 named collections [UNV until scratch round 6 confirms startup]. -->
+            <access_management remove="remove"/>
+            <named_collection_control remove="remove"/>
+            <show_named_collections remove="remove"/>
+            <show_named_collections_secrets remove="remove"/>
             <!-- [AUTH] default exists because the cluster entry in cluster.xml has no <user>, so Distributed tables and
                  clusterAllReplicas reach the shard as default. Its grants are limited to what that needs: SELECT and INSERT on the
                  six signoz_* databases and SELECT on system.*. Nothing else: no SOURCES, SYSTEM, FILE, URL, S3, REMOTE, ALTER,
