@@ -2,12 +2,15 @@
 // and the geldar-life-registry key of each life's username (the Velocity admission entry). Runbook:
 // docs/runbooks/account-deletion.md, step 5. It is an operator tool run by hand, never by a web route.
 //
-// Dry run by default. A change needs --execute AND --confirm <owner id>, the owner id exactly. The buckets are
-// opened, never created. Keys are purged (every revision, not a delete marker), so the data is gone from the stream.
+// Dry run by default. A change needs --execute AND --confirm <owner id>, the owner id exactly. --confirm guards a
+// typo in the command only. It does not check the lives file, which is the target: the operator must check the file
+// against the step 3a query output before running --execute. The buckets are opened, never created. Keys are purged
+// (every revision, not a delete marker), so the data is gone from the stream; a purged key reads as absent afterwards.
 // Output is counts only: no owner id, life id, username, key value or signature is printed.
 //
 // The lives list must be captured BEFORE register_account_delete runs: the deletion removes the owner's players and
 // lives from Postgres, so this script cannot find them afterwards. The file is JSON: [{"lifeId": "...", "username": "..."}].
+// The registry key of each life is its username (lowercased), which must equal the Body's game_account.
 import { readFileSync } from 'node:fs';
 import { connectNats } from '@geldar/contract/nats';
 import { jetstream } from '@nats-io/jetstream';
@@ -75,6 +78,7 @@ export function refusalFor(req: ErasureRequest): string | undefined {
     return 'a life in the list is malformed';
   }
   if (req.execute && req.confirm !== req.ownerId) {
+    // Exact equality only: a prefix, an extension or a case change of the owner id is refused.
     return '--execute needs --confirm with the owner id, exactly; nothing was changed';
   }
   return undefined;
@@ -226,10 +230,13 @@ export async function openErasureKvs(
   }
 }
 
-function asPort(kv: KV): KvPort {
+/** Wraps one bucket. A DEL or PURGE entry is an absent key: NATS keeps the marker after a purge, so kv.get returns it. */
+export function asPort(kv: KV): KvPort {
   return {
     async get(key) {
-      return (await kv.get(key)) ?? null;
+      const entry = (await kv.get(key)) ?? null;
+      if (entry === null || entry.operation === 'DEL' || entry.operation === 'PURGE') return null;
+      return entry;
     },
     async purge(key) {
       await kv.purge(key);
@@ -237,7 +244,12 @@ function asPort(kv: KV): KvPort {
   };
 }
 
-async function main(argv: string[]): Promise<number> {
+/** The process exit code for a run outcome: 1 for a failed or refused run, 0 for a dry run or a purge. */
+export function exitCodeFor(status: ErasureOutcome['status']): number {
+  return status === 'failed' || status === 'refused' ? 1 : 0;
+}
+
+export async function main(argv: string[]): Promise<number> {
   let args: ReturnType<typeof parseArgs>;
   let lives: ErasureLife[];
   try {
@@ -277,7 +289,7 @@ async function main(argv: string[]): Promise<number> {
   try {
     const outcome = await runErasure(request, opened.kvs);
     for (const line of outcome.lines) console.log(line);
-    return outcome.status === 'failed' || outcome.status === 'refused' ? 1 : 0;
+    return exitCodeFor(outcome.status);
   } finally {
     await opened.close().catch(() => undefined);
   }

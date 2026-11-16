@@ -1,13 +1,19 @@
-import { readdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import type { KV } from '@nats-io/kv';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  asPort,
   type ErasureKvs,
+  exitCodeFor,
   type KvPort,
+  main,
   parseArgs,
   parseLivesFile,
   REGISTRY_BUCKET_NAME,
+  refusalFor,
   runErasure,
   SKIN_BUCKET_NAME,
 } from './erase-owner.ts';
@@ -17,6 +23,23 @@ const LIVES = [
   { lifeId: 'life-a1', username: 'Ranger_One' },
   { lifeId: 'life-b2', username: 'ranger_two' },
 ];
+
+/** A fake KV that keeps a PURGE marker after a purge, as NATS does: kv.get returns the marker, not null. */
+function markerKv(initial: string[]) {
+  const entries = new Map<string, { operation: string; value: Uint8Array }>();
+  for (const key of initial) entries.set(key, { operation: 'PUT', value: new Uint8Array([1]) });
+  const purges: string[] = [];
+  const kv = {
+    async get(key: string) {
+      return entries.get(key) ?? null;
+    },
+    async purge(key: string) {
+      purges.push(key);
+      entries.set(key, { operation: 'PURGE', value: new Uint8Array() });
+    },
+  } as unknown as KV;
+  return { kv, purges };
+}
 
 /** A fake KV bucket: `data` holds the keys that exist; `calls` records every read and purge. */
 function fakeBucket(initial: string[], failOn?: { op: 'get' | 'purge'; key: string }) {
@@ -168,17 +191,37 @@ describe('runErasure execute', () => {
     expect(lifeAsConfirm.skins.calls).toEqual([]);
   });
 
-  it('is a no-op on a second run: nothing is found and nothing is purged', async () => {
-    const { kvs, skins } = fakeKvs(['life-a1'], ['ranger_one']);
-    await runErasure({ ownerId: OWNER, lives: LIVES, execute: true, confirm: OWNER }, kvs);
-    skins.calls.length = 0;
-    const again = await runErasure(
-      { ownerId: OWNER, lives: LIVES, execute: true, confirm: OWNER },
-      kvs,
-    );
+  it('is a no-op on a second run: a purge marker reads as absent, so nothing is found or purged', async () => {
+    const skinKv = markerKv(['life-a1']);
+    const registryKv = markerKv(['ranger_one']);
+    const kvs: ErasureKvs = { skins: asPort(skinKv.kv), registry: asPort(registryKv.kv) };
+    const request = { ownerId: OWNER, lives: LIVES, execute: true, confirm: OWNER };
+    const first = await runErasure(request, kvs);
+    expect(first.status).toBe('purged');
+    expect(skinKv.purges).toEqual(['life-a1']);
+    expect(registryKv.purges).toEqual(['ranger_one']);
+    const dry = await runErasure({ ...request, execute: false }, kvs);
+    expect(dry.skins).toEqual({ found: 0, purged: 0 });
+    expect(dry.registry).toEqual({ found: 0, purged: 0 });
+    const again = await runErasure(request, kvs);
     expect(again.status).toBe('purged');
     expect(again.skins).toEqual({ found: 0, purged: 0 });
-    expect(skins.calls.some((c) => c.startsWith('purge:'))).toBe(false);
+    expect(again.registry).toEqual({ found: 0, purged: 0 });
+    expect(skinKv.purges).toEqual(['life-a1']);
+    expect(registryKv.purges).toEqual(['ranger_one']);
+  });
+
+  it('refuses a confirm that is a prefix, an extension, a case change or empty, before any read', async () => {
+    for (const confirm of ['owner-773', `${OWNER}x`, OWNER.toUpperCase(), '']) {
+      const { kvs, skins, registry } = fakeKvs(['life-a1'], ['ranger_one']);
+      const outcome = await runErasure(
+        { ownerId: OWNER, lives: LIVES, execute: true, confirm },
+        kvs,
+      );
+      expect(outcome.status, `confirm "${confirm}"`).toBe('refused');
+      expect(skins.calls).toEqual([]);
+      expect(registry.calls).toEqual([]);
+    }
   });
 
   it('stops at a purge error, reports it with a fixed message, and a re-run finishes the rest', async () => {
@@ -274,5 +317,106 @@ describe('runErasure refusals', () => {
   it('names the bucket constants the operator sees', () => {
     expect(SKIN_BUCKET_NAME).toBe('geldar-skins');
     expect(REGISTRY_BUCKET_NAME).toBe('geldar-life-registry');
+  });
+});
+
+describe('asPort', () => {
+  it('reads a live entry as present, and a DEL, a PURGE or a missing key as absent', async () => {
+    const entries: Record<string, { operation: string; value: Uint8Array }> = {
+      live: { operation: 'PUT', value: new Uint8Array([1]) },
+      deleted: { operation: 'DEL', value: new Uint8Array() },
+      purged: { operation: 'PURGE', value: new Uint8Array() },
+    };
+    const kv = {
+      async get(key: string) {
+        return entries[key] ?? null;
+      },
+    } as unknown as KV;
+    const port = asPort(kv);
+    expect(await port.get('live')).not.toBeNull();
+    expect(await port.get('deleted')).toBeNull();
+    expect(await port.get('purged')).toBeNull();
+    expect(await port.get('missing')).toBeNull();
+  });
+});
+
+describe('malformed lives', () => {
+  it('refuses a life id or username the keys cannot hold, and runErasure reads nothing', async () => {
+    const bad = [
+      { lifeId: '*', username: 'ranger' },
+      { lifeId: 'a.b', username: 'ranger' },
+      { lifeId: '', username: 'ranger' },
+      { lifeId: 'life-a1', username: '' },
+      { lifeId: 'life-a1', username: 'a'.repeat(17) },
+      { lifeId: 'life-a1', username: 'ranger>' },
+    ];
+    for (const life of bad) {
+      const request = { ownerId: OWNER, lives: [life], execute: false, confirm: undefined };
+      expect(refusalFor(request), JSON.stringify(life)).toBeDefined();
+    }
+    const { kvs, skins, registry } = fakeKvs(['life-a1'], ['ranger']);
+    const outcome = await runErasure(
+      {
+        ownerId: OWNER,
+        lives: [{ lifeId: '*', username: 'ranger' }],
+        execute: false,
+        confirm: undefined,
+      },
+      kvs,
+    );
+    expect(outcome.status).toBe('refused');
+    expect(skins.calls).toEqual([]);
+    expect(registry.calls).toEqual([]);
+  });
+
+  it('parseLivesFile rejects a wildcard, a dotted id, an empty id, an empty or 17-character username', () => {
+    for (const lifeId of ['*', '>', 'a.b', '']) {
+      expect(() => parseLivesFile(JSON.stringify([{ lifeId, username: 'ranger' }]))).toThrow();
+    }
+    expect(() => parseLivesFile(JSON.stringify([{ lifeId: 'life-a1', username: '' }]))).toThrow();
+    expect(() =>
+      parseLivesFile(JSON.stringify([{ lifeId: 'life-a1', username: 'a'.repeat(17) }])),
+    ).toThrow();
+  });
+});
+
+describe('exit codes and main', () => {
+  it('maps a dry run and a purge to 0, and a failed or refused run to 1', () => {
+    expect(exitCodeFor('dry-run')).toBe(0);
+    expect(exitCodeFor('purged')).toBe(0);
+    expect(exitCodeFor('failed')).toBe(1);
+    expect(exitCodeFor('refused')).toBe(1);
+  });
+
+  it('main exits 2 for a bad confirm, a missing NATS URL and a missing lives file, with no bucket touched', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'erase-owner-test-'));
+    const lives = join(dir, 'lives.json');
+    writeFileSync(lives, JSON.stringify(LIVES));
+    const savedUrl = process.env.GELDAR_NATS_URL;
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(
+        await main(['--owner', OWNER, '--lives', lives, '--execute', '--confirm', 'owner-773']),
+      ).toBe(2);
+      delete process.env.GELDAR_NATS_URL;
+      expect(await main(['--owner', OWNER, '--lives', lives])).toBe(2);
+      expect(await main(['--owner', OWNER, '--lives', join(dir, 'absent.json')])).toBe(2);
+    } finally {
+      errors.mockRestore();
+      if (savedUrl !== undefined) process.env.GELDAR_NATS_URL = savedUrl;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('source guards', () => {
+  it('opens both buckets with open(), never create()', () => {
+    const source = readFileSync(
+      fileURLToPath(new URL('./erase-owner.ts', import.meta.url)),
+      'utf8',
+    );
+    expect(source).toContain('kvm.open(SKIN_BUCKET_NAME)');
+    expect(source).toContain('kvm.open(REGISTRY_BUCKET_NAME)');
+    expect(source).not.toContain('kvm.create(');
   });
 });
