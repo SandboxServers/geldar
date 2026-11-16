@@ -113,11 +113,10 @@ services:
     # [AUTH] shell wrapper; the image must have /bin/sh [UNV]. The steps run in order and stop at the first failure.
     command:
       - 'export SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_DSN="tcp://geldar_writer:$$(cat /run/secrets/ch_writer_password)@geldar-ch:9000" SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_CLUSTER=cluster SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_REPLICATION=true SIGNOZ_OTEL_COLLECTOR_TIMEOUT=10m; /signoz-otel-collector migrate ready && /signoz-otel-collector migrate bootstrap && /signoz-otel-collector migrate sync up && /signoz-otel-collector migrate async up'
+    # Owner and mode of the secret file are the host file's (README, "Secrets": ch_writer_password 10001:10001 0400). Not set here.
     secrets:
       - source: ch_writer_password
         target: ch_writer_password
-        uid: "10001"
-        mode: 0400
     networks: [geldar-telemetry]
     depends_on:
       geldar-ch:
@@ -151,9 +150,9 @@ services:
     volumes:
       - /mnt/nvme/geldar-telemetry/query:/var/lib/signoz
     secrets:
+      # Owner and mode from the host file: ch_reader_password 0:0 0400 (README, "Secrets"). Not set here.
       - source: ch_reader_password
         target: ch_reader_password
-        mode: 0400
     networks: [geldar-telemetry]
     ports:
       - "127.0.0.1:8095:8080"
@@ -192,10 +191,9 @@ services:
     volumes:
       - ./signoz-otelcol-config.yaml:/etc/otel/config.yaml:ro
     secrets:
+      # Owner and mode from the host file: ch_writer_password 10001:10001 0400 (README, "Secrets"). Not set here.
       - source: ch_writer_password
         target: ch_writer_password
-        uid: "10001"
-        mode: 0400
     networks: [geldar-telemetry]
     environment:
       GOMEMLIMIT: 800MiB   # about 80% of the 1g cap; matches memory_limiter limit_mib 800 in signoz-otelcol-config.yaml (S5)

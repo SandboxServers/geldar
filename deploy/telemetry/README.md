@@ -47,10 +47,10 @@ All writable host paths are under `/mnt/nvme/geldar-telemetry`. Besides them, th
 
 No `docker.sock` is mounted in any service.
 
-- `/mnt/nvme/geldar-telemetry/clickhouse` (server data and logs; config comes from the read-only repo mounts above)
+- `/mnt/nvme/geldar-telemetry/clickhouse` (server data; config comes from the read-only repo mounts above; logs go to the console)
 - `/mnt/nvme/geldar-telemetry/keeper` (Keeper data)
 - `/mnt/nvme/geldar-telemetry/query` (SigNoz SQLite directory)
-- `/mnt/nvme/geldar-telemetry/secrets` (password files, mode 0400 for uid 10001, see Secrets)
+- `/mnt/nvme/geldar-telemetry/secrets` (password files and the hash env file, owners and modes per file in the Secrets table)
 
 ## Networks
 
@@ -70,12 +70,24 @@ No `docker.sock` is mounted in any service.
 
 Passwords are never inline. Compose mounts them as file secrets from `/mnt/nvme/geldar-telemetry/secrets/`:
 
-- `ch_writer_password`: the writer password (`<writer password from secret file>`). Used by the migrator and the collector.
+- `ch_writer_password`: the writer password. Used by the migrator and the collector.
 - `ch_reader_password`: the reader password. Used by the query service.
+
+**Password format (S-E):** each password is 32 random bytes as 64 lowercase hex characters (`[0-9a-f]` only, for example `openssl rand -hex 32`). No other characters: the value is placed in a `tcp://user:password@host` URL, where `@ / : ? # %` break the parse. Each file has no trailing text; `$(cat)` strips the final newline.
+
+**File owner and mode.** Compose ignores `uid`, `gid` and `mode` on file secrets on a non-Swarm engine `[INF]`, and this compose file does not set them. The container sees the host file's owner and mode. Create the files with the owner and mode below, then check with `ls -ln` (see item 14). The owner is numeric because the container has no name for it.
+
+| File (host) | Read by | Runs as | Required owner:mode |
+|---|---|---|---|
+| `secrets/ch_writer_password` | `geldar-signoz-migrator`, `geldar-signoz-otelcol` (wrapper) | uid 10001 (image `User`) | `10001:10001` `0400` |
+| `secrets/ch_reader_password` | `geldar-signoz` (wrapper) | uid 0 (root, no USER; `cap_drop: ALL`, so no DAC_OVERRIDE) | `0:0` `0400` |
+| `secrets/ch-hashes.env` | the compose client, which passes it to `geldar-ch` as env (`env_file`); no container reads the file | the operator running compose | operator's own uid, `0400` |
+
+A reader file owned by 10001 would be unreadable to `geldar-signoz` (root without DAC_OVERRIDE cannot read a 0400 file owned by another uid); a writer file owned by root would be unreadable to 10001.
 
 ### Password hashes
 
-`clickhouse/users.d/users.xml` is well-formed and contains no hash. Each user reads its hash with `<password_sha256_hex from_env="..."/>`: `GELDAR_CH_WRITER_SHA256` (writer) and `GELDAR_CH_READER_SHA256` (reader). `geldar-ch` loads them from `/mnt/nvme/geldar-telemetry/secrets/ch-hashes.env` (compose `env_file`, not in git). Write that file on the node, mode 0400, with two lines `GELDAR_CH_WRITER_SHA256=<hex>` and `GELDAR_CH_READER_SHA256=<hex>`. Make each hex with `printf %s "$pw" | sha256sum | cut -d' ' -f1`, where `$pw` is the password read from the matching secret file. Do not put the values in a command line that is saved in shell history.
+`clickhouse/users.d/users.xml` is well-formed and contains no hash. Each user reads its hash with `<password_sha256_hex from_env="..."/>`: `GELDAR_CH_WRITER_SHA256` (writer) and `GELDAR_CH_READER_SHA256` (reader). `geldar-ch` loads them from `/mnt/nvme/geldar-telemetry/secrets/ch-hashes.env` (compose `env_file`, not in git). Write that file on the node, mode 0400, with two lines `GELDAR_CH_WRITER_SHA256=<hex>` and `GELDAR_CH_READER_SHA256=<hex>`. Make each hex with `pw=$(cat /mnt/nvme/geldar-telemetry/secrets/ch_writer_password); printf %s "$pw" | sha256sum | cut -d' ' -f1` (and the same for `ch_reader_password`), so `$pw` is the password read from the matching secret file. Do not put the values in a command line that is saved in shell history.
 
 - `from_env` in ClickHouse config is `[INF]`, unverified on 25.12.5. **Blocks start of geldar-ch** (a missing variable is a start failure, which fails closed).
 - Residual exposure: the hash is in the container environment, so `docker inspect geldar-ch` shows it to anyone with Docker access. A sha256 of a password can be brute-forced offline. Docker access is root-equivalent on this host, so this is accepted, not removed.
@@ -109,7 +121,7 @@ Each item says what it blocks. Nothing starts on the node until the items marked
 11. **Keeper healthcheck** `clickhouse-keeper-client -h localhost -p 9181 -q ls`. `[SRC]` Foundry; the binary's presence in the 25.12.5 (build 44) image is not checked. **Blocks start of geldar-ch and everything behind it** (see "Healthchecks and restarts").
 12. **SigNoz healthcheck** `wget --spider -q http://localhost:8080/api/v1/health`. busybox `wget` in alpine `[INF]`. **Blocks nothing**: no service depends on `geldar-signoz`, so a failing check only marks it unhealthy.
 13. **Collector DSN wrapper.** The collector and migrator read the password from a file through a shell wrapper. The collector's `${env:}` expansion is `[SRC]`; `${file:}` is not used. Whether the image has `/bin/sh` is unchecked. **Blocks start of the collector and migrator.**
-14. **Compose `secrets:` uid and mode.** Compose's file-secret ownership for uid 10001 is `[INF]` and may be ignored on Docker Desktop. Check with `docker exec ... ls -l /run/secrets` on the node. **Blocks start of the collector and migrator.**
+14. **Secret file owner and mode.** Compose keeps the host file's owner and mode for file secrets `[INF]`, on any engine (not only Docker Desktop), and the Compose version on the node is not checked. Create the files per the Secrets table, then run `ls -ln /mnt/nvme/geldar-telemetry/secrets` and check the numbers match. In the scratch run, check reachability: `docker exec geldar-signoz test -r /run/secrets/ch_reader_password` and `docker exec geldar-signoz-otelcol test -r /run/secrets/ch_writer_password` must both exit 0. The one-shot migrator is not running after its exit, so for it only the `ls -ln` check applies. **Blocks start of geldar-signoz (reader) and of the migrator and collector (writer).**
 15. **Logs and ports of SigNoz.** The server's listener on 8080 is `[SRC]` from the SigNoz config. The OpAMP listener on 4320 is not used here (no manager config), so it is not published. `[UNV]` whether the server also opens 4320 by default. **Blocks nothing; check with `docker port`.**
 16. **Collector pipeline config.** Copied from the SigNoz devenv config at v0.148.1 (`[SRC]`). Components were checked at v0.144.6 only by the devenv pairing `[INF]`. Run `otelcol validate` (or `/signoz-otel-collector --config ... ` with a dry flag if one exists) in the scratch run. **Blocks start of the collector.**
 
