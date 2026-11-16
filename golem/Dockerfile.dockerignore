@@ -6,6 +6,7 @@
 !pnpm-lock.yaml
 !contract
 !psyche
+!telemetry
 !golem
 **/node_modules
 golem/test
