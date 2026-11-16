@@ -34,7 +34,7 @@ Core Caddy has no rate limiter, and this repo adds no third-party Caddy module (
 
 1. Edit the site file, or swap a site for its kill switch (for example `map-off.caddy` in place of `map.caddy`).
 2. Validate: `bash deploy/caddy/validate.sh` (uses the pinned caddy image, `docker run --rm` only). CI runs it in the `compose` job.
-3. Reload: `caddy reload` on the node.
+3. Apply: `caddy reload` where the admin API is on. On the Colo node it is off (R39): one `docker restart board-proxy` instead (see below and `deploy/colo-public.sh`).
 
 ## Kill procedure
 
@@ -42,7 +42,7 @@ Swap to `<site>-off.caddy` (`deploy/colo-public.sh off <site>`) and reload. `mcp
 
 The 405 for a refused method is `handle @not_allowed { respond 405 }`, the first handle in each site, because Caddy sorts a site-level `respond` after `handle` and it would never run. `tools/repo-checks/src/caddy-adapt.test.ts` adapts each file in the pinned image and checks the route order.
 
-Never run `systemctl restart caddy` or restart the container. Caddy serves other sites on the node, and a restart interrupts them all.
+On the Colo node the shared Caddy (`board-proxy`) has its admin API OFF (owner ruling R39, `deploy/README.md` section Caddy), so `caddy reload` fails there: every change of a live file is one operator `docker restart board-proxy` (`deploy/colo-public.sh` restart mode is the precedent). Caddy serves other sites on the node, and a restart interrupts them all for a few seconds, so batch changes. Never run `systemctl restart caddy`, and never recreate the container except in the one approved window of the OTLP section below.
 
 ## OTLP ingest (otel.caddy)
 
@@ -69,9 +69,13 @@ Every step below needs the owner's approval at the time. Record the exact comman
    ```
 
    `openssl rand -hex 32` is 32 random bytes as 64 hex characters. Check by length only, for example `sudo awk -F= '/^GELDAR_INGEST_TOKEN=/{print length($2)}' <env-file>` (expect at least 64, not the value), and that `GELDAR_INGEST_HOST` and `GELDAR_INGEST_UPSTREAM` are set. An empty token would make the match `Bearer ` and admit that header, so any failure here stops the procedure.
-3. The one recreate of the shared Caddy container, to load the new variables (a running Caddy cannot see a new environment value). Its own approved window, with the exact diff and rollback. Later changes are reloads only; rotating the token needs the same recreate.
-4. Put `otel.caddy` in `config/geldar/` on the node, then `caddy validate` with the Caddyfile (the Caddy container already holds the variables; do not pass the token with `docker exec -e`). Locally, `bash deploy/caddy/validate.sh` plus `tools/repo-checks/src/caddy-adapt.test.ts` check the file in the pinned image.
-5. `caddy reload`.
+3. The one recreate of the shared Caddy container, to load the new variables (a running Caddy cannot see a new environment value, and `docker restart` keeps the old one, so only a recreate loads them). Its own approved window. Cost: every site on the node is down while the container is recreated (a few seconds, plus start time), and the long-lived `mcp.caddy` SSE streams drop and their clients reconnect. Rotating the token needs the same recreate.
+   - Validate the new env file before the recreate, in a throwaway container of the running container's own image, so a bad file never takes the shared Caddy down: `sudo docker run --rm --env-file <env-file> -v <host Caddyfile>:/etc/caddy/Caddyfile:ro -v <host config dir>:/config:ro "$(docker inspect -f '{{.Config.Image}}' board-proxy)" caddy validate --config /etc/caddy/Caddyfile` (the env file is read by docker and not printed; `GELDAR_PUBLIC_ENV`-style host paths come from the owner, as in `deploy/colo-public.sh`). Unverified on the node: whether `validate` of a build with the DNS module needs more than the env file.
+   - Recreate, from the compose project directory of `board-proxy` (the owner supplies the project and file names; the repo does not know them): `sudo docker compose up -d --force-recreate board-proxy`.
+   - Immediately after, before step 4: the container runs (`docker inspect -f '{{.State.Running}}' board-proxy` prints `true`), `docker exec board-proxy caddy validate --config /etc/caddy/Caddyfile` passes (the check `deploy/colo-public.sh` runs after its own restart, for up to 30 s), and every existing public site answers: the `map`, `glass` and `mcp` sites that `deploy/colo-public.sh` installs, requested from the workstation exactly as in step 7. `deploy/colo-public.sh status` shows the files on disk only.
+   - Failed recreate (the container does not run, validate fails, or a site does not answer): restore the env file backup made in step 2 over the env file (`sudo cp -p <backup> <env-file>`; never print it) and run the same recreate command again, then repeat the checks. Stop the procedure and report.
+4. Put `otel.caddy` in `config/geldar/` on the node (same owner and mode as `mcp.caddy`), then `docker exec board-proxy caddy validate --config /etc/caddy/Caddyfile` (the container already holds the variables; do not pass the token with `docker exec -e`). Locally, `tools/repo-checks/src/caddy-adapt.test.ts` checks the file in the pinned image.
+5. Apply with one `docker restart board-proxy` (admin API off, R39: `caddy reload` does not work). Cost: a few seconds of dropped connections on every site, including the `mcp.caddy` SSE streams, which reconnect. Then repeat the post-recreate checks of step 3 (container running, validate passes, `map`, `glass` and `mcp` answer). Failed restart or a site that does not answer: delete `config/geldar/otel.caddy` (the file set is then what it was before step 4), `docker restart board-proxy` again, repeat the checks, and report.
 6. Verify, from the operator workstation, with the owner's token (the value is not written here and is not put in shell history or the log):
    - POST without a token to each of `/v1/traces`, `/v1/logs`, `/v1/metrics`: 401.
    - GET to an OTLP path: 405.
@@ -79,10 +83,10 @@ Every step below needs the owner's approval at the time. Record the exact comman
    - POST to any other path: 404.
    - A body over 8 MiB: 413.
    - After these requests the access log has no `Authorization` value (search the log for the token's first characters, by length-safe means; no match expected).
-7. Portscan and after-reload checks: the host gains no new listener (no plain-HTTP port; Caddy already owns 443 on the node), the gateway's publish stays on the loopback address, and `tools/portscan` is unchanged. Other sites on the shared Caddy (`mcp`, `glass`, `map`) still answer as before.
+7. Portscan and after-restart checks: the host gains no new listener (no plain-HTTP port; Caddy already owns 443 on the node), the gateway's publish stays on the loopback address, and `tools/portscan` is unchanged. Other sites on the shared Caddy (`mcp`, `glass`, `map`) still answer as before.
 
-Rollback, no restart: put `otel-off.caddy` in place of `otel.caddy` (or remove the live file), `caddy validate`, `caddy reload`. The host answers 503 for every path. The environment variables can stay until the next recreate. The public hostname stays in the 0071 and 0096 amendments until the owner decides to drop it.
+Rollback and kill switch, one restart (R39): copy `otel-off.caddy` over `config/geldar/otel.caddy` (never both files at once: they name the same host), `docker exec board-proxy caddy validate --config /etc/caddy/Caddyfile`, `docker restart board-proxy`, then the checks of step 3. Cost: the same few seconds of dropped connections on every site (the `mcp.caddy` SSE streams reconnect) and the ingest route is down during it; afterwards the host answers 503 for every path and Mind-host exporters see 503 until the owner restores the route (their retry queues are the gateway design's concern, not Caddy's). The kill switch is therefore not instant and not free: batch it with other changes when the abuse is not urgent. Removing the file instead of swapping it needs the same restart. Remove the live file before removing `GELDAR_INGEST_*` from the env file (see step 2). The public hostname stays in the 0071 and 0096 amendments until the owner decides to drop it.
 
 ## Status
 
-The live reload is an owner or ops step (C2-07). Nothing here has been loaded on a node.
+The live restart is an owner or ops step (C2-07). Nothing here has been loaded on a node.

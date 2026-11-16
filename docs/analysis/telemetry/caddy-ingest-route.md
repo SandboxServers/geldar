@@ -7,8 +7,8 @@ Stock Caddy only. Owner ruling geldar-93, 2026-11-16: a custom Caddy image is no
 ## Repo shape this matches
 
 - `deploy/caddy/` holds one file per site: the live file `<site>.caddy` and its kill switch `<site>-off.caddy`. Each uses `{$GELDAR_*}` environment placeholders, and the file holds no value (`deploy/caddy/mcp.caddy`, `deploy/caddy/README.md`).
-- Validate with `bash deploy/caddy/validate.sh` (the pinned Caddy image, `docker run --rm`). Reload with `caddy reload` on the node.
-- The README says the shared Caddy is never restarted. A running Caddy cannot see a new environment secret without a container recreate, so this route asks for one owner-approved recreate for the token (see Load). After that, changes are reloads only.
+- Validate with `bash deploy/caddy/validate.sh` (the pinned Caddy image, `docker run --rm`). The shared Caddy's admin API is off (owner ruling R39, `deploy/README.md`), so `caddy reload` cannot work there: every apply is one `docker restart board-proxy`.
+- A restart keeps the container's old environment, so this route asks for one owner-approved recreate for the new variables (see Load). After that, each change of the live file (including the kill switch swap) is one restart. Each restart drops connections on every site on the node for a few seconds, including `mcp.caddy`'s long-lived SSE streams (clients reconnect), so changes are batched.
 - Node import line (read-only check, 2026-11-16 12:33Z; see Node facts below): the Caddyfile's only import is `import /config/geldar/*.caddy`. It is a top-level glob, so live files go in `config/geldar/` on the node, next to `mcp.caddy`. Subdirectories are not loaded.
 
 ## Node facts (read-only, 2026-11-16 12:33Z)
@@ -99,7 +99,7 @@ New live file `deploy/caddy/otel.caddy`. The file is new, so every line is an ad
 Kill switch, new file `deploy/caddy/otel-off.caddy` (swap it in for `otel.caddy` to stop the route):
 
 ```diff
-+# OTLP ingest kill switch (caddy-ingest-route.md). Swap in for otel.caddy, then validate and reload.
++# OTLP ingest kill switch (caddy-ingest-route.md). Swap in for otel.caddy, then validate and restart (admin API off, R39).
 +{$GELDAR_INGEST_HOST} {
 +	respond 503
 +}
@@ -138,7 +138,7 @@ So the real defence is the token itself, plus the 8 MiB body limit and the gatew
 - Per-site proxy timeouts: `reverse_proxy` `transport http { dial_timeout 5s; response_header_timeout 60s }` on the otel site only. Stock options. PROPOSED values. Verify with `caddy validate` on the node's Caddy version. No global `servers` timeouts: they would also apply to `mcp.caddy` and could cut its SSE streams.
 - Connection count limit: not used. This document does not name a stock Caddy directive for a per-client or total connection cap, and none is set here. Any cap claimed later must be verified with `caddy validate` before it is written down.
 
-## Validation (no restart)
+## Validation (before each restart)
 
 1. Check the Caddy environment on the node by length only, never by printing the value: `GELDAR_INGEST_TOKEN` is set and at least 32 bytes; `GELDAR_INGEST_HOST` and `GELDAR_INGEST_UPSTREAM` are set. Any failure stops the step.
 2. `bash deploy/caddy/validate.sh` runs `caddy validate` in the pinned image. It reads the file and does not touch the running Caddy. UNVERIFIED: whether `validate.sh` sets the three placeholders today. If it does not, a separate packet adds them with test values, never the real token.
@@ -146,8 +146,8 @@ So the real defence is the token itself, plus the 8 MiB body limit and the gatew
 
 ## Load (owner approval at the time)
 
-1. Once, for the token: the owner places the token in the Caddy environment and recreates the Caddy container. This is the one restart of the shared Caddy for this change. Later rotations need the same recreate.
-2. `caddy reload` on the node, with the live file in place. Do not pass the token on the command line (`docker exec -e` is not used; the container already holds the variable).
+1. Once, for the variables: the owner places them in the Caddy env file and the container is recreated (validated first in a throwaway container of the same image). Every site on the node is down while it happens; the other sites are checked at once, with a failed-recreate path (restore the env file backup, recreate again). Later token rotations need the same recreate. Exact commands: `deploy/caddy/README.md`, OTLP ingest, steps 2 and 3.
+2. Place the live file, `caddy validate` inside the container, then `docker restart board-proxy` (R39: no reload). Do not pass the token on the command line (`docker exec -e` is not used; the container already holds the variable). A failed restart is undone by deleting the live file and restarting again.
 3. Read-only checks from the operator workstation, run by the owner with the owner's token (the value is not written here):
    - a POST without a token to each of the three paths gets 401;
    - a GET to an OTLP path gets 405;
@@ -158,14 +158,14 @@ So the real defence is the token itself, plus the 8 MiB body limit and the gatew
 
 ## Rollback (owner approval at the time)
 
-1. Swap `deploy/caddy/otel-off.caddy` in for `deploy/caddy/otel.caddy` (or remove the live file from the node's set), run the validation step, and `caddy reload`. The hostname then answers 503 for every path.
-2. No restart is needed for the rollback. The environment secret can stay until the next recreate, then be removed.
+1. Swap `deploy/caddy/otel-off.caddy` in for `deploy/caddy/otel.caddy` (or remove the live file from the node's set), run `caddy validate`, and `docker restart board-proxy`. The hostname then answers 503 for every path (when the file is removed instead, the host has no site).
+2. The rollback is a restart (R39), so it costs the same few seconds of dropped connections on every site, and the ingest route is down during it. The kill switch is not instant. Remove the live file before removing the variables from the env file: a recreate with the file live and `GELDAR_INGEST_HOST` unset leaves Caddy unable to start (every site down).
 3. The public hostname stays in the 0071 and 0096 amendments until the owner decides to drop it.
 4. No global timeouts exist to remove, because none are added. The `transport http` block leaves with `otel.caddy` in step 1.
 
 ## Change policy for the shared Caddy
 
-- One container recreate (a restart) for the token, then reloads only.
-- Every restart or reload needs the owner's approval at the time, against the exact file in this document.
+- One container recreate for the variables, then one `docker restart board-proxy` per change of the live file (admin API off, R39; no reloads).
+- Every recreate or restart needs the owner's approval at the time, against the exact file in this document.
 - The UI is never routed through Caddy, and no restart is requested for it.
 - The ingest token secret needs one approved recreate of the shared Caddy container, requested as its own window with the exact diff and rollback.

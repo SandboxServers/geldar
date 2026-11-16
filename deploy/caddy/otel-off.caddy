@@ -1,5 +1,5 @@
-# OTLP ingest kill switch (docs/analysis/telemetry/caddy-ingest-route.md). Swap in for otel.caddy, then validate and reload.
-# Never restart Caddy: it serves other sites on the node.
+# OTLP ingest kill switch (docs/analysis/telemetry/caddy-ingest-route.md). Swap in for otel.caddy, then validate and
+# `docker restart board-proxy` (admin API off, R39: no reload; the restart drops connections on every site for a few seconds).
 {$GELDAR_INGEST_HOST} {
 	respond 503
 }

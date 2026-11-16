@@ -2,9 +2,10 @@
 # Placeholders: GELDAR_INGEST_HOST (public hostname), GELDAR_INGEST_UPSTREAM (gateway loopback publish, host:port),
 # GELDAR_INGEST_TOKEN (ingest bearer token, Caddy environment secret). No value is written in this file.
 # Live file: place it in config/geldar/ on the node (the Caddyfile imports /config/geldar/*.caddy, top level only).
-# Before use: check the three variables by length only (the token at least 32 bytes), then
-#   bash deploy/caddy/validate.sh   (or `caddy validate` on the node), then `caddy reload`.
-# Rollback: put otel-off.caddy in its place, validate, reload. Never restart Caddy for it.
+# Before use: check the three variables by length only (the token at least 64 hex characters), then
+#   `caddy validate` on the node. The shared Caddy has its admin API off (R39): `caddy reload` fails there, so every
+#   change of this file is one `docker restart board-proxy` (a few seconds of dropped connections on every site).
+# Rollback and kill switch: put otel-off.caddy in its place, validate, `docker restart board-proxy` (same cost).
 # Steps and the verification matrix: deploy/caddy/README.md, section "OTLP ingest (otel.caddy)".
 {$GELDAR_INGEST_HOST} {
 	# Only POST passes (the OTLP/HTTP exporters POST).

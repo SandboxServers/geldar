@@ -12,5 +12,5 @@
 
 ## Consequences
 
-- No new public port. `tools/portscan` expected lists are unchanged, confirmed by a scan after the reload.
+- No new public port. `tools/portscan` expected lists are unchanged, confirmed by a scan after the restart.
 - The ingest site is not part of `deploy/colo-public.sh`'s site list or `validate.sh` yet; a later packet adds the placeholders to validation with test values.
