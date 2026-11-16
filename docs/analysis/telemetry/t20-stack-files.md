@@ -45,7 +45,7 @@ The full list with numbers is in the README (section "Unverified, check in the s
 
 ## Guesses
 
-- Reader limits (1 GB, 4 threads) are not in 0352.
+- Reader threads (4) are not in 0352. The other reader limits follow 0352's read path (readonly 2, 1 GB, 30 s, 100000 rows with break, SELECT grants on the signoz_* databases). The per-hour read quota is not set: 0352 gives no value.
 - The 30-day system log TTL: the packet says 30 days; the facts file shows one day.
 - `default` user kept on loopback, not removed.
 - Cap exceptions for `geldar-ch`: `cap_add` CHOWN, DAC_OVERRIDE, SETUID, SETGID. Other services use `cap_drop: ALL` with no add.
