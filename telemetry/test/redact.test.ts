@@ -42,6 +42,47 @@ describe('redactContent', () => {
   });
 });
 
+describe('redactContent on hostile objects', () => {
+  const boom = (): never => {
+    throw new Error('boom');
+  };
+
+  it('marks a throwing getter and keeps the other fields', () => {
+    const input = {
+      ok: 'fine',
+      get bad(): string {
+        return boom();
+      },
+    };
+    expect(redactContent(input)).toEqual({ ok: 'fine', bad: '[unreadable]' });
+  });
+
+  it('survives a Proxy whose get, ownKeys or getPrototypeOf throws', () => {
+    const getTrap = new Proxy({ a: 1 }, { get: boom });
+    const keysTrap = new Proxy({ a: 1 }, { ownKeys: boom });
+    const protoTrap = new Proxy({ a: 1 }, { getPrototypeOf: boom });
+    expect(redactContent(getTrap)).toEqual({ a: '[unreadable]' });
+    expect(redactContent(keysTrap)).toBe('[unreadable]');
+    expect(() => redactContent(protoTrap)).not.toThrow();
+    expect(redactContent({ nested: keysTrap, n: 1 })).toEqual({ nested: '[unreadable]', n: 1 });
+  });
+
+  it('survives a throwing array length and a revoked Proxy', () => {
+    const arr = new Proxy([1, 2], { get: boom });
+    expect(redactContent({ arr })).toEqual({ arr: '[unreadable]' });
+    const { proxy, revoke } = Proxy.revocable({}, {});
+    revoke();
+    expect(redactContent(proxy)).toBe('[unreadable]');
+    expect(redactContent({ p: proxy, n: 1 })).toEqual({ p: '[unreadable]', n: 1 });
+  });
+
+  it('ignores a throwing toJSON and Symbol.toPrimitive', () => {
+    const input = { toJSON: boom, [Symbol.toPrimitive]: boom, keep: 'x' };
+    expect(() => redactContent(input)).not.toThrow();
+    expect((redactContent(input) as Record<string, unknown>).keep).toBe('x');
+  });
+});
+
 describe('scrubText', () => {
   it('replaces Authorization values, tokens and URL userinfo', () => {
     expect(scrubText('Authorization: Basic zzz\nnext')).toBe(`${REDACTED}\nnext`);

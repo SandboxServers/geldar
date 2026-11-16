@@ -10,6 +10,7 @@ export const REDACTED = '[redacted]';
 const MAX_REDACT_DEPTH = 32;
 const TRUNCATED_MARK = '[truncated]';
 const CYCLE_MARK = '[cycle]';
+const UNREADABLE_MARK = '[unreadable]';
 
 // Mirrors TOKEN_PATTERN in threshold/mcp/src/store/token-hash.ts (`^gmcp-[0-9a-f]{64}$`), unanchored
 // so it finds a token inside text. Not imported: this package does not depend on threshold.
@@ -38,7 +39,20 @@ export function scrubText(text: string): string {
  * scrubbed by scrubText. Nested objects and arrays are copied too; the input is never changed.
  */
 export function redactContent(value: unknown): unknown {
-  return redactAt(value, 0, new WeakSet<object>());
+  try {
+    return redactAt(value, 0, new WeakSet<object>());
+  } catch {
+    return UNREADABLE_MARK;
+  }
+}
+
+/** One property or element read that may run user code (a getter or a Proxy trap); a throw becomes a mark. */
+function redactRead(read: () => unknown, depth: number, ancestors: WeakSet<object>): unknown {
+  try {
+    return redactAt(read(), depth, ancestors);
+  } catch {
+    return UNREADABLE_MARK;
+  }
 }
 
 /** One level of redactContent; `ancestors` holds the objects on the path to this value (a cycle guard). */
@@ -49,11 +63,19 @@ function redactAt(value: unknown, depth: number, ancestors: WeakSet<object>): un
   if (depth >= MAX_REDACT_DEPTH) return TRUNCATED_MARK;
   ancestors.add(value);
   try {
-    if (Array.isArray(value)) return value.map((item) => redactAt(item, depth + 1, ancestors));
+    if (Array.isArray(value)) {
+      const items: unknown[] = [];
+      for (let i = 0; i < value.length; i++) {
+        items.push(redactRead(() => value[i], depth + 1, ancestors));
+      }
+      return items;
+    }
     const copy: Record<string, unknown> = {};
-    for (const [key, inner] of Object.entries(value)) {
+    for (const key of Object.keys(value)) {
       // A key that names a credential (the package's forbidden-name rule): whole words or joined stems.
-      const kept = hasForbiddenSegment(key) ? REDACTED : redactAt(inner, depth + 1, ancestors);
+      const kept = hasForbiddenSegment(key)
+        ? REDACTED
+        : redactRead(() => (value as Record<string, unknown>)[key], depth + 1, ancestors);
       // defineProperty, not assignment: a key named __proto__ stays an own key and never sets the prototype.
       Object.defineProperty(copy, key, {
         value: kept,
