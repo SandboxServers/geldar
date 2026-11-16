@@ -35,6 +35,15 @@
             <result_overflow_mode>break</result_overflow_mode>
             <load_balancing>in_order</load_balancing>
         </geldar_reader>
+        <!-- [AUTH] Retention window only (D3). Not readonly: ALTER ... MODIFY TTL is DDL. 600 s because the ALTER on a large table
+             can take longer than the reader's 30 s [UNV]. -->
+        <geldar_signoz_admin>
+            <readonly>0</readonly>
+            <max_memory_usage>2000000000</max_memory_usage>
+            <max_threads>4</max_threads>
+            <max_execution_time>600</max_execution_time>
+            <load_balancing>in_order</load_balancing>
+        </geldar_signoz_admin>
     </profiles>
     <users>
         <default>
@@ -124,5 +133,42 @@
                 <ip>::/0</ip>
             </networks>
         </geldar_reader>
+        <!-- [AUTH] D3: retention user (0370, ruled by geldar-93 on 2026-11-16 as "temporary override accepted"). SigNoz sets retention
+             through POST /api/v1/settings/ttl, which runs ALTER TABLE ... ON CLUSTER ... MODIFY TTL over SigNoz's own ClickHouse
+             connection. geldar_reader is readonly=2 and cannot run DDL, and it is NOT widened. This user is used only during a
+             retention window through deploy/telemetry/compose.retention.yml, which swaps SigNoz's DSN to it; the override is removed
+             afterwards (README, "Retention window (N6c)"). Its hash comes from GELDAR_CH_SIGNOZ_ADMIN_SHA256 in ch-hashes.env; with
+             the variable unset geldar-ch REFUSES to start ("Env variable is not set"), so the hash goes into ch-hashes.env BEFORE
+             this file reaches the node (README ordering).
+             Grants are explicit and nothing else sits next to them (no access_management keys: they cannot coexist with grants;
+             the stock keys apply only to default). ALTER TTL is the ClickHouse privilege (alias ALTER MODIFY TTL). Distributed DDL
+             runs the ALTER on the replica as the initiating user, so the same user needs ALTER TTL on the replicated tables; the
+             Distributed tables are altered too, and the grant is on whole databases so both are covered. SELECT on the three
+             databases and on system.* because SigNoz reads engine_full from system.tables for the TTL status call; system.*
+             is wider than system.tables, narrowing is untested [UNV]. CLUSTER is for ON CLUSTER.
+             NOT granted: INSERT, CREATE, DROP, TRUNCATE, SYSTEM, REMOTE, SOURCES, TABLE ENGINE, access management, ALTER of
+             columns or settings. No grants on signoz_metadata, signoz_meter or signoz_analytics: whether the retention call touches
+             them is not known [UNV]; the ALTER failure names the missing privilege. If SigNoz's logs path takes the _retention_days
+             branch it may need ALTER MODIFY COLUMN, and cold storage needs ALTER MODIFY SETTING; both are unused here [UNV].
+             Networks are all, as for the writer and the reader: the container reaches geldar-ch by name on the telemetry network;
+             nothing is published. -->
+        <geldar_signoz_admin>
+            <password_sha256_hex from_env="GELDAR_CH_SIGNOZ_ADMIN_SHA256"/>
+            <profile>geldar_signoz_admin</profile>
+            <quota>default</quota>
+            <grants>
+                <query>GRANT ALTER TTL ON signoz_traces.*</query>
+                <query>GRANT ALTER TTL ON signoz_logs.*</query>
+                <query>GRANT ALTER TTL ON signoz_metrics.*</query>
+                <query>GRANT SELECT ON signoz_traces.*</query>
+                <query>GRANT SELECT ON signoz_logs.*</query>
+                <query>GRANT SELECT ON signoz_metrics.*</query>
+                <query>GRANT SELECT ON system.*</query>
+                <query>GRANT CLUSTER ON *.*</query>
+            </grants>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+        </geldar_signoz_admin>
     </users>
 </clickhouse>
