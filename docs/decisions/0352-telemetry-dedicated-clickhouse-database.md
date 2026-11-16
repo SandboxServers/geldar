@@ -1,6 +1,6 @@
 # 0352. Telemetry on a dedicated ClickHouse database for Geldar
 
-- Status: Accepted, chosen option B (Geldar-owned ClickHouse server and SigNoz stack). The owner's ruling was relayed by the orchestrator on 2026-11-16. An earlier relay chose option A; the owner changed the answer before this record was committed, so option A is not the decision.
+- Status: Accepted, chosen option B (Geldar-owned ClickHouse server and SigNoz stack). The owner's ruling was relayed by the orchestrator on 2026-11-16. An earlier relay chose option A; the owner changed the answer before this record was committed, so option A is not the decision. **Ingest (owner ruling, geldar-93, 2026-11-16):** the Mind-host OTLP ingest gets a Caddy route on the shared Caddy. This supersedes the earlier no-shared-Caddy wording for ingest only (0350 clarification 3). The SigNoz UI stays SSH-tunnel only, with no Caddy route.
 - Date: 2026-11-15
 - Spec: section 7 (monitoring). Amends 0350 items 4, 5 and 6 (shared SigNoz, budget and retention, readers). Builds on 0130 (SigNoz on the node). Does not edit 0350 (it stays Accepted), `docs/spec.md` (0073), or the other tenant's configuration.
 
@@ -125,7 +125,7 @@ Attribute keys follow 0350 item 1: `life_id`, `player_id`, `thought_id`, `intent
 
 ## Amendments to 0350
 
-- **Item 4 (shared tenant).** Unchanged. Geldar data does not live in that tenant's stack under B, and nothing on that tenant changes. Mind hosts' ingest route (T-15) is an open owner question, not decided here: a Caddy route conflicts with the 2026-11-16 ruling of no change to the shared Caddy (collector-design section 9 lists the alternatives).
+- **Item 4 (shared tenant).** Unchanged. Geldar data does not live in that tenant's stack under B, and nothing on that tenant changes. Mind hosts' ingest route (T-15) is a Caddy route on the shared Caddy, approved by the owner on 2026-11-16 (geldar-93) for ingest only. The earlier no-shared-Caddy wording is superseded for ingest (0350 clarification 3); item 4's other terms still hold, and the other tenant is not changed.
 - **Item 5 (budget and retention).** The 100 GB budget, the 70 GB and 60% alarms, and the one-year retention stay. The budget is measured per server under B, and the retention is set on the Geldar stack. "The Geldar database" means the Geldar server's Geldar databases.
 - **Item 6 (readers).** The SigNoz MCP server and the viewer-role key point at the Geldar stack. The Geldar UI is not a public route: it is bound to loopback and reached by SSH tunnel (see Read path). Operator Claude sessions may query read-only (owner ruling, 2026-11-16).
 
@@ -161,11 +161,11 @@ Owner-side budget: the node's `/mnt/nvme` data disk had 1.2 TB free at the surve
 
 ## T-cards that change
 
-- **T-02 (collector)**: the gateway's exporter endpoint points at the Geldar SigNoz collector on the Geldar network. F9 goes away. Section 4 network row and the N3 step change with it. This record makes no Caddy change (owner ruling, 2026-11-16).
+- **T-02 (collector)**: the gateway's exporter endpoint points at the Geldar SigNoz collector on the Geldar network. F9 goes away. Section 4 network row and the N3 step change with it. This record makes no Caddy change for the stack or the UI (owner ruling, 2026-11-16). The ingest route is a separate Caddy change (T-15).
 - **T-17 (dashboards and alerts)**: the rules and dashboards target the Geldar stack. The "shared SigNoz at 0.135 or later" condition becomes a condition on the Geldar stack's own version.
 - **T-18 (Claude access)**: the SigNoz MCP server is pinned to the Geldar stack's version, with a viewer-role key for it.
 - **New card (number for the orchestrator to assign)**: the Geldar SigNoz stack and its ClickHouse server, with its caps, network, disk paths and node steps. Owner approval.
-- **Unchanged**: T-03, T-06, T-07, T-08 and T-20 (they send to the gateway's endpoint variable and do not care which stack is behind it). T-15 (Mind-host ingest route) is not changed by this record; it is an open owner question (collector-design section 9). No Caddy route serves the UI.
+- **Unchanged**: T-03, T-06, T-07, T-08 and T-20 (they send to the gateway's endpoint variable and do not care which stack is behind it). T-15 (Mind-host ingest route) is decided for ingest only: a Caddy route on the shared Caddy (collector-design section 9, caddy-ingest-route.md), owner ruling 2026-11-16. No Caddy route serves the UI.
 
 ## Unverified
 

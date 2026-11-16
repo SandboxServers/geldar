@@ -29,7 +29,7 @@ The owner ruled on 2026-11-15: during development all content is captured into S
    - the erase-by-life and erase-by-owner procedures are written in `open-signup.md`;
    - the gap is registered with geldar-registration, and account deletion (0262) gains a telemetry erasure step.
 
-4. **Shared-tenant gap (owner-level).** The SigNoz instance on the node belongs to another tenant. Per-life erasure is impossible inside it: only TTL expiry or a heavy ClickHouse mutation can remove data. Its OTLP ports are published without an ingestion key. **We do not change that tenant's configuration.** Geldar data reaches SigNoz only through our authenticated Caddy route. That route needs the owner's approval with the exact config, requested via geldar-93, before any node change.
+4. **Shared-tenant gap (owner-level).** The SigNoz instance on the node belongs to another tenant. Per-life erasure is impossible inside it: only TTL expiry or a heavy ClickHouse mutation can remove data. Its OTLP ports are published without an ingestion key. **We do not change that tenant's configuration.** Geldar data reaches SigNoz only through our authenticated Caddy route. The owner approved this route in principle on 2026-11-16 (geldar-93), for ingest only (clarification 3). Each node change to it still needs the owner's approval at the time, against the exact config in `docs/analysis/telemetry/caddy-ingest-route.md`.
 
 5. **Retention and budget.** Traces, logs and metrics in the Geldar database are kept one year, under a hard TTL. The Geldar ClickHouse budget is 100 GB.
    - Alarm at 70% of that budget (70 GB) for the Geldar database.
@@ -48,22 +48,22 @@ The owner ruled on 2026-11-15: during development all content is captured into S
 8. **Principle 1.** Telemetry and alerts are read-only. No dashboard, exporter, alert or automation may act in the world: no RCON, no teleport, no plan, no chat. Alert channels notify operators only.
 
 9. **Node.**
-   - One Geldar Collector on the Colo with caps of 0.5 CPU, 512 MiB memory and 128 pids (0082).
+   - One Geldar Collector on the Colo with caps of 0.5 CPU, 512 MiB memory and 256 pids (the 0352 table; this corrects the earlier 128, which 0082 does not state).
    - No raw `docker.sock` mount in any telemetry container (0260). Container stats come from read-only cgroup reads or a read-only stats proxy.
    - The NATS monitor is scraped only for `/varz` and `/jsz`. Never `/subsz` or connection subscriptions (`docs/runbooks/kino.md`).
-   - Mind hosts reach the Colo through an authenticated OTLP endpoint on Caddy (bearer token). This amends 0071 and 0096, adds a public ingress, and needs owner approval before any node change.
+   - Mind hosts reach the Colo through an authenticated OTLP endpoint on Caddy (bearer token). This amends 0071 and 0096 and adds a public ingress. The owner approved the ingest route in principle on 2026-11-16 (geldar-93); the amendment to 0071 and 0096 and each node change still need approval at the time.
    - Paper runs the OpenTelemetry Java agent plus Geldar-Core tick metrics, after a scratch-shard overhead test (MSPT and heap at 20, 10 and 5 TPS, with and without the agent).
 
 10. **Substitution record.** SigNoz replaces spec 7's Prometheus and Loki, as 0130 already decided. Spec 7's alert list is the minimum alert set: TPS under 12 for 5 minutes, bodies online under 80% for 10 minutes, daily token spend. The spec is not edited (0073); this record is the amendment for the owner's reconciliation.
 
-**Clarification (owner ruling, 2026-11-16).** (1) Operator Claude sessions (never agents, Minds, Bodies or kits) MAY query the telemetry read-only, through the MCP server or SQL. That read path uses a read-only ClickHouse user limited to the Geldar database (SELECT only, a settings profile with `readonly`, `max_memory_usage`, `max_execution_time` and `max_rows_to_read`, and a quota) and a viewer-role SigNoz key held only on the operator's workstation; no tool, prompt, file or path an agent can read ever references either. (2) Item 6's "no public route" stands: the UI is reached by SSH tunnel only, with no Caddy route and no change to or restart of the shared Caddy.
+**Clarification (owner ruling, 2026-11-16).** (1) Operator Claude sessions (never agents, Minds, Bodies or kits) MAY query the telemetry read-only, through the MCP server or SQL. That read path uses a read-only ClickHouse user limited to the Geldar database (SELECT only, a settings profile with `readonly`, `max_memory_usage`, `max_execution_time` and `max_rows_to_read`, and a quota) and a viewer-role SigNoz key held only on the operator's workstation; no tool, prompt, file or path an agent can read ever references either. (2) Item 6's "no public route" stands for the UI: the UI is reached by SSH tunnel only, with no Caddy route and no change to or restart of the shared Caddy for the UI. (3) **Ingest (owner ruling, geldar-93, 2026-11-16).** The OTLP ingest gets a Caddy route on the shared Caddy, authenticated with the ingest token the owner already holds. This supersedes, for ingest only, the earlier "option C, Colo-only" and "no shared-Caddy change" wording in item 4 and in the telemetry design (0352, collector-design section 9). The ingest route is a write route, not a read route, so item 6 still holds. Its exact config is in `docs/analysis/telemetry/caddy-ingest-route.md`; the owner places the token as collector-design section 9 describes.
 
 ## Consequences
 
 Cards (from the telemetry survey, section 7; each card names its own owner approval and its own tests):
 
 - T-01 Decision record: telemetry scope, attribute allow-list, content policy, retention, readers; amends 0088
-- T-02 Geldar Collector on the Colo (contrib 0.164.0 by digest): `compose/colo-otel.yml` overlay and `deploy/otel/gateway.yaml`; caps 0.5 CPU, 512 MiB, 128 pids
+- T-02 Geldar Collector on the Colo (contrib 0.164.0 by digest): `compose/colo-otel.yml` overlay and `deploy/otel/gateway.yaml`; caps 0.5 CPU, 512 MiB, 256 pids
 - T-03 `@geldar/telemetry` package (JS SDK 3.0.0, api 1.10.0, OTLP proto exporters 0.300.0): SDK setup off when the endpoint is unset, W3C trace context only, split resources, bounded dropping queues, attribute allow-list with tests, NATS `injectTrace` and `extractTrace`
 - T-04 Logs: reconcile with `phase1/host-logs-journald`; app-level OTLP logs by default; give the player host's connection lines `life_id` and a timestamp
 - T-05 NATS client observability in `contract/src/nats-connect.ts`: status events as logs and `geldar_nats_status_total{type}`
@@ -90,4 +90,4 @@ Open items:
 - **ClickHouse disk budget**: 100 GB with a hard TTL and the alarms in decision point 5; the actual TTL settings on the node are unverified.
 - **Alert channel**: not chosen. Alerts go to operators only (decision point 8).
 - **Shared-tenant risks**: the other tenant's stack has no CPU or memory limits and no `memory_limiter`; its OTLP ports are open without an ingestion key (decision point 4); its version is too old for V2 dashboards; per-life erasure is impossible inside it (decision point 3).
-- **Owner approvals still needed**: the Caddy OTLP route with its exact config (decision point 4, via geldar-93); the public ingress amendment to 0071 and 0096 (decision point 9).
+- **Owner approvals still needed**: each node change to the Caddy OTLP ingest route, against its exact config (decision point 4; the route itself was approved in principle 2026-11-16 by geldar-93); the public ingress amendment to 0071 and 0096 (decision point 9).
