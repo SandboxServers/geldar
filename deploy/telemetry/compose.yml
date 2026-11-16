@@ -150,6 +150,8 @@ services:
     ports:
       - "127.0.0.1:8095:8080"
     depends_on:
+      geldar-signoz-migrator:
+        condition: service_completed_successfully
       geldar-ch:
         condition: service_healthy
     healthcheck:
