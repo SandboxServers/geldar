@@ -137,6 +137,16 @@ export function managedBodyConfig(input: ManagedBodyInput): Record<string, unkno
   };
 }
 
+/** The remove one-shot's container name (BH-5b): the unadmit prefix and the validated life id. */
+export function removeName(lifeId: string): string {
+  return admitName(lifeId, 'remove');
+}
+
+/** The remove one-shot's config (BH-5b): the add one-shot's fixed template with mode remove. */
+export function removeConfig(input: Omit<AdmitInput, 'mode'>): Record<string, unknown> {
+  return admitConfig({ ...input, mode: 'remove' });
+}
+
 export function admitConfig(input: AdmitInput): Record<string, unknown> {
   checkLifeId(input.lifeId);
   const mode = checkMode(input.mode);
