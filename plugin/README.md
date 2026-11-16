@@ -1,17 +1,19 @@
 # Geldar plugins
 
-A Gradle multi-project. Java 25 (see `.java-version`), Paper API 26.1.2 build 74. Every version is pinned in `gradle/libs.versions.toml` locked in `*.lockfile` and checksummed in `gradle/verification-metadata.xml` (refresh both with `./gradlew build --write-locks --write-verification-metadata sha256`). The Paper repository is consulted only for the Paper groups.
+A Gradle multi-project. Java 25 (see `.java-version`), Paper API 26.1.2 build 74. Every version is pinned in `gradle/libs.versions.toml` locked in `*.lockfile` and checksummed in `gradle/verification-metadata.xml` (refresh both with `./gradlew build --write-locks --write-verification-metadata sha256`). The Paper repository is consulted only for the Paper and Velocity groups.
 
 | Subproject | What it is |
 |---|---|
 | `core` | Geldar-Core, the Paper plugin (spec Appendix F). |
 | `velocity-identity` | The Velocity bot-ingress identity plugin (spec Appendix F, 8.4): on `LoginEvent` it admits only usernames in the JetStream KV bucket `geldar-life-registry` (key: lowercase username, value `{life_id, registered_at}`; a deleted key revokes). A local cache fed by a watcher answers the check; the gate fails closed until the first sync and while the bucket is absent (Golem creates it). One fixed deny message. Drops `geldar:cmd` messages from connections that were not admitted. Velocity API 3.5.1; its `velocity-brigadier` 1.0.0-SNAPSHOT dependency is excluded (no release exists, and it would make the locks float). Output `velocity-identity/build/libs/geldar-velocity-identity.jar`; reads `GELDAR_NATS_URL`. |
+| `ledger-core` | Ledger's loader-neutral core (OpenTelemetry API only). See Ledger modules. |
+| `ledger` | Ledger's Paper adapter, `ledger/build/libs/ledger.jar`. See Ledger modules. |
 
 ## Build
 
 ```powershell
 cd plugin
-./gradlew build          # compiles, runs the JUnit tests, writes core/build/libs/geldar-core.jar and velocity-identity/build/libs/geldar-velocity-identity.jar
+./gradlew build          # compiles, runs the JUnit tests, writes core/build/libs/geldar-core.jar, velocity-identity/build/libs/geldar-velocity-identity.jar and ledger/build/libs/ledger.jar (compose mounts only the first two)
 ```
 
 The jars carry `jnats`; Paper and Velocity supply their APIs. Compose mounts each jar read-only into the server's plugins directory (`compose/phase0.yml`), so build before `./geldar.ps1 shard up phase0`. Compose does not run the build; `shard up` stops with a message when either jar is not a file (Docker would otherwise create a directory at that path and the server would boot without the plugin). After the stack is healthy, `shard up` also checks the container logs (`docker logs`) for `Geldar-Core enabled` and `Geldar identity enabled`. The Paper and Velocity healthchecks do not read the rolling server logs: each plugin writes a readiness marker (`/tmp/geldar-core.ready`, `/tmp/geldar-identity.ready`) holding its process's pid and start time on enable and removes it on disable, and the healthcheck requires that marker to match the running process in `/proc`. A plugin that failed to load is never reported as healthy. Decisions: [0040](../docs/decisions/0040-bot-ingress-registry-in-nats-kv.md) (the gate) and [0041](../docs/decisions/0041-event-export-stream-and-sink.md) (the export).
@@ -23,6 +25,8 @@ To refresh the dependency locks after changing a version: `./gradlew build --wri
 Two more subprojects carry the Ledger statistics plugin. `ledger-core` is loader-neutral: it depends on the OpenTelemetry API only and has no Bukkit, Paper, Velocity, Fabric or NeoForge import (`NoLoaderImportsTest` fails the build if one appears). `ledger` is the Paper adapter: it builds `ledger/build/libs/ledger.jar` (core module and OpenTelemetry API inside; Paper, gson and BlueMap are compile-only) and its `plugin.yml` declares no commands and no permissions.
 
 **spark-api is deferred.** It is not a dependency yet: the metrics card that first integrates spark must pin it with a verified artifact. A `-SNAPSHOT` declaration is NOT checksum-verified by Gradle (tested: a wrong sha256 in `verification-metadata.xml` still builds, and the lock line stays `0.1-SNAPSHOT`); use a scoped ivy/maven repository pointing at the exact timestamped file, or a vendored jar with a recorded sha256.
+
+Known gap: `CensusHookTest` pins the guarded `census.gradle.kts` apply in `ledger/build.gradle.kts` by text; applying a present file is not run by any test (no TestKit).
 
 ## Geldar-Core
 

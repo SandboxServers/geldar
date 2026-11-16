@@ -28,6 +28,9 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    // CensusHookTest reads this build script.
+    systemProperty("ledger.build.script", file("build.gradle.kts").absolutePath)
+    inputs.file("build.gradle.kts")
 }
 
 tasks.processResources {
