@@ -4,7 +4,9 @@
   One shard, one replica, Keeper at geldar-ch-keeper. Needed for the SigNoz migrator's ON CLUSTER DDL [SRC manager.go].
   S-A: Keeper is on geldar-telemetry-backend only (internal). geldar-ch joins it, so the name resolves there, not on geldar-telemetry.
   Base shape from the SigNoz devenv sample and Foundry config-0-0.yaml [SRC]; hostnames are Geldar's.
-  Unverified (README item 9): the cluster entry has no user, so DDL runs as `default`, which is loopback-only in users.d.
+  The cluster entry has no user. The DDL ran with the restricted grants (scratch report8); the initiating user was not recorded
+  (see README unverified list, item 9). Through remote() the writer acts as default (README item 32).
+  default is loopback-only in users.d.
 -->
 <clickhouse>
     <!-- S8: logs go to the console only (docker json-file, capped by compose logging). The default file sinks are removed so no log
@@ -19,12 +21,23 @@
     <user_defined_executable_functions_config>*function.xml</user_defined_executable_functions_config>
     <user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
     <listen_host>0.0.0.0</listen_host>
+    <!-- [AUTH] Single replica never fetches from itself, so the interserver port (9009) is bound to loopback. The stock config
+         binds it on all interfaces, which would expose it on the shared network. -->
+    <interserver_listen_host replace="replace">127.0.0.1</interserver_listen_host>
+    <!-- [AUTH] Geldar uses only the native port 9000 and HTTP 8123. The scratch run found the MySQL (9004) and PostgreSQL (9005)
+         compatibility listeners on 0.0.0.0. remove="remove" drops them from the merged config (see README unverified list). -->
+    <mysql_port remove="remove"/>
+    <postgresql_port remove="remove"/>
     <display_name>cluster</display_name>
+    <!-- [AUTH] The replica host is the alias geldar-ch-sql, which exists only on the geldar-telemetry network. ClickHouse reports this
+         address in system.clusters, so every client that uses the cluster (migrator, collector, SigNoz) and geldar-ch itself reach it on
+         the telemetry network. Using geldar-ch here could resolve to the backend IP, which is unroutable from those clients (scratch run
+         report4, step 4). The keeper hostname geldar-ch-keeper is unchanged and resolves only on the backend network. -->
     <remote_servers>
         <cluster>
             <shard>
                 <replica>
-                    <host>geldar-ch</host>
+                    <host>geldar-ch-sql</host>
                     <port>9000</port>
                 </replica>
             </shard>
