@@ -54,7 +54,16 @@ Passwords are never inline. Compose mounts them as file secrets from `/mnt/nvme/
 - `ch_writer_password`: the writer password (`<writer password from secret file>`). Used by the migrator and the collector.
 - `ch_reader_password`: the reader password. Used by the query service.
 
-The ClickHouse users file holds only `password_sha256_hex` placeholders (`<sha256 of writer password from secret file>`). The real hash is written on the node, not in git. The SigNoz and collector DSNs are built by a short shell wrapper that reads the secret file at start (see `signoz-otelcol-config.yaml` and the compose `command:` lines). This wrapper is `[AUTH]` and **unverified** that the image has `/bin/sh` (the alpine SigNoz image has it; the collector and migrator images are not inspected).
+### Password hashes
+
+`clickhouse/users.d/users.xml` is well-formed and contains no hash. Each user reads its hash with `<password_sha256_hex from_env="..."/>`: `GELDAR_CH_WRITER_SHA256` (writer) and `GELDAR_CH_READER_SHA256` (reader). `geldar-ch` loads them from `/mnt/nvme/geldar-telemetry/secrets/ch-hashes.env` (compose `env_file`, not in git). Write that file on the node, mode 0400, with two lines `GELDAR_CH_WRITER_SHA256=<hex>` and `GELDAR_CH_READER_SHA256=<hex>`. Make each hex with `printf %s "$pw" | sha256sum | cut -d' ' -f1`, where `$pw` is the password read from the matching secret file. Do not put the values in a command line that is saved in shell history.
+
+- `from_env` in ClickHouse config is `[INF]`, unverified on 25.12.5. **Blocks start of geldar-ch** (a missing variable is a start failure, which fails closed).
+- Residual exposure: the hash is in the container environment, so `docker inspect geldar-ch` shows it to anyone with Docker access. A sha256 of a password can be brute-forced offline. Docker access is root-equivalent on this host, so this is accepted, not removed.
+
+### Secret wrappers (migrator, SigNoz, collector)
+
+The DSNs are built by a short shell wrapper that reads the secret file at start (see the compose `command:` lines). The wrapper text contains `$(cat /run/secrets/...)`, not the value, so no password is in argv or in `docker inspect`. The value lives in the environment of the running process, which is readable by root and by the same uid through `/proc/<pid>/environ`. That residual exposure is accepted for this single-node host. The migrator uses the collector image (`signoz/signoz-otel-collector`, see the Pins), so its DSN is an environment variable, as the SigNoz `migrate` subcommands expect. The wrapper relies on `/bin/sh` in the image: `[UNV]` for the collector and the SigNoz image is alpine.
 
 No secret value, token or account name is in this directory.
 

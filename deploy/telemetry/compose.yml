@@ -61,6 +61,11 @@ services:
     image: clickhouse/clickhouse-server@sha256:cacf32d6884291dc2ff5e0156a97f46fc53ff7c929a7906d114e268a929dfd3a # 25.12.5 build 44
     container_name: geldar-ch
     hostname: geldar-ch
+    env_file:
+      # Node-only file with GELDAR_CH_WRITER_SHA256 and GELDAR_CH_READER_SHA256 (README, "Password hashes").
+      # required: false only so that `compose config` runs off the node; on the node a missing hash makes ClickHouse fail to start.
+      - path: /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env
+        required: false
     environment:
       CLICKHOUSE_SKIP_USER_SETUP: "1"   # [SRC] Foundry compose
     volumes:

@@ -1,8 +1,9 @@
 <?xml version="1.0"?>
 <!--
   Authored for Geldar (0352 and 0370). [AUTH] Not upstream.
-  PLACEHOLDERS: every password_sha256_hex below is a placeholder. The real hash is written on the node, never in git.
-  Replace <sha256 of writer password from secret file> and <sha256 of reader password from secret file> before start.
+  Password hashes are NOT in git. Each hash is read from the container environment with from_env:
+  GELDAR_CH_WRITER_SHA256 and GELDAR_CH_READER_SHA256. Compose loads them from the node-only env file
+  /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env (README, "Password hashes"). from_env in config is [INF, unverified on 25.12.5].
   Limits from 0352: writer max_memory_usage 2 GB, max_threads 4, max_execution_time 60, max_insert_threads 2.
   Reader limits: not in 0352; 1 GB and 4 threads chosen here [AUTH guess].
   default: kept because the cluster entry in cluster.xml has no user, so ON CLUSTER DDL runs as default (README item 9).
@@ -38,7 +39,7 @@
             <access_management>1</access_management>
         </default>
         <geldar_writer>
-            <password_sha256_hex><sha256 of writer password from secret file></password_sha256_hex>
+            <password_sha256_hex from_env="GELDAR_CH_WRITER_SHA256"/>
             <profile>geldar_writer</profile>
             <quota>default</quota>
             <networks>
@@ -47,7 +48,7 @@
             <access_management>1</access_management>
         </geldar_writer>
         <geldar_reader>
-            <password_sha256_hex><sha256 of reader password from secret file></password_sha256_hex>
+            <password_sha256_hex from_env="GELDAR_CH_READER_SHA256"/>
             <profile>geldar_reader</profile>
             <quota>default</quota>
             <networks>
