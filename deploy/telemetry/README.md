@@ -74,6 +74,7 @@ Passwords are never inline. Compose mounts them as file secrets from `/mnt/nvme/
 
 - `ch_writer_password`: the writer password. Used by the migrator and the collector.
 - `ch_reader_password`: the reader password. Used by the query service.
+- `ch_signoz_admin_password`: the retention user's password (D3). Created only for the retention window; used only through `compose.retention.yml` (see "Retention window (N6c)"). Not referenced by `compose.yml`.
 
 **Password format (S-E):** each password is 32 random bytes as 64 lowercase hex characters (`[0-9a-f]` only, for example `openssl rand -hex 32`). No other characters: the value is placed in a `tcp://user:password@host` URL, where `@ / : ? # %` break the parse. Each file has no trailing text; `$(cat)` strips the final newline.
 
@@ -83,6 +84,7 @@ Passwords are never inline. Compose mounts them as file secrets from `/mnt/nvme/
 |---|---|---|---|
 | `secrets/ch_writer_password` | `geldar-signoz-migrator`, `geldar-signoz-otelcol` (wrapper) | uid 10001 (image `User`) | `10001:10001` `0400` |
 | `secrets/ch_reader_password` | `geldar-signoz` (wrapper) | uid 0 (root, no USER; `cap_drop: ALL`, so no DAC_OVERRIDE) | `0:0` `0400` |
+| `secrets/ch_signoz_admin_password` | `geldar-signoz` (wrapper) only while `compose.retention.yml` is applied | uid 0 (same as the reader) | `0:0` `0400` |
 | `secrets/ch-hashes.env` | the compose client, which passes it to `geldar-ch` as env (`env_file`); no container reads the file | the operator running compose | operator's own uid, `0400` |
 
 A reader file owned by 10001 would be unreadable to `geldar-signoz` (root without DAC_OVERRIDE cannot read a 0400 file owned by another uid); a writer file owned by root would be unreadable to 10001.
@@ -97,6 +99,7 @@ pw=$(cat /mnt/nvme/geldar-telemetry/secrets/ch_writer_password) && [ "${#pw}" -e
 
 Use the same form for `ch_reader_password`. If a command prints nothing or exits non-zero, stop and do not write that hash. The hash `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` is the SHA-256 of the empty string (what an empty password would give); if it appears in `ch-hashes.env`, delete that file and start again. Do not put the values in a command line that is saved in shell history.
 
+- **Third hash (D3).** `users.xml` also defines `geldar_signoz_admin`, whose hash is `GELDAR_CH_SIGNOZ_ADMIN_SHA256` (a third line in `ch-hashes.env`). Compose needs no change for it: `env_file` already passes the whole file to `geldar-ch`, and no value is in the repo. **Ordering (a start failure otherwise):** with `from_env` for an unset variable, `geldar-ch` refuses to start ("Env variable is not set", seen on the node). So once the new `users.xml` is on the node, `geldar-ch` cannot be restarted until `ch-hashes.env` holds this line. Do these in order: (a) create `secrets/ch_signoz_admin_password` (64 hex, `0:0` `0400`, same recipe as the reader file); (b) compute its hash with the guarded form above and append `GELDAR_CH_SIGNOZ_ADMIN_SHA256=<hex>` to `ch-hashes.env` (the file is 0400, so use the same umask or `chmod` steps as when it was written, and do not put the value in argv) BEFORE the new `users.xml` reaches the node; the node's `users.xml` is staged from a tarball under `/mnt/nvme/geldar-telemetry/src`, so re-staging is a node step; (c) restart `geldar-ch` (`docker compose -f deploy/telemetry/compose.yml up -d --force-recreate geldar-ch`; the env file is read at container creation, so a plain restart does not pick up the new line). Whether ClickHouse reloads `users.d` without a restart is `[UNV]` (item 36); plan a recreate at a time when nothing depends on `geldar-ch` (stop `geldar-signoz` and `geldar-signoz-otelcol` first, or accept their reconnect); (d) verify: `docker inspect -f '{{.State.Health.Status}}' geldar-ch` prints `healthy`, and `docker exec geldar-ch clickhouse-client -q "SELECT name FROM system.users ORDER BY name"` lists `geldar_signoz_admin`.
 - `from_env` in ClickHouse config is `[INF]`, unverified on 25.12.5. **Blocks start of geldar-ch** (a missing variable is a start failure, which fails closed).
 - Residual exposure: the hash is in the container environment, so `docker inspect geldar-ch` shows it to anyone with Docker access. A sha256 of a password can be brute-forced offline. Docker access is root-equivalent on this host, so this is accepted, not removed.
 

@@ -68,7 +68,8 @@ services:
     container_name: geldar-ch
     hostname: geldar-ch
     env_file:
-      # Node-only file with GELDAR_CH_WRITER_SHA256 and GELDAR_CH_READER_SHA256 (README, "Password hashes").
+      # Node-only file with GELDAR_CH_WRITER_SHA256, GELDAR_CH_READER_SHA256 and GELDAR_CH_SIGNOZ_ADMIN_SHA256 (README, "Password hashes").
+      # The whole file is passed through, so the retention user's hash (D3) needs no other compose change.
       # required: false only so that `compose config` runs off the node; on the node a missing hash makes ClickHouse fail to start.
       - path: /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env
         required: false
