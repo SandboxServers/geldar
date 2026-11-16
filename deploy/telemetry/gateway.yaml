@@ -6,7 +6,7 @@
 # So there is NO attribute-size limit, NO log-body-length limit and NO sampling anywhere below. Do not add one.
 # Redaction here is narrow, per collector-design section 5: it masks IPv4 and IPv6 literals (log bodies that are strings, the top-level
 # string values of map bodies, resource attributes and span event attributes) and deletes credential-looking attribute KEYS (resource,
-# scope, log, span, span event and datapoint attributes). It does NOT scrub free text for secrets or personal data. Known gaps (README, G1 to G4):
+# scope, log, span, span event and datapoint attributes). It does NOT scrub free text for secrets or personal data. Known gaps (README, G4 and G8):
 # array and bytes bodies, nested map values, span link attributes and metric exemplar labels have no OTTL context here.
 #
 # Credential key rule, used by every delete_matching_keys below (case-insensitive, RE2):

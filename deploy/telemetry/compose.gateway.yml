@@ -11,7 +11,7 @@ x-logging: &logging
     max-file: "3"
 
 networks:
-  # Existing Geldar Body/Colo network (external; not created by this file). The services reach the gateway here as otel-gateway.
+  # Existing Geldar Body/Colo network (external; not created by this file). The services reach the gateway here as geldar-gateway (the container name; one name, no alias).
   geldar-colo:
     external: true
     name: geldar-colo
@@ -35,13 +35,13 @@ services:
     volumes:
       - ./gateway.yaml:/etc/otelcol/gateway.yaml:ro
       # The only writable path: the persisted sending queue. Owner 10001:10001, mode 750, set at the node step.
+      # Bound: queue_size 1 GiB of request bytes in gateway.yaml, plus file overhead. NOT a fixed-size volume: the /mnt/nvme alarm is the guard (README, "Limits").
       - /mnt/nvme/geldar-telemetry/queue:/var/lib/otelcol/queue
     environment:
       GELDAR_SIGNOZ_OTLP_ENDPOINT: geldar-signoz-otelcol:4317   # OTLP gRPC port of signoz-otelcol-config.yaml [SRC]
       GOMEMLIMIT: 400MiB   # matches memory_limiter limit_mib 400 in gateway.yaml
     networks:
       geldar-colo:
-        aliases: [otel-gateway]
       geldar-telemetry:
     ports:
       # Loopback only: the target of the Caddy ingest route (N14). 4320 was free on the node at N1. OTLP/HTTP only; 4317 and 13133 are not published.
