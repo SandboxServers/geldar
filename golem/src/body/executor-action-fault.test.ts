@@ -60,4 +60,34 @@ describe('the internal-fault line of a failed action', () => {
       error.mockRestore();
     }
   });
+
+  it.each([100_000, 1024 * 1024])(
+    'logs a hostile %i-character exception quickly and bounded',
+    async (n) => {
+      for (const message of ['a'.repeat(n), `x://${'a'.repeat(n)}`]) {
+        const runtime = {
+          sink: new MemorySink(),
+          runAction: () => Promise.reject(new Error(message)),
+        } as unknown as BodyRuntime;
+        const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        try {
+          const started = performance.now();
+          await runPlanAction(
+            runtime,
+            () => new Date(0),
+            waits(1)[0] as never,
+            'ac_big',
+            1,
+            planFor(1),
+          );
+          expect(performance.now() - started).toBeLessThan(100);
+          const line = String(error.mock.calls[0]?.[0]);
+          expect(line.length).toBeLessThan(400_000);
+          expect(JSON.parse(line).action_id).toBe('ac_big');
+        } finally {
+          error.mockRestore();
+        }
+      }
+    },
+  );
 });
