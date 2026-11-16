@@ -32,7 +32,7 @@ with trace context carried in NATS message headers.
 | File | Purpose |
 |---|---|
 | `src/sdk.ts` | `startTelemetry()`: providers, exporters, queue limits, shutdown |
-| `src/natsTrace.ts` | `injectTrace()` and `extractTrace()` for NATS-style headers |
+| `src/nats-trace.ts` | `injectTrace()` and `extractTrace()` for NATS-style headers |
 | `src/logger.ts` | `createLogger()`: JSON stdout lines stamped with trace ids, plus OTLP log records |
 | `src/attributes.ts` | Attribute allow-list, identity refusal for metrics, forbidden key names |
 | `src/sdk-processors.ts` | Span, log and metric-View processors that run the allow-list inside the SDK |

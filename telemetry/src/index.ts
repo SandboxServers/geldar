@@ -16,7 +16,7 @@ export {
   type EventSpan,
 } from './content.ts';
 export { createLogger, type LogFields, type Logger, type LogLevel } from './logger.ts';
-export { extractTrace, type HeaderLike, injectTrace } from './natsTrace.ts';
+export { extractTrace, type HeaderLike, injectTrace } from './nats-trace.ts';
 export {
   EXPORT_TIMEOUT_MS,
   type QueueLimits,

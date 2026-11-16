@@ -1,7 +1,7 @@
 import { type Context, propagation, ROOT_CONTEXT, trace } from '@opentelemetry/api';
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
 import { describe, expect, it } from 'vitest';
-import { extractTrace, type HeaderLike, injectTrace } from '../src/natsTrace.ts';
+import { extractTrace, type HeaderLike, injectTrace } from '../src/nats-trace.ts';
 
 // A minimal stand-in for nats.js MsgHdrs: the same get/set/has shape.
 class FakeHeaders implements HeaderLike {
