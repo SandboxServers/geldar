@@ -296,4 +296,27 @@ describe('the roster lookup, the life id and the deadline on the remove path', (
     await new Promise((resolve) => setTimeout(resolve, 120));
     expect(audit.some((line) => /outcome=(accepted|failed)/.test(line))).toBe(false);
   });
+
+  it('a missing container whose roster lookup outlives the deadline runs no one-shot and audits no outcome', async () => {
+    const engine = createFakeEngine();
+    const { handle, audit } = setup({
+      engine,
+      requestDeadlineMs: 10,
+      lifeId: () => new Promise((resolve) => setTimeout(() => resolve(LIFE), 60)),
+    });
+    expect(await handle(stop())).toMatchObject({ ok: false, code: 'timeout' });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(engine.oneShots).toHaveLength(0);
+    expect(audit.some((line) => /outcome=(accepted|not_running|failed)/.test(line))).toBe(false);
+  });
+
+  it('a missing container whose remove fails after the deadline is answered timeout, and audits no failed remove', async () => {
+    const engine = createFakeEngine();
+    engine.oneShotExit = 1;
+    engine.oneShotHook = () => new Promise((resolve) => setTimeout(resolve, 60));
+    const { handle, audit } = setup({ engine, requestDeadlineMs: 10 });
+    expect(await handle(stop())).toMatchObject({ ok: false, code: 'timeout' });
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    expect(audit.some((line) => /outcome=(accepted|not_running|failed)/.test(line))).toBe(false);
+  });
 });
