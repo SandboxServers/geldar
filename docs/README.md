@@ -3,9 +3,9 @@ title: Documentation index
 type: reference
 audience: contributors
 status: draft
-last_verified: 2026-11-16 against cd4499da
-companions: [../README.md, agents/README.md, reference/README.md, runbooks/README.md, analysis/docs-library/RESUME.md]
-sources: [docs/spec.md, docs/decisions/README.md, docs/runbooks/README.md]
+last_verified: 2026-11-16 against 1b114276
+companions: [../README.md, agents/README.md, concepts/README.md, architecture/README.md, reference/README.md, runbooks/README.md, analysis/docs-library/RESUME.md]
+sources: [docs/spec.md, docs/decisions/README.md, docs/runbooks/README.md, docs/concepts, docs/architecture, docs/reference]
 ---
 
 # Documentation index
@@ -19,10 +19,11 @@ Some documents here describe how humans observe the world (marked `audience: age
 1. [Root README](../README.md): what Geldar is and how to watch or join.
 2. [`spec.md`](spec.md): the design. Section 2 holds the principles, section 3 the glossary, section 10 the Phase 0 exit criteria.
 3. [`reference/glossary.md`](reference/glossary.md): the terms the code and docs use.
-4. [`reference/repo-layout.md`](reference/repo-layout.md): every package and folder, what it is, how it is tested.
-5. [`reference/spec-section-map.md`](reference/spec-section-map.md): which spec section maps to which code and decisions.
-6. [`runbooks/README.md`](runbooks/README.md): the operating procedures.
-7. [`../CONTRIBUTING.md`](../CONTRIBUTING.md) and [`../CLAUDE.md`](../CLAUDE.md): how to change the repo.
+4. [`concepts/what-is-geldar.md`](concepts/what-is-geldar.md), then [`architecture/system-overview.md`](architecture/system-overview.md): what is built and how it fits together.
+5. [`reference/components.md`](reference/components.md): one row per component, with its owner role and every document about it. [`reference/repo-layout.md`](reference/repo-layout.md) has every folder and package.
+6. [`reference/spec-section-map.md`](reference/spec-section-map.md): which spec section maps to which code and decisions.
+7. [`runbooks/README.md`](runbooks/README.md): the operating procedures.
+8. [`../CONTRIBUTING.md`](../CONTRIBUTING.md) and [`../CLAUDE.md`](../CLAUDE.md): how to change the repo.
 
 ## By section
 
@@ -30,7 +31,9 @@ Some documents here describe how humans observe the world (marked `audience: age
 |---|---|---|
 | [`spec.md`](spec.md) | Explanation | The full design, version 0.8 (draft). Only the owner edits it. |
 | [`decisions/`](decisions/README.md) | Explanation | One record per settled decision, 180 records. Index table in [`decisions/README.md`](decisions/README.md). |
-| [`reference/`](reference/README.md) | Reference | Glossary, repo layout, spec-to-code map; component and interface reference to follow (planned). |
+| [`concepts/`](concepts/README.md) | Explanation | 11 pages on why Geldar is built as it is: principles, Body and Mind, sovereign players, a life's cycle, identity, shards and phases, budgets, character, observation, world-operations exceptions. Drafts under review. |
+| [`architecture/`](architecture/README.md) | Explanation | 8 pages on how the parts fit: system overview, data flow, network and trust zones, NATS, the Colo deployment, build and release, telemetry, the package graph. Drafts under review. |
+| [`reference/`](reference/README.md) | Reference | 30 documents: [components](reference/components.md) (one row per component, with every doc), glossary, repo layout, spec-to-code map, and one reference per interface and component (schemas, subjects, database, MCP tools, services, plugins, compose, shard config, environment names, deploy scripts, tools, gates, CI). Drafts under review. |
 | [`runbooks/`](runbooks/README.md) | How-to | 19 operating procedures with an index, status and gaps. |
 | [`agents/`](agents/README.md) | Reference, how-to | Documentation rules: update map, style, verification. |
 | [`threat-model.md`](threat-model.md) | Explanation | Assets, actors, trust boundaries, Phase 0 surfaces and what we do not protect against. |
@@ -38,7 +41,7 @@ Some documents here describe how humans observe the world (marked `audience: age
 | [`legal/`](legal/) | Reference | Terms, privacy and acceptable-use drafts. |
 | [`analysis/`](analysis/) | History | Campaign ledgers, packets, retrospectives and worknotes (see below). |
 | [`ideas.md`](ideas.md) | n/a | Ideas outside the spec and the current packet. An idea goes here instead of into code. |
-| `concepts/`, `architecture/`, `guides/`, `operations/`, `security/`, `history/`, `siblings/` | Mixed | Planned. See the [plan](analysis/docs-library/plan.md). |
+| `guides/`, `operations/`, `security/`, `history/`, `siblings/` | Mixed | Planned (waves W3 to W6). See the [plan](analysis/docs-library/plan.md). |
 
 ## Analysis campaigns
 
