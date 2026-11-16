@@ -24,11 +24,28 @@ describe('pgEventWriter', () => {
     await pgEventWriter(pool).insertBatch([EVENT, { ...EVENT, source_event_id: 'ev_2' }]);
     expect(calls).toHaveLength(1);
     expect(calls[0]?.sql).toContain('ON CONFLICT (source_event_id) DO NOTHING');
-    expect(calls[0]?.params).toHaveLength(10);
+    expect(calls[0]?.params).toHaveLength(11);
     expect(calls[0]?.params[0]).toEqual([EVENT.source_event_id, 'ev_2']);
     expect(calls[0]?.params[5]).toEqual(['ag_kestrel_01', 'ag_kestrel_01']);
     expect(calls[0]?.params[6]).toEqual([null, null]);
     expect(calls[0]?.params[7]).toEqual(['{"bed":[1,2,3]}', '{"bed":[1,2,3]}']);
+    expect(calls[0]?.params[8]).toEqual([null, null]);
+    expect(calls[0]?.params[9]).toEqual([null, null]);
+    expect(calls[0]?.params[10]).toEqual([null, null]);
+  });
+
+  it('binds trace_id per event, null when the batch carries none', async () => {
+    const calls: { sql: string; params: unknown[] }[] = [];
+    const pool = {
+      query: async (sql: string, params: unknown[]) => void calls.push({ sql, params }),
+    } as unknown as Pool;
+    const traced = '4bf92f3577b34da6a3ce929d0e0e4736';
+    await pgEventWriter(pool).insertBatch(
+      [EVENT, { ...EVENT, source_event_id: 'ev_2' }],
+      [traced, null],
+    );
+    expect(calls[0]?.sql).toContain('trace_id');
+    expect(calls[0]?.params[10]).toEqual([traced, null]);
     expect(calls[0]?.params[8]).toEqual([null, null]);
     expect(calls[0]?.params[9]).toEqual([null, null]);
   });

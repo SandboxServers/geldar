@@ -8,6 +8,7 @@ import {
   MAX_DELIVER,
   nakDelayMs,
   type SinkMessage,
+  traceIdOf,
 } from './consumer.ts';
 import { isNonEventSubject } from './validate.ts';
 import { type EventWriter, isPermanentDbError } from './writer.ts';
@@ -329,6 +330,44 @@ describe('a database outage', () => {
     expect(Math.max(...queue.map((d) => d.deliveryCount))).toBeGreaterThan(20);
     expect(dlq).toHaveLength(1);
     expect(JSON.parse(dlq[0] ?? '{}').data).toBe('not json');
+  });
+});
+
+describe('trace ids', () => {
+  const TRACE = '4bf92f3577b34da6a3ce929d0e0e4736';
+  function withHeader(value: string | null, data: Uint8Array = new Uint8Array()): SinkMessage {
+    return {
+      subject: 'geldar.phase0.damage',
+      data,
+      deliveryCount: 1,
+      headers: { get: (name) => (name === 'traceparent' && value !== null ? value : '') },
+      ack: () => {},
+      nak: () => {},
+    };
+  }
+
+  it('reads the trace id of a version 00 traceparent only', () => {
+    expect(traceIdOf(withHeader(`00-${TRACE}-00f067aa0ba902b7-01`))).toBe(TRACE);
+    expect(traceIdOf(withHeader(null))).toBeNull();
+    expect(traceIdOf(withHeader(`00-${TRACE.toUpperCase()}-00f067aa0ba902b7-01`))).toBeNull();
+    expect(traceIdOf(withHeader(`01-${TRACE}-00f067aa0ba902b7-01`))).toBeNull();
+    expect(traceIdOf(withHeader(`00-${'0'.repeat(32)}-00f067aa0ba902b7-01`))).toBeNull();
+    expect(traceIdOf(withHeader('not a traceparent'))).toBeNull();
+    expect(traceIdOf({ ...withHeader(null), headers: undefined })).toBeNull();
+  });
+
+  it('hands each event its own trace id, null for a message without one', async () => {
+    const seen: (readonly (string | null)[] | undefined)[] = [];
+    const writer: EventWriter = {
+      async insertBatch(_events, traceIds) {
+        seen.push(traceIds);
+      },
+    };
+    const data = new TextEncoder().encode(JSON.stringify(EVENT));
+    const traced = withHeader(`00-${TRACE}-00f067aa0ba902b7-01`, data);
+    const plain = withHeader(null, data);
+    await handleBatch([traced, plain], { writer, publishDlq: async () => {} });
+    expect(seen).toEqual([[TRACE, null]]);
   });
 });
 

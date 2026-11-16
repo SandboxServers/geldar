@@ -23,8 +23,25 @@ export interface SinkMessage {
   data: Uint8Array;
   /** How many times the server has delivered this message (1 on the first). */
   deliveryCount: number;
+  /** The NATS headers; absent in tests that build messages by hand. `get` returns '' when a header is missing. */
+  headers?: { get(name: string): string } | undefined;
   ack(): void;
   nak(delayMs: number): void;
+}
+
+/** A W3C traceparent, version 00 only: `00-<32 hex trace id>-<16 hex parent id>-<2 hex flags>`. */
+const TRACEPARENT = /^00-([0-9a-f]{32})-[0-9a-f]{16}-[0-9a-f]{2}$/;
+
+/**
+ * The trace id from the message's `traceparent` header, or null when the header is absent,
+ * malformed, or the all-zero id (which W3C defines as invalid). Read directly; no telemetry import.
+ */
+export function traceIdOf(message: SinkMessage): string | null {
+  const header = message.headers?.get('traceparent') ?? '';
+  const match = TRACEPARENT.exec(header);
+  const id = match?.[1];
+  if (id === undefined || /^0+$/.test(id)) return null;
+  return id;
 }
 
 /** What `handleBatch` needs besides the messages. */
@@ -124,15 +141,22 @@ function retryLater(message: SinkMessage): void {
   message.nak(nakDelayMs(message.deliveryCount));
 }
 
+/** A message that passed validation, with its event and its trace id (null when it carried none). */
+interface ValidMessage {
+  message: SinkMessage;
+  event: WorldEvent;
+  traceId: string | null;
+}
+
 /** After a permanent batch error: one row at a time, so only the offending rows are dead-lettered. */
 async function insertRowByRow(
-  valid: readonly { message: SinkMessage; event: WorldEvent }[],
+  valid: readonly ValidMessage[],
   deps: BatchDeps,
   log: (line: string) => void,
 ): Promise<void> {
-  for (const { message, event } of valid) {
+  for (const { message, event, traceId } of valid) {
     try {
-      await deps.writer.insertBatch([event]);
+      await deps.writer.insertBatch([event], [traceId]);
       deps.metrics?.written(1);
       message.ack();
     } catch (error) {
@@ -166,7 +190,7 @@ export async function handleBatch(
   deps: BatchDeps,
 ): Promise<void> {
   const log = deps.log ?? ((line: string) => console.error(line));
-  const valid: { message: SinkMessage; event: WorldEvent }[] = [];
+  const valid: ValidMessage[] = [];
   for (const message of messages) {
     deps.metrics?.consumed(message.subject);
     if (isOwnDeadLetter(message)) {
@@ -181,14 +205,17 @@ export async function handleBatch(
     }
     const verdict = validateMessage(message.subject, message.data);
     if (verdict.ok) {
-      valid.push({ message, event: verdict.event });
+      valid.push({ message, event: verdict.event, traceId: traceIdOf(message) });
       continue;
     }
     await deadLetter(message, verdict.reason, 'validate', deps, log);
   }
   if (valid.length === 0) return;
   try {
-    await deps.writer.insertBatch(valid.map((v) => v.event));
+    await deps.writer.insertBatch(
+      valid.map((v) => v.event),
+      valid.map((v) => v.traceId),
+    );
     deps.metrics?.written(valid.length);
   } catch (error) {
     if (isPermanentDbError(error)) {
@@ -256,6 +283,7 @@ function toSinkMessage(m: JsMsg): SinkMessage {
     subject: m.subject,
     data: m.data,
     deliveryCount: m.info.deliveryCount,
+    headers: m.headers,
     ack: () => m.ack(),
     nak: (delayMs) => m.nak(delayMs),
   };
