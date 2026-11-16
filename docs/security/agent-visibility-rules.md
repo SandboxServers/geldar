@@ -106,7 +106,7 @@ A documentation writer does not edit these paths. A reviewer of a mixed change r
 ./geldar.ps1 pnpm test agent-visible-text agent-text.test persona-lint failure-texts resources.test refusal-detail
 ```
 
-These are the contract scan, the prompt scan, the persona lint, the Body failure-text test and the two MCP result scans (`contract/test/agent-visible-text.test.ts`, `animus/src/prompts/agent-text.test.ts`, `tools/mcp-tokens/src/persona-lint.test.ts`, `golem/src/actions/failure-texts.test.ts`, `threshold/mcp/src/resources.test.ts`, `threshold/mcp/src/tools/refusal-detail.test.ts`). The command was not run for this page. None of them reads `docs/`, sibling repos or in-world text written at run time (0361, Why).
+These are the contract scan, the prompt scan, the persona lint, the Body failure-text test and the two MCP result scans (`contract/test/agent-visible-text.test.ts`, `animus/src/prompts/agent-text.test.ts`, `tools/mcp-tokens/src/persona-lint.test.ts`, `golem/src/actions/failure-texts.test.ts`, `threshold/mcp/src/resources.test.ts`, `threshold/mcp/src/tools/refusal-detail.test.ts`). The command was not run for this page.
 
 ### 4d. The general forbidden-content scans
 
@@ -132,13 +132,10 @@ Report each failure as a numbered finding with file and line.
 
 ## What the scans cannot catch
 
-- **The D9 level.** No pattern can judge it; a reviewer must (decision [0365](../decisions/0365-docs-gates-after-the-freeze.md) item 3).
-- **Sibling repos.** The kit, the player template and player repos are checked in those repos, not here.
-- **Text written at run time.** Signs, books and chat are written in the world.
-- **No gate yet.** Nothing in CI runs scan 4a; decision 0365 proposes one after the freeze.
+A reviewer judges the D9 level (decision [0365](../decisions/0365-docs-gates-after-the-freeze.md) item 3); sibling repos are checked there.
 
 ## Gaps recorded
 
-1. **`player-core` and `animus/src/prompts` are missing from the style table.** The [style document](../agents/documentation-style.md#paths-an-agent-reads) lists neither `player-core/src/` nor `animus/src/prompts/`, and the placement grep in [doc verification](../agents/doc-verification.md#agents-never-placement) covers neither. This page lists both in its own step 1 table and its own scan 4a; the style document and the doc-verification grep are unchanged and need their own edit.
+1. **Closed 2026-11-16 (W7).** The [style document](../agents/documentation-style.md#paths-an-agent-reads) now lists `player-core/src/` and `animus/src/prompts/`, and the placement grep in [doc verification](../agents/doc-verification.md#agents-never-placement) covers both (its line 171).
 2. **0361 is Proposed.** Points 3 and 4 wait for the owner; point 4 needs the owner to name a private store.
 3. **0366 is open.** The spec's Watched row and decision 0059 disagree on what agents are told; see that record.

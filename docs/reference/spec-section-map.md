@@ -10,15 +10,15 @@ sources: [docs/spec.md, docs/decisions]
 
 # Spec section map
 
-For each section of [the spec](../spec.md): the components that implement it, where their code is, the planned doc that will explain or describe it, and the decision records that amend or settle it. Use it to find the code behind a spec section, or the decisions to read before you trust a section's text. The spec is never edited ([decision 0073](../decisions/0073-spec-is-never-edited.md)); decisions amend it.
+For each section of [the spec](../spec.md): the components that implement it, where their code is, the doc that explains or describes it, and the decision records that amend or settle it. Use it to find the code behind a spec section, or the decisions to read before you trust a section's text. The spec is never edited ([decision 0073](../decisions/0073-spec-is-never-edited.md)); decisions amend it.
 
 ## How this map was built
 
 - **Sources**: the metadata lists the spec and the decisions folder; the code paths in the table come from `git ls-files` and `git grep` over the source folders.
 - **Headings**: `grep -n '^#' docs/spec.md` on commit `cd4499da`, 2026-11-16. The spec is 2135 lines (`wc -l`). Lines starting with `#` inside the spec's code blocks (compose file comments in 6.5, the kit files in Appendix J) are not sections and are left out.
-- **Decisions**: each record's `Spec:` header, extracted with grep on 2026-11-16. 124 of the 180 records state one: 121 as a line starting `- Spec:`, and 3 inline (0135, whose header items are joined on its first line, and 0350 and 0351, which write `Spec:` without the list dash). 7 of the 124 say the record has no spec section (0132, 0186, 0220, 0280, 0281, 0282, 0339). The other 56 records have no `Spec:` header, so they are not mapped here; the planned [decisions by topic](decisions-by-topic.md) will place them. A decision is listed under each section its `Spec:` line names; a decision that names only a parent section (for example "5.3") is listed there, not under every subsection.
+- **Decisions**: each record's `Spec:` header, extracted with grep on 2026-11-16. 124 of the 180 records state one: 121 as a line starting `- Spec:`, and 3 inline (0135, whose header items are joined on its first line, and 0350 and 0351, which write `Spec:` without the list dash). 7 of the 124 say the record has no spec section (0132, 0186, 0220, 0280, 0281, 0282, 0339). The other 56 records have no `Spec:` header, so they are not mapped here; the [decisions by topic](decisions-by-topic.md) page places them. Records 0360 to 0366 came after this count (2026-11-16, re-read at 02e9ee34): 0364 is listed under 8.4 and 0366 under 5.14; 0361 names sections 2 and 8 as a whole; 0360, 0363 and 0365 name no section; 0362 names 2a and 3 without changing them. A decision is listed under each section its `Spec:` line names; a decision that names only a parent section (for example "5.3") is listed there, not under every subsection.
 - **Code**: paths from `git ls-files`. "Spec only" means `git grep` over the source folders found no implementation.
-- **Planned docs**: paths from the documentation plan (wave W0 to W6). Most do not exist yet; their links resolve once they are written. Docs marked "agents-never" are operator material.
+- **Planned docs**: paths from the documentation plan (wave W0 to W6). All 98 relative links on this page resolved on 2026-11-16 (checked with a link script at `3f07a4be`). Docs marked "agents-never" are operator material.
 
 ## Map
 
@@ -49,7 +49,7 @@ For each section of [the spec](../spec.md): the components that implement it, wh
 | 5.11 Code Sandbox | Skill sandbox | Spec only (no sandbox found in `golem/src/`) | none planned | none |
 | 5.12 The Historian | Historian | Spec only | none planned | none |
 | 5.13 The Observatory | Glass, Kino, BlueMap | `glass/`, `plugins/bluemap/`, `plugin/core/.../kino/`, `.../lakitu/` | [observation-and-privacy](../concepts/observation-and-privacy.md) (agents-never), [glass-and-kino](glass-and-kino.md) (agents-never) | 0166 |
-| 5.14 Shards and Time | shard config, environments, tick rate | `shards/`, `envs/`, `golem/src/bench/` | [time-shards-and-phases](../concepts/time-shards-and-phases.md), [shard-config](shard-config.md) | 0038, 0047, 0059 |
+| 5.14 Shards and Time | shard config, environments, tick rate | `shards/`, `envs/`, `golem/src/bench/` | [time-shards-and-phases](../concepts/time-shards-and-phases.md), [shard-config](shard-config.md) | 0038, 0047, 0059, 0366 |
 | 5.15 Sovereign Players | MCP, Register, player host | `threshold/mcp/`, `threshold/register/`, `tools/players-cli/`, `supervisor/`, `body-helper/` | [sovereign-players](../concepts/sovereign-players.md), [mcp-tools](mcp-tools.md), [register-service](register-service.md) | 0036, 0053, 0055, 0056, 0059, 0060, 0090, 0091, 0093, 0135, 0151, 0152, 0153, 0155, 0162, 0171, 0172, 0261, 0262 |
 | 5.15.1 The compliance rule | MCP harness list | harness field in `tools/mcp-tokens` | [sovereign-players](../concepts/sovereign-players.md) | 0044, 0045, 0046, 0052, 0180 |
 | 5.15.2 Architecture | MCP presence | `threshold/mcp/src/presence.ts`; `contract/schemas/presence-record.schema.json` | [sovereign-players](../concepts/sovereign-players.md) | none |
@@ -70,7 +70,7 @@ For each section of [the spec](../spec.md): the components that implement it, wh
 | 6.8 Backups | backups (deferred), pre-deploy dump | `contract/schemas/checkpoint-manifest.schema.json` (unused until the backup packet, per its description); `deploy/colo-cd.sh` writes a pre-deploy SQL dump (lines 390 to 391) | [backup-and-restore](../runbooks/backup-and-restore.md) | 0076, 0130 |
 | 7 Observability | events, eventsink, Glass, telemetry | `contract/schemas/event.schema.json`, `eventsink/`, `glass/` | [data-flow-events](../architecture/data-flow-events.md), [telemetry-pipeline](../architecture/telemetry-pipeline.md) (agents-never), [monitoring-and-vitals](../operations/monitoring-and-vitals.md) (agents-never) | 0020, 0026, 0027, 0041, 0042, 0067, 0072, 0075, 0350, 0351, 0352 |
 | 8 Security (8.1 to 8.3) | whole system | n/a | [security index](../security/README.md); existing [threat-model](../threat-model.md) | 0044 |
-| 8.4 Human identity: watchers and ghosts | Velocity spectator proxy, Glass access | `plugin/velocity-identity/`, `compose/velocity/` | [authn-authz-map](../security/authn-authz-map.md) | 0040, 0071, 0075, 0077, 0092, 0137 |
+| 8.4 Human identity: watchers and ghosts | Velocity spectator proxy, Glass access | `plugin/velocity-identity/`, `compose/velocity/` | [authn-authz-map](../security/authn-authz-map.md) | 0040, 0071, 0075, 0077, 0092, 0137, 0364 |
 | 8.4b Sovereign players: OAuth, scopes | MCP tokens | `threshold/mcp/src/store/` | [authn-authz-map](../security/authn-authz-map.md) | none (0054 replaces OAuth, cited under 5.15.3) |
 | 8.5 Application-layer controls | MCP, Register | `threshold/` | [authn-authz-map](../security/authn-authz-map.md) | none |
 | 8.6 Host hardening | Colo node | `compose/colo.yml` limits, `deploy/` | [deployment-topology-colo](../architecture/deployment-topology-colo.md) | 0080, 0082 |
@@ -99,5 +99,5 @@ For each section of [the spec](../spec.md): the components that implement it, wh
 ## Known gaps in this map
 
 - 56 decision records carry no `Spec:` header and are not mapped (for example 0088, 0095, 0100, 0101, 0133, 0134, 0136, 0138 to 0140, 0147 to 0149, 0160, 0164, 0167 to 0169, 0181 to 0184, 0187, 0190 to 0198, 0210 to 0219, 0221 to 0226, 0250, 0310, 0330 to 0338, 0341). Many are Body behaviour rulings (5.2) and Observatory rulings (5.13) by title; that placement is inferred from titles only and is not in the table.
-- Some records name spec text by line number or by a phrase instead of a section (for example 0068, 0070, 0074, 0145, 0154, 0163, 0165). Those were placed by the section they also name, or left to the planned [decisions by topic](decisions-by-topic.md).
+- Some records name spec text by line number or by a phrase instead of a section (for example 0068, 0070, 0074, 0145, 0154, 0163, 0165). Those were placed by the section they also name, or left to the [decisions by topic](decisions-by-topic.md).
 - The table of contents in the spec (line 16) lists sections; this map follows the headings, not the table of contents.

@@ -10,7 +10,7 @@ sources: [docs/spec.md, contract/src/subjects.ts, contract/schemas/event.schema.
 
 # Data flow and events
 
-How a fact in the world travels: from the producer that sees it, over NATS, into Postgres, and out to the people who read it. The NATS users and their permissions are in [nats-topology](nats-topology.md); the full subject list will be the [nats-subjects](../reference/nats-subjects.md) reference (planned, W2).
+How a fact in the world travels: from the producer that sees it, over NATS, into Postgres, and out to the people who read it. The NATS users and their permissions are in [nats-topology](nats-topology.md); the full subject list is the [nats-subjects](../reference/nats-subjects.md) reference.
 
 All file and line facts were read on 2026-11-16 at 1b114276.
 
@@ -109,12 +109,12 @@ The sink also writes character audit rows (`eventsink/src/audit/store.ts`: `roll
 | `geldar.<shard>.ctl.body.<op>` | register service asks, supervisor answers | no | the supervisor writes `body_ops` and `register_audit` | supervisor (`supervisor/src/pg-ports.ts`) |
 | `geldar.<shard>.helper.body.<verb>` | supervisor asks, host body helper answers | no | none | none |
 | `geldar.<shard>.state.<life_id>.{proficiency,level}` | Body asks, eventsink answers and pushes | no | read from the proficiency tables | eventsink |
-| `geldar.<shard>.kino.<agent_id>.feed`, `geldar.<shard>.kino.control` | plugin and Glass | no | none | none |
+| Kino subjects (decision 0075) | plugin and Glass | no | none | none |
 | KV buckets (`geldar-life-registry`, `geldar-checkpoints`, `geldar-body-generation`, `geldar-presence`, `geldar-skins`) | see [nats-topology](nats-topology.md#jetstream-streams-and-kv-buckets) | JetStream KV | none | none |
 
 Subject builders: `contract/src/subjects.ts`. Users: decision [0067](../decisions/0067-nats-accounts-and-least-privilege.md) table "Subjects and buckets used today", and `Get-NatsUsers` in `geldar.ps1`.
 
-Some tables are written directly, not from events. In this repo the only writer of `thoughts` is the Mind (`animus/src/memory/journal.ts`). The MCP writes a sovereign player's journal to `mcp_journal` (`threshold/mcp/src/store/pg-journal.ts`). The full list of tables and their writers will be the [database-schema](../reference/database-schema.md) reference (planned, W2).
+Some tables are written directly, not from events. In this repo the only writer of `thoughts` is the Mind (`animus/src/memory/journal.ts`). The MCP writes a sovereign player's journal to `mcp_journal` (`threshold/mcp/src/store/pg-journal.ts`). The full list of tables and their writers is the [database-schema](../reference/database-schema.md) reference.
 
 ## The Body and Mind channel
 
@@ -148,7 +148,7 @@ flowchart LR
   pg --> glass --> caddy --> people
 ```
 
-At spec level: the Thought Stream shows people what agents think and do (spec 5.13, section 7). The routes and their rules are in `glass/README.md` and the planned [glass-and-kino](../reference/glass-and-kino.md) reference (operators only). How observation is kept apart from agents is not described here; see the planned [observation-and-privacy](../concepts/observation-and-privacy.md) concept (operators only).
+At spec level: the Thought Stream shows people what agents think and do (spec 5.13, section 7). The routes and their rules are in `glass/README.md` and the [glass-and-kino](../reference/glass-and-kino.md) reference (operators only). How observation is kept apart from agents is not described here; see the [observation-and-privacy](../concepts/observation-and-privacy.md) concept (operators only).
 
 ## Conflicts recorded
 

@@ -3,16 +3,18 @@ title: Documentation library plan
 type: explanation
 audience: owner
 status: draft
-last_verified: 2026-11-16 against cd4499da
+last_verified: 2026-11-16 against 3f07a4be
 companions: [RESUME.md, ../../agents/README.md, ../../agents/documentation-style.md, ../../agents/doc-update-map.md, ../../agents/doc-verification.md]
-sources: [.claude/agents/documentation-writer.md, docs, sql, prompts, .github/workflows, tools, pnpm-workspace.yaml, compose/colo.yml, animus/README.md, player-core/README.md, docs/glossary.md, docs/README.md, README.md]
+sources: [.claude/agents/documentation-writer.md, docs, docs/decisions/README.md, sql, prompts, .github/workflows, tools, pnpm-workspace.yaml, compose/colo.yml, animus/README.md, player-core/README.md, docs/glossary.md, docs/README.md, README.md]
 ---
 
 # Documentation library plan
 
 The plan for Geldar's documentation library, as the owner approved it on 2026-11-16, and the record of why it is shaped this way. Progress lives in [RESUME.md](RESUME.md). The rules the plan set up are in [docs/agents/](../../agents/README.md).
 
-Where a figure below was re-measured for this page, it carries the date and the commit (cd4499da, 2026-11-16). Where it was not, it says "unverified, from the plan of 2026-11-16". [Section 13](#13-corrections-to-the-plan-data) lists the plan figures this re-check changed.
+Where a figure below was re-measured for this page, it carries the date and the commit (cd4499da, 2026-11-16). Where it was not, it says "unverified, from the plan of 2026-11-16". [Section 13](#13-corrections-to-the-plan-data) lists the plan figures this re-check changed, and [section 13.1](#131-re-derived-lists) the W7 re-run at 3f07a4be. Sections 2 to 5 describe the library as planned at cd4499da and are kept as the record; the current state of each wave is in [RESUME.md](RESUME.md).
+
+**Status at the W7 close (2026-11-16).** All 89 documents exist. W0 to W6 are merged (PRs #557 to #563; W6 is PR #563, merge commit `02e9ee34`). W7, the closing pass, is finished in the working tree and waits for the orchestrator's commit. Every document is `status: draft`.
 
 ## 1. Scope and approval
 
@@ -28,7 +30,7 @@ Measured on 2026-11-16 at cd4499da with `git ls-files` unless marked.
 | Area | Measured | Notes |
 |---|---|---|
 | `docs/spec.md` | 2135 lines (`(Get-Content docs/spec.md).Count` and `git show HEAD:docs/spec.md \| wc -l`) | v0.8 draft per its header (unverified, from the plan). Owner only. |
-| `docs/decisions/` | 180 records and a README; highest number 0352 | Index and files agree (the decision-index gate). No metadata blocks (D4). |
+| `docs/decisions/` | 180 records and a README; highest number 0352 (187, highest 0366, at 3f07a4be) | Index and files agree (the decision-index gate). No metadata blocks (D4). |
 | `docs/runbooks/` | 19 files, 178,849 bytes, 1,840 to 22,360 bytes each | Stay in place (D10). |
 | `docs/legal/` | 3 files | Gated (decision 0155). |
 | `docs/players/` | 1 file | The player guide; gated wording. |
@@ -85,7 +87,7 @@ docs/
 ├── analysis/            existing campaigns; docs-library/ holds this plan
 ├── architecture/        A01-A08
 ├── concepts/            C01-C11
-├── decisions/           180 records, unchanged (D4)
+├── decisions/           180 records at cd4499da (187 at 3f07a4be), no metadata (D4)
 ├── guides/              G01-G04 tutorials
 ├── history/             H01-H05
 ├── legal/               existing 3 texts
@@ -162,7 +164,7 @@ docs/
 | O03 | runbooks/rotate-secrets-by-role.md | how-to | operators | deploy/gen-secrets.sh, nats-auth runbook (roles only) | deploy | P1 | 3000 | W3 |
 | O04 | runbooks/add-a-contract-schema.md | how-to | contributors | contract/scripts, CLAUDE.md rule | contract | P2 | 2500 | W3 |
 | O05 | runbooks/add-a-migration.md | how-to | contributors | sql/README, tools/migrate | sql | P2 | 2500 | W3 |
-| O06 | runbooks/release-a-prompt-version.md | how-to | contributors | prompts/README, spec App. D | prompts | P2 | 2000 | W3 |
+| O06 | runbooks/release-a-prompt-version.md | how-to | contributors (written as agents-never: it covers the prompts) | prompts/README, spec App. D | prompts | P2 | 2000 | W3 |
 | O07 | runbooks/add-a-decision-record.md | how-to | contributors | docs/decisions/README, repo-checks decision gates | docs | P3 | 1800 | W3 |
 | O08 | runbooks/incident-response.md | how-to | operators | spec s8.8 and s11, existing runbooks | ops | P1 | 3500 | W3 |
 | O09 | runbooks/world-and-memory-reset.md | how-to | owner | rescission decisions, town cutover notes | worldops | P1 | 3000 | W3 |
@@ -173,7 +175,7 @@ docs/
 | O14 | operations/capacity-and-cost.md | reference | owner | spec s9, analysis/economy, bench-results | economy | P3 | 3500 | W3 |
 | S01 | security/README.md (index; threat-model.md gets metadata, stays put) | reference | operators | docs/threat-model.md, spec s8 | security | P1 | 1500 | W4 |
 | S02 | security/secrets-by-role.md | reference | operators | roles only; deploy/gen-secrets.sh, compose.secrets.yml | security | P1 | 3000 | W4 |
-| S03 | security/privacy-and-data-retention.md | explanation | owner | docs/legal/*, account-deletion runbook, sql consents | security | P1 | 4000 | W4 |
+| S03 | security/privacy-and-data-retention.md | explanation | owner (written as agents-never: it covers thoughts and journals; style ruling) | docs/legal/*, account-deletion runbook, sql consents | security | P1 | 4000 | W4 |
 | S04 | security/supply-chain.md | explanation | contributors | decision 0005, pin-rules, release-age, Dependabot | security | P2 | 3000 | W4 |
 | S05 | security/agent-visibility-rules.md | how-to | agents-never | spec s8, persona rule 5; lists paths agents read | security | P1 | 2500 | W4 |
 | S06 | security/authn-authz-map.md | reference | operators | register, MCP tokens, NATS users, Velocity gate | security | P1 | 5000 | W4 |
@@ -189,7 +191,7 @@ docs/
 | X04 | siblings/agent-board-and-agentcraft.md | explanation | contributors | agent-board README, agentcraft README (boundary note only) | siblings | P3 | 1800 | W6 |
 | G01 | guides/first-hour-contributor.md | tutorial | contributors | CLAUDE.md commands, geldar.ps1 | tools | P1 | 3000 | W6 |
 | G02 | guides/first-shard-on-your-machine.md | tutorial | contributors | run-shard skill, compose/phase0.yml | compose | P2 | 3000 | W6 |
-| G03 | guides/trace-one-action.md | tutorial | contributors | thought to plan to action to event to Glass | all | P1 | 4500 | W6 |
+| G03 | guides/trace-one-action.md | tutorial | contributors (written as agents-never: it follows a thought and the journal; style ruling) | thought to plan to action to event to Glass | all | P1 | 4500 | W6 |
 | G04 | guides/operator-first-day.md | tutorial | operators | runbooks index, node-facts | ops | P2 | 3000 | W6 |
 | G05 | players/README.md (metadata added; stays a tutorial for players) | tutorial | players | docs/players/README.md | register | P2 | 800 | W6 |
 
@@ -207,6 +209,8 @@ docs/
 | W7 | Verification and review | Link check, evidence check, leak scan, index and update-map audit, staleness labels | Closes the library at a commit | 0 | 0 |
 
 Total estimate: 348,700 output tokens, of which P1 is 242,000 (69%). Every wave closes with a reviewer pass before the next starts.
+
+Outcome on 2026-11-16: W0 to W6 merged as PRs #557 to #563 (one PR per wave); W7 finished in the working tree after two closing reviews and a fix pass, not yet committed. Details per wave are in [RESUME.md](RESUME.md#status).
 
 ## 7. Lifecycle template
 
@@ -304,9 +308,9 @@ The owner approved the plan on 2026-11-16 with the defaults below for D1 to D5 a
 | D2 | Where do sibling-repo documents live? | Summaries only, in this repo; no new operator documents in any agent-read repo. | Approved |
 | D3 | Name a technical owner per component? | Yes: a campaign or coordinator role, never a person. | Approved |
 | D4 | Metadata on the 180 decision records? | No. Metadata goes on the index and the digests. | Approved |
-| D5 | Add an optional `sources:` field to the metadata block? | Yes. Editing the persona file to match is the owner's change. | Approved |
+| D5 | Add an optional `sources:` field to the metadata block? | Yes; a later review ruling made it required for any document that cites files (decision 0360). Editing the persona file to match is the owner's change. | Approved; persona edit open |
 | D6 | Reserve a decision-number block for documentation rules? | Yes, 10 numbers; the block is not yet assigned. | Plan default, to confirm |
-| D7 | Coder follow-ups after the freeze: link checker, metadata linter, agent-visibility check, generated lists? | All four as small packets. | Plan default, to confirm |
+| D7 | Coder follow-ups after the freeze: link checker, metadata linter, agent-visibility check, generated lists? | All four as small packets; written up as decision 0365. | Proposed in 0365, owner to accept |
 | D8 | Read-only fact pass on the node and the VM? | Not yet. Existing documents only. | Approved |
 | D9 | Should agents-never documents live outside the public repo? | Concepts stay in the repo at spec level, with no thresholds, delays, hiding rules or detection detail. | Approved |
 | D10 | Move the 19 runbooks and `threat-model.md`? | Leave in place; add metadata and indexes. | Approved |
@@ -337,21 +341,23 @@ The "first pass" rows were found by the W0 review on 2026-11-16 and corrected he
 
 ### 13.1 Re-derived lists
 
-The results of the [re-derive commands](../../agents/doc-verification.md#re-derive-lists) on 2026-11-16 at cd4499da, before `docs/analysis/docs-library/` was added. Later runs give different analysis counts (see the note under the table). Moved here from the verification how-to after the W0 review, so the how-to holds steps only.
+The results of the [re-derive commands](../../agents/doc-verification.md#re-derive-lists) on 2026-11-16 at cd4499da, before `docs/analysis/docs-library/` was added, and again at 3f07a4be for the W7 close. Later runs give different analysis counts (see the note under the table). Moved here from the verification how-to after the W0 review, so the how-to holds steps only.
 
-| List | Result |
-|---|---|
-| Decision records | 180; highest number 0352 |
-| Index rows whose status starts "Proposed" | 40 |
-| Runbooks | 19 |
-| Migrations | 44: 0001-0027, 0032-0040, 0050-0052, 0060-0063, 0065 |
-| Prompt files | 17 templates (thought v1-v5, reflection v1-v2, body-api v1-v10) and a README |
-| CI workflows | 6 |
-| Tools | 14 directories |
-| Repo-check sources | 19 modules, 51 test files |
-| Workspace packages | 13 entries plus `tools/*` |
-| Analysis | 13 areas, 333 files |
-| Campaign RESUME files | 9 |
-| Agent-read schemas | `mcp-world`, `mcp-play`, `mcp-common`, `common` (constant `AGENT_SCHEMAS` in `contract/test/agent-visible-text.test.ts`) |
+| List | At cd4499da | At 3f07a4be (W7 re-run) |
+|---|---|---|
+| Decision records | 180; highest number 0352 | 187; highest number 0366 |
+| Index rows whose status starts "Proposed" | 40 | 46 (0366 reads "Open (owner decision)") |
+| Runbooks | 19 | 29 |
+| Migrations | 44: 0001-0027, 0032-0040, 0050-0052, 0060-0063, 0065 | unchanged |
+| Prompt files | 17 templates (thought v1-v5, reflection v1-v2, body-api v1-v10) and a README | unchanged (18 files) |
+| CI workflows | 6 | 6 |
+| Tools | 14 directories | 14 |
+| Repo-check sources | 19 modules, 51 test files | unchanged (only `release-dates.json` changed) |
+| Workspace packages | 13 entries plus `tools/*` | 14 plus `tools/*` (`telemetry`, PR #551) |
+| Analysis | 13 areas, 333 files | 14 areas, 336 files |
+| Campaign RESUME files | 9 | 10 |
+| Agent-read schemas | `mcp-world`, `mcp-play`, `mcp-common`, `common` (constant `AGENT_SCHEMAS` in `contract/test/agent-visible-text.test.ts`) | unchanged |
+| Markdown files under `docs/` outside `decisions/` and `analysis/` | not measured | 122 |
+| Broken relative links in `docs/` | 29 in 16 files | 29, all under `docs/analysis/` |
 
 Once `docs/analysis/docs-library/` is committed, the analysis commands give 14 areas, 335 files and 10 `RESUME.md` files. `Get-ChildItem docs/analysis -Directory` counts the folder as soon as it exists on disk; `git ls-files` counts its files only after the commit.

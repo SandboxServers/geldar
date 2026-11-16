@@ -1,11 +1,11 @@
 ---
 title: Geldar-Core plugin
 type: reference
-audience: contributors
+audience: agents-never
 status: draft
 last_verified: 2026-11-16 against 1b114276
 companions: [README.md, velocity-identity-plugin.md, third-party-plugins.md, glass-and-kino.md, nats-subjects.md, ../runbooks/block-owner.md, ../runbooks/maintenance-notice.md, ../runbooks/skins.md, ../runbooks/map-chat-panel.md, ../runbooks/kino.md]
-sources: [plugin/README.md, plugin/build.gradle.kts, plugin/core/build.gradle.kts, plugin/gradle/libs.versions.toml, plugin/.java-version, plugin/core/src/main/resources/plugin.yml, plugin/core/src/main/resources/config.yml, plugin/core/src/main/java/dev/geldar/core, plugin/core/src/test/java/dev/geldar/core, compose/phase0.yml, compose/colo.yml, compose/colo-public.yml, compose/nats-auth.yml, geldar.ps1, .github/workflows/ci.yml, .github/workflows/plugin-jars.yml, docs/spec.md, docs/decisions/README.md]
+sources: [plugin/README.md, plugin/build.gradle.kts, plugin/core/build.gradle.kts, plugin/gradle/libs.versions.toml, plugin/.java-version, plugin/core/src/main/resources/plugin.yml, plugin/core/src/main/resources/config.yml, plugin/core/src/main/java/dev/geldar/core, plugin/core/src/test/java/dev/geldar/core, compose/phase0.yml, compose/colo.yml, compose/colo-public.yml, compose/nats-auth.yml, geldar.ps1, .github/workflows/ci.yml, .github/workflows/plugin-jars.yml, docs/spec.md, docs/decisions/README.md, docs/decisions/0361-agents-never-placement-and-public-detail.md, docs/decisions/0364-known-gap-public-overlay-against-0137.md]
 ---
 
 # Geldar-Core plugin
@@ -14,7 +14,7 @@ Geldar-Core is the Paper plugin in `plugin/core`. It exports world events to NAT
 
 Everything below was read from the files in `sources:` at commit `1b114276` on 2026-11-16. Nothing was read from a running server (plan decision D8).
 
-Related: the [Velocity identity plugin](velocity-identity-plugin.md), the [third-party plugins](third-party-plugins.md) it works with, for the camera side [Glass and Kino](glass-and-kino.md) (`agents-never`), [nats-subjects](nats-subjects.md) and [identity-and-ingress](../concepts/identity-and-ingress.md). Two gaps against spec 8.4 and decision 0137 are under [Known gaps](#known-gaps).
+Related: the [Velocity identity plugin](velocity-identity-plugin.md), the [third-party plugins](third-party-plugins.md) it works with, for the camera side [Glass and Kino](glass-and-kino.md) (`agents-never`), [nats-subjects](nats-subjects.md) and [identity-and-ingress](../concepts/identity-and-ingress.md). One known gap, against decision 0137, is under [Known gaps](#known-gaps). This page is `agents-never`: it covers the world side of the camera feeds (decision [0361](../decisions/0361-agents-never-placement-and-public-detail.md)).
 
 ## Identity
 
@@ -45,10 +45,9 @@ flowchart LR
   end
   Core -- "geldar.SHARD.TYPE (JetStream GELDAR_EVENTS)" --> NATS[(NATS)]
   Core -- "body.LIFE.hearing, blockowner.changed, kino feed" --> NATS
-  NATS -- "maintenance, blockowner.query, kino.control" --> Core
+  NATS -- "maintenance, blockowner.query, kino control" --> Core
   Core -- owner lookups and system placements --> CP
   Core -- skin provider, geldar-chat.json --> BM
-  Velocity[Velocity identity] -- "geldar:ghost channel, signed profile" --> Core
 ```
 
 ## Enable and disable
@@ -57,7 +56,7 @@ flowchart LR
 
 1. Load `config.yml` and the environment (`CoreConfig.load`). A shard name that does not match `^[a-z][a-z0-9-]{1,31}$` fails the enable.
 2. Start the NATS event publisher and the exporter.
-3. Register the exporter, the recipe grant (only when `recipes.grant_on_join` is true), the command block and the ghost listener; open the incoming `geldar:ghost` channel.
+3. Register the exporter, the recipe grant (only when `recipes.grant_on_join` is true), the command block and the ghost handling.
 4. Register Lakitu only when `lakitu.enabled` is true.
 5. Register Kino always; it starts killed unless `kino.enabled` is true.
 6. Register maintenance notices, then block ownership.
@@ -75,7 +74,7 @@ flowchart LR
 |---|---|---|---|---|
 | Event export | `EventExporter`, `NatsEventPublisher`, `BoundedEventQueue`, `EventEnvelope` | Publishes `server_tps` (wall-clock timer), `damage`, `death`, `sleep` to `geldar.<shard>.<type>` in JetStream stream `GELDAR_EVENTS` (created if missing: subjects `geldar.*.*`, file storage, 30-day retention). `Nats-Msg-Id` is the `source_event_id`. Publishing only enqueues; a bounded queue drops the oldest event when full. Type `dlq` is rejected. | none | [0041](../decisions/0041-event-export-stream-and-sink.md) |
 | Command block | `CommandBlockListener` | Cancels and logs every command a player types (`HIGHEST` priority), operators included. Console and RCON are not affected. Log text is truncated and rate-limited. | none | spec Appendix F |
-| Ghosts | `GhostListener` | Holds a joiner without the signed live marker from Velocity in spectator, and cancels a ghost's chat (spec 8.4). Kicks when spectator cannot be applied. See [Known gaps](#known-gaps). | none | [0092](../decisions/0092-velocity-spectator-whitelist.md), [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md) |
+| Ghosts | `GhostListener` | Holds non-agent joiners in spectator (spec 8.4). | none | [0092](../decisions/0092-velocity-spectator-whitelist.md), [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md) |
 | Recipes | `RecipeGrantListener` | Grants every recipe on join, only for a test shard. Off by default: recipes unlock through play. | `recipes.grant_on_join` | [0048](../decisions/0048-recipe-discovery-is-part-of-the-game.md) (reverses [0032](../decisions/0032-table-crafting-and-recipe-book.md)) |
 | Gravestones | `Gravestone`, `GravestoneListener` | Places a stone-brick block and a sign where an agent character (`ag_*`) dies; no loot. Each is recorded as owned by the system through CoreProtect. | `gravestones.enabled`, `gravestones.max_per_chunk` | [0195](../decisions/0195-gravestones-owned-by-system.md), [0147](../decisions/0147-death-is-knowable-while-permadeath-is-off.md) |
 | Grave backfill | `GraveBackfillCommand`, `GraveBackfill` | Records gravestones already standing in loaded chunks as owned by the system. | console command | [0195](../decisions/0195-gravestones-owned-by-system.md) |
@@ -117,8 +116,8 @@ Every row is from the class named and from `GeldarCore.java`. Gravestone and com
 | `recipes.grant_on_join` | `false` | enable | Test shards only (decision 0048). |
 | `gravestones.enabled` | `true` | enable | |
 | `gravestones.max_per_chunk` | `4` | enable | At least 1; extras are skipped, older ones never removed. |
-| `lakitu.enabled` | `false` | enable | The other `lakitu.*` keys are in `config.yml`; see [Glass and Kino](glass-and-kino.md). |
-| `kino.enabled` | `false` | reload | The Kino kill switch. The other `kino.*` keys are in `config.yml`; see [Glass and Kino](glass-and-kino.md). |
+| `lakitu.enabled` | `false` | enable | Other `lakitu.*` keys: withheld (decision 0361). |
+| `kino.enabled` | `false` | reload | The Kino kill switch. Other `kino.*` keys: withheld (decision 0361). |
 | `maintenance.broadcast` | `true` | reload | `false` stops the broadcast; the subscription stays. |
 | `blockowner.enabled` | `true` | reload | `false` stops the change listener and the query replies. |
 | `blockowner.lookup_timeout_ms` | `2000` | reload | Clamped to 100 to 60000 (`BlockOwnerSetup`). A slower lookup answers an empty list with `truncated: true`. |
@@ -144,15 +143,13 @@ Re-derive: `git grep -n -E 'getConfig\(\)\.get|config\.get|file\.get' -- plugin/
 
 ### Bukkit events handled
 
-Listed from every `@EventHandler` under `plugin/core/src/main/java` (re-derive: `git grep -n -A2 '@EventHandler' -- plugin/core/src/main`).
+Listed from every `@EventHandler` under `plugin/core/src/main/java` except `GhostListener`, whose handlers are not listed (decision 0361) (re-derive: `git grep -n -A2 '@EventHandler' -- plugin/core/src/main`).
 
 | Event | Class | Priority |
 |---|---|---|
 | `PlayerCommandPreprocessEvent` | `CommandBlockListener` | HIGHEST |
-| `PlayerJoinEvent` | `GhostListener` (LOWEST); `RecipeGrantListener` (only when enabled) | as listed |
-| `PlayerQuitEvent`, `PlayerRespawnEvent`, `PlayerChangedWorldEvent` | `GhostListener` | NORMAL |
-| `PlayerGameModeChangeEvent` | `GhostListener` | HIGHEST |
-| `AsyncChatEvent` | `GhostListener` (LOWEST), `ProximityChatListener` (HIGH), `SpeechChatListener` (MONITOR) | as listed |
+| `PlayerJoinEvent` | `RecipeGrantListener` (only when enabled) | as listed |
+| `AsyncChatEvent` | `ProximityChatListener` (HIGH), `SpeechChatListener` (MONITOR) | as listed |
 | `PlayerDeathEvent` | `ProximityDeathListener` (HIGH), `EventExporter` (MONITOR), `GravestoneListener` (MONITOR) | as listed |
 | `EntityDamageEvent` | `EventExporter` | MONITOR |
 | `PlayerBedEnterEvent` | `EventExporter` | MONITOR |
@@ -167,18 +164,16 @@ Listed from every `@EventHandler` under `plugin/core/src/main/java` (re-derive: 
 | `geldar.<shard>.blockowner.query` | subscribe, reply on the request inbox | `block-owner.schema.json` | `NatsBlockOwnerLink` |
 | `geldar.<shard>.blockowner.changed` | publish | `block-owner.schema.json` | `NatsBlockOwnerLink` |
 | `geldar.<shard>.maintenance` | subscribe | `maintenance-notice.schema.json` | `NatsMaintenanceSubscriber` |
-| `geldar.<shard>.kino.control` | subscribe | `kino-control.schema.json` | `NatsKinoControl` |
-| `geldar.<shard>.kino.<agent_id>.feed` | publish (core NATS) | `kino-feed.schema.json` | `NatsKinoSink` |
+| Kino subjects (decision 0075) | subscribe (control), publish (feed, core NATS) | `kino-control.schema.json`, `kino-feed.schema.json` | `kino/` |
 
 Re-derive: `git grep -n '"geldar\.' -- plugin/core/src/main`. Core-NATS publishers drop a message when there is no connection; only the event export queues.
 
-The NATS user `paper` (generator in `geldar.ps1`, line 403 at 1b114276) may publish `geldar.<shard>.>` and the JetStream API, is denied publishing `kino.control`, `blockowner.query`, `ctl.body.>`, `helper.body.>` and `state.*.level`, and may subscribe to `kino.control`, `maintenance`, `blockowner.query` and its inbox.
+The NATS user `paper` (generator in `geldar.ps1`, line 403 at 1b114276) may publish `geldar.<shard>.>` and the JetStream API, is denied publishing Kino subjects, `blockowner.query`, `ctl.body.>`, `helper.body.>` and `state.*.level`, and may subscribe to Kino subjects, `maintenance`, `blockowner.query` and its inbox.
 
 ### Plugin channels and files
 
 | Interface | Direction | Notes |
 |---|---|---|
-| `geldar:ghost` plugin channel | in, from Velocity | Registered for `GhostListener`; the payload is not read. |
 | `/tmp/geldar-core.ready` | written on enable, removed on disable | pid and start time, read by the compose healthcheck. |
 | `geldar-chat.json` in the BlueMap web root | written | Written atomically (temp file and move) by `ChatFeedWriter`. |
 | CoreProtect API | read; write for system placements | `CoreProtectApi`; only when CoreProtect is loaded with API 12 or newer. |
@@ -219,7 +214,6 @@ cd plugin; ./gradlew build   # compiles both plugins, runs the JUnit tests, writ
 | CoreProtect absent or API older than 12 | Owner queries answer unknown; system placements are not recorded. One warning at enable. | `BlockOwnerSetup.sourceFor` |
 | BlueMap absent | Skin provider and chat feed are off; one INFO line each. | `AgentSkinSetup`, `SpeechSetup` |
 | Server-thread hop for hearing fails | Every other player is silenced for that line (the safe side). | `ProximityChatListener` comment |
-| Spectator cannot be applied to a ghost | The player is kicked with a fixed message. | `GhostListener.hold` |
 
 ## Security and privacy
 
@@ -240,7 +234,7 @@ cd plugin; ./gradlew build   # compiles both plugins, runs the JUnit tests, writ
 | Appendix F area | In `plugin/core` at 1b114276 |
 |---|---|
 | Event export ("Everything") | Partial: `server_tps`, `damage`, `death`, `sleep` only (`EventExporter`). |
-| Ghosts | Partly implemented in `GhostListener.java` (decisions 0092, 0137); see [Known gaps](#known-gaps). A clause-by-clause comparison is withheld (owner decision D9). |
+| Ghosts | In `GhostListener` (decisions 0092, 0137). Detail is not published (decision 0361). |
 | Command block | Implemented, for every player (`CommandBlockListener`). |
 | Bot ingress identity | In the Velocity plugin: [velocity-identity-plugin](velocity-identity-plugin.md). |
 | Proximity chat | Implemented with muffled hearing (decisions 0198, 0199). No `speech` event is published (see conflict 3). |
@@ -252,7 +246,7 @@ cd plugin; ./gradlew build   # compiles both plugins, runs the JUnit tests, writ
 
 ## Conflicts recorded
 
-1. **Ghost handling.** `plugin/README.md` says "Ghosts. Out of scope: Phase 0 has no ghosts, so there is no ghost handling here." Decision [0198](../decisions/0198-proximity-chat-and-deaths.md) says "ghost enforcement not built". Code: `GhostListener.java` exists and is registered in `GeldarCore.listeners`, citing decisions 0092 and 0137. Spec 8.4 and Appendix F ask for more than the code does: the code is a partial implementation ([Known gaps](#known-gaps)). Four accounts: spec, README, 0198 and code. The README and 0198 predate or omit the code.
+1. **Ghost handling.** `plugin/README.md` says "Ghosts. Out of scope: Phase 0 has no ghosts, so there is no ghost handling here." Decision [0198](../decisions/0198-proximity-chat-and-deaths.md) says "ghost enforcement not built". Code: `GhostListener.java` exists and is registered in `GeldarCore.listeners`, citing decisions 0092 and 0137. Three accounts: README, 0198 and code. The README and 0198 predate or omit the code.
 2. **Event export scope.** Spec Appendix F: export "Everything". Spec section 7 lists 17 event types. Code exports four (`EventExporter`). `plugin/README.md` agrees with the code.
 3. **Speech event.** Spec Appendix F: proximity chat publishes a `speech` event with recipients. Code: `ProximityChatListener` publishes only `heard_muffled` notices; no `speech` event. `contract/schemas/speech-event.schema.json` exists; who publishes it was not checked for this page.
 4. **Permissions plugin.** Spec 5.1 names LuckPerms; the repo ships none. The command block covers the "zero command permissions" goal by cancelling every typed command.
@@ -260,15 +254,11 @@ cd plugin; ./gradlew build   # compiles both plugins, runs the JUnit tests, writ
 
 ## Known gaps
 
-Gaps between the code and an authoritative spec section or decision, recorded by owner ruling (relayed 2026-11-16). Neither is fixed at 1b114276.
-
-1. **A ghost measure against spec 8.4.** A ghost measure described in spec 8.4 is not implemented in the plugin at 03c1f5de; a plugin-side fix is planned after the freeze (owner ruling relayed 2026-11-16). Detail is withheld under decision [0361](../decisions/0361-agents-never-placement-and-public-detail.md). Not fixed.
-2. **The public overlay publishes the bot ingress.** Decision [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md) (authoritative) says the offline-mode bot ingress is never published and only a separate online-mode spectator proxy appears in `compose/colo-public.yml`; that file at 1b114276 adds a publish to the bot-ingress `velocity` service instead. Node state: unchecked. Not fixed. Detail: [Velocity identity plugin, Known gaps](velocity-identity-plugin.md#known-gaps). Geldar-Core's side of 0137 point 2 (spectator from the first join event for every player without the live marker) is the Ghosts row above.
+One gap, open and not fixed: the public overlay against decision [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md), recorded in decision [0364](../decisions/0364-known-gap-public-overlay-against-0137.md). It concerns the compose overlay, not this plugin's code.
 
 ## Detail withheld, owner decision D9
 
-- The comparison of `GhostListener` with the other clauses of spec Appendix F and 8.4, beyond the known gap above.
-- Kino and Lakitu settings other than `kino.enabled` and `lakitu.enabled`: see the withheld list in [Glass and Kino](glass-and-kino.md#detail-withheld-owner-decision-d9).
+Further detail on ghost handling, Kino and Lakitu is withheld under decision [0361](../decisions/0361-agents-never-placement-and-public-detail.md). The only Kino and Lakitu settings this page names are the two switches, `kino.enabled` and `lakitu.enabled`.
 
 ## Re-derive
 

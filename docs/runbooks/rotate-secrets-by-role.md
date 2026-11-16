@@ -80,7 +80,7 @@ The scratch stack generates its own secrets in a per-user directory and removes 
 | Role | Lifetime | Who rotates it |
 |---|---|---|
 | Player MCP bearer token (`gmcp-` plus 64 hex, stored as an HMAC) | 90 days ([decision 0170](../decisions/0170-owner-management-values-and-admin-flag.md) point 1; `tools/mcp-tokens/src/tokens.ts` line 15) | The operator with `mcp-tokens`; the owner on the account page or the API |
-| Owner API key (`gowner-` plus 64 hex, stored as an HMAC) | Set by the owner at mint ([decision 0152](../decisions/0152-programmatic-body-management-for-owners.md) item 2) | The owner only, cookie session ([decision 0173](../decisions/0173-owner-keys-by-session-and-bearer-scope.md)) |
+| Owner API key (`gowner-` plus 64 hex, stored as an HMAC) | 90 days from mint, fixed; the owner cannot choose it ([decision 0170](../decisions/0170-owner-management-values-and-admin-flag.md) point 2, answering question Q2 of [decision 0152](../decisions/0152-programmatic-body-management-for-owners.md) item 2; `interval '90 days'` in `sql/0026_owner_api_keys.sql` line 102 and `sql/0035_owner_keys_by_session.sql` line 41; `OWNER_KEY_LIFETIME_MS` in `threshold/register/src/owner-keys-policy.ts` line 4; read 2026-11-16) | The owner only, cookie session ([decision 0173](../decisions/0173-owner-keys-by-session-and-bearer-scope.md)) |
 
 ## Rotate a player's MCP token
 
@@ -202,6 +202,6 @@ The runbooks and `deploy/README.md` disagree on how the live NATS conf is change
 
 ## Related
 
-- Secrets by role, as reference: [secrets by role](../security/secrets-by-role.md) (*planned*, W4).
+- Secrets by role, as reference: [secrets by role](../security/secrets-by-role.md).
 - Variable names: [environment variables](../reference/environment-variables.md). Compose secret names: [compose stacks](../reference/compose-stacks.md).
 - Adding a player and minting the first token: [mcp-tokens](mcp-tokens.md). Retiring one: [retire an agent](retire-an-agent.md).

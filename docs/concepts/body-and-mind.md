@@ -37,7 +37,7 @@ sequenceDiagram
   B-->>M: receipts, intent progress, reflex and wake records (as events)
 ```
 
-The order of a single thought is in [spec 4.3](../spec.md#43-data-flow-for-one-thought) and the thinking loop in [spec 5.3.4](../spec.md#534-the-thinking-loop). The trace from thought to stored event is the planned tutorial [trace one action](../guides/trace-one-action.md) (*planned*).
+The order of a single thought is in [spec 4.3](../spec.md#43-data-flow-for-one-thought) and the thinking loop in [spec 5.3.4](../spec.md#534-the-thinking-loop). The trace from thought to stored event is the tutorial [trace one action](../guides/trace-one-action.md).
 
 ## The Body
 
@@ -105,12 +105,12 @@ The spec's numbers and triggers were changed by decisions, and the code follows 
 
 ## What it touches
 
-[Sovereign players](sovereign-players.md) (the other kind of Mind), [life cycle of a life](life-cycle-of-a-life.md) (presence, death), [identity and ingress](identity-and-ingress.md) (how a Body gets into the world), [principles in practice](principles-in-practice.md), and the planned [character and memory](character-and-memory.md), [economy and budgets](economy-and-budgets.md) and [time, shards and phases](time-shards-and-phases.md).
+[Sovereign players](sovereign-players.md) (the other kind of Mind), [life cycle of a life](life-cycle-of-a-life.md) (presence, death), [identity and ingress](identity-and-ingress.md) (how a Body gets into the world), [principles in practice](principles-in-practice.md), and the [character and memory](character-and-memory.md), [economy and budgets](economy-and-budgets.md) and [time, shards and phases](time-shards-and-phases.md).
 
 ## Where to read the reference
 
 - Body actions, perception and reflexes: [golem-body](../reference/golem-body.md).
-- The headless Mind: [animus-mind](../reference/animus-mind.md) (*planned*); shared pieces: [player-core](../reference/player-core.md) (*planned*).
+- The headless Mind: [animus-mind](../reference/animus-mind.md); shared pieces: [player-core](../reference/player-core.md).
 - Plan, snapshot and receipt schemas: [contract-schemas](../reference/contract-schemas.md); subjects: [nats-subjects](../reference/nats-subjects.md).
-- Body containers on the node: [supervisor-and-body-helper](../reference/supervisor-and-body-helper.md) (*planned*).
+- Body containers on the node: [supervisor-and-body-helper](../reference/supervisor-and-body-helper.md).
 - Terms (intent, plan, wake, reflex, receipt, snapshot): [glossary](../reference/glossary.md#the-agent).

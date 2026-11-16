@@ -1,3 +1,13 @@
+---
+title: Ideas
+type: reference
+audience: agents-never
+status: draft
+last_verified: 2026-11-16 against 3f07a4be
+companions: [spec.md, README.md, decisions/README.md, analysis/docs-library/RESUME.md]
+sources: [docs/spec.md, docs/decisions]
+---
+
 # Ideas
 
 Where scope creep goes. An idea that isn't in [the spec](spec.md) or the current packet is written down here instead of being built. Each idea is a line or a short paragraph: what, why it might matter, and which phase could take it. Ideas move into the spec (and then into a packet) by a deliberate decision, never by being half-built in a PR.

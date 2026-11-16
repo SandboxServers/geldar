@@ -24,4 +24,4 @@
 - Owner: name the private store, or decide that withheld detail is not kept anywhere.
 - Decision [0365](0365-docs-gates-after-the-freeze.md) proposes an agent-visibility check. Until it exists, the manual grep in [doc verification](../agents/doc-verification.md#agents-never-placement) stands in for it.
 - Documents already written are not audited against point 3 by this record. That audit belongs to the planned W4 document S05 and the W7 review (plan section 6).
-- Decision [0364](0364-known-gaps-against-0137-and-spec-8-4.md) is written at this level.
+- Decision [0364](0364-known-gap-public-overlay-against-0137.md) is written at this level.

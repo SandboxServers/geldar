@@ -47,7 +47,7 @@ git grep -n -i supervisor -- compose deploy
 
 ### Purpose
 
-`supervisor/src/main.ts` loads its config, connects to Postgres as `geldar_supervisor` (pool of 4) and to NATS as `geldar-supervisor`, and hands both to `runSupervisor` (`run.ts`), "which serves the control subjects of its shard and runs the policy in service.ts. Bodies are reached only through the host body helper over NATS. It holds no Docker socket (decision 0260)." Confirmed from the entry point and `run.ts`, `service.ts`, `helper-client.ts`.
+`supervisor/src/main.ts` loads its config, connects to Postgres as `geldar_supervisor` (pool of 4) and to NATS as the `supervisor` user (the name `GELDAR_NATS_USER` carries; `geldar.ps1` line 411 defines that user's permissions; `geldar-supervisor` is only the connection name passed to `connectNats`), and hands both to `runSupervisor` (`run.ts`), "which serves the control subjects of its shard and runs the policy in service.ts. Bodies are reached only through the host body helper over NATS. It holds no Docker socket (decision 0260)." Confirmed from the entry point and `run.ts`, `service.ts`, `helper-client.ts`.
 
 ### Files
 
@@ -172,7 +172,7 @@ From the generator in `geldar.ps1` (lines 408 to 413 at `1b114276`); the gate `t
 | `helper` | `_INBOX.>` | `geldar.<s>.helper.body.{start,stop,status,logtail}` |
 | `body`, `paper` | deny `geldar.<s>.ctl.body.>` and `geldar.<s>.helper.body.>` | n/a |
 
-The full NATS user table belongs to [nats-topology](../architecture/nats-topology.md) and the planned [authn-authz-map](../security/authn-authz-map.md) (*planned*, W4).
+The full NATS user table belongs to [nats-topology](../architecture/nats-topology.md) and the [authn-authz-map](../security/authn-authz-map.md).
 
 ### Configuration
 
@@ -187,7 +187,7 @@ Names only (`helperConfig.ts`, `config.ts`); re-derive with `Select-String "'(GE
 | Managed Bodies | `GELDAR_MANAGED_BODIES`, `GELDAR_MANAGED_PG_HOST`, `GELDAR_MANAGED_PG_PORT`, `GELDAR_MANAGED_PG_ROLE`, `GELDAR_MANAGED_DB_SECRET_HOST_PATH`, `GELDAR_RCON_SECRET_HOST_PATH` |
 | Limits | `GELDAR_GLOBAL_BODY_CAP`, `GELDAR_BODY_HELPER_DEADLINE_MS`, `GELDAR_SWEEP_MINUTES` (default 10) |
 
-The secrets it reads (its NATS password, its database password) are held by the operator in root-only files on the node; the `*_HOST_PATH` names point the Body containers at their own secret files. Values and locations stay out of the repo (see the planned [secrets-by-role](../security/secrets-by-role.md), *planned*, W4).
+The secrets it reads (its NATS password, its database password) are held by the operator in root-only files on the node; the `*_HOST_PATH` names point the Body containers at their own secret files. Values and locations stay out of the repo (see the [secrets-by-role](../security/secrets-by-role.md)).
 
 ### Build, ship and install
 
@@ -209,8 +209,8 @@ What each piece is; the install steps are in the runbooks only.
 | Stray Bodies | The sweep only reports Body containers not on the roster; an operator reap path is a later card (C7-03c4) | `sweep.ts` |
 | Timed-out start | The supervisor's 20 s bound answers `timeout` and records no row; the helper may still land the start within its 120 s deadline and removes what it made on its own timeout; the register's retry must read `status` first | `supervisor/src/helper-client.ts` header |
 | Restart of the services | Both drain in-flight replies before closing NATS (shutdown orders above) | `run.ts`, `shutdown.ts` |
-| Retiring an agent | Decision 0152 item 1: retire stops the Body, revokes tokens and keeps the row; the planned [retire-an-agent](../runbooks/retire-an-agent.md) runbook (*planned*, W3) will hold the steps | decision 0152 |
-| Failure table | The planned [failure-modes](../operations/failure-modes.md) (*planned*, W3) | |
+| Retiring an agent | Decision 0152 item 1: retire stops the Body, revokes tokens and keeps the row; the [retire-an-agent](../runbooks/retire-an-agent.md) runbook holds the steps | decision 0152 |
+| Failure table | The [failure-modes](../operations/failure-modes.md) | |
 
 ## Conflicts recorded
 

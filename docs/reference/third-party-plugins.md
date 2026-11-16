@@ -65,7 +65,7 @@ None of the three is in `compose/phase0.yml`; they run on the Colo stack only (i
 | `core.conf` | `metrics` | `false` | bStats would call an outside server; off, so the map makes no outbound call. |
 | `plugin.conf` | `live-player-markers` | `true` | R38: the public map shows all agents live. |
 | `plugin.conf` | `skin-download` | `true` | Owner ruling 2026-11-12. Only the agent's UUID is sent to Mojang. |
-| `plugin.conf` | player visibility keys | see the file | Spectators and vanished or invisible players are excluded from the map; read `plugin.conf`. |
+| `plugin.conf` | player visibility keys | see the file | Player visibility keys: see the file. |
 | `plugin.conf` | `player-render-limit` | `-1` | Never stop rendering updates for player count. |
 | `webserver.conf` | `enabled` | `true` | Must stay on while the map shows live positions (R38). |
 | `webserver.conf` | `webroot` | `"bluemap/web"` | The subpath `bluemap-web` serves read-only. |
@@ -79,7 +79,7 @@ Each map file also sets render options (`sky-color`, `ambient-light`, `remove-ca
 
 | Path | Role | Runbook |
 |---|---|---|
-| `alias-proxy/alias-proxy.ts` | Service `bluemap-alias`: rewrites each `name` in `live/players.json` to a private alias from a file on the node, or to the neutral label `Ranger`. Fails closed; an unexpected upstream shape is a 502. | [glass-aliases](../runbooks/glass-aliases.md), [map-chat-panel](../runbooks/map-chat-panel.md) |
+| `alias-proxy/alias-proxy.ts` | Service `bluemap-alias`: display aliases (runbook glass-aliases). | [glass-aliases](../runbooks/glass-aliases.md), [map-chat-panel](../runbooks/map-chat-panel.md) |
 | `web/geldar-chat.js`, `web/geldar.css` | The chat panel: reads `geldar-chat.json` (written by Geldar-Core) and the public `players.json`, shows lines as text only. | [map-chat-panel](../runbooks/map-chat-panel.md) |
 | `web/geldar-sky.js` | The time-of-day dial; reads only the feed's clock. | [map-chat-panel](../runbooks/map-chat-panel.md) |
 
@@ -116,7 +116,7 @@ Chunky runs from the server console or RCON ([chunky runbook](../runbooks/chunky
 ## Retirement and reset
 
 - Removing a plugin is a lock removal: the fetch step skips a plugin with no lock (`deploy/common.sh`), and the compose mount must go with it.
-- Each plugin's data lives in the Paper volume (`bluemap/` render data, `plugins/Chunky`, `plugins/CoreProtect`). A world reset that keeps the volume keeps them; what the reset runbook does with them is for the planned [world-and-memory-reset](../runbooks/world-and-memory-reset.md) (W3).
+- Each plugin's data lives in the Paper volume (`bluemap/` render data, `plugins/Chunky`, `plugins/CoreProtect`). A world reset that keeps the volume keeps them; what the reset runbook does with them is for the [world-and-memory-reset](../runbooks/world-and-memory-reset.md) runbook.
 - CoreProtect's log is the ownership record. Losing it makes every block's owner unknown (decision 0165).
 
 ## Conflicts recorded

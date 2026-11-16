@@ -4,7 +4,7 @@ type: explanation
 audience: agents-never
 status: draft
 last_verified: 2026-11-16 against 1b114276
-companions: [../operations/monitoring-and-vitals.md, ../concepts/observation-and-privacy.md, data-flow-events.md, deployment-topology-colo.md, ../reference/eventsink.md, ../security/privacy-and-data-retention.md]
+companions: [../reference/telemetry-package.md, ../operations/monitoring-and-vitals.md, ../concepts/observation-and-privacy.md, data-flow-events.md, deployment-topology-colo.md, ../reference/eventsink.md, ../security/privacy-and-data-retention.md]
 sources: [docs/spec.md, compose/colo.yml, golem/src/metrics.ts, threshold/mcp/src/metrics.ts, threshold/mcp/src/cli.ts, eventsink/src/metrics.ts, eventsink/src/main.ts, glass/src/kino/otlp.ts, glass/src/kino/wiring.ts, docs/analysis/telemetry/collector-design.md, docs/analysis/telemetry/collector-options.md, ../decisions/0088-metrics-exporters-and-replay-window.md, ../decisions/0130-phase1-owner-rulings-for-c1.md, ../decisions/0185-per-turn-record-for-kit-minds.md, ../decisions/0350-telemetry-scope-and-full-capture.md, ../decisions/0351-paper-telemetry-plugin-scope.md, ../decisions/0352-telemetry-dedicated-clickhouse-database.md]
 ---
 
@@ -12,7 +12,7 @@ sources: [docs/spec.md, compose/colo.yml, golem/src/metrics.ts, threshold/mcp/sr
 
 Operator material. Do not copy, quote or link this page from anything an agent in the world reads ([documentation style](../agents/documentation-style.md#agents-never-learn-they-are-watched)). It stays at spec level: the rules that keep telemetry out of agents' reach are in decision 0350 item 7 and are not repeated here (plan decision D9).
 
-How Geldar's traces, logs and metrics are meant to flow, what the decisions settle, and what exists in the repo. The deployed shape on the node was **not inspected** for this page (plan decision D8). Alerts and dashboards are the planned [monitoring and vitals](../operations/monitoring-and-vitals.md) reference.
+How Geldar's traces, logs and metrics are meant to flow, what the decisions settle, and what exists in the repo. The deployed shape on the node was **not inspected** for this page (plan decision D8). Alerts and dashboards are the [monitoring and vitals](../operations/monitoring-and-vitals.md) reference.
 
 ## Purpose: diagnosis, not the record
 
@@ -71,7 +71,7 @@ flowchart LR
 
 What each piece is for:
 
-- **Sources.** Each Geldar service sends traces, logs and metrics through a shared SDK package (card T-03), with trace context carried across NATS so one trace spans the Mind, the MCP, the Body and eventsink (cards T-03, T-06 to T-08). Paper's own metrics come through the Java agent (0351). NATS and Postgres are scraped (cards T-09, T-10).
+- **Sources.** Each Geldar service sends traces, logs and metrics through a shared SDK package (cards T-03, T-06 to T-08). Paper's own metrics come through the Java agent (0351). NATS and Postgres are scraped (cards T-09, T-10).
 - **Gateway.** One Geldar collector on the Colo, with CPU, memory and process caps (0350 item 9; design in `docs/analysis/telemetry/collector-design.md`, options in `collector-options.md`).
 - **Store.** A Geldar-owned ClickHouse and SigNoz stack, so Geldar's budget is an exact measure of one server and Geldar's retention never changes another tenant's (0352, "Why B").
 - **Readers.** Operators only. The diagnosis path is a SigNoz MCP server with a viewer-role key held by the owner and never kept in the repo (0350 item 6; 0352 "Read path").
@@ -93,9 +93,9 @@ Checked with `git grep` and `ls` on 2026-11-16.
 
 | Piece | State |
 |---|---|
-| Hand-written metric pushers | Four, each off unless its endpoint is set: `golem/src/metrics.ts`, `threshold/mcp/src/metrics.ts` (read from `GELDAR_TELEMETRY_URL` in `threshold/mcp/src/cli.ts`), `eventsink/src/metrics.ts` (`eventsink/src/main.ts` line 17), and the Kino counters in `glass/src/kino/otlp.ts` (endpoint `GELDAR_KINO_OTLP_ENDPOINT`, `glass/src/kino/wiring.ts` line 68). They post OTLP/HTTP JSON written by hand, with no SDK (0088 item 3; file headers). |
-| Compose wiring | `compose/colo.yml` passes `GELDAR_TELEMETRY_URL` through to `golem-body` (line 267) and `animus` (line 307) only. |
-| Shared SDK package, collector overlay, collector config, dashboards as code | Not present. No `@geldar/telemetry` package, no `compose/colo-otel.yml`, no `deploy/otel/` or `deploy/signoz/` (`ls compose deploy`, 2026-11-16). |
+| Hand-written metric pushers | Four, in the Body, the MCP, eventsink and Kino, each off unless its endpoint variable is set. They post metrics written by hand, with no SDK (0088 item 3). |
+| Shared SDK package | Present since PR #551 (merge `6cf3c957`, 2026-11-16): `telemetry/` (`@geldar/telemetry`), off unless a caller passes a collector URL, imported by no other package (`git grep -l "@geldar/telemetry" -- '*.ts' '*.json' ':!telemetry'` prints nothing at `3f07a4be`, 2026-11-16). Reference: [telemetry-package](../reference/telemetry-package.md). |
+| Collector overlay, collector config, dashboards as code | Not present. No `compose/colo-otel.yml`, no `deploy/otel/` or `deploy/signoz/` (`ls compose deploy`, 2026-11-16 at `3f07a4be`). |
 | Design | `docs/analysis/telemetry/collector-design.md` (T-02, "design only ... Nothing here is built, merged or switched on") and `collector-options.md` (re-checked under 0352 option B). |
 
 0350 records that on 2026-11-15 nothing was switched on and no Geldar series existed in SigNoz (0350, "Context"). That is the record's survey, not re-checked here.
@@ -107,8 +107,8 @@ Checked with `git grep` and `ls` on 2026-11-16.
 | Owner | The owner approves every node step, the extra containers, the budget, the retention and any route; the orchestrator decides which cards change and when (0352, "Who decides"). |
 | Build and test | Cards T-01 to T-20 in 0350, "Consequences". Each card names its own owner approval and tests. Edits to the kit, the Body and the MCP are granted per card (0350, "Exemptions"). |
 | Deploy | Every node change needs the owner's approval first (0350 items 4 and 9; 0352). Paper's agent goes to a scratch shard before the live server (0350 item 9; 0351). |
-| Rollback | Unset the gateway's endpoint variable so the SDK goes off; stop and remove the Geldar SigNoz stack; keep its data volume until the owner decides (0352, "Rollback"). |
-| Operate and monitor | Planned [monitoring and vitals](../operations/monitoring-and-vitals.md). Spec 7's alerts are the minimum set (0350 item 10). |
+| Rollback | As decision 0352, "Rollback", states; the owner decides what happens to stored data. |
+| Operate and monitor | [monitoring and vitals](../operations/monitoring-and-vitals.md). Spec 7's alerts are the minimum set (0350 item 10). |
 | Failure modes | An export failure never stops a component (0088 item 2); a full export queue drops instead of blocking (0352, "Write path"). Merge load on the shared host is a named risk to the Paper tick (0352, "Fit check", caution). |
 | Retirement | Card T-20 retires the four hand-written pushers once the SDK path reaches parity, keeping the 0088 metric names. |
 

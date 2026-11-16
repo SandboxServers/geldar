@@ -114,7 +114,7 @@ Each is a fair reading; the other choice is named so a reader can find the recor
 | 0185 | Database | Telemetry | A new operator-only table; the Minds it serves live in a sibling repo |
 | 0212 | Golem (Body) | Compose, shards and envs | components.md lists it under Golem |
 | 0282 | Database | Psyche; Sheet driver | The erasure is a database function; components.md lists it under Sheet driver |
-| 0364 | Velocity identity plugin | Compose, shards and envs; Geldar-Core plugin | It records gaps against 0137, a Velocity decision |
+| 0364 | Velocity identity plugin | Compose, shards and envs | It records a gap against 0137, a Velocity decision |
 
 ## Decisions by primary component
 
@@ -356,7 +356,7 @@ No record has this component as primary. It is secondary in none.
 | [0092](../decisions/0092-velocity-spectator-whitelist.md) | Velocity spectator whitelist and the ghost rule | Proposed (orchestrator, 2026-11-11; owner to confirm) | Velocity identity plugin | Geldar-Core plugin | ingress, spectators |
 | [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md) | The public Minecraft port is a separate online-mode spectator proxy; Paper fails closed | Accepted | Velocity identity plugin | Compose, shards and envs, Geldar-Core plugin | ingress, spectators |
 | [0140](../decisions/0140-agent-skins.md) | Agent skins: MineSkin-signed textures in geldar-skins, applied by the Velocity identity plugin | accepted | Velocity identity plugin | Tools, Golem (Body) | skins |
-| [0364](../decisions/0364-known-gaps-against-0137-and-spec-8-4.md) | Known gaps against decision 0137 and spec 8.4, recorded and not fixed | Proposed (owner to accept) | Velocity identity plugin | Compose, shards and envs, Geldar-Core plugin | ingress (title only, D9) |
+| [0364](../decisions/0364-known-gap-public-overlay-against-0137.md) | Known gap: the public overlay against decision 0137, recorded and not fixed | Proposed (owner to accept) | Velocity identity plugin | Compose, shards and envs | ingress (title only, D9) |
 
 ### Third-party plugins
 
@@ -423,7 +423,7 @@ No record has this component as primary. It is secondary in 0072, 0094, 0187, 01
 | # | Short title (record heading) | Status (record) | Primary | Secondary | Topics |
 |---|---|---|---|---|---|
 | [0058](../decisions/0058-the-character-knowledge-boundary-and-thought-v2.md) | The character knowledge boundary, and thought prompt v2 | Accepted | Prompts | Animus (Mind) | prompts, character knowledge |
-| [0068](../decisions/0068-prompt-v4-and-agent-visible-text.md) | Prompt v4 and the agent-visible text: no observer, harness or credit meta | Proposed (fix-c; the owner amends the spec line below) | Prompts | Tools, Contract | observation (title only, D9) |
+| [0068](../decisions/0068-prompt-v4-and-agent-visible-text.md) | Prompt v4 and the agent-visible text: no observer, harness or credit meta | Proposed (the owner amends the spec line below) | Prompts | Tools, Contract | observation (title only, D9) |
 | [0074](../decisions/0074-shelter-means-an-enclosed-safe-space.md) | Shelter means an enclosed safe space | Accepted | Prompts | Golem (Body) | shelter, prompts |
 | [0181](../decisions/0181-thought-context-8704.md) | the context window is raised from 8192 to 8704 so the till thought prompt fits | Accepted | Prompts | Animus (Mind), lantern-local | prompts, models |
 
@@ -512,7 +512,7 @@ For each of the 27 components, every record that names it as primary or secondar
 | [lantern-local](#lantern-local) | 0002, 0028, 0049 | 0050, 0051, 0066, 0078, 0181 | 3 | 5 |
 | [Supervisor](#supervisor) | 0152 | 0170, 0260, 0261 | 1 | 3 |
 | [Body helper](#body-helper) | 0260 | 0261 | 1 | 1 |
-| [Geldar-Core plugin](#geldar-core-plugin) | 0048, 0101, 0146, 0165, 0187, 0195, 0197, 0198, 0199, 0310 | 0024, 0032, 0041, 0092, 0137, 0157, 0164, 0364 | 10 | 8 |
+| [Geldar-Core plugin](#geldar-core-plugin) | 0048, 0101, 0146, 0165, 0187, 0195, 0197, 0198, 0199, 0310 | 0024, 0032, 0041, 0092, 0137, 0157, 0164 | 10 | 7 |
 | [Velocity identity plugin](#velocity-identity-plugin) | 0021, 0040, 0092, 0137, 0140, 0364 | 0250 | 6 | 1 |
 | [Third-party plugins](#third-party-plugins) | none | 0072, 0094, 0187, 0197, 0310 | 0 | 5 |
 | [Compose, shards and envs](#compose-shards-and-envs) | 0024, 0067, 0080, 0082, 0087, 0131, 0180, 0188 | 0021, 0022, 0059, 0071, 0089, 0096, 0108, 0134, 0137, 0150, 0169, 0212, 0351, 0364 | 8 | 14 |
@@ -533,5 +533,5 @@ For each of the 27 components, every record that names it as primary or secondar
 2. **Status lines have three shapes.** `- Status:` (most), a bare `Status:` line (for example 0088, 0136, 0149) and lowercase `accepted` (0136, 0138, 0139, 0140, 0147, 0148, 0149). A record-to-index status gate, as proposed in decision [0365](../decisions/0365-docs-gates-after-the-freeze.md), must accept all three.
 3. **Session labels in records.** Seventeen records name a coordinator session by label in their Status line: 0168, 0182, 0185, 0188, 0194, 0218, 0219, 0282, 0330, 0332 to 0338 and 0352 (the first re-derive block, read by hand, 2026-11-16; a repository or bucket name is not a session label). This page drops the label with the provenance on `Accepted` rows and replaces it on the others (see the status rule). The records themselves are not changed.
 4. **No decision governs player-core** as primary or secondary, and none has Third-party plugins or the Sheet driver as primary.
-5. **The style guide's record count is stale.** [Documentation style](../agents/documentation-style.md#metadata-block) says 180 records; 187 exist at `db33805c`.
-6. **Not yet linked.** The [reference index](README.md) row H06 still says "planned"; the "Design and decisions" column of [components](components.md#lifecycle-design-to-build) does not link this page; the [doc-update map](../agents/doc-update-map.md) row "A new decision record" does not name this page.
+5. **Closed 2026-11-16 (W7).** The style guide's record count was stale; [documentation style](../agents/documentation-style.md#metadata-block) now says 187 records (line 47).
+6. **Closed 2026-11-16 (W7).** This page is linked: the [reference index](README.md) row H06 carries no "planned", each [components](components.md#lifecycle-design-to-build) row links its section here, and the [doc-update map](../agents/doc-update-map.md) row "A new decision record" names this page (line 84).

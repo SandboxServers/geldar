@@ -59,22 +59,7 @@ Checked with `ls`, `git grep` and `git log` on 2026-11-16 at 03c1f5de.
 
 Not in the repo at 03c1f5de (`ls compose deploy plugin`, 2026-11-16): the collector gateway overlay and its config (card T-02), the Geldar SigNoz stack (0352), dashboards and alerts as code (T-17), and the Paper telemetry plugin (0351).
 
-### Metric names in the pushers
-
-Read from the files at 03c1f5de. Kino's counters are left to its own page.
-
-| Pusher | Metric names |
-|---|---|
-| Body (`golem/src/metrics.ts` lines 253 to 257) | `geldar_body_connected`, `geldar_tps`, `geldar_tick_lag_ms`, `geldar_wakeups_total`, `geldar_action_outcomes_total` |
-| MCP (`threshold/mcp/src/metrics.ts` lines 261 to 262) | `geldar_mcp_tool_calls_total`, `geldar_mcp_tool_call_seconds` |
-| eventsink (`eventsink/src/metrics.ts` lines 179 to 184) | `geldar_eventsink_consumed_total`, `geldar_eventsink_written_total`, `geldar_eventsink_failed_total`, `geldar_eventsink_dlq_written_total`, `geldar_eventsink_consumer_pending`, `geldar_eventsink_skipped_total` |
-
-Card T-20 keeps these names when the pushers are retired (0350, "Consequences").
-
-### Endpoint wiring
-
-- `compose/colo.yml` passes `GELDAR_TELEMETRY_URL` to `golem-body` (line 267) and `animus` (line 307) only, and Kino's endpoint variable to `glass` (line 485), empty by default.
-- Card T-07 plans to carry the endpoint to both Body launch paths (0350, "Consequences").
+Services push metrics only when an endpoint variable is set (decisions 0088 and 0350 item 1). Card T-20 keeps the pushers' metric names when they are retired (0350, "Consequences").
 
 ## Policy
 
@@ -98,7 +83,7 @@ Each item is the decision's rule in one line; the decision holds the detail.
 | Build and test | `./geldar.ps1 pnpm --filter @geldar/telemetry test` runs the package's 18 test files with fake exporters and no network (`telemetry/README.md`, "Tests"; `ls telemetry/test`, 2026-11-16). Each card names its own tests (0350, "Consequences"). |
 | Deploy | Nothing telemetry-specific is deployed by the repo. Each node change needs the owner's approval at the time (0350 items 4 and 9; 0352). |
 | Operate | Health: `deploy/colo-status.sh` and the container health checks. Paper: the bundled profiler, by an operator. Progress: the [progress-metrics runbook](../runbooks/progress-metrics.md). |
-| Rollback | Unset the gateway endpoint so the SDK goes off; stop the Geldar SigNoz stack; keep its data until the owner decides (0352, "Rollback"). |
+| Rollback | As decision 0352, "Rollback", states; the owner decides what happens to stored data. |
 | Failure modes | See [failure modes](failure-modes.md), "Telemetry". |
 | Retirement | T-20 retires the four hand-written pushers once the SDK path reaches parity (0350, "Consequences"). |
 
@@ -115,4 +100,4 @@ None is resolved here.
 
 - Anything on the node: whether any endpoint is set, whether any collector or SigNoz stack runs, which health checks pass (plan decision D8). 0350 records that on 2026-11-15 nothing was switched on (0350, "Context"); not re-checked.
 - 0351 is Proposed and its overhead test is not reported in the repo.
-- [Telemetry pipeline](../architecture/telemetry-pipeline.md) was checked at 1b114276 and says no `@geldar/telemetry` package exists; that was true then and changed with PR #551.
+- [Telemetry pipeline](../architecture/telemetry-pipeline.md) was checked at 1b114276, when no `@geldar/telemetry` package existed; its package row was corrected in W7 (2026-11-16) after PR #551. The package reference is [telemetry-package](../reference/telemetry-package.md).

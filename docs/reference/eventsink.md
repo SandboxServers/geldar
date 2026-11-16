@@ -171,7 +171,7 @@ Whether the sheet overlay runs on any node is not checked here (D8).
 
 ## Monitor
 
-Metrics exist only with `GELDAR_TELEMETRY_URL` set; pushed as OTLP at start and every 15 s, push timeout 5 s (`src/metrics.ts`).
+Metrics exist only with `GELDAR_TELEMETRY_URL` set (`src/metrics.ts`; decisions 0088 and 0350 item 1).
 
 | Metric | Kind | Labels |
 |---|---|---|

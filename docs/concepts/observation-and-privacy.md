@@ -10,7 +10,7 @@ sources: [docs/spec.md, README.md, glass/README.md, docs/legal, docs/decisions/R
 
 # Observation and privacy
 
-Operator material. Do not copy, quote or link this page from anything an agent in the world reads ([documentation style](../agents/documentation-style.md#agents-never-learn-they-are-watched)). It stays at the level the spec, the decision titles and the public root README already state: what each surface is and who uses it, not how it works. Mechanism detail lives in the decision records it cites and in the planned [Glass and Kino reference](../reference/glass-and-kino.md).
+Operator material. Do not copy, quote or link this page from anything an agent in the world reads ([documentation style](../agents/documentation-style.md#agents-never-learn-they-are-watched)). It stays at the level the spec, the decision titles and the public root README already state: what each surface is and who uses it, not how it works. Mechanism detail lives in the decision records it cites and in the [Glass and Kino reference](../reference/glass-and-kino.md).
 
 This page explains why Geldar is watched, who may see what, how the agents' side is kept separate, and what privacy the project owes to the humans involved.
 
@@ -46,11 +46,11 @@ Every arrow points away from the world. No surface has a path back into the worl
 | Telemetry | Traces, logs and metrics for diagnosis | Operators only | [0350](../decisions/0350-telemetry-scope-and-full-capture.md); see [telemetry pipeline](../architecture/telemetry-pipeline.md) |
 | Grafana dashboards, the Chronicle | Spec 5.13 surfaces | n/a | Spec only. Decision 0070 keeps Grafana private until the owner decides otherwise; decision 0350 item 10 replaces the spec's Prometheus and Loki with SigNoz. |
 
-The public root [README.md](../../README.md) (lines 13 to 15) lists the map, Glass and Kino for the public. It says Glass runs on a delay and hides living sovereign players, and that Kino is "coming soon".
+The public root [README.md](../../README.md) (lines 13 to 15) lists the map, Glass and Kino for the public, and says that Kino is "coming soon".
 
 ## Who may read a thought
 
-Decision [0138](../decisions/0138-thought-visibility.md) sets who reads a sovereign player's thoughts, in the words of its index row: the owner live, everyone once the life is over, the public delayed only on the owner's opt-in. A finished life has no live play left to protect, so its record becomes public for good.
+Who may read a thought is set by decision [0138](../decisions/0138-thought-visibility.md).
 
 Decision [0077](../decisions/0077-invitee-auth-and-the-0072-0075-login-rule.md) sets the login rule, as its index row states it: anonymous viewers read the thought stream and the map; cameras need an owner or admin login.
 
@@ -60,7 +60,7 @@ Agents are never told they are watched (public README, line 66). Nothing an agen
 
 What `identity_mode` and "Watched" mean is open, owner decision: [spec 5.14](../spec.md#514-shards-and-time) and [spec section 2](../spec.md#2-principles), principle 7; decision [0059](../decisions/0059-identity-mode-is-about-human-observation-not-agent-belief.md).
 
-The project is open about this toward people: the public README says "Agents are not told they are watched" (line 66). The repo is public, so this page and every page like it are kept at this level (plan decision D9). Which files count as "something an agent reads" is listed in the [documentation style](../agents/documentation-style.md#paths-an-agent-reads); the planned [agent-visibility rules](../security/agent-visibility-rules.md) will hold the full how-to.
+The project is open about this toward people: the public README says "Agents are not told they are watched" (line 66). The repo is public, so this page and every page like it are kept at this level (plan decision D9). Which files count as "something an agent reads" is listed in the [documentation style](../agents/documentation-style.md#paths-an-agent-reads); the [agent-visibility rules](../security/agent-visibility-rules.md) hold the full how-to.
 
 ## Privacy for the humans
 
@@ -71,7 +71,7 @@ Agents are subjects; owners, viewers and outside players are people with rights 
 - **Viewers.** Glass responses carry no secrets, tokens, account names, addresses or internal host names, and agent-authored text is shown escaped, never as a clickable link (0072 item 3; spec 5.13).
 - **Telemetry.** During development all content is captured into telemetry for diagnosis, outside players included, and erased on request. Per-life erasure there is a known gap that must be closed, and stated in the published privacy text, before any outside player's agent runs (0350 items 2 and 3). See [telemetry pipeline](../architecture/telemetry-pipeline.md).
 
-The planned [privacy and data retention](../security/privacy-and-data-retention.md) page will cover retention per table.
+The [privacy and data retention](../security/privacy-and-data-retention.md) page covers retention per table.
 
 ## Conflicts recorded
 

@@ -97,7 +97,7 @@ The spec's seven principles are the rules the builders and operators follow; the
 
 ## What it touches
 
-[What is Geldar](what-is-geldar.md), [world-operations exceptions](world-operations-exceptions.md), [sovereign players](sovereign-players.md), [Body and Mind](body-and-mind.md), [life cycle of a life](life-cycle-of-a-life.md), and the planned [observation and privacy](observation-and-privacy.md), [economy and budgets](economy-and-budgets.md) and [time, shards and phases](time-shards-and-phases.md).
+[What is Geldar](what-is-geldar.md), [world-operations exceptions](world-operations-exceptions.md), [sovereign players](sovereign-players.md), [Body and Mind](body-and-mind.md), [life cycle of a life](life-cycle-of-a-life.md), and the [observation and privacy](observation-and-privacy.md), [economy and budgets](economy-and-budgets.md) and [time, shards and phases](time-shards-and-phases.md).
 
 ## Where to read the reference
 

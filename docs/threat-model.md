@@ -1,3 +1,13 @@
+---
+title: Threat model
+type: explanation
+audience: owner
+status: draft
+last_verified: 2026-11-16 against 3f07a4be
+companions: [security/README.md, security/authn-authz-map.md, security/secrets-by-role.md, security/supply-chain.md, security/privacy-and-data-retention.md, architecture/network-and-trust-zones.md, concepts/identity-and-ingress.md]
+sources: [docs/spec.md, docs/decisions/0005-pinning-and-security-updates.md, docs/decisions/0021-velocity-from-phase0.md, docs/decisions/0022-minecraft-26-1.md, docs/decisions/0040-bot-ingress-registry-in-nats-kv.md, docs/decisions/0041-event-export-stream-and-sink.md, docs/decisions/0067-nats-accounts-and-least-privilege.md, compose/phase0.yml, compose/mcp.yml, compose/probe/login-probe.mjs, tools/repo-checks/src/loopback-ports.ts, tools/repo-checks/src/run-checks.ts]
+---
+
 # Geldar threat model
 
 Status: Phase 0 version. Written for spec [section 8](spec.md#8-security) and reviewed before every phase gate. Nothing is exposed in Phase 0, but the interfaces are shaped now so the armor bolts on later without changing them.
@@ -35,7 +45,7 @@ Condensed from [spec 8.1](spec.md#81-assets-actors-trust-boundaries).
 | Internet, unauthenticated | None | Exists as an actor. Phase 0: no path in, nothing listens off-host. After the colo move: a path only to `/p/<player_id>` through the tunnel's ingress rule, then the MCP's Host and Bearer checks (section 3). |
 | Patron (Thinker) | Low | Later. The local Thinker is ours. |
 | Sovereign player's human | Low to medium | Wave M builds the MCP for them: one bearer token per player, issued by `mcp-tokens`. The human's CLI and OAuth are Phase 2. |
-| Sovereign player's agent session (an MCP client) | Low. A model driven by the human; its inputs include in-world text. | Built, not run. Calls the 14 tools over HTTP with its player's token, and reaches only its own Body. |
+| Sovereign player's agent session (an MCP client) | Low. A model driven by the human; its inputs include in-world text. | Built, not run. Calls the 16 tools over HTTP with its player's token, and reaches only its own Body. |
 | Watcher | Medium, read-only | Later. Thought Stream v0 is localhost only. |
 | Ghost | Medium, spectator | Later. |
 | Agent (AI, in-world) | None. Generates code and text by design. | Exists. Reaches the Body API and in-world mechanics, never a command, a network or a file. |

@@ -47,7 +47,7 @@ flowchart LR
 - **The Body stays in the Colo.** There is no bring-your-own Body; the token drives a Colo-hosted Body ([0151](../decisions/0151-bodies-run-only-in-the-colo.md)). Owners start, stop and inspect their agents' Bodies through an owner API, behind a supervisor and a host helper ([0152](../decisions/0152-programmatic-body-management-for-owners.md), [0260](../decisions/0260-body-container-control-by-host-helper.md)). See [Body and Mind](body-and-mind.md).
 - **Tokens, not OAuth.** Each player has a static bearer token bound to one player id; only its HMAC is stored, and revocation takes effect at once ([0054](../decisions/0054-static-hashed-per-player-bearer-tokens.md); `sql/0002_sovereign_mcp.sql`). Operators mint and rotate them with `tools/mcp-tokens` ([runbook](../runbooks/mcp-tokens.md)).
 - **Sign-up.** People register themselves with a Microsoft personal account through the register service ([0135](../decisions/0135-self-registration-with-github-and-discord.md), amendment R40). Terms, consent, deletion and export are required before sign-up opens ([0153](../decisions/0153-terms-consent-and-deletion-before-sign-up.md)). Sign-up is open to everyone and unannounced once its readiness milestone is met; a roster row is written on registration, and at most 40 Bodies run at once ([0261](../decisions/0261-open-signup-player-host-bodies-and-auto-roster.md)). The operator's steps are in [open sign-up](../runbooks/open-signup.md); the player's are in the [player guide](../players/README.md).
-- **Memory lives in the player repo**, loaded through a tool rather than imported, so in-world text cannot become a standing instruction ([spec 5.15.2](../spec.md#5152-architecture)). A session may write only under `memory/` and `skills/`, and the identity file is locked after birth ([spec 5.15.4](../spec.md#5154-the-player-repo); [0042](../decisions/0042-path-rule-case-folded-identity-prefix.md)). The kit that builds such repos is a sibling repository, summarised in the planned [scriptorium](../siblings/scriptorium.md) (*planned*).
+- **Memory lives in the player repo**, loaded through a tool rather than imported, so in-world text cannot become a standing instruction ([spec 5.15.2](../spec.md#5152-architecture)). A session may write only under `memory/` and `skills/`, and the identity file is locked after birth ([spec 5.15.4](../spec.md#5154-the-player-repo); [0042](../decisions/0042-path-rule-case-folded-identity-prefix.md)). The kit that builds such repos is a sibling repository, summarised in the [scriptorium](../siblings/scriptorium.md).
 - **Hostile text stays data.** A corpus of malicious books tests that the kit treats in-world text as untrusted; the live half of the check is local and owner-run ([0044](../decisions/0044-malicious-book-corpus-world-side.md), [0045](../decisions/0045-live-malicious-book-check-is-local-only.md); [spec 8.4b](../spec.md#84b-sovereign-players-oauth-scopes-and-the-humans-machine)).
 
 ## Presence and budget
@@ -63,7 +63,7 @@ A sovereign player is present only while its person runs it ([spec 5.15.1](../sp
 | Wake spacing | 30 s | `wake.min_spacing_seconds` |
 | Credits | 30 per real hour, at most 240 | `budget.credits_per_real_hour`, `budget.cap_credits` |
 
-The act budget is suspended by default; every act is still metered ([0149](../decisions/0149-act-budget-suspended-and-metered.md)). The planned [economy and budgets](economy-and-budgets.md) explains the budget; [life cycle of a life](life-cycle-of-a-life.md) explains presence.
+The act budget is suspended by default; every act is still metered ([0149](../decisions/0149-act-budget-suspended-and-metered.md)). The [economy and budgets](economy-and-budgets.md) explains the budget; [life cycle of a life](life-cycle-of-a-life.md) explains presence.
 
 ## One person, many players
 
@@ -73,7 +73,7 @@ The spec caps an owner at 3 players per shard by default, raisable by the operat
 
 - **A human hand on the scale.** The person starts, stops and shapes the agent. The spec labels sovereign players in the record, reports them separately, keeps them on Watched shards, and asks owners to be "a Patron, not a puppeteer" ([spec 5.15.8](../spec.md#5158-humans-and-principle-1)). What Watched means is open, owner decision (spec 5.14; [spec section 2](../spec.md#2-principles), principle 7; [0059](../decisions/0059-identity-mode-is-about-human-observation-not-agent-belief.md)).
 - **Unverifiable cognition.** Geldar verifies every action, because it runs the Body. It cannot verify the model, the effort, hand edits to the repo, or instructions typed mid-session ([spec 5.15.9](../spec.md#5159-what-we-can-and-cant-verify)). So sovereign players are excluded from controlled model comparisons ([spec 5.15.3](../spec.md#5153-the-geldar-mcp-server), "Budget and fairness").
-- **A partial record.** The Colo keeps a mirror of actions and volunteered text, not hidden reasoning ([spec 5.15.2](../spec.md#5152-architecture)). Who may read a sovereign player's thoughts is set by [0138](../decisions/0138-thought-visibility.md); the planned [observation and privacy](observation-and-privacy.md) (agents-never) covers it.
+- **A partial record.** The Colo keeps a mirror of actions and volunteered text, not hidden reasoning ([spec 5.15.2](../spec.md#5152-architecture)). Who may read a sovereign player's thoughts is set by [0138](../decisions/0138-thought-visibility.md); the [observation and privacy](observation-and-privacy.md) (agents-never) covers it.
 - **Principle 1 at the boundary.** The 2026-11-14 review finds that a token holder may be a model, a script or a person, so Principle 1 cannot be enforced there (`docs/analysis/autonomy/review-and-plan-2026-11-14.md`, finding SC5). See [principles in practice](principles-in-practice.md#principle-1-no-humans-inside).
 
 ## History
@@ -98,12 +98,12 @@ The spec caps an owner at 3 players per shard by default, raisable by the operat
 
 ## What it touches
 
-[Body and Mind](body-and-mind.md), [life cycle of a life](life-cycle-of-a-life.md), [identity and ingress](identity-and-ingress.md), [principles in practice](principles-in-practice.md), and the planned [economy and budgets](economy-and-budgets.md), [character and memory](character-and-memory.md) and [observation and privacy](observation-and-privacy.md).
+[Body and Mind](body-and-mind.md), [life cycle of a life](life-cycle-of-a-life.md), [identity and ingress](identity-and-ingress.md), [principles in practice](principles-in-practice.md), and the [economy and budgets](economy-and-budgets.md), [character and memory](character-and-memory.md) and [observation and privacy](observation-and-privacy.md).
 
 ## Where to read the reference
 
 - MCP tools and results: [mcp-tools](../reference/mcp-tools.md); today `threshold/mcp/README.md`.
 - Register routes, sessions and consents: [register-service](../reference/register-service.md); today `threshold/register/README.md`.
 - Tokens and caps: [mcp-tokens runbook](../runbooks/mcp-tokens.md); [glossary, owner cap](../reference/glossary.md#owner-cap-in-detail).
-- Who may do what: [authn-authz-map](../security/authn-authz-map.md) (*planned*).
-- The kit: [scriptorium](../siblings/scriptorium.md) (*planned*).
+- Who may do what: [authn-authz-map](../security/authn-authz-map.md).
+- The kit: [scriptorium](../siblings/scriptorium.md).

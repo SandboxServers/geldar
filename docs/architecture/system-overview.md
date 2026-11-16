@@ -35,7 +35,7 @@ The spec splits the system in two (spec 4.1). The Colo runs everything that is c
 | Geldar MCP | `geldar-mcp` service (`threshold/mcp`) | `compose/colo.yml` |
 | Create-player form (spec 6.2) | `register` service (`threshold/register`), profile `register`, kill switch on by default | `compose/colo.yml` service `register` |
 | Spectator proxy | Design (0137): a separate online-mode proxy. The repo has one Velocity service, not two; a known gap, see [network-and-trust-zones](network-and-trust-zones.md#known-gaps) | `compose/colo-public.yml`; decision [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md) |
-| Grafana, Prometheus, embeddings | Not in any compose file. Telemetry is the planned [telemetry-pipeline](telemetry-pipeline.md) | `git grep -l grafana -- compose` finds nothing |
+| Grafana, Prometheus, embeddings | Not in any compose file. Telemetry is the [telemetry-pipeline](telemetry-pipeline.md) | `git grep -l grafana -- compose` finds nothing |
 | Operator tools | `admin`, a one-shot container (profile `admin`) running `tools/migrate` and `tools/mcp-tokens` | decision [0133](../decisions/0133-colo-admin-by-one-shot-container.md) |
 
 ## The Colo stack
@@ -186,7 +186,7 @@ Each row gives every account. This page does not pick one.
 
 ## Where to go next
 
-- One row per component with its owner role and docs: [components](../reference/components.md) (planned, W2).
-- Every service, port and variable of each stack: [compose-stacks](../reference/compose-stacks.md) (planned, W2).
-- Why the Body and the Mind are split: [body-and-mind](../concepts/body-and-mind.md) (planned, W1).
+- One row per component with its owner role and docs: [components](../reference/components.md).
+- Every service, port and variable of each stack: [compose-stacks](../reference/compose-stacks.md).
+- Why the Body and the Mind are split: [body-and-mind](../concepts/body-and-mind.md).
 - Telemetry and vitals: [telemetry-pipeline](telemetry-pipeline.md) (operators only).

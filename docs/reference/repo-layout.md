@@ -4,13 +4,13 @@ type: reference
 audience: contributors
 status: draft
 last_verified: 2026-11-16 against cd4499da
-companions: [glossary.md, spec-section-map.md, README.md, ../architecture/repo-map-and-dependencies.md, components.md]
-sources: [pnpm-workspace.yaml, package.json, vitest.config.ts, geldar.ps1, .github/workflows, plugin/README.md, supervisor/src/main.ts, supervisor/src/service.ts, body-helper/src/main.ts, body-helper/src/service.ts, tools]
+companions: [glossary.md, spec-section-map.md, README.md, ../architecture/repo-map-and-dependencies.md, components.md, telemetry-package.md]
+sources: [pnpm-workspace.yaml, package.json, telemetry/package.json, telemetry/README.md, vitest.config.ts, geldar.ps1, .github/workflows, plugin/README.md, supervisor/src/main.ts, supervisor/src/service.ts, body-helper/src/main.ts, body-helper/src/service.ts, tools]
 ---
 
 # Repo layout
 
-Every top-level folder and workspace package in the Geldar repo: what it is for, whether it has a README, its language, how to test it and how it is built. For how the packages depend on each other, see the planned [repo map and dependencies](../architecture/repo-map-and-dependencies.md). For one row per runtime component, see the planned [components](components.md) reference.
+Every top-level folder and workspace package in the Geldar repo: what it is for, whether it has a README, its language, how to test it and how it is built. For how the packages depend on each other, see the [repo map and dependencies](../architecture/repo-map-and-dependencies.md). For one row per runtime component, see the [components](components.md) reference.
 
 ## How the counts were measured
 
@@ -45,7 +45,7 @@ The TypeScript packages have no compile step of their own: Node 22 runs the `.ts
 | `compose/` | Docker Compose stacks and overlays: `phase0.yml`, `colo.yml`, `mcp.yml`, the NATS auth, Kino, notice and public overlays, `signcheck.yml`, `rcon-host.yml`, `opt-in/`; also the Paper entrypoint, the Velocity config and examples. | **No** | YAML | 19 | `docker compose config` steps in `./geldar.ps1 check` and the CI `compose` job | Not built (mounts jars and images built elsewhere) | [compose-stacks](compose-stacks.md) |
 | `contract/` | JSON Schemas (`contract/schemas/`, 52 files), the code generated from them, NATS subject builders and connection helpers. | **No** | TypeScript, JSON Schema | 111 | Shared; drift: `./geldar.ps1 pnpm check:generated` | `pnpm --filter @geldar/contract generate` (`scripts/generate.ts`); never hand-edit the output | [contract-schemas](contract-schemas.md), [nats-subjects](nats-subjects.md) |
 | `deploy/` | Colo deploy, rollback, status and admin scripts, Caddy site files, the genesis config bundle, the scratch stack. | Yes | Bash, Caddyfile, TypeScript tests | 67 | Shared (`deploy/test/*.test.ts`) | Not built; runs on the node | [deploy-scripts](deploy-scripts.md) |
-| `docs/` | Spec, decisions (181 files), runbooks (19), analysis (333), legal (3), players (1), and loose docs (5). | Yes | Markdown | 542 | Doc gates in `tools/repo-checks` | n/a | [docs index](../README.md) |
+| `docs/` | Spec, decisions (188 files: 187 records and the index), runbooks (30: 29 and the index), analysis (336), the library sections (agents, concepts, architecture, reference, guides, operations, security, history, siblings), legal (3), players (1), and loose docs (5). Counts are tracked files at 02e9ee34 (`git ls-files docs`, 2026-11-16). | Yes | Markdown | 646 | Doc gates in `tools/repo-checks` | n/a | [docs index](../README.md) |
 | `envs/` | Genesis environment definitions: `environment.schema.json` and `test.example.yaml` (decision 0188). | **No** | JSON Schema, YAML | 2 | Through `tools/genesis-env` tests | n/a | [shard-config](shard-config.md) |
 | `eventsink/` | Copies the NATS event stream `GELDAR_EVENTS` into Postgres. | Yes | TypeScript | 52 | Shared; integration test with `$env:GELDAR_IT = '1'` and a running shard | Image `eventsink/Dockerfile`, job `eventsink` in `colo-images.yml` | [eventsink](eventsink.md) |
 | `glass/` | The Glass: the Thought Stream server and Kino pages for human viewers. | Yes | TypeScript | 170 | Shared | Image `glass/Dockerfile`, job `glass` in `colo-images.yml` | [glass-and-kino](glass-and-kino.md) (agents-never) |
@@ -59,6 +59,7 @@ The TypeScript packages have no compile step of their own: Node 22 runs the `.ts
 | `shards/` | Shard configuration: `phase0.yaml`, `colo.yaml` (flat Colo budget keys), `colo-mind.yaml` (what the Colo containers read), `character-fixture.yaml` (disposable fixtures). | **No** | YAML | 4 | Read by config tests in several packages; `./geldar.ps1 check` validates `shards/colo.yaml` first | n/a | [shard-config](shard-config.md) |
 | `sql/` | Postgres migrations (44 files, `NNNN_slug.sql`), schema checks (`sql/test/`, 23 files) and a README. | Yes | SQL | 68 | CI `sql` job applies every migration in name order, then runs `sql/test/check-schema.sql` | Applied by `./geldar.ps1 db migrate` (`tools/migrate`) or by Postgres init on a fresh volume | [database-schema](database-schema.md) |
 | `supervisor/` | See [supervisor](#supervisor). | **No** | TypeScript | 27 | `./geldar.ps1 pnpm --filter @geldar/supervisor test`, or shared | Image `supervisor/Dockerfile`, job `supervisor` in `colo-images.yml` | [supervisor-and-body-helper](supervisor-and-body-helper.md) |
+| `telemetry/` | Shared OpenTelemetry setup for the Node services (`@geldar/telemetry`), off unless a caller passes a collector URL; no package imports it yet. Added by PR #551 after this page's pin; row measured 2026-11-16 at `3f07a4be`. | Yes | TypeScript | 29 | `./geldar.ps1 pnpm --filter @geldar/telemetry test`, or shared | Not built; TypeScript source bundled into the images that import it | [telemetry-package](telemetry-package.md) (agents-never) |
 | `threshold/` | Container folder for three packages (below). No files of its own. | **No** | n/a | 451 | per package | per package | [mcp-tools](mcp-tools.md), [register-service](register-service.md) |
 | `tools/` | Fourteen CLI and check packages (below). No files of its own. | **No** | TypeScript, Bash | 317 | per package | per package | [cli-tools](cli-tools.md) |
 

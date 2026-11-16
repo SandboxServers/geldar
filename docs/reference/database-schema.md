@@ -1,7 +1,7 @@
 ---
 title: Database schema
 type: reference
-audience: operators
+audience: agents-never
 status: draft
 last_verified: 2026-11-16 against 1b114276
 companions: [README.md, eventsink.md, contract-schemas.md, glossary.md, ../../sql/README.md, ../runbooks/account-deletion.md, ../runbooks/add-a-migration.md, ../security/privacy-and-data-retention.md]
@@ -14,7 +14,7 @@ Every table, column, role, grant, function and trigger the 44 migrations in `sql
 
 Tables and functions that serve observation (thoughts, journals, the per-turn record, Kino) are marked **agents-never** and described at the level spec Appendix D and the decision titles state, with no visibility rule detail ([documentation style](../agents/documentation-style.md#agents-never-learn-they-are-watched)).
 
-For how to add a migration, see [add-a-migration](../runbooks/add-a-migration.md) (*planned*, W3). For the privacy view, see [privacy-and-data-retention](../security/privacy-and-data-retention.md) (*planned*, W4).
+For how to add a migration, see [add-a-migration](../runbooks/add-a-migration.md). For the privacy view, see [privacy-and-data-retention](../security/privacy-and-data-retention.md).
 
 ## How migrations apply
 
@@ -167,7 +167,7 @@ Sheet data is operator-readable only: nothing is granted to PUBLIC, `geldar_mcp`
 
 | Table | Created | Purpose | Grants |
 |---|---|---|---|
-| `turn_records` | 0060 | one row per model call of a kit Mind; operator-only; no owner link; erased by `life_id`. Nothing writes it at 1b114276 (the writer GX-05b stays off unless `GELDAR_TURN_RECORD=1`) | `geldar`: INSERT, SELECT (granted only when the role exists) |
+| `turn_records` | 0060 | one row per model call of a kit Mind; operator-only; no owner link; meant to be erased by `life_id`, but account deletion does not erase it yet (card GX-05c, see [data retention and erasure](#data-retention-and-erasure)). Nothing writes it at 1b114276 (the writer GX-05b stays off unless `GELDAR_TURN_RECORD=1`) | `geldar`: INSERT, SELECT (granted only when the role exists) |
 
 Decision 0185.
 
@@ -183,7 +183,7 @@ Decision 0185.
 | `geldar_body_host` | 0063 | NOLOGIN as created | a managed Body reading its host config; no table privilege | 0063 header |
 | `geldar` | not created by a migration: the Postgres image creates it from `POSTGRES_USER` | yes | the bootstrap superuser ("Postgres roles are still the superuser `geldar` for admin work", decision 0133); the role `tools/mcp-tokens` and `tools/admin` connect as (0034 calls it the operator role); the event sink's default `POSTGRES_USER` (0060) | `compose/phase0.yml` line 19; `compose/colo.yml` line 45; decision 0133; 0034 and 0060 headers |
 
-How a node sets each role's password is outside this page (D8; see [secrets-by-role](../security/secrets-by-role.md), *planned*, W4).
+How a node sets each role's password is outside this page (D8; see [secrets-by-role](../security/secrets-by-role.md)).
 
 0001 mentions `mind_role`, `mcp_role` and `historian_role` in a comment only; no migration creates them.
 
@@ -275,14 +275,14 @@ Re-derive: `git grep -nE 'CREATE TRIGGER' -- 'sql/*.sql'`.
 | `mcp_tokens` | 90 days from issue; a renewal gives older live tokens a 10-minute grace | 0032 header |
 | `owner_api_keys` | 90 days; at most 10 live keys per owner | 0026, 0035 headers |
 | `register_sessions` | sliding expiry with a 12-hour cap, computed by the register service, not the table | 0021 header |
-| `kino_audit` (**agents-never**) | purged by `kino_audit_purge` on a retention period set in code; the figures are left out here (plan decision D9) and belong in the planned [privacy-and-data-retention](../security/privacy-and-data-retention.md) document | 0015; `AUDIT_RETENTION_DAYS` in `glass/src/kino/audit.ts` |
+| `kino_audit` (**agents-never**) | 90 days; see [privacy-and-data-retention](../security/privacy-and-data-retention.md#retention) | 0015; `AUDIT_RETENTION_DAYS = 90` in `glass/src/kino/audit.ts` line 10 (read 2026-11-16) |
 | `register_audit` | append-only; no purge in any migration | 0025 |
 | Sheet tables | erased by `sheet_erase_life` for every life of a deleted owner account, alive or dead | 0052 comments; decisions 0262, 0282 |
-| `turn_records` | erased by `life_id`; not append-only | 0060 header; decision 0185 |
+| `turn_records` | not append-only, but not yet erased by account deletion: `register_account_delete` (0040) does not touch it, and erasure by `life_id` is deferred to card GX-05c. Nothing writes the table yet | 0060 header; 0062 and 0065 (`not_included`: "erasure is deferred to GX-05c"); decision 0185 open questions; [privacy-and-data-retention](../security/privacy-and-data-retention.md#gaps) gap 4 |
 
 ### Account deletion (`register_account_delete`, 0040)
 
-The current body (0040, replacing 0039) runs in one transaction with `lock_timeout` 3 s. For every life of the owner, dead or alive, it calls `sheet_erase_life` and deletes the life's rows from `mcp_sleep_marks`, `mcp_budget`, `mcp_life_deaths`, `mcp_death_events`, `actions`, `intents`, `skill_runs`, `memories`, `goals`, `skill_library`, `relationships` (both sides), `ledger`, `votes`, `events` (by `agent_id` or `thinker_id`), `mcp_journal`, `thoughts`, `receipts` and `suppressed_wakeups`. For the owner it deletes tokens, `mcp_players`, `owner_api_keys`, `mcp_roster`, `body_ops`, and for the identity `register_sessions`, `register_consents`, `kino_admins` and its `kino_audit` rows; then the identity (or, when banned, keeps it as a tombstone with `owner_id` NULL) and the owner. It keeps the `agents` rows without the owner link, the ban tombstone, the `register_audit` row (random erasure actor) and the shared world objects `skills.author`, `books.author`, `proposals.proposer` and `laws` (0040 header and body, lines 67 to 144). The procedure for operators is the [account-deletion runbook](../runbooks/account-deletion.md).
+The current body (0040, replacing 0039) runs in one transaction with `lock_timeout` 3 s. For every life of the owner, dead or alive, it calls `sheet_erase_life` and deletes the life's rows from `mcp_sleep_marks`, `mcp_budget`, `mcp_life_deaths`, `mcp_death_events`, `actions`, `intents`, `skill_runs`, `memories`, `goals`, `skill_library`, `relationships` (both sides), `ledger`, `votes`, `events` (by `agent_id` or `thinker_id`), `mcp_journal`, `thoughts`, `receipts` and `suppressed_wakeups`. For the owner it deletes tokens, `mcp_players`, `owner_api_keys`, `mcp_roster`, `body_ops`, and for the identity `register_sessions`, `register_consents`, `kino_admins` and its `kino_audit` rows; then the identity (or, when banned, keeps it as a tombstone with `owner_id` NULL) and the owner. It keeps the `agents` rows without the owner link, the ban tombstone, the `register_audit` row (random erasure actor) and the shared world objects `skills.author`, `books.author`, `proposals.proposer` and `laws` (0040 header and body, lines 67 to 144). It does not touch `turn_records` (0060 postdates it; erasure is deferred to card GX-05c). The procedure for operators is the [account-deletion runbook](../runbooks/account-deletion.md).
 
 0040 depends at call time on `sheet_erase_life` (0051): without 0051 every deletion fails and rolls back (0040 header).
 

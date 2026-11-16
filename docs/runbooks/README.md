@@ -4,16 +4,23 @@ type: reference
 audience: agents-never
 status: draft
 last_verified: 2026-11-16 against 03c1f5de
-companions: [../README.md, ../decisions/README.md, ../../deploy/README.md]
+companions: [../README.md, ../decisions/README.md, ../../deploy/README.md, ../guides/first-shard-on-your-machine.md, ../guides/operator-first-day.md, ../operations/README.md]
 sources: [docs/runbooks, tools/repo-checks/src, deploy/test]
 ---
 
 # Runbooks index
 
-A runbook is a how-to: one goal, the steps to reach it, and how to undo them. This index lists every runbook in this
-folder in two tables: the [main index](#index) for the 19 runbooks of the W0 index and W3 body pass, and
+A runbook is a how-to: one goal, the steps to reach it, and how to undo them. This index lists all 29 runbooks in this
+folder (`git ls-files docs/runbooks`: 30 files with this index, 2026-11-16 at 3f07a4be) in two tables: the
+[main index](#index) for the 19 runbooks of the W0 index and W3 body pass, and
 [new runbooks](#new-runbooks-o01-to-o10-wave-w3) for the ten written in W3. For each it says what it is for, who it is
-for, and how far its references were checked.
+for, and how far its references were checked. The Audience, Status and Last verified columns of both tables were
+compared with each runbook's metadata block by script on 2026-11-16 at 3f07a4be: all 29 match.
+
+New here? Walk a tutorial first: [your first shard on your machine](../guides/first-shard-on-your-machine.md) (G02)
+before [bring-up-phase0-shard.md](bring-up-phase0-shard.md), and [operator first day](../guides/operator-first-day.md)
+(G04) before any node runbook. Failure symptoms per component are in
+[failure-modes](../operations/failure-modes.md).
 
 This folder is operator documentation. Several runbooks describe Glass, Kino, thoughts, journals and progress metrics.
 Never copy any of it into a prompt, skill, kit file, tool text, `identity.md`, player repo or sign.

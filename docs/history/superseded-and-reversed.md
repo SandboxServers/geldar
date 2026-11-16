@@ -149,7 +149,7 @@ The index row is the only place most of these chains show from the earlier side,
 | [0060](../decisions/0060-persona-size-limits.md) | Status: "the fit check below is OPEN" | The Wave M packet and verification named in the record | `tools/mcp-tokens/src/players.ts` lines 15 and 18: 8192 and 4096 bytes, as the index title says |
 | [0186](../decisions/0186-character-sheet-assumed-answers.md) Character-sheet answers | Assumed for planning only; "Nothing is switched on" | Owner answers | Eight files outside `docs/` cite 0186 (count method under [still Proposed](#still-proposed)) (for example `psyche/src/proficiency.ts`); whether anything is switched on was not checked |
 | [0221](../decisions/0221-wait-result-deduplicates-static-sections.md) `wait` deduplication | On only for listed lives | Not stated | `compose/colo.yml` cites `GELDAR_WAIT_DELTA_LIVES` |
-| [0364](../decisions/0364-known-gaps-against-0137-and-spec-8-4.md) Known gaps | Recorded, not fixed during the freeze | "Each gap closes with a later record" (0364) | See [contradicted by code](#accepted-records-contradicted-by-code) |
+| [0364](../decisions/0364-known-gap-public-overlay-against-0137.md) Known gap | Recorded, not fixed during the freeze | "The gap closes with a later record that cites the merged C2-02c fix" (0364) | See [contradicted by code](#accepted-records-contradicted-by-code) |
 
 ## Still Proposed
 
@@ -163,7 +163,7 @@ It is a citation count, not a check of behaviour. It can over-count (a bare numb
 
 | Record | Proposed by or awaiting | Files | Example file |
 |---|---|---|---|
-| [0068](../decisions/0068-prompt-v4-and-agent-visible-text.md) | fix-c; owner amends the spec line | 11 | `contract/src/agent-text.ts` |
+| [0068](../decisions/0068-prompt-v4-and-agent-visible-text.md) | owner amends the spec line | 11 | `contract/src/agent-text.ts` |
 | [0079](../decisions/0079-credit-numbers-and-charge-rules.md) | Owner confirms numbers and charge rules | 0 | |
 | [0082](../decisions/0082-colo-compose-network-and-limits.md) | Orchestrator may accept at the ops merge | 10 | `compose/colo.yml` |
 | [0083](../decisions/0083-c1-body-and-mind-image-contents.md) | (no qualifier) | 5 | `animus/Dockerfile.mind` |
@@ -211,7 +211,7 @@ Two records are Open, not Proposed: [0146](../decisions/0146-c5-open-questions-f
 
 The cheap checks on this page found one Accepted record that the repo contradicts today, and it is already recorded:
 
-1. **[0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md)** (Accepted). [0364](../decisions/0364-known-gaps-against-0137-and-spec-8-4.md) (Proposed) records that `compose/colo-public.yml` departs from 0137, that 0137 stays authoritative, and that node state is unchecked. Its title is the level of detail this page keeps (decision 0361 point 5).
+1. **[0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md)** (Accepted). [0364](../decisions/0364-known-gap-public-overlay-against-0137.md) (Proposed) records that `compose/colo-public.yml` departs from 0137, that 0137 stays authoritative, and that node state is unchecked. Its title is the level of detail this page keeps (decision 0361 point 5).
 
 Near misses, where an Accepted record reads differently from the code but a later record explains it:
 

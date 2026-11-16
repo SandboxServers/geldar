@@ -50,9 +50,9 @@ The generator defines 11 users (`Get-NatsUsers`, counted 2026-11-16). `<s>` is t
 | `mind` | The Mind | `animus` (profile `mind`) | its event types (`wake`, `intent`, `action`, `plan_result`, `reflex_fired`, `speech`, `damage`, `death`, `sleep`); `geldar.<s>.body.>`; JS | `body.*.hearing` | inbox |
 | `mcp` | The Geldar MCP | `geldar-mcp` | `geldar.<s>.sovereign_call`; `geldar.<s>.body.>`; KV `geldar-presence`; JS | `body.*.hearing` | inbox |
 | `eventsink` | The sink and its state service | `eventsink` | `geldar.<s>.dlq`; `geldar.<s>.state.>`; JS | none | `state.*.proficiency`, inbox |
-| `paper` | The Geldar-Core plugin | `paper` | `geldar.<s>.>`; JS | `kino.control`, `blockowner.query`, `ctl.body.>`, `helper.body.>`, `state.*.level` | `kino.control`, `maintenance`, `blockowner.query`, inbox |
+| `paper` | The Geldar-Core plugin | `paper` | `geldar.<s>.>`; JS | Kino subjects, `blockowner.query`, `ctl.body.>`, `helper.body.>`, `state.*.level` | Kino subjects, `maintenance`, `blockowner.query`, inbox |
 | `velocity` | The identity gate, read-only | `velocity` | only the JetStream calls a KV watch needs on `geldar-life-registry` and `geldar-skins`; flow control; inbox | none | inbox |
-| `kino` | Glass's camera link | `glass`, only with the Kino overlay | `kino.control` | none | `kino.*.feed`, inbox |
+| `kino` | Glass's camera link | `glass`, only with the Kino overlay | Kino subjects | none | Kino subjects, inbox |
 | `deploy` | The maintenance notice | `admin`, only through `compose/colo-notice.yml` | `geldar.<s>.maintenance` | none | inbox |
 | `supervisor` | Owner body control | not in any compose file in this repo | the four `helper.body.<verb>` subjects; inbox | none | `ctl.body.>`, inbox |
 | `register` | The register service's control requests | not wired in `compose/colo.yml` | `ctl.body.>` | none | inbox |
@@ -60,7 +60,7 @@ The generator defines 11 users (`Get-NatsUsers`, counted 2026-11-16). `<s>` is t
 
 Why some lists look the way they do:
 
-- **The denies stop forgery.** A Body may publish almost anything on its shard, so the denies name what only someone else may say: the Kino feed and control, a block owner change, a body control verb, a proficiency level, a hearing notice (comments in `Get-NatsUsers`; decisions [0165](../decisions/0165-block-owner-subjects.md), [0199](../decisions/0199-muffled-hearing.md), [0280](../decisions/0280-proficiency-contract-and-state-subjects.md)).
+- **The denies stop forgery.** A Body may publish almost anything on its shard, so the denies name what only someone else may say: the Kino subjects, a block owner change, a body control verb, a proficiency level, a hearing notice (comments in `Get-NatsUsers`; decisions [0165](../decisions/0165-block-owner-subjects.md), [0199](../decisions/0199-muffled-hearing.md), [0280](../decisions/0280-proficiency-contract-and-state-subjects.md)).
 - **Velocity is read-only.** It watches two buckets and writes none, so a compromised proxy cannot admit a username (decision [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md) item 3, a correction to the 0087 table). Because Velocity cannot create a bucket, the admin container creates `geldar-skins` as the `body` user before the stack starts (`deploy/README.md`, "Known limits").
 - **Body control is a chain of narrow users.** The register service may only ask (`ctl.body.>`); the supervisor may only answer that and ask the helper; the helper may only hear its four verbs. Only the helper touches Docker (decisions [0152](../decisions/0152-programmatic-body-management-for-owners.md), [0260](../decisions/0260-body-container-control-by-host-helper.md)).
 

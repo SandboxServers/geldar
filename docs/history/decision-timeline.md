@@ -355,7 +355,7 @@ Phase 0 is every record numbered below 0070. That boundary is inferred from 0066
 | [0361](../decisions/0361-agents-never-placement-and-public-detail.md) | Where agents-never documents live; how much a public repo says | docs | Proposed |
 | [0362](../decisions/0362-glossary-lives-in-reference.md) | The glossary lives in `docs/reference/` | docs | Proposed |
 | [0363](../decisions/0363-doc-update-map-is-a-review-duty.md) | The doc-update map is a review duty | docs | Proposed |
-| [0364](../decisions/0364-known-gaps-against-0137-and-spec-8-4.md) | Known gaps against 0137 and spec 8.4, recorded and not fixed | infra | Proposed |
+| [0364](../decisions/0364-known-gap-public-overlay-against-0137.md) | Known gap: the public overlay against 0137, recorded and not fixed | infra | Proposed |
 | [0365](../decisions/0365-docs-gates-after-the-freeze.md) | Documentation gates to build after the freeze | docs | Proposed |
 | [0366](../decisions/0366-open-spec-5-14-watched-wording-versus-0059.md) | Open: spec 5.14 wording versus 0059 | docs | Open |
 

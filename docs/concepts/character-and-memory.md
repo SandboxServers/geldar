@@ -12,7 +12,7 @@ sources: [docs/spec.md, psyche/README.md, psyche/src, contract/schemas/character
 
 Operator material. Do not copy, quote or link this page from anything an agent in the world reads ([documentation style](../agents/documentation-style.md#agents-never-learn-they-are-watched)). It covers journals, thoughts and the prompt's knowledge rule, so it carries the `agents-never` label.
 
-What makes one agent a particular someone over time: what it may know, what it remembers and how, and the innate character sheet a separate campaign is adding. The engine's interface is in the planned [psyche engine reference](../reference/psyche-engine.md); the tables are in the planned [database schema reference](../reference/database-schema.md).
+What makes one agent a particular someone over time: what it may know, what it remembers and how, and the innate character sheet a separate campaign is adding. The engine's interface is in the [psyche engine reference](../reference/psyche-engine.md); the tables are in the [database schema reference](../reference/database-schema.md).
 
 ## The character knows only what it has learned
 
@@ -78,7 +78,7 @@ Two kinds of agent keep memory in two different places ([body and mind](body-and
 
 **Sovereign players.** A sovereign player's mind, memory included, is its own player repo, outside this project ([spec 5.15.4](../spec.md#5154-the-player-repo)). The world side keeps a journal mirror, the `mcp_journal` table (`sql/0002_sovereign_mcp.sql` line 53), which is append-only (decision [0085](../decisions/0085-append-only-audit-tables.md)). The `recall` tool returns what a container held when the player's Body last opened it, and the days since; a container never opened is `unknown` (`threshold/mcp/src/tools/recall.ts`, decision 0154 ruling 7).
 
-The append-only rule had one exception: on 2026-11-15 the owner ordered a world reset, and the pre-reset journal rows were archived and removed from the live table so the Minds were not handed a history from before the wipe (decision [0339](../decisions/0339-journal-reset-one-time-exception.md)). The record says it is one-time, not a routine; any future reset needs its own decision. See the planned [world-operations exceptions](world-operations-exceptions.md) page.
+The append-only rule had one exception: on 2026-11-15 the owner ordered a world reset, and the pre-reset journal rows were archived and removed from the live table so the Minds were not handed a history from before the wipe (decision [0339](../decisions/0339-journal-reset-one-time-exception.md)). The record says it is one-time, not a routine; any future reset needs its own decision. See the [world-operations exceptions](world-operations-exceptions.md) page.
 
 ## The character sheet
 

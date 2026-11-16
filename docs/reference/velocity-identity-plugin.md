@@ -5,16 +5,16 @@ audience: operators
 status: draft
 last_verified: 2026-11-16 against 1b114276
 companions: [README.md, geldar-core-plugin.md, ../concepts/identity-and-ingress.md, ../security/authn-authz-map.md, compose-stacks.md, ../runbooks/skins.md, ../runbooks/nats-auth-inplace.md]
-sources: [plugin/README.md, plugin/velocity-identity/build.gradle.kts, plugin/velocity-identity/src/main/java/dev/geldar/identity, plugin/velocity-identity/src/test/java/dev/geldar/identity, plugin/gradle/libs.versions.toml, compose/velocity/velocity.toml, compose/phase0.yml, compose/colo.yml, compose/colo-public.yml, compose/nats-auth.yml, geldar.ps1, golem/src/registry.ts, plugin/core/src/main/java/dev/geldar/core/GhostListener.java, docs/spec.md, docs/decisions/README.md]
+sources: [plugin/README.md, plugin/velocity-identity/build.gradle.kts, plugin/velocity-identity/src/main/java/dev/geldar/identity, plugin/velocity-identity/src/test/java/dev/geldar/identity, plugin/gradle/libs.versions.toml, compose/velocity/velocity.toml, compose/phase0.yml, compose/colo.yml, compose/colo-public.yml, compose/nats-auth.yml, geldar.ps1, golem/src/registry.ts, docs/spec.md, docs/decisions/README.md, docs/decisions/0364-known-gap-public-overlay-against-0137.md]
 ---
 
 # Velocity identity plugin
 
-The Velocity identity plugin (`plugin/velocity-identity`) is the bot-ingress gate. Velocity admits a Minecraft login only when the username is registered for a life in the NATS KV bucket `geldar-life-registry`. It also applies stored agent skins, keeps unadmitted connections off the `geldar:cmd` channel, and tells Paper which connections are ghosts. This page also covers the proxy's own configuration, `compose/velocity/velocity.toml`.
+The Velocity identity plugin (`plugin/velocity-identity`) is the bot-ingress gate. Velocity admits a Minecraft login only when the username is registered for a life in the NATS KV bucket `geldar-life-registry`. It also applies stored agent skins and keeps unadmitted connections off the `geldar:cmd` channel. Spectator handling is shared with Geldar-Core (spec 8.4). This page also covers the proxy's own configuration, `compose/velocity/velocity.toml`.
 
 Everything below was read from the files in `sources:` at commit `1b114276` on 2026-11-16. Nothing was read from a running proxy (plan decision D8).
 
-Related: [Geldar-Core](geldar-core-plugin.md) (the Paper half of ghost enforcement), [identity-and-ingress](../concepts/identity-and-ingress.md) (the why), [compose-stacks](compose-stacks.md). Planned and not yet written: [authn-authz-map](../security/authn-authz-map.md) (W4). Two gaps against decision 0137 and spec 8.4 are under [Known gaps](#known-gaps).
+Related: [Geldar-Core](geldar-core-plugin.md) (the Paper half of ghost enforcement), [identity-and-ingress](../concepts/identity-and-ingress.md) (the why), [compose-stacks](compose-stacks.md). Who may do what: [authn-authz-map](../security/authn-authz-map.md). One known gap, against decision 0137, is under [Known gaps](#known-gaps).
 
 ## Identity
 
@@ -43,8 +43,7 @@ sequenceDiagram
   alt DENIED
     V-->>G: fixed deny message
   else LIVE or SPECTATOR
-    V->>P: modern forwarding (live logins carry the signed live marker)
-    V->>P: spectators get a geldar:ghost message
+    V->>P: modern forwarding
   end
 ```
 
@@ -59,8 +58,6 @@ sequenceDiagram
 | Deny message | One fixed text for every denial, so a denial reveals nothing about which check failed. | `LoginGate.DENY_MESSAGE` |
 | Denial log | At most 10 denial lines per 10 s window; the rest are counted. Usernames are cut to 32 characters and stripped to `[A-Za-z0-9_.-]` before logging. | `MAX_LOGGED_DENIALS`, `DENY_WINDOW_NANOS`, `printable` |
 | `geldar:cmd` | Messages on this channel from a connection that was not admitted as `LIVE` are dropped at the proxy. | `onPluginMessage`, `LoginGate.isAdmitted` |
-| Ghost signal | For a `SPECTATOR` connection, one `geldar:ghost` message to Paper after each backend connect; if no backend or the send fails, the player is disconnected. Paper holds the player in spectator ([Geldar-Core](geldar-core-plugin.md)). | `onServerPostConnect` |
-| Live marker | A `LIVE` login gets the profile property `geldar_live`; any copy the client sent is dropped first. Modern forwarding signs profile properties. | `markLive`; decision [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md) |
 | Release | An admission is forgotten on disconnect, except after `CONFLICTING_LOGIN`, which shares the live player's UUID. | `release` |
 
 ## Skins
@@ -146,14 +143,11 @@ The tests need no proxy: gate, registry, readiness, denial limiter, skins, ghost
 
 ## Known gaps
 
-Gaps between the code and an authoritative spec section or decision, recorded by owner ruling (relayed 2026-11-16). Neither is fixed at 1b114276.
-
-1. **The public overlay publishes the bot ingress.** Decision [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md) is authoritative. Its point 1: the offline-mode bot ingress "is reachable only on the compose network, and is never published"; a separate public spectator proxy runs with `online-mode = true`; "Only the public spectator proxy appears in `compose/colo-public.yml`." What the file says at 1b114276: `compose/colo-public.yml` (decision [0096](../decisions/0096-public-topology-as-built.md), packet C2-07a2) adds one port publish to the `velocity` service, which is the bot ingress on this page (`compose/velocity/velocity.toml`, `online-mode = false`); bind and port come from environment, and its header says the deploy merges it when the owner opens the game port. No online-mode proxy exists in `compose/` (`git grep -n -i online-mode -- compose`, 2026-11-16). Node state: unchecked (plan decision D8). Not fixed.
-2. **A ghost measure against spec 8.4.** A ghost measure described in spec 8.4 is not implemented in the plugin at 03c1f5de; a plugin-side fix is planned after the freeze (owner ruling relayed 2026-11-16). Detail is withheld under decision [0361](../decisions/0361-agents-never-placement-and-public-detail.md). Not fixed. The Paper half is [Geldar-Core](geldar-core-plugin.md#known-gaps).
+One gap, open and not fixed: the public overlay against decision [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md), recorded in decision [0364](../decisions/0364-known-gap-public-overlay-against-0137.md).
 
 ## Detail withheld, owner decision D9
 
-- Spectator (ghost) handling beyond what spec 8.4, decision 0137 and the known gaps above already state.
+- Spectator (ghost) handling beyond what spec 8.4 and decision 0137 state is withheld under decision [0361](../decisions/0361-agents-never-placement-and-public-detail.md).
 
 ## Re-derive
 
