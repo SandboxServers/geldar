@@ -80,6 +80,15 @@ async function shutdownAll(providers: Stoppable[]): Promise<void> {
   clearTimeout(timer);
 }
 
+/** Clears the global API so a later start in the same process can register again. */
+function disableGlobals(): void {
+  trace.disable();
+  logs.disable();
+  metrics.disable();
+  propagation.disable();
+  context.disable();
+}
+
 /** True only for an absolute http or https URL. Throws for a bare host, which the setup catch handles. */
 function hasHttpScheme(endpoint: string): boolean {
   const { protocol } = new URL(endpoint);
@@ -148,18 +157,38 @@ export function startTelemetry(options: TelemetryOptions): TelemetryHandle {
       ],
     });
 
-    trace.setGlobalTracerProvider(tracerProvider);
-    logs.setGlobalLoggerProvider(loggerProvider);
-    metrics.setGlobalMeterProvider(meterProvider);
-    // W3C trace context only: no Baggage propagator is ever installed.
-    propagation.setGlobalPropagator(new W3CTraceContextPropagator());
-    context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable());
+    // Each global is registered once per process. A false return means another provider already owns it.
+    const registered = [
+      { ok: trace.setGlobalTracerProvider(tracerProvider), clear: () => trace.disable() },
+      { ok: logs.setGlobalLoggerProvider(loggerProvider), clear: () => logs.disable() },
+      { ok: metrics.setGlobalMeterProvider(meterProvider), clear: () => metrics.disable() },
+      // W3C trace context only: no Baggage propagator is ever installed.
+      {
+        ok: propagation.setGlobalPropagator(new W3CTraceContextPropagator()),
+        clear: () => propagation.disable(),
+      },
+      {
+        ok: context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable()),
+        clear: () => context.disable(),
+      },
+    ];
+    if (!registered.every((entry) => entry.ok)) {
+      // Undo only what this start registered: the foreign owner's globals stay as they are.
+      for (const entry of registered) if (entry.ok) entry.clear();
+      void shutdownAll([tracerProvider, loggerProvider, meterProvider]);
+      // One line, no URL, as with the setup failure above.
+      process.stderr.write(
+        'telemetry: another OpenTelemetry provider owns the global API; telemetry is off\n',
+      );
+      return OFF;
+    }
 
     const handle: TelemetryHandle = {
       enabled: true,
       tracerProvider,
       shutdown: async () => {
         if (active === handle) active = undefined;
+        disableGlobals();
         await shutdownAll([tracerProvider, loggerProvider, meterProvider]);
       },
     };
