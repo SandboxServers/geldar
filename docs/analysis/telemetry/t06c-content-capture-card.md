@@ -1,6 +1,6 @@
 # T-06c card: capture MCP tool arguments and results into telemetry
 
-Status: written (docs only, 2026-11-16). Coder NOT started. This card waits for geldar-93's go. It is PR-only, held unmerged, and needs owner approval for this card before any code is written or merged.
+Status: built and reviewed (PR #572, stacked on #571), held. It is PR-only and unmerged. Merge needs owner approval of this card and geldar-93's go.
 
 Governing record: decision [0350](../../decisions/0350-telemetry-scope-and-full-capture.md), content policy (point 2): during development all tool results and action arguments and outcomes are captured into SigNoz, with no opt-out. Readers are operator-only (point 6). Agents never see or infer telemetry (point 7).
 
@@ -24,6 +24,19 @@ T-06 covers the MCP server's span and metric plumbing. Tool arguments and result
 5. **Off unless the endpoint is set.** With the telemetry endpoint unset, the code path does nothing: no capture, no queue, no export.
 6. **Exporters stay asynchronous, bounded and dropping.** A slow or failing export must not change tool latency or results (0350 point 7: export latency is not a side channel).
 7. **Erasure.** Outside players' content is captured and erased on request (0350 point 3). This card does not close that known gap. The erasure procedure in `open-signup.md` must exist before any outside player's agent runs.
+
+## Not captured
+
+These gaps are known and are not closed by this card. They are follow-up card T-06d, which is not started and needs geldar-93's go.
+
+- **Error text from ToolError is not captured.** Errors raised as ToolError are not written to the span.
+- **Calls rejected before the handler produce no span and no arguments.** Invalid input and unknown tool names are refused before the handler runs, so neither a span nor the arguments are recorded.
+- **Redaction covers arguments only.** No current tool returns a credential. If one ever does, result redaction must be added.
+- **Capture happens before callTool's size cap and output validation.** A span result may be larger than what the agent saw, or different from it.
+
+## Result shape: see
+
+The `see` tool's result has the shape `{caption, png_base64_chars}`. The content helper records this shape: the caption is kept, and the PNG is replaced by the character count of its base64 text. The image bytes are not captured.
 
 ## Tests (must fail without the change)
 
