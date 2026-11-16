@@ -61,6 +61,18 @@ describe('Mind span and log keys', () => {
     expect(filterAttributes({ harness: 'claude' }, 'metric').dropped).toEqual([]);
   });
 
+  it('keeps http.response.status_code as a number in trace and log scope only', () => {
+    const key = 'http.response.status_code';
+    for (const scope of ['trace', 'log'] as const) {
+      const kept = filterAttributes({ [key]: 401 }, scope);
+      expect(kept.dropped, scope).toEqual([]);
+      expect(kept.attributes, scope).toEqual({ [key]: 401 });
+    }
+    expect(filterAttributes({ [key]: 401 }, 'metric').dropped).toEqual([
+      { key, reason: 'unknown' },
+    ]);
+  });
+
   it('keeps token counts and drops a credential-named key', () => {
     const result = filterAttributes(
       { 'gen_ai.usage.output_tokens': 5, 'geldar.mind_auth_token': 'x' },

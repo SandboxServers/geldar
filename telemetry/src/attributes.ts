@@ -50,6 +50,7 @@ const TRACE_LOG_KEYS: ReadonlySet<string> = new Set([
   'gen_ai.usage.output_tokens',
   'gen_ai.usage.total_tokens',
   'mcp.method.name',
+  'http.response.status_code',
   // Mind spans and logs: OpenTelemetry GenAI names.
   'gen_ai.provider.name',
   'gen_ai.conversation.id',
