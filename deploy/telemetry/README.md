@@ -14,8 +14,6 @@ Compose references every image as `repo@sha256:<index digest>` (digest only, no 
 | clickhouse/clickhouse-keeper | 25.12.5 (build 44) | sha256:525b8b0f93ccb371131c46f22a066ea43d33d74aba314203e8044609945d8524 | sha256:5493b0fba2fdfc3bf51115db4fb378fac8b0a953c116db442fd4297a8f49a9d7 | 2026-02-02 | starts as root, drops to 101:101 [INF, see Owner uids] |
 | signoz/signoz | v0.148.1 | sha256:a7d1a968a1f7f65c518106150ac05424ca8e91c52d7076077dfce034980e9c34 | sha256:909443fb98d16048df866d49f6efe5e8b19dd60e20821bee2c45c46090700027 | 2026-10-29 | root (no drop) [SRC] |
 | signoz/signoz-otel-collector | v0.144.6 | sha256:7e4e539a73f1f88fbc1cd7e659ab3950908e83ce1f2a37a297452f910d072174 | sha256:13fca6050f79c49a0bdc644ccdc65a9248f22f3b4337d1e0680da026a764d77e | 2026-07-14 | 10001 [SRC] |
-| signoz/signoz-schema-migrator | v0.144.6 | sha256:4e57475fbf8b24168dcfbe6fc5799bb3f3d965819b72663580d0926185b68bf5 | sha256:1b58ff410181d8708bc032c3d5bd5e4e4863cda2464dfa444090be423d7cda4b | 2026-07-14 | 10001 [SRC] |
-
 Why these tags: 25.12.5 (build 44) is the ClickHouse line SigNoz v0.148.1 tests in CI. v0.144.6 is the collector version the v0.148.1 `go.mod` pins. The newer 25.12.11 (build 4) and 26.3.62 (build 3) are not used (see 0370). The digests were read from the Docker Hub registry API on 2026-11-16 and were not pulled.
 
 ## Owner uids
@@ -28,7 +26,7 @@ Why these tags: 25.12.5 (build 44) is the ClickHouse line SigNoz v0.148.1 tests 
   ```
 
   Expected: `uid=101(clickhouse) gid=101(clickhouse)`. **Stop on any other output** and do not chown. (The check runs a container and is a scratch-run step, not part of this packet.)
-- **signoz-schema-migrator and signoz-otel-collector**: uid 10001 [SRC, image `User`]. The secret files are mounted for uid 10001 (see the compose file).
+- **signoz-otel-collector** (also the migrator, which runs its `migrate` subcommands from the same image): uid 10001 [SRC, image `User`]. The secret files are mounted for uid 10001 (see the compose file).
 - **signoz**: root [SRC]. Data dir `/mnt/nvme/geldar-telemetry/query` is owned by root.
 
 ## Host paths

@@ -95,16 +95,17 @@ services:
     logging: *logging
 
   geldar-signoz-migrator:
-    # One-shot schema migrator v0.144.6 (0370). Tested by SigNoz CI with ClickHouse 25.12.5 [SRC].
-    # --replication true: the migrator default is false, the collector default is true; the two must match [INF from facts].
-    # Password is read from the file secret at start, not inline.
-    image: signoz/signoz-schema-migrator@sha256:4e57475fbf8b24168dcfbe6fc5799bb3f3d965819b72663580d0926185b68bf5 # v0.144.6
+    # One-shot schema migrator: the collector image's migrate subcommands (0370, facts section 2A) [SRC SZ devenv compose].
+    # Same digest as geldar-signoz-otelcol, so no second migrator image is pinned. Tested by SigNoz CI with ClickHouse 25.12.5 [SRC].
+    # The DSN (with the writer password) is exported inside the shell from the secret file. It is not in argv or docker inspect.
+    # Replication is on through the env var (matches the collector default and the macros). The migrator's --replication flag is not used.
+    image: signoz/signoz-otel-collector@sha256:7e4e539a73f1f88fbc1cd7e659ab3950908e83ce1f2a37a297452f910d072174 # v0.144.6
     container_name: geldar-signoz-migrator
     hostname: geldar-signoz-migrator
     entrypoint: ["/bin/sh", "-c"]
-    # [AUTH] shell wrapper; the image must have /bin/sh [UNV]
+    # [AUTH] shell wrapper; the image must have /bin/sh [UNV]. The steps run in order and stop at the first failure.
     command:
-      - 'export CH_DSN="tcp://geldar_writer:$$(cat /run/secrets/ch_writer_password)@geldar-ch:9000"; /signoz-schema-migrator sync --dsn "$$CH_DSN" --cluster-name cluster --replication true && /signoz-schema-migrator async --dsn "$$CH_DSN" --cluster-name cluster --replication true'
+      - 'export SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_DSN="tcp://geldar_writer:$$(cat /run/secrets/ch_writer_password)@geldar-ch:9000" SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_CLUSTER=cluster SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_REPLICATION=true SIGNOZ_OTEL_COLLECTOR_TIMEOUT=10m; /signoz-otel-collector migrate ready && /signoz-otel-collector migrate bootstrap && /signoz-otel-collector migrate sync up && /signoz-otel-collector migrate async up'
     secrets:
       - source: ch_writer_password
         target: ch_writer_password
