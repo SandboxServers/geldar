@@ -1,6 +1,7 @@
 // The helper's entry point (C7-03c1). It reads the config (env names and root-only secret files), connects to NATS as
-// the `helper` user, serves the four body subjects, runs the stray sweep (BH-6: it removes orphans only when managed Bodies are on), and shuts down on SIGTERM or
-// SIGINT. It logs names and counts only: never a password, a template or a request body.
+// the `helper` user, serves the four body subjects, runs the stray sweep (BH-6: it removes orphans only when managed
+// Bodies are on), and shuts down on SIGTERM or SIGINT. It logs names and counts only: never a password, a template or
+// a request body.
 import { readFileSync, statSync } from 'node:fs';
 import { connectNats, exitOnFatalClose } from '@geldar/contract/nats';
 import { Pool } from 'pg';

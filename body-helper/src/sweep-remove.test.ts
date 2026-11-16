@@ -52,9 +52,11 @@ function harness(w: World, withRemoval = true) {
   const audit: string[] = [];
   const order: string[] = [];
   const lifeIds: string[] = [];
+  const rosterCalls: [string, string][] = [];
   const seen = new Set<string>();
   const roster = {
-    displayName: async () => {
+    displayName: async (owner: string, name: string) => {
+      rosterCalls.push([owner, name]);
       if (w.rosterThrows) throw new Error('roster down');
       return w.onRoster ? 'Orphan' : null;
     },
@@ -86,7 +88,13 @@ function harness(w: World, withRemoval = true) {
         }
       : {}),
   };
-  return { deps, audit, order, lifeIds, seen };
+  return { deps, audit, order, lifeIds, rosterCalls, seen };
+}
+
+/** Every roster read (the first read and the re-read) must use the owner and the lower-cased container name. */
+function expectRosterKeys(calls: [string, string][], name: string) {
+  expect(calls.length).toBeGreaterThan(0);
+  for (const call of calls) expect(call).toEqual(['owner-1', name]);
 }
 
 describe('stray sweep removal (BH-6)', () => {
@@ -98,6 +106,17 @@ describe('stray sweep removal (BH-6)', () => {
     expect(await sweepStrays(h.deps)).toBe(0);
     expect(h.order).toEqual([`whitelist ${LIFE}`, 'container cid-orphan']);
     expect(h.audit).toContain(`body-helper orphan_removed name=${NAME} outcome=removed`);
+    expectRosterKeys(h.rosterCalls, NAME);
+  });
+
+  it('reads the roster with the lower-cased name on the first read and the re-read, for a mixed-case container name', async () => {
+    const h = harness(world());
+    h.deps.engine.bodies = async () => [{ name: 'Orphan1', owner: 'owner-1', running: false }];
+    await sweepStrays(h.deps);
+    expect(await sweepStrays(h.deps)).toBe(0);
+    expect(h.order).toEqual([`whitelist ${LIFE}`, 'container cid-orphan']);
+    expect(h.rosterCalls.length).toBe(3);
+    expectRosterKeys(h.rosterCalls, 'orphan1');
   });
 
   it('a failed whitelist remove keeps the container, and the confirming pass retries it on the next pass', async () => {
@@ -247,6 +266,7 @@ describe('stray sweep removal (BH-6)', () => {
     expect(h.order).toEqual([]);
     await sweepStrays(h.deps);
     expect(h.order).toEqual([`whitelist ${LIFE}`, 'container cid-orphan']);
+    expectRosterKeys(h.rosterCalls, NAME);
   });
 
   it('a roster read that throws before the remove keeps the Body, and the mark is not carried', async () => {
