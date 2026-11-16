@@ -146,10 +146,15 @@
              Distributed tables are altered too, and the grant is on whole databases so both are covered. SELECT on the three
              databases and on system.* because SigNoz reads engine_full from system.tables for the TTL status call; system.*
              is wider than system.tables, narrowing is untested [UNV]. CLUSTER is for ON CLUSTER.
-             NOT granted: INSERT, CREATE, DROP, TRUNCATE, SYSTEM, REMOTE, SOURCES, TABLE ENGINE, access management, ALTER of
-             columns or settings. No grants on signoz_metadata, signoz_meter or signoz_analytics: whether the retention call touches
-             them is not known [UNV]; the ALTER failure names the missing privilege. If SigNoz's logs path takes the _retention_days
-             branch it may need ALTER MODIFY COLUMN, and cold storage needs ALTER MODIFY SETTING; both are unused here [UNV].
+             Ruled in scratch round 9: the logs v2 call (POST /api/v2/settings/ttl, type logs) runs ALTER TABLE signoz_logs.logs_v2 ON
+             CLUSTER ... MODIFY COLUMN _retention_days and was refused with Code 497, so GRANT ALTER MODIFY COLUMN ON signoz_logs.* is
+             added (narrow: signoz_logs only; it is the child of ALTER COLUMN that the error names). Traces and metrics need only ALTER
+             TTL, as before. Existing rows keep their old _retention_days: v2 changes only the column default for new rows, and no
+             materialization (ALTER UPDATE) is granted. Acceptable because nothing is ingested yet.
+             NOT granted: INSERT, CREATE, DROP, TRUNCATE, SYSTEM, REMOTE, SOURCES, TABLE ENGINE, access management, ALTER UPDATE,
+             ALTER DELETE, ALTER COLUMN on other databases, ALTER of settings. No grants on signoz_metadata, signoz_meter or
+             signoz_analytics: whether the retention call touches them is not known [UNV]; the ALTER failure names the missing
+             privilege. Cold storage needs ALTER MODIFY SETTING; unused here [UNV].
              Networks are all, as for the writer and the reader: the container reaches geldar-ch by name on the telemetry network;
              nothing is published. -->
         <geldar_signoz_admin>
@@ -160,6 +165,7 @@
                 <query>GRANT ALTER TTL ON signoz_traces.*</query>
                 <query>GRANT ALTER TTL ON signoz_logs.*</query>
                 <query>GRANT ALTER TTL ON signoz_metrics.*</query>
+                <query>GRANT ALTER MODIFY COLUMN ON signoz_logs.*</query>
                 <query>GRANT SELECT ON signoz_traces.*</query>
                 <query>GRANT SELECT ON signoz_logs.*</query>
                 <query>GRANT SELECT ON signoz_metrics.*</query>
