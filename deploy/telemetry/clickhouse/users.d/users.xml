@@ -9,7 +9,9 @@
   SELECT grants on the signoz_* databases. Threads 4 are [AUTH]. The per-hour read quota of 0352 is NOT set here: 0352 gives no value [UNV].
   The grants use the XML users grants element [INF, unverified on 25.12.5]. signoz_analytics is not named by any source, so it is not granted.
   default: kept because the cluster entry in cluster.xml has no user, so ON CLUSTER DDL runs as default (README item 9).
-  Networks for default are loopback only; nothing is published. Widen only if the scratch run shows ON CLUSTER refused.
+  Networks for default are loopback only (127.0.0.1, ::1). Both <networks> and each <ip> carry replace="replace" so the stock ::/0
+  is not kept by the merge [INF, unverified on 25.12.5; README item 21]. default has no access_management (N2).
+  Nothing is published. Widen only if the scratch run shows ON CLUSTER refused.
 -->
 <clickhouse>
     <profiles>
@@ -34,13 +36,12 @@
     <users>
         <default>
             <password></password>
-            <networks>
-                <ip>127.0.0.1</ip>
-                <ip>::1</ip>
+            <networks replace="replace">
+                <ip replace="replace">127.0.0.1</ip>
+                <ip replace="replace">::1</ip>
             </networks>
             <profile>default</profile>
             <quota>default</quota>
-            <access_management>1</access_management>
         </default>
         <geldar_writer>
             <password_sha256_hex from_env="GELDAR_CH_WRITER_SHA256"/>
