@@ -66,6 +66,7 @@ export function createFakeEngine(seed: FakeContainer[] = []): FakeEngine {
             running: found.running,
             helperBody: BODY_LABEL in found.labels,
             owner: found.labels['geldar.owner'] ?? null,
+            lifeId: found.labels['geldar.life'] ?? null,
           }
         : null;
     },

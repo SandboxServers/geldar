@@ -8,6 +8,8 @@ import {
   admitName,
   type ManagedDbWiring,
   managedBodyConfig,
+  removeConfig,
+  removeName,
 } from './managed-template.ts';
 import { LOGIN_NAME, parseRequest } from './requests.ts';
 import { LIFE_ID_PATTERN, type RosterLifePort } from './roster.ts';
@@ -28,6 +30,8 @@ export const ENGINE_TIMEOUT = 'engine timeout';
 export const MANAGED_REFUSAL = 'managed bodies are not enabled';
 /** The refusal of a start whose life admission (the admit one-shot) did not exit 0. The reason is never sent. */
 export const ADMIT_REFUSAL = 'life admission failed';
+/** The refusal of a stop whose life removal (the remove one-shot, BH-5b) did not exit 0. The caller retries; nothing is erased. */
+export const LIFE_REMOVAL_FAILED = 'life removal failed';
 /** The most time one start or stop may hold the queue (config: GELDAR_BODY_HELPER_DEADLINE_MS). */
 export const REQUEST_DEADLINE_MS = 120_000;
 /** The error an abandoned run ends with. It is never sent: the caller was answered at the deadline. */
@@ -272,6 +276,34 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
     }
   };
 
+  // The remove one-shot for a life id (BH-5b): the add one-shot's fixed template in mode remove. Any failure is -1.
+  const runRemove = async (lifeId: string): Promise<number> => {
+    try {
+      const settings = deps.template;
+      const rconSecretHostPath = settings.managed?.rconSecretHostPath;
+      if (rconSecretHostPath === undefined) return -1;
+      return await deps.engine.runOneShot(
+        removeName(lifeId),
+        removeConfig({
+          image: settings.image,
+          uid: settings.wiring.uid,
+          network: settings.wiring.network ?? DEFAULT_NETWORK,
+          stack: settings.wiring.stack ?? DEFAULT_STACK,
+          lifeId,
+          rconSecretHostPath,
+        }),
+      );
+    } catch {
+      return -1;
+    }
+  };
+
+  // A stop whose life removal failed is reported, never answered as stopped: the delete path then erases nothing.
+  const removalFailed = (name: string): Reply => {
+    audit('stop', name, 'failed', 'life_removal');
+    return { ok: false, code: 'failed', error: LIFE_REMOVAL_FAILED };
+  };
+
   async function stop(
     container: string,
     name: string,
@@ -283,15 +315,38 @@ export function createBodyHelper(deps: HelperDeps): RequestHandler {
     if (!live()) throw new Error(ABANDONED);
     if (state === null) {
       deps.stopTimeouts?.delete(container);
+      // Race only: the container vanished between the status the supervisor read and this stop. The supervisor answers
+      // unknown for an absent status and sends no stop, so a container lost earlier leaves its life id admitted with no
+      // automatic cleanup built; the operator removes it by the exact-name remove one-shot (body-helper-node-steps.md).
+      // The Body is gone, so its life id comes from the roster row (the stop runs before any erase). No row: nothing to remove.
+      // With managed Bodies off or without the rcon file no Body could have been admitted, so the roster is not read and
+      // the stop answers not_running as before (a failed remove here would block every account delete while off).
+      const removal = deps.template.managed;
+      if (removal?.enabled && removal.rconSecretHostPath) {
+        const lifeId = await deps.roster.lifeId(owner, name);
+        if (!live()) throw new Error(ABANDONED);
+        if (lifeId !== null) {
+          const code = await runRemove(lifeId);
+          if (!live()) throw new Error(ABANDONED);
+          if (code !== 0) return removalFailed(name);
+        }
+      }
       audit('stop', name, 'not_running');
       return { ok: false, code: 'not_running', error: 'not running' };
     }
     const refusal = refusalFor('stop', name, state, owner);
     if (refusal) return refusal;
+    // Only a Body with a validated geldar.life label is managed. A house or Adam Body has none: it is stopped, nothing else.
+    const managedLifeId = state.lifeId ?? null;
     try {
       await deps.engine.stop(container);
     } finally {
       deps.stopTimeouts?.delete(container);
+    }
+    if (managedLifeId !== null) {
+      const code = await runRemove(managedLifeId);
+      if (!live()) throw new Error(ABANDONED);
+      if (code !== 0) return removalFailed(name);
     }
     // A stop that lands after its deadline was already answered with the timeout: it is not audited as accepted.
     if (live()) audit('stop', name, 'accepted');

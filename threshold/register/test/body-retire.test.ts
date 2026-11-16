@@ -9,7 +9,7 @@ const RETIRE = '/api/v1/agents/p1/retire';
 const STOP = '/api/v1/agents/p1/body/stop';
 const enc = (o: unknown) => new TextEncoder().encode(JSON.stringify(o));
 
-type StopMode = 'stopped' | 'unknown' | 'busy' | 'unreachable';
+type StopMode = 'stopped' | 'unknown' | 'busy' | 'error' | 'unreachable';
 
 /**
  * The agents of alice (p1 ok, p3 retired, p4 a bad display name, p5 retired with a bad display name) and bob (p2).
@@ -168,6 +168,19 @@ describe('owner API retire route (C7-04d)', () => {
       expect(r.status).toBe(503);
       expect(JSON.parse(r.body).code).toBe('body_unavailable');
       expect(w.log).toEqual(['stop']);
+    });
+  });
+
+  it('answers 503 when the supervisor answers error (a helper failure on stop, the code the supervisor sends), nothing is retired and the slot is freed', async () => {
+    await withWorld(async (w) => {
+      w.mode.stop = 'error';
+      const r = await w.srv.call('POST', RETIRE, cookie);
+      expect(r.status).toBe(503);
+      expect(JSON.parse(r.body).code).toBe('body_unavailable');
+      expect(r.retryAfter).toBe('30');
+      expect(w.log).toEqual(['stop']);
+      expect(w.retireArgs).toEqual([]);
+      expect(w.slot.size).toBe(0);
     });
   });
 
