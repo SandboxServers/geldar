@@ -1,3 +1,13 @@
+---
+title: "Block owner bridge (CoreProtect)"
+type: how-to
+audience: operators
+status: draft
+last_verified: 2026-11-16 against cd4499da
+companions: [README.md, coreprotect.md, kino.md]
+sources: [../decisions/0165-block-owner-subjects.md]
+---
+
 # Block owner bridge (CoreProtect)
 
 The Body's goto must not dig a block another player placed (decision 0165). geldar-core answers

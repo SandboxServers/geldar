@@ -1,3 +1,13 @@
+---
+title: "Scratch stack"
+type: how-to
+audience: operators
+status: draft
+last_verified: 2026-11-16 against cd4499da
+companions: [README.md, nats-auth-inplace.md]
+sources: [../../deploy/scratch/scratch.sh]
+---
+
 # Scratch stack
 
 A throwaway copy of the Phase 0 shard stack (`compose/phase0.yml`) for the sheet campaign validation. It runs beside the

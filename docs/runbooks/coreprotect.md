@@ -1,3 +1,13 @@
+---
+title: "CoreProtect (block owner records)"
+type: how-to
+audience: operators
+status: draft
+last_verified: 2026-11-16 against cd4499da
+companions: [README.md, block-owner.md, chunky.md, node-only-config.md]
+sources: [plugins/coreprotect/coreprotect.lock.json, deploy/common.sh, deploy/colo-up.sh, tools/repo-checks/src/release-dates.json]
+---
+
 # Runbook: CoreProtect (block owner records)
 
 CoreProtect records block changes in the Paper world so that a block's owner can be found later. Its jar is pinned, verified and mounted read-only like BlueMap and Chunky. Its data directory is not a repo path and not a mount.

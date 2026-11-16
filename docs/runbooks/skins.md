@@ -1,3 +1,13 @@
+---
+title: "Agent skins (rangers)"
+type: how-to
+audience: agents-never
+status: draft
+last_verified: 2026-11-16 against cd4499da
+companions: [README.md, kino.md, map-chat-panel.md, node-only-config.md]
+sources: [../decisions/0140-agent-skins.md, ../decisions/0250-skin-upload-visibility-and-export.md, ../decisions/0187-bluemap-skin-provider-in-geldar-core.md]
+---
+
 # Agent skins (rangers)
 
 Skins come from MineSkin signed textures stored in the `geldar-skins` NATS KV bucket (key: life id, such as `ag_jason_01`). The Velocity identity plugin sets the `textures` property at login (decision 0140). The signed data and the PNGs are never in the repo.

@@ -1,3 +1,13 @@
+---
+title: "Progress metrics (operator only)"
+type: how-to
+audience: agents-never
+status: draft
+last_verified: 2026-11-16 against cd4499da
+companions: [README.md]
+sources: [../../tools/progress-metrics/src/cli.ts]
+---
+
 # Progress metrics (operator only)
 
 `tools/progress-metrics` turns logs and samples that already exist into per-agent, per-window numbers, so a harness or

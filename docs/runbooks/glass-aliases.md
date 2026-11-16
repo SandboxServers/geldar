@@ -1,3 +1,13 @@
+---
+title: "Glass and Kino display aliases"
+type: how-to
+audience: agents-never
+status: draft
+last_verified: 2026-11-16 against cd4499da
+companions: [README.md, kino.md, map-chat-panel.md, node-only-config.md]
+sources: [compose/colo.yml, plugins/bluemap/README.md, plugins/bluemap/test/alias-format.test.ts]
+---
+
 # Glass and Kino display aliases
 
 Glass (the thought stream and `/api/agents`) and Kino (the picker and the 3D name labels) can show a public alias

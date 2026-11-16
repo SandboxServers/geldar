@@ -1,3 +1,13 @@
+---
+title: "Merge queue for main"
+type: how-to
+audience: contributors
+status: draft
+last_verified: 2026-11-16 against cd4499da
+companions: [README.md, colo-deploy.md]
+sources: [../decisions/0220-merge-queue-for-main.md]
+---
+
 # Merge queue for main
 
 Decision: [0220](../decisions/0220-merge-queue-for-main.md). The queue is a GitHub repository ruleset on `main`.

@@ -1,3 +1,13 @@
+---
+title: "Chunky pregeneration"
+type: how-to
+audience: operators
+status: draft
+last_verified: 2026-11-16 against cd4499da
+companions: [README.md, coreprotect.md, map-chat-panel.md]
+sources: [../../plugins/chunky/README.md]
+---
+
 # Runbook: Chunky pregeneration
 
 Chunky (`plugins/chunky/README.md`) pregenerates chunks in the Paper world so players do not wait on generation. Run its commands from the Paper console (the RCON path or `docker compose exec paper` for an operator). Do not paste console output that contains secrets into tickets.

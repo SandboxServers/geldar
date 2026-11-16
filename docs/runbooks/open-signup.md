@@ -1,3 +1,13 @@
+---
+title: "Open sign-up (ordered runbook for the node operator)"
+type: how-to
+audience: operators
+status: draft
+last_verified: 2026-11-16 against cd4499da
+companions: [README.md, body-helper-node-steps.md, nats-auth-inplace.md, account-deletion.md, mcp-tokens.md]
+sources: [deploy/gen-secrets.sh, deploy/colo-admin.sh, deploy/colo-up.sh, deploy/colo-public.sh, compose/colo.yml, ../decisions]
+---
+
 # Open sign-up (ordered runbook for the node operator)
 
 Audience: the node operator (geldar-93). Scope: the steps that take the Colo node from "sign-up closed" to "sign-up open" with managed Bodies. This runbook names files, variables and portal screens only. It contains no values. Never paste a secret, token, client id, tenant id, IP address or account name into a chat, a commit or this file.
