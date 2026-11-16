@@ -8,6 +8,7 @@ packages:
   - player-core
   - lantern-local
   - eventsink
+  - telemetry
   - glass
   - threshold/mcp-mock
   - threshold/mcp
