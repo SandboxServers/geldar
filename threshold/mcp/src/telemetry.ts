@@ -2,6 +2,7 @@
 // TOOL_SPAN_FIELDS below; the @geldar/telemetry span processor filters the attributes again.
 // Off unless the telemetry endpoint is set: main.ts then passes no recorder, so no span is made.
 
+import { MCP_TOOL_NAMES } from '@geldar/contract';
 import { type AttrValue, filterAttributes } from '@geldar/telemetry';
 
 /** The span name: one per call, so a trace list reads by tool. */
@@ -41,7 +42,10 @@ const TOOL_SPAN_FIELDS = {
  */
 export function toolSpanAttributes(call: ToolCallSpan): Record<string, AttrValue> {
   const picked: Record<string, unknown> = {};
-  picked[TOOL_SPAN_FIELDS.tool] = call.tool;
+  // A tool name outside the contract's list is `other`, as in metrics (recordToolCall).
+  picked[TOOL_SPAN_FIELDS.tool] = (MCP_TOOL_NAMES as readonly string[]).includes(call.tool)
+    ? call.tool
+    : 'other';
   picked[TOOL_SPAN_FIELDS.outcome] = call.outcome;
   if (call.outcome !== 'ok') picked['error.type'] = call.outcome;
   return filterAttributes(picked, 'trace').attributes;

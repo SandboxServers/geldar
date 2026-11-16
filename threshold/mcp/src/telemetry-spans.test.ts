@@ -1,9 +1,14 @@
-import { callTool, type ToolContext } from '@geldar/mcp-mock';
+import { callTool, type ToolContext, ToolError } from '@geldar/mcp-mock';
 import { startTelemetry, type TelemetryHandle } from '@geldar/telemetry';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { worldFixture } from './fakes/world.fakes.ts';
-import type { PlayerRecord } from './ports.ts';
-import { TOOL_SPAN_NAME, toolSpanAttributes, toolSpanRecorder } from './telemetry.ts';
+import type { BodyGateway, PlayerRecord } from './ports.ts';
+import {
+  TOOL_SPAN_NAME,
+  type ToolCallSpan,
+  toolSpanAttributes,
+  toolSpanRecorder,
+} from './telemetry.ts';
 import { createWorld } from './world.ts';
 
 const PLAYER: PlayerRecord = {
@@ -19,6 +24,8 @@ const PLAYER: PlayerRecord = {
 interface Captured {
   name: string;
   attributes: Record<string, unknown>;
+  startTime: [number, number];
+  endTime: [number, number];
 }
 
 /** An in-memory trace exporter. Logs and metrics get no-op exporters, so nothing leaves the process. */
@@ -141,5 +148,107 @@ describe('one span per MCP tool call', () => {
     expect(spans).toHaveLength(1);
     expect(Object.keys(spans[0]?.attributes ?? {})).not.toContain(tokenKey);
     expect(JSON.stringify(spans[0]?.attributes)).not.toContain(tokenValue);
+  });
+});
+
+/**
+ * A world whose Body throws `error` on every method, so a `look` call (which reads the Body's snapshot
+ * first, with no wrapping) fails with it. `view` is not usable here: viewTool turns any Body throw into BodyUnavailable.
+ */
+function failingLook(error: unknown, onToolSpan?: ((call: ToolCallSpan) => void) | undefined) {
+  const fx = worldFixture([PLAYER]);
+  fx.budget.seed(PLAYER.lifeId, 37, 0);
+  const body = new Proxy({} as BodyGateway, {
+    get: () => async () => {
+      throw error;
+    },
+  });
+  return createWorld({ ...fx.deps, body, onToolSpan }).tools;
+}
+
+/**
+ * Runs one failing `look` per error through one real span exporter, and returns the spans made, in order.
+ * One SDK start per test: a second start in the same test sends its spans to the first exporter.
+ */
+async function spansOfFailedLooks(errors: unknown[]): Promise<Captured[]> {
+  const { handle, spans } = startWithMemory();
+  const provider = handle.tracerProvider;
+  if (!provider) throw new Error('telemetry should be on when the endpoint is set');
+  const recorder = toolSpanRecorder(provider.getTracer('geldar-mcp'));
+  for (const error of errors) {
+    await expect(failingLook(error, recorder).look({}, ctx())).rejects.toBeDefined();
+  }
+  await provider.forceFlush();
+  return spans;
+}
+
+describe('recorder faults and failed calls', () => {
+  it('a recorder that throws does not fail a successful call', async () => {
+    const fx = worldFixture([PLAYER]);
+    fx.budget.seed(PLAYER.lifeId, 37, 0);
+    const tools = createWorld({
+      ...fx.deps,
+      onToolSpan: () => {
+        throw new Error('recorder down');
+      },
+    }).tools;
+    const response = await callTool(tools, 'look', {}, ctx());
+    expect(response.isError).not.toBe(true);
+  });
+
+  it('keeps the tool error code when the recorder also throws', async () => {
+    const tools = failingLook(new ToolError('rate_limited', 'Slow down.'), () => {
+      throw new Error('recorder down');
+    });
+    await expect(tools.look({}, ctx())).rejects.toMatchObject({ code: 'rate_limited' });
+  });
+
+  it('marks a ToolError with its code, and a plain Error as internal', async () => {
+    const spans = await spansOfFailedLooks([
+      new ToolError('rate_limited', 'Slow down.'),
+      new Error('boom'),
+    ]);
+    expect(spans).toHaveLength(2);
+    const [limited, crashed] = spans;
+    if (!limited || !crashed) throw new Error('two spans expected');
+    expect(limited.attributes['error.type']).toBe('rate_limited');
+    expect(limited.attributes.outcome).toBe('rate_limited');
+    expect(crashed.attributes['error.type']).toBe('internal');
+  });
+});
+
+describe('the span helpers', () => {
+  it('ends the span durationMs after it started', async () => {
+    const { handle, spans } = startWithMemory();
+    const provider = handle.tracerProvider;
+    if (!provider) throw new Error('telemetry should be on when the endpoint is set');
+    const recorder = toolSpanRecorder(provider.getTracer('geldar-mcp'));
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_000_000);
+    try {
+      recorder({ tool: 'look', outcome: 'ok', durationMs: 250 });
+    } finally {
+      vi.useRealTimers();
+    }
+    await provider.forceFlush();
+    const span = spans[0];
+    if (!span) throw new Error('one span expected');
+    const [startS, startNs] = span.startTime;
+    const [endS, endNs] = span.endTime;
+    expect((endS - startS) * 1000 + (endNs - startNs) / 1e6).toBe(250);
+  });
+
+  it('copies only the explicit fields, so a token-named field never reaches the attributes', () => {
+    const tokenKey = ['auth', 'token'].join('_');
+    const tokenValue = ['tok', 'en', '-', 'value'].join('');
+    const hostile = { tool: 'look', outcome: 'ok', durationMs: 1, [tokenKey]: tokenValue };
+    expect(toolSpanAttributes(hostile)).toEqual({ 'gen_ai.tool.name': 'look', outcome: 'ok' });
+  });
+
+  it('clamps an unknown tool name to other, and keeps a known one', () => {
+    const known = toolSpanAttributes({ tool: 'look', outcome: 'ok', durationMs: 1 });
+    expect(known['gen_ai.tool.name']).toBe('look');
+    const unknown = toolSpanAttributes({ tool: 'made_up_tool', outcome: 'ok', durationMs: 1 });
+    expect(unknown['gen_ai.tool.name']).toBe('other');
   });
 });
