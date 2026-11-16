@@ -53,3 +53,8 @@ Owner: freeze exemption for this session; full-text capture, no opt-out, 1-year 
 ## Rules
 No code by me; Haiku coders in worktrees; ops subagent pushes/queues; no agent sees telemetry; no node changes without geldar-93.
 Merge a PR only if no changed file is in the colo-images path filter (colo-deploy recreates all Bodies): golem, animus, eventsink, threshold/mcp|register, tools/admin|mcp-tokens|players-cli|migrate, glass, sql, contract, shards/phase0.yaml, root package.json, pnpm-workspace.yaml, pnpm-lock.yaml.
+
+## Paper plugin packet cards (2026-11-16, branch telemetry/t27-paper-cards)
+- Cards for the Ledger plugin (loader-neutral `plugin/ledger-core` plus thin Paper adapter `plugin/ledger`) are in `docs/analysis/telemetry/paper-plugin/`: README.md (index, dependency graph, start-now set), cards-*.md, scratch-test-plan.md, safety-rules.md.
+- Finding: `deploy/scratch/scratch.sh` allows suffixes of at most 8 characters; `telemetry` has 9 (PT-03j fixes).
+- Held cards (touch live compose or deploy files, PR-only until the PT-16 window): PT-02a, PT-03l, PT-16. PT-08e (Velocity) is optional and needs the owner's nod.
