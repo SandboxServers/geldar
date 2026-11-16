@@ -41,7 +41,10 @@ body can exist, so the stop is skipped.
 
 Deletions made under 0039 removed the owner link and the player rows of the owner's dead lives. Those dead lives
 no longer have an owner link or a player row, so 0040 cannot reach them: their thoughts, events and death records
-stay. An operator cleanup of these is follow-up card `C7-09c` (not done; the owner decides the cleanup).
+stay. The operator script `tools/players-cli/src/erase-owner.ts` can remove the skins and registry keys of these lives
+only if the operator has their life ids and login names from another record: step 3a cannot find them, because 0039
+cleared `agents.owner` and removed the player rows. The database cleanup of the 0039 dead lives is not done; the owner
+decides it.
 
 ## What stays, and why
 
@@ -99,13 +102,26 @@ subject in a shared channel.
    `deploy/colo-admin.sh player-stop`). Do this before the deletion, so no host keeps running in the world with its
    tokens removed.
 3. Find the identity hash: `SELECT identity_hash FROM mcp_identities WHERE owner_id = '<owner id>';`
+3a. Capture the lives list BEFORE step 4, and save it as the JSON file that step 5 reads. Run
+   `SELECT a.agent_id, a.game_account FROM agents a WHERE a.owner = '<owner id>' UNION SELECT a.agent_id, a.game_account FROM agents a JOIN mcp_players p ON p.life_id = a.agent_id WHERE p.owner_id = '<owner id>';`
+   and write one entry per row: `lifeId` is `agent_id`, and `username` is `game_account` (the Body's login name). Check the
+   file against the output of this query. The file cannot be rebuilt after step 4. Then, with `GELDAR_NATS_URL` set as in
+   step 5, run the script with no flags
+   (`node tools/players-cli/src/erase-owner.ts --owner <owner id> --lives <file>`, a dry run that prints counts only).
+   The registry key of each life is its username, lowercased, and it must equal the Body's `game_account`. 0 present
+   on a dry run before step 4 means the username is wrong or the Body never registered: check before going on.
 4. Run the function as the register role: `SELECT register_account_delete('\x<identity hash hex>'::bytea);`
    It returns `true` when the account was removed and `false` when there was nothing to remove. If it fails on a lock
    timeout, wait and run it again.
-5. Remove what the function does not reach, by hand, on the owner's written request. No script in this repository does
-   these steps yet (operator erasure script, C7-09c, is not built):
-   - the `geldar-skins` KV key for the owner's skin uploads (the PNG data; C7-13a adds the rows to the function);
-   - the Velocity life registry entries for the owner's lives.
+5. Remove what the function does not reach, on the owner's written request, after step 4, with the operator script
+   `tools/players-cli/src/erase-owner.ts` (C7-09c) and the lives file captured in step 3a. The file is JSON, one entry
+   per life of the owner: `[{"lifeId": "<life id>", "username": "<login name>"}]`. With `GELDAR_NATS_URL` set, run
+   `node tools/players-cli/src/erase-owner.ts --owner <owner id> --lives <file> --execute --confirm <owner id>` (the owner
+   id exactly). `--confirm` guards a typo in the command only. The script does not check the file's contents, and the
+   file is the target, so check it against the step 3a query output before running. It purges every revision of:
+   - the `geldar-skins` key of each life (the PNG data; C7-13a adds the skin rows to the function);
+   - the `geldar-life-registry` key of each life's username (the Velocity admission entry).
+   It does not remove the 0039 dead-life cleanup (open question (c) in decision 0262; the owner decides it).
 6. Record the request in the operator log by owner id and date only. Do not copy the identity hash or any provider data.
 
 Do not disable the append-only triggers by hand. The function does that inside its own transaction and turns them back
