@@ -310,6 +310,9 @@ importers:
       '@geldar/psyche':
         specifier: workspace:*
         version: link:../psyche
+      '@geldar/telemetry':
+        specifier: workspace:*
+        version: link:../telemetry
       '@nats-io/jetstream':
         specifier: 3.4.0
         version: 3.4.0

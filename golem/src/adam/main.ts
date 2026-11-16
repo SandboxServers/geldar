@@ -7,6 +7,7 @@
  */
 import { pathToFileURL } from 'node:url';
 import { connectNats } from '@geldar/contract/nats';
+import { startTelemetry } from '@geldar/telemetry';
 import { jetstream } from '@nats-io/jetstream';
 import type { Bot } from 'mineflayer';
 import { type BackoffPolicy, DEFAULT_BACKOFF, nextDelayMs } from '../backoff.ts';
@@ -207,6 +208,14 @@ export async function main(): Promise<void> {
     service: 'geldar-golem-adam',
     log: jsonLog,
   });
+  // Spans for the Body's actions (T-07). With no URL the SDK starts no provider and makes no request.
+  const sdk = startTelemetry({
+    service: 'geldar-golem-adam',
+    version: process.env.GELDAR_VERSION ?? 'dev',
+    shard: config.shard,
+    endpoint: process.env.GELDAR_TELEMETRY_URL,
+  });
+  const tracer = sdk.tracerProvider?.getTracer('geldar-golem-adam');
   // The proficiency cache (AN-12a): started only for a config sheet; off and standard send no request.
   const proficiency = startProficiency({
     nc,
@@ -226,6 +235,7 @@ export async function main(): Promise<void> {
     owners: nc,
     log: (line) => jsonLog({ event: 'body', life_id: config.lifeId, line }),
     metrics: telemetry.metrics,
+    ...(tracer === undefined ? {} : { tracer }),
   };
   const manager = new ConnectionManager({
     host: stack.mcHost,
@@ -251,6 +261,7 @@ export async function main(): Promise<void> {
   process.once('SIGTERM', () => onSignal('SIGTERM'));
   await done;
   await telemetry.stop();
+  await sdk.shutdown();
   if (supervisor.fatal) process.exitCode = 1;
   await manager.stop();
   proficiency?.stop();
