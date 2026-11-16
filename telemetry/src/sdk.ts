@@ -236,10 +236,15 @@ export function startTelemetry(options: TelemetryOptions): TelemetryHandle {
       return OFF;
     }
 
+    // Set by the first shutdown. A second call on this handle does nothing, so it cannot clear the
+    // globals of a later start.
+    let stopped = false;
     const handle: TelemetryHandle = {
       enabled: true,
       tracerProvider,
       shutdown: async () => {
+        if (stopped) return;
+        stopped = true;
         if (active === handle) active = undefined;
         // Clears only the globals this start registered, so a signal that is off leaves others alone.
         for (const entry of registered) entry.clear();

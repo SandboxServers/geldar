@@ -35,6 +35,10 @@ with trace context carried in NATS message headers.
   The global check then looks only at the signals that are on, so a foreign owner of an off signal's
   global does not block the start. With `traces` on, `tracerProvider` is set and `shutdown()` works
   as usual. The context and propagator globals are always installed.
+- **All signals off.** `signals: { traces: false, metrics: false, logs: false }` still returns an
+  enabled handle, with `tracerProvider` undefined and no exporter, provider, reader or timer. The
+  context and propagator globals are still installed, so a foreign propagator or context manager
+  makes the call return off, as it does for any start. `shutdown()` is safe to call.
 
 ## Modules
 
