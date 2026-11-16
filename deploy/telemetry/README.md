@@ -233,7 +233,8 @@ Run on the node as root, from the repo checkout that CD placed (so `deploy/telem
 2. The directories exist (N3): `ls -ld /mnt/nvme/geldar-telemetry/clickhouse /mnt/nvme/geldar-telemetry/keeper /mnt/nvme/geldar-telemetry/query /mnt/nvme/geldar-telemetry/queue` lists all four. (`queue` is not mounted by this compose file.)
 3. Create the secrets directory: `install -d -m 0700 /mnt/nvme/geldar-telemetry/secrets`.
 4. The loopback port 8095 is free: `ss -ltn | grep -c ':8095 '` prints `0`.
-5. The vendor reporting variable is set in compose (item 26): `grep -c SIGNOZ_ANALYTICS_ENABLED deploy/telemetry/compose.yml` prints at least `1`.
+5. Compose is recent enough: `docker compose version` prints 2.24.0 or later (item 20: `required: false` needs it; stop if older).
+6. The vendor reporting variable is set in compose (item 26): `grep -c SIGNOZ_ANALYTICS_ENABLED deploy/telemetry/compose.yml` prints at least `1`.
 
 **Step b. Pull the four images by digest** (the compose references; the migrator uses the collector image):
 
@@ -267,12 +268,16 @@ The listing shows `101 101` for the first two and `0 0` for `query`.
 **Step d. Create the secret files and check owner, mode and readability (item 14).** Passwords are written by shell builtins, so they never appear in a process argument list:
 
 ```
+(
 cd /mnt/nvme/geldar-telemetry/secrets
 (umask 277; printf %s "$(openssl rand -hex 32)" > ch_writer_password; printf %s "$(openssl rand -hex 32)" > ch_reader_password)
 chown 10001:10001 ch_writer_password
 chown 0:0 ch_reader_password
 ls -ln
+)
 ```
+
+The `cd` is inside the outer subshell, so your shell stays in the repo checkout. Steps g to j use the relative path `deploy/telemetry/compose.yml` and must run from the repo checkout root; if in doubt, replace it with the absolute path of `compose.yml` in every `docker compose -f` command.
 
 Expected: `ch_writer_password` is `10001 10001` mode `-r--------`, `ch_reader_password` is `0 0` mode `-r--------`. `ch-hashes.env` does not exist yet (step e). Then read each file as its container uid through a one-shot container, with a read-only mount of that one file and `--cap-drop ALL` (as the service):
 
@@ -329,7 +334,7 @@ Abort rule: if the block prints `ABORT` or exits non-zero, delete `ch-hashes.env
 
 **Step h. Migrator, SigNoz, collector, end-to-end, reader and writer checks.**
 
-1. Migrator: `docker compose -f deploy/telemetry/compose.yml up -d geldar-signoz-migrator`, wait for exit, then `docker inspect -f '{{.State.ExitCode}} {{.State.OOMKilled}}' geldar-signoz-migrator` prints `0 false` (report8: exit 0).
+1. Migrator: `docker compose -f deploy/telemetry/compose.yml up -d geldar-signoz-migrator`, then `timeout 300 docker wait geldar-signoz-migrator` (prints the exit code; expect `0`; report8 used `docker wait`, exit 0), and only then `docker inspect -f '{{.State.Status}} {{.State.ExitCode}} {{.State.OOMKilled}}' geldar-signoz-migrator` must print `exited 0 false`. A container that is still running also prints `0 false` for the last two fields, so do not read the inspect before the wait returns. Record this exit code immediately after the first `up`. The migrator runs again on each `up -d` of `geldar-signoz` or `geldar-signoz-otelcol` (compose `depends_on` with `service_completed_successfully`; report8 `up` logs show `geldar-signoz-migrator Starting/Started/Exited`), so repeat the `docker inspect` after step h.3 and at the end; each run must show `exited 0 false`.
 2. Tables: `docker exec geldar-ch clickhouse-client -q "SELECT database, count() FROM system.tables WHERE startsWith(database, 'signoz_') GROUP BY database ORDER BY database"` gives `signoz_analytics` 4, `signoz_logs` 14, `signoz_metadata` 6, `signoz_meter` 7, `signoz_metrics` 66, `signoz_traces` 36 (report8). Engines: `... SELECT engine, count() ... GROUP BY engine ORDER BY engine` gives `Distributed` 54, `MaterializedView` 24, `ReplicatedAggregatingMergeTree` 7, `ReplicatedMergeTree` 16, `ReplicatedReplacingMergeTree` 31, `ReplicatedSummingMergeTree` 1. Any other count stops the start; a plain `MergeTree` means replication was off.
 3. Start SigNoz and the collector, in that order, as separate starts: `docker compose -f deploy/telemetry/compose.yml up -d geldar-signoz`, then `docker compose -f deploy/telemetry/compose.yml up -d geldar-signoz-otelcol`.
 4. SigNoz health: `docker inspect -f '{{.State.Health.Status}}' geldar-signoz` prints `healthy` and `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8095/api/v1/health` prints `200`. Report8 saw one non-fatal ERROR line in the SigNoz log (a missing active-queries log directory); any other ERROR line is a finding. `docker inspect geldar-signoz --format '{{range .Config.Env}}{{println .}}{{end}}' | grep SIGNOZ_ANALYTICS_ENABLED` prints `SIGNOZ_ANALYTICS_ENABLED=false`.
