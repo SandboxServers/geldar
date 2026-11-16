@@ -5,6 +5,7 @@
 - Decision context: `docs/decisions/0352-telemetry-dedicated-clickhouse-database.md` (accepted, option B: Geldar-owned ClickHouse server and SigNoz stack on a Geldar-owned network) and 0350 (accepted).
 - Scope: docs only. Nothing here is implemented, deployed or run. Versions are those named in the design: contrib 0.164.0, Caddy on the node (version unverified).
 - Re-check: F1, F3, F4, F5 and F6 were re-checked under 0352 option B on 2026-11-15 (the recommendations stand unless a note says otherwise). F9 is resolved by option B: no Geldar container joins the other tenant's network.
+- Owner ruling, 2026-11-16: no change to the shared Caddy, and the SigNoz UI is reached by SSH tunnel only. F1, F4 and F5 assume a Caddy route for Mind hosts, which the ruling conflicts with; they stay as written but are conditional on F10. The UI has no Caddy route.
 
 Each finding gets a safer option and a recommendation. "Unverified" marks a claim this document could not check against the pinned versions or the node.
 
@@ -20,7 +21,7 @@ Each finding gets a safer option and a recommendation. "Unverified" marks a clai
 
 **Recommendation: option 1.** It matches the existing MCP and Glass pattern, needs no change to Caddy's networking, and adds exactly one loopback entry to `tools/repo-checks/src/loopback-ports.ts`. Harden it: the gateway requires the bearer check on its own side too (F5, option A), so a local process that reaches the port without the token gets nothing. If the owner prefers no loopback port at all, option 2 is the next choice after a 0.164.0 check of the receiver.
 
-**Under 0352 option B.** No change. The gateway's downstream is now the Geldar SigNoz collector on the Geldar network, which does not alter the Caddy side. The Geldar SigNoz UI route (0352 read path) is a separate owner-approved Caddy route and does not reuse this loopback port.
+**Under 0352 option B.** The gateway's downstream is now the Geldar SigNoz collector on the Geldar network. The SigNoz UI has no Caddy route: by the owner ruling of 2026-11-16 it is bound to `127.0.0.1` on the node and reached by SSH tunnel (0352 read path). The Caddy side of this finding is open, because the owner ruled no change to the shared Caddy and the Mind-host route depends on one (F10).
 
 ## F3. Host `/proc` and `/sys` expose the host's process list
 
@@ -142,6 +143,18 @@ Resolved by 0352 option B. The Geldar ClickHouse server holds only Geldar's data
 4. **A Geldar-owned SigNoz stack and ClickHouse server (0352 option B).** The gateway joins only Geldar's own network.
 
 **Resolution: option 4, accepted in 0352.** No Geldar container joins the other tenant's network, and no port of the other tenant is published or changed. F9 is no longer open. The only node-level action is creating Geldar's own Docker network and stack, which needs owner approval (N3 and N7). Nothing changes on the other tenant: no config, no network membership, no published port.
+
+## F10. Mind-host ingest conflicts with the no-Caddy-change ruling (OPEN, owner decision)
+
+**Problem.** Mind hosts post OTLP through an authenticated Caddy route (design section 9, T-15, N6). The owner ruled on 2026-11-16 that the shared Caddy is not changed or restarted. The route is therefore on hold. This finding does not decide it.
+
+**Options (detail in design section 9.1).**
+
+1. **SSH tunnel per Mind host to a loopback gateway port.** A dedicated key restricted to one `permitopen` port. No Caddy change; the bearer token and F4 to F6 are not needed for the tunnel.
+2. **WireGuard to the Colo.** Strong, but a new interface, a key per host and a new UDP listener on the node.
+3. **Colo-only ingest for now.** No Mind-host telemetry; the Mind transcript stays in session files.
+
+**Recommendation (for the owner).** Option 1 with the restricted key; option 3 as the interim until the owner approves option 1. Not decided. No node step is requested.
 
 ## Summary
 

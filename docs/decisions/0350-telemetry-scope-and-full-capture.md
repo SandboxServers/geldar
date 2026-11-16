@@ -56,6 +56,8 @@ The owner ruled on 2026-11-15: during development all content is captured into S
 
 10. **Substitution record.** SigNoz replaces spec 7's Prometheus and Loki, as 0130 already decided. Spec 7's alert list is the minimum alert set: TPS under 12 for 5 minutes, bodies online under 80% for 10 minutes, daily token spend. The spec is not edited (0073); this record is the amendment for the owner's reconciliation.
 
+**Clarification (owner ruling, 2026-11-16).** (1) Operator Claude sessions (never agents, Minds, Bodies or kits) MAY query the telemetry read-only, through the MCP server or SQL. That read path uses a read-only ClickHouse user limited to the Geldar database (SELECT only, a settings profile with `readonly`, `max_memory_usage`, `max_execution_time` and `max_rows_to_read`, and a quota) and a viewer-role SigNoz key held only on the operator's workstation; no tool, prompt, file or path an agent can read ever references either. (2) Item 6's "no public route" stands: the UI is reached by SSH tunnel only, with no Caddy route and no change to or restart of the shared Caddy.
+
 ## Consequences
 
 Cards (from the telemetry survey, section 7; each card names its own owner approval and its own tests):
