@@ -238,11 +238,41 @@ describe('the span helpers', () => {
     expect((endS - startS) * 1000 + (endNs - startNs) / 1e6).toBe(250);
   });
 
-  it('copies only the explicit fields, so a token-named field never reaches the attributes', () => {
+  it('copies only the explicit fields: allow-listed names and token-named fields never reach the attributes', () => {
     const tokenKey = ['auth', 'token'].join('_');
     const tokenValue = ['tok', 'en', '-', 'value'].join('');
-    const hostile = { tool: 'look', outcome: 'ok', durationMs: 1, [tokenKey]: tokenValue };
+    // Names the span does allow-list (a model, an error type) are hostile too on an ok call: the
+    // attributes come only from the explicit map, so neither can leak in.
+    const hostile = {
+      tool: 'look',
+      outcome: 'ok',
+      durationMs: 1,
+      'gen_ai.request.model': 'x',
+      'error.type': 'leak',
+      [tokenKey]: tokenValue,
+    };
     expect(toolSpanAttributes(hostile)).toEqual({ 'gen_ai.tool.name': 'look', outcome: 'ok' });
+  });
+
+  it('exports exactly the explicit attributes for the same hostile input through the recorder', async () => {
+    const { handle, spans } = startWithMemory();
+    const provider = handle.tracerProvider;
+    if (!provider) throw new Error('telemetry should be on when the endpoint is set');
+    const tokenKey = ['auth', 'token'].join('_');
+    const tokenValue = ['tok', 'en', '-', 'value'].join('');
+    const hostile = {
+      tool: 'look',
+      outcome: 'ok',
+      durationMs: 1,
+      'gen_ai.request.model': 'x',
+      'error.type': 'leak',
+      [tokenKey]: tokenValue,
+    };
+    toolSpanRecorder(provider.getTracer('geldar-mcp'))(hostile);
+    await provider.forceFlush();
+
+    expect(spans).toHaveLength(1);
+    expect(spans[0]?.attributes).toEqual({ 'gen_ai.tool.name': 'look', outcome: 'ok' });
   });
 
   it('clamps an unknown tool name to other, and keeps a known one', () => {
