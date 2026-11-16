@@ -141,9 +141,10 @@
              the variable unset geldar-ch REFUSES to start ("Env variable is not set"), so the hash goes into ch-hashes.env BEFORE
              this file reaches the node (README ordering).
              Grants are explicit and nothing else sits next to them (no access_management keys: they cannot coexist with grants;
-             the stock keys apply only to default). ALTER TTL is the ClickHouse privilege (alias ALTER MODIFY TTL). Distributed DDL
-             runs the ALTER on the replica as the initiating user, so the same user needs ALTER TTL on the replicated tables; the
-             Distributed tables are altered too, and the grant is on whole databases so both are covered. SELECT on the three
+             the stock keys apply only to default). ALTER TTL is the ClickHouse privilege (alias ALTER MODIFY TTL). Round 9
+             (single replica, single shard): every ON CLUSTER ALTER row in system.query_log had initial_user = user (writer, admin
+             and reader each ran their own); behaviour on other replicas is not shown. The Distributed tables are altered too, and
+             the grant is on whole databases so both are covered. SELECT on the three
              databases and on system.* because SigNoz reads engine_full from system.tables for the TTL status call; system.*
              is wider than system.tables, narrowing is untested [UNV]. CLUSTER is for ON CLUSTER.
              Ruled in scratch round 9: the logs v2 call (POST /api/v2/settings/ttl, type logs) runs ALTER TABLE signoz_logs.logs_v2 ON
