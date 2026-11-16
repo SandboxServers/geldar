@@ -28,7 +28,7 @@ services:
     # Keeper is required (0370): the SigNoz migrator issues ON CLUSTER DDL.
     # [INF] runs as uid 101 (the clickhouse user); entrypoint overridden as Foundry does [SRC], so no /entrypoint.sh drop.
     # Data dir must be owned by 101:101 after the id check in the README. [UNV]
-    image: clickhouse/clickhouse-keeper:25.12.5.44@sha256:525b8b0f93ccb371131c46f22a066ea43d33d74aba314203e8044609945d8524
+    image: clickhouse/clickhouse-keeper@sha256:525b8b0f93ccb371131c46f22a066ea43d33d74aba314203e8044609945d8524 # 25.12.5 build 44
     container_name: geldar-ch-keeper
     hostname: geldar-ch-keeper
     entrypoint: ["/usr/bin/clickhouse-keeper", "--config-file=/etc/clickhouse-keeper/keeper.yaml"]
@@ -39,7 +39,7 @@ services:
     networks: [geldar-telemetry]
     expose: ["9181", "9234"]
     healthcheck:
-      # [SRC] Foundry compose; binary presence in 25.12.5.44 [UNV]
+      # [SRC] Foundry compose; binary presence in 25.12.5 build 44 [UNV]
       test: ["CMD-SHELL", "clickhouse-keeper-client -h localhost -p 9181 -q ls"]
       interval: 30s
       timeout: 10s
@@ -55,10 +55,10 @@ services:
     logging: *logging
 
   geldar-ch:
-    # ClickHouse server 25.12.5.44 (0370). Starts as root, /entrypoint.sh chowns the data dir and drops to 101 [INF].
+    # ClickHouse server 25.12.5 build 44 (0370). Starts as root, /entrypoint.sh chowns the data dir and drops to 101 [INF].
     # Exception to cap_drop ALL: the entrypoint needs CHOWN, SETUID, SETGID and DAC_OVERRIDE for that drop [INF, check in scratch run].
     # No ports published: native 9000 and HTTP 8123 stay on the Geldar network.
-    image: clickhouse/clickhouse-server:25.12.5.44@sha256:cacf32d6884291dc2ff5e0156a97f46fc53ff7c929a7906d114e268a929dfd3a
+    image: clickhouse/clickhouse-server@sha256:cacf32d6884291dc2ff5e0156a97f46fc53ff7c929a7906d114e268a929dfd3a # 25.12.5 build 44
     container_name: geldar-ch
     hostname: geldar-ch
     environment:
@@ -93,7 +93,7 @@ services:
     # One-shot schema migrator v0.144.6 (0370). Tested by SigNoz CI with ClickHouse 25.12.5 [SRC].
     # --replication true: the migrator default is false, the collector default is true; the two must match [INF from facts].
     # Password is read from the file secret at start, not inline.
-    image: signoz/signoz-schema-migrator:v0.144.6@sha256:4e57475fbf8b24168dcfbe6fc5799bb3f3d965819b72663580d0926185b68bf5
+    image: signoz/signoz-schema-migrator@sha256:4e57475fbf8b24168dcfbe6fc5799bb3f3d965819b72663580d0926185b68bf5 # v0.144.6
     container_name: geldar-signoz-migrator
     hostname: geldar-signoz-migrator
     entrypoint: ["/bin/sh", "-c"]
@@ -122,7 +122,7 @@ services:
     # SigNoz v0.148.1: query API and UI in one container (deviation from collector-design 4, see README).
     # Runs as root [SRC], no USER in the image. Loopback publish only; reached over an SSH tunnel.
     # Port 8095 was free on the node at the 2026-11-16 check. 3301 is not used.
-    image: signoz/signoz:v0.148.1@sha256:a7d1a968a1f7f65c518106150ac05424ca8e91c52d7076077dfce034980e9c34
+    image: signoz/signoz@sha256:a7d1a968a1f7f65c518106150ac05424ca8e91c52d7076077dfce034980e9c34 # v0.148.1
     container_name: geldar-signoz
     hostname: geldar-signoz
     entrypoint: ["/bin/sh", "-c"]
@@ -167,7 +167,7 @@ services:
     # SigNoz collector v0.144.6, run without the OpAMP manager (no --manager-config) [SRC facts section 3].
     # Config: deploy/telemetry/signoz-otelcol-config.yaml. Runs as uid 10001 [SRC].
     # Receives OTLP only from geldar-gateway on the Geldar network. No published port.
-    image: signoz/signoz-otel-collector:v0.144.6@sha256:7e4e539a73f1f88fbc1cd7e659ab3950908e83ce1f2a37a297452f910d072174
+    image: signoz/signoz-otel-collector@sha256:7e4e539a73f1f88fbc1cd7e659ab3950908e83ce1f2a37a297452f910d072174 # v0.144.6
     container_name: geldar-signoz-otelcol
     hostname: geldar-signoz-otelcol
     entrypoint: ["/bin/sh", "-c"]
