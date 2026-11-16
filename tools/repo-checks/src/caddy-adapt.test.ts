@@ -35,7 +35,30 @@ function flatten(routes: Route[]): Handler[] {
   );
 }
 
-function adapt(site: string): Handler[] {
+type AdaptJson = {
+  apps: {
+    http: {
+      servers: Record<
+        string,
+        {
+          routes: {
+            match?: { host?: string[] }[];
+            handle?: { routes?: { match?: { expression?: { expr?: string } }[] }[] }[];
+          }[];
+        }
+      >;
+    };
+  };
+};
+
+const INGEST_ENV = [
+  'GELDAR_INGEST_HOST=ingest.example.test',
+  'GELDAR_INGEST_UPSTREAM=localhost:4320',
+  'GELDAR_INGEST_TOKEN=not-a-real-token',
+];
+
+/** The pinned image is Caddy 2.10.2; the node runs 2.11.6, so the node's own `caddy validate` stays the check for its version. */
+function adaptJson(site: string, ingestEnv: string[]): AdaptJson {
   const run = spawnSync(
     'docker',
     [
@@ -51,12 +74,7 @@ function adapt(site: string): Handler[] {
       'GELDAR_MCP_UPSTREAM=mcp.example.test:8788',
       '-e',
       'GELDAR_REGISTER_UPSTREAM=register.example.test:18090',
-      '-e',
-      'GELDAR_INGEST_HOST=ingest.example.test',
-      '-e',
-      'GELDAR_INGEST_UPSTREAM=localhost:4320',
-      '-e',
-      'GELDAR_INGEST_TOKEN=not-a-real-token',
+      ...ingestEnv.flatMap((e) => ['-e', e]),
       '-v',
       `${dir}:/etc/caddy:ro`,
       IMAGE,
@@ -70,9 +88,11 @@ function adapt(site: string): Handler[] {
     { encoding: 'utf8' },
   );
   expect(run.status, run.stderr).toBe(0);
-  const json = JSON.parse(run.stdout) as {
-    apps: { http: { servers: Record<string, { routes: Route[] }> } };
-  };
+  return JSON.parse(run.stdout) as AdaptJson;
+}
+
+function adapt(site: string): Handler[] {
+  const json = adaptJson(site, INGEST_ENV);
   const server = Object.values(json.apps.http.servers)[0] as { routes: Route[] };
   return flatten(server.routes);
 }
@@ -126,10 +146,42 @@ describe('caddy adapt: otel.caddy and otel-off.caddy', () => {
       expect(proxies[0]?.transport?.dial_timeout).toBe(5_000_000_000);
       expect(proxies[0]?.transport?.response_header_timeout).toBe(60_000_000_000);
       const firstProxy = chain.findIndex((h) => h.handler === 'reverse_proxy');
-      const at401 = chain.findIndex((h) => h.handler === 'static_response' && h.status_code === 401);
-      const at404 = chain.findIndex((h) => h.handler === 'static_response' && h.status_code === 404);
+      const at401 = chain.findIndex(
+        (h) => h.handler === 'static_response' && h.status_code === 401,
+      );
+      const at404 = chain.findIndex(
+        (h) => h.handler === 'static_response' && h.status_code === 404,
+      );
       expect(at401).toBeGreaterThan(firstProxy);
       expect(at404).toBeGreaterThan(at401);
+    },
+  );
+
+  it.skipIf(skip)(
+    'fails closed on the token: an empty token still carries the size guard in the proxy matcher',
+    { timeout: 120_000 },
+    () => {
+      const json = adaptJson('otel', [
+        'GELDAR_INGEST_HOST=ingest.example.test',
+        'GELDAR_INGEST_UPSTREAM=localhost:4320',
+        'GELDAR_INGEST_TOKEN=',
+      ]);
+      const text = JSON.stringify(json);
+      expect(text).toContain('"expr":"size(\'\') >= 64"');
+      expect(text).toContain('"Authorization":["Bearer "]');
+    },
+  );
+
+  it.skipIf(skip)(
+    'adapts with every ingest variable unset (safe defaults), so a recreate cannot leave Caddy unable to start',
+    { timeout: 120_000 },
+    () => {
+      for (const site of ['otel', 'otel-off']) {
+        const json = adaptJson(site, []);
+        const server = Object.values(json.apps.http.servers)[0];
+        expect(server?.routes[0]?.match?.[0]?.host).toEqual(['otel.invalid']);
+      }
+      expect(JSON.stringify(adaptJson('otel', []))).toContain('"dial":"localhost:4320"');
     },
   );
 

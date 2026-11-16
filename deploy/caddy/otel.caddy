@@ -1,4 +1,6 @@
 # OTLP/HTTP ingest for Mind hosts (T-15; 0350 item 9; collector-design section 9; owner ruling 2026-11-16).
+# Placeholders have safe defaults so a recreate with a variable missing still starts Caddy: host otel.invalid, upstream
+# localhost:4320, token empty (an empty or short token never matches: the matcher also needs size(token) >= 64).
 # Placeholders: GELDAR_INGEST_HOST (public hostname), GELDAR_INGEST_UPSTREAM (gateway loopback publish, host:port),
 # GELDAR_INGEST_TOKEN (ingest bearer token, Caddy environment secret). No value is written in this file.
 # Live file: place it in config/geldar/ on the node (the Caddyfile imports /config/geldar/*.caddy, top level only).
@@ -7,7 +9,7 @@
 #   change of this file is one `docker restart board-proxy` (a few seconds of dropped connections on every site).
 # Rollback and kill switch: put otel-off.caddy in its place, validate, `docker restart board-proxy` (same cost).
 # Steps and the verification matrix: deploy/caddy/README.md, section "OTLP ingest (otel.caddy)".
-{$GELDAR_INGEST_HOST} {
+{$GELDAR_INGEST_HOST:otel.invalid} {
 	# Only POST passes (the OTLP/HTTP exporters POST).
 	@not_post not method POST
 	handle @not_post {
@@ -30,6 +32,8 @@
 			wrap json
 			fields {
 				request>headers>Authorization delete
+				request>headers>Cookie delete
+				request>headers>Proxy-Authorization delete
 			}
 		}
 	}
@@ -43,9 +47,10 @@
 	@ingest {
 		path /v1/traces /v1/logs /v1/metrics
 		header Authorization "Bearer {$GELDAR_INGEST_TOKEN}"
+		expression `size('{$GELDAR_INGEST_TOKEN}') >= 64`
 	}
 	handle @ingest {
-		reverse_proxy {$GELDAR_INGEST_UPSTREAM} {
+		reverse_proxy {$GELDAR_INGEST_UPSTREAM:localhost:4320} {
 			header_up Host localhost
 			header_up x-geldar-client-ip {remote_host}
 			transport http {

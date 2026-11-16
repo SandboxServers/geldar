@@ -40,7 +40,7 @@ const SET = 'header_up x-geldar-client-ip {remote_host}';
 
 /** The body of every reverse_proxy block that has one, in a file. */
 const proxyBlocks = (text: string): string[] =>
-  [...text.matchAll(/reverse_proxy \{\$[A-Z_]+\} \{((?:[^{}]|\{[^{}]*\})*)\}/g)].map(
+  [...text.matchAll(/reverse_proxy \{\$[A-Z_]+(?::[^}]*)?\} \{((?:[^{}]|\{[^{}]*\})*)\}/g)].map(
     (m) => m[1] ?? '',
   );
 
@@ -215,11 +215,11 @@ describe('OTLP ingest route (otel.caddy, caddy-ingest-route.md)', () => {
       .join('\n');
 
   it('takes the site address and every value from the env placeholders only', () => {
-    expect(text).toContain('{$GELDAR_INGEST_HOST} {');
-    expect(text).toContain('reverse_proxy {$GELDAR_INGEST_UPSTREAM} {');
+    expect(text).toContain('{$GELDAR_INGEST_HOST:otel.invalid} {');
+    expect(text).toContain('reverse_proxy {$GELDAR_INGEST_UPSTREAM:localhost:4320} {');
     expect(text).toContain('header Authorization "Bearer {$GELDAR_INGEST_TOKEN}"');
-    expect(off).toContain('{$GELDAR_INGEST_HOST} {');
-    const names = new Set([...text.matchAll(/\{\$([A-Z_]+)\}/g)].map((m) => m[1]));
+    expect(off).toContain('{$GELDAR_INGEST_HOST:otel.invalid} {');
+    const names = new Set([...text.matchAll(/\{\$([A-Z_]+)(?::[^}]*)?\}/g)].map((m) => m[1]));
     expect([...names].sort()).toEqual([
       'GELDAR_INGEST_HOST',
       'GELDAR_INGEST_TOKEN',
@@ -230,6 +230,8 @@ describe('OTLP ingest route (otel.caddy, caddy-ingest-route.md)', () => {
   it('lets only POST pass, on the three OTLP paths, and answers 405, 401 and 404 otherwise', () => {
     expect(text).toMatch(/@not_post not method POST\s+handle @not_post \{\s*respond 405\s*\}/);
     expect(text).toMatch(new RegExp(`@ingest \\{\\s+path ${PATHS}\\s+header Authorization`));
+    // An empty or short token must never match (a header of just `Bearer `): the matcher carries a size guard.
+    expect(text).toContain("expression `size('{$GELDAR_INGEST_TOKEN}') >= 64`");
     expect(text).toMatch(new RegExp(`@signal path ${PATHS}\\s+handle @signal \\{\\s*respond 401`));
     expect(text).toMatch(/handle \{\s*respond 404\s*\}/);
     expect(text.indexOf('handle @not_post')).toBeLessThan(text.indexOf('reverse_proxy'));
@@ -253,23 +255,25 @@ describe('OTLP ingest route (otel.caddy, caddy-ingest-route.md)', () => {
     }
   });
 
-  it('deletes the Authorization header from the access log', () => {
+  it('deletes the Authorization, Cookie and Proxy-Authorization headers from the access log', () => {
     expect(text).toMatch(
-      /log \{\s+format filter \{\s+wrap json\s+fields \{\s+request>headers>Authorization delete\s+\}\s+\}\s+\}/,
+      /log \{\s+format filter \{\s+wrap json\s+fields \{\s+request>headers>Authorization delete\s+request>headers>Cookie delete\s+request>headers>Proxy-Authorization delete\s+\}\s+\}\s+\}/,
     );
   });
 
   it('has no global options block, no servers timeouts, no plain-HTTP listener and no token value', () => {
     const body = code(text);
     expect(body).not.toMatch(/^\{\s*$/m);
-    expect(body).not.toMatch(/\bservers\b|timeouts|read_body|read_header|idle_timeout|write_timeout/);
+    expect(body).not.toMatch(
+      /\bservers\b|timeouts|read_body|read_header|idle_timeout|write_timeout/,
+    );
     expect(body).not.toMatch(/http:\/\/|:80\b|auto_https|admin /);
     expect(body).not.toMatch(/Bearer (?!\{\$GELDAR_INGEST_TOKEN\}")/);
     expect(code(off)).not.toMatch(/\bservers\b|Authorization|Bearer/);
   });
 
   it('has a kill switch that answers 503 on the same host and proxies nothing', () => {
-    expect(code(off)).toMatch(/\{\$GELDAR_INGEST_HOST\} \{\s+respond 503\s+\}/);
+    expect(code(off)).toMatch(/\{\$GELDAR_INGEST_HOST:otel\.invalid\} \{\s+respond 503\s+\}/);
     expect(off).not.toContain('reverse_proxy');
   });
 });
