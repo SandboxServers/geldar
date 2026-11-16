@@ -72,8 +72,13 @@ export interface BatchDeps {
 /** The sink for the error logs: an event name and its fields. */
 export type ErrorLog = (event: string, fields: LogFields) => void;
 
-/** Longest `reason` sent in an error log. */
-const ERROR_LOG_REASON_LIMIT = 2000;
+/**
+ * Longest `reason` sent in an error log, in characters. The reason is cut to this (plus a small
+ * slack, so a token straddling the cut is still scrubbed whole) BEFORE it is scrubbed: a reason is
+ * producer-controlled (an unknown key name is echoed by the validator) and can be near 1 MiB.
+ */
+export const ERROR_LOG_REASON_LIMIT = 8192;
+const ERROR_LOG_REASON_SLACK = 512;
 
 /** The message facts an error log carries. */
 interface LogContext {
@@ -88,12 +93,15 @@ function report(
   event: string,
   reason: string,
   context?: LogContext,
+  extra?: LogFields,
 ): void {
   if (errorLog === undefined) return;
   try {
-    const fields: LogFields = {
-      reason: capText(scrubText(reason), ERROR_LOG_REASON_LIMIT).text,
-    };
+    const cut = reason.slice(0, ERROR_LOG_REASON_LIMIT + ERROR_LOG_REASON_SLACK);
+    const capped = capText(scrubText(cut), ERROR_LOG_REASON_LIMIT);
+    const lost = reason.length - ERROR_LOG_REASON_LIMIT;
+    const marker = capped.truncated || lost > 0 ? `…[truncated ${Math.max(lost, 1)} chars]` : '';
+    const fields: LogFields = { ...extra, reason: capped.text + marker };
     if (context !== undefined) {
       fields.subject = context.subject.slice(0, 256);
       fields.trace_id = context.traceId;
@@ -289,10 +297,19 @@ export async function handleBatch(
     }
     const ids = valid.map((v) => v.event.source_event_id).join(',');
     log(`eventsink: write failed, nak ${valid.length} events [${ids}]: ${String(error)}`);
-    for (const { message, traceId } of valid) {
-      report(deps.errorLog, 'write_failed_nak', String(error), contextOf(message, traceId));
-      retryLater(message);
+    // One record per failed batch, not per message: an outage must not flood the log queue and
+    // evict dead_letter records. The first message stands for the batch.
+    const first = valid[0];
+    if (first !== undefined) {
+      report(
+        deps.errorLog,
+        'write_failed_nak',
+        String(error),
+        contextOf(first.message, first.traceId),
+        { batch_size: valid.length },
+      );
     }
+    for (const { message } of valid) retryLater(message);
     return;
   }
   for (const { message } of valid) message.ack();

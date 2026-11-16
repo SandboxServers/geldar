@@ -53,7 +53,7 @@ export function startErrorLogs(env: NodeJS.ProcessEnv): ErrorLogs | undefined {
   const logger = createLogger({
     name: 'geldar-eventsink',
     write: () => {},
-    extraKeys: ['subject', 'delivery_count'],
+    extraKeys: ['subject', 'delivery_count', 'batch_size'],
   });
   return { errorLog: (event, fields) => logger.error(event, fields), stop: () => sdk.shutdown() };
 }

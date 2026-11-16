@@ -2,6 +2,7 @@ import type { WorldEvent } from '@geldar/contract';
 import { describe, expect, it } from 'vitest';
 import {
   type BatchDeps,
+  ERROR_LOG_REASON_LIMIT,
   type ErrorLog,
   handleBatch,
   nakDelayMs,
@@ -102,7 +103,82 @@ describe('eventsink OTLP error logs', () => {
     expect(h.calls).toEqual([`nak geldar.phase0.damage ${nakDelayMs(4)}`]);
   });
 
-  it('a write failure that naks gives one record per message and the same nak', async () => {
+  it('a 50-message batch with the database down gives one record and 50 naks', async () => {
+    const h = harness({ dbFails: true });
+    const batch = Array.from({ length: 50 }, (_, i) =>
+      h.message('geldar.phase0.damage', {
+        ...EVENT,
+        source_event_id: `${EVENT.source_event_id.slice(0, -2)}${String(i).padStart(2, '0')}`,
+      }),
+    );
+    await handleBatch(batch, h.make(true));
+    expect(h.records).toHaveLength(1);
+    expect(h.records[0]?.event).toBe('write_failed_nak');
+    expect(h.records[0]?.fields).toMatchObject({
+      subject: 'geldar.phase0.damage',
+      batch_size: 50,
+      trace_id: TRACE,
+    });
+    expect(h.calls.filter((c) => c.startsWith('nak '))).toHaveLength(50);
+  });
+
+  it('a 1 MiB reason is cut before scrubbing, marked, and handled fast through handleBatch', async () => {
+    const h = harness();
+    const key = 'k'.repeat(1_048_576);
+    const started = performance.now();
+    await handleBatch([h.message('geldar.phase0.damage', { [key]: 1 })], h.make(true));
+    const elapsed = performance.now() - started;
+    console.info(`1 MiB reason handleBatch: ${elapsed.toFixed(1)} ms`);
+    expect(elapsed).toBeLessThan(100);
+    const reason = String(h.records[0]?.fields.reason);
+    expect(reason.length).toBeLessThanOrEqual(ERROR_LOG_REASON_LIMIT + 64);
+    expect(reason).toMatch(/…\[truncated \d+ chars\]$/);
+    expect(h.calls).toEqual(['dlq geldar.phase0.dlq', 'ack geldar.phase0.damage']);
+  });
+
+  it('a 5000-char reason is kept whole (the cap is 8192), a short one has no marker', async () => {
+    const h = harness({ dlqFails: true });
+    const deps: BatchDeps = {
+      ...h.make(true),
+      async publishDlq() {
+        throw new Error('x'.repeat(5000));
+      },
+    };
+    await handleBatch([h.message('geldar.phase0.damage', { nonsense: true })], deps);
+    const reason = String(h.records[0]?.fields.reason);
+    expect(reason.length).toBeGreaterThan(5000);
+    expect(reason).not.toContain('truncated');
+  });
+
+  it('key=value credentials in a reason are scrubbed', async () => {
+    const h = harness({ dlqFails: true });
+    const pw = `${'hunt'}er2`;
+    const deps: BatchDeps = {
+      ...h.make(true),
+      async publishDlq() {
+        throw new Error(`failed password=${pw} token=${'abc'}123`);
+      },
+    };
+    await handleBatch([h.message('geldar.phase0.damage', { nonsense: true })], deps);
+    const reason = String(h.records[0]?.fields.reason);
+    expect(reason).not.toContain(pw);
+    expect(reason).not.toContain('abc123');
+  });
+
+  it('the DLQ body reason stays sliced to 2000', async () => {
+    const h = harness();
+    let body = '';
+    const deps: BatchDeps = {
+      ...h.make(true),
+      async publishDlq(_s, b) {
+        body = b;
+      },
+    };
+    await handleBatch([h.message('geldar.phase0.damage', { ['k'.repeat(5000)]: 1 })], deps);
+    expect((JSON.parse(body) as { reason: string }).reason).toHaveLength(2000);
+  });
+
+  it('a write failure that naks gives one record and the same nak', async () => {
     const h = harness({ dbFails: true });
     await handleBatch([h.message('geldar.phase0.damage', EVENT, 2)], h.make(true));
     expect(h.records.map((r) => r.event)).toEqual(['write_failed_nak']);
