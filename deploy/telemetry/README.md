@@ -394,3 +394,57 @@ Each step is a separate start. Do not start the collector before the migrator ex
 
 - `docker compose -f deploy/telemetry/compose.yml config` with dummy secret paths and dummy environment (see the file's header comment). No start, no pull.
 - The otelcol config validation in the scratch run (item 16).
+
+## Gateway (N8)
+
+Files: `gateway.yaml` (collector config, first stage) and `compose.gateway.yml` (service `geldar-gateway`, same project `geldar-telemetry`). Nothing here has been run on the node.
+
+| Image | Tag | Index digest (used in compose) | linux/amd64 digest | Release date (UTC) | Runtime user |
+|---|---|---|---|---|---|
+| otel/opentelemetry-collector-contrib | 0.164.0 | sha256:340c9ca6a36617084c6661bdc4f0fe92b7cda5a805d61673ec8db375fddc522b | sha256:ac0bb9cdc844b55d2fd2655d03e596243787d6a8c52dd408b1dc96dd1bd372ee | 2026-10-26 | 10001:10001; scratch image, no shell, no wget, no healthcheck binary; entrypoint `/otelcol-contrib` |
+
+Scope of this stage: receiver `otlp` only (traces, logs, metrics). The `prometheus` (N10), `postgresql` (N11) and `host_metrics` receivers are commented placeholders in `gateway.yaml`. Content capture (decision 0350) means no truncation, size limit or sampling in the config; redaction is limited to IPv4 and IPv6 literals in log bodies and credential-looking attribute keys (not free text), as in collector-design section 5.
+
+### Order dependencies
+
+- The SigNoz collector (N7, `geldar-signoz-otelcol`, OTLP gRPC on 4317) must be up before ingested data is useful. The gateway may start before it: the exporter retries (300 s) and the queue is persisted in `/mnt/nvme/geldar-telemetry/queue`.
+- The Caddy ingest route (N14) targets the gateway's loopback publish `127.0.0.1:4320`, so the gateway must run before the route is loaded.
+- `GELDAR_TELEMETRY_URL` on the Geldar services (a later batched Body redeploy, not applied now) is intended to be `http://otel-gateway:4318` (OTLP/HTTP, alias on `geldar-colo`).
+
+### Node steps, in order
+
+1. Pull by digest: `docker pull otel/opentelemetry-collector-contrib@sha256:340c9ca6a36617084c6661bdc4f0fe92b7cda5a805d61673ec8db375fddc522b`.
+2. Queue directory (inside the sudo scope): `sudo -n chown 10001:10001 /mnt/nvme/geldar-telemetry/queue && sudo -n chmod 750 /mnt/nvme/geldar-telemetry/queue`. The contents are disposable.
+3. Stage the new files: same route as the first staging (tarball of `deploy/telemetry`, `sha256sum -c` before extracting, extract into `/mnt/nvme/geldar-telemetry/src`). Only `gateway.yaml` and `compose.gateway.yml` are new; `compose.yml` is unchanged.
+4. Validate the config on the node image without starting it (the queue directory must be mounted: `file_storage` has `create_directory: false` and validate checks that it exists; the scratch run found this):
+   `docker run --rm --network none -e GELDAR_SIGNOZ_OTLP_ENDPOINT=geldar-signoz-otelcol:4317 --entrypoint /otelcol-contrib -v /mnt/nvme/geldar-telemetry/src/deploy/telemetry/gateway.yaml:/etc/otelcol/gateway.yaml:ro -v /mnt/nvme/geldar-telemetry/queue:/var/lib/otelcol/queue otel/opentelemetry-collector-contrib@sha256:340c9ca6a36617084c6661bdc4f0fe92b7cda5a805d61673ec8db375fddc522b validate --config=/etc/otelcol/gateway.yaml`
+   It must print nothing and exit 0. (`validate` checks the config shape; OTTL statements are compiled only when the processors start, so the verification below also covers them.) Run it as the SSH user: if the mounted queue directory is unreadable for that user, add `--user 10001:10001`.
+5. Start the gateway only: `docker compose -f deploy/telemetry/compose.yml -f deploy/telemetry/compose.gateway.yml up -d geldar-gateway`. With both files an `up -d <service>` should touch only the gateway, but a service whose config changed would be recreated: read the compose output and stop if any other service is named.
+
+### Verification
+
+1. Running: `docker ps --filter name=geldar-gateway --format '{{.Names}} {{.Status}}'`, and `docker logs geldar-gateway` has no error or warn lines (level is `warn`).
+2. Hardening: `docker inspect -f '{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.CapDrop}} {{.HostConfig.SecurityOpt}} {{.Config.User}}' geldar-gateway` prints `true [ALL] [no-new-privileges:true] 10001:10001`.
+3. No docker.sock: `docker inspect -f '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}' geldar-gateway` lists only the `gateway.yaml` bind and the queue directory (and no `docker.sock`).
+4. Networks: `docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{$v.Aliases}}{{println}}{{end}}' geldar-gateway` shows exactly `geldar-colo` (with `otel-gateway`) and `geldar-telemetry`.
+5. Published port: `docker port geldar-gateway` prints only `4318/tcp -> 127.0.0.1:4320`.
+6. Health: `docker run --rm --network geldar-telemetry curlimages/curl -s -o /dev/null -w '%{http_code}\n' http://geldar-gateway:13133/` prints `200`. (The gateway has no compose healthcheck: the scratch image has no client.)
+7. Test data: from a one-shot curl container on `geldar-telemetry` post a log and a trace to `http://geldar-gateway:4318/v1/logs` and `/v1/traces` (`-H 'content-type: application/json'`, status 200). The log body holds a marker such as `T25-MARK 203.0.113.7:5000`, and the log record and span carry an attribute `password` and an attribute `keep`. After the 5 s batch, in ClickHouse (reader or admin path as in "N4 checks"), query `signoz_logs` for the marker: the body must read `T25-MARK <addr>:5000`, the `password` attribute must be absent from the attributes, and `keep` present. Do the same for the trace in `signoz_traces` (no `password` attribute). Table and column names are the migrator's: check them with `DESCRIBE` first.
+8. Queue directory: `ls -ln /mnt/nvme/geldar-telemetry/queue` shows `file_storage` files owned by 10001.
+9. Caps: `docker stats --no-stream geldar-gateway` shows memory under 512 MiB and CPU under 50%; `docker inspect -f '{{.HostConfig.NanoCpus}} {{.HostConfig.Memory}} {{.HostConfig.PidsLimit}}' geldar-gateway` prints `500000000 536870912 256`.
+10. Reachable by name from `geldar-colo`: a one-shot curl container on `geldar-colo` posts an empty `{}` JSON body to `http://otel-gateway:4318/v1/logs` and gets 200.
+
+### Failure and rollback
+
+- Failure: `docker logs geldar-gateway`; a config error stops the container at start (restart loop): stop it and fix the file.
+- Rollback: `docker compose -f deploy/telemetry/compose.yml -f deploy/telemetry/compose.gateway.yml stop geldar-gateway` then `docker compose -f deploy/telemetry/compose.yml -f deploy/telemetry/compose.gateway.yml rm -f geldar-gateway`. The queue directory contents are disposable (`rm` the files inside only on the owner's say). Removing the container unpublishes `127.0.0.1:4320`, which removes the Caddy route's target (the route then returns a gateway error until it is switched off with `otel-off.caddy`).
+
+### Unverified (gateway)
+
+- G1: OTTL regex escaping. The statements use `\\d` and `\\b` in single-quoted YAML (OTTL string escape). A local run on 0.164.0 with a debug exporter showed IPv4, IPv6 (full and compressed, `::1`) replaced by `<addr>`, `12:30:45` and `1.20.4` kept; the node `validate` step plus the verification in step 7 are the node check. Known edge: `v1.2.3.4.5` becomes `v1.<addr>`.
+- G2: `otlp_grpc` is accepted as the exporter type by 0.164.0 (local `validate` passed; repeat on the node image).
+- G3: `file_storage` and the persisted queue on a bind owned by 10001 (not yet run on the node).
+- G4: trace and metric label filtering behaviour: the span key deletion and the `datapoint` deletions (`geldar.life_id`, `player_id`) compile, but were not exercised with data. Check with a test metric.
+- G5: the gateway is reachable by the alias `otel-gateway` from containers on `geldar-colo` (verification step 10).
+- G6: the `/healthz` span filter route name (`http.route`) is unconfirmed.
+- G7: queue sizing (`queue_size: 400`, items not bytes) is the collector-design estimate; check against the real request size after traffic starts.
