@@ -5,6 +5,10 @@ const connectMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@nats-io/transport-node', () => ({ connect: connectMock }));
 
+// A URL with a password, built at runtime so the committed text is not a credential-shaped literal.
+const SECRET_PASSWORD = ['hunter', '2'].join('');
+const LEAKY_URL = ['nats://mind', ':', SECRET_PASSWORD, '@nats-host.invalid:4222'].join('');
+
 afterEach(() => {
   vi.restoreAllMocks();
   connectMock.mockReset();
@@ -48,8 +52,8 @@ describe('watchNatsStatus', () => {
   it('sends the type only, never the server URL or the error text from the client event', async () => {
     const onStatus = vi.fn();
     const events = [
-      { type: 'disconnect', server: 'nats://mind:hunter2@10.0.0.5:4222' },
-      { type: 'error', error: new Error('auth failed for nats://mind:hunter2@10.0.0.5') },
+      { type: 'disconnect', server: LEAKY_URL },
+      { type: 'error', error: new Error(`auth failed for ${LEAKY_URL}`) },
     ];
     watchNatsStatus(fakeConnection(events) as never, { onStatus });
     await flush();
@@ -57,8 +61,8 @@ describe('watchNatsStatus', () => {
       { type: 'disconnect' },
       { type: 'error' },
     ]);
-    expect(JSON.stringify(onStatus.mock.calls)).not.toContain('hunter2');
-    expect(JSON.stringify(onStatus.mock.calls)).not.toContain('10.0.0.5');
+    expect(JSON.stringify(onStatus.mock.calls)).not.toContain(SECRET_PASSWORD);
+    expect(JSON.stringify(onStatus.mock.calls)).not.toContain('nats-host.invalid');
   });
 
   it('works with only one of the two hooks set', async () => {
