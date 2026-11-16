@@ -190,6 +190,8 @@ services:
         uid: "10001"
         mode: 0400
     networks: [geldar-telemetry]
+    environment:
+      GOMEMLIMIT: 800MiB   # about 80% of the 1g cap; matches memory_limiter limit_mib 800 in signoz-otelcol-config.yaml (S5)
     expose: ["4317", "4318"]
     depends_on:
       geldar-signoz-migrator:
