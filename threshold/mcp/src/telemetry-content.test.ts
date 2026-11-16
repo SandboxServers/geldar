@@ -1,4 +1,4 @@
-import { ImageToolResult, type ToolContext } from '@geldar/mcp-mock';
+import { callTool, ImageToolResult, type ToolContext } from '@geldar/mcp-mock';
 import { CONTENT_CAP_BYTES, startTelemetry, type TelemetryHandle } from '@geldar/telemetry';
 import { afterEach, describe, expect, it } from 'vitest';
 import { worldFixture } from './fakes/world.fakes.ts';
@@ -198,6 +198,29 @@ describe('tool content as span events (T-06c)', () => {
 
     expect(spans).toHaveLength(1);
     expect(JSON.stringify(resultOn)).toBe(JSON.stringify(resultOff));
+  });
+
+  it('a successful look is the same wire response with the recorder on and off, with no trace id in it', async () => {
+    const { recorder, provider, spans } = startWithMemory();
+    const off = worldTools();
+    const on = worldTools(recorder);
+
+    const wireOff = await callTool(off, 'look', {}, ctx());
+    const wireOn = await callTool(on, 'look', {}, ctx());
+    await provider.forceFlush();
+
+    expect(spans).toHaveLength(1);
+    const traceId = spans[0]?.traceId ?? '';
+    expect(traceId).toMatch(/^[0-9a-f]{32}$/);
+    expect(wireOn).toEqual(wireOff);
+    expect(wireOn.isError).not.toBe(true);
+    expect(wireOn.content[0]).toMatchObject({ type: 'text' });
+    const text = JSON.stringify(wireOn);
+    expect(text).not.toContain(traceId);
+    expect(text).not.toMatch(/[0-9a-f]{32}/);
+    expect(text).not.toContain('trace_id');
+    expect(text).not.toContain('traceId');
+    expect(text).not.toContain('_meta');
   });
 
   it('no trace id or span id reaches the agent-visible result or the error response', async () => {
