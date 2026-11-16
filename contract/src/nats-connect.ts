@@ -54,18 +54,55 @@ export const exitOnFatalClose: OnFatalClose = (error, name) => {
 };
 
 /**
+ * A connection status event, named by the client's status type (`disconnect`, `reconnect`,
+ * `reconnecting`, `update`, `ldm`, `error`, `staleConnection`, `forceReconnect`, ...). `data` is
+ * never set by Geldar: server URLs and error text can carry credentials, so hooks get the type only.
+ */
+export type NatsStatusEvent = { type: string; data?: string };
+
+/** Receives each status event. Optional; absent means no observation. */
+export type OnNatsStatus = (event: NatsStatusEvent) => void;
+
+/** Counts each status event by type, e.g. for `geldar_nats_status_total{type}`. Optional. */
+export type IncNatsStatus = (type: string) => void;
+
+export type NatsStatusHooks = { onStatus?: OnNatsStatus; incStatus?: IncNatsStatus };
+
+/**
+ * Reads `nc.status()` and passes each event to the hooks. With no hook given it returns at once
+ * and never reads the status stream. The stream ends when the connection closes. A hook that throws
+ * stops the watcher and logs the error message (the stream is then no longer read).
+ */
+export function watchNatsStatus(nc: Pick<NatsConnection, 'status'>, hooks: NatsStatusHooks): void {
+  const { onStatus, incStatus } = hooks;
+  if (!onStatus && !incStatus) return;
+  void (async () => {
+    for await (const status of nc.status()) {
+      incStatus?.(status.type);
+      onStatus?.({ type: status.type });
+    }
+  })().catch((error: unknown) => {
+    console.error(
+      `NATS status watcher stopped: ${error instanceof Error ? error.message : 'unknown error'}`,
+    );
+  });
+}
+
+/**
  * Connects with `maxReconnectAttempts: -1` (the caller's value is overridden) and watches the
  * connection: a close that carries an error calls `onFatalClose`. Pass `options.name` and
- * `options.servers` as for `connect`.
+ * `options.servers` as for `connect`. `hooks` (optional) observe status events; see `watchNatsStatus`.
  */
 export async function connectNats(
   options: ConnectionOptions & { name: string; servers: string },
   onFatalClose: OnFatalClose = exitOnFatalClose,
+  hooks: NatsStatusHooks = {},
 ): Promise<NatsConnection> {
   const auth = natsAuth(options);
   const nc = await connect({ ...options, ...auth, maxReconnectAttempts: -1 });
   nc.closed().then((reason) => {
     if (reason instanceof Error) onFatalClose(reason, options.name);
   });
+  watchNatsStatus(nc, hooks);
   return nc;
 }
