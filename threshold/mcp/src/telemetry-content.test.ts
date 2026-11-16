@@ -364,3 +364,48 @@ describe('content failures never change the call (T-06c)', () => {
     expect(eventText(span, TOOL_RESULT_EVENT)).toBeUndefined();
   });
 });
+
+/** A tracer that records each added event's name and attributes, with no SDK processor behind it. */
+function fakeTracer(added: { name: string; attributes: Record<string, unknown> }[]): SpanTracer {
+  return {
+    startSpan: () => ({
+      setAttributes: () => undefined,
+      addEvent: (name: string, attributes?: Record<string, unknown>) => {
+        added.push({ name, attributes: { ...attributes } });
+      },
+      end: () => undefined,
+    }),
+  };
+}
+
+describe('the content helper caps and serializes (T-06c)', () => {
+  it('marks an over-cap argument event truncated, and an under-cap one not', () => {
+    const added: { name: string; attributes: Record<string, unknown> }[] = [];
+    const record = toolSpanRecorder(fakeTracer(added));
+    record({
+      tool: 'look',
+      outcome: 'ok',
+      durationMs: 1,
+      content: { arguments: { big: 'é'.repeat(CONTENT_CAP_BYTES) } },
+    });
+    record({ tool: 'look', outcome: 'ok', durationMs: 1, content: { arguments: { small: 'x' } } });
+
+    const key = `geldar.content.${TOOL_ARGUMENTS_EVENT}`;
+    expect(added.map((item) => item.name)).toEqual([key, key]);
+    expect(added[0]?.attributes[`${key}.truncated`]).toBe(true);
+    expect(added[1]?.attributes[`${key}.truncated`]).toBe(false);
+  });
+
+  it('a bigint in the arguments drops only the arguments event; the result event is still emitted', () => {
+    const added: { name: string; attributes: Record<string, unknown> }[] = [];
+    toolSpanRecorder(fakeTracer(added))({
+      tool: 'look',
+      outcome: 'ok',
+      durationMs: 1,
+      content: { arguments: { a: 1n }, result: 'ok' },
+    });
+
+    expect(added.map((item) => item.name)).toEqual([`geldar.content.${TOOL_RESULT_EVENT}`]);
+    expect(added[0]?.attributes[`geldar.content.${TOOL_RESULT_EVENT}`]).toBe('"ok"');
+  });
+});
