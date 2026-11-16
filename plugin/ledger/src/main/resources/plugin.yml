@@ -1,0 +1,6 @@
+name: Ledger
+main: dev.geldar.ledger.paper.LedgerPlugin
+version: "${version}"
+api-version: "26.1"
+description: Server statistics.
+softdepend: [spark, Chunky, BlueMap, CoreProtect]

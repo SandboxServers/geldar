@@ -18,6 +18,10 @@ The jars carry `jnats`; Paper and Velocity supply their APIs. Compose mounts eac
 
 To refresh the dependency locks after changing a version: `./gradlew build --write-locks`.
 
+## Ledger modules
+
+Two more subprojects carry the Ledger statistics plugin. `ledger-core` is loader-neutral: it depends on the OpenTelemetry API only and has no Bukkit, Paper, Velocity, Fabric or NeoForge import (`NoLoaderImportsTest` fails the build if one appears). `ledger` is the Paper adapter: it builds `ledger/build/libs/ledger.jar` (core module and OpenTelemetry API inside; Paper, gson, spark and BlueMap are compile-only) and its `plugin.yml` declares no commands and no permissions.
+
 ## Geldar-Core
 
 - **Event export.** `server_tps` every 20 s, plus `damage`, `death` and `sleep`. Each event follows `contract/schemas/event.schema.json`: `source_event_id` (`ev_` plus a ULID), `at`, `shard`, `world_day`, `world_tick`, `type`, optional `agent_id` (set when the player name is a life id), and `payload`. Events go to `geldar.<shard>.<type>` in JetStream stream `GELDAR_EVENTS` (created if missing: subjects `geldar.*.*`, file storage, 30-day retention). The `Nats-Msg-Id` header is the `source_event_id`, so JetStream drops duplicates.
