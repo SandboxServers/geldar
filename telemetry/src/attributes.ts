@@ -76,11 +76,12 @@ const IDENTITY_KEYS: ReadonlySet<string> = new Set([
 ]);
 
 // Any key that names a credential is dropped in every scope, including content fields such as
-// `geldar.content.password`. `token` must be a whole word, so `gen_ai.usage.input_tokens` stays allowed.
+// `geldar.content.password`. `token` and `pwd` must be whole words, so `gen_ai.usage.input_tokens` stays allowed.
 // The other stems also match inside joined names (`authtoken`, `apiKey`, `emailAddress`).
-const FORBIDDEN_WORD = 'token';
+const FORBIDDEN_WORDS: ReadonlySet<string> = new Set(['token', 'pwd']);
 const FORBIDDEN_STEMS: readonly string[] = [
   'apikey',
+  'apitoken',
   'authtoken',
   'accesstoken',
   'passwd',
@@ -90,8 +91,10 @@ const FORBIDDEN_STEMS: readonly string[] = [
   'authorization',
   'bearer',
   'credential',
+  'idtoken',
   'jwt',
   'privatekey',
+  'refreshtoken',
   'sessionid',
   'email',
 ];
@@ -118,7 +121,7 @@ export function hasForbiddenSegment(key: string): boolean {
     .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
     .toLowerCase()
     .split(/[._-]/);
-  if (words.includes(FORBIDDEN_WORD)) return true;
+  if (words.some((word) => FORBIDDEN_WORDS.has(word))) return true;
   const joined = words.join('');
   return FORBIDDEN_STEMS.some((stem) => joined.includes(stem));
 }

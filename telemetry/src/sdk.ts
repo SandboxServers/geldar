@@ -94,6 +94,11 @@ function disableGlobals(): void {
   context.disable();
 }
 
+/** The OTLP/HTTP URL for one signal. Trailing slashes on the endpoint are dropped before `/v1/<signal>`. */
+export function signalUrl(endpoint: string, signal: 'traces' | 'logs' | 'metrics'): string {
+  return `${endpoint.replace(/\/+$/, '')}/v1/${signal}`;
+}
+
 /** True only for an absolute http or https URL. Throws for a bare host, which the setup catch handles. */
 function hasHttpScheme(endpoint: string): boolean {
   const { protocol } = new URL(endpoint);
@@ -114,7 +119,6 @@ export function startTelemetry(options: TelemetryOptions): TelemetryHandle {
   try {
     // Only http(s) is a collector. Anything else with a scheme (ftp:, otel-gateway:4318) is off.
     if (!hasHttpScheme(endpoint)) return OFF;
-    const base = endpoint.replace(/\/+$/, '');
     const limits = { ...DEFAULT_LIMITS, ...options.limits };
     const exporters = options.exporters ?? {};
     // Resource attributes are shared by every signal, so they carry no life or player identifier.
@@ -134,13 +138,19 @@ export function startTelemetry(options: TelemetryOptions): TelemetryHandle {
     };
     const traces =
       exporters.traces ??
-      new OTLPTraceExporter({ url: `${base}/v1/traces`, timeoutMillis: EXPORT_TIMEOUT_MS });
+      new OTLPTraceExporter({
+        url: signalUrl(endpoint, 'traces'),
+        timeoutMillis: EXPORT_TIMEOUT_MS,
+      });
     const logExporter =
       exporters.logs ??
-      new OTLPLogExporter({ url: `${base}/v1/logs`, timeoutMillis: EXPORT_TIMEOUT_MS });
+      new OTLPLogExporter({ url: signalUrl(endpoint, 'logs'), timeoutMillis: EXPORT_TIMEOUT_MS });
     const metricExporter =
       exporters.metrics ??
-      new OTLPMetricExporter({ url: `${base}/v1/metrics`, timeoutMillis: EXPORT_TIMEOUT_MS });
+      new OTLPMetricExporter({
+        url: signalUrl(endpoint, 'metrics'),
+        timeoutMillis: EXPORT_TIMEOUT_MS,
+      });
 
     // Every signal passes the allow-list inside the SDK, so raw API calls are filtered too.
     const tracerProvider = new TracerProvider({
