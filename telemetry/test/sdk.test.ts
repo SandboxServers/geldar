@@ -35,16 +35,39 @@ function recorder(): { exporters: TelemetryExporters; spanNames: string[] } {
 }
 
 describe('startTelemetry off switch', () => {
-  it('is completely off when the endpoint is unset: no provider, no export, no fetch', async () => {
+  it('is completely off when the endpoint is unset: no provider, no export, no timer, no fetch', async () => {
+    const exportSpy = vi.fn();
+    const shutdownSpy = vi.fn(async () => {});
+    // Injected exporters that count every call. The off path must never reach them.
+    const exporters: TelemetryExporters = {
+      traces: { export: exportSpy, shutdown: shutdownSpy },
+      logs: { export: exportSpy, shutdown: shutdownSpy } as unknown as LogRecordExporter,
+      metrics: {
+        export: exportSpy,
+        forceFlush: shutdownSpy,
+        shutdown: shutdownSpy,
+      } as unknown as PushMetricExporter,
+    };
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
-    const { exporters, spanNames } = recorder();
-    const handle = startTelemetry({ ...BASE, exporters });
-    expect(handle.enabled).toBe(false);
-    expect(handle.tracerProvider).toBeUndefined();
-    await handle.shutdown();
-    expect(spanNames).toEqual([]);
-    expect(fetchSpy).not.toHaveBeenCalled();
-    fetchSpy.mockRestore();
+    const intervalSpy = vi.spyOn(globalThis, 'setInterval');
+    const timeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+    try {
+      const off = startTelemetry({ ...BASE, exporters });
+      expect(off.enabled).toBe(false);
+      expect(off.tracerProvider).toBeUndefined();
+      // Blank endpoints are off too, and each returns the same shared off handle.
+      for (const endpoint of ['', '   ']) {
+        expect(startTelemetry({ ...BASE, endpoint, exporters })).toBe(off);
+      }
+      await off.shutdown();
+      expect(exportSpy).not.toHaveBeenCalled();
+      expect(shutdownSpy).not.toHaveBeenCalled();
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(intervalSpy).not.toHaveBeenCalled();
+      expect(timeoutSpy).not.toHaveBeenCalled();
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 
   it('treats a blank endpoint as unset', () => {

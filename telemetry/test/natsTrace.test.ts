@@ -1,4 +1,5 @@
 import { type Context, propagation, ROOT_CONTEXT, trace } from '@opentelemetry/api';
+import { W3CTraceContextPropagator } from '@opentelemetry/core';
 import { describe, expect, it } from 'vitest';
 import { extractTrace, type HeaderLike, injectTrace } from '../src/natsTrace.ts';
 
@@ -41,6 +42,23 @@ describe('NATS trace propagation', () => {
     const headers = new FakeHeaders();
     injectTrace(headers, ctx);
     expect(headers.names()).toEqual(['traceparent']);
+    expect(headers.has('baggage')).toBe(false);
+  });
+
+  it('injects traceparent only when the context carries trace state and baggage', () => {
+    // Build the trace state through the W3C propagator: the API does not export a TraceState constructor.
+    const withState = new W3CTraceContextPropagator().extract(
+      ROOT_CONTEXT,
+      { traceparent: `00-${TRACE_ID}-${SPAN_ID}-01`, tracestate: 'vendor=x' },
+      { get: (c, k) => c[k], keys: (c) => Object.keys(c) },
+    );
+    expect(trace.getSpanContext(withState)?.traceState?.get('vendor')).toBe('x');
+    const baggage = propagation.createBaggage({ user: { value: 'owner-secret' } });
+    const headers = new FakeHeaders();
+    injectTrace(headers, propagation.setBaggage(withState, baggage));
+    // Exact equality: a copy-every-key injector would also write tracestate here.
+    expect(headers.names()).toEqual(['traceparent']);
+    expect(headers.has('tracestate')).toBe(false);
     expect(headers.has('baggage')).toBe(false);
   });
 
