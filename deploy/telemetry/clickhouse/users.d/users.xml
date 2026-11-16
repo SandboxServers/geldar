@@ -68,7 +68,7 @@
                  clusterAllReplicas reach the shard as default. Its grants are limited to what that needs: SELECT and INSERT on the
                  six signoz_* databases and SELECT on system.*. Nothing else: no SOURCES, SYSTEM, FILE, URL, S3, REMOTE, ALTER,
                  CREATE, DROP, TABLE ENGINE or access management. Distributed DDL (ON CLUSTER) ran with these restricted grants in
-                 scratch report8; the initiating user was not recorded. Networks stay HOST LOCAL and the password stays
+                 scratch report8; which user the replica-side DDL ran as is not shown (README item 38). Networks stay HOST LOCAL and the password stays
                  empty. Residual: through remote() the writer can act as default, which gives SELECT and INSERT on the six signoz_*
                  databases and SELECT on system.*, no more than the writer already has on those databases. -->
             <grants>
@@ -143,8 +143,9 @@
              this file reaches the node (README ordering).
              Grants are explicit and nothing else sits next to them (no access_management keys: they cannot coexist with grants;
              the stock keys apply only to default). ALTER TTL is the ClickHouse privilege (alias ALTER MODIFY TTL). Round 9
-             (single replica, single shard): every ON CLUSTER ALTER row in system.query_log had initial_user = user (writer, admin
-             and reader each ran their own); behaviour on other replicas is not shown. The Distributed tables are altered too, and
+             (single replica, single shard) logged only is_initial_query = 1 rows, so it does not show which user the
+             replica-side DDL ran as; it shows that ON CLUSTER MODIFY TTL succeeded for this user while default, the cluster
+             entry's user, has no ALTER grants. Behaviour on other replicas is not shown (README item 38). The Distributed tables are altered too, and
              the grant is on whole databases so both are covered. SELECT on the three
              databases and on system.* because SigNoz reads engine_full from system.tables for the TTL status call; system.*
              is wider than system.tables, narrowing is untested [UNV]. CLUSTER is for ON CLUSTER.
@@ -157,8 +158,8 @@
              ALTER DELETE, ALTER COLUMN on other databases, ALTER of settings. No grants on signoz_metadata, signoz_meter or
              signoz_analytics: whether the retention call touches them is not known [UNV]; the ALTER failure names the missing
              privilege. Cold storage needs ALTER MODIFY SETTING; unused here [UNV].
-             Networks are all, as for the writer and the reader: the container reaches geldar-ch by name on the telemetry network;
-             nothing is published. -->
+             Networks are all, as for the writer and the reader: the container reaches geldar-ch by name on the query network
+             (geldar-telemetry-query); nothing is published. -->
         <geldar_signoz_admin>
             <password_sha256_hex from_env="GELDAR_CH_SIGNOZ_ADMIN_SHA256"/>
             <profile>geldar_signoz_admin</profile>
