@@ -80,7 +80,12 @@ services:
       - ./clickhouse/users.d:/etc/clickhouse-server/users.d:ro
       - ./clickhouse/histogram_function.xml:/etc/clickhouse-server/histogram_function.xml:ro
     # Both networks: geldar-telemetry for the Geldar clients, geldar-telemetry-backend for Keeper (cluster.xml reaches it by name there).
-    networks: [geldar-telemetry, geldar-telemetry-backend]
+    # The alias geldar-ch-sql exists only on geldar-telemetry. cluster.xml advertises it, so the replica address ClickHouse reports is the
+    # telemetry-network address on every client. Without it, the plain name geldar-ch can resolve to the backend IP, which the migrator cannot reach. [AUTH]
+    networks:
+      geldar-telemetry:
+        aliases: [geldar-ch-sql]
+      geldar-telemetry-backend:
     depends_on:
       geldar-ch-keeper:
         condition: service_healthy
