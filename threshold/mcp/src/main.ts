@@ -83,6 +83,8 @@ export interface McpPorts {
   frontDoor?: (options: FrontDoorOptions) => FrontDoor;
   /** Metrics push (decision 0088). Off when `url` is unset (cli.ts reads GELDAR_TELEMETRY_URL). */
   telemetry?: TelemetryPorts;
+  /** Test-only (T-06): in-memory exporters for the span SDK. Unset in production, where the OTLP exporters run. */
+  spanExporters?: Parameters<typeof startSpanTelemetry>[0]['exporters'] | undefined;
 }
 
 export interface TelemetryPorts {
@@ -313,6 +315,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       version: process.env.GELDAR_VERSION ?? 'dev',
       endpoint: ports.telemetry?.url,
       shard: config.shard,
+      ...(ports.spanExporters ? { exporters: ports.spanExporters } : {}),
     });
     closers.push(() => spans.shutdown());
     const password = postgresPassword(await ports.readSecret(config.postgres.passwordFile));
