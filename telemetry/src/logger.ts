@@ -1,9 +1,10 @@
-// JSON stdout logger. Each line is stamped with trace_id and span_id when a span is active,
-// and is also emitted as an OTLP log record (a no-op until the SDK registers a provider).
-// Logging never throws into the caller.
+// JSON stdout logger. Each line keeps every caller field except forbidden names (credentials, emails),
+// and is stamped with trace_id and span_id when a span is active. The same record is also emitted as an
+// OTLP log record, where only allow-listed attributes pass (plus `extraKeys`). A no-op until the SDK
+// registers a provider. Logging never throws into the caller.
 
 import { isSpanContextValid, logs, SeverityNumber, trace } from '@opentelemetry/api';
-import { filterAttributes } from './attributes.ts';
+import { allowLogKeys, filterAttributes } from './attributes.ts';
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 export type LogFields = Record<string, string | number | boolean | undefined | null>;
@@ -19,6 +20,8 @@ export interface Logger {
 export interface LoggerOptions {
   name: string;
   write?: (line: string) => void;
+  /** Extra field names this service may send to OTLP, on top of the allow-list. Process-wide. */
+  extraKeys?: readonly string[];
 }
 
 const SEVERITY: Record<LogLevel, SeverityNumber> = {
@@ -30,14 +33,16 @@ const SEVERITY: Record<LogLevel, SeverityNumber> = {
 
 export function createLogger(options: LoggerOptions): Logger {
   const write = options.write ?? ((line: string) => void process.stdout.write(line));
+  if (options.extraKeys !== undefined) allowLogKeys(options.extraKeys);
 
   const log = (level: LogLevel, event: string, fields: LogFields = {}): void => {
     try {
-      const { attributes } = filterAttributes(fields, 'log');
+      const { attributes: stdoutFields } = filterAttributes(fields, 'stdout');
       const sc = trace.getActiveSpan()?.spanContext();
       const ids = sc && isSpanContextValid(sc) ? { trace_id: sc.traceId, span_id: sc.spanId } : {};
-      const row = { ...attributes, at: new Date().toISOString(), level, event, ...ids };
+      const row = { ...stdoutFields, at: new Date().toISOString(), level, event, ...ids };
       write(`${JSON.stringify(row)}\n`);
+      const { attributes } = filterAttributes(fields, 'log');
       logs.getLogger(options.name).emit({
         severityNumber: SEVERITY[level],
         severityText: level.toUpperCase(),

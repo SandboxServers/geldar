@@ -5,7 +5,8 @@
 
 import { capText } from './cap-text.ts';
 
-export type TelemetryScope = 'trace' | 'log' | 'metric';
+// `stdout` is the JSON stdout line: every caller field except forbidden names is kept.
+export type TelemetryScope = 'trace' | 'log' | 'metric' | 'stdout';
 export type AttrValue = string | number | boolean;
 export type DropReason = 'unknown' | 'forbidden' | 'identity';
 export interface DroppedAttribute {
@@ -39,6 +40,7 @@ const TRACE_LOG_KEYS: ReadonlySet<string> = new Set([
   'gen_ai.tool.name',
   'gen_ai.usage.input_tokens',
   'gen_ai.usage.output_tokens',
+  'gen_ai.usage.total_tokens',
   'mcp.method.name',
   // Log record envelope fields that createLogger stamps after filtering.
   'event',
@@ -124,6 +126,8 @@ export function hasForbiddenSegment(key: string): boolean {
 function classify(key: string, name: string, scope: TelemetryScope): DropReason | undefined {
   if (scope === 'metric' && (IDENTITY_KEYS.has(name) || IDENTITY_KEYS.has(key))) return 'identity';
   if (hasForbiddenSegment(key)) return 'forbidden';
+  // Stdout lines keep every other caller field; only the forbidden check above applies.
+  if (scope === 'stdout') return undefined;
   if (scope === 'metric') return METRIC_KEYS.has(name) ? undefined : 'unknown';
   // Content fields (`geldar.content.*`) are allowed; their size is capped in filterAttributes.
   if (name.startsWith('content.')) return undefined;
@@ -167,6 +171,7 @@ export function filterAttributes(
     attributes[`${key}.bytes`] = bytes;
     attributes[`${key}.truncated`] = true;
   }
-  droppedTotal += dropped.length;
+  // Stdout drops are forbidden names only; they are not allow-list drops, so they are not counted.
+  if (scope !== 'stdout') droppedTotal += dropped.length;
   return { attributes, dropped };
 }
