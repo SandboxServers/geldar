@@ -46,7 +46,7 @@ services:
     expose: ["9181", "9234"]
     healthcheck:
       # [SRC] Foundry compose; binary presence in 25.12.5 build 44 [UNV]
-      test: ["CMD-SHELL", "clickhouse-keeper-client -h localhost -p 9181 -q ls"]
+      test: ["CMD-SHELL", "clickhouse-keeper-client -h 127.0.0.1 -p 9181 -q ls"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -85,8 +85,8 @@ services:
       geldar-ch-keeper:
         condition: service_healthy
     healthcheck:
-      # [SRC] SigNoz devenv and Foundry compose; not checked inside the image [UNV]
-      test: ["CMD-SHELL", "wget --spider -q http://localhost:8123/ping || exit 1"]
+      # [SRC] SigNoz devenv and Foundry compose, with 127.0.0.1 for IPv4 (listen_host 0.0.0.0); not checked inside the image [UNV] (README item 23)
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:8123/ping || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 3
