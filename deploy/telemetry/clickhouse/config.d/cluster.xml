@@ -2,6 +2,7 @@
 <!--
   Authored for Geldar (0370), not upstream. [AUTH]
   One shard, one replica, Keeper at geldar-ch-keeper. Needed for the SigNoz migrator's ON CLUSTER DDL [SRC manager.go].
+  S-A: Keeper is on geldar-telemetry-backend only (internal). geldar-ch joins it, so the name resolves there, not on geldar-telemetry.
   Base shape from the SigNoz devenv sample and Foundry config-0-0.yaml [SRC]; hostnames are Geldar's.
   Unverified (README item 9): the cluster entry has no user, so DDL runs as `default`, which is loopback-only in users.d.
 -->

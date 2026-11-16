@@ -13,9 +13,15 @@ x-logging: &logging
     max-file: "3"
 
 networks:
+  # Created at N2 on the node (external; not created by this file). Shared with geldar-gateway.
   geldar-telemetry:
     external: true
     name: geldar-telemetry
+  # S-A: project-scoped, internal (no route out). Only geldar-ch and geldar-ch-keeper join it, so Keeper is not on geldar-telemetry.
+  # Compose prefixes the project name: the Docker name is geldar-telemetry_geldar-telemetry-backend (README, "Networks").
+  geldar-telemetry-backend:
+    driver: bridge
+    internal: true
 
 secrets:
   ch_writer_password:
@@ -36,7 +42,7 @@ services:
     volumes:
       - /mnt/nvme/geldar-telemetry/keeper:/var/lib/clickhouse-keeper
       - ./clickhouse/keeper/keeper.yaml:/etc/clickhouse-keeper/keeper.yaml:ro
-    networks: [geldar-telemetry]
+    networks: [geldar-telemetry-backend]
     expose: ["9181", "9234"]
     healthcheck:
       # [SRC] Foundry compose; binary presence in 25.12.5 build 44 [UNV]
@@ -73,7 +79,8 @@ services:
       - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
       - ./clickhouse/users.d:/etc/clickhouse-server/users.d:ro
       - ./clickhouse/histogram_function.xml:/etc/clickhouse-server/histogram_function.xml:ro
-    networks: [geldar-telemetry]
+    # Both networks: geldar-telemetry for the Geldar clients, geldar-telemetry-backend for Keeper (cluster.xml reaches it by name there).
+    networks: [geldar-telemetry, geldar-telemetry-backend]
     depends_on:
       geldar-ch-keeper:
         condition: service_healthy

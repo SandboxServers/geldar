@@ -5,7 +5,8 @@ keeper_server:
   server_id: 0
   log_storage_path: /var/lib/clickhouse-keeper/coordination/log
   snapshot_storage_path: /var/lib/clickhouse-keeper/coordination/snapshots
-  four_letter_word_white_list: '*'
+  # S-A: only the commands used here (the healthcheck uses the client protocol, not a four-letter word). Not '*'.
+  four_letter_word_white_list: 'ruok,mntr,srvr'
   coordination_settings:
     force_sync: false
     operation_timeout_ms: 10000

@@ -52,6 +52,13 @@ No `docker.sock` is mounted in any service.
 - `/mnt/nvme/geldar-telemetry/query` (SigNoz SQLite directory)
 - `/mnt/nvme/geldar-telemetry/secrets` (password files, mode 0400 for uid 10001, see Secrets)
 
+## Networks
+
+- `geldar-telemetry`: external, created on the node at N2 (not by this file). Shared with `geldar-gateway`. Joined by `geldar-ch`, the migrator, SigNoz and the collector.
+- `geldar-telemetry-backend`: created by Compose for this project (`internal: true`, bridge). Docker name `geldar-telemetry_geldar-telemetry-backend`. Joined only by `geldar-ch` and `geldar-ch-keeper`, so Keeper (unauthenticated ZooKeeper protocol) is not reachable from `geldar-gateway`. `cluster.xml` reaches Keeper by its service name there.
+- This adds **one extra Docker network at N4**. The N4 request must name it, and the N4 checks below must include it.
+- Rollback: `docker compose -f deploy/telemetry/compose.yml down` removes it with the project. Check with `docker network ls` that `geldar-telemetry_geldar-telemetry-backend` is gone. The external `geldar-telemetry` is not removed by compose.
+
 ## Deviation from collector-design section 4
 
 - **One SigNoz container, not two.** SigNoz v0.148.1 serves the query API and the frontend from one container (`signoz/signoz`, port 8080) [SRC, `conf/example.yaml` `web.enabled: true`; `cmd/enterprise/Dockerfile.multi-arch` copies the frontend build to `/etc/signoz/web`]. So this stack has one `geldar-signoz` (1.0 CPU, 1g memory, 1g memswap, 256 pids) and no `geldar-signoz-ui`.
