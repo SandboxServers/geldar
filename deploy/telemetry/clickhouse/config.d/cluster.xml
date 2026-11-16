@@ -6,6 +6,17 @@
   Unverified (README item 9): the cluster entry has no user, so DDL runs as `default`, which is loopback-only in users.d.
 -->
 <clickhouse>
+    <!-- S8: logs go to the console only (docker json-file, capped by compose logging). The default file sinks are removed so no log
+         files fill the container layer. remove="remove" is the ClickHouse config-merge syntax [INF, unverified on 25.12.5]. -->
+    <logger>
+        <level>information</level>
+        <console>1</console>
+        <log remove="remove"/>
+        <errorlog remove="remove"/>
+    </logger>
+    <!-- Executable functions (histogram quantile, histogram_function.xml), keys from the SigNoz facts [SRC]. -->
+    <user_defined_executable_functions_config>*function.xml</user_defined_executable_functions_config>
+    <user_scripts_path>/var/lib/clickhouse/user_scripts/</user_scripts_path>
     <listen_host>0.0.0.0</listen_host>
     <display_name>cluster</display_name>
     <remote_servers>
