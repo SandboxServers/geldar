@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<!--
+  Authored for Geldar (0352 and 0370). [AUTH] Not upstream.
+  PLACEHOLDERS: every password_sha256_hex below is a placeholder. The real hash is written on the node, never in git.
+  Replace <sha256 of writer password from secret file> and <sha256 of reader password from secret file> before start.
+  Limits from 0352: writer max_memory_usage 2 GB, max_threads 4, max_execution_time 60, max_insert_threads 2.
+  Reader limits: not in 0352; 1 GB and 4 threads chosen here [AUTH guess].
+  default: kept because the cluster entry in cluster.xml has no user, so ON CLUSTER DDL runs as default (README item 9).
+  Networks for default are loopback only; nothing is published. Widen only if the scratch run shows ON CLUSTER refused.
+-->
+<clickhouse>
+    <profiles>
+        <geldar_writer>
+            <max_memory_usage>2000000000</max_memory_usage>
+            <max_threads>4</max_threads>
+            <max_execution_time>60</max_execution_time>
+            <max_insert_threads>2</max_insert_threads>
+            <load_balancing>in_order</load_balancing>
+            <log_queries>1</log_queries>
+        </geldar_writer>
+        <geldar_reader>
+            <readonly>1</readonly>
+            <max_memory_usage>1000000000</max_memory_usage>
+            <max_threads>4</max_threads>
+            <max_execution_time>60</max_execution_time>
+            <load_balancing>in_order</load_balancing>
+        </geldar_reader>
+    </profiles>
+    <users>
+        <default>
+            <password></password>
+            <networks>
+                <ip>127.0.0.1</ip>
+                <ip>::1</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <access_management>1</access_management>
+        </default>
+        <geldar_writer>
+            <password_sha256_hex><sha256 of writer password from secret file></password_sha256_hex>
+            <profile>geldar_writer</profile>
+            <quota>default</quota>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <access_management>1</access_management>
+        </geldar_writer>
+        <geldar_reader>
+            <password_sha256_hex><sha256 of reader password from secret file></password_sha256_hex>
+            <profile>geldar_reader</profile>
+            <quota>default</quota>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+        </geldar_reader>
+    </users>
+</clickhouse>

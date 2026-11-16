@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<!--
+  System log TTL, 30 days, as the Geldar 0352 retention for system tables. [AUTH]
+  Key names and the TTL expression come from Foundry config-0-0.yaml [SRC]. The facts file gives a one-day TTL there; this file
+  sets 30 days (INTERVAL 30 DAY) because the packet asks for 30 days. Check the expression parses on 25.12.5.44 in the scratch run [UNV].
+  Other log tables (asynchronous_metric_log, error_log, latency_log, query_metric_log, query_thread_log, query_views_log,
+  session_log, zookeeper_log) take the same one-line ttl in Foundry [SRC]; add them the same way if their TTL is needed.
+-->
+<clickhouse>
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <flush_interval_milliseconds>30000</flush_interval_milliseconds>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </query_log>
+    <part_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </part_log>
+    <trace_log>
+        <flush_interval_milliseconds>30000</flush_interval_milliseconds>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </trace_log>
+    <text_log>
+        <flush_interval_milliseconds>30000</flush_interval_milliseconds>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </text_log>
+    <metric_log>
+        <flush_interval_milliseconds>30000</flush_interval_milliseconds>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </metric_log>
+    <processors_profile_log>
+        <flush_interval_milliseconds>30000</flush_interval_milliseconds>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </processors_profile_log>
+</clickhouse>

@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<!--
+  Authored for Geldar (0370), not upstream. [AUTH]
+  One shard, one replica, Keeper at geldar-ch-keeper. Needed for the SigNoz migrator's ON CLUSTER DDL [SRC manager.go].
+  Base shape from the SigNoz devenv sample and Foundry config-0-0.yaml [SRC]; hostnames are Geldar's.
+  Unverified (README item 9): the cluster entry has no user, so DDL runs as `default`, which is loopback-only in users.d.
+-->
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+    <display_name>cluster</display_name>
+    <remote_servers>
+        <cluster>
+            <shard>
+                <replica>
+                    <host>geldar-ch</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster>
+    </remote_servers>
+    <zookeeper>
+        <node>
+            <host>geldar-ch-keeper</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+    <distributed_ddl>
+        <path>/clickhouse/task_queue/ddl</path>
+    </distributed_ddl>
+    <!-- One node: shard and replica names are free [SRC Foundry uses 00/00; 01/01 per facts]. -->
+    <macros>
+        <shard>01</shard>
+        <replica>01</replica>
+    </macros>
+</clickhouse>
