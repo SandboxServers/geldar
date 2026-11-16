@@ -12,6 +12,8 @@ COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY contract ./contract
 # psyche: @geldar/mcp-tokens depends on @geldar/psyche (AN-03a).
 COPY psyche ./psyche
+# telemetry: @geldar/golem depends on @geldar/telemetry, so the filtered frozen install needs it.
+COPY telemetry ./telemetry
 COPY animus ./animus
 COPY player-core ./player-core
 COPY threshold ./threshold

@@ -49,7 +49,6 @@ import { BotVoice } from '../voice/voice.ts';
 import { watchWorldTicks, worldAge } from '../world-clock.ts';
 import type { AdamConfig } from './adam-config.ts';
 
-/** What one run of the Body needs besides the bot. */
 /** The two span calls the Body makes. A tracer from the telemetry SDK satisfies this structurally. */
 export interface ActionSpan {
   setAttribute(key: string, value: string): unknown;
@@ -108,6 +107,7 @@ export function actionSpanSink(inner: RecordSink, tracer: ActionTracer): RecordS
   };
 }
 
+/** What one run of the Body needs besides the bot. */
 export interface AdamBodyEnv {
   config: AdamConfig;
   /** The generation and checkpoint buckets. */

@@ -259,9 +259,12 @@ export async function main(): Promise<void> {
   };
   process.once('SIGINT', () => onSignal('SIGINT'));
   process.once('SIGTERM', () => onSignal('SIGTERM'));
-  await done;
-  await telemetry.stop();
-  await sdk.shutdown();
+  try {
+    await done;
+    await telemetry.stop();
+  } finally {
+    await sdk.shutdown();
+  }
   if (supervisor.fatal) process.exitCode = 1;
   await manager.stop();
   proficiency?.stop();
