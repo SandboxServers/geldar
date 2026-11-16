@@ -10,7 +10,9 @@ import { ownerKeyRoutes } from './owner-keys.ts';
 import type { ApiContext, ApiDeps, ApiRoute } from './route.ts';
 import { tokenRoutes } from './tokens.ts';
 
-const PREFIX = '/api/v1';
+/** The owner API prefix. The public edge reaches it as /register/api/v1 (server.ts strips /register); the script uses it too. */
+export const OWNER_API_PREFIX = '/api/v1';
+const PREFIX = OWNER_API_PREFIX;
 
 /** Thrown when an audit row could not be written; the request then ends 500 internal. */
 class AuditLost extends Error {}

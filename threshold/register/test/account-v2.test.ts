@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { OWNER_API_PUBLIC_PREFIX } from '../src/account-controls-script.ts';
+import { OWNER_API_PREFIX } from '../src/api/index.ts';
 import { errorPage } from '../src/errors.ts';
+import { BASE } from '../src/pages.ts';
 import { FakeStore } from './fake-store.ts';
 import { type Harness, harness, NOW } from './fixture.ts';
 
@@ -158,6 +161,22 @@ describe('error pages (C7-06): HTML for the browser, JSON under /api/', () => {
       expect(page).toContain('<!doctype html>');
       expect(page).not.toContain('Try again');
     }
+  });
+
+  it('calls the owner router through the script API prefix, the one the edge forwards', async () => {
+    await start();
+    const s = await signIn('6009');
+    // The prefix the script sends is the public one: /register (Caddy's forward) plus the owner API prefix.
+    expect(OWNER_API_PUBLIC_PREFIX).toBe(`${BASE}${OWNER_API_PREFIX}`);
+    expect(OWNER_API_PUBLIC_PREFIX).toBe('/register/api/v1');
+    // The script reads its prefix from the served file; a request built from that value reaches the owner router.
+    const script = await (await fetch(`${h.base}/register/account-controls.js`)).text();
+    const api = /var API = '([^']+)';/.exec(script)?.[1] ?? '';
+    expect(api).toBe(OWNER_API_PUBLIC_PREFIX);
+    const res = await fetch(`${h.base}${api}/agents/ag-x/body/status`, {
+      headers: { cookie: s.cookie },
+    });
+    expect(res.headers.get('content-type')).toContain('application/problem+json');
   });
 
   it('keeps problem JSON for an unknown path under /api/', async () => {

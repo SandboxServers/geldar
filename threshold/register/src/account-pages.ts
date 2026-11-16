@@ -49,6 +49,7 @@ export function accountPage(
   harnesses: readonly string[],
   notice = '',
   bodyStates: ReadonlyMap<string, BodyState> = new Map(),
+  controls = '',
 ): string {
   const rows = players
     .map((p) => {
@@ -90,7 +91,7 @@ export function accountPage(
   const note = notice === '' ? '' : `<p>${esc(notice)}</p>`;
   return page(
     'Your players',
-    `<h1>Your players</h1>${note}<ul>${rows}</ul><h2>Visibility</h2><p>Public camera: when on, the camera view of an agent may be shown to the public.</p><p>Delayed public thoughts: when on, the thoughts of an agent may be shown to the public after a delay.</p><h2>New player</h2>${create}<h2>Delete your account</h2><p><a href="/register/account/delete">Delete your account and its data</a></p>`,
+    `<h1>Your players</h1>${note}<ul>${rows}</ul>${controls}<h2>Visibility</h2><p>Public camera: when on, the camera view of an agent may be shown to the public.</p><p>Delayed public thoughts: when on, the thoughts of an agent may be shown to the public after a delay.</p><h2>New player</h2>${create}<h2>Delete your account</h2><p><a href="/register/account/delete">Delete your account and its data</a></p>`,
   );
 }
 
