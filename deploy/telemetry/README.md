@@ -87,7 +87,13 @@ A reader file owned by 10001 would be unreadable to `geldar-signoz` (root withou
 
 ### Password hashes
 
-`clickhouse/users.d/users.xml` is well-formed and contains no hash. Each user reads its hash with `<password_sha256_hex from_env="..."/>`: `GELDAR_CH_WRITER_SHA256` (writer) and `GELDAR_CH_READER_SHA256` (reader). `geldar-ch` loads them from `/mnt/nvme/geldar-telemetry/secrets/ch-hashes.env` (compose `env_file`, not in git). Write that file on the node, mode 0400, with two lines `GELDAR_CH_WRITER_SHA256=<hex>` and `GELDAR_CH_READER_SHA256=<hex>`. Make each hex with `pw=$(cat /mnt/nvme/geldar-telemetry/secrets/ch_writer_password); printf %s "$pw" | sha256sum | cut -d' ' -f1` (and the same for `ch_reader_password`), so `$pw` is the password read from the matching secret file. Do not put the values in a command line that is saved in shell history.
+`clickhouse/users.d/users.xml` is well-formed and contains no hash. Each user reads its hash with `<password_sha256_hex from_env="..."/>`: `GELDAR_CH_WRITER_SHA256` (writer) and `GELDAR_CH_READER_SHA256` (reader). `geldar-ch` loads them from `/mnt/nvme/geldar-telemetry/secrets/ch-hashes.env` (compose `env_file`, not in git). Write that file on the node, mode 0400, with two lines `GELDAR_CH_WRITER_SHA256=<hex>` and `GELDAR_CH_READER_SHA256=<hex>`. Make each hex with the guarded form below, run as host root (`sudo`), which can read both 0400 secret files whatever their owner. The form stops on an empty or short password, so an unreadable file cannot produce a hash:
+
+```
+pw=$(cat /mnt/nvme/geldar-telemetry/secrets/ch_writer_password) && [ "${#pw}" -eq 64 ] && printf %s "$pw" | sha256sum | cut -d' ' -f1
+```
+
+Use the same form for `ch_reader_password`. If a command prints nothing or exits non-zero, stop and do not write that hash. The hash `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` is the SHA-256 of the empty string (what an empty password would give); if it appears in `ch-hashes.env`, delete that file and start again. Do not put the values in a command line that is saved in shell history.
 
 - `from_env` in ClickHouse config is `[INF]`, unverified on 25.12.5. **Blocks start of geldar-ch** (a missing variable is a start failure, which fails closed).
 - Residual exposure: the hash is in the container environment, so `docker inspect geldar-ch` shows it to anyone with Docker access. A sha256 of a password can be brute-forced offline. Docker access is root-equivalent on this host, so this is accepted, not removed.
@@ -157,6 +163,14 @@ Run these in order. Each must pass before the next start.
 4. `default` negative test (item 21) fails as required.
 5. The vendor reporting setting is found and disabled (item 26).
 6. The N4 request names the extra network `geldar-telemetry_geldar-telemetry-backend` (see "Networks").
+7. **Empty password refused (M1).** With `geldar-ch` healthy, run from a container on `geldar-telemetry`. Both must fail with an authentication or address error, and print no `1`:
+
+    ```
+    docker run --rm --network geldar-telemetry --entrypoint /usr/bin/clickhouse clickhouse/clickhouse-server@sha256:cacf32d6884291dc2ff5e0156a97f46fc53ff7c929a7906d114e268a929dfd3a client --host geldar-ch --user geldar_writer --password '' --query "SELECT 1"
+    ```
+
+    The same command with `--user geldar_reader` must fail the same way.
+8. **No empty-string hash (M1).** `grep -c e3b0c442 /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env` must print `0`. `grep` exits 1 when the count is 0, so judge by the printed number. Do not print the file.
 
 ## Start order (for the scratch run, not this packet)
 
