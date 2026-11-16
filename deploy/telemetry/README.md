@@ -31,7 +31,7 @@ Why these tags: 25.12.5 (build 44) is the ClickHouse line SigNoz v0.148.1 tests 
   docker run --rm --entrypoint id clickhouse/clickhouse-keeper@sha256:525b8b0f93ccb371131c46f22a066ea43d33d74aba314203e8044609945d8524 clickhouse
   ```
 
-  Expected: `uid=101(clickhouse) gid=101(clickhouse)`. **Stop on any other output** and do not chown. (The check runs a container and is a scratch-run step, not part of this packet.)
+  Expected: the output has `uid=101` and `gid=101` (the Keeper image prints the supplementary group twice, `groups=101(clickhouse),101(clickhouse)`, a listing quirk observed on the node at N4a on 2026-11-16; the server image prints it once). **Stop on any other uid or gid** and do not chown. (The check runs a container and is a scratch-run step, not part of this packet.)
 - **signoz-otel-collector** (also the migrator, which runs its `migrate` subcommands from the same image): uid 10001 [SRC, image `User`]. The writer secret file is owned by 10001 and read by it; the owner and mode of each secret file are in the table under "Secrets" (compose sets neither uid nor mode).
 - **signoz**: root [SRC]. Data dir `/mnt/nvme/geldar-telemetry/query` is owned by root.
 
@@ -67,6 +67,8 @@ No `docker.sock` is mounted in any service.
 - Caps for the other containers are the 0352 table values, as in collector-design section 4. The ClickHouse caps (3.0 CPU, 8g, 1024 pids) and the Keeper caps (0.5, 1g, 256) are not changed. The migrator is 0.5, 512m, 128. The collector is 0.5, 1g, 256.
 
 ## Secrets
+
+Sudo scope for the node steps: `mkdir` and `chown` inside `/mnt/nvme/geldar-telemetry` only. Anything else (including `sudo stat`, `sudo cat`, and files in `/tmp`) must be asked for first.
 
 Passwords are never inline. Compose mounts them as file secrets from `/mnt/nvme/geldar-telemetry/secrets/`:
 
@@ -174,8 +176,8 @@ Each item says what it blocks. Nothing starts on the node until the items marked
 
     Decision rule: if the connection persists, recurs, or resolves to a vendor or analytics host, stop and ask the owner about egress. Until decided, do not leave `geldar-signoz` running unattended. A possible block is an internal network that carries only the ClickHouse path. That needs care: a Docker internal network does not publish the `127.0.0.1:8095` port, so the SSH-tunnel access would need another route.
 
-34. **DECISION (owner), not a blocker for the N4 start; needed for leaving the stack up: the writer's `GRANT REMOTE ON *.*`.** It lets `remote()` reach any host from a container on the shared `geldar-telemetry` network (the writer's password is held by the collector and the migrator). The owner's explicit acceptance is needed and none is recorded; item 32 calls it an owner acceptance. Whether REMOTE can be dropped was not isolated (item 32).
-35. **DECISION (owner), not a blocker for the N4 start; needed for leaving the stack up: default's grants are an assumption.** The migrator passed in the scratch run, but whether `default` needs its SELECT and INSERT grants was not tested (item 9: the initiating user was not recorded). On the node, after a day: `docker exec geldar-ch clickhouse-client -q "SELECT initial_user, user, count() FROM system.query_log GROUP BY initial_user, user"`. If `default` never runs a shard query, remove its grants (that closes the `remote()` residual of item 32).
+34. **DECIDED 2026-11-16 (owner): D1 APPROVED. `geldar_writer` keeps `GRANT REMOTE ON *.*` (`remote()` reach to any host from a container on the shared `geldar-telemetry` network); the migrator and the collector hold the writer password.** Original text: **DECISION (owner), not a blocker for the N4 start; needed for leaving the stack up: the writer's `GRANT REMOTE ON *.*`.** It lets `remote()` reach any host from a container on the shared `geldar-telemetry` network (the writer's password is held by the collector and the migrator). The owner's explicit acceptance is needed and none is recorded; item 32 calls it an owner acceptance. Whether REMOTE can be dropped was not isolated (item 32).
+35. **DECIDED 2026-11-16 (owner): D2 APPROVED. The `default` user keeps its SELECT and INSERT grants on the six `signoz_*` databases and SELECT on `system.*`. After the stack has run a day, run the check below and remove `default`'s grants if `default` never runs a shard query.** Original text: **DECISION (owner), not a blocker for the N4 start; needed for leaving the stack up: default's grants are an assumption.** The migrator passed in the scratch run, but whether `default` needs its SELECT and INSERT grants was not tested (item 9: the initiating user was not recorded). On the node, after a day: `docker exec geldar-ch clickhouse-client -q "SELECT initial_user, user, count() FROM system.query_log GROUP BY initial_user, user"`. If `default` never runs a shard query, remove its grants (that closes the `remote()` residual of item 32).
 
 ## Scratch run results (local Docker Desktop, 2026-11-16; final run report8, config e6a08a4b)
 
@@ -232,12 +234,13 @@ Run on the node as root, from the repo checkout that CD placed (so `deploy/telem
 
 **Step a. Preconditions.**
 
+0. Sudo scope for the node steps is `mkdir` and `chown` inside `/mnt/nvme/geldar-telemetry` only. Anything else (including `sudo stat`, `sudo cat`, and files in `/tmp`) must be asked for first.
 1. The network exists (N2): `docker network inspect geldar-telemetry --format '{{.Name}}'` prints `geldar-telemetry`. If not, stop.
 2. The directories exist (N3): `ls -ld /mnt/nvme/geldar-telemetry/clickhouse /mnt/nvme/geldar-telemetry/keeper /mnt/nvme/geldar-telemetry/query /mnt/nvme/geldar-telemetry/queue` lists all four. (`queue` is not mounted by this compose file.)
 3. Create the secrets directory: `install -d -m 0700 /mnt/nvme/geldar-telemetry/secrets`.
 4. The loopback port 8095 is free: `ss -ltn | grep -c ':8095 '` prints `0`.
 5. Compose is recent enough: `docker compose version` prints 2.24.0 or later (item 20: `required: false` needs it; stop if older).
-6. Helper images, pulled once and reused (no digest for them is known from the reports or the compose file; none is invented here). Pin by digest before use: `docker pull busybox` and `docker pull curlimages/curl:8.11.1` once, read each digest with `docker image inspect --format '{{index .RepoDigests 0}}' <image>`, record both in the N4 report, and set `BB` and `CURL` in the shell to those `repo@sha256:...` values. Later commands use `"$BB"` and `"$CURL"`; do not pull again. (`curlimages/curl:8.11.1` is the tag report8 used.)
+6. Helper images, pulled once and reused. **N4a DONE on the node (2026-11-16):** the four pinned images were pulled by digest (the digests in the Pins table), and the helper images are pinned as `BB=busybox@sha256:73aaf090f3d85aa34ee199857f03fa3a95c8ede2ffd4cc2cdb5b94e566b11662` (tag 1.36.1) and `CURL=curlimages/curl@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69` (tag 8.11.1). Pull each once by those digests (`docker pull "$BB"`, `docker pull "$CURL"`), confirm each with `docker image inspect --format '{{index .RepoDigests 0}}' <image>` (it must print the same digest), record both in the N4 report, and set `BB` and `CURL` in the shell to those `repo@sha256:...` values. Later commands use `"$BB"` and `"$CURL"`; do not pull again. (`curlimages/curl:8.11.1` is the tag report8 used.)
 7. The vendor reporting variable is set in compose (item 26): `grep -c SIGNOZ_ANALYTICS_ENABLED deploy/telemetry/compose.yml` prints at least `1`.
 
 **Step b. Pull the four images by digest** (the compose references; the migrator uses the collector image):
@@ -259,7 +262,7 @@ docker run --rm --entrypoint id clickhouse/clickhouse-server@sha256:cacf32d68842
 docker run --rm --entrypoint id clickhouse/clickhouse-keeper@sha256:525b8b0f93ccb371131c46f22a066ea43d33d74aba314203e8044609945d8524 clickhouse
 ```
 
-Expected on both: `uid=101(clickhouse) gid=101(clickhouse)`. **Stop on any other output.** Only then:
+Expected on both: the output has `uid=101` and `gid=101` (the Keeper image prints the supplementary group twice, `groups=101(clickhouse),101(clickhouse)`, a listing quirk observed on the node at N4a on 2026-11-16; the server image prints it once). **Stop on any other uid or gid.** Only then:
 
 ```
 chown 101:101 /mnt/nvme/geldar-telemetry/clickhouse /mnt/nvme/geldar-telemetry/keeper
@@ -318,7 +321,11 @@ Abort rule: if the block prints `ABORT` or exits non-zero, delete `ch-hashes.env
 3. `tar -tzf hq.tar.gz` lists the contents; record the list in the N4 report (the release ships license and readme files beside the binary).
 4. `tar -xzf hq.tar.gz histogram-quantile` extracts only the binary (use the member name from step 3).
 5. `sha256sum histogram-quantile`: record the full value in the N4 report. The round 1 value began `fc3168f9`; a different value is a finding to report before install.
-6. `install -d -o 101 -g 101 -m 0755 /mnt/nvme/geldar-telemetry/clickhouse/user_scripts` then `install -o 101 -g 101 -m 0755 histogram-quantile /mnt/nvme/geldar-telemetry/clickhouse/user_scripts/histogramQuantile`; `ls -ln /mnt/nvme/geldar-telemetry/clickhouse/user_scripts` shows `101 101` and `-rwxr-xr-x`.
+6. Install the binary. `mkdir` and `chown` alone were not enough at N4b (2026-11-16): after the data-dir chown (step c), `clickhouse/` is 750 101:101 and the ssh user cannot reach into it. All sudo use stays inside the sudo scope (`mkdir` and `chown` inside `/mnt/nvme/geldar-telemetry` only; no other sudo verbs).
+    - Preferred: install the binary BEFORE the chown of `clickhouse/` to 101:101 (as the scratch run did). Create `clickhouse/user_scripts`, copy the binary in as `histogramQuantile`, set mode 755 (`install -m 0755 histogram-quantile /mnt/nvme/geldar-telemetry/clickhouse/user_scripts/histogramQuantile`), then `sudo -n chown 101:101` the `user_scripts` directory, the binary and `clickhouse/`.
+    - If the data dir was already chowned: `sudo -n chown <ssh user> /mnt/nvme/geldar-telemetry/clickhouse /mnt/nvme/geldar-telemetry/clickhouse/user_scripts` (create `user_scripts` first with `sudo -n mkdir` and the same chown if it does not exist), run the `install -m 0755` above, then `sudo -n chown 101:101` both directories and the binary back.
+    - Either way, verify the final owner and mode with `stat -c '%u:%g %a %n'` on `/mnt/nvme/geldar-telemetry/clickhouse`, `/mnt/nvme/geldar-telemetry/clickhouse/user_scripts` and `/mnt/nvme/geldar-telemetry/clickhouse/user_scripts/histogramQuantile`: `101:101` for all three, `750` for `clickhouse` and `755` for the other two. Once `clickhouse/` is 750 101:101 the ssh user cannot stat the inner two (and `sudo stat` is outside the sudo scope): take their stat while the ssh user still owns `clickhouse/` (after the chown back to 101:101 of the inner two, before the last chown of `clickhouse/`), and stat `clickhouse/` itself last. Or ask first for the extra sudo verb.
+    - Record in the N4 report: at N4b the detour was needed, and `clickhouse/` was briefly owned by the ssh user while it was empty.
 7. Delete the tarball and the extracted copy from the scratch directory.
 8. Value check, after `geldar-ch` is healthy (step g): `docker exec geldar-ch clickhouse-client -q "SELECT histogramQuantile([0.5,1,2,inf],[1,3,6,6],0.9)"` expects `1.8000000000000003`, and `... histogramQuantile([0.5,1,2,inf],[1,3,6,6],0.5)` expects `1`. Both are cumulative inputs with a `+Inf` bucket. Also `SELECT name FROM system.functions WHERE name = 'histogramQuantile'` returns one row (item 24).
 

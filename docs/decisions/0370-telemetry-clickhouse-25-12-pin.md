@@ -29,6 +29,13 @@ Research on 2026-11-16 (`docs/analysis/telemetry/t20-stack-files.md`, and the st
 - Container names map to the SigNoz image roles: `geldar-ch` = clickhouse-server; `geldar-ch-keeper` = clickhouse-keeper; `geldar-signoz` = `signoz/signoz` (query API and UI in one container, so the collector design's `geldar-signoz-query` and `geldar-signoz-ui` are one container here); `geldar-signoz-migrator` = `signoz/signoz-otel-collector` running its `migrate` subcommands; `geldar-signoz-otelcol` = `signoz/signoz-otel-collector` running as the collector.
 - Keeper is on its own internal network, `geldar-telemetry-backend`, shared only with `geldar-ch`. It is not on the shared `geldar-telemetry` network (README, "Networks"). This adds one Docker network at N4.
 
+## Owner decisions on the Geldar stack grants (2026-11-16)
+
+Ruled by the owner on 2026-11-16, relayed by the orchestrator (geldar-93).
+
+- D1 APPROVED: `geldar_writer` keeps `GRANT REMOTE ON *.*`, so `remote()` can reach any host from a container on the shared `geldar-telemetry` network. The migrator and the collector hold the writer password.
+- D2 APPROVED: the `default` user keeps its SELECT and INSERT grants on the six `signoz_*` databases and SELECT on `system.*`. After the stack has run a day, check `SELECT initial_user, user, count() FROM system.query_log GROUP BY initial_user, user`, and remove `default`'s grants if `default` never runs a shard query.
+
 ## Amendment scope
 
 This record amends 0352 only for the ClickHouse version (26.3 becomes 25.12.5 (build 44)) and the Keeper rule (conditional becomes required). The Mind-host ingest decision, the SigNoz UI access path (SSH tunnel only), the retention and the budget in 0352 are not changed.
