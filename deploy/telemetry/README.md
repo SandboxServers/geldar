@@ -142,6 +142,8 @@ Each item says what it blocks. Nothing starts on the node until the items marked
 24. **UDF file glob (S-C c).** `user_defined_executable_functions_config` is `*function.xml`, resolved against the server config directory `/etc/clickhouse-server/`. The histogram file is mounted at `/etc/clickhouse-server/histogram_function.xml`, so the glob should match it. Check: `docker exec geldar-ch clickhouse-client -q "SELECT name FROM system.functions WHERE name = 'histogramQuantile'"` returns one row. **Blocks SigNoz metrics queries that use histogramQuantile.**
 25. **System log tables enabled by `config.d` (S-C d).** `system-log-ttl.xml` has sections for 14 system log tables. A section can enable a table the base config has off, and `<text_log>` with no `<level>` stores every level `[INF]`. At a 30-day TTL these can grow past the 0352 budget. Check: `docker exec geldar-ch clickhouse-client -q "SELECT name FROM system.tables WHERE database='system' AND name LIKE '%_log'"` against the expected list, and the disk use after a day. **Blocks nothing; blocks the disk budget decision.**
 
+26. **SigNoz vendor reporting (S-D).** SigNoz v0.148.1 may send usage data to the vendor by default. The setting is not in the stack facts file, and no env var is set in this compose file. unverified: disable telemetry reporting (find the setting before N4 compose up). Check in the scratch run: `ss -tnp` on the host for connections of the `geldar-signoz` process. **Blocks nothing; an outbound report from a shared host is an owner decision.**
+
 ## Start order (for the scratch run, not this packet)
 
 1. `geldar-ch-keeper` healthy.
