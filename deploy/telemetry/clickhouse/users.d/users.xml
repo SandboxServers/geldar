@@ -7,7 +7,10 @@
   Limits from 0352: writer max_memory_usage 2 GB, max_threads 4, max_execution_time 60, max_insert_threads 2.
   Reader limits follow 0352 (Read path, B): readonly 2, 1 GB, max_execution_time 30, max_result_rows 100000 with break,
   SELECT grants on the signoz_* databases. Threads 4 are [AUTH]. The per-hour read quota of 0352 is NOT set here: 0352 gives no value [UNV].
-  The grants use the XML users grants element [INF, unverified on 25.12.5]. signoz_analytics is not named by any source, so it is not granted.
+  The grants use the XML users grants element [INF, unverified on 25.12.5]. geldar_writer is granted the six signoz_* databases the
+  migrator creates (signoz_analytics, signoz_logs, signoz_metadata, signoz_meter, signoz_metrics, signoz_traces). geldar_reader is
+  granted SELECT on signoz_traces, signoz_logs, signoz_metrics and signoz_metadata only; it has NO grant on signoz_meter or
+  signoz_analytics (left as is; a gap to decide, not changed here).
   default: kept because the cluster entry in cluster.xml has no user, so ON CLUSTER DDL runs as default (README item 9).
   Networks for default are loopback only (127.0.0.1, ::1). Both <networks> and each <ip> carry replace="replace" so the stock ::/0
   is not kept by the merge [INF, unverified on 25.12.5; README item 21]. default has no access_management (N2).
