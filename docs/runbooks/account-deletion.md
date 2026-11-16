@@ -102,10 +102,15 @@ subject in a shared channel.
 4. Run the function as the register role: `SELECT register_account_delete('\x<identity hash hex>'::bytea);`
    It returns `true` when the account was removed and `false` when there was nothing to remove. If it fails on a lock
    timeout, wait and run it again.
-5. Remove what the function does not reach, by hand, on the owner's written request. No script in this repository does
-   these steps yet (operator erasure script, C7-09c, is not built):
-   - the `geldar-skins` KV key for the owner's skin uploads (the PNG data; C7-13a adds the rows to the function);
-   - the Velocity life registry entries for the owner's lives.
+5. Remove what the function does not reach, on the owner's written request, with the operator script
+   `tools/players-cli/src/erase-owner.ts` (C7-09c). Write the lives list BEFORE step 4: the function deletes the owner's
+   players and lives, and the script cannot find them afterwards. The file is JSON, one entry per life of the owner:
+   `[{"lifeId": "<life id>", "username": "<login name>"}]`. Run the script first without flags (a dry run prints counts
+   only), then with `--execute --confirm <owner id>` (the owner id exactly). On the node, with `GELDAR_NATS_URL` set:
+   `node tools/players-cli/src/erase-owner.ts --owner <owner id> --lives <file>`. It purges every revision of:
+   - the `geldar-skins` key of each life (the PNG data; C7-13a adds the skin rows to the function);
+   - the `geldar-life-registry` key of each life's username (the Velocity admission entry).
+   It does not remove the 0039 dead-life cleanup (open question (c) in decision 0262; the owner decides it).
 6. Record the request in the operator log by owner id and date only. Do not copy the identity hash or any provider data.
 
 Do not disable the append-only triggers by hand. The function does that inside its own transaction and turns them back
