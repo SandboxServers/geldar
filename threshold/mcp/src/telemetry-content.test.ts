@@ -1,4 +1,4 @@
-import { callTool, type ToolContext } from '@geldar/mcp-mock';
+import { callTool, ImageToolResult, type ToolContext } from '@geldar/mcp-mock';
 import { CONTENT_CAP_BYTES, startTelemetry, type TelemetryHandle } from '@geldar/telemetry';
 import { afterEach, describe, expect, it } from 'vitest';
 import { worldFixture } from './fakes/world.fakes.ts';
@@ -139,6 +139,27 @@ describe('tool content as span events (T-06c)', () => {
     const key = `geldar.content.${TOOL_RESULT_EVENT}.truncated`;
     const event = span.events.find((item) => item.name === `geldar.content.${TOOL_RESULT_EVENT}`);
     expect(event?.attributes[key]).toBe(false);
+  });
+
+  it('captures a picture result as its caption and PNG size, never the base64 bytes', async () => {
+    const { recorder, provider, spans } = startWithMemory();
+    const png = 'A'.repeat(300_000);
+    recorder({
+      tool: 'see',
+      outcome: 'ok',
+      durationMs: 1,
+      content: { arguments: {}, result: new ImageToolResult(png, 'a view of stone') },
+    });
+    await provider.forceFlush();
+
+    const span = spans[0] as ExportedSpan;
+    const text = eventText(span, TOOL_RESULT_EVENT) as string;
+    expect(JSON.parse(text)).toEqual({ caption: 'a view of stone', png_bytes: 300_000 });
+    expect(text).toContain('a view of stone');
+    expect(new TextEncoder().encode(text).byteLength).toBeLessThan(1024);
+    const key = `geldar.content.${TOOL_RESULT_EVENT}`;
+    const event = span.events.find((item) => item.name === key);
+    expect(event?.attributes[`${key}.truncated`]).toBe(false);
   });
 
   it('caps a result above 32 KiB on a UTF-8 boundary and marks it truncated', async () => {

@@ -4,6 +4,7 @@
 // Off unless the telemetry endpoint is set: main.ts then passes no recorder, so no span is made.
 
 import { MCP_TOOL_NAMES } from '@geldar/contract';
+import { ImageToolResult } from '@geldar/mcp-mock';
 import {
   type AttrValue,
   addContentEvent,
@@ -103,6 +104,16 @@ function jsonText(value: unknown): string | undefined {
 }
 
 /**
+ * The shape of a result as captured: a picture (`see`) keeps its caption and the PNG's length, never the
+ * base64 bytes (up to ~350 KB). Every other result is captured as it is.
+ */
+export function capturedResult(value: unknown): unknown {
+  if (value instanceof ImageToolResult)
+    return { caption: value.caption, png_bytes: value.png.length };
+  return value;
+}
+
+/**
  * Adds the call's content to its span as events: the redacted arguments, and the result when there is one.
  * Each text goes through the content helper, so it is capped at 32 KiB on a UTF-8 boundary.
  */
@@ -110,7 +121,7 @@ export function addToolContentEvents(span: EventSpan, content: ToolCallContent):
   const args = jsonText(redactArguments(content.arguments));
   if (args !== undefined) addContentEvent(span, TOOL_ARGUMENTS_EVENT, args);
   if (content.result === undefined) return;
-  const result = jsonText(content.result);
+  const result = jsonText(capturedResult(content.result));
   if (result !== undefined) addContentEvent(span, TOOL_RESULT_EVENT, result);
 }
 
