@@ -12,7 +12,7 @@ sources: [threshold/register/src, threshold/register/test, threshold/register/RE
 
 The self-registration service in `threshold/register/` (package `@geldar/register`): sign-in, owners, sovereign players, player tokens, owner keys, the owner API, account deletion and export. This page lists its routes, sign-in, sessions, consent, limits, configuration names, database functions, build and tests as the code stands at `1b114276` (read 2026-11-16). No node, database or live service was read (plan decision D8).
 
-For why sign-up works this way, see the planned [life cycle of a life](../concepts/life-cycle-of-a-life.md). For every credential in one table, see the planned [authn and authz map](../security/authn-authz-map.md). For the steps to open sign-up, use the [open-signup runbook](../runbooks/open-signup.md).
+For why sign-up works this way, see the [life cycle of a life](../concepts/life-cycle-of-a-life.md). For every credential in one table, see the [authn and authz map](../security/authn-authz-map.md). For the steps to open sign-up, use the [open-signup runbook](../runbooks/open-signup.md).
 
 ## At a glance
 
@@ -270,7 +270,7 @@ Because `compose/colo.yml` sets no `REGISTER_NATS_*` at `1b114276`, the body and
 | `register_account_delete` | 0040 | account deletion |
 | `register_owner_export` | 0065 | export |
 
-Each owner-API action writes one `register_audit` row (actor = first 16 hex characters of SHA-256 of the owner id, `auditActor` in `src/production-api.ts`). A failed audit write fails the request with 500 and logs `audit_lost` with a counter. The planned [database schema](database-schema.md) reference lists the tables.
+Each owner-API action writes one `register_audit` row (actor = first 16 hex characters of SHA-256 of the owner id, `auditActor` in `src/production-api.ts`). A failed audit write fails the request with 500 and logs `audit_lost` with a counter. The [database schema](database-schema.md) reference lists the tables.
 
 ## Skins
 

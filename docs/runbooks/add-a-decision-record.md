@@ -99,6 +99,6 @@ It prints `error: <message>` for each problem and exits 1, or passes. Only the t
 
 ## Related
 
-- Index: [decisions README](../decisions/README.md); by topic: [decisions by topic](../reference/decisions-by-topic.md) (*planned*).
+- Index: [decisions README](../decisions/README.md); by topic: [decisions by topic](../reference/decisions-by-topic.md).
 - Reference: [repo checks](../reference/repo-checks.md) gates 11 and 12; [spec section map](../reference/spec-section-map.md).
 - How-to: [merge queue](merge-queue.md) (how rows from parallel PRs land).

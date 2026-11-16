@@ -18,7 +18,7 @@ The Colo admin service: a one-shot container, `admin`, that runs one administrat
 | Image entrypoint | `tools/admin/admin.sh` (in the image built from `tools/admin/Dockerfile`) | Maps one subcommand to one existing CLI. |
 | Node wrapper | `deploy/colo-admin.sh` | Checks arguments, prerequisites and secrets on the node, then runs the container with `run --rm`. Also manages per-player host containers. |
 
-Decision [0133](../decisions/0133-colo-admin-by-one-shot-container.md) (Accepted, 2026-11-10) chose this design: the node has no Node or pnpm, and Postgres is not published, so the CLIs run inside the compose network. For the deploy scripts as a whole see the planned [deploy-scripts](deploy-scripts.md) reference; for the compose stacks, the planned [compose-stacks](compose-stacks.md) reference. For step-by-step use see [colo-deploy](../runbooks/colo-deploy.md) and [mcp-tokens](../runbooks/mcp-tokens.md).
+Decision [0133](../decisions/0133-colo-admin-by-one-shot-container.md) (Accepted, 2026-11-10) chose this design: the node has no Node or pnpm, and Postgres is not published, so the CLIs run inside the compose network. For the deploy scripts as a whole see the [deploy-scripts](deploy-scripts.md) reference; for the compose stacks, the [compose-stacks](compose-stacks.md) reference. For step-by-step use see [colo-deploy](../runbooks/colo-deploy.md) and [mcp-tokens](../runbooks/mcp-tokens.md).
 
 Everything below was read from the files at commit `1b114276` on 2026-11-16. No node, VM or database was read (plan decision D8).
 
@@ -136,7 +136,7 @@ From `tools/migrate/src/cli.ts`.
 | (none) | Apply every `sql/NNNN_*.sql` not yet in `schema_migrations`. |
 | `--dry-run` | Report without applying. |
 | `--sql-dir <dir>` | Another migrations folder. |
-| `--set-role-password <role> --password-file <file>` | Set a role's login password. Only `geldar_mcp`, `geldar_glass` and `geldar_register` are accepted (`PASSWORD_ROLES` in `tools/migrate/src/migrate.ts`). Each flag needs the other. |
+| `--set-role-password <role> --password-file <file>` | Set a role's login password. Five roles are accepted: `geldar_mcp`, `geldar_glass`, `geldar_register`, `geldar_helper` and `geldar_supervisor` (`PASSWORD_ROLES` in `tools/migrate/src/migrate.ts` lines 137 to 143, read 2026-11-16). Through this service, `colo-up.sh` sets the first three; `deploy/install-body-helper.sh` sets `geldar_helper` by running the CLI on the host, and no deploy script names `geldar_supervisor` (`git grep geldar_supervisor -- deploy`, no hits). Each flag needs the other. |
 
 ## Subcommands of `deploy/colo-admin.sh`
 
@@ -221,7 +221,7 @@ Re-derive: `git grep -n "colo-admin.sh\|admin notice" -- deploy/*.sh`.
 
 ## Database role and grants
 
-`admin.sh` connects as `PGUSER` (default `geldar`) with the superuser password. Decision 0133 records this: "Postgres roles are still the superuser `geldar` for admin work. Least-privilege admin roles are C2." No least-privilege admin role exists in this checkout (`git grep -n "PGUSER" -- tools/admin compose/colo.yml` shows only the default). Decision [0170](../decisions/0170-owner-management-values-and-admin-flag.md) item 5 requires that only the operator CLI writes `mcp_owners.is_admin`; `owner-admin` is that path (`tools/mcp-tokens/src/owner-admin.ts`, one audit row per change). For tables and roles see the planned [database-schema](database-schema.md) reference; for who may do what, the planned [authn-authz-map](../security/authn-authz-map.md).
+`admin.sh` connects as `PGUSER` (default `geldar`) with the superuser password. Decision 0133 records this: "Postgres roles are still the superuser `geldar` for admin work. Least-privilege admin roles are C2." No least-privilege admin role exists in this checkout (`git grep -n "PGUSER" -- tools/admin compose/colo.yml` shows only the default). Decision [0170](../decisions/0170-owner-management-values-and-admin-flag.md) item 5 requires that only the operator CLI writes `mcp_owners.is_admin`; `owner-admin` is that path (`tools/mcp-tokens/src/owner-admin.ts`, one audit row per change). For tables and roles see the [database-schema](database-schema.md) reference; for who may do what, the [authn-authz-map](../security/authn-authz-map.md).
 
 ## Exit codes
 
@@ -242,7 +242,7 @@ Re-derive: `git grep -n "colo-admin.sh\|admin notice" -- deploy/*.sh`.
 - The Postgres password is exported only in `admin.sh`'s own process; no subcommand prints a secret value (`admin.sh` header; `deploy/test/colo-admin.test.ts`, "never shows its value").
 - The wrapper never runs `down -v` and touches no volume (test "names the geldar-colo project in every docker call, and never runs down -v").
 - Host directories are mounted only for `token-mint` (read-write) and `skin-import` (read-only), through a temporary 0600 overlay.
-- `player-flags` changes a player's visibility flags; what they control is operator material, covered by the planned [glass-and-kino](glass-and-kino.md) reference (`agents-never`).
+- `player-flags` changes a player's visibility flags; what they control is operator material, covered by the [glass-and-kino](glass-and-kino.md) reference (`agents-never`).
 
 ## Tests
 
@@ -260,8 +260,8 @@ Counts from `grep -cE "^\s*it\(" <file>` at `1b114276`, 2026-11-16.
 
 ## Conflicts and gaps recorded
 
-1. **Decision 0133 scope versus the image.** Decision 0133 describes an image with `tools/migrate`, `tools/mcp-tokens`, their closure and `sql/`, and one role password (`geldar_mcp`). The Dockerfile also copies `tools/players-cli`, `animus`, `golem/src` and more, and `migrate` sets three role passwords. Later work cards (C2-07j, C2-07k, C7-12, CD-1d, named in comments) extended it; no superseding decision was found (`git grep -n "0133" -- docs/decisions`).
-2. **Usage text.** The `admin.sh` usage lists neither `ensure-skins-bucket` nor `whitelist-house-body`, which its `case` accepts. The `migrate` usage names only `geldar_mcp`; the code accepts three roles.
+1. **Decision 0133 scope versus the image.** Decision 0133 describes an image with `tools/migrate`, `tools/mcp-tokens`, their closure and `sql/`, and one role password (`geldar_mcp`). The Dockerfile also copies `tools/players-cli`, `animus`, `golem/src` and more, and `migrate` accepts five role passwords (three set through this service by `colo-up.sh`). Later work cards (C2-07j, C2-07k, C7-12, CD-1d, named in comments) extended it; no superseding decision was found (`git grep -n "0133" -- docs/decisions`).
+2. **Usage text.** The `admin.sh` usage lists neither `ensure-skins-bucket` nor `whitelist-house-body`, which its `case` accepts. The `migrate` usage names only `geldar_mcp`; the code accepts five roles.
 3. **Image default.** `compose/colo.yml` defaults the image to the tag `geldar-admin:c1`; `check_merged_config` refuses any image not pinned by digest, so on the node the release manifest must override it.
 4. **Superuser password default.** `admin.sh` and `compose/colo.yml` give `GELDAR_ADMIN_PG_PASSWORD_FILE` different defaults for the Postgres superuser password secret; `deploy/README.md` (around line 263) agrees with `admin.sh`. Which one the node uses is unverified (D8).
 5. **Roster verbs.** `mcp-tokens roster remove` and `roster seed` exist but cannot be run through the admin container.

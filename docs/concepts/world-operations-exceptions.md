@@ -78,7 +78,7 @@ Drawn from what 0339 did and what the review asks for; none of it is yet a singl
 2. **A decision record that names it one-time** and says what it does not authorise (0339, consequences).
 3. **Backups first**, kept operator-only (0339, decision item 1).
 4. **A logged time window**, so later measurements can tell the change from agent behaviour (review, section E2: "every world edit logged as an exception").
-5. **No standing procedure.** No reset verb, script or migration is added (0339, consequences). The planned [world and memory reset](../runbooks/world-and-memory-reset.md) (*planned*) runbook must describe what was done under 0339, not a routine to repeat.
+5. **No standing procedure.** No reset verb, script or migration is added (0339, consequences). The [world and memory reset](../runbooks/world-and-memory-reset.md) runbook must describe what was done under 0339, not a routine to repeat.
 6. **Return to the standing rule** at once afterwards.
 
 ## Trade-offs
@@ -97,10 +97,10 @@ Drawn from what 0339 did and what the review asks for; none of it is yet a singl
 
 ## What it touches
 
-[Principles in practice](principles-in-practice.md), [what is Geldar](what-is-geldar.md), [life cycle of a life](life-cycle-of-a-life.md), and the planned [time, shards and phases](time-shards-and-phases.md) and [character and memory](character-and-memory.md).
+[Principles in practice](principles-in-practice.md), [what is Geldar](what-is-geldar.md), [life cycle of a life](life-cycle-of-a-life.md), and the [time, shards and phases](time-shards-and-phases.md) and [character and memory](character-and-memory.md).
 
 ## Where to read the reference
 
 - The one-time journal reset: [decision 0339](../decisions/0339-journal-reset-one-time-exception.md).
 - The world border and gamerules in config: [shard config](../reference/shard-config.md), [compose stacks](../reference/compose-stacks.md).
-- The decision index: [decisions README](../decisions/README.md); by topic: [decisions by topic](../reference/decisions-by-topic.md) (*planned*).
+- The decision index: [decisions README](../decisions/README.md); by topic: [decisions by topic](../reference/decisions-by-topic.md).

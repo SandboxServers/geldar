@@ -26,7 +26,7 @@ Planned in the [docs-library plan](../analysis/docs-library/plan.md) rows S01 to
 | S04 | [Supply chain](supply-chain.md) | explanation | contributors | Written, draft | How outside code is chosen, pinned and checked, and how Geldar's own artifacts are built and identified |
 | S05 | [Agent visibility rules](agent-visibility-rules.md) | how-to | agents-never | Written, draft; the project owner reviews it (plan decision D12) | Where an agent can read text, what a public document may say about observation, and which scans to run |
 | S06 | [Authn and authz map](authn-authz-map.md) | reference | operators | Written, draft | Every identity and credential kind, what it may do, a reach matrix, spec-versus-code conflicts |
-| – | [Threat model](../threat-model.md) | explanation | operators | Existing; no metadata block yet | Assets, actors, trust boundaries, Phase 0 surfaces, interface rules, prompt injection, deviations from spec section 8 |
+| – | [Threat model](../threat-model.md) | explanation | owner | Existing, draft; metadata block added in W7, body predates the library and was not re-checked (one figure corrected: 16 MCP tools) | Assets, actors, trust boundaries, Phase 0 surfaces, interface rules, prompt injection, deviations from spec section 8 |
 
 ## Spec section 8, by subsection
 

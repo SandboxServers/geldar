@@ -1,7 +1,7 @@
 ---
 title: Animus (the Mind)
 type: reference
-audience: contributors
+audience: agents-never
 status: draft
 last_verified: 2026-11-16 against 1b114276
 companions: [README.md, components.md, ../concepts/body-and-mind.md, player-core.md, golem-body.md, lantern-thinker-protocol.md, prompt-templates.md, ../../animus/README.md]

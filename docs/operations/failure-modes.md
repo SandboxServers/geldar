@@ -1,7 +1,7 @@
 ---
 title: Failure modes
 type: reference
-audience: operators
+audience: agents-never
 status: draft
 last_verified: 2026-11-16 against 03c1f5de
 companions: [README.md, ../runbooks/incident-response.md, ../reference/components.md, ../runbooks/README.md, ../runbooks/backup-and-restore.md, node-facts.md, ../architecture/deployment-topology-colo.md, ../concepts/world-operations-exceptions.md]
@@ -212,10 +212,9 @@ Known gap: by default the Thinker hub accepts any local process, because nothing
 | Paper stops during start | Enable threw: bad shard name, unwritable readiness marker, any `RuntimeException` (`enableOrStop`, `GeldarCore.java` line 41, **re-checked**) | Read the Paper log for the exception | [deploy and rollback](../reference/geldar-core-plugin.md#deploy-and-rollback): previous jar and a Paper restart | Restart Paper outside the owner's window (R4) | Whole world |
 | `server_tps` shows `dropped` and `connected: false` | NATS down: events queue up to `queue.capacity` (10000 in `plugin/core/src/main/resources/config.yml` line 7, **re-checked**), then the oldest is dropped; core-NATS messages are dropped | Check NATS | [NATS](#nats) | Restart NATS (R3) | Event history; hearing and notices |
 | Block owner queries answer unknown | CoreProtect absent or older than API 12 | Check the CoreProtect jar | [coreprotect](../runbooks/coreprotect.md); [block-owner](../runbooks/block-owner.md) | None recorded | Ownership records |
-| A player is kicked with a fixed message on join | Spectator could not be applied to a ghost (`GhostListener.hold`) | Read the log | [geldar-core-plugin](../reference/geldar-core-plugin.md#failure-modes) | None recorded | One ghost |
 | Players see a maintenance line at the wrong time, or must not see any | A notice was published | Set `maintenance.broadcast: false`; the plugin re-reads it every 5 s | [maintenance-notice](../runbooks/maintenance-notice.md#switching-it-off) | Publish a notice with the plugin's own credentials | Every player online |
 
-Known gap: a ghost measure described in spec 8.4 is not implemented in the plugin at 03c1f5de; a plugin-side fix is planned after the freeze (owner ruling relayed 2026-11-16; [known gaps](../reference/geldar-core-plugin.md#known-gaps)). Plugin changes are "needs manual" in a CD run ([colo-deploy](../runbooks/colo-deploy.md#needs-manual)).
+Plugin changes are "needs manual" in a CD run ([colo-deploy](../runbooks/colo-deploy.md#needs-manual)).
 
 ## Velocity identity plugin
 
@@ -227,7 +226,7 @@ Known gap: a ghost measure described in spec 8.4 is not implemented in the plugi
 | Logins fail for up to 30 s after the bucket was recreated | The bucket identity is checked every 30 s (`BUCKET_CHECK_MS = 30_000`, `RegistryClient.java` line 51, **re-checked**) | Wait 30 s | same | Recreate the bucket to "fix" a login | Every Body |
 | Skins missing | Skins bucket missing: default profile (fail open for skins only) | `deploy/colo-admin.sh ensure-skins-bucket` | [skins](../runbooks/skins.md) **(a-n)** | None recorded | Appearance only |
 
-Known gap: `compose/colo-public.yml` publishes the offline-mode bot ingress, against decision [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md); node state unchecked ([known gaps](../reference/velocity-identity-plugin.md#known-gaps)). A deleted watch consumer alone is not detected.
+Known gap: the public overlay against decision 0137, recorded in decision [0364](../decisions/0364-known-gap-public-overlay-against-0137.md). A deleted watch consumer alone is not detected.
 
 ## Third-party plugins
 

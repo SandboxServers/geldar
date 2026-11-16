@@ -3,9 +3,9 @@ title: Documentation style
 type: reference
 audience: contributors
 status: draft
-last_verified: 2026-11-16 against cd4499da
-companions: [README.md, doc-update-map.md, doc-verification.md, ../analysis/docs-library/plan.md]
-sources: [.claude/agents/documentation-writer.md, .gitattributes, contract/src/agent-text.ts, contract/test/agent-visible-text.test.ts, animus/src/prompts/agent-text.test.ts, tools/mcp-tokens/src/persona-lint.ts, tools/mcp-tokens/src/persona-export.ts, threshold/mcp-mock/src/prompts.ts, threshold/mcp-mock/README.md, threshold/mcp/src/resources.ts, threshold/mcp/src/world-session.ts, tools/repo-checks/src/open-signup-runbook.test.ts, docs/spec.md, docs/decisions/0042-path-rule-case-folded-identity-prefix.md, docs/decisions/0068-prompt-v4-and-agent-visible-text.md, docs/decisions/0132-ipv4-literal-policy.md]
+last_verified: 2026-11-16 against 3f07a4be
+companions: [README.md, doc-update-map.md, doc-verification.md, ../security/agent-visibility-rules.md, ../analysis/docs-library/plan.md]
+sources: [.claude/agents/documentation-writer.md, .gitattributes, contract/src/agent-text.ts, contract/test/agent-visible-text.test.ts, animus/src/prompts, animus/src/prompts/agent-text.test.ts, player-core/src, player-core/README.md, threshold/mcp/src/tools/act.ts, threshold/register/scripts/gen-legal.ts, docs/decisions, docs/history, tools/mcp-tokens/src/persona-lint.ts, tools/mcp-tokens/src/persona-export.ts, threshold/mcp-mock/src/prompts.ts, threshold/mcp-mock/README.md, threshold/mcp/src/resources.ts, threshold/mcp/src/world-session.ts, tools/repo-checks/src/open-signup-runbook.test.ts, docs/spec.md, docs/decisions/0042-path-rule-case-folded-identity-prefix.md, docs/decisions/0068-prompt-v4-and-agent-visible-text.md, docs/decisions/0132-ipv4-literal-policy.md]
 ---
 
 # Documentation style
@@ -38,13 +38,22 @@ sources: [<comma-separated paths the claims rest on>]
 | `status` | `draft` until a reviewer passes it; `verified` only after a reviewer has passed it against the commit in `last_verified`; `stale` when a staleness sweep finds a source changed since then. A writer's own check that every cited file exists is not a review and never sets `verified` (the runbooks index records it in a separate column). |
 | `last_verified` | The date and the short commit sha the claims were checked against. |
 | `companions` | Relative links to the documents of the other types on the same subject. |
-| `sources` | Required for any document that cites files; leave it out only when the document cites none (an index of planned documents, a pointer page). A comma-separated list of paths: repo-relative (`sql/0006_owner_cap_trigger.sql`) or relative to the document, starting `./` or `../` (`../decisions/0132-ipv4-literal-policy.md`). A folder is allowed (`tools/repo-checks/src`). No prose, section numbers, globs or "decision NNNN" in the list: the sweep cannot read them. Put that detail in the body. A staleness sweep diffs these paths since the `last_verified` sha ([doc verification](doc-verification.md#staleness-sweep)). |
+| `sources` | Required for any document that cites files (review ruling, 2026-11-16; decision [0360](../decisions/0360-documentation-metadata-block-and-sources-field.md), Proposed). Leave it out only when the document cites no file, as in a pointer page such as `docs/glossary.md`. A reviewer reports a document that cites files without it as a finding. A comma-separated list of paths: repo-relative (`sql/0006_owner_cap_trigger.sql`) or relative to the document, starting `./` or `../` (`../decisions/0132-ipv4-literal-policy.md`). A folder is allowed (`tools/repo-checks/src`). No prose, section numbers, globs or "decision NNNN" in the list: the sweep cannot read them. Put that detail in the body. A staleness sweep diffs these paths since the `last_verified` sha ([doc verification](doc-verification.md#staleness-sweep)). |
 
 The `sources:` field is an addition the owner approved on 2026-11-16 (plan decision D5). The persona file's own copy of the block does not list it yet; adding it there is the owner's edit, not a writer's.
 
 **One documented exception.** `docs/runbooks/open-signup.md` cites the folder `../decisions` instead of its two decision files. Its gate, `tools/repo-checks/src/open-signup-runbook.test.ts`, fails on any run of 32 or more characters from `[A-Za-z0-9+/_-]` anywhere in the file, and every decision file path is such a run. The body names the decisions (0261 and 0153). Any other runbook a test scans for long runs gets the same treatment; check the test before you add a path.
 
-The 180 decision records under `docs/decisions/` carry no metadata block (plan decision D4): a record is never rewritten ([decisions README](../decisions/README.md)). The decisions index and the digests about them carry the block instead.
+The decision records under `docs/decisions/` carry no metadata block (plan decision D4): a record is never rewritten ([decisions README](../decisions/README.md)). There are 187 of them on 2026-11-16 at 3f07a4be, highest number 0366 (`(git ls-files docs/decisions | Select-String '/\d{4}-').Count`; re-run it rather than copy the figure). The [decisions by topic](../reference/decisions-by-topic.md) digest and the [history](../history/README.md) pages carry the block instead.
+
+Other files with no block:
+
+- The legal texts in `docs/legal/`, on purpose. `threshold/register/scripts/gen-legal.ts` reads each whole file (line 23) into the pages the register service serves, so a block would be served to players (inferred from that line; `legal-pages.test.ts` compares the output).
+- `docs/spec.md`, which only the owner edits.
+- The working files under `docs/analysis/` (working notes, not a Diataxis type), except the library's own `RESUME.md` and `plan.md`.
+- `docs/ideas.md`, a parking list. No rule names it; give it a block when it is next edited.
+
+`docs/threat-model.md` stays at the top of `docs/` with a block added in place (plan decision D10; added in the W7 pass).
 
 ## Document types and where they live
 
@@ -53,13 +62,17 @@ Geldar follows Diataxis. Pick one type per document and link to the others throu
 | Type | Use it for | Home in Geldar |
 |---|---|---|
 | Tutorial | A first walkthrough that ends in a working result | `docs/guides/`, and `docs/players/README.md` for players |
-| How-to | A goal with numbered steps; assumes the basics | `docs/runbooks/` |
-| Reference | Complete and dry: every field, option, route, table or subject | `docs/reference/`, `docs/operations/` (tables), `docs/agents/` (rules and maps) |
-| Explanation | Why: design, trade-offs, history | `docs/concepts/`, `docs/architecture/`, `docs/history/`, and `docs/decisions/` |
+| How-to | A goal with numbered steps; assumes the basics | `docs/runbooks/`; `docs/security/agent-visibility-rules.md` and `docs/agents/doc-verification.md`, which sit next to the rules they apply |
+| Reference | Complete and dry: every field, option, route, table or subject | `docs/reference/`, `docs/operations/` (tables), `docs/agents/` (rules and maps), `docs/security/` (secrets by role, the access map), every section `README.md` index, and `docs/history/campaign-index.md` |
+| Explanation | Why: design, trade-offs, history | `docs/concepts/`, `docs/architecture/`, `docs/history/`, `docs/decisions/`, and the explanation pages in `docs/security/` and `docs/siblings/` |
 
-A runbook is a how-to. A decision record is an explanation. A schema table is reference. The folders `docs/concepts/`, `docs/architecture/`, `docs/reference/`, `docs/operations/`, `docs/history/`, `docs/security/`, `docs/siblings/` and `docs/guides/` are planned in waves W1 to W6 ([plan.md](../analysis/docs-library/plan.md#4-target-tree)); several do not exist yet at cd4499da.
+A runbook is a how-to. A decision record is an explanation. A schema table is reference. All the section folders exist on 2026-11-16 at 3f07a4be (`ls docs`).
 
-Existing runbooks and `docs/threat-model.md` stay where they are (plan decision D10); they get the metadata block in place.
+**History pages (review ruling, 2026-11-16).** The pages in `docs/history/` are explanation: they tell how and why the project got where it is, and cite the campaign files and decision records rather than restate them. Two are reference by nature and are labelled so: the folder index and `campaign-index.md` (one row per campaign area). The by-topic digest of decisions is reference too and lives in `docs/reference/decisions-by-topic.md`, not in `docs/history/`. The campaign files under `docs/analysis/` are working notes, not a Diataxis type; they keep no metadata block and stay where they are.
+
+**Folders that mix types.** `docs/security/`, `docs/siblings/` and `docs/history/` hold more than one type. Each document still has exactly one; the section index gives each document's type in a column.
+
+Existing runbooks and `docs/threat-model.md` stay where they are (plan decision D10); the runbooks got the metadata block in place in W0.
 
 ## Audience labels
 
@@ -68,8 +81,10 @@ Existing runbooks and `docs/threat-model.md` stay where they are (plan decision 
 | `owner` | The project owner | Decisions, scope, cost, world-operations exceptions. |
 | `operators` | People who run the node and the stack | Runbooks, deploy, secrets by role, failure modes. |
 | `contributors` | People and coding agents who change the code | Architecture, reference, process. |
-| `players` | Outside human players | Only the public legal texts (`docs/legal/`) and the player guide (`docs/players/README.md`). |
+| `players` | Outside human players | Two places only (review ruling, 2026-11-16): the player guide (`docs/players/README.md`) and the legal texts (`docs/legal/`). Nothing else takes this label, even a document players might find useful: [mcp-tools](../reference/mcp-tools.md) is `contributors` until the owner decides. The legal texts carry no block (above), so the label is written only in the player guide. |
 | `agents-never` | Operators and the owner. The label adds a restriction: no agent in the world may be given this document | Telemetry, vitals, the Glass, journals, thoughts, prompts, observation. The readers are the same as for `operators`; the label marks where the document must never be placed. See the next section. |
+
+**The label follows the content, not the plan row (review ruling, 2026-11-16).** A document that names thoughts, journals, prompts or another observation surface as part of its subject is `agents-never`, whoever else reads it. Two documents changed label for this reason: [privacy-and-data-retention](../security/privacy-and-data-retention.md) (plan row S03 said `owner`; it lists what is kept about thoughts and journals) and [trace-one-action](../guides/trace-one-action.md) (plan row G03 said `contributors`; it follows a thought, the journal and the `thought` prompt to the Glass). Contributors still read both. The plan rows keep their original value with a note ([plan.md section 5](../analysis/docs-library/plan.md#5-documents)).
 
 ## Agents never learn they are watched
 
@@ -87,11 +102,13 @@ Rules for documents:
 
 ### Paths an agent reads
 
-Checked in this repo at cd4499da on 2026-11-16 unless marked otherwise. The two MCP prompt rows were corrected after the W0 review the same day.
+Checked in this repo at cd4499da on 2026-11-16 unless marked otherwise. The two MCP prompt rows were corrected after the W0 review the same day; the `animus/src/prompts` and `player-core/src` rows were added at 3f07a4be after the W4 security writer found them missing ([agent-visibility rules](../security/agent-visibility-rules.md), gaps recorded, item 1). That page's step 1 table is the longer operator version of this one; keep the two in step.
 
 | Surface | Where it lives | Evidence |
 |---|---|---|
 | Mind prompt templates | `prompts/` (thought, reflection, body-api) | 18 files listed by `git ls-files prompts`; scanned by `animus/src/prompts/agent-text.test.ts` |
+| Text the Mind's prompt code builds | `animus/src/prompts/` (`wake-wording.ts`, `world-text.ts`, `render-snapshot.ts`, `render-memory.ts`, `body-api.ts`) | `wake-wording.ts` line 2 calls its text the wording "as the model reads it (decision 0068)"; `git ls-files animus/src/prompts`, 2026-11-16 at 3f07a4be |
+| Output validation, corrective and refusal text | `player-core/src/` (for example `validate/corrective.ts`, the corrective message the model receives) | Imported by `threshold/mcp/src/tools/act.ts` and by `animus` (`player-core/README.md`); `corrective.ts` line 15 builds a `ModelMessage`, 2026-11-16 at 3f07a4be |
 | MCP tool list, results and refusals | `contract/schemas/mcp-world`, `mcp-play`, `mcp-common` and `common` `.schema.json`; `threshold/mcp/src/tools/`; `threshold/mcp/src/play-view/` | `contract/test/agent-visible-text.test.ts` names the four schemas as agent-read |
 | MCP resources | `threshold/mcp/src/resources.ts` | spec section 5.15.3 lists `geldar://player/self`, `geldar://player/journal/recent`, `geldar://shard/rules` |
 | MCP prompts `geldar:play`, `geldar:reflect`, `geldar:newborn` | `threshold/mcp-mock/src/prompts.ts` (named in spec section 5.15.3) | Defined in the mock (`git grep -n 'geldar:play' -- threshold`: lines 17, 22, 27; test in `threshold/mcp-mock/src/app.test.ts` lines 186 to 190). The production server serves the same text: `threshold/mcp/src/resources.ts` re-exports `listPrompts` and wraps `getPrompt` from `@geldar/mcp-mock`, and `threshold/mcp/src/world-session.ts` lines 161 to 162 answer prompt requests with them |

@@ -5,7 +5,7 @@ audience: operators
 status: draft
 last_verified: 2026-11-16 against 1b114276
 companions: [README.md, system-overview.md, deployment-topology-colo.md, nats-topology.md, ../threat-model.md, ../security/authn-authz-map.md, ../reference/compose-stacks.md, ../runbooks/colo-deploy.md]
-sources: [docs/spec.md, docs/threat-model.md, compose/colo.yml, compose/phase0.yml, compose/mcp.yml, compose/colo-public.yml, compose/rcon-host.yml, compose/velocity/velocity.toml, plugin/core/src/main/java/dev/geldar/core/GhostListener.java, compose/bluemap-web/Caddyfile, compose/cloudflared/config.example.yml, deploy/README.md, deploy/common.sh, deploy/caddy, tools/repo-checks/src/loopback-ports.ts, geldar.ps1, lantern-local/README.md, threshold/mcp/src/main.ts, plugins/bluemap/alias-proxy/alias-proxy.ts, ../decisions/0053-public-mcp-through-an-outbound-tunnel-deferred.md, ../decisions/0054-static-hashed-per-player-bearer-tokens.md, ../decisions/0067-nats-accounts-and-least-privilege.md, ../decisions/0071-public-endpoints-and-ports.md, ../decisions/0080-nats-auth-cutover.md, ../decisions/0084-colo-deploy-by-pull-with-a-project-scoped-script.md, ../decisions/0072-glass-and-bluemap-are-public.md, ../decisions/0082-colo-compose-network-and-limits.md, ../decisions/0087-nats-overlay-live-test-and-scoped-subjects.md, ../decisions/0094-public-sites-read-only-through-caddy.md, ../decisions/0096-public-topology-as-built.md, ../decisions/0131-colo-in-container-hosts-and-mind-shard-file.md, ../decisions/0132-ipv4-literal-policy.md, ../decisions/0135-self-registration-with-github-and-discord.md, ../decisions/0137-public-spectator-proxy-is-separate-and-online.md, ../decisions/0150-register-loopback-port-18090.md, ../decisions/0260-body-container-control-by-host-helper.md]
+sources: [docs/spec.md, docs/threat-model.md, compose/colo.yml, compose/phase0.yml, compose/mcp.yml, compose/colo-public.yml, compose/rcon-host.yml, compose/velocity/velocity.toml, compose/bluemap-web/Caddyfile, compose/cloudflared/config.example.yml, deploy/README.md, deploy/common.sh, deploy/caddy, tools/repo-checks/src/loopback-ports.ts, geldar.ps1, lantern-local/README.md, threshold/mcp/src/main.ts, plugins/bluemap/alias-proxy/alias-proxy.ts, ../decisions/0053-public-mcp-through-an-outbound-tunnel-deferred.md, ../decisions/0054-static-hashed-per-player-bearer-tokens.md, ../decisions/0067-nats-accounts-and-least-privilege.md, ../decisions/0071-public-endpoints-and-ports.md, ../decisions/0080-nats-auth-cutover.md, ../decisions/0084-colo-deploy-by-pull-with-a-project-scoped-script.md, ../decisions/0072-glass-and-bluemap-are-public.md, ../decisions/0082-colo-compose-network-and-limits.md, ../decisions/0087-nats-overlay-live-test-and-scoped-subjects.md, ../decisions/0094-public-sites-read-only-through-caddy.md, ../decisions/0096-public-topology-as-built.md, ../decisions/0131-colo-in-container-hosts-and-mind-shard-file.md, ../decisions/0132-ipv4-literal-policy.md, ../decisions/0135-self-registration-with-github-and-discord.md, ../decisions/0137-public-spectator-proxy-is-separate-and-online.md, ../decisions/0150-register-loopback-port-18090.md, ../decisions/0260-body-container-control-by-host-helper.md, ../decisions/0364-known-gap-public-overlay-against-0137.md]
 ---
 
 # Network and trust zones
@@ -38,7 +38,7 @@ flowchart TB
       p18090["18090 register (profile)"]
       p25567["25567 bot ingress"]
     end
-    pub["public Minecraft port<br/>(colo-public overlay, owner-held bind;<br/>known gap 1)"]
+    pub["public Minecraft port<br/>(colo-public overlay, owner-held bind;<br/>known gap)"]
     subgraph net["Docker network geldar-colo"]
       mcp["geldar-mcp"]
       glass["glass"]
@@ -78,7 +78,7 @@ The loopback host ports are defaults: each is `127.0.0.1:${GELDAR_PORT_<NAME>:-<
 | 8100 | `GELDAR_PORT_BLUEMAP` | host loopback | `bluemap-web` | same |
 | 18090 (container 8090) | `GELDAR_PORT_REGISTER` | host loopback, profile `register` only | `register` | same; decision [0150](../decisions/0150-register-loopback-port-18090.md) |
 | 25567 (container 25565) | `GELDAR_PORT_BOT` | host loopback | `velocity`, the bot ingress | same; decision [0082](../decisions/0082-colo-compose-network-and-limits.md) (Proposed) |
-| owner-held port | `GELDAR_MC_BIND`, `GELDAR_MC_PORT` | the node's own interface, only with the public overlay | `velocity`, the bot ingress ([known gap 1](#known-gaps)) | `compose/colo-public.yml`; `deploy/common.sh` `public_overlay()` |
+| owner-held port | `GELDAR_MC_BIND`, `GELDAR_MC_PORT` | the node's own interface, only with the public overlay | `velocity`, the bot ingress ([known gap](#known-gaps)) | `compose/colo-public.yml`; `deploy/common.sh` `public_overlay()` |
 | 5432, 4222 | the `geldar-colo` network only | `postgres`, `nats` | `compose/colo.yml` ("No ports") |
 | 25565, 25575, 8101 | the `geldar-colo` network only | `paper` (game, RCON, map web) | `compose/colo.yml` ("Velocity is the only game listener") |
 | 8102 | the `geldar-colo` network only | `bluemap-alias` | `plugins/bluemap/alias-proxy/alias-proxy.ts` |
@@ -117,7 +117,7 @@ Every site removes any client-sent address header and sets `x-geldar-client-ip` 
 | MCP tool input to validator | The MCP imports the shared validator from `player-core` | `threshold/mcp/src/main.ts` imports `@geldar/player-core/src/validate/index.ts` |
 | Sovereign player's human | Static per-player Bearer tokens, not OAuth 2.1 | decisions [0054](../decisions/0054-static-hashed-per-player-bearer-tokens.md), [0071](../decisions/0071-public-endpoints-and-ports.md) item 7 |
 | Watcher (human with SSO) | Glass and the map are public and read-only; the register service adds Microsoft sign-in on the Glass host | decisions [0072](../decisions/0072-glass-and-bluemap-are-public.md), [0135](../decisions/0135-self-registration-with-github-and-discord.md) |
-| Ghost (spectator) | Design: a separate online-mode spectator proxy. The repo has none yet | decision [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md); [known gaps](#known-gaps) 1 and 2 |
+| Ghost (spectator) | Design: a separate online-mode spectator proxy. The repo has none yet | decision [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md); [known gap](#known-gaps) |
 | Operator | Self-hosted runner or the owner's own SSH access; no host or user in the repo | `deploy/README.md`, "Runner or SSH"; decision [0084](../decisions/0084-colo-deploy-by-pull-with-a-project-scoped-script.md) item 10 |
 | Agent | Reaches the world only through its Body; Bodies reach Velocity and NATS | `compose/colo.yml` (`GELDAR_MC_HOST: velocity`) |
 
@@ -129,21 +129,13 @@ Every publish in `compose/phase0.yml` is on `127.0.0.1`: Postgres 5432, NATS 422
 
 ## Known gaps
 
-Places where the repo does not yet match the authoritative design. Each is open and **not fixed**. Decision 0137 is the authoritative design for the public Minecraft path (it is Accepted, and the owner's ruling relayed by the orchestrating session on 2026-11-16 confirms it; that ruling is not yet in a decision record).
-
-1. **The public overlay publishes the offline-mode bot ingress (against 0137).**
-   - Design: decision [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md) item 1. Two Velocity services. The offline-mode bot ingress "is reachable only on the compose network, and is never published". A separate public spectator proxy runs with `online-mode = true`, and "only the public spectator proxy appears in `compose/colo-public.yml`". Spec 6.2 and 8.4 describe the same separate online-mode proxy.
-   - What the file says at 1b114276: `compose/colo-public.yml` adds one publish, `"${GELDAR_MC_BIND:?}:${GELDAR_MC_PORT:?}:25565"`, to the service `velocity`. Its header cites C2-07a2 and decision [0096](../decisions/0096-public-topology-as-built.md) (Proposed) and says the loopback-ports check allows exactly that entry. `velocity` is the bot ingress: `compose/velocity/velocity.toml` sets `online-mode = false`. No compose file defines a second Velocity service (`git grep` for Velocity service keys under `compose/`, 2026-11-16). `tools/repo-checks/src/loopback-ports.ts` allowlists the entry as `PUBLIC_OVERLAY_PORT`.
-   - Node state: unchecked. Whether the overlay is merged on the node, whether the public port is open, and whether any proxy runs from files outside the repo were not read (plan decision D8).
-2. **A ghost measure against [spec 8.4](../spec.md#84-human-identity-watchers-and-ghosts).**
-   - A ghost measure described in spec 8.4 is not implemented in the plugin at 03c1f5de; a plugin-side fix is planned after the freeze (owner ruling relayed 2026-11-16). Detail is withheld under decision [0361](../decisions/0361-agents-never-placement-and-public-detail.md).
-   - Node state: unchecked.
+One place where the repo does not yet match the authoritative design, open and **not fixed**: the public overlay against decision [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md) (Accepted, the authoritative design for the public Minecraft path). Decision [0364](../decisions/0364-known-gap-public-overlay-against-0137.md) records it and the stop rule that holds until it closes. Node state is unchecked (plan decision D8).
 
 ## Conflicts recorded
 
 Each item gives every account. This page does not pick one.
 
-1. **The public Minecraft path.** Decision [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md) is the authoritative design; the repo's divergence from it is [known gap 1](#known-gaps), not a conflict between accounts.
+1. **The public Minecraft path.** Decision [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md) is the authoritative design; the repo's divergence from it is the [known gap](#known-gaps), not a conflict between accounts.
 2. **The MCP's NATS reach.** Spec 6.4: the MCP reaches the internal zone through "NATS (MCP service account, `geldar.*.player.>` subjects only)". Decision [0067](../decisions/0067-nats-accounts-and-least-privilege.md): the `mcp` user publishes `sovereign_call` and requests only `body.<life>.book` for its own players. Decision [0087](../decisions/0087-nats-overlay-live-test-and-scoped-subjects.md) (Proposed) and `Get-NatsUsers` in `geldar.ps1`: `mcp` may publish `geldar.<shard>.body.>`, limited by the application's own life check. Detail in [nats-topology](nats-topology.md#conflicts-and-drift-recorded).
 3. **Caddy changes: reload or restart.** Decision [0071](../decisions/0071-public-endpoints-and-ports.md) item 6 and `deploy/caddy/README.md`: load with `caddy reload`, "never restarted". `deploy/README.md` ("Caddy"): the shared Caddy has its admin API off, so a public-site change "is applied by ONE operator restart of it, never by a deploy step" (owner ruling R39), and `colo-public.sh` has a `restart` mode for that.
 4. **Observatory access.** Spec 6.2 and 8.4: the Observatory edge is behind SSO (Cloudflare Access or oauth2-proxy). Decision [0072](../decisions/0072-glass-and-bluemap-are-public.md): Glass and BlueMap are public and read-only. The Caddy sites have no SSO step (`deploy/caddy/glass.caddy`, `map.caddy`).

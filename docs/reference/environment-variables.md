@@ -10,7 +10,7 @@ sources: [.env.example, compose/.env.example, deploy/release.env.example, thresh
 
 # Environment variables
 
-The environment variables Geldar code, compose files and deploy scripts read, as far as the searches [below](#how-the-list-was-derived) and a review pass found them: its name, what it means, and which service or tool reads it. Glass and Kino names are listed only as families here; their meanings are in [Glass and Kino](glass-and-kino.md). **Names and meanings only.** This page holds no value and no default that is an address, a path, a secret or a host name. A secret is named by its role; where its file lives is the operator's business (see the planned [secrets by role](../security/secrets-by-role.md)).
+The environment variables Geldar code, compose files and deploy scripts read, as far as the searches [below](#how-the-list-was-derived) and a review pass found them: its name, what it means, and which service or tool reads it. Glass and Kino names are listed only as families here; their meanings are in [Glass and Kino](glass-and-kino.md). **Names and meanings only.** This page holds no value and no default that is an address, a path, a secret or a host name. A secret is named by its role; where its file lives is the operator's business (see the [secrets by role](../security/secrets-by-role.md)).
 
 For the compose files that set these variables, see [compose stacks](compose-stacks.md). For the keys of the shard files (configuration that is not in the environment), see [shard config](shard-config.md).
 
@@ -113,7 +113,7 @@ Plus the shared NATS, Postgres and telemetry names.
 |---|---|---|
 | `GELDAR_MCP_DB_PASSWORD_FILE` | Secret file: the `geldar_mcp` role password. | `compose/colo.yml` line 344 |
 | `GELDAR_MCP_PEPPER_FILE` | Secret file: the pepper token hashes use. Required. | `threshold/mcp/src/config.ts` line 220 |
-| `GELDAR_MCP_INSTINCT_KEY_FILE` | Secret file for the instinct class; unset turns it off, set but unusable refuses start-up. | `threshold/mcp/src/config.ts` line 106 |
+| `GELDAR_MCP_INSTINCT_KEY_FILE` | Secret file that turns on the MCP's second connection class ([mcp-tools, Identity and scopes](mcp-tools.md#identity-and-scopes); no decision names it, [mcp-tools conflict 12](mcp-tools.md#conflicts-recorded)). Unset leaves the class off; set but unusable refuses start-up. | `threshold/mcp/src/config.ts` line 106 |
 | `GELDAR_MCP_IN_CONTAINER` | Set to `1` inside the container; only then may the server bind all interfaces. | `compose/mcp.yml` |
 | `GELDAR_MCP_BIND` | The listen address. | `compose/mcp.yml` |
 | `GELDAR_MCP_DEV_HOSTS` | Host header values accepted from local clients. | `threshold/mcp/src/config.ts` line 367 |

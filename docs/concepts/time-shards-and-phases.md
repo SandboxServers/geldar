@@ -12,7 +12,7 @@ sources: [docs/spec.md, shards/phase0.yaml, shards/colo.yaml, shards/colo-mind.y
 
 Why Geldar splits its worlds into shards, why every shard runs at one fixed tick rate with three separate clocks, and why the rollout is cut into phases whose exits are system tests. It also records how the phases have actually gone so far, which differs from the spec's plan.
 
-The keys of a shard file are described in the planned [shard-config reference](../reference/shard-config.md). The budget clock is explained in [economy and budgets](economy-and-budgets.md). Whether humans may watch a shard is explained in [observation and privacy](observation-and-privacy.md) (operator material).
+The keys of a shard file are described in the [shard-config reference](../reference/shard-config.md). The budget clock is explained in [economy and budgets](economy-and-budgets.md). Whether humans may watch a shard is explained in [observation and privacy](observation-and-privacy.md) (operator material).
 
 ## Shards: one world per experiment
 
@@ -103,7 +103,7 @@ Decision [0130](../decisions/0130-phase1-owner-rulings-for-c1.md) (owner, 2026-1
 
 On the Colo, the project's own Mind (`animus`) is a compose profile that stays off until a Thinker path exists (decision [0134](../decisions/0134-mind-is-a-profile-until-a-thinker-exists.md)). The root [README.md](../../README.md) says the same and that "Phase 1 is in progress" (lines 57 to 59); whether that still matches the node is not verified here.
 
-The phase summaries are planned as [Phase 0 summary](../history/phase0-summary.md) and [Phase 1 summary](../history/phase1-summary.md).
+The phase summaries are [Phase 0 summary](../history/phase0-summary.md) and [Phase 1 summary](../history/phase1-summary.md).
 
 ## Conflicts recorded
 

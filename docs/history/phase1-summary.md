@@ -72,7 +72,7 @@ All from [phase1/RESUME.md](../analysis/phase1/RESUME.md) at `771a1cbd`. The sec
 - **C5 and PX (drafted 2026-11-11).** Cards ready except where an owner decision blocks (lines 38 and 40).
 - **C7 (2026-11-14, after window B).** Waves 1 to 4 merged and deployed; C7-04c2 and C7-14b merged in window B. Unbuilt: retire, account items, supervisor compose, account Body controls, rename, deletion and export, operator console, the sign-up gate, skin upload (lines 69 to 72).
 - **Owner rulings of 2026-11-14** ([0261](../decisions/0261-open-signup-player-host-bodies-and-auto-roster.md)): sign-up open to everyone, unannounced, once milestone M1 is ready; auto-roster on registration with a per-owner cap of 3; a global cap of 40 running Bodies, alert and review at 30 (line 73).
-- **The public Minecraft port stays closed** until C2-02c merges (RESUME lines 20 to 22; policy in [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md); the gap is gap 1 of [0364](../decisions/0364-known-gaps-against-0137-and-spec-8-4.md)).
+- **The public Minecraft port stays closed** until C2-02c merges (RESUME lines 20 to 22; policy in [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md); the gap is recorded in [0364](../decisions/0364-known-gap-public-overlay-against-0137.md)).
 
 The two C7 retros record the cost: five review passes in C7-1, four in C7-2, every pass finding a real defect; about half the coders hit their context cap; a scratch Postgres recipe still not committed ([wave-c7-1.md](../analysis/phase1/retro/wave-c7-1.md); [wave-c7-2.md](../analysis/phase1/retro/wave-c7-2.md)).
 
@@ -94,7 +94,7 @@ The RESUME was not rewritten after 2026-11-15 05:30Z. `git log --first-parent --
 - C7 branches: `c7-03b5-supervisor-entry`, `c7-03c5-helper-bundle`, `c7-09a2`, `c7-09b-export`, `c7-09b-route`, `roster-auto`, `signup-runbook`, and four `bh-*` body-helper branches. A sign-up runbook exists ([open-signup.md](../runbooks/open-signup.md)); whether sign-up is open is not recorded.
 - Parallel campaigns, each with its own files: character sheet (`an-*`, `gx-*`, `sheet-*`), muffled hearing (`mh*`), telemetry (`telemetry-*`), BlueMap (`bm-*`, `bluemap/*`), genesis (`gn-*`) and Body survival fixes (sleep, mining, swimming, drowning, boxed-in). See the [campaign index](campaign-index.md).
 - World operations on 2026-11-15: a branch `ops/border-9500`, the spawn-town cutover and a one-time journal reset under [0339](../decisions/0339-journal-reset-one-time-exception.md). [World-operations exceptions](../concepts/world-operations-exceptions.md) covers these and their bounds.
-- [Decision 0364](../decisions/0364-known-gaps-against-0137-and-spec-8-4.md) (2026-11-16, Proposed) records known gaps against 0137 and spec 8.4, not fixed during the documentation freeze.
+- [Decision 0364](../decisions/0364-known-gap-public-overlay-against-0137.md) (2026-11-16, Proposed) records the public overlay as a known gap against 0137, not fixed during the documentation freeze.
 - The root [README.md](../../README.md) line 57 says "Phase 1 is in progress".
 
 ## Decisions

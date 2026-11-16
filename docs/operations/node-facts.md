@@ -1,7 +1,7 @@
 ---
 title: Node facts
 type: reference
-audience: operators
+audience: agents-never
 status: draft
 last_verified: 2026-11-16 against 03c1f5de
 companions: [../architecture/deployment-topology-colo.md, ../architecture/network-and-trust-zones.md, ../runbooks/node-only-config.md, ../runbooks/colo-deploy.md, ../runbooks/nats-auth-inplace.md, ../runbooks/body-helper-node-steps.md, ../reference/compose-stacks.md, ../reference/deploy-scripts.md, capacity-and-cost.md, monitoring-and-vitals.md]
@@ -115,7 +115,7 @@ Repo facts, re-read 2026-11-16 at 03c1f5de:
 
 | Drift | Source, date, status |
 |---|---|
-| NATS users: the live file had 8 users and the generator on `main` 10 at the time of writing; permission lines differ too. | [nats-auth-inplace](../runbooks/nats-auth-inplace.md) (as of 2026-11-14); unverified. The [runbooks index](../runbooks/README.md#what-could-not-be-checked) **(a-n)** notes PR #415 has since merged, so the generator side has moved. |
+| NATS users: on 2026-11-14 the live file had 8 users; the generator on `main` defines 11 (`Get-NatsUsers` in `geldar.ps1`, counted 2026-11-16 at 02e9ee34). | [nats-auth-inplace](../runbooks/nats-auth-inplace.md) (as of 2026-11-14); unverified. The [runbooks index](../runbooks/README.md#what-could-not-be-checked) **(a-n)** notes PR #415 has since merged, so the generator side has moved. |
 | Deploy work copies: 111 old copies, never cleaned. | [node-only config](../runbooks/node-only-config.md) item 14 (2026-11-14/15); unverified |
 | Glass alias directory: the runbook's default differs from the directory in use on the node. | [node-only config](../runbooks/node-only-config.md) item 4; unverified |
 | The node's compose file: hand-synced, no sync check exists. | [node-only config](../runbooks/node-only-config.md) item 3; unverified |
@@ -138,4 +138,4 @@ None is resolved here.
 - Why the stack is laid out this way: [deployment topology](../architecture/deployment-topology-colo.md), [network and trust zones](../architecture/network-and-trust-zones.md).
 - Budgets and cost: [capacity and cost](capacity-and-cost.md).
 - What watches the node: [monitoring and vitals](monitoring-and-vitals.md) **(a-n)** (operators only).
-- Failure modes per component: *planned* [failure modes](failure-modes.md).
+- Failure modes per component: [failure modes](failure-modes.md).

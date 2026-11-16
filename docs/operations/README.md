@@ -20,8 +20,8 @@ Checked on 2026-11-16 at `03c1f5de` by listing the folder: all four documents th
 
 | Document | Plan id | Type | Audience | What it holds | Status |
 |---|---|---|---|---|---|
-| [failure-modes.md](failure-modes.md) | O11 | reference | operators | One table per component: symptom, likely cause, safe first action, runbook, what not to do, blast radius | draft |
-| [node-facts.md](node-facts.md) | O12 | reference | operators | What the Colo node runs and holds, from existing documents only, dated | draft |
+| [failure-modes.md](failure-modes.md) | O11 | reference | agents-never | One table per component: symptom, likely cause, safe first action, runbook, what not to do, blast radius | draft |
+| [node-facts.md](node-facts.md) | O12 | reference | agents-never | What the Colo node runs and holds, from existing documents only, dated | draft |
 | [monitoring-and-vitals.md](monitoring-and-vitals.md) | O13 | reference | agents-never | What is monitored, what is decided, what exists in the repo | draft |
 | [capacity-and-cost.md](capacity-and-cost.md) | O14 | reference | owner | Cost model, budgets, stack and node capacity | draft |
 

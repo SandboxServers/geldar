@@ -10,7 +10,7 @@ sources: [docs/spec.md, contract/schemas/thinker-frame.schema.json, contract/sch
 
 # Lantern Thinker protocol
 
-The protocol between a Thinker (the software that runs a model) and the Mind that sends it jobs: spec Appendix H, its contract schema, the Phase 0 server in `animus` (the Thinker hub) and the Phase 0 client `lantern-local`. For the Mind as a whole see the planned [animus-mind](animus-mind.md) reference; for every schema, the planned [contract-schemas](contract-schemas.md) reference; for why the Mind and the Thinker are separate, the planned [body-and-mind](../concepts/body-and-mind.md) explanation.
+The protocol between a Thinker (the software that runs a model) and the Mind that sends it jobs: spec Appendix H, its contract schema, the Phase 0 server in `animus` (the Thinker hub) and the Phase 0 client `lantern-local`. For the Mind as a whole see the [animus-mind](animus-mind.md) reference; for every schema, the [contract-schemas](contract-schemas.md) reference; for why the Mind and the Thinker are separate, the [body-and-mind](../concepts/body-and-mind.md) explanation.
 
 Read from the files at commit `1b114276` on 2026-11-16. Nothing was run against Ollama or a live Mind.
 
@@ -204,4 +204,4 @@ Recorded, not resolved.
 
 ## Observation
 
-Spec Appendix H notes that prompts carry an agent's in-world name and memory, so a Thinker can tell whom it thinks for, and that "the Thought Stream shows the same thing to watchers". The Mind's use of completions after a job is outside this protocol; see the planned [animus-mind](animus-mind.md) reference and, for operators, the planned `agents-never` [observation-and-privacy](../concepts/observation-and-privacy.md) explanation.
+Spec Appendix H notes that prompts carry an agent's in-world name and memory, so a Thinker can tell whom it thinks for, and that "the Thought Stream shows the same thing to watchers". The Mind's use of completions after a job is outside this protocol; see the [animus-mind](animus-mind.md) reference and, for operators, the `agents-never` [observation-and-privacy](../concepts/observation-and-privacy.md) explanation.

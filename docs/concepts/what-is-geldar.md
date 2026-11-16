@@ -53,7 +53,7 @@ flowchart LR
 - **The record**: NATS carries events and plans; `eventsink/` stores events in Postgres, one database per shard ([spec 7](../spec.md#7-observability)).
 - **Observation** is everything humans use to watch, all read-only ([spec 5.13](../spec.md#513-the-observatory)). It is covered by [observation and privacy](observation-and-privacy.md) (agents-never).
 
-The spec's product names and roles are in [spec 2a](../spec.md#2a-names) and the [glossary](../reference/glossary.md). The planned [system overview](../architecture/system-overview.md) draws the deployed topology.
+The spec's product names and roles are in [spec 2a](../spec.md#2a-names) and the [glossary](../reference/glossary.md). The [system overview](../architecture/system-overview.md) draws the deployed topology.
 
 ## The spec and the decisions
 
@@ -109,7 +109,7 @@ Population, uptime and agent counts are live facts. None is stated here as curre
 | 2026-11-14 | Open sign-up decided; autonomy review | [0261](../decisions/0261-open-signup-player-host-bodies-and-auto-roster.md); `docs/analysis/autonomy/` |
 | 2026-11-15 | Spawn-town cutover and a one-time journal reset | [world-operations exceptions](world-operations-exceptions.md); [0339](../decisions/0339-journal-reset-one-time-exception.md) |
 
-The planned [decision timeline](../history/decision-timeline.md) (*planned*) and the [phase summaries](../history/phase0-summary.md) (*planned*) give the full history.
+The [decision timeline](../history/decision-timeline.md) and the [phase summaries](../history/phase0-summary.md) give the full history.
 
 ## Conflicts recorded
 
@@ -118,11 +118,11 @@ The planned [decision timeline](../history/decision-timeline.md) (*planned*) and
 
 ## What it touches
 
-[Principles in practice](principles-in-practice.md), [Body and Mind](body-and-mind.md), [sovereign players](sovereign-players.md), [life cycle of a life](life-cycle-of-a-life.md), [identity and ingress](identity-and-ingress.md), [world-operations exceptions](world-operations-exceptions.md), and the planned [time, shards and phases](time-shards-and-phases.md), [economy and budgets](economy-and-budgets.md) and [character and memory](character-and-memory.md).
+[Principles in practice](principles-in-practice.md), [Body and Mind](body-and-mind.md), [sovereign players](sovereign-players.md), [life cycle of a life](life-cycle-of-a-life.md), [identity and ingress](identity-and-ingress.md), [world-operations exceptions](world-operations-exceptions.md), and the [time, shards and phases](time-shards-and-phases.md), [economy and budgets](economy-and-budgets.md) and [character and memory](character-and-memory.md).
 
 ## Where to read the reference
 
 - Terms: [glossary](../reference/glossary.md).
 - Folders and packages: [repo layout](../reference/repo-layout.md).
 - Spec section to code and decisions: [spec section map](../reference/spec-section-map.md).
-- Every component on one page: [components](../reference/components.md) (*planned*).
+- Every component on one page: [components](../reference/components.md).

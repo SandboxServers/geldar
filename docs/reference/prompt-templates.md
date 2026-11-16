@@ -16,7 +16,7 @@ Every versioned template under `prompts/`: what each kind is for, how a file is 
 
 Everything below was read from the files in `sources:` at commit `1b114276` on 2026-11-16, with the commands in [Re-derive](#re-derive).
 
-Related: [animus-mind](animus-mind.md), [character-and-memory](../concepts/character-and-memory.md) and [observation-and-privacy](../concepts/observation-and-privacy.md). Planned and not yet written: [release-a-prompt-version](../runbooks/release-a-prompt-version.md) (W3, the how-to).
+Related: [animus-mind](animus-mind.md), [character-and-memory](../concepts/character-and-memory.md) and [observation-and-privacy](../concepts/observation-and-privacy.md). The how-to: [release-a-prompt-version](../runbooks/release-a-prompt-version.md).
 
 ## The three kinds
 
@@ -31,7 +31,7 @@ Related: [animus-mind](animus-mind.md), [character-and-memory](../concepts/chara
 ## Who reads them
 
 - The Mind (`animus/`) loads them at start through `createPromptLibrary` (`animus/src/prompts/library.ts`); the parser is `animus/src/prompts/template.ts`. Nothing is built or served (`prompts/README.md`).
-- `animus/src/main.ts` passes only `thoughtVersion`, from `mind.thought_version` in the shard file (`5` in `shards/phase0.yaml` and `shards/colo-mind.yaml`; `animus/src/config.ts` accepts 1 to 5). The body-api and reflection versions are the library defaults; no config key selects them (`git grep -n reflection_version -- shards animus/src` finds nothing).
+- `animus/src/main.ts` passes only `thoughtVersion`, from `mind.thought_version` in the shard file (`5` in `shards/phase0.yaml` and `shards/colo-mind.yaml`; `animus/src/config.ts` line 222 reads it with `optionalInt(mind, 'thought_version', 'mind', 5, 1)`: default 5, minimum 1, no maximum; a version with no file fails when the library loads it, see [release-a-prompt-version](../runbooks/release-a-prompt-version.md) conflict 2). The body-api and reflection versions are the library defaults; no config key selects them (`git grep -n reflection_version -- shards animus/src` finds nothing).
 - `golem/src/mind-link/body-api.test.ts` checks a body-api file against the Body.
 - The Mind of our own is off on the Colo until a Thinker path exists (decision [0134](../decisions/0134-mind-is-a-profile-until-a-thinker-exists.md)). Sovereign players do not read these files; the MCP prompts they use are separate (`threshold/mcp-mock/src/prompts.ts`, served by `threshold/mcp`).
 
@@ -43,15 +43,7 @@ Related: [animus-mind](animus-mind.md), [character-and-memory](../concepts/chara
 | System and user messages | Thought: blocks 1 to 4 are the system message, the same for every thought of an agent (no times, no counts); blocks 5 and 6 are the user message. Reflection: blocks 1 and 2, then block 3. | `prompts/README.md` |
 | Slots | `{{name}}`. The library refuses a template with an unknown slot and a render that leaves one unfilled; values are inserted once and never re-scanned. | `prompts/README.md`; `template.ts` |
 | World text | Speech, signs, names and the overheard digest never appear in a template or the system message. They are JSON-escaped strings, one per line, in the one quoted-world-text section at the end of the user message. | `prompts/README.md`; `player-core/src/ports/prompts.ts` |
-| No model identity | Templates never say what the agent runs on, or describe it as a tool or program. | `prompts/README.md` |
 | Agent-facing text | The default thought, reflection and body-api files are scanned by `animus/src/prompts/agent-text.test.ts`; the test fails on a marker word. The list of words is in that file; this page does not repeat it. | test file; decisions 0058, 0059, 0068 |
-
-### Slots
-
-| Kind | Slots in the default version (re-derive: `Select-String -Path prompts/thought/v5.md -Pattern '\{\{[a-z_]+\}\}' -AllMatches`) |
-|---|---|
-| `thought` v5 (17) | `beliefs`, `body_api_table`, `commitments`, `days`, `days_since_sleep`, `goal_stack`, `intent_and_actions_schema`, `intent_state`, `memories`, `name`, `personality_seed`, `quoted_world_text`, `recent_thoughts`, `skill_index`, `snapshot`, `thinking_left`, `wake_reason` |
-| `reflection` v2 (12) | `beliefs`, `commitments`, `day`, `degraded_note`, `goal_stack`, `journal_today`, `memories`, `memories_max`, `name`, `personality_seed`, `quoted_world_text`, `reflection_schema` |
 
 ### body-api JSON shape
 
@@ -70,10 +62,10 @@ Dates are the UTC dates of the commit that added the file (`git log --diff-filte
 | Version | Added | Change from the previous version | Decision or packet |
 |---|---|---|---|
 | v1 | 9cdea3fd, 2026-11-09 | The thought prompt of spec Appendix B.1, blocks 1 to 6. | spec Appendix B.1 |
-| v2 | 9d49ca11, 2026-11-10 | Knowledge, sleep and anti-loop rules added to block 1. | [0058](../decisions/0058-the-character-knowledge-boundary-and-thought-v2.md) |
-| v3 | 786b087f, 2026-11-10 | One line in block 1: remembered notes, beliefs and goals are data. | BC-10 (`prompts/README.md`) |
-| v4 | a92b2c93, 2026-11-10 | Wording changed per decisions 0058, 0059 and 0068 (see `prompts/README.md`); one slot renamed. | [0058](../decisions/0058-the-character-knowledge-boundary-and-thought-v2.md), [0059](../decisions/0059-identity-mode-is-about-human-observation-not-agent-belief.md), [0068](../decisions/0068-prompt-v4-and-agent-visible-text.md) |
-| v5 (default) | 20a384d8, 2026-11-10 | One line in block 1: shelter is not only a bed. | [0074](../decisions/0074-shelter-means-an-enclosed-safe-space.md) |
+| v2 | 9d49ca11, 2026-11-10 | See the decision. | [0058](../decisions/0058-the-character-knowledge-boundary-and-thought-v2.md) |
+| v3 | 786b087f, 2026-11-10 | See the packet note in `prompts/README.md`. | BC-10 (`prompts/README.md`) |
+| v4 | a92b2c93, 2026-11-10 | See the decisions. | [0058](../decisions/0058-the-character-knowledge-boundary-and-thought-v2.md), [0059](../decisions/0059-identity-mode-is-about-human-observation-not-agent-belief.md), [0068](../decisions/0068-prompt-v4-and-agent-visible-text.md) |
+| v5 (default) | 20a384d8, 2026-11-10 | See the decision. | [0074](../decisions/0074-shelter-means-an-enclosed-safe-space.md) |
 
 The context window was raised so the till wording fits (decision [0181](../decisions/0181-thought-context-8704.md)).
 
@@ -82,7 +74,7 @@ The context window was raised so the till wording fits (decision [0181](../decis
 | Version | Added | Change | Decision or packet |
 |---|---|---|---|
 | v1 | 9cdea3fd, 2026-11-09 | The sleep reflection of spec Appendix B.2, with the degraded variant. | spec Appendix B.2 |
-| v2 (default) | e368d96b, 2026-11-10 | Block 1: the `beliefs_remove` field wording; block 3: new slot `commitments` (`git diff --no-index -U0 prompts/reflection/v1.md prompts/reflection/v2.md`, 2026-11-16). | Commit subject "R4d: commitments flood and reflection v2"; no decision record. Not decision 0058, which keeps reflection at v1 (see [conflict 4](#conflicts-recorded)). |
+| v2 (default) | e368d96b, 2026-11-10 | Changes in blocks 1 and 3 (`git diff --no-index -U0 prompts/reflection/v1.md prompts/reflection/v2.md`, 2026-11-16). | Commit subject "R4d: commitments flood and reflection v2"; no decision record. Not decision 0058, which keeps reflection at v1 (see [conflict 4](#conflicts-recorded)). |
 
 Degraded path: the validator limits the reflection fields (`prompts/README.md`).
 
@@ -105,7 +97,7 @@ Verb and program names are read from the `do` and `program` fields. "Reworded" m
 
 ## Release rules
 
-The rules a new version must meet, from `prompts/README.md`, `CLAUDE.md` and the tests. The steps are the planned how-to [release-a-prompt-version](../runbooks/release-a-prompt-version.md) (W3).
+The rules a new version must meet, from `prompts/README.md`, `CLAUDE.md` and the tests. The steps are the how-to [release-a-prompt-version](../runbooks/release-a-prompt-version.md).
 
 | Rule | Detail | Evidence |
 |---|---|---|

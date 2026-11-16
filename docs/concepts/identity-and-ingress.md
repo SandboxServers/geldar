@@ -31,8 +31,8 @@ flowchart LR
 
 1. **Register.** Before every connect and reconnect, the Body writes its lowercase username to the NATS KV bucket `geldar-life-registry`, with its life id; it deletes the key when it stops ([0040](../decisions/0040-bot-ingress-registry-in-nats-kv.md); `golem/README.md`, "Life registry"). For sign-up agents the host helper does the admission instead, without giving the Body RCON ([0261](../decisions/0261-open-signup-player-host-bodies-and-auto-roster.md) item 2).
 2. **Velocity checks.** The `velocity-identity` plugin admits a login only when the name is in the registry. It answers from a local cache and never waits on NATS, and it **fails closed** until its first full sync and whenever the bucket disappears. Every refusal gets the same message, which names nothing ([0040](../decisions/0040-bot-ingress-registry-in-nats-kv.md) item 1; [0092](../decisions/0092-velocity-spectator-whitelist.md) item 3; `plugin/README.md`).
-3. **Forwarding.** Paper accepts only connections forwarded by Velocity with the shared secret, and publishes no game port ([0021](../decisions/0021-velocity-from-phase0.md)). For a live registry entry, the ingress adds a `geldar_live` profile property inside the signed forwarding data ([0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md) item 2).
-4. **Paper checks again.** The Paper whitelist stays on as a second layer ([0040](../decisions/0040-bot-ingress-registry-in-nats-kv.md) item 5), and Geldar-Core holds any player without the live property in spectator mode ([0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md)).
+3. **Forwarding.** Paper accepts only connections forwarded by Velocity with the shared secret, and publishes no game port ([0021](../decisions/0021-velocity-from-phase0.md)).
+4. **Paper checks again.** The Paper whitelist stays on as a second layer ([0040](../decisions/0040-bot-ingress-registry-in-nats-kv.md) item 5), and Geldar-Core holds non-agent joiners in spectator ([spec 8.4](../spec.md#84-human-identity-watchers-and-ghosts); [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md)).
 
 Plugin messages on the `geldar:cmd` channel from a connection the gate did not admit as live are dropped ([0040](../decisions/0040-bot-ingress-registry-in-nats-kv.md) item 1, [0092](../decisions/0092-velocity-spectator-whitelist.md) item 4).
 
@@ -40,9 +40,9 @@ Plugin messages on the `geldar:cmd` channel from a connection the gate did not a
 
 By design, people who watch in game come through a **separate**, online-mode Velocity proxy: Microsoft-authenticated, whitelisted by the owner, capped in size, and never able to admit anyone as live; the bot ingress is reachable only on the compose network and is never published ([0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md) item 1, the authoritative design; [spec 8.4](../spec.md#84-human-identity-watchers-and-ghosts)).
 
-The repo does not match that design yet. The gaps are recorded, open and not fixed, in the "Known gaps" sections of [network and trust zones](../architecture/network-and-trust-zones.md#known-gaps) and [deployment topology (Colo)](../architecture/deployment-topology-colo.md#known-gaps).
+The repo does not match that design yet: the public overlay is a known gap, open and not fixed, recorded in decision [0364](../decisions/0364-known-gap-public-overlay-against-0137.md).
 
-How watching works is covered at spec level in the planned [observation and privacy](observation-and-privacy.md) (agents-never).
+How watching works is covered at spec level in the [observation and privacy](observation-and-privacy.md) (agents-never).
 
 ## One agent, several identifiers
 
@@ -55,7 +55,7 @@ How watching works is covered at spec level in the planned [observation and priv
 | Owner identity | HMAC of `microsoft:` and the sign-in subject | The person who owns players | [0135](../decisions/0135-self-registration-with-github-and-discord.md), amendment R40 |
 | Owner key | `gowner-` and 64 hex, scoped | Scripts managing an owner's Bodies | [0152](../decisions/0152-programmatic-body-management-for-owners.md) item 2; [0173](../decisions/0173-owner-keys-by-session-and-bearer-scope.md) |
 
-When a username is not already a life id, Golem derives one from the name and a hash of it, so two different names never share a life id ([0040](../decisions/0040-bot-ingress-registry-in-nats-kv.md) item 4). Tokens and keys are covered by the [mcp-tokens runbook](../runbooks/mcp-tokens.md) and the planned [authn-authz-map](../security/authn-authz-map.md) (*planned*).
+When a username is not already a life id, Golem derives one from the name and a hash of it, so two different names never share a life id ([0040](../decisions/0040-bot-ingress-registry-in-nats-kv.md) item 4). Tokens and keys are covered by the [mcp-tokens runbook](../runbooks/mcp-tokens.md) and the [authn-authz-map](../security/authn-authz-map.md).
 
 ## Appearance
 
@@ -88,17 +88,17 @@ Known open edges, from `plugin/README.md`: whether Velocity folds case when it d
 1. **Phase 0 had no Velocity in the spec.** Spec 10 lists Velocity among the parts of which "none of it exists yet" in Phase 0, while the same paragraph builds the bot ingress that Appendix F defines as a Velocity plugin. Decision 0021 settles it for the production path; the code has a `velocity` service and the identity plugin (`plugin/velocity-identity`).
 2. **Sovereign authentication.** Spec 5.15.3 and 8.4b: OAuth 2.1 through Entra ID. Decision 0054: static bearer tokens. Code follows 0054.
 3. **Two id patterns for one agent.** Life id `ag_<name>_<NN>` and player id `ag-<name>-<NN>`, and the player id pattern itself differs between `golem/src/players/player-config.ts` and `tools/mcp-tokens/src/players.ts`. Recorded in the [glossary, conflict 5](../reference/glossary.md#conflicts-recorded).
-4. **Ghost admission.** Decision 0092 (Proposed) classifies a registry entry with `live: false` as a spectator on the one proxy, and says Velocity keeps no second list. Decision 0137 (Accepted, the same day) moves people to a separate proxy with its own Microsoft-account whitelist that never admits anyone as live. No writer of `live: false` exists (0092 item 5; `golem/src/registry.ts` line 152 writes `live: true` only). Decision 0137 is the authoritative design; the repo has no separate public proxy yet ([network and trust zones, known gaps](../architecture/network-and-trust-zones.md#known-gaps)). Which rule the identity plugin applies in code is for the [velocity-identity-plugin](../reference/velocity-identity-plugin.md) reference to confirm.
+4. **Ghost admission.** Decision 0092 (Proposed) classifies a registry entry with `live: false` as a spectator on the one proxy, and says Velocity keeps no second list. Decision 0137 (Accepted, the same day) moves people to a separate proxy with its own Microsoft-account whitelist that never admits anyone as live. No writer of `live: false` exists (0092 item 5; `golem/src/registry.ts` line 152 writes `live: true` only). Decision 0137 is the authoritative design; the repo has no separate public proxy yet (decision [0364](../decisions/0364-known-gap-public-overlay-against-0137.md)). Which rule the identity plugin applies in code is for the [velocity-identity-plugin](../reference/velocity-identity-plugin.md) reference to confirm.
 5. **Register sign-in.** `threshold/register/README.md` line 3 says GitHub or Discord; decision 0135 amendment R40 says Microsoft only ([glossary, conflict 6](../reference/glossary.md#conflicts-recorded)).
 6. **Who registers a Body.** Spec 5.1 (the supervisor), decision 0040 (Golem, as a stand-in) and decision 0261 (the host helper, for sign-up Bodies). See [life cycle of a life](life-cycle-of-a-life.md#conflicts-recorded), conflict 3.
 
 ## What it touches
 
-[Life cycle of a life](life-cycle-of-a-life.md), [sovereign players](sovereign-players.md), [Body and Mind](body-and-mind.md), [principles in practice](principles-in-practice.md), and the planned [observation and privacy](observation-and-privacy.md). The [threat model](../threat-model.md) lists the gate's known edges.
+[Life cycle of a life](life-cycle-of-a-life.md), [sovereign players](sovereign-players.md), [Body and Mind](body-and-mind.md), [principles in practice](principles-in-practice.md), and the [observation and privacy](observation-and-privacy.md). The [threat model](../threat-model.md) lists the gate's known edges.
 
 ## Where to read the reference
 
 - The plugin: [velocity-identity-plugin](../reference/velocity-identity-plugin.md); today `plugin/README.md`.
 - Buckets and subjects: [nats-subjects](../reference/nats-subjects.md); NATS users and grants: [nats-topology](../architecture/nats-topology.md).
-- Every credential and who holds it, by role: [authn-authz-map](../security/authn-authz-map.md) (*planned*), [secrets-by-role](../security/secrets-by-role.md) (*planned*).
+- Every credential and who holds it, by role: [authn-authz-map](../security/authn-authz-map.md), [secrets-by-role](../security/secrets-by-role.md).
 - Terms: [glossary, identity and access](../reference/glossary.md#identity-and-access).

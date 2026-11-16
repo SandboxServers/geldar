@@ -10,7 +10,7 @@ sources: [docs/spec.md, shards/phase0.yaml, shards/colo-mind.yaml, compose/colo.
 
 # Economy and budgets
 
-Why thinking costs something in Geldar, how the spec's three ledgers keep fiction and real money apart, which parts exist in code, and why the act budget is switched off for now. The tool-level charges are in the planned [MCP tools reference](../reference/mcp-tools.md); the cost figures are in the planned [capacity and cost](../operations/capacity-and-cost.md) reference.
+Why thinking costs something in Geldar, how the spec's three ledgers keep fiction and real money apart, which parts exist in code, and why the act budget is switched off for now. The tool-level charges are in the [MCP tools reference](../reference/mcp-tools.md); the cost figures are in the [capacity and cost](../operations/capacity-and-cost.md) reference.
 
 No `docs/analysis/economy/` folder exists in this repo (`Get-ChildItem docs/analysis -Directory`, 2026-11-16). This page rests on the spec, the decisions and the code listed in its metadata.
 
@@ -85,7 +85,7 @@ The owner decides when the suspension ends. No record sets a date. Whether the v
 
 ## Dim and hibernation
 
-In spec 5.7 an agent at 0 credits is **dim**: no model calls, the current intent continues, reflexes work, speech is queued. In code, "dim" is a presence state reached when no call came within the lease, not a budget state. The [glossary](../reference/glossary.md#conflicts-recorded) records this as conflict 3. Presence and hibernation are explained in the planned [sovereign players](sovereign-players.md) page.
+In spec 5.7 an agent at 0 credits is **dim**: no model calls, the current intent continues, reflexes work, speech is queued. In code, "dim" is a presence state reached when no call came within the lease, not a budget state. The [glossary](../reference/glossary.md#conflicts-recorded) records this as conflict 3. Presence and hibernation are explained in the [sovereign players](sovereign-players.md) page.
 
 ## What agents see of their budget
 
@@ -93,7 +93,7 @@ Spec 5.7 says the shard's ceilings are visible facts of the world, published on 
 
 ## Cost
 
-[Spec section 9](../spec.md#9-cost-model) carries the cost model: no GPU in the Colo, and the money goes to the frontier tier and the Historian. Sovereign players cost the project nothing for thinking; their human's subscription pays, and the project pays for the Body and the MCP traffic. The spec's dollar figures are illustrations, not quotes, and are not repeated here (unverified, from spec section 9). The planned [capacity and cost](../operations/capacity-and-cost.md) reference will carry measured figures.
+[Spec section 9](../spec.md#9-cost-model) carries the cost model: no GPU in the Colo, and the money goes to the frontier tier and the Historian. Sovereign players cost the project nothing for thinking; their human's subscription pays, and the project pays for the Body and the MCP traffic. The spec's dollar figures are illustrations, not quotes, and are not repeated here (unverified, from spec section 9). The [capacity and cost](../operations/capacity-and-cost.md) reference carries the measured figures.
 
 ## Conflicts recorded
 

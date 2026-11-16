@@ -3,16 +3,16 @@ title: Doc verification
 type: how-to
 audience: contributors
 status: draft
-last_verified: 2026-11-16 against cd4499da
-companions: [README.md, documentation-style.md, doc-update-map.md, ../analysis/docs-library/plan.md]
-sources: [.claude/agents/documentation-writer.md, package.json, tools/repo-checks/src/run-checks.ts, pnpm-workspace.yaml, .github/workflows/ci.yml]
+last_verified: 2026-11-16 against 3f07a4be
+companions: [README.md, documentation-style.md, doc-update-map.md, ../security/agent-visibility-rules.md, ../analysis/docs-library/plan.md]
+sources: [.claude/agents/documentation-writer.md, package.json, tools/repo-checks/src/run-checks.ts, pnpm-workspace.yaml, .github/workflows/ci.yml, animus/src/prompts, player-core/src, threshold/mcp-mock/src, docs/decisions]
 ---
 
 # Doc verification
 
 How to check one document before review, how to sweep the library for stale documents, and how to re-derive the lists other documents cite. The rules being checked are in [documentation style](documentation-style.md); which documents a change touches is in the [doc-update map](doc-update-map.md).
 
-Every command below is PowerShell 7, run from the repo root. Each one reads only; none touches the node, the VM, the database or the world. They were run on 2026-11-16 at cd4499da.
+Every command below is PowerShell 7, run from the repo root. Each one reads only; none touches the node, the VM, the database or the world. They were first run on 2026-11-16 at cd4499da; the link, metadata, placement, coverage and re-derive blocks were run again the same day at 3f07a4be for the W7 close, with the results given under each block.
 
 ## Verify one document
 
@@ -96,7 +96,7 @@ foreach ($f in git ls-files -co --exclude-standard -- 'docs/*.md') {
 }
 ```
 
-A link to a document the plan schedules but has not written is expected; it is marked *planned* in the text. Anything else is a broken link to fix.
+Every planned document now exists, so outside `docs/analysis/` every hit is a broken link to fix. At 3f07a4be (2026-11-16) the scan found 29 broken links, all in campaign files under `docs/analysis/` (mostly a wrong `../` depth in `docs/analysis/phase1/`, finding F-6 in the [plan](../analysis/docs-library/plan.md#3-findings)), and none elsewhere. Campaign files are working notes; fix them when the campaign next edits them.
 
 ### Metadata present
 
@@ -107,6 +107,40 @@ git ls-files -co --exclude-standard -- 'docs/*.md' |
   Where-Object { $_ -notmatch '^docs/(decisions|analysis)/' -and $_ -ne 'docs/spec.md' } |
   Where-Object { (Get-Content $_ -TotalCount 1) -ne '---' }
 ```
+
+Expected hits: the three legal texts, which carry no block on purpose ([style](documentation-style.md#metadata-block)). `docs/ideas.md` gained its block in W7. On 2026-11-16 at 3f07a4be, with the W7 working-tree edits, those three were the only hits.
+
+### Metadata fields
+
+Prints each document's type, audience, status and pinned commit, one line per file. Section indexes (for example the [reference index](../reference/README.md)) copy their Type, Audience and Status columns from this output instead of typing them; re-run it when you update an index.
+
+```powershell
+foreach ($f in git ls-files -co --exclude-standard -- 'docs/*.md' | Where-Object { $_ -notmatch '^docs/(decisions|analysis)/' }) {
+  $head = Get-Content $f -TotalCount 12
+  if ($head[0] -ne '---') { continue }
+  $get = { param($k) ($head | Where-Object { $_ -match "^${k}: " } | Select-Object -First 1) -replace "^${k}: ", '' }
+  $sha = (& $get 'last_verified') -replace '^.* against ', ''
+  "$f | $(& $get 'type') | $(& $get 'audience') | $(& $get 'status') | $sha | sources: $([bool](& $get 'sources'))"
+}
+```
+
+A line with `sources: False` is a document with no `sources:` list; it needs one if it cites any file (review ruling in the [style](documentation-style.md#metadata-block)). On 2026-11-16 at 3f07a4be the only such line was `docs/glossary.md`, a pointer page that cites no file.
+
+### Update-map coverage
+
+Lists documents under `docs/` (outside `decisions/` and `analysis/`) that no row of the [doc-update map](doc-update-map.md) links. Each one needs a row naming the change that updates it.
+
+```powershell
+$map = 'docs/agents/doc-update-map.md'
+$linked = foreach ($m in [regex]::Matches((Get-Content -Raw $map), '\]\(([^)\s#]+)')) {
+  [IO.Path]::GetFullPath((Join-Path (Split-Path $map) $m.Groups[1].Value))
+}
+git ls-files -co --exclude-standard -- 'docs/*.md' |
+  Where-Object { $_ -notmatch '^docs/(decisions|analysis)/' } |
+  Where-Object { $linked -notcontains [IO.Path]::GetFullPath($_) }
+```
+
+No output is a pass. On 2026-11-16 at 3f07a4be the block printed nothing: all 122 files are linked; the W7 close re-ran it with `reference/telemetry-package.md` added and all 123 were linked ([verification report](../analysis/docs-library/verification-report.md)).
 
 ### Forbidden content
 
@@ -134,10 +168,10 @@ Also search the document for personal names and account names by eye; no pattern
 An `agents-never` document must not be linked or quoted from a path an agent reads ([style](documentation-style.md#paths-an-agent-reads)). Check the agent-read paths in this repo for links into `docs/`:
 
 ```powershell
-git grep -nE 'docs/' -- prompts contract/schemas threshold/mcp/src/tools threshold/mcp/src/resources.ts threshold/mcp-mock/src psyche/src
+git grep -nE 'docs/' -- prompts animus/src/prompts contract/schemas threshold/mcp/src/tools threshold/mcp/src/play-view threshold/mcp/src/resources.ts threshold/mcp-mock/src player-core/src psyche/src golem/src/actions contract/src/outcome-words.ts tools/mcp-tokens/src/persona-export.ts plugin/core/src/main/java/dev/geldar/core/speech plugin/core/src/main/java/dev/geldar/core/maintenance
 ```
 
-Any hit needs a reason. On 2026-11-16 at cd4499da there were none (`threshold/mcp-mock/src` added after the W0 review; still none). Sibling repos (the kit, the player template) are checked in those repos, not here.
+The path list matches the [paths table](documentation-style.md#paths-an-agent-reads) and scan 4a of the [agent-visibility rules](../security/agent-visibility-rules.md); change all three together. Any hit needs a reason. `git grep` exits 1 when it finds nothing; that is a pass. History of the list: at cd4499da it covered `prompts`, `contract/schemas`, the MCP tools and resources, `threshold/mcp-mock/src` (added after the W0 review) and `psyche/src`, with no hits. At 3f07a4be (2026-11-16) it gained `animus/src/prompts` and `player-core/src`, found missing by the W4 security writer, and the play view, Body actions, outcome words, persona export and plugin text folders from that page's scan; run as written, no hits (exit 1). Sibling repos (the kit, the player template) are checked in those repos, not here.
 
 ## Re-derive lists
 
@@ -163,7 +197,7 @@ Get-ChildItem docs/analysis -Directory | ForEach-Object { "$($_.Name)=$((git ls-
 git ls-files docs/analysis | Select-String 'RESUME\.md$'
 ```
 
-Write the result into the document that cites it, with the date and the commit. The results of the run on 2026-11-16 at cd4499da are in [plan.md section 13.1](../analysis/docs-library/plan.md#131-re-derived-lists).
+Write the result into the document that cites it, with the date and the commit. The results of the runs on 2026-11-16 at cd4499da and at 3f07a4be are in [plan.md section 13.1](../analysis/docs-library/plan.md#131-re-derived-lists). At 3f07a4be block 1 gives 187 records, highest 0366, and 46 index rows starting "Proposed"; quote the command with the figure so a reader can re-run it.
 
 ## Review checklist
 
@@ -171,12 +205,12 @@ The persona's review mode. Report numbered findings with file and line.
 
 1. **Type.** One Diataxis type, matching the folder. No steps in a reference, no reference tables in a tutorial.
 2. **Audience.** The label fits the reader. Anything about observation is `agents-never`.
-3. **Metadata.** Block present and complete; `last_verified` names a real commit.
+3. **Metadata.** Block present and complete; `last_verified` names a real commit; `sources:` present whenever the document cites a file. The audience follows the content: a document that names thoughts, journals, prompts or another observation surface is `agents-never` even if its plan row said otherwise; `players` only for the player guide and the legal texts ([style](documentation-style.md#audience-labels)).
 4. **Evidence.** Every claim cites a file, decision, commit or command; measured figures are dated; unverifiable ones say "unverified" and where they came from.
 5. **Conflicts.** Disagreements between code, spec and decisions are recorded, not resolved silently.
-6. **Links.** Every relative link resolves, or is marked *planned*.
+6. **Links.** Every relative link resolves.
 7. **Forbidden content.** No secret, secret location, account name, personal name, IP address or unapproved email (persona rules 3 and 4).
 8. **Agent visibility.** Nothing an agent reads links to or quotes the document; an `agents-never` document stays at spec level (no thresholds, delays, hiding rules or detection detail; plan decision D9).
 9. **Principle 1.** A human acting in the world appears only as a bounded, decision-backed exception.
-10. **Index and map.** The section `README.md` lists the document; the [doc-update map](doc-update-map.md) covers the change.
+10. **Index and map.** The section `README.md` lists the document; the [doc-update map](doc-update-map.md) has a row that names it (run the [coverage scan](#update-map-coverage)).
 11. **Form.** LF endings, Mermaid for diagrams, short sections, active voice.

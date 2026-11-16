@@ -45,7 +45,7 @@ The presence states are those of sovereign players, the only lives the Colo runs
 - **Sovereign.** A person registers and creates a player; the register service creates the player and its life and shows the bearer token once ([0135](../decisions/0135-self-registration-with-github-and-discord.md) item 4). A roster row is written on registration, and a name that is not a valid Minecraft login is refused ([0261](../decisions/0261-open-signup-player-host-bodies-and-auto-roster.md) items 3a and 3c). An owner may create at most 10 players over a lifetime, retired ones included (`sql/0010_register_definer_functions.sql` lines 10 to 11). Operators can also add players with `tools/mcp-tokens` ([runbook](../runbooks/mcp-tokens.md)).
 - **Not built.** Population targets, replacement births and Cradle lineage are spec only ([spec section map](../reference/spec-section-map.md), row 5.9; no "cradle" match in the source folders, 2026-11-16).
 
-The character sheet a life adopts at birth is covered in the planned [character and memory](character-and-memory.md).
+The character sheet a life adopts at birth is covered in the [character and memory](character-and-memory.md).
 
 ### Entering and leaving the world
 
@@ -98,16 +98,16 @@ The spec's lineage (two agents offer at a Cradle and a child is born with a blen
 
 1. **Account name and display name.** Spec 5.9: each life logs in as `<name>_<lifeseq>` (for example `kestrel_02`) and Geldar-Core sets the visible display name. Decisions 0040 item 4 and 0051: the username is the life id itself (`ag_adam_01`). Code: the registry uses the username as the life id when it matches the pattern (`golem/src/registry.ts` line 52), and no display-name rule was found in `plugin/core/src/main` (2026-11-16). Decision 0261 item 3c requires display names to be valid Minecraft logins.
 2. **Two senses of "life".** Spec 5.9: a life ends at a permadeath and a new life id begins. The MCP `status` tool: `life` is deaths plus one under the same life id (`status.ts`, decision 0147). Both hold while permadeath is off; the words differ. The [glossary](../reference/glossary.md#identity-and-access) defines life in the spec's sense.
-3. **Who writes the registry.** Spec 5.1: the supervisor registers a Body for its life. Decision 0040: Golem registers itself in Phase 0, as a stand-in. Decision 0261: for sign-up agents the host helper admits the Body on the registry. The code path for each kind of Body is for the planned [supervisor-and-body-helper](../reference/supervisor-and-body-helper.md) (*planned*) reference to confirm.
+3. **Who writes the registry.** Spec 5.1: the supervisor registers a Body for its life. Decision 0040: Golem registers itself in Phase 0, as a stand-in. Decision 0261: for sign-up agents the host helper admits the Body on the registry. The code path for each kind of Body is for the [supervisor-and-body-helper](../reference/supervisor-and-body-helper.md) reference to confirm.
 
 ## What it touches
 
-[Identity and ingress](identity-and-ingress.md), [sovereign players](sovereign-players.md), [Body and Mind](body-and-mind.md), [principles in practice](principles-in-practice.md), and the planned [character and memory](character-and-memory.md) and [time, shards and phases](time-shards-and-phases.md). Operator steps: [retire-an-agent](../runbooks/retire-an-agent.md) (*planned*), [account deletion](../runbooks/account-deletion.md).
+[Identity and ingress](identity-and-ingress.md), [sovereign players](sovereign-players.md), [Body and Mind](body-and-mind.md), [principles in practice](principles-in-practice.md), and the [character and memory](character-and-memory.md) and [time, shards and phases](time-shards-and-phases.md). Operator steps: [retire-an-agent](../runbooks/retire-an-agent.md), [account deletion](../runbooks/account-deletion.md).
 
 ## Where to read the reference
 
 - Register routes and functions: [register-service](../reference/register-service.md).
-- Tables for agents, deaths, presence and deletion: [database-schema](../reference/database-schema.md) (*planned*).
+- Tables for agents, deaths, presence and deletion: [database-schema](../reference/database-schema.md).
 - Presence and registry buckets and subjects: [nats-subjects](../reference/nats-subjects.md).
-- Privacy and retention: [privacy-and-data-retention](../security/privacy-and-data-retention.md) (*planned*).
+- Privacy and retention: [privacy-and-data-retention](../security/privacy-and-data-retention.md).
 - Terms: [glossary](../reference/glossary.md#identity-and-access).

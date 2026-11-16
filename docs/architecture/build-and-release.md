@@ -10,7 +10,7 @@ sources: [docs/spec.md, .github/workflows/ci.yml, .github/workflows/colo-images.
 
 # Build and release
 
-How code becomes something that runs: what CI checks, what it builds and publishes, how every input is pinned, and how a running container can be traced back to the commit it came from. For how a release lands on the node, read [deployment-topology-colo](deployment-topology-colo.md). The per-workflow reference will be [ci-workflows](../reference/ci-workflows.md) (planned, W2).
+How code becomes something that runs: what CI checks, what it builds and publishes, how every input is pinned, and how a running container can be traced back to the commit it came from. For how a release lands on the node, read [deployment-topology-colo](deployment-topology-colo.md). The per-workflow reference is [ci-workflows](../reference/ci-workflows.md).
 
 Facts were read on 2026-11-16 at 1b114276. The repo has six workflows (`git ls-files .github/workflows`).
 
@@ -96,7 +96,7 @@ The images are unsigned, with no SBOM and no provenance attestation (`colo-image
 
 Each item gives every account. This page does not pick one.
 
-1. **Signed images.** Spec 6.5 shows the Patron image "signed with cosign; verify before first run", and spec 8.7 covers supply chain. The workflows publish unsigned images with no provenance, citing an owner ruling (`mcp-mock-image.yml` header). No decision record for that ruling was found in this pass; the planned [supply-chain](../security/supply-chain.md) page (W4) should trace it.
+1. **Signed images.** Spec 6.5 shows the Patron image "signed with cosign; verify before first run", and spec 8.7 covers supply chain. The workflows publish unsigned images with no provenance, citing an owner ruling (`mcp-mock-image.yml` header). No decision record for that ruling was found in this pass; the [supply-chain](../security/supply-chain.md) page (W4) should trace it.
 2. **Plugin jar delivery.** `deploy/README.md` section (b): "Follow-up: publish the jars as a CI artifact so this copy step goes away." `plugin-jars.yml` already publishes that artifact. The README's step and the workflow both exist; which one the node uses is unverified (D8).
 3. **Supervisor in the release.** `colo-images.yml` pushes a `supervisor` image and says "it is not in release.env yet (C7-03b2 adds it)", so the CD cannot deploy it; [system-overview](system-overview.md#conflicts-recorded) records that no compose file runs it.
 4. **CI comment.** `ci.yml` says a job "whose part of the repo does not exist yet (plugin/, compose/) says so and passes". Both folders exist at 1b114276, so the skip branches are dead code kept as a guard.

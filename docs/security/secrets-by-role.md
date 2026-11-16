@@ -91,7 +91,7 @@ The developer's own machine keeps its secrets as git-ignored secret files; `comp
 | Postgres superuser, RCON, Velocity forwarding | `./geldar.ps1 shard secrets phase0` or `shard up` | RCON is reachable from host tools only with `compose/rcon-host.yml` |
 | MCP token pepper, `geldar_mcp` role password | `./geldar.ps1 mcp-tokens init` (also run by `mcp up`) | `init --force --i-understand` re-creates both; every token dies |
 | NATS server config and per-user passwords; Thinker hub token | `./geldar.ps1 shard nats-auth <shard>` | NATS is open on Phase 0 unless the auth overlay is merged ([nats topology](../architecture/nats-topology.md#the-server)) |
-| Thinker hub token (`GELDAR_THINKER_TOKEN_FILE`) | As above | Optional; unset leaves the Mind's loopback Thinker socket open (`animus/src/thinker/hub.ts` line 30). Not wired in `compose/colo.yml` (`git grep THINKER_TOKEN -- compose deploy`, no hits, 2026-11-16). Leak: answer Thinker jobs on that socket, limited by job ownership (threat model section 4, rule 2) |
+| Thinker hub token (`GELDAR_THINKER_TOKEN_FILE`) | As above | Optional shared token (`animus/src/thinker/hub.ts` line 30). Not wired in `compose/colo.yml` (`git grep THINKER_TOKEN -- compose deploy`, no hits, 2026-11-16). See threat model section 4, rule 2 |
 | A test player's MCP token (`GELDAR_MCP_TEST_TOKEN_FILE`) | `mcp-tokens` | Read by the MCP live cases only |
 
 ## Per-person credentials

@@ -40,10 +40,10 @@ All facts were read from the repo at `03c1f5de` on 2026-11-16. The service refer
 | MCP connection-class key | Not traced | A shared key in a request header, compared in constant time | `threshold/mcp` | While configured | `threshold/mcp/src/http/instinct-key.ts`; [conflict 12](#conflicts-recorded) |
 | NATS user and password | Each service, one user per role | User name and password from a secret file | `nats` (account `GELDAR`) | No repo rotation | [NATS users](#nats-users); decision [0067](../decisions/0067-nats-accounts-and-least-privilege.md) |
 | Postgres role and password | Each service with its own role; some share the superuser | Password from a secret file | `postgres` | No repo rotation except `migrate --set-role-password` | [Postgres roles](#postgres-roles) |
-| Minecraft username (offline mode) | A Body | The username alone, admitted only when the NATS life registry holds it; Paper's whitelist as a second check | Velocity identity plugin; Paper | A registry entry expires unless re-put; a deleted key is a revocation | [Velocity gate](#velocity-gate-and-the-life-registry) |
+| Minecraft username (offline mode) | A Body | A registry entry (decision [0040](../decisions/0040-bot-ingress-registry-in-nats-kv.md)); Paper's whitelist as a second check | Velocity identity plugin; Paper | A registry entry expires unless re-put; a deleted key is a revocation | [Velocity gate](#velocity-gate-and-the-life-registry) |
 | Velocity forwarding secret | `velocity` and `paper` | Modern forwarding: Paper accepts only connections Velocity forwarded with the secret | `paper` | No repo rotation | `compose/velocity/velocity.toml` lines 9 to 13 |
 | RCON password | `paper`, `players-host`, the admin one-shot, the admit one-shot | RCON login | `paper` | No repo rotation | [secrets by role](secrets-by-role.md#generated-on-the-colo-node) |
-| Thinker hub token | A local Thinker (`lantern-local`) | A shared token in the `hello` frame, when configured; unset leaves the socket open | `animus` hub, loopback only | Not wired on Colo | `animus/src/thinker/hub.ts` line 30; threat model section 3 |
+| Thinker hub token | A local Thinker (`lantern-local`) | An optional shared token | `animus` hub, loopback only | Not wired on Colo | `animus/src/thinker/hub.ts` line 30; threat model section 3 |
 | Node operator account | The operator | The node's own login; outside the repo | The node | Outside the repo | `deploy/common.sh` refuses uid 0 (`check_service_uid`) |
 | Deploy runner | GitHub Actions on a self-hosted runner | The runner's registration and a root-owned entrypoint on the node | The node | Outside the repo | `.github/workflows/colo-deploy.yml` header |
 
@@ -108,9 +108,8 @@ One account, `GELDAR`. Anything not allowed is refused, a deny wins over an allo
 Limits of this model, as the repo states them:
 
 - **Per shard, not per life.** No user is scoped to one life; the Mind and the MCP enforce their own life lists in code (decision 0067, "Lives scoping"; decision [0087](../decisions/0087-nats-overlay-live-test-and-scoped-subjects.md)).
-- **Denies and the JetStream API.** The `body`, `mind` and `mcp` roles also hold `$JS.API.>`; the interaction of these denies with JetStream is an open item ([nats-auth-inplace, Open questions](../runbooks/nats-auth-inplace.md#open-questions); decision 0199).
 - **Proven against what.** The comments in `geldar.ps1` disagree. `Initialize-NatsAuth` (line 318) and the header it writes into the server config (line 345) say the lists are "untested against a live server". `Get-NatsUsers` (line 367) calls them "the table the live test proves" (`threshold/mcp/test/nats-auth.it.test.ts`, which starts a throwaway `nats-server` from the generated config and is skipped unless `GELDAR_IT=1`). No row of the table is proven against the node's live file.
-- **Live node.** The node's live config was last recorded on 2026-11-14 with 8 users: `body`, `mind`, `eventsink`, `mcp`, `velocity`, `paper`, `kino`, `deploy`. It lacked `helper`, `supervisor` and `register`, and it differed from the table above in permission lines as well: the `body` and `paper` publish denies, the `mind` and `mcp` hearing denies, and the `body` subscribe and `eventsink` lines ([nats-auth-inplace, Drift to resolve first](../runbooks/nats-auth-inplace.md#drift-to-resolve-first)). The live file today is unverified; treat every row as generator state, not node state.
+- **Live node.** The live file was last compared on 2026-11-14 and is unverified; see [nats-auth-inplace](../runbooks/nats-auth-inplace.md). Treat every row as generator state, not node state.
 - **Phase 0.** NATS is open on the local stack unless the auth overlay is merged (threat model section 3).
 
 ## Postgres roles
@@ -141,7 +140,7 @@ Re-derived from `CREATE ROLE`, `GRANT` and `REVOKE` in `sql/` at `03c1f5de` (`gi
 | Commands | Paper cancels every command a player types; console and RCON are not affected | `CommandBlockListener.java` |
 | Plugin channel | Messages on `geldar:cmd` from a connection not admitted as a live agent are dropped at the proxy | [velocity identity plugin](../reference/velocity-identity-plugin.md) |
 
-The human path into the game (ghosts) is designed in spec 8.4 and decision [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md). Its state in the repo is recorded in [network and trust zones, Known gaps](../architecture/network-and-trust-zones.md#known-gaps); detail is withheld under decision [0361](../decisions/0361-agents-never-placement-and-public-detail.md).
+The human path into the game (ghosts) is designed in spec 8.4 and decision [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md). The repo's divergence from 0137 is recorded in decision [0364](../decisions/0364-known-gap-public-overlay-against-0137.md).
 
 ## Body control chain
 
@@ -173,7 +172,7 @@ Operator tools read, start, stop and restore; they do not act in the world (thre
 
 | Principal | Public sites through Caddy | Owner API | MCP tools | NATS | Postgres | Paper game | RCON | Docker socket |
 |---|---|---|---|---|---|---|---|---|
-| Anonymous internet client | Map, Glass public pages, register pages, the MCP path (401 without a token) | 401 | 401 | No | No | Only through the public overlay; see [known gap 1](../architecture/network-and-trust-zones.md#known-gaps) | No | No |
+| Anonymous internet client | Map, Glass public pages, register pages, the MCP path (401 without a token) | 401 | 401 | No | No | Only through the public overlay, when opened | No | No |
 | Account owner, browser session | Yes | All scopes, `own` | No | No | No | No | No | No |
 | Owner API key holder | Yes | Key's scopes, `own`, never cookie-only routes | No | No | No | No | No | No |
 | Player token holder (harness) | The MCP path | No | `own` player | No | No | No | No | No |
@@ -209,7 +208,7 @@ Each item gives every account. This page does not pick one (persona rule 8).
 ## Unverified
 
 - Which overlays, NATS users, Postgres logins and migrations are live on the node (D8).
-- Whether the public overlay is merged on the node ([network and trust zones](../architecture/network-and-trust-zones.md#known-gaps), known gap 1).
+- Whether the public overlay is merged on the node (decision [0364](../decisions/0364-known-gap-public-overlay-against-0137.md)).
 - Whether the operator account on the node can reach the Docker socket directly, and how the runner's entrypoint is set up (outside the repo).
 - Who holds the MCP connection-class key, if anyone.
 

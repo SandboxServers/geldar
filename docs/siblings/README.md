@@ -86,7 +86,7 @@ Dashed lines are not on a `main` branch.
 
 ## Debt
 
-- The [docs index](../README.md) still lists `siblings/` as planned, and [sovereign players](../concepts/sovereign-players.md) (lines 50 and 109) marks the scriptorium link *planned*. Their owners update them. The [spec section map](../reference/spec-section-map.md) lists the page in its "Planned doc" column, which needs no change.
+- Closed in W7 (2026-11-16): the [docs index](../README.md) lists `siblings/` as written, and [sovereign players](../concepts/sovereign-players.md) links [scriptorium](scriptorium.md) without a *planned* mark. The [spec section map](../reference/spec-section-map.md) lists the page in its "Planned doc" column, which needs no change.
 - The [paths an agent reads](../agents/documentation-style.md#paths-an-agent-reads) table says the kit repos were "not checked in those repos for this page" and does not name the kit image settings or the tool text in `packages/`. This folder has now read both repos; the table's owner updates the row.
 - The [doc-update map](../agents/doc-update-map.md) has no row for "a sibling repo changes its interface to this repo".
 - No gate checks sibling repos for operator material. The [agents-never placement](../agents/doc-verification.md#agents-never-placement) grep covers this repo only.

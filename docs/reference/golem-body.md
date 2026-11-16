@@ -295,7 +295,7 @@ The benchmark sets the tick rate over RCON and restores 20 TPS when it ends (ski
 | Managed Bodies | Containers built by the body helper; see [supervisor-and-body-helper](supervisor-and-body-helper.md). |
 | Restart | `restartBody` resumes a saved intent or idles with a reason (`no_checkpoint`, `checkpoint_unreadable`, `other_life`, `expired`, `unknown_program`, `resume_failed`, `tick_unknown`) and raises a `no_plan` wake after 45 s ([golem/README.md](../../golem/README.md#checkpoints-and-restarts-restartbody)). |
 | Retirement | `src/players/life-removal.ts` removes the life registry key over NATS, then the whitelist entry over RCON; called by `players down`, `adam stop` and `mcp-tokens retire`. |
-| Failure modes | The planned [failure-modes](../operations/failure-modes.md) table (*planned*, W3). |
+| Failure modes | The [failure-modes](../operations/failure-modes.md) table. |
 
 ## Conflicts recorded
 

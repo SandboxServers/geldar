@@ -12,7 +12,7 @@ sources: [contract/src/subjects.ts, contract/src/index.ts, contract/test/state-s
 
 Every NATS subject, stream, consumer and KV bucket Geldar uses: the subject builders in `contract/src/subjects.ts`, the subjects built elsewhere, which NATS user may publish or subscribe to each, and the JetStream objects behind them. Checked at 1b114276 on 2026-11-16 from the repository only; nothing was read from a running NATS server (plan decision D8).
 
-For the message bodies, see [contract schemas](contract-schemas.md). For how events flow end to end, see [data-flow-events](../architecture/data-flow-events.md). For users and accounts as a topology, see [nats-topology](../architecture/nats-topology.md) and [authn-authz-map](../security/authn-authz-map.md) (*planned*, W4).
+For the message bodies, see [contract schemas](contract-schemas.md). For how events flow end to end, see [data-flow-events](../architecture/data-flow-events.md). For users and accounts as a topology, see [nats-topology](../architecture/nats-topology.md) and [authn-authz-map](../security/authn-authz-map.md).
 
 ## Token rules
 
@@ -21,7 +21,6 @@ For the message bodies, see [contract schemas](contract-schemas.md). For how eve
 | Prefix | Every Geldar subject starts `geldar.<shard>.` | `contract/src/subjects.ts`; `geldar.ps1` `Get-NatsUsers` comment |
 | Shard token | `^[a-z][a-z0-9-]{1,31}$` (same as `ShardName` in `common.schema.json`) | `subjects.ts` constant `SHARD` |
 | Life id token | `^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$` (same as `LifeId` in `common.schema.json`) | `subjects.ts` constant `LIFE_ID` |
-| Kino agent id token | `^[a-z][a-z0-9_]{0,63}$` | `subjects.ts` `kinoFeedSubject` |
 | Refusal | Each builder throws on a token that fails its pattern, so no caller can add a dot, wildcard or space | `subjects.ts` `checked` |
 | Event subjects | Three tokens, `geldar.<shard>.<type>`, captured by the stream filter `geldar.*.*` | `eventsink/src/config.ts` `STREAM_CONFIG` |
 | Non-event subjects | Four or five tokens, so outside `geldar.*.*`; the event sink never sees them. One exception: `geldar.<shard>.maintenance` has three tokens | `subjects.ts` header and `maintenanceSubject` comment |
@@ -45,7 +44,6 @@ On 2026-11-16 at 1b114276 the file exports 17 functions and constants.
 | `viewSubject(shard, lifeId)` | `geldar.<shard>.body.<life_id>.view` | request/reply | `ViewInput` / `ViewResult` or `{"error":"unavailable"}` | view-tool packet |
 | `hearingSubject(shard, lifeId)` | `geldar.<shard>.body.<life_id>.hearing` | publish | `heard_muffled` notice (`heard-muffled-event.schema.json`) | 0199 |
 | `PRESENCE_BUCKET` | `geldar-presence` (KV bucket name) | KV | `PresenceRecord` per life id | WM-01 |
-| `kinoFeedSubject(shard, agentId)` | `geldar.<shard>.kino.<agent_id>.feed` | publish | `kino-feed.schema.json` | 0075 |
 | `blockownerQuerySubject(shard)` | `geldar.<shard>.blockowner.query` | request/reply | `BlockOwnerQuery` / `BlockOwnerReply` | 0165 |
 | `blockownerChangedSubject(shard)` | `geldar.<shard>.blockowner.changed` | publish | `BlockOwnerChanged` | 0165 |
 | `maintenanceSubject(shard)` | `geldar.<shard>.maintenance` | publish | `MaintenanceNotice` | CD-1 |
@@ -69,13 +67,12 @@ git grep -nE 'proficiencyRequestSubject|proficiencyPushSubject|stateWildcard' --
 | `geldar.<shard>.<type>` | publish into `GELDAR_EVENTS` | Each producer's event publisher; the type is the `WorldEvent.type` | `WorldEvent` (`event.schema.json`) | `eventsink/src/validate.ts` (subject must equal `geldar.<shard>.<type>`); decision 0041 |
 | `geldar.<shard>.dlq` | publish into `GELDAR_EVENTS` | `eventsink/src/consumer.ts` `dlqSubject` | dead-letter body `{ reason, subject, data, data_bytes, data_truncated }` | [eventsink](eventsink.md#dead-letters) |
 | `geldar.<shard>.sovereign_call` | publish into `GELDAR_EVENTS` | `threshold/mcp` | `SovereignCallPayload` | `geldar.ps1` `mcp` user; `sovereign-call-event.schema.json` |
-| `geldar.<shard>.kino.control` | publish | `glass/src/kino` (publisher), `NatsKinoControl.java` (subscriber) | `KinoControl` | `NatsKinoControl.java` line 29; `geldar.ps1` `kino` user; decision 0075 |
 | `geldar.<shard>.helper.body.<verb>`, verb `start`, `stop`, `status`, `logtail` | request/reply | supervisor (requester), body helper (responder) | helper request | `geldar.ps1` lines 408 to 413 (C7-03c1, decision 0260) |
 | `$KV.<bucket>.>` | KV put and get | NATS KV client | per bucket, below | `geldar.ps1` `$kv` helper |
 | `$JS.API.>`, `$JS.ACK.>`, `$JS.FC.>` | JetStream API, acks, flow control | NATS clients | none | `geldar.ps1` `$js` list and `velocity` user |
 | `_INBOX.>` | request/reply inboxes | NATS clients | reply bodies | every user in `geldar.ps1` |
 
-The Kino feed and control subjects belong to the observation side; the [Glass and Kino reference](glass-and-kino.md) (`agents-never`) covers them. This page names them and their NATS permissions only.
+The Kino subjects belong to the observation side (decision [0075](../decisions/0075-glass-is-a-lakitu-camera.md)). Their names, publishers and permissions are not listed on this page (decision [0361](../decisions/0361-agents-never-placement-and-public-detail.md)); the tables below write "Kino subjects" where they occur.
 
 ## World event types on `geldar.<shard>.<type>`
 
@@ -116,13 +113,13 @@ Select-String -Path geldar.ps1 -Pattern '^\s+(body|mind|eventsink|mcp|velocity|p
 
 | User | Publish allow | Publish deny | Subscribe allow |
 |---|---|---|---|
-| `body` | `geldar.<s>.>`; JetStream API; KV `geldar-life-registry`, `geldar-checkpoints`, `geldar-body-generation`, `geldar-skins` | `geldar.<s>.kino.>`, `geldar.<s>.blockowner.changed`, `geldar.<s>.ctl.body.>`, `geldar.<s>.helper.body.>`, `geldar.<s>.state.*.level`, `geldar.<s>.body.*.hearing` | `geldar.<s>.body.>`, `geldar.<s>.blockowner.changed`, `geldar.<s>.state.*.level`, `_INBOX.>` |
+| `body` | `geldar.<s>.>`; JetStream API; KV `geldar-life-registry`, `geldar-checkpoints`, `geldar-body-generation`, `geldar-skins` | Kino subjects, `geldar.<s>.blockowner.changed`, `geldar.<s>.ctl.body.>`, `geldar.<s>.helper.body.>`, `geldar.<s>.state.*.level`, `geldar.<s>.body.*.hearing` | `geldar.<s>.body.>`, `geldar.<s>.blockowner.changed`, `geldar.<s>.state.*.level`, `_INBOX.>` |
 | `mind` | `geldar.<s>.` + `wake`, `intent`, `action`, `plan_result`, `reflex_fired`, `speech`, `damage`, `death`, `sleep`; JetStream API; `geldar.<s>.body.>` | `geldar.<s>.body.*.hearing` | `_INBOX.>` |
 | `eventsink` | `geldar.<s>.dlq`, `geldar.<s>.state.>`; JetStream API | none | `geldar.<s>.state.*.proficiency`, `_INBOX.>` |
 | `mcp` | `geldar.<s>.sovereign_call`, `geldar.<s>.body.>`, KV `geldar-presence`; JetStream API | `geldar.<s>.body.*.hearing` | `_INBOX.>` |
 | `velocity` | JetStream stream info and consumer create, info and delete on `KV_geldar-life-registry` and `KV_geldar-skins`; `$JS.FC.>`; `_INBOX.>` | none | `_INBOX.>` |
-| `paper` | `geldar.<s>.>`; JetStream API | `geldar.<s>.kino.control`, `geldar.<s>.blockowner.query`, `geldar.<s>.ctl.body.>`, `geldar.<s>.helper.body.>`, `geldar.<s>.state.*.level` | `geldar.<s>.kino.control`, `geldar.<s>.maintenance`, `geldar.<s>.blockowner.query`, `_INBOX.>` |
-| `kino` | `geldar.<s>.kino.control` | none | `geldar.<s>.kino.*.feed`, `_INBOX.>` |
+| `paper` | `geldar.<s>.>`; JetStream API | Kino subjects, `geldar.<s>.blockowner.query`, `geldar.<s>.ctl.body.>`, `geldar.<s>.helper.body.>`, `geldar.<s>.state.*.level` | Kino subjects, `geldar.<s>.maintenance`, `geldar.<s>.blockowner.query`, `_INBOX.>` |
+| `kino` | Kino subjects | none | Kino subjects, `_INBOX.>` |
 | `deploy` | `geldar.<s>.maintenance` | none | `_INBOX.>` |
 | `supervisor` | `_INBOX.>`; `geldar.<s>.helper.body.start`, `.stop`, `.status`, `.logtail` | none | `geldar.<s>.ctl.body.>`, `_INBOX.>` |
 | `register` | `geldar.<s>.ctl.body.>` | none | `_INBOX.>` |
@@ -143,8 +140,6 @@ From the code at 1b114276 (re-derive each row with `git grep -n <builder> -- . '
 | `body.<life>.image` | MCP (`body-gateway.ts`) | Body (`golem/src/body-image/image-serve.ts`) |
 | `body.<life>.view` | MCP (`body-gateway.ts`) | Body (`golem/src/mind-link/server.ts`) |
 | `body.<life>.hearing` | Geldar-Core plugin (`NatsHearingSink.java`) | not found by name in TypeScript at 1b114276 (the `body` user may subscribe through `geldar.<s>.body.>`) |
-| `kino.<agent>.feed` | Geldar-Core plugin (`NatsKinoSink.java`) | Glass (`glass/src/kino/nats-feed.ts`) |
-| `kino.control` | Glass | Geldar-Core plugin (`NatsKinoControl.java`) |
 | `blockowner.query` | Body (`golem/src/body/block-owners.ts`) | Geldar-Core plugin (`NatsBlockOwnerLink.java`) |
 | `blockowner.changed` | Geldar-Core plugin | Body (`block-owners.ts`) |
 | `maintenance` | Deploy: `deploy/colo-notice.sh` runs `golem/src/publish-maintenance-notice.ts` in the one-shot admin container as user `deploy` | Geldar-Core plugin (`NatsMaintenanceSubscriber.java`); MCP (`threshold/mcp/src/events/stream.ts`); the event sink acks and skips it |

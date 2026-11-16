@@ -14,7 +14,7 @@ Every tool, resource and prompt that the Geldar MCP server (`threshold/mcp`, pac
 
 **Audience.** The plan data proposed `players`; the [style rules](../agents/documentation-style.md#audience-labels) reserve `players` for the legal texts and the player guide. This page uses `contributors` until the owner decides (open owner decision, [plan.md](../analysis/docs-library/plan.md) row R05).
 
-For token minting see the [mcp-tokens runbook](../runbooks/mcp-tokens.md). For sign-up and owner keys see [register-service](register-service.md). For the schema files as a whole see the planned [contract-schemas](contract-schemas.md). For why budgets look the way they do see the planned [economy-and-budgets](../concepts/economy-and-budgets.md).
+For token minting see the [mcp-tokens runbook](../runbooks/mcp-tokens.md). For sign-up and owner keys see [register-service](register-service.md). For the schema files as a whole see the [contract-schemas](contract-schemas.md). For why budgets look the way they do see the [economy-and-budgets](../concepts/economy-and-budgets.md).
 
 ## Agent-visible text
 
@@ -146,7 +146,7 @@ Input (none required, but at least one of `intent`, `actions` or a string `say`;
 | `intent` | `Intent` (`contract/schemas/thought.schema.json`) | must carry `limits`; replaces the current intent |
 | `actions` | array of `Action` (`thought.schema.json`) | max 6; executed in order |
 
-Result: `accepted` (indices), `rejected` (`index`, `reason`, optional `detail` up to 120 characters), `budget_remaining_thoughts`, optional `note` (max 200; `ACT_QUEUED_NOTE` when items were queued). Indices are flat: say first, then actions in order, then intent. One invalid action refuses the whole action list; the others get `batch_rejected` (`threshold/mcp/src/tools/act.ts` lines 1 to 10; `refusal-detail.ts`). Body reasons `wrong_life` and `stale_generation` reach the player as `invalid_plan` and `stale_snapshot`; a `stale_snapshot` is retried once with a fresh snapshot. Item reasons come from the player-core validator; see the planned [player-core](player-core.md) reference.
+Result: `accepted` (indices), `rejected` (`index`, `reason`, optional `detail` up to 120 characters), `budget_remaining_thoughts`, optional `note` (max 200; `ACT_QUEUED_NOTE` when items were queued). Indices are flat: say first, then actions in order, then intent. One invalid action refuses the whole action list; the others get `batch_rejected` (`threshold/mcp/src/tools/act.ts` lines 1 to 10; `refusal-detail.ts`). Body reasons `wrong_life` and `stale_generation` reach the player as `invalid_plan` and `stale_snapshot`; a `stale_snapshot` is retried once with a fresh snapshot. Item reasons come from the player-core validator; see the [player-core](player-core.md) reference.
 
 Tool errors: `rate_limited` (enforced only), `body_unavailable`.
 
@@ -266,7 +266,7 @@ Re-derive: `git grep -n "name: 'geldar:" threshold/mcp-mock/src/prompts.ts`.
 
 ## Configuration that changes tool behaviour
 
-Names only; values are in the shard files or held by the operator. Full list: the planned [environment-variables](environment-variables.md) and [shard-config](shard-config.md) references.
+Names only; values are in the shard files or held by the operator. Full list: the [environment-variables](environment-variables.md) and [shard-config](shard-config.md) references.
 
 | Name | Effect |
 |---|---|

@@ -100,9 +100,9 @@ Observation schemas (`kino-control`, `lakitu-audit`, `lakitu-feed`, `turn-record
 | `heard-sound-event` | `HeardSoundPayload` | a sound heard within 24 blocks as a compass direction and band (PX-4, provisional, decision 0143) | `$ref` to `HeardSoundEvent` (`type`, `sound`, `dir`, `band`) | golem, player-core | no |
 | `hurt-event` | `HurtPayload` | the Body's hurt report, bearing relative to facing (PX-1, provisional, decision 0143) | `$ref` to `HurtEvent` (`type`, `source`, `amount`) | golem | no |
 | `intent-event` | `IntentEventPayload` | `intent` event payload: one state change of an intent (spec 5.3, section 7) | `intent_id`, `life_id`, `body_generation`, `state`, `tick` | eventsink, golem, player-core | no |
-| `kino-client` | `KinoClient` | browser-to-server Kino messages, subscribe and unsubscribe only (decision 0075) | union | glass (by schema file name in comments: `glass/src/kino/relay.ts`, `glass/web/kino/session.ts`; no type or validator import) | no |
-| `kino-control` | `KinoControl` | Glass-to-plugin Kino control on `geldar.<shard>.kino.control` (decision 0075) | left out on purpose (observation schema, see the note above the table) | glass; plugin/core (Java) | no |
-| `kino-feed` | `KinoFeed` | the Kino data feed, server to browser only (decision 0075) | union | glass; plugin/core (Java) | no |
+| `kino-client` | `KinoClient` | browser-to-server Kino messages (decision 0075) | union | glass (by schema file name in comments: `glass/src/kino/relay.ts`, `glass/web/kino/session.ts`; no type or validator import) | no |
+| `kino-control` | `KinoControl` | Glass-to-plugin Kino control (decision 0075) | left out on purpose (observation schema, see the note above the table) | glass; plugin/core (Java) | no |
+| `kino-feed` | `KinoFeed` | the Kino data feed (decision 0075) | union | glass; plugin/core (Java) | no |
 | `lakitu-audit` | `LakituAudit` | one pane action in the Lakitu audit log (decision 0100) | left out on purpose (observation schema, see the note above the table) | glass (the header of `glass/src/kino/audit.ts` names "lakitu-audit"; the command does not find it, because it searches the full file name) | no |
 | `lakitu-feed` | `LakituFeed` | one frame of the Lakitu feed (decision 0100) | left out on purpose (observation schema, see the note above the table) | plugin/core (Java) | no |
 | `maintenance-notice` | `MaintenanceNotice` | the deploy's maintenance notice on `geldar.<shard>.maintenance` (CD-1) | `id`, `kind`, `scope` | golem, threshold/mcp; plugin/core (Java) | no |
