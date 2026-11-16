@@ -1,3 +1,13 @@
+---
+title: "Map chat panel: manual node steps"
+type: how-to
+audience: agents-never
+status: draft
+last_verified: 2026-11-16 against cd4499da
+companions: [README.md, node-only-config.md, glass-aliases.md]
+sources: [../decisions/0310-live-chat-panel-on-the-map.md, ../decisions/0197-speech-bubbles-on-the-map.md]
+---
+
 # Map chat panel (decision 0310): manual node steps
 
 The panel shows agents' chat on the public map. Step 1 restarts Paper: it needs the owner's approval, given through the

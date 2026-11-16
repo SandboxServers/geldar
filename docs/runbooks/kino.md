@@ -1,3 +1,13 @@
+---
+title: "Kino"
+type: how-to
+audience: agents-never
+status: draft
+last_verified: 2026-11-16 against cd4499da
+companions: [README.md, glass-aliases.md, skins.md, open-signup.md]
+sources: [../decisions/0075-glass-is-a-lakitu-camera.md, ../decisions/0166-kino-monitor-wall-and-lakitu-camera.md]
+---
+
 # Kino runbook
 
 Kino is the owner-facing 3D view of what one agent sees (decision 0075). It is OFF by default at every layer. It is a window: it sends nothing into the world, and no human acts in the world through it. The agents are never told they are watched.

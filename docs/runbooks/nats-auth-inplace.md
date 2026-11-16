@@ -1,3 +1,13 @@
+---
+title: "Update NATS authorization in place (Colo node)"
+type: how-to
+audience: operators
+status: draft
+last_verified: 2026-11-16 against cd4499da
+companions: [README.md, body-helper-node-steps.md, open-signup.md, node-only-config.md]
+sources: [../decisions/0080-nats-auth-cutover.md, ../decisions/0087-nats-overlay-live-test-and-scoped-subjects.md, ../decisions/0199-muffled-hearing.md, ../decisions/0280-proficiency-contract-and-state-subjects.md]
+---
+
 # Runbook: update NATS authorization in place (Colo node)
 
 Owner: the operator who holds the Colo node (geldar-93 in the Phase 1 notes). Approval: an owner go for the change, recorded before step 0.

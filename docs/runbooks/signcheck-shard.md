@@ -1,3 +1,13 @@
+---
+title: "Signcheck shard"
+type: how-to
+audience: contributors
+status: draft
+last_verified: 2026-11-16 against cd4499da
+companions: [README.md, map-chat-panel.md]
+sources: [../../compose/signcheck.yml, ../decisions/0192-edit-sign-action.md]
+---
+
 # Signcheck shard
 
 A throwaway vanilla Paper server for checking sign facts. It exists to check the eleven sign facts that edit_sign depends on, for the live test golem/test/live/edit-sign.live.test.ts. It is not part of Phase 0 or Colo.

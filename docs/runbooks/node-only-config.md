@@ -1,3 +1,13 @@
+---
+title: "Node-only configuration inventory (Colo)"
+type: how-to
+audience: operators
+status: draft
+last_verified: 2026-11-16 against cd4499da
+companions: [README.md, colo-deploy.md, nats-auth-inplace.md, glass-aliases.md, coreprotect.md, skins.md]
+sources: [compose/colo.yml, compose/phase0.yml, deploy/colo-cd-plan.sh, golem/src/whitelist-house-body.ts, animus/src/colo-profile.test.ts, docs/analysis/genesis/plan.md]
+---
+
 # Runbook: node-only configuration inventory (Colo)
 
 Scope: what the Colo node runs or holds that the repo does not reproduce. Verified 2026-11-14/15. Input for geldar-genesis, which is making the world's configuration reproducible; genesis owns the fixes, this file lists the gaps.

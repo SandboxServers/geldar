@@ -1,3 +1,13 @@
+---
+title: "mcp-tokens: adding a sovereign player"
+type: how-to
+audience: agents-never
+status: draft
+last_verified: 2026-11-16 against cd4499da
+companions: [README.md, open-signup.md, account-deletion.md]
+sources: [../decisions/0108-mcp-roster-source-of-truth.md]
+---
+
 # mcp-tokens: adding a sovereign player
 
 ## Put the name on the roster first

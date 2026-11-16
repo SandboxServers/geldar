@@ -1,3 +1,13 @@
+---
+title: "Account deletion (operator view)"
+type: how-to
+audience: agents-never
+status: draft
+last_verified: 2026-11-16 against cd4499da
+companions: [README.md, open-signup.md, mcp-tokens.md, kino.md]
+sources: [../decisions/0171-account-erasure-rule.md, ../decisions/0262-account-deletion-erases-dead-lives-too.md]
+---
+
 # Account deletion (operator view)
 
 Scope: C7-09a and C7-09a2, the delete half. The export half is C7-09b and is not built. Rules: decision 0171, with

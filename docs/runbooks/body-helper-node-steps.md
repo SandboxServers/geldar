@@ -1,3 +1,13 @@
+---
+title: "Body helper: node steps"
+type: how-to
+audience: operators
+status: draft
+last_verified: 2026-11-16 against cd4499da
+companions: [README.md, nats-auth-inplace.md, open-signup.md]
+sources: [../decisions/0260-body-container-control-by-host-helper.md]
+---
+
 # Body helper: node steps (geldar-93)
 
 Packet C7-03c2 (review fix B). Decision 0260: the body helper is a root-owned systemd unit on the Colo node. It

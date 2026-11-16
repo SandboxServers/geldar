@@ -1,3 +1,13 @@
+---
+title: "Colo deploy from GitHub Actions"
+type: how-to
+audience: operators
+status: draft
+last_verified: 2026-11-16 against cd4499da
+companions: [README.md, node-only-config.md, maintenance-notice.md, merge-queue.md, ../../deploy/README.md]
+sources: [../decisions/0084-colo-deploy-by-pull-with-a-project-scoped-script.md]
+---
+
 # Colo deploy from GitHub Actions (CD-2b)
 
 The workflow `.github/workflows/colo-deploy.yml` deploys the Colo node after the `colo-images` workflow
