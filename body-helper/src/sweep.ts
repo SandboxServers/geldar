@@ -76,6 +76,15 @@ async function removeIfConfirmed(
     marked.add(body.name);
     return 'waiting';
   }
+  // The roster is read again right before the remove: a row that came back since the first read keeps the Body, and a
+  // read that throws keeps it too. The name is not marked, so it must meet every condition afresh on a later pass.
+  let stillGone: string | null;
+  try {
+    stillGone = await deps.roster.displayName(body.owner, body.name.toLowerCase());
+  } catch {
+    return 'skipped';
+  }
+  if (stillGone !== null) return 'skipped';
   // The whitelist entry goes first. A failed remove keeps the container and is retried on the next pass.
   const code = await removal.removeLife(state.lifeId).catch(() => -1);
   if (code !== 0) {
@@ -141,6 +150,14 @@ export async function sweepStrays(deps: SweepDeps): Promise<number> {
     }
   }
   return strays;
+}
+
+/** The removal state for the sweep: present only when managed Bodies are on, so off means report only (BH-6). */
+export function orphanRemovalFor(
+  managedEnabled: boolean,
+  removeLife: (lifeId: string) => Promise<number>,
+): SweepRemoval | undefined {
+  return managedEnabled ? { removeLife, seen: new Set<string>() } : undefined;
 }
 
 /** Runs one pass now and then every minutes. Returns the function that stops the timer. */

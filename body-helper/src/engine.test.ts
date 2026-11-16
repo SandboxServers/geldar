@@ -114,6 +114,22 @@ describe('engine: the verbs', () => {
     expect(await noCode.inspect('body1')).toMatchObject({ exitCode: null, managed: false });
   });
 
+  it('reads a restarting orphan (BH-6): Running true with Restarting true and exit 78 keeps the exit code 78 and managed true', async () => {
+    const restarting = createDockerEngine(async () =>
+      json(200, {
+        Id: 'abc',
+        Name: '/body1',
+        State: { Running: true, Restarting: true, ExitCode: 78 },
+        Config: { Labels: { 'geldar.managed': '1' } },
+      }),
+    );
+    expect(await restarting.inspect('body1')).toMatchObject({
+      running: true,
+      exitCode: 78,
+      managed: true,
+    });
+  });
+
   it('reads the Body label: a Body label gives helperBody true; no labels, or another label, gives false', async () => {
     const labelled = (labels: Record<string, string> | null) =>
       createDockerEngine(async () =>

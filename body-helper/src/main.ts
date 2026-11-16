@@ -10,7 +10,7 @@ import { type HelperWire, newHelperStats, serveHelper } from './listener.ts';
 import { rosterFromQuery } from './roster.ts';
 import { createBodyHelper, runLifeRemove } from './service.ts';
 import { shutdownHelper, shutdownOnce } from './shutdown.ts';
-import { startSweep } from './sweep.ts';
+import { orphanRemovalFor, startSweep } from './sweep.ts';
 
 const log = (line: string) => console.log(line);
 
@@ -52,12 +52,9 @@ async function main(): Promise<void> {
     managed: config.managed,
   };
   // BH-6: the sweep removes an orphaned managed Body only when managed Bodies are on; otherwise it reports only.
-  const orphanRemoval = config.managed.enabled
-    ? {
-        removeLife: (lifeId: string) => runLifeRemove(engine, template, lifeId),
-        seen: new Set<string>(),
-      }
-    : undefined;
+  const orphanRemoval = orphanRemovalFor(config.managed.enabled, (lifeId: string) =>
+    runLifeRemove(engine, template, lifeId),
+  );
   const handle = createBodyHelper({
     roster,
     engine,

@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import type { RosterPort } from './roster.ts';
 import type { ContainerState } from './service.ts';
-import { ORPHAN_EXIT_CODE, SWEEP_FAILED, type SweepDeps, sweepStrays } from './sweep.ts';
+import {
+  ORPHAN_EXIT_CODE,
+  orphanRemovalFor,
+  SWEEP_FAILED,
+  type SweepDeps,
+  sweepStrays,
+} from './sweep.ts';
 
 // The orphan is one managed Body under one owner. Its roster row is gone unless `onRoster` says otherwise.
 const NAME = 'orphan1';
@@ -193,5 +199,84 @@ describe('stray sweep removal (BH-6)', () => {
     expect(h.order).toEqual([]);
     expect(h.lifeIds).toEqual([]);
     expect(h.audit).toContain(`body-helper stray name=${NAME} outcome=report_only`);
+  });
+
+  it('pins the orphan exit code to 78, the golem NO_HOST_CONFIG_EXIT that a managed Body leaves with', () => {
+    expect(ORPHAN_EXIT_CODE).toBe(78);
+  });
+
+  it('removes a restarting orphan (Docker reports Running true with exit 78 under unless-stopped) on the second pass', async () => {
+    const h = harness(world({ state: orphanState({ running: true, exitCode: ORPHAN_EXIT_CODE }) }));
+    await sweepStrays(h.deps);
+    expect(h.order).toEqual([]);
+    await sweepStrays(h.deps);
+    expect(h.order).toEqual([`whitelist ${LIFE}`, 'container cid-orphan']);
+  });
+
+  it('a failed listing clears the marks: the pass after a failed listing only marks again, and removes on the pass after', async () => {
+    const h = harness(world());
+    await sweepStrays(h.deps);
+    const listing = h.deps.engine.bodies;
+    h.deps.engine.bodies = async () => {
+      throw new Error('docker down');
+    };
+    expect(await sweepStrays(h.deps)).toBe(-1);
+    expect(h.audit).toContain(SWEEP_FAILED);
+    h.deps.engine.bodies = listing;
+    await sweepStrays(h.deps);
+    expect(h.order).toEqual([]);
+    await sweepStrays(h.deps);
+    expect(h.order).toEqual([`whitelist ${LIFE}`, 'container cid-orphan']);
+  });
+
+  it('a roster row that reappears between the confirming inspect and the remove keeps the Body, and the mark is not carried', async () => {
+    const w = world();
+    const h = harness(w);
+    await sweepStrays(h.deps);
+    const inspect = h.deps.engine.inspect;
+    h.deps.engine.inspect = async (name: string) => {
+      w.onRoster = true;
+      return inspect(name);
+    };
+    expect(await sweepStrays(h.deps)).toBe(1);
+    expect(h.order).toEqual([]);
+    expect(h.audit).toContain(`body-helper stray name=${NAME} outcome=report_only`);
+    h.deps.engine.inspect = inspect;
+    w.onRoster = false;
+    await sweepStrays(h.deps);
+    expect(h.order).toEqual([]);
+    await sweepStrays(h.deps);
+    expect(h.order).toEqual([`whitelist ${LIFE}`, 'container cid-orphan']);
+  });
+
+  it('a roster read that throws before the remove keeps the Body, and the mark is not carried', async () => {
+    const w = world();
+    const h = harness(w);
+    await sweepStrays(h.deps);
+    const inspect = h.deps.engine.inspect;
+    h.deps.engine.inspect = async (name: string) => {
+      w.rosterThrows = true;
+      return inspect(name);
+    };
+    expect(await sweepStrays(h.deps)).toBe(1);
+    expect(h.order).toEqual([]);
+    h.deps.engine.inspect = inspect;
+    w.rosterThrows = false;
+    await sweepStrays(h.deps);
+    expect(h.order).toEqual([]);
+    await sweepStrays(h.deps);
+    expect(h.order).toEqual([`whitelist ${LIFE}`, 'container cid-orphan']);
+  });
+});
+
+describe('orphanRemovalFor (BH-6 wiring)', () => {
+  it('managed Bodies off: no removal state, so the sweep only reports and never removes', () => {
+    expect(orphanRemovalFor(false, async () => 0)).toBeUndefined();
+  });
+
+  it('managed Bodies on: a removal state with no marks and the given remove one-shot', async () => {
+    const removal = orphanRemovalFor(true, async () => 7);
+    expect(removal?.seen.size).toBe(0);
+    expect(await removal?.removeLife(LIFE)).toBe(7);
   });
 });
