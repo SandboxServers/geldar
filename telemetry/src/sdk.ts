@@ -19,6 +19,11 @@ import {
   type PushMetricExporter,
 } from '@opentelemetry/sdk-metrics';
 import { BatchSpanProcessor, type SpanExporter, TracerProvider } from '@opentelemetry/sdk-trace';
+import {
+  AllowListLogProcessor,
+  AllowListSpanProcessor,
+  metricLabelProcessor,
+} from './sdk-processors.ts';
 
 export interface QueueLimits {
   /** Spans or log records held before new ones are dropped. */
@@ -103,16 +108,22 @@ export function startTelemetry(options: TelemetryOptions): TelemetryHandle {
       exporters.metrics ??
       new OTLPMetricExporter({ url: `${base}/v1/metrics`, timeoutMillis: EXPORT_TIMEOUT_MS });
 
+    // Every signal passes the allow-list inside the SDK, so raw API calls are filtered too.
     const tracerProvider = new TracerProvider({
       resource,
-      spanProcessors: [new BatchSpanProcessor({ exporter: traces, ...queue })],
+      spanProcessors: [
+        new AllowListSpanProcessor(new BatchSpanProcessor({ exporter: traces, ...queue })),
+      ],
     });
     const loggerProvider = new LoggerProvider({
       resource,
-      processors: [new BatchLogRecordProcessor({ exporter: logExporter, ...queue })],
+      processors: [
+        new AllowListLogProcessor(new BatchLogRecordProcessor({ exporter: logExporter, ...queue })),
+      ],
     });
     const meterProvider = new MeterProvider({
       resource,
+      views: [{ instrumentName: '*', attributesProcessors: [metricLabelProcessor] }],
       readers: [
         new PeriodicExportingMetricReader({
           exporter: metricExporter,

@@ -1,5 +1,9 @@
 // Attribute allow-list for traces, logs and metrics (decision 0350 section 1; amends 0088).
 // Keys are compared after a leading `geldar.` is removed, so `geldar.life_id` and `life_id` are the same key.
+// The SDK processors (sdk-processors.ts) run this on every span, log record and metric, so raw
+// OpenTelemetry API calls are filtered too.
+
+import { capText } from './cap-text.ts';
 
 export type TelemetryScope = 'trace' | 'log' | 'metric';
 export type AttrValue = string | number | boolean;
@@ -36,6 +40,10 @@ const TRACE_LOG_KEYS: ReadonlySet<string> = new Set([
   'gen_ai.usage.input_tokens',
   'gen_ai.usage.output_tokens',
   'mcp.method.name',
+  // Log record envelope fields that createLogger stamps after filtering.
+  'event',
+  'trace_id',
+  'span_id',
 ]);
 
 const METRIC_KEYS: ReadonlySet<string> = new Set([
@@ -76,11 +84,19 @@ const FORBIDDEN_SEGMENTS: ReadonlySet<string> = new Set([
   'email',
 ]);
 
+// Per-service log keys (createLogger extraKeys). Process-wide: one service runs one SDK.
+const extraLogKeys = new Set<string>();
+
 let droppedTotal = 0;
 
 /** How many attributes the allow-list has dropped in this process. */
 export function attributeDropCount(): number {
   return droppedTotal;
+}
+
+/** Adds per-service keys to the log allow-list. */
+export function allowLogKeys(keys: readonly string[]): void {
+  for (const key of keys) extraLogKeys.add(key);
 }
 
 export function hasForbiddenSegment(key: string): boolean {
@@ -94,22 +110,27 @@ function classify(key: string, name: string, scope: TelemetryScope): DropReason 
   if (scope === 'metric' && (IDENTITY_KEYS.has(name) || IDENTITY_KEYS.has(key))) return 'identity';
   if (hasForbiddenSegment(key)) return 'forbidden';
   if (scope === 'metric') return METRIC_KEYS.has(name) ? undefined : 'unknown';
-  // Content fields (`geldar.content.*`) are allowed; contentAttributes() caps their size.
+  // Content fields (`geldar.content.*`) are allowed; their size is capped in filterAttributes.
   if (name.startsWith('content.')) return undefined;
-  return TRACE_LOG_KEYS.has(name) ? undefined : 'unknown';
+  if (TRACE_LOG_KEYS.has(name)) return undefined;
+  return scope === 'log' && extraLogKeys.has(name) ? undefined : 'unknown';
 }
 
 function isScalar(value: unknown): value is AttrValue {
   return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
 }
 
-/** Keeps only allow-listed scalar attributes for a scope; everything else is dropped and counted. */
+/**
+ * Keeps only allow-listed scalar attributes for a scope; everything else is dropped and counted.
+ * A string under `geldar.content.*` is capped at 32 KiB, and its `.bytes` and `.truncated` siblings are set.
+ */
 export function filterAttributes(
   input: Record<string, unknown>,
   scope: TelemetryScope,
 ): FilteredAttributes {
   const attributes: Record<string, AttrValue> = {};
   const dropped: DroppedAttribute[] = [];
+  const cut = new Map<string, number>();
   for (const [key, value] of Object.entries(input)) {
     if (value === undefined || value === null) continue;
     const name = key.startsWith('geldar.') ? key.slice('geldar.'.length) : key;
@@ -118,7 +139,18 @@ export function filterAttributes(
       dropped.push({ key, reason });
       continue;
     }
-    if (isScalar(value)) attributes[key] = value;
+    if (!isScalar(value)) continue;
+    if (typeof value === 'string' && name.startsWith('content.')) {
+      const capped = capText(value);
+      attributes[key] = capped.text;
+      if (capped.truncated) cut.set(key, capped.bytes);
+    } else {
+      attributes[key] = value;
+    }
+  }
+  for (const [key, bytes] of cut) {
+    attributes[`${key}.bytes`] = bytes;
+    attributes[`${key}.truncated`] = true;
   }
   droppedTotal += dropped.length;
   return { attributes, dropped };

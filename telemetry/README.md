@@ -13,12 +13,14 @@ with trace context carried in NATS message headers.
   reach the caller.
 - **Trace context only.** The only propagated header is `traceparent`. Baggage is never installed or
   injected, and `tracestate` is not carried over NATS.
-- **Attribute policy.** Each signal has an allow-list of attribute names. Unknown names are dropped
+- **Attribute policy, enforced in the SDK.** Every span, span event and log record passes an
+  allow-list in a span or log processor, and every metric data point passes a metric View. Raw
+  OpenTelemetry API calls are filtered the same as the package helpers. Unknown names are dropped
   and counted (`attributeDropCount()`). Metrics refuse any attribute that names a life, a player, an
   agent or a token. Names containing `token`, `secret`, `password`, `cookie`, `authorization` or
   `email` are dropped everywhere.
-- **Large text.** Content fields are capped at 32 KiB and carry a `truncated` flag and their original
-  byte size.
+- **Large text.** Content fields (`geldar.content.*`) are capped at 32 KiB in the SDK processors, on
+  spans, span events and logs. Each capped field carries a `truncated` flag and its original byte size.
 - **Resource.** Every signal carries `service.name`, `service.version` and
   `deployment.environment.name`.
 
@@ -30,7 +32,9 @@ with trace context carried in NATS message headers.
 | `src/natsTrace.ts` | `injectTrace()` and `extractTrace()` for NATS-style headers |
 | `src/logger.ts` | `createLogger()`: JSON stdout lines stamped with trace ids, plus OTLP log records |
 | `src/attributes.ts` | Attribute allow-list, identity refusal for metrics, forbidden key names |
-| `src/content.ts` | `capText()`, `contentAttributes()`, `addContentEvent()` |
+| `src/sdk-processors.ts` | Span, log and metric-View processors that run the allow-list inside the SDK |
+| `src/cap-text.ts` | `capText()`: the UTF-8 byte cap for large text |
+| `src/content.ts` | `contentAttributes()`, `addContentEvent()` |
 
 ## Use
 
