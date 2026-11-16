@@ -36,6 +36,15 @@ describe('NATS trace propagation', () => {
     expect(trace.getSpanContext(extracted)).toMatchObject({ traceId: TRACE_ID, spanId: SPAN_ID });
   });
 
+  it('ignores tracestate: only traceparent is read, so traceState stays undefined', () => {
+    const headers = new FakeHeaders();
+    headers.set('traceparent', `00-${TRACE_ID}-${SPAN_ID}-01`);
+    headers.set('tracestate', 'vendor=secret-value');
+    const extracted = extractTrace(headers);
+    expect(trace.getSpanContext(extracted)?.traceId).toBe(TRACE_ID);
+    expect(trace.getSpanContext(extracted)?.traceState).toBeUndefined();
+  });
+
   it('never injects baggage, even when the context carries baggage', () => {
     const baggage = propagation.createBaggage({ user: { value: 'owner-secret' } });
     const ctx = propagation.setBaggage(spanContext(), baggage);

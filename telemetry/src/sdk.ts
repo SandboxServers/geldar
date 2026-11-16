@@ -80,11 +80,26 @@ async function shutdownAll(providers: Stoppable[]): Promise<void> {
   clearTimeout(timer);
 }
 
-/** Starts the SDK. Never throws: any setup failure returns the off handle. */
+/** True only for an absolute http or https URL. Throws for a bare host, which the setup catch handles. */
+function hasHttpScheme(endpoint: string): boolean {
+  const { protocol } = new URL(endpoint);
+  return protocol === 'http:' || protocol === 'https:';
+}
+
+/** The running SDK, so a second start returns it instead of building providers again. */
+let active: TelemetryHandle | undefined;
+
+/**
+ * Starts the SDK. Never throws: any setup failure writes one stderr line (no URL) and returns the
+ * off handle. A second call while the SDK runs returns the running handle.
+ */
 export function startTelemetry(options: TelemetryOptions): TelemetryHandle {
   const endpoint = options.endpoint?.trim();
-  if (endpoint === undefined || endpoint === '') return OFF;
+  if (!endpoint) return OFF;
+  if (active) return active;
   try {
+    // Only http(s) is a collector. Anything else with a scheme (ftp:, otel-gateway:4318) is off.
+    if (!hasHttpScheme(endpoint)) return OFF;
     const base = endpoint.replace(/\/+$/, '');
     const limits = { ...DEFAULT_LIMITS, ...options.limits };
     const exporters = options.exporters ?? {};
@@ -140,12 +155,19 @@ export function startTelemetry(options: TelemetryOptions): TelemetryHandle {
     propagation.setGlobalPropagator(new W3CTraceContextPropagator());
     context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable());
 
-    return {
+    const handle: TelemetryHandle = {
       enabled: true,
       tracerProvider,
-      shutdown: () => shutdownAll([tracerProvider, loggerProvider, meterProvider]),
+      shutdown: async () => {
+        if (active === handle) active = undefined;
+        await shutdownAll([tracerProvider, loggerProvider, meterProvider]);
+      },
     };
+    active = handle;
+    return handle;
   } catch {
+    // One line, no URL: the endpoint may carry credentials or internal hostnames.
+    process.stderr.write('telemetry: SDK setup failed; telemetry is off\n');
     return OFF;
   }
 }

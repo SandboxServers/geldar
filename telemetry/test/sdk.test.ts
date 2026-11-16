@@ -103,7 +103,7 @@ describe('startTelemetry when on', () => {
     expect(spanNames.length).toBeLessThanOrEqual(8);
   });
 
-  it('never blocks the caller when the exporter never answers', () => {
+  it('never blocks the caller when the exporter never answers', async () => {
     const { exporters } = recorder();
     const never: SpanExporter = { export() {}, shutdown: async () => {} };
     const handle = startTelemetry({
@@ -116,5 +116,14 @@ describe('startTelemetry when on', () => {
     const started = Date.now();
     for (let i = 0; i < 5000; i++) tracer?.startSpan(`s${i}`).end();
     expect(Date.now() - started).toBeLessThan(2000);
+    // Shutdown with a dead exporter is bounded by the shutdown limit: run it on fake timers.
+    vi.useFakeTimers();
+    try {
+      const stopped = handle.shutdown();
+      await vi.advanceTimersByTimeAsync(10_000);
+      await stopped;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
