@@ -5,6 +5,7 @@
   sets 30 days (INTERVAL 30 DAY) because the packet asks for 30 days. Check the expression parses on 25.12.5 (build 44) in the scratch run [UNV].
 -->
 <clickhouse>
+    <!-- Other tables in this list are assumed to use event_date; scratch round 3 verifies each by startup. -->
     <query_log>
         <database>system</database>
         <table>query_log</table>
@@ -74,8 +75,10 @@
     <iceberg_metadata_log>
         <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
     </iceberg_metadata_log>
+    <!-- [AUTH] stock config sets an engine for this table, so TTL goes inside the engine; column is finish_date (no event_date);
+         verified against the image's /etc/clickhouse-server/config.xml lines 1366-1389. -->
     <opentelemetry_span_log>
-        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+        <engine replace="replace">engine MergeTree partition by toYYYYMM(finish_date) order by (finish_date, finish_time_us) TTL finish_date + INTERVAL 30 DAY DELETE</engine>
     </opentelemetry_span_log>
     <s3queue_log>
         <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
