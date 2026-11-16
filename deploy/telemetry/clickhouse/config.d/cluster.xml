@@ -22,6 +22,10 @@
     <!-- [AUTH] Single replica never fetches from itself, so the interserver port (9009) is bound to loopback. The stock config
          binds it on all interfaces, which would expose it on the shared network. -->
     <interserver_listen_host replace="replace">127.0.0.1</interserver_listen_host>
+    <!-- [AUTH] Geldar uses only the native port 9000 and HTTP 8123. The scratch run found the MySQL (9004) and PostgreSQL (9005)
+         compatibility listeners on 0.0.0.0. remove="remove" drops them from the merged config (unverified, README item 30). -->
+    <mysql_port remove="remove"/>
+    <postgresql_port remove="remove"/>
     <display_name>cluster</display_name>
     <!-- [AUTH] The replica host is the alias geldar-ch-sql, which exists only on the geldar-telemetry network. ClickHouse reports this
          address in system.clusters, so every client that uses the cluster (migrator, collector, SigNoz) and geldar-ch itself reach it on
