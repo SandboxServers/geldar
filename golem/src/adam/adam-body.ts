@@ -47,11 +47,14 @@ import { BotEars } from '../voice/ears.ts';
 import { SpeechEvents } from '../voice/speech-event.ts';
 import { BotVoice } from '../voice/voice.ts';
 import { watchWorldTicks, worldAge } from '../world-clock.ts';
+import { ACTION_ERROR_EVENT, actionErrorAttributes } from './action-error-event.ts';
 import type { AdamConfig } from './adam-config.ts';
 
 /** The two span calls the Body makes. A tracer from the telemetry SDK satisfies this structurally. */
 export interface ActionSpan {
   setAttribute(key: string, value: string): unknown;
+  /** A failed action adds one `action_error` event; absent on a span that cannot take events. */
+  addEvent?(name: string, attributes?: Record<string, string | number | boolean>): unknown;
   end(): void;
 }
 export interface ActionTracer {
@@ -76,9 +79,12 @@ export function actionSpanSink(
   const open = new Map<string, ActionSpan>();
   let capLogged = false;
   /** Sets the outcome and ends the span; the entry is removed by the caller before this runs. */
-  const finish = (span: ActionSpan, outcome: string): void => {
+  const finish = (span: ActionSpan, outcome: string, result?: ActionRecord['result']): void => {
     try {
       span.setAttribute('outcome', outcome);
+      // The failure text goes to the span only, scrubbed; an event failure never skips `end()`.
+      const attributes = result ? actionErrorAttributes(result) : null;
+      if (attributes) span.addEvent?.(ACTION_ERROR_EVENT, attributes);
     } finally {
       span.end();
     }
@@ -118,7 +124,7 @@ export function actionSpanSink(
       const outcome = (OUTCOME_STATUS_LABELS as readonly string[]).includes(status)
         ? status
         : 'other';
-      finish(span, outcome);
+      finish(span, outcome, result);
     }
   };
   return {

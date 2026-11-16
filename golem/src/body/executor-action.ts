@@ -1,4 +1,5 @@
 import type { ActionRecord, Receipt, Thought } from '@geldar/contract';
+import { errorFields } from '@geldar/telemetry';
 import { errorText } from '../actions/outcome.ts';
 import type { ActionRun } from '../actions/registry.ts';
 import { receiptIdFor } from './derived-id.ts';
@@ -34,7 +35,7 @@ export async function waitForReflexIdle(runtime: BodyRuntime): Promise<boolean> 
  * should wait); any other throw is `internal`, and its message and stack go to the body log so the
  * next `internal` can be diagnosed. The detail names no action: the slot's holder may be a reflex.
  */
-function thrownRun(error: unknown): ActionRun {
+function thrownRun(error: unknown, actionId: string, lifeId: string): ActionRun {
   if (error instanceof ActionBusyError) {
     return {
       state: 'failed',
@@ -48,8 +49,16 @@ function thrownRun(error: unknown): ActionRun {
       },
     };
   }
-  const trace = error instanceof Error ? (error.stack ?? error.message) : String(error);
-  console.error(`action failed inside the body: ${trace}`);
+  // One JSON line: ids, the closed reason, and scrubbed exception fields (the stack text included).
+  console.error(
+    JSON.stringify({
+      msg: 'action failed inside the body',
+      action_id: actionId,
+      life_id: lifeId,
+      reason: 'internal',
+      ...errorFields(error),
+    }),
+  );
   return {
     state: 'failed',
     result: {
@@ -115,7 +124,7 @@ export async function runPlanAction(
     if (economic) await runtime.inflight?.begin(record, economic.item, economic.count);
     run = await runtime.runAction(action);
   } catch (error) {
-    run = thrownRun(error);
+    run = thrownRun(error, actionId, plan.lifeId);
   }
   const phase = run.state === 'completed' ? 'committed' : 'aborted';
   const receipt: Receipt = {
