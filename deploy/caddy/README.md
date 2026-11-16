@@ -44,6 +44,45 @@ The 405 for a refused method is `handle @not_allowed { respond 405 }`, the first
 
 Never run `systemctl restart caddy` or restart the container. Caddy serves other sites on the node, and a restart interrupts them all.
 
+## OTLP ingest (otel.caddy)
+
+The telemetry gateway's OTLP/HTTP ingest for Mind hosts. Live file `otel.caddy`, kill switch `otel-off.caddy`. The full design, abuse case and limits are in [caddy-ingest-route.md](../../docs/analysis/telemetry/caddy-ingest-route.md). Owner ruling geldar-93 (2026-11-16): the ingest route goes on the shared Caddy, authenticated with the ingest token; stock Caddy only, no custom image, no third-party module. The SigNoz UI has no Caddy route.
+
+Differences from the sites above (the doc is followed where it differs from `mcp.caddy`):
+
+- The host is `{$GELDAR_INGEST_HOST}` (no `GELDAR_DOMAIN` prefix), the upstream is `{$GELDAR_INGEST_UPSTREAM}` (the gateway's loopback publish, `localhost:4320` form, no IP literal in the file) and the token is `{$GELDAR_INGEST_TOKEN}`.
+- Only POST passes (405 otherwise), on `/v1/traces`, `/v1/logs` and `/v1/metrics`. Without the exact `Authorization: Bearer <token>` header those paths get 401; any other path gets 404. The kill switch answers 503 on the whole host.
+- Per-site limits only: `request_body { max_size 8MiB }` (413 over it) and `transport http { dial_timeout 5s; response_header_timeout 60s }`. No global `servers` timeouts, because `mcp.caddy` serves long-lived SSE.
+- The access log uses the filter encoder and deletes `request>headers>Authorization`. No plain-HTTP listener is added (automatic HTTPS only).
+- Stock Caddy has no rate limit and the token compare is not constant-time; see the Abuse case in the doc.
+- The live file goes in `config/geldar/` on the node (the Caddyfile imports `/config/geldar/*.caddy`, top level only; subdirectories are not loaded). It is not in `deploy/colo-public.sh`'s site list, and `validate.sh` does not cover it yet (a follow-up that adds the three placeholders with test values, never the real token).
+
+Every step below needs the owner's approval at the time. Record the exact commands run.
+
+1. Precheck, read-only. Confirm the import line (`import /config/geldar/*.caddy`) in the node's Caddyfile, and that the env file the shared Caddy container (`board-proxy`) reads (`azure.env`, root-only) exists. Do not print its contents.
+2. Place the three variables in that env file. The file is root-only, so this needs `sudo` beyond a mkdir/chown scope (geldar-93 allows sudo where the work needs it); record the exact commands. The owner sets `GELDAR_INGEST_HOST` and `GELDAR_INGEST_UPSTREAM`. For the token, generate it on the node, never print it, never put it on a command line or in the repo; keep the file mode and owner it already has:
+
+   ```bash
+   # Appends one line. The value is never echoed. Run once; do not run it if the line exists.
+   sudo grep -q '^GELDAR_INGEST_TOKEN=' <env-file> \
+     || { printf 'GELDAR_INGEST_TOKEN=%s\n' "$(openssl rand -hex 32)" | sudo tee -a <env-file> >/dev/null; }
+   ```
+
+   `openssl rand -hex 32` is 32 random bytes as 64 hex characters. Check by length only, for example `sudo awk -F= '/^GELDAR_INGEST_TOKEN=/{print length($2)}' <env-file>` (expect at least 64, not the value), and that `GELDAR_INGEST_HOST` and `GELDAR_INGEST_UPSTREAM` are set. An empty token would make the match `Bearer ` and admit that header, so any failure here stops the procedure.
+3. The one recreate of the shared Caddy container, to load the new variables (a running Caddy cannot see a new environment value). Its own approved window, with the exact diff and rollback. Later changes are reloads only; rotating the token needs the same recreate.
+4. Put `otel.caddy` in `config/geldar/` on the node, then `caddy validate` with the Caddyfile (the Caddy container already holds the variables; do not pass the token with `docker exec -e`). Locally, `bash deploy/caddy/validate.sh` plus `tools/repo-checks/src/caddy-adapt.test.ts` check the file in the pinned image.
+5. `caddy reload`.
+6. Verify, from the operator workstation, with the owner's token (the value is not written here and is not put in shell history or the log):
+   - POST without a token to each of `/v1/traces`, `/v1/logs`, `/v1/metrics`: 401.
+   - GET to an OTLP path: 405.
+   - POST with the token to `/v1/traces`: neither 401 nor 404 (the gateway's own status is the answer).
+   - POST to any other path: 404.
+   - A body over 8 MiB: 413.
+   - After these requests the access log has no `Authorization` value (search the log for the token's first characters, by length-safe means; no match expected).
+7. Portscan and after-reload checks: the host gains no new listener (no plain-HTTP port; Caddy already owns 443 on the node), the gateway's publish stays on the loopback address, and `tools/portscan` is unchanged. Other sites on the shared Caddy (`mcp`, `glass`, `map`) still answer as before.
+
+Rollback, no restart: put `otel-off.caddy` in place of `otel.caddy` (or remove the live file), `caddy validate`, `caddy reload`. The host answers 503 for every path. The environment variables can stay until the next recreate. The public hostname stays in the 0071 and 0096 amendments until the owner decides to drop it.
+
 ## Status
 
 The live reload is an owner or ops step (C2-07). Nothing here has been loaded on a node.
