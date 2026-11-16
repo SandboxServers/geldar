@@ -41,6 +41,6 @@ All are wave W1 of the [documentation plan](../analysis/docs-library/plan.md), p
 
 Each doc ends with a "Conflicts recorded" section that gives every account and picks none. The ones with the widest reach:
 
-- Known gaps against the authoritative design, open and not fixed: `compose/colo-public.yml` publishes the offline-mode bot ingress, against decision 0137's separate online-mode spectator proxy; ghosts are not hidden from the tab list, against spec 8.4 ([network-and-trust-zones, known gaps](network-and-trust-zones.md#known-gaps); [deployment-topology-colo, known gaps](deployment-topology-colo.md#known-gaps)).
+- Known gaps against the authoritative design, open and not fixed: `compose/colo-public.yml` publishes the offline-mode bot ingress, against decision 0137's separate online-mode spectator proxy; a ghost measure described in spec 8.4 is not implemented in the plugin at 03c1f5de, and a plugin-side fix is planned after the freeze (owner ruling relayed 2026-11-16) ([network-and-trust-zones, known gaps](network-and-trust-zones.md#known-gaps); [deployment-topology-colo, known gaps](deployment-topology-colo.md#known-gaps)).
 - The MCP's NATS reach differs between spec 6.4, decision 0067 and the generator ([nats-topology](nats-topology.md#conflicts-and-drift-recorded)).
 - The supervisor's image is built, but no compose file in the repo runs it ([system-overview](system-overview.md#conflicts-recorded)).

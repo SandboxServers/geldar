@@ -135,10 +135,9 @@ Places where the repo does not yet match the authoritative design. Each is open 
    - Design: decision [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md) item 1. Two Velocity services. The offline-mode bot ingress "is reachable only on the compose network, and is never published". A separate public spectator proxy runs with `online-mode = true`, and "only the public spectator proxy appears in `compose/colo-public.yml`". Spec 6.2 and 8.4 describe the same separate online-mode proxy.
    - What the file says at 1b114276: `compose/colo-public.yml` adds one publish, `"${GELDAR_MC_BIND:?}:${GELDAR_MC_PORT:?}:25565"`, to the service `velocity`. Its header cites C2-07a2 and decision [0096](../decisions/0096-public-topology-as-built.md) (Proposed) and says the loopback-ports check allows exactly that entry. `velocity` is the bot ingress: `compose/velocity/velocity.toml` sets `online-mode = false`. No compose file defines a second Velocity service (`git grep` for Velocity service keys under `compose/`, 2026-11-16). `tools/repo-checks/src/loopback-ports.ts` allowlists the entry as `PUBLIC_OVERLAY_PORT`.
    - Node state: unchecked. Whether the overlay is merged on the node, whether the public port is open, and whether any proxy runs from files outside the repo were not read (plan decision D8).
-2. **Ghosts are not hidden from the tab list (against spec 8.4).**
-   - Design: [spec 8.4](../spec.md#84-human-identity-watchers-and-ghosts) says Geldar-Core forces spectator mode for anyone not in the agent group, cancels their chat and commands, and hides them from the tab list.
-   - Code at 1b114276: `plugin/core/src/main/java/dev/geldar/core/GhostListener.java` holds ghosts in spectator and cancels their chat. It does not hide them from the tab list, and `git grep` for `hidePlayer`, `setPlayerListName` and `setListed` in `plugin/core/src/main` finds nothing (2026-11-16).
-   - Status: a plugin-side fix is planned; development is frozen (owner ruling relayed 2026-11-16). Node state: unchecked.
+2. **A ghost measure against [spec 8.4](../spec.md#84-human-identity-watchers-and-ghosts).**
+   - A ghost measure described in spec 8.4 is not implemented in the plugin at 03c1f5de; a plugin-side fix is planned after the freeze (owner ruling relayed 2026-11-16). Detail is withheld under decision [0361](../decisions/0361-agents-never-placement-and-public-detail.md).
+   - Node state: unchecked.
 
 ## Conflicts recorded
 

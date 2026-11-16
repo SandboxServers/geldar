@@ -3,16 +3,16 @@ title: "Body helper: node steps"
 type: how-to
 audience: operators
 status: draft
-last_verified: 2026-11-16 against cd4499da
+last_verified: 2026-11-16 against 03c1f5de
 companions: [README.md, nats-auth-inplace.md, open-signup.md]
-sources: [../decisions/0260-body-container-control-by-host-helper.md]
+sources: [../decisions/0260-body-container-control-by-host-helper.md, deploy/install-body-helper.sh, deploy/body-helper-node.env, body-helper/src/helperConfig.ts, deploy/README.md]
 ---
 
-# Body helper: node steps (geldar-93)
+# Body helper: node steps
 
 Packet C7-03c2 (review fix B). Decision 0260: the body helper is a root-owned systemd unit on the Colo node. It
 starts and stops Body containers for the supervisor. It is not in a container and not in any compose
-file. This runbook is the plan for geldar-93. It names env vars and files by name only. No value,
+file. This runbook is the plan for the node operator. It names env vars and files by name only. No value,
 address, user password or token appears here, and none may be pasted into a chat or a commit.
 
 ## Rules for every step
@@ -36,16 +36,16 @@ The install script runs FIRST. It creates the helper's NATS password file, and t
 `helper` takes its value from that file. So the order is: dry run (step 1), the install script (step 2),
 the NATS conf in place (step 3), verify (step 4). Do not change the NATS conf before step 2 is DONE.
 
-## Open questions for geldar-93 (block step 2)
+## Open questions for the node operator (block step 2)
 
 1. How the built helper reaches the node is decided by C7-03c5 (decision 0260): a CI artifact, not a registry.
    The CI job `body-helper-bundle` (`.github/workflows/body-helper-bundle.yml`) builds one bundle, `main.js`, and
    `main.js.sha256` beside it, and keeps them as the GitHub Actions artifact `body-helper-bundle` for 30 days.
-   geldar-93 downloads that artifact from a green run (see "Step 0a" below), checks it, and copies the two files to
+   The node operator downloads that artifact from a green run (see "Step 0a" below), checks it, and copies the two files to
    `/opt/geldar/body-helper/dist/`. The install script does not fetch code. It verifies `main.js` against
    `main.js.sha256` before it writes anything, and blocks if either file is missing or does not match.
 2. The PG* variables for the password step (step 2) are NOT set by this runbook. `sudo` drops them
-   (env_reset), and `sudo -E` is refused by this runbook. geldar-93 decides how root's run gets them,
+   (env_reset), and `sudo -E` is refused by this runbook. The node operator decides how root's run gets them,
    and writes that decision into the change log. They must name the admin role (PGUSER), the host
    (PGHOST), the port (PGPORT) and the database (PGDATABASE).
 3. The tool that sends the step 4 `status` request as the `supervisor` user is not named here. Use a
@@ -53,7 +53,7 @@ the NATS conf in place (step 3), verify (step 4). Do not change the NATS conf be
 
 ## Step 0a: the helper bundle and the pinned Node (C7-03c5)
 
-Run by geldar-93 before step 2. Nothing here runs on the node except the copies and the checks named.
+Run by the node operator before step 2. Nothing here runs on the node except the copies and the checks named.
 
 1. Get the bundle from a green run of the `body-helper-bundle` workflow (build only; it touches no node). Pick the
    run on `main` that built the commit being installed, then download its artifact on a machine with the GitHub
@@ -78,8 +78,8 @@ Run by geldar-93 before step 2. Nothing here runs on the node except the copies 
 
 ## Step 0: inputs by name
 
-The helper reads these env vars from `/etc/geldar/body-helper.env`, a root-owned file that geldar-93
-writes from the release env. Names, as read by `body-helper/src/helperConfig.ts`:
+The helper reads these env vars from `/etc/geldar/body-helper.env`, a root-owned file that the node
+operator writes from the release env. Names, as read by `body-helper/src/helperConfig.ts`:
 
 `GELDAR_SHARD`, `GELDAR_SERVICE_UID`, `GELDAR_NATS_URL`, `GELDAR_NATS_USER`,
 `GELDAR_NATS_PASSWORD_FILE`, `GELDAR_PG_HOST`, `GELDAR_PG_PORT`, `GELDAR_PG_DATABASE`,
@@ -90,7 +90,7 @@ writes from the release env. Names, as read by `body-helper/src/helperConfig.ts`
 `GELDAR_GLOBAL_BODY_CAP` (default 40; the owner sets it, the helper never raises it).
 
 Managed Body inputs (BH-3), all optional and off by default. Names only; the values go in the root-only config, never here:
-`GELDAR_MANAGED_BODIES` (default off; the managed flag, which stays off until geldar-93 flips it after the live check),
+`GELDAR_MANAGED_BODIES` (default off; the managed flag, which stays off until the node operator flips it after the live check),
 `GELDAR_RCON_SECRET_HOST_PATH` (the root-only RCON password file, bound only into the admit one-shot),
 `GELDAR_MANAGED_PG_HOST` and `GELDAR_MANAGED_PG_ROLE` (the managed Body's database wiring, the narrow role and never the
 helper's own role), `GELDAR_MANAGED_DB_SECRET_HOST_PATH` (the root-only file that holds the managed Body's database
@@ -98,7 +98,8 @@ password), and `GELDAR_MANAGED_PG_PORT` (optional, default 5432). With the flag 
 path or the host, role or secret path is missing, and the error names only that variable. A managed start is refused
 until the flag is on and the config is complete.
 The RCON and database secret files must be readable by the container user (owner `GELDAR_SERVICE_UID`, mode 0600 or
-0400): use the same owner and mode as the NATS secret for Bodies (see the NATS secret rule above).
+0400): use the same owner and mode as the NATS secret for Bodies (`GELDAR_BODY_NATS_SECRET_HOST_PATH`). The rule for
+the NATS files, owner `GELDAR_SERVICE_UID` and mode `0600`, is in `deploy/README.md`, section "(c) Secrets".
 
 If an admit one-shot is left behind (a helper killed between create and start, or a create the client timed out on),
 the next start for that life is refused with `life admission failed`. Find it by label, then remove it by its exact
@@ -149,8 +150,8 @@ Rollback: none needed; a dry run changes nothing.
    password step, and enables the unit. A second `--apply` changes nothing. Only `--apply` changes
    anything; an unknown flag is refused.
 3. Node runtime (decided by C7-03c5): the unit's `ExecStart` and the password step's migrate call use the
-   pinned Node 22.23.4 at `/opt/geldar/node/bin/node`, never a PATH `node`. The node (geldar-worldops, node5) has
-   no Node. The pin is `deploy/body-helper-node.env` (version, tarball name, sha256 of
+   pinned Node 22.23.4 at `/opt/geldar/node/bin/node`, never a PATH `node`. The node has no Node (recorded in
+   the header comment of `deploy/body-helper-node.env`; not re-checked on the node for this runbook). The pin is `deploy/body-helper-node.env` (version, tarball name, sha256 of
    `node-v22.23.4-linux-x64.tar.xz`). Stage the official tarball in `/opt/geldar/node/`; the script checks its
    sha256 against the pin, then extracts it. If `/opt/geldar/node/bin/node` is absent and the tarball is not
    staged, `--apply` stops at its node preflight before it writes anything. Do not install Node from a package
@@ -173,8 +174,8 @@ Follow `docs/runbooks/nats-auth-inplace.md` (the procedure, steps 0 to 7): the o
 notice, the staging directory `$HOME/nats-stage` (0700, `umask 077`), validation with the container's
 `nats-server -t`, the sha256 of the backup against the live file, the `http:` line check, the
 `Reloaded:` log lines, and the connection count. Do not run `nats-server` on the host. This runbook adds
-only the helper's lines below. The batch applies only after the PR that adds the helper to
-`geldar.ps1` is merged, so the node runs what the generator produces.
+only the helper's lines below. The PR that adds the helper to `geldar.ps1` (#415) is merged (merge commit
+`4bab81b3`, 2026-11-15; `geldar.ps1` lines 411 to 413), so the node runs what the generator produces.
 
 In `nats-auth-inplace.md` step 0 create ONLY `nats-supervisor.txt`. Do NOT create `nats-helper.txt` there: it
 already exists at `/etc/geldar/secrets/nats-helper.txt` from step 2, and that file is the only source. Where that

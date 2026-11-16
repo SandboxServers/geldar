@@ -41,7 +41,8 @@ Some documents here describe how humans observe the world (marked `audience: age
 | [`legal/`](legal/) | Reference | Terms, privacy and acceptable-use drafts. |
 | [`analysis/`](analysis/) | History | Campaign ledgers, packets, retrospectives and worknotes (see below). |
 | [`ideas.md`](ideas.md) | n/a | Ideas outside the spec and the current packet. An idea goes here instead of into code. |
-| `guides/`, `operations/`, `security/`, `history/`, `siblings/` | Mixed | Planned (waves W3 to W6). See the [plan](analysis/docs-library/plan.md). |
+| [`operations/`](operations/README.md) | Reference | Operator tables: failure modes, node facts, monitoring and vitals (`agents-never`), capacity and cost. Drafts under review. |
+| `guides/`, `security/`, `history/`, `siblings/` | Mixed | Planned (waves W3 to W6). See the [plan](analysis/docs-library/plan.md). |
 
 ## Analysis campaigns
 

@@ -3,9 +3,9 @@ title: "Block owner bridge (CoreProtect)"
 type: how-to
 audience: operators
 status: draft
-last_verified: 2026-11-16 against cd4499da
+last_verified: 2026-11-16 against 03c1f5de
 companions: [README.md, coreprotect.md, kino.md]
-sources: [../decisions/0165-block-owner-subjects.md]
+sources: [../decisions/0165-block-owner-subjects.md, plugins/coreprotect/coreprotect.lock.json, plugin/core/src/main/resources/config.yml, contract/schemas/block-owner.schema.json]
 ---
 
 # Block owner bridge (CoreProtect)
@@ -47,7 +47,8 @@ writes for non-player causes on.
 
 ## CoreProtect configuration
 
-Pin CoreProtect 24.1 (Modrinth, sha512 in `plugins/coreprotect/coreprotect.lock.json` once that lands). The
+Pin CoreProtect 24.1 (Modrinth; the sha256 and sha512 are in `plugins/coreprotect/coreprotect.lock.json`, and
+[coreprotect.md](coreprotect.md) covers the jar check). The
 node needs block logging only. Set these in `plugins/CoreProtect/config.yml`:
 
 | Key | Value | Why |
