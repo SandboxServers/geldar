@@ -1,5 +1,7 @@
 {
   "docker:caddy@sha256:c3d7ee5d2b11f9dc54f947f68a734c84e9c9666c92c88a7f30b9cba5da182adb": "2026-02-11T19:53:38Z",
+  "docker:clickhouse/clickhouse-keeper@sha256:525b8b0f93ccb371131c46f22a066ea43d33d74aba314203e8044609945d8524": "2026-02-02T00:00:00Z",
+  "docker:clickhouse/clickhouse-server@sha256:cacf32d6884291dc2ff5e0156a97f46fc53ff7c929a7906d114e268a929dfd3a": "2026-02-02T00:00:00Z",
   "docker:ghcr.io/sandboxservers/geldar-mcp-mock:main@sha256:615c9160842ed46655dca33f561eaed83b69a5e80dd4076ad8c61c898d0e7d97": "2026-11-10T08:37:02Z",
   "docker:itzg/mc-proxy:2026.10.2-java25@sha256:0b969bd3000d6e21ebb58444d062d63202cb552b5264b57a274fed7d2b411c0d": "2026-10-20T18:15:23Z",
   "docker:itzg/minecraft-server:2026.10.1-java25@sha256:d12aed7e35981dfe259b60fbfee77d23a19b5898a7a31dca298d18b47b7b5776": "2026-10-25T14:14:45Z",
@@ -7,6 +9,9 @@
   "docker:node:22.23.2-alpine@sha256:b6f26b36c8ff49624cfdac716b8ea1138d606df02586a77d364bb5536a634f85": "2026-09-18T02:38:47Z",
   "docker:node:22.23.2-trixie-slim@sha256:c5849ff9c9ebcd66615412f0b548ca5b8ecaef84003dc9ac2e077ebe46aaa3f6": "2026-09-19T05:39:35Z",
   "docker:pgvector/pgvector:0.8.6-pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b": "2026-08-13T21:26:05Z",
+  "docker:signoz/signoz-otel-collector@sha256:7e4e539a73f1f88fbc1cd7e659ab3950908e83ce1f2a37a297452f910d072174": "2026-07-14T00:00:00Z",
+  "docker:signoz/signoz-schema-migrator@sha256:4e57475fbf8b24168dcfbe6fc5799bb3f3d965819b72663580d0926185b68bf5": "2026-07-14T00:00:00Z",
+  "docker:signoz/signoz@sha256:a7d1a968a1f7f65c518106150ac05424ca8e91c52d7076077dfce034980e9c34": "2026-10-29T00:00:00Z",
   "github-release:BlueMap-Minecraft/BlueMap@v5.29": "2026-10-10T17:31:34Z",
   "gradle-dist:9.8.2": "2026-10-19T16:47:07Z",
   "maven:com.google.code.gson:gson:2.14.0": "2026-04-23T19:01:47Z",
