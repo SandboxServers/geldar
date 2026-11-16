@@ -53,7 +53,7 @@ No `docker.sock` is mounted in any service.
 
 - **One SigNoz container, not two.** SigNoz v0.148.1 serves the query API and the frontend from one container (`signoz/signoz`, port 8080) [SRC, `conf/example.yaml` `web.enabled: true`; `cmd/enterprise/Dockerfile.multi-arch` copies the frontend build to `/etc/signoz/web`]. So this stack has one `geldar-signoz` (1.0 CPU, 1g memory, 1g memswap, 256 pids) and no `geldar-signoz-ui`.
 - The name `geldar-signoz-query` is **not used**.
-- The one published port is `127.0.0.1:8095:8080` (loopback only, reached over an SSH tunnel). Port 8095 was free on the node at the 2026-11-16 check. Host port 3301 is not used (the packet does not allow it).
+- The one published port is `127.0.0.1:8095:8080` (loopback only, reached over an SSH tunnel). Port 8095 is free at the 2026-11-16 N1 check (recheck before use). Host port 3301 is not used (the packet does not allow it).
 - Caps for the other containers are the 0352 table values, as in collector-design section 4. The ClickHouse caps (3.0 CPU, 8g, 1024 pids) and the Keeper caps (0.5, 1g, 256) are not changed. The migrator is 0.5, 512m, 128. The collector is 0.5, 1g, 256.
 
 ## Secrets
