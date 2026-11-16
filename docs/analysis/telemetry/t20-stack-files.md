@@ -2,7 +2,15 @@
 
 Date: 2026-11-16. Decision: `docs/decisions/0370-telemetry-clickhouse-25-12-pin.md` (amends 0352). Operator README: `deploy/telemetry/README.md` (pins, owner uids, the full unverified list, start order).
 
-Nothing was started or pulled. The only docker call was `docker compose -f deploy/telemetry/compose.yml config --quiet` (no network, no pull), which exited 0.
+At the time these files were written, nothing was started or pulled. The only docker call was `docker compose -f deploy/telemetry/compose.yml config --quiet` (no network, no pull), which exited 0.
+
+## Status after the local scratch run (2026-11-16)
+
+- The stack has now been started locally on a dev machine, in project `scratch-telemetry-local`, not on the node, with lowered memory caps.
+- The migrator exits 0 with the restricted writer grants, the explicit engine grants and REMOTE.
+- SigNoz and the collector start clean, and one OTLP test trace reached ClickHouse. The reader is read-only.
+- The full table of verified and open items is in `deploy/telemetry/README.md`, section "Scratch run results".
+- The open blockers are item 33 (SigNoz outbound connection attempt, an unattended-run blocker) and the node-only checks (secret owner and mode, uid check, real caps, histogram binary install).
 
 ## Files added
 
@@ -26,11 +34,11 @@ The full list with numbers is in the README (section "Unverified, check in the s
 - **Keeper user and command (README item 8).** Keeper runs as 101:101 with the entrypoint overridden. Blocks `geldar-ch-keeper` until the `id` check on the node and the chown are done.
 - **ClickHouse uid drop (README "Owner uids").** The server image starts as root and its entrypoint drops to 101 [INF]; the Keeper runs as 101:101 directly (compose `user:`, entrypoint overridden) [INF]. Blocks any chown of `/mnt/nvme/geldar-telemetry/clickhouse` or `/keeper`. Stop on any `id` output other than `uid=101(clickhouse) gid=101(clickhouse)`.
 - **Histogram binary (item 6).** Blocks SigNoz metrics queries that use `histogramQuantile`.
-- **Migrator with ClickHouse 25.12.5 (build 44) (item 7).** Blocks the collector: run the migrator once and check its exit code first.
-- **Collector and migrator shell wrapper (items 13, 14).** The wrapper needs `/bin/sh` in the collector and migrator images, and the secret mode and uid to work on the node. Blocks both.
-- **Collector config (item 16).** Blocks the collector. Validate the config in the scratch run.
+- **Migrator with ClickHouse 25.12.5 (build 44) (item 7).** Verified in the scratch run (exit 0). On the node, run the migrator once and check its exit code before the collector starts.
+- **Collector and migrator shell wrapper (items 13, 14).** The wrapper ran in the scratch run (migrator exit 0, collector started), so both images have `/bin/sh`. The secret mode and uid still need checking on the node. Blocks both until then.
+- **Collector config (item 16).** The collector started with this config in the scratch run. Validate it again on the node, before the collector starts there.
 - **SQLite env names (item 1).** Blocks `geldar-signoz` start.
-- **Collector healthcheck (item 3).** `wget` in the debian collector image is unconfirmed. Left off, so it blocks only that healthcheck.
+- **Collector healthcheck (item 3).** The collector image has no `wget` (verified in the scratch run). The healthcheck stays off, so it blocks only that healthcheck.
 - **ON CLUSTER with the `default` user (item 9).** Blocks the decision to remove `default`. The current plan keeps `default` on loopback.
 - **Reader and retention (item 4).** Blocks retention changes made from the SigNoz UI. Does not block start.
 - Items 2, 5, 12, 15 do not block start (JWT names not needed with the opaque provider; async insert is tuning; the SigNoz health check blocks nothing because no service depends on it).
@@ -39,7 +47,7 @@ The full list with numbers is in the README (section "Unverified, check in the s
 ## Checks to run
 
 1. `docker compose -f deploy/telemetry/compose.yml config --quiet`, exit 0 (done here).
-2. Collector config validation in the scratch run (README item 16).
+2. Collector config validation on the node (README item 16; the scratch run started the collector with this config).
 3. The uid check on the node: `docker run --rm --entrypoint id <server digest> clickhouse` and the same for keeper. Expect 101 and 101.
 4. Migrator run once against `geldar-ch`, exit 0, before the collector starts.
 5. `docker manifest inspect` for each index digest, compared against the README table, before the first pull.
