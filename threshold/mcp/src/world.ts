@@ -117,6 +117,8 @@ export interface WorldDeps {
   log?: (line: Record<string, unknown>) => void;
   /** Counts each tool call with its closed outcome code and duration (metrics, decision 0088). */
   onToolCall?: (tool: string, outcome: string, durationMs: number) => void;
+  /** Records one OpenTelemetry span per call (T-06, telemetry.ts). Unset when telemetry is off. */
+  onToolSpan?: ((call: { tool: string; outcome: string; durationMs: number }) => void) | undefined;
 }
 
 /** The world as the server uses it: the tool handlers, and a `close` that stops the settle timer. */
@@ -469,6 +471,11 @@ function logged(deps: Wired, tool: string, run: ToolHandler): ToolHandler {
       deps.onToolCall?.(tool, outcome, durationMs);
     } catch {
       // The count is lost; the call's own result stands.
+    }
+    try {
+      deps.onToolSpan?.({ tool, outcome, durationMs });
+    } catch {
+      // The span is lost; the call's own result stands.
     }
   };
   return async (input, ctx) => {
