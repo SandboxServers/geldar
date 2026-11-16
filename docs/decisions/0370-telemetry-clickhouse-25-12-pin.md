@@ -26,6 +26,8 @@ Research on 2026-11-16 (`docs/analysis/telemetry/t20-stack-files.md`, and the st
 - 0352's other decisions stand: option B, a Geldar-owned server and stack, Geldar's network only, its own retention and budget. The 100 GB budget and the 70 GB alarm are unchanged.
 - The ClickHouse upgrade path is 25.12 to 26.3 once SigNoz tests 26.3. That is a new decision record, not a silent bump.
 - The histogram quantile function and migrator/ClickHouse compatibility are unverified until the scratch run (the README lists them).
+- Container names map to the SigNoz image roles: `geldar-ch` = clickhouse-server; `geldar-ch-keeper` = clickhouse-keeper; `geldar-signoz` = `signoz/signoz` (query API and UI in one container, so the collector design's `geldar-signoz-query` and `geldar-signoz-ui` are one container here); `geldar-signoz-migrator` = `signoz/signoz-otel-collector` running its `migrate` subcommands; `geldar-signoz-otelcol` = `signoz/signoz-otel-collector` running as the collector.
+- Keeper is on its own internal network, `geldar-telemetry-backend`, shared only with `geldar-ch`. It is not on the shared `geldar-telemetry` network (README, "Networks"). This adds one Docker network at N4.
 
 ## Amendment scope
 

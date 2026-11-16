@@ -3,8 +3,6 @@
   System log TTL, 30 days, as the Geldar 0352 retention for system tables. [AUTH]
   Key names and the TTL expression come from Foundry config-0-0.yaml [SRC]. The facts file gives a one-day TTL there; this file
   sets 30 days (INTERVAL 30 DAY) because the packet asks for 30 days. Check the expression parses on 25.12.5 (build 44) in the scratch run [UNV].
-  Other log tables (asynchronous_metric_log, error_log, latency_log, query_metric_log, query_thread_log, query_views_log,
-  session_log, zookeeper_log) take the same one-line ttl in Foundry [SRC]; add them the same way if their TTL is needed.
 -->
 <clickhouse>
     <query_log>

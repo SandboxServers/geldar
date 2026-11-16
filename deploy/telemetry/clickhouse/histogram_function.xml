@@ -24,6 +24,6 @@
             <type>Float64</type>
         </argument>
         <format>CSV</format>
-        <command>histogramQuantile</command>
+        <command>./histogramQuantile</command>
     </function>
 </functions>
