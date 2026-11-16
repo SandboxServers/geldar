@@ -2,8 +2,9 @@
 
 - Date: 2026-11-15
 - Source: `docs/analysis/telemetry/collector-design.md` on branch `phase1/telemetry-t02-collector-design` (sections 4, 6, 8, 9, 18 and 19). Read with `git show phase1/telemetry-t02-collector-design:docs/analysis/telemetry/collector-design.md`.
-- Decision context: `docs/decisions/0352-telemetry-dedicated-clickhouse-database.md` (proposed) and 0350 (accepted).
+- Decision context: `docs/decisions/0352-telemetry-dedicated-clickhouse-database.md` (accepted, option B: Geldar-owned ClickHouse server and SigNoz stack on a Geldar-owned network) and 0350 (accepted).
 - Scope: docs only. Nothing here is implemented, deployed or run. Versions are those named in the design: contrib 0.164.0, Caddy on the node (version unverified).
+- Re-check: F1, F3, F4, F5 and F6 were re-checked under 0352 option B on 2026-11-15 (the recommendations stand unless a note says otherwise). F9 is resolved by option B: no Geldar container joins the other tenant's network.
 
 Each finding gets a safer option and a recommendation. "Unverified" marks a claim this document could not check against the pinned versions or the node.
 
@@ -13,11 +14,13 @@ Each finding gets a safer option and a recommendation. "Unverified" marks a clai
 
 **Options.**
 
-1. **Loopback publish of one port (design as written in section 4).** `127.0.0.1:<port>:4318` on the gateway only. Caddy reverse-proxies to `127.0.0.1:<port>`. The gateway stays on `geldar-colo` and the SigNoz side only. The MCP (8788) and Glass (8787) routes already work this way (0096 item 2).
+1. **Loopback publish of one port (design as written in section 4).** `127.0.0.1:<port>:4318` on the gateway only. Caddy reverse-proxies to `127.0.0.1:<port>`. The gateway stays on `geldar-colo` and the Geldar SigNoz side only. The MCP (8788) and Glass (8787) routes already work this way (0096 item 2).
 2. **Unix socket.** Caddy's `reverse_proxy` takes unix socket upstreams (from memory of Caddy's docs, not checked here; unverified for the node's version). The gateway's OTLP/HTTP receiver would need a unix listener, which I could not confirm for 0.164.0 (unverified). Reachability is then by file permission, not by port.
 3. **Caddy on the colo network.** Rejected: it widens the proxy's reach into every Geldar service.
 
 **Recommendation: option 1.** It matches the existing MCP and Glass pattern, needs no change to Caddy's networking, and adds exactly one loopback entry to `tools/repo-checks/src/loopback-ports.ts`. Harden it: the gateway requires the bearer check on its own side too (F5, option A), so a local process that reaches the port without the token gets nothing. If the owner prefers no loopback port at all, option 2 is the next choice after a 0.164.0 check of the receiver.
+
+**Under 0352 option B.** No change. The gateway's downstream is now the Geldar SigNoz collector on the Geldar network, which does not alter the Caddy side. The Geldar SigNoz UI route (0352 read path) is a separate owner-approved Caddy route and does not reuse this loopback port.
 
 ## F3. Host `/proc` and `/sys` expose the host's process list
 
@@ -33,6 +36,8 @@ Each finding gets a safer option and a recommendation. "Unverified" marks a clai
 
 **Recommendation: options 1 and 2 together.** Use the container's own procfs for CPU, memory and load; bind only `/mnt/nvme` read-only for the disk alarm; disable the process scraper; and ask the owner for option 3 only as a separate node change if the owner wants the other tenants' process lists hidden. Check the network-counter limit (the node's `/proc/net/dev`) in T-02's soak test, because the container view may not show the node.
 
+**Under 0352 option B.** No change. The `/mnt/nvme` bind is still needed for the 60% node-wide alarm, which is the only alarm that covers the other tenant's data. Node CPU and memory still come from the container's procfs. The new Geldar ClickHouse disk is under `/mnt/nvme/geldar-telemetry`, so the same bind covers its disk use.
+
 ## F4. The Caddy token enters the reload environment
 
 **Problem.** `{$GELDAR_OTEL_INGEST_TOKEN}` is substituted when the Caddy CLI parses the file. `caddy reload` runs inside `docker exec`, so the token sits in that exec's environment, visible to root on the node and in shell history if typed.
@@ -44,6 +49,8 @@ Each finding gets a safer option and a recommendation. "Unverified" marks a clai
 3. **Keep `{$VAR}` and pass the token with `docker exec -e` from a file read by the script.** Still visible to root in the process table during the reload; not recommended.
 
 **Recommendation: option 1 (or 2 where the Caddy version does not support `{file.*}`).** Check the node's Caddy version first (N1). Keep the token out of the repo and out of the reload command. The file is owned by root, mode 0400, and the Caddy process reads it. Rotation is: write the new file, reload, then revoke the old token at the gateway (F6).
+
+**Under 0352 option B.** No change. The Caddy route is the same whichever stack is behind the gateway. The token is the Mind-host ingest token, not a ClickHouse credential; the ClickHouse writer and reader users (0352) are separate secrets and must not be placed in Caddy at all.
 
 ## F5. Header comparison is not constant-time
 
@@ -57,6 +64,8 @@ Each finding gets a safer option and a recommendation. "Unverified" marks a clai
 
 **Recommendation: option 1, plus option 3.** Caddy keeps the method, path and header-presence checks. The gateway's `bearertokenauth` is the real check (after verifying its compare). The token must be at least 32 random bytes. Verify the claim about constant-time comparison before the change; mark it unverified until then. Tradeoff: the gateway then holds the token, so F6's options apply to the gateway too.
 
+**Under 0352 option B.** No change. The gateway's `bearertokenauth` is the check for the Mind-host token. The Geldar SigNoz collector behind the gateway is on the Geldar network and is not reached from Caddy, so it needs no second token check, but it must accept writes only from the gateway (a network-level rule on the Geldar network, not a shared secret).
+
 ## F6. The token is held outside the Mind host's trust boundary
 
 **Problem.** The Mind host holds the ingest token. The model child runs as another uid and does not inherit the supervisor's environment (T-14 proves this). A leaked token lets anyone write telemetry into Geldar's data (not read it, 0350 item 7).
@@ -68,6 +77,8 @@ Each finding gets a safer option and a recommendation. "Unverified" marks a clai
 3. **An authenticating forwarder run by the supervisor.** A local process on the Mind host, run as the supervisor's uid, holds the token and forwards to Caddy. The model child cannot read its files. The token is still on the host, so this moves the trust boundary; it does not remove the token. Store it in an OS secret store (Windows Credential Manager or DPAPI on the owner's PC; systemd credentials on Linux) so a plain file read is not enough.
 
 **Recommendation: option 2, with option 3 as the fallback.** A certificate per host is revocable by host and never sent as a bearer value. Its cost is a small CA and a rotation procedure, which the design already needs before N9 (risk 6). Until the certificate path is verified, use option 3 with the OS secret store, and keep the token scoped to telemetry writes.
+
+**Under 0352 option B.** No change to the Mind-host side. The Geldar ClickHouse writer and reader credentials (`geldar_writer`, `geldar_reader`, 0352) are a separate trust boundary: they live on the node and on the operator workstation, never on a Mind host. A leaked Mind-host token still only writes into Geldar's own server, which is now a server Geldar owns, so the blast radius is Geldar's data and nothing of the other tenant's.
 
 ## F2. The queue has no native byte cap
 
@@ -100,7 +111,7 @@ extensions:
 
 exporters:
   otlphttp/geldar_stack:
-    endpoint: ${env:GELDAR_OTEL_STACK_ENDPOINT}        # the Geldar stack's OTLP/HTTP (option B in 0352)
+    endpoint: ${env:GELDAR_OTEL_STACK_ENDPOINT}        # the Geldar SigNoz collector on the Geldar network (0352 option B)
     sending_queue:
       enabled: true
       storage: file_storage/queue
@@ -117,33 +128,33 @@ The placeholders are `GELDAR_OTEL_QUEUE_FILE_MAX_BYTES`, `GELDAR_OTEL_QUEUE_REBO
 
 ## F7 to F8: budget and retention
 
-Not in this file's scope; decided in `docs/decisions/0352-telemetry-dedicated-clickhouse-database.md`. Option B there removes F7 and F8.
+Resolved by 0352 option B. The Geldar ClickHouse server holds only Geldar's data, so `system.parts` grouped by database is an exact budget measure (F7 gone). The one-year TTL and the Geldar stack's retention setting apply to Geldar's own workspace, not the other tenant's (F8 gone). Details in `docs/decisions/0352-telemetry-dedicated-clickhouse-database.md`.
 
 ## F9. Joining the other tenant's Docker network
 
-**Problem.** The gateway is on the SigNoz network so it can reach the other tenant's collector. Any container on that network can write into Geldar's data, and the reverse.
+**Problem.** Any Geldar writer on the other tenant's SigNoz side had to join that tenant's Docker network. Any container on that network can reach the other tenant's services, and the reverse.
 
-**Options.**
+**Options considered (under the earlier shared-stack design).**
 
-1. **Send through a published loopback port of the SigNoz collector on the host.** Not available as written: the other tenant publishes its collector ports on all interfaces, not on loopback. A loopback publish would change the other tenant's configuration, which 0350 item 4 forbids. Rejected unless the owner changes that ruling.
-2. **`host-gateway` to the other tenant's published 4317 or 4318.** Uses the all-interfaces port with no ingestion key; relies on the node firewall (unverified). Worse than the design's join, because the exposure already exists and the gateway would depend on it. Rejected.
-3. **A Geldar-owned collector that writes straight to ClickHouse.** Still has to reach the other tenant's ClickHouse, which means the same network problem. Only safe if the server is Geldar's own.
-4. **A Geldar-owned SigNoz stack (option B in 0352).** The gateway joins only Geldar's own network. No join with the other tenant. The Geldar stack's ingress is the gateway on loopback (F1).
+1. **Send through a published loopback port of the other tenant's collector.** Not available: the other tenant publishes its ports on all interfaces, not loopback, and a loopback publish would change that tenant's configuration (0350 item 4). Rejected.
+2. **`host-gateway` to the other tenant's published 4317 or 4318.** Uses the all-interfaces port with no ingestion key; relies on the node firewall (unverified). Rejected: it depends on exposure that already exists.
+3. **Socat-style forwarder on the host to the other tenant's ClickHouse container address.** Not joined, one port, but it still writes Geldar data into the other tenant's server, which 0352 rejects.
+4. **A Geldar-owned SigNoz stack and ClickHouse server (0352 option B).** The gateway joins only Geldar's own network.
 
-**Recommendation: option 4 (0352 option B).** It is the only option that avoids the join. If the owner keeps the other tenant's stack for Geldar's data, the least-bad form is option 3 on a Geldar-owned network with the other tenant's ClickHouse reached by an owner-approved route, which is still a trust decision (F9 stays owner-level).
+**Resolution: option 4, accepted in 0352.** No Geldar container joins the other tenant's network, and no port of the other tenant is published or changed. F9 is no longer open. The only node-level action is creating Geldar's own Docker network and stack, which needs owner approval (N3 and N7). Nothing changes on the other tenant: no config, no network membership, no published port.
 
 ## Summary
 
-| Finding | Recommendation | Owner decision needed |
-|---|---|---|
-| F1 | Loopback publish of one port; bearer check also on the gateway | Yes: the one loopback entry |
-| F2 | Fixed-size volume with an items count; `sizer: bytes` only after the soak test | Node step N2 |
-| F3 | Container procfs for node CPU and memory; bind `/mnt/nvme` read-only; no process scraper | Only if `hidepid` is wanted |
-| F4 | `{file.*}` placeholder or a secret mount for Caddy; not the reload environment | Caddy version check first |
-| F5 | Gateway `bearertokenauth` after verifying its compare; token at least 32 random bytes | No |
-| F6 | mTLS client certificate per Mind host; OS secret store as the fallback | Yes: the certificate CA and rotation |
-| F7, F8 | Option B in 0352 | Yes: owner |
-| F9 | Geldar-owned SigNoz stack (0352 option B) | Yes: owner |
+| Finding | Recommendation | Under 0352 option B | Owner decision needed |
+|---|---|---|---|
+| F1 | Loopback publish of one port; bearer check also on the gateway | Unchanged | Yes: the one loopback entry |
+| F2 | Fixed-size volume with an items count; `sizer: bytes` only after the soak test | Unchanged; the downstream is the Geldar collector | Node step N2 |
+| F3 | Container procfs for node CPU and memory; bind `/mnt/nvme` read-only; no process scraper | Unchanged; the bind also covers the Geldar disk | Only if `hidepid` is wanted |
+| F4 | `{file.*}` placeholder or a secret mount for Caddy; not the reload environment | Unchanged | Caddy version check first |
+| F5 | Gateway `bearertokenauth` after verifying its compare; token at least 32 random bytes | Unchanged | No |
+| F6 | mTLS client certificate per Mind host; OS secret store as the fallback | Unchanged; Geldar writer and reader credentials are separate | Yes: the certificate CA and rotation |
+| F7, F8 | Resolved: Geldar-owned ClickHouse and SigNoz stack (0352 option B) | Resolved | Owner ruling accepted (0352) |
+| F9 | Resolved: no network join (0352 option B) | Resolved | Node steps N3 and N7 |
 
 ## Unverified (collected)
 
@@ -151,4 +162,5 @@ Not in this file's scope; decided in `docs/decisions/0352-telemetry-dedicated-cl
 - Caddy's `{file.*}` placeholder and `client_auth` directives for the node's Caddy version.
 - The JS SDK's client-certificate environment names (T-03).
 - Whether the container's `/proc/net/dev` and `/proc/stat` show node values on the node.
-- The node's free RAM and CPU for option B (0352).
+- The node's free RAM and CPU for option B were measured read-only on 2026-11-15 (0352 fit check); the peak under ClickHouse merges is not measured until a scratch run.
+- Whether SigNoz 0.135 or later runs on one ClickHouse node without ZooKeeper or keeper (0352).
