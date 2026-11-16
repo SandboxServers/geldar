@@ -10,6 +10,7 @@ import {
   addContentEvent,
   type EventSpan,
   filterAttributes,
+  hasForbiddenSegment,
 } from '@geldar/telemetry';
 
 /** The span name: one per call, so a trace list reads by tool. */
@@ -21,9 +22,6 @@ export const TOOL_RESULT_EVENT = 'tool_result';
 
 /** The value that replaces any argument whose key names a secret. */
 export const REDACTED = '[redacted]';
-
-/** Keys that name a secret: their values are never captured. Matched anywhere in the key, any case. */
-const SECRET_KEY = /token|secret|authorization|password|cookie/i;
 
 /** The arguments and, on success, the result of one call. Captured as span events only. */
 export interface ToolCallContent {
@@ -100,7 +98,8 @@ function redactAt(value: unknown, depth: number, ancestors: WeakSet<object>): un
     if (Array.isArray(value)) return value.map((item) => redactAt(item, depth + 1, ancestors));
     const copy: Record<string, unknown> = {};
     for (const [key, inner] of Object.entries(value)) {
-      const kept = SECRET_KEY.test(key) ? REDACTED : redactAt(inner, depth + 1, ancestors);
+      // A key that names a credential (the telemetry package's forbidden-name rule): whole words or joined stems.
+      const kept = hasForbiddenSegment(key) ? REDACTED : redactAt(inner, depth + 1, ancestors);
       // defineProperty, not assignment: a key named __proto__ stays an own key and never sets the prototype.
       Object.defineProperty(copy, key, {
         value: kept,

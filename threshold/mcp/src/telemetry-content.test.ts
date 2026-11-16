@@ -253,6 +253,24 @@ describe('tool content as span events (T-06c)', () => {
     expect(input.PassWord).toBe(secret);
   });
 
+  it('redacts the credential-name family (apiKey, bearer, sessionId) and keeps token counts', () => {
+    const secret = ['fake', 'family', Date.now().toString(36)].join('-');
+    const input = {
+      apiKey: secret,
+      bearer: secret,
+      sessionId: secret,
+      input_tokens: 12,
+      max_tokens: 64,
+    };
+    expect(redactArguments(input)).toEqual({
+      apiKey: REDACTED,
+      bearer: REDACTED,
+      sessionId: REDACTED,
+      input_tokens: 12,
+      max_tokens: 64,
+    });
+  });
+
   it('keeps a __proto__ key as an own key of the copy, with its value redacted or kept', () => {
     const input = JSON.parse('{"__proto__":{"a":1},"keep":2}');
     const out = redactArguments(input);
