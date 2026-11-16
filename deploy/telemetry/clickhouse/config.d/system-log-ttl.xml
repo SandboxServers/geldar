@@ -10,7 +10,7 @@
   so check the system.tables list of *_log tables after each upgrade (README item 25).
 -->
 <clickhouse>
-    <!-- Other tables in this list are assumed to use event_date; scratch round 3 verifies each by startup. -->
+    <!-- Other tables in this list are assumed to use event_date; verified at startup in scratch round 5; re-check after each upgrade. -->
     <query_log>
         <database>system</database>
         <table>query_log</table>
