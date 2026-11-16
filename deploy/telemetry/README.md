@@ -76,6 +76,12 @@ The DSNs are built by a short shell wrapper that reads the secret file at start 
 
 No secret value, token or account name is in this directory.
 
+## Healthchecks and restarts
+
+Compose gates start on health. `geldar-ch` waits for `geldar-ch-keeper` to be healthy. The migrator, `geldar-signoz` and `geldar-signoz-otelcol` wait for `geldar-ch` to be healthy. So a failing Keeper healthcheck stops `geldar-ch` from starting, and a failing ClickHouse healthcheck stops the migrator, SigNoz and the collector from starting. The blocked services are not restarted and do not start at all.
+
+Nothing restarts a service because of a healthcheck: plain Docker does not act on `unhealthy`, and there is no autoheal sidecar. Restart loops (`restart: unless-stopped`) come only from a process exit, for example a ClickHouse config parse error. Those do not damage data.
+
 ## Unverified, check in the scratch run
 
 Each item says what it blocks. Nothing starts on the node until the items marked **blocks start** are checked.
@@ -89,9 +95,9 @@ Each item says what it blocks. Nothing starts on the node until the items marked
 7. **ClickHouse 25.12.5 (build 44) and migrator compatibility.** The migrator v0.144.6 is tested by SigNoz CI with 25.12.5. Run the migrator once against this server and check its exit status before the collector starts. **Blocks start of the collector.**
 8. **Keeper command.** Compose overrides the keeper entrypoint with `/usr/bin/clickhouse-keeper --config-file=...` (as Foundry does [SRC]) and sets `user: "101:101"`, so the `/entrypoint.sh` drop is not used. `[UNV]` that the binary path and the 101 data-dir owner match the 25.12.5 (build 44) image. **Blocks start of geldar-ch-keeper** until the id check and the chown are done.
 9. **ClickHouse `ON CLUSTER` with the `default` user.** The cluster entry in `cluster.xml` has no user, so DDL runs as `default`. `default` is kept, with networks restricted to loopback (`127.0.0.1`, `::1`), for this reason. If the scratch run shows ON CLUSTER refused from the container's own address, widen it to the Geldar telemetry subnet, never `::/0`. The plan: after the scratch run confirms DDL works, set `<user>` and `<password>` for `writer` in `remote_servers` and remove the `default` user. **Blocks the decision to remove `default`.**
-10. **Container `wget` for ClickHouse** (`http://localhost:8123/ping`). `[SRC]` from SigNoz devenv and Foundry; not checked inside the image. **Blocks ClickHouse healthcheck.**
-11. **Keeper healthcheck** `clickhouse-keeper-client -h localhost -p 9181 -q ls`. `[SRC]` Foundry; the binary's presence in the 25.12.5 (build 44) image is not checked. **Blocks Keeper healthcheck.**
-12. **SigNoz healthcheck** `wget --spider -q http://localhost:8080/api/v1/health`. busybox `wget` in alpine `[INF]`. **Blocks SigNoz healthcheck.**
+10. **Container `wget` for ClickHouse** (`http://localhost:8123/ping`). `[SRC]` from SigNoz devenv and Foundry; not checked inside the image. **Blocks start of geldar-ch and everything behind it** (see "Healthchecks and restarts").
+11. **Keeper healthcheck** `clickhouse-keeper-client -h localhost -p 9181 -q ls`. `[SRC]` Foundry; the binary's presence in the 25.12.5 (build 44) image is not checked. **Blocks start of geldar-ch and everything behind it** (see "Healthchecks and restarts").
+12. **SigNoz healthcheck** `wget --spider -q http://localhost:8080/api/v1/health`. busybox `wget` in alpine `[INF]`. **Blocks nothing**: no service depends on `geldar-signoz`, so a failing check only marks it unhealthy.
 13. **Collector DSN wrapper.** The collector and migrator read the password from a file through a shell wrapper. The collector's `${env:}` expansion is `[SRC]`; `${file:}` is not used. Whether the image has `/bin/sh` is unchecked. **Blocks start of the collector and migrator.**
 14. **Compose `secrets:` uid and mode.** Compose's file-secret ownership for uid 10001 is `[INF]` and may be ignored on Docker Desktop. Check with `docker exec ... ls -l /run/secrets` on the node. **Blocks start of the collector and migrator.**
 15. **Logs and ports of SigNoz.** The server's listener on 8080 is `[SRC]` from the SigNoz config. The OpAMP listener on 4320 is not used here (no manager config), so it is not published. `[UNV]` whether the server also opens 4320 by default. **Blocks nothing; check with `docker port`.**

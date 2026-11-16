@@ -33,7 +33,8 @@ The full list with numbers is in the README (section "Unverified, check in the s
 - **Collector healthcheck (item 3).** `wget` in the debian collector image is unconfirmed. Left off, so it blocks only that healthcheck.
 - **ON CLUSTER with the `default` user (item 9).** Blocks the decision to remove `default`. The current plan keeps `default` on loopback.
 - **Reader and retention (item 4).** Blocks retention changes made from the SigNoz UI. Does not block start.
-- Items 2, 5, 10, 11, 12, 15 do not block start (JWT names not needed with the opaque provider; async insert is tuning; health checks for ClickHouse, Keeper and SigNoz are [SRC] or [INF] and are checked on first start).
+- Items 2, 5, 12, 15 do not block start (JWT names not needed with the opaque provider; async insert is tuning; the SigNoz health check blocks nothing because no service depends on it).
+- Items 10 and 11 (ClickHouse and Keeper health checks) block the start of `geldar-ch` and every service behind it: a failing check stops the dependent from starting, and nothing is restarted for it (README, "Healthchecks and restarts").
 
 ## Checks to run
 
