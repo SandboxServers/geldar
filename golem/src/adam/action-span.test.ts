@@ -135,3 +135,124 @@ describe('actionSpanSink: one span per body action', () => {
     expect(handle.tracerProvider).toBeUndefined();
   });
 });
+
+interface FakeSpan extends ActionSpan {
+  attrs: Record<string, string>;
+  ends: number;
+}
+
+/** A tracer that keeps every span it starts: the attributes set on it, and how many times it ended. */
+function countingTracer(throwOn: (key: string, index: number) => boolean = () => false): {
+  tracer: ActionTracer;
+  spans: FakeSpan[];
+} {
+  const spans: FakeSpan[] = [];
+  const tracer: ActionTracer = {
+    startSpan: () => {
+      const index = spans.length;
+      const span: FakeSpan = {
+        attrs: {},
+        ends: 0,
+        setAttribute(key, value) {
+          if (throwOn(key, index)) throw new Error('attribute refused');
+          span.attrs[key] = value;
+          return undefined;
+        },
+        end() {
+          span.ends += 1;
+        },
+      };
+      spans.push(span);
+      return span;
+    },
+  };
+  return { tracer, spans };
+}
+
+describe('actionSpanSink: the open-span cap and the lifecycle', () => {
+  const CAP = 256;
+  const runningIds = (from: number, to: number): never[] =>
+    Array.from({ length: to - from }, (_, i) => running(`r${from + i}`));
+
+  it('traces up to the cap with every span still open', () => {
+    const { tracer, spans } = countingTracer();
+    const sink = actionSpanSink(new MemorySink(), tracer);
+    for (const record of runningIds(0, CAP)) sink.actionChanged(record);
+    expect(spans).toHaveLength(CAP);
+    expect(spans.every((span) => span.ends === 0)).toBe(true);
+  });
+
+  it('ends and evicts the oldest open span as other when the 257th action starts', () => {
+    const { tracer, spans } = countingTracer();
+    const lines: string[] = [];
+    const sink = actionSpanSink(new MemorySink(), tracer, (line) => lines.push(line));
+    for (const record of runningIds(0, CAP)) sink.actionChanged(record);
+    sink.actionChanged(running('r256'));
+    expect(spans).toHaveLength(CAP + 1);
+    expect(spans[0]?.attrs).toEqual({ action_id: 'r0', outcome: 'other' });
+    expect(spans[0]?.ends).toBe(1);
+    expect(spans.slice(1, CAP).every((span) => span.ends === 0)).toBe(true);
+    // One line for the first eviction; the next eviction does not log again.
+    expect(lines).toHaveLength(1);
+    sink.actionChanged(running('r257'));
+    expect(spans[1]?.attrs).toEqual({ action_id: 'r1', outcome: 'other' });
+    expect(spans[1]?.ends).toBe(1);
+    expect(lines).toHaveLength(1);
+  });
+
+  it('traces new actions again once the open ones finish (the entries are removed)', () => {
+    const { tracer, spans } = countingTracer();
+    const sink = actionSpanSink(new MemorySink(), tracer);
+    for (const record of runningIds(0, CAP)) sink.actionChanged(record);
+    // r0 stays open; r1 to r255 finish.
+    for (let i = 1; i < CAP; i += 1) sink.actionChanged(finished(`r${i}`, 'completed'));
+    expect(spans.slice(1).every((span) => span.ends === 1)).toBe(true);
+    sink.actionChanged(running('x'));
+    sink.actionChanged(finished('x', 'completed'));
+    expect(spans).toHaveLength(CAP + 1);
+    expect(spans[CAP]?.attrs).toEqual({ action_id: 'x', outcome: 'completed' });
+    // r0 was never evicted: no outcome, one end is still owed. Every other span ends exactly once.
+    expect(spans[0]?.attrs).toEqual({ action_id: 'r0' });
+    expect(spans[0]?.ends).toBe(0);
+    expect(spans.slice(1).every((span) => span.ends === 1)).toBe(true);
+  });
+
+  it('gives a terminal-only record past the cap its own span, without evicting', () => {
+    const { tracer, spans } = countingTracer();
+    const lines: string[] = [];
+    const inner = new MemorySink();
+    const sink = actionSpanSink(inner, tracer, (line) => lines.push(line));
+    for (const record of runningIds(0, CAP)) sink.actionChanged(record);
+    sink.actionChanged(finished('t1', 'completed'));
+    expect(spans).toHaveLength(CAP + 1);
+    expect(spans[CAP]?.attrs).toEqual({ action_id: 't1', outcome: 'completed' });
+    expect(spans[CAP]?.ends).toBe(1);
+    expect(spans[0]?.ends).toBe(0);
+    expect(lines).toHaveLength(0);
+    expect(inner.actions.at(-1)?.action_id).toBe('t1');
+  });
+
+  it('does not leave the entry open when setAttribute(action_id) throws', () => {
+    const { tracer, spans } = countingTracer((key, index) => key === 'action_id' && index === 0);
+    const inner = new MemorySink();
+    const sink = actionSpanSink(inner, tracer);
+    expect(() => sink.actionChanged(running('bad'))).not.toThrow();
+    expect(inner.actions.map((a) => a.action_id)).toEqual(['bad']);
+    expect(spans[0]?.ends).toBe(1);
+    // The failed span is not in the map, so a later terminal record starts a fresh span.
+    sink.actionChanged(finished('bad', 'failed'));
+    expect(spans).toHaveLength(2);
+    expect(spans[1]?.attrs).toEqual({ action_id: 'bad', outcome: 'failed' });
+  });
+
+  it('removes the entry and ends the span when setAttribute(outcome) throws', () => {
+    const { tracer, spans } = countingTracer((key) => key === 'outcome');
+    const sink = actionSpanSink(new MemorySink(), tracer);
+    sink.actionChanged(running('o1'));
+    expect(() => sink.actionChanged(finished('o1', 'completed'))).not.toThrow();
+    expect(spans[0]?.ends).toBe(1);
+    // The entry is gone, so the next record for the same id starts a new span.
+    sink.actionChanged(running('o1'));
+    expect(spans).toHaveLength(2);
+  });
+});
