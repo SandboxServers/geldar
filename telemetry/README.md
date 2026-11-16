@@ -22,7 +22,8 @@ with trace context carried in NATS message headers.
   `pass_word`) are matched after camelCase is split. Plural token counts such as
   `gen_ai.usage.input_tokens` are not credentials.
 - **Large text.** Content fields (`geldar.content.*`) are capped at 32 KiB in the SDK processors, on
-  spans, span events and logs. Each capped field carries a `truncated` flag and its original byte size.
+  spans, span events and logs. The cut never splits a UTF-8 character, so capped text is always
+  valid. Each capped field carries a `truncated` flag and its original byte size.
 - **Resource.** Every signal carries `service.name`, `service.version` and
   `deployment.environment.name`.
 

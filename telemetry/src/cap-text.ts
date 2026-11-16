@@ -11,11 +11,13 @@ export interface CappedText {
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-/** Caps text at `cap` UTF-8 bytes, cutting only on a character boundary. */
+/** Caps text at `cap` UTF-8 bytes, cutting only on a character boundary (never inside a multi-byte character). */
 export function capText(text: string, cap: number = CONTENT_CAP_BYTES): CappedText {
   const bytes = encoder.encode(text);
   if (bytes.byteLength <= cap) return { text, bytes: bytes.byteLength, truncated: false };
-  let out = decoder.decode(bytes.subarray(0, cap));
-  while (encoder.encode(out).byteLength > cap) out = out.slice(0, -1);
-  return { text: out, bytes: bytes.byteLength, truncated: true };
+  // Continuation bytes are 10xxxxxx. Back off while the first dropped byte is one, so a character
+  // that straddles the cap is dropped whole and the kept bytes are always complete characters.
+  let end = cap;
+  while (end > 0 && ((bytes[end] ?? 0) & 0xc0) === 0x80) end -= 1;
+  return { text: decoder.decode(bytes.subarray(0, end)), bytes: bytes.byteLength, truncated: true };
 }
