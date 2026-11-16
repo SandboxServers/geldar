@@ -173,6 +173,62 @@ describe('scrubText: credential forms', () => {
   });
 });
 
+describe('scrubText: free-text key=value', () => {
+  const R = REDACTED;
+  const redacted: [string, string][] = [
+    ['password=hunter2 token=abc', `password=${R} token=${R}`],
+    ['api_key: xyz', `api_key: ${R}`],
+    ['x-api-key=abc&next=1', `x-api-key=${R}&next=1`],
+    ['{"client_secret":"s3cr3t","ok":1}', `{"client_secret":"${R}","ok":1}`],
+    ['access_token=aaa refresh_token: bbb', `access_token=${R} refresh_token: ${R}`],
+    ['Cookie=sid123; path=/', `Cookie=${R}; path=/`],
+    ['passwd = longer-than-usual', `passwd = ${R}`],
+    [`secret=${'z'.repeat(600)} tail`, `secret=${R} tail`],
+  ];
+  it.each(redacted)('redacts %s', (input, expected) => {
+    expect(scrubText(input)).toBe(expected);
+  });
+
+  const kept = [
+    'max_tokens=100',
+    'input_tokens: 12',
+    'tokens=5',
+    'email: bob@example.org',
+    'name=steve count: 4',
+    'time: 12:30:45',
+  ];
+  it.each(kept)('keeps %s', (input) => {
+    expect(scrubText(input)).toBe(input);
+  });
+
+  it('is idempotent', () => {
+    const once = scrubText('password=hunter2 token=abc');
+    expect(scrubText(once)).toBe(once);
+  });
+
+  it('stays fast on 1 MiB inputs', () => {
+    const size = 1 << 20;
+    const rep = (unit: string): string => unit.repeat(Math.ceil(size / unit.length));
+    const inputs = {
+      passwords: rep('password='),
+      passwordColons: rep('password: '),
+      tokens: rep('token'),
+      tokenEq: rep('token='),
+      colons: rep(':'),
+      equals: rep('='),
+      pairs: rep('a=b '),
+      longKey: `${'k'.repeat(size)}=v`,
+      longValue: `token=${'v'.repeat(size)}`,
+      eqSpaces: `token=${' '.repeat(size)}x`,
+      quotes: rep('token":"'),
+    };
+    for (const [name, input] of Object.entries(inputs)) {
+      expect(timeScrub(input), name).toBeLessThan(500);
+    }
+    expect(timeScrub('x'.repeat(10 * (1 << 20)))).toBeLessThan(500);
+  });
+});
+
 describe('errorFields', () => {
   it('hides a token in a thrown object message and its stack', () => {
     const err = new TypeError(`bad ${token}`);

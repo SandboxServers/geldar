@@ -33,7 +33,23 @@ const BEARER_PROOF = /[\d_~+/=]/;
 // `://` is rejected in constant time per start instead of rescanned from every position.
 const URL_USERINFO = /(?<![a-z0-9+.-])([a-z][a-z0-9+.-]{0,31}:\/\/)[^\s/@:]*:[^\s/]*@/gi;
 
-/** The text with Authorization values, bearer strings, MCP tokens and URL userinfo replaced. */
+// Free-text `key=value` and `key: value` (also `"key":"value"`). The key starts at a key boundary (no
+// word character, dot or hyphen before it) and is at most 64 characters, so a long run is rejected in
+// constant time per start. The key is judged by the same rule as an object key (hasForbiddenSegment),
+// minus email addresses and authorization (the header pattern owns that). The value runs to a space,
+// quote, `&`, `,` or `;`; it is not capped, so a long secret is hidden whole.
+const KEY_VALUE = /(?<![\w.-])([A-Za-z][\w.-]{0,63})(["']?[ \t]*[=:][ \t]*["']?)([^\s"'&,;]+)/g;
+const KEY_HINT = /token|pass|pwd|secret|key|cookie|auth|cred|jwt|session|bearer/i;
+
+function credentialKey(key: string): boolean {
+  return (
+    KEY_HINT.test(key) &&
+    !/email|authorization/i.test(key) &&
+    hasForbiddenSegment(key)
+  );
+}
+
+/** The text with Authorization values, bearer strings, MCP tokens, URL userinfo and secret key=value pairs replaced. */
 export function scrubText(text: string): string {
   return text
     .replace(AUTH_HEADER, (_match, head: string) => (/["']/.test(head) ? head + REDACTED : REDACTED))
@@ -43,7 +59,10 @@ export function scrubText(text: string): string {
         : match,
     )
     .replace(MCP_TOKEN, REDACTED)
-    .replace(URL_USERINFO, `$1${REDACTED}@`);
+    .replace(URL_USERINFO, `$1${REDACTED}@`)
+    .replace(KEY_VALUE, (match, key: string, sep: string) =>
+      credentialKey(key) ? key + sep + REDACTED : match,
+    );
 }
 
 /**
