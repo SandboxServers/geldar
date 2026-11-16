@@ -33,4 +33,28 @@
         <flush_interval_milliseconds>30000</flush_interval_milliseconds>
         <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
     </processors_profile_log>
+    <asynchronous_metric_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </asynchronous_metric_log>
+    <error_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </error_log>
+    <latency_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </latency_log>
+    <query_metric_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </query_metric_log>
+    <query_thread_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </query_thread_log>
+    <query_views_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </query_views_log>
+    <session_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </session_log>
+    <zookeeper_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </zookeeper_log>
 </clickhouse>
