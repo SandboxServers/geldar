@@ -316,3 +316,97 @@ describe.skipIf(!SH)('scratch script under sh', { timeout: 60_000 }, () => {
     },
   );
 });
+
+describe.skipIf(!SH)('scratch script under sh: port files', { timeout: 60_000 }, () => {
+  const upCall = (run: { calls: string[] }) =>
+    run.calls.find((c) => c.startsWith('compose') && c.includes(' up -d'));
+  const withEnv = (envFile: string | null, jars = true) => ({ tree: { jars, envFile } });
+
+  it('up telemetry reads telemetry.env: the compose call carries the 25432/24222/28222/45565 block', () => {
+    const run = runScript(['up', 'telemetry'], OPEN, JARS);
+    expect(run.status).toBe(0);
+    expect(upCall(run)).toContain('PORTS=25432,24222,28222,45565');
+  });
+
+  it('status and down for telemetry also load the file, so every verb sees the same ports', () => {
+    for (const verb of ['status', 'down']) {
+      const run = runScript([verb, 'telemetry'], {}, JARS);
+      expect(
+        run.calls.some((c) => c.includes('PORTS=25432,24222,28222,45565')),
+        verb,
+      ).toBe(true);
+    }
+  });
+
+  it('up telemetry with telemetry.env missing exits 2 and makes no docker call', () => {
+    const run = runScript(['up', 'telemetry'], OPEN, withEnv(null));
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain('telemetry.env is missing');
+    expect(run.calls).toEqual([]);
+  });
+
+  it('up scratch-a (the default suffix) sets no port variable', () => {
+    const run = runScript(['up'], OPEN, JARS);
+    expect(run.status).toBe(0);
+    expect(upCall(run)).toContain('PORTS=,,,');
+  });
+
+  it('up scratch-a with no env file at all still works, and another suffix needs none', () => {
+    for (const args of [['up'], ['up', 'zz']]) {
+      const run = runScript(args, OPEN, withEnv(null));
+      expect(run.status, args.join(' ')).toBe(0);
+      expect(upCall(run), args.join(' ')).toContain('PORTS=,,,');
+    }
+  });
+
+  it('an operator-set port variable wins over the file; the others come from the file', () => {
+    const run = runScript(['up', 'telemetry'], { ...OPEN, SCRATCH_PG_PORT: '6543' }, JARS);
+    expect(run.status).toBe(0);
+    expect(upCall(run)).toContain('PORTS=6543,24222,28222,45565');
+  });
+
+  it.each([
+    ['an unknown key', 'SCRATCH_PG_PORT=25432\nGELDAR_X=1\n', 'unknown key'],
+    ['a key that only looks like a port key', 'SCRATCH_PG_PORTS=25432\n', 'unknown key'],
+    ['a non-numeric value', 'SCRATCH_PG_PORT=abc\n', 'must be digits only'],
+    ['a value with a trailing command', 'SCRATCH_PG_PORT=1;x\n', 'must be digits only'],
+    ['an empty value', 'SCRATCH_PG_PORT=\n', 'must be digits only'],
+    ['a line without an equals sign', 'SCRATCH_PG_PORT\n', 'must be digits only'],
+    ['a value above 65535', 'SCRATCH_PG_PORT=65536\n', 'must be 1 to 65535'],
+    ['a value of 70000', 'SCRATCH_PG_PORT=70000\n', 'must be 1 to 65535'],
+    ['a value of 0', 'SCRATCH_PG_PORT=0\n', 'must be 1 to 65535'],
+    ['a value of 000000', 'SCRATCH_PG_PORT=000000\n', 'must be 1 to 65535'],
+  ])('up telemetry with %s in the file exits 2 and makes no docker call', (_n, text, message) => {
+    const run = runScript(['up', 'telemetry'], OPEN, withEnv(text));
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain(message);
+    expect(run.calls).toEqual([]);
+  });
+
+  it('accepts 1 and 65535, blank lines and comments', () => {
+    const text = '# c\n\nSCRATCH_PG_PORT=1\nSCRATCH_NATS_PORT=65535\n# more\n';
+    const run = runScript(['up', 'telemetry'], OPEN, withEnv(text));
+    expect(run.status).toBe(0);
+    expect(upCall(run)).toContain('PORTS=1,65535,,');
+  });
+
+  it('does not execute shell content: a command substitution value is refused and nothing runs', () => {
+    const run = runScript(['up', 'telemetry'], OPEN, {
+      ...withEnv('SCRATCH_PG_PORT=$(touch @BASE@/pwned)\n'),
+      watch: ['pwned'],
+    });
+    expect(run.status).toBe(2);
+    expect(run.stderr).toContain('must be digits only');
+    expect(run.present.pwned).toBe(false);
+    expect(run.calls).toEqual([]);
+  });
+
+  it('does not execute a command on its own line either', () => {
+    const run = runScript(['up', 'telemetry'], OPEN, {
+      ...withEnv('touch @BASE@/pwned\n'),
+      watch: ['pwned'],
+    });
+    expect(run.status).toBe(2);
+    expect(run.present.pwned).toBe(false);
+  });
+});

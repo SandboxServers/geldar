@@ -7,6 +7,7 @@
 # (nats-auth.conf, nats-paper.txt, nats-velocity.txt, nats-eventsink.txt). Open NATS needs SCRATCH_NATS_OPEN=1 and
 # prints a warning. Secrets live in a per-user state directory, not a shared temp directory; down removes only that
 # directory.
+# Ports: deploy/scratch/<suffix>.env (SCRATCH_*_PORT lines only) is read by this script; required for telemetry.
 set -u
 umask 077
 
@@ -39,6 +40,45 @@ if [ "${#suffix}" -gt 9 ]; then
   exit 2
 fi
 PROJECT="scratch-$suffix"
+
+# Host ports for this project come from deploy/scratch/<suffix>.env, which this script parses itself (never sourced, so
+# nothing in it runs). Only the four port keys are accepted, with digit values 1 to 65535; anything else exits 2. A
+# variable the operator already set wins over the file. The file is required for telemetry and optional otherwise.
+load_ports() {
+  portfile="$ROOT/deploy/scratch/$suffix.env"
+  if [ ! -f "$portfile" ]; then
+    if [ "$suffix" = telemetry ]; then
+      echo "scratch: deploy/scratch/telemetry.env is missing; nothing started" >&2
+      exit 2
+    fi
+    return 0
+  fi
+  while IFS='=' read -r key val || [ -n "$key" ]; do
+    case "$key" in '' | '#'*) continue ;; esac
+    case "$key" in
+      SCRATCH_PG_PORT) cur=${SCRATCH_PG_PORT:-} ;;
+      SCRATCH_NATS_PORT) cur=${SCRATCH_NATS_PORT:-} ;;
+      SCRATCH_NATS_MON_PORT) cur=${SCRATCH_NATS_MON_PORT:-} ;;
+      SCRATCH_MC_PORT) cur=${SCRATCH_MC_PORT:-} ;;
+      *)
+        echo "scratch: $portfile: unknown key; nothing started" >&2
+        exit 2
+        ;;
+    esac
+    case "$val" in
+      '' | *[!0-9]*)
+        echo "scratch: $portfile: $key must be digits only; nothing started" >&2
+        exit 2
+        ;;
+    esac
+    if [ "${#val}" -gt 5 ] || [ "$val" -lt 1 ] || [ "$val" -gt 65535 ]; then
+      echo "scratch: $portfile: $key must be 1 to 65535; nothing started" >&2
+      exit 2
+    fi
+    [ -n "$cur" ] || export "$key=$val"
+  done <"$portfile"
+}
+load_ports
 
 # Paths the script uses must be absolute and one line: a relative or multi-line path would reach the compose files.
 # A drive-letter path counts only where uname does not say Linux: the Windows host runs this script under MSYS sh.

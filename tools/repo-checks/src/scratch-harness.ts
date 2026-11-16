@@ -21,6 +21,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 export const SCRIPT_PATH = `${ROOT}deploy/scratch/scratch.sh`;
 export const SCRIPT = readFileSync(SCRIPT_PATH, 'utf8');
+const ENV_PATH = `${ROOT}deploy/scratch/telemetry.env`;
 export const SH = spawnSync('sh', ['-c', 'exit 0']).status === 0 ? 'sh' : null;
 
 /** Windows needs a privilege to make symlinks, so that case runs only where one can be made. */
@@ -48,7 +49,11 @@ export const HOME_UNSETTABLE =
 export type Env = Record<string, string | undefined>;
 export interface RunOpts {
   /** Runs a copy of the script in a temp tree; jars adds the two plugin jars the script checks for. */
-  tree?: { jars: boolean };
+  tree?: {
+    jars: boolean;
+    /** The telemetry.env in the tree: undefined copies the real file, null leaves it out, a string is its text (@BASE@ is the stub base dir). */
+    envFile?: string | null;
+  };
   /** Sets up files under the stub base dir before the script runs. */
   prepare?: (base: string) => void;
   /** Paths relative to the stub base dir whose existence is recorded after the run. */
@@ -79,7 +84,7 @@ export function stubs(): { base: string; env: Env } {
   const files: Record<string, string> = {
     docker: [
       '#!/bin/sh',
-      'echo "$* SECRETS=$SCRATCH_SECRETS_DIR WORLD=$GELDAR_WORLD_VOLUME" >>"$STUB_LOG"',
+      'echo "$* SECRETS=$SCRATCH_SECRETS_DIR WORLD=$GELDAR_WORLD_VOLUME PORTS=$SCRATCH_PG_PORT,$SCRATCH_NATS_PORT,$SCRATCH_NATS_MON_PORT,$SCRATCH_MC_PORT" >>"$STUB_LOG"',
       'if [ "$1" = compose ] && { [ -z "$SCRATCH_SECRETS_DIR" ] || [ -z "$GELDAR_WORLD_VOLUME" ]; }; then',
       '  echo "required variable SCRATCH_SECRETS_DIR or GELDAR_WORLD_VOLUME is missing a value" >&2; exit 1',
       'fi',
@@ -154,10 +159,17 @@ export function assertStubsFirst(bin: string, env: Env): void {
 }
 
 /** A copy of the script in base/tree, with the plugin jars when asked. The script finds its root from its own path. */
-export function makeTree(base: string, jars: boolean): string {
+export function makeTree(base: string, jars: boolean, envFile?: string | null): string {
   const script = join(base, 'tree', 'deploy', 'scratch', 'scratch.sh');
   mkdirSync(dirname(script), { recursive: true });
   writeFileSync(script, SCRIPT);
+  if (envFile !== null) {
+    const text =
+      envFile === undefined
+        ? readFileSync(ENV_PATH, 'utf8')
+        : envFile.replaceAll('@BASE@', slash(base));
+    writeFileSync(join(dirname(script), 'telemetry.env'), text);
+  }
   if (jars) {
     for (const jar of [
       'plugin/core/build/libs/geldar-core.jar',
@@ -182,7 +194,7 @@ export function runScript(
   for (const key of Object.keys(env)) if (env[key] === undefined) delete env[key];
   try {
     opts.prepare?.(s.base);
-    const script = opts.tree ? makeTree(s.base, opts.tree.jars) : SCRIPT_PATH;
+    const script = opts.tree ? makeTree(s.base, opts.tree.jars, opts.tree.envFile) : SCRIPT_PATH;
     assertStubsFirst(join(s.base, 'bin'), env);
     const result = spawnSync(SH as string, [script, ...args], {
       encoding: 'utf8',
