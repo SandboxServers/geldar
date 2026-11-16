@@ -107,6 +107,8 @@ name only: `docker ps -a --filter label=geldar.admit --format '{{.Names}}'`, the
 
 The admit one-shot has two fixed modes (BH-5a): `GELDAR_ADMIT_MODE=add` (start, container `geldar-admit-<life id>`) and `remove` (stop, container `geldar-unadmit-<life id>`). Both carry the `geldar.admit` label, whose value names the mode, so the label filter above lists both. A left-behind `geldar-unadmit-<life id>` is removed the same way, by its exact name only: `docker rm -f geldar-unadmit-<life id>`. Never a pattern.
 
+The BH-6 sweep (with managed Bodies on) removes a managed Body whose roster row is gone and whose container exited 78, only after two consecutive passes: its whitelist entry first (the remove one-shot), then the container. A failed remove keeps the container and retries on the next pass; the sweep audit lines are `orphan_removed` and `orphan_removal_failed`.
+
 `GELDAR_NETWORK` (default `geldar-colo`) and `GELDAR_STACK` (default `colo`) are optional; an unset or empty
 value takes the default. `GELDAR_NETWORK` is a Docker network name of at most 63 characters, and the
 helper refuses `host`, `bridge` and `none` (also `default` and `container:<id>`, in any case). The helper

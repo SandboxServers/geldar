@@ -26,6 +26,8 @@ export const ADMIT_NAME_PREFIX = 'geldar-admit-';
 export const UNADMIT_NAME_PREFIX = 'geldar-unadmit-';
 /** The label of a managed Body that carries its validated life id, so a later stop can find the id without the roster (BH-5a). */
 export const LIFE_LABEL = 'geldar.life';
+/** The label of a managed Body (BH-6). The sweep removes only a Body that carries it, so a legacy or house Body never qualifies. */
+export const MANAGED_LABEL = 'geldar.managed';
 /** The two one-shot modes: add (admit before start) and remove (un-admit on stop). */
 export type AdmitMode = 'add' | 'remove';
 /** Paper's RCON host and port on the colo network (the same names the admin one-shot uses). */
@@ -114,6 +116,7 @@ export function managedBodyConfig(input: ManagedBodyInput): Record<string, unkno
       'com.geldar.stack': wiring.stack ?? 'colo',
       'geldar.owner': input.owner,
       [LIFE_LABEL]: input.lifeId,
+      [MANAGED_LABEL]: '1',
       [BODY_LABEL]: input.name,
     },
     HostConfig: {
