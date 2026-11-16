@@ -18,7 +18,15 @@ export interface FilteredAttributes {
   dropped: DroppedAttribute[];
 }
 
+// Exception text is capped like content (see isCappedText).
+const EXCEPTION_TEXT_KEYS: ReadonlySet<string> = new Set([
+  'exception.type',
+  'exception.message',
+  'exception.stacktrace',
+]);
+
 const TRACE_LOG_KEYS: ReadonlySet<string> = new Set([
+  ...EXCEPTION_TEXT_KEYS,
   'life_id',
   'player_id',
   'thought_id',
@@ -138,13 +146,17 @@ function classify(key: string, name: string, scope: TelemetryScope): DropReason 
   return scope === 'log' && extraLogKeys.has(name) ? undefined : 'unknown';
 }
 
+function isCappedText(name: string): boolean {
+  return name.startsWith('content.') || EXCEPTION_TEXT_KEYS.has(name);
+}
+
 function isScalar(value: unknown): value is AttrValue {
   return typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
 }
 
 /**
  * Keeps only allow-listed scalar attributes for a scope; everything else is dropped and counted.
- * A string under `geldar.content.*` is capped at 32 KiB, and its `.bytes` and `.truncated` siblings are set.
+ * A string under `geldar.content.*`, or exception text, is capped at 32 KiB, and its `.bytes` and `.truncated` siblings are set.
  */
 export function filterAttributes(
   input: Record<string, unknown>,
@@ -162,7 +174,7 @@ export function filterAttributes(
       continue;
     }
     if (!isScalar(value)) continue;
-    if (typeof value === 'string' && name.startsWith('content.')) {
+    if (typeof value === 'string' && isCappedText(name)) {
       const capped = capText(value);
       attributes[key] = capped.text;
       if (capped.truncated) cut.set(key, capped.bytes);
