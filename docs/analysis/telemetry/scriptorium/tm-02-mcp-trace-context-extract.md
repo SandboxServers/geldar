@@ -1,10 +1,10 @@
 # TM-02: MCP extracts the Mind's trace context (T-14, MCP side) (geldar repo)
 
-Repo: geldar. Depends on: T-06 and T-06c (merged). Unblocks: TM-20, the end-to-end proof of TM-22. `colo-images` path: YES (`threshold/mcp/**`). Hold the PR for the batch window (rollout-plan C1); do not merge it alone.
+Repo: geldar. Depends on: T-06 and T-06c (merged). Unblocks: nothing (the cards that would have sent the carrier, TM-20 to TM-23, are dropped; see README, Dropped cards). `colo-images` path: YES (`threshold/mcp/**`). Hold the PR for the batch window (rollout-plan C1); do not merge it alone.
 
 ## Goal
 
-Make every `tools/call` span a child of the Mind's run span, when the call carries W3C trace context. Two carriers, in this order (survey 3.2): MCP `params._meta.traceparent` (and `tracestate`), then the HTTP `traceparent` header. With neither, the span stays a root, as today. Nothing about this reaches the agent: the extracted context is used for the span parent only.
+Make every `tools/call` span a child of the Mind's run span, when the call carries W3C trace context. Two carriers, in this order (survey 3.2): MCP `params._meta.traceparent` (and `tracestate`), then the HTTP `traceparent` header. With neither, the span stays a root, as today. Nothing about this reaches the agent: the extracted context is used for the span parent only. Note (2026-11-16 ruling): nothing in the Mind now puts a `traceparent` into the model child or the ChatGPT harness (TM-20 to TM-23 dropped); a carrier arrives only where an SDK or client forwards one. Without a carrier tool spans stay roots and join the Mind spans by `player_id` plus time. This card is kept as passive support; whether it is still worth a batch-window slot is an owner call (see the report).
 
 ## Files (exactly these)
 
