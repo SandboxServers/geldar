@@ -45,6 +45,22 @@
             </networks>
             <profile>default</profile>
             <quota>default</quota>
+            <!-- [AUTH] default exists because the cluster entry in cluster.xml has no <user>, so Distributed tables and
+                 clusterAllReplicas reach the shard as default. Its grants are limited to what that needs: SELECT and INSERT on the
+                 six signoz_* databases and SELECT on system.*. Nothing else: no SOURCES, SYSTEM, FILE, URL, S3, REMOTE, ALTER,
+                 CREATE, DROP, TABLE ENGINE or access management. Distributed DDL (ON CLUSTER) is expected to run as the initiating
+                 user (geldar_writer), not as default [UNV until scratch round 6]. Networks stay HOST LOCAL and the password stays
+                 empty. Residual: through remote() the writer can act as default, which gives SELECT and INSERT on the six signoz_*
+                 databases and SELECT on system.*, no more than the writer already has on those databases. -->
+            <grants>
+                <query>GRANT SELECT, INSERT ON signoz_traces.*</query>
+                <query>GRANT SELECT, INSERT ON signoz_logs.*</query>
+                <query>GRANT SELECT, INSERT ON signoz_metrics.*</query>
+                <query>GRANT SELECT, INSERT ON signoz_metadata.*</query>
+                <query>GRANT SELECT, INSERT ON signoz_meter.*</query>
+                <query>GRANT SELECT, INSERT ON signoz_analytics.*</query>
+                <query>GRANT SELECT ON system.*</query>
+            </grants>
         </default>
         <geldar_writer>
             <password_sha256_hex from_env="GELDAR_CH_WRITER_SHA256"/>
