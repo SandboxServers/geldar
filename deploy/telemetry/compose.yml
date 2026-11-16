@@ -147,6 +147,9 @@ services:
       SIGNOZ_SQLSTORE_PROVIDER: sqlite                      # [SRC] key; Foundry sets postgres
       SIGNOZ_SQLSTORE_SQLITE_PATH: /var/lib/signoz/signoz.db  # [INF] default path [SRC]; env name [UNV]
       SIGNOZ_TOKENIZER_PROVIDER: opaque                     # default; no JWT secret needed [INF]
+      # Vendor usage reporting off (analytics and segment reporter). The binary exposes this name; its default is not known from the
+      # image (scratch report2, step 4), so it is set explicitly here. [AUTH]
+      SIGNOZ_ANALYTICS_ENABLED: "false"
     volumes:
       - /mnt/nvme/geldar-telemetry/query:/var/lib/signoz
     secrets:
