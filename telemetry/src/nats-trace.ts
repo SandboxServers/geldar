@@ -1,5 +1,6 @@
 // W3C trace context over NATS headers. Only `traceparent` crosses the wire: never Baggage,
-// never tracestate (decision 0350 section 7; survey 3.4 and 9.9). The HeaderLike type is
+// never tracestate. Not carrying tracestate is a deliberate narrowing of decision 0350 point 7,
+// because vendor state could carry unreviewed data (survey 3.4 and 9.9). The HeaderLike type is
 // structural, so this module needs no NATS import (nats MsgHdrs satisfies it).
 
 import { type Context, context, ROOT_CONTEXT } from '@opentelemetry/api';

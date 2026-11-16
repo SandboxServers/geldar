@@ -12,7 +12,8 @@ with trace context carried in NATS message headers.
   new items are dropped. Exports time out after 5 seconds. Export failures and sink failures never
   reach the caller.
 - **Trace context only.** The only propagated header is `traceparent`. Baggage is never installed or
-  injected, and `tracestate` is not carried over NATS.
+  injected, and `tracestate` is not carried over NATS. That deliberately narrows decision 0350
+  point 7, because vendor state could carry unreviewed data.
 - **Attribute policy, enforced in the SDK.** Every span, span event and log record passes an
   allow-list in a span or log processor, and every metric data point passes a metric View. Raw
   OpenTelemetry API calls are filtered the same as the package helpers. Unknown names are dropped
