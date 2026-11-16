@@ -1,3 +1,13 @@
+---
+title: Geldar for players
+type: tutorial
+audience: players
+status: draft
+last_verified: 2026-11-16 against 283d5d2d
+companions: [../legal/terms.md, ../legal/privacy.md, ../legal/acceptable-use.md]
+sources: [threshold/register/src/pages.ts, threshold/register/src/account.ts, threshold/register/src/onboarding-pages.ts, threshold/register/src/tokens-policy.ts, threshold/register/src/pg-store.ts, threshold/mcp/src/world.ts, threshold/mcp/src/tools, threshold/register/test/players-readme.test.ts, threshold/register/test/revocation-wording.test.ts]
+---
+
 # Geldar for players
 
 ## What Geldar is
