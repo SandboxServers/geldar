@@ -1,0 +1,112 @@
+# Geldar telemetry gateway (T-25): OpenTelemetry Collector contrib 0.164.0, first-stage config.
+# Design: docs/analysis/telemetry/collector-design.md sections 5 to 7. Compose: deploy/telemetry/compose.gateway.yml.
+# Labels: [SRC] from collector-design; [AUTH] written here; [UNV] unverified until the node validate step (README, "Gateway (N8)").
+#
+# Content capture (decision 0350, full text, no opt-out): this gateway must NOT truncate or drop thoughts, speech, journals or prompts.
+# So there is NO attribute-size limit, NO log-body-length limit and NO sampling anywhere below. Do not add one.
+# Redaction here is narrow, per collector-design section 5: it masks IPv4 and IPv6 literals in the log body and deletes
+# credential-looking attribute KEYS. It does NOT scrub free text for secrets or personal data.
+
+receivers:
+  otlp:
+    protocols:
+      # geldar-colo and geldar-telemetry only. Not published, except the loopback publish of 4318 in compose.gateway.yml.
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+  # Later steps (not enabled now; exact receiver names for 0.164.0):
+  # prometheus:   # N10, NATS exporter scrape (nats:<exporter port>, 30s)
+  # postgresql:   # N11, monitoring role, password from ${file:/run/secrets/otel-pg.txt}
+  # host_metrics: # later step, the /mnt/nvme filesystem alarm (collector-design section 8)
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 400
+    spike_limit_mib: 80
+  resource:
+    attributes:
+      - {key: deployment.environment.name, value: colo, action: upsert}
+      - {key: service.namespace, value: geldar, action: upsert}
+  filter/noise:
+    error_mode: ignore
+    logs:
+      log_record:
+        # Drops Paper's RCON thread lines; the [Rcon: ...] echoes are kept.
+        - 'IsMatch(body, ".*Thread RCON Client .*(started|shutting down).*")'
+    traces:
+      span:
+        - 'attributes["http.route"] == "/healthz"'   # route name to confirm [UNV]
+  transform/redact:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          # IPv4 (each octet 0-255, word boundaries so version-like or longer digit runs are not touched). [UNV] escaping: single-quoted YAML keeps \\ as two characters, OTTL turns them into one.
+          - 'replace_pattern(log.body, "\\b(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\b", "<addr>")'
+          # IPv6, full form (8 groups).
+          - 'replace_pattern(log.body, "\\b(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}\\b", "<addr>")'
+          # IPv6, compressed form: needs a "::", so clock times such as 12:30:45 are not touched.
+          - 'replace_pattern(log.body, "(?:[0-9A-Fa-f]{1,4}:){1,7}:(?:[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6})?|::(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4}", "<addr>")'
+          - 'delete_matching_keys(log.attributes, "(?i)(token|secret|password|passwd|authorization|cookie|api[_-]?key)")'
+          - 'delete_key(log.attributes, "user.email")'
+    trace_statements:
+      - context: span
+        statements:
+          - 'delete_matching_keys(span.attributes, "(?i)(token|secret|password|passwd|authorization|cookie|api[_-]?key)")'
+  transform/metric_labels:
+    error_mode: ignore
+    metric_statements:
+      - context: datapoint
+        statements:
+          # 0088 and 0350 item 1: metrics keep no life or player label
+          - 'delete_key(datapoint.attributes, "geldar.life_id")'
+          - 'delete_key(datapoint.attributes, "player_id")'
+  batch:
+    send_batch_size: 2048
+    timeout: 5s   # PROPOSED; not tuned
+
+exporters:
+  # Downstream: the Geldar SigNoz collector (OTLP gRPC on 4317, see signoz-otelcol-config.yaml). Set in compose.gateway.yml.
+  # `otlp_grpc` is the 0.164.0 type name; `otlp` is a deprecated alias.
+  otlp_grpc/geldar_signoz:
+    endpoint: ${env:GELDAR_SIGNOZ_OTLP_ENDPOINT}
+    tls:
+      insecure: true   # internal Geldar network only
+    compression: gzip
+    timeout: 5s
+    retry_on_failure:
+      enabled: true
+      max_elapsed_time: 300s
+    sending_queue:
+      enabled: true
+      storage: file_storage
+      queue_size: 400   # collector-design section 6: items, not bytes; about 1 GiB at 2.5 MB a request [UNV]
+      block_on_overflow: false
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133   # inside the container only, not published
+  file_storage:
+    directory: /var/lib/otelcol/queue   # the mounted host directory, owner 10001:10001
+    create_directory: false
+
+service:
+  extensions: [health_check, file_storage]
+  telemetry:
+    logs:
+      level: warn
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, filter/noise, transform/redact, batch]
+      exporters: [otlp_grpc/geldar_signoz]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, filter/noise, transform/redact, batch]
+      exporters: [otlp_grpc/geldar_signoz]
+    metrics:
+      receivers: [otlp]   # add prometheus (N10), postgresql (N11), host_metrics (later) here when enabled
+      processors: [memory_limiter, resource, transform/metric_labels, batch]
+      exporters: [otlp_grpc/geldar_signoz]
