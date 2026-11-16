@@ -68,26 +68,57 @@ const MAX_OPEN_ACTION_SPANS = 256;
  * The span carries only `action_id` and `outcome` (a closed status label): never thought, chat,
  * speech or prompt text. Every record still reaches `inner`, and a tracer failure is swallowed here.
  */
-export function actionSpanSink(inner: RecordSink, tracer: ActionTracer): RecordSink {
+export function actionSpanSink(
+  inner: RecordSink,
+  tracer: ActionTracer,
+  log: (line: string) => void = () => undefined,
+): RecordSink {
   const open = new Map<string, ActionSpan>();
+  let capLogged = false;
+  /** Sets the outcome and ends the span; the entry is removed by the caller before this runs. */
+  const finish = (span: ActionSpan, outcome: string): void => {
+    try {
+      span.setAttribute('outcome', outcome);
+    } finally {
+      span.end();
+    }
+  };
   const observe = (record: ActionRecord): void => {
     const id = record.action_id;
     const result = record.result ?? null;
     let span = open.get(id);
     if (span === undefined) {
-      if (result === null && open.size >= MAX_OPEN_ACTION_SPANS) return;
+      // A running action holds a slot, so at the cap the oldest open span is ended to make room. A
+      // terminal-only record is started and ended at once, so it needs no slot and never evicts.
+      if (result === null && open.size >= MAX_OPEN_ACTION_SPANS) {
+        const oldest = open.entries().next();
+        if (!oldest.done) {
+          const [oldestId, oldestSpan] = oldest.value;
+          open.delete(oldestId);
+          if (!capLogged) {
+            capLogged = true;
+            log(`action spans: ${MAX_OPEN_ACTION_SPANS} open; the oldest is ended as other`);
+          }
+          finish(oldestSpan, 'other');
+        }
+      }
       span = tracer.startSpan(ACTION_SPAN_NAME);
-      span.setAttribute('action_id', id);
-      open.set(id, span);
+      try {
+        span.setAttribute('action_id', id);
+      } catch (error) {
+        span.end();
+        throw error;
+      }
+      if (result === null) open.set(id, span);
     }
     if (result !== null) {
+      // The entry goes before the span ends, so a failure below never leaves it open.
+      open.delete(id);
       const status = String(result.status);
       const outcome = (OUTCOME_STATUS_LABELS as readonly string[]).includes(status)
         ? status
         : 'other';
-      span.setAttribute('outcome', outcome);
-      span.end();
-      open.delete(id);
+      finish(span, outcome);
     }
   };
   return {
@@ -267,7 +298,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     },
     nats: { publisher, shard: config.shard, log },
     wrapRecords: (inner) => {
-      const traced = env.tracer ? actionSpanSink(inner, env.tracer) : inner;
+      const traced = env.tracer ? actionSpanSink(inner, env.tracer, log) : inner;
       const made = new RecentEvents(env.metrics ? countingSink(traced, env.metrics) : traced);
       wrapped.recent = made;
       return made;
