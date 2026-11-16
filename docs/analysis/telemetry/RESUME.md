@@ -23,7 +23,7 @@ Owner: freeze exemption for this session; full-text capture, no opt-out, 1-year 
 - Node stack steps N1-N13 in collector-design.md, one request each (caps, window, rollback).
 - N14: Caddy ingest window (after gateway).
 - N15: helper read-only stats route (separate window).
-- T-06d (content capture follow-up, see t06c card): not started.
+- T-06d (errors, pre-handler failures, capture order): cards written (t06d-errors-card.md: d1 telemetry, d2 MCP, d3 Body, d4 eventsink); not started. One batched deploy window: batch-deploy-plan.md.
 - Paper plugin cards: scratch shard first. JEP 509 CPU sampling stays off until owner says yes.
 - Paper limit edit in node colo.yml (repo copy stale).
 
