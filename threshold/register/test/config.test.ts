@@ -57,6 +57,14 @@ describe('loadConfig', () => {
     }
   });
 
+  it('keeps the switch on when the terms version is not approved, even when the switch is off (C7-11)', () => {
+    const off = { ...env, REGISTER_KILL_SWITCH: 'false' };
+    expect(loadConfig(off, read).killSwitch).toBe(false);
+    expect(loadConfig(off, read, ['v1']).killSwitch).toBe(false);
+    expect(loadConfig(off, read, []).killSwitch).toBe(true);
+    expect(loadConfig(off, read, ['v2']).killSwitch).toBe(true);
+  });
+
   it('refuses a short pepper or session key, a missing secret file and a non-https url', () => {
     expect(() => loadConfig(env, (p) => (p === 'p' ? 'short' : 'x'.repeat(32)))).toThrow(/PEPPER/);
     expect(() => loadConfig(env, (p) => (p === 's' ? 'short' : 'x'.repeat(32)))).toThrow(

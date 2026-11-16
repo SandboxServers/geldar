@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { isIP } from 'node:net';
+import { TERMS_VERSION } from './account.ts';
+import { APPROVED_TERMS_VERSIONS, termsApproved } from './signup-gate.ts';
 
 export interface ProviderCredentials {
   readonly clientId: string;
@@ -125,11 +127,13 @@ function natsOf(
 
 /**
  * Reads the config from an environment map. A secret is read from the file named by
- * `<NAME>_FILE`. Only the exact string `false` turns the kill switch off.
+ * `<NAME>_FILE`. Only the exact string `false` turns the kill switch off, and even then the
+ * switch stays on unless the current terms version is approved (C7-11 sign-up gate).
  */
 export function loadConfig(
   env: Readonly<Record<string, string | undefined>>,
   readSecret: (path: string) => string = (p) => readFileSync(p, 'utf8'),
+  approvedTerms: readonly string[] = APPROVED_TERMS_VERSIONS,
 ): RegisterConfig {
   const secret = (name: string): string => {
     const path = env[`${name}_FILE`];
@@ -152,7 +156,8 @@ export function loadConfig(
   return {
     nats: nats.nats,
     natsPasswordUnreadable: nats.passwordUnreadable,
-    killSwitch: env.REGISTER_KILL_SWITCH !== 'false',
+    killSwitch:
+      env.REGISTER_KILL_SWITCH !== 'false' || !termsApproved(TERMS_VERSION, approvedTerms),
     publicUrl,
     mcpPublicUrl,
     host: env.REGISTER_HOST ?? '127.0.0.1',

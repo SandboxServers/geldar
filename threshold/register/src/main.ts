@@ -36,6 +36,12 @@ const server = createRegisterServer({
   accountDelete,
   api,
 });
+// The gate (signup-gate.ts) can hold the switch on after REGISTER_KILL_SWITCH=false; say so, since the env alone looks open.
+if (process.env.REGISTER_KILL_SWITCH === 'false' && config.killSwitch) {
+  log(
+    'register kill switch held on: terms version not in APPROVED_TERMS_VERSIONS (signup-gate.ts)',
+  );
+}
 server.listen(config.port, config.host, () => {
   log(`register listening killSwitch=${config.killSwitch}`);
 });
