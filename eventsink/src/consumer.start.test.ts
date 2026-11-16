@@ -191,6 +191,48 @@ describe('startConsumer', () => {
     await running.stop();
   });
 
+  it('gives one scrubbed fetch_failed error log per failed fetch', async () => {
+    const secret = `${'tk'}${'7'.repeat(12)}`;
+    fetch = async (n) => {
+      if (n === 1) throw new Error(`no responders Bearer ${secret}`);
+      return idleBatch();
+    };
+    const errorLog = vi.fn();
+    const running = await startConsumer({} as NatsConnection, writer, {
+      batchSize: 10,
+      fetchWaitMs: 1000,
+      errorLog,
+    });
+    await vi.advanceTimersByTimeAsync(1_500);
+    expect(errorLog).toHaveBeenCalledTimes(1);
+    const [event, fields] = errorLog.mock.calls[0] ?? [];
+    expect(event).toBe('fetch_failed');
+    expect(String(fields.reason)).toContain('no responders');
+    expect(String(fields.reason)).not.toContain(secret);
+    const stopped = running.stop();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await stopped;
+  });
+
+  it('keeps fetching when the error log throws', async () => {
+    fetch = async (n) => {
+      if (n <= 2) throw new Error('no responders');
+      return idleBatch();
+    };
+    const running = await startConsumer({} as NatsConnection, writer, {
+      batchSize: 10,
+      fetchWaitMs: 1000,
+      errorLog: () => {
+        throw new Error('logger down');
+      },
+    });
+    await vi.advanceTimersByTimeAsync(3_500);
+    expect(fetches).toBeGreaterThanOrEqual(3);
+    const stopped = running.stop();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await stopped;
+  });
+
   it('acks a fetched message after the write commits', async () => {
     const ack = vi.fn();
     const nak = vi.fn();

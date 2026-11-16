@@ -1,5 +1,6 @@
 /** The durable pull consumer on GELDAR_EVENTS and the per-batch decision logic. */
 import type { WorldEvent } from '@geldar/contract';
+import { capText, type LogFields, scrubText } from '@geldar/telemetry';
 import {
   AckPolicy,
   type Consumer,
@@ -59,6 +60,49 @@ export interface BatchDeps {
   log?(line: string): void;
   /** Counts what the batch decides; absent when no telemetry URL is set. */
   metrics?: EventsinkMetrics | undefined;
+  /**
+   * One OTLP error log per dead letter, failed DLQ publish, write nak or fetch failure. Fire and
+   * forget: absent when no telemetry URL is set, and a throw from it is swallowed, so it never
+   * reaches the ack, nak or DLQ path. Carries the subject, a scrubbed reason and the trace id,
+   * never the event body.
+   */
+  errorLog?: ErrorLog | undefined;
+}
+
+/** The sink for the error logs: an event name and its fields. */
+export type ErrorLog = (event: string, fields: LogFields) => void;
+
+/** Longest `reason` sent in an error log. */
+const ERROR_LOG_REASON_LIMIT = 2000;
+
+/** The message facts an error log carries. */
+interface LogContext {
+  subject: string;
+  deliveryCount: number;
+  traceId: string | null;
+}
+
+/** Sends one error log, guarded: a failing logger never changes a decision. */
+function report(
+  errorLog: ErrorLog | undefined,
+  event: string,
+  reason: string,
+  context?: LogContext,
+): void {
+  if (errorLog === undefined) return;
+  try {
+    const fields: LogFields = {
+      reason: capText(scrubText(reason), ERROR_LOG_REASON_LIMIT).text,
+    };
+    if (context !== undefined) {
+      fields.subject = context.subject.slice(0, 256);
+      fields.trace_id = context.traceId;
+      fields.delivery_count = context.deliveryCount;
+    }
+    errorLog(event, fields);
+  } catch {
+    // Telemetry is never allowed to break the consumer.
+  }
 }
 
 /** Original payload bytes kept in a dead letter body; the rest is cut so it fits max_payload. */
@@ -113,6 +157,17 @@ function isOwnDeadLetter(message: SinkMessage): boolean {
   }
 }
 
+/** The log context of a message; a header read that throws gives a null trace id, never an error. */
+function contextOf(message: SinkMessage, traceId?: string | null): LogContext {
+  let id: string | null = null;
+  try {
+    id = traceId === undefined ? traceIdOf(message) : traceId;
+  } catch {
+    // A malformed header object must not reach the DLQ path.
+  }
+  return { subject: message.subject, deliveryCount: message.deliveryCount, traceId: id };
+}
+
 /**
  * Publishes one dead letter and acks the message; a DLQ failure naks it instead. Only the acked
  * (terminal) outcome is counted, so a retried DLQ publish is not counted twice.
@@ -132,9 +187,11 @@ async function deadLetter(
     );
     deps.metrics?.failed(kind);
     deps.metrics?.dlqWritten();
+    report(deps.errorLog, 'dead_letter', reason, contextOf(message));
     message.ack();
   } catch (error) {
     log(`eventsink: DLQ publish failed subject=${message.subject}: ${String(error)}`);
+    report(deps.errorLog, 'dlq_publish_failed', String(error), contextOf(message));
     message.nak(nakDelayMs(message.deliveryCount));
   }
 }
@@ -176,6 +233,7 @@ async function insertRowByRow(
         );
       } else {
         log(`eventsink: write failed, nak ${event.source_event_id}: ${String(error)}`);
+        report(deps.errorLog, 'write_failed_nak', String(error), contextOf(message, traceId));
         retryLater(message);
       }
     }
@@ -231,7 +289,10 @@ export async function handleBatch(
     }
     const ids = valid.map((v) => v.event.source_event_id).join(',');
     log(`eventsink: write failed, nak ${valid.length} events [${ids}]: ${String(error)}`);
-    for (const { message } of valid) retryLater(message);
+    for (const { message, traceId } of valid) {
+      report(deps.errorLog, 'write_failed_nak', String(error), contextOf(message, traceId));
+      retryLater(message);
+    }
     return;
   }
   for (const { message } of valid) message.ack();
@@ -332,6 +393,8 @@ export async function startConsumer(
     metrics?: EventsinkMetrics | undefined;
     /** How often the pending count is sampled; 15 s by default. */
     lagIntervalMs?: number | undefined;
+    /** The OTLP error log; absent when telemetry is off. */
+    errorLog?: ErrorLog | undefined;
   },
 ): Promise<RunningConsumer> {
   const js = jetstream(nc);
@@ -342,6 +405,7 @@ export async function startConsumer(
       await js.publish(subject, body);
     },
     metrics: options.metrics,
+    errorLog: options.errorLog,
   };
   const metrics = options.metrics;
   const lagTimer = metrics
@@ -368,6 +432,7 @@ export async function startConsumer(
       } catch (error) {
         failures++;
         console.error(`eventsink: fetch failed (${failures} in a row), retrying`, error);
+        report(options.errorLog, 'fetch_failed', String(error));
         if (failures >= FATAL_AFTER) {
           options.onFatal?.(error);
           return;

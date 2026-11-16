@@ -1,9 +1,10 @@
 /** Entry point: connect to Postgres and NATS, run the consumer, drain on SIGINT/SIGTERM. */
 import { pathToFileURL } from 'node:url';
 import { connectNats } from '@geldar/contract/nats';
+import { createLogger, startTelemetry } from '@geldar/telemetry';
 import pg from 'pg';
 import { loadConfig, type SinkConfig } from './config.ts';
-import { startConsumer } from './consumer.ts';
+import { type ErrorLog, startConsumer } from './consumer.ts';
 import { type EventsinkTelemetry, eventsinkTelemetry } from './metrics.ts';
 import { eventsinkNatsAuth } from './nats-credentials.ts';
 import { sinkPlan, startShardServices } from './sink-plan.ts';
@@ -20,8 +21,41 @@ export function consumerOptions(
   config: SinkConfig,
   telemetry: EventsinkTelemetry | undefined,
   onFatal: (error: unknown) => void,
+  errorLogs?: ErrorLogs,
 ): Parameters<typeof startConsumer>[2] {
-  return { ...config, ...(telemetry ? { metrics: telemetry.metrics } : {}), onFatal };
+  return {
+    ...config,
+    ...(telemetry ? { metrics: telemetry.metrics } : {}),
+    ...(errorLogs ? { errorLog: errorLogs.errorLog } : {}),
+    onFatal,
+  };
+}
+
+/** The OTLP error-log path of the consumer (T-06d4) and the call that flushes it. */
+export interface ErrorLogs {
+  errorLog: ErrorLog;
+  stop(): Promise<void>;
+}
+
+/**
+ * Starts the SDK for logs only (the metrics push above stays as it is) and returns the error log.
+ * With no GELDAR_TELEMETRY_URL, or an unusable one, it returns undefined: no logger, no request.
+ * The logger's stdout line is dropped: the consumer already writes its own text line to stderr.
+ */
+export function startErrorLogs(env: NodeJS.ProcessEnv): ErrorLogs | undefined {
+  const sdk = startTelemetry({
+    service: 'geldar-eventsink',
+    version: env.GELDAR_VERSION ?? 'dev',
+    endpoint: env.GELDAR_TELEMETRY_URL,
+    signals: { traces: false, metrics: false, logs: true },
+  });
+  if (!sdk.enabled) return undefined;
+  const logger = createLogger({
+    name: 'geldar-eventsink',
+    write: () => {},
+    extraKeys: ['subject', 'delivery_count'],
+  });
+  return { errorLog: (event, fields) => logger.error(event, fields), stop: () => sdk.shutdown() };
 }
 
 /** Runs the sink until a signal, then stops the consumer and closes the connections. */
@@ -49,6 +83,7 @@ export async function main(): Promise<void> {
     service: 'eventsink',
     log: (line) => console.error('eventsink: telemetry', JSON.stringify(line)),
   });
+  const errorLogs = startErrorLogs(process.env);
   // GELDAR_SHEET_SHARD unset starts nothing here (sink-plan.ts); a bad shard name throws before the consumer runs.
   const services = startShardServices(plan, {
     startState: (shard) =>
@@ -68,10 +103,15 @@ export async function main(): Promise<void> {
   const consumer = await startConsumer(
     nc,
     pgEventWriter(pool, plan.xp),
-    consumerOptions(config, telemetry, (error) => {
-      console.error('eventsink: giving up after repeated failures, exiting for a restart', error);
-      process.exit(1);
-    }),
+    consumerOptions(
+      config,
+      telemetry,
+      (error) => {
+        console.error('eventsink: giving up after repeated failures, exiting for a restart', error);
+        process.exit(1);
+      },
+      errorLogs,
+    ),
   );
   console.log('eventsink: consuming GELDAR_EVENTS');
 
@@ -82,6 +122,7 @@ export async function main(): Promise<void> {
     await consumer.stop();
     for (const service of services) await service.stop();
     await telemetry?.stop();
+    await errorLogs?.stop();
     await nc.drain();
     await pool.end();
     process.exit(0);
