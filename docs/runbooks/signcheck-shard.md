@@ -3,14 +3,14 @@ title: "Signcheck shard"
 type: how-to
 audience: contributors
 status: draft
-last_verified: 2026-11-16 against cd4499da
+last_verified: 2026-11-16 against 03c1f5de
 companions: [README.md, map-chat-panel.md]
-sources: [../../compose/signcheck.yml, ../decisions/0192-edit-sign-action.md]
+sources: [../../compose/signcheck.yml, ../decisions/0192-edit-sign-action.md, golem/src/actions/edit-sign.test.ts, contract/test/edit-sign-action.test.ts]
 ---
 
 # Signcheck shard
 
-A throwaway vanilla Paper server for checking sign facts. It exists to check the eleven sign facts that edit_sign depends on, for the live test golem/test/live/edit-sign.live.test.ts. It is not part of Phase 0 or Colo.
+A throwaway vanilla Paper server for checking sign facts. It exists to check the eleven sign facts that edit_sign depends on, for an edit_sign live test. That live test, `golem/test/live/edit-sign.live.test.ts` (named here and in the header of `compose/signcheck.yml`), is on the branch `phase1/body-edit-sign-live` (added in commit `37172f47`) and is not merged to `main`: `git merge-base --is-ancestor 37172f47 03c1f5de` fails, and `git ls-files golem/test/live` at `03c1f5de` does not list it (2026-11-16). On `main`, the edit_sign tests are unit tests: `golem/src/actions/edit-sign.test.ts` and `contract/test/edit-sign-action.test.ts`. It is not part of Phase 0 or Colo.
 
 ## What it is
 
@@ -73,7 +73,7 @@ docker compose -p geldar-signcheck -f compose/signcheck.yml --profile core down 
 
 ## RCON profile (edit-sign live check)
 
-The `rcon` profile runs `paper-rcon`: the same vanilla Paper as `paper`, with RCON on (container port 25575). The live test `golem/test/live/edit-sign.live.test.ts` uses RCON to place signs, give items, teleport its two bots and restore the arena on this throwaway world. RCON is for that fixture only. The bots are **GolemSign** and **GolemSignB**.
+The `rcon` profile runs `paper-rcon`: the same vanilla Paper as `paper`, with RCON on (container port 25575). The edit_sign live test (on the branch `phase1/body-edit-sign-live`, not on `main`; see the top of this runbook) uses RCON "to place signs, give items and move the bots on the local world" (its header comment at `37172f47`). That header also says to run it against "the shard up with `--rcon-host`" through `./geldar.ps1 pnpm --filter @geldar/golem test:live -- edit-sign`, which is the local Phase 0 shard, not this one. Which shard the test is meant for is therefore unsettled: the `compose/signcheck.yml` header and this runbook say the signcheck shard, the test's own header says the local shard. Recorded, not resolved. RCON is for that fixture only. The bots are **GolemSign** and **GolemSignB**.
 
 `paper`, `paper-core` and `paper-rcon` share the `paper-data` world volume, and `paper-rcon` uses host port 25570 too. Run only one of them at a time. Stop `paper` before you start `paper-rcon`.
 

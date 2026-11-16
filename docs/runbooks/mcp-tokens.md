@@ -3,9 +3,9 @@ title: "mcp-tokens: adding a sovereign player"
 type: how-to
 audience: agents-never
 status: draft
-last_verified: 2026-11-16 against cd4499da
+last_verified: 2026-11-16 against 03c1f5de
 companions: [README.md, open-signup.md, account-deletion.md]
-sources: [../decisions/0108-mcp-roster-source-of-truth.md]
+sources: [../decisions/0108-mcp-roster-source-of-truth.md, ../decisions/0052-per-owner-sovereign-player-cap-raised-to-20.md, deploy/colo-admin.sh, sql/0002_sovereign_mcp.sql, tools/mcp-tokens/src/cli.ts]
 ---
 
 # mcp-tokens: adding a sovereign player
@@ -26,9 +26,15 @@ or `_`, the same name `player add --name` uses; the wrapper stores it lower-case
 
 ```sh
 deploy/colo-admin.sh roster-add <name> --owner <owner>   # then player-add
-deploy/colo-admin.sh owner-set-cap <owner> <N>        # N 0 to 50 (decision 0052); owner-add is limited by the shard's owner_cap_owner (20)
+deploy/colo-admin.sh owner-set-cap <owner> <N>        # N 0 to 50 (see the note below); owner-add is limited by the shard's owner_cap_owner (20)
 deploy/colo-admin.sh roster-list [--owner <owner>]        # read-only
 ```
+
+Note on the 0 to 50 range (unresolved, flagged 2026-11-16 at `03c1f5de`): three sources say different things. The code
+enforces 0 to 50 (`deploy/colo-admin.sh` lines 136 to 145, whose comment cites decision 0052; the `player_cap` CHECK in
+`sql/0002_sovereign_mcp.sql`). Decision 0052 raises the owner's cap to 20 and states no range. Spec section 5.15.6 sets a
+default cap of 3 per owner per shard, raisable per person by the operator, and states no upper bound. Use the range the
+code enforces; a decision record would settle which bound is intended.
 
 Why: [decision 0108](../decisions/0108-mcp-roster-source-of-truth.md).
 

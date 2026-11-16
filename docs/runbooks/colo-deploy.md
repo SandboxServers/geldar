@@ -3,9 +3,9 @@ title: "Colo deploy from GitHub Actions"
 type: how-to
 audience: operators
 status: draft
-last_verified: 2026-11-16 against cd4499da
+last_verified: 2026-11-16 against 03c1f5de
 companions: [README.md, node-only-config.md, maintenance-notice.md, merge-queue.md, ../../deploy/README.md]
-sources: [../decisions/0084-colo-deploy-by-pull-with-a-project-scoped-script.md]
+sources: [../decisions/0084-colo-deploy-by-pull-with-a-project-scoped-script.md, .github/workflows/colo-deploy.yml, deploy/colo-cd.sh, deploy/colo-cd-plan.sh]
 ---
 
 # Colo deploy from GitHub Actions (CD-2b)
@@ -23,13 +23,17 @@ The scripts are described in `deploy/README.md`.
    branch is `main`, its event is `push` or `workflow_dispatch`, and both repositories are this one.
 3. The job takes the `colo` environment, which the repository limits to `main`. Its concurrency group
    is `colo-deploy`, with `cancel-in-progress: false`: a second deploy waits for the first. The job
-   timeout is 40 minutes.
+   timeout is 30 minutes (`timeout-minutes: 30` in the workflow).
 4. It resolves the commit (the run's head SHA) and the `colo-images` run that built it. The runner
    has no GitHub CLI (`gh`). The steps call the GitHub REST API with `curl` and read the replies with
    `jq`, using the job's `GITHUB_TOKEN`. On a manual dispatch without a SHA, the head of `main` comes
-   from `GET /repos/{repo}/commits/main`. The SHA must be on `main`: the compare status of
-   `main...<sha>` must be `identical` or `behind`. The successful `colo-images` run for the SHA comes
-   from the workflow runs list, and the job fails when there is none.
+   from `GET /repos/{repo}/commits/main`. On a manual dispatch the SHA must be on `main`: the compare
+   status of `main...<sha>` must be `identical` or `behind`. The successful `colo-images` run for the
+   SHA comes from the workflow runs list, and the job fails when there is none. On a `workflow_run`
+   event the job takes the SHA and run id from the event itself; this runbook's step 6 says the entrypoint
+   still checks the SHA, but the entrypoint is root-owned and outside the repo ([node-only-config](node-only-config.md)
+   item 14), and `deploy/colo-cd.sh` has no ancestor check, so that it refuses a SHA main does not contain is not
+   checked in the repo.
 5. It fetches `release.env` of that run with curl and jq (step timeout 5 minutes; the whole job 30).
    The artifact blob host can time out from the node, so every curl has a 10 s connect and 60 s total
    limit and `--retry 4`, and the archive download is tried 3 times. The zip must match the sha256
@@ -60,7 +64,7 @@ gh workflow run colo-deploy.yml -f sha=<40-hex commit on main>
 ```
 
 Without `-f sha` the job deploys the head of `main`. The job refuses a commit that is not on
-`main` (the compare status must be `ahead` or `identical`). It also refuses a commit with no
+`main` (the compare status must be `identical` or `behind`). It also refuses a commit with no
 successful `colo-images` run, because the images must exist before the node pulls them. Check
 the run first with `gh run list --workflow colo-images.yml --branch main`.
 
@@ -78,13 +82,16 @@ as the entrypoint's plan reads it from there.
 The pipeline applies only the Colo images and the stack that `colo-cd.sh` owns. It does not
 apply these changes, and an operator must act on them:
 
-- a plugin jar change (the Paper plugin), and the Paper restart that loads it;
-- Paper, Velocity, Caddy or NATS configuration or version changes.
+- a plugin jar or plugin config change (`plugin/`), and the Paper restart that loads it;
+- a compose config change (it may define Paper, Velocity, Caddy or NATS);
+- a Caddy config change (`deploy/caddy`) or a NATS config change.
 
 The job summary lists the lines that the plan or the deploy printed with the words `needs manual`.
 If the list says `None reported`, nothing was flagged. Read the list and the plan output before you
-close a deploy. Note: `deploy/colo-cd.sh` is not in this repository yet, so the exact wording it uses
-for these lines is unverified here. Update this section when the script lands.
+close a deploy. `deploy/colo-cd-plan.sh` writes each item as a `manual <what>` line (lines 61 and 90
+to 93, for example `manual NATS config changed: not applied`), and `deploy/colo-cd.sh` prints it as
+`needs manual: <what>` (line 336). A failed player host refresh also prints `needs manual` (lines 222
+and 425).
 
 ## Maintenance notices
 

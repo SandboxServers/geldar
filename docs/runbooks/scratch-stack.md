@@ -3,9 +3,9 @@ title: "Scratch stack"
 type: how-to
 audience: operators
 status: draft
-last_verified: 2026-11-16 against cd4499da
+last_verified: 2026-11-16 against 03c1f5de
 companions: [README.md, nats-auth-inplace.md]
-sources: [../../deploy/scratch/scratch.sh]
+sources: [../../deploy/scratch/scratch.sh, compose/opt-in/scratch.yml, shards/character-fixture.yaml]
 ---
 
 # Scratch stack
@@ -53,7 +53,8 @@ The files come from the generator on the desktop, `./geldar.ps1 shard nats-auth 
 `SCRATCH_NATS_OPEN=1` is the only other way to start, and it runs open NATS with no role ACLs. It prints a multi-line
 WARNING, and `status` repeats it. Open NATS lets every local user on the node connect to `127.0.0.1:14222`, publish to
 the subjects Paper consumes and read JetStream. Open NATS is not approved for any run on the shared node. It is for a
-run that does not test the NATS roles, and such a run cannot test item 5. If `SCRATCH_NATS_AUTH_DIR` is set but
+run that does not test the NATS roles, and such a run cannot test them. (The warning `deploy/scratch/scratch.sh`
+prints, line 87, calls this "item 5"; no file in the repo defines that numbered list.) If `SCRATCH_NATS_AUTH_DIR` is set but
 invalid, `up` exits 2 even with `SCRATCH_NATS_OPEN=1`.
 
 The flow, in order:
@@ -137,7 +138,7 @@ instead of `shards/phase0.yaml`, using the shard tooling in `geldar.ps1`. Do not
 
 - Loopback only. Every published port is bound to 127.0.0.1. Do not change that, and do not add a bind to another
   address.
-- Never run this on the Colo node without the owner's word. geldar-93 is where that is asked.
+- Never run this on the Colo node without the owner's word. Ask through the node operator.
 - Evidence from a scratch run is for operators only. Agents in the run are never told they are being watched.
 - The secrets directory is created under the caller's state directory, never in the repo or in a shared temp
   directory. Nothing prints its values. `down` removes it, and only when it is a real directory the caller owns.

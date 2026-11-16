@@ -3,15 +3,15 @@ title: "Map chat panel: manual node steps"
 type: how-to
 audience: agents-never
 status: draft
-last_verified: 2026-11-16 against cd4499da
+last_verified: 2026-11-16 against 03c1f5de
 companions: [README.md, node-only-config.md, glass-aliases.md]
-sources: [../decisions/0310-live-chat-panel-on-the-map.md, ../decisions/0197-speech-bubbles-on-the-map.md]
+sources: [../decisions/0310-live-chat-panel-on-the-map.md, ../decisions/0197-speech-bubbles-on-the-map.md, compose/colo.yml, compose/bluemap-web/Caddyfile, deploy/genesis/config-bundle.list]
 ---
 
 # Map chat panel (decision 0310): manual node steps
 
 The panel shows agents' chat on the public map. Step 1 restarts Paper: it needs the owner's approval, given through the
-orchestrator (geldar-93). Nothing here restarts the shared production Caddy. The node's compose and Caddyfile edits are
+orchestrator. Nothing here restarts the shared production Caddy. The node's compose and Caddyfile edits are
 in step 2; the only hand edit to the Paper volume is the one `settings.json` line in step 2.
 
 ## 1. Replace the geldar-core jar and restart Paper (owner approval)
@@ -58,7 +58,7 @@ Run the commands below in the node's checkout, the one that holds `compose/colo.
    cp -p compose/colo.yml compose/colo.yml.bak-$STAMP
    cp -p compose/bluemap-web/Caddyfile compose/bluemap-web/Caddyfile.bak-$STAMP
    ```
-2. In `compose/colo.yml`, in the `bluemap-web` service (main has it at line 540), add the mount lines directly after
+2. In `compose/colo.yml`, in the `bluemap-web` service (main has it at line 541 at commit `03c1f5de`), add the mount lines directly after
    the `geldar.css` mount, in this order: `geldar-chat.js`, then `geldar-sky.js` (the sky dial, BM-15). Six spaces of
    indent, as the lines around them:
    ```

@@ -75,7 +75,7 @@ flowchart LR
 |---|---|---|---|---|
 | Event export | `EventExporter`, `NatsEventPublisher`, `BoundedEventQueue`, `EventEnvelope` | Publishes `server_tps` (wall-clock timer), `damage`, `death`, `sleep` to `geldar.<shard>.<type>` in JetStream stream `GELDAR_EVENTS` (created if missing: subjects `geldar.*.*`, file storage, 30-day retention). `Nats-Msg-Id` is the `source_event_id`. Publishing only enqueues; a bounded queue drops the oldest event when full. Type `dlq` is rejected. | none | [0041](../decisions/0041-event-export-stream-and-sink.md) |
 | Command block | `CommandBlockListener` | Cancels and logs every command a player types (`HIGHEST` priority), operators included. Console and RCON are not affected. Log text is truncated and rate-limited. | none | spec Appendix F |
-| Ghosts | `GhostListener` | Holds a joiner without the signed live marker from Velocity in spectator, and cancels a ghost's chat (spec 8.4). Kicks when spectator cannot be applied. Does not hide a ghost from the tab list ([Known gaps](#known-gaps)). | none | [0092](../decisions/0092-velocity-spectator-whitelist.md), [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md) |
+| Ghosts | `GhostListener` | Holds a joiner without the signed live marker from Velocity in spectator, and cancels a ghost's chat (spec 8.4). Kicks when spectator cannot be applied. See [Known gaps](#known-gaps). | none | [0092](../decisions/0092-velocity-spectator-whitelist.md), [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md) |
 | Recipes | `RecipeGrantListener` | Grants every recipe on join, only for a test shard. Off by default: recipes unlock through play. | `recipes.grant_on_join` | [0048](../decisions/0048-recipe-discovery-is-part-of-the-game.md) (reverses [0032](../decisions/0032-table-crafting-and-recipe-book.md)) |
 | Gravestones | `Gravestone`, `GravestoneListener` | Places a stone-brick block and a sign where an agent character (`ag_*`) dies; no loot. Each is recorded as owned by the system through CoreProtect. | `gravestones.enabled`, `gravestones.max_per_chunk` | [0195](../decisions/0195-gravestones-owned-by-system.md), [0147](../decisions/0147-death-is-knowable-while-permadeath-is-off.md) |
 | Grave backfill | `GraveBackfillCommand`, `GraveBackfill` | Records gravestones already standing in loaded chunks as owned by the system. | console command | [0195](../decisions/0195-gravestones-owned-by-system.md) |
@@ -240,7 +240,7 @@ cd plugin; ./gradlew build   # compiles both plugins, runs the JUnit tests, writ
 | Appendix F area | In `plugin/core` at 1b114276 |
 |---|---|
 | Event export ("Everything") | Partial: `server_tps`, `damage`, `death`, `sleep` only (`EventExporter`). |
-| Ghosts | Partly implemented in `GhostListener.java` (decisions 0092, 0137): spectator and chat cancel exist; hiding from the tab list does not ([Known gaps](#known-gaps)). A clause-by-clause comparison beyond that gap is withheld (owner decision D9). |
+| Ghosts | Partly implemented in `GhostListener.java` (decisions 0092, 0137); see [Known gaps](#known-gaps). A clause-by-clause comparison is withheld (owner decision D9). |
 | Command block | Implemented, for every player (`CommandBlockListener`). |
 | Bot ingress identity | In the Velocity plugin: [velocity-identity-plugin](velocity-identity-plugin.md). |
 | Proximity chat | Implemented with muffled hearing (decisions 0198, 0199). No `speech` event is published (see conflict 3). |
@@ -262,7 +262,7 @@ cd plugin; ./gradlew build   # compiles both plugins, runs the JUnit tests, writ
 
 Gaps between the code and an authoritative spec section or decision, recorded by owner ruling (relayed 2026-11-16). Neither is fixed at 1b114276.
 
-1. **Ghosts are not hidden from the tab list.** Spec 8.4 (line 1280) and Appendix F, Ghosts row (line 1832): Geldar-Core hides a ghost from the tab list. `GhostListener` holds spectator, cancels chat and kicks on failure; no code in `plugin/` hides a player from the tab list (`git grep -n -i -E "tablist|hidePlayer|setListed|setPlayerListName" -- plugin` finds only the read-only test guards in `KinoReadOnlyTest` and `LakituReadOnlyTest`, 2026-11-16). A plugin-side fix is planned; development is frozen. Not fixed.
+1. **A ghost measure against spec 8.4.** A ghost measure described in spec 8.4 is not implemented in the plugin at 03c1f5de; a plugin-side fix is planned after the freeze (owner ruling relayed 2026-11-16). Detail is withheld under decision [0361](../decisions/0361-agents-never-placement-and-public-detail.md). Not fixed.
 2. **The public overlay publishes the bot ingress.** Decision [0137](../decisions/0137-public-spectator-proxy-is-separate-and-online.md) (authoritative) says the offline-mode bot ingress is never published and only a separate online-mode spectator proxy appears in `compose/colo-public.yml`; that file at 1b114276 adds a publish to the bot-ingress `velocity` service instead. Node state: unchecked. Not fixed. Detail: [Velocity identity plugin, Known gaps](velocity-identity-plugin.md#known-gaps). Geldar-Core's side of 0137 point 2 (spectator from the first join event for every player without the live marker) is the Ghosts row above.
 
 ## Detail withheld, owner decision D9

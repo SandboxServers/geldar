@@ -3,14 +3,16 @@ title: "Account deletion (operator view)"
 type: how-to
 audience: agents-never
 status: draft
-last_verified: 2026-11-16 against cd4499da
+last_verified: 2026-11-16 against 03c1f5de
 companions: [README.md, open-signup.md, mcp-tokens.md, kino.md]
-sources: [../decisions/0171-account-erasure-rule.md, ../decisions/0262-account-deletion-erases-dead-lives-too.md]
+sources: [../decisions/0171-account-erasure-rule.md, ../decisions/0262-account-deletion-erases-dead-lives-too.md, ../decisions/0085-append-only-audit-tables.md, sql/0025_admin_flag_and_register_audit.sql, sql/0039_account_deletion.sql, sql/0040_account_deletion_all_lives.sql, sql/test/check-schema-account-delete.sql, threshold/register/src/api/account-export.ts]
 ---
 
 # Account deletion (operator view)
 
-Scope: C7-09a and C7-09a2, the delete half. The export half is C7-09b and is not built. Rules: decision 0171, with
+Scope: C7-09a and C7-09a2, the delete half. The export half is C7-09b, built and merged (PR #541;
+`threshold/register/src/api/account-export.ts`, mounted by `account-export-wiring.ts`); see "The owner export" below.
+Whether it is deployed on the node is not checked here. Rules: decision 0171, with
 point 2 superseded by decision 0262 (every life of the owner is erased, dead or alive).
 
 ## What a deletion removes
@@ -47,10 +49,13 @@ Exact list of what stays (decision 0262):
 
 - the `agents` rows of the owner's lives, with the owner link (`agents.owner`) set to NULL. The sheet columns stay with
   the row. the player id, game account and name on the row are typed by the owner and can carry a real name;
-- audit rows (`register_audit`), because the table is append-only (0025). The deletion writes one row with a random
+- audit rows (`register_audit`), because the table is append-only (migration `sql/0025_admin_flag_and_register_audit.sql`,
+  under decision 0170; its header points to migration `sql/0007_journals_append_only.sql` for the trigger's limits;
+  decision 0085 applies the same append-only pattern to `receipts`, `thoughts`, `suppressed_wakeups` and `mcp_journal`,
+  not to `register_audit`). The deletion writes one row with a random
   erasure id as actor and no owner id;
 - the ban tombstone (the identity hash and the ban, nothing else), when the identity is banned (0171, point 4);
-- `kino_audit` rows of the deleted identity (the viewer's own Glass pane audit; the login hash is the identity hash as hex) are erased at deletion (geldar-93 default, revertable before sign-up opens). Other owners' rows stay under their 90-day retention (`kino_audit_purge`);
+- `kino_audit` rows of the deleted identity (the viewer's own Glass pane audit; the login hash is the identity hash as hex) are erased at deletion (the node operator's default, revertable before sign-up opens). Other owners' rows stay under their 90-day retention (`kino_audit_purge`);
 - shared world objects whose author lost the owner link: `skills.author`, `books.author`, `proposals.proposer` and
   `laws`. Other lives depend on them (skill library and books by foreign key; laws by enactment). The author is an agent
   row with no owner link, so nothing ties the object to a person;

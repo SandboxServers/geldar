@@ -3,9 +3,9 @@ title: "Agent skins (rangers)"
 type: how-to
 audience: agents-never
 status: draft
-last_verified: 2026-11-16 against cd4499da
-companions: [README.md, kino.md, map-chat-panel.md, node-only-config.md]
-sources: [../decisions/0140-agent-skins.md, ../decisions/0250-skin-upload-visibility-and-export.md, ../decisions/0187-bluemap-skin-provider-in-geldar-core.md]
+last_verified: 2026-11-16 against 03c1f5de
+companions: [README.md, kino.md, map-chat-panel.md, node-only-config.md, nats-auth-inplace.md]
+sources: [../decisions/0140-agent-skins.md, ../decisions/0250-skin-upload-visibility-and-export.md, ../decisions/0187-bluemap-skin-provider-in-geldar-core.md, geldar.ps1, deploy/colo-admin.sh, tools/players-cli/src/png.ts, plugins/bluemap/config/plugin.conf]
 ---
 
 # Agent skins (rangers)
@@ -25,7 +25,7 @@ On the Colo node (no node or pnpm on the host; the admin image carries `players-
 3. The plugin watches the bucket, so a new login gets the skin; an already connected agent shows it after it reconnects (restart that body: `colo-admin.sh player-stop` then `player-start`).
 4. Delete the file from the node when done, or keep it mode 0600 in that 0700 directory.
 
-Needs: an admin image built from this change (it adds `tools/players-cli`), and a NATS auth config whose `body` user may publish `$KV.geldar-skins.>` (regenerate `nats-auth.conf` with `./geldar.ps1 shard nats-auth colo` and recreate the NATS container; this is a separate owner approval step, and the passwords stay unchanged). `ensure-skins-bucket` must have run once (colo-up does it).
+Needs: an admin image built from this change (it adds `tools/players-cli`), and a NATS auth config whose `body` user may publish `$KV.geldar-skins.>` (the generator has it: `body` in `Get-NatsUsers`, `geldar.ps1`). If the node's conf lacks it, add it in place with SIGHUP by [nats-auth-inplace.md](nats-auth-inplace.md); this is a separate owner approval step, and the passwords stay unchanged. Never run `./geldar.ps1 shard nats-auth colo` on the node. The regenerate-on-the-trusted-machine and restart path is in `deploy/README.md` (lines 309 to 318), and decision 0199 ("Deploy", line 80) names the same restart path for the hearing denies; it drops every NATS client, and nats-auth-inplace.md keeps it for when in place is impossible. No decision record states a general rule for which path to use ([runbooks index, open conflict 1](README.md#open-conflicts-recorded-in-runbook-text-not-resolved)). `ensure-skins-bucket` must have run once (colo-up does it).
 
 On a dev machine with the Phase 0 shard, the original path still works: `pnpm --filter ./tools/players-cli exec node src/cli.ts skin import ag-jason-01 <json outside the repo>` with `GELDAR_NATS_URL` and the NATS user set.
 
@@ -82,7 +82,7 @@ pnpm --filter ./tools/players-cli exec node src/cli.ts skin show ag-jason-01
 
 ## BlueMap
 
-`plugins/bluemap/config/plugin.conf` has `skin-download: true`, set by the owner's ruling of 2026-11-12 (commit 2d29ca29). It was `false` in an earlier version of this runbook. The reason it is `true` now: the geldar-core skin provider (GX-07, decision 0187) replaces Mojang's lookup for our agents, so BlueMap gets their heads from Kino's PNGs and does not fetch unknown offline UUIDs from Mojang. **UNVERIFIED:** that BlueMap calls the provider when downloads are on. It is not verified until the live check after the Paper restart. If that check shows the provider is not called with `true`, tell geldar-93 before any config change. Showing the skin on the live markers still needs a live check on the node; see the SKINS report.
+`plugins/bluemap/config/plugin.conf` has `skin-download: true`, set by the owner's ruling of 2026-11-12 (commit 2d29ca29). It was `false` in an earlier version of this runbook. The reason it is `true` now: the geldar-core skin provider (GX-07, decision 0187) replaces Mojang's lookup for our agents, so BlueMap gets their heads from Kino's PNGs and does not fetch unknown offline UUIDs from Mojang. **UNVERIFIED:** that BlueMap calls the provider when downloads are on. It is not verified until the live check after the Paper restart. If that check shows the provider is not called with `true`, tell the node operator before any config change. Showing the skin on the live markers still needs a live check on the node; see the SKINS report.
 
 The provider lives in the `geldar-core` jar (`plugin/core`, class `dev.geldar.core.skins.AgentSkinSetup`). It reads `<agent_id>.png` for the agent that owns the UUID from the directory in `GELDAR_AGENT_SKINS_DIR` (default `/data/skins`), and that directory is mounted read-only into the Paper container from the glass skins directory (`compose/colo.yml`, source `./secrets/kino-skins`). The directory must exist on the node before Paper starts: compose does not create it (`create_host_path: false`), so Paper fails to start without it. A missing or unreadable file falls back to the default skin built in code (`AgentSkinLookup.defaultSkin()`; no skin PNG is tracked in the repo), so the provider never returns an empty skin: a marker shows a head even when no PNG exists. The provider does not write files; the `skin heads` command above still writes `playerheads/<uuid>.png` for the BlueMap web root, and the next join replaces those files.
 
