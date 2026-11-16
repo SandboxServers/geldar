@@ -1,0 +1,5 @@
+# OTLP ingest kill switch (docs/analysis/telemetry/caddy-ingest-route.md). Swap in for otel.caddy, then validate and reload.
+# Never restart Caddy: it serves other sites on the node.
+{$GELDAR_INGEST_HOST} {
+	respond 503
+}
