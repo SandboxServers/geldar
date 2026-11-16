@@ -47,6 +47,22 @@
             <password_sha256_hex from_env="GELDAR_CH_WRITER_SHA256"/>
             <profile>geldar_writer</profile>
             <quota>default</quota>
+            <!-- authored; the scratch run showed the migrator ran with full privileges, so this list is a hypothesis to be verified in
+                 scratch round 2; if the migrator fails on a missing privilege the error names it. Not granted on purpose: SYSTEM, FILE,
+                 URL, REMOTE, S3, MYSQL, POSTGRES, SOURCES, KILL QUERY, dictGet, INTROSPECTION. CREATE DATABASE is not granted on *.*;
+                 the CREATE grants above are on the six signoz_* databases only. [AUTH] -->
+            <grants>
+                <query>GRANT SELECT, INSERT, ALTER, CREATE, DROP, TRUNCATE, OPTIMIZE, SHOW ON signoz_traces.*</query>
+                <query>GRANT SELECT, INSERT, ALTER, CREATE, DROP, TRUNCATE, OPTIMIZE, SHOW ON signoz_logs.*</query>
+                <query>GRANT SELECT, INSERT, ALTER, CREATE, DROP, TRUNCATE, OPTIMIZE, SHOW ON signoz_metrics.*</query>
+                <query>GRANT SELECT, INSERT, ALTER, CREATE, DROP, TRUNCATE, OPTIMIZE, SHOW ON signoz_metadata.*</query>
+                <query>GRANT SELECT, INSERT, ALTER, CREATE, DROP, TRUNCATE, OPTIMIZE, SHOW ON signoz_meter.*</query>
+                <query>GRANT SELECT, INSERT, ALTER, CREATE, DROP, TRUNCATE, OPTIMIZE, SHOW ON signoz_analytics.*</query>
+                <query>GRANT SELECT ON system.*</query>
+                <query>GRANT CLUSTER ON *.*</query>
+                <query>GRANT TABLE ENGINE ON *</query>
+                <query>GRANT SHOW ON *.*</query>
+            </grants>
             <networks>
                 <ip>::/0</ip>
             </networks>
