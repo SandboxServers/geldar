@@ -16,7 +16,7 @@ Compose references every image as `repo@sha256:<index digest>` (digest only, no 
 | signoz/signoz-otel-collector | v0.144.6 | sha256:7e4e539a73f1f88fbc1cd7e659ab3950908e83ce1f2a37a297452f910d072174 | sha256:13fca6050f79c49a0bdc644ccdc65a9248f22f3b4337d1e0680da026a764d77e | 2026-07-14 | 10001 [SRC] |
 | signoz/signoz-schema-migrator | v0.144.6 | sha256:4e57475fbf8b24168dcfbe6fc5799bb3f3d965819b72663580d0926185b68bf5 | sha256:1b58ff410181d8708bc032c3d5bd5e4e4863cda2464dfa444090be423d7cda4b | 2026-07-14 | 10001 [SRC] |
 
-Why these tags: 25.12.5 (build 44) is the ClickHouse line SigNoz v0.148.1 tests in CI. v0.144.6 is the collector version the v0.148.1 `go.mod` pins. The newer 25.12.11.4 and 26.3.62.3 are not used (see 0370). The digests were read from the Docker Hub registry API on 2026-11-16 and were not pulled.
+Why these tags: 25.12.5 (build 44) is the ClickHouse line SigNoz v0.148.1 tests in CI. v0.144.6 is the collector version the v0.148.1 `go.mod` pins. The newer 25.12.11 (build 4) and 26.3.62 (build 3) are not used (see 0370). The digests were read from the Docker Hub registry API on 2026-11-16 and were not pulled.
 
 ## Owner uids
 
