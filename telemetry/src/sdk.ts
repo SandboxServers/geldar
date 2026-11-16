@@ -51,6 +51,11 @@ export interface TelemetryOptions {
   endpoint?: string | undefined;
   limits?: Partial<QueueLimits>;
   exporters?: TelemetryExporters;
+  /**
+   * Which signals to run; each defaults to on. A signal set to false gets no provider, no exporter
+   * and no timer, and its global API stays a no-op. Context and propagator are always installed.
+   */
+  signals?: { traces?: boolean; metrics?: boolean; logs?: boolean };
 }
 
 export interface TelemetryHandle {
@@ -83,15 +88,6 @@ async function shutdownAll(providers: Stoppable[]): Promise<void> {
   const done = Promise.allSettled(providers.map((p) => Promise.resolve().then(() => p.shutdown())));
   await Promise.race([done.then(() => undefined), limit]);
   clearTimeout(timer);
-}
-
-/** Clears the global API so a later start in the same process can register again. */
-function disableGlobals(): void {
-  trace.disable();
-  logs.disable();
-  metrics.disable();
-  propagation.disable();
-  context.disable();
 }
 
 /** The OTLP/HTTP URL for one signal. Trailing slashes on the endpoint are dropped before `/v1/<signal>`. */
@@ -136,66 +132,103 @@ export function startTelemetry(options: TelemetryOptions): TelemetryHandle {
       maxExportBatchSize: limits.maxExportBatchSize,
       exportTimeoutMillis: EXPORT_TIMEOUT_MS,
     };
-    const traces =
-      exporters.traces ??
-      new OTLPTraceExporter({
-        url: signalUrl(endpoint, 'traces'),
-        timeoutMillis: EXPORT_TIMEOUT_MS,
-      });
-    const logExporter =
-      exporters.logs ??
-      new OTLPLogExporter({ url: signalUrl(endpoint, 'logs'), timeoutMillis: EXPORT_TIMEOUT_MS });
-    const metricExporter =
-      exporters.metrics ??
-      new OTLPMetricExporter({
-        url: signalUrl(endpoint, 'metrics'),
-        timeoutMillis: EXPORT_TIMEOUT_MS,
-      });
+    const on = {
+      traces: options.signals?.traces ?? true,
+      metrics: options.signals?.metrics ?? true,
+      logs: options.signals?.logs ?? true,
+    };
+    // A signal that is off gets no exporter, so no network client is built for it.
+    const traces = on.traces
+      ? (exporters.traces ??
+        new OTLPTraceExporter({
+          url: signalUrl(endpoint, 'traces'),
+          timeoutMillis: EXPORT_TIMEOUT_MS,
+        }))
+      : undefined;
+    const logExporter = on.logs
+      ? (exporters.logs ??
+        new OTLPLogExporter({ url: signalUrl(endpoint, 'logs'), timeoutMillis: EXPORT_TIMEOUT_MS }))
+      : undefined;
+    const metricExporter = on.metrics
+      ? (exporters.metrics ??
+        new OTLPMetricExporter({
+          url: signalUrl(endpoint, 'metrics'),
+          timeoutMillis: EXPORT_TIMEOUT_MS,
+        }))
+      : undefined;
 
     // Every signal passes the allow-list inside the SDK, so raw API calls are filtered too.
-    const tracerProvider = new TracerProvider({
-      resource,
-      spanProcessors: [
-        new AllowListSpanProcessor(new BatchSpanProcessor({ exporter: traces, ...queue })),
-      ],
-    });
-    const loggerProvider = new LoggerProvider({
-      resource,
-      processors: [
-        new AllowListLogProcessor(new BatchLogRecordProcessor({ exporter: logExporter, ...queue })),
-      ],
-    });
-    const meterProvider = new MeterProvider({
-      resource,
-      views: [{ instrumentName: '*', attributesProcessors: [metricLabelProcessor] }],
-      readers: [
-        new PeriodicExportingMetricReader({
-          exporter: metricExporter,
-          exportIntervalMillis: METRIC_INTERVAL_MS,
-          exportTimeoutMillis: EXPORT_TIMEOUT_MS,
-        }),
-      ],
-    });
+    const tracerProvider = traces
+      ? new TracerProvider({
+          resource,
+          spanProcessors: [
+            new AllowListSpanProcessor(new BatchSpanProcessor({ exporter: traces, ...queue })),
+          ],
+        })
+      : undefined;
+    const loggerProvider = logExporter
+      ? new LoggerProvider({
+          resource,
+          processors: [
+            new AllowListLogProcessor(
+              new BatchLogRecordProcessor({ exporter: logExporter, ...queue }),
+            ),
+          ],
+        })
+      : undefined;
+    const meterProvider = metricExporter
+      ? new MeterProvider({
+          resource,
+          views: [{ instrumentName: '*', attributesProcessors: [metricLabelProcessor] }],
+          readers: [
+            new PeriodicExportingMetricReader({
+              exporter: metricExporter,
+              exportIntervalMillis: METRIC_INTERVAL_MS,
+              exportTimeoutMillis: EXPORT_TIMEOUT_MS,
+            }),
+          ],
+        })
+      : undefined;
+    // Providers this start built, in shutdown order. A signal that is off contributes none.
+    const made: Stoppable[] = [];
+    for (const provider of [tracerProvider, loggerProvider, meterProvider]) {
+      if (provider) made.push(provider);
+    }
 
     // Each global is registered once per process. A false return means another provider already owns it.
-    const registered = [
-      { ok: trace.setGlobalTracerProvider(tracerProvider), clear: () => trace.disable() },
-      { ok: logs.setGlobalLoggerProvider(loggerProvider), clear: () => logs.disable() },
-      { ok: metrics.setGlobalMeterProvider(meterProvider), clear: () => metrics.disable() },
-      // W3C trace context only: no Baggage propagator is ever installed.
-      {
-        ok: propagation.setGlobalPropagator(new W3CTraceContextPropagator()),
-        clear: () => propagation.disable(),
-      },
-      {
-        ok: context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable()),
-        clear: () => context.disable(),
-      },
-    ];
+    // Only the globals of signals that are on are registered, checked and cleared.
+    const registered: Array<{ ok: boolean; clear: () => void }> = [];
+    if (tracerProvider) {
+      registered.push({
+        ok: trace.setGlobalTracerProvider(tracerProvider),
+        clear: () => trace.disable(),
+      });
+    }
+    if (loggerProvider) {
+      registered.push({
+        ok: logs.setGlobalLoggerProvider(loggerProvider),
+        clear: () => logs.disable(),
+      });
+    }
+    if (meterProvider) {
+      registered.push({
+        ok: metrics.setGlobalMeterProvider(meterProvider),
+        clear: () => metrics.disable(),
+      });
+    }
+    // W3C trace context only: no Baggage propagator is ever installed.
+    registered.push({
+      ok: propagation.setGlobalPropagator(new W3CTraceContextPropagator()),
+      clear: () => propagation.disable(),
+    });
+    registered.push({
+      ok: context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable()),
+      clear: () => context.disable(),
+    });
     if (!registered.every((entry) => entry.ok)) {
       // Undo only what this start registered: the foreign owner's globals stay as they are.
       for (const entry of registered) if (entry.ok) entry.clear();
-      void shutdownAll([tracerProvider, loggerProvider, meterProvider]);
+      void shutdownAll(made);
       // One line, no URL, as with the setup failure above.
       process.stderr.write(
         'telemetry: another OpenTelemetry provider owns the global API; telemetry is off\n',
@@ -208,8 +241,9 @@ export function startTelemetry(options: TelemetryOptions): TelemetryHandle {
       tracerProvider,
       shutdown: async () => {
         if (active === handle) active = undefined;
-        disableGlobals();
-        await shutdownAll([tracerProvider, loggerProvider, meterProvider]);
+        // Clears only the globals this start registered, so a signal that is off leaves others alone.
+        for (const entry of registered) entry.clear();
+        await shutdownAll(made);
       },
     };
     active = handle;
