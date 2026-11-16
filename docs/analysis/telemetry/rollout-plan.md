@@ -51,6 +51,8 @@ Note: stock Caddy has no per-client rate limit, and the 401 path is not rate lim
 
 ### Phase C: batch deploy of the held code PRs
 
+**Order inside Phase C: sql/0066 first, then images.** The eventsink migration `sql/0066` (the T-08 `trace_id` migration, per RESUME.md; the file is not in `sql/` yet, so the number is **PROPOSED** and **UNVERIFIED**) is applied FIRST, before any image starts. An image that starts before the migration writes to a table without the new column, and eventsink INSERTs fail with SQLSTATE 42703 (undefined column). Only after the migration is applied and the column is confirmed on the target table (read-only check) does C1 deploy the images through `colo-images` and `colo-deploy`. Migration and image deploy are separate steps with separate approvals.
+
 | Step | What it does | Caps | Approver and window | Verification | Exact rollback | Must not touch |
 |---|---|---|---|---|---|---|
 | C1 | Batch deploy of the held PRs: T-05 (PR #554), T-06, T-07, T-08 (with migration). Every Body and every Mind goes out through `colo-images` then `colo-deploy` in one window. Telemetry endpoint stays unset, so no SDK starts. | none defined in sources (**UNVERIFIED**) | owner (batch approval at the time); one window; not in the same window as B1 or D2 | Each PR's checks; each Body and Mind comes back up; migration applied once; Geldar endpoint still unset (**UNVERIFIED** that the held PRs ship with it off) | redeploy the previous `colo-images` digest through `colo-deploy`; migration rollback **UNVERIFIED**: if T-08 has no down path, stop before its migration runs and report | the telemetry stack (A1 to A13); Caddy; Paper's process (this step redeploys Bodies by design, so Bodies are not protected here) |
@@ -94,6 +96,7 @@ Changes to the shared Caddy (B1) and any Body or Paper restart (C1, D2) are neve
 9. Approve the D2 Paper window (jar sha256, window, rollback), the Paper memory change from 14 GiB to 15 GiB, and that JEP 509 and JEP 520 stay off.
 10. Decide the gateway pid count (128 or 256, F11).
 11. Decide the keeper rule once SigNoz single-node support is checked (0352 risk 4).
+12. Follow-up: pin the shared Caddy's images by digest. B0 found `board-proxy` built from unpinned tags (`caddy:2-builder` and the stock base). Pinning changes the image the node runs, so it needs its own owner approval and its own recreate step; no step in this plan does it.
 
 ## 4. UNVERIFIED list
 
