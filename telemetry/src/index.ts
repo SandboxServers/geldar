@@ -18,7 +18,13 @@ export {
 } from './content.ts';
 export { createLogger, type LogFields, type Logger, type LogLevel } from './logger.ts';
 export { extractTrace, type HeaderLike, injectTrace } from './nats-trace.ts';
-export { type ErrorFields, errorFields, REDACTED, redactContent, scrubText } from './redact.ts';
+export {
+  type ErrorFields,
+  errorFields,
+  MAX_ERROR_TEXT_CHARS,
+  REDACTED,   redactContent,
+  scrubText,
+} from './redact.ts';
 export {
   EXPORT_TIMEOUT_MS,
   type QueueLimits,

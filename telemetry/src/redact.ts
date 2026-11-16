@@ -175,21 +175,35 @@ export interface ErrorFields {
   'exception.stacktrace'?: string;
 }
 
-/** Exception fields for a thrown value; message and stack are scrubbed. Never throws. */
+/**
+ * The most characters of one error field (message or stack) that reach scrubText. Longer text is cut
+ * first and marked, so an unbounded error string cannot stall the event loop. The package's own cap
+ * after scrubbing is 32 KiB, so nothing that would have been visible is lost.
+ */
+export const MAX_ERROR_TEXT_CHARS = 64 * 1024;
+
+/** The text cut to MAX_ERROR_TEXT_CHARS, then scrubbed; a cut ends with `…[truncated N chars]`. */
+function scrubBounded(text: string): string {
+  if (text.length <= MAX_ERROR_TEXT_CHARS) return scrubText(text);
+  const cut = text.length - MAX_ERROR_TEXT_CHARS;
+  return `${scrubText(text.slice(0, MAX_ERROR_TEXT_CHARS))}…[truncated ${cut} chars]`;
+}
+
+/** Exception fields for a thrown value; message and stack are cut, then scrubbed. Never throws. */
 export function errorFields(error: unknown): ErrorFields {
   try {
     if (error instanceof Error) {
       const fields: ErrorFields = {
-        'exception.type': scrubText(String(error.name || 'Error')),
-        'exception.message': scrubText(String(error.message)),
+        'exception.type': scrubBounded(String(error.name || 'Error')),
+        'exception.message': scrubBounded(String(error.message)),
       };
-      if (typeof error.stack === 'string') fields['exception.stacktrace'] = scrubText(error.stack);
+      if (typeof error.stack === 'string') fields['exception.stacktrace'] = scrubBounded(error.stack);
       return fields;
     }
     const text = String(error);
     // A thrown plain object (String gives `[object Object]`): its redacted fields as JSON instead.
     const message =
-      text === '[object Object]' ? JSON.stringify(redactContent(error)) : scrubText(text);
+      text === '[object Object]' ? JSON.stringify(redactContent(error)) : scrubBounded(text);
     return { 'exception.type': typeof error, 'exception.message': message };
   } catch {
     return { 'exception.type': 'unknown', 'exception.message': '' };

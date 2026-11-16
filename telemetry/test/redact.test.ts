@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { errorFields, REDACTED, redactContent, scrubText } from '../src/redact.ts';
+import { errorFields, MAX_ERROR_TEXT_CHARS, REDACTED, redactContent, scrubText } from '../src/redact.ts';
 
 // Fixtures are built at run time so no literal credential-shaped string sits in the source.
 const token = ['gmcp', 'a1'.repeat(32)].join('-');
@@ -215,6 +215,39 @@ describe('redactContent: shared sub-objects and thrown values', () => {
       message: `hi ${REDACTED}`,
       [word]: REDACTED,
     });
+  });
+});
+
+describe('errorFields bound', () => {
+  it('cuts a huge message and stack before scrubbing and marks the cut', () => {
+    const extra = 5000;
+    const big = 'x'.repeat(MAX_ERROR_TEXT_CHARS + extra);
+    const err = new Error(big);
+    err.stack = big;
+    const fields = errorFields(err);
+    const mark = `…[truncated ${extra} chars]`;
+    expect(fields['exception.message']).toBe('x'.repeat(MAX_ERROR_TEXT_CHARS) + mark);
+    expect(fields['exception.stacktrace']).toBe('x'.repeat(MAX_ERROR_TEXT_CHARS) + mark);
+  });
+
+  it('leaves text of exactly the bound unmarked, and handles a 10 MB message quickly', () => {
+    const exact = new Error('y'.repeat(MAX_ERROR_TEXT_CHARS));
+    expect(errorFields(exact)['exception.message']).toBe('y'.repeat(MAX_ERROR_TEXT_CHARS));
+    const start = performance.now();
+    const fields = errorFields(new Error('QUJD'.repeat(2.5 * (1 << 20))));
+    expect(performance.now() - start).toBeLessThan(500);
+    expect(fields['exception.message']).toContain('[truncated');
+  });
+});
+
+describe('scrubText on 10 MB', () => {
+  it('returns in well under 500 ms (the patterns are linear, so no cut is needed)', () => {
+    const base64 = timeScrub('QUJD'.repeat(2.5 * (1 << 20)));
+    const bearers = timeScrub('Bearer '.repeat(1.5 * (1 << 20)));
+    const urls = timeScrub('http://u:'.repeat(1.2 * (1 << 20)));
+    expect(base64).toBeLessThan(500);
+    expect(bearers).toBeLessThan(500);
+    expect(urls).toBeLessThan(500);
   });
 });
 
