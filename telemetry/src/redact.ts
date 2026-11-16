@@ -10,6 +10,8 @@ export const REDACTED = '[redacted]';
 const MAX_REDACT_DEPTH = 32;
 const TRUNCATED_MARK = '[truncated]';
 const CYCLE_MARK = '[cycle]';
+/** The most entries copied from one Map or Set; the rest is replaced by TRUNCATED_MARK. */
+const MAX_COLLECTION_ENTRIES = 1000;
 const UNREADABLE_MARK = '[unreadable]';
 
 // Mirrors TOKEN_PATTERN in threshold/mcp/src/store/token-hash.ts (`^gmcp-[0-9a-f]{64}$`), unanchored
@@ -89,11 +91,49 @@ function redactRead(read: () => unknown, depth: number, ancestors: WeakSet<objec
 /** One level of redactContent; `ancestors` holds the objects on the path to this value (a cycle guard). */
 function redactAt(value: unknown, depth: number, ancestors: WeakSet<object>): unknown {
   if (typeof value === 'string') return scrubText(value);
+  // JSON-safe plain data out: a bigint, symbol or function becomes text, never a value JSON.stringify rejects.
+  if (typeof value === 'bigint') return value.toString();
+  if (typeof value === 'symbol' || typeof value === 'function') return scrubText(String(value));
   if (value === null || typeof value !== 'object') return value;
   if (ancestors.has(value)) return CYCLE_MARK;
   if (depth >= MAX_REDACT_DEPTH) return TRUNCATED_MARK;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? 'Invalid Date' : value.toISOString();
+  }
+  if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) {
+    return `[binary ${value.byteLength} bytes]`;
+  }
+  if (value instanceof Error) {
+    const fields = errorFields(value);
+    return {
+      name: fields['exception.type'],
+      message: fields['exception.message'],
+      ...(fields['exception.stacktrace'] === undefined
+        ? {}
+        : { stack: fields['exception.stacktrace'] }),
+    };
+  }
   ancestors.add(value);
   try {
+    if (value instanceof Map) {
+      const entries: unknown[] = [];
+      for (const [k, v] of Array.from(value).slice(0, MAX_COLLECTION_ENTRIES)) {
+        const keyed = typeof k === 'string' && hasForbiddenSegment(k);
+        entries.push([
+          redactAt(k, depth + 1, ancestors),
+          keyed ? REDACTED : redactAt(v, depth + 1, ancestors),
+        ]);
+      }
+      if (value.size > MAX_COLLECTION_ENTRIES) entries.push(TRUNCATED_MARK);
+      return entries;
+    }
+    if (value instanceof Set) {
+      const items = Array.from(value)
+        .slice(0, MAX_COLLECTION_ENTRIES)
+        .map((item) => redactAt(item, depth + 1, ancestors));
+      if (value.size > MAX_COLLECTION_ENTRIES) items.push(TRUNCATED_MARK);
+      return items;
+    }
     if (Array.isArray(value)) {
       const items: unknown[] = [];
       for (let i = 0; i < value.length; i++) {

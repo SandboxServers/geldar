@@ -140,6 +140,57 @@ describe('scrubText on large adversarial input', () => {
   });
 });
 
+describe('redactContent: plain JSON-safe output', () => {
+  it('turns a bigint, symbol and function into text', () => {
+    const out = redactContent({ n: 10n, s: Symbol('x'), f: function named() {} });
+    expect(out).toEqual({ n: '10', s: 'Symbol(x)', f: 'function named() {}' });
+    expect(() => JSON.stringify(out)).not.toThrow();
+  });
+
+  it('keeps a Date as an ISO string and marks an invalid one', () => {
+    expect(redactContent({ at: new Date(Date.UTC(2026, 10, 16, 12, 0, 0)) })).toEqual({
+      at: '2026-11-16T12:00:00.000Z',
+    });
+    expect(redactContent(new Date(Number.NaN))).toBe('Invalid Date');
+  });
+
+  it('copies Map and Set entries with redaction and a bound', () => {
+    const map = new Map<string, unknown>([
+      ['a', 'Bearer abc123'],
+      [word, 'x'],
+    ]);
+    expect(redactContent({ m: map, s: new Set(['ok', token]) })).toEqual({
+      m: [
+        ['a', REDACTED],
+        [word, REDACTED],
+      ],
+      s: ['ok', REDACTED],
+    });
+    const big = new Set(Array.from({ length: 1500 }, (_, i) => i));
+    const out = redactContent(big) as unknown[];
+    expect(out).toHaveLength(1001);
+    expect(out.at(-1)).toBe('[truncated]');
+  });
+
+  it('keeps an Error as name, message and stack, scrubbed', () => {
+    const out = redactContent({ e: new RangeError(`bad ${token}`) }) as {
+      e: { name: string; message: string; stack: string };
+    };
+    expect(out.e.name).toBe('RangeError');
+    expect(out.e.message).toBe(`bad ${REDACTED}`);
+    expect(out.e.stack).toContain('RangeError');
+    expect(out.e.stack).not.toContain(token);
+  });
+
+  it('replaces a Buffer and typed arrays by a byte count', () => {
+    expect(redactContent(Buffer.from('abc'))).toBe('[binary 3 bytes]');
+    expect(redactContent({ u: new Uint16Array(4), b: new ArrayBuffer(5) })).toEqual({
+      u: '[binary 8 bytes]',
+      b: '[binary 5 bytes]',
+    });
+  });
+});
+
 describe('scrubText: credential forms', () => {
   const R = REDACTED;
   const b64 = ['dXNlcjpw', 'ZA=='].join('');
