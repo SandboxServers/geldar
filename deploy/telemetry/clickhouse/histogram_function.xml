@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<!--
+  User-defined executable function histogramQuantile, needed by SigNoz metrics queries. [AUTH] XML form of Foundry functions.yaml [SRC].
+  The config is loaded through user_defined_executable_functions_config *function.xml in the server config directory [INF].
+  The binary is NOT in this repo. Vendor it into /mnt/nvme/geldar-telemetry/clickhouse/user_scripts/histogramQuantile (owner uid 101,
+  executable) and check its sha256 before start. The upstream init download from GitHub is not used (README item 6). [UNV]
+-->
+<functions>
+    <function>
+        <type>executable</type>
+        <name>histogramQuantile</name>
+        <return_name>result</return_name>
+        <return_type>Float64</return_type>
+        <argument>
+            <name>buckets</name>
+            <type>Array(Float64)</type>
+        </argument>
+        <argument>
+            <name>counts</name>
+            <type>Array(Float64)</type>
+        </argument>
+        <argument>
+            <name>quantile</name>
+            <type>Float64</type>
+        </argument>
+        <format>CSV</format>
+        <command>./histogramQuantile</command>
+    </function>
+</functions>

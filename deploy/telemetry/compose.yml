@@ -1,0 +1,215 @@
+# Geldar telemetry stack (T-20). FILES ONLY: nothing here has been started or pulled.
+# Decision: docs/decisions/0370-telemetry-clickhouse-25-12-pin.md (amends 0352).
+# Pins, uids, deviations and the unverified list: deploy/telemetry/README.md.
+# Labels: [SRC] quoted from the cited SigNoz/ClickHouse file; [INF] inferred; [AUTH] written here; [UNV] unverified (check in the scratch run).
+# Shell wrappers use $$ so that Compose does not interpolate them; the shell sees a single $.
+# Dummy check (no start, no pull): docker compose -f deploy/telemetry/compose.yml config
+name: geldar-telemetry
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+networks:
+  # Created at N2 on the node (external; not created by this file). Shared with geldar-gateway.
+  geldar-telemetry:
+    external: true
+    name: geldar-telemetry
+  # S-A: project-scoped, internal (no route out). Only geldar-ch and geldar-ch-keeper join it, so Keeper is not on geldar-telemetry.
+  # Compose prefixes the project name: the Docker name is geldar-telemetry_geldar-telemetry-backend (README, "Networks").
+  geldar-telemetry-backend:
+    driver: bridge
+    internal: true
+
+secrets:
+  ch_writer_password:
+    file: /mnt/nvme/geldar-telemetry/secrets/ch_writer_password
+  ch_reader_password:
+    file: /mnt/nvme/geldar-telemetry/secrets/ch_reader_password
+
+services:
+  geldar-ch-keeper:
+    # Keeper is required (0370): the SigNoz migrator issues ON CLUSTER DDL.
+    # [INF] runs as uid 101 (the clickhouse user); entrypoint overridden as Foundry does [SRC], so no /entrypoint.sh drop.
+    # Data dir must be owned by 101:101 after the id check in the README. [UNV]
+    image: clickhouse/clickhouse-keeper@sha256:525b8b0f93ccb371131c46f22a066ea43d33d74aba314203e8044609945d8524 # 25.12.5 build 44
+    container_name: geldar-ch-keeper
+    hostname: geldar-ch-keeper
+    entrypoint: ["/usr/bin/clickhouse-keeper", "--config-file=/etc/clickhouse-keeper/keeper.yaml"]
+    user: "101:101"
+    volumes:
+      - /mnt/nvme/geldar-telemetry/keeper:/var/lib/clickhouse-keeper
+      - ./clickhouse/keeper/keeper.yaml:/etc/clickhouse-keeper/keeper.yaml:ro
+    networks: [geldar-telemetry-backend]
+    expose: ["9181", "9234"]
+    healthcheck:
+      # [SRC] Foundry compose; binary presence in 25.12.5 build 44 [UNV]
+      test: ["CMD-SHELL", "clickhouse-keeper-client -h 127.0.0.1 -p 9181 -q ls"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    cpus: 0.5
+    mem_limit: 1g
+    memswap_limit: 1g
+    pids_limit: 256
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    logging: *logging
+
+  geldar-ch:
+    # ClickHouse server 25.12.5 build 44 (0370). Starts as root, /entrypoint.sh chowns the data dir and drops to 101 [INF].
+    # Exception to cap_drop ALL: the entrypoint needs CHOWN, SETUID, SETGID and DAC_OVERRIDE for that drop [INF, check in scratch run].
+    # No ports published: native 9000 and HTTP 8123 stay on the Geldar network.
+    image: clickhouse/clickhouse-server@sha256:cacf32d6884291dc2ff5e0156a97f46fc53ff7c929a7906d114e268a929dfd3a # 25.12.5 build 44
+    container_name: geldar-ch
+    hostname: geldar-ch
+    env_file:
+      # Node-only file with GELDAR_CH_WRITER_SHA256 and GELDAR_CH_READER_SHA256 (README, "Password hashes").
+      # required: false only so that `compose config` runs off the node; on the node a missing hash makes ClickHouse fail to start.
+      - path: /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env
+        required: false
+    environment:
+      CLICKHOUSE_SKIP_USER_SETUP: "1"   # [SRC] Foundry compose
+    volumes:
+      - /mnt/nvme/geldar-telemetry/clickhouse:/var/lib/clickhouse
+      - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
+      - ./clickhouse/users.d:/etc/clickhouse-server/users.d:ro
+      - ./clickhouse/histogram_function.xml:/etc/clickhouse-server/histogram_function.xml:ro
+    # Both networks: geldar-telemetry for the Geldar clients, geldar-telemetry-backend for Keeper (cluster.xml reaches it by name there).
+    networks: [geldar-telemetry, geldar-telemetry-backend]
+    depends_on:
+      geldar-ch-keeper:
+        condition: service_healthy
+    healthcheck:
+      # [SRC] SigNoz devenv and Foundry compose, with 127.0.0.1 for IPv4 (listen_host 0.0.0.0); not checked inside the image [UNV] (README item 23)
+      test: ["CMD-SHELL", "wget --spider -q http://127.0.0.1:8123/ping || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    cpus: 3.0
+    mem_limit: 8g
+    memswap_limit: 8g
+    pids_limit: 1024
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, SETUID, SETGID]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    logging: *logging
+
+  geldar-signoz-migrator:
+    # One-shot schema migrator: the collector image's migrate subcommands (0370, facts section 2A) [SRC SZ devenv compose].
+    # Same digest as geldar-signoz-otelcol, so no second migrator image is pinned. Tested by SigNoz CI with ClickHouse 25.12.5 [SRC].
+    # The DSN (with the writer password) is exported inside the shell from the secret file. It is not in argv or docker inspect.
+    # Replication is on through the env var (matches the collector default and the macros). The migrator's --replication flag is not used.
+    image: signoz/signoz-otel-collector@sha256:7e4e539a73f1f88fbc1cd7e659ab3950908e83ce1f2a37a297452f910d072174 # v0.144.6
+    container_name: geldar-signoz-migrator
+    hostname: geldar-signoz-migrator
+    entrypoint: ["/bin/sh", "-c"]
+    # [AUTH] shell wrapper; the image must have /bin/sh [UNV]. The steps run in order and stop at the first failure.
+    command:
+      - 'export SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_DSN="tcp://geldar_writer:$$(cat /run/secrets/ch_writer_password)@geldar-ch:9000" SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_CLUSTER=cluster SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_REPLICATION=true SIGNOZ_OTEL_COLLECTOR_TIMEOUT=10m; /signoz-otel-collector migrate ready && /signoz-otel-collector migrate bootstrap && /signoz-otel-collector migrate sync up && /signoz-otel-collector migrate async up'
+    # Owner and mode of the secret file are the host file's (README, "Secrets": ch_writer_password 10001:10001 0400). Not set here.
+    secrets:
+      - source: ch_writer_password
+        target: ch_writer_password
+    networks: [geldar-telemetry]
+    depends_on:
+      geldar-ch:
+        condition: service_healthy
+    cpus: 0.5
+    mem_limit: 512m
+    memswap_limit: 512m
+    pids_limit: 128
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: "no"
+    logging: *logging
+
+  geldar-signoz:
+    # SigNoz v0.148.1: query API and UI in one container (deviation from collector-design 4, see README).
+    # Runs as root [SRC], no USER in the image. Loopback publish only; reached over an SSH tunnel.
+    # Port 8095 is assumed free (no N1 source for it in the repo; confirm with ss -ltn before N4). 3301 is not used.
+    image: signoz/signoz@sha256:a7d1a968a1f7f65c518106150ac05424ca8e91c52d7076077dfce034980e9c34 # v0.148.1
+    container_name: geldar-signoz
+    hostname: geldar-signoz
+    entrypoint: ["/bin/sh", "-c"]
+    # [AUTH] wrapper; reads the reader password at start. Entrypoint of the image is ./signoz server [SRC].
+    command:
+      - 'export SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN="tcp://geldar_reader:$$(cat /run/secrets/ch_reader_password)@geldar-ch:9000"; exec ./signoz server'
+    environment:
+      SIGNOZ_TELEMETRYSTORE_PROVIDER: clickhouse           # [SRC] Foundry compose
+      SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_CLUSTER: cluster    # [INF] key from conf/example.yaml
+      SIGNOZ_SQLSTORE_PROVIDER: sqlite                      # [SRC] key; Foundry sets postgres
+      SIGNOZ_SQLSTORE_SQLITE_PATH: /var/lib/signoz/signoz.db  # [INF] default path [SRC]; env name [UNV]
+      SIGNOZ_TOKENIZER_PROVIDER: opaque                     # default; no JWT secret needed [INF]
+    volumes:
+      - /mnt/nvme/geldar-telemetry/query:/var/lib/signoz
+    secrets:
+      # Owner and mode from the host file: ch_reader_password 0:0 0400 (README, "Secrets"). Not set here.
+      - source: ch_reader_password
+        target: ch_reader_password
+    networks: [geldar-telemetry]
+    ports:
+      - "127.0.0.1:8095:8080"
+    depends_on:
+      geldar-signoz-migrator:
+        condition: service_completed_successfully
+      geldar-ch:
+        condition: service_healthy
+    healthcheck:
+      # [SRC] Foundry compose: start_period 60s, interval 30s, retries 3; busybox wget in alpine [INF]
+      test: ["CMD-SHELL", "wget --spider -q http://localhost:8080/api/v1/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    cpus: 1.0
+    mem_limit: 1g
+    memswap_limit: 1g
+    pids_limit: 256
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    logging: *logging
+
+  geldar-signoz-otelcol:
+    # SigNoz collector v0.144.6, run without the OpAMP manager (no --manager-config) [SRC facts section 3].
+    # Config: deploy/telemetry/signoz-otelcol-config.yaml. Runs as uid 10001 [SRC].
+    # Receives OTLP only from geldar-gateway on the Geldar network. No published port.
+    image: signoz/signoz-otel-collector@sha256:7e4e539a73f1f88fbc1cd7e659ab3950908e83ce1f2a37a297452f910d072174 # v0.144.6
+    container_name: geldar-signoz-otelcol
+    hostname: geldar-signoz-otelcol
+    entrypoint: ["/bin/sh", "-c"]
+    # [AUTH] wrapper; the collector exporters read CLICKHOUSE_DSN_BASE through ${env:} in the config file [INF].
+    command:
+      - 'export CLICKHOUSE_DSN_BASE="tcp://geldar_writer:$$(cat /run/secrets/ch_writer_password)@geldar-ch:9000"; exec /signoz-otel-collector --config=/etc/otel/config.yaml'
+    volumes:
+      - ./signoz-otelcol-config.yaml:/etc/otel/config.yaml:ro
+    secrets:
+      # Owner and mode from the host file: ch_writer_password 10001:10001 0400 (README, "Secrets"). Not set here.
+      - source: ch_writer_password
+        target: ch_writer_password
+    networks: [geldar-telemetry]
+    environment:
+      GOMEMLIMIT: 800MiB   # about 80% of the 1g cap; matches memory_limiter limit_mib 800 in signoz-otelcol-config.yaml (S5)
+    expose: ["4317", "4318"]
+    depends_on:
+      geldar-signoz-migrator:
+        condition: service_completed_successfully
+      geldar-ch:
+        condition: service_healthy
+    # healthcheck: [UNV] wget --spider -q localhost:13133. The image is debian with only ca-certificates [SRC]; wget is not confirmed.
+    # Left off until checked in the scratch run.
+    cpus: 0.5
+    mem_limit: 1g
+    memswap_limit: 1g
+    pids_limit: 256
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    logging: *logging

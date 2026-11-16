@@ -1,0 +1,21 @@
+# Keeper config for geldar-ch-keeper (0370). Base: Foundry telemetrykeeper/clickhousekeeper/keeper-0.yaml [SRC], hostnames changed [AUTH].
+# Paths are under /var/lib/clickhouse-keeper (the data volume). Keeper is required by the SigNoz migrator's ON CLUSTER DDL.
+keeper_server:
+  tcp_port: 9181
+  server_id: 0
+  log_storage_path: /var/lib/clickhouse-keeper/coordination/log
+  snapshot_storage_path: /var/lib/clickhouse-keeper/coordination/snapshots
+  # S-A: only the commands used here (the healthcheck uses the client protocol, not a four-letter word). Not '*'.
+  four_letter_word_white_list: 'ruok,mntr,srvr'
+  coordination_settings:
+    force_sync: false
+    operation_timeout_ms: 10000
+    raft_logs_level: warning
+    session_timeout_ms: 30000
+    snapshot_distance: 100000
+    snapshots_to_keep: 3
+  raft_configuration:
+    server:
+      - {hostname: geldar-ch-keeper, id: 0, port: 9234}
+listen_host: 0.0.0.0
+logger: {console: true, level: information}
