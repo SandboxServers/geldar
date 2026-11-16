@@ -91,6 +91,30 @@ describe('scratch overlay: ports', () => {
     for (const port of defaults) expect(phase0Hosts).not.toContain(port);
   });
 
+  it('gives scratch-telemetry its own port block: every telemetry.env port differs from every overlay default', () => {
+    const env = Object.fromEntries(
+      readFileSync(`${ROOT}deploy/scratch/telemetry.env`, 'utf8')
+        .split('\n')
+        .filter((line) => line.trim() && !line.startsWith('#'))
+        .map((line) => line.split('=') as [string, string]),
+    );
+    const defaults = new Map(
+      [...OVERLAY_TEXT.matchAll(/\$\{(SCRATCH_[A-Z_]+):-(\d+)\}/g)].map((m) => [
+        m[1] as string,
+        Number(m[2]),
+      ]),
+    );
+    expect(Object.keys(env).sort()).toEqual([...defaults.keys()].sort());
+    const phase0Hosts = Object.values(BASE.services).flatMap((s) => (s.ports ?? []).map(hostPort));
+    const own = Object.values(env).map(Number);
+    expect(new Set(own).size).toBe(own.length);
+    for (const [key, value] of Object.entries(env)) {
+      expect(value, key).toMatch(/^\d+$/);
+      expect([...defaults.values()], key).not.toContain(Number(value));
+      expect(phase0Hosts, key).not.toContain(Number(value));
+    }
+  });
+
   it('binds every overlay mapping to 127.0.0.1 and no other address', () => {
     expect(OVERLAY_TEXT).not.toMatch(/0\.0\.0\.0/);
     const addresses = OVERLAY_TEXT.match(/\b\d{1,3}(?:\.\d{1,3}){3}\b/g) ?? [];
@@ -529,12 +553,23 @@ describe.skipIf(!SH)('scratch script under sh', { timeout: 60_000 }, () => {
     expect(up).toContain('WORLD=scratch-a_paper-data');
   });
 
-  it('refuses a suffix outside [a-z0-9]{1,8} with exit 2 and no docker call', () => {
-    for (const suffix of ['A b', '../x', 'toolongsuffix']) {
+  it('refuses a suffix outside [a-z0-9]{1,9} with exit 2 and no docker call', () => {
+    for (const suffix of ['A b', '../x', 'toolongsuffix', 'telemetry1']) {
       const run = runScript(['up', suffix], OPEN);
       expect(run.status, suffix).toBe(2);
+      expect(run.stderr, suffix).toContain('[a-z0-9]{1,9}');
       expect(run.calls, suffix).toEqual([]);
     }
+  });
+
+  it('accepts the 9-character suffix telemetry and reaches compose as project scratch-telemetry', () => {
+    const run = runScript(['up', 'telemetry'], OPEN, JARS);
+    expect(run.status).toBe(0);
+    expect(started(run)).toBe(true);
+    const up = run.calls.find((c) => c.startsWith('compose') && c.includes(' up -d'));
+    expect(up).toContain('-p scratch-telemetry ');
+    expect(up).toContain('WORLD=scratch-telemetry_paper-data');
+    expect(run.calls.some((c) => c.includes('-p scratch-a '))).toBe(false);
   });
 
   it('status for a project with no state prints no open-NATS warning', () => {

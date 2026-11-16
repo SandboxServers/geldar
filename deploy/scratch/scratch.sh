@@ -1,7 +1,7 @@
 #!/bin/sh
 # Throwaway scratch stack for the sheet campaign validation (see docs/runbooks/scratch-stack.md).
 # Usage: sh deploy/scratch/scratch.sh up|status|down [suffix]
-# The project is always scratch-<suffix> (suffix [a-z0-9]{1,8}, default a). Exit codes: 2 usage or NATS auth refused,
+# The project is always scratch-<suffix> (suffix [a-z0-9]{1,9}, default a). Exit codes: 2 usage or NATS auth refused,
 # 3 resource gate failed, 1 anything else. On 2 and 3 nothing is started.
 # NATS fails closed: up needs SCRATCH_NATS_AUTH_DIR, a readable directory holding the four generated files
 # (nats-auth.conf, nats-paper.txt, nats-velocity.txt, nats-eventsink.txt). Open NATS needs SCRATCH_NATS_OPEN=1 and
@@ -30,12 +30,12 @@ case "$verb" in
 esac
 case "$suffix" in
   '' | *[!a-z0-9]*)
-    echo "suffix must match [a-z0-9]{1,8}" >&2
+    echo "suffix must match [a-z0-9]{1,9}" >&2
     exit 2
     ;;
 esac
-if [ "${#suffix}" -gt 8 ]; then
-  echo "suffix must match [a-z0-9]{1,8}" >&2
+if [ "${#suffix}" -gt 9 ]; then
+  echo "suffix must match [a-z0-9]{1,9}" >&2
   exit 2
 fi
 PROJECT="scratch-$suffix"
