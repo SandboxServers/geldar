@@ -14,7 +14,10 @@ Compose references every image as `repo@sha256:<index digest>` (digest only, no 
 | clickhouse/clickhouse-keeper | 25.12.5 (build 44) | sha256:525b8b0f93ccb371131c46f22a066ea43d33d74aba314203e8044609945d8524 | sha256:5493b0fba2fdfc3bf51115db4fb378fac8b0a953c116db442fd4297a8f49a9d7 | 2026-02-02 | runs as 101:101 directly (compose `user:`, entrypoint overridden, no drop) [INF, see Owner uids] |
 | signoz/signoz | v0.148.1 | sha256:a7d1a968a1f7f65c518106150ac05424ca8e91c52d7076077dfce034980e9c34 | sha256:909443fb98d16048df866d49f6efe5e8b19dd60e20821bee2c45c46090700027 | 2026-10-29 | root (no drop) [SRC] |
 | signoz/signoz-otel-collector | v0.144.6 | sha256:7e4e539a73f1f88fbc1cd7e659ab3950908e83ce1f2a37a297452f910d072174 | sha256:13fca6050f79c49a0bdc644ccdc65a9248f22f3b4337d1e0680da026a764d77e | 2026-07-14 | 10001 [SRC] |
+| signoz/signoz-schema-migrator (UNUSED) | v0.144.6 | sha256:4e57475fbf8b24168dcfbe6fc5799bb3f3d965819b72663580d0926185b68bf5 | not recorded | 2026-07-14 | n/a (not run by compose) |
 Why these tags: 25.12.5 (build 44) is the ClickHouse line SigNoz v0.148.1 tests in CI. v0.144.6 is the collector version the v0.148.1 `go.mod` pins. The newer 25.12.11 (build 4) and 26.3.62 (build 3) are not used (see 0370). The digests were read from the Docker Hub registry API on 2026-11-16 and were not pulled.
+
+**Unused:** the `signoz/signoz-schema-migrator` row is kept for the record only. Compose does not run it. The one-shot migrator runs the `migrate` subcommands of the collector image (`signoz/signoz-otel-collector`, same digest as the collector), so no separate migrator image is pinned. Its entry in `tools/repo-checks/src/release-dates.json` is therefore unused as well.
 
 ## Owner uids
 

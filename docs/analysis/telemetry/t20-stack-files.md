@@ -8,11 +8,11 @@ Nothing was started or pulled. The only docker call was `docker compose -f deplo
 
 | File | What it is | Source |
 |---|---|---|
-| `deploy/telemetry/compose.yml` | Project `geldar-telemetry`, external network `geldar-telemetry`, six services (keeper, ClickHouse, migrator, SigNoz, collector). Caps per collector-design 4 (ch 3.0/8g/1024, keeper 0.5/1g/256, migrator 0.5/512m/128, signoz 1.0/1g/256, otelcol 0.5/1g/256). One publish: `127.0.0.1:8095:8080`. File secrets, no inline password, no docker.sock. | [AUTH] from the facts file |
+| `deploy/telemetry/compose.yml` | Project `geldar-telemetry`, external network `geldar-telemetry`, five services (keeper, ClickHouse, migrator, SigNoz, collector). Caps per collector-design 4 (ch 3.0/8g/1024, keeper 0.5/1g/256, migrator 0.5/512m/128, signoz 1.0/1g/256, otelcol 0.5/1g/256). One publish: `127.0.0.1:8095:8080`. File secrets, no inline password, no docker.sock. | [AUTH] from the facts file |
 | `deploy/telemetry/README.md` | Pins table (index and amd64 digests), owner uids, host paths, the one-container deviation, the unverified list, start order | [AUTH] with [SRC]/[INF] labels |
 | `deploy/telemetry/clickhouse/config.d/cluster.xml` | One shard, one replica, Keeper at `geldar-ch-keeper`, macros, `distributed_ddl` | [AUTH] from the Foundry and devenv samples [SRC] |
 | `deploy/telemetry/clickhouse/config.d/system-log-ttl.xml` | System log TTL, 30 days (the packet asks for 30 days; Foundry uses 1 day) | keys [SRC] Foundry, value [AUTH] |
-| `deploy/telemetry/clickhouse/users.d/users.xml` | `geldar_writer` (2 GB, 4 threads, 60 s, 2 insert threads), `geldar_reader` (readonly), `default` (loopback only). Password hashes are placeholders. | [AUTH] |
+| `deploy/telemetry/clickhouse/users.d/users.xml` | `geldar_writer` (2 GB, 4 threads, 60 s, 2 insert threads, `::/0`). `geldar_reader` (`readonly` 2, 1 GB, 4 threads, 30 s, 100000 rows with `break`, `GRANT SELECT` on `signoz_traces`, `signoz_logs`, `signoz_metrics`, `signoz_metadata`, `::/0`, `quota default`). `default` (loopback only, kept for ON CLUSTER DDL). Password hashes are read with `from_env` from the node-only env file, not written in the file. | [AUTH]; `from_env` and grants syntax [INF] |
 | `deploy/telemetry/clickhouse/histogram_function.xml` | `histogramQuantile` executable UDF, XML form of Foundry `functions.yaml`. The binary is not in the repo. | [AUTH] from [SRC] |
 | `deploy/telemetry/clickhouse/keeper/keeper.yaml` | Single-node Keeper config | [SRC] Foundry, hostnames [AUTH] |
 | `deploy/telemetry/signoz-otelcol-config.yaml` | Collector config without OpAMP; exporter DSNs from `${env:CLICKHOUSE_DSN_BASE}` | [SRC] devenv v0.148.1, [AUTH] changes |
@@ -50,6 +50,6 @@ The full list with numbers is in the README (section "Unverified, check in the s
 - The 30-day system log TTL: the packet says 30 days; the facts file shows one day.
 - `default` user kept on loopback, not removed.
 - Cap exceptions for `geldar-ch`: `cap_add` CHOWN, DAC_OVERRIDE, SETUID, SETGID. Other services use `cap_drop: ALL` with no add.
-- Migrator `--replication true` matches the collector's default and the macros.
+- The migrator runs the collector image's `migrate ready`, `migrate bootstrap`, `migrate sync up`, `migrate async up` sequence. The DSN is exported in the shell from the secret file, and `SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_REPLICATION=true` is set as an env var (the collector default, matching the macros). No `--replication` flag remains.
 - `low_cardinal_exception_grouping` is literal `false`, not an env var.
 - The wrapper that builds the DSN from the secret file.
