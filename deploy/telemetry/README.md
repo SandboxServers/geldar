@@ -158,19 +158,25 @@ Each item says what it blocks. Nothing starts on the node until the items marked
 Run these in order. Each must pass before the next start.
 
 1. Create the secret and hash files per "Secrets", then `ls -ln /mnt/nvme/geldar-telemetry/secrets` matches the table (item 14).
-2. Hash file refusal: move `ch-hashes.env` aside, run `docker compose -f deploy/telemetry/compose.yml up -d geldar-ch`. `geldar-ch` must not become healthy, because it must refuse to start without `GELDAR_CH_WRITER_SHA256` and `GELDAR_CH_READER_SHA256`. Restore the file name, then run `docker compose -f deploy/telemetry/compose.yml down`. If ClickHouse starts with an empty hash, stop and resolve item 20 first.
-3. Network: `docker network inspect geldar-telemetry_geldar-telemetry-backend` shows `"Internal": true`, and `geldar-ch-keeper` is not listed in `docker network inspect geldar-telemetry`.
-4. `default` negative test (item 21) fails as required.
-5. The vendor reporting setting is found and disabled (item 26).
-6. The N4 request names the extra network `geldar-telemetry_geldar-telemetry-backend` (see "Networks").
-7. **Empty password refused (M1).** With `geldar-ch` healthy, run from a container on `geldar-telemetry`. Both must fail with an authentication or address error, and print no `1`:
-
-    ```
-    docker run --rm --network geldar-telemetry --entrypoint /usr/bin/clickhouse clickhouse/clickhouse-server@sha256:cacf32d6884291dc2ff5e0156a97f46fc53ff7c929a7906d114e268a929dfd3a client --host geldar-ch --user geldar_writer --password '' --query "SELECT 1"
-    ```
-
-    The same command with `--user geldar_reader` must fail the same way.
-8. **No empty-string hash (M1).** `grep -c e3b0c442 /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env` must print `0`. `grep` exits 1 when the count is 0, so judge by the printed number. Do not print the file.
+2. **Hash file refusal (runs first, before any N4 network check).** The backend network exists only while the project is up.
+    a. `mv /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env.aside`
+    b. `docker compose -f deploy/telemetry/compose.yml up -d geldar-ch`. This starts `geldar-ch-keeper` first and creates the backend network.
+    c. Wait 2 minutes, then `docker inspect -f '{{.State.Health.Status}}' geldar-ch`. Expected: not `healthy`. A restart loop is the expected refusal, so `starting`, `unhealthy` or `restarting` all pass. `docker logs geldar-ch` shows a missing-variable error for `GELDAR_CH_WRITER_SHA256` or `GELDAR_CH_READER_SHA256`. If the status is `healthy`, stop and resolve item 20.
+    d. `docker compose -f deploy/telemetry/compose.yml down`. Expected: exit 0. This removes the backend network.
+    e. `mv /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env.aside /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env`, then repeat step 1's `ls -ln` check (mode `0400`).
+3. **Bring geldar-ch up with the hash file restored.** `docker compose -f deploy/telemetry/compose.yml up -d geldar-ch`. Wait up to 3 minutes until `docker inspect -f '{{.State.Health.Status}}' geldar-ch` prints `healthy` and `docker inspect -f '{{.State.Health.Status}}' geldar-ch-keeper` prints `healthy`. If either stays unhealthy, stop.
+4. **Network (geldar-ch is up).**
+    a. `docker network inspect geldar-telemetry_geldar-telemetry-backend --format '{{.Internal}}'` prints `true`.
+    b. `docker network inspect geldar-telemetry --format '{{range .Containers}}{{.Name}} {{end}}'` lists `geldar-ch` and does not list `geldar-ch-keeper`.
+5. **Negative and positive tests (geldar-ch is healthy).** Run the `docker run --rm --network geldar-telemetry --entrypoint /usr/bin/clickhouse clickhouse/clickhouse-server@sha256:cacf32d6884291dc2ff5e0156a97f46fc53ff7c929a7906d114e268a929dfd3a client --host geldar-ch ...` form from item 21 for each line below. Negative lines must exit non-zero with an authentication or address error and print no `1`. Record the exact error text in the report.
+    a. `--user default --query "SELECT 1"`: negative (item 21). Must fail.
+    b. `--user geldar_writer --password '' --query "SELECT 1"`: negative (item 7, M1). Must fail.
+    c. `--user geldar_reader --password '' --query "SELECT 1"`: negative (item 7, M1). Must fail.
+    d. Positive control: `--user geldar_reader --password "$(cat /mnt/nvme/geldar-telemetry/secrets/ch_reader_password)" --query "SELECT 1"`, run as host root with the password not printed. Expected: prints `1`. This shows the network path and client work, so the negatives above fail for the right reason.
+    e. Positive check from inside geldar-ch: `docker exec geldar-ch clickhouse-client -q "SELECT host_ip FROM system.users WHERE name='default'"` lists only `127.0.0.1` and `::1`.
+6. **No empty-string hash (M1).** `grep -c e3b0c442 /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env` must print `0`. `grep` exits 1 when the count is 0, so judge by the printed number. Do not print the file.
+7. The vendor reporting setting is found and disabled (item 26).
+8. The N4 request names the extra network `geldar-telemetry_geldar-telemetry-backend` (see "Networks").
 
 ## Start order (for the scratch run, not this packet)
 
