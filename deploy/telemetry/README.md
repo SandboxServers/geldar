@@ -97,6 +97,11 @@ Each item says what it blocks. Nothing starts on the node until the items marked
 15. **Logs and ports of SigNoz.** The server's listener on 8080 is `[SRC]` from the SigNoz config. The OpAMP listener on 4320 is not used here (no manager config), so it is not published. `[UNV]` whether the server also opens 4320 by default. **Blocks nothing; check with `docker port`.**
 16. **Collector pipeline config.** Copied from the SigNoz devenv config at v0.148.1 (`[SRC]`). Components were checked at v0.144.6 only by the devenv pairing `[INF]`. Run `otelcol validate` (or `/signoz-otel-collector --config ... ` with a dry flag if one exists) in the scratch run. **Blocks start of the collector.**
 
+17. **ClickHouse capabilities.** `geldar-ch` has `cap_drop: [ALL]` and `cap_add: [CHOWN, DAC_OVERRIDE, SETUID, SETGID]` (compose). That set is what the entrypoint's uid drop is assumed to need `[INF]`; no smaller set has been tested. A binary in the image with file capabilities outside the bounding set fails to exec with EPERM. Whether the image's binaries carry file capabilities is not checked (`getcap` in the scratch run). **Blocks start of geldar-ch.**
+18. **ClickHouse `<grants>` syntax and `from_env` on 25.12.5.** The reader's grants use `<grants><query>GRANT SELECT ON ...</query></grants>` in `users.xml`, and the hashes are read with `from_env` (see "Password hashes"). Both are `[INF]` for 25.12.5. A malformed grant or an unsupported `from_env` stops ClickHouse from loading users, so it fails to start. **Blocks start of geldar-ch.**
+19. **Reader quota.** 0352 gives no per-hour read quota value, so `geldar_reader` has no quota of its own and uses `quota default` (`users.xml`). This is an owner decision, not a check. **Blocks nothing.**
+20. **Node-only hash file.** `/mnt/nvme/geldar-telemetry/secrets/ch-hashes.env` (`GELDAR_CH_WRITER_SHA256`, `GELDAR_CH_READER_SHA256`) must exist on the node before `geldar-ch` starts. Compose marks it `required: false` so that `docker compose config` runs off the node. On the node, a missing file leaves the variables unset and ClickHouse fails to start. Nothing has checked the file on the node. **Blocks start of geldar-ch.**
+
 ## Start order (for the scratch run, not this packet)
 
 1. `geldar-ch-keeper` healthy.
