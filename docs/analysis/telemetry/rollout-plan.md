@@ -8,7 +8,7 @@ Labels: **UNVERIFIED** = not checked against the node or the repo. **PROPOSED** 
 
 ## 0. Gaps in the inputs
 
-- **RESUME.md**: the brief names one in this folder. There is none in `docs/analysis/telemetry/`, so nothing is taken from it.
+- **RESUME.md**: the brief names one in this folder. There is none in `docs/analysis/telemetry/`, so nothing is taken from it. RESUME.md exists on main only after its own PR merges; nothing in this plan depends on it.
 - **Held code PRs** (T-05 PR #554, T-06, T-07, T-08 with migration): not listed in any file in the repo. The list comes from the brief and is **UNVERIFIED** until the orchestrator confirms the PR numbers and the migration.
 - **Gateway pids**: 128 in 0350 and 0082, 256 in the 0352 table. This plan uses 256 (F11, open for the orchestrator).
 - **Single-node ClickHouse without keeper**: **UNVERIFIED** (0352 risk 4). The keeper rule in `collector-design.md` section 4 applies until it is checked.
