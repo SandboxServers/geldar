@@ -154,8 +154,7 @@ function endToolSpan(
   }
 }
 
-/** The refusal of a hidden tool, with its one span (outcome 
-ot_available), or undefined when the call may run. */
+/** The refusal of a hidden tool, with its one span (outcome not_available), or undefined when the call may run. */
 export function refuseHidden(
   deps: Pick<WorldSessionDeps, 'onToolSpan'>,
   name: string,

@@ -3,11 +3,7 @@ import { startTelemetry, type TelemetryHandle } from '@geldar/telemetry';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { worldFixture } from './fakes/world.fakes.ts';
 import type { BodyGateway, PlayerRecord } from './ports.ts';
-import {
-  TOOL_SPAN_NAME,
-  toolSpanAttributes,
-  toolSpanRecorder,
-} from './telemetry.ts';
+import { TOOL_SPAN_NAME, toolSpanAttributes, toolSpanRecorder } from './telemetry.ts';
 import { createWorld } from './world.ts';
 import { runToolCall } from './world-session.ts';
 

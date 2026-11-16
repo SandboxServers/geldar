@@ -477,7 +477,7 @@ function watchSessionEnd(deps: Wired, ctx: ToolContext): void {
  * Logs one `tool_call` line per call: the tool, the player, the outcome code and the duration. Never the
  * arguments, the result or any text. A logger that throws does not fail the call.
  * What the span needs (the arguments, the raw result or the error) is stored for the session handler, which
- * ends the one span per call after it sees the final response (T-06d2); see 	akePendingCall.
+ * ends the one span per call after it sees the final response (T-06d2); see takePendingCall.
  */
 function logged(deps: Wired, tool: string, run: ToolHandler): ToolHandler {
   const record = (playerId: string, outcome: string, started: number): number => {

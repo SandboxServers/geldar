@@ -7,7 +7,6 @@ import { PLAYER_FAULT } from './resources.ts';
 import {
   authRefusalRecorder,
   type SpanTracer,
-  type ToolCallSpan,
   toolSpanRecorder,
 } from './telemetry.ts';
 import { hiddenToolsFor } from './tools/unavailable.ts';
