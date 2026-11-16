@@ -51,9 +51,15 @@
             <profile>geldar_writer</profile>
             <quota>default</quota>
             <!-- authored; the scratch run showed the migrator ran with full privileges, so this list is a hypothesis to be verified in
-                 scratch round 2; if the migrator fails on a missing privilege the error names it. Not granted on purpose: SYSTEM, FILE,
-                 URL, REMOTE, S3, MYSQL, POSTGRES, SOURCES, KILL QUERY, dictGet, INTROSPECTION. CREATE DATABASE is not granted on *.*;
-                 the CREATE grants above are on the six signoz_* databases only. [AUTH] -->
+                 scratch round 5; if the migrator fails on a missing privilege the error names it. Not granted on purpose: SYSTEM, FILE,
+                 URL, S3, MYSQL, POSTGRES, SOURCES, KILL QUERY, dictGet, INTROSPECTION. CREATE DATABASE is not granted on *.*;
+                 the CREATE grants above are on the six signoz_* databases only. CREATE on a database covers CREATE TABLE, CREATE VIEW
+                 (materialized views) and CREATE DICTIONARY, so no separate VIEW grant is listed. ALTER covers ALTER UPDATE (the migration
+                 status mutation). Table engines are granted one query each, because the Distributed engine's source is REMOTE.
+                 REMOTE gives the writer the remote() and cluster() table functions to any host. This residual risk is accepted: the
+                 writer's password is held only by the migrator and the collector, and the container network is private. The hypothesis
+                 that the Distributed engine grant needs REMOTE is [UNV] until scratch round 5 confirms it (a failure names the missing
+                 privilege). [AUTH] -->
             <grants>
                 <query>GRANT SELECT, INSERT, ALTER, CREATE, DROP, TRUNCATE, OPTIMIZE, SHOW ON signoz_traces.*</query>
                 <query>GRANT SELECT, INSERT, ALTER, CREATE, DROP, TRUNCATE, OPTIMIZE, SHOW ON signoz_logs.*</query>
@@ -63,7 +69,16 @@
                 <query>GRANT SELECT, INSERT, ALTER, CREATE, DROP, TRUNCATE, OPTIMIZE, SHOW ON signoz_analytics.*</query>
                 <query>GRANT SELECT ON system.*</query>
                 <query>GRANT CLUSTER ON *.*</query>
-                <query>GRANT TABLE ENGINE ON *</query>
+                <query>GRANT TABLE ENGINE ON Distributed</query>
+                <query>GRANT TABLE ENGINE ON ReplicatedMergeTree</query>
+                <query>GRANT TABLE ENGINE ON ReplicatedReplacingMergeTree</query>
+                <query>GRANT TABLE ENGINE ON ReplicatedAggregatingMergeTree</query>
+                <query>GRANT TABLE ENGINE ON ReplicatedSummingMergeTree</query>
+                <query>GRANT TABLE ENGINE ON MergeTree</query>
+                <query>GRANT TABLE ENGINE ON ReplacingMergeTree</query>
+                <query>GRANT TABLE ENGINE ON AggregatingMergeTree</query>
+                <query>GRANT TABLE ENGINE ON SummingMergeTree</query>
+                <query>GRANT REMOTE ON *.*</query>
                 <query>GRANT SHOW ON *.*</query>
             </grants>
             <networks>
