@@ -37,9 +37,6 @@
     <error_log>
         <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
     </error_log>
-    <latency_log>
-        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
-    </latency_log>
     <query_metric_log>
         <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
     </query_metric_log>
@@ -55,4 +52,35 @@
     <zookeeper_log>
         <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
     </zookeeper_log>
+    <!-- [AUTH] The 10 live *_log tables that had no section (scratch run, report2 step 6). Same form as the sections above. -->
+    <aggregated_zookeeper_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </aggregated_zookeeper_log>
+    <asynchronous_insert_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </asynchronous_insert_log>
+    <backup_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </backup_log>
+    <blob_storage_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </blob_storage_log>
+    <crash_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </crash_log>
+    <delta_lake_metadata_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </delta_lake_metadata_log>
+    <iceberg_metadata_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </iceberg_metadata_log>
+    <opentelemetry_span_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </opentelemetry_span_log>
+    <s3queue_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </s3queue_log>
+    <zookeeper_connection_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </zookeeper_connection_log>
 </clickhouse>
