@@ -9,6 +9,7 @@ Decisions: [0071](../../docs/decisions/0071-public-endpoints-and-ports.md) (the 
 | BlueMap map | `map.caddy` | `map-off.caddy` | `{$GELDAR_MAP_UPSTREAM}` |
 | Glass | `glass.caddy` | `glass-off.caddy` | `{$GELDAR_GLASS_UPSTREAM}` |
 | MCP (`/p/<player_id>` only) | `mcp.caddy` | `mcp-off.caddy` | `{$GELDAR_MCP_UPSTREAM}` |
+| OTLP ingest (see the OTLP section) | `otel.caddy` | `otel-off.caddy` | `{$GELDAR_INGEST_UPSTREAM}` |
 
 The live and kill-switch files stay in this directory, `deploy/caddy/<site>.caddy`. That is where C2-04 and `deploy/colo-public.sh` look; the `deploy/caddy/sites/` path in the C2-07 card is superseded.
 
@@ -55,7 +56,7 @@ Differences from the sites above (the doc is followed where it differs from `mcp
 - Per-site limits only: `request_body { max_size 8MiB }` (413 over it) and `transport http { dial_timeout 5s; response_header_timeout 60s }`. No global `servers` timeouts, because `mcp.caddy` serves long-lived SSE.
 - The access log uses the filter encoder and deletes `request>headers>Authorization`. No plain-HTTP listener is added (automatic HTTPS only).
 - Stock Caddy has no rate limit and the token compare is not constant-time; see the Abuse case in the doc.
-- The live file goes in `config/geldar/` on the node (the Caddyfile imports `/config/geldar/*.caddy`, top level only; subdirectories are not loaded). It is not in `deploy/colo-public.sh`'s site list, and `validate.sh` does not cover it yet (a follow-up that adds the three placeholders with test values, never the real token).
+- The live file goes in `config/geldar/` on the node (the Caddyfile imports `/config/geldar/*.caddy`, top level only; subdirectories are not loaded). It is not in `deploy/colo-public.sh`'s site list. `bash deploy/caddy/validate.sh` checks it in the pinned image with test values for the three placeholders (the sets `live-otel` and `killed-otel`; never the real token). The pinned image is Caddy 2.10.2 and the node runs 2.11.6, so the node's own `caddy validate` (steps 3 and 4) is the check for its version.
 
 Every step below needs the owner's approval at the time. Record the exact commands run.
 
@@ -103,13 +104,17 @@ Every step below needs the owner's approval at the time. Record the exact comman
    - Failed recreate (the container does not run, validate fails, or a site does not answer): restore the env file backup made in step 2 over the env file (`sudo cp -p <backup> <env-file>`; never print it) and run the same recreate command again, then repeat the checks. Stop the procedure and report.
 4. Put `otel.caddy` in `config/geldar/` on the node (same owner and mode as `mcp.caddy`), then `docker exec board-proxy caddy validate --config /etc/caddy/Caddyfile` (the container already holds the variables; do not pass the token with `docker exec -e`). Locally, `tools/repo-checks/src/caddy-adapt.test.ts` checks the file in the pinned image.
 5. Apply with one `docker restart board-proxy` (admin API off, R39: `caddy reload` does not work). Cost: a few seconds of dropped connections on every site, including the `mcp.caddy` SSE streams, which reconnect. Then repeat the post-recreate checks of step 3 (container running, validate passes, `map`, `glass` and `mcp` answer). Failed restart or a site that does not answer: delete `config/geldar/otel.caddy` (the file set is then what it was before step 4), `docker restart board-proxy` again, repeat the checks, and report.
-6. Verify, from the operator workstation, with the owner's token (the value is not written here and is not put in shell history or the log):
-   - POST without a token to each of `/v1/traces`, `/v1/logs`, `/v1/metrics`: 401.
+6. Verify, from the operator workstation, with the owner's token. `<host>` is the ingest hostname; use `https://` only. Token route: the owner holds the token (it is not generated on the node); it never appears on a command line, in argv, in shell history or in a log. Every command below takes it from STDIN (`<vault pipe>` stands for the owner's pipe that prints the token, one line):
+   - Token header through a curl config read from stdin (nothing in argv): `<vault pipe> | sed 's/^/header = "Authorization: Bearer /; s/$/"/' | curl --config - -sS -o /dev/null -w '%{http_code}\n' --data '{}' -H 'Content-Type: application/json' https://<host>/v1/traces`. The alternative is a header file with mode 0600 (`umask 077`), used with `curl -H @<file>` and deleted straight after; never leave it on disk.
+   - POST without a token to each of `/v1/traces`, `/v1/logs`, `/v1/metrics`: 401. POST with `Authorization: Bearer` and an empty value, and with a wrong fixed string such as `Bearer wrong`: 401 each.
    - GET to an OTLP path: 405.
-   - POST with the token to `/v1/traces`: neither 401 nor 404 (the gateway's own status is the answer).
+   - POST with the token to `/v1/traces`: neither 401 nor 404 (the gateway's own status is the answer; 502 after at most 5 s while the gateway's publish is not up).
    - POST to any other path: 404.
-   - A body over 8 MiB: 413.
-   - After these requests the access log has no `Authorization` value (search the log for the token's first characters, by length-safe means; no match expected).
+   - A body over 8 MiB gets 413 on any path, with or without a token: it shows the cap, not authentication.
+   - Log check, after these requests and after a forced 502 (send the authenticated POST while the gateway's loopback publish is not up; do not stop the gateway for this): `umask 077; t=$(mktemp); docker logs board-proxy --since <time of step 5> >"$t" 2>&1`, then `<vault pipe> | grep -c -F -f - "$t"` (the pattern comes from stdin, the file is the argument) must print `0`; `grep -ci -e authorization -e bearer -e cookie "$t"` must print `0` or only lines that say `REDACTED`; then `rm -f "$t"`. Logs can include other sites' lines: print counts only.
+   - The gateway receives the `Authorization` header too (`reverse_proxy` forwards it): the gateway's own config must not log request headers.
+   - The Mind-host side (the otel-agent endpoint `https://<host>` and the same token) is the owner's step, not part of this procedure.
+   - Precondition: the DNS record for `<host>` is created by the owner (Azure DNS, decision 0071 item 5) and the node's Caddy has issued its certificate before this step; without it these requests fail on TLS. The node's build has the `caddy-dns/azure` module and reads its credentials from the same env file, so certificates for new hosts come through the same DNS-challenge path as the existing sites; I did not read the node's Caddyfile for the issuer, so the owner confirms it. Wait for issuance (the Caddy log) before step 6.
 7. Portscan and after-restart checks: the host gains no new listener (no plain-HTTP port; Caddy already owns 443 on the node), the gateway's publish stays on the loopback address, and `tools/portscan` is unchanged. Other sites on the shared Caddy (`mcp`, `glass`, `map`) still answer as before.
 
 Rollback and kill switch, one restart (R39): copy `otel-off.caddy` over `config/geldar/otel.caddy` (never both files at once: they name the same host), `docker exec board-proxy caddy validate --config /etc/caddy/Caddyfile`, `docker restart board-proxy`, then the checks of step 3. Cost: the same few seconds of dropped connections on every site (the `mcp.caddy` SSE streams reconnect) and the ingest route is down during it; afterwards the host answers 503 for every path and Mind-host exporters see 503 until the owner restores the route (their retry queues are the gateway design's concern, not Caddy's). The kill switch is therefore not instant and not free: batch it with other changes when the abuse is not urgent. Removing the file instead of swapping it needs the same restart. Remove the live file before removing `GELDAR_INGEST_*` from the env file (see step 2). The public hostname stays in the 0071 and 0096 amendments until the owner decides to drop it.
