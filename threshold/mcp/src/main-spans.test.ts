@@ -132,4 +132,19 @@ describe('the span wiring in startMcp (T-06)', () => {
     expect(fetchCalls).toEqual([]);
     expect(eventNames(spans).filter((name) => name.startsWith('geldar.content.'))).toEqual([]);
   });
+
+  it('the agent response is identical with telemetry on and off, with no trace id and no _meta', async () => {
+    const on = await startWithSpans('http://127.0.0.1:4318');
+    const off = await startWithSpans(undefined);
+    const traceId = on.spans[0]?.spanContext().traceId ?? '';
+    expect(traceId).toMatch(/^[0-9a-f]{32}$/);
+
+    expect(on.response).toEqual(off.response);
+    const text = JSON.stringify(on.response);
+    expect(text).not.toContain(traceId);
+    expect(text).not.toContain('trace_id');
+    expect(text).not.toContain('traceId');
+    expect(text).not.toContain('"_meta"');
+    expect(on.response).not.toHaveProperty('_meta');
+  });
 });
