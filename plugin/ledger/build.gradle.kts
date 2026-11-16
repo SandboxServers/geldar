@@ -12,9 +12,6 @@ dependencies {
     compileOnly(libs.paper.api)
     // Paper provides gson; the stats-file reader parses with it.
     compileOnly(libs.gson)
-    compileOnly(libs.spark.api) {
-        isTransitive = false
-    }
     // BlueMap provides its API at runtime; compile-only, never bundled.
     compileOnly(libs.bluemap.api) {
         isTransitive = false

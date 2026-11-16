@@ -9,7 +9,7 @@ pluginManagement {
 dependencyResolutionManagement {
     repositoriesMode = RepositoriesMode.FAIL_ON_PROJECT_REPOS
     repositories {
-        // The Paper repository serves only the Paper, Velocity and spark (me.lucko) groups (exclusiveContent), and those groups
+        // The Paper repository serves only the Paper and Velocity groups (exclusiveContent), and those groups
         // are never looked up elsewhere; everything else comes from Central.
         exclusiveContent {
             forRepository { maven("https://repo.papermc.io/repository/maven-public/") }
@@ -18,7 +18,6 @@ dependencyResolutionManagement {
                 includeGroup("com.mojang")
                 includeGroup("net.md-5")
                 includeGroup("com.velocitypowered")
-                includeGroup("me.lucko")
             }
         }
         // CoreProtect (block owner queries) comes from its own repository, for its group only.

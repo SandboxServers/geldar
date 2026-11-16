@@ -20,7 +20,9 @@ To refresh the dependency locks after changing a version: `./gradlew build --wri
 
 ## Ledger modules
 
-Two more subprojects carry the Ledger statistics plugin. `ledger-core` is loader-neutral: it depends on the OpenTelemetry API only and has no Bukkit, Paper, Velocity, Fabric or NeoForge import (`NoLoaderImportsTest` fails the build if one appears). `ledger` is the Paper adapter: it builds `ledger/build/libs/ledger.jar` (core module and OpenTelemetry API inside; Paper, gson, spark and BlueMap are compile-only) and its `plugin.yml` declares no commands and no permissions.
+Two more subprojects carry the Ledger statistics plugin. `ledger-core` is loader-neutral: it depends on the OpenTelemetry API only and has no Bukkit, Paper, Velocity, Fabric or NeoForge import (`NoLoaderImportsTest` fails the build if one appears). `ledger` is the Paper adapter: it builds `ledger/build/libs/ledger.jar` (core module and OpenTelemetry API inside; Paper, gson and BlueMap are compile-only) and its `plugin.yml` declares no commands and no permissions.
+
+**spark-api is deferred.** It is not a dependency yet: the metrics card that first integrates spark must pin it with a verified artifact. A `-SNAPSHOT` declaration is NOT checksum-verified by Gradle (tested: a wrong sha256 in `verification-metadata.xml` still builds, and the lock line stays `0.1-SNAPSHOT`); use a scoped ivy/maven repository pointing at the exact timestamped file, or a vendored jar with a recorded sha256.
 
 ## Geldar-Core
 
