@@ -51,6 +51,54 @@ describe('scrubText', () => {
   });
 });
 
+/** Adversarial inputs of about `size` characters, aimed at every pattern in redact.ts. */
+function adversarial(size: number): Record<string, string> {
+  const rep = (unit: string): string => unit.repeat(Math.ceil(size / unit.length));
+  return {
+    letters: rep('a'),
+    base64: rep('QUJD'),
+    hex: rep('0123456789abcdef'),
+    bearers: rep('Bearer '),
+    bearerSpaces: `Bearer${' '.repeat(size)}`,
+    bearerQuotes: rep('Bearer "'),
+    authWords: rep('Authorization'),
+    authSpaces: `Authorization${' '.repeat(size)}x`,
+    authColons: rep('Authorization: '),
+    authJson: rep('{"Authorization":'),
+    mcpPrefix: rep('gmcp-'),
+    mcpPartial: `gmcp-${'a'.repeat(size)}`,
+    schemes: rep('http://'),
+    schemeUser: `x://u:${'p'.repeat(size)}`,
+    plusRun: `${'a+'.repeat(size / 2)}://x:y`,
+    userColons: `http://${'u:'.repeat(size / 2)}`,
+    colons: rep(':'),
+    ats: rep('@'),
+    colonAt: rep(':@'),
+    schemeColonAt: rep('a://:@'),
+    slashes: rep('/'),
+  };
+}
+
+function timeScrub(input: string): number {
+  const start = performance.now();
+  scrubText(input);
+  return performance.now() - start;
+}
+
+describe('scrubText on large adversarial input', () => {
+  it('stays fast on 1 MiB inputs (every pattern)', () => {
+    for (const [name, input] of Object.entries(adversarial(1 << 20))) {
+      expect(timeScrub(input), name).toBeLessThan(500);
+    }
+  });
+
+  it('stays linear on 40 KB inputs (distinguishes a quadratic pattern)', () => {
+    for (const [name, input] of Object.entries(adversarial(40_000))) {
+      expect(timeScrub(input), name).toBeLessThan(60);
+    }
+  });
+});
+
 describe('errorFields', () => {
   it('hides a token in a thrown object message and its stack', () => {
     const err = new TypeError(`bad ${token}`);

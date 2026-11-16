@@ -20,7 +20,9 @@ const BEARER = /\b(?:Bearer|BEARER)\s+[^\s"',;]+/g;
 // An Authorization header value, up to the end of the line.
 const AUTH_HEADER = /\bAuthorization\s*:[^\r\n]*/gi;
 // URL userinfo: `scheme://user:pass@`. The password part is required, so a plain `a@b` is untouched.
-const URL_USERINFO = /([a-z][a-z0-9+.-]*:\/\/)[^\s/@:]*:[^\s/@]*@/gi;
+// The scheme is left-anchored (no letter, digit, + . - before it) and at most 32 characters, so a long
+// run with no `://` is rejected in constant time per start instead of rescanned from every position.
+const URL_USERINFO = /(?<![a-z0-9+.-])([a-z][a-z0-9+.-]{0,31}:\/\/)[^\s/@:]*:[^\s/@]*@/gi;
 
 /** The text with bearer strings, Authorization values, MCP tokens and URL userinfo replaced. */
 export function scrubText(text: string): string {
