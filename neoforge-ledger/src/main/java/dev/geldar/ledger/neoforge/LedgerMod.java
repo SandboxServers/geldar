@@ -46,6 +46,7 @@ public final class LedgerMod {
             // After TickWiring: Post listeners run in registration order, so the measured tick excludes our own tasks.
             NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post.class, e -> scheduler.onServerTick());
             dev.geldar.ledger.neoforge.players.ProgressWiring.install(ledger, host, scheduler);
+            dev.geldar.ledger.neoforge.curated.CuratedWiring.install(ledger, host, scheduler);
             NeoForge.EVENT_BUS.addListener(ServerStoppingEvent.class, e -> shutdown(ledger, scheduler));
         } catch (Throwable t) {
             rethrowIfVmError(t);
