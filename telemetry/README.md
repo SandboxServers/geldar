@@ -68,6 +68,18 @@ log.info('started', { shard: 'phase1' });
 await telemetry.shutdown();
 ```
 
+## Distribution
+
+Inside this repo, workspace packages import the TypeScript source (`workspace:*`). Outside it, the
+package is a GitHub Release tarball of built ESM (`dist/`, with `.d.ts`), made by the
+`telemetry-release` workflow when a tag `telemetry-vX.Y.Z` is pushed (the tag must equal the
+`version` in `package.json`). Releases are never overwritten. A consumer installs it by release URL
+and pins the integrity hash in its lockfile. See decision 0373 for the steps to cut a release.
+
+```sh
+./geldar.ps1 pnpm --filter @geldar/telemetry build   # writes telemetry/dist (ignored by git)
+```
+
 ## Tests
 
 ```sh

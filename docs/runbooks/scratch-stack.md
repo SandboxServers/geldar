@@ -36,7 +36,17 @@ Not approved for any run on the shared node: open NATS (see NATS auth below).
     sh deploy/scratch/scratch.sh status [suffix]   # compose ps, CPU and memory per container, NATS warning if open
     sh deploy/scratch/scratch.sh down [suffix]     # down -v --rmi local, removes the secrets directory, lists leftover volumes
 
-The suffix is `[a-z0-9]{1,8}`. Anything else exits 2. Exit codes: 2 usage or NATS auth refused, 3 a gate failed,
+The suffix is `[a-z0-9]{1,9}`. Anything else exits 2. Host ports come from `deploy/scratch/<suffix>.env`, which the
+script reads itself (it never sources the file; only the four `SCRATCH_*_PORT` keys with digit values 1 to 65535 are
+accepted, anything else exits 2, and a variable you already set in your environment wins over the file). The file is
+required for `telemetry` (a missing file exits 2) and optional for every other suffix, which then gets the defaults:
+
+| Project | Postgres | NATS | NATS monitor | Minecraft (Velocity) |
+| --- | --- | --- | --- | --- |
+| `scratch-a` and other suffixes (defaults) | 15432 | 14222 | 18222 | 35565 |
+| `scratch-telemetry` (`telemetry.env`, defaults + 10000) | 25432 | 24222 | 28222 | 45565 |
+
+Exit codes: 2 usage or NATS auth refused, 3 a gate failed,
 1 anything else. On 2 and 3 nothing is started. `down` works after a failed `up`: run it to clean up. If `down` fails
 the secrets directory is kept, and `up` refuses until `down` succeeds.
 
