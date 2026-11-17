@@ -28,6 +28,9 @@ const CONTROL_USERS = [
   join(import.meta.dirname, 'whitelist-house-body.ts'),
   // BH-3 (decisions 0260/0261): the admit one-shot reaches RCON only through players/whitelist.ts's admissionOnly wrapper.
   join(import.meta.dirname, 'admit-life.ts'),
+  // P0 scratch probe only (isolation-gated, runs in the scratch compose project, never on the colo stack):
+  // it admits its one fixed Body over RCON and removes it again, through the same admissionOnly wrapper.
+  join(import.meta.dirname, 'p0', 'probe.ts'),
 ];
 
 /** What actions must not reach: the RCON layer, the arena builder and the bench. */
@@ -390,7 +393,7 @@ describe('TestControl', () => {
     expect(text).not.toMatch(/\bremoveLife\b|\badmitLife\b/);
   });
 
-  it('pins CONTROL_USERS to the reviewed list: BH-5a adds no file (admit-life.ts already listed)', () => {
+  it('pins CONTROL_USERS to the reviewed list: the P0 probe is the only addition since BH-5a (admit-life.ts already listed)', () => {
     expect(CONTROL_USERS.map((user) => relative(import.meta.dirname, user))).toEqual([
       'bench',
       'arena.ts',
@@ -401,6 +404,7 @@ describe('TestControl', () => {
       join('players', 'life-removal.ts'),
       'whitelist-house-body.ts',
       'admit-life.ts',
+      join('p0', 'probe.ts'),
     ]);
   });
 
