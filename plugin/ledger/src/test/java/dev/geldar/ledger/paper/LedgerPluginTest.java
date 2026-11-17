@@ -258,7 +258,7 @@ class LedgerPluginTest {
     }
 
     @Test
-    void theRealCollectorListStartsOnlyTheCgroupCollectorAndSkipsTheRestWithoutAWarning() {
+    void theRealCollectorListStartsTheCgroupCollectorAndBuildsTickWhoseStartFailsOutsideAServer() {
         LedgerPlugin plugin = plugin(tmp.resolve("data"));
         plugin.collectorNames = PaperCollectors.NAMES;
         List<java.util.logging.LogRecord> logs = new ArrayList<>();
@@ -276,14 +276,17 @@ class LedgerPluginTest {
             log.removeHandler(h);
         }
         assertTrue(disabled.isEmpty());
-        assertEquals(List.of("container"), plugin.collectors().builtIds());
+        // PT-04b: the tick collector is built; its start needs the live plugin loader (JavaPlugin.getPlugin), so here it fails and is disabled
+        assertEquals(List.of("tick", "container"), plugin.collectors().builtIds());
         assertEquals(List.of("container"), plugin.collectors().runningIds());
         List<String> expectedSkipped = new ArrayList<>(PaperCollectors.NAMES);
         expectedSkipped.remove(PaperCollectors.CGROUP);
+        expectedSkipped.remove("dev.geldar.ledger.paper.tick.TickCollector");
         assertEquals(expectedSkipped.stream().sorted().toList(), plugin.collectors().skippedNames().stream().sorted().toList());
         assertTrue(plugin.collectors().skippedNames().contains(PaperCollectors.DISK), "no disk path configured");
-        assertFalse(logs.stream().anyMatch(r -> r.getLevel().intValue() >= java.util.logging.Level.WARNING.intValue()),
-                "no warning: " + logs.stream().map(java.util.logging.LogRecord::getMessage).toList());
+        assertFalse(logs.stream().anyMatch(r -> r.getLevel().intValue() >= java.util.logging.Level.WARNING.intValue()
+                        && !r.getMessage().startsWith("Ledger collector tick failed to start")),
+                "no warning other than the tick start: " + logs.stream().map(java.util.logging.LogRecord::getMessage).toList());
         assertFalse(logs.stream().anyMatch(r -> r.getMessage().contains("cannot")), "no 'cannot load' line");
     }
 
