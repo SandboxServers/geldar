@@ -43,6 +43,8 @@
     "ServerChatEvent",
     "getRawText",
     "getPlayerMessage",
+    "getMessage",
+    "getUsername",
     "ChatType",
     "SignText",
     "getFrontText",
@@ -88,10 +90,34 @@
       "reason": "Reads the ledger own properties file (the agent config path), never chat, agent or repo content."
     },
     {
+      "file": "neoforge-ledger/src/main/java/dev/geldar/ledger/neoforge/audit/AuditWiring.java",
+      "name": "ServerChatEvent",
+      "text": "net.neoforged.neoforge.event.ServerChatEvent.class, e -> chat(text, e)",
+      "reason": "PT-N8: the one chat listener (observation only: reads the text, never cancels or replies); owner-approved full-text capture D-F, cancelled messages skipped D-I."
+    },
+    {
+      "file": "neoforge-ledger/src/main/java/dev/geldar/ledger/neoforge/audit/AuditWiring.java",
+      "name": "ServerChatEvent",
+      "text": "private static void chat(TextContentFamily text, net.neoforged.neoforge.event.ServerChatEvent e)",
+      "reason": "PT-N8: the parameter type of the same chat reader; no send, no setter."
+    },
+    {
+      "file": "neoforge-ledger/src/main/java/dev/geldar/ledger/neoforge/audit/AuditWiring.java",
+      "name": "getRawText",
+      "text": "() -> TextContentFamily.chatText(e.getRawText()));",
+      "reason": "PT-N8: the original typed chat text, immune to other mods decorating the message (a decorated text can carry the speaker name, D-F). The only chat read; getMessage and getUsername stay forbidden everywhere."
+    },
+    {
       "file": "neoforge-ledger/src/main/java/dev/geldar/ledger/neoforge/players/StatsFileReader.java",
       "name": "FileChannel.open(",
       "text": "FileChannel.open(file, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)",
       "reason": "Reads only a life-id agent's own stats JSON: a path built from its UUID inside the world stats directory, a regular file, NOFOLLOW_LINKS, 256 KiB cap; never chat, agent or repo content."
+    },
+    {
+      "file": "neoforge-ledger/src/main/java/dev/geldar/ledger/neoforge/LedgerLog.java",
+      "name": "getMessage",
+      "text": "sink.accept(r.getLevel(), r.getMessage());",
+      "reason": "java.util.logging LogRecord.getMessage of the ledger own log line (PT-N8 forbids getMessage for chat); not a chat read."
     }
   ],
   "modsToml": {

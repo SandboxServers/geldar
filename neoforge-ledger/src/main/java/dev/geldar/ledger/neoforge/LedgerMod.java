@@ -47,6 +47,7 @@ public final class LedgerMod {
             NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post.class, e -> scheduler.onServerTick());
             dev.geldar.ledger.neoforge.players.ProgressWiring.install(ledger, host, scheduler);
             dev.geldar.ledger.neoforge.curated.CuratedWiring.install(ledger, host, scheduler);
+            dev.geldar.ledger.neoforge.audit.AuditWiring.install(ledger, host);
             NeoForge.EVENT_BUS.addListener(ServerStoppingEvent.class, e -> shutdown(ledger, scheduler));
         } catch (Throwable t) {
             rethrowIfVmError(t);
