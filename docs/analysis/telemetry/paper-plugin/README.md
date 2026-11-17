@@ -126,8 +126,10 @@ Metrics (attributes in braces):
 | `geldar_jfr_thread_group_cpu_ratio` {group}, `geldar_jfr_safepoint_ms` histogram, `geldar_jfr_monitor_contention_total` {class_group}, `geldar_jfr_file_io_ms` histogram {op}, `geldar_jfr_exceptions_total` {kind} | JFR-owned. GC and heap metrics are the agent's `jvm.*`; do not duplicate | PT-09b |
 | `geldar_container_cpu_periods_total`, `geldar_container_cpu_throttled_periods_total`, `geldar_container_cpu_throttled_seconds_total`, `geldar_container_memory_bytes`, `geldar_container_memory_limit_bytes` | all gauges: the cgroup v2 counters (`periods`, `throttled_periods`, `throttled_seconds`) are exported as monotonic gauges, not OTel counters, because they are read as absolute values from the file; the memory pair are plain gauges (cgroup v2 files) | PT-09c |
 | `geldar_disk_bytes` {area=world,plugin_data,logs,bluemap,chunky} | gauge | PT-10a |
-| `geldar_bridge_chunky_running`, `geldar_bridge_coreprotect_queue`, `geldar_bridge_bluemap_enabled` | gauges, guarded by class presence | PT-10b |
+| `geldar_bridge_chunky_running`, `geldar_bridge_coreprotect_enabled`, `geldar_bridge_bluemap_enabled` | gauges, guarded by class presence | PT-10b |
 | `geldar_publisher_*`, `geldar_hearing_*`, `geldar_blockowner_*`, `geldar_kino_*` counters | Geldar-Core, own jar, no agent or viewer attributes | PT-11e |
+
+`geldar_event_count_total` series are disjoint: each counts events whose class is exactly the labelled class (`getClass() == type`). A subclass shares a parent's handler list but is not counted under the parent, and a plugin-defined subclass of a census class is counted under no series (accepted loss; PT-06c).
 
 Events (OTel log records; `event.name` is the attribute):
 

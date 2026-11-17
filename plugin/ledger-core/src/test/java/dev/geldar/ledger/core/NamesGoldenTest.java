@@ -22,7 +22,7 @@ class NamesGoldenTest {
             "geldar_container_cpu_periods_total", "geldar_container_cpu_throttled_periods_total",
             "geldar_container_cpu_throttled_seconds_total", "geldar_container_memory_bytes",
             "geldar_container_memory_limit_bytes", "geldar_disk_bytes", "geldar_bridge_chunky_running",
-            "geldar_bridge_coreprotect_queue", "geldar_bridge_bluemap_enabled", "geldar_publisher_", "geldar_hearing_",
+            "geldar_bridge_coreprotect_enabled", "geldar_bridge_bluemap_enabled", "geldar_publisher_", "geldar_hearing_",
             "geldar_blockowner_", "geldar_kino_");
 
     private static final Set<String> EVENTS = Set.of(

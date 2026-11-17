@@ -44,7 +44,7 @@ const FROZEN_METRICS = new Set([
   'geldar_container_memory_limit_bytes',
   'geldar_disk_bytes',
   'geldar_bridge_chunky_running',
-  'geldar_bridge_coreprotect_queue',
+  'geldar_bridge_coreprotect_enabled',
   'geldar_bridge_bluemap_enabled',
 ]);
 
