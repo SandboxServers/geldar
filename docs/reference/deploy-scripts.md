@@ -256,7 +256,7 @@ Installs the body helper (decision [0260](../decisions/0260-body-container-contr
 
 ## Scratch stack
 
-`sh deploy/scratch/scratch.sh up|status|down [suffix]` runs a throwaway stack named `scratch-<suffix>` (suffix `[a-z0-9]{1,8}`, default `a`) from `compose/phase0.yml` and `compose/opt-in/scratch.yml`, plus `compose/nats-auth.yml` when NATS auth is given (lines 2 to 9, 82 to 88).
+`sh deploy/scratch/scratch.sh up|status|down [suffix]` runs a throwaway stack named `scratch-<suffix>` (suffix `[a-z0-9]{1,9}`, default `a`; the script parses `deploy/scratch/<suffix>.env` itself for the four `SCRATCH_*_PORT` host ports, never sourcing it, an operator-set variable wins, and the file is required for `telemetry` (25432, 24222, 28222, 45565) and optional otherwise (defaults 15432, 14222, 18222, 35565)) from `compose/phase0.yml` and `compose/opt-in/scratch.yml`, plus `compose/nats-auth.yml` when NATS auth is given (lines 2 to 10, 122 to 129; the port loader is `load_ports`, lines 44 to 81).
 
 - **Environment:** `SCRATCH_NATS_AUTH_DIR` (a directory holding the four NATS auth files from `./geldar.ps1 shard nats-auth <shard>`) or `SCRATCH_NATS_OPEN=1` (open NATS, with a warning); `SCRATCH_NATS_PORT`; `XDG_STATE_HOME` or `HOME` for the per-user state directory.
 - **up:** NATS gate, Compose 2.24.4 or newer, resource gate (10 GB free RAM, 20 GB free disk), both plugin jars present, uid check; refuses leftover containers or secrets; generates the scratch secrets in a per-user 0700 directory; `up -d --wait --build`.
