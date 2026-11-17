@@ -17,6 +17,7 @@ final class StallWatchdog {
     private final long periodMs;
     private final Sleeper sleeper;
     private final Runnable check;
+    private volatile boolean stopped;
     private Thread thread;
 
     StallWatchdog(long periodMs, Sleeper sleeper, Runnable check) {
@@ -29,6 +30,7 @@ final class StallWatchdog {
         if (thread != null) {
             return;
         }
+        stopped = false;
         Thread t = new Thread(this::run, THREAD_NAME);
         t.setDaemon(true);
         thread = t;
@@ -37,7 +39,7 @@ final class StallWatchdog {
 
     private void run() {
         Thread self = Thread.currentThread();
-        while (!self.isInterrupted()) {
+        while (!stopped && !self.isInterrupted()) {
             try {
                 sleeper.sleep(periodMs);
             } catch (InterruptedException e) {
@@ -60,6 +62,7 @@ final class StallWatchdog {
         if (t == null) {
             return;
         }
+        stopped = true; // a check that swallowed the interrupt still ends the loop
         try {
             t.interrupt();
             t.join(JOIN_MS);

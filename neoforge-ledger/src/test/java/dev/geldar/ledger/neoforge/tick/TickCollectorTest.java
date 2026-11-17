@@ -17,7 +17,6 @@ import dev.geldar.ledger.core.Ledger;
 import dev.geldar.ledger.core.LedgerConfig;
 import dev.geldar.ledger.core.Names;
 import dev.geldar.ledger.core.Severity;
-import dev.geldar.ledger.neoforge.world.WorldTickGauges;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -43,6 +42,8 @@ class TickCollectorTest {
     final List<String> registeredEventFields = new ArrayList<>();
     final Map<String, DoubleSupplier> doubleGauges = new HashMap<>();
     final List<List<String>> gaugeAttrs = new ArrayList<>();
+    final AtomicBoolean idle = new AtomicBoolean();
+    final List<String> gaugeNameUnit = new ArrayList<>();
     final AtomicBoolean guardAllowed = new AtomicBoolean(true);
     final AtomicBoolean lagThrows = new AtomicBoolean();
     final Semaphore permits = new Semaphore(0);
@@ -109,6 +110,7 @@ class TickCollectorTest {
                     };
                 }
                 case "gaugeDouble" -> {
+                    gaugeNameUnit.add(a[0] + "|" + a[1]);
                     doubleGauges.put((String) a[0], (DoubleSupplier) a[3]);
                     gaugeAttrs.add(List.of((String[]) a[4]));
                     return null;
@@ -164,7 +166,7 @@ class TickCollectorTest {
     }
 
     private TickListener started(Map<String, Supplier<long[]>> dims, TickCollector[] out) {
-        TickCollector c = new TickCollector(dims, clock::get, sleeper);
+        TickCollector c = new TickCollector(dims, idle::get, clock::get, sleeper);
         out[0] = c;
         c.start(ctx(ledger()));
         return c.listener();
@@ -315,16 +317,127 @@ class TickCollectorTest {
         }), c);
         DoubleSupplier reader = doubleGauges.values().iterator().next();
         assertEquals(0.0, reader.getAsDouble());
-        for (int i = 0; i < WorldTickGauges.SAMPLE_EVERY_TICKS - 1; i++) {
+        for (int i = 0; i < 19; i++) {
             tick(l, 1);
         }
         assertEquals(0, reads[0]);
         assertEquals(0.0, reader.getAsDouble());
         tick(l, 1);
         assertEquals(1, reads[0]);
+        assertEquals(List.of("geldar_world_tick_ms|ms"), gaugeNameUnit);
         assertEquals(10.0, reader.getAsDouble());
         reader.getAsDouble();
         assertEquals(1, reads[0]);
         c[0].stop();
+    }
+
+    @Test
+    void preThenPreMeasuresOnlyTheSecondSpan() {
+        TickCollector[] c = new TickCollector[1];
+        TickListener l = started(Map.of(), c);
+        l.pre();
+        clock.addAndGet(500_000_000L);
+        l.pre();
+        clock.addAndGet(10_000_000L);
+        l.post(1);
+        assertEquals(List.of(10.0), lag);
+        c[0].stop();
+    }
+
+    @Test
+    void aNullRingGivesZeroAndALaterRingIsPickedUp() {
+        long[] ring = {20_000_000L, 0};
+        long[][] next = {null};
+        TickCollector[] c = new TickCollector[1];
+        TickListener l = started(Map.of("d", () -> next[0]), c);
+        for (int i = 0; i < 20; i++) {
+            tick(l, 1);
+        }
+        assertEquals(0.0, doubleGauges.get("geldar_world_tick_ms").getAsDouble());
+        next[0] = ring;
+        for (int i = 0; i < 20; i++) {
+            tick(l, 1);
+        }
+        assertEquals(20.0, doubleGauges.get("geldar_world_tick_ms").getAsDouble());
+        c[0].stop();
+    }
+
+    @Test
+    void aThrowingRingReaderKeepsTheLastValueAndTheTickStillRecords() {
+        long[] ring = {10_000_000L};
+        boolean[] boom = {false};
+        TickCollector[] c = new TickCollector[1];
+        TickListener l = started(Map.of("d", () -> {
+            if (boom[0]) {
+                throw new IllegalStateException("x");
+            }
+            return ring;
+        }), c);
+        for (int i = 0; i < 20; i++) {
+            tick(l, 1);
+        }
+        boom[0] = true;
+        for (int i = 0; i < 20; i++) {
+            tick(l, 1);
+        }
+        assertEquals(10.0, doubleGauges.get("geldar_world_tick_ms").getAsDouble());
+        assertEquals(40, lag.size());
+        c[0].stop();
+    }
+
+    @Test
+    void anEmptyPausedServerIsNotAStallAndTheFirstTickAfterResumeIsNotOne() throws Exception {
+        TickCollector[] c = new TickCollector[1];
+        TickListener l = started(Map.of(), c);
+        tick(l, 10);
+        assertTrue(asleep.tryAcquire(5, TimeUnit.SECONDS));
+        idle.set(true); // no players: the server pauses and fires no tick events
+        clock.addAndGet(3_000_000_000L);
+        permits.release();
+        assertTrue(asleep.tryAcquire(5, TimeUnit.SECONDS));
+        assertEquals(0, stalls.get());
+        assertTrue(stallEvents.isEmpty());
+        idle.set(false); // a player joined; the first tick is still on its way
+        clock.addAndGet(1_000_000_000L);
+        permits.release();
+        assertTrue(asleep.tryAcquire(5, TimeUnit.SECONDS));
+        assertEquals(0, stalls.get());
+        // a real stall with players online is still reported
+        clock.addAndGet(3_000_000_000L);
+        permits.release();
+        assertTrue(asleep.tryAcquire(5, TimeUnit.SECONDS));
+        assertEquals(1, stalls.get());
+        c[0].stop();
+    }
+
+    @Test
+    void aReEnabledGuardDoesNotSeeAStaleHeartbeat() throws Exception {
+        TickCollector[] c = new TickCollector[1];
+        TickListener l = started(Map.of(), c);
+        assertTrue(asleep.tryAcquire(5, TimeUnit.SECONDS));
+        clock.addAndGet(1_500_000_000L);
+        guardAllowed.set(false);
+        tick(l, 10); // the guard is tripped, but the server is alive
+        clock.addAndGet(1_000_000_000L);
+        guardAllowed.set(true);
+        permits.release();
+        assertTrue(asleep.tryAcquire(5, TimeUnit.SECONDS));
+        assertEquals(0, stalls.get());
+        c[0].stop();
+    }
+
+    @Test
+    void stopEndsALoopWhoseCheckSwallowsTheInterrupt() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger runs = new java.util.concurrent.atomic.AtomicInteger();
+        StallWatchdog w = new StallWatchdog(1, ms -> Thread.sleep(1), () -> {
+            runs.incrementAndGet();
+            Thread.interrupted(); // swallows the stop request
+        });
+        w.start();
+        while (runs.get() == 0) {
+            Thread.sleep(1);
+        }
+        w.stop();
+        assertFalse(w.running());
     }
 }

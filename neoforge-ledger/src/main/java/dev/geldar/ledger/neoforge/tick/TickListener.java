@@ -63,6 +63,7 @@ public final class TickListener {
                 return;
             }
             havePre = false;
+            stall.heartbeat(); // before the guard: a re-enabled guard must not see a stale heartbeat
             if (!guard.allowed()) {
                 return;
             }
@@ -74,7 +75,6 @@ public final class TickListener {
                     overruns.add(1);
                 }
                 boolean slow = stats.onTick(ms);
-                stall.heartbeat();
                 world.onServerTick();
                 if (slow) {
                     events.record(slowTickId, tickNumber, Math.round(ms), stats.overruns(), "", "", "");

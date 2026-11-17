@@ -13,6 +13,7 @@ import dev.geldar.ledger.core.tick.StallDetector;
 import dev.geldar.ledger.core.tick.TickStats;
 import dev.geldar.ledger.neoforge.world.WorldTickGauges;
 import java.util.Map;
+import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
@@ -28,15 +29,26 @@ public final class TickCollector implements Collector {
     private final LongSupplier nanoClock;
     private final StallWatchdog.Sleeper sleeper;
     private final Map<String, Supplier<long[]>> dimensions;
+    private final BooleanSupplier idle;
     private volatile TickListener listener;
     private StallWatchdog watchdog;
 
-    /** {@code dimensions} maps a dimension name to its tick-time ring reader (main thread only). */
-    public TickCollector(Map<String, Supplier<long[]>> dimensions) {
-        this(dimensions, System::nanoTime, Thread::sleep);
+    /**
+     * {@code dimensions} maps a dimension name to its tick-time ring reader (main thread only). {@code idle} is true
+     * while no player is online: a dedicated server then pauses (pause-when-empty-seconds, default 60) and fires no tick
+     * events, which is not a stall. The pause state itself has no public accessor in 26.1.2, so zero players stands for
+     * it; a real stall with zero players is not reported.
+     */
+    public TickCollector(Map<String, Supplier<long[]>> dimensions, BooleanSupplier idle) {
+        this(dimensions, idle, System::nanoTime, Thread::sleep);
     }
 
-    TickCollector(Map<String, Supplier<long[]>> dimensions, LongSupplier nanoClock, StallWatchdog.Sleeper sleeper) {
+    TickCollector(
+            Map<String, Supplier<long[]>> dimensions,
+            BooleanSupplier idle,
+            LongSupplier nanoClock,
+            StallWatchdog.Sleeper sleeper) {
+        this.idle = idle;
         this.dimensions = Map.copyOf(dimensions);
         this.nanoClock = nanoClock;
         this.sleeper = sleeper;
@@ -82,7 +94,7 @@ public final class TickCollector implements Collector {
                 nanoClock,
                 world);
         watchdog = new StallWatchdog(
-                STALL_CHECK_MS, sleeper, () -> checkStall(stall, stalls, guard, l, ctx, thresholdMs));
+                STALL_CHECK_MS, sleeper, () -> checkStall(stall, stalls, guard, l, ctx, thresholdMs, idle));
         watchdog.start();
         listener = built;
     }
@@ -94,8 +106,13 @@ public final class TickCollector implements Collector {
             CollectorGuard guard,
             Ledger l,
             CollectorContext ctx,
-            long thresholdMs) {
+            long thresholdMs,
+            BooleanSupplier idle) {
         try {
+            if (idle.getAsBoolean()) {
+                stall.heartbeat(); // paused for empty: restart the age so the first tick after resume is not a stall
+                return;
+            }
             if (!guard.allowed() || !stall.check()) {
                 return;
             }

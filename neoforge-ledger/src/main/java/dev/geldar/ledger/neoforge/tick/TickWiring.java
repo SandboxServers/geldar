@@ -59,7 +59,7 @@ public final class TickWiring {
             for (ResourceKey<Level> key : server.levelKeys()) {
                 dims.put(key.identifier().toString(), () -> server.getTickTime(key));
             }
-            TickCollector c = new TickCollector(dims);
+            TickCollector c = new TickCollector(dims, () -> server.getPlayerList().getPlayerCount() == 0);
             c.start(new CollectorContext() {
                 @Override
                 public Ledger ledger() {
