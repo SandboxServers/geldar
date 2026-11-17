@@ -22,3 +22,5 @@ Least privilege: a NeoForge mod should not hold the `paper` credential of the co
 - `deploy/colo-notice.sh` gains a target-shard argument so the notice can reach the NeoForge NATS (packet a6). Its colo default is unchanged.
 - The NeoForge mod's default user is UNVERIFIED in the source (`ExportConfig.java` reads `GELDAR_NATS_USER` or a `nats.user` property); the default becomes `neoforge` in the packet that changes it.
 - Body, Mind, MCP and Glass for NeoForge are not in this record.
+
+Generator (PR 691 review): the per-shard NATS auth set is written by deploy/nats-auth-nf.ps1, dot-sourced from geldar.ps1 for `shard nats-auth nf`; the NeoForge mod publishes `geldar.nf.*` (its subjects are geldar.nf.<type>), not `geldar.nf.>`.

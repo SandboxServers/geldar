@@ -164,8 +164,7 @@ services:
 
   identity-seed:
     # One-shot: creates the two identity buckets before velocity starts (golem/src/seed-buckets.ts, the bucket configs the
-    # admin tool uses). UNVERIFIED: the NATS user that may create them. The design names the deploy user, and this file runs
-    # it here; the per-shard NATS auth set must grant it KV bucket creation, or this one-shot must use another user.
+    # admin tool uses). It connects as NATS user seed (nats-seed.txt); its permissions are UNVERIFIED until the node run.
     build:
       context: ..
       dockerfile: tools/admin/Dockerfile
@@ -174,9 +173,9 @@ services:
     user: "${NF_SERVICE_UID:-1000}:${NF_SERVICE_UID:-1000}"
     environment:
       GELDAR_NATS_URL: nats://nats:4222
-      GELDAR_NATS_USER: deploy
-      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-deploy.txt
-    secrets: [nats-deploy.txt]
+      GELDAR_NATS_USER: seed
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-seed.txt
+    secrets: [nats-seed.txt]
     depends_on:
       nats:
         condition: service_healthy
@@ -307,9 +306,9 @@ volumes:
   velocity-data: {}
 
 # File-based secrets under the per-project directory (compose/secrets-nf/, gitignored). The names are the per-shard NATS
-# auth set's: nats-auth.conf (the server config), nats-sink.txt, nats-neoforge.txt, nats-velocity.txt, nats-deploy.txt (one
-# password file per user), and the Postgres and forwarding secrets. The NF secrets generator is a later packet; no value is
-# in this file.
+# auth set's: nats-auth.conf (the server config), nats-sink.txt, nats-neoforge.txt, nats-velocity.txt, nats-deploy.txt,
+# nats-seed.txt (one password file per user), and the Postgres and forwarding secrets. `./geldar.ps1 shard nats-auth nf --live`
+# writes the NATS ones (runbook section 4b); the Postgres and forwarding secrets are a later packet. No value is in this file.
 secrets:
   postgres:
     file: ${NF_SECRETS_DIR:-./secrets-nf}/postgres.txt
@@ -325,3 +324,5 @@ secrets:
     file: ${NF_SECRETS_DIR:-./secrets-nf}/nats-velocity.txt
   nats-deploy.txt:
     file: ${NF_SECRETS_DIR:-./secrets-nf}/nats-deploy.txt
+  nats-seed.txt:
+    file: ${NF_SECRETS_DIR:-./secrets-nf}/nats-seed.txt

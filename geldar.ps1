@@ -457,6 +457,8 @@ function Restrict-OwnerOnly([string] $Path) {
 
 function Invoke-Shard([string[]] $ShardArgs) {
   $action, $shard, $extra = $ShardArgs
+  # The nf set has its own generator in deploy/ and no compose/nf.yml to resolve, so it is routed before Get-ComposeFile.
+  if ($action -eq 'nats-auth' -and $shard -eq 'nf') { . (Join-Path $Root 'deploy/nats-auth-nf.ps1'); Initialize-NfNatsAuth @($ShardArgs | Select-Object -Skip 2); return }
   $file = Get-ComposeFile $shard
   # --rcon-host adds compose/rcon-host.yml, which publishes RCON to the host loopback for the host-run tools.
   $rconHost = @($extra) -contains '--rcon-host'

@@ -297,3 +297,5 @@ Open items for the live project (from the a4 report of branch `phase1/nf-live-co
 - **Deploy script.** `deploy/nf-cd.sh` is a later packet. The runner sets neither `GELDAR_PROJECT` nor `GELDAR_COLO_COMPOSE` (settled, section 7.1). The script names `geldar-nf` and `compose/nf-live.yml` itself, and adds `cpu_shares: 256` to `compose/nf-live.yml` (section 7.2).
 
 Where the live NeoForge shard runs is decided (D8, record 0386), not open.
+
+Generator (PR 691 review): the per-shard NATS auth set is written by deploy/nats-auth-nf.ps1, dot-sourced from geldar.ps1 for `shard nats-auth nf`; the NeoForge mod publishes `geldar.nf.*` (its subjects are geldar.nf.<type>), not `geldar.nf.>`.
