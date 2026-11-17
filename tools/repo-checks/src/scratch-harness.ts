@@ -235,7 +235,13 @@ export const withSecrets = (base: string) => {
 /** A directory with the four NATS files, non-empty, for SCRATCH_NATS_AUTH_DIR. */
 export function authDir(): string {
   const dir = mkdtempSync(join(tmpdir(), 'scratch-auth-'));
-  for (const f of ['nats-auth.conf', 'nats-paper.txt', 'nats-velocity.txt', 'nats-eventsink.txt'])
+  for (const f of [
+    'nats-auth.conf',
+    'nats-paper.txt',
+    'nats-velocity.txt',
+    'nats-eventsink.txt',
+    'nats-seed.txt',
+  ])
     writeFileSync(join(dir, f), 'x');
   return dir;
 }

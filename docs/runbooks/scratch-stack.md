@@ -180,9 +180,18 @@ Limits:
 ## NATS auth (fail closed)
 
 `up` needs `SCRATCH_NATS_AUTH_DIR`: a readable directory holding non-empty `nats-auth.conf`, `nats-paper.txt`,
-`nats-velocity.txt` and `nats-eventsink.txt`. Without it `up` exits 2 and prints why:
+`nats-velocity.txt`, `nats-eventsink.txt` and `nats-seed.txt`. Without it `up` exits 2 and prints why:
 
-    scratch: NATS auth is required. Set SCRATCH_NATS_AUTH_DIR to a directory holding the four files made by ...
+    scratch: NATS auth is required. Set SCRATCH_NATS_AUTH_DIR to a directory holding the five files made by ...
+
+`nats-seed.txt` is the password of the scratch-only `seed` NATS user. It may create only the two identity KV buckets
+(`geldar-life-registry`, `geldar-skins`) and has no other subject. The `identity-seed` one-shot (`golem/src/seed-buckets.ts`,
+the admin image) runs once after NATS is healthy and before velocity starts; velocity waits for it to exit 0. Velocity
+only reads the buckets, and its healthcheck stays red until the life registry bucket exists. A failed seed fails `up`.
+The seed user exists only in the phase0 table of `./geldar.ps1 shard nats-auth phase0`, so a `nats-auth.conf` made
+before this change lacks it: delete that file (no secret is lost; the generator rebuilds it from the password files)
+and run the generator again, or the seed fails with an authorization error. The JetStream subjects of the seed user are
+untested against a live server.
 
 The files come from the generator on the desktop, `./geldar.ps1 shard nats-auth <shard>` (`Initialize-NatsAuth` in
 `geldar.ps1`). It writes into the repo's `compose/secrets/` (git-ignored).
@@ -198,8 +207,9 @@ The flow, in order:
 
 1. On the desktop, from the repo root: `./geldar.ps1 shard nats-auth <shard>`. It never overwrites a file that exists,
    so a file that was already there belongs to someone else's stack.
-2. Make a temp dir outside the repo. Copy only `nats-auth.conf`, `nats-paper.txt`, `nats-velocity.txt` and
-   `nats-eventsink.txt` into it. Those are the four files `compose/nats-auth.yml` mounts. Do not copy anything else.
+2. Make a temp dir outside the repo. Copy only `nats-auth.conf`, `nats-paper.txt`, `nats-velocity.txt`,
+   `nats-eventsink.txt` and `nats-seed.txt` into it. The first four are the files `compose/nats-auth.yml` mounts; the fifth
+   is the seed's (`compose/opt-in/scratch.yml`). Do not copy anything else.
 3. Delete the repo-side copies that step 1 created (the lines `created compose/secrets/...` in its output name them).
    Leave alone any file that was already there.
 4. After the review passes and the start gates are met, copy the temp dir to a node temp dir. Do not copy it

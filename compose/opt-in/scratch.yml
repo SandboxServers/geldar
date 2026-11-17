@@ -76,6 +76,39 @@ services:
     labels:
       geldar.scratch: "true"
     restart: "no"
+    # The plugin only reads geldar-life-registry and geldar-skins and never creates them (decision 0087 correction), so
+    # the seed below runs first. Without its buckets the plugin never marks the registry synced, and the healthcheck fails.
+    depends_on:
+      identity-seed:
+        condition: service_completed_successfully
+
+  # One-shot: creates the two identity buckets before velocity starts (golem/src/seed-buckets.ts, the same bucket configs
+  # golem and deploy/colo-admin.sh use). It runs as the scratch-only `seed` NATS user, so no body or mind password is used.
+  identity-seed:
+    build:
+      context: ..
+      dockerfile: tools/admin/Dockerfile
+    image: ${GELDAR_ADMIN_IMAGE:-geldar-admin:c1}
+    entrypoint: ["node", "/opt/geldar/golem/src/seed-buckets.ts"]
+    # As the eventsink: the 0600 seed password file is the account's, so the image's uid 1000 cannot read it.
+    user: "${SCRATCH_RUN_UID:?set by deploy/scratch/scratch.sh}:${SCRATCH_RUN_GID:?set by deploy/scratch/scratch.sh}"
+    environment:
+      GELDAR_NATS_URL: nats://nats:4222
+      GELDAR_NATS_USER: seed
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-seed.txt
+    secrets: [nats-seed.txt]
+    depends_on:
+      nats:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.25"
+    memswap_limit: 256m
+    labels:
+      geldar.scratch: "true"
+    restart: "no"
 
   eventsink:
     # Runs as the uid:gid of the account that started the stack (set_env in deploy/scratch/scratch.sh), not the image's
@@ -109,6 +142,8 @@ secrets:
     file: ${SCRATCH_NATS_AUTH_DIR:-${SCRATCH_SECRETS_DIR:?set by deploy/scratch/scratch.sh}}/nats-velocity.txt
   nats-eventsink.txt:
     file: ${SCRATCH_NATS_AUTH_DIR:-${SCRATCH_SECRETS_DIR:?set by deploy/scratch/scratch.sh}}/nats-eventsink.txt
+  nats-seed.txt:
+    file: ${SCRATCH_NATS_AUTH_DIR:-${SCRATCH_SECRETS_DIR:?set by deploy/scratch/scratch.sh}}/nats-seed.txt
 
 # The world volume is named by the script (<project>_paper-data), never the live phase0 volume.
 volumes:

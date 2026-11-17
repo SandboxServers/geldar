@@ -372,7 +372,7 @@ function Get-NatsUsers([string] $Shard) {
   $js = @('$JS.API.>', '$JS.ACK.>', '_INBOX.>')
   $kv = { param($b) "`$KV.$b.>" }
   $mindTypes = @('wake', 'intent', 'action', 'plan_result', 'reflex_fired', 'speech', 'damage', 'death', 'sleep')
-  return [ordered]@{
+  $table = [ordered]@{
     body = @{ Pub = @("geldar.$s.>") + $js + @((& $kv 'geldar-life-registry'), (& $kv 'geldar-checkpoints'), (& $kv 'geldar-body-generation'), (& $kv 'geldar-skins'));
       # Kino (decision 0075, review fix A): the body never publishes, and so never forges, the Kino feed or control subjects.
       # Control (C7-03b1): the body never publishes a ctl.body request, so it cannot start or stop a body for an owner.
@@ -412,6 +412,15 @@ function Get-NatsUsers([string] $Shard) {
     register = @{ Pub = @("geldar.$s.ctl.body.>"); Sub = @('_INBOX.>') }
     helper = @{ Pub = @('_INBOX.>'); Sub = @(@('start', 'stop', 'status', 'logtail') | ForEach-Object { "geldar.$s.helper.body.$_" }) }
   }
+  # Scratch only (identity-seed of compose/opt-in/scratch.yml): creates the two identity KV buckets before velocity starts, and
+  # nothing else. Only the phase0 table (the shard scratch runs) has it, so the colo table and its generated file are unchanged.
+  # The bucket names are the ones golem creates (REGISTRY_BUCKET, SKINS_BUCKET); the JetStream API subjects are the create,
+  # info and update of each KV stream. Untested against a live server.
+  if ($s -eq 'phase0') {
+    $seedBuckets = 'geldar-life-registry', 'geldar-skins'
+    $table['seed'] = @{ Pub = @('$JS.API.INFO') + @(foreach ($b in $seedBuckets) { "`$JS.API.STREAM.CREATE.KV_$b"; "`$JS.API.STREAM.INFO.KV_$b"; "`$JS.API.STREAM.UPDATE.KV_$b" }) + @('_INBOX.>'); Sub = @('_INBOX.>') }
+  }
+  return $table
 }
 
 # Owner-only access, and a failure throws. On Windows: drop inherited ACL rules and grant the current user read and
