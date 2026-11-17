@@ -19,7 +19,7 @@ class AuditOptInTest {
     /** Drives every audit path once, on the current thread setting; returns nothing, the fake records it all. */
     private void driveAll() {
         CombatFamily combat = new CombatFamily(f.ledger, f.host);
-        TextContentFamily text = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily text = f.text(clock::get);
         OperatorAuditFamily op = new OperatorAuditFamily(f.ledger, f.host, clock::get);
         combat.damage(LIFE, null, 2, "mob");
         combat.playerDeath(LIFE, "mob", "w");
@@ -86,7 +86,7 @@ class AuditOptInTest {
 
     @Test
     void turningTheKeyOffAtRuntimeStopsAFamilyAlreadyBuilt() {
-        TextContentFamily text = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily text = f.text(clock::get);
         text.chat(false, LIFE, "w", () -> "a");
         assertEquals(1, f.content.size());
         f.config = FakeLedger.config("collector.audit.enabled=false");
@@ -103,7 +103,7 @@ class AuditOptInTest {
         f.config = FakeLedger.config("collector.audit.enabled=true", "collector.chat.enabled=true", "collector.operator.enabled=false");
         f.main.set(false); // RCON and chat arrive off the server thread
         OperatorAuditFamily op = new OperatorAuditFamily(f.ledger, f.host, clock::get);
-        TextContentFamily text = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily text = f.text(clock::get);
         op.command("rcon", false, () -> {
             reads.incrementAndGet();
             return "stop";
@@ -131,7 +131,7 @@ class AuditOptInTest {
         int before = f.content.size();
         var swapped = f.config; // a malformed value may leave no config at all: build the family on a good one first
         f.config = FakeLedger.config("collector.audit.enabled=true", "collector.chat.enabled=true");
-        TextContentFamily family = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily family = f.text(clock::get);
         f.config = swapped;
         family.chat(false, LIFE, "w", () -> {
             reads.incrementAndGet();
@@ -167,7 +167,7 @@ class AuditOptInTest {
         assertTrue(AuditWiring.shouldInstallChat(f.ledger));
         for (boolean main : new boolean[] {true, false}) {
             f.main.set(main);
-            new TextContentFamily(f.ledger, clock::get).chat(false, LIFE, "w", () -> "hi");
+            f.text(clock::get).chat(false, LIFE, "w", () -> "hi");
         }
         assertEquals(2, f.content.size());
         for (String[] cfg : new String[][] {
@@ -182,7 +182,7 @@ class AuditOptInTest {
 
     @Test
     void turningChatOffAtRuntimeStopsAFamilyAlreadyBuilt() {
-        TextContentFamily text = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily text = f.text(clock::get);
         f.main.set(false);
         text.chat(false, LIFE, "w", () -> "a");
         assertEquals(1, f.content.size());
@@ -209,7 +209,7 @@ class AuditOptInTest {
     @Test
     void chatHonoursTheConfiguredRateAndCountsEveryDrop() {
         f.config = FakeLedger.config("collector.audit.enabled=true", "collector.chat.enabled=true", "rate.geldar.chat=100");
-        TextContentFamily t = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily t = f.text(clock::get);
         assertEquals(0, f.registeredRates.get("geldar.chat._rate_drop"));
         for (int i = 0; i < 150; i++) {
             t.chat(false, LIFE, "w", () -> "x");
@@ -221,7 +221,7 @@ class AuditOptInTest {
 
     @Test
     void chatDefaultRateStaysTwentyAndFloodIsCounted() {
-        TextContentFamily t = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily t = f.text(clock::get);
         for (int i = 0; i < 200; i++) {
             t.chat(false, LIFE, "w", () -> "x");
         }

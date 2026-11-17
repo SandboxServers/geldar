@@ -39,7 +39,10 @@ public final class TextContentFamily {
     private final TokenBucket bucket;
     private final NameMask mask = new NameMask();
     private final LongAdder maskDrops = new LongAdder();
-    private volatile Supplier<Collection<String>> onlineNames = List::of;
+    // fail closed until the wiring supplies the player-list source: no source means no chat event
+    private volatile Supplier<Collection<String>> onlineNames = () -> {
+        throw new IllegalStateException("online-name source not wired");
+    };
     private final LongAdder errors = new LongAdder();
     private final LongAdder rateDrops = new LongAdder();
 

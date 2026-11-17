@@ -13,7 +13,7 @@ import java.util.Set;
  * without leading slashes or a {@code plugin:} prefix; {@code execute ... run <command>} (nested too) is unwrapped to
  * the inner command, so {@code execute as @a run say hi} is name {@code say}, count 1. An authentication verb
  * ({@link #AUTH_ROOTS}) exports its name and count 0 (a password has no recognisable shape, and its length is a leak).
- * A name that is not plain ({@code [a-z0-9_.+-]}, at most 64 characters: unicode tricks, an accidentally typed secret)
+ * A name that is not a registered root command of the server dispatcher, or is not plain ({@code [a-z0-9_.+-]}, at most 64 characters: unicode tricks, an accidentally typed secret)
  * is exported as {@code unknown}. The arguments are counted and then dropped, never copied.
  */
 final class CommandText {
@@ -38,6 +38,11 @@ final class CommandText {
     }
 
     static Parsed parse(String raw) {
+        return parse(raw, n -> true);
+    }
+
+    /** {@code registered}: is the name a registered root command; anything else is exported as {@code unknown}. */
+    static Parsed parse(String raw, java.util.function.Predicate<String> registered) {
         if (raw == null || raw.isBlank()) {
             return new Parsed("", 0);
         }
@@ -82,7 +87,7 @@ final class CommandText {
         if (AUTH_ROOTS.contains(name)) {
             return new Parsed(name, 0);
         }
-        if (!plain(name)) {
+        if (!plain(name) || !registered.test(name)) {
             name = UNKNOWN;
         }
         return new Parsed(name, Math.min(COUNT_MAX, tokens.size() - pos - 1));

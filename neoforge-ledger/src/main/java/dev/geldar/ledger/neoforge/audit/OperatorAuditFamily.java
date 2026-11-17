@@ -9,6 +9,7 @@ import dev.geldar.ledger.core.Severity;
 import dev.geldar.ledger.core.TokenBucket;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.LongSupplier;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 /**
@@ -91,8 +92,17 @@ public final class OperatorAuditFamily {
         };
     }
 
-    /** {@code text} is only called once the command passed the bucket; a null {@code kind} exports nothing. */
-    public void command(String kind, boolean cancelled, Supplier<String> text) {
+    /** Tests only: every name counts as a registered command. */
+    void command(String kind, boolean cancelled, Supplier<String> text) {
+        command(kind, cancelled, text, n -> true);
+    }
+
+    /**
+     * {@code text} is only called once the command passed the bucket; a null {@code kind} exports nothing.
+     * {@code registered} says whether a name is a registered root command of the server dispatcher (read on the thread
+     * that runs the command); the name is exported only if it is, else {@code unknown}.
+     */
+    public void command(String kind, boolean cancelled, Supplier<String> text, Predicate<String> registered) {
         if (kind == null || cancelled || !gate.getAsBoolean()) {
             return;
         }
@@ -103,7 +113,7 @@ public final class OperatorAuditFamily {
             return;
         }
         guarded.run(() -> {
-            CommandText.Parsed c = CommandText.parse(text.get());
+            CommandText.Parsed c = CommandText.parse(text.get(), registered);
             events.record(rcon ? rconId : consoleId, 0, 0, c.argCount(), c.name(), kind, null);
         });
     }

@@ -21,7 +21,7 @@ class AuditFamiliesTest {
     @Test
     void registersGeldarNamesOnly() {
         new CombatFamily(f.ledger, f.host);
-        new TextContentFamily(f.ledger, clock::get);
+        f.text(clock::get);
         new OperatorAuditFamily(f.ledger, f.host, clock::get);
         assertEquals(10, f.registered.size()); // 7 events and 3 rate-drop twins
         assertTrue(f.registered.stream().allMatch(n -> n.startsWith("geldar.")), f.registered.toString());
@@ -139,7 +139,7 @@ class AuditFamiliesTest {
 
     @Test
     void humanChatIsVerbatimWithNoSpeakerId() {
-        TextContentFamily t = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily t = f.text(clock::get);
         t.chat(false, "HumanSteve", "minecraft:overworld", () -> "hello Steve, come to the base");
         String[] c = f.content.get(0);
         assertEquals("hello Steve, come to the base", c[0]);
@@ -149,14 +149,14 @@ class AuditFamiliesTest {
 
     @Test
     void lifeChatCarriesTheLifeId() {
-        TextContentFamily t = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily t = f.text(clock::get);
         t.chat(false, LIFE, "w", () -> "hi");
         assertEquals(LIFE, f.content.get(0)[1]);
     }
 
     @Test
     void cancelledChatIsNotCaptured() {
-        TextContentFamily t = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily t = f.text(clock::get);
         AtomicInteger flattened = new AtomicInteger();
         t.chat(true, LIFE, "w", () -> {
             flattened.incrementAndGet();
@@ -168,7 +168,7 @@ class AuditFamiliesTest {
 
     @Test
     void chatIsScrubbedAndCapped() {
-        TextContentFamily t = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily t = f.text(clock::get);
         t.chat(false, LIFE, "w", () -> "the password=hunter2xyz is set");
         assertFalse(f.content.get(0)[0].contains("hunter2xyz"), f.content.get(0)[0]);
         t.chat(false, LIFE, "w", () -> "a".repeat(100_000));
@@ -177,7 +177,7 @@ class AuditFamiliesTest {
 
     @Test
     void chatFloodDoesNoFlattenWorkAndNeverTouchesTheGuard() {
-        TextContentFamily t = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily t = f.text(clock::get);
         AtomicInteger flattened = new AtomicInteger();
         for (int i = 0; i < 200; i++) {
             t.chat(false, LIFE, "w", () -> {
@@ -193,7 +193,7 @@ class AuditFamiliesTest {
 
     @Test
     void chatErrorsAreDropped() {
-        TextContentFamily t = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily t = f.text(clock::get);
         t.chat(false, LIFE, "w", () -> {
             throw new IllegalStateException("flatten");
         });
@@ -423,7 +423,7 @@ class AuditFamiliesTest {
 
     @Test
     void chatRateCapIsExactlyTwentyPerSecond() {
-        TextContentFamily t = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily t = f.text(clock::get);
         for (int i = 0; i < TextContentFamily.CHAT_RATE; i++) {
             t.chat(false, LIFE, "w", () -> "x");
         }
@@ -455,10 +455,10 @@ class AuditFamiliesTest {
 
     @Test
     void hugeChatIsBoundedBeforeAndAfterScrub() {
-        TextContentFamily t = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily t = f.text(clock::get);
         t.chat(false, LIFE, "w", () -> "z".repeat(5_000_000));
         assertTrue(f.content.get(0)[0].getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= 32768);
-        // the marker of the final cap records the size it saw: the pre-scrub cap held it to 1 MiB
-        assertTrue(f.content.get(0)[0].endsWith("[truncated:1048576]"), f.content.get(0)[0]);
+        // the name mask cuts its input to NameMask.INPUT_MAX characters before any matching
+        assertEquals("z".repeat(NameMask.INPUT_MAX), f.content.get(0)[0]);
     }
 }

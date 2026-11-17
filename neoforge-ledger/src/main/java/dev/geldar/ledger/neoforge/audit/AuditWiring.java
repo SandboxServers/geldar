@@ -48,9 +48,7 @@ public final class AuditWiring {
             NeoForge.EVENT_BUS.addListener(PRIORITY, RECEIVE_CANCELED, LivingDamageEvent.Post.class, e -> damage(combat, e));
             NeoForge.EVENT_BUS.addListener(PRIORITY, RECEIVE_CANCELED, LivingDeathEvent.class, e -> death(combat, e));
             if (shouldInstallChat(ledger)) {
-                // human chat is its own opt-in (collector.chat.enabled=true): no listener at all unless it is on
-                NeoForge.EVENT_BUS.addListener(PRIORITY, RECEIVE_CANCELED, net.neoforged.neoforge.event.ServerChatEvent.class, e -> chat(text, e));
-                installNameMask(ledger, text);
+                installChat(ledger, text);
             }
             NeoForge.EVENT_BUS.addListener(PRIORITY, RECEIVE_CANCELED, CommandEvent.class, e -> command(audit, e));
             NeoForge.EVENT_BUS.addListener(PRIORITY, RECEIVE_CANCELED, PermissionsChangedEvent.class, e -> operator(audit, e));
@@ -70,6 +68,23 @@ public final class AuditWiring {
     /** The chat install decision: audit on AND collector.chat.enabled=true (off by default, D-F not yet recorded). */
     static boolean shouldInstallChat(Ledger ledger) {
         return ledger != null && AuditGate.chat(ledger).getAsBoolean();
+    }
+
+    /**
+     * Chat is registered only AFTER the name-mask feed (login, logout, server and player-list source) is wired; if any
+     * step throws, chat stays off (one log line, class name only) and the other audit families are unaffected.
+     */
+    private static void installChat(Ledger ledger, TextContentFamily text) {
+        try {
+            installNameMask(ledger, text);
+            // human chat is its own opt-in (collector.chat.enabled=true): no listener at all unless it is on
+            NeoForge.EVENT_BUS.addListener(PRIORITY, RECEIVE_CANCELED, net.neoforged.neoforge.event.ServerChatEvent.class, e -> chat(text, e));
+            LOG.info("ledger chat export on: name mask feed wired");
+        } catch (Throwable t) {
+            rethrowVmError(t);
+            text.onlineNames(null); // a half-wired chat stays unusable
+            LOG.warning("ledger chat wiring failed, chat stays off: " + t.getClass().getName());
+        }
     }
 
     /**
@@ -151,7 +166,8 @@ public final class AuditWiring {
                     source.getTextName(),
                     source.source instanceof net.minecraft.server.MinecraftServer,
                     source.source instanceof net.minecraft.server.rcon.RconConsoleSource);
-            audit.command(kind, e.isCanceled(), () -> e.getParseResults().getReader().getString());
+            var root = e.getParseResults().getContext().getDispatcher().getRoot();
+            audit.command(kind, e.isCanceled(), () -> e.getParseResults().getReader().getString(), n -> root.getChild(n) != null);
         } catch (Throwable t) {
             rethrowVmError(t);
         }
