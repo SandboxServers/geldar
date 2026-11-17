@@ -1,0 +1,24 @@
+{
+  "stats": {
+    "minecraft:custom": {
+      "minecraft:play_time": 72000,
+      "minecraft:deaths": 3,
+      "minecraft:mob_kills": 12,
+      "minecraft:walk_one_cm": 55000,
+      "minecraft:jump": 9,
+      "minecraft:time_since_death": 400
+    },
+    "minecraft:mined": {
+      "minecraft:stone": 10,
+      "minecraft:dirt": 5
+    },
+    "minecraft:crafted": {
+      "minecraft:stick": 4,
+      "minecraft:torch": 6
+    },
+    "minecraft:killed": {
+      "minecraft:zombie": 7
+    }
+  },
+  "DataVersion": 4440
+}

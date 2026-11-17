@@ -109,6 +109,35 @@ describe('the LedgerMod config allowance', () => {
   });
 });
 
+describe('the StatsFileReader byte-channel allowance', () => {
+  const reader =
+    'neoforge-ledger/src/main/java/dev/geldar/ledger/neoforge/players/StatsFileReader.java';
+  const open =
+    'try (FileChannel ch = FileChannel.open(file, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)) {';
+  const lists = asScan(NEOFORGE_LISTS);
+
+  it.each([
+    'FileChannel.open(p, StandardOpenOption.READ);',
+    'AsynchronousFileChannel.open(p);',
+    'Files.newByteChannel(p);',
+    'FileSystems.getDefault().provider().newFileChannel(p, s);',
+    'Channels.newInputStream(ch);',
+  ])('flags %s in another file', (line) => {
+    expect(scanJava('B.java', line, lists).length).toBeGreaterThan(0);
+  });
+
+  it('allows exactly the one open call in StatsFileReader.java', () => {
+    expect(scanJava(reader, open, lists)).toEqual([]);
+    expect(
+      scanJava(reader, 'FileChannel.open(other, StandardOpenOption.READ);', lists),
+    ).toHaveLength(1);
+    expect(scanJava(reader, 'Files.newByteChannel(file);', lists)).toHaveLength(1);
+  });
+
+  it('does not cover another file with the same line', () => {
+    expect(scanJava('neoforge-ledger/src/main/java/B.java', open, lists)).toHaveLength(1);
+  });
+});
 describe('scanModsToml', () => {
   it('accepts the plain file', () => {
     expect(scanModsToml(GOOD_TOML)).toEqual([]);
