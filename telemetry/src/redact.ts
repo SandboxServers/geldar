@@ -107,6 +107,7 @@ const CREDENTIAL_PAIRS: ReadonlySet<string> = new Set([
   'signingkey',
   'sshkey',
   'sessionid',
+  'accountkey',
 ]);
 const COOKIE_KEY = /(?:^|[._-])cookie$/i;
 /** A cookie header value in `name=value` form: the rest of the line. */
@@ -220,6 +221,77 @@ function delimitedSecretLength(text: string, end: number, run: string, quotedKey
   const value = whole.slice(0, stop);
   return looksSecret(value) || DIGIT_AND_LETTER.test(value) ? stop : 0;
 }
+// A command-line flag whose value follows after whitespace: `--password VALUE` (and passwd, token, secret,
+// api-key, apikey), or curl's `-u` / `--user` with `name:secret`. The head must be followed by a space or
+// tab, so `--password-file /x`, `--secret-name abc` and `--token=...` (the key=value rule) do not match.
+const FLAG_HEAD =
+  /(?<![\w.-])(?:--(?:password|passwd|token|secret|api-key|apikey)|-u|--user)(?=[ \t])/gi;
+const FLAG_VALUE = /[^\s]+/y;
+const MAX_FLAG_GAP = 64;
+
+/** The text with the value after a credential flag replaced. Heads are run starts and each value is read once: linear. */
+function scrubFlags(text: string): string {
+  let out = '';
+  let last = 0;
+  FLAG_HEAD.lastIndex = 0;
+  for (let m = FLAG_HEAD.exec(text); m; m = FLAG_HEAD.exec(text)) {
+    const head = m[0];
+    const lower = head.toLowerCase();
+    const user = lower === '-u' || lower === '--user';
+    if (user && head !== lower) continue;
+    let at = m.index + head.length;
+    const gapEnd = at + MAX_FLAG_GAP;
+    while (at < text.length && at < gapEnd && (text.charAt(at) === ' ' || text.charAt(at) === '\t'))
+      at++;
+    const quote = text.charAt(at);
+    const quoted = quote === '"' || quote === "'";
+    let start = quoted ? at + 1 : at;
+    let length = 0;
+    if (quoted) length = Math.max(quotedLength(text, start, quote, 0), 0);
+    else {
+      FLAG_VALUE.lastIndex = start;
+      length = FLAG_VALUE.exec(text)?.[0].length ?? 0;
+    }
+    if (length === 0 || text.charAt(start) === '-') continue;
+    if (!quoted)
+      while (length > 0 && TRAILING_PUNCTUATION.includes(text.charAt(start + length - 1))) length--;
+    let value = text.slice(start, start + length);
+    if (user) {
+      // `name:secret`, the secret not starting with `/` (so `-u origin:/x` and `-u http://h` stay).
+      const colon = value.indexOf(':');
+      if (colon < 1 || colon === value.length - 1 || value.charAt(colon + 1) === '/') continue;
+      start += colon + 1;
+      length -= colon + 1;
+      value = value.slice(colon + 1);
+    }
+    if (!(looksSecret(value) || DIGIT_AND_LETTER.test(value))) continue;
+    out += text.slice(last, start) + REDACTED;
+    last = start + length;
+    FLAG_HEAD.lastIndex = last;
+  }
+  return out + text.slice(last);
+}
+
+/** Query keys whose value is a credential whatever it looks like (`sig`, `X-Amz-Credential`, `X-Amz-Signature`). */
+const QUERY_CREDENTIAL_KEYS: ReadonlySet<string> = new Set([
+  'sig',
+  'x-amz-credential',
+  'x-amz-signature',
+]);
+/** Query keys that are credentials only with a long value (`?code=404` and `?key=name` stay). */
+const QUERY_LONG_KEYS: ReadonlySet<string> = new Set(['key', 'code']);
+const MIN_QUERY_SECRET = 16;
+
+/** True when `key` after `?` or `&` is a credential query parameter whose value starts at `end`. */
+function queryCredential(key: string, text: string, end: number): boolean {
+  const lower = key.toLowerCase();
+  if (QUERY_CREDENTIAL_KEYS.has(lower)) return true;
+  if (!QUERY_LONG_KEYS.has(lower)) return false;
+  VALUE_RUN.lastIndex = end;
+  const run = VALUE_RUN.exec(text)?.[0] ?? '';
+  return run.length >= MIN_QUERY_SECRET && looksSecret(run);
+}
+
 /** The text with the value of every credential `key=value` / `key: value` pair replaced. One linear pass. */
 function scrubKeyValues(text: string): string {
   let out = '';
@@ -229,8 +301,9 @@ function scrubKeyValues(text: string): string {
     const end = m.index + m[0].length;
     const key = m[1] as string;
     const sep = m[2] as string;
-    if (!credentialKey(key)) continue;
     const prev = m.index > 0 ? text.charAt(m.index - 1) : '';
+    const inQuery = (prev === '?' || prev === '&') && sep === '=';
+    if (!credentialKey(key) && !(inQuery && queryCredential(key, text, end))) continue;
     // A URL query parameter or a command-line flag: the value is a credential whatever it looks like.
     const flagOrQuery = m[0].startsWith('--') || prev === '?' || prev === '&';
     let length = 0;
@@ -276,7 +349,7 @@ export function scrubText(text: string): string {
 
 function scrubPatterns(text: string): string {
   return scrubKeyValues(
-    scrubPem(text)
+    scrubFlags(scrubPem(text))
       .replace(AUTH_HEADER, (match, head: string) => {
         if (!/["']/.test(head)) return REDACTED;
         // A quoted pair (JSON): the value ends at the closing quote, so a Digest run does not eat the line.

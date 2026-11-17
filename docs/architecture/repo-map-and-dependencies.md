@@ -158,7 +158,7 @@ The documentation plan built a first, second and third degree map from inference
 | body-helper: "Node-side helper for Bodies" | Confirmed: a root-owned host service, the only Docker socket holder | decision [0260](../decisions/0260-body-container-control-by-host-helper.md) |
 | Velocity identity: "ingress gate reading the NATS life registry" | Confirmed | `plugin/velocity-identity/.../RegistryClient.java` |
 | Psyche "mirrored into the Mind kit" | Confirmed on this side (zero outside imports); the kit side is unverified | `psyche/README.md` |
-| Risk R9: "the plugin's use of Postgres" | **Corrected:** Geldar-Core has no JDBC or Postgres reference in `plugin/core/src/main`; it uses NATS and the CoreProtect API | `git grep -il "jdbc\|postgres" -- plugin/core/src/main` returns nothing, 2026-11-16 |
+| Risk R9: "the plugin's use of Postgres" | **Corrected:** Geldar-Core has no JDBC or Postgres reference in `plugin/core/src/main plugin/core-common/src/main`; it uses NATS and the CoreProtect API | `git grep -il "jdbc\|postgres" -- plugin/core/src/main plugin/core-common/src/main` returns nothing, 2026-11-16 |
 | Workspace packages: 13 entries plus `tools/*` | Confirmed | `pnpm-workspace.yaml` |
 
 ## Debt found

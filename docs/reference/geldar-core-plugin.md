@@ -30,7 +30,7 @@ Related: the [Velocity identity plugin](velocity-identity-plugin.md), the [third
 | Jar | `plugin/core/build/libs/geldar-core.jar` | `tasks.jar` in `plugin/core/build.gradle.kts` |
 | Sources | 87 main and 71 test Java files | `git ls-files plugin/core/src/main/java \| wc -l` and the same for `src/test`, 2026-11-16 at 1b114276 |
 | Owner | Not named in the code or the plan. Plan decision D3 asks for a campaign or coordinator role; none is assigned yet. | `docs/analysis/docs-library/plan.md` sections 7 and 12 |
-| Database | None. The plugin has no JDBC dependency and no SQL. Block owners come from CoreProtect's own store. | `grep -rn 'jdbc\|java.sql' plugin/core/src/main` finds nothing; `build.gradle.kts` |
+| Database | None. The plugin has no JDBC dependency and no SQL. Block owners come from CoreProtect's own store. | `grep -rn 'jdbc\|java.sql' plugin/core/src/main plugin/core-common/src/main` finds nothing; `build.gradle.kts` |
 
 This corrects the plan's risk R9 ("the plugin's use of Postgres", inferred): the plugin uses no Postgres.
 
@@ -128,7 +128,7 @@ Every row is from the class named and from `GeldarCore.java`. Gravestone and com
 | `chat.muffle.per_ray_cap` | `64` | enable | At least 1. |
 | `chat.muffle.bench_log` | `false` | enable | Bench shard only; must stay `false` in production and every Colo config (`config.yml` comment). |
 
-Re-derive: `git grep -n -E 'getConfig\(\)\.get|config\.get|file\.get' -- plugin/core/src/main` lists every key read.
+Re-derive: `git grep -n -E 'getConfig\(\)\.get|config\.get|file\.get' -- plugin/core/src/main plugin/core-common/src/main` lists every key read.
 
 ### Environment
 
@@ -143,7 +143,7 @@ Re-derive: `git grep -n -E 'getConfig\(\)\.get|config\.get|file\.get' -- plugin/
 
 ### Bukkit events handled
 
-Listed from every `@EventHandler` under `plugin/core/src/main/java` except `GhostListener`, whose handlers are not listed (decision 0361) (re-derive: `git grep -n -A2 '@EventHandler' -- plugin/core/src/main`).
+Listed from every `@EventHandler` under `plugin/core/src/main/java` except `GhostListener`, whose handlers are not listed (decision 0361) (re-derive: `git grep -n -A2 '@EventHandler' -- plugin/core/src/main plugin/core-common/src/main`).
 
 | Event | Class | Priority |
 |---|---|---|
@@ -166,7 +166,7 @@ Listed from every `@EventHandler` under `plugin/core/src/main/java` except `Ghos
 | `geldar.<shard>.maintenance` | subscribe | `maintenance-notice.schema.json` | `NatsMaintenanceSubscriber` |
 | Kino subjects (decision 0075) | subscribe (control), publish (feed, core NATS) | `kino-control.schema.json`, `kino-feed.schema.json` | `kino/` |
 
-Re-derive: `git grep -n '"geldar\.' -- plugin/core/src/main`. Core-NATS publishers drop a message when there is no connection; only the event export queues.
+Re-derive: `git grep -n '"geldar\.' -- plugin/core/src/main plugin/core-common/src/main`. Core-NATS publishers drop a message when there is no connection; only the event export queues.
 
 The NATS user `paper` (generator in `geldar.ps1`, line 403 at 1b114276) may publish `geldar.<shard>.>` and the JetStream API, is denied publishing Kino subjects, `blockowner.query`, `ctl.body.>`, `helper.body.>` and `state.*.level`, and may subscribe to Kino subjects, `maintenance`, `blockowner.query` and its inbox.
 
@@ -238,7 +238,7 @@ cd plugin; ./gradlew build   # compiles both plugins, runs the JUnit tests, writ
 | Command block | Implemented, for every player (`CommandBlockListener`). |
 | Bot ingress identity | In the Velocity plugin: [velocity-identity-plugin](velocity-identity-plugin.md). |
 | Proximity chat | Implemented with muffled hearing (decisions 0198, 0199). No `speech` event is published (see conflict 3). |
-| Shrine, Books, Cradle, Governance | Not found (`grep -rniE 'shrine|lodestone|cradle|propose|governance|book_read|EditBook'` over `plugin/core/src/main` finds nothing). |
+| Shrine, Books, Cradle, Governance | Not found (`grep -rniE 'shrine|lodestone|cradle|propose|governance|book_read|EditBook'` over `plugin/core/src/main plugin/core-common/src/main` finds nothing). |
 | Death and birth | `death` exported; no `birth`. |
 | Tick rate | Not set by the plugin (same grep for `setTickRate` finds nothing). The Appendix F row itself says 20 on every shard, citing decision 0047. |
 | Metrics (Prometheus) | No Prometheus endpoint; TPS and player count go out as the `server_tps` event. |
@@ -265,7 +265,7 @@ Further detail on ghost handling, Kino and Lakitu is withheld under decision [03
 ```powershell
 git ls-files plugin/core/src/main/java | Measure-Object -Line   # 87 at 1b114276
 git ls-files plugin/core/src/test | Measure-Object -Line        # 71 at 1b114276
-git grep -n '"geldar\.' -- plugin/core/src/main                  # NATS subjects
-git grep -n -A2 '@EventHandler' -- plugin/core/src/main           # events handled
-git grep -n 'getConfig()' -- plugin/core/src/main                 # config keys read in GeldarCore
+git grep -n '"geldar\.' -- plugin/core/src/main plugin/core-common/src/main                  # NATS subjects
+git grep -n -A2 '@EventHandler' -- plugin/core/src/main plugin/core-common/src/main           # events handled
+git grep -n 'getConfig()' -- plugin/core/src/main plugin/core-common/src/main                 # config keys read in GeldarCore
 ```

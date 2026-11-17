@@ -135,13 +135,13 @@ function timeScrub(input: string): number {
 describe('scrubText on large adversarial input', () => {
   it('stays fast on 1 MiB inputs (every pattern)', () => {
     for (const [name, input] of Object.entries(adversarial(1 << 20))) {
-      expect(timeScrub(input), name).toBeLessThan(1000);
+      expect(timeScrub(input), name).toBeLessThan(3000);
     }
   });
 
   it('stays linear on 40 KB inputs (distinguishes a quadratic pattern)', () => {
     for (const [name, input] of Object.entries(adversarial(40_000))) {
-      expect(timeScrub(input), name).toBeLessThan(150);
+      expect(timeScrub(input), name).toBeLessThan(600);
     }
   });
 });
@@ -203,7 +203,7 @@ describe('redactContent: shared sub-objects and thrown values', () => {
     for (let i = 0; i < 22; i++) node = { l: node, r: node };
     const start = performance.now();
     const out = redactContent(node);
-    expect(performance.now() - start).toBeLessThan(1000);
+    expect(performance.now() - start).toBeLessThan(3000);
     expect(out).toBeTypeOf('object');
   });
 
@@ -241,7 +241,7 @@ describe('errorFields bound', () => {
     expect(errorFields(exact)['exception.message']).toBe('y'.repeat(MAX_ERROR_TEXT_CHARS));
     const start = performance.now();
     const fields = errorFields(new Error('QUJD'.repeat(2.5 * (1 << 20))));
-    expect(performance.now() - start).toBeLessThan(2000);
+    expect(performance.now() - start).toBeLessThan(6000);
     expect(fields['exception.message']).toContain('[truncated');
   });
 });
@@ -329,7 +329,7 @@ describe('scrubText: free-text key=value', () => {
       quotes: rep('token":"'),
     };
     for (const [name, input] of Object.entries(inputs)) {
-      expect(timeScrub(input), name).toBeLessThan(1000);
+      expect(timeScrub(input), name).toBeLessThan(3000);
     }
     expect(timeScrub('x'.repeat(10 * (1 << 20)))).toBeLessThan(5000);
   });

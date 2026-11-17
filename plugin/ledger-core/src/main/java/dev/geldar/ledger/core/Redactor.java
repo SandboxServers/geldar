@@ -110,12 +110,15 @@ public final class Redactor {
                 || s.regionMatches(true, start - 5, "java ", 0, 5) && start >= 5;
     }
 
-    /** Replaces IPv4 and IPv6 literals with {@code [addr]}; everything else stays byte-identical. */
+    /**
+     * Replaces credentials in free text with {@code [redacted]} (decision 0350: credentials only) and IPv4 and
+     * IPv6 literals with {@code [addr]}; everything else stays byte-identical.
+     */
     public static String scrub(String value) {
         if (value == null || value.length() < 3) {
             return value;
         }
-        String s = value;
+        String s = CredentialScrub.scrub(value);
         if (s.indexOf(':') >= 0) {
             s = scrubV6(s);
         }

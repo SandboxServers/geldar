@@ -45,16 +45,18 @@ esac
 # Files written below are readable by their owner only.
 umask 077
 
-# fetch URL DEST HASH SUM: keeps DEST when it already has the pinned hash; otherwise downloads, checks the hash, and moves
-# the file into place. A download that does not match is deleted and the script exits 1.
+# fetch URL DEST HASH SUM PIN: keeps DEST when it already has the pinned hash, so a file pre-seeded into the volume with the
+# right hash is used and curl is never called. Otherwise downloads (6 retries, 10 s apart, on any error), checks the hash,
+# and moves the file into place. A download that does not match is deleted and the script exits 1. PIN names the script
+# constant holding the hash, for the error message.
 fetch() {
   if [ -f "$2" ] && printf '%s  %s\n' "$3" "$2" | "$4" -c --status; then
     return 0
   fi
   rm -f "$2.part"
-  if ! curl -fsSL --connect-timeout 30 --max-time 600 --retry 3 -o "$2.part" "$1"; then
+  if ! curl -fsSL --connect-timeout 60 --max-time 900 --retry 6 --retry-delay 10 --retry-all-errors -o "$2.part" "$1"; then
     rm -f "$2.part"
-    echo "neoforge-entrypoint: download of $2 failed" >&2
+    echo "neoforge-entrypoint: download of $2 failed after retries. To pre-seed it, put a file at $2 (inside the container) whose $4 matches the pin $5 in compose/neoforge/neoforge-entrypoint.sh, then start again. See docs/runbooks/scratch-stack.md." >&2
     exit 1
   fi
   if ! printf '%s  %s\n' "$3" "$2.part" | "$4" -c --status; then
@@ -66,8 +68,8 @@ fetch() {
 }
 
 mkdir -p "$data/mods"
-fetch "$MOD_URL" "$mod" "$MOD_SHA512" sha512sum
-fetch "$INSTALLER_URL" "$installer" "$INSTALLER_SHA256" sha256sum
+fetch "$MOD_URL" "$mod" "$MOD_SHA512" sha512sum MOD_SHA512
+fetch "$INSTALLER_URL" "$installer" "$INSTALLER_SHA256" sha256sum INSTALLER_SHA256
 # The image installs NeoForge from this local file (start-deployNeoForge reads NEOFORGE_INSTALLER as a path).
 export NEOFORGE_INSTALLER="$installer"
 chown --reference="$data" "$data/mods" "$mod" "$installer"

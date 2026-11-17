@@ -16,6 +16,8 @@ import org.junit.jupiter.api.Test;
 /** A static scan of the kino package (comments included): nothing visible, no input path, no loading. */
 class KinoReadOnlyTest {
     private static final Path ROOT = Path.of("src/main/java/dev/geldar/core/kino");
+    // The platform-neutral kino classes (core-common) are scanned by the same guards.
+    private static final Path NEUTRAL_ROOT = Path.of("../core-common/src/main/java/dev/geldar/core/kino");
 
     private static final List<Pattern> BANNED = List.of(
             Pattern.compile("setCancelled"), Pattern.compile("teleport"), Pattern.compile("spawn"),
@@ -28,9 +30,13 @@ class KinoReadOnlyTest {
             Pattern.compile("EventPriority\\.(LOWEST|LOW|NORMAL|HIGH|HIGHEST)\\b"));
 
     private static List<Path> sources() throws IOException {
-        try (Stream<Path> s = Files.walk(ROOT)) {
-            return s.filter(p -> p.toString().endsWith(".java")).toList();
+        List<Path> all = new ArrayList<>();
+        for (Path root : List.of(ROOT, NEUTRAL_ROOT)) {
+            try (Stream<Path> s = Files.walk(root)) {
+                all.addAll(s.filter(p -> p.toString().endsWith(".java")).toList());
+            }
         }
+        return all;
     }
 
     @Test

@@ -13,11 +13,14 @@ import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
 /**
- * A static scan of every source file in the lakitu package. Each pattern is an invariant: the feed creates
- * nothing visible (I1) and changes nothing (I2). Comments are scanned too, so the words stay out of the package.
+ * A static scan of every source file in the lakitu package, in both modules: the Paper adapter (core) and the
+ * platform-neutral classes (core-common). Each pattern is an invariant: the feed creates nothing visible (I1) and
+ * changes nothing (I2). Comments are scanned too, so the words stay out of the package.
  */
 class LakituReadOnlyTest {
     private static final Path ROOT = Path.of("src/main/java/dev/geldar/core/lakitu");
+    // The platform-neutral lakitu classes (core-common) are scanned by the same guards.
+    private static final Path NEUTRAL_ROOT = Path.of("../core-common/src/main/java/dev/geldar/core/lakitu");
 
     private static final List<Pattern> BANNED = List.of(
             Pattern.compile("setCancelled"),
@@ -40,9 +43,13 @@ class LakituReadOnlyTest {
             Pattern.compile("EventPriority\\.(LOW|NORMAL|HIGH)\\b"));
 
     private static List<Path> sources() throws IOException {
-        try (Stream<Path> s = Files.walk(ROOT)) {
-            return s.filter(p -> p.toString().endsWith(".java")).toList();
+        List<Path> all = new ArrayList<>();
+        for (Path root : List.of(ROOT, NEUTRAL_ROOT)) {
+            try (Stream<Path> s = Files.walk(root)) {
+                all.addAll(s.filter(p -> p.toString().endsWith(".java")).toList());
+            }
         }
+        return all;
     }
 
     @Test
