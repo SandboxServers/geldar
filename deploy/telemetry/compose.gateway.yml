@@ -35,7 +35,7 @@ services:
     volumes:
       - ./gateway.yaml:/etc/otelcol/gateway.yaml:ro
       # The only writable path: the persisted sending queue. Owner 10001:10001, mode 750, set at the node step.
-      # Bound: queue_size 1 GiB of request bytes in gateway.yaml, plus file overhead. NOT a fixed-size volume: the /mnt/nvme alarm is the guard (README, "Limits").
+      # Bound: queue_size 256 MiB of request bytes per signal queue (three queues) in gateway.yaml, about 1.5 GiB on disk with file overhead. NOT a fixed-size volume (owner decision, README "Limits"): the /mnt/nvme alarm is the guard.
       - /mnt/nvme/geldar-telemetry/queue:/var/lib/otelcol/queue
     environment:
       GELDAR_SIGNOZ_OTLP_ENDPOINT: geldar-signoz-otelcol:4317   # OTLP gRPC port of signoz-otelcol-config.yaml [SRC]
