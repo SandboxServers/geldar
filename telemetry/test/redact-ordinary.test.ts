@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { REDACTED as R, scrubText } from '../src/redact.ts';
+import { assertLinear } from './timing.ts';
 
 // Credential-shaped fixtures are built at run time.
 const pw = ['pass', 'word'].join('');
@@ -113,11 +114,8 @@ describe('scrubText URL userinfo with prefixed or long schemes', () => {
   it.each(['a', 'a.', 'a+', 'x://u:', 'http://'])(
     'is linear on %s repeated',
     (unit) => {
-      timed(rep(unit, 1 << 16));
-      const t1 = Math.min(...[1, 2, 3].map(() => timed(rep(unit, MiB))));
-      const t2 = Math.min(...[1, 2, 3].map(() => timed(rep(unit, 2 * MiB))));
+      const { t1 } = assertLinear((size) => scrubText(rep(unit, size)));
       expect(t1).toBeLessThan(3000);
-      expect(t2).toBeLessThan(3 * t1 + 100);
       expect(timed(rep(unit, 10 * MiB))).toBeLessThan(5000);
     },
     60_000,
