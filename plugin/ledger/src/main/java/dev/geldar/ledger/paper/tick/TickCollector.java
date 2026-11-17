@@ -42,7 +42,8 @@ public final class TickCollector implements Collector {
     private TickEndListener listener;
     private TpsGauges tpsGauges;
     private Cancellable managerTask;
-    private Cancellable stallTask;
+    private StallWatchdog watchdog;
+    private final StallWatchdog.Sleeper sleeper;
 
     /** Production constructor, used by reflection from the collector factory. */
     public TickCollector() {
@@ -58,10 +59,20 @@ public final class TickCollector implements Collector {
             Supplier<ServerTickManager> manager,
             Supplier<double[]> tps,
             LongSupplier nanoClock) {
+        this(registry, manager, tps, nanoClock, Thread::sleep);
+    }
+
+    TickCollector(
+            Consumer<Listener> registry,
+            Supplier<ServerTickManager> manager,
+            Supplier<double[]> tps,
+            LongSupplier nanoClock,
+            StallWatchdog.Sleeper sleeper) {
         this.registry = registry;
         this.manager = manager;
         this.tps = tps;
         this.nanoClock = nanoClock;
+        this.sleeper = sleeper;
     }
 
     @Override
@@ -105,7 +116,10 @@ public final class TickCollector implements Collector {
         sampleManager(guard);
         managerTask = ctx.scheduler().everyTicks(MANAGER_EVERY_TICKS, () -> sampleManager(guard));
 
-        stallTask = ctx.scheduler().everyMillis(STALL_CHECK_MS, () -> checkStall(stall, stalls, guard, l, ctx, thresholdMs));
+        // Not the host scheduler: Bukkit dispatches async timers from the main thread, which is what hangs.
+        watchdog = new StallWatchdog(
+                STALL_CHECK_MS, sleeper, () -> checkStall(stall, stalls, guard, l, ctx, thresholdMs));
+        watchdog.start();
     }
 
     /** Main thread: getters only. */
@@ -127,7 +141,7 @@ public final class TickCollector implements Collector {
         }
     }
 
-    /** Async thread. */
+    /** Watchdog thread: reads the volatile heartbeat and records through the ledger; no Bukkit state. */
     private void checkStall(
             StallDetector stall, BoundCounter stalls, CollectorGuard guard, Ledger l, CollectorContext ctx, long thresholdMs) {
         try {
@@ -166,9 +180,9 @@ public final class TickCollector implements Collector {
             managerTask.cancel();
             managerTask = null;
         }
-        if (stallTask != null) {
-            stallTask.cancel();
-            stallTask = null;
+        if (watchdog != null) {
+            watchdog.stop();
+            watchdog = null;
         }
     }
 }

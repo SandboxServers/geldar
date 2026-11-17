@@ -22,6 +22,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.DoubleSupplier;
 import java.util.function.LongSupplier;
@@ -43,6 +45,16 @@ class TickCollectorTest {
     float rate = 20f;
     boolean guardAllowed = true;
     Ledger ledgerOverride;
+    volatile boolean guardThrows;
+    volatile Thread sleeperThread;
+    final List<String> emitThreads = new java.util.concurrent.CopyOnWriteArrayList<>();
+    final Semaphore permits = new Semaphore(0);
+    final Semaphore asleep = new Semaphore(0);
+    final StallWatchdog.Sleeper fakeSleeper = ms -> {
+        sleeperThread = Thread.currentThread();
+        asleep.release();
+        permits.acquire();
+    };
 
     @Test
     void everyEventAttributeKeyPassesTheRealAllowList() {
@@ -63,11 +75,15 @@ class TickCollectorTest {
                         assertEquals(Names.Events.SERVER_STALL, a[0]);
                         assertEquals(Severity.WARN, a[1]);
                         stallEvents.add((Map<String, Object>) a[2]);
+                        emitThreads.add(Thread.currentThread().getName());
                     }
                     return m.getName().equals("register") ? 3 : null;
                 });
         CollectorGuard g = new CollectorGuard() {
             public boolean allowed() {
+                if (guardThrows) {
+                    throw new IllegalStateException("x");
+                }
                 return guardAllowed;
             }
 
@@ -154,7 +170,7 @@ class TickCollectorTest {
                             throw new AssertionError("tick manager call " + me.getName());
                     }
                 });
-        return new TickCollector(registered::add, () -> m, () -> new double[] {20, 20, 20}, clock::get);
+        return new TickCollector(registered::add, () -> m, () -> new double[] {20, 20, 20}, clock::get, fakeSleeper);
     }
 
     @Test
@@ -166,30 +182,83 @@ class TickCollectorTest {
     }
 
     @Test
-    void stallReportsOncePerStallWithCounterAndOneEvent() {
+    void stallReportsOncePerStallFromTheWatchdogThread() throws Exception {
         TickCollector c = collector();
         c.start(ctx());
+        awaitAsleep();
         assertEquals(1, registered.size());
-        Runnable check = async.get(1); // 0 is the TPS refresh, 1 the stall check
+        assertEquals(1, async.size()); // only the TPS refresh: the stall check is not a scheduler task
         clock.set(1_000_000_000L);
-        check.run();
+        step();
         assertTrue(stallEvents.isEmpty());
         clock.set(2_500_000_000L); // default threshold is 2000 ms
-        check.run();
-        check.run();
+        step();
+        step();
         assertEquals(1, stallEvents.size());
         assertEquals(77L, stallEvents.get(0).get("geldar.server_tick"));
         assertEquals(List.of("geldar_tick_stalls_total+1"), counterAdds);
+        assertEquals(List.of(StallWatchdog.THREAD_NAME), emitThreads);
+        Thread w = watchdogThread();
+        assertTrue(w.isDaemon());
+        c.stop();
     }
 
     @Test
-    void stallCheckIsSilentWhenGuardIsOff() {
-        collector().start(ctx());
+    void stallCheckIsSilentWhenGuardIsOff() throws Exception {
+        TickCollector c = collector();
+        c.start(ctx());
+        awaitAsleep();
         guardAllowed = false;
         clock.set(9_000_000_000L);
-        async.get(1).run();
+        step();
         assertTrue(stallEvents.isEmpty());
         assertTrue(counterAdds.isEmpty());
+        c.stop();
+    }
+
+    @Test
+    void aThrowingCheckDoesNotKillTheWatchdog() throws Exception {
+        TickCollector c = collector();
+        c.start(ctx());
+        awaitAsleep();
+        clock.set(9_000_000_000L);
+        guardThrows = true;
+        step(); // the check throws; the thread lives
+        assertTrue(stallEvents.isEmpty());
+        guardThrows = false;
+        step();
+        assertEquals(1, stallEvents.size());
+        c.stop();
+    }
+
+    @Test
+    void stopEndsTheWatchdogThreadAndIsIdempotent() throws Exception {
+        TickCollector c = collector();
+        c.start(ctx());
+        awaitAsleep();
+        Thread w = watchdogThread();
+        c.stop();
+        assertTrue(!w.isAlive());
+        c.stop();
+        assertEquals(2, cancels); // tps refresh, manager sample
+        c.start(ctx()); // restart makes a fresh watchdog
+        awaitAsleep();
+        assertTrue(watchdogThread().isAlive());
+        c.stop();
+    }
+
+    private void awaitAsleep() throws Exception {
+        assertTrue(asleep.tryAcquire(5, TimeUnit.SECONDS));
+    }
+
+    /** Lets the watchdog run one check and waits until it is asleep again. */
+    private void step() throws Exception {
+        permits.release();
+        awaitAsleep();
+    }
+
+    private Thread watchdogThread() {
+        return sleeperThread;
     }
 
     @Test
@@ -205,16 +274,6 @@ class TickCollectorTest {
         assertEquals(5.0, doubleGauges.get(Names.Tick.RATE_TARGET).getAsDouble());
         assertEquals(1, longGauges.get(Names.Tick.FROZEN).getAsLong());
         assertEquals(0, setterCalls);
-    }
-
-    @Test
-    void stopCancelsAllTasksAndIsIdempotent() {
-        TickCollector c = collector();
-        c.start(ctx());
-        c.stop();
-        assertEquals(3, cancels); // tps refresh, manager sample, stall check
-        c.stop();
-        assertEquals(3, cancels);
     }
 
     @Test
