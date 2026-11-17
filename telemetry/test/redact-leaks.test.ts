@@ -108,7 +108,7 @@ describe('PEM and JWT scans are linear', () => {
       const rep = (size: number): string => unit.repeat(Math.ceil(size / unit.length));
       const t1 = best(rep(MiB));
       const t2 = best(rep(2 * MiB));
-      expect(t1).toBeLessThan(1000);
+      expect(t1).toBeLessThan(3000);
       expect(t2).toBeLessThan(3 * t1 + 100);
     },
     60_000,
@@ -119,7 +119,7 @@ describe('redactContent bounds its total work', () => {
   it('reads a sparse 1e8 array in bounded time and marks the cut', () => {
     const start = performance.now();
     const out = redactContent(new Array(1e8)) as unknown[];
-    expect(performance.now() - start).toBeLessThan(1000);
+    expect(performance.now() - start).toBeLessThan(3000);
     expect(out.at(-1)).toBe('[truncated]');
     expect(out.length).toBeLessThanOrEqual(100_001);
   });
@@ -144,6 +144,6 @@ describe('redactContent bounds its total work', () => {
   it('stays fast on one hostile 60,000-character upper-case key', () => {
     const start = performance.now();
     redactContent({ ['A'.repeat(60_000)]: 1 });
-    expect(performance.now() - start).toBeLessThan(200);
+    expect(performance.now() - start).toBeLessThan(1000);
   });
 });

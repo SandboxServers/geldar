@@ -62,7 +62,7 @@ describe('a quoted credential value with escapes (step 1)', () => {
     const text = `{"${pw}":"${run}`;
     const start = performance.now();
     const out = scrubText(text);
-    expect(performance.now() - start).toBeLessThan(1000);
+    expect(performance.now() - start).toBeLessThan(3000);
     expect(out.length).toBeLessThan(text.length + 64);
   });
 

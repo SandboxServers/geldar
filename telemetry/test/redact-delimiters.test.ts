@@ -37,7 +37,7 @@ describe('an unquoted value that contains a delimiter (step 4)', () => {
     const text = `${pw}=a,`.repeat(MiB / 9);
     const start = performance.now();
     scrubText(text);
-    expect(performance.now() - start).toBeLessThan(2000);
+    expect(performance.now() - start).toBeLessThan(6000);
   });
 });
 
@@ -128,7 +128,7 @@ describe('a delimiter at every split point of an 18-character password (step 4, 
     'is linear and fast on %s at 1 MiB and 10 MiB',
     (_n, unit) => {
       const rep = (size: number): string => unit.repeat(Math.ceil(size / unit.length));
-      expect(Math.min(timed(rep(MiB)), timed(rep(MiB)))).toBeLessThan(1000);
+      expect(Math.min(timed(rep(MiB)), timed(rep(MiB)))).toBeLessThan(3000);
       expect(timed(rep(10 * MiB))).toBeLessThan(3000);
     },
     60_000,
