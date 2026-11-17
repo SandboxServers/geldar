@@ -25,6 +25,29 @@ class OtelLedgerMetricsTest {
     }
 
     @Test
+    void closeClosesEveryObservableInstrumentOnceAndIsIdempotent() {
+        OtelLedger l = ledger();
+        l.gaugeLong("g_long", "1", "d", () -> 1, "world", "w");
+        l.gaugeLong("g_long", "1", "d", () -> 2, "world", "x"); // same instrument, second series
+        l.gaugeDouble("g_double", "1", "d", () -> 1.0);
+        int observable = 0;
+        for (RecordingMeter.Instrument i : rm.instruments) {
+            if (i.observable) {
+                observable++;
+                assertEquals(0, i.closed, i.name);
+            }
+        }
+        assertEquals(4, observable); // dropped, depth, g_long, g_double
+        l.close();
+        l.close();
+        for (RecordingMeter.Instrument i : rm.instruments) {
+            if (i.observable) {
+                assertEquals(1, i.closed, i.name);
+            }
+        }
+    }
+
+    @Test
     void droppedTotalIsAnObservableCounterAndDepthStaysAGauge() {
         OtelLedger l = ledger();
         RecordingMeter.Instrument dropped = rm.named(Names.Queue.DROPPED_TOTAL).get(0);

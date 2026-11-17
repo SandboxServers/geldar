@@ -58,6 +58,8 @@ public final class OtelLedger implements Ledger, AutoCloseable {
             new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, ConcurrentHashMap<Attributes, DoubleSupplier>> doubleGauges =
             new ConcurrentHashMap<>();
+    /** Observable instrument handles, closed by {@link #close()}. */
+    private final java.util.List<AutoCloseable> handles = new java.util.concurrent.CopyOnWriteArrayList<>();
     private final EventDefs eventDefs = new EventDefs();
     private final EventDefs contentDefs = new EventDefs();
     private final EventRing eventRing;
@@ -100,13 +102,13 @@ public final class OtelLedger implements Ledger, AutoCloseable {
     private void registerQueueGauges() {
         try {
             // Monotonic totals: an observable counter (README section 4: counter), not a gauge.
-            meter.counterBuilder(Names.Queue.DROPPED_TOTAL).buildWithCallback(m -> {
+            handles.add(meter.counterBuilder(Names.Queue.DROPPED_TOTAL).buildWithCallback(m -> {
                 drops.snapshot().forEach((q, n) -> m.record(n, Attributes.of(QUEUE_KEY, q)));
-            });
-            meter.gaugeBuilder(Names.Queue.DEPTH).ofLongs().buildWithCallback(m -> {
+            }));
+            handles.add(meter.gaugeBuilder(Names.Queue.DEPTH).ofLongs().buildWithCallback(m -> {
                 m.record(eventRing.size(), Attributes.of(QUEUE_KEY, OtelEventSink.EVENTS));
                 m.record(contentRing.size(), Attributes.of(QUEUE_KEY, OtelEventSink.CONTENT));
-            });
+            }));
         } catch (RuntimeException e) {
             log.log(Level.WARNING, "ledger queue gauges not registered", e);
         }
@@ -140,6 +142,16 @@ public final class OtelLedger implements Ledger, AutoCloseable {
     @Override
     public void close() {
         emitter.close();
+        // unregister every observable callback, so a ledger built after a disable and enable does not report a second
+        // (stale) series under the same instrument names
+        for (AutoCloseable h : handles) {
+            try {
+                h.close();
+            } catch (Throwable e) {
+                log.log(Level.FINE, "instrument close failed", e);
+            }
+        }
+        handles.clear();
     }
 
     // --- metrics ---
@@ -260,19 +272,25 @@ public final class OtelLedger implements Ledger, AutoCloseable {
         return b.build();
     }
 
+    private void handle(AutoCloseable h) {
+        if (h != null) {
+            handles.add(h);
+        }
+    }
+
     @Override
     public void gaugeLong(String name, String unit, String description, LongSupplier reader, String... attrKeys) {
         Attributes a = gaugeAttributes(attrKeys);
         ConcurrentHashMap<Attributes, LongSupplier> series = longGauges.computeIfAbsent(name, n -> {
             ConcurrentHashMap<Attributes, LongSupplier> m = new ConcurrentHashMap<>();
-            guarded(() -> meter.gaugeBuilder(n).ofLongs().setUnit(unit).setDescription(description)
+            handle(guarded(() -> meter.gaugeBuilder(n).ofLongs().setUnit(unit).setDescription(description)
                     .buildWithCallback(om -> m.forEach((at, r) -> {
                         try {
                             om.record(r.getAsLong(), at);
                         } catch (RuntimeException e) {
                             log.log(Level.FINE, "gauge reader failed", e);
                         }
-                    })));
+                    }))));
             return m;
         });
         series.put(a, reader);
@@ -283,14 +301,14 @@ public final class OtelLedger implements Ledger, AutoCloseable {
         Attributes a = gaugeAttributes(attrKeys);
         ConcurrentHashMap<Attributes, DoubleSupplier> series = doubleGauges.computeIfAbsent(name, n -> {
             ConcurrentHashMap<Attributes, DoubleSupplier> m = new ConcurrentHashMap<>();
-            guarded(() -> meter.gaugeBuilder(n).setUnit(unit).setDescription(description)
+            handle(guarded(() -> meter.gaugeBuilder(n).setUnit(unit).setDescription(description)
                     .buildWithCallback(om -> m.forEach((at, r) -> {
                         try {
                             om.record(r.getAsDouble(), at);
                         } catch (RuntimeException e) {
                             log.log(Level.FINE, "gauge reader failed", e);
                         }
-                    })));
+                    }))));
             return m;
         });
         series.put(a, reader);
