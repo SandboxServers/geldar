@@ -176,4 +176,26 @@ describe('bluemap-web Caddyfile', () => {
       expect(r.headers['content-type']).toContain('application/json');
     });
   });
+
+  describe.skipIf(skip)('settings.json with an empty webroot (neither file)', () => {
+    const root = mkdtempSync(join(tmpdir(), 'bluemap-web-empty-'));
+    const name = `geldar-bluemap-web-empty-test-${process.pid}`;
+    let port = 0;
+
+    beforeAll(async () => {
+      // Neither geldar-settings.json nor BlueMap's settings.json: the fallback has nothing to serve.
+      port = await startCaddy(name, root);
+    }, 120_000);
+
+    afterAll(() => {
+      spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    it('answers GET /settings.json with 404 and keeps serving after the miss', async () => {
+      const r = await call(port, 'GET', '/settings.json');
+      expect(r.status).toBe(404);
+      expect((await call(port, 'GET', '/settings.json')).status).toBe(404);
+    });
+  });
 });

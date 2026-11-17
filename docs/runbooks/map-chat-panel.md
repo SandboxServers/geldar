@@ -74,34 +74,53 @@ Nothing here needs compose, and nothing restarts Paper or the shared Caddy.
    Empty output is expected. Any difference means BlueMap's output changed (a BlueMap upgrade, or a map added or removed
    under `config/maps/`). Stop: the pinned file must be updated in the repo first (the upgrade check in
    `plugins/bluemap/README.md`), then this section starts again from step 1.
-2. Back up the node's Caddyfile, and record its inode: `STAMP=$(date -u +%Y%m%dT%H%M%SZ)`,
-   `cp -p compose/bluemap-web/Caddyfile compose/bluemap-web/Caddyfile.bak-$STAMP`, `stat -c %i compose/bluemap-web/Caddyfile`.
-3. Hand-copy the pinned file into the webroot: `cat plugins/bluemap/web/geldar-settings.json > "$WEBROOT/geldar-settings.json"`,
+2. Back up the Caddyfile that the running container reads (not a copy of a repo file), and record the node file's inode:
+   ```
+   STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+   docker exec bluemap-web cat /etc/caddy/Caddyfile > compose/bluemap-web/Caddyfile.bak-$STAMP
+   test -s compose/bluemap-web/Caddyfile.bak-$STAMP
+   stat -c %i compose/bluemap-web/Caddyfile
+   ```
+3. Hand-copy the pinned file into the webroot, as root (sudo), because the webroot is on the Paper volume:
+   `cat plugins/bluemap/web/geldar-settings.json > "$WEBROOT/geldar-settings.json"`,
    then give it the owner and mode of the webroot's `settings.json` (`chown --reference` and `chmod --reference`).
    Check: `sha256sum "$WEBROOT/geldar-settings.json"` is `a3750e6e...161f69`, and the size is 542 bytes.
-4. Stage the new Caddyfile as `compose/bluemap-web/Caddyfile.new` (copy main's file there). Validate it in a throwaway
-   container of the same caddy image, with nothing from the node mounted except this file, read only, on the default network:
-   `docker run --rm -v "$PWD/compose/bluemap-web/Caddyfile.new:/etc/caddy/Caddyfile:ro" <caddy image> caddy validate --config /etc/caddy/Caddyfile`.
+4. Stage main's Caddyfile at `/tmp/Caddyfile.new`, outside the bind-mount source directory, and compare it with the
+   backup:
+   ```
+   git show origin/main:compose/bluemap-web/Caddyfile > /tmp/Caddyfile.new
+   diff compose/bluemap-web/Caddyfile.bak-$STAMP /tmp/Caddyfile.new
+   ```
+   The file comes from the checkout or from the config bundle, and it lands only at `/tmp/Caddyfile.new`: never extract
+   the bundle over `compose/bluemap-web/Caddyfile`. The only difference expected is the `/settings.json` handler hunk.
+   Stop and report on any other difference: the node's Caddyfile may have node-only edits that an overwrite would clobber.
+5. Validate the new Caddyfile in a throwaway container of the image the running container uses, with nothing from the
+   node mounted except this file, read only, on the default network:
+   `docker run --rm -v /tmp/Caddyfile.new:/etc/caddy/Caddyfile:ro $(docker inspect bluemap-web --format '{{.Config.Image}}') caddy validate --config /etc/caddy/Caddyfile`.
    It needs no other mount: the Caddyfile reads the pinned copy from `/srv`, which validate does not open. Do not go on
    unless validate prints "Valid configuration".
-5. Write the new Caddyfile in place: `cat compose/bluemap-web/Caddyfile.new > compose/bluemap-web/Caddyfile`. Never `mv`,
+6. Write the new Caddyfile in place: `cat /tmp/Caddyfile.new > compose/bluemap-web/Caddyfile`. Never `mv`,
    never `cp` over it through a rename, never `sed -i`. Check that `stat -c %i compose/bluemap-web/Caddyfile` equals the
-   inode from step 2, and that `docker exec bluemap-web sha256sum /etc/caddy/Caddyfile` equals `sha256sum compose/bluemap-web/Caddyfile.new`.
-   Then remove `Caddyfile.new`.
-6. `docker restart bluemap-web`. Same container, same networks, aliases, mounts and ports. `caddy reload` is not possible
+   inode from step 2, and that `docker exec bluemap-web sha256sum /etc/caddy/Caddyfile` equals `sha256sum /tmp/Caddyfile.new`.
+   Then remove `/tmp/Caddyfile.new`.
+7. `docker restart bluemap-web`. Same container, same networks, aliases, mounts and ports. `caddy reload` is not possible
    because the Caddyfile has `admin off`. Expect a few seconds of downtime on the public map.
-7. Verify, against `http://127.0.0.1:8100` (the container must be healthy within 20 seconds of the restart, or roll back):
+8. Verify, against `http://127.0.0.1:8100`. Within 20 seconds of the restart the container must be Up
+   (`docker ps --filter name=bluemap-web --format '{{.Status}}'` prints `Up ...`) and this must print `200`:
+   `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8100/settings.json`. bluemap-web has no healthcheck, so these
+   two checks replace one. If either fails within 20 seconds, roll back.
    - `curl -s http://127.0.0.1:8100/settings.json | cmp - plugins/bluemap/web/geldar-settings.json` prints nothing.
    - `curl -sI http://127.0.0.1:8100/settings.json` shows `content-type: application/json` and `cache-control: no-cache`.
    - `curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8100/settings.json` prints `405`.
    - `curl -sI` for `/assets/geldar-chat.js`, `/assets/geldar-sky.js`, `/assets/geldar.css` and `/geldar-chat.json` each return 200 (the feed may be 404 before any agent speaks).
-8. Hand step, not automated: prune the old `settings.json.bak-*` files in the webroot (`bluemap/web/` on the Paper volume).
+9. Hand step, not automated: prune the old `settings.json.bak-*` files in the webroot (`bluemap/web/` on the Paper volume).
    List them first with `ls -l "$WEBROOT"/settings.json.bak-*` (about 8 at the time of writing), keep the newest, and
    delete the rest by hand. The public site does not read them.
 
-**Rollback (BM-16c).** Write the saved Caddyfile back in place the same way as step 5 (`cat compose/bluemap-web/Caddyfile.bak-$STAMP > compose/bluemap-web/Caddyfile`,
-then the inode and sha256 checks), then `docker restart bluemap-web`, then re-verify the URLs in step 7. The webroot copy
-may stay: nothing references it then. Use the same rollback if the container is not healthy within 20 seconds.
+**Rollback (BM-16c).** Write the saved Caddyfile back in place the same way as step 6 (`cat compose/bluemap-web/Caddyfile.bak-$STAMP > compose/bluemap-web/Caddyfile`,
+then the inode and sha256 checks), then `docker restart bluemap-web`, then re-verify the URLs in step 8. The webroot copy
+may stay: nothing references it then. Use the same rollback if the container is not Up, or the `settings.json` check does
+not print `200`, within 20 seconds.
 
 The pinned copy holds the BlueMap 5.29 keys, the chat panel and dial scripts, and the stylesheet: `"scripts": ["assets/geldar-chat.js", "assets/geldar-sky.js"]` and `"styles": ["assets/geldar.css"]`. `version` must equal both
 `bluemap.lock.json` `version` and `known-keys.json` `bluemap`; `maps` must list the `config/maps/*.conf` names in the order of
@@ -120,7 +139,8 @@ Run before step 1 and again after step 2. Compare the `players.json` body before
 - `curl -s http://127.0.0.1:8100/settings.json | grep -o 'assets/geldar-\(chat\|sky\)\.js' | wc -l`: 2. `grep -o` prints
   each match, so the one-line `scripts` array counts 2; `grep -c` counts lines and would give 1.
 - After every BlueMap restart, the `settings.json` check above still returns 2: the public site reads the pinned copy, so
-  BlueMap's regenerated copy does not matter.
+  BlueMap's regenerated copy does not matter. If it returns 0 or the `settings.json` check fails, BlueMap deleted the
+  webroot copy: re-copy it (section 2a step 3, as root).
 - `curl -s http://127.0.0.1:8100/geldar-chat.json | grep -c 'ag_'`: 0. The feed holds no agent username; speech text has
   them replaced with `Ranger`.
 - Follow (BM-11): click a speaker's name in the panel. The camera follows that agent (its marker is the followed one, and the name gets the `gc-following` highlight). A second click stops the follow, and dragging the map cancels it and clears the highlight. An agent not on the map shows "Not on the map" for 3 s.
@@ -153,7 +173,8 @@ the warning above), the first command differs on purpose.
 
 1. Restore the previous geldar-core jar and restart Paper (owner approval).
 2. The public site reads the pinned `geldar-settings.json` in the webroot (BM-16c), not BlueMap's `settings.json`. To take the scripts off the page,
-   roll the Caddyfile back (section 2a, from the `.bak-<stamp>` copy) or remove the `scripts` entries from the pinned file in the repo.
+   roll the Caddyfile back (section 2a, from the `.bak-<stamp>` copy). Or remove the `scripts` entries from the pinned file in the repo, then
+   re-copy that file to the webroot (section 2a step 3, as root): the handler serves the webroot copy, so the repo edit has no effect on the node until the re-copy, and the URL checks in section 2a step 8 confirm it.
 3. Delete `geldar-chat.json` and `geldar-chat.json.tmp` (if present) from the BlueMap web root on the Paper volume.
 4. Undo the Caddyfile change: copy the `.bak-<stamp>` Caddyfile from section 2a step 2 back in place (section 2a rollback),
    then `docker restart bluemap-web`. Do not run compose.
