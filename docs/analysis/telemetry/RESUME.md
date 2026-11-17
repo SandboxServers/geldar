@@ -63,6 +63,7 @@ Merge a PR only if no changed file is in the colo-images path filter (colo-deplo
 
 ## Paper plugin cards
 Cards for Ledger (`plugin/ledger-core` plus the Paper adapter `plugin/ledger`) are in `docs/analysis/telemetry/paper-plugin/`: README.md, cards-*.md, scratch-test-plan.md, safety-rules.md. PT-08e (Velocity) is optional and needs the owner's nod.
+NeoForge plan (additive; Paper stays supported, cards PT-N1 to PT-N14): `docs/analysis/telemetry/neoforge-telemetry.md`.
 
 ## First hour for a replacement session
 1. Read this file.
