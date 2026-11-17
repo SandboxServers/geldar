@@ -13,7 +13,7 @@ sources: [../../deploy/scratch/scratch.sh, compose/opt-in/scratch.yml, shards/ch
 A throwaway copy of the Phase 0 shard stack (`compose/phase0.yml`) for the sheet campaign validation. It runs beside the
 live phase0 stack and the Colo stack without clashing: its own compose project (`scratch-<suffix>`), its own volumes,
 loopback-only ports on high defaults, and hard caps. `down` removes its containers, its volumes, its eventsink image
-and its secrets directory. The Docker build cache is not removed (prune it by hand if the disk needs it).
+and its secrets directory. The Docker build cache is not removed (prune it by hand if the disk needs it). The P0 probe image is not removed either; see "The probe image" under P0 probe.
 
 The sheet sink is not enabled. The overlay does not include `compose/opt-in/sheet-sink.yml` and `GELDAR_SHEET_SHARD` is
 unset, so a scratch run does not write to the sheet.
@@ -334,3 +334,97 @@ instead of `shards/phase0.yaml`, using the shard tooling in `geldar.ps1`. Do not
 - Evidence from a scratch run is for operators only. Agents in the run are never told they are being watched.
 - The secrets directory is created under the caller's state directory, never in the repo or in a shared temp
   directory. Nothing prints its values. `down` removes it, and only when it is a real directory the caller owns.
+
+## P0 probe
+
+The P0 probe is one run of the golem probe (`golem/src/p0/probe.ts`) against a scratch stack that `up` already started.
+It registers one Body, joins it through Velocity to Paper, runs one goto and one mine, and removes its own registry
+entry and whitelist entry. The overlay is `compose/opt-in/scratch-probe.yml` (service `p0-probe`, profile `p0`). Only the
+`probe` verb of `deploy/scratch/scratch.sh` starts it, so `up` never does. It never touches the Colo stack: the probe
+refuses unless its project is `scratch-<suffix>`, and its NATS and RCON credentials are the scratch ones.
+
+When to run: only when ops asks for it, on the scratch node, after `up` has reached healthy for that suffix.
+
+Steps, in order:
+
+1. In a clean export (`git archive` of main into a new empty temp dir outside the live checkout), run
+   `./geldar.ps1 shard nats-auth phase0` from the export.
+2. Make a second temp dir outside the repo. Copy six files from the export's `compose/secrets/`: `nats-auth.conf`,
+   `nats-paper.txt`, `nats-velocity.txt`, `nats-eventsink.txt`, `nats-seed.txt` and `nats-body.txt` (the body's NATS
+   password, which only the probe reads). Copy nothing else.
+3. Delete the export dir, which holds the generated files.
+4. On the node, with the same absolute auth dir for both verbs:
+
+        SCRATCH_NATS_AUTH_DIR=<absolute path of the six-file dir> SCRATCH_PLATFORM=neoforge sh deploy/scratch/scratch.sh up nf
+        SCRATCH_NATS_AUTH_DIR=<same path> SCRATCH_PLATFORM=neoforge sh deploy/scratch/scratch.sh probe nf
+
+   `up` checks five files and accepts the six-file dir. `probe` checks six and refuses with exit 2 and a message that
+   names `nats-body.txt` if that file is missing or empty. Give `SCRATCH_PLATFORM` the value `up` used: the `nf` stack
+   is NeoForge, and the probe's merged files must match its stack. `probe` also exits 2 when no container of the project
+   is running, when the project has no NATS override (`up` was not run with an auth dir), when `nats`, `velocity` or
+   `paper` has no healthy container (the message names the service), or when `SCRATCH_PLATFORM` is not `paper` or
+   `neoforge`. Nothing starts in any refusal. The probe runs with `--no-deps`, so compose does not check the health
+   of those services; the verb does.
+5. Keep the probe's output: stdout and stderr both (`2>&1`). The verb passes the probe's exit code through. Exit 2 from a
+   message that starts `scratch:` means the verb refused before compose ran; exit 2 from a message that starts
+   `p0 probe refused:` means the probe's isolation check refused.
+6. At teardown run `sh deploy/scratch/scratch.sh down nf`, remove the probe image (see "The probe image" below), then delete both temp dirs. The six-file dir holds the
+   password-bearing `nats-auth.conf` and `nats-body.txt`; delete it even when the probe failed. `down` never removes it.
+
+What the probe prints. The header comment of `golem/src/p0/probe.ts` is the reference for these lines; re-check it
+against the file before a run. As of this section:
+
+- stdout, in order:
+  - `p0 join ok name=ag_nfprobe_01 uuid=<uuid>` once the Body has joined. Match the username and UUID in the logs below;
+  - `p0 goto <state> status=<n> latency_ms=<n>`, then `p0 mine <state> status=<n> latency_ms=<n>`, each with
+    ` reason=<text>` when the action gave one. The run passes only when both states are `completed`;
+  - `p0 interrupted by SIGINT` or `p0 interrupted by SIGTERM`, if a signal arrived;
+  - `p0 cleanup registry=<removed|failed> whitelist=<removed|failed>`. It is printed on every run that reaches the cleanup,
+    and it is the last stdout line. It is the receipt for the registry and whitelist entries.
+- stderr (capture it too):
+  - `p0 disconnect failed: <reason>`, `p0 registry delete failed: <reason>` or `p0 whitelist remove failed: <reason>`,
+    one per failed cleanup step, printed before the cleanup line;
+  - `p0 failed: <reason>` for the first failed step (admission, registry put, join, goto, mine, or a signal), printed
+    after the cleanup line;
+  - `p0 heartbeat failed for <username>: <reason>` when a registry heartbeat fails during the run;
+  - `p0 probe refused: <rule>` for an isolation refusal. Nothing else is printed, and nothing is opened.
+- Exit codes: 0 only when join, goto and mine completed, both cleanup entries were removed and the disconnect was ok;
+  1 for any other run that started (a failed step, a signal, a failed cleanup step); 2 for the isolation refusal.
+  There is no separate exit-reason line: the reason for a non-zero exit is the `p0 failed:` line on stderr, or a
+  `failed` cleanup line.
+
+Comparing the username and UUID with the server logs (the grep forms are unverified on the 26.1 server logs; record the
+raw output with the run, not a summary):
+
+    docker logs scratch-nf-paper-1 2>&1 | grep -i '<username>'
+    docker logs scratch-nf-paper-1 2>&1 | grep -i '<uuid>'
+    docker logs scratch-nf-velocity-1 2>&1 | grep -i '<username>'
+
+The username should appear in the Velocity log at the join and in the Paper log at the login, with the same UUID. A
+mismatch in either is a failure to report, even if the probe exited 0. The container names are the compose names for
+the `scratch-nf` project; confirm them with `docker ps` first (unverified until a node run).
+
+Cleanup expectations: the probe removes its registry entry and its whitelist entry on every exit, including failure
+and a signal. Confirm both after the run, with the stack still up:
+
+    docker exec scratch-nf-paper-1 rcon-cli whitelist list
+
+The probe's username must not be in that list. For the registry, the probe's cleanup line (`p0 cleanup registry=...`) is the
+record; no operator-side registry read is verified yet. If the whitelist still lists the probe's username, or the
+cleanup line says `failed`, record it as a finding and keep the stack up for inspection before `down`.
+
+The probe image. `probe` builds `geldar-body:<project>` (for example `geldar-body:scratch-nf`). That is a custom tag, so
+`down --rmi local` does not remove it, and the probe overlay is not in the `down` file set. `down` therefore leaves the
+image behind, one per suffix. After `down` has finished (this prints nothing: `docker ps -a --filter label=com.docker.compose.project=scratch-nf`),
+ops removes it by hand:
+
+    docker images geldar-body
+    docker rmi geldar-body:scratch-nf
+    docker images geldar-body
+
+The second `docker images` must not list the `scratch-nf` tag. `docker rmi` deletes the image only when no other tag
+refers to it. This cleanup is not verified on a node run.
+
+The probe never touches colo. Its overlay is added only by the `probe` verb, and only to a `scratch-<suffix>` project.
+Its password files are scratch-only and come from the clean export. Nothing it prints is a secret: no password, token or
+RCON value appears in its output, and none may be pasted into a report.
