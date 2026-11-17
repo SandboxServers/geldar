@@ -32,7 +32,14 @@ interface Overlay {
   secrets: Record<string, { file: string }>;
 }
 
-const OVERLAY = parse(OVERLAY_TEXT, { customTags: [OVERRIDE] }) as Overlay;
+/** The same tag on a mapping: compose replaces the whole healthcheck of nats under !override. */
+const OVERRIDE_MAP: CollectionTag = {
+  tag: '!override',
+  collection: 'map',
+  resolve: (node: unknown) => ({ override: true, items: (node as { toJSON(): unknown }).toJSON() }),
+};
+
+const OVERLAY = parse(OVERLAY_TEXT, { customTags: [OVERRIDE, OVERRIDE_MAP] }) as Overlay;
 const BASE = parse(PHASE0_TEXT) as { services: Record<string, { ports?: string[] }> };
 const OVERLAY_SERVICES = ['postgres', 'nats', 'paper', 'velocity', 'eventsink'];
 
