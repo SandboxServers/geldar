@@ -9,9 +9,9 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  AUTH,
   type Env,
   JARS,
-  OPEN,
   runScript,
   SCRIPT,
   skipWithoutSh,
@@ -51,7 +51,7 @@ describe.skipIf(skipWithoutSh())(
     it('a non-root account other than 1000 starts, and the compose call runs the eventsink as its uid:gid', () => {
       const run = runScript(
         ['up'],
-        { ...OPEN, ...ACCT_1001 },
+        { ...AUTH, ...ACCT_1001 },
         { ...JARS, watch: ['state/geldar-scratch/scratch-a'] },
       );
       expect(run.status).toBe(0);
@@ -61,7 +61,7 @@ describe.skipIf(skipWithoutSh())(
     });
 
     it('the eventsink user is set under the default uid 1000 too: compose cannot branch on the uid', () => {
-      const run = runScript(['up'], OPEN, JARS);
+      const run = runScript(['up'], AUTH, JARS);
       expect(started(run)).toBe(true);
       expect(callOf(run.calls, ' up -d')).toContain('RUN=1000:1000');
     });
@@ -70,7 +70,7 @@ describe.skipIf(skipWithoutSh())(
       for (const extra of [{}, { SCRATCH_CONTAINER_UID: '1000' }]) {
         const run = runScript(
           ['up'],
-          { ...OPEN, STUB_ACCT_UID: '0', ...extra },
+          { ...AUTH, STUB_ACCT_UID: '0', ...extra },
           { ...JARS, watch: ['state/geldar-scratch'] },
         );
         expect(run.status).toBe(1);
@@ -83,7 +83,7 @@ describe.skipIf(skipWithoutSh())(
     it('GELDAR_SERVICE_UID set to another uid exits 1 before any state directory is made', () => {
       const run = runScript(
         ['up'],
-        { ...OPEN, ...ACCT_1001, GELDAR_SERVICE_UID: '1000' },
+        { ...AUTH, ...ACCT_1001, GELDAR_SERVICE_UID: '1000' },
         { ...JARS, watch: ['state/geldar-scratch'] },
       );
       expect(run.status).toBe(1);
@@ -95,7 +95,7 @@ describe.skipIf(skipWithoutSh())(
     it('the uid and the gid are read from their own variables: an account of 1001:1002 runs the eventsink as 1001:1002', () => {
       const run = runScript(
         ['up'],
-        { ...OPEN, STUB_ACCT_UID: '1001', STUB_ACCT_GID: '1002' },
+        { ...AUTH, STUB_ACCT_UID: '1001', STUB_ACCT_GID: '1002' },
         JARS,
       );
       expect(run.status).toBe(0);
@@ -106,7 +106,7 @@ describe.skipIf(skipWithoutSh())(
       for (const bad of ['10x1', '-1001', '1001 ', '1.5', 'abc']) {
         const run = runScript(
           ['up'],
-          { ...OPEN, ...ACCT_1001, GELDAR_SERVICE_UID: bad },
+          { ...AUTH, ...ACCT_1001, GELDAR_SERVICE_UID: bad },
           { ...JARS, watch: ['state/geldar-scratch'] },
         );
         expect(run.status, `GELDAR_SERVICE_UID='${bad}'`).toBe(2);
@@ -117,7 +117,7 @@ describe.skipIf(skipWithoutSh())(
     });
 
     it('GELDAR_SERVICE_UID equal to the account uid starts', () => {
-      const run = runScript(['up'], { ...OPEN, ...ACCT_1001, GELDAR_SERVICE_UID: '1001' }, JARS);
+      const run = runScript(['up'], { ...AUTH, ...ACCT_1001, GELDAR_SERVICE_UID: '1001' }, JARS);
       expect(run.status).toBe(0);
       expect(started(run)).toBe(true);
     });
@@ -126,7 +126,7 @@ describe.skipIf(skipWithoutSh())(
       for (const bad of ['', '10x', '-1', '0']) {
         const run = runScript(
           ['up'],
-          { ...OPEN, ...ACCT_1001, SCRATCH_CONTAINER_UID: bad },
+          { ...AUTH, ...ACCT_1001, SCRATCH_CONTAINER_UID: bad },
           { ...JARS, watch: ['state/geldar-scratch'] },
         );
         expect(run.status, `SCRATCH_CONTAINER_UID='${bad}'`).toBe(2);
@@ -137,14 +137,14 @@ describe.skipIf(skipWithoutSh())(
     });
 
     it('SCRATCH_CONTAINER_UID that differs from the account uid is reported and still starts', () => {
-      const run = runScript(['up'], { ...OPEN, ...ACCT_1001, SCRATCH_CONTAINER_UID: '1000' }, JARS);
+      const run = runScript(['up'], { ...AUTH, ...ACCT_1001, SCRATCH_CONTAINER_UID: '1000' }, JARS);
       expect(run.status).toBe(0);
       expect(run.stderr).toContain("not the image's uid 1000");
       expect(callOf(run.calls, ' up -d')).toContain('RUN=1001:1001');
     });
 
     it('SCRATCH_CONTAINER_UID equal to the account uid is not reported', () => {
-      const run = runScript(['up'], { ...OPEN, ...ACCT_1001, SCRATCH_CONTAINER_UID: '1001' }, JARS);
+      const run = runScript(['up'], { ...AUTH, ...ACCT_1001, SCRATCH_CONTAINER_UID: '1001' }, JARS);
       expect(run.status).toBe(0);
       expect(run.stderr).not.toContain("not the image's uid");
     });
@@ -161,7 +161,7 @@ describe.skipIf(skipWithoutSh())(
     it('NeoForge with account uid 1001 and SCRATCH_CONTAINER_UID=1000: the nf secrets directory is made, the eventsink runs as 1001:1001, and the compose call carries the NeoForge overlay', () => {
       const run = runScript(
         ['up', 'nf'],
-        { ...OPEN, ...NF, ...ACCT_1001, SCRATCH_CONTAINER_UID: '1000' },
+        { ...AUTH, ...NF, ...ACCT_1001, SCRATCH_CONTAINER_UID: '1000' },
         { ...JARS, watch: ['state/geldar-scratch/scratch-nf'] },
       );
       const up = callOf(run.calls, ' up -d');
