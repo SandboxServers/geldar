@@ -12,7 +12,7 @@ The spec's runbook says `make shard SHARD=baseline up`; on this repo that is
   ./geldar.ps1 check                 Every check CI runs, in CI's order
   ./geldar.ps1 shard up <name>       Create missing secrets, rebuild the repo images, start compose/<name>.yml and wait until healthy (--rcon-host publishes RCON to the host)
   ./geldar.ps1 shard secrets <name>  Create missing files in compose/secrets/ (never overwrites)
-  ./geldar.ps1 shard nats-auth <name>  Create the opt-in NATS users, server config and Thinker token in compose/secrets/ (decision 0067; untested live)
+  ./geldar.ps1 shard nats-auth <name> [--local|--scratch]  Create the opt-in NATS users, server config and Thinker token in compose/secrets/ (decision 0067; untested live). phase0 in a git checkout needs --local; --scratch is for a clean git archive export only
   ./geldar.ps1 shard down <name>     Stop the shard (volumes are kept)
   ./geldar.ps1 shard status <name>   Show container health
   ./geldar.ps1 shard logs <name> [service]
@@ -316,8 +316,28 @@ function Assert-ColoNatsSecrets {
 # component user in compose/secrets/nats-<user>.txt and the server config nats-auth.conf that
 # names the GELDAR account and each user's publish and subscribe allow lists. Both are git-ignored,
 # owner-only by ACL, and never overwritten. The lists are untested against a live server.
-function Initialize-NatsAuth([string] $Shard) {
+#
+# The phase0 table is used both by the local desktop stack (in a git checkout) and by a scratch run (in a clean git archive
+# export, which has no .git). Generating in the live checkout by mistake put scratch passwords next to the local ones, so
+# phase0 must say which one it is. Assert-NatsAuthIntent throws before anything is written. Colo and other shards are not guarded.
+function Assert-NatsAuthIntent([string] $Shard, [string[]] $Flags) {
+  if ($Shard -ne 'phase0') { return }
+  $scratch = $Flags -contains '--scratch'
+  $local = $Flags -contains '--local'
+  if ($scratch -and $local) { throw 'shard nats-auth phase0: --scratch and --local are two different intents; pass one. Nothing was written.' }
+  $checkout = Test-Path -LiteralPath (Join-Path $Root '.git')
+  if ($scratch -and $checkout) {
+    throw 'shard nats-auth phase0 --scratch is refused: this is a git checkout (a .git entry exists). A scratch run generates in a clean export made with git archive -o <file> <commit>, extracted into an empty directory; see docs/runbooks/scratch-stack.md. Nothing was written.'
+  }
+  if ($local -or $scratch) { return }
+  if ($checkout) {
+    throw 'shard nats-auth phase0 needs one flag, because this is a git checkout. Pass --local to generate the local desktop phase0 NATS auth in this checkout, or --scratch for a scratch run (refused in a checkout). The scratch runbook uses --scratch, inside a clean export. Nothing was written.'
+  }
+}
+
+function Initialize-NatsAuth([string] $Shard, [string[]] $Flags = @()) {
   Get-ComposeFile $Shard | Out-Null
+  Assert-NatsAuthIntent $Shard $Flags
   $dir = Join-Path $Root 'compose/secrets'
   New-Item -ItemType Directory -Force $dir | Out-Null
   $conf = Join-Path $dir 'nats-auth.conf'
@@ -450,7 +470,7 @@ function Invoke-Shard([string[]] $ShardArgs) {
   $compose = @('compose') + $files + @('-p', "geldar-$shard")
   switch ($action) {
     'secrets' { Initialize-ShardSecrets $shard }
-    'nats-auth' { Initialize-NatsAuth $shard }
+    'nats-auth' { Initialize-NatsAuth $shard @($ShardArgs | Select-Object -Skip 2) }
     'up' {
       if ($shard -eq 'colo') { Assert-ColoNatsSecrets }
       Assert-PluginJar $shard
@@ -587,7 +607,7 @@ Usage: ./geldar.ps1 <command> [args]
   ./geldar.ps1 check                 Every check CI runs, in CI's order
   ./geldar.ps1 shard up <name>       Create missing secrets, rebuild the repo images, start compose/<name>.yml and wait until healthy (--rcon-host publishes RCON to the host)
   ./geldar.ps1 shard secrets <name>  Create missing files in compose/secrets/ (never overwrites)
-  ./geldar.ps1 shard nats-auth <name>  Create the opt-in NATS users, server config and Thinker token in compose/secrets/ (decision 0067; untested live)
+  ./geldar.ps1 shard nats-auth <name> [--local|--scratch]  Create the opt-in NATS users, server config and Thinker token in compose/secrets/ (decision 0067; untested live). phase0 in a git checkout needs --local; --scratch is for a clean git archive export only
   ./geldar.ps1 shard down <name>     Stop the shard (volumes are kept)
   ./geldar.ps1 shard status <name>   Show container health
   ./geldar.ps1 shard logs <name> [service]

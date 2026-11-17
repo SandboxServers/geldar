@@ -10,6 +10,11 @@ sources: [../../deploy/scratch/scratch.sh, compose/opt-in/scratch.yml, shards/ch
 
 # Scratch stack
 
+The NATS auth generator (`./geldar.ps1 shard nats-auth phase0`) must never run in the live checkout: it would write scratch
+passwords into that checkout's `compose/secrets/`. The guard enforces this. In a git checkout (a `.git` entry exists),
+`--scratch` is refused and writes nothing, and a run with no flag is refused too. `--local` is the local desktop phase0
+stack and works in a checkout. Scratch runs use `--scratch` inside a clean `git archive` export, as the steps below say.
+
 A throwaway copy of the Phase 0 shard stack (`compose/phase0.yml`) for the sheet campaign validation. It runs beside the
 live phase0 stack and the Colo stack without clashing: its own compose project (`scratch-<suffix>`), its own volumes,
 loopback-only ports on high defaults, and hard caps. `down` removes its containers, its volumes, its eventsink image
@@ -294,7 +299,7 @@ and run the generator again, or the seed fails with an authorization error. The 
 untested against a live server.
 
 The auth dir is generated in a clean export (`git archive` of main), never in the live checkout. The generator is
-`./geldar.ps1 shard nats-auth <shard>` (`Initialize-NatsAuth` in `geldar.ps1`). It writes into the export's
+`./geldar.ps1 shard nats-auth phase0 --scratch` (`Initialize-NatsAuth` in `geldar.ps1`). It writes into the export's
 `compose/secrets/` (git-ignored) and reuses any file already there, so a clean export makes every scratch user fresh:
 no live Body, Mind or MCP password can reach the node.
 
@@ -306,11 +311,23 @@ run on the shared node, and cannot run the identity seed, which needs the auth d
 no override says it was not started with `SCRATCH_NATS_AUTH_DIR`. If `SCRATCH_NATS_AUTH_DIR` is set but invalid, `up`
 exits 2.
 
+The export procedure (every scratch run that generates auth files, and the probe, uses it). Use a file, never a pipe:
+
+1. `git fetch origin`, then `git archive -o <absolute path to a file>.tar <commit>`, where `<commit>` is the commit of main
+   (`git rev-parse origin/main`). The file is outside the live checkout. Never pipe `git archive` into `tar`.
+   If this fails, STOP.
+2. List the archive: `tar -tf <file>.tar`. Stop if any entry is an absolute path or contains `..`. A check that prints
+   nothing when the archive is clean is `tar -tf <file>.tar | Select-String -Pattern '^/|^[A-Za-z]:|(^|/)\.\.(/|$)'`.
+3. Extract into an empty directory outside the checkout: `tar -xf <file>.tar -C <empty-dir>`. If the directory already
+   holds files, pick another one.
+4. Check the directory exists, then change into it, and confirm the change worked (`Set-Location <empty-dir>` succeeds and
+   `(Get-Location).Path` is that directory) before running anything. If any check fails, STOP.
+
 The flow, in order:
 
-1. On the desktop, in a clean export: `git archive` of main into a new empty temp dir outside the live checkout, then
-   from that export run `./geldar.ps1 shard nats-auth <shard>`. It never overwrites a file that exists; the export has
-   none, so every file it writes is new for this run.
+1. On the desktop, make the clean export (the export procedure above), then from that export directory run
+   `./geldar.ps1 shard nats-auth phase0 --scratch`. It never overwrites a file that exists; the export has none, so every
+   file it writes is new for this run. If any export step fails, STOP. Do not run the generator in the checkout.
 2. Make a second temp dir outside the repo. Copy only `nats-auth.conf`, `nats-paper.txt`, `nats-velocity.txt`,
    `nats-eventsink.txt` and `nats-seed.txt` from the export's `compose/secrets/` into it. The first four are the files
    `compose/nats-auth.yml` mounts; the fifth is the seed's (`compose/opt-in/scratch.yml`). Do not copy anything else.
@@ -407,8 +424,9 @@ When to run: only when ops asks for it, on the scratch node, after `up` has reac
 
 Steps, in order:
 
-1. In a clean export (`git archive` of main into a new empty temp dir outside the live checkout), run
-   `./geldar.ps1 shard nats-auth phase0` from the export.
+1. In a clean export (the export procedure in the NATS auth section, from main), run
+   `./geldar.ps1 shard nats-auth phase0 --scratch` from the export. If any export step fails, STOP; do not run it in the
+   checkout.
 2. Make a second temp dir outside the repo. Copy six files from the export's `compose/secrets/`: `nats-auth.conf`,
    `nats-paper.txt`, `nats-velocity.txt`, `nats-eventsink.txt`, `nats-seed.txt` and `nats-body.txt` (the body's NATS
    password, which only the probe reads). Copy nothing else.
@@ -525,7 +543,9 @@ never from the live checkout, as the nats-auth section does.
    ```
    git fetch origin
    COMMIT=$(git rev-parse origin/main)
-   git archive --format=tar --prefix=geldar/ "$COMMIT" | tar -x -C <empty-dir>
+   git archive --format=tar --prefix=geldar/ -o <absolute-file>.tar "$COMMIT"
+   tar -tf <absolute-file>.tar        # stop if any entry is absolute or contains ..
+   tar -xf <absolute-file>.tar -C <empty-dir>
    ```
 
 2. Build. The output dir is absolute and absent or empty. Pass the commit from step 1 as `GELDAR_MOD_BUILD_COMMIT` (exactly

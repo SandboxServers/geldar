@@ -200,11 +200,18 @@ export interface Rendered {
   stderr: string;
 }
 
+export interface RenderOptions {
+  /** Extra arguments after the shard name, such as `--local` or `--scratch`. */
+  flags?: string[];
+  /** Adds a `.git` entry to the temp copy, which makes it look like a git checkout (a clean export has none). */
+  checkout?: boolean;
+}
+
 /**
  * Runs the real generator for the phase0 shard, in a temp copy of the repo's generator inputs. The caller removes `dir`.
  * The repo's own compose/secrets/ is never written.
  */
-export function renderGenerator(shard: string = SHARD): Rendered {
+export function renderGenerator(shard: string = SHARD, opts: RenderOptions = {}): Rendered {
   const dir = mkdtempSync(join(tmpdir(), 'geldar-nats-auth-'));
   copyFileSync(join(ROOT, 'geldar.ps1'), join(dir, 'geldar.ps1'));
   cpSync(join(ROOT, 'shards'), join(dir, 'shards'), { recursive: true });
@@ -212,9 +219,18 @@ export function renderGenerator(shard: string = SHARD): Rendered {
   for (const f of readdirSync(join(ROOT, 'compose'))) {
     if (f.endsWith('.yml')) copyFileSync(join(ROOT, 'compose', f), join(dir, 'compose', f));
   }
+  if (opts.checkout) mkdirSync(join(dir, '.git'));
   const run = spawnSync(
     'pwsh',
-    ['-NoProfile', '-File', join(dir, 'geldar.ps1'), 'shard', 'nats-auth', shard],
+    [
+      '-NoProfile',
+      '-File',
+      join(dir, 'geldar.ps1'),
+      'shard',
+      'nats-auth',
+      shard,
+      ...(opts.flags ?? []),
+    ],
     { encoding: 'utf8', cwd: dir },
   );
   const confPath = join(dir, 'compose', 'secrets', 'nats-auth.conf');
