@@ -58,6 +58,7 @@ public final class LedgerMod {
             isolated("progress", () -> dev.geldar.ledger.neoforge.players.ProgressWiring.install(l, host, scheduler));
             isolated("curated", () -> dev.geldar.ledger.neoforge.curated.CuratedWiring.install(l, host, scheduler));
             isolated("audit", () -> dev.geldar.ledger.neoforge.audit.AuditWiring.install(l, host));
+            isolated("world, server, snapshot", () -> StateWiring.install(l, host, scheduler));
         } catch (Throwable t) {
             rethrowIfVmError(t);
             LOG.warning("ledger setup failed, ledger off: " + t.getClass().getName());
