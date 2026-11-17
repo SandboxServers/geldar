@@ -119,6 +119,21 @@ class EventRingTest {
   }
 
   @Test
+  void stopSetAfterTakingARecordKeepsItFromTheSinkAndCountsADrop() {
+    DropCounters drops = new DropCounters();
+    EventRing ring = new EventRing("q", 8, drops);
+    ring.offer(1, 0, 0, 0, null, null, null);
+    int[] polls = {0};
+    int[] delivered = {0};
+    // false at the loop top, true just before the sink call.
+    int n =
+        ring.drain(10, (q, id, t, a, b, c, x, y, z) -> delivered[0]++, NO_ERRORS, () -> polls[0]++ >= 1);
+    assertEquals(1, n);
+    assertEquals(0, delivered[0]);
+    assertEquals(1L, drops.dropped("q"));
+  }
+
+  @Test
   void drainStopsTakingRecordsOnceStopIsSet() {
     DropCounters drops = new DropCounters();
     EventRing ring = new EventRing("q", 8, drops);
@@ -162,7 +177,7 @@ class EventRingTest {
 
   @Test
   void manyProducersLoseNothingAndRecordsAreIntact() throws Exception {
-    for (int capacity : new int[] {4, 1024}) {
+    for (int capacity : new int[] {2, 4, 64, 1024}) {
       producersRound(capacity);
     }
   }
@@ -171,8 +186,8 @@ class EventRingTest {
   private static void producersRound(int capacity) throws Exception {
     DropCounters drops = new DropCounters();
     EventRing ring = new EventRing("q", capacity, drops);
-    int producers = 4;
-    int each = 50_000;
+    int producers = 6;
+    int each = 150_000;
     long[] accepted = new long[producers];
     Thread[] ts = new Thread[producers];
     for (int p = 0; p < producers; p++) {
