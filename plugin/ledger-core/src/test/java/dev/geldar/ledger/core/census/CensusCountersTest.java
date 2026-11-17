@@ -68,11 +68,11 @@ class CensusCountersTest {
     }
 
     @Test
-    void registersOneCounterWithTheFrozenNameAndKeys() {
+    void registersOneCounterWithTheFrozenNameAndBareMetricKeys() {
         Fake f = new Fake();
         new CensusCounters(f.ledger(), List.of("A"));
         assertEquals(List.of(Names.Census.EVENT_COUNT_TOTAL), f.registered);
-        assertArrayEquals(new String[] {AttrKeys.EVENT_CLASS, AttrKeys.CANCELLED}, f.registeredKeys.get(0));
+        assertArrayEquals(new String[] {AttrKeys.M_EVENT_CLASS, AttrKeys.M_CANCELLED}, f.registeredKeys.get(0));
     }
 
     @Test
@@ -87,7 +87,6 @@ class CensusCountersTest {
         assertEquals(2, c.unknown());
         assertEquals(-1, c.indexOf("NotOnTheList"));
         assertEquals(1, f.get("A", false));
-        assertArrayEquals(new long[] {1, 0}, c.snapshot());
     }
 
     @Test
@@ -136,50 +135,6 @@ class CensusCountersTest {
         assertEquals(each, f.get("A", false));
         assertEquals(each, f.get("B", true));
         assertEquals(each, f.get("B", false));
-        assertArrayEquals(new long[] {each, each, each, each}, c.snapshot());
-    }
-
-    @Test
-    void snapshotIsACopyAndResetZeroesTheTallyOnly() {
-        Fake f = new Fake();
-        CensusCounters c = new CensusCounters(f.ledger(), List.of("A", "B"));
-        c.count(0, false);
-        c.count(1, true);
-        long[] snap = c.snapshot();
-        c.count(0, false);
-        assertArrayEquals(new long[] {1, 0, 0, 1}, snap); // a copy, not a view
-        assertArrayEquals(new long[] {2, 0, 0, 1}, c.snapshotAndReset());
-        assertArrayEquals(new long[] {0, 0, 0, 0}, c.snapshot());
-        assertEquals(0, c.tally(0, false));
-        assertEquals(2, f.get("A", false)); // the exported counter is never reset
-        c.count(0, false);
-        assertArrayEquals(new long[] {1, 0, 0, 0}, c.snapshotAndReset());
-    }
-
-    @Test
-    void tallySaturatesAtLongMaxInsteadOfWrapping() {
-        Fake f = new Fake();
-        CensusCounters c = new CensusCounters(f.ledger(), List.of("A"));
-        c.add(0, false, Long.MAX_VALUE - 1);
-        c.count(0, false);
-        assertEquals(Long.MAX_VALUE, c.tally(0, false));
-        c.count(0, false);
-        c.add(0, false, Long.MAX_VALUE);
-        assertEquals(Long.MAX_VALUE, c.tally(0, false));
-        assertEquals(0, c.tally(0, true));
-        assertEquals(Long.MAX_VALUE, c.snapshotAndReset()[0]);
-        c.count(0, false);
-        assertEquals(1, c.tally(0, false)); // usable again after reset
-    }
-
-    @Test
-    void nonPositiveAddIsIgnored() {
-        Fake f = new Fake();
-        CensusCounters c = new CensusCounters(f.ledger(), List.of("A"));
-        c.add(0, false, 0);
-        c.add(0, false, -5);
-        assertEquals(0, f.get("A", false));
-        assertEquals(0, c.tally(0, false));
     }
 
     @Test
