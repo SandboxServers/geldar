@@ -131,6 +131,15 @@ public final class ConfigParser {
         if (v.isEmpty() || v.length() > 256 || v.chars().anyMatch(Character::isISOControl)) {
             throw new IllegalArgumentException("expected a non-empty path of at most 256 chars");
         }
+        // PT-10a: a path never names secrets (any case), never walks up with a '..' segment. NUL is a control char.
+        if (v.toLowerCase(Locale.ROOT).contains("secret")) {
+            throw new IllegalArgumentException("path rejected: it must not contain 'secret'");
+        }
+        for (String segment : v.split("[/\\\\]")) {
+            if (segment.equals("..")) {
+                throw new IllegalArgumentException("path rejected: '..' segments are not allowed");
+            }
+        }
         return v;
     }
 

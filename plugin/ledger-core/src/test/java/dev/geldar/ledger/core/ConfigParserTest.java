@@ -119,4 +119,33 @@ class ConfigParserTest {
         ConfigParser.ParseResult r = parse("enabled", "false", "bogus", "1");
         assertNull(r.config());
     }
+
+    @Test
+    void goodPathsAreAccepted() {
+        ConfigParser.ParseResult r = parse("disk.area.world.path", "world", "disk.area.logs.path", "/srv/mc/logs", "container.cgroup_root", "/sys/fs/cgroup");
+        assertTrue(r.ok());
+        assertEquals("world", r.config().diskAreaPath("world"));
+        assertEquals("/srv/mc/logs", r.config().diskAreaPath("logs"));
+    }
+
+    @Test
+    void pathsWithSecretDotDotOrNulAreRejectedWithoutEchoingTheValue() {
+        String[] bad = {
+            "/run/secrets", "/data/SeCrEt/x", "secret", "/a/mysecretdir", "../world", "a/../b", "a\\..\\b", "..", "/x/..",
+            "wor\u0000ld"
+        };
+        for (String v : bad) {
+            ConfigParser.ParseResult r = parse("disk.area.world.path", v);
+            assertFalse(r.ok(), "disk path " + v.replace('\u0000', '0'));
+            assertEquals(1, r.errors().size());
+            assertTrue(r.errors().get(0).length() < 120, "bounded");
+            assertFalse(r.errors().get(0).toLowerCase().contains("secrets"), "value is not echoed");
+            assertFalse(parse("container.cgroup_root", v).ok(), "cgroup root " + v.replace('\u0000', '0'));
+        }
+    }
+
+    @Test
+    void dotsInsideANameAreNotADotDotSegment() {
+        assertTrue(parse("disk.area.world.path", "a..b/c...d").ok());
+    }
 }
