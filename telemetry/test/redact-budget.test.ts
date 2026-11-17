@@ -16,7 +16,9 @@ describe('the work budget covers Error values (step 2)', () => {
     const errors = Array.from({ length: 300 }, () => new Error('a'.repeat(65_536)));
     const { ms, out } = run(errors);
     expect(ms).toBeLessThan(1500);
-    expect(out.filter((e) => typeof e === 'string' && e.startsWith('[omitted ')).length).toBeGreaterThan(200);
+    expect(
+      out.filter((e) => typeof e === 'string' && e.startsWith('[omitted ')).length,
+    ).toBeGreaterThan(200);
     expect(typeof out[0]).toBe('object');
   });
 
@@ -29,7 +31,9 @@ describe('the work budget covers Error values (step 2)', () => {
     expect(ms).toBeLessThan(1500);
     expect(JSON.stringify(out)).not.toContain(secret);
     expect(JSON.stringify(out)).toContain(R);
-    expect(out.filter((e) => typeof e === 'string' && e.startsWith('[omitted ')).length).toBeGreaterThan(200);
+    expect(
+      out.filter((e) => typeof e === 'string' && e.startsWith('[omitted ')).length,
+    ).toBeGreaterThan(200);
   });
 
   it('omits an Error once the budget is gone even when it holds a credential', () => {

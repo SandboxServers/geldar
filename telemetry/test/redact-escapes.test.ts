@@ -37,7 +37,9 @@ describe('a quoted credential value with escapes (step 1)', () => {
       const json = JSON.stringify({ [tk]: `Zq9x${tail}`, after: 'ok' });
       expect(scrubText(json)).toBe(JSON.stringify({ [tk]: R, after: 'ok' }));
       const nested = JSON.stringify({ args: json });
-      expect(scrubText(nested)).toBe(JSON.stringify({ args: JSON.stringify({ [tk]: R, after: 'ok' }) }));
+      expect(scrubText(nested)).toBe(
+        JSON.stringify({ args: JSON.stringify({ [tk]: R, after: 'ok' }) }),
+      );
     }
   });
 
