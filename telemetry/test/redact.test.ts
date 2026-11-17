@@ -22,7 +22,7 @@ describe('redactContent', () => {
   });
 
   it('scrubs string values: a bearer string and a token-shaped string', () => {
-    const out = redactContent({ note: 'Bearer abc123', other: [token], n: 3 });
+    const out = redactContent({ note: 'Bearer abc12345', other: [token], n: 3 });
     expect(out).toEqual({ note: REDACTED, other: [REDACTED], n: 3 });
   });
 
@@ -162,7 +162,7 @@ describe('redactContent: plain JSON-safe output', () => {
 
   it('copies Map and Set entries with redaction and a bound', () => {
     const map = new Map<string, unknown>([
-      ['a', 'Bearer abc123'],
+      ['a', 'Bearer abc12345'],
       [word, 'x'],
     ]);
     expect(redactContent({ m: map, s: new Set(['ok', token]) })).toEqual({
@@ -209,7 +209,7 @@ describe('redactContent: shared sub-objects and thrown values', () => {
 
   it('scrubs error.name', () => {
     const err = new Error('m');
-    err.name = `Bearer ${'q'.repeat(10)}`;
+    err.name = `Bearer ${'q1'.repeat(5)}`;
     expect(errorFields(err)['exception.type']).toBe(REDACTED);
   });
 
@@ -253,8 +253,8 @@ describe('scrubText: credential forms', () => {
     ['JSON Basic', `{"Authorization":"Basic ${b64}"}`, `{"Authorization":"${R}"}`],
     ['JSON Token lower key', '{"authorization": "Token abcdef"}', `{"authorization": "${R}"}`],
     ['lower-case bearer with token', 'bearer abc12345', R],
-    ['Bearer colon', 'Bearer: abcdef', R],
-    ['Bearer quoted', 'Bearer "abcdef" next', `${'"'}${R}" next`],
+    ['Bearer colon', 'Bearer: abcDEF123', R],
+    ['Bearer quoted', 'Bearer "abc12345" next', `${'"'}${R}" next`],
     ['password with @', 'https://u:p@ss@host/x', `https://${R}@host/x`],
     ['Proxy-Authorization', 'Proxy-Authorization: Basic abc', R],
     ['bare 16+ token', `Authorization: ${'ab12'.repeat(5)}`, R],
@@ -282,12 +282,12 @@ describe('scrubText: credential forms', () => {
 describe('scrubText: free-text key=value', () => {
   const R = REDACTED;
   const redacted: [string, string][] = [
-    ['password=hunter2 token=abc', `password=${R} token=${R}`],
-    ['api_key: xyz', `api_key: ${R}`],
-    ['x-api-key=abc&next=1', `x-api-key=${R}&next=1`],
+    ['password=hunter2hunter2 token=abcDEF123456', `password=${R} token=${R}`],
+    ['api_key: xyz123XYZ', `api_key: ${R}`],
+    ['x-api-key=abc12345&next=1', `x-api-key=${R}&next=1`],
     ['{"client_secret":"s3cr3t","ok":1}', `{"client_secret":"${R}","ok":1}`],
-    ['access_token=aaa refresh_token: bbb', `access_token=${R} refresh_token: ${R}`],
-    ['Cookie=sid123; path=/', `Cookie=${R}; path=/`],
+    ['access_token=aaaa1111 refresh_token: bbbb2222', `access_token=${R} refresh_token: ${R}`],
+    ['Cookie=sid123xyz; path=/', `Cookie=${R}; path=/`],
     ['passwd = longer-than-usual', `passwd = ${R}`],
     [`secret=${'z'.repeat(600)} tail`, `secret=${R} tail`],
   ];
@@ -308,7 +308,7 @@ describe('scrubText: free-text key=value', () => {
   });
 
   it('is idempotent', () => {
-    const once = scrubText('password=hunter2 token=abc');
+    const once = scrubText('password=hunter2hunter2 token=abcDEF123456');
     expect(scrubText(once)).toBe(once);
   });
 
@@ -345,7 +345,7 @@ describe('errorFields', () => {
   });
 
   it('handles a non-Error value and never throws', () => {
-    expect(errorFields(`Bearer ${'q'.repeat(8)}`)).toEqual({
+    expect(errorFields(`Bearer ${'q1'.repeat(4)}`)).toEqual({
       'exception.type': 'string',
       'exception.message': REDACTED,
     });

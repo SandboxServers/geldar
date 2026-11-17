@@ -29,7 +29,7 @@ const MCP_TOKEN = /gmcp-[0-9a-f]{64}/g;
 // Negotiate, NTLM) and the rest up to a quote or the end of the line, or a bare run of 16 or more
 // token characters with at least one digit or symbol. Prose such as `authorization: grants access` stays.
 const AUTH_HEADER =
-  /\b((?:Proxy-)?Authorization["']?[ \t]*[:=][ \t]*["']?)(?:(?:Basic|Bearer|Token|Digest|Negotiate|NTLM)[ \t]+[^\r\n"']*|(?=[A-Za-z0-9._~+/=-]{16})(?=[A-Za-z0-9._~+/=-]*[\d._~+/=-])[A-Za-z0-9._~+/=-]+)/gi;
+  /\b((?:Proxy-)?Authorization["']?[ \t]*[:=][ \t]*["']?)(?:(?:Basic|Bearer|Token|Digest|Negotiate|NTLM)[ \t]+[^\r\n"']*|(?=[A-Za-z0-9._~+/=-]{16})(?=[A-Za-z0-9._~+/=-]*[\d._~+/=])[A-Za-z0-9._~+/=-]+)/gi;
 // `bearer <run>` (also `Bearer: <run>` and `Bearer "<run>"`), case-insensitive because HTTP schemes are.
 // The run is 6 or more characters and ends at a space, quote, comma or semicolon. `Bearer` or `BEARER`
 // redacts any such run; another case redacts only a run with a digit or `_~+/=` or one of 20+ characters,
@@ -37,33 +37,66 @@ const AUTH_HEADER =
 // `{6}` then `*`, not `{6,}`: V8 pushes a backtrack frame per iteration of a counted greedy loop, so
 // `{6,}` throws RangeError (regex stack) on a run of about 5.5 MiB.
 const BEARER = /\b(bearer)(?:[ \t]*[:=][ \t]*|[ \t]+)(["']?)([^\s"',;]{6}[^\s"',;]*)/gi;
-const BEARER_PROOF = /[\d_~+/=]/;
+const BEARER_PROOF = /[\d_~+/=-]/;
 // URL userinfo: `scheme://user:pass@`. The password part is required, so a plain `a@b` is untouched, and
 // it runs to the last `@` before the next `/` or space, so `u:p@ss@host` hides `ss` too. The scheme is
 // left-anchored (no letter, digit, + . - before it) and at most 32 characters, so a long run with no
 // `://` is rejected in constant time per start instead of rescanned from every position.
-const URL_USERINFO = /(?<![a-z0-9+.-])([a-z][a-z0-9+.-]{0,31}:\/\/)[^\s/@:]*:[^\s/]*@/gi;
+const URL_USERINFO = /([a-z][a-z0-9+.-]{0,31}:\/\/)[^\s/@:]*:[^\s/]*@/gi;
 
-// Free-text `key=value` and `key: value` (also `"key":"value"`). The key starts at a key boundary (no
-// word character, dot or hyphen before it) and is at most 64 characters, so a long run is rejected in
-// constant time per start. The key is judged by the same rule as an object key (hasForbiddenSegment),
-// minus email addresses and authorization (the header pattern owns that). The value runs to a space,
-// quote, `&`, `,` or `;`; it is not capped, so a long secret is hidden whole.
-// The scan matches only `key + separator` (never the value), so a non-credential key such as `https`
-// cannot swallow `//host/cb?token=...`; the value is read, with a sticky regex, only for a credential key.
+// Free-text `key=value` and `key: value` (also `"key":"value"`). The scan matches only `key + separator`
+// (never the value), so a non-credential key such as `https` cannot swallow `//host/cb?token=...`; the
+// value is read, with a sticky regex, only for a credential key. The key starts at a key boundary (no word
+// character, dot or hyphen before it, optionally after `--`) and has no length cap: only run starts are
+// tried, so the scan stays linear.
 const KEY_SEP = /(?<![\w.-])(?:--)?([A-Za-z][\w.-]*)(["']?[ \t]*[=:][ \t]*["']?)/g;
-const KEY_HINT = /token|pass|pwd|secret|key|cookie|auth|cred|jwt|session|bearer/i;
-/** An unquoted value: up to whitespace, a quote, `&`, `,`, `;` or `)`. */
-const VALUE_RUN = /[^\s"'&,;)]+/y;
-/** A quoted value: up to the closing quote on the same line; capped so an unclosed quote is cheap. */
+const KEY_HINT = /token|pass|secret|key|cookie|signature/i;
+/** Whole credential words: a key is a credential only when one of its segments says so (not `secretary`, `cookies`, `tokens`). */
+const CREDENTIAL_WORDS: ReadonlySet<string> = new Set([
+  'password',
+  'passwd',
+  'passphrase',
+  'secret',
+  'token',
+  'cookie',
+  'apikey',
+  'signature',
+]);
+/** Two adjacent segments that together name a credential (`api_key`, `private_key`, `secret_key`). */
+const CREDENTIAL_PAIRS: ReadonlySet<string> = new Set(['apikey', 'privatekey', 'secretkey']);
 const COOKIE_KEY = /(?:^|[._-])cookie$/i;
 /** A cookie header value in `name=value` form: the rest of the line. */
 const COOKIE_PAIRS = /[^\s=;"']+=[^\r\n]*/y;
+/** An unquoted value: up to whitespace, a quote, `&`, `,`, `;`, `)` or `}`. */
+const VALUE_RUN = /[^\s"'&,;)}]+/y;
+/** A quoted value: up to the closing quote on the same line; capped so an unclosed quote is cheap. */
 const VALUE_DQ = /[^"\r\n]{0,8192}"/y;
 const VALUE_SQ = /[^'\r\n]{0,8192}'/y;
 
+/** A credential key in free text: the last segment is a credential word, or the last two make one. */
 function credentialKey(key: string): boolean {
-  return KEY_HINT.test(key) && !/email|authorization/i.test(key) && hasForbiddenSegment(key);
+  if (!KEY_HINT.test(key)) return false;
+  const seg = key
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .toLowerCase()
+    .split(/[._-]/)
+    .filter((part) => part !== '');
+  const last = seg[seg.length - 1];
+  if (last === undefined) return false;
+  if (CREDENTIAL_WORDS.has(last)) return true;
+  const before = seg[seg.length - 2];
+  if (before !== undefined && CREDENTIAL_PAIRS.has(before + last)) return true;
+  return last === 'key' && seg.includes('secret');
+}
+
+/** A plain single word (`north`, `swordfish`, `Alexander`): lower-case letters, shorter than 12. */
+function plainWord(value: string): boolean {
+  return value.length < 12 && /^[A-Za-z][a-z]*$/.test(value);
+}
+
+/** An unquoted value that looks like a secret: 8 or more characters and not a plain word. */
+function looksSecret(value: string): boolean {
+  return value.length >= 8 && !plainWord(value);
 }
 
 /** The text with the value of every credential `key=value` / `key: value` pair replaced. One linear pass. */
@@ -73,29 +106,32 @@ function scrubKeyValues(text: string): string {
   KEY_SEP.lastIndex = 0;
   for (let m = KEY_SEP.exec(text); m; m = KEY_SEP.exec(text)) {
     const end = m.index + m[0].length;
-    if (!credentialKey(m[1] as string)) continue;
+    const key = m[1] as string;
+    const sep = m[2] as string;
+    if (!credentialKey(key)) continue;
+    const prev = m.index > 0 ? text.charAt(m.index - 1) : '';
+    // A URL query parameter or a command-line flag: the value is a credential whatever it looks like.
+    const flagOrQuery = m[0].startsWith('--') || prev === '?' || prev === '&';
     let length = 0;
+    let whole = false;
     // A cookie header (`Cookie: a=1; session=abcd`, `Set-Cookie: ...`) runs to the end of the line.
-    if (COOKIE_KEY.test(m[1] as string)) {
+    if (COOKIE_KEY.test(key)) {
       COOKIE_PAIRS.lastIndex = end;
       length = COOKIE_PAIRS.exec(text)?.[0].length ?? 0;
+      whole = length > 0;
     }
-    const quote =
-      length > 0
-        ? undefined
-        : m[2]?.endsWith('"')
-          ? VALUE_DQ
-          : m[2]?.endsWith("'")
-            ? VALUE_SQ
-            : undefined;
-    if (quote) {
-      quote.lastIndex = end;
-      const q = quote.exec(text);
-      if (q) length = q[0].length - 1;
+    // A quoted value runs to the closing quote (spaces included) only in a structured position: a quoted
+    // key (`"password":"..."`), `=` (`password="..."`) or a query. After a prose `password: "` it is a word.
+    const quoteRe = sep.endsWith('"') ? VALUE_DQ : sep.endsWith("'") ? VALUE_SQ : undefined;
+    if (!whole && quoteRe && (/^["']/.test(sep) || sep.includes('=') || flagOrQuery)) {
+      quoteRe.lastIndex = end;
+      length = (quoteRe.exec(text)?.[0].length ?? 1) - 1;
+      whole = length > 0;
     }
-    if (length === 0) {
+    if (!whole) {
       VALUE_RUN.lastIndex = end;
-      length = VALUE_RUN.exec(text)?.[0].length ?? 0;
+      const run = VALUE_RUN.exec(text)?.[0] ?? '';
+      length = flagOrQuery || looksSecret(run) ? run.length : 0;
     }
     if (length === 0) continue;
     out += text.slice(last, end) + REDACTED;
@@ -122,7 +158,11 @@ function scrubPatterns(text: string): string {
         /["']/.test(head) ? head + REDACTED : REDACTED,
       )
       .replace(BEARER, (match, word: string, quote: string, run: string) =>
-        word === 'Bearer' || word === 'BEARER' || BEARER_PROOF.test(run) || run.length >= 20
+        (
+          word === 'Bearer' || word === 'BEARER'
+            ? looksSecret(run)
+            : BEARER_PROOF.test(run) || run.length >= 20
+        )
           ? quote + REDACTED
           : match,
       )
