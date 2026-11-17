@@ -7,6 +7,7 @@ Owner: freeze exemption for this session; full-text capture, no opt-out, 1-year 
 - Paper plugin "Ledger" merged to main in waves 1-7: PRs #590 #595 #598 #602 #605 #616 #618 #621 #623 #624. No jar is placed on any server. The plugin runs a no-op ledger without an OpenTelemetry agent and ships disabled.
 - Collectors ON when the plugin is enabled: tick, world, server, container (cgroup), connections, snapshots (agents only).
 - Collectors OPT-IN (`collector.<id>.enabled=true`): census (390 event classes); curated (blocks/items, containers/sleep/animals, combat/movement, text chat/sign/book, operator audit/RCON, raids/tab/lifecycle/exceptions); bridge.
+- PT-08c opt-in progress collector merged (#626).
 - JFR mappers are built but not started (no wiring).
 - Dashboard JSON merged, not imported into SigNoz.
 - The gateway on the node predates PT-12: it needs a restage and restart (owner-gated).
@@ -36,11 +37,13 @@ Owner: freeze exemption for this session; full-text capture, no opt-out, 1-year 
 - D-I: cancelled chat not captured.
 - D-J: async exceptions dropped.
 - Snapshots opt-in or not.
+- NeoForge privacy defaults P-N1 to P-N6 (`neoforge-telemetry.md` section 5): open until the owner answers; defaults as stated there.
+- D2 note (NeoForge): NeoForge container events carry no position. The PT-N7 card text and the Paper build do not match on positions; recorded as a mismatch, not resolved.
 
 ## Remaining cards
 - PT-04c (spark bridge): needs a verified spark-api artifact.
 - PT-06d (duty-cycle defaults from measured rates): needs the scratch run.
-- PT-08c, PT-08d, PT-17b.
+- PT-08d, PT-17b.
 - PT-01 (throwaway census run): branch only.
 - PT-02a, PT-03l: held, enablement.
 - PT-11a-e, PT-15, PT-16.
@@ -64,6 +67,12 @@ Merge a PR only if no changed file is in the colo-images path filter (colo-deplo
 ## Paper plugin cards
 Cards for Ledger (`plugin/ledger-core` plus the Paper adapter `plugin/ledger`) are in `docs/analysis/telemetry/paper-plugin/`: README.md, cards-*.md, scratch-test-plan.md, safety-rules.md. PT-08e (Velocity) is optional and needs the owner's nod.
 NeoForge plan (additive; Paper stays supported, cards PT-N1 to PT-N14): `docs/analysis/telemetry/neoforge-telemetry.md`.
+
+## NeoForge telemetry (2026-11-17)
+- Merged to main: plan #628; PT-N2 #629; PT-N5 #630; PT-N11 #631; PT-N1 #635; PT-N10 #636; PT-N4a #637; PT-N3 #638; follow-up #639; PT-N9 #640; PT-N7 #641; PT-N8 #642.
+- Remaining: PT-N6 (blocked on the node join test: which UUID and name the server sees behind Velocity); PT-N4b (world, server and snapshot collectors; unblocked by PT-N5); PT-N12 (blocked on geldar-neoforge P3/P4); PT-N13 (scratch NeoForge telemetry run, owner-gated); PT-N14 (enablement window, owner-gated); G1 (neoforge CI lane; owner-approved PR needed; module's own tests do not run in CI today).
+- Full state and unverified items: `docs/analysis/telemetry/neoforge-telemetry.md`, "Current state".
+- Paper stays fully supported.
 
 ## First hour for a replacement session
 1. Read this file.

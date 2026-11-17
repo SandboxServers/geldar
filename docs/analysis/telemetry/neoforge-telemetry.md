@@ -1,8 +1,31 @@
 # NeoForge telemetry plan: a second Ledger adapter beside Paper
 
-Status: plan, 2026-11-17. Docs only. No code, no node contact, no push. Author: geldar-telemetry. Governing records: [0350](../../decisions/0350-telemetry-scope-and-full-capture.md), [0351](../../decisions/0351-paper-telemetry-plugin-scope.md). Paper side: [paper-plugin/README.md](paper-plugin/README.md) (frozen API v1, names, card table). NeoForge side: [../neoforge/RESUME.md](../neoforge/RESUME.md), [../neoforge/neoforge-api-notes.md](../neoforge/neoforge-api-notes.md) (short name NOTES below).
+Status: plan, 2026-11-17, with merged cards (see "Current state"). Docs only. No code, no node contact, no push. Author: geldar-telemetry. Governing records: [0350](../../decisions/0350-telemetry-scope-and-full-capture.md), [0351](../../decisions/0351-paper-telemetry-plugin-scope.md). Paper side: [paper-plugin/README.md](paper-plugin/README.md) (frozen API v1, names, card table). NeoForge side: [../neoforge/RESUME.md](../neoforge/RESUME.md), [../neoforge/neoforge-api-notes.md](../neoforge/neoforge-api-notes.md) (short name NOTES below).
 
 Target loader: NeoForge 26.1.2 (build 126), Java 25. Every NeoForge API statement here is tagged VERIFIED (read in NOTES, with its section) or UNVERIFIED (not read; a coder confirms it compiles before relying on it). Nothing below invents an API: where NOTES is silent the tag is UNVERIFIED and the class name, if given, is a search hint only.
+
+## Current state (2026-11-17)
+
+Merged to main: the plan (#628); PT-N2 (#629); PT-N5 (#630); PT-N11 (#631); PT-N1 (#635); PT-N10 (#636); PT-N4a (#637); PT-N3 (#638); follow-up (#639, not mapped to a card in this file); PT-N9 (#640); PT-N7 (#641); PT-N8 (#642). Section 4 headings carry the same numbers.
+
+Still open:
+- PT-N6: blocked on the node join test (which UUID and name the server sees behind Velocity; see P-N5).
+- PT-N4b: world, server and snapshot collectors; unblocked now that PT-N5 is merged.
+- PT-N12: blocked on geldar-neoforge P3 and P4.
+- PT-N13: scratch NeoForge telemetry run; owner-gated (run time and capacity).
+- PT-N14: enablement window; owner-gated.
+- G1: neoforge CI lane; an owner-approved PR is needed. The module's own tests do not run in CI today.
+
+Unverified items and known gaps:
+- Console and RCON names are verified in the sources read; command blocks are excluded.
+- Kick reasons, whitelist, sign and book edit, and raid have no NeoForge event in the sources read.
+- The ledger logging bridge to SLF4J is unproven on a real server.
+- The stats-file layout on 26.1 is unconfirmed.
+- Symlink tests skip on Windows, and no CI lane runs them.
+
+Paper stays fully supported; no Paper card, file or alert changes in this state.
+
+Open owner decisions: D1 to D4, D-A to D-D, D-F to D-J and snapshots opt-in are unchanged (listed in `RESUME.md`). New: NeoForge privacy defaults P-N1 to P-N6 (section 5), open until the owner answers, with the defaults stated there. D2 note: NeoForge container events carry no position. The PT-N7 card text and the Paper build do not match on positions; recorded as a mismatch, not resolved here.
 
 ## 0. Paper stays supported (owner constraint, binding on every card)
 
@@ -124,76 +147,76 @@ PT-N5 (read-only API spike) independent, can start now
 
 Parallel groups after PT-N1 merges: {PT-N3, PT-N4a, PT-N4b, PT-N7, PT-N8} touch disjoint files and can run in parallel; PT-N9 to PT-N12 follow.
 
-### PT-N1: neoforge-ledger skeleton, wired to ledger-core (M) BLOCKED ON G1 (owner-gated Gradle lane; the neoforge CI lane is on hold)
+### PT-N1: neoforge-ledger skeleton, wired to ledger-core (M) MERGED #635 (was blocked on G1; G1 CI lane still open)
 - Files (new): `neoforge-ledger/{settings.gradle.kts,build.gradle.kts,gradle.properties,.gitignore,README.md}`, `gradle/{libs.versions.toml,verification-metadata.xml}`, lockfiles, wrapper copied from `neoforge/` (same Gradle 9.8.2), `src/main/resources/META-INF/neoforge.mods.toml` (mod id `ledger`, `side = "SERVER"` dependencies, `loaderVersion` as the geldar mod's), `src/main/java/dev/geldar/ledger/neoforge/{LedgerMod,NeoForgeHostInfo,NeoForgeHostScheduler,package-info}.java`, tests `NoRegistryScanTest` (copy of the geldar one: no registry, payloads, mixins), `NoPaperImportsTest` (mirror of `NoLoaderImportsTest`), `ModInfoTest`.
 - Steps: copy build conventions from `neoforge/` (pins identical; no new versions); consume `:ledger-core` per the G1 decision; `@Mod(value = "ledger", dist = Dist.DEDICATED_SERVER)` (VERIFIED NOTES 1); the constructor reads the config file path, calls `LedgerBootstrap.create(config, host, logger)`, and registers no collectors yet; `HostInfo`/`HostScheduler` implementations per 3.2 item 1; jar-in-jar of `ledger-core` and `opentelemetry-api` (exact versions from the Paper libs catalog, 1.67.0).
 - Checks: `(cd neoforge-ledger; ./gradlew build)` (not run on the node; local only), Paper guard unchanged because no `plugin/` file is edited.
 - Depends on: G1. Blocks: everything NeoForge-side.
 
-### PT-N2: ledger-core additive neutrality fixes (S) can start now
+### PT-N2: ledger-core additive neutrality fixes (S) can start now MERGED #629
 - Files: `plugin/ledger-core/.../jfr/JfrSettings.java`, `jfr/ThreadCpuHandler.java`, their tests, README names table note for `geldar_paper_collector_disabled` (docs edit only through the orchestrator, per README rule).
 - Steps: make the thread-prefix list an injectable `JfrSettings` field with default `["Paper","Netty"]` (so Paper behaviour is bit-identical; a test asserts the default list and the output on the existing fixtures); add a second list constant for NeoForge once PT-N5 confirms the thread names. No signature change on frozen API v1.
 - Revert test: a test that fails if the default list changes.
 - Paper guard: `:ledger-core:test :ledger:test`, `LedgerPluginTest`, `NoLoaderImportsTest`, golden jar guard, PT-18b scan, jar content of `ledger.jar` unchanged except the changed classes.
 
-### PT-N3: OpenTelemetry under NeoForge, loud spike (S) after PT-N1; node-free
+### PT-N3: OpenTelemetry under NeoForge, loud spike (S) after PT-N1; node-free MERGED #638
 - Files: `neoforge-ledger/src/test/.../OtelLoadTest.java`, `neoforge-ledger/README.md`.
 - Steps: run `runServer` (dev server, NOTES 7; EULA by `eula.txt`) with the OpenTelemetry Java agent from the same pin as PT-02a and an OTLP file or log exporter; assert that `LedgerBootstrap.agentPresent` is true and one metric is exported; record the module-layer behaviour (UNVERIFIED items 1 above and NOTES "Not verified" 5). Result is a note, not a pass condition: if the API cannot see the agent, the card ends "blocked" with the failure and the options (shade and relocate: UNVERIFIED NOTES 5).
 - Checks: build; local run only. No node, no Docker.
 
-### PT-N4a: tick and stall collector (M) after PT-N1
+### PT-N4a: tick and stall collector (M) after PT-N1 MERGED #637
 - Files: `neoforge-ledger/.../tick/{TickCollector,TickListener,StallWatchdog}.java`, `.../world/WorldTickGauges.java` (A2), tests (pure logic via fakes; no Minecraft classes).
 - Steps: `ServerTickEvent.Pre`/`Post` record `System.nanoTime()` into `TickStats`; overrun and stall counters with the frozen names; per-dimension gauge from `getTickTime(dim)` averaged on the exporter thread reading a field copied each tick (do not call from the exporter thread: the long[] is written by the server thread; copy an average once per 20 ticks into a volatile). Register names in `Names` only through PT-N2-style core cards (the `geldar_world_tick_ms` constant needs a README names row first: orchestrator).
 - Checks: `./gradlew test`; fakes verify the same bucket output as the Paper `TickCollector` tests.
 - Revert test: fails if Post does not record the duration.
 
-### PT-N4b: world, server and snapshot collectors (M) after PT-N1, parallel with N4a
+### PT-N4b: world, server and snapshot collectors (M) after PT-N1, parallel with N4a; OPEN, unblocked by PT-N5 (#630)
 - Files: `.../world/WorldCollector.java`, `.../server/{ServerCollector,ConfigSnapshot}.java`, `.../players/SnapshotCollector.java`, tests.
 - Steps: counts via the accessors found in PT-N5 (UNVERIFIED now); config snapshot is an allow-list of keys; snapshot collector agents-only (`LifeIds.isLifeId`), 60 s, opt-in, off by default.
 - Blocked on PT-N5 for accessor names.
 
-### PT-N5: read-only API spike, no code (S) can start now
+### PT-N5: read-only API spike, no code (S) can start now MERGED #630
 - Output: an addendum to NOTES (only by the geldar-neoforge session; see section 6) or a section in this file's follow-up, listing for each UNVERIFIED row in sections 1 and 2 the class and accessor in the 26.1.x source: damage, item use, interaction, breed, tame, trade, sleep, raid, explosion, command execution, whitelist, operator changes, sign and book edit, prelogin, kick, `ModList`, dedicated-server thread check, thread names, uncaught-exception hook, level chunk and entity counts. Read-only; no node contact.
 - Parallel: yes. Blocks N4b, N6 to N9.
 
-### PT-N6: connection lifecycle and session ids (M) after PT-N1; BLOCKED on P0 (which UUID and name the server sees)
+### PT-N6: connection lifecycle and session ids (M) after PT-N1; BLOCKED on P0 (which UUID and name the server sees); OPEN, blocked on the node join test
 - Files: `.../players/{ConnectionCollector,SessionIds}.java`, tests with fakes.
 - Steps: join and leave listeners (VERIFIED); `Ulid.next()` per connection; agent test by `LifeIds.isLifeId`; events `geldar.player.join|quit`; kick and prelogin only if PT-N5 found events; D1 (kick-reason free text) not captured until decided.
 - Revert test: fails if a reconnect reuses the old `mc_session`; fails if a human name gets `geldar.life_id`.
 - Gate: the UUID the server reports (P0 open item) must be recorded in the card report before merge.
 
-### PT-N7: curated families, blocks, items, containers (M) after PT-N1 and PT-N5; parallel with N8
+### PT-N7: curated families, blocks, items, containers (M) after PT-N1 and PT-N5; parallel with N8 MERGED #641
 - Files: `.../curated/{CuratedCollector,BlocksItemsFamily,ContainersFamily}.java`, tests.
 - Steps: VERIFIED events only (A3): break, place, craft, smelt, container open and close. Token bucket via `EventLog.register` rates; cancelled break marked, not dropped. D2 stays default (positions as built for blocks, item events without position).
 
-### PT-N8: combat, deaths, text content, operator audit (M) after PT-N1, PT-N5
+### PT-N8: combat, deaths, text content, operator audit (M) after PT-N1, PT-N5 MERGED #642
 - Files: `.../curated/{CombatFamily,TextContentFamily,OperatorAuditFamily}.java`, tests.
 - Steps: death VERIFIED; damage and command execution per PT-N5; chat via `ContentLog` (D-F, D-I). Defaults for D-A to D-J as built on Paper: nothing different.
 - Revert tests: pvp damage keeps the victim only (D-B); kill excludes players (D-C).
 
-### PT-N9: progress and stats (S) after PT-N1
+### PT-N9: progress and stats (S) after PT-N1 MERGED #640
 - Files: `.../players/{ProgressCollector,StatsFileReader}.java`, tests.
 - Steps: `AdvancementEarnEvent` and `AdvancementProgressEvent` (VERIFIED) to `geldar.player.advancement`; stats-file reader reused logic if the layout is vanilla (UNVERIFIED; the card confirms against a scratch world file, local only).
 
-### PT-N10: scans for the new module (S) after PT-N1
+### PT-N10: scans for the new module (S) after PT-N1 MERGED #636
 - Files: the PT-18a forbidden-API scan (`tools/repo-checks/...` file named in the PT-18a card; the coder reads that card first), a NeoForge list, tests.
 - Steps: add the NeoForge list as a second table; Paper list and its tests untouched; the neutral list reused.
 - Paper guard: PT-18a and PT-18b scans still pass on the existing tree.
 
-### PT-N11: gateway, dashboard and alerts for NeoForge (M) can start now for JSON; panels needing N4a names wait for N4a
+### PT-N11: gateway, dashboard and alerts for NeoForge (M) can start now for JSON; panels needing N4a names wait for N4a MERGED #631
 - Files (new only): `deploy/signoz/neoforge-dashboard.json`, `deploy/signoz/neoforge-alerts-server.json`, `deploy/signoz/neoforge-alerts-capacity.json`; if a rule is needed, one added statement in `deploy/telemetry/gateway.yaml` (only after the scratch run shows a NeoForge-specific noise line; otherwise no edit).
 - Steps: clone the Paper files with the `service.name` filter; keep metric names; add per-world tick and mod-count panels; JSON validity test as the Paper dashboard has.
 - Checks: JSON parses; `git diff --stat origin/main -- deploy/signoz/paper-*` empty; gateway unchanged or one new statement; `check:repo`. The existing Paper dashboard and 11 alerts untouched.
 - Not imported into SigNoz (owner step).
 
-### PT-N12: Geldar mod counters (S) BLOCKED on geldar-neoforge P3 and P4
+### PT-N12: Geldar mod counters (S) BLOCKED on geldar-neoforge P3 and P4; OPEN
 - Files: counters in `neoforge-ledger` or a tiny seam in the geldar mod (decided with that session); the counting points are named by that session.
 - Steps: counters like PT-11e for event export, maintenance notices and block-owner queries. Needs the geldar mod to expose its counting points through a stable interface (section 6, item 4).
 
-### PT-N13: scratch NeoForge telemetry run (M) HELD: owner and node gate
+### PT-N13: scratch NeoForge telemetry run (M) OPEN, HELD: owner and node gate
 - Reuse the scratch overlay (PT-03k) with `SCRATCH_PLATFORM=neoforge`; the existing scratch Paper run stays first on the list. Verify every row as scratch-test-plan.md does for Paper (a new "Rows pending a live scratch run" table for NeoForge). 15 GB RAM, up to 6 CPUs, 20-40 min, one at a time with the Paper run. Needs: the P0 node run finished, the NeoForge scratch re-run, owner's go.
 
-### PT-N14: enablement window request (S) HELD: owner
+### PT-N14: enablement window request (S) OPEN, HELD: owner
 - Same as PT-16 for the NeoForge server: PT-N13 passes, PT-15 overhead A/B on NeoForge, gateway restaged, agent properties for `geldar-neoforge`. No jar is placed on any server until then.
 
 ### Order and parallelism
