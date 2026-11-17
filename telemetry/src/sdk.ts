@@ -236,19 +236,21 @@ export function startTelemetry(options: TelemetryOptions): TelemetryHandle {
       return OFF;
     }
 
-    // Set by the first shutdown. A second call on this handle does nothing, so it cannot clear the
-    // globals of a later start.
-    let stopped = false;
+    // The first shutdown's promise. A second call gets the same promise, so it neither runs again
+    // (it cannot clear the globals of a later start) nor returns before the flush has finished.
+    let stopping: Promise<void> | undefined;
+    const run = async (): Promise<void> => {
+      if (active === handle) active = undefined;
+      // Clears only the globals this start registered, so a signal that is off leaves others alone.
+      for (const entry of registered) entry.clear();
+      await shutdownAll(made);
+    };
     const handle: TelemetryHandle = {
       enabled: true,
       tracerProvider,
-      shutdown: async () => {
-        if (stopped) return;
-        stopped = true;
-        if (active === handle) active = undefined;
-        // Clears only the globals this start registered, so a signal that is off leaves others alone.
-        for (const entry of registered) entry.clear();
-        await shutdownAll(made);
+      shutdown: () => {
+        stopping ??= run();
+        return stopping;
       },
     };
     active = handle;
