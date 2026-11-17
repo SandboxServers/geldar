@@ -116,6 +116,7 @@ Every event handler in these cards: priority `EventPriority.MONITOR`, never muta
 - Tests (fail when reverted): an RCON event's record has `senderKind=rcon` and the command text, and the recorded strings contain no address or sender object string (use a sender whose `toString()` returns an IPv4 address with a port; the test asserts it never appears); a console and an RCON event each yield exactly one record; the source reads no `rcon` property key (PT-18a scan covers lasting); a command text `rcon.password=hunter2` typed by an operator is recorded as text (it is content) but passes `Redactor.scrub` unchanged: documented limit in the card's Javadoc: **the plugin cannot know a secret typed as plain text; the gateway rules (PT-12) and the operator's discipline are the other layers**.
 - Checks: `:ledger:test`; scratch rows X4 to X6. S1, S3, S4, S5.
 - Commit: `PT-07e Console, RCON and broadcast audit (plugin)`.
+- Bound, by design: the command and broadcast text leave the plugin as `EventLog` attributes, so they are capped at 1 KiB. The full-text path now exists (`CuratedRegistry.onContent`, the `ContentLog` of PT-07d), but this family is kept on `EventLog`: an audit line is short, and a longer command is truncated, not dropped. Moving it to `onContent` is a later, separate choice.
 - Do NOT: reply to the sender; dispatch a command; read configuration for RCON; record the sender's address or object string.
 
 ## PT-07f: raids, tab completion, plugin lifecycle, exceptions
