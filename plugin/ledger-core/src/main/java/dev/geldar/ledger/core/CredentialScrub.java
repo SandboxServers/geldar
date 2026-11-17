@@ -18,7 +18,7 @@ final class CredentialScrub {
     /** The text with every credential value replaced; on any failure the text is dropped, never returned as is. */
     static String scrub(String text) {
         try {
-            return KeyValueScrub.scrub(userinfo(mcpToken(HeaderScrub.bearer(jwt(HeaderScrub.authorization(pem(text)))))));
+            return KeyValueScrub.scrub(userinfo(mcpToken(HeaderScrub.bearer(jwt(HeaderScrub.authorization(FlagScrub.scrub(pem(text))))))));
         } catch (RuntimeException | StackOverflowError e) {
             return "[unscrubbable " + text.length() + " chars]";
         }

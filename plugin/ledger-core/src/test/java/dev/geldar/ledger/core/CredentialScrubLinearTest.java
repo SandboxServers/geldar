@@ -44,6 +44,16 @@ class CredentialScrubLinearTest {
         m.put("ats", "@");
         m.put("slashes", "/");
         m.put("cookie", "Cookie: a=");
+        m.put("flag", "--" + PW + " ");
+        m.put("flag value", "--" + PW + " Zq9xK2mP7vL4Ab ");
+        m.put("flag spaces", "--" + TK + " ".repeat(100));
+        m.put("curl -u", "-u a:b ");
+        m.put("curl -u secret", "-u a:Zq9xK2mP7vL4Ab ");
+        m.put("query sig", "?sig=");
+        m.put("query key", "?key=Zq9xK2mP7vL4AbZq9x&");
+        m.put("query amz", "&X-Amz-Credential=a ");
+        m.put("one long flag run", "--" + PW + " " + "a".repeat(1000));
+        m.put("dashes", "-");
         return m;
     }
 
@@ -80,5 +90,16 @@ class CredentialScrubLinearTest {
         assertTrue(millis("Authorization" + " ".repeat(MIB) + "x") < 3000);
         assertTrue(millis("gmcp-" + "a".repeat(MIB)) < 3000);
         assertTrue(millis("http://" + "u:".repeat(MIB / 2)) < 3000);
+        assertTrue(millis("-u " + "a:".repeat(5 * MIB)) < 15000);
+    }
+
+    @Test
+    void oneTenMiBValueAfterAFlagIsHiddenWhole() {
+        String text = "--" + PW + " " + "a1".repeat(5 * MIB);
+        long start = System.nanoTime();
+        String out = Redactor.scrub(text);
+        long ms = (System.nanoTime() - start) / 1_000_000;
+        assertTrue(out.equals("--" + PW + " " + Redactor.REDACTED), "value not hidden whole");
+        assertTrue(ms < 15000, "took " + ms + " ms");
     }
 }

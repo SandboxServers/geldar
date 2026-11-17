@@ -11,7 +11,7 @@ final class CredentialKeys {
     private static final Set<String> WORDS = Set.of(
             "password", "passwd", "passphrase", "secret", "token", "cookie", "apikey", "signature", "jwt", "auth");
     private static final Set<String> PAIRS =
-            Set.of("apikey", "privatekey", "secretkey", "accesskey", "signingkey", "sshkey", "sessionid");
+            Set.of("apikey", "privatekey", "secretkey", "accesskey", "signingkey", "sshkey", "sessionid", "accountkey");
 
     private CredentialKeys() {}
 
