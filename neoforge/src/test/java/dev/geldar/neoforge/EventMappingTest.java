@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import com.google.gson.JsonObject;
 import dev.geldar.core.EventEnvelope;
 import java.time.Instant;
+import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
 
@@ -26,7 +27,7 @@ class EventMappingTest {
 
     @Test
     void damageUsesPaperFieldsAndTheConfiguredSubject() {
-        EventEnvelope e = EventMapping.damage("nf", AT, 24_000L, "Steve", "FALL", 3.5);
+        EventEnvelope e = EventMapping.damage("nf", AT, 24_000L, LIFE, "FALL", 3.5);
         assertEquals("geldar.nf.damage", e.subject());
         assertEquals("damage", e.type());
         JsonObject o = e.toJson();
@@ -35,7 +36,7 @@ class EventMappingTest {
         assertEquals("FALL", o.getAsJsonObject("payload").get("cause").getAsString());
         assertEquals(3.5, o.getAsJsonObject("payload").get("amount").getAsDouble());
         assertEquals(1L, e.worldDay());
-        assertFalse(o.has("agent_id"), "a username is not a life id");
+        assertEquals(LIFE, o.get("agent_id").getAsString());
     }
 
     @Test
@@ -79,9 +80,41 @@ class EventMappingTest {
     }
 
     @Test
-    void sleepCarriesThePlayerOnly() {
-        JsonObject p = EventMapping.sleep("nf", AT, 0L, "Steve").toJson().getAsJsonObject("payload");
+    void sleepCarriesThePlayerOnlyForALifeId() {
+        JsonObject p = EventMapping.sleep("nf", AT, 0L, LIFE).toJson().getAsJsonObject("payload");
         assertEquals(Set.of("player"), p.keySet());
+    }
+
+    /** Human names (online-mode Microsoft names on the NeoForge shard) and look-alikes that are not life ids. */
+    private static final List<String> HUMANS = List.of("Notch", "Alex_123", "ag_x");
+
+    @Test
+    void aHumanNameIsNeverExportedAndLeavesNoTrace() {
+        for (String human : HUMANS) {
+            assertFalse(EventEnvelope.isLifeId(human), human + " must not be a life id in this test");
+            List<EventEnvelope> events = List.of(
+                    EventMapping.damage("nf", AT, 0L, human, "FALL", 2.0),
+                    EventMapping.death("nf", AT, 0L, human, "FALL", new EventMapping.Pos(1, 2, 3), "minecraft:overworld"),
+                    EventMapping.sleep("nf", AT, 0L, human));
+            for (EventEnvelope e : events) {
+                JsonObject o = e.toJson();
+                assertFalse(o.getAsJsonObject("payload").has("player"), e.type() + " must omit player for " + human);
+                assertFalse(o.has("agent_id"), e.type() + " must have no agent_id for " + human);
+                assertFalse(o.toString().contains(human), e.type() + " serialized envelope must not contain " + human);
+            }
+        }
+    }
+
+    @Test
+    void aHumanDeathKeepsItsPositionsAndTimes() {
+        JsonObject o = EventMapping.death("nf", AT, 7L, "Notch", "FALL", new EventMapping.Pos(1, 2, 3), "minecraft:the_nether")
+                .toJson();
+        JsonObject p = o.getAsJsonObject("payload");
+        assertEquals(Set.of("cause", "x", "y", "z", "dimension"), p.keySet());
+        assertEquals(1, p.get("x").getAsInt());
+        assertEquals("nether", p.get("dimension").getAsString());
+        assertEquals(7L, o.get("world_tick").getAsLong());
+        assertEquals("2026-11-17T12:00:00Z", o.get("at").getAsString());
     }
 
     @Test
