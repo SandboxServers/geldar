@@ -1,6 +1,6 @@
 # Per-shard event storage design (NeoForge live shard and scratch)
 
-- Status: design note, docs only. Base: origin/main 134bf7f0. First written 2026-11-17 for the lead; revised 2026-11-17 with the lead's decisions (below), then reconciled with the live project file (branch `phase1/nf-live-compose`, commit e353646c) and the lead's read-only node check (about 16:07Z 2026-11-17). Decisions are recorded in `docs/decisions/0380` to `0386`; the owner confirms them.
+- Status: design note, docs only. Base: origin/main 134bf7f0. First written 2026-11-17 for the lead; revised 2026-11-17 with the lead's decisions (below), then reconciled with the live project file (branch `phase1/nf-live-compose`, commit e353646c) and the lead's read-only node check (about 16:07Z 2026-11-17). Its capacity figures were replaced by the lead's read-only check at 17:50Z 2026-11-17 (sections 7.2 and 7.4). Decisions are recorded in `docs/decisions/0380` to `0386`; the owner confirms them.
 - Reading rule: **UNVERIFIED** marks a claim I did not confirm in code, config or on a server. Paths are relative to the repo root.
 - Owner answer this design implements: "separate stream and table per shard". Plainly: each shard gets its own JetStream stream (on its own NATS) and its own database, which holds its own `events` table. The `events` table itself is unchanged. This is option C of section 2, and it meets the owner's answer by a database per shard rather than a table per shard in one database (decision 0026).
 
@@ -151,39 +151,65 @@ Must never restart the autonomous shard (colo), from the repo:
 - `deploy/colo-cd.sh` line 7 (comment): "Never restarted: Paper, Velocity, Caddy, Postgres, NATS. Never started: mind, and golem-body (the idle Adam, profile adam)." The CD script's restarts are per service in its `ORDER` list (line 340).
 - `deploy/colo-down.sh` line 2: "Stops the geldar-colo project and nothing else." Running it on the node stops colo.
 - `deploy/common.sh` lines 6-8: `PROJECT=${GELDAR_PROJECT:-geldar-colo}` and `COMPOSE_FILE=${GELDAR_COLO_COMPOSE:-$ROOT/compose/colo.yml}`. `common.sh` adds colo overlays and secrets to every compose call, so it cannot isolate `geldar-nf`, and setting `GELDAR_PROJECT` would not isolate it either. The NeoForge deploy script must not source `common.sh`.
-- Whether the `ghdeploy` runner sets `GELDAR_PROJECT` or `GELDAR_COLO_COMPOSE` is **UNVERIFIED** and cannot be settled from the repo. Have it read-only checked on the node when `deploy/nf-cd.sh` is written.
+- The `ghdeploy` runner sets neither `GELDAR_PROJECT` nor `GELDAR_COLO_COMPOSE` (lead's read-only check at 17:50Z: the runner's unit has no `GELDAR_` variables, and the colo-deploy root entrypoint names only the release manifest and the SHA). So `colo-cd` runs on the defaults: project `geldar-colo` and `compose/colo.yml` from its exported work directory. The `geldar-nf` script therefore names its own project `geldar-nf` and its own file `compose/nf-live.yml` explicitly (literals or its own variables), and never inherits `GELDAR_PROJECT`, which is unset on the runner. The colo project is already mixed: its containers carry different compose config-file labels and work directories, so no shared script should run compose against it.
 - Golem bodies: restart only when `golem/**` is in the window (D9). `deploy/colo-cd-players.sh` was not read (UNVERIFIED).
 - The shared Caddy: out of scope here (section 8).
 
 ### 7.2 Per-service caps
 
-**Node correction (lead, read-only check of the node's `compose/colo.yml`, about 16:07Z 2026-11-17).** The autonomous Paper runs at **8 CPUs and 14336m** on the node (`MEMORY` 10G). The repo's `compose/colo.yml` says 3 CPUs and 8192m, so **the repo file is stale on this point** (other drift exists too; not listed here). The live budget below uses 8 CPUs and 14336m for Paper. This note does not depend on running compose against the node's drifted `colo.yml`. The repo's colo file should be updated in its own packet; that is not done here.
+**Measured caps and use, 17:50Z 2026-11-17 (lead's read-only check of the live node; figures only, no addresses).** These replace the earlier estimates in this section and the 13:55Z and 16:07Z figures. The repo's `compose/colo.yml` is stale against the node (Paper 3 CPUs and 8192m in the repo; 8 CPUs and 14336m on the node), so the figures below are the node's, not the repo's. `shards/colo.yaml` (`cpu_limit: 10.6`, `memory_limit: 19968m`) is on the repo values, not the node's. Re-measure at deploy time with the commands in section 7.4.
 
-Colo caps from the repo (`compose/colo.yml`; the per-service budgets are the literal defaults). The non-Paper values are the repo's and are **UNVERIFIED against the node**:
+Measured now:
 
-| Service | CPUs | Memory |
+| Measure at 17:50Z | Value |
+|---|---|
+| Host CPUs | 16 |
+| Load (1, 5, 15 min) | 0.72, 0.98, 0.98 |
+| Memory: total, used, available | 125 GiB, 33 GiB, 91 GiB |
+| Disk under the Docker data root (`/mnt/nvme`) | 1.8 TiB size, 36% used, 1.1 TiB free |
+| Running containers, all projects | 69 |
+| Measured CPU sum, all 69 (`docker stats`) | 67.1%: about 0.67 of one core in total, about 4% of 16 cores |
+| Measured memory sum, all 69 (`docker stats`) | 38377 MiB (about 37.5 GiB) |
+| Top memory: autonomous Paper (`geldar-colo-paper-1`) | 8.1 GiB |
+| Top memory: scratch-telemetry Paper (the idle scratch stack) | 7.3 GiB |
+| Top memory: signoz-clickhouse, geldar-ch | 4.5 GiB, 3.3 GiB |
+| Top memory: four other containers | 0.9 to 1.8 GiB each |
+
+The CPU and memory sums cover all 69 containers, not the colo project alone; colo's own share is not measured separately here.
+
+Caps (ceilings, not use):
+
+| Stack | CPU caps | Memory caps | Source |
+|---|---|---|---|
+| `geldar-colo` (29 running, 2 exited) | 31.10 | 58368 MiB (57.0 GiB) | Lead's read-only check of the live containers. Paper 8 CPUs, 14336 MiB, 512 pids; Postgres 1 CPU, 2048 MiB; players-host containers 1 CPU, 2048 MiB, 256 pids each (per-container table below) |
+| `geldar-nf` (proposed; not running; no project, containers, volumes or networks yet) | 5.75 | 16640 MiB (16.25 GiB) | Per-service table below, from `compose/nf-live.yml` on branch `phase1/nf-live-compose` (head 5e119771) |
+| scratch-telemetry (opt-in overlay, idle) | 6.5 | 15872 MiB (15.5 GiB) | `compose/opt-in/scratch-telemetry.yml`: Paper 6 CPUs (`SCRATCH_PAPER_CPUS`, default 6) and 15360m; otel-sink 0.5 CPU and 512m. The other services of the scratch stack are not counted here |
+| **Sum, colo + nf** | **36.85** (about 230% of 16 cores) | **75008 MiB** (73.25 GiB) | |
+| **Sum, colo + nf + scratch-telemetry** | **43.35** (about 271% of 16 cores) | **90880 MiB** (88.75 GiB) | |
+
+**Per-container colo caps, running set (29 running).** Lead's read-only check of the live node at 17:50Z 2026-11-17, from each container's `NanoCpus` and `Memory`. Role names only:
+
+| Container (role) | CPUs | Memory (MiB) |
 |---|---|---|
-| postgres | 1 | 2048m |
-| nats | 0.5 | 512m |
-| paper (repo value; node is 8 and 14336m) | 3 | 8192m (heap `MEMORY: 6G`) |
-| velocity | 0.5 | 1024m |
-| eventsink | 0.5 | 512m |
-| golem-body | 1 | 2048m |
-| animus | 1 | 2048m |
-| geldar-mcp | 0.5 | 512m |
-| register (profile, off by default) | 0.25 | 128m |
-| glass | 0.5 | 256m |
-| bluemap-alias | 0.1 | 64m |
-| bluemap-web | 0.25 | 64m |
-| players-host (profile) | 1 | 2048m |
-| admin (profile, one-shot) | 0.5 | 512m |
-| **All services, repo values** | **10.6** | **19968m** (19.5 GiB) |
-| **Default-on, repo values** (profiles excluded) | **8.85** | **17280m** |
-| **Default-on, Paper at node values** (8 and 14336m) | **13.85** | **23424m** (22.9 GiB) |
+| mcp | 0.5 | 512 |
+| glass | 0.5 | 256 |
+| register | 0.25 | 128 |
+| eventsink | 0.5 | 512 |
+| paper (autonomous) | 8 | 14336 |
+| bluemap-web | 0.25 | 64 |
+| bluemap-alias | 0.1 | 64 |
+| velocity | 0.5 | 1024 |
+| postgres | 1 | 2048 |
+| nats | 0.5 | 512 |
+| **Subtotal, 10 non-player containers** | **12.10** | **19456** |
+| players-host, 19 containers (1 CPU, 2048 MiB each) | 19.00 | 38912 |
+| **Total, 29 running** | **31.10** | **58368** |
 
-`shards/colo.yaml` `cpu_limit: 10.6` and `memory_limit: 19968m` match the repo's all-services sum, so that file is also on the repo values, not the node's.
+Not running (exited): one players-host and one golem-body container; they are not in the table.
 
-Live `geldar-nf` budget (from `compose/nf-live.yml`; proposals, to be measured at deploy):
+The earlier figure of 23 players-host containers was a miscount: it counted exited containers or matched names by substring. The running set has 19 players-host containers, and 19 reconciles the rows with the stated totals and with 29 running. `CpuQuota` and `CpuPeriod` are 0 on every colo container, so `NanoCpus` is the only CPU cap. To be re-measured at deploy time with the commands in section 7.4.
+
+Live `geldar-nf` budget (from `compose/nf-live.yml` on branch `phase1/nf-live-compose`, not on this branch; proposals, to be measured at deploy):
 
 | Service | CPUs | Memory | Port |
 |---|---|---|---|
@@ -197,21 +223,24 @@ Live `geldar-nf` budget (from `compose/nf-live.yml`; proposals, to be measured a
 
 Pids: 512 for neoforge, 256 for the others. The earlier proposal of 25575 to 25579 is withdrawn: 25575 is the RCON default and is not a good choice.
 
-Sums, with the autonomous Paper at 8 CPUs and 14336m:
+What the sums mean:
 
-- Colo default-on (Paper at node values, other services at repo values) 13.85 CPUs and 23424m, plus nf 5.75 CPUs and 16640m: **19.6 CPUs against 16 cores (about 122%, overcommitted)** and **40064m (39.1 GiB)**.
-- Adding scratch telemetry (repo caps, UNVERIFIED on the node: Paper 6 CPUs and 15360m, plus one service at 0.5 CPU and 512m): 26.1 CPUs against 16 cores (about 163%) and 55936m (54.6 GiB). Scratch NeoForge is not included (no caps in the repo; UNVERIFIED).
-- Caps are ceilings, not reservations. The 16-core overcommit is the reason for the `cpu_shares` proposal below.
+- **CPU caps are overcommitted today, and that is how the colo project runs.** Its caps sum to 31.10 CPUs on 16 cores (about 194%). Yet the node's measured CPU use across all 69 containers is about 0.67 of one core. The measured use matters more than the caps for capacity planning; the caps are ceilings that are almost never reached together.
+- **geldar-nf adds the same kind of overcommit.** Its 5.75 CPUs of caps take the colo + nf sum to 36.85 CPUs (about 230% of 16 cores). That is the same kind of overcommit, not a new kind.
+- **Memory is different.** Memory caps are hard limits, so the memory sum has to fit. Colo + nf caps are 73.25 GiB against 125 GiB total and 91 GiB available (measured use 37.5 GiB): they fit, with about 17.75 GiB to spare. The scratch-telemetry caps (15.5 GiB) sit on top of that: colo + nf + scratch is 88.75 GiB, which is under the 91 GiB available with only about 2.25 GiB to spare. The scratch stack is idle and its Paper measures 7.3 GiB, but its cap is 15 GiB. Plan: scratch-telemetry does not run beside the first geldar-nf start.
+- Scratch NeoForge caps are not in the repo and are not counted.
 
-What it means for the other tenants: memory fits comfortably in the lead's roughly 100 GiB available. CPU is the constraint: when several stacks peak at once, the autonomous Paper (8 CPUs on the node) can be slowed by nf and scratch-telemetry. Mitigation (proposal, stands): set lower Docker `cpu_shares` on the nf and scratch services so colo wins contention; caps alone do not protect colo. The scratch-telemetry stack is the largest single competitor and is a scratch tenant, so it should not run during the colo peak.
+**Proposal: `cpu_shares` for geldar-nf.** Docker's default weight is 1024; the colo services have `CpuShares` unset, so they carry 1024. Propose **256 for every geldar-nf service** (neoforge, velocity, postgres, nats, eventsink, identity-seed). Shares act only when CPUs are contended: idle use and the caps are unchanged. Under contention each nf service then weighs a quarter of a colo service, so the autonomous Paper (1024) wins over an nf service (256) when both want CPU. These values are proposals, not measured; test them on the node. Any scratch service that runs beside colo should take the same value (a scratch packet).
+
+Follow-up, not done here: `compose/nf-live.yml` is not on this branch. A read-only check of `origin/phase1/nf-live-compose` (head 5e119771) found no `cpu_shares` in it. The deploy-script packet should add `cpu_shares: 256` to each geldar-nf service and a test that every service sets it. This note does not edit that file.
 
 ### 7.3 Deploy script
 
 `colo-cd` (`deploy/colo-cd.sh`) and the `colo-deploy` workflow (`.github/workflows/colo-deploy.yml`, triggered by `colo-images` through `workflow_run`) deploy the colo project only, through `deploy/common.sh`. They do **not** apply to `geldar-nf`. No colo deploy script applies to the NeoForge project. It needs its own script, `deploy/nf-cd.sh` (proposal, section 4a5), which names `-p geldar-nf -f compose/nf-live.yml` on every compose action and pins its own image digests in its file (so a colo-images build does not change nf until its digest is edited). That script is a later packet. Whether `colo-images` should build the NeoForge images is an owner call (not decided here).
 
-### 7.4 Node headroom: measured by the lead, NOT measured by me
+### 7.4 Node headroom: measured by the lead at 17:50Z, to be re-measured at deploy time
 
-The headroom figures below are the lead's ops measurement at about 13:55Z on 2026-11-17: about 100 GiB available memory, 16 cores. The autonomous Paper cap is now confirmed at 14 GiB (14336m) on the node, which the repo's `compose/colo.yml` (8192m) does not match; that repo file is stale (section 7.2). I did not measure these figures. They are from another session and must be re-measured at deploy time.
+The figures in section 7.2 (16 CPUs, 125 GiB total, 91 GiB available, 69 containers, measured use and caps) are the lead's read-only check at 17:50Z on 2026-11-17. This design note did not run those commands itself. They replace the earlier 13:55Z and 16:07Z estimates. The node's clock is US/Central, so the lead's "17:50Z" (header) and "11:50 node time" (body) are one instant: 17:50 UTC is 11:50 CST (UTC-6). Times in this note are UTC. The figures must be re-measured with these commands before the first `geldar-nf` start.
 
 Read-only commands for the operator, on the colo node, each with the UTC time first:
 
@@ -241,7 +270,7 @@ Risks:
 - R5 The stream pin spans `eventsink/` and `plugin/`. Change both in one window (b4, b5).
 - R6 The plugin's "whichever starts first wins" creates the stream with its own name. On a separate NATS this is harmless; b5 makes the name configurable.
 - R7 Retention: the stream keeps 30 days; the database keeps rows indefinitely (no purge code found; UNVERIFIED against `docs/security/privacy-and-data-retention.md`).
-- R8 Budget and CPU contention: section 7.2 (19.6 CPUs against 16 cores before scratch, 26.1 with it).
+- R8 Budget and CPU contention: section 7.2 (cap sums 36.85 CPUs against 16 cores with nf, 43.35 with scratch-telemetry; measured CPU use about 0.67 of one core; memory caps 88.75 GiB with scratch against 91 GiB available).
 - R9 The scratch token rename changes subjects probes use: `docs/analysis/neoforge/p3-adapter-design.md` (about line 145) and the P0 probe subscribe to `geldar.<nf shard>.death`; they must follow the new token.
 - R10 Readers of `events` (`sql/0005_glass_reader.sql`, `sql/0062`, `sql/0040`, and tools `adam-report`, `adam-run`, `glass-ctl`, grep only, UNVERIFIED). Each reader sees its own database only.
 - R11 The repo's `compose/colo.yml` is stale against the node (Paper 3 CPUs and 8192m in the repo, 8 and 14336m on the node; other drift exists). Any compose run against the node's file would be based on drift; the nf note does not depend on it.
@@ -264,7 +293,7 @@ Open items for the live project (from the a4 report of branch `phase1/nf-live-co
 - **Sink per-shard keys.** The stream, shard-filter and retention keys (section 3) do not exist yet; a later trigger-path packet (b1, b2).
 - **Live account uid.** `NF_SERVICE_UID` defaults to 1000, the colo default; the live account uid is UNVERIFIED.
 - **Per-shard NATS auth set and its generator.** Not written (a later packet). No secret value exists in the repo.
-- **Caps.** Proposals. The other tenants' non-Paper services are UNVERIFIED against the node (section 7.2).
-- **Deploy script.** `deploy/nf-cd.sh` is a later packet; the `GELDAR_PROJECT` and `GELDAR_COLO_COMPOSE` question is UNVERIFIED (section 7.1).
+- **Caps.** The colo caps are measured at 17:50Z (section 7.2). The geldar-nf caps and the `cpu_shares` values are proposals, to be measured at deploy time.
+- **Deploy script.** `deploy/nf-cd.sh` is a later packet. The runner sets neither `GELDAR_PROJECT` nor `GELDAR_COLO_COMPOSE` (settled, section 7.1). The script names `geldar-nf` and `compose/nf-live.yml` itself, and adds `cpu_shares: 256` to `compose/nf-live.yml` (section 7.2).
 
 Where the live NeoForge shard runs is decided (D8, record 0386), not open.

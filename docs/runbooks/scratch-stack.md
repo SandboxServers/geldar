@@ -603,3 +603,24 @@ Placeholders: `<suffix>` is the scratch suffix, `<auth dir>` the NATS auth dir, 
 `down` runs `compose down -v --rmi local --remove-orphans` (the mind services are removed with the stack because `--remove-orphans` drops containers the compose file no longer defines; UNVERIFIED on a live node), then removes the scratch secrets dir, and with it `postgres-mcp.txt`, `mcp-token-pepper.txt` and `mind-token.txt`. It exits 1 if any volume is left. The NATS auth dir is the operator's and is not removed. Mind services declare no named volume, and the `geldar-*:c1` images are shared tags that `--rmi local` does not remove.
 
 Not in this section: the human client route (option B), the desktop variant (A), and any change to the live Colo mind (`shards/colo-mind.yaml`).
+## Human listener on the scratch stack
+
+When to use it: when a human player (a real Microsoft account, the vanilla client) must join the NeoForge scratch shard to check the online-mode path. It is opt-in and off by default.
+
+Start it with the NeoForge platform, the NATS auth dir and the lane variable:
+`SCRATCH_PLATFORM=neoforge SCRATCH_NATS_AUTH_DIR=<dir> SCRATCH_HUMAN_LANE=1 sh deploy/scratch/scratch.sh up nf`. The script refuses with exit 2, and starts nothing, for SCRATCH_PLATFORM=paper, a missing NATS auth dir, or any value of SCRATCH_HUMAN_LANE other than 1. `status` and `down` work with or without the variable.
+
+What starts: the service `velocity-human` (compose/opt-in/scratch-human.yml, config compose/velocity/velocity-human.toml). It is a second Velocity with online-mode = true, so Mojang authentication decides the account and its UUID. It is its own container with its own data volume. It uses the existing scratch secrets only: the forwarding secret and the velocity NATS user (the registry read that refuses agent names). It adds no NATS role and no secret. Its identity plugin runs with GELDAR_IDENTITY_LANE=human. The bot ingress (`velocity`) is unchanged and stays offline-mode.
+
+Ports: loopback only, 127.0.0.1:${SCRATCH_HUMAN_PORT}. The default is 35566; deploy/scratch/nf.env sets 55566 for the nf project. Caps: 0.5 CPU, 768m memory with no swap, 256 pids, restart no, label geldar.scratch=true. Nothing is published on a public address.
+
+Connecting: the owner opens an SSH tunnel from the owner's machine to the loopback port on the host (`ssh -L <local-port>:127.0.0.1:<human-port> <host>`), then the vanilla client connects to localhost on the local port. A vanilla client with a real Microsoft account should see the normal Mojang sign-in, then the shard.
+
+Checks (UNVERIFIED until run on a host; record each result):
+1. Join with an ordinary account name: the join succeeds and the player shows in the Paper player list.
+2. Join with an agent-shaped name (a name the identity plugin's human lane refuses, see plugin/velocity-identity): the join is refused by the identity plugin.
+3. The UUID the server logs for the join is the online UUID (Mojang's), NOT the offline-mode UUID derived from the name. Record both lines: the velocity-human join line and the Paper join line, each with its UUID, and the offline UUID for comparison.
+
+What to capture: the velocity-human and Paper log lines for checks 1 to 3 and the health of the velocity-human container. Redact account names, IP addresses and any token before the lines leave the host. Never capture secret files.
+
+Node steps need the owner's approval: any run on a node, a tunnel to a node, and any change to the public port or the SRV record. Nothing here is public: the port is loopback only, and the public game port by SRV record is a separate owner decision that is not made.

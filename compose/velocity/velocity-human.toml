@@ -1,0 +1,50 @@
+# Velocity human listener for the NeoForge shard (scratch overlay compose/opt-in/scratch-human.yml, service velocity-human).
+# Humans are players: online-mode = true, so Mojang authentication decides the account and its UUID. The bot ingress
+# (compose/velocity/velocity.toml) stays offline-mode and unpublished; this file is a separate proxy with its own container.
+# The forwarding secret is the Docker secret file (the same secret the NeoForge server's Proxy Compatible Forge reads).
+# The identity plugin runs with GELDAR_IDENTITY_LANE=human: it refuses agent-shaped names. See docs/runbooks/scratch-stack.md.
+config-version = "2.7"
+# Inside the container only: the overlay publishes this port on 127.0.0.1 and nothing else.
+bind = "0.0.0.0:25565"
+motd = "Geldar shard (scratch)"
+show-max-players = 20
+online-mode = true
+force-key-authentication = false
+prevent-client-proxy-connections = false
+player-info-forwarding-mode = "modern"
+forwarding-secret-file = "/run/secrets/velocity-forwarding"
+announce-forge = false
+kick-existing-players = false
+ping-passthrough = "DISABLED"
+sample-players-in-ping = false
+enable-player-address-logging = true
+
+[servers]
+# The NeoForge game server (the scratch service paper) is reachable only on the compose network.
+paper = "paper:25565"
+try = ["paper"]
+
+[forced-hosts]
+
+[advanced]
+compression-threshold = 256
+compression-level = -1
+# Humans connect from their own addresses; a small login limit guards the proxy without throttling one shared source.
+login-ratelimit = 3000
+connection-timeout = 5000
+read-timeout = 30000
+haproxy-protocol = false
+tcp-fast-open = false
+bungee-plugin-message-channel = true
+show-ping-requests = false
+failover-on-unexpected-server-disconnect = true
+announce-proxy-commands = true
+log-command-executions = false
+log-player-connections = true
+accepts-transfers = false
+
+[query]
+enabled = false
+port = 25565
+map = "Velocity"
+show-plugins = false

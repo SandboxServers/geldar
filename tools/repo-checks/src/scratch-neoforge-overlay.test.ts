@@ -254,13 +254,14 @@ describe('nf.env: the port block of scratch-nf', () => {
     .map((l) => l.split('=') as [string, string]);
   const env = Object.fromEntries(pairs);
 
-  it('has exactly the five allowed keys, with the table values', () => {
+  it('has exactly the six allowed keys, with the table values', () => {
     expect(pairs.map(([k]) => k)).toEqual([
       'SCRATCH_PG_PORT',
       'SCRATCH_NATS_PORT',
       'SCRATCH_NATS_MON_PORT',
       'SCRATCH_MC_PORT',
       'SCRATCH_RCON_PORT',
+      'SCRATCH_HUMAN_PORT',
     ]);
     expect(env).toEqual({
       SCRATCH_PG_PORT: '35432',
@@ -268,6 +269,7 @@ describe('nf.env: the port block of scratch-nf', () => {
       SCRATCH_NATS_MON_PORT: '38222',
       SCRATCH_MC_PORT: '55565',
       SCRATCH_RCON_PORT: '55575',
+      SCRATCH_HUMAN_PORT: '55566',
     });
   });
 

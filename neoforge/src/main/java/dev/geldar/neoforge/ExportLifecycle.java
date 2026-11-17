@@ -74,6 +74,18 @@ public final class ExportLifecycle {
         }
     }
 
+    /** Events the publisher has discarded so far; 0 when the export is off. */
+    public long dropped() {
+        EventPublisher current = publisher;
+        return current == null ? 0L : current.dropped();
+    }
+
+    /** Whether the publisher can deliver now; false when the export is off. */
+    public boolean connected() {
+        EventPublisher current = publisher;
+        return current != null && current.connected();
+    }
+
     /** Closes the publisher, which flushes what it can for a bounded time, then releases the connection. */
     public synchronized void stop() {
         EventPublisher current = publisher;
