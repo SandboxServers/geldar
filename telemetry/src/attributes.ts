@@ -94,6 +94,8 @@ const FORBIDDEN_STEMS: readonly string[] = [
   'accesstoken',
   'passwd',
   'password',
+  'passphrase',
+  'signature',
   'secret',
   'cookie',
   'authorization',
