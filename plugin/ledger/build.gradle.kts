@@ -16,11 +16,18 @@ dependencies {
     compileOnly(libs.bluemap.api) {
         isTransitive = false
     }
+    // spark provides its API at runtime when installed (soft dependency); compile-only, never bundled.
+    compileOnly(libs.spark.api) {
+        isTransitive = false
+    }
     implementation(project(":ledger-core"))
     implementation(libs.opentelemetry.api)
 
     testImplementation(libs.paper.api)
     testImplementation(libs.gson)
+    testImplementation(libs.spark.api) {
+        isTransitive = false
+    }
     testImplementation(testFixtures(project(":ledger-core")))
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
