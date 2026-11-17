@@ -11,6 +11,8 @@ coreprotect = "24.1"
 bluemap-api = "2.8.2"
 # BlueMap's Vector3d type (its HtmlMarker takes one). Compile-only: BlueMap provides it at runtime; a 2016 artifact.
 flow-math = "1.0.3"
+# Ledger (PT-03a): the OpenTelemetry API only (not relocated). spark-api is deferred to the card that first uses it (see plugin/README.md).
+opentelemetry-api = "1.67.0"
 
 [libraries]
 paper-api = { module = "io.papermc.paper:paper-api", version.ref = "paper" }
@@ -23,3 +25,4 @@ velocity-api = { module = "com.velocitypowered:velocity-api", version.ref = "vel
 coreprotect = { module = "net.coreprotect:coreprotect", version.ref = "coreprotect" }
 bluemap-api = { module = "de.bluecolored:bluemap-api", version.ref = "bluemap-api" }
 flow-math = { module = "com.flowpowered:flow-math", version.ref = "flow-math" }
+opentelemetry-api = { module = "io.opentelemetry:opentelemetry-api", version.ref = "opentelemetry-api" }
