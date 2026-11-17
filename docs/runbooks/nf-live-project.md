@@ -95,7 +95,8 @@ colo-notice.sh, colo-cd-players.sh and .github/workflows/colo-deploy.yml. Not ru
 The operator script is `deploy/nf-deploy.sh`. Run it on the node from an exported tree (a directory with no `.git` at its
 root; a checkout is refused, and `--local` is for the tests only). Run it as the operator account, never as root.
 
-- Verbs: `plan` (runs every gate and prints the steps, changes nothing), `up`, `status`, `down` (stops and removes the
+- Verbs: `plan` (runs every gate and prints the steps, changes nothing), `up` (refuses an unseeded neoforge-data volume),
+  `seed-bundle` (once per volume; see "Seeding the NeoForge bundle" below), `status`, `down` (stops and removes the
   project's containers and networks; volumes are kept), `down --volumes` (also removes the volumes, after the operator types
   `geldar-nf` at the prompt), `logs <service>`.
 - The project name (`geldar-nf`) and the file (`compose/nf-live.yml`) are constants. The script refuses to run when
@@ -112,8 +113,42 @@ root; a checkout is refused, and `--local` is for the tests only). Run it as the
 - `DEPLOY_DRY_RUN=1` prints the steps of `up` and `down` without running them. The gates still run.
 - No CI workflow runs this script. It is operator-run. A continuous deploy for geldar-nf would be a separate change that the
   owner must approve.
-- UNVERIFIED on a real node: the bundle is checked on the host, but nothing in this script copies it into the `neoforge-data`
-  volume (item 7.1 below). `up` has not been run against a live node.
+- `up` checks that `geldar-nf_neoforge-data` is seeded: the volume exists and its `.geldar-bundle.sha256` marker verifies
+  (`sha256sum -c --strict` in a throwaway container). If not, `up` refuses and names `seed-bundle`. `plan` does not check it.
+- UNVERIFIED on a real node: `seed-bundle` and the `up` check have run only against stubs. `up` has not been run against a live node.
+
+### Seeding the NeoForge bundle: `nf-deploy.sh seed-bundle`
+
+The entrypoint runs in bundle mode only when the `neoforge-data` volume already holds the extracted bundle and its marker.
+`seed-bundle` puts it there. It runs once per volume.
+
+1. On the trusted desktop, not the node, from the reviewed commit: `sh deploy/scratch/build-neoforge-bundle.sh <output-dir>`
+   (`<output-dir>` is a new, empty directory; Docker is needed). It writes `neoforge-26.1.2-build<N>-bundle.tar.gz` and
+   `bundle.sha256`, and prints the tarball's sha256. The bundle is valid only for the itzg image digest in `compose/nf-live.yml`
+   (and the scratch runbook's rule applies: a digest bump means rebuild).
+2. Compare the tarball's sha256 by a second channel: read it out, or send it apart from the tarball. The `bundle.sha256` that
+   travels with the tarball only guards corruption. `NF_BUNDLE_TARBALL_SHA256` must come from the second channel.
+3. Copy the tarball to the node (scp) into a directory the operator account owns.
+4. On the node, from the exported tree, as the operator account (never root):
+   `NF_BUNDLE_TARBALL=<absolute path of the tarball> NF_BUNDLE_TARBALL_SHA256=<64 lowercase hex> sh deploy/nf-deploy.sh seed-bundle`.
+   `DEPLOY_DRY_RUN=1` in front prints the extract without running it.
+
+What the verb does, in order, and stops at the first failure:
+- Refuses unless the volume `geldar-nf_neoforge-data` is absent or empty. A seeded volume is never overwritten; there is no
+  `--force-reseed`.
+- Refuses a tarball path that is not absolute, a symlink or not a regular file, and a sha256 that differs from
+  `NF_BUNDLE_TARBALL_SHA256` (the stdin form of `sha256sum`).
+- Lists the archive (`tar -tzf`, `tar -tzvf`). Refuses an absolute path, a `..` segment, any entry that is not a regular file or
+  a directory (so no symlink, hardlink or device), and an archive without `.geldar-bundle.sha256`.
+- Extracts through one throwaway container of the image pinned in `compose/nf-live.yml` (the verb reads the reference from that
+  file). It runs with `--network none`, `--rm`, as root inside that container only, the tarball mounted read-only, and
+  `tar -xzf` into the volume, then `chown -R --reference=/data /data` as the scratch flow does.
+- Checks the marker with `sha256sum -c --strict` in another throwaway container. It prints OK, or fails closed. On failure, do not
+  start the stack; leave the volume for the operator to inspect.
+
+Nothing here removes a volume. Reseeding a volume means removing it by hand, and `down --volumes` removes every project
+volume, Postgres data included, so that decision is the operator's. UNVERIFIED on a node: the listing, the extract, the chown
+and the marker check have run only against stubs.
 
 ### What must never restart the autonomous shard (concrete, from the repo)
 
@@ -131,9 +166,9 @@ root; a checkout is refused, and `--local` is for the tests only). Run it as the
 
 ## 7. UNVERIFIED (not confirmed in code or on a server)
 
-1. **The NeoForge offline bundle is not seeded by this file.** The entrypoint runs bundle mode when `.geldar-bundle.sha256` exists in
-   the data dir (the neoforge-data volume). deploy/scratch/build-neoforge-bundle.sh builds the bundle; how scratch.sh copies it into the
-   volume was not read. The seeding step is UNVERIFIED.
+1. **DONE in the repo: the NeoForge offline bundle is seeded by `nf-deploy.sh seed-bundle`** (section 6, "Seeding the NeoForge
+   bundle"). It copies the scratch flow's steps (empty volume, sha256, tar listing, extract through the pinned image with no network,
+   chown, marker check). Its run on a node is UNVERIFIED.
 2. **identity-seed uses the deploy NATS user.** The design lists deploy only for the notice. Whether that user may create the identity KV
    buckets is UNVERIFIED; the per-shard NATS auth set must grant it, or the one-shot uses another user.
 3. **The Postgres init runs sql/ from empty.** The file mounts ../sql into docker-entrypoint-initdb.d (as colo does). That 0001 to 0066 run
@@ -152,7 +187,7 @@ root; a checkout is refused, and `--local` is for the tests only). Run it as the
 ## 8. Before the first start (checklist, in order)
 
 1. Per-shard NATS auth set generated into compose/secrets-nf/ (the later packet) and the secret files written 0600.
-2. The neoforge bundle seeded (item 7.1); compose/velocity/velocity-nf.toml is in place (bot ingress, backend neoforge:25565).
+2. The neoforge bundle seeded (`nf-deploy.sh seed-bundle`, section 6; item 7.1 is done in the repo); compose/velocity/velocity-nf.toml is in place (bot ingress, backend neoforge:25565).
 3. `docker compose -p geldar-nf -f compose/nf-live.yml config --quiet` with the real environment.
 4. Re-measure the node's memory and cores; confirm the caps in section 3 still fit beside the autonomous shard.
 5. Start `nats`, then `postgres`, then `eventsink`, then `identity-seed`, then `neoforge`, then `velocity`. Read-only probes only

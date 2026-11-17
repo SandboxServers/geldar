@@ -1,7 +1,8 @@
 #!/bin/sh
 # Operator script for the live NeoForge project (compose project geldar-nf, compose/nf-live.yml). Run it on the node from an
 # exported tree (a git checkout is refused unless --local, which the tests use), as the operator account (never root, and
-# never with elevated rights). Verbs: plan (prints the gates and the steps, changes nothing), up, status, down [--volumes], logs <service>.
+# never with elevated rights). Verbs: plan (prints the gates and the steps, changes nothing), up (refuses an unseeded
+# neoforge-data volume), seed-bundle (once per volume: extracts the offline bundle tarball into it), status, down [--volumes], logs <service>.
 # The project name and the compose file are constants here. deploy/common.sh (the colo model) is NOT sourced, and the script
 # refuses to run when GELDAR_PROJECT or GELDAR_COLO_COMPOSE is set, so no colo setting can reach this project.
 # It never names golem-body or players-host (they are not services of compose/nf-live.yml). down removes containers and
@@ -9,6 +10,7 @@
 # the steps of up and down without running them; the gates still run. Inputs come from the environment, never the repo:
 #   NF_MOD_JAR_HOST, NF_MOD_SHA256     the pinned geldar NeoForge mod jar and its sha256 (64 lowercase hex)
 #   NF_BUNDLE_DIR, NF_BUNDLE_SHA256    the NeoForge offline bundle directory and the sha256 of its .geldar-bundle.sha256 list
+#   NF_BUNDLE_TARBALL, NF_BUNDLE_TARBALL_SHA256   seed-bundle only: the absolute path of the bundle tarball and its sha256
 #   NF_SECRETS_DIR                     the secret files (default compose/secrets-nf); NF_SERVICE_UID (default 1000)
 # Runbook: docs/runbooks/nf-live-project.md (section 6).
 set -eu
@@ -27,6 +29,8 @@ MEM_CAPS_MIB=16640
 MEM_MARGIN_MIB=8192
 # Disk: the free-space floor for the project's volumes and images, in KiB (50 GiB). Measured 2026-11-17: 1.1T free on /mnt/nvme.
 MIN_FREE_DISK_KB=52428800
+# The NeoForge data volume. compose/nf-live.yml declares neoforge-data with no name:, so compose names it <project>_neoforge-data.
+VOLUME=${PROJECT}_neoforge-data
 
 die() {
   echo "nf-deploy: error: $*" >&2
@@ -80,7 +84,7 @@ for arg in "$@"; do
   esac
 done
 case $verb in
-  plan | up | status) [ -z "$SERVICE" ] || die "$verb takes no service name" ;;
+  plan | up | status | seed-bundle) [ -z "$SERVICE" ] || die "$verb takes no service name" ;;
   down) [ -z "$SERVICE" ] || die "down takes no service name" ;;
   logs)
     [ -n "$SERVICE" ] || die "logs needs a service: one of $SERVICES"
@@ -90,7 +94,7 @@ case $verb in
     esac
     ;;
   *)
-    echo "usage: nf-deploy.sh plan|up|status|down [--volumes] [--local]|logs <service> [--local]" >&2
+    echo "usage: nf-deploy.sh plan|up|status|down [--volumes] [--local]|logs <service> [--local]|seed-bundle [--local]" >&2
     exit 2
     ;;
 esac
@@ -174,6 +178,69 @@ check_bundle() {
   [ "$got" = "$want" ] || die "the sha256 of the bundle list does not match NF_BUNDLE_SHA256; nothing started"
 }
 
+# The image of the neoforge service in compose/nf-live.yml: the one pinned reference, read from the file (no second copy here).
+compose_image() {
+  img=$(awk '/^  [a-z][a-z-]*:$/ { svc = ($1 == "neoforge:") } svc && /^    image: / { print $2; exit }' "$COMPOSE_FILE")
+  printf '%s\n' "$img" | grep -Eq '^itzg/minecraft-server:[A-Za-z0-9._-]+@sha256:[0-9a-f]{64}$' ||
+    die "the neoforge image in $COMPOSE_FILE is not a pinned itzg/minecraft-server reference"
+  printf '%s\n' "$img"
+}
+
+# The volume is seeded when its bundle marker verifies. Read-only, no network, the service uid; the marker check is the entrypoint's.
+seed_marker_ok() {
+  docker run --rm --network none --user "$SERVICE_UID" -v "$VOLUME:/data:ro" --entrypoint /bin/sh "$IMAGE" \
+    -c 'cd /data && sha256sum -c --strict --status .geldar-bundle.sha256' >/dev/null 2>&1
+}
+
+# up refuses an unseeded volume: a missing volume, or one whose marker does not verify, is not seeded.
+check_seeded() {
+  IMAGE=$(compose_image) || exit 1
+  if ! docker volume inspect "$VOLUME" >/dev/null 2>&1 || ! seed_marker_ok; then
+    die "volume $VOLUME is not seeded with the NeoForge bundle; run nf-deploy.sh seed-bundle once (runbook section 7), then up"
+  fi
+  say "neoforge-data: seeded (the bundle marker verifies)"
+}
+
+# The tarball must be an absolute regular file with the expected sha256 (the stdin form). Its archive must hold no absolute
+# path, no ../ segment, no link or device (only regular files and directories) and the marker. Nothing is extracted before these pass.
+check_seed_inputs() {
+  TARBALL=${NF_BUNDLE_TARBALL:-}
+  # A drive-letter path is accepted only so the Windows test fixtures pass; the node is Linux and a drive letter is no path there.
+  case $TARBALL in
+    /* | [A-Za-z]:[\\/]*) ;;
+    *) die "NF_BUNDLE_TARBALL must be an absolute path to the bundle tarball" ;;
+  esac
+  case $TARBALL in
+    *,*) die "NF_BUNDLE_TARBALL must not contain a comma (docker --mount syntax)" ;;
+  esac
+  [ ! -L "$TARBALL" ] || die "NF_BUNDLE_TARBALL is a symlink; give the regular file"
+  [ -f "$TARBALL" ] || die "NF_BUNDLE_TARBALL is not a regular file"
+  want=${NF_BUNDLE_TARBALL_SHA256:-}
+  printf '%s' "$want" | grep -Eq '^[0-9a-f]{64}$' || die "NF_BUNDLE_TARBALL_SHA256 must be 64 lowercase hex digits"
+  need sha256sum
+  got=$(sha256sum <"$TARBALL" | awk '{print $1}')
+  [ "$got" = "$want" ] || die "the sha256 of the tarball does not match NF_BUNDLE_TARBALL_SHA256; nothing extracted"
+  need tar
+  names=$(tar -tzf "$TARBALL") || die "cannot list the tarball"
+  verbose=$(tar -tzvf "$TARBALL") || die "cannot list the tarball with entry types"
+  bad=$(printf '%s\n' "$names" | awk '/^\// || /^[A-Za-z]:/ || /^-/ || /(^|\/)\.\.(\/|$)/ { print; exit }')
+  [ -z "$bad" ] || die "the tarball holds an absolute, dash-led or ../ entry ($bad); nothing extracted"
+  odd=$(printf '%s\n' "$verbose" | awk 'NF && substr($0, 1, 1) != "-" && substr($0, 1, 1) != "d" { print; exit }')
+  [ -z "$odd" ] || die "the tarball holds a symlink, hardlink or device entry ($odd); nothing extracted"
+  printf '%s\n' "$names" | grep -Fxq -e .geldar-bundle.sha256 -e ./.geldar-bundle.sha256 ||
+    die "the tarball has no .geldar-bundle.sha256 marker; it is not a bundle"
+}
+
+# The volume must hold nothing: a seeded volume is never overwritten. A missing volume is empty (the extract creates it).
+check_volume_empty() {
+  if docker volume inspect "$VOLUME" >/dev/null 2>&1; then
+    listing=$(docker run --rm --network none --user "$SERVICE_UID" -v "$VOLUME:/data:ro" --entrypoint /bin/sh "$IMAGE" \
+      -c 'ls -A /data') || die "cannot list $VOLUME"
+    [ -z "$listing" ] || die "volume $VOLUME is not empty; it is never overwritten (seed-bundle runs once per volume)"
+  fi
+  say "volume $VOLUME: absent or empty"
+}
+
 check_inputs() {
   check_secrets
   check_mod_jar
@@ -223,17 +290,40 @@ cmd_plan() {
   say "  2. up --no-deps --exit-code-from identity-seed identity-seed (one-shot)"
   say "  3. up -d --wait eventsink neoforge"
   say "  4. up -d --wait velocity (the only published port: 127.0.0.1:$PORT)"
+  say "up refuses until the neoforge-data volume is seeded (seed-bundle, once per volume); plan does not check it"
   say "golem-body and players-host are not in this project and are never started"
   say "all gates passed"
 }
 
 cmd_up() {
   gates
+  check_seeded
   act dc up -d --wait nats postgres
   act dc up --no-deps --exit-code-from identity-seed identity-seed
   act dc up -d --wait eventsink neoforge
   act dc up -d --wait velocity
   say "up: project $PROJECT started (no volume removed)"
+}
+
+# Extracts the offline bundle tarball into the empty neoforge-data volume, then checks its marker. Once per volume.
+# The extract runs as root inside a throwaway container of the pinned image: no network, the tarball read-only, --rm.
+cmd_seed_bundle() {
+  check_operator
+  check_service_uid
+  check_no_colo_labels
+  IMAGE=$(compose_image) || exit 1
+  check_seed_inputs
+  check_volume_empty
+  say "seed-bundle: extracting the tarball into $VOLUME (one throwaway container, no network, the tarball read-only)"
+  act docker run --rm --network none --user 0 \
+    --mount "type=bind,source=$TARBALL,target=/in/bundle.tar.gz,readonly" -v "$VOLUME:/data" \
+    --entrypoint /bin/sh "$IMAGE" -c 'tar -xzf /in/bundle.tar.gz -C /data && chown -R --reference=/data /data'
+  if [ "${DEPLOY_DRY_RUN:-0}" = 1 ]; then
+    say "seed-bundle: dry run; the extract and the marker check were not run"
+    return 0
+  fi
+  seed_marker_ok || die "the marker check of $VOLUME failed after the extract; do not start the stack; leave the volume for the operator to inspect"
+  say "seed-bundle: $VOLUME seeded; the bundle marker verifies. up is now allowed."
 }
 
 cmd_status() {
@@ -268,4 +358,5 @@ case $verb in
   status) cmd_status ;;
   down) cmd_down ;;
   logs) cmd_logs ;;
+  seed-bundle) cmd_seed_bundle ;;
 esac
