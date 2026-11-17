@@ -23,6 +23,8 @@ public final class BudgetGuard implements CollectorGuard {
     private volatile long maxBudgetNs;
     private volatile boolean configEnabled = true;
     private volatile boolean tripped;
+    /** Set by {@link #reenable} on the config thread; consumed by the next {@link #begin} on the main thread. */
+    private volatile boolean resetPending;
     private volatile boolean usesTickAverage;
 
     // Main thread only.
@@ -67,6 +69,11 @@ public final class BudgetGuard implements CollectorGuard {
 
     @Override
     public long begin() {
+        if (resetPending) {
+            resetPending = false;
+            sumNs = 0;
+            samples = 0;
+        }
         if (++calls < SAMPLE_EVERY) {
             return 0L;
         }
@@ -116,10 +123,12 @@ public final class BudgetGuard implements CollectorGuard {
         }
     }
 
-    /** Only from the config reload or a plugin restart. Clears the switch and the running average. */
+    /**
+     * Only from the config reload or a plugin restart. Clears the switch at once and asks the main thread to clear the
+     * running average at its next {@link #begin}; this thread never writes the main-thread-only counters.
+     */
     public void reenable() {
-        sumNs = 0;
-        samples = 0;
+        resetPending = true;
         tripped = false;
     }
 }
