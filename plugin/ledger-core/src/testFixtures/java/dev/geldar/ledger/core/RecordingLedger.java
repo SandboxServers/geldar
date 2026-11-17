@@ -1,6 +1,7 @@
 package dev.geldar.ledger.core;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -51,6 +52,7 @@ public final class RecordingLedger implements Ledger {
     private final Map<String, DoubleSupplier> doubleGauges = new ConcurrentHashMap<>();
     private final List<MetricRegistration> metricRegs = new CopyOnWriteArrayList<>();
     private final List<String> rejectedKeys = new CopyOnWriteArrayList<>();
+    private final List<String> rejectedEventKeys = new CopyOnWriteArrayList<>();
     private final List<Registration> eventRegs = new CopyOnWriteArrayList<>();
     private final List<Registration> contentRegs = new CopyOnWriteArrayList<>();
     private final List<EventRecord> events = new CopyOnWriteArrayList<>();
@@ -108,7 +110,10 @@ public final class RecordingLedger implements Ledger {
         return new EventLog() {
             @Override
             public int register(String eventName, Severity s, int ratePerSecond, String... fieldNames) {
-                eventRegs.add(new Registration(eventName, s, List.of(fieldNames)));
+                eventRegs.add(new Registration(eventName, s, Arrays.asList(fieldNames)));
+                for (String f : fieldNames) {
+                    noteEventKey(f);
+                }
                 return eventRegs.size() - 1;
             }
 
@@ -121,6 +126,9 @@ public final class RecordingLedger implements Ledger {
             @Override
             public void emitMap(String eventName, Severity s, Map<String, Object> attrs) {
                 noteMainThread("emitMap " + eventName);
+                for (String k : attrs.keySet()) {
+                    noteEventKey(k);
+                }
                 events.add(new EventRecord(eventName, s, 0, 0, 0, null, null, null, Map.copyOf(attrs)));
             }
         };
@@ -176,6 +184,16 @@ public final class RecordingLedger implements Ledger {
         return out;
     }
 
+    /** The field names an event was registered with (first registration of that name), in order. */
+    public List<String> eventFields(String name) {
+        for (Registration r : eventRegs) {
+            if (r.name().equals(name)) {
+                return r.fields();
+            }
+        }
+        return List.of();
+    }
+
     public List<EventRecord> allEvents() {
         return List.copyOf(events);
     }
@@ -222,6 +240,20 @@ public final class RecordingLedger implements Ledger {
     /** Metric attribute keys that failed {@link AttrKeys#metricAllowed} (an unpaired gauge key is listed too). */
     public List<String> rejectedMetricKeys() {
         return List.copyOf(rejectedKeys);
+    }
+
+    /**
+     * Event attribute keys (registered field names other than null, and emitMap keys) that failed
+     * {@link AttrKeys#allowed}: the real sink drops them, so a collector must never use one.
+     */
+    public List<String> rejectedEventKeys() {
+        return List.copyOf(rejectedEventKeys);
+    }
+
+    private void noteEventKey(String key) {
+        if (key != null && !AttrKeys.allowed(key)) {
+            rejectedEventKeys.add(key);
+        }
     }
 
     /** Descriptions of forbidden main-thread calls seen so far. Empty when no HostInfo was given. */

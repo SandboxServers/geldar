@@ -83,10 +83,10 @@ public final class TickCollector implements Collector {
                         Names.Events.SERVER_SLOW_TICK,
                         Severity.WARN,
                         SLOW_TICK_RATE_PER_SECOND,
-                        "server_tick",
-                        "duration_ms",
-                        "overruns",
-                        "world");
+                        AttrKeys.SERVER_TICK,
+                        AttrKeys.DURATION_MS,
+                        AttrKeys.TICK_OVERRUNS,
+                        AttrKeys.WORLD);
         listener = new TickEndListener(
                 l.histogram(Names.Tick.LAG_MS, "ms", "tick duration", TickStats.BOUNDS).bind(),
                 l.counter(Names.Tick.OVERRUNS_TOTAL, "1", "ticks over 50 ms").bind(),

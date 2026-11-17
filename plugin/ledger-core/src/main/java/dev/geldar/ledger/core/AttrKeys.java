@@ -32,11 +32,13 @@ public final class AttrKeys {
     public static final String EXCEPTION_CLASS = "geldar.exception.class";
     public static final String PLUGIN = "geldar.plugin";
     public static final String DURATION_MS = "geldar.duration_ms";
+    /** Consecutive overrun count on {@code geldar.server.slow_tick} (PT-04b). */
+    public static final String TICK_OVERRUNS = "geldar.tick_overruns";
 
     private static final Set<String> ALLOWED = Set.of(
             LIFE_ID, PLAYER_UUID, WORLD, WORLD_TICK, SERVER_TICK, MC_SESSION, EVENT_CLASS, CANCELLED, COLLECTOR, QUEUE,
             CAUSE, RESULT, X, Y, Z, ITEM, BLOCK, CONTAINER_TYPE, AMOUNT, TEXT, COMMAND, EXCEPTION_CLASS, PLUGIN,
-            DURATION_MS);
+            DURATION_MS, TICK_OVERRUNS);
 
     // Metric attribute keys: BARE, as in the README section 4 metric table (decision 2026-11-17). The prefixed
     // geldar.* keys above are for events and logs only.

@@ -3,7 +3,9 @@ package dev.geldar.ledger.paper.tick;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.geldar.ledger.core.AttrKeys;
 import dev.geldar.ledger.core.BoundCounter;
+import dev.geldar.ledger.core.RecordingLedger;
 import dev.geldar.ledger.core.Cancellable;
 import dev.geldar.ledger.core.CollectorContext;
 import dev.geldar.ledger.core.CollectorGuard;
@@ -40,6 +42,18 @@ class TickCollectorTest {
     boolean frozen;
     float rate = 20f;
     boolean guardAllowed = true;
+    Ledger ledgerOverride;
+
+    @Test
+    void everyEventAttributeKeyPassesTheRealAllowList() {
+        RecordingLedger rec = new RecordingLedger();
+        ledgerOverride = rec;
+        collector().start(ctx());
+        assertEquals(
+                List.of(AttrKeys.SERVER_TICK, AttrKeys.DURATION_MS, AttrKeys.TICK_OVERRUNS, AttrKeys.WORLD),
+                rec.eventFields(Names.Events.SERVER_SLOW_TICK));
+        assertEquals(List.of(), rec.rejectedEventKeys());
+    }
 
     @SuppressWarnings("unchecked")
     CollectorContext ctx() {
@@ -114,7 +128,7 @@ class TickCollectorTest {
         };
         return new CollectorContext() {
             public Ledger ledger() {
-                return l;
+                return ledgerOverride != null ? ledgerOverride : l;
             }
 
             public HostScheduler scheduler() {
