@@ -84,7 +84,7 @@ function scrubPem(text: string): string {
 // character, dot or hyphen before it, optionally after `--`) and has no length cap: only run starts are
 // tried, so the scan stays linear.
 const KEY_SEP = /(?<![\w.-])(?:--)?([A-Za-z][\w.-]*)(\\*["']?[ \t]*[=:][ \t]*\\*["']?)/g;
-const KEY_HINT = /token|pass|secret|key|cookie|signature/i;
+const KEY_HINT = /token|pass|secret|key|cookie|signature|session|jwt|auth/i;
 /** Whole credential words: a key is a credential only when one of its segments says so (not `secretary`, `cookies`, `tokens`). */
 const CREDENTIAL_WORDS: ReadonlySet<string> = new Set([
   'password',
@@ -95,9 +95,19 @@ const CREDENTIAL_WORDS: ReadonlySet<string> = new Set([
   'cookie',
   'apikey',
   'signature',
+  'jwt',
+  'auth',
 ]);
 /** Two adjacent segments that together name a credential (`api_key`, `private_key`, `secret_key`). */
-const CREDENTIAL_PAIRS: ReadonlySet<string> = new Set(['apikey', 'privatekey', 'secretkey']);
+const CREDENTIAL_PAIRS: ReadonlySet<string> = new Set([
+  'apikey',
+  'privatekey',
+  'secretkey',
+  'accesskey',
+  'signingkey',
+  'sshkey',
+  'sessionid',
+]);
 const COOKIE_KEY = /(?:^|[._-])cookie$/i;
 /** A cookie header value in `name=value` form: the rest of the line. */
 const COOKIE_PAIRS = /[^\s=;"']+=[^\r\n]*/y;
@@ -156,6 +166,28 @@ function looksSecret(value: string): boolean {
   return value.length >= 8 && !plainWord(value);
 }
 
+/** Up to 512 characters, so a long run with many keys in it is not rescanned to its end for each key. */
+const WHITESPACE_RUN = /[^\s]{1,512}/y;
+const DIGIT_AND_LETTER = /^(?=.*\d)(?=.*[A-Za-z])/;
+
+/**
+ * A short unquoted value that stops at `, ; & ) }` (`password=Zq9x,K2mP7vL4Ab`): the whole run to the next
+ * whitespace is the value when that run looks secret (8 or more characters and not a plain word, or a digit
+ * and a letter), has no `=`, `"` or `'` (so `token=5,name=bob` and minified JSON keep their other fields) and
+ * carries something after the delimiter. Trailing `, ; . ) } ]` do not count (`password: swordfish, then` stays).
+ * Returns the length to hide, or 0.
+ */
+function delimitedSecretLength(text: string, end: number, run: string): number {
+  const stop = text.charAt(end + run.length);
+  if (stop === '' || !',;&)}'.includes(stop)) return 0;
+  WHITESPACE_RUN.lastIndex = end;
+  const whole = WHITESPACE_RUN.exec(text)?.[0] ?? '';
+  if (/[="']/.test(whole)) return 0;
+  const value = whole.replace(/[,;.)}\]]+$/, '');
+  if (value.length <= run.length) return 0;
+  return looksSecret(value) || DIGIT_AND_LETTER.test(value) ? whole.length : 0;
+}
+
 /** The text with the value of every credential `key=value` / `key: value` pair replaced. One linear pass. */
 function scrubKeyValues(text: string): string {
   let out = '';
@@ -190,6 +222,7 @@ function scrubKeyValues(text: string): string {
       VALUE_RUN.lastIndex = end;
       const run = VALUE_RUN.exec(text)?.[0] ?? '';
       length = flagOrQuery || looksSecret(run) ? run.length : 0;
+      if (length === 0) length = delimitedSecretLength(text, end, run);
     }
     if (length === 0) continue;
     out += text.slice(last, end) + REDACTED;
