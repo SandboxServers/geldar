@@ -34,7 +34,7 @@ This records the P0 join test of a vanilla-protocol golem Body against a scratch
 ## 3. Cleanup
 
 - Whitelist was empty afterwards.
-- Registry removal relied on the probe's own "registry=removed" line. We did not read the registry independently.
+- Registry removal: runs 6 and 7 relied on the probe's own "registry=removed" line. From run 8b the probe reads the key back after cleanup and prints `p0 verify registry=absent` (section 9), which is a re-read that does not trust the delete call. One run so far.
 - `down` removed all scratch volumes, networks and images.
 - Live container names were identical to the baseline taken before the run.
 
@@ -47,6 +47,8 @@ This records the P0 join test of a vanilla-protocol golem Body against a scratch
 - Run 5: stopped at the mod-load check. The runbook and the stack did not match: the scratch stack mounts no geldar jar.
 - Run 6: passed. This is the run in section 2.
 - Run 7: passed. Our own mod loaded on a dedicated server, and the vanilla probe still passed with it installed. See section 8.
+- Run 8: the first attempt stopped at the export step. The generator then ran in the live checkout: eight ignored files were written and nothing ran, so no harm. Run 8b is the rerun.
+- Run 8b: passed. The probe read the registry key back after cleanup and got `absent`. See section 9.
 
 ## 5. Findings worth keeping
 
@@ -61,7 +63,9 @@ This records the P0 join test of a vanilla-protocol golem Body against a scratch
 
 - Human vanilla client (criterion 4).
 - Our own mod beyond one load (run 7, section 8): a second start with the jar, any behaviour of the mod, and events exported.
-- Registry key absence, read independently.
+- Registry key absence after a TTL expiry. Run 8b read a key that had been deleted, not one that expired on its own.
+- Any second read of the registry key: there is one verify line (run 8b).
+- A second probe run, or a second start with the jar mounted, after run 8b.
 - Behaviour with many Bodies.
 - UUID forwarding in online-mode.
 - Windows and other platforms.
@@ -87,3 +91,14 @@ This records the P0 join test of a vanilla-protocol golem Body against a scratch
 
 - Proves: the mod loads on a dedicated server, and the vanilla Body joins through Velocity with it installed.
 - Does not prove: that the mod does anything yet; a second start with the jar; a human vanilla client (criterion 4 is still NOT RUN); many Bodies; the registry key read from outside; online-mode UUID forwarding.
+
+## 9. Run 8b: the probe verifies the registry key
+
+- 2026-11-17, scratch NeoForge 26.1.2 (build 126), Java 25, suffix nf, one probe run. Code: main at d60f589a.
+- Stack: `up` reached healthy for all five services. The offline bundle was rebuilt for this run (144,507,104 bytes; new sha256, not pinned).
+- Mod: loaded once on the dedicated server. The game server ran as the account uid.
+- Probe: exit 0. Join, goto and mine completed. `p0 cleanup registry=removed whitelist=removed`, then `p0 verify registry=absent` as the last stdout line. The whitelist was empty afterwards.
+- Logs: the probe name appears 9 times in the game server log and 6 times in the Velocity log. The netty VarInt trace appeared twice, both in the same second and before the probe; none appeared after it.
+- `down` was clean, and the live container names matched the baseline.
+- Proves: in this run the delete took effect. The probe read the key back after cleanup, without trusting the delete call, and got `absent`.
+- Does not prove: a read of a key that expired by TTL (this run read a deleted key); a second probe run or a restart with the jar mounted; a human vanilla client; many Bodies.

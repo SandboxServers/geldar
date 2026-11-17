@@ -480,6 +480,9 @@ against the file before a run. As of this section:
   delete did not take effect: record the run and check the bucket by hand before calling the probe clean. An `unknown`
   verify means nothing was learned about the key, so it is not a pass. The key also expires on its own about a minute
   after its last put, so a later look at an absent key does not prove this run's delete; the verify line is the proof.
+- Observed: `p0 verify registry=absent` as the last stdout line, with exit 0, in run 8b (one run, 2026-11-17).
+  UNVERIFIED: an `absent` read of a key that expired on its own (run 8b read a deleted key); a second probe run; the
+  `present` and `unknown` outcomes.
 
 Comparing the username and UUID with the server logs (the grep forms are unverified on the 26.1 server logs; record the
 raw output with the run, not a summary):
@@ -498,7 +501,7 @@ and a signal. Confirm both after the run, with the stack still up:
     docker exec scratch-nf-paper-1 rcon-cli whitelist list
 
 The probe's username must not be in that list. For the registry, the probe's cleanup line (`p0 cleanup registry=...`) is the
-record; no operator-side registry read is verified yet. If the whitelist still lists the probe's username, or the
+record, and its verify line (`p0 verify registry=...`) is the read-back; no operator-side read of the key is verified yet. If the whitelist still lists the probe's username, or the
 cleanup line says `failed`, record it as a finding and keep the stack up for inspection before `down`.
 
 The probe image. `probe` builds `geldar-body:<project>` (for example `geldar-body:scratch-nf`). That is a custom tag, so
