@@ -16,8 +16,8 @@ import jdk.jfr.consumer.RecordedEvent;
 import jdk.jfr.consumer.RecordingStream;
 
 /**
- * An in-process JFR event stream on one daemon thread named {@code ledger-jfr}. Nothing goes to disk by this class: no
- * {@code dump}, no {@code setDestination}. Memory is bounded by {@code setMaxAge(30 s)} and {@code setMaxSize(8 MiB)}.
+ * An in-process JFR event stream on one daemon thread named {@code ledger-jfr}. This class does not dump or set a
+ * destination; JFR's own repository is bounded by maxAge and maxSize. Memory is bounded by {@code setMaxAge(30 s)} and {@code setMaxSize(8 MiB)}.
  * Only events that handlers request, that are allowed by {@link JfrSettings} and that are not on its deny-list are
  * enabled, each with an explicit period or threshold and no stack trace. Never throws into the caller: every failure
  * is logged once and leaves an inert runner. Handler exceptions are caught and counted in the {@code jfr} drop queue
@@ -91,15 +91,8 @@ public final class JfrRunner {
         }
         RecordingStream rs = new RecordingStream();
         this.stream = rs;
-        rs.setMaxAge(MAX_AGE);
-        rs.setMaxSize(MAX_SIZE_BYTES);
+        configure(forStream(rs), resolved);
         resolved.forEach((name, setting) -> {
-            var ev = rs.enable(name).withoutStackTrace();
-            if (setting.kind() == JfrSettings.Setting.Kind.PERIOD) {
-                ev.withPeriod(setting.value());
-            } else {
-                ev.withThreshold(setting.value());
-            }
             enabled.put(name, setting);
             rs.onEvent(name, event -> dispatch(handlers, name, event));
         });
@@ -107,6 +100,56 @@ public final class JfrRunner {
         t.setDaemon(true);
         this.thread = t;
         t.start();
+    }
+
+    /** What {@link #configure} needs from a stream; a test double records the calls. */
+    interface StreamConfigurer {
+        void setMaxAge(Duration age);
+
+        void setMaxSize(long bytes);
+
+        void setSettings(Map<String, String> settings);
+    }
+
+    static StreamConfigurer forStream(RecordingStream rs) {
+        return new StreamConfigurer() {
+            @Override
+            public void setMaxAge(Duration age) {
+                rs.setMaxAge(age);
+            }
+
+            @Override
+            public void setMaxSize(long bytes) {
+                rs.setMaxSize(bytes);
+            }
+
+            @Override
+            public void setSettings(Map<String, String> settings) {
+                rs.setSettings(settings);
+            }
+        };
+    }
+
+    /**
+     * Applies the safety bounds: {@link #MAX_AGE}, {@link #MAX_SIZE_BYTES}, and for every event {@code enabled=true},
+     * {@code stackTrace=false} and its explicit period or threshold.
+     */
+    static void configure(StreamConfigurer c, Map<String, JfrSettings.Setting> resolved) {
+        c.setMaxAge(MAX_AGE);
+        c.setMaxSize(MAX_SIZE_BYTES);
+        c.setSettings(effectiveSettings(resolved));
+    }
+
+    /** The JFR settings map for the resolved events, e.g. {@code jdk.FileRead#stackTrace=false}. */
+    static Map<String, String> effectiveSettings(Map<String, JfrSettings.Setting> resolved) {
+        Map<String, String> out = new LinkedHashMap<>();
+        resolved.forEach((name, setting) -> {
+            out.put(name + "#enabled", "true");
+            out.put(name + "#stackTrace", "false");
+            String key = setting.kind() == JfrSettings.Setting.Kind.PERIOD ? "#period" : "#threshold";
+            out.put(name + key, setting.value().toNanos() + " ns");
+        });
+        return out;
     }
 
     private void dispatch(List<JfrHandler> handlers, String name, RecordedEvent event) {
