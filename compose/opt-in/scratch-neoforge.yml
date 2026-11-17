@@ -1,0 +1,26 @@
+# Scratch NeoForge variant (suffix nf). Layers after compose/opt-in/scratch.yml and is used only through
+# deploy/scratch/scratch.sh with SCRATCH_PLATFORM=neoforge (see docs/runbooks/scratch-stack.md):
+#   docker compose -p scratch-<suffix> -f compose/phase0.yml -f compose/opt-in/scratch.yml \
+#     -f compose/opt-in/scratch-neoforge.yml ...
+# Only the paper service changes: it runs NeoForge 26.1.2 (build 126) with Proxy Compatible Forge 1.3.1 (the forwarding mod)
+# instead of Paper with geldar-core. The entrypoint compose/neoforge/neoforge-entrypoint.sh fetches and hash-checks both
+# artifacts. No geldar-core jar is mounted, so the eventsink sees no game events. Caps, secrets, the volume name and
+# every other port come from scratch.yml and phase0.yml. RCON is published on loopback only, for the Body-join test (P0).
+services:
+  paper:
+    environment:
+      TYPE: NEOFORGE
+      NEOFORGE_VERSION: "26.1.2.${SCRATCH_NEOFORGE_BUILD:-126}"
+    entrypoint: !override ["/bin/sh", "/geldar/neoforge-entrypoint.sh"]
+    volumes: !override
+      - paper-data:/data
+      - ./neoforge/neoforge-entrypoint.sh:/geldar/neoforge-entrypoint.sh:ro
+    ports: !override
+      - "127.0.0.1:${SCRATCH_RCON_PORT:-35575}:25575"
+    healthcheck:
+      # phase0's check waits for /tmp/geldar-core.ready, which NeoForge never writes.
+      test: ["CMD-SHELL", "mc-health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15m

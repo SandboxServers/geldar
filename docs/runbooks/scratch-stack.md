@@ -45,6 +45,26 @@ required for `telemetry` (a missing file exits 2) and optional for every other s
 | --- | --- | --- | --- | --- |
 | `scratch-a` and other suffixes (defaults) | 15432 | 14222 | 18222 | 35565 |
 | `scratch-telemetry` (`telemetry.env`, defaults + 10000) | 25432 | 24222 | 28222 | 45565 |
+| `scratch-nf` (`nf.env`, defaults + 20000, NeoForge; RCON 55575) | 35432 | 34222 | 38222 | 55565 |
+
+## NeoForge variant (suffix nf)
+
+Run the game server as NeoForge instead of Paper, behind the same scratch Velocity, for the Body-join test (P0):
+
+    SCRATCH_PLATFORM=neoforge SCRATCH_NATS_AUTH_DIR=<dir> sh deploy/scratch/scratch.sh up nf
+
+- The `paper` service runs NeoForge 26.1.2 (build 126) with Proxy Compatible Forge 1.3.1 (the mod that gives NeoForge Velocity's
+  modern forwarding) instead of Paper with geldar-core. `compose/neoforge/neoforge-entrypoint.sh` fetches the installer
+  and the mod and checks each against a pinned hash; a mismatch stops the start.
+- The overlay is `compose/opt-in/scratch-neoforge.yml`, layered after `scratch.yml`. Only `SCRATCH_PLATFORM=neoforge`
+  adds it. `status` and `down` take the same setting, so `down -v` removes what `up` made.
+- No geldar-core jar is mounted, so the eventsink sees no game events from this server. The caps are the scratch caps
+  (3072m, 1.5 CPUs). Ports come from `deploy/scratch/nf.env`, loopback only.
+- The first start is slow: it downloads the mod and the installer, runs the installer, and waits for the health check's
+  15 minute start period. Allow about 15 to 18 minutes before `up` returns (the 15 minute start period plus the health retries).
+- RCON is published only in this variant, on `127.0.0.1:55575`, with the run's own `rcon.txt` secret. The live tests use
+  `GELDAR_RCON_PORT=55575`, `GELDAR_RCON_PASSWORD_FILE` set to the path of that `rcon.txt` (a path, never the value),
+  `GELDAR_MC_PORT=55565`, `GELDAR_NATS_URL` on 127.0.0.1 port 34222, and `GELDAR_MC_HOST` and `GELDAR_RCON_HOST` 127.0.0.1.
 
 Exit codes: 2 usage or NATS auth refused, 3 a gate failed,
 1 anything else. On 2 and 3 nothing is started. `down` works after a failed `up`: run it to clean up. If `down` fails
