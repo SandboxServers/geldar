@@ -15,6 +15,25 @@ java {
     }
 }
 
+repositories {
+    // The test libraries come from Maven Central only. exclusiveContent keeps these groups off the other project
+    // repositories, which ModDevGradle adds (the NeoForged maven among them), so the mirror never serves them.
+    exclusiveContent {
+        forRepository {
+            mavenCentral()
+        }
+        filter {
+            includeGroupAndSubgroups("org.junit")
+            includeGroup("org.opentest4j")
+            includeGroup("org.apiguardian")
+        }
+    }
+}
+
+dependencyLocking {
+    lockAllConfigurations()
+}
+
 neoForge {
     version = providers.gradleProperty("neoforge.version").get()
 
