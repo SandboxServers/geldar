@@ -1,6 +1,32 @@
 # geldar-neoforge
 
-A server-side NeoForge 26.1.2 mod for the Geldar vivarium. This packet is the project skeleton only: it builds, loads on a dedicated server, logs one line on server start, and has unit tests. There is no game logic yet. The progression mod and the later Core adapter go here.
+A server-side NeoForge 26.1.2 mod for the Geldar vivarium. It builds, loads on a dedicated server, and carries the NATS export lifecycle (config and publisher; no events yet). There is no game logic yet. The progression mod and the later Core adapter go here.
+
+## Export: config and publisher lifecycle (P3-2)
+
+The mod starts a NATS publisher when the server starts and closes it when the server stops. It is **off by default**: with no config the mod logs `geldar_neoforge export disabled` and connects to nothing, so existing scratch runs are unchanged.
+
+**Not done yet:** no event listeners and no exported events (P3-3), and no maintenance notices (P3-4). The publisher carries the lifecycle only.
+
+Config file: `config/geldar_neoforge.properties`, read from the server's working directory (its `config/` directory). A plain properties file is used instead of NeoForge's `ModConfigSpec`, because that API is UNVERIFIED for 26.1 and a properties file can be unit-tested without a server. Environment variables win over the file, as on Paper.
+
+| Key | Environment (wins) | Default | Meaning |
+|---|---|---|---|
+| `export.enabled` | `GELDAR_NEOFORGE_EXPORT` | `false` | `true` turns the export on (only `true` enables it) |
+| `nats.url` | `GELDAR_NATS_URL` | `nats://nats:4222` | `nats://` or `tls://`, with no credentials in the URL |
+| `shard` | `GELDAR_SHARD` | none; required when enabled | one NATS subject token, `^[a-z][a-z0-9-]{1,31}$` (no `phase0` default, so the mod never writes Paper's shard by accident) |
+| `nats.user` | `GELDAR_NATS_USER` | unset | the NATS user; set together with `nats.password.file` |
+| `nats.password.file` | `GELDAR_NATS_PASSWORD_FILE` | unset | path to a file holding the password. Read at connect time; its content is never logged or kept |
+| `queue.capacity` | none | `10000` | the bounded queue; the oldest event is dropped when it is full |
+
+Rules:
+- Any problem while enabled (a bad or credentialed URL, a missing or bad shard, a user without a password file, an unreadable password file, a bad capacity) leaves the export off. Each problem logs one warning that names the key, never the value or the path. The server keeps running.
+- Credentials: core-common's `NatsEventPublisher` reads `GELDAR_NATS_USER` and `GELDAR_NATS_PASSWORD_FILE` from the environment, or from system properties of the same names. When the properties file supplies them and the environment does not, the mod sets those system properties. This is process-wide JVM state; it is the only seam core-common offers without editing it.
+- Operator log lines (never agent-visible): `geldar_neoforge export disabled`, `geldar_neoforge export enabled, shard <token>`, `geldar_neoforge export stopped, dropped <n>`. A NATS outage logs one warning, and the next only after a reconnect.
+- Threading: `publish` only enqueues. The connection, the retries (500 ms doubling to 30 s) and the flush run on core-common's daemon thread. Stop flushes for a bounded time (about 3 s) and then closes. While NATS is down the server keeps running and events are counted as dropped.
+- Start hook: `ServerStartingEvent`, the event this mod already uses. `ServerStartedEvent` is not used anywhere in the repo, so it is UNVERIFIED. Stop hook: `ServerStoppingEvent` (VERIFIED in `neoforge-ledger`).
+
+Tests: `ExportConfigTest` (defaults, env over file, bad or credentialed URL, missing password file, shard rule, capacity, `toString` without the path), `ExportLifecycleTest` (order, factory failure, publish without waiting for NATS, NATS down with drops and a bounded stop, no password or user in the log), `OperatorLogBridgeTest` (one warning per outage). The NATS-up path needs a live NATS and is not covered by a unit test; it belongs to the live lane.
 
 ## Rules this project keeps
 
