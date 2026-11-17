@@ -359,6 +359,11 @@ class TickCollectorTest {
             tick(l, 1);
         }
         assertEquals(20.0, doubleGauges.get("geldar_world_tick_ms").getAsDouble());
+        next[0] = null; // the level vanished or has no ring yet: 0, not the last value
+        for (int i = 0; i < 20; i++) {
+            tick(l, 1);
+        }
+        assertEquals(0.0, doubleGauges.get("geldar_world_tick_ms").getAsDouble());
         c[0].stop();
     }
 
@@ -429,7 +434,7 @@ class TickCollectorTest {
     @Test
     void stopEndsALoopWhoseCheckSwallowsTheInterrupt() throws Exception {
         java.util.concurrent.atomic.AtomicInteger runs = new java.util.concurrent.atomic.AtomicInteger();
-        StallWatchdog w = new StallWatchdog(1, ms -> Thread.sleep(1), () -> {
+        StallWatchdog w = new StallWatchdog(1, ms -> Thread.onSpinWait(), () -> {
             runs.incrementAndGet();
             Thread.interrupted(); // swallows the stop request
         });
@@ -437,7 +442,11 @@ class TickCollectorTest {
         while (runs.get() == 0) {
             Thread.sleep(1);
         }
+        Thread t = Thread.getAllStackTraces().keySet().stream()
+                .filter(x -> x.getName().equals(StallWatchdog.THREAD_NAME))
+                .findFirst()
+                .orElseThrow();
         w.stop();
-        assertFalse(w.running());
+        assertFalse(t.isAlive());
     }
 }
