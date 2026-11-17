@@ -207,3 +207,5 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0366](0366-open-spec-5-14-watched-wording-versus-0059.md) | Open: spec 5.14 Watched wording versus decision 0059; the conflict stated with citations, no recommendation; an owner decision | Open (owner decision) |
 | [0370](0370-telemetry-clickhouse-25-12-pin.md) | Telemetry ClickHouse and Keeper pinned to 25.12.5 (build 44); keeper required | Accepted |
 | [0373](0373-telemetry-package-release-tarball.md) | @geldar/telemetry distributed to the geldar-scriptorium kit as a GitHub Release tarball built by a tag-triggered workflow (`telemetry-vX.Y.Z`, GITHUB_TOKEN only, built JS, immutable, hash pinned in the consumer lockfile) | Accepted |
+| [0371](0371-amend-0071-otlp-ingest-route-and-one-caddy-recreate.md) | Amends 0071: the OTLP ingest route on the shared Caddy (hostname held in the environment), and one owner-approved Caddy container recreate for its token | Accepted |
+| [0372](0372-amend-0096-gateway-loopback-publish-for-ingest.md) | Amends 0096: the telemetry gateway loopback publish for the ingest route; the ingest site file goes in config/geldar | Accepted |

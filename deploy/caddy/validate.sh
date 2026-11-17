@@ -19,6 +19,9 @@ env_args=(
   -e GELDAR_MCP_UPSTREAM=mcp.example.test:8788
   -e GELDAR_REGISTER_UPSTREAM=register.example.test:18090
   -e GELDAR_KINO_ENABLED=1
+  -e GELDAR_INGEST_HOST=ingest.example.test
+  -e GELDAR_INGEST_UPSTREAM=localhost:4320
+  -e GELDAR_INGEST_TOKEN=0000000000000000000000000000000000000000000000000000000000000000
 )
 
 check() {
@@ -37,3 +40,6 @@ check() {
 
 check live map.caddy glass.caddy mcp.caddy
 check killed map-off.caddy glass-off.caddy mcp-off.caddy
+# The ingest site and its kill switch name the same host, so they are never in one set. Test values only, never the real token.
+check live-otel map.caddy glass.caddy mcp.caddy otel.caddy
+check killed-otel map-off.caddy glass-off.caddy mcp-off.caddy otel-off.caddy

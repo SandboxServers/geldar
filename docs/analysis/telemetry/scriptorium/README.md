@@ -45,7 +45,6 @@ Size is changed lines (code and tests, estimate). `CI?` says whether any file is
 | Card | Repo | What | Depends on | Size | Files touched | Node / owner | CI? |
 |---|---|---|---|---|---|---|---|
 | [TM-01](tm-01-allow-list-mind-keys.md) | geldar | allow-list keys for Mind spans and logs | none | 80 | `telemetry/src/attributes.ts`, `telemetry/test/mind-keys.test.ts` | no | no |
-| [TM-02](tm-02-mcp-trace-context-extract.md) | geldar | MCP: extract `_meta.traceparent`, then HTTP `traceparent`; parent the tool span | T-06 (merged) | 220 | `threshold/mcp/src/trace-parent.ts` (new), `telemetry.ts`, `world-session.ts`, 2 tests | Colo redeploy, batched | YES (`threshold/mcp/**`) |
 | [TM-10](tm-10-kit-telemetry-copy-a.md) | scriptorium | kit telemetry package, part A: allow-list, capText, content | TM-01 | 260 (copied) | `packages/telemetry/{package.json,tsconfig.json,src/attributes.ts,src/cap-text.ts,src/content.ts}` | no | n/a |
 | [TM-11](tm-11-kit-telemetry-copy-b.md) | scriptorium | kit telemetry package, part B: SDK, processors, index, drift test | TM-10 | 330 (copied) | `packages/telemetry/src/{sdk,sdk-processors,index}.ts`, `packages/telemetry/test/drift.test.ts`, lockfile | no | n/a |
 | [TM-12](tm-12-supervisor-settings-start.md) | scriptorium | `GELDAR_TELEMETRY_URL` setting, start and stop in the CLI, off by default | TM-11 | 140 | `settings.ts`, `cli.ts`, `Sup dir/start.ts` (new), `package.json`, test | no | n/a |
@@ -56,10 +55,6 @@ Size is changed lines (code and tests, estimate). `CI?` says whether any file is
 | [TM-17](tm-17-genai-spans.md) | scriptorium | stream to GenAI spans (`chat`, `execute_tool`), tokens, subagent nesting, no content | TM-13, TM-16 | 280 | `Sup dir/stream-spans.ts` (new), `supervisor.ts` (1 line), test | no | n/a |
 | [TM-18](tm-18-content-events.md) | scriptorium | content events: assistant text, reasoning, tool arguments and results, journal | TM-17 | 200 | `Sup dir/stream-content.ts` (new), `stream-spans.ts` (small), test | no | n/a |
 | [TM-19](tm-19-live-tail-latency.md) | scriptorium | tail the session file for per-turn latency | TM-17 | 220 | `Sup dir/tail.ts` (new), `supervisor.ts` (2 lines), test | no | n/a |
-| [TM-20](tm-20-chatgpt-meta-traceparent.md) | scriptorium | ChatGPT harness: `_meta.traceparent` per MCP call | TM-02, TM-22 | 150 | `packages/chatgpt/src/tools.ts`, `trace-meta.ts` (new), test | no | n/a |
-| [TM-21](tm-21-cli-traceparent-proof.md) | scriptorium | proof harness: does CLI 2.1.310 send `traceparent` to an MCP server | none | 240 | `tools/live-check/src/header-probe*.ts` (new), test | ops live run, owner OAuth | n/a |
-| [TM-22](tm-22-childenv-traceparent.md) | scriptorium | `TRACEPARENT` per run in `childEnv`, gated | TM-13, TM-21 verdict, TM-24 | 120 | `supervisor.ts` (`childEnv` only), `Sup dir/run-span.ts`, test | no | n/a |
-| [TM-23](tm-23-run-id-fallback.md) | both | CONDITIONAL: neutral run-id header and deterministic trace ids | TM-21 fails | 280 | split in two (kit half, geldar half) | no | geldar half YES |
 | [TM-24](tm-24-isolation-test-unit.md) | scriptorium | HC-26 extension, unit: child env carries nothing of the supervisor's | none (write first) | 200 | `packages/supervisor/src/child-env-isolation.test.ts` (new) | no | n/a |
 | [TM-25](tm-25-isolation-test-container.md) | scriptorium | HC-26 extension, container: model uid cannot read the supervisor's environment | TM-24 | 180 | `tests/isolation/` docker test (new) | ops docker run | n/a |
 | [TM-26](tm-26-leak-scan-kit.md) | scriptorium | telemetry vocabulary scan over template, prompt text, skills, file names | none | 150 | `tests/template/telemetry-words.test.ts` (new) | no | n/a |
@@ -76,41 +71,36 @@ Size is changed lines (code and tests, estimate). `CI?` says whether any file is
  TM-01 (geldar keys) --> TM-10 --> TM-11 --> TM-12 --+--> TM-13 --+--> TM-14
                                                      |            +--> TM-17 --> TM-18
  TM-16 (pure parser) --------------------------------+--> TM-15   |         \--> TM-19
-                                                                  +--> TM-22  (needs TM-21 verdict, TM-24)
  TM-24 (unit isolation) --> TM-25 (container isolation)
- TM-21 (header proof) --yes--> TM-22 --> TM-20 (ChatGPT; also needs TM-02)
-                      \--no---> TM-23 (fallback run-id header)
- TM-02 (MCP extract) ---------------------------------------------------> TM-20, end-to-end proof of TM-22
  TM-30 --> TM-31 --> TM-32 + TM-33 --> TM-34 (owner, N13, after B1 and TM-35)
  TM-16 also feeds TM-17. TM-26 (leak scan) and TM-35 (rotation doc) have no dependencies.
 ```
 
 ## What can start NOW, in parallel
 
-Wave 1, all independent, no shared files: TM-01 (geldar `telemetry/`), TM-16 (`packages/verify`), TM-24 (one new supervisor test file), TM-26 (template tests), TM-30 (`image/otel-agent/`), TM-35 (doc), TM-21 (probe code; the live run waits for the ops agent and an owner decision), TM-02 (geldar `threshold/mcp/`; it can be coded now but must wait for the batch window to merge), TM-10 (it copies the geldar files at their current state plus the TM-01 key list; if TM-01 is not merged yet, TM-10 copies from the TM-01 branch).
+Wave 1, all independent, no shared files: TM-01 (geldar `telemetry/`), TM-16 (`packages/verify`), TM-24 (one new supervisor test file), TM-26 (template tests), TM-30 (`image/otel-agent/`), TM-35 (doc), TM-10 (it copies the geldar files at their current state plus the TM-01 key list; if TM-01 is not merged yet, TM-10 copies from the TM-01 branch).
 
-Wave 2 (after TM-10 and TM-11 merge): TM-12, then in parallel TM-13, TM-15, TM-31. After TM-13: TM-14, TM-17, TM-22 (gated). After TM-17: TM-18, TM-19. TM-32 and TM-33 in parallel after TM-31. TM-25 after TM-24. TM-20 after TM-02 and the TM-21 verdict. TM-23 only if TM-21 says the header is not sent.
+Wave 2 (after TM-10 and TM-11 merge): TM-12, then in parallel TM-13, TM-15, TM-31. After TM-13: TM-14, TM-17, After TM-17: TM-18, TM-19. TM-32 and TM-33 in parallel after TM-31. TM-25 after TM-24.
 
-Front-loaded because they unblock the most: the chain TM-01, TM-10, TM-11, TM-12 (everything on the supervisor waits on it); TM-16 (needed by TM-17, TM-18, TM-19 and by HC-41a); TM-24 (the isolation test must exist BEFORE any env change, so TM-22 cannot weaken it); TM-21 (decides TM-22 versus TM-23 and needs the owner, so it should start early); TM-30 (the agent config is the long pole for the node).
+Front-loaded because they unblock the most: the chain TM-01, TM-10, TM-11, TM-12 (everything on the supervisor waits on it); TM-16 (needed by TM-17, TM-18, TM-19 and by HC-41a); TM-24 (the isolation test must exist BEFORE any env change); TM-30 (the agent config is the long pole for the node).
 
 ### Overlap between parallel coders
 
-`packages/supervisor/src/supervisor.ts` is touched, by a few call lines each, by TM-13, TM-14, TM-15, TM-17, TM-19 and TM-22. It is at 668 of 700 lines: each of those cards adds only call lines and puts the logic in `packages/supervisor/src/telemetry/`. Merge them in the order TM-13, TM-15, TM-14, TM-17, TM-19, TM-22; each coder rebases on the last, and conflicts are one-line hunks. TM-13 must report the line count after its change; if it would pass 690, TM-13 first moves the `status()` writer out (the card says how). No two cards create the same new file. `packages/supervisor/package.json` is touched by TM-12 only. The launcher cards TM-32 and TM-33 touch different files.
+`packages/supervisor/src/supervisor.ts` is touched, by a few call lines each, by TM-13, TM-14, TM-15, TM-17 and TM-19. It is at 668 of 700 lines: each of those cards adds only call lines and puts the logic in `packages/supervisor/src/telemetry/`. Merge them in the order TM-13, TM-15, TM-14, TM-17, TM-19; each coder rebases on the last, and conflicts are one-line hunks. TM-13 must report the line count after its change; if it would pass 690, TM-13 first moves the `status()` writer out (the card says how). No two cards create the same new file. `packages/supervisor/package.json` is touched by TM-12 only. The launcher cards TM-32 and TM-33 touch different files.
 
 ## Batching: Body, Mind and Colo redeploys
 
 - Scriptorium cards are not in the geldar `colo-images` filter. Their effect reaches a Mind only when the kit image is rebuilt and each Mind is restarted by the launcher on the Mind host (the owner's machine). Batch them: merge all kit cards behind the off-by-default switch (R6), cut ONE kit image release, restart Minds once, and switch the endpoint on later in a second owner step. Nothing on the Colo restarts for any of them.
-- Geldar cards that hit the filter: TM-02 (`threshold/mcp/**`), the geldar half of TM-23 (conditional), and the T-19 vocabulary change in `contract/**` (another session's card). These recreate the MCP and, by the filter, every Body through `colo-deploy`. Hold them and batch them into the C1 window with the other held PRs (rollout-plan C1), never in the same window as B1 or D2. Merge rule from RESUME: do not merge a PR with a `colo-images` path file outside the batch window.
+- Geldar cards that hit the filter: the T-19 vocabulary change in `contract/**` (another session's card). It recreates the MCP and, by the filter, every Body through `colo-deploy`. Hold it and batch it into the C1 window with the other held PRs (rollout-plan C1), never in the same window as B1 or D2. Merge rule from RESUME: do not merge a PR with a `colo-images` path file outside the batch window.
 - Geldar cards that do NOT hit the filter: TM-01 (`telemetry/**`), TM-35 and these docs. They can merge at any time.
-- Ordering between windows: TM-02 must be deployed before TM-22 is switched on in production; without it `TRACEPARENT` goes nowhere and the Mind spans are merely orphan roots (harmless, less useful).
+- Ordering between windows: none from the dropped cards. The tool span stays a root and joins by player_id plus time (see Dropped cards).
 
 ## Node and owner steps (no card does these)
 
 1. B1 (shared Caddy route, one recreate for the token) is a Colo step in the rollout plan; N13 needs it first.
 2. The owner generates and places the ingest token (never in a repo, chat or log). TM-35 is the rotation procedure that rollout-plan risk 8 says must exist before N13.
 3. TM-34 (install on each Mind host): an owner session per host.
-4. TM-21 live run: the ops agent, one scratch MCP on loopback, one real CLI call; the owner must allow an OAuth token for the probe (a player's own token must not be used).
-5. TM-25 docker run: the ops agent, on a machine with Docker.
+4. TM-25 docker run: the ops agent, on a machine with Docker.
 
 ## Assumptions
 
@@ -134,3 +124,12 @@ Front-loaded because they unblock the most: the chain TM-01, TM-10, TM-11, TM-12
 - G-9. The otel-agent image digest and the exact `otlphttp` exporter keys are UNVERIFIED here; TM-30 resolves the digest at implementation time and compares it with the gateway's pin (collector-design section 2).
 - G-10. Whether the kit image build copies workspace packages (so `packages/telemetry` reaches the container) is UNVERIFIED; TM-12 checks `image/Dockerfile` and stops if it does not.
 - G-11. The `player_id` and `run_id` attribute values (A5) and the content event names are this plan's choice; the owner or the T-17 dashboards card may rename them. Names are pinned in one file in the kit (`Sup dir/names.ts`, created by TM-13) so a rename is one edit.
+
+## Dropped cards
+
+TM-02 (MCP extracts `_meta.traceparent`, then the HTTP `traceparent` header, to parent the tool span), TM-20 (ChatGPT harness `_meta.traceparent`), TM-21 (CLI header proof harness), TM-22 (`TRACEPARENT` in the model child environment) and TM-23 (run-id header fallback, both halves, including TM-23b) were written and then dropped before any code was started. Their card files are deleted.
+
+- Why: the owner ruled (owner/geldar-93, relayed 2026-11-16) that spans join by `player_id` plus time, per R3 above and decision 0350 point 7: trace context is forwarded as `traceparent`/`tracestate` only where the SDKs do it, Baggage is not used, and nothing is injected into the model process. The model child environment must stay free of telemetry context. This is consistent with TM-24 and TM-25, which assert that the child gets NO `TRACEPARENT` and no `OTEL_*` variable (they plant `TRACEPARENT` as a canary that must NOT appear; keep them as written).
+- Join key now: `player_id` (span attribute, A5) plus time plus the MCP session. `run_id` is defined in A5 and TM-17 (`gen_ai.conversation.id`); attribute names are pinned in `packages/supervisor/src/telemetry/names.ts` (created by TM-13, G-11). No dropped card defined either.
+- Who and when: the owner, relayed 2026-11-16, approving the scriptorium orchestrator plan except these four cards.
+- TM-02 specifically: with TM-20 to TM-23 dropped nothing sends a carrier, so the extraction has no sender (spans join by `player_id` plus time, 0350 point 7; R3), and it lives in a `colo-images` path (`threshold/mcp/**`), so it would put dead code into the one batched Body/MCP deploy. The MCP tool span stays a root span; no surviving card depends on TM-02.

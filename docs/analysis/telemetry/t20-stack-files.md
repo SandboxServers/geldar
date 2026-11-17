@@ -68,3 +68,7 @@ The full list with numbers is in the README (section "Unverified, check in the s
 - The migrator runs the collector image's `migrate ready`, `migrate bootstrap`, `migrate sync up`, `migrate async up` sequence. The DSN is exported in the shell from the secret file, and `SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_REPLICATION=true` is set as an env var (the collector default, matching the macros). No `--replication` flag remains.
 - `low_cardinal_exception_grouping` is literal `false`, not an env var.
 - The wrapper that builds the DSN from the secret file.
+
+## Status after the retention window (2026-11-16)
+
+The retention window (T-24) ran on the node on 2026-11-16 and is closed. The T37 PR removes the `geldar_signoz_admin` user and its profile from `users.xml`; `compose.retention.yml` stays for a later window but works only after the user is re-added. The window observed six logs objects altered (the four logs tables plus `logs_attribute_keys` and `logs_resource_keys`). The remaining teardown (delete the hash line, then the secret file) is in the README Window log.
