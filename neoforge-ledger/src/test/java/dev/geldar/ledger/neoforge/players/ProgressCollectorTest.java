@@ -43,6 +43,7 @@ class ProgressCollectorTest {
     final List<String> emitted = new CopyOnWriteArrayList<>();
     final List<List<String>> registered = new ArrayList<>();
     final AtomicBoolean main = new AtomicBoolean();
+    final AtomicInteger mainDrops = new AtomicInteger();
     final AtomicBoolean allowed = new AtomicBoolean(true);
     final AtomicInteger begun = new AtomicInteger();
     final AtomicInteger ended = new AtomicInteger();
@@ -88,7 +89,13 @@ class ProgressCollectorTest {
                             return registered.size() - 1;
                         }
                         case "record" -> recorded.add(slots((int) a[0], a));
-                        case "emitMap" -> emitted.add(a[0] + "|" + new java.util.TreeMap<>((Map<?, ?>) a[2]));
+                        case "emitMap" -> {
+                            if (main.get()) { // as OtelLedger.emitMap: dropped on the main thread
+                                mainDrops.incrementAndGet();
+                            } else {
+                                emitted.add(a[0] + "|" + new java.util.TreeMap<>((Map<?, ?>) a[2]));
+                            }
+                        }
                         default -> throw new UnsupportedOperationException(m.getName());
                     }
                     return null;

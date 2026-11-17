@@ -98,6 +98,7 @@ Not emitted (UNVERIFIED in the API spike or without a VERIFIED row): furnace ext
 | `collector.connections.enabled` | on (as Paper) | `geldar.player.join` (`amount` = roster size), `geldar.player.quit` (`duration_ms`) |
 
 - A name with the life id shape gets `geldar.life_id` and a per-connection ULID `geldar.mc_session` (opened at login, closed at logout, keyed by the player object, so a late logout of an old connection never closes a reconnected agent's session). The snapshot event carries the same `mc_session`.
-- A human gets neither, and no name, UUID or address is read or exported. Behind Velocity the server sees the same name as the Body and the standard offline UUID, which is reversible by dictionary, so no UUID is used. A human-client join is untested.
+- A human gets neither, and no name, UUID or address is read or exported. VERIFIED in one P0 run (run 6, 2026-11-17): behind Velocity the server sees the same name as the Body and the standard offline UUID derived from the name (one run, one name). That UUID is reversible by dictionary, so no UUID is used. A human-client join is untested.
+- The session is keyed by the player's packet listener, which survives respawn (a respawn builds a new `ServerPlayer` but keeps the listener) and differs per connection.
 - Gaps: no verified event for prelogin or kick reasons (nothing is emitted), and no quit cause.
 - Not yet wired to `mc_session`: the advancement event (follow-up; the progress collector is keyed by UUID).

@@ -297,7 +297,6 @@ public final class SnapshotCollector implements Collector {
         }
         return head
                 .str(AttrKeys.WORLD, v.world())
-                .str(AttrKeys.WORLD, v.world())
                 .lng(AttrKeys.X, v.x())
                 .lng(AttrKeys.Y, v.y())
                 .lng(AttrKeys.Z, v.z())

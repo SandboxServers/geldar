@@ -1,10 +1,10 @@
 package dev.geldar.ledger.neoforge.players;
 
 import dev.geldar.ledger.core.AttrKeys;
-import dev.geldar.ledger.core.Attrs;
 import dev.geldar.ledger.core.Collector;
 import dev.geldar.ledger.core.CollectorContext;
 import dev.geldar.ledger.core.CollectorGuard;
+import dev.geldar.ledger.core.EventLog;
 import dev.geldar.ledger.core.Ledger;
 import dev.geldar.ledger.core.Names;
 import dev.geldar.ledger.core.Severity;
@@ -28,7 +28,11 @@ public final class ConnectionCollector implements Collector {
 
     private final LongSupplier clockMs;
     private final SessionIds sessions;
-    private volatile Ledger ledger;
+    static final int RATE_PER_SECOND = 20;
+
+    private volatile EventLog events;
+    private volatile int joinId;
+    private volatile int quitId;
     private volatile CollectorGuard guard;
 
     public ConnectionCollector() {
@@ -56,13 +60,22 @@ public final class ConnectionCollector implements Collector {
         if (!l.config().collectorEnabled(ID)) {
             return;
         }
-        ledger = l;
+        // Field names are positional: three longs, then three strings (a null skips a slot). record() is main-thread safe;
+        // emitMap is not (the ledger drops it on the main thread).
+        EventLog ev = l.events();
+        joinId = ev.register(
+                Names.Events.PLAYER_JOIN, Severity.INFO, RATE_PER_SECOND,
+                AttrKeys.AMOUNT, null, null, AttrKeys.LIFE_ID, AttrKeys.MC_SESSION, null);
+        quitId = ev.register(
+                Names.Events.PLAYER_QUIT, Severity.INFO, RATE_PER_SECOND,
+                AttrKeys.DURATION_MS, null, null, AttrKeys.LIFE_ID, AttrKeys.MC_SESSION, null);
+        events = ev;
         guard = l.guard(ID);
     }
 
     @Override
     public synchronized void stop() {
-        ledger = null;
+        events = null;
         guard = null;
         sessions.clear();
     }
@@ -75,16 +88,16 @@ public final class ConnectionCollector implements Collector {
     /** A connection joined (main thread). {@code online} is the roster size. Never throws. */
     public void join(Object connection, String name, int online) {
         try {
-            Ledger l = ledger;
+            EventLog ev = events;
             CollectorGuard g = guard;
-            if (l == null || g == null || !g.allowed()) {
+            if (ev == null || g == null || !g.allowed()) {
                 return;
             }
             long token = g.begin();
             try {
                 String life = lifeId(name);
-                String session = life == null ? null : sessions.open(connection, clockMs.getAsLong());
-                l.events().emitMap(Names.Events.PLAYER_JOIN, Severity.INFO, joinAttrs(life, session, online));
+                String session = life == null || connection == null ? null : sessions.open(connection, clockMs.getAsLong());
+                ev.record(joinId, online, 0, 0, orEmpty(life), orEmpty(session), "");
             } finally {
                 g.end(token);
             }
@@ -99,17 +112,16 @@ public final class ConnectionCollector implements Collector {
     /** A connection left (main thread). Closes only this object's session, even while the collector is shut off. */
     public void quit(Object connection, String name) {
         try {
-            SessionIds.Session s = sessions.close(connection);
-            Ledger l = ledger;
+            SessionIds.Session s = connection == null ? null : sessions.close(connection);
+            EventLog ev = events;
             CollectorGuard g = guard;
-            if (l == null || g == null || !g.allowed()) {
+            if (ev == null || g == null || !g.allowed()) {
                 return;
             }
             long token = g.begin();
             try {
                 long duration = s == null ? 0 : Math.max(0, clockMs.getAsLong() - s.openedMs());
-                l.events().emitMap(
-                        Names.Events.PLAYER_QUIT, Severity.INFO, quitAttrs(lifeId(name), s == null ? null : s.id(), duration));
+                ev.record(quitId, duration, 0, 0, orEmpty(lifeId(name)), orEmpty(s == null ? null : s.id()), "");
             } finally {
                 g.end(token);
             }
@@ -121,24 +133,7 @@ public final class ConnectionCollector implements Collector {
         }
     }
 
-    static java.util.Map<String, Object> joinAttrs(String life, String session, int online) {
-        Attrs a = Attrs.of().lng(AttrKeys.AMOUNT, online);
-        return identity(a, life, session).build();
-    }
-
-    static java.util.Map<String, Object> quitAttrs(String life, String session, long durationMs) {
-        Attrs a = Attrs.of().lng(AttrKeys.DURATION_MS, durationMs);
-        return identity(a, life, session).build();
-    }
-
-    private static Attrs identity(Attrs a, String life, String session) {
-        Attrs r = a;
-        if (life != null) {
-            r = r.str(AttrKeys.LIFE_ID, life);
-        }
-        if (session != null) {
-            r = r.str(AttrKeys.MC_SESSION, session);
-        }
-        return r;
+    private static String orEmpty(String s) {
+        return s == null ? "" : s;
     }
 }

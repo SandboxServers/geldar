@@ -164,6 +164,62 @@ class ConnectionCollectorTest {
     }
 
     @Test
+    void joinAndQuitOnTheMainThreadAreRecordedNotDropped() {
+        FakeRig r = new FakeRig(); // the rig host says main, and drops any emitMap like the real ledger
+        ConnectionCollector c = started(r);
+        Object p = new Object();
+        c.join(p, "ag_ada_01", 1);
+        c.quit(p, "ag_ada_01");
+        assertEquals(0, r.mainThreadDrops.get());
+        assertEquals(2, r.events.size());
+    }
+
+    @Test
+    void sessionKeyIsStableAcrossRespawnSoSnapshotsAndQuitKeepIt() {
+        FakeRig r = new FakeRig();
+        ConnectionCollector c = started(r);
+        Object connection = new Object(); // the packet listener: the same object for every ServerPlayer of this connection
+        c.join(connection, "ag_ada_01", 1);
+        for (int i = 0; i < 1000; i++) {
+            assertEquals("S1", sessions.get(connection)); // a snapshot after respawn i
+            assertEquals(1, sessions.size());
+        }
+        now.set(3_000);
+        c.quit(connection, "ag_ada_01");
+        Map<?, ?> q = r.eventAttrs.get(1);
+        assertEquals("S1", q.get(AttrKeys.MC_SESSION));
+        assertEquals(2_000L, q.get(AttrKeys.DURATION_MS));
+        assertEquals(0, sessions.size());
+    }
+
+    @Test
+    void replacingAnOpenKeyAtTheCapKeepsTheMapAtTheCap() {
+        SessionIds s = new SessionIds(2, () -> "R" + seq.incrementAndGet());
+        Object a = new Object();
+        s.open(a, 0);
+        s.open(new Object(), 0);
+        String again = s.open(a, 5);
+        assertEquals(again, s.get(a));
+        assertEquals(2, s.size());
+        assertEquals(0, s.overflowed());
+        s.open(new Object(), 0);
+        assertEquals(1, s.overflowed());
+    }
+
+    @Test
+    void wiringGuardSwallowsThrowsButNotVmErrorsAndKeyOfIsNullSafe() {
+        ConnectionWiring.guarded(() -> {
+            throw new IllegalStateException("x");
+        });
+        org.junit.jupiter.api.Assertions.assertThrows(OutOfMemoryError.class, () -> ConnectionWiring.guarded(() -> {
+            throw new OutOfMemoryError();
+        }));
+        assertNull(ConnectionWiring.keyOf(null));
+        assertNull(ConnectionWiring.keyOf("not a player"));
+        assertNull(ConnectionWiring.sessionOf(null));
+    }
+
+    @Test
     void snapshotAttrsCarrySessionOnlyWhenKnown() {
         SnapshotCollector.Reading v = new SnapshotCollector.Reading("w", 0, 0, 0, 20, 20, 0, "survival");
         assertEquals("S9", SnapshotCollector.attrs("ag_ada_01", v, "S9").get(AttrKeys.MC_SESSION));

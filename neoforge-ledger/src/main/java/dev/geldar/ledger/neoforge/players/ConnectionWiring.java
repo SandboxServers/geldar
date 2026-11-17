@@ -7,6 +7,7 @@ import dev.geldar.ledger.neoforge.CollectorCtx;
 import dev.geldar.ledger.neoforge.LedgerLog;
 import java.util.logging.Logger;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
@@ -54,15 +55,26 @@ public final class ConnectionWiring {
 
     private void join(Player p) {
         MinecraftServer s = server;
-        collector.join(p, p.getGameProfile().name(), s == null ? 0 : s.getPlayerCount());
+        collector.join(keyOf(p), p.getGameProfile().name(), s == null ? 0 : s.getPlayerCount());
     }
 
     private void quit(Player p) {
-        collector.quit(p, p.getGameProfile().name());
+        collector.quit(keyOf(p), p.getGameProfile().name());
     }
 
-    /** The session of a connection for another collector; null when none is open. */
-    public static String sessionOf(Object connection) {
-        return SessionIds.shared().get(connection);
+    /**
+     * The session key: the player's packet listener. Vanilla builds a new {@code ServerPlayer} after every death or End
+     * exit but hands the same listener to it, so the key is stable across respawn and unique per connection (a
+     * reconnect gets a new listener, so a late logout of the old one never closes the new session). It is never a dead
+     * player. Null for anything that is not a connected server player.
+     */
+    static Object keyOf(Object player) {
+        return player instanceof ServerPlayer sp ? sp.connection : null;
+    }
+
+    /** The session of a player for another collector; null when none is open. */
+    public static String sessionOf(Object player) {
+        Object key = keyOf(player);
+        return key == null ? null : SessionIds.shared().get(key);
     }
 }
