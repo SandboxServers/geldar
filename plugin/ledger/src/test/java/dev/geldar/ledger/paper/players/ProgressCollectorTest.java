@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.geldar.ledger.core.AttrKeys;
 import dev.geldar.ledger.core.CollectorContext;
+import dev.geldar.ledger.core.ConfigParser;
 import dev.geldar.ledger.core.FakeHostInfo;
 import dev.geldar.ledger.core.FakeHostScheduler;
 import dev.geldar.ledger.core.HostInfo;
@@ -21,6 +22,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
 import java.util.UUID;
 import net.kyori.adventure.text.Component;
 import org.bukkit.NamespacedKey;
@@ -38,18 +40,30 @@ class ProgressCollectorTest {
     Path dir;
 
     final FakeHostInfo host = new FakeHostInfo();
-    final RecordingLedger ledger = new RecordingLedger(host, LedgerConfig.defaults());
+    final RecordingLedger ledger = new RecordingLedger(host, config("true"));
     final FakeHostScheduler scheduler = new FakeHostScheduler();
     final SessionIds sessions = new SessionIds();
     final List<Listener> registered = new ArrayList<>();
     final List<Player> online = new ArrayList<>();
     ProgressCollector collector;
 
+    static LedgerConfig config(String progress) {
+        Properties p = new Properties();
+        if (progress != null) {
+            p.setProperty("collector.progress.enabled", progress);
+        }
+        return ConfigParser.parse(p).config();
+    }
+
     void start() {
+        start(ledger);
+    }
+
+    void start(RecordingLedger led) {
         collector = new ProgressCollector(registered::add, () -> List.copyOf(online), () -> dir, sessions, ms -> {});
         collector.start(new CollectorContext() {
             public Ledger ledger() {
-                return ledger;
+                return led;
             }
 
             public HostScheduler scheduler() {
@@ -106,6 +120,19 @@ class ProgressCollectorTest {
     void tickStats() {
         host.mainThread(false);
         scheduler.advanceMillis(ProgressCollector.STATS_MS);
+    }
+
+    @Test
+    void offUnlessExplicitlyEnabled() {
+        for (String v : new String[] {null, "false"}) {
+            registered.clear();
+            start(new RecordingLedger(host, config(v)));
+            assertEquals(0, registered.size(), "listener, enabled=" + v);
+            assertEquals(0, scheduler.activeTasks(), "task, enabled=" + v);
+        }
+        start(new RecordingLedger(host, config("true")));
+        assertEquals(1, registered.size());
+        assertEquals(1, scheduler.activeTasks());
     }
 
     @Test

@@ -88,8 +88,7 @@ final class StatsFileReader {
 
     private byte[] load(Path file) {
         try {
-            BasicFileAttributes a = Files.readAttributes(file, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
-            if (!a.isRegularFile() || a.size() > MAX_BYTES || !file.toRealPath().startsWith(root)) {
+            if (!eligible(file, root)) {
                 return null;
             }
             try (InputStream in = Files.newInputStream(file, LinkOption.NOFOLLOW_LINKS)) {
@@ -98,6 +97,16 @@ final class StatsFileReader {
             }
         } catch (IOException | RuntimeException e) {
             return null;
+        }
+    }
+
+    /** True when the path is a regular file (links not followed), within the size cap, and resolves inside {@code root}. */
+    static boolean eligible(Path file, Path root) {
+        try {
+            BasicFileAttributes a = Files.readAttributes(file, BasicFileAttributes.class, LinkOption.NOFOLLOW_LINKS);
+            return a.isRegularFile() && a.size() <= MAX_BYTES && file.toRealPath().startsWith(root);
+        } catch (IOException | RuntimeException e) {
+            return false;
         }
     }
 

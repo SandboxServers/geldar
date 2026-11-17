@@ -300,9 +300,9 @@ class LedgerPluginTest {
             log.removeHandler(h);
         }
         assertTrue(disabled.isEmpty());
-        // Built so far, in PaperCollectors.NAMES order: tick (PT-04b), world (PT-05a), server (PT-05b), census (PT-06c), curated (PT-07a), connections (PT-08a), snapshots (PT-08b), bridge (PT-10b), container. Tick's start needs the live plugin loader (JavaPlugin.getPlugin), so outside a server it fails and is disabled; world, server, census, curated and bridge start fine, so tick (and connections, which registers its listener the same way) are the tolerated warnings.
+        // Built so far, in PaperCollectors.NAMES order: tick (PT-04b), world (PT-05a), server (PT-05b), census (PT-06c), curated (PT-07a), connections (PT-08a), snapshots (PT-08b), progress (PT-08c, opt-in: starts to nothing), bridge (PT-10b), container. Tick's start needs the live plugin loader (JavaPlugin.getPlugin), so outside a server it fails and is disabled; world, server, census, curated and bridge start fine, so tick (and connections, which registers its listener the same way) are the tolerated warnings.
         assertEquals(List.of("tick", "world", "server", "census", "curated", "connections", "snapshots", "progress", "bridge", "container"), plugin.collectors().builtIds());
-        assertEquals(List.of("world", "server", "census", "curated", "snapshots", "bridge", "container"), plugin.collectors().runningIds());
+        assertEquals(List.of("world", "server", "census", "curated", "snapshots", "progress", "bridge", "container"), plugin.collectors().runningIds());
         List<String> expectedSkipped = new ArrayList<>(PaperCollectors.NAMES);
         expectedSkipped.remove(PaperCollectors.CGROUP);
         expectedSkipped.remove("dev.geldar.ledger.paper.tick.TickCollector");
@@ -318,8 +318,7 @@ class LedgerPluginTest {
         assertTrue(plugin.collectors().skippedNames().contains(PaperCollectors.DISK), "no disk path configured");
         assertFalse(logs.stream().anyMatch(r -> r.getLevel().intValue() >= java.util.logging.Level.WARNING.intValue()
                         && !r.getMessage().startsWith("Ledger collector tick failed to start")
-                        && !r.getMessage().startsWith("Ledger collector connections failed to start")
-                        && !r.getMessage().startsWith("Ledger collector progress failed to start")),
+                        && !r.getMessage().startsWith("Ledger collector connections failed to start")),
                 "no warning other than the tick start: " + logs.stream().map(java.util.logging.LogRecord::getMessage).toList());
         assertFalse(logs.stream().anyMatch(r -> r.getMessage().contains("cannot")), "no 'cannot load' line");
     }

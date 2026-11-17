@@ -38,7 +38,7 @@ import org.bukkit.plugin.java.JavaPlugin;
  * {@code geldar.player.advancement} and {@code geldar.player.stats} (PT-08c). Observe only: every handler is MONITOR and
  * reads the event; nothing is written to the world or to the stats directory.
  *
- * <p>Identity. Only a player whose login name has the life id shape is ever exported or read: the roster of agents
+ * <p>OPT-IN: unless {@code collector.progress.enabled=true} is set explicitly it registers nothing (it reads player data\n * files).\n *\n * <p>Identity. Only a player whose login name has the life id shape is ever exported or read: the roster of agents
  * (UUID to life id) is built from join events and the online list, the name is read once to classify, and a human is
  * never put in it, so a human's stats file is never opened and a human's advancement is dropped. The UUID is a roster key
  * and a file name only; it is never exported. The advancement key is the namespaced id ({@code minecraft:story/root}),
@@ -109,7 +109,7 @@ public final class ProgressCollector implements Collector {
     public synchronized void start(CollectorContext ctx) {
         stop();
         Ledger l = ctx.ledger();
-        if (!l.config().collectorEnabled(ID)) {
+        if (!l.config().collectorEnabled(ID) || !Boolean.TRUE.equals(l.config().collectorEnabled().get(ID))) {
             return;
         }
         EventLog ev = l.events();

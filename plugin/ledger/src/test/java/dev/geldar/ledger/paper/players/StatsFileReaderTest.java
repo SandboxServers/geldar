@@ -133,6 +133,25 @@ class StatsFileReaderTest {
     }
 
     @Test
+    void theEligibilityGuardAcceptsOnlyARegularFileWithinTheCapInsideTheRoot() throws Exception {
+        Path root = dir.toRealPath();
+        assertEquals(false, StatsFileReader.eligible(file(), root), "missing");
+        Files.createDirectory(file());
+        assertEquals(false, StatsFileReader.eligible(file(), root), "directory");
+        Files.delete(file());
+        Files.writeString(file(), sample());
+        assertEquals(true, StatsFileReader.eligible(file(), root), "regular file");
+        Files.writeString(file(), "x".repeat(StatsFileReader.MAX_BYTES + 1));
+        assertEquals(false, StatsFileReader.eligible(file(), root), "over the cap");
+        Path other = Files.createTempDirectory("other");
+        try {
+            assertEquals(false, StatsFileReader.eligible(file(), other.toRealPath()), "outside the root");
+        } finally {
+            Files.delete(other);
+        }
+    }
+
+    @Test
     void aMissingStatsDirectoryGivesNoReader() {
         assertNull(StatsFileReader.open(dir.resolve("nope"), sleeps::add));
         assertNull(StatsFileReader.open(null, sleeps::add));
