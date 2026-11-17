@@ -42,6 +42,8 @@ export interface FrontDoorOptions {
   ) => McpServer;
   /** Receives each log line after `frontLog` has cut it to safe fields. Default: JSON on stderr. */
   log?: (line: Record<string, string | number>) => void;
+  /** Receives each 401 or 503 refusal of a bearer: the closed reason and the status, nothing else (T-06d2). */
+  onRefusal?: ((refusal: { reason: string; status: number }) => void) | undefined;
   /** Clock in milliseconds. Default Date.now. */
   now?: () => number;
   /** Test seam: the request timeout and the per-address cap. Defaults: 30 s and the config's cap. */
@@ -185,6 +187,14 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
       ...(last !== undefined && last.suppressed > 0 ? { suppressed: last.suppressed } : {}),
     });
   };
+  // The refusal hook never fails a request: a throw is dropped.
+  const refused = (reason: string, status: number): void => {
+    try {
+      options.onRefusal?.({ reason, status });
+    } catch {
+      // The span is lost; the refusal stands.
+    }
+  };
   // Authenticated requests, so the call hook can read the owner of the player it serves.
   const players = new WeakMap<IncomingMessage, PlayerRecord>();
   let port = options.http.port;
@@ -259,6 +269,7 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
           event: 'auth_unavailable',
           error: (error as Error).constructor.name,
         });
+        refused('auth_unavailable', 503);
         return { outcome: 'answered', status: 503, body: KILL_SWITCH_BODY, event: 'unavailable' };
       } finally {
         if (lookup) gates.releaseLookup();
@@ -277,6 +288,7 @@ export function createFrontDoor(options: FrontDoorOptions): FrontDoor {
       const retryAfterSec = gates.failedAuth(address, now());
       if (retryAfterSec !== undefined) return limitedAnswer(retryAfterSec, 'rate_limited');
       if (verdict.outcome === 'unauthorized') {
+        refused(verdict.reason, 401);
         // One 401 for a missing, malformed or unknown token (0090); the reason is for the log only.
         return {
           outcome: 'answered',

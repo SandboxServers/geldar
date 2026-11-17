@@ -83,7 +83,7 @@ function fakePorts(captured: { options?: FrontDoorOptions }): McpPorts {
  * through the front door's createSession, makes one `look` call over an in-memory MCP transport, then
  * stops the MCP. Returns what the span exporter received and what the telemetry push sent.
  */
-async function startWithSpans(url: string | undefined) {
+async function startWithSpans(url: string | undefined, refuse = false) {
   const spans: ExportedSpan[] = [];
   const fetchCalls: string[] = [];
   const captured: { options?: FrontDoorOptions } = {};
@@ -108,8 +108,10 @@ async function startWithSpans(url: string | undefined) {
   await client.connect(clientSide);
   await client.callTool({ name: 'look', arguments: {} });
   await client.close();
+  const hook = captured.options.onRefusal;
+  if (refuse) hook?.({ reason: 'unknown_token', status: 401 });
   await running.stop();
-  return { spans, fetchCalls };
+  return { spans, fetchCalls, hook };
 }
 
 describe('the span wiring in startMcp (T-06)', () => {
@@ -123,5 +125,18 @@ describe('the span wiring in startMcp (T-06)', () => {
     const { spans, fetchCalls } = await startWithSpans(undefined);
     expect(spans).toEqual([]);
     expect(fetchCalls).toEqual([]);
+  });
+
+  it('passes the auth refusal hook to the front door only when the telemetry URL is set', async () => {
+    expect((await startWithSpans('http://127.0.0.1:4318')).hook).toBeTypeOf('function');
+    expect((await startWithSpans(undefined)).hook).toBeUndefined();
+  });
+
+  it('exports one mcp.auth_refused span from the hook, with the outcome and no other attribute today', async () => {
+    const { spans } = await startWithSpans('http://127.0.0.1:4318', true);
+    const refused = spans.filter((span) => span.name === 'mcp.auth_refused');
+    expect(refused).toHaveLength(1);
+    // http.response.status_code is dropped by the allow-list until that key lands (branch telemetry/t36-tm01).
+    expect(refused[0]?.attributes).toEqual({ outcome: 'unknown_token' });
   });
 });
