@@ -34,6 +34,11 @@
       "path": "deploy/signoz/paper-dashboard.json",
       "hardCap": 1200,
       "reason": "SigNoz dashboard definition: biome formats one JSON value per line; 14 panels; data, not code"
+    },
+    {
+      "path": "deploy/signoz/neoforge-dashboard.json",
+      "hardCap": 1300,
+      "reason": "SigNoz dashboard definition cloned from the Paper one: biome formats one JSON value per line; 14 panels; data, not code"
     }
   ]
 }
