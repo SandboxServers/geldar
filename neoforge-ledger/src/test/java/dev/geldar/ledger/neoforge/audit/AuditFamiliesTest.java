@@ -21,7 +21,7 @@ class AuditFamiliesTest {
     @Test
     void registersGeldarNamesOnly() {
         new CombatFamily(f.ledger, f.host);
-        new TextContentFamily(f.ledger, clock::get);
+        f.text(clock::get);
         new OperatorAuditFamily(f.ledger, f.host, clock::get);
         assertEquals(10, f.registered.size()); // 7 events and 3 rate-drop twins
         assertTrue(f.registered.stream().allMatch(n -> n.startsWith("geldar.")), f.registered.toString());
@@ -139,7 +139,7 @@ class AuditFamiliesTest {
 
     @Test
     void humanChatIsVerbatimWithNoSpeakerId() {
-        TextContentFamily t = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily t = f.text(clock::get);
         t.chat(false, "HumanSteve", "minecraft:overworld", () -> "hello Steve, come to the base");
         String[] c = f.content.get(0);
         assertEquals("hello Steve, come to the base", c[0]);
@@ -149,14 +149,14 @@ class AuditFamiliesTest {
 
     @Test
     void lifeChatCarriesTheLifeId() {
-        TextContentFamily t = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily t = f.text(clock::get);
         t.chat(false, LIFE, "w", () -> "hi");
         assertEquals(LIFE, f.content.get(0)[1]);
     }
 
     @Test
     void cancelledChatIsNotCaptured() {
-        TextContentFamily t = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily t = f.text(clock::get);
         AtomicInteger flattened = new AtomicInteger();
         t.chat(true, LIFE, "w", () -> {
             flattened.incrementAndGet();
@@ -168,7 +168,7 @@ class AuditFamiliesTest {
 
     @Test
     void chatIsScrubbedAndCapped() {
-        TextContentFamily t = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily t = f.text(clock::get);
         t.chat(false, LIFE, "w", () -> "the password=hunter2xyz is set");
         assertFalse(f.content.get(0)[0].contains("hunter2xyz"), f.content.get(0)[0]);
         t.chat(false, LIFE, "w", () -> "a".repeat(100_000));
@@ -177,7 +177,7 @@ class AuditFamiliesTest {
 
     @Test
     void chatFloodDoesNoFlattenWorkAndNeverTouchesTheGuard() {
-        TextContentFamily t = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily t = f.text(clock::get);
         AtomicInteger flattened = new AtomicInteger();
         for (int i = 0; i < 200; i++) {
             t.chat(false, LIFE, "w", () -> {
@@ -193,7 +193,7 @@ class AuditFamiliesTest {
 
     @Test
     void chatErrorsAreDropped() {
-        TextContentFamily t = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily t = f.text(clock::get);
         t.chat(false, LIFE, "w", () -> {
             throw new IllegalStateException("flatten");
         });
@@ -206,12 +206,56 @@ class AuditFamiliesTest {
     // --- operator audit ---
 
     @Test
-    void consoleCommandIsExportedWithNamesAsTyped() {
+    void consoleCommandExportsTheNameAndArgumentCountOnly() {
         OperatorAuditFamily a = new OperatorAuditFamily(f.ledger, f.host, clock::get);
         a.command("console", false, () -> "whitelist add HumanSteve");
         Object[] e = f.events.get(0);
-        assertEquals("whitelist add HumanSteve", e[4]);
+        assertEquals("whitelist", e[4]);
         assertEquals("console", e[5]);
+        assertEquals(2, ((Number) e[3]).intValue());
+        assertFalse(java.util.Arrays.deepToString(e).contains("HumanSteve"));
+    }
+
+    private Object[] exported(String kind, String raw) {
+        f.events.clear();
+        new OperatorAuditFamily(f.ledger, f.host, clock::get).command(kind, false, () -> raw);
+        return f.events.get(0);
+    }
+
+    @Test
+    void argumentsAreNeverExportedOnEitherSource() {
+        for (String kind : new String[] {"console", "rcon"}) {
+            Object[] e = exported(kind, "say hello world");
+            assertEquals("say", e[4]);
+            assertEquals(2, ((Number) e[3]).intValue());
+            assertFalse(java.util.Arrays.deepToString(e).contains("hello"), kind);
+            e = exported(kind, "msg Steve secret text");
+            assertEquals("msg", e[4]);
+            assertEquals(3, ((Number) e[3]).intValue());
+            String all = java.util.Arrays.deepToString(e);
+            assertFalse(all.contains("Steve") || all.contains("secret") || all.contains("text"), all);
+            e = exported(kind, "execute as @a run say hi");
+            assertEquals("say", e[4]);
+            assertEquals(1, ((Number) e[3]).intValue());
+            e = exported(kind, "/me waves");
+            assertEquals("me", e[4]);
+            assertEquals(1, ((Number) e[3]).intValue());
+            e = exported(kind, "  /Minecraft:Say\u00a0 hi\u2003there ");
+            assertEquals("say", e[4]);
+            assertEquals(2, ((Number) e[3]).intValue());
+        }
+    }
+
+    @Test
+    void executeUnwrappingAndOddNames() {
+        assertEquals(new CommandText.Parsed("say", 1), CommandText.parse("execute as @a at @s run execute if x run say run"));
+        assertEquals(new CommandText.Parsed("execute", 2), CommandText.parse("execute as @a"));
+        assertEquals(new CommandText.Parsed("execute", 2), CommandText.parse("execute as run"));
+        assertEquals(new CommandText.Parsed("unknown", 1), CommandText.parse("sa\u200by hi"));
+        assertEquals(new CommandText.Parsed("unknown", 0), CommandText.parse("HumanSt\u00e9ve"));
+        assertEquals(new CommandText.Parsed("unknown", 0), CommandText.parse("x".repeat(65)));
+        assertEquals(new CommandText.Parsed("", 0), CommandText.parse("/"));
+        assertEquals(CommandText.COUNT_MAX, CommandText.parse("say" + " a".repeat(50_000)).argCount());
     }
 
     @Test
@@ -224,19 +268,17 @@ class AuditFamiliesTest {
 
     @Test
     void authVerbArgumentsAreDropped() {
-        assertEquals("login", CommandText.exportable("/Login hunter2"));
-        assertEquals("execute as x run login", CommandText.exportable("execute as x run login pw123"));
-        assertEquals("auth", CommandText.exportable("plugin:auth s3cret"));
-        assertEquals("say hello", CommandText.exportable("say hello"));
+        assertEquals(new CommandText.Parsed("login", 0), CommandText.parse("/Login hunter2"));
+        assertEquals(new CommandText.Parsed("login", 0), CommandText.parse("execute as x run login pw123"));
+        assertEquals(new CommandText.Parsed("auth", 0), CommandText.parse("plugin:auth s3cret"));
+        assertEquals("say", CommandText.exportable("say hello"));
         assertEquals("", CommandText.exportable("   "));
         assertEquals("", CommandText.exportable(null));
     }
 
     @Test
-    void commandTextIsScrubbedAndCappedTo1KiB() {
-        String scrubbed = CommandText.exportable("say password=hunter2xyz");
-        assertFalse(scrubbed.contains("hunter2xyz"), scrubbed);
-        assertTrue(CommandText.exportable("say " + "b".repeat(5000)).length() <= CommandText.TEXT_MAX_BYTES);
+    void aSecretTypedAsTheCommandNameIsNotExported() {
+        assertEquals("unknown", CommandText.exportable("P@ssw0rd!hunter2 more"));
     }
 
     @Test
@@ -340,7 +382,7 @@ class AuditFamiliesTest {
         assertTrue(code.contains("RECEIVE_CANCELED = false;"));
         int listeners = code.split("addListener\\(", -1).length - 1;
         int constant = code.split("addListener\\(PRIORITY, RECEIVE_CANCELED, ", -1).length - 1;
-        assertEquals(5, listeners);
+        assertEquals(8, listeners); // five audit listeners plus the three name-mask feeds (chat only)
         assertEquals(listeners, constant);
         // the speaker name and the decorated message never enter the chat read
         assertFalse(code.contains("getUsername"));
@@ -358,30 +400,30 @@ class AuditFamiliesTest {
             "captcha", "email", "setemail", "changeemail", "recovery", "pin", "setpin", "secret"};
         assertEquals(verbs.length, CommandText.AUTH_ROOTS.size());
         for (String root : verbs) {
-            assertEquals(root, CommandText.exportable(root + " hunter2 hunter2"), root);
-            assertEquals(root, CommandText.exportable("/" + root.toUpperCase() + " hunter2"), root);
-            assertEquals("execute as @a run " + root, CommandText.exportable("execute as @a run Plugin:" + root + " pw pw"));
+            assertEquals(new CommandText.Parsed(root, 0), CommandText.parse(root + " hunter2 hunter2"), root);
+            assertEquals(new CommandText.Parsed(root, 0), CommandText.parse("/" + root.toUpperCase() + " hunter2"), root);
+            assertEquals(new CommandText.Parsed(root, 0), CommandText.parse("execute as @a run Plugin:" + root + " pw pw"));
         }
     }
 
     @Test
     void unicodeAndControlSeparatorsDoNotHideAnAuthVerb() {
         for (String sep : new String[] {"\u00a0", "\u2003", "\t", "\n", "\r", "\u2028", "\u3000", "\u0000"}) {
-            assertEquals("login", CommandText.exportable("login" + sep + "hunter2"), "sep " + (int) sep.charAt(0));
-            assertEquals("say login", CommandText.exportable("say" + sep + "login" + sep + "pw"));
+            assertEquals(new CommandText.Parsed("login", 0), CommandText.parse("login" + sep + "hunter2"), "sep " + (int) sep.charAt(0));
+            assertEquals(new CommandText.Parsed("say", 2), CommandText.parse("say" + sep + "login" + sep + "pw"));
         }
-        assertEquals("login\u200bx", CommandText.exportable("login\u200bx")); // not whitespace: not that verb
+        assertEquals("unknown", CommandText.exportable("login\u200bx")); // not whitespace: not that verb, not a plain name
     }
 
     @Test
     void hugeCommandsAreBounded() {
-        assertTrue(CommandText.exportable("say " + "x".repeat(200_000)).length() <= CommandText.TEXT_MAX_BYTES);
-        assertTrue(CommandText.exportable("x".repeat(150_000)).length() <= CommandText.TEXT_MAX_BYTES);
+        assertEquals("say", CommandText.exportable("say " + "x".repeat(200_000)));
+        assertTrue(CommandText.exportable("x".repeat(150_000)).length() <= CommandText.NAME_MAX);
     }
 
     @Test
     void chatRateCapIsExactlyTwentyPerSecond() {
-        TextContentFamily t = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily t = f.text(clock::get);
         for (int i = 0; i < TextContentFamily.CHAT_RATE; i++) {
             t.chat(false, LIFE, "w", () -> "x");
         }
@@ -413,10 +455,10 @@ class AuditFamiliesTest {
 
     @Test
     void hugeChatIsBoundedBeforeAndAfterScrub() {
-        TextContentFamily t = new TextContentFamily(f.ledger, clock::get);
+        TextContentFamily t = f.text(clock::get);
         t.chat(false, LIFE, "w", () -> "z".repeat(5_000_000));
         assertTrue(f.content.get(0)[0].getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= 32768);
-        // the marker of the final cap records the size it saw: the pre-scrub cap held it to 1 MiB
-        assertTrue(f.content.get(0)[0].endsWith("[truncated:1048576]"), f.content.get(0)[0]);
+        // the name mask cuts its input to NameMask.INPUT_MAX characters before any matching
+        assertEquals("z".repeat(NameMask.INPUT_MAX), f.content.get(0)[0]);
     }
 }

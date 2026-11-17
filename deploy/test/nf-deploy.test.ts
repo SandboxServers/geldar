@@ -29,7 +29,6 @@ const JAR_BYTES = 'geldar neoforge mod fixture\n';
 const LIST_BYTES = 'bundle list fixture\n';
 const sha = (text: string) => createHash('sha256').update(text).digest('hex');
 const MOD_SHA = sha(JAR_BYTES);
-const BUNDLE_SHA = sha(LIST_BYTES);
 const TARBALL_BYTES = 'bundle tarball fixture\n';
 const TARBALL_SHA = sha(TARBALL_BYTES);
 const GOOD_NAMES = ['mods/', 'mods/geldar.jar', '.geldar-bundle.sha256'];
@@ -124,8 +123,6 @@ function envFor(repo: string, extra: Record<string, string> = {}): NodeJS.Proces
     STUB_LOG: join(repo, 'calls.log'),
     NF_MOD_JAR_HOST: join(repo, 'mod.jar'),
     NF_MOD_SHA256: MOD_SHA,
-    NF_BUNDLE_DIR: join(repo, 'bundle'),
-    NF_BUNDLE_SHA256: BUNDLE_SHA,
     NF_BUNDLE_TARBALL: join(repo, 'bundle-tarball.tar.gz'),
     NF_BUNDLE_TARBALL_SHA256: TARBALL_SHA,
     TAR_NAMES: join(repo, 'archive-names.txt'),
@@ -251,11 +248,12 @@ describe('nf-deploy.sh refusals', () => {
     expect(composeCalls(repo)).toEqual([]);
   });
 
-  it('refuses a bundle whose list sha256 does not match NF_BUNDLE_SHA256', () => {
+  it('a bundle list sha256 that does not match is no gate for up (the seeded volume marker is)', () => {
     const repo = makeRepo();
+    // The bundle directory gate is gone (the seeded volume's marker is the gate): a wrong bundle sha no longer stops up.
     const r = run(repo, ['up'], { NF_BUNDLE_SHA256: '1'.repeat(64) });
-    expect(r.status).toBe(1);
-    expect(r.out).toContain('bundle list does not match');
+    expect(r.status).toBe(0);
+    expect(r.out).not.toContain('bundle list');
   });
 
   it('refuses low free RAM (below the caps plus the margin)', () => {
@@ -472,14 +470,19 @@ describe('nf-deploy.sh seed-bundle', () => {
 
   it('extracts with --network none, the tarball read-only, --rm, root only in the container, the pinned image', () => {
     const repo = makeRepo();
-    expect(run(repo, ['seed-bundle']).status).toBe(0);
+    expect(run(repo, ['seed-bundle'], { NF_SERVICE_UID: '1001' }).status).toBe(0);
     const [extract] = extractCalls(repo);
     expect(extract).toContain('docker run --rm --network none --user 0 ');
     expect(extract).toMatch(/--mount type=bind,source=\S+,target=\/in\/bundle\.tar\.gz,readonly /);
+    // The extract keeps only the three capabilities tar and chown need, and gains no privileges.
     expect(extract).toContain(
-      `--entrypoint /bin/sh ${NEOFORGE_IMAGE} -c tar -xzf /in/bundle.tar.gz -C /data`,
+      '--user 0 --cap-drop ALL --cap-add CHOWN --cap-add FOWNER --cap-add DAC_OVERRIDE --security-opt no-new-privileges --mount ',
     );
-    expect(extract).toContain('chown -R --reference=/data /data');
+    expect(extract).toContain(
+      `--entrypoint /bin/sh ${NEOFORGE_IMAGE} -c tar -xzf /in/bundle.tar.gz -C /data && chown -R 1001:1001 /data && chmod -R u+rwX,go-w /data`,
+    );
+    expect(extract).not.toContain('--reference');
+    expect(extract).not.toMatch(/chown -R 1000:/);
     for (const c of calls(repo).filter((c) => c.startsWith('docker run '))) {
       expect(c).toContain('--network none');
     }
@@ -533,6 +536,72 @@ describe('nf-deploy.sh seed-bundle', () => {
     const repo = makeRepo();
     expect(run(repo, ['up']).status).toBe(0);
     expect(calls(repo).some((c) => c.includes('sha256sum -c --strict'))).toBe(true);
+  });
+
+  it('runs the marker check as the same uid:gid that seed-bundle chowned the volume to', () => {
+    const repo = makeRepo();
+    expect(run(repo, ['seed-bundle'], { NF_SERVICE_UID: '1001' }).status).toBe(0);
+    const markers = calls(repo).filter((c) => c.includes('sha256sum -c --strict'));
+    expect(markers).toHaveLength(1);
+    expect(markers[0]).toContain('--user 1001:1001 ');
+    expect(markers[0]).not.toContain('--user 1000');
+  });
+
+  it('lists the volume as root, so a half-seeded /data the service uid cannot read is still listed', () => {
+    const repo = makeRepo();
+    expect(run(repo, ['seed-bundle'], { NF_SERVICE_UID: '1001' }).status).toBe(0);
+    const listings = calls(repo).filter((c) => c.includes('ls -A /data'));
+    expect(listings).toHaveLength(1);
+    expect(listings[0]).toContain('--user 0 ');
+    expect(listings[0]).not.toContain('--user 1001');
+  });
+
+  it('checks the marker as uid:gid at gid 1002 on seed-bundle and on up, never uid:uid', () => {
+    const seeded = makeRepo();
+    const extract = run(seeded, ['seed-bundle'], {
+      NF_SERVICE_UID: '1001',
+      NF_SERVICE_GID: '1002',
+    });
+    expect(extract.status, extract.out).toBe(0);
+    const seedMarkers = calls(seeded).filter((c) => c.includes('sha256sum -c --strict'));
+    expect(seedMarkers).toHaveLength(1);
+    expect(seedMarkers[0]).toContain('--user 1001:1002 ');
+    expect(seedMarkers[0]).not.toContain('--user 1001:1001 ');
+    const upRepo = makeRepo();
+    const up = run(upRepo, ['up'], {
+      NF_SERVICE_UID: '1001',
+      NF_SERVICE_GID: '1002',
+      STAT_UID: '1001',
+    });
+    expect(up.status, up.out).toBe(0);
+    const upMarkers = calls(upRepo).filter((c) => c.includes('sha256sum -c --strict'));
+    expect(upMarkers).toHaveLength(1);
+    expect(upMarkers[0]).toContain('--user 1001:1002 ');
+    expect(upMarkers[0]).not.toContain('--user 1001:1001 ');
+  });
+
+  it('takes NF_SERVICE_GID separately, and refuses a non-numeric or root gid', () => {
+    const repo = makeRepo();
+    expect(
+      run(repo, ['seed-bundle'], { NF_SERVICE_UID: '1001', NF_SERVICE_GID: '1002' }).status,
+    ).toBe(0);
+    expect(extractCalls(repo)[0]).toContain('chown -R 1001:1002 /data');
+    expect(run(makeRepo(), ['plan'], { NF_SERVICE_GID: 'x' }).status).toBe(1);
+    expect(run(makeRepo(), ['plan'], { NF_SERVICE_GID: '0' }).status).toBe(1);
+  });
+
+  it('plan and up need no bundle directory (the volume marker is the gate)', () => {
+    const planRepo = makeRepo();
+    const plan = run(planRepo, ['plan'], {
+      NF_BUNDLE_DIR: join(planRepo, 'no-such-bundle-dir'),
+      NF_BUNDLE_SHA256: 'f'.repeat(64),
+    });
+    expect(plan.status).toBe(0);
+    expect(plan.out).not.toContain('NF_BUNDLE_DIR');
+    const upRepo = makeRepo();
+    const up = run(upRepo, ['up'], { NF_BUNDLE_DIR: join(upRepo, 'no-such-bundle-dir') });
+    expect(up.status).toBe(0);
+    expect(up.out).not.toContain('NF_BUNDLE_DIR');
   });
 });
 

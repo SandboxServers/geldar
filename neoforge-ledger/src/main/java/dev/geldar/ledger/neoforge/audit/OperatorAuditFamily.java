@@ -9,6 +9,7 @@ import dev.geldar.ledger.core.Severity;
 import dev.geldar.ledger.core.TokenBucket;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.LongSupplier;
+import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 /**
@@ -21,15 +22,15 @@ import java.util.function.Supplier;
  * from the new level the event carries; an offline op or deop and a change to the same level emit nothing. Whitelist
  * changes, kick reasons, prelogin, sign and book edits have no NeoForge event (PT-N5): nothing is emitted for them.
  *
- * <p>The command text goes through {@link CommandText}. The token bucket comes first, so a flood costs no flatten or
- * scrub work. Commands may arrive on any thread; the guard is used only on the server thread.
+ * <p>Only the command name (geldar.command) and the argument count (geldar.amount) are exported ({@link CommandText}); no argument text. The token bucket comes first, so a flood costs no flatten or
+ * scrub work. In NeoForge 26.1.2 console, RCON (executeBlocking) and chat (server.execute) all run on the server thread; the families deliberately skip the guard (bucket-bounded), and the guard is used only on the server thread.
  */
 public final class OperatorAuditFamily {
     public static final String OPERATOR_CHANGE = "geldar.operator.change";
     static final String CONSOLE = "console";
     static final String RCON = "rcon";
     private static final int RATE = 20;
-    private static final String[] COMMAND_FIELDS = {null, null, null, AttrKeys.COMMAND, AttrKeys.SUBTYPE, null};
+    private static final String[] COMMAND_FIELDS = {null, null, AttrKeys.AMOUNT, AttrKeys.COMMAND, AttrKeys.SUBTYPE, null};
     private static final String[] OP_FIELDS = {null, null, AttrKeys.FLAG, AttrKeys.LIFE_ID, null, null};
 
     private final EventLog events;
@@ -91,8 +92,17 @@ public final class OperatorAuditFamily {
         };
     }
 
-    /** {@code text} is only called once the command passed the bucket; a null {@code kind} exports nothing. */
-    public void command(String kind, boolean cancelled, Supplier<String> text) {
+    /** Tests only: every name counts as a registered command. */
+    void command(String kind, boolean cancelled, Supplier<String> text) {
+        command(kind, cancelled, text, n -> true);
+    }
+
+    /**
+     * {@code text} is only called once the command passed the bucket; a null {@code kind} exports nothing.
+     * {@code registered} says whether a name is a registered root command of the server dispatcher (read on the thread
+     * that runs the command); the name is exported only if it is, else {@code unknown}.
+     */
+    public void command(String kind, boolean cancelled, Supplier<String> text, Predicate<String> registered) {
         if (kind == null || cancelled || !gate.getAsBoolean()) {
             return;
         }
@@ -102,7 +112,10 @@ public final class OperatorAuditFamily {
             guarded.run(() -> events.record(rcon ? rconDropId : consoleDropId, 0, 0, 0, null, null, null));
             return;
         }
-        guarded.run(() -> events.record(rcon ? rconId : consoleId, 0, 0, 0, CommandText.exportable(text.get()), kind, null));
+        guarded.run(() -> {
+            CommandText.Parsed c = CommandText.parse(text.get(), registered);
+            events.record(rcon ? rconId : consoleId, 0, 0, c.argCount(), c.name(), kind, null);
+        });
     }
 
     public void operatorChange(String player, boolean opped) {

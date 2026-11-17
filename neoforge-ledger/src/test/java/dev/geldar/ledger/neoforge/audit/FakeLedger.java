@@ -27,8 +27,15 @@ final class FakeLedger {
     final AtomicBoolean recordThrows = new AtomicBoolean();
     /** Event name to the rate it was registered with (content registrations have none). */
     final java.util.Map<String, Integer> registeredRates = new java.util.HashMap<>();
-    /** The ledger config, read on every event: audit is on by default here; tests swap it. */
-    volatile LedgerConfig config = config("collector.audit.enabled=true");
+    /** The ledger config, read on every event: audit and chat are on by default here; tests swap it. */
+    volatile LedgerConfig config = config("collector.audit.enabled=true", "collector.chat.enabled=true");
+
+    /** A chat family with an explicit, empty online-name source (the production default fails closed). */
+    TextContentFamily text(java.util.function.LongSupplier clock) {
+        TextContentFamily t = new TextContentFamily(ledger, clock);
+        t.onlineNames(java.util.List::of);
+        return t;
+    }
 
     static LedgerConfig config(String... lines) {
         java.util.Properties p = new java.util.Properties();
