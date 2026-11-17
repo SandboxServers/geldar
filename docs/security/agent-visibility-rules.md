@@ -5,7 +5,7 @@ audience: agents-never
 status: draft
 last_verified: 2026-11-16 against 03c1f5de
 companions: [README.md, privacy-and-data-retention.md, authn-authz-map.md, ../agents/documentation-style.md, ../agents/doc-verification.md, ../concepts/observation-and-privacy.md, ../reference/mcp-tools.md, ../reference/player-core.md]
-sources: [.claude/agents/documentation-writer.md, CLAUDE.md, docs/agents/documentation-style.md, docs/agents/doc-verification.md, contract/src/agent-text.ts, contract/test/agent-visible-text.test.ts, animus/src/prompts, animus/src/prompts/agent-text.test.ts, tools/mcp-tokens/src/persona-lint.ts, tools/mcp-tokens/src/persona-export.ts, golem/src/actions/failure-texts.test.ts, threshold/mcp/src/resources.ts, threshold/mcp/src/resources.test.ts, threshold/mcp/src/world-session.ts, threshold/mcp/src/tools, threshold/mcp/src/play-view, threshold/mcp-mock/src/prompts.ts, threshold/mcp-mock/README.md, player-core/src, docs/reference/player-core.md, docs/reference/mcp-tools.md, golem/src/actions/write-sign.ts, plugin/core/src/main/java/dev/geldar/core/speech, plugin/core/src/main/java/dev/geldar/core/maintenance, ../decisions/0058-the-character-knowledge-boundary-and-thought-v2.md, ../decisions/0059-identity-mode-is-about-human-observation-not-agent-belief.md, ../decisions/0068-prompt-v4-and-agent-visible-text.md, ../decisions/0361-agents-never-placement-and-public-detail.md, ../decisions/0365-docs-gates-after-the-freeze.md, ../decisions/0366-open-spec-5-14-watched-wording-versus-0059.md]
+sources: [.claude/agents/documentation-writer.md, CLAUDE.md, docs/agents/documentation-style.md, docs/agents/doc-verification.md, contract/src/agent-text.ts, contract/test/agent-visible-text.test.ts, animus/src/prompts, animus/src/prompts/agent-text.test.ts, tools/mcp-tokens/src/persona-lint.ts, tools/mcp-tokens/src/persona-export.ts, golem/src/actions/failure-texts.test.ts, threshold/mcp/src/resources.ts, threshold/mcp/src/resources.test.ts, threshold/mcp/src/world-session.ts, threshold/mcp/src/tools, threshold/mcp/src/play-view, threshold/mcp-mock/src/prompts.ts, threshold/mcp-mock/README.md, player-core/src, docs/reference/player-core.md, docs/reference/mcp-tools.md, golem/src/actions/write-sign.ts, plugin/core-common/src/main/java/dev/geldar/core/speech, plugin/core-common/src/main/java/dev/geldar/core/maintenance, ../decisions/0058-the-character-knowledge-boundary-and-thought-v2.md, ../decisions/0059-identity-mode-is-about-human-observation-not-agent-belief.md, ../decisions/0068-prompt-v4-and-agent-visible-text.md, ../decisions/0361-agents-never-placement-and-public-detail.md, ../decisions/0365-docs-gates-after-the-freeze.md, ../decisions/0366-open-spec-5-14-watched-wording-versus-0059.md]
 ---
 
 # Agent visibility rules
@@ -40,7 +40,7 @@ Re-verified at `03c1f5de` on 2026-11-16: every path below exists, `git ls-files 
 | Character engine text | `psyche/` |
 | Persona files | a player's `memory/identity.md` and `memory/goals.md`, written by `tools/mcp-tokens/src/persona-export.ts` |
 | Kit files, skills and player repos | sibling repos and `player-<name>` repos (spec sections 5.15.4 and 5.15.5). Not checkable from this repo |
-| In-world text | signs, books, chat, maintenance notices, skins and names: `golem/src/actions/write-sign.ts`; `plugin/core/src/main/java/dev/geldar/core/speech/` and `.../core/maintenance/` |
+| In-world text | signs, books, chat, maintenance notices, skins and names: `golem/src/actions/write-sign.ts`; `plugin/core-common/src/main/java/dev/geldar/core/speech/` and `.../core/maintenance/` |
 
 The development skills and agents in `.claude/` are read by coding agents, not by agents in the world. They still sit in the public repo.
 
@@ -81,7 +81,7 @@ A hit is a question, not a verdict. Read every hit.
 ### 4a. Nothing an agent reads links into `docs/`
 
 ```powershell
-git grep -nE 'docs/' -- prompts animus/src/prompts contract/schemas threshold/mcp/src/tools threshold/mcp/src/play-view threshold/mcp/src/resources.ts threshold/mcp-mock/src player-core/src psyche/src golem/src/actions contract/src/outcome-words.ts tools/mcp-tokens/src/persona-export.ts plugin/core/src/main/java/dev/geldar/core/speech plugin/core/src/main/java/dev/geldar/core/maintenance
+git grep -nE 'docs/' -- prompts animus/src/prompts contract/schemas threshold/mcp/src/tools threshold/mcp/src/play-view threshold/mcp/src/resources.ts threshold/mcp-mock/src player-core/src psyche/src golem/src/actions contract/src/outcome-words.ts tools/mcp-tokens/src/persona-export.ts plugin/core-common/src/main/java/dev/geldar/core/speech plugin/core-common/src/main/java/dev/geldar/core/maintenance
 ```
 
 `git grep` exits 1 when it finds nothing; that is a pass. This extends the grep in [doc verification](../agents/doc-verification.md#agents-never-placement) with the Mind's prompt code, the play view, `player-core`, the Body actions, outcome words, persona export and the plugin text folders. Run as written on 2026-11-16 at `03c1f5de`: no hits (exit 1).

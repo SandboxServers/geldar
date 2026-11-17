@@ -5,7 +5,7 @@ audience: operators
 status: draft
 last_verified: 2026-11-16 against 1b114276
 companions: [README.md, compose-stacks.md, shard-config.md, deploy-scripts.md, cli-tools.md, glass-and-kino.md, register-service.md, supervisor-and-body-helper.md, ../security/secrets-by-role.md, ../runbooks/open-signup.md, ../runbooks/scratch-stack.md]
-sources: [.env.example, compose/.env.example, deploy/release.env.example, threshold/register/.env.example, deploy/body-helper-node.env, compose, deploy/common.sh, deploy/colo-admin.sh, deploy/colo-cd.sh, deploy/colo-notice.sh, deploy/colo-public.sh, deploy/install-body-helper.sh, deploy/scratch/scratch.sh, geldar.ps1, contract/src/nats-connect.ts, animus/src, golem/src, lantern-local/src, eventsink/src, glass/src, threshold/mcp/src, threshold/register/src, supervisor/src, body-helper/src, tools, plugin/core/src/main, plugin/velocity-identity/src/main, CLAUDE.md, bench/sheet/run.sh, deploy/compose.secrets.yml, plugins/bluemap/alias-proxy/alias-proxy.ts, shards/phase0.yaml]
+sources: [.env.example, compose/.env.example, deploy/release.env.example, threshold/register/.env.example, deploy/body-helper-node.env, compose, deploy/common.sh, deploy/colo-admin.sh, deploy/colo-cd.sh, deploy/colo-notice.sh, deploy/colo-public.sh, deploy/install-body-helper.sh, deploy/scratch/scratch.sh, geldar.ps1, contract/src/nats-connect.ts, animus/src, golem/src, lantern-local/src, eventsink/src, glass/src, threshold/mcp/src, threshold/register/src, supervisor/src, body-helper/src, tools, plugin/core/src/main, plugin/core-common/src/main, plugin/velocity-identity/src/main, CLAUDE.md, bench/sheet/run.sh, deploy/compose.secrets.yml, plugins/bluemap/alias-proxy/alias-proxy.ts, shards/phase0.yaml]
 ---
 
 # Environment variables

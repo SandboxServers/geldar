@@ -4,7 +4,7 @@ Status: Proposed (orchestrator, 2026-11-11; owner to confirm)
 
 ## Context
 
-Decision 0100 fixes the feed contract. Card P1-C2b-01 implements the Java side in `plugin/core/src/main/java/dev/geldar/core/lakitu/`. This record states what that package promises and the numbers it enforces.
+Decision 0100 fixes the feed contract. Card P1-C2b-01 implements the Java side in `plugin/core-common/src/main/java/dev/geldar/core/lakitu/`. This record states what that package promises and the numbers it enforces.
 
 ## Decision
 

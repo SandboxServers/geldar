@@ -4,10 +4,13 @@ A Gradle multi-project. Java 25 (see `.java-version`), Paper API 26.1.2 build 74
 
 | Subproject | What it is |
 |---|---|
-| `core` | Geldar-Core, the Paper plugin (spec Appendix F). |
+| `core-common` | Geldar-Core's platform-neutral code: nothing in it imports Bukkit, Paper, CoreProtect, BlueMap or another server API. It holds the event export, the NATS publishers and the block-owner, kino, lakitu, maintenance and proximity logic. Its tests live in `src/test`, its shared test helpers in `src/testFixtures`. |
+| `core` | Geldar-Core, the Paper adapter (spec Appendix F): the listeners and the Bukkit, CoreProtect and BlueMap wiring, plus `plugin.yml` and `config.yml`. It depends on `core-common`, which its jar packs. |
 | `velocity-identity` | The Velocity bot-ingress identity plugin (spec Appendix F, 8.4): on `LoginEvent` it admits only usernames in the JetStream KV bucket `geldar-life-registry` (key: lowercase username, value `{life_id, registered_at}`; a deleted key revokes). A local cache fed by a watcher answers the check; the gate fails closed until the first sync and while the bucket is absent (Golem creates it). One fixed deny message. Drops `geldar:cmd` messages from connections that were not admitted. Velocity API 3.5.1; its `velocity-brigadier` 1.0.0-SNAPSHOT dependency is excluded (no release exists, and it would make the locks float). Output `velocity-identity/build/libs/geldar-velocity-identity.jar`; reads `GELDAR_NATS_URL`. |
 | `ledger-core` | Ledger's loader-neutral core (OpenTelemetry API only). See Ledger modules. |
 | `ledger` | Ledger's Paper adapter, `ledger/build/libs/ledger.jar`. See Ledger modules. |
+
+**Platform split.** `core-common` has no server API, so a platform adapter (the Paper plugin in `core`, and later a NeoForge adapter) reuses it through a project dependency, and the package names stay `dev.geldar.core.*`. `core`'s `verifyJarContents` task (run by `check`) compares `geldar-core.jar`'s entry names and the SHA-256 of its expanded `plugin.yml` and `config.yml` with `core/src/test/resources/jar-contents.golden`. A deliberate change to the jar contents means regenerating that golden and reviewing its diff.
 
 ## Build
 

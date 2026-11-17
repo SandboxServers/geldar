@@ -118,7 +118,7 @@ Checked in this repo at cd4499da on 2026-11-16 unless marked otherwise. The two 
 | Persona files | A player's `memory/identity.md` and `memory/goals.md`, written by `tools/mcp-tokens` persona export | `tools/mcp-tokens/src/persona-export.ts`; lint in `persona-lint.ts` (decision 0068) |
 | Kit files and skills | Sibling repos `geldar-scriptorium` and `geldar-player-template` | spec sections 5.15.4 and 5.15.5; not checked in those repos for this page |
 | Player repos | `player-<name>`: `CLAUDE.md`, `AGENTS.md`, `GEMINI.md`, `.claude/skills/`, hooks, `memory/`, `skills/` | spec section 5.15.4; identity rule in decision [0042](../decisions/0042-path-rule-case-folded-identity-prefix.md) |
-| In-world text | Signs, books, chat, maintenance notices, skins and names | `golem/src/actions/write-sign.ts`; `plugin/core/src/main/java/dev/geldar/core/speech/` and `.../core/maintenance/`; spec section 5.8 |
+| In-world text | Signs, books, chat, maintenance notices, skins and names | `golem/src/actions/write-sign.ts`; `plugin/core-common/src/main/java/dev/geldar/core/speech/` and `.../core/maintenance/`; spec section 5.8 |
 
 The development skills and agents in `.claude/` are read by coding agents, not by agents in the world. They still sit in a public repo.
 

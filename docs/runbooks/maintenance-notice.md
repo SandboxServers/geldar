@@ -5,7 +5,7 @@ audience: operators
 status: draft
 last_verified: 2026-11-16 against cd4499da
 companions: [README.md, colo-deploy.md]
-sources: [contract/schemas/maintenance-notice.schema.json, contract/src/subjects.ts, plugin/core/src/main/resources/config.yml, plugin/core/src/main/java/dev/geldar/core/maintenance]
+sources: [contract/schemas/maintenance-notice.schema.json, contract/src/subjects.ts, plugin/core/src/main/resources/config.yml, plugin/core-common/src/main/java/dev/geldar/core/maintenance]
 ---
 
 # Maintenance notice: the Paper broadcast (CD-1c)
