@@ -11,7 +11,9 @@ function read(relative: string): string {
 // agree. The plugin is Java, so this reads its source and README as text.
 describe('stream definition agrees across the plugin and the sink', () => {
   it('matches the stream the plugin builds in NatsEventPublisher.java', () => {
-    const java = read('../../plugin/core-common/src/main/java/dev/geldar/core/NatsEventPublisher.java');
+    const java = read(
+      '../../plugin/core-common/src/main/java/dev/geldar/core/NatsEventPublisher.java',
+    );
     expect(java).toContain(`STREAM = "${STREAM_CONFIG.name}"`);
     for (const subject of STREAM_CONFIG.subjects) expect(java).toContain(`.subjects("${subject}")`);
     expect(java).toContain('.storageType(StorageType.File)');
