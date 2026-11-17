@@ -1,11 +1,7 @@
 {
   "title": "Geldar Paper",
   "description": "Paper server health from the Ledger plugin (PT-17a). Metric names are the frozen PT names; metric attribute keys are the bare keys of AttrKeys.metricAllowed (window, world, queue, collector, group, area) plus event_class and cancelled for the census (README section 4 table). The query shape is the v4 builder shape, which SigNoz v0.148.1 migrates on import; UNVERIFIED until the first import. Read-only: no panel acts in the world.",
-  "tags": [
-    "geldar",
-    "paper",
-    "telemetry"
-  ],
+  "tags": ["geldar", "paper", "telemetry"],
   "version": "v4",
   "variables": {},
   "layout": [
@@ -149,7 +145,92 @@
       "softMin": null,
       "timePreferance": "GLOBAL_TIME",
       "yAxisUnit": "ms",
-      "query": {"queryType":"builder","id":"paper-01-query","promql":[{"name":"A","query":"","disabled":false,"legend":""}],"clickhouse_sql":[{"name":"A","query":"","disabled":false,"legend":""}],"builder":{"queryData":[{"dataSource":"metrics","queryName":"A","expression":"A","disabled":false,"aggregateOperator":"hist_quantile_50","aggregateAttribute":{"key":"geldar_tick_lag_ms","dataType":"float64","type":"Histogram","isColumn":true,"isJSON":false},"timeAggregation":"","spaceAggregation":"p50","functions":[],"filters":{"op":"AND","items":[]},"groupBy":[],"having":[],"legend":"p50","limit":null,"orderBy":[{"columnName":"#SIGNOZ_VALUE","order":"desc"}],"reduceTo":"avg","stepInterval":60},{"dataSource":"metrics","queryName":"B","expression":"B","disabled":false,"aggregateOperator":"hist_quantile_95","aggregateAttribute":{"key":"geldar_tick_lag_ms","dataType":"float64","type":"Histogram","isColumn":true,"isJSON":false},"timeAggregation":"","spaceAggregation":"p95","functions":[],"filters":{"op":"AND","items":[]},"groupBy":[],"having":[],"legend":"p95","limit":null,"orderBy":[{"columnName":"#SIGNOZ_VALUE","order":"desc"}],"reduceTo":"avg","stepInterval":60},{"dataSource":"metrics","queryName":"C","expression":"C","disabled":false,"aggregateOperator":"hist_quantile_99","aggregateAttribute":{"key":"geldar_tick_lag_ms","dataType":"float64","type":"Histogram","isColumn":true,"isJSON":false},"timeAggregation":"","spaceAggregation":"p99","functions":[],"filters":{"op":"AND","items":[]},"groupBy":[],"having":[],"legend":"p99","limit":null,"orderBy":[{"columnName":"#SIGNOZ_VALUE","order":"desc"}],"reduceTo":"avg","stepInterval":60}],"queryFormulas":[]}}
+      "query": {
+        "queryType": "builder",
+        "id": "paper-01-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "hist_quantile_50",
+              "aggregateAttribute": {
+                "key": "geldar_tick_lag_ms",
+                "dataType": "float64",
+                "type": "Histogram",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "",
+              "spaceAggregation": "p50",
+              "functions": [],
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [],
+              "having": [],
+              "legend": "p50",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            },
+            {
+              "dataSource": "metrics",
+              "queryName": "B",
+              "expression": "B",
+              "disabled": false,
+              "aggregateOperator": "hist_quantile_95",
+              "aggregateAttribute": {
+                "key": "geldar_tick_lag_ms",
+                "dataType": "float64",
+                "type": "Histogram",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "",
+              "spaceAggregation": "p95",
+              "functions": [],
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [],
+              "having": [],
+              "legend": "p95",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            },
+            {
+              "dataSource": "metrics",
+              "queryName": "C",
+              "expression": "C",
+              "disabled": false,
+              "aggregateOperator": "hist_quantile_99",
+              "aggregateAttribute": {
+                "key": "geldar_tick_lag_ms",
+                "dataType": "float64",
+                "type": "Histogram",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "",
+              "spaceAggregation": "p99",
+              "functions": [],
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [],
+              "having": [],
+              "legend": "p99",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
     },
     {
       "id": "paper-02",
@@ -163,7 +244,50 @@
       "softMin": null,
       "timePreferance": "GLOBAL_TIME",
       "yAxisUnit": "none",
-      "query": {"queryType":"builder","id":"paper-02-query","promql":[{"name":"A","query":"","disabled":false,"legend":""}],"clickhouse_sql":[{"name":"A","query":"","disabled":false,"legend":""}],"builder":{"queryData":[{"dataSource":"metrics","queryName":"A","expression":"A","disabled":false,"aggregateOperator":"avg","aggregateAttribute":{"key":"geldar_tps","dataType":"float64","type":"Gauge","isColumn":true,"isJSON":false},"timeAggregation":"avg","spaceAggregation":"avg","functions":[],"filters":{"op":"AND","items":[]},"groupBy":[{"key":"window","dataType":"string","type":"tag","isColumn":false,"isJSON":false}],"having":[],"legend":"{{window}}","limit":null,"orderBy":[{"columnName":"#SIGNOZ_VALUE","order":"desc"}],"reduceTo":"avg","stepInterval":60}],"queryFormulas":[]}}
+      "query": {
+        "queryType": "builder",
+        "id": "paper-02-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "avg",
+              "aggregateAttribute": {
+                "key": "geldar_tps",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "avg",
+              "spaceAggregation": "avg",
+              "functions": [],
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [
+                {
+                  "key": "window",
+                  "dataType": "string",
+                  "type": "tag",
+                  "isColumn": false,
+                  "isJSON": false
+                }
+              ],
+              "having": [],
+              "legend": "{{window}}",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
     },
     {
       "id": "paper-03",
@@ -177,7 +301,67 @@
       "softMin": null,
       "timePreferance": "GLOBAL_TIME",
       "yAxisUnit": "none",
-      "query": {"queryType":"builder","id":"paper-03-query","promql":[{"name":"A","query":"","disabled":false,"legend":""}],"clickhouse_sql":[{"name":"A","query":"","disabled":false,"legend":""}],"builder":{"queryData":[{"dataSource":"metrics","queryName":"A","expression":"A","disabled":false,"aggregateOperator":"increase","aggregateAttribute":{"key":"geldar_tick_overruns_total","dataType":"float64","type":"Sum","isColumn":true,"isJSON":false},"timeAggregation":"increase","spaceAggregation":"sum","functions":[],"filters":{"op":"AND","items":[]},"groupBy":[],"having":[],"legend":"overruns","limit":null,"orderBy":[{"columnName":"#SIGNOZ_VALUE","order":"desc"}],"reduceTo":"avg","stepInterval":3600},{"dataSource":"metrics","queryName":"B","expression":"B","disabled":false,"aggregateOperator":"increase","aggregateAttribute":{"key":"geldar_tick_stalls_total","dataType":"float64","type":"Sum","isColumn":true,"isJSON":false},"timeAggregation":"increase","spaceAggregation":"sum","functions":[],"filters":{"op":"AND","items":[]},"groupBy":[],"having":[],"legend":"stalls","limit":null,"orderBy":[{"columnName":"#SIGNOZ_VALUE","order":"desc"}],"reduceTo":"avg","stepInterval":3600}],"queryFormulas":[]}}
+      "query": {
+        "queryType": "builder",
+        "id": "paper-03-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "increase",
+              "aggregateAttribute": {
+                "key": "geldar_tick_overruns_total",
+                "dataType": "float64",
+                "type": "Sum",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "increase",
+              "spaceAggregation": "sum",
+              "functions": [],
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [],
+              "having": [],
+              "legend": "overruns",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 3600
+            },
+            {
+              "dataSource": "metrics",
+              "queryName": "B",
+              "expression": "B",
+              "disabled": false,
+              "aggregateOperator": "increase",
+              "aggregateAttribute": {
+                "key": "geldar_tick_stalls_total",
+                "dataType": "float64",
+                "type": "Sum",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "increase",
+              "spaceAggregation": "sum",
+              "functions": [],
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [],
+              "having": [],
+              "legend": "stalls",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 3600
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
     },
     {
       "id": "paper-04",
@@ -191,7 +375,74 @@
       "softMin": null,
       "timePreferance": "GLOBAL_TIME",
       "yAxisUnit": "percentunit",
-      "query": {"queryType":"builder","id":"paper-04-query","promql":[{"name":"A","query":"","disabled":false,"legend":""}],"clickhouse_sql":[{"name":"A","query":"","disabled":false,"legend":""}],"builder":{"queryData":[{"dataSource":"metrics","queryName":"A","expression":"A","disabled":true,"aggregateOperator":"rate","aggregateAttribute":{"key":"geldar_container_cpu_throttled_periods_total","dataType":"float64","type":"Gauge","isColumn":true,"isJSON":false},"timeAggregation":"rate","spaceAggregation":"sum","functions":[],"filters":{"op":"AND","items":[]},"groupBy":[],"having":[],"legend":"","limit":null,"orderBy":[{"columnName":"#SIGNOZ_VALUE","order":"desc"}],"reduceTo":"avg","stepInterval":60},{"dataSource":"metrics","queryName":"B","expression":"B","disabled":true,"aggregateOperator":"rate","aggregateAttribute":{"key":"geldar_container_cpu_periods_total","dataType":"float64","type":"Gauge","isColumn":true,"isJSON":false},"timeAggregation":"rate","spaceAggregation":"sum","functions":[],"filters":{"op":"AND","items":[]},"groupBy":[],"having":[],"legend":"","limit":null,"orderBy":[{"columnName":"#SIGNOZ_VALUE","order":"desc"}],"reduceTo":"avg","stepInterval":60}],"queryFormulas":[{"queryName":"F1","expression":"A/B","disabled":false,"legend":"throttled ratio"}]}}
+      "query": {
+        "queryType": "builder",
+        "id": "paper-04-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": true,
+              "aggregateOperator": "rate",
+              "aggregateAttribute": {
+                "key": "geldar_container_cpu_throttled_periods_total",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "rate",
+              "spaceAggregation": "sum",
+              "functions": [],
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [],
+              "having": [],
+              "legend": "",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            },
+            {
+              "dataSource": "metrics",
+              "queryName": "B",
+              "expression": "B",
+              "disabled": true,
+              "aggregateOperator": "rate",
+              "aggregateAttribute": {
+                "key": "geldar_container_cpu_periods_total",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "rate",
+              "spaceAggregation": "sum",
+              "functions": [],
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [],
+              "having": [],
+              "legend": "",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": [
+            {
+              "queryName": "F1",
+              "expression": "A/B",
+              "disabled": false,
+              "legend": "throttled ratio"
+            }
+          ]
+        }
+      }
     },
     {
       "id": "paper-05",
@@ -205,7 +456,67 @@
       "softMin": null,
       "timePreferance": "GLOBAL_TIME",
       "yAxisUnit": "bytes",
-      "query": {"queryType":"builder","id":"paper-05-query","promql":[{"name":"A","query":"","disabled":false,"legend":""}],"clickhouse_sql":[{"name":"A","query":"","disabled":false,"legend":""}],"builder":{"queryData":[{"dataSource":"metrics","queryName":"A","expression":"A","disabled":false,"aggregateOperator":"avg","aggregateAttribute":{"key":"geldar_container_memory_bytes","dataType":"float64","type":"Gauge","isColumn":true,"isJSON":false},"timeAggregation":"avg","spaceAggregation":"avg","functions":[],"filters":{"op":"AND","items":[]},"groupBy":[],"having":[],"legend":"used","limit":null,"orderBy":[{"columnName":"#SIGNOZ_VALUE","order":"desc"}],"reduceTo":"avg","stepInterval":60},{"dataSource":"metrics","queryName":"B","expression":"B","disabled":false,"aggregateOperator":"avg","aggregateAttribute":{"key":"geldar_container_memory_limit_bytes","dataType":"float64","type":"Gauge","isColumn":true,"isJSON":false},"timeAggregation":"avg","spaceAggregation":"avg","functions":[],"filters":{"op":"AND","items":[]},"groupBy":[],"having":[],"legend":"limit","limit":null,"orderBy":[{"columnName":"#SIGNOZ_VALUE","order":"desc"}],"reduceTo":"avg","stepInterval":60}],"queryFormulas":[]}}
+      "query": {
+        "queryType": "builder",
+        "id": "paper-05-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "avg",
+              "aggregateAttribute": {
+                "key": "geldar_container_memory_bytes",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "avg",
+              "spaceAggregation": "avg",
+              "functions": [],
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [],
+              "having": [],
+              "legend": "used",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            },
+            {
+              "dataSource": "metrics",
+              "queryName": "B",
+              "expression": "B",
+              "disabled": false,
+              "aggregateOperator": "avg",
+              "aggregateAttribute": {
+                "key": "geldar_container_memory_limit_bytes",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "avg",
+              "spaceAggregation": "avg",
+              "functions": [],
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [],
+              "having": [],
+              "legend": "limit",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
     },
     {
       "id": "paper-06",
@@ -219,7 +530,50 @@
       "softMin": null,
       "timePreferance": "GLOBAL_TIME",
       "yAxisUnit": "none",
-      "query": {"queryType":"builder","id":"paper-06-query","promql":[{"name":"A","query":"","disabled":false,"legend":""}],"clickhouse_sql":[{"name":"A","query":"","disabled":false,"legend":""}],"builder":{"queryData":[{"dataSource":"metrics","queryName":"A","expression":"A","disabled":false,"aggregateOperator":"avg","aggregateAttribute":{"key":"geldar_world_loaded_chunks","dataType":"float64","type":"Gauge","isColumn":true,"isJSON":false},"timeAggregation":"avg","spaceAggregation":"avg","functions":[],"filters":{"op":"AND","items":[]},"groupBy":[{"key":"world","dataType":"string","type":"tag","isColumn":false,"isJSON":false}],"having":[],"legend":"{{world}}","limit":null,"orderBy":[{"columnName":"#SIGNOZ_VALUE","order":"desc"}],"reduceTo":"avg","stepInterval":60}],"queryFormulas":[]}}
+      "query": {
+        "queryType": "builder",
+        "id": "paper-06-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "avg",
+              "aggregateAttribute": {
+                "key": "geldar_world_loaded_chunks",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "avg",
+              "spaceAggregation": "avg",
+              "functions": [],
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [
+                {
+                  "key": "world",
+                  "dataType": "string",
+                  "type": "tag",
+                  "isColumn": false,
+                  "isJSON": false
+                }
+              ],
+              "having": [],
+              "legend": "{{world}}",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
     },
     {
       "id": "paper-07",
@@ -233,7 +587,50 @@
       "softMin": null,
       "timePreferance": "GLOBAL_TIME",
       "yAxisUnit": "none",
-      "query": {"queryType":"builder","id":"paper-07-query","promql":[{"name":"A","query":"","disabled":false,"legend":""}],"clickhouse_sql":[{"name":"A","query":"","disabled":false,"legend":""}],"builder":{"queryData":[{"dataSource":"metrics","queryName":"A","expression":"A","disabled":false,"aggregateOperator":"avg","aggregateAttribute":{"key":"geldar_world_entities","dataType":"float64","type":"Gauge","isColumn":true,"isJSON":false},"timeAggregation":"avg","spaceAggregation":"avg","functions":[],"filters":{"op":"AND","items":[]},"groupBy":[{"key":"world","dataType":"string","type":"tag","isColumn":false,"isJSON":false}],"having":[],"legend":"{{world}}","limit":null,"orderBy":[{"columnName":"#SIGNOZ_VALUE","order":"desc"}],"reduceTo":"avg","stepInterval":60}],"queryFormulas":[]}}
+      "query": {
+        "queryType": "builder",
+        "id": "paper-07-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "avg",
+              "aggregateAttribute": {
+                "key": "geldar_world_entities",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "avg",
+              "spaceAggregation": "avg",
+              "functions": [],
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [
+                {
+                  "key": "world",
+                  "dataType": "string",
+                  "type": "tag",
+                  "isColumn": false,
+                  "isJSON": false
+                }
+              ],
+              "having": [],
+              "legend": "{{world}}",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
     },
     {
       "id": "paper-08",
@@ -247,7 +644,75 @@
       "softMin": null,
       "timePreferance": "GLOBAL_TIME",
       "yAxisUnit": "none",
-      "query": {"queryType":"builder","id":"paper-08-query","promql":[{"name":"A","query":"","disabled":false,"legend":""}],"clickhouse_sql":[{"name":"A","query":"","disabled":false,"legend":""}],"builder":{"queryData":[{"dataSource":"metrics","queryName":"A","expression":"A","disabled":false,"aggregateOperator":"avg","aggregateAttribute":{"key":"geldar_players_online","dataType":"float64","type":"Gauge","isColumn":true,"isJSON":false},"timeAggregation":"avg","spaceAggregation":"avg","functions":[],"filters":{"op":"AND","items":[]},"groupBy":[],"having":[],"legend":"online","limit":null,"orderBy":[{"columnName":"#SIGNOZ_VALUE","order":"desc"}],"reduceTo":"avg","stepInterval":60},{"dataSource":"metrics","queryName":"B","expression":"B","disabled":false,"aggregateOperator":"avg","aggregateAttribute":{"key":"geldar_world_players","dataType":"float64","type":"Gauge","isColumn":true,"isJSON":false},"timeAggregation":"avg","spaceAggregation":"avg","functions":[],"filters":{"op":"AND","items":[]},"groupBy":[{"key":"world","dataType":"string","type":"tag","isColumn":false,"isJSON":false}],"having":[],"legend":"{{world}}","limit":null,"orderBy":[{"columnName":"#SIGNOZ_VALUE","order":"desc"}],"reduceTo":"avg","stepInterval":60}],"queryFormulas":[]}}
+      "query": {
+        "queryType": "builder",
+        "id": "paper-08-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "avg",
+              "aggregateAttribute": {
+                "key": "geldar_players_online",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "avg",
+              "spaceAggregation": "avg",
+              "functions": [],
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [],
+              "having": [],
+              "legend": "online",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            },
+            {
+              "dataSource": "metrics",
+              "queryName": "B",
+              "expression": "B",
+              "disabled": false,
+              "aggregateOperator": "avg",
+              "aggregateAttribute": {
+                "key": "geldar_world_players",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "avg",
+              "spaceAggregation": "avg",
+              "functions": [],
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [
+                {
+                  "key": "world",
+                  "dataType": "string",
+                  "type": "tag",
+                  "isColumn": false,
+                  "isJSON": false
+                }
+              ],
+              "having": [],
+              "legend": "{{world}}",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
     },
     {
       "id": "paper-09",
@@ -261,7 +726,50 @@
       "softMin": null,
       "timePreferance": "GLOBAL_TIME",
       "yAxisUnit": "none",
-      "query": {"queryType":"builder","id":"paper-09-query","promql":[{"name":"A","query":"","disabled":false,"legend":""}],"clickhouse_sql":[{"name":"A","query":"","disabled":false,"legend":""}],"builder":{"queryData":[{"dataSource":"metrics","queryName":"A","expression":"A","disabled":false,"aggregateOperator":"rate","aggregateAttribute":{"key":"geldar_event_count_total","dataType":"float64","type":"Sum","isColumn":true,"isJSON":false},"timeAggregation":"rate","spaceAggregation":"sum","functions":[],"filters":{"op":"AND","items":[]},"groupBy":[{"key":"event_class","dataType":"string","type":"tag","isColumn":false,"isJSON":false}],"having":[],"legend":"{{event_class}}","limit":20,"orderBy":[{"columnName":"#SIGNOZ_VALUE","order":"desc"}],"reduceTo":"avg","stepInterval":60}],"queryFormulas":[]}}
+      "query": {
+        "queryType": "builder",
+        "id": "paper-09-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "rate",
+              "aggregateAttribute": {
+                "key": "geldar_event_count_total",
+                "dataType": "float64",
+                "type": "Sum",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "rate",
+              "spaceAggregation": "sum",
+              "functions": [],
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [
+                {
+                  "key": "event_class",
+                  "dataType": "string",
+                  "type": "tag",
+                  "isColumn": false,
+                  "isJSON": false
+                }
+              ],
+              "having": [],
+              "legend": "{{event_class}}",
+              "limit": 20,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
     },
     {
       "id": "paper-10",
@@ -275,7 +783,50 @@
       "softMin": null,
       "timePreferance": "GLOBAL_TIME",
       "yAxisUnit": "none",
-      "query": {"queryType":"builder","id":"paper-10-query","promql":[{"name":"A","query":"","disabled":false,"legend":""}],"clickhouse_sql":[{"name":"A","query":"","disabled":false,"legend":""}],"builder":{"queryData":[{"dataSource":"metrics","queryName":"A","expression":"A","disabled":false,"aggregateOperator":"rate","aggregateAttribute":{"key":"geldar_ledger_dropped_total","dataType":"float64","type":"Sum","isColumn":true,"isJSON":false},"timeAggregation":"rate","spaceAggregation":"sum","functions":[],"filters":{"op":"AND","items":[]},"groupBy":[{"key":"queue","dataType":"string","type":"tag","isColumn":false,"isJSON":false}],"having":[],"legend":"{{queue}}","limit":null,"orderBy":[{"columnName":"#SIGNOZ_VALUE","order":"desc"}],"reduceTo":"avg","stepInterval":60}],"queryFormulas":[]}}
+      "query": {
+        "queryType": "builder",
+        "id": "paper-10-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "rate",
+              "aggregateAttribute": {
+                "key": "geldar_ledger_dropped_total",
+                "dataType": "float64",
+                "type": "Sum",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "rate",
+              "spaceAggregation": "sum",
+              "functions": [],
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [
+                {
+                  "key": "queue",
+                  "dataType": "string",
+                  "type": "tag",
+                  "isColumn": false,
+                  "isJSON": false
+                }
+              ],
+              "having": [],
+              "legend": "{{queue}}",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
     },
     {
       "id": "paper-11",
@@ -289,7 +840,50 @@
       "softMin": null,
       "timePreferance": "GLOBAL_TIME",
       "yAxisUnit": "none",
-      "query": {"queryType":"builder","id":"paper-11-query","promql":[{"name":"A","query":"","disabled":false,"legend":""}],"clickhouse_sql":[{"name":"A","query":"","disabled":false,"legend":""}],"builder":{"queryData":[{"dataSource":"metrics","queryName":"A","expression":"A","disabled":false,"aggregateOperator":"avg","aggregateAttribute":{"key":"geldar_ledger_queue_depth","dataType":"float64","type":"Gauge","isColumn":true,"isJSON":false},"timeAggregation":"avg","spaceAggregation":"avg","functions":[],"filters":{"op":"AND","items":[]},"groupBy":[{"key":"queue","dataType":"string","type":"tag","isColumn":false,"isJSON":false}],"having":[],"legend":"{{queue}}","limit":null,"orderBy":[{"columnName":"#SIGNOZ_VALUE","order":"desc"}],"reduceTo":"avg","stepInterval":60}],"queryFormulas":[]}}
+      "query": {
+        "queryType": "builder",
+        "id": "paper-11-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "avg",
+              "aggregateAttribute": {
+                "key": "geldar_ledger_queue_depth",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "avg",
+              "spaceAggregation": "avg",
+              "functions": [],
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [
+                {
+                  "key": "queue",
+                  "dataType": "string",
+                  "type": "tag",
+                  "isColumn": false,
+                  "isJSON": false
+                }
+              ],
+              "having": [],
+              "legend": "{{queue}}",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
     },
     {
       "id": "paper-12",
@@ -303,7 +897,50 @@
       "softMin": null,
       "timePreferance": "GLOBAL_TIME",
       "yAxisUnit": "none",
-      "query": {"queryType":"builder","id":"paper-12-query","promql":[{"name":"A","query":"","disabled":false,"legend":""}],"clickhouse_sql":[{"name":"A","query":"","disabled":false,"legend":""}],"builder":{"queryData":[{"dataSource":"metrics","queryName":"A","expression":"A","disabled":false,"aggregateOperator":"max","aggregateAttribute":{"key":"geldar_paper_collector_disabled","dataType":"float64","type":"Gauge","isColumn":true,"isJSON":false},"timeAggregation":"max","spaceAggregation":"max","functions":[],"filters":{"op":"AND","items":[]},"groupBy":[{"key":"collector","dataType":"string","type":"tag","isColumn":false,"isJSON":false}],"having":[],"legend":"{{collector}}","limit":null,"orderBy":[{"columnName":"#SIGNOZ_VALUE","order":"desc"}],"reduceTo":"avg","stepInterval":60}],"queryFormulas":[]}}
+      "query": {
+        "queryType": "builder",
+        "id": "paper-12-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "max",
+              "aggregateAttribute": {
+                "key": "geldar_paper_collector_disabled",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "max",
+              "spaceAggregation": "max",
+              "functions": [],
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [
+                {
+                  "key": "collector",
+                  "dataType": "string",
+                  "type": "tag",
+                  "isColumn": false,
+                  "isJSON": false
+                }
+              ],
+              "having": [],
+              "legend": "{{collector}}",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
     },
     {
       "id": "paper-13",
@@ -317,7 +954,50 @@
       "softMin": null,
       "timePreferance": "GLOBAL_TIME",
       "yAxisUnit": "none",
-      "query": {"queryType":"builder","id":"paper-13-query","promql":[{"name":"A","query":"","disabled":false,"legend":""}],"clickhouse_sql":[{"name":"A","query":"","disabled":false,"legend":""}],"builder":{"queryData":[{"dataSource":"metrics","queryName":"A","expression":"A","disabled":false,"aggregateOperator":"avg","aggregateAttribute":{"key":"geldar_jfr_thread_group_cpu_ratio","dataType":"float64","type":"Gauge","isColumn":true,"isJSON":false},"timeAggregation":"avg","spaceAggregation":"avg","functions":[],"filters":{"op":"AND","items":[]},"groupBy":[{"key":"group","dataType":"string","type":"tag","isColumn":false,"isJSON":false}],"having":[],"legend":"{{group}}","limit":null,"orderBy":[{"columnName":"#SIGNOZ_VALUE","order":"desc"}],"reduceTo":"avg","stepInterval":60}],"queryFormulas":[]}}
+      "query": {
+        "queryType": "builder",
+        "id": "paper-13-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "avg",
+              "aggregateAttribute": {
+                "key": "geldar_jfr_thread_group_cpu_ratio",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "avg",
+              "spaceAggregation": "avg",
+              "functions": [],
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [
+                {
+                  "key": "group",
+                  "dataType": "string",
+                  "type": "tag",
+                  "isColumn": false,
+                  "isJSON": false
+                }
+              ],
+              "having": [],
+              "legend": "{{group}}",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
     },
     {
       "id": "paper-14",
@@ -331,7 +1011,50 @@
       "softMin": null,
       "timePreferance": "GLOBAL_TIME",
       "yAxisUnit": "bytes",
-      "query": {"queryType":"builder","id":"paper-14-query","promql":[{"name":"A","query":"","disabled":false,"legend":""}],"clickhouse_sql":[{"name":"A","query":"","disabled":false,"legend":""}],"builder":{"queryData":[{"dataSource":"metrics","queryName":"A","expression":"A","disabled":false,"aggregateOperator":"avg","aggregateAttribute":{"key":"geldar_disk_bytes","dataType":"float64","type":"Gauge","isColumn":true,"isJSON":false},"timeAggregation":"avg","spaceAggregation":"avg","functions":[],"filters":{"op":"AND","items":[]},"groupBy":[{"key":"area","dataType":"string","type":"tag","isColumn":false,"isJSON":false}],"having":[],"legend":"{{area}}","limit":null,"orderBy":[{"columnName":"#SIGNOZ_VALUE","order":"desc"}],"reduceTo":"avg","stepInterval":60}],"queryFormulas":[]}}
+      "query": {
+        "queryType": "builder",
+        "id": "paper-14-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "avg",
+              "aggregateAttribute": {
+                "key": "geldar_disk_bytes",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "avg",
+              "spaceAggregation": "avg",
+              "functions": [],
+              "filters": { "op": "AND", "items": [] },
+              "groupBy": [
+                {
+                  "key": "area",
+                  "dataType": "string",
+                  "type": "tag",
+                  "isColumn": false,
+                  "isJSON": false
+                }
+              ],
+              "having": [],
+              "legend": "{{area}}",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
     }
   ]
 }
