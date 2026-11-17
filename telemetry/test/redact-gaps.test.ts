@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { REDACTED as R, scrubText } from '../src/redact.ts';
-import { assertLinear } from './timing.ts';
+import { assertLinear, CEILING_MS } from './timing.ts';
 
 // Credential-shaped fixtures are built at run time.
 const pw = ['pass', 'word'].join('');
@@ -153,19 +153,19 @@ describe('new shapes are linear', () => {
   };
   const rep = (unit: string, size: number): string => unit.repeat(Math.ceil(size / unit.length));
 
-  it.each(Object.entries(shapes))('%s: 1 MiB under 1 s and 3x on doubling', (_n, unit) => {
+  it.each(Object.entries(shapes))('%s: 3x on doubling', (_n, unit) => {
     const { t1 } = assertLinear((size) => scrubText(rep(unit, size)));
-    expect(t1).toBeLessThan(3000);
+    expect(t1).toBeLessThan(CEILING_MS);
   });
 
-  it.each(Object.entries(shapes))('%s: 10 MiB under 5 s', (_n, unit) => {
-    expect(timed(rep(unit, 10 * MiB))).toBeLessThan(5000);
+  it.each(Object.entries(shapes))('%s: 10 MiB under the ceiling', (_n, unit) => {
+    expect(timed(rep(unit, 10 * MiB))).toBeLessThan(CEILING_MS);
   });
 
   it('a single 10 MiB value after a flag is hidden whole in bounded time', () => {
     const text = `--${pw} ${'a1'.repeat(5 * MiB)}`;
     const start = performance.now();
     expect(scrubText(text)).toBe(`--${pw} ${R}`);
-    expect(performance.now() - start).toBeLessThan(5000);
+    expect(performance.now() - start).toBeLessThan(CEILING_MS);
   });
 });

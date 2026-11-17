@@ -16,7 +16,7 @@ final class Guarded {
     private final BooleanSupplier gate;
     private final LongAdder errors = new LongAdder();
 
-    /** {@code gate} is the opt-in: checked first on every thread, so off means no read and no record. */
+    /** {@code gate} is the opt-in: checked first on every thread, so off means nothing is recorded (names may still be read by the wiring). */
     Guarded(CollectorGuard guard, HostInfo host, BooleanSupplier gate) {
         this.guard = guard;
         this.host = host;

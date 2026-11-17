@@ -31,11 +31,25 @@ Config is `config/ledger.properties`; a missing file means defaults. The keys ar
 | `collector.audit.enabled` | off | every audit family below: chat text, console and RCON command text, combat, operator change |
 | `collector.combat.enabled`, `collector.operator.enabled` | on, but only matter once audit is on | switch one audit family off |
 
-Audit is opt-in, like Paper's curated data: absent or anything but `true` means off. It is checked at install and again on every event on whatever thread it arrives (chat and RCON are not server-thread events), so off means no read and no record. Nothing exports until the owner sets a window and the keys.
+Audit is opt-in, like Paper's curated data: absent or anything but `true` means off. It is checked at install and again on every event on whatever thread it arrives (chat and RCON are not server-thread events), so off means nothing is recorded and no chat or command text is read. The wiring handlers may still read player names, the dimension, the damage cause and the command source name before the gate (only when audit is on but `collector.combat.enabled` or `collector.operator.enabled` is false); none of that is recorded. Nothing exports until the owner sets a window and the keys.
 
 ## Tick (PT-N4a, package `tick`)
 
 Tick lag, overruns, stalls (a watchdog on its own daemon thread) and the per-dimension tick time. On unless `collector.tick.enabled=false` or the master is off; then no listener, gauge or watchdog starts.
+
+## World, server and snapshot (PT-N4b)
+
+| Key | Default | What |
+|---|---|---|
+| `collector.world.enabled` | on (as Paper) | `geldar_world_loaded_chunks`, `geldar_world_entities`, `geldar_world_players`, attribute `world` = dimension name |
+| `collector.server.enabled` | on (as Paper) | `geldar_players_online`, `geldar_operators_count`, `geldar_mods_loaded` (count of loaded mods only: no names or versions; the mod-list event of plan P-N1 is not implemented), one `geldar.server.config_snapshot` event 5 s after start |
+| `collector.snapshot.enabled` (Paper's spelling `collector.snapshots.enabled` also works) | off (opt-in; Paper's is on) | `geldar.player.snapshot` for each online agent every 60 s |
+
+- **World counts are approximate and unverified.** They are running counts from chunk load and unload and entity join and leave events (the server has no verified total accessor), and the gauge descriptions say so. They start counting in the mod constructor so spawn chunks are included. Known drift: a mod that cancels `EntityJoinLevelEvent` after our listener leaves +1 for an entity that never enters the level and never fires a leave. Our listener runs at LOWEST priority and a cancelled join is not delivered to it, which should remove the cancel-before-us case, but that is unverified too. The zero clamp hides only downward drift; upward drift is invisible. Until scratch row NF-W1 (`docs/analysis/telemetry/paper-plugin/scratch-test-plan.md`: gauge versus a real count after restart, idle, a mob-farm run and a dimension change) has been run on a live server, treat entity and chunk counts as indicative; players per dimension is the least fragile. A dimension created after server start gets no gauge. At most 16 dimensions, names up to 64 characters. The `world` value is the dimension id (`minecraft:overworld`), not a Paper world name.
+- The config snapshot reads an allow-list only: `server_version`, `view_distance`, `simulation_distance`, `max_players`, `online_mode`, `jvm_xmx`. No `rcon.*`, `query.*`, address or seed key is ever read.
+- Snapshots carry life ids only (`geldar.life_id`, world, block position, health, food, xp level, game mode); a player whose name is not a life id is never read past the name. No session id (waits for the connection collector), ping, UUID or address. A stop or restart makes a fresh queue, so an old drain task cannot touch the new run.
+- `jvm_xmx` in the config snapshot is the last `-Xmx` or `-XX:MaxHeapSize=` among the JVM arguments, else `MaxRAMPercentage=<n>`, else `unknown`.
+- No scheduler-pending-tasks gauge: NeoForge has no such count.
 
 ## Progress (PT-N9, package `players`, opt-in: `collector.progress.enabled=true`)
 
@@ -43,7 +57,7 @@ Tick lag, overruns, stalls (a watchdog on its own daemon thread) and the per-dim
 
 ## Audit events (PT-N8, package `audit`, opt-in: `collector.audit.enabled=true`)
 
-A rate denial for chat or a command goes to a rate-0 twin event (`<event>._rate_drop`), so the core's rate-drop counter counts it like a core drop. `geldar.operator.change` is not yet in the names table of the Paper plugin README (docs/analysis/telemetry/paper-plugin/README.md, section 4); that table is outside this module.
+A rate denial for chat or a command goes to a rate-0 twin event (`<event>._rate_drop`), so the core's rate-drop counter counts it like a core drop. The `._rate_drop` twins are internal: they carry no text and no attributes and must not be configured (do not set `rate.<event>._rate_drop`; a nonzero rate would emit an empty event). `geldar.operator.change` is in the names table of the Paper plugin README (docs/analysis/telemetry/paper-plugin/README.md, section 4).
 
 | Event | Source | Notes |
 |---|---|---|

@@ -31,6 +31,11 @@ class LedgerModTest {
     }
 
     @Test
+    void shutdownListenerRunsAfterTheCollectorsStopListeners() {
+        assertEquals(net.neoforged.bus.api.EventPriority.LOWEST, LedgerMod.SHUTDOWN_PRIORITY);
+    }
+
+    @Test
     void missingFileMeansDefaults(@TempDir Path dir) {
         assertNotNull(create(dir.resolve("absent.properties")));
     }

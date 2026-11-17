@@ -122,6 +122,7 @@ Metrics (attributes in braces):
 | `geldar_world_loaded_chunks`, `geldar_world_entities`, `geldar_world_players` {world} | gauges | PT-05a |
 | `geldar_world_tick_ms` {world} | gauge (NeoForge only: average of the per-dimension tick-time ring, sampled every 20 ticks) | PT-N4a |
 | `geldar_players_online`, `geldar_operators_count`, `geldar_plugins_enabled`, `geldar_scheduler_pending_tasks` | gauges | PT-05b |
+| `geldar_mods_loaded` | gauge (NeoForge only: count of loaded mods) | PT-N4b |
 | `geldar_event_count_total` {event_class, cancelled} | counter | PT-06a, 06c |
 | `geldar_event_duty_ratio` {event_class} | gauge | PT-06a |
 | `geldar_paper_collector_disabled` {collector} | gauge 0/1 | PT-03e |
@@ -137,7 +138,7 @@ Metrics (attributes in braces):
 
 Events (OTel log records; `event.name` is the attribute):
 
-`geldar.player.join|quit|kick|prelogin|snapshot|advancement|stats|client_tick|command_tree`, `geldar.server.slow_tick|stall|config_snapshot|exception|plugin_enabled|plugin_disabled`, `geldar.collector.disabled`, `geldar.block.*`, `geldar.item.*`, `geldar.container.*`, `geldar.sleep.*`, `geldar.animal.*`, `geldar.trade`, `geldar.combat.*`, `geldar.movement.*`, `geldar.chat`, `geldar.sign`, `geldar.book`, `geldar.rcon.command`, `geldar.console.command`, `geldar.broadcast`, `geldar.whitelist.*`, `geldar.raid.*`, `geldar.tabcomplete`, `geldar.velocity.login|disconnect`.
+`geldar.player.join|quit|kick|prelogin|snapshot|advancement|stats|client_tick|command_tree`, `geldar.server.slow_tick|stall|config_snapshot|exception|plugin_enabled|plugin_disabled`, `geldar.collector.disabled`, `geldar.block.*`, `geldar.item.*`, `geldar.container.*`, `geldar.sleep.*`, `geldar.animal.*`, `geldar.trade`, `geldar.combat.*`, `geldar.movement.*`, `geldar.chat`, `geldar.sign`, `geldar.book`, `geldar.rcon.command`, `geldar.console.command`, `geldar.operator.change` (NeoForge ledger: an online player opped or deopped to a different level; `geldar.flag` 1 or 0), `geldar.broadcast`, `geldar.whitelist.*`, `geldar.raid.*`, `geldar.tabcomplete`, `geldar.velocity.login|disconnect`.
 
 Attribute keys are two separate lists. Source of truth: `AttrKeys` in `plugin/ledger-core`; anything else is dropped by the binding.
 
