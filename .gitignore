@@ -47,6 +47,8 @@ skins/
 # The Java package named skins (GX-07 code), not a skin directory; exact paths so no other skins/ dir is exposed
 !plugin/core/src/main/java/dev/geldar/core/skins/
 !plugin/core/src/test/java/dev/geldar/core/skins/
+!plugin/core-common/src/main/java/dev/geldar/core/skins/
+!plugin/core-common/src/test/java/dev/geldar/core/skins/
 
 # The real public tunnel config (the template is compose/cloudflared/config.example.yml; decision 0053)
 compose/cloudflared/config.yml
