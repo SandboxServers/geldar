@@ -42,6 +42,8 @@ const STUB_SCRIPTS: Record<string, string> = {
     'esac',
     'exit 0',
   ].join('\n'),
+  // The probe verb asks only `id -u` (check_operator); the uid is STUB_ID, 1000 unless a test says otherwise.
+  id: ['#!/bin/sh', 'echo "${STUB_ID:-1000}"', 'exit 0'].join('\n'),
   stat: [
     '#!/bin/sh',
     'case "$*" in',
@@ -88,6 +90,7 @@ function envFor(repo: string, extra: Record<string, string> = {}): NodeJS.Proces
     DOCKER_LABELS: '',
     STAT_MODE: '600',
     STAT_UID: '1000',
+    STUB_ID: '1000',
     ...extra,
   };
 }
@@ -171,6 +174,43 @@ describe('nf-deploy.sh probe: refusals (nothing is run)', () => {
       expect(runCalls(repo)).toEqual([]);
     },
   );
+});
+
+describe('nf-deploy.sh probe: guards (nothing is run)', () => {
+  it.each([
+    [
+      'a geldar-nf container with a geldar-colo stack label',
+      'com.docker.compose.project=geldar-nf,com.geldar.stack=colo',
+    ],
+    ['a container of the geldar-colo project', 'com.docker.compose.project=geldar-colo'],
+  ])('refuses when %s', (_label, labels) => {
+    const repo = makeRepo();
+    const r = run(repo, ['probe'], { DOCKER_LABELS: labels });
+    expect(r.status).toBe(1);
+    expect(r.out).toContain('geldar-colo label');
+    expect(composeCalls(repo)).toEqual([]);
+    expect(runCalls(repo)).toEqual([]);
+  });
+
+  it.each([
+    ['a secret file has mode 644', { STAT_MODE: '644' }, /has mode 644/],
+    ['a secret file is owned by another uid', { STAT_UID: '1001' }, /owned by uid 1001/],
+  ])('refuses when %s, and the probe never runs', (_label, extra, message) => {
+    const repo = makeRepo();
+    const r = run(repo, ['probe'], extra);
+    expect(r.status).not.toBe(0);
+    expect(r.out).toMatch(message);
+    expect(runCalls(repo)).toEqual([]);
+  });
+
+  it('refuses to run as root, before any docker call that changes anything', () => {
+    const repo = makeRepo();
+    const r = run(repo, ['probe'], { STUB_ID: '0' });
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain('refusing to run as root');
+    expect(composeCalls(repo)).toEqual([]);
+    expect(runCalls(repo)).toEqual([]);
+  });
 });
 
 describe('nf-deploy.sh probe: the run', () => {
