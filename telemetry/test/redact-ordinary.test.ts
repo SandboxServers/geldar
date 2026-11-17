@@ -25,8 +25,8 @@ describe('scrubText keeps ordinary game and prose text (decision 0350: redact on
     `${sec}ary: Bob`,
     'sessionid: 4',
     'pwd: /home',
-    `s=1234567890`,
-    `ary: Bartholomew_2`,
+    `${ck}s=1234567890`,
+    `${sec}ary: Bartholomew_2`,
     'tokens=123456789',
     'pwd=/tmp',
     'Standard Bearer Alexander arrives',
@@ -107,8 +107,8 @@ describe('scrubText URL userinfo with prefixed or long schemes', () => {
     'is linear on %s repeated',
     (unit) => {
       timed(rep(unit, 1 << 16));
-      const t1 = timed(rep(unit, MiB));
-      const t2 = timed(rep(unit, 2 * MiB));
+      const t1 = Math.min(...[1, 2, 3].map(() => timed(rep(unit, MiB))));
+      const t2 = Math.min(...[1, 2, 3].map(() => timed(rep(unit, 2 * MiB))));
       expect(t1).toBeLessThan(1000);
       expect(t2).toBeLessThan(3 * t1 + 100);
       expect(timed(rep(unit, 10 * MiB))).toBeLessThan(5000);

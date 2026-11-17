@@ -18,7 +18,11 @@ const MAX_REDACT_NODES = 100_000;
 interface Walk {
   ancestors: WeakSet<object>;
   nodes: number;
+  /** Characters of string content taken so far in this call (scrubbed or omitted). */
+  chars: number;
 }
+/** The most string characters scrubbed in one redactContent call; later strings become `[omitted N chars]`. */
+const MAX_REDACT_CHARS = 4 * 1024 * 1024;
 const UNREADABLE_MARK = '[unreadable]';
 
 // Mirrors TOKEN_PATTERN in threshold/mcp/src/store/token-hash.ts (`^gmcp-[0-9a-f]{64}$`), unanchored
@@ -29,7 +33,7 @@ const MCP_TOKEN = /gmcp-[0-9a-f]{64}/g;
 // Negotiate, NTLM) and the rest up to a quote or the end of the line, or a bare run of 16 or more
 // token characters with at least one digit or symbol. Prose such as `authorization: grants access` stays.
 const AUTH_HEADER =
-  /\b((?:Proxy-)?Authorization["']?[ \t]*[:=][ \t]*["']?)(?:(?:Basic|Bearer|Token|Digest|Negotiate|NTLM)[ \t]+[^\r\n"']*|(?=[A-Za-z0-9._~+/=-]{16})(?=[A-Za-z0-9._~+/=-]*[\d._~+/=])[A-Za-z0-9._~+/=-]+)/gi;
+  /\b((?:Proxy-)?Authorization\\*["']?[ \t]*[:=][ \t]*\\*["']?)(?:(?:Basic|Bearer|Token|Negotiate|NTLM)[ \t]+[^\r\n"'\\]*|(?:Digest|AWS4-HMAC-SHA256)[ \t]+[^\r\n]*|(?=[A-Za-z0-9._~+/=-]{16})(?=[A-Za-z0-9._~+/=-]*[\d._~+/=])[A-Za-z0-9._~+/=-]+)/gi;
 // `bearer <run>` (also `Bearer: <run>` and `Bearer "<run>"`), case-insensitive because HTTP schemes are.
 // The run is 6 or more characters and ends at a space, quote, comma or semicolon. `Bearer` or `BEARER`
 // redacts any such run; another case redacts only a run with a digit or `_~+/=` or one of 20+ characters,
@@ -43,13 +47,43 @@ const BEARER_PROOF = /[\d_~+/=-]/;
 // left-anchored (no letter, digit, + . - before it) and at most 32 characters, so a long run with no
 // `://` is rejected in constant time per start instead of rescanned from every position.
 const URL_USERINFO = /([a-z][a-z0-9+.-]{0,31}:\/\/)[^\s/@:]*:[^\s/]*@/gi;
+// A bare JWT: three base64url segments, the first starting `eyJ` (`{"`). Starts only at a run start
+// (the lookbehind), so a long run is tried once; `{8}` then `*` for the same stack reason as BEARER.
+const JWT = /(?<![\w-])eyJ[\w-]{5}[\w-]*\.[\w-]{8}[\w-]*\.[\w-]*/g;
+const PEM_HEADER = /-----BEGIN [A-Z ]{0,40}PRIVATE KEY-----/y;
+const PEM_FOOTER = 'PRIVATE KEY-----';
+
+/**
+ * PEM private key blocks: from the BEGIN line to the END line, or to the end of the text when the END
+ * line is missing (a cut capture). A manual scan with `indexOf`: each block is consumed once, so it is linear.
+ */
+function scrubPem(text: string): string {
+  let from = text.indexOf('-----BEGIN ');
+  if (from < 0) return text;
+  let out = '';
+  let last = 0;
+  while (from >= 0) {
+    PEM_HEADER.lastIndex = from;
+    const header = PEM_HEADER.exec(text);
+    if (!header) {
+      from = text.indexOf('-----BEGIN ', from + 1);
+      continue;
+    }
+    const footer = text.indexOf(PEM_FOOTER, from + header[0].length);
+    const stop = footer < 0 ? text.length : footer + PEM_FOOTER.length;
+    out += text.slice(last, from) + REDACTED;
+    last = stop;
+    from = text.indexOf('-----BEGIN ', stop);
+  }
+  return out + text.slice(last);
+}
 
 // Free-text `key=value` and `key: value` (also `"key":"value"`). The scan matches only `key + separator`
 // (never the value), so a non-credential key such as `https` cannot swallow `//host/cb?token=...`; the
 // value is read, with a sticky regex, only for a credential key. The key starts at a key boundary (no word
 // character, dot or hyphen before it, optionally after `--`) and has no length cap: only run starts are
 // tried, so the scan stays linear.
-const KEY_SEP = /(?<![\w.-])(?:--)?([A-Za-z][\w.-]*)(["']?[ \t]*[=:][ \t]*["']?)/g;
+const KEY_SEP = /(?<![\w.-])(?:--)?([A-Za-z][\w.-]*)(\\*["']?[ \t]*[=:][ \t]*\\*["']?)/g;
 const KEY_HINT = /token|pass|secret|key|cookie|signature/i;
 /** Whole credential words: a key is a credential only when one of its segments says so (not `secretary`, `cookies`, `tokens`). */
 const CREDENTIAL_WORDS: ReadonlySet<string> = new Set([
@@ -68,7 +102,7 @@ const COOKIE_KEY = /(?:^|[._-])cookie$/i;
 /** A cookie header value in `name=value` form: the rest of the line. */
 const COOKIE_PAIRS = /[^\s=;"']+=[^\r\n]*/y;
 /** An unquoted value: up to whitespace, a quote, `&`, `,`, `;`, `)` or `}`. */
-const VALUE_RUN = /[^\s"'&,;)}]+/y;
+const VALUE_RUN = /[^\s"'&,;)}\\]+/y;
 /** A quoted value: up to the closing quote on the same line; capped so an unclosed quote is cheap. */
 const VALUE_DQ = /[^"\r\n]{0,8192}"/y;
 const VALUE_SQ = /[^'\r\n]{0,8192}'/y;
@@ -123,9 +157,11 @@ function scrubKeyValues(text: string): string {
     // A quoted value runs to the closing quote (spaces included) only in a structured position: a quoted
     // key (`"password":"..."`), `=` (`password="..."`) or a query. After a prose `password: "` it is a word.
     const quoteRe = sep.endsWith('"') ? VALUE_DQ : sep.endsWith("'") ? VALUE_SQ : undefined;
-    if (!whole && quoteRe && (/^["']/.test(sep) || sep.includes('=') || flagOrQuery)) {
+    if (!whole && quoteRe && (/^\\*["']/.test(sep) || sep.includes('=') || flagOrQuery)) {
       quoteRe.lastIndex = end;
       length = (quoteRe.exec(text)?.[0].length ?? 1) - 1;
+      // An escaped quote closes the value: keep its backslash out of it.
+      while (length > 0 && sep.includes('\\') && text.charAt(end + length - 1) === '\\') length--;
       whole = length > 0;
     }
     if (!whole) {
@@ -153,10 +189,15 @@ export function scrubText(text: string): string {
 
 function scrubPatterns(text: string): string {
   return scrubKeyValues(
-    text
-      .replace(AUTH_HEADER, (_match, head: string) =>
-        /["']/.test(head) ? head + REDACTED : REDACTED,
-      )
+    scrubPem(text)
+      .replace(AUTH_HEADER, (match, head: string) => {
+        if (!/["']/.test(head)) return REDACTED;
+        // A quoted pair (JSON): the value ends at the closing quote, so a Digest run does not eat the line.
+        const value = match.slice(head.length);
+        const cut = value.search(/["'\\]/);
+        return head + REDACTED + (cut < 0 ? '' : value.slice(cut));
+      })
+      .replace(JWT, REDACTED)
       .replace(BEARER, (match, word: string, quote: string, run: string) =>
         (
           word === 'Bearer' || word === 'BEARER'
@@ -177,7 +218,7 @@ function scrubPatterns(text: string): string {
  */
 export function redactContent(value: unknown): unknown {
   try {
-    return redactAt(value, 0, { ancestors: new WeakSet<object>(), nodes: 0 });
+    return redactAt(value, 0, { ancestors: new WeakSet<object>(), nodes: 0, chars: 0 });
   } catch {
     return UNREADABLE_MARK;
   }
@@ -193,11 +234,18 @@ function redactRead(read: () => unknown, depth: number, walk: Walk): unknown {
 }
 
 /** One level of redactContent; `walk` holds the objects on the path to this value (a cycle guard) and a node count. */
+/** scrubText for one string of a redactContent call: past the call's character budget the string is omitted. */
+function scrubBudgeted(text: string, walk: Walk): string {
+  walk.chars += text.length;
+  return walk.chars > MAX_REDACT_CHARS ? `[omitted ${text.length} chars]` : scrubText(text);
+}
+
 function redactAt(value: unknown, depth: number, walk: Walk): unknown {
-  if (typeof value === 'string') return scrubText(value);
+  if (typeof value === 'string') return scrubBudgeted(value, walk);
   // JSON-safe plain data out: a bigint, symbol or function becomes text, never a value JSON.stringify rejects.
   if (typeof value === 'bigint') return value.toString();
-  if (typeof value === 'symbol' || typeof value === 'function') return scrubText(String(value));
+  if (typeof value === 'symbol' || typeof value === 'function')
+    return scrubBudgeted(String(value), walk);
   if (value === null || typeof value !== 'object') return value;
   if (walk.ancestors.has(value)) return CYCLE_MARK;
   if (depth >= MAX_REDACT_DEPTH || ++walk.nodes > MAX_REDACT_NODES) return TRUNCATED_MARK;
@@ -209,6 +257,9 @@ function redactAt(value: unknown, depth: number, walk: Walk): unknown {
   }
   if (value instanceof Error) {
     const fields = errorFields(value);
+    walk.chars +=
+      fields['exception.message'].length + (fields['exception.stacktrace']?.length ?? 0);
+    if (walk.chars > MAX_REDACT_CHARS) return `[omitted error]`;
     return {
       name: fields['exception.type'],
       message: fields['exception.message'],
@@ -240,13 +291,21 @@ function redactAt(value: unknown, depth: number, walk: Walk): unknown {
     }
     if (Array.isArray(value)) {
       const items: unknown[] = [];
-      for (let i = 0; i < value.length; i++) {
+      // At most MAX_REDACT_NODES elements are read, so a sparse `new Array(1e8)` costs the same as a full one.
+      const count = Math.min(value.length, MAX_REDACT_NODES);
+      for (let i = 0; i < count; i++) {
         items.push(redactRead(() => value[i], depth + 1, walk));
       }
+      if (value.length > count) items.push(TRUNCATED_MARK);
       return items;
     }
     const copy: Record<string, unknown> = {};
     for (const key of Object.keys(value)) {
+      walk.chars += key.length;
+      if (walk.chars > MAX_REDACT_CHARS) {
+        Object.defineProperty(copy, TRUNCATED_MARK, { value: TRUNCATED_MARK, enumerable: true });
+        break;
+      }
       // A key that names a credential (the package's forbidden-name rule): whole words or joined stems.
       const kept = hasForbiddenSegment(key)
         ? REDACTED
@@ -282,8 +341,18 @@ export const MAX_ERROR_TEXT_CHARS = 64 * 1024;
 /** The text cut to MAX_ERROR_TEXT_CHARS, then scrubbed; a cut ends with `…[truncated N chars]`. */
 function scrubBounded(text: string): string {
   if (text.length <= MAX_ERROR_TEXT_CHARS) return scrubText(text);
-  const cut = text.length - MAX_ERROR_TEXT_CHARS;
-  return `${scrubText(text.slice(0, MAX_ERROR_TEXT_CHARS))}…[truncated ${cut} chars]`;
+  return `${scrubText(text.slice(0, MAX_ERROR_TEXT_CHARS))}${cutMark(text)}`;
+}
+
+function cutMark(text: string): string {
+  return `…[truncated ${text.length - MAX_ERROR_TEXT_CHARS} chars]`;
+}
+
+/** Text that is already redacted, cut to MAX_ERROR_TEXT_CHARS with the same mark. */
+function cutText(text: string): string {
+  return text.length <= MAX_ERROR_TEXT_CHARS
+    ? text
+    : `${text.slice(0, MAX_ERROR_TEXT_CHARS)}${cutMark(text)}`;
 }
 
 /** Exception fields for a thrown value; message and stack are cut, then scrubbed. Never throws. */
@@ -301,7 +370,9 @@ export function errorFields(error: unknown): ErrorFields {
     const text = String(error);
     // A thrown plain object (String gives `[object Object]`): its redacted fields as JSON instead.
     const message =
-      text === '[object Object]' ? JSON.stringify(redactContent(error)) : scrubBounded(text);
+      text === '[object Object]'
+        ? cutText(JSON.stringify(redactContent(error)))
+        : scrubBounded(text);
     return { 'exception.type': typeof error, 'exception.message': message };
   } catch {
     return { 'exception.type': 'unknown', 'exception.message': '' };

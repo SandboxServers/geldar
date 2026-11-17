@@ -42,8 +42,11 @@ describe('scrubText never overflows the regex stack', () => {
   }, 300_000);
 
   it('survives the same runs through redactContent (no [unreadable])', () => {
-    const out = redactContent({ v: `Bearer ${'a'.repeat(8 * MiB)}` }) as { v: string };
+    const out = redactContent({ v: `Bearer ${'a'.repeat(3 * MiB)}` }) as { v: string };
     expect(out.v).toBe('[redacted]');
+    // Past the call's 4 MiB string budget the text is omitted, never returned unscrubbed.
+    const big = redactContent({ v: `Bearer ${'a'.repeat(8 * MiB)}` }) as { v: string };
+    expect(big.v).toBe(`[omitted ${7 + 8 * MiB} chars]`);
   }, 60_000);
 
   it('replaces the text with a placeholder when the scrub itself throws', () => {

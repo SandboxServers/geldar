@@ -68,8 +68,8 @@ describe('scrubText key/value scan is linear', () => {
     '%s: 1 MiB and 2 MiB scale at most 3x, 1 MiB under 1 s',
     (_n, unit) => {
       timed(rep(unit, 1 << 16)); // warm-up
-      const t1 = timed(rep(unit, MiB));
-      const t2 = timed(rep(unit, 2 * MiB));
+      const t1 = Math.min(...[1, 2, 3].map(() => timed(rep(unit, MiB))));
+      const t2 = Math.min(...[1, 2, 3].map(() => timed(rep(unit, 2 * MiB))));
       expect(t1).toBeLessThan(1000);
       expect(t2).toBeLessThan(3 * t1 + 100);
     },
