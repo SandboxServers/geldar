@@ -21,7 +21,7 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
  * server (and so its dimensions) exists. Fail-safe: any failure leaves the collector off and the server running.
  */
 public final class TickWiring {
-    private static final Logger LOG = Logger.getLogger("ledger");
+    private static final Logger LOG = dev.geldar.ledger.neoforge.LedgerLog.server();
 
     private final Ledger ledger;
     private final HostInfo host;
