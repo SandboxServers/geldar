@@ -8,7 +8,8 @@ import java.util.function.BooleanSupplier;
  * The audit opt-in (chat text, console and RCON command text, combat, operator change). Off unless the master switch is
  * on AND {@code collector.audit.enabled=true} is set explicitly (absent means off), and, for a family with its own id
  * (combat, operator), that collector is not switched off. Read from the ledger's config on every call, so it holds on
- * any thread (chat and RCON are not server-thread events) and a gate that is off means no read and no record.
+ * any thread (chat and RCON are not server-thread events). A gate that is off means nothing is recorded and no text
+ * (chat, command) is read; the wiring may still read names, dimension, cause and the command source name first.
  */
 final class AuditGate implements BooleanSupplier {
     static final String ID = "audit";

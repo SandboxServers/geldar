@@ -33,7 +33,7 @@ public final class AuditWiring {
 
     /** Registers the listeners on the NeoForge bus; call from the mod constructor. Does nothing for a null ledger. */
     public static void install(Ledger ledger, HostInfo host) {
-        if (ledger == null || !new AuditGate(ledger, null).getAsBoolean()) {
+        if (!shouldInstall(ledger)) {
             return; // opt-in: nothing is registered or listened to unless collector.audit.enabled=true
         }
         try {
@@ -51,6 +51,11 @@ public final class AuditWiring {
             }
             LOG.warning("ledger audit wiring failed: " + t.getClass().getName());
         }
+    }
+
+    /** The install decision: a ledger exists and the audit opt-in is on (master on, audit explicitly true). */
+    static boolean shouldInstall(Ledger ledger) {
+        return ledger != null && new AuditGate(ledger, null).getAsBoolean();
     }
 
     static String playerName(Entity e) {
