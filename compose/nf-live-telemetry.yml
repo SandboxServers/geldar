@@ -1,0 +1,53 @@
+# Optional telemetry overlay for the live NeoForge project (compose/nf-live.yml). deploy/nf-deploy.sh adds it only when
+# NF_TELEMETRY=on, as `-f compose/nf-live.yml -f compose/nf-live-telemetry.yml`. The default render (nf-live.yml alone) is unchanged.
+# It adds to the neoforge service only:
+#   - four read-only bind mounts with create_host_path false (a missing host file fails the start): the ledger mod jar, the
+#     OpenTelemetry Java agent jar, the agent properties and the ledger properties. Their host paths come from the environment.
+#   - GELDAR_NF_TELEMETRY (on), GELDAR_NF_LEDGER_SHA256 (the pin of the host ledger jar, from NF_LEDGER_SHA256) and
+#     GELDAR_NF_OTEL_AGENT_SHA256 (a constant: the sha256 of opentelemetry-javaagent 2.33.1, 26507624 bytes; not an operator
+#     input). This file is the single source of that pin: the entrypoint reads it from the environment and builds the
+#     -javaagent flag itself; this file sets no JAVA_AGENTS, JVM_OPTS or OTEL_* variable.
+#   - a join to the EXTERNAL network geldar-telemetry, which the telemetry stack owns. Compose never creates or removes it.
+# No other service joins geldar-telemetry, and nothing here is published. The OTLP endpoint is whatever the properties
+# files say; this file does not pin or check it. CI and `geldar.ps1 check` also render this file alone, so it names the
+# nf network and repeats the neoforge image (a test asserts it equals the one in nf-live.yml).
+networks:
+  nf: {}
+  telemetry:
+    external: true
+    name: geldar-telemetry
+
+services:
+  neoforge:
+    image: itzg/minecraft-server:2026.10.1-java25@sha256:d12aed7e35981dfe259b60fbfee77d23a19b5898a7a31dca298d18b47b7b5776
+    environment:
+      GELDAR_NF_TELEMETRY: "${NF_TELEMETRY:-on}"
+      GELDAR_NF_LEDGER_SHA256: "${NF_LEDGER_SHA256:-}"
+      # The OpenTelemetry Java agent 2.33.1 pin (docs/analysis/telemetry/nf-live-telemetry.md, section 0a). Constant.
+      GELDAR_NF_OTEL_AGENT_SHA256: "e43a270df53c6f423e0ab157be9c27ccc01d5dc3232e162fe54777573db2f149"
+    volumes:
+      - type: bind
+        source: ${NF_LEDGER_JAR_HOST:-./nf-live-unset/geldar-neoforge-ledger.jar}
+        target: /geldar/mods/geldar-neoforge-ledger.jar
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${NF_OTEL_AGENT_HOST:-./nf-live-unset/opentelemetry-javaagent.jar}
+        target: /geldar/telemetry/opentelemetry-javaagent.jar
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${NF_OTEL_AGENT_PROPS_HOST:-./nf-live-unset/otel-agent.properties}
+        target: /geldar/telemetry/otel-agent.properties
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${NF_LEDGER_PROPS_HOST:-./nf-live-unset/ledger.properties}
+        target: /geldar/telemetry/ledger.properties
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [nf, telemetry]

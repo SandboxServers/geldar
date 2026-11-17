@@ -11,6 +11,13 @@
 #   NF_MOD_JAR_HOST, NF_MOD_SHA256     the pinned geldar NeoForge mod jar and its sha256 (64 lowercase hex)
 #   NF_BUNDLE_TARBALL, NF_BUNDLE_TARBALL_SHA256   seed-bundle only: the absolute path of the bundle tarball and its sha256
 #                                      (plan and up need no bundle input: the seeded volume's marker check is the gate)
+#   NF_TELEMETRY (default off)         on adds compose/nf-live-telemetry.yml and joins neoforge to the external network
+#                                      geldar-telemetry (plan and up only; down and status never read these). With on, the inputs are
+#                                      NF_LEDGER_JAR_HOST, NF_LEDGER_SHA256 (the ledger jar's sha256), NF_OTEL_AGENT_HOST (its sha256
+#                                      must equal the pin in the overlay), NF_OTEL_AGENT_PROPS_HOST and NF_LEDGER_PROPS_HOST (absolute
+#                                      regular files). Any other NF_TELEMETRY value refuses, and so does on while compose/neoforge/neoforge-entrypoint.sh has no
+#                                      GELDAR_NF_TELEMETRY. NF_TELEMETRY=on has NO effect on the JVM until entrypoint packet B (PR #701)
+#                                      is merged: do not set it before.
 #   NF_SECRETS_DIR                     the secret files (default compose/secrets-nf)
 #   NF_SERVICE_UID (default 1000), NF_SERVICE_GID (default NF_SERVICE_UID): the uid:gid the services run as and that owns
 #                                      the seeded volume. The default 1000 is not the node: its ops account is uid 1001, so the
@@ -34,6 +41,11 @@ MEM_MARGIN_MIB=8192
 MIN_FREE_DISK_KB=52428800
 # The NeoForge data volume. compose/nf-live.yml declares neoforge-data with no name:, so compose names it <project>_neoforge-data.
 VOLUME=${PROJECT}_neoforge-data
+# Telemetry (NF_TELEMETRY=on only): the overlay plan and up add, and the external network it joins. The stack owns the network:
+# this script never creates, removes or prunes it. TELEMETRY is 1 only after check_telemetry sees on.
+TELEMETRY_FILE=$ROOT/compose/nf-live-telemetry.yml
+TELEMETRY_NETWORK=geldar-telemetry
+TELEMETRY=0
 
 die() {
   echo "nf-deploy: error: $*" >&2
@@ -50,7 +62,11 @@ need() {
 
 # Every compose call goes through here: the constant project and the one compose file, nothing else.
 dc() {
-  docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"
+  if [ "$TELEMETRY" = 1 ]; then
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$TELEMETRY_FILE" "$@"
+  else
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"
+  fi
 }
 
 # Runs a state-changing step, or names it in dry-run mode.
@@ -176,6 +192,68 @@ check_mod_jar() {
   [ "$got" = "$want" ] || die "the sha256 of the mod jar does not match NF_MOD_SHA256; nothing started"
 }
 
+# Telemetry is off unless NF_TELEMETRY is set to on (an empty value refuses). On, the host inputs are checked here, before
+# any docker call: absolute regular files without whitespace, quotes, backslash or dollar; the ledger jar's sha256 against
+# NF_LEDGER_SHA256; the OTel agent jar's sha256 against the pin in the overlay (read from the file, one copy).
+check_host_file() {
+  name=$1
+  p=$2
+  [ -n "$p" ] || die "$name is not set (NF_TELEMETRY=on needs it)"
+  case $p in
+    /*) ;;
+    # A drive-letter form is accepted only so the Windows test fixtures pass (as the bundle tarball check does); the node is Linux.
+    [A-Za-z]:/*) ;;
+    *) die "$name must be an absolute path" ;;
+  esac
+  case $p in
+    *[[:space:]]* | *\"* | *\'* | *\\* | *\$*) die "$name has whitespace, a quote, a backslash or a dollar; refusing" ;;
+  esac
+  [ ! -L "$p" ] || die "$name is a symlink; give the regular file"
+  [ -f "$p" ] || die "$name is not a regular file"
+  case $p in
+    # The parent must be its real path: a symlinked directory would hide the file that is hashed (Linux node form).
+    /*) [ "$(cd "$(dirname "$p")" && pwd -P)/$(basename "$p")" = "$p" ] || die "$name is under a symlinked directory; give the real path" ;;
+  esac
+}
+
+check_telemetry_inputs() {
+  check_host_file NF_LEDGER_JAR_HOST "${NF_LEDGER_JAR_HOST:-}"
+  check_host_file NF_OTEL_AGENT_HOST "${NF_OTEL_AGENT_HOST:-}"
+  check_host_file NF_OTEL_AGENT_PROPS_HOST "${NF_OTEL_AGENT_PROPS_HOST:-}"
+  check_host_file NF_LEDGER_PROPS_HOST "${NF_LEDGER_PROPS_HOST:-}"
+  want=${NF_LEDGER_SHA256:-}
+  printf '%s' "$want" | grep -Eq '^[0-9a-f]{64}$' || die "NF_LEDGER_SHA256 must be 64 lowercase hex digits"
+  need sha256sum
+  got=$(sha256sum <"$NF_LEDGER_JAR_HOST" | awk '{print $1}')
+  [ "$got" = "$want" ] || die "the sha256 of the ledger jar does not match NF_LEDGER_SHA256; nothing started"
+  pin=$(awk -F'"' '/^ *GELDAR_NF_OTEL_AGENT_SHA256:/ { print $2; exit }' "$TELEMETRY_FILE")
+  printf '%s\n' "$pin" | grep -Eq '^[0-9a-f]{64}$' || die "the agent pin in $TELEMETRY_FILE is not 64 lowercase hex digits"
+  got=$(sha256sum <"$NF_OTEL_AGENT_HOST" | awk '{print $1}')
+  [ "$got" = "$pin" ] || die "the sha256 of the OTel agent jar is not the pinned agent (GELDAR_NF_OTEL_AGENT_SHA256 in the overlay); nothing started"
+  say "telemetry: the ledger jar and the OTel agent jar match their pins (no docker call made yet)"
+}
+
+check_telemetry() {
+  case ${NF_TELEMETRY-off} in
+    off) TELEMETRY=0 ;;
+    on)
+      # The entrypoint of packet B (PR #701) reads GELDAR_NF_TELEMETRY. Without it the overlay mounts and joins, and no agent loads.
+      grep -Fq GELDAR_NF_TELEMETRY "$ROOT/compose/neoforge/neoforge-entrypoint.sh" 2>/dev/null ||
+        die "compose/neoforge/neoforge-entrypoint.sh has no GELDAR_NF_TELEMETRY (PR #701 is not merged): on would start nothing; refusing"
+      TELEMETRY=1
+      check_telemetry_inputs
+      ;;
+    *) die "NF_TELEMETRY must be on or off (default off); refusing" ;;
+  esac
+}
+
+# On, the external network must already exist (the telemetry stack creates it). Checked before anything starts.
+check_telemetry_network() {
+  [ "$TELEMETRY" = 1 ] || return 0
+  docker network inspect "$TELEMETRY_NETWORK" >/dev/null 2>&1 ||
+    die "docker network $TELEMETRY_NETWORK does not exist on this node; start the geldar-telemetry stack first (nothing started)"
+}
+
 # The image of the neoforge service in compose/nf-live.yml: the one pinned reference, read from the file (no second copy here).
 compose_image() {
   img=$(awk '/^  [a-z][a-z-]*:$/ { svc = ($1 == "neoforge:") } svc && /^    image: / { print $2; exit }' "$COMPOSE_FILE")
@@ -272,7 +350,9 @@ check_config() {
 
 # Every gate that up and plan run, in order. Refusing here stops before any state changes.
 gates() {
+  check_telemetry
   check_operator
+  check_telemetry_network
   check_service_uid
   check_no_colo_labels
   check_port
@@ -283,7 +363,10 @@ gates() {
 
 cmd_plan() {
   gates
-  say "project $PROJECT; compose file $COMPOSE_FILE (the only -f)"
+  say "project $PROJECT; compose file $COMPOSE_FILE"
+  if [ "$TELEMETRY" = 1 ]; then
+    say "telemetry on: overlay $TELEMETRY_FILE is added; neoforge joins the external network $TELEMETRY_NETWORK (never created or removed here)"
+  fi
   say "plan, nothing changed: up runs these steps in order"
   say "  1. up -d --wait nats postgres"
   say "  2. up --no-deps --exit-code-from identity-seed identity-seed (one-shot)"
