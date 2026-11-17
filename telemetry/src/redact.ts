@@ -34,7 +34,9 @@ const AUTH_HEADER =
 // The run is 6 or more characters and ends at a space, quote, comma or semicolon. `Bearer` or `BEARER`
 // redacts any such run; another case redacts only a run with a digit or `_~+/=` or one of 20+ characters,
 // so `the bearer of bad news` and `bearer wisdom` stay.
-const BEARER = /\b(bearer)(?:[ \t]*[:=][ \t]*|[ \t]+)(["']?)([^\s"',;]{6,})/gi;
+// `{6}` then `*`, not `{6,}`: V8 pushes a backtrack frame per iteration of a counted greedy loop, so
+// `{6,}` throws RangeError (regex stack) on a run of about 5.5 MiB.
+const BEARER = /\b(bearer)(?:[ \t]*[:=][ \t]*|[ \t]+)(["']?)([^\s"',;]{6}[^\s"',;]*)/gi;
 const BEARER_PROOF = /[\d_~+/=]/;
 // URL userinfo: `scheme://user:pass@`. The password part is required, so a plain `a@b` is untouched, and
 // it runs to the last `@` before the next `/` or space, so `u:p@ss@host` hides `ss` too. The scheme is
@@ -56,6 +58,15 @@ function credentialKey(key: string): boolean {
 
 /** The text with Authorization values, bearer strings, MCP tokens, URL userinfo and secret key=value pairs replaced. */
 export function scrubText(text: string): string {
+  try {
+    return scrubPatterns(text);
+  } catch {
+    // Any failure (a regex stack overflow, an engine limit): drop the text, never return it unscrubbed.
+    return `[unscrubbable ${text.length} chars]`;
+  }
+}
+
+function scrubPatterns(text: string): string {
   return text
     .replace(AUTH_HEADER, (_match, head: string) =>
       /["']/.test(head) ? head + REDACTED : REDACTED,
