@@ -37,7 +37,8 @@ public final class TokenBucket {
     long now = nanoClock.getAsLong();
     while (true) {
       long cur = tat.get();
-      long base = Math.max(cur, now);
+      // Signed difference, so the comparison survives nanoTime wrapping past Long.MAX_VALUE.
+      long base = (cur - now > 0) ? cur : now;
       long next = base + interval;
       if (next - now > window) {
         return false;

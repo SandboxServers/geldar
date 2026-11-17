@@ -8,6 +8,7 @@ public final class OfflineUuid {
     private OfflineUuid() {}
 
     public static UUID of(String name) {
+        java.util.Objects.requireNonNull(name, "name");
         return UUID.nameUUIDFromBytes(("OfflinePlayer:" + name).getBytes(StandardCharsets.UTF_8));
     }
 }

@@ -25,7 +25,8 @@ class ContentCapTest {
     @Test
     void asciiIsCutAtTheLimitWithMarker() {
         String out = ContentCap.cap("a".repeat(40000), 32768);
-        assertEquals("a".repeat(32768) + MARKER_40000, out);
+        assertEquals("a".repeat(32768 - MARKER_40000.length()) + MARKER_40000, out);
+        assertEquals(32768, out.getBytes(StandardCharsets.UTF_8).length);
     }
 
     @Test
@@ -37,16 +38,28 @@ class ContentCapTest {
         assertTrue(out.endsWith(MARKER_40000));
         String body = out.substring(0, out.length() - MARKER_40000.length());
         byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
-        assertEquals(32766, bytes.length);
-        assertEquals("€".repeat(10922), body);
+        assertEquals(32748, bytes.length); // 32768 - 18 marker bytes = 32750, cut back to a boundary
+        assertEquals("€".repeat(10916), body);
+        assertTrue(out.getBytes(StandardCharsets.UTF_8).length <= 32768);
         StandardCharsets.UTF_8.newDecoder().onMalformedInput(CodingErrorAction.REPORT)
                 .decode(ByteBuffer.wrap(bytes));
     }
 
     @Test
+    void resultNeverExceedsTheCapForAnyCutPoint() {
+        String text = "a€😀".repeat(40);
+        for (int cap = 20; cap < 120; cap++) {
+            String out = ContentCap.cap(text, cap);
+            assertTrue(out.getBytes(StandardCharsets.UTF_8).length <= cap, "cap " + cap);
+            assertTrue(out.endsWith(" [truncated:" + text.getBytes(StandardCharsets.UTF_8).length + "]"));
+        }
+    }
+
+    @Test
     void cutInsideSurrogatePairDropsWholePair() {
         String text = "😀".repeat(20); // 80 bytes, 4 each
-        String out = ContentCap.cap(text, 10);
-        assertEquals("😀".repeat(2) + " [truncated:80]", out);
+        String out = ContentCap.cap(text, 40);
+        assertEquals("😀".repeat(6) + " [truncated:80]", out); // 40 - 15 = 25, cut back to 24
+        assertTrue(out.getBytes(StandardCharsets.UTF_8).length <= 40);
     }
 }

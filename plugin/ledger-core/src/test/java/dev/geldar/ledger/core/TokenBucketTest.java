@@ -7,7 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
+@Timeout(value = 30, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 class TokenBucketTest {
   @Test
   void givesExactlyRateInOneSecondOfFakeTime() {
@@ -23,8 +25,8 @@ class TokenBucketTest {
       }
       now.addAndGet(1_000_000L);
     }
-    // Burst equals rate, then refill at rate per second: the burst (20) plus what refilled is bounded.
-    assertTrue(taken >= 20 && taken <= 40, "taken " + taken);
+    // The k-th take needs k*50ms <= 1000ms + now; at now = 999 ms that is k <= 39.
+    assertEquals(39, taken);
   }
 
   @Test
@@ -55,6 +57,29 @@ class TokenBucketTest {
       n++;
     }
     assertEquals(5, n);
+  }
+
+  @Test
+  void staysExactAcrossTheNanoTimeWrap() {
+    AtomicLong now = new AtomicLong(Long.MAX_VALUE - 500_000_000L);
+    TokenBucket b = new TokenBucket(20, now::get);
+    int first = 0;
+    while (b.tryTake()) { // the theoretical arrival time passes Long.MAX_VALUE here
+      first++;
+    }
+    assertEquals(20, first);
+    assertFalse(b.tryTake());
+    now.addAndGet(500_000_000L); // now itself wraps negative and half the window has refilled
+    int half = 0;
+    while (b.tryTake()) {
+      half++;
+    }
+    assertEquals(10, half);    now.addAndGet(1_000_000_000L);
+    int second = 0;
+    while (b.tryTake()) {
+      second++;
+    }
+    assertEquals(20, second);
   }
 
   @Test
