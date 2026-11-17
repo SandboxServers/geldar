@@ -9,6 +9,14 @@ import org.junit.jupiter.api.Test;
 
 class RecordingLedgerTest {
     @Test
+    void eventKeysOutsideTheAllowListAreRecordedAsRejected() {
+        RecordingLedger ledger = new RecordingLedger();
+        ledger.events().register("geldar.a", Severity.INFO, 5, AttrKeys.X, null, "bare");
+        ledger.events().emitMap("geldar.b", Severity.INFO, Attrs.of().lng(AttrKeys.Y, 1).lng("n", 2).build());
+        assertEquals(java.util.List.of("bare", "n"), ledger.rejectedEventKeys());
+    }
+
+    @Test
     void recordsCountersByAttributeValues() {
         RecordingLedger ledger = new RecordingLedger();
         Counter c = ledger.counter("geldar_x_total", "1", "d", "world");

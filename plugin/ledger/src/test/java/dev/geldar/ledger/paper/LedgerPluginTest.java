@@ -7,6 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.geldar.ledger.core.Collector;
 import dev.geldar.ledger.core.CollectorContext;
+import dev.geldar.ledger.core.HostInfo;
+import dev.geldar.ledger.core.Ledger;
+import dev.geldar.ledger.core.LedgerConfig;
 import java.io.IOException;
 import java.lang.reflect.Proxy;
 import java.nio.file.Files;
@@ -40,6 +43,15 @@ class LedgerPluginTest {
         public void start(CollectorContext ctx) { LOG.add("start b"); }
         public void stop() { LOG.add("stop b"); }
     }
+
+    /** Records the ledger each start received. */
+    public static class Probe implements Collector {
+        public String id() { return "probe"; }
+        public void start(CollectorContext ctx) { SEEN.add(ctx.ledger()); }
+        public void stop() { LOG.add("stop probe"); }
+    }
+
+    static final List<Ledger> SEEN = new ArrayList<>();
 
     public static class Bad implements Collector {
         public String id() { return "bad"; }
@@ -85,6 +97,9 @@ class LedgerPluginTest {
     final List<String> schedulerCalls = new ArrayList<>();
     final List<Plugin> disabled = new ArrayList<>();
     int shutdowns;
+    int asyncCalls;
+    boolean deferAsync;
+    final List<Runnable> asyncTasks = new ArrayList<>();
     boolean queueMain;
     final List<Runnable> mainQueue = new ArrayList<>();
     boolean throwOnDisable;
@@ -93,6 +108,7 @@ class LedgerPluginTest {
     void clearLog() {
         current = this;
         LOG.clear();
+        SEEN.clear();
     }
 
     static Object defaultFor(Class<?> t) {
@@ -120,6 +136,14 @@ class LedgerPluginTest {
                             }
                         }
                         case "runTaskTimerAsynchronously" -> asyncTimers.add((Runnable) a[1]);
+                        case "runTaskAsynchronously" -> {
+                            asyncCalls++;
+                            if (deferAsync) {
+                                asyncTasks.add((Runnable) a[1]);
+                            } else {
+                                ((Runnable) a[1]).run();
+                            }
+                        }
                         default -> {}
                     }
                     return m.getReturnType() == BukkitTask.class ? task() : defaultFor(m.getReturnType());
@@ -258,7 +282,7 @@ class LedgerPluginTest {
     }
 
     @Test
-    void theRealCollectorListStartsOnlyTheCgroupCollectorAndSkipsTheRestWithoutAWarning() {
+    void theRealCollectorListBuildsTickAndWorldAndContainerAndSkipsTheRestWithoutAWarning() {
         LedgerPlugin plugin = plugin(tmp.resolve("data"));
         plugin.collectorNames = PaperCollectors.NAMES;
         List<java.util.logging.LogRecord> logs = new ArrayList<>();
@@ -276,14 +300,18 @@ class LedgerPluginTest {
             log.removeHandler(h);
         }
         assertTrue(disabled.isEmpty());
-        assertEquals(List.of("container"), plugin.collectors().builtIds());
-        assertEquals(List.of("container"), plugin.collectors().runningIds());
+        // Built so far, in PaperCollectors.NAMES order: tick (PT-04b), world (PT-05a), container. Tick's start needs the live plugin loader (JavaPlugin.getPlugin), so outside a server it fails and is disabled; world starts fine, so tick is the one tolerated warning.
+        assertEquals(List.of("tick", "world", "container"), plugin.collectors().builtIds());
+        assertEquals(List.of("world", "container"), plugin.collectors().runningIds());
         List<String> expectedSkipped = new ArrayList<>(PaperCollectors.NAMES);
         expectedSkipped.remove(PaperCollectors.CGROUP);
+        expectedSkipped.remove("dev.geldar.ledger.paper.tick.TickCollector");
+        expectedSkipped.remove("dev.geldar.ledger.paper.world.WorldCollector");
         assertEquals(expectedSkipped.stream().sorted().toList(), plugin.collectors().skippedNames().stream().sorted().toList());
         assertTrue(plugin.collectors().skippedNames().contains(PaperCollectors.DISK), "no disk path configured");
-        assertFalse(logs.stream().anyMatch(r -> r.getLevel().intValue() >= java.util.logging.Level.WARNING.intValue()),
-                "no warning: " + logs.stream().map(java.util.logging.LogRecord::getMessage).toList());
+        assertFalse(logs.stream().anyMatch(r -> r.getLevel().intValue() >= java.util.logging.Level.WARNING.intValue()
+                        && !r.getMessage().startsWith("Ledger collector tick failed to start")),
+                "no warning other than the tick start: " + logs.stream().map(java.util.logging.LogRecord::getMessage).toList());
         assertFalse(logs.stream().anyMatch(r -> r.getMessage().contains("cannot")), "no 'cannot load' line");
     }
 
@@ -356,5 +384,190 @@ class LedgerPluginTest {
         assertEquals(List.of(1L), periods); // a zero period becomes one tick
         assertDoesNotThrow(() -> captured.get(0).run());
         assertDoesNotThrow(() -> captured.get(0).run());
+    }
+
+    // --- PT-03o: the real ledger lifecycle ---
+
+    /** A recording factory: what it built, what it reloaded, what it closed. */
+    final class Fake implements LedgerPlugin.LedgerFactory {
+        final List<Ledger> built = new ArrayList<>();
+        final List<LedgerConfig> reloads = new ArrayList<>();
+        int closes;
+        boolean throwOnBuild;
+        boolean throwOnClose;
+
+        @Override
+        public LedgerPlugin.Built create(LedgerConfig config, HostInfo host, Logger log) {
+            if (throwOnBuild) throw new IllegalStateException("no otel");
+            Ledger l = (Ledger) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] {Ledger.class},
+                    (p, m, a) -> defaultFor(m.getReturnType()));
+            built.add(l);
+            return new LedgerPlugin.Built(l, reloads::add, () -> {
+                closes++;
+                if (throwOnClose) throw new IllegalStateException("close boom");
+            });
+        }
+    }
+
+    private LedgerPlugin withFake(Path data, Fake fake) {
+        LedgerPlugin plugin = plugin(data, Probe.class);
+        plugin.ledgerFactory = fake;
+        return plugin;
+    }
+
+    @Test
+    void disabledConfigAndTheTimeBeforeTheFirstLoadBuildNoRealLedger() throws IOException {
+        Path data = tmp.resolve("data");
+        writeConfig(data, "enabled=false");
+        Fake fake = new Fake();
+        LedgerPlugin plugin = withFake(data, fake);
+        plugin.onEnable(); // before the first poll
+        assertTrue(fake.built.isEmpty());
+        poll();
+        assertTrue(fake.built.isEmpty());
+        assertTrue(SEEN.isEmpty());
+    }
+
+    @Test
+    void aBadFirstConfigBuildsNoRealLedger() throws IOException {
+        Path data = tmp.resolve("data");
+        writeConfig(data, "stall.threshold_ms=not-a-number\nenabled=maybe");
+        Fake fake = new Fake();
+        LedgerPlugin plugin = withFake(data, fake);
+        plugin.onEnable();
+        poll();
+        assertTrue(fake.built.isEmpty());
+    }
+
+    @Test
+    void enablingBuildsOneLedgerAndTheCollectorsGetIt() throws IOException {
+        Path data = tmp.resolve("data");
+        writeConfig(data, "enabled=true");
+        Fake fake = new Fake();
+        LedgerPlugin plugin = withFake(data, fake);
+        plugin.onEnable();
+        poll();
+        assertEquals(1, fake.built.size());
+        assertEquals(List.of(fake.built.get(0)), SEEN);
+    }
+
+    @Test
+    void disablingClosesTheLedgerOnceOffTheMainThreadAndFallsBackToNoop() throws IOException {
+        Path data = tmp.resolve("data");
+        writeConfig(data, "enabled=true");
+        Fake fake = new Fake();
+        LedgerPlugin plugin = withFake(data, fake);
+        plugin.onEnable();
+        poll();
+        writeConfig(data, "enabled=false");
+        poll();
+        assertEquals(1, fake.closes);
+        assertEquals(1, asyncCalls);
+        assertEquals(List.of(), plugin.collectors().runningIds());
+        plugin.onDisable();
+        assertEquals(1, fake.closes); // not closed a second time
+    }
+
+    @Test
+    void onDisableClosesALedgerWhoseAsyncCloseNeverRan() throws IOException {
+        Path data = tmp.resolve("data");
+        writeConfig(data, "enabled=true");
+        Fake fake = new Fake();
+        LedgerPlugin plugin = withFake(data, fake);
+        plugin.onEnable();
+        poll();
+        deferAsync = true;
+        writeConfig(data, "enabled=false");
+        poll();
+        assertEquals(1, asyncTasks.size());
+        assertEquals(0, fake.closes);
+        plugin.onDisable(); // the scheduler cancels the queued task on disable
+        assertEquals(1, fake.closes);
+        asyncTasks.forEach(Runnable::run); // a late run must not close it twice
+        plugin.onDisable();
+        assertEquals(1, fake.closes);
+    }
+
+    @Test
+    void enableDisableEnableRestartsCollectorsOnAFreshLedger() throws IOException {
+        Path data = tmp.resolve("data");
+        writeConfig(data, "enabled=true");
+        Fake fake = new Fake();
+        LedgerPlugin plugin = withFake(data, fake);
+        plugin.onEnable();
+        poll();
+        writeConfig(data, "enabled=false");
+        poll();
+        writeConfig(data, "enabled=true");
+        poll();
+        assertEquals(2, fake.built.size());
+        assertEquals(List.of(fake.built.get(0), fake.built.get(1)), SEEN);
+        assertEquals(1, fake.closes);
+    }
+
+    @Test
+    void otherReloadsCallReloadAndDoNotRebuild() throws IOException {
+        Path data = tmp.resolve("data");
+        writeConfig(data, "enabled=true");
+        Fake fake = new Fake();
+        LedgerPlugin plugin = withFake(data, fake);
+        plugin.onEnable();
+        poll();
+        writeConfig(data, "enabled=true\nstall.threshold_ms=777");
+        poll();
+        assertEquals(1, fake.built.size());
+        assertEquals(1, fake.reloads.size());
+        assertEquals(0, fake.closes);
+    }
+
+    @Test
+    void aLedgerFactoryThatThrowsLeavesThePluginUpWithTheNoopLedger() throws IOException {
+        Path data = tmp.resolve("data");
+        writeConfig(data, "enabled=true");
+        Fake fake = new Fake();
+        fake.throwOnBuild = true;
+        LedgerPlugin plugin = withFake(data, fake);
+        plugin.onEnable();
+        poll();
+        assertTrue(disabled.isEmpty());
+        assertEquals(1, SEEN.size()); // the collector still started, on the no-op ledger
+        assertEquals(List.of("probe"), plugin.collectors().runningIds());
+        writeConfig(data, "enabled=false");
+        poll();
+        assertEquals(0, fake.closes);
+    }
+
+    @Test
+    void onDisableClosesOnceAfterTheCollectorsAndToleratesAThrowingClose() throws IOException {
+        Path data = tmp.resolve("data");
+        writeConfig(data, "enabled=true");
+        Fake fake = new Fake();
+        fake.throwOnClose = true;
+        LedgerPlugin plugin = withFake(data, fake);
+        plugin.onEnable();
+        poll();
+        assertDoesNotThrow(plugin::onDisable);
+        assertEquals(1, fake.closes);
+        assertEquals(List.of("stop probe"), LOG);
+        assertDoesNotThrow(plugin::onDisable);
+        assertEquals(1, fake.closes);
+    }
+
+    @Test
+    void aThrowingCloseAfterADisableDoesNotEscape() throws IOException {
+        Path data = tmp.resolve("data");
+        writeConfig(data, "enabled=true");
+        Fake fake = new Fake();
+        fake.throwOnClose = true;
+        LedgerPlugin plugin = withFake(data, fake);
+        plugin.onEnable();
+        poll();
+        deferAsync = true;
+        writeConfig(data, "enabled=false");
+        poll();
+        assertEquals(1, asyncTasks.size());
+        assertEquals(0, fake.closes); // the close is not on the config or main thread
+        assertDoesNotThrow(() -> asyncTasks.get(0).run());
+        assertEquals(1, fake.closes);
     }
 }

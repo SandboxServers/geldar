@@ -24,6 +24,7 @@ final class RecordingMeter {
         final String name;
         boolean longs;
         boolean observable;
+        int closed;
         Consumer<Object> callback;
 
         Instrument(String kind, String name) {
@@ -79,6 +80,7 @@ final class RecordingMeter {
                     i.observable = true;
                     i.callback = (Consumer<Object>) a[0];
                 }
+                case "close" -> i.closed++;
                 default -> {}
             }
             Class<?> r = m.getReturnType();

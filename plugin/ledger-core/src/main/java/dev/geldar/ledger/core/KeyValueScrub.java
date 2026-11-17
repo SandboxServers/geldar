@@ -12,6 +12,7 @@ final class KeyValueScrub {
     /** The most characters read for one unquoted run, so a long run with many keys is not rescanned to its end. */
     static final int MAX_RUN = 512;
     private static final String TRAILING = ",;.)}]";
+    private static final int MIN_QUERY_SECRET = 16;
 
     private KeyValueScrub() {}
 
@@ -46,10 +47,11 @@ final class KeyValueScrub {
             }
             i = sepEnd;
             String key = s.substring(keyStart, e);
-            if (!CredentialKeys.isCredential(key)) {
+            char prev = keyStart - (flag ? 2 : 0) > 0 ? s.charAt(keyStart - (flag ? 2 : 0) - 1) : '\0';
+            boolean inQuery = (prev == '?' || prev == '&') && sepEnd - e == 1 && s.charAt(e) == '=';
+            if (!CredentialKeys.isCredential(key) && !(inQuery && queryCredential(key, s, sepEnd))) {
                 continue;
             }
-            char prev = keyStart - (flag ? 2 : 0) > 0 ? s.charAt(keyStart - (flag ? 2 : 0) - 1) : '\0';
             boolean flagOrQuery = flag || prev == '?' || prev == '&';
             int length = 0;
             boolean whole = false;
@@ -86,6 +88,26 @@ final class KeyValueScrub {
             i = sepEnd + length;
         }
         return sp.finish();
+    }
+
+    /**
+     * True when {@code key} after {@code ?} or {@code &} is a credential query parameter whose value starts at
+     * {@code from}: {@code sig}, {@code X-Amz-Credential} and {@code X-Amz-Signature} always; {@code key} and
+     * {@code code} only with a value run of 16 or more characters (never a plain word, which is shorter than 12).
+     */
+    private static boolean queryCredential(String key, String s, int from) {
+        if (key.equalsIgnoreCase("sig") || key.equalsIgnoreCase("x-amz-credential")
+                || key.equalsIgnoreCase("x-amz-signature")) {
+            return true;
+        }
+        if (!key.equalsIgnoreCase("key") && !key.equalsIgnoreCase("code")) {
+            return false;
+        }
+        int e = from;
+        while (e < s.length() && e - from < MIN_QUERY_SECRET && valueChar(s.charAt(e))) {
+            e++;
+        }
+        return e - from >= MIN_QUERY_SECRET;
     }
 
     /** End of {@code \\* ["']? [ \t]* [=:] [ \t]* \\* ["']?} read at {@code p}, or -1 when it does not match. */

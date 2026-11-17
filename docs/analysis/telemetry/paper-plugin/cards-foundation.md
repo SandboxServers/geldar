@@ -81,6 +81,15 @@ Read [README.md](README.md) first: path aliases, frozen API, frozen names and th
 - Commit: `PT-03f Redactor and content cap (plugin)`.
 - Do NOT: log the redacted value; use regexes with catastrophic backtracking (the coder runs the IPv6 test on a 50 KB adversarial string and requires under 200 ms); touch gateway rules (PT-12).
 
+## PT-03n: newer TypeScript redaction rules in the Java free-text scrub
+
+- Loader: Neutral. Depends on: PT-03m (`CredentialScrub`) and T-06d1b (PR #606). Size: S.
+- Goal: the Java free-text scrub hides what the TypeScript `scrubText` hides after #606, with the same ordinary-text exceptions.
+- Files: CREATE `CORE/FlagScrub.java`; EDIT `CORE/CredentialScrub.java`, `CORE/KeyValueScrub.java`, `CORE/CredentialKeys.java`; tests `CORE_T/CredentialScrubFlagsTest.java`, `CORE_T/CredentialScrubLinearTest.java`.
+- Rules: (1) `--password`, `--passwd`, `--token`, `--secret`, `--api-key`, `--apikey` followed by a space or tab and a value (bare or quoted) hide the value when it looks secret; `--password-file /x`, `--secret-name abc`, `use --token option` and a value starting with `-` stay; `-p VALUE` is not a rule. (2) lower-case `curl -u` / `--user name:secret` keeps the name and hides the secret; a secret starting with `/` stays. (3) URL query (after `?` or `&`): `sig`, `X-Amz-Credential`, `X-Amz-Signature` always hidden; `key` and `code` only with a value of 16 or more characters. (4) `AccountKey` (pair `account` + `key`) hidden anywhere. All scanners are single hand-written passes (no regex on user text).
+- Checks: `:ledger-core:test`.
+- Commit: `PT-03n Port the newer TypeScript redaction rules (plugin)`.
+
 ## PT-03g: OpenTelemetry binding (`OtelLedger`)
 
 - Loader: Neutral. Depends on: PT-03 api, 03d, 03e, 03f (code against the frozen API meanwhile). Size: M.
@@ -103,6 +112,15 @@ Read [README.md](README.md) first: path aliases, frozen API, frozen names and th
 - Commit: `PT-03h Paper adapter shell and collector registry (plugin)`.
 - Do NOT: register any command or permission; call `Bukkit.shutdown`; load chunks; write to disk; add a collector implementation (only names in `PaperCollectors`).
 
+## PT-03o: wire the real ledger into the Paper shell
+
+- Loader: Paper. Depends on: PT-03g, PT-03h. Size: M.
+- Goal: the shell builds the real `OtelLedger` (through `LedgerBootstrap`, over the OpenTelemetry API; without an agent the binding is no-op) only when a config is loaded AND `enabled=true`. Before the first load, with `enabled=false` or after a bad first config the plugin keeps the no-op ledger (the agent ships disabled).
+- Files: EDIT `PAPER/LedgerPlugin.java`; tests `PAPER_T/LedgerPluginTest.java`.
+- Steps: 1. `applyConfig` (main thread): `enabled=true` builds the ledger once (no file IO; a throwing build keeps the no-op ledger and logs one line), later reloads call `OtelLedger.reload(config)`; `enabled=false` stops collectors and listeners, swaps to the no-op ledger, then closes the real one on the async scheduler (`close()` can block up to 1 s, never on the main thread). 2. `CollectorContext.ledger()` reads the current ledger at each collector start, so collectors restarted after an enable get the new ledger, never a closed one. 3. `onDisable` stops the watcher, collectors and listeners, then closes the ledger last and synchronously (the scheduler refuses tasks then); bounded, never throws. 4. Test seam: package-private `LedgerFactory` returning `Built(ledger, reload, close)`.
+- Tests (fail when reverted): disabled, before-first-load and bad first config build nothing; enable builds one and the collector gets it; disable closes once off-thread and falls back; disable then enable builds a fresh ledger and restarts collectors with it; other reloads call reload not rebuild; a throwing factory leaves the plugin up on the no-op ledger; `onDisable` closes once and survives a throwing close.
+- Checks: `:ledger:test`. S8, S9.
+- Do NOT: touch the chat, signs or the world; add dependencies.
 ## PT-03i: test fixtures
 
 - Loader: Neutral. Depends on: PT-03 api (starts only when it is on the integration branch). Size: S. Start: immediately.
