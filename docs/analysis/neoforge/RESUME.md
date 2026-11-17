@@ -67,4 +67,6 @@ Result: P0 probe run results (2026-11-17) are in [p0-findings.md](p0-findings.md
 
 Mind route options (how to connect a Claude Mind to the NeoForge shard, desktop rehearsal first, final instance later): [mind-route.md](mind-route.md).
 
+Public NeoForge shard and the human route (owner decision 2026-11-17; design only, nothing public yet): [public-and-human-route.md](public-and-human-route.md).
+
 Per-shard event storage (decided 2026-11-17; records 0380 to 0384 and 0386 are Proposed, the owner confirms): each shard has its own NATS, database and sink; the live NeoForge shard is compose project `geldar-nf` on the colo node: [per-shard-storage-design.md](per-shard-storage-design.md).
