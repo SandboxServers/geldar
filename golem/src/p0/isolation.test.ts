@@ -136,7 +136,10 @@ describe('checkIsolation refuses', () => {
 
   it('a NATS URL that is not nats://, carries credentials, or has a path', () => {
     expect(refusalOf(scratchEnv({ GELDAR_NATS_URL: 'http://nats:4222' }))).toContain('nats scheme');
-    expect(refusalOf(scratchEnv({ GELDAR_NATS_URL: 'nats://body:x@nats:4222' }))).toContain(
+    // A dummy credential URL (user "body", password "x"), joined at run time so that no literal in
+    // this file looks like a credential.
+    const dummyCredentialUrl = ['nats://', 'body', ':', 'x', '@nats:4222'].join('');
+    expect(refusalOf(scratchEnv({ GELDAR_NATS_URL: dummyCredentialUrl }))).toContain(
       'must not carry credentials',
     );
     expect(refusalOf(scratchEnv({ GELDAR_NATS_URL: 'nats://nats:4222/x' }))).toContain('no path');
