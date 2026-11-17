@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -13,8 +13,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 const IMAGE = 'caddy@sha256:c3d7ee5d2b11f9dc54f947f68a734c84e9c9666c92c88a7f30b9cba5da182adb';
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const caddyfile = resolve(repo, 'compose/bluemap-web/Caddyfile');
-// BM-16: GET /settings.json is served from this pinned file, mounted as colo.yml mounts it.
+// BM-16c: GET /settings.json is served from geldar-settings.json in the webroot (hand-copied there on the node).
 const pinnedSettings = resolve(repo, 'plugins/bluemap/web/geldar-settings.json');
+const pinnedBytes = readFileSync(pinnedSettings, 'utf8');
+// The stale file BlueMap writes on every start: no scripts, no styles.
+const staleSettings = '{"maps":["world"],"scripts":[],"styles":[]}';
 
 const dockerUp =
   spawnSync('docker', ['version', '--format', '{{.Server.Version}}'], { stdio: 'ignore' })
@@ -44,6 +47,39 @@ function call(port: number, method: string, path: string): Promise<Reply> {
   });
 }
 
+/** Starts the pinned caddy image on a webroot (mounted read only at /srv) and returns the mapped port. */
+async function startCaddy(name: string, webroot: string): Promise<number> {
+  const run = spawnSync(
+    'docker',
+    [
+      'run',
+      '-d',
+      '--name',
+      name,
+      '-p',
+      '127.0.0.1::8100',
+      '-v',
+      `${caddyfile}:/etc/caddy/Caddyfile:ro`,
+      '-v',
+      `${webroot}:/srv:ro`,
+      IMAGE,
+    ],
+    { encoding: 'utf8' },
+  );
+  expect(run.status, run.stderr).toBe(0);
+  const mapped = spawnSync('docker', ['port', name, '8100/tcp'], { encoding: 'utf8' });
+  const port = Number(mapped.stdout.trim().split('\n')[0]?.split(':').pop());
+  for (let i = 0; i < 50; i++) {
+    try {
+      await call(port, 'GET', '/settings.json');
+      return port;
+    } catch {
+      await new Promise((r) => setTimeout(r, 200));
+    }
+  }
+  return port;
+}
+
 describe('bluemap-web Caddyfile', () => {
   it('sets Content-Encoding gzip on the BlueMap .gz files', () => {
     // Caddy's precompressed directive cannot serve a sidecar without the plain file, so the Caddyfile rewrites to the
@@ -57,7 +93,6 @@ describe('bluemap-web Caddyfile', () => {
     const root = mkdtempSync(join(tmpdir(), 'bluemap-web-'));
     const name = `geldar-bluemap-web-test-${process.pid}`;
     let port = 0;
-    const settings = '{"maps":["world"]}';
 
     beforeAll(async () => {
       const map = join(root, 'maps', 'world');
@@ -67,37 +102,10 @@ describe('bluemap-web Caddyfile', () => {
         join(map, 'tiles', '0', 'x-1', 'z-1.prbm.gz'),
         gzipSync(Buffer.from([1, 2, 3])),
       );
-      writeFileSync(join(root, 'settings.json'), settings);
-      const run = spawnSync(
-        'docker',
-        [
-          'run',
-          '-d',
-          '--name',
-          name,
-          '-p',
-          '127.0.0.1::8100',
-          '-v',
-          `${caddyfile}:/etc/caddy/Caddyfile:ro`,
-          '-v',
-          `${pinnedSettings}:/etc/caddy/geldar-settings.json:ro`,
-          '-v',
-          `${root}:/srv:ro`,
-          IMAGE,
-        ],
-        { encoding: 'utf8' },
-      );
-      expect(run.status, run.stderr).toBe(0);
-      const mapped = spawnSync('docker', ['port', name, '8100/tcp'], { encoding: 'utf8' });
-      port = Number(mapped.stdout.trim().split('\n')[0]?.split(':').pop());
-      for (let i = 0; i < 50; i++) {
-        try {
-          await call(port, 'GET', '/settings.json');
-          return;
-        } catch {
-          await new Promise((r) => setTimeout(r, 200));
-        }
-      }
+      // BlueMap's own copy (stale) and the hand-copied pinned copy, both in the webroot.
+      writeFileSync(join(root, 'settings.json'), staleSettings);
+      copyFileSync(pinnedSettings, join(root, 'geldar-settings.json'));
+      port = await startCaddy(name, root);
     }, 120_000);
 
     afterAll(() => {
@@ -130,14 +138,64 @@ describe('bluemap-web Caddyfile', () => {
       expect((await call(port, 'POST', '/maps/world/textures.json')).status).toBe(405);
     });
 
-    it('serves the pinned settings.json, never the webroot copy (BM-16)', async () => {
+    it('refuses POST /settings.json with 405', async () => {
+      expect((await call(port, 'POST', '/settings.json')).status).toBe(405);
+    });
+
+    it('serves the pinned settings.json from the webroot, never BlueMap copy (BM-16c)', async () => {
       const r = await call(port, 'GET', '/settings.json');
       expect(r.status).toBe(200);
       expect(r.headers['content-encoding']).toBeUndefined();
       expect(r.headers['content-type']).toContain('application/json');
       expect(r.headers['cache-control']).toBe('no-cache');
-      expect(r.body.toString()).toBe(readFileSync(pinnedSettings, 'utf8'));
-      expect(r.body.toString()).not.toBe(settings);
+      expect(r.body.toString()).toBe(pinnedBytes);
+      expect(r.body.toString()).not.toBe(staleSettings);
+    });
+  });
+
+  describe.skipIf(skip)('settings.json fail-safe when the pinned copy is missing', () => {
+    const root = mkdtempSync(join(tmpdir(), 'bluemap-web-stale-'));
+    const name = `geldar-bluemap-web-stale-test-${process.pid}`;
+    let port = 0;
+
+    beforeAll(async () => {
+      // Only BlueMap's own file: the pinned copy was never hand-copied into this webroot.
+      writeFileSync(join(root, 'settings.json'), staleSettings);
+      port = await startCaddy(name, root);
+    }, 120_000);
+
+    afterAll(() => {
+      spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    it('serves BlueMap settings.json bytes with 200, never a 404 (the fallback)', async () => {
+      const r = await call(port, 'GET', '/settings.json');
+      expect(r.status).toBe(200);
+      expect(r.body.toString()).toBe(staleSettings);
+      expect(r.headers['content-type']).toContain('application/json');
+    });
+  });
+
+  describe.skipIf(skip)('settings.json with an empty webroot (neither file)', () => {
+    const root = mkdtempSync(join(tmpdir(), 'bluemap-web-empty-'));
+    const name = `geldar-bluemap-web-empty-test-${process.pid}`;
+    let port = 0;
+
+    beforeAll(async () => {
+      // Neither geldar-settings.json nor BlueMap's settings.json: the fallback has nothing to serve.
+      port = await startCaddy(name, root);
+    }, 120_000);
+
+    afterAll(() => {
+      spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
+      rmSync(root, { recursive: true, force: true });
+    });
+
+    it('answers GET /settings.json with 404 and keeps serving after the miss', async () => {
+      const r = await call(port, 'GET', '/settings.json');
+      expect(r.status).toBe(404);
+      expect((await call(port, 'GET', '/settings.json')).status).toBe(404);
     });
   });
 });

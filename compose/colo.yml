@@ -573,7 +573,6 @@ services:
       - ../plugins/bluemap/web/geldar.css:/etc/caddy/geldar.css:ro
       - ../plugins/bluemap/web/geldar-chat.js:/etc/caddy/geldar-chat.js:ro
       - ../plugins/bluemap/web/geldar-sky.js:/etc/caddy/geldar-sky.js:ro
-      - ../plugins/bluemap/web/geldar-settings.json:/etc/caddy/geldar-settings.json:ro
     ports:
       # The loopback map port. Literal: the loopback rule rejects interpolation.
       - "127.0.0.1:${GELDAR_PORT_BLUEMAP:-8100}:8100"
