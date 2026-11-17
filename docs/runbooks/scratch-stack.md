@@ -84,9 +84,17 @@ under uid 1000 they are `1000` and `1000`), and the overlay (`compose/opt-in/scr
   read permission for others. If it does not, stop, run `down`, and say so; do not change the mode by hand.
 - On the first `up`, check the drop. `docker exec <container> id` is not the check: it prints root, because `docker exec`
   defaults to the image user, not the JVM's. Check the JVM's uid instead: `docker top <container> -eo uid,pid,args`
-  for the Paper and Velocity containers (from `docker compose -p scratch-<suffix> ps -q paper` and `... ps -q velocity`),
-  and the eventsink, Paper, Velocity and NATS processes must show the account uid, not 1000 or any other uid. If Paper or
-  Velocity shows another uid, stop and run `down`. Unverified command on this image, record the output: if `docker top`
+  for the Paper container (from `docker compose -p scratch-<suffix> ps -q paper`) and the Velocity container (`... ps -q velocity`).
+  **Paper is blocking:** the eventsink and Paper processes must show the account uid, not 1000 or any other uid. If Paper shows
+  another uid, stop and run `down`.
+  **Velocity is recorded, not blocking:** on run 4 and live, the Velocity java process is uid 0. Verified by ops reading the
+  pinned `itzg/mc-proxy` script (`/usr/bin/run-bungeecord.sh`): its privilege drop is a hardcoded `exec gosu bungeecord java ...`
+  (uid 1000), taken only when bash's `$UID` is 0 (script lines 159, 554, 584-587). It does not read UID, GID, PUID or PGID as a
+  target user. Bash takes `$UID` from the environment, so our `UID=1001` turns the drop off and java runs as the real uid, root;
+  the `/server` chown is skipped too. PUID and PGID have no effect. With UID unset the proxy would drop to uid 1000, which cannot
+  read the 0600 forwarding secret owned by the account uid. Accepted for scratch: the scratch volume is the only writable mount
+  (`velocity.toml` and the plugin jar are read-only), and `down` deletes it. Record the output and do not stop on it.
+  Unverified command on this image, record the output: if `docker top`
   is not available on the node, run `docker exec <container> sh -c 'for p in /proc/[0-9]*; do grep -q java $p/cmdline 2>/dev/null && grep "^Uid" $p/status; done'`
   and read the first Uid field (real uid).
 - Real-node assumptions, not yet verified: the node's ssh account has uid 1001, so the run uses
@@ -192,7 +200,7 @@ Limits:
 
 ### First-run checks (NeoForge)
 
-Run these after `up` returns healthy. `<paper>` is `docker compose -p scratch-nf ps -q paper`. Items marked
+Run these after `up` returns healthy. Run the process-uid check in the section above first (Paper blocking, Velocity recorded). `<paper>` is `docker compose -p scratch-nf ps -q paper`. Items marked
 UNVERIFIED are commands or reply wording not confirmed against the repo or a live NeoForge 26.1 server: run them, record
 the real output in the run notes, and check it against the reply before calling it a failure.
 
@@ -212,8 +220,15 @@ the real output in the run notes, and check it against the reply before calling 
    One earlier measurement (2026-11-17, node not otherwise loaded): paper 1.62 GiB of 3 GiB, velocity 194 MiB. Its CPU
    was not captured, so these two samples are the first CPU figures.
 5. Proxy Compatible Forge config. `docker exec <paper> stat -c '%a %u:%g' /data/config/proxy-compatible-forge.toml /data`
-   prints two lines: the file's mode and uid:gid first, then `/data`'s. The mode must be `600`, and the file's uid:gid must
-   equal `/data`'s, which is the server user the entrypoint drops to (`chown --reference`, `chmod 600`).
+   prints two lines: the file's mode and uid:gid first, then `/data`'s. The mode must be `600`; that is the requirement.
+   Record the file's uid:gid and `/data`'s, but do not block on a difference. Run 4 saw the file at mode 600 with owner uid 1000
+   while the Paper JVM ran as 1001. The itzg/minecraft-server image appears to remap its server user (observed; cause unverified).
+6. Netty VarInt line (cause UNVERIFIED; likely Paper's own healthcheck server-list ping). After the stack is up, run
+   `docker logs --timestamps <paper> 2>&1 | grep -n VarInt` on the FULL paper log, not a tail, and record the count and the
+   timestamps. The line is an IndexOutOfBoundsException at PCF VarInt.read (ModernForwarding.handleClientIntention) with no
+   client. Then watch one minute: note the count, wait 60 s, count again. If it repeats about every 30 s, it is the healthcheck.
+   If it appeared once, capture the full stack trace (the lines around the match in `docker logs <paper> 2>&1`). Never treat
+   this line as a failure by itself.
 
 Known noise: a log4j DebugFile error that names a netty kqueue class appears in the paper log on NeoForge. It is unrelated
 to the mod. Do not treat it as a failure.
@@ -263,7 +278,8 @@ The flow, in order:
    checks the five files, then points the `nats-auth.yml` secrets at that dir. It does not read, print or copy the files.
 6. At teardown run `sh deploy/scratch/scratch.sh down [suffix]`, then delete the node temp dir and the desktop temp dir
    (if it still exists). The node dir holds the password-bearing `nats-auth.conf`, so delete it even when the run failed.
-   `down` never removes `SCRATCH_NATS_AUTH_DIR`.
+   `down` never removes `SCRATCH_NATS_AUTH_DIR`. Before `down`, copy the FULL output of `up` and the FULL paper log
+   (`docker logs --timestamps <paper> 2>&1`, not only the tail) into the desktop temp dir, outside the repo.
 
 The conf and the passwords never go in the repo, in logs or in messages. Do not paste their contents into a
 terminal, a chat or a report.
@@ -428,3 +444,13 @@ refers to it. This cleanup is not verified on a node run.
 The probe never touches colo. Its overlay is added only by the `probe` verb, and only to a `scratch-<suffix>` project.
 Its password files are scratch-only and come from the clean export. Nothing it prints is a secret: no password, token or
 RCON value appears in its output, and none may be pasted into a report.
+
+## Follow-ups for the owner
+
+- Velocity runs as root on live and on scratch. The `itzg/mc-proxy` image drops privilege only when `$UID` is 0, and then to
+  a hardcoded `bungeecord` user (uid 1000), so our `UID=1001` leaves it root (see the process-uid check above). Live colo sets
+  the same UID and GID (`compose/colo.yml`, per ops lines 170-172). The comment there, and the velocity block in
+  `compose/opt-in/scratch.yml`, say the itzg image "starts as root and drops to this uid". That is true for the Paper image and
+  not for mc-proxy. A compose change on live is a deploy change and the owner's call; this PR does not edit the compose files.
+- The Proxy Compatible Forge config owner: run 4 saw uid 1000 on a mode 600 file against the Paper JVM's 1001. The mode is the
+  requirement and the owner is recorded. Cause unverified (the itzg/minecraft-server remap). The owner decides whether it must match.
