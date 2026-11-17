@@ -158,11 +158,16 @@ describe.skipIf(skipWithoutSh())('scratch.sh mind verbs', () => {
 
   it('down removes the mind token with the secrets dir, and keeps its compose flags', () => {
     const TOKEN = 'state/geldar-scratch/scratch-a/mind-token.txt';
-    const run = runScript(['down', 'a'], { STUB_PROJECT_UP: '1' }, {
-      ...JARS,
-      prepare: (base) => upSecrets(base, ['mind-token.txt', 'postgres-mcp.txt', 'mcp-token-pepper.txt']),
-      watch: [TOKEN],
-    });
+    const run = runScript(
+      ['down', 'a'],
+      { STUB_PROJECT_UP: '1' },
+      {
+        ...JARS,
+        prepare: (base) =>
+          upSecrets(base, ['mind-token.txt', 'postgres-mcp.txt', 'mcp-token-pepper.txt']),
+        watch: [TOKEN],
+      },
+    );
     expect(run.status).toBe(0);
     expect(run.calls.some((c) => c.includes('down') && c.includes('--remove-orphans'))).toBe(true);
     expect(run.calls.some((c) => c.includes(' down ') && c.includes(' -v '))).toBe(true);
