@@ -1,6 +1,6 @@
 # How to connect the Mind to a NeoForge shard
 
-Status: design note, 2026-11-17. Nothing here was run. Every fact is from the repo at the base of this branch unless marked UNVERIFIED. Read with [RESUME.md](RESUME.md) and [p0-body-model.md](p0-body-model.md) (section 10).
+Status: design note, 2026-11-17, revised for the owner's directive "Do all shard testing out on the Colo machine not on this desktop" (Option A' added; Option A relabelled as the desktop-only variant). Nothing here was run. Every fact is from the repo at the base of this branch unless marked UNVERIFIED. Read with [RESUME.md](RESUME.md) and [p0-body-model.md](p0-body-model.md) (section 10).
 
 ## 1. Goal and what "connected" means
 
@@ -56,7 +56,32 @@ Source: `docs/runbooks/scratch-stack.md` (NeoForge section), `compose/opt-in/scr
 
 ## 4. Options
 
-### Option A: the P0b shape on the desktop, with the dev seam
+### Option A': the same service set on the Colo scratch stack, reached through an ssh forward (recommended)
+
+Add golem-body or players-host, and geldar-mcp, to the scratch NeoForge project on the Colo node. Use a separate compose project (its own name, not the live shard's), with service blocks copied from `compose/colo.yml` under scratch names, ports and secrets. Ports are loopback only on the node. No Caddy, no public exposure, and no 25565 or 25566 published. The secrets (NATS users, Postgres role, token pepper, forwarding secret, RCON) and the test token are generated on the node and kept there. Velocity, the NeoForge server and the NeoForge bundle are the scratch set from section 3.
+
+The Mind runs on the owner's desktop: the scriptorium session in a container there. The owner starts an ssh local forward from the desktop, `ssh -L <local port>:127.0.0.1:<mcp port> <node-ssh-host>`. The forward binds loopback on the desktop. The scriptorium dev seam then points at `GELDAR_DEV_MCP_URL=http://host.docker.internal:<local port>`, one player while the variable is set.
+
+- Pros: the stack and geldar-mcp run on the Colo node, as the owner's directive asks. No Caddy change, no DNS, no public port, no restart of live services. The Mind side uses the same dev seam as A, so the scriptorium kit needs no change.
+- Cons: the tunnel is a second path the test must prove (see UNVERIFIED below). The seam takes one player only. The MCP Host allow-list may need the dev host. The human client is not part of this option; it stays deferred to B (owner, 2026-11-17). With the Mind on the desktop, this does not prove remote reach through the https route.
+- What it needs:
+  - The owner's ssh access to the node, already used for ops. Owner action only; no new account and no new key on the node.
+  - The MCP Host allow-list for the dev host, if geldar-mcp refuses the seam's Host header (`threshold/mcp/src/http/front.ts`). UNVERIFIED in this repo.
+  - One test token, minted on the node (the node-side roster, `tools/mcp-tokens`) and carried to the Mind host by the owner. It never goes in chat or the repo. The delivery pattern is the one in `deploy/caddy/README.md` (section "Token"): generated on the node, passed by stdin, written to a mode 600 file in a mode 700 directory on the Mind host. That section covers the ingest token only; the MCP token path is UNVERIFIED in this repo.
+  - The golem body image and the NeoForge bundle already exist on the node from the P0 runs. This comes from the owner's brief and is not checked in this repo.
+  - Operator steps on the node: compose up under the scratch project name, secrets, and a roster entry and token for the one test player. An operator runs these, not an agent. The live shard's CPU and memory caps (`compose/colo.yml`) must leave room for the extra services; not measured.
+- Unverified in this option:
+  - Whether the Mind container reaches the forward through `host.docker.internal`. A forward bound to 127.0.0.1 on the desktop is not the Docker bridge gateway address on Linux, and whether Docker Desktop passes it through is UNVERIFIED. If it does not, a different bind address is needed; that is the owner's choice and is not designed here.
+  - Whether MCP over an ssh forward works in practice: long or streamed replies, keepalive, and what a dropped ssh session does to a call in flight.
+  - Whether geldar-mcp accepts the seam's Host header (`front.ts`).
+  - A Mind on a VM instead of the desktop: it needs a forward bound off loopback or another path. Not designed here.
+- Repo paths touched: a scratch overlay for the node (`compose/opt-in/scratch-neoforge.yml` or a new overlay), `deploy/scratch/` (env file), possibly `threshold/mcp` (dev Host), and `docs/runbooks/scratch-stack.md`. How an overlay reaches the node is UNVERIFIED in this repo. The colo-images auto-deploy list (section 7) applies only if a packet touches those paths.
+- Approvals: owner's go to start the scratch services on the node; owner's ssh forward; owner's go to mint and carry the one test token.
+- Effort: about one packet plus one operator session on the node. Estimate, not measured.
+
+### Option A (desktop-only variant): the P0b shape on the desktop, with the dev seam
+
+Not recommended. This variant is allowed only if the owner explicitly waives the Colo-only directive ("Do all shard testing out on the Colo machine not on this desktop") for this rehearsal. Without that waiver, do not run it. Why it is not recommended: it runs the scratch stack (golem-body, players-host, geldar-mcp, Velocity, server) on the owner's desktop, which the directive rules out. The Mind and the owner's client also share one machine, so it proves less than A'. The text below is kept as written for the case where the owner waives the directive.
 
 Extend the scratch NeoForge stack with golem-body, geldar-mcp and players-host (copies of the colo service blocks with scratch names, ports and secrets). Run it on the owner's desktop, as the scratch stack already can (its runbook has a desktop path for the NATS auth files). The MCP port is published on `127.0.0.1` only. The scriptorium session runs in a container on the same desktop and reaches the MCP through the dev seam: `GELDAR_DEV_MCP_URL` as http, host `host.docker.internal`, a port from 1024 to 65535, one player while the variable is set. The owner's Minecraft client connects to the loopback Velocity port.
 
@@ -78,12 +103,12 @@ A separate project (own Velocity, NeoForge Paper, golem-body, players-host, geld
 - Approvals: owner (DNS name, the Caddy host, the public or tunnelled game port, token minting, the node window); operator (the compose project, secrets, migration, Caddy restart). The node's operator rules say ops agents do not run sudo steps.
 - Effort: several packets and one approved node window. Estimate, not measured.
 
-### Option C: hybrid (recommended)
+### Option C: hybrid (recommended: A' now, B later)
 
-Run Option A on the desktop first to get a Mind into a world with the owner. Then write the final instance as Option B, but only after the owner decides the human route and the public name. A is a rehearsal of the same service set, so B reuses its compose blocks and the test plan in section 6.
+Run A' on the Colo scratch stack first, to get a Mind driving a Body while the golem script stands in for the owner's client. Then write the final instance as Option B, but only after the owner decides the human route and the public name. A' is a rehearsal of the same service set, so B reuses its compose blocks and the test plan in section 6. The desktop variant A is not part of the plan unless the owner waives the Colo-only directive.
 
 Recommendation, in three lines:
-1. Do A now on the desktop: it gives a Mind in the world with the owner without touching the node or exposing a port.
+1. Do A' now on the Colo scratch stack, reached through the owner's ssh forward. It gives a Mind driving a Body without a public port, a Caddy change, or a run of the stack on the desktop. It does not put the owner's client in the world; that stays with B.
 2. Write B as a design, not a deploy, and hold it until the owner decides the human route and the public host name.
 3. Treat the Hall/shard2 design as another owner's: any second-shard overlap (NATS, Postgres, Caddy host) is an open item for the lead, not a change in this note.
 
@@ -91,9 +116,10 @@ Per option, what is touched and who acts:
 
 | | Repo paths | Node | Operator / lead | Owner approval |
 |---|---|---|---|---|
-| A | compose overlay, `deploy/scratch/`, possibly `threshold/mcp` (dev Host), runbook | none | none on the node; the owner runs the desktop stack | desktop run; one test token; NeoForge download |
+| A' | scratch overlay for the node, `deploy/scratch/`, possibly `threshold/mcp` (dev Host), runbook | scratch project on the node, loopback only; no Caddy; no live-service restart | operator runs the node steps; owner runs the ssh forward | ssh access (existing); one test token carried by owner; go to start the scratch services |
+| A (desktop-only variant) | compose overlay, `deploy/scratch/`, possibly `threshold/mcp` (dev Host), runbook | none | none on the node; the owner runs the desktop stack | only if the owner waives the Colo-only directive; then desktop run, one test token, NeoForge download |
 | B | `compose/`, `shards/`, `deploy/caddy/`, `deploy/`, `tools/mcp-tokens`; colo-images paths on merge | new project, secrets, migration, Caddy file, `board-proxy` restart | operator: compose, secrets, migrate, restart; lead: schedule | DNS name; public or tunnelled game port; token minting; the window |
-| C | A now, B later | as B, later | as B, later | as A now; as B later |
+| C | A' now, B later | as B, later | as B, later | as A' now; as B later |
 
 ## 5. The final NeoForge instance: what "fully reachable" needs
 
@@ -108,15 +134,15 @@ Design inputs only. Nothing here is a decision.
 
 ## 6. Test plan: a Claude Mind in the world with the owner
 
-Minimal path (Option A): desktop scratch stack up with golem-body, players-host and geldar-mcp; one test player in the roster and one token minted; the scriptorium session given the dev seam URL and that token; the owner's client joins Velocity on loopback.
+Minimal path (Option A'): the scratch stack up on the Colo node with golem-body or players-host and geldar-mcp, loopback only; one test player in the node-side roster and one token minted there; the owner's ssh forward to the MCP port started; the scriptorium session on the desktop given the dev seam URL (`GELDAR_DEV_MCP_URL`) and that token. The human client route is not in this path; it stays deferred to B. The desktop variant (A) is not the minimal path unless the owner waives the Colo-only directive.
 
 Checks, in order. Each has a pass condition and needs a run record:
 
-1. **Stack health.** Every service healthy; no published port other than loopback; no 25565 or 25566 (`deploy/README.md` section (g) rule, applied to the desktop too).
-2. **Auth refusal.** `curl http://127.0.0.1:<port>/p/<player>` with no token returns 401, not a connection error (same check as `deploy/README.md` section (g)). With a token for another player, 403.
+1. **Stack health.** Every service healthy; no published port other than loopback; no 25565 or 25566 (`deploy/README.md` section (g) rule, applied to the node's scratch project).
+2. **Auth refusal.** `curl http://127.0.0.1:<port>/p/<player>` with no token returns 401, not a connection error (same check as `deploy/README.md` section (g)), run on the node against the loopback MCP port; in A' also through the forward from the desktop. With a token for another player, 403.
 3. **MCP tools list.** The Mind's session lists the MCP tools; the list matches `docs/reference/mcp-tools.md`. Tool names are not repeated here (UNVERIFIED against the current build).
-4. **Look.** One look through MCP returns the Body's view as plain text. The owner's client shows the same Body in the world.
-5. **Goto.** One goto through MCP moves the Body; the owner sees it move. Check the position text in the MCP reply against the server (RCON read-only `data get` or `execute if` only).
+4. **Look.** One look through MCP returns the Body's view as plain text. The owner's client shows the same Body in the world (in A': deferred to B; the golem script stands in).
+5. **Goto.** One goto through MCP moves the Body; the owner sees it move (in A': deferred to B; the golem script's view is the check). Check the position text in the MCP reply against the server (RCON read-only `data get` or `execute if` only).
 6. **Plain text only.** Grep the Mind's transcript and every tool result for telemetry field names (trace ids, span names, OTLP keys) and for any observer or recording wording. The Mind's container must have no `GELDAR_TELEMETRY_URL` set. The grep list is not written yet; the packet that adds the test must name it (UNVERIFIED that a repo test covers this today).
 7. **Abort and error paths.** Expired or wrong token: 401, no action. Goto to an unreachable block: an error text, no hang. Mind stops mid-call: the Body does not keep moving (UNVERIFIED behaviour, to be observed).
 8. **Cleanup.** Revoke the test token; stop the stack with `down` (removes volumes), per the scratch runbook.
@@ -131,7 +157,12 @@ Rehearsal without a human client: the P0 golem script joins as a stand-in for th
 - The node's `GELDAR_MCP_UPSTREAM` value and the board-proxy network mode: `127.0.0.1:<port>` per `deploy/colo-public.sh`; the exact port is in the node's env file (not read).
 - `animus/`: `compose/colo.yml` still runs an in-house Mind service (profile `mind`), and scriptorium's docs say that Mind is abandoned. Which Mind the live shard uses is UNVERIFIED; this note assumes scriptorium, per the owner's brief.
 - Vanilla 26.1 client join through Velocity with Proxy Compatible Forge: unverified (P0).
-- NeoForge downloads from the desktop: UNVERIFIED.
+- NeoForge downloads from the desktop: UNVERIFIED. Not needed in A', where the bundle is already on the node (owner's brief; not checked in this repo).
+- A': the forward reaching the Mind container through `host.docker.internal` (loopback bind; Docker Desktop versus Linux): UNVERIFIED.
+- A': MCP over an ssh forward, streamed or long replies, keepalive, and a dropped ssh session during a call: UNVERIFIED.
+- A': the geldar-mcp Host allow-list for the seam's Host header: UNVERIFIED (`threshold/mcp/src/http/front.ts`).
+- A': the MCP token delivery to the Mind host. `deploy/caddy/README.md` covers the ingest token only; the MCP token path is UNVERIFIED in this repo.
+- A': the node's CPU and memory headroom for the scratch services beside the live shard: not measured.
 - The colo-images auto-deploy list (`golem/`, `eventsink/`, `tools/admin/`, `contract/`, `sql/`) is from the brief; this note did not confirm it in CI config. `threshold/` (geldar-mcp) is not on it in the brief; whether it deploys on merge is UNVERIFIED.
 - Hall/shard2 (second-shard design) belongs to another owner. Any NATS, Postgres or Caddy overlap with Option B is an open item for the lead.
 - Budget and latency on the node for a second project: not measured; the live shard's caps are in `compose/colo.yml`.
