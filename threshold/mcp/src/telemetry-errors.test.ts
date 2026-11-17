@@ -266,12 +266,13 @@ describe('every call ends in one span (T-06d2)', () => {
     expect(await runToolCall(noEvent, 'look', {}, ctx())).toEqual(plain);
   });
 
-  it('(i) an auth refusal span carries the reason and status, never a token or header', () => {
+  it('(i) an auth refusal span carries the reason (the status is dropped by the allow-list until its key lands), never a token or header', () => {
     const { tracer, spans } = fakeTracer();
     authRefusalRecorder(tracer)({ reason: 'token_shape', status: 401 });
     expect(spans).toHaveLength(1);
     expect(spans[0]?.name).toBe('mcp.auth_refused');
-    expect(spans[0]?.attributes.outcome).toBe('token_shape');
+    // Today the span carries the outcome only: http.response.status_code is filtered out.
+    expect(spans[0]?.attributes).toEqual({ outcome: 'token_shape' });
     expect(spans[0]?.ended).toBe(true);
     expect(JSON.stringify(spans[0])).not.toMatch(/gmcp-|Bearer|authorization/i);
   });

@@ -193,7 +193,10 @@ export function toolSpanRecorder(tracer: SpanTracer): (call: ToolCallSpan) => vo
 
 /**
  * Returns the recorder for a request refused before a session exists: one mcp.auth_refused span with
- * the closed reason code and the HTTP status. Never the token, a header, an address or a body.
+ * the closed reason code. The HTTP status is set as `http.response.status_code`, but that key is not on
+ * the telemetry allow-list yet (it lands with T-36), so the filter DROPS it for now; the 401 or 503 is
+ * still readable from the reason (`auth_unavailable` is the only 503). Never the token, a header, an
+ * address or a body.
  */
 export function authRefusalRecorder(
   tracer: SpanTracer,
