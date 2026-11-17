@@ -84,6 +84,8 @@ Every row: drive, read, expected. "Driver" names what produces the signal; B = `
 | N2 | agent on and off, Geldar-Core | run two arms with `geldar-core.jar` and `ledger.jar` (each bundles `opentelemetry-api` 1.67.0, unrelocated, in its own plugin classloader): once with `SCRATCH_OTEL_AGENT_JAR` set, once unset | log, sink | **MUST PASS before any deployment window.** Agent on: `GlobalOpenTelemetry` resolves to the agent in both plugin loaders (no `LinkageError`, server starts, Geldar-Core enabled), and `geldar_publisher_published_total` and `geldar_hearing_sent_total` arrive with scope `geldar-core`, no attributes. Agent off: both plugins enable, the API is the no-op, nothing new is logged, no `traceparent` header on any NATS message. Evidence so far is only the NeoForge spike (`docs/analysis/telemetry/neoforge-otel-spike.md`: agent 2.33.1, API 1.67.0 in a mod loader, bridge `ApplicationOpenTelemetry127`); Paper has not been run. |
 | R1 | jar absent | start with the `ledger.jar` bind removed | startup | Paper starts, no error, no Ledger in `plugins` |
 
+`deploy/scratch/telemetry-rows.sh` implements the rows T1, T3, T4, T5, T6, S1, V6, G1, X4, X6, D1, K1, R1, N1, N2, C1 and Q1 of this table as one scripted run (see [scratch-telemetry.md](../../../runbooks/scratch-telemetry.md) "Row driver"); the row text above stays the definition. Where the script cannot follow it literally it says so: T6 skips without a spark jar, Q1 pauses `otel-sink` instead of stopping it and runs idle, C1 runs the default `cpus` arm only, and a failed row skips only its dependents instead of stopping the sequence.
+
 Rows are pass or fail. A failed row stops the sequence and goes to the orchestrator with the row number (rollout plan stop rule).
 
 ## 4. Load for PT-01 and PT-15
