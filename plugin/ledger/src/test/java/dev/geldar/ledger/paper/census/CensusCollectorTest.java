@@ -213,7 +213,7 @@ class CensusCollectorTest {
 
     @Test
     void defaultDutyTableIsFiveOfTwenty() {
-        assertEquals(12, DefaultDuty.HIGH_RATE.size());
+        assertEquals(16, DefaultDuty.HIGH_RATE.size());
         for (String n : DefaultDuty.HIGH_RATE) {
             assertEquals(new LedgerConfig.Duty(5, 20), DefaultDuty.forSimpleName(n));
         }

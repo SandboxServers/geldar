@@ -23,7 +23,11 @@ public final class DefaultDuty {
             "EntityExhaustionEvent",
             "BlockFromToEvent",
             "VehicleUpdateEvent",
-            "VehicleMoveEvent");
+            "VehicleMoveEvent",
+            "EntityInsideBlockEvent",
+            "EntityEffectTickEvent",
+            "EntityAddToWorldEvent",
+            "BlockRedstoneEvent");
 
     private DefaultDuty() {}
 

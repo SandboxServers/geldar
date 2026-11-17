@@ -309,7 +309,16 @@ public final class CensusCollector implements Collector {
         @Override
         public void execute(org.bukkit.event.Listener listener, Event event) {
             try {
-                if (!running || !guard.allowed() || !type.isInstance(event)) {
+                // exact class: a child event reaches the parent's executor through a shared HandlerList; the series are disjoint
+                if (!running || event.getClass() != type || !guard.allowed()) {
+                    return;
+                }
+                if (!host.isMainThread()) {
+                    // the guard keeps plain main-thread-only fields: an off-thread event (Async*) only counts. The counter is a
+                    // bound OTel counter (thread-safe) and DutyCycler is immutable; serverTick is a single int read.
+                    if (duty == null || duty.on(host.serverTick())) {
+                        counters.count(index, event instanceof org.bukkit.event.Cancellable c && c.isCancelled());
+                    }
                     return;
                 }
                 long t = guard.begin();

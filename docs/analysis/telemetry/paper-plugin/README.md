@@ -129,6 +129,8 @@ Metrics (attributes in braces):
 | `geldar_bridge_chunky_running`, `geldar_bridge_coreprotect_enabled`, `geldar_bridge_bluemap_enabled` | gauges, guarded by class presence | PT-10b |
 | `geldar_publisher_*`, `geldar_hearing_*`, `geldar_blockowner_*`, `geldar_kino_*` counters | Geldar-Core, own jar, no agent or viewer attributes | PT-11e |
 
+`geldar_event_count_total` series are disjoint: each counts events whose class is exactly the labelled class (`getClass() == type`). A subclass shares a parent's handler list but is not counted under the parent, and a plugin-defined subclass of a census class is counted under no series (accepted loss; PT-06c).
+
 Events (OTel log records; `event.name` is the attribute):
 
 `geldar.player.join|quit|kick|prelogin|snapshot|advancement|stats`, `geldar.server.slow_tick|stall|config_snapshot|exception|plugin_enabled|plugin_disabled`, `geldar.collector.disabled`, `geldar.block.*`, `geldar.item.*`, `geldar.container.*`, `geldar.sleep.*`, `geldar.animal.*`, `geldar.trade`, `geldar.combat.*`, `geldar.movement.*`, `geldar.chat`, `geldar.sign`, `geldar.book`, `geldar.rcon.command`, `geldar.console.command`, `geldar.broadcast`, `geldar.whitelist.*`, `geldar.raid.*`, `geldar.tabcomplete`, `geldar.velocity.login|disconnect`.
