@@ -27,8 +27,8 @@
     },
     {
       "path": "neoforge/gradle/verification-metadata.xml",
-      "hardCap": 1700,
-      "reason": "generated dependency checksums; includes the Linux-only native artifacts (netty epoll, lwjgl natives) that a clean CI runner needs"
+      "hardCap": 1710,
+      "reason": "generated dependency checksums; includes the Linux-only native artifacts (netty epoll, lwjgl natives) that a clean CI runner needs. Raised from 1700 to 1710 for the jnats 2.26.4 checksums (1703 lines); the cap was not moved when that entry landed"
     },
     {
       "path": "neoforge-ledger/gradle/verification-metadata.xml",
