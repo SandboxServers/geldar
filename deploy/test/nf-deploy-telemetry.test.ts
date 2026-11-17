@@ -286,6 +286,11 @@ describe('nf-deploy.sh telemetry (NF_TELEMETRY)', () => {
       'has whitespace, a quote, a backslash or a dollar',
     ],
     [
+      'a ledger jar path with a double quote',
+      (r) => ({ ...telemetryInputs(r), NF_LEDGER_JAR_HOST: '/no/such/dir"x/ledger.jar' }),
+      'has whitespace, a quote, a backslash or a dollar',
+    ],
+    [
       'a ledger jar path with a backslash',
       (r) => ({ ...telemetryInputs(r), NF_LEDGER_JAR_HOST: '/no/such\\dir/ledger.jar' }),
       'has whitespace, a quote, a backslash or a dollar',
