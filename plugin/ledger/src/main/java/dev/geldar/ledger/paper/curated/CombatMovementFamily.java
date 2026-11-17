@@ -28,7 +28,7 @@ import org.bukkit.event.player.PlayerTeleportEvent.TeleportCause;
  * registers {@code PlayerMoveEvent}: nothing is exported per tick.
  *
  * <p>s1 is a {@code geldar.life_id} when the player is a Geldar life, else null (a human carries no name). Role code in
- * {@code geldar.result} of {@code geldar.combat.damage}: 1 a player was hurt by a non-player, 2 a player hurt a non-player,
+ * {@code geldar.role} of {@code geldar.combat.damage}: 1 a player was hurt by a non-player, 2 a player hurt a non-player,
  * 3 a player hurt a player. The extractors are static and take plain values; the lambdas in {@link #register} that pull
  * those values out of the Bukkit events are compile-only (an event cannot be built without a server).
  */
@@ -44,13 +44,13 @@ public final class CombatMovementFamily implements CuratedFamily {
     private static final String C = Names.Events.COMBAT_FAMILY + ".";
     private static final String M = Names.Events.MOVEMENT_FAMILY + ".";
     private static final String[] DAMAGE_FIELDS = {
-        AttrKeys.AMOUNT, AttrKeys.RESULT, null, AttrKeys.LIFE_ID, AttrKeys.CAUSE, null
+        AttrKeys.AMOUNT, AttrKeys.ROLE, null, AttrKeys.LIFE_ID, AttrKeys.CAUSE, null
     };
     private static final String[] DEATH_FIELDS = {null, null, null, AttrKeys.LIFE_ID, AttrKeys.CAUSE, AttrKeys.WORLD};
-    private static final String[] KILL_FIELDS = {null, null, null, AttrKeys.LIFE_ID, AttrKeys.CAUSE, null};
+    private static final String[] KILL_FIELDS = {null, null, null, AttrKeys.LIFE_ID, AttrKeys.SUBTYPE, null};
     private static final String[] LIFE_ONLY = {null, null, null, AttrKeys.LIFE_ID, AttrKeys.CAUSE, AttrKeys.WORLD};
     private static final String[] TELEPORT_FIELDS = {
-        null, null, AttrKeys.RESULT, AttrKeys.LIFE_ID, AttrKeys.CAUSE, AttrKeys.WORLD
+        null, null, AttrKeys.FLAG, AttrKeys.LIFE_ID, AttrKeys.CAUSE, AttrKeys.WORLD
     };
 
     @Override

@@ -27,7 +27,7 @@ import org.bukkit.event.player.PlayerShearEntityEvent;
  * s2 = one bounded enum or registry key name (the attribute key differs per event, see below); s3 = world name.
  *
  * <p>s2 per event: container open/close = {@code InventoryType} name ({@code geldar.container_type}); sleep enter =
- * {@code BedEnterResult} name, every result including denials; trade = villager profession key (upper case, capped) or
+ * {@code BedEnterResult} name, every result including denials; trade, breed, tame, shear and fish are in {@code geldar.subtype}: trade = villager profession key (upper case, capped) or
  * the entity type for a non-villager trader; breed/tame/shear = the animal's {@code EntityType} name; fish = the
  * {@code PlayerFishEvent.State} name; sleep leave and deep sleep carry no s2. All of these are enum or registry names:
  * none is free text.
@@ -43,6 +43,9 @@ public final class ContainersSleepAnimalsFamily implements CuratedFamily {
     };
     private static final String[] RESULT_FIELDS = {
         AttrKeys.X, AttrKeys.Y, AttrKeys.Z, AttrKeys.LIFE_ID, AttrKeys.RESULT, AttrKeys.WORLD
+    };
+    private static final String[] SUBTYPE_FIELDS = {
+        AttrKeys.X, AttrKeys.Y, AttrKeys.Z, AttrKeys.LIFE_ID, AttrKeys.SUBTYPE, AttrKeys.WORLD
     };
     private static final String[] PLAIN_FIELDS = {AttrKeys.X, AttrKeys.Y, AttrKeys.Z, AttrKeys.LIFE_ID, AttrKeys.WORLD};
     private static final String C = Names.Events.CONTAINER_FAMILY + ".";
@@ -74,12 +77,12 @@ public final class ContainersSleepAnimalsFamily implements CuratedFamily {
                 atBlock(s, e.getPlayer(), e.getBed()));
         r.on(PlayerDeepSleepEvent.class, S + "deep", Severity.INFO, PLAIN_FIELDS, true, (e, s) ->
                 atPlayer(s, e.getPlayer()));
-        r.on(PlayerTradeEvent.class, Names.Events.TRADE, Severity.INFO, RESULT_FIELDS, true, (e, s) -> {
+        r.on(PlayerTradeEvent.class, Names.Events.TRADE, Severity.INFO, SUBTYPE_FIELDS, true, (e, s) -> {
             atPlayer(s, e.getPlayer());
             AbstractVillager v = e.getVillager();
             s.s2 = v instanceof Villager vil ? bounded(vil.getProfession().key().value()) : v.getType().name();
         });
-        r.on(EntityBreedEvent.class, A + "breed", Severity.INFO, RESULT_FIELDS, true, (e, s) -> {
+        r.on(EntityBreedEvent.class, A + "breed", Severity.INFO, SUBTYPE_FIELDS, true, (e, s) -> {
             if (!(e.getBreeder() instanceof Player p)) {
                 s.skip();
                 return;
@@ -87,7 +90,7 @@ public final class ContainersSleepAnimalsFamily implements CuratedFamily {
             atPlayer(s, p);
             s.s2 = e.getEntity().getType().name();
         });
-        r.on(EntityTameEvent.class, A + "tame", Severity.INFO, RESULT_FIELDS, true, (e, s) -> {
+        r.on(EntityTameEvent.class, A + "tame", Severity.INFO, SUBTYPE_FIELDS, true, (e, s) -> {
             if (!(e.getOwner() instanceof Player p)) {
                 s.skip();
                 return;
@@ -95,11 +98,11 @@ public final class ContainersSleepAnimalsFamily implements CuratedFamily {
             atPlayer(s, p);
             s.s2 = e.getEntity().getType().name();
         });
-        r.on(PlayerShearEntityEvent.class, A + "shear", Severity.INFO, RESULT_FIELDS, true, (e, s) -> {
+        r.on(PlayerShearEntityEvent.class, A + "shear", Severity.INFO, SUBTYPE_FIELDS, true, (e, s) -> {
             atPlayer(s, e.getPlayer());
             s.s2 = e.getEntity().getType().name();
         });
-        r.on(PlayerFishEvent.class, Names.Events.ITEM_FAMILY + ".fish", Severity.INFO, RESULT_FIELDS, true, (e, s) -> {
+        r.on(PlayerFishEvent.class, Names.Events.ITEM_FAMILY + ".fish", Severity.INFO, SUBTYPE_FIELDS, true, (e, s) -> {
             atPlayer(s, e.getPlayer());
             s.s2 = e.getState().name();
         });

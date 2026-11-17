@@ -72,6 +72,20 @@ class ContainersSleepAnimalsFamilyTest {
         assertEquals(
                 List.of("geldar.x", "geldar.y", "geldar.z", "geldar.life_id", "geldar.result", "geldar.world"),
                 ledger.eventFields("geldar.sleep.enter"));
+        assertEquals(
+                List.of("geldar.x", "geldar.y", "geldar.z", "geldar.life_id", "geldar.container_type", "geldar.world"),
+                ledger.eventFields("geldar.container.open"));
+    }
+
+    @Test
+    void professionAnimalTypeAndFishStateUseTheDedicatedSubtypeKey() {
+        List<String> subtype = List.of("geldar.x", "geldar.y", "geldar.z", "geldar.life_id", "geldar.subtype", "geldar.world");
+        assertEquals(subtype, ledger.eventFields("geldar.trade"));
+        assertEquals(subtype, ledger.eventFields("geldar.animal.breed"));
+        assertEquals(subtype, ledger.eventFields("geldar.animal.tame"));
+        assertEquals(subtype, ledger.eventFields("geldar.animal.shear"));
+        assertEquals(subtype, ledger.eventFields("geldar.item.fish"));
+        assertTrue(ledger.rejectedEventKeys().isEmpty());
     }
 
     @Test

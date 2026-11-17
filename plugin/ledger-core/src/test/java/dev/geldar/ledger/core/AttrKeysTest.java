@@ -26,7 +26,8 @@ class AttrKeysTest {
             "geldar.cause", "geldar.result", "geldar.x", "geldar.y", "geldar.z", "geldar.item", "geldar.block",
             "geldar.container_type", "geldar.amount", "geldar.text", "geldar.command", "geldar.exception.class",
             "geldar.plugin", "geldar.duration_ms", "geldar.tick_overruns",
-            "geldar.health", "geldar.food", "geldar.xp_level", "geldar.gamemode", "geldar.ping_bucket");
+            "geldar.health", "geldar.food", "geldar.xp_level", "geldar.gamemode", "geldar.ping_bucket",
+            "geldar.subtype", "geldar.role", "geldar.flag");
 
     /** README section 4 metric table attributes, bare (decision 2026-11-17), frozen. */
     private static final List<String> README_METRIC = List.of(
@@ -35,7 +36,7 @@ class AttrKeysTest {
 
     @Test
     void everyReadmeAllowedKeyIsAllowedAndNothingElseIsChecked() {
-        assertEquals(30, README_ALLOWED.size());
+        assertEquals(33, README_ALLOWED.size());
         for (String key : README_ALLOWED) {
             assertTrue(AttrKeys.allowed(key), key);
         }
@@ -67,6 +68,9 @@ class AttrKeysTest {
             }
         }
         assertEquals(new java.util.HashSet<>(README_METRIC), bare);
+        for (String k : List.of("geldar.subtype", "geldar.role", "geldar.flag")) {
+            assertFalse(AttrKeys.metricAllowed(k), k);
+        }
         assertFalse(AttrKeys.metricAllowed("password"));
         assertFalse(AttrKeys.metricAllowed(null));
         assertFalse(AttrKeys.metricAllowed("world "));

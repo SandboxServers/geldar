@@ -66,11 +66,18 @@ class CombatMovementFamilyTest {
         }
         assertTrue(ledger.rejectedEventKeys().isEmpty());
         assertEquals(
-                java.util.Arrays.asList("geldar.amount", "geldar.result", null, "geldar.life_id", "geldar.cause", null),
+                java.util.Arrays.asList("geldar.amount", "geldar.role", null, "geldar.life_id", "geldar.cause", null),
                 ledger.eventFields("geldar.combat.damage"));
         assertEquals(
-                java.util.Arrays.asList(null, null, "geldar.result", "geldar.life_id", "geldar.cause", "geldar.world"),
+                java.util.Arrays.asList(null, null, "geldar.flag", "geldar.life_id", "geldar.cause", "geldar.world"),
                 ledger.eventFields("geldar.movement.teleport"));
+        assertEquals(
+                java.util.Arrays.asList(null, null, null, "geldar.life_id", "geldar.subtype", null),
+                ledger.eventFields("geldar.combat.kill"));
+        assertEquals(
+                java.util.Arrays.asList(null, null, null, "geldar.life_id", "geldar.cause", "geldar.world"),
+                ledger.eventFields("geldar.combat.player_death"));
+        assertTrue(ledger.rejectedEventKeys().isEmpty());
         registry.unbindAll();
         assertTrue(executors.isEmpty());
     }
