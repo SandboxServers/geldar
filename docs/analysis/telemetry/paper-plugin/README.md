@@ -14,6 +14,9 @@ Files in this folder:
 | scratch-test-plan.md | How every metric and event is verified on `scratch-telemetry`, the overhead A/B method, the live window and its rollback |
 | safety-rules.md | The privacy and safety rules S1 to S12, each as a check; every card cites the ones that apply |
 
+## Status 2026-11-17
+
+Waves 1-7 are merged to main (PRs #590, #595, #598, #602, #605, #616, #618, #621, #623, #624). The frozen API above is unchanged. Collectors on by default when the plugin is enabled: tick, world, server, container, connections, snapshots (agents only). Opt-in (`collector.<id>.enabled=true`): census, curated, bridge. JFR mappers are built but not started. The plugin is a no-op without an OpenTelemetry agent and ships disabled; no jar is placed on any server. Pending live proof: see "Rows pending a live scratch run" in [scratch-test-plan.md](scratch-test-plan.md). Current state, held items and owner decisions: [RESUME.md](../RESUME.md).
 ## 1. Design: a loader-neutral core and a thin Paper adapter
 
 The owner asked whether Fabric or NeoForge could replace Paper later. The plugin is therefore two Gradle modules under `plugin/`:
