@@ -107,7 +107,7 @@ public final class Names {
     /** PT-10b. */
     public static final class Bridge {
         public static final String CHUNKY_RUNNING = "geldar_bridge_chunky_running";
-        public static final String COREPROTECT_QUEUE = "geldar_bridge_coreprotect_queue";
+        public static final String COREPROTECT_ENABLED = "geldar_bridge_coreprotect_enabled";
         public static final String BLUEMAP_ENABLED = "geldar_bridge_bluemap_enabled";
 
         private Bridge() {}

@@ -1,16 +1,16 @@
 package dev.geldar.ledger.paper.bridge;
 
 import dev.geldar.ledger.core.Names;
+import java.util.concurrent.atomic.AtomicLong;
 import org.bukkit.plugin.PluginManager;
 
 /**
- * {@code geldar_bridge_coreprotect_queue}. CoreProtect exposes no queue size without compiling against it, and a
- * block lookup is heavy I/O, so this bridge reports presence only: the gauge is 0 whether or not CoreProtect is
- * enabled. {@link #present} tells the collector and the tests which it is.
+ * {@code geldar_bridge_coreprotect_enabled}: 1 when CoreProtect is loaded and enabled, read from the plugin manager
+ * only. CoreProtect exposes no queue size without compiling against it, so no queue gauge is exported.
  */
 final class CoreProtectBridge implements Bridge {
     static final String PLUGIN = "CoreProtect";
-    private volatile boolean present;
+    private final AtomicLong enabled = new AtomicLong();
 
     @Override
     public String plugin() {
@@ -19,35 +19,31 @@ final class CoreProtectBridge implements Bridge {
 
     @Override
     public String metric() {
-        return Names.Bridge.COREPROTECT_QUEUE;
+        return Names.Bridge.COREPROTECT_ENABLED;
     }
 
     @Override
     public String description() {
-        return "CoreProtect queue size (presence only, always 0)";
+        return "1 when the CoreProtect plugin is enabled";
     }
 
     @Override
     public void probe(PluginManager manager) {
-        present = Bridge.enabled(manager, PLUGIN) != null;
+        enabled.set(Bridge.enabled(manager, PLUGIN) != null ? 1 : 0);
     }
 
     @Override
     public void scan() {
-        // presence only: no file is read
+        // presence only: nothing to read from disk
     }
 
     @Override
     public void clear() {
-        present = false;
-    }
-
-    boolean present() {
-        return present;
+        enabled.set(0);
     }
 
     @Override
     public long value() {
-        return 0;
+        return enabled.get();
     }
 }

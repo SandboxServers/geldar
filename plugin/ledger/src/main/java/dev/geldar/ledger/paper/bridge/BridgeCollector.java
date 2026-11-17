@@ -10,7 +10,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.plugin.PluginManager;
 
 /**
- * Exports the three bridge gauges (Chunky tasks running, CoreProtect queue, BlueMap enabled). Presence is probed on the
+ * Exports the three bridge gauges (Chunky tasks running, CoreProtect enabled, BlueMap enabled). Presence is probed on the
  * main thread every {@value #PROBE_EVERY_TICKS} ticks (a map lookup per plugin); the Chunky task files are read on an
  * async timer. Each bridge is wrapped on its own: a {@link Throwable} (including {@link NoClassDefFoundError}) from
  * one bridge zeroes that bridge only (S8). A missing plugin reads 0. Nothing here calls into the other plugins (S1, S11).
@@ -99,10 +99,5 @@ public final class BridgeCollector implements Collector {
                 b.clear();
             }
         }
-    }
-
-    /** Whether CoreProtect was seen enabled at the last probe (the queue gauge itself is always 0). */
-    boolean coreProtectPresent() {
-        return ((CoreProtectBridge) bridges.get(1)).present();
     }
 }

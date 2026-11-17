@@ -22,6 +22,8 @@ import org.bukkit.plugin.PluginManager;
  * {@value #MAX_FILES} files of at most {@value #MAX_BYTES} bytes), skip symbolic links, run off the main thread and
  * never throw. A missing folder is logged once and reads 0. The data folder comes from the plugin object, so a test
  * injects a temp folder; the field name {@code "cancelled"} is a guess about Chunky's task file (see the report).
+ * UNVERIFIED: both the {@code tasks/*.json} layout and the {@code "cancelled": false} field are unchecked guesses about
+ * Chunky, not confirmed against a real install.
  */
 final class ChunkyBridge implements Bridge {
     static final String PLUGIN = "Chunky";

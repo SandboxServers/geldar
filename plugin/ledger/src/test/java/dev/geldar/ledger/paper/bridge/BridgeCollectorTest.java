@@ -84,7 +84,7 @@ class BridgeCollectorTest {
     }
 
     private long coreprotect() {
-        return ledger.readGaugeLong(Names.Bridge.COREPROTECT_QUEUE);
+        return ledger.readGaugeLong(Names.Bridge.COREPROTECT_ENABLED);
     }
 
     private long bluemap() {
@@ -110,7 +110,6 @@ class BridgeCollectorTest {
         assertEquals(0, chunky());
         assertEquals(0, coreprotect());
         assertEquals(0, bluemap());
-        assertFalse(collector.coreProtectPresent());
     }
 
     @Test
@@ -119,13 +118,12 @@ class BridgeCollectorTest {
         plugin("CoreProtect", false, tmp);
         start();
         assertEquals(1, bluemap());
-        assertFalse(collector.coreProtectPresent());
+        assertEquals(0, coreprotect(), "a disabled CoreProtect reads 0");
         plugin("CoreProtect", true, tmp);
         plugin("BlueMap", false, tmp);
         scheduler.advanceTicks(BridgeCollector.PROBE_EVERY_TICKS);
         assertEquals(0, bluemap());
-        assertTrue(collector.coreProtectPresent());
-        assertEquals(0, coreprotect(), "the queue is presence only");
+        assertEquals(1, coreprotect(), "an enabled CoreProtect reads 1");
     }
 
     @Test
@@ -201,7 +199,7 @@ class BridgeCollectorTest {
         scheduler.advanceMillis(BridgeCollector.SCAN_EVERY_MS);
         assertEquals(0, chunky(), "the failing bridge is zeroed");
         assertEquals(1, bluemap());
-        assertTrue(collector.coreProtectPresent());
+        assertEquals(1, coreprotect());
     }
 
     @Test
