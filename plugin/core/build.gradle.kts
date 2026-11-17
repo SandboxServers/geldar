@@ -31,6 +31,8 @@ dependencies {
     // never bundled (tasks.jar packs runtimeClasspath, which does not carry compileOnly).
     compileOnly(libs.flow.math)
     implementation(libs.jnats)
+    // PT-11a: the OpenTelemetry API only. With no agent it is a no-op (GlobalOpenTelemetry), and the jar bundles it.
+    implementation(libs.opentelemetry.api)
 
     testImplementation(libs.bluemap.api) {
         isTransitive = false
