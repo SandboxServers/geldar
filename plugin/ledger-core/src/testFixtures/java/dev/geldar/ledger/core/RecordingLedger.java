@@ -16,6 +16,11 @@ import java.util.function.LongSupplier;
  * tests assert on it instead of on an exporter. When built with a {@link HostInfo} it also notes every call that the
  * frozen API forbids on the main thread (gauge reads, {@code emitMap}, registration of gauges), in
  * {@link #mainThreadViolations()}.
+ *
+ * <p>It applies the same metric attribute rule as the real binding: counter and histogram {@code attrKeys} are keys;
+ * gauge {@code attrKeys} are alternating key,value pairs; every key must pass {@link AttrKeys#metricAllowed}.
+ * Violations are kept in {@link #rejectedMetricKeys()} (the fixture does not throw, as the real binding does not).
+ * Every registration is kept in {@link #registrations(String)}; a second one never overwrites the first.
  */
 public final class RecordingLedger implements Ledger {
     /** One {@code EventLog.record} or {@code EventLog.emitMap} call. For emitMap the numbers and strings are unset. */
@@ -33,6 +38,9 @@ public final class RecordingLedger implements Ledger {
     /** One {@code ContentLog.record} call. */
     public record ContentRecord(String name, String text, String s1, String s2, String s3) {}
 
+    /** One metric registration: kind (counter, histogram, gaugeLong, gaugeDouble), name and the raw attr args. */
+    public record MetricRegistration(String kind, String name, List<String> attrArgs) {}
+
     private record Registration(String name, Severity severity, List<String> fields) {}
 
     private final HostInfo host;
@@ -41,6 +49,8 @@ public final class RecordingLedger implements Ledger {
     private final Map<String, List<Double>> histograms = new ConcurrentHashMap<>();
     private final Map<String, LongSupplier> longGauges = new ConcurrentHashMap<>();
     private final Map<String, DoubleSupplier> doubleGauges = new ConcurrentHashMap<>();
+    private final List<MetricRegistration> metricRegs = new CopyOnWriteArrayList<>();
+    private final List<String> rejectedKeys = new CopyOnWriteArrayList<>();
     private final List<Registration> eventRegs = new CopyOnWriteArrayList<>();
     private final List<Registration> contentRegs = new CopyOnWriteArrayList<>();
     private final List<EventRecord> events = new CopyOnWriteArrayList<>();
@@ -65,6 +75,7 @@ public final class RecordingLedger implements Ledger {
 
     @Override
     public Counter counter(String name, String unit, String description, String... attrKeys) {
+        noteMetric("counter", name, attrKeys, 1);
         return values -> {
             LongAdder adder = counters.computeIfAbsent(key(name, values), k -> new LongAdder());
             return adder::add;
@@ -73,6 +84,7 @@ public final class RecordingLedger implements Ledger {
 
     @Override
     public Histogram histogram(String name, String unit, String description, double[] bounds, String... attrKeys) {
+        noteMetric("histogram", name, attrKeys, 1);
         return values -> {
             List<Double> list = histograms.computeIfAbsent(key(name, values), k -> new CopyOnWriteArrayList<>());
             return list::add;
@@ -81,12 +93,14 @@ public final class RecordingLedger implements Ledger {
 
     @Override
     public void gaugeLong(String name, String unit, String description, LongSupplier reader, String... attrKeys) {
-        longGauges.put(name, reader);
+        noteMetric("gaugeLong", name, attrKeys, 2);
+        longGauges.put(key(name, gaugeValues(attrKeys)), reader);
     }
 
     @Override
     public void gaugeDouble(String name, String unit, String description, DoubleSupplier reader, String... attrKeys) {
-        doubleGauges.put(name, reader);
+        noteMetric("gaugeDouble", name, attrKeys, 2);
+        doubleGauges.put(key(name, gaugeValues(attrKeys)), reader);
     }
 
     @Override
@@ -177,18 +191,37 @@ public final class RecordingLedger implements Ledger {
     }
 
     public boolean hasGauge(String name) {
-        return longGauges.containsKey(name) || doubleGauges.containsKey(name);
+        return hasName(longGauges, name) || hasName(doubleGauges, name);
     }
 
-    /** Runs the registered long gauge reader as the exporter would. */
-    public long readGaugeLong(String name) {
+    /**
+     * Runs the long gauge registered with these attribute values (the VALUES of its key,value pairs, in order) as
+     * the exporter would. With no values and exactly one registration under the name, that one is read.
+     */
+    public long readGaugeLong(String name, String... attrValues) {
         noteMainThread("gauge read " + name);
-        return longGauges.get(name).getAsLong();
+        return requireGauge(findGauge(longGauges, name, attrValues), name).getAsLong();
     }
 
-    public double readGaugeDouble(String name) {
+    public double readGaugeDouble(String name, String... attrValues) {
         noteMainThread("gauge read " + name);
-        return doubleGauges.get(name).getAsDouble();
+        return requireGauge(findGauge(doubleGauges, name, attrValues), name).getAsDouble();
+    }
+
+    /** Every registration (counter, histogram, gauge) under this name, in call order. */
+    public List<MetricRegistration> registrations(String name) {
+        List<MetricRegistration> out = new ArrayList<>();
+        for (MetricRegistration r : metricRegs) {
+            if (r.name().equals(name)) {
+                out.add(r);
+            }
+        }
+        return out;
+    }
+
+    /** Metric attribute keys that failed {@link AttrKeys#metricAllowed} (an unpaired gauge key is listed too). */
+    public List<String> rejectedMetricKeys() {
+        return List.copyOf(rejectedKeys);
     }
 
     /** Descriptions of forbidden main-thread calls seen so far. Empty when no HostInfo was given. */
@@ -205,6 +238,60 @@ public final class RecordingLedger implements Ledger {
         if (host != null && host.isMainThread()) {
             violations.add(what);
         }
+    }
+
+    /** Notes a registration and checks its keys: every key (stride 1) or every even-position key (stride 2). */
+    private void noteMetric(String kind, String name, String[] args, int stride) {
+        String[] a = args == null ? new String[0] : args;
+        metricRegs.add(new MetricRegistration(kind, name, List.of(a)));
+        for (int i = 0; i < a.length; i += stride) {
+            if (!AttrKeys.metricAllowed(a[i]) || (stride == 2 && i + 1 >= a.length)) {
+                rejectedKeys.add(String.valueOf(a[i]));
+            }
+        }
+    }
+
+    /** The values (odd positions) of a gauge's key,value pairs. */
+    private static String[] gaugeValues(String[] pairs) {
+        if (pairs == null) {
+            return new String[0];
+        }
+        String[] v = new String[pairs.length / 2];
+        for (int i = 0; i < v.length; i++) {
+            v[i] = pairs[2 * i + 1];
+        }
+        return v;
+    }
+
+    private static boolean hasName(Map<String, ?> gauges, String name) {
+        return gauges.keySet().stream().anyMatch(k -> k.startsWith(name + "|"));
+    }
+
+    private static <T> T findGauge(Map<String, T> gauges, String name, String[] values) {
+        if (values != null && values.length > 0) {
+            return gauges.get(key(name, values));
+        }
+        T exact = gauges.get(key(name, new String[0]));
+        if (exact != null) {
+            return exact;
+        }
+        T only = null;
+        for (Map.Entry<String, T> e : gauges.entrySet()) {
+            if (e.getKey().startsWith(name + "|")) {
+                if (only != null) {
+                    return null;
+                }
+                only = e.getValue();
+            }
+        }
+        return only;
+    }
+
+    private static <T> T requireGauge(T gauge, String name) {
+        if (gauge == null) {
+            throw new IllegalStateException("no single gauge registered as " + name + " (give its attr values)");
+        }
+        return gauge;
     }
 
     private static String key(String name, String[] values) {

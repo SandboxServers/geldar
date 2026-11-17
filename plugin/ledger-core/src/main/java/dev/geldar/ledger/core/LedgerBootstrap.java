@@ -31,7 +31,8 @@ public final class LedgerBootstrap {
 
     /**
      * True unless the API is the no-op. The global instance is wrapped, so it is compared by its providers, not
-     * by identity alone.
+     * by identity alone. The real {@code GlobalOpenTelemetry} wrapper delegates to the noop providers until the agent
+     * installs the SDK (unverified against 1.67.0 bytecode); the decision logic is pinned by LedgerBootstrapTest.
      */
     static boolean agentPresent(OpenTelemetry otel) {
         if (otel == null || otel == OpenTelemetry.noop()) {

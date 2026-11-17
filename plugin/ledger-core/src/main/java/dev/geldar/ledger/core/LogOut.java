@@ -32,9 +32,10 @@ public interface LogOut {
                     b.setAttribute(AttributeKey.doubleKey(e.getKey()), d);
                 } else if (v instanceof Boolean bo) {
                     b.setAttribute(AttributeKey.booleanKey(e.getKey()), bo);
-                } else if (v != null) {
-                    b.setAttribute(AttributeKey.stringKey(e.getKey()), v.toString());
+                } else if (v instanceof String s) {
+                    b.setAttribute(AttributeKey.stringKey(e.getKey()), s);
                 }
+                // Any other type is never stringified here: the sink has already turned it into a scrubbed String.
             }
             b.emit();
         };

@@ -164,9 +164,63 @@ class OtelLedgerTest {
         bh.record(1.5);
         assertEquals("k", ((OtelLedger.Bound) bh).attributes().get(AttributeKey.stringKey("kind")));
         assertEquals(3, l.dropped("metric.attrs"));
-        l.gaugeLong("g", "1", "t", () -> 1L, AttrKeys.PLAYER_UUID);
-        l.gaugeDouble("gd", "1", "t", () -> 1.0, "stat");
+        l.gaugeLong("g", "1", "t", () -> 1L, AttrKeys.PLAYER_UUID, "v");
+        l.gaugeDouble("gd", "1", "t", () -> 1.0, "stat", "v");
         assertEquals(4, l.dropped("metric.attrs"));
+    }
+
+    /** A value that is neither String nor a number: the sink must stringify AND scrub it. */
+    private record Secretive(String text) {
+        @Override
+        public String toString() {
+            return text;
+        }
+    }
+
+    @Test
+    void emitMapStringifiesNonStringValuesThroughTheScrubber() throws Exception {
+        OtelLedger l = make(true);
+        String addr = ip(10, 9, 8, 7);
+        l.events().emitMap("geldar.a", Severity.INFO, Map.of(AttrKeys.TEXT, List.of("host " + addr)));
+        l.events().emitMap("geldar.b", Severity.INFO, Map.of(AttrKeys.TEXT, new Secretive("login " + addr)));
+        l.events().emitMap("geldar.c", Severity.INFO, Map.of(AttrKeys.TEXT, new Secretive("password=pw1 from " + addr)));
+        await(() -> out.size() == 3);
+        Out a = out.stream().filter(o -> o.name().equals("geldar.a")).findFirst().orElseThrow();
+        assertEquals("[host [addr]]", a.attrs().get(AttrKeys.TEXT));
+        Out b = out.stream().filter(o -> o.name().equals("geldar.b")).findFirst().orElseThrow();
+        assertEquals("login [addr]", b.attrs().get(AttrKeys.TEXT));
+        Out c = out.stream().filter(o -> o.name().equals("geldar.c")).findFirst().orElseThrow();
+        // Redactor.scrub masks addresses, not free-text "password=" values: only the address is asserted (report).
+        assertEquals("password=pw1 from [addr]", c.attrs().get(AttrKeys.TEXT));
+        for (Out o : out) {
+            assertTrue(o.attrs().values().stream().allMatch(v -> v instanceof String), "only scrubbed Strings");
+        }
+    }
+
+    @Test
+    void emitMapThrowingToStringIsDroppedNotPropagated() throws Exception {
+        OtelLedger l = make(true);
+        Object bomb = new Object() {
+            @Override
+            public String toString() {
+                throw new IllegalStateException("boom");
+            }
+        };
+        l.events().emitMap("geldar.bomb", Severity.INFO, Map.of(AttrKeys.TEXT, bomb, AttrKeys.WORLD, "w"));
+        await(() -> !out.isEmpty());
+        assertEquals("w", out.get(0).attrs().get(AttrKeys.WORLD));
+        assertFalse(out.get(0).attrs().containsKey(AttrKeys.TEXT));
+        assertEquals(1, l.dropped("attrs"));
+    }
+
+    @Test
+    void eventStringAttributesAreCapped() throws Exception {
+        OtelLedger l = make(true);
+        l.events().emitMap("geldar.big", Severity.INFO, Map.of(AttrKeys.TEXT, "a".repeat(100_000)));
+        await(() -> !out.isEmpty());
+        String v = (String) out.get(0).attrs().get(AttrKeys.TEXT);
+        assertTrue(v.length() <= OtelEventSink.ATTR_MAX_BYTES, "len " + v.length());
+        assertTrue(v.endsWith("[truncated:100000]"));
     }
 
     @Test

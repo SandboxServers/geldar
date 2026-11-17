@@ -124,13 +124,84 @@ class RecordingLedgerTest {
     }
 
     @Test
-    void fakeClockAdvancesAndDrivesTokenBucket() {
+    void fakeClockDrivesATokenBucket() {
         FakeClock clock = new FakeClock(10);
         clock.advanceMillis(2);
         assertEquals(2_000_010L, clock.getAsLong());
         clock.set(5);
         assertEquals(5, clock.getAsLong());
-        new FakeHostInfo().serverTick(9);
-        assertEquals(9, new FakeHostInfo().serverTick(9).serverTick());
+        clock.set(0);
+        TokenBucket bucket = new TokenBucket(2, clock);
+        assertTrue(bucket.tryTake());
+        assertTrue(bucket.tryTake());
+        assertFalse(bucket.tryTake(), "burst of two is spent");
+        clock.advanceMillis(499);
+        assertFalse(bucket.tryTake(), "half a second per token at 2/s");
+        clock.advanceMillis(1);
+        assertTrue(bucket.tryTake());
+        assertFalse(bucket.tryTake());
+        clock.advanceNanos(1_000_000_000L);
+        assertTrue(bucket.tryTake());
+        assertTrue(bucket.tryTake());
+        assertFalse(bucket.tryTake());
+    }
+
+    @Test
+    void gaugeRegistrationsWithDifferentPairsDoNotOverwriteEachOther() {
+        RecordingLedger ledger = new RecordingLedger();
+        ledger.gaugeLong("geldar_disk_bytes", "By", "d", () -> 1, "area", "world");
+        ledger.gaugeLong("geldar_disk_bytes", "By", "d", () -> 2, "area", "logs");
+        ledger.gaugeDouble("geldar_dd", "1", "d", () -> 0.25, "area", "world");
+        ledger.gaugeDouble("geldar_dd", "1", "d", () -> 0.75, "area", "logs");
+        assertEquals(1, ledger.readGaugeLong("geldar_disk_bytes", "world"));
+        assertEquals(2, ledger.readGaugeLong("geldar_disk_bytes", "logs"));
+        assertEquals(0.25, ledger.readGaugeDouble("geldar_dd", "world"));
+        assertEquals(0.75, ledger.readGaugeDouble("geldar_dd", "logs"));
+        assertEquals(2, ledger.registrations("geldar_disk_bytes").size());
+        assertEquals(java.util.List.of("area", "logs"), ledger.registrations("geldar_disk_bytes").get(1).attrArgs());
+        assertEquals("gaugeLong", ledger.registrations("geldar_disk_bytes").get(0).kind());
+        assertTrue(ledger.hasGauge("geldar_dd"));
+        assertFalse(ledger.hasGauge("geldar_none"));
+        assertTrue(ledger.rejectedMetricKeys().isEmpty());
+    }
+
+    @Test
+    void anAmbiguousOrUnknownGaugeReadFailsLoudly() {
+        RecordingLedger ledger = new RecordingLedger();
+        ledger.gaugeLong("g", "1", "d", () -> 1, "area", "a");
+        ledger.gaugeLong("g", "1", "d", () -> 2, "area", "b");
+        assertEquals(1, ledger.readGaugeLong("g", "a"));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, () -> ledger.readGaugeLong("g"));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, () -> ledger.readGaugeLong("g", "z"));
+        ledger.gaugeLong("solo", "1", "d", () -> 9);
+        assertEquals(9, ledger.readGaugeLong("solo"));
+    }
+
+    @Test
+    void metricKeysAreCheckedLikeTheRealBinding() {
+        RecordingLedger ledger = new RecordingLedger();
+        ledger.counter("c", "1", "d", "world", AttrKeys.TEXT);
+        ledger.histogram("h", "ms", "d", new double[] {1}, AttrKeys.LIFE_ID);
+        ledger.gaugeLong("g", "1", "d", () -> 1, "area", "plugin_data", "geldar.world", "x");
+        ledger.gaugeLong("odd", "1", "d", () -> 1, "area", "w", "kind");
+        assertEquals(java.util.List.of(AttrKeys.TEXT, AttrKeys.LIFE_ID, "geldar.world", "kind"),
+                ledger.rejectedMetricKeys());
+        // "plugin_data" is a gauge VALUE, never a rejected key.
+        assertFalse(ledger.rejectedMetricKeys().contains("plugin_data"));
+    }
+
+    @Test
+    void counterAndHistogramReadsTakeAttrValuesPerSeries() {
+        RecordingLedger ledger = new RecordingLedger();
+        Counter c = ledger.counter("c", "1", "d", "world", "kind");
+        c.bind("w1", "a").add(1);
+        c.bind("w1", "b").add(2);
+        assertEquals(1, ledger.counterValue("c", "w1", "a"));
+        assertEquals(2, ledger.counterValue("c", "w1", "b"));
+        assertEquals(0, ledger.counterValue("c", "w1"));
+        ledger.histogram("h", "ms", "d", new double[] {1}, "op").bind("r").record(3);
+        assertEquals(java.util.List.of(3.0), ledger.histogramValues("h", "r"));
+        assertTrue(ledger.histogramValues("h", "w").isEmpty());
+        assertEquals(1, ledger.registrations("c").size());
     }
 }
