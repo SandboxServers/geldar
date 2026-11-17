@@ -30,8 +30,7 @@ public final class SnapshotWiring {
     }
 
     public static void install(Ledger ledger, HostInfo host, HostScheduler scheduler) {
-        if (ledger == null || !ledger.config().collectorEnabled(SnapshotCollector.ID)
-                || !Boolean.TRUE.equals(ledger.config().collectorEnabled().get(SnapshotCollector.ID))) {
+        if (ledger == null || !SnapshotCollector.optedIn(ledger.config())) {
             return;
         }
         SnapshotWiring w = new SnapshotWiring(ledger, host, scheduler);
@@ -69,9 +68,9 @@ public final class SnapshotWiring {
             public SnapshotCollector.Reading read() {
                 return new SnapshotCollector.Reading(
                         p.level().dimension().identifier().toString(),
-                        (int) Math.floor(p.getX()),
-                        (int) Math.floor(p.getY()),
-                        (int) Math.floor(p.getZ()),
+                        SnapshotCollector.blockCoord(p.getX()),
+                        SnapshotCollector.blockCoord(p.getY()),
+                        SnapshotCollector.blockCoord(p.getZ()),
                         p.getHealth(),
                         p.getFoodData().getFoodLevel(),
                         p.experienceLevel,

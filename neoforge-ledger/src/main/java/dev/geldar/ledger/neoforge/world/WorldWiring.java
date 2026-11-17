@@ -13,6 +13,7 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.EntityLeaveLevelEvent;
@@ -32,6 +33,7 @@ public final class WorldWiring {
     private final HostInfo host;
     private final HostScheduler scheduler;
     private final WorldCounts counts = new WorldCounts();
+    private final DimensionNames<ResourceKey<Level>> names = new DimensionNames<>(k -> k.identifier().toString());
     private volatile WorldCollector collector;
 
     private WorldWiring(Ledger ledger, HostInfo host, HostScheduler scheduler) {
@@ -48,7 +50,9 @@ public final class WorldWiring {
         WorldWiring w = new WorldWiring(ledger, host, scheduler);
         NeoForge.EVENT_BUS.addListener(ChunkEvent.Load.class, e -> w.chunk(e.getLevel(), 1));
         NeoForge.EVENT_BUS.addListener(ChunkEvent.Unload.class, e -> w.chunk(e.getLevel(), -1));
-        NeoForge.EVENT_BUS.addListener(EntityJoinLevelEvent.class, e -> w.entity(e.getLevel(), e.getEntity(), 1));
+        // LOWEST: a join cancelled by any earlier listener is not delivered here, so it is not counted
+        NeoForge.EVENT_BUS.addListener(
+                EventPriority.LOWEST, EntityJoinLevelEvent.class, e -> w.entity(e.getLevel(), e.getEntity(), 1));
         NeoForge.EVENT_BUS.addListener(EntityLeaveLevelEvent.class, e -> w.entity(e.getLevel(), e.getEntity(), -1));
         NeoForge.EVENT_BUS.addListener(ServerStartedEvent.class, e -> w.start(e.getServer()));
         NeoForge.EVENT_BUS.addListener(ServerStoppingEvent.class, e -> w.stop());
@@ -57,20 +61,26 @@ public final class WorldWiring {
     private void chunk(Object level, int delta) {
         try {
             if (level instanceof ServerLevel sl) {
-                counts.chunk(sl.dimension().identifier().toString(), delta);
+                counts.chunk(names.of(sl.dimension()), delta);
             }
         } catch (Throwable t) {
-            // never throw into the host
+            rethrowVmError(t);
         }
     }
 
     private void entity(Object level, Object entity, int delta) {
         try {
             if (level instanceof ServerLevel sl) {
-                counts.entity(sl.dimension().identifier().toString(), entity instanceof ServerPlayer, delta);
+                counts.entity(names.of(sl.dimension()), entity instanceof ServerPlayer, delta);
             }
         } catch (Throwable t) {
-            // never throw into the host
+            rethrowVmError(t);
+        }
+    }
+
+    private static void rethrowVmError(Throwable t) {
+        if (t instanceof VirtualMachineError vme) {
+            throw vme;
         }
     }
 

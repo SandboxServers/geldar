@@ -8,10 +8,15 @@ import dev.geldar.ledger.core.CollectorContext;
 import dev.geldar.ledger.core.CollectorGuard;
 import dev.geldar.ledger.core.HostInfo;
 import dev.geldar.ledger.core.Ledger;
+import dev.geldar.ledger.core.LedgerConfig;
 import dev.geldar.ledger.core.Names;
 import dev.geldar.ledger.core.Severity;
 import dev.geldar.ledger.core.ids.LifeIds;
+import java.util.ArrayList;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
@@ -20,8 +25,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 /**
- * {@code geldar.player.snapshot}: each online agent every 60 s (Paper parity). Opt-in: nothing starts unless
- * {@code collector.snapshot.enabled=true} (the default is off) and the master switch is on.
+ * {@code geldar.player.snapshot}: each online agent every 60 s (same event and fields as Paper, minus session and
+ * ping). Opt-in, unlike Paper's default: nothing starts unless {@code collector.snapshot.enabled=true} (or Paper's
+ * spelling {@code collector.snapshots.enabled=true}) and the master switch is on.
  *
  * <p>Identity. Only a player whose login name has the life id shape is exported, keyed by that {@code life_id}. A human
  * is never exported: the name is read to classify and no other field of that player is read. No UUID, address, display
@@ -35,6 +41,8 @@ import java.util.function.Supplier;
  */
 public final class SnapshotCollector implements Collector {
     public static final String ID = "snapshot";
+    /** Paper's spelling of the same switch; either one opts in. */
+    public static final String PAPER_ID = "snapshots";
     public static final int RUN_TICKS = 20;
     /** 60 s between snapshots of one agent. */
     public static final int INTERVAL_RUNS = 60;
@@ -76,6 +84,24 @@ public final class SnapshotCollector implements Collector {
         this.source = source;
     }
 
+    /**
+     * True when the master switch is on and {@code collector.snapshot.enabled} or Paper's spelling
+     * {@code collector.snapshots.enabled} is explicitly true. An absent key never opts in.
+     */
+    public static boolean optedIn(LedgerConfig config) {
+        for (String id : new String[] {ID, PAPER_ID}) {
+            if (config.collectorEnabled(id) && Boolean.TRUE.equals(config.collectorEnabled().get(id))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The floor of a coordinate, so a negative position rounds down (-0.5 is block -1). */
+    public static int blockCoord(double v) {
+        return (int) Math.floor(v);
+    }
+
     @Override
     public String id() {
         return ID;
@@ -85,7 +111,7 @@ public final class SnapshotCollector implements Collector {
     public synchronized void start(CollectorContext ctx) {
         stop();
         Ledger l = ctx.ledger();
-        if (!l.config().collectorEnabled(ID) || !Boolean.TRUE.equals(l.config().collectorEnabled().get(ID))) {
+        if (!optedIn(l.config())) {
             return; // opt-in: only an explicit true starts it
         }
         ledger = l;
@@ -152,6 +178,9 @@ public final class SnapshotCollector implements Collector {
                 g.end(token);
             }
         } catch (Throwable t) {
+            if (t instanceof VirtualMachineError vme) {
+                throw vme;
+            }
             // a sampling failure never reaches the host
         }
     }
@@ -159,39 +188,52 @@ public final class SnapshotCollector implements Collector {
     private void capture(Run r) {
         r.run++;
         List<? extends Ref> players = source.get();
-        int n = players.size();
-        Map<String, Long> alive = new HashMap<>();
-        int done = 0;
-        for (int k = 0; k < n; k++) {
-            int idx = (r.cursor + k) % n;
-            Ref p = players.get(idx);
+        // Pass 1, in roster order so the tracked set is stable: who is an agent, and who is tracked (each counted once).
+        Map<String, Long> alive = new LinkedHashMap<>();
+        List<Ref> refs = new ArrayList<>();
+        for (Ref p : players) {
             String name;
             try {
                 name = p.name();
             } catch (Throwable t) {
+                if (t instanceof VirtualMachineError vme) {
+                    throw vme;
+                }
                 continue;
             }
-            if (!LifeIds.isLifeId(name)) {
-                continue; // a human: never read further
+            if (!LifeIds.isLifeId(name) || alive.containsKey(name)) {
+                continue; // a human is never read further
             }
             Long due = r.due.get(name);
             if (due == null) {
-                if (r.due.size() + alive.size() >= MAX_TRACKED) {
-                    continue;
+                if (alive.size() >= MAX_TRACKED) {
+                    continue; // beyond the cap: not tracked, so never read
                 }
                 due = r.run;
             }
-            if (r.run < due || done >= MAX_PER_RUN) {
-                alive.put(name, due);
+            alive.put(name, due);
+            refs.add(p);
+        }
+        // Pass 2: read at most MAX_PER_RUN due agents, starting from a rotating cursor.
+        int n = refs.size();
+        int done = 0;
+        List<String> names = new ArrayList<>(alive.keySet());
+        for (int k = 0; k < n && done < MAX_PER_RUN; k++) {
+            int idx = (r.cursor + k) % n;
+            String name = names.get(idx);
+            if (r.run < alive.get(name)) {
                 continue;
             }
             alive.put(name, r.run + INTERVAL_RUNS); // before the read, so a failing player is not retried every run
             try {
-                Reading v = p.read();
+                Reading v = refs.get(idx).read();
                 if (v != null && offer(r, name, v)) {
                     done++;
                 }
             } catch (Throwable t) {
+                if (t instanceof VirtualMachineError vme) {
+                    throw vme;
+                }
                 // one bad player never stops the others
             }
         }
@@ -199,7 +241,6 @@ public final class SnapshotCollector implements Collector {
         r.due.clear();
         r.due.putAll(alive); // a player who left is forgotten
     }
-
     private boolean offer(Run r, String lifeId, Reading v) {
         if (r.size.get() >= QUEUE_CAP) {
             r.dropped.incrementAndGet();
@@ -224,10 +265,16 @@ public final class SnapshotCollector implements Collector {
                 try {
                     l.events().emitMap(Names.Events.PLAYER_SNAPSHOT, Severity.INFO, a);
                 } catch (Throwable t) {
+                    if (t instanceof VirtualMachineError vme) {
+                        throw vme;
+                    }
                     // skip this one
                 }
             }
         } catch (Throwable t) {
+            if (t instanceof VirtualMachineError vme) {
+                throw vme;
+            }
             // never throws out of the timer
         }
     }

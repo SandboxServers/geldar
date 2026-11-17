@@ -82,12 +82,7 @@ public final class ServerWiring {
     }
 
     private static String xmx() {
-        for (String arg : ManagementFactory.getRuntimeMXBean().getInputArguments()) {
-            if (arg.startsWith("-Xmx")) {
-                return arg.substring(4);
-            }
-        }
-        return "default"; // no -Xmx flag: the JVM default (Runtime.getRuntime is on the forbidden-API list)
+        return JvmHeap.describe(ManagementFactory.getRuntimeMXBean().getInputArguments());
     }
 
     private void stop() {

@@ -10,7 +10,9 @@ import java.util.function.Supplier;
 
 /**
  * {@code geldar_world_loaded_chunks}, {@code geldar_world_entities} and {@code geldar_world_players} per dimension
- * (Paper parity), from the running counts in {@link WorldCounts}. The gauge readers are field reads, so there is no
+ * (Paper names), from the running counts in {@link WorldCounts}. The counts are approximate: they come from events,
+ * not from a server accessor, and are unverified against a live server until the scratch row (PT-N13) is run. A mod that
+ * cancels a join after our listener drifts the entity count upward; the zero clamp hides only downward drift. The gauge readers are field reads, so there is no
  * sampling, no guard use and nothing for an async thread to touch. On unless {@code collector.world.enabled=false} or
  * the master is off.
  */
@@ -42,9 +44,9 @@ public final class WorldCollector implements Collector {
         }
         for (String d : counts.names()) {
             String key = AttrKeys.M_WORLD;
-            l.gaugeLong(Names.World.LOADED_CHUNKS, "{chunk}", "Loaded chunks in a world", counts.reader(d, WorldCounts.CHUNKS), key, d);
-            l.gaugeLong(Names.World.ENTITIES, "{entity}", "Entities in a world", counts.reader(d, WorldCounts.ENTITIES), key, d);
-            l.gaugeLong(Names.World.PLAYERS, "{player}", "Players in a world", counts.reader(d, WorldCounts.PLAYERS), key, d);
+            l.gaugeLong(Names.World.LOADED_CHUNKS, "{chunk}", "Loaded chunks in a world (approximate running count from load and unload events, unverified)", counts.reader(d, WorldCounts.CHUNKS), key, d);
+            l.gaugeLong(Names.World.ENTITIES, "{entity}", "Entities in a world (approximate running count from join and leave events, unverified)", counts.reader(d, WorldCounts.ENTITIES), key, d);
+            l.gaugeLong(Names.World.PLAYERS, "{player}", "Players in a world (approximate running count from join and leave events)", counts.reader(d, WorldCounts.PLAYERS), key, d);
         }
     }
 

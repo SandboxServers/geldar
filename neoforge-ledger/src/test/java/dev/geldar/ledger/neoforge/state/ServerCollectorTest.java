@@ -49,7 +49,8 @@ class ServerCollectorTest {
         c.start(r.ctx());
         assertEquals(2, r.gauges.get(Names.Server.PLAYERS_ONLINE + "[]").getAsLong());
         assertEquals(1, r.gauges.get(Names.Server.OPERATORS_COUNT + "[]").getAsLong());
-        assertEquals(7, r.gauges.get(Names.Server.PLUGINS_ENABLED + "[]").getAsLong());
+        assertEquals(7, r.gauges.get(Names.Server.MODS_LOADED + "[]").getAsLong());
+        assertFalse(r.gauges.containsKey(Names.Server.PLUGINS_ENABLED + "[]"));
         players.set(5);
         r.runAll(true);
         assertEquals(5, r.gauges.get(Names.Server.PLAYERS_ONLINE + "[]").getAsLong());
@@ -119,6 +120,32 @@ class ServerCollectorTest {
         r2.runAll(false);
         assertTrue(r2.events.isEmpty());
         assertEquals(r2.begins.get(), r2.ends.get());
+    }
+
+    @Test
+    void aVmErrorFromACountOrTheSnapshotSourceIsNotSwallowed() {
+        ServerCollector.Counts oom = new ServerCollector.Counts() {
+            public long players() {
+                throw new OutOfMemoryError();
+            }
+
+            public long operators() {
+                return 0;
+            }
+
+            public long mods() {
+                return 0;
+            }
+        };
+        FakeRig r = new FakeRig();
+        org.junit.jupiter.api.Assertions.assertThrows(OutOfMemoryError.class, () -> new ServerCollector(oom, Map::of).start(r.ctx()));
+        FakeRig r2 = new FakeRig();
+        org.junit.jupiter.api.Assertions.assertThrows(
+                OutOfMemoryError.class,
+                () -> new ServerCollector(counts, () -> {
+                            throw new OutOfMemoryError();
+                        })
+                        .start(r2.ctx()));
     }
 
     @Test

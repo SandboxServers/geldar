@@ -64,6 +64,8 @@ public final class Names {
         public static final String OPERATORS_COUNT = "geldar_operators_count";
         public static final String PLUGINS_ENABLED = "geldar_plugins_enabled";
         public static final String SCHEDULER_PENDING_TASKS = "geldar_scheduler_pending_tasks";
+        /** NeoForge only: the count of loaded mods (no names or versions). */
+        public static final String MODS_LOADED = "geldar_mods_loaded";
 
         private Server() {}
     }

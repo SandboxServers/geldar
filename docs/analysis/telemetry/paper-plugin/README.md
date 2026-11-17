@@ -122,6 +122,7 @@ Metrics (attributes in braces):
 | `geldar_world_loaded_chunks`, `geldar_world_entities`, `geldar_world_players` {world} | gauges | PT-05a |
 | `geldar_world_tick_ms` {world} | gauge (NeoForge only: average of the per-dimension tick-time ring, sampled every 20 ticks) | PT-N4a |
 | `geldar_players_online`, `geldar_operators_count`, `geldar_plugins_enabled`, `geldar_scheduler_pending_tasks` | gauges | PT-05b |
+| `geldar_mods_loaded` | gauge (NeoForge only: count of loaded mods) | PT-N4b |
 | `geldar_event_count_total` {event_class, cancelled} | counter | PT-06a, 06c |
 | `geldar_event_duty_ratio` {event_class} | gauge | PT-06a |
 | `geldar_paper_collector_disabled` {collector} | gauge 0/1 | PT-03e |

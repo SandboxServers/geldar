@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.function.Supplier;
 
 /**
- * {@code geldar_players_online}, {@code geldar_operators_count} and {@code geldar_plugins_enabled} (here: loaded mods),
+ * {@code geldar_players_online}, {@code geldar_operators_count} and {@code geldar_mods_loaded},
  * plus one {@code geldar.server.config_snapshot} event shortly after start (Paper parity; there is no
  * scheduler-pending-tasks gauge: NeoForge has no such count). On unless {@code collector.server.enabled=false} or the
  * master is off.
@@ -84,11 +84,14 @@ public final class ServerCollector implements Collector {
         running = true;
         l.gaugeLong(Names.Server.PLAYERS_ONLINE, "{player}", "Players online", () -> values.get(PLAYERS));
         l.gaugeLong(Names.Server.OPERATORS_COUNT, "{operator}", "Server operators (count only)", () -> values.get(OPERATORS));
-        l.gaugeLong(Names.Server.PLUGINS_ENABLED, "{mod}", "Loaded mods", () -> values.get(MODS));
+        l.gaugeLong(Names.Server.MODS_LOADED, "{mod}", "Loaded mods (count only)", () -> values.get(MODS));
         sample();
         try {
             snapshot = ConfigSnapshot.build(snapshotSource.get());
         } catch (Throwable t) {
+            if (t instanceof VirtualMachineError vme) {
+                throw vme;
+            }
             // no snapshot event
         }
         sampler = ctx.scheduler().everyTicks(SAMPLE_EVERY_TICKS, this::sample);
@@ -127,6 +130,9 @@ public final class ServerCollector implements Collector {
                 g.end(token);
             }
         } catch (Throwable t) {
+            if (t instanceof VirtualMachineError vme) {
+                throw vme;
+            }
             // a sampling failure never reaches the host
         }
     }
@@ -154,6 +160,9 @@ public final class ServerCollector implements Collector {
                 l.events().emitMap(Names.Events.SERVER_CONFIG_SNAPSHOT, Severity.INFO, attrs);
             }
         } catch (Throwable t) {
+            if (t instanceof VirtualMachineError vme) {
+                throw vme;
+            }
             // never throws out of the timer
         }
     }

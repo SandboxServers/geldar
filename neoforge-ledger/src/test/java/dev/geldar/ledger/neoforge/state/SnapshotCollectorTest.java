@@ -149,6 +149,83 @@ class SnapshotCollectorTest {
     }
 
     @Test
+    void paperSpellingOptsInToo() {
+        FakeRig r = new FakeRig("collector.snapshots.enabled=true");
+        make().start(r.ctx());
+        assertEquals(2, r.tasks.size());
+        FakeRig off = new FakeRig("collector.snapshots.enabled=true", "enabled=false");
+        make().start(off.ctx());
+        assertTrue(off.tasks.isEmpty());
+        FakeRig no = new FakeRig("collector.snapshots.enabled=false");
+        make().start(no.ctx());
+        assertTrue(no.tasks.isEmpty());
+    }
+
+    @Test
+    void vmErrorsFromAReadOrTheEmitAreNotSwallowed() {
+        FakeRig r = new FakeRig(OPT_IN);
+        roster.add(new Ref() {
+            public String name() {
+                return "ag_oom_01";
+            }
+
+            public Reading read() {
+                throw new OutOfMemoryError();
+            }
+        });
+        make().start(r.ctx());
+        org.junit.jupiter.api.Assertions.assertThrows(OutOfMemoryError.class, () -> sample(r));
+        FakeRig r2 = new FakeRig(OPT_IN);
+        roster.clear();
+        roster.add(new Ref() {
+            public String name() {
+                throw new OutOfMemoryError();
+            }
+
+            public Reading read() {
+                return null;
+            }
+        });
+        make().start(r2.ctx());
+        org.junit.jupiter.api.Assertions.assertThrows(OutOfMemoryError.class, () -> sample(r2));
+    }
+
+    @Test
+    void trackedAgentsAreCountedOnceAndCapped() {
+        FakeRig r = new FakeRig(OPT_IN);
+        java.util.Set<String> read = new java.util.HashSet<>();
+        for (int i = 0; i < 600; i++) {
+            String n = "ag_t" + i + "_01";
+            roster.add(new Ref() {
+                public String name() {
+                    return n;
+                }
+
+                public Reading read() {
+                    read.add(n);
+                    return new Reading("w", 0, 0, 0, 1, 1, 1, "survival");
+                }
+            });
+        }
+        make().start(r.ctx());
+        for (int i = 0; i < 200; i++) {
+            sample(r);
+        }
+        // the first MAX_TRACKED agents are all tracked (each counted once); the rest never are
+        assertEquals(SnapshotCollector.MAX_TRACKED, read.size());
+        assertFalse(read.contains("ag_t599_01"));
+    }
+    @Test
+    void blockCoordFloorsOnBothSigns() {
+        assertEquals(-1, SnapshotCollector.blockCoord(-0.5));
+        assertEquals(-1, SnapshotCollector.blockCoord(-1.0));
+        assertEquals(-2, SnapshotCollector.blockCoord(-1.5));
+        assertEquals(0, SnapshotCollector.blockCoord(0.5));
+        assertEquals(1, SnapshotCollector.blockCoord(1.5));
+        assertEquals(-30000001, SnapshotCollector.blockCoord(-30000000.1));
+    }
+
+    @Test
     void guardOffStopsSampling() {
         FakeRig r = new FakeRig(OPT_IN);
         roster.add(agent("ag_ada_01"));

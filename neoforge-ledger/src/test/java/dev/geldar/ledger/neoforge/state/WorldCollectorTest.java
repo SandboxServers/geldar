@@ -31,6 +31,15 @@ class WorldCollectorTest {
     }
 
     @Test
+    void descriptionsSayApproximate() {
+        FakeRig r = new FakeRig();
+        new WorldCollector(new WorldCounts(), () -> List.of("a")).start(r.ctx());
+        for (String n : new String[] {"geldar_world_loaded_chunks", "geldar_world_entities", "geldar_world_players"}) {
+            assertTrue(r.descriptions.get(n).contains("approximate"), n);
+        }
+    }
+
+    @Test
     void neverGoesNegative() {
         WorldCounts c = new WorldCounts();
         c.chunk("a", -1);

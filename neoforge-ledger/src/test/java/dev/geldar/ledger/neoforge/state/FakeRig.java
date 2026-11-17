@@ -35,6 +35,7 @@ public final class FakeRig {
     }
 
     public final Map<String, LongSupplier> gauges = new TreeMap<>(); // "name{attrs}" to reader
+    public final Map<String, String> descriptions = new java.util.concurrent.ConcurrentHashMap<>();
     public final List<String> gaugeAttrs = new CopyOnWriteArrayList<>();
     public final List<String> events = new CopyOnWriteArrayList<>();
     public final List<Map<?, ?>> eventAttrs = new CopyOnWriteArrayList<>();
@@ -123,6 +124,7 @@ public final class FakeRig {
                     String id = a[0] + java.util.Arrays.toString(keys);
                     gauges.put(id, (LongSupplier) a[3]);
                     gaugeAttrs.add(java.util.Arrays.toString(keys));
+                    descriptions.put((String) a[0], (String) a[2]);
                     yield null;
                 }
                 default -> throw new UnsupportedOperationException(m.getName());
