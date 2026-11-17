@@ -32,6 +32,10 @@ installer=$data/neoforge-installer.jar
 # The offline bundle's list (deploy/scratch/build-neoforge-bundle.sh writes it into the bundle as .geldar-bundle.sha256). Present
 # means bundle mode: the bundle is checked before anything is fetched. Absent means the normal path.
 bundle_list=${GELDAR_NF_BUNDLE_LIST:-$data/.geldar-bundle.sha256}
+# The mod jar that compose/opt-in/scratch-neoforge-mod.yml mounts read-only (only when scratch.sh gets SCRATCH_NEOFORGE_MOD_JAR),
+# and the copy of it this script makes in mods/. GELDAR_NF_MOD_JAR is the test seam for the mount path.
+mounted_jar=${GELDAR_NF_MOD_JAR:-/geldar/mods/geldar-neoforge.jar}
+mod_copy=$data/mods/geldar-neoforge.jar
 
 # Drop the CR/LF that editors and echo leave behind; nothing else is removed.
 secret=$(tr -d '\r\n' < "$secret_file")
@@ -71,6 +75,13 @@ fetch() {
   fi
   mv -f "$2.part" "$2"
 }
+
+# A copy left by an earlier start is removed first, but only while a mounted jar is present, so the bundle check below sees mods/
+# as the bundle lists it. The copy is made again after that check (see the mounted jar block after the chown). With no mounted
+# jar nothing is removed, so a stale copy still fails the strict mods/ check.
+if [ -e "$mounted_jar" ] || [ -L "$mounted_jar" ]; then
+  rm -f "$mod_copy"
+fi
 
 # Bundle mode, before any fetch. The list holds the bundle's immutable files with their hashes; the image's start script rewrites
 # some other files on every start, so they are not listed. The list is checked in this order: paths (no entry may reach outside
@@ -124,6 +135,45 @@ fi
 # The image installs NeoForge from this local file (start-deployNeoForge reads NEOFORGE_INSTALLER as a path).
 export NEOFORGE_INSTALLER="$installer"
 chown --reference="$data" "$data/mods" "$mod" "$installer"
+
+# True for exactly 64 lowercase hex digits. The case pattern (not a command substitution) so a newline anywhere is refused.
+is_sha256_hex() {
+  case "$1" in
+    *[!0-9a-f]* | '') return 1 ;;
+  esac
+  [ "${#1}" -eq 64 ]
+}
+
+# The mounted mod jar, when one is mounted, is copied into mods/ only after it matches GELDAR_NF_MOD_SHA256 (the pin scratch.sh
+# also checks on the host). A symlink or a non-file is refused; a missing, short, long or non-lowercase-hex hash is refused.
+# Nothing is copied on a refusal. The copy is mode 644 with the data dir's owner, like the other written files, and is read
+# back and hashed once more. Only file names and the fixed messages are printed, never the jar's bytes.
+if [ -e "$mounted_jar" ] || [ -L "$mounted_jar" ]; then
+  if [ -L "$mounted_jar" ] || [ ! -f "$mounted_jar" ]; then
+    echo "neoforge-entrypoint: $mounted_jar is a symlink or not a regular file; refusing to start" >&2
+    exit 1
+  fi
+  mod_sha=${GELDAR_NF_MOD_SHA256:-}
+  if ! is_sha256_hex "$mod_sha"; then
+    echo "neoforge-entrypoint: GELDAR_NF_MOD_SHA256 is not 64 lowercase hex digits; refusing to start with a mounted mod jar" >&2
+    exit 1
+  fi
+  actual=$(sha256sum "$mounted_jar" 2>/dev/null || true)
+  actual=${actual%% *}
+  if [ "$actual" != "$mod_sha" ]; then
+    echo "neoforge-entrypoint: the mounted mod jar does not match GELDAR_NF_MOD_SHA256; not copied; refusing to start" >&2
+    exit 1
+  fi
+  cp "$mounted_jar" "$mod_copy"
+  chmod 644 "$mod_copy"
+  chown --reference="$data" "$mod_copy"
+  copied=$(sha256sum "$mod_copy" 2>/dev/null || true)
+  if [ "${copied%% *}" != "$mod_sha" ]; then
+    rm -f "$mod_copy"
+    echo "neoforge-entrypoint: the copy of the mod jar in mods/ does not match GELDAR_NF_MOD_SHA256; removed it; refusing to start" >&2
+    exit 1
+  fi
+fi
 
 # The mod's config, from its README layout. Written once; on later starts only the secret line is replaced, because the
 # mod may have rewritten the file.

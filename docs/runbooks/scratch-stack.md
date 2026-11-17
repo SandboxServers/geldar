@@ -252,6 +252,21 @@ confirm that.
 Known noise: a log4j DebugFile error that names a netty kqueue class appears in the paper log on NeoForge. It is unrelated
 to the mod. Do not treat it as a failure.
 
+### Mounting the mod jar
+
+Only for SCRATCH_PLATFORM=neoforge. Two optional variables mount one mod jar read-only into the server at
+/geldar/mods/geldar-neoforge.jar: SCRATCH_NEOFORGE_MOD_JAR, the absolute path of the jar on this node (forward slashes; no
+quotes, backslashes or dollar signs), and SCRATCH_NEOFORGE_MOD_SHA256, its sha256 as 64 lowercase hex digits. Set both or
+neither. With SCRATCH_PLATFORM=paper, or with only one of them, scratch.sh exits 2 and starts nothing.
+
+- `up` checks the jar's sha256 on the host before anything starts, and exits 2 on a mismatch.
+- The entrypoint checks the same hash again inside the container. It copies the jar into the data dir's mods/ only when the
+  hash matches, and refuses to start otherwise. While the jar is mounted, each start removes the old copy before the
+  offline-bundle check and copies again after it, so the strict mods/ check still passes on a second start.
+- Check 1 stays N/A until a run proves the load. Do not make it blocking on the strength of this section.
+- This is the first dedicated-server run of neoforge/. A failure to load the mod (no geldar_neoforge line) is a finding to
+  record in the report. It is not a reason to change the check or the mod by hand.
+
 ## NATS auth (fail closed)
 
 `up` needs `SCRATCH_NATS_AUTH_DIR`: a readable directory holding non-empty `nats-auth.conf`, `nats-paper.txt`,

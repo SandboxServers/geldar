@@ -184,6 +184,9 @@ compose_run() {
   if [ -f "$NATS_OVERRIDE" ]; then
     set -- -f "$NATS_OVERRIDE" "$@"
   fi
+  if [ "$PLATFORM" = neoforge ] && [ -n "${GELDAR_NF_MOD_JAR_HOST:-}" ]; then
+    set -- -f "$ROOT/compose/opt-in/scratch-neoforge-mod.yml" "$@"
+  fi
   if [ "$PLATFORM" = neoforge ]; then
     set -- -f "$ROOT/compose/opt-in/scratch-neoforge.yml" "$@"
   fi
@@ -201,6 +204,63 @@ compose_run() {
   docker compose "$@"
 }
 
+# True for exactly 64 lowercase hex digits. A case pattern, not a command substitution: $(...) would drop a trailing newline.
+is_sha256_hex() {
+  case "$1" in
+    *[!0-9a-f]* | '') return 1 ;;
+  esac
+  [ "${#1}" -eq 64 ]
+}
+
+# SCRATCH_NEOFORGE_MOD_JAR and SCRATCH_NEOFORGE_MOD_SHA256 mount one mod jar into the NeoForge server, read-only. Both or
+# neither, and only with SCRATCH_PLATFORM=neoforge. The jar must be a readable regular file (not a symlink) at an absolute path
+# with no newline, quotes, backslashes or dollar signs; the hash must be 64 lowercase hex digits. Refusals exit 2, before compose.
+check_mod_env() {
+  jar=${SCRATCH_NEOFORGE_MOD_JAR:-}
+  sha=${SCRATCH_NEOFORGE_MOD_SHA256:-}
+  if [ -z "$jar" ] && [ -z "$sha" ]; then
+    return 0
+  fi
+  if [ "$PLATFORM" != neoforge ]; then
+    echo "scratch: the mod jar variables need SCRATCH_PLATFORM=neoforge; nothing started" >&2
+    exit 2
+  fi
+  if [ -z "$jar" ] || [ -z "$sha" ]; then
+    echo "scratch: set both SCRATCH_NEOFORGE_MOD_JAR and SCRATCH_NEOFORGE_MOD_SHA256, or neither; nothing started" >&2
+    exit 2
+  fi
+  if ! is_abs "$jar" || has_newline "$jar"; then
+    echo "scratch: SCRATCH_NEOFORGE_MOD_JAR must be an absolute path with no newline; nothing started" >&2
+    exit 2
+  fi
+  case "$jar" in
+    *'"'* | *'\'* | *'$'*)
+      echo "scratch: SCRATCH_NEOFORGE_MOD_JAR must not contain quotes, backslashes or dollar signs; nothing started" >&2
+      exit 2
+      ;;
+  esac
+  if [ -L "$jar" ] || [ ! -f "$jar" ] || [ ! -r "$jar" ]; then
+    echo "scratch: SCRATCH_NEOFORGE_MOD_JAR must be a readable regular file, not a symlink; nothing started" >&2
+    exit 2
+  fi
+  if ! is_sha256_hex "$sha"; then
+    echo "scratch: SCRATCH_NEOFORGE_MOD_SHA256 must be exactly 64 lowercase hex digits; nothing started" >&2
+    exit 2
+  fi
+}
+
+# up only, before compose: the jar's real sha256 on the host must equal SCRATCH_NEOFORGE_MOD_SHA256. The entrypoint checks it
+# again inside the container. The jar's bytes are never printed.
+check_mod_sha() {
+  [ -n "${SCRATCH_NEOFORGE_MOD_JAR:-}" ] || return 0
+  actual=$(sha256sum "$SCRATCH_NEOFORGE_MOD_JAR" 2>/dev/null || true)
+  actual=${actual%% *}
+  if [ "$actual" != "$SCRATCH_NEOFORGE_MOD_SHA256" ]; then
+    echo "scratch: the sha256 of SCRATCH_NEOFORGE_MOD_JAR does not match SCRATCH_NEOFORGE_MOD_SHA256; nothing started" >&2
+    exit 2
+  fi
+}
+
 # Sets the variables the overlay reads. Status and down use the same paths; compose only needs them set.
 set_env() {
   case "$PLATFORM" in
@@ -216,6 +276,11 @@ set_env() {
   SCRATCH_RUN_UID=$(id -u)
   SCRATCH_RUN_GID=$(id -g)
   export GELDAR_WORLD_VOLUME SCRATCH_SECRETS_DIR SCRATCH_RUN_UID SCRATCH_RUN_GID
+  check_mod_env
+  # Empty unless both mod variables are set; compose_run adds the mod overlay only for a non-empty jar path.
+  GELDAR_NF_MOD_JAR_HOST=${SCRATCH_NEOFORGE_MOD_JAR:-}
+  GELDAR_NF_MOD_SHA256=${SCRATCH_NEOFORGE_MOD_SHA256:-}
+  export GELDAR_NF_MOD_JAR_HOST GELDAR_NF_MOD_SHA256
 }
 
 # Any non-root account may run. GELDAR_SERVICE_UID, when set, must be this account's uid. The secret modes never change:
@@ -393,6 +458,7 @@ secrets_removable() {
 do_up() {
   set_env
   check_nats
+  check_mod_sha
   check_compose
   gate
   check_plugins
