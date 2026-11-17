@@ -24,6 +24,15 @@ services:
     ports: !override
       - "127.0.0.1:${SCRATCH_NATS_PORT:-14222}:4222"
       - "127.0.0.1:${SCRATCH_NATS_MON_PORT:-18222}:8222"
+    # The auth overlay (nats-auth.yml) replaces the command without -m 8222, so the monitor listens only when the generated
+    # conf has an `http:` line. The phase0 wget probe of the monitor then fails. Probe the client port, as colo.yml does.
+    # Never probe the monitor.
+    healthcheck: !override
+      test: ["CMD", "nc", "-z", "127.0.0.1", "4222"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
     deploy:
       resources:
         limits:

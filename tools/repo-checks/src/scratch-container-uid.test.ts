@@ -236,6 +236,13 @@ function renderSkip(): boolean {
 interface RenderedService {
   user?: string;
   environment?: Record<string, string>;
+  healthcheck?: {
+    test?: string[];
+    interval?: string;
+    timeout?: string;
+    retries?: number;
+    start_period?: string;
+  };
 }
 
 /** The merged config as compose renders it: phase0, nats-auth, the scratch overlay and, when asked, the NeoForge overlay.
@@ -281,6 +288,26 @@ describe.skipIf(renderSkip())(
         }
         expect(svc.postgres?.user, 'postgres').toBeUndefined();
         expect(svc.nats?.user, 'nats').toBeUndefined();
+      });
+    }
+  },
+);
+
+describe.skipIf(renderSkip())(
+  'scratch compose render: the NATS healthcheck probes the client port, not the monitor',
+  { timeout: 60_000 },
+  () => {
+    for (const neoforge of [false, true]) {
+      it(`${neoforge ? 'with' : 'without'} the NeoForge overlay: nats runs nc -z on 4222 every 5s and never the 8222 monitor or wget`, () => {
+        const nats = renderServices(neoforge).nats;
+        expect(nats?.healthcheck?.test).toEqual(['CMD', 'nc', '-z', '127.0.0.1', '4222']);
+        expect(nats?.healthcheck).toMatchObject({
+          interval: '5s',
+          timeout: '5s',
+          retries: 10,
+          start_period: '5s',
+        });
+        expect(JSON.stringify(nats?.healthcheck)).not.toMatch(/8222|wget/);
       });
     }
   },
