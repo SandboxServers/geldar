@@ -6,6 +6,7 @@
 !pnpm-lock.yaml
 !contract
 !psyche
+!telemetry
 !eventsink
 **/node_modules
 eventsink/test

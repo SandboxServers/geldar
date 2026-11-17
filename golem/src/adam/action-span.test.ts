@@ -276,3 +276,119 @@ describe('actionSpanSink: the open-span cap and the lifecycle', () => {
     expect(spans).toHaveLength(2);
   });
 });
+
+interface EventSpan extends ActionSpan {
+  attrs: Record<string, string>;
+  events: Array<{ name: string; attributes: Record<string, unknown> | undefined }>;
+  ends: number;
+}
+
+/** A tracer whose spans keep their events; `addEventThrows` makes every `addEvent` fail. */
+function eventTracer(addEventThrows = false): { tracer: ActionTracer; spans: EventSpan[] } {
+  const spans: EventSpan[] = [];
+  const tracer: ActionTracer = {
+    startSpan: () => {
+      const span: EventSpan = {
+        attrs: {},
+        events: [],
+        ends: 0,
+        setAttribute(key, value) {
+          span.attrs[key] = value;
+          return undefined;
+        },
+        addEvent(name, attributes) {
+          if (addEventThrows) throw new Error('event refused');
+          span.events.push({ name, attributes });
+          return undefined;
+        },
+        end() {
+          span.ends += 1;
+        },
+      };
+      spans.push(span);
+      return span;
+    },
+  };
+  return { tracer, spans };
+}
+
+const failedWith = (action_id: string, reason: string, message: string): never =>
+  ({ action_id, state: 'failed', result: { status: 'failed', reason, message } }) as never;
+
+describe('actionSpanSink: the action_error event (T-06d3)', () => {
+  it('adds one action_error event with the message and reason; the attributes stay two', () => {
+    const { tracer, spans } = eventTracer();
+    const sink = actionSpanSink(new MemorySink(), tracer);
+    sink.actionChanged(running('e1'));
+    sink.actionChanged(failedWith('e1', 'blocked', 'the way north is blocked'));
+    expect(spans[0]?.attrs).toEqual({ action_id: 'e1', outcome: 'failed' });
+    expect(spans[0]?.events).toHaveLength(1);
+    const event = spans[0]?.events[0];
+    expect(event?.name).toBe('action_error');
+    expect(event?.attributes?.reason).toBe('blocked');
+    expect(event?.attributes?.['geldar.content.error']).toBe('the way north is blocked');
+    expect(spans[0]?.ends).toBe(1);
+  });
+
+  it('labels a reason outside the closed set as other', () => {
+    const { tracer, spans } = eventTracer();
+    actionSpanSink(new MemorySink(), tracer).actionChanged(
+      failedWith('e2', 'a free text reason', 'x'),
+    );
+    expect(spans[0]?.events[0]?.attributes?.reason).toBe('other');
+  });
+
+  it('redacts a token in the message', () => {
+    const { tracer, spans } = eventTracer();
+    const token = `gmcp-${'ab12'.repeat(16)}`;
+    actionSpanSink(new MemorySink(), tracer).actionChanged(
+      failedWith('e3', 'internal', `call failed with ${token} in the header`),
+    );
+    const text = String(spans[0]?.events[0]?.attributes?.['geldar.content.error']);
+    expect(text).not.toContain(token);
+    expect(text).toContain('call failed with');
+  });
+
+  it('emits no event for a completed action', () => {
+    const { tracer, spans } = eventTracer();
+    const sink = actionSpanSink(new MemorySink(), tracer);
+    sink.actionChanged(running('e4'));
+    sink.actionChanged(finished('e4', 'completed'));
+    expect(spans[0]?.events).toEqual([]);
+    expect(spans[0]?.ends).toBe(1);
+  });
+
+  it('a throwing addEvent still ends the span and passes the record on', () => {
+    const { tracer, spans } = eventTracer(true);
+    const inner = new MemorySink();
+    const sink = actionSpanSink(inner, tracer);
+    expect(() => sink.actionChanged(failedWith('e5', 'internal', 'boom'))).not.toThrow();
+    expect(spans[0]?.ends).toBe(1);
+    expect(inner.actions.map((a) => a.action_id)).toEqual(['e5']);
+  });
+
+  it('a span without addEvent still ends (the event is optional)', () => {
+    const inner = new MemorySink();
+    const sink = actionSpanSink(inner, {
+      startSpan: () => ({ setAttribute: () => undefined, end: () => undefined }),
+    });
+    expect(() => sink.actionChanged(failedWith('e6', 'internal', 'boom'))).not.toThrow();
+    expect(inner.actions).toHaveLength(1);
+  });
+
+  it('the record stream to inner is identical with and without the tracer', () => {
+    const records = [
+      running('s1'),
+      failedWith('s1', 'internal', 'boom'),
+      finished('s2', 'completed'),
+    ];
+    const plain = new MemorySink();
+    const traced = new MemorySink();
+    const sink = actionSpanSink(traced, eventTracer().tracer);
+    for (const record of records) {
+      plain.actionChanged(record);
+      sink.actionChanged(record);
+    }
+    expect(JSON.stringify(traced.actions)).toBe(JSON.stringify(plain.actions));
+  });
+});

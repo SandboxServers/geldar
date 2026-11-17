@@ -47,7 +47,7 @@ describe('consumerOptions', () => {
     const telemetry = eventsinkTelemetry(
       { GELDAR_TELEMETRY_URL: 'http://127.0.0.1:9' },
       {
-        service: 'eventsink',
+        service: 'geldar-eventsink',
         log: vi.fn(),
         intervalMs: 60_000,
         fetch: vi.fn(async () => new Response(null, { status: 200 })),
@@ -61,7 +61,7 @@ describe('consumerOptions', () => {
   });
 
   it('passes no metrics key when GELDAR_TELEMETRY_URL is unset', () => {
-    const telemetry = eventsinkTelemetry({}, { service: 'eventsink', log: vi.fn() });
+    const telemetry = eventsinkTelemetry({}, { service: 'geldar-eventsink', log: vi.fn() });
     const options = consumerOptions(CONFIG, telemetry, () => undefined);
     expect(telemetry).toBeUndefined();
     expect(options).not.toHaveProperty('metrics');

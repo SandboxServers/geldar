@@ -8,9 +8,10 @@ import { ImageToolResult } from '@geldar/mcp-mock';
 import {
   type AttrValue,
   addContentEvent,
+  type ErrorFields,
   type EventSpan,
   filterAttributes,
-  hasForbiddenSegment,
+  redactContent,
 } from '@geldar/telemetry';
 
 /** The span name: one per call, so a trace list reads by tool. */
@@ -19,14 +20,23 @@ export const TOOL_SPAN_NAME = 'mcp.tool_call';
 /** The content event names: `geldar.content.tool_arguments` and `geldar.content.tool_result`. */
 export const TOOL_ARGUMENTS_EVENT = 'tool_arguments';
 export const TOOL_RESULT_EVENT = 'tool_result';
+export const TOOL_ERROR_EVENT = 'tool_error';
+export const TOOL_RESPONSE_EVENT = 'tool_response';
 
-/** The value that replaces any argument whose key names a secret. */
-export const REDACTED = '[redacted]';
+/** The span name for a request refused before a session exists (HTTP 401 or 503 at the front door). */
+export const AUTH_REFUSED_SPAN_NAME = 'mcp.auth_refused';
+/** OpenTelemetry's SpanStatusCode.ERROR, written out so this file needs no new dependency. */
+const SPAN_STATUS_ERROR = 2;
 
-/** The arguments and, on success, the result of one call. Captured as span events only. */
+/**
+ * What one call carries into its span, as events only: the raw arguments (the tool name as received is in the error and response text),
+ * the handler's raw result, the full error, and the final text the agent was sent (set when it is not a success).
+ */
 export interface ToolCallContent {
   arguments: unknown;
   result?: unknown;
+  error?: ErrorFields;
+  response?: string;
 }
 
 /** What the tool-call wrapper knows about one finished call. Nothing else reaches the span. */
@@ -47,6 +57,7 @@ export interface SpanTracer {
   ): {
     setAttributes(attributes: Record<string, AttrValue>): unknown;
     addEvent(name: string, attributes?: Record<string, AttrValue>): unknown;
+    setStatus?(status: { code: number }): unknown;
     end(endTime?: number): void;
   };
 }
@@ -75,45 +86,6 @@ export function toolSpanAttributes(call: ToolCallSpan): Record<string, AttrValue
   return filterAttributes(picked, 'trace').attributes;
 }
 
-/**
- * A copy of the arguments with every secret-named key's value replaced by REDACTED. Nested objects and
- * arrays are copied too; the input is never changed.
- */
-export function redactArguments(value: unknown): unknown {
-  return redactAt(value, 0, new WeakSet<object>());
-}
-
-/** The deepest level copied; an object below it is replaced by TRUNCATED_MARK. */
-const MAX_REDACT_DEPTH = 32;
-const TRUNCATED_MARK = '[truncated]';
-const CYCLE_MARK = '[cycle]';
-
-/** One level of redactArguments; `ancestors` holds the objects on the path to this value (a cycle guard). */
-function redactAt(value: unknown, depth: number, ancestors: WeakSet<object>): unknown {
-  if (value === null || typeof value !== 'object') return value;
-  if (ancestors.has(value)) return CYCLE_MARK;
-  if (depth >= MAX_REDACT_DEPTH) return TRUNCATED_MARK;
-  ancestors.add(value);
-  try {
-    if (Array.isArray(value)) return value.map((item) => redactAt(item, depth + 1, ancestors));
-    const copy: Record<string, unknown> = {};
-    for (const [key, inner] of Object.entries(value)) {
-      // A key that names a credential (the telemetry package's forbidden-name rule): whole words or joined stems.
-      const kept = hasForbiddenSegment(key) ? REDACTED : redactAt(inner, depth + 1, ancestors);
-      // defineProperty, not assignment: a key named __proto__ stays an own key and never sets the prototype.
-      Object.defineProperty(copy, key, {
-        value: kept,
-        enumerable: true,
-        writable: true,
-        configurable: true,
-      });
-    }
-    return copy;
-  } finally {
-    ancestors.delete(value);
-  }
-}
-
 /** The JSON text of a value, or undefined when it cannot be serialized (a capture never fails a call). */
 function jsonText(value: unknown): string | undefined {
   try {
@@ -135,15 +107,35 @@ export function capturedResult(value: unknown): unknown {
 }
 
 /**
- * Adds the call's content to its span as events: the redacted arguments, and the result when there is one.
- * Each text goes through the content helper, so it is capped at 32 KiB on a UTF-8 boundary.
+ * Adds the call's content to its span as events, in a fixed order, each only when it has data: the
+ * arguments, the handler's result, the error, the final response. Each text goes through
+ * redactContent, then the content helper, so it is capped at 32 KiB on a UTF-8 boundary.
  */
 export function addToolContentEvents(span: EventSpan, content: ToolCallContent): void {
-  const args = jsonText(redactArguments(content.arguments));
-  if (args !== undefined) addContentEvent(span, TOOL_ARGUMENTS_EVENT, args);
-  if (content.result === undefined) return;
-  const result = jsonText(capturedResult(content.result));
-  if (result !== undefined) addContentEvent(span, TOOL_RESULT_EVENT, result);
+  // Each event is guarded alone: one that throws (a hostile value) loses itself, not the events after it.
+  const guarded = (add: () => void): void => {
+    try {
+      add();
+    } catch {
+      // This event is lost; the others stand.
+    }
+  };
+  const emit = (name: string, value: unknown): void =>
+    guarded(() => {
+      const text = jsonText(redactContent(value));
+      if (text !== undefined) addContentEvent(span, name, text);
+    });
+  // A call with no arguments is the empty object: callTool validates it as one.
+  emit(TOOL_ARGUMENTS_EVENT, content.arguments === undefined ? {} : content.arguments);
+  if (content.result !== undefined) emit(TOOL_RESULT_EVENT, capturedResult(content.result));
+  if (content.error !== undefined) emit(TOOL_ERROR_EVENT, content.error);
+  if (content.response !== undefined) {
+    const response = content.response;
+    guarded(() => {
+      const text = redactContent(response);
+      if (typeof text === 'string') addContentEvent(span, TOOL_RESPONSE_EVENT, text);
+    });
+  }
 }
 
 /**
@@ -156,6 +148,7 @@ export function toolSpanRecorder(tracer: SpanTracer): (call: ToolCallSpan) => vo
     const end = Date.now();
     const span = tracer.startSpan(TOOL_SPAN_NAME, { startTime: end - call.durationMs });
     span.setAttributes(toolSpanAttributes(call));
+    if (call.outcome !== 'ok') span.setStatus?.({ code: SPAN_STATUS_ERROR });
     if (call.content !== undefined) {
       try {
         addToolContentEvents(span, call.content);
@@ -164,5 +157,26 @@ export function toolSpanRecorder(tracer: SpanTracer): (call: ToolCallSpan) => vo
       }
     }
     span.end(end);
+  };
+}
+
+/**
+ * Returns the recorder for a request refused before a session exists: one mcp.auth_refused span with
+ * the closed reason code. The HTTP status is set as `http.response.status_code`, a key on the telemetry
+ * allow-list, so the span keeps the 401 or 503 (`auth_unavailable` is the only 503). Never the token, a
+ * header, an address or a body.
+ */
+export function authRefusalRecorder(
+  tracer: SpanTracer,
+): (refusal: { reason: string; status: number }) => void {
+  return (refusal) => {
+    const span = tracer.startSpan(AUTH_REFUSED_SPAN_NAME);
+    const picked = filterAttributes(
+      { outcome: refusal.reason, 'http.response.status_code': refusal.status },
+      'trace',
+    ).attributes;
+    span.setAttributes(picked);
+    span.setStatus?.({ code: SPAN_STATUS_ERROR });
+    span.end();
   };
 }
