@@ -7,12 +7,12 @@ import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  AUTH,
   assertStubsFirst,
   authDir,
   CAN_SYMLINK,
   HOME_UNSETTABLE,
   JARS,
-  OPEN,
   runScript,
   SECRETS_KEEP,
   SH,
@@ -39,17 +39,17 @@ describe.skipIf(!SH)('scratch script under sh', { timeout: 60_000 }, () => {
     ['a newline in the NATS auth dir', { SCRATCH_NATS_AUTH_DIR: '/var/auth\n/x' }, 'no newline'],
     [
       'a relative XDG_STATE_HOME',
-      { ...OPEN, XDG_STATE_HOME: 'state' },
+      { ...AUTH, XDG_STATE_HOME: 'state' },
       'XDG_STATE_HOME must be an absolute path',
     ],
     [
       'a newline in XDG_STATE_HOME',
-      { ...OPEN, XDG_STATE_HOME: '/var/state\n/x' },
+      { ...AUTH, XDG_STATE_HOME: '/var/state\n/x' },
       'XDG_STATE_HOME must be an absolute path',
     ],
     [
       'a drive-letter XDG_STATE_HOME on Linux',
-      { ...OPEN, XDG_STATE_HOME: 'C:/state', STUB_UNAME: 'Linux' },
+      { ...AUTH, XDG_STATE_HOME: 'C:/state', STUB_UNAME: 'Linux' },
       'XDG_STATE_HOME must be an absolute path',
     ],
     [
@@ -93,21 +93,21 @@ describe.skipIf(!SH)('scratch script under sh', { timeout: 60_000 }, () => {
     ['the repo disk when the Docker root is larger', { STUB_DISK_KB: '1000' }, 'gate failed'],
     ['free RAM just below 10 GB', { STUB_RAM_KB: '10485759' }, 'gate failed'],
   ])('up exits 3 before any compose call on %s', (_name, stub, message) => {
-    const run = runScript(['up'], { ...OPEN, ...stub });
+    const run = runScript(['up'], { ...AUTH, ...stub });
     expect(run.status).toBe(3);
     expect(run.stderr).toContain(message);
     expect(started(run)).toBe(false);
   });
 
   it('up exits 3 with the Docker root unknown when docker info gives no root dir, before any compose call', () => {
-    const run = runScript(['up'], { ...OPEN, STUB_NO_INFO: '1' });
+    const run = runScript(['up'], { ...AUTH, STUB_NO_INFO: '1' });
     expect(run.status).toBe(3);
     expect(run.stderr).toContain("Docker root: 'unknown'");
     expect(started(run)).toBe(false);
   });
 
   it('up lists leftover containers with docker ps by the project label, before compose up, never with compose ps', () => {
-    const run = runScript(['up'], OPEN, JARS);
+    const run = runScript(['up'], AUTH, JARS);
     expect(run.status).toBe(0);
     const list = run.calls.findIndex((c) =>
       c.startsWith('ps -aq --filter label=com.docker.compose.project=scratch-a '),
@@ -121,7 +121,7 @@ describe.skipIf(!SH)('scratch script under sh', { timeout: 60_000 }, () => {
   it('up exits 1 with the secrets directory never made when docker ps fails', () => {
     const run = runScript(
       ['up'],
-      { ...OPEN, STUB_FAIL_PS: '1' },
+      { ...AUTH, STUB_FAIL_PS: '1' },
       {
         ...JARS,
         watch: ['state/geldar-scratch/scratch-a'],
@@ -134,17 +134,17 @@ describe.skipIf(!SH)('scratch script under sh', { timeout: 60_000 }, () => {
   });
 
   it('up exits 1 when compose is older than 2.24.4, and goes on at exactly 2.24.4', () => {
-    const old = runScript(['up'], { ...OPEN, STUB_COMPOSE_VERSION: '2.24.3' }, JARS);
+    const old = runScript(['up'], { ...AUTH, STUB_COMPOSE_VERSION: '2.24.3' }, JARS);
     expect(old.status).toBe(1);
     expect(old.stderr).toContain('older than 2.24.4');
     expect(started(old)).toBe(false);
-    expect(runScript(['up'], { ...OPEN, STUB_COMPOSE_VERSION: '2.24.4' }, JARS).status).toBe(0);
+    expect(runScript(['up'], { ...AUTH, STUB_COMPOSE_VERSION: '2.24.4' }, JARS).status).toBe(0);
   });
 
   it('up exits 1 when the caller uid is not GELDAR_SERVICE_UID, before any state directory is made', () => {
     const run = runScript(
       ['up'],
-      { ...OPEN, GELDAR_SERVICE_UID: '999' },
+      { ...AUTH, GELDAR_SERVICE_UID: '999' },
       { ...JARS, watch: ['state/geldar-scratch'] },
     );
     expect(run.status).toBe(1);
@@ -154,7 +154,7 @@ describe.skipIf(!SH)('scratch script under sh', { timeout: 60_000 }, () => {
   });
 
   it('up exits 1 naming the missing jar, with nothing made, when the plugins are not built', () => {
-    const run = runScript(['up'], OPEN, { tree: { jars: false }, watch: ['state'] });
+    const run = runScript(['up'], AUTH, { tree: { jars: false }, watch: ['state'] });
     expect(run.status).toBe(1);
     expect(run.stderr).toContain('missing plugin/core/build/libs/geldar-core.jar');
     expect(run.stderr).toContain('Nothing started');
@@ -162,17 +162,21 @@ describe.skipIf(!SH)('scratch script under sh', { timeout: 60_000 }, () => {
     expect(started(run)).toBe(false);
   });
 
-  it('up with SCRATCH_NATS_OPEN=1 prints the multi-line warning, starts, and never merges nats-auth.yml', () => {
-    const run = runScript(['up'], OPEN, {
-      ...JARS,
-      watch: ['state/geldar-scratch/scratch-a/postgres.txt'],
-    });
-    expect(run.status).toBe(0);
-    expect(run.stderr).toContain('WARNING: NATS IS OPEN for scratch-a');
-    expect(run.stderr).toContain('No role ACLs. Any local user or process can connect');
-    expect(run.calls.some((c) => c.includes('up -d --wait --build'))).toBe(true);
-    expect(run.calls.some((c) => c.includes('nats-auth.yml'))).toBe(false);
-    expect(run.present['state/geldar-scratch/scratch-a/postgres.txt']).toBe(true);
+  it('up with SCRATCH_NATS_OPEN=1 exits 2 before anything is written or started, with or without an auth dir', () => {
+    const open = runScript(['up'], { SCRATCH_NATS_OPEN: '1' }, { ...JARS, watch: ['state'] });
+    expect(open.status).toBe(2);
+    expect(open.stderr).toContain('open NATS (SCRATCH_NATS_OPEN=1) is not supported');
+    expect(open.stderr).toContain('the identity seed needs the NATS auth dir');
+    expect(open.stderr).toContain('Set SCRATCH_NATS_AUTH_DIR');
+    expect(open.stderr).toContain('Nothing started');
+    expect(open.stderr).not.toContain('WARNING');
+    expect(open.calls).toEqual([]);
+    expect(open.present.state).toBe(false);
+    expect(started(open)).toBe(false);
+    const withAuth = runScript(['up'], { ...AUTH, SCRATCH_NATS_OPEN: '1' }, JARS);
+    expect(withAuth.status).toBe(2);
+    expect(withAuth.calls).toEqual([]);
+    expect(started(withAuth)).toBe(false);
   });
 
   it('up with a valid auth dir writes the override, merges nats-auth.yml, and prints no warning', () => {
@@ -188,7 +192,7 @@ describe.skipIf(!SH)('scratch script under sh', { timeout: 60_000 }, () => {
   });
 
   it('gives the compose up call the compose variables (the stub fails compose calls without them)', () => {
-    const run = runScript(['up'], OPEN, JARS);
+    const run = runScript(['up'], AUTH, JARS);
     expect(run.status).toBe(0);
     const up = run.calls.find((c) => c.startsWith('compose') && c.includes(' up -d'));
     expect(up).toBeDefined();
@@ -198,7 +202,7 @@ describe.skipIf(!SH)('scratch script under sh', { timeout: 60_000 }, () => {
 
   it('refuses a suffix outside [a-z0-9]{1,9} with exit 2 and no docker call', () => {
     for (const suffix of ['A b', '../x', 'toolongsuffix', 'telemetry1']) {
-      const run = runScript(['up', suffix], OPEN);
+      const run = runScript(['up', suffix], AUTH);
       expect(run.status, suffix).toBe(2);
       expect(run.stderr, suffix).toContain('[a-z0-9]{1,9}');
       expect(run.calls, suffix).toEqual([]);
@@ -206,7 +210,7 @@ describe.skipIf(!SH)('scratch script under sh', { timeout: 60_000 }, () => {
   });
 
   it('accepts the 9-character suffix telemetry and reaches compose as project scratch-telemetry', () => {
-    const run = runScript(['up', 'telemetry'], OPEN, JARS);
+    const run = runScript(['up', 'telemetry'], AUTH, JARS);
     expect(run.status).toBe(0);
     expect(started(run)).toBe(true);
     const up = run.calls.find((c) => c.startsWith('compose') && c.includes(' up -d'));
@@ -222,10 +226,13 @@ describe.skipIf(!SH)('scratch script under sh', { timeout: 60_000 }, () => {
     expect(run.stdout).toContain('no scratch stack state for scratch-zz');
   });
 
-  it('status for a project whose secrets exist and have no override prints the open-NATS warning', () => {
+  it('status for a project whose secrets exist and have no override says it was not started with the auth dir', () => {
     const run = runScript(['status', 'a'], {}, { prepare: withSecrets });
     expect(run.status).toBe(0);
-    expect(run.stderr).toContain('WARNING: NATS IS OPEN for scratch-a');
+    expect(run.stderr).not.toContain('WARNING');
+    expect(run.stdout).toContain(
+      'no override for scratch-a (not started with SCRATCH_NATS_AUTH_DIR)',
+    );
   });
 
   it('down removes a real owned state directory and exits 0', () => {
@@ -323,7 +330,7 @@ describe.skipIf(!SH)('scratch script under sh: port files', { timeout: 60_000 },
   const withEnv = (envFile: string | null, jars = true) => ({ tree: { jars, envFile } });
 
   it('up telemetry reads telemetry.env: the compose call carries the 25432/24222/28222/45565 block', () => {
-    const run = runScript(['up', 'telemetry'], OPEN, JARS);
+    const run = runScript(['up', 'telemetry'], AUTH, JARS);
     expect(run.status).toBe(0);
     expect(upCall(run)).toContain('PORTS=25432,24222,28222,45565');
   });
@@ -339,28 +346,28 @@ describe.skipIf(!SH)('scratch script under sh: port files', { timeout: 60_000 },
   });
 
   it('up telemetry with telemetry.env missing exits 2 and makes no docker call', () => {
-    const run = runScript(['up', 'telemetry'], OPEN, withEnv(null));
+    const run = runScript(['up', 'telemetry'], AUTH, withEnv(null));
     expect(run.status).toBe(2);
     expect(run.stderr).toContain('telemetry.env is missing');
     expect(run.calls).toEqual([]);
   });
 
   it('up scratch-a (the default suffix) sets no port variable', () => {
-    const run = runScript(['up'], OPEN, JARS);
+    const run = runScript(['up'], AUTH, JARS);
     expect(run.status).toBe(0);
     expect(upCall(run)).toContain('PORTS=,,,');
   });
 
   it('up scratch-a with no env file at all still works, and another suffix needs none', () => {
     for (const args of [['up'], ['up', 'zz']]) {
-      const run = runScript(args, OPEN, withEnv(null));
+      const run = runScript(args, AUTH, withEnv(null));
       expect(run.status, args.join(' ')).toBe(0);
       expect(upCall(run), args.join(' ')).toContain('PORTS=,,,');
     }
   });
 
   it('an operator-set port variable wins over the file; the others come from the file', () => {
-    const run = runScript(['up', 'telemetry'], { ...OPEN, SCRATCH_PG_PORT: '6543' }, JARS);
+    const run = runScript(['up', 'telemetry'], { ...AUTH, SCRATCH_PG_PORT: '6543' }, JARS);
     expect(run.status).toBe(0);
     expect(upCall(run)).toContain('PORTS=6543,24222,28222,45565');
   });
@@ -377,7 +384,7 @@ describe.skipIf(!SH)('scratch script under sh: port files', { timeout: 60_000 },
     ['a value of 0', 'SCRATCH_PG_PORT=0\n', 'must be 1 to 65535'],
     ['a value of 000000', 'SCRATCH_PG_PORT=000000\n', 'must be 1 to 65535'],
   ])('up telemetry with %s in the file exits 2 and makes no docker call', (_n, text, message) => {
-    const run = runScript(['up', 'telemetry'], OPEN, withEnv(text));
+    const run = runScript(['up', 'telemetry'], AUTH, withEnv(text));
     expect(run.status).toBe(2);
     expect(run.stderr).toContain(message);
     expect(run.calls).toEqual([]);
@@ -385,13 +392,13 @@ describe.skipIf(!SH)('scratch script under sh: port files', { timeout: 60_000 },
 
   it('accepts 1 and 65535, blank lines and comments', () => {
     const text = '# c\n\nSCRATCH_PG_PORT=1\nSCRATCH_NATS_PORT=65535\n# more\n';
-    const run = runScript(['up', 'telemetry'], OPEN, withEnv(text));
+    const run = runScript(['up', 'telemetry'], AUTH, withEnv(text));
     expect(run.status).toBe(0);
     expect(upCall(run)).toContain('PORTS=1,65535,,');
   });
 
   it('does not execute shell content: a command substitution value is refused and nothing runs', () => {
-    const run = runScript(['up', 'telemetry'], OPEN, {
+    const run = runScript(['up', 'telemetry'], AUTH, {
       ...withEnv('SCRATCH_PG_PORT=$(touch @BASE@/pwned)\n'),
       watch: ['pwned'],
     });
@@ -402,7 +409,7 @@ describe.skipIf(!SH)('scratch script under sh: port files', { timeout: 60_000 },
   });
 
   it('does not execute a command on its own line either', () => {
-    const run = runScript(['up', 'telemetry'], OPEN, {
+    const run = runScript(['up', 'telemetry'], AUTH, {
       ...withEnv('touch @BASE@/pwned\n'),
       watch: ['pwned'],
     });

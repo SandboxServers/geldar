@@ -3,9 +3,9 @@
 # Usage: sh deploy/scratch/scratch.sh up|status|down [suffix]
 # The project is always scratch-<suffix> (suffix [a-z0-9]{1,9}, default a). Exit codes: 2 usage or NATS auth refused,
 # 3 resource gate failed, 1 anything else. On 2 and 3 nothing is started.
-# NATS fails closed: up needs SCRATCH_NATS_AUTH_DIR, a readable directory holding the four generated files
-# (nats-auth.conf, nats-paper.txt, nats-velocity.txt, nats-eventsink.txt). Open NATS needs SCRATCH_NATS_OPEN=1 and
-# prints a warning. Secrets live in a per-user state directory, not a shared temp directory; down removes only that
+# NATS fails closed: up needs SCRATCH_NATS_AUTH_DIR, a readable directory holding the five generated files
+# (nats-auth.conf, nats-paper.txt, nats-velocity.txt, nats-eventsink.txt, nats-seed.txt). Open NATS (SCRATCH_NATS_OPEN=1) is
+# refused, exit 2: the identity seed needs the auth dir. Secrets live in a per-user state directory, not a shared temp directory; down removes only that
 # directory.
 # Ports: deploy/scratch/<suffix>.env (SCRATCH_*_PORT lines only) is read by this script; required for telemetry.
 # SCRATCH_PLATFORM=neoforge adds compose/opt-in/scratch-neoforge.yml (the NeoForge game server); unset or paper is the default.
@@ -16,7 +16,7 @@ ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 RAM_MIN_KB=10485760  # 10 GB free RAM gate
 DISK_MIN_KB=20971520 # 20 GB free disk gate: the repo filesystem and the Docker data root, the smaller figure counts
 MIN_COMPOSE=2.24.4   # the !override tag in compose/opt-in/scratch.yml needs this compose or newer
-NATS_FILES="nats-auth.conf nats-paper.txt nats-velocity.txt nats-eventsink.txt"
+NATS_FILES="nats-auth.conf nats-paper.txt nats-velocity.txt nats-eventsink.txt nats-seed.txt"
 VELOCITY_JAR="plugin/velocity-identity/build/libs/geldar-velocity-identity.jar"
 PLUGIN_JARS="plugin/core/build/libs/geldar-core.jar $VELOCITY_JAR"
 # The NeoForge game server runs the forwarding mod instead of geldar-core, so only the Velocity identity jar is checked.
@@ -125,15 +125,6 @@ SECRETS="$STATE_ROOT/$PROJECT"
 NATS_OVERRIDE="$SECRETS/nats-override.yml"
 STARTED=0
 
-open_warning() {
-  cat >&2 <<EOF
-!!! WARNING: NATS IS OPEN for $PROJECT !!!
-  No role ACLs. Any local user or process can connect to 127.0.0.1:${SCRATCH_NATS_PORT:-14222}, publish to the
-  subjects Paper consumes and read JetStream. Not approved for any run on the shared node.
-  This run cannot test the NATS roles (item 5).
-EOF
-}
-
 nats_dir_ok() {
   [ -d "$SCRATCH_NATS_AUTH_DIR" ] && [ -r "$SCRATCH_NATS_AUTH_DIR" ] || return 1
   for f in $NATS_FILES; do
@@ -144,6 +135,10 @@ nats_dir_ok() {
 
 # The NATS gate. Runs first, before any file is written or any container is started.
 check_nats() {
+  if [ "${SCRATCH_NATS_OPEN:-}" = 1 ]; then
+    echo "scratch: open NATS (SCRATCH_NATS_OPEN=1) is not supported: the identity seed needs the NATS auth dir. Set SCRATCH_NATS_AUTH_DIR to a directory holding the five files made by ./geldar.ps1 shard nats-auth <shard>. Nothing started." >&2
+    exit 2
+  fi
   if [ -n "${SCRATCH_NATS_AUTH_DIR:-}" ]; then
     if ! is_abs "$SCRATCH_NATS_AUTH_DIR" || has_newline "$SCRATCH_NATS_AUTH_DIR"; then
       echo "scratch: SCRATCH_NATS_AUTH_DIR must be an absolute path with no newline; nothing started" >&2
@@ -161,13 +156,8 @@ check_nats() {
     esac
     return 0
   fi
-  if [ "${SCRATCH_NATS_OPEN:-}" = 1 ]; then
-    open_warning
-    return 0
-  fi
-  echo "scratch: NATS auth is required. Set SCRATCH_NATS_AUTH_DIR to a directory holding the four files made by" >&2
-  echo "scratch: ./geldar.ps1 shard nats-auth <shard>, or set SCRATCH_NATS_OPEN=1 for open NATS (not approved on the" >&2
-  echo "scratch: shared node; see the runbook). Nothing started." >&2
+  echo "scratch: NATS auth is required. Set SCRATCH_NATS_AUTH_DIR to a directory holding the five files made by" >&2
+  echo "scratch: ./geldar.ps1 shard nats-auth <shard>; see the runbook. Nothing started." >&2
   exit 2
 }
 
@@ -433,9 +423,9 @@ do_up() {
 do_status() {
   set_env
   if [ -f "$NATS_OVERRIDE" ]; then
-    echo "NATS auth: the four files from the SCRATCH_NATS_AUTH_DIR given to up"
+    echo "NATS auth: the five files from the SCRATCH_NATS_AUTH_DIR given to up"
   elif [ -d "$SECRETS" ]; then
-    open_warning
+    echo "NATS auth: no override for $PROJECT (not started with SCRATCH_NATS_AUTH_DIR); run down to remove its state"
   else
     echo "no scratch stack state for $PROJECT (never started, or down has run)"
   fi

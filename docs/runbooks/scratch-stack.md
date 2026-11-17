@@ -180,35 +180,49 @@ Limits:
 ## NATS auth (fail closed)
 
 `up` needs `SCRATCH_NATS_AUTH_DIR`: a readable directory holding non-empty `nats-auth.conf`, `nats-paper.txt`,
-`nats-velocity.txt` and `nats-eventsink.txt`. Without it `up` exits 2 and prints why:
+`nats-velocity.txt`, `nats-eventsink.txt` and `nats-seed.txt`. Without it `up` exits 2 and prints why:
 
-    scratch: NATS auth is required. Set SCRATCH_NATS_AUTH_DIR to a directory holding the four files made by ...
+    scratch: NATS auth is required. Set SCRATCH_NATS_AUTH_DIR to a directory holding the five files made by ...
 
-The files come from the generator on the desktop, `./geldar.ps1 shard nats-auth <shard>` (`Initialize-NatsAuth` in
-`geldar.ps1`). It writes into the repo's `compose/secrets/` (git-ignored).
+`nats-seed.txt` is the password of the scratch-only `seed` NATS user. It may create only the two identity KV buckets
+(`geldar-life-registry`, `geldar-skins`) and has no other subject. The `identity-seed` one-shot (`golem/src/seed-buckets.ts`,
+the admin image) runs once after NATS is healthy and before velocity starts; velocity waits for it to exit 0. Velocity
+only reads the buckets, and its healthcheck stays red until the life registry bucket exists. A failed seed fails `up`.
+The seed user exists only in the phase0 table of `./geldar.ps1 shard nats-auth phase0`, so a `nats-auth.conf` made
+before this change lacks it: delete that file (no secret is lost; the generator rebuilds it from the password files)
+and run the generator again, or the seed fails with an authorization error. The JetStream subjects of the seed user are
+untested against a live server.
 
-`SCRATCH_NATS_OPEN=1` is the only other way to start, and it runs open NATS with no role ACLs. It prints a multi-line
-WARNING, and `status` repeats it. Open NATS lets every local user on the node connect to `127.0.0.1:14222`, publish to
-the subjects Paper consumes and read JetStream. Open NATS is not approved for any run on the shared node. It is for a
-run that does not test the NATS roles, and such a run cannot test them. (The warning `deploy/scratch/scratch.sh`
-prints, line 87, calls this "item 5"; no file in the repo defines that numbered list.) If `SCRATCH_NATS_AUTH_DIR` is set but
-invalid, `up` exits 2 even with `SCRATCH_NATS_OPEN=1`.
+The auth dir is generated in a clean export (`git archive` of main), never in the live checkout. The generator is
+`./geldar.ps1 shard nats-auth <shard>` (`Initialize-NatsAuth` in `geldar.ps1`). It writes into the export's
+`compose/secrets/` (git-ignored) and reuses any file already there, so a clean export makes every scratch user fresh:
+no live Body, Mind or MCP password can reach the node.
+
+The generated `nats-auth.conf` embeds every role's password. Treat the whole auth dir as secret, and delete it from the
+node after the run (step 6).
+
+`SCRATCH_NATS_OPEN=1` is refused: `up` exits 2 with nothing started. Open NATS has no role ACLs, is not approved for any
+run on the shared node, and cannot run the identity seed, which needs the auth dir. `status` for a project with state but
+no override says it was not started with `SCRATCH_NATS_AUTH_DIR`. If `SCRATCH_NATS_AUTH_DIR` is set but invalid, `up`
+exits 2.
 
 The flow, in order:
 
-1. On the desktop, from the repo root: `./geldar.ps1 shard nats-auth <shard>`. It never overwrites a file that exists,
-   so a file that was already there belongs to someone else's stack.
-2. Make a temp dir outside the repo. Copy only `nats-auth.conf`, `nats-paper.txt`, `nats-velocity.txt` and
-   `nats-eventsink.txt` into it. Those are the four files `compose/nats-auth.yml` mounts. Do not copy anything else.
-3. Delete the repo-side copies that step 1 created (the lines `created compose/secrets/...` in its output name them).
-   Leave alone any file that was already there.
+1. On the desktop, in a clean export: `git archive` of main into a new empty temp dir outside the live checkout, then
+   from that export run `./geldar.ps1 shard nats-auth <shard>`. It never overwrites a file that exists; the export has
+   none, so every file it writes is new for this run.
+2. Make a second temp dir outside the repo. Copy only `nats-auth.conf`, `nats-paper.txt`, `nats-velocity.txt`,
+   `nats-eventsink.txt` and `nats-seed.txt` from the export's `compose/secrets/` into it. The first four are the files
+   `compose/nats-auth.yml` mounts; the fifth is the seed's (`compose/opt-in/scratch.yml`). Do not copy anything else.
+3. Delete the export dir, which holds the generated files. Do not copy anything else out of it.
 4. After the review passes and the start gates are met, copy the temp dir to a node temp dir. Do not copy it
    anywhere else.
 5. On the node: `SCRATCH_NATS_AUTH_DIR=<absolute path of the node temp dir> sh deploy/scratch/scratch.sh up [suffix]`.
    The path must be absolute and on one line; a relative path or a newline exits 2 with nothing started. The script
-   checks the four files, then points the `nats-auth.yml` secrets at that dir. It does not read, print or copy the files.
-6. At teardown run `sh deploy/scratch/scratch.sh down [suffix]`, then delete both copies: the desktop temp dir (if
-   it still exists) and the node temp dir. `down` never removes `SCRATCH_NATS_AUTH_DIR`.
+   checks the five files, then points the `nats-auth.yml` secrets at that dir. It does not read, print or copy the files.
+6. At teardown run `sh deploy/scratch/scratch.sh down [suffix]`, then delete the node temp dir and the desktop temp dir
+   (if it still exists). The node dir holds the password-bearing `nats-auth.conf`, so delete it even when the run failed.
+   `down` never removes `SCRATCH_NATS_AUTH_DIR`.
 
 The conf and the passwords never go in the repo, in logs or in messages. Do not paste their contents into a
 terminal, a chat or a report.

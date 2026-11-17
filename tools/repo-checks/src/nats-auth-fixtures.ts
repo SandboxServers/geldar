@@ -26,6 +26,11 @@ export const ROLES = [
   'register',
   'helper',
 ];
+/** The scratch-only identity-seed user (geldar.ps1 Get-NatsUsers): in the phase0 table, never in the colo table. */
+export const SEED_ROLE = 'seed';
+/** The users the phase0 table defines: the eleven ROLES plus the scratch seed. The colo table is ROLES alone. */
+export const PHASE0_USERS = [...ROLES, SEED_ROLE];
+const SEED_BUCKETS = ['geldar-life-registry', 'geldar-skins'];
 const MIND_TYPES = [
   'wake',
   'intent',
@@ -54,7 +59,7 @@ const VELOCITY_PUB = [
 
 /** The scoped table of decision 0087 for one shard, the same as the live test's roleAllows. */
 export function expectedTable(s: string): Record<string, { pub: string[]; sub: string[] }> {
-  return {
+  const table: Record<string, { pub: string[]; sub: string[] }> = {
     body: {
       pub: [
         `geldar.${s}.>`,
@@ -114,6 +119,22 @@ export function expectedTable(s: string): Record<string, { pub: string[]; sub: s
       sub: ['start', 'stop', 'status', 'logtail'].map((v) => `geldar.${s}.helper.body.${v}`),
     },
   };
+  // Scratch only (geldar.ps1 Get-NatsUsers, phase0 table): the identity-seed creates the two identity KV buckets and nothing else.
+  if (s === 'phase0') {
+    table[SEED_ROLE] = {
+      pub: [
+        '$JS.API.INFO',
+        ...SEED_BUCKETS.flatMap((b) => [
+          `$JS.API.STREAM.CREATE.KV_${b}`,
+          `$JS.API.STREAM.INFO.KV_${b}`,
+          `$JS.API.STREAM.UPDATE.KV_${b}`,
+        ]),
+        '_INBOX.>',
+      ],
+      sub: ['_INBOX.>'],
+    };
+  }
+  return table;
 }
 
 /** NATS subject match for one pattern: `*` is one token, a trailing `>` is one or more tokens. */
@@ -183,7 +204,7 @@ export interface Rendered {
  * Runs the real generator for the phase0 shard, in a temp copy of the repo's generator inputs. The caller removes `dir`.
  * The repo's own compose/secrets/ is never written.
  */
-export function renderGenerator(): Rendered {
+export function renderGenerator(shard: string = SHARD): Rendered {
   const dir = mkdtempSync(join(tmpdir(), 'geldar-nats-auth-'));
   copyFileSync(join(ROOT, 'geldar.ps1'), join(dir, 'geldar.ps1'));
   cpSync(join(ROOT, 'shards'), join(dir, 'shards'), { recursive: true });
@@ -193,7 +214,7 @@ export function renderGenerator(): Rendered {
   }
   const run = spawnSync(
     'pwsh',
-    ['-NoProfile', '-File', join(dir, 'geldar.ps1'), 'shard', 'nats-auth', SHARD],
+    ['-NoProfile', '-File', join(dir, 'geldar.ps1'), 'shard', 'nats-auth', shard],
     { encoding: 'utf8', cwd: dir },
   );
   const confPath = join(dir, 'compose', 'secrets', 'nats-auth.conf');

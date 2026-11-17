@@ -7,9 +7,9 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  AUTH,
   authDir,
   JARS,
-  OPEN,
   type RunOpts,
   runScript,
   skipWithoutSh,
@@ -44,7 +44,7 @@ describe.skipIf(skipWithoutSh())(
   { timeout: 60_000 },
   () => {
     it('neoforge adds the NeoForge overlay right after scratch.yml, before any NATS override', () => {
-      const run = runScript(['up', 'nf'], { ...OPEN, ...NF }, JARS);
+      const run = runScript(['up', 'nf'], { ...AUTH, ...NF }, JARS);
       const up = callOf(run.calls, ' up -d');
       expect(started(run)).toBe(true);
       expect(up).toContain('opt-in/scratch-neoforge.yml');
@@ -52,7 +52,7 @@ describe.skipIf(skipWithoutSh())(
         up.indexOf('opt-in/scratch-neoforge.yml'),
       );
       expect(up).toMatch(/opt-in\/scratch\.yml -f \S*opt-in\/scratch-neoforge\.yml /);
-      expect(up).not.toContain('nats-auth');
+      expect(up).toMatch(/opt-in\/scratch-neoforge\.yml -f \S*nats-override\.yml up -d/);
     });
 
     it('with NATS auth the order is nats-auth, scratch, the NeoForge overlay, then the NATS override last', () => {
@@ -68,14 +68,14 @@ describe.skipIf(skipWithoutSh())(
 
     it('unset and paper both leave the NeoForge overlay out of the compose call', () => {
       for (const platform of [undefined, 'paper']) {
-        const run = runScript(['up', 'nf'], { ...OPEN, SCRATCH_PLATFORM: platform }, JARS);
+        const run = runScript(['up', 'nf'], { ...AUTH, SCRATCH_PLATFORM: platform }, JARS);
         expect(started(run)).toBe(true);
         expect(callOf(run.calls, ' up -d')).not.toContain('scratch-neoforge');
       }
     });
 
     it('a bogus SCRATCH_PLATFORM exits 2 before any compose call, for up and for down', () => {
-      const up = runScript(['up', 'nf'], { ...OPEN, SCRATCH_PLATFORM: 'bogus' }, JARS);
+      const up = runScript(['up', 'nf'], { ...AUTH, SCRATCH_PLATFORM: 'bogus' }, JARS);
       expect(up.status).toBe(2);
       expect(up.stderr).toContain('SCRATCH_PLATFORM must be paper or neoforge');
       expect(up.calls).toEqual([]);
@@ -94,7 +94,7 @@ describe.skipIf(skipWithoutSh())(
     it('neoforge needs the velocity identity jar but not geldar-core', () => {
       const run = runScript(
         ['up', 'nf'],
-        { ...OPEN, ...NF },
+        { ...AUTH, ...NF },
         { tree: { jars: false }, prepare: velocityJarOnly },
       );
       expect(run.status).not.toBe(1);
@@ -102,14 +102,14 @@ describe.skipIf(skipWithoutSh())(
     });
 
     it('neoforge with no plugin jar at all exits 1 naming the velocity jar, with no compose call', () => {
-      const run = runScript(['up', 'nf'], { ...OPEN, ...NF }, { tree: { jars: false } });
+      const run = runScript(['up', 'nf'], { ...AUTH, ...NF }, { tree: { jars: false } });
       expect(run.status).toBe(1);
       expect(run.stderr).toContain('geldar-velocity-identity.jar');
       expect(started(run)).toBe(false);
     });
 
     it('paper still needs geldar-core: with only the velocity jar it exits 1 naming geldar-core', () => {
-      const run = runScript(['up', 'nf'], OPEN, {
+      const run = runScript(['up', 'nf'], AUTH, {
         tree: { jars: false },
         prepare: velocityJarOnly,
       });
@@ -119,7 +119,7 @@ describe.skipIf(skipWithoutSh())(
     });
 
     it('nf.env may carry SCRATCH_RCON_PORT: the run starts with it', () => {
-      const run = runScript(['up', 'nf'], { ...OPEN, ...NF }, nfEnv('SCRATCH_RCON_PORT=55575\n'));
+      const run = runScript(['up', 'nf'], { ...AUTH, ...NF }, nfEnv('SCRATCH_RCON_PORT=55575\n'));
       expect(run.status).not.toBe(2);
       expect(started(run)).toBe(true);
     });
@@ -132,7 +132,7 @@ describe.skipIf(skipWithoutSh())(
     ])('SCRATCH_RCON_PORT=%s exits 2 with %s and starts nothing', (value, message) => {
       const run = runScript(
         ['up', 'nf'],
-        { ...OPEN, ...NF },
+        { ...AUTH, ...NF },
         nfEnv(`SCRATCH_RCON_PORT=${value}\n`),
       );
       expect(run.status).toBe(2);
@@ -142,7 +142,7 @@ describe.skipIf(skipWithoutSh())(
     });
 
     it('a made-up key in the port file still exits 2 and starts nothing', () => {
-      const run = runScript(['up', 'nf'], { ...OPEN, ...NF }, nfEnv('SCRATCH_FOO_PORT=1\n'));
+      const run = runScript(['up', 'nf'], { ...AUTH, ...NF }, nfEnv('SCRATCH_FOO_PORT=1\n'));
       expect(run.status).toBe(2);
       expect(run.stderr).toContain('unknown key');
       expect(run.calls).toEqual([]);
