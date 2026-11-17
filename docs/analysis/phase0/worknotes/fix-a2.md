@@ -49,7 +49,7 @@ Branch `fix/a2-nats-accounts`, from `wave6-main`. Not pushed.
   same two variables from their environment; they are not in compose.
 - Step 5 (wrap-up, this session): `docs/threat-model.md` rows updated (NATS, Local Thinker WebSocket,
   MCP HTTP, MCP to NATS, WM-10b). The enable steps are in the root `README.md` under "Opt-in NATS
-  auth". Enable order: `./geldar.ps1 shard nats-auth phase0` (writes `compose/secrets/nats-<user>.txt`
+  auth". Enable order: `./geldar.ps1 shard nats-auth phase0 --local` (a git checkout needs one flag for phase0: `--local` is the desktop table, and `--scratch` is refused in a checkout; writes `compose/secrets/nats-<user>.txt`
   for body, mind, eventsink, mcp, velocity, paper and ops; `thinker-token.txt`; `nats-auth.conf`),
   then start with `-f compose/phase0.yml -f compose/mcp.yml -f compose/nats-auth.yml`. Host-run
   Body and Mind need `GELDAR_NATS_USER` and `GELDAR_NATS_PASSWORD_FILE`; Mind and lantern-local need
