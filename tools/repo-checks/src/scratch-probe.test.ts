@@ -66,6 +66,13 @@ describe('scratch P0 probe overlay (text)', () => {
       expect(probe).toMatch(new RegExp(`${svc}:\\s*\\n\\s*condition: service_healthy`));
   });
 
+  it('caps the probe at 1 CPU, 1 GiB of memory and swap, and 256 pids', () => {
+    expect(probe).toMatch(
+      /deploy:\n {6}resources:\n {8}limits:\n {10}memory: 1g\n {10}cpus: "1"\n {10}pids: 256/,
+    );
+    expect(probe).toContain('memswap_limit: 1g');
+  });
+
   it('mounts only the body NATS password and the scratch rcon secret', () => {
     expect(probe).toContain('secrets: [nats-body.txt, rcon]');
     expect(probe).not.toMatch(/nats-(mind|mcp|seed|paper|velocity|eventsink)/);
@@ -158,6 +165,8 @@ describe.skipIf(COMPOSE.status !== 0)('scratch P0 probe overlay: docker compose 
     entrypoint?: string[];
     working_dir?: string;
     image?: string;
+    deploy?: { resources?: { limits?: Record<string, unknown> } };
+    memswap_limit?: number | string;
   };
 
   it('renders p0-probe with the profile, the user, no ports, the two secrets, healthy dependencies and restart no', () => {
@@ -194,6 +203,14 @@ describe.skipIf(COMPOSE.status !== 0)('scratch P0 probe overlay: docker compose 
       GELDAR_RCON_PORT: '25575',
       GELDAR_RCON_PASSWORD_FILE: '/run/secrets/rcon',
     });
+  });
+
+  it('renders the caps: 1 CPU, 1 GiB of memory and swap, 256 pids', () => {
+    const run = compose(probeFiles, true);
+    expect(run.status, run.stderr).toBe(0);
+    const svc = (JSON.parse(run.stdout) as { services: Record<string, Svc> }).services['p0-probe'];
+    expect(svc?.deploy?.resources?.limits).toEqual({ cpus: 1, memory: '1073741824', pids: 256 });
+    expect(svc?.memswap_limit).toBe('1073741824');
   });
 
   it('keeps p0-probe out of the plain up render, even with the p0 profile on', () => {

@@ -30,6 +30,7 @@ services:
       GELDAR_RCON_PORT: "25575"
       GELDAR_RCON_PASSWORD_FILE: /run/secrets/rcon
     secrets: [nats-body.txt, rcon]
+    # The probe verb runs with --no-deps, so compose does not wait on these. scratch.sh checks each is healthy before the run.
     depends_on:
       nats:
         condition: service_healthy
