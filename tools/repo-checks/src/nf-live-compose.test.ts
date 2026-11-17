@@ -280,6 +280,26 @@ describe('nf-live compose: service uid and gid', () => {
   );
 });
 
+/** The services that list a named secret in their `secrets:`, sorted. A short entry is a string; a long one is an object. */
+const servicesMounting = (secret: string): string[] =>
+  services()
+    .filter(([, svc]) => {
+      const refs = (svc as { secrets?: (string | { source?: string })[] }).secrets ?? [];
+      return refs.some((ref) => (typeof ref === 'string' ? ref : ref.source) === secret);
+    })
+    .map(([name]) => name)
+    .sort();
+
+describe('nf-live compose: secret mounts', () => {
+  it('mounts velocity-forwarding into exactly velocity and neoforge (both sides of the shared secret)', () => {
+    expect(servicesMounting('velocity-forwarding')).toEqual(['neoforge', 'velocity']);
+  });
+
+  it('mounts the Postgres password into exactly postgres and eventsink', () => {
+    expect(servicesMounting('postgres')).toEqual(['eventsink', 'postgres']);
+  });
+});
+
 /** The `key = value` lines of one TOML table (comments and blank lines dropped), trimmed. */
 function tomlTable(text: string, name: string): string[] {
   const lines = text.split('\n');

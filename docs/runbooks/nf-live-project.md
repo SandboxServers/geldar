@@ -99,7 +99,9 @@ Files, in `compose/secrets-nf/` (git-ignored; `NF_SECRETS_DIR` points nf-live.ym
 config), then one password file per user: `nats-neoforge.txt`, `nats-sink.txt`, `nats-velocity.txt`, `nats-deploy.txt`,
 `nats-seed.txt`. Existing files are reused and never overwritten. If `nats-auth.conf` exists and a password file is missing,
 the run fails and writes nothing. Restore the missing file, or delete the directory and generate again before any start.
-The files are mode 0600 and the directory 0700 on POSIX (checked by the test there); owner-only (ACL) on Windows.
+The files are mode 0600 and the directory 0700 on POSIX (checked by the test there); owner-only (ACL) on Windows. Each file is
+created empty, restricted, then written, so the secret is never in a file with a looser mode. On Windows the script sets no ACL on
+the directory: it inherits its parent's. A re-run restricts an existing file again; an existing empty secret file is refused by name.
 An empty password file, or one with a double quote or a line break, is refused by name and nothing is written.
 
 Mapping to nf-live.yml: `nats-auth.conf` is the nats service's config; `nats-sink.txt` the eventsink; `nats-neoforge.txt`
@@ -134,7 +136,7 @@ nats-server 2.15 acceptance of this config is checked only there. The mod's expo
 
 ## 5. Environment (all optional at render time)
 
-`NF_SECRETS_DIR`, `NF_MOD_JAR_HOST` (the pinned geldar NeoForge mod jar; default path does not exist, so `up` refuses the bind),
+`NF_SECRETS_DIR`, `NF_SERVICE_UID` and `NF_SERVICE_GID` (the service uid and gid, below), `NF_MOD_JAR_HOST` (the pinned geldar NeoForge mod jar; default path does not exist, so `up` refuses the bind),
 `NF_MOD_SHA256` (64 lowercase hex, the jar's sha256; the entrypoint refuses a mismatch), `NF_NEOFORGE_BUILD` (default 126, the only
 build the entrypoint pin accepts), `NF_NEOFORGE_HEAP` (default 9G), `NF_EVENTSINK_IMAGE`, `NF_ADMIN_IMAGE`.
 
@@ -150,15 +152,14 @@ the shell for every verb, not left to the default:
 - The script refuses a value that is not a number or is 0 ("NF_SERVICE_UID must be a number" or "the containers must not run as
   root"). It refuses a secret file whose owner is not the value: `secret file <name> is owned by uid <n>; expected <value>
   (NF_SERVICE_UID)`. A mismatch therefore stops before any state change; fix the file's owner or the variable, never the script.
-- What it sets: compose runs `eventsink` and `identity-seed` with `user: <uid>:<uid>`, and the itzg images (`velocity`,
-  `neoforge`) with `UID` and `GID` set to the same value. There is no separate group variable: the group is the same number,
-  and the script checks only the owner of the secret files, not their group. Mode 0600 is owner-only, so the group does not
-  affect the read.
-- Data-volume ownership: `seed-bundle` runs the extract as root (`--user 0`) and then `chown -R --reference=/data /data`. That
-  references `/data` itself, not the service uid, so the bundle ends owned by whatever owner `/data` already has in the image.
-  The script does not set the service uid on the volume. The `sha256sum -c` marker check runs as the service uid, so the files
-  must be readable by it, or the check fails closed. Who owns `/data` after seeding, and whether the itzg entrypoint changes
-  it when `UID` is 1001, is UNVERIFIED: check it on the node with a read-only `stat` in a throwaway container before `up`.
+- What it sets: compose runs `eventsink` and `identity-seed` with `user: <uid>:<gid>`, and the itzg images (`velocity`,
+  `neoforge`) with `UID` and `GID` set to the same two numbers. `NF_SERVICE_GID` is the group; it defaults to `NF_SERVICE_UID`,
+  so one uid alone gives uid:uid. The script checks the owner uid of the secret files, not their group; mode 0600 is owner-only,
+  so the group does not affect the read.
+- Data-volume ownership: `seed-bundle` extracts the tarball as root (`--user 0`, with only CHOWN, FOWNER and DAC_OVERRIDE), then
+  in the same container runs `chown -R <uid>:<gid> /data` and `chmod -R u+rwX,go-w /data`, so the whole volume ends owned by the
+  service uid:gid. The `sha256sum -c` marker check runs as that same uid:gid. Whether itzg re-owns `/data` when `UID` is 1001 is
+  UNVERIFIED: check it on the node with a read-only `stat` in a throwaway container before `up`.
 
 The file renders with no environment (ci.yml renders every compose/*.yml with none), and with dummy secret files and a dummy jar
 (the repo test does both).
@@ -251,13 +252,20 @@ What the verb does, in order, and stops at the first failure:
   a directory (so no symlink, hardlink or device), and an archive without `.geldar-bundle.sha256`.
 - Extracts through one throwaway container of the image pinned in `compose/nf-live.yml` (the verb reads the reference from that
   file). It runs with `--network none`, `--rm`, as root inside that container only, the tarball mounted read-only, and
-  `tar -xzf` into the volume, then `chown -R --reference=/data /data` as the scratch flow does.
+  `tar -xzf` into the volume, then `chown -R <uid>:<gid> /data` and `chmod -R u+rwX,go-w /data`. The container drops every
+  capability except CHOWN, FOWNER and DAC_OVERRIDE (`--cap-drop ALL`), and gains none (`no-new-privileges`).
 - Checks the marker with `sha256sum -c --strict` in another throwaway container. It prints OK, or fails closed. On failure, do not
   start the stack; leave the volume for the operator to inspect.
 
-Nothing here removes a volume. Reseeding a volume means removing it by hand, and `down --volumes` removes every project
-volume, Postgres data included, so that decision is the operator's. UNVERIFIED on a node: the listing, the extract, the chown
-and the marker check have run only against stubs.
+Nothing here removes a volume. The listing runs as root, so a volume that holds files is refused as "not empty", including a
+half-seeded one whose `/data` is owned by another uid at mode 750 (the refusal names the volume and the root listing). To reseed
+such a volume, by hand and in this order:
+1. `nf-deploy.sh down`, without `--volumes`: it stops the project and keeps Postgres.
+2. `docker volume rm geldar-nf_neoforge-data`, only when `docker ps -a` shows no container that uses that volume.
+3. `seed-bundle` again, as above.
+
+`down --volumes` also deletes the Postgres data, so it is never part of this recovery. UNVERIFIED on a node: the listing, the
+extract, the chown and the marker check have run only against stubs.
 
 ### What must never restart the autonomous shard (concrete, from the repo)
 
@@ -273,11 +281,11 @@ and the marker check have run only against stubs.
 
 `deploy/colo-status.sh` is read-only and scoped to geldar-colo by label; it will not show this project.
 
-## 7. UNVERIFIED (not confirmed in code or on a server)
+## 7. Not yet confirmed on a server, and confirmed items
 
 1. **DONE in the repo: the NeoForge offline bundle is seeded by `nf-deploy.sh seed-bundle`** (section 6, "Seeding the NeoForge
    bundle"). It copies the scratch flow's steps (empty volume, sha256, tar listing, extract through the pinned image with no network,
-   chown, marker check). Its run on a node is UNVERIFIED.
+   chown to the service uid:gid, marker check as that owner). Its run on a node is UNVERIFIED.
 2. **identity-seed uses the NATS user seed.** Its allow list (section 4b) is create, inspect and update on the two identity buckets
    and `$JS.API.INFO`. Whether the bucket creates succeed with those permissions is UNVERIFIED until the node run.
 3. **The Postgres init runs sql/ from empty.** The file mounts ../sql into docker-entrypoint-initdb.d (as colo does). That 0001 to 0066 run
@@ -288,13 +296,12 @@ and the marker check have run only against stubs.
 5. **The per-shard sink config is not in the file.** GELDAR_EVENTS_STREAM, GELDAR_EVENTSINK_SHARD and the retention keys do not exist
    in eventsink/ today; they need the sink per-shard config packet. This project's NATS holds only its own events, so the default stream
    name is correct for now.
-6. **NF_SERVICE_UID is 1001 on this node, not the default 1000.** 1001 is the ops account's uid as recorded for this node. Confirm it with
-   `id -u` as the ops account on the node before the secrets are copied (section 4b, step 6); the script's and compose's default
-   of 1000 is the colo default and is not used here. Confirmed (the secrets created at owner uid 1001, scratch runs showed 1001
-   processes, home files owned by 1001).
+6. **Confirmed: NF_SERVICE_UID is 1001 on this node, not the default 1000.** The ops account's uid is 1001: the secrets were created
+   at owner uid 1001, scratch runs showed 1001 processes, and home files are owned by 1001. The script's and compose's default of
+   1000 is the colo default and is not used here.
 7. **The caps in section 3** are proposals from the lead's measurement. The other tenants' non-Paper services are UNVERIFIED.
 8. **Alpine nc, mc-health and the NeoForge start script** are used as scratch uses them; not run here.
-9. **Nothing was started.** No container, no node contact, no live lane.
+9. **Not run from this checkout.** No container was started and no node was contacted here; the live lane and the node run are the orchestrator's (section 8).
 
 ## 8. Before the first start (checklist, in order)
 

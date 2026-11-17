@@ -1,6 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import {
   appendFileSync,
+  chmodSync,
   existsSync,
   mkdirSync,
   readdirSync,
@@ -374,6 +375,33 @@ describe.skipIf(!hasPwsh)(
       expect(again.status, again.stderr).toBe(0);
       expect(conf().endsWith(marker)).toBe(true);
       expect(passwords.map((f) => readFileSync(join(dirOf(), f), 'utf8'))).toEqual(before);
+    }, 60_000);
+
+    // POSIX only: the mode is the check. A file left at 0644 by an older run is restricted again by a re-run, not kept as it is.
+    it.skipIf(process.platform === 'win32')(
+      'restricts a pre-existing 0644 secret file to 0600 on a re-run',
+      () => {
+        const path = join(dirOf(), 'postgres.txt');
+        chmodSync(path, 0o644);
+        expect(statSync(path).mode & 0o777).toBe(0o644);
+        const again = runGenerator(r.dir);
+        expect(again.status, again.stderr).toBe(0);
+        expect(statSync(path).mode & 0o777).toBe(0o600);
+      },
+      60_000,
+    );
+
+    // An empty file is what a crash between create and write leaves: the run refuses it by name, for both files.
+    it('refuses an existing empty postgres.txt or velocity-forwarding.txt, names it, and exits non-zero', () => {
+      for (const f of ['postgres.txt', 'velocity-forwarding.txt']) {
+        const path = join(dirOf(), f);
+        const kept = readFileSync(path, 'utf8');
+        writeFileSync(path, '');
+        const again = runGenerator(r.dir);
+        expect(again.status, f).not.toBe(0);
+        expect(again.stderr, f).toContain(`${f} is empty`);
+        writeFileSync(path, kept);
+      }
     }, 60_000);
 
     it('refuses a config with a missing password file and writes nothing', () => {

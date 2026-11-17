@@ -29,7 +29,6 @@ const JAR_BYTES = 'geldar neoforge mod fixture\n';
 const LIST_BYTES = 'bundle list fixture\n';
 const sha = (text: string) => createHash('sha256').update(text).digest('hex');
 const MOD_SHA = sha(JAR_BYTES);
-const BUNDLE_SHA = sha(LIST_BYTES);
 const TARBALL_BYTES = 'bundle tarball fixture\n';
 const TARBALL_SHA = sha(TARBALL_BYTES);
 const GOOD_NAMES = ['mods/', 'mods/geldar.jar', '.geldar-bundle.sha256'];
@@ -124,8 +123,6 @@ function envFor(repo: string, extra: Record<string, string> = {}): NodeJS.Proces
     STUB_LOG: join(repo, 'calls.log'),
     NF_MOD_JAR_HOST: join(repo, 'mod.jar'),
     NF_MOD_SHA256: MOD_SHA,
-    NF_BUNDLE_DIR: join(repo, 'bundle'),
-    NF_BUNDLE_SHA256: BUNDLE_SHA,
     NF_BUNDLE_TARBALL: join(repo, 'bundle-tarball.tar.gz'),
     NF_BUNDLE_TARBALL_SHA256: TARBALL_SHA,
     TAR_NAMES: join(repo, 'archive-names.txt'),
@@ -477,8 +474,12 @@ describe('nf-deploy.sh seed-bundle', () => {
     const [extract] = extractCalls(repo);
     expect(extract).toContain('docker run --rm --network none --user 0 ');
     expect(extract).toMatch(/--mount type=bind,source=\S+,target=\/in\/bundle\.tar\.gz,readonly /);
+    // The extract keeps only the three capabilities tar and chown need, and gains no privileges.
     expect(extract).toContain(
-      `--entrypoint /bin/sh ${NEOFORGE_IMAGE} -c tar -xzf /in/bundle.tar.gz -C /data && chown -R 1001:1001 /data && chmod -R u+rwX /data`,
+      '--user 0 --cap-drop ALL --cap-add CHOWN --cap-add FOWNER --cap-add DAC_OVERRIDE --security-opt no-new-privileges --mount ',
+    );
+    expect(extract).toContain(
+      `--entrypoint /bin/sh ${NEOFORGE_IMAGE} -c tar -xzf /in/bundle.tar.gz -C /data && chown -R 1001:1001 /data && chmod -R u+rwX,go-w /data`,
     );
     expect(extract).not.toContain('--reference');
     expect(extract).not.toMatch(/chown -R 1000:/);
@@ -544,6 +545,39 @@ describe('nf-deploy.sh seed-bundle', () => {
     expect(markers).toHaveLength(1);
     expect(markers[0]).toContain('--user 1001:1001 ');
     expect(markers[0]).not.toContain('--user 1000');
+  });
+
+  it('lists the volume as root, so a half-seeded /data the service uid cannot read is still listed', () => {
+    const repo = makeRepo();
+    expect(run(repo, ['seed-bundle'], { NF_SERVICE_UID: '1001' }).status).toBe(0);
+    const listings = calls(repo).filter((c) => c.includes('ls -A /data'));
+    expect(listings).toHaveLength(1);
+    expect(listings[0]).toContain('--user 0 ');
+    expect(listings[0]).not.toContain('--user 1001');
+  });
+
+  it('checks the marker as uid:gid at gid 1002 on seed-bundle and on up, never uid:uid', () => {
+    const seeded = makeRepo();
+    const extract = run(seeded, ['seed-bundle'], {
+      NF_SERVICE_UID: '1001',
+      NF_SERVICE_GID: '1002',
+    });
+    expect(extract.status, extract.out).toBe(0);
+    const seedMarkers = calls(seeded).filter((c) => c.includes('sha256sum -c --strict'));
+    expect(seedMarkers).toHaveLength(1);
+    expect(seedMarkers[0]).toContain('--user 1001:1002 ');
+    expect(seedMarkers[0]).not.toContain('--user 1001:1001 ');
+    const upRepo = makeRepo();
+    const up = run(upRepo, ['up'], {
+      NF_SERVICE_UID: '1001',
+      NF_SERVICE_GID: '1002',
+      STAT_UID: '1001',
+    });
+    expect(up.status, up.out).toBe(0);
+    const upMarkers = calls(upRepo).filter((c) => c.includes('sha256sum -c --strict'));
+    expect(upMarkers).toHaveLength(1);
+    expect(upMarkers[0]).toContain('--user 1001:1002 ');
+    expect(upMarkers[0]).not.toContain('--user 1001:1001 ');
   });
 
   it('takes NF_SERVICE_GID separately, and refuses a non-numeric or root gid', () => {

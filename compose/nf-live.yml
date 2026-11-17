@@ -27,7 +27,7 @@
 #
 # Environment: every variable has a default, so the file renders with no environment set (ci.yml renders every compose file
 # with none). The variables an operator sets for this project, all optional at render time:
-#   NF_SECRETS_DIR         the per-project secret files (default ./secrets-nf, gitignored; written by the NF secrets step, not yet built)
+#   NF_SECRETS_DIR         the per-project secret files (default ./secrets-nf, gitignored; written by `./geldar.ps1 shard nats-auth nf --live`, runbook section 4b, which writes all eight files)
 #   NF_MOD_JAR_HOST        host path of the pinned geldar NeoForge mod jar (read-only mount). Unset, the default path does not
 #                          exist and `up` refuses to start the bind (create_host_path is false), which is the fail-closed path.
 #   NF_MOD_SHA256          the jar's sha256, 64 lowercase hex; the entrypoint refuses a mounted jar that does not match
@@ -64,7 +64,7 @@ x-labels: &nf-labels
 
 services:
   nats:
-    # Budget: 0.5 CPU, 512m, 256 pids. The auth conf is the per-shard set written by the NF secrets step (not yet built).
+    # Budget: 0.5 CPU, 512m, 256 pids. The auth conf is the per-shard set written by `./geldar.ps1 shard nats-auth nf --live` (runbook section 4b).
     deploy:
       resources:
         limits:
@@ -310,7 +310,7 @@ volumes:
 # File-based secrets under the per-project directory (compose/secrets-nf/, gitignored). The names are the per-shard NATS
 # auth set's: nats-auth.conf (the server config), nats-sink.txt, nats-neoforge.txt, nats-velocity.txt, nats-deploy.txt,
 # nats-seed.txt (one password file per user), and the Postgres and forwarding secrets. `./geldar.ps1 shard nats-auth nf --live`
-# writes the NATS ones (runbook section 4b); the Postgres and forwarding secrets are a later packet. No value is in this file.
+# writes all eight of them, the NATS ones and the Postgres and forwarding secrets (runbook section 4b). No value is in this file.
 secrets:
   postgres:
     file: ${NF_SECRETS_DIR:-./secrets-nf}/postgres.txt

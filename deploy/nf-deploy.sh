@@ -233,8 +233,9 @@ check_seed_inputs() {
 # The volume must hold nothing: a seeded volume is never overwritten. A missing volume is empty (the extract creates it).
 check_volume_empty() {
   if docker volume inspect "$VOLUME" >/dev/null 2>&1; then
-    listing=$(docker run --rm --network none --user "$SERVICE_OWNER" -v "$VOLUME:/data:ro" --entrypoint /bin/sh "$IMAGE" \
-      -c 'ls -A /data') || die "cannot list $VOLUME"
+    # Listed as root: a half-seeded /data can be owned by another uid at mode 750, which the service uid cannot read.
+    listing=$(docker run --rm --network none --user 0 -v "$VOLUME:/data:ro" --entrypoint /bin/sh "$IMAGE" \
+      -c 'ls -A /data') || die "cannot list /data in $VOLUME, even as root (its /data is not readable); nothing extracted"
     [ -z "$listing" ] || die "volume $VOLUME is not empty; it is never overwritten (seed-bundle runs once per volume)"
   fi
   say "volume $VOLUME: absent or empty"
@@ -313,11 +314,14 @@ cmd_seed_bundle() {
   check_seed_inputs
   check_volume_empty
   say "seed-bundle: extracting the tarball into $VOLUME (one throwaway container, no network, the tarball read-only)"
-  # After the tar, the whole tree is chowned to the service uid:gid (the numbers were checked above), and the owner gets rw on
-  # every directory and file so the server can write later. /data itself is the tree's root, so it is chowned too.
-  act docker run --rm --network none --user 0 \
+  # After the tar, the whole tree is chowned to the service uid:gid (the numbers were checked above). The owner gets rw on every
+  # directory and file, and group and others lose write (the archive's own modes could carry o+w), so only the server writes.
+  # /data itself is the tree's root, so it is chowned too. The container keeps only CHOWN, FOWNER and DAC_OVERRIDE (what tar and
+  # chown need) and gains no privileges.
+  act docker run --rm --network none --user 0 --cap-drop ALL --cap-add CHOWN --cap-add FOWNER --cap-add DAC_OVERRIDE \
+    --security-opt no-new-privileges \
     --mount "type=bind,source=$TARBALL,target=/in/bundle.tar.gz,readonly" -v "$VOLUME:/data" \
-    --entrypoint /bin/sh "$IMAGE" -c "tar -xzf /in/bundle.tar.gz -C /data && chown -R $SERVICE_OWNER /data && chmod -R u+rwX /data"
+    --entrypoint /bin/sh "$IMAGE" -c "tar -xzf /in/bundle.tar.gz -C /data && chown -R $SERVICE_OWNER /data && chmod -R u+rwX,go-w /data"
   if [ "${DEPLOY_DRY_RUN:-0}" = 1 ]; then
     say "seed-bundle: dry run; the extract and the marker check were not run"
     return 0
