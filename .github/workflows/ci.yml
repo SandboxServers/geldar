@@ -91,7 +91,7 @@ jobs:
           set -o pipefail
           for attempt in 1 2; do
             ./gradlew build --no-daemon 2>&1 | tee "$RUNNER_TEMP/gradle-neoforge.log" && exit 0
-            if grep -Eqi 'Dependency verification failed|lock state|Could not resolve all' "$RUNNER_TEMP/gradle-neoforge.log"; then exit 1; fi
+            if grep -Eqi 'Dependency verification failed|lock state' "$RUNNER_TEMP/gradle-neoforge.log"; then exit 1; fi
             if [ "$attempt" = 2 ] || ! grep -Eqi 'HTTP (429|50[0-9])|Could not (GET|HEAD) |Read timed out|Connect(ion)? (reset|timed out)|Premature end of Content-Length|Received status code (429|50[0-9])' "$RUNNER_TEMP/gradle-neoforge.log"; then exit 1; fi
             echo "::warning::network error in the neoforge build; retrying once"
             sleep 30
@@ -103,7 +103,7 @@ jobs:
           set -o pipefail
           for attempt in 1 2; do
             ./gradlew build --no-daemon 2>&1 | tee "$RUNNER_TEMP/gradle-ledger.log" && exit 0
-            if grep -Eqi 'Dependency verification failed|lock state|Could not resolve all' "$RUNNER_TEMP/gradle-ledger.log"; then exit 1; fi
+            if grep -Eqi 'Dependency verification failed|lock state' "$RUNNER_TEMP/gradle-ledger.log"; then exit 1; fi
             if [ "$attempt" = 2 ] || ! grep -Eqi 'HTTP (429|50[0-9])|Could not (GET|HEAD) |Read timed out|Connect(ion)? (reset|timed out)|Premature end of Content-Length|Received status code (429|50[0-9])' "$RUNNER_TEMP/gradle-ledger.log"; then exit 1; fi
             echo "::warning::network error in the neoforge-ledger build; retrying once"
             sleep 30
