@@ -21,9 +21,24 @@ import {
 
 /** The users and files the nf set must have, in the generator's order (geldar.ps1 is not involved: deploy/nats-auth-nf.ps1). */
 const NF_USERS = ['neoforge', 'sink', 'deploy', 'velocity', 'seed'];
-const NF_FILES = ['nats-auth.conf', ...NF_USERS.map((u) => `nats-${u}.txt`)].sort();
-/** Declared by nf-live.yml and not written by this generator: postgres (a later packet) and the forwarding secret. */
-const NOT_NATS_SECRETS = ['postgres.txt', 'velocity-forwarding.txt'];
+/** The eight files the generator writes: the conf, the five NATS passwords, postgres.txt and velocity-forwarding.txt. */
+const NF_FILES = [
+  'nats-auth.conf',
+  ...NF_USERS.map((u) => `nats-${u}.txt`),
+  'postgres.txt',
+  'velocity-forwarding.txt',
+].sort();
+/** The two-way difference of two name lists: names only in `a`, and names only in `b`. */
+function setDiff(a: string[], b: string[]): { onlyA: string[]; onlyB: string[] } {
+  return { onlyA: a.filter((f) => !b.includes(f)), onlyB: b.filter((f) => !a.includes(f)) };
+}
+/** The SECRET_FILES list of deploy/nf-deploy.sh (the files the operator script requires before any start). */
+function deploySecretFiles(): string[] {
+  const m = /^SECRET_FILES="([^"]+)"/m.exec(
+    readFileSync(join(ROOT, 'deploy', 'nf-deploy.sh'), 'utf8'),
+  );
+  return (m?.[1] ?? '').split(' ').filter((f) => f !== '');
+}
 const STREAMS = ['GELDAR_EVENTS', 'GELDAR_EVENTS_NF'];
 const BUCKETS = ['geldar-life-registry', 'geldar-skins'];
 const NF_LIVE = readFileSync(join(ROOT, 'compose', 'nf-live.yml'), 'utf8');
@@ -299,14 +314,46 @@ describe.skipIf(!hasPwsh)(
       }
     });
 
-    it('declares in nf-live.yml exactly the generated files, plus the two non-NATS secrets', () => {
+    it('makes the generator output equal the secrets of nf-live.yml and the SECRET_FILES of nf-deploy.sh', () => {
+      const generated = readdirSync(dirOf()).sort();
       const names = [...NF_LIVE.matchAll(/\$\{NF_SECRETS_DIR:-\.\/secrets-nf\}\/([\w.-]+)/g)].map(
         (m) => m[1] ?? '',
       );
-      const declared = [...new Set(names)];
-      for (const name of NOT_NATS_SECRETS) expect(declared, name).toContain(name);
-      expect(declared.filter((n) => !NOT_NATS_SECRETS.includes(n)).sort()).toEqual(NF_FILES);
+      const declared = [...new Set(names)].sort();
+      const deploy = deploySecretFiles().sort();
+      expect(deploy.length, 'SECRET_FILES parsed').toBeGreaterThan(0);
+      expect(setDiff(generated, declared), 'generator vs nf-live.yml secrets').toEqual({
+        onlyA: [],
+        onlyB: [],
+      });
+      expect(setDiff(generated, deploy), 'generator vs nf-deploy.sh SECRET_FILES').toEqual({
+        onlyA: [],
+        onlyB: [],
+      });
+      expect(generated).toEqual(NF_FILES);
     });
+
+    it('writes postgres.txt and velocity-forwarding.txt as 32 symbols of [A-Za-z0-9_-] with no newline', () => {
+      for (const f of ['postgres.txt', 'velocity-forwarding.txt']) {
+        expect(readFileSync(join(dirOf(), f), 'utf8'), f).toMatch(/^[A-Za-z0-9_-]{32}$/);
+      }
+    });
+
+    it('never prints a secret value: a fresh run echoes no file content', () => {
+      const fresh = renderGenerator('nf', { flags: ['--local'], checkout: false });
+      try {
+        const run = runGenerator(fresh.dir);
+        expect(run.status, run.stderr).toBe(0);
+        const out = `${run.stdout}${run.stderr}`;
+        for (const f of NF_FILES.filter((x) => x !== 'nats-auth.conf')) {
+          const value = readFileSync(join(fresh.dir, 'compose', 'secrets-nf', f), 'utf8');
+          expect(value.length, f).toBe(32);
+          expect(out, f).not.toContain(value);
+        }
+      } finally {
+        rmSync(fresh.dir, { recursive: true, force: true });
+      }
+    }, 60_000);
 
     it('gives identity-seed the seed user and its own password file, never deploy', () => {
       const start = NF_LIVE.indexOf('\n  identity-seed:');

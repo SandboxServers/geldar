@@ -9,9 +9,12 @@
 # networks; --volumes also removes the project's volumes, after the operator types the project name. DEPLOY_DRY_RUN=1 prints
 # the steps of up and down without running them; the gates still run. Inputs come from the environment, never the repo:
 #   NF_MOD_JAR_HOST, NF_MOD_SHA256     the pinned geldar NeoForge mod jar and its sha256 (64 lowercase hex)
-#   NF_BUNDLE_DIR, NF_BUNDLE_SHA256    the NeoForge offline bundle directory and the sha256 of its .geldar-bundle.sha256 list
 #   NF_BUNDLE_TARBALL, NF_BUNDLE_TARBALL_SHA256   seed-bundle only: the absolute path of the bundle tarball and its sha256
-#   NF_SECRETS_DIR                     the secret files (default compose/secrets-nf); NF_SERVICE_UID (default 1000)
+#                                      (plan and up need no bundle input: the seeded volume's marker check is the gate)
+#   NF_SECRETS_DIR                     the secret files (default compose/secrets-nf)
+#   NF_SERVICE_UID (default 1000), NF_SERVICE_GID (default NF_SERVICE_UID): the uid:gid the services run as and that owns
+#                                      the seeded volume. The default 1000 is not the node: its ops account is uid 1001, so the
+#                                      operator must export NF_SERVICE_UID=1001 (the default itself is unchanged).
 # Runbook: docs/runbooks/nf-live-project.md (section 6).
 set -eu
 
@@ -115,11 +118,18 @@ check_operator() {
 
 check_service_uid() {
   SERVICE_UID=${NF_SERVICE_UID:-1000}
+  SERVICE_GID=${NF_SERVICE_GID:-$SERVICE_UID}
   case $SERVICE_UID in
     '' | *[!0-9]*) die "NF_SERVICE_UID must be a number (default 1000)" ;;
   esac
+  case $SERVICE_GID in
+    '' | *[!0-9]*) die "NF_SERVICE_GID must be a number (default NF_SERVICE_UID)" ;;
+  esac
   [ "$SERVICE_UID" -ne 0 ] || die "NF_SERVICE_UID is 0; the containers must not run as root"
-  export NF_SERVICE_UID=$SERVICE_UID
+  [ "$SERVICE_GID" -ne 0 ] || die "NF_SERVICE_GID is 0; the containers must not run as root"
+  export NF_SERVICE_UID=$SERVICE_UID NF_SERVICE_GID=$SERVICE_GID
+  # The owner the seeded volume and the services use: one uid:gid string for every docker --user.
+  SERVICE_OWNER=$SERVICE_UID:$SERVICE_GID
 }
 
 # Refuses when a geldar-nf container carries a geldar-colo label (its compose project, or the colo stack label).
@@ -166,18 +176,6 @@ check_mod_jar() {
   [ "$got" = "$want" ] || die "the sha256 of the mod jar does not match NF_MOD_SHA256; nothing started"
 }
 
-# The offline bundle: NF_BUNDLE_SHA256 is the sha256 of the bundle's .geldar-bundle.sha256 list (the hashes of its files).
-check_bundle() {
-  [ -n "${NF_BUNDLE_DIR:-}" ] || die "NF_BUNDLE_DIR is not set (the bundle from deploy/scratch/build-neoforge-bundle.sh)"
-  want=${NF_BUNDLE_SHA256:-}
-  printf '%s' "$want" | grep -Eq '^[0-9a-f]{64}$' || die "NF_BUNDLE_SHA256 must be 64 lowercase hex digits"
-  list=$NF_BUNDLE_DIR/.geldar-bundle.sha256
-  [ -f "$list" ] || die "NF_BUNDLE_DIR has no .geldar-bundle.sha256 list; it is not a bundle"
-  need sha256sum
-  got=$(sha256sum <"$list" | awk '{print $1}')
-  [ "$got" = "$want" ] || die "the sha256 of the bundle list does not match NF_BUNDLE_SHA256; nothing started"
-}
-
 # The image of the neoforge service in compose/nf-live.yml: the one pinned reference, read from the file (no second copy here).
 compose_image() {
   img=$(awk '/^  [a-z][a-z-]*:$/ { svc = ($1 == "neoforge:") } svc && /^    image: / { print $2; exit }' "$COMPOSE_FILE")
@@ -186,9 +184,10 @@ compose_image() {
   printf '%s\n' "$img"
 }
 
-# The volume is seeded when its bundle marker verifies. Read-only, no network, the service uid; the marker check is the entrypoint's.
+# The volume is seeded when its bundle marker verifies. Read-only, no network, as the service uid:gid (the owner seed-bundle
+# chowned /data to): the marker check runs as the same owner the services run as.
 seed_marker_ok() {
-  docker run --rm --network none --user "$SERVICE_UID" -v "$VOLUME:/data:ro" --entrypoint /bin/sh "$IMAGE" \
+  docker run --rm --network none --user "$SERVICE_OWNER" -v "$VOLUME:/data:ro" --entrypoint /bin/sh "$IMAGE" \
     -c 'cd /data && sha256sum -c --strict --status .geldar-bundle.sha256' >/dev/null 2>&1
 }
 
@@ -234,7 +233,7 @@ check_seed_inputs() {
 # The volume must hold nothing: a seeded volume is never overwritten. A missing volume is empty (the extract creates it).
 check_volume_empty() {
   if docker volume inspect "$VOLUME" >/dev/null 2>&1; then
-    listing=$(docker run --rm --network none --user "$SERVICE_UID" -v "$VOLUME:/data:ro" --entrypoint /bin/sh "$IMAGE" \
+    listing=$(docker run --rm --network none --user "$SERVICE_OWNER" -v "$VOLUME:/data:ro" --entrypoint /bin/sh "$IMAGE" \
       -c 'ls -A /data') || die "cannot list $VOLUME"
     [ -z "$listing" ] || die "volume $VOLUME is not empty; it is never overwritten (seed-bundle runs once per volume)"
   fi
@@ -244,8 +243,7 @@ check_volume_empty() {
 check_inputs() {
   check_secrets
   check_mod_jar
-  check_bundle
-  say "inputs: secret files, mod jar and bundle present and checked"
+  say "inputs: secret files and the mod jar present and checked (the bundle is verified by the volume's marker, not here)"
 }
 
 # Free RAM must cover the project's memory caps plus the margin. Free disk must clear the floor. Both are read-only.
@@ -315,9 +313,11 @@ cmd_seed_bundle() {
   check_seed_inputs
   check_volume_empty
   say "seed-bundle: extracting the tarball into $VOLUME (one throwaway container, no network, the tarball read-only)"
+  # After the tar, the whole tree is chowned to the service uid:gid (the numbers were checked above), and the owner gets rw on
+  # every directory and file so the server can write later. /data itself is the tree's root, so it is chowned too.
   act docker run --rm --network none --user 0 \
     --mount "type=bind,source=$TARBALL,target=/in/bundle.tar.gz,readonly" -v "$VOLUME:/data" \
-    --entrypoint /bin/sh "$IMAGE" -c 'tar -xzf /in/bundle.tar.gz -C /data && chown -R --reference=/data /data'
+    --entrypoint /bin/sh "$IMAGE" -c "tar -xzf /in/bundle.tar.gz -C /data && chown -R $SERVICE_OWNER /data && chmod -R u+rwX /data"
   if [ "${DEPLOY_DRY_RUN:-0}" = 1 ]; then
     say "seed-bundle: dry run; the extract and the marker check were not run"
     return 0

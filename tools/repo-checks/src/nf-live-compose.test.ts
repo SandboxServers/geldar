@@ -240,6 +240,46 @@ describe('nf-live compose: secrets', () => {
 const VELOCITY_PATH = 'compose/velocity/velocity-nf.toml';
 const velocityText = (): string => readFileSync(`${ROOT}${VELOCITY_PATH}`, 'utf8');
 
+describe('nf-live compose: service uid and gid', () => {
+  // The services run as NF_SERVICE_UID:NF_SERVICE_GID, and the gid defaults to the uid. Rendered only; no container starts.
+  const withIds = (env: Record<string, string>) => {
+    const dirs = {
+      NF_SECRETS_DIR: join(tmp, 'secrets'),
+      NF_MOD_JAR_HOST: join(tmp, 'geldar-neoforge.jar'),
+    };
+    const run = renderNf({ ...dirs, NF_MOD_SHA256: DUMMY_SHA256, ...env });
+    return JSON.parse(run.stdout) as {
+      services: Record<string, { user?: string; environment?: Record<string, string> }>;
+    };
+  };
+
+  it.skipIf(!DOCKER)(
+    'takes the uid and the gid from NF_SERVICE_UID and NF_SERVICE_GID (1001 and 1002)',
+    () => {
+      const r = withIds({ NF_SERVICE_UID: '1001', NF_SERVICE_GID: '1002' });
+      expect(r.services.eventsink?.user).toBe('1001:1002');
+      expect(r.services['identity-seed']?.user).toBe('1001:1002');
+      for (const svc of ['neoforge', 'velocity']) {
+        expect(r.services[svc]?.environment?.UID, svc).toBe('1001');
+        expect(r.services[svc]?.environment?.GID, svc).toBe('1002');
+      }
+    },
+    60_000,
+  );
+
+  it.skipIf(!DOCKER)(
+    'defaults the gid to the uid when NF_SERVICE_GID is unset',
+    () => {
+      const r = withIds({ NF_SERVICE_UID: '1001' });
+      expect(r.services.eventsink?.user).toBe('1001:1001');
+      expect(r.services['identity-seed']?.user).toBe('1001:1001');
+      expect(r.services.neoforge?.environment?.GID).toBe('1001');
+      expect(r.services.velocity?.environment?.GID).toBe('1001');
+    },
+    60_000,
+  );
+});
+
 /** The `key = value` lines of one TOML table (comments and blank lines dropped), trimmed. */
 function tomlTable(text: string, name: string): string[] {
   const lines = text.split('\n');
