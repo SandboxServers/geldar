@@ -37,10 +37,11 @@ import org.bukkit.plugin.java.JavaPlugin;
  *
  * <p>Ledger lifecycle (PT-03o): the plugin runs a no-op ledger until a config is loaded AND says {@code enabled=true}
  * (the agent ships disabled). Then it builds the real {@code OtelLedger} through {@code LedgerBootstrap} on the main
- * thread (no file IO there; a throwing build keeps the no-op ledger and logs one line). A later reload with
+ * thread (a throwing build keeps the no-op ledger and logs one line; the first {@code GlobalOpenTelemetry.get()} may do class
+ * loading and classpath work, such as service discovery, on the main thread, once). A later reload with
  * {@code enabled=true} calls {@code reload}; {@code enabled=false} stops collectors and listeners, swaps back to the
  * no-op ledger and closes the real one on an async thread (close can block up to a second, so never on the main
- * thread). {@link #onDisable} closes last, synchronously (the scheduler no longer takes tasks) and bounded.
+ * thread). {@link #onDisable} closes last, synchronously (the scheduler no longer takes tasks) and bounded, and also closes any ledger whose async close was scheduled but has not run.
  */
 public final class LedgerPlugin extends JavaPlugin {
     static final String CONFIG_FILE = "ledger.properties";
@@ -71,6 +72,8 @@ public final class LedgerPlugin extends JavaPlugin {
     private Ledger noopLedger;
     private volatile Ledger currentLedger;
     private Built real;
+    /** Ledgers swapped out whose async close has not run yet; guarded by LEDGER_LOCK; null until first used. */
+    private List<Built> pendingCloses;
     private boolean buildWarned;
 
     /** Used by the server. */
@@ -192,12 +195,18 @@ public final class LedgerPlugin extends JavaPlugin {
             old = real;
             real = null;
             currentLedger = noopLedger;
+            if (old != null) {
+                if (pendingCloses == null) {
+                    pendingCloses = new java.util.ArrayList<>();
+                }
+                pendingCloses.add(old);
+            }
         }
         if (old == null) {
             return;
         }
         try {
-            getServer().getScheduler().runTaskAsynchronously(this, () -> closeQuietly(old));
+            getServer().getScheduler().runTaskAsynchronously(this, () -> closePending(old));
         } catch (Throwable t) {
             getLogger().warning("Ledger could not schedule its close: " + t.getClass().getSimpleName());
         }
@@ -205,15 +214,31 @@ public final class LedgerPlugin extends JavaPlugin {
 
     /** onDisable path: the scheduler no longer takes tasks, so the (bounded) close runs here. */
     private void closeRealNow() {
-        Built old;
+        List<Built> toClose = new java.util.ArrayList<>();
         synchronized (LEDGER_LOCK) {
-            old = real;
+            if (pendingCloses != null) {
+                toClose.addAll(pendingCloses); // scheduled closes the disabled scheduler will never run
+                pendingCloses.clear();
+            }
+            if (real != null) {
+                toClose.add(real);
+            }
             real = null;
             currentLedger = noopLedger;
         }
-        if (old != null) {
-            closeQuietly(old);
+        for (Built b : toClose) {
+            closeQuietly(b);
         }
+    }
+
+    /** The async close: runs once, and not at all when onDisable already closed this ledger. */
+    private void closePending(Built b) {
+        synchronized (LEDGER_LOCK) {
+            if (pendingCloses == null || !pendingCloses.remove(b)) {
+                return;
+            }
+        }
+        closeQuietly(b);
     }
 
     private void closeQuietly(Built b) {

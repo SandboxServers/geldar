@@ -469,6 +469,26 @@ class LedgerPluginTest {
     }
 
     @Test
+    void onDisableClosesALedgerWhoseAsyncCloseNeverRan() throws IOException {
+        Path data = tmp.resolve("data");
+        writeConfig(data, "enabled=true");
+        Fake fake = new Fake();
+        LedgerPlugin plugin = withFake(data, fake);
+        plugin.onEnable();
+        poll();
+        deferAsync = true;
+        writeConfig(data, "enabled=false");
+        poll();
+        assertEquals(1, asyncTasks.size());
+        assertEquals(0, fake.closes);
+        plugin.onDisable(); // the scheduler cancels the queued task on disable
+        assertEquals(1, fake.closes);
+        asyncTasks.forEach(Runnable::run); // a late run must not close it twice
+        plugin.onDisable();
+        assertEquals(1, fake.closes);
+    }
+
+    @Test
     void enableDisableEnableRestartsCollectorsOnAFreshLedger() throws IOException {
         Path data = tmp.resolve("data");
         writeConfig(data, "enabled=true");
