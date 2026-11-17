@@ -10,6 +10,7 @@
   "dependencies": {
     "@geldar/contract": "workspace:*",
     "@geldar/psyche": "workspace:*",
+    "@geldar/telemetry": "workspace:*",
     "@nats-io/jetstream": "3.4.0",
     "@nats-io/transport-node": "3.4.0",
     "pg": "8.23.1"
