@@ -103,6 +103,15 @@ Read [README.md](README.md) first: path aliases, frozen API, frozen names and th
 - Commit: `PT-03h Paper adapter shell and collector registry (plugin)`.
 - Do NOT: register any command or permission; call `Bukkit.shutdown`; load chunks; write to disk; add a collector implementation (only names in `PaperCollectors`).
 
+## PT-03o: wire the real ledger into the Paper shell
+
+- Loader: Paper. Depends on: PT-03g, PT-03h. Size: M.
+- Goal: the shell builds the real `OtelLedger` (through `LedgerBootstrap`, over the OpenTelemetry API; without an agent the binding is no-op) only when a config is loaded AND `enabled=true`. Before the first load, with `enabled=false` or after a bad first config the plugin keeps the no-op ledger (the agent ships disabled).
+- Files: EDIT `PAPER/LedgerPlugin.java`; tests `PAPER_T/LedgerPluginTest.java`.
+- Steps: 1. `applyConfig` (main thread): `enabled=true` builds the ledger once (no file IO; a throwing build keeps the no-op ledger and logs one line), later reloads call `OtelLedger.reload(config)`; `enabled=false` stops collectors and listeners, swaps to the no-op ledger, then closes the real one on the async scheduler (`close()` can block up to 1 s, never on the main thread). 2. `CollectorContext.ledger()` reads the current ledger at each collector start, so collectors restarted after an enable get the new ledger, never a closed one. 3. `onDisable` stops the watcher, collectors and listeners, then closes the ledger last and synchronously (the scheduler refuses tasks then); bounded, never throws. 4. Test seam: package-private `LedgerFactory` returning `Built(ledger, reload, close)`.
+- Tests (fail when reverted): disabled, before-first-load and bad first config build nothing; enable builds one and the collector gets it; disable closes once off-thread and falls back; disable then enable builds a fresh ledger and restarts collectors with it; other reloads call reload not rebuild; a throwing factory leaves the plugin up on the no-op ledger; `onDisable` closes once and survives a throwing close.
+- Checks: `:ledger:test`. S8, S9.
+- Do NOT: touch the chat, signs or the world; add dependencies.
 ## PT-03i: test fixtures
 
 - Loader: Neutral. Depends on: PT-03 api (starts only when it is on the integration branch). Size: S. Start: immediately.

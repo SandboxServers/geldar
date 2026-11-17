@@ -98,6 +98,8 @@ class LedgerPluginTest {
     final List<Plugin> disabled = new ArrayList<>();
     int shutdowns;
     int asyncCalls;
+    boolean deferAsync;
+    final List<Runnable> asyncTasks = new ArrayList<>();
     boolean queueMain;
     final List<Runnable> mainQueue = new ArrayList<>();
     boolean throwOnDisable;
@@ -136,7 +138,11 @@ class LedgerPluginTest {
                         case "runTaskTimerAsynchronously" -> asyncTimers.add((Runnable) a[1]);
                         case "runTaskAsynchronously" -> {
                             asyncCalls++;
-                            ((Runnable) a[1]).run();
+                            if (deferAsync) {
+                                asyncTasks.add((Runnable) a[1]);
+                            } else {
+                                ((Runnable) a[1]).run();
+                            }
                         }
                         default -> {}
                     }
@@ -532,8 +538,12 @@ class LedgerPluginTest {
         LedgerPlugin plugin = withFake(data, fake);
         plugin.onEnable();
         poll();
+        deferAsync = true;
         writeConfig(data, "enabled=false");
-        assertDoesNotThrow(() -> poll());
+        poll();
+        assertEquals(1, asyncTasks.size());
+        assertEquals(0, fake.closes); // the close is not on the config or main thread
+        assertDoesNotThrow(() -> asyncTasks.get(0).run());
         assertEquals(1, fake.closes);
     }
 }
