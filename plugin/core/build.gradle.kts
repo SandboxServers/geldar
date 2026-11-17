@@ -154,8 +154,9 @@ val verifyTestSourceInputs = tasks.register("verifyTestSourceInputs") {
             .toList()
         if (uncovered.isNotEmpty()) {
             throw GradleException(
-                "A core test reads source paths that are not declared test inputs of :core:test. Add a " +
-                    "declareScannedSource(...) line for each in plugin/core/build.gradle.kts:\n" + uncovered.joinToString("\n"),
+                "A core test reads source paths that are not declared test inputs of :core:test. Add each missing " +
+                    "root to the scannedSourceRoots list at the top of plugin/core/build.gradle.kts (a path relative " +
+                    "to plugin/core, as the test reads it):\n" + uncovered.joinToString("\n"),
             )
         }
     }
