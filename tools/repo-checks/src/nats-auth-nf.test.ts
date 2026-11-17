@@ -1,0 +1,342 @@
+import { spawnSync } from 'node:child_process';
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { join } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  hasPwsh,
+  parseEntries,
+  type Rendered,
+  ROOT,
+  renderGenerator,
+} from './nats-auth-fixtures.ts';
+
+/** The users and files the nf set must have, in the generator's order (geldar.ps1 is not involved: deploy/nats-auth-nf.ps1). */
+const NF_USERS = ['neoforge', 'sink', 'deploy', 'velocity', 'seed'];
+const NF_FILES = ['nats-auth.conf', ...NF_USERS.map((u) => `nats-${u}.txt`)].sort();
+/** Declared by nf-live.yml and not written by this generator: postgres (a later packet) and the forwarding secret. */
+const NOT_NATS_SECRETS = ['postgres.txt', 'velocity-forwarding.txt'];
+const STREAMS = ['GELDAR_EVENTS', 'GELDAR_EVENTS_NF'];
+const BUCKETS = ['geldar-life-registry', 'geldar-skins'];
+const NF_LIVE = readFileSync(join(ROOT, 'compose', 'nf-live.yml'), 'utf8');
+
+const streamApi = (s: string): string[] => [
+  `$JS.API.STREAM.INFO.${s}`,
+  `$JS.API.STREAM.CREATE.${s}`,
+];
+const sinkApi = (s: string): string[] => [
+  ...streamApi(s),
+  `$JS.API.CONSUMER.CREATE.${s}.eventsink`,
+  `$JS.API.CONSUMER.CREATE.${s}.eventsink.>`,
+  `$JS.API.CONSUMER.DURABLE.CREATE.${s}.eventsink`,
+  `$JS.API.CONSUMER.INFO.${s}.eventsink`,
+  `$JS.API.CONSUMER.MSG.NEXT.${s}.eventsink`,
+  `$JS.ACK.${s}.eventsink.>`,
+];
+const velocityApi = (b: string): string[] => [
+  `$JS.API.STREAM.INFO.KV_${b}`,
+  `$JS.API.CONSUMER.CREATE.KV_${b}`,
+  `$JS.API.CONSUMER.CREATE.KV_${b}.>`,
+  `$JS.API.CONSUMER.INFO.KV_${b}.>`,
+  `$JS.API.CONSUMER.DELETE.KV_${b}.>`,
+];
+const seedApi = (b: string): string[] => [
+  `$JS.API.STREAM.CREATE.KV_${b}`,
+  `$JS.API.STREAM.INFO.KV_${b}`,
+  `$JS.API.STREAM.UPDATE.KV_${b}`,
+];
+
+/** The exact allow and deny lists, restated here so a changed generator fails. */
+const EXPECTED: Record<string, { pub: string[]; deny: string[]; sub: string[] }> = {
+  neoforge: {
+    pub: ['geldar.nf.*', ...STREAMS.flatMap(streamApi), '_INBOX.>'],
+    deny: ['geldar.nf.maintenance', 'geldar.nf.dlq'],
+    sub: ['geldar.nf.maintenance', '_INBOX.>'],
+  },
+  sink: {
+    pub: [
+      'geldar.nf.dlq',
+      'geldar.nf.state.>',
+      '$JS.API.INFO',
+      ...STREAMS.flatMap(sinkApi),
+      '_INBOX.>',
+    ],
+    deny: [],
+    sub: ['geldar.nf.state.*.proficiency', '_INBOX.>'],
+  },
+  deploy: { pub: ['geldar.nf.maintenance'], deny: [], sub: ['_INBOX.>'] },
+  velocity: {
+    pub: [...BUCKETS.flatMap(velocityApi), '$JS.FC.>', '_INBOX.>'],
+    deny: [],
+    sub: ['_INBOX.>'],
+  },
+  seed: {
+    pub: ['$JS.API.INFO', ...BUCKETS.flatMap(seedApi), '_INBOX.>'],
+    deny: [],
+    sub: ['_INBOX.>'],
+  },
+};
+
+/** Whether a subject is one this shard's NATS may carry: geldar.nf.*, the inbox, $JS.FC, $JS.API.INFO, or a JetStream
+ * API or ack subject whose tokens include exactly one of this shard's stream or bucket names. */
+function inScope(subject: string): boolean {
+  if (subject.startsWith('geldar.nf.')) return true;
+  if (['_INBOX.>', '$JS.FC.>', '$JS.API.INFO'].includes(subject)) return true;
+  if (subject.startsWith('$JS.API.') || subject.startsWith('$JS.ACK.')) {
+    const tokens = subject.split('.');
+    const names = [...STREAMS, ...BUCKETS.map((b) => `KV_${b}`)];
+    return names.some((n) => tokens.includes(n));
+  }
+  return false;
+}
+
+/** NATS subject matching: `*` matches one token, `>` matches one or more tokens and must be the last token. */
+function natsMatch(pattern: string, subject: string): boolean {
+  const p = pattern.split('.');
+  const s = subject.split('.');
+  for (let i = 0; i < p.length; i++) {
+    if (p[i] === '>') return i === p.length - 1 && s.length > i;
+    if (i >= s.length) return false;
+    if (p[i] !== '*' && p[i] !== s[i]) return false;
+  }
+  return p.length === s.length;
+}
+
+/** Whether a user's publish allow list admits a subject and its publish deny list does not. */
+function publishAllowed(
+  entry: { pub: string[]; deny: string[] } | undefined,
+  subject: string,
+): boolean {
+  if (!entry) return false;
+  return (
+    entry.pub.some((p) => natsMatch(p, subject)) && !entry.deny.some((d) => natsMatch(d, subject))
+  );
+}
+
+/**
+ * The subjects the sink's client sends (@nats-io/jetstream 3.4.0, read from its lib/): jetstreamManager's INFO
+ * (jsclient.js:148), STREAM.INFO and STREAM.CREATE (jsmstream_api.js:388, :356), the consumer create with its filter
+ * (jsmconsumer_api.js:101; consumers.update sends the same subject), CONSUMER.INFO (jsmconsumer_api.js:158), the pull
+ * request (consumer.js:551) and an ack reply (jsmsg.js:41). Written here from the client, not from the generator's list.
+ */
+function sinkClientSubjects(st: string): string[] {
+  return [
+    '$JS.API.INFO',
+    `$JS.API.STREAM.INFO.${st}`,
+    `$JS.API.STREAM.CREATE.${st}`,
+    `$JS.API.CONSUMER.CREATE.${st}.eventsink.geldar.*.*`,
+    `$JS.API.CONSUMER.INFO.${st}.eventsink`,
+    `$JS.API.CONSUMER.MSG.NEXT.${st}.eventsink`,
+    `$JS.ACK.${st}.eventsink.1.1.1.1700000000000000000.0`,
+  ];
+}
+
+function runGenerator(dir: string, flags: string[] = ['--live', '--local']) {
+  return spawnSync(
+    'pwsh',
+    ['-NoProfile', '-File', join(dir, 'geldar.ps1'), 'shard', 'nats-auth', 'nf', ...flags],
+    {
+      encoding: 'utf8',
+      cwd: dir,
+    },
+  );
+}
+
+describe('NATS subject matching (the test helper)', () => {
+  it.each([
+    ['a.>', 'a', false],
+    ['a.>', 'a.b', true],
+    ['a.>', 'a.b.c', true],
+    ['a.*', 'a.b', true],
+    ['a.*', 'a.b.c', false],
+    ['a.*.c', 'a.b.c', true],
+    ['a.b', 'a.b.c', false],
+  ])('%s matches %s: %s', (pattern, subject, want) => {
+    expect(natsMatch(pattern, subject)).toBe(want);
+  });
+});
+
+describe.skipIf(!hasPwsh)('NF NATS auth set: refusals write nothing', () => {
+  const made: string[] = [];
+  afterAll(() => {
+    for (const dir of made) rmSync(dir, { recursive: true, force: true });
+  });
+  const cases: [string, string[], boolean, RegExp][] = [
+    ['no flag', [], false, /--live/],
+    ['--local without --live', ['--local'], false, /--live/],
+    ['a git checkout without --local', ['--live'], true, /git checkout/],
+    ['an unknown flag', ['--live', '--force'], false, /unknown flag/],
+    ['--LIVE in capitals (case-sensitive)', ['--LIVE'], false, /unknown flag/],
+  ];
+  it.each(cases)('refuses %s and writes nothing', (_name, flags, checkout, message) => {
+    const r = renderGenerator('nf', { flags, checkout });
+    made.push(r.dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(message);
+    expect(existsSync(join(r.dir, 'compose', 'secrets-nf'))).toBe(false);
+    expect(existsSync(join(r.dir, 'compose', 'secrets'))).toBe(false);
+  });
+});
+
+describe.skipIf(!hasPwsh)('NF NATS auth set: password files that would break the config', () => {
+  const dirs: string[] = [];
+  afterAll(() => {
+    for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
+  });
+  /** A temp copy of the generator with one password file already written (no --live, so nothing is generated). */
+  function seeded(name: string, text: string): string {
+    const { dir } = renderGenerator('nf', { flags: ['--local'], checkout: false });
+    dirs.push(dir);
+    mkdirSync(join(dir, 'compose', 'secrets-nf'), { recursive: true });
+    writeFileSync(join(dir, 'compose', 'secrets-nf', name), text);
+    return dir;
+  }
+  it('names an empty password file and writes no config', () => {
+    const dir = seeded('nats-seed.txt', '');
+    const r = runGenerator(dir);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toMatch(/nats-seed\.txt is empty/);
+    expect(existsSync(join(dir, 'compose', 'secrets-nf', 'nats-auth.conf'))).toBe(false);
+  }, 60_000);
+  it.each([
+    ['a double quote', 'ab"cd'],
+    ['a line break', 'ab\ncd'],
+  ])(
+    'refuses a password with %s and writes no config',
+    (_name, text) => {
+      const dir = seeded('nats-sink.txt', text);
+      const r = runGenerator(dir);
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toMatch(/double quote or a line break/);
+      expect(existsSync(join(dir, 'compose', 'secrets-nf', 'nats-auth.conf'))).toBe(false);
+    },
+    60_000,
+  );
+});
+
+describe.skipIf(!hasPwsh)(
+  'NF NATS auth set: the generator in a temp checkout (--live --local)',
+  () => {
+    let r: Rendered;
+    const dirOf = () => join(r.dir, 'compose', 'secrets-nf');
+    const conf = () => readFileSync(join(dirOf(), 'nats-auth.conf'), 'utf8');
+    const entry = (user: string) => parseEntries(conf()).find((e) => e.user === user);
+    beforeAll(() => {
+      r = renderGenerator('nf', { flags: ['--live', '--local'], checkout: true });
+    }, 120_000);
+    afterAll(() => {
+      if (r) rmSync(r.dir, { recursive: true, force: true });
+    });
+
+    it('runs and writes exactly the nf files', () => {
+      expect(r.status, r.stderr).toBe(0);
+      expect(readdirSync(dirOf()).sort()).toEqual(NF_FILES);
+    });
+
+    // POSIX only: Windows keeps no mode bits, so this is skipped there (the ACL is checked by hand on the node).
+    it.skipIf(process.platform === 'win32')('writes the directory 0700 and every file 0600', () => {
+      const modeOf = (p: string) => statSync(p).mode & 0o777;
+      expect(modeOf(dirOf())).toBe(0o700);
+      for (const f of NF_FILES) expect(modeOf(join(dirOf(), f)), f).toBe(0o600);
+    });
+
+    it('writes exactly the expected users, in order, with the expected allow and deny lists', () => {
+      const entries = parseEntries(conf());
+      expect(entries.map((e) => e.user)).toEqual(NF_USERS);
+      for (const e of entries) {
+        expect(e.pub, `${e.user} publish`).toEqual(EXPECTED[e.user]?.pub);
+        expect(e.deny, `${e.user} deny`).toEqual(EXPECTED[e.user]?.deny);
+        expect(e.sub, `${e.user} subscribe`).toEqual(EXPECTED[e.user]?.sub);
+      }
+    });
+
+    it('scopes every subject to this shard, its two streams, its two buckets or the inbox', () => {
+      for (const e of parseEntries(conf())) {
+        for (const subject of [...e.pub, ...e.sub, ...e.deny]) {
+          expect(inScope(subject), `${e.user}: ${subject}`).toBe(true);
+          expect(subject, e.user).not.toBe('>');
+          expect(subject, e.user).not.toMatch(/^geldar\.(\*|>)/);
+          expect(subject, e.user).not.toMatch(/colo|phase0/);
+        }
+      }
+    });
+
+    it('gives the NeoForge mod no publish on maintenance or the dead letter, and no wider subject than geldar.nf.*', () => {
+      const mod = entry('neoforge');
+      expect(mod?.deny).toEqual(['geldar.nf.maintenance', 'geldar.nf.dlq']);
+      expect(mod?.pub.filter((s) => s.startsWith('geldar.'))).toEqual(['geldar.nf.*']);
+    });
+
+    it('lets the sink send every JetStream subject its client builds (computed, not restated)', () => {
+      for (const st of STREAMS) {
+        for (const subject of [...sinkClientSubjects(st), 'geldar.nf.dlq', '_INBOX.abc123']) {
+          expect(publishAllowed(entry('sink'), subject), subject).toBe(true);
+        }
+      }
+    });
+
+    it('lets the mod send its stream calls and its events, and not maintenance or the dead letter', () => {
+      for (const st of STREAMS) {
+        for (const subject of [
+          `$JS.API.STREAM.INFO.${st}`,
+          `$JS.API.STREAM.CREATE.${st}`,
+          'geldar.nf.player-joined',
+          '_INBOX.abc123',
+        ]) {
+          expect(publishAllowed(entry('neoforge'), subject), subject).toBe(true);
+        }
+      }
+      for (const subject of ['geldar.nf.maintenance', 'geldar.nf.dlq']) {
+        expect(publishAllowed(entry('neoforge'), subject), subject).toBe(false);
+      }
+    });
+
+    it('declares in nf-live.yml exactly the generated files, plus the two non-NATS secrets', () => {
+      const names = [...NF_LIVE.matchAll(/\$\{NF_SECRETS_DIR:-\.\/secrets-nf\}\/([\w.-]+)/g)].map(
+        (m) => m[1] ?? '',
+      );
+      const declared = [...new Set(names)];
+      for (const name of NOT_NATS_SECRETS) expect(declared, name).toContain(name);
+      expect(declared.filter((n) => !NOT_NATS_SECRETS.includes(n)).sort()).toEqual(NF_FILES);
+    });
+
+    it('gives identity-seed the seed user and its own password file, never deploy', () => {
+      const start = NF_LIVE.indexOf('\n  identity-seed:');
+      const rest = NF_LIVE.slice(start + 1);
+      const block = rest.slice(0, rest.search(/\n {2}[a-z][\w-]*:\n/));
+      expect(block).toMatch(/GELDAR_NATS_USER: seed$/m);
+      expect(block).toMatch(/\/run\/secrets\/nats-seed\.txt/);
+      expect(block).toMatch(/secrets: \[nats-seed\.txt\]/);
+      expect(block).not.toMatch(/GELDAR_NATS_USER: deploy/);
+    });
+
+    it('reuses existing files and never overwrites the config', () => {
+      const passwords = NF_FILES.filter((f) => f !== 'nats-auth.conf');
+      const before = passwords.map((f) => readFileSync(join(dirOf(), f), 'utf8'));
+      const marker = '# hand edit: a re-run must not rewrite this config\n';
+      appendFileSync(join(dirOf(), 'nats-auth.conf'), marker);
+      const again = runGenerator(r.dir);
+      expect(again.status, again.stderr).toBe(0);
+      expect(conf().endsWith(marker)).toBe(true);
+      expect(passwords.map((f) => readFileSync(join(dirOf(), f), 'utf8'))).toEqual(before);
+    }, 60_000);
+
+    it('refuses a config with a missing password file and writes nothing', () => {
+      const before = readFileSync(join(dirOf(), 'nats-auth.conf'), 'utf8');
+      rmSync(join(dirOf(), 'nats-seed.txt'));
+      const again = runGenerator(r.dir);
+      expect(again.status).not.toBe(0);
+      expect(again.stderr).toMatch(/nats-seed\.txt is missing/);
+      expect(existsSync(join(dirOf(), 'nats-seed.txt'))).toBe(false);
+      expect(readFileSync(join(dirOf(), 'nats-auth.conf'), 'utf8')).toBe(before);
+    }, 60_000);
+  },
+);

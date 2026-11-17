@@ -54,12 +54,57 @@ Their other services are UNVERIFIED here. Paper-equivalent sum about 32 GiB plus
 Per-project directory `compose/secrets-nf/` (gitignored; the repo ignore line is added). The file reads `${NF_SECRETS_DIR:-./secrets-nf}`.
 Names, one file each, mode 0600, owned by the account:
 
-- `nats-auth.conf` (the per-shard NATS server config), `nats-sink.txt`, `nats-neoforge.txt`, `nats-velocity.txt`, `nats-deploy.txt`
-  (the four NATS users of the design: neoforge, sink, deploy, velocity; the `nats-auth.conf` file is the server side);
+- `nats-auth.conf` (the per-shard NATS server config), `nats-sink.txt`, `nats-neoforge.txt`, `nats-velocity.txt`, `nats-deploy.txt`, `nats-seed.txt`
+  (the five NATS users of the design: neoforge, sink, deploy, velocity, seed; the `nats-auth.conf` file is the server side);
 - `postgres.txt` (the Postgres password), `velocity-forwarding.txt` (the Velocity forwarding secret, shared with the NeoForge side).
 
-No secret value is in the file or in this runbook. The generator entries in geldar.ps1 are a later packet; do not create the files by hand
-outside that step. The NATS user table itself is the per-shard NATS auth packet's (a3 in the design).
+No secret value is in the file or in this runbook. The files are written by `./geldar.ps1 shard nats-auth nf --live` (section 4b,
+deploy/nats-auth-nf.ps1); do not create them by hand. The NATS user table itself is the per-shard NATS auth packet's (a3 in the design).
+
+## 4b. The NATS auth set (generated on the node)
+
+When: on the NF node, once, before the first start (section 8). Never in a git checkout. Make a clean export
+(`git archive -o <file> <commit>`, extracted into an empty directory), run the command there, then keep the secrets
+directory with the node's secrets. The generator refuses a checkout (a `.git` entry) unless `--local` is also given. `--local` is accepted in a
+clean export and changes nothing there; the test harness needs it. Flags are case-sensitive (`--LIVE` is refused).
+
+Command: `./geldar.ps1 shard nats-auth nf --live`. Without `--live` it refuses and writes nothing. An unknown flag is refused.
+
+Files, in `compose/secrets-nf/` (git-ignored; `NF_SECRETS_DIR` points nf-live.yml at it): `nats-auth.conf` (the server
+config), then one password file per user: `nats-neoforge.txt`, `nats-sink.txt`, `nats-velocity.txt`, `nats-deploy.txt`,
+`nats-seed.txt`. Existing files are reused and never overwritten. If `nats-auth.conf` exists and a password file is missing,
+the run fails and writes nothing. Restore the missing file, or delete the directory and generate again before any start.
+The files are mode 0600 and the directory 0700 on POSIX (checked by the test there); owner-only (ACL) on Windows.
+An empty password file, or one with a double quote or a line break, is refused by name and nothing is written.
+
+Mapping to nf-live.yml: `nats-auth.conf` is the nats service's config; `nats-sink.txt` the eventsink; `nats-neoforge.txt`
+the neoforge service; `nats-velocity.txt` velocity; `nats-seed.txt` identity-seed (user `seed`). `nats-deploy.txt` is
+declared but no compose service mounts it: the maintenance notice is published by the operator's deploy as that user, on
+the node, outside the stack.
+
+Not generated: `postgres.txt` and `velocity-forwarding.txt` (a later packet), and no Thinker token (this shard has no
+Thinker hub). A test checks that the files nf-live.yml declares are these, minus those two names.
+
+Users and allow lists (every subject is `geldar.nf.*`, a JetStream API subject for the two streams below or the two identity
+buckets, or the inbox; no user has `>` or `geldar.*`):
+
+| User | May publish | May subscribe |
+|------|-------------|---------------|
+| neoforge | `geldar.nf.*` except `geldar.nf.maintenance` and `geldar.nf.dlq`; JetStream STREAM.INFO and STREAM.CREATE for the two streams; `_INBOX.>` | `geldar.nf.maintenance`; `_INBOX.>` |
+| sink | `geldar.nf.dlq`, `geldar.nf.state.>`, `$JS.API.INFO`; the durable consumer `eventsink` on the two streams (CONSUMER.CREATE with its filter, `.eventsink.>`; INFO; MSG.NEXT; ACK); STREAM.INFO and CREATE; `_INBOX.>` | `geldar.nf.state.*.proficiency`; `_INBOX.>` |
+| deploy | `geldar.nf.maintenance` | `_INBOX.>` |
+| velocity | watch and get on the two identity buckets (read only) | `_INBOX.>` |
+| seed | `$JS.API.INFO`; create, inspect and update of the two identity buckets | `_INBOX.>` |
+
+The two stream names are `GELDAR_EVENTS` (the name the plugin and the sink use today) and `GELDAR_EVENTS_NF` (decision
+0380). The `GELDAR_EVENTS` allow is a default: remove it when the sink's per-shard config lands.
+
+The password is plaintext inside `nats-auth.conf`, as the colo shard's config is. Treat the directory as a secret: do not
+copy it into a checkout, a ticket or a log.
+
+UNVERIFIED: the JetStream API subjects above come from the code and the @nats-io/jetstream 3.4.0 client; the test computes the
+sink's subjects from that client. The sink and seed permissions remain UNVERIFIED against a live server until the node run;
+nats-server 2.15 acceptance of this config is checked only there. The mod's export type list is not defined yet, so its publish is `geldar.nf.*` and narrows later.
 
 ## 5. Environment (all optional at render time)
 
@@ -105,7 +150,7 @@ root; a checkout is refused, and `--local` is for the tests only). Run it as the
   `up -d --wait velocity` (the only published port, `127.0.0.1:46565`). It never starts golem-body or players-host.
 - Inputs, all from the environment: `NF_MOD_JAR_HOST` and `NF_MOD_SHA256` (the pinned mod jar and its sha256);
   `NF_BUNDLE_DIR` and `NF_BUNDLE_SHA256` (the offline bundle from `deploy/scratch/build-neoforge-bundle.sh`, and the sha256 of
-  its `.geldar-bundle.sha256` list); `NF_SECRETS_DIR` (default `compose/secrets-nf/`, which must hold the seven files the
+  its `.geldar-bundle.sha256` list); `NF_SECRETS_DIR` (default `compose/secrets-nf/`, which must hold the eight files the
   script lists, owner `NF_SERVICE_UID` (default 1000), mode 0600 or 0400).
 - Refusals, before any state changes: a colo variable set; a checkout; a missing or badly owned secret file; a mod jar or
   bundle list whose sha256 differs; free RAM below the 16640 MiB of caps plus an 8192 MiB margin; free disk below 50 GiB;
@@ -169,8 +214,8 @@ and the marker check have run only against stubs.
 1. **DONE in the repo: the NeoForge offline bundle is seeded by `nf-deploy.sh seed-bundle`** (section 6, "Seeding the NeoForge
    bundle"). It copies the scratch flow's steps (empty volume, sha256, tar listing, extract through the pinned image with no network,
    chown, marker check). Its run on a node is UNVERIFIED.
-2. **identity-seed uses the deploy NATS user.** The design lists deploy only for the notice. Whether that user may create the identity KV
-   buckets is UNVERIFIED; the per-shard NATS auth set must grant it, or the one-shot uses another user.
+2. **identity-seed uses the NATS user seed.** Its allow list (section 4b) is create, inspect and update on the two identity buckets
+   and `$JS.API.INFO`. Whether the bucket creates succeed with those permissions is UNVERIFIED until the node run.
 3. **The Postgres init runs sql/ from empty.** The file mounts ../sql into docker-entrypoint-initdb.d (as colo does). That 0001 to 0066 run
    cleanly into an empty geldar_nf database is UNVERIFIED. The admin migrate one-shot is the other path; the deploy picks one.
 4. **The eventsink NATS and database keys.** The sink reads GELDAR_NATS_URL, POSTGRES_HOST, POSTGRES_DB, POSTGRES_USER and

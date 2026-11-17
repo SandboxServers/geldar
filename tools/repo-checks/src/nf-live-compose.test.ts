@@ -30,6 +30,7 @@ const SECRET_FILES = [
   'nats-neoforge.txt',
   'nats-velocity.txt',
   'nats-deploy.txt',
+  'nats-seed.txt',
 ];
 /** The service that is a one-shot; every other service must restart unless-stopped. */
 const ONE_SHOT = 'identity-seed';
