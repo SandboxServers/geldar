@@ -258,7 +258,7 @@ class LedgerPluginTest {
     }
 
     @Test
-    void theRealCollectorListStartsOnlyTheCgroupCollectorAndSkipsTheRestWithoutAWarning() {
+    void theRealCollectorListStartsOnlyTheBuiltCollectorsAndSkipsTheRestWithoutAWarning() {
         LedgerPlugin plugin = plugin(tmp.resolve("data"));
         plugin.collectorNames = PaperCollectors.NAMES;
         List<java.util.logging.LogRecord> logs = new ArrayList<>();
@@ -276,10 +276,11 @@ class LedgerPluginTest {
             log.removeHandler(h);
         }
         assertTrue(disabled.isEmpty());
-        assertEquals(List.of("container"), plugin.collectors().builtIds());
-        assertEquals(List.of("container"), plugin.collectors().runningIds());
+        assertEquals(List.of("world", "container"), plugin.collectors().builtIds());
+        assertEquals(List.of("world", "container"), plugin.collectors().runningIds());
         List<String> expectedSkipped = new ArrayList<>(PaperCollectors.NAMES);
         expectedSkipped.remove(PaperCollectors.CGROUP);
+        expectedSkipped.remove("dev.geldar.ledger.paper.world.WorldCollector");
         assertEquals(expectedSkipped.stream().sorted().toList(), plugin.collectors().skippedNames().stream().sorted().toList());
         assertTrue(plugin.collectors().skippedNames().contains(PaperCollectors.DISK), "no disk path configured");
         assertFalse(logs.stream().anyMatch(r -> r.getLevel().intValue() >= java.util.logging.Level.WARNING.intValue()),
