@@ -2,11 +2,91 @@
 
 Status: DESIGN, docs only. No node contact, no Docker, nothing started. Written 2026-11-17 against origin/main at 2f7625ce.
 Every file named below was read; claims that no file settles are marked UNVERIFIED.
+Updated 2026-11-17: section 0a records geldar-neoforge's answers and the owner's decisions and **supersedes** the sections
+below where they differ (Option A is the default, not Option B; the build script is `deploy/build-neoforge-ledger.sh`).
 
 Goal: the live shard (compose project `geldar-nf`, `compose/nf-live.yml`, operated with `deploy/nf-deploy.sh`, runbook
 `docs/runbooks/nf-live-project.md`, owned by the geldar-neoforge session) ships telemetry from the `neoforge` service
 (NeoForge 26.1.2 (build 126)) to the telemetry gateway (`geldar-gateway`, OTLP/HTTP 4318), with a bring-up that takes
 minutes, no soak, and the smallest possible edit to the geldar-neoforge files.
+
+## 0a. Answers and decisions of 2026-11-17 (they supersede the sections below where they differ)
+
+Recorded from geldar-neoforge's answers, the node audit and the owner's direct decisions. Where this section and a later
+one disagree (Option B as "recommended", `deploy/scratch/` as the script's place, the open questions), this section wins.
+
+**Network: Option A is the default now; the relay (Option B) is later hardening.**
+- Only the `neoforge` service joins the external network `geldar-telemetry` (endpoint `http://geldar-gateway:4318`). No relay
+  service is added; the six-service list stays six. `nf-live-compose.test.ts` carries an allow-list for exactly that service
+  and that network name (geldar-neoforge's file). `nf-deploy.sh up` refuses if the network is missing; `nf-deploy.sh down`
+  never removes it (it is external).
+- Exposure, from the node audit: `geldar-telemetry` is a bridge, local, labelled `geldar.purpose=telemetry`, and is **not** an
+  internal network. Its members are `geldar-signoz-otelcol`, `geldar-ch` and `geldar-gateway` only; ClickHouse is reachable
+  from it, the keeper is not. Only `geldar-gateway` is also on `geldar-colo`. The gateway's OTLP ingest is unauthenticated on
+  this network, so the `neoforge` container (which runs third-party mods) could write telemetry under any `service.name`. That
+  is the accepted cost of Option A until the relay exists.
+- The gateway upserts `deployment.environment.name=colo` on every signal, so that tag is **misleading** for nf data. nf data
+  is told apart by `service.name=geldar-neoforge` and `geldar.shard=nf`. A gateway change that tags nf correctly is a later
+  restage (geldar-93's), not part of the first bring-up.
+- Gateway headroom at the audit: 0.33% of 0.5 CPU and 61 MiB of 1 GiB. Re-check after the first nf hour.
+
+**Entrypoint and compose switches (geldar-neoforge's files; their branch `phase1/nf-entrypoint-ledger` is in progress).**
+- The telemetry block is default **off** in the shared entrypoint (scratch is unchanged); `compose/nf-live.yml` sets it on.
+- Env names: `GELDAR_NF_LEDGER_SHA256` (the value `off` is an explicit soft kill that also removes our own previous ledger
+  copy from `mods/`), `GELDAR_NF_OTEL_AGENT` (0 or 1), `GELDAR_NF_OTEL_AGENT_SHA256`. `NF_TELEMETRY=off` maps to both.
+- Memory: the cap decision (`12288m` limit, 9G heap, trigger at 11 GiB container memory, heap 8G first) is geldar-neoforge's.
+- The first live stage needs no player. The live probe needs a `body` NATS user limited to the nf registry bucket, an rcon
+  secret, `nf-deploy.sh probe`, an opt-in p0-probe overlay and a `golem/**` isolation-check change (geldar-93's window): that
+  is geldar-neoforge's packet, not ours.
+
+**Owner decisions.**
+- "Enable all functionality once fully coded and deployed": owner direct, 2026-11-17 (decision record 0374, Proposed).
+- D-F, updated today by the owner directly: human chat is exported **with a name mask**: the verbatim text with human names
+  masked, agent names allow-listed, the mask applied before export and failing closed, tested with fake names, **no speaker
+  id**. Stated weaknesses: emails, coordinates, nicknames and misspellings, names not yet seen can still pass. Record 0375
+  (Proposed) holds it; 0387 item 8 ("nothing human-written is exported until answered") is answered by it.
+- Chat export stays **off** on geldar-nf (`collector.chat.enabled=false`, default false) until the mask is built and tested.
+  Branch `telemetry/nf-chat-switch` builds the switch, the command-name-only change and the mask. **Do not stage a ledger jar
+  built before that branch has merged**: without the switch, `collector.audit.enabled=true` exports chat text.
+- geldar-neoforge found that their own event export wrote the human's name in `player` to NATS and Postgres and is fixing it in
+  `neoforge/` only (not our files).
+
+**Artifacts.**
+- Build script: `deploy/build-neoforge-ledger.sh` (not under `deploy/scratch/`). It refuses unless the jar is exactly
+  `geldar-neoforge-ledger-0.1.0.jar` (the real name the build produces), has `META-INF/neoforge.mods.toml` with modId `ledger`
+  and nests exactly four jars (`geldar-plugin.ledger-core-0.1.0.jar` and `opentelemetry-api`, `-common`, `-context` 1.67.0),
+  with no jnats. It records the exact commit, never weakens dependency verification and adds no `--offline`.
+- **Reproducibility (answers question 14): yes.** Two builds from two clean `git archive` exports of the same commit, in two
+  different directories, gave byte-identical jars (same sha256, 448749 bytes) with no change to `build.gradle.kts`: the Gradle
+  jar task there already writes a stable entry order and times. Observed on one machine (Windows, one JDK 25 and one Gradle
+  cache); a build on another OS or JDK is not proven identical. The pin is still the hash of the one jar that is staged and
+  compared over a second channel.
+- Staging: the ledger jar goes in the same 0700 directory as the geldar mod jar, under the ops account's home on the node,
+  never in a repo; its sha256 comes from `build-neoforge-ledger.sh` on a clean export, with the commit recorded.
+- Agent profile `compose/neoforge/otel-agent.properties` (minimum, from geldar-neoforge's privacy check): every
+  auto-instrumentation off, then only the OpenTelemetry API bridge and the JVM runtime metrics on; the log4j, logback and
+  java-util-logging appenders off; metrics and logs exporters `otlp`, traces `none`, `http/protobuf`, endpoint the gateway
+  service name; the identity resource providers (host, host id, OS, process with command line and owner, process runtime,
+  container) disabled, so the resource holds `service.name`, `service.namespace` and `geldar.shard=nf`. UNVERIFIED against agent
+  2.33.1: the provider class names (`otel.java.disabled.resource.providers`) and the key `otel.experimental.resource.disabled.keys`.
+  The first live run settles them: the first exported batch must hold no `host.name`, `process.*` or `os.*`.
+- Ledger profile `compose/neoforge/ledger.properties`: all neoforge collectors on, `collector.chat.enabled=false`. Both
+  profiles are checked by `tools/repo-checks/src/nf-live-telemetry-config.test.ts`.
+
+### SigNoz import (ops runbook, part 1: NeoForge; part 2: Paper)
+Done by ops with a **limited SigNoz login created by the owner** (decision 0376); the login is never in the repo or in chat.
+1. Part 1: in the SigNoz UI, Dashboards, New dashboard, Import JSON: `deploy/signoz/neoforge-dashboard.json`. Then Alerts,
+   New alert rule, import: `deploy/signoz/neoforge-alerts-server.json` and `deploy/signoz/neoforge-alerts-capacity.json`.
+2. Via the API instead (SigNoz v0.148.1): `POST /api/v1/dashboards` for the dashboard JSON and `POST /api/v1/rules` for each
+   alert rule, with the login's token in an `Authorization` header from the operator's shell. These two endpoints are the ones
+   known from the SigNoz source; the exact request envelope (whether the file body is posted as is) and the auth scheme are
+   UNVERIFIED until tried once from the operator's machine. Every other endpoint is UNVERIFIED.
+3. Verify: the dashboard panels show data for `service.name=geldar-neoforge` within 3 minutes of the first server start (the
+   checklist rows of section 3); the alert rules list as enabled and none fires at idle.
+4. Part 2 (Paper): the same with `deploy/signoz/paper-dashboard.json`, `paper-alerts-server.json` and `paper-alerts-capacity.json`,
+   filtered on `service.name=geldar-paper`.
+5. Rollback: delete the imported dashboard and alert rules in the UI (or the matching `DELETE` calls, UNVERIFIED). Nothing else
+   changes; telemetry data stays.
 
 ## 0. Findings that shape the design
 
