@@ -30,7 +30,7 @@ public final class JfrSettings {
 
     /**
      * Never enabled, whatever the allow-list says: CPU sampling and method timing need the owner's explicit yes (0351,
-     * after PT-15), and {@code jdk.JavaExceptionThrow} has a very high rate.
+     * after PT-15), {@code jdk.JavaExceptionThrow} has a very high rate, and the socket, process, environment, system property, JVM\n     * argument and native library events carry addresses, command lines, arguments or paths from outside the JVM.
      */
     public static final Set<String> DENIED = Set.of(
             "jdk.ExecutionSample",
@@ -39,7 +39,15 @@ public final class JfrSettings {
             "jdk.MethodTiming",
             "jdk.MethodTrace",
             "jdk.JavaExceptionThrow",
-            "jdk.JavaErrorThrow");
+            "jdk.JavaErrorThrow",
+            "jdk.SocketRead",
+            "jdk.SocketWrite",
+            "jdk.ProcessStart",
+            "jdk.InitialEnvironmentVariable",
+            "jdk.InitialSystemProperty",
+            "jdk.JVMInformation",
+            "jdk.SystemProcess",
+            "jdk.NativeLibrary");
 
     private final Map<String, Setting> byEvent;
 
