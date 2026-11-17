@@ -3,6 +3,7 @@ package dev.geldar.neoforge;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -78,6 +79,42 @@ class ExportHandlersTest {
         assertEquals("geldar.nf.death", mem.events().get(1).subject());
         assertEquals("geldar.nf.sleep", mem.events().get(2).subject());
         assertTrue(sink.warnings.isEmpty());
+    }
+
+    @Test
+    void aHumanNameIsNeverPublishedByAnyEventHandler() {
+        InMemoryEventPublisher mem = new InMemoryEventPublisher();
+        Warnings sink = new Warnings();
+        ExportHandlers h = new ExportHandlers(started(mem, sink), "nf", () -> AT, sink);
+        h.damage("Notch", "FALL", 4.0);
+        h.death("Notch", "FALL", new EventMapping.Pos(1, 2, 3), "minecraft:overworld");
+        h.sleep("Notch");
+        assertEquals(3, mem.events().size());
+        for (EventEnvelope e : mem.events()) {
+            assertFalse(e.toJson().getAsJsonObject("payload").has("player"), e.type());
+            assertNull(e.agentId(), e.type());
+            assertFalse(e.toJson().toString().contains("Notch"), e.type());
+        }
+        assertTrue(sink.warnings.isEmpty());
+    }
+
+    @Test
+    void aHumanNameIsNeverInAnOperatorWarning() {
+        Warnings sink = new Warnings();
+        ExportHandlers h = new ExportHandlers(
+                started(new InMemoryEventPublisher(), sink),
+                "nf",
+                () -> {
+                    throw new IllegalStateException("clock");
+                },
+                sink);
+        h.damage("Notch", "FALL", 4.0);
+        h.death("Notch", "FALL", new EventMapping.Pos(1, 2, 3), "minecraft:overworld");
+        h.sleep("Notch");
+        assertEquals(3, sink.warnings.size());
+        for (String warning : sink.warnings) {
+            assertFalse(warning.contains("Notch"), warning);
+        }
     }
 
     @Test

@@ -34,14 +34,16 @@ When the export is on, the mod publishes these events on the subject `geldar.<sh
 
 | Type | NeoForge event (verified) | Payload | Notes |
 |---|---|---|---|
-| `damage` | `LivingDamageEvent.Post`: `getInflictedDamage()`, `getSource()` | `player`, `cause`, `amount` | `ServerPlayer` only |
-| `death` | `LivingDeathEvent`: `getSource()` | `player`, `cause`, `x`, `y`, `z`, `dimension` | `ServerPlayer` only; no drops, no respawn |
-| `sleep` | `CanPlayerSleepEvent`: `getProblem()`, `getEntity()` | `player` | see below |
+| `damage` | `LivingDamageEvent.Post`: `getInflictedDamage()`, `getSource()` | `player` (life id only), `cause`, `amount` | `ServerPlayer` only |
+| `death` | `LivingDeathEvent`: `getSource()` | `player` (life id only), `cause`, `x`, `y`, `z`, `dimension` | `ServerPlayer` only; no drops, no respawn |
+| `sleep` | `CanPlayerSleepEvent`: `getProblem()`, `getEntity()` | `player` (life id only) | see below |
 | `server_tps` | `ServerTickEvent.Pre` and `.Post`: `getServer()` | `tps`, `players`, `dropped`, `connected` | every 400 ticks (20 s) |
+
+**Privacy: no human name leaves the shard.** The NeoForge shard is human-directed: people join online-mode under their Microsoft names. `player` is written only when the name is an agent life id (`EventEnvelope.isLifeId`), and `agent_id` is set only then. For any other player (a human) the event is still written, with its positions, cause, dimension and time, but with no `player` field: no name, no UUID, no IP, no hash of a name. So humans are counted and anonymous. Paper has no human players (ghost spectators only), so its payload is unchanged and core-common is untouched. Tests: `EventMappingTest` and `ExportHandlersTest` (a human name is in no envelope and in no operator warning).
 
 The listeners are registered only when the export is enabled. With the export off, the mod registers no listener at all (`ExportListenersTest`). The tick type uses two listeners (Pre starts the clock, Post ends it), so five listeners are registered in all.
 
-- **Sleep.** `PlayerSleepInBedEvent` does not exist in 26.1.2, so the mod uses `CanPlayerSleepEvent`. Its `getProblem()` is the reason the game refuses the sleep. `allowed` is not a field: a `sleep` event is written only when `getProblem()` is `null`, which is how an allowed sleep is mapped. A refused sleep writes nothing. The payload is the player only, as on Paper. UNVERIFIED: that a `null` problem means a bed was really used, and that the event fires only for an actual attempt.
+- **Sleep.** `PlayerSleepInBedEvent` does not exist in 26.1.2, so the mod uses `CanPlayerSleepEvent`. Its `getProblem()` is the reason the game refuses the sleep. `allowed` is not a field: a `sleep` event is written only when `getProblem()` is `null`, which is how an allowed sleep is mapped. A refused sleep writes nothing. The payload is the player only, as on Paper, for a life id; for a human it is an empty payload (see Privacy). UNVERIFIED: that a `null` problem means a bed was really used, and that the event fires only for an actual attempt.
 - **Damage.** The `amount` is `getInflictedDamage()`, which may differ from Paper's final damage (`getFinalDamage()`). UNVERIFIED on 26.1.2; check it with a GameTest or the first scratch run.
 - **Cause.** A best-effort table from the vanilla damage type's message id to Bukkit's cause names; an unknown id is written as `CUSTOM`.
 - **Not exported.** Drops: `LivingDropsEvent` is not listened to, because its order against the death event is UNVERIFIED, so death is written from `LivingDeathEvent` alone. Respawn: no listener yet. The schema allows both absent. Both are open for the owner.
