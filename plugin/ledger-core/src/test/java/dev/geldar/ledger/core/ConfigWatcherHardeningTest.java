@@ -159,7 +159,6 @@ class ConfigWatcherHardeningTest {
         String last = logged.get(logged.size() - 1);
         assertFalse(last.contains("\n"));
         assertBounded();
-        assertTrue(w.current().enabled() || !w.current().enabled());
     }
 
     // ---- step 2: torn and missed reloads
