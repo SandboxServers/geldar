@@ -293,3 +293,66 @@ instead of `shards/phase0.yaml`, using the shard tooling in `geldar.ps1`. Do not
 - Evidence from a scratch run is for operators only. Agents in the run are never told they are being watched.
 - The secrets directory is created under the caller's state directory, never in the repo or in a shared temp
   directory. Nothing prints its values. `down` removes it, and only when it is a real directory the caller owns.
+
+## P0 probe
+
+The P0 probe is one run of the golem probe (`golem/src/p0/probe.ts`) against a scratch stack that `up` already started.
+It registers one Body, joins it through Velocity to Paper, runs one goto and one mine, and removes its own registry
+entry and whitelist entry. The overlay is `compose/opt-in/scratch-probe.yml` (service `p0-probe`, profile `p0`). Only the
+`probe` verb of `deploy/scratch/scratch.sh` starts it, so `up` never does. It never touches the Colo stack: the probe
+refuses unless its project is `scratch-<suffix>`, and its NATS and RCON credentials are the scratch ones.
+
+When to run: only when ops asks for it, on the scratch node, after `up` has reached healthy for that suffix.
+
+Steps, in order:
+
+1. In a clean export (`git archive` of main into a new empty temp dir outside the live checkout), run
+   `./geldar.ps1 shard nats-auth phase0` from the export.
+2. Make a second temp dir outside the repo. Copy six files from the export's `compose/secrets/`: `nats-auth.conf`,
+   `nats-paper.txt`, `nats-velocity.txt`, `nats-eventsink.txt`, `nats-seed.txt` and `nats-body.txt` (the body's NATS
+   password, which only the probe reads). Copy nothing else.
+3. Delete the export dir, which holds the generated files.
+4. On the node, with the same absolute auth dir for both verbs:
+
+        SCRATCH_NATS_AUTH_DIR=<absolute path of the six-file dir> SCRATCH_PLATFORM=neoforge sh deploy/scratch/scratch.sh up nf
+        SCRATCH_NATS_AUTH_DIR=<same path> SCRATCH_PLATFORM=neoforge sh deploy/scratch/scratch.sh probe nf
+
+   `up` checks five files and accepts the six-file dir. `probe` checks six and refuses with exit 2 and a message that
+   names `nats-body.txt` if that file is missing or empty. Give `SCRATCH_PLATFORM` the value `up` used: the `nf` stack
+   is NeoForge, and the probe's merged files must match its stack. `probe` also exits 2 when no container of the project
+   is running, when the project has no NATS override (`up` was not run with an auth dir), or when `SCRATCH_PLATFORM` is
+   not `paper` or `neoforge`. Nothing starts in any refusal.
+5. Keep the probe's output. `probe` prints the probe's stdout unchanged and exits with the probe's exit code.
+6. At teardown run `sh deploy/scratch/scratch.sh down nf`, then delete both temp dirs. The six-file dir holds the
+   password-bearing `nats-auth.conf` and `nats-body.txt`; delete it even when the probe failed. `down` never removes it.
+
+What the probe prints (the design; re-check against the final `golem/src/p0/probe.ts` output before a run):
+
+- the probe's username and UUID, one per line, so they can be matched in the Paper and Velocity logs;
+- one receipt line per step (register, join, goto, mine, unregister, whitelist removed), each with `ok` or the reason;
+- a final line with the exit reason. Exit 0 means every step passed and the cleanup ran; a non-zero exit names the
+  step that failed and the disconnect reason, if there was one.
+
+Comparing the username and UUID with the server logs (the grep forms are unverified on the 26.1 server logs; record the
+raw output with the run, not a summary):
+
+    docker logs scratch-nf-paper-1 2>&1 | grep -i '<username>'
+    docker logs scratch-nf-paper-1 2>&1 | grep -i '<uuid>'
+    docker logs scratch-nf-velocity-1 2>&1 | grep -i '<username>'
+
+The username should appear in the Velocity log at the join and in the Paper log at the login, with the same UUID. A
+mismatch in either is a failure to report, even if the probe exited 0. The container names are the compose names for
+the `scratch-nf` project; confirm them with `docker ps` first (unverified until a node run).
+
+Cleanup expectations: the probe removes its registry entry and its whitelist entry on every exit, including failure
+and a signal. Confirm both after the run, with the stack still up:
+
+    docker exec scratch-nf-paper-1 rcon-cli whitelist list
+
+The probe's username must not be in that list. For the registry, the probe's final receipt line (`unregister`) is the
+record; no operator-side registry read is verified yet. If the whitelist still lists the probe's username, or the
+receipt says the cleanup failed, record it as a finding and keep the stack up for inspection before `down`.
+
+The probe never touches colo. Its overlay is added only by the `probe` verb, and only to a `scratch-<suffix>` project.
+Its password files are scratch-only and come from the clean export. Nothing it prints is a secret: no password, token or
+RCON value appears in its output, and none may be pasted into a report.
