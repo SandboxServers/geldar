@@ -66,6 +66,10 @@ Nothing is restored when the script is killed with SIGKILL or the shell is lost.
 
 `sh deploy/scratch/scratch.sh down telemetry` removes the containers, the world volume and the secrets directory. The output directory is yours: delete it by hand when done.
 
+## NeoForge
+
+The NeoForge scratch project (suffix `nf`) has the same sink: set `SCRATCH_NEOFORGE_TELEMETRY_SINK=1` and `SCRATCH_TELEMETRY_OUT`. The start sequence, the checks and the teardown are in [scratch-stack.md](scratch-stack.md), "Telemetry sink on the scratch NeoForge stack". The verify script here reads its `otlp.jsonl` unchanged.
+
 ## The 15 GiB limit
 
 The Paper container limit is 15360m (memory and swap), `PAPER_MEMORY` defaults to 10G and the CPU cap is 6 (`SCRATCH_PAPER_CPUS` lowers it on a smaller host). This is only in `scratch-telemetry.yml`; `scratch.yml` keeps `scratch-a` at 3072m and no live compose file changes. The live Paper limit is a separate node step.

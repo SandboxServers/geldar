@@ -645,3 +645,28 @@ Staging. The ledger jar comes from `neoforge-ledger/` through its own build scri
 The OTLP endpoint is whatever the agent properties file says. Nothing here sets an endpoint. Nothing is public: the overlay declares no network and no published port, and the scratch stack stays on its own project network.
 
 Soft kill. `SCRATCH_NEOFORGE_LEDGER_SHA256=off` alone is the soft kill, and it works in scratch. It renders `compose/opt-in/scratch-neoforge-ledger-off.yml`: two environment keys on `paper` (`GELDAR_NF_LEDGER_SHA256=off` and `GELDAR_NF_OTEL_AGENT=0`), with no mount and no network. The entrypoint's `off` branch removes only the container's own earlier copy of the ledger jar and starts without the ledger, so a stale copy left in the data volume no longer stops the start. `off` together with the jar pair or any agent variable exits 2 before any docker call (contradictory). `down` and `status` never refuse on it (see `docs/analysis/neoforge/ledger-extras-entrypoint.md`).
+
+### Telemetry sink on the scratch NeoForge stack
+
+The agent above exports to `http://geldar-gateway:4318` (`compose/neoforge/otel-agent.properties`); the scratch stack has nothing of that name unless you ask for it. `SCRATCH_NEOFORGE_TELEMETRY_SINK=1` (NeoForge only) adds `compose/opt-in/scratch-neoforge-telemetry.yml`, layered after the ledger and mod overlays: a throwaway OTLP/HTTP receiver, service `otel-sink`, that answers as `geldar-gateway` on the scratch project network only, so the properties file works unchanged. It is a copy of the Paper scratch sink (`compose/opt-in/scratch-telemetry.yml`: same pinned image digest, same config, 512m and 0.5 CPU, runs as `SCRATCH_RUN_UID:SCRATCH_RUN_GID`). It publishes no port and declares no network. The NeoForge service (named `paper` in these overlays) starts after it. Unset (the default), no render changes.
+
+`up` needs `SCRATCH_TELEMETRY_OUT`: an absolute path with no newline, quotes, backslashes or dollar signs, naming an existing writable directory that is not a symlink. Any other value of the sink variable than `1`, a non-neoforge platform, or a bad directory exits 2 before any docker call. `down` and `status` never refuse on these variables; they pass the overlay when the values are well formed, so export the same variables for them. The sink writes `otlp.jsonl` in that directory, which is what `deploy/scratch/telemetry-verify.sh` reads (no change needed there).
+
+Start sequence for a NeoForge telemetry run (from the repository root, in a clean export as for any scratch run):
+
+```
+export SCRATCH_PLATFORM=neoforge
+export SCRATCH_NATS_AUTH_DIR=<absolute node dir with the five NATS auth files>
+export SCRATCH_NEOFORGE_MOD_JAR=<abs path of the mod jar>  SCRATCH_NEOFORGE_MOD_SHA256=<64 hex>
+# the ledger jar, ledger config and OpenTelemetry agent variables: export them exactly as the table above lists them
+export SCRATCH_TELEMETRY_OUT="$HOME/.local/state/geldar/scratch-nf-telemetry-out"   # absolute, outside the repo
+mkdir -p "$SCRATCH_TELEMETRY_OUT"
+export SCRATCH_NEOFORGE_TELEMETRY_SINK=1
+sh deploy/scratch/scratch.sh up nf          # hashes are checked on the host first; any refusal exits 2 and starts nothing
+sh deploy/scratch/scratch.sh status nf
+# wait at least two export intervals (15 s each), then:
+sh deploy/scratch/telemetry-verify.sh event <name>      # or metric / max / histcount / absent, as in scratch-telemetry.md "Verify"
+sh deploy/scratch/scratch.sh down nf        # same exports; removes containers, volumes and the project's secrets
+```
+
+Teardown leaves `"$SCRATCH_TELEMETRY_OUT"` in place on the host (it is yours); remove its `otlp.jsonl` before the next run so the verify counts start from zero, or use `SCRATCH_TELEMETRY_SINCE_LINE`. `down` removes the `otel-sink` container with the rest of the project. The sink variable does not turn the agent on: set the agent variables of the table above for that, and with the agent off the sink stays empty.

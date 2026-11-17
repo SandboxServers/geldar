@@ -74,6 +74,33 @@ ledger_render_ok() {
   fi
 }
 
+# The OTLP receiver for the scratch NeoForge stack (compose/opt-in/scratch-neoforge-telemetry.yml), independent of the ledger
+# variables. SCRATCH_NEOFORGE_TELEMETRY_SINK=1 turns it on; unset or empty is off, any other value is refused on up. It needs
+# SCRATCH_PLATFORM=neoforge and SCRATCH_TELEMETRY_OUT: an absolute path (no newline, quotes, backslashes or dollar signs) naming an
+# existing writable directory, where the sink writes otlp.jsonl. up refuses with exit 2 before any docker call.
+check_sink_env() {
+  case "${SCRATCH_NEOFORGE_TELEMETRY_SINK:-}" in
+    '') return 0 ;;
+    1) ;;
+    *) ledger_refuse "SCRATCH_NEOFORGE_TELEMETRY_SINK must be 1 or unset" ;;
+  esac
+  [ "$PLATFORM" = neoforge ] || ledger_refuse "SCRATCH_NEOFORGE_TELEMETRY_SINK needs SCRATCH_PLATFORM=neoforge"
+  [ -n "${SCRATCH_TELEMETRY_OUT:-}" ] || ledger_refuse "SCRATCH_NEOFORGE_TELEMETRY_SINK=1 needs SCRATCH_TELEMETRY_OUT, an absolute host directory for the sink output"
+  ledger_shape_ok "$SCRATCH_TELEMETRY_OUT" || ledger_refuse "SCRATCH_TELEMETRY_OUT must be an absolute path with no newline, quotes, backslashes or dollar signs"
+  if [ -L "$SCRATCH_TELEMETRY_OUT" ] || [ ! -d "$SCRATCH_TELEMETRY_OUT" ] || [ ! -w "$SCRATCH_TELEMETRY_OUT" ]; then
+    ledger_refuse "SCRATCH_TELEMETRY_OUT must be an existing writable directory, not a symlink"
+  fi
+}
+
+# Sets GELDAR_NF_SINK_FILE, the overlay compose_run adds. Nothing is read from disk and nothing exits, so down and status render
+# the overlay exactly when the value and the path have the right shape, and never refuse.
+sink_set_env() {
+  GELDAR_NF_SINK_FILE=
+  if [ "${SCRATCH_NEOFORGE_TELEMETRY_SINK:-}" = 1 ] && [ "$PLATFORM" = neoforge ] && [ -n "${SCRATCH_TELEMETRY_OUT:-}" ] && ledger_shape_ok "$SCRATCH_TELEMETRY_OUT"; then
+    GELDAR_NF_SINK_FILE=$ROOT/compose/opt-in/scratch-neoforge-telemetry.yml
+  fi
+}
+
 # Sets the variables compose_run and the overlay read. With the agent off, the two agent mounts point at the ledger files:
 # the entrypoint reads them only when GELDAR_NF_OTEL_AGENT=1, so the placeholder is never used by the agent.
 ledger_set_env() {
@@ -86,8 +113,10 @@ ledger_set_env() {
   agent=0
   [ -z "$aj$as$ap" ] || agent=1
   if [ "$verb" = up ]; then
+    check_sink_env
     check_ledger_env
   fi
+  sink_set_env
   GELDAR_NF_LEDGER_JAR_HOST=
   GELDAR_NF_LEDGER_PROPS_HOST=
   GELDAR_NF_LEDGER_SHA256=

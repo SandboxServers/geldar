@@ -13,6 +13,9 @@
 # SCRATCH_NEOFORGE_MOD_JAR and SCRATCH_NEOFORGE_MOD_SHA256 (neoforge only, both or neither) mount one mod jar read-only. up checks
 # them on the host (path shape, the jar's sha256) and refuses with exit 2. down, status and probe never refuse on them: a malformed
 # or missing pair only leaves the mod overlay out, so a project can always be torn down.
+# SCRATCH_NEOFORGE_TELEMETRY_SINK=1 (neoforge only) adds compose/opt-in/scratch-neoforge-telemetry.yml, an OTLP receiver answering as
+# geldar-gateway; up then needs SCRATCH_TELEMETRY_OUT, an existing absolute writable directory, and refuses with exit 2 otherwise
+# (checks in scratch-ledger.sh). Unset is the default and changes nothing.
 set -u
 umask 077
 
@@ -184,11 +187,12 @@ write_nats_override() {
 
 # Compose with the phase0 base and the scratch overlay. The -f list is built by prepending, last file first, so the
 # command line reads: -p, phase0, nats-auth (only when the override exists), scratch, compose/opt-in/scratch-telemetry.yml
-# (only for the project scratch-telemetry), the NeoForge overlay (only for SCRATCH_PLATFORM=neoforge), and the NATS override last so its file paths win. The verb arguments follow unchanged.
+# (only for the project scratch-telemetry), the NeoForge overlay (only for SCRATCH_PLATFORM=neoforge; its ledger, mod and telemetry-sink overlays follow it, in that order), and the NATS override last so its file paths win. The verb arguments follow unchanged.
 compose_run() {
   if [ -f "$NATS_OVERRIDE" ]; then
     set -- -f "$NATS_OVERRIDE" "$@"
   fi
+  [ "$PLATFORM" = neoforge ] && [ -n "${GELDAR_NF_SINK_FILE:-}" ] && set -- -f "$GELDAR_NF_SINK_FILE" "$@"
   [ "$PLATFORM" = neoforge ] && [ -n "${GELDAR_NF_MOD_JAR_HOST:-}" ] && set -- -f "$ROOT/compose/opt-in/scratch-neoforge-mod.yml" "$@"
   [ "$PLATFORM" = neoforge ] && [ -n "${GELDAR_NF_LEDGER_FILE:-}" ] && set -- -f "$GELDAR_NF_LEDGER_FILE" "$@"
   if [ "$PLATFORM" = neoforge ]; then
@@ -308,8 +312,9 @@ set_env() {
     GELDAR_NF_MOD_SHA256=$SCRATCH_NEOFORGE_MOD_SHA256
   fi
   export GELDAR_NF_MOD_JAR_HOST GELDAR_NF_MOD_SHA256
-  # The ledger jar and the OpenTelemetry agent (scratch-ledger.sh, sourced only when one of their variables is set; up refuses on them there).
-  [ -z "${SCRATCH_NEOFORGE_LEDGER_JAR:-}${SCRATCH_NEOFORGE_LEDGER_SHA256:-}${SCRATCH_LEDGER_PROPS:-}${SCRATCH_OTEL_AGENT_JAR:-}${SCRATCH_OTEL_AGENT_SHA256:-}${SCRATCH_OTEL_AGENT_PROPS:-}" ] || { . "$ROOT/deploy/scratch/scratch-ledger.sh"; ledger_set_env; }
+  GELDAR_NF_SINK_FILE=
+  # The ledger jar, the OpenTelemetry agent and the NeoForge OTLP sink (scratch-ledger.sh, sourced only when one of their variables is set; up refuses on them there).
+  [ -z "${SCRATCH_NEOFORGE_LEDGER_JAR:-}${SCRATCH_NEOFORGE_LEDGER_SHA256:-}${SCRATCH_LEDGER_PROPS:-}${SCRATCH_OTEL_AGENT_JAR:-}${SCRATCH_OTEL_AGENT_SHA256:-}${SCRATCH_OTEL_AGENT_PROPS:-}${SCRATCH_NEOFORGE_TELEMETRY_SINK:-}" ] || { . "$ROOT/deploy/scratch/scratch-ledger.sh"; ledger_set_env; }
 }
 
 # Any non-root account may run. GELDAR_SERVICE_UID, when set, must be this account's uid. The secret modes never change:
