@@ -81,6 +81,18 @@
       "name": "newInputStream(",
       "text": "Files.newInputStream(file)",
       "reason": "Reads the ledger own properties file (the agent config path), never chat, agent or repo content."
+    },
+    {
+      "file": "neoforge-ledger/src/main/java/dev/geldar/ledger/neoforge/curated/CuratedWiring.java",
+      "name": "ServerChatEvent",
+      "text": "net.neoforged.neoforge.event.ServerChatEvent.class, e -> chat(text, e)",
+      "reason": "PT-N8: the one chat listener (observation only: reads the text, never cancels or replies); owner-approved full-text capture D-F, cancelled messages skipped D-I."
+    },
+    {
+      "file": "neoforge-ledger/src/main/java/dev/geldar/ledger/neoforge/curated/CuratedWiring.java",
+      "name": "ServerChatEvent",
+      "text": "private static void chat(TextContentFamily text, net.neoforged.neoforge.event.ServerChatEvent e)",
+      "reason": "PT-N8: the parameter type of the same chat reader; no send, no setter."
     }
   ],
   "modsToml": {
