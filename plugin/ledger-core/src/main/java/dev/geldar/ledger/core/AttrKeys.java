@@ -4,8 +4,8 @@ import java.util.Set;
 
 /**
  * The attribute allow-list. {@link #allowed} governs event and content attributes (anything else is dropped by the
- * binding). {@link #metricAllowed} governs metric attributes: per-player and high-cardinality keys are refused (S7),
- * and the short low-cardinality keys of the frozen metric names (README section 4) are accepted.
+ * binding). {@link #metricAllowed} governs metric attributes: only the bare low-cardinality keys of the frozen metric
+ * names (README section 4) are accepted; every {@code geldar.*} key is refused (S7).
  */
 public final class AttrKeys {
     public static final String LIFE_ID = "geldar.life_id";
@@ -38,14 +38,30 @@ public final class AttrKeys {
             CAUSE, RESULT, X, Y, Z, ITEM, BLOCK, CONTAINER_TYPE, AMOUNT, TEXT, COMMAND, EXCEPTION_CLASS, PLUGIN,
             DURATION_MS);
 
-    /** Never a metric attribute (S7): per-player, per-session, free text and coordinates. */
-    private static final Set<String> NOT_METRIC =
-            Set.of(LIFE_ID, PLAYER_UUID, MC_SESSION, TEXT, COMMAND, X, Y, Z);
+    // Metric attribute keys: BARE, as in the README section 4 metric table (decision 2026-11-17). The prefixed
+    // geldar.* keys above are for events and logs only.
+    public static final String M_WINDOW = "window";
+    public static final String M_STAT = "stat";
+    public static final String M_SCOPE = "scope";
+    public static final String M_GC = "gc";
+    public static final String M_GROUP = "group";
+    public static final String M_CLASS_GROUP = "class_group";
+    public static final String M_OP = "op";
+    public static final String M_KIND = "kind";
+    public static final String M_AREA = "area";
+    public static final String M_WORLD = "world";
+    public static final String M_QUEUE = "queue";
+    public static final String M_COLLECTOR = "collector";
+    public static final String M_EVENT_CLASS = "event_class";
+    public static final String M_CANCELLED = "cancelled";
 
-    /** Low-cardinality keys used as metric attributes by README section 4 (window, stat, gc, ...). */
+    /**
+     * Exactly the bare metric attribute keys. Every {@code geldar.*} key (including per-player, per-session, free text,
+     * coordinates, ticks, amounts, durations, exception classes) is refused as a metric attribute (S7).
+     */
     private static final Set<String> METRIC_ONLY = Set.of(
-            "window", "stat", "scope", "gc", "group", "class_group", "op", "kind", "area", "world", "queue",
-            "collector");
+            M_WINDOW, M_STAT, M_SCOPE, M_GC, M_GROUP, M_CLASS_GROUP, M_OP, M_KIND, M_AREA, M_WORLD, M_QUEUE,
+            M_COLLECTOR, M_EVENT_CLASS, M_CANCELLED);
 
     private AttrKeys() {}
 
@@ -54,11 +70,8 @@ public final class AttrKeys {
         return key != null && ALLOWED.contains(key);
     }
 
-    /** True when the key may be a metric attribute. */
+    /** True when the key may be a metric attribute: exactly the bare keys of the README section 4 metric table. */
     public static boolean metricAllowed(String key) {
-        if (key == null || NOT_METRIC.contains(key)) {
-            return false;
-        }
-        return ALLOWED.contains(key) || METRIC_ONLY.contains(key);
+        return key != null && METRIC_ONLY.contains(key);
     }
 }

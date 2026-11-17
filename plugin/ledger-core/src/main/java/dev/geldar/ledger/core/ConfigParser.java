@@ -14,6 +14,7 @@ import java.util.regex.Pattern;
 public final class ConfigParser {
     private static final Pattern COLLECTOR_KEY = Pattern.compile("^collector\\.([a-z0-9_]+)\\.(enabled|budget_avg_us|budget_max_us)$");
     private static final Pattern DUTY_KEY = Pattern.compile("^collector\\.census\\.duty\\.([A-Za-z0-9_$.]+)$");
+    private static final Pattern DISK_KEY = Pattern.compile("^disk\\.area\\.([a-z0-9_]+)\\.path$");
     private static final Pattern DUTY_VALUE = Pattern.compile("^(\\d{1,9})/(\\d{1,9})$");
     private static final Pattern RATE_KEY = Pattern.compile("^rate\\.(geldar(?:\\.[a-z0-9_]+)+)$");
     private static final Pattern QUEUE_KEY = Pattern.compile("^queue\\.([a-z0-9_.]+)\\.capacity$");
@@ -34,7 +35,7 @@ public final class ConfigParser {
         // S4: a credential-looking key rejects the whole file; the value is never read or reported.
         for (String key : keys) {
             if (isCredentialKey(key)) {
-                errors.add("credential-looking key rejected: " + key);
+                errors.add("credential-looking key rejected: " + safeKey(key));
             }
         }
         if (!errors.isEmpty()) {
@@ -54,6 +55,8 @@ public final class ConfigParser {
         int worldTicks = d.sampleWorldEveryTicks();
         int playerTicks = d.samplePlayerEveryTicks();
         boolean jfr = d.jfrEnabled();
+        String cgroupRoot = d.cgroupRoot();
+        Map<String, String> diskPaths = new HashMap<>();
 
         for (String key : keys) {
             String v = props.getProperty(key).trim();
@@ -63,6 +66,13 @@ public final class ConfigParser {
                     enabled = bool(v);
                 } else if (key.equals("jfr.enabled")) {
                     jfr = bool(v);
+                } else if (key.equals("container.cgroup_root")) {
+                    cgroupRoot = path(v);
+                } else if ((m = DISK_KEY.matcher(key)).matches()) {
+                    if (!LedgerConfig.DISK_AREAS.contains(m.group(1))) {
+                        throw new IllegalArgumentException("unknown disk area, expected one of " + LedgerConfig.DISK_AREAS);
+                    }
+                    diskPaths.put(m.group(1), path(v));
                 } else if (key.equals("content.max_bytes")) {
                     contentMax = (int) range(v, 1, LedgerConfig.MAX_CONTENT_BYTES);
                 } else if (key.equals("stall.threshold_ms")) {
@@ -85,17 +95,18 @@ public final class ConfigParser {
                 } else if ((m = QUEUE_KEY.matcher(key)).matches()) {
                     queues.put(m.group(1), (int) range(v, LedgerConfig.MIN_QUEUE_CAPACITY, LedgerConfig.MAX_QUEUE_CAPACITY));
                 } else {
-                    errors.add("unknown key: " + key);
+                    errors.add("unknown key: " + safeKey(key));
                 }
             } catch (IllegalArgumentException e) {
-                errors.add(key + ": " + e.getMessage());
+                errors.add(safeKey(key) + ": " + e.getMessage());
             }
         }
         if (!errors.isEmpty()) {
             return new ParseResult(null, List.copyOf(errors));
         }
         LedgerConfig cfg = new LedgerConfig(
-                enabled, collectorEnabled, avg, max, duty, rates, queues, contentMax, stall, worldTicks, playerTicks, jfr);
+                enabled, collectorEnabled, avg, max, duty, rates, queues, contentMax, stall, worldTicks, playerTicks, jfr,
+                cgroupRoot, diskPaths);
         return new ParseResult(cfg, List.of());
     }
 
@@ -108,6 +119,19 @@ public final class ConfigParser {
             }
         }
         return false;
+    }
+
+    /** Log-safe key: at most 64 chars, only {@code [A-Za-z0-9._-]}, anything else becomes '?'. */
+    private static String safeKey(String k) {
+        String cut = k.length() > 64 ? k.substring(0, 64) : k;
+        return cut.replaceAll("[^A-Za-z0-9._-]", "?");
+    }
+
+    private static String path(String v) {
+        if (v.isEmpty() || v.length() > 256 || v.chars().anyMatch(Character::isISOControl)) {
+            throw new IllegalArgumentException("expected a non-empty path of at most 256 chars");
+        }
+        return v;
     }
 
     private static boolean bool(String v) {

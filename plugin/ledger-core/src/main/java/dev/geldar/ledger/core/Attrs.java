@@ -7,7 +7,7 @@ import java.util.Objects;
 
 /**
  * Immutable attribute map for {@link EventLog#emitMap}. Each method returns a new instance, so a shared base can
- * never be changed by a later call. Keys and values are null-checked. Off the hot path only.
+ * never be changed by a later call: the result must be used, a discarded result is lost. Keys and values are null-checked. Off the hot path only.
  */
 public final class Attrs {
     private static final Attrs EMPTY = new Attrs(Map.of());
