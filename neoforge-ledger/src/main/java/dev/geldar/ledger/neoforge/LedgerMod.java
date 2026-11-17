@@ -30,7 +30,7 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 @Mod(value = "ledger", dist = Dist.DEDICATED_SERVER)
 public final class LedgerMod {
     static final String CONFIG_FILE = "ledger.properties";
-    private static final Logger LOG = Logger.getLogger("ledger");
+    private static final Logger LOG = LedgerLog.server();
 
     private final NeoForgeHostScheduler scheduler = new NeoForgeHostScheduler(LOG);
     private volatile MinecraftServer server;
@@ -42,8 +42,9 @@ public final class LedgerMod {
                     scheduler::serverTick, () -> server != null && server.isSameThread());
             ledger = create(FMLPaths.CONFIGDIR.get().resolve(CONFIG_FILE), host, GlobalOpenTelemetry::get);
             NeoForge.EVENT_BUS.addListener(ServerStartingEvent.class, e -> server = e.getServer());
-            NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post.class, e -> scheduler.onServerTick());
             dev.geldar.ledger.neoforge.tick.TickWiring.install(ledger, host, scheduler);
+            // After TickWiring: Post listeners run in registration order, so the measured tick excludes our own tasks.
+            NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post.class, e -> scheduler.onServerTick());
             NeoForge.EVENT_BUS.addListener(ServerStoppingEvent.class, e -> shutdown(ledger, scheduler));
         } catch (Throwable t) {
             rethrowIfVmError(t);
