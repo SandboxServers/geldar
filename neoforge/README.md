@@ -1,12 +1,12 @@
 # geldar-neoforge
 
-A server-side NeoForge 26.1.2 mod for the Geldar vivarium. It builds, loads on a dedicated server, carries the NATS export lifecycle, and exports four event types (damage, death, sleep, server_tps; see below). There is no game logic yet. The progression mod and the later Core adapter go here.
+A server-side NeoForge 26.1.2 mod for the Geldar vivarium. It builds, loads on a dedicated server, carries the NATS export lifecycle, exports four event types (damage, death, sleep, server_tps; see below), and receives maintenance notices (see below). There is no game logic yet. The progression mod and the later Core adapter go here.
 
 ## Export: config and publisher lifecycle (P3-2)
 
 The mod starts a NATS publisher when the server starts and closes it when the server stops. It is **off by default**: with no config the mod logs `geldar_neoforge export disabled` and connects to nothing, so existing scratch runs are unchanged.
 
-**Not done yet:** the scratch-stack proof of the exported events (a later packet, see Events) and maintenance notices (P3-4). Drops and respawn are not exported.
+**Not done yet:** the scratch-stack proof of the exported events (P3-3, see Events) and of the maintenance notices (P3-4, see Maintenance notices); both need the live lane (`live: pending`). Drops and respawn are not exported.
 
 Config file: `config/geldar_neoforge.properties`, read from the server's working directory (its `config/` directory). A plain properties file is used instead of NeoForge's `ModConfigSpec`, because that API is UNVERIFIED for 26.1 and a properties file can be unit-tested without a server. Environment variables win over the file, as on Paper.
 
@@ -49,6 +49,19 @@ The listeners are registered only when the export is enabled. With the export of
 - **`server_tps`.** The `tps` field is derived from tick time on NeoForge, not Bukkit's TPS: the mean tick duration over the last 1200 ticks, capped at 20. The name and shape are Paper's. `contract/` has no payload schema for this type (Q8). The Paper payload shape is used, and no schema was invented; the owner decides whether one is needed.
 - **`source_event_id`.** A fresh ULID per envelope, as on Paper (`EventEnvelope.create`). It is reused only when the same envelope is retried, so it is not stable across a restart.
 - **Proof on the scratch stack.** Not done in this packet (`live: pending`). A later probe-style check, using read-only verbs, will confirm that an exported event appears in the NATS stream.
+
+## Maintenance notices (P3-4)
+
+While the export is on, the mod subscribes to `geldar.<shard>.maintenance` (the subject of `maintenanceSubject(shard)` in `contract/src/subjects.ts`, published by `deploy/colo-notice.sh`) and says each valid notice to everyone online, as the Paper plugin does. The line is a system message from a fixed template, never text taken from the payload.
+
+- **Off unless the export is on.** With `export.enabled` false nothing is subscribed. The same shard token, NATS URL and credentials as the publisher are used.
+- **Reused from core-common, unchanged:** `NatsMaintenanceSubscriber` (the NATS side, daemon thread, reconnects forever once connected) and `MaintenanceNotices` / `MaintenanceNotice` (schema check, the four fixed lines, dedupe by id over the last 64 ids, at most 4 lines per 60 s window). A notice that does not match `maintenance-notice.schema.json` is dropped without a log line. The Bukkit-free parts are packed into this jar with the rest of core-common.
+- **Server-thread hand-off.** The NATS thread only validates and queues: `MaintenanceNotices` passes the line to `MaintenanceBroadcast.serverThread`, which runs the broadcast on the server thread. Nothing is said from the NATS thread.
+- **The only server touch** is `MaintenanceBroadcast`, one small class with the Minecraft names it relies on (`MinecraftServer#execute`, `PlayerList#broadcastSystemMessage`, `Component#literal`). They are **UNVERIFIED on 26.1**: confirm with a GameTest or a first server run. A wrong name is a compile error. `GeldarNeoForge` also calls `ServerStartingEvent#getServer`, UNVERIFIED the same way.
+- **NATS down:** core-common logs one warning when the first connect fails, and the server keeps running. Like the publisher, a connect that fails before the first success is not retried by core-common, so the subscription recovers only from a connection that was once up. This is a known gap, reported rather than changed in `plugin/`.
+- Operator log lines (never agent-visible): `geldar_neoforge maintenance notices on, subject geldar.<shard>.maintenance`, `geldar_neoforge maintenance notices off`, and one warning when the subscription cannot start.
+
+Tests: `MaintenanceLifecycleTest` (a valid notice gives one line, handed to a thread named `fake-server`, and nothing on the NATS-side thread; invalid, oversized and wrong-schema notices give none; duplicates and the rate limit match Paper; subscription only when enabled; the subject; NATS down gives one warning; stop closes once and a close failure is warned, not thrown). The live path needs a live NATS and belongs to the live lane.
 
 ## Rules this project keeps
 
