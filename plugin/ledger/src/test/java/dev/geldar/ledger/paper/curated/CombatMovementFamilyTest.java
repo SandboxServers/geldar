@@ -183,6 +183,21 @@ class CombatMovementFamilyTest {
         assertEquals("ZOMBIE", t.s2);
     }
 
+    /** A PlayerDeathEvent reaches the EntityDeathEvent executor (shared handler list): kill must skip it. */
+    @Test
+    void aPlayerDeathEventReachingTheKillExecutorRecordsNothing() throws Exception {
+        var f = sun.misc.Unsafe.class.getDeclaredField("theUnsafe");
+        f.setAccessible(true);
+        var unsafe = (sun.misc.Unsafe) f.get(null);
+        var e = (org.bukkit.event.entity.EntityDeathEvent)
+                unsafe.allocateInstance(org.bukkit.event.entity.PlayerDeathEvent.class);
+        FieldSink s = new FieldSink();
+        CombatMovementFamily.killed(e, s); // no entity behind it: any read of the event would throw
+        assertTrue(skipped(s));
+        assertNull(s.s1);
+        assertNull(s.s2);
+    }
+
     @Test
     void teleportByCommandSetsTheOperatorFlagAndOtherCausesDoNot() {
         FieldSink s = new FieldSink();

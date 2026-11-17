@@ -33,12 +33,14 @@ const PROCESS_KEYS = [
 ];
 
 describe('PT-12 gateway rules for Paper logs', () => {
-  it('drops the RCON thread lines except the geldar.rcon.command audit stream', () => {
+  it('drops the RCON thread lines only when the record has no event.name, so every plugin event keeps its text', () => {
     const rules = procs['filter/noise']?.logs?.log_record ?? [];
     const rule = rules.find((r) => r.includes('RCON Client'));
     expect(rule).toBeDefined();
     expect(rule).toContain('(RCON Client|Thread RCON)');
-    expect(rule).toContain('attributes["event.name"] != "geldar.rcon.command"');
+    expect(rule).toMatch(/ and attributes\["event\.name"\] == nil'?$/);
+    expect(rule).not.toContain('!=');
+    expect(rule).not.toContain('geldar.rcon.command');
     expect(rule).not.toContain('Rcon:');
   });
 

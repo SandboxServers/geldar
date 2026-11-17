@@ -46,6 +46,7 @@ public final class SnapshotCollector implements Collector {
     public static final long BUDGET_NANOS = 50_000L;
     static final int RING = 64;
     static final long DRAIN_MS = 1000L;
+    static final java.util.logging.Logger LOG = java.util.logging.Logger.getLogger(SnapshotCollector.class.getName());
 
     /** One captured snapshot: primitives and strings that already exist. */
     static final class Slot {
@@ -79,6 +80,8 @@ public final class SnapshotCollector implements Collector {
     private final Entry[] rosterEntries = new Entry[MAX_TRACKED];
     private final Map<UUID, Entry> entries = new HashMap<>();
     private int rosterSize;
+    private int overflow;
+    private boolean overflowLogged;
     private int cursor;
     private int gen;
     private long tick;
@@ -149,6 +152,8 @@ public final class SnapshotCollector implements Collector {
             rosterEntries[i] = null;
         }
         rosterSize = 0;
+        overflow = 0;
+        overflowLogged = false;
         cursor = 0;
         tick = 0;
         lastRefresh = Long.MIN_VALUE / 2;
@@ -157,6 +162,11 @@ public final class SnapshotCollector implements Collector {
 
     SessionIds sessions() {
         return sessions;
+    }
+
+    /** Online players beyond {@value #MAX_TRACKED} at the last roster refresh (never snapshotted; read by tests). */
+    int overflow() {
+        return overflow;
     }
 
     /** Snapshots dropped because the ring was full (read by tests). */
@@ -174,12 +184,13 @@ public final class SnapshotCollector implements Collector {
             }
             long token = g.begin();
             try {
+                long start = nanos.getAsLong(); // the budget covers the roster refresh too
                 tick++;
                 if (tick - lastRefresh >= REFRESH_TICKS) {
                     lastRefresh = tick;
                     refresh();
                 }
-                capturePending();
+                capturePending(start);
             } finally {
                 g.end(token);
             }
@@ -192,9 +203,11 @@ public final class SnapshotCollector implements Collector {
     private void refresh() {
         gen++;
         int n = 0;
+        int over = 0;
         for (Player p : source.get()) {
             if (n >= MAX_TRACKED) {
-                break;
+                over++; // beyond the roster: counted, never snapshotted
+                continue;
             }
             try {
                 UUID id = p.getUniqueId();
@@ -217,6 +230,11 @@ public final class SnapshotCollector implements Collector {
             rosterEntries[i] = null;
         }
         rosterSize = n;
+        overflow = over;
+        if (over > 0 && !overflowLogged) {
+            overflowLogged = true;
+            LOG.info("snapshot roster overflow: players beyond " + MAX_TRACKED + " are not snapshotted");
+        }
         for (Iterator<Entry> it = entries.values().iterator(); it.hasNext(); ) {
             if (it.next().gen != gen) {
                 it.remove();
@@ -224,7 +242,7 @@ public final class SnapshotCollector implements Collector {
         }
     }
 
-    private void capturePending() {
+    private void capturePending(long start) {
         int n = rosterSize;
         if (n == 0) {
             return;
@@ -232,7 +250,6 @@ public final class SnapshotCollector implements Collector {
         if (cursor >= n) {
             cursor = 0;
         }
-        long start = nanos.getAsLong();
         int done = 0;
         int examined = Math.min(n, EXAMINE_PER_RUN);
         for (int i = 0; i < examined && done < MAX_PER_RUN; i++) {

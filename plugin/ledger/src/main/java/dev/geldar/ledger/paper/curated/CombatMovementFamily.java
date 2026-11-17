@@ -65,8 +65,7 @@ public final class CombatMovementFamily implements CuratedFamily {
             EntityDamageEvent last = p.getLastDamageCause(); // the cause enum only; getDeathMessage is never called
             death(s, p, last == null ? null : last.getCause(), p.getWorld());
         });
-        r.on(EntityDeathEvent.class, C + "kill", Severity.INFO, KILL_FIELDS, true, (e, s) ->
-                kill(s, e.getEntity().getKiller(), e.getEntityType().name()));
+        r.on(EntityDeathEvent.class, C + "kill", Severity.INFO, KILL_FIELDS, true, CombatMovementFamily::killed);
         r.on(PlayerRespawnEvent.class, C + "respawn", Severity.INFO, LIFE_ONLY, true, (e, s) ->
                 named(s, e.getPlayer(), e.getRespawnReason().name(), e.getPlayer().getWorld()));
         r.on(PlayerPostRespawnEvent.class, C + "post_respawn", Severity.INFO, LIFE_ONLY, true, (e, s) ->
@@ -84,6 +83,18 @@ public final class CombatMovementFamily implements CuratedFamily {
                 named(s, e.getPlayer(), e.getCause().name(), e.getTo() == null ? null : e.getTo().getWorld()));
         r.on(PlayerGameModeChangeEvent.class, M + "gamemode", Severity.INFO, LIFE_ONLY, true, (e, s) ->
                 named(s, e.getPlayer(), e.getNewGameMode().name(), e.getPlayer().getWorld()));
+    }
+
+    /**
+     * {@code PlayerDeathEvent} declares no handler list of its own, so it reaches the {@code EntityDeathEvent} executor.
+     * {@code kill} is for non-player victims only; a player death is recorded by {@code player_death} and nothing else.
+     */
+    static void killed(EntityDeathEvent e, FieldSink s) {
+        if (e instanceof PlayerDeathEvent) {
+            s.skip();
+            return;
+        }
+        kill(s, e.getEntity().getKiller(), e.getEntityType().name());
     }
 
     /** Final damage x100, clamped to [0, MAX_DAMAGE_X100]; NaN and negatives are 0. */

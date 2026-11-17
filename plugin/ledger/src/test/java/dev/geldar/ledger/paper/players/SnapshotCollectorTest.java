@@ -36,6 +36,7 @@ class SnapshotCollectorTest {
     final List<String> forbidden = new ArrayList<>();
     final AtomicLong clock = new AtomicLong();
     final long[] perCall = {0};
+    final long[] refreshCost = {0};
     final FakeHostInfo host = new FakeHostInfo();
     final RecordingLedger ledger = new RecordingLedger(host, LedgerConfig.defaults());
     final FakeHostScheduler scheduler = new FakeHostScheduler();
@@ -48,7 +49,12 @@ class SnapshotCollectorTest {
 
     SnapshotCollector start(RecordingLedger l) {
         collector = new SnapshotCollector(
-                () -> List.copyOf(online), () -> clock.addAndGet(perCall[0]), sessions);
+                () -> {
+                    clock.addAndGet(refreshCost[0]);
+                    return List.copyOf(online);
+                },
+                () -> clock.addAndGet(perCall[0]),
+                sessions);
         collector.start(new CollectorContext() {
             public Ledger ledger() {
                 return l;
@@ -175,6 +181,70 @@ class SnapshotCollectorTest {
         ticks(40, "ag_");
         drain();
         assertEquals(38, snaps().size());
+    }
+
+    /** Counts the INFO notices of the collector logger that mention the roster overflow. */
+    private static int overflowNotices(Runnable body) {
+        java.util.logging.Logger log = SnapshotCollector.LOG;
+        int[] n = {0};
+        java.util.logging.Handler h = new java.util.logging.Handler() {
+            @Override
+            public void publish(java.util.logging.LogRecord r) {
+                if (r.getMessage().contains("roster overflow") && r.getLevel() == java.util.logging.Level.INFO) {
+                    n[0]++;
+                }
+            }
+
+            @Override
+            public void flush() {}
+
+            @Override
+            public void close() {}
+        };
+        log.addHandler(h);
+        try {
+            body.run();
+        } finally {
+            log.removeHandler(h);
+        }
+        return n[0];
+    }
+
+    @Test
+    void playersBeyondTheRosterAreCountedAndLoggedOncePerStart() {
+        for (int i = 0; i < SnapshotCollector.MAX_TRACKED + 3; i++) {
+            online.add(agent(i));
+        }
+        int notices = overflowNotices(() -> {
+            start();
+            ticks(SnapshotCollector.REFRESH_TICKS * 2 + 1, "ag_"); // three refreshes
+        });
+        assertEquals(3, collector.overflow());
+        assertEquals(1, notices);
+    }
+
+    @Test
+    void aFullRosterIsNotAnOverflow() {
+        for (int i = 0; i < SnapshotCollector.MAX_TRACKED; i++) {
+            online.add(agent(i));
+        }
+        int notices = overflowNotices(() -> {
+            start();
+            ticks(2, "ag_");
+        });
+        assertEquals(0, collector.overflow());
+        assertEquals(0, notices);
+    }
+
+    @Test
+    void theBudgetClockStartsBeforeTheRosterRefresh() {
+        for (int i = 0; i < 3; i++) {
+            online.add(agent(i));
+        }
+        refreshCost[0] = SnapshotCollector.BUDGET_NANOS; // the refresh alone uses the whole budget
+        start();
+        // all three are due on the refresh tick; the first capture finds the budget spent and the run stops
+        assertEquals(1, ticks(1, "ag_"));
     }
 
     @Test

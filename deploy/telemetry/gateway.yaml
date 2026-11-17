@@ -54,9 +54,10 @@ processors:
     error_mode: ignore
     logs:
       log_record:
-        # PT-12: drops Paper's RCON thread lines (any line naming "RCON Client" or "Thread RCON"), EXCEPT the plugin's RCON audit records
-        # (attribute event.name=geldar.rcon.command, whose body may legitimately contain that text). The [Rcon: ...] echoes are kept (they match neither phrase).
-        - 'IsMatch(body, ".*(RCON Client|Thread RCON).*") and attributes["event.name"] != "geldar.rcon.command"'
+        # PT-12: drops Paper's vanilla RCON thread lines (naming "RCON Client" or "Thread RCON") ONLY when the record carries no event.name.
+        # Every plugin event sets event.name, and content events (chat, sign, book, console, broadcast, rcon audit) carry the player's text in the body, so they are always kept.
+        # The [Rcon: ...] echoes are kept (they match neither phrase).
+        - 'IsMatch(body, ".*(RCON Client|Thread RCON).*") and attributes["event.name"] == nil'
     traces:
       span:
         - 'attributes["http.route"] == "/healthz"'   # route name to confirm [UNV]
