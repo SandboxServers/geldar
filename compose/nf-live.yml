@@ -161,8 +161,7 @@ services:
 
   identity-seed:
     # One-shot: creates the two identity buckets before velocity starts (golem/src/seed-buckets.ts, the bucket configs the
-    # admin tool uses). UNVERIFIED: the NATS user that may create them. The design names the deploy user, and this file runs
-    # it here; the per-shard NATS auth set must grant it KV bucket creation, or this one-shot must use another user.
+    # admin tool uses). It connects as NATS user seed (nats-seed.txt); its permissions are UNVERIFIED until the node run.
     build:
       context: ..
       dockerfile: tools/admin/Dockerfile

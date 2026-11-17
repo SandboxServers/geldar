@@ -268,3 +268,5 @@ Open items for the live project (from the a4 report of branch `phase1/nf-live-co
 - **Deploy script.** `deploy/nf-cd.sh` is a later packet; the `GELDAR_PROJECT` and `GELDAR_COLO_COMPOSE` question is UNVERIFIED (section 7.1).
 
 Where the live NeoForge shard runs is decided (D8, record 0386), not open.
+
+Generator (PR 691 review): the per-shard NATS auth set is written by deploy/nats-auth-nf.ps1, dot-sourced from geldar.ps1 for `shard nats-auth nf`; the NeoForge mod publishes `geldar.nf.*` (its subjects are geldar.nf.<type>), not `geldar.nf.>`.

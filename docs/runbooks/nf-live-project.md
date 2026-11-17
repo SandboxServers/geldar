@@ -58,15 +58,15 @@ Names, one file each, mode 0600, owned by the account:
   (the four NATS users of the design: neoforge, sink, deploy, velocity; the `nats-auth.conf` file is the server side);
 - `postgres.txt` (the Postgres password), `velocity-forwarding.txt` (the Velocity forwarding secret, shared with the NeoForge side).
 
-No secret value is in the file or in this runbook. The generator entries in geldar.ps1 are a later packet; do not create the files by hand
-outside that step. The NATS user table itself is the per-shard NATS auth packet's (a3 in the design).
+No secret value is in the file or in this runbook. The files are written by `./geldar.ps1 shard nats-auth nf --live` (section 4b,
+deploy/nats-auth-nf.ps1); do not create them by hand. The NATS user table itself is the per-shard NATS auth packet's (a3 in the design).
 
 ## 4b. The NATS auth set (generated on the node)
 
 When: on the NF node, once, before the first start (section 8). Never in a git checkout. Make a clean export
 (`git archive -o <file> <commit>`, extracted into an empty directory), run the command there, then keep the secrets
-directory with the node's secrets. The generator refuses a checkout (a `.git` entry) unless `--local` is also given; that
-flag is for the test harness only.
+directory with the node's secrets. The generator refuses a checkout (a `.git` entry) unless `--local` is also given. `--local` is accepted in a
+clean export and changes nothing there; the test harness needs it. Flags are case-sensitive (`--LIVE` is refused).
 
 Command: `./geldar.ps1 shard nats-auth nf --live`. Without `--live` it refuses and writes nothing. An unknown flag is refused.
 
@@ -74,7 +74,8 @@ Files, in `compose/secrets-nf/` (git-ignored; `NF_SECRETS_DIR` points nf-live.ym
 config), then one password file per user: `nats-neoforge.txt`, `nats-sink.txt`, `nats-velocity.txt`, `nats-deploy.txt`,
 `nats-seed.txt`. Existing files are reused and never overwritten. If `nats-auth.conf` exists and a password file is missing,
 the run fails and writes nothing. Restore the missing file, or delete the directory and generate again before any start.
-The files are mode 0600 on POSIX and owner-only (ACL) on Windows.
+The files are mode 0600 and the directory 0700 on POSIX (checked by the test there); owner-only (ACL) on Windows.
+An empty password file, or one with a double quote or a line break, is refused by name and nothing is written.
 
 Mapping to nf-live.yml: `nats-auth.conf` is the nats service's config; `nats-sink.txt` the eventsink; `nats-neoforge.txt`
 the neoforge service; `nats-velocity.txt` velocity; `nats-seed.txt` identity-seed (user `seed`). `nats-deploy.txt` is
@@ -89,8 +90,8 @@ buckets, or the inbox; no user has `>` or `geldar.*`):
 
 | User | May publish | May subscribe |
 |------|-------------|---------------|
-| neoforge | `geldar.nf.*` except `geldar.nf.maintenance`; JetStream STREAM.INFO and STREAM.CREATE for the two streams; `_INBOX.>` | `geldar.nf.maintenance`; `_INBOX.>` |
-| sink | `geldar.nf.dlq`, `geldar.nf.state.>`; the durable consumer `eventsink` on the two streams; STREAM.INFO and CREATE; `_INBOX.>` | `geldar.nf.state.*.proficiency`; `_INBOX.>` |
+| neoforge | `geldar.nf.*` except `geldar.nf.maintenance` and `geldar.nf.dlq`; JetStream STREAM.INFO and STREAM.CREATE for the two streams; `_INBOX.>` | `geldar.nf.maintenance`; `_INBOX.>` |
+| sink | `geldar.nf.dlq`, `geldar.nf.state.>`, `$JS.API.INFO`; the durable consumer `eventsink` on the two streams (CONSUMER.CREATE with its filter, `.eventsink.>`; INFO; MSG.NEXT; ACK); STREAM.INFO and CREATE; `_INBOX.>` | `geldar.nf.state.*.proficiency`; `_INBOX.>` |
 | deploy | `geldar.nf.maintenance` | `_INBOX.>` |
 | velocity | watch and get on the two identity buckets (read only) | `_INBOX.>` |
 | seed | `$JS.API.INFO`; create, inspect and update of the two identity buckets | `_INBOX.>` |
@@ -101,9 +102,9 @@ The two stream names are `GELDAR_EVENTS` (the name the plugin and the sink use t
 The password is plaintext inside `nats-auth.conf`, as the colo shard's config is. Treat the directory as a secret: do not
 copy it into a checkout, a ticket or a log.
 
-UNVERIFIED: the JetStream API subjects above come from the code (NatsEventPublisher's ensureStream, the eventsink's consumer
-name), not from a live server. nats-server 2.15 acceptance of this config, and the POSIX mode, are checked only in the live
-packet. The mod's export type list is not defined yet, so its publish is `geldar.nf.*` and narrows later.
+UNVERIFIED: the JetStream API subjects above come from the code and the @nats-io/jetstream 3.4.0 client; the test computes the
+sink's subjects from that client. The sink and seed permissions remain UNVERIFIED against a live server until the node run;
+nats-server 2.15 acceptance of this config is checked only there. The mod's export type list is not defined yet, so its publish is `geldar.nf.*` and narrows later.
 
 ## 5. Environment (all optional at render time)
 
@@ -153,8 +154,8 @@ colo-notice.sh, colo-cd-players.sh and .github/workflows/colo-deploy.yml. Not ru
 1. **The NeoForge offline bundle is not seeded by this file.** The entrypoint runs bundle mode when `.geldar-bundle.sha256` exists in
    the data dir (the neoforge-data volume). deploy/scratch/build-neoforge-bundle.sh builds the bundle; how scratch.sh copies it into the
    volume was not read. The seeding step is UNVERIFIED.
-2. **identity-seed uses the deploy NATS user.** The design lists deploy only for the notice. Whether that user may create the identity KV
-   buckets is UNVERIFIED; the per-shard NATS auth set must grant it, or the one-shot uses another user.
+2. **identity-seed uses the NATS user seed.** Its allow list (section 4b) is create, inspect and update on the two identity buckets
+   and `$JS.API.INFO`. Whether the bucket creates succeed with those permissions is UNVERIFIED until the node run.
 3. **The Postgres init runs sql/ from empty.** The file mounts ../sql into docker-entrypoint-initdb.d (as colo does). That 0001 to 0066 run
    cleanly into an empty geldar_nf database is UNVERIFIED. The admin migrate one-shot is the other path; the deploy picks one.
 4. **The eventsink NATS and database keys.** The sink reads GELDAR_NATS_URL, POSTGRES_HOST, POSTGRES_DB, POSTGRES_USER and
