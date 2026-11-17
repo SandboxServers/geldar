@@ -21,8 +21,9 @@ Measured on 2026-11-16 at `3f07a4be` unless a row says otherwise.
 | Field | Value | Evidence |
 |---|---|---|
 | Folder | `telemetry/` (29 tracked files: README, `package.json`, `tsconfig.json`, 8 source files, 18 test files) | `git ls-files telemetry`; `ls telemetry/src telemetry/test` |
-| Package name | `@geldar/telemetry`, `private`, ES module | `telemetry/package.json` |
-| Entry point | `.` resolves to `./src/index.ts` (TypeScript source, no build step) | `telemetry/package.json`, `exports` |
+| Package name | `@geldar/telemetry`, version `0.1.0`, ES module, not `private` (decision 0373) | `telemetry/package.json` |
+| Entry point | In the workspace `.` resolves to `./src/index.ts` (TypeScript source, no build step). In the packed tarball `publishConfig` makes it `./dist/index.js` with `./dist/index.d.ts` | `telemetry/package.json`, `exports` and `publishConfig` |
+| Distribution | A GitHub Release tarball of built ESM, made by `.github/workflows/telemetry-release.yml` on a `telemetry-vX.Y.Z` tag (tag equals `version`, GITHUB_TOKEN only, never overwritten); the kit pins the URL and the integrity in its lockfile | decision 0373 |
 | Workspace entry | `telemetry` | `pnpm-workspace.yaml` line 11 |
 | Purpose | One shared OpenTelemetry setup for Geldar's Node services: traces, logs and metrics | [`telemetry/README.md`](../../telemetry/README.md), first paragraph |
 | Built by | Card T-03 of decision 0350, commit `7451e735` (2026-11-15) | `git log --diff-filter=A -- telemetry/package.json` |
