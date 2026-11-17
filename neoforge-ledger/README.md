@@ -22,6 +22,20 @@ cd neoforge-ledger
 ```
 
 Config is `config/ledger.properties` (same keys as the Paper plugin); a missing file means defaults. No collectors are registered yet.
+
+## Audit events (PT-N8, package `audit`)
+
+| Event | Source | Notes |
+|---|---|---|
+| `geldar.combat.damage` | `LivingDamageEvent.Post` | player victim or attacker only; pvp keeps the victim |
+| `geldar.combat.player_death` | `LivingDeathEvent` | cause and dimension only, no message |
+| `geldar.combat.kill` | `LivingDeathEvent` | player killer, non-player victim |
+| `geldar.chat` | `ServerChatEvent` | raw typed text, scrubbed and capped; speaker only as a life id |
+| `geldar.console.command`, `geldar.rcon.command` | `CommandEvent` | only the console (`Server`) and RCON (`Rcon`) sources with no entity; player and command-block commands are not exported |
+| `geldar.operator.change` | `PermissionsChangedEvent` | online players only; `geldar.flag` 1 = opped, 0 = deopped (a literal in the family, not in `Names`) |
+
+Every listener runs at LOWEST priority and does not receive cancelled events. `/say`, `/msg` and `/me` do not fire `ServerChatEvent`, so private messages are not captured. Whitelist changes, kick reasons, prelogin, sign and book edits have no known NeoForge event: nothing is emitted for them.
+
 ## Curated events (PT-N7, opt-in: `collector.curated.enabled=true`)
 
 Emitted on the NeoForge game bus at lowest priority, cancelled events included; each event has a bucket at `rate.<eventName>` (default 20/s) taken before any reading, and a denial is counted by the core rate-drop counter like any structured event.
