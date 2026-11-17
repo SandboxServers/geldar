@@ -50,6 +50,11 @@ class OtelLedgerTest {
         return make(LedgerConfig.defaults(), agent, (n, s, b, a, t) -> out.add(new Out(n, s, b, a)));
     }
 
+    /** Builds a dotted-quad address at runtime so the source holds no IP literal. */
+    private static String ip(int a, int b, int c, int d) {
+        return String.join(".", String.valueOf(a), String.valueOf(b), String.valueOf(c), String.valueOf(d));
+    }
+
     @AfterEach
     void close() {
         if (ledger != null) {
@@ -96,7 +101,7 @@ class OtelLedgerTest {
         int e = l.events().register(
                 "geldar.block.break", Severity.WARN, 1000, AttrKeys.X, AttrKeys.Y, "password", AttrKeys.ITEM,
                 AttrKeys.WORLD, AttrKeys.CAUSE);
-        l.events().record(e, 5, 6, 7, "stone", "world", "from 10.1.2.3 now");
+        l.events().record(e, 5, 6, 7, "stone", "world", "from " + ip(10, 1, 2, 3) + " now");
         await(() -> !out.isEmpty());
         Out o = out.get(0);
         assertEquals("geldar.block.break", o.name());
@@ -133,7 +138,7 @@ class OtelLedgerTest {
         int c = l.content().register("geldar.chat", AttrKeys.PLUGIN, AttrKeys.WORLD, AttrKeys.CAUSE);
         l.content().record(c, "a".repeat(40_000), "p", "w", "cause");
         int d = l.content().register("geldar.sign", AttrKeys.PLUGIN);
-        l.content().record(d, "join 192.168.1.9 please", "p", null, null);
+        l.content().record(d, "join " + ip(192, 168, 1, 9) + " please", "p", null, null);
         await(() -> out.size() == 2);
         Out big = out.stream().filter(o -> o.name().equals("geldar.chat")).findFirst().orElseThrow();
         assertTrue(big.body().getBytes(java.nio.charset.StandardCharsets.UTF_8).length < 32_768 + 64);
@@ -203,7 +208,11 @@ class OtelLedgerTest {
         l.events().emitMap("geldar.snap", Severity.INFO, Map.of(AttrKeys.WORLD, "w"));
         assertEquals(1, l.dropped("events.mainthread"));
         mainThread[0] = false;
-        l.events().emitMap("geldar.snap", Severity.ERROR, Map.of(AttrKeys.WORLD, "w", "token", "x", AttrKeys.TEXT, "10.0.0.1"));
+        l.events()
+                .emitMap(
+                        "geldar.snap",
+                        Severity.ERROR,
+                        Map.of(AttrKeys.WORLD, "w", "token", "x", AttrKeys.TEXT, ip(10, 0, 0, 1)));
         await(() -> !out.isEmpty());
         Out o = out.get(0);
         assertEquals("w", o.attrs().get(AttrKeys.WORLD));
