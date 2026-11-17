@@ -48,6 +48,64 @@ const FROZEN_METRICS = new Set([
   'geldar_bridge_bluemap_enabled',
 ]);
 
+/**
+ * Metric attribute keys a panel may group or filter by. Source of truth: AttrKeys.metricAllowed in
+ * plugin/ledger-core (bare keys; per-player and free-text keys are rejected there). Frozen here on
+ * purpose (not read from plugin/): a change there must be mirrored here. `geldar.event.class` and
+ * `geldar.cancelled` are the census attributes the README section 4 metric table names.
+ */
+const ALLOWED_METRIC_KEYS = new Set([
+  'window',
+  'world',
+  'queue',
+  'collector',
+  'group',
+  'area',
+  'stat',
+  'scope',
+  'gc',
+  'class_group',
+  'op',
+  'kind',
+  'geldar.event.class',
+  'geldar.cancelled',
+]);
+
+type Kind = 'counter' | 'gauge' | 'histogram' | 'monotonic-gauge';
+
+/**
+ * Kind of each metric the dashboard reads, from the README section 4 table. The cgroup counters are
+ * exported as monotonic gauges (PT-09c, gaugeLong), so the dashboard types them Gauge.
+ */
+const KINDS: Record<string, Kind> = {
+  geldar_tick_lag_ms: 'histogram',
+  geldar_tick_overruns_total: 'counter',
+  geldar_tick_stalls_total: 'counter',
+  geldar_tps: 'gauge',
+  geldar_container_cpu_periods_total: 'monotonic-gauge',
+  geldar_container_cpu_throttled_periods_total: 'monotonic-gauge',
+  geldar_container_memory_bytes: 'gauge',
+  geldar_container_memory_limit_bytes: 'gauge',
+  geldar_world_loaded_chunks: 'gauge',
+  geldar_world_entities: 'gauge',
+  geldar_world_players: 'gauge',
+  geldar_players_online: 'gauge',
+  geldar_event_count_total: 'counter',
+  geldar_ledger_dropped_total: 'counter',
+  geldar_ledger_queue_depth: 'gauge',
+  geldar_paper_collector_disabled: 'gauge',
+  geldar_jfr_thread_group_cpu_ratio: 'gauge',
+  geldar_disk_bytes: 'gauge',
+};
+
+/** Panel metric type and the operators each kind may use. */
+const KIND_RULES: Record<Kind, { type: string; ops: RegExp }> = {
+  counter: { type: 'Sum', ops: /^(rate|increase)$/ },
+  'monotonic-gauge': { type: 'Gauge', ops: /^(rate|increase)$/ },
+  gauge: { type: 'Gauge', ops: /^(avg|latest|last|max|min)$/ },
+  histogram: { type: 'Histogram', ops: /^hist_quantile_(50|90|95|99)$/ },
+};
+
 /** Per-player attribute keys: a panel that groups or filters by one breaks S7. */
 const PER_PLAYER_KEYS = ['geldar.life_id', 'minecraft.player.uuid', 'geldar.mc_session'];
 
@@ -77,7 +135,9 @@ const REQUIRED_PANELS: Record<string, string[]> = {
 interface QueryData {
   dataSource: string;
   queryName: string;
-  aggregateAttribute?: { key?: string };
+  aggregateOperator?: string;
+  spaceAggregation?: string;
+  aggregateAttribute?: { key?: string; type?: string };
   groupBy?: { key?: string }[];
   filters?: { items?: { key?: { key?: string } }[] };
   limit?: number | null;
@@ -111,6 +171,30 @@ function problems(dash: Dashboard): string[] {
       const metric = q.aggregateAttribute?.key;
       if (q.dataSource === 'metrics' && !(metric && FROZEN_METRICS.has(metric))) {
         found.push(`${w.title}: metric ${metric} is not a frozen name`);
+      }
+      const keys = [
+        ...(q.groupBy ?? []).map((g) => g.key),
+        ...(q.filters?.items ?? []).map((i) => i.key?.key),
+      ];
+      for (const k of keys) {
+        if (!k || !ALLOWED_METRIC_KEYS.has(k))
+          found.push(`${w.title}: attribute key ${k} is not allowed`);
+      }
+      const kind = metric ? KINDS[metric] : undefined;
+      if (q.dataSource === 'metrics' && metric && FROZEN_METRICS.has(metric)) {
+        if (!kind) {
+          found.push(`${w.title}: metric ${metric} has no frozen kind`);
+        } else {
+          const rule = KIND_RULES[kind];
+          if (q.aggregateAttribute?.type !== rule.type)
+            found.push(`${w.title}: ${metric} is ${kind}, typed ${q.aggregateAttribute?.type}`);
+          if (!rule.ops.test(q.aggregateOperator ?? ''))
+            found.push(`${w.title}: ${metric} is ${kind}, operator ${q.aggregateOperator}`);
+          if (kind === 'histogram' && !/^p(50|90|95|99)$/.test(q.spaceAggregation ?? ''))
+            found.push(
+              `${w.title}: ${metric} is a histogram, space aggregation ${q.spaceAggregation}`,
+            );
+        }
       }
     }
     // A formula may only name queries of its own panel.
@@ -184,5 +268,47 @@ describe('Paper dashboard JSON (PT-17a)', () => {
     const orphan = structuredClone(dashboard);
     orphan.layout.push({ i: 'ghost' });
     expect(problems(orphan).some((p) => p.includes('ghost'))).toBe(true);
+  });
+
+  it('checks attribute keys and metric kinds (each mutation is caught)', () => {
+    const q = (title: string, i = 0) => {
+      const m = structuredClone(dashboard);
+      const query = m.widgets.find((x) => x.title === title)?.query.builder.queryData[i];
+      if (!query) throw new Error(`no query in ${title}`);
+      return { m, query };
+    };
+    // Wrong kind: the counter typed Gauge, a gauge typed Sum, a histogram with a plain operator.
+    const a = q('Tick overruns and stalls per hour');
+    if (a.query.aggregateAttribute) a.query.aggregateAttribute.type = 'Gauge';
+    expect(problems(a.m).some((p) => p.includes('is counter, typed Gauge'))).toBe(true);
+    const b = q('TPS by window');
+    if (b.query.aggregateAttribute) b.query.aggregateAttribute.type = 'Sum';
+    expect(problems(b.m).some((p) => p.includes('is gauge, typed Sum'))).toBe(true);
+    const c = q('Tick time p50, p95, p99');
+    c.query.aggregateOperator = 'avg';
+    expect(problems(c.m).some((p) => p.includes('is histogram, operator avg'))).toBe(true);
+    const d = q('Container CPU throttled-period ratio');
+    if (d.query.aggregateAttribute) d.query.aggregateAttribute.type = 'Sum';
+    expect(problems(d.m).some((p) => p.includes('is monotonic-gauge, typed Sum'))).toBe(true);
+    // Wrong key and per-player key in a group-by.
+    const e = q('TPS by window');
+    e.query.groupBy = [{ key: 'geldar.window' }];
+    expect(problems(e.m).some((p) => p.includes('attribute key geldar.window'))).toBe(true);
+    const f = q('Loaded chunks per world');
+    f.query.groupBy = [{ key: 'minecraft.player.uuid' }];
+    const found = problems(f.m);
+    expect(found.some((p) => p.includes('attribute key minecraft.player.uuid'))).toBe(true);
+    expect(found.some((p) => p.includes('per-player key minecraft.player.uuid'))).toBe(true);
+  });
+
+  it('groups only by the allowed bare keys the panels use', () => {
+    const used = new Set(
+      dashboard.widgets.flatMap((w) =>
+        w.query.builder.queryData.flatMap((x) => (x.groupBy ?? []).map((g) => g.key)),
+      ),
+    );
+    expect([...used].sort()).toEqual(
+      ['area', 'collector', 'geldar.event.class', 'group', 'queue', 'window', 'world'].sort(),
+    );
   });
 });
