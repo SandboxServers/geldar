@@ -64,7 +64,7 @@ public final class ConnectionCollector implements Collector {
                 l -> JavaPlugin.getPlugin(LedgerPlugin.class).listeners().register(l),
                 () -> Bukkit.getServer().getOnlinePlayers().size(),
                 System::currentTimeMillis,
-                new SessionIds());
+                SessionIds.shared());
     }
 
     ConnectionCollector(Consumer<Listener> registry, IntSupplier online, LongSupplier clockMs, SessionIds sessions) {

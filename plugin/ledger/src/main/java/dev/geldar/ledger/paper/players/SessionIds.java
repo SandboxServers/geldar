@@ -28,6 +28,20 @@ public final class SessionIds {
         this(DEFAULT_CAP, Ulid::next);
     }
 
+    private static final class Holder {
+        static final SessionIds SHARED = new SessionIds();
+    }
+
+    /**
+     * The process-wide instance. The collector factory builds {@code ConnectionCollector} and {@code SnapshotCollector}
+     * with their no-arg constructors, and both use this one map so the snapshot sees the join's {@code mc_session}.
+     * Only the connection collector clears it (on its stop), so a snapshot taken after that finds no session and exports
+     * none.
+     */
+    public static SessionIds shared() {
+        return Holder.SHARED;
+    }
+
     SessionIds(int cap, Supplier<String> ids) {
         this.cap = cap;
         this.ids = ids;

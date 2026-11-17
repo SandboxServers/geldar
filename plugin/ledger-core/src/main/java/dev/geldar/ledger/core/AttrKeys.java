@@ -34,11 +34,25 @@ public final class AttrKeys {
     public static final String DURATION_MS = "geldar.duration_ms";
     /** Consecutive overrun count on {@code geldar.server.slow_tick} (PT-04b). */
     public static final String TICK_OVERRUNS = "geldar.tick_overruns";
+    // Player snapshot fields (PT-08b): event keys only, never metric attributes.
+    public static final String HEALTH = "geldar.health";
+    public static final String FOOD = "geldar.food";
+    public static final String XP_LEVEL = "geldar.xp_level";
+    public static final String GAMEMODE = "geldar.gamemode";
+    public static final String PING_BUCKET = "geldar.ping_bucket";
+    // Dedicated keys (event keys only, never metric attributes): replace borrowing geldar.result / geldar.cause.
+    /** String: enum-like subtype (villager profession key, animal or killed EntityType, fish state). */
+    public static final String SUBTYPE = "geldar.subtype";
+    /** Long: the damage role code, 1 victim, 2 attacker, 3 pvp. */
+    public static final String ROLE = "geldar.role";
+    /** Long: a 0/1 flag, such as the operator teleport flag. */
+    public static final String FLAG = "geldar.flag";
 
     private static final Set<String> ALLOWED = Set.of(
             LIFE_ID, PLAYER_UUID, WORLD, WORLD_TICK, SERVER_TICK, MC_SESSION, EVENT_CLASS, CANCELLED, COLLECTOR, QUEUE,
             CAUSE, RESULT, X, Y, Z, ITEM, BLOCK, CONTAINER_TYPE, AMOUNT, TEXT, COMMAND, EXCEPTION_CLASS, PLUGIN,
-            DURATION_MS, TICK_OVERRUNS);
+            DURATION_MS, TICK_OVERRUNS, HEALTH, FOOD, XP_LEVEL, GAMEMODE, PING_BUCKET,
+            SUBTYPE, ROLE, FLAG);
 
     // Metric attribute keys: BARE, as in the README section 4 metric table (decision 2026-11-17). The prefixed
     // geldar.* keys above are for events and logs only.
