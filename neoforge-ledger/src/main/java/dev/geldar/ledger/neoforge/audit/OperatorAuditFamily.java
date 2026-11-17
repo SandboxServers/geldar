@@ -23,7 +23,7 @@ import java.util.function.Supplier;
  * changes, kick reasons, prelogin, sign and book edits have no NeoForge event (PT-N5): nothing is emitted for them.
  *
  * <p>Only the command name (geldar.command) and the argument count (geldar.amount) are exported ({@link CommandText}); no argument text. The token bucket comes first, so a flood costs no flatten or
- * scrub work. Commands may arrive on any thread; the guard is used only on the server thread.
+ * scrub work. In NeoForge 26.1.2 console, RCON (executeBlocking) and chat (server.execute) all run on the server thread; the families deliberately skip the guard (bucket-bounded), and the guard is used only on the server thread.
  */
 public final class OperatorAuditFamily {
     public static final String OPERATOR_CHANGE = "geldar.operator.change";

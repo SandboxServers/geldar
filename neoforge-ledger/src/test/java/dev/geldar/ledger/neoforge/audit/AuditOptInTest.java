@@ -101,7 +101,7 @@ class AuditOptInTest {
     @Test
     void operatorSwitchStopsOffThreadRconAndOpChangeButNotChat() {
         f.config = FakeLedger.config("collector.audit.enabled=true", "collector.chat.enabled=true", "collector.operator.enabled=false");
-        f.main.set(false); // RCON and chat arrive off the server thread
+        f.main.set(false); // not what 26.1.2 does (RCON and chat run on the server thread), but the gate must hold on any thread
         OperatorAuditFamily op = new OperatorAuditFamily(f.ledger, f.host, clock::get);
         TextContentFamily text = f.text(clock::get);
         op.command("rcon", false, () -> {

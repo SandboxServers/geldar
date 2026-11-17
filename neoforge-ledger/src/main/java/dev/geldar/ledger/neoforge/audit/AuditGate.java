@@ -8,7 +8,7 @@ import java.util.function.BooleanSupplier;
  * The audit opt-in (console and RCON command text, combat, operator change). Off unless the master switch is
  * on AND {@code collector.audit.enabled=true} is set explicitly (absent means off), and, for a family with its own id
  * (combat, operator), that collector is not switched off. Read from the ledger's config on every call, so it holds on
- * any thread (chat and RCON are not server-thread events). A gate that is off means nothing is recorded and no text
+ * any thread (in NeoForge 26.1.2 chat is handled through server.execute and RCON through executeBlocking, both on the server thread, but the gate does not depend on it). A gate that is off means nothing is recorded and no text
  * (chat, command) is read; the wiring may still read names, dimension, cause and the command source name first.
  */
 final class AuditGate implements BooleanSupplier {

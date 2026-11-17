@@ -70,15 +70,28 @@ public final class AuditWiring {
         return ledger != null && AuditGate.chat(ledger).getAsBoolean();
     }
 
+    /** True if the dispatcher root has a child (a registered root command) of that name. */
+    static boolean isRegistered(com.mojang.brigadier.tree.CommandNode<?> root, String name) {
+        return root.getChild(name) != null;
+    }
+
     /**
      * Chat is registered only AFTER the name-mask feed (login, logout, server and player-list source) is wired; if any
      * step throws, chat stays off (one log line, class name only) and the other audit families are unaffected.
      */
     private static void installChat(Ledger ledger, TextContentFamily text) {
+        installChat(
+                text,
+                () -> installNameMask(ledger, text),
+                // human chat is its own opt-in (collector.chat.enabled=true): no listener at all unless it is on
+                () -> NeoForge.EVENT_BUS.addListener(PRIORITY, RECEIVE_CANCELED, net.neoforged.neoforge.event.ServerChatEvent.class, e -> chat(text, e)));
+    }
+
+    /** The order and the failure rule, testable: the feed first, then the listener; any failure leaves chat unusable. */
+    static void installChat(TextContentFamily text, Runnable feed, Runnable listener) {
         try {
-            installNameMask(ledger, text);
-            // human chat is its own opt-in (collector.chat.enabled=true): no listener at all unless it is on
-            NeoForge.EVENT_BUS.addListener(PRIORITY, RECEIVE_CANCELED, net.neoforged.neoforge.event.ServerChatEvent.class, e -> chat(text, e));
+            feed.run();
+            listener.run();
             LOG.info("ledger chat export on: name mask feed wired");
         } catch (Throwable t) {
             rethrowVmError(t);
@@ -167,7 +180,7 @@ public final class AuditWiring {
                     source.source instanceof net.minecraft.server.MinecraftServer,
                     source.source instanceof net.minecraft.server.rcon.RconConsoleSource);
             var root = e.getParseResults().getContext().getDispatcher().getRoot();
-            audit.command(kind, e.isCanceled(), () -> e.getParseResults().getReader().getString(), n -> root.getChild(n) != null);
+            audit.command(kind, e.isCanceled(), () -> e.getParseResults().getReader().getString(), n -> isRegistered(root, n));
         } catch (Throwable t) {
             rethrowVmError(t);
         }
