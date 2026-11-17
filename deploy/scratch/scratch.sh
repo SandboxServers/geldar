@@ -28,14 +28,14 @@ PLUGIN_JARS="plugin/core/build/libs/geldar-core.jar $VELOCITY_JAR"
 NEOFORGE_PLUGIN_JARS="$VELOCITY_JAR"
 
 usage() {
-  echo "usage: sh deploy/scratch/scratch.sh up|status|down|probe [suffix]" >&2
+  echo "usage: sh deploy/scratch/scratch.sh up|status|down|probe|mind-up|mind-token [suffix] [player]" >&2
   exit 2
 }
 
 verb=${1:-}
 suffix=${2:-a}
 case "$verb" in
-  up | status | down | probe) ;;
+  up | status | down | probe | mind-up | mind-token) ;;
   *) usage ;;
 esac
 case "$suffix" in
@@ -52,7 +52,7 @@ PROJECT="scratch-$suffix"
 PLATFORM=${SCRATCH_PLATFORM:-paper}
 
 # Host ports for this project come from deploy/scratch/<suffix>.env, which this script parses itself (never sourced, so
-# nothing in it runs). Only the five port keys are accepted (the four, and SCRATCH_RCON_PORT for neoforge),
+# nothing in it runs). Only the port keys are accepted (the four, SCRATCH_RCON_PORT for neoforge, SCRATCH_MCP_PORT for the mind),
 # with digit values 1 to 65535; anything else exits 2. A variable the operator already set wins over the file. The file is required for telemetry and optional otherwise.
 load_ports() {
   portfile="$ROOT/deploy/scratch/$suffix.env"
@@ -71,6 +71,7 @@ load_ports() {
       SCRATCH_NATS_MON_PORT) cur=${SCRATCH_NATS_MON_PORT:-} ;;
       SCRATCH_MC_PORT) cur=${SCRATCH_MC_PORT:-} ;;
       SCRATCH_RCON_PORT) cur=${SCRATCH_RCON_PORT:-} ;;
+      SCRATCH_MCP_PORT) cur=${SCRATCH_MCP_PORT:-} ;;
       *)
         echo "scratch: $portfile: unknown key; nothing started" >&2
         exit 2
@@ -198,6 +199,9 @@ compose_run() {
   fi
   if [ "$verb" = probe ]; then
     set -- -f "$ROOT/compose/opt-in/scratch-probe.yml" "$@"
+  fi
+  if [ "$verb" = mind-up ] || [ "$verb" = mind-token ]; then
+    set -- -f "$ROOT/compose/opt-in/scratch-mind.yml" "$@"
   fi
   set -- -f "$ROOT/compose/opt-in/scratch.yml" "$@"
   if [ -f "$NATS_OVERRIDE" ]; then
@@ -641,4 +645,6 @@ case "$verb" in
   status) do_status ;;
   down) do_down ;;
   probe) do_probe ;;
+  mind-up) . "$ROOT/deploy/scratch/scratch-mind.sh"; do_mind_up ;;
+  mind-token) . "$ROOT/deploy/scratch/scratch-mind.sh"; do_mind_token "${3:-}" ;;
 esac
