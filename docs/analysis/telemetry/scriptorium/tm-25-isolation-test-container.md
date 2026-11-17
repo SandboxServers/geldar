@@ -1,6 +1,6 @@
 # TM-25: isolation test (HC-26 extension), container level: the model uid cannot read the supervisor's environment or the token (scriptorium repo)
 
-Repo: geldar-scriptorium. Depends on: TM-24. Unblocks: switching on `TRACEPARENT` (TM-22) and the N13 install (TM-34). Mind redeploy: none (test only). `colo-images` path: n/a. Needs Docker: the ops agent runs it (R11), never the coder.
+Repo: geldar-scriptorium. Depends on: TM-24. Unblocks: the N13 install (TM-34). Mind redeploy: none (test only). `colo-images` path: n/a. Needs Docker: the ops agent runs it (R11), never the coder.
 
 ## What it proves
 
@@ -24,7 +24,7 @@ TM-24 proves what the supervisor passes. This proves what the operating system l
 | P1 | `cat /proc/<supervisor pid>/environ` | exit non-zero, `Permission denied`; no canary in output |
 | P2 | `stat -c '%u %a' /proc/<supervisor pid>/environ` | owner is 1001 or 0, mode `400`; not world or group readable |
 | P3 | `cat /proc/1/environ` (the init process, root, which started the supervisor and holds the same planted environment) | `Permission denied`; no canary in output. A readable init environment fails the test |
-| P4 | `tr '\0' '\n' < /proc/<child pid>/environ` for the stub CLI child | readable (own uid); contains no `canary`, no key matching `OTEL\|TELEMETRY\|INGEST` (TRACEPARENT allowed only after TM-22 and only when telemetry is on) |
+| P4 | `tr '\0' '\n' < /proc/<child pid>/environ` for the stub CLI child | readable (own uid); contains no `canary`, no key matching `OTEL\|TELEMETRY\|INGEST` (`TRACEPARENT` and `TRACESTATE` are never allowed: the child gets no telemetry context) |
 | P5 | `cat /proc/*/cmdline` for every process, then search | no `canary` (an argv is world-readable; a secret must never be passed there) |
 | P6 | `ls /state/supervisor`, `cat /state/supervisor/supervisor.log` | denied (the directory is closed to uid 1000) |
 | P7 | `find / -xdev -readable -type f` limited to `/etc /run /var /tmp /player /cli-home` then `grep -l canary` | no file contains the canary (the token is in no readable file) |
@@ -41,7 +41,7 @@ Also check from outside: `docker inspect` of the stub container shows the canary
 
 ## Expected result
 
-All probes pass on the kit image of the day. A failure is a stop-ship: no `TRACEPARENT` and no endpoint variable may be set on a Mind until it passes.
+All probes pass on the kit image of the day. A failure is a stop-ship: no endpoint variable may be set on a Mind until it passes.
 
 ## Checks and commit
 

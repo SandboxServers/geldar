@@ -8,7 +8,7 @@ Verification of every metric on the scratch shard is in [scratch-test-plan.md](s
 
 ## PT-04a: tick statistics (pure logic)
 
-- Loader: Neutral (lives in `ledger-core`). Depends on: frozen API. Size: S. Start: immediately.
+- Loader: Neutral (lives in `ledger-core`). Depends on: PT-03 api (starts only when it is on the integration branch). Size: S. Start: immediately.
 - Goal: the arithmetic of tick timing with no Paper types, so a port reuses it.
 - Files: CREATE `CORE/tick/TickStats.java`, `CORE/tick/StallDetector.java`; tests `CORE_T/tick/TickStatsTest.java`, `CORE_T/tick/StallDetectorTest.java`.
 - Steps: 1. `TickStats.onTick(double durationMs)`: counts overruns (over 50.0 ms), returns `true` when the tick is "slow" (over a configured `slow_tick_ms`, default 100). Holds no allocation. 2. `StallDetector(thresholdMs, nanoClock)`: `heartbeat()` called from the main thread each tick end (volatile long write); `check()` called from an async thread returns `true` once per stall (when `now - lastHeartbeat > threshold` and not yet reported; resets on the next heartbeat). 3. Bucket bounds constant `TickStats.BOUNDS = {1,2,5,10,20,30,40,50,75,100,250,1000}`.
@@ -33,7 +33,7 @@ Verification of every metric on the scratch shard is in [scratch-test-plan.md](s
 - Loader: Paper. Depends on: PT-03h. Size: S.
 - Goal: `geldar_spark_tps`, `geldar_spark_mspt_ms`, `geldar_spark_cpu_ratio`, `geldar_spark_gc_ms` from spark's API summaries only (0351 point 5).
 - Files: CREATE `PAPER/spark/SparkCollector.java`, `PAPER/spark/SparkReader.java`; test `PAPER_T/spark/SparkReaderTest.java`.
-- Steps: 1. `SparkReader` loads `me.lucko.spark.api.SparkProvider` by `Class.forName` guard; absent class or `IllegalStateException` from `SparkProvider.get()` means the collector reports nothing and retries every 60 s. 2. On an async `everyMillis(15000)` task read `spark.tps()`, `spark.mspt()` and `spark.cpuUsage()` statistics and GC collector windows through the `DoubleStatistic`/`GenericStatistic` types the API offers (the coder maps windows 10s, 1m, 15m to the `window` attribute; a window the API lacks is skipped). Store into volatile doubles; gauge readers return them. 3. Never call profiler, health report, heap summary or heap dump methods.
+- Steps: 1. `SparkReader` loads `me.lucko.spark.api.SparkProvider` by `Class.forName` guard; absent class or `IllegalStateException` from `SparkProvider.get()` means the collector reports nothing and retries every 60 s. 2. On an async `everyMillis(15000)` task read `spark.tps()`, `spark.mspt()` and `spark.cpuUsage()` statistics and GC collector windows through the `DoubleStatistic`/`GenericStatistic` types the API offers (the coder maps windows 10s, 1m, 15m to the `window` attribute; a window the API lacks is skipped). Store into volatile doubles; gauge readers return them. 3. Never call profiler, health report, heap summary or heap dump methods. 4. Dependency pin (spark-api was deferred out of PT-03a: a `-SNAPSHOT` declaration is not checksum-verified by Gradle): this card is the first to use spark and pins `me.lucko:spark-api` with a verified artifact, either a repository scoped to the exact timestamped file with Gradle dependency verification, or a vendored jar with a recorded sha256 (the coder records the version, hash and source in the card report). It adds `compileOnly(libs.spark.api) { isTransitive = false }` to `plugin/ledger/build.gradle.kts` and the pin to `libs.versions.toml`; it is the only card besides PT-03a allowed to touch those two files.
 - Tests (fail when reverted): with the class absent (classloader without spark) the collector starts and emits nothing and does not throw; with a fake provider object (the test defines a minimal stand-in only if spark-api is on the test classpath; else test `SparkReader` through an interface seam) the gauges show the values; a test scans the class's constant pool/source (via PT-18a pattern) for `profiler`, `heap`, `healthReport` and fails when present.
 - Checks: `:ledger:test`; scratch row T6 (spark present on scratch Paper). S9, S11.
 - Commit: `PT-04c spark summary bridge (plugin)`.
@@ -63,7 +63,7 @@ Verification of every metric on the scratch shard is in [scratch-test-plan.md](s
 
 ## PT-09a: JFR stream runner
 
-- Loader: Neutral (JFR is JVM, not loader). Depends on: frozen API. Size: M. Start: immediately.
+- Loader: Neutral (JFR is JVM, not loader). Depends on: PT-03 api (starts only when it is on the integration branch). Size: M. Start: immediately.
 - Goal: an in-process `RecordingStream` on its own thread, explicit settings, no disk (0351 point 4), with a handler registry the mapper cards (PT-09b) plug into.
 - Files: CREATE `CORE/jfr/JfrRunner.java`, `CORE/jfr/JfrHandler.java`, `CORE/jfr/JfrSettings.java`; test `CORE_T/jfr/JfrRunnerTest.java`.
 - Steps: 1. `JfrRunner.start(List<JfrHandler>, LedgerConfig, Logger)`: creates `new RecordingStream()`, `setMaxAge(Duration.ofSeconds(30))`, `setMaxSize(8 MiB)`, never `dump`/`setDestination`; enables only the event names the handlers request, each with an explicit `withPeriod` or `withThreshold` from `JfrSettings`; `onEvent(name, handler)`; `startAsync()`; daemon thread named `ledger-jfr`. 2. If `jdk.jfr` is unavailable or `FlightRecorder.isAvailable()` is false, log once and do nothing. 3. `stop()` closes the stream, idempotent. 4. Handler exceptions are caught and counted (`geldar_ledger_dropped_total{queue=jfr}`), never rethrown.
@@ -85,7 +85,8 @@ Verification of every metric on the scratch shard is in [scratch-test-plan.md](s
 
 ## PT-09c: container CPU throttling and memory
 
-- Loader: Neutral. Depends on: frozen API. Size: S. Start: immediately.
+- Loader: Neutral. Depends on: PT-03 api (starts only when it is on the integration branch). Size: S. Start: immediately.
+- Kind: the three cumulative cgroup values (periods, throttled periods, throttled seconds) are exported as monotonic GAUGES (the frozen API has no observable counter); the memory pair are plain gauges. README section 4 says the same.
 - Goal: the missing evidence for the 25% throttled-period finding: `geldar_container_cpu_periods_total`, `..._throttled_periods_total`, `..._throttled_seconds_total`, `geldar_container_memory_bytes`, `geldar_container_memory_limit_bytes` from cgroup v2 files.
 - Files: CREATE `CORE/container/CgroupReader.java`, `CORE/container/CgroupCollector.java`; tests `CORE_T/container/CgroupReaderTest.java`; test resources `plugin/ledger-core/src/test/resources/cgroup/cpu.stat`, `memory.current`, `memory.max`.
 - Steps: 1. `CgroupReader(Path root)`: parses `cpu.stat` (`nr_periods`, `nr_throttled`, `throttled_usec`), `memory.current`, `memory.max` (`max` means unlimited -> 0). v1 layout or a missing file means unavailable: the collector emits nothing and logs once. 2. `CgroupCollector` implements `Collector`; reads on an async `everyMillis(15000)` into volatile longs; counters are exported as observable counters through `gaugeLong` with monotonic semantics documented (the frozen API has no observable counter; name keeps `_total` and the binding exports a gauge of the monotonic value, noted in the dashboard card). 3. Default root `/sys/fs/cgroup` from config key `container.cgroup_root` (tests use a temp dir).
@@ -96,7 +97,7 @@ Verification of every metric on the scratch shard is in [scratch-test-plan.md](s
 
 ## PT-10a: on-disk sizes
 
-- Loader: Neutral. Depends on: frozen API. Size: S. Start: immediately.
+- Loader: Neutral. Depends on: PT-03 api (starts only when it is on the integration branch). Size: S. Start: immediately.
 - Goal: `geldar_disk_bytes{area}` for world, plugin data, logs, BlueMap, Chunky, every 10 minutes, off the main thread.
 - Files: CREATE `CORE/disk/DiskCollector.java`, `CORE/disk/DirSize.java`; test `CORE_T/disk/DirSizeTest.java`.
 - Steps: 1. `DirSize.of(Path, long maxEntries)` walks with `Files.walkFileTree`, does not follow symlinks, returns bytes and a `truncated` flag at `maxEntries` (default 2,000,000); errors per file are skipped. 2. `DiskCollector` takes a map `area -> Path` from config keys `disk.area.<name>.path` (relative paths resolve against the server working directory given by the adapter); runs on an async `everyMillis(600000)`, one area per run to spread I/O. 3. Skip any path that is not a directory.

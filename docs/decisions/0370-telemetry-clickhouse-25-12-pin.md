@@ -40,3 +40,5 @@ Ruled by the owner on 2026-11-16, relayed by the orchestrator (geldar-93).
 ## Amendment scope
 
 This record amends 0352 only for the ClickHouse version (26.3 becomes 25.12.5 (build 44)) and the Keeper rule (conditional becomes required). The Mind-host ingest decision, the SigNoz UI access path (SSH tunnel only), the retention and the budget in 0352 are not changed.
+
+- D3 outcome (2026-11-16, N6-C2): the retention window ran on the node (traces and metrics 365 days through the v1 API, logs 365 days through the v2 API, all as `geldar_signoz_admin`) and is closed; SigNoz is back on the reader DSN. The user and its profile were removed from `users.xml` in the T37 PR. The hash line and the secret file are deleted afterwards, in the order given in the README (`Retention window (N6c)`, Window log). A later window re-adds the user through a reviewed PR with a fresh hash.

@@ -29,7 +29,7 @@ A Fabric or NeoForge port writes a new thin adapter (about the size of `plugin/l
 
 | Loader | Cards |
 |---|---|
-| **Neutral** (carry over to any loader; touch only `plugin/ledger-core` or repo tooling) | PT-03b1, 03b2, 03c, 03d, 03e, 03f, 03g, 03i, PT-09a, 09b, 09c, PT-10a, PT-04a (tick statistics), PT-06a (census counters, duty cycler) |
+| **Neutral** (carry over to any loader; touch only `plugin/ledger-core` or repo tooling) | PT-03 api (03b1, 03b2, 03c), 03d, 03e, 03f, 03g, 03i, PT-09a, 09b, 09c, PT-10a, PT-04a (tick statistics), PT-06a (census counters, duty cycler) |
 | **Split** (small neutral piece plus Paper piece in the same card; the neutral piece is named in the card) | PT-04a, PT-06a, PT-08a (ULID in core, listener in Paper) |
 | **Paper-only** (rewritten for another loader) | PT-03h, PT-04b, 04c, PT-05a, 05b, PT-06b, 06c, 06d, PT-07a to 07f, PT-08a (listener part), 08b, 08c, 08d, PT-10b |
 | **Second adapter** (Velocity; proves the core is neutral) | PT-08e |
@@ -49,7 +49,7 @@ PAPER_T = plugin/ledger/src/test/java/dev/geldar/ledger/paper/
 
 ## 3. Frozen API v1 (the contract between parallel cards)
 
-PT-03b implements exactly this. Collector cards code against it without waiting for PT-03b to merge. A change to this section is a change to this README, made by the orchestrator session, never by a coder. Only the shapes matter; parameter names are free.
+PT-03 api (PT-03b1, 03b2, 03c in one packet) implements exactly this. A card that references a frozen type may start only when the type is on the integration branch. A change to this section is a change to this README, made by the orchestrator session, never by a coder. Only the shapes matter; parameter names are free.
 
 ```java
 package dev.geldar.ledger.core;
@@ -104,7 +104,7 @@ Threading rules, binding for every card: main-thread code calls only `BoundCount
 
 ## 4. Frozen names
 
-Cards use these names verbatim. The registry class `CORE/Names.java` (PT-03b) holds the strings; collectors reference constants, they do not retype them. Per-player data goes to events only, never to metric attributes (0350 point 1, S7). Prefix `geldar_` for metrics (0351 names `geldar_tps`, `geldar_tick_lag_ms`, `geldar_paper_collector_disabled`), `geldar.<family>.<action>` for events. Names are PROPOSED until PT-15; the coder never invents a name outside this list (add it here first).
+Cards use these names verbatim. The registry class `CORE/Names.java` (PT-03 api) holds the strings; collectors reference constants, they do not retype them. Per-player data goes to events only, never to metric attributes (0350 point 1, S7). Prefix `geldar_` for metrics (0351 names `geldar_tps`, `geldar_tick_lag_ms`, `geldar_paper_collector_disabled`), `geldar.<family>.<action>` for events. Names are PROPOSED until PT-15; the coder never invents a name outside this list (add it here first).
 
 Metrics (attributes in braces):
 
@@ -118,13 +118,13 @@ Metrics (attributes in braces):
 | `geldar_spark_tps` {window}, `geldar_spark_mspt_ms` {window,stat=mean,p95,max}, `geldar_spark_cpu_ratio` {scope=process,system, window}, `geldar_spark_gc_ms` {window,gc} | gauges (spark summaries) | PT-04c |
 | `geldar_world_loaded_chunks`, `geldar_world_entities`, `geldar_world_players` {world} | gauges | PT-05a |
 | `geldar_players_online`, `geldar_operators_count`, `geldar_plugins_enabled`, `geldar_scheduler_pending_tasks` | gauges | PT-05b |
-| `geldar_event_count_total` {geldar.event.class, geldar.cancelled} | counter | PT-06a, 06c |
-| `geldar_event_duty_ratio` {geldar.event.class} | gauge | PT-06a |
+| `geldar_event_count_total` {event_class, cancelled} | counter | PT-06a, 06c |
+| `geldar_event_duty_ratio` {event_class} | gauge | PT-06a |
 | `geldar_paper_collector_disabled` {collector} | gauge 0/1 | PT-03e |
 | `geldar_ledger_collector_time_us` {collector} | histogram (1-in-1024 sampled) | PT-03e |
-| `geldar_ledger_dropped_total` {queue} , `geldar_ledger_queue_depth` {queue} | counter, gauge | PT-03d |
+| `geldar_ledger_dropped_total` {queue}, `geldar_ledger_queue_depth` {queue} | counter, gauge | PT-03d |
 | `geldar_jfr_thread_group_cpu_ratio` {group}, `geldar_jfr_safepoint_ms` histogram, `geldar_jfr_monitor_contention_total` {class_group}, `geldar_jfr_file_io_ms` histogram {op}, `geldar_jfr_exceptions_total` {kind} | JFR-owned. GC and heap metrics are the agent's `jvm.*`; do not duplicate | PT-09b |
-| `geldar_container_cpu_periods_total`, `geldar_container_cpu_throttled_periods_total`, `geldar_container_cpu_throttled_seconds_total`, `geldar_container_memory_bytes`, `geldar_container_memory_limit_bytes` | counters, gauges (cgroup v2 files) | PT-09c |
+| `geldar_container_cpu_periods_total`, `geldar_container_cpu_throttled_periods_total`, `geldar_container_cpu_throttled_seconds_total`, `geldar_container_memory_bytes`, `geldar_container_memory_limit_bytes` | all gauges: the cgroup v2 counters (`periods`, `throttled_periods`, `throttled_seconds`) are exported as monotonic gauges, not OTel counters, because they are read as absolute values from the file; the memory pair are plain gauges (cgroup v2 files) | PT-09c |
 | `geldar_disk_bytes` {area=world,plugin_data,logs,bluemap,chunky} | gauge | PT-10a |
 | `geldar_bridge_chunky_running`, `geldar_bridge_coreprotect_queue`, `geldar_bridge_bluemap_enabled` | gauges, guarded by class presence | PT-10b |
 | `geldar_publisher_*`, `geldar_hearing_*`, `geldar_blockowner_*`, `geldar_kino_*` counters | Geldar-Core, own jar, no agent or viewer attributes | PT-11e |
@@ -133,7 +133,10 @@ Events (OTel log records; `event.name` is the attribute):
 
 `geldar.player.join|quit|kick|prelogin|snapshot|advancement|stats`, `geldar.server.slow_tick|stall|config_snapshot|exception|plugin_enabled|plugin_disabled`, `geldar.collector.disabled`, `geldar.block.*`, `geldar.item.*`, `geldar.container.*`, `geldar.sleep.*`, `geldar.animal.*`, `geldar.trade`, `geldar.combat.*`, `geldar.movement.*`, `geldar.chat`, `geldar.sign`, `geldar.book`, `geldar.rcon.command`, `geldar.console.command`, `geldar.broadcast`, `geldar.whitelist.*`, `geldar.raid.*`, `geldar.tabcomplete`, `geldar.velocity.login|disconnect`.
 
-Attribute keys (the allow-list in `CORE/AttrKeys.java`; anything else is dropped by the binding): `geldar.life_id`, `minecraft.player.uuid`, `geldar.world`, `geldar.world_tick`, `geldar.server_tick`, `geldar.mc_session`, `geldar.event.class`, `geldar.cancelled`, `geldar.collector`, `geldar.queue`, `geldar.cause`, `geldar.result`, `geldar.x`, `geldar.y`, `geldar.z`, `geldar.item`, `geldar.block`, `geldar.container_type`, `geldar.amount`, `geldar.text` (content only), `geldar.command` (content only), `geldar.exception.class`, `geldar.plugin`, `geldar.duration_ms`. Resource attributes (set by the agent, PT-02b): `service.namespace=geldar`, `service.name=geldar-paper` (Velocity: `geldar-velocity`), `deployment.environment` is not set.
+Attribute keys are two separate lists. Source of truth: `AttrKeys` in `plugin/ledger-core`; anything else is dropped by the binding.
+
+1. **Metric attribute keys (bare, no prefix):** `window`, `stat`, `scope`, `gc`, `group`, `class_group`, `op`, `kind`, `area`, `world`, `queue`, `collector`, `event_class`, `cancelled` (the last two are the census counter and duty-ratio attributes in the table above; reconcile with `AttrKeys.metricAllowed` when the merged class lands, and edit this list, not the class, if they differ). These are the keys in the metric table. Per-player and free-text keys are never metric attributes (S7).
+2. **Event and log attribute keys (`geldar.*` as listed):** `geldar.life_id`, `minecraft.player.uuid`, `geldar.world`, `geldar.world_tick`, `geldar.server_tick`, `geldar.mc_session`, `geldar.event.class`, `geldar.cancelled`, `geldar.collector`, `geldar.queue`, `geldar.cause`, `geldar.result`, `geldar.x`, `geldar.y`, `geldar.z`, `geldar.item`, `geldar.block`, `geldar.container_type`, `geldar.amount`, `geldar.text` (content only), `geldar.command` (content only), `geldar.exception.class`, `geldar.plugin`, `geldar.duration_ms`. `geldar.world`, `geldar.queue` and `geldar.collector` here are event/log keys only; the metrics use the bare `world`, `queue`, `collector`. Resource attributes (set by the agent, PT-02b): `service.namespace=geldar`, `service.name=geldar-paper` (Velocity: `geldar-velocity`), `deployment.environment` is not set.
 
 ## 5. Rules every card inherits (not repeated in each card)
 
@@ -153,25 +156,24 @@ Size: S under 100 changed lines, M 100 to 300. "Existing plugin files" lists edi
 | Card | Title | Loader | Depends on | Size | Existing plugin/ files edited |
 |---|---|---|---|---|---|
 | PT-03a | Module skeleton and build wiring | repo | none | S | `plugin/settings.gradle.kts`, `plugin/gradle/libs.versions.toml`, `plugin/README.md` |
-| PT-03b1, PT-03b2 | Core API interfaces; names, attribute allow-list and rules | Neutral | frozen API (this file) | S, M | none |
-| PT-03c | Config schema and 5 s reload | Neutral | frozen API | M | none |
-| PT-03d | Rings, emitter thread, token bucket, drop counters | Neutral | frozen API | M | none |
-| PT-03e | Collector guard (budget, auto shut-off) | Neutral | frozen API | S | none |
-| PT-03f | Redactor and content cap | Neutral | frozen API | S | none |
-| PT-03g | OpenTelemetry binding (`OtelLedger`) | Neutral | 03b, 03d, 03e, 03f | M | none |
-| PT-03h | Paper adapter shell, collector and listener registry | Paper | 03b, 03c | M | none |
-| PT-03i | Test fixtures (`RecordingLedger`, fakes) | Neutral | frozen API | S | none |
+| PT-03 api (PT-03b1 + PT-03b2 + PT-03c as ONE packet) | Core API interfaces; names, metric and event attribute lists and rules; config schema and 5 s reload. Mutually dependent: `Ledger` declares `LedgerConfig config()`, and `LedgerConfig`/`ConfigWatcher` need `HostScheduler`/`Cancellable`. Done on branch telemetry/t40-pt03b1; integration branch telemetry/t60-paper-int | Neutral | PT-03a | M | none |
+| PT-03d | Rings, emitter thread, token bucket, drop counters | Neutral | PT-03 api | M | none |
+| PT-03e | Collector guard (budget, auto shut-off) | Neutral | PT-03 api (needs `CollectorGuard` from 03b1 and `LedgerConfig` from 03c) | S | none |
+| PT-03f | Redactor and content cap | Neutral | PT-03 api | S | none |
+| PT-03g | OpenTelemetry binding (`OtelLedger`) | Neutral | PT-03 api, 03d, 03e, 03f | M | none |
+| PT-03h | Paper adapter shell, collector and listener registry | Paper | PT-03 api | M | none |
+| PT-03i | Test fixtures (`RecordingLedger`, fakes) | Neutral | PT-03 api (the full frozen API on the integration branch) | S | none |
 | PT-03j | scratch.sh: allow `telemetry`, per-run ports | scratch | none | S | none (`deploy/scratch/scratch.sh`, outside plugin/) |
 | PT-03k | scratch-telemetry overlay, OTLP sink, verify script | scratch | 03j | M | none |
 | PT-03l | CI jar and compose mount (HELD) | deploy | 03h | S | none (`.github/workflows/plugin-jars.yml`, `compose/colo.yml`) |
-| PT-02a | Agent lock, fetch, mount, `JAVA_AGENTS` (HELD) | deploy | none | M | none (`deploy/common.sh`, `compose/colo.yml`) |
+| PT-02a | Agent lock, fetch, mount, `JAVA_AGENTS`, `otel.javaagent.configuration-file` (HELD) | deploy | none | M | none (`deploy/common.sh`, `compose/colo.yml`) |
 | PT-02b | Agent properties, OTLP endpoint, resource attributes | deploy | none | S | none |
-| PT-04a | Tick statistics (pure logic) | Split: Neutral | 03b | S | none |
+| PT-04a | Tick statistics (pure logic) | Split: Neutral | PT-03 api | S | none |
 | PT-04b | Tick listener, TPS, tick manager, stall detector | Paper | 03h, 04a | M | none |
-| PT-04c | spark bridge (`SparkProvider`) | Paper | 03h | S | none |
+| PT-04c | spark bridge (`SparkProvider`); pins `spark-api` with a verified artifact | Paper | 03h | S | none |
 | PT-05a | World, chunk, entity, player-count samplers | Paper | 03h | S | none |
 | PT-05b | Server samplers, operators alarm, config snapshot | Paper | 03h | S | none |
-| PT-06a | Census counters and duty cycler (pure logic) | Split: Neutral | 03b | S | none |
+| PT-06a | Census counters and duty cycler (pure logic) | Split: Neutral | PT-03 api | S | none |
 | PT-06b | Census allow-list generator (Gradle task, checked-in list) | Paper | 03a | M | none |
 | PT-06c | Census registration and exclusion test | Paper | 03h, 06a, 06b | M | none |
 | PT-06d | Duty-cycle defaults from PT-01 rates | Paper | 06c, PT-01 | S | none |
@@ -186,11 +188,11 @@ Size: S under 100 changed lines, M 100 to 300. "Existing plugin files" lists edi
 | PT-08b | 60 s player snapshots | Paper | 03h | M | none |
 | PT-08c | Progress events and stats-file reader | Paper | 03h | M | none |
 | PT-08d | Client tick cadence and command-tree audit | Paper | 03h | S | none |
-| PT-08e | Velocity login and disconnect (second adapter, OPTIONAL) | Velocity | 03b, 03g | M | none (new module) |
-| PT-09a | JFR stream runner | Neutral | 03b | M | none |
+| PT-08e | Velocity login and disconnect (second adapter, OPTIONAL) | Velocity | PT-03 api, 03g | M | none (new module) |
+| PT-09a | JFR stream runner | Neutral | PT-03 api | M | none |
 | PT-09b | JFR mappers: thread-group CPU, safepoint, contention, file I/O, exceptions | Neutral | 09a | M | none |
-| PT-09c | Container CPU throttling and memory (cgroup v2) | Neutral | 03b | S | none |
-| PT-10a | On-disk sizes | Neutral | 03b | S | none |
+| PT-09c | Container CPU throttling and memory (cgroup v2) | Neutral | PT-03 api | S | none |
+| PT-10a | On-disk sizes | Neutral | PT-03 api | S | none |
 | PT-10b | Chunky, BlueMap, CoreProtect bridges | Paper | 03h | M | none |
 | PT-11a | Geldar-Core: OTel API dependency, trace header helper | Paper-bound | 03a | S | `plugin/core/build.gradle.kts`, `plugin/core/gradle.lockfile` |
 | PT-11b | Seam: block-owner query and reply | Paper-bound | 11a | S | `blockowner/NatsBlockOwnerLink.java` |
@@ -210,7 +212,7 @@ Size: S under 100 changed lines, M 100 to 300. "Existing plugin files" lists edi
 
 ```mermaid
 graph TD
-  F[frozen API v1 and names, this README] --> B03b[PT-03b API]
+  F[frozen API v1 and names, this README] --> B03b[PT-03 api: b1+b2+c]
   F --> C03c[PT-03c config]
   F --> D03d[PT-03d rings]
   F --> E03e[PT-03e guard]
@@ -267,15 +269,12 @@ graph TD
 
 ### Waves: what can start immediately and in parallel
 
-The frozen API (section 3) and names (section 4) make most cards independent of each other's merge. A coder in wave 1 writes against the frozen shapes; where a card needs the module to compile (tests), the coder stacks the branch on PT-03a's commit (PT-03a is a few minutes of work and lands first).
+The frozen API (section 3) and names (section 4) fix the shapes, but a card that references a frozen type may start only when the type is on the integration branch (telemetry/t60-paper-int). Three cards first listed separately (PT-03b1, PT-03b2, PT-03c) are mutually dependent and ship as ONE packet, "PT-03 api".
 
-- **Wave 0 (one coder, minutes, front-load it):** PT-03a. Everything that compiles Java needs it. PT-03j (scratch.sh) and PT-02b, PT-12, PT-18 prep are independent of it and start at the same time.
-- **Wave 1 (start together, all independent of each other, file-disjoint):**
-  - Foundation: PT-03b1, PT-03b2, PT-03c, PT-03d, PT-03e, PT-03f, PT-03i.
-  - Neutral cards that need only the frozen API: PT-04a, PT-06a, PT-09a, PT-09c, PT-10a.
-  - Tooling and deploy: PT-03j, PT-02b, PT-06b (needs PT-03a only), PT-18a, PT-18b, PT-12 (needs only the gateway config path), PT-17a (names are frozen), PT-11a.
-  - That is 20 cards that can start the moment PT-03a's commit exists. Four of them (PT-03j, PT-02b, PT-12, PT-17a) do not need PT-03a at all, and neither does PT-02a (held), so they start at the same minute as PT-03a.
-- **Wave 2 (after PT-03b/03c merge or on a branch stacked on them):** PT-03g, PT-03h, PT-09b, PT-03k, PT-11b to 11e.
+- **Wave 0:** PT-03a (merged).
+- **Wave 1:** "PT-03 api" (b1 + b2 + c in one packet; done on telemetry/t40-pt03b1). Starting at once, because they need no API type: PT-02b, PT-03j, PT-06b (needs PT-03a only), PT-11a, PT-17a (names are frozen), PT-18a, PT-18b, PT-12 (needs only the gateway config path), and PT-02a (held).
+- **Wave 1b (after PT-03 api is on the integration branch; parallel, file-disjoint):** PT-03d, PT-03e, PT-03f, PT-03i, PT-04a, PT-06a, PT-09a, PT-09c, PT-10a.
+- **Wave 2 (after PT-03 api and 1b merge or on a branch stacked on them):** PT-03g, PT-03h, PT-09b, PT-03k, PT-11b to 11e.
 - **Wave 3 (after PT-03h; all file-disjoint, fully parallel):** PT-04b, PT-04c, PT-05a, PT-05b, PT-06c, PT-07a, PT-08a, PT-08b, PT-08c, PT-08d, PT-10b, PT-08e, PT-03l (held), PT-02a (held; independent, may start in wave 1).
 - **Wave 4:** PT-07b to PT-07f (after PT-07a), PT-01 (after PT-03k; branch only), PT-17b.
 - **Gate:** PT-15 after wave 3 and 4 have merged to the test branch and the scratch fixture works; PT-06d after PT-01 and PT-15 numbers.
@@ -287,7 +286,7 @@ Almost every card creates new files in `plugin/ledger-core` or `plugin/ledger` a
 
 | Existing file | Cards |
 |---|---|
-| `plugin/settings.gradle.kts`, `plugin/gradle/libs.versions.toml` | PT-03a alone. It pre-adds every pin later cards need (opentelemetry-api 1.67.0, spark-api, velocity-api is already pinned). No other card edits these two files; a card that finds it needs another pin stops and reports |
+| `plugin/settings.gradle.kts`, `plugin/gradle/libs.versions.toml` | PT-03a alone. It pre-adds the pins later cards need (opentelemetry-api 1.67.0; velocity-api is already pinned). It does NOT add `spark-api`: a `-SNAPSHOT` declaration is not checksum-verified by Gradle (proven), so the first card that uses spark (PT-04c) pins it with a verified artifact (a repository scoped to the exact timestamped file, or a vendored jar with a recorded sha256) and is the only other card allowed to edit these two files for that pin. A card that finds it needs any other pin stops and reports |
 | `plugin/core/build.gradle.kts`, `plugin/core/gradle.lockfile` | PT-11a alone |
 | `plugin/core/.../NatsBlockOwnerLink.java` | PT-11b alone |
 | `plugin/core/.../NatsHearingSink.java` | PT-11c alone |
@@ -305,7 +304,7 @@ PT-11b, 11c, 11d and 11e all depend on the helper from PT-11a and use disjoint f
 3. Config is a Java `.properties` file (`plugins/Ledger/ledger.properties`), because the core must not depend on Bukkit's YAML. 0351 says "one config file"; the format is open.
 4. PT-04b names the tick histogram `geldar_tick_lag_ms` after 0351 but records the tick duration from Paper's `ServerTickEndEvent`; "lag" in 0351 is read as tick time.
 5. The OpenTelemetry agent is the SDK (0351 point 2); the core binds to `GlobalOpenTelemetry` through the API and is a no-op without the agent. The relocated-SDK fallback is not carded (owner's choice after PT-15).
-6. Scratch has no real gateway. PT-03k adds a throwaway OTLP/HTTP receiver that answers at `otel-gateway:4318` on the scratch network and writes JSON lines to a host directory. The real gateway at `http://otel-gateway:4318` on `geldar-colo` is used only in PT-16. Whether the receiver image is the OpenTelemetry Collector contrib image is the PT-03k coder's call; the digest must be at least two weeks old.
+6. Scratch has no real gateway. PT-03k adds a throwaway OTLP/HTTP receiver that answers at `geldar-gateway:4318` on the scratch network and writes JSON lines to a host directory. The real gateway (container `geldar-gateway`, resolving on the geldar-colo and geldar-telemetry networks) at `http://geldar-gateway:4318` is used only in PT-16. Whether the receiver image is the OpenTelemetry Collector contrib image is the PT-03k coder's call; the digest must be at least two weeks old.
 7. The scratch overlay builds on `compose/phase0.yml` (as `scratch-a` does), not on `compose/colo.yml`; PT-15's closeness to Colo is limited to load, tick rate, JVM flags and the 15 GiB limit set by the overlay.
 8. `deploy/scratch/scratch.sh` accepts a suffix of at most 8 characters, but the owner's project name `scratch-telemetry` has 9. PT-03j raises the limit to 9. This is a finding, not a choice.
 9. PT-08e (Velocity) is optional and not in 0351. The brief lists "plugin and Velocity login/disconnect events"; Paper sees joins and quits itself, Velocity sees the proxy side. It needs the owner's nod before merge.
@@ -313,3 +312,12 @@ PT-11b, 11c, 11d and 11e all depend on the helper from PT-11a and use disjoint f
 11. The bench lane's ability to target the scratch shard (ports, `GELDAR_NATS_URL`) is UNVERIFIED; PT-15 states it as a precondition.
 12. `tick query` output (P50, P95, P99 of the last 100 ticks) is assumed to exist in Paper 26.1.2 (rollout plan D2 uses `tick query`).
 13. The paths of the gateway collector config, the SigNoz import files and `colo-spark.test.ts` are UNVERIFIED; the coder of PT-12 and PT-17 finds them from [t20-stack-files.md](../t20-stack-files.md).
+
+## 8. Changes after the first coder rounds (2026-11-17)
+
+1. Gateway name: the container is `geldar-gateway` (geldar-colo and geldar-telemetry networks); OTLP/HTTP endpoint `http://geldar-gateway:4318`. `otel-gateway` is wrong everywhere.
+2. Metric attributes use the bare keys of the section 4 table; `geldar.*` keys are event and log attributes only; per-player and free-text keys are never metric attributes. Source of truth: `AttrKeys` in `plugin/ledger-core`.
+3. Dependency edges: PT-03b1, PT-03b2 and PT-03c ship as one packet `PT-03 api`; PT-03e needs CollectorGuard and LedgerConfig; PT-03i needs the full frozen API; the Waves section is corrected, with the rule that a card referencing a frozen type starts only when the type is on the integration branch.
+4. JFR: the agent properties file (PT-02b) carries no JFR-sourced keys (the deprecated `emit-experimental-telemetry` is removed); JFR metrics come from the plugin's own JFR stream (PT-09a, PT-09b). PT-02a must set `otel.javaagent.configuration-file` (or `OTEL_JAVAAGENT_CONFIGURATION_FILE`), because the properties file is read only then and the itzg `JAVA_AGENTS` variable passes a bare `-javaagent`.
+5. spark-api is deferred out of PT-03a (a `-SNAPSHOT` declaration is not checksum-verified by Gradle); PT-04c pins it with a verified artifact.
+6. PT-09c exports the cgroup counters as monotonic gauges; the metric table and the PT-17a dashboard use gauge panels.
