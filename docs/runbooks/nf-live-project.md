@@ -264,7 +264,12 @@ root; a checkout is refused, and `--local` is for the tests only). Run it as the
   `plan` and `up` read the secrets (through the gates); `seed-bundle`, `status`, `down` and `logs` do not.
 - Refusals, before any state changes: a colo variable set; a checkout; a missing or badly owned secret file; a mod jar or
   bundle tarball whose sha256 differs (seed-bundle only); free RAM below the 16640 MiB of caps plus an 8192 MiB margin; free disk below 50 GiB;
-  anything listening on 46565; a `geldar-nf` container with a geldar-colo label.
+  a listener on 46565 other than the project's own velocity; a `geldar-nf` container with a geldar-colo label.
+- Port 46565: `plan` and `up` accept the project's own running velocity on it. That is a container with the exact
+  project label `geldar-nf` and service label `velocity`, published as exactly `127.0.0.1:46565->25565/tcp`, with every
+  listener socket on `127.0.0.1:46565`. So a re-`up` on a running project passes this gate. They still refuse any other
+  listener: another project (colo or scratch), another service, a binding on `0.0.0.0` or `[::]`, a host process with no
+  container, or a `docker ps` failure or unreadable output.
 - `DEPLOY_DRY_RUN=1` prints the steps of `up` and `down` without running them. The gates still run.
 - No CI workflow runs this script. It is operator-run. A continuous deploy for geldar-nf would be a separate change that the
   owner must approve.
