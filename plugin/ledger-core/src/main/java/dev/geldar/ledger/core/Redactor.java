@@ -1,5 +1,8 @@
 package dev.geldar.ledger.core;
 
+import java.util.Locale;
+import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -11,19 +14,100 @@ public final class Redactor {
     public static final String REDACTED = "[redacted]";
     public static final String ADDR = "[addr]";
 
-    private static final Pattern CREDENTIAL_KEY = Pattern.compile(
-            "password|passwd|secret|token|authorization|api[_-]?key|cookie|credential|private[_-]?key",
-            Pattern.CASE_INSENSITIVE);
+    /** Whole words that name a credential; "token" alone, but not "input_tokens" (same rule as the gateway). */
+    private static final Set<String> FORBIDDEN_WORDS = Set.of("token", "pwd");
 
+    /** Stems matched inside the joined key (separators removed), so "apiKey", "auth_token", "emailAddress" hit. */
+    private static final String[] FORBIDDEN_STEMS = {
+        "apikey", "apitoken", "authtoken", "accesstoken", "passwd", "password", "secret", "cookie",
+        "authorization", "bearer", "credential", "idtoken", "jwt", "privatekey", "refreshtoken",
+        "sessionid", "email"
+    };
+
+    /**
+     * IPv4 rule: four dotted octets of 1-3 digits (leading zeros allowed, each at most 255), not touching
+     * another digit, and not part of a longer dotted run ("1.2.3.4.5": a digit and a dot before, or a dot
+     * and a digit after). Letters may touch it ("ip10.0.0.1", "Connecting...10.0.0.1"). Not scrubbed when
+     * preceded by "v", "version " or "java " (a version string). A bare four-part number such as "1.20.4.1"
+     * is masked: that false positive is accepted over leaking an address.
+     */
     private static final Pattern IPV4 = Pattern.compile(
-            "(?<![0-9A-Za-z.])(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.){3}"
-                    + "(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])(?![0-9A-Za-z]|\\.[0-9])");
-
+            "(?<![0-9])(?<![0-9]\\.)(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]{1,2})\\.){3}"
+                    + "(?:25[0-5]|2[0-4][0-9]|[01]?[0-9]{1,2})(?![0-9])(?!\\.[0-9])");
     private Redactor() {}
 
     /** True when the attribute key looks like it carries a credential. */
     public static boolean keyIsCredential(String key) {
-        return key != null && CREDENTIAL_KEY.matcher(key).find();
+        if (key == null) {
+            return false;
+        }
+        // One pass: lower-case words split at [._-] and camelCase boundaries; no regex, linear time.
+        int n = key.length();
+        StringBuilder joined = new StringBuilder(n);
+        int wordStart = 0;
+        for (int i = 0; i < n; i++) {
+            char ch = key.charAt(i);
+            boolean sep = ch == '.' || ch == '_' || ch == '-';
+            boolean boundary = false;
+            if (!sep && i > 0 && ch >= 'A' && ch <= 'Z') {
+                char p = key.charAt(i - 1);
+                boundary = (p >= 'a' && p <= 'z') || (p >= '0' && p <= '9')
+                        || (p >= 'A' && p <= 'Z' && i + 1 < n && key.charAt(i + 1) >= 'a' && key.charAt(i + 1) <= 'z');
+            }
+            if (sep || boundary) {
+                if (isForbiddenWord(joined, wordStart)) {
+                    return true;
+                }
+                wordStart = joined.length();
+            }
+            if (!sep) {
+                joined.append(Character.toLowerCase(ch));
+            }
+        }
+        if (isForbiddenWord(joined, wordStart)) {
+            return true;
+        }
+        String all = joined.toString().toLowerCase(Locale.ROOT);
+        for (String stem : FORBIDDEN_STEMS) {
+            if (all.contains(stem)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isForbiddenWord(StringBuilder joined, int from) {
+        int len = joined.length() - from;
+        return (len == 5 && FORBIDDEN_WORDS.contains(joined.substring(from)))
+                || (len == 3 && FORBIDDEN_WORDS.contains(joined.substring(from)));
+    }
+
+    private static String scrubV4(String s) {
+        Matcher m = IPV4.matcher(s);
+        StringBuilder out = null;
+        int copied = 0;
+        while (m.find()) {
+            if (versionContext(s, m.start())) {
+                continue;
+            }
+            if (out == null) {
+                out = new StringBuilder(s.length());
+            }
+            out.append(s, copied, m.start()).append(ADDR);
+            copied = m.end();
+        }
+        return out == null ? s : out.append(s, copied, s.length()).toString();
+    }
+
+    private static boolean versionContext(String s, int start) {
+        if (start >= 1) {
+            char p = s.charAt(start - 1);
+            if ((p == 'v' || p == 'V') && (start == 1 || !Character.isLetter(s.charAt(start - 2)))) {
+                return true;
+            }
+        }
+        return s.regionMatches(true, start - 8, "version ", 0, 8) && start >= 8
+                || s.regionMatches(true, start - 5, "java ", 0, 5) && start >= 5;
     }
 
     /** Replaces IPv4 and IPv6 literals with {@code [addr]}; everything else stays byte-identical. */
@@ -36,7 +120,7 @@ public final class Redactor {
             s = scrubV6(s);
         }
         if (s.indexOf('.') >= 0) {
-            s = IPV4.matcher(s).replaceAll(ADDR);
+            s = scrubV4(s);
         }
         return s;
     }
@@ -84,6 +168,17 @@ public final class Redactor {
             }
             if (end - start >= 2 && s.charAt(start) == ':' && s.charAt(start + 1) != ':') {
                 start++;
+            }
+            if (start > 0 && isWord(s.charAt(start - 1))) {
+                // A label ending in a hex character ("node:2001:db8::1") is absorbed into the run:
+                // restart just after the first single colon of the run, bounded by the run end.
+                int c = start;
+                while (c < end && s.charAt(c) != ':') {
+                    c++;
+                }
+                if (c > start && c + 1 < end && s.charAt(c + 1) != ':') {
+                    start = c + 1;
+                }
             }
             if (end - start < 3 || (start > 0 && isWord(s.charAt(start - 1))) || (end < n && isWord(s.charAt(end)))) {
                 continue;
