@@ -2,6 +2,7 @@ package dev.geldar.neoforge;
 
 import com.mojang.logging.LogUtils;
 import java.nio.file.Path;
+import net.minecraft.server.MinecraftServer;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
@@ -28,6 +29,7 @@ public final class GeldarNeoForge {
         }
     };
     private static volatile ExportLifecycle export;
+    private static volatile MaintenanceLifecycle maintenance;
 
     public GeldarNeoForge() {
         NeoForge.EVENT_BUS.addListener(GeldarNeoForge::onServerStarting);
@@ -42,12 +44,34 @@ public final class GeldarNeoForge {
             ExportLifecycle lifecycle = new ExportLifecycle(config, ExportLifecycle.natsPublisher(), SINK);
             lifecycle.start();
             export = lifecycle;
+            startMaintenance(config, event);
         } catch (RuntimeException e) {
             SINK.warn("geldar_neoforge export disabled: setup failed (" + e.getClass().getSimpleName() + ")");
         }
     }
 
+    /** Maintenance notices follow the export's config and never throw; they are off unless the export is on. */
+    private static void startMaintenance(ExportConfig config, ServerStartingEvent event) {
+        try {
+            // UNVERIFIED on 26.1: ServerStartingEvent#getServer. Confirm with a GameTest or a first server run.
+            MinecraftServer server = event.getServer();
+            MaintenanceLifecycle lifecycle = new MaintenanceLifecycle(
+                    config, MaintenanceLifecycle.natsSubscriber(), MaintenanceBroadcast.serverThread(server),
+                    MaintenanceBroadcast.systemLine(server), SINK);
+            lifecycle.start();
+            maintenance = lifecycle;
+        } catch (RuntimeException e) {
+            SINK.warn("geldar_neoforge maintenance notices disabled: setup failed (" + e.getClass().getSimpleName()
+                    + ")");
+        }
+    }
+
     private static void onServerStopping(ServerStoppingEvent event) {
+        MaintenanceLifecycle notices = maintenance;
+        maintenance = null;
+        if (notices != null) {
+            notices.stop();
+        }
         ExportLifecycle lifecycle = export;
         export = null;
         if (lifecycle != null) {
