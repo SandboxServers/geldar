@@ -336,7 +336,9 @@ describe.skipIf(!SH)('telemetry-verify.sh against a fixture JSONL', { timeout: 1
     }
     const skip = verify(['metric', NAME], FIXTURE, false, { SCRATCH_TELEMETRY_SINCE_LINE: '1' });
     expect(skip.stdout).toContain('count=1');
-    expect(verify(['metric', NAME], FIXTURE, false, { SCRATCH_TELEMETRY_SINCE_LINE: '2' }).status).toBe(1);
+    expect(
+      verify(['metric', NAME], FIXTURE, false, { SCRATCH_TELEMETRY_SINCE_LINE: '2' }).status,
+    ).toBe(1);
   });
 
   it('metric: a name that is only a prefix of another does not match', () => {
