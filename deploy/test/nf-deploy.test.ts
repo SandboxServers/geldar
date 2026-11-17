@@ -62,7 +62,7 @@ const STUB_SCRIPTS: Record<string, string> = {
 
 let made: string[] = [];
 
-// A fixture tree: the script and compose/nf-live.yml, the seven secret files, the mod jar and the bundle list.
+// A fixture tree: the script and compose/nf-live.yml, the eight secret files, the mod jar and the bundle list.
 function makeRepo(): string {
   const repo = mkdtempSync(join(tmpdir(), 'nf-deploy-'));
   made.push(repo);
@@ -356,7 +356,7 @@ describe('nf-deploy.sh secret list', () => {
     const declared = [
       ...NF_COMPOSE_TEXT.matchAll(/\$\{NF_SECRETS_DIR:-\.\/secrets-nf\}\/(\S+)$/gm),
     ].map((m) => m[1]);
-    expect(SECRET_FILES.length).toBe(7);
+    expect(SECRET_FILES.length).toBe(8);
     expect([...SECRET_FILES].sort()).toEqual([...new Set(declared)].sort());
   });
 });

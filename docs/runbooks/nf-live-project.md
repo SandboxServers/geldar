@@ -54,8 +54,8 @@ Their other services are UNVERIFIED here. Paper-equivalent sum about 32 GiB plus
 Per-project directory `compose/secrets-nf/` (gitignored; the repo ignore line is added). The file reads `${NF_SECRETS_DIR:-./secrets-nf}`.
 Names, one file each, mode 0600, owned by the account:
 
-- `nats-auth.conf` (the per-shard NATS server config), `nats-sink.txt`, `nats-neoforge.txt`, `nats-velocity.txt`, `nats-deploy.txt`
-  (the four NATS users of the design: neoforge, sink, deploy, velocity; the `nats-auth.conf` file is the server side);
+- `nats-auth.conf` (the per-shard NATS server config), `nats-sink.txt`, `nats-neoforge.txt`, `nats-velocity.txt`, `nats-deploy.txt`, `nats-seed.txt`
+  (the five NATS users of the design: neoforge, sink, deploy, velocity, seed; the `nats-auth.conf` file is the server side);
 - `postgres.txt` (the Postgres password), `velocity-forwarding.txt` (the Velocity forwarding secret, shared with the NeoForge side).
 
 No secret value is in the file or in this runbook. The files are written by `./geldar.ps1 shard nats-auth nf --live` (section 4b,
@@ -149,7 +149,7 @@ root; a checkout is refused, and `--local` is for the tests only). Run it as the
   `up -d --wait velocity` (the only published port, `127.0.0.1:46565`). It never starts golem-body or players-host.
 - Inputs, all from the environment: `NF_MOD_JAR_HOST` and `NF_MOD_SHA256` (the pinned mod jar and its sha256);
   `NF_BUNDLE_DIR` and `NF_BUNDLE_SHA256` (the offline bundle from `deploy/scratch/build-neoforge-bundle.sh`, and the sha256 of
-  its `.geldar-bundle.sha256` list); `NF_SECRETS_DIR` (default `compose/secrets-nf/`, which must hold the seven files the
+  its `.geldar-bundle.sha256` list); `NF_SECRETS_DIR` (default `compose/secrets-nf/`, which must hold the eight files the
   script lists, owner `NF_SERVICE_UID` (default 1000), mode 0600 or 0400).
 - Refusals, before any state changes: a colo variable set; a checkout; a missing or badly owned secret file; a mod jar or
   bundle list whose sha256 differs; free RAM below the 16640 MiB of caps plus an 8192 MiB margin; free disk below 50 GiB;
