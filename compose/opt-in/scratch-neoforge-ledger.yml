@@ -5,13 +5,13 @@
 # compose command, so the default render has no telemetry mount. Every mount is read-only and comes from a host variable that scratch.sh
 # sets; the required-variable markers make compose fail if this file is used without them. No network is declared here.
 # GELDAR_NF_TELEMETRY=on is the one switch: the entrypoint copies the ledger jar into mods/ (pinned by GELDAR_NF_LEDGER_SHA256), copies
-# the ledger properties into config/ and adds the agent to JVM_OPTS (pinned by GELDAR_NF_OTEL_AGENT_PIN, a repo constant, not an operator value).
+# the ledger properties into config/ and adds the agent to JVM_OPTS (pinned by GELDAR_NF_OTEL_AGENT_SHA256, a repo constant, not an operator value).
 services:
   paper:
     environment:
       GELDAR_NF_TELEMETRY: "on"
       GELDAR_NF_LEDGER_SHA256: ${GELDAR_NF_LEDGER_SHA256:?set by deploy/scratch/scratch-ledger.sh from SCRATCH_NEOFORGE_LEDGER_SHA256}
-      GELDAR_NF_OTEL_AGENT_PIN: "e43a270df53c6f423e0ab157be9c27ccc01d5dc3232e162fe54777573db2f149"
+      GELDAR_NF_OTEL_AGENT_SHA256: "e43a270df53c6f423e0ab157be9c27ccc01d5dc3232e162fe54777573db2f149"
     volumes:
       - type: bind
         source: ${GELDAR_NF_LEDGER_JAR_HOST:?set by deploy/scratch/scratch-ledger.sh from SCRATCH_NEOFORGE_LEDGER_JAR}

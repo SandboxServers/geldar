@@ -162,7 +162,7 @@ const ledgerCopy = (c: Case) => join(c.mods, 'geldar-neoforge-ledger.jar');
 const onEnv = (): Record<string, string> => ({
   GELDAR_NF_TELEMETRY: 'on',
   GELDAR_NF_LEDGER_SHA256: LEDGER_PIN,
-  GELDAR_NF_OTEL_AGENT_PIN: AGENT_PIN,
+  GELDAR_NF_OTEL_AGENT_SHA256: AGENT_PIN,
 });
 const agentArgs = (c: Case) =>
   `-javaagent:${slash(c.agent)} -Dotel.javaagent.configuration-file=${slash(c.props)}`;
@@ -200,7 +200,7 @@ describe.skipIf(skipWithoutSh())(
         const c = setup();
         const extra: Record<string, string> = {
           GELDAR_NF_TELEMETRY: 'on',
-          GELDAR_NF_OTEL_AGENT_PIN: AGENT_PIN,
+          GELDAR_NF_OTEL_AGENT_SHA256: AGENT_PIN,
           ...(pin === undefined ? {} : { GELDAR_NF_LEDGER_SHA256: pin }),
         };
         const r = run(c, extra);
@@ -243,7 +243,7 @@ describe.skipIf(skipWithoutSh())(
     it('a mounted ledger jar with the pin unset refuses and keeps the stale copy (a refusal never deletes it)', () => {
       const c = setup();
       writeFileSync(ledgerCopy(c), LEDGER_BODY);
-      const r = run(c, { GELDAR_NF_TELEMETRY: 'on', GELDAR_NF_OTEL_AGENT_PIN: AGENT_PIN });
+      const r = run(c, { GELDAR_NF_TELEMETRY: 'on', GELDAR_NF_OTEL_AGENT_SHA256: AGENT_PIN });
       expect(r.status).toBe(1);
       expect(r.stderr).toContain('GELDAR_NF_LEDGER_SHA256 is not 64 lowercase hex digits');
       expect(readFileSync(ledgerCopy(c), 'utf8')).toBe(LEDGER_BODY);
@@ -564,9 +564,9 @@ describe.skipIf(skipWithoutSh())(
 
     it('on: refuses a jar whose sha256 does not match, without printing its bytes', () => {
       const c = setup(true);
-      const r = run(c, { ...onEnv(), GELDAR_NF_OTEL_AGENT_PIN: '0'.repeat(64) });
+      const r = run(c, { ...onEnv(), GELDAR_NF_OTEL_AGENT_SHA256: '0'.repeat(64) });
       expect(r.status).toBe(1);
-      expect(r.stderr).toContain('does not match GELDAR_NF_OTEL_AGENT_PIN');
+      expect(r.stderr).toContain('does not match GELDAR_NF_OTEL_AGENT_SHA256');
       expect(r.stdout).not.toContain('JVM_OPTS');
       expect(r.stdout + r.stderr).not.toContain(AGENT_BODY);
     });
@@ -575,11 +575,11 @@ describe.skipIf(skipWithoutSh())(
       for (const pin of [undefined, 'a'.repeat(63), 'B'.repeat(64)]) {
         const c = setup(true);
         const extra: Record<string, string> = { ...onEnv() };
-        if (pin !== undefined) extra.GELDAR_NF_OTEL_AGENT_PIN = pin;
-        else delete extra.GELDAR_NF_OTEL_AGENT_PIN;
+        if (pin !== undefined) extra.GELDAR_NF_OTEL_AGENT_SHA256 = pin;
+        else delete extra.GELDAR_NF_OTEL_AGENT_SHA256;
         const r = run(c, extra);
         expect(r.status).toBe(1);
-        expect(r.stderr).toContain('GELDAR_NF_OTEL_AGENT_PIN is not 64 lowercase hex digits');
+        expect(r.stderr).toContain('GELDAR_NF_OTEL_AGENT_SHA256 is not 64 lowercase hex digits');
       }
     });
 
@@ -619,11 +619,11 @@ describe.skipIf(skipWithoutSh())(
     it('any other GELDAR_NF_TELEMETRY value refuses to start', () => {
       const c = setup(true);
       for (const value of ['1', 'true', 'ON']) {
-        const r = run(c, { GELDAR_NF_TELEMETRY: value, GELDAR_NF_OTEL_AGENT_PIN: AGENT_PIN });
+        const r = run(c, { GELDAR_NF_TELEMETRY: value, GELDAR_NF_OTEL_AGENT_SHA256: AGENT_PIN });
         expect(r.status, value).toBe(1);
         expect(r.stderr, value).toContain('GELDAR_NF_TELEMETRY must be on or off (or unset)');
       }
-      const r = run(c, { GELDAR_NF_TELEMETRY: 'true', GELDAR_NF_OTEL_AGENT_PIN: AGENT_PIN });
+      const r = run(c, { GELDAR_NF_TELEMETRY: 'true', GELDAR_NF_OTEL_AGENT_SHA256: AGENT_PIN });
       expect(r.status).toBe(1);
       expect(r.stderr).toContain('GELDAR_NF_TELEMETRY must be on or off (or unset)');
       expect(r.stdout).not.toContain('JVM_OPTS');

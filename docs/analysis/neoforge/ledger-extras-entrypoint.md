@@ -6,10 +6,10 @@ Status: part 1 (the entrypoint, the scratch overlay and the scratch wiring). The
 
 - `compose/neoforge/neoforge-entrypoint.sh` takes two optional extras, switched by one variable, `GELDAR_NF_TELEMETRY=on|off` (unset changes nothing):
   - `on`: the ledger jar is mounted read-only at `/geldar/mods/geldar-neoforge-ledger.jar` and copied to `$data/mods/geldar-neoforge-ledger.jar` only after its sha256 matches `GELDAR_NF_LEDGER_SHA256`. The ledger properties are mounted read-only at `/geldar/telemetry/ledger.properties` and copied to `$data/config/ledger.properties` at every start (atomic: written to `.part`, mode 644, renamed into place; a symlink source is refused).
-  - `on`: the OpenTelemetry Java agent is mounted read-only at `/geldar/telemetry/opentelemetry-javaagent.jar` (never copied) with its properties at `/geldar/telemetry/otel-agent.properties`. Its sha256 must match `GELDAR_NF_OTEL_AGENT_PIN`, a repo constant set in the overlay, not an operator value. The entrypoint appends `-javaagent:/geldar/telemetry/opentelemetry-javaagent.jar -Dotel.javaagent.configuration-file=/geldar/telemetry/otel-agent.properties` to `JVM_OPTS`.
+  - `on`: the OpenTelemetry Java agent is mounted read-only at `/geldar/telemetry/opentelemetry-javaagent.jar` (never copied) with its properties at `/geldar/telemetry/otel-agent.properties`. Its sha256 must match `GELDAR_NF_OTEL_AGENT_SHA256`, a repo constant set in the overlay, not an operator value. The entrypoint appends `-javaagent:/geldar/telemetry/opentelemetry-javaagent.jar -Dotel.javaagent.configuration-file=/geldar/telemetry/otel-agent.properties` to `JVM_OPTS`.
   - `off`: a mounted ledger jar is refused. Our own stale copy (exact name, never followed) is removed, and a directory or other non-file at that path is refused with exit 1. No agent flag is added, `OTEL_SDK_DISABLED=true` is exported, and `JAVA_AGENTS` and `OTEL_JAVAAGENT_CONFIGURATION_FILE` are unset, so the shared script's own agent and SDK settings are inert. The server then starts without the extras.
   - unset: a mounted ledger jar, a stale copy or a pin with no jar stops the start, as before. Any other value stops the start.
-- The agent pin is `GELDAR_NF_OTEL_AGENT_PIN=e43a270df53c6f423e0ab157be9c27ccc01d5dc3232e162fe54777573db2f149` in `compose/opt-in/scratch-neoforge-ledger.yml`. A repo test checks that the overlay and this document carry the same value.
+- The agent pin is `GELDAR_NF_OTEL_AGENT_SHA256=e43a270df53c6f423e0ab157be9c27ccc01d5dc3232e162fe54777573db2f149` in `compose/opt-in/scratch-neoforge-ledger.yml`. A repo test checks that the overlay and this document carry the same value.
 - `compose/opt-in/scratch-neoforge-ledger.yml` mounts four files read-only under `/geldar/telemetry/` and `/geldar/mods/` with `create_host_path: false`. It declares no network. `compose/opt-in/scratch-neoforge-ledger-off.yml` sets only `GELDAR_NF_TELEMETRY=off` on `paper`, with no mount.
 - `deploy/scratch/scratch-ledger.sh` (sourced by `scratch.sh` only when a ledger or telemetry variable is set) validates on `up`, exit 2 before any docker call, and sets the host variables the overlay reads.
 
@@ -20,7 +20,7 @@ The first draft of this part used other names. None of them remain in the code, 
 | Old | New |
 |---|---|
 | `SCRATCH_OTEL_AGENT_JAR`, `SCRATCH_OTEL_AGENT_PROPS` (in the draft) | `SCRATCH_NEOFORGE_OTEL_AGENT_JAR`, `SCRATCH_NEOFORGE_OTEL_AGENT_PROPS` |
-| `SCRATCH_OTEL_AGENT_SHA256` | removed: the agent pin is the repo constant `GELDAR_NF_OTEL_AGENT_PIN` |
+| `SCRATCH_OTEL_AGENT_SHA256` | removed: the agent pin is the repo constant `GELDAR_NF_OTEL_AGENT_SHA256` |
 | `GELDAR_NF_OTEL_AGENT=0\|1` | `GELDAR_NF_TELEMETRY=on\|off` |
 | literal `GELDAR_NF_LEDGER_SHA256=off` (the soft kill) | `GELDAR_NF_TELEMETRY=off` in the container, and host `SCRATCH_NEOFORGE_TELEMETRY=off` |
 | `/opt/otel/*` | `/geldar/telemetry/*` |

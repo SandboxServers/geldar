@@ -7,7 +7,7 @@
 # The GELDAR_NF_* variables are seams for the behaviour tests (scratch-neoforge-entrypoint.test.ts). Unset, each one is the
 # real value: the data dir, the secret file, the config, the two URLs, the two pinned hashes and the start command.
 # Optional telemetry (GELDAR_NF_TELEMETRY=on|off, unset = nothing): on copies the ledger jar (pin GELDAR_NF_LEDGER_SHA256), copies the
-# ledger properties into config/ and adds the OpenTelemetry agent to JVM_OPTS (pin GELDAR_NF_OTEL_AGENT_PIN); off removes only our own
+# ledger properties into config/ and adds the OpenTelemetry agent to JVM_OPTS (pin GELDAR_NF_OTEL_AGENT_SHA256); off removes only our own
 # stale ledger copy and adds no agent. See the telemetry blocks below.
 set -eu
 
@@ -334,7 +334,7 @@ fi
 # into user_jvm_args.txt on every start for NeoForge (start-finalExec, lines 634-635 of the pinned image's start script). That reaching
 # user_jvm_args.txt is verified by those lines. The agent ATTACH is UNVERIFIED until a scratch run shows it in ps or the logs, and whether
 # run.sh reads user_jvm_args.txt for NeoForge (start-deployNeoForge) is not confirmed. The jar is mounted read-only under /geldar/telemetry,
-# never copied, and must match GELDAR_NF_OTEL_AGENT_PIN (a repo constant set in the overlay, not an operator value).
+# never copied, and must match GELDAR_NF_OTEL_AGENT_SHA256 (a repo constant set in the overlay, not an operator value).
 # The properties file must be present. Only the fixed messages are printed, never either file's contents.
 case "${GELDAR_NF_TELEMETRY:-}" in
   off)
@@ -358,15 +358,15 @@ case "${GELDAR_NF_TELEMETRY:-}" in
       echo "neoforge-entrypoint: $agent_props is missing, a symlink or not a regular file; refusing to start" >&2
       exit 1
     fi
-    agent_sha=${GELDAR_NF_OTEL_AGENT_PIN:-}
+    agent_sha=${GELDAR_NF_OTEL_AGENT_SHA256:-}
     if ! is_sha256_hex "$agent_sha"; then
-      echo "neoforge-entrypoint: GELDAR_NF_OTEL_AGENT_PIN is not 64 lowercase hex digits; refusing to start with the OpenTelemetry agent" >&2
+      echo "neoforge-entrypoint: GELDAR_NF_OTEL_AGENT_SHA256 is not 64 lowercase hex digits; refusing to start with the OpenTelemetry agent" >&2
       exit 1
     fi
     actual=$(sha256sum "$agent_jar" 2>/dev/null || true)
     actual=${actual%% *}
     if [ "$actual" != "$agent_sha" ]; then
-      echo "neoforge-entrypoint: the OpenTelemetry agent jar does not match GELDAR_NF_OTEL_AGENT_PIN; refusing to start" >&2
+      echo "neoforge-entrypoint: the OpenTelemetry agent jar does not match GELDAR_NF_OTEL_AGENT_SHA256; refusing to start" >&2
       exit 1
     fi
     JVM_OPTS="${JVM_OPTS:-} -javaagent:$agent_jar -Dotel.javaagent.configuration-file=$agent_props"

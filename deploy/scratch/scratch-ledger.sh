@@ -10,7 +10,7 @@
 #     SCRATCH_NEOFORGE_LEDGER_JAR and SCRATCH_NEOFORGE_LEDGER_SHA256 (the ledger jar and its pin, 64 lowercase hex digits),
 #     SCRATCH_LEDGER_PROPS (the ledger config; the entrypoint copies it into the container's config/ at every start),
 #     SCRATCH_NEOFORGE_OTEL_AGENT_JAR and SCRATCH_NEOFORGE_OTEL_AGENT_PROPS (the agent jar and its properties).
-#   The agent's pin is a repo constant, ledger_agent_pin below. It is the same value as GELDAR_NF_OTEL_AGENT_PIN in the overlay;
+#   The agent's pin is a repo constant, ledger_agent_pin below. It is the same value as GELDAR_NF_OTEL_AGENT_SHA256 in the overlay;
 #   a repo test checks that it matches the design doc. It is not an operator variable.
 #   The properties files are neither pinned nor checked. SCRATCH_OTEL_AGENT_JAR is the Paper telemetry variable (docs/runbooks/scratch-telemetry.md): this file never reads it.
 

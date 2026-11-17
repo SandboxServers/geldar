@@ -416,7 +416,7 @@ describe('scratch-neoforge-ledger.yml: the render when the variables are set', (
     const env = OVERLAY.services.paper.environment;
     expect(env.GELDAR_NF_TELEMETRY).toBe('on');
     expect(env.GELDAR_NF_LEDGER_SHA256).toMatch(/^\$\{GELDAR_NF_LEDGER_SHA256:\?[^}]+\}$/);
-    expect(env.GELDAR_NF_OTEL_AGENT_PIN).toBe(
+    expect(env.GELDAR_NF_OTEL_AGENT_SHA256).toBe(
       'e43a270df53c6f423e0ab157be9c27ccc01d5dc3232e162fe54777573db2f149',
     );
   });
@@ -432,7 +432,7 @@ describe('the agent pin constant: one sha256 in the overlay, the host script and
   const PIN = 'e43a270df53c6f423e0ab157be9c27ccc01d5dc3232e162fe54777573db2f149';
 
   it('the overlay env, the host script constant and the design doc all state the same pin', () => {
-    expect(OVERLAY.services.paper.environment.GELDAR_NF_OTEL_AGENT_PIN).toBe(PIN);
+    expect(OVERLAY.services.paper.environment.GELDAR_NF_OTEL_AGENT_SHA256).toBe(PIN);
     expect(LEDGER_SCRIPT.match(/^ledger_agent_pin=([0-9a-f]{64})$/m)?.[1]).toBe(PIN);
     expect(DOC_TEXT).toContain(PIN);
   });

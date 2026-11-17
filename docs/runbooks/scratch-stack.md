@@ -638,11 +638,11 @@ Opt-in, NeoForge only (`SCRATCH_PLATFORM=neoforge`). The overlay is `compose/opt
 | `SCRATCH_NEOFORGE_OTEL_AGENT_PROPS` | Absolute path to the agent properties file. |
 | `SCRATCH_NEOFORGE_TELEMETRY` | `off` alone is the soft kill (see below). Otherwise the five variables above are all set, or none is. All five set `GELDAR_NF_TELEMETRY=on` in the container. |
 
-The agent's sha256 has no host variable: its pin is the repo constant `GELDAR_NF_OTEL_AGENT_PIN` in `compose/opt-in/scratch-neoforge-ledger.yml`.
+The agent's sha256 has no host variable: its pin is the repo constant `GELDAR_NF_OTEL_AGENT_SHA256` in `compose/opt-in/scratch-neoforge-ledger.yml`.
 
-What `up` checks, before any docker call, and exits 2 with nothing started: the platform is neoforge; each path is absolute, has no newline, quotes, backslashes or dollar signs, and is a readable regular file (not a symlink); each hash is 64 lowercase hex digits; an agent path contains no whitespace (the entrypoint splits `JVM_OPTS` on it); the host sha256 of the ledger jar equals `SCRATCH_NEOFORGE_LEDGER_SHA256`, and the host sha256 of the agent jar equals the repo constant `GELDAR_NF_OTEL_AGENT_PIN`. `down` and `status` never refuse on these variables. The container checks the same pins again (`compose/neoforge/neoforge-entrypoint.sh`) and refuses to start on a mismatch.
+What `up` checks, before any docker call, and exits 2 with nothing started: the platform is neoforge; each path is absolute, has no newline, quotes, backslashes or dollar signs, and is a readable regular file (not a symlink); each hash is 64 lowercase hex digits; an agent path contains no whitespace (the entrypoint splits `JVM_OPTS` on it); the host sha256 of the ledger jar equals `SCRATCH_NEOFORGE_LEDGER_SHA256`, and the host sha256 of the agent jar equals the repo constant `GELDAR_NF_OTEL_AGENT_SHA256`. `down` and `status` never refuse on these variables. The container checks the same pins again (`compose/neoforge/neoforge-entrypoint.sh`) and refuses to start on a mismatch.
 
-Staging. The ledger jar comes from `neoforge-ledger/` through `deploy/build-neoforge-ledger.sh`, which writes `neoforge-ledger-0.1.0.jar`. The host path to that jar is what `SCRATCH_NEOFORGE_LEDGER_JAR` takes; the overlay mounts it as `/geldar/mods/geldar-neoforge-ledger.jar`. The agent jar comes from the agent's release, downloaded by the owner; its pin is the repo constant `GELDAR_NF_OTEL_AGENT_PIN`, and nothing in this repo fetches the jar. The agent is mounted under `/geldar/telemetry/`. The properties files (`SCRATCH_LEDGER_PROPS` and `SCRATCH_NEOFORGE_OTEL_AGENT_PROPS`) are written on the host. They are neither pinned nor checked by any script: they control the export endpoint, so their content is the operator's to get right.
+Staging. The ledger jar comes from `neoforge-ledger/` through `deploy/build-neoforge-ledger.sh`, which writes `neoforge-ledger-0.1.0.jar`. The host path to that jar is what `SCRATCH_NEOFORGE_LEDGER_JAR` takes; the overlay mounts it as `/geldar/mods/geldar-neoforge-ledger.jar`. The agent jar comes from the agent's release, downloaded by the owner; its pin is the repo constant `GELDAR_NF_OTEL_AGENT_SHA256`, and nothing in this repo fetches the jar. The agent is mounted under `/geldar/telemetry/`. The properties files (`SCRATCH_LEDGER_PROPS` and `SCRATCH_NEOFORGE_OTEL_AGENT_PROPS`) are written on the host. They are neither pinned nor checked by any script: they control the export endpoint, so their content is the operator's to get right.
 
 The OTLP endpoint is whatever the agent properties file says. Nothing here sets an endpoint. Nothing is public: the overlay declares no network and no published port, and the scratch stack stays on its own project network.
 
@@ -655,7 +655,7 @@ Rename table. Names from the first draft are gone from the code, the overlays an
 | Old | New |
 |---|---|
 | `SCRATCH_OTEL_AGENT_JAR`, `SCRATCH_OTEL_AGENT_PROPS` (first draft) | `SCRATCH_NEOFORGE_OTEL_AGENT_JAR`, `SCRATCH_NEOFORGE_OTEL_AGENT_PROPS` |
-| `SCRATCH_OTEL_AGENT_SHA256` | removed: the pin is the repo constant `GELDAR_NF_OTEL_AGENT_PIN` |
+| `SCRATCH_OTEL_AGENT_SHA256` | removed: the pin is the repo constant `GELDAR_NF_OTEL_AGENT_SHA256` |
 | `GELDAR_NF_OTEL_AGENT=0\|1` | `GELDAR_NF_TELEMETRY=on\|off` |
 | literal `GELDAR_NF_LEDGER_SHA256=off` (soft kill) | `GELDAR_NF_TELEMETRY=off` in the container; host `SCRATCH_NEOFORGE_TELEMETRY=off` |
 | `/opt/otel/*` | `/geldar/telemetry/*` |
