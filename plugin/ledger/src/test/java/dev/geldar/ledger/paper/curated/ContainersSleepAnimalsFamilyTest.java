@@ -11,12 +11,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.geldar.ledger.core.FakeHostInfo;
 import dev.geldar.ledger.core.RecordingLedger;
+import java.lang.ref.Reference;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.World;
 import org.bukkit.entity.Cow;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
@@ -124,15 +126,26 @@ class ContainersSleepAnimalsFamilyTest {
     @Test
     void containerLocationIsTheRoundedBlockOnEverySign() {
         CuratedRegistry.FieldSink s = new CuratedRegistry.FieldSink();
-        ContainersSleepAnimalsFamily.container(s, player("ag_mira_01"), new Location(world(), -3.4, 70.9, 12.0), "CHEST");
+        // Location holds its World only weakly and getWorld() throws "World unloaded" once the referent is collected, so
+        // the test keeps the fake worlds strongly reachable; the gc calls make a missing strong reference fail every time.
+        World w1 = world();
+        World w2 = world();
+        Location l1 = new Location(w1, -3.4, 70.9, 12.0);
+        Location l2 = new Location(w2, 3.4, -0.1, -12.5);
+        for (int i = 0; i < 5; i++) {
+            System.gc();
+        }
+        ContainersSleepAnimalsFamily.container(s, player("ag_mira_01"), l1, "CHEST");
         assertEquals(-4, s.l1);
         assertEquals(70, s.l2);
         assertEquals(12, s.l3);
-        ContainersSleepAnimalsFamily.container(s, player("Notch"), new Location(world(), 3.4, -0.1, -12.5), "BARREL");
+        ContainersSleepAnimalsFamily.container(s, player("Notch"), l2, "BARREL");
         assertEquals(3, s.l1);
         assertEquals(-1, s.l2);
         assertEquals(-13, s.l3);
         assertNull(s.s1); // a human name is not copied
+        Reference.reachabilityFence(w1);
+        Reference.reachabilityFence(w2);
     }
     @Test
     void aNonPlayerBreederRecordsNothingAndAPlayerBreederDoes() throws Exception {
