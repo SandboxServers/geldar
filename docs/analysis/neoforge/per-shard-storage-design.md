@@ -181,13 +181,33 @@ Caps (ceilings, not use):
 
 | Stack | CPU caps | Memory caps | Source |
 |---|---|---|---|
-| `geldar-colo` (29 running, 2 exited) | 31.10 | 58368 MiB (57.0 GiB) | Lead's read-only check of the live containers. Paper 8 CPUs, 14336 MiB, 512 pids; Postgres 1 CPU, 2048 MiB; players-host containers 1 CPU, 2048 MiB, 256 pids each (count note below) |
+| `geldar-colo` (29 running, 2 exited) | 31.10 | 58368 MiB (57.0 GiB) | Lead's read-only check of the live containers. Paper 8 CPUs, 14336 MiB, 512 pids; Postgres 1 CPU, 2048 MiB; players-host containers 1 CPU, 2048 MiB, 256 pids each (per-container table below) |
 | `geldar-nf` (proposed; not running; no project, containers, volumes or networks yet) | 5.75 | 16640 MiB (16.25 GiB) | Per-service table below, from `compose/nf-live.yml` on branch `phase1/nf-live-compose` (head 5e119771) |
 | scratch-telemetry (opt-in overlay, idle) | 6.5 | 15872 MiB (15.5 GiB) | `compose/opt-in/scratch-telemetry.yml`: Paper 6 CPUs (`SCRATCH_PAPER_CPUS`, default 6) and 15360m; otel-sink 0.5 CPU and 512m. The other services of the scratch stack are not counted here |
 | **Sum, colo + nf** | **36.85** (about 230% of 16 cores) | **75008 MiB** (73.25 GiB) | |
 | **Sum, colo + nf + scratch-telemetry** | **43.35** (about 271% of 16 cores) | **90880 MiB** (88.75 GiB) | |
 
-Count note: the per-row lines of the lead's colo table (Paper, Velocity, eventsink, geldar-mcp, glass, NATS, Postgres, register, bluemap-web, bluemap-alias) add to 12.10 CPUs and 19456 MiB. Only 19 players-host containers at 1 CPU and 2048 MiB reconcile that with the stated totals (31.10 CPUs, 58368 MiB) and with 29 running. The lead's note says 23 players-host containers. The count does not reconcile yet; recount with `docker ps` and `docker compose ls` at deploy time (section 7.4).
+**Per-container colo caps, running set (29 running).** Lead's read-only check of the live node at 17:50Z 2026-11-17, from each container's `NanoCpus` and `Memory`. Role names only:
+
+| Container (role) | CPUs | Memory (MiB) |
+|---|---|---|
+| mcp | 0.5 | 512 |
+| glass | 0.5 | 256 |
+| register | 0.25 | 128 |
+| eventsink | 0.5 | 512 |
+| paper (autonomous) | 8 | 14336 |
+| bluemap-web | 0.25 | 64 |
+| bluemap-alias | 0.1 | 64 |
+| velocity | 0.5 | 1024 |
+| postgres | 1 | 2048 |
+| nats | 0.5 | 512 |
+| **Subtotal, 10 non-player containers** | **12.10** | **19456** |
+| players-host, 19 containers (1 CPU, 2048 MiB each) | 19.00 | 38912 |
+| **Total, 29 running** | **31.10** | **58368** |
+
+Not running (exited): one players-host and one golem-body container; they are not in the table.
+
+The earlier figure of 23 players-host containers was a miscount: it counted exited containers or matched names by substring. The running set has 19 players-host containers, and 19 reconciles the rows with the stated totals and with 29 running. `CpuQuota` and `CpuPeriod` are 0 on every colo container, so `NanoCpus` is the only CPU cap. To be re-measured at deploy time with the commands in section 7.4.
 
 Live `geldar-nf` budget (from `compose/nf-live.yml` on branch `phase1/nf-live-compose`, not on this branch; proposals, to be measured at deploy):
 
@@ -220,7 +240,7 @@ Follow-up, not done here: `compose/nf-live.yml` is not on this branch. A read-on
 
 ### 7.4 Node headroom: measured by the lead at 17:50Z, to be re-measured at deploy time
 
-The figures in section 7.2 (16 CPUs, 125 GiB total, 91 GiB available, 69 containers, measured use and caps) are the lead's read-only check at 17:50Z on 2026-11-17. This design note did not run those commands itself. They replace the earlier 13:55Z and 16:07Z estimates. The lead's note gives the time as 17:50Z in its header and as "11:50 node time" in its body; the commands below record UTC and settle it at re-measure. The figures must be re-measured with these commands, and the colo container count recounted, before the first `geldar-nf` start.
+The figures in section 7.2 (16 CPUs, 125 GiB total, 91 GiB available, 69 containers, measured use and caps) are the lead's read-only check at 17:50Z on 2026-11-17. This design note did not run those commands itself. They replace the earlier 13:55Z and 16:07Z estimates. The node's clock is US/Central, so the lead's "17:50Z" (header) and "11:50 node time" (body) are one instant: 17:50 UTC is 11:50 CST (UTC-6). Times in this note are UTC. The figures must be re-measured with these commands before the first `geldar-nf` start.
 
 Read-only commands for the operator, on the colo node, each with the UTC time first:
 
