@@ -47,7 +47,7 @@ interface Svc {
   labels?: Record<string, string>;
   logging?: { driver?: string; options?: Record<string, string> };
   ports?: Port[];
-  volumes?: { type?: string; target?: string; read_only?: boolean }[];
+  volumes?: { type?: string; source?: string; target?: string; read_only?: boolean }[];
 }
 interface Rendered {
   name?: string;
@@ -232,5 +232,97 @@ describe('nf-live compose: secrets', () => {
 
   it('reads its secrets from files under the per-project directory', () => {
     expect(NF_TEXT).toMatch(/file: \$\{NF_SECRETS_DIR:-\.\/secrets-nf\}\/postgres\.txt/);
+  });
+});
+
+/** The bot-ingress Velocity config the velocity service mounts. Read lazily, so the other tests load without it. */
+const VELOCITY_PATH = 'compose/velocity/velocity-nf.toml';
+const velocityText = (): string => readFileSync(`${ROOT}${VELOCITY_PATH}`, 'utf8');
+
+/** The `key = value` lines of one TOML table (comments and blank lines dropped), trimmed. */
+function tomlTable(text: string, name: string): string[] {
+  const lines = text.split('\n');
+  const start = lines.indexOf(`[${name}]`);
+  if (start < 0) return [];
+  const body: string[] = [];
+  for (const line of lines.slice(start + 1)) {
+    if (line.startsWith('[')) break;
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith('#')) body.push(trimmed);
+  }
+  return body;
+}
+
+/** The unquoted value of a top-level `key = value` line, or undefined. */
+function tomlValue(text: string, key: string): string | undefined {
+  const m = text.match(new RegExp(`^${key}\\s*=\\s*(.+?)\\s*$`, 'm'));
+  return m?.[1]?.replace(/^"(.*)"$/, '$1');
+}
+
+describe('nf-live velocity config: bot ingress', () => {
+  it('exists at the path the velocity service mounts', () => {
+    expect(velocityText().length).toBeGreaterThan(0);
+  });
+
+  it('is mounted read-only over the velocity config path', () => {
+    const mount = rendered.services.velocity?.volumes?.find(
+      (v) => v.target === '/config/velocity.toml',
+    );
+    expect(mount?.read_only).toBe(true);
+    expect(mount?.source).toMatch(/velocity-nf\.toml$/);
+  });
+
+  it('binds 0.0.0.0:25565 inside the container', () => {
+    expect(tomlValue(velocityText(), 'bind')).toBe('0.0.0.0:25565');
+  });
+
+  it('runs offline: online-mode is false and never true', () => {
+    const text = velocityText();
+    expect(tomlValue(text, 'online-mode')).toBe('false');
+    expect(text).not.toMatch(/^online-mode\s*=\s*true/m);
+  });
+
+  it('forwards with modern forwarding and the secret from its file', () => {
+    const text = velocityText();
+    expect(tomlValue(text, 'player-info-forwarding-mode')).toBe('modern');
+    expect(tomlValue(text, 'forwarding-secret-file')).toBe('/run/secrets/velocity-forwarding');
+    expect(text).not.toMatch(/^forwarding-secret\s*=/m);
+  });
+
+  it('has one backend, neoforge at neoforge:25565, and tries it first', () => {
+    expect(tomlTable(velocityText(), 'servers')).toEqual([
+      'neoforge = "neoforge:25565"',
+      'try = ["neoforge"]',
+    ]);
+  });
+
+  it('points the backend at the neoforge service name in nf-live.yml, on port 25565', () => {
+    const backend = tomlValue(velocityText(), 'neoforge') ?? '';
+    const [host, port] = backend.split(':');
+    expect(host).toBe('neoforge');
+    expect(port).toBe('25565');
+    expect(Object.keys(rendered.services)).toContain(host);
+  });
+
+  it('has empty forced-hosts', () => {
+    expect(tomlTable(velocityText(), 'forced-hosts')).toEqual([]);
+  });
+
+  it('names no colo or paper backend', () => {
+    expect(velocityText()).not.toMatch(/colo|paper/i);
+  });
+
+  it('holds no secret value: no inline secret and no long token-like run', () => {
+    const text = velocityText();
+    expect(text).not.toMatch(/secret\s*=/i);
+    expect(text).not.toMatch(/[A-Za-z0-9+]{32,}/);
+  });
+
+  it('keeps the safe defaults: ping passthrough off, login rate limit off, neutral motd', () => {
+    const text = velocityText();
+    expect(tomlValue(text, 'ping-passthrough')).toBe('DISABLED');
+    expect(tomlValue(text, 'login-ratelimit')).toBe('0');
+    expect(tomlValue(text, 'motd')).toBe('Geldar');
+    expect(text).not.toMatch(/agent|watch/i);
   });
 });

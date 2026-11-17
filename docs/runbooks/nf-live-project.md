@@ -106,31 +106,28 @@ colo-notice.sh, colo-cd-players.sh and .github/workflows/colo-deploy.yml. Not ru
 
 ## 7. UNVERIFIED (not confirmed in code or on a server)
 
-1. **velocity-nf.toml is not written.** The velocity service mounts `./velocity/velocity-nf.toml` (its backend must be `neoforge:25565`).
-   The colo config names the Paper backend and must not be mounted here. If the file is absent, `up` creates an empty directory at the
-   mount target and velocity does not start. This is a deploy blocker, and the file belongs to the next packet.
-2. **The NeoForge offline bundle is not seeded by this file.** The entrypoint runs bundle mode when `.geldar-bundle.sha256` exists in
+1. **The NeoForge offline bundle is not seeded by this file.** The entrypoint runs bundle mode when `.geldar-bundle.sha256` exists in
    the data dir (the neoforge-data volume). deploy/scratch/build-neoforge-bundle.sh builds the bundle; how scratch.sh copies it into the
    volume was not read. The seeding step is UNVERIFIED.
-3. **identity-seed uses the deploy NATS user.** The design lists deploy only for the notice. Whether that user may create the identity KV
+2. **identity-seed uses the deploy NATS user.** The design lists deploy only for the notice. Whether that user may create the identity KV
    buckets is UNVERIFIED; the per-shard NATS auth set must grant it, or the one-shot uses another user.
-4. **The Postgres init runs sql/ from empty.** The file mounts ../sql into docker-entrypoint-initdb.d (as colo does). That 0001 to 0066 run
+3. **The Postgres init runs sql/ from empty.** The file mounts ../sql into docker-entrypoint-initdb.d (as colo does). That 0001 to 0066 run
    cleanly into an empty geldar_nf database is UNVERIFIED. The admin migrate one-shot is the other path; the deploy picks one.
-5. **The eventsink NATS and database keys.** The sink reads GELDAR_NATS_URL, POSTGRES_HOST, POSTGRES_DB, POSTGRES_USER and
+4. **The eventsink NATS and database keys.** The sink reads GELDAR_NATS_URL, POSTGRES_HOST, POSTGRES_DB, POSTGRES_USER and
    POSTGRES_PASSWORD_FILE (eventsink/src/config.ts). The NATS user and password keys (GELDAR_NATS_USER, GELDAR_NATS_PASSWORD_FILE) come from
    compose/nats-auth.yml's comment and contract/src/nats-connect.ts; the second file was not re-read.
-6. **The per-shard sink config is not in the file.** GELDAR_EVENTS_STREAM, GELDAR_EVENTSINK_SHARD and the retention keys do not exist
+5. **The per-shard sink config is not in the file.** GELDAR_EVENTS_STREAM, GELDAR_EVENTSINK_SHARD and the retention keys do not exist
    in eventsink/ today; they need the sink per-shard config packet. This project's NATS holds only its own events, so the default stream
    name is correct for now.
-7. **NF_SERVICE_UID default 1000** is the colo default; the live account uid is UNVERIFIED.
-8. **The caps in section 3** are proposals from the lead's measurement. The other tenants' non-Paper services are UNVERIFIED.
-9. **Alpine nc, mc-health and the NeoForge start script** are used as scratch uses them; not run here.
-10. **Nothing was started.** No container, no node contact, no live lane.
+6. **NF_SERVICE_UID default 1000** is the colo default; the live account uid is UNVERIFIED.
+7. **The caps in section 3** are proposals from the lead's measurement. The other tenants' non-Paper services are UNVERIFIED.
+8. **Alpine nc, mc-health and the NeoForge start script** are used as scratch uses them; not run here.
+9. **Nothing was started.** No container, no node contact, no live lane.
 
 ## 8. Before the first start (checklist, in order)
 
 1. Per-shard NATS auth set generated into compose/secrets-nf/ (the later packet) and the secret files written 0600.
-2. velocity-nf.toml written (item 7.1) and the neoforge bundle seeded (item 7.2).
+2. The neoforge bundle seeded (item 7.1); compose/velocity/velocity-nf.toml is in place (bot ingress, backend neoforge:25565).
 3. `docker compose -p geldar-nf -f compose/nf-live.yml config --quiet` with the real environment.
 4. Re-measure the node's memory and cores; confirm the caps in section 3 still fit beside the autonomous shard.
 5. Start `nats`, then `postgres`, then `eventsink`, then `identity-seed`, then `neoforge`, then `velocity`. Read-only probes only

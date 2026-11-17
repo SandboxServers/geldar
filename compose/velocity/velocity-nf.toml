@@ -1,0 +1,49 @@
+# Bot ingress Velocity config for the live NeoForge shard (compose/nf-live.yml, service velocity).
+# Offline mode: bots connect here and Velocity forwards them to the NeoForge backend with modern forwarding.
+# The human listener is a separate online-mode Velocity, added later. This ingress stays on loopback.
+# The forwarding secret is the Docker secret file, shared with the NeoForge side.
+config-version = "2.7"
+# Inside the container only: compose publishes this port on 127.0.0.1 and nothing else.
+bind = "0.0.0.0:25565"
+motd = "Geldar"
+show-max-players = 400
+online-mode = false
+force-key-authentication = false
+prevent-client-proxy-connections = false
+player-info-forwarding-mode = "modern"
+forwarding-secret-file = "/run/secrets/velocity-forwarding"
+announce-forge = false
+kick-existing-players = false
+ping-passthrough = "DISABLED"
+sample-players-in-ping = false
+enable-player-address-logging = true
+
+[servers]
+# NeoForge is reachable only on the compose network.
+neoforge = "neoforge:25565"
+try = ["neoforge"]
+
+[forced-hosts]
+
+[advanced]
+compression-threshold = 256
+compression-level = -1
+# Disabled: every bot connects from one source IP, so a per-IP limit would throttle the whole shard.
+login-ratelimit = 0
+connection-timeout = 5000
+read-timeout = 30000
+haproxy-protocol = false
+tcp-fast-open = false
+bungee-plugin-message-channel = true
+show-ping-requests = false
+failover-on-unexpected-server-disconnect = true
+announce-proxy-commands = true
+log-command-executions = false
+log-player-connections = true
+accepts-transfers = false
+
+[query]
+enabled = false
+port = 25565
+map = "Velocity"
+show-plugins = false
