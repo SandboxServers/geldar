@@ -6,6 +6,7 @@ import {
   redactContent,
   scrubText,
 } from '../src/redact.ts';
+import { assertLinear } from './timing.ts';
 
 // Credential-shaped fixtures are built at run time.
 const pw = ['pass', 'word'].join('');
@@ -83,16 +84,6 @@ describe('long keys, signatures, PEM and JWT', () => {
   });
 });
 
-function best(input: string): number {
-  let min = Number.POSITIVE_INFINITY;
-  for (let i = 0; i < 3; i++) {
-    const start = performance.now();
-    scrubText(input);
-    min = Math.min(min, performance.now() - start);
-  }
-  return min;
-}
-
 describe('PEM and JWT scans are linear', () => {
   const shapes: Record<string, string> = {
     begin: '-----BEGIN ',
@@ -105,11 +96,8 @@ describe('PEM and JWT scans are linear', () => {
   it.each(Object.entries(shapes))(
     '%s: 1 MiB under 1 s and 3x on doubling',
     (_n, unit) => {
-      const rep = (size: number): string => unit.repeat(Math.ceil(size / unit.length));
-      const t1 = best(rep(MiB));
-      const t2 = best(rep(2 * MiB));
+      const { t1 } = assertLinear((size) => scrubText(unit.repeat(Math.ceil(size / unit.length))));
       expect(t1).toBeLessThan(3000);
-      expect(t2).toBeLessThan(3 * t1 + 100);
     },
     60_000,
   );
