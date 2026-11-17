@@ -1,0 +1,92 @@
+# Releases @geldar/telemetry as a GitHub Release tarball (decision 0373). Runs only on a push of a tag
+# `telemetry-v*`: no branch trigger and no pull_request, so a branch or a fork never releases. The tag must
+# equal `telemetry-v` plus the version in telemetry/package.json. The workflow tests, builds and packs
+# the package, then creates the release with the tarball and SHA256SUMS. It never publishes to a registry
+# and never overwrites a release: if a release for the tag exists, it fails. Only GITHUB_TOKEN is used.
+name: telemetry-release
+
+on:
+  push:
+    tags: ['telemetry-v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: telemetry-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: release @geldar/telemetry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: the tag equals the package version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="$(node -p "require('./telemetry/package.json').version")"
+          if [ "$TAG" != "telemetry-v${version}" ]; then
+            echo "::error::tag $TAG does not equal telemetry-v${version} (telemetry/package.json version)" >&2
+            exit 1
+          fi
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
+      - name: no release exists for this tag yet
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::a release for $TAG already exists; releases are never overwritten" >&2
+            exit 1
+          fi
+      - name: typecheck
+        run: pnpm --filter @geldar/telemetry typecheck
+      - name: test
+        run: pnpm --filter @geldar/telemetry test
+      - name: build
+        run: pnpm --filter @geldar/telemetry build
+      - name: pack
+        run: pnpm --filter @geldar/telemetry pack --pack-destination "$RUNNER_TEMP/out"
+      - name: checksums
+        run: |
+          cd "$RUNNER_TEMP/out"
+          file="geldar-telemetry-${VERSION}.tgz"
+          test -f "$file"
+          test "$(ls | wc -l)" = 1
+          sha256sum "$file" > SHA256SUMS
+          integrity="sha512-$(openssl dgst -sha512 -binary "$file" | openssl base64 -A)"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/${file}"
+          {
+            echo "@geldar/telemetry ${VERSION}, built ESM with .d.ts for plain Node."
+            echo
+            echo "Install URL (pin it in the consumer's package.json; pnpm records the integrity in its lockfile):"
+            echo
+            echo "    ${url}"
+            echo
+            echo "sha512 integrity (npm style): \`${integrity}\`"
+            echo
+            echo "sha256:"
+            echo
+            echo "    $(cat SHA256SUMS)"
+          } > "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md"
+      - name: create the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" \
+            "$RUNNER_TEMP/out/geldar-telemetry-${VERSION}.tgz" \
+            "$RUNNER_TEMP/out/SHA256SUMS" \
+            --verify-tag \
+            --title "@geldar/telemetry ${VERSION}" \
+            --notes-file "$RUNNER_TEMP/notes.md"
