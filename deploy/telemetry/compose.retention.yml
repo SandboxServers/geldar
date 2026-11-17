@@ -1,4 +1,6 @@
 # Geldar telemetry: RETENTION WINDOW override (T-24, decision 0370 D3). [AUTH]
+# NOTE (after the 2026-11-16 window): geldar_signoz_admin was removed from users.xml, so this override only works after the user is re-added
+# through a reviewed PR with a fresh password hash and secret file (README: Opening a later retention window). The file stays for the next window.
 # Use only during the retention window (README, "Retention window (N6c)"):
 #   docker compose -f deploy/telemetry/compose.yml -f deploy/telemetry/compose.retention.yml up -d geldar-signoz
 # It swaps SigNoz's ClickHouse DSN from geldar_reader (readonly=2, cannot run DDL) to geldar_signoz_admin (ALTER TTL grants only),

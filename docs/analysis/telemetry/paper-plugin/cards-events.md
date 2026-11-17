@@ -8,10 +8,11 @@ Every event handler in these cards: priority `EventPriority.MONITOR`, never muta
 
 ## PT-06a: census counters and duty cycler (pure logic)
 
-- Loader: Neutral. Depends on: frozen API. Size: S. Start: immediately.
+- Loader: Neutral. Depends on: PT-03 api (starts only when it is on the integration branch). Size: S. Start: immediately.
 - Goal: the loader-independent part of the census: one pair of bound counters per event class and the duty-cycle decision.
 - Files: CREATE `CORE/census/CensusCounters.java`, `CORE/census/DutyCycler.java`; tests `CORE_T/census/CensusCountersTest.java`, `CORE_T/census/DutyCyclerTest.java`.
-- Steps: 1. `CensusCounters(Ledger, List<String> classNames)`: for each name `counter("geldar_event_count_total", ...).bind(className, "false")` and `bind(className, "true")`, stored in two arrays indexed by class index; `count(int index, boolean cancelled)` is O(1) and allocation-free. 2. `DutyCycler(onTicks, periodTicks)`: `boolean on(long serverTick)` is `(serverTick % period) < on`; period 0 means always on. `ratio()` is `on/period`, published as `geldar_event_duty_ratio{geldar.event.class}` by the collector in PT-06c. 3. Class names are simple names; the constructor throws on duplicate simple names (the allow-list generator in PT-06b emits fully qualified names where simple names collide).
+- Metric attribute keys for the census (README section 4): bare `event_class` and `cancelled`; never the `geldar.event.class` event key.
+- Steps: 1. `CensusCounters(Ledger, List<String> classNames)`: for each name `counter("geldar_event_count_total", ...).bind(className, "false")` and `bind(className, "true")`, stored in two arrays indexed by class index; `count(int index, boolean cancelled)` is O(1) and allocation-free. 2. `DutyCycler(onTicks, periodTicks)`: `boolean on(long serverTick)` is `(serverTick % period) < on`; period 0 means always on. `ratio()` is `on/period`, published as `geldar_event_duty_ratio{event_class}` by the collector in PT-06c. 3. Class names are simple names; the constructor throws on duplicate simple names (the allow-list generator in PT-06b emits fully qualified names where simple names collide).
 - Tests (fail when reverted): counts land in the right series by class and cancelled flag; duty 5/20 is on for ticks 0 to 4 of each 20 and off otherwise; duplicate names rejected; 1 million `count` calls allocate under a small constant.
 - Checks: `:ledger-core:test`. S6, S7.
 - Commit: `PT-06a Census counters and duty cycler (plugin)`.
@@ -173,7 +174,7 @@ Every event handler in these cards: priority `EventPriority.MONITOR`, never muta
 
 ## PT-08e: Velocity login and disconnect events (OPTIONAL, second adapter)
 
-- Loader: Velocity adapter over the neutral core. Depends on: PT-03b, PT-03g, PT-03a. Size: M. Needs the owner's nod (not in 0351); it proves the core is loader-neutral.
+- Loader: Velocity adapter over the neutral core. Depends on: PT-03 api, PT-03g, PT-03a. Size: M. Needs the owner's nod (not in 0351); it proves the core is loader-neutral.
 - Goal: `geldar.velocity.login` and `geldar.velocity.disconnect` from the proxy, with the same redaction and drop rules, in its own jar.
 - Files: EDIT `plugin/settings.gradle.kts` (one line `include("ledger-velocity")`; the only existing-file edit; stack on PT-03a); CREATE `plugin/ledger-velocity/build.gradle.kts` (compileOnly velocity-api with the `velocity-brigadier` exclusion copied from `plugin/velocity-identity/build.gradle.kts`, `implementation(project(":ledger-core"))`), `plugin/ledger-velocity/src/main/java/dev/geldar/ledger/velocity/LedgerVelocity.java` (`@Plugin` main, `VelocityHostScheduler`, listeners for `PostLoginEvent` and `DisconnectEvent`); test file for the listeners; generated lockfile.
 - Steps: 1. Same shell contract as PT-03h: never throws out of an event handler. 2. `PostLoginEvent`: record the username as life_id when `LifeIds.isLifeId`, the protocol version, the forwarding mode name; **never `getRemoteAddress`**. 3. `DisconnectEvent`: `getLoginStatus()` name. 4. Resource `service.name=geldar-velocity` comes from the agent properties of the Velocity process (outside this card).

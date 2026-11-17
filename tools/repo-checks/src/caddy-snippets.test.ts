@@ -40,7 +40,7 @@ const SET = 'header_up x-geldar-client-ip {remote_host}';
 
 /** The body of every reverse_proxy block that has one, in a file. */
 const proxyBlocks = (text: string): string[] =>
-  [...text.matchAll(/reverse_proxy \{\$[A-Z_]+\} \{((?:[^{}]|\{[^{}]*\})*)\}/g)].map(
+  [...text.matchAll(/reverse_proxy \{\$[A-Z_]+(?::[^}]*)?\} \{((?:[^{}]|\{[^{}]*\})*)\}/g)].map(
     (m) => m[1] ?? '',
   );
 
@@ -200,5 +200,80 @@ describe('register shares the Glass host (decision 0135, amendment R42)', () => 
     expect(text.indexOf('handle @register_not_allowed')).toBeLessThan(
       text.indexOf('reverse_proxy'),
     );
+  });
+});
+
+describe('OTLP ingest route (otel.caddy, caddy-ingest-route.md)', () => {
+  const text = read('otel.caddy');
+  const off = read('otel-off.caddy');
+  const PATHS = '/v1/traces /v1/logs /v1/metrics';
+  /** The text without comment lines, so a comment cannot satisfy or break an assertion. */
+  const code = (s: string): string =>
+    s
+      .split('\n')
+      .filter((l) => !l.trimStart().startsWith('#'))
+      .join('\n');
+
+  it('takes the site address and every value from the env placeholders only', () => {
+    expect(text).toContain('{$GELDAR_INGEST_HOST:otel.invalid} {');
+    expect(text).toContain('reverse_proxy {$GELDAR_INGEST_UPSTREAM:localhost:4320} {');
+    expect(text).toContain('header Authorization "Bearer {$GELDAR_INGEST_TOKEN}"');
+    expect(off).toContain('{$GELDAR_INGEST_HOST:otel.invalid} {');
+    const names = new Set([...text.matchAll(/\{\$([A-Z_]+)(?::[^}]*)?\}/g)].map((m) => m[1]));
+    expect([...names].sort()).toEqual([
+      'GELDAR_INGEST_HOST',
+      'GELDAR_INGEST_TOKEN',
+      'GELDAR_INGEST_UPSTREAM',
+    ]);
+  });
+
+  it('lets only POST pass, on the three OTLP paths, and answers 405, 401 and 404 otherwise', () => {
+    expect(text).toMatch(/@not_post not method POST\s+handle @not_post \{\s*respond 405\s*\}/);
+    expect(text).toMatch(new RegExp(`@ingest \\{\\s+path ${PATHS}\\s+header Authorization`));
+    // An empty or short token must never match (a header of just `Bearer `): the matcher carries a size guard.
+    expect(text).toContain("expression `size('{$GELDAR_INGEST_TOKEN}') >= 64`");
+    expect(text).toMatch(new RegExp(`@signal path ${PATHS}\\s+handle @signal \\{\\s*respond 401`));
+    expect(text).toMatch(/handle \{\s*respond 404\s*\}/);
+    expect(text.indexOf('handle @not_post')).toBeLessThan(text.indexOf('reverse_proxy'));
+    expect(text.indexOf('handle @ingest')).toBeLessThan(text.indexOf('handle @signal'));
+  });
+
+  it('caps the body at 8 MiB and sets the per-site proxy timeouts', () => {
+    expect(text).toMatch(/request_body \{\s+max_size 8MiB\s+\}/);
+    const blocks = proxyBlocks(text);
+    expect(blocks.length).toBe(1);
+    expect(blocks[0]).toMatch(
+      /transport http \{\s+dial_timeout 5s\s+response_header_timeout 60s\s+\}/,
+    );
+    expect(blocks[0]).toMatch(/^\s*header_up Host localhost$/m);
+    expect(blocks[0]).toContain(SET);
+  });
+
+  it('strips the incoming address headers', () => {
+    for (const line of STRIPS) {
+      expect(text).toContain(line);
+    }
+  });
+
+  it('deletes the Authorization, Cookie and Proxy-Authorization headers from the access log', () => {
+    expect(text).toMatch(
+      /log \{\s+format filter \{\s+wrap json\s+fields \{\s+request>headers>Authorization delete\s+request>headers>Cookie delete\s+request>headers>Proxy-Authorization delete\s+\}\s+\}\s+\}/,
+    );
+  });
+
+  it('has no global options block, no servers timeouts, no plain-HTTP listener and no token value', () => {
+    const body = code(text);
+    expect(body).not.toMatch(/^\{\s*$/m);
+    expect(body).not.toMatch(
+      /\bservers\b|timeouts|read_body|read_header|idle_timeout|write_timeout/,
+    );
+    expect(body).not.toMatch(/http:\/\/|:80\b|auto_https|admin /);
+    expect(body).not.toMatch(/Bearer (?!\{\$GELDAR_INGEST_TOKEN\}")/);
+    expect(code(off)).not.toMatch(/\bservers\b|Authorization|Bearer/);
+  });
+
+  it('has a kill switch that answers 503 on the same host and proxies nothing', () => {
+    expect(code(off)).toMatch(/\{\$GELDAR_INGEST_HOST:otel\.invalid\} \{\s+respond 503\s+\}/);
+    expect(off).not.toContain('reverse_proxy');
   });
 });

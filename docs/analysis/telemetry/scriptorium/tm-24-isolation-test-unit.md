@@ -1,6 +1,6 @@
 # TM-24: isolation test (HC-26 extension), unit level: the model child inherits nothing of the supervisor's environment (scriptorium repo)
 
-Repo: geldar-scriptorium. Depends on: none. WRITE THIS FIRST: it must exist before any card changes `childEnv` (TM-22, TM-23b) so those cards cannot weaken it. Unblocks: TM-22, TM-23b, TM-25. Mind redeploy: none (test only). `colo-images` path: n/a.
+Repo: geldar-scriptorium. Depends on: none. WRITE THIS FIRST: it must exist before any card changes `childEnv`, so no later card can weaken it. Unblocks: TM-25. Mind redeploy: none (test only). `colo-images` path: n/a.
 
 ## What it proves
 
@@ -32,7 +32,7 @@ The supervisor builds the model child's environment explicitly (`childEnv`, `sup
 3. Direct `childEnv` tests for both harnesses (`claude`, `chatgpt`) with the same canaries: same assertions.
 4. A "who sees what" assertion: `supervisor.log`, `status.json`, `costs.csv`, `prompt.txt` written during the run contain no canary (the supervisor must not echo its own environment).
 5. Revert check (do all three, one at a time, and restore): (i) add `'GELDAR_INGEST_TOKEN'` to `PASS_THROUGH`: (a) fails naming the canary; (ii) add `...env` (spread the whole supervisor environment) to `childEnv`: (a) and (b) fail; (iii) put `console.log(env)`-style echo into `log()`: (4) fails. State the three results in the report.
-6. After TM-22 merges, TM-22 edits `ALLOWED` to add `TRACEPARENT` (only when telemetry on). That is the only expected edit to this file.
+6. `ALLOWED` never gains `TRACEPARENT`, `TRACESTATE` or any `OTEL_*` name: the child gets no telemetry context (R3, 0350 point 7; the former TM-22 that would have added it is dropped). Any edit that adds one is a failure of this test, not a reason to edit the list.
 
 ## Expected result
 

@@ -1,6 +1,6 @@
 # TM-13: `mind.run` span, run metrics and state gauge (scriptorium repo)
 
-Repo: geldar-scriptorium. Depends on: TM-12. Unblocks: TM-14, TM-17, TM-22. Mind redeploy: next kit image (batched). `colo-images` path: n/a.
+Repo: geldar-scriptorium. Depends on: TM-12. Unblocks: TM-14, TM-17. Mind redeploy: next kit image (batched). `colo-images` path: n/a.
 
 ## Goal
 
@@ -59,4 +59,4 @@ git diff --check
 - Do not record STOP, HELD or `status.json` text, only the closed state and reason codes above.
 - Do not await any telemetry call in the loop; do not add a timer other than the SDK's.
 - Do not change `costs.csv`, `status.json`, `supervisor.log` or `heartbeat` formats.
-- Do not pass the span context to the child yet (TM-22).
+- Do not pass the span context to the child: the child environment stays free of telemetry context (R3, 0350 point 7).

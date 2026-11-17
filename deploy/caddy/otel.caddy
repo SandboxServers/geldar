@@ -1,0 +1,75 @@
+# OTLP/HTTP ingest for Mind hosts (T-15; 0350 item 9; collector-design section 9; owner ruling 2026-11-16).
+# Placeholders have safe defaults so a recreate with a variable missing still starts Caddy: host otel.invalid, upstream
+# localhost:4320, token empty (an empty or short token never matches: the matcher also needs size(token) >= 64).
+# Placeholders: GELDAR_INGEST_HOST (public hostname), GELDAR_INGEST_UPSTREAM (gateway loopback publish, host:port),
+# GELDAR_INGEST_TOKEN (ingest bearer token, Caddy environment secret). No value is written in this file.
+# Live file: place it in config/geldar/ on the node (the Caddyfile imports /config/geldar/*.caddy, top level only).
+# Before use: check the three variables by length only (the token at least 64 hex characters), then
+#   `caddy validate` on the node. The shared Caddy has its admin API off (R39): `caddy reload` fails there, so every
+#   change of this file is one `docker restart board-proxy` (a few seconds of dropped connections on every site).
+# If `caddy validate` fails on the node: delete this file at once and do not restart (a bad file in the imported
+#   directory would stop the shared Caddy at its next start, every site down).
+# Rollback and kill switch: put otel-off.caddy in its place, validate, `docker restart board-proxy` (same cost).
+# Steps and the verification matrix: deploy/caddy/README.md, section "OTLP ingest (otel.caddy)".
+{$GELDAR_INGEST_HOST:otel.invalid} {
+	# Only POST passes (the OTLP/HTTP exporters POST).
+	@not_post not method POST
+	handle @not_post {
+		respond 405
+	}
+
+	# Drop any address header a client sent. Caddy sets the one it vouches for inside reverse_proxy.
+	request_header -x-geldar-client-ip
+	request_header -X-Forwarded-For
+	request_header -CF-Connecting-IP
+
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+	}
+
+	# The access log must never hold the Authorization header (it carries the ingest token).
+	log {
+		format filter {
+			wrap json
+			fields {
+				request>headers>Authorization delete
+				request>headers>Cookie delete
+				request>headers>Proxy-Authorization delete
+			}
+		}
+	}
+
+	# The same 8 MiB cap for every request. A 2048-span batch is about 2.5 MB (collector-design section 6).
+	request_body {
+		max_size 8MiB
+	}
+
+	# Authenticated ingest on the three OTLP/HTTP paths only. Stock Caddy: no rate limit (see the doc, Abuse case).
+	@ingest {
+		path /v1/traces /v1/logs /v1/metrics
+		header Authorization "Bearer {$GELDAR_INGEST_TOKEN}"
+		expression `size('{$GELDAR_INGEST_TOKEN}') >= 64`
+	}
+	handle @ingest {
+		reverse_proxy {$GELDAR_INGEST_UPSTREAM:localhost:4320} {
+			header_up Host localhost
+			header_up x-geldar-client-ip {remote_host}
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 60s
+			}
+		}
+	}
+
+	# The same three paths without a valid token: 401. Not rate limited (stock Caddy has no rate limit).
+	@signal path /v1/traces /v1/logs /v1/metrics
+	handle @signal {
+		respond 401
+	}
+
+	# Every other path is 404.
+	handle {
+		respond 404
+	}
+}
