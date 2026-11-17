@@ -632,19 +632,37 @@ Opt-in, NeoForge only (`SCRATCH_PLATFORM=neoforge`). The overlay is `compose/opt
 | Variable | Meaning |
 |---|---|
 | `SCRATCH_NEOFORGE_LEDGER_JAR` | Absolute path to the ledger jar, built from `neoforge-ledger/`. Both this and the hash, or neither. |
-| `SCRATCH_NEOFORGE_LEDGER_SHA256` | The jar's sha256, 64 lowercase hex digits. `off` alone is the soft kill (see below). |
-| `SCRATCH_LEDGER_PROPS` | Absolute path to the ledger config file. Required with the jar pair. |
-| `SCRATCH_OTEL_AGENT_JAR` | Absolute path to the OpenTelemetry Java agent jar. All three agent variables, or none. Needs the jar pair. |
-| `SCRATCH_OTEL_AGENT_SHA256` | The agent jar's sha256, 64 lowercase hex digits. |
-| `SCRATCH_OTEL_AGENT_PROPS` | Absolute path to the agent properties file. The agent is on only when all three agent variables are set. |
+| `SCRATCH_NEOFORGE_LEDGER_SHA256` | The ledger jar's sha256, 64 lowercase hex digits. |
+| `SCRATCH_LEDGER_PROPS` | Absolute path to the ledger config file. The entrypoint copies it into the container's `config/ledger.properties` at every start. |
+| `SCRATCH_NEOFORGE_OTEL_AGENT_JAR` | Absolute path to the OpenTelemetry Java agent jar. Not `SCRATCH_OTEL_AGENT_JAR`, which is the Paper telemetry variable (`docs/runbooks/scratch-telemetry.md`). |
+| `SCRATCH_NEOFORGE_OTEL_AGENT_PROPS` | Absolute path to the agent properties file. |
+| `SCRATCH_NEOFORGE_TELEMETRY` | `off` alone is the soft kill (see below). Otherwise the five variables above are all set, or none is. All five set `GELDAR_NF_TELEMETRY=on` in the container. |
 
-What `up` checks, before any docker call, and exits 2 with nothing started: the platform is neoforge; each path is absolute, has no newline, quotes, backslashes or dollar signs, and is a readable regular file (not a symlink); each hash is 64 lowercase hex digits; and the host sha256 of the ledger jar and of the agent jar equals its pin. `down` and `status` never refuse on these variables. The container checks the same pins again (`compose/neoforge/neoforge-entrypoint.sh`) and refuses to start on a mismatch.
+The agent's sha256 has no host variable: its pin is the repo constant `GELDAR_NF_OTEL_AGENT_SHA256` in `compose/opt-in/scratch-neoforge-ledger.yml`.
 
-Staging. The ledger jar comes from `neoforge-ledger/` through its own build script (`deploy/build-neoforge-ledger.sh`, arriving with the telemetry work; not in this tree yet). The agent jar and its pinned sha256 come from the agent's release, downloaded by the owner; the pin is theirs to record, and nothing in this repo fetches it. The properties files are written on the host.
+What `up` checks, before any docker call, and exits 2 with nothing started: the platform is neoforge; each path is absolute, has no newline, quotes, backslashes or dollar signs, and is a readable regular file (not a symlink); each hash is 64 lowercase hex digits; an agent path contains no whitespace (the entrypoint splits `JVM_OPTS` on it); the host sha256 of the ledger jar equals `SCRATCH_NEOFORGE_LEDGER_SHA256`, and the host sha256 of the agent jar equals the repo constant `GELDAR_NF_OTEL_AGENT_SHA256`. `down` and `status` never refuse on these variables. The container checks the same pins again (`compose/neoforge/neoforge-entrypoint.sh`) and refuses to start on a mismatch.
+
+Staging. The ledger jar comes from `neoforge-ledger/` through `deploy/build-neoforge-ledger.sh`, which writes `neoforge-ledger-0.1.0.jar`. The host path to that jar is what `SCRATCH_NEOFORGE_LEDGER_JAR` takes; the overlay mounts it as `/geldar/mods/geldar-neoforge-ledger.jar`. The agent jar comes from the agent's release, downloaded by the owner; its pin is the repo constant `GELDAR_NF_OTEL_AGENT_SHA256`, and nothing in this repo fetches the jar. The agent is mounted under `/geldar/telemetry/`. The properties files (`SCRATCH_LEDGER_PROPS` and `SCRATCH_NEOFORGE_OTEL_AGENT_PROPS`) are written on the host. They are neither pinned nor checked by any script: they control the export endpoint, so their content is the operator's to get right.
 
 The OTLP endpoint is whatever the agent properties file says. Nothing here sets an endpoint. Nothing is public: the overlay declares no network and no published port, and the scratch stack stays on its own project network.
 
-Soft kill. `SCRATCH_NEOFORGE_LEDGER_SHA256=off` alone is the soft kill, and it works in scratch. It renders `compose/opt-in/scratch-neoforge-ledger-off.yml`: two environment keys on `paper` (`GELDAR_NF_LEDGER_SHA256=off` and `GELDAR_NF_OTEL_AGENT=0`), with no mount and no network. The entrypoint's `off` branch removes only the container's own earlier copy of the ledger jar and starts without the ledger, so a stale copy left in the data volume no longer stops the start. `off` together with the jar pair or any agent variable exits 2 before any docker call (contradictory). `down` and `status` never refuse on it (see `docs/analysis/neoforge/ledger-extras-entrypoint.md`).
+Soft kill. `SCRATCH_NEOFORGE_TELEMETRY=off` alone is the soft kill, and it works in scratch. It renders `compose/opt-in/scratch-neoforge-ledger-off.yml`: one environment key on `paper` (`GELDAR_NF_TELEMETRY=off`), with no mount and no network. The entrypoint's `off` branch removes only the container's own earlier copy of the ledger jar (a regular file or a symlink, unlinked without following it) and starts without the ledger, so a stale copy left in the data volume no longer stops the start. A directory at that path is refused with exit 1 and nothing inside it is removed. Off adds no agent flag, sets `OTEL_SDK_DISABLED=true` and unsets `JAVA_AGENTS` and `OTEL_JAVAAGENT_CONFIGURATION_FILE` in the start environment. `SCRATCH_NEOFORGE_TELEMETRY=off` together with any of the five variables exits 2 before any docker call (contradictory). `down` and `status` never refuse on it (see `docs/analysis/neoforge/ledger-extras-entrypoint.md`).
+
+JVM_OPTS, not JAVA_AGENTS. The agent is added to `JVM_OPTS`. On the pinned image, `start-finalExec` (lines 634-635 of its start script) writes `JVM_OPTS` into `user_jvm_args.txt` on every start for NeoForge. `JAVA_AGENTS` is not used: it goes through `addAgents` and `mc-image-helper mcopy`, which is a download list. UNVERIFIED: that the agent attaches (the scratch run shows it in `ps` and the logs), and that NeoForge's `run.sh` reads `user_jvm_args.txt` (`start-deployNeoForge` is not confirmed). The properties files are neither pinned nor checked. They control the export endpoint.
+
+Rename table. Names from the first draft are gone from the code, the overlays and this runbook:
+
+| Old | New |
+|---|---|
+| `SCRATCH_OTEL_AGENT_JAR`, `SCRATCH_OTEL_AGENT_PROPS` (first draft) | `SCRATCH_NEOFORGE_OTEL_AGENT_JAR`, `SCRATCH_NEOFORGE_OTEL_AGENT_PROPS` |
+| `SCRATCH_OTEL_AGENT_SHA256` | removed: the pin is the repo constant `GELDAR_NF_OTEL_AGENT_SHA256` |
+| `GELDAR_NF_OTEL_AGENT=0\|1` | `GELDAR_NF_TELEMETRY=on\|off` |
+| literal `GELDAR_NF_LEDGER_SHA256=off` (soft kill) | `GELDAR_NF_TELEMETRY=off` in the container; host `SCRATCH_NEOFORGE_TELEMETRY=off` |
+| `/opt/otel/*` | `/geldar/telemetry/*` |
+| nested bind of the ledger config at `/data/config` | mount at `/geldar/telemetry/ledger.properties`, copied to `/data/config/ledger.properties` at every start |
+| `geldar-ledger.jar` | `geldar-neoforge-ledger.jar` |
+
+The design notes are in `docs/analysis/neoforge/ledger-extras-entrypoint.md`.
 
 ### Telemetry sink on the scratch NeoForge stack
 
@@ -658,7 +676,10 @@ Start sequence for a NeoForge telemetry run (from the repository root, in a clea
 export SCRATCH_PLATFORM=neoforge
 export SCRATCH_NATS_AUTH_DIR=<absolute node dir with the five NATS auth files>
 export SCRATCH_NEOFORGE_MOD_JAR=<abs path of the mod jar>  SCRATCH_NEOFORGE_MOD_SHA256=<64 hex>
-# the ledger jar, ledger config and OpenTelemetry agent variables: export them exactly as the table above lists them
+export SCRATCH_NEOFORGE_LEDGER_JAR=<abs path of the ledger jar>  SCRATCH_NEOFORGE_LEDGER_SHA256=<64 hex>
+export SCRATCH_LEDGER_PROPS=<abs path of the ledger config>
+export SCRATCH_NEOFORGE_OTEL_AGENT_JAR=<abs path of the agent jar>  SCRATCH_NEOFORGE_OTEL_AGENT_PROPS=<abs path of compose/neoforge/otel-agent.properties or a copy>
+# all five or none; there is no agent hash variable (the pin is a repo constant)
 export SCRATCH_TELEMETRY_OUT="$HOME/.local/state/geldar/scratch-nf-telemetry-out"   # absolute, outside the repo
 mkdir -p "$SCRATCH_TELEMETRY_OUT"
 export SCRATCH_NEOFORGE_TELEMETRY_SINK=1
@@ -669,4 +690,4 @@ sh deploy/scratch/telemetry-verify.sh event <name>      # or metric / max / hist
 sh deploy/scratch/scratch.sh down nf        # same exports; removes containers, volumes and the project's secrets
 ```
 
-Teardown leaves `"$SCRATCH_TELEMETRY_OUT"` in place on the host (it is yours); remove its `otlp.jsonl` before the next run so the verify counts start from zero, or use `SCRATCH_TELEMETRY_SINCE_LINE`. `down` removes the `otel-sink` container with the rest of the project. The sink variable does not turn the agent on: set the agent variables of the table above for that, and with the agent off the sink stays empty.
+Teardown leaves `"$SCRATCH_TELEMETRY_OUT"` in place on the host (it is yours); remove its `otlp.jsonl` before the next run so the verify counts start from zero, or use `SCRATCH_TELEMETRY_SINCE_LINE`. `down` removes the `otel-sink` container with the rest of the project. The sink variable does not turn the agent on: the five variables above do, and with the agent off the sink stays empty. The sink is compatible with the soft kill: `SCRATCH_NEOFORGE_TELEMETRY=off` refuses only together with the five ledger and agent variables, not with `SCRATCH_NEOFORGE_TELEMETRY_SINK=1`, so `off` plus the sink gives a run in which the receiver is up and the verify script can show that nothing was exported (`absent`).

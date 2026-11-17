@@ -313,8 +313,8 @@ set_env() {
   fi
   export GELDAR_NF_MOD_JAR_HOST GELDAR_NF_MOD_SHA256
   GELDAR_NF_SINK_FILE=
-  # The ledger jar, the OpenTelemetry agent and the NeoForge OTLP sink (scratch-ledger.sh, sourced only when one of their variables is set; up refuses on them there).
-  [ -z "${SCRATCH_NEOFORGE_LEDGER_JAR:-}${SCRATCH_NEOFORGE_LEDGER_SHA256:-}${SCRATCH_LEDGER_PROPS:-}${SCRATCH_OTEL_AGENT_JAR:-}${SCRATCH_OTEL_AGENT_SHA256:-}${SCRATCH_OTEL_AGENT_PROPS:-}${SCRATCH_NEOFORGE_TELEMETRY_SINK:-}" ] || { . "$ROOT/deploy/scratch/scratch-ledger.sh"; ledger_set_env; }
+  # The ledger jar, the telemetry agent and the NeoForge OTLP sink (scratch-ledger.sh, sourced only when one of their variables is set; up refuses on them there).
+  [ -z "${SCRATCH_NEOFORGE_LEDGER_JAR:-}${SCRATCH_NEOFORGE_LEDGER_SHA256:-}${SCRATCH_LEDGER_PROPS:-}${SCRATCH_NEOFORGE_OTEL_AGENT_JAR:-}${SCRATCH_NEOFORGE_TELEMETRY:-}${SCRATCH_NEOFORGE_OTEL_AGENT_PROPS:-}${SCRATCH_NEOFORGE_TELEMETRY_SINK:-}" ] || { . "$ROOT/deploy/scratch/scratch-ledger.sh"; ledger_set_env; }
 }
 
 # Any non-root account may run. GELDAR_SERVICE_UID, when set, must be this account's uid. The secret modes never change:

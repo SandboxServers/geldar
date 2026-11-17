@@ -27,13 +27,15 @@
 #
 # Environment: every variable has a default, so the file renders with no environment set (ci.yml renders every compose file
 # with none). The variables an operator sets for this project, all optional at render time:
-#   NF_SECRETS_DIR         the per-project secret files (default ./secrets-nf, gitignored; written by the NF secrets step, not yet built)
+#   NF_SECRETS_DIR         the per-project secret files (default ./secrets-nf, gitignored; written by `./geldar.ps1 shard nats-auth nf --live`, runbook section 4b, which writes all eight files)
 #   NF_MOD_JAR_HOST        host path of the pinned geldar NeoForge mod jar (read-only mount). Unset, the default path does not
 #                          exist and `up` refuses to start the bind (create_host_path is false), which is the fail-closed path.
 #   NF_MOD_SHA256          the jar's sha256, 64 lowercase hex; the entrypoint refuses a mounted jar that does not match
 #   NF_NEOFORGE_BUILD      NeoForge 26.1.2 build number (default 126, the only build the entrypoint pin accepts)
 #   NF_NEOFORGE_HEAP       neoforge JVM heap (default 9G)
-#   NF_SERVICE_UID         the account uid:gid the services run as (default 1000; the account that owns the secret files)
+#   NF_SERVICE_UID         the uid the services run as (default 1000, which is not the node: its ops account is uid 1001, so
+#                          the operator exports NF_SERVICE_UID=1001; the default itself is unchanged)
+#   NF_SERVICE_GID         the gid the services run as (default NF_SERVICE_UID; deploy/nf-deploy.sh exports both)
 #   NF_EVENTSINK_IMAGE     the eventsink image (default geldar-eventsink:nf-live, built from eventsink/Dockerfile)
 #   NF_ADMIN_IMAGE         the admin image for identity-seed (default geldar-admin:nf-live, built from tools/admin/Dockerfile)
 #
@@ -62,7 +64,7 @@ x-labels: &nf-labels
 
 services:
   nats:
-    # Budget: 0.5 CPU, 512m, 256 pids. The auth conf is the per-shard set written by the NF secrets step (not yet built).
+    # Budget: 0.5 CPU, 512m, 256 pids. The auth conf is the per-shard set written by `./geldar.ps1 shard nats-auth nf --live` (runbook section 4b).
     deploy:
       resources:
         limits:
@@ -142,7 +144,7 @@ services:
       dockerfile: eventsink/Dockerfile
     image: ${NF_EVENTSINK_IMAGE:-geldar-eventsink:nf-live}
     # Runs as the account uid:gid, like the scratch eventsink: the 0600 secret files belong to that account.
-    user: "${NF_SERVICE_UID:-1000}:${NF_SERVICE_UID:-1000}"
+    user: "${NF_SERVICE_UID:-1000}:${NF_SERVICE_GID:-${NF_SERVICE_UID:-1000}}"
     environment:
       GELDAR_NATS_URL: nats://nats:4222
       GELDAR_NATS_USER: sink
@@ -170,7 +172,7 @@ services:
       dockerfile: tools/admin/Dockerfile
     image: ${NF_ADMIN_IMAGE:-geldar-admin:nf-live}
     entrypoint: ["node", "/opt/geldar/golem/src/seed-buckets.ts"]
-    user: "${NF_SERVICE_UID:-1000}:${NF_SERVICE_UID:-1000}"
+    user: "${NF_SERVICE_UID:-1000}:${NF_SERVICE_GID:-${NF_SERVICE_UID:-1000}}"
     environment:
       GELDAR_NATS_URL: nats://nats:4222
       GELDAR_NATS_USER: seed
@@ -213,7 +215,7 @@ services:
     image: itzg/mc-proxy:2026.10.2-java25@sha256:0b969bd3000d6e21ebb58444d062d63202cb552b5264b57a274fed7d2b411c0d
     environment:
       UID: "${NF_SERVICE_UID:-1000}"
-      GID: "${NF_SERVICE_UID:-1000}"
+      GID: "${NF_SERVICE_GID:-${NF_SERVICE_UID:-1000}}"
       TYPE: VELOCITY
       VELOCITY_VERSION: "3.5.1"
       VELOCITY_BUILD_ID: "615"
@@ -266,7 +268,7 @@ services:
     entrypoint: ["/bin/sh", "/geldar/neoforge-entrypoint.sh"]
     environment:
       UID: "${NF_SERVICE_UID:-1000}"
-      GID: "${NF_SERVICE_UID:-1000}"
+      GID: "${NF_SERVICE_GID:-${NF_SERVICE_UID:-1000}}"
       EULA: "TRUE"
       TYPE: NEOFORGE
       NEOFORGE_VERSION: "26.1.2.${NF_NEOFORGE_BUILD:-126}"
@@ -308,7 +310,7 @@ volumes:
 # File-based secrets under the per-project directory (compose/secrets-nf/, gitignored). The names are the per-shard NATS
 # auth set's: nats-auth.conf (the server config), nats-sink.txt, nats-neoforge.txt, nats-velocity.txt, nats-deploy.txt,
 # nats-seed.txt (one password file per user), and the Postgres and forwarding secrets. `./geldar.ps1 shard nats-auth nf --live`
-# writes the NATS ones (runbook section 4b); the Postgres and forwarding secrets are a later packet. No value is in this file.
+# writes all eight of them, the NATS ones and the Postgres and forwarding secrets (runbook section 4b). No value is in this file.
 secrets:
   postgres:
     file: ${NF_SECRETS_DIR:-./secrets-nf}/postgres.txt

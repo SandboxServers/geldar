@@ -9,7 +9,15 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
-import { AUTH, type Env, JARS, runScript, skipWithoutSh, slash } from './scratch-harness.js';
+import {
+  AUTH,
+  type Env,
+  JARS,
+  type RunOpts,
+  runScript,
+  skipWithoutSh,
+  slash,
+} from './scratch-harness.js';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const OVERLAY_TEXT = readFileSync(`${ROOT}compose/opt-in/scratch-neoforge-telemetry.yml`, 'utf8');
@@ -52,6 +60,30 @@ const withOut =
       ...extra,
     };
   };
+
+/**
+ * The only place this file names the ledger and agent variables (all five, or none; the agent pin is a repo constant, so the
+ * success runs use AGENT_TREE, a script copy whose pin is the fixture agent jar's sha256): a rename is an edit here.
+ */
+const LEDGER_BYTES = 'ledger fixture';
+const AGENT_BYTES = 'agent fixture';
+const AGENT_TREE: RunOpts = {
+  tree: { jars: true, agentPin: createHash('sha256').update(AGENT_BYTES).digest('hex') },
+};
+const ledgerFiveVars = (base: string): Env => {
+  const at = (name: string, text: string) => {
+    const path = join(base, name);
+    writeFileSync(path, text);
+    return slash(path);
+  };
+  return {
+    SCRATCH_NEOFORGE_LEDGER_JAR: at('ledger.jar', LEDGER_BYTES),
+    SCRATCH_NEOFORGE_LEDGER_SHA256: createHash('sha256').update(LEDGER_BYTES).digest('hex'),
+    SCRATCH_LEDGER_PROPS: at('ledger.properties', 'x=1\n'),
+    SCRATCH_NEOFORGE_OTEL_AGENT_JAR: at('agent.jar', AGENT_BYTES),
+    SCRATCH_NEOFORGE_OTEL_AGENT_PROPS: at('agent.properties', 'y=1\n'),
+  };
+};
 
 describe('scratch-neoforge-telemetry overlay', () => {
   it('has no published port, no network of its own and no top-level network', () => {
@@ -102,29 +134,36 @@ describe.skipIf(skipWithoutSh())(
     });
 
     it('is layered after the ledger overlay when both are set', () => {
-      // The only place this file names the ledger variables (the jar pair and its config): a rename is an edit here.
       const run = runScript(
         ['up', 'nf'],
-        (base) => {
-          const jar = join(base, 'ledger.jar');
-          const props = join(base, 'ledger.properties');
-          writeFileSync(jar, 'ledger fixture');
-          writeFileSync(props, 'x=1\n');
-          return {
-            ...withOut()(base),
-            SCRATCH_NEOFORGE_LEDGER_JAR: slash(jar),
-            SCRATCH_NEOFORGE_LEDGER_SHA256: createHash('sha256')
-              .update('ledger fixture')
-              .digest('hex'),
-            SCRATCH_LEDGER_PROPS: slash(props),
-          };
-        },
-        JARS,
+        (base) => ({ ...withOut()(base), ...ledgerFiveVars(base) }),
+        AGENT_TREE,
       );
       const up = upLine(run.calls);
       expect(run.status).toBe(0);
       expect(up).toContain('opt-in/scratch-neoforge-ledger.yml');
       expect(up.indexOf('opt-in/scratch-neoforge-ledger.yml')).toBeLessThan(up.indexOf(SINK));
+    });
+
+    it('is compatible with the soft kill: off plus the sink starts, with both overlays and no refusal', () => {
+      const run = runScript(['up', 'nf'], withOut({ SCRATCH_NEOFORGE_TELEMETRY: 'off' }), JARS);
+      const up = upLine(run.calls);
+      expect(run.status).toBe(0);
+      expect(up).toContain('opt-in/scratch-neoforge-ledger-off.yml');
+      expect(up).toContain(SINK);
+      // The soft kill still refuses with any of the five variables: the sink variable is not one of them.
+      const clash = runScript(
+        ['up', 'nf'],
+        (base) => ({
+          ...withOut()(base),
+          ...ledgerFiveVars(base),
+          SCRATCH_NEOFORGE_TELEMETRY: 'off',
+        }),
+        AGENT_TREE,
+      );
+      expect(clash.status).toBe(2);
+      expect(clash.stderr).toContain('SCRATCH_NEOFORGE_TELEMETRY=off is contradictory');
+      expect(clash.calls).toEqual([]);
     });
 
     it('leaves the overlay out by default, with the variable unset, empty or the platform paper', () => {
