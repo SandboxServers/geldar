@@ -846,6 +846,7 @@ dev/geldar/core/blockowner/BlockOwnerQueries.class
 dev/geldar/core/blockowner/BlockOwnerResponder$Reply.class
 dev/geldar/core/blockowner/BlockOwnerResponder.class
 dev/geldar/core/blockowner/BlockOwnerSetup.class
+dev/geldar/core/blockowner/BlockOwnerTrace.class
 dev/geldar/core/blockowner/ChunkLookupCall.class
 dev/geldar/core/blockowner/CoreProtectApi.class
 dev/geldar/core/blockowner/CoreProtectOwnerSource.class
@@ -855,6 +856,9 @@ dev/geldar/core/blockowner/FirstRowResolver$Pos.class
 dev/geldar/core/blockowner/FirstRowResolver.class
 dev/geldar/core/blockowner/LookupDebugLog.class
 dev/geldar/core/blockowner/LookupFailureLog.class
+dev/geldar/core/blockowner/NatsBlockOwnerLink$TraceSeam$1.class
+dev/geldar/core/blockowner/NatsBlockOwnerLink$TraceSeam$Scope.class
+dev/geldar/core/blockowner/NatsBlockOwnerLink$TraceSeam.class
 dev/geldar/core/blockowner/NatsBlockOwnerLink.class
 dev/geldar/core/blockowner/OwnerCache$1.class
 dev/geldar/core/blockowner/OwnerCache$Base.class

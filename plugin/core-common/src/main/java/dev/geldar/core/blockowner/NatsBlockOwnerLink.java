@@ -2,7 +2,9 @@ package dev.geldar.core.blockowner;
 
 import io.nats.client.Connection;
 import io.nats.client.Nats;
+import io.nats.client.Message;
 import io.nats.client.Options;
+import io.nats.client.impl.Headers;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,12 +25,58 @@ public final class NatsBlockOwnerLink implements BlockOwnerResponder.Reply, Auto
     private final Logger log;
     private volatile Connection connection;
     private volatile boolean closed;
+    private volatile TraceSeam trace = TraceSeam.NONE;
 
     public NatsBlockOwnerLink(String url, String shard, Function<String, String> setting, Logger log) {
         this.url = url;
         this.shard = shard;
         this.setting = setting;
         this.log = log;
+    }
+
+    /**
+     * The trace-context seam. core-common carries no OpenTelemetry, so the Paper adapter plugs in TraceHeaders here.
+     * The default does nothing: the reply goes out exactly as before.
+     */
+    public interface TraceSeam {
+        TraceSeam NONE = new TraceSeam() {
+            @Override
+            public Scope open(Headers incoming) {
+                return () -> {};
+            }
+
+            @Override
+            public Headers inject() {
+                return null;
+            }
+        };
+
+        /** Makes the context carried by the query's headers current until the scope is closed. */
+        Scope open(Headers incoming);
+
+        /** Fresh headers carrying the current trace context, or {@code null} when there is none. */
+        Headers inject();
+
+        /** A scope that closes without throwing. */
+        interface Scope extends AutoCloseable {
+            @Override
+            void close();
+        }
+    }
+
+    public void setTrace(TraceSeam seam) {
+        trace = seam == null ? TraceSeam.NONE : seam;
+    }
+
+    /** Test seam: uses this connection instead of connecting. */
+    void attach(Connection nc) {
+        connection = nc;
+    }
+
+    void handle(Message m, BiConsumer<String, String> onQuery) {
+        try (TraceSeam.Scope ignored = trace.open(m.getHeaders())) {
+            onQuery.accept(m.getReplyTo(), new String(m.getData(), StandardCharsets.UTF_8));
+        }
     }
 
     static String querySubject(String shard) {
@@ -60,7 +108,7 @@ public final class NatsBlockOwnerLink implements BlockOwnerResponder.Reply, Auto
                 nc.close();
                 return;
             }
-            nc.createDispatcher(m -> onQuery.accept(m.getReplyTo(), new String(m.getData(), StandardCharsets.UTF_8)))
+            nc.createDispatcher(m -> handle(m, onQuery))
                     .subscribe(querySubject(shard));
             connection = nc;
         } catch (Exception e) {
@@ -70,7 +118,17 @@ public final class NatsBlockOwnerLink implements BlockOwnerResponder.Reply, Auto
 
     @Override
     public void reply(String replyTo, String json) {
-        publish(replyTo, json);
+        Connection nc = connection;
+        if (nc == null) {
+            return;
+        }
+        Headers headers = trace.inject();
+        byte[] body = json.getBytes(StandardCharsets.UTF_8);
+        if (headers == null) {
+            nc.publish(replyTo, body);
+        } else {
+            nc.publish(replyTo, headers, body);
+        }
     }
 
     /** Publishes one change; called from the server thread by the publisher. */

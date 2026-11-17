@@ -68,6 +68,7 @@ public final class BlockOwnerSetup implements AutoCloseable {
         OwnerQueryService service = new OwnerQueryService(source, cache, lookups, DEFAULT_TIMEOUT_MS, log);
         service.attachDebug(debug);
         NatsBlockOwnerLink link = new NatsBlockOwnerLink(natsUrl, shard, env, log);
+        link.setTrace(new BlockOwnerTrace());
         BlockOwnerPublisher publisher = new BlockOwnerPublisher(link::changed, log);
         PlacementRecorder placements = new PlacementRecorder(cache, publisher, writerFor(coreProtect, debug), log);
         BlockOwnerSetup setup = new BlockOwnerSetup(lookups, link, service, debug, placements, source);
