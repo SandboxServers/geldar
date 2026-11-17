@@ -66,6 +66,8 @@ dependencies {
     }
 
     testImplementation(libs.junit.jupiter)
+    // Test-only: EventEnvelope's signature names gson's JsonObject (core-common keeps gson compileOnly).
+    testImplementation(libs.gson)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
