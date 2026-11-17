@@ -1,0 +1,9 @@
+# Scratch NeoForge telemetry off (suffix nf). Layers after compose/opt-in/scratch-neoforge.yml, and is added by
+# deploy/scratch/scratch.sh compose_run only when SCRATCH_NEOFORGE_TELEMETRY=off alone (scratch-ledger.sh sets GELDAR_NF_LEDGER_OFF=1).
+# It sets one environment key on paper, with a literal value: GELDAR_NF_TELEMETRY=off makes the entrypoint remove only our own stale
+# ledger copy, add no agent, unset JAVA_AGENTS and OTEL_JAVAAGENT_CONFIGURATION_FILE, and set OTEL_SDK_DISABLED=true. It declares no
+# volume, no mount and no network: the ledger jar, the agent and the ledger config are not mounted or read.
+services:
+  paper:
+    environment:
+      GELDAR_NF_TELEMETRY: "off"
