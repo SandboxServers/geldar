@@ -35,6 +35,14 @@ public final class WorldCollector implements Collector {
     public static final int MAX_WORLDS = 16;
     /** Worlds read in one sampling run: the per-tick work bound. */
     public static final int WORLDS_PER_RUN = 8;
+    /**
+     * Cap on gauge series registered over the collector's life. Gauges cannot be unregistered and their world attribute is
+     * fixed at registration, so a world that unloads keeps its three series (reading 0) and a new name needs new series.
+     * At most {@value #MAX_WORLDS} worlds are live at once; this bounds the churn (temporary worlds) to
+     * {@value #MAX_SERIES_WORLDS} distinct names per collector start.
+     */
+    public static final int MAX_SERIES_WORLDS = 4 * MAX_WORLDS;
+
     static final long REGISTER_EVERY_MS = 1000L;
 
     private static final int CHUNKS = 0;
@@ -42,7 +50,10 @@ public final class WorldCollector implements Collector {
     private static final int PLAYERS = 2;
 
     private final Supplier<List<? extends World>> source;
+    /** Live worlds: at most MAX_WORLDS. */
     private final Map<String, AtomicLongArray> values = new ConcurrentHashMap<>();
+    /** Every name that ever got series (live or stale): at most MAX_SERIES_WORLDS. A stale world's array reads 0. */
+    private final Map<String, AtomicLongArray> series = new ConcurrentHashMap<>();
     private final Set<String> registered = new HashSet<>();
     private volatile Ledger ledger;
     private volatile HostInfo host;
@@ -73,6 +84,8 @@ public final class WorldCollector implements Collector {
         synchronized (registered) {
             registered.clear();
         }
+        values.clear();
+        series.clear();
         cursor = 0;
         running = true;
         int every = Math.max(1, ledger.config().sampleWorldEveryTicks());
@@ -121,6 +134,7 @@ public final class WorldCollector implements Collector {
 
     private void readSlice() {
         List<? extends World> worlds = source.get();
+        dropUnloaded(worlds);
         int total = Math.min(worlds.size(), MAX_WORLDS);
         if (total == 0) {
             return;
@@ -141,12 +155,39 @@ public final class WorldCollector implements Collector {
                 if (values.size() >= MAX_WORLDS) {
                     continue;
                 }
-                v = new AtomicLongArray(3);
+                v = series.get(name); // a world that comes back reuses its registered series
+                if (v == null) {
+                    if (series.size() >= MAX_SERIES_WORLDS) {
+                        continue;
+                    }
+                    v = new AtomicLongArray(3);
+                    series.put(name, v);
+                }
                 values.put(name, v);
             }
             v.set(CHUNKS, w.getChunkCount());
             v.set(ENTITIES, w.getEntityCount());
             v.set(PLAYERS, w.getPlayerCount());
+        }
+    }
+
+    /** A live world that is no longer loaded frees its slot; its (unremovable) gauges read 0 from now on. */
+    private void dropUnloaded(List<? extends World> worlds) {
+        for (Map.Entry<String, AtomicLongArray> e : values.entrySet()) {
+            boolean loaded = false;
+            for (World w : worlds) {
+                if (e.getKey().equals(w.getName())) {
+                    loaded = true;
+                    break;
+                }
+            }
+            if (!loaded) {
+                AtomicLongArray v = e.getValue();
+                for (int i = 0; i < 3; i++) {
+                    v.set(i, 0);
+                }
+                values.remove(e.getKey());
+            }
         }
     }
 
@@ -158,7 +199,7 @@ public final class WorldCollector implements Collector {
             if (!running || h == null || l == null || h.isMainThread()) {
                 return;
             }
-            for (Map.Entry<String, AtomicLongArray> e : values.entrySet()) {
+            for (Map.Entry<String, AtomicLongArray> e : series.entrySet()) {
                 String world = e.getKey();
                 synchronized (registered) {
                     if (!registered.add(world)) {

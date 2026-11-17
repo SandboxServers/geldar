@@ -251,7 +251,78 @@ class WorldCollectorTest {
             r.scheduler.advanceTicks(LedgerConfig.defaults().sampleWorldEveryTicks());
         }
         assertEquals(WorldCollector.MAX_WORLDS, r.collector.trackedWorlds().size());
-        assertFalse(r.collector.trackedWorlds().contains("b0"));
+        // the old worlds are gone, so their slots are free and the new names are tracked
+        assertTrue(r.collector.trackedWorlds().contains("b0"));
+        assertFalse(r.collector.trackedWorlds().contains("a0"));
+    }
+
+    private void samples(Rig r, int n) {
+        r.host.mainThread(true);
+        for (int i = 0; i < n; i++) {
+            r.scheduler.advanceTicks(LedgerConfig.defaults().sampleWorldEveryTicks());
+        }
+    }
+
+    @Test
+    void aSeventeenthWorldIsTrackedAfterOneUnloadsAndTheStaleOneReadsZero() {
+        Rig r = new Rig();
+        for (int i = 0; i < WorldCollector.MAX_WORLDS; i++) {
+            r.worlds.add(new FakeWorld("a" + i, 11, 12, 13));
+        }
+        r.start();
+        samples(r, 2);
+        r.host.mainThread(false);
+        r.scheduler.advanceMillis(WorldCollector.REGISTER_EVERY_MS);
+        assertEquals(11, r.read(Names.World.LOADED_CHUNKS, "a3"));
+        r.worlds.remove(3);
+        r.worlds.add(new FakeWorld("fresh", 5, 6, 7));
+        samples(r, 2);
+        r.host.mainThread(false);
+        r.scheduler.advanceMillis(WorldCollector.REGISTER_EVERY_MS);
+        assertEquals(WorldCollector.MAX_WORLDS, r.collector.trackedWorlds().size());
+        assertTrue(r.collector.trackedWorlds().contains("fresh"));
+        assertFalse(r.collector.trackedWorlds().contains("a3"));
+        assertEquals(0, r.read(Names.World.LOADED_CHUNKS, "a3"));
+        assertEquals(0, r.read(Names.World.ENTITIES, "a3"));
+        assertEquals(0, r.read(Names.World.PLAYERS, "a3"));
+        assertEquals(5, r.read(Names.World.LOADED_CHUNKS, "fresh"));
+        assertEquals(7, r.read(Names.World.PLAYERS, "fresh"));
+        assertEquals(WorldCollector.MAX_WORLDS + 1, r.ledger.registrations(Names.World.PLAYERS).size());
+    }
+
+    @Test
+    void aWorldThatComesBackReusesItsSeriesAndNeverExceedsTheSlotCap() {
+        Rig r = new Rig();
+        FakeWorld w = new FakeWorld("temp", 4, 4, 4);
+        r.worlds.add(w);
+        r.start();
+        samples(r, 1);
+        r.host.mainThread(false);
+        r.scheduler.advanceMillis(WorldCollector.REGISTER_EVERY_MS);
+        r.worlds.clear();
+        samples(r, 1);
+        assertEquals(0, r.read(Names.World.LOADED_CHUNKS, "temp"));
+        r.worlds.add(new FakeWorld("temp", 9, 9, 9));
+        samples(r, 1);
+        r.host.mainThread(false);
+        r.scheduler.advanceMillis(WorldCollector.REGISTER_EVERY_MS);
+        assertEquals(9, r.read(Names.World.LOADED_CHUNKS, "temp"));
+        assertEquals(1, r.ledger.registrations(Names.World.LOADED_CHUNKS).size());
+    }
+
+    @Test
+    void churnIsBoundedByTheSeriesCap() {
+        Rig r = new Rig();
+        r.start();
+        for (int i = 0; i < WorldCollector.MAX_SERIES_WORLDS + 10; i++) {
+            r.worlds.clear();
+            r.worlds.add(new FakeWorld("t" + i, 1, 1, 1));
+            samples(r, 1);
+            r.host.mainThread(false);
+            r.scheduler.advanceMillis(WorldCollector.REGISTER_EVERY_MS);
+            assertTrue(r.collector.trackedWorlds().size() <= WorldCollector.MAX_WORLDS);
+        }
+        assertEquals(WorldCollector.MAX_SERIES_WORLDS, r.ledger.registrations(Names.World.PLAYERS).size());
     }
 
     @Test
