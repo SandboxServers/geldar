@@ -490,3 +490,43 @@ RCON value appears in its output, and none may be pasted into a report.
   requirement and the owner is recorded. Cause unverified (the itzg/minecraft-server remap). The owner decides whether it must match.
 - Our own mod is not mounted in the scratch NeoForge stack yet (the overlay mounts only proxy-compatible-forge.jar), so no run
   has exercised `neoforge/` on a dedicated server. A separate mod-mount packet covers this.
+
+## Building the mod jar
+
+Build the jar on the desktop when `neoforge/` changes and a scratch NeoForge run needs it. Putting the jar into the server is the
+mod-mount packet's job; this section only produces the jar, its sha256 and a build-info file. Build from a clean export of `main`,
+never from the live checkout, as the nats-auth section does.
+
+1. Export `main` into an empty directory (absolute path):
+
+   ```
+   git archive --format=tar --prefix=geldar/ origin/main | tar -x -C <empty-dir>
+   ```
+
+2. Build. The output dir is absolute and absent or empty:
+
+   ```
+   GELDAR_MOD_BUILD_FROM_EXPORT=1 sh <empty-dir>/geldar/deploy/scratch/build-neoforge-mod.sh <absolute-output-dir>
+   ```
+
+   The script runs the pinned Gradle wrapper with the single task `build`, and dependency verification stays on. It needs Java 25
+   and network for the first build. It prints the jar's sha256 and size. In a git checkout (a `.git` in the tree) the script
+   refuses unless `neoforge/` has no changes and no untracked files, so the export mode is only for a tree without `.git`.
+
+3. Compare the sha256 by a second channel. Read it from the desktop output or from `geldar-neoforge.jar.sha256`, send it to the
+   node by a route other than the copy, and run `sha256sum geldar-neoforge.jar` there. The two must match, as for the bundle.
+
+4. Copy only the jar and its `.sha256` to the node (scp or similar): `geldar-neoforge.jar` and `geldar-neoforge.jar.sha256`.
+   Never copy the build dir (`neoforge/build/` or the export tree).
+
+The output holds `geldar-neoforge.jar`, `geldar-neoforge.jar.sha256` (the sha256 in `sha256sum` format) and
+`geldar-neoforge.build-info`: the commit (or `export`), the UTC build time, the Gradle wrapper version, the first line of
+`java -version`, and the jar's sha256 and size. Each build records its sha256 in those two files. The hash is not pinned in the
+repo: a pin would go stale on every change to `neoforge/`, so the run's brief states the hash it used.
+
+The script refuses, and writes no jar: a relative or non-empty output dir; a dirty tree; a build that leaves no jar or more than
+one (the one that is not `-sources` or `-javadoc`); a jar without `META-INF/neoforge.mods.toml`, or one that packs in `.java`
+sources. A failed build writes nothing.
+
+This is the first dedicated-server run of `neoforge/`, so the jar has never loaded on a server. If the server fails to load the
+mod, record that as a finding in the run's report. It is not a fault in `build-neoforge-mod.sh`.
