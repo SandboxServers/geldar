@@ -15,10 +15,15 @@ public interface Ledger {
     /** Registers a histogram with explicit bucket bounds. Startup only. */
     Histogram histogram(String name, String unit, String description, double[] bounds, String... attrKeys);
 
-    /** Registers a long gauge. The reader runs on the exporter thread and must be a cheap field read. */
+    /**
+     * Registers a long gauge. The reader runs on the exporter thread and must be a cheap field read. Unlike counters
+     * and histograms, {@code attrKeys} here are ALTERNATING key,value pairs (key0, value0, key1, value1, ...): the
+     * registration reports one series with exactly those attributes, so one name registered several times with
+     * different pairs gives several series. Only the keys are checked against the metric allow-list.
+     */
     void gaugeLong(String name, String unit, String description, LongSupplier reader, String... attrKeys);
 
-    /** Registers a double gauge. The reader runs on the exporter thread and must be a cheap field read. */
+    /** Registers a double gauge; {@code attrKeys} are alternating key,value pairs as for {@link #gaugeLong}. */
     void gaugeDouble(String name, String unit, String description, DoubleSupplier reader, String... attrKeys);
 
     /** The event log. */

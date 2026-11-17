@@ -24,6 +24,14 @@ import java.util.logging.Logger;
  * events and content go through bounded rings drained by an {@link Emitter} into an {@link OtelEventSink}. Without an
  * agent ({@code agentPresent=false}) the API is a no-op and {@code record} returns before touching a ring (S12).
  * Nothing here throws into the host: a bad registration or a disallowed metric key is dropped and counted.
+ *
+ * <p>Deviation from the PT-03g card text: the card says binding a disallowed metric attribute "throws at bind".
+ * This class never throws for it; the key is dropped and counted under {@code metric.attrs} (safer for the host).
+ *
+ * <p>Gauge attribute arguments are alternating key,value pairs (see {@link Ledger#gaugeLong}): only the keys are
+ * checked with {@link AttrKeys#metricAllowed}; a disallowed key drops the whole attribute set of that registration,
+ * an odd count drops the unpaired last key, a null or over-64-character value drops that pair; each is counted.
+ * Registrations of one gauge name share one instrument and report one series per distinct attribute set.
  */
 public final class OtelLedger implements Ledger, AutoCloseable {
     static final String RING_RATE = "events.rate";
@@ -31,6 +39,8 @@ public final class OtelLedger implements Ledger, AutoCloseable {
     static final String RING_MAIN_THREAD = "events.mainthread";
     static final String RING_MAP_FULL = "events.map";
     static final int MAP_CAP = 256;
+    /** Longest gauge attribute value kept; the caller bounds cardinality (the area enum). */
+    static final int MAX_GAUGE_VALUE = 64;
     private static final AttributeKey<String> QUEUE_KEY = AttributeKey.stringKey("queue");
 
     private final AtomicReference<LedgerConfig> config;
@@ -44,6 +54,10 @@ public final class OtelLedger implements Ledger, AutoCloseable {
     private final LongAdder rateDrops = drops.counter(RING_RATE);
     private final LongAdder mainThreadDrops = drops.counter(RING_MAIN_THREAD);
     private final LongAdder mapDrops = drops.counter(RING_MAP_FULL);
+    private final ConcurrentHashMap<String, ConcurrentHashMap<Attributes, LongSupplier>> longGauges =
+            new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, ConcurrentHashMap<Attributes, DoubleSupplier>> doubleGauges =
+            new ConcurrentHashMap<>();
     private final EventDefs eventDefs = new EventDefs();
     private final EventDefs contentDefs = new EventDefs();
     private final EventRing eventRing;
@@ -85,7 +99,8 @@ public final class OtelLedger implements Ledger, AutoCloseable {
 
     private void registerQueueGauges() {
         try {
-            meter.gaugeBuilder(Names.Queue.DROPPED_TOTAL).ofLongs().buildWithCallback(m -> {
+            // Monotonic totals: an observable counter (README section 4: counter), not a gauge.
+            meter.counterBuilder(Names.Queue.DROPPED_TOTAL).buildWithCallback(m -> {
                 drops.snapshot().forEach((q, n) -> m.record(n, Attributes.of(QUEUE_KEY, q)));
             });
             meter.gaugeBuilder(Names.Queue.DEPTH).ofLongs().buildWithCallback(m -> {
@@ -221,31 +236,65 @@ public final class OtelLedger implements Ledger, AutoCloseable {
         }
     }
 
+    /**
+     * Builds the attribute set of one gauge registration from alternating key,value pairs. Keys only are checked.
+     */
+    Attributes gaugeAttributes(String[] pairs) {
+        if (pairs == null || pairs.length == 0) {
+            return Attributes.empty();
+        }
+        AttributesBuilder b = Attributes.builder();
+        for (int i = 0; i < pairs.length; i += 2) {
+            String key = pairs[i];
+            if (!AttrKeys.metricAllowed(key)) {
+                drops.counter("metric.attrs").increment();
+                return Attributes.empty();
+            }
+            String value = i + 1 < pairs.length ? pairs[i + 1] : null;
+            if (i + 1 >= pairs.length || value == null || value.length() > MAX_GAUGE_VALUE) {
+                drops.counter("metric.attrs").increment();
+                continue;
+            }
+            b.put(AttributeKey.stringKey(key), value);
+        }
+        return b.build();
+    }
+
     @Override
     public void gaugeLong(String name, String unit, String description, LongSupplier reader, String... attrKeys) {
-        metricKeyMask(attrKeys == null ? new String[0] : attrKeys);
-        guarded(() -> meter.gaugeBuilder(name).ofLongs().setUnit(unit).setDescription(description)
-                .buildWithCallback(m -> {
-                    try {
-                        m.record(reader.getAsLong());
-                    } catch (RuntimeException e) {
-                        log.log(Level.FINE, "gauge reader failed", e);
-                    }
-                }));
+        Attributes a = gaugeAttributes(attrKeys);
+        ConcurrentHashMap<Attributes, LongSupplier> series = longGauges.computeIfAbsent(name, n -> {
+            ConcurrentHashMap<Attributes, LongSupplier> m = new ConcurrentHashMap<>();
+            guarded(() -> meter.gaugeBuilder(n).ofLongs().setUnit(unit).setDescription(description)
+                    .buildWithCallback(om -> m.forEach((at, r) -> {
+                        try {
+                            om.record(r.getAsLong(), at);
+                        } catch (RuntimeException e) {
+                            log.log(Level.FINE, "gauge reader failed", e);
+                        }
+                    })));
+            return m;
+        });
+        series.put(a, reader);
     }
 
     @Override
     public void gaugeDouble(String name, String unit, String description, DoubleSupplier reader, String... attrKeys) {
-        metricKeyMask(attrKeys == null ? new String[0] : attrKeys);
-        guarded(() -> meter.gaugeBuilder(name).setUnit(unit).setDescription(description).buildWithCallback(m -> {
-            try {
-                m.record(reader.getAsDouble());
-            } catch (RuntimeException e) {
-                log.log(Level.FINE, "gauge reader failed", e);
-            }
-        }));
+        Attributes a = gaugeAttributes(attrKeys);
+        ConcurrentHashMap<Attributes, DoubleSupplier> series = doubleGauges.computeIfAbsent(name, n -> {
+            ConcurrentHashMap<Attributes, DoubleSupplier> m = new ConcurrentHashMap<>();
+            guarded(() -> meter.gaugeBuilder(n).setUnit(unit).setDescription(description)
+                    .buildWithCallback(om -> m.forEach((at, r) -> {
+                        try {
+                            om.record(r.getAsDouble(), at);
+                        } catch (RuntimeException e) {
+                            log.log(Level.FINE, "gauge reader failed", e);
+                        }
+                    })));
+            return m;
+        });
+        series.put(a, reader);
     }
-
     // --- events and content ---
 
     private final class Events implements EventLog {

@@ -20,6 +20,8 @@ final class OtelEventSink implements Sink {
     static final int MAP_ID = -1;
     /** Joins the second and third content string into one ring slot. */
     static final char JOIN = '\u001F';
+    /** Longest event attribute string kept, in UTF-8 bytes (S3). */
+    static final int ATTR_MAX_BYTES = 1024;
 
     /** Payload of an {@code emitMap} call, parked until the emitter reaches the marker. */
     record MapEvent(String name, Severity severity, Map<String, Object> attrs) {}
@@ -126,6 +128,19 @@ final class OtelEventSink implements Sink {
         if (AttrKeys.PLAYER_UUID.equals(key) && attrs.containsKey(key)) {
             return;
         }
-        attrs.put(key, Redactor.redactAttr(key, value));
+        Object v = value;
+        if (!(v instanceof Long || v instanceof Integer || v instanceof Double || v instanceof Boolean)) {
+            // Anything else (List, address object, record, custom toString) takes the String path: stringify first,
+            // then cap, then scrub, so no unscrubbed text can reach LogOut.
+            String text;
+            try {
+                text = String.valueOf(v);
+            } catch (RuntimeException e) {
+                attrDrops.increment();
+                return;
+            }
+            v = ContentCap.cap(text, ATTR_MAX_BYTES);
+        }
+        attrs.put(key, Redactor.redactAttr(key, v));
     }
 }
