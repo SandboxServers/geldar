@@ -1,6 +1,6 @@
 # Node request 03: retire the retention admin user (part B) and delete the old staged trees (part A)
 
-Status: DRAFT. Nothing has been run. Part B needs a SigNoz and ClickHouse sanity check first. Part A needs request 01 finished and the timing in section 4 met. The owner must say go for each part.
+Status: DONE 2026-11-17 (window N11, README window log). Part A: the five old trees were removed. Part B: the baseline found the hash line and the secret file already absent, removed at about 00:59Z by the earlier admin-user removal step (T-37), not by this request (ANOMALY, resolved), so the removal and the backup were not run; `geldar-ch` was recreated with the form in step 4. The result is in section 9.
 
 Source of the rules: README "Remaining teardown" (steps 1 to 3) and RESUME.md "Held": the `src.old*` trees and stage tarballs stay until `geldar-ch` and keeper are recreated from the new `src`.
 
@@ -53,7 +53,7 @@ Expected outage: none for part A (no container reads these paths after request 0
 1. Edit the env file: `chmod u+w secrets/ch-hashes.env`, remove the line `GELDAR_CH_SIGNOZ_ADMIN_SHA256=` with an editor (no value in argv), then `chmod 0400 secrets/ch-hashes.env`.
 2. Delete the secret file with its full literal path: `rm -- /mnt/nvme/geldar-telemetry/secrets/ch_signoz_admin_password`.
 3. Dry run first: `(cd /mnt/nvme/geldar-telemetry/src && docker compose -f deploy/telemetry/compose.yml up -d --dry-run)`. Expect only `geldar-ch` to be recreated (its `env_file` content changed). Any other container named for recreate stops part B; restore the backup (see rollback) before going further.
-4. Recreate: `(cd /mnt/nvme/geldar-telemetry/src && docker compose -f deploy/telemetry/compose.yml up -d)`. `geldar-ch` must start, because `users.xml` no longer names the user, so no `from_env` needs the variable (README "Hazard").
+4. Recreate: `(cd /mnt/nvme/geldar-telemetry/src && docker compose -f deploy/telemetry/compose.yml up -d --no-deps --force-recreate geldar-ch)`. Use this form, not a plain `up -d`: a plain `up -d` also starts the one-shot `geldar-signoz-migrator`, which starts and exits (seen in the N11 dry run), so it is not used. `geldar-ch` must start, because `users.xml` no longer names the user, so no `from_env` needs the variable (README "Hazard").
 5. Wait for `geldar-ch` to be healthy. **Stop rule:** not healthy within 300 s: go to rollback at once.
 
 **Verify (after step 5).**
@@ -64,13 +64,13 @@ Expected outage: none for part A (no container reads these paths after request 0
 - `grep -c '^GELDAR_CH_SIGNOZ_ADMIN_SHA256=' secrets/ch-hashes.env` prints `0` (grep exits 1 on zero matches; that is expected here). `ls secrets/ch_signoz_admin_password` reports no such file.
 - `docker compose -f deploy/telemetry/compose.yml config | grep -c GELDAR_CH_SIGNOZ_ADMIN` prints `0`.
 - Gateway: `http://geldar-gateway:13133/` returns 200 (from the telemetry network, as in request 01 section 7.2). SigNoz API health returns 200 (B0).
-- Row counts rising against B1; `du` of the queue at or near the baseline.
+- Row counts rising against B1; queue size (Docker read-only `du` and `otelcol_exporter_queue_size`, B1) at or near the baseline.
 - Then delete the backup: `rm -- /mnt/nvme/geldar-telemetry/stage/ch-hashes.env.bak-<ts>`.
 
 **Rollback.** Before the backup is deleted:
 
 1. `chmod u+w secrets/ch-hashes.env`, copy the backup over it (`cp -p stage/ch-hashes.env.bak-<ts> secrets/ch-hashes.env`), `chmod 0400 secrets/ch-hashes.env`.
-2. `(cd /mnt/nvme/geldar-telemetry/src && docker compose -f deploy/telemetry/compose.yml up -d --force-recreate geldar-ch)`; wait for healthy with restart count 0.
+2. `(cd /mnt/nvme/geldar-telemetry/src && docker compose -f deploy/telemetry/compose.yml up -d --no-deps --force-recreate geldar-ch)`; wait for healthy with restart count 0.
 
 **The secret file cannot be restored if it was deleted in step 2.** It is only used by `compose.retention.yml`, and the README says a later window needs a fresh password and a fresh hash, never the old password. So a rollback restores the hash line and not the file. That is acceptable: the admin user is not defined in `users.xml`, so the file has no consumer until a later window.
 
@@ -97,3 +97,11 @@ The gateway metrics endpoint is loopback-only (`127.0.0.1:8888` inside the conta
 ## 8. Open facts
 
 The exact list of old trees and tarballs on the node; whether any is root-owned; whether anything other than compose refers to the old trees or the secret file (cron or scripts: not known from the repo); the SigNoz API health path (B0, [UNV]); the exact gateway failure-series names (section 7, [UNV]).
+
+## 9. Result (2026-11-17, window N11)
+
+- **Part B: not run as written.** The baseline (19:47Z) found `GELDAR_CH_SIGNOZ_ADMIN_SHA256` count 0 in `ch-hashes.env` and the secret file absent. Cause (read-only evidence): removed at about 00:59Z on 2026-11-17 by the earlier admin-user removal step (T-37), not by this request. No backup of the hash line exists in `stage/`, so none was made. `compose.retention.yml` was not applied. `geldar-ch` was recreated at 19:48:30Z with the step 4 form, and the plain `up -d` dry run was not used (it also starts `geldar-signoz-migrator`). Result: healthy after 11 s, restart count 0, outage about 11 s, other containers' start times unchanged, `geldar_signoz_admin` absent from `system.users`, rows queryable (logs 4, traces 17312 at 19:49Z), SigNoz API 200, gateway `:13133` 200, no auth errors in SigNoz and no error or warn lines in the gateway since.
+- **Part A: done.** 0 running containers mounted any `src.old*` path. Removed by literal path: `src.old`, `src.old-n6d`, `src.old-n7`, `src.old-n8`, `src.old-n10` (about 1 MB). `df` unchanged at 624G used of 1.8T (36%). No tarballs deleted. After: all `geldar-*` containers Up, no restarts, none unhealthy. Part A ran on 2026-11-17, before the section 4 gate (2026-11-18T14:00Z). The owner approved, directly in a dialog with the orchestrator geldar-93 on 2026-11-17, deleting the old trees now with no soak hold (and the user told the telemetry coordinator the same: skip long soak times); parts B and A were run together in one window.
+- **Queue and drain:** the queue directory (uid 10001, mode 0750) was read as root through the busybox read-only `du`: 7.4M. `otelcol_exporter_queue_size` is 0 for logs, metrics and traces (capacity 2.68e8 each). Drain is fine. The `send_failed` and `enqueue_failed` series are not exposed, because counters appear only after a first increment.
+
+Details: `deploy/telemetry/README.md`, window log N11.
