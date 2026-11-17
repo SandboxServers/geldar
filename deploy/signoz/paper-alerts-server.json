@@ -1,0 +1,391 @@
+{
+  "rules": [
+    {
+      "alert": "Paper TPS low",
+      "alertType": "METRIC_BASED_ALERT",
+      "ruleType": "threshold_rule",
+      "version": "v4",
+      "condition": {
+        "compositeQuery": {
+          "queryType": "builder",
+          "panelType": "graph",
+          "unit": "",
+          "builderQueries": {
+            "A": {
+              "queryName": "A",
+              "dataSource": "metrics",
+              "aggregateOperator": "avg",
+              "timeAggregation": "avg",
+              "spaceAggregation": "sum",
+              "aggregateAttribute": {
+                "key": "geldar_tps",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true
+              },
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "window",
+                      "dataType": "string",
+                      "type": "tag",
+                      "isColumn": false
+                    },
+                    "op": "=",
+                    "value": "1m"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "expression": "A",
+              "disabled": false,
+              "having": [],
+              "stepInterval": 60,
+              "reduceTo": "avg",
+              "functions": [],
+              "legend": ""
+            }
+          }
+        },
+        "op": "2",
+        "target": 12,
+        "matchType": "2",
+        "selectedQueryName": "A",
+        "alertOnAbsent": false
+      },
+      "evalWindow": "5m0s",
+      "frequency": "1m",
+      "labels": {
+        "severity": "critical"
+      },
+      "annotations": {
+        "description": "TPS stayed under 12 for 5 minutes: check the tick time panel and the census for a hot event class, then the container throttling panel.",
+        "summary": "Paper TPS low"
+      },
+      "preferredChannels": ["geldar-owner-channel"],
+      "disabled": false
+    },
+    {
+      "alert": "Paper MSPT p95 high",
+      "alertType": "METRIC_BASED_ALERT",
+      "ruleType": "threshold_rule",
+      "version": "v4",
+      "condition": {
+        "compositeQuery": {
+          "queryType": "builder",
+          "panelType": "graph",
+          "unit": "ms",
+          "builderQueries": {
+            "A": {
+              "queryName": "A",
+              "dataSource": "metrics",
+              "aggregateOperator": "avg",
+              "timeAggregation": "avg",
+              "spaceAggregation": "sum",
+              "aggregateAttribute": {
+                "key": "geldar_spark_mspt_ms",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true
+              },
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "stat",
+                      "dataType": "string",
+                      "type": "tag",
+                      "isColumn": false
+                    },
+                    "op": "=",
+                    "value": "p95"
+                  },
+                  {
+                    "key": {
+                      "key": "window",
+                      "dataType": "string",
+                      "type": "tag",
+                      "isColumn": false
+                    },
+                    "op": "=",
+                    "value": "1m"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "expression": "A",
+              "disabled": false,
+              "having": [],
+              "stepInterval": 60,
+              "reduceTo": "avg",
+              "functions": [],
+              "legend": ""
+            }
+          }
+        },
+        "op": "1",
+        "target": 50,
+        "matchType": "3",
+        "selectedQueryName": "A",
+        "alertOnAbsent": false
+      },
+      "evalWindow": "5m0s",
+      "frequency": "1m",
+      "labels": {
+        "severity": "warning"
+      },
+      "annotations": {
+        "description": "Spark MSPT p95 is over the 50 ms tick budget: check the tick time panel and slow_tick events for the cause.",
+        "summary": "Paper MSPT p95 high"
+      },
+      "preferredChannels": ["geldar-owner-channel"],
+      "disabled": false
+    },
+    {
+      "alert": "Paper watchdog warning",
+      "alertType": "LOGS_BASED_ALERT",
+      "ruleType": "threshold_rule",
+      "version": "v4",
+      "condition": {
+        "compositeQuery": {
+          "queryType": "builder",
+          "panelType": "graph",
+          "unit": "",
+          "builderQueries": {
+            "A": {
+              "queryName": "A",
+              "dataSource": "logs",
+              "aggregateOperator": "count",
+              "aggregateAttribute": {
+                "key": "",
+                "dataType": "",
+                "type": "",
+                "isColumn": false
+              },
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "body",
+                      "dataType": "string",
+                      "type": "tag",
+                      "isColumn": false
+                    },
+                    "op": "contains",
+                    "value": "The server has stopped responding"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "expression": "A",
+              "disabled": false,
+              "having": [],
+              "stepInterval": 60,
+              "reduceTo": "sum",
+              "functions": [],
+              "legend": ""
+            }
+          }
+        },
+        "op": "1",
+        "target": 0,
+        "matchType": "1",
+        "selectedQueryName": "A",
+        "alertOnAbsent": false
+      },
+      "evalWindow": "5m0s",
+      "frequency": "1m",
+      "labels": {
+        "severity": "critical"
+      },
+      "annotations": {
+        "description": "The watchdog logged that the server stopped responding: take a thread dump from the log and check the stall events.",
+        "summary": "Paper watchdog warning"
+      },
+      "preferredChannels": ["geldar-owner-channel"],
+      "disabled": false
+    },
+    {
+      "alert": "Paper exception events",
+      "alertType": "LOGS_BASED_ALERT",
+      "ruleType": "threshold_rule",
+      "version": "v4",
+      "condition": {
+        "compositeQuery": {
+          "queryType": "builder",
+          "panelType": "graph",
+          "unit": "",
+          "builderQueries": {
+            "A": {
+              "queryName": "A",
+              "dataSource": "logs",
+              "aggregateOperator": "count",
+              "aggregateAttribute": {
+                "key": "",
+                "dataType": "",
+                "type": "",
+                "isColumn": false
+              },
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "event.name",
+                      "dataType": "string",
+                      "type": "tag",
+                      "isColumn": false
+                    },
+                    "op": "=",
+                    "value": "geldar.server.exception"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "expression": "A",
+              "disabled": false,
+              "having": [],
+              "stepInterval": 60,
+              "reduceTo": "sum",
+              "functions": [],
+              "legend": ""
+            }
+          }
+        },
+        "op": "1",
+        "target": 5,
+        "matchType": "5",
+        "selectedQueryName": "A",
+        "alertOnAbsent": false
+      },
+      "evalWindow": "5m0s",
+      "frequency": "1m",
+      "labels": {
+        "severity": "warning"
+      },
+      "annotations": {
+        "description": "More than 5 geldar.server.exception events in 5 minutes: read the exception class on the events and the plugin named.",
+        "summary": "Paper exception events"
+      },
+      "preferredChannels": ["geldar-owner-channel"],
+      "disabled": false
+    },
+    {
+      "alert": "Paper operators present",
+      "alertType": "METRIC_BASED_ALERT",
+      "ruleType": "threshold_rule",
+      "version": "v4",
+      "condition": {
+        "compositeQuery": {
+          "queryType": "builder",
+          "panelType": "graph",
+          "unit": "",
+          "builderQueries": {
+            "A": {
+              "queryName": "A",
+              "dataSource": "metrics",
+              "aggregateOperator": "avg",
+              "timeAggregation": "avg",
+              "spaceAggregation": "sum",
+              "aggregateAttribute": {
+                "key": "geldar_operators_count",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true
+              },
+              "filters": {
+                "op": "AND",
+                "items": []
+              },
+              "groupBy": [],
+              "expression": "A",
+              "disabled": false,
+              "having": [],
+              "stepInterval": 60,
+              "reduceTo": "avg",
+              "functions": [],
+              "legend": ""
+            }
+          }
+        },
+        "op": "1",
+        "target": 0,
+        "matchType": "1",
+        "selectedQueryName": "A",
+        "alertOnAbsent": false
+      },
+      "evalWindow": "5m0s",
+      "frequency": "1m",
+      "labels": {
+        "severity": "warning"
+      },
+      "annotations": {
+        "description": "The operator count is above 0: an account holds operator status, confirm it is intended.",
+        "summary": "Paper operators present"
+      },
+      "preferredChannels": ["geldar-owner-channel"],
+      "disabled": false
+    },
+    {
+      "alert": "Paper TPS data absent",
+      "alertType": "METRIC_BASED_ALERT",
+      "ruleType": "threshold_rule",
+      "version": "v4",
+      "condition": {
+        "compositeQuery": {
+          "queryType": "builder",
+          "panelType": "graph",
+          "unit": "",
+          "builderQueries": {
+            "A": {
+              "queryName": "A",
+              "dataSource": "metrics",
+              "aggregateOperator": "avg",
+              "timeAggregation": "avg",
+              "spaceAggregation": "sum",
+              "aggregateAttribute": {
+                "key": "geldar_tps",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true
+              },
+              "filters": {
+                "op": "AND",
+                "items": []
+              },
+              "groupBy": [],
+              "expression": "A",
+              "disabled": false,
+              "having": [],
+              "stepInterval": 60,
+              "reduceTo": "avg",
+              "functions": [],
+              "legend": ""
+            }
+          }
+        },
+        "op": "2",
+        "target": 0,
+        "matchType": "1",
+        "selectedQueryName": "A",
+        "alertOnAbsent": true,
+        "absentFor": 5
+      },
+      "evalWindow": "5m0s",
+      "frequency": "1m",
+      "labels": {
+        "severity": "critical"
+      },
+      "annotations": {
+        "description": "No geldar_tps data for 5 minutes: the server, the agent or the collector pipeline is down.",
+        "summary": "Paper TPS data absent"
+      },
+      "preferredChannels": ["geldar-owner-channel"],
+      "disabled": false
+    }
+  ]
+}
