@@ -73,6 +73,13 @@ function hostAndPort(natsUrl: string): string {
   }
 }
 
+/** Creates the life registry bucket with REGISTRY_TTL_MS (a no-op when it exists with that config). Shared with the scratch seed. */
+export function createRegistryBucket<T>(kvm: {
+  create(name: string, opts: { ttl: number }): Promise<T>;
+}): Promise<T> {
+  return kvm.create(REGISTRY_BUCKET, { ttl: REGISTRY_TTL_MS });
+}
+
 /** Opens NATS and creates the bucket if it is missing. Throws a clear error when unreachable. */
 export async function openRegistryBucket(natsUrl: string): Promise<OpenedRegistry> {
   let nc: Awaited<ReturnType<typeof connectNats>>;
@@ -92,17 +99,15 @@ export async function openRegistryBucket(natsUrl: string): Promise<OpenedRegistr
     );
   }
   try {
-    const kv = await new Kvm(jetstream(nc))
-      .create(REGISTRY_BUCKET, { ttl: REGISTRY_TTL_MS })
-      .catch((error: unknown) => {
-        const why = error instanceof Error ? error.message : String(error);
-        throw new Error(
-          `the life registry bucket ${REGISTRY_BUCKET} could not be created with a ${REGISTRY_TTL_MS} ms TTL (${why}); ` +
-            'a bucket created before the TTL existed must be removed once (nats stream rm KV_geldar-life-registry) ' +
-            'so golem can recreate it',
-          { cause: error },
-        );
-      });
+    const kv = await createRegistryBucket(new Kvm(jetstream(nc))).catch((error: unknown) => {
+      const why = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `the life registry bucket ${REGISTRY_BUCKET} could not be created with a ${REGISTRY_TTL_MS} ms TTL (${why}); ` +
+          'a bucket created before the TTL existed must be removed once (nats stream rm KV_geldar-life-registry) ' +
+          'so golem can recreate it',
+        { cause: error },
+      );
+    });
     return { kv, close: () => nc.close().then(() => undefined) };
   } catch (error) {
     await nc.close().catch(() => undefined);

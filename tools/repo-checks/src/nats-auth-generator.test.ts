@@ -3,13 +3,14 @@
  * generator runs once for the phase0 shard, in a temp copy of its inputs; each test reads the config and secrets it wrote.
  * It skips when pwsh is not on PATH. The compose overlays and the static wiring are in nats-auth.test.ts.
  */
-import { readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   expectedTable,
   GENERATOR_TIMEOUT_MS,
   hasPwsh,
+  PHASE0_USERS,
   parseEntries,
   type Rendered,
   ROLES,
@@ -20,13 +21,17 @@ import {
 
 describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () => {
   let rendered: Rendered | undefined;
+  // The colo shard renders the eleven roles only: the scratch seed is in the phase0 table alone.
+  let colo: Rendered | undefined;
 
   beforeAll(() => {
     rendered = renderGenerator();
-  }, GENERATOR_TIMEOUT_MS);
+    colo = renderGenerator('colo');
+  }, GENERATOR_TIMEOUT_MS * 2);
 
   afterAll(() => {
     if (rendered) rmSync(rendered.dir, { recursive: true, force: true });
+    if (colo) rmSync(colo.dir, { recursive: true, force: true });
   });
 
   it('runs the generator without error', () => {
@@ -40,7 +45,7 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
       // Off Windows the owner-only step is chmod 600; on Windows the ACL is checked by the icacls step, not here.
       const dir = join(rendered?.dir ?? '', 'compose', 'secrets');
       const names = [
-        ...ROLES.map((role) => `nats-${role}.txt`),
+        ...PHASE0_USERS.map((user) => `nats-${user}.txt`),
         'thinker-token.txt',
         'nats-auth.conf',
       ];
@@ -90,22 +95,33 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
     expect(deploy?.raw.includes('kino')).toBe(false);
   });
 
-  it('writes one password file per role, and the config carries the same password', () => {
+  it('writes one password file per phase0 user, the scratch seed included, and the config carries the same password', () => {
     const dir = join(rendered?.dir ?? '', 'compose', 'secrets');
     const entries = parseEntries(rendered?.conf ?? '');
-    const files = ROLES.map((role) => ({
-      role,
+    const files = PHASE0_USERS.map((user) => ({
+      user,
       // A value check, not a print: the test reports booleans only.
-      text: readFileSync(join(dir, `nats-${role}.txt`), 'utf8'),
+      text: readFileSync(join(dir, `nats-${user}.txt`), 'utf8'),
     }));
-    expect(files.map((f) => /^[A-Za-z0-9_-]{32}$/.test(f.text))).toEqual(ROLES.map(() => true));
-    const same = entries.map((e) => e.password === files.find((f) => f.role === e.user)?.text);
+    expect(files.map((f) => /^[A-Za-z0-9_-]{32}$/.test(f.text))).toEqual(
+      PHASE0_USERS.map(() => true),
+    );
+    const same = entries.map((e) => e.password === files.find((f) => f.user === e.user)?.text);
     expect(same).toEqual(entries.map(() => true));
   });
 
-  it('writes exactly the eight role users (deploy included), with no ops user the overlay does not mount', () => {
+  it('writes exactly the phase0 users: the eleven roles (deploy included) and the scratch seed, with no ops user', () => {
     const names = parseEntries(rendered?.conf ?? '').map((e) => e.user);
+    expect(names).toEqual(PHASE0_USERS);
+  });
+
+  it('writes the colo users as the eleven roles only: no scratch seed user and no seed password file', () => {
+    expect(colo?.status, `exit ${colo?.status}: ${colo?.stderr}`).toBe(0);
+    const names = parseEntries(colo?.conf ?? '').map((e) => e.user);
     expect(names).toEqual(ROLES);
+    // A seed leak into colo would add the user to the config, and its password file to the secrets dir.
+    expect(names.includes('seed')).toBe(false);
+    expect(existsSync(join(colo?.dir ?? '', 'compose', 'secrets', 'nats-seed.txt'))).toBe(false);
   });
 
   it('emits the scoped subject table of decision 0087 for each role, with no bare * token', () => {
@@ -113,16 +129,16 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
     const want = expectedTable(SHARD);
     // Subject lists only: the entries carry passwords, and a failing expect prints its value.
     const actual = entries
-      .filter((e) => ROLES.includes(e.user))
+      .filter((e) => PHASE0_USERS.includes(e.user))
       .map((e) => ({
         user: e.user,
         pub: [...e.pub].sort(),
         sub: [...e.sub].sort(),
       }));
-    const expected = ROLES.map((role) => ({
-      user: role,
-      pub: [...(want[role]?.pub ?? [])].sort(),
-      sub: [...(want[role]?.sub ?? [])].sort(),
+    const expected = PHASE0_USERS.map((user) => ({
+      user,
+      pub: [...(want[user]?.pub ?? [])].sort(),
+      sub: [...(want[user]?.sub ?? [])].sort(),
     }));
     expect(actual).toEqual(expected);
     // The one wildcard token is the agent id in Glass's feed subscription: geldar.<shard>.kino.*.feed.

@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { type CollectionTag, parse } from 'yaml';
-import { JARS, OPEN, runScript, SH, slash } from './scratch-harness.js';
+import { AUTH, JARS, runScript, SH, slash } from './scratch-harness.js';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const OVERLAY_TEXT = readFileSync(`${ROOT}compose/opt-in/scratch-telemetry.yml`, 'utf8');
@@ -182,7 +182,7 @@ describe.skipIf(!SH)('scratch.sh: the telemetry overlay file list', { timeout: 6
     run.calls.find((c) => c.startsWith('compose') && c.includes(' up -d'));
 
   it('up telemetry adds scratch-telemetry.yml after scratch.yml, once, to both the up and the status call', () => {
-    const run = runScript(['up', 'telemetry'], OPEN, JARS);
+    const run = runScript(['up', 'telemetry'], AUTH, JARS);
     expect(run.status).toBe(0);
     const calls = run.calls.filter((c) => c.startsWith('compose') && c.includes('-p scratch-'));
     expect(calls.length).toBeGreaterThanOrEqual(2);
@@ -210,7 +210,7 @@ describe.skipIf(!SH)('scratch.sh: the telemetry overlay file list', { timeout: 6
 
   it('up scratch-a and other suffixes never get the telemetry overlay', () => {
     for (const args of [['up'], ['up', 'b'], ['status', 'a']]) {
-      const run = runScript(args, OPEN, JARS);
+      const run = runScript(args, AUTH, JARS);
       expect(run.status, args.join(' ')).toBe(0);
       expect(run.calls.join('\n'), args.join(' ')).not.toContain('scratch-telemetry.yml');
     }

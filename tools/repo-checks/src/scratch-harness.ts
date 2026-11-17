@@ -220,7 +220,10 @@ export function runScript(
   }
 }
 
-export const OPEN: Env = { SCRATCH_NATS_OPEN: '1' };
+/** One valid SCRATCH_NATS_AUTH_DIR per test file, for runs that do not test NATS auth. Open NATS is refused (check_nats). */
+const SHARED_AUTH = authDir();
+process.on('exit', () => rmSync(SHARED_AUTH, { recursive: true, force: true }));
+export const AUTH: Env = { SCRATCH_NATS_AUTH_DIR: slash(SHARED_AUTH) };
 export const JARS: RunOpts = { tree: { jars: true } };
 /** True when a docker call reached compose with the project flag: the stack was about to start. */
 export const started = (run: Run) => run.calls.some((c) => c.includes('-p scratch-'));
@@ -235,7 +238,13 @@ export const withSecrets = (base: string) => {
 /** A directory with the four NATS files, non-empty, for SCRATCH_NATS_AUTH_DIR. */
 export function authDir(): string {
   const dir = mkdtempSync(join(tmpdir(), 'scratch-auth-'));
-  for (const f of ['nats-auth.conf', 'nats-paper.txt', 'nats-velocity.txt', 'nats-eventsink.txt'])
+  for (const f of [
+    'nats-auth.conf',
+    'nats-paper.txt',
+    'nats-velocity.txt',
+    'nats-eventsink.txt',
+    'nats-seed.txt',
+  ])
     writeFileSync(join(dir, f), 'x');
   return dir;
 }
