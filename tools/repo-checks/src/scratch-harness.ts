@@ -24,6 +24,15 @@ export const SCRIPT = readFileSync(SCRIPT_PATH, 'utf8');
 const ENV_PATH = `${ROOT}deploy/scratch/telemetry.env`;
 export const SH = spawnSync('sh', ['-c', 'exit 0']).status === 0 ? 'sh' : null;
 
+/** For describe.skipIf and it.skipIf: true skips the sh tests when no sh is on PATH. With CI set, a missing sh throws at
+ * collection instead, so the sh tests fail rather than skip. */
+export function skipWithoutSh(): boolean {
+  if (SH !== null) return false;
+  if (process.env.CI)
+    throw new Error('sh is not on PATH and CI is set: the sh script tests must run, not skip');
+  return true;
+}
+
 /** Windows needs a privilege to make symlinks, so that case runs only where one can be made. */
 export const CAN_SYMLINK = (() => {
   const dir = mkdtempSync(join(tmpdir(), 'scratch-link-'));
