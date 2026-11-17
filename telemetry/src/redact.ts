@@ -169,25 +169,57 @@ function looksSecret(value: string): boolean {
 /** Up to 512 characters, so a long run with many keys in it is not rescanned to its end for each key. */
 const WHITESPACE_RUN = /[^\s]{1,512}/y;
 const DIGIT_AND_LETTER = /^(?=.*\d)(?=.*[A-Za-z])/;
+const TRAILING_PUNCTUATION = ',;.)}]';
 
-/**
- * A short unquoted value that stops at `, ; & ) }` (`password=Zq9x,K2mP7vL4Ab`): the whole run to the next
- * whitespace is the value when that run looks secret (8 or more characters and not a plain word, or a digit
- * and a letter), has no `=`, `"` or `'` (so `token=5,name=bob` and minified JSON keep their other fields) and
- * carries something after the delimiter. Trailing `, ; . ) } ]` do not count (`password: swordfish, then` stays).
- * Returns the length to hide, or 0.
- */
-function delimitedSecretLength(text: string, end: number, run: string): number {
-  const stop = text.charAt(end + run.length);
-  if (stop === '' || !',;&)}'.includes(stop)) return 0;
-  WHITESPACE_RUN.lastIndex = end;
-  const whole = WHITESPACE_RUN.exec(text)?.[0] ?? '';
-  if (/[="']/.test(whole)) return 0;
-  const value = whole.replace(/[,;.)}\]]+$/, '');
-  if (value.length <= run.length) return 0;
-  return looksSecret(value) || DIGIT_AND_LETTER.test(value) ? whole.length : 0;
+/** True when a quote at `at` ends the run: nothing follows it, or one of `, ; ) } ]` does. */
+function closesAfter(run: string, at: number): boolean {
+  return at + 1 >= run.length || ',;)}]'.includes(run.charAt(at + 1));
 }
 
+/** True when `,name=value` (or `;`, `&`) starts at `at`: a delimiter, an identifier, `=` and a value that is not another `=`. */
+function pairStartsAt(run: string, at: number): boolean {
+  let i = at + 1;
+  const first = run.charCodeAt(i);
+  // A letter or underscore starts the name; after that letters, digits, `_`, `.` and `-` continue it.
+  if (!((first >= 65 && first <= 90) || (first >= 97 && first <= 122) || first === 95))
+    return false;
+  for (i++; i < run.length; i++) {
+    const c = run.charCodeAt(i);
+    const word = (c >= 48 && c <= 57) || (c >= 65 && c <= 90) || (c >= 97 && c <= 122);
+    if (!(word || c === 95 || c === 46 || c === 45)) break;
+  }
+  return run.charAt(i) === '=' && i + 1 < run.length && run.charAt(i + 1) !== '=';
+}
+
+/**
+ * The value of an unquoted credential `key=value` read to the next whitespace (at most 512 characters), so a
+ * delimiter inside it (`password=Zq9x,K2mP7vL4Ab`) does not end it. The run is cut where another pair starts
+ * (`,user=bob`) and, after a quoted key, at the first quote (`"token":5,"other":"x"`); trailing `, ; . ) } ]`
+ * are not part of it. Returns the length to hide: the whole run when it is longer than the first segment
+ * and looks secret as a whole (8 or more characters and not a plain word, or a digit and a letter), else 0.
+ */
+function delimitedSecretLength(text: string, end: number, run: string, quotedKey: boolean): number {
+  WHITESPACE_RUN.lastIndex = end;
+  const whole = WHITESPACE_RUN.exec(text)?.[0] ?? '';
+  if (whole.length <= run.length || /["']/.test(whole.charAt(0))) return 0;
+  let stop = whole.length;
+  for (let i = run.length; i < whole.length; i++) {
+    const c = whole.charAt(i);
+    if ((c === '"' || c === "'") && (quotedKey || closesAfter(whole, i))) {
+      stop = i;
+      break;
+    }
+    if ((c === ',' || c === ';' || c === '&') && pairStartsAt(whole, i)) {
+      stop = i;
+      break;
+    }
+  }
+  if (quotedKey) while (stop > 0 && whole.charAt(stop - 1) === '\\') stop--;
+  while (stop > 0 && TRAILING_PUNCTUATION.includes(whole.charAt(stop - 1))) stop--;
+  if (stop <= run.length) return 0;
+  const value = whole.slice(0, stop);
+  return looksSecret(value) || DIGIT_AND_LETTER.test(value) ? stop : 0;
+}
 /** The text with the value of every credential `key=value` / `key: value` pair replaced. One linear pass. */
 function scrubKeyValues(text: string): string {
   let out = '';
@@ -221,8 +253,8 @@ function scrubKeyValues(text: string): string {
     if (!whole) {
       VALUE_RUN.lastIndex = end;
       const run = VALUE_RUN.exec(text)?.[0] ?? '';
-      length = flagOrQuery || looksSecret(run) ? run.length : 0;
-      if (length === 0) length = delimitedSecretLength(text, end, run);
+      const extended = delimitedSecretLength(text, end, run, /^\\*["']/.test(sep));
+      length = extended > 0 ? extended : flagOrQuery || looksSecret(run) ? run.length : 0;
     }
     if (length === 0) continue;
     out += text.slice(last, end) + REDACTED;
@@ -308,12 +340,22 @@ function errorTextSize(error: Error): number {
   }
 }
 
+/** The `[object String]` style tag, so a boxed primitive of any realm is found; a throwing Proxy trap gives ''. */
+function objectTag(value: unknown): string {
+  try {
+    return Object.prototype.toString.call(value);
+  } catch {
+    return '';
+  }
+}
+
 function redactAt(value: unknown, depth: number, walk: Walk): unknown {
   if (typeof value === 'string') return scrubBudgeted(value, walk);
   // A boxed primitive is its primitive: `new String('password=...')` must not be split into one key per character.
-  if (value instanceof String) return scrubBudgeted(String.prototype.valueOf.call(value), walk);
-  if (value instanceof Number) return Number.prototype.valueOf.call(value);
-  if (value instanceof Boolean) return Boolean.prototype.valueOf.call(value);
+  const tag = typeof value === 'object' ? objectTag(value) : '';
+  if (tag === '[object String]') return scrubBudgeted(String.prototype.valueOf.call(value), walk);
+  if (tag === '[object Number]') return Number.prototype.valueOf.call(value);
+  if (tag === '[object Boolean]') return Boolean.prototype.valueOf.call(value);
   // JSON-safe plain data out: a bigint, symbol or function becomes text, never a value JSON.stringify rejects.
   if (typeof value === 'bigint') return value.toString();
   if (typeof value === 'symbol' || typeof value === 'function')

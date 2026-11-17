@@ -71,3 +71,66 @@ describe('more credential words in text (step 6)', () => {
     expect(scrubText(text)).toBe(text);
   });
 });
+
+describe('a delimiter at every split point of an 18-character password (step 4, fix pass 4)', () => {
+  const secret = 'Zq9xK2mP7vL4AbR5tY';
+  const forms: [string, string][] = [
+    ['login password=', ' ok'],
+    ['GET /x?password=', ' HTTP/1.1'],
+    ['run --password=', ' --verbose'],
+    ['login password: ', ' ok'],
+  ];
+  const delimiters = [',', ';', '&', ')', '}'];
+  const windows = (s: string): string[] =>
+    Array.from({ length: s.length - 3 }, (_, i) => s.slice(i, i + 4));
+
+  it('leaks no 4-character window of the password: 4 forms x 17 split points x 5 delimiters', () => {
+    const leaks: string[] = [];
+    for (const [head, tail] of forms)
+      for (const d of delimiters)
+        for (let at = 1; at < secret.length; at++) {
+          const password = secret.slice(0, at) + d + secret.slice(at);
+          const out = scrubText(`${head}${password}${tail}`);
+          if (windows(password).some((w) => out.includes(w))) leaks.push(`${head}${password}`);
+        }
+    expect(leaks).toEqual([]);
+  });
+
+  it('hides a backslash or a quote inside an unquoted value', () => {
+    for (const mid of ['\\', '"x', '=y']) {
+      const out = scrubText(`login ${pw}=Zq9xK2mP${mid}7vL4AbR5tY ok`);
+      expect(out).not.toContain('7vL4');
+      expect(out).toContain(' ok');
+    }
+  });
+
+  it('stops at the next pair and keeps trailing punctuation', () => {
+    expect(scrubText(`${pw}=Zq9x,K2mP7vL4Ab,user=bob`)).toBe(`${pw}=${R},user=bob`);
+    expect(scrubText(`?${pw}=Zq9x&K2mP7vL4Ab&x=1`)).toBe(`?${pw}=${R}&x=1`);
+    expect(scrubText(`(${pw}=Zq9xK2mP7vL4Ab,R5tY).`)).toBe(`(${pw}=${R}).`);
+    expect(scrubText(`${pw}=abcdefghi, then`)).toBe(`${pw}=abcdefghi, then`);
+    expect(scrubText(`${pw}: swordfish, then`)).toBe(`${pw}: swordfish, then`);
+  });
+
+  const MiB = 1 << 20;
+  const timed = (s: string): number => {
+    const start = performance.now();
+    scrubText(s);
+    return performance.now() - start;
+  };
+  const shapes: [string, string][] = [
+    ['key and delimiter', `${pw}=Zq9x,K2mP7vL4Ab `],
+    ['trailing delimiter run', `${pw}:a${','.repeat(510)}x `],
+    ['trailing paren run', `${pw}:a${')'.repeat(510)}x `],
+    ['pair cuts', `${pw}=a,b=c,${pw}=d,e=f `],
+  ];
+  it.each(shapes)(
+    'is linear and fast on %s at 1 MiB and 10 MiB',
+    (_n, unit) => {
+      const rep = (size: number): string => unit.repeat(Math.ceil(size / unit.length));
+      expect(Math.min(timed(rep(MiB)), timed(rep(MiB)))).toBeLessThan(1000);
+      expect(timed(rep(10 * MiB))).toBeLessThan(3000);
+    },
+    60_000,
+  );
+});

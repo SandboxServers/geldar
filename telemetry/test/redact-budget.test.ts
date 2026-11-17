@@ -1,3 +1,4 @@
+import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { REDACTED as R, redactContent } from '../src/redact.ts';
 
@@ -61,5 +62,14 @@ describe('a boxed primitive is its primitive (step 3)', () => {
 
   it('returns boxed Number and Boolean as primitives', () => {
     expect(redactContent([new Number(5), new Boolean(false)])).toEqual([5, false]);
+  });
+});
+
+describe('a boxed primitive from another realm (fix pass 4)', () => {
+  it('is read as its primitive', () => {
+    const boxed = runInNewContext(`new String('${pw}=${secret}')`);
+    expect(boxed instanceof String).toBe(false);
+    expect(redactContent(boxed)).toBe(`${pw}=${R}`);
+    expect(redactContent({ n: runInNewContext('new Number(7)') })).toEqual({ n: 7 });
   });
 });
