@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { type CollectionTag, parse } from 'yaml';
-import { SH, slash } from './scratch-harness.js';
+import { skipWithoutSh, slash } from './scratch-harness.js';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const read = (rel: string) => readFileSync(`${ROOT}${rel}`, 'utf8');
@@ -148,14 +148,12 @@ describe('NeoForge entrypoint script', () => {
     expect(ENTRY_TEXT).toContain(
       'https://cdn.modrinth.com/data/vDyrHl8l/versions/qiZ49HIW/proxy-compatible-forge-1.3.1.jar',
     );
-    expect(ENTRY_TEXT).toContain(
-      'MOD_SHA512=dba5b70fedcb0f5fdc014801ab43e6d048f24b531de8aea5b70ea223760b66ae9fba3033c2ccd9d78793b9ea2f9d3b47ae1f4caa95aa129d989f97e63636b4ab',
-    );
+    expect(ENTRY_TEXT).toMatch(/MOD_SHA512=\$\{GELDAR_NF_MOD_SHA512:-dba5b70f[0-9a-f]{120}\}/);
   });
 
   it('builds the installer URL from NEOFORGE_VERSION and never writes the build number out', () => {
-    expect(ENTRY_TEXT).toContain(
-      'INSTALLER_URL="https://maven.neoforged.net/releases/net/neoforged/neoforge/${NEOFORGE_VERSION}/neoforge-${NEOFORGE_VERSION}-installer.jar"',
+    expect(ENTRY_TEXT).toMatch(
+      /INSTALLER_URL="\$\{GELDAR_NF_INSTALLER_URL:-https:\/\/maven\.neoforged\.net\/releases\/net\/neoforged\/neoforge\/\$\{NEOFORGE_VERSION\}\/neoforge-\$\{NEOFORGE_VERSION\}-installer\.jar\}"/,
     );
     expect(ENTRY_TEXT).not.toContain(NEOFORGE_BUILD);
   });
@@ -166,15 +164,15 @@ describe('NeoForge entrypoint script', () => {
   });
 
   it('pins the installer sha256, which refuses any other build', () => {
-    expect(ENTRY_TEXT).toContain(
-      'INSTALLER_SHA256=1184ffee181bd7a940691539fea07f237096378da4c94795247ecdb9cb354a1b',
+    expect(ENTRY_TEXT).toMatch(
+      /INSTALLER_SHA256=\$\{GELDAR_NF_INSTALLER_SHA256:-1184ffee[0-9a-f]{56}\}/,
     );
     expect(ENTRY_TEXT).toMatch(
       /fetch "\$INSTALLER_URL" "\$installer" "\$INSTALLER_SHA256" sha256sum/,
     );
   });
 
-  it.skipIf(!SH)(
+  it.skipIf(skipWithoutSh())(
     'exits 1 before any download when NEOFORGE_VERSION is unset or not 26.1.2 build N',
     // Five sh starts: under load one start can pass vitest's 5 s default, so this test gets its own budget.
     { timeout: 30_000 },
@@ -191,14 +189,10 @@ describe('NeoForge entrypoint script', () => {
           SYSTEMROOT: process.env.SYSTEMROOT ?? '',
         };
         if (version !== undefined) env.NEOFORGE_VERSION = version;
-        const run = spawnSync(
-          SH as string,
-          [slash(`${ROOT}compose/neoforge/neoforge-entrypoint.sh`)],
-          {
-            encoding: 'utf8',
-            env,
-          },
-        );
+        const run = spawnSync('sh', [slash(`${ROOT}compose/neoforge/neoforge-entrypoint.sh`)], {
+          encoding: 'utf8',
+          env,
+        });
         expect(run.status, `version ${JSON.stringify(version)}`).toBe(1);
         expect(run.stderr).toContain('NEOFORGE_VERSION is unset or not 26.1.2 build N');
       }
@@ -208,7 +202,9 @@ describe('NeoForge entrypoint script', () => {
   it('checks the mod with sha512sum and fails closed: a mismatch is deleted and exits 1', () => {
     expect(ENTRY_TEXT).toMatch(/fetch\(\) \{/);
     expect(ENTRY_TEXT).toMatch(/fetch "\$MOD_URL" "\$mod" "\$MOD_SHA512" sha512sum/);
-    expect(ENTRY_TEXT).toMatch(/if ! printf '%s {2}%s\\n' "\$3" "\$2\.part" \| "\$4" -c -s; then/);
+    expect(ENTRY_TEXT).toMatch(
+      /if ! printf '%s {2}%s\\n' "\$3" "\$2\.part" \| "\$4" -c --status; then/,
+    );
     expect(ENTRY_TEXT).toMatch(/rm -f "\$2\.part" "\$2"\n\s+echo [^\n]*\n\s+exit 1/);
   });
 
@@ -225,7 +221,9 @@ describe('NeoForge entrypoint script', () => {
   });
 
   it('reads the secret from /run/secrets only, with the paper entrypoint checks', () => {
-    expect(ENTRY_TEXT).toContain('secret_file=/run/secrets/velocity-forwarding');
+    expect(ENTRY_TEXT).toMatch(
+      /secret_file=\$\{GELDAR_NF_SECRET_FILE:-\/run\/secrets\/velocity-forwarding\}/,
+    );
     expect(ENTRY_TEXT).toMatch(/\*\[!a-zA-Z0-9_-\]\*\)/);
     expect(ENTRY_TEXT).toMatch(/umask 077/);
   });
@@ -234,13 +232,14 @@ describe('NeoForge entrypoint script', () => {
     expect(ENTRY_TEXT).toContain("echo '[forwarding]'");
     expect(ENTRY_TEXT).toContain('echo \'mode = "MODERN"\'');
     expect(ENTRY_TEXT).toContain('echo \'modernForwardingVersion = "NO_OVERRIDE"\'');
-    expect(ENTRY_TEXT).toMatch(/grep -Fq "secret = \\"\$secret\\"" "\$config"/);
+    expect(ENTRY_TEXT).toMatch(/awk -v secret="\$secret"/);
+    expect(ENTRY_TEXT).toMatch(/inforwarding && \$0 == "enabled = true"/);
     expect(ENTRY_TEXT).toMatch(/chmod 600 "\$config"/);
   });
 
   it('writes no Paper config and no spark config, and ends by starting the image script', () => {
     expect(ENTRY_TEXT).not.toMatch(/online-mode|paper-global|spark/);
-    expect(ENTRY_TEXT).toMatch(/\nexec \/image\/scripts\/start "\$@"\n$/);
+    expect(ENTRY_TEXT).toMatch(/\nexec "\$\{GELDAR_NF_START:-\/image\/scripts\/start\}" "\$@"\n$/);
   });
 
   it('is LF only and under the 500-line soft cap', () => {

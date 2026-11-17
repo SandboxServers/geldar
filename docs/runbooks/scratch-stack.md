@@ -61,7 +61,7 @@ Run the game server as NeoForge instead of Paper, behind the same scratch Veloci
 - No geldar-core jar is mounted, so the eventsink sees no game events from this server. The caps are the scratch caps
   (3072m, 1.5 CPUs). Ports come from `deploy/scratch/nf.env`, loopback only.
 - The first start is slow: it downloads the mod and the installer, runs the installer, and waits for the health check's
-  15 minute start period. Allow up to 15 minutes before `up` returns.
+  15 minute start period. Allow about 15 to 18 minutes before `up` returns (the 15 minute start period plus the health retries).
 - RCON is published only in this variant, on `127.0.0.1:55575`, with the run's own `rcon.txt` secret. The live tests use
   `GELDAR_RCON_PORT=55575`, `GELDAR_RCON_PASSWORD_FILE` set to the path of that `rcon.txt` (a path, never the value),
   `GELDAR_MC_PORT=55565`, `GELDAR_NATS_URL` on 127.0.0.1 port 34222, and `GELDAR_MC_HOST` and `GELDAR_RCON_HOST` 127.0.0.1.
