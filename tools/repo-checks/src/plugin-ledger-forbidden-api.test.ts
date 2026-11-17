@@ -103,6 +103,8 @@ describe('scanJava', () => {
     expect(scanJava('B.java', text, lists)).toHaveLength(3);
   });
 
+  // The orchestrator accepted this one allowance: the `geldar.broadcast` event-name constant (that file, that name,
+  // that line text). Any other hit, or a broadcast call in that file, still fails.
   it('allows the Names.java broadcast constant but still flags a broadcast call there', () => {
     const file = LISTS.allow[0]?.file ?? '';
     expect(scanJava(file, 'String B = "geldar.broadcast";')).toEqual([]);
