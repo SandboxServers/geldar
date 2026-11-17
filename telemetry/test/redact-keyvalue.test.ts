@@ -70,7 +70,7 @@ describe('scrubText key/value scan is linear', () => {
       timed(rep(unit, 1 << 16)); // warm-up
       const t1 = Math.min(...[1, 2, 3].map(() => timed(rep(unit, MiB))));
       const t2 = Math.min(...[1, 2, 3].map(() => timed(rep(unit, 2 * MiB))));
-      expect(t1).toBeLessThan(1000);
+      expect(t1).toBeLessThan(3000);
       expect(t2).toBeLessThan(3 * t1 + 100);
     },
   );

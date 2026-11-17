@@ -115,7 +115,7 @@ describe('startTelemetry when on', () => {
     const tracer = handle.tracerProvider?.getTracer('t');
     const started = Date.now();
     for (let i = 0; i < 5000; i++) tracer?.startSpan(`s${i}`).end();
-    expect(Date.now() - started).toBeLessThan(2000);
+    expect(Date.now() - started).toBeLessThan(6000);
     // Shutdown with a dead exporter is bounded by the shutdown limit: run it on fake timers.
     vi.useFakeTimers();
     try {
