@@ -16,5 +16,5 @@
 
 ## Consequences
 
-- The expected public hostname list gains the ingest hostname (owner-held, not in the repo). No new listener is added: the route uses the existing HTTPS port, and `tools/portscan` expected lists do not change; a scan after the reload confirms it.
+- The expected public hostname list gains the ingest hostname (owner-held, not in the repo). No new listener is added: the route uses the existing HTTPS port, and `tools/portscan` expected lists do not change; a scan after the restart confirms it.
 - The SigNoz UI has no Caddy route (0350 clarification, 0352).

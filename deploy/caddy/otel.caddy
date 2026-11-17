@@ -7,6 +7,8 @@
 # Before use: check the three variables by length only (the token at least 64 hex characters), then
 #   `caddy validate` on the node. The shared Caddy has its admin API off (R39): `caddy reload` fails there, so every
 #   change of this file is one `docker restart board-proxy` (a few seconds of dropped connections on every site).
+# If `caddy validate` fails on the node: delete this file at once and do not restart (a bad file in the imported
+#   directory would stop the shared Caddy at its next start, every site down).
 # Rollback and kill switch: put otel-off.caddy in its place, validate, `docker restart board-proxy` (same cost).
 # Steps and the verification matrix: deploy/caddy/README.md, section "OTLP ingest (otel.caddy)".
 {$GELDAR_INGEST_HOST:otel.invalid} {
