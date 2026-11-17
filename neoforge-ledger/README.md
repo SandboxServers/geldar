@@ -8,7 +8,7 @@ Server-side NeoForge 26.1.2 (build 126) adapter for the loader-neutral `plugin/l
 - No Paper types (`NoPaperImportsTest`); `NoLoaderImportsTest` mirrors the ledger-core test and also runs over the ledger-core tree.
 - One copy of each pin: the NeoForge build is read from `../neoforge/gradle.properties` (`neoforge.version`), the ModDevGradle version from `../neoforge/build.gradle.kts`, the wrapper is a copy checked by `ModInfoTest`. The toolchain is Java 25. JUnit and `opentelemetry-api` pins are in `gradle/libs.versions.toml`.
 - `ledger-core` comes in as a composite build (`includeBuild("../plugin")`, substituting `dev.geldar:ledger-core`).
-- Jar-in-jar: ledger-core and opentelemetry-api, -common and -context are nested in the mod jar through `jarJar` with strict ranges (works with the composite-substituted ledger-core); `JarContentTest` opens the built jar. A real dedicated-server load is the PT-N3 spike.
+- Jar-in-jar: ledger-core and opentelemetry-api, -common and -context are nested in the mod jar through `jarJar` with strict single-version ranges (`[0.1.0]`, `[1.67.0]`; works with the composite-substituted ledger-core). The range is only jar-in-jar metadata; the exact version is the catalog pin, and `JarJarVersionTest` fails if range, metadata and catalog drift. Observed 2026-11-17 on NeoForge 26.1.2 (build 126), Linux (eclipse-temurin:25-jdk, clean Gradle home, `runServer` with the mod jar in `mods/`, `compileOnly` variant so only jar-in-jar supplies ledger-core and the API): the loader listed all four nested jars (`ledger-core-0.1.0`, `opentelemetry-api/common/context-1.67.0`), the `ledger` mod loaded and the server reached `Done`. Not exercised: a production (non-dev) NeoForge install; `JarContentTest` opens the built jar. A real dedicated-server load is the PT-N3 spike.
 - Fail-safe: any startup failure (bad config, missing class) leaves the ledger off and never stops the server; the ledger is closed on ServerStoppingEvent.
 - Logging uses java.util.logging. PT-N3 result: records print on stderr (root ConsoleHandler) but are NOT in `logs/latest.log`. See `docs/analysis/telemetry/neoforge-otel-spike.md`, which also records that the jar-in-jar API and the agent's `GlobalOpenTelemetry` work under a real server load (`OtelLoadTest` covers the no-agent half).
 - Own `gradle/verification-metadata.xml` and lockfiles.
@@ -90,3 +90,15 @@ Positions follow D2 as built on Paper. The card line "item events without positi
 Privacy note: `geldar.container_type` is the menu class simple name, capped at 48 characters, and `unknown` when empty. `ChestMenu` is shared by chests, ender chests, barrels and minecarts, so they cannot be told apart. A modded menu class name discloses part of the mod stack, which is the mod-list question in the plan (P-N1).
 
 Not emitted (UNVERIFIED in the API spike or without a VERIFIED row): furnace extract, enchant, buckets, harvest, consume, pickup, drop, and placements by non-players.
+
+## Connections and mc_session (PT-N6)
+
+| Key | Default | Emits |
+| --- | --- | --- |
+| `collector.connections.enabled` | on (as Paper) | `geldar.player.join` (`amount` = roster size), `geldar.player.quit` (`duration_ms`) |
+
+- A name with the life id shape gets `geldar.life_id` and a per-connection ULID `geldar.mc_session` (opened at login, closed at logout, keyed by the player object, so a late logout of an old connection never closes a reconnected agent's session). The snapshot event carries the same `mc_session`.
+- A human gets neither, and no name, UUID or address is read or exported. VERIFIED in one P0 run (run 6, 2026-11-17): behind Velocity the server sees the same name as the Body and the standard offline UUID derived from the name (one run, one name). That UUID is reversible by dictionary, so no UUID is used. A human-client join is untested.
+- The session is keyed by the player's packet listener, which survives respawn (a respawn builds a new `ServerPlayer` but keeps the listener) and differs per connection.
+- Gaps: no verified event for prelogin or kick reasons (nothing is emitted), and no quit cause.
+- Not yet wired to `mc_session`: the advancement event (follow-up; the progress collector is keyed by UUID).

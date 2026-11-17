@@ -45,6 +45,10 @@ public final class FakeRig {
     public final AtomicInteger begins = new AtomicInteger();
     public final AtomicInteger ends = new AtomicInteger();
     public final AtomicInteger guardOffMain = new AtomicInteger();
+    /** emitMap calls made while the host said main: the real ledger drops these, so the fake does too. */
+    public final AtomicInteger mainThreadDrops = new AtomicInteger();
+    private final List<List<String>> registered = new ArrayList<>();
+    private final List<String> registeredNames = new ArrayList<>();
     public final LedgerConfig config;
 
     public FakeRig(String... lines) {
@@ -89,8 +93,35 @@ public final class FakeRig {
     private final EventLog eventLog = (EventLog) Proxy.newProxyInstance(
             getClass().getClassLoader(), new Class<?>[] {EventLog.class}, (p, m, a) -> {
                 if (m.getName().equals("emitMap")) {
+                    if (main.get()) { // as OtelLedger.emitMap: a main-thread call is dropped, never exported
+                        mainThreadDrops.incrementAndGet();
+                        return null;
+                    }
                     events.add(String.valueOf(a[0]));
                     eventAttrs.add((Map<?, ?>) a[2]);
+                    return null;
+                }
+                if (m.getName().equals("register")) {
+                    List<String> f = new ArrayList<>();
+                    for (Object o : (Object[]) a[3]) {
+                        f.add((String) o);
+                    }
+                    registered.add(f);
+                    registeredNames.add((String) a[0]);
+                    return registered.size() - 1;
+                }
+                if (m.getName().equals("record")) { // main-thread safe, as the real log: names 0-2 bind a,b,c; 3-5 bind s1-s3
+                    int id = (int) a[0];
+                    Map<String, Object> out = new java.util.TreeMap<>();
+                    List<String> names = registered.get(id);
+                    for (int i = 0; i < names.size(); i++) {
+                        Object v = a[1 + i];
+                        if (names.get(i) != null && !(v instanceof String s && s.isEmpty())) {
+                            out.put(names.get(i), v);
+                        }
+                    }
+                    events.add(registeredNames.get(id));
+                    eventAttrs.add(out);
                     return null;
                 }
                 throw new UnsupportedOperationException(m.getName());
