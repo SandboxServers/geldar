@@ -216,7 +216,8 @@ describe.skipIf(skipWithoutSh())(
       const c = setup();
       const link = join(c.base, 'mount', 'link.jar');
       symlinkSync(c.ledger, link);
-      const r = run(c, { GELDAR_NF_LEDGER_JAR: slash(link), GELDAR_NF_LEDGER_SHA256: LEDGER_PIN });
+      // Telemetry on: the switch check runs before the copy, so the fixture must set it for the symlink refusal to be reached.
+      const r = run(c, { ...onEnv(), GELDAR_NF_LEDGER_JAR: slash(link) });
       expect(r.status).toBe(1);
       expect(r.stderr).toContain('is a symlink or not a regular file; refusing to start');
       expect(existsSync(ledgerCopy(c))).toBe(false);
@@ -594,7 +595,8 @@ describe.skipIf(skipWithoutSh())(
     });
 
     it.runIf(CAN_LINK)('on: refuses an agent jar that is a symlink', () => {
-      const c = setup(false);
+      // Telemetry on needs a valid ledger jar mounted, so the agent check (after the ledger copy) is reached.
+      const c = setup(true);
       const link = join(c.base, 'mount', 'agent-link.jar');
       symlinkSync(c.agent, link);
       const r = run(c, { ...onEnv(), GELDAR_NF_OTEL_JAR: slash(link) });
