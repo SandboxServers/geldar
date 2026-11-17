@@ -79,9 +79,10 @@ This records the P0 join test of a vanilla-protocol golem Body against a scratch
 
 - 2026-11-17, dedicated server, scratch NeoForge 26.1.2 (build 126), Java 25, suffix nf, one run.
 - Code: main at 423b6ceb (merge of #663, the mod mount).
-- Mod load: our mod (`geldar_neoforge`) loaded on the dedicated server. The count and log lines are in the run's report.
-- Vanilla Body join through Velocity, with the mod installed: passed. Name and UUID agree; the UUID is the offline-mode one.
-- Stack: `up` returned 0 and reported healthy. Tick, CPU and memory figures are in the run's report.
+- Mod load: our mod (`geldar_neoforge`) loaded on the dedicated server: the full server log has the line "geldar_neoforge loaded on the dedicated server" once, and the mod list shows "Geldar NeoForge 0.1.0". The mods directory held our jar (2,439 bytes) and the Proxy Compatible Forge jar.
+- Jar: built on the desktop from a clean export at 423b6ceb; two builds gave the same sha256; the host and the container hash checks both passed.
+- Vanilla Body join through Velocity, with the mod installed: passed (join, goto, mine, cleanup of the registry entry and the whitelist entry). Name and UUID agree; the UUID is the offline-mode one.
+- Stack (one run): `up` returned 0 with all five services healthy; tick 20/s; `neoforge tps` 20.000 in every dimension; every service under 0.3 percent CPU; the game server container at 1.48 GiB of its 3 GiB cap; Paper-side and eventsink processes ran as the account uid, Velocity as root (see the runbook).
 - Start-up noise (the kqueue DebugFile ERROR and the one-off netty VarInt IndexOutOfBounds) is in the runbook's known noise list.
 
 - Proves: the mod loads on a dedicated server, and the vanilla Body joins through Velocity with it installed.
