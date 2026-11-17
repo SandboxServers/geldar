@@ -109,6 +109,35 @@ describe('the LedgerMod config allowance', () => {
   });
 });
 
+describe('the PT-N8 chat allowances', () => {
+  const wiring = 'neoforge-ledger/src/main/java/dev/geldar/ledger/neoforge/audit/AuditWiring.java';
+  const read = '() -> TextContentFamily.chatText(e.getRawText()));';
+  const lists = asScan(NEOFORGE_LISTS);
+
+  it('forbids the decorated message and the user name everywhere', () => {
+    expect(scanJava('A.java', 'e.getMessage();', lists)).toHaveLength(1);
+    expect(scanJava('A.java', 'e.getUsername();', lists)).toHaveLength(1);
+    expect(scanJava(wiring, 'e.getMessage();', lists)).toHaveLength(1);
+    expect(scanJava(wiring, 'e.getUsername();', lists)).toHaveLength(1);
+  });
+
+  it('allows the raw text read on that one line of AuditWiring only', () => {
+    expect(scanJava(wiring, read, lists)).toEqual([]);
+    expect(scanJava(wiring, 'String s = e.getRawText();', lists)).toHaveLength(1);
+    expect(scanJava(wiring, 'send(e.getRawText()); // ' + read, lists)).toEqual([]); // same line text: still that line
+    expect(scanJava('Other.java', read, lists)).toHaveLength(1);
+  });
+
+  it('has exactly one getRawText allow entry and two ServerChatEvent entries, all in AuditWiring', () => {
+    const entries = NEOFORGE_LISTS.allow.filter((a) => a.name === 'getRawText');
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.file).toBe(wiring);
+    const chat = NEOFORGE_LISTS.allow.filter((a) => a.name === 'ServerChatEvent');
+    expect(chat).toHaveLength(2);
+    expect(chat.every((a) => a.file === wiring)).toBe(true);
+  });
+});
+
 describe('scanModsToml', () => {
   it('accepts the plain file', () => {
     expect(scanModsToml(GOOD_TOML)).toEqual([]);

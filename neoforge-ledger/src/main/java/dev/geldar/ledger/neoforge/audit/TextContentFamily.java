@@ -1,4 +1,4 @@
-package dev.geldar.ledger.neoforge.curated;
+package dev.geldar.ledger.neoforge.audit;
 
 import dev.geldar.ledger.core.AttrKeys;
 import dev.geldar.ledger.core.ContentCap;
@@ -15,14 +15,16 @@ import java.util.function.Supplier;
 /**
  * Chat text (PT-N8): owner-approved full-text capture, delivered only to the gateway through {@code ContentLog}.
  * Observation only: nothing here changes the event. Sign and book text are not captured (no NeoForge event for them was
- * found: PT-N5). Chat arrives off the server thread, so this path never touches the {@code CollectorGuard} (S6).
+ * found: PT-N5). On 26.1.2 chat is handled on the server thread, but this path still never touches the {@code CollectorGuard} (bounded by the bucket instead). /say, /msg and /me do not fire the chat event: private messages are not captured.
  *
  * <p>Exported per message: the text, s1 = the speaker's life id or nothing (a human's name is never copied, D-F; the
  * text itself is kept verbatim apart from the credential scrub and the byte cap), s2 = the world. A cancelled message is
  * not captured (D-I). Order: the token bucket first, so a flood costs no flatten, scrub or cap work.
  */
 public final class TextContentFamily {
-    private static final int CHAT_RATE = 20;
+    static final int CHAT_RATE = 20;
+    /** Pre-scrub bound on the text read from the event (a mod-supplied component can be huge). */
+    static final int PRE_SCRUB_MAX_BYTES = 1 << 20;
     private static final String[] FIELDS = {AttrKeys.LIFE_ID, AttrKeys.WORLD};
 
     private final ContentLog content;
@@ -39,6 +41,11 @@ public final class TextContentFamily {
         this.content = ledger.content();
         this.chatId = content.register(Names.Events.CHAT, FIELDS);
         this.bucket = new TokenBucket(CHAT_RATE, nanoClock);
+    }
+
+    /** The text to capture: the raw typed text only, never the decorated message another mod may have prefixed. */
+    static String chatText(String rawTyped) {
+        return rawTyped == null ? "" : rawTyped;
     }
 
     long errors() {
@@ -63,7 +70,7 @@ public final class TextContentFamily {
                 return;
             }
             String raw = text.get();
-            String clean = ContentCap.cap(Redactor.scrub(raw == null ? "" : raw));
+            String clean = ContentCap.cap(Redactor.scrub(ContentCap.cap(raw == null ? "" : raw, PRE_SCRUB_MAX_BYTES)));
             content.record(chatId, clean, CombatFamily.lifeId(player), world, null);
         } catch (Throwable t) {
             if (t instanceof VirtualMachineError vme) {

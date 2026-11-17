@@ -1,4 +1,4 @@
-package dev.geldar.ledger.neoforge.curated;
+package dev.geldar.ledger.neoforge.audit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -9,8 +9,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.Test;
 
-/** Pure-logic tests for the PT-N8 families (the game-event readers in CuratedWiring need a server and are compile-only). */
-class CuratedFamiliesTest {
+/** Pure-logic tests for the PT-N8 families (the game-event readers in AuditWiring need a server and are compile-only). */
+class AuditFamiliesTest {
     static final String LIFE = "ag_ada_01";
     static final String LIFE2 = "ag_bob_02";
     final FakeLedger f = new FakeLedger();
@@ -23,7 +23,7 @@ class CuratedFamiliesTest {
         new CombatFamily(f.ledger, f.host);
         new TextContentFamily(f.ledger, clock::get);
         new OperatorAuditFamily(f.ledger, f.host, clock::get);
-        assertEquals(6, f.registered.size());
+        assertEquals(7, f.registered.size());
         assertTrue(f.registered.stream().allMatch(n -> n.startsWith("geldar.")), f.registered.toString());
     }
 
@@ -94,10 +94,12 @@ class CuratedFamiliesTest {
     @Test
     void killSkipsPlayerDeathsAndMissingKillers() {
         CombatFamily c = new CombatFamily(f.ledger, f.host);
-        c.killed(LIFE, true, "minecraft:player");
-        c.killed(null, false, "minecraft:zombie");
+        c.killed(LIFE, true, () -> "minecraft:player");
+        c.killed(null, false, () -> {
+            throw new AssertionError("type built without a player killer");
+        });
         assertTrue(f.events.isEmpty());
-        c.killed(LIFE, false, "minecraft:zombie");
+        c.killed(LIFE, false, () -> "minecraft:zombie");
         assertEquals(LIFE, f.events.get(0)[4]);
         assertEquals("minecraft:zombie", f.events.get(0)[5]);
     }
@@ -125,7 +127,7 @@ class CuratedFamiliesTest {
         f.recordThrows.set(true);
         c.damage(LIFE, null, 1, "x");
         c.playerDeath(LIFE, "x", "d");
-        c.killed(LIFE, false, "t");
+        c.killed(LIFE, false, () -> "t");
         assertEquals(3, c.errors());
         assertEquals(f.guardBegins.get(), f.guardEnds.get());
         f.recordThrows.set(false);
@@ -206,7 +208,7 @@ class CuratedFamiliesTest {
     @Test
     void consoleCommandIsExportedWithNamesAsTyped() {
         OperatorAuditFamily a = new OperatorAuditFamily(f.ledger, f.host, clock::get);
-        a.command(false, false, () -> "whitelist add HumanSteve");
+        a.command("console", false, () -> "whitelist add HumanSteve");
         Object[] e = f.events.get(0);
         assertEquals("whitelist add HumanSteve", e[4]);
         assertEquals("console", e[5]);
@@ -215,8 +217,8 @@ class CuratedFamiliesTest {
     @Test
     void playerAndCancelledCommandsAreNotExported() {
         OperatorAuditFamily a = new OperatorAuditFamily(f.ledger, f.host, clock::get);
-        a.command(true, false, () -> "home");
-        a.command(false, true, () -> "stop");
+        a.command(OperatorAuditFamily.commandKind(true, "Server"), false, () -> "home");
+        a.command("console", true, () -> "stop");
         assertTrue(f.events.isEmpty());
     }
 
@@ -242,7 +244,7 @@ class CuratedFamiliesTest {
         OperatorAuditFamily a = new OperatorAuditFamily(f.ledger, f.host, clock::get);
         AtomicInteger flattened = new AtomicInteger();
         for (int i = 0; i < 200; i++) {
-            a.command(false, false, () -> {
+            a.command("console", false, () -> {
                 flattened.incrementAndGet();
                 return "list";
             });
@@ -255,13 +257,13 @@ class CuratedFamiliesTest {
     void asyncCommandNeverTouchesTheGuardAndErrorsAreSwallowed() {
         OperatorAuditFamily a = new OperatorAuditFamily(f.ledger, f.host, clock::get);
         f.main.set(false);
-        a.command(false, false, () -> "list");
+        a.command("console", false, () -> "list");
         assertEquals(1, f.events.size());
         assertEquals(0, f.guardBegins.get());
         f.recordThrows.set(true);
         clock.addAndGet(2_000_000_000L);
-        a.command(false, false, () -> "list");
-        a.command(false, false, () -> {
+        a.command("console", false, () -> "list");
+        a.command("console", false, () -> {
             throw new IllegalStateException("flatten");
         });
         assertEquals(2, a.errors());
@@ -270,12 +272,12 @@ class CuratedFamiliesTest {
     @Test
     void mainThreadCommandUsesTheGuardAndHonoursIt() {
         OperatorAuditFamily a = new OperatorAuditFamily(f.ledger, f.host, clock::get);
-        a.command(false, false, () -> "list");
+        a.command("console", false, () -> "list");
         assertEquals(1, f.guardBegins.get());
         assertEquals(1, f.guardEnds.get());
         f.guardAllowed.set(false);
         clock.addAndGet(2_000_000_000L);
-        a.command(false, false, () -> "list");
+        a.command("console", false, () -> "list");
         assertEquals(1, f.events.size());
     }
 
@@ -288,6 +290,119 @@ class CuratedFamiliesTest {
         assertEquals(LIFE, f.events.get(0)[4]);
         assertEquals(0L, f.events.get(1)[3]);
         assertNull(f.events.get(1)[4]);
-        assertEquals("geldar.operator.change", f.registered.get(1));
+        assertTrue(f.registered.contains("geldar.operator.change"));
+    }
+
+    // --- review fixes ---
+
+    @Test
+    void commandKindExportsOnlyTrueConsoleAndRcon() {
+        assertEquals("console", OperatorAuditFamily.commandKind(false, "Server"));
+        assertEquals("rcon", OperatorAuditFamily.commandKind(false, "Rcon"));
+        assertNull(OperatorAuditFamily.commandKind(true, "Server"));
+        assertNull(OperatorAuditFamily.commandKind(true, "Steve"));
+        assertNull(OperatorAuditFamily.commandKind(false, "@")); // a command block
+        assertNull(OperatorAuditFamily.commandKind(false, "Steve"));
+        assertNull(OperatorAuditFamily.commandKind(false, null));
+    }
+
+    @Test
+    void rconCommandUsesItsOwnEventAndSubtype() {
+        OperatorAuditFamily a = new OperatorAuditFamily(f.ledger, f.host, clock::get);
+        a.command("rcon", false, () -> "list");
+        a.command("console", false, () -> "list");
+        assertEquals(f.registered.indexOf("geldar.rcon.command"), f.events.get(0)[0]);
+        assertEquals("rcon", f.events.get(0)[5]);
+        assertEquals(f.registered.indexOf("geldar.console.command"), f.events.get(1)[0]);
+        assertEquals("console", f.events.get(1)[5]);
+        a.command(null, false, () -> "say hi");
+        assertEquals(2, f.events.size());
+    }
+
+    @Test
+    void chatTextIsTheRawTypedTextOnly() {
+        assertEquals("hi", TextContentFamily.chatText("hi"));
+        assertEquals("", TextContentFamily.chatText(null));
+        assertEquals("<Steve> hi", TextContentFamily.chatText("<Steve> hi")); // verbatim: no decoration is added or removed
+    }
+
+    @Test
+    void wiringListensLastAndNeverOnCancelledEvents() throws Exception {
+        java.nio.file.Path src = java.nio.file.Path.of(
+                "src", "main", "java", "dev", "geldar", "ledger", "neoforge", "audit", "AuditWiring.java");
+        String code = java.nio.file.Files.readString(src);
+        assertTrue(code.contains("PRIORITY = EventPriority.LOWEST;"));
+        assertTrue(code.contains("RECEIVE_CANCELED = false;"));
+        int listeners = code.split("addListener\\(", -1).length - 1;
+        int constant = code.split("addListener\\(PRIORITY, RECEIVE_CANCELED, ", -1).length - 1;
+        assertEquals(5, listeners);
+        assertEquals(listeners, constant);
+        // the speaker name and the decorated message never enter the chat read
+        assertFalse(code.contains("getUsername"));
+        assertFalse(code.contains("getMessage"));
+        assertTrue(code.contains("chatText(e.getRawText())"));
+        assertTrue(code.contains("source.getEntity() != null, source.getTextName()"));
+    }
+
+    @Test
+    void everyAuthVerbDropsItsArguments() {
+        for (String root : CommandText.AUTH_ROOTS) {
+            assertEquals(root, CommandText.exportable(root + " hunter2 hunter2"), root);
+            assertEquals(root, CommandText.exportable("/" + root.toUpperCase() + " hunter2"), root);
+            assertEquals("execute as @a run " + root, CommandText.exportable("execute as @a run Plugin:" + root + " pw pw"));
+        }
+    }
+
+    @Test
+    void unicodeAndControlSeparatorsDoNotHideAnAuthVerb() {
+        for (String sep : new String[] {"\u00a0", "\u2003", "\t", "\n", "\r", "\u2028", "\u3000", "\u0000"}) {
+            assertEquals("login", CommandText.exportable("login" + sep + "hunter2"), "sep " + (int) sep.charAt(0));
+            assertEquals("say login", CommandText.exportable("say" + sep + "login" + sep + "pw"));
+        }
+        assertEquals("login\u200bx", CommandText.exportable("login\u200bx")); // not whitespace: not that verb
+    }
+
+    @Test
+    void hugeCommandsAreBounded() {
+        assertTrue(CommandText.exportable("say " + "x".repeat(200_000)).length() <= CommandText.TEXT_MAX_BYTES);
+        assertTrue(CommandText.exportable("x".repeat(150_000)).length() <= CommandText.TEXT_MAX_BYTES);
+    }
+
+    @Test
+    void chatRateCapIsExactlyTwentyPerSecond() {
+        TextContentFamily t = new TextContentFamily(f.ledger, clock::get);
+        for (int i = 0; i < TextContentFamily.CHAT_RATE; i++) {
+            t.chat(false, LIFE, "w", () -> "x");
+        }
+        assertEquals(20, f.content.size());
+        assertEquals(0, t.rateDrops());
+        t.chat(false, LIFE, "w", () -> "x");
+        assertEquals(20, f.content.size());
+        assertEquals(1, t.rateDrops());
+        clock.addAndGet(60_000_000L);
+        t.chat(false, LIFE, "w", () -> "x");
+        assertEquals(21, f.content.size());
+    }
+
+    @Test
+    void commandRateCapIsExactlyTwentyPerSecond() {
+        OperatorAuditFamily a = new OperatorAuditFamily(f.ledger, f.host, clock::get);
+        for (int i = 0; i < 20; i++) {
+            a.command("console", false, () -> "list");
+        }
+        assertEquals(20, f.events.size());
+        a.command("console", false, () -> "list");
+        assertEquals(20, f.events.size());
+        assertEquals(1, a.rateDrops());
+        clock.addAndGet(60_000_000L);
+        a.command("console", false, () -> "list");
+        assertEquals(21, f.events.size());
+    }
+
+    @Test
+    void hugeChatIsBoundedBeforeAndAfterScrub() {
+        TextContentFamily t = new TextContentFamily(f.ledger, clock::get);
+        t.chat(false, LIFE, "w", () -> "z".repeat(5_000_000));
+        assertTrue(f.content.get(0)[0].getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= 32768);
     }
 }

@@ -1,4 +1,4 @@
-package dev.geldar.ledger.neoforge.curated;
+package dev.geldar.ledger.neoforge.audit;
 
 import dev.geldar.ledger.core.CollectorGuard;
 import dev.geldar.ledger.core.HostInfo;

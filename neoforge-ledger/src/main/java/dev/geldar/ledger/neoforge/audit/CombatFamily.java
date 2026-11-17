@@ -1,4 +1,4 @@
-package dev.geldar.ledger.neoforge.curated;
+package dev.geldar.ledger.neoforge.audit;
 
 import dev.geldar.ledger.core.AttrKeys;
 import dev.geldar.ledger.core.EventLog;
@@ -7,10 +7,11 @@ import dev.geldar.ledger.core.Ledger;
 import dev.geldar.ledger.core.Names;
 import dev.geldar.ledger.core.Severity;
 import dev.geldar.ledger.core.ids.LifeIds;
+import java.util.function.Supplier;
 
 /**
  * Combat and deaths (PT-N8), the NeoForge twin of the Paper combat family. Plain values in, so it is testable without a
- * server; the code that reads the game events is {@link CuratedWiring}. Only enum-like names, a clamped damage number and
+ * server; the code that reads the game events is {@link AuditWiring}. Only enum-like names, a clamped damage number and
  * a dimension name leave the server: no coordinates, no death message, no display name. A player name is exported only
  * when it is a life id ({@link LifeIds#isLifeId}); a human is never named.
  *
@@ -82,12 +83,12 @@ public final class CombatFamily {
     }
 
     /** A kill counts only for a player killer and a non-player victim (D-C); s2 is the victim's entity type name. */
-    public void killed(String killerPlayer, boolean victimIsPlayer, String victimType) {
+    public void killed(String killerPlayer, boolean victimIsPlayer, Supplier<String> victimType) {
         guarded.runMain(() -> {
             if (killerPlayer == null || victimIsPlayer) {
-                return;
+                return; // the type string is not built for a mob farm death with no player killer
             }
-            events.record(killId, 0, 0, 0, lifeId(killerPlayer), victimType, null);
+            events.record(killId, 0, 0, 0, lifeId(killerPlayer), victimType.get(), null);
         });
     }
 
