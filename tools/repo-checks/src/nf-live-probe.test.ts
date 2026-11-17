@@ -43,6 +43,11 @@ interface Svc {
   networks?: Record<string, unknown>;
   secrets?: { source: string }[];
   environment?: Record<string, string | null>;
+  user?: string;
+  volumes?: unknown[];
+  pids_limit?: unknown;
+  memswap_limit?: unknown;
+  deploy?: { resources?: { limits?: Record<string, unknown> } };
 }
 interface Rendered {
   services: Record<string, Svc>;
@@ -67,6 +72,7 @@ function render(
 
 let base: Rendered;
 let probed: Rendered;
+let common: Record<string, string>;
 let tmp: string;
 
 beforeAll(() => {
@@ -77,7 +83,7 @@ beforeAll(() => {
   for (const name of SECRET_NAMES) writeFileSync(join(secrets, name), 'DUMMY-NF-SECRET\n');
   const jar = join(tmp, 'geldar-neoforge.jar');
   writeFileSync(jar, 'dummy jar, not a real mod');
-  const common = { NF_SECRETS_DIR: secrets, NF_MOD_JAR_HOST: jar, NF_MOD_SHA256: DUMMY_SHA };
+  common = { NF_SECRETS_DIR: secrets, NF_MOD_JAR_HOST: jar, NF_MOD_SHA256: DUMMY_SHA };
   const baseRun = render([BASE], common);
   if (baseRun.status !== 0) throw new Error('compose config of the base file failed');
   base = JSON.parse(baseRun.stdout) as Rendered;
@@ -142,5 +148,42 @@ describe.skipIf(!DOCKER)('nf-live probe overlay: the render', () => {
     expect(env.GELDAR_NATS_PASSWORD_FILE).toBe('/run/secrets/nats-body.txt');
     expect(env.GELDAR_RCON_HOST).toBe('neoforge');
     expect(env.GELDAR_P0_PROJECT).toBe('geldar-nf');
+  });
+
+  it('renders alone with the probe profile active (CI and geldar.ps1 check render each file alone)', () => {
+    const alone = render([PROBE], { ...common, COMPOSE_PROFILES: 'probe' });
+    expect(alone.status).toBe(0);
+    const doc = JSON.parse(alone.stdout) as Rendered;
+    expect(Object.keys(doc.services)).toEqual(['probe']);
+    expect(Object.keys(doc.services.probe?.networks ?? {})).toEqual(['nf']);
+    expect((doc.services.probe?.secrets ?? []).map((s) => s.source)).toEqual([
+      'nats-body.txt',
+      'rcon',
+    ]);
+  });
+
+  it('the probe runs as the service user, with no volumes and the project memswap and pids caps', () => {
+    const probe = probed.services.probe;
+    expect(probe?.user).toBe('1000:1000');
+    expect(probe?.volumes ?? []).toEqual([]);
+    expect(probe?.pids_limit).toBe(256);
+    expect(probe?.memswap_limit).toBeDefined();
+    const limits = probe?.deploy?.resources?.limits;
+    expect(Number(limits?.memory)).toBe(1024 ** 3);
+    expect(Number(limits?.cpus)).toBe(1);
+    expect(limits?.pids).toBe(256);
+  });
+
+  it('the probe mounts exactly the nats-body and rcon secrets', () => {
+    const names = (probed.services.probe?.secrets ?? []).map((s) => s.source).sort();
+    expect(names).toEqual(['nats-body.txt', 'rcon']);
+  });
+
+  it('the probe environment has no plain password, and no RCON_PASSWORD', () => {
+    const env = probed.services.probe?.environment ?? {};
+    const plain = Object.keys(env).filter((k) => /PASSWORD/.test(k) && !k.endsWith('_FILE'));
+    expect(plain).toEqual([]);
+    expect(env.RCON_PASSWORD).toBeUndefined();
+    expect(env.GELDAR_RCON_PASSWORD).toBeUndefined();
   });
 });

@@ -32,14 +32,9 @@ services:
       GELDAR_RCON_PORT: "25575"
       GELDAR_RCON_PASSWORD_FILE: /run/secrets/rcon
     secrets: [nats-body.txt, rcon]
-    # The probe verb runs with --no-deps, so compose does not wait on these. deploy/nf-deploy.sh checks each is healthy first.
-    depends_on:
-      nats:
-        condition: service_healthy
-      velocity:
-        condition: service_healthy
-      neoforge:
-        condition: service_healthy
+    # No depends_on: it names services this file does not declare, so the file would not render alone (CI and geldar.ps1 check
+    # render it alone, with the probe profile active in the self-contained test). The probe verb runs with --no-deps, and
+    # deploy/nf-deploy.sh checks that nats, velocity and neoforge are healthy before it runs the probe.
     networks: [nf]
     deploy:
       resources:
@@ -61,6 +56,12 @@ services:
       com.centurylinklabs.watchtower.enable: "false"
     restart: "no"
 
+# Declared here so that the file renders alone: the same definitions as compose/nf-live.yml (the nf network, the rcon secret).
+networks:
+  nf: {}
+
 secrets:
   nats-body.txt:
     file: ${NF_SECRETS_DIR:-./secrets-nf}/nats-body.txt
+  rcon:
+    file: ${NF_SECRETS_DIR:-./secrets-nf}/rcon.txt
