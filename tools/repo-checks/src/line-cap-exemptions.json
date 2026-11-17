@@ -24,6 +24,11 @@
       "path": "tools/adam-run/src/adapters.test.ts",
       "hardCap": 900,
       "reason": "one describe per adapter surface (start, sampler, flags, run-folder store, SQL reads) over one module"
+    },
+    {
+      "path": "neoforge/gradle/verification-metadata.xml",
+      "hardCap": 1650,
+      "reason": "generated dependency checksums"
     }
   ]
 }
