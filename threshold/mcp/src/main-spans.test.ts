@@ -136,7 +136,10 @@ describe('the span wiring in startMcp (T-06)', () => {
     const { spans } = await startWithSpans('http://127.0.0.1:4318', true);
     const refused = spans.filter((span) => span.name === 'mcp.auth_refused');
     expect(refused).toHaveLength(1);
-    // http.response.status_code is dropped by the allow-list until that key lands (branch telemetry/t36-tm01).
-    expect(refused[0]?.attributes).toEqual({ outcome: 'unknown_token' });
+    // http.response.status_code is on the allow-list, so the 401 is kept.
+    expect(refused[0]?.attributes).toEqual({
+      outcome: 'unknown_token',
+      'http.response.status_code': 401,
+    });
   });
 });

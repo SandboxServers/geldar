@@ -152,17 +152,20 @@ describe('eventsink OTLP error logs', () => {
 
   it('key=value credentials in a reason are scrubbed', async () => {
     const h = harness({ dlqFails: true });
-    const pw = `${'hunt'}er2`;
+    // The redactor scrubs a key=value only when the value is at least 8 characters and not a plain word.
+    const pw = `${'Zq9x'}K2mP7vL4`;
+    const tok = `${'abc'}123Xy9Qz`;
     const deps: BatchDeps = {
       ...h.make(true),
       async publishDlq() {
-        throw new Error(`failed password=${pw} token=${'abc'}123`);
+        throw new Error(`failed password=${pw} token=${tok}`);
       },
     };
     await handleBatch([h.message('geldar.phase0.damage', { nonsense: true })], deps);
     const reason = String(h.records[0]?.fields.reason);
     expect(reason).not.toContain(pw);
-    expect(reason).not.toContain('abc123');
+    expect(reason).not.toContain(tok);
+    expect(reason).toContain('password=');
   });
 
   it('the DLQ body reason stays sliced to 2000', async () => {

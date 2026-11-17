@@ -296,15 +296,23 @@ describe('every call ends in one span (T-06d2)', () => {
     expect(await runToolCall(noEvent, 'look', {}, ctx())).toEqual(plain);
   });
 
-  it('(i) an auth refusal span carries the reason (the status is dropped by the allow-list until its key lands), never a token or header', () => {
+  it('(i) an auth refusal span carries the reason and the kept status (401 and 503), never a token or header', () => {
     const { tracer, spans } = fakeTracer();
     authRefusalRecorder(tracer)({ reason: 'token_shape', status: 401 });
     expect(spans).toHaveLength(1);
     expect(spans[0]?.name).toBe('mcp.auth_refused');
-    // Today the span carries the outcome only: http.response.status_code is filtered out.
-    expect(spans[0]?.attributes).toEqual({ outcome: 'token_shape' });
+    // http.response.status_code is on the allow-list, so the span keeps it.
+    expect(spans[0]?.attributes).toEqual({
+      outcome: 'token_shape',
+      'http.response.status_code': 401,
+    });
     expect(spans[0]?.ended).toBe(true);
     expect(JSON.stringify(spans[0])).not.toMatch(/gmcp-|Bearer|authorization/i);
+    authRefusalRecorder(tracer)({ reason: 'auth_unavailable', status: 503 });
+    expect(spans[1]?.attributes).toEqual({
+      outcome: 'auth_unavailable',
+      'http.response.status_code': 503,
+    });
   });
 
   it('(j) calls past the rate limit give rate_limited spans', async () => {
