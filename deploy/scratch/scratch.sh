@@ -189,9 +189,8 @@ compose_run() {
   if [ -f "$NATS_OVERRIDE" ]; then
     set -- -f "$NATS_OVERRIDE" "$@"
   fi
-  if [ "$PLATFORM" = neoforge ] && [ -n "${GELDAR_NF_MOD_JAR_HOST:-}" ]; then
-    set -- -f "$ROOT/compose/opt-in/scratch-neoforge-mod.yml" "$@"
-  fi
+  [ "$PLATFORM" = neoforge ] && [ -n "${GELDAR_NF_MOD_JAR_HOST:-}" ] && set -- -f "$ROOT/compose/opt-in/scratch-neoforge-mod.yml" "$@"
+  [ "$PLATFORM" = neoforge ] && [ -n "${GELDAR_NF_LEDGER_JAR_HOST:-}" ] && set -- -f "$ROOT/compose/opt-in/scratch-neoforge-ledger.yml" "$@"
   if [ "$PLATFORM" = neoforge ]; then
     set -- -f "$ROOT/compose/opt-in/scratch-neoforge.yml" "$@"
   fi
@@ -309,6 +308,8 @@ set_env() {
     GELDAR_NF_MOD_SHA256=$SCRATCH_NEOFORGE_MOD_SHA256
   fi
   export GELDAR_NF_MOD_JAR_HOST GELDAR_NF_MOD_SHA256
+  # The ledger jar and the OpenTelemetry agent (scratch-ledger.sh, sourced only when one of their variables is set; up refuses on them there).
+  [ -z "${SCRATCH_NEOFORGE_LEDGER_JAR:-}${SCRATCH_NEOFORGE_LEDGER_SHA256:-}${SCRATCH_LEDGER_PROPS:-}${SCRATCH_OTEL_AGENT_JAR:-}${SCRATCH_OTEL_AGENT_SHA256:-}${SCRATCH_OTEL_AGENT_PROPS:-}" ] || { . "$ROOT/deploy/scratch/scratch-ledger.sh"; ledger_set_env; }
 }
 
 # Any non-root account may run. GELDAR_SERVICE_UID, when set, must be this account's uid. The secret modes never change:

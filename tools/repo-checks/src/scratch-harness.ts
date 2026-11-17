@@ -25,6 +25,8 @@ export const MIND_SCRIPT_PATH = `${ROOT}deploy/scratch/scratch-mind.sh`;
 export const MIND_SCRIPT = readFileSync(MIND_SCRIPT_PATH, 'utf8');
 export const HUMAN_SCRIPT_PATH = `${ROOT}deploy/scratch/scratch-human.sh`;
 export const HUMAN_SCRIPT = readFileSync(HUMAN_SCRIPT_PATH, 'utf8');
+export const LEDGER_SCRIPT_PATH = `${ROOT}deploy/scratch/scratch-ledger.sh`;
+export const LEDGER_SCRIPT = readFileSync(LEDGER_SCRIPT_PATH, 'utf8');
 const ENV_PATH = `${ROOT}deploy/scratch/telemetry.env`;
 export const SH = spawnSync('sh', ['-c', 'exit 0']).status === 0 ? 'sh' : null;
 
@@ -185,6 +187,7 @@ export function makeTree(base: string, jars: boolean, envFile?: string | null): 
   writeFileSync(script, SCRIPT);
   writeFileSync(join(dirname(script), 'scratch-mind.sh'), MIND_SCRIPT);
   writeFileSync(join(dirname(script), 'scratch-human.sh'), HUMAN_SCRIPT);
+  writeFileSync(join(dirname(script), 'scratch-ledger.sh'), LEDGER_SCRIPT);
   if (envFile !== null) {
     const text =
       envFile === undefined

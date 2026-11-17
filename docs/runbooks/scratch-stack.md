@@ -624,3 +624,24 @@ Checks (UNVERIFIED until run on a host; record each result):
 What to capture: the velocity-human and Paper log lines for checks 1 to 3 and the health of the velocity-human container. Redact account names, IP addresses and any token before the lines leave the host. Never capture secret files.
 
 Node steps need the owner's approval: any run on a node, a tunnel to a node, and any change to the public port or the SRV record. Nothing here is public: the port is loopback only, and the public game port by SRV record is a separate owner decision that is not made.
+
+### Ledger jar and OTel agent on the scratch NeoForge stack
+
+Opt-in, NeoForge only (`SCRATCH_PLATFORM=neoforge`). The overlay is `compose/opt-in/scratch-neoforge-ledger.yml`, added by `deploy/scratch/scratch-ledger.sh` only when one of these variables is set. Unset, the default render is unchanged.
+
+| Variable | Meaning |
+|---|---|
+| `SCRATCH_NEOFORGE_LEDGER_JAR` | Absolute path to the ledger jar, built from `neoforge-ledger/`. Both this and the hash, or neither. |
+| `SCRATCH_NEOFORGE_LEDGER_SHA256` | The jar's sha256, 64 lowercase hex digits. `off` alone is the soft kill (see below). |
+| `SCRATCH_LEDGER_PROPS` | Absolute path to the ledger config file. Required with the jar pair. |
+| `SCRATCH_OTEL_AGENT_JAR` | Absolute path to the OpenTelemetry Java agent jar. All three agent variables, or none. Needs the jar pair. |
+| `SCRATCH_OTEL_AGENT_SHA256` | The agent jar's sha256, 64 lowercase hex digits. |
+| `SCRATCH_OTEL_AGENT_PROPS` | Absolute path to the agent properties file. The agent is on only when all three agent variables are set. |
+
+What `up` checks, before any docker call, and exits 2 with nothing started: the platform is neoforge; each path is absolute, has no newline, quotes, backslashes or dollar signs, and is a readable regular file (not a symlink); each hash is 64 lowercase hex digits; and the host sha256 of the ledger jar and of the agent jar equals its pin. `down` and `status` never refuse on these variables. The container checks the same pins again (`compose/neoforge/neoforge-entrypoint.sh`) and refuses to start on a mismatch.
+
+Staging. The ledger jar comes from `neoforge-ledger/` through its own build script (`deploy/build-neoforge-ledger.sh`, arriving with the telemetry work; not in this tree yet). The agent jar and its pinned sha256 come from the agent's release, downloaded by the owner; the pin is theirs to record, and nothing in this repo fetches it. The properties files are written on the host.
+
+The OTLP endpoint is whatever the agent properties file says. Nothing here sets an endpoint. Nothing is public: the overlay declares no network and no published port, and the scratch stack stays on its own project network.
+
+Soft kill. `SCRATCH_NEOFORGE_LEDGER_SHA256=off` alone renders no overlay and no mount. The entrypoint's `off` branch (it removes only the container's own earlier copy of the ledger jar, and starts without the ledger) runs only when the overlay is rendered, so with `off` alone a copy left in the data volume still stops the start. Removing that copy is a manual step until this is decided (see `docs/analysis/neoforge/ledger-extras-entrypoint.md`).
