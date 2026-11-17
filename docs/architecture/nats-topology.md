@@ -42,7 +42,7 @@ Every subject in the table starts with `geldar.<shard>`. A life is not known whe
 
 ## Users by role
 
-The generator defines 11 users (`Get-NatsUsers`, counted 2026-11-16). `<s>` is the shard. "JS" means the JetStream API, ACK and inbox subjects (`$JS.API.>`, `$JS.ACK.>`, `_INBOX.>`).
+The generator defines 11 users for the colo table (`Get-NatsUsers`, counted 2026-11-16). The phase0 table (scratch stack) adds a twelfth, `seed`, which can only create, inspect and update the two identity KV buckets. `<s>` is the shard. "JS" means the JetStream API, ACK and inbox subjects (`$JS.API.>`, `$JS.ACK.>`, `_INBOX.>`).
 
 | User | Role | Connected by (Colo) | May publish | Denied | May subscribe |
 |---|---|---|---|---|---|
@@ -115,6 +115,6 @@ Each item gives every account. This page does not pick one.
 
 1. **The MCP's reach.** Spec 6.4: "NATS (MCP service account, `geldar.*.player.>` subjects only)". Decision [0067](../decisions/0067-nats-accounts-and-least-privilege.md): publish `sovereign_call`, request only `body.<life>.book` for its own players, "NO publish on ... other lives' subjects". Decision [0087](../decisions/0087-nats-overlay-live-test-and-scoped-subjects.md) (status Proposed) and the generator: `mcp` publishes `geldar.<s>.body.>`, any life of its shard, limited by the application check. No `player` subject exists in `contract/src/subjects.ts`.
 2. **The `ops` user.** Decision [0067](../decisions/0067-nats-accounts-and-least-privilege.md) lists an `ops` user with full access, "used by hand only". Decision [0087](../decisions/0087-nats-overlay-live-test-and-scoped-subjects.md) removed it from the generator and left "Owner to reconcile 0067". The generator at 1b114276 has no `ops` user.
-3. **The live node and the generator.** [nats-auth-inplace](../runbooks/nats-auth-inplace.md) records, as of 2026-11-14, 8 users on the live node and a pending batch for `helper` and `supervisor` "pending the PR #415 merge". The generator at 1b114276 already has both, plus `register`: 11 users. The live count is unverified (D8); the runbook's "not merged yet" wording is stale.
+3. **The live node and the generator.** [nats-auth-inplace](../runbooks/nats-auth-inplace.md) records, as of 2026-11-14, 8 users on the live node and a pending batch for `helper` and `supervisor` "pending the PR #415 merge". The generator at 1b114276 already has both, plus `register`: 11 users in the colo table. The live count is unverified (D8); the runbook's "not merged yet" wording is stale.
 4. **Hearing deny.** `contract/src/subjects.ts` (comment on `hearingSubject`) says the deny is "a later nats-auth change"; the generator already has it for `body`, `mind` and `mcp`.
 5. **Where the MCP's user is wired.** `compose/nats-auth-mcp.yml` says "Colo does not include the MCP service, so this file is not merged there." `compose/colo.yml` does include `geldar-mcp` and wires its `mcp` user in the base file ("the overlay compose/nats-auth-mcp.yml is not merged on colo, so the wiring is here"). The overlay's comment is out of date; the behaviour agrees.
