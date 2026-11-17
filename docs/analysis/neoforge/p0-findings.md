@@ -26,7 +26,7 @@ This records the P0 join test of a vanilla-protocol golem Body against a scratch
 ### 2.1 Criterion 5 figures
 
 - Server tick: `tick query` reports 20 ticks per second at 0.1 ms. `neoforge tps` reports an overall 20.000 TPS at 0.104 ms per tick.
-- Paper container (the stack's Paper shard, which we also ran): 1.636 GiB of a 3 GiB cap, at 0.19 to 0.52 percent CPU.
+- Game server container (the compose service named `paper`, which runs NeoForge on this stack): 1.636 GiB of a 3 GiB cap, at 0.19 to 0.52 percent CPU.
 - Velocity: 189 MiB of a 768 MiB limit.
 - Another scratch run was on the same node during the measurement.
 - The 1.5 CPU cap was not tested under load.
@@ -54,7 +54,7 @@ This records the P0 join test of a vanilla-protocol golem Body against a scratch
 - One netty IndexOutOfBounds at `PCF VarInt.read` appeared at start-up, from a one-byte connection. It looks benign. We did not verify the sender.
 - A Mojang profile lookup warning appears at whitelist add. It is harmless.
 - Scratch `down` removes the probe image too.
-- Tick and TPS commands that worked on the Paper and NeoForge consoles: `rcon-cli tick query` and `rcon-cli neoforge tps`.
+- Tick and TPS commands that worked on the NeoForge server console (run through `rcon-cli` in the service named `paper`): `tick query` and `neoforge tps`.
 
 ## 6. Not proven
 
