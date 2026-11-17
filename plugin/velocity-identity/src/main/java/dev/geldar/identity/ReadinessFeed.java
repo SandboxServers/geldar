@@ -39,6 +39,18 @@ final class ReadinessFeed implements RegistryClient.Feed {
     @Override
     public synchronized void markSynced() {
         feed.markSynced();
+        writeMarker();
+    }
+
+    /**
+     * The human lane with no registry configured: nothing feeds the marker, so the enabled proxy writes it once here.
+     * Nothing is written after {@link #retire}.
+     */
+    synchronized void markReadyWithoutRegistry() {
+        writeMarker();
+    }
+
+    private void writeMarker() {
         if (retired) {
             return;
         }

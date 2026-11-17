@@ -19,20 +19,58 @@ public final class LoginGate {
     /** The one message every denied connection sees. */
     public static final String DENY_MESSAGE = "This connection is not admitted.";
 
-    /** The result of checking one username against the registry. */
-    public enum Admission { DENIED, LIVE, SPECTATOR }
+    /**
+     * The result of checking one login. {@link #HUMAN} is a human admitted by the human lane: it reaches the proxy but
+     * is in neither set, so it never opens {@code geldar:cmd} and is never a ghost.
+     */
+    public enum Admission { DENIED, LIVE, SPECTATOR, HUMAN }
 
     private final LifeRegistry registry;
+    private final IdentityLane lane;
+    /** True when a NATS URL is configured: the human lane then denies while the registry is unsynced. */
+    private final boolean registryExpected;
     private final Set<UUID> admitted = ConcurrentHashMap.newKeySet();
     private final Set<UUID> spectators = ConcurrentHashMap.newKeySet();
 
     public LoginGate(LifeRegistry registry) {
-        this.registry = registry;
+        this(registry, IdentityLane.AGENT, false);
     }
 
-    /** Classifies a username. Pure cache lookup, safe on the event loop. */
+    public LoginGate(LifeRegistry registry, IdentityLane lane, boolean registryExpected) {
+        this.registry = registry;
+        this.lane = lane;
+        this.registryExpected = registryExpected;
+    }
+
+    /**
+     * Decides one login under the gate's lane. The agent lane is {@link #classify}; the human lane also needs the
+     * connection's UUID. Pure cache lookup, safe on the event loop.
+     */
+    public Admission decide(UUID connection, String username) {
+        return lane == IdentityLane.HUMAN ? classifyHuman(connection, username) : classify(username);
+    }
+
+    /**
+     * The human lane. Refused: a name that is not a plain username, the agent prefix, a name in the registry, and the
+     * offline-mode UUID of the name. While a configured registry is unsynced, every login is refused (fail closed).
+     * With no registry configured the registry is absent and the name rules alone decide.
+     */
+    private Admission classifyHuman(UUID connection, String username) {
+        if (!LifeRegistry.isValidUsername(username) || HumanRules.isAgentShaped(username)) {
+            return Admission.DENIED;
+        }
+        if (HumanRules.offlineUuid(username).equals(connection)) {
+            return Admission.DENIED;
+        }
+        if (registry.isSynced()) {
+            return registry.find(username).isPresent() ? Admission.DENIED : Admission.HUMAN;
+        }
+        return registryExpected ? Admission.DENIED : Admission.HUMAN;
+    }
+
+    /** Classifies a username under the agent lane. Pure cache lookup, safe on the event loop; the human lane denies. */
     public Admission classify(String username) {
-        if (!LifeRegistry.isValidUsername(username) || !registry.isSynced()) {
+        if (lane == IdentityLane.HUMAN || !LifeRegistry.isValidUsername(username) || !registry.isSynced()) {
             return Admission.DENIED;
         }
         Optional<LifeRegistry.Entry> life = registry.find(username);
@@ -47,12 +85,15 @@ public final class LoginGate {
         return classify(username) != Admission.DENIED;
     }
 
-    /** Checks the username and, when it passes, remembers the connection as admitted. */
+    /** Checks the login and, when it passes, remembers the connection as admitted. */
     public boolean admit(UUID connection, String username) {
-        Admission admission = classify(username);
+        Admission admission = decide(connection, username);
         switch (admission) {
             case LIVE -> admitted.add(connection);
             case SPECTATOR -> spectators.add(connection);
+            case HUMAN -> {
+                // Admitted to the proxy only: not to geldar:cmd, and not a ghost.
+            }
             case DENIED -> {
                 return false;
             }

@@ -183,6 +183,12 @@ Evidence: `body-helper/src/helperConfig.ts`. `deploy/install-body-helper.sh` ins
 
 The itzg images read their own settings (`EULA`, `TYPE`, `VERSION`, `PAPER_BUILD`, `VELOCITY_VERSION`, `VELOCITY_BUILD_ID`, `MEMORY`, `SEED`, `ONLINE_MODE`, `ENABLE_WHITELIST`, `ENFORCE_WHITELIST`, `HARDCORE`, `DIFFICULTY`, `VIEW_DISTANCE`, `SIMULATION_DISTANCE`, `MAX_PLAYERS`, `SPAWN_PROTECTION`, `ALLOW_FLIGHT`, `MOTD`, `ENABLE_RCON`, `RCON_PASSWORD_FILE`, `RCON_CMDS_STARTUP`, `UID`, `GID`). The Geldar plugins inside read `GELDAR_NATS_URL`, `GELDAR_SHARD`, `GELDAR_NATS_USER`, `GELDAR_NATS_PASSWORD_FILE` and `GELDAR_AGENT_SKINS_DIR` (the agent skins folder for the map). The Postgres image reads `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD_FILE`. `bluemap-web` sets `XDG_CONFIG_HOME` and `XDG_DATA_HOME` for Caddy. The `bluemap-alias` proxy (`plugins/bluemap/alias-proxy/alias-proxy.ts` lines 132 to 135) reads `GELDAR_ALIAS_PROXY_PORT` (its listen port), `GELDAR_ALIAS_UPSTREAM_HOST` and `GELDAR_ALIAS_UPSTREAM_PORT` (the BlueMap live server inside Paper) and `GELDAR_ALIASES_FILE`; each has a code default. Evidence: `compose/phase0.yml`, `compose/colo.yml`; `git grep -hoE 'getenv\("[A-Z_0-9]+"' -- plugin`.
 
+### Velocity identity plugin
+
+| Name | Meaning | Evidence |
+|---|---|---|
+| `GELDAR_IDENTITY_LANE` | Selects the login lane of the identity gate. Unset (default) or `agent`: the agent lane, unchanged from before the lane existed. `human`: the human lane. Any other value, including an empty one, refuses the gate: every login is denied and the error is logged. Read once, when the plugin loads. Compose files must not set it blank, because an empty value refuses the gate. What each lane admits: [velocity-identity-plugin, Lanes](velocity-identity-plugin.md#lanes). | `plugin/README.md`, "Velocity identity: lanes"; `git grep -n GELDAR_IDENTITY_LANE -- plugin` |
+
 ## Compose interpolation (set by the operator or the deploy)
 
 These are read by Docker Compose when it renders a file, not by a service.
