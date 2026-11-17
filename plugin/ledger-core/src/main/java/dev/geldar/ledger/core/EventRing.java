@@ -3,13 +3,15 @@ package dev.geldar.ledger.core;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
 
 /**
  * Bounded ring of preallocated slots (3 longs, 3 strings, event id, timestamp). Many producers, one
  * consumer (the {@link Emitter}). Each slot has a sequence number (bounded MPMC queue after Vyukov), so a
  * producer claims a slot with one CAS and publishes with one ordered store. {@link #offer} never blocks,
- * never allocates and returns false when the ring is full (the drop is counted).
+ * never allocates and returns false when the ring is full (the drop is counted). A ring belongs to one
+ * {@link Emitter} for its whole lifetime: a second consumer would corrupt the single-consumer head.
  */
 public final class EventRing {
   private final String name;
@@ -75,6 +77,13 @@ public final class EventRing {
 
   /** Copies the arguments into a free slot. Returns false (and counts a drop) when the ring is full. */
   public boolean offer(int id, long a, long b, long c, String str1, String str2, String str3) {
+    // Read the clock before claiming a slot: a throwing clock must never leave a claimed, unpublished slot.
+    long now;
+    try {
+      now = epochNanos.getAsLong();
+    } catch (RuntimeException e) {
+      now = 0L;
+    }
     long pos = tail.get();
     while (true) {
       int i = (int) pos & mask;
@@ -83,7 +92,7 @@ public final class EventRing {
       if (diff == 0) {
         if (tail.compareAndSet(pos, pos + 1)) {
           ids[i] = id;
-          ts[i] = epochNanos.getAsLong();
+          ts[i] = now;
           as[i] = a;
           bs[i] = b;
           cs[i] = c;
@@ -106,12 +115,20 @@ public final class EventRing {
   /**
    * Single consumer only. Delivers up to {@code max} records to the sink and returns how many were taken.
    * A slot is released before the sink is called, so a slow or throwing sink never pins a slot.
-   * A Throwable from the sink is rethrown after the slot is released; the caller decides.
+   * A Throwable from the sink is caught and reported to {@code errors}; the slot is already free.
    */
   int drain(int max, Sink sink, ErrorCounter errors) {
+    return drain(max, sink, errors, () -> false);
+  }
+
+  /**
+   * As {@link #drain(int, Sink, ErrorCounter)}, but stops as soon as {@code stop} is true: no record is
+   * taken after that, and a record taken just before it is counted as a drop instead of reaching the sink.
+   */
+  int drain(int max, Sink sink, ErrorCounter errors, BooleanSupplier stop) {
     int n = 0;
     long h = head;
-    while (n < max) {
+    while (n < max && !stop.getAsBoolean()) {
       int i = (int) h & mask;
       if (seq.get(i) != h + 1) {
         break;
@@ -131,6 +148,10 @@ public final class EventRing {
       h++;
       head = h;
       n++;
+      if (stop.getAsBoolean()) {
+        drops.increment();
+        continue;
+      }
       try {
         sink.accept(name, id, t, a, b, c, x, y, z);
       } catch (Throwable e) {

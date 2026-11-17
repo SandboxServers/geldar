@@ -3,6 +3,7 @@ package dev.geldar.ledger.core.ids;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
@@ -16,6 +17,19 @@ class IdsTest {
         assertEquals(expected, OfflineUuid.of("Adam"));
         assertNotEquals(OfflineUuid.of("Adam"), OfflineUuid.of("adam"));
         assertEquals(3, OfflineUuid.of("Adam").version());
+    }
+
+    @Test
+    void offlineUuidMatchesIndependentVectors() {
+        // Computed outside Java (MD5 of "OfflinePlayer:<name>", version 3, variant 2).
+        assertEquals(UUID.fromString("b50ad385-829d-3141-a216-7e7d7539ba7f"), OfflineUuid.of("Notch"));
+        assertEquals(UUID.fromString("ad077ebc-226d-3e98-8162-26cfcd17bf22"), OfflineUuid.of("Adam"));
+        assertEquals(UUID.fromString("a762f560-4fce-3236-812a-b80efff0b62b"), OfflineUuid.of("jeb_"));
+    }
+
+    @Test
+    void offlineUuidRejectsNull() {
+        assertThrows(NullPointerException.class, () -> OfflineUuid.of(null));
     }
 
     @Test

@@ -9,7 +9,9 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
+@Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 class EmitterTest {
   private static void awaitTrue(java.util.function.BooleanSupplier c, long ms) throws Exception {
     long end = System.nanoTime() + ms * 1_000_000L;
@@ -102,5 +104,88 @@ class EmitterTest {
     assertFalse(
         Thread.getAllStackTraces().keySet().stream()
             .anyMatch(t -> t.getName().equals("t-close") && t.isAlive()));
+  }
+
+  @Test
+  void closeFlushesQueuedRecords() {
+    EventRing ring = new EventRing("q", 64, new DropCounters());
+    AtomicInteger got = new AtomicInteger();
+    Emitter e =
+        new Emitter(
+                "t-flush",
+                List.of(ring),
+                (q, id, t, a, b, c, x, y, z) -> {
+                  try {
+                    Thread.sleep(10);
+                  } catch (InterruptedException ex) {
+                    Thread.currentThread().interrupt();
+                  }
+                  got.incrementAndGet();
+                })
+            .start();
+    for (int i = 0; i < 10; i++) {
+      ring.offer(1, 0, 0, 0, null, null, null);
+    }
+    e.close();
+    assertEquals(10, got.get());
+    assertEquals(0, ring.size());
+  }
+
+  @Test
+  void noSinkCallStartsAfterCloseReturns() throws Exception {
+    EventRing ring = new EventRing("q", 64, new DropCounters());
+    AtomicInteger calls = new AtomicInteger();
+    CountDownLatch entered = new CountDownLatch(1);
+    Sink stuck =
+        (q, id, t, a, b, c, x, y, z) -> {
+          calls.incrementAndGet();
+          entered.countDown();
+          long end = System.nanoTime() + 1_600_000_000L;
+          while (System.nanoTime() < end) { // ignores interrupts, like a stuck socket
+            try {
+              Thread.sleep(20);
+            } catch (InterruptedException ignored) {
+              // keep blocking
+            }
+          }
+        };
+    Emitter e = new Emitter("t-stuck", List.of(ring), stuck).start();
+    for (int i = 0; i < 30; i++) {
+      ring.offer(1, 0, 0, 0, null, null, null);
+    }
+    assertTrue(entered.await(3, TimeUnit.SECONDS));
+    long c0 = System.nanoTime();
+    e.close();
+    assertTrue((System.nanoTime() - c0) / 1_000_000L < 1500);
+    int atClose = calls.get();
+    Thread.sleep(1500); // the stuck call returns; the thread must not take another record
+    assertEquals(atClose, calls.get());
+    assertEquals(1, atClose);
+  }
+
+  @Test
+  void flushIsBoundedByTheDeadline() throws Exception {
+    EventRing ring = new EventRing("q", 256, new DropCounters());
+    AtomicInteger got = new AtomicInteger();
+    Sink slow =
+        (q, id, t, a, b, c, x, y, z) -> {
+          try {
+            Thread.sleep(50);
+          } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+          }
+          got.incrementAndGet();
+        };
+    Emitter e = new Emitter("t-slow", List.of(ring), slow).start();
+    for (int i = 0; i < 200; i++) { // 10 s of work at 50 ms each
+      ring.offer(1, 0, 0, 0, null, null, null);
+    }
+    long c0 = System.nanoTime();
+    e.close();
+    assertTrue((System.nanoTime() - c0) / 1_000_000L < 1500);
+    int atClose = got.get();
+    assertTrue(atClose < 200, "delivered " + atClose);
+    Thread.sleep(300);
+    assertEquals(atClose, got.get());
   }
 }

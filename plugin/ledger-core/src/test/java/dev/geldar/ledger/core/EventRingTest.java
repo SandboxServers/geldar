@@ -8,8 +8,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.lang.management.ManagementFactory;
 import java.util.ArrayList;
 import java.util.List;
+import java.lang.ref.WeakReference;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
+@Timeout(value = 60, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
 class EventRingTest {
   private static final EventRing.ErrorCounter NO_ERRORS = () -> {};
 
@@ -73,15 +77,71 @@ class EventRingTest {
     assertEquals(5, ring.size());
   }
 
-  @Test
-  void drainedSlotsDropStringReferences() {
-    EventRing ring = new EventRing("q", 2, new DropCounters());
-    ring.offer(1, 0, 0, 0, new String("held"), null, null);
-    List<String> seen = new ArrayList<>();
-    ring.drain(10, (q, id, t, a, b, c, x, y, z) -> seen.add(x), NO_ERRORS);
-    assertEquals(List.of("held"), seen);
+  private static WeakReference<String> offerFreshString(EventRing ring) {
+    String held = new String(new char[] {'h', 'e', 'l', 'd'});
+    ring.offer(1, 0, 0, 0, held, null, null);
+    return new WeakReference<>(held);
   }
 
+  @Test
+  void drainedSlotsDropStringReferences() throws Exception {
+    EventRing ring = new EventRing("q", 2, new DropCounters());
+    WeakReference<String> ref = offerFreshString(ring);
+    assertEquals(1, ring.drain(10, (q, id, t, a, b, c, x, y, z) -> {}, NO_ERRORS));
+    for (int i = 0; i < 100 && ref.get() != null; i++) {
+      System.gc();
+      Thread.sleep(20);
+    }
+    assertEquals(null, ref.get(), "the drained slot still pins its string");
+  }
+
+  @Test
+  void throwingClockNeverPoisonsTheRing() {
+    AtomicInteger calls = new AtomicInteger();
+    EventRing ring =
+        new EventRing(
+            "q",
+            64,
+            new DropCounters(),
+            () -> {
+              if (calls.incrementAndGet() % 3 == 0) {
+                throw new IllegalStateException("clock down");
+              }
+              return 7L;
+            });
+    for (int i = 0; i < 30; i++) {
+      assertTrue(ring.offer(1, i, 0, 0, null, null, null), "offer " + i);
+    }
+    long[] last = {-1};
+    assertEquals(30, ring.drain(256, (q, id, t, a, b, c, x, y, z) -> last[0] = a, NO_ERRORS));
+    assertEquals(29, last[0]);
+    assertEquals(0, ring.size());
+  }
+
+  @Test
+  void drainStopsTakingRecordsOnceStopIsSet() {
+    DropCounters drops = new DropCounters();
+    EventRing ring = new EventRing("q", 8, drops);
+    for (int i = 0; i < 8; i++) {
+      ring.offer(1, i, 0, 0, null, null, null);
+    }
+    int[] delivered = {0};
+    boolean[] stop = {false};
+    int n =
+        ring.drain(
+            100,
+            (q, id, t, a, b, c, x, y, z) -> {
+              delivered[0]++;
+              stop[0] = true;
+            },
+            NO_ERRORS,
+            () -> stop[0]);
+    assertEquals(1, n);
+    assertEquals(1, delivered[0]);
+    assertEquals(7, ring.size());
+    assertEquals(0, ring.drain(100, (q, id, t, a, b, c, x, y, z) -> delivered[0]++, NO_ERRORS, () -> true));
+    assertEquals(1, delivered[0]);
+  }
   @Test
   void sinkThrowReleasesSlotAndIsCounted() {
     EventRing ring = new EventRing("q", 2, new DropCounters());
@@ -101,31 +161,52 @@ class EventRingTest {
   }
 
   @Test
-  void manyProducersLoseNothingAccepted() throws Exception {
+  void manyProducersLoseNothingAndRecordsAreIntact() throws Exception {
+    for (int capacity : new int[] {4, 1024}) {
+      producersRound(capacity);
+    }
+  }
+
+  /** Each record carries (id=p, a=i, b=3p, c=~i, "p<p>"): a torn or reordered slot breaks the pattern. */
+  private static void producersRound(int capacity) throws Exception {
     DropCounters drops = new DropCounters();
-    EventRing ring = new EventRing("q", 1024, drops);
+    EventRing ring = new EventRing("q", capacity, drops);
     int producers = 4;
     int each = 50_000;
     long[] accepted = new long[producers];
     Thread[] ts = new Thread[producers];
     for (int p = 0; p < producers; p++) {
       int pi = p;
+      String tag = "p" + pi;
       ts[p] =
           new Thread(
               () -> {
                 for (int i = 0; i < each; i++) {
-                  if (ring.offer(pi, i, 0, 0, null, null, null)) {
+                  if (ring.offer(pi, i, pi * 3L, ~(long) i, tag, tag, tag)) {
                     accepted[pi]++;
                   }
                 }
               });
       ts[p].start();
     }
-    long[] consumed = {0};
-    Sink count = (q, id, t, a, b, c, x, y, z) -> consumed[0]++;
+    long[] consumed = new long[producers];
+    long[] lastSeen = new long[producers];
+    java.util.Arrays.fill(lastSeen, -1);
+    AtomicInteger bad = new AtomicInteger();
+    Sink check =
+        (q, id, t, a, b, c, x, y, z) -> {
+          String tag = "p" + id;
+          if (id < 0 || id >= producers || b != id * 3L || c != ~a || !tag.equals(x) || !tag.equals(y)
+              || !tag.equals(z) || a <= lastSeen[id]) {
+            bad.incrementAndGet();
+            return;
+          }
+          lastSeen[id] = a;
+          consumed[id]++;
+        };
     boolean alive = true;
     while (alive) {
-      ring.drain(256, count, NO_ERRORS);
+      ring.drain(256, check, NO_ERRORS);
       alive = false;
       for (Thread t : ts) {
         alive |= t.isAlive();
@@ -134,15 +215,15 @@ class EventRingTest {
     for (Thread t : ts) {
       t.join();
     }
-    ring.drain(Integer.MAX_VALUE, count, NO_ERRORS);
+    ring.drain(Integer.MAX_VALUE, check, NO_ERRORS);
+    assertEquals(0, bad.get(), "corrupt or reordered records, capacity " + capacity);
     long total = 0;
-    for (long a : accepted) {
-      total += a;
+    for (int p = 0; p < producers; p++) {
+      assertEquals(accepted[p], consumed[p], "producer " + p);
+      total += accepted[p];
     }
-    assertEquals(total, consumed[0]);
     assertEquals((long) producers * each - total, drops.dropped("q"));
   }
-
   @Test
   void offerDoesNotAllocate() {
     com.sun.management.ThreadMXBean mx =
