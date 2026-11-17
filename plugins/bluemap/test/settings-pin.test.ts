@@ -3,8 +3,9 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 // BM-16: the public map serves a pinned settings.json (GET /settings.json, plugins/bluemap/web/geldar-settings.json)
-// instead of the copy BlueMap rewrites on every start. These checks tie the pinned file to the BlueMap version, the
-// map configs, the Caddy handlers, the compose mount and the config bundle, so a drift fails the suite.
+// instead of the copy BlueMap rewrites on every start. BM-16c: the pinned file is hand-copied into the webroot as
+// geldar-settings.json (no compose mount), and Caddy reads it from /srv. These checks tie the pinned file to the BlueMap
+// version, the map configs, the Caddy handler, the compose file and the config bundle, so a drift fails the suite.
 const ROOT = join(import.meta.dirname, '..', '..', '..');
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
 
@@ -108,11 +109,17 @@ describe('pinned settings.json: every script and style is served', () => {
 describe('settings.json handler in Caddy', () => {
   const block = handleBlock('/settings.json') ?? '';
 
-  it('is a handle /settings.json block that rewrites to the pinned file', () => {
+  it('reads the pinned copy from the webroot at /srv (no mount)', () => {
     expect(block).not.toBe('');
-    expect(block).toContain('root * /etc/caddy');
-    expect(block).toContain('rewrite * /geldar-settings.json');
+    expect(block).toContain('root * /srv');
+    expect(block).not.toContain('/etc/caddy');
     expect(block).toContain('file_server');
+  });
+
+  it('falls back to BlueMap settings.json when the pinned copy is missing (try_files, never 404)', () => {
+    expect(block).toContain('try_files /geldar-settings.json /settings.json');
+    // The fallback is inside the same route, so it cannot be skipped by a second rewrite in one group.
+    expect(block).not.toContain('rewrite * /settings.json');
   });
 
   it('answers as application/json and never caches it', () => {
@@ -132,21 +139,19 @@ describe('settings.json handler in Caddy', () => {
 });
 
 describe('settings.json: wiring', () => {
-  it('compose mounts the pinned file read only into the bluemap-web Caddy root', () => {
-    expect(read('compose/colo.yml')).toContain(
-      '../plugins/bluemap/web/geldar-settings.json:/etc/caddy/geldar-settings.json:ro',
+  it('compose does not mount the pinned file: the node never had that mount (BM-16c)', () => {
+    expect(read('compose/colo.yml')).not.toContain('geldar-settings.json');
+  });
+
+  it('the compose fixture carries no bind for the pinned file', () => {
+    expect(read('deploy/test/fixtures/colo-default-config.yml')).not.toContain(
+      'geldar-settings.json',
     );
   });
 
-  it('the config bundle ships the pinned file, so the node has what the mount reads', () => {
+  it('the config bundle ships the pinned file: it is the source of the hand copy into the webroot', () => {
     expect(read('deploy/genesis/config-bundle.list')).toContain(
       '\nplugins/bluemap/web/geldar-settings.json\n',
-    );
-  });
-
-  it('the compose fixture carries the same bind', () => {
-    expect(read('deploy/test/fixtures/colo-default-config.yml')).toContain(
-      'source: ../plugins/bluemap/web/geldar-settings.json',
     );
   });
 });

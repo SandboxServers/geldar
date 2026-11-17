@@ -46,14 +46,19 @@
 		file_server
 	}
 
-	# BlueMap's settings.json, pinned in the repo (BM-16). BlueMap rewrites the webroot copy on every start and drops the
-	# scripts and styles, so this file is served instead. Same-origin only.
+	# BlueMap's settings.json (BM-16, BM-16c). BlueMap rewrites the webroot copy on every start and drops the scripts and
+	# styles, so the pinned copy is served instead: geldar-settings.json, hand-copied into the webroot (no mount). If that
+	# copy is missing, try_files serves BlueMap's own settings.json, so the page still loads (without the scripts and
+	# styles) and never 404s while BlueMap's file exists. Same-origin only. (A rewrite, pass_thru and a second rewrite in
+	# one route do not work: Caddy runs each rewrite in one group, so the second one is skipped.)
 	handle /settings.json {
-		root * /etc/caddy
-		rewrite * /geldar-settings.json
-		header Content-Type "application/json"
-		header Cache-Control no-cache
-		file_server
+		route {
+			root * /srv
+			header Content-Type "application/json"
+			header Cache-Control no-cache
+			try_files /geldar-settings.json /settings.json
+			file_server
+		}
 	}
 
 	# The chat feed the plugin writes into the webroot (decision 0310). It changes every few seconds: never cached.
