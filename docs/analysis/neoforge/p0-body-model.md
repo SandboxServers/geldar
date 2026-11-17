@@ -146,3 +146,5 @@ What to borrow from Goldar regardless:
 - The scratch stack (`compose/phase0.yml` plus the overlay) has no golem-body, geldar-mcp or players-host service. Those exist only in `compose/colo.yml`. The Claude-mind test therefore needs a follow-up packet, P0b, that adds them to a scratch NeoForge stack.
 - The scriptorium dev seam `GELDAR_DEV_MCP_URL` needs these settings: the MCP listen address and port, an id shape of `^[a-z][a-z0-9-]{0,30}$`, and a separate dev token file. It takes an http URL, host `host.docker.internal`, a port from 1024 to 65535, and only one player while it is set.
 - How the Mind host reaches the node is not settled.
+
+Result: the join test results are in [p0-findings.md](p0-findings.md).
