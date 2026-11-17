@@ -468,7 +468,7 @@ cmd_logs() {
 }
 
 # The probe: one run of the body probe (compose/nf-live-probe.yml, profile probe) on a project that `up` started. It refuses
-# unless the five long-running services run and identity-seed exited 0, and unless the secret files pass check_secrets (it
+# unless the five long-running services run (nats, velocity and neoforge healthy too), identity-seed exited 0, and unless the secret files pass check_secrets (it
 # reads nats-body.txt and rcon.txt). The run is --no-deps, so nothing is started or restarted. Its exit code is the probe's.
 # Cleanup runs even when the run fails: run --rm removes the container, and rm -f removes any left behind. The probe's own
 # cleanup (the registry entry and the RCON whitelist entry) runs inside the probe process (golem/src/p0/probe-cleanup.ts).
@@ -477,11 +477,17 @@ probe_dc() {
 }
 
 check_probe_up() {
-  states=$(dc ps -a --format '{{.Service}} {{.State}} {{.ExitCode}}') || die "docker compose ps failed (is docker running?); nothing started"
-  for svc in nats postgres eventsink velocity neoforge; do
+  states=$(dc ps -a --format '{{.Service}} {{.State}} {{.Health}} {{.ExitCode}}') || die "docker compose ps failed (is docker running?); nothing started"
+  # nats, velocity and neoforge must be healthy, not only running: a neoforge in its start period is `starting` (mc-health
+  # allows 15 minutes) and would fail the join after the probe's timeout. postgres and eventsink need only be running.
+  for svc in nats velocity neoforge; do
+    printf '%s\n' "$states" | grep -q "^$svc running healthy " ||
+      die "$svc is not running and healthy in $PROJECT (wait for it, or run: nf-deploy.sh up first). Nothing started."
+  done
+  for svc in postgres eventsink; do
     printf '%s\n' "$states" | grep -q "^$svc running " || die "$svc is not running in $PROJECT; run: nf-deploy.sh up first. Nothing started."
   done
-  printf '%s\n' "$states" | grep -q '^identity-seed exited 0$' ||
+  printf '%s\n' "$states" | grep -Eq '^identity-seed exited +0$' ||
     die "identity-seed has not exited 0 in $PROJECT; run: nf-deploy.sh up first. Nothing started."
 }
 

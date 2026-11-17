@@ -22,8 +22,9 @@ const SCRIPT_TEXT = readFileSync(SCRIPT_SRC, 'utf8');
 const NF_COMPOSE_TEXT = readFileSync(resolve(ROOT, 'compose', 'nf-live.yml'), 'utf8');
 const PROBE_TEXT = readFileSync(resolve(ROOT, 'compose', 'nf-live-probe.yml'), 'utf8');
 const SECRET_FILES = /^SECRET_FILES="([^"]+)"$/m.exec(SCRIPT_TEXT)?.[1].split(' ') ?? [];
+// The `docker compose ps -a` lines of a project `up` started: service, state, health (empty without one), exit code.
 const UP =
-  'nats running 0\npostgres running 0\neventsink running 0\nvelocity running 0\nneoforge running 0\nidentity-seed exited 0';
+  'nats running healthy 0\npostgres running  0\neventsink running  0\nvelocity running healthy 0\nneoforge running healthy 0\nidentity-seed exited  0';
 
 const STUB_SCRIPTS: Record<string, string> = {
   docker: [
@@ -120,12 +121,23 @@ afterEach(() => {
 describe('nf-deploy.sh probe: refusals (nothing is run)', () => {
   it.each([
     ['no service is up', ''],
-    ['nats is not running', UP.replace('nats running 0\n', 'nats exited 0\n')],
-    ['neoforge is missing', UP.replace('neoforge running 0\n', '')],
+    ['nats is not running', UP.replace('nats running healthy 0\n', 'nats exited  0\n')],
+    ['neoforge is missing', UP.replace('neoforge running healthy 0\n', '')],
     [
       'identity-seed did not exit 0',
-      UP.replace('identity-seed exited 0', 'identity-seed exited 1'),
+      UP.replace('identity-seed exited  0', 'identity-seed exited  1'),
     ],
+    ['velocity is not running', UP.replace('velocity running healthy 0\n', 'velocity exited  0\n')],
+    ['postgres is not running', UP.replace('postgres running  0\n', 'postgres exited  0\n')],
+    [
+      'neoforge is starting, not healthy',
+      UP.replace('neoforge running healthy 0', 'neoforge running starting 0'),
+    ],
+    [
+      'velocity is unhealthy',
+      UP.replace('velocity running healthy 0', 'velocity running unhealthy 0'),
+    ],
+    ['nats is unhealthy', UP.replace('nats running healthy 0', 'nats running unhealthy 0')],
   ])('refuses when %s, and the probe never runs', (_label, states) => {
     const repo = makeRepo();
     const r = run(repo, ['probe'], { COMPOSE_PS: states });
@@ -134,6 +146,20 @@ describe('nf-deploy.sh probe: refusals (nothing is run)', () => {
     expect(runCalls(repo)).toEqual([]);
     expect(rmCalls(repo)).toEqual([]);
   });
+
+  it.each(['nats', 'velocity', 'neoforge', 'postgres', 'eventsink', 'identity-seed'])(
+    'refuses when %s is missing from the project, and the probe never runs',
+    (svc) => {
+      const repo = makeRepo();
+      const states = UP.split('\n')
+        .filter((line) => !line.startsWith(`${svc} `))
+        .join('\n');
+      const r = run(repo, ['probe'], { COMPOSE_PS: states });
+      expect(r.status).not.toBe(0);
+      expect(r.out).toContain('Nothing started');
+      expect(runCalls(repo)).toEqual([]);
+    },
+  );
 
   it.each(['nats-body.txt', 'rcon.txt'])(
     'refuses when %s is missing, before the probe runs',
