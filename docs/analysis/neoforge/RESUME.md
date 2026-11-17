@@ -62,3 +62,5 @@ State 2026-11-17. Read this, then [p0-body-model.md](p0-body-model.md).
 3. P0b is written once the Mind-host-to-node route is decided.
 
 Result: P0 probe run results (2026-11-17) are in [p0-findings.md](p0-findings.md).
+
+Mind route options (how to connect a Claude Mind to the NeoForge shard, desktop rehearsal first, final instance later): [mind-route.md](mind-route.md).
