@@ -120,6 +120,7 @@ Metrics (attributes in braces):
 | `geldar_tick_rate_target`, `geldar_tick_frozen` | gauges (tick manager getters only) | PT-04b |
 | `geldar_spark_tps` {window}, `geldar_spark_mspt_ms` {window,stat=mean,p95,max}, `geldar_spark_cpu_ratio` {scope=process,system, window}, `geldar_spark_gc_ms` {window,gc} | gauges (spark summaries) | PT-04c |
 | `geldar_world_loaded_chunks`, `geldar_world_entities`, `geldar_world_players` {world} | gauges | PT-05a |
+| `geldar_world_tick_ms` {world} | gauge (NeoForge only: average of the per-dimension tick-time ring, sampled every 20 ticks) | PT-N4a |
 | `geldar_players_online`, `geldar_operators_count`, `geldar_plugins_enabled`, `geldar_scheduler_pending_tasks` | gauges | PT-05b |
 | `geldar_event_count_total` {event_class, cancelled} | counter | PT-06a, 06c |
 | `geldar_event_duty_ratio` {event_class} | gauge | PT-06a |

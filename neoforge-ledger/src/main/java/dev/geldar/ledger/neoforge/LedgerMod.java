@@ -43,6 +43,7 @@ public final class LedgerMod {
             ledger = create(FMLPaths.CONFIGDIR.get().resolve(CONFIG_FILE), host, GlobalOpenTelemetry::get);
             NeoForge.EVENT_BUS.addListener(ServerStartingEvent.class, e -> server = e.getServer());
             NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post.class, e -> scheduler.onServerTick());
+            dev.geldar.ledger.neoforge.tick.TickWiring.install(ledger, host, scheduler);
             NeoForge.EVENT_BUS.addListener(ServerStoppingEvent.class, e -> shutdown(ledger, scheduler));
         } catch (Throwable t) {
             rethrowIfVmError(t);
