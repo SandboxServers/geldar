@@ -3,8 +3,10 @@
 # build-info file into an output dir (docs/runbooks/scratch-stack.md, "Building the mod jar"). It runs the pinned Gradle wrapper,
 # which downloads Gradle and the NeoForge artifacts, so it needs network. Run it from a clean export of main, never from the
 # live checkout, as the nats-auth runbook does:
-#   COMMIT=$(git rev-parse origin/main) && git archive --format=tar --prefix=geldar/ "$COMMIT" | tar -x -C <empty-dir>
-#   GELDAR_MOD_BUILD_COMMIT=$COMMIT GELDAR_MOD_BUILD_FROM_EXPORT=1 sh <empty-dir>/geldar/deploy/scratch/build-neoforge-mod.sh <absolute-output-dir>
+#   COMMIT=$(git rev-parse origin/main) && git archive --format=tar --prefix=geldar/ -o <absolute-file>.tar "$COMMIT"
+#   tar -tf <absolute-file>.tar    # stop if any entry is an absolute path or contains ".."
+#   tar -xf <absolute-file>.tar -C <empty-dir>    # the directory must be empty; stop on any failed step
+#   cd <empty-dir> && GELDAR_MOD_BUILD_COMMIT=$COMMIT GELDAR_MOD_BUILD_FROM_EXPORT=1 sh geldar/deploy/scratch/build-neoforge-mod.sh <absolute-output-dir>
 # In a git checkout the script refuses unless neoforge/ has no changes and no untracked files, and records HEAD. An export has
 # no .git: the caller says so with GELDAR_MOD_BUILD_FROM_EXPORT=1 and names the commit it was made from with
 # GELDAR_MOD_BUILD_COMMIT (exactly 40 lowercase hex); build-info records it as "commit=<sha> (export)".
