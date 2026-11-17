@@ -16,7 +16,9 @@ import java.util.function.Supplier;
 
 /**
  * Curated structured events (PT-N7). OPT-IN: unless {@code collector.curated.enabled=true} it registers nothing. Each
- * {@link CuratedKind} has its own token bucket that is taken before the reader runs, so a flood costs no reading work.
+ * {@link CuratedKind} has its own token bucket, at the core's {@code rate.<eventName>} (default 20), taken before the
+ * reader runs, so a flood costs no reading work. A denial is forwarded to a rate-0 twin id, so the core's exported
+ * rate-drop counter counts it exactly like a core drop.
  * Events arrive on the server thread, so they run under the {@link CollectorGuard}; an event on any other thread never
  * touches the guard. Nothing escapes {@link #handle}: any throwable is counted.
  *
@@ -35,7 +37,7 @@ public final class CuratedCollector implements Collector {
     private volatile CollectorGuard guard;
     private volatile HostInfo host;
 
-    private record Slot(int id, TokenBucket bucket) {}
+    private record Slot(int id, int dropId, TokenBucket bucket) {}
 
     public CuratedCollector() {
         this(System::nanoTime);
@@ -70,8 +72,17 @@ public final class CuratedCollector implements Collector {
             return;
         }
         EventLog log = ctx.ledger().events();
-        for (CuratedKind k : CuratedKind.values()) {
-            slots.put(k, new Slot(log.register(k.eventName, Severity.INFO, RATE, k.fieldNames), new TokenBucket(RATE, nanoClock)));
+        java.util.Map<String, Integer> rates = ctx.ledger().config().rates();
+        CuratedKind[] kinds = CuratedKind.values();
+        int[] ids = new int[kinds.length];
+        for (int i = 0; i < kinds.length; i++) {
+            ids[i] = log.register(kinds[i].eventName, Severity.INFO, RATE, kinds[i].fieldNames);
+        }
+        for (int i = 0; i < kinds.length; i++) {
+            // Rate 0 (the config rate never reaches it, the name is not configurable): always denies and counts.
+            int dropId = log.register(kinds[i].dropName, Severity.INFO, 0);
+            int rate = Math.max(0, rates.getOrDefault(kinds[i].eventName, RATE));
+            slots.put(kinds[i], new Slot(ids[i], dropId, new TokenBucket(rate, nanoClock)));
         }
         events = log;
         guard = ctx.ledger().guard(ID);
@@ -106,6 +117,7 @@ public final class CuratedCollector implements Collector {
             // The bucket comes first: a flood costs no reading work and no guard work.
             if (!slot.bucket().tryTake()) {
                 rateDrops.increment();
+                log.record(slot.dropId(), 0, 0, 0, null, null, null); // the core counts it as a rate drop
                 return;
             }
             if (h.isMainThread()) {

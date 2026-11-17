@@ -12,8 +12,16 @@ final class BlocksItemsFamily {
     private BlocksItemsFamily() {}
 
     static void register(Bus bus, CuratedCollector c, Readers r) {
-        bus.listen(BreakBlockEvent.class, e -> c.handle(CuratedKind.BREAK, () -> r.breakBlock(e)));
-        bus.listen(BlockEvent.EntityPlaceEvent.class, e -> c.handle(CuratedKind.PLACE, () -> r.place(e)));
+        bus.listen(BreakBlockEvent.class, e -> {
+            if (r.wantsBreak(e)) {
+                c.handle(CuratedKind.BREAK, () -> r.breakBlock(e));
+            }
+        });
+        bus.listen(BlockEvent.EntityPlaceEvent.class, e -> {
+            if (r.wantsPlace(e)) {
+                c.handle(CuratedKind.PLACE, () -> r.place(e));
+            }
+        });
         bus.listen(PlayerEvent.ItemCraftedEvent.class, e -> c.handle(CuratedKind.CRAFT, () -> r.craft(e)));
         bus.listen(PlayerEvent.ItemSmeltedEvent.class, e -> c.handle(CuratedKind.SMELT, () -> r.smelt(e)));
     }

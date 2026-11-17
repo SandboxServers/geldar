@@ -10,6 +10,12 @@ import net.neoforged.neoforge.event.level.block.BreakBlockEvent;
  * not a player). It may throw: {@link CuratedCollector} counts and swallows that. The test seam of the family lambdas.
  */
 interface Readers {
+    /** Cheap filter before the bucket (no reading work): false for a client-side break. */
+    boolean wantsBreak(BreakBlockEvent e);
+
+    /** Cheap filter before the bucket: false for a client-side event or a placement by a non-player (an enderman). */
+    boolean wantsPlace(BlockEvent.EntityPlaceEvent e);
+
     CuratedFields breakBlock(BreakBlockEvent e);
 
     CuratedFields place(BlockEvent.EntityPlaceEvent e);

@@ -36,6 +36,9 @@ class CuratedCollectorTest {
     final List<String> names = new ArrayList<>();
     final List<String[]> fields = new ArrayList<>();
     final List<Object[]> records = new ArrayList<>();
+    final List<Object[]> dropRecords = new ArrayList<>();
+    final List<Object> registeredRates = new ArrayList<>();
+    final Properties extra = new Properties();
     final AtomicBoolean guardAllowed = new AtomicBoolean(true);
     final AtomicBoolean mainThread = new AtomicBoolean(true);
     final AtomicInteger guardCalls = new AtomicInteger();
@@ -47,11 +50,13 @@ class CuratedCollectorTest {
         if (enabled) {
             p.setProperty("collector.curated.enabled", "true");
         }
+        p.putAll(extra);
         LedgerConfig cfg = ConfigParser.parse(p).config();
         EventLog events = (EventLog) Proxy.newProxyInstance(
                 getClass().getClassLoader(), new Class<?>[] {EventLog.class}, (px, m, a) -> {
                     if (m.getName().equals("register")) {
                         names.add((String) a[0]);
+                        registeredRates.add(a[2]);
                         fields.add((String[]) a[3]);
                         return names.size() - 1;
                     }
@@ -59,7 +64,11 @@ class CuratedCollectorTest {
                         if (recordThrows.get()) {
                             throw new IllegalStateException("boom");
                         }
-                        records.add(a);
+                        if ((Integer) a[0] >= 8) {
+                            dropRecords.add(a); // the rate-0 twin ids: the core counts these as rate drops
+                        } else {
+                            records.add(a);
+                        }
                     }
                     return null;
                 });
@@ -152,7 +161,20 @@ class CuratedCollectorTest {
                         "geldar.block.break", "geldar.block.break_cancelled", "geldar.block.place",
                         "geldar.block.place_cancelled", "geldar.item.craft", "geldar.item.smelt",
                         "geldar.container.open", "geldar.container.close"),
-                names);
+                names.subList(0, 8));
+        assertEquals(16, names.size());
+        assertTrue(names.get(8).endsWith("._rate_drop"));
+        assertEquals(0, registeredRates.get(8)); // the twin is closed
+        assertEquals(CuratedCollector.RATE, registeredRates.get(0));
+        assertEquals(
+                List.of(
+                        "geldar.block.break", "geldar.block.break_cancelled", "geldar.block.place",
+                        "geldar.block.place_cancelled", "geldar.item.craft", "geldar.item.smelt",
+                        "geldar.container.open", "geldar.container.close"),
+                List.of(
+                        "geldar.block.break", "geldar.block.break_cancelled", "geldar.block.place",
+                        "geldar.block.place_cancelled", "geldar.item.craft", "geldar.item.smelt",
+                        "geldar.container.open", "geldar.container.close"));
         assertEquals(List.of(AttrKeys.X, AttrKeys.Y, AttrKeys.Z, AttrKeys.LIFE_ID, AttrKeys.BLOCK, AttrKeys.WORLD), List.of(fields.get(0)));
         assertEquals(AttrKeys.ITEM, fields.get(4)[4]);
         assertEquals(AttrKeys.CONTAINER_TYPE, fields.get(6)[4]);
@@ -294,6 +316,16 @@ class CuratedCollectorTest {
             }
 
             @Override
+            public boolean wantsBreak(BreakBlockEvent e) {
+                return true;
+            }
+
+            @Override
+            public boolean wantsPlace(BlockEvent.EntityPlaceEvent e) {
+                return true;
+            }
+
+            @Override
             public CuratedFields breakBlock(BreakBlockEvent e) {
                 return f("break", true);
             }
@@ -350,4 +382,155 @@ class CuratedCollectorTest {
         assertEquals(List.of(1, 2, 4, 5, 6, 7), records.stream().map(x -> x[0]).toList());
         assertTrue(c.errorCount() == 0);
     }
-}
+
+    @Test
+    void everyKindsFieldKeysAreExactAndAllowed() {
+        started(true);
+        String[] nameKey = {
+            AttrKeys.BLOCK, AttrKeys.BLOCK, AttrKeys.BLOCK, AttrKeys.BLOCK, AttrKeys.ITEM, AttrKeys.ITEM,
+            AttrKeys.CONTAINER_TYPE, AttrKeys.CONTAINER_TYPE
+        };
+        for (int i = 0; i < 8; i++) {
+            String[] f = fields.get(i);
+            boolean pos = i < 6;
+            assertEquals(pos ? AttrKeys.X : null, f[0], names.get(i));
+            assertEquals(pos ? AttrKeys.Y : null, f[1], names.get(i));
+            assertEquals(pos ? AttrKeys.Z : null, f[2], names.get(i));
+            assertEquals(AttrKeys.LIFE_ID, f[3]);
+            assertEquals(nameKey[i], f[4], names.get(i));
+            assertEquals(AttrKeys.WORLD, f[5]);
+            for (String k : f) {
+                assertTrue(k == null || AttrKeys.allowed(k), String.valueOf(k));
+            }
+        }
+    }
+
+    @Test
+    void blockPositionMapsEveryAxisAndSign() {
+        CuratedCollector c = started(true);
+        for (int[] p : new int[][] {{1, 2, 3}, {-1, -2, -3}, {300, -64, -29999999}}) {
+            records.clear();
+            CuratedFields f = McReaders.block(new net.minecraft.core.BlockPos(p[0], p[1], p[2]), LIFE, "b", "w", false);
+            c.handle(CuratedKind.BREAK, () -> f);
+            assertEquals((long) p[0], records.get(0)[1]);
+            assertEquals((long) p[1], records.get(0)[2]);
+            assertEquals((long) p[2], records.get(0)[3]);
+        }
+    }
+
+    @Test
+    void wiringChoosesLowestPriorityAndReceivesCancelled() {
+        assertEquals(net.neoforged.bus.api.EventPriority.LOWEST, CuratedWiring.PRIORITY);
+        assertTrue(CuratedWiring.RECEIVE_CANCELED);
+    }
+
+    @Test
+    void menuNameBoundedAndUnknownWhenEmpty() {
+        assertEquals("unknown", McReaders.menuName(""));
+        assertEquals("unknown", McReaders.menuName(null));
+        assertEquals("ChestMenu", McReaders.menuName("ChestMenu"));
+        assertEquals(48, McReaders.menuName("X".repeat(200)).length());
+        assertEquals(48, McReaders.menuName("X".repeat(48)).length());
+        assertEquals(47, McReaders.menuName("X".repeat(47)).length());
+    }
+
+    @Test
+    void placementFilterIsPureAndPlayerOnly() {
+        assertFalse(McReaders.isServerPlayer(false, new Object())); // an enderman-style entity
+        assertFalse(McReaders.isServerPlayer(false, null));
+        assertFalse(McReaders.isServerPlayer(true, new Object()));
+    }
+
+    @Test
+    void floodIncrementsTheCoreDropCounterAndHonoursRateConfig() {
+        CuratedCollector c = started(true);
+        for (int i = 0; i < 30; i++) {
+            c.handle(CuratedKind.CRAFT, () -> at(LIFE, false));
+        }
+        assertEquals(20, records.size());
+        assertEquals(10, dropRecords.size()); // each denial reaches the core as one rate-0 record
+        assertEquals(12, dropRecords.get(0)[0]); // the rate-0 twin of craft (id 4) is id 8 + 4
+    }
+
+    @Test
+    void configRateRaisesAndClosesTheLocalBucket() {
+        extra.setProperty("rate.geldar.block.break", "200");
+        extra.setProperty("rate.geldar.item.craft", "0");
+        CuratedCollector c = started(true);
+        AtomicInteger reads = new AtomicInteger();
+        for (int i = 0; i < 100; i++) {
+            c.handle(CuratedKind.BREAK, () -> {
+                reads.incrementAndGet();
+                return at(LIFE, false);
+            });
+        }
+        assertEquals(100, reads.get()); // above the default 20
+        reads.set(0);
+        for (int i = 0; i < 5; i++) {
+            c.handle(CuratedKind.CRAFT, () -> {
+                reads.incrementAndGet();
+                return at(LIFE, false);
+            });
+        }
+        assertEquals(0, reads.get()); // rate 0: no reading at all, every attempt counted as a drop
+        assertEquals(5, dropRecords.size());
+    }
+
+    @Test
+    void unwantedPlacementsSpendNoTokens() {
+        CuratedCollector c = started(true);
+        boolean[] wants = {false};
+        Readers r = new Readers() {
+            public boolean wantsBreak(BreakBlockEvent e) {
+                return true;
+            }
+
+            public boolean wantsPlace(BlockEvent.EntityPlaceEvent e) {
+                return wants[0];
+            }
+
+            public CuratedFields breakBlock(BreakBlockEvent e) {
+                return null;
+            }
+
+            public CuratedFields place(BlockEvent.EntityPlaceEvent e) {
+                return at(LIFE, false);
+            }
+
+            public CuratedFields craft(PlayerEvent.ItemCraftedEvent e) {
+                return null;
+            }
+
+            public CuratedFields smelt(PlayerEvent.ItemSmeltedEvent e) {
+                return null;
+            }
+
+            public CuratedFields open(PlayerContainerEvent.Open e) {
+                return null;
+            }
+
+            public CuratedFields close(PlayerContainerEvent.Close e) {
+                return null;
+            }
+        };
+        List<Consumer<Event>> hs = new ArrayList<>();
+        Bus bus = new Bus() {
+            @SuppressWarnings("unchecked")
+            public <E extends Event> void listen(Class<E> type, Consumer<E> handler) {
+                if (type == BlockEvent.EntityPlaceEvent.class) {
+                    hs.add((Consumer<Event>) (Consumer<?>) handler);
+                }
+            }
+        };
+        BlocksItemsFamily.register(bus, c, r);
+        for (int i = 0; i < 100; i++) {
+            hs.get(0).accept(null);
+        }
+        assertEquals(0, records.size());
+        assertEquals(0, dropRecords.size());
+        wants[0] = true;
+        for (int i = 0; i < 20; i++) {
+            hs.get(0).accept(null);
+        }
+        assertEquals(20, records.size()); // the bucket was still full
+    }}

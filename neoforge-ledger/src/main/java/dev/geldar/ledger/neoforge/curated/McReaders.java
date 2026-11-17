@@ -21,16 +21,28 @@ final class McReaders implements Readers {
     private static final int NAME_CAP = 48;
 
     @Override
+    public boolean wantsBreak(BreakBlockEvent e) {
+        return !e.getLevel().isClientSide(); // fires on both sides
+    }
+
+    @Override
+    public boolean wantsPlace(BlockEvent.EntityPlaceEvent e) {
+        return isServerPlayer(e.getLevel().isClientSide(), e.getEntity());
+    }
+
+    /** The pure placement filter: server side and a player (an enderman is not). */
+    static boolean isServerPlayer(boolean clientSide, Object entity) {
+        return !clientSide && entity instanceof Player;
+    }
+
+    @Override
     public CuratedFields breakBlock(BreakBlockEvent e) {
-        if (e.getLevel().isClientSide()) { // fires on both sides
-            return null;
-        }
         return atBlock(e.getLevel(), e.getPos(), e.getPlayer(), blockId(e.getState()), e.isCanceled());
     }
 
     @Override
     public CuratedFields place(BlockEvent.EntityPlaceEvent e) {
-        if (e.getLevel().isClientSide() || !(e.getEntity() instanceof Player p)) {
+        if (!(e.getEntity() instanceof Player p)) {
             return null;
         }
         return atBlock(e.getLevel(), e.getPos(), p, blockId(e.getPlacedBlock()), e.isCanceled());
@@ -48,21 +60,31 @@ final class McReaders implements Readers {
 
     @Override
     public CuratedFields open(PlayerContainerEvent.Open e) {
-        return atPlayer(e.getEntity(), menu(e.getContainer()), false);
+        return noPosition(e.getEntity(), menu(e.getContainer()));
     }
 
     @Override
     public CuratedFields close(PlayerContainerEvent.Close e) {
-        return atPlayer(e.getEntity(), menu(e.getContainer()), false);
+        return noPosition(e.getEntity(), menu(e.getContainer()));
     }
 
     private static CuratedFields atBlock(LevelAccessor level, BlockPos pos, Player p, String what, boolean cancelled) {
-        return new CuratedFields(pos.getX(), pos.getY(), pos.getZ(), name(p), what, world(level), cancelled);
+        return block(pos, name(p), what, world(level), cancelled);
+    }
+
+    /** The pure mapping of a block position to fields (x to x, y to y, z to z). */
+    static CuratedFields block(BlockPos pos, String player, String what, String world, boolean cancelled) {
+        return new CuratedFields(pos.getX(), pos.getY(), pos.getZ(), player, what, world, cancelled);
     }
 
     private static CuratedFields atPlayer(Player p, String what, boolean cancelled) {
         BlockPos pos = p.blockPosition();
         return new CuratedFields(pos.getX(), pos.getY(), pos.getZ(), name(p), what, world(p.level()), cancelled);
+    }
+
+    /** Container events: the position slots are skipped at registration, so these zeros are never emitted. */
+    private static CuratedFields noPosition(Player p, String what) {
+        return new CuratedFields(0, 0, 0, name(p), what, world(p.level()), false);
     }
 
     private static String name(Player p) {
@@ -83,7 +105,14 @@ final class McReaders implements Readers {
 
     /** The menu class name: bounded, and unlike the menu type it exists for the player's own inventory menu. */
     private static String menu(AbstractContainerMenu menu) {
-        String n = menu.getClass().getSimpleName();
-        return n.length() > NAME_CAP ? n.substring(0, NAME_CAP) : n;
+        return menuName(menu.getClass().getSimpleName());
+    }
+
+    /** Empty (anonymous or lambda class) becomes the fixed {@code unknown}; the rest is capped at 48 characters. */
+    static String menuName(String simple) {
+        if (simple == null || simple.isEmpty()) {
+            return "unknown";
+        }
+        return simple.length() > NAME_CAP ? simple.substring(0, NAME_CAP) : simple;
     }
 }

@@ -20,6 +20,11 @@ import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 public final class CuratedWiring {
     private static final Logger LOG = Logger.getLogger("ledger");
 
+    /** Last to run, and cancelled events are delivered: a cancelled break must be seen and marked. */
+    static final EventPriority PRIORITY = EventPriority.LOWEST;
+
+    static final boolean RECEIVE_CANCELED = true;
+
     private CuratedWiring() {}
 
     /** Call from the mod constructor. Does nothing for a null ledger. */
@@ -32,7 +37,7 @@ public final class CuratedWiring {
             Bus bus = new Bus() {
                 @Override
                 public <E extends Event> void listen(Class<E> type, Consumer<E> handler) {
-                    NeoForge.EVENT_BUS.addListener(EventPriority.LOWEST, true, type, handler);
+                    NeoForge.EVENT_BUS.addListener(PRIORITY, RECEIVE_CANCELED, type, handler);
                 }
             };
             Readers readers = new McReaders();
