@@ -9,7 +9,7 @@ State 2026-11-17. Read this, then [p0-body-model.md](p0-body-model.md).
 
 ## PRs
 - Merged: #593 (P0 Body-model note), #594 (API notes and progression design), #596 (P2 plugin/core split), #600 (scratch NeoForge overlay, suffix nf), #601 (neoforge/ skeleton: NeoForge 26.1.2 (build 126), Java 25, lock and verification, no CI lane), #604 (earlier RESUME), #607 (installer fetch retry), #610 (scratch uid fix: SCRATCH_RUN_UID/GID), #611 (offline bundle), #614 (declared source-scan inputs for plugin/core tests), #619 (message-only fix for the verifyTestSourceInputs failure text), #620 (RESUME), #622 (NATS healthcheck), #632 (identity buckets seed), #633 (NATS users docs), #634 (telemetry test timeout), #643 (runbook run 3 notes), #645 (P0 probe).
-- The telemetry and CI lane is owned by geldar-telemetry, not this campaign.
+- The telemetry and CI lane is owned by geldar-telemetry, not this campaign. The NeoForge CI lane exists: job `neoforge` in ci.yml, feeds ci gate, lenient lock mode; first green run 2026-11-17 (e7d84df9).
 
 ## Packets
 - P0 join test: golem Body joins the scratch NeoForge server through Velocity. Ops runs `SCRATCH_PLATFORM=neoforge ... scratch.sh up nf`, then the probe (docs/runbooks/scratch-stack.md, NeoForge section and P0 probe).

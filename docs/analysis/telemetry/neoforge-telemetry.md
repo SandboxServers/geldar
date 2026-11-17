@@ -14,14 +14,14 @@ Still open:
 - PT-N12: blocked on geldar-neoforge P3 and P4.
 - PT-N13: scratch NeoForge telemetry run; owner-gated (run time and capacity).
 - PT-N14: enablement window; owner-gated.
-- G1: neoforge CI lane; an owner-approved PR is needed. The module's own tests do not run in CI today.
+- G1: neoforge CI lane: done as the `neoforge` job in ci.yml (builds and tests `neoforge/` and `neoforge-ledger/`, feeds `ci gate`); first real CI run pending.
 
 Unverified items and known gaps:
 - Console and RCON names are verified in the sources read; command blocks are excluded.
 - Kick reasons, whitelist, sign and book edit, and raid have no NeoForge event in the sources read.
 - The ledger logging bridge to SLF4J is unproven on a real server.
 - The stats-file layout on 26.1 is unconfirmed.
-- Symlink tests skip on Windows, and no CI lane runs them.
+- Symlink tests skip on Windows, and the CI lane (Linux) is where they first run.
 
 Paper stays fully supported; no Paper card, file or alert changes in this state.
 
