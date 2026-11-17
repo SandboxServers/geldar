@@ -1,0 +1,23 @@
+modLoader = "javafml"
+loaderVersion = "[11,)"
+license = "MIT"
+
+[[mods]]
+modId = "ledger"
+version = "0.1.0"
+displayName = "Geldar Ledger"
+description = "Server-side telemetry ledger for NeoForge. Adds no registry entries and no network payloads."
+
+[[dependencies.ledger]]
+modId = "neoforge"
+type = "required"
+versionRange = "[26.1,26.2)"
+ordering = "NONE"
+side = "SERVER"
+
+[[dependencies.ledger]]
+modId = "minecraft"
+type = "required"
+versionRange = "[26.1,26.2)"
+ordering = "NONE"
+side = "SERVER"

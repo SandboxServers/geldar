@@ -31,6 +31,11 @@
       "reason": "generated dependency checksums"
     },
     {
+      "path": "neoforge-ledger/gradle/verification-metadata.xml",
+      "hardCap": 2400,
+      "reason": "generated dependency checksums"
+    },
+    {
       "path": "deploy/signoz/paper-dashboard.json",
       "hardCap": 1200,
       "reason": "SigNoz dashboard definition: biome formats one JSON value per line; 14 panels; data, not code"
