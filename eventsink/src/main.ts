@@ -6,11 +6,11 @@ import pg from 'pg';
 import { loadConfig, type SinkConfig } from './config.ts';
 import { type ErrorLog, startConsumer } from './consumer.ts';
 import { type EventsinkTelemetry, eventsinkTelemetry } from './metrics.ts';
-import { flushTelemetry, TELEMETRY_FLUSH_MS } from './telemetry-flush.ts';
 import { eventsinkNatsAuth } from './nats-credentials.ts';
 import { sinkPlan, startShardServices } from './sink-plan.ts';
 import { pgStateStore } from './state/pg-state-store.ts';
 import { serveProficiencyState } from './state/service.ts';
+import { flushTelemetry, TELEMETRY_FLUSH_MS } from './telemetry-flush.ts';
 import { pgEventWriter } from './writer.ts';
 import { startOutboxPublisher } from './xp/outbox.ts';
 
