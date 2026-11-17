@@ -46,6 +46,7 @@ This records the P0 join test of a vanilla-protocol golem Body against a scratch
 - Run 4: stopped at the Velocity uid check. The Velocity java process runs as uid 0.
 - Run 5: stopped at the mod-load check. The runbook and the stack did not match: the scratch stack mounts no geldar jar.
 - Run 6: passed. This is the run in section 2.
+- Run 7: passed. Our own mod loaded on a dedicated server, and the vanilla probe still passed with it installed. See section 8.
 
 ## 5. Findings worth keeping
 
@@ -59,7 +60,7 @@ This records the P0 join test of a vanilla-protocol golem Body against a scratch
 ## 6. Not proven
 
 - Human vanilla client (criterion 4).
-- Our own mod loading. The geldar mod jar was not mounted in scratch.
+- Our own mod beyond one load (run 7, section 8): a second start with the jar, any behaviour of the mod, and events exported.
 - Registry key absence, read independently.
 - Behaviour with many Bodies.
 - UUID forwarding in online-mode.
@@ -70,6 +71,25 @@ This records the P0 join test of a vanilla-protocol golem Body against a scratch
 - The golem stays the Body for the second shard. This is option A in p0-body-model.md. Goldar's in-server bodies are not needed.
 - Next packets, in order:
   1. Operator-side registry check.
-  2. Mod jar mount for the scratch stack.
+  2. Mod jar mount for the scratch stack (done in run 7; see section 8).
   3. NeoForge adapter design.
 - The human client route stays a separate approval.
+
+## 8. Run 7: our own mod
+
+- 2026-11-17, main 423b6ceb, scratch NeoForge 26.1.2 (build 126), Java 25, suffix nf, dedicated server.
+- `/data/mods`: `geldar-neoforge.jar` (2,439 bytes, mode 644) and `proxy-compatible-forge.jar`. Built on the desktop from a clean export at 423b6ceb; two builds gave the same sha256; host and container hash checks passed.
+- Mod load: the paper log has `geldar_neoforge loaded on the dedicated server` once. The mod-list lines are
+  `Geldar NeoForge 0.1.0 (geldar_neoforge)` and ` - geldar_neoforge (jar(mods/geldar-neoforge.jar))`.
+- Vanilla Body probe, with the mod installed: join ok, goto completed, mine completed, cleanup registry=removed
+  whitelist=removed. The whitelist was empty afterwards. Name and UUID agree across the logs (values not recorded here).
+- Stack: `up` returned 0, all five services healthy, seed one-shot exited 0. Tick 20/s. `neoforge tps` 20.000 in every
+  dimension. Every service under 0.3% CPU. Paper 1.48 GiB of a 3 GiB cap (one run).
+- Users: Paper and eventsink uid 1001. Velocity uid 0 (recorded, as in run 4). PCF config mode 600, owner 1001:1000.
+- The offline bundle was rebuilt for this run (144,507,078 bytes, 78 files). The old tarball predated a change to the
+  build script. Bundle size and hash differ between builds, so none is pinned in the runbook.
+- Start-up noise, not from our code, logged before the mod line: the kqueue DebugFile ERROR (also runs 3 to 5) and the
+  one-off netty VarInt IndexOutOfBoundsException (also runs 4 to 6). Both are in the runbook's known noise list.
+
+- Proves: the skeleton loads on a dedicated server, logs its start line and adds no payloads; the vanilla Body still joins, moves, mines and cleans up with the mod installed.
+- Does not prove: that the mod does anything (no behaviour yet, no events exported); a second start with the jar; a human vanilla client (criterion 4 is still NOT RUN); many Bodies; the registry key read from outside; a second probe or a Paper restart (no safe runbook step exists for either).

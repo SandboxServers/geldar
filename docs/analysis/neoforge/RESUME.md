@@ -4,7 +4,7 @@ State 2026-11-17. Read this, then [p0-body-model.md](p0-body-model.md).
 
 ## State
 - Freeze lifted for own docs/analysis and own-area PRs. No node, VM or world changes by this session; node steps run by the main orchestrator or ops after the owner's explicit go.
-- P0 node run is in progress on the Colo scratch stack, suffix nf, run by ops under geldar-93 (owner approved). It stops at the first failure. The raw report goes to geldar-93; findings are written up here afterwards.
+- P0 node runs (through run 7, which passed) were on the Colo scratch stack, suffix nf, run by ops under geldar-93 (owner approved). A run stops at the first failure. The raw report goes to geldar-93; findings are written up here afterwards.
 - No decision numbers until the main orchestrator assigns a block.
 
 ## PRs
@@ -19,6 +19,8 @@ State 2026-11-17. Read this, then [p0-body-model.md](p0-body-model.md).
   - Run 3 came up healthy.
   - Run 4 stopped at the Velocity uid check. The Velocity java process is uid 0. The `itzg/mc-proxy` image drops privilege only when `$UID` is 0, so our `UID=1001` leaves it root; live colo does the same. Velocity is now recorded, not blocking, in the runbook.
   - Run 5 (2026-11-17) stopped at first-run check 1 (mod load): the scratch stack mounts no geldar jar. The runbook now marks check 1 N/A until a mod jar is mounted; the probe has not run yet.
+  - Run 6: passed (the probe; see p0-findings.md section 2).
+  - Run 7 (2026-11-17) passed: our own mod (geldar_neoforge) loaded on a dedicated server, and the vanilla probe still passed with it installed. Check 1 is blocking when a jar is mounted. Not exercised: a second start with the jar, a second probe, a Paper restart (no runbook step yet). See p0-findings.md section 8.
 - P0 verified (runs 1-4):
   - Proxy Compatible Forge 1.3.1 loads on NeoForge 26.1.2.
   - Server ticks at 20 TPS.
@@ -30,7 +32,8 @@ State 2026-11-17. Read this, then [p0-body-model.md](p0-body-model.md).
   - The probe's goto, mine and cleanup.
   - The netty `VarInt` line in the Paper log at 13:51:04 (no client; likely Paper's own healthcheck ping; UNVERIFIED). The runbook has a one-minute watch for it.
   - PCF config owner: uid 1000 on a mode 600 file, against the Paper JVM's 1001 (observed; cause unverified).
-- Next: run 5 with the probe, once the owner or main orchestrator schedules it.
+- Next: the C design note, then P3. P3 also appears in the on-hold list below. This update does not change that list, so the lead settles it.
+- Human connection route: the lead asks the owner for it (separate approval; not requested here). Progression (P6 to P8) stays on hold.
 - On hold: P0b (scratch golem-body and geldar-mcp for the Claude-mind test; the Mind-host route is not decided). P3 (NeoForge adapter event export and maintenance notices). P4 (own block-owner log and gravestones). P5 (BlueMap and pregeneration). P6 to P8 (progression): ON HOLD for the owner's six policy decisions in progression-design.md. Human connection route (tunnel or proxy): needs separate approval. CI lane for neoforge/: needs a separate owner-approved PR.
 - Pins: NeoForge 26.1.2 (build 126); Proxy Compatible Forge 1.3.1.
 
@@ -47,7 +50,7 @@ State 2026-11-17. Read this, then [p0-body-model.md](p0-body-model.md).
 - Owner: whether the mc-proxy root setting is changed on live (a deploy change), and whether the PCF config owner must match the server user.
 
 ## Next actions
-1. Run 5 of P0 with the probe, under geldar-93 and the owner's go. The raw report goes to geldar-93, then findings are written up here and in p0-body-model.md.
+1. C design note, then P3 (P3 is also on the on-hold list above; the lead settles that first). P0 runs 1 to 7 are done; run 7 passed.
 2. Main orchestrator schedules the merge of this runbook and RESUME update after review.
 3. P0b is written once the Mind-host-to-node route is decided.
 
