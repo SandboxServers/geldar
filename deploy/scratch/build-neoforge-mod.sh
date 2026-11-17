@@ -3,16 +3,25 @@
 # build-info file into an output dir (docs/runbooks/scratch-stack.md, "Building the mod jar"). It runs the pinned Gradle wrapper,
 # which downloads Gradle and the NeoForge artifacts, so it needs network. Run it from a clean export of main, never from the
 # live checkout, as the nats-auth runbook does:
-#   git archive --format=tar --prefix=geldar/ origin/main | tar -x -C <empty-dir>
-#   GELDAR_MOD_BUILD_FROM_EXPORT=1 sh <empty-dir>/geldar/deploy/scratch/build-neoforge-mod.sh <absolute-output-dir>
-# In a git checkout the script refuses unless neoforge/ has no changes and no untracked files. An export has no .git, so the
-# git check is skipped only when GELDAR_MOD_BUILD_FROM_EXPORT=1 is set.
-# Dependency verification stays on: the wrapper gets the single task build, and no flag or variable turns verification or
-# the offline checks off.
-# Seams for the tests: GELDAR_MOD_GRADLE runs that command instead of the wrapper, in neoforge/, with the single argument build.
+#   COMMIT=$(git rev-parse origin/main) && git archive --format=tar --prefix=geldar/ "$COMMIT" | tar -x -C <empty-dir>
+#   GELDAR_MOD_BUILD_COMMIT=$COMMIT GELDAR_MOD_BUILD_FROM_EXPORT=1 sh <empty-dir>/geldar/deploy/scratch/build-neoforge-mod.sh <absolute-output-dir>
+# In a git checkout the script refuses unless neoforge/ has no changes and no untracked files, and records HEAD. An export has
+# no .git: the caller says so with GELDAR_MOD_BUILD_FROM_EXPORT=1 and names the commit it was made from with
+# GELDAR_MOD_BUILD_COMMIT (exactly 40 lowercase hex); build-info records it as "commit=<sha> (export)".
+# Dependency verification stays on: the wrapper gets the single task build. The script clears GRADLE_OPTS, JAVA_TOOL_OPTIONS,
+# JDK_JAVA_OPTIONS, _JAVA_OPTIONS and GRADLE_USER_HOME_OPTS before it runs anything, and adds no flag that turns verification
+# or the offline checks off.
+# Seam for the tests: GELDAR_MOD_GRADLE runs that command instead of the wrapper, in neoforge/, with the single argument build.
+# It is refused unless GELDAR_MOD_ALLOW_SEAM=1 is set too.
 # The script never prints or writes a secret.
 set -eu
 set +x
+# The ambient variables that could weaken the build are cleared first. Only the wrapper's own settings apply after this.
+unset GRADLE_OPTS JAVA_TOOL_OPTIONS JDK_JAVA_OPTIONS _JAVA_OPTIONS GRADLE_USER_HOME_OPTS
+if [ -n "${GELDAR_MOD_GRADLE:-}" ] && [ "${GELDAR_MOD_ALLOW_SEAM:-}" != 1 ]; then
+  echo "build-neoforge-mod: GELDAR_MOD_GRADLE is a test seam and needs GELDAR_MOD_ALLOW_SEAM=1 as well; refusing" >&2
+  exit 1
+fi
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
 nf="$root/neoforge"
@@ -56,7 +65,14 @@ if [ -e "$root/.git" ]; then
   fi
   commit=$(git -C "$root" rev-parse HEAD) || { echo "build-neoforge-mod: git rev-parse failed; refusing" >&2; exit 1; }
 elif [ "${GELDAR_MOD_BUILD_FROM_EXPORT:-}" = 1 ]; then
-  commit=export
+  # An invalid value is cleared, so the length check refuses it too (a newline inside the value is refused the same way).
+  commit_in=${GELDAR_MOD_BUILD_COMMIT:-}
+  case "$commit_in" in
+    *[!0-9a-f]*) commit_in= ;;
+  esac
+  [ "${#commit_in}" -eq 40 ] ||
+    { echo "build-neoforge-mod: export mode needs GELDAR_MOD_BUILD_COMMIT, the 40 lowercase hex commit the export was made from (git rev-parse origin/main before git archive); refusing" >&2; exit 1; }
+  commit="$commit_in (export)"
 else
   echo "build-neoforge-mod: $root has no .git; build from a git checkout, or from a git archive export with GELDAR_MOD_BUILD_FROM_EXPORT=1; refusing" >&2
   exit 1
@@ -129,19 +145,24 @@ fi
 
 # The output: copied only now, after every check. The dir is checked again, since the build took a while.
 check_out
+made_out=
+[ -d "$out" ] || made_out=1
 mkdir -p "$out"
 wrote=1
 cleanup() {
   rc=$?
   if [ "$rc" -ne 0 ] && [ -n "${wrote:-}" ]; then
     rm -f "$out/$jar_name" "$out/$jar_name.sha256" "$out/geldar-neoforge.build-info"
+    if [ -n "${made_out:-}" ]; then rmdir "$out" 2>/dev/null || true; fi
   fi
   exit "$rc"
 }
 trap cleanup EXIT
 cp "$jar_path" "$out/$jar_name"
+# The hash is taken in its own step: a pipeline would hide a failing sha256sum behind the sed's status.
+hashed=$(cd "$out" && sha256sum -- "$jar_name") || { echo "build-neoforge-mod: sha256sum failed; no output kept" >&2; exit 1; }
 # sha256sum on Git Bash writes "hash *name" (binary mode); the sed writes the text form, "hash  name", on every platform.
-(cd "$out" && sha256sum -- "$jar_name") | sed 's/^\([0-9a-f]\{64\}\) [* ]/\1  /' > "$out/$jar_name.sha256"
+printf '%s\n' "$hashed" | sed 's/^\([0-9a-f]\{64\}\) [* ]/\1  /' > "$out/$jar_name.sha256"
 sha=$(awk '{ print $1 }' "$out/$jar_name.sha256")
 size=$(wc -c < "$out/$jar_name" | tr -d ' ')
 

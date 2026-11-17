@@ -16,7 +16,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import { type Env, SH, skipWithoutSh, slash } from './scratch-harness.js';
@@ -39,6 +39,7 @@ const MODS_TEXT = 'modLoader = "javafml"\n';
 const GRADLE_STUB = [
   '#!/bin/sh',
   'echo "$*" >>"$STUB_GRADLE_LOG"',
+  'printf "GRADLE_OPTS=%s\\nJAVA_TOOL_OPTIONS=%s\\nGRADLE_USER_HOME=%s\\n" "$GRADLE_OPTS" "$JAVA_TOOL_OPTIONS" "$GRADLE_USER_HOME" >"$STUB_GRADLE_ENV"',
   '[ -z "$STUB_GRADLE_FAIL" ] || exit 1',
   'mkdir -p build/libs',
   'for j in $STUB_GRADLE_JARS; do cp "$STUB_GRADLE_SRC/$j" build/libs/; done',
@@ -97,6 +98,9 @@ function storedZip(entries: Record<string, string>): Buffer {
   eocd.writeUInt32LE(offset, 16);
   return Buffer.concat([...locals, cd, eocd]);
 }
+
+/** The commit an export is named after: 40 lowercase hex, as the runbook's git rev-parse gives. */
+const COMMIT = 'ab'.repeat(20);
 
 const GOOD = { [MODS]: MODS_TEXT, 'com/geldar/Mod.class': 'cafe' };
 const WITH_JAVA = { ...GOOD, 'com/geldar/Mod.java': 'class Mod {}' };
@@ -174,6 +178,9 @@ function run(s: Setup, args: string[], extra: Env = {}) {
     STUB_GRADLE_LOG: slash(s.log),
     STUB_GRADLE_SRC: slash(join(s.base, 'fixtures')),
     STUB_GRADLE_JARS: JAR,
+    STUB_GRADLE_ENV: slash(join(s.base, 'gradle.env')),
+    GELDAR_MOD_ALLOW_SEAM: '1',
+    GELDAR_MOD_BUILD_COMMIT: COMMIT,
     ...extra,
   };
   for (const key of Object.keys(env)) if (env[key] === undefined) delete env[key];
@@ -306,7 +313,7 @@ describe.skipIf(skipWithoutSh() || skipWithoutLister())(
       });
       expect(tool.stdout.split(' ')[0]).toBe(hash);
       const info = readFileSync(join(s.out, 'geldar-neoforge.build-info'), 'utf8');
-      expect(info).toMatch(/^commit=export$/m);
+      expect(info).toContain(`commit=${COMMIT} (export)\n`);
       expect(info).toMatch(/^built_utc=\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/m);
       expect(info).toMatch(/^gradle_wrapper=9\.8\.2$/m);
       expect(info).toMatch(/^java=.+$/m);
@@ -344,6 +351,103 @@ describe.skipIf(skipWithoutSh() || skipWithoutLister())(
       expect(r.status).not.toBe(0);
       expect(r.stderr).toContain('GELDAR_MOD_BUILD_FROM_EXPORT');
       expect(r.gradle).toHaveLength(0);
+    });
+
+    it('refuses an export with no GELDAR_MOD_BUILD_COMMIT, before the build runs', () => {
+      const s = setup(false);
+      fixture(s, JAR, GOOD);
+      const r = run(s, [slash(s.out)], {
+        GELDAR_MOD_BUILD_FROM_EXPORT: '1',
+        GELDAR_MOD_BUILD_COMMIT: undefined,
+      });
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toContain('GELDAR_MOD_BUILD_COMMIT');
+      expect(r.gradle).toHaveLength(0);
+      expect(existsSync(s.out)).toBe(false);
+    });
+
+    it('refuses a commit that is not exactly 40 lowercase hex, before the build runs', () => {
+      const s = setup(false);
+      fixture(s, JAR, GOOD);
+      const bad = [
+        'ab'.repeat(19),
+        'ab'.repeat(21),
+        'AB'.repeat(20),
+        `${'ab'.repeat(19)}a\n`,
+        'zz'.repeat(20),
+        '',
+      ];
+      for (const value of bad) {
+        const r = run(s, [slash(s.out)], {
+          GELDAR_MOD_BUILD_FROM_EXPORT: '1',
+          GELDAR_MOD_BUILD_COMMIT: value,
+        });
+        expect(r.status, JSON.stringify(value)).not.toBe(0);
+        expect(r.stderr, JSON.stringify(value)).toContain('GELDAR_MOD_BUILD_COMMIT');
+        expect(r.gradle).toHaveLength(0);
+      }
+      expect(existsSync(s.out)).toBe(false);
+    });
+
+    it('clears the ambient Gradle and JVM options before the build; GRADLE_USER_HOME is kept', () => {
+      const s = setup(false);
+      fixture(s, JAR, GOOD);
+      const home = slash(join(s.base, 'gradle-home'));
+      const r = run(s, [slash(s.out)], {
+        GELDAR_MOD_BUILD_FROM_EXPORT: '1',
+        GRADLE_OPTS: '-Dorg.gradle.dependency.verification=off',
+        JAVA_TOOL_OPTIONS: '-Dorg.gradle.dependency.verification=off',
+        GRADLE_USER_HOME: home,
+      });
+      expect(r.status, r.stderr).toBe(0);
+      expect(r.gradle).toEqual(['build']);
+      const seen = readFileSync(join(s.base, 'gradle.env'), 'utf8');
+      expect(seen).toContain('GRADLE_OPTS=\n');
+      expect(seen).toContain('JAVA_TOOL_OPTIONS=\n');
+      expect(seen).toContain(`GRADLE_USER_HOME=${home}\n`);
+      expect(seen).not.toContain('verification=off');
+    });
+
+    it('refuses GELDAR_MOD_GRADLE unless GELDAR_MOD_ALLOW_SEAM=1 is set, before the build runs', () => {
+      const s = setup(false);
+      fixture(s, JAR, GOOD);
+      const r = run(s, [slash(s.out)], {
+        GELDAR_MOD_BUILD_FROM_EXPORT: '1',
+        GELDAR_MOD_ALLOW_SEAM: undefined,
+      });
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toContain('GELDAR_MOD_ALLOW_SEAM');
+      expect(r.gradle).toHaveLength(0);
+      expect(existsSync(s.out)).toBe(false);
+    });
+
+    it('refuses a git tree with an untracked file under neoforge/, before the build runs', () => {
+      const s = setup(true);
+      fixture(s, JAR, GOOD);
+      writeFileSync(join(s.tree, 'neoforge', 'stray.txt'), 'x');
+      const r = run(s, [slash(s.out)]);
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toContain('changes or untracked files');
+      expect(r.gradle).toHaveLength(0);
+      expect(existsSync(s.out)).toBe(false);
+    });
+
+    it('a failure after the jar is copied leaves no partial output, and removes the dir the script made', () => {
+      const s = setup(false);
+      fixture(s, JAR, GOOD);
+      const bin = join(s.base, 'bin');
+      mkdirSync(bin);
+      writeFileSync(join(bin, 'sha256sum'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+      const r = run(s, [slash(s.out)], {
+        GELDAR_MOD_BUILD_FROM_EXPORT: '1',
+        PATH: [slash(bin), process.env.PATH ?? ''].join(delimiter),
+      });
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toContain('sha256sum failed');
+      for (const f of [JAR, `${JAR}.sha256`, 'geldar-neoforge.build-info']) {
+        expect(existsSync(join(s.out, f))).toBe(false);
+      }
+      expect(existsSync(s.out)).toBe(false);
     });
 
     it('the script text never turns dependency verification or the offline checks off', () => {
