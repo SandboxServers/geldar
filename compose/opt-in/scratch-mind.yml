@@ -1,0 +1,197 @@
+# Scratch Mind test overlay (docs/analysis/neoforge/mind-scratch-design.md, option A'). Not part of any default file set.
+# deploy/scratch/scratch.sh adds it only for the mind-up and mind-token verbs (and the mind services are in profile mind,
+# so a plain `up` never starts one). Restart "no", label geldar.scratch=true, hard caps on every service, and the only
+# published port is the MCP port on loopback (127.0.0.1 only). Every variable has a default so a bare render works.
+# The shard is the scratch one (GELDAR_SHARD=phase0, the roster has the test player ag-test-01). No colo file is mounted.
+services:
+  mind-migrate:
+    # One-shot: sets the geldar_mcp login password once (the role is NOLOGIN in sql/0002_sovereign_mcp.sql).
+    # admin.sh reads the superuser password from GELDAR_ADMIN_PG_PASSWORD_FILE into PGPASSWORD for its own process.
+    profiles: ["mind"]
+    build:
+      context: ..
+      dockerfile: tools/admin/Dockerfile
+    image: ${GELDAR_ADMIN_IMAGE:-geldar-admin:c1}
+    entrypoint: ["sh", "/opt/geldar/tools/admin/admin.sh"]
+    command: ["migrate", "--set-role-password", "geldar_mcp", "--password-file", "/run/secrets/postgres-mcp.txt"]
+    user: "${SCRATCH_RUN_UID:-65534}:${SCRATCH_RUN_GID:-65534}"
+    environment:
+      GELDAR_ADMIN_PG_PASSWORD_FILE: /run/secrets/postgres
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: geldar
+    secrets:
+      - postgres
+      - source: mind-postgres-mcp
+        target: postgres-mcp.txt
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256m
+          pids: 128
+    memswap_limit: 256m
+    pids_limit: 128
+    labels:
+      geldar.scratch: "true"
+    restart: "no"
+
+  mind-mint:
+    # One-shot: mints the test player's token into /out (the scratch secrets dir), mode 0600, and exits.
+    # The mint CLI prints "minted <token id> for <player> to <path>"; scratch.sh keeps only the id and never reads the file.
+    profiles: ["mind"]
+    image: ${GELDAR_ADMIN_IMAGE:-geldar-admin:c1}
+    entrypoint: ["sh", "/opt/geldar/tools/admin/admin.sh"]
+    command: ["token-mint", "${GELDAR_MIND_PLAYER:-ag-test-01}", "--out", "/out/mind-token.txt"]
+    user: "${SCRATCH_RUN_UID:-65534}:${SCRATCH_RUN_GID:-65534}"
+    environment:
+      GELDAR_SHARD_FILE: /opt/geldar/shards/phase0.yaml
+      GELDAR_MCP_DB_PASSWORD_FILE: /run/secrets/postgres-mcp.txt
+      GELDAR_MCP_PEPPER_FILE: /opt/geldar/compose/secrets/mcp-token-pepper.txt
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: geldar
+    secrets:
+      - source: mind-postgres-mcp
+        target: postgres-mcp.txt
+      - source: mind-pepper
+        target: /opt/geldar/compose/secrets/mcp-token-pepper.txt
+    volumes:
+      - ${SCRATCH_SECRETS_DIR:-/nonexistent-scratch-secrets}:/out
+      - ../shards/phase0.yaml:/opt/geldar/shards/phase0.yaml:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256m
+          pids: 128
+    memswap_limit: 256m
+    pids_limit: 128
+    labels:
+      geldar.scratch: "true"
+    restart: "no"
+
+  geldar-mcp:
+    # The MCP server (threshold/mcp). Budget: 0.5 CPU, 512m (no swap, 128 pids). Read-only root.
+    profiles: ["mind"]
+    build:
+      context: ..
+      dockerfile: threshold/mcp/Dockerfile
+    image: ${GELDAR_MCP_IMAGE:-geldar-mcp:c1}
+    user: "${SCRATCH_RUN_UID:-65534}:${SCRATCH_RUN_GID:-65534}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      GELDAR_SHARD: phase0
+      GELDAR_SHARD_FILE: /opt/geldar/shards/phase0.yaml
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      GELDAR_MCP_DB_PASSWORD_FILE: /run/secrets/postgres-mcp.txt
+      GELDAR_MCP_PEPPER_FILE: /run/secrets/mcp-token-pepper.txt
+      # Only inside the container may the server bind 0.0.0.0; the port is still published on loopback alone.
+      GELDAR_MCP_IN_CONTAINER: "1"
+      GELDAR_MCP_BIND: 0.0.0.0
+      # The Host values local clients send to the loopback port (the ssh forward names 127.0.0.1 or localhost).
+      GELDAR_MCP_DEV_HOSTS: 127.0.0.1,localhost
+      GELDAR_MCP_TRUSTED_PROXIES: 127.0.0.1
+      GELDAR_ACT_BUDGET_ENFORCE: "0"
+      GELDAR_NATS_URL: nats://nats:4222
+      GELDAR_NATS_USER: mcp
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-mcp.txt
+    secrets:
+      - source: mind-postgres-mcp
+        target: postgres-mcp.txt
+      - source: mind-pepper
+        target: mcp-token-pepper.txt
+      - source: mind-nats-mcp
+        target: nats-mcp.txt
+    volumes:
+      - ../shards/phase0.yaml:/opt/geldar/shards/phase0.yaml:ro
+    ports:
+      - "127.0.0.1:${SCRATCH_MCP_PORT:-18788}:8788"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512m
+          pids: 128
+    memswap_limit: 512m
+    pids_limit: 128
+    labels:
+      geldar.scratch: "true"
+    restart: "no"
+
+  players-host:
+    # The one test player's Body (golem/src/players/main.ts), read from GELDAR_PLAYER_ID as the colo block does.
+    # Budget: 1 CPU, 2g (no swap, 256 pids). No published port.
+    profiles: ["mind"]
+    build:
+      context: ..
+      dockerfile: golem/Dockerfile
+    image: ${GELDAR_BODY_IMAGE:-geldar-body:c1}
+    entrypoint: ["node", "src/players/main.ts"]
+    user: "${SCRATCH_RUN_UID:-65534}:${SCRATCH_RUN_GID:-65534}"
+    environment:
+      GELDAR_PLAYER_ID: ${GELDAR_MIND_PLAYER:-ag-test-01}
+      GELDAR_SHARD: phase0
+      GELDAR_SHARD_FILE: /opt/geldar/shards/phase0.yaml
+      GELDAR_IN_NETWORK_HOSTS: "1"
+      GELDAR_MC_HOST: velocity
+      GELDAR_MC_PORT: "25565"
+      GELDAR_RCON_HOST: paper
+      GELDAR_RCON_PORT: "25575"
+      GELDAR_RCON_PASSWORD_FILE: /run/secrets/rcon
+      GELDAR_NATS_URL: nats://nats:4222
+      GELDAR_NATS_USER: body
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-body.txt
+    secrets:
+      - rcon
+      - source: mind-nats-body
+        target: nats-body.txt
+    volumes:
+      - ../shards/phase0.yaml:/opt/geldar/shards/phase0.yaml:ro
+    depends_on:
+      paper:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 2g
+          pids: 256
+    memswap_limit: 2g
+    pids_limit: 256
+    labels:
+      geldar.scratch: "true"
+    restart: "no"
+
+# The mind secrets. postgres-mcp.txt and mcp-token-pepper.txt are written by mind-up in the scratch secrets dir; the NATS
+# passwords come from the auth dir the operator made with ./geldar.ps1 shard nats-auth phase0 (see the runbook).
+secrets:
+  mind-postgres-mcp:
+    file: ${SCRATCH_SECRETS_DIR:-/nonexistent-scratch-secrets}/postgres-mcp.txt
+  mind-pepper:
+    file: ${SCRATCH_SECRETS_DIR:-/nonexistent-scratch-secrets}/mcp-token-pepper.txt
+  mind-nats-mcp:
+    file: ${SCRATCH_NATS_AUTH_DIR:-/nonexistent-scratch-nats-auth}/nats-mcp.txt
+  mind-nats-body:
+    file: ${SCRATCH_NATS_AUTH_DIR:-/nonexistent-scratch-nats-auth}/nats-body.txt
