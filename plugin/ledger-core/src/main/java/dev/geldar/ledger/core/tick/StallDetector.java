@@ -10,6 +10,7 @@ public final class StallDetector {
   // Only touched by check() (single async thread) and reset via the heartbeat stamp.
   private long reportedFor = Long.MIN_VALUE;
   private boolean reported;
+  private long recoveredNanos = -1;
 
   public StallDetector(long thresholdMs, LongSupplier nanoClock) {
     this.thresholdNanos = thresholdMs * 1_000_000L;
@@ -21,11 +22,22 @@ public final class StallDetector {
     lastHeartbeat = nanoClock.getAsLong();
   }
 
+  /**
+   * The measured length in ns of a reported stall that has ended, once; -1 while none is pending. Call after
+   * {@link #check()}, from the same thread.
+   */
+  public long takeRecoveredNanos() {
+    long n = recoveredNanos;
+    recoveredNanos = -1;
+    return n;
+  }
+
   /** True once per stall: when the last heartbeat is older than the threshold and not yet reported. */
   public boolean check() {
     long beat = lastHeartbeat;
     if (reported && beat != reportedFor) {
       reported = false; // a heartbeat arrived since the report
+      recoveredNanos = beat - reportedFor; // the measured pause: last old beat to first new beat
     }
     if (reported) {
       return false;

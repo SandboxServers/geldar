@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.geldar.ledger.core.ids.OfflineUuid;
@@ -112,6 +113,31 @@ class OtelLedgerTest {
         assertFalse(o.attrs().containsKey("password"));
         assertTrue(o.attrs().values().stream().noneMatch(v -> "7".equals(String.valueOf(v))));
         assertEquals(1, l.dropped("attrs"));
+    }
+
+    @Test
+    void disabledCollectorIsVisibleAsGaugeAndOneEventPerSwitchOff() throws Exception {
+        OtelLedger l = make(true);
+        BudgetGuard g = (BudgetGuard) l.guard("census");
+        assertSame(g, l.guard("census"), "second call does not wire again");
+        assertEquals(0L, l.longGaugeValue(Names.Guard.COLLECTOR_DISABLED, AttrKeys.M_COLLECTOR, "census"));
+        mainThread[0] = true; // the guard trips on the main thread: nothing may use emitMap
+        g.disable("one call took 9 us");
+        g.disable("again");
+        mainThread[0] = false;
+        assertEquals(1L, l.longGaugeValue(Names.Guard.COLLECTOR_DISABLED, AttrKeys.M_COLLECTOR, "census"));
+        await(() -> !out.isEmpty());
+        Thread.sleep(50);
+        assertEquals(1, out.size());
+        assertEquals(Names.Events.COLLECTOR_DISABLED, out.get(0).name());
+        assertEquals("census", out.get(0).attrs().get(AttrKeys.COLLECTOR));
+        assertEquals("one call took 9 us", out.get(0).attrs().get(AttrKeys.CAUSE));
+        assertEquals(0L, l.dropped("events.mainthread"));
+        g.reenable();
+        assertEquals(0L, l.longGaugeValue(Names.Guard.COLLECTOR_DISABLED, AttrKeys.M_COLLECTOR, "census"));
+        g.disable("second");
+        await(() -> out.size() == 2);
+        assertEquals(2, out.size());
     }
 
     @Test

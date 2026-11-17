@@ -68,6 +68,7 @@ public final class OtelLedger implements Ledger, AutoCloseable {
     private final AtomicLong tickets = new AtomicLong();
     private final AtomicBoolean warnedMainThread = new AtomicBoolean();
     private final Emitter emitter;
+    private final java.util.Set<String> wiredGuards = ConcurrentHashMap.newKeySet();
     private final EventLog eventLog = new Events();
     private final ContentLog contentLog = new Content();
 
@@ -394,7 +395,32 @@ public final class OtelLedger implements Ledger, AutoCloseable {
 
     @Override
     public CollectorGuard guard(String collectorId) {
-        return guards.guard(collectorId, config.get());
+        BudgetGuard g = guards.guard(collectorId, config.get());
+        if (wiredGuards.add(collectorId)) {
+            wireDisabledSignal(g);
+        }
+        return g;
+    }
+
+    /** Current value of one registered long gauge series, or -1 when none (what the next export would read). */
+    long longGaugeValue(String name, String... attrKeys) {
+        ConcurrentHashMap<Attributes, LongSupplier> m = longGauges.get(name);
+        LongSupplier r = m == null ? null : m.get(gaugeAttributes(attrKeys));
+        return r == null ? -1L : r.getAsLong();
+    }
+
+    /** Once per guard: the disabled gauge (0/1, reset by re-enable) and one event per switch-off. */
+    private void wireDisabledSignal(BudgetGuard g) {
+        String id = g.id();
+        try {
+            gaugeLong(Names.Guard.COLLECTOR_DISABLED, "1", "1 when the collector switched itself off",
+                    () -> g.disabled() ? 1L : 0L, AttrKeys.M_COLLECTOR, id);
+            int evId = eventLog.register(Names.Events.COLLECTOR_DISABLED, Severity.WARN, 10,
+                    null, null, null, AttrKeys.COLLECTOR, AttrKeys.CAUSE);
+            g.onDisable(reason -> eventLog.record(evId, 0, 0, 0, id, reason, null));
+        } catch (RuntimeException e) {
+            log.log(Level.WARNING, "collector disabled signal not wired for " + id, e);
+        }
     }
 
     @Override

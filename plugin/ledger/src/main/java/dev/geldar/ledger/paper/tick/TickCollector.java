@@ -145,17 +145,24 @@ public final class TickCollector implements Collector {
     private void checkStall(
             StallDetector stall, BoundCounter stalls, CollectorGuard guard, Ledger l, CollectorContext ctx, long thresholdMs) {
         try {
-            if (!guard.allowed() || !stall.check()) {
+            if (!guard.allowed()) {
                 return;
             }
-            stalls.add(1);
+            if (stall.check()) {
+                stalls.add(1);
+            }
+            // The event waits for the end of the stall so it carries the measured pause, not the threshold.
+            long pauseNanos = stall.takeRecoveredNanos();
+            if (pauseNanos < 0) {
+                return;
+            }
             l.events()
                     .emitMap(
                             Names.Events.SERVER_STALL,
                             Severity.WARN,
                             Attrs.of()
                                     .lng(AttrKeys.SERVER_TICK, ctx.host().serverTick())
-                                    .lng(AttrKeys.DURATION_MS, thresholdMs)
+                                    .lng(AttrKeys.DURATION_MS, pauseNanos / 1_000_000L)
                                     .build());
         } catch (Throwable t) {
             // never throw into the host

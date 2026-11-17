@@ -282,6 +282,29 @@ describe.skipIf(!SH)('telemetry-verify.sh against a fixture JSONL', { timeout: 3
     expect(verify(['metric', NAME, '3.5']).status).toBe(1);
   });
 
+  it('metric: a histogram is not read as the next metric (req 02 finding 5), max and histcount read the named metric', () => {
+    const hist = (count: number, tps: number, frozen: number) =>
+      `{"resourceMetrics":[{"scopeMetrics":[{"metrics":[{"name":"${NAME}","histogram":{"dataPoints":[{"count":"${count}","sum":12.5}]}},{"name":"geldar_tps","gauge":{"dataPoints":[{"asDouble":${tps}}]}},{"name":"geldar_tick_frozen","gauge":{"dataPoints":[{"asInt":"${frozen}"}]}}]}]}]}`;
+    const fx = [hist(81, 19.999, 0), hist(381, 20.1, 1), hist(681, 20.2, 0)].join('\n');
+    // old behaviour returned the neighbour: last=20.2 for the histogram name
+    const m = verify(['metric', NAME], fx);
+    expect(m.stdout).toContain('last=none');
+    expect(m.stdout).not.toContain('20.2');
+    const g = verify(['metric', 'geldar_tps', '20.2'], fx);
+    expect(g.status, g.stderr).toBe(0);
+    const h = verify(['histcount', NAME, '600'], fx);
+    expect(h.status, h.stderr).toBe(0);
+    expect(h.stdout).toContain('first=81 last=681 delta=600');
+    expect(verify(['histcount', NAME, '601'], fx).status).toBe(1);
+    expect(verify(['histcount', 'geldar_tps'], fx).status).toBe(1);
+    // last value is 0 (the freeze was missed), max over the window is 1
+    expect(verify(['metric', 'geldar_tick_frozen', '1'], fx).status).toBe(1);
+    const x = verify(['max', 'geldar_tick_frozen', '1'], fx);
+    expect(x.status, x.stderr).toBe(0);
+    expect(x.stdout).toContain('max=1');
+    expect(verify(['max', 'geldar_tps', '21'], fx).status).toBe(1);
+  });
+
   it('metric: a name that is only a prefix of another does not match', () => {
     expect(verify(['metric', 'geldar_tick']).status).toBe(1);
   });

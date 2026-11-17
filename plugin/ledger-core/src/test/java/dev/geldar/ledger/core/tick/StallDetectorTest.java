@@ -1,5 +1,6 @@
 package dev.geldar.ledger.core.tick;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -12,6 +13,24 @@ class StallDetectorTest {
   private StallDetector detector(long thresholdMs, long start) {
     now = start;
     return new StallDetector(thresholdMs, () -> now);
+  }
+
+  @Test
+  void measuredPauseIsAvailableOnceAfterTheStallEnds() {
+    StallDetector d = detector(1000, 0);
+    assertEquals(-1, d.takeRecoveredNanos());
+    now = 1500 * MS;
+    assertTrue(d.check());
+    assertEquals(-1, d.takeRecoveredNanos(), "still stalled: no pause yet");
+    now = 3200 * MS;
+    d.heartbeat();
+    assertFalse(d.check());
+    assertEquals(3200 * MS, d.takeRecoveredNanos());
+    assertEquals(-1, d.takeRecoveredNanos(), "taken once");
+    now = 3300 * MS;
+    d.heartbeat();
+    assertFalse(d.check());
+    assertEquals(-1, d.takeRecoveredNanos(), "a normal heartbeat is not a stall");
   }
 
   @Test

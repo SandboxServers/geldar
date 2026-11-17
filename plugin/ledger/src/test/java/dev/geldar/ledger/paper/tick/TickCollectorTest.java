@@ -194,8 +194,16 @@ class TickCollectorTest {
         clock.set(2_500_000_000L); // default threshold is 2000 ms
         step();
         step();
+        // Detected and counted, but the event waits for the end of the stall to carry the measured pause.
+        assertTrue(stallEvents.isEmpty());
+        assertEquals(List.of("geldar_tick_stalls_total+1"), counterAdds);
+        clock.set(4_000_000_000L);
+        heartbeat();
+        step();
+        step();
         assertEquals(1, stallEvents.size());
         assertEquals(77L, stallEvents.get(0).get("geldar.server_tick"));
+        assertEquals(4000L, stallEvents.get(0).get("geldar.duration_ms")); // measured, not the 2000 threshold
         assertEquals(List.of("geldar_tick_stalls_total+1"), counterAdds);
         assertEquals(List.of(StallWatchdog.THREAD_NAME), emitThreads);
         Thread w = watchdogThread();
@@ -227,8 +235,17 @@ class TickCollectorTest {
         assertTrue(stallEvents.isEmpty());
         guardThrows = false;
         step();
+        assertEquals(List.of("geldar_tick_stalls_total+1"), counterAdds);
+        clock.set(9_500_000_000L);
+        heartbeat();
+        step();
         assertEquals(1, stallEvents.size());
+        assertEquals(9500L, stallEvents.get(0).get("geldar.duration_ms"));
         c.stop();
+    }
+
+    private void heartbeat() {
+        ((TickEndListener) registered.get(0)).onTickEnd(new com.destroystokyo.paper.event.server.ServerTickEndEvent(1, 5.0, 0));
     }
 
     @Test

@@ -34,7 +34,7 @@ class ConfigParserTest {
         assertEquals(2000, c.stallThresholdMs());
         assertEquals(200, c.sampleWorldEveryTicks());
         assertEquals(20, c.samplePlayerEveryTicks());
-        assertTrue(c.jfrEnabled());
+        assertFalse(c.jfrEnabled(), "JFR is off unless the config turns it on");
         assertNull(c.dutyFor("PlayerMoveEvent"));
     }
 

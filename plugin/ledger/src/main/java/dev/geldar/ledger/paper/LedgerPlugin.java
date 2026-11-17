@@ -75,6 +75,7 @@ public final class LedgerPlugin extends JavaPlugin {
     /** Ledgers swapped out whose async close has not run yet; guarded by LEDGER_LOCK; null until first used. */
     private List<Built> pendingCloses;
     private boolean buildWarned;
+    private JfrWiring jfr;
 
     /** Used by the server. */
     public LedgerPlugin() {
@@ -111,6 +112,7 @@ public final class LedgerPlugin extends JavaPlugin {
                 watcher.stop();
             }
         });
+        guard(() -> jfrWiring().stop());
         guard(() -> {
             if (collectors != null) {
                 collectors.stopAll();
@@ -133,6 +135,16 @@ public final class LedgerPlugin extends JavaPlugin {
         return collectors;
     }
 
+    /** Lazy: the tests allocate the plugin without running field initializers. */
+    private JfrWiring jfrWiring() {
+        synchronized (LEDGER_LOCK) {
+            if (jfr == null) {
+                jfr = new JfrWiring(getLogger());
+            }
+            return jfr;
+        }
+    }
+
     /** ConfigWatcher callback; runs on an async thread. Hops to the main thread before touching collectors. */
     private void onConfig(LedgerConfig config) {
         try {
@@ -147,7 +159,9 @@ public final class LedgerPlugin extends JavaPlugin {
             if (config.enabled()) {
                 ensureLedger(config);
                 collectors.apply(config);
+                jfrWiring().sync(config, currentLedger);
             } else {
+                jfrWiring().stop();
                 collectors.stopAll();
                 listeners.unregisterAll();
                 swapToNoop();
