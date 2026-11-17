@@ -94,7 +94,7 @@ public final class CuratedCollector implements Collector {
             return;
         }
         CuratedRegistry.Binder binder = binderFactory.get();
-        CuratedRegistry r = new CuratedRegistry(ledger.events(), ledger.guard(ID), ctx.host(), binder);
+        CuratedRegistry r = new CuratedRegistry(ledger.events(), ledger.content(), ledger.guard(ID), ctx.host(), binder);
         registry = r;
         int ok = 0;
         for (CuratedFamily f : families.get()) {

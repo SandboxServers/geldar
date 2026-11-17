@@ -47,12 +47,14 @@ public final class AttrKeys {
     public static final String ROLE = "geldar.role";
     /** Long: a 0/1 flag, such as the operator teleport flag. */
     public static final String FLAG = "geldar.flag";
+    /** String: a rounded block position {@code "x,y,z"} (a sign, PT-07d). Event and content key only. */
+    public static final String POS = "geldar.pos";
 
     private static final Set<String> ALLOWED = Set.of(
             LIFE_ID, PLAYER_UUID, WORLD, WORLD_TICK, SERVER_TICK, MC_SESSION, EVENT_CLASS, CANCELLED, COLLECTOR, QUEUE,
             CAUSE, RESULT, X, Y, Z, ITEM, BLOCK, CONTAINER_TYPE, AMOUNT, TEXT, COMMAND, EXCEPTION_CLASS, PLUGIN,
             DURATION_MS, TICK_OVERRUNS, HEALTH, FOOD, XP_LEVEL, GAMEMODE, PING_BUCKET,
-            SUBTYPE, ROLE, FLAG);
+            SUBTYPE, ROLE, FLAG, POS);
 
     // Metric attribute keys: BARE, as in the README section 4 metric table (decision 2026-11-17). The prefixed
     // geldar.* keys above are for events and logs only.

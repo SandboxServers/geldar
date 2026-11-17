@@ -27,7 +27,7 @@ class AttrKeysTest {
             "geldar.container_type", "geldar.amount", "geldar.text", "geldar.command", "geldar.exception.class",
             "geldar.plugin", "geldar.duration_ms", "geldar.tick_overruns",
             "geldar.health", "geldar.food", "geldar.xp_level", "geldar.gamemode", "geldar.ping_bucket",
-            "geldar.subtype", "geldar.role", "geldar.flag");
+            "geldar.subtype", "geldar.role", "geldar.flag", "geldar.pos");
 
     /** README section 4 metric table attributes, bare (decision 2026-11-17), frozen. */
     private static final List<String> README_METRIC = List.of(
@@ -36,7 +36,7 @@ class AttrKeysTest {
 
     @Test
     void everyReadmeAllowedKeyIsAllowedAndNothingElseIsChecked() {
-        assertEquals(33, README_ALLOWED.size());
+        assertEquals(34, README_ALLOWED.size());
         for (String key : README_ALLOWED) {
             assertTrue(AttrKeys.allowed(key), key);
         }
