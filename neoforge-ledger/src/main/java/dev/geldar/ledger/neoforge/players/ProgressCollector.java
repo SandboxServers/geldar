@@ -158,7 +158,9 @@ public final class ProgressCollector implements Collector {
         try {
             Ledger l = ledger;
             CollectorGuard g = guard;
-            if (!running || l == null || g == null || !g.allowed()) {
+            HostInfo h = host;
+            // The guard is main-thread state: an event on any other thread never touches it.
+            if (!running || l == null || g == null || h == null || !h.isMainThread() || !g.allowed()) {
                 return;
             }
             long token = g.begin();

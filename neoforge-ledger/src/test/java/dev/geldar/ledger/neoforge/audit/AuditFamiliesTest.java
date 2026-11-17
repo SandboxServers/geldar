@@ -23,7 +23,7 @@ class AuditFamiliesTest {
         new CombatFamily(f.ledger, f.host);
         new TextContentFamily(f.ledger, clock::get);
         new OperatorAuditFamily(f.ledger, f.host, clock::get);
-        assertEquals(7, f.registered.size());
+        assertEquals(10, f.registered.size()); // 7 events and 3 rate-drop twins
         assertTrue(f.registered.stream().allMatch(n -> n.startsWith("geldar.")), f.registered.toString());
     }
 
@@ -217,7 +217,7 @@ class AuditFamiliesTest {
     @Test
     void playerAndCancelledCommandsAreNotExported() {
         OperatorAuditFamily a = new OperatorAuditFamily(f.ledger, f.host, clock::get);
-        a.command(OperatorAuditFamily.commandKind(true, "Server"), false, () -> "home");
+        a.command(OperatorAuditFamily.commandKind(true, "Server", true, false), false, () -> "home");
         a.command("console", true, () -> "stop");
         assertTrue(f.events.isEmpty());
     }
@@ -297,13 +297,18 @@ class AuditFamiliesTest {
 
     @Test
     void commandKindExportsOnlyTrueConsoleAndRcon() {
-        assertEquals("console", OperatorAuditFamily.commandKind(false, "Server"));
-        assertEquals("rcon", OperatorAuditFamily.commandKind(false, "Rcon"));
-        assertNull(OperatorAuditFamily.commandKind(true, "Server"));
-        assertNull(OperatorAuditFamily.commandKind(true, "Steve"));
-        assertNull(OperatorAuditFamily.commandKind(false, "@")); // a command block
-        assertNull(OperatorAuditFamily.commandKind(false, "Steve"));
-        assertNull(OperatorAuditFamily.commandKind(false, null));
+        assertEquals("console", OperatorAuditFamily.commandKind(false, "Server", true, false));
+        assertEquals("rcon", OperatorAuditFamily.commandKind(false, "Rcon", false, true));
+        // a command block renamed Server or Rcon is neither the server nor an RCON source
+        assertNull(OperatorAuditFamily.commandKind(false, "Server", false, false));
+        assertNull(OperatorAuditFamily.commandKind(false, "Rcon", false, false));
+        assertNull(OperatorAuditFamily.commandKind(false, "Server", false, true));
+        assertNull(OperatorAuditFamily.commandKind(false, "Rcon", true, false));
+        assertNull(OperatorAuditFamily.commandKind(true, "Server", false, false));
+        assertNull(OperatorAuditFamily.commandKind(true, "Steve", false, false));
+        assertNull(OperatorAuditFamily.commandKind(false, "@", false, false)); // a command block
+        assertNull(OperatorAuditFamily.commandKind(false, "Steve", false, false));
+        assertNull(OperatorAuditFamily.commandKind(false, null, false, false));
     }
 
     @Test
@@ -341,7 +346,8 @@ class AuditFamiliesTest {
         assertFalse(code.contains("getUsername"));
         assertFalse(code.contains("getMessage"));
         assertTrue(code.contains("chatText(e.getRawText())"));
-        assertTrue(code.contains("source.getEntity() != null, source.getTextName()"));
+        assertTrue(code.contains("source.source instanceof net.minecraft.server.MinecraftServer"));
+        assertTrue(code.contains("source.source instanceof net.minecraft.server.rcon.RconConsoleSource"));
     }
 
     @Test
@@ -392,16 +398,17 @@ class AuditFamiliesTest {
     @Test
     void commandRateCapIsExactlyTwentyPerSecond() {
         OperatorAuditFamily a = new OperatorAuditFamily(f.ledger, f.host, clock::get);
+        int console = f.registered.indexOf("geldar.console.command");
         for (int i = 0; i < 20; i++) {
             a.command("console", false, () -> "list");
         }
-        assertEquals(20, f.events.size());
+        assertEquals(20, f.events.stream().filter(e -> (int) e[0] == console).count());
         a.command("console", false, () -> "list");
-        assertEquals(20, f.events.size());
+        assertEquals(20, f.events.stream().filter(e -> (int) e[0] == console).count());
         assertEquals(1, a.rateDrops());
         clock.addAndGet(60_000_000L);
         a.command("console", false, () -> "list");
-        assertEquals(21, f.events.size());
+        assertEquals(21, f.events.stream().filter(e -> (int) e[0] == console).count());
     }
 
     @Test

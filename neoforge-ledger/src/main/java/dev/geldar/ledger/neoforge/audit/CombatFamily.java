@@ -41,7 +41,7 @@ public final class CombatFamily {
 
     public CombatFamily(Ledger ledger, HostInfo host) {
         this.events = ledger.events();
-        this.guarded = new Guarded(ledger.guard("combat"), host);
+        this.guarded = new Guarded(ledger.guard("combat"), host, new AuditGate(ledger, "combat"));
         String c = Names.Events.COMBAT_FAMILY + ".";
         this.damageId = events.register(c + "damage", Severity.INFO, RATE, DAMAGE_FIELDS);
         this.deathId = events.register(c + "player_death", Severity.INFO, RATE, DEATH_FIELDS);

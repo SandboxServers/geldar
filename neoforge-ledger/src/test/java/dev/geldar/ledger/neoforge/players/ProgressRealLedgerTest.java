@@ -28,7 +28,7 @@ class ProgressRealLedgerTest {
         }
 
         public boolean isMainThread() {
-            return false;
+            return true; // advancement events are server-thread events
         }
 
         public String loaderName() {

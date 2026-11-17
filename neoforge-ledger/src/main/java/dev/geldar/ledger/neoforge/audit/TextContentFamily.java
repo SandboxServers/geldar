@@ -3,10 +3,12 @@ package dev.geldar.ledger.neoforge.audit;
 import dev.geldar.ledger.core.AttrKeys;
 import dev.geldar.ledger.core.ContentCap;
 import dev.geldar.ledger.core.ContentLog;
+import dev.geldar.ledger.core.EventLog;
 import dev.geldar.ledger.core.HostInfo;
 import dev.geldar.ledger.core.Ledger;
 import dev.geldar.ledger.core.Names;
 import dev.geldar.ledger.core.Redactor;
+import dev.geldar.ledger.core.Severity;
 import dev.geldar.ledger.core.TokenBucket;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.LongSupplier;
@@ -28,7 +30,10 @@ public final class TextContentFamily {
     private static final String[] FIELDS = {AttrKeys.LIFE_ID, AttrKeys.WORLD};
 
     private final ContentLog content;
+    private final EventLog events;
+    private final AuditGate gate;
     private final int chatId;
+    private final int dropId;
     private final TokenBucket bucket;
     private final LongAdder errors = new LongAdder();
     private final LongAdder rateDrops = new LongAdder();
@@ -39,8 +44,13 @@ public final class TextContentFamily {
 
     TextContentFamily(Ledger ledger, LongSupplier nanoClock) {
         this.content = ledger.content();
+        this.events = ledger.events();
+        this.gate = new AuditGate(ledger, null);
         this.chatId = content.register(Names.Events.CHAT, FIELDS);
-        this.bucket = new TokenBucket(CHAT_RATE, nanoClock);
+        // Rate 0: always denies and counts, so a denial shows in the core's rate-drop counter like a core drop.
+        this.dropId = events.register(Names.Events.CHAT + "._rate_drop", Severity.INFO, 0);
+        int rate = Math.max(0, ledger.config().rates().getOrDefault(Names.Events.CHAT, CHAT_RATE));
+        this.bucket = new TokenBucket(rate, nanoClock);
     }
 
     /** The text to capture: the raw typed text only, never the decorated message another mod may have prefixed. */
@@ -62,11 +72,12 @@ public final class TextContentFamily {
      */
     public void chat(boolean cancelled, String player, String world, Supplier<String> text) {
         try {
-            if (cancelled) {
+            if (!gate.getAsBoolean() || cancelled) {
                 return;
             }
             if (!bucket.tryTake()) {
                 rateDrops.increment();
+                events.record(dropId, 0, 0, 0, null, null, null);
                 return;
             }
             String raw = text.get();

@@ -34,10 +34,14 @@ public final class OperatorAuditFamily {
 
     private final EventLog events;
     private final Guarded guarded;
-    private final TokenBucket bucket;
+    private final AuditGate gate;
+    private final TokenBucket consoleBucket;
+    private final TokenBucket rconBucket;
     private final LongAdder rateDrops = new LongAdder();
     private final int consoleId;
     private final int rconId;
+    private final int consoleDropId;
+    private final int rconDropId;
     private final int opId;
 
     public OperatorAuditFamily(Ledger ledger, HostInfo host) {
@@ -46,11 +50,19 @@ public final class OperatorAuditFamily {
 
     OperatorAuditFamily(Ledger ledger, HostInfo host, LongSupplier nanoClock) {
         this.events = ledger.events();
-        this.guarded = new Guarded(ledger.guard("operator"), host);
-        this.bucket = new TokenBucket(RATE, nanoClock);
+        this.gate = new AuditGate(ledger, "operator");
+        this.guarded = new Guarded(ledger.guard("operator"), host, gate);
+        java.util.Map<String, Integer> rates = ledger.config().rates();
+        this.consoleBucket = new TokenBucket(
+                Math.max(0, rates.getOrDefault(Names.Events.CONSOLE_COMMAND, RATE)), nanoClock);
+        this.rconBucket = new TokenBucket(
+                Math.max(0, rates.getOrDefault(Names.Events.RCON_COMMAND, RATE)), nanoClock);
         this.consoleId = events.register(Names.Events.CONSOLE_COMMAND, Severity.INFO, RATE, COMMAND_FIELDS);
         this.rconId = events.register(Names.Events.RCON_COMMAND, Severity.INFO, RATE, COMMAND_FIELDS);
         this.opId = events.register(OPERATOR_CHANGE, Severity.INFO, RATE, OP_FIELDS);
+        // Rate 0: always denies and counts, so a family denial shows in the core's rate-drop counter.
+        this.consoleDropId = events.register(Names.Events.CONSOLE_COMMAND + "._rate_drop", Severity.INFO, 0);
+        this.rconDropId = events.register(Names.Events.RCON_COMMAND + "._rate_drop", Severity.INFO, 0);
     }
 
     long errors() {
@@ -61,29 +73,36 @@ public final class OperatorAuditFamily {
         return rateDrops.sum();
     }
 
-    /** The source kind to export: {@code console}, {@code rcon}, or null (player, command block, anything else). */
-    static String commandKind(boolean hasEntity, String textName) {
+    /**
+     * The source kind to export: {@code console}, {@code rcon}, or null (player, command block, anything else).
+     * {@code serverSource}: the stack's source is the MinecraftServer; {@code rconSource}: it is an RconConsoleSource
+     * (26.1.2: MinecraftServer.createCommandSourceStack passes the server itself; RconConsoleSource implements CommandSource).
+     */
+    static String commandKind(boolean hasEntity, String textName, boolean serverSource, boolean rconSource) {
         if (hasEntity || textName == null) {
             return null;
         }
+        // The name alone is not enough: a command block can be renamed "Server" or "Rcon". The source object must be
+        // the MinecraftServer itself (console) or an RconConsoleSource (RCON).
         return switch (textName) {
-            case "Server" -> CONSOLE;
-            case "Rcon" -> RCON;
+            case "Server" -> serverSource ? CONSOLE : null;
+            case "Rcon" -> rconSource ? RCON : null;
             default -> null;
         };
     }
 
     /** {@code text} is only called once the command passed the bucket; a null {@code kind} exports nothing. */
     public void command(String kind, boolean cancelled, Supplier<String> text) {
-        if (kind == null || cancelled) {
+        if (kind == null || cancelled || !gate.getAsBoolean()) {
             return;
         }
-        if (!bucket.tryTake()) {
+        boolean rcon = kind.equals(RCON);
+        if (!(rcon ? rconBucket : consoleBucket).tryTake()) {
             rateDrops.increment();
+            guarded.run(() -> events.record(rcon ? rconDropId : consoleDropId, 0, 0, 0, null, null, null));
             return;
         }
-        guarded.run(() -> events.record(
-                kind.equals(RCON) ? rconId : consoleId, 0, 0, 0, CommandText.exportable(text.get()), kind, null));
+        guarded.run(() -> events.record(rcon ? rconId : consoleId, 0, 0, 0, CommandText.exportable(text.get()), kind, null));
     }
 
     public void operatorChange(String player, boolean opped) {

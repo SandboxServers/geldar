@@ -1,6 +1,8 @@
 package dev.geldar.ledger.neoforge;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -68,13 +70,45 @@ class LedgerModTest {
     }
 
     @Test
-    void shutdownClosesTheLedgerThenTheSchedulerAndSurvivesCloseFailure(@TempDir Path dir) {
+    void shutdownFlushesTheLedgerBeforeTheSchedulerCloses() {
+        java.util.List<String> order = new java.util.ArrayList<>();
+        LedgerMod.shutdown(() -> order.add("ledger"), () -> order.add("scheduler"));
+        assertEquals(java.util.List.of("ledger", "scheduler"), order);
+    }
+
+    @Test
+    void shutdownStillClosesTheSchedulerWhenTheLedgerCloseThrowsOrIsAbsent() {
+        java.util.List<String> order = new java.util.ArrayList<>();
+        assertDoesNotThrow(() -> LedgerMod.shutdown(() -> {
+            order.add("ledger");
+            throw new IllegalStateException("boom");
+        }, () -> order.add("scheduler")));
+        assertEquals(java.util.List.of("ledger", "scheduler"), order);
+        order.clear();
+        LedgerMod.shutdown((Runnable) null, () -> order.add("scheduler"));
+        assertEquals(java.util.List.of("scheduler"), order);
+    }
+
+    @Test
+    void realShutdownClosesTheScheduler(@TempDir Path dir) {
         OtelLedger ledger = create(dir.resolve("none"));
         NeoForgeHostScheduler scheduler = new NeoForgeHostScheduler(Logger.getLogger("t"));
         assertDoesNotThrow(() -> LedgerMod.shutdown(ledger, scheduler));
-        // the scheduler is closed: late scheduling is a no-op
         assertDoesNotThrow(() -> scheduler.everyMillis(1, () -> {}).cancel());
-        assertDoesNotThrow(() -> LedgerMod.shutdown(null, scheduler));
-        assertTrue(true);
+        assertDoesNotThrow(() -> LedgerMod.shutdown((OtelLedger) null, scheduler));
+    }
+
+    @Test
+    void aThrowingInstallDoesNotSkipTheNextOnes() {
+        java.util.List<String> ran = new java.util.ArrayList<>();
+        LedgerMod.isolated("a", () -> ran.add("a"));
+        LedgerMod.isolated("b", () -> {
+            throw new NoClassDefFoundError("x");
+        });
+        LedgerMod.isolated("c", () -> ran.add("c"));
+        assertEquals(java.util.List.of("a", "c"), ran);
+        assertThrows(OutOfMemoryError.class, () -> LedgerMod.isolated("d", () -> {
+            throw new OutOfMemoryError();
+        }));
     }
 }

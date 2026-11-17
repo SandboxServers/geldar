@@ -122,7 +122,7 @@ class TickCollectorTest {
                     return guard;
                 }
                 case "config" -> {
-                    return LedgerConfig.defaults();
+                    return config;
                 }
                 default -> throw new UnsupportedOperationException(m.getName());
             }
@@ -163,6 +163,25 @@ class TickCollectorTest {
                 };
             }
         };
+    }
+
+    private volatile LedgerConfig config = LedgerConfig.defaults();
+
+    @Test
+    void tickSwitchOrMasterOffStartsNothing() throws Exception {
+        for (String[] keys : new String[][] {{"collector.tick.enabled", "false"}, {"enabled", "false"}}) {
+            java.util.Properties p = new java.util.Properties();
+            p.setProperty(keys[0], keys[1]);
+            config = dev.geldar.ledger.core.ConfigParser.parse(p).config();
+            TickCollector[] c = new TickCollector[1];
+            assertNull(started(Map.of(), c), keys[0]);
+            assertFalse(asleep.tryAcquire(300, TimeUnit.MILLISECONDS), "no watchdog: " + keys[0]);
+            assertNull(c[0].listener());
+        }
+        config = LedgerConfig.defaults();
+        TickCollector[] on = new TickCollector[1];
+        assertNotNull(started(Map.of(), on));
+        on[0].stop();
     }
 
     private TickListener started(Map<String, Supplier<long[]>> dims, TickCollector[] out) {

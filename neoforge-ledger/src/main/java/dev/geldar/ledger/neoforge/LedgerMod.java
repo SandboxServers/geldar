@@ -15,6 +15,7 @@ import java.util.function.Supplier;
 import java.util.logging.Logger;
 import net.minecraft.server.MinecraftServer;
 import net.neoforged.api.distmarker.Dist;
+import net.neoforged.bus.api.EventPriority;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.loading.FMLPaths;
 import net.neoforged.neoforge.common.NeoForge;
@@ -24,8 +25,9 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 /**
  * Server-only entry point. Builds the ledger from {@code config/ledger.properties} (a missing file means defaults, a
- * bad file means no ledger). Nothing here may stop the server from starting: any failure leaves the ledger off. No
- * collectors are registered yet; no registry entries and no payloads, ever.
+ * bad file means no ledger). Nothing here may stop the server from starting: any failure leaves the ledger off. Each
+ * wiring (tick, progress, curated, audit) installs on its own: one failing install never skips the others or the
+ * shutdown listener. No registry entries and no payloads, ever.
  */
 @Mod(value = "ledger", dist = Dist.DEDICATED_SERVER)
 public final class LedgerMod {
@@ -41,31 +43,50 @@ public final class LedgerMod {
             NeoForgeHostInfo host = new NeoForgeHostInfo(
                     scheduler::serverTick, () -> server != null && server.isSameThread());
             ledger = create(FMLPaths.CONFIGDIR.get().resolve(CONFIG_FILE), host, GlobalOpenTelemetry::get);
-            NeoForge.EVENT_BUS.addListener(ServerStartingEvent.class, e -> server = e.getServer());
-            dev.geldar.ledger.neoforge.tick.TickWiring.install(ledger, host, scheduler);
+            OtelLedger l = ledger;
+            // First, so no failing install can skip it. LOWEST: it runs after the collectors' own stop listeners
+            // (priority NORMAL), whatever the registration order, so the ledger still closes last.
+            isolated("shutdown listener", () -> NeoForge.EVENT_BUS.addListener(
+                    EventPriority.LOWEST, ServerStoppingEvent.class, e -> shutdown(ledger, scheduler)));
+            isolated("server holder", () -> NeoForge.EVENT_BUS.addListener(ServerStartingEvent.class, e -> server = e.getServer()));
+            isolated("tick", () -> dev.geldar.ledger.neoforge.tick.TickWiring.install(l, host, scheduler));
             // After TickWiring: Post listeners run in registration order, so the measured tick excludes our own tasks.
-            NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post.class, e -> scheduler.onServerTick());
-            dev.geldar.ledger.neoforge.players.ProgressWiring.install(ledger, host, scheduler);
-            dev.geldar.ledger.neoforge.curated.CuratedWiring.install(ledger, host, scheduler);
-            dev.geldar.ledger.neoforge.audit.AuditWiring.install(ledger, host);
-            NeoForge.EVENT_BUS.addListener(ServerStoppingEvent.class, e -> shutdown(ledger, scheduler));
+            isolated("scheduler tick", () -> NeoForge.EVENT_BUS.addListener(ServerTickEvent.Post.class, e -> scheduler.onServerTick()));
+            isolated("progress", () -> dev.geldar.ledger.neoforge.players.ProgressWiring.install(l, host, scheduler));
+            isolated("curated", () -> dev.geldar.ledger.neoforge.curated.CuratedWiring.install(l, host, scheduler));
+            isolated("audit", () -> dev.geldar.ledger.neoforge.audit.AuditWiring.install(l, host));
         } catch (Throwable t) {
             rethrowIfVmError(t);
             LOG.warning("ledger setup failed, ledger off: " + t.getClass().getName());
         }
     }
 
+    /** Runs one install on its own: a throw (a linkage error included) is logged and never skips the others. */
+    static void isolated(String what, Runnable install) {
+        try {
+            install.run();
+        } catch (Throwable t) {
+            rethrowIfVmError(t);
+            LOG.warning("ledger " + what + " install failed: " + t.getClass().getName());
+        }
+    }
+
     /** Closes the ledger first (flush), then the scheduler; neither failure escapes. */
     static void shutdown(OtelLedger ledger, NeoForgeHostScheduler scheduler) {
+        shutdown(ledger == null ? null : ledger::close, scheduler::close);
+    }
+
+    /** The order itself: flush the ledger, then close the scheduler even when the flush failed. */
+    static void shutdown(Runnable closeLedger, Runnable closeScheduler) {
         try {
-            if (ledger != null) {
-                ledger.close();
+            if (closeLedger != null) {
+                closeLedger.run();
             }
         } catch (Throwable t) {
             rethrowIfVmError(t);
             LOG.warning("ledger close failed: " + t.getClass().getName());
         } finally {
-            scheduler.close();
+            closeScheduler.run();
         }
     }
 

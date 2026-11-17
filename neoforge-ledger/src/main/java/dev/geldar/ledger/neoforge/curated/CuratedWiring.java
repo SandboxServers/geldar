@@ -18,7 +18,7 @@ import net.neoforged.neoforge.event.server.ServerStoppingEvent;
  * they do nothing until the collector is active.
  */
 public final class CuratedWiring {
-    private static final Logger LOG = Logger.getLogger("ledger");
+    private static final Logger LOG = dev.geldar.ledger.neoforge.LedgerLog.server();
 
     /** Last to run, and cancelled events are delivered: a cancelled break must be seen and marked. */
     static final EventPriority PRIORITY = EventPriority.LOWEST;
