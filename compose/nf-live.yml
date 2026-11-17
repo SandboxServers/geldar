@@ -27,7 +27,7 @@
 #
 # Environment: every variable has a default, so the file renders with no environment set (ci.yml renders every compose file
 # with none). The variables an operator sets for this project, all optional at render time:
-#   NF_SECRETS_DIR         the per-project secret files (default ./secrets-nf, gitignored; written by `./geldar.ps1 shard nats-auth nf --live`, runbook section 4b, which writes all eight files)
+#   NF_SECRETS_DIR         the per-project secret files (default ./secrets-nf, gitignored; written by `./geldar.ps1 shard nats-auth nf --live`, runbook section 4b, which writes all ten files)
 #   NF_MOD_JAR_HOST        host path of the pinned geldar NeoForge mod jar (read-only mount). Unset, the default path does not
 #                          exist and `up` refuses to start the bind (create_host_path is false), which is the fail-closed path.
 #   NF_MOD_SHA256          the jar's sha256, 64 lowercase hex; the entrypoint refuses a mounted jar that does not match
@@ -274,12 +274,15 @@ services:
       NEOFORGE_VERSION: "26.1.2.${NF_NEOFORGE_BUILD:-126}"
       MEMORY: "${NF_NEOFORGE_HEAP:-9G}"
       ONLINE_MODE: "FALSE"
-      ENABLE_RCON: "FALSE"
+      # RCON on the project network only: the port (25575) is not in any ports: list, so it is not published. The probe
+      # (compose/nf-live-probe.yml) and the operator's `rcon-cli` (runbook) reach it by the service name neoforge.
+      ENABLE_RCON: "TRUE"
+      RCON_PASSWORD_FILE: /run/secrets/rcon
       GELDAR_NATS_URL: nats://nats:4222
       GELDAR_NATS_USER: neoforge
       GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-neoforge.txt
       GELDAR_NF_MOD_SHA256: "${NF_MOD_SHA256:-}"
-    secrets: [velocity-forwarding, nats-neoforge.txt]
+    secrets: [velocity-forwarding, nats-neoforge.txt, rcon]
     volumes:
       - neoforge-data:/data
       - ./neoforge/neoforge-entrypoint.sh:/geldar/neoforge-entrypoint.sh:ro
@@ -309,13 +312,16 @@ volumes:
 
 # File-based secrets under the per-project directory (compose/secrets-nf/, gitignored). The names are the per-shard NATS
 # auth set's: nats-auth.conf (the server config), nats-sink.txt, nats-neoforge.txt, nats-velocity.txt, nats-deploy.txt,
-# nats-seed.txt (one password file per user), and the Postgres and forwarding secrets. `./geldar.ps1 shard nats-auth nf --live`
-# writes all eight of them, the NATS ones and the Postgres and forwarding secrets (runbook section 4b). No value is in this file.
+# nats-seed.txt (one password file per user), and the Postgres, forwarding and RCON secrets. `./geldar.ps1 shard nats-auth nf --live`
+# writes all ten files of the set: these nine, and nats-body.txt, which only compose/nf-live-probe.yml declares (runbook section 4b).
+# No value is in this file.
 secrets:
   postgres:
     file: ${NF_SECRETS_DIR:-./secrets-nf}/postgres.txt
   velocity-forwarding:
     file: ${NF_SECRETS_DIR:-./secrets-nf}/velocity-forwarding.txt
+  rcon:
+    file: ${NF_SECRETS_DIR:-./secrets-nf}/rcon.txt
   nats-auth.conf:
     file: ${NF_SECRETS_DIR:-./secrets-nf}/nats-auth.conf
   nats-sink.txt:

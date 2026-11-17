@@ -45,11 +45,14 @@ const STUB_SCRIPTS: Record<string, string> = {
     'echo "docker $*" >>"$STUB_LOG"',
     'case "$1" in',
     '  ps) printf "%s\\n" "$DOCKER_LABELS"; exit 0 ;;',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: a shell fixture, not a template
     '  volume) exit "${VOLUME_MISSING:-0}" ;;',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: a shell fixture, not a template
     '  network) exit "${NETWORK_MISSING:-0}" ;;',
     '  run)',
     '    case "$*" in',
     '      *"ls -A"*) printf "%s\\n" "$VOLUME_CONTENT"; exit 0 ;;',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: a shell fixture, not a template
     '      *"sha256sum -c"*) exit "${MARKER_STATUS:-0}" ;;',
     '    esac',
     '    exit 0 ;;',
@@ -171,15 +174,23 @@ describe('nf-deploy.sh constants and the one compose file', () => {
     const repo = makeRepo();
     expect(SCRIPT_TEXT).toMatch(/^PROJECT=geldar-nf$/m);
     expect(SCRIPT_TEXT).toMatch(/^COMPOSE_FILE=\$ROOT\/compose\/nf-live\.yml$/m);
-    // Exactly one line in the script passes -f to compose: the dc wrapper, with the project and the one file.
-    const composeFileLines = SCRIPT_TEXT.split('\n').filter(
-      (l) => l.includes('docker compose') && l.includes(' -f'),
-    );
-    // Two lines: the telemetry branch (the overlay added) and the default branch.
-    expect(composeFileLines).toEqual([
-      '    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$TELEMETRY_FILE" "$@"',
-      '    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"',
-    ]);
+    // Every script line that runs docker compose (the version probe excepted) must be one of exactly three known
+    // shapes, each present once: dc with the telemetry overlay, dc with the base only, and probe_dc with the probe overlay.
+    // Any other compose line, or a compose line without the project and file flags, fails here.
+    const allowed = [
+      'docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$TELEMETRY_FILE" "$@"',
+      'docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"',
+      'docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$PROBE_FILE" --profile probe "$@"',
+    ];
+    const composeLines = SCRIPT_TEXT.split('\n')
+      .map((l) => l.trim())
+      // Command position only: a die message that names "docker compose ps" is not a call.
+      .filter(
+        (l) =>
+          /(^|[;&|(]|\$\()\s*docker compose\b/.test(l) && !l.includes('docker compose version'),
+      );
+    expect(composeLines.filter((l) => !allowed.includes(l))).toEqual([]);
+    expect([...composeLines].sort()).toEqual([...allowed].sort());
     expect(run(repo, ['up'], {}).status).toBe(0);
     // The script's ROOT is a POSIX-style path under Git Bash, so the test checks the tokens, not the path text.
     for (const c of composeCalls(repo)) {
@@ -402,13 +413,13 @@ function extractCalls(repo: string): string[] {
 }
 
 const NEOFORGE_IMAGE =
-  /^  neoforge:\n(?:(?!  \S).*\n)*?    image: (\S+)$/m.exec(NF_COMPOSE_TEXT)?.[1] ?? '';
+  /^ {2}neoforge:\n(?:(?! {2}\S).*\n)*? {4}image: (\S+)$/m.exec(NF_COMPOSE_TEXT)?.[1] ?? '';
 
 describe('nf-deploy.sh seed-bundle', () => {
   it('takes the neoforge image from compose/nf-live.yml, and names the volume as compose does', () => {
     expect(NEOFORGE_IMAGE).toMatch(/^itzg\/minecraft-server:[^@]+@sha256:[0-9a-f]{64}$/);
     expect(SCRIPT_TEXT).not.toContain(NEOFORGE_IMAGE);
-    expect(NF_COMPOSE_TEXT).toMatch(/^  neoforge-data: \{\}$/m);
+    expect(NF_COMPOSE_TEXT).toMatch(/^ {2}neoforge-data: \{\}$/m);
     expect(NF_COMPOSE_TEXT).not.toContain('name: geldar-nf_neoforge-data');
     expect(SCRIPT_TEXT).not.toMatch(/\bsudo\b/);
   });
@@ -614,8 +625,12 @@ describe('nf-deploy.sh seed-bundle', () => {
 
 describe('nf-deploy.sh secret list', () => {
   it('keeps its secret file list in sync with the secrets block of compose/nf-live.yml', () => {
+    // The declared set is nf-live.yml's secrets block plus the probe overlay's (nats-body.txt, mounted only by the probe).
+    const probeText = readFileSync(join(ROOT, 'compose', 'nf-live-probe.yml'), 'utf8');
     const declared = [
-      ...NF_COMPOSE_TEXT.matchAll(/\$\{NF_SECRETS_DIR:-\.\/secrets-nf\}\/(\S+)$/gm),
+      ...`${NF_COMPOSE_TEXT}\n${probeText}`.matchAll(
+        /\$\{NF_SECRETS_DIR:-\.\/secrets-nf\}\/(\S+)$/gm,
+      ),
     ].map((m) => m[1]);
     const declaredSet = new Set(declared);
     const missing = [...declaredSet].filter((name) => !SECRET_FILES.includes(name)).sort();

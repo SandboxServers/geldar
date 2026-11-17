@@ -28,9 +28,10 @@ set -eu
 PROJECT=geldar-nf
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 COMPOSE_FILE=$ROOT/compose/nf-live.yml
+PROBE_FILE=$ROOT/compose/nf-live-probe.yml
 SERVICES="nats postgres eventsink identity-seed velocity neoforge"
 # The secret files compose/nf-live.yml declares under ${NF_SECRETS_DIR:-./secrets-nf}. A test keeps this list in sync.
-SECRET_FILES="postgres.txt velocity-forwarding.txt nats-auth.conf nats-sink.txt nats-neoforge.txt nats-velocity.txt nats-deploy.txt nats-seed.txt"
+SECRET_FILES="postgres.txt velocity-forwarding.txt nats-auth.conf nats-sink.txt nats-neoforge.txt nats-velocity.txt nats-deploy.txt nats-seed.txt rcon.txt nats-body.txt"
 # The one published host port (127.0.0.1:46565, velocity). Nothing else may listen on it.
 PORT=46565
 # Memory: the sum of the memory caps in compose/nf-live.yml, in MiB (neoforge 12288, postgres 2048, velocity 1024, nats 512,
@@ -103,7 +104,7 @@ for arg in "$@"; do
   esac
 done
 case $verb in
-  plan | up | status | seed-bundle) [ -z "$SERVICE" ] || die "$verb takes no service name" ;;
+  plan | up | status | seed-bundle | probe) [ -z "$SERVICE" ] || die "$verb takes no service name" ;;
   down) [ -z "$SERVICE" ] || die "down takes no service name" ;;
   logs)
     [ -n "$SERVICE" ] || die "logs needs a service: one of $SERVICES"
@@ -113,7 +114,7 @@ case $verb in
     esac
     ;;
   *)
-    echo "usage: nf-deploy.sh plan|up|status|down [--volumes] [--local]|logs <service> [--local]|seed-bundle [--local]" >&2
+    echo "usage: nf-deploy.sh plan|up|status|down [--volumes] [--local]|logs <service> [--local]|seed-bundle [--local]|probe [--local]" >&2
     exit 2
     ;;
 esac
@@ -439,11 +440,43 @@ cmd_logs() {
   dc logs --tail 200 "$SERVICE"
 }
 
+# The probe: one run of the body probe (compose/nf-live-probe.yml, profile probe) on a project that `up` started. It refuses
+# unless the five long-running services run and identity-seed exited 0, and unless the secret files pass check_secrets (it
+# reads nats-body.txt and rcon.txt). The run is --no-deps, so nothing is started or restarted. Its exit code is the probe's.
+# Cleanup runs even when the run fails: run --rm removes the container, and rm -f removes any left behind. The probe's own
+# cleanup (the registry entry and the RCON whitelist entry) runs inside the probe process (golem/src/p0/probe-cleanup.ts).
+probe_dc() {
+  docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$PROBE_FILE" --profile probe "$@"
+}
+
+check_probe_up() {
+  states=$(dc ps -a --format '{{.Service}} {{.State}} {{.ExitCode}}') || die "docker compose ps failed (is docker running?); nothing started"
+  for svc in nats postgres eventsink velocity neoforge; do
+    printf '%s\n' "$states" | grep -q "^$svc running " || die "$svc is not running in $PROJECT; run: nf-deploy.sh up first. Nothing started."
+  done
+  printf '%s\n' "$states" | grep -q '^identity-seed exited 0$' ||
+    die "identity-seed has not exited 0 in $PROJECT; run: nf-deploy.sh up first. Nothing started."
+}
+
+cmd_probe() {
+  check_operator
+  check_service_uid
+  check_no_colo_labels
+  check_secrets
+  check_probe_up
+  [ -f "$PROBE_FILE" ] || die "probe overlay not found: $PROBE_FILE"
+  rc=0
+  act probe_dc run --rm --no-deps probe || rc=$?
+  act probe_dc rm -f probe >/dev/null 2>&1 || true
+  exit "$rc"
+}
+
 case $verb in
   plan) cmd_plan ;;
   up) cmd_up ;;
   status) cmd_status ;;
   down) cmd_down ;;
   logs) cmd_logs ;;
+  probe) cmd_probe ;;
   seed-bundle) cmd_seed_bundle ;;
 esac

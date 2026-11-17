@@ -20,6 +20,7 @@ const AGENT_PIN = 'e43a270df53c6f423e0ab157be9c27ccc01d5dc3232e162fe54777573db2f
 const DUMMY_SHA = 'a'.repeat(64);
 const SECRET_NAMES = [
   'postgres.txt',
+  'rcon.txt',
   'velocity-forwarding.txt',
   'nats-auth.conf',
   'nats-sink.txt',

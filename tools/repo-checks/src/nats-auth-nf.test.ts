@@ -21,14 +21,16 @@ import {
 } from './nats-auth-fixtures.ts';
 
 /** The users and files the nf set must have, in the generator's order (geldar.ps1 is not involved: deploy/nats-auth-nf.ps1). */
-const NF_USERS = ['neoforge', 'sink', 'deploy', 'velocity', 'seed'];
-/** The eight files the generator writes: the conf, the five NATS passwords, postgres.txt and velocity-forwarding.txt. */
+const NF_USERS = ['neoforge', 'sink', 'deploy', 'velocity', 'seed', 'body'];
+/** The ten files the generator writes: the conf, the six NATS passwords, postgres.txt, velocity-forwarding.txt and rcon.txt. */
 const NF_FILES = [
   'nats-auth.conf',
   ...NF_USERS.map((u) => `nats-${u}.txt`),
   'postgres.txt',
   'velocity-forwarding.txt',
+  'rcon.txt',
 ].sort();
+const NF_PROBE = readFileSync(join(ROOT, 'compose', 'nf-live-probe.yml'), 'utf8');
 /** The two-way difference of two name lists: names only in `a`, and names only in `b`. */
 function setDiff(a: string[], b: string[]): { onlyA: string[]; onlyB: string[] } {
   return { onlyA: a.filter((f) => !b.includes(f)), onlyB: b.filter((f) => !a.includes(f)) };
@@ -99,6 +101,20 @@ const EXPECTED: Record<string, { pub: string[]; deny: string[]; sub: string[] }>
     deny: [],
     sub: ['_INBOX.>'],
   },
+  // The probe's body: the life registry bucket's KV put, get and delete, and the JetStream calls a KV client makes on it.
+  body: {
+    pub: [
+      '$KV.geldar-life-registry.>',
+      '$JS.API.INFO',
+      '$JS.API.STREAM.INFO.KV_geldar-life-registry',
+      '$JS.API.DIRECT.GET.KV_geldar-life-registry',
+      '$JS.API.DIRECT.GET.KV_geldar-life-registry.>',
+      '$JS.API.STREAM.MSG.GET.KV_geldar-life-registry',
+      '_INBOX.>',
+    ],
+    deny: [],
+    sub: ['_INBOX.>'],
+  },
 };
 
 /** Whether a subject is one this shard's NATS may carry: geldar.nf.*, the inbox, $JS.FC, $JS.API.INFO, or a JetStream
@@ -106,6 +122,7 @@ const EXPECTED: Record<string, { pub: string[]; deny: string[]; sub: string[] }>
 function inScope(subject: string): boolean {
   if (subject.startsWith('geldar.nf.')) return true;
   if (['_INBOX.>', '$JS.FC.>', '$JS.API.INFO'].includes(subject)) return true;
+  if (subject.startsWith('$KV.')) return BUCKETS.some((b) => subject.startsWith(`$KV.${b}.`));
   if (subject.startsWith('$JS.API.') || subject.startsWith('$JS.ACK.')) {
     const tokens = subject.split('.');
     const names = [...STREAMS, ...BUCKETS.map((b) => `KV_${b}`)];
@@ -317,9 +334,10 @@ describe.skipIf(!hasPwsh)(
 
     it('makes the generator output equal the secrets of nf-live.yml and the SECRET_FILES of nf-deploy.sh', () => {
       const generated = readdirSync(dirOf()).sort();
-      const names = [...NF_LIVE.matchAll(/\$\{NF_SECRETS_DIR:-\.\/secrets-nf\}\/([\w.-]+)/g)].map(
-        (m) => m[1] ?? '',
-      );
+      // The declared set is nf-live.yml's plus the probe overlay's (nats-body.txt, which only the probe mounts).
+      const names = [
+        ...`${NF_LIVE}\n${NF_PROBE}`.matchAll(/\$\{NF_SECRETS_DIR:-\.\/secrets-nf\}\/([\w.-]+)/g),
+      ].map((m) => m[1] ?? '');
       const declared = [...new Set(names)].sort();
       const deploy = deploySecretFiles().sort();
       expect(deploy.length, 'SECRET_FILES parsed').toBeGreaterThan(0);
@@ -334,10 +352,26 @@ describe.skipIf(!hasPwsh)(
       expect(generated).toEqual(NF_FILES);
     });
 
-    it('writes postgres.txt and velocity-forwarding.txt as 32 symbols of [A-Za-z0-9_-] with no newline', () => {
-      for (const f of ['postgres.txt', 'velocity-forwarding.txt']) {
+    it('writes postgres.txt, velocity-forwarding.txt and rcon.txt as 32 symbols of [A-Za-z0-9_-] with no newline', () => {
+      for (const f of ['postgres.txt', 'velocity-forwarding.txt', 'rcon.txt']) {
         expect(readFileSync(join(dirOf(), f), 'utf8'), f).toMatch(/^[A-Za-z0-9_-]{32}$/);
       }
+    });
+
+    it('limits the body user to the life registry bucket: every publish subject names that bucket or is a generic API subject', () => {
+      const conf = readFileSync(join(dirOf(), 'nats-auth.conf'), 'utf8');
+      const line = conf.split('\n').find((l) => l.includes('user: "body"')) ?? '';
+      const pub = /publish: \{ allow: \[([^\]]*)\]/.exec(line)?.[1] ?? '';
+      const subjects = [...pub.matchAll(/"([^"]+)"/g)].map((m) => m[1] ?? '');
+      expect(subjects).toContain('$KV.geldar-life-registry.>');
+      for (const s of subjects) {
+        expect(s, s).toMatch(
+          /^(\$KV\.geldar-life-registry\.>|\$JS\.API\.INFO|\$JS\.API\.(STREAM\.INFO|STREAM\.MSG\.GET|DIRECT\.GET)\.KV_geldar-life-registry(\.>)?|_INBOX\.>)$/,
+        );
+      }
+      expect(line, 'no event stream, no shard subject, no other bucket').not.toMatch(
+        /geldar\.nf|GELDAR_EVENTS|geldar-skins/,
+      );
     });
 
     it('never prints a secret value: a fresh run echoes no file content', () => {
