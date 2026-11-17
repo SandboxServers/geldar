@@ -24,6 +24,12 @@ import { skipWithoutSh, slash } from './scratch-harness.js';
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const ENTRY = `${ROOT}compose/neoforge/neoforge-entrypoint.sh`;
 const ENTRY_TEXT = readFileSync(ENTRY, 'utf8');
+/** The captured digits of a pinned default; throws with a clear message if the script no longer has it. */
+function pinDefault(text: string, pattern: RegExp, name: string): string {
+  const digits = pattern.exec(text)?.[1];
+  if (digits === undefined) throw new Error(`${name} default pin not found in the entrypoint`);
+  return digits;
+}
 /** Built from parts, so the dotted build never appears literally (the IP-literal check rejects it). */
 const BUILD = ['26', '1', '2', '126'].join('.');
 const MOD_NAME = 'proxy-compatible-forge-1.3.1.jar';
@@ -237,13 +243,19 @@ describe.skipIf(skipWithoutSh())('NeoForge entrypoint under sh', { timeout: 30_0
   });
 
   it('the default pins in the script are the documented ones: sha512 of 128 hex digits, sha256 of 64', () => {
-    const mod = ENTRY_TEXT.match(/MOD_SHA512=\$\{GELDAR_NF_MOD_SHA512:-([0-9a-f]+)\}/);
-    const installer = ENTRY_TEXT.match(
-      /INSTALLER_SHA256=\$\{GELDAR_NF_INSTALLER_SHA256:-([0-9a-f]+)\}/,
+    const mod = pinDefault(
+      ENTRY_TEXT,
+      /MOD_SHA512=\$\{GELDAR_NF_MOD_SHA512:-([0-9a-f]+)\}/,
+      'MOD_SHA512',
     );
-    expect(mod?.[1]).toHaveLength(128);
-    expect(mod?.[1].startsWith('dba5b70f')).toBe(true);
-    expect(installer?.[1]).toHaveLength(64);
-    expect(installer?.[1].startsWith('1184ffee')).toBe(true);
+    const installer = pinDefault(
+      ENTRY_TEXT,
+      /INSTALLER_SHA256=\$\{GELDAR_NF_INSTALLER_SHA256:-([0-9a-f]+)\}/,
+      'INSTALLER_SHA256',
+    );
+    expect(mod).toHaveLength(128);
+    expect(mod.startsWith('dba5b70f')).toBe(true);
+    expect(installer).toHaveLength(64);
+    expect(installer.startsWith('1184ffee')).toBe(true);
   });
 });

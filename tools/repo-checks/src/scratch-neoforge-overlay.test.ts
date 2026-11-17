@@ -74,9 +74,9 @@ describe('NeoForge overlay: the service', () => {
   it('runs NeoForge at the pinned version, never latest or a range', () => {
     expect(paper.environment.TYPE).toBe('NEOFORGE');
     // The template is 26.1.2 plus a build default; the default must be the pinned build 126, never another value or latest.
-    const match = /^26\.1\.2\.\$\{SCRATCH_NEOFORGE_BUILD:-(\d+)\}$/.exec(
-      paper.environment.NEOFORGE_VERSION,
-    );
+    const version = paper.environment.NEOFORGE_VERSION;
+    if (version === undefined) throw new Error('the overlay sets no NEOFORGE_VERSION');
+    const match = /^26\.1\.2\.\$\{SCRATCH_NEOFORGE_BUILD:-(\d+)\}$/.exec(version);
     expect(match?.[1]).toBe('126');
     expect(['26', '1', '2', match?.[1] ?? ''].join('.')).toBe(NEOFORGE_BUILD);
     expect(paper.environment.NEOFORGE_VERSION).not.toMatch(/latest/i);
