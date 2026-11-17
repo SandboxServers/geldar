@@ -10,8 +10,9 @@ receivers:
     protocols:
       grpc:
         endpoint: 0.0.0.0:4317
-        # Default is 4 MiB, and a larger request is refused permanently (ResourceExhausted). The gateway exports requests of at most
-        # 3 MiB, but one log record (a captured prompt) can be larger and cannot be split, so the receiver accepts up to 32 MiB.
+        # Default is 4 MiB, and a larger request is refused permanently (ResourceExhausted). The gateway exports requests of up to
+        # 12 MiB (a single log record, a captured prompt, cannot be split and the Caddy ingest cap is 8 MiB), so the receiver accepts up to 32 MiB.
+        # This SigNoz collector must be RESTARTED to apply the limit, and BEFORE the gateway carries real traffic.
         max_recv_msg_size_mib: 32
       http:
         endpoint: 0.0.0.0:4318

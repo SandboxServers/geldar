@@ -20,20 +20,32 @@ receivers:
   otlp:
     protocols:
       # geldar-colo and geldar-telemetry only. Not published, except the loopback publish of 4318 in compose.gateway.yml.
+      # Receive limits are set explicitly (not left to defaults): the Caddy ingest cap is 8 MiB, so 16 MiB leaves room for a gzip-expanded body.
       grpc:
         endpoint: 0.0.0.0:4317
+        max_recv_msg_size_mib: 16
       http:
         endpoint: 0.0.0.0:4318
+        max_request_body_size: 16777216
+  # The gateway's own metrics (queue size and capacity, enqueue and send failures, memory limiter refusals) are served on 127.0.0.1:8888 inside the container.
+  # Scraping them here makes a drop or refusal visible in SigNoz (otelcol_exporter_enqueue_failed_*, otelcol_exporter_send_failed_*, otelcol_processor_refused_*).
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: geldar-gateway
+          scrape_interval: 30s
+          static_configs:
+            - targets: ['127.0.0.1:8888']
   # Later steps (not enabled now; exact receiver names for 0.164.0):
-  # prometheus:   # N10, NATS exporter scrape (nats:<exporter port>, 30s)
+  # prometheus:   # N10, NATS exporter scrape (nats:<exporter port>, 30s): add a second scrape_config job to the receiver above
   # postgresql:   # N11, monitoring role, password from ${file:/run/secrets/otel-pg.txt}
   # host_metrics: # later step, the /mnt/nvme filesystem alarm (collector-design section 8)
 
 processors:
   memory_limiter:
     check_interval: 1s
-    limit_mib: 400
-    spike_limit_mib: 80
+    limit_mib: 800   # 80% of the 1 GiB container cap (compose.gateway.yml); GOMEMLIMIT is 800MiB
+    spike_limit_mib: 160
   resource:
     attributes:
       - {key: deployment.environment.name, value: colo, action: upsert}
@@ -134,14 +146,18 @@ exporters:
       enabled: true
       storage: file_storage
       sizer: bytes
-      queue_size: 1073741824   # bytes (1 GiB of queued request data); the queue is full beyond this and new data is refused
+      # bytes. 256 MiB per signal queue (traces, logs, metrics: three queues). Queued items also live in the heap (measured 0.75 to 0.9 x the queued bytes),
+      # so the bound is under the memory limiter soft limit (limit_mib 800 minus spike 160). When a queue is full the exporter drops new data (producer still gets 200)
+      # and logs sending queue is full; the counter otelcol_exporter_enqueue_failed_* reaches SigNoz through the prometheus receiver below.
+      queue_size: 268435456
       block_on_overflow: false
       batch:
-        # Exporter-side batching, by bytes: every exported request is merged or split to at most 3 MiB (OTLP proto size, before gzip),
-        # under the 4 MiB gRPC default of any receiver that has not been raised. A single record above 3 MiB cannot be split and is dropped with a warn line.
+        # Exporter-side batching, by bytes: every exported request is merged or split to at most 12 MiB (OTLP proto size, before gzip).
+        # A single record cannot be split, so max_size must exceed the largest record: the Caddy ingest cap is 8 MiB, plus overhead.
+        # The SigNoz collector receiver must accept 32 MiB (signoz-otelcol-config.yaml, restarted first): at its 4 MiB default a request above 4 MiB is refused for good.
         sizer: bytes
         min_size: 1048576
-        max_size: 3145728
+        max_size: 12582912
         flush_timeout: 5s
 
 extensions:
@@ -166,6 +182,6 @@ service:
       processors: [memory_limiter, resource, filter/noise, transform/redact, batch]
       exporters: [otlp_grpc/geldar_signoz]
     metrics:
-      receivers: [otlp]   # add prometheus (N10), postgresql (N11), host_metrics (later) here when enabled
+      receivers: [otlp, prometheus]   # prometheus: the gateway's own metrics (and later the N10 NATS scrape); add postgresql (N11), host_metrics (later) here when enabled
       processors: [memory_limiter, resource, transform/metric_labels, batch]
       exporters: [otlp_grpc/geldar_signoz]

@@ -39,7 +39,7 @@ services:
       - /mnt/nvme/geldar-telemetry/queue:/var/lib/otelcol/queue
     environment:
       GELDAR_SIGNOZ_OTLP_ENDPOINT: geldar-signoz-otelcol:4317   # OTLP gRPC port of signoz-otelcol-config.yaml [SRC]
-      GOMEMLIMIT: 400MiB   # matches memory_limiter limit_mib 400 in gateway.yaml
+      GOMEMLIMIT: 800MiB   # matches memory_limiter limit_mib 800 in gateway.yaml (80% of the 1 GiB cap)
     networks:
       geldar-colo:
       geldar-telemetry:
@@ -51,8 +51,8 @@ services:
     # No depends_on: the gateway may start before the SigNoz collector; the exporter retries and the queue persists.
     # No docker.sock mount [AUTH].
     cpus: 0.5
-    mem_limit: 512m
-    memswap_limit: 512m
+    mem_limit: 1g   # batches and the persisted queue items live in memory: the heap tracks queued bytes (README, Limits)
+    memswap_limit: 1g
     pids_limit: 256
     restart: unless-stopped
     logging: *logging
