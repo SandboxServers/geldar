@@ -507,7 +507,8 @@ check_probe_nats() {
   fi
 }
 
-# Up must have started this project: a running container, and the NATS override that up wrote.
+# Up must have started this project: a running container, the NATS override that up wrote, and a healthy nats, velocity
+# and paper container. The probe runs with --no-deps, so compose does not wait on those services; this check does.
 check_probe_up() {
   running=$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT") || {
     echo "scratch: docker ps failed (is docker running?); nothing started" >&2
@@ -521,6 +522,16 @@ check_probe_up() {
     echo "scratch: $PROJECT has no NATS override (it was not started with SCRATCH_NATS_AUTH_DIR); nothing started" >&2
     exit 2
   fi
+  for svc in nats velocity paper; do
+    healthy=$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$svc" --filter health=healthy) || {
+      echo "scratch: docker ps failed (is docker running?); nothing started" >&2
+      exit 1
+    }
+    if [ -z "$healthy" ]; then
+      echo "scratch: $PROJECT has no healthy $svc container; run: sh deploy/scratch/scratch.sh up $suffix and wait for healthy; nothing started" >&2
+      exit 2
+    fi
+  done
 }
 
 do_probe() {

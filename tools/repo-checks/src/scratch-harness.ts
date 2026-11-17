@@ -83,7 +83,7 @@ export const slash = (path: string) => path.replace(/\\/g, '/');
 /** The stub bin dir and the default environment. docker logs each call with the compose variables, fails compose calls
  * that lack them (as compose does for a required variable), answers compose version and info, and fails down when
  * STUB_FAIL_DOWN is set. info prints no Docker root when STUB_NO_INFO is set; any ps -aq call fails when STUB_FAIL_PS
- * is set. df prints STUB_DOCKER_KB for the Docker root and STUB_DISK_KB for the repo; id says 1000; uname says
+ * is set; a ps -q call filtered on the compose service named in STUB_NO_SERVICE finds nothing. df prints STUB_DOCKER_KB for the Docker root and STUB_DISK_KB for the repo; id says 1000; uname says
  * MINGW64_NT unless STUB_UNAME is set; powershell.exe prints STUB_RAM_KB. */
 export function stubs(): { base: string; env: Env } {
   const base = mkdtempSync(join(tmpdir(), 'scratch-stub-'));
@@ -100,7 +100,10 @@ export function stubs(): { base: string; env: Env } {
       'case "$*" in',
       '  *"version --short"*) echo "$STUB_COMPOSE_VERSION" ;;',
       '  *"ps -aq"*) [ -z "$STUB_FAIL_PS" ] || exit 1 ;;',
-      '  "ps -q --filter"*) [ -z "$STUB_PROJECT_UP" ] || echo stub-container ;;',
+      '  "ps -q --filter"*)',
+      '    [ -n "$STUB_PROJECT_UP" ] || exit 0',
+      '    case "$*" in *"service=$STUB_NO_SERVICE "*) [ -n "$STUB_NO_SERVICE" ] && exit 0 ;; esac',
+      '    echo stub-container ;;',
       '  *" run --rm"*)',
       '    grep -q nats-body.txt "$SCRATCH_SECRETS_DIR/nats-override.yml" 2>/dev/null && echo BODY_SECRET_IN_OVERRIDE >>"$STUB_LOG"',
       '    exit "${STUB_RUN_EXIT:-0}" ;;',

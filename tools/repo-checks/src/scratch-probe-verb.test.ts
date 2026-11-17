@@ -38,7 +38,8 @@ function upState(base: string): void {
 
 const runsProbe = (run: Run) => run.calls.filter((c) => c.includes(' run --rm'));
 
-describe.skipIf(skipWithoutSh())('scratch probe verb', () => {
+// Each case runs sh and the stubs; under full-suite load the 5 s default timeout is too short.
+describe.skipIf(skipWithoutSh())('scratch probe verb', { timeout: 30_000 }, () => {
   const body = slash(probeAuth(true));
   const noBody = slash(probeAuth(false));
   const up: Env = { STUB_PROJECT_UP: '1', SCRATCH_NATS_AUTH_DIR: body };
@@ -85,6 +86,26 @@ describe.skipIf(skipWithoutSh())('scratch probe verb', () => {
     expect(run.status).toBe(2);
     expect(run.stderr).toContain('suffix must match [a-z0-9]{1,9}');
     expect(run.calls).toEqual([]);
+  });
+
+  it.each(['nats', 'velocity', 'paper'])(
+    'refuses when %s has no healthy container (depends_on is not checked under --no-deps); nothing runs',
+    (svc) => {
+      const run = runScript(['probe', 'a'], { ...up, STUB_NO_SERVICE: svc }, { prepare: upState });
+      expect(run.status).toBe(2);
+      expect(run.stderr).toContain(`no healthy ${svc} container`);
+      expect(run.stderr).toContain('nothing started');
+      expect(runsProbe(run)).toEqual([]);
+    },
+  );
+
+  it('checks nats, velocity and paper for a healthy container before the probe runs', () => {
+    const run = runScript(['probe', 'a'], up, { prepare: upState });
+    expect(run.status).toBe(0);
+    for (const svc of ['nats', 'velocity', 'paper'])
+      expect(
+        run.calls.some((c) => c.includes(`service=${svc}`) && c.includes('health=healthy')),
+      ).toBe(true);
   });
 
   it('runs the p0-probe one-shot with the probe overlay and the six-file override, and passes its exit code through', () => {
