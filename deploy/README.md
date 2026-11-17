@@ -115,9 +115,11 @@ notes, not in this file or the repository.
 - A root-only state directory: `sudo install -d -m 0700 /etc/geldar-colo` for the release record and the secrets
   directory, or set `GELDAR_STATE_DIR` and `GELDAR_SECRETS_DIR` to directories you create the same way.
 - The repository checkout at `<release-commit>`: `git clone --depth 1 <public repository URL> <checkout>`, then
-  `git -C <checkout> fetch --depth 1 origin <release-commit>` and `git -C <checkout> checkout <release-commit>`. Or
-  `git archive <release-commit> | tar -x -C <checkout>` on a machine with the repository, copied over. The commit is
-  named in the release summary of the `colo-images` workflow.
+  `git -C <checkout> fetch --depth 1 origin <release-commit>` and `git -C <checkout> checkout <release-commit>`. Or a
+  file made on a machine with the repository: `git archive -o <file>.tar <release-commit>`, copied over. Then
+  `tar -tf <file>.tar` (stop if any entry is an absolute path or contains `..`), `tar -xf <file>.tar -C <empty-dir>` into an
+  EMPTY directory, and `cd <empty-dir>`, confirming the change worked before running anything. Stop on any failed step. The
+  commit is named in the release summary of the `colo-images` workflow.
 - Free disk above `GELDAR_MIN_FREE_KB` (default 10 GiB). Check with `df -h /`.
 
 ### (b) Plugin jars
