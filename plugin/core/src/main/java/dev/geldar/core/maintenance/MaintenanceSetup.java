@@ -1,7 +1,10 @@
 package dev.geldar.core.maintenance;
 
+import dev.geldar.core.trace.TraceHook;
 import java.util.function.Function;
+import dev.geldar.core.trace.TraceHook;
 import org.bukkit.configuration.ConfigurationSection;
+import dev.geldar.core.trace.TraceHook;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
@@ -22,14 +25,15 @@ public final class MaintenanceSetup {
     }
 
     public static MaintenanceNotices register(
-            JavaPlugin plugin, ConfigurationSection file, String natsUrl, String shard, Function<String, String> env) {
+            JavaPlugin plugin, ConfigurationSection file, String natsUrl, String shard, Function<String, String> env,
+            TraceHook trace) {
         MaintenanceNotices notices = new MaintenanceNotices(
                 enabled(file),
                 text -> plugin.getServer().broadcastMessage(text),
                 task -> plugin.getServer().getScheduler().runTask(plugin, task),
                 System::currentTimeMillis,
                 plugin.getLogger());
-        new NatsMaintenanceSubscriber(natsUrl, shard, env, plugin.getLogger(), notices);
+        new NatsMaintenanceSubscriber(natsUrl, shard, env, plugin.getLogger(), notices, trace);
         plugin.getLogger().info("Maintenance notices enabled: broadcast " + enabled(file));
         return notices;
     }

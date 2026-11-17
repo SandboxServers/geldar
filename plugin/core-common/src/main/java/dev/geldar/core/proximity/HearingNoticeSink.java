@@ -4,4 +4,9 @@ package dev.geldar.core.proximity;
 public interface HearingNoticeSink {
     /** The notice for the life {@code lifeId} (its player name): a direction (a compass point, overhead or below) and a distance band. */
     void muffled(String lifeId, String direction, String band);
+
+    /** As above with the hash of the speech that caused the notice (never the text); the default ignores it. */
+    default void muffled(String lifeId, String direction, String band, String speechHash) {
+        muffled(lifeId, direction, band);
+    }
 }

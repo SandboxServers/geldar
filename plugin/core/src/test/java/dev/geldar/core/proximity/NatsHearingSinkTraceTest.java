@@ -6,7 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import dev.geldar.core.trace.SpanHearingTrace;
+import dev.geldar.core.trace.OtelTraceHook;
 import dev.geldar.core.trace.SpeechHash;
 import io.nats.client.Connection;
 import io.nats.client.impl.Headers;
@@ -59,13 +59,13 @@ class NatsHearingSinkTraceTest {
     @Test
     void payloadBytesAreEqualWithAndWithoutASpanAndHeadersCarryTraceparentOnly() {
         Fake plain = new Fake();
-        new NatsHearingSink("phase0", plain.asConnection(), new SpanHearingTrace())
+        new NatsHearingSink("phase0", plain.asConnection(), new OtelTraceHook())
                 .muffled(LIFE, "w", "far", SpeechHash.of(TEXT));
         assertNull(plain.headers);
 
         Fake traced = new Fake();
         try (Scope s = enterSpan()) {
-            new NatsHearingSink("phase0", traced.asConnection(), new SpanHearingTrace())
+            new NatsHearingSink("phase0", traced.asConnection(), new OtelTraceHook())
                     .muffled(LIFE, "w", "far", SpeechHash.of(TEXT));
         }
         assertArrayEquals(plain.payload, traced.payload);
@@ -78,7 +78,7 @@ class NatsHearingSinkTraceTest {
     @Test
     void spanAttributesHoldTheLifeIdAndHashNeverTheText() {
         Map<String, String> seen = new LinkedHashMap<>();
-        SpanHearingTrace trace = new SpanHearingTrace(() -> seen::put);
+        OtelTraceHook trace = new OtelTraceHook(() -> seen::put);
         Fake fake = new Fake();
         try (Scope s = enterSpan()) {
             new NatsHearingSink("phase0", fake.asConnection(), trace).muffled(LIFE, "n", "near", SpeechHash.of(TEXT));
@@ -91,17 +91,39 @@ class NatsHearingSinkTraceTest {
     @Test
     void aThrowingTraceStillPublishesTheNotice() {
         Fake fake = new Fake();
-        new NatsHearingSink("phase0", fake.asConnection(), (l, h) -> {
-            throw new IllegalStateException("telemetry down");
+        new NatsHearingSink("phase0", fake.asConnection(), new dev.geldar.core.trace.TraceHook() {
+            public io.nats.client.impl.Headers inject(io.nats.client.impl.Headers target) {
+                throw new IllegalStateException("telemetry down");
+            }
+
+            public Scope enter(io.nats.client.impl.Headers incoming) {
+                return Scope.NONE;
+            }
+
+            public void annotate(String key, String value) {}
         }).muffled(LIFE, "s", "far");
         assertEquals(1, fake.publishes);
         assertNull(fake.headers);
     }
 
     @Test
+    void sentCountsPublishedNoticesAndNotDroppedOnes() {
+        Fake fake = new Fake();
+        NatsHearingSink sink = new NatsHearingSink("phase0", fake.asConnection());
+        sink.muffled(LIFE, "n", "near");
+        sink.muffled(LIFE, "s", "far", SpeechHash.of(TEXT));
+        sink.muffled("Steve", "n", "near");
+        assertEquals(2, sink.sent());
+        assertEquals(0, sink.dropped());
+        NatsHearingSink none = new NatsHearingSink("phase0", null);
+        none.muffled(LIFE, "n", "near");
+        assertEquals(0, none.sent());
+        assertEquals(1, none.dropped());
+    }
+    @Test
     void noSpanMeansTheOldPublishCall() {
         Fake fake = new Fake();
-        new NatsHearingSink("phase0", fake.asConnection(), new SpanHearingTrace()).muffled(LIFE, "s", "far");
+        new NatsHearingSink("phase0", fake.asConnection(), new OtelTraceHook()).muffled(LIFE, "s", "far");
         assertNull(fake.headers);
         assertEquals(1, fake.publishes);
     }

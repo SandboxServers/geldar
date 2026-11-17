@@ -18,6 +18,7 @@ public final class NatsKinoSink implements KinoSink, AutoCloseable {
     private final String shard;
     private volatile Connection connection;
     private volatile boolean closed;
+    private final java.util.concurrent.atomic.AtomicLong published = new java.util.concurrent.atomic.AtomicLong();
     private final java.util.concurrent.atomic.AtomicLong dropped = new java.util.concurrent.atomic.AtomicLong();
 
     public NatsKinoSink(String url, String shard, Function<String, String> setting, Logger log) {
@@ -57,11 +58,17 @@ public final class NatsKinoSink implements KinoSink, AutoCloseable {
         if (nc != null) {
             try {
                 nc.publish(subject(shard, agentId), json.getBytes(StandardCharsets.UTF_8));
+                published.incrementAndGet();
             } catch (IllegalStateException e) {
                 // Closed or reconnect buffer full: drop the message; the server thread never throws or waits.
                 dropped.incrementAndGet();
             }
         }
+    }
+
+    /** Messages handed to the connection. */
+    public long published() {
+        return published.get();
     }
 
     /** Messages dropped because the connection refused them. */

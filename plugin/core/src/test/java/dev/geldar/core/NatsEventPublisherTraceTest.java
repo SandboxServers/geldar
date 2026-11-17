@@ -1,5 +1,6 @@
 package dev.geldar.core;
 
+import dev.geldar.core.trace.OtelTraceHook;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -28,7 +29,7 @@ class NatsEventPublisherTraceTest {
     @Test
     void withoutASpanHeadersAreExactlyTheMessageId() {
         EventEnvelope event = event();
-        Headers headers = NatsEventPublisher.headers(event);
+        Headers headers = NatsEventPublisher.headers(event, new OtelTraceHook());
         assertEquals(Set.of("Nats-Msg-Id"), headers.keySet());
         assertEquals(List.of(event.sourceEventId()), headers.get("Nats-Msg-Id"));
     }
@@ -38,7 +39,7 @@ class NatsEventPublisherTraceTest {
         EventEnvelope event = event();
         SpanContext context = SpanContext.create(TRACE_ID, SPAN_ID, TraceFlags.getSampled(), TraceState.getDefault());
         try (Scope ignored = Span.wrap(context).makeCurrent()) {
-            Headers headers = NatsEventPublisher.headers(event);
+            Headers headers = NatsEventPublisher.headers(event, new OtelTraceHook());
             assertEquals(Set.of("Nats-Msg-Id", "traceparent"), headers.keySet());
             assertEquals(List.of(TRACEPARENT), headers.get("traceparent"));
             assertEquals(List.of(event.sourceEventId()), headers.get("Nats-Msg-Id"));
@@ -51,9 +52,9 @@ class NatsEventPublisherTraceTest {
         byte[] before = event.toBytes();
         SpanContext context = SpanContext.create(TRACE_ID, SPAN_ID, TraceFlags.getSampled(), TraceState.getDefault());
         try (Scope ignored = Span.wrap(context).makeCurrent()) {
-            NatsEventPublisher.headers(event);
+            NatsEventPublisher.headers(event, new OtelTraceHook());
             assertArrayEquals(before, event.toBytes());
         }
-        assertNull(NatsEventPublisher.headers(event).get("traceparent"));
+        assertNull(NatsEventPublisher.headers(event, new OtelTraceHook()).get("traceparent"));
     }
 }

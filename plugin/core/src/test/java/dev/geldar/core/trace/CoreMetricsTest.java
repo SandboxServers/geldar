@@ -24,7 +24,9 @@ class CoreMetricsTest {
     private static final Pattern METRIC = Pattern.compile("^geldar_[a-z0-9_]+$");
     private static final List<String> NAMES = List.of(
             CoreMetrics.PUBLISHER_PUBLISHED, CoreMetrics.PUBLISHER_FAILED, CoreMetrics.PUBLISHER_DROPPED,
-            CoreMetrics.HEARING_DROPPED, CoreMetrics.KINO_DROPPED);
+            CoreMetrics.HEARING_SENT, CoreMetrics.HEARING_DROPPED, CoreMetrics.BLOCKOWNER_QUERIES,
+            CoreMetrics.BLOCKOWNER_CACHE_HITS, CoreMetrics.BLOCKOWNER_FAILURES, CoreMetrics.KINO_PUBLISHED,
+            CoreMetrics.KINO_DROPPED);
 
     @BeforeEach
     void reset() {
@@ -41,8 +43,8 @@ class CoreMetricsTest {
 
     @Test
     void registerWithNoopApiAndNullSinksDoesNotThrowAndRunsOnce() {
-        assertTrue(CoreMetrics.register(null, null, null));
-        assertFalse(CoreMetrics.register(null, null, null));
+        assertTrue(CoreMetrics.register(null, null, null, null));
+        assertFalse(CoreMetrics.register(null, null, null, null));
     }
 
     @Test
@@ -91,5 +93,25 @@ class CoreMetricsTest {
         CoreMetrics.registerOn(meter, Map.of(CoreMetrics.KINO_DROPPED, () -> 7L));
         assertEquals(List.of("record/1"), calls);
         assertEquals(7L, seen[0]);
+    }
+
+    @Test
+    void queueDepthIsAnAttributeFreeGaugeNotACounter() {
+        List<String> gauges = new ArrayList<>();
+        List<String> counters = new ArrayList<>();
+        Meter noop = MeterProvider.noop().get("t");
+        Meter spy = (Meter) Proxy.newProxyInstance(
+                Meter.class.getClassLoader(), new Class<?>[] {Meter.class}, (p, method, args) -> {
+                    if (method.getName().equals("gaugeBuilder")) {
+                        gauges.add((String) args[0]);
+                    } else if (method.getName().equals("counterBuilder")) {
+                        counters.add((String) args[0]);
+                    }
+                    return method.invoke(noop, args);
+                });
+        CoreMetrics.registerGaugesOn(spy, Map.of(CoreMetrics.PUBLISHER_QUEUE_DEPTH, () -> 3L));
+        assertEquals(List.of("geldar_publisher_queue_depth"), gauges);
+        assertTrue(counters.isEmpty());
+        assertTrue(CoreMetrics.PUBLISHER_QUEUE_DEPTH.matches("geldar_publisher_.*"));
     }
 }

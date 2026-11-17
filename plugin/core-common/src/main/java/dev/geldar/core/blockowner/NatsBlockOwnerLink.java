@@ -1,5 +1,6 @@
 package dev.geldar.core.blockowner;
 
+import dev.geldar.core.trace.TraceHook;
 import io.nats.client.Connection;
 import io.nats.client.Nats;
 import io.nats.client.Message;
@@ -25,7 +26,7 @@ public final class NatsBlockOwnerLink implements BlockOwnerResponder.Reply, Auto
     private final Logger log;
     private volatile Connection connection;
     private volatile boolean closed;
-    private volatile TraceSeam trace = TraceSeam.NONE;
+    private volatile TraceHook trace = TraceHook.NOOP;
 
     public NatsBlockOwnerLink(String url, String shard, Function<String, String> setting, Logger log) {
         this.url = url;
@@ -34,38 +35,8 @@ public final class NatsBlockOwnerLink implements BlockOwnerResponder.Reply, Auto
         this.log = log;
     }
 
-    /**
-     * The trace-context seam. core-common carries no OpenTelemetry, so the Paper adapter plugs in TraceHeaders here.
-     * The default does nothing: the reply goes out exactly as before.
-     */
-    public interface TraceSeam {
-        TraceSeam NONE = new TraceSeam() {
-            @Override
-            public Scope open(Headers incoming) {
-                return () -> {};
-            }
-
-            @Override
-            public Headers inject() {
-                return null;
-            }
-        };
-
-        /** Makes the context carried by the query's headers current until the scope is closed. */
-        Scope open(Headers incoming);
-
-        /** Fresh headers carrying the current trace context, or {@code null} when there is none. */
-        Headers inject();
-
-        /** A scope that closes without throwing. */
-        interface Scope extends AutoCloseable {
-            @Override
-            void close();
-        }
-    }
-
-    public void setTrace(TraceSeam seam) {
-        trace = seam == null ? TraceSeam.NONE : seam;
+    public void setTrace(TraceHook hook) {
+        trace = hook == null ? TraceHook.NOOP : hook;
     }
 
     /** Test seam: uses this connection instead of connecting. */
@@ -74,7 +45,7 @@ public final class NatsBlockOwnerLink implements BlockOwnerResponder.Reply, Auto
     }
 
     void handle(Message m, BiConsumer<String, String> onQuery) {
-        try (TraceSeam.Scope ignored = trace.open(m.getHeaders())) {
+        try (TraceHook.Scope ignored = trace.enter(m.getHeaders())) {
             onQuery.accept(m.getReplyTo(), new String(m.getData(), StandardCharsets.UTF_8));
         }
     }
@@ -122,7 +93,7 @@ public final class NatsBlockOwnerLink implements BlockOwnerResponder.Reply, Auto
         if (nc == null) {
             return;
         }
-        Headers headers = trace.inject();
+        Headers headers = trace.inject(null);
         byte[] body = json.getBytes(StandardCharsets.UTF_8);
         if (headers == null) {
             nc.publish(replyTo, body);

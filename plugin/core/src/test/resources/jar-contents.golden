@@ -846,7 +846,6 @@ dev/geldar/core/blockowner/BlockOwnerQueries.class
 dev/geldar/core/blockowner/BlockOwnerResponder$Reply.class
 dev/geldar/core/blockowner/BlockOwnerResponder.class
 dev/geldar/core/blockowner/BlockOwnerSetup.class
-dev/geldar/core/blockowner/BlockOwnerTrace.class
 dev/geldar/core/blockowner/ChunkLookupCall.class
 dev/geldar/core/blockowner/CoreProtectApi.class
 dev/geldar/core/blockowner/CoreProtectOwnerSource.class
@@ -856,9 +855,6 @@ dev/geldar/core/blockowner/FirstRowResolver$Pos.class
 dev/geldar/core/blockowner/FirstRowResolver.class
 dev/geldar/core/blockowner/LookupDebugLog.class
 dev/geldar/core/blockowner/LookupFailureLog.class
-dev/geldar/core/blockowner/NatsBlockOwnerLink$TraceSeam$1.class
-dev/geldar/core/blockowner/NatsBlockOwnerLink$TraceSeam$Scope.class
-dev/geldar/core/blockowner/NatsBlockOwnerLink$TraceSeam.class
 dev/geldar/core/blockowner/NatsBlockOwnerLink.class
 dev/geldar/core/blockowner/OwnerCache$1.class
 dev/geldar/core/blockowner/OwnerCache$Base.class
@@ -927,7 +923,6 @@ dev/geldar/core/proximity/ChatHop$Submitter.class
 dev/geldar/core/proximity/ChatHop.class
 dev/geldar/core/proximity/Hearing.class
 dev/geldar/core/proximity/HearingNoticeSink.class
-dev/geldar/core/proximity/HearingTrace.class
 dev/geldar/core/proximity/LineBudget.class
 dev/geldar/core/proximity/MuffleConfig.class
 dev/geldar/core/proximity/MuffleSettings.class
@@ -951,12 +946,15 @@ dev/geldar/core/speech/ChatRing.class
 dev/geldar/core/speech/SpeechChatListener.class
 dev/geldar/core/speech/SpeechSetup.class
 dev/geldar/core/speech/SpeechText.class
-dev/geldar/core/trace/SpanHearingTrace$SpanAttributes.class
-dev/geldar/core/trace/SpanHearingTrace.class
-dev/geldar/core/trace/SpeechHash.class
 dev/geldar/core/trace/CoreMetrics.class
+dev/geldar/core/trace/OtelTraceHook$SpanAttributes.class
+dev/geldar/core/trace/OtelTraceHook.class
+dev/geldar/core/trace/SpeechHash.class
 dev/geldar/core/trace/TraceHeaders$1.class
 dev/geldar/core/trace/TraceHeaders.class
+dev/geldar/core/trace/TraceHook$1.class
+dev/geldar/core/trace/TraceHook$Scope.class
+dev/geldar/core/trace/TraceHook.class
 io/nats/client/AuthHandler.class
 io/nats/client/AuthenticationException.class
 io/nats/client/BaseConsumeOptions$Builder.class

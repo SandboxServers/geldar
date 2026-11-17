@@ -1,5 +1,6 @@
 package dev.geldar.core.maintenance;
 
+import dev.geldar.core.trace.OtelTraceHook;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
@@ -32,7 +33,7 @@ class MaintenanceTraceTest {
     void theNoticeIsHandledInsideTheExtractedContext() {
         Headers headers = new Headers();
         headers.put("traceparent", "00-" + TRACE_ID + "-00f067aa0ba902b7-01");
-        NatsMaintenanceSubscriber.handle(headers, NOTICE, notices);
+        NatsMaintenanceSubscriber.handle(headers, NOTICE, notices, new OtelTraceHook());
         assertEquals(List.of("Server maintenance in 60 seconds."), said);
         assertEquals(List.of(TRACE_ID), tracesSeen);
         assertFalse(Span.current().getSpanContext().isValid(), "the scope is closed after the notice");
@@ -40,7 +41,7 @@ class MaintenanceTraceTest {
 
     @Test
     void withoutHeadersTheNoticeIsHandledAsBefore() {
-        NatsMaintenanceSubscriber.handle(null, NOTICE, notices);
+        NatsMaintenanceSubscriber.handle(null, NOTICE, notices, new OtelTraceHook());
         assertEquals(List.of("Server maintenance in 60 seconds."), said);
         assertFalse(Span.fromContext(io.opentelemetry.context.Context.current()).getSpanContext().isValid());
         assertEquals(List.of("00000000000000000000000000000000"), tracesSeen);

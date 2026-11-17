@@ -1,5 +1,6 @@
 package dev.geldar.core.blockowner;
 
+import dev.geldar.core.trace.OtelTraceHook;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -47,7 +48,7 @@ class NatsBlockOwnerLinkTraceTest {
         NatsBlockOwnerLink link = new NatsBlockOwnerLink("nats://x", "s", k -> null, Logger.getAnonymousLogger());
         link.attach(fake(sent));
         if (traced) {
-            link.setTrace(new BlockOwnerTrace());
+            link.setTrace(new OtelTraceHook());
         }
         return link;
     }
@@ -89,7 +90,7 @@ class NatsBlockOwnerLinkTraceTest {
     @Test
     void replyWithNoConnectionIsDropped() {
         NatsBlockOwnerLink link = new NatsBlockOwnerLink("nats://x", "s", k -> null, Logger.getAnonymousLogger());
-        link.setTrace(new BlockOwnerTrace());
+        link.setTrace(new OtelTraceHook());
         try (Scope ignored = span()) {
             link.reply("_INBOX.1", JSON);
         }

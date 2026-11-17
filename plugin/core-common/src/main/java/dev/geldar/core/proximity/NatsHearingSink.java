@@ -1,6 +1,7 @@
 package dev.geldar.core.proximity;
 
 import dev.geldar.core.EventEnvelope;
+import dev.geldar.core.trace.TraceHook;
 import io.nats.client.Connection;
 import io.nats.client.Nats;
 import io.nats.client.Options;
@@ -21,15 +22,16 @@ import java.util.logging.Logger;
 public final class NatsHearingSink implements HearingNoticeSink, AutoCloseable {
     private final String shard;
     private final AtomicLong dropped = new AtomicLong();
-    private final HearingTrace trace;
+    private final AtomicLong sent = new AtomicLong();
+    private final TraceHook trace;
     private volatile Connection connection;
     private volatile boolean closed;
 
     public NatsHearingSink(String url, String shard, Function<String, String> setting, Logger log) {
-        this(url, shard, setting, log, HearingTrace.NONE);
+        this(url, shard, setting, log, TraceHook.NOOP);
     }
 
-    public NatsHearingSink(String url, String shard, Function<String, String> setting, Logger log, HearingTrace trace) {
+    public NatsHearingSink(String url, String shard, Function<String, String> setting, Logger log, TraceHook trace) {
         this.shard = shard;
         this.trace = trace;
         Thread t = new Thread(() -> connect(url, setting, log), "geldar-hearing-connect");
@@ -39,10 +41,10 @@ public final class NatsHearingSink implements HearingNoticeSink, AutoCloseable {
 
     /** A sink over a connection that already exists, for tests: no connect thread and no server. */
     NatsHearingSink(String shard, Connection connection) {
-        this(shard, connection, HearingTrace.NONE);
+        this(shard, connection, TraceHook.NOOP);
     }
 
-    NatsHearingSink(String shard, Connection connection, HearingTrace trace) {
+    NatsHearingSink(String shard, Connection connection, TraceHook trace) {
         this.shard = shard;
         this.trace = trace;
         this.connection = connection;
@@ -79,6 +81,7 @@ public final class NatsHearingSink implements HearingNoticeSink, AutoCloseable {
     }
 
     /** As above, with the hash of the speech that caused it (never the text); it goes to the span only, not the payload. */
+    @Override
     public void muffled(String lifeId, String direction, String band, String speechHash) {
         if (!EventEnvelope.isLifeId(lifeId)) {
             return;
@@ -93,7 +96,11 @@ public final class NatsHearingSink implements HearingNoticeSink, AutoCloseable {
         try {
             Headers headers = null;
             try {
-                headers = trace.begin(lifeId, speechHash);
+                trace.annotate("geldar.life_id", lifeId);
+                if (speechHash != null) {
+                    trace.annotate("geldar.speech_hash", speechHash);
+                }
+                headers = trace.inject(null);
             } catch (RuntimeException e) {
                 // A telemetry failure never stops a notice (S8).
             }
@@ -102,10 +109,16 @@ public final class NatsHearingSink implements HearingNoticeSink, AutoCloseable {
             } else {
                 nc.publish(subject(shard, lifeId), headers, payload);
             }
+            sent.incrementAndGet();
         } catch (IllegalStateException e) {
             // Closed or reconnect buffer full: drop the notice; the server thread never throws or waits.
             dropped.incrementAndGet();
         }
+    }
+
+    /** Notices handed to the connection. */
+    public long sent() {
+        return sent.get();
     }
 
     /** Notices dropped because the connection refused them. */

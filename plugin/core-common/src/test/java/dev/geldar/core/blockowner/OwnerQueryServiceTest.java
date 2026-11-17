@@ -67,6 +67,53 @@ class OwnerQueryServiceTest {
     }
 
     @Test
+    void countersCountQueriesCacheHitsAndFailures() throws Exception {
+        OwnerSource ok = (w, cx, cz) -> new Owners(List.of(), false);
+        OwnerQueryService service = service(ok, 1_000);
+        await(service);
+        assertEquals(1, service.queries());
+        assertEquals(0, service.cacheHits());
+        await(service);
+        assertEquals(2, service.queries());
+        assertEquals(1, service.cacheHits(), "the second answer is a fresh cache entry");
+        assertEquals(0, service.failures());
+
+        OwnerSource unavailable = (w, cx, cz) -> {
+            throw new OwnerSource.Unavailable("no coreprotect");
+        };
+        OwnerQueryService failing = new OwnerQueryService(
+                unavailable, new OwnerCache(System::currentTimeMillis), lookups, 1_000, LOG);
+        assertEmptyUnknown(await(failing));
+        assertEquals(1, failing.failures());
+        assertEquals(0, failing.cacheHits());
+    }
+
+    @Test
+    void aFullLookupQueueCountsAsAFailure() throws Exception {
+        ExecutorService full = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(1));
+        CountDownLatch release = new CountDownLatch(1);
+        try {
+            full.execute(() -> awaitQuietly(release));
+            full.execute(() -> {});
+            OwnerQueryService service = new OwnerQueryService(
+                    (w, cx, cz) -> new Owners(List.of(), false), cache, full, 1_000, LOG);
+            assertEmptyUnknown(await(service));
+            assertEquals(1, service.failures());
+            assertEquals(1, service.queries());
+        } finally {
+            release.countDown();
+            full.shutdownNow();
+        }
+    }
+
+    private static void awaitQuietly(CountDownLatch latch) {
+        try {
+            latch.await(5, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+    @Test
     void freshChunkIsServedFromTheCacheWithoutALookup() throws Exception {
         OwnerSource source = (w, cx, cz) -> {
             calls.incrementAndGet();

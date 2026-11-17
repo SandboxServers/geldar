@@ -1,5 +1,6 @@
 package dev.geldar.core;
 
+import dev.geldar.core.trace.TraceHook;
 import io.nats.client.Connection;
 import io.nats.client.JetStream;
 import io.nats.client.JetStreamApiException;
@@ -35,6 +36,7 @@ public final class NatsEventPublisher implements EventPublisher {
     private final Logger log;
     private final BoundedEventQueue<EventEnvelope> queue;
     private final Thread worker;
+    private final TraceHook trace;
     private final AtomicLong published = new AtomicLong();
     private final AtomicLong failed = new AtomicLong();
     private static final long FAILURE_PAUSE_MS = 250;
@@ -50,7 +52,12 @@ public final class NatsEventPublisher implements EventPublisher {
     private int consecutiveFailures;
 
     public NatsEventPublisher(String url, int queueCapacity, Logger log) {
+        this(url, queueCapacity, log, TraceHook.NOOP);
+    }
+
+    public NatsEventPublisher(String url, int queueCapacity, Logger log, TraceHook trace) {
         this.url = url;
+        this.trace = trace == null ? TraceHook.NOOP : trace;
         this.log = log;
         this.queue = new BoundedEventQueue<>(queueCapacity);
         this.worker = new Thread(this::run, "geldar-nats-publisher");
@@ -87,38 +94,22 @@ public final class NatsEventPublisher implements EventPublisher {
 
     /** The headers sent with an event: {@code Nats-Msg-Id} is the {@code source_event_id}, for de-duplication. */
     static Headers headers(EventEnvelope event) {
-        Headers headers = new Headers().put(NatsJetStreamConstants.MSG_ID_HDR, event.sourceEventId());
-        injectTrace(headers);
-        return headers;
+        return headers(event, TraceHook.NOOP);
     }
 
     /**
-     * Adds {@code traceparent} and {@code tracestate} when a valid span is current on this thread. The trace helper
-     * lives in the Paper adapter (core), which this module cannot depend on, so it is found by name; without it, or
-     * without an OpenTelemetry agent, nothing is added.
+     * As above, plus {@code traceparent} and {@code tracestate} when the hook finds a valid span current on this
+     * thread. A hook failure never stops an event from being exported.
      */
-    private static void injectTrace(Headers headers) {
-        if (TRACE_INJECT == null) {
-            return;
-        }
+    static Headers headers(EventEnvelope event, TraceHook trace) {
+        Headers headers = new Headers().put(NatsJetStreamConstants.MSG_ID_HDR, event.sourceEventId());
         try {
-            TRACE_INJECT.invoke(null, headers);
-        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            trace.inject(headers);
+        } catch (RuntimeException | LinkageError e) {
             // Tracing must never stop an event from being exported.
         }
+        return headers;
     }
-
-    private static final java.lang.reflect.Method TRACE_INJECT = traceInject();
-
-    private static java.lang.reflect.Method traceInject() {
-        try {
-            return Class.forName("dev.geldar.core.trace.TraceHeaders", true, NatsEventPublisher.class.getClassLoader())
-                    .getMethod("inject", Headers.class);
-        } catch (ReflectiveOperationException | LinkageError e) {
-            return null;
-        }
-    }
-
     /**
      * Adds the NATS user and password of decision 0067 when they are set: {@code GELDAR_NATS_USER}
      * and {@code GELDAR_NATS_PASSWORD_FILE} (a file holding the password), read by {@code setting}.
@@ -276,7 +267,7 @@ public final class NatsEventPublisher implements EventPublisher {
 
     private boolean send(Sender sender, EventEnvelope event) {
         try {
-            sender.publish(event.subject(), headers(event), event.toBytes());
+            sender.publish(event.subject(), headers(event, trace), event.toBytes());
             published.incrementAndGet();
             return true;
         } catch (Exception e) {
@@ -292,7 +283,7 @@ public final class NatsEventPublisher implements EventPublisher {
     }
 
     /** The events waiting to be sent. */
-    int queued() {
+    public int queued() {
         return queue.size();
     }
 

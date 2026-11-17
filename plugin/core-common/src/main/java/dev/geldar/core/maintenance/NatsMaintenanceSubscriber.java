@@ -1,5 +1,6 @@
 package dev.geldar.core.maintenance;
 
+import dev.geldar.core.trace.TraceHook;
 import io.nats.client.Connection;
 import io.nats.client.Nats;
 import io.nats.client.Options;
@@ -22,8 +23,9 @@ public final class NatsMaintenanceSubscriber implements AutoCloseable {
     private volatile boolean closed;
 
     public NatsMaintenanceSubscriber(
-            String url, String shard, Function<String, String> setting, Logger log, MaintenanceNotices notices) {
-        Thread t = new Thread(() -> connect(url, shard, setting, log, notices), "geldar-maintenance");
+            String url, String shard, Function<String, String> setting, Logger log, MaintenanceNotices notices,
+            TraceHook trace) {
+        Thread t = new Thread(() -> connect(url, shard, setting, log, notices, trace), "geldar-maintenance");
         t.setDaemon(true);
         t.start();
     }
@@ -32,8 +34,8 @@ public final class NatsMaintenanceSubscriber implements AutoCloseable {
         return "geldar." + shard + ".maintenance";
     }
 
-    private void connect(
-            String url, String shard, Function<String, String> setting, Logger log, MaintenanceNotices notices) {
+    private void connect(String url, String shard, Function<String, String> setting, Logger log,
+            MaintenanceNotices notices, TraceHook trace) {
         try {
             Options.Builder b = Options.builder().server(url).connectionTimeout(Duration.ofSeconds(5))
                     .maxReconnects(-1);
@@ -47,7 +49,7 @@ public final class NatsMaintenanceSubscriber implements AutoCloseable {
                 nc.close();
                 return;
             }
-            nc.createDispatcher(m -> handle(m.getHeaders(), m.getData(), notices)).subscribe(subject(shard));
+            nc.createDispatcher(m -> handle(m.getHeaders(), m.getData(), notices, trace)).subscribe(subject(shard));
             connection = nc;
         } catch (Exception e) {
             log.warning("Maintenance notices cannot reach NATS: " + e.getClass().getSimpleName());
@@ -56,42 +58,32 @@ public final class NatsMaintenanceSubscriber implements AutoCloseable {
 
     /**
      * Hands one notice on, inside the trace context its headers carry (only {@code traceparent} and
-     * {@code tracestate}). The trace helper lives in the Paper adapter (core), which this module cannot depend on, so
-     * it is found by name; without it or without an agent the notice is handled exactly as before.
+     * {@code tracestate}). With {@link TraceHook#NOOP} or no agent the notice is handled exactly as before.
      */
-    static void handle(Headers headers, byte[] data, MaintenanceNotices notices) {
-        AutoCloseable scope = enterTrace(headers);
+    static void handle(Headers headers, byte[] data, MaintenanceNotices notices, TraceHook trace) {
+        TraceHook.Scope scope = enterTrace(headers, trace);
         try {
             notices.receive(new String(data, StandardCharsets.UTF_8));
         } finally {
-            if (scope != null) {
-                try {
-                    scope.close();
-                } catch (Exception e) {
-                    // Tracing must never break notice handling.
-                }
+            try {
+                scope.close();
+            } catch (RuntimeException e) {
+                // Tracing must never break notice handling.
             }
         }
     }
 
-    private static AutoCloseable enterTrace(Headers headers) {
+    private static TraceHook.Scope enterTrace(Headers headers, TraceHook trace) {
         if (headers == null) {
-            return null;
+            return TraceHook.Scope.NONE;
         }
         try {
-            ClassLoader cl = NatsMaintenanceSubscriber.class.getClassLoader();
-            Object context = Class.forName("dev.geldar.core.trace.TraceHeaders", true, cl)
-                    .getMethod("extract", Headers.class)
-                    .invoke(null, headers);
-            Object scope = Class.forName("io.opentelemetry.context.Context", true, cl)
-                    .getMethod("makeCurrent")
-                    .invoke(context);
-            return scope instanceof AutoCloseable c ? c : null;
-        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
-            return null;
+            TraceHook.Scope scope = trace.enter(headers);
+            return scope == null ? TraceHook.Scope.NONE : scope;
+        } catch (RuntimeException | LinkageError e) {
+            return TraceHook.Scope.NONE;
         }
     }
-
     @Override
     public void close() {
         closed = true;

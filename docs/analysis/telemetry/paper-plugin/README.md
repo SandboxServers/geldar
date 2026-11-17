@@ -131,7 +131,12 @@ Metrics (attributes in braces):
 | `geldar_container_cpu_periods_total`, `geldar_container_cpu_throttled_periods_total`, `geldar_container_cpu_throttled_seconds_total`, `geldar_container_memory_bytes`, `geldar_container_memory_limit_bytes` | all gauges: the cgroup v2 counters (`periods`, `throttled_periods`, `throttled_seconds`) are exported as monotonic gauges, not OTel counters, because they are read as absolute values from the file; the memory pair are plain gauges (cgroup v2 files) | PT-09c |
 | `geldar_disk_bytes` {area=world,plugin_data,logs,bluemap,chunky} | gauge | PT-10a |
 | `geldar_bridge_chunky_running`, `geldar_bridge_coreprotect_enabled`, `geldar_bridge_bluemap_enabled` | gauges, guarded by class presence | PT-10b |
-| `geldar_publisher_*`, `geldar_hearing_*`, `geldar_blockowner_*`, `geldar_kino_*` counters | Geldar-Core, own jar, no agent or viewer attributes | PT-11e |
+| `geldar_publisher_published_total`, `geldar_publisher_failed_total`, `geldar_publisher_dropped_total`, `geldar_publisher_queue_depth` (gauge) | Geldar-Core, own jar, no attributes | PT-11e, PT-11e2 |
+| `geldar_hearing_sent_total`, `geldar_hearing_dropped_total` | counters, no attributes (never a life id or speech hash) | PT-11e, PT-11e2 |
+| `geldar_blockowner_queries_total`, `geldar_blockowner_cache_hits_total`, `geldar_blockowner_failures_total` | counters, no attributes (failures: lookup queue full, source unavailable, lookup threw; a timeout is not counted) | PT-11e2 |
+| `geldar_kino_published_total`, `geldar_kino_dropped_total` | counters, no attributes | PT-11e, PT-11e2 |
+
+Trace seam (PT-11 integration): one `TraceHook` (core-common) carries `traceparent`/`tracestate` for the event publisher, the maintenance subscriber, the block-owner link and the hearing sink; `OtelTraceHook` (core) is the only implementation and `TraceHook.NOOP` the default. The speech hash is a span attribute only (`geldar.speech_hash`), set from `ProximityChatListener`; the text never leaves that class. Known gap: the block-owner reply is published from the lookup thread after the query handler has returned, so it carries no span of its own; it injects whatever context is current there (none, so the reply goes out without trace headers, exactly as before the seam). Follow-ups needing golem/eventsink changes: none found; the Body side may read `traceparent` from the hearing notice and block-owner reply when it wants to continue the trace.
 
 `geldar_event_count_total` series are disjoint: each counts events whose class is exactly the labelled class (`getClass() == type`). A subclass shares a parent's handler list but is not counted under the parent, and a plugin-defined subclass of a census class is counted under no series (accepted loss; PT-06c).
 
