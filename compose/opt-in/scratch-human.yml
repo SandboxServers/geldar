@@ -1,0 +1,61 @@
+# Opt-in human listener for the scratch NeoForge shard (SCRATCH_HUMAN_LANE=1 with SCRATCH_PLATFORM=neoforge; see
+# deploy/scratch/scratch-human.sh and docs/runbooks/scratch-stack.md, "Human listener on the scratch stack").
+# A second Velocity, online-mode, for human players. The bot ingress (service velocity, offline-mode, unpublished on
+# the scratch stack's own port) is unchanged. This service uses the existing scratch secrets only: the forwarding secret,
+# the velocity NATS user (the registry read that refuses agent names). It adds no NATS role and no secret.
+# Use only through deploy/scratch/scratch.sh: the -f list adds this file after scratch.yml (the script adds it for
+# up only with SCRATCH_HUMAN_LANE=1; down and status always include it so a stack with this service can be torn down).
+# Relative paths resolve from compose/ (the phase0 base file), as in compose/phase0.yml.
+services:
+  velocity-human:
+    image: itzg/mc-proxy:2026.10.2-java25@sha256:0b969bd3000d6e21ebb58444d062d63202cb552b5264b57a274fed7d2b411c0d
+    environment:
+      TYPE: VELOCITY
+      VELOCITY_VERSION: "3.5.1"
+      VELOCITY_BUILD_ID: "615"
+      MEMORY: 512M
+      # The identity plugin's human lane (plugin/velocity-identity): online-mode names, agent-shaped names refused.
+      GELDAR_IDENTITY_LANE: human
+      GELDAR_NATS_URL: nats://nats:4222
+      GELDAR_NATS_USER: velocity
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-velocity.txt
+      # Like the velocity service: the itzg image starts as root and drops to UID:GID, so the 0600 secrets are readable.
+      UID: "${SCRATCH_RUN_UID:?set by deploy/scratch/scratch.sh}"
+      GID: "${SCRATCH_RUN_GID:?set by deploy/scratch/scratch.sh}"
+    secrets: [velocity-forwarding, nats-velocity.txt]
+    volumes:
+      - ./velocity/velocity-human.toml:/config/velocity.toml:ro
+      - velocity-human-data:/server
+      # itzg/mc-proxy copies /plugins into /server/plugins on start. Build the jar first: cd plugin; ./gradlew build
+      - ../plugin/velocity-identity/build/libs/geldar-velocity-identity.jar:/plugins/geldar-velocity-identity.jar:ro
+    ports:
+      # Loopback only, on the scratch project's human port (deploy/scratch/*.env, SCRATCH_HUMAN_PORT). Nothing public.
+      - "127.0.0.1:${SCRATCH_HUMAN_PORT:-35566}:25565"
+    depends_on:
+      paper:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      identity-seed:
+        condition: service_completed_successfully
+    healthcheck:
+      # Port open AND the identity plugin enabled in this proxy process (the same check as the velocity service; the
+      # plugin writes its ready file in this container's own /tmp, so the path is this service's own). ($$ is Compose's escape.)
+      test: ["CMD", "bash", "-c", "read -r pid start < /tmp/geldar-identity.ready && [ -n \"$$start\" ] && [ \"$$(cut -d' ' -f22 /proc/$$pid/stat 2>/dev/null)\" = \"$$start\" ] && exec 3<>/dev/tcp/127.0.0.1/25565"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+          cpus: "0.5"
+    memswap_limit: 768m
+    pids_limit: 256
+    labels:
+      geldar.scratch: "true"
+    restart: "no"
+
+volumes:
+  velocity-human-data:

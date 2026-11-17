@@ -72,6 +72,7 @@ load_ports() {
       SCRATCH_MC_PORT) cur=${SCRATCH_MC_PORT:-} ;;
       SCRATCH_RCON_PORT) cur=${SCRATCH_RCON_PORT:-} ;;
       SCRATCH_MCP_PORT) cur=${SCRATCH_MCP_PORT:-} ;;
+      SCRATCH_HUMAN_PORT) cur=${SCRATCH_HUMAN_PORT:-} ;;
       *)
         echo "scratch: $portfile: unknown key; nothing started" >&2
         exit 2
@@ -204,6 +205,8 @@ compose_run() {
     set -- -f "$ROOT/compose/opt-in/scratch-mind.yml" "$@"
   fi
   set -- -f "$ROOT/compose/opt-in/scratch.yml" "$@"
+  # The human listener (scratch-human.sh): up adds it only with SCRATCH_HUMAN_LANE=1; down and status always do, so its volume and container go with the project.
+  { [ "${SCRATCH_HUMAN_LANE:-}" = 1 ] || [ "$verb" = down ] || [ "$verb" = status ]; } && set -- -f "$ROOT/compose/opt-in/scratch-human.yml" "$@"
   if [ -f "$NATS_OVERRIDE" ]; then
     set -- -f "$ROOT/compose/nats-auth.yml" "$@"
   fi
@@ -485,6 +488,10 @@ do_up() {
   check_mod_env
   check_nats
   check_mod_sha
+  if [ -n "${SCRATCH_HUMAN_LANE:-}" ]; then
+    . "$ROOT/deploy/scratch/scratch-human.sh"
+    check_human_lane
+  fi
   check_compose
   gate
   check_plugins
