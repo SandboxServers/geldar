@@ -72,16 +72,41 @@ fetch() {
   mv -f "$2.part" "$2"
 }
 
-# Bundle mode, before any fetch: every file the bundle lists must match its hash, and the install record must be there. Then the
-# image's helper sees the install as done and runs nothing that needs the network. Only file names are printed, never contents.
+# Bundle mode, before any fetch. The list holds the bundle's immutable files with their hashes; the image's start script rewrites
+# some other files on every start, so they are not listed. The list is checked in this order: paths (no entry may reach outside
+# the data dir), the required files, symlinks, strict hashes, then mods/ holds exactly the jars the list names. Only file names
+# are printed, never contents. libraries/ may hold extra files: the classpath is fixed by unix_args.txt, so they are not on it.
 if [ -f "$bundle_list" ]; then
-  if ! (cd "$data" && sha256sum -c --status "$bundle_list"); then
-    first=$(cd "$data" && sha256sum -c "$bundle_list" 2>&1 | grep -v ': OK$' | head -n 1 || true)
+  bad=$(awk '$2 ~ /^\// || $2 ~ /^[A-Za-z]:/ || $2 ~ /^-/ || $2 ~ /(^|\/)\.\.(\/|$)/ { print $2; exit }' "$bundle_list")
+  if [ -n "$bad" ]; then
+    echo "neoforge-entrypoint: offline bundle list names an absolute (/ or drive letter), dash-led or ../ path ($bad); refusing to start" >&2
+    exit 1
+  fi
+  for f in .neoforge-manifest.json neoforge-installer.jar mods/proxy-compatible-forge.jar run.sh; do
+    if ! awk -v f="$f" '$2 == f { found = 1 } END { exit !found }' "$bundle_list"; then
+      echo "neoforge-entrypoint: offline bundle is incomplete: its list does not name $f; refusing to start" >&2
+      exit 1
+    fi
+  done
+  links=$(cd "$data" && find mods libraries -type l 2>/dev/null || true)
+  if [ -n "$links" ]; then
+    first_link=$(printf '%s\n' "$links" | head -n 1)
+    echo "neoforge-entrypoint: offline bundle has symlinks under mods/ or libraries/ (first: $first_link); refusing to start" >&2
+    exit 1
+  fi
+  # --strict: a malformed or truncated line is a failure, not a skipped line.
+  if ! (cd "$data" && sha256sum -c --strict --status "$bundle_list"); then
+    first=$(cd "$data" && sha256sum -c --strict "$bundle_list" 2>&1 | grep -v ': OK$' | head -n 1 || true)
     echo "neoforge-entrypoint: offline bundle check failed: ${first:-no listed file verified}; refusing to start" >&2
     exit 1
   fi
-  if [ ! -f "$data/.neoforge-manifest.json" ]; then
-    echo "neoforge-entrypoint: offline bundle is incomplete: $data/.neoforge-manifest.json is missing; refusing to start" >&2
+  listed_mods=$(awk '$2 ~ /^mods\// { print $2 }' "$bundle_list" | LC_ALL=C sort)
+  extra=""
+  for f in $(cd "$data" && find mods -type f | LC_ALL=C sort); do
+    printf '%s\n' "$listed_mods" | grep -qxF -- "$f" || extra="$extra $f"
+  done
+  if [ -n "$extra" ]; then
+    echo "neoforge-entrypoint: mods/ holds files the offline bundle does not list:$extra; refusing to start" >&2
     exit 1
   fi
   export NEOFORGE_FORCE_REINSTALL=false
