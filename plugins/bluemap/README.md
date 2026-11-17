@@ -113,10 +113,15 @@ the file is mounted read only at `/etc/caddy/geldar-settings.json`, and the hand
 answers it as `application/json` with `Cache-Control: no-cache`. The webroot's own `settings.json` is ignored by the
 public site; BlueMap may keep rewriting it.
 
-The pinned copy holds the BlueMap 5.29 keys, the chat panel and dial scripts, and the stylesheet. After a BlueMap upgrade,
-or after a map is added or removed under `config/maps/`, re-check it by hand: `version` must equal `known-keys.json`
-`bluemap`, and `maps` must list the `config/maps/*.conf` names. `plugins/bluemap/test/settings-pin.test.ts` fails when they
-differ.
+The pinned copy holds the BlueMap 5.29 keys, the chat panel and dial scripts, and the stylesheet. `version` must equal both
+`bluemap.lock.json` `version` and `known-keys.json` `bluemap`; `maps` must list the `config/maps/*.conf` names in the order of
+their `sorting:` values; `mapDataRoot` and `liveDataRoot` must be `maps`, and `clientDecompression` must be `false`.
+`plugins/bluemap/test/settings-pin.test.ts` checks all of these.
+
+**Upgrade step (BM-16).** After a BlueMap upgrade, or after a map is added or removed under `config/maps/`, run the node
+check in `docs/runbooks/map-chat-panel.md` section 2a, step 5: the webroot's `settings.json` with `scripts` and `styles`
+removed must equal the pinned file with the same keys removed. A difference means BlueMap's output changed. Update
+`web/geldar-settings.json` in the repo first, then re-run `settings-pin.test.ts`.
 
 ## Live chat panel (decision 0310)
 

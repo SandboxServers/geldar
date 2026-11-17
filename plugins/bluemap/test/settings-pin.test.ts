@@ -44,10 +44,18 @@ describe('pinned settings.json: content', () => {
     expect(Object.keys(pinned)).toEqual(KEYS);
   });
 
-  it('pins the BlueMap version that known-keys.json records', () => {
+  it('pins the BlueMap version that bluemap.lock.json and known-keys.json record', () => {
     const known = JSON.parse(read('plugins/bluemap/known-keys.json')) as { bluemap: string };
+    const lock = JSON.parse(read('plugins/bluemap/bluemap.lock.json')) as { version: string };
     expect(pinned.version).toBe('5.29');
     expect(pinned.version).toBe(known.bluemap);
+    expect(pinned.version).toBe(lock.version);
+  });
+
+  it('reads map data from maps/ and turns client decompression off (the Caddy @gz and @live rules depend on both)', () => {
+    expect(pinned.mapDataRoot).toBe('maps');
+    expect(pinned.liveDataRoot).toBe('maps');
+    expect(pinned.clientDecompression).toBe(false);
   });
 
   it('lists exactly the map configs (plugins/bluemap/config/maps), as a set', () => {
@@ -57,6 +65,19 @@ describe('pinned settings.json: content', () => {
       .sort();
     expect([...(pinned.maps as string[])].sort()).toEqual(names);
     expect(names).toEqual(['end', 'nether', 'overworld']);
+  });
+
+  it('lists the maps in the order of their sorting: value in config/maps', () => {
+    const dir = join(ROOT, 'plugins/bluemap/config/maps');
+    const maps = readdirSync(dir)
+      .filter((f) => f.endsWith('.conf'))
+      .map((f) => {
+        const match = /^\s*sorting\s*:\s*(\d+)\s*$/m.exec(readFileSync(join(dir, f), 'utf8'));
+        return { name: f.replace(/\.conf$/, ''), sorting: match ? Number(match[1]) : Number.NaN };
+      });
+    expect(maps.every((m) => Number.isFinite(m.sorting))).toBe(true);
+    const inOrder = [...maps].sort((a, b) => a.sorting - b.sorting).map((m) => m.name);
+    expect(pinned.maps).toEqual(inOrder);
   });
 
   it('loads the chat panel and the dial as scripts, in that order', () => {
