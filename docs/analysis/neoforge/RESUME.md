@@ -6,6 +6,7 @@ State 2026-11-17. Read this, then [p0-body-model.md](p0-body-model.md).
 - Freeze lifted for own docs/analysis and own-area PRs. No node, VM or world changes by this session; node steps run by the main orchestrator or ops after the owner's explicit go.
 - P0 node runs (through run 7, which passed) were on the Colo scratch stack, suffix nf, run by ops under geldar-93 (owner approved). A run stops at the first failure. The raw report goes to geldar-93; findings are written up here afterwards.
 - No decision numbers until the main orchestrator assigns a block.
+- Progression defaults (2026-11-17, owner delegation): proposed in [progression-defaults.md](progression-defaults.md). Not in force until the flagged decision record exists; P6 to P8 stay on hold until then.
 
 ## PRs
 - Merged: #593 (P0 Body-model note), #594 (API notes and progression design), #596 (P2 plugin/core split), #600 (scratch NeoForge overlay, suffix nf), #601 (neoforge/ skeleton: NeoForge 26.1.2 (build 126), Java 25, lock and verification, no CI lane), #604 (earlier RESUME), #607 (installer fetch retry), #610 (scratch uid fix: SCRATCH_RUN_UID/GID), #611 (offline bundle), #614 (declared source-scan inputs for plugin/core tests), #619 (message-only fix for the verifyTestSourceInputs failure text), #620 (RESUME), #622 (NATS healthcheck), #632 (identity buckets seed), #633 (NATS users docs), #634 (telemetry test timeout), #643 (runbook run 3 notes), #645 (P0 probe).
