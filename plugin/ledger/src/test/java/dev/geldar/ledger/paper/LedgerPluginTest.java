@@ -301,11 +301,12 @@ class LedgerPluginTest {
         }
         assertTrue(disabled.isEmpty());
         // Built so far, in PaperCollectors.NAMES order: tick (PT-04b), world (PT-05a), server (PT-05b), census (PT-06c), curated (PT-07a), connections (PT-08a), snapshots (PT-08b), progress (PT-08c, opt-in: starts to nothing), bridge (PT-10b), container. Tick's start needs the live plugin loader (JavaPlugin.getPlugin), so outside a server it fails and is disabled; world, server, census, curated and bridge start fine, so tick (and connections, which registers its listener the same way) are the tolerated warnings.
-        assertEquals(List.of("tick", "world", "server", "census", "curated", "connections", "snapshots", "progress", "cadence", "bridge", "container"), plugin.collectors().builtIds());
-        assertEquals(List.of("world", "server", "census", "curated", "snapshots", "progress", "cadence", "bridge", "container"), plugin.collectors().runningIds());
+        assertEquals(List.of("tick", "spark", "world", "server", "census", "curated", "connections", "snapshots", "progress", "cadence", "bridge", "container"), plugin.collectors().builtIds());
+        assertEquals(List.of("spark", "world", "server", "census", "curated", "snapshots", "progress", "cadence", "bridge", "container"), plugin.collectors().runningIds());
         List<String> expectedSkipped = new ArrayList<>(PaperCollectors.NAMES);
         expectedSkipped.remove(PaperCollectors.CGROUP);
         expectedSkipped.remove("dev.geldar.ledger.paper.tick.TickCollector");
+        expectedSkipped.remove("dev.geldar.ledger.paper.spark.SparkCollector");
         expectedSkipped.remove("dev.geldar.ledger.paper.world.WorldCollector");
         expectedSkipped.remove("dev.geldar.ledger.paper.server.ServerCollector");
         expectedSkipped.remove("dev.geldar.ledger.paper.census.CensusCollector");
