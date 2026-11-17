@@ -13,4 +13,6 @@
 ## Consequences
 
 - No new public port. `tools/portscan` expected lists are unchanged, confirmed by a scan after the restart.
-- The ingest site is not part of `deploy/colo-public.sh`'s site list or `validate.sh` yet; a later packet adds the placeholders to validation with test values.
+- The ingest site is not part of `deploy/colo-public.sh`'s site list. (It is part of `validate.sh`: the sets `live-otel` and `killed-otel` check it with test values; see the note below.)
+
+Note 2026-11-17: the consequence line above said the ingest site was not yet in `validate.sh`; it is (sets `live-otel` and `killed-otel`), and that line is corrected. The install is now one outage, not two: the snippet is placed before the single recreate, after a throwaway-container validation of the new env file and the config directory with the same image; the old two-step is the documented fallback (`deploy/caddy/README.md`, OTLP ingest). The outage is an estimate of 5 to 15 seconds for every site on the shared Caddy plus certificate load (to be measured; earlier text said a few seconds), and a rollback adds one more. The ingest host name is a new public name in the owner's DNS zone, kept out of the repo; where 0371 says the expected public hostname list gains the ingest hostname, the name is owner-held and not in any repo list.
