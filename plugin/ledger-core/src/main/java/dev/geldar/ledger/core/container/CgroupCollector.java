@@ -12,11 +12,13 @@ import java.nio.file.Path;
  * ({@code everyMillis}), never on the calling thread of {@link #start}. The frozen API has no observable counter, so
  * the {@code _total} names are exported as MONOTONIC GAUGES of the running total (dashboards treat them as
  * counters). When the kernel counter goes backwards (container restart, wrap) the earlier total is carried forward,
- * so the exported value never decreases. If the cgroup is unavailable the collector logs once and stops polling.
+ * so the exported value never decreases. A failed read is logged once at the first failure; after {@link #MAX_FAILURES}\n * consecutive failed samples the collector logs once more and stops polling. One good sample resets the count.
  */
 public final class CgroupCollector implements Collector {
     public static final String ID = "container";
     public static final long PERIOD_MS = 15_000;
+    /** Consecutive failed samples after which polling stops. */
+    public static final int MAX_FAILURES = 5;
 
     private static final System.Logger LOG = System.getLogger(CgroupCollector.class.getName());
 
@@ -46,6 +48,7 @@ public final class CgroupCollector implements Collector {
     private volatile long memory;
     private volatile long memoryLimit;
     private volatile boolean stopped;
+    private int failures;
     private volatile Cancellable task;
 
     public CgroupCollector() {
@@ -63,6 +66,8 @@ public final class CgroupCollector implements Collector {
 
     @Override
     public void start(CollectorContext ctx) {
+        stopped = false;
+        failures = 0;
         try {
             Ledger l = ctx.ledger();
             l.gaugeLong(Names.Container.CPU_PERIODS_TOTAL, "1", "cgroup cpu periods (monotonic)", periods::value);
@@ -91,10 +96,17 @@ public final class CgroupCollector implements Collector {
         }
         CgroupReader.Sample s = reader.read();
         if (s == null) {
-            LOG.log(System.Logger.Level.INFO, "cgroup v2 files unavailable, container collector stops");
-            stop();
+            failures++;
+            if (failures == 1) {
+                LOG.log(System.Logger.Level.INFO, "cgroup v2 files unavailable, will retry");
+            }
+            if (failures >= MAX_FAILURES) {
+                LOG.log(System.Logger.Level.INFO, "cgroup v2 files unavailable for " + failures + " samples, container collector stops");
+                stop();
+            }
             return;
         }
+        failures = 0;
         periods.update(s.periods());
         throttled.update(s.throttledPeriods());
         throttledUsec.update(s.throttledUsec());
