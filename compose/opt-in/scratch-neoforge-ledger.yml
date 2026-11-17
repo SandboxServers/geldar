@@ -4,7 +4,7 @@
 # compose command, so the default render has no ledger mount. Every mount is read-only and comes from a host variable that scratch.sh
 # sets; the required-variable markers make compose fail if this file is used without them. When the agent is off, scratch.sh points
 # the two agent mounts at the ledger files: the entrypoint never reads them then. No network is declared here.
-# GELDAR_NF_OTEL_AGENT defaults to 0: the agent runs only when scratch.sh sets it to 1 (all three SCRATCH_OTEL_AGENT_* values given).
+# GELDAR_NF_OTEL_AGENT defaults to 0: the agent runs only when scratch.sh sets it to 1 (all three SCRATCH_NEOFORGE_OTEL_AGENT_* values given).
 services:
   paper:
     environment:
@@ -19,13 +19,13 @@ services:
         bind:
           create_host_path: false
       - type: bind
-        source: ${GELDAR_NF_OTEL_AGENT_JAR_HOST:?set by deploy/scratch/scratch-ledger.sh from SCRATCH_OTEL_AGENT_JAR}
+        source: ${GELDAR_NF_OTEL_AGENT_JAR_HOST:?set by deploy/scratch/scratch-ledger.sh from SCRATCH_NEOFORGE_OTEL_AGENT_JAR}
         target: /opt/otel/opentelemetry-javaagent.jar
         read_only: true
         bind:
           create_host_path: false
       - type: bind
-        source: ${GELDAR_NF_OTEL_AGENT_PROPS_HOST:?set by deploy/scratch/scratch-ledger.sh from SCRATCH_OTEL_AGENT_PROPS}
+        source: ${GELDAR_NF_OTEL_AGENT_PROPS_HOST:?set by deploy/scratch/scratch-ledger.sh from SCRATCH_NEOFORGE_OTEL_AGENT_PROPS}
         target: /opt/otel/otel-agent.properties
         read_only: true
         bind:

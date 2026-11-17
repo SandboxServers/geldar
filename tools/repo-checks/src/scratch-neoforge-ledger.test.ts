@@ -52,9 +52,9 @@ function ledgerEnv(sha: string | undefined, opts: { agent?: boolean; extra?: Env
       ...opts.extra,
     };
     if (opts.agent) {
-      env.SCRATCH_OTEL_AGENT_JAR = slash(f.agentJar);
-      env.SCRATCH_OTEL_AGENT_SHA256 = AGENT_SHA;
-      env.SCRATCH_OTEL_AGENT_PROPS = slash(f.agentProps);
+      env.SCRATCH_NEOFORGE_OTEL_AGENT_JAR = slash(f.agentJar);
+      env.SCRATCH_NEOFORGE_OTEL_AGENT_SHA256 = AGENT_SHA;
+      env.SCRATCH_NEOFORGE_OTEL_AGENT_PROPS = slash(f.agentProps);
     }
     return env;
   };
@@ -107,6 +107,48 @@ describe.skipIf(skipWithoutSh())(
       }
     });
 
+    it('the Paper telemetry variable SCRATCH_OTEL_AGENT_JAR does not trigger the ledger code: up on telemetry runs with no ledger refusal or overlay', () => {
+      const r = runScript(
+        ['up', 'telemetry'],
+        (base) => {
+          const telemetryAgent = join(base, 'telemetry-agent.jar');
+          writeFileSync(telemetryAgent, AGENT);
+          return { ...AUTH, SCRATCH_OTEL_AGENT_JAR: slash(telemetryAgent) };
+        },
+        JARS,
+      );
+      expect(r.stderr).not.toContain('need SCRATCH_PLATFORM=neoforge');
+      expect(r.stderr).not.toContain('SCRATCH_NEOFORGE_OTEL_AGENT');
+      expect(r.calls.join('\n')).not.toContain('scratch-neoforge-ledger');
+      expect(upLine(r.calls)).toContain(' up -d');
+    });
+
+    it('an agent path with whitespace exits 2 before any docker call, for the jar and for the properties file', () => {
+      for (const field of [
+        'SCRATCH_NEOFORGE_OTEL_AGENT_JAR',
+        'SCRATCH_NEOFORGE_OTEL_AGENT_PROPS',
+      ]) {
+        const r = runScript(
+          ['up'],
+          (base) => {
+            const spaced = join(base, 'agent with space.jar');
+            writeFileSync(spaced, AGENT);
+            return {
+              ...ledgerEnv(LEDGER_SHA)(base),
+              SCRATCH_NEOFORGE_OTEL_AGENT_JAR: slash(join(base, 'agent.jar')),
+              SCRATCH_NEOFORGE_OTEL_AGENT_SHA256: AGENT_SHA,
+              SCRATCH_NEOFORGE_OTEL_AGENT_PROPS: slash(join(base, 'agent.properties')),
+              [field]: slash(spaced),
+            };
+          },
+          JARS,
+        );
+        expect(r.status, field).toBe(2);
+        expect(r.stderr, field).toContain(`${field} must not contain whitespace`);
+        expect(r.calls, field).toEqual([]);
+      }
+    });
+
     it('a relative path, a path with quotes, or a non-hex hash exits 2 before any docker call', () => {
       const relative = runScript(
         ['up'],
@@ -152,7 +194,7 @@ describe.skipIf(skipWithoutSh())(
         ['up'],
         (base) => ({
           ...ledgerEnv(LEDGER_SHA)(base),
-          SCRATCH_OTEL_AGENT_JAR: slash(join(base, 'agent.jar')),
+          SCRATCH_NEOFORGE_OTEL_AGENT_JAR: slash(join(base, 'agent.jar')),
         }),
         JARS,
       );

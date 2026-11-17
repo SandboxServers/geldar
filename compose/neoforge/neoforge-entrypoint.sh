@@ -103,12 +103,16 @@ else
 fi
 
 # The same for the ledger jar, with GELDAR_NF_LEDGER_SHA256 as its pin: a stale copy with no mounted jar, or a pin with no jar, stops the start.
-# GELDAR_NF_LEDGER_SHA256=off is the operator's explicit soft kill: only our own previous regular-file copy (exact name, no symlink
-# followed, no glob) is removed, no jar is required and the ledger is not copied. An unset pin with a stale copy still refuses.
+# GELDAR_NF_LEDGER_SHA256=off is the operator's explicit soft kill: our own previous copy (exact name, no glob) is removed, no jar is
+# required and the ledger is not copied. A regular file or a symlink (dangling too) is unlinked by rm -f, which never follows a link.
+# A directory or any other non-file there is refused with exit 1: it is not ours to remove. An unset pin with a stale copy still refuses.
 case "${GELDAR_NF_LEDGER_SHA256:-}" in
   off)
-    if [ -f "$ledger_copy" ] && [ ! -L "$ledger_copy" ]; then
+    if [ -L "$ledger_copy" ] || [ -f "$ledger_copy" ]; then
       rm -f "$ledger_copy"
+    elif [ -e "$ledger_copy" ]; then
+      echo "neoforge-entrypoint: the geldar ledger path in mods/ is a directory or other non-file; remove it; refusing to start" >&2
+      exit 1
     fi
     ;;
   *)
@@ -193,6 +197,7 @@ is_sha256_hex() {
 # non-lowercase-hex hash is refused. Nothing is copied on a refusal. The copy is mode 644 with the data dir's owner, like the other
 # written files, and is read back and hashed once more. Only file names and the fixed messages are printed, never the jar's bytes.
 copy_pinned_jar() {
+  rm -f "$2.part"
   if [ -L "$1" ] || [ ! -f "$1" ]; then
     echo "neoforge-entrypoint: $1 is a symlink or not a regular file; refusing to start" >&2
     exit 1
@@ -207,15 +212,18 @@ copy_pinned_jar() {
     echo "neoforge-entrypoint: the mounted $4 jar does not match $5; not copied; refusing to start" >&2
     exit 1
   fi
-  cp "$1" "$2"
-  chmod 644 "$2"
-  chown --reference="$data" "$2"
-  copied=$(sha256sum "$2" 2>/dev/null || true)
+  # The copy goes to $2.part and is renamed onto $2 only once its hash matches, so a kill or a full disk never leaves a partial jar
+  # under the final name. A mismatch removes the .part and any final file.
+  cp "$1" "$2.part"
+  chmod 644 "$2.part"
+  chown --reference="$data" "$2.part"
+  copied=$(sha256sum "$2.part" 2>/dev/null || true)
   if [ "${copied%% *}" != "$3" ]; then
-    rm -f "$2"
+    rm -f "$2.part" "$2"
     echo "neoforge-entrypoint: the copy of the $4 jar in mods/ does not match $5; removed it; refusing to start" >&2
     exit 1
   fi
+  mv -f "$2.part" "$2"
 }
 
 if [ -e "$mounted_jar" ] || [ -L "$mounted_jar" ]; then
@@ -264,12 +272,18 @@ if ! awk -v secret="$secret" '
 fi
 
 # The OpenTelemetry Java agent, only with GELDAR_NF_OTEL_AGENT=1 (unset or 0 adds nothing). The itzg image's JVM_OPTS
-# (appended to, never replaced) reaches the java command: the start script writes it into user_jvm_args.txt for the NeoForge
-# run.sh branch. The jar is mounted read-only outside /data and is never copied; it must match GELDAR_NF_OTEL_AGENT_SHA256.
+# (appended to, never replaced) is meant to reach the java command (the start script writes it into user_jvm_args.txt for the
+# NeoForge run.sh branch); that is UNVERIFIED on the pinned image, and no check or command run runs it. The jar is mounted read-only outside /data and is never copied; it must match GELDAR_NF_OTEL_AGENT_SHA256.
 # The properties file must be present. Only the fixed messages are printed, never either file's contents.
 case "${GELDAR_NF_OTEL_AGENT:-0}" in
   0) ;;
   1)
+    case "$agent_jar$agent_props" in
+      *[[:space:]]*)
+        echo "neoforge-entrypoint: the OpenTelemetry agent paths must not contain whitespace (JVM_OPTS splits on it); refusing to start" >&2
+        exit 1
+        ;;
+    esac
     if [ -L "$agent_jar" ] || [ ! -f "$agent_jar" ]; then
       echo "neoforge-entrypoint: $agent_jar is missing, a symlink or not a regular file; refusing to start" >&2
       exit 1

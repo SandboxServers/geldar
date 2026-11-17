@@ -3,10 +3,13 @@
 # Nothing here starts anything. For up only, check_ledger_env refuses with exit 2 before compose runs. down and status never
 # refuse on these variables: they render the overlay only when every value has the right shape (ledger_render_ok). The host
 # sha256 of each jar is checked before any docker call; the entrypoint checks it again inside the container.
+# Every shell global here has a ledger_ prefix: scratch.sh sources other files (telemetry-rows.sh) into the same shell.
 #   SCRATCH_NEOFORGE_LEDGER_JAR and SCRATCH_NEOFORGE_LEDGER_SHA256: both or neither. SCRATCH_NEOFORGE_LEDGER_SHA256=off alone is
 #     the soft kill: compose/opt-in/scratch-neoforge-ledger-off.yml (two environment keys, no mount), and it refuses with a jar or agent variable.
 #   SCRATCH_LEDGER_PROPS: the ledger config file, required with the jar pair.
-#   SCRATCH_OTEL_AGENT_JAR, SCRATCH_OTEL_AGENT_SHA256, SCRATCH_OTEL_AGENT_PROPS: all three or none, and only with the jar pair.
+#   SCRATCH_NEOFORGE_OTEL_AGENT_JAR, SCRATCH_NEOFORGE_OTEL_AGENT_SHA256, SCRATCH_NEOFORGE_OTEL_AGENT_PROPS: all three or none, and
+#     only with the jar pair. SCRATCH_OTEL_AGENT_JAR is the Paper telemetry variable (docs/runbooks/scratch-telemetry.md): this file never reads it.
+#   The properties files (SCRATCH_LEDGER_PROPS and SCRATCH_NEOFORGE_OTEL_AGENT_PROPS) are neither pinned nor checked; they set the export endpoint.
 
 # Exit 2 with the message, nothing started. The message names the variable only, never a value.
 ledger_refuse() {
@@ -30,61 +33,73 @@ ledger_file_ok() {
   fi
 }
 
+# The agent paths: the entrypoint splits JVM_OPTS on whitespace, so a path with a space would become two arguments.
+ledger_no_space() {
+  case "$2" in
+    *[[:space:]]*) ledger_refuse "$1 must not contain whitespace" ;;
+  esac
+}
+
 # up only, before compose. Refuses a combination that cannot run, a malformed value, or a jar whose host sha256 differs from its pin.
 check_ledger_env() {
   if [ "$PLATFORM" != neoforge ]; then
     ledger_refuse "the ledger jar and the OpenTelemetry agent need SCRATCH_PLATFORM=neoforge"
   fi
-  if [ "$ls" = off ]; then
-    [ -z "$lj$lp$aj$as$ap" ] || ledger_refuse "SCRATCH_NEOFORGE_LEDGER_SHA256=off is contradictory with the ledger jar or agent variables; unset them, or set the jar pair"
+  if [ "$ledger_sha" = off ]; then
+    [ -z "$ledger_jar$ledger_props$ledger_agent_jar$ledger_agent_sha$ledger_agent_props" ] || ledger_refuse "SCRATCH_NEOFORGE_LEDGER_SHA256=off is contradictory with the ledger jar or agent variables; unset them, or set the jar pair"
     return 0
   fi
-  if [ -z "$lj" ] && [ -z "$ls" ]; then
-    [ -z "$lp$aj$as$ap" ] || ledger_refuse "SCRATCH_LEDGER_PROPS and the OpenTelemetry agent variables need SCRATCH_NEOFORGE_LEDGER_JAR and SCRATCH_NEOFORGE_LEDGER_SHA256"
+  if [ -z "$ledger_jar" ] && [ -z "$ledger_sha" ]; then
+    [ -z "$ledger_props$ledger_agent_jar$ledger_agent_sha$ledger_agent_props" ] || ledger_refuse "SCRATCH_LEDGER_PROPS and the OpenTelemetry agent variables need SCRATCH_NEOFORGE_LEDGER_JAR and SCRATCH_NEOFORGE_LEDGER_SHA256"
     return 0
   fi
-  if [ -z "$lj" ] || [ -z "$ls" ]; then
+  if [ -z "$ledger_jar" ] || [ -z "$ledger_sha" ]; then
     ledger_refuse "set both SCRATCH_NEOFORGE_LEDGER_JAR and SCRATCH_NEOFORGE_LEDGER_SHA256, or neither (off alone is the soft kill)"
   fi
-  is_sha256_hex "$ls" || ledger_refuse "SCRATCH_NEOFORGE_LEDGER_SHA256 must be exactly 64 lowercase hex digits (or off alone)"
-  ledger_file_ok SCRATCH_NEOFORGE_LEDGER_JAR "$lj"
-  ledger_file_ok SCRATCH_LEDGER_PROPS "$lp"
-  if [ "$agent" = 1 ]; then
-    [ -n "$aj" ] && [ -n "$as" ] && [ -n "$ap" ] || ledger_refuse "set all three of SCRATCH_OTEL_AGENT_JAR, SCRATCH_OTEL_AGENT_SHA256 and SCRATCH_OTEL_AGENT_PROPS, or none"
-    is_sha256_hex "$as" || ledger_refuse "SCRATCH_OTEL_AGENT_SHA256 must be exactly 64 lowercase hex digits"
-    ledger_file_ok SCRATCH_OTEL_AGENT_JAR "$aj"
-    ledger_file_ok SCRATCH_OTEL_AGENT_PROPS "$ap"
+  is_sha256_hex "$ledger_sha" || ledger_refuse "SCRATCH_NEOFORGE_LEDGER_SHA256 must be exactly 64 lowercase hex digits (or off alone)"
+  ledger_file_ok SCRATCH_NEOFORGE_LEDGER_JAR "$ledger_jar"
+  ledger_file_ok SCRATCH_LEDGER_PROPS "$ledger_props"
+  if [ "$ledger_agent" = 1 ]; then
+    [ -n "$ledger_agent_jar" ] && [ -n "$ledger_agent_sha" ] && [ -n "$ledger_agent_props" ] || ledger_refuse "set all three of SCRATCH_NEOFORGE_OTEL_AGENT_JAR, SCRATCH_NEOFORGE_OTEL_AGENT_SHA256 and SCRATCH_NEOFORGE_OTEL_AGENT_PROPS, or none"
+    is_sha256_hex "$ledger_agent_sha" || ledger_refuse "SCRATCH_NEOFORGE_OTEL_AGENT_SHA256 must be exactly 64 lowercase hex digits"
+    ledger_no_space SCRATCH_NEOFORGE_OTEL_AGENT_JAR "$ledger_agent_jar"
+    ledger_no_space SCRATCH_NEOFORGE_OTEL_AGENT_PROPS "$ledger_agent_props"
+    ledger_file_ok SCRATCH_NEOFORGE_OTEL_AGENT_JAR "$ledger_agent_jar"
+    ledger_file_ok SCRATCH_NEOFORGE_OTEL_AGENT_PROPS "$ledger_agent_props"
   fi
-  actual=$(sha256sum < "$lj" 2>/dev/null || true)
-  [ "${actual%% *}" = "$ls" ] || ledger_refuse "the sha256 of SCRATCH_NEOFORGE_LEDGER_JAR does not match SCRATCH_NEOFORGE_LEDGER_SHA256"
-  if [ "$agent" = 1 ]; then
-    actual=$(sha256sum < "$aj" 2>/dev/null || true)
-    [ "${actual%% *}" = "$as" ] || ledger_refuse "the sha256 of SCRATCH_OTEL_AGENT_JAR does not match SCRATCH_OTEL_AGENT_SHA256"
+  ledger_actual=$(sha256sum < "$ledger_jar" 2>/dev/null || true)
+  [ "${ledger_actual%% *}" = "$ledger_sha" ] || ledger_refuse "the sha256 of SCRATCH_NEOFORGE_LEDGER_JAR does not match SCRATCH_NEOFORGE_LEDGER_SHA256"
+  if [ "$ledger_agent" = 1 ]; then
+    ledger_actual=$(sha256sum < "$ledger_agent_jar" 2>/dev/null || true)
+    [ "${ledger_actual%% *}" = "$ledger_agent_sha" ] || ledger_refuse "the sha256 of SCRATCH_NEOFORGE_OTEL_AGENT_JAR does not match SCRATCH_NEOFORGE_OTEL_AGENT_SHA256"
   fi
 }
 
 # True when every value the overlay needs is present and well formed. Nothing is read from disk and nothing exits, so
 # down and status render the overlay exactly when up would, and never refuse.
 ledger_render_ok() {
-  [ "$PLATFORM" = neoforge ] && [ -n "$lj" ] && [ -n "$lp" ] && is_sha256_hex "$ls" || return 1
-  ledger_shape_ok "$lj" && ledger_shape_ok "$lp" || return 1
-  if [ "$agent" = 1 ]; then
-    [ -n "$aj" ] && [ -n "$ap" ] && is_sha256_hex "$as" || return 1
-    ledger_shape_ok "$aj" && ledger_shape_ok "$ap" || return 1
+  [ "$PLATFORM" = neoforge ] && [ -n "$ledger_jar" ] && [ -n "$ledger_props" ] && is_sha256_hex "$ledger_sha" || return 1
+  ledger_shape_ok "$ledger_jar" && ledger_shape_ok "$ledger_props" || return 1
+  if [ "$ledger_agent" = 1 ]; then
+    [ -n "$ledger_agent_jar" ] && [ -n "$ledger_agent_props" ] && is_sha256_hex "$ledger_agent_sha" || return 1
+    ledger_shape_ok "$ledger_agent_jar" && ledger_shape_ok "$ledger_agent_props" || return 1
+    case "$ledger_agent_jar$ledger_agent_props" in
+      *[[:space:]]*) return 1 ;;
+    esac
   fi
 }
 
 # Sets the variables compose_run and the overlay read. With the agent off, the two agent mounts point at the ledger files:
 # the entrypoint reads them only when GELDAR_NF_OTEL_AGENT=1, so the placeholder is never used by the agent.
 ledger_set_env() {
-  lj=${SCRATCH_NEOFORGE_LEDGER_JAR:-}
-  ls=${SCRATCH_NEOFORGE_LEDGER_SHA256:-}
-  lp=${SCRATCH_LEDGER_PROPS:-}
-  aj=${SCRATCH_OTEL_AGENT_JAR:-}
-  as=${SCRATCH_OTEL_AGENT_SHA256:-}
-  ap=${SCRATCH_OTEL_AGENT_PROPS:-}
-  agent=0
-  [ -z "$aj$as$ap" ] || agent=1
+  ledger_jar=${SCRATCH_NEOFORGE_LEDGER_JAR:-}
+  ledger_sha=${SCRATCH_NEOFORGE_LEDGER_SHA256:-}
+  ledger_props=${SCRATCH_LEDGER_PROPS:-}
+  ledger_agent_jar=${SCRATCH_NEOFORGE_OTEL_AGENT_JAR:-}
+  ledger_agent_sha=${SCRATCH_NEOFORGE_OTEL_AGENT_SHA256:-}
+  ledger_agent_props=${SCRATCH_NEOFORGE_OTEL_AGENT_PROPS:-}
+  ledger_agent=0
+  [ -z "$ledger_agent_jar$ledger_agent_sha$ledger_agent_props" ] || ledger_agent=1
   if [ "$verb" = up ]; then
     check_ledger_env
   fi
@@ -96,20 +111,20 @@ ledger_set_env() {
   GELDAR_NF_OTEL_AGENT_JAR_HOST=
   GELDAR_NF_OTEL_AGENT_PROPS_HOST=
   GELDAR_NF_LEDGER_OFF=0
-  if [ "$ls" = off ] && [ -z "$lj$lp$aj$as$ap" ]; then
+  if [ "$ledger_sha" = off ] && [ -z "$ledger_jar$ledger_props$ledger_agent_jar$ledger_agent_sha$ledger_agent_props" ]; then
     GELDAR_NF_LEDGER_OFF=1
   fi
   if ledger_render_ok; then
-    GELDAR_NF_LEDGER_JAR_HOST=$lj
-    GELDAR_NF_LEDGER_PROPS_HOST=$lp
-    GELDAR_NF_LEDGER_SHA256=$ls
-    GELDAR_NF_OTEL_AGENT_JAR_HOST=$lj
-    GELDAR_NF_OTEL_AGENT_PROPS_HOST=$lp
-    if [ "$agent" = 1 ]; then
+    GELDAR_NF_LEDGER_JAR_HOST=$ledger_jar
+    GELDAR_NF_LEDGER_PROPS_HOST=$ledger_props
+    GELDAR_NF_LEDGER_SHA256=$ledger_sha
+    GELDAR_NF_OTEL_AGENT_JAR_HOST=$ledger_jar
+    GELDAR_NF_OTEL_AGENT_PROPS_HOST=$ledger_props
+    if [ "$ledger_agent" = 1 ]; then
       GELDAR_NF_OTEL_AGENT=1
-      GELDAR_NF_OTEL_AGENT_SHA256=$as
-      GELDAR_NF_OTEL_AGENT_JAR_HOST=$aj
-      GELDAR_NF_OTEL_AGENT_PROPS_HOST=$ap
+      GELDAR_NF_OTEL_AGENT_SHA256=$ledger_agent_sha
+      GELDAR_NF_OTEL_AGENT_JAR_HOST=$ledger_agent_jar
+      GELDAR_NF_OTEL_AGENT_PROPS_HOST=$ledger_agent_props
     fi
   fi
   # The overlay compose_run adds (scratch.sh): the env-only soft kill, or the ledger jar overlay. Empty adds nothing.

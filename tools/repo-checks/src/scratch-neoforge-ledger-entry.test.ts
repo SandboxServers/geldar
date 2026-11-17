@@ -7,11 +7,14 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  chmodSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -281,17 +284,97 @@ describe.skipIf(skipWithoutSh())(
       expect(existsSync(ledgerCopy(c))).toBe(false);
     });
 
-    it('off never removes our mod jar or any other file in mods/', () => {
+    it('off removes only our ledger copy: the mod copy, other.jar and the pinned mod keep their bytes and mode', () => {
       const c = setup();
-      writeFileSync(join(c.mods, 'geldar-neoforge.jar'), 'our mod copy');
+      const modJar = join(c.base, 'mount', 'geldar-neoforge.jar');
+      writeFileSync(modJar, MOD_BODY);
       writeFileSync(join(c.mods, 'other.jar'), 'other');
+      chmodSync(join(c.mods, 'other.jar'), 0o644);
       writeFileSync(ledgerCopy(c), 'a stale copy');
-      const r = run(c, { GELDAR_NF_LEDGER_JAR: ABSENT, GELDAR_NF_LEDGER_SHA256: 'off' });
-      // A mod copy with no mounted mod jar is refused by the mod rule, which runs first; off must leave it and other.jar alone.
-      expect(r.status).toBe(1);
-      expect(r.stderr).toContain('a geldar mod jar is present in mods/ but none is mounted');
-      expect(readFileSync(join(c.mods, 'geldar-neoforge.jar'), 'utf8')).toBe('our mod copy');
+      const r = run(c, {
+        GELDAR_NF_MOD_JAR: slash(modJar),
+        GELDAR_NF_MOD_SHA256: sha256(MOD_BODY),
+        GELDAR_NF_LEDGER_JAR: ABSENT,
+        GELDAR_NF_LEDGER_SHA256: 'off',
+      });
+      // The mod is mounted, so the off block runs (it is not stopped by the mod rule).
+      expect(r.status).toBe(0);
+      expect(existsSync(ledgerCopy(c))).toBe(false);
+      expect(readFileSync(join(c.mods, 'geldar-neoforge.jar'), 'utf8')).toBe(MOD_BODY);
       expect(readFileSync(join(c.mods, 'other.jar'), 'utf8')).toBe('other');
+      expect(readFileSync(join(c.mods, 'proxy-compatible-forge.jar'), 'utf8')).toBe(MOD_BODY);
+      if (process.platform !== 'win32') {
+        expect(statSync(join(c.mods, 'other.jar')).mode & 0o777).toBe(0o644);
+      }
+    });
+
+    it('off refuses a directory at the ledger copy path, exits 1 and removes nothing inside it', () => {
+      const c = setup();
+      mkdirSync(ledgerCopy(c));
+      writeFileSync(join(ledgerCopy(c), 'inner.txt'), 'keep');
+      const r = run(c, { GELDAR_NF_LEDGER_JAR: ABSENT, GELDAR_NF_LEDGER_SHA256: 'off' });
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain('is a directory or other non-file; remove it; refusing to start');
+      expect(r.stdout).not.toContain('JVM_OPTS');
+      expect(readFileSync(join(ledgerCopy(c), 'inner.txt'), 'utf8')).toBe('keep');
+    });
+
+    it.runIf(CAN_LINK)('off unlinks a symlink at the ledger copy path without following it', () => {
+      const c = setup();
+      const target = join(c.base, 'link-target.jar');
+      writeFileSync(target, 'target bytes');
+      symlinkSync(target, ledgerCopy(c));
+      const r = run(c, { GELDAR_NF_LEDGER_JAR: ABSENT, GELDAR_NF_LEDGER_SHA256: 'off' });
+      expect(r.status).toBe(0);
+      expect(() => lstatSync(ledgerCopy(c))).toThrow();
+      expect(readFileSync(target, 'utf8')).toBe('target bytes');
+    });
+
+    it.runIf(CAN_LINK)('off unlinks a dangling symlink at the ledger copy path', () => {
+      const c = setup();
+      symlinkSync(join(c.base, 'nowhere.jar'), ledgerCopy(c));
+      const r = run(c, { GELDAR_NF_LEDGER_JAR: ABSENT, GELDAR_NF_LEDGER_SHA256: 'off' });
+      expect(r.status).toBe(0);
+      expect(() => lstatSync(ledgerCopy(c))).toThrow();
+    });
+
+    it.skipIf(process.platform === 'win32')('the copied ledger jar is mode 644', () => {
+      const c = setup();
+      expect(run(c, { GELDAR_NF_LEDGER_SHA256: LEDGER_PIN }).status).toBe(0);
+      expect(statSync(ledgerCopy(c)).mode & 0o777).toBe(0o644);
+    });
+
+    it('a stale .part from an interrupted copy is removed, and a good start leaves no .part', () => {
+      const c = setup();
+      writeFileSync(`${ledgerCopy(c)}.part`, 'a partial copy');
+      const r = run(c, { GELDAR_NF_LEDGER_SHA256: LEDGER_PIN });
+      expect(r.status).toBe(0);
+      expect(existsSync(`${ledgerCopy(c)}.part`)).toBe(false);
+      expect(readFileSync(ledgerCopy(c), 'utf8')).toBe(LEDGER_BODY);
+    });
+
+    it('a stale .part is removed even when the start is refused, so a refused start leaves no .part', () => {
+      const c = setup();
+      writeFileSync(`${ledgerCopy(c)}.part`, 'a partial copy');
+      const r = run(c, { GELDAR_NF_LEDGER_SHA256: '0'.repeat(64) });
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain('does not match GELDAR_NF_LEDGER_SHA256; not copied');
+      expect(existsSync(`${ledgerCopy(c)}.part`)).toBe(false);
+      expect(existsSync(ledgerCopy(c))).toBe(false);
+    });
+
+    it('a copy whose hash does not match leaves neither the final file nor a .part', () => {
+      const c = setup();
+      // A cp that appends a byte, so the copy fails the hash check after it is made.
+      writeFileSync(join(c.base, 'bin', 'cp'), '#!/bin/sh\ncat "$1" > "$2" && printf x >> "$2"\n', {
+        mode: 0o755,
+      });
+      const r = run(c, { GELDAR_NF_LEDGER_SHA256: LEDGER_PIN });
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain('does not match GELDAR_NF_LEDGER_SHA256; removed it');
+      expect(existsSync(ledgerCopy(c))).toBe(false);
+      expect(existsSync(`${ledgerCopy(c)}.part`)).toBe(false);
+      expect(r.stdout).not.toContain('JVM_OPTS');
     });
 
     it('any other non-hex value refuses to start', () => {
@@ -397,6 +480,22 @@ describe.skipIf(skipWithoutSh())(
       });
       expect(r.status).toBe(1);
       expect(r.stderr).toContain('is missing, a symlink or not a regular file');
+    });
+
+    it('on: refuses an agent jar or properties path with whitespace before reading any hash', () => {
+      for (const field of ['GELDAR_NF_OTEL_JAR', 'GELDAR_NF_OTEL_PROPS']) {
+        const c = setup(false);
+        const spaced = join(c.base, 'mount', 'agent with space');
+        writeFileSync(spaced, AGENT_BODY);
+        const r = run(c, {
+          GELDAR_NF_OTEL_AGENT: '1',
+          GELDAR_NF_OTEL_AGENT_SHA256: AGENT_PIN,
+          [field]: slash(spaced),
+        });
+        expect(r.status, field).toBe(1);
+        expect(r.stderr, field).toContain('must not contain whitespace');
+        expect(r.stdout, field).not.toContain('JVM_OPTS');
+      }
     });
 
     it('any other GELDAR_NF_OTEL_AGENT value refuses to start', () => {
