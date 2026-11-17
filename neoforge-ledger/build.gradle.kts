@@ -68,6 +68,8 @@ dependencies {
     }
     implementation(libs.opentelemetry.api)
 
+    // The curated family tests load NeoForge event classes (never started, no bootstrap), as the main code sees them.
+    testImplementation(files(sourceSets.main.get().compileClasspath))
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
 }
