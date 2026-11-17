@@ -157,10 +157,37 @@ check_no_colo_labels() {
   fi
 }
 
+# The one listener the project may have on its port: its own velocity container, published as exactly
+# 127.0.0.1:$PORT->25565/tcp (compose/nf-live.yml), under the exact compose project and service labels. Any other container
+# publishing the port, a second published binding, a different project, a different service, a docker failure or output
+# that does not parse all refuse (the awk exits 1; a docker failure returns 1). Called only once a listener is found.
+own_velocity_on_port() {
+  rows=$(docker ps --filter "label=com.docker.compose.project=$PROJECT" \
+    --format '{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.service"}}|{{.Ports}}') || return 1
+  printf '%s\n' "$rows" | awk -F'|' -v p="$PROJECT" -v want="127.0.0.1:$PORT->25565/tcp" '
+    NF == 0 { next }
+    NF != 3 { bad = 1; next }
+    { n++; proj = $1; svc = $2; ports = $3 }
+    END {
+      if (bad || n != 1 || proj != p || svc != "velocity") exit 1
+      pub = 0; ok = 0
+      k = split(ports, t, ", ")
+      for (i = 1; i <= k; i++) if (index(t[i], "->") > 0) { pub++; if (t[i] == want) ok = 1 }
+      if (pub != 1 || !ok) exit 1
+    }'
+}
+
 check_port() {
   need ss
   listeners=$(ss -Hltn "sport = :$PORT") || die "cannot read the listening sockets (ss)"
-  [ -z "$listeners" ] || die "something already listens on port $PORT; the project's published port must be free"
+  if [ -n "$listeners" ]; then
+    # Every listener socket must be on 127.0.0.1:$PORT (a second socket on another address refuses), and the project's own
+    # velocity must own the published binding. Otherwise the port is taken.
+    if ! printf '%s\n' "$listeners" | awk -v want="127.0.0.1:$PORT" 'NF && $4 != want { bad = 1 } END { exit bad + 0 }' ||
+      ! own_velocity_on_port; then
+      die "something already listens on port $PORT; the project's published port must be free (only $PROJECT's own velocity on 127.0.0.1:$PORT is accepted)"
+    fi
+  fi
 }
 
 check_secrets() {
