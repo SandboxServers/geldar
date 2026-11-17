@@ -28,7 +28,7 @@
     {
       "path": "neoforge/gradle/verification-metadata.xml",
       "hardCap": 1700,
-      "reason": "generated dependency checksums"
+      "reason": "generated dependency checksums; includes the Linux-only native artifacts (netty epoll, lwjgl natives) that a clean CI runner needs"
     },
     {
       "path": "neoforge-ledger/gradle/verification-metadata.xml",

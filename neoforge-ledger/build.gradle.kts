@@ -36,6 +36,8 @@ repositories {
 
 dependencyLocking {
     lockAllConfigurations()
+    // Lenient: locked versions stay pinned, but a dependency missing from the lock no longer fails; strict cannot work because Linux resolves netty epoll natives a Windows lockfile lacks (verification-metadata.xml sha256 is the integrity guard).
+    lockMode = LockMode.LENIENT
 }
 
 neoForge {
