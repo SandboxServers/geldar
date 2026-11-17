@@ -1,0 +1,90 @@
+# Scratch-only overlay for the project scratch-telemetry (PT-03k). Not part of any default compose file set. Use only
+# through deploy/scratch/scratch.sh, which adds it after compose/opt-in/scratch.yml when the project is scratch-telemetry
+# (see docs/runbooks/scratch-telemetry.md):
+#   docker compose -p scratch-telemetry -f compose/phase0.yml -f compose/opt-in/scratch.yml -f compose/opt-in/scratch-telemetry.yml ...
+# It mounts the Ledger plugin jar, the Ledger config and the OpenTelemetry Java agent profile into the scratch Paper,
+# raises the scratch Paper limit to 15 GiB (this file only: scratch.yml keeps scratch-a at 3072m and no live compose
+# file changes), and adds a throwaway OTLP/HTTP receiver that answers as geldar-gateway on the scratch network only.
+# Relative bind paths resolve against compose/ (the directory of the first file, compose/phase0.yml).
+# Nothing here names the live stack, a live network, a secret or a host address. The receiver publishes no port.
+services:
+  paper:
+    environment:
+      MEMORY: ${PAPER_MEMORY:-10G}
+      # Set only when the operator gives an agent jar (SCRATCH_OTEL_AGENT_JAR); empty otherwise, so no agent runs.
+      JAVA_AGENTS: ${SCRATCH_OTEL_AGENT_JAR:+/opt/otel/opentelemetry-javaagent.jar}
+      # The itzg JAVA_AGENTS adds a bare -javaagent, so the profile is passed by environment (compose/paper/otel-agent.properties
+      # ships with otel.sdk.disabled=true; the environment wins over the file).
+      OTEL_JAVAAGENT_CONFIGURATION_FILE: /opt/otel/otel-agent.properties
+      OTEL_SDK_DISABLED: "false"
+    deploy:
+      resources:
+        limits:
+          memory: 15360m
+          cpus: "${SCRATCH_PAPER_CPUS:-6}"
+    memswap_limit: 15360m
+    volumes:
+      # Build first: cd plugin; ./gradlew build
+      - ../plugin/ledger/build/libs/ledger.jar:/plugins/ledger.jar:ro
+      - ./paper/otel-agent.properties:/opt/otel/otel-agent.properties:ro
+      # Without an agent jar this binds /dev/null and JAVA_AGENTS above stays empty.
+      - ${SCRATCH_OTEL_AGENT_JAR:-/dev/null}:/opt/otel/opentelemetry-javaagent.jar:ro
+      - ../deploy/scratch/ledger.properties:/data/plugins/Ledger/ledger.properties:ro
+    depends_on:
+      - otel-sink
+    labels:
+      geldar.scratch: "true"
+    restart: "no"
+
+  # The receiver. Image reused from deploy/telemetry/compose.gateway.yml (same digest, 0.164.0, released 2026-10-26).
+  # It runs as the account that started the stack, so it can write the bind-mounted output directory.
+  otel-sink:
+    image: otel/opentelemetry-collector-contrib@sha256:340c9ca6a36617084c6661bdc4f0fe92b7cda5a805d61673ec8db375fddc522b # 0.164.0
+    command: ["--config=/etc/otelcol/sink.yaml"]
+    user: "${SCRATCH_RUN_UID:?set by deploy/scratch/scratch.sh}:${SCRATCH_RUN_GID:?set by deploy/scratch/scratch.sh}"
+    configs:
+      - source: otel-sink
+        target: /etc/otelcol/sink.yaml
+    volumes:
+      # Absolute host directory outside the repo; one JSON object per OTLP export request goes to otlp.jsonl in it.
+      - ${SCRATCH_TELEMETRY_OUT:?set an absolute host directory for the sink output}:/out
+    networks:
+      default:
+        aliases:
+          - geldar-gateway
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "0.5"
+    memswap_limit: 512m
+    labels:
+      geldar.scratch: "true"
+    restart: "no"
+
+configs:
+  otel-sink:
+    content: |
+      receivers:
+        otlp:
+          protocols:
+            http:
+              endpoint: ":4318"
+      exporters:
+        file:
+          path: /out/otlp.jsonl
+          flush_interval: 1s
+      service:
+        telemetry:
+          metrics:
+            level: none
+        pipelines:
+          metrics:
+            receivers: [otlp]
+            exporters: [file]
+          logs:
+            receivers: [otlp]
+            exporters: [file]
+          traces:
+            receivers: [otlp]
+            exporters: [file]

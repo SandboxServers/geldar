@@ -183,14 +183,17 @@ write_nats_override() {
 }
 
 # Compose with the phase0 base and the scratch overlay. The -f list is built by prepending, last file first, so the
-# command line reads: -p, phase0, nats-auth (only when the override exists), scratch, the NeoForge overlay (only for
-# SCRATCH_PLATFORM=neoforge), and the NATS override last so its file paths win. The verb arguments follow unchanged.
+# command line reads: -p, phase0, nats-auth (only when the override exists), scratch, compose/opt-in/scratch-telemetry.yml
+# (only for the project scratch-telemetry), the NeoForge overlay (only for SCRATCH_PLATFORM=neoforge), and the NATS override last so its file paths win. The verb arguments follow unchanged.
 compose_run() {
   if [ -f "$NATS_OVERRIDE" ]; then
     set -- -f "$NATS_OVERRIDE" "$@"
   fi
   if [ "$PLATFORM" = neoforge ]; then
     set -- -f "$ROOT/compose/opt-in/scratch-neoforge.yml" "$@"
+  fi
+  if [ "$PROJECT" = scratch-telemetry ]; then
+    set -- -f "$ROOT/compose/opt-in/scratch-telemetry.yml" "$@"
   fi
   set -- -f "$ROOT/compose/opt-in/scratch.yml" "$@"
   if [ -f "$NATS_OVERRIDE" ]; then
