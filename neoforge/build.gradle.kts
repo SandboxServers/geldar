@@ -53,6 +53,18 @@ neoForge {
 }
 
 dependencies {
+    // Composite build (settings.gradle.kts): core-common is packed into this jar, because the server has neither
+    // core-common nor its libraries. The range is the jar-in-jar metadata; the exact version is the plugin build version.
+    implementation("dev.geldar:core-common")
+    jarJar("dev.geldar:core-common") {
+        version { strictly("[0.1.0]"); prefer("0.1.0") }
+    }
+    // jnats is nested in this jar and in no other module's jar (the single owner, see README.md; repo-checks
+    // neoforge-jarjar-owner fails on a second owner). core-common declares it as an implementation dependency.
+    jarJar("io.nats:jnats") {
+        version { strictly("[${libs.versions.jnats.get()}]"); prefer(libs.versions.jnats.get()) }
+    }
+
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)
 }

@@ -32,6 +32,14 @@ The `neoforge` and `minecraft` dependency ranges stay `[26.1,26.2)` with `side =
 - `settings.gradle.kts`, `dependencyResolutionManagement`: `PREFER_PROJECT`, with no repository declared in settings. Settings-level repositories were dead under `PREFER_PROJECT` (the project's repositories win), so they were removed rather than left as a false record.
 - Project repositories in effect: the ones ModDevGradle adds (Mojang libraries and meta, the NeoForged maven, and Minecraft Forge for mergetool). `build.gradle.kts` adds Maven Central as an `exclusiveContent` repository for `org.junit`, `org.opentest4j` and `org.apiguardian` only, so the test libraries come from Central and not from the NeoForged mirror.
 
+## Shared code and jnats
+
+- `settings.gradle.kts` includes `../plugin` as a composite build and substitutes `dev.geldar:core-common` with `:core-common`. The plugin build is not edited and nothing is copied or published. This is the pattern `neoforge-ledger/` uses for `ledger-core`.
+- `core-common` is packed into `geldar-neoforge-0.1.0.jar` as a jar-in-jar (`jarJar("dev.geldar:core-common")`, strict range `[0.1.0]`, preferred `0.1.0`). The server has neither core-common nor its libraries.
+- **jnats has one owner: this module.** `neoforge/build.gradle.kts` nests `io.nats:jnats` (`jarJar`, strict range `[2.26.4]`, preferred `2.26.4`). This module publishes the jar the server loads for the export, so it is the one that carries the library. `core-common` declares jnats as an `implementation` dependency and does not nest it; `neoforge-ledger/` does not nest it either. `tools/repo-checks/src/neoforge-jarjar-owner.test.ts` fails if a second NeoForge module nests jnats, and checks that the jnats pin matches `plugin/gradle/libs.versions.toml`.
+- The core-common sources are on the scan list of `NoRegistryScanTest`, because they are packed into this jar.
+- The jar-in-jar nesting of jnats on the server (module layer, signed jars) is unverified until a `runServer` smoke. This packet changes wiring only; the mod still adds no payloads or registry entries.
+
 ## Dependency verification and locking
 
 - `gradle/verification-metadata.xml` holds sha256 checksums for the resolved artifacts. It is written by `./gradlew --write-verification-metadata sha256 build` and is not hand-edited. Verification is on for every build; nothing in this project turns it off. Its line cap is an exemption in `tools/repo-checks/src/line-cap-exemptions.json` ("generated dependency checksums").
@@ -47,6 +55,7 @@ The `neoforge` and `minecraft` dependency ranges stay `[26.1,26.2)` with `side =
 | ModDevGradle | `net.neoforged.moddev` 2.0.148 | pom 2026-09-29 | `build.gradle.kts` |
 | Java toolchain | 25 | n/a | `build.gradle.kts` |
 | JUnit | 6.1.3 (jupiter and platform launcher) | 2026-08-07 | `gradle/libs.versions.toml` |
+| jnats | 2.26.4 (the pin `plugin/gradle/libs.versions.toml` already uses) | as that file | `gradle/libs.versions.toml` |
 
 Gradle 9.9.0 (2026-11-06) and 9.9.1 (2026-11-10) were newer than two weeks on 2026-11-16, so the wrapper stays on 9.8.2. The wrapper jar is the one from `plugin/gradle/wrapper`, which pins the same 9.8.2 distribution.
 
