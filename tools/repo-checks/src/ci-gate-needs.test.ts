@@ -6,7 +6,7 @@ import { parse } from 'yaml';
 
 const CI = fileURLToPath(new URL('../../../.github/workflows/ci.yml', import.meta.url));
 
-type Job = { needs?: string[]; if?: string };
+type Job = { needs?: string[]; if?: string; steps?: unknown[] };
 const jobs = (parse(readFileSync(CI, 'utf8')) as { jobs: Record<string, Job> }).jobs;
 
 // `ci gate` is the one required check: a job it does not need guards nothing, and a job with a job-level `if`
@@ -21,6 +21,21 @@ describe('ci gate wiring', () => {
 
   it('includes the neoforge lane', () => {
     expect(jobs.gate?.needs).toContain('neoforge');
+  });
+
+  it('neoforge lane prints a test summary and uploads reports only on failure, for 7 days', () => {
+    const steps = (jobs.neoforge?.steps ?? []) as Array<{
+      name?: string;
+      if?: string;
+      uses?: string;
+      with?: { 'retention-days'?: number };
+    }>;
+    const summary = steps.find((s) => s.name?.startsWith('test summary'));
+    const upload = steps.find((s) => s.uses?.startsWith('actions/upload-artifact@'));
+    expect(summary?.if).toBe('always()');
+    expect(upload?.if).toBe('failure()');
+    expect(upload?.uses).toMatch(/@[0-9a-f]{40}$/);
+    expect(upload?.with?.['retention-days']).toBe(7);
   });
 
   it('has no job-level condition on a needed job (a skipped job would fail the gate)', () => {

@@ -60,12 +60,16 @@ dependencies {
     // Jar-in-jar: the server has neither ledger-core nor the OpenTelemetry API. Strict ranges, because the jarjar
     // metadata records a version range.
     implementation("dev.geldar:ledger-core")
+    // The range below is only the jar-in-jar metadata (the single-version form "[x.y.z]", accepted by the loader on
+    // NeoForge 26.1.2 build 126); the exact version is the preferred one (the plugin build version here; for
+    // OpenTelemetry the catalog, gradle/libs.versions.toml). JarJarVersionTest keeps them in step.
     jarJar("dev.geldar:ledger-core") {
-        version { strictly("[0.1,0.2)"); prefer("0.1.0") }
+        version { strictly("[0.1.0]"); prefer("0.1.0") }
     }
     for (artifact in listOf("opentelemetry-api", "opentelemetry-common", "opentelemetry-context")) {
+        // Range = jar-in-jar metadata only; the exact version is the preferred one, from the catalog (libs.versions.toml).
         jarJar("io.opentelemetry:$artifact") {
-            version { strictly("[1.67,1.68)"); prefer("1.67.0") }
+            version { strictly("[1.67.0]"); prefer("1.67.0") }
         }
     }
     implementation(libs.opentelemetry.api)
@@ -81,6 +85,10 @@ tasks.test {
     // JarContentTest opens the built mod jar (jar-in-jar content).
     dependsOn(tasks.jar)
     systemProperty("ledger.mod.jar", tasks.jar.get().archiveFile.get().asFile.absolutePath)
+    // JarJarVersionTest compares the jar-in-jar metadata with the catalog and the plugin build version.
+    systemProperty("ledger.catalog", file("gradle/libs.versions.toml").absolutePath)
+    systemProperty("ledger.plugin.build", file("../plugin/build.gradle.kts").absolutePath)
+    inputs.files("gradle/libs.versions.toml", "../plugin/build.gradle.kts")
     // The scan tests read these trees directly; declare them so an edit reruns the tests instead of being up to date.
     inputs.dir(layout.projectDirectory.dir("src/main"))
     inputs.dir(layout.projectDirectory.dir("../plugin/ledger-core/src/main"))
