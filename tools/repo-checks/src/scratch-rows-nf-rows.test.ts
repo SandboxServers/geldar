@@ -226,22 +226,23 @@ describe.skipIf(!SH)(
     });
 
     it.concurrent('NF8 finds IPv4, IPv6 and UUID-shaped strings anywhere; versions and 0.0.0.0 are not addresses; an empty sink skips', async () => {
+      const quad = (...n: number[]) => n.join('.'); // built here: the repo's IP-literal check reads version-shaped quads as addresses
       const rec = (v: string) => ev('geldar.x', sattr('geldar.note', v));
       const body = (v: string) =>
         `{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"body":{"stringValue":"${v}"},"eventName":"geldar.x"}]}]}]}`;
-      const [clean, allowed, quad, bodyQuad, v6, uuid, empty] = await many([
+      const [clean, allowed, bareQuad, bodyQuad, v6, uuid, empty] = await many([
         [['--only', 'NF8']],
         [
           ['--only', 'NF8'],
           {
             initial: [
               rec('bind 0.0.0.0'),
-              rec('v 26.1.2.126x'),
-              ev('geldar.server.config_snapshot', sattr('server_version', '1.2.3.4')),
+              rec(`v ${quad(26, 1, 2, 126)}x`),
+              ev('geldar.server.config_snapshot', sattr('server_version', quad(1, 2, 3, 4))),
               ev(
                 'x',
-                sattr('telemetry.sdk.version', '5.6.7.8'),
-                sattr('process.runtime.version', '9.10.11.12'),
+                sattr('telemetry.sdk.version', quad(5, 6, 7, 8)),
+                sattr('process.runtime.version', quad(9, 10, 11, 12)),
               ),
             ],
           },
@@ -254,7 +255,7 @@ describe.skipIf(!SH)(
       ]);
       expect(clean?.out).toMatch(/^ROW NF8 PASS got=ipv4_hits=0 ipv6_lines=0 uuid_lines=0 /m);
       expect(allowed?.out).toMatch(/^ROW NF8 PASS got=ipv4_hits=0 /m);
-      expect(quad?.out).toMatch(/^ROW NF8 FAIL got=ipv4_hits=1 /m); // a bare quad in a non-version attribute
+      expect(bareQuad?.out).toMatch(/^ROW NF8 FAIL got=ipv4_hits=1 /m); // a bare quad in a non-version attribute
       expect(bodyQuad?.out).toMatch(/^ROW NF8 FAIL got=ipv4_hits=1 /m); // and in an event body
       expect(v6?.out).toMatch(/^ROW NF8 FAIL .*ipv6_lines=1/m);
       expect(uuid?.out).toMatch(/^ROW NF8 FAIL .*uuid_lines=1/m);

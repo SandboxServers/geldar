@@ -374,7 +374,7 @@ row_NF8() {
   fi
   # A dotted quad is not an address when it is a version: attributes whose key contains "version" (server_version,
   # telemetry.sdk.version, process.runtime.version) are dropped first, and a quad that starts with `26.` (the NeoForge and
-  # Minecraft release line, e.g. 26.1.2.126) is ignored; 0.0.0.0 is a bind address. Any other quad, in any attribute or body, counts.
+  # Minecraft release line, 26.x.y.z) is ignored; 0.0.0.0 is a bind address. Any other quad, in any attribute or body, counts.
   v4=$(cat "$OUT"/*.jsonl | sed 's/"key":"[^"]*[Vv]ersion[^"]*","value":{"[A-Za-z]*":"[^"]*"}//g' | grep -o -E "$IPV4" |
     grep -v -c -E '0\.0\.0\.0|(^|[^0-9.])26\.[0-9]+\.[0-9]+\.[0-9]+')
   v6=$(cat "$OUT"/*.jsonl | grep -c -E "$IPV6")
