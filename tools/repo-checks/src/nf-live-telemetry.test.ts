@@ -145,6 +145,38 @@ describe('nf-live telemetry overlay: the pinned constants (no docker needed)', (
   });
 });
 
+// The shared contract between the overlay and the entrypoint that reads it. Names are parsed from the overlay YAML, not
+// copied here, so renaming an env key or a mount target in the overlay fails this block until the entrypoint follows.
+describe('nf-live telemetry overlay: the entrypoint contract (no docker needed)', () => {
+  const ENTRYPOINT = readFileSync(`${ROOT}compose/neoforge/neoforge-entrypoint.sh`, 'utf8');
+  const NF_DEPLOY = readFileSync(`${ROOT}deploy/nf-deploy.sh`, 'utf8');
+  const neo = (parse(OVERLAY_TEXT) as { services: { neoforge: Svc } }).services.neoforge;
+
+  it('is the grep nf-deploy.sh runs before it accepts NF_TELEMETRY=on', () => {
+    expect(NF_DEPLOY).toContain(
+      'grep -Fq GELDAR_NF_TELEMETRY "$ROOT/compose/neoforge/neoforge-entrypoint.sh"',
+    );
+    expect(ENTRYPOINT).toContain('GELDAR_NF_TELEMETRY');
+  });
+
+  it('has every container env name the overlay sets on neoforge in the entrypoint source', () => {
+    const names = Object.keys(neo.environment ?? {});
+    expect(names.length).toBeGreaterThan(0);
+    for (const name of names) expect(ENTRYPOINT, name).toContain(name);
+  });
+
+  it('has every container mount target the overlay uses on neoforge in the entrypoint source', () => {
+    const targets = (neo.volumes ?? []).map((v) => v.target ?? '');
+    expect(targets.length).toBeGreaterThan(0);
+    for (const target of targets) expect(ENTRYPOINT, target).toContain(target);
+  });
+
+  it('has no agent pin variable and no old GELDAR_NF_OTEL_AGENT= switch', () => {
+    expect(ENTRYPOINT).not.toContain('GELDAR_NF_OTEL_AGENT_PIN');
+    expect(ENTRYPOINT).not.toMatch(/GELDAR_NF_OTEL_AGENT=/);
+  });
+});
+
 describe.skipIf(!DOCKER)('nf-live telemetry overlay: the render', () => {
   it('renders on top of the base file, and renders alone (CI and geldar.ps1 check each compose file alone)', () => {
     expect(on.services.neoforge).toBeDefined();

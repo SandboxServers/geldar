@@ -402,9 +402,10 @@ UNVERIFIED, and not covered by this packet:
 - The symlink refusal tests run on Linux CI only: they skip on Windows (the probe in the test file).
 - The two properties files (`NF_OTEL_AGENT_PROPS_HOST`, `NF_LEDGER_PROPS_HOST`) are NOT hash-checked. The script checks only
   that they are regular files; the agent sends what they say.
-- TODO after PR #701 merges (not added before: the entrypoint is absent from this tree): a repo test greps
-  `compose/neoforge/neoforge-entrypoint.sh` for `GELDAR_NF_TELEMETRY`, `GELDAR_NF_LEDGER_SHA256` and `GELDAR_NF_OTEL_AGENT_SHA256`,
-  and checks that the entrypoint builds the `-javaagent` flag itself.
+- The repo test `tools/repo-checks/src/nf-live-telemetry.test.ts` (block "the entrypoint contract") checks that every env name and
+  mount target of the overlay appears in `compose/neoforge/neoforge-entrypoint.sh`, that the `GELDAR_NF_TELEMETRY` grep of
+  `deploy/nf-deploy.sh` matches, and that the old `GELDAR_NF_OTEL_AGENT_PIN` and `GELDAR_NF_OTEL_AGENT=` names are gone. It does
+  NOT check that the entrypoint builds the `-javaagent` flag itself; that check is still open.
 - RCON stays disabled until the probe packet; the tick and TPS check (checklist item 6) is outside this packet.
 - The mechanism by which `JVM_OPTS` reaches `user_jvm_args.txt` on every start of the pinned itzg image is verified by the lead,
   not by this checkout. The attach is not.
