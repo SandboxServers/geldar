@@ -1,9 +1,11 @@
 package dev.geldar.ledger.paper.curated;
 
 import dev.geldar.ledger.core.CollectorGuard;
+import dev.geldar.ledger.core.ContentLog;
 import dev.geldar.ledger.core.EventLog;
 import dev.geldar.ledger.core.HostInfo;
 import dev.geldar.ledger.core.Severity;
+import dev.geldar.ledger.core.TokenBucket;
 import dev.geldar.ledger.core.ids.LifeIds;
 import dev.geldar.ledger.paper.census.CensusExclusions;
 import java.util.HashMap;
@@ -110,18 +112,106 @@ public final class CuratedRegistry {
         }
     }
 
+    /** Reads one content event (PT-07d). May run on any thread, so it must be thread-safe and must not change the event. */
+    @FunctionalInterface
+    public interface ContentExtractor<E extends Event> {
+        void extract(E event, ContentSink out);
+    }
+
+    /**
+     * The out-parameter of a {@link ContentExtractor}: the text and three field strings. One per event, because a
+     * content event (chat) is delivered off the main thread. Identity as in {@link FieldSink#player}: only a life id.
+     */
+    public static final class ContentSink {
+        public String text;
+        public String s1;
+        public String s2;
+        public String s3;
+        private boolean skipped;
+
+        public void skip() {
+            skipped = true;
+        }
+
+        /** s1 = the life id when the player's name is one; a human's name is never copied (S5). */
+        public void player(Player p) {
+            String name = p.getName();
+            s1 = name != null && LifeIds.isLifeId(name) ? name : null;
+        }
+    }
+
+    private static final int CONTENT_RATE = 20;
+
     private final EventLog events;
+    private final ContentLog content;
     private final CollectorGuard guard;
     private final HostInfo host;
     private final Binder binder;
     private final LongAdder errors = new LongAdder();
+    private final LongAdder contentRateDrops = new LongAdder();
     private int registered;
 
     public CuratedRegistry(EventLog events, CollectorGuard guard, HostInfo host, Binder binder) {
+        this(events, null, guard, host, binder);
+    }
+
+    public CuratedRegistry(EventLog events, ContentLog content, CollectorGuard guard, HostInfo host, Binder binder) {
         this.events = events;
+        this.content = content;
         this.guard = guard;
         this.host = host;
         this.binder = binder;
+    }
+
+    /** Content events dropped by the plugin-side token bucket so far. */
+    public long contentRateDrops() {
+        return contentRateDrops.sum();
+    }
+
+    /**
+     * Registers one content event class (PT-07d). Startup only. Unlike {@link #on} the executor works on any thread and
+     * never touches the {@link CollectorGuard} (the guard is main-thread state, S6): it takes only the thread-safe token
+     * bucket ({@code ratePerSecond}) and the core's ring offer. Every throwable is swallowed and counted (S8).
+     * {@code fieldNames} name s1 to s3. Needs a registry built with a {@link ContentLog}.
+     */
+    public <E extends Event> void onContent(
+            Class<E> type,
+            String eventName,
+            int ratePerSecond,
+            String[] fieldNames,
+            boolean ignoreCancelled,
+            ContentExtractor<E> extractor) {
+        if (content == null) {
+            throw new IllegalStateException("no ContentLog");
+        }
+        if (CensusExclusions.isExcluded(type)) {
+            throw new IllegalArgumentException("excluded event class: " + type.getSimpleName());
+        }
+        int id = content.register(eventName, fieldNames);
+        TokenBucket bucket = new TokenBucket(ratePerSecond > 0 ? ratePerSecond : CONTENT_RATE, System::nanoTime);
+        binder.bind(
+                type,
+                (listener, event) -> {
+                    if (!type.isInstance(event)) {
+                        return;
+                    }
+                    try {
+                        ContentSink sink = new ContentSink();
+                        extractor.extract(type.cast(event), sink);
+                        if (sink.skipped) {
+                            return;
+                        }
+                        if (!bucket.tryTake()) {
+                            contentRateDrops.increment();
+                            return;
+                        }
+                        content.record(id, sink.text, sink.s1, sink.s2, sink.s3);
+                    } catch (Throwable t) {
+                        errors.increment();
+                    }
+                },
+                ignoreCancelled);
+        registered++;
     }
 
     /** Events registered so far. */
