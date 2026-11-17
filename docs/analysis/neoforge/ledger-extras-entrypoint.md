@@ -15,7 +15,7 @@ Status: part 1 (the entrypoint, the scratch overlay and the scratch wiring). The
 
 1. The JVM variable on the `run.sh` branch. Verified on the pinned image: `JVM_OPTS` reaches the `java` command, and the `run.sh` branch writes `user_jvm_args.txt`. NOT verified: that NeoForge's own `run.sh` reads `user_jvm_args.txt` on this version. Check on a host with the agent on and read the java command line (a read-only probe) before relying on it.
 2. Whether Docker creates `/data/config` for the nested bind of `ledger.properties` inside the `paper-data` volume. The overlay sets `create_host_path: false` for the host file only; the target directory is expected to be created by the container runtime. Unverified on a host.
-3. The soft kill reaches the container only when the overlay is rendered. With `SCRATCH_NEOFORGE_LEDGER_SHA256=off` alone, scratch.sh renders no overlay, so a stale copy of the ledger jar left in the data volume still stops the start. Decide whether `off` alone should render an env-only overlay. Not decided here.
+3. The soft kill works in scratch. With `SCRATCH_NEOFORGE_LEDGER_SHA256=off` alone, scratch.sh renders the env-only overlay `compose/opt-in/scratch-neoforge-ledger-off.yml` (two environment keys on `paper`, no mount, no network), so the entrypoint's `off` branch sees `GELDAR_NF_LEDGER_SHA256=off` and removes a stale ledger copy in the data volume. The nf-live wiring of the same kill is still to decide.
 4. The OTLP endpoint is whatever the agent properties file says. Nothing in this repo sets or checks it.
 5. The agent jar's pinned sha256 is the owner's to record. Nothing here downloads it.
 6. `deploy/build-neoforge-ledger.sh` is not in this tree; it arrives with the telemetry work.

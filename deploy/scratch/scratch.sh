@@ -190,7 +190,7 @@ compose_run() {
     set -- -f "$NATS_OVERRIDE" "$@"
   fi
   [ "$PLATFORM" = neoforge ] && [ -n "${GELDAR_NF_MOD_JAR_HOST:-}" ] && set -- -f "$ROOT/compose/opt-in/scratch-neoforge-mod.yml" "$@"
-  [ "$PLATFORM" = neoforge ] && [ -n "${GELDAR_NF_LEDGER_JAR_HOST:-}" ] && set -- -f "$ROOT/compose/opt-in/scratch-neoforge-ledger.yml" "$@"
+  [ "$PLATFORM" = neoforge ] && [ -n "${GELDAR_NF_LEDGER_FILE:-}" ] && set -- -f "$GELDAR_NF_LEDGER_FILE" "$@"
   if [ "$PLATFORM" = neoforge ]; then
     set -- -f "$ROOT/compose/opt-in/scratch-neoforge.yml" "$@"
   fi

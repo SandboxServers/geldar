@@ -14,6 +14,7 @@ import { AUTH, type Env, JARS, runScript, skipWithoutSh, slash } from './scratch
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const OVERLAY_TEXT = readFileSync(`${ROOT}compose/opt-in/scratch-neoforge-ledger.yml`, 'utf8');
 const NF_TEXT = readFileSync(`${ROOT}compose/opt-in/scratch-neoforge.yml`, 'utf8');
+const OFF_TEXT = readFileSync(`${ROOT}compose/opt-in/scratch-neoforge-ledger-off.yml`, 'utf8');
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 
 /** Fixture bytes for the four host files. The tests check the bytes never reach stdout or stderr. */
@@ -191,7 +192,7 @@ describe.skipIf(skipWithoutSh())(
       expect(upLine(r.calls).split('scratch-neoforge-ledger.yml').length - 1).toBe(1);
     });
 
-    it('the soft kill: SCRATCH_NEOFORGE_LEDGER_SHA256=off alone exits 0 and adds no ledger overlay', () => {
+    it('the soft kill: SCRATCH_NEOFORGE_LEDGER_SHA256=off alone exits 0 and adds the off overlay, never the jar overlay', () => {
       const r = runScript(
         ['up'],
         { ...AUTH, SCRATCH_PLATFORM: 'neoforge', SCRATCH_NEOFORGE_LEDGER_SHA256: 'off' },
@@ -199,15 +200,53 @@ describe.skipIf(skipWithoutSh())(
       );
       expect(r.status).toBe(0);
       expect(r.stderr).not.toContain('scratch:');
-      expect(upLine(r.calls)).not.toContain('scratch-neoforge-ledger.yml');
+      const up = upLine(r.calls);
+      expect(up.indexOf('opt-in/scratch-neoforge.yml')).toBeLessThan(
+        up.indexOf('opt-in/scratch-neoforge-ledger-off.yml'),
+      );
+      expect(up.indexOf('opt-in/scratch-neoforge-ledger-off.yml')).toBeLessThan(
+        up.indexOf('nats-override.yml'),
+      );
+      expect(up).not.toContain('scratch-neoforge-ledger.yml');
     });
 
-    it('with neither variable the up command has no ledger overlay: the default render is unchanged', () => {
+    it('off with a jar path or an agent variable exits 2 before any docker call: the two are contradictory', () => {
+      const withJar = runScript(['up'], ledgerEnv('off'), JARS);
+      expect(withJar.status).toBe(2);
+      expect(withJar.stderr).toContain('contradictory');
+      expect(withJar.stderr).toContain('nothing started');
+      expect(withJar.calls).toEqual([]);
+
+      const withAgent = runScript(['up'], ledgerEnv('off', { agent: true }), JARS);
+      expect(withAgent.status).toBe(2);
+      expect(withAgent.stderr).toContain('contradictory');
+      expect(withAgent.calls).toEqual([]);
+      expect(withAgent.stdout + withAgent.stderr).not.toContain(LEDGER);
+    });
+
+    it('down and status never refuse on off: off alone renders the off overlay, off with a jar renders no ledger file', () => {
+      const offAlone = runScript(
+        ['down'],
+        { ...AUTH, SCRATCH_PLATFORM: 'neoforge', SCRATCH_NEOFORGE_LEDGER_SHA256: 'off' },
+        JARS,
+      );
+      expect(offAlone.status).toBe(0);
+      expect(offAlone.calls.join('\n')).toContain('opt-in/scratch-neoforge-ledger-off.yml');
+      for (const verb of ['down', 'status']) {
+        const r = runScript([verb], ledgerEnv('off'), JARS);
+        expect(r.status, verb).toBe(0);
+        expect(r.stderr, verb).not.toContain('nothing started');
+        expect(r.calls.join('\n'), verb).not.toContain('scratch-neoforge-ledger');
+      }
+    });
+
+    it('with neither variable the up command has no ledger overlay and no off overlay: the default render is unchanged', () => {
       const r = runScript(['up'], { ...AUTH, SCRATCH_PLATFORM: 'neoforge' }, JARS);
       expect(r.status).toBe(0);
       const up = upLine(r.calls);
       expect(up).toContain('opt-in/scratch-neoforge.yml');
       expect(up).not.toContain('scratch-neoforge-ledger.yml');
+      expect(up).not.toContain('scratch-neoforge-ledger-off.yml');
     });
 
     it('down and status run after the jar is deleted: only up refuses on the ledger variables', () => {
@@ -285,5 +324,23 @@ describe('scratch-neoforge-ledger.yml: the render when the variables are set', (
     expect(NF_TEXT).not.toContain('geldar-ledger.jar');
     expect(NF_TEXT).not.toContain('GELDAR_NF_LEDGER');
     expect(NF_TEXT).not.toContain('GELDAR_NF_OTEL');
+  });
+});
+
+describe('scratch-neoforge-ledger-off.yml: the soft kill render', () => {
+  const off = parse(OFF_TEXT) as {
+    services: { paper: { environment: Record<string, string>; volumes?: unknown } };
+    networks?: unknown;
+  };
+
+  it('sets only two environment keys on paper, with literal values, and no volume, mount or network', () => {
+    expect(Object.keys(off.services)).toEqual(['paper']);
+    expect(off.services.paper.environment).toEqual({
+      GELDAR_NF_LEDGER_SHA256: 'off',
+      GELDAR_NF_OTEL_AGENT: '0',
+    });
+    expect(off.services.paper.volumes).toBeUndefined();
+    expect(off.networks).toBeUndefined();
+    expect(OFF_TEXT).not.toMatch(/volumes:|networks:|external:|\$\{/);
   });
 });

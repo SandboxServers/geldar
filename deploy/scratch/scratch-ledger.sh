@@ -4,7 +4,7 @@
 # refuse on these variables: they render the overlay only when every value has the right shape (ledger_render_ok). The host
 # sha256 of each jar is checked before any docker call; the entrypoint checks it again inside the container.
 #   SCRATCH_NEOFORGE_LEDGER_JAR and SCRATCH_NEOFORGE_LEDGER_SHA256: both or neither. SCRATCH_NEOFORGE_LEDGER_SHA256=off alone is
-#     the soft kill: no overlay and no mount.
+#     the soft kill: compose/opt-in/scratch-neoforge-ledger-off.yml (two environment keys, no mount), and it refuses with a jar or agent variable.
 #   SCRATCH_LEDGER_PROPS: the ledger config file, required with the jar pair.
 #   SCRATCH_OTEL_AGENT_JAR, SCRATCH_OTEL_AGENT_SHA256, SCRATCH_OTEL_AGENT_PROPS: all three or none, and only with the jar pair.
 
@@ -36,7 +36,7 @@ check_ledger_env() {
     ledger_refuse "the ledger jar and the OpenTelemetry agent need SCRATCH_PLATFORM=neoforge"
   fi
   if [ "$ls" = off ]; then
-    [ -z "$lj$lp$aj$as$ap" ] || ledger_refuse "SCRATCH_NEOFORGE_LEDGER_SHA256=off takes no other ledger or agent variable"
+    [ -z "$lj$lp$aj$as$ap" ] || ledger_refuse "SCRATCH_NEOFORGE_LEDGER_SHA256=off is contradictory with the ledger jar or agent variables; unset them, or set the jar pair"
     return 0
   fi
   if [ -z "$lj" ] && [ -z "$ls" ]; then
@@ -95,6 +95,10 @@ ledger_set_env() {
   GELDAR_NF_OTEL_AGENT_SHA256=
   GELDAR_NF_OTEL_AGENT_JAR_HOST=
   GELDAR_NF_OTEL_AGENT_PROPS_HOST=
+  GELDAR_NF_LEDGER_OFF=0
+  if [ "$ls" = off ] && [ -z "$lj$lp$aj$as$ap" ]; then
+    GELDAR_NF_LEDGER_OFF=1
+  fi
   if ledger_render_ok; then
     GELDAR_NF_LEDGER_JAR_HOST=$lj
     GELDAR_NF_LEDGER_PROPS_HOST=$lp
@@ -108,6 +112,13 @@ ledger_set_env() {
       GELDAR_NF_OTEL_AGENT_PROPS_HOST=$ap
     fi
   fi
+  # The overlay compose_run adds (scratch.sh): the env-only soft kill, or the ledger jar overlay. Empty adds nothing.
+  GELDAR_NF_LEDGER_FILE=
+  if [ "$GELDAR_NF_LEDGER_OFF" = 1 ]; then
+    GELDAR_NF_LEDGER_FILE=$ROOT/compose/opt-in/scratch-neoforge-ledger-off.yml
+  elif [ -n "$GELDAR_NF_LEDGER_JAR_HOST" ]; then
+    GELDAR_NF_LEDGER_FILE=$ROOT/compose/opt-in/scratch-neoforge-ledger.yml
+  fi
   export GELDAR_NF_LEDGER_JAR_HOST GELDAR_NF_LEDGER_PROPS_HOST GELDAR_NF_LEDGER_SHA256 GELDAR_NF_OTEL_AGENT GELDAR_NF_OTEL_AGENT_SHA256
-  export GELDAR_NF_OTEL_AGENT_JAR_HOST GELDAR_NF_OTEL_AGENT_PROPS_HOST
+  export GELDAR_NF_OTEL_AGENT_JAR_HOST GELDAR_NF_OTEL_AGENT_PROPS_HOST GELDAR_NF_LEDGER_OFF
 }

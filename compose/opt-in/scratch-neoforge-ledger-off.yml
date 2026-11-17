@@ -1,0 +1,9 @@
+# Scratch NeoForge ledger soft kill (suffix nf). Layers after compose/opt-in/scratch-neoforge.yml, and is added by
+# deploy/scratch/scratch.sh compose_run only when SCRATCH_NEOFORGE_LEDGER_SHA256=off alone (scratch-ledger.sh sets GELDAR_NF_LEDGER_OFF=1).
+# It sets two environment keys on paper, with literal values, so the entrypoint takes its off branch on a stale ledger copy. It
+# declares no volume, no mount and no network: the ledger jar, the agent and the ledger config are not mounted or read.
+services:
+  paper:
+    environment:
+      GELDAR_NF_LEDGER_SHA256: "off"
+      GELDAR_NF_OTEL_AGENT: "0"
