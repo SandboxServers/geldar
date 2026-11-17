@@ -82,6 +82,7 @@ Each map file also sets render options (`sky-color`, `ambient-light`, `remove-ca
 | `alias-proxy/alias-proxy.ts` | Service `bluemap-alias`: display aliases (runbook glass-aliases). | [glass-aliases](../runbooks/glass-aliases.md), [map-chat-panel](../runbooks/map-chat-panel.md) |
 | `web/geldar-chat.js`, `web/geldar.css` | The chat panel: reads `geldar-chat.json` (written by Geldar-Core) and the public `players.json`, shows lines as text only. | [map-chat-panel](../runbooks/map-chat-panel.md) |
 | `web/geldar-sky.js` | The time-of-day dial; reads only the feed's clock. | [map-chat-panel](../runbooks/map-chat-panel.md) |
+| `web/geldar-settings.json` | The pinned BlueMap `settings.json` (BM-16): Caddy serves it at `/settings.json`, so the scripts and styles survive a BlueMap restart. | [map-chat-panel](../runbooks/map-chat-panel.md) |
 
 Caddy serves the tiles and these assets from the `bluemap-web` service and proxies only `/maps/<map>/live/<file>` (GET and HEAD) (`plugins/bluemap/README.md`; `compose/colo.yml`).
 

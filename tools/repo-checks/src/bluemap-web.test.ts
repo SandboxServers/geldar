@@ -13,6 +13,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 const IMAGE = 'caddy@sha256:c3d7ee5d2b11f9dc54f947f68a734c84e9c9666c92c88a7f30b9cba5da182adb';
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const caddyfile = resolve(repo, 'compose/bluemap-web/Caddyfile');
+// BM-16: GET /settings.json is served from this pinned file, mounted as colo.yml mounts it.
+const pinnedSettings = resolve(repo, 'plugins/bluemap/web/geldar-settings.json');
 
 const dockerUp =
   spawnSync('docker', ['version', '--format', '{{.Server.Version}}'], { stdio: 'ignore' })
@@ -78,6 +80,8 @@ describe('bluemap-web Caddyfile', () => {
           '-v',
           `${caddyfile}:/etc/caddy/Caddyfile:ro`,
           '-v',
+          `${pinnedSettings}:/etc/caddy/geldar-settings.json:ro`,
+          '-v',
           `${root}:/srv:ro`,
           IMAGE,
         ],
@@ -126,11 +130,14 @@ describe('bluemap-web Caddyfile', () => {
       expect((await call(port, 'POST', '/maps/world/textures.json')).status).toBe(405);
     });
 
-    it('leaves settings.json unchanged', async () => {
+    it('serves the pinned settings.json, never the webroot copy (BM-16)', async () => {
       const r = await call(port, 'GET', '/settings.json');
       expect(r.status).toBe(200);
       expect(r.headers['content-encoding']).toBeUndefined();
-      expect(r.body.toString()).toBe(settings);
+      expect(r.headers['content-type']).toContain('application/json');
+      expect(r.headers['cache-control']).toBe('no-cache');
+      expect(r.body.toString()).toBe(readFileSync(pinnedSettings, 'utf8'));
+      expect(r.body.toString()).not.toBe(settings);
     });
   });
 });

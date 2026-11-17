@@ -12,7 +12,7 @@ sources: [../decisions/0310-live-chat-panel-on-the-map.md, ../decisions/0197-spe
 
 The panel shows agents' chat on the public map. Step 1 restarts Paper: it needs the owner's approval, given through the
 orchestrator. Nothing here restarts the shared production Caddy. The node's compose and Caddyfile edits are
-in step 2; the only hand edit to the Paper volume is the one `settings.json` line in step 2.
+in step 2; the Paper volume gets no hand edit, since BM-16 the public site serves the pinned `settings.json` (section 2a).
 
 ## 1. Replace the geldar-core jar and restart Paper (owner approval)
 
@@ -59,20 +59,22 @@ Run the commands below in the node's checkout, the one that holds `compose/colo.
    cp -p compose/bluemap-web/Caddyfile compose/bluemap-web/Caddyfile.bak-$STAMP
    ```
 2. In `compose/colo.yml`, in the `bluemap-web` service (main has it at line 541 at commit `03c1f5de`), add the mount lines directly after
-   the `geldar.css` mount, in this order: `geldar-chat.js`, then `geldar-sky.js` (the sky dial, BM-15). Six spaces of
-   indent, as the lines around them:
+   the `geldar.css` mount, in this order: `geldar-chat.js`, then `geldar-sky.js` (the sky dial, BM-15), then
+   `geldar-settings.json` (the pinned settings, BM-16). Six spaces of indent, as the lines around them:
    ```
          - ../plugins/bluemap/web/geldar.css:/etc/caddy/geldar.css:ro
          - ../plugins/bluemap/web/geldar-chat.js:/etc/caddy/geldar-chat.js:ro
          - ../plugins/bluemap/web/geldar-sky.js:/etc/caddy/geldar-sky.js:ro
+         - ../plugins/bluemap/web/geldar-settings.json:/etc/caddy/geldar-settings.json:ro
    ```
-   Add the `geldar-chat.js` line only if the node file does not already have it, then the `geldar-sky.js` line. A second
-   mount with the same target makes compose reject the file. Do not copy main's `colo.yml` over the node file: the node file holds node-only values
+   Add each line only if the node file does not already have it. A second mount with the same target makes compose reject
+   the file. The `geldar-settings.json` source must already be on the node (step 4), or compose creates a directory in its
+   place. Do not copy main's `colo.yml` over the node file: the node file holds node-only values
    (see "Shipped versus node-only drift" below).
 3. Replace the node's `compose/bluemap-web/Caddyfile` with main's `compose/bluemap-web/Caddyfile`. Copy over the file in
-   place (not `mv`), so the bind mount keeps the same file. Main's file has three blocks the node needs, quoted below:
-   the `/assets/geldar-chat.js` handler, the `/assets/geldar-sky.js` handler and the `@chat` feed block. Tabs are the
-   file's indentation.
+   place (not `mv`), so the bind mount keeps the same file. Main's file has four blocks the node needs, quoted below:
+   the `/assets/geldar-chat.js` handler, the `/assets/geldar-sky.js` handler, the `/settings.json` handler (BM-16) and the
+   `@chat` feed block. Tabs are the file's indentation. Copy the whole file, not only the quoted blocks.
 
 
 ```
@@ -91,6 +93,16 @@ Run the commands below in the node's checkout, the one that holds `compose/colo.
 		file_server
 	}
 
+	# BlueMap's settings.json, pinned in the repo (BM-16). BlueMap rewrites the webroot copy on every start and drops the
+	# scripts and styles, so this file is served instead. Same-origin only.
+	handle /settings.json {
+		root * /etc/caddy
+		rewrite * /geldar-settings.json
+		header Content-Type "application/json"
+		header Cache-Control no-cache
+		file_server
+	}
+
 	# The chat feed the plugin writes into the webroot (decision 0310). It changes every few seconds: never cached.
 	@chat path /geldar-chat.json
 	handle @chat {
@@ -100,23 +112,59 @@ Run the commands below in the node's checkout, the one that holds `compose/colo.
 	}
 ```
 
-4. Both source files must exist on the node, at the paths the mounts point at. The mounts are relative to `compose/`:
-   `plugins/bluemap/web/geldar.css` (already there), `plugins/bluemap/web/geldar-chat.js` and `plugins/bluemap/web/geldar-sky.js`
-   (new). All three are listed in `deploy/genesis/config-bundle.list` (lines 54 to 56), so the config bundle ships them. Check with
-   `ls -l plugins/bluemap/web/`.
-5. Check the rendered config reads the new mounts, without starting anything: `dc config | grep 'geldar-\(chat\|sky\)'`.
+4. Every source file must exist on the node, at the paths the mounts point at. The mounts are relative to `compose/`:
+   `plugins/bluemap/web/geldar.css` (already there), and `geldar-chat.js`, `geldar-sky.js` and `geldar-settings.json`
+   (new, the last one from section 2a step 2). All four are listed in `deploy/genesis/config-bundle.list`, so the config
+   bundle ships them. Check with `ls -l plugins/bluemap/web/`. A missing source makes compose create a directory in its place.
+5. Check the rendered config reads the new mounts, without starting anything: `dc config | grep 'geldar-\(chat\|sky\|settings\)'`.
    `dc` is the compose helper in `deploy/common.sh`, the one `colo-up.sh` uses. It names the project and the compose files.
-6. Recreate only the web service, so it reads the new Caddyfile and mount. Do not name any other service:
+6. Only after steps 2 to 5 are all done, recreate the web service, so it reads the new Caddyfile and mounts. Do not name any other service:
    `dc up -d --no-deps --force-recreate --wait bluemap-web`.
    `--no-deps` keeps `caddy` (the shared production Caddy) and every other service out of it. `--force-recreate` is
    needed because compose does not see a changed bind-mounted file. `--wait` returns once the healthcheck passes.
 7. Verify before step 8: `curl -sI http://127.0.0.1:8100/assets/geldar-chat.js` and `curl -sI http://127.0.0.1:8100/assets/geldar-sky.js`
-   each return `HTTP/1.1 200` and `content-type: text/javascript; charset=utf-8`. If either does not, stop and go to the rollback below.
-8. Add the scripts to the webroot's settings: in `bluemap/web/settings.json` on the Paper volume, set
-   `"scripts": ["assets/geldar-chat.js", "assets/geldar-sky.js"]`. Only `scripts` is required. BlueMap resets `settings.json` on every Paper
-   restart (its `styles` became `[]` on 2026-11-15), so after a restart check the `scripts` line again and add it back
-   if it is gone. The script loads `assets/geldar.css` itself, so the panel still positions after such a reset.
+   each return `HTTP/1.1 200` and `content-type: text/javascript; charset=utf-8`. Then
+   `curl -s http://127.0.0.1:8100/settings.json | cmp - plugins/bluemap/web/geldar-settings.json` prints nothing. If any check
+   does not pass, stop and go to the rollback below.
+8. Settings: no hand edit to the webroot's `settings.json`. After steps 2 to 6, `/settings.json` is served from the pinned
+   `web/geldar-settings.json` (section 2a), which lists `assets/geldar-chat.js`, `assets/geldar-sky.js` and `assets/geldar.css`.
+   BlueMap's regenerated copy in the webroot is ignored, so a restart does not remove the scripts (BM-16; before it, `styles`
+   was reset to `[]` on 2026-11-15).
 9. Reload the public map page once.
+
+## 2a. Pinned settings.json (BM-16): node steps
+
+BlueMap rewrites the webroot's `settings.json` on every start and drops `scripts` and `styles`. BM-16 makes Caddy serve
+`/settings.json` from the repo's pinned copy instead, so a restart cannot remove them. These steps need the coordinator's
+authorisation. They recreate `bluemap-web` only: never the shared production Caddy, and no Paper restart. Section 2 steps 2.2
+to 2.4 carry the same mount and handler, so a node that runs section 2 needs only the check in step 5 below as well.
+
+1. Back up the node's `compose/colo.yml` and `compose/bluemap-web/Caddyfile` (step 2.1, with a new stamp).
+2. Copy `plugins/bluemap/web/geldar-settings.json` from the repo to the node's `plugins/bluemap/web/` (the config bundle
+   ships it; check with `ls -l plugins/bluemap/web/`).
+3. In `compose/colo.yml`, in the `bluemap-web` service, add one mount directly after the `geldar-sky.js` mount. Six spaces
+   of indent, as the lines around it:
+   ```
+         - ../plugins/bluemap/web/geldar-settings.json:/etc/caddy/geldar-settings.json:ro
+   ```
+4. Replace the node's `compose/bluemap-web/Caddyfile` with main's (copy over the file in place, as in step 2.3), so it has
+   the `handle /settings.json` block.
+5. Before the recreate, compare the webroot's `settings.json` with the pinned file, with `scripts` and `styles` removed from both
+   (`jq -S` sorts the keys, so the order does not matter):
+   ```
+   diff <(jq -S 'del(.scripts,.styles)' bluemap/web/settings.json) <(jq -S 'del(.scripts,.styles)' plugins/bluemap/web/geldar-settings.json)
+   ```
+   Empty output is expected. Any difference means BlueMap's output changed (a BlueMap upgrade, or a map added or removed
+   under `config/maps/`). Stop here: the pinned file must be updated in the repo first (the upgrade check in
+   `plugins/bluemap/README.md`), then this section starts again from step 1. Do not recreate on a difference.
+6. Recreate only the web service: `dc up -d --no-deps --force-recreate --wait bluemap-web`.
+7. Verify, all against `http://127.0.0.1:8100`:
+   - `curl -s http://127.0.0.1:8100/settings.json | cmp - plugins/bluemap/web/geldar-settings.json` prints nothing.
+   - `curl -sI http://127.0.0.1:8100/settings.json` shows `content-type: application/json` and `cache-control: no-cache`.
+   - `curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:8100/settings.json` prints `405`.
+8. Hand step, not automated: prune the old `settings.json.bak-*` files in the webroot (`bluemap/web/` on the Paper volume).
+   List them first with `ls -l bluemap/web/settings.json.bak-*` (about 8 at the time of writing), keep the newest, and
+   delete the rest by hand. The public site does not read them.
 
 ## 3. Checks (curl against the loopback port 127.0.0.1:8100)
 
@@ -129,8 +177,8 @@ Run before step 1 and again after step 2. Compare the `players.json` body before
 - `curl -s http://127.0.0.1:8100/maps/overworld/live/players.json`: the names are aliases, never an `ag_` username.
 - `curl -s http://127.0.0.1:8100/settings.json | grep -o 'assets/geldar-\(chat\|sky\)\.js' | wc -l`: 2. `grep -o` prints
   each match, so the one-line `scripts` array counts 2; `grep -c` counts lines and would give 1.
-- After every BlueMap restart, repeat the `settings.json` check above: the `scripts` line must still be there. BlueMap
-  regenerates the file on start.
+- After every BlueMap restart, the `settings.json` check above still returns 2: the public site reads the pinned file, so
+  BlueMap's regenerated copy does not matter.
 - `curl -s http://127.0.0.1:8100/geldar-chat.json | grep -c 'ag_'`: 0. The feed holds no agent username; speech text has
   them replaced with `Ranger`.
 - Follow (BM-11): click a speaker's name in the panel. The camera follows that agent (its marker is the followed one, and the name gets the `gc-following` highlight). A second click stops the follow, and dragging the map cancels it and clears the highlight. An agent not on the map shows "Not on the map" for 3 s.
@@ -160,7 +208,8 @@ Empty output means the copies match.
 ## Rollback
 
 1. Restore the previous geldar-core jar and restart Paper (owner approval).
-2. Remove `"assets/geldar-chat.js"` and `"assets/geldar-sky.js"` from `scripts` in `bluemap/web/settings.json`; remove the `scripts` key if it is empty.
+2. The public site reads the pinned `web/geldar-settings.json` (BM-16), not the webroot's `settings.json`. To take the scripts off the page,
+   undo the BM-16 node sync (section 2a, from the `.bak-<stamp>` copies) or remove the `scripts` entries from the pinned file in the repo.
 3. Delete `geldar-chat.json` and `geldar-chat.json.tmp` (if present) from the BlueMap web root on the Paper volume.
 4. Undo the node sync: copy the two `.bak-<stamp>` files from step 2.1 back over `compose/colo.yml` and
    `compose/bluemap-web/Caddyfile`, then recreate only the web service: `dc up -d --no-deps --force-recreate --wait bluemap-web`.

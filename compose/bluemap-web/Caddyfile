@@ -46,6 +46,16 @@
 		file_server
 	}
 
+	# BlueMap's settings.json, pinned in the repo (BM-16). BlueMap rewrites the webroot copy on every start and drops the
+	# scripts and styles, so this file is served instead. Same-origin only.
+	handle /settings.json {
+		root * /etc/caddy
+		rewrite * /geldar-settings.json
+		header Content-Type "application/json"
+		header Cache-Control no-cache
+		file_server
+	}
+
 	# The chat feed the plugin writes into the webroot (decision 0310). It changes every few seconds: never cached.
 	@chat path /geldar-chat.json
 	handle @chat {

@@ -130,6 +130,12 @@ services:
         read_only: true
         bind:
           create_host_path: true
+      - type: bind
+        source: ../plugins/bluemap/web/geldar-settings.json
+        target: /etc/caddy/geldar-settings.json
+        read_only: true
+        bind:
+          create_host_path: true
   eventsink:
     build:
       context: ..
