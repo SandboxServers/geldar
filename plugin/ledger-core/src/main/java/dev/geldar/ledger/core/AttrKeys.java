@@ -41,7 +41,7 @@ public final class AttrKeys {
     public static final String GAMEMODE = "geldar.gamemode";
     public static final String PING_BUCKET = "geldar.ping_bucket";
     // Dedicated keys (event keys only, never metric attributes): replace borrowing geldar.result / geldar.cause.
-    /** String: enum-like subtype (villager profession key, animal or killed EntityType, fish state). */
+    /** String: enum-like subtype (villager profession key, animal or killed EntityType, fish state, stat name, or a short hash such as the command tree hash). */
     public static final String SUBTYPE = "geldar.subtype";
     /** Long: the damage role code, 1 victim, 2 attacker, 3 pvp. */
     public static final String ROLE = "geldar.role";
