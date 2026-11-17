@@ -31,7 +31,14 @@ public final class ThreadCpuHandler implements JfrHandler {
     private final Map<String, Double> published = new LinkedHashMap<>();
     private Instant window;
 
+    private final List<String> ioPrefixes;
+
     public ThreadCpuHandler(Ledger ledger) {
+        this(ledger, JfrSettings.DEFAULT_IO_THREAD_PREFIXES);
+    }
+
+    public ThreadCpuHandler(Ledger ledger, List<String> ioThreadPrefixes) {
+        this.ioPrefixes = List.copyOf(ioThreadPrefixes);
         for (String g : GROUPS) {
             pending.put(g, 0.0);
             published.put(g, 0.0);
@@ -47,6 +54,10 @@ public final class ThreadCpuHandler implements JfrHandler {
 
     /** The group of a thread name; null and unknown names are {@code other}. */
     static String groupOf(String threadName) {
+        return groupOf(threadName, JfrSettings.DEFAULT_IO_THREAD_PREFIXES);
+    }
+
+    static String groupOf(String threadName, List<String> ioPrefixes) {
         if (threadName == null) {
             return "other";
         }
@@ -56,7 +67,7 @@ public final class ThreadCpuHandler implements JfrHandler {
         if (threadName.startsWith("ledger-")) {
             return "ledger";
         }
-        if (threadName.startsWith("Paper") || threadName.startsWith("Netty")) {
+        if (ioPrefixes.stream().anyMatch(threadName::startsWith)) {
             return "io";
         }
         if (threadName.startsWith("C2 CompilerThread") || threadName.startsWith("C1 CompilerThread")) {
@@ -89,7 +100,7 @@ public final class ThreadCpuHandler implements JfrHandler {
         }
         Instant start = (Instant) field.apply("startTime");
         double ratio = number(field.apply("user")) + number(field.apply("system"));
-        String group = groupOf((String) field.apply("eventThread.javaName"));
+        String group = groupOf((String) field.apply("eventThread.javaName"), ioPrefixes);
         if (window != null && start != null && start.isAfter(window)) {
             published.putAll(pending);
             pending.replaceAll((k, v) -> 0.0);

@@ -118,7 +118,7 @@ Any other action throws and names the six valid ones (line 461).
 
 `./geldar.ps1 shard nats-auth <name>` writes, when missing and never overwriting: one password file per NATS user, a Thinker hub token file, and the server config `nats-auth.conf`, all in the shard's git-ignored secrets folder and owner-only (lines 315 to 365; decision 0067). The config defines one account, `GELDAR`, with JetStream, and one user per role with publish allow, optional publish deny and subscribe allow lists (lines 345 to 364).
 
-The roles come from `Get-NatsUsers` (lines 367 to 415), the per-user allow lists of decision 0087: `body`, `mind`, `eventsink`, `mcp`, `velocity`, `paper`, `kino`, `deploy`, `supervisor`, `register` and `helper`. Re-derive with:
+The roles come from `Get-NatsUsers` (lines 367 to 415), the per-user allow lists of decision 0087: `body`, `mind`, `eventsink`, `mcp`, `velocity`, `paper`, `kino`, `deploy`, `supervisor`, `register` and `helper` (the colo table). The phase0 table (scratch stack) adds `seed`, which can only create, inspect and update the two identity KV buckets. Re-derive with:
 
 ```powershell
 Select-String -Path geldar.ps1 -Pattern '^\s+(\w+) = @\{' | ForEach-Object { $_.Matches.Groups[1].Value }

@@ -2,6 +2,7 @@ package dev.geldar.ledger.core.jfr;
 
 import java.time.Duration;
 import java.util.Collection;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
@@ -49,10 +50,19 @@ public final class JfrSettings {
             "jdk.SystemProcess",
             "jdk.NativeLibrary");
 
+    /** Thread-name prefixes the thread-CPU handler counts as the I/O group. The default is the Paper and Netty pair. */
+    public static final List<String> DEFAULT_IO_THREAD_PREFIXES = List.of("Paper", "Netty");
+
     private final Map<String, Setting> byEvent;
+    private final List<String> ioThreadPrefixes;
 
     /** An allow-list with its values; denied names are dropped at construction. */
     public JfrSettings(Map<String, Setting> allowed) {
+        this(allowed, DEFAULT_IO_THREAD_PREFIXES);
+    }
+
+    private JfrSettings(Map<String, Setting> allowed, List<String> ioThreadPrefixes) {
+        this.ioThreadPrefixes = List.copyOf(ioThreadPrefixes);
         Map<String, Setting> m = new LinkedHashMap<>();
         allowed.forEach((k, v) -> {
             if (!DENIED.contains(k)) {
@@ -83,14 +93,23 @@ public final class JfrSettings {
                 m.put(k, v);
             }
         });
-        return new JfrSettings(m);
+        return new JfrSettings(m, ioThreadPrefixes);
     }
 
     /** A copy with one event's setting replaced or added (denied names stay out). */
     public JfrSettings with(String event, Setting setting) {
         Map<String, Setting> m = new LinkedHashMap<>(byEvent);
         m.put(event, setting);
-        return new JfrSettings(m);
+        return new JfrSettings(m, ioThreadPrefixes);
+    }
+
+    /** A copy with a different I/O thread-prefix list (a loader adapter supplies its own). */
+    public JfrSettings withIoThreadPrefixes(List<String> prefixes) {
+        return new JfrSettings(byEvent, prefixes);
+    }
+
+    public List<String> ioThreadPrefixes() {
+        return ioThreadPrefixes;
     }
 
     public Set<String> allowed() {

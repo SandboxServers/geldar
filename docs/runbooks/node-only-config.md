@@ -41,7 +41,7 @@ What genesis should script first, in this order:
 1. **Gamerule startup lines.** `compose/phase0.yml` has no `players_sleeping_percentage` line; add it next to the others, and keep `compose/colo.yml` line 138. Confirm the live value read-only with `gamerule players_sleeping_percentage`. This is the cheapest gap to close.
 2. **Compose sync check.** Compare the node's `compose/colo.yml` with main before any deploy. Without it, items 1 and 3 drift silently.
 3. **Aliases from a repo-tracked source.** Item 4 is never committed. Genesis needs a tracked source (a template or an encrypted file) that renders `aliases.json`, followed by a Glass restart.
-4. **NATS auth generated-vs-live check.** Compare `nats-auth.conf` with `Get-NatsUsers` output (user list and permission lines, passwords redacted). Item 5 already drifts by 3 users (`helper`, `supervisor`, `register`) and deny lines.
+4. **NATS auth generated-vs-live check.** Compare `nats-auth.conf` with `Get-NatsUsers` output (user list and permission lines, passwords redacted). Item 5 already drifts by 3 users (`helper`, `supervisor`, `register`) from the colo table, and deny lines.
 5. **CoreProtect config template.** Item 2's config is set by hand after the first start. Genesis needs a template whose keys are confirmed against the file the plugin writes. The database (graves and placement history) is data: back it up, do not reproduce it.
 
 Items 6 to 15 are either owner-gated (6, 9), data (10 to 12), or outside Colo (15). They need a decision, not a script.

@@ -85,6 +85,49 @@ class JfrHandlersTest {
     }
 
     @Test
+    void defaultIoThreadPrefixesArePaperAndNettyAndSurviveSettingsCopies() {
+        assertEquals(List.of("Paper", "Netty"), JfrSettings.DEFAULT_IO_THREAD_PREFIXES);
+        JfrSettings d = JfrSettings.defaults();
+        assertEquals(List.of("Paper", "Netty"), d.ioThreadPrefixes());
+        assertEquals(List.of("Paper", "Netty"), d.allowOnly(List.of("jdk.FileRead")).ioThreadPrefixes());
+        JfrSettings custom = d.withIoThreadPrefixes(List.of("Worker"));
+        assertEquals(List.of("Worker"), custom.ioThreadPrefixes());
+        assertEquals(List.of("Worker"), custom.with("jdk.FileRead", JfrSettings.Setting.period(java.time.Duration.ofSeconds(1))).ioThreadPrefixes());
+        assertEquals(List.of("Worker"), custom.allowOnly(List.of("jdk.FileRead")).ioThreadPrefixes());
+        assertEquals(d.allowed(), custom.allowed());
+    }
+
+    @Test
+    void customIoPrefixesReplaceTheDefaultsInGroupOf() {
+        List<String> custom = List.of("Worker-", "Netty");
+        assertEquals("io", ThreadCpuHandler.groupOf("Worker-Main-3", custom));
+        assertEquals("io", ThreadCpuHandler.groupOf("Netty Epoll Server IO #0", custom));
+        assertEquals("other", ThreadCpuHandler.groupOf("Paper Async Task Handler Thread - 0", custom));
+        assertEquals("server", ThreadCpuHandler.groupOf("Server thread", custom));
+        assertEquals("other", ThreadCpuHandler.groupOf("Worker-Main-3", List.of()));
+    }
+
+    @Test
+    void handlerUsesInjectedIoPrefixesAndDefaultsToPaperNetty() {
+        Instant t0 = Instant.parse("2026-01-01T00:00:00Z");
+        RecordingLedger custom = new RecordingLedger();
+        ThreadCpuHandler h = new ThreadCpuHandler(custom, List.of("Worker-"));
+        h.handle("jdk.ThreadCPULoad", cpu(t0, "Worker-Main-3", 0.25, 0.25));
+        h.handle("jdk.ThreadCPULoad", cpu(t0, "Paper Async", 0.125, 0.0));
+        h.handle("jdk.ThreadCPULoad", cpu(t0.plusSeconds(10), "Server thread", 0.0, 0.0));
+        assertEquals(0.5, custom.readGaugeDouble(Names.Jfr.THREAD_GROUP_CPU_RATIO, "io"), 1e-9);
+        assertEquals(0.125, custom.readGaugeDouble(Names.Jfr.THREAD_GROUP_CPU_RATIO, "other"), 1e-9);
+
+        RecordingLedger dflt = new RecordingLedger();
+        ThreadCpuHandler d = new ThreadCpuHandler(dflt);
+        d.handle("jdk.ThreadCPULoad", cpu(t0, "Paper Async", 0.125, 0.0));
+        d.handle("jdk.ThreadCPULoad", cpu(t0, "Worker-Main-3", 0.25, 0.0));
+        d.handle("jdk.ThreadCPULoad", cpu(t0.plusSeconds(10), "Server thread", 0.0, 0.0));
+        assertEquals(0.125, dflt.readGaugeDouble(Names.Jfr.THREAD_GROUP_CPU_RATIO, "io"), 1e-9);
+        assertEquals(0.25, dflt.readGaugeDouble(Names.Jfr.THREAD_GROUP_CPU_RATIO, "other"), 1e-9);
+    }
+
+    @Test
     void ratioIsUserPlusSystemSummedPerGroupAndPublishedWhenThePeriodEnds() {
         RecordingLedger ledger = new RecordingLedger();
         ThreadCpuHandler h = new ThreadCpuHandler(ledger);
