@@ -124,6 +124,7 @@ class CuratedRegistryTest {
         registry.on(EvChild.class, "geldar.test.child", Severity.INFO, FIELDS, true, (e, s) -> s.l1 = 1);
         binder.fire(EvChild.class, new EvA(5)); // delivered through the shared list, not a child
         assertEquals(0, ledger.events("geldar.test.child").size());
+        assertEquals(0, registry.errorCount()); // filtered, not cast and failed
         binder.fire(EvChild.class, new EvChild());
         assertEquals(1, ledger.events("geldar.test.child").size());
     }
@@ -131,7 +132,7 @@ class CuratedRegistryTest {
     @Test
     void aThrowingExtractorIsSwallowedCountedAndRecordsNothing() throws Exception {
         registry.on(EvA.class, "geldar.test.a", Severity.INFO, FIELDS, true, (e, s) -> {
-            throw new IllegalStateException("boom");
+            throw new NoClassDefFoundError("boom"); // an Error: the guard catches Throwable, not only exceptions
         });
         binder.fire(EvA.class, new EvA(1));
         assertEquals(1, registry.errorCount());
