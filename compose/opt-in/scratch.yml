@@ -35,8 +35,12 @@ services:
     restart: "no"
 
   paper:
+    # The itzg image starts as root and drops to UID:GID (its default is 1000:1000). Set to the account uid:gid, as
+    # compose/colo.yml does with GELDAR_SERVICE_UID, so the root entrypoint reads the 0600 secrets and the dropped JVM owns /data.
     environment:
       MEMORY: ${PAPER_MEMORY:-2G}
+      UID: "${SCRATCH_RUN_UID:?set by deploy/scratch/scratch.sh}"
+      GID: "${SCRATCH_RUN_GID:?set by deploy/scratch/scratch.sh}"
     deploy:
       resources:
         limits:
@@ -48,6 +52,10 @@ services:
     restart: "no"
 
   velocity:
+    # Like Paper: the itzg image starts as root and drops to UID:GID, so the forwarding-secret file (0600, the account's) is readable.
+    environment:
+      UID: "${SCRATCH_RUN_UID:?set by deploy/scratch/scratch.sh}"
+      GID: "${SCRATCH_RUN_GID:?set by deploy/scratch/scratch.sh}"
     ports: !override
       - "127.0.0.1:${SCRATCH_MC_PORT:-35565}:25565"
     deploy:
@@ -61,6 +69,10 @@ services:
     restart: "no"
 
   eventsink:
+    # Runs as the uid:gid of the account that started the stack (set_env in deploy/scratch/scratch.sh), not the image's
+    # node user. The 0600 secret files and the NATS files in SCRATCH_NATS_AUTH_DIR are owned by that account, so this
+    # user can read them without any mode change or ACL. No other service gets a user override.
+    user: "${SCRATCH_RUN_UID:?set by deploy/scratch/scratch.sh}:${SCRATCH_RUN_GID:?set by deploy/scratch/scratch.sh}"
     deploy:
       resources:
         limits:

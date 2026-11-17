@@ -211,14 +211,51 @@ set_env() {
   esac
   GELDAR_WORLD_VOLUME="${PROJECT}_paper-data"
   SCRATCH_SECRETS_DIR="$SECRETS"
-  export GELDAR_WORLD_VOLUME SCRATCH_SECRETS_DIR
+  # The eventsink runs as this account's uid:gid (compose/opt-in/scratch.yml), so it reads the 0600 files this account owns.
+  SCRATCH_RUN_UID=$(id -u)
+  SCRATCH_RUN_GID=$(id -g)
+  export GELDAR_WORLD_VOLUME SCRATCH_SECRETS_DIR SCRATCH_RUN_UID SCRATCH_RUN_GID
 }
 
+# Any non-root account may run. GELDAR_SERVICE_UID, when set, must be this account's uid. The secret modes never change:
+# the eventsink is started as the account (set_env), so no file is made readable to another uid.
 check_uid() {
-  want=${GELDAR_SERVICE_UID:-1000}
-  if [ "$(id -u)" != "$want" ]; then
-    echo "scratch: run as uid $want (GELDAR_SERVICE_UID): the eventsink reads the 0600 secret files as that uid; nothing started" >&2
+  if [ -n "${GELDAR_SERVICE_UID:-}" ]; then
+    case "$GELDAR_SERVICE_UID" in
+      *[!0-9]*)
+        echo "scratch: GELDAR_SERVICE_UID must be digits only (a uid such as 1001); nothing started" >&2
+        exit 2
+        ;;
+    esac
+  fi
+  if [ "$SCRATCH_RUN_UID" = 0 ]; then
+    echo "scratch: run as a non-root account; nothing started" >&2
     exit 1
+  fi
+  if [ -n "${GELDAR_SERVICE_UID:-}" ] && [ "$GELDAR_SERVICE_UID" != "$SCRATCH_RUN_UID" ]; then
+    echo "scratch: run as uid $GELDAR_SERVICE_UID (GELDAR_SERVICE_UID), but this account is uid $SCRATCH_RUN_UID; nothing started" >&2
+    exit 1
+  fi
+  check_container_uid
+}
+
+# SCRATCH_CONTAINER_UID is the uid the eventsink image was built for (its Dockerfile says node, 1000). It is only checked
+# and reported: the eventsink runs as this account whatever it says, so nothing else depends on it.
+check_container_uid() {
+  if [ -n "${SCRATCH_CONTAINER_UID+set}" ]; then
+    case "$SCRATCH_CONTAINER_UID" in
+      '' | *[!0-9]*)
+        echo "scratch: SCRATCH_CONTAINER_UID must be digits only (the uid the eventsink image was built for); nothing started" >&2
+        exit 2
+        ;;
+    esac
+    if [ "$SCRATCH_CONTAINER_UID" -eq 0 ]; then
+      echo "scratch: SCRATCH_CONTAINER_UID must not be 0 (root); nothing started" >&2
+      exit 2
+    fi
+    if [ "$SCRATCH_CONTAINER_UID" != "$SCRATCH_RUN_UID" ]; then
+      echo "scratch: the eventsink runs as uid $SCRATCH_RUN_UID (this account), not the image's uid $SCRATCH_CONTAINER_UID" >&2
+    fi
   fi
 }
 
