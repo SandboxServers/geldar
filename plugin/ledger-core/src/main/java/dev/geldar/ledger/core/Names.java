@@ -53,6 +53,7 @@ public final class Names {
         public static final String LOADED_CHUNKS = "geldar_world_loaded_chunks";
         public static final String ENTITIES = "geldar_world_entities";
         public static final String PLAYERS = "geldar_world_players";
+        public static final String TICK_MS = "geldar_world_tick_ms";
 
         private World() {}
     }
