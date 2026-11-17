@@ -175,9 +175,8 @@ class CadenceAndTreeTest {
         assertEquals(1, collector.count(id));
         handlers().onQuit(new PlayerQuitEvent(p, Component.empty(), PlayerQuitEvent.QuitReason.DISCONNECTED));
         assertEquals(-1, collector.count(id));
-        handlers().onTickEnd(new ClientTickEndEvent(p));
         minute();
-        assertEquals(0, ledger.events(Names.Events.PLAYER_CLIENT_TICK).size());
+        assertEquals(1, ledger.events(Names.Events.PLAYER_CLIENT_TICK).size(), "only the final window of the quit connection");
     }
 
     @Test
@@ -193,15 +192,19 @@ class CadenceAndTreeTest {
     @Test
     void slotsAreBoundedAndAFreedSlotIsReused() {
         start();
+        Player firstPlayer = null;
         for (int i = 0; i < ClientCadenceCollector.MAX_SLOTS; i++) {
-            join(player("ag_ada_" + (i + 10), new UUID(0, i + 1)));
+            Player pl = player("ag_ada_" + (i + 10), new UUID(0, i + 1));
+            if (i == 0) {
+                firstPlayer = pl;
+            }
+            join(pl);
         }
         UUID extra = new UUID(0, 9999);
         Player extraPlayer = player("ag_extra_11", extra);
         join(extraPlayer);
         assertEquals(-1, collector.count(extra));
-        Player first = player("ag_ada_10", new UUID(0, 1));
-        handlers().onQuit(new PlayerQuitEvent(first, Component.empty(), PlayerQuitEvent.QuitReason.DISCONNECTED));
+        handlers().onQuit(new PlayerQuitEvent(firstPlayer, Component.empty(), PlayerQuitEvent.QuitReason.DISCONNECTED));
         join(extraPlayer);
         assertEquals(0, collector.count(extra));
     }
@@ -257,16 +260,47 @@ class CadenceAndTreeTest {
         assertEquals("b", in[0], "the caller's array is not sorted in place");
     }
 
+
+    /** A command collection that counts how often its names are copied out (the start of the sort). */
+    static final class CountingCommands extends ArrayList<String> {
+        private static final long serialVersionUID = 1L;
+        int copies;
+
+        CountingCommands(String... names) {
+            super(List.of(names));
+        }
+
+        @Override
+        public <T> T[] toArray(T[] a) {
+            copies++;
+            return super.toArray(a);
+        }
+    }
+
+    static PlayerQuitEvent quit(Player p) {
+        return new PlayerQuitEvent(p, Component.empty(), PlayerQuitEvent.QuitReason.DISCONNECTED);
+    }
+
+    static long amount(EventRecord r) {
+        return ((Number) r.attrs().get(AttrKeys.AMOUNT)).longValue();
+    }
+
+    static long duration(EventRecord r) {
+        return ((Number) r.attrs().get(AttrKeys.DURATION_MS)).longValue();
+    }
+
     @Test
     void theTreeIsRecordedOncePerConnectionAndAgainAfterARejoin() {
         start();
         UUID id = new UUID(0, 1);
         Player p = player("ag_ada_01", id);
+        sessions.open(id, 0);
         join(p);
         audit().onCommandSend(new PlayerCommandSendEvent(p, new ArrayList<>(List.of("a"))));
         audit().onCommandSend(new PlayerCommandSendEvent(p, new ArrayList<>(List.of("a", "b"))));
         assertEquals(1, ledger.events(Names.Events.PLAYER_COMMAND_TREE).size());
-        handlers().onQuit(new PlayerQuitEvent(p, Component.empty(), PlayerQuitEvent.QuitReason.DISCONNECTED));
+        handlers().onQuit(quit(p));
+        sessions.open(id, 0);
         join(p);
         audit().onCommandSend(new PlayerCommandSendEvent(p, new ArrayList<>(List.of("a", "b"))));
         List<EventRecord> evs = ledger.events(Names.Events.PLAYER_COMMAND_TREE);
@@ -275,28 +309,202 @@ class CadenceAndTreeTest {
     }
 
     @Test
-    void aTreeSentBeforeTheJoinEventIsStillRecorded() {
+    void aTreeSentBeforeTheSessionExistsIsHeldAndRecordedWithTheSessionAtJoin() {
+        start();
+        UUID id = new UUID(0, 1);
+        Player p = player("ag_ada_01", id);
+        audit().onCommandSend(new PlayerCommandSendEvent(p, new ArrayList<>(List.of("a", "b"))));
+        assertEquals(0, ledger.events(Names.Events.PLAYER_COMMAND_TREE).size(), "no session yet: held");
+        String session = sessions.open(id, 0);
+        join(p);
+        List<EventRecord> evs = ledger.events(Names.Events.PLAYER_COMMAND_TREE);
+        assertEquals(1, evs.size());
+        assertEquals(session, evs.get(0).s2());
+        assertEquals(2L, evs.get(0).a());
+        audit().onCommandSend(new PlayerCommandSendEvent(p, new ArrayList<>(List.of("a"))));
+        join(p);
+        minute();
+        assertEquals(1, ledger.events(Names.Events.PLAYER_COMMAND_TREE).size(), "one per connection, flushed once");
+    }
+
+    @Test
+    void aHeldTreeIsFlushedByTheFirstTickEndOnceTheSessionExists() {
+        start();
+        UUID id = new UUID(0, 1);
+        Player p = player("ag_ada_01", id);
+        audit().onCommandSend(new PlayerCommandSendEvent(p, new ArrayList<>(List.of("a"))));
+        handlers().onTickEnd(new ClientTickEndEvent(p));
+        assertEquals(0, ledger.events(Names.Events.PLAYER_COMMAND_TREE).size());
+        String session = sessions.open(id, 0);
+        handlers().onTickEnd(new ClientTickEndEvent(p));
+        assertEquals(session, ledger.events(Names.Events.PLAYER_COMMAND_TREE).get(0).s2());
+    }
+
+    @Test
+    void aHeldTreeWithNoSessionIsStillRecordedByTheMinuteTaskAndADepartedOneIsDropped() {
         start();
         Player p = player("ag_ada_01", new UUID(0, 1));
         audit().onCommandSend(new PlayerCommandSendEvent(p, new ArrayList<>(List.of("a"))));
-        assertEquals(1, ledger.events(Names.Events.PLAYER_COMMAND_TREE).size());
+        minute();
+        List<EventRecord> evs = ledger.events(Names.Events.PLAYER_COMMAND_TREE);
+        assertEquals(1, evs.size());
+        assertEquals("", evs.get(0).s2());
+        Player q = player("ag_bob_02", new UUID(0, 2));
+        audit().onCommandSend(new PlayerCommandSendEvent(q, new ArrayList<>(List.of("a"))));
+        handlers().onQuit(quit(q));
+        sessions.open(new UUID(0, 2), 0);
+        join(q);
+        minute();
+        assertEquals(1, ledger.events(Names.Events.PLAYER_COMMAND_TREE).size(), "the held tree died with its connection");
+    }
+
+    @Test
+    void aStaleQuitDoesNotFreeTheSlotOfTheReconnectedAgent() {
+        start();
+        UUID id = new UUID(0, 1);
+        Player oldConn = player("ag_ada_01", id);
+        Player newConn = player("ag_ada_01", id);
+        join(oldConn);
+        join(newConn);
+        handlers().onQuit(quit(oldConn));
+        assertEquals(0, collector.count(id), "the new connection keeps its slot");
+        handlers().onTickEnd(new ClientTickEndEvent(newConn));
+        assertEquals(1, collector.count(id));
+        handlers().onQuit(quit(newConn));
+        assertEquals(-1, collector.count(id));
+    }
+
+    @Test
+    void aTickEndOfAnAgentWithoutASlotClaimsOne() {
+        start();
+        Player p = player("ag_ada_01", new UUID(0, 1));
+        handlers().onTickEnd(new ClientTickEndEvent(p));
+        assertEquals(1, collector.count(new UUID(0, 1)));
+        Player human = player("Steve", new UUID(0, 2));
+        handlers().onTickEnd(new ClientTickEndEvent(human));
+        assertEquals(-1, collector.count(new UUID(0, 2)));
+    }
+
+    @Test
+    void agentsBeyondTheSlotLimitAreCountedOnceEachAndNeverBreakTheOthers() {
+        start();
+        for (int i = 0; i < ClientCadenceCollector.MAX_SLOTS; i++) {
+            join(player("ag_ada_" + (i + 10), new UUID(0, i + 1)));
+        }
+        Player extra = player("ag_extra_11", new UUID(0, 9999));
+        join(extra);
+        handlers().onTickEnd(new ClientTickEndEvent(extra));
+        handlers().onTickEnd(new ClientTickEndEvent(extra));
+        assertEquals(1, collector.overflowed());
+        assertEquals(-1, collector.count(new UUID(0, 9999)));
+        handlers().onQuit(quit(extra));
+        join(extra);
+        assertEquals(2, collector.overflowed(), "a reconnect after a quit is counted again");
+    }
+
+    @Test
+    void theClientTickEventCarriesTheWindowLength() {
+        start();
+        UUID id = new UUID(0, 1);
+        Player p = player("ag_ada_01", id);
         join(p);
-        audit().onCommandSend(new PlayerCommandSendEvent(p, new ArrayList<>(List.of("a"))));
-        assertEquals(1, ledger.events(Names.Events.PLAYER_COMMAND_TREE).size());
+        clock.addAndGet(60_000_000_000L);
+        minute();
+        clock.addAndGet(5_000_000_000L);
+        minute();
+        List<EventRecord> evs = ledger.events(Names.Events.PLAYER_CLIENT_TICK);
+        assertEquals(60_000L, duration(evs.get(0)));
+        assertEquals(5_000L, duration(evs.get(1)));
+    }
+
+    @Test
+    void aDepartingAgentsFinalPartialWindowIsEmittedByTheNextTask() {
+        start();
+        UUID id = new UUID(0, 1);
+        Player p = player("ag_ada_01", id);
+        String session = sessions.open(id, 0);
+        join(p);
+        for (int i = 0; i < 7; i++) {
+            handlers().onTickEnd(new ClientTickEndEvent(p));
+        }
+        clock.addAndGet(30_000_000_000L);
+        sessions.close(id);
+        handlers().onQuit(quit(p));
+        minute();
+        List<EventRecord> evs = ledger.events(Names.Events.PLAYER_CLIENT_TICK);
+        assertEquals(1, evs.size());
+        assertEquals(7L, amount(evs.get(0)));
+        assertEquals(30_000L, duration(evs.get(0)));
+        assertEquals("ag_ada_01", evs.get(0).attrs().get(AttrKeys.LIFE_ID));
+        assertEquals(session, evs.get(0).attrs().get(AttrKeys.MC_SESSION));
+        minute();
+        assertEquals(1, ledger.events(Names.Events.PLAYER_CLIENT_TICK).size(), "emitted once");
+    }
+
+    @Test
+    void aReconnectEmitsTheOldConnectionsWindowAndTheNewOneSeparately() {
+        start();
+        UUID id = new UUID(0, 1);
+        Player oldConn = player("ag_ada_01", id);
+        Player newConn = player("ag_ada_01", id);
+        join(oldConn);
+        handlers().onTickEnd(new ClientTickEndEvent(oldConn));
+        join(newConn);
+        handlers().onTickEnd(new ClientTickEndEvent(newConn));
+        handlers().onTickEnd(new ClientTickEndEvent(newConn));
+        minute();
+        List<Long> amounts = ledger.events(Names.Events.PLAYER_CLIENT_TICK).stream().map(CadenceAndTreeTest::amount).sorted().toList();
+        assertEquals(List.of(1L, 2L), amounts);
+    }
+
+    @Test
+    void theEmitTaskDoesNothingWhileTheGuardIsDisabled() {
+        start();
+        Player p = player("ag_ada_01", new UUID(0, 1));
+        join(p);
+        ledger.fakeGuard(ClientCadenceCollector.ID).disable();
+        minute();
+        assertEquals(0, ledger.events(Names.Events.PLAYER_CLIENT_TICK).size());
+    }
+
+    @Test
+    void theNamesAreNotCopiedOrSortedForAHumanAnAlreadyAuditedConnectionOrACappedEvent() {
+        start();
+        CountingCommands forHuman = new CountingCommands("a");
+        audit().onCommandSend(new PlayerCommandSendEvent(player("Steve", new UUID(0, 2)), forHuman));
+        assertEquals(0, forHuman.copies);
+        Player p = player("ag_ada_01", new UUID(0, 1));
+        sessions.open(new UUID(0, 1), 0);
+        CountingCommands first = new CountingCommands("a");
+        audit().onCommandSend(new PlayerCommandSendEvent(p, first));
+        assertEquals(1, first.copies);
+        CountingCommands again = new CountingCommands("a");
+        audit().onCommandSend(new PlayerCommandSendEvent(p, again));
+        assertEquals(0, again.copies, "already audited");
+        for (int i = 0; i < CommandTreeAudit.PER_SECOND; i++) {
+            UUID u = new UUID(0, 100 + i);
+            sessions.open(u, 0);
+            audit().onCommandSend(new PlayerCommandSendEvent(player("ag_cap_" + (i + 10), u), new CountingCommands("a")));
+        }
+        CountingCommands capped = new CountingCommands("a");
+        audit().onCommandSend(new PlayerCommandSendEvent(player("ag_late_55", new UUID(0, 500)), capped));
+        assertEquals(0, capped.copies, "over the cap: no copy, no sort");
     }
 
     @Test
     void theTreeIsCappedPerSecondBeforeAnyWorkAndTheLastAllowedPassesThenTheWindowReopens() {
         start();
         int n = CommandTreeAudit.PER_SECOND + 5;
+        Player last = null;
         for (int i = 0; i < n; i++) {
             Player p = player("ag_ada_" + (i + 10), new UUID(0, i + 1));
+            sessions.open(new UUID(0, i + 1), 0);
+            last = p;
             audit().onCommandSend(new PlayerCommandSendEvent(p, new ArrayList<>(List.of("a"))));
         }
         assertEquals(CommandTreeAudit.PER_SECOND, ledger.events(Names.Events.PLAYER_COMMAND_TREE).size());
         clock.addAndGet(1_000_000_000L);
-        Player again = player("ag_ada_" + (n - 1 + 10), new UUID(0, n));
-        audit().onCommandSend(new PlayerCommandSendEvent(again, new ArrayList<>(List.of("a"))));
+        audit().onCommandSend(new PlayerCommandSendEvent(last, new ArrayList<>(List.of("a"))));
         assertEquals(CommandTreeAudit.PER_SECOND + 1, ledger.events(Names.Events.PLAYER_COMMAND_TREE).size());
     }
 
@@ -307,6 +515,7 @@ class CadenceAndTreeTest {
         for (int i = 0; i <= CommandTreeAudit.MAX_COMMANDS; i++) {
             big.add("c" + i);
         }
+        sessions.open(new UUID(0, 1), 0);
         audit().onCommandSend(new PlayerCommandSendEvent(player("ag_ada_01", new UUID(0, 1)), big));
         EventRecord r = ledger.events(Names.Events.PLAYER_COMMAND_TREE).get(0);
         assertEquals(CommandTreeAudit.MAX_COMMANDS + 1L, r.a());

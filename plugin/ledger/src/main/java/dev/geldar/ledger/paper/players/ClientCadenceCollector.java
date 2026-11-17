@@ -15,13 +15,17 @@ import dev.geldar.ledger.core.ids.LifeIds;
 import dev.geldar.ledger.paper.LedgerPlugin;
 import io.papermc.paper.event.packet.ClientTickEndEvent;
 import java.util.Collection;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicIntegerArray;
-import java.util.concurrent.atomic.AtomicReferenceArray;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
+import java.util.logging.Logger;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -40,36 +44,67 @@ import org.bukkit.plugin.java.JavaPlugin;
  * config at any time (a config reload starts it).
  *
  * <p>Identity. Only a player whose login name has the life id shape is tracked or exported; a human has no slot, so no
- * count and no event. The UUID is a map key only and is never exported. Both events carry the join's {@code mc_session}
- * when {@link SessionIds#shared()} knows it.
+ * count and no event. The UUID is a map key only and is never exported. Both events carry the join's {@code mc_session}.
+ * A slot is bound to the {@link Player} object of its connection: a stale quit of an earlier connection of the same UUID
+ * does not free the slot of the new one, and a tick-end event of an agent without a slot claims one.
  *
- * <p>Client tick. {@link ClientTickEndEvent} handler does one map read and one atomic increment on a preallocated slot
- * array ({@value #MAX_SLOTS} slots, no allocation per event). An async task every {@value #CADENCE_MS} ms reads and
- * resets each slot and emits one {@code geldar.player.client_tick} per agent, a zero included (a stalled client is the
- * point). Whether a given client sends the tick-end packet is unverified: a zero count is a finding, not a failure.
+ * <p>Client tick. The {@link ClientTickEndEvent} handler does one map read and one atomic increment (no allocation per
+ * event). An async task every {@value #CADENCE_MS} ms reads and resets each slot and emits one
+ * {@code geldar.player.client_tick} per agent: {@code amount} is the count and {@code duration_ms} is the length of the
+ * window the count covers (a first or last window is partial, so compare count per second, not the raw count). A zero
+ * count is emitted too: a stalled client is the point. An agent that leaves has its final partial window queued (at most
+ * {@value #MAX_SLOTS} waiting) and emitted by the next task. Whether a client sends the tick-end packet is unverified: a
+ * zero count is a finding, not a failure.
  *
- * <p>Command tree. See {@link CommandTreeAudit}: once per connection, count and hash only.
+ * <p>Capacity. At most {@value #MAX_SLOTS} agents are tracked; each further agent is counted once in
+ * {@link #overflowed()} and one WARNING line is logged per start. Such an agent has no cadence and no tree audit.
+ *
+ * <p>Command tree. See {@link CommandTreeAudit}: first tree per connection, count and hash only.
  */
 public final class ClientCadenceCollector implements Collector {
     public static final String ID = "cadence";
     public static final long CADENCE_MS = 60_000L;
     static final int MAX_SLOTS = 256;
+    static final int MAX_OVERFLOW_TRACKED = 4096;
+    private static final Logger LOG = Logger.getLogger(ClientCadenceCollector.class.getName());
+
+    /** One tracked connection of an agent. Identity fields are final, so a reader never sees a half-replaced slot. */
+    static final class Slot {
+        final UUID id;
+        final String name;
+        final Player player;
+        final AtomicInteger count = new AtomicInteger();
+        final AtomicBoolean treeSent = new AtomicBoolean();
+        final AtomicBoolean pending = new AtomicBoolean();
+        volatile int pendingSize;
+        volatile String pendingHash = "";
+        volatile long windowStart;
+        volatile String lastSession;
+
+        Slot(Player player, UUID id, String name, long now) {
+            this.player = player;
+            this.id = id;
+            this.name = name;
+            this.windowStart = now;
+        }
+    }
 
     private final Consumer<Listener> registry;
     private final Supplier<Collection<? extends Player>> online;
     private final SessionIds sessions;
     private final LongSupplier nanos;
 
-    private final ConcurrentHashMap<UUID, Integer> index = new ConcurrentHashMap<>();
-    private final AtomicIntegerArray counts = new AtomicIntegerArray(MAX_SLOTS);
-    private final AtomicIntegerArray treeSent = new AtomicIntegerArray(MAX_SLOTS);
-    private final AtomicReferenceArray<String> names = new AtomicReferenceArray<>(MAX_SLOTS);
-    private final AtomicReferenceArray<UUID> uuids = new AtomicReferenceArray<>(MAX_SLOTS);
+    private final ConcurrentHashMap<UUID, Slot> index = new ConcurrentHashMap<>();
+    private final ArrayBlockingQueue<Slot> departed = new ArrayBlockingQueue<>(MAX_SLOTS);
+    private final Set<UUID> overflowSeen = ConcurrentHashMap.newKeySet();
+    private final LongAdder overflowed = new LongAdder();
+    private final AtomicBoolean overflowLogged = new AtomicBoolean();
     private final Object slotLock = new Object();
 
     private Listener tickListener;
     private Listener treeListener;
     private Cancellable task;
+    private volatile CommandTreeAudit audit;
     private volatile Ledger ledger;
     private volatile HostInfo host;
     private volatile CollectorGuard guard;
@@ -113,11 +148,12 @@ public final class ClientCadenceCollector implements Collector {
         host = ctx.host();
         guard = l.guard(ID);
         Handlers h = new Handlers(guard);
-        CommandTreeAudit audit = new CommandTreeAudit(guard, ev, treeId, this, nanos);
+        CommandTreeAudit a = new CommandTreeAudit(guard, ev, treeId, this, nanos);
+        audit = a;
         tickListener = h;
-        treeListener = audit;
+        treeListener = a;
         registry.accept(h);
-        registry.accept(audit);
+        registry.accept(a);
         seed();
         running = true;
         task = ctx.scheduler().everyMillis(CADENCE_MS, this::emitCadence);
@@ -132,12 +168,13 @@ public final class ClientCadenceCollector implements Collector {
         tickListener = null;
         treeListener = null;
         task = null;
+        audit = null;
         synchronized (slotLock) {
             index.clear();
-            for (int i = 0; i < MAX_SLOTS; i++) {
-                clearSlot(i);
-            }
+            departed.clear();
+            overflowSeen.clear();
         }
+        overflowLogged.set(false);
         try {
             if (a != null) {
                 HandlerList.unregisterAll(a);
@@ -153,68 +190,79 @@ public final class ClientCadenceCollector implements Collector {
         }
     }
 
-    private void clearSlot(int i) {
-        counts.set(i, 0);
-        treeSent.set(i, 0);
-        names.set(i, null);
-        uuids.set(i, null);
-    }
-
     private void seed() {
         try {
             for (Player p : online.get()) {
-                slot(p.getUniqueId(), p.getName());
+                claim(p);
             }
         } catch (Throwable t) {
             // the join handler still fills the slots
         }
     }
 
-    /** The slot of an agent, claimed on first sight; -1 for a human or when every slot is taken. */
-    int slot(UUID id, String name) {
-        Integer have = index.get(id);
-        if (have != null) {
+    /**
+     * The slot of this connection, claimed on first sight; null for a human or when every slot is taken. A slot held by
+     * another {@link Player} object of the same UUID (a reconnect) is replaced and its final window queued.
+     */
+    Slot claim(Player p) {
+        UUID id = p.getUniqueId();
+        Slot have = index.get(id);
+        if (have != null && have.player == p) {
             return have;
         }
+        if (have == null && index.size() >= MAX_SLOTS && overflowSeen.contains(id)) {
+            return null;
+        }
+        String name = p.getName();
         if (!LifeIds.isLifeId(name)) {
-            return -1;
+            return null;
         }
         synchronized (slotLock) {
             have = index.get(id);
-            if (have != null) {
+            if (have != null && have.player == p) {
                 return have;
             }
-            for (int i = 0; i < MAX_SLOTS; i++) {
-                if (names.get(i) == null) {
-                    clearSlot(i);
-                    uuids.set(i, id);
-                    names.set(i, name);
-                    index.put(id, i);
-                    return i;
-                }
+            if (have == null && index.size() >= MAX_SLOTS) {
+                overflow(id);
+                return null;
             }
-            return -1;
+            overflowSeen.remove(id);
+            Slot s = new Slot(p, id, name, nanos.getAsLong());
+            s.lastSession = sessions.get(id);
+            index.put(id, s);
+            if (have != null) {
+                retire(have);
+            }
+            return s;
         }
     }
 
-    private void release(UUID id) {
+    private void overflow(UUID id) {
+        if (overflowSeen.size() < MAX_OVERFLOW_TRACKED && overflowSeen.add(id)) {
+            overflowed.increment();
+        }
+        if (overflowLogged.compareAndSet(false, true)) {
+            LOG.warning("Ledger collector cadence: more than " + MAX_SLOTS + " agents online; the extra agents get no client_tick or command_tree");
+        }
+    }
+
+    /** Queues the slot's final window for the async task (dropped when the queue is full). */
+    private void retire(Slot s) {
+        String session = sessions.get(s.id);
+        if (session != null) {
+            s.lastSession = session;
+        }
+        departed.offer(s);
+    }
+
+    private void release(Player p) {
         synchronized (slotLock) {
-            Integer i = index.remove(id);
-            if (i != null) {
-                clearSlot(i);
+            overflowSeen.remove(p.getUniqueId());
+            Slot s = index.get(p.getUniqueId());
+            if (s != null && s.player == p) {
+                index.remove(p.getUniqueId());
+                retire(s);
             }
-        }
-    }
-
-    boolean treePending(UUID id, String name) {
-        int i = slot(id, name);
-        return i >= 0 && treeSent.get(i) == 0;
-    }
-
-    void treeDone(UUID id) {
-        Integer i = index.get(id);
-        if (i != null) {
-            treeSent.set(i, 1);
         }
     }
 
@@ -222,13 +270,35 @@ public final class ClientCadenceCollector implements Collector {
         return sessions.get(id);
     }
 
-    /** Counts now in the slot of this player, for tests. */
-    int count(UUID id) {
-        Integer i = index.get(id);
-        return i == null ? -1 : counts.get(i);
+    /** Agents that got no slot because {@value #MAX_SLOTS} were already tracked (distinct, bounded). */
+    public long overflowed() {
+        return overflowed.sum();
     }
 
-    /** Async task: one event per tracked agent, count read and reset together. Never on the main thread; never throws. */
+    /** Counts now in the slot of this player, for tests; -1 when there is none. */
+    int count(UUID id) {
+        Slot s = index.get(id);
+        return s == null ? -1 : s.count.get();
+    }
+
+    private void emitWindow(Ledger l, Slot s, long now) {
+        int n = s.count.getAndSet(0);
+        long ms = Math.max(0L, (now - s.windowStart) / 1_000_000L);
+        s.windowStart = now;
+        String session = sessions.get(s.id);
+        if (session != null) {
+            s.lastSession = session;
+        } else {
+            session = s.lastSession;
+        }
+        Attrs at = Attrs.of().str(AttrKeys.LIFE_ID, s.name).lng(AttrKeys.AMOUNT, n).lng(AttrKeys.DURATION_MS, ms);
+        if (session != null && !session.isEmpty()) {
+            at = at.str(AttrKeys.MC_SESSION, session);
+        }
+        l.events().emitMap(Names.Events.PLAYER_CLIENT_TICK, Severity.INFO, at.build());
+    }
+
+    /** Async task: one event per tracked and per departed agent. Never on the main thread; never throws. */
     void emitCadence() {
         try {
             HostInfo h = host;
@@ -237,20 +307,26 @@ public final class ClientCadenceCollector implements Collector {
             if (!running || h == null || l == null || g == null || h.isMainThread() || !g.allowed()) {
                 return;
             }
-            for (int i = 0; i < MAX_SLOTS && running; i++) {
+            long now = nanos.getAsLong();
+            CommandTreeAudit a = audit;
+            for (Slot s : index.values()) {
+                if (!running) {
+                    return;
+                }
                 try {
-                    String name = names.get(i);
-                    UUID id = uuids.get(i);
-                    if (name == null || id == null) {
-                        continue;
+                    if (a != null) {
+                        a.flush(s, true);
                     }
-                    int n = counts.getAndSet(i, 0);
-                    String session = sessions.get(id);
-                    Attrs at = Attrs.of().str(AttrKeys.LIFE_ID, name).lng(AttrKeys.AMOUNT, n);
-                    if (session != null && !session.isEmpty()) {
-                        at = at.str(AttrKeys.MC_SESSION, session);
-                    }
-                    l.events().emitMap(Names.Events.PLAYER_CLIENT_TICK, Severity.INFO, at.build());
+                    emitWindow(l, s, now);
+                } catch (Throwable t) {
+                    // one agent never stops the others
+                }
+            }
+            Slot gone;
+            while (running && (gone = departed.poll()) != null) {
+                try {
+                    // a tree still held for a connection that has left is dropped, not flushed
+                    emitWindow(l, gone, now);
                 } catch (Throwable t) {
                     // one agent never stops the others
                 }
@@ -275,9 +351,19 @@ public final class ClientCadenceCollector implements Collector {
                 }
                 long token = guard.begin();
                 try {
-                    Integer i = index.get(e.getPlayer().getUniqueId());
-                    if (i != null) {
-                        counts.incrementAndGet(i);
+                    Player p = e.getPlayer();
+                    Slot s = index.get(p.getUniqueId());
+                    if (s == null) {
+                        s = claim(p);
+                    }
+                    if (s != null) {
+                        s.count.incrementAndGet();
+                        if (s.pending.get()) {
+                            CommandTreeAudit a = audit;
+                            if (a != null) {
+                                a.flush(s, false);
+                            }
+                        }
                     }
                 } finally {
                     guard.end(token);
@@ -290,8 +376,17 @@ public final class ClientCadenceCollector implements Collector {
         @EventHandler(priority = EventPriority.MONITOR)
         public void onJoin(PlayerJoinEvent e) {
             try {
-                Player p = e.getPlayer();
-                slot(p.getUniqueId(), p.getName());
+                Slot s = claim(e.getPlayer());
+                CommandTreeAudit a = audit;
+                if (s != null) {
+                    String session = sessions.get(s.id);
+                    if (session != null) {
+                        s.lastSession = session;
+                    }
+                }
+                if (s != null && a != null) {
+                    a.flush(s, false);
+                }
             } catch (Throwable t) {
                 // never throw into the host
             }
@@ -300,7 +395,7 @@ public final class ClientCadenceCollector implements Collector {
         @EventHandler(priority = EventPriority.MONITOR)
         public void onQuit(PlayerQuitEvent e) {
             try {
-                release(e.getPlayer().getUniqueId());
+                release(e.getPlayer());
             } catch (Throwable t) {
                 // never throw into the host
             }

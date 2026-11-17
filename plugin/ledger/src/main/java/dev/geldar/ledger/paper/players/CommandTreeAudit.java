@@ -73,6 +73,30 @@ final class CommandTreeAudit implements Listener {
         return true;
     }
 
+    /**
+     * Records a tree whose session was not known yet. With {@code force} the session is taken as it is (possibly
+     * empty); otherwise nothing happens until the connection has a session. Safe on any thread; one record at most.
+     */
+    void flush(ClientCadenceCollector.Slot s, boolean force) {
+        if (!s.pending.get()) {
+            return;
+        }
+        String session = owner.session(s.id);
+        if (session == null) {
+            session = s.lastSession;
+        }
+        if ((session == null || session.isEmpty()) && !force) {
+            return;
+        }
+        if (s.pending.compareAndSet(true, false)) {
+            events.record(id, s.pendingSize, 0, 0, s.name, session == null ? "" : session, s.pendingHash);
+        }
+    }
+
+    /**
+     * Only the first tree per connection is audited, and it is marked audited once taken, not once the ring accepted it
+     * (the event log does not report acceptance): a record dropped by the rate limit or the ring is not retried.
+     */
     @EventHandler(priority = EventPriority.MONITOR)
     public void onCommandSend(PlayerCommandSendEvent e) {
         try {
@@ -82,16 +106,25 @@ final class CommandTreeAudit implements Listener {
             long token = guard.begin();
             try {
                 Player p = e.getPlayer();
-                String name = p.getName();
-                if (!LifeIds.isLifeId(name) || !owner.treePending(p.getUniqueId(), name) || !underCap()) {
+                if (!LifeIds.isLifeId(p.getName())) {
                     return;
                 }
-                owner.treeDone(p.getUniqueId());
+                ClientCadenceCollector.Slot s = owner.claim(p);
+                if (s == null || s.treeSent.get() || !underCap()) {
+                    return;
+                }
+                s.treeSent.set(true);
                 Collection<String> commands = e.getCommands();
                 int size = commands.size();
                 String hash = size > MAX_COMMANDS ? "" : hash(commands.toArray(new String[0]));
-                String session = owner.session(p.getUniqueId());
-                events.record(id, size, 0, 0, name, session == null ? "" : session, hash);
+                String session = owner.session(s.id);
+                if (session == null) {
+                    s.pendingSize = size;
+                    s.pendingHash = hash;
+                    s.pending.set(true);
+                    return;
+                }
+                events.record(id, size, 0, 0, s.name, session, hash);
             } finally {
                 guard.end(token);
             }
