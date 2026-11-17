@@ -1,0 +1,55 @@
+# Scratch P0 probe overlay: one run of the golem probe (golem/src/p0/probe.ts) against a scratch stack that `up` started.
+# Not part of any default file set. It is added only by the probe verb of deploy/scratch/scratch.sh, after
+# compose/opt-in/scratch.yml and before the NATS override:
+#   sh deploy/scratch/scratch.sh probe <suffix>   (see docs/runbooks/scratch-stack.md, "P0 probe")
+# The service sits in the profile p0, so `up` never starts it. It has no ports, restart "no", the label geldar.scratch=true,
+# and hard caps (1 CPU, 1 GiB, 256 pids). It joins the scratch network only and reaches nats, velocity and paper by
+# their service names. It mounts the body NATS password (nats-body.txt, from SCRATCH_NATS_AUTH_DIR) and the scratch
+# rcon secret, the same one paper uses. It runs as the account uid:gid, like identity-seed.
+services:
+  p0-probe:
+    profiles: ["p0"]
+    build:
+      context: ..
+      dockerfile: golem/Dockerfile
+    image: ${GELDAR_P0_IMAGE:?set by deploy/scratch/scratch.sh}
+    working_dir: /opt/geldar/golem
+    entrypoint: ["node", "src/p0/probe.ts"]
+    # As identity-seed: the 0600 secret files are the account's, so the image's uid 1000 cannot read them.
+    user: "${SCRATCH_RUN_UID:?set by deploy/scratch/scratch.sh}:${SCRATCH_RUN_GID:?set by deploy/scratch/scratch.sh}"
+    environment:
+      # The isolation check: the probe refuses unless this is scratch-<suffix>. scratch.sh sets COMPOSE_PROJECT_NAME.
+      GELDAR_P0_PROJECT: ${COMPOSE_PROJECT_NAME:?set by deploy/scratch/scratch.sh}
+      GELDAR_IN_NETWORK_HOSTS: "1"
+      GELDAR_MC_HOST: velocity
+      GELDAR_MC_PORT: "25565"
+      GELDAR_NATS_URL: nats://nats:4222
+      GELDAR_NATS_USER: body
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-body.txt
+      GELDAR_RCON_HOST: paper
+      GELDAR_RCON_PORT: "25575"
+      GELDAR_RCON_PASSWORD_FILE: /run/secrets/rcon
+    secrets: [nats-body.txt, rcon]
+    depends_on:
+      nats:
+        condition: service_healthy
+      velocity:
+        condition: service_healthy
+      paper:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1"
+          pids: 256
+    memswap_limit: 1g
+    labels:
+      geldar.scratch: "true"
+    restart: "no"
+
+# The body password file is read only when the caller passed SCRATCH_NATS_AUTH_DIR to the probe verb (the NATS override
+# written for it names the same file). rcon is declared in compose/opt-in/scratch.yml.
+secrets:
+  nats-body.txt:
+    file: ${SCRATCH_NATS_AUTH_DIR:?set by deploy/scratch/scratch.sh}/nats-body.txt
