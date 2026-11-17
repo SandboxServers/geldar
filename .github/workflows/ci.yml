@@ -108,6 +108,43 @@ jobs:
             echo "::warning::network error in the neoforge-ledger build; retrying once"
             sleep 30
           done
+      # Per-module totals from the JUnit XML (tests, failures+errors, skipped) in the job summary. Informational only:
+      # it never fails the job, so the gate semantics stay with the two build steps above.
+      - name: test summary (neoforge)
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo '### neoforge test summary'
+            echo '| module | tests | failed | skipped |'
+            echo '|---|---|---|---|'
+            for m in neoforge neoforge-ledger; do
+              t=0; f=0; s=0
+              for x in "$m"/build/test-results/test/*.xml; do
+                [ -f "$x" ] || continue
+                line=$(grep -m1 -o '<testsuite [^>]*' "$x" || true)
+                n=$(echo "$line" | grep -o ' tests="[0-9]*"' | grep -o '[0-9]*' || echo 0)
+                fl=$(echo "$line" | grep -o ' failures="[0-9]*"' | grep -o '[0-9]*' || echo 0)
+                er=$(echo "$line" | grep -o ' errors="[0-9]*"' | grep -o '[0-9]*' || echo 0)
+                sk=$(echo "$line" | grep -o ' skipped="[0-9]*"' | grep -o '[0-9]*' || echo 0)
+                t=$((t + ${n:-0})); f=$((f + ${fl:-0} + ${er:-0})); s=$((s + ${sk:-0}))
+              done
+              echo "| $m | $t | $f | $s |"
+              echo "$m: $t tests completed, $f failed, $s skipped"
+            done
+          } 2>&1 | tee -a "$GITHUB_STEP_SUMMARY" || true
+      - name: upload test reports (neoforge)
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: neoforge-test-reports
+          path: |
+            neoforge/build/reports/tests
+            neoforge/build/test-results
+            neoforge-ledger/build/reports/tests
+            neoforge-ledger/build/test-results
+          if-no-files-found: ignore
+          retention-days: 7
 
   compose:
     name: compose

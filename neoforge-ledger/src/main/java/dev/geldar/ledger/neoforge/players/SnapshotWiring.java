@@ -65,6 +65,11 @@ public final class SnapshotWiring {
             }
 
             @Override
+            public String session() {
+                return ConnectionWiring.sessionOf(p);
+            }
+
+            @Override
             public SnapshotCollector.Reading read() {
                 return new SnapshotCollector.Reading(
                         p.level().dimension().identifier().toString(),

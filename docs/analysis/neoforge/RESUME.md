@@ -50,3 +50,5 @@ State 2026-11-17. Read this, then [p0-body-model.md](p0-body-model.md).
 1. Run 5 of P0 with the probe, under geldar-93 and the owner's go. The raw report goes to geldar-93, then findings are written up here and in p0-body-model.md.
 2. Main orchestrator schedules the merge of this runbook and RESUME update after review.
 3. P0b is written once the Mind-host-to-node route is decided.
+
+Result: P0 probe run results (2026-11-17) are in [p0-findings.md](p0-findings.md).
