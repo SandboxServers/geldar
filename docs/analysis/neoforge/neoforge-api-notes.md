@@ -1,6 +1,6 @@
 # NeoForge 26.1.2 server-side mod API notes
 
-Date 2026-11-16. Author: geldar-docs research. Status: reference; each item tagged VERIFIED (read in the 26.1 docs, the 26.1.x branch source, or the 26.1 porting primer) or UNVERIFIED (not read, or only older knowledge). Target: NeoForge 26.1.2 (build 26.1.2.126), Java 25, ModDevGradle 2.0.148, Gradle 9.1+, official Mojang names, no obfuscation.
+Date 2026-11-16. Author: geldar-docs research. Status: reference; each item tagged VERIFIED (read in the 26.1 docs, the 26.1.x branch source, or the 26.1 porting primer) or UNVERIFIED (not read, or only older knowledge). Target: NeoForge 26.1.2 (build 126), Java 25, ModDevGradle 2.0.148, Gradle 9.1+, official Mojang names, no obfuscation.
 
 Sources (short names used below):
 - DOCS = https://docs.neoforged.net/docs/ (26.1 pages)
@@ -170,7 +170,7 @@ event.registerTest(id, new FunctionGameTestInstance(EXAMPLE_FUNCTION.getKey(),
 
 ## 10. 26.1 breaking changes to avoid (VERIFIED, NEWS)
 
-- Requirements: Java 25, Gradle 9.1.0+, MDG 2.0.141+ at the time of writing (the brief pins 2.0.148). Versions have four components, e.g. `26.1.0.10-beta`; `-beta` means breaking changes are allowed. NeoForm versions are `<mc>-<build>`.
+- Requirements: Java 25, Gradle 9.1.0+, MDG 2.0.141+ at the time of writing (the brief pins 2.0.148). Versions have four components (a three-part release plus a build number), e.g. 26.1.0 (build 10) with a `-beta` suffix; `-beta` means breaking changes are allowed. NeoForm versions are `<mc>-<build>`.
 - No obfuscation: official Mojang parameter names; Parchment not needed.
 - `ItemStack` creation needs loaded registries. Data files use `ItemStackTemplate` (empty is `null`): `template.create()`, `ItemStackTemplate.fromNonEmptyStack(stack)`. Do not build `ItemStack`s in static initializers or the mod constructor. Same for `FluidStack` / `FluidStackTemplate`. Helper: `ItemStack#isSameItemSameComponents(stack, template)`.
 - `GuiGraphics` renamed `GuiGraphicsExtractor`; `Screen#render` is `extractRenderState` (client only; irrelevant to a server mod).
