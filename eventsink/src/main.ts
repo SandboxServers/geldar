@@ -6,6 +6,7 @@ import pg from 'pg';
 import { loadConfig, type SinkConfig } from './config.ts';
 import { type ErrorLog, startConsumer } from './consumer.ts';
 import { type EventsinkTelemetry, eventsinkTelemetry } from './metrics.ts';
+import { flushTelemetry, TELEMETRY_FLUSH_MS } from './telemetry-flush.ts';
 import { eventsinkNatsAuth } from './nats-credentials.ts';
 import { sinkPlan, startShardServices } from './sink-plan.ts';
 import { pgStateStore } from './state/pg-state-store.ts';
@@ -34,8 +35,7 @@ export function consumerOptions(
 /** The one service name of the log and the metrics push. */
 export const SERVICE_NAME = 'geldar-eventsink';
 
-/** Longest the telemetry flush may hold the process at exit; a black-holed collector cannot hold it longer. */
-export const TELEMETRY_FLUSH_MS = 2000;
+export { flushTelemetry, TELEMETRY_FLUSH_MS };
 
 /**
  * Runs the stops together and returns when all settle or after `ms`, whichever is first. Never
@@ -167,10 +167,12 @@ export async function main(): Promise<void> {
     await nc.drain();
     await pool.end();
     // Telemetry flushes last, after the data connections are closed, and for at most 2 s.
-    await boundedStop([
-      () => telemetry?.stop() ?? Promise.resolve(),
-      () => errorLogs?.stop() ?? Promise.resolve(),
-    ]);
+    await flushTelemetry(async () => {
+      await Promise.allSettled([
+        Promise.resolve().then(() => telemetry?.stop()),
+        Promise.resolve().then(() => errorLogs?.stop()),
+      ]);
+    });
     process.exit(0);
   }
   process.on('SIGINT', () => void shutdown());
