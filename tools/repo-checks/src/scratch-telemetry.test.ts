@@ -98,9 +98,26 @@ describe('scratch-telemetry overlay', () => {
       `\${SCRATCH_OTEL_AGENT_JAR:+/opt/otel/opentelemetry-javaagent.jar}`,
     );
     expect(paper.environment?.MEMORY).toBe(`\${PAPER_MEMORY:-10G}`);
-    expect(readFileSync(`${ROOT}deploy/scratch/ledger.properties`, 'utf8')).toMatch(
-      /^enabled=true$/m,
-    );
+    const props = readFileSync(`${ROOT}deploy/scratch/ledger.properties`, 'utf8');
+    expect(props).toMatch(/^enabled=true$/m);
+    for (const id of [
+      'tick',
+      'spark',
+      'world',
+      'server',
+      'census',
+      'curated',
+      'connections',
+      'snapshots',
+      'progress',
+      'cadence',
+      'bridge',
+      'container',
+      'disk',
+    ]) {
+      expect(props, id).toMatch(new RegExp(`^collector\\.${id}\\.enabled=true$`, 'm'));
+    }
+    expect(props).not.toMatch(/^\s*[^#\s][^=]*(password|token|secret)/im);
   });
 
   it('writes the sink output to a required host directory, with no secret-looking variable', () => {
