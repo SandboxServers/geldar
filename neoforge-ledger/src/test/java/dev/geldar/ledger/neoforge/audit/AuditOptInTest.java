@@ -64,6 +64,19 @@ class AuditOptInTest {
     }
 
     @Test
+    void installsNothingUnlessAuditIsExplicitlyOn() {
+        assertFalse(AuditWiring.shouldInstall(null));
+        for (String[] cfg : new String[][] {
+            {}, {"collector.audit.enabled=false"}, {"enabled=false", "collector.audit.enabled=true"}
+        }) {
+            f.config = FakeLedger.config(cfg);
+            assertFalse(AuditWiring.shouldInstall(f.ledger), String.join(",", cfg));
+        }
+        f.config = FakeLedger.config("collector.audit.enabled=true");
+        assertTrue(AuditWiring.shouldInstall(f.ledger));
+    }
+
+    @Test
     void onWhenExplicitlyEnabled() {
         driveAll();
         assertEquals(6, f.events.size());
