@@ -1,10 +1,11 @@
 #!/bin/sh
 # Throwaway scratch stack for the sheet campaign validation (see docs/runbooks/scratch-stack.md).
-# Usage: sh deploy/scratch/scratch.sh up|status|down [suffix]
+# Usage: sh deploy/scratch/scratch.sh up|status|down|probe [suffix]
 # The project is always scratch-<suffix> (suffix [a-z0-9]{1,9}, default a). Exit codes: 2 usage or NATS auth refused,
 # 3 resource gate failed, 1 anything else. On 2 and 3 nothing is started.
 # NATS fails closed: up needs SCRATCH_NATS_AUTH_DIR, a readable directory holding the five generated files
-# (nats-auth.conf, nats-paper.txt, nats-velocity.txt, nats-eventsink.txt, nats-seed.txt). Open NATS (SCRATCH_NATS_OPEN=1) is
+# (nats-auth.conf, nats-paper.txt, nats-velocity.txt, nats-eventsink.txt, nats-seed.txt). probe needs six: those five and
+# nats-body.txt (the body NATS password, read only by the p0-probe one-shot). Open NATS (SCRATCH_NATS_OPEN=1) is
 # refused, exit 2: the identity seed needs the auth dir. Secrets live in a per-user state directory, not a shared temp directory; down removes only that
 # directory.
 # Ports: deploy/scratch/<suffix>.env (SCRATCH_*_PORT lines only) is read by this script; required for telemetry.
@@ -17,20 +18,21 @@ RAM_MIN_KB=10485760  # 10 GB free RAM gate
 DISK_MIN_KB=20971520 # 20 GB free disk gate: the repo filesystem and the Docker data root, the smaller figure counts
 MIN_COMPOSE=2.24.4   # the !override tag in compose/opt-in/scratch.yml needs this compose or newer
 NATS_FILES="nats-auth.conf nats-paper.txt nats-velocity.txt nats-eventsink.txt nats-seed.txt"
+PROBE_NATS_FILES="$NATS_FILES nats-body.txt"
 VELOCITY_JAR="plugin/velocity-identity/build/libs/geldar-velocity-identity.jar"
 PLUGIN_JARS="plugin/core/build/libs/geldar-core.jar $VELOCITY_JAR"
 # The NeoForge game server runs the forwarding mod instead of geldar-core, so only the Velocity identity jar is checked.
 NEOFORGE_PLUGIN_JARS="$VELOCITY_JAR"
 
 usage() {
-  echo "usage: sh deploy/scratch/scratch.sh up|status|down [suffix]" >&2
+  echo "usage: sh deploy/scratch/scratch.sh up|status|down|probe [suffix]" >&2
   exit 2
 }
 
 verb=${1:-}
 suffix=${2:-a}
 case "$verb" in
-  up | status | down) ;;
+  up | status | down | probe) ;;
   *) usage ;;
 esac
 case "$suffix" in
@@ -125,9 +127,11 @@ SECRETS="$STATE_ROOT/$PROJECT"
 NATS_OVERRIDE="$SECRETS/nats-override.yml"
 STARTED=0
 
+# Takes the list of file names to check; up checks NATS_FILES (five), probe checks PROBE_NATS_FILES (six).
 nats_dir_ok() {
+  files=${1:-$NATS_FILES}
   [ -d "$SCRATCH_NATS_AUTH_DIR" ] && [ -r "$SCRATCH_NATS_AUTH_DIR" ] || return 1
-  for f in $NATS_FILES; do
+  for f in $files; do
     [ -f "$SCRATCH_NATS_AUTH_DIR/$f" ] && [ -r "$SCRATCH_NATS_AUTH_DIR/$f" ] && [ -s "$SCRATCH_NATS_AUTH_DIR/$f" ] || return 1
   done
   return 0
@@ -162,10 +166,11 @@ check_nats() {
 }
 
 write_nats_override() {
+  files=${1:-$NATS_FILES}
   {
     echo "# Written by deploy/scratch/scratch.sh. Points the nats-auth.yml secrets at the caller's auth dir."
     echo "secrets:"
-    for f in $NATS_FILES; do
+    for f in $files; do
       echo "  $f:"
       echo "    file: \"$SCRATCH_NATS_AUTH_DIR/$f\""
     done
@@ -184,6 +189,9 @@ compose_run() {
   fi
   if [ "$PROJECT" = scratch-telemetry ]; then
     set -- -f "$ROOT/compose/opt-in/scratch-telemetry.yml" "$@"
+  fi
+  if [ "$verb" = probe ]; then
+    set -- -f "$ROOT/compose/opt-in/scratch-probe.yml" "$@"
   fi
   set -- -f "$ROOT/compose/opt-in/scratch.yml" "$@"
   if [ -f "$NATS_OVERRIDE" ]; then
@@ -465,8 +473,84 @@ do_down() {
   exit "$rc"
 }
 
+# The probe verb: one run of the p0-probe one-shot (compose/opt-in/scratch-probe.yml) against a project that up started.
+# It needs six files, rewrites the project's NATS override to name them, and exits with the probe's exit code. Every
+# refusal exits 2 before compose runs. It never touches the colo stack: the project is the scratch-<suffix> one.
+check_probe_project() {
+  case "$PROJECT" in
+    scratch-?*) ;;
+    *)
+      echo "scratch: probe refuses $PROJECT: it is not a scratch-<suffix> project; nothing started" >&2
+      exit 2
+      ;;
+  esac
+}
+
+check_probe_nats() {
+  if [ -z "${SCRATCH_NATS_AUTH_DIR:-}" ]; then
+    echo "scratch: probe needs SCRATCH_NATS_AUTH_DIR, a readable directory holding the six files $PROBE_NATS_FILES; nothing started" >&2
+    exit 2
+  fi
+  if ! is_abs "$SCRATCH_NATS_AUTH_DIR" || has_newline "$SCRATCH_NATS_AUTH_DIR"; then
+    echo "scratch: SCRATCH_NATS_AUTH_DIR must be an absolute path with no newline; nothing started" >&2
+    exit 2
+  fi
+  case "$SCRATCH_NATS_AUTH_DIR" in
+    *'"'* | *'\'* | *'$'*)
+      echo "scratch: SCRATCH_NATS_AUTH_DIR must not contain quotes, backslashes or dollar signs; nothing started" >&2
+      exit 2
+      ;;
+  esac
+  if ! nats_dir_ok "$PROBE_NATS_FILES"; then
+    echo "scratch: probe needs nats-body.txt (the body NATS password) in SCRATCH_NATS_AUTH_DIR: a readable directory holding the six files $PROBE_NATS_FILES, all non-empty; nothing started" >&2
+    exit 2
+  fi
+}
+
+# Up must have started this project: a running container, the NATS override that up wrote, and a healthy nats, velocity
+# and paper container. The probe runs with --no-deps, so compose does not wait on those services; this check does.
+check_probe_up() {
+  running=$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT") || {
+    echo "scratch: docker ps failed (is docker running?); nothing started" >&2
+    exit 1
+  }
+  if [ -z "$running" ]; then
+    echo "scratch: $PROJECT is not up (no running container); run: sh deploy/scratch/scratch.sh up $suffix first. Nothing started." >&2
+    exit 2
+  fi
+  if [ ! -f "$NATS_OVERRIDE" ]; then
+    echo "scratch: $PROJECT has no NATS override (it was not started with SCRATCH_NATS_AUTH_DIR); nothing started" >&2
+    exit 2
+  fi
+  for svc in nats velocity paper; do
+    healthy=$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$svc" --filter health=healthy) || {
+      echo "scratch: docker ps failed (is docker running?); nothing started" >&2
+      exit 1
+    }
+    if [ -z "$healthy" ]; then
+      echo "scratch: $PROJECT has no healthy $svc container; run: sh deploy/scratch/scratch.sh up $suffix and wait for healthy; nothing started" >&2
+      exit 2
+    fi
+  done
+}
+
+do_probe() {
+  set_env
+  check_probe_project
+  check_probe_nats
+  check_uid
+  check_probe_up
+  write_nats_override "$PROBE_NATS_FILES"
+  COMPOSE_PROJECT_NAME="$PROJECT"
+  GELDAR_P0_IMAGE="geldar-body:$PROJECT"
+  export COMPOSE_PROJECT_NAME GELDAR_P0_IMAGE
+  compose_run --profile p0 run --rm --no-deps --build p0-probe
+  exit $?
+}
+
 case "$verb" in
   up) do_up ;;
   status) do_status ;;
   down) do_down ;;
+  probe) do_probe ;;
 esac
