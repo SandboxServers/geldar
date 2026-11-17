@@ -1,38 +1,39 @@
-# Scratch NeoForge ledger jar and OpenTelemetry agent (suffix nf). Layers after compose/opt-in/scratch-neoforge.yml and is added by
-# deploy/scratch/scratch.sh only when SCRATCH_PLATFORM=neoforge and SCRATCH_NEOFORGE_LEDGER_JAR is set (see deploy/scratch/scratch-ledger.sh
-# and docs/runbooks/scratch-stack.md, "Ledger jar and OTel agent on the scratch NeoForge stack"). Without it this file is not in the
-# compose command, so the default render has no ledger mount. Every mount is read-only and comes from a host variable that scratch.sh
-# sets; the required-variable markers make compose fail if this file is used without them. When the agent is off, scratch.sh points
-# the two agent mounts at the ledger files: the entrypoint never reads them then. No network is declared here.
-# GELDAR_NF_OTEL_AGENT defaults to 0: the agent runs only when scratch.sh sets it to 1 (all three SCRATCH_NEOFORGE_OTEL_AGENT_* values given).
+# Scratch NeoForge telemetry on (suffix nf): the ledger jar, the OpenTelemetry agent and the ledger config. Layers after
+# compose/opt-in/scratch-neoforge.yml and is added by deploy/scratch/scratch.sh only when SCRATCH_PLATFORM=neoforge and all five
+# SCRATCH_NEOFORGE_LEDGER_* / SCRATCH_LEDGER_PROPS / SCRATCH_NEOFORGE_OTEL_AGENT_* variables are set (deploy/scratch/scratch-ledger.sh,
+# docs/runbooks/scratch-stack.md, "Ledger jar and OTel agent on the scratch NeoForge stack"). Without them this file is not in the
+# compose command, so the default render has no telemetry mount. Every mount is read-only and comes from a host variable that scratch.sh
+# sets; the required-variable markers make compose fail if this file is used without them. No network is declared here.
+# GELDAR_NF_TELEMETRY=on is the one switch: the entrypoint copies the ledger jar into mods/ (pinned by GELDAR_NF_LEDGER_SHA256), copies
+# the ledger properties into config/ and adds the agent to JVM_OPTS (pinned by GELDAR_NF_OTEL_AGENT_PIN, a repo constant, not an operator value).
 services:
   paper:
     environment:
+      GELDAR_NF_TELEMETRY: "on"
       GELDAR_NF_LEDGER_SHA256: ${GELDAR_NF_LEDGER_SHA256:?set by deploy/scratch/scratch-ledger.sh from SCRATCH_NEOFORGE_LEDGER_SHA256}
-      GELDAR_NF_OTEL_AGENT: ${GELDAR_NF_OTEL_AGENT:-0}
-      GELDAR_NF_OTEL_AGENT_SHA256: ${GELDAR_NF_OTEL_AGENT_SHA256:-}
+      GELDAR_NF_OTEL_AGENT_PIN: "e43a270df53c6f423e0ab157be9c27ccc01d5dc3232e162fe54777573db2f149"
     volumes:
       - type: bind
         source: ${GELDAR_NF_LEDGER_JAR_HOST:?set by deploy/scratch/scratch-ledger.sh from SCRATCH_NEOFORGE_LEDGER_JAR}
-        target: /geldar/mods/geldar-ledger.jar
+        target: /geldar/mods/geldar-neoforge-ledger.jar
         read_only: true
         bind:
           create_host_path: false
       - type: bind
         source: ${GELDAR_NF_OTEL_AGENT_JAR_HOST:?set by deploy/scratch/scratch-ledger.sh from SCRATCH_NEOFORGE_OTEL_AGENT_JAR}
-        target: /opt/otel/opentelemetry-javaagent.jar
+        target: /geldar/telemetry/opentelemetry-javaagent.jar
         read_only: true
         bind:
           create_host_path: false
       - type: bind
         source: ${GELDAR_NF_OTEL_AGENT_PROPS_HOST:?set by deploy/scratch/scratch-ledger.sh from SCRATCH_NEOFORGE_OTEL_AGENT_PROPS}
-        target: /opt/otel/otel-agent.properties
+        target: /geldar/telemetry/otel-agent.properties
         read_only: true
         bind:
           create_host_path: false
       - type: bind
         source: ${GELDAR_NF_LEDGER_PROPS_HOST:?set by deploy/scratch/scratch-ledger.sh from SCRATCH_LEDGER_PROPS}
-        target: /data/config/ledger.properties
+        target: /geldar/telemetry/ledger.properties
         read_only: true
         bind:
           create_host_path: false

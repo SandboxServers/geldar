@@ -6,8 +6,9 @@
 # only: never from an environment value or this file, and it is never printed.
 # The GELDAR_NF_* variables are seams for the behaviour tests (scratch-neoforge-entrypoint.test.ts). Unset, each one is the
 # real value: the data dir, the secret file, the config, the two URLs, the two pinned hashes and the start command.
-# Optional extras (off unless set): a ledger jar (GELDAR_NF_LEDGER_SHA256 = its 64-hex pin, or the literal "off", which removes only
-# our own stale copy and starts without the ledger), and the OpenTelemetry agent (GELDAR_NF_OTEL_AGENT=1 with its pin).
+# Optional telemetry (GELDAR_NF_TELEMETRY=on|off, unset = nothing): on copies the ledger jar (pin GELDAR_NF_LEDGER_SHA256), copies the
+# ledger properties into config/ and adds the OpenTelemetry agent to JVM_OPTS (pin GELDAR_NF_OTEL_AGENT_PIN); off removes only our own
+# stale ledger copy and adds no agent. See the telemetry blocks below.
 set -eu
 
 # NeoForge version from the environment (compose/opt-in/scratch-neoforge.yml sets it). Only the 26.1.2 line is accepted,
@@ -38,12 +39,15 @@ bundle_list=${GELDAR_NF_BUNDLE_LIST:-$data/.geldar-bundle.sha256}
 # and the copy of it this script makes in mods/. GELDAR_NF_MOD_JAR is the test seam for the mount path.
 mounted_jar=${GELDAR_NF_MOD_JAR:-/geldar/mods/geldar-neoforge.jar}
 mod_copy=$data/mods/geldar-neoforge.jar
-# The second optional jar, the ledger (compose/opt-in/scratch-neoforge-ledger.yml mounts it read-only), its copy in mods/, and
-# the OpenTelemetry agent's jar and properties (mounted outside /data, read-only, used in place, never copied). Same rules as the mod.
-ledger_mounted=${GELDAR_NF_LEDGER_JAR:-/geldar/mods/geldar-ledger.jar}
-ledger_copy=$data/mods/geldar-ledger.jar
-agent_jar=${GELDAR_NF_OTEL_JAR:-/opt/otel/opentelemetry-javaagent.jar}
-agent_props=${GELDAR_NF_OTEL_PROPS:-/opt/otel/otel-agent.properties}
+# The second optional jar, the ledger (compose/opt-in/scratch-neoforge-ledger.yml mounts it read-only at /geldar/mods/geldar-neoforge-ledger.jar),
+# and its copy in mods/. Same rules as the mod. The ledger properties are mounted read-only at /geldar/telemetry/ledger.properties and
+# copied to config/ at every start. The agent jar and properties are mounted read-only under /geldar/telemetry and used in place, never copied.
+ledger_mounted=${GELDAR_NF_LEDGER_JAR:-/geldar/mods/geldar-neoforge-ledger.jar}
+ledger_copy=$data/mods/geldar-neoforge-ledger.jar
+ledger_props_mounted=${GELDAR_NF_LEDGER_PROPS:-/geldar/telemetry/ledger.properties}
+ledger_props_copy=$data/config/ledger.properties
+agent_jar=${GELDAR_NF_OTEL_JAR:-/geldar/telemetry/opentelemetry-javaagent.jar}
+agent_props=${GELDAR_NF_OTEL_PROPS:-/geldar/telemetry/otel-agent.properties}
 
 # Drop the CR/LF that editors and echo leave behind; nothing else is removed.
 secret=$(tr -d '\r\n' < "$secret_file")
@@ -102,12 +106,44 @@ else
   fi
 fi
 
-# The same for the ledger jar, with GELDAR_NF_LEDGER_SHA256 as its pin: a stale copy with no mounted jar, or a pin with no jar, stops the start.
-# GELDAR_NF_LEDGER_SHA256=off is the operator's explicit soft kill: our own previous copy (exact name, no glob) is removed, no jar is
-# required and the ledger is not copied. A regular file or a symlink (dangling too) is unlinked by rm -f, which never follows a link.
-# A directory or any other non-file there is refused with exit 1: it is not ours to remove. An unset pin with a stale copy still refuses.
-case "${GELDAR_NF_LEDGER_SHA256:-}" in
+# The ledger jar follows GELDAR_NF_TELEMETRY (the case below), with GELDAR_NF_LEDGER_SHA256 as its pin. Our own stale copy (exact name,
+# no glob) is removed only for on or off. A regular file or a symlink (dangling too) is unlinked by rm -f, which never follows a link.
+# A directory or any other non-file there is refused with exit 1: it is not ours to remove.
+# GELDAR_NF_TELEMETRY is the one switch for the ledger and the agent: on, off, or unset (nothing changes).
+#   on: the ledger jar must be mounted; a directory at the copy path is refused; a stale copy is replaced only by a verified copy
+#     (copy_pinned_jar below), so a mismatched mount leaves the old copy in place.
+#   off: a mounted ledger jar is refused; our own stale copy is removed (exact name, never followed: a regular file or a symlink,
+#     dangling too; a directory or other non-file is refused). No agent is added (see the telemetry block below).
+#   unset: a mounted ledger jar, a stale copy or a pin with no jar stops the start, as before. Any other value stops the start.
+ledger_jar_present=0
+if [ -e "$ledger_mounted" ] || [ -L "$ledger_mounted" ]; then
+  ledger_jar_present=1
+fi
+case "${GELDAR_NF_TELEMETRY:-}" in
+  on)
+    if [ "$ledger_jar_present" = 0 ]; then
+      echo "neoforge-entrypoint: GELDAR_NF_TELEMETRY=on but no ledger jar is mounted at $ledger_mounted; refusing to start" >&2
+      exit 1
+    fi
+    if [ -d "$ledger_copy" ]; then
+      echo "neoforge-entrypoint: the geldar ledger path in mods/ is a directory; remove it; refusing to start" >&2
+      exit 1
+    fi
+    # The stale copy goes before the bundle check, but only when the mounted jar already matches its pin (a plain hash here,
+    # not a copy). A mismatch or a symlink leaves the old copy in place; copy_pinned_jar refuses it later.
+    if [ -f "$ledger_mounted" ] && [ ! -L "$ledger_mounted" ]; then
+      actual=$(sha256sum "$ledger_mounted" 2>/dev/null || true)
+      actual=${actual%% *}
+      if [ -n "${GELDAR_NF_LEDGER_SHA256:-}" ] && [ "$actual" = "$GELDAR_NF_LEDGER_SHA256" ]; then
+        rm -f "$ledger_copy"
+      fi
+    fi
+    ;;
   off)
+    if [ "$ledger_jar_present" = 1 ]; then
+      echo "neoforge-entrypoint: GELDAR_NF_TELEMETRY=off but a ledger jar is mounted; remove the mount or set on; refusing to start" >&2
+      exit 1
+    fi
     if [ -L "$ledger_copy" ] || [ -f "$ledger_copy" ]; then
       rm -f "$ledger_copy"
     elif [ -e "$ledger_copy" ]; then
@@ -115,19 +151,23 @@ case "${GELDAR_NF_LEDGER_SHA256:-}" in
       exit 1
     fi
     ;;
-  *)
-    if [ -e "$ledger_mounted" ] || [ -L "$ledger_mounted" ]; then
-      rm -f "$ledger_copy"
-    else
-      if [ -e "$ledger_copy" ] || [ -L "$ledger_copy" ]; then
-        echo "neoforge-entrypoint: a geldar ledger jar is present in mods/ but none is mounted; remove it or mount the pinned jar, or set GELDAR_NF_LEDGER_SHA256=off; refusing to start" >&2
-        exit 1
-      fi
-      if [ -n "${GELDAR_NF_LEDGER_SHA256:-}" ]; then
-        echo "neoforge-entrypoint: GELDAR_NF_LEDGER_SHA256 is set but no ledger jar is mounted; refusing to start" >&2
-        exit 1
-      fi
+  '')
+    if [ "$ledger_jar_present" = 1 ]; then
+      echo "neoforge-entrypoint: a ledger jar is mounted but GELDAR_NF_TELEMETRY is unset; set GELDAR_NF_TELEMETRY=on or off; refusing to start" >&2
+      exit 1
     fi
+    if [ -e "$ledger_copy" ] || [ -L "$ledger_copy" ]; then
+      echo "neoforge-entrypoint: a geldar ledger jar is present in mods/ but none is mounted; remove it, or set GELDAR_NF_TELEMETRY=off; refusing to start" >&2
+      exit 1
+    fi
+    if [ -n "${GELDAR_NF_LEDGER_SHA256:-}" ]; then
+      echo "neoforge-entrypoint: GELDAR_NF_LEDGER_SHA256 is set but no ledger jar is mounted; refusing to start" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    echo "neoforge-entrypoint: GELDAR_NF_TELEMETRY must be on or off (or unset); refusing to start" >&2
+    exit 1
     ;;
 esac
 
@@ -226,11 +266,29 @@ copy_pinned_jar() {
   mv -f "$2.part" "$2"
 }
 
+# copy_ledger_props: the ledger properties are mounted read-only at ledger_props_mounted and copied to config/ at every start, so a host
+# edit takes effect on the next start. The copy is written to .part (mode 644, the data dir's owner) and renamed into place. A
+# symlink or a non-file source is refused, and nothing is removed. Only the fixed messages are printed, never the file's contents.
+copy_ledger_props() {
+  if [ -L "$ledger_props_mounted" ] || [ ! -f "$ledger_props_mounted" ]; then
+    echo "neoforge-entrypoint: $ledger_props_mounted is a symlink or not a regular file; refusing to start" >&2
+    exit 1
+  fi
+  mkdir -p "$(dirname "$ledger_props_copy")"
+  chown --reference="$data" "$(dirname "$ledger_props_copy")"
+  rm -f "$ledger_props_copy.part"
+  cp "$ledger_props_mounted" "$ledger_props_copy.part"
+  chmod 644 "$ledger_props_copy.part"
+  chown --reference="$data" "$ledger_props_copy.part"
+  mv -f "$ledger_props_copy.part" "$ledger_props_copy"
+}
+
 if [ -e "$mounted_jar" ] || [ -L "$mounted_jar" ]; then
   copy_pinned_jar "$mounted_jar" "$mod_copy" "${GELDAR_NF_MOD_SHA256:-}" mod GELDAR_NF_MOD_SHA256
 fi
-if [ "${GELDAR_NF_LEDGER_SHA256:-}" != off ] && { [ -e "$ledger_mounted" ] || [ -L "$ledger_mounted" ]; }; then
+if [ "${GELDAR_NF_TELEMETRY:-}" = on ]; then
   copy_pinned_jar "$ledger_mounted" "$ledger_copy" "${GELDAR_NF_LEDGER_SHA256:-}" ledger GELDAR_NF_LEDGER_SHA256
+  copy_ledger_props
 fi
 
 # The mod's config, from its README layout. Written once; on later starts only the secret line is replaced, because the
@@ -271,13 +329,21 @@ if ! awk -v secret="$secret" '
   exit 1
 fi
 
-# The OpenTelemetry Java agent, only with GELDAR_NF_OTEL_AGENT=1 (unset or 0 adds nothing). The itzg image's JVM_OPTS
-# (appended to, never replaced) is meant to reach the java command (the start script writes it into user_jvm_args.txt for the
-# NeoForge run.sh branch); that is UNVERIFIED on the pinned image, and no check or command run runs it. The jar is mounted read-only outside /data and is never copied; it must match GELDAR_NF_OTEL_AGENT_SHA256.
+# The OpenTelemetry Java agent, only with GELDAR_NF_TELEMETRY=on. The agent is added to JVM_OPTS, never JAVA_AGENTS: on the pinned image
+# JAVA_AGENTS goes through addAgents and mc-image-helper mcopy (a download list), so it is not used. The start script writes JVM_OPTS
+# into user_jvm_args.txt on every start for NeoForge (start-finalExec, lines 634-635 of the pinned image's start script). That reaching
+# user_jvm_args.txt is verified by those lines. The agent ATTACH is UNVERIFIED until a scratch run shows it in ps or the logs, and whether
+# run.sh reads user_jvm_args.txt for NeoForge (start-deployNeoForge) is not confirmed. The jar is mounted read-only under /geldar/telemetry,
+# never copied, and must match GELDAR_NF_OTEL_AGENT_PIN (a repo constant set in the overlay, not an operator value).
 # The properties file must be present. Only the fixed messages are printed, never either file's contents.
-case "${GELDAR_NF_OTEL_AGENT:-0}" in
-  0) ;;
-  1)
+case "${GELDAR_NF_TELEMETRY:-}" in
+  off)
+    # Off adds no agent and makes the shared script's own agent and OTel SDK settings inert.
+    unset JAVA_AGENTS OTEL_JAVAAGENT_CONFIGURATION_FILE
+    OTEL_SDK_DISABLED=true
+    export OTEL_SDK_DISABLED
+    ;;
+  on)
     case "$agent_jar$agent_props" in
       *[[:space:]]*)
         echo "neoforge-entrypoint: the OpenTelemetry agent paths must not contain whitespace (JVM_OPTS splits on it); refusing to start" >&2
@@ -292,24 +358,21 @@ case "${GELDAR_NF_OTEL_AGENT:-0}" in
       echo "neoforge-entrypoint: $agent_props is missing, a symlink or not a regular file; refusing to start" >&2
       exit 1
     fi
-    agent_sha=${GELDAR_NF_OTEL_AGENT_SHA256:-}
+    agent_sha=${GELDAR_NF_OTEL_AGENT_PIN:-}
     if ! is_sha256_hex "$agent_sha"; then
-      echo "neoforge-entrypoint: GELDAR_NF_OTEL_AGENT_SHA256 is not 64 lowercase hex digits; refusing to start with the OpenTelemetry agent" >&2
+      echo "neoforge-entrypoint: GELDAR_NF_OTEL_AGENT_PIN is not 64 lowercase hex digits; refusing to start with the OpenTelemetry agent" >&2
       exit 1
     fi
     actual=$(sha256sum "$agent_jar" 2>/dev/null || true)
     actual=${actual%% *}
     if [ "$actual" != "$agent_sha" ]; then
-      echo "neoforge-entrypoint: the OpenTelemetry agent jar does not match GELDAR_NF_OTEL_AGENT_SHA256; refusing to start" >&2
+      echo "neoforge-entrypoint: the OpenTelemetry agent jar does not match GELDAR_NF_OTEL_AGENT_PIN; refusing to start" >&2
       exit 1
     fi
     JVM_OPTS="${JVM_OPTS:-} -javaagent:$agent_jar -Dotel.javaagent.configuration-file=$agent_props"
     export JVM_OPTS
     ;;
-  *)
-    echo "neoforge-entrypoint: GELDAR_NF_OTEL_AGENT must be 1 or 0 (or unset); refusing to start" >&2
-    exit 1
-    ;;
+  *) ;;
 esac
 
 exec "${GELDAR_NF_START:-/image/scripts/start}" "$@"

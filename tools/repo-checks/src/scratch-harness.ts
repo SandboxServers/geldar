@@ -68,6 +68,8 @@ export interface RunOpts {
     jars: boolean;
     /** The telemetry.env in the tree: undefined copies the real file, null leaves it out, a string is its text (@BASE@ is the stub base dir). */
     envFile?: string | null;
+    /** The agent pin the copied scratch-ledger.sh checks against: a test fixture's sha256 in place of the real pin. Omitted, the real pin stays. */
+    agentPin?: string;
   };
   /** Sets up files under the stub base dir before the script runs. */
   prepare?: (base: string) => void;
@@ -180,14 +182,30 @@ export function assertStubsFirst(bin: string, env: Env): void {
   });
 }
 
+/** The ledger script with its agent pin replaced by a fixture's sha256 (the real agent jar is 26 MB and is not in the repo).
+ * The check itself is unchanged: only the constant it compares against differs. Throws when the constant is not found. */
+export function pinnedLedgerScript(agentPin?: string): string {
+  if (agentPin === undefined) return LEDGER_SCRIPT;
+  if (!/^[0-9a-f]{64}$/.test(agentPin)) throw new Error('agentPin must be 64 lowercase hex digits');
+  const pinLine = /^ledger_agent_pin=[0-9a-f]{64}$/m;
+  if (!pinLine.test(LEDGER_SCRIPT))
+    throw new Error('scratch-ledger.sh has no ledger_agent_pin line');
+  return LEDGER_SCRIPT.replace(pinLine, `ledger_agent_pin=${agentPin}`);
+}
+
 /** A copy of the script in base/tree, with the plugin jars when asked. The script finds its root from its own path. */
-export function makeTree(base: string, jars: boolean, envFile?: string | null): string {
+export function makeTree(
+  base: string,
+  jars: boolean,
+  envFile?: string | null,
+  agentPin?: string,
+): string {
   const script = join(base, 'tree', 'deploy', 'scratch', 'scratch.sh');
   mkdirSync(dirname(script), { recursive: true });
   writeFileSync(script, SCRIPT);
   writeFileSync(join(dirname(script), 'scratch-mind.sh'), MIND_SCRIPT);
   writeFileSync(join(dirname(script), 'scratch-human.sh'), HUMAN_SCRIPT);
-  writeFileSync(join(dirname(script), 'scratch-ledger.sh'), LEDGER_SCRIPT);
+  writeFileSync(join(dirname(script), 'scratch-ledger.sh'), pinnedLedgerScript(agentPin));
   if (envFile !== null) {
     const text =
       envFile === undefined
@@ -219,7 +237,9 @@ export function runScript(
   for (const key of Object.keys(env)) if (env[key] === undefined) delete env[key];
   try {
     opts.prepare?.(s.base);
-    const script = opts.tree ? makeTree(s.base, opts.tree.jars, opts.tree.envFile) : SCRIPT_PATH;
+    const script = opts.tree
+      ? makeTree(s.base, opts.tree.jars, opts.tree.envFile, opts.tree.agentPin)
+      : SCRIPT_PATH;
     assertStubsFirst(join(s.base, 'bin'), env);
     const result = spawnSync(SH as string, [script, ...args], {
       encoding: 'utf8',

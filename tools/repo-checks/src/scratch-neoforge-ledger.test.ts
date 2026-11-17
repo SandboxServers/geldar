@@ -9,12 +9,22 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
-import { AUTH, type Env, JARS, runScript, skipWithoutSh, slash } from './scratch-harness.js';
+import {
+  AUTH,
+  type Env,
+  JARS,
+  LEDGER_SCRIPT,
+  type RunOpts,
+  runScript,
+  skipWithoutSh,
+  slash,
+} from './scratch-harness.js';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const OVERLAY_TEXT = readFileSync(`${ROOT}compose/opt-in/scratch-neoforge-ledger.yml`, 'utf8');
 const NF_TEXT = readFileSync(`${ROOT}compose/opt-in/scratch-neoforge.yml`, 'utf8');
 const OFF_TEXT = readFileSync(`${ROOT}compose/opt-in/scratch-neoforge-ledger-off.yml`, 'utf8');
+const DOC_TEXT = readFileSync(`${ROOT}docs/analysis/telemetry/nf-live-telemetry.md`, 'utf8');
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 
 /** Fixture bytes for the four host files. The tests check the bytes never reach stdout or stderr. */
@@ -23,6 +33,10 @@ const LEDGER_SHA = sha256(LEDGER);
 const AGENT = 'agent jar fixture bytes';
 const AGENT_SHA = sha256(AGENT);
 const PROPS = 'ledger.config.fixture=1\n';
+
+/** The real agent pin (scratch-ledger.sh and the overlay). The fixture agent jar cannot match it, so the success runs use a
+ * copy of the script whose pin is AGENT_SHA: the same check, a different constant. The refusal runs use the real pin. */
+const AGENT_TREE: RunOpts = { tree: { jars: true, agentPin: AGENT_SHA } };
 
 /** Writes the four files into the stub base dir and returns their paths (forward slashes). */
 function files(base: string) {
@@ -39,7 +53,7 @@ function files(base: string) {
   return paths;
 }
 
-/** The ledger pair (and the props) as the environment; the agent trio only when agent is true. */
+/** The ledger pair and props as the environment; the agent pair and properties too only when agent is true. */
 function ledgerEnv(sha: string | undefined, opts: { agent?: boolean; extra?: Env } = {}) {
   return (base: string): Env => {
     const f = files(base);
@@ -51,9 +65,9 @@ function ledgerEnv(sha: string | undefined, opts: { agent?: boolean; extra?: Env
       SCRATCH_LEDGER_PROPS: slash(f.props),
       ...opts.extra,
     };
+    if (sha === 'off') env.SCRATCH_NEOFORGE_TELEMETRY = 'off';
     if (opts.agent) {
       env.SCRATCH_NEOFORGE_OTEL_AGENT_JAR = slash(f.agentJar);
-      env.SCRATCH_NEOFORGE_OTEL_AGENT_SHA256 = AGENT_SHA;
       env.SCRATCH_NEOFORGE_OTEL_AGENT_PROPS = slash(f.agentProps);
     }
     return env;
@@ -61,6 +75,8 @@ function ledgerEnv(sha: string | undefined, opts: { agent?: boolean; extra?: Env
 }
 
 const upLine = (calls: string[]) => calls.find((c) => c.includes(' up -d')) ?? '';
+/** The refusal the script prints when fewer or more than the five ledger variables are set (or the trio is partial). */
+const FIVE = 'set all five of SCRATCH_NEOFORGE_LEDGER_JAR, SCRATCH_NEOFORGE_LEDGER_SHA256';
 
 describe.skipIf(skipWithoutSh())(
   'scratch.sh: the ledger jar variables (up refuses, nothing starts)',
@@ -73,9 +89,7 @@ describe.skipIf(skipWithoutSh())(
         JARS,
       );
       expect(onlyJar.status).toBe(2);
-      expect(onlyJar.stderr).toContain(
-        'set both SCRATCH_NEOFORGE_LEDGER_JAR and SCRATCH_NEOFORGE_LEDGER_SHA256',
-      );
+      expect(onlyJar.stderr).toContain(FIVE);
       expect(onlyJar.calls).toEqual([]);
 
       const onlySha = runScript(
@@ -84,14 +98,15 @@ describe.skipIf(skipWithoutSh())(
         JARS,
       );
       expect(onlySha.status).toBe(2);
+      expect(onlySha.stderr).toContain(FIVE);
       expect(onlySha.calls).toEqual([]);
     });
 
     it('paper with the ledger variables exits 2 before any docker call; down and status still run', () => {
       const up = runScript(
         ['up'],
-        ledgerEnv(LEDGER_SHA, { extra: { SCRATCH_PLATFORM: 'paper' } }),
-        JARS,
+        ledgerEnv(LEDGER_SHA, { agent: true, extra: { SCRATCH_PLATFORM: 'paper' } }),
+        AGENT_TREE,
       );
       expect(up.status).toBe(2);
       expect(up.stderr).toContain('need SCRATCH_PLATFORM=neoforge');
@@ -136,7 +151,6 @@ describe.skipIf(skipWithoutSh())(
             return {
               ...ledgerEnv(LEDGER_SHA)(base),
               SCRATCH_NEOFORGE_OTEL_AGENT_JAR: slash(join(base, 'agent.jar')),
-              SCRATCH_NEOFORGE_OTEL_AGENT_SHA256: AGENT_SHA,
               SCRATCH_NEOFORGE_OTEL_AGENT_PROPS: slash(join(base, 'agent.properties')),
               [field]: slash(spaced),
             };
@@ -152,16 +166,22 @@ describe.skipIf(skipWithoutSh())(
     it('a relative path, a path with quotes, or a non-hex hash exits 2 before any docker call', () => {
       const relative = runScript(
         ['up'],
-        (base) => ({ ...ledgerEnv(LEDGER_SHA)(base), SCRATCH_NEOFORGE_LEDGER_JAR: 'ledger/x.jar' }),
+        (base) => ({
+          ...ledgerEnv(LEDGER_SHA, { agent: true })(base),
+          SCRATCH_NEOFORGE_LEDGER_JAR: 'ledger/x.jar',
+        }),
         JARS,
       );
       expect(relative.status).toBe(2);
-      expect(relative.stderr).toContain('absolute path');
+      expect(relative.stderr).toContain('must be an absolute path');
       expect(relative.calls).toEqual([]);
 
       const quoted = runScript(
         ['up'],
-        ledgerEnv(LEDGER_SHA, { extra: { SCRATCH_LEDGER_PROPS: '/x/a"b.properties' } }),
+        ledgerEnv(LEDGER_SHA, {
+          agent: true,
+          extra: { SCRATCH_LEDGER_PROPS: '/x/a"b.properties' },
+        }),
         JARS,
       );
       expect(quoted.status).toBe(2);
@@ -174,7 +194,7 @@ describe.skipIf(skipWithoutSh())(
         `${LEDGER_SHA}0`,
         `${LEDGER_SHA.slice(0, 63)}\n`,
       ]) {
-        const r = runScript(['up'], ledgerEnv(bad), JARS);
+        const r = runScript(['up'], ledgerEnv(bad, { agent: true }), JARS);
         expect(r.status, JSON.stringify(bad)).toBe(2);
         expect(r.stderr).toContain('64 lowercase hex digits');
         expect(r.calls).toEqual([]);
@@ -182,11 +202,19 @@ describe.skipIf(skipWithoutSh())(
     });
 
     it('a jar whose host sha256 differs from the pin exits 2, starts nothing and prints no jar bytes', () => {
-      const r = runScript(['up'], ledgerEnv('0'.repeat(64)), JARS);
+      const r = runScript(['up'], ledgerEnv('0'.repeat(64), { agent: true }), JARS);
       expect(r.status).toBe(2);
       expect(r.stderr).toContain('does not match SCRATCH_NEOFORGE_LEDGER_SHA256');
       expect(r.calls).toEqual([]);
       expect(r.stdout + r.stderr).not.toContain(LEDGER);
+    });
+
+    it('an agent jar whose sha256 differs from the real agent pin exits 2, starts nothing and prints no agent bytes', () => {
+      const r = runScript(['up'], ledgerEnv(LEDGER_SHA, { agent: true }), JARS);
+      expect(r.status).toBe(2);
+      expect(r.stderr).toContain('SCRATCH_NEOFORGE_OTEL_AGENT_JAR does not match the agent pin');
+      expect(r.calls).toEqual([]);
+      expect(r.stdout + r.stderr).not.toContain(AGENT);
     });
 
     it('an agent trio with a missing member, or with the jar pair absent, exits 2 before any docker call', () => {
@@ -199,7 +227,7 @@ describe.skipIf(skipWithoutSh())(
         JARS,
       );
       expect(partial.status).toBe(2);
-      expect(partial.stderr).toContain('all three');
+      expect(partial.stderr).toContain(FIVE);
       expect(partial.calls).toEqual([]);
 
       const noPair = runScript(
@@ -212,14 +240,22 @@ describe.skipIf(skipWithoutSh())(
         JARS,
       );
       expect(noPair.status).toBe(2);
+      expect(noPair.stderr).toContain(FIVE);
       expect(noPair.calls).toEqual([]);
     });
 
-    it('with the jar pair, props and a matching hash, up adds the ledger overlay after scratch-neoforge.yml', () => {
+    it('the jar pair and props without the agent trio exits 2 before any docker call: the render is all five or none', () => {
       const r = runScript(['up'], ledgerEnv(LEDGER_SHA), JARS);
+      expect(r.status).toBe(2);
+      expect(r.stderr).toContain(FIVE);
+      expect(r.calls).toEqual([]);
+    });
+
+    it('all five variables with matching hashes: up adds the one ledger overlay after scratch-neoforge.yml and before nats-override.yml', () => {
+      const r = runScript(['up'], ledgerEnv(LEDGER_SHA, { agent: true }), AGENT_TREE);
       expect(r.status).toBe(0);
       const up = upLine(r.calls);
-      expect(up.indexOf('opt-in/scratch-neoforge-ledger.yml')).toBeGreaterThan(-1);
+      expect(up.split('scratch-neoforge-ledger.yml').length - 1).toBe(1);
       expect(up.indexOf('opt-in/scratch-neoforge.yml')).toBeLessThan(
         up.indexOf('opt-in/scratch-neoforge-ledger.yml'),
       );
@@ -228,16 +264,10 @@ describe.skipIf(skipWithoutSh())(
       );
     });
 
-    it('with the agent trio and a matching agent hash, up still adds the one ledger overlay', () => {
-      const r = runScript(['up'], ledgerEnv(LEDGER_SHA, { agent: true }), JARS);
-      expect(r.status).toBe(0);
-      expect(upLine(r.calls).split('scratch-neoforge-ledger.yml').length - 1).toBe(1);
-    });
-
-    it('the soft kill: SCRATCH_NEOFORGE_LEDGER_SHA256=off alone exits 0 and adds the off overlay, never the jar overlay', () => {
+    it('the soft kill: SCRATCH_NEOFORGE_TELEMETRY=off alone exits 0 and adds the off overlay, never the jar overlay', () => {
       const r = runScript(
         ['up'],
-        { ...AUTH, SCRATCH_PLATFORM: 'neoforge', SCRATCH_NEOFORGE_LEDGER_SHA256: 'off' },
+        { ...AUTH, SCRATCH_PLATFORM: 'neoforge', SCRATCH_NEOFORGE_TELEMETRY: 'off' },
         JARS,
       );
       expect(r.status).toBe(0);
@@ -266,10 +296,29 @@ describe.skipIf(skipWithoutSh())(
       expect(withAgent.stdout + withAgent.stderr).not.toContain(LEDGER);
     });
 
+    it('off with any one of the five ledger variables, alone with off, exits 2 before any docker call', () => {
+      for (const name of [
+        'SCRATCH_NEOFORGE_LEDGER_JAR',
+        'SCRATCH_NEOFORGE_LEDGER_SHA256',
+        'SCRATCH_LEDGER_PROPS',
+        'SCRATCH_NEOFORGE_OTEL_AGENT_JAR',
+        'SCRATCH_NEOFORGE_OTEL_AGENT_PROPS',
+      ]) {
+        const r = runScript(
+          ['up'],
+          { ...AUTH, SCRATCH_PLATFORM: 'neoforge', SCRATCH_NEOFORGE_TELEMETRY: 'off', [name]: 'x' },
+          JARS,
+        );
+        expect(r.status, name).toBe(2);
+        expect(r.stderr, name).toContain('contradictory');
+        expect(r.calls, name).toEqual([]);
+      }
+    });
+
     it('down and status never refuse on off: off alone renders the off overlay, off with a jar renders no ledger file', () => {
       const offAlone = runScript(
         ['down'],
-        { ...AUTH, SCRATCH_PLATFORM: 'neoforge', SCRATCH_NEOFORGE_LEDGER_SHA256: 'off' },
+        { ...AUTH, SCRATCH_PLATFORM: 'neoforge', SCRATCH_NEOFORGE_TELEMETRY: 'off' },
         JARS,
       );
       expect(offAlone.status).toBe(0);
@@ -278,7 +327,7 @@ describe.skipIf(skipWithoutSh())(
         const r = runScript([verb], ledgerEnv('off'), JARS);
         expect(r.status, verb).toBe(0);
         expect(r.stderr, verb).not.toContain('nothing started');
-        expect(r.calls.join('\n'), verb).not.toContain('scratch-neoforge-ledger');
+        expect(r.calls.join('\n'), verb).not.toContain('scratch-neoforge-ledger.yml');
       }
     });
 
@@ -293,7 +342,7 @@ describe.skipIf(skipWithoutSh())(
 
     it('down and status run after the jar is deleted: only up refuses on the ledger variables', () => {
       const gone = (base: string): Env => {
-        const env = ledgerEnv(LEDGER_SHA)(base);
+        const env = ledgerEnv(LEDGER_SHA, { agent: true })(base);
         unlinkSync(join(base, 'ledger.jar'));
         return env;
       };
@@ -342,10 +391,10 @@ describe('scratch-neoforge-ledger.yml: the render when the variables are set', (
   it('mounts the four files read-only, each from a host variable, with create_host_path false', () => {
     const mounts = OVERLAY.services.paper.volumes;
     expect(mounts.map((m) => m.target)).toEqual([
-      '/geldar/mods/geldar-ledger.jar',
-      '/opt/otel/opentelemetry-javaagent.jar',
-      '/opt/otel/otel-agent.properties',
-      '/data/config/ledger.properties',
+      '/geldar/mods/geldar-neoforge-ledger.jar',
+      '/geldar/telemetry/opentelemetry-javaagent.jar',
+      '/geldar/telemetry/otel-agent.properties',
+      '/geldar/telemetry/ledger.properties',
     ]);
     for (const mount of mounts) {
       expect(mount.type, mount.target).toBe('bind');
@@ -355,17 +404,37 @@ describe('scratch-neoforge-ledger.yml: the render when the variables are set', (
     }
   });
 
-  it('passes the ledger hash, the agent switch (default 0) and the agent hash into the paper environment', () => {
+  it('nests no bind under /data: the telemetry files sit under /geldar/telemetry and the entrypoint copies the config', () => {
+    const targets = OVERLAY.services.paper.volumes.map((m) => m.target);
+    for (const target of targets) {
+      expect(target === '/data' || target.startsWith('/data/'), target).toBe(false);
+    }
+    expect(targets.filter((t) => t.startsWith('/geldar/telemetry/'))).toHaveLength(3);
+  });
+
+  it('sets the on switch, the ledger pin (required) and the agent pin constant on paper', () => {
     const env = OVERLAY.services.paper.environment;
+    expect(env.GELDAR_NF_TELEMETRY).toBe('on');
     expect(env.GELDAR_NF_LEDGER_SHA256).toMatch(/^\$\{GELDAR_NF_LEDGER_SHA256:\?[^}]+\}$/);
-    expect(env.GELDAR_NF_OTEL_AGENT).toBe('${GELDAR_NF_OTEL_AGENT:-0}');
-    expect(env.GELDAR_NF_OTEL_AGENT_SHA256).toBe('${GELDAR_NF_OTEL_AGENT_SHA256:-}');
+    expect(env.GELDAR_NF_OTEL_AGENT_PIN).toBe(
+      'e43a270df53c6f423e0ab157be9c27ccc01d5dc3232e162fe54777573db2f149',
+    );
   });
 
   it('is never in the base overlay: the default render has no ledger mount or variable', () => {
-    expect(NF_TEXT).not.toContain('geldar-ledger.jar');
+    expect(NF_TEXT).not.toContain('geldar-neoforge-ledger.jar');
     expect(NF_TEXT).not.toContain('GELDAR_NF_LEDGER');
     expect(NF_TEXT).not.toContain('GELDAR_NF_OTEL');
+  });
+});
+
+describe('the agent pin constant: one sha256 in the overlay, the host script and the design doc', () => {
+  const PIN = 'e43a270df53c6f423e0ab157be9c27ccc01d5dc3232e162fe54777573db2f149';
+
+  it('the overlay env, the host script constant and the design doc all state the same pin', () => {
+    expect(OVERLAY.services.paper.environment.GELDAR_NF_OTEL_AGENT_PIN).toBe(PIN);
+    expect(LEDGER_SCRIPT.match(/^ledger_agent_pin=([0-9a-f]{64})$/m)?.[1]).toBe(PIN);
+    expect(DOC_TEXT).toContain(PIN);
   });
 });
 
@@ -375,12 +444,9 @@ describe('scratch-neoforge-ledger-off.yml: the soft kill render', () => {
     networks?: unknown;
   };
 
-  it('sets only two environment keys on paper, with literal values, and no volume, mount or network', () => {
+  it('sets only GELDAR_NF_TELEMETRY=off on paper, with a literal value, and no volume, mount or network', () => {
     expect(Object.keys(off.services)).toEqual(['paper']);
-    expect(off.services.paper.environment).toEqual({
-      GELDAR_NF_LEDGER_SHA256: 'off',
-      GELDAR_NF_OTEL_AGENT: '0',
-    });
+    expect(off.services.paper.environment).toEqual({ GELDAR_NF_TELEMETRY: 'off' });
     expect(off.services.paper.volumes).toBeUndefined();
     expect(off.networks).toBeUndefined();
     expect(OFF_TEXT).not.toMatch(/volumes:|networks:|external:|\$\{/);
