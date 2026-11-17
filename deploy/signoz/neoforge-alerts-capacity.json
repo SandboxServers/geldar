@@ -1,0 +1,477 @@
+{
+  "rules": [
+    {
+      "alert": "NeoForge container CPU throttled",
+      "alertType": "METRIC_BASED_ALERT",
+      "ruleType": "threshold_rule",
+      "version": "v4",
+      "condition": {
+        "compositeQuery": {
+          "queryType": "builder",
+          "panelType": "graph",
+          "unit": "",
+          "builderQueries": {
+            "A": {
+              "queryName": "A",
+              "dataSource": "metrics",
+              "aggregateOperator": "increase",
+              "timeAggregation": "increase",
+              "spaceAggregation": "sum",
+              "aggregateAttribute": {
+                "key": "geldar_container_cpu_throttled_periods_total",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true
+              },
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "expression": "A",
+              "disabled": true,
+              "having": [],
+              "stepInterval": 60,
+              "reduceTo": "avg",
+              "functions": [],
+              "legend": ""
+            },
+            "B": {
+              "queryName": "B",
+              "dataSource": "metrics",
+              "aggregateOperator": "increase",
+              "timeAggregation": "increase",
+              "spaceAggregation": "sum",
+              "aggregateAttribute": {
+                "key": "geldar_container_cpu_periods_total",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true
+              },
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "expression": "B",
+              "disabled": true,
+              "having": [],
+              "stepInterval": 60,
+              "reduceTo": "avg",
+              "functions": [],
+              "legend": ""
+            },
+            "F1": {
+              "queryName": "F1",
+              "expression": "A / B",
+              "disabled": false,
+              "legend": ""
+            }
+          }
+        },
+        "op": "1",
+        "target": 0.05,
+        "matchType": "3",
+        "selectedQueryName": "F1",
+        "alertOnAbsent": false
+      },
+      "evalWindow": "10m0s",
+      "frequency": "1m",
+      "labels": { "severity": "warning" },
+      "annotations": {
+        "description": "More than 5 percent of CPU periods were throttled (PROPOSED threshold): raise the container CPU limit or reduce load.",
+        "summary": "NeoForge container CPU throttled"
+      },
+      "preferredChannels": ["geldar-owner-channel"],
+      "disabled": false
+    },
+    {
+      "alert": "NeoForge JVM heap after GC high",
+      "alertType": "METRIC_BASED_ALERT",
+      "ruleType": "threshold_rule",
+      "version": "v4",
+      "condition": {
+        "compositeQuery": {
+          "queryType": "builder",
+          "panelType": "graph",
+          "unit": "",
+          "builderQueries": {
+            "A": {
+              "queryName": "A",
+              "dataSource": "metrics",
+              "aggregateOperator": "avg",
+              "timeAggregation": "avg",
+              "spaceAggregation": "sum",
+              "aggregateAttribute": {
+                "key": "jvm_memory_used_after_last_gc",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true
+              },
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "expression": "A",
+              "disabled": true,
+              "having": [],
+              "stepInterval": 60,
+              "reduceTo": "avg",
+              "functions": [],
+              "legend": ""
+            },
+            "B": {
+              "queryName": "B",
+              "dataSource": "metrics",
+              "aggregateOperator": "avg",
+              "timeAggregation": "avg",
+              "spaceAggregation": "sum",
+              "aggregateAttribute": {
+                "key": "jvm_memory_limit",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true
+              },
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "expression": "B",
+              "disabled": true,
+              "having": [],
+              "stepInterval": 60,
+              "reduceTo": "avg",
+              "functions": [],
+              "legend": ""
+            },
+            "F1": {
+              "queryName": "F1",
+              "expression": "A / B",
+              "disabled": false,
+              "legend": ""
+            }
+          }
+        },
+        "op": "1",
+        "target": 0.85,
+        "matchType": "3",
+        "selectedQueryName": "F1",
+        "alertOnAbsent": false
+      },
+      "evalWindow": "10m0s",
+      "frequency": "1m",
+      "labels": { "severity": "warning" },
+      "annotations": {
+        "description": "Heap after the last GC is over 85 percent of the heap limit (agent jvm metrics): check for a leak or raise the heap.",
+        "summary": "NeoForge JVM heap after GC high"
+      },
+      "preferredChannels": ["geldar-owner-channel"],
+      "disabled": false
+    },
+    {
+      "alert": "NeoForge container memory near limit",
+      "alertType": "METRIC_BASED_ALERT",
+      "ruleType": "threshold_rule",
+      "version": "v4",
+      "condition": {
+        "compositeQuery": {
+          "queryType": "builder",
+          "panelType": "graph",
+          "unit": "",
+          "builderQueries": {
+            "A": {
+              "queryName": "A",
+              "dataSource": "metrics",
+              "aggregateOperator": "avg",
+              "timeAggregation": "avg",
+              "spaceAggregation": "sum",
+              "aggregateAttribute": {
+                "key": "geldar_container_memory_bytes",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true
+              },
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "expression": "A",
+              "disabled": true,
+              "having": [],
+              "stepInterval": 60,
+              "reduceTo": "avg",
+              "functions": [],
+              "legend": ""
+            },
+            "B": {
+              "queryName": "B",
+              "dataSource": "metrics",
+              "aggregateOperator": "avg",
+              "timeAggregation": "avg",
+              "spaceAggregation": "sum",
+              "aggregateAttribute": {
+                "key": "geldar_container_memory_limit_bytes",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true
+              },
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "expression": "B",
+              "disabled": true,
+              "having": [],
+              "stepInterval": 60,
+              "reduceTo": "avg",
+              "functions": [],
+              "legend": ""
+            },
+            "F1": {
+              "queryName": "F1",
+              "expression": "A / B",
+              "disabled": false,
+              "legend": ""
+            }
+          }
+        },
+        "op": "1",
+        "target": 0.9,
+        "matchType": "3",
+        "selectedQueryName": "F1",
+        "alertOnAbsent": false
+      },
+      "evalWindow": "5m0s",
+      "frequency": "1m",
+      "labels": { "severity": "critical" },
+      "annotations": {
+        "description": "Container memory is over 90 percent of its limit: the kernel may OOM-kill the server, raise the limit or reduce heap and caches.",
+        "summary": "NeoForge container memory near limit"
+      },
+      "preferredChannels": ["geldar-owner-channel"],
+      "disabled": false
+    },
+    {
+      "alert": "NeoForge ledger dropping events",
+      "alertType": "METRIC_BASED_ALERT",
+      "ruleType": "threshold_rule",
+      "version": "v4",
+      "condition": {
+        "compositeQuery": {
+          "queryType": "builder",
+          "panelType": "graph",
+          "unit": "",
+          "builderQueries": {
+            "A": {
+              "queryName": "A",
+              "dataSource": "metrics",
+              "aggregateOperator": "rate",
+              "timeAggregation": "rate",
+              "spaceAggregation": "sum",
+              "aggregateAttribute": {
+                "key": "geldar_ledger_dropped_total",
+                "dataType": "float64",
+                "type": "Sum",
+                "isColumn": true
+              },
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [
+                {
+                  "key": "queue",
+                  "dataType": "string",
+                  "type": "tag",
+                  "isColumn": false
+                }
+              ],
+              "expression": "A",
+              "disabled": false,
+              "having": [],
+              "stepInterval": 60,
+              "reduceTo": "avg",
+              "functions": [],
+              "legend": ""
+            }
+          }
+        },
+        "op": "1",
+        "target": 0,
+        "matchType": "2",
+        "selectedQueryName": "A",
+        "alertOnAbsent": false
+      },
+      "evalWindow": "10m0s",
+      "frequency": "1m",
+      "labels": { "severity": "warning" },
+      "annotations": {
+        "description": "The Ledger dropped events on a queue for 10 minutes: the sink or the exporter is slower than the producers, check the queue depth.",
+        "summary": "NeoForge ledger dropping events"
+      },
+      "preferredChannels": ["geldar-owner-channel"],
+      "disabled": false
+    },
+    {
+      "alert": "NeoForge collector disabled",
+      "alertType": "METRIC_BASED_ALERT",
+      "ruleType": "threshold_rule",
+      "version": "v4",
+      "condition": {
+        "compositeQuery": {
+          "queryType": "builder",
+          "panelType": "graph",
+          "unit": "",
+          "builderQueries": {
+            "A": {
+              "queryName": "A",
+              "dataSource": "metrics",
+              "aggregateOperator": "max",
+              "timeAggregation": "max",
+              "spaceAggregation": "max",
+              "aggregateAttribute": {
+                "key": "geldar_paper_collector_disabled",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true
+              },
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [
+                {
+                  "key": "collector",
+                  "dataType": "string",
+                  "type": "tag",
+                  "isColumn": false
+                }
+              ],
+              "expression": "A",
+              "disabled": false,
+              "having": [],
+              "stepInterval": 60,
+              "reduceTo": "avg",
+              "functions": [],
+              "legend": ""
+            }
+          }
+        },
+        "op": "3",
+        "target": 1,
+        "matchType": "1",
+        "selectedQueryName": "A",
+        "alertOnAbsent": false
+      },
+      "evalWindow": "5m0s",
+      "frequency": "1m",
+      "labels": { "severity": "warning" },
+      "annotations": {
+        "description": "A collector disabled itself (gauge equals 1): read the geldar.collector.disabled event for the cause.",
+        "summary": "NeoForge collector disabled"
+      },
+      "preferredChannels": ["geldar-owner-channel"],
+      "disabled": false
+    }
+  ]
+}

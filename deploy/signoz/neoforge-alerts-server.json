@@ -1,0 +1,302 @@
+{
+  "rules": [
+    {
+      "alert": "NeoForge TPS low",
+      "alertType": "METRIC_BASED_ALERT",
+      "ruleType": "threshold_rule",
+      "version": "v4",
+      "condition": {
+        "compositeQuery": {
+          "queryType": "builder",
+          "panelType": "graph",
+          "unit": "",
+          "builderQueries": {
+            "A": {
+              "queryName": "A",
+              "dataSource": "metrics",
+              "aggregateOperator": "avg",
+              "timeAggregation": "avg",
+              "spaceAggregation": "sum",
+              "aggregateAttribute": {
+                "key": "geldar_tps",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true
+              },
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  },
+                  {
+                    "key": {
+                      "key": "window",
+                      "dataType": "string",
+                      "type": "tag",
+                      "isColumn": false
+                    },
+                    "op": "=",
+                    "value": "1m"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "expression": "A",
+              "disabled": false,
+              "having": [],
+              "stepInterval": 60,
+              "reduceTo": "avg",
+              "functions": [],
+              "legend": ""
+            }
+          }
+        },
+        "op": "2",
+        "target": 12,
+        "matchType": "2",
+        "selectedQueryName": "A",
+        "alertOnAbsent": false
+      },
+      "evalWindow": "5m0s",
+      "frequency": "1m",
+      "labels": { "severity": "critical" },
+      "annotations": {
+        "description": "TPS stayed under 12 for 5 minutes: check the tick time panel and the census for a hot event class, then the container throttling panel.",
+        "summary": "NeoForge TPS low"
+      },
+      "preferredChannels": ["geldar-owner-channel"],
+      "disabled": false
+    },
+    {
+      "alert": "NeoForge MSPT p95 high",
+      "alertType": "METRIC_BASED_ALERT",
+      "ruleType": "threshold_rule",
+      "version": "v4",
+      "condition": {
+        "compositeQuery": {
+          "queryType": "builder",
+          "panelType": "graph",
+          "unit": "ms",
+          "builderQueries": {
+            "A": {
+              "queryName": "A",
+              "dataSource": "metrics",
+              "aggregateOperator": "avg",
+              "timeAggregation": "avg",
+              "spaceAggregation": "sum",
+              "aggregateAttribute": {
+                "key": "geldar_spark_mspt_ms",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true
+              },
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  },
+                  {
+                    "key": {
+                      "key": "stat",
+                      "dataType": "string",
+                      "type": "tag",
+                      "isColumn": false
+                    },
+                    "op": "=",
+                    "value": "p95"
+                  },
+                  {
+                    "key": {
+                      "key": "window",
+                      "dataType": "string",
+                      "type": "tag",
+                      "isColumn": false
+                    },
+                    "op": "=",
+                    "value": "1m"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "expression": "A",
+              "disabled": false,
+              "having": [],
+              "stepInterval": 60,
+              "reduceTo": "avg",
+              "functions": [],
+              "legend": ""
+            }
+          }
+        },
+        "op": "1",
+        "target": 50,
+        "matchType": "3",
+        "selectedQueryName": "A",
+        "alertOnAbsent": false
+      },
+      "evalWindow": "5m0s",
+      "frequency": "1m",
+      "labels": { "severity": "warning" },
+      "annotations": {
+        "description": "Spark MSPT p95 is over the 50 ms tick budget: check the tick time panel and slow_tick events for the cause.",
+        "summary": "NeoForge MSPT p95 high"
+      },
+      "preferredChannels": ["geldar-owner-channel"],
+      "disabled": false
+    },
+    {
+      "alert": "NeoForge exception events",
+      "alertType": "LOGS_BASED_ALERT",
+      "ruleType": "threshold_rule",
+      "version": "v4",
+      "condition": {
+        "compositeQuery": {
+          "queryType": "builder",
+          "panelType": "graph",
+          "unit": "",
+          "builderQueries": {
+            "A": {
+              "queryName": "A",
+              "dataSource": "logs",
+              "aggregateOperator": "count",
+              "aggregateAttribute": { "key": "", "dataType": "", "type": "", "isColumn": false },
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  },
+                  {
+                    "key": {
+                      "key": "event.name",
+                      "dataType": "string",
+                      "type": "tag",
+                      "isColumn": false
+                    },
+                    "op": "=",
+                    "value": "geldar.server.exception"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "expression": "A",
+              "disabled": false,
+              "having": [],
+              "stepInterval": 60,
+              "reduceTo": "sum",
+              "functions": [],
+              "legend": ""
+            }
+          }
+        },
+        "op": "1",
+        "target": 5,
+        "matchType": "5",
+        "selectedQueryName": "A",
+        "alertOnAbsent": false
+      },
+      "evalWindow": "5m0s",
+      "frequency": "1m",
+      "labels": { "severity": "warning" },
+      "annotations": {
+        "description": "More than 5 geldar.server.exception events in 5 minutes: read the exception class on the events and the plugin named.",
+        "summary": "NeoForge exception events"
+      },
+      "preferredChannels": ["geldar-owner-channel"],
+      "disabled": false
+    },
+    {
+      "alert": "NeoForge TPS data absent",
+      "alertType": "METRIC_BASED_ALERT",
+      "ruleType": "threshold_rule",
+      "version": "v4",
+      "condition": {
+        "compositeQuery": {
+          "queryType": "builder",
+          "panelType": "graph",
+          "unit": "",
+          "builderQueries": {
+            "A": {
+              "queryName": "A",
+              "dataSource": "metrics",
+              "aggregateOperator": "avg",
+              "timeAggregation": "avg",
+              "spaceAggregation": "sum",
+              "aggregateAttribute": {
+                "key": "geldar_tps",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true
+              },
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "expression": "A",
+              "disabled": false,
+              "having": [],
+              "stepInterval": 60,
+              "reduceTo": "avg",
+              "functions": [],
+              "legend": ""
+            }
+          }
+        },
+        "op": "2",
+        "target": 0,
+        "matchType": "1",
+        "selectedQueryName": "A",
+        "alertOnAbsent": true,
+        "absentFor": 5
+      },
+      "evalWindow": "5m0s",
+      "frequency": "1m",
+      "labels": { "severity": "critical" },
+      "annotations": {
+        "description": "No geldar_tps data for 5 minutes: the server, the agent or the collector pipeline is down.",
+        "summary": "NeoForge TPS data absent"
+      },
+      "preferredChannels": ["geldar-owner-channel"],
+      "disabled": false
+    }
+  ]
+}

@@ -1,0 +1,1240 @@
+{
+  "title": "Geldar NeoForge",
+  "description": "NeoForge server health from the Ledger mod (PT-N11). Clone of the Paper dashboard filtered on service.name = geldar-neoforge; metric names are the frozen PT names. geldar_world_tick_ms and geldar_mods_loaded are PROPOSED names (PT-N4a): those panels stay empty until the names are registered. UNVERIFIED until the first import. Read-only: no panel acts in the world.",
+  "tags": ["geldar", "neoforge", "telemetry"],
+  "version": "v4",
+  "variables": {},
+  "layout": [
+    { "i": "nf-01", "x": 0, "y": 0, "w": 6, "h": 6, "moved": false, "static": false },
+    { "i": "nf-02", "x": 6, "y": 0, "w": 6, "h": 6, "moved": false, "static": false },
+    { "i": "nf-03", "x": 0, "y": 6, "w": 6, "h": 6, "moved": false, "static": false },
+    { "i": "nf-04", "x": 6, "y": 6, "w": 6, "h": 6, "moved": false, "static": false },
+    { "i": "nf-05", "x": 0, "y": 12, "w": 6, "h": 6, "moved": false, "static": false },
+    { "i": "nf-06", "x": 6, "y": 12, "w": 6, "h": 6, "moved": false, "static": false },
+    { "i": "nf-07", "x": 0, "y": 18, "w": 6, "h": 6, "moved": false, "static": false },
+    { "i": "nf-08", "x": 6, "y": 18, "w": 6, "h": 6, "moved": false, "static": false },
+    { "i": "nf-10", "x": 0, "y": 24, "w": 6, "h": 6, "moved": false, "static": false },
+    { "i": "nf-11", "x": 6, "y": 24, "w": 6, "h": 6, "moved": false, "static": false },
+    { "i": "nf-13", "x": 0, "y": 30, "w": 6, "h": 6, "moved": false, "static": false },
+    { "i": "nf-14", "x": 6, "y": 30, "w": 6, "h": 6, "moved": false, "static": false },
+    { "i": "nf-15", "x": 0, "y": 36, "w": 6, "h": 6, "moved": false, "static": false },
+    { "i": "nf-16", "x": 6, "y": 36, "w": 6, "h": 6, "moved": false, "static": false }
+  ],
+  "widgets": [
+    {
+      "id": "nf-01",
+      "title": "Tick time p50, p95, p99",
+      "description": "geldar_tick_lag_ms: tick duration per tick (ms). 50 ms is the budget.",
+      "panelTypes": "graph",
+      "isStacked": false,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "softMax": null,
+      "softMin": null,
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "ms",
+      "query": {
+        "queryType": "builder",
+        "id": "nf-01-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "hist_quantile_50",
+              "aggregateAttribute": {
+                "key": "geldar_tick_lag_ms",
+                "dataType": "float64",
+                "type": "Histogram",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "",
+              "spaceAggregation": "p50",
+              "functions": [],
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "having": [],
+              "legend": "p50",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            },
+            {
+              "dataSource": "metrics",
+              "queryName": "B",
+              "expression": "B",
+              "disabled": false,
+              "aggregateOperator": "hist_quantile_95",
+              "aggregateAttribute": {
+                "key": "geldar_tick_lag_ms",
+                "dataType": "float64",
+                "type": "Histogram",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "",
+              "spaceAggregation": "p95",
+              "functions": [],
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "having": [],
+              "legend": "p95",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            },
+            {
+              "dataSource": "metrics",
+              "queryName": "C",
+              "expression": "C",
+              "disabled": false,
+              "aggregateOperator": "hist_quantile_99",
+              "aggregateAttribute": {
+                "key": "geldar_tick_lag_ms",
+                "dataType": "float64",
+                "type": "Histogram",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "",
+              "spaceAggregation": "p99",
+              "functions": [],
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "having": [],
+              "legend": "p99",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
+    },
+    {
+      "id": "nf-02",
+      "title": "TPS by window",
+      "description": "geldar_tps for the 1m, 5m and 15m windows.",
+      "panelTypes": "graph",
+      "isStacked": false,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "softMax": null,
+      "softMin": null,
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "none",
+      "query": {
+        "queryType": "builder",
+        "id": "nf-02-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "avg",
+              "aggregateAttribute": {
+                "key": "geldar_tps",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "avg",
+              "spaceAggregation": "avg",
+              "functions": [],
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [
+                {
+                  "key": "window",
+                  "dataType": "string",
+                  "type": "tag",
+                  "isColumn": false,
+                  "isJSON": false
+                }
+              ],
+              "having": [],
+              "legend": "{{window}}",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
+    },
+    {
+      "id": "nf-03",
+      "title": "Tick overruns and stalls per hour",
+      "description": "Counters: ticks over 50 ms and main-thread stalls, increase per hour.",
+      "panelTypes": "graph",
+      "isStacked": false,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "softMax": null,
+      "softMin": null,
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "none",
+      "query": {
+        "queryType": "builder",
+        "id": "nf-03-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "increase",
+              "aggregateAttribute": {
+                "key": "geldar_tick_overruns_total",
+                "dataType": "float64",
+                "type": "Sum",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "increase",
+              "spaceAggregation": "sum",
+              "functions": [],
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "having": [],
+              "legend": "overruns",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 3600
+            },
+            {
+              "dataSource": "metrics",
+              "queryName": "B",
+              "expression": "B",
+              "disabled": false,
+              "aggregateOperator": "increase",
+              "aggregateAttribute": {
+                "key": "geldar_tick_stalls_total",
+                "dataType": "float64",
+                "type": "Sum",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "increase",
+              "spaceAggregation": "sum",
+              "functions": [],
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "having": [],
+              "legend": "stalls",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 3600
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
+    },
+    {
+      "id": "nf-04",
+      "title": "Container CPU throttled-period ratio",
+      "description": "Throttled periods over periods. Shape note (PT-09c): the plugin exports both cgroup counters as monotonic gauges (observable counters through gaugeLong), so they are typed Gauge here. Both only grow, so the ratio is taken on the rate of each, not on the raw values.",
+      "panelTypes": "graph",
+      "isStacked": false,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "softMax": null,
+      "softMin": null,
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "percentunit",
+      "query": {
+        "queryType": "builder",
+        "id": "nf-04-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": true,
+              "aggregateOperator": "rate",
+              "aggregateAttribute": {
+                "key": "geldar_container_cpu_throttled_periods_total",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "rate",
+              "spaceAggregation": "sum",
+              "functions": [],
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "having": [],
+              "legend": "",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            },
+            {
+              "dataSource": "metrics",
+              "queryName": "B",
+              "expression": "B",
+              "disabled": true,
+              "aggregateOperator": "rate",
+              "aggregateAttribute": {
+                "key": "geldar_container_cpu_periods_total",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "rate",
+              "spaceAggregation": "sum",
+              "functions": [],
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "having": [],
+              "legend": "",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": [
+            {
+              "queryName": "F1",
+              "expression": "A/B",
+              "disabled": false,
+              "legend": "throttled ratio"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "nf-05",
+      "title": "Container memory against limit",
+      "description": "geldar_container_memory_bytes against geldar_container_memory_limit_bytes.",
+      "panelTypes": "graph",
+      "isStacked": false,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "softMax": null,
+      "softMin": null,
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "bytes",
+      "query": {
+        "queryType": "builder",
+        "id": "nf-05-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "avg",
+              "aggregateAttribute": {
+                "key": "geldar_container_memory_bytes",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "avg",
+              "spaceAggregation": "avg",
+              "functions": [],
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "having": [],
+              "legend": "used",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            },
+            {
+              "dataSource": "metrics",
+              "queryName": "B",
+              "expression": "B",
+              "disabled": false,
+              "aggregateOperator": "avg",
+              "aggregateAttribute": {
+                "key": "geldar_container_memory_limit_bytes",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "avg",
+              "spaceAggregation": "avg",
+              "functions": [],
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "having": [],
+              "legend": "limit",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
+    },
+    {
+      "id": "nf-06",
+      "title": "Loaded chunks per world",
+      "description": "geldar_world_loaded_chunks by world.",
+      "panelTypes": "graph",
+      "isStacked": false,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "softMax": null,
+      "softMin": null,
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "none",
+      "query": {
+        "queryType": "builder",
+        "id": "nf-06-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "avg",
+              "aggregateAttribute": {
+                "key": "geldar_world_loaded_chunks",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "avg",
+              "spaceAggregation": "avg",
+              "functions": [],
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [
+                {
+                  "key": "world",
+                  "dataType": "string",
+                  "type": "tag",
+                  "isColumn": false,
+                  "isJSON": false
+                }
+              ],
+              "having": [],
+              "legend": "{{world}}",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
+    },
+    {
+      "id": "nf-07",
+      "title": "Entities per world",
+      "description": "geldar_world_entities by world.",
+      "panelTypes": "graph",
+      "isStacked": false,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "softMax": null,
+      "softMin": null,
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "none",
+      "query": {
+        "queryType": "builder",
+        "id": "nf-07-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "avg",
+              "aggregateAttribute": {
+                "key": "geldar_world_entities",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "avg",
+              "spaceAggregation": "avg",
+              "functions": [],
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [
+                {
+                  "key": "world",
+                  "dataType": "string",
+                  "type": "tag",
+                  "isColumn": false,
+                  "isJSON": false
+                }
+              ],
+              "having": [],
+              "legend": "{{world}}",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
+    },
+    {
+      "id": "nf-08",
+      "title": "Players online",
+      "description": "geldar_players_online and geldar_world_players by world.",
+      "panelTypes": "graph",
+      "isStacked": false,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "softMax": null,
+      "softMin": null,
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "none",
+      "query": {
+        "queryType": "builder",
+        "id": "nf-08-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "avg",
+              "aggregateAttribute": {
+                "key": "geldar_players_online",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "avg",
+              "spaceAggregation": "avg",
+              "functions": [],
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "having": [],
+              "legend": "online",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            },
+            {
+              "dataSource": "metrics",
+              "queryName": "B",
+              "expression": "B",
+              "disabled": false,
+              "aggregateOperator": "avg",
+              "aggregateAttribute": {
+                "key": "geldar_world_players",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "avg",
+              "spaceAggregation": "avg",
+              "functions": [],
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [
+                {
+                  "key": "world",
+                  "dataType": "string",
+                  "type": "tag",
+                  "isColumn": false,
+                  "isJSON": false
+                }
+              ],
+              "having": [],
+              "legend": "{{world}}",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
+    },
+    {
+      "id": "nf-10",
+      "title": "Plugin drops per queue",
+      "description": "geldar_ledger_dropped_total rate by queue.",
+      "panelTypes": "graph",
+      "isStacked": false,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "softMax": null,
+      "softMin": null,
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "none",
+      "query": {
+        "queryType": "builder",
+        "id": "nf-10-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "rate",
+              "aggregateAttribute": {
+                "key": "geldar_ledger_dropped_total",
+                "dataType": "float64",
+                "type": "Sum",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "rate",
+              "spaceAggregation": "sum",
+              "functions": [],
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [
+                {
+                  "key": "queue",
+                  "dataType": "string",
+                  "type": "tag",
+                  "isColumn": false,
+                  "isJSON": false
+                }
+              ],
+              "having": [],
+              "legend": "{{queue}}",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
+    },
+    {
+      "id": "nf-11",
+      "title": "Plugin queue depth",
+      "description": "geldar_ledger_queue_depth by queue.",
+      "panelTypes": "graph",
+      "isStacked": false,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "softMax": null,
+      "softMin": null,
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "none",
+      "query": {
+        "queryType": "builder",
+        "id": "nf-11-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "avg",
+              "aggregateAttribute": {
+                "key": "geldar_ledger_queue_depth",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "avg",
+              "spaceAggregation": "avg",
+              "functions": [],
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [
+                {
+                  "key": "queue",
+                  "dataType": "string",
+                  "type": "tag",
+                  "isColumn": false,
+                  "isJSON": false
+                }
+              ],
+              "having": [],
+              "legend": "{{queue}}",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
+    },
+    {
+      "id": "nf-13",
+      "title": "JFR thread-group CPU",
+      "description": "geldar_jfr_thread_group_cpu_ratio stacked by thread group.",
+      "panelTypes": "graph",
+      "isStacked": true,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "softMax": null,
+      "softMin": null,
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "none",
+      "query": {
+        "queryType": "builder",
+        "id": "nf-13-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "avg",
+              "aggregateAttribute": {
+                "key": "geldar_jfr_thread_group_cpu_ratio",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "avg",
+              "spaceAggregation": "avg",
+              "functions": [],
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [
+                {
+                  "key": "group",
+                  "dataType": "string",
+                  "type": "tag",
+                  "isColumn": false,
+                  "isJSON": false
+                }
+              ],
+              "having": [],
+              "legend": "{{group}}",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
+    },
+    {
+      "id": "nf-14",
+      "title": "Disk bytes per area",
+      "description": "geldar_disk_bytes by area.",
+      "panelTypes": "graph",
+      "isStacked": false,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "softMax": null,
+      "softMin": null,
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "bytes",
+      "query": {
+        "queryType": "builder",
+        "id": "nf-14-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "avg",
+              "aggregateAttribute": {
+                "key": "geldar_disk_bytes",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "avg",
+              "spaceAggregation": "avg",
+              "functions": [],
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [
+                {
+                  "key": "area",
+                  "dataType": "string",
+                  "type": "tag",
+                  "isColumn": false,
+                  "isJSON": false
+                }
+              ],
+              "having": [],
+              "legend": "{{area}}",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
+    },
+    {
+      "id": "nf-15",
+      "title": "Tick time per world (ms)",
+      "description": "geldar_world_tick_ms by world (PROPOSED name, PT-N4a).",
+      "panelTypes": "graph",
+      "isStacked": false,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "softMax": null,
+      "softMin": null,
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "none",
+      "query": {
+        "queryType": "builder",
+        "id": "nf-15-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "avg",
+              "aggregateAttribute": {
+                "key": "geldar_world_tick_ms",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "avg",
+              "spaceAggregation": "avg",
+              "functions": [],
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [
+                {
+                  "key": "world",
+                  "dataType": "string",
+                  "type": "tag",
+                  "isColumn": false,
+                  "isJSON": false
+                }
+              ],
+              "having": [],
+              "legend": "{{world}}",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
+    },
+    {
+      "id": "nf-16",
+      "title": "Mods loaded",
+      "description": "geldar_mods_loaded (PROPOSED name, PT-N4a).",
+      "panelTypes": "graph",
+      "isStacked": false,
+      "nullZeroValues": "zero",
+      "opacity": "1",
+      "softMax": null,
+      "softMin": null,
+      "timePreferance": "GLOBAL_TIME",
+      "yAxisUnit": "none",
+      "query": {
+        "queryType": "builder",
+        "id": "nf-16-query",
+        "promql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "clickhouse_sql": [{ "name": "A", "query": "", "disabled": false, "legend": "" }],
+        "builder": {
+          "queryData": [
+            {
+              "dataSource": "metrics",
+              "queryName": "A",
+              "expression": "A",
+              "disabled": false,
+              "aggregateOperator": "max",
+              "aggregateAttribute": {
+                "key": "geldar_mods_loaded",
+                "dataType": "float64",
+                "type": "Gauge",
+                "isColumn": true,
+                "isJSON": false
+              },
+              "timeAggregation": "max",
+              "spaceAggregation": "avg",
+              "functions": [],
+              "filters": {
+                "op": "AND",
+                "items": [
+                  {
+                    "key": {
+                      "key": "service.name",
+                      "dataType": "string",
+                      "type": "resource",
+                      "isColumn": false,
+                      "isJSON": false
+                    },
+                    "op": "=",
+                    "value": "geldar-neoforge"
+                  }
+                ]
+              },
+              "groupBy": [],
+              "having": [],
+              "legend": "",
+              "limit": null,
+              "orderBy": [{ "columnName": "#SIGNOZ_VALUE", "order": "desc" }],
+              "reduceTo": "avg",
+              "stepInterval": 60
+            }
+          ],
+          "queryFormulas": []
+        }
+      }
+    }
+  ]
+}
