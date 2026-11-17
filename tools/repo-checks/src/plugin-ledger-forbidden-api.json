@@ -1,0 +1,57 @@
+{
+  "_comment": "PT-18a lists (S1, S5, S9, S11 of paper-plugin/safety-rules.md). Edit this file, not the scanner, when porting. A name ending in '(' must be a call; any other name is matched as a whole word.",
+  "scanRoots": [
+    "plugin/ledger/src/main",
+    "plugin/ledger-core/src/main",
+    "plugin/ledger-velocity/src/main"
+  ],
+  "forbiddenNames": [
+    "sendMessage",
+    "sendActionBar",
+    "sendTitle",
+    "showTitle",
+    "broadcast",
+    "broadcastMessage",
+    "dispatchCommand",
+    "Scoreboard",
+    "BossBar",
+    "sendPluginMessage",
+    "registerOutgoingPluginChannel",
+    "setPlayerListName",
+    "getChunkAt",
+    "loadChunk",
+    "setBlock",
+    "setType(",
+    "spawn(",
+    "teleport(",
+    "setCancelled",
+    "setMessage",
+    "setLine",
+    "shutdown(",
+    "saveWorld",
+    "setTickRate",
+    "setFrozen",
+    "getRemoteAddress",
+    "getAddress",
+    "getHostAddress",
+    "startTask",
+    "pauseTask",
+    "cancelTask",
+    "renderMap",
+    "purge"
+  ],
+  "allow": [
+    {
+      "file": "plugin/ledger-core/src/main/java/dev/geldar/ledger/core/Names.java",
+      "name": "broadcast",
+      "text": "\"geldar.broadcast\"",
+      "reason": "Event-name string constant of the broadcast content family; not a call to the Bukkit broadcast API."
+    }
+  ],
+  "pluginYml": {
+    "path": "plugin/ledger/src/main/resources/plugin.yml",
+    "allowedKeys": ["name", "main", "version", "api-version", "description", "softdepend"],
+    "forbiddenKeys": ["commands", "permissions", "loadbefore"],
+    "forbiddenNameWords": ["telemetry", "trace", "otel", "metric", "monitor"]
+  }
+}
