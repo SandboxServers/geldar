@@ -52,7 +52,7 @@ Their other services are UNVERIFIED here. Paper-equivalent sum about 32 GiB plus
 ## 4. Secrets
 
 Per-project directory `compose/secrets-nf/` (gitignored; the repo ignore line is added). The file reads `${NF_SECRETS_DIR:-./secrets-nf}`.
-Names, one file each, mode 0600, owned by the account:
+Names, one file each, mode 0600, owned by the ops account (uid `NF_SERVICE_UID`, 1001 on this node; section 5):
 
 - `nats-auth.conf` (the per-shard NATS server config), `nats-sink.txt`, `nats-neoforge.txt`, `nats-velocity.txt`, `nats-deploy.txt`, `nats-seed.txt`
   (the five NATS users of the design: neoforge, sink, deploy, velocity, seed; the `nats-auth.conf` file is the server side);
@@ -61,12 +61,36 @@ Names, one file each, mode 0600, owned by the account:
 No secret value is in the file or in this runbook. The files are written by `./geldar.ps1 shard nats-auth nf --live` (section 4b,
 deploy/nats-auth-nf.ps1); do not create them by hand. The NATS user table itself is the per-shard NATS auth packet's (a3 in the design).
 
-## 4b. The NATS auth set (generated on the node)
+## 4b. The NATS auth set (generated on the trusted machine)
 
-When: on the NF node, once, before the first start (section 8). Never in a git checkout. Make a clean export
-(`git archive -o <file> <commit>`, extracted into an empty directory), run the command there, then keep the secrets
-directory with the node's secrets. The generator refuses a checkout (a `.git` entry) unless `--local` is also given. `--local` is accepted in a
-clean export and changes nothing there; the test harness needs it. Flags are case-sensitive (`--LIVE` is refused).
+When: once, before the first start (section 8), on the trusted machine (the owner's desktop). Not on the node: the node has
+no pwsh and no node runtime, so the generator cannot run there. The generator writes plaintext passwords into whatever tree
+it runs in, so the live checkout never runs it. The `--live` guard refuses a tree with a `.git` entry unless `--local` is also
+given; the same guard reasoning as the scratch stack's (docs/runbooks/scratch-stack.md, the guard paragraph). `--local` is
+accepted in a clean export and changes nothing there; the test harness needs it. Flags are case-sensitive (`--LIVE` is refused).
+
+**SAFE-EXPORT procedure (trusted machine).** Use the reviewed commit. Keep the archive and the export outside any checkout.
+Shown in POSIX shell; on the Windows desktop run the same steps in pwsh 7 (`tar` there is bsdtar). Stop at the first failed step.
+
+1. `git archive -o "$ARCH" "$SHA"`. Never pipe the archive into tar: a failed archive must not be half-read.
+2. `tar -tf "$ARCH" > "$LIST"`, then `grep -E '^/|^[A-Za-z]:|(^|/)\.\.(/|$)' "$LIST"` must print nothing. Any hit: stop.
+3. Assert `$EXP` is an existing, empty directory (`[ -z "$(ls -A "$EXP")" ]`), then `tar -xf "$ARCH" -C "$EXP"`.
+4. `cd "$EXP"`, assert `[ "$(pwd -P)" = "$EXP" ]` and `[ ! -e .git ]`. Only now run the generator, from this directory:
+   `./geldar.ps1 shard nats-auth nf --live`. Never run it from the live checkout or from any other directory.
+5. Check the set: `compose/secrets-nf/` holds `nats-auth.conf` and `nats-neoforge.txt`, `nats-sink.txt`, `nats-velocity.txt`,
+   `nats-deploy.txt`, `nats-seed.txt`, with no other file.
+
+**Copy to the node (the SAFE-EXPORT ends here on the desktop).**
+
+6. Copy only the directory: `scp -r "$EXP/compose/secrets-nf" <ops account>@<node>:<node export>/compose/`. Use the ops account
+   so the files arrive owned by its uid (1001, section 5). Do not copy the rest of the export.
+7. On the node, as the ops account, set the modes explicitly (scp does not keep them): `chmod 700 <dir>` and
+   `chmod 600 <dir>/*`. Then check `stat -c '%a %u %n' <dir> <dir>/*`: the directory must show `700 1001`, every file `600 1001`,
+   and the file list must be the six names of step 5. A wrong owner or mode stops the run here (the script refuses it too).
+8. On the desktop, delete the copies: `rm -rf "$EXP" "$ARCH" "$LIST"` (the export holds the generated secrets). Keep no other copy.
+
+The generator's output is owned by the desktop account, and its modes are set on the desktop only; the node copy is set by
+step 7. The copy is the only one; do not paste the passwords into a ticket or a chat.
 
 Command: `./geldar.ps1 shard nats-auth nf --live`. Without `--live` it refuses and writes nothing. An unknown flag is refused.
 
@@ -110,8 +134,29 @@ nats-server 2.15 acceptance of this config is checked only there. The mod's expo
 
 `NF_SECRETS_DIR`, `NF_MOD_JAR_HOST` (the pinned geldar NeoForge mod jar; default path does not exist, so `up` refuses the bind),
 `NF_MOD_SHA256` (64 lowercase hex, the jar's sha256; the entrypoint refuses a mismatch), `NF_NEOFORGE_BUILD` (default 126, the only
-build the entrypoint pin accepts), `NF_NEOFORGE_HEAP` (default 9G), `NF_SERVICE_UID` (default 1000; set it to the account that owns the
-secret files), `NF_EVENTSINK_IMAGE`, `NF_ADMIN_IMAGE`.
+build the entrypoint pin accepts), `NF_NEOFORGE_HEAP` (default 9G), `NF_EVENTSINK_IMAGE`, `NF_ADMIN_IMAGE`.
+
+**`NF_SERVICE_UID` (the service uid) is 1001 on this node.** It is the uid of the ops account, the account that runs
+`deploy/nf-deploy.sh` and owns the secret files. The uid is read from `id -u` on the node, as that account; the value is 1001
+(the ops account's uid as recorded for this node; confirm it with `id -u`). The script and compose default to 1000 (the colo default), so the variable must be set explicitly in
+the shell for every verb, not left to the default:
+
+- Set `export NF_SERVICE_UID=1001` (the value `id -u` printed) before `seed-bundle`, `plan` and `up`, which read it and refuse
+  a bad value. `status`, `down` and `logs` do not check it, but use the same value in every shell and in any direct
+  `docker compose -p geldar-nf -f compose/nf-live.yml` call, since compose interpolates the same variable into the containers'
+  `user:` and `UID`. Nothing stores the value: the script reads the environment on each run.
+- The script refuses a value that is not a number or is 0 ("NF_SERVICE_UID must be a number" or "the containers must not run as
+  root"). It refuses a secret file whose owner is not the value: `secret file <name> is owned by uid <n>; expected <value>
+  (NF_SERVICE_UID)`. A mismatch therefore stops before any state change; fix the file's owner or the variable, never the script.
+- What it sets: compose runs `eventsink` and `identity-seed` with `user: <uid>:<uid>`, and the itzg images (`velocity`,
+  `neoforge`) with `UID` and `GID` set to the same value. There is no separate group variable: the group is the same number,
+  and the script checks only the owner of the secret files, not their group. Mode 0600 is owner-only, so the group does not
+  affect the read.
+- Data-volume ownership: `seed-bundle` runs the extract as root (`--user 0`) and then `chown -R --reference=/data /data`. That
+  references `/data` itself, not the service uid, so the bundle ends owned by whatever owner `/data` already has in the image.
+  The script does not set the service uid on the volume. The `sha256sum -c` marker check runs as the service uid, so the files
+  must be readable by it, or the check fails closed. Who owns `/data` after seeding, and whether the itzg entrypoint changes
+  it when `UID` is 1001, is UNVERIFIED: check it on the node with a read-only `stat` in a throwaway container before `up`.
 
 The file renders with no environment (ci.yml renders every compose/*.yml with none), and with dummy secret files and a dummy jar
 (the repo test does both).
@@ -129,9 +174,9 @@ colo-notice.sh, colo-cd-players.sh and .github/workflows/colo-deploy.yml. Not ru
 - **colo-deploy.yml and colo-cd.sh** deploy only the geldar-colo services by digest from the colo release file, into
   `GELDAR_COLO_ROOT` (default /mnt/nvme/geldar-colo/src). They do not apply here. The job runs on a self-hosted runner and deploys
   from main only.
-- **So this project needs its own deploy script** (a later packet, under deploy/ as a new file). It must always pass
-  `-p geldar-nf -f compose/nf-live.yml`, read its own release file and secrets directory, and never source the colo defaults.
-  Until it exists, the only compose action the operator may take is one with those two flags, by hand, after the secrets exist.
+- **So this project needs its own deploy script.** It must always pass `-p geldar-nf -f compose/nf-live.yml`, read its own
+  secrets directory, and never source the colo defaults. `deploy/nf-deploy.sh` is that script (below). The only other compose
+  action the operator may take is one by hand with those two flags, after the secrets exist.
 - **A compose action on this project must always pass** `-p geldar-nf -f compose/nf-live.yml`. No other project flag, no overlay.
   Never run it without `-p` and with a colo file in the same command.
 
@@ -151,7 +196,10 @@ root; a checkout is refused, and `--local` is for the tests only). Run it as the
 - Inputs, all from the environment: `NF_MOD_JAR_HOST` and `NF_MOD_SHA256` (the pinned mod jar and its sha256);
   `NF_BUNDLE_DIR` and `NF_BUNDLE_SHA256` (the offline bundle from `deploy/scratch/build-neoforge-bundle.sh`, and the sha256 of
   its `.geldar-bundle.sha256` list); `NF_SECRETS_DIR` (default `compose/secrets-nf/`, which must hold the eight files the
-  script lists, owner `NF_SERVICE_UID` (default 1000), mode 0600 or 0400).
+  script lists, owner `NF_SERVICE_UID` (1001 on this node; the script's default is 1000, so export it, section 5), mode 0600 or 0400).
+  The list is eight names: `postgres.txt` and `velocity-forwarding.txt` as well as the six NATS files of section 4b. The generator
+  writes only the six, so `plan` and `up` refuse with "secret file missing" until those two exist (a later packet).
+  `plan` and `up` read the secrets (through the gates); `seed-bundle`, `status`, `down` and `logs` do not.
 - Refusals, before any state changes: a colo variable set; a checkout; a missing or badly owned secret file; a mod jar or
   bundle list whose sha256 differs; free RAM below the 16640 MiB of caps plus an 8192 MiB margin; free disk below 50 GiB;
   anything listening on 46565; a `geldar-nf` container with a geldar-colo label.
@@ -224,16 +272,41 @@ and the marker check have run only against stubs.
 5. **The per-shard sink config is not in the file.** GELDAR_EVENTS_STREAM, GELDAR_EVENTSINK_SHARD and the retention keys do not exist
    in eventsink/ today; they need the sink per-shard config packet. This project's NATS holds only its own events, so the default stream
    name is correct for now.
-6. **NF_SERVICE_UID default 1000** is the colo default; the live account uid is UNVERIFIED.
+6. **NF_SERVICE_UID is 1001 on this node, not the default 1000.** 1001 is the ops account's uid as recorded for this node. Confirm it with
+   `id -u` as the ops account on the node before the secrets are copied (section 4b, step 6); the script's and compose's default
+   of 1000 is the colo default and is not used here. Not confirmed by a node read yet.
 7. **The caps in section 3** are proposals from the lead's measurement. The other tenants' non-Paper services are UNVERIFIED.
 8. **Alpine nc, mc-health and the NeoForge start script** are used as scratch uses them; not run here.
 9. **Nothing was started.** No container, no node contact, no live lane.
 
 ## 8. Before the first start (checklist, in order)
 
-1. Per-shard NATS auth set generated into compose/secrets-nf/ (the later packet) and the secret files written 0600.
-2. The neoforge bundle seeded (`nf-deploy.sh seed-bundle`, section 6; item 7.1 is done in the repo); compose/velocity/velocity-nf.toml is in place (bot ingress, backend neoforge:25565).
-3. `docker compose -p geldar-nf -f compose/nf-live.yml config --quiet` with the real environment.
+### Order of operations on the node
+
+Each step is a stop point. The node steps run as the ops account (uid `NF_SERVICE_UID`, 1001 on this node), never as root,
+from the exported tree, with `NF_SERVICE_UID` exported in the shell (section 5). The live checkout runs none of them.
+
+1. **Trusted machine:** export the reviewed commit and generate the NATS auth set (section 4b, the SAFE-EXPORT steps 1 to 5).
+2. **Copy to the node:** `compose/secrets-nf/` only, directory mode 700, files 600, owner the ops account (section 4b, steps 6 to 8).
+   Verify the owner and modes with `stat` on the node. Delete the desktop copies.
+3. **Stage:** build the pinned mod jar and the NeoForge bundle on the trusted machine, and compare each sha256 by a second channel
+   (section 6, "Seeding the NeoForge bundle", step 2; `NF_MOD_SHA256` for the jar). Copy them to the node, into directories the
+   ops account owns.
+4. **Seed (node):** `nf-deploy.sh seed-bundle` with `NF_BUNDLE_TARBALL` and `NF_BUNDLE_TARBALL_SHA256` (section 6). Once per volume.
+   Then check the volume's owner and the marker as section 5 describes.
+5. **Plan (node, read-only):** `nf-deploy.sh plan` runs every gate and changes nothing. It refuses until `postgres.txt` and
+   `velocity-forwarding.txt` exist (a later packet; section 6).
+6. **Up (node):** `nf-deploy.sh up`. It starts the services in its own order (section 6): `nats` and `postgres`, then
+   `identity-seed`, then `eventsink` and `neoforge`, then `velocity` (the only published port, loopback). Probes after it are
+   read-only (`nf-deploy.sh status`, `logs`, and `tick query`, `list`, `version` in the game).
+
+### Checklist
+
+1. The NATS auth set is generated on the trusted machine and copied to the node (order steps 1 and 2). `postgres.txt` and
+   `velocity-forwarding.txt` are a later packet; the secret files must be 0600 (or 0400) and owned by the ops account.
+2. The neoforge bundle seeded (order step 4; item 7.1 is done in the repo); compose/velocity/velocity-nf.toml is in place (bot
+   ingress, backend neoforge:25565).
+3. `docker compose -p geldar-nf -f compose/nf-live.yml config --quiet` with the real environment, including `NF_SERVICE_UID=1001`.
 4. Re-measure the node's memory and cores; confirm the caps in section 3 still fit beside the autonomous shard.
-5. Start `nats`, then `postgres`, then `eventsink`, then `identity-seed`, then `neoforge`, then `velocity`. Read-only probes only
-   (`docker compose -p geldar-nf ... ps`, `tick query`, `list`, `version`).
+5. Start with `up` (order step 6), not by hand. The old by-hand order (`nats`, `postgres`, `eventsink`, `identity-seed`,
+   `neoforge`, `velocity`) differed from `up`'s order, so it is no longer the procedure.
