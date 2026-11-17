@@ -7,12 +7,13 @@
 ## Decision
 
 1. The live NeoForge shard runs on the colo node as a new compose project named `geldar-nf`, not on a separate host.
-2. Its file `compose/nf.yml` is self-contained, not an overlay on `compose/colo.yml`. It has its own network, NATS, Postgres, `eventsink`, Velocity and NeoForge server.
-3. Every compose action on it names `-p geldar-nf -f compose/nf.yml`. It never uses the colo file, the `geldar-colo` network or the node's `colo.yml`.
-4. Per-service caps (budget in `per-shard-storage-design.md` section 7.2): NeoForge server 3 CPUs and 8192m (heap 6G); Velocity 0.5 CPU and 1024m; Postgres 1 CPU and 2048m; NATS 0.5 CPU and 512m; `eventsink` 0.5 CPU and 512m. Total 5.5 CPUs and 12288m. These are proposals, to be measured at deploy time.
-5. Loopback only. One host port is proposed, 127.0.0.1:25575 for Velocity, from a block 25575 to 25579 reserved for this project. No Postgres or NATS port is published.
-6. The colo-cd and colo-deploy workflows do not apply to `geldar-nf`. It gets its own deploy script (`deploy/nf-cd.sh`, a proposal), which pins its own image digests.
+2. Its file `compose/nf-live.yml` is self-contained, not an overlay on `compose/colo.yml`. It has its own network, NATS, Postgres, `eventsink`, Velocity, NeoForge server and a one-shot `identity-seed`. The file is on branch `phase1/nf-live-compose` (commit e353646c).
+3. Every compose action on it names `-p geldar-nf -f compose/nf-live.yml`. It never uses the colo file, the `geldar-colo` network or the node's `colo.yml`.
+4. Per-service caps (budget in `per-shard-storage-design.md` section 7.2): NeoForge server 3 CPUs and 12288m (heap 9G, 512 pids); Velocity 0.5 CPU and 1024m; Postgres 1 CPU and 2048m; NATS 0.5 CPU and 512m; `eventsink` 0.5 CPU and 512m; identity-seed (one-shot) 0.25 CPU and 256m. Total 5.75 CPUs and 16640m (about 16.25 GiB). These are proposals, to be measured at deploy time.
+5. Loopback only. One host port is published: 127.0.0.1:46565 for Velocity. The block for this project is 46565 (Velocity, published), 46222 (NATS), 46432 (Postgres) and 46575 (NeoForge RCON), the last three reserved and not published. The earlier proposal 25575 to 25579 is withdrawn; 25575 is the RCON default.
+6. The colo-cd and colo-deploy workflows do not apply to `geldar-nf`. No colo deploy script applies. It gets its own deploy script (`deploy/nf-cd.sh`, a later packet), which pins its own image digests and never sources `deploy/common.sh`.
 7. The autonomous shard (colo) must never be restarted by an action on this project; the list of what must never restart is in the design note section 7.1.
+8. Purge of the `events` rows is not automatic. The owner of the purge is the lead's operations, as an open assignment: an ops job with a runbook step, run by an ops agent under the lead's authorisation. The database has no purge today (record 0380, D7).
 
 ## Why
 
@@ -21,6 +22,8 @@ The owner decided a new project on the colo node rather than a separate host. A 
 ## Consequences
 
 - The node's headroom is not measured in this record. The lead's figures (about 100 GiB available, 16 cores, at about 13:55Z on 2026-11-17) must be re-measured with the read-only commands in the design note section 7.4 before the first start.
-- The CPU caps of colo, nf and scratch telemetry add to 22.6 cores against 16 cores. Caps are ceilings: CPU contention can slow the autonomous Paper. Lower `cpu_shares` on the nf services is a proposal to protect colo.
+- The repo's `compose/colo.yml` is stale against the node. The node's autonomous Paper runs at 8 CPUs and 14336m (checked read-only by the lead at about 16:07Z 2026-11-17); the repo file says 3 CPUs and 8192m. Other drift exists too. The budget uses the node's Paper values. The repo file is updated in its own packet.
+- With the autonomous Paper at 8 CPUs and 14336m, the colo default-on caps (other services at repo values, UNVERIFIED on the node) are 13.85 CPUs; with `geldar-nf` (5.75) the caps are 19.6 CPUs against 16 cores (about 122%). With scratch telemetry (repo caps) they are 26.1 CPUs (about 163%). Caps are ceilings: CPU contention can slow the autonomous Paper. Lower `cpu_shares` on the nf services is a proposal to protect colo, and it stands.
 - Public exposure, the shared Caddy and the human route are out of scope. They are owner decisions for the final-instance step.
-- `geldar.ps1 check` validates every `compose/*.yml` with `docker compose config`, so `compose/nf.yml` is checked there too.
+- `geldar.ps1 check` validates every `compose/*.yml` with `docker compose config`, so `compose/nf-live.yml` is checked there too. Its test renders the file with no environment.
+- `GELDAR_PROJECT` and `GELDAR_COLO_COMPOSE` on the `ghdeploy` runner are UNVERIFIED and cannot be settled from the repo. They are checked read-only on the node when the deploy script is written.

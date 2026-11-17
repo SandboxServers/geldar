@@ -11,7 +11,7 @@
 3. The live NeoForge shard has token `nf`, stream `GELDAR_EVENTS_NF` (subjects `geldar.nf.*`), durable consumer `eventsink`, database `geldar_nf` and table `events`. Its compose project is `geldar-nf` (record 0386).
 4. Scratch has token `nf-scratch`, stream `GELDAR_EVENTS_NF_SCRATCH` (subjects `geldar.nf-scratch.*`) and database `geldar_nf_scratch`. The token must match `^[a-z][a-z0-9-]{1,31}$`.
 5. The `events` table keeps its name and its columns in every database. No shard column is added.
-6. Retention for the live NeoForge stream is 30 days and 2 GiB, the accepted defaults; the owner may change them. The database has no purge today. The purge is a documented, idempotent job run by the operator of each shard; the assignment of its owner is open (the lead's operations; not yet a named person).
+6. Retention for the live NeoForge stream is 30 days and 2 GiB, the accepted defaults; the owner may change them. The database has no purge today. The purge is a documented, idempotent ops job with a runbook step, run under the lead's authorisation by an ops agent; it is not automatic. Its owner is an open assignment (the lead's operations; not yet a named person or agent).
 
 This meets the owner's answer "separate stream and table per shard" as follows: each shard has its own stream (on its own NATS) and its own database, which holds its own `events` table.
 
