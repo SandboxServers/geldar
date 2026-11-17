@@ -10,7 +10,8 @@ Scope: how every metric and event of the [frozen list](README.md) is verified on
 - Start (ops agent):
 
 ```
-export $(cat deploy/scratch/telemetry.env | xargs)           # ports, no secrets
+# No export for the ports: scratch.sh reads deploy/scratch/telemetry.env itself (only the SCRATCH_*_PORT lines,
+# never sourced). A SCRATCH_*_PORT variable already exported wins. Do not export or source the file.
 export SCRATCH_TELEMETRY_OUT="$HOME/.local/state/geldar/scratch-telemetry-out"   # absolute, outside the repo
 export SCRATCH_OTEL_AGENT_JAR=<absolute path of the verified agent jar>          # sha256 checked against deploy/otel-agent.lock.json
 export SCRATCH_NATS_AUTH_DIR=<absolute 0700 node dir with the five NATS auth files>   # required, step 0 below
