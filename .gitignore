@@ -30,6 +30,7 @@ Thumbs.db
 # Benchmark and shard runtime output (results we keep are copied into docs/)
 bench-results/
 compose/secrets/
+compose/secrets-nf/
 .data/
 # Pid files and logs of the host processes of ./geldar.ps1 adam
 .geldar/

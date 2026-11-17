@@ -1,0 +1,321 @@
+# The live NeoForge shard (token nf): a self-contained compose project, separate from the autonomous shard's project.
+# Start (after the per-shard NATS auth set and the secrets exist; see docs/runbooks/nf-live-project.md):
+#   docker compose -p geldar-nf -f compose/nf-live.yml config --quiet
+#   docker compose -p geldar-nf -f compose/nf-live.yml up -d
+# Every compose action on this shard passes -p geldar-nf -f compose/nf-live.yml. It is not an overlay: it does not
+# merge any other compose file, and it names no external network or volume. Its own network and its own named volumes
+# carry the project prefix, so a compose action here cannot reach any other project's containers, networks or volumes.
+# Nothing here is published beyond loopback. Host ports, all loopback (127.0.0.1), the NF block:
+#
+#   | Host port | Service    | Container port | Published | Purpose                                              |
+#   | 46565     | velocity   | 25565          | yes       | game ingress (loopback only; the forwarding proxy)   |
+#   | 46222     | nats       | 4222           | no        | reserved: NATS client port, never published here     |
+#   | 46432     | postgres   | 5432           | no        | reserved: Postgres, never published here             |
+#   | 46575     | neoforge   | 25575          | no        | reserved: RCON, never published here                 |
+#
+# Never 25565 or 25566 (deploy/README.md). The block collides with none of compose/*.yml, deploy/scratch/*.env, or the
+# scratch defaults (the repo-checks test nf-live-compose.test.ts reads them and fails on any shared host port).
+#
+# Caps (CPU, memory, pids; memswap equals memory, so no swap). Proposal, against the lead's node measurement on
+# 2026-11-17 (about 100 GiB memory available, 16 cores; to be re-measured at deploy): this shard's caps sum to about
+# 5.75 CPUs and 16.25 GiB. The other tenants at that time: the autonomous Paper at a 14 GiB cap, scratch-telemetry Paper at 15 GiB,
+# the nf scratch Paper at 3 GiB. neoforge is the Paper-equivalent: 12 GiB cap, a 9 GiB heap (the colo Paper's ratio), 3 CPUs.
+# The Postgres, NATS, sink and Velocity numbers are the measured budgets the autonomous shard uses. The identity-seed one-shot is small.
+# Restart is unless-stopped on every long-running service; identity-seed is a one-shot (restart no).
+#
+# Logging: json-file, 10 MiB per file, 3 files (the autonomous shard's policy). Labels: geldar.project=geldar-nf on each service.
+#
+# Environment: every variable has a default, so the file renders with no environment set (ci.yml renders every compose file
+# with none). The variables an operator sets for this project, all optional at render time:
+#   NF_SECRETS_DIR         the per-project secret files (default ./secrets-nf, gitignored; written by the NF secrets step, not yet built)
+#   NF_MOD_JAR_HOST        host path of the pinned geldar NeoForge mod jar (read-only mount). Unset, the default path does not
+#                          exist and `up` refuses to start the bind (create_host_path is false), which is the fail-closed path.
+#   NF_MOD_SHA256          the jar's sha256, 64 lowercase hex; the entrypoint refuses a mounted jar that does not match
+#   NF_NEOFORGE_BUILD      NeoForge 26.1.2 build number (default 126, the only build the entrypoint pin accepts)
+#   NF_NEOFORGE_HEAP       neoforge JVM heap (default 9G)
+#   NF_SERVICE_UID         the account uid:gid the services run as (default 1000; the account that owns the secret files)
+#   NF_EVENTSINK_IMAGE     the eventsink image (default geldar-eventsink:nf-live, built from eventsink/Dockerfile)
+#   NF_ADMIN_IMAGE         the admin image for identity-seed (default geldar-admin:nf-live, built from tools/admin/Dockerfile)
+#
+# Not in this file yet (needs the sink per-shard config packet; the keys do not exist in eventsink/ today):
+#   GELDAR_EVENTS_STREAM=GELDAR_EVENTS_NF, GELDAR_EVENTSINK_SHARD=nf, retention and max-bytes keys. The sink reads only the
+#   keys it reads today (GELDAR_NATS_URL, POSTGRES_HOST, POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD_FILE, GELDAR_TELEMETRY_URL,
+#   and the NATS user and password file). This project's NATS holds only this shard's events, so its stream is the default GELDAR_EVENTS.
+
+name: geldar-nf
+
+x-minecraft-healthcheck: &mc-health
+  interval: 30s
+  timeout: 10s
+  retries: 5
+  start_period: 15m
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-labels: &nf-labels
+  geldar.project: geldar-nf
+  com.centurylinklabs.watchtower.enable: "false"
+
+services:
+  nats:
+    # Budget: 0.5 CPU, 512m, 256 pids. The auth conf is the per-shard set written by the NF secrets step (not yet built).
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512m
+          pids: 256
+    memswap_limit: 512m
+    pids_limit: 256
+    logging: *logging
+    labels: *nf-labels
+    image: nats:2.15.1-alpine@sha256:7ae34c25dfd6fe2e01c6483eabef20d796690fdcac6c4d94ca780a6cf9877fde
+    command: ["-js", "-sd", "/data", "-c", "/etc/nats/nats-auth.conf"]
+    volumes:
+      - nats-data:/data
+    secrets:
+      - source: nats-auth.conf
+        target: /etc/nats/nats-auth.conf
+    # No ports: the client port (4222) is reached on this project's network only. Probe the client port, never the monitor.
+    networks: [nf]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "4222"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  postgres:
+    # Budget: 1 CPU, 2048m, 256 pids (the colo Postgres budget). Its own database for this shard only.
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 2048m
+          pids: 256
+    memswap_limit: 2048m
+    pids_limit: 256
+    logging: *logging
+    labels: *nf-labels
+    image: pgvector/pgvector:0.8.6-pg16@sha256:ccc6e83d6e35e931dc7c5def2022729d5a6c370318d099181995567ff1fb4d6b
+    environment:
+      POSTGRES_DB: geldar_nf
+      POSTGRES_USER: geldar
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres
+    secrets: [postgres]
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Applied in name order on a fresh volume only (sql/README.md). UNVERIFIED: that 0001 to 0066 run cleanly into an empty
+      # database of their own; the admin migrate one-shot is the other path, and the runbook says which one the deploy uses.
+      - ../sql:/docker-entrypoint-initdb.d:ro
+    networks: [nf]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "geldar", "-d", "geldar_nf"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    restart: unless-stopped
+
+  eventsink:
+    # Budget: 0.5 CPU, 512m, 256 pids (the colo sink budget). One sink for this shard: its NATS, its database.
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 512m
+          pids: 256
+    memswap_limit: 512m
+    pids_limit: 256
+    logging: *logging
+    labels: *nf-labels
+    build:
+      context: ..
+      dockerfile: eventsink/Dockerfile
+    image: ${NF_EVENTSINK_IMAGE:-geldar-eventsink:nf-live}
+    # Runs as the account uid:gid, like the scratch eventsink: the 0600 secret files belong to that account.
+    user: "${NF_SERVICE_UID:-1000}:${NF_SERVICE_UID:-1000}"
+    environment:
+      GELDAR_NATS_URL: nats://nats:4222
+      GELDAR_NATS_USER: sink
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-sink.txt
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: geldar_nf
+      POSTGRES_USER: geldar
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres
+      # Optional telemetry endpoint. Unset in the host environment, it is unset in the container.
+      GELDAR_TELEMETRY_URL:
+    secrets: [postgres, nats-sink.txt]
+    networks: [nf]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    restart: unless-stopped
+
+  identity-seed:
+    # One-shot: creates the two identity buckets before velocity starts (golem/src/seed-buckets.ts, the bucket configs the
+    # admin tool uses). UNVERIFIED: the NATS user that may create them. The design names the deploy user, and this file runs
+    # it here; the per-shard NATS auth set must grant it KV bucket creation, or this one-shot must use another user.
+    build:
+      context: ..
+      dockerfile: tools/admin/Dockerfile
+    image: ${NF_ADMIN_IMAGE:-geldar-admin:nf-live}
+    entrypoint: ["node", "/opt/geldar/golem/src/seed-buckets.ts"]
+    user: "${NF_SERVICE_UID:-1000}:${NF_SERVICE_UID:-1000}"
+    environment:
+      GELDAR_NATS_URL: nats://nats:4222
+      GELDAR_NATS_USER: deploy
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-deploy.txt
+    secrets: [nats-deploy.txt]
+    depends_on:
+      nats:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 256m
+          pids: 256
+    memswap_limit: 256m
+    pids_limit: 256
+    logging: *logging
+    labels: *nf-labels
+    networks: [nf]
+    restart: "no"
+
+  velocity:
+    # Budget: 0.5 CPU, 1024m, 256 pids (the colo velocity budget). Loopback game ingress: the only published port here.
+    # The itzg image starts as root and drops to NF_SERVICE_UID, so it reads the 0600 forwarding secret.
+    # UNVERIFIED and a deploy blocker: the volume below points at a velocity config that names the backend `neoforge:25565`.
+    # The colo config (compose/velocity/velocity.toml) names the Paper backend, so it must not be mounted here. That file is
+    # not in this packet; without it, `up` creates an empty directory at the mount target and velocity does not start.
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 1024m
+          pids: 256
+    memswap_limit: 1024m
+    pids_limit: 256
+    logging: *logging
+    labels: *nf-labels
+    image: itzg/mc-proxy:2026.10.2-java25@sha256:0b969bd3000d6e21ebb58444d062d63202cb552b5264b57a274fed7d2b411c0d
+    environment:
+      UID: "${NF_SERVICE_UID:-1000}"
+      GID: "${NF_SERVICE_UID:-1000}"
+      TYPE: VELOCITY
+      VELOCITY_VERSION: "3.5.1"
+      VELOCITY_BUILD_ID: "615"
+      MEMORY: 512M
+      GELDAR_NATS_URL: nats://nats:4222
+      GELDAR_NATS_USER: velocity
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-velocity.txt
+    secrets: [velocity-forwarding, nats-velocity.txt]
+    volumes:
+      - ./velocity/velocity-nf.toml:/config/velocity.toml:ro
+      - velocity-data:/server
+      - ../plugin/velocity-identity/build/libs/geldar-velocity-identity.jar:/plugins/geldar-velocity-identity.jar:ro
+    ports:
+      # Literal host port (the loopback rule rejects interpolation). Loopback only; never 25565 or 25566.
+      - "127.0.0.1:46565:25565"
+    networks: [nf]
+    depends_on:
+      neoforge:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      identity-seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "bash", "-c", "read -r pid start < /tmp/geldar-identity.ready && [ -n \"$$start\" ] && [ \"$$(cut -d' ' -f22 /proc/$$pid/stat 2>/dev/null)\" = \"$$start\" ] && exec 3<>/dev/tcp/127.0.0.1/25565"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 1m
+    restart: unless-stopped
+
+  neoforge:
+    # The NeoForge 26.1.2 game server (Proxy Compatible Forge for Velocity's modern forwarding). The same itzg image as the
+    # colo Paper, with TYPE NEOFORGE. Its install comes from the offline bundle in the neoforge-data volume (the entrypoint
+    # runs bundle mode when the bundle list is present; the seeding step is UNVERIFIED, see the runbook). No game port and no
+    # RCON are published. Velocity is the only game listener.
+    # Budget: 3 CPUs, 12 GiB cap, 9 GiB heap (MEMORY), 512 pids. Proposal, to be re-measured at deploy.
+    deploy:
+      resources:
+        limits:
+          cpus: "3"
+          memory: 12288m
+          pids: 512
+    memswap_limit: 12288m
+    pids_limit: 512
+    logging: *logging
+    labels: *nf-labels
+    image: itzg/minecraft-server:2026.10.1-java25@sha256:d12aed7e35981dfe259b60fbfee77d23a19b5898a7a31dca298d18b47b7b5776
+    entrypoint: ["/bin/sh", "/geldar/neoforge-entrypoint.sh"]
+    environment:
+      UID: "${NF_SERVICE_UID:-1000}"
+      GID: "${NF_SERVICE_UID:-1000}"
+      EULA: "TRUE"
+      TYPE: NEOFORGE
+      NEOFORGE_VERSION: "26.1.2.${NF_NEOFORGE_BUILD:-126}"
+      MEMORY: "${NF_NEOFORGE_HEAP:-9G}"
+      ONLINE_MODE: "FALSE"
+      ENABLE_RCON: "FALSE"
+      GELDAR_NATS_URL: nats://nats:4222
+      GELDAR_NATS_USER: neoforge
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-neoforge.txt
+      GELDAR_NF_MOD_SHA256: "${NF_MOD_SHA256:-}"
+    secrets: [velocity-forwarding, nats-neoforge.txt]
+    volumes:
+      - neoforge-data:/data
+      - ./neoforge/neoforge-entrypoint.sh:/geldar/neoforge-entrypoint.sh:ro
+      - type: bind
+        source: ${NF_MOD_JAR_HOST:-./nf-live-unset/geldar-neoforge.jar}
+        target: /geldar/mods/geldar-neoforge.jar
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [nf]
+    depends_on:
+      nats:
+        condition: service_healthy
+    healthcheck:
+      <<: *mc-health
+      test: ["CMD-SHELL", "mc-health"]
+    restart: unless-stopped
+
+networks:
+  nf: {}
+
+volumes:
+  postgres-data: {}
+  nats-data: {}
+  neoforge-data: {}
+  velocity-data: {}
+
+# File-based secrets under the per-project directory (compose/secrets-nf/, gitignored). The names are the per-shard NATS
+# auth set's: nats-auth.conf (the server config), nats-sink.txt, nats-neoforge.txt, nats-velocity.txt, nats-deploy.txt (one
+# password file per user), and the Postgres and forwarding secrets. The NF secrets generator is a later packet; no value is
+# in this file.
+secrets:
+  postgres:
+    file: ${NF_SECRETS_DIR:-./secrets-nf}/postgres.txt
+  velocity-forwarding:
+    file: ${NF_SECRETS_DIR:-./secrets-nf}/velocity-forwarding.txt
+  nats-auth.conf:
+    file: ${NF_SECRETS_DIR:-./secrets-nf}/nats-auth.conf
+  nats-sink.txt:
+    file: ${NF_SECRETS_DIR:-./secrets-nf}/nats-sink.txt
+  nats-neoforge.txt:
+    file: ${NF_SECRETS_DIR:-./secrets-nf}/nats-neoforge.txt
+  nats-velocity.txt:
+    file: ${NF_SECRETS_DIR:-./secrets-nf}/nats-velocity.txt
+  nats-deploy.txt:
+    file: ${NF_SECRETS_DIR:-./secrets-nf}/nats-deploy.txt
