@@ -42,6 +42,8 @@ public final class GeldarNeoForge {
             ExportLifecycle lifecycle = new ExportLifecycle(config, ExportLifecycle.natsPublisher(), SINK);
             lifecycle.start();
             export = lifecycle;
+            ExportListeners.install(
+                    config, ExportListeners.neoForgeBus(), ExportListeners.handlersFor(config, lifecycle, SINK), SINK);
         } catch (RuntimeException e) {
             SINK.warn("geldar_neoforge export disabled: setup failed (" + e.getClass().getSimpleName() + ")");
         }
