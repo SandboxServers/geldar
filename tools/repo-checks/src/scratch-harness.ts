@@ -93,7 +93,7 @@ export function stubs(): { base: string; env: Env } {
   const files: Record<string, string> = {
     docker: [
       '#!/bin/sh',
-      'echo "$* SECRETS=$SCRATCH_SECRETS_DIR WORLD=$GELDAR_WORLD_VOLUME PORTS=$SCRATCH_PG_PORT,$SCRATCH_NATS_PORT,$SCRATCH_NATS_MON_PORT,$SCRATCH_MC_PORT" >>"$STUB_LOG"',
+      'echo "$* SECRETS=$SCRATCH_SECRETS_DIR WORLD=$GELDAR_WORLD_VOLUME PORTS=$SCRATCH_PG_PORT,$SCRATCH_NATS_PORT,$SCRATCH_NATS_MON_PORT,$SCRATCH_MC_PORT RUN=$SCRATCH_RUN_UID:$SCRATCH_RUN_GID" >>"$STUB_LOG"',
       'if [ "$1" = compose ] && { [ -z "$SCRATCH_SECRETS_DIR" ] || [ -z "$GELDAR_WORLD_VOLUME" ]; }; then',
       '  echo "required variable SCRATCH_SECRETS_DIR or GELDAR_WORLD_VOLUME is missing a value" >&2; exit 1',
       'fi',
@@ -106,7 +106,7 @@ export function stubs(): { base: string; env: Env } {
       'exit 0',
       '',
     ].join('\n'),
-    id: '#!/bin/sh\necho 1000\n',
+    id: '#!/bin/sh\nif [ "$1" = -g ]; then echo "${STUB_ACCT_GID:-1000}"; else echo "${STUB_ACCT_UID:-1000}"; fi\n',
     uname: '#!/bin/sh\n[ -z "$STUB_UNAME" ] && echo MINGW64_NT || echo "$STUB_UNAME"\n',
     'powershell.exe': '#!/bin/sh\necho "$STUB_RAM_KB"\n',
     df: [

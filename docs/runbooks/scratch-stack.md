@@ -25,8 +25,9 @@ Not approved for any run on the shared node: open NATS (see NATS auth below).
 1. Build the two plugin jars on the machine that runs the stack: `cd plugin; ./gradlew build`. The stack bind-mounts
    `plugin/core/build/libs/geldar-core.jar` and `plugin/velocity-identity/build/libs/geldar-velocity-identity.jar`.
    `up` refuses (exit 1) if either is missing, and does not create anything.
-2. Run as the account whose uid is `GELDAR_SERVICE_UID` (default 1000). The eventsink image runs as uid 1000 and reads
-   the secret files, which are mode 0600. `up` refuses (exit 1) under any other uid, including root.
+2. Run as any non-root account. The eventsink runs as that account's uid:gid (see the next section), so it reads the
+   secret files, which are mode 0600 and owned by the account. If `GELDAR_SERVICE_UID` is set it must be digits and equal
+   the account's uid: digits-only fails with exit 2, a different uid with exit 1. `up` refuses (exit 1) under root.
 3. Compose 2.24.4 or newer (the `!override` tag). `up` checks.
 4. Set up NATS auth (next section).
 
@@ -47,6 +48,40 @@ required for `telemetry` (a missing file exits 2) and optional for every other s
 | `scratch-telemetry` (`telemetry.env`, defaults + 10000) | 25432 | 24222 | 28222 | 45565 |
 | `scratch-nf` (`nf.env`, defaults + 20000, NeoForge; RCON 55575) | 35432 | 34222 | 38222 | 55565 |
 
+## Running as an account whose uid differs from the image's uid
+
+The eventsink image (`eventsink/Dockerfile`) sets `USER node`, uid 1000, and its files are copied in root-owned without
+`--chown`. The scratch script sets `SCRATCH_RUN_UID` and `SCRATCH_RUN_GID` from `id -u` and `id -g` (both always set, so
+under uid 1000 they are `1000` and `1000`), and the overlay (`compose/opt-in/scratch.yml`) uses them as follows:
+
+- eventsink: `user: SCRATCH_RUN_UID:SCRATCH_RUN_GID`, so it runs as the account.
+- paper and velocity: no `user:`. They get the itzg `UID` and `GID` environment variables set to the same two values, as
+  `compose/colo.yml` does with `GELDAR_SERVICE_UID`. The image starts as root, reads the 0600 files, then drops to that
+  uid, so the Paper and Velocity JVMs read the forwarding secret and their `GELDAR_NATS_PASSWORD_FILE` and own `/data`.
+- postgres and nats: unchanged, with their image users and no override. The postgres image's root entrypoint reads
+  `POSTGRES_PASSWORD_FILE` before it drops privilege. NATS keeps its image user; the first-start check below shows it.
+
+- This is the no-ACL path. The script changes no file mode: the state directory stays 0700, the secret files stay 0600
+  (umask 077). It requires the four NATS files in `SCRATCH_NATS_AUTH_DIR` to be readable and non-empty; it does not check
+  their owner and never touches them. The account owns those files, so the eventsink, Paper and Velocity, running as
+  that uid, read them as the owner.
+- `GELDAR_SERVICE_UID`, when set, must be digits only (exit 2 otherwise) and must equal the account's uid (exit 1).
+- `SCRATCH_CONTAINER_UID` (digits only, not 0; empty is refused, exit 2) names the uid the image was built for. It is
+  checked and reported when it differs from the account's uid; it changes no mode and no compose value.
+- Before the first `up`, a hard step: the eventsink's `/app` files are root-owned and copied in without `--chown`, so
+  they are readable as the account uid only if they are world-readable. Run
+  `docker run --rm --user <uid>:<gid> --entrypoint ls <eventsink image> -l /app` and confirm the listing shows
+  read permission for others. If it does not, stop and say so; do not change the mode by hand.
+- On the first `up`, check the drop: `docker exec <container> id` for the paper and velocity containers (from
+  `docker compose -p scratch-<suffix> ps -q paper` and `... ps -q velocity`) must print `uid=<account uid> gid=<account gid>`.
+  `docker top <container>` shows the same uid for the eventsink, Paper, Velocity and NATS processes. If Paper or Velocity
+  shows uid 1000 (or any other uid), stop and run `down`.
+- Real-node assumptions, not yet verified: the node's ssh account has uid 1001, so the run uses
+  `SCRATCH_CONTAINER_UID=1000` and the eventsink runs as `1001:1001`. The Docker data root, the `/app` check and the
+  first-start check above are still to be run on that node.
+- Supersedes the ACL design of PR #540 (`ops/scratch-uid-fix`): that design changed secret modes to 0711/0644 and needed
+  `setfacl` on the NATS auth dir. The node has no `setfacl` and no sudo, so it is not used here.
+
 ## NeoForge variant (suffix nf)
 
 Run the game server as NeoForge instead of Paper, behind the same scratch Velocity, for the Body-join test (P0):
@@ -58,6 +93,9 @@ Run the game server as NeoForge instead of Paper, behind the same scratch Veloci
   and the mod and checks each against a pinned hash; a mismatch stops the start.
 - The overlay is `compose/opt-in/scratch-neoforge.yml`, layered after `scratch.yml`. Only `SCRATCH_PLATFORM=neoforge`
   adds it. `status` and `down` take the same setting, so `down -v` removes what `up` made.
+- The NeoForge variant uses the same three secret files as Paper (postgres, rcon, velocity-forwarding) in the same
+  `scratch-nf` state directory, and the same eventsink user override from `scratch.yml` applies. The overlay itself
+  sets no user.
 - No geldar-core jar is mounted, so the eventsink sees no game events from this server. The caps are the scratch caps
   (3072m, 1.5 CPUs). Ports come from `deploy/scratch/nf.env`, loopback only.
 - The first start is slow: it downloads the mod and the installer, runs the installer, and waits for the health check's
