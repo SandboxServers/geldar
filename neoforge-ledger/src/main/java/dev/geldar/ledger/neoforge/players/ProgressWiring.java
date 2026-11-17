@@ -4,6 +4,7 @@ import dev.geldar.ledger.core.CollectorContext;
 import dev.geldar.ledger.core.HostInfo;
 import dev.geldar.ledger.core.HostScheduler;
 import dev.geldar.ledger.core.Ledger;
+import dev.geldar.ledger.neoforge.LedgerLog;
 import java.util.logging.Logger;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.entity.player.Player;
@@ -19,7 +20,7 @@ import net.neoforged.neoforge.event.server.ServerStoppingEvent;
  * {@link ProgressCollector} once the server exists. Observe only. Fail-safe: any failure leaves the collector off.
  */
 public final class ProgressWiring {
-    private static final Logger LOG = Logger.getLogger("ledger");
+    private static final Logger LOG = LedgerLog.server();
 
     private final Ledger ledger;
     private final HostInfo host;
