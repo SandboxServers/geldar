@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { createServer, request } from 'node:http';
+import { createServer, request, type Server } from 'node:http';
 import { fileURLToPath } from 'node:url';
 
 // Public BlueMap labels show private aliases, never agent usernames. This sits between the bluemap-web Caddy @live
@@ -50,7 +50,7 @@ export function rewritePlayers(body: string, aliases: Aliases | null): string | 
   return JSON.stringify(doc);
 }
 
-export type Proxy = { close: () => void; port: () => number };
+export type Proxy = { close: () => void; port: () => number; server: Server };
 
 export function startProxy(opts: {
   listen: number;
@@ -58,6 +58,8 @@ export function startProxy(opts: {
   upstreamPort: number;
   aliasesFile: string | undefined;
   log?: (line: string) => void;
+  /** Called once, before listen, so the entry point can attach diagnostics that also cover a failed listen. */
+  onServer?: (server: Server) => void;
 }): Promise<Proxy> {
   const log = opts.log ?? ((line: string) => console.log(line));
   let lastState = '';
@@ -116,22 +118,94 @@ export function startProxy(opts: {
     up.on('error', () => res.writeHead(502).end());
     up.end();
   });
+  opts.onServer?.(server);
   return new Promise((ok) => {
     server.listen(opts.listen, () => {
       const addr = server.address();
       ok({
         close: () => server.close(),
         port: () => (typeof addr === 'object' && addr ? addr.port : 0),
+        server,
       });
     });
   });
 }
 
+export type DiagProcess = Pick<NodeJS.Process, 'on' | 'exit' | 'uptime'>;
+export type Log = (line: string) => void;
+
+const SIGNAL_GRACE_MS = 2000;
+
+/**
+ * The error name and code only. The message is left out on purpose: V8 JSON SyntaxError messages echo the parsed
+ * input (a token could be an alias or a secret), and fs and net errors carry paths and hosts.
+ */
+function errorText(err: unknown): string {
+  const code = (err as NodeJS.ErrnoException)?.code;
+  return err instanceof Error
+    ? `${err.name}${typeof code === 'string' ? ` ${code}` : ''}`
+    : 'non-Error value';
+}
+
+/**
+ * Logs why the process stops. SIGTERM and SIGINT are handled (no default kill): the server closes and the exit is 0,
+ * so `docker stop` shows the signal in the logs. Deliberately not the signal default (128+n). The unref'd 2 s timer
+ * forces the exit if the server does not close. Uncaught errors and server errors exit 1.
+ */
+export function installDiagnostics(proc: DiagProcess, log: Log, server?: Server): void {
+  const up = (): number => Math.round(proc.uptime());
+  let stopping = false;
+  for (const name of ['SIGTERM', 'SIGINT'] as const) {
+    proc.on(name, () => {
+      if (stopping) return;
+      stopping = true;
+      log(`alias-proxy: signal ${name} uptime=${up()}s`);
+      let timer: NodeJS.Timeout | undefined;
+      const done = (): void => {
+        clearTimeout(timer);
+        proc.exit(0);
+      };
+      timer = setTimeout(done, SIGNAL_GRACE_MS);
+      timer.unref();
+      if (server) server.close(done);
+      else done();
+    });
+  }
+  proc.on('exit', (code: number) => log(`alias-proxy: exit code=${code} uptime=${up()}s`));
+  proc.on('beforeExit', (code: number) =>
+    log(`alias-proxy: event loop empty (beforeExit code=${code}) uptime=${up()}s`),
+  );
+  const fatal = (origin: string, err: unknown): void => {
+    log(`alias-proxy: uncaught ${origin} ${errorText(err)}`);
+    proc.exit(1);
+  };
+  proc.on('uncaughtException', (err: unknown, origin: string) => fatal(origin, err));
+  proc.on('unhandledRejection', (reason: unknown) => fatal('unhandledRejection', reason));
+  if (server) {
+    server.on('close', () => log(`alias-proxy: server closed uptime=${up()}s`));
+    server.on('error', (err: NodeJS.ErrnoException) => {
+      log(`alias-proxy: server error ${err.code ?? 'unknown'}`);
+      proc.exit(1);
+    });
+  }
+}
+
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const log: Log = (line) => console.log(line);
+  const listen = Number(process.env.GELDAR_ALIAS_PROXY_PORT ?? 8102);
+  const upstreamHost = process.env.GELDAR_ALIAS_UPSTREAM_HOST ?? 'paper';
+  const upstreamPort = Number(process.env.GELDAR_ALIAS_UPSTREAM_PORT ?? 8101);
   void startProxy({
-    listen: Number(process.env.GELDAR_ALIAS_PROXY_PORT ?? 8102),
-    upstreamHost: process.env.GELDAR_ALIAS_UPSTREAM_HOST ?? 'paper',
-    upstreamPort: Number(process.env.GELDAR_ALIAS_UPSTREAM_PORT ?? 8101),
+    listen,
+    upstreamHost,
+    upstreamPort,
     aliasesFile: process.env.GELDAR_ALIASES_FILE,
+    onServer: (server) => installDiagnostics(process, log, server),
+  }).then((proxy) => {
+    const aliases = process.env.GELDAR_ALIASES_FILE ? 'set' : 'unset';
+    log(
+      `alias-proxy: start pid=${process.pid} node=${process.version} listen=${proxy.port()} ` +
+        `upstream=${upstreamHost}:${upstreamPort} aliases=${aliases}`,
+    );
   });
 }
