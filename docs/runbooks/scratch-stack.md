@@ -13,7 +13,7 @@ sources: [../../deploy/scratch/scratch.sh, compose/opt-in/scratch.yml, shards/ch
 A throwaway copy of the Phase 0 shard stack (`compose/phase0.yml`) for the sheet campaign validation. It runs beside the
 live phase0 stack and the Colo stack without clashing: its own compose project (`scratch-<suffix>`), its own volumes,
 loopback-only ports on high defaults, and hard caps. `down` removes its containers, its volumes, its eventsink image
-and its secrets directory. The Docker build cache is not removed (prune it by hand if the disk needs it).
+and its secrets directory. The Docker build cache is not removed (prune it by hand if the disk needs it). The P0 probe image is not removed either; see "The probe image" under P0 probe.
 
 The sheet sink is not enabled. The overlay does not include `compose/opt-in/sheet-sink.yml` and `GELDAR_SHEET_SHARD` is
 unset, so a scratch run does not write to the sheet.
@@ -30,12 +30,21 @@ Not approved for any run on the shared node: open NATS (see NATS auth below).
    the account's uid: digits-only fails with exit 2, a different uid with exit 1. `up` refuses (exit 1) under root.
 3. Compose 2.24.4 or newer (the `!override` tag). `up` checks.
 4. Set up NATS auth (next section).
+5. Export `GELDAR_ADMIN_IMAGE=geldar-admin:scratch-<suffix>` (for `nf`, `geldar-admin:scratch-nf`) in the shell that runs
+   `up`, `status` and `down`. The `identity-seed` service in `compose/opt-in/scratch.yml` builds the admin image and tags it
+   `${GELDAR_ADMIN_IMAGE:-geldar-admin:c1}`. `scratch.sh` does not set this variable, so without the export the build
+   retags the shared `geldar-admin:c1` tag. Record `docker images geldar-admin` before `up` and compare it after, to show the
+   shared tag kept its image ID. `down` should see the same value so it acts on this run's image; whether
+   `down --rmi local` removes an image with a custom tag is not confirmed from the repo, so check `docker images` after `down`.
 
 ## Commands
 
     sh deploy/scratch/scratch.sh up [suffix]       # gates, then starts the stack (default suffix a)
     sh deploy/scratch/scratch.sh status [suffix]   # compose ps, CPU and memory per container, NATS warning if open
     sh deploy/scratch/scratch.sh down [suffix]     # down -v --rmi local, removes the secrets directory, lists leftover volumes
+
+Never build the images by hand, for example `docker compose build eventsink`: it fails, because `GELDAR_WORLD_VOLUME` is
+set only inside `scratch.sh` (`set_env`). `up` builds them (it passes `--build`).
 
 The suffix is `[a-z0-9]{1,9}`. Anything else exits 2. Host ports come from `deploy/scratch/<suffix>.env`, which the
 script reads itself (it never sources the file; only the four `SCRATCH_*_PORT` keys with digit values 1 to 65535 are
@@ -68,14 +77,18 @@ under uid 1000 they are `1000` and `1000`), and the overlay (`compose/opt-in/scr
 - `GELDAR_SERVICE_UID`, when set, must be digits only (exit 2 otherwise) and must equal the account's uid (exit 1).
 - `SCRATCH_CONTAINER_UID` (digits only, not 0; empty is refused, exit 2) names the uid the image was built for. It is
   checked and reported when it differs from the account's uid; it changes no mode and no compose value.
-- Before the first `up`, a hard step: the eventsink's `/app` files are root-owned and copied in without `--chown`, so
+- A hard step after the first `up`: the eventsink's `/app` files are root-owned and copied in without `--chown`, so
   they are readable as the account uid only if they are world-readable. Run
-  `docker run --rm --user <uid>:<gid> --entrypoint ls <eventsink image> -l /app` and confirm the listing shows
-  read permission for others. If it does not, stop and say so; do not change the mode by hand.
-- On the first `up`, check the drop: `docker exec <container> id` for the paper and velocity containers (from
-  `docker compose -p scratch-<suffix> ps -q paper` and `... ps -q velocity`) must print `uid=<account uid> gid=<account gid>`.
-  `docker top <container>` shows the same uid for the eventsink, Paper, Velocity and NATS processes. If Paper or Velocity
-  shows uid 1000 (or any other uid), stop and run `down`.
+  `docker run --rm --user <uid>:<gid> --entrypoint ls <eventsink image> -l /app` (the eventsink image is the one `up`
+  built; its name is `scratch-<suffix>-eventsink` by compose's default naming, so check it with `docker images`) and confirm the listing shows
+  read permission for others. If it does not, stop, run `down`, and say so; do not change the mode by hand.
+- On the first `up`, check the drop. `docker exec <container> id` is not the check: it prints root, because `docker exec`
+  defaults to the image user, not the JVM's. Check the JVM's uid instead: `docker top <container> -eo uid,pid,args`
+  for the Paper and Velocity containers (from `docker compose -p scratch-<suffix> ps -q paper` and `... ps -q velocity`),
+  and the eventsink, Paper, Velocity and NATS processes must show the account uid, not 1000 or any other uid. If Paper or
+  Velocity shows another uid, stop and run `down`. Unverified command on this image, record the output: if `docker top`
+  is not available on the node, run `docker exec <container> sh -c 'for p in /proc/[0-9]*; do grep -q java $p/cmdline 2>/dev/null && grep "^Uid" $p/status; done'`
+  and read the first Uid field (real uid).
 - Real-node assumptions, not yet verified: the node's ssh account has uid 1001, so the run uses
   `SCRATCH_CONTAINER_UID=1000` and the eventsink runs as `1001:1001`. The Docker data root, the `/app` check and the
   first-start check above are still to be run on that node.
@@ -176,6 +189,34 @@ Limits:
   protect against a compromised Maven server. The installer's sha512 is pinned next to its sha256 in the entrypoint; both must match.
 - 26.1.2 (build 126) is pinned on purpose, although the package-level metadata lists a later 26.3 build as the latest. Moving the pin
   is a separate change with its own checks.
+
+### First-run checks (NeoForge)
+
+Run these after `up` returns healthy. `<paper>` is `docker compose -p scratch-nf ps -q paper`. Items marked
+UNVERIFIED are commands or reply wording not confirmed against the repo or a live NeoForge 26.1 server: run them, record
+the real output in the run notes, and check it against the reply before calling it a failure.
+
+1. Mod load. `docker logs <paper> 2>&1 | grep "geldar_neoforge loaded on the dedicated server"` shows one line. That is
+   the log line `GeldarNeoForge.java` writes at server start; the id is `ModInfo.modId()`, equal to `modId` in
+   `neoforge.mods.toml`. The loaded-mods list: UNVERIFIED, `docker logs <paper> 2>&1 | grep -i "loaded"`, record the mod lines.
+2. Tick time. `docker exec <paper> rcon-cli tick query` (vanilla; UNVERIFIED on this image) shows the target tick rate and
+   the average time per tick. `docker exec <paper> rcon-cli neoforge tps` is a NeoForge command, UNVERIFIED on 26.1: record
+   its reply, or the unknown-command reply. spark is not installed on the scratch NeoForge, so `rcon-cli spark tps`
+   (the live equivalent in `deploy/README.md`) does not work here.
+3. Vanilla join. `docker exec <paper> rcon-cli list` before and after one join shows the player count rising by one.
+   `docker logs <paper> 2>&1 | grep -E "joined the game|UUID of player"` shows one "joined the game" line and one line
+   with the player's UUID (UNVERIFIED wording on this image). Redact the name and UUID in the notes.
+4. CPU and memory. Run `docker stats --no-stream` twice, 30 s apart, and record both. `scratch.sh status nf` prints the same
+   per-container figures. Each must stay within its cap: memory at or below 3072m (paper) and 768m (velocity), CPU % at or
+   below 150 (paper, 1.5 CPUs) and 50 (velocity, 0.5 CPUs; `docker stats` percent is per CPU).
+   One earlier measurement (2026-11-17, node not otherwise loaded): paper 1.62 GiB of 3 GiB, velocity 194 MiB. Its CPU
+   was not captured, so these two samples are the first CPU figures.
+5. Proxy Compatible Forge config. `docker exec <paper> stat -c '%a %u:%g' /data/config/proxy-compatible-forge.toml /data`
+   prints two lines: the file's mode and uid:gid first, then `/data`'s. The mode must be `600`, and the file's uid:gid must
+   equal `/data`'s, which is the server user the entrypoint drops to (`chown --reference`, `chmod 600`).
+
+Known noise: a log4j DebugFile error that names a netty kqueue class appears in the paper log on NeoForge. It is unrelated
+to the mod. Do not treat it as a failure.
 
 ## NATS auth (fail closed)
 
@@ -293,3 +334,97 @@ instead of `shards/phase0.yaml`, using the shard tooling in `geldar.ps1`. Do not
 - Evidence from a scratch run is for operators only. Agents in the run are never told they are being watched.
 - The secrets directory is created under the caller's state directory, never in the repo or in a shared temp
   directory. Nothing prints its values. `down` removes it, and only when it is a real directory the caller owns.
+
+## P0 probe
+
+The P0 probe is one run of the golem probe (`golem/src/p0/probe.ts`) against a scratch stack that `up` already started.
+It registers one Body, joins it through Velocity to Paper, runs one goto and one mine, and removes its own registry
+entry and whitelist entry. The overlay is `compose/opt-in/scratch-probe.yml` (service `p0-probe`, profile `p0`). Only the
+`probe` verb of `deploy/scratch/scratch.sh` starts it, so `up` never does. It never touches the Colo stack: the probe
+refuses unless its project is `scratch-<suffix>`, and its NATS and RCON credentials are the scratch ones.
+
+When to run: only when ops asks for it, on the scratch node, after `up` has reached healthy for that suffix.
+
+Steps, in order:
+
+1. In a clean export (`git archive` of main into a new empty temp dir outside the live checkout), run
+   `./geldar.ps1 shard nats-auth phase0` from the export.
+2. Make a second temp dir outside the repo. Copy six files from the export's `compose/secrets/`: `nats-auth.conf`,
+   `nats-paper.txt`, `nats-velocity.txt`, `nats-eventsink.txt`, `nats-seed.txt` and `nats-body.txt` (the body's NATS
+   password, which only the probe reads). Copy nothing else.
+3. Delete the export dir, which holds the generated files.
+4. On the node, with the same absolute auth dir for both verbs:
+
+        SCRATCH_NATS_AUTH_DIR=<absolute path of the six-file dir> SCRATCH_PLATFORM=neoforge sh deploy/scratch/scratch.sh up nf
+        SCRATCH_NATS_AUTH_DIR=<same path> SCRATCH_PLATFORM=neoforge sh deploy/scratch/scratch.sh probe nf
+
+   `up` checks five files and accepts the six-file dir. `probe` checks six and refuses with exit 2 and a message that
+   names `nats-body.txt` if that file is missing or empty. Give `SCRATCH_PLATFORM` the value `up` used: the `nf` stack
+   is NeoForge, and the probe's merged files must match its stack. `probe` also exits 2 when no container of the project
+   is running, when the project has no NATS override (`up` was not run with an auth dir), when `nats`, `velocity` or
+   `paper` has no healthy container (the message names the service), or when `SCRATCH_PLATFORM` is not `paper` or
+   `neoforge`. Nothing starts in any refusal. The probe runs with `--no-deps`, so compose does not check the health
+   of those services; the verb does.
+5. Keep the probe's output: stdout and stderr both (`2>&1`). The verb passes the probe's exit code through. Exit 2 from a
+   message that starts `scratch:` means the verb refused before compose ran; exit 2 from a message that starts
+   `p0 probe refused:` means the probe's isolation check refused.
+6. At teardown run `sh deploy/scratch/scratch.sh down nf`, remove the probe image (see "The probe image" below), then delete both temp dirs. The six-file dir holds the
+   password-bearing `nats-auth.conf` and `nats-body.txt`; delete it even when the probe failed. `down` never removes it.
+
+What the probe prints. The header comment of `golem/src/p0/probe.ts` is the reference for these lines; re-check it
+against the file before a run. As of this section:
+
+- stdout, in order:
+  - `p0 join ok name=ag_nfprobe_01 uuid=<uuid>` once the Body has joined. Match the username and UUID in the logs below;
+  - `p0 goto <state> status=<n> latency_ms=<n>`, then `p0 mine <state> status=<n> latency_ms=<n>`, each with
+    ` reason=<text>` when the action gave one. The run passes only when both states are `completed`;
+  - `p0 interrupted by SIGINT` or `p0 interrupted by SIGTERM`, if a signal arrived;
+  - `p0 cleanup registry=<removed|failed> whitelist=<removed|failed>`. It is printed on every run that reaches the cleanup,
+    and it is the last stdout line. It is the receipt for the registry and whitelist entries.
+- stderr (capture it too):
+  - `p0 disconnect failed: <reason>`, `p0 registry delete failed: <reason>` or `p0 whitelist remove failed: <reason>`,
+    one per failed cleanup step, printed before the cleanup line;
+  - `p0 failed: <reason>` for the first failed step (admission, registry put, join, goto, mine, or a signal), printed
+    after the cleanup line;
+  - `p0 heartbeat failed for <username>: <reason>` when a registry heartbeat fails during the run;
+  - `p0 probe refused: <rule>` for an isolation refusal. Nothing else is printed, and nothing is opened.
+- Exit codes: 0 only when join, goto and mine completed, both cleanup entries were removed and the disconnect was ok;
+  1 for any other run that started (a failed step, a signal, a failed cleanup step); 2 for the isolation refusal.
+  There is no separate exit-reason line: the reason for a non-zero exit is the `p0 failed:` line on stderr, or a
+  `failed` cleanup line.
+
+Comparing the username and UUID with the server logs (the grep forms are unverified on the 26.1 server logs; record the
+raw output with the run, not a summary):
+
+    docker logs scratch-nf-paper-1 2>&1 | grep -i '<username>'
+    docker logs scratch-nf-paper-1 2>&1 | grep -i '<uuid>'
+    docker logs scratch-nf-velocity-1 2>&1 | grep -i '<username>'
+
+The username should appear in the Velocity log at the join and in the Paper log at the login, with the same UUID. A
+mismatch in either is a failure to report, even if the probe exited 0. The container names are the compose names for
+the `scratch-nf` project; confirm them with `docker ps` first (unverified until a node run).
+
+Cleanup expectations: the probe removes its registry entry and its whitelist entry on every exit, including failure
+and a signal. Confirm both after the run, with the stack still up:
+
+    docker exec scratch-nf-paper-1 rcon-cli whitelist list
+
+The probe's username must not be in that list. For the registry, the probe's cleanup line (`p0 cleanup registry=...`) is the
+record; no operator-side registry read is verified yet. If the whitelist still lists the probe's username, or the
+cleanup line says `failed`, record it as a finding and keep the stack up for inspection before `down`.
+
+The probe image. `probe` builds `geldar-body:<project>` (for example `geldar-body:scratch-nf`). That is a custom tag, so
+`down --rmi local` does not remove it, and the probe overlay is not in the `down` file set. `down` therefore leaves the
+image behind, one per suffix. After `down` has finished (this prints nothing: `docker ps -a --filter label=com.docker.compose.project=scratch-nf`),
+ops removes it by hand:
+
+    docker images geldar-body
+    docker rmi geldar-body:scratch-nf
+    docker images geldar-body
+
+The second `docker images` must not list the `scratch-nf` tag. `docker rmi` deletes the image only when no other tag
+refers to it. This cleanup is not verified on a node run.
+
+The probe never touches colo. Its overlay is added only by the `probe` verb, and only to a `scratch-<suffix>` project.
+Its password files are scratch-only and come from the clean export. Nothing it prints is a secret: no password, token or
+RCON value appears in its output, and none may be pasted into a report.
