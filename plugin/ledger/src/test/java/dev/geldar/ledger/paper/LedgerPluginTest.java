@@ -300,8 +300,8 @@ class LedgerPluginTest {
             log.removeHandler(h);
         }
         assertTrue(disabled.isEmpty());
-        // Built so far, in PaperCollectors.NAMES order: tick (PT-04b), world (PT-05a), server (PT-05b), census (PT-06c), bridge (PT-10b), container. Tick's start needs the live plugin loader (JavaPlugin.getPlugin), so outside a server it fails and is disabled; world, server, census and bridge start fine, so tick is the one tolerated warning.
-        assertEquals(List.of("tick", "world", "server", "census", "bridge", "container"), plugin.collectors().builtIds());
+        // Built so far, in PaperCollectors.NAMES order: tick (PT-04b), world (PT-05a), server (PT-05b), census (PT-06c), connections (PT-08a), bridge (PT-10b), container. Tick's start needs the live plugin loader (JavaPlugin.getPlugin), so outside a server it fails and is disabled; world, server, census and bridge start fine, so tick (and connections, which registers its listener the same way) are the tolerated warnings.
+        assertEquals(List.of("tick", "world", "server", "census", "connections", "bridge", "container"), plugin.collectors().builtIds());
         assertEquals(List.of("world", "server", "census", "bridge", "container"), plugin.collectors().runningIds());
         List<String> expectedSkipped = new ArrayList<>(PaperCollectors.NAMES);
         expectedSkipped.remove(PaperCollectors.CGROUP);
@@ -309,11 +309,13 @@ class LedgerPluginTest {
         expectedSkipped.remove("dev.geldar.ledger.paper.world.WorldCollector");
         expectedSkipped.remove("dev.geldar.ledger.paper.server.ServerCollector");
         expectedSkipped.remove("dev.geldar.ledger.paper.census.CensusCollector");
+        expectedSkipped.remove("dev.geldar.ledger.paper.players.ConnectionCollector");
         expectedSkipped.remove("dev.geldar.ledger.paper.bridge.BridgeCollector");
         assertEquals(expectedSkipped.stream().sorted().toList(), plugin.collectors().skippedNames().stream().sorted().toList());
         assertTrue(plugin.collectors().skippedNames().contains(PaperCollectors.DISK), "no disk path configured");
         assertFalse(logs.stream().anyMatch(r -> r.getLevel().intValue() >= java.util.logging.Level.WARNING.intValue()
-                        && !r.getMessage().startsWith("Ledger collector tick failed to start")),
+                        && !r.getMessage().startsWith("Ledger collector tick failed to start")
+                        && !r.getMessage().startsWith("Ledger collector connections failed to start")),
                 "no warning other than the tick start: " + logs.stream().map(java.util.logging.LogRecord::getMessage).toList());
         assertFalse(logs.stream().anyMatch(r -> r.getMessage().contains("cannot")), "no 'cannot load' line");
     }
