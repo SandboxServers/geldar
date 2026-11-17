@@ -113,17 +113,17 @@ No global server timeouts are added. The `servers` block is a global option that
 Notes on the snippet:
 - The snippet uses only stock Caddy directives: `handle`, `respond`, `request_header`, `header`, `log` with the filter encoder, `request_body`, and `reverse_proxy` with its `transport http` timeouts. No global `servers` block is added. It has no rate limit and adds no module, and it needs no custom image.
 - The token matcher is a plain string match plus a CEL guard, `expression size('{$GELDAR_INGEST_TOKEN}') >= 64`, in the same matcher (all conditions must hold). An unset, empty or short token turns the header match into `Bearer ` or similar, but the guard is false, so the proxy route never matches and the request gets 401. The adapt test checks the guard with an empty token. The guard checks length only; the procedure still refuses a short token before anything is written (README step 2).
-- The placeholders have defaults (`otel.invalid`, `localhost:4320`, empty token), so a recreate with a variable missing still starts Caddy and cannot take every site down. Do not rely on it: remove the live file before removing the variables.
+- The placeholders have defaults (`otel.invalid`, `localhost:4320`, empty token), so a recreate with a variable missing still starts Caddy and cannot take every site down. Do not rely on it: with the host unset the route silently moves to `otel.invalid` (and ACME may retry for that name, log noise, 2.10.2 measured, node unverified). Remove the live file before removing the variables.
 - Logging. The access log of this site uses the filter encoder and deletes the `Authorization`, `Cookie` and `Proxy-Authorization` request headers. The error log (for example the 502 when the gateway is down) is the default logger, which the node's global block does not change (it has `admin off`, `email` and `servers { trusted_proxies }` only, no `log` and no `log_credentials`); Caddy redacts credential headers there by default (`log_credentials` is off), so the headers appear as `REDACTED`. This is Caddy's documented default, not verified on the node's 2.11.6: README step 6 reads the `board-proxy` log after a forced 502 and greps (pattern from stdin) for the token and for `Authorization`. The gateway receives the `Authorization` header and must not log request headers.
 
 ## Abuse case
 
 Who can send what:
 - **A holder of the ingest token** (a Mind host, or anyone who has copied the token) can send valid-looking OTLP that is junk, malformed or oversized, to the three paths.
-- **An unauthenticated scanner** can send requests to the three paths, and gets 401 for each. It can also send large bodies to them.
+- **An unauthenticated scanner** can send requests to the three paths, and gets 401 for each (404 on any other path, 405 for a non-POST). It can also send large bodies: they get 401 or 404 and the body is not read, so the cap is not what stops them.
 
 What each limit bounds:
-- `request_body { max_size 8MiB }` bounds the size of one request body. A larger body gets 413 at Caddy and never reaches the gateway.
+- `request_body { max_size 8MiB }` bounds the size of one request body. A larger body on the authenticated path gets 413 at Caddy and is not forwarded to the gateway in full.
 - The `transport http` timeouts (`dial_timeout`, `response_header_timeout`) bound how long the proxy waits on the gateway. No global timeouts are set, because `mcp.caddy` serves long-lived SSE. A slow or stalled request body is bounded by `request_body max_size 8MiB` and by the gateway's own limits, not by a server timeout.
 - The Bearer match is the only thing that admits a request to the proxy. Without the token, nothing is forwarded.
 
@@ -158,13 +158,13 @@ So the real defence is the token itself, plus the 8 MiB body limit and the gatew
    - a GET to an OTLP path gets 405;
    - a POST with the token to `/v1/traces` does not get 401 or 404 (the gateway's own status is the answer);
    - a POST to any other path gets 404;
-   - a body over 8 MiB gets 413;
+   - an authenticated POST with a body over 8 MiB to one of the three paths gets 413. An unauthenticated big body gets 401 (three paths) or 404 (other paths), measured on Caddy 2.10.2: the cap trips only when the body is read, which only the proxied request does. A 401 there is not a failed cap (node 2.11.6 not measured);
    - the access log has no `Authorization` value after these requests.
 
 ## Rollback (owner approval at the time)
 
 1. Swap `deploy/caddy/otel-off.caddy` in for `deploy/caddy/otel.caddy` (or remove the live file from the node's set), run `caddy validate`, and `docker restart board-proxy`. The hostname then answers 503 for every path (when the file is removed instead, the host has no site).
-2. The rollback is a restart (R39), so it costs the same few seconds of dropped connections on every site, and the ingest route is down during it. The kill switch is not instant. Remove the live file before removing the variables from the env file: a recreate with the file live and `GELDAR_INGEST_HOST` unset leaves Caddy unable to start (every site down).
+2. The rollback is a restart (R39), so it costs the same few seconds of dropped connections on every site, and the ingest route is down during it. The kill switch is not instant. Remove the live file before removing the variables from the env file: a recreate with the file live and `GELDAR_INGEST_HOST` unset still starts Caddy (defaults), but the site then answers only the placeholder name `otel.invalid`, which silently disables the route, and Caddy may retry ACME for that name and log noise (measured on 2.10.2 with a dead CA address: retries for up to 30 days, no effect on other sites; not verified on the node).
 3. The public hostname stays in the 0071 and 0096 amendments until the owner decides to drop it.
 4. No global timeouts exist to remove, because none are added. The `transport http` block leaves with `otel.caddy` in step 1.
 

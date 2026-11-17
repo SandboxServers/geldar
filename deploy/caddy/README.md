@@ -53,7 +53,7 @@ Differences from the sites above (the doc is followed where it differs from `mcp
 
 - The host is `{$GELDAR_INGEST_HOST:otel.invalid}` (no `GELDAR_DOMAIN` prefix), the upstream is `{$GELDAR_INGEST_UPSTREAM:localhost:4320}` (the gateway's loopback publish, `127.0.0.1:4320:4318` in `compose.gateway.yml` on the telemetry/t25-gateway branch; one value, `localhost:4320`, everywhere) and the token is `{$GELDAR_INGEST_TOKEN}`. The defaults keep Caddy starting if a variable is missing; an empty or short token never matches, because the proxy matcher also needs ``size(token) >= 64`` (adapt-tested). Defaults are a safety net, not a procedure: remove the live file before removing the variables.
 - Only POST passes (405 otherwise), on `/v1/traces`, `/v1/logs` and `/v1/metrics`. Without the exact `Authorization: Bearer <token>` header those paths get 401; any other path gets 404. The kill switch answers 503 on the whole host.
-- Per-site limits only: `request_body { max_size 8MiB }` (413 over it) and `transport http { dial_timeout 5s; response_header_timeout 60s }`. No global `servers` timeouts, because `mcp.caddy` serves long-lived SSE.
+- Per-site limits only: `request_body { max_size 8MiB }` (413 over it, for an authenticated request on one of the three paths; see step 6) and `transport http { dial_timeout 5s; response_header_timeout 60s }`. No global `servers` timeouts, because `mcp.caddy` serves long-lived SSE.
 - The access log uses the filter encoder and deletes the `Authorization`, `Cookie` and `Proxy-Authorization` request headers. The error log (default logger; the node's global block sets no `log` and no `log_credentials`) relies on Caddy's default redaction of credential headers: step 6 checks it after a forced 502. No plain-HTTP listener is added (automatic HTTPS only, with its HTTP-to-HTTPS redirect on every host), so Mind hosts must use `https://` endpoints: a token sent over `http://` would travel in clear once.
 - Stock Caddy has no rate limit and the token compare is not constant-time; see the Abuse case in the doc.
 - The live file goes in `config/geldar/` on the node (the Caddyfile imports `/config/geldar/*.caddy`, top level only; subdirectories are not loaded). It is not in `deploy/colo-public.sh`'s site list. `bash deploy/caddy/validate.sh` checks it in the pinned image with test values for the three placeholders (the sets `live-otel` and `killed-otel`; never the real token). The pinned image is Caddy 2.10.2 and the node runs 2.11.6, so the node's own `caddy validate` (steps 3 and 4) is the check for its version.
@@ -73,19 +73,21 @@ Every step below needs the owner's approval at the time. Record the exact comman
    sudo sh -c 'cp -p "$1" "$2" && chmod 0600 "$2"' _ <env-file> <env-file>.bak-<UTC timestamp>
    ```
 
-   c. Guarded append. The three values arrive on STDIN only, one per line in this order: host, upstream, token, each line ending in a newline. They are never in argv, in a here-doc in the repo, in the shell history or echoed (`printf` is a shell builtin). The script refuses an empty host, an upstream other than `localhost:4320`, an empty, short (under 64) or non-hex token, and a name that already exists in the file; it adds a newline first when the last byte of the file is not one, so the token cannot be glued onto an existing line:
+   c. Guarded append. The three values arrive on STDIN only, one per line in this order: host, upstream, token, each line ending in a newline. They are never in argv, in a here-doc in the repo, in the shell history or echoed (`printf` is a shell builtin). The script refuses a path that is not an existing regular file (it never creates the file; `umask 077` covers any other file it could make), an empty host, an upstream other than `localhost:4320`, an empty, short (under 64) or non-hex token, and a name that already exists in the file (also as `export NAME=` or with leading spaces); every refusal prints a message, exits 1 and leaves the file untouched (a value with CRLF is refused as a bad host or a non-hex token; a token line without its final newline is accepted); it adds a newline first when the last byte of the file is not one, so the token cannot be glued onto an existing line:
 
    ```bash
    <the owner's vault pipe, printing host, upstream and token as three lines> | sudo sh -c '
    set -eu
+   umask 077
    f=$1
-   read -r host; read -r up; read -r tok
+   [ -f "$f" ] || { echo "no such file" >&2; exit 1; }
+   read -r host; read -r up; read -r tok || [ -n "$tok" ]
    case $host in ""|*[!A-Za-z0-9.-]*) echo "bad host" >&2; exit 1;; esac
    [ "$up" = localhost:4320 ] || { echo "upstream must be localhost:4320" >&2; exit 1; }
    [ "${#tok}" -ge 64 ] || { echo "token empty or shorter than 64" >&2; exit 1; }
    case $tok in *[!0-9a-fA-F]*) echo "token is not hex" >&2; exit 1;; esac
    for n in GELDAR_INGEST_HOST GELDAR_INGEST_UPSTREAM GELDAR_INGEST_TOKEN; do
-     if grep -q "^$n=" "$f"; then echo "$n already in the file" >&2; exit 1; fi
+     if grep -Eq "^[[:space:]]*(export[[:space:]]+)?$n[[:space:]]*=" "$f"; then echo "$n already in the file" >&2; exit 1; fi
    done
    [ -z "$(tail -c1 "$f")" ] || echo >> "$f"
    printf "GELDAR_INGEST_HOST=%s\nGELDAR_INGEST_UPSTREAM=%s\nGELDAR_INGEST_TOKEN=%s\n" "$host" "$up" "$tok" >> "$f"
@@ -94,7 +96,7 @@ Every step below needs the owner's approval at the time. Record the exact comman
 
    d. Check, printing counts and names only: (1) `sudo stat -c '%U:%G %a' <env-file>` equals the line from a; (2) `sudo grep -vcE '^[A-Za-z_][A-Za-z0-9_]*=' <env-file>` equals the same command on the backup (no new malformed line; the count may be non-zero only if it was before); (3) each of `sudo grep -c '^GELDAR_INGEST_HOST=' <env-file>`, `...UPSTREAM=` and `...TOKEN=` prints `1`; (4) `sudo grep -c '' <env-file>` is the backup's count plus 3; (5) `sudo cmp -n "$(sudo stat -c %s <backup>)" <backup> <env-file>` prints nothing (the old bytes are unchanged). Any failure: restore with `sudo cp -p <backup> <env-file>`, stop, report.
 
-   e. The recreate (step 3) runs only after the validate in step 3 passes against this file. The other two variables stay valid on their own; do not remove any `GELDAR_INGEST_*` line while a live `otel.caddy` or `otel-off.caddy` is in `config/geldar/` (Caddy then fails to start and every site is down): remove the live file first, restart, then edit the env file.
+   e. The recreate (step 3) runs only after the validate in step 3 passes against this file. The other two variables stay valid on their own; do not remove any `GELDAR_INGEST_*` line while a live `otel.caddy` or `otel-off.caddy` is in `config/geldar/` (Caddy still starts on the defaults, but with `GELDAR_INGEST_HOST` unset the site answers only the placeholder name `otel.invalid`, which silently disables the route; Caddy may also retry ACME for that placeholder name and log noise, unverified on the node): remove the live file first, restart, then edit the env file.
 
    Not verified without the node: the file's actual owner and mode, whether its lines are plain `KEY=VALUE` (docker `--env-file` and compose read it that way), and whether the file has comment or blank lines (check d.2 compares against the backup for that reason).
 3. The one recreate of the shared Caddy container, to load the new variables (a running Caddy cannot see a new environment value, and `docker restart` keeps the old one, so only a recreate loads them). Its own approved window. Cost: every site on the node is down while the container is recreated (a few seconds, plus start time), and the long-lived `mcp.caddy` SSE streams drop and their clients reconnect. Rotating the token needs the same recreate.
@@ -122,7 +124,7 @@ Every step below needs the owner's approval at the time. Record the exact comman
    - GET to an OTLP path: 405.
    - POST with the token to `/v1/traces`: neither 401 nor 404 (the gateway's own status is the answer; 502 after at most 5 s while the gateway's publish is not up).
    - POST to any other path: 404.
-   - A body over 8 MiB gets 413 on any path, with or without a token: it shows the cap, not authentication.
+   - What each request class returns (the handle order in `otel.caddy`: 405 for a non-POST, then the authenticated proxy, then 401 on the three paths, then 404): non-POST 405 whatever the body; POST without a valid token to the three paths 401, whatever the body size; POST to another path 404, whatever the body size; POST WITH the token to one of the three paths, body up to 8 MiB the gateway's answer, body over 8 MiB 413. Measured on Caddy 2.10.2: an unauthenticated 9 MiB body gets 401 (and 404 on another path), because the cap trips only when a body is read, which only the proxied request does. So a 401 for an unauthenticated big body is NOT a failed cap. Test the cap with the token: `<vault pipe> | sed 's/^/header = "Authorization: Bearer /; s/$/"/' | curl --config - -sS -o /dev/null -w '%{http_code}\n' -X POST --data-binary @<file of 9 MiB> https://<host>/v1/traces` must print 413 (not measured on the node's 2.11.6: if it prints something else, report, do not roll back on this alone).
    - Log check, after these requests and after a forced 502 (send the authenticated POST while the gateway's loopback publish is not up; do not stop the gateway for this): `umask 077; t=$(mktemp); docker logs board-proxy --since <time of step 5> >"$t" 2>&1`, then `<vault pipe> | grep -c -F -f - "$t"` (the pattern comes from stdin, the file is the argument) must print `0`; `grep -ci -e authorization -e bearer -e cookie "$t"` must print `0` or only lines that say `REDACTED`; then `rm -f "$t"`. Logs can include other sites' lines: print counts only.
    - The gateway receives the `Authorization` header too (`reverse_proxy` forwards it): the gateway's own config must not log request headers.
    - The Mind-host side (the otel-agent endpoint `https://<host>` and the same token) is the owner's step, not part of this procedure.
