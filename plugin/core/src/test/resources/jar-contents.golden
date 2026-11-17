@@ -927,6 +927,7 @@ dev/geldar/core/proximity/ChatHop$Submitter.class
 dev/geldar/core/proximity/ChatHop.class
 dev/geldar/core/proximity/Hearing.class
 dev/geldar/core/proximity/HearingNoticeSink.class
+dev/geldar/core/proximity/HearingTrace.class
 dev/geldar/core/proximity/LineBudget.class
 dev/geldar/core/proximity/MuffleConfig.class
 dev/geldar/core/proximity/MuffleSettings.class
@@ -950,6 +951,9 @@ dev/geldar/core/speech/ChatRing.class
 dev/geldar/core/speech/SpeechChatListener.class
 dev/geldar/core/speech/SpeechSetup.class
 dev/geldar/core/speech/SpeechText.class
+dev/geldar/core/trace/SpanHearingTrace$SpanAttributes.class
+dev/geldar/core/trace/SpanHearingTrace.class
+dev/geldar/core/trace/SpeechHash.class
 dev/geldar/core/trace/TraceHeaders$1.class
 dev/geldar/core/trace/TraceHeaders.class
 io/nats/client/AuthHandler.class

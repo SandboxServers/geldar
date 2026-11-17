@@ -4,6 +4,7 @@ import dev.geldar.core.EventEnvelope;
 import io.nats.client.Connection;
 import io.nats.client.Nats;
 import io.nats.client.Options;
+import io.nats.client.impl.Headers;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,11 +21,17 @@ import java.util.logging.Logger;
 public final class NatsHearingSink implements HearingNoticeSink, AutoCloseable {
     private final String shard;
     private final AtomicLong dropped = new AtomicLong();
+    private final HearingTrace trace;
     private volatile Connection connection;
     private volatile boolean closed;
 
     public NatsHearingSink(String url, String shard, Function<String, String> setting, Logger log) {
+        this(url, shard, setting, log, HearingTrace.NONE);
+    }
+
+    public NatsHearingSink(String url, String shard, Function<String, String> setting, Logger log, HearingTrace trace) {
         this.shard = shard;
+        this.trace = trace;
         Thread t = new Thread(() -> connect(url, setting, log), "geldar-hearing-connect");
         t.setDaemon(true);
         t.start();
@@ -32,7 +39,12 @@ public final class NatsHearingSink implements HearingNoticeSink, AutoCloseable {
 
     /** A sink over a connection that already exists, for tests: no connect thread and no server. */
     NatsHearingSink(String shard, Connection connection) {
+        this(shard, connection, HearingTrace.NONE);
+    }
+
+    NatsHearingSink(String shard, Connection connection, HearingTrace trace) {
         this.shard = shard;
+        this.trace = trace;
         this.connection = connection;
     }
 
@@ -63,6 +75,11 @@ public final class NatsHearingSink implements HearingNoticeSink, AutoCloseable {
 
     @Override
     public void muffled(String lifeId, String direction, String band) {
+        muffled(lifeId, direction, band, null);
+    }
+
+    /** As above, with the hash of the speech that caused it (never the text); it goes to the span only, not the payload. */
+    public void muffled(String lifeId, String direction, String band, String speechHash) {
         if (!EventEnvelope.isLifeId(lifeId)) {
             return;
         }
@@ -72,9 +89,19 @@ public final class NatsHearingSink implements HearingNoticeSink, AutoCloseable {
             dropped.incrementAndGet();
             return;
         }
-        String json = new MuffledNotice(direction, band).json();
+        byte[] payload = new MuffledNotice(direction, band).json().getBytes(StandardCharsets.UTF_8);
         try {
-            nc.publish(subject(shard, lifeId), json.getBytes(StandardCharsets.UTF_8));
+            Headers headers = null;
+            try {
+                headers = trace.begin(lifeId, speechHash);
+            } catch (RuntimeException e) {
+                // A telemetry failure never stops a notice (S8).
+            }
+            if (headers == null) {
+                nc.publish(subject(shard, lifeId), payload);
+            } else {
+                nc.publish(subject(shard, lifeId), headers, payload);
+            }
         } catch (IllegalStateException e) {
             // Closed or reconnect buffer full: drop the notice; the server thread never throws or waits.
             dropped.incrementAndGet();
