@@ -15,6 +15,10 @@ import jdk.jfr.consumer.RecordedEvent;
  * Thread names are mapped to six fixed groups and never become a label. The ratio of a group is the sum of
  * user+system over its threads in one period; a period ends when an event with a later start time arrives, and the
  * gauge shows the last completed period. Reads only the fields in {@link #FIELDS}.
+ *
+ * <p>Consequences, both by design: a period is only known to be complete when the next one starts, so every gauge reads
+ * 0 until the second period begins; and JFR emits nothing in a period with no load, so if events stop, the gauge keeps
+ * showing the last completed period (stale) rather than dropping to 0.
  */
 public final class ThreadCpuHandler implements JfrHandler {
     static final String EVENT = "jdk.ThreadCPULoad";

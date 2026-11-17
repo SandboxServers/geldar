@@ -100,6 +100,19 @@ class JfrHandlersTest {
     }
 
     @Test
+    void theGaugeKeepsTheLastPeriodWhenEventsStopAndReadsZeroUntilTheSecondPeriod() {
+        RecordingLedger ledger = new RecordingLedger();
+        ThreadCpuHandler h = new ThreadCpuHandler(ledger);
+        Instant t0 = Instant.parse("2026-01-01T00:00:00Z");
+        h.handle("jdk.ThreadCPULoad", cpu(t0, "Server thread", 0.25, 0.25));
+        assertEquals(0.0, ledger.readGaugeDouble(Names.Jfr.THREAD_GROUP_CPU_RATIO, "server"), "first period is not visible yet");
+        h.handle("jdk.ThreadCPULoad", cpu(t0.plusSeconds(10), "Server thread", 0.0, 0.0));
+        assertEquals(0.5, ledger.readGaugeDouble(Names.Jfr.THREAD_GROUP_CPU_RATIO, "server"), 1e-9);
+        // no more events: the value stays at the last completed period
+        assertEquals(0.5, ledger.readGaugeDouble(Names.Jfr.THREAD_GROUP_CPU_RATIO, "server"), 1e-9);
+    }
+
+    @Test
     void ledgerOwnThreadsGoToGroupLedger() {
         RecordingLedger ledger = new RecordingLedger();
         ThreadCpuHandler h = new ThreadCpuHandler(ledger);
@@ -128,6 +141,12 @@ class JfrHandlersTest {
         assertEquals("default", ContentionHandler.groupOf("Thing"));
         assertEquals("java.util", ContentionHandler.groupOf("[Ljava.util.Foo;"));
         assertEquals("other", ContentionHandler.groupOf(null));
+        // the shape a real JVM returns for monitorClass.name (JFR probe, JDK 25)
+        assertEquals("java.util", ContentionHandler.groupOf("java/util/ArrayList"));
+        assertEquals("java.util", ContentionHandler.groupOf("java/util/ArrayList$Itr"));
+        assertEquals("org.bukkit", ContentionHandler.groupOf("org/bukkit/craftbukkit/CraftServer"));
+        assertEquals("default", ContentionHandler.groupOf("Thing$Inner"));
+        assertEquals("java.util", ContentionHandler.groupOf("[Ljava/util/Foo;"));
         RecordingLedger ledger = new RecordingLedger();
         ContentionHandler h = new ContentionHandler(ledger);
         h.handle("jdk.JavaMonitorEnter", new Fake().with("monitorClass.name", "java.util.Vector"));

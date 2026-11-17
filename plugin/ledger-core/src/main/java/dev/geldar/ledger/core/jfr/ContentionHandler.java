@@ -35,12 +35,17 @@ public final class ContentionHandler implements JfrHandler {
         bound.put(OTHER, counter.bind(OTHER));
     }
 
-    /** First two package segments; a class without a package is {@code default}; null is {@code other}. */
+    /**
+     * First two package segments; a class without a package is {@code default}; null is {@code other}. A real JVM
+     * returns the internal form of {@code monitorClass.name} ({@code java/util/ArrayList}), so slashes are read as dots
+     * first. An inner class ($) only changes the last segment, which is never part of the group.
+     */
     static String groupOf(String className) {
         if (className == null || className.isEmpty()) {
             return OTHER;
         }
-        String n = className.startsWith("[") ? className.replaceAll("^\\[+L?", "") : className;
+        String dotted = className.replace('/', '.');
+        String n = dotted.startsWith("[") ? dotted.replaceAll("^\\[+L?", "") : dotted;
         String[] parts = n.split("\\.");
         if (parts.length < 2) {
             return "default";
