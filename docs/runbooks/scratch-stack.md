@@ -204,9 +204,14 @@ Run these after `up` returns healthy. Run the process-uid check in the section a
 UNVERIFIED are commands or reply wording not confirmed against the repo or a live NeoForge 26.1 server: run them, record
 the real output in the run notes, and check it against the reply before calling it a failure.
 
-1. Mod load. `docker logs <paper> 2>&1 | grep "geldar_neoforge loaded on the dedicated server"` shows one line. That is
-   the log line `GeldarNeoForge.java` writes at server start; the id is `ModInfo.modId()`, equal to `modId` in
-   `neoforge.mods.toml`. The loaded-mods list: UNVERIFIED, `docker logs <paper> 2>&1 | grep -i "loaded"`, record the mod lines.
+1. Mod load: N/A until a geldar mod jar is mounted. Today the scratch NeoForge overlay (`compose/opt-in/scratch-neoforge.yml`)
+   mounts no geldar jar, so `/data/mods` holds only `proxy-compatible-forge.jar`. Record `docker exec <paper> ls /data/mods`
+   and the count from `docker logs <paper> 2>&1 | grep "geldar_neoforge loaded on the dedicated server"`. Today the expected
+   count is 0, and 0 is not a failure. The grep matches the log line `GeldarNeoForge.java` writes at server start; the id is
+   `ModInfo.modId()`, equal to `modId` in `neoforge.mods.toml`. This check becomes blocking when the mod-mount packet mounts
+   the jar. Until then the blocking mod check is Proxy Compatible Forge loading: the paper log must show the
+   `Initializing ProxyCompatibleForge` and `Found status` lines. The loaded-mods list: UNVERIFIED,
+   `docker logs <paper> 2>&1 | grep -i "loaded"`, record the mod lines.
 2. Tick time. `docker exec <paper> rcon-cli tick query` (vanilla; UNVERIFIED on this image) shows the target tick rate and
    the average time per tick. `docker exec <paper> rcon-cli neoforge tps` is a NeoForge command, UNVERIFIED on 26.1: record
    its reply, or the unknown-command reply. spark is not installed on the scratch NeoForge, so `rcon-cli spark tps`
@@ -217,18 +222,32 @@ the real output in the run notes, and check it against the reply before calling 
 4. CPU and memory. Run `docker stats --no-stream` twice, 30 s apart, and record both. `scratch.sh status nf` prints the same
    per-container figures. Each must stay within its cap: memory at or below 3072m (paper) and 768m (velocity), CPU % at or
    below 150 (paper, 1.5 CPUs) and 50 (velocity, 0.5 CPUs; `docker stats` percent is per CPU).
-   One earlier measurement (2026-11-17, node not otherwise loaded): paper 1.62 GiB of 3 GiB, velocity 194 MiB. Its CPU
-   was not captured, so these two samples are the first CPU figures.
+   Measurements, labelled by run. Run 3 (2026-11-17, node not otherwise loaded): paper 1.62 GiB of 3 GiB, velocity 194 MiB;
+   its CPU was not captured. Run 5 (one run, 2026-11-17): `tick query` 20/s with a 0.1 ms average; `neoforge tps` overall
+   20.000 at 0.091 ms/tick; `docker stats`: paper 1.625 GiB of 3 GiB at 0.25% CPU, velocity 188 MiB of 768 MiB. These are
+   one run's figures, not a baseline. The CPU samples from this step are the first CPU figures.
 5. Proxy Compatible Forge config. `docker exec <paper> stat -c '%a %u:%g' /data/config/proxy-compatible-forge.toml /data`
    prints two lines: the file's mode and uid:gid first, then `/data`'s. The mode must be `600`; that is the requirement.
    Record the file's uid:gid and `/data`'s, but do not block on a difference. Run 4 saw the file at mode 600 with owner uid 1000
-   while the Paper JVM ran as 1001. The itzg/minecraft-server image appears to remap its server user (observed; cause unverified).
-6. Netty VarInt line (cause UNVERIFIED; likely Paper's own healthcheck server-list ping). After the stack is up, run
+   while the Paper JVM ran as 1001. Run 5 saw mode 600, owner 1001:1000, with the Paper JVM as uid 1001. The itzg/minecraft-server
+   image appears to remap its server user (observed; cause unverified).
+6. Netty VarInt line (sender UNVERIFIED). After the stack is up, run
    `docker logs --timestamps <paper> 2>&1 | grep -n VarInt` on the FULL paper log, not a tail, and record the count and the
    timestamps. The line is an IndexOutOfBoundsException at PCF VarInt.read (ModernForwarding.handleClientIntention) with no
-   client. Then watch one minute: note the count, wait 60 s, count again. If it repeats about every 30 s, it is the healthcheck.
-   If it appeared once, capture the full stack trace (the lines around the match in `docker logs <paper> 2>&1`). Never treat
-   this line as a failure by itself.
+   client. Run 5 (2026-11-17) logged it once, at 14:21:29Z, about 4 s into start-up while the server was still preparing its
+   level. The read buffer had capacity 1, so one byte was read. The count did not change over the next 60 s, so it did not
+   repeat on the 30 s healthcheck interval. The most likely reading is a one-byte connection that reached the pre-Netty
+   legacy-ping path before the world was ready, such as a start-up readiness probe; this is not verified. It did not stop
+   the server. Then watch one minute: note the count, wait 60 s, count again. If it repeats about every 30 s, it is the
+   healthcheck. If it appears more than once, or one appears after the server is ready, capture the full trace and the 20
+   lines either side with timestamps (`docker logs --timestamps <paper> 2>&1`) and report it. If it appeared once at
+   start-up, capture the full stack trace (the lines around the match in `docker logs <paper> 2>&1`). Never treat this
+   line as a failure by itself.
+
+Order. The blocking checks, in this order, are: the process-uid check (Paper), check 1 (the Proxy Compatible Forge lines
+only, as above), check 4 and check 5. Checks 2, 3 and 6 are recorded and do not block. When the blocking checks pass, the
+probe (P0 probe section, step 4) may run when ops asks for it. Check 3 is recorded here as non-blocking; the owner should
+confirm that.
 
 Known noise: a log4j DebugFile error that names a netty kqueue class appears in the paper log on NeoForge. It is unrelated
 to the mod. Do not treat it as a failure.
@@ -454,3 +473,5 @@ RCON value appears in its output, and none may be pasted into a report.
   not for mc-proxy. A compose change on live is a deploy change and the owner's call; this PR does not edit the compose files.
 - The Proxy Compatible Forge config owner: run 4 saw uid 1000 on a mode 600 file against the Paper JVM's 1001. The mode is the
   requirement and the owner is recorded. Cause unverified (the itzg/minecraft-server remap). The owner decides whether it must match.
+- Our own mod is not mounted in the scratch NeoForge stack yet (the overlay mounts only proxy-compatible-forge.jar), so no run
+  has exercised `neoforge/` on a dedicated server. A separate mod-mount packet covers this.
