@@ -28,13 +28,6 @@ dependencyResolutionManagement {
         maven("https://repo.bluecolored.de/releases") {
             content { includeGroup("de.bluecolored") }
         }
-        // spark's API (compile-only soft dependency) has no release. This ivy layout points at one exact timestamped
-        // file of 0.1-SNAPSHOT, so the version below is a plain version that Gradle verifies against verification-metadata.xml.
-        ivy("https://repo.lucko.me") {
-            patternLayout { artifact("me/lucko/spark-api/0.1-SNAPSHOT/[module]-[revision](-[classifier]).[ext]") }
-            metadataSources { artifact() }
-            content { includeModule("me.lucko", "spark-api") }
-        }
         mavenCentral()
     }
 }

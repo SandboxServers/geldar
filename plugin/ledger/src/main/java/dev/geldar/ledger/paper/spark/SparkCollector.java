@@ -39,6 +39,8 @@ public final class SparkCollector implements Collector {
     @Override
     public synchronized void start(CollectorContext ctx) {
         stop();
+        // A new ledger (disable then enable) has none of our gauges: register them again on the next reading.
+        values.clear();
         Ledger ledger = ctx.ledger();
         task = ctx.scheduler().everyMillis(PERIOD_MS, () -> refresh(ledger));
     }
@@ -47,11 +49,17 @@ public final class SparkCollector implements Collector {
     void refresh(Ledger ledger) {
         try {
             List<SparkReader.Point> points = reader.poll();
+            if (points.isEmpty()) {
+                // spark went away or is not ready: stop showing the last numbers as if they were live
+                values.replaceAll((k, v) -> Double.NaN);
+                return;
+            }
             for (SparkReader.Point p : points) {
                 String key = p.key();
                 if (values.put(key, p.value()) == null) {
-                    DoubleSupplier reader = () -> values.getOrDefault(key, 0.0);
-                    ledger.gaugeDouble(p.metric(), "1", "spark summary", reader, p.attrs());
+                    DoubleSupplier read = () -> values.getOrDefault(key, Double.NaN);
+                    String unit = p.metric().endsWith("_ms") ? "ms" : "1";
+                    ledger.gaugeDouble(p.metric(), unit, "spark summary", read, p.attrs());
                 }
             }
         } catch (Throwable t) {

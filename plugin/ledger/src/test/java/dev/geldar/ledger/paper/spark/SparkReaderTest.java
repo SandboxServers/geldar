@@ -3,6 +3,7 @@ package dev.geldar.ledger.paper.spark;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.geldar.ledger.core.Cancellable;
@@ -92,9 +93,56 @@ class SparkReaderTest {
         async.get(0).run();
         async.get(0).run();
         assertTrue(gauges.isEmpty());
-        assertTrue(new SparkReader(SparkReader.production(loader), System::nanoTime).poll().isEmpty());
+        assertNull(SparkReader.production(loader).get(), "no spark on the loader: no adapter, so no spark class is loaded");
+        assertNotNull(SparkReader.production(getClass().getClassLoader()).get());
         c.stop();
         assertTrue(cancelled);
+    }
+
+    final AtomicLong clock = new AtomicLong();
+
+    SparkReader scripted(AtomicInteger mode) {
+        return new SparkReader(
+                () -> () -> {
+                    if (mode.get() == 0) {
+                        throw new IllegalStateException("gone");
+                    }
+                    return List.of(new SparkReader.Point("geldar_spark_mspt_ms", new String[] {"window", "1m", "stat", "mean"}, 40.0));
+                },
+                clock::get);
+    }
+
+    @Test
+    void disableThenEnableRegistersTheGaugesOnTheNewLedger() {
+        AtomicInteger mode = new AtomicInteger(1);
+        SparkCollector c = new SparkCollector(scripted(mode));
+        c.start(ctx(ledger()));
+        async.get(0).run();
+        assertEquals(1, gauges.size());
+        c.stop();
+        gauges.clear();
+        c.start(ctx(ledger()));
+        async.get(1).run();
+        assertEquals(1, gauges.size(), "the new ledger got the gauge again");
+        assertEquals(40.0, gauges.values().iterator().next().getAsDouble());
+    }
+
+    @Test
+    void valuesGoNaNWhenSparkDisappearsAndComeBack() {
+        AtomicInteger mode = new AtomicInteger(1);
+        SparkCollector c = new SparkCollector(scripted(mode));
+        c.start(ctx(ledger()));
+        async.get(0).run();
+        DoubleSupplier g = gauges.values().iterator().next();
+        assertEquals(40.0, g.getAsDouble());
+        mode.set(0);
+        async.get(0).run();
+        assertTrue(Double.isNaN(g.getAsDouble()));
+        mode.set(1);
+        clock.addAndGet(61_000_000_000L);
+        async.get(0).run();
+        assertEquals(40.0, g.getAsDouble());
+        assertEquals(1, gauges.size());
     }
 
     @Test
@@ -145,6 +193,7 @@ class SparkReaderTest {
         for (String n : List.of("SparkReader", "SparkCollector")) {
             assertFalse(bytes(n).contains("me/lucko"), n + " must not name a spark class");
         }
+        assertFalse(bytes("SparkCollector").contains("SparkApiAdapter"));
     }
 
     @Test

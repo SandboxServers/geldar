@@ -8,6 +8,8 @@ java {
     }
 }
 
+val sparkApiJar = file("libs/spark-api-0.1-20260912.112908-2.jar")
+
 dependencies {
     compileOnly(libs.paper.api)
     // Paper provides gson; the stats-file reader parses with it.
@@ -17,17 +19,14 @@ dependencies {
         isTransitive = false
     }
     // spark provides its API at runtime when installed (soft dependency); compile-only, never bundled.
-    compileOnly(libs.spark.api) {
-        isTransitive = false
-    }
+    // Vendored jar (MIT, see libs/README.md): the upstream snapshot is purged on each publish; VendoredSparkApiTest pins its sha256.
+    compileOnly(files(sparkApiJar))
     implementation(project(":ledger-core"))
     implementation(libs.opentelemetry.api)
 
     testImplementation(libs.paper.api)
     testImplementation(libs.gson)
-    testImplementation(libs.spark.api) {
-        isTransitive = false
-    }
+    testImplementation(files(sparkApiJar))
     testImplementation(testFixtures(project(":ledger-core")))
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly(libs.junit.platform.launcher)

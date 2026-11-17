@@ -11,10 +11,8 @@ coreprotect = "24.1"
 bluemap-api = "2.8.2"
 # BlueMap's Vector3d type (its HtmlMarker takes one). Compile-only: BlueMap provides it at runtime; a 2016 artifact.
 flow-math = "1.0.3"
-# Ledger (PT-03a): the OpenTelemetry API only (not relocated). spark-api is compile-only (PT-04c), see settings.gradle.kts.
+# Ledger (PT-03a): the OpenTelemetry API only (not relocated). spark-api is vendored (PT-04c), not in this catalog: see plugin/ledger/libs.
 opentelemetry-api = "1.67.0"
-# spark-api has no release: this is the exact timestamped file of 0.1-SNAPSHOT from repo.lucko.me (jar sha256 e4856b0d2ba56db652ca340821a5b40ad0bdd192cf77707ba0f4557eeb5cb63d).
-spark-api = "0.1-20260912.112908-2"
 
 [libraries]
 paper-api = { module = "io.papermc.paper:paper-api", version.ref = "paper" }
@@ -28,4 +26,3 @@ coreprotect = { module = "net.coreprotect:coreprotect", version.ref = "coreprote
 bluemap-api = { module = "de.bluecolored:bluemap-api", version.ref = "bluemap-api" }
 flow-math = { module = "com.flowpowered:flow-math", version.ref = "flow-math" }
 opentelemetry-api = { module = "io.opentelemetry:opentelemetry-api", version.ref = "opentelemetry-api" }
-spark-api = { module = "me.lucko:spark-api", version.ref = "spark-api" }
