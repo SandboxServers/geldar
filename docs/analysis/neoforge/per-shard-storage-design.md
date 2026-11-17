@@ -1,6 +1,6 @@
 # Per-shard event storage design (NeoForge live shard and scratch)
 
-- Status: design note, docs only. Base: origin/main 134bf7f0. First written 2026-11-17 for the lead; revised 2026-11-17 with the lead's decisions (below). Decisions are recorded in `docs/decisions/0380` to `0386`; the owner confirms them.
+- Status: design note, docs only. Base: origin/main 134bf7f0. First written 2026-11-17 for the lead; revised 2026-11-17 with the lead's decisions (below), then reconciled with the live project file (branch `phase1/nf-live-compose`, commit e353646c) and the lead's read-only node check (about 16:07Z 2026-11-17). Decisions are recorded in `docs/decisions/0380` to `0386`; the owner confirms them.
 - Reading rule: **UNVERIFIED** marks a claim I did not confirm in code, config or on a server. Paths are relative to the repo root.
 - Owner answer this design implements: "separate stream and table per shard". Plainly: each shard gets its own JetStream stream (on its own NATS) and its own database, which holds its own `events` table. The `events` table itself is unchanged. This is option C of section 2, and it meets the owner's answer by a database per shard rather than a table per shard in one database (decision 0026).
 
@@ -14,8 +14,8 @@
 | D4 | Shard-mismatch policy: dead-letter, not ack-and-skip. The `validate.ts` gap is an implementation gap with a trigger-path packet. | 0382 |
 | D5 | The NeoForge mod connects as a new `neoforge` NATS user (not `paper`). Colo output of `geldar.ps1` is unchanged. The maintenance notice publishes to the NeoForge shard's own NATS as its own deploy user, defined in the same per-shard auth set. | 0383 |
 | D6 | `server_tps` has no payload schema (owner decision). The NeoForge mod emits the shape the Paper plugin sends today (section 6). | 0384 |
-| D7 | Live retention 30 days and 2 GiB (accepted defaults; the owner can change them). The database has no purge today; the purge is an open assignment (section 8). | 0380 |
-| D8 | The live NeoForge shard runs as a new compose project `geldar-nf` on the colo node, separate from `geldar-colo`, with its own file. Budget and headroom in section 7. | 0386 |
+| D7 | Live retention 30 days and 2 GiB (accepted defaults; the owner can change them). The database has no purge today. The purge is an open assignment, an ops job with a runbook step and not automatic (section 8, O2). | 0380 |
+| D8 | The live NeoForge shard runs as a new compose project `geldar-nf` on the colo node, separate from `geldar-colo`, with its own file `compose/nf-live.yml`. Budget and headroom in section 7. | 0386 |
 | D9 | Keep `golem/` out of the deploy window. | 0380 |
 | D10 | Progression (per-shard flag, relaxes Principle 2 for flagged shards only) is recorded in 0385. Proposed; the owner must accept it; nothing is in force. | 0385 |
 
@@ -65,7 +65,7 @@ Options for the table (the 0026 model):
 | C. Own database per shard, own Postgres in the shard's compose project | **Chosen (D1).** `events` keeps its name; writer, projections and migrations are unchanged; roles live in their own cluster. |
 | D. `shard` column on the existing `events` | Reject. Changes the autonomous table; 0026 says revisit only if one database serves two shards. |
 
-Each shard's compose project holds one NATS, one Postgres, one sink. The NeoForge database runs `sql/` 0001 to 0066 from empty.
+Each shard's compose project holds one NATS, one Postgres, one sink. The NeoForge database runs `sql/` 0001 to 0066 from empty (UNVERIFIED until run; section 8).
 
 ## 3. The sink: one instance per shard
 
@@ -77,6 +77,8 @@ Config keys the per-shard sink needs (proposals; none exists today):
 - `GELDAR_EVENTSINK_SHARD` (default unset, which keeps today's `geldar.*.*`): the filter becomes `geldar.<shard>.*`. Not `GELDAR_SHARD`, which the sink ignores on purpose.
 - `EVENTSINK_STREAM_RETENTION_DAYS` (default 30) and `EVENTSINK_STREAM_MAX_BYTES` (default 2 GiB): optional; the defaults keep colo unchanged.
 - `POSTGRES_DB` is already read (`config.ts` line 62); the NeoForge sink sets `geldar_nf`.
+
+The live project file (section 7.1) uses only keys that exist today. The per-shard keys above are a later trigger-path packet (b1, b2), so the NeoForge sink is not yet able to use its own stream.
 
 Shard mismatch: a message whose shard differs from the served shard is dead-lettered (D4, record 0382).
 
@@ -90,11 +92,11 @@ Trigger paths (`.github/workflows/colo-images.yml` `paths:`): `golem/**`, `event
 |---|---|---|---|
 | a1 | this note; `docs/analysis/neoforge/RESUME.md`; `docs/analysis/neoforge/progression-defaults.md` | Pointers to 0380 to 0386 | `pnpm check:repo` |
 | a2 | `geldar.ps1` `Get-NatsUsers`, `shard nats-auth` | Accept shard `nf` and `nf-scratch`. The colo table and the colo generated file are unchanged (D5). | the existing test that pins the colo generated file (UNVERIFIED which file) |
-| a3 | `compose/nf.yml` (new, self-contained, not an overlay of `colo.yml`) | The `geldar-nf` project: NeoForge server, Velocity, NATS, Postgres, eventsink. Loopback ports only. Memory and CPU caps per service (section 7). | `geldar.ps1 check` runs `docker compose config` on every `compose/*.yml`, so the file is validated there; a cap test (new) that every service has a CPU and memory cap |
+| a3 | `compose/nf-live.yml` (new, self-contained, not an overlay of `colo.yml`; on branch `phase1/nf-live-compose`, commit e353646c) | The `geldar-nf` project: NeoForge server, Velocity, NATS, Postgres, eventsink, identity-seed (one-shot). Loopback ports only. Memory and CPU caps per service (section 7). | `tools/repo-checks/src/nf-live-compose.test.ts` (16 tests, renders with no env and with dummy secrets); `geldar.ps1 check` runs `docker compose config` on every `compose/*.yml` |
 | a4 | `deploy/scratch/scratch.sh`, `deploy/scratch/nf.env` | Scratch token `nf-scratch`; stream and database names from env | `deploy/test` scratch tests (names UNVERIFIED) |
-| a5 | `deploy/nf-cd.sh` (new, proposal) | Deploy script for `geldar-nf` only (section 7.3) | a dry-run test that the project is `geldar-nf` and the colo file is never named |
+| a5 | `deploy/nf-cd.sh` (new, proposal) | Deploy script for `geldar-nf` only (section 7.3). Every compose action passes `-p geldar-nf -f compose/nf-live.yml`. | a dry-run test that the project is `geldar-nf` and the colo file is never named |
 | a6 | `tools/repo-checks/src/` (new check) | No two stream subject filters overlap in one project; stream names unique | the new check on a fixture with an overlap |
-| a7 | `docs/reference/eventsink.md`, `docs/reference/nats-subjects.md`, `docs/security/authn-authz-map.md`, `docs/runbooks/` | Names, per-shard users, operator steps | `pnpm check:repo` |
+| a7 | `docs/reference/eventsink.md`, `docs/reference/nats-subjects.md`, `docs/security/authn-authz-map.md`, `docs/runbooks/` | Names, per-shard users, operator steps. The live project runbook is `docs/runbooks/nf-live-project.md` (branch `phase1/nf-live-compose`). | `pnpm check:repo` |
 
 ### (b) Packets that DO touch trigger paths (one window)
 
@@ -119,15 +121,15 @@ Colo node and NeoForge project:
 1. Repo, now: this note and the records (docs only). No deploy.
 2. Repo: the (a) packets. No restart: they touch no image of the colo project.
 3. Repo, one window: the (b) batch. The colo-images workflow builds the eventsink image. `colo-cd` deploys the colo project only (section 7.3): the colo `eventsink` restarts on the new image with default config, reads `GELDAR_EVENTS` and `geldar.*.*`, writes `events`. Check: the stream exists; the durable `eventsink` is unchanged; the log line is unchanged. Rollback: the previous digest in the release env.
-4. Operator: create the `geldar-nf` project from `compose/nf.yml` (`docker compose -p geldar-nf -f compose/nf.yml ...`, never with the colo file). Generate its NATS users with `shard nats-auth nf`.
+4. Operator: create the `geldar-nf` project from `compose/nf-live.yml` (`docker compose -p geldar-nf -f compose/nf-live.yml ...`, never with the colo file). Provide the offline NeoForge bundle and the mod jar (section 7.1). Generate its NATS users with `shard nats-auth nf` (the per-shard auth set and its generator are a later packet; UNVERIFIED).
 5. Operator: run the migrations into `geldar_nf` through the admin one-shot (b6). Check that `events` exists and is empty.
-6. Operator: start the NeoForge sink with `GELDAR_EVENTS_NF`. Check that the stream exists with subjects `geldar.nf.*` and that the colo stream's filter and message count are unchanged (read-only `/jsz?streams=true` on the monitor, as in `.claude/skills/run-shard/SKILL.md`).
+6. Operator: start the NeoForge sink with `GELDAR_EVENTS_NF` (needs b1 and b2). Check that the stream exists with subjects `geldar.nf.*` and that the colo stream's filter and message count are unchanged (read-only `/jsz?streams=true` on the monitor, as in `.claude/skills/run-shard/SKILL.md`).
 7. Operator: start the NeoForge server. Read-only probes only: `tick query`, `list`; `server_tps` arrives every 20 s.
 8. Operator: send a maintenance notice to the NeoForge NATS with its own deploy user (D5).
 
 Scratch: the owner approves the token change (`nf` to `nf-scratch`); the old scratch stack (`scratch-nf`) keeps its volumes until removed; the operator stops it; `scratch.sh up` with `nf-scratch` creates `GELDAR_EVENTS_NF_SCRATCH` in its own NATS. Rollback: stop the new token; bring the old one back only if its image is still published.
 
-Rollback for the NeoForge project: `docker compose -p geldar-nf ... stop`. Deleting its volumes, stream or database is destructive: owner approval first. Colo is unaffected.
+Rollback for the NeoForge project: `docker compose -p geldar-nf -f compose/nf-live.yml ... stop`. Deleting its volumes, stream or database is destructive: owner approval first. Colo is unaffected.
 
 ## 6. Contract and `server_tps`
 
@@ -140,25 +142,30 @@ Rollback for the NeoForge project: `docker compose -p geldar-nf ... stop`. Delet
 
 ### 7.1 Where it runs and what must not restart
 
-The live NeoForge shard is a new compose project `geldar-nf` on the colo node, not a separate host. Its file `compose/nf.yml` is self-contained (not an overlay on `compose/colo.yml`). It has its own network (Compose names it from the project, `geldar-nf_*`), its own NATS, its own Postgres, its own sink. A compose action on `geldar-nf` must never touch the `geldar-colo` network or the node's `colo.yml`; every nf command names `-p geldar-nf -f compose/nf.yml`.
+The live NeoForge shard is a new compose project `geldar-nf` on the colo node, not a separate host. Its file `compose/nf-live.yml` (branch `phase1/nf-live-compose`, commit e353646c) is self-contained (not an overlay on `compose/colo.yml`). It has its own network (Compose names it from the project, `geldar-nf_*`), its own NATS, its own Postgres, its own sink, its own Velocity and NeoForge server, and a one-shot `identity-seed`. A compose action on `geldar-nf` must never touch the `geldar-colo` network or the node's `colo.yml`; every nf command names `-p geldar-nf -f compose/nf-live.yml`.
+
+The file renders with no environment (every variable has a default), so the file is checked by `docker compose config` and by its test with no env. Its defaults are not a deploy: the NeoForge offline bundle and the mod jar are inputs the operator provides. The host-side names are `NF_MOD_JAR_HOST` and `NF_MOD_SHA256`; the container side keeps `GELDAR_NF_MOD_SHA256`, which the entrypoint reads. With the default jar path (which does not exist), `up` fails closed.
 
 Must never restart the autonomous shard (colo), from the repo:
 
 - `deploy/colo-cd.sh` line 7 (comment): "Never restarted: Paper, Velocity, Caddy, Postgres, NATS. Never started: mind, and golem-body (the idle Adam, profile adam)." The CD script's restarts are per service in its `ORDER` list (line 340).
 - `deploy/colo-down.sh` line 2: "Stops the geldar-colo project and nothing else." Running it on the node stops colo.
-- `deploy/common.sh` lines 6-8: `PROJECT=${GELDAR_PROJECT:-geldar-colo}` and `COMPOSE_FILE=${GELDAR_COLO_COMPOSE:-$ROOT/compose/colo.yml}`. Any colo script run with `GELDAR_PROJECT` set to `geldar-nf` would act on nf, so nf scripts must not source `common.sh` with that variable. Whether the `ghdeploy` runner sets `GELDAR_PROJECT` is UNVERIFIED (not in the repo).
+- `deploy/common.sh` lines 6-8: `PROJECT=${GELDAR_PROJECT:-geldar-colo}` and `COMPOSE_FILE=${GELDAR_COLO_COMPOSE:-$ROOT/compose/colo.yml}`. `common.sh` adds colo overlays and secrets to every compose call, so it cannot isolate `geldar-nf`, and setting `GELDAR_PROJECT` would not isolate it either. The NeoForge deploy script must not source `common.sh`.
+- Whether the `ghdeploy` runner sets `GELDAR_PROJECT` or `GELDAR_COLO_COMPOSE` is **UNVERIFIED** and cannot be settled from the repo. Have it read-only checked on the node when `deploy/nf-cd.sh` is written.
 - Golem bodies: restart only when `golem/**` is in the window (D9). `deploy/colo-cd-players.sh` was not read (UNVERIFIED).
 - The shared Caddy: out of scope here (section 8).
 
 ### 7.2 Per-service caps
 
-Colo (`compose/colo.yml`; the per-service budgets are the literal defaults). Summed from the file:
+**Node correction (lead, read-only check of the node's `compose/colo.yml`, about 16:07Z 2026-11-17).** The autonomous Paper runs at **8 CPUs and 14336m** on the node (`MEMORY` 10G). The repo's `compose/colo.yml` says 3 CPUs and 8192m, so **the repo file is stale on this point** (other drift exists too; not listed here). The live budget below uses 8 CPUs and 14336m for Paper. This note does not depend on running compose against the node's drifted `colo.yml`. The repo's colo file should be updated in its own packet; that is not done here.
+
+Colo caps from the repo (`compose/colo.yml`; the per-service budgets are the literal defaults). The non-Paper values are the repo's and are **UNVERIFIED against the node**:
 
 | Service | CPUs | Memory |
 |---|---|---|
 | postgres | 1 | 2048m |
 | nats | 0.5 | 512m |
-| paper | 3 | 8192m (heap `MEMORY: 6G`) |
+| paper (repo value; node is 8 and 14336m) | 3 | 8192m (heap `MEMORY: 6G`) |
 | velocity | 0.5 | 1024m |
 | eventsink | 0.5 | 512m |
 | golem-body | 1 | 2048m |
@@ -170,40 +177,41 @@ Colo (`compose/colo.yml`; the per-service budgets are the literal defaults). Sum
 | bluemap-web | 0.25 | 64m |
 | players-host (profile) | 1 | 2048m |
 | admin (profile, one-shot) | 0.5 | 512m |
-| **All services** | **10.6** | **19968m** (19.5 GiB) |
-| Default-on (profiles excluded) | 8.85 | 17280m |
+| **All services, repo values** | **10.6** | **19968m** (19.5 GiB) |
+| **Default-on, repo values** (profiles excluded) | **8.85** | **17280m** |
+| **Default-on, Paper at node values** (8 and 14336m) | **13.85** | **23424m** (22.9 GiB) |
 
-`shards/colo.yaml` `cpu_limit: 10.6` and `memory_limit: 19968m` match the all-services sum. Note `compose/colo.yml` sets Paper to 8192m; the lead's measured Paper cap of 14 GiB is not in the repo (see 7.4).
+`shards/colo.yaml` `cpu_limit: 10.6` and `memory_limit: 19968m` match the repo's all-services sum, so that file is also on the repo values, not the node's.
 
-Proposed `geldar-nf` budget (proposals, to be measured at deploy):
+Live `geldar-nf` budget (from `compose/nf-live.yml`; proposals, to be measured at deploy):
 
 | Service | CPUs | Memory | Port |
 |---|---|---|---|
-| NeoForge server (Paper-equivalent, heap 6G like colo) | 3 | 8192m | none published |
-| Velocity (game entry) | 0.5 | 1024m | 127.0.0.1:25575 (proposal) |
-| postgres | 1 | 2048m | none published |
-| nats | 0.5 | 512m | none published |
-| eventsink | 0.5 | 512m | none |
-| **Total** | **5.5** | **12288m** (12 GiB) | one loopback port |
+| neoforge (heap 9G; 512 pids) | 3 | 12288m | none published; RCON 46575 reserved |
+| velocity (game entry) | 0.5 | 1024m | 127.0.0.1:46565 (the only published port) |
+| postgres | 1 | 2048m | none published; 46432 reserved |
+| nats | 0.5 | 512m | none published; 46222 reserved |
+| eventsink | 0.5 | 512m | none published |
+| identity-seed (one-shot) | 0.25 | 256m | none |
+| **Total** | **5.75** | **16640m** (16.25 GiB) | one loopback port |
 
-Ports: colo publishes 25567 on loopback (`shards/colo.yaml` `minecraft_port`); 25565 and 25566 are never published. The NeoForge block proposal is 25575 to 25579 on loopback. Scratch uses 24222 and 28222 (`deploy/scratch/telemetry.env`) and 34222 and 38222 (`deploy/scratch/nf.env`). Before deploy, check that no scratch game port lies in 25575 to 25579 (UNVERIFIED).
+Pids: 512 for neoforge, 256 for the others. The earlier proposal of 25575 to 25579 is withdrawn: 25575 is the RCON default and is not a good choice.
 
-Other tenants (caps from the repo):
+Sums, with the autonomous Paper at 8 CPUs and 14336m:
 
-- Scratch telemetry (`compose/opt-in/scratch-telemetry.yml` lines 23-24 and 58-59): Paper 15360m, `SCRATCH_PAPER_CPUS` default 6; a second service 512m, 0.5 CPU.
-- Scratch NeoForge (`compose/opt-in/scratch-neoforge.yml`): no `cpus` or `memory` line found by grep; UNVERIFIED.
+- Colo default-on (Paper at node values, other services at repo values) 13.85 CPUs and 23424m, plus nf 5.75 CPUs and 16640m: **19.6 CPUs against 16 cores (about 122%, overcommitted)** and **40064m (39.1 GiB)**.
+- Adding scratch telemetry (repo caps, UNVERIFIED on the node: Paper 6 CPUs and 15360m, plus one service at 0.5 CPU and 512m): 26.1 CPUs against 16 cores (about 163%) and 55936m (54.6 GiB). Scratch NeoForge is not included (no caps in the repo; UNVERIFIED).
+- Caps are ceilings, not reservations. The 16-core overcommit is the reason for the `cpu_shares` proposal below.
 
-Sums of caps if everything runs: CPUs colo 10.6 + nf 5.5 + scratch-telemetry 6.5 = **22.6 against 16 cores** (overcommitted; caps are ceilings, not reservations). Memory colo 19968m + nf 12288m + scratch-telemetry 15872m = **48128m (about 47 GiB)**, plus scratch NeoForge (UNVERIFIED) and plus about 6 GiB if Paper really runs at 14 GiB.
-
-What it means for the other tenants: memory fits comfortably in the lead's 100 GiB available. CPU is the constraint: when several stacks peak at once, the autonomous Paper (3 CPUs) can be slowed by nf and scratch-telemetry. Mitigation (proposal): set lower Docker `cpu_shares` on the nf and scratch services so colo wins contention; caps alone do not protect colo. The scratch-telemetry stack (6 CPUs) is the largest single competitor and is a scratch tenant, so it should not run during the colo peak.
+What it means for the other tenants: memory fits comfortably in the lead's roughly 100 GiB available. CPU is the constraint: when several stacks peak at once, the autonomous Paper (8 CPUs on the node) can be slowed by nf and scratch-telemetry. Mitigation (proposal, stands): set lower Docker `cpu_shares` on the nf and scratch services so colo wins contention; caps alone do not protect colo. The scratch-telemetry stack is the largest single competitor and is a scratch tenant, so it should not run during the colo peak.
 
 ### 7.3 Deploy script
 
-`colo-cd` (`deploy/colo-cd.sh`) and the `colo-deploy` workflow (`.github/workflows/colo-deploy.yml`, triggered by `colo-images` through `workflow_run`) deploy the colo project only, through `deploy/common.sh`. They do **not** apply to `geldar-nf`. The NeoForge project needs its own script, `deploy/nf-cd.sh` (proposal, section 4a5), that names `-p geldar-nf -f compose/nf.yml` and pins its own image digests in its file (so a colo-images build does not change nf until its digest is edited). Whether `colo-images` should build the NeoForge images is an owner call (not decided here).
+`colo-cd` (`deploy/colo-cd.sh`) and the `colo-deploy` workflow (`.github/workflows/colo-deploy.yml`, triggered by `colo-images` through `workflow_run`) deploy the colo project only, through `deploy/common.sh`. They do **not** apply to `geldar-nf`. No colo deploy script applies to the NeoForge project. It needs its own script, `deploy/nf-cd.sh` (proposal, section 4a5), which names `-p geldar-nf -f compose/nf-live.yml` on every compose action and pins its own image digests in its file (so a colo-images build does not change nf until its digest is edited). That script is a later packet. Whether `colo-images` should build the NeoForge images is an owner call (not decided here).
 
 ### 7.4 Node headroom: measured by the lead, NOT measured by me
 
-The headroom figures below are the lead's ops measurement at about 13:55Z on 2026-11-17: about 100 GiB available memory, 16 cores, and the autonomous Paper at a 14 GiB cap. I did not measure them. They are from another session and must be re-measured at deploy time. The 14 GiB Paper cap does not match `compose/colo.yml` (8192m); the difference is UNVERIFIED (possibly an override by the operator).
+The headroom figures below are the lead's ops measurement at about 13:55Z on 2026-11-17: about 100 GiB available memory, 16 cores. The autonomous Paper cap is now confirmed at 14 GiB (14336m) on the node, which the repo's `compose/colo.yml` (8192m) does not match; that repo file is stale (section 7.2). I did not measure these figures. They are from another session and must be re-measured at deploy time.
 
 Read-only commands for the operator, on the colo node, each with the UTC time first:
 
@@ -220,6 +228,8 @@ docker inspect -f '{{.Name}} nano={{.HostConfig.NanoCpus}} mem={{.HostConfig.Mem
 
 Record the output (no IPs, no hostnames, no secrets) in a dated note under `docs/analysis/neoforge/` with the UTC time, and compare with section 7.2 before the first `geldar-nf` start. If available memory after the nf start is under 20 GiB, stop and tell the owner.
 
+Ports: colo publishes 25567 on loopback (`shards/colo.yaml` `minecraft_port`); 25565 and 25566 are never published. The live `geldar-nf` block on loopback is 46565 (Velocity, the only published port), 46222 (NATS), 46432 (Postgres) and 46575 (NeoForge RCON), the last three reserved and not published. Scratch uses 24222 and 28222 (`deploy/scratch/telemetry.env`) and 34222 and 38222 (`deploy/scratch/nf.env`). Before deploy, check that no other port collides with 46222, 46432, 46565 or 46575 on the node (UNVERIFIED). The operator's public overlay `GELDAR_MC_PORT` must also avoid 46565; the repo test cannot check that.
+
 ## 8. Risks and open items
 
 Risks:
@@ -231,16 +241,30 @@ Risks:
 - R5 The stream pin spans `eventsink/` and `plugin/`. Change both in one window (b4, b5).
 - R6 The plugin's "whichever starts first wins" creates the stream with its own name. On a separate NATS this is harmless; b5 makes the name configurable.
 - R7 Retention: the stream keeps 30 days; the database keeps rows indefinitely (no purge code found; UNVERIFIED against `docs/security/privacy-and-data-retention.md`).
-- R8 Budget and CPU contention: section 7.2.
+- R8 Budget and CPU contention: section 7.2 (19.6 CPUs against 16 cores before scratch, 26.1 with it).
 - R9 The scratch token rename changes subjects probes use: `docs/analysis/neoforge/p3-adapter-design.md` (about line 145) and the P0 probe subscribe to `geldar.<nf shard>.death`; they must follow the new token.
 - R10 Readers of `events` (`sql/0005_glass_reader.sql`, `sql/0062`, `sql/0040`, and tools `adam-report`, `adam-run`, `glass-ctl`, grep only, UNVERIFIED). Each reader sees its own database only.
+- R11 The repo's `compose/colo.yml` is stale against the node (Paper 3 CPUs and 8192m in the repo, 8 and 14336m on the node; other drift exists). Any compose run against the node's file would be based on drift; the nf note does not depend on it.
 
 Open items (after the lead's decisions):
 
 - **O1 Retention change (owner).** 30 days and 2 GiB are accepted defaults. The owner may change them; no record is needed for a number change.
-- **O2 Purge owner (open assignment).** The database has no purge today. Proposal: the per-shard sink owner (the operator of each shard) runs a documented, idempotent purge job that deletes `events` rows older than the retention the owner sets, in batches, and logs the count. Owner of the assignment: the lead's operations (open; not yet assigned to a person).
+- **O2 Purge (open assignment).** The database has no purge today, and none is scheduled. The purge is an ops job with a runbook step, run under the lead's authorisation by an ops agent. It is **not automatic**. Proposal: a documented, idempotent job that deletes `events` rows older than the retention the owner sets, in batches, and logs the count. Owner of the assignment: the lead's operations (open; not yet assigned to a named person or agent).
 - **O3 Public exposure, the shared Caddy and the human route:** out of scope here, owner decisions for the final-instance step. The shared Caddy is not touched by this design.
 - **O4 Glass for NeoForge:** a NeoForge Glass needs its own connection to `geldar_nf` (open; not in this batch).
 - **O5 Whether `colo-images` builds the NeoForge images:** owner call (section 7.3).
+- **O6 Repo colo file stale.** Update `compose/colo.yml` (Paper and the other drift) in its own packet, after the node's values are confirmed read-only. Not in this note's scope.
+
+Open items for the live project (from the a4 report of branch `phase1/nf-live-compose`, commit e353646c). All UNVERIFIED or open:
+
+- **Velocity config (deploy blocker).** `compose/velocity/velocity-nf.toml` (backend `neoforge:25565`) is not written on that branch; it is written in a follow-up commit on that branch. Without it, velocity does not start (the bind creates a directory).
+- **NeoForge offline bundle.** The file does not seed the bundle into the `neoforge-data` volume. How `scratch.sh` seeds it was not read.
+- **identity-seed rights.** It uses the deploy NATS user; the permission to create buckets is UNVERIFIED.
+- **Postgres init.** Init from `sql/` 0001 to 0066 into an empty `geldar_nf` is UNVERIFIED. The `sql/` directory is mounted read-only into postgres, as colo does.
+- **Sink per-shard keys.** The stream, shard-filter and retention keys (section 3) do not exist yet; a later trigger-path packet (b1, b2).
+- **Live account uid.** `NF_SERVICE_UID` defaults to 1000, the colo default; the live account uid is UNVERIFIED.
+- **Per-shard NATS auth set and its generator.** Not written (a later packet). No secret value exists in the repo.
+- **Caps.** Proposals. The other tenants' non-Paper services are UNVERIFIED against the node (section 7.2).
+- **Deploy script.** `deploy/nf-cd.sh` is a later packet; the `GELDAR_PROJECT` and `GELDAR_COLO_COMPOSE` question is UNVERIFIED (section 7.1).
 
 Where the live NeoForge shard runs is decided (D8, record 0386), not open.
