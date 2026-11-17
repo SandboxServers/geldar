@@ -101,14 +101,12 @@ const EXPECTED: Record<string, { pub: string[]; deny: string[]; sub: string[] }>
     deny: [],
     sub: ['_INBOX.>'],
   },
-  // The probe's body: the life registry bucket's KV put, get and delete, and the JetStream calls a KV client makes on it.
+  // The probe's body: its one key of the life registry bucket (KV put, get and delete), and the JetStream calls its bound bucket makes.
   body: {
     pub: [
-      '$KV.geldar-life-registry.>',
+      '$KV.geldar-life-registry.ag_nfprobe_01',
       '$JS.API.INFO',
       '$JS.API.STREAM.INFO.KV_geldar-life-registry',
-      '$JS.API.DIRECT.GET.KV_geldar-life-registry',
-      '$JS.API.DIRECT.GET.KV_geldar-life-registry.>',
       '$JS.API.STREAM.MSG.GET.KV_geldar-life-registry',
       '_INBOX.>',
     ],
@@ -358,15 +356,15 @@ describe.skipIf(!hasPwsh)(
       }
     });
 
-    it('limits the body user to the life registry bucket: every publish subject names that bucket or is a generic API subject', () => {
+    it('limits the body user to the probe key of the life registry bucket: every publish subject names that key or is a generic API subject', () => {
       const conf = readFileSync(join(dirOf(), 'nats-auth.conf'), 'utf8');
       const line = conf.split('\n').find((l) => l.includes('user: "body"')) ?? '';
       const pub = /publish: \{ allow: \[([^\]]*)\]/.exec(line)?.[1] ?? '';
       const subjects = [...pub.matchAll(/"([^"]+)"/g)].map((m) => m[1] ?? '');
-      expect(subjects).toContain('$KV.geldar-life-registry.>');
+      expect(subjects).toContain('$KV.geldar-life-registry.ag_nfprobe_01');
       for (const s of subjects) {
         expect(s, s).toMatch(
-          /^(\$KV\.geldar-life-registry\.>|\$JS\.API\.INFO|\$JS\.API\.(STREAM\.INFO|STREAM\.MSG\.GET|DIRECT\.GET)\.KV_geldar-life-registry(\.>)?|_INBOX\.>)$/,
+          /^(\$KV\.geldar-life-registry\.ag_nfprobe_01|\$JS\.API\.INFO|\$JS\.API\.(STREAM\.INFO|STREAM\.MSG\.GET)\.KV_geldar-life-registry|_INBOX\.>)$/,
         );
       }
       expect(line, 'no event stream, no shard subject, no other bucket').not.toMatch(

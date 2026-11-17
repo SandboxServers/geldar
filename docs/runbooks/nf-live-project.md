@@ -128,7 +128,7 @@ buckets, the life registry bucket (body only), or the inbox; no user has `>` or 
 | deploy | `geldar.nf.maintenance` | `_INBOX.>` |
 | velocity | watch and get on the two identity buckets (read only) | `_INBOX.>` |
 | seed | `$JS.API.INFO`; create, inspect and update of the two identity buckets | `_INBOX.>` |
-| body | `$KV.geldar-life-registry.>`; `$JS.API.INFO`; stream info, direct get and message get of `KV_geldar-life-registry` (the registry only) | `_INBOX.>` |
+| body | `$KV.geldar-life-registry.ag_nfprobe_01` (the probe's one key); `$JS.API.INFO`; stream info and message get of `KV_geldar-life-registry` (the registry only) | `_INBOX.>` |
 
 The two stream names are `GELDAR_EVENTS` (the name the plugin and the sink use today) and `GELDAR_EVENTS_NF` (decision
 0380). The `GELDAR_EVENTS` allow is a default: remove it when the sink's per-shard config lands.
