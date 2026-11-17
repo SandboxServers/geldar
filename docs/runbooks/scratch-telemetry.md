@@ -46,9 +46,21 @@ sh telemetry-rows.sh --print-compose-files   # the compose -f list it duplicates
 
 Stdout holds one line per row, `ROW <id> PASS|FAIL|SKIP got=<value> want=<expectation>` (a skip carries `reason=...`; T6 prints `reason=no-spark-jar` because no spark jar is in `/data/plugins`), then a `SUMMARY` block: Paper `memory.current` and its cgroup path, `nr_throttled`, `geldar_ledger_dropped_total` last and max, the `tick query` output, the node clock at start and end (UTC) and the sha256 of `ledger.properties` at start and end (they must be equal). Detail goes to `telemetry-rows-<utc>.log` in `SCRATCH_TELEMETRY_OUT`. A failed row skips only its dependents (`--list` shows them). Q1 runs idle, without bench load, and pauses (never stops) `otel-sink`; the C1 arm with the Paper `cpus` limit at 1 is not run.
 
-The script ABORTs (prints `ABORT reason=...`) when Paper `memory.current` is above 14 GiB, `MemAvailable` is below 30 GiB, or a container without the label `geldar.scratch=true` restarts (its `StartedAt` is compared at every row boundary). On any exit, error or SIGTERM it writes back the original `ledger.properties` in place (same inode, checked by sha256), sets tick rate 20, unfreezes, unpauses what it paused and recreates Paper in its default configuration if an R1 or N1 arm is open. It never runs `docker stop`, `kill` or `rm`.
+The script ABORTs (prints `ABORT reason=...`) when Paper `memory.current` is above 14 GiB, cannot be found at start (exit 2) or reads 0 or goes missing later (the cgroup is looked up again after every recreate and at every row boundary), `MemAvailable` is below 30 GiB, or a container that existed at start and is not labelled `geldar.scratch=true` restarts (its `StartedAt` and restart count are compared at every row boundary; a container that merely appears or disappears is ignored). The log names only the scratch containers and counts the others; it and the saved profile are mode 0600. On any exit, error or SIGTERM it writes back the original `ledger.properties` in place (`cat >` keeps the inode; the sha256 is compared, the inode is only logged), sets tick rate 20, unfreezes, unpauses what it paused and recreates Paper in its default configuration if an R1 or N1 arm is open. It never runs `docker stop` or `docker kill`; its own removals are its temp files and, in R1, `/data/plugins/ledger.jar` inside the scratch Paper (`docker exec ... rm -f`), and `docker compose up --force-recreate` replaces the Paper container itself for R1, N1 and N2.
 
-Exit codes: 0 no row failed (skips do not count), 1 a row failed, 2 environment or usage error (nothing ran), 3 ABORT, 4 the profile hash differs after the restore.
+R1, N1 and N2 recreate Paper only when the driver would rebuild exactly what `scratch.sh up` started: `XDG_STATE_HOME` and `SCRATCH_REPO_ROOT` (or the checkout the script sits in) must equal those of the `up`, which the script checks against the compose labels of the running Paper, the NATS override file and the profile file. Otherwise the rows print `SKIP reason=env-mismatch`.
+
+Exit codes: 0 no row failed (skips do not count), 1 a row failed, 2 environment or usage error (nothing ran), 3 ABORT, 4 the profile hash differs after the restore (the saved copy `ledger.properties.orig.<pid>` is kept and its path printed), 5 Paper is not back in its default configuration. The script prints a `RECOVERY` line with the saved-profile and log paths at start.
+
+### After kill -9 or a lost shell
+
+Nothing is restored when the script is killed with SIGKILL or the shell is lost. By hand, from the node:
+
+1. Unpause what the script may have paused (T3 pauses Paper for 4 s, Q1 `otel-sink` for 10 min): `docker ps --filter label=com.docker.compose.project=scratch-telemetry --filter status=paused -q | xargs -r docker unpause`.
+2. Undo the tick state (T4, T5): `docker exec <paper> rcon-cli 'tick unfreeze'`, then `'tick rate 20'`.
+3. Restore the profile in place (G1, K1), never with `mv` or an editor: `cat "$SCRATCH_TELEMETRY_OUT"/ledger.properties.orig.<pid> > <path of deploy/scratch/ledger.properties>`, then compare `sha256sum` with the `profile_sha256` in the log.
+4. Put Paper back in its default configuration if R1 or N1 was running: `sh deploy/scratch/scratch.sh up telemetry` (same environment as the first `up`), then delete `"$SCRATCH_TELEMETRY_OUT"/r1-override.yml` and the empty directory `r1-empty`.
+5. Check `docker ps` shows paper healthy and `otel-sink` running.
 
 ## Stop
 

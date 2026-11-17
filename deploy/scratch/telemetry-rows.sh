@@ -1,18 +1,15 @@
 #!/bin/sh
-# Row driver for the scratch-telemetry test plan (docs/analysis/telemetry/paper-plugin/scratch-test-plan.md section 3,
-# docs/runbooks/scratch-telemetry.md "Row driver"). Copy this file and telemetry-verify.sh into one directory on the node,
-# then run once against a running stack: nohup sh telemetry-rows.sh >rows.out 2>&1 &
-# Usage: sh telemetry-rows.sh [--list | --print-compose-files | --only T1,T3,...]
-# Needs: SCRATCH_TELEMETRY_OUT (absolute, the sink directory), SCRATCH_NATS_AUTH_DIR (only for R1/N1/N2/the final restore),
-# docker, POSIX sh, awk, sed, grep, sort, sha256sum. Optional: SCRATCH_REPO_ROOT (compose files for R1/N1/N2),
-# SCRATCH_ROWS_PROFILE (host path of ledger.properties), SCRATCH_ROWS_CGROUP_DIR, SCRATCH_ROWS_MEMINFO (test hooks).
-# Stdout: one line per row, "ROW <id> PASS|FAIL|SKIP got=<v> want=<w>", ABORT lines and the SUMMARY block. Detail goes to
-# the log $SCRATCH_TELEMETRY_OUT/telemetry-rows-<utc>.log. Exit: 0 no row failed, 1 a row failed, 2 usage or environment,
-# 3 ABORT, 4 the profile was not restored byte for byte.
-# The script never stops, kills or removes a container. It pauses paper (T3) and otel-sink (Q1) and unpauses them again,
-# recreates paper with `compose up` for R1/N1/N2 (compose replaces the container itself), rewrites the one mounted profile
-# in place (cat > file keeps the inode; never sed -i) and writes the log.
+# Row driver for the scratch-telemetry test plan (scratch-test-plan.md section 3; docs/runbooks/scratch-telemetry.md "Row
+# driver"). Copy it and telemetry-verify.sh into one directory on the node and run once: nohup sh telemetry-rows.sh >rows.out 2>&1 &
+# Usage: sh telemetry-rows.sh [--list | --print-compose-files | --only T1,T3,...]. Needs SCRATCH_TELEMETRY_OUT, docker, awk,
+# sed, grep, sha256sum. Optional: SCRATCH_REPO_ROOT, SCRATCH_ROWS_PROFILE, SCRATCH_ROWS_CGROUP_DIR/_ROOT, SCRATCH_ROWS_MEMINFO.
+# Stdout: "ROW <id> PASS|FAIL|SKIP got=<v> want=<w>", RECOVERY, ABORT and SUMMARY lines; detail in $SCRATCH_TELEMETRY_OUT/
+# telemetry-rows-<utc>.log. Exit: 0 no row failed, 1 a row failed, 2 usage or environment, 3 ABORT, 4 profile not restored
+# (saved copy kept), 5 Paper not back in its default configuration. No shellcheck here: `sh -n` and the tests only.
+# Never stops, kills or removes a container: pauses paper (T3) and otel-sink (Q1), recreates paper with `compose up` for
+# R1/N1/N2, rewrites the one mounted profile in place (cat > file keeps the inode; never sed -i).
 set -u
+umask 077 # the log, the saved profile and the override file are the operator's only (as scratch.sh does)
 HERE=$(cd "$(dirname "$0")" && pwd)
 VERIFY=$HERE/telemetry-verify.sh
 PROJECT=scratch-telemetry
@@ -76,9 +73,9 @@ case "$OUT" in /* | [A-Za-z]:/*) [ -d "$OUT" ] || OUT='' ;; *) OUT='' ;; esac
 export SCRATCH_TELEMETRY_OUT="$OUT"
 LOG=$OUT/telemetry-rows-$(date -u +%Y%m%dT%H%M%SZ).log
 : >"$LOG"
+chmod 600 "$LOG"
 log() { printf '%s %s\n' "$(date -u +%H:%M:%S)" "$*" >>"$LOG"; }
 
-# Containers of the stack, found through the compose project label (never by a fixed name).
 by_service() {
   docker ps --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=$1" --format '{{.Names}}' 2>>"$LOG" | head -n 1
 }
@@ -96,30 +93,61 @@ fi
 ORIG=$OUT/ledger.properties.orig.$$
 cat "$PROFILE" >"$ORIG"
 START_SHA=$(sha_of "$PROFILE")
+[ -n "$START_SHA" ] || { rm -f "$ORIG"; echo "sha256sum is needed" >&2; exit 2; }
 START_INODE=$(ls -i "$PROFILE" | awk '{print $1}')
 T_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 log "paper=$PAPER sink=$SINK profile_sha256=$START_SHA inode=$START_INODE"
+echo "RECOVERY saved_profile=$ORIG log=$LOG runbook=docs/runbooks/scratch-telemetry.md#after-kill--9-or-a-lost-shell"
 
-# Non-scratch containers: name and StartedAt at start, compared at every row boundary.
+# Containers not labelled geldar.scratch=true that exist now: "name StartedAt/RestartCount", kept in memory only (other
+# tenants' names stay out of the log). A change of an entry at a row boundary aborts; one that appeared or went is ignored.
 non_scratch() {
-  docker ps --format '{{.Names}} {{.Label "geldar.scratch"}}' 2>>"$LOG" | awk '$2 != "true" { print $1 }' | while read -r n; do
-    echo "$n $(docker inspect -f '{{.State.StartedAt}}' "$n" 2>>"$LOG")"
+  docker ps --format '{{.Names}} {{.Label "geldar.scratch"}}' 2>/dev/null | awk '$2 != "true" { print $1 }' | while read -r n; do
+    s=$(docker inspect -f '{{.State.StartedAt}}/{{.RestartCount}}' "$n" 2>/dev/null)
+    [ -z "$s" ] || echo "$n $s"
   done
 }
-log "docker ps at start: $(docker ps --format '{{.Names}} {{.Status}}' 2>>"$LOG" | tr '\n' ';')"
+ns_restarted() { # $1 = the current list; true when a container of the start list has a different StartedAt
+  while IFS= read -r l; do
+    [ -n "$l" ] || continue
+    cur=$(printf '%s\n' "$1" | awk -v n="${l%% *}" '$1 == n')
+    [ -z "$cur" ] || [ "$cur" = "$l" ] || return 0
+  done <<EOF
+$NS_START
+EOF
+  return 1
+}
 NS_START=$(non_scratch)
-log "non-scratch at start: $(echo "$NS_START" | tr '\n' ';')"
+log "scratch containers: $(docker ps --format '{{.Names}} {{.Label "geldar.scratch"}}' 2>/dev/null | awk '$2 == "true" { print $1 }' | tr '\n' ' ') non-scratch count=$(echo "$NS_START" | grep -c .)"
 
-# Paper's cgroup (v2): the explicit hook, or the systemd or cgroupfs docker path of the container id.
-CG=${SCRATCH_ROWS_CGROUP_DIR:-}
-if [ -z "$CG" ]; then
+# Paper's cgroup (v2): the hook, or the systemd or cgroupfs docker path of the CURRENT container id (a recreate changes it).
+CGROOT=${SCRATCH_ROWS_CGROUP_ROOT:-/sys/fs/cgroup}
+find_cg() {
+  CG=${SCRATCH_ROWS_CGROUP_DIR:-}
+  [ -z "$CG" ] || return 0
   cid=$(docker inspect -f '{{.Id}}' "$PAPER" 2>>"$LOG")
-  for c in "/sys/fs/cgroup/system.slice/docker-$cid.scope" "/sys/fs/cgroup/docker/$cid"; do
+  for c in "$CGROOT/system.slice/docker-$cid.scope" "$CGROOT/docker/$cid"; do
     [ -f "$c/memory.current" ] && CG=$c && break
   done
-fi
+  return 0
+}
+refresh_paper() { # the container name and cgroup of the running paper, after a recreate and at every row boundary
+  PAPER=$(by_service paper)
+  [ -n "$PAPER" ] || return 1
+  find_cg
+}
 MEMINFO=${SCRATCH_ROWS_MEMINFO:-/proc/meminfo}
-mem_now() { cat "$CG/memory.current" 2>/dev/null || echo 0; }
+mem_now() { # 0 when memory.current is missing or unreadable: the guard treats 0 as blind and aborts
+  m=$(cat "$CG/memory.current" 2>/dev/null)
+  case "$m" in '' | *[!0-9]*) m=0 ;; esac
+  echo "$m"
+}
+find_cg
+if [ "$(mem_now)" -le 0 ]; then
+  rm -f "$ORIG"
+  echo "ABORT reason=no-cgroup-memory-current"
+  exit 2
+fi
 
 abort() {
   log "ABORT $1"
@@ -128,13 +156,13 @@ abort() {
 }
 guard() {
   m=$(mem_now)
+  [ "$m" -gt 0 ] || abort "paper-memory-current-unreadable"
   awk -v m="$m" -v max="$MEM_MAX" 'BEGIN { exit !(m + 0 > max + 0) }' && abort "paper-memory-current-above-14GiB:$m"
   a=$(awk '/^MemAvailable:/ { print $2 }' "$MEMINFO" 2>/dev/null)
   [ -n "$a" ] && [ "$a" -lt "$AVAIL_MIN_KB" ] && abort "node-MemAvailable-below-30GiB:${a}kB"
-  now=$(non_scratch)
-  [ "$now" = "$NS_START" ] || abort "non-scratch-container-restarted-or-gone"
+  ns_restarted "$(non_scratch)" && abort "non-scratch-container-restarted"
+  return 0
 }
-# Plain sleep in chunks of at most 60 s, with the guard between chunks.
 nap() {
   left=$1
   while [ "$left" -gt 0 ]; do
@@ -146,7 +174,6 @@ nap() {
   done
 }
 
-# Readers on top of telemetry-verify.sh. SINCE is the sink line count noted before an action.
 SINCE=0
 lines_now() { cat "$OUT"/*.jsonl 2>/dev/null | wc -l | tr -d ' '; }
 vf() { SCRATCH_TELEMETRY_SINCE_LINE=$SINCE sh "$VERIFY" "$@" 2>>"$LOG"; }
@@ -302,18 +329,25 @@ row_X4() {
   e=$(vf event geldar.rcon.command 'say ledger-rcon-1' | head -n 2 | tr '\n' ' ')
   rec=$(sink_lines | grep -F 'geldar.rcon.command')
   ip=$(echo "$rec" | grep -c -E '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}')
-  GOT="found=$(echo "$e" | grep -c 'say ledger-rcon-1') rcon_subtype=$(echo "$rec" | grep -c 'rcon') address_lines=$ip"
-  echo "$e" | grep -q 'say ledger-rcon-1' && echo "$rec" | grep -q '"rcon"\|rcon' && [ "$ip" -eq 0 ]
+  sub=$(echo "$rec" | grep -c '"key":"geldar.subtype","value":{"stringValue":"rcon"')
+  GOT="found=$(echo "$e" | grep -c 'say ledger-rcon-1') subtype_rcon=$sub address_lines=$ip"
+  echo "$e" | grep -q 'say ledger-rcon-1' && [ "$sub" -ge 1 ] && [ "$ip" -eq 0 ]
 }
 row_X6() {
   WANT="no password, no 127.0.0.1, no IPv4 in geldar.* attributes"
   SINCE=0
-  pw=0
+  if [ "$(cat "$OUT"/*.jsonl 2>/dev/null | grep -c .)" -eq 0 ]; then
+    SKIP_REASON="empty-sink"
+    GOT=none
+    return 2
+  fi
+  pw=-1
   if [ -s "$STATE/rcon.txt" ]; then
-    # The password is matched through -f, never put on a command line or printed.
-    grep -F -q -f "$STATE/rcon.txt" "$OUT"/*.jsonl 2>/dev/null && pw=1
-  else
-    pw=-1
+    # The password is matched through -f, never put on a command line or printed. grep status: 0 hit, 1 clean, 2 error.
+    grep -F -q -f "$STATE/rcon.txt" "$OUT"/*.jsonl 2>/dev/null
+    g=$?
+    [ "$g" -eq 0 ] && pw=1
+    [ "$g" -eq 1 ] && pw=0
   fi
   lo=0
   sh "$VERIFY" absent 127.0.0.1 >>"$LOG" 2>&1 || lo=1
@@ -351,12 +385,11 @@ row_K1() {
   e=$(lastv geldar_event_count_total)
   nap 30
   f=$(lastv geldar_event_count_total)
-  pl=$(rc plugins | grep -c Ledger)
+  pl=$(plug_n Ledger)
   GOT="on=$a,$b off=$c,$d on_again=$e,$f ledger_listed=$pl"
   isnum "$a" && isnum "$b" && isnum "$c" && isnum "$d" && isnum "$e" && isnum "$f" &&
     ok "$b > $a && $d == $c && $f > $e" && [ "$pl" -ge 1 ]
 }
-# The default stack again: no override, the operator's own environment (agent jar included). Needs the compose files.
 wait_healthy() {
   i=0
   while [ "$i" -lt 40 ]; do
@@ -370,9 +403,32 @@ stack_default() {
   EXTRA_F=''
   ARM_OFF=0
   # SCRATCH_OTEL_AGENT_JAR, SCRATCH_TELEMETRY_OUT and SCRATCH_NATS_AUTH_DIR come from the operator's environment.
-  compose_run up -d --no-deps paper >>"$LOG" 2>&1 && wait_healthy && return 0
+  compose_run up -d --no-deps paper >>"$LOG" 2>&1 && refresh_paper && wait_healthy && return 0
   STACK_OK=0
   return 1
+}
+# Number of lines of the plugins reply matching $1; -1 when rcon returned nothing or no plugin list (never a silent 0).
+plug_n() {
+  r=$(rc plugins)
+  case "$r" in *Plugins*) echo "$r" | grep -c -E "$1" ;; *) echo -1 ;; esac
+}
+# R1, N1 and N2 recreate Paper: only when the driver would rebuild exactly what scratch.sh up started (same compose files
+# and working dir, same state dir and NATS override, same profile file). Otherwise SKIP reason=env-mismatch.
+env_ok() {
+  cf=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.config_files"}}' "$PAPER" 2>/dev/null)
+  wd=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$PAPER" 2>/dev/null)
+  [ "$wd" = "$ROOT/compose" ] && [ -d "$STATE" ] || return 1
+  for f in compose/phase0.yml compose/opt-in/scratch.yml compose/opt-in/scratch-telemetry.yml; do
+    case "$cf" in *"$ROOT/$f"*) ;; *) return 1 ;; esac
+  done
+  case "$cf" in *"$NATS_OV"*) [ -f "$NATS_OV" ] || return 1 ;; *) [ ! -f "$NATS_OV" ] || return 1 ;; esac
+  [ "$(ls -i "$ROOT/deploy/scratch/ledger.properties" 2>/dev/null | awk '{print $1}')" = "$START_INODE" ]
+}
+arm_gate() { # return 2 with SKIP_REASON when the compose environment differs from the stack's
+  env_ok && return 0
+  SKIP_REASON="env-mismatch"
+  GOT=none
+  return 2
 }
 compose_env() { # the variables scratch.sh sets itself (set_env, load_ports); same values for the same project
   GELDAR_WORLD_VOLUME=${PROJECT}_paper-data
@@ -392,22 +448,27 @@ compose_env() { # the variables scratch.sh sets itself (set_env, load_ports); sa
 }
 recreate() {
   compose_run up -d --no-deps --force-recreate paper >>"$LOG" 2>&1 || return 1
-  PAPER=$(by_service paper)
-  wait_healthy
+  refresh_paper && wait_healthy
+}
+recreate_noagent() { # the env change is made in a subshell; the parent refreshes PAPER and the cgroup
+  (unset SCRATCH_OTEL_AGENT_JAR; compose_run up -d --no-deps --force-recreate paper >>"$LOG" 2>&1) || return 1
+  refresh_paper && wait_healthy
 }
 row_R1() {
   WANT="paper healthy, no Ledger in plugins, no Ledger error"
+  arm_gate || return 2
   mkdir -p "$OUT/r1-empty"
   printf 'services:\n  paper:\n    volumes:\n      - %s:/plugins/ledger.jar:ro\n' "$OUT/r1-empty" >"$OUT/r1-override.yml"
   docker exec "$PAPER" rm -f /data/plugins/ledger.jar >>"$LOG" 2>&1 # the copy a previous start left in the data volume
   EXTRA_F=$OUT/r1-override.yml
   ARM_OFF=1
   if recreate; then
-    p=$(rc plugins | grep -c Ledger)
+    p=$(plug_n Ledger)
     er=$(docker logs "$PAPER" 2>&1 | grep -i ledger | grep -c -E 'ERROR|SEVERE')
-    GOT="healthy=yes ledger_in_plugins=$p ledger_errors=$er"
+    mnt=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/plugins/ledger.jar"}}{{.Source}}{{end}}{{end}}' "$PAPER" 2>/dev/null)
+    GOT="healthy=yes ledger_in_plugins=$p ledger_errors=$er jar_bind_replaced=$(case "$mnt" in */r1-empty) echo yes ;; *) echo no ;; esac)"
     stack_default
-    [ "$p" -eq 0 ] && [ "$er" -eq 0 ]
+    [ "$p" -eq 0 ] && [ "$er" -eq 0 ] && case "$mnt" in */r1-empty) true ;; *) false ;; esac
   else
     GOT="paper-not-healthy"
     stack_default
@@ -417,13 +478,14 @@ row_R1() {
 row_N1() {
   WANT="agentPresent=false once, no geldar_ points, plugins load"
   [ -n "${SCRATCH_OTEL_AGENT_JAR:-}" ] || { SKIP_REASON="agent-jar-not-set-at-start"; GOT="none"; return 2; }
+  arm_gate || return 2
   ARM_OFF=1
-  if (unset SCRATCH_OTEL_AGENT_JAR; recreate); then
+  if recreate_noagent; then
     SINCE=$(lines_now)
     nap 60
     ap=$(docker logs "$PAPER" 2>&1 | grep -c 'agentPresent=false')
     pts=$(sink_lines | grep -c '"name":"geldar_')
-    pl=$(rc plugins | grep -c -E 'Ledger|GeldarCore|Geldar-Core')
+    pl=$(plug_n 'Ledger|GeldarCore|Geldar-Core')
     GOT="agentPresent_false_lines=$ap geldar_points=$pts plugins=$pl"
     [ "$ap" -eq 1 ] && [ "$pts" -eq 0 ] && [ "$pl" -ge 1 ] && return 0
     stack_default
@@ -436,7 +498,7 @@ row_N1() {
 row_N2() {
   WANT="agent off: both plugins, no LinkageError; agent on: publisher and hearing metrics, scope geldar-core"
   off_l=$(docker logs "$PAPER" 2>&1 | grep -c -E 'LinkageError|traceparent')
-  off_p=$(rc plugins | grep -c -E 'Ledger|GeldarCore|Geldar-Core')
+  off_p=$(plug_n 'Ledger|GeldarCore|Geldar-Core')
   stack_default || { GOT="restore-failed"; return 1; }
   SINCE=$(lines_now)
   nap 90
@@ -477,7 +539,6 @@ row_Q1() {
   isnum "$before" && isnum "$during" && ok "($during - $before) <= 0.5 && ($before - $during) <= 0.5" && [ "$pts" -ge 1 ]
 }
 
-# --- runner ---
 PASSED=' '
 FAILED=' '
 RAN=' '
@@ -506,6 +567,7 @@ dep_state() { # prints the first unmet dependency
 }
 run_row() {
   id=$1
+  refresh_paper || abort "paper-container-not-found"
   guard
   GOT=''
   WANT=''
@@ -556,14 +618,21 @@ summary() {
 }
 on_exit() {
   code=$?
-  trap '' EXIT
+  trap '' EXIT TERM INT HUP # a second signal must not cut the restore short
   restore_all
   if [ "${END_SHA:-}" != "$START_SHA" ]; then
-    echo "ABORT reason=profile-sha256-differs-after-restore"
+    echo "ABORT reason=profile-sha256-differs-after-restore saved_profile=$ORIG" # the saved copy is kept
     code=4
+  else
+    rm -f "$ORIG"
+  fi
+  if [ "$STACK_OK" -eq 0 ]; then
+    echo "ABORT reason=default-stack-not-restored"
+    code=5
   fi
   [ "$SUMMARY_DONE" -eq 1 ] || summary
-  rm -f "$ORIG"
+  rmdir "$OUT/r1-empty" 2>/dev/null
+  rm -f "$OUT/r1-override.yml"
   exit "$code"
 }
 trap on_exit EXIT
