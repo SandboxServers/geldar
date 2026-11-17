@@ -241,12 +241,17 @@ const FIXTURE = [
   `{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"eventName":"geldar.server.stall","attributes":[{"key":"geldar.duration_ms","value":{"intValue":"2500"}}]}]}]}]}`,
 ].join('\n');
 
-function verify(args: string[], fixture: string | null = FIXTURE, unsetDir = false) {
+function verify(
+  args: string[],
+  fixture: string | null = FIXTURE,
+  unsetDir = false,
+  extra: Record<string, string> = {},
+) {
   const dir = mkdtempSync(join(tmpdir(), 'tele-out-'));
   try {
     mkdirSync(join(dir, 'sub'));
     if (fixture !== null) writeFileSync(join(dir, 'otlp.jsonl'), `${fixture}\n`);
-    const env: Record<string, string> = { PATH: process.env.PATH ?? '' };
+    const env: Record<string, string> = { PATH: process.env.PATH ?? '', ...extra };
     if (process.env.SYSTEMROOT) env.SYSTEMROOT = process.env.SYSTEMROOT;
     if (!unsetDir) env.SCRATCH_TELEMETRY_OUT = slash(dir);
     return spawnSync(SH as string, [slash(VERIFY), ...args], { encoding: 'utf8', env });
@@ -256,7 +261,7 @@ function verify(args: string[], fixture: string | null = FIXTURE, unsetDir = fal
 }
 
 // Each case spawns sh and a chain of MSYS tools; under a parallel suite run one case took about 7 s, over the 5 s default.
-describe.skipIf(!SH)('telemetry-verify.sh against a fixture JSONL', { timeout: 30_000 }, () => {
+describe.skipIf(!SH)('telemetry-verify.sh against a fixture JSONL', { timeout: 120_000 }, () => {
   it('metric: found prints the count and the last value, exit 0', () => {
     const r = verify(['metric', NAME]);
     expect(r.status, r.stderr).toBe(0);
@@ -280,6 +285,60 @@ describe.skipIf(!SH)('telemetry-verify.sh against a fixture JSONL', { timeout: 3
     expect(verify(['metric', NAME, '7.25']).status).toBe(0);
     expect(verify(['metric', NAME, '7.250']).status).toBe(0);
     expect(verify(['metric', NAME, '3.5']).status).toBe(1);
+  });
+
+  it('metric: a histogram is not read as the next metric (req 02 finding 5), max and histcount read the named metric', () => {
+    const hist = (count: number, tps: number, frozen: number) =>
+      `{"resourceMetrics":[{"scopeMetrics":[{"metrics":[{"name":"${NAME}","histogram":{"dataPoints":[{"count":"${count}","sum":12.5}]}},{"name":"geldar_tps","gauge":{"dataPoints":[{"asDouble":${tps}}]}},{"name":"geldar_tick_frozen","gauge":{"dataPoints":[{"asInt":"${frozen}"}]}}]}]}]}`;
+    const fx = [hist(81, 19.999, 0), hist(381, 20.1, 1), hist(681, 20.2, 0)].join('\n');
+    // old behaviour returned the neighbour: last=20.2 for the histogram name
+    const m = verify(['metric', NAME], fx);
+    expect(m.stdout).toContain('last=none');
+    expect(m.stdout).not.toContain('20.2');
+    const g = verify(['metric', 'geldar_tps', '20.2'], fx);
+    expect(g.status, g.stderr).toBe(0);
+    const h = verify(['histcount', NAME, '600'], fx);
+    expect(h.status, h.stderr).toBe(0);
+    expect(h.stdout).toContain('first=81 last=681 delta=600');
+    expect(verify(['histcount', NAME, '601'], fx).status).toBe(1);
+    expect(verify(['histcount', 'geldar_tps'], fx).status).toBe(1);
+    // last value is 0 (the freeze was missed), max over the window is 1
+    expect(verify(['metric', 'geldar_tick_frozen', '1'], fx).status).toBe(1);
+    const x = verify(['max', 'geldar_tick_frozen', '1'], fx);
+    expect(x.status, x.stderr).toBe(0);
+    expect(x.stdout).toContain('max=1');
+    expect(verify(['max', 'geldar_tps', '21'], fx).status).toBe(1);
+  });
+
+  it('metric and max: name@key=value reads one series of a labelled metric (G1), the reset is visible', () => {
+    const pt = (c: string, v: number) =>
+      `{"attributes":[{"key":"collector","value":{"stringValue":"${c}"}}],"timeUnixNano":"1","asInt":"${v}"}`;
+    const ex = (census: number, tick: number) =>
+      `{"resourceMetrics":[{"scopeMetrics":[{"metrics":[{"name":"geldar_paper_collector_disabled","gauge":{"dataPoints":[${pt('census', census)},${pt('tick', tick)}]}},{"name":"geldar_tps","gauge":{"dataPoints":[{"asDouble":20}]}}]}]}]}`;
+    const fx = [ex(0, 0), ex(1, 0), ex(0, 1)].join('\n'); // census trips then resets; tick is 1 in the last export
+    const n = 'geldar_paper_collector_disabled';
+    // the last series of the last export is tick=1: an unfiltered metric read gives 1, census is 0
+    expect(verify(['metric', n, '1'], fx).status).toBe(0);
+    expect(verify(['metric', `${n}@collector=census`, '0'], fx).status).toBe(0);
+    expect(verify(['metric', `${n}@collector=tick`, '1'], fx).status).toBe(0);
+    const m = verify(['max', `${n}@collector=census`, '1'], fx);
+    expect(m.status, m.stderr).toBe(0);
+    expect(m.stdout).toContain('max=1');
+    expect(verify(['max', `${n}@collector=world`, '1'], fx).status).toBe(1);
+    expect(verify(['max', `${n}@collector=tick`], ex(0, 0)).stdout).toContain('max=0');
+    expect(verify(['max', `${n}@collector=`], fx).status).toBe(2);
+  });
+
+  it('SCRATCH_TELEMETRY_SINCE_LINE must be a non-negative integer (usage error, exit 2) and skips lines', () => {
+    for (const bad of ['abc', '-5', '1;echo pwned', '1.5']) {
+      const r = verify(['metric', NAME], FIXTURE, false, { SCRATCH_TELEMETRY_SINCE_LINE: bad });
+      expect(r.status, bad).toBe(2);
+    }
+    const skip = verify(['metric', NAME], FIXTURE, false, { SCRATCH_TELEMETRY_SINCE_LINE: '1' });
+    expect(skip.stdout).toContain('count=1');
+    expect(
+      verify(['metric', NAME], FIXTURE, false, { SCRATCH_TELEMETRY_SINCE_LINE: '2' }).status,
+    ).toBe(1);
   });
 
   it('metric: a name that is only a prefix of another does not match', () => {

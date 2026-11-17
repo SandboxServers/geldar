@@ -426,6 +426,57 @@ class LedgerPluginTest {
     }
 
     @Test
+    void jfrStartsFromTheAppliedConfigAndStopsOnDisableWithoutBlockingIt() {
+        Fake fake = new Fake();
+        LedgerPlugin plugin = withFake(tmp.resolve("data"), fake);
+        List<String> ev = new ArrayList<>();
+        plugin.jfr = new JfrWiring(Logger.getAnonymousLogger(), (l, c) -> {
+            ev.add("start");
+            return new JfrWiring.Handle() {
+                public boolean running() {
+                    return true;
+                }
+
+                public void stop() {
+                    ev.add("stop");
+                }
+            };
+        }, Runnable::run);
+        plugin.onEnable();
+        plugin.applyConfig(LedgerConfig.defaults()); // jfr.enabled is off by default
+        assertEquals(List.of(), ev);
+        plugin.applyConfig(LedgerConfig.defaults().withJfrEnabled(true));
+        assertEquals(List.of("start"), ev);
+        plugin.applyConfig(LedgerConfig.defaults().withJfrEnabled(true));
+        assertEquals(List.of("start"), ev, "no second start while running");
+        plugin.onDisable();
+        assertEquals(List.of("start", "stop"), ev);
+    }
+
+    @Test
+    void jfrStopsWhenTheConfigTurnsItOff() {
+        Fake fake = new Fake();
+        LedgerPlugin plugin = withFake(tmp.resolve("data"), fake);
+        List<String> ev = new ArrayList<>();
+        plugin.jfr = new JfrWiring(Logger.getAnonymousLogger(), (l, c) -> {
+            ev.add("start");
+            return new JfrWiring.Handle() {
+                public boolean running() {
+                    return true;
+                }
+
+                public void stop() {
+                    ev.add("stop");
+                }
+            };
+        }, Runnable::run);
+        plugin.onEnable();
+        plugin.applyConfig(LedgerConfig.defaults().withJfrEnabled(true));
+        plugin.applyConfig(LedgerConfig.defaults());
+        assertEquals(List.of("start", "stop"), ev);
+    }
+
+    @Test
     void disabledConfigAndTheTimeBeforeTheFirstLoadBuildNoRealLedger() throws IOException {
         Path data = tmp.resolve("data");
         writeConfig(data, "enabled=false");

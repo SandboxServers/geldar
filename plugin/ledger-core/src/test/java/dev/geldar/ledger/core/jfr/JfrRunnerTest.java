@@ -88,7 +88,7 @@ class JfrRunnerTest {
     @Test
     void deliversAContentionEventToTheHandler() throws Exception {
         Recording h = new Recording(false, MONITOR);
-        JfrRunner r = JfrRunner.start(List.of(h), LedgerConfig.defaults(), LOG, new DropCounters(), fastSettings());
+        JfrRunner r = JfrRunner.start(List.of(h), LedgerConfig.defaults().withJfrEnabled(true), LOG, new DropCounters(), fastSettings());
         try {
             assertTrue(r.running());
             assertTrue(contendUntil(() -> h.seen.get() >= 1), "no JavaMonitorEnter event seen");
@@ -100,7 +100,7 @@ class JfrRunnerTest {
     @Test
     void stopLeavesNoLedgerJfrThreadAndIsIdempotent() throws Exception {
         Recording h = new Recording(false, MONITOR);
-        JfrRunner r = JfrRunner.start(List.of(h), LedgerConfig.defaults(), LOG, new DropCounters(), fastSettings());
+        JfrRunner r = JfrRunner.start(List.of(h), LedgerConfig.defaults().withJfrEnabled(true), LOG, new DropCounters(), fastSettings());
         assertTrue(threadAlive());
         r.stop();
         r.stop();
@@ -111,7 +111,7 @@ class JfrRunnerTest {
     @Test
     void runnerThreadIsADaemon() {
         Recording h = new Recording(false, MONITOR);
-        JfrRunner r = JfrRunner.start(List.of(h), LedgerConfig.defaults(), LOG, new DropCounters(), fastSettings());
+        JfrRunner r = JfrRunner.start(List.of(h), LedgerConfig.defaults().withJfrEnabled(true), LOG, new DropCounters(), fastSettings());
         try {
             Thread t = Thread.getAllStackTraces().keySet().stream()
                     .filter(x -> JfrRunner.THREAD_NAME.equals(x.getName()))
@@ -128,7 +128,7 @@ class JfrRunnerTest {
         Recording bad = new Recording(true, MONITOR);
         Recording good = new Recording(false, MONITOR);
         DropCounters drops = new DropCounters();
-        JfrRunner r = JfrRunner.start(List.of(bad, good), LedgerConfig.defaults(), LOG, drops, fastSettings());
+        JfrRunner r = JfrRunner.start(List.of(bad, good), LedgerConfig.defaults().withJfrEnabled(true), LOG, drops, fastSettings());
         try {
             assertTrue(contendUntil(() -> good.seen.get() >= 2), "stream stopped after a handler threw");
             assertTrue(bad.seen.get() >= 2);
@@ -153,7 +153,7 @@ class JfrRunnerTest {
         Set<String> tmpBefore = listing(tmp);
         Set<String> cwdBefore = listing(cwd);
         Recording h = new Recording(false, MONITOR);
-        JfrRunner r = JfrRunner.start(List.of(h), LedgerConfig.defaults(), LOG, new DropCounters(), fastSettings());
+        JfrRunner r = JfrRunner.start(List.of(h), LedgerConfig.defaults().withJfrEnabled(true), LOG, new DropCounters(), fastSettings());
         try {
             contendUntil(() -> h.seen.get() >= 1);
         } finally {
@@ -166,7 +166,7 @@ class JfrRunnerTest {
     @Test
     void enablesOnlyEventsHandlersRequestedAndAllowed() {
         Recording h = new Recording(false, MONITOR, "jdk.ExecutionSample", "jdk.CPUTimeSample", "jdk.MethodTiming", "jdk.NotAnEvent");
-        JfrRunner r = JfrRunner.start(List.of(h), LedgerConfig.defaults(), LOG, new DropCounters(), fastSettings());
+        JfrRunner r = JfrRunner.start(List.of(h), LedgerConfig.defaults().withJfrEnabled(true), LOG, new DropCounters(), fastSettings());
         try {
             assertEquals(List.of(MONITOR), r.enabledEvents());
         } finally {
@@ -230,7 +230,7 @@ class JfrRunnerTest {
             @Override
             public void handle(RecordedEvent event) {}
         };
-        JfrRunner a = JfrRunner.start(List.of(broken), LedgerConfig.defaults(), LOG);
+        JfrRunner a = JfrRunner.start(List.of(broken), LedgerConfig.defaults().withJfrEnabled(true), LOG);
         JfrRunner b = JfrRunner.start(List.of(), null, LOG);
         assertFalse(a.running());
         assertFalse(b.running());

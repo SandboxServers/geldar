@@ -125,7 +125,7 @@ Metrics (attributes in braces):
 | `geldar_mods_loaded` | gauge (NeoForge only: count of loaded mods) | PT-N4b |
 | `geldar_event_count_total` {event_class, cancelled} | counter | PT-06a, 06c |
 | `geldar_event_duty_ratio` {event_class} | gauge | PT-06a |
-| `geldar_paper_collector_disabled` {collector} | gauge 0/1 | PT-03e |
+| `geldar_paper_collector_disabled` {collector} | gauge 0/1; set to 1 when the budget guard switches the collector off, back to 0 on re-enable; the event `geldar.collector.disabled` (`geldar.collector`, reason in `geldar.cause`) is emitted once per switch-off | PT-03e |
 | `geldar_ledger_collector_time_us` {collector} | histogram (1-in-1024 sampled) | PT-03e |
 | `geldar_ledger_dropped_total` {queue}, `geldar_ledger_queue_depth` {queue} | counter, gauge | PT-03d |
 | `geldar_jfr_thread_group_cpu_ratio` {group}, `geldar_jfr_safepoint_ms` histogram, `geldar_jfr_monitor_contention_total` {class_group}, `geldar_jfr_file_io_ms` histogram {op}, `geldar_jfr_exceptions_total` {kind} | JFR-owned. GC and heap metrics are the agent's `jvm.*`; do not duplicate | PT-09b |
@@ -143,7 +143,7 @@ Trace seam (PT-11 integration): one `TraceHook` (core-common) carries `tracepare
 
 Events (OTel log records; `event.name` is the attribute):
 
-`geldar.player.join|quit|kick|prelogin|snapshot|advancement|stats|client_tick|command_tree`, `geldar.server.slow_tick|stall|config_snapshot|exception|plugin_enabled|plugin_disabled`, `geldar.collector.disabled`, `geldar.block.*`, `geldar.item.*`, `geldar.container.*`, `geldar.sleep.*`, `geldar.animal.*`, `geldar.trade`, `geldar.combat.*`, `geldar.movement.*`, `geldar.chat`, `geldar.sign`, `geldar.book`, `geldar.rcon.command`, `geldar.console.command`, `geldar.operator.change` (NeoForge ledger: an online player opped or deopped to a different level; `geldar.flag` 1 or 0), `geldar.broadcast`, `geldar.whitelist.*`, `geldar.raid.*`, `geldar.tabcomplete`, `geldar.velocity.login|disconnect`.
+`geldar.player.join|quit|kick|prelogin|snapshot|advancement|stats|client_tick|command_tree`, `geldar.server.slow_tick|stall|config_snapshot|exception|plugin_enabled|plugin_disabled` (`stall` is emitted twice per stall with the existing allowed key `geldar.flag`: 1 at detection, `geldar.duration_ms` the pause so far (at least `stall.threshold_ms`; it exists even if the server never recovers), and 0 at recovery, `geldar.duration_ms` the measured total pause from the last tick to the first new tick; `geldar_tick_stalls_total` counts once per stall at detection; no record is written while the collector's guard is off), `geldar.collector.disabled`, `geldar.block.*`, `geldar.item.*`, `geldar.container.*`, `geldar.sleep.*`, `geldar.animal.*`, `geldar.trade`, `geldar.combat.*`, `geldar.movement.*`, `geldar.chat`, `geldar.sign`, `geldar.book`, `geldar.rcon.command`, `geldar.console.command`, `geldar.operator.change` (NeoForge ledger: an online player opped or deopped to a different level; `geldar.flag` 1 or 0), `geldar.broadcast`, `geldar.whitelist.*`, `geldar.raid.*`, `geldar.tabcomplete`, `geldar.velocity.login|disconnect`.
 
 Attribute keys are two separate lists. Source of truth: `AttrKeys` in `plugin/ledger-core`; anything else is dropped by the binding.
 

@@ -1,5 +1,6 @@
 package dev.geldar.ledger.core;
 
+import java.util.function.Consumer;
 import java.util.logging.Logger;
 
 /**
@@ -26,6 +27,7 @@ public final class BudgetGuard implements CollectorGuard {
     /** Set by {@link #reenable} on the config thread; consumed by the next {@link #begin} on the main thread. */
     private volatile boolean resetPending;
     private volatile boolean usesTickAverage;
+    private volatile Consumer<String> onDisable;
 
     // Main thread only.
     private int calls;
@@ -121,6 +123,19 @@ public final class BudgetGuard implements CollectorGuard {
         } catch (Throwable ignored) {
             // S8: a logging failure never stops the server.
         }
+        Consumer<String> l = onDisable;
+        if (l != null) {
+            try {
+                l.accept(reason);
+            } catch (Throwable ignored) {
+                // S8: a failing listener never stops the server.
+            }
+        }
+    }
+
+    /** Called once per switch-off with the reason; must not block (a ring offer). Set once by the ledger. */
+    void onDisable(Consumer<String> listener) {
+        this.onDisable = listener;
     }
 
     /**

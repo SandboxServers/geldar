@@ -18,7 +18,7 @@ import java.util.Map;
  *   <li>{@code content.max_bytes=32768} (hard max 32768)
  *   <li>{@code stall.threshold_ms=2000}
  *   <li>{@code sample.world_every_ticks=200}, {@code sample.player_every_ticks=20}
- *   <li>{@code jfr.enabled=true}
+ *   <li>{@code jfr.enabled=false} (JFR starts only by explicit config; the scratch JFR profile sets it)
  *   <li>{@code container.cgroup_root=/sys/fs/cgroup} (PT-09c; same path rule as below)
  *   <li>{@code disk.area.<name>.path} for name in world, plugin_data, logs, bluemap, chunky (PT-10a; unset = none).
  *       A path containing {@code secret} (any case), a {@code ..} segment or a control character rejects the file
@@ -88,7 +88,7 @@ public record LedgerConfig(
     /** All defaults (the file default {@code enabled=true}; {@link ConfigWatcher} serves {@link #disabled()} before the first load). */
     public static LedgerConfig defaults() {
         return new LedgerConfig(
-                true, Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), MAX_CONTENT_BYTES, 2000, 200, 20, true);
+                true, Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), MAX_CONTENT_BYTES, 2000, 200, 20, false);
     }
 
     /** The master-off state: every collector off. */
@@ -100,6 +100,13 @@ public record LedgerConfig(
     public LedgerConfig withEnabled(boolean on) {
         return new LedgerConfig(on, collectorEnabled, budgetAvgUs, budgetMaxUs, duty, rates, queueCapacity,
                 contentMaxBytes, stallThresholdMs, sampleWorldEveryTicks, samplePlayerEveryTicks, jfrEnabled,
+                cgroupRoot, diskAreaPaths);
+    }
+
+    /** A copy with the JFR switch set. */
+    public LedgerConfig withJfrEnabled(boolean on) {
+        return new LedgerConfig(enabled, collectorEnabled, budgetAvgUs, budgetMaxUs, duty, rates, queueCapacity,
+                contentMaxBytes, stallThresholdMs, sampleWorldEveryTicks, samplePlayerEveryTicks, on,
                 cgroupRoot, diskAreaPaths);
     }
 

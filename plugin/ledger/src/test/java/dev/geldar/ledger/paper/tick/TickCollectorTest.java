@@ -194,10 +194,24 @@ class TickCollectorTest {
         clock.set(2_500_000_000L); // default threshold is 2000 ms
         step();
         step();
+        // Detection: counted once, and an event (geldar.flag=1) exists even if the server never recovers.
         assertEquals(1, stallEvents.size());
-        assertEquals(77L, stallEvents.get(0).get("geldar.server_tick"));
+        assertEquals(1L, stallEvents.get(0).get("geldar.flag"));
+        assertEquals(2500L, stallEvents.get(0).get("geldar.duration_ms")); // the pause so far, over the threshold
         assertEquals(List.of("geldar_tick_stalls_total+1"), counterAdds);
-        assertEquals(List.of(StallWatchdog.THREAD_NAME), emitThreads);
+        clock.set(4_000_000_000L);
+        heartbeat(); // first new beat
+        clock.set(4_200_000_000L);
+        heartbeat();
+        clock.set(4_400_000_000L); // the poll sees it later
+        step();
+        step();
+        assertEquals(2, stallEvents.size());
+        assertEquals(77L, stallEvents.get(1).get("geldar.server_tick"));
+        assertEquals(0L, stallEvents.get(1).get("geldar.flag"));
+        assertEquals(4000L, stallEvents.get(1).get("geldar.duration_ms")); // measured: first new beat
+        assertEquals(List.of("geldar_tick_stalls_total+1"), counterAdds);
+        assertEquals(List.of(StallWatchdog.THREAD_NAME, StallWatchdog.THREAD_NAME), emitThreads);
         Thread w = watchdogThread();
         assertTrue(w.isDaemon());
         c.stop();
@@ -227,8 +241,39 @@ class TickCollectorTest {
         assertTrue(stallEvents.isEmpty());
         guardThrows = false;
         step();
+        assertEquals(List.of("geldar_tick_stalls_total+1"), counterAdds);
         assertEquals(1, stallEvents.size());
+        assertEquals(9000L, stallEvents.get(0).get("geldar.duration_ms"));
+        clock.set(9_500_000_000L);
+        heartbeat();
+        step();
+        assertEquals(2, stallEvents.size());
+        assertEquals(9500L, stallEvents.get(1).get("geldar.duration_ms"));
         c.stop();
+    }
+
+    @Test
+    void aPauseThatEndedWhileTheGuardWasOffIsNeverReportedLater() throws Exception {
+        TickCollector c = collector();
+        c.start(ctx());
+        awaitAsleep();
+        guardAllowed = false;
+        clock.set(5_000_000_000L);
+        step(); // detected silently
+        clock.set(6_000_000_000L);
+        heartbeat();
+        step(); // recovered silently
+        guardAllowed = true;
+        clock.set(7_000_000_000L);
+        heartbeat();
+        step();
+        assertTrue(stallEvents.isEmpty());
+        assertTrue(counterAdds.isEmpty());
+        c.stop();
+    }
+
+    private void heartbeat() {
+        ((TickEndListener) registered.get(0)).onTickEnd(new com.destroystokyo.paper.event.server.ServerTickEndEvent(1, 5.0, 0));
     }
 
     @Test

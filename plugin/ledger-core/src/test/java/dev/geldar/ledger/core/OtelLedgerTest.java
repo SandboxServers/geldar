@@ -115,6 +115,35 @@ class OtelLedgerTest {
     }
 
     @Test
+    void disabledCollectorIsVisibleAsGaugeAndOneEventPerSwitchOff() throws Exception {
+        OtelLedger l = make(true);
+        BudgetGuard g = (BudgetGuard) l.guard("census");
+        int probeA = l.events().register("geldar.probe.a", Severity.INFO, 1);
+        l.guard("census");
+        l.guard("census");
+        int probeB = l.events().register("geldar.probe.b", Severity.INFO, 1);
+        assertEquals(probeA + 1, probeB, "later guard() calls register no further event definition (wired once)");
+        assertEquals(0L, l.longGaugeValue(Names.Guard.COLLECTOR_DISABLED, AttrKeys.M_COLLECTOR, "census"));
+        mainThread[0] = true; // the guard trips on the main thread: nothing may use emitMap
+        g.disable("one call took 9 us");
+        g.disable("again");
+        mainThread[0] = false;
+        assertEquals(1L, l.longGaugeValue(Names.Guard.COLLECTOR_DISABLED, AttrKeys.M_COLLECTOR, "census"));
+        await(() -> !out.isEmpty());
+        Thread.sleep(50);
+        assertEquals(1, out.size());
+        assertEquals(Names.Events.COLLECTOR_DISABLED, out.get(0).name());
+        assertEquals("census", out.get(0).attrs().get(AttrKeys.COLLECTOR));
+        assertEquals("one call took 9 us", out.get(0).attrs().get(AttrKeys.CAUSE));
+        assertEquals(0L, l.dropped("events.mainthread"));
+        g.reenable();
+        assertEquals(0L, l.longGaugeValue(Names.Guard.COLLECTOR_DISABLED, AttrKeys.M_COLLECTOR, "census"));
+        g.disable("second");
+        await(() -> out.size() == 2);
+        assertEquals(2, out.size());
+    }
+
+    @Test
     void lifeIdAddsOfflineUuidAndBadLifeIdIsDropped() throws Exception {
         OtelLedger l = make(true);
         int e = l.events().register("geldar.life", Severity.INFO, 1000, AttrKeys.LIFE_ID);
