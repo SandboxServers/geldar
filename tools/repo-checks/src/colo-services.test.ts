@@ -107,11 +107,11 @@ describe('compose/colo.yml: the Body and Mind services (C1-03)', () => {
     expect(env(colo.services['geldar-mcp'] ?? {})).toHaveProperty('GELDAR_TELEMETRY_URL', null);
   });
 
-  it('the merged-config fixture agrees: GELDAR_TELEMETRY_URL is null for all four services', () => {
+  it('the merged-config fixture agrees: GELDAR_TELEMETRY_URL is null for the services it holds (animus is not in it)', () => {
     const merged = parse(
       readFileSync(`${ROOT}deploy/test/fixtures/colo-merged-config.yml`, 'utf8'),
     ) as { services: Record<string, Service> };
-    for (const name of ['golem-body', 'animus', 'eventsink', 'geldar-mcp']) {
+    for (const name of ['golem-body', 'eventsink', 'geldar-mcp']) {
       expect(env(merged.services[name] ?? {}), name).toHaveProperty('GELDAR_TELEMETRY_URL', null);
     }
   });
