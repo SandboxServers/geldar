@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { hasForbiddenSegment } from '../src/attributes.ts';
 import { redactContent, scrubText } from '../src/redact.ts';
+import { assertLinear } from './timing.ts';
 
 const MiB = 1 << 20;
 
@@ -98,11 +99,8 @@ describe('hasForbiddenSegment is linear on capital runs', () => {
   });
 
   it('checks a 1 MiB capital run in well under a second, and a hostile key in redactContent', () => {
-    const start = performance.now();
     expect(hasForbiddenSegment('A'.repeat(MiB))).toBe(false);
-    expect(performance.now() - start).toBeLessThan(1500);
-    const start2 = performance.now();
-    redactContent({ ['A'.repeat(200_000)]: 1 });
-    expect(performance.now() - start2).toBeLessThan(1500);
+    assertLinear((size) => hasForbiddenSegment('A'.repeat(size)));
+    assertLinear((size) => redactContent({ ['A'.repeat(size)]: 1 }), [200_000, 400_000]);
   });
 });

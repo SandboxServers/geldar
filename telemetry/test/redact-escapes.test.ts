@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { REDACTED as R, redactContent, scrubText } from '../src/redact.ts';
+import { assertLinear } from './timing.ts';
 
 // Credential-shaped fixtures are built at run time.
 const pw = ['pass', 'word'].join('');
@@ -58,18 +59,13 @@ describe('a quoted credential value with escapes (step 1)', () => {
   });
 
   it('is linear on 1 MiB of escaped quotes after a credential key', () => {
-    const run = '\\"'.repeat(MiB / 2);
-    const text = `{"${pw}":"${run}`;
-    const start = performance.now();
-    const out = scrubText(text);
-    expect(performance.now() - start).toBeLessThan(3000);
-    expect(out.length).toBeLessThan(text.length + 64);
+    const build = (size: number): string => `{"${pw}":"${'\\"'.repeat(Math.ceil(size / 2))}`;
+    assertLinear((size) => scrubText(build(size)));
+    const text = build(MiB);
+    expect(scrubText(text).length).toBeLessThan(text.length + 64);
   });
 
   it('is linear on a credential key repeated with escaped quotes', () => {
-    const text = `{"${pw}":"\\"`.repeat(MiB / 16);
-    const start = performance.now();
-    scrubText(text);
-    expect(performance.now() - start).toBeLessThan(3000);
+    assertLinear((size) => scrubText(`{"${pw}":"\\"`.repeat(Math.ceil(size / 16))));
   });
 });
