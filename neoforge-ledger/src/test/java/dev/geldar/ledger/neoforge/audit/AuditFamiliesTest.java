@@ -346,7 +346,12 @@ class AuditFamiliesTest {
 
     @Test
     void everyAuthVerbDropsItsArguments() {
-        for (String root : CommandText.AUTH_ROOTS) {
+        // a fixed list, so shrinking AUTH_ROOTS cannot shrink the test
+        String[] verbs = {"login", "l", "log", "register", "reg", "changepassword", "changepass", "cp", "authme", "unregister",
+            "unreg", "passwd", "password", "auth", "pass", "2fa", "totp", "setpassword", "loginsecurity", "lpassword", "nlogin",
+            "captcha", "email", "setemail", "changeemail", "recovery", "pin", "setpin", "secret"};
+        assertEquals(verbs.length, CommandText.AUTH_ROOTS.size());
+        for (String root : verbs) {
             assertEquals(root, CommandText.exportable(root + " hunter2 hunter2"), root);
             assertEquals(root, CommandText.exportable("/" + root.toUpperCase() + " hunter2"), root);
             assertEquals("execute as @a run " + root, CommandText.exportable("execute as @a run Plugin:" + root + " pw pw"));
@@ -404,5 +409,7 @@ class AuditFamiliesTest {
         TextContentFamily t = new TextContentFamily(f.ledger, clock::get);
         t.chat(false, LIFE, "w", () -> "z".repeat(5_000_000));
         assertTrue(f.content.get(0)[0].getBytes(java.nio.charset.StandardCharsets.UTF_8).length <= 32768);
+        // the marker of the final cap records the size it saw: the pre-scrub cap held it to 1 MiB
+        assertTrue(f.content.get(0)[0].endsWith("[truncated:1048576]"), f.content.get(0)[0]);
     }
 }
