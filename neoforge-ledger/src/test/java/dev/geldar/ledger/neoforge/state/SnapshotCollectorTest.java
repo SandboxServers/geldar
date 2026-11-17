@@ -194,7 +194,7 @@ class SnapshotCollectorTest {
     void trackedAgentsAreCountedOnceAndCapped() {
         FakeRig r = new FakeRig(OPT_IN);
         java.util.Set<String> read = new java.util.HashSet<>();
-        for (int i = 0; i < 600; i++) {
+        java.util.function.IntConsumer add = i -> {
             String n = "ag_t" + i + "_01";
             roster.add(new Ref() {
                 public String name() {
@@ -206,8 +206,18 @@ class SnapshotCollectorTest {
                     return new Reading("w", 0, 0, 0, 1, 1, 1, "survival");
                 }
             });
+        };
+        for (int i = 0; i < 300; i++) {
+            add.accept(i);
         }
         make().start(r.ctx());
+        for (int i = 0; i < 50; i++) {
+            sample(r);
+        }
+        assertEquals(300, read.size());
+        for (int i = 300; i < 600; i++) {
+            add.accept(i); // arrive later, while 300 are already tracked: room for 212 more, each counted once
+        }
         for (int i = 0; i < 200; i++) {
             sample(r);
         }
@@ -215,6 +225,7 @@ class SnapshotCollectorTest {
         assertEquals(SnapshotCollector.MAX_TRACKED, read.size());
         assertFalse(read.contains("ag_t599_01"));
     }
+
     @Test
     void blockCoordFloorsOnBothSigns() {
         assertEquals(-1, SnapshotCollector.blockCoord(-0.5));
