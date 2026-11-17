@@ -42,7 +42,10 @@ public final class AuditWiring {
             OperatorAuditFamily audit = new OperatorAuditFamily(ledger, host);
             NeoForge.EVENT_BUS.addListener(PRIORITY, RECEIVE_CANCELED, LivingDamageEvent.Post.class, e -> damage(combat, e));
             NeoForge.EVENT_BUS.addListener(PRIORITY, RECEIVE_CANCELED, LivingDeathEvent.class, e -> death(combat, e));
-            NeoForge.EVENT_BUS.addListener(PRIORITY, RECEIVE_CANCELED, net.neoforged.neoforge.event.ServerChatEvent.class, e -> chat(text, e));
+            if (shouldInstallChat(ledger)) {
+                // human chat is its own opt-in (collector.chat.enabled=true): no listener at all unless it is on
+                NeoForge.EVENT_BUS.addListener(PRIORITY, RECEIVE_CANCELED, net.neoforged.neoforge.event.ServerChatEvent.class, e -> chat(text, e));
+            }
             NeoForge.EVENT_BUS.addListener(PRIORITY, RECEIVE_CANCELED, CommandEvent.class, e -> command(audit, e));
             NeoForge.EVENT_BUS.addListener(PRIORITY, RECEIVE_CANCELED, PermissionsChangedEvent.class, e -> operator(audit, e));
         } catch (Throwable t) {
@@ -56,6 +59,11 @@ public final class AuditWiring {
     /** The install decision: a ledger exists and the audit opt-in is on (master on, audit explicitly true). */
     static boolean shouldInstall(Ledger ledger) {
         return ledger != null && new AuditGate(ledger, null).getAsBoolean();
+    }
+
+    /** The chat install decision: audit on AND collector.chat.enabled=true (off by default, D-F not yet recorded). */
+    static boolean shouldInstallChat(Ledger ledger) {
+        return ledger != null && AuditGate.chat(ledger).getAsBoolean();
     }
 
     static String playerName(Entity e) {

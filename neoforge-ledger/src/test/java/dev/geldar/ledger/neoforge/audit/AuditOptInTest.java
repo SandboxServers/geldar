@@ -100,7 +100,7 @@ class AuditOptInTest {
 
     @Test
     void operatorSwitchStopsOffThreadRconAndOpChangeButNotChat() {
-        f.config = FakeLedger.config("collector.audit.enabled=true", "collector.operator.enabled=false");
+        f.config = FakeLedger.config("collector.audit.enabled=true", "collector.chat.enabled=true", "collector.operator.enabled=false");
         f.main.set(false); // RCON and chat arrive off the server thread
         OperatorAuditFamily op = new OperatorAuditFamily(f.ledger, f.host, clock::get);
         TextContentFamily text = new TextContentFamily(f.ledger, clock::get);
@@ -123,6 +123,78 @@ class AuditOptInTest {
         assertTrue(f.events.isEmpty());
     }
 
+    // --- chat has its own switch (collector.chat.enabled, default off, owner decision D-F pending) ---
+
+    private void assertNoChat(String why) {
+        f.main.set(false);
+        reads.set(0);
+        int before = f.content.size();
+        var swapped = f.config; // a malformed value may leave no config at all: build the family on a good one first
+        f.config = FakeLedger.config("collector.audit.enabled=true", "collector.chat.enabled=true");
+        TextContentFamily family = new TextContentFamily(f.ledger, clock::get);
+        f.config = swapped;
+        family.chat(false, LIFE, "w", () -> {
+            reads.incrementAndGet();
+            return "hello";
+        });
+        assertEquals(before, f.content.size(), why + ": content");
+        assertEquals(0, reads.get(), why + ": text read");
+        assertFalse(AuditWiring.shouldInstallChat(f.ledger), why + ": install");
+    }
+
+    @Test
+    void chatIsOffByDefaultEvenWithAuditOn() {
+        for (String[] cfg : new String[][] {
+            {"collector.audit.enabled=true"},
+            {"collector.audit.enabled=true", "collector.chat.enabled=false"},
+            {"collector.audit.enabled=true", "collector.chat.enabled=yes"},
+            {"collector.audit.enabled=true", "collector.chat.enabled="},
+        }) {
+            f.config = FakeLedger.config(cfg);
+            assertNoChat(String.join(",", cfg));
+        }
+        // the other audit families keep working under their own flags
+        f.config = FakeLedger.config("collector.audit.enabled=true");
+        f.main.set(true);
+        driveAll();
+        assertEquals(6, f.events.size());
+        assertTrue(f.content.isEmpty());
+    }
+
+    @Test
+    void chatIsOnOnlyWithAuditAndChatBothOnAndTheMasterOn() {
+        f.config = FakeLedger.config("collector.audit.enabled=true", "collector.chat.enabled=true");
+        assertTrue(AuditWiring.shouldInstallChat(f.ledger));
+        for (boolean main : new boolean[] {true, false}) {
+            f.main.set(main);
+            new TextContentFamily(f.ledger, clock::get).chat(false, LIFE, "w", () -> "hi");
+        }
+        assertEquals(2, f.content.size());
+        for (String[] cfg : new String[][] {
+            {"collector.chat.enabled=true"},
+            {"collector.audit.enabled=false", "collector.chat.enabled=true"},
+            {"enabled=false", "collector.audit.enabled=true", "collector.chat.enabled=true"},
+        }) {
+            f.config = FakeLedger.config(cfg);
+            assertNoChat(String.join(",", cfg));
+        }
+    }
+
+    @Test
+    void turningChatOffAtRuntimeStopsAFamilyAlreadyBuilt() {
+        TextContentFamily text = new TextContentFamily(f.ledger, clock::get);
+        f.main.set(false);
+        text.chat(false, LIFE, "w", () -> "a");
+        assertEquals(1, f.content.size());
+        f.config = FakeLedger.config("collector.audit.enabled=true");
+        text.chat(false, LIFE, "w", () -> {
+            reads.incrementAndGet();
+            return "b";
+        });
+        assertEquals(1, f.content.size());
+        assertEquals(0, reads.get());
+    }
+
     // --- rate.<event> ---
 
     private int dropId(String name) {
@@ -136,7 +208,7 @@ class AuditOptInTest {
 
     @Test
     void chatHonoursTheConfiguredRateAndCountsEveryDrop() {
-        f.config = FakeLedger.config("collector.audit.enabled=true", "rate.geldar.chat=100");
+        f.config = FakeLedger.config("collector.audit.enabled=true", "collector.chat.enabled=true", "rate.geldar.chat=100");
         TextContentFamily t = new TextContentFamily(f.ledger, clock::get);
         assertEquals(0, f.registeredRates.get("geldar.chat._rate_drop"));
         for (int i = 0; i < 150; i++) {

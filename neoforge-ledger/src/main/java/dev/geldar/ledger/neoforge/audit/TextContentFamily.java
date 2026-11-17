@@ -45,7 +45,7 @@ public final class TextContentFamily {
     TextContentFamily(Ledger ledger, LongSupplier nanoClock) {
         this.content = ledger.content();
         this.events = ledger.events();
-        this.gate = new AuditGate(ledger, null);
+        this.gate = AuditGate.chat(ledger);
         this.chatId = content.register(Names.Events.CHAT, FIELDS);
         // Rate 0: always denies and counts, so a denial shows in the core's rate-drop counter like a core drop.
         this.dropId = events.register(Names.Events.CHAT + "._rate_drop", Severity.INFO, 0);
