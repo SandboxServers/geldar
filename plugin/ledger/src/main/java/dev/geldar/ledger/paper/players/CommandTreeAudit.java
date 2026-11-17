@@ -5,7 +5,6 @@ import dev.geldar.ledger.core.CollectorGuard;
 import dev.geldar.ledger.core.EventLog;
 import dev.geldar.ledger.core.Names;
 import dev.geldar.ledger.core.Severity;
-import dev.geldar.ledger.core.ids.LifeIds;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.function.LongSupplier;
@@ -106,9 +105,6 @@ final class CommandTreeAudit implements Listener {
             long token = guard.begin();
             try {
                 Player p = e.getPlayer();
-                if (!LifeIds.isLifeId(p.getName())) {
-                    return;
-                }
                 ClientCadenceCollector.Slot s = owner.claim(p);
                 if (s == null || s.treeSent.get() || !underCap()) {
                     return;

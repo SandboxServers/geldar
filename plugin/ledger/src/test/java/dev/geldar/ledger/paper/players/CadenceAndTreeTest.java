@@ -509,6 +509,21 @@ class CadenceAndTreeTest {
     }
 
     @Test
+    void repeatTreesOfAnAuditedConnectionDoNotUseUpTheCap() {
+        start();
+        Player p = player("ag_ada_01", new UUID(0, 1));
+        sessions.open(new UUID(0, 1), 0);
+        audit().onCommandSend(new PlayerCommandSendEvent(p, new ArrayList<>(List.of("a"))));
+        for (int i = 0; i < 3 * CommandTreeAudit.PER_SECOND; i++) {
+            audit().onCommandSend(new PlayerCommandSendEvent(p, new ArrayList<>(List.of("a"))));
+        }
+        Player q = player("ag_bob_02", new UUID(0, 2));
+        sessions.open(new UUID(0, 2), 0);
+        audit().onCommandSend(new PlayerCommandSendEvent(q, new ArrayList<>(List.of("a"))));
+        assertEquals(2, ledger.events(Names.Events.PLAYER_COMMAND_TREE).size());
+    }
+
+    @Test
     void aHugeTreeIsCountedButNotHashed() {
         start();
         List<String> big = new ArrayList<>();
