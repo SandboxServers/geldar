@@ -16,7 +16,10 @@ public final class EventMapping {
 
     private EventMapping() {}
 
-    /** A {@code damage} event: Paper's {@code cause} and {@code amount} fields, plus {@code player}. */
+    /**
+     * A {@code damage} event: Paper's {@code cause} and {@code amount} fields, plus {@code player} for a life id only
+     * (see {@link #build}).
+     */
     public static EventEnvelope damage(
             String shard, Instant at, long tick, String player, String cause, double amount) {
         JsonObject p = new JsonObject();
@@ -61,10 +64,14 @@ public final class EventMapping {
         return build(shard, at, tick, "server_tps", null, p);
     }
 
-    /** Adds {@code player} when known and sets the agent id only for a life id, as Paper's emit does. */
+    /**
+     * Adds {@code player} and sets the agent id only for a life id, as Paper's emit does. A name that is not a life id
+     * is a human's (the NeoForge shard is human-directed): its name is never exported, so the payload carries no
+     * {@code player} field and the agent id stays null. The event itself is still written.
+     */
     static EventEnvelope build(
             String shard, Instant at, long tick, String type, String player, JsonObject payload) {
-        if (player != null) {
+        if (EventEnvelope.isLifeId(player)) {
             payload.addProperty("player", player);
         }
         String agentId = EventEnvelope.isLifeId(player) ? player : null;
