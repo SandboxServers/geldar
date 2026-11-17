@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const BASE = 'compose/nf-live.yml';
@@ -75,7 +76,7 @@ function render(
 // The telemetry mounts: the host variable, the container path. The agent jar and the four files are read-only.
 const MOUNTS: [string, string][] = [
   ['NF_LEDGER_JAR_HOST', '/geldar/mods/geldar-neoforge-ledger.jar'],
-  ['NF_OTEL_AGENT_JAR_HOST', '/geldar/telemetry/opentelemetry-javaagent.jar'],
+  ['NF_OTEL_AGENT_HOST', '/geldar/telemetry/opentelemetry-javaagent.jar'],
   ['NF_OTEL_AGENT_PROPS_HOST', '/geldar/telemetry/otel-agent.properties'],
   ['NF_LEDGER_PROPS_HOST', '/geldar/telemetry/ledger.properties'],
 ];
@@ -115,7 +116,7 @@ afterAll(() => {
 
 describe('nf-live telemetry overlay: the pinned constants (no docker needed)', () => {
   it('pins the OpenTelemetry agent to the design doc value, as a constant in the overlay', () => {
-    expect(OVERLAY_TEXT).toContain(`GELDAR_NF_OTEL_AGENT_PIN: "${AGENT_PIN}"`);
+    expect(OVERLAY_TEXT).toContain(`GELDAR_NF_OTEL_AGENT_SHA256: "${AGENT_PIN}"`);
     const doc = readFileSync(`${ROOT}docs/analysis/telemetry/nf-live-telemetry.md`, 'utf8');
     expect(doc).toContain(AGENT_PIN);
   });
@@ -128,6 +129,19 @@ describe('nf-live telemetry overlay: the pinned constants (no docker needed)', (
 
   it('is an operator input nowhere: no host variable names the agent pin', () => {
     expect(OVERLAY_TEXT).not.toMatch(/\$\{[A-Z_]*PIN[A-Z_]*[:}-]/);
+  });
+
+  // Compose omits create_host_path when false, so the render cannot show it; the file itself must say false on each mount.
+  it('sets create_host_path: false on each of the four telemetry mounts in the overlay file', () => {
+    const doc = parse(OVERLAY_TEXT) as {
+      services: {
+        neoforge: { volumes: { target?: string; bind?: { create_host_path?: unknown } }[] };
+      };
+    };
+    for (const [, target] of MOUNTS) {
+      const mount = doc.services.neoforge.volumes.find((v) => v.target === target);
+      expect(mount?.bind?.create_host_path, target).toBe(false);
+    }
   });
 });
 
@@ -191,7 +205,7 @@ describe.skipIf(!DOCKER)('nf-live telemetry overlay: the render', () => {
     const env = on.services.neoforge?.environment ?? {};
     expect(env.GELDAR_NF_TELEMETRY).toBe('on');
     expect(env.GELDAR_NF_LEDGER_SHA256).toBe(DUMMY_SHA);
-    expect(env.GELDAR_NF_OTEL_AGENT_PIN).toBe(AGENT_PIN);
+    expect(env.GELDAR_NF_OTEL_AGENT_SHA256).toBe(AGENT_PIN);
   });
 
   it('repeats the neoforge image of the base file exactly', () => {

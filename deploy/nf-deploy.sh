@@ -13,9 +13,11 @@
 #                                      (plan and up need no bundle input: the seeded volume's marker check is the gate)
 #   NF_TELEMETRY (default off)         on adds compose/nf-live-telemetry.yml and joins neoforge to the external network
 #                                      geldar-telemetry (plan and up only; down and status never read these). With on, the inputs are
-#                                      NF_LEDGER_JAR_HOST, NF_LEDGER_SHA256 (the ledger jar's sha256), NF_OTEL_AGENT_JAR_HOST (its sha256
+#                                      NF_LEDGER_JAR_HOST, NF_LEDGER_SHA256 (the ledger jar's sha256), NF_OTEL_AGENT_HOST (its sha256
 #                                      must equal the pin in the overlay), NF_OTEL_AGENT_PROPS_HOST and NF_LEDGER_PROPS_HOST (absolute
-#                                      regular files). Any other NF_TELEMETRY value refuses.
+#                                      regular files). Any other NF_TELEMETRY value refuses, and so does on while compose/neoforge/neoforge-entrypoint.sh has no
+#                                      GELDAR_NF_TELEMETRY. NF_TELEMETRY=on has NO effect on the JVM until entrypoint packet B (PR #701)
+#                                      is merged: do not set it before.
 #   NF_SECRETS_DIR                     the secret files (default compose/secrets-nf)
 #   NF_SERVICE_UID (default 1000), NF_SERVICE_GID (default NF_SERVICE_UID): the uid:gid the services run as and that owns
 #                                      the seeded volume. The default 1000 is not the node: its ops account is uid 1001, so the
@@ -208,11 +210,15 @@ check_host_file() {
   esac
   [ ! -L "$p" ] || die "$name is a symlink; give the regular file"
   [ -f "$p" ] || die "$name is not a regular file"
+  case $p in
+    # The parent must be its real path: a symlinked directory would hide the file that is hashed (Linux node form).
+    /*) [ "$(cd "$(dirname "$p")" && pwd -P)/$(basename "$p")" = "$p" ] || die "$name is under a symlinked directory; give the real path" ;;
+  esac
 }
 
 check_telemetry_inputs() {
   check_host_file NF_LEDGER_JAR_HOST "${NF_LEDGER_JAR_HOST:-}"
-  check_host_file NF_OTEL_AGENT_JAR_HOST "${NF_OTEL_AGENT_JAR_HOST:-}"
+  check_host_file NF_OTEL_AGENT_HOST "${NF_OTEL_AGENT_HOST:-}"
   check_host_file NF_OTEL_AGENT_PROPS_HOST "${NF_OTEL_AGENT_PROPS_HOST:-}"
   check_host_file NF_LEDGER_PROPS_HOST "${NF_LEDGER_PROPS_HOST:-}"
   want=${NF_LEDGER_SHA256:-}
@@ -220,10 +226,10 @@ check_telemetry_inputs() {
   need sha256sum
   got=$(sha256sum <"$NF_LEDGER_JAR_HOST" | awk '{print $1}')
   [ "$got" = "$want" ] || die "the sha256 of the ledger jar does not match NF_LEDGER_SHA256; nothing started"
-  pin=$(awk -F'"' '/^ *GELDAR_NF_OTEL_AGENT_PIN:/ { print $2; exit }' "$TELEMETRY_FILE")
+  pin=$(awk -F'"' '/^ *GELDAR_NF_OTEL_AGENT_SHA256:/ { print $2; exit }' "$TELEMETRY_FILE")
   printf '%s\n' "$pin" | grep -Eq '^[0-9a-f]{64}$' || die "the agent pin in $TELEMETRY_FILE is not 64 lowercase hex digits"
-  got=$(sha256sum <"$NF_OTEL_AGENT_JAR_HOST" | awk '{print $1}')
-  [ "$got" = "$pin" ] || die "the sha256 of the OTel agent jar is not the pinned agent (GELDAR_NF_OTEL_AGENT_PIN); nothing started"
+  got=$(sha256sum <"$NF_OTEL_AGENT_HOST" | awk '{print $1}')
+  [ "$got" = "$pin" ] || die "the sha256 of the OTel agent jar is not the pinned agent (GELDAR_NF_OTEL_AGENT_SHA256 in the overlay); nothing started"
   say "telemetry: the ledger jar and the OTel agent jar match their pins (no docker call made yet)"
 }
 
@@ -231,6 +237,9 @@ check_telemetry() {
   case ${NF_TELEMETRY-off} in
     off) TELEMETRY=0 ;;
     on)
+      # The entrypoint of packet B (PR #701) reads GELDAR_NF_TELEMETRY. Without it the overlay mounts and joins, and no agent loads.
+      grep -Fq GELDAR_NF_TELEMETRY "$ROOT/compose/neoforge/neoforge-entrypoint.sh" 2>/dev/null ||
+        die "compose/neoforge/neoforge-entrypoint.sh has no GELDAR_NF_TELEMETRY (PR #701 is not merged): on would start nothing; refusing"
       TELEMETRY=1
       check_telemetry_inputs
       ;;

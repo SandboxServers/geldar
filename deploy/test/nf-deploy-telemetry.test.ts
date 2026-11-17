@@ -107,11 +107,17 @@ function makeRepo(): string {
   made.push(repo);
   mkdirSync(join(repo, 'deploy'), { recursive: true });
   mkdirSync(join(repo, 'compose', 'secrets-nf'), { recursive: true });
+  mkdirSync(join(repo, 'compose', 'neoforge'), { recursive: true });
   mkdirSync(join(repo, 'stubs'));
   mkdirSync(join(repo, 'bundle'));
   copyFileSync(SCRIPT_SRC, join(repo, 'deploy', 'nf-deploy.sh'));
   writeFileSync(join(repo, 'compose', 'nf-live.yml'), NF_COMPOSE_TEXT);
   writeFileSync(join(repo, 'compose', 'nf-live-telemetry.yml'), NF_OVERLAY_TEXT);
+  // The fixture entrypoint carries the GELDAR_NF_TELEMETRY string that on requires (the real one lands with PR #701).
+  writeFileSync(
+    join(repo, 'compose', 'neoforge', 'neoforge-entrypoint.sh'),
+    '#!/bin/sh\n# fixture: reads GELDAR_NF_TELEMETRY\n',
+  );
   for (const f of SECRET_FILES)
     writeFileSync(join(repo, 'compose', 'secrets-nf', f), `${f} fixture\n`);
   writeFileSync(join(repo, 'mod.jar'), JAR_BYTES);
@@ -208,10 +214,15 @@ function telemetryInputs(repo: string): Record<string, string> {
     NF_TELEMETRY: 'on',
     NF_LEDGER_JAR_HOST: fwd(join(repo, 'ledger.jar')),
     NF_LEDGER_SHA256: sha(LEDGER_BYTES),
-    NF_OTEL_AGENT_JAR_HOST: fwd(join(repo, 'agent.jar')),
+    NF_OTEL_AGENT_HOST: fwd(join(repo, 'agent.jar')),
     NF_OTEL_AGENT_PROPS_HOST: fwd(join(repo, 'otel-agent.properties')),
     NF_LEDGER_PROPS_HOST: fwd(join(repo, 'ledger.properties')),
   };
+}
+
+// The inputs with one variable unset: the script reads an unset variable as empty.
+function without(env: Record<string, string>, key: string): Record<string, string> {
+  return Object.fromEntries(Object.entries(env).filter(([k]) => k !== key));
 }
 
 describe('nf-deploy.sh telemetry (NF_TELEMETRY)', () => {
@@ -263,6 +274,50 @@ describe('nf-deploy.sh telemetry (NF_TELEMETRY)', () => {
       },
       'not the pinned agent',
     ],
+    ['NF_TELEMETRY is empty', () => ({ NF_TELEMETRY: '' }), 'NF_TELEMETRY must be on or off'],
+    [
+      'a ledger jar path with a dollar',
+      (r) => ({ ...telemetryInputs(r), NF_LEDGER_JAR_HOST: '/no/such/dir$x/ledger.jar' }),
+      'has whitespace, a quote, a backslash or a dollar',
+    ],
+    [
+      'a ledger jar path with a single quote',
+      (r) => ({ ...telemetryInputs(r), NF_LEDGER_JAR_HOST: "/no/such/it's/ledger.jar" }),
+      'has whitespace, a quote, a backslash or a dollar',
+    ],
+    [
+      'a ledger jar path with a backslash',
+      (r) => ({ ...telemetryInputs(r), NF_LEDGER_JAR_HOST: '/no/such\\dir/ledger.jar' }),
+      'has whitespace, a quote, a backslash or a dollar',
+    ],
+    [
+      'an agent jar path that is a directory',
+      (r) => ({ ...telemetryInputs(r), NF_OTEL_AGENT_HOST: fwd(r) }),
+      'NF_OTEL_AGENT_HOST is not a regular file',
+    ],
+    [
+      'a ledger jar path that does not exist',
+      (r) => ({ ...telemetryInputs(r), NF_LEDGER_JAR_HOST: fwd(join(r, 'missing.jar')) }),
+      'NF_LEDGER_JAR_HOST is not a regular file',
+    ],
+    [
+      'an unset agent properties variable',
+      (r) => without(telemetryInputs(r), 'NF_OTEL_AGENT_PROPS_HOST'),
+      'NF_OTEL_AGENT_PROPS_HOST is not set',
+    ],
+    [
+      'an unset NF_LEDGER_SHA256',
+      (r) => without(telemetryInputs(r), 'NF_LEDGER_SHA256'),
+      'NF_LEDGER_SHA256 must be 64',
+    ],
+    [
+      'an entrypoint without GELDAR_NF_TELEMETRY',
+      (r) => {
+        writeFileSync(join(r, 'compose', 'neoforge', 'neoforge-entrypoint.sh'), '#!/bin/sh\n');
+        return telemetryInputs(r);
+      },
+      'has no GELDAR_NF_TELEMETRY',
+    ],
   ];
   it.each(refusals)('refuses %s, before any docker call', (_label, inputs, message) => {
     const repo = makeRepo();
@@ -291,6 +346,42 @@ describe('nf-deploy.sh telemetry (NF_TELEMETRY)', () => {
     expect(r.status).not.toBe(0);
     expect(r.out).toContain('is a symlink');
     expect(calls(repo)).toEqual([]);
+  });
+
+  // Runs on Linux CI (the symlink probe above skips it on Windows): a symlinked parent hides the file that was hashed.
+  it.runIf(canSymlink)(
+    'refuses a host file under a symlinked directory, before any docker call',
+    () => {
+      const repo = makeRepo();
+      const env = telemetryInputs(repo);
+      mkdirSync(join(repo, 'real'));
+      copyFileSync(join(repo, 'ledger.jar'), join(repo, 'real', 'ledger.jar'));
+      symlinkSync(join(repo, 'real'), join(repo, 'linked'));
+      const host = fwd(join(repo, 'linked', 'ledger.jar'));
+      const r = run(repo, ['up'], { ...env, NF_LEDGER_JAR_HOST: host });
+      expect(r.status).not.toBe(0);
+      expect(r.out).toContain('is under a symlinked directory');
+      expect(calls(repo)).toEqual([]);
+    },
+  );
+
+  it('plan with telemetry on checks the network, prints the overlay line, and changes no state', () => {
+    const repo = makeRepo();
+    const r = run(repo, ['plan'], telemetryInputs(repo));
+    expect(r.status).toBe(0);
+    expect(r.out).toContain('telemetry on: overlay');
+    expect(calls(repo)).toContain('docker network inspect geldar-telemetry');
+    expect(
+      calls(repo).filter((c) => / (up|down|run|start|stop|rm|create|exec)( |$)/.test(c)),
+    ).toEqual([]);
+  });
+
+  it('plan refuses when the network is missing, and runs no compose call', () => {
+    const repo = makeRepo();
+    const r = run(repo, ['plan'], { ...telemetryInputs(repo), NETWORK_MISSING: '1' });
+    expect(r.status).not.toBe(0);
+    expect(r.out).toContain('docker network geldar-telemetry does not exist');
+    expect(composeCalls(repo)).toEqual([]);
   });
 
   it('refuses when the geldar-telemetry network is missing, and starts nothing', () => {

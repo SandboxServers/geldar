@@ -334,7 +334,8 @@ from the exported tree, with `NF_SERVICE_UID` exported in the shell (section 5).
 4. Re-measure the node's memory and cores; confirm the caps in section 3 still fit beside the autonomous shard.
 5. Start with `up` (order step 6), not by hand. The old by-hand order (`nats`, `postgres`, `eventsink`, `identity-seed`,
    `neoforge`, `velocity`) differed from `up`'s order, so it is no longer the procedure.
-6. **Tick and TPS check, without RCON.** RCON is disabled in this project (`ENABLE_RCON` is FALSE) until the probe packet, so this
+6. **Tick and TPS check, without RCON** (added with the telemetry overlay; used from the probe packet; outside this packet's scope).
+   RCON stays disabled (`ENABLE_RCON` is FALSE) until the probe packet, so this
    check reads the database. After about 30 s of neoforge uptime, run these read-only through the project's postgres service
    (database `geldar_nf`, user `geldar`, from compose/nf-live.yml):
    `docker compose -p geldar-nf -f compose/nf-live.yml exec -T postgres psql -U geldar -d geldar_nf -tAc "SELECT count(*) FROM events WHERE type = 'server_tps'"`
@@ -345,24 +346,31 @@ from the exported tree, with `NF_SERVICE_UID` exported in the shell (section 5).
 ## 9. Telemetry (optional)
 
 Off is the default. With `NF_TELEMETRY` unset, `nf-deploy.sh` renders and starts exactly the base file, `compose/nf-live.yml`
-alone, and makes no network call. That default render is unchanged and a repo test asserts it.
+alone, and makes no network call. The base file is not changed, and a render test asserts that the base render carries no telemetry.
+
+**`NF_TELEMETRY=on` has no effect on the JVM until the entrypoint of PR #701 (packet B) is merged. Do not set it before.**
+Until then the script refuses `on`, because the entrypoint in the tree has no `GELDAR_NF_TELEMETRY`.
 
 Inputs, read by `deploy/nf-deploy.sh` (all optional; `NF_TELEMETRY=on` needs the five others):
 
 - `NF_TELEMETRY`: `on` or `off`. Any other value refuses.
 - `NF_LEDGER_JAR_HOST`: absolute host path of the geldar NeoForge ledger jar.
 - `NF_LEDGER_SHA256`: the sha256 of that jar, 64 lowercase hex.
-- `NF_OTEL_AGENT_JAR_HOST`: absolute host path of the OpenTelemetry Java agent jar.
+- `NF_OTEL_AGENT_HOST`: absolute host path of the OpenTelemetry Java agent jar.
 - `NF_OTEL_AGENT_PROPS_HOST`: absolute host path of the agent properties file.
 - `NF_LEDGER_PROPS_HOST`: absolute host path of the ledger properties file.
 
-Checks, in this order, on `plan` and `up`. Each refusal starts nothing and makes no docker call before it:
+Checks on `plan` and `up`, in the order the script runs them. Each refusal starts nothing. No docker call happens before
+checks 1 to 5; check 6 follows the read-only `docker compose version` and `docker info` calls of the operator check.
 
-1. `NF_TELEMETRY` is `on` or `off`.
-2. `NF_LEDGER_SHA256` is 64 lowercase hex.
-3. Each host path is absolute, has no whitespace, quote, backslash or dollar, and is a regular file, not a symlink.
+1. `NF_TELEMETRY` is `on` or `off` (unset is off; an empty value refuses). On only: `compose/neoforge/neoforge-entrypoint.sh`
+   contains `GELDAR_NF_TELEMETRY`.
+2. Four host paths, in this order: `NF_LEDGER_JAR_HOST`, `NF_OTEL_AGENT_HOST`, `NF_OTEL_AGENT_PROPS_HOST`,
+   `NF_LEDGER_PROPS_HOST`. Each is set, absolute, has no whitespace, quote, backslash or dollar, is a regular file (not a
+   symlink, and not under a symlinked directory).
+3. `NF_LEDGER_SHA256` is 64 lowercase hex.
 4. The sha256 of the ledger jar equals `NF_LEDGER_SHA256`.
-5. The agent pin in the overlay is 64 lowercase hex, and the sha256 of the agent jar equals it.
+5. The agent pin in the overlay (`GELDAR_NF_OTEL_AGENT_SHA256`) is 64 lowercase hex, and the sha256 of the agent jar equals it.
 6. `docker network inspect geldar-telemetry` succeeds on the node.
 
 Only then does the script add the overlay. `down` and `status` never read these inputs, never add the overlay, and never
@@ -372,12 +380,14 @@ What the overlay `compose/nf-live-telemetry.yml` adds, to the `neoforge` service
 
 - Four read-only bind mounts with `create_host_path: false`, so a missing host file fails the start: the ledger jar, the
   OpenTelemetry agent jar, the agent properties and the ledger properties, at fixed container paths.
-- The environment `GELDAR_NF_TELEMETRY`, `GELDAR_NF_LEDGER_SHA256` (from `NF_LEDGER_SHA256`) and `GELDAR_NF_OTEL_AGENT_PIN`.
+- The environment `GELDAR_NF_TELEMETRY`, `GELDAR_NF_LEDGER_SHA256` (from `NF_LEDGER_SHA256`) and `GELDAR_NF_OTEL_AGENT_SHA256`.
 - A join to the EXTERNAL network `geldar-telemetry`. The telemetry stack owns that network; compose never creates or removes it.
   No other service joins it, and nothing in the overlay publishes a port.
 
-The agent pin is a repo constant in the overlay: `GELDAR_NF_OTEL_AGENT_PIN`, the sha256 of opentelemetry-javaagent 2.33.1
-(26507624 bytes). It is not an operator input. A change to it is a repo change, reviewed with the agent.
+The agent pin is a repo constant in the overlay: `GELDAR_NF_OTEL_AGENT_SHA256`, the sha256 of opentelemetry-javaagent 2.33.1
+(26507624 bytes). It is not an operator input, and it has one copy: the script reads it from the overlay, and the entrypoint
+reads it from the environment. The entrypoint builds the `-javaagent` flag itself; the overlay sets no `JAVA_AGENTS` or
+`JVM_OPTS`. A change to the pin is a repo change, reviewed with the agent.
 
 The OTLP endpoint is whatever the agent properties file says. This repo neither pins nor checks it.
 
@@ -389,5 +399,12 @@ UNVERIFIED, and not covered by this packet:
 
 - The agent attach itself: that the JVM loads the agent at start on the pinned image. Only the node run shows it.
 - The join needs the `geldar-telemetry` stack up on the node first. The script refuses otherwise and does not create the network.
+- The symlink refusal tests run on Linux CI only: they skip on Windows (the probe in the test file).
+- The two properties files (`NF_OTEL_AGENT_PROPS_HOST`, `NF_LEDGER_PROPS_HOST`) are NOT hash-checked. The script checks only
+  that they are regular files; the agent sends what they say.
+- TODO after PR #701 merges (not added before: the entrypoint is absent from this tree): a repo test greps
+  `compose/neoforge/neoforge-entrypoint.sh` for `GELDAR_NF_TELEMETRY`, `GELDAR_NF_LEDGER_SHA256` and `GELDAR_NF_OTEL_AGENT_SHA256`,
+  and checks that the entrypoint builds the `-javaagent` flag itself.
+- RCON stays disabled until the probe packet; the tick and TPS check (checklist item 6) is outside this packet.
 - The mechanism by which `JVM_OPTS` reaches `user_jvm_args.txt` on every start of the pinned itzg image is verified by the lead,
   not by this checkout. The attach is not.
