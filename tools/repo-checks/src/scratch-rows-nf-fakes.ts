@@ -1,5 +1,5 @@
 // Fake docker, rcon-cli and sleep, the runner and the synthetic OTLP builders for scratch-rows-nf.test.ts (the NeoForge row driver).
-import { spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import {
   chmodSync,
   existsSync,
@@ -25,7 +25,7 @@ export const AGENT_CMD =
 const FAKES: Record<string, string> = {
   // Appends pending.<n>.jsonl (the n-th sleep) and pending.jsonl (the first) to the sink; records the profile at each sleep.
   sleep: `#!/bin/sh
-n=$(cat "$FAKE_DIR/sleepn" 2>/dev/null || echo 0); n=$((n + 1)); echo $n >"$FAKE_DIR/sleepn"
+n=0; [ -f "$FAKE_DIR/sleepn" ] && read -r n <"$FAKE_DIR/sleepn"; n=$((n + 1)); echo $n >"$FAKE_DIR/sleepn"
 for f in "$FAKE_DIR/pending.$n.jsonl" "$FAKE_DIR/pending.jsonl"; do
   [ "$f" = "$FAKE_DIR/pending.jsonl" ] && [ "$n" -ne 1 ] && continue
   [ -f "$f" ] && cat "$f" >>"$SCRATCH_TELEMETRY_OUT/otlp.jsonl" && rm "$f"
@@ -50,7 +50,7 @@ case "$1" in
     case "$*" in
       *service=paper*) echo fake-paper ;;
       *geldar.scratch*)
-        n=$(cat "$FAKE_DIR/psn" 2>/dev/null || echo 0); n=$((n + 1)); echo $n >"$FAKE_DIR/psn"
+        n=0; [ -f "$FAKE_DIR/psn" ] && read -r n <"$FAKE_DIR/psn"; n=$((n + 1)); echo $n >"$FAKE_DIR/psn"
         printf 'fake-paper true\\nfake-sink true\\n'
         if [ -n "\${FAKE_NS_AFTER_N:-}" ] && [ "$n" -gt "$FAKE_NS_AFTER_N" ]; then
           for c in $FAKE_NS_AFTER; do echo "$c"; done
@@ -64,7 +64,7 @@ case "$1" in
       *.RW*) echo "\${FAKE_RW:-false}" ;;
       *Mounts*) echo "\${FAKE_MOUNT:-$SCRATCH_ROWS_PROFILE}" ;;
       *StartedAt*)
-        n=$(cat "$FAKE_DIR/count" 2>/dev/null || echo 0); n=$((n + 1)); echo $n >"$FAKE_DIR/count"
+        n=0; [ -f "$FAKE_DIR/count" ] && read -r n <"$FAKE_DIR/count"; n=$((n + 1)); echo $n >"$FAKE_DIR/count"
         if [ "$n" -gt "\${FAKE_RESTART_AFTER:-99999}" ]; then echo 2026-01-02T00:00:00Z/0; else echo 2026-01-01T00:00:00Z/0; fi ;;
       *Health*) echo healthy ;;
       *.Id*) cat "$FAKE_DIR/cid" 2>/dev/null || echo id1 ;;
@@ -100,7 +100,7 @@ esac
 exit 0
 `,
   sha256sum: `#!/bin/sh
-n=$(cat "$FAKE_DIR/shan" 2>/dev/null || echo 0); n=$((n + 1)); echo $n >"$FAKE_DIR/shan"
+n=0; [ -f "$FAKE_DIR/shan" ] && read -r n <"$FAKE_DIR/shan"; n=$((n + 1)); echo $n >"$FAKE_DIR/shan"
 if [ "$n" -le 1 ]; then printf '%064d  %s\\n' 1 "$1"; else printf '%064d  %s\\n' 2 "$1"; fi
 `,
 };
@@ -129,7 +129,7 @@ export type Opts = {
   fakeSha?: boolean;
 };
 
-export function runRows(args: string[], opts: Opts = {}): Run {
+export async function runRows(args: string[], opts: Opts = {}): Promise<Run> {
   const dir = mkdtempSync(join(tmpdir(), 'rows-nf-'));
   try {
     const bin = join(dir, 'bin');
@@ -174,7 +174,17 @@ export function runRows(args: string[], opts: Opts = {}): Run {
     if (opts.vanish) env.FAKE_VANISH = '1';
     if (opts.restartAfter !== undefined) env.FAKE_RESTART_AFTER = String(opts.restartAfter);
     if (process.env.SYSTEMROOT) env.SYSTEMROOT = process.env.SYSTEMROOT;
-    const r = spawnSync(SH as string, [slash(ROWS), ...args], { encoding: 'utf8', env });
+    const r = await new Promise<{ status: number | null; stdout: string }>((resolve) => {
+      const child = spawn(SH as string, [slash(ROWS), ...args], {
+        env,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      let stdout = '';
+      child.stdout.on('data', (d) => {
+        stdout += d;
+      });
+      child.on('close', (status) => resolve({ status, stdout }));
+    });
     const seen = join(fake, 'profile.seen');
     const dlog = join(fake, 'docker.log');
     const outFiles = readdirSync(out);
@@ -224,3 +234,8 @@ export const quit1 = (s: string) =>
 export const PROBE = { SCRATCH_ROWS_PROBE_CMD: 'echo p0 join ok name=ag_nfprobe_01' };
 export const shaLine = (out: string) => /ledger\.properties_sha256 start=(\S+) end=(\S+)/.exec(out);
 export const compose = (r: Run) => r.docker.filter((c) => c.startsWith('compose'));
+
+/** Several runs at once (each in its own temp dir): the script forks a lot, so the suite runs them in parallel. */
+export function many(specs: [string[], Opts?][]): Promise<Run[]> {
+  return Promise.all(specs.map(([args, opts]) => runRows(args, opts)));
+}
