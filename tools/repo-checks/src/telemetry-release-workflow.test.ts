@@ -87,6 +87,7 @@ describe('telemetry-release.yml', () => {
     const build = indexOfRun('pnpm --filter @geldar/telemetry build');
     const checks = [
       indexOfRun('git merge-base --is-ancestor "$GITHUB_SHA" origin/main'),
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: literal shell text from the workflow run body, not a JS template
       indexOfRun('"$TAG" != "telemetry-v${version}"'),
       indexOfRun('gh release view "$TAG"'),
     ];
