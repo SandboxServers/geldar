@@ -2,6 +2,13 @@ import { expect } from 'vitest';
 
 export const MiB = 1 << 20;
 
+/**
+ * Absolute ceiling in ms for a single timed run. Far above any observed time on
+ * a loaded shared runner; it only catches catastrophic (quadratic or worse)
+ * behaviour. Scaling is judged by `assertLinear`, never by a tight absolute.
+ */
+export const CEILING_MS = 30_000;
+
 /** Minimum wall time in ms of three runs of `run(size)`. */
 function minOfThree(run: (size: number) => void, size: number): number {
   let min = Number.POSITIVE_INFINITY;

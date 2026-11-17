@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { REDACTED as R, scrubText } from '../src/redact.ts';
+import { assertLinear, CEILING_MS } from './timing.ts';
 
 // Credential-shaped fixtures are built at run time.
 const pw = ['pass', 'word'].join('');
 const tk = ['to', 'ken'].join('');
-const MiB = 1 << 20;
-
 describe('an unquoted value that contains a delimiter (step 4)', () => {
   it.each([',', ';', '&', ')', '}'])('hides password=Zq9x%sK2mP7vL4Ab', (d) => {
     expect(scrubText(`${pw}=Zq9x${d}K2mP7vL4Ab`)).toBe(`${pw}=${R}`);
@@ -34,10 +33,7 @@ describe('an unquoted value that contains a delimiter (step 4)', () => {
   });
 
   it('is linear when many credential keys sit in one long run', () => {
-    const text = `${pw}=a,`.repeat(MiB / 9);
-    const start = performance.now();
-    scrubText(text);
-    expect(performance.now() - start).toBeLessThan(6000);
+    assertLinear((size) => scrubText(`${pw}=a,`.repeat(Math.ceil(size / 9))));
   });
 });
 
@@ -128,8 +124,8 @@ describe('a delimiter at every split point of an 18-character password (step 4, 
     'is linear and fast on %s at 1 MiB and 10 MiB',
     (_n, unit) => {
       const rep = (size: number): string => unit.repeat(Math.ceil(size / unit.length));
-      expect(Math.min(timed(rep(MiB)), timed(rep(MiB)))).toBeLessThan(3000);
-      expect(timed(rep(10 * MiB))).toBeLessThan(3000);
+      assertLinear((size) => scrubText(rep(size)));
+      expect(timed(rep(10 * MiB))).toBeLessThan(CEILING_MS);
     },
     60_000,
   );

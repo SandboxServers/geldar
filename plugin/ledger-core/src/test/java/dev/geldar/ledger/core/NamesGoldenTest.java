@@ -16,7 +16,7 @@ class NamesGoldenTest {
             "geldar_spark_cpu_ratio", "geldar_spark_gc_ms", "geldar_world_loaded_chunks", "geldar_world_entities",
             "geldar_world_players", "geldar_world_tick_ms", "geldar_players_online", "geldar_operators_count",
             "geldar_plugins_enabled",
-            "geldar_scheduler_pending_tasks", "geldar_event_count_total", "geldar_event_duty_ratio",
+            "geldar_scheduler_pending_tasks", "geldar_mods_loaded", "geldar_event_count_total", "geldar_event_duty_ratio",
             "geldar_paper_collector_disabled", "geldar_ledger_collector_time_us", "geldar_ledger_dropped_total",
             "geldar_ledger_queue_depth", "geldar_jfr_thread_group_cpu_ratio", "geldar_jfr_safepoint_ms",
             "geldar_jfr_monitor_contention_total", "geldar_jfr_file_io_ms", "geldar_jfr_exceptions_total",
@@ -57,7 +57,7 @@ class NamesGoldenTest {
                 found.addAll(s);
             }
         }
-        assertEquals(42, METRICS.size());
+        assertEquals(43, METRICS.size());
         assertEquals(METRICS, found);
         assertEquals(METRICS.size(), count, "no duplicate constant");
     }

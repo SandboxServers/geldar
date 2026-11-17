@@ -6,6 +6,7 @@ import {
   redactContent,
   scrubText,
 } from '../src/redact.ts';
+import { assertLinear, CEILING_MS } from './timing.ts';
 
 // Fixtures are built at run time so no literal credential-shaped string sits in the source.
 const token = ['gmcp', 'a1'.repeat(32)].join('-');
@@ -133,15 +134,17 @@ function timeScrub(input: string): number {
 }
 
 describe('scrubText on large adversarial input', () => {
-  it('stays fast on 1 MiB inputs (every pattern)', () => {
-    for (const [name, input] of Object.entries(adversarial(1 << 20))) {
-      expect(timeScrub(input), name).toBeLessThan(3000);
+  it('stays linear on 1 MiB inputs (every pattern)', { timeout: 120_000 }, () => {
+    for (const name of Object.keys(adversarial(1))) {
+      assertLinear((size) => scrubText(adversarial(size)[name] as string));
     }
   });
 
-  it('stays linear on 40 KB inputs (distinguishes a quadratic pattern)', () => {
-    for (const [name, input] of Object.entries(adversarial(40_000))) {
-      expect(timeScrub(input), name).toBeLessThan(600);
+  it('stays linear on 40 KB inputs (distinguishes a quadratic pattern)', {
+    timeout: 120_000,
+  }, () => {
+    for (const name of Object.keys(adversarial(1))) {
+      assertLinear((size) => scrubText(adversarial(size)[name] as string), [40_000, 160_000]);
     }
   });
 });
@@ -203,7 +206,7 @@ describe('redactContent: shared sub-objects and thrown values', () => {
     for (let i = 0; i < 22; i++) node = { l: node, r: node };
     const start = performance.now();
     const out = redactContent(node);
-    expect(performance.now() - start).toBeLessThan(3000);
+    expect(performance.now() - start).toBeLessThan(CEILING_MS);
     expect(out).toBeTypeOf('object');
   });
 
@@ -241,7 +244,7 @@ describe('errorFields bound', () => {
     expect(errorFields(exact)['exception.message']).toBe('y'.repeat(MAX_ERROR_TEXT_CHARS));
     const start = performance.now();
     const fields = errorFields(new Error('QUJD'.repeat(2.5 * (1 << 20))));
-    expect(performance.now() - start).toBeLessThan(6000);
+    expect(performance.now() - start).toBeLessThan(CEILING_MS);
     expect(fields['exception.message']).toContain('[truncated');
   });
 });
@@ -312,26 +315,27 @@ describe('scrubText: free-text key=value', () => {
     expect(scrubText(once)).toBe(once);
   });
 
-  it('stays fast on 1 MiB inputs', () => {
-    const size = 1 << 20;
-    const rep = (unit: string): string => unit.repeat(Math.ceil(size / unit.length));
-    const inputs = {
-      passwords: rep('password='),
-      passwordColons: rep('password: '),
-      tokens: rep('token'),
-      tokenEq: rep('token='),
-      colons: rep(':'),
-      equals: rep('='),
-      pairs: rep('a=b '),
-      longKey: `${'k'.repeat(size)}=v`,
-      longValue: `token=${'v'.repeat(size)}`,
-      eqSpaces: `token=${' '.repeat(size)}x`,
-      quotes: rep('token":"'),
+  it('stays linear on 1 MiB inputs', { timeout: 120_000 }, () => {
+    const build = (size: number): Record<string, string> => {
+      const rep = (unit: string): string => unit.repeat(Math.ceil(size / unit.length));
+      return {
+        passwords: rep('password='),
+        passwordColons: rep('password: '),
+        tokens: rep('token'),
+        tokenEq: rep('token='),
+        colons: rep(':'),
+        equals: rep('='),
+        pairs: rep('a=b '),
+        longKey: `${'k'.repeat(size)}=v`,
+        longValue: `token=${'v'.repeat(size)}`,
+        eqSpaces: `token=${' '.repeat(size)}x`,
+        quotes: rep('token":"'),
+      };
     };
-    for (const [name, input] of Object.entries(inputs)) {
-      expect(timeScrub(input), name).toBeLessThan(3000);
+    for (const name of Object.keys(build(1))) {
+      assertLinear((size) => scrubText(build(size)[name] as string));
     }
-    expect(timeScrub('x'.repeat(10 * (1 << 20)))).toBeLessThan(5000);
+    expect(timeScrub('x'.repeat(10 * (1 << 20)))).toBeLessThan(CEILING_MS);
   });
 });
 

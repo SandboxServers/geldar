@@ -1,6 +1,7 @@
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { REDACTED as R, redactContent } from '../src/redact.ts';
+import { CEILING_MS } from './timing.ts';
 
 // Credential-shaped fixtures are built at run time.
 const pw = ['pass', 'word'].join('');
@@ -16,7 +17,7 @@ describe('the work budget covers Error values (step 2)', () => {
   it('finishes 300 Errors with 64 KiB messages quickly and omits the later ones', () => {
     const errors = Array.from({ length: 300 }, () => new Error('a'.repeat(65_536)));
     const { ms, out } = run(errors);
-    expect(ms).toBeLessThan(8000);
+    expect(ms).toBeLessThan(CEILING_MS);
     expect(
       out.filter((e) => typeof e === 'string' && e.startsWith('[omitted ')).length,
     ).toBeGreaterThan(200);
@@ -29,7 +30,7 @@ describe('the work budget covers Error values (step 2)', () => {
       () => new Error(`${pw}=${secret} `.repeat(Math.ceil(65_536 / 24))),
     );
     const { ms, out } = run(errors);
-    expect(ms).toBeLessThan(8000);
+    expect(ms).toBeLessThan(CEILING_MS);
     expect(JSON.stringify(out)).not.toContain(secret);
     expect(JSON.stringify(out)).toContain(R);
     expect(

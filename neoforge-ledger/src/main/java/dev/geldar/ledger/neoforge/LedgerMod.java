@@ -32,6 +32,9 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 @Mod(value = "ledger", dist = Dist.DEDICATED_SERVER)
 public final class LedgerMod {
     static final String CONFIG_FILE = "ledger.properties";
+    /** The ledger closes after every collector's own stop listener (they run at NORMAL). */
+    static final EventPriority SHUTDOWN_PRIORITY = EventPriority.LOWEST;
+
     private static final Logger LOG = LedgerLog.server();
 
     private final NeoForgeHostScheduler scheduler = new NeoForgeHostScheduler(LOG);
@@ -47,7 +50,7 @@ public final class LedgerMod {
             // First, so no failing install can skip it. LOWEST: it runs after the collectors' own stop listeners
             // (priority NORMAL), whatever the registration order, so the ledger still closes last.
             isolated("shutdown listener", () -> NeoForge.EVENT_BUS.addListener(
-                    EventPriority.LOWEST, ServerStoppingEvent.class, e -> shutdown(ledger, scheduler)));
+                    SHUTDOWN_PRIORITY, ServerStoppingEvent.class, e -> shutdown(ledger, scheduler)));
             isolated("server holder", () -> NeoForge.EVENT_BUS.addListener(ServerStartingEvent.class, e -> server = e.getServer()));
             isolated("tick", () -> dev.geldar.ledger.neoforge.tick.TickWiring.install(l, host, scheduler));
             // After TickWiring: Post listeners run in registration order, so the measured tick excludes our own tasks.
@@ -55,6 +58,7 @@ public final class LedgerMod {
             isolated("progress", () -> dev.geldar.ledger.neoforge.players.ProgressWiring.install(l, host, scheduler));
             isolated("curated", () -> dev.geldar.ledger.neoforge.curated.CuratedWiring.install(l, host, scheduler));
             isolated("audit", () -> dev.geldar.ledger.neoforge.audit.AuditWiring.install(l, host));
+            isolated("world, server, snapshot", () -> StateWiring.install(l, host, scheduler));
         } catch (Throwable t) {
             rethrowIfVmError(t);
             LOG.warning("ledger setup failed, ledger off: " + t.getClass().getName());
