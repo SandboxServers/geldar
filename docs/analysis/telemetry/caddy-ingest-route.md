@@ -23,8 +23,8 @@ Placeholders (no values in the repo; set in the Caddy environment on the node by
 
 | Placeholder | Holds | Set by |
 |---|---|---|
-| `{$GELDAR_INGEST_HOST}` | the public hostname of the route | owner, Caddy environment |
-| `{$GELDAR_INGEST_UPSTREAM}` | the gateway's loopback publish, `127.0.0.1:<port>` (port chosen at N1) | owner, Caddy environment |
+| `{$GELDAR_INGEST_HOST:otel.invalid}` | the public hostname of the route (default `otel.invalid`, so Caddy still starts if the variable is missing) | owner, Caddy environment |
+| `{$GELDAR_INGEST_UPSTREAM:localhost:4320}` | the gateway's loopback publish, `localhost:4320` (`127.0.0.1:4320:4318` in `compose.gateway.yml` on the telemetry/t25-gateway branch, not on main until it merges) | owner, Caddy environment |
 | `{$GELDAR_INGEST_TOKEN}` | the ingest token (Caddy environment secret) | owner, never typed into a shell or a file in the repo |
 
 ## The snippet (diff)
@@ -35,7 +35,7 @@ New live file `deploy/caddy/otel.caddy`. The file is new, so every line is an ad
 +# OTLP/HTTP ingest for Mind hosts (T-15; 0350 item 9; collector-design section 9; owner ruling 2026-11-16).
 +# Placeholders: GELDAR_INGEST_HOST (public hostname), GELDAR_INGEST_UPSTREAM (gateway loopback publish, host:port),
 +# GELDAR_INGEST_TOKEN (ingest bearer token, Caddy environment secret). No value is written in this file.
-+{$GELDAR_INGEST_HOST} {
++{$GELDAR_INGEST_HOST:otel.invalid} {
 +	# Only POST passes (the OTLP/HTTP exporters POST).
 +	@not_post not method POST
 +	handle @not_post {
@@ -58,6 +58,8 @@ New live file `deploy/caddy/otel.caddy`. The file is new, so every line is an ad
 +			wrap json
 +			fields {
 +				request>headers>Authorization delete
++				request>headers>Cookie delete
++				request>headers>Proxy-Authorization delete
 +			}
 +		}
 +	}
@@ -71,9 +73,10 @@ New live file `deploy/caddy/otel.caddy`. The file is new, so every line is an ad
 +	@ingest {
 +		path /v1/traces /v1/logs /v1/metrics
 +		header Authorization "Bearer {$GELDAR_INGEST_TOKEN}"
++		expression `size('{$GELDAR_INGEST_TOKEN}') >= 64`
 +	}
 +	handle @ingest {
-+		reverse_proxy {$GELDAR_INGEST_UPSTREAM} {
++		reverse_proxy {$GELDAR_INGEST_UPSTREAM:localhost:4320} {
 +			header_up Host localhost
 +			header_up x-geldar-client-ip {remote_host}
 +			transport http {
@@ -100,7 +103,7 @@ Kill switch, new file `deploy/caddy/otel-off.caddy` (swap it in for `otel.caddy`
 
 ```diff
 +# OTLP ingest kill switch (caddy-ingest-route.md). Swap in for otel.caddy, then validate and restart (admin API off, R39).
-+{$GELDAR_INGEST_HOST} {
++{$GELDAR_INGEST_HOST:otel.invalid} {
 +	respond 503
 +}
 ```
@@ -109,7 +112,9 @@ No global server timeouts are added. The `servers` block is a global option that
 
 Notes on the snippet:
 - The snippet uses only stock Caddy directives: `handle`, `respond`, `request_header`, `header`, `log` with the filter encoder, `request_body`, and `reverse_proxy` with its `transport http` timeouts. No global `servers` block is added. It has no rate limit and adds no module, and it needs no custom image.
-- The token matcher is a plain string match. If `GELDAR_INGEST_TOKEN` is unset or empty, the matcher becomes `Bearer ` and would accept a request with that exact header. The validation step therefore refuses an empty or short token before anything else.
+- The token matcher is a plain string match plus a CEL guard, `expression size('{$GELDAR_INGEST_TOKEN}') >= 64`, in the same matcher (all conditions must hold). An unset, empty or short token turns the header match into `Bearer ` or similar, but the guard is false, so the proxy route never matches and the request gets 401. The adapt test checks the guard with an empty token. The guard checks length only; the procedure still refuses a short token before anything is written (README step 2).
+- The placeholders have defaults (`otel.invalid`, `localhost:4320`, empty token), so a recreate with a variable missing still starts Caddy and cannot take every site down. Do not rely on it: remove the live file before removing the variables.
+- Logging. The access log of this site uses the filter encoder and deletes the `Authorization`, `Cookie` and `Proxy-Authorization` request headers. The error log (for example the 502 when the gateway is down) is the default logger, which the node's global block does not change (it has `admin off`, `email` and `servers { trusted_proxies }` only, no `log` and no `log_credentials`); Caddy redacts credential headers there by default (`log_credentials` is off), so the headers appear as `REDACTED`. This is Caddy's documented default, not verified on the node's 2.11.6: README step 6 reads the `board-proxy` log after a forced 502 and greps (pattern from stdin) for the token and for `Authorization`. The gateway receives the `Authorization` header and must not log request headers.
 
 ## Abuse case
 
