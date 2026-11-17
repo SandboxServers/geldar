@@ -19,8 +19,9 @@ import java.util.Map;
  *   <li>{@code stall.threshold_ms=2000}
  *   <li>{@code sample.world_every_ticks=200}, {@code sample.player_every_ticks=20}
  *   <li>{@code jfr.enabled=true}
- *   <li>{@code container.cgroup_root=/sys/fs/cgroup} (PT-09c)
- *   <li>{@code disk.area.<name>.path} for name in world, plugin_data, logs, bluemap, chunky (PT-10a; unset = none)
+ *   <li>{@code container.cgroup_root=/sys/fs/cgroup} (PT-09c; same path rule as below)
+ *   <li>{@code disk.area.<name>.path} for name in world, plugin_data, logs, bluemap, chunky (PT-10a; unset = none).
+ *       A path containing {@code secret} (any case), a {@code ..} segment or a control character rejects the file
  * </ul>
  *
  * Unknown keys are errors. A key ending in {@code password}, {@code secret}, {@code token}, {@code key} or
