@@ -126,7 +126,9 @@ describe('geldar.ps1 NATS auth generator: static wiring', () => {
   it('defines Initialize-NatsAuth and Get-NatsUsers, and dispatches nats-auth to it', () => {
     expect(functionBody('Initialize-NatsAuth')).not.toBe('');
     expect(functionBody('Get-NatsUsers')).not.toBe('');
-    expect(SCRIPT).toMatch(/'nats-auth' \{ Initialize-NatsAuth \$shard \}/);
+    expect(SCRIPT).toMatch(
+      /'nats-auth' \{ Initialize-NatsAuth \$shard @\(\$ShardArgs \| Select-Object -Skip 2\) \}/,
+    );
   });
 
   it('skips every overlay when validating compose files alone, and merges nats-auth-mcp.yml into the Phase 0 chain', () => {

@@ -2,6 +2,8 @@
 
 Status: design, recommendation A. No code in this commit.
 
+Status: node steps superseded by BM-16c (settings-deploy-design.md); do not run compose against the node's colo.yml.
+
 ## Problem
 
 BlueMap (5.29) rewrites the node webroot's `settings.json` at every Paper and BlueMap start, and writes

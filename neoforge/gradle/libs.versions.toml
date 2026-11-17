@@ -1,8 +1,16 @@
 # Exact pins only. Every version is at least two weeks old when it lands.
 # junit 6.1.3: published 2026-08-07 (same pin as plugin/gradle/libs.versions.toml).
+# jnats 2.26.4: the pin plugin/gradle/libs.versions.toml already uses for core-common; the RepoChecks test
+# neoforge-jarjar-owner keeps the two equal.
 [versions]
+# gson 2.13.2: already in verification-metadata.xml (sha256 checked; NeoForge's own gson). Test-only: EventEnvelope
+# names gson's JsonObject, and core-common's gson is compileOnly, so the test classpath needs it.
 junit = "6.1.3"
+jnats = "2.26.4"
+gson = "2.13.2"
 
 [libraries]
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher", version.ref = "junit" }
+jnats = { module = "io.nats:jnats", version.ref = "jnats" }
+gson = { module = "com.google.code.gson:gson", version.ref = "gson" }

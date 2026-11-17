@@ -116,7 +116,7 @@ Any other action throws and names the six valid ones (line 461).
 
 ### NATS auth generator
 
-`./geldar.ps1 shard nats-auth <name>` writes, when missing and never overwriting: one password file per NATS user, a Thinker hub token file, and the server config `nats-auth.conf`, all in the shard's git-ignored secrets folder and owner-only (lines 315 to 365; decision 0067). The config defines one account, `GELDAR`, with JetStream, and one user per role with publish allow, optional publish deny and subscribe allow lists (lines 345 to 364).
+`./geldar.ps1 shard nats-auth <name>` writes, when missing and never overwriting: one password file per NATS user, a Thinker hub token file, and the server config `nats-auth.conf`, all in the shard's git-ignored secrets folder and owner-only (lines 315 to 365; decision 0067). The config defines one account, `GELDAR`, with JetStream, and one user per role with publish allow, optional publish deny and subscribe allow lists (lines 345 to 364). For `phase0`, pass `--local` (the local desktop stack, allowed in a git checkout) or `--scratch` (a clean `git archive` export only; refused, with nothing written, when a `.git` entry exists). A checkout run with no flag is refused, also with nothing written; an export with no flag behaves like `--scratch`.
 
 The roles come from `Get-NatsUsers` (lines 367 to 415), the per-user allow lists of decision 0087: `body`, `mind`, `eventsink`, `mcp`, `velocity`, `paper`, `kino`, `deploy`, `supervisor`, `register` and `helper` (the colo table). The phase0 table (scratch stack) adds `seed`, which can only create, inspect and update the two identity KV buckets. Re-derive with:
 

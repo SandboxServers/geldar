@@ -27,10 +27,18 @@ class NoRegistryScanTest {
 
     private static final Path JAVA_ROOT = Path.of("src", "main", "java");
     private static final Path RESOURCE_ROOT = Path.of("src", "main", "resources");
+    /** core-common is a composite build input and is packed into this jar (build.gradle.kts), so it is scanned too. */
+    private static final Path CORE_COMMON_JAVA_ROOT = Path.of("..", "plugin", "core-common", "src", "main", "java");
 
     @Test
     void mainSourcesIntroduceNoRegistriesOrPayloads() throws IOException {
         assertEquals(List.of(), scan(JAVA_ROOT, ".java"), "registry or payload API found in main sources");
+    }
+
+    @Test
+    void packedCoreCommonSourcesIntroduceNoRegistriesOrPayloads() throws IOException {
+        assertEquals(List.of(), scan(CORE_COMMON_JAVA_ROOT, ".java"),
+                "registry or payload API found in packed core-common sources");
     }
 
     @Test

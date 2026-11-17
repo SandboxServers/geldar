@@ -444,3 +444,5 @@ Risks:
 - Provenance without item tags is approximate (bulk chests, stack merges). A miss costs a little `U`; a false match is bounded by the caps. If the bench shows drift, test a vanilla `custom_data` component, which may break stacking for mineflayer.
 - Hidden advancements still sync to vanilla clients as packets. Golem ignores them, but a vanilla client must be checked on the scratch shard to confirm no toast or tab appears.
 - Persistence and claims depend on the unfinished P4 block-owner log. The pure library, contracts and simulation can proceed without it.
+
+Pointer (2026-11-17): default choices for these open questions are in [progression-defaults.md](progression-defaults.md). They are proposals under the owner's delegation, not in force until the flagged decision record exists.
