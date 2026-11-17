@@ -301,12 +301,13 @@ class LedgerPluginTest {
         }
         assertTrue(disabled.isEmpty());
         // Built so far, in PaperCollectors.NAMES order: tick (PT-04b), world (PT-05a), container. Tick's start needs the live plugin loader (JavaPlugin.getPlugin), so outside a server it fails and is disabled; world starts fine, so tick is the one tolerated warning.
-        assertEquals(List.of("tick", "world", "container"), plugin.collectors().builtIds());
-        assertEquals(List.of("world", "container"), plugin.collectors().runningIds());
+        assertEquals(List.of("tick", "world", "census", "container"), plugin.collectors().builtIds());
+        assertEquals(List.of("world", "census", "container"), plugin.collectors().runningIds());
         List<String> expectedSkipped = new ArrayList<>(PaperCollectors.NAMES);
         expectedSkipped.remove(PaperCollectors.CGROUP);
         expectedSkipped.remove("dev.geldar.ledger.paper.tick.TickCollector");
         expectedSkipped.remove("dev.geldar.ledger.paper.world.WorldCollector");
+        expectedSkipped.remove("dev.geldar.ledger.paper.census.CensusCollector");
         assertEquals(expectedSkipped.stream().sorted().toList(), plugin.collectors().skippedNames().stream().sorted().toList());
         assertTrue(plugin.collectors().skippedNames().contains(PaperCollectors.DISK), "no disk path configured");
         assertFalse(logs.stream().anyMatch(r -> r.getLevel().intValue() >= java.util.logging.Level.WARNING.intValue()
