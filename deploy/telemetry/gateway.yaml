@@ -5,7 +5,7 @@
 # Content capture (decision 0350, full text, no opt-out): this gateway must NOT truncate or drop thoughts, speech, journals or prompts.
 # So there is NO attribute-size limit, NO log-body-length limit and NO sampling anywhere below. Do not add one.
 # Redaction here is narrow, per collector-design section 5: it masks IPv4 and IPv6 literals (log bodies that are strings, the top-level
-# string values of map bodies, resource attributes and span event attributes) and deletes credential-looking attribute KEYS (resource,
+# string values of map bodies, log attributes, resource attributes and span event attributes) and deletes credential-looking attribute KEYS (resource,
 # scope, log, span, span event and datapoint attributes). It does NOT scrub free text for secrets or personal data. Known gaps (README, G4 and G8):
 # array and bytes bodies, nested map values, span link attributes and metric exemplar labels have no OTTL context here.
 #
@@ -54,8 +54,9 @@ processors:
     error_mode: ignore
     logs:
       log_record:
-        # Drops Paper's RCON thread lines; the [Rcon: ...] echoes are kept.
-        - 'IsMatch(body, ".*Thread RCON Client .*(started|shutting down).*")'
+        # PT-12: drops Paper's RCON thread lines (any line naming "RCON Client" or "Thread RCON"), EXCEPT the plugin's RCON audit records
+        # (attribute event.name=geldar.rcon.command, whose body may legitimately contain that text). The [Rcon: ...] echoes are kept (they match neither phrase).
+        - 'IsMatch(body, ".*(RCON Client|Thread RCON).*") and attributes["event.name"] != "geldar.rcon.command"'
     traces:
       span:
         - 'attributes["http.route"] == "/healthz"'   # route name to confirm [UNV]
@@ -81,8 +82,17 @@ processors:
           - 'delete_matching_keys(log.body, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|auth[._-]?(header|key)|session[._-]?key|passcode|encryption[._-]?key|master[._-]?key|(^|[._-])(pass|pat|otp|pin|signature)($|[._-])|webhook[._-]?url|license[._-]?key|db[._-]?pass($|[._-])|token$|token[._-]?(value|id|string)$)") where IsMap(log.body)'
           - 'delete_matching_keys(log.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|auth[._-]?(header|key)|session[._-]?key|passcode|encryption[._-]?key|master[._-]?key|(^|[._-])(pass|pat|otp|pin|signature)($|[._-])|webhook[._-]?url|license[._-]?key|db[._-]?pass($|[._-])|token$|token[._-]?(value|id|string)$)")'
           - 'delete_key(log.attributes, "user.email")'
+          # PT-12: the same address masking on string LOG ATTRIBUTE values (same patterns and boundaries as the body statements above).
+          - 'replace_all_patterns(log.attributes, "value", "(^|[^0-9.])(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)($|[^0-9.]|\\.(?:$|[^0-9]))", "$1<addr>$2")'
+          - 'replace_all_patterns(log.attributes, "value", "(^|[^0-9.])(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)($|[^0-9.]|\\.(?:$|[^0-9]))", "$1<addr>$2")'
+          - 'replace_all_patterns(log.attributes, "value", "\\b(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}\\b", "<addr>")'
+          - 'replace_all_patterns(log.attributes, "value", "\\B::(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4}\\b|\\b(?:[0-9A-Fa-f]{1,4}:){1,7}(?::[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6}\\b|:\\B)", "<addr>")'
       - context: resource
         statements:
+          # PT-12: process identity attributes from the Paper agent can carry paths, arguments and secrets; deleted on every signal's resource.
+          - 'delete_key(resource.attributes, "process.command_line")'
+          - 'delete_key(resource.attributes, "process.command_args")'
+          - 'delete_key(resource.attributes, "process.environment_variables")'
           - 'delete_matching_keys(resource.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|auth[._-]?(header|key)|session[._-]?key|passcode|encryption[._-]?key|master[._-]?key|(^|[._-])(pass|pat|otp|pin|signature)($|[._-])|webhook[._-]?url|license[._-]?key|db[._-]?pass($|[._-])|token$|token[._-]?(value|id|string)$)")'
           - 'replace_all_patterns(resource.attributes, "value", "(^|[^0-9.])(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)($|[^0-9.]|\\.(?:$|[^0-9]))", "$1<addr>$2")'
           - 'replace_all_patterns(resource.attributes, "value", "(^|[^0-9.])(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)($|[^0-9.]|\\.(?:$|[^0-9]))", "$1<addr>$2")'
@@ -94,6 +104,9 @@ processors:
     trace_statements:
       - context: resource
         statements:
+          - 'delete_key(resource.attributes, "process.command_line")'
+          - 'delete_key(resource.attributes, "process.command_args")'
+          - 'delete_key(resource.attributes, "process.environment_variables")'
           - 'delete_matching_keys(resource.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|auth[._-]?(header|key)|session[._-]?key|passcode|encryption[._-]?key|master[._-]?key|(^|[._-])(pass|pat|otp|pin|signature)($|[._-])|webhook[._-]?url|license[._-]?key|db[._-]?pass($|[._-])|token$|token[._-]?(value|id|string)$)")'
           - 'replace_all_patterns(resource.attributes, "value", "(^|[^0-9.])(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)($|[^0-9.]|\\.(?:$|[^0-9]))", "$1<addr>$2")'
           - 'replace_all_patterns(resource.attributes, "value", "(^|[^0-9.])(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)($|[^0-9.]|\\.(?:$|[^0-9]))", "$1<addr>$2")'
@@ -117,6 +130,9 @@ processors:
     metric_statements:
       - context: resource
         statements:
+          - 'delete_key(resource.attributes, "process.command_line")'
+          - 'delete_key(resource.attributes, "process.command_args")'
+          - 'delete_key(resource.attributes, "process.environment_variables")'
           - 'delete_matching_keys(resource.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|auth[._-]?(header|key)|session[._-]?key|passcode|encryption[._-]?key|master[._-]?key|(^|[._-])(pass|pat|otp|pin|signature)($|[._-])|webhook[._-]?url|license[._-]?key|db[._-]?pass($|[._-])|token$|token[._-]?(value|id|string)$)")'
           - 'delete_key(resource.attributes, "geldar.life_id")'
           - 'delete_key(resource.attributes, "player_id")'
