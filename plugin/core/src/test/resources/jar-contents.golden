@@ -954,6 +954,7 @@ dev/geldar/core/speech/SpeechText.class
 dev/geldar/core/trace/SpanHearingTrace$SpanAttributes.class
 dev/geldar/core/trace/SpanHearingTrace.class
 dev/geldar/core/trace/SpeechHash.class
+dev/geldar/core/trace/CoreMetrics.class
 dev/geldar/core/trace/TraceHeaders$1.class
 dev/geldar/core/trace/TraceHeaders.class
 io/nats/client/AuthHandler.class
