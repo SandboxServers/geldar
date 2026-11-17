@@ -2,21 +2,23 @@
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [k: string]: JsonValue };
 
 /** Why an action failed. `blocked` is a reason, not a status: an abandoned path is a failed action. */
-export type FailReason =
-  | 'invalid_args'
-  | 'timeout'
-  | 'blocked'
-  | 'not_found'
-  | 'out_of_reach'
-  | 'missing_materials'
-  | 'missing_station'
-  | 'needs_rescue'
-  | 'not_possible'
-  | 'interrupted'
-  | 'unsupported'
-  | 'busy'
-  | 'no_effect'
-  | 'internal';
+export const FAIL_REASONS = [
+  'invalid_args',
+  'timeout',
+  'blocked',
+  'not_found',
+  'out_of_reach',
+  'missing_materials',
+  'missing_station',
+  'needs_rescue',
+  'not_possible',
+  'interrupted',
+  'unsupported',
+  'busy',
+  'no_effect',
+  'internal',
+] as const;
+export type FailReason = (typeof FAIL_REASONS)[number];
 
 /**
  * What a handler returns. `runAction` turns it into the stored `ActionRecord.result` and state.

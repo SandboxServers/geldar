@@ -23,6 +23,7 @@ import {
   viewSubject,
   type WorldEvent,
 } from '@geldar/contract';
+import { errorFields } from '@geldar/telemetry';
 import type { NatsConnection } from '@nats-io/transport-node';
 import type { IntentExecutor, PlanEnvelope, SubmitResult } from '../body/executor.ts';
 import type { EventPublisher } from '../body/records-nats.ts';
@@ -78,7 +79,9 @@ export function natsRequestServer(nc: NatsConnection): RequestServer {
       void (async () => {
         for await (const msg of sub) {
           handler(msg.string(), (body) => msg.respond(body)).catch((error: unknown) => {
-            console.warn(`mind-link: handler for ${subject} failed: ${String(error)}`);
+            console.warn(
+              JSON.stringify({ msg: 'mind-link handler failed', subject, ...errorFields(error) }),
+            );
           });
         }
       })();
