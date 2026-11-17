@@ -232,6 +232,29 @@ class WorldCollectorTest {
     }
 
     @Test
+    void renamedWorldsNeverGrowTheTrackedSetPastTheCap() {
+        Rig r = new Rig();
+        for (int i = 0; i < WorldCollector.MAX_WORLDS; i++) {
+            r.worlds.add(new FakeWorld("a" + i, 1, 1, 1));
+        }
+        r.start();
+        r.host.mainThread(true);
+        for (int i = 0; i < 2; i++) {
+            r.scheduler.advanceTicks(LedgerConfig.defaults().sampleWorldEveryTicks());
+        }
+        assertEquals(WorldCollector.MAX_WORLDS, r.collector.trackedWorlds().size());
+        r.worlds.clear();
+        for (int i = 0; i < WorldCollector.MAX_WORLDS; i++) {
+            r.worlds.add(new FakeWorld("b" + i, 1, 1, 1));
+        }
+        for (int i = 0; i < 4; i++) {
+            r.scheduler.advanceTicks(LedgerConfig.defaults().sampleWorldEveryTicks());
+        }
+        assertEquals(WorldCollector.MAX_WORLDS, r.collector.trackedWorlds().size());
+        assertFalse(r.collector.trackedWorlds().contains("b0"));
+    }
+
+    @Test
     void stopCancelsBothTimersAndIsIdempotent() {
         Rig r = new Rig();
         FakeWorld w = new FakeWorld("world", 1, 1, 1);
