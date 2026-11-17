@@ -64,7 +64,7 @@ class RedactorTest {
     void largeInputsStayLinear() {
         String[] shapes = {
             "node:2001:db8::1 ".repeat(60_000), "a1".repeat(500_000) + ":", "xa1 ".repeat(250_000) + ":",
-            "e:".repeat(500_000), "1.".repeat(500_000), "10.0.0.1".repeat(130_000)
+            "e:".repeat(500_000), "1.".repeat(500_000), q(10, 0, 0, 1).repeat(130_000)
         };
         for (String s : shapes) {
             long t0 = System.nanoTime();
@@ -88,16 +88,17 @@ class RedactorTest {
 
     @Test
     void versionStringsAndLongerDottedRunsKeepTheirText() {
+        String v = q(1, 2, 3, 4);
         for (String s : new String[] {
-            "v1.2.3.4", "V1.2.3.4", "version 1.2.3.4", "Version 1.2.3.4", "java 1.2.3.4", "Java 1.2.3.4",
-            "1.2.3.4.5", "5.1.2.3.4", "1.2.3.4.5.6", "20240101.1.2.3.4"
+            "v" + v, "V" + v, "version " + v, "Version " + v, "java " + v, "Java " + v,
+            v + ".5", "5." + v, v + ".5.6", "20240101." + v
         }) {
             assertSame(s, Redactor.scrub(s), s);
         }
         // A word that merely ends in v is not a version prefix.
         assertEquals("dev[addr]", Redactor.scrub("dev" + q(10, 0, 0, 1)));
         // Documented caveat: a bare four-part number is masked.
-        assertEquals("build [addr]", Redactor.scrub("build 1.20.4.1"));
+        assertEquals("build [addr]", Redactor.scrub("build " + q(1, 20, 4, 1)));
     }
     @Test
     void redactAttrReplacesCredentialValueAndScrubsStrings() {

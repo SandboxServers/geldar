@@ -27,8 +27,8 @@ public final class Redactor {
     /**
      * IPv4 rule: four dotted octets of 1-3 digits (leading zeros allowed, each at most 255), not touching
      * another digit, and not part of a longer dotted run ("1.2.3.4.5": a digit and a dot before, or a dot
-     * and a digit after). Letters may touch it ("ip10.0.0.1", "Connecting...10.0.0.1"). Not scrubbed when
-     * preceded by "v", "version " or "java " (a version string). A bare four-part number such as "1.20.4.1"
+     * and a digit after). Letters may touch it ("ip" or "Connecting..." glued to an address). Not scrubbed when
+     * preceded by "v", "version " or "java " (a version string). A bare four-part number (a four-part build number)
      * is masked: that false positive is accepted over leaking an address.
      */
     private static final Pattern IPV4 = Pattern.compile(
