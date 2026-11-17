@@ -4,6 +4,7 @@ import type { PushMetricExporter } from '@opentelemetry/sdk-metrics';
 import type { SpanExporter } from '@opentelemetry/sdk-trace';
 import { describe, expect, it, vi } from 'vitest';
 import { startTelemetry, type TelemetryExporters } from '../src/sdk.ts';
+import { CEILING_MS } from './timing.ts';
 
 const ENDPOINT = 'http://127.0.0.1:4318';
 const BASE = { service: 'geldar-test', version: '0.0.0' };
@@ -115,7 +116,7 @@ describe('startTelemetry when on', () => {
     const tracer = handle.tracerProvider?.getTracer('t');
     const started = Date.now();
     for (let i = 0; i < 5000; i++) tracer?.startSpan(`s${i}`).end();
-    expect(Date.now() - started).toBeLessThan(6000);
+    expect(Date.now() - started).toBeLessThan(CEILING_MS);
     // Shutdown with a dead exporter is bounded by the shutdown limit: run it on fake timers.
     vi.useFakeTimers();
     try {

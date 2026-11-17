@@ -6,7 +6,7 @@ import {
   redactContent,
   scrubText,
 } from '../src/redact.ts';
-import { assertLinear } from './timing.ts';
+import { assertLinear, CEILING_MS } from './timing.ts';
 
 // Credential-shaped fixtures are built at run time.
 const pw = ['pass', 'word'].join('');
@@ -94,10 +94,10 @@ describe('PEM and JWT scans are linear', () => {
     jwtRun: 'eyJ' + 'a'.repeat(1000),
   };
   it.each(Object.entries(shapes))(
-    '%s: 1 MiB under 1 s and 3x on doubling',
+    '%s: 3x on doubling',
     (_n, unit) => {
       const { t1 } = assertLinear((size) => scrubText(unit.repeat(Math.ceil(size / unit.length))));
-      expect(t1).toBeLessThan(3000);
+      expect(t1).toBeLessThan(CEILING_MS);
     },
     60_000,
   );
@@ -107,7 +107,7 @@ describe('redactContent bounds its total work', () => {
   it('reads a sparse 1e8 array in bounded time and marks the cut', () => {
     const start = performance.now();
     const out = redactContent(new Array(1e8)) as unknown[];
-    expect(performance.now() - start).toBeLessThan(3000);
+    expect(performance.now() - start).toBeLessThan(CEILING_MS);
     expect(out.at(-1)).toBe('[truncated]');
     expect(out.length).toBeLessThanOrEqual(100_001);
   });
@@ -116,7 +116,7 @@ describe('redactContent bounds its total work', () => {
     const big = 'a=b '.repeat(MiB / 4);
     const start = performance.now();
     const out = redactContent(Array.from({ length: 200 }, () => big)) as string[];
-    expect(performance.now() - start).toBeLessThan(5000);
+    expect(performance.now() - start).toBeLessThan(CEILING_MS);
     expect(out.filter((s) => s.startsWith('[omitted ')).length).toBeGreaterThan(190);
     expect(out[0]).toBe(big);
   }, 30_000);
@@ -130,8 +130,6 @@ describe('redactContent bounds its total work', () => {
   });
 
   it('stays fast on one hostile 60,000-character upper-case key', () => {
-    const start = performance.now();
-    redactContent({ ['A'.repeat(60_000)]: 1 });
-    expect(performance.now() - start).toBeLessThan(1000);
+    assertLinear((size) => redactContent({ ['A'.repeat(size)]: 1 }), [200_000, 400_000]);
   });
 });
