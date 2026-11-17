@@ -3,10 +3,15 @@
 # nothing else reads it. It writes compose/secrets-nf/ (git-ignored), the directory nf-live.yml reads through
 # NF_SECRETS_DIR (default ./secrets-nf, relative to compose/).
 #
-# Run it on the node, in a clean export made with git archive (no .git), with --live. Without --live nothing is written.
+# Run it on the TRUSTED machine, in a clean export made with git archive (no .git), with --live, then copy the result to the
+# node (the node has no pwsh and no node runtime). Without --live nothing is written.
 # A git checkout (a .git entry) is refused unless --local is also given. --local is accepted in a clean export and changes
 # nothing there; only the test harness needs it (tools/repo-checks/src/nats-auth-nf.test.ts). The password files are
 # plaintext inside nats-auth.conf, as the colo config is (docs/runbooks/nf-live-project.md, section 4b).
+# Each file (the config included) is created empty with CreateNew, so an existing file is never overwritten; its owner-only
+# mode (Set-OwnerOnlyAcl, from geldar.ps1) is set while it is still empty, and only then is its text written. A re-run restricts
+# an existing file again, and an existing empty secret file is refused. On Windows this script sets no ACL on the directory:
+# it keeps its parent's ACL, and its files are owner-only from their creation.
 #
 # The allow lists are this shard's NATS only: every subject starts with geldar.nf., or is a JetStream API subject that
 # names one of the two streams below or one of the two identity KV buckets. No user gets `>`, `geldar.*` or another shard.
@@ -52,7 +57,7 @@ function Assert-NfNatsIntent([string[]] $Flags) {
   $unknown = @($Flags | Where-Object { $_ -cnotin '--live', '--local' })
   if ($unknown.Count -gt 0) { throw "shard nats-auth nf: unknown flag $($unknown -join ', ') (the flags are --live and --local). Nothing was written." }
   if ($Flags -cnotcontains '--live') {
-    throw 'shard nats-auth nf writes the live NeoForge NATS passwords to compose/secrets-nf/. Run it on the node, in a clean export, with --live. Nothing was written.'
+    throw 'shard nats-auth nf writes the live NeoForge secrets to compose/secrets-nf/. Run it on the trusted machine, in a clean export, with --live, then copy the result to the node. Nothing was written.'
   }
   if ((Test-Path -LiteralPath (Join-Path $Root '.git')) -and $Flags -cnotcontains '--local') {
     throw 'shard nats-auth nf --live is refused in a git checkout (a .git entry exists). Generate in a clean export made with git archive, never in a checkout. --local is for the test harness only. Nothing was written.'
@@ -67,6 +72,20 @@ function Get-NfNatsPassword([string] $Dir, [string] $User) {
   if ($pass -eq '') { throw "compose/secrets-nf/nats-$User.txt is empty. Nothing was written. Restore the password, or delete the file and run again before any start." }
   if ($pass -match '["\x00-\x1f]') { throw "compose/secrets-nf/nats-$User.txt holds a double quote or a line break, which would break nats-auth.conf. Nothing was written." }
   return $pass
+}
+
+# Creates one secret file or the config: CreateNew, so an existing file is never overwritten, and the owner-only mode is set
+# while the file is still empty. Set-OwnerOnlyAcl and Assert-OwnerOnlyMode come from geldar.ps1 (loaded before this file).
+function Write-NfSecretFile([string] $Path, [string] $Text) {
+  $stream = [IO.File]::Open($Path, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write)
+  try {
+    Set-OwnerOnlyAcl $Path
+    $data = [Text.Encoding]::ASCII.GetBytes($Text)
+    $stream.Write($data, 0, $data.Length)
+  } finally {
+    $stream.Dispose()
+  }
+  Assert-OwnerOnlyMode $Path '600'
 }
 
 function Initialize-NfNatsAuth([string[]] $Flags = @()) {
@@ -88,16 +107,23 @@ function Initialize-NfNatsAuth([string[]] $Flags = @()) {
     Assert-OwnerOnlyMode $dir '700'
   }
   $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
-  foreach ($user in $users.Keys) {
-    $path = Join-Path $dir "nats-$user.txt"
-    if (Test-Path -LiteralPath $path) { continue }
+  # The NATS passwords, then the Postgres password and the Velocity forwarding secret (nf-live.yml declares both). Each is 32
+  # symbols from $alphabet (the neoforge entrypoint accepts [A-Za-z0-9_-] only), no trailing newline, never overwritten.
+  $names = @($users.Keys | ForEach-Object { "nats-$_" }) + 'postgres', 'velocity-forwarding'
+  foreach ($name in $names) {
+    $path = Join-Path $dir "$name.txt"
+    if (Test-Path -LiteralPath $path) {
+      # An empty file is what a crash between create and write leaves behind: refuse it by name (Initialize-ShardSecrets does too).
+      if ((Get-Item -LiteralPath $path).Length -eq 0) { throw "compose/secrets-nf/$name.txt is empty; delete it and run again before any start." }
+      Set-OwnerOnlyAcl $path
+      continue
+    }
     $bytes = [Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
     $secret = -join ($bytes | ForEach-Object { $alphabet[$_ % $alphabet.Length] })
-    [IO.File]::WriteAllText($path, $secret, [Text.Encoding]::ASCII)
-    Restrict-OwnerOnly $path
-    Write-Host "created compose/secrets-nf/nats-$user.txt"
+    Write-NfSecretFile $path $secret
+    Write-Host "created compose/secrets-nf/$name.txt"
   }
-  if (Test-Path -LiteralPath $conf) { Write-Host 'kept compose/secrets-nf/nats-auth.conf (it exists; never overwritten)'; return }
+  if (Test-Path -LiteralPath $conf) { Set-OwnerOnlyAcl $conf; Write-Host 'kept compose/secrets-nf/nats-auth.conf (it exists; never overwritten)'; return }
   $lines = @('# Generated by ./geldar.ps1 shard nats-auth nf --live. Git-ignored. Plaintext passwords, as the colo config is.',
     'port: 4222', 'http: "127.0.0.1:8222"', 'jetstream: enabled', 'accounts {', '  GELDAR {', '    jetstream: enabled', '    users = [')
   $entries = foreach ($user in $users.Keys) {
@@ -113,7 +139,6 @@ function Initialize-NfNatsAuth([string[]] $Flags = @()) {
   }
   $lines += ($entries -join ",`n")
   $lines += @('    ]', '  }', '}')
-  [IO.File]::WriteAllText($conf, (($lines -join "`n") + "`n"), [Text.Encoding]::ASCII)
-  Restrict-OwnerOnly $conf
+  Write-NfSecretFile $conf (($lines -join "`n") + "`n")
   Write-Host 'created compose/secrets-nf/nats-auth.conf'
 }
