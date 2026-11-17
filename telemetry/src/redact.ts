@@ -103,9 +103,32 @@ const COOKIE_KEY = /(?:^|[._-])cookie$/i;
 const COOKIE_PAIRS = /[^\s=;"']+=[^\r\n]*/y;
 /** An unquoted value: up to whitespace, a quote, `&`, `,`, `;`, `)` or `}`. */
 const VALUE_RUN = /[^\s"'&,;)}\\]+/y;
-/** A quoted value: up to the closing quote on the same line; capped so an unclosed quote is cheap. */
-const VALUE_DQ = /[^"\r\n]{0,8192}"/y;
-const VALUE_SQ = /[^'\r\n]{0,8192}'/y;
+/** The most characters read for one quoted value; an unclosed quote costs at most this much. */
+const MAX_QUOTED_VALUE = 8192;
+
+/**
+ * The length of a quoted value starting at `from`, or -1 when no closing quote is found on the same line
+ * within MAX_QUOTED_VALUE characters. The closing quote is escape-aware: `closer` is the number of
+ * backslashes the closing quote carries in this text (0 in plain JSON, 1 in JSON inside a JSON string,
+ * 3 one level deeper). A literal backslash takes 2*(closer+1) characters, so a quote closes the value
+ * when the backslash run before it is `closer` modulo 2*(closer+1); any other run is an escaped quote
+ * inside the value. A value that ends in a backslash still closes. One pass, no backtracking.
+ */
+function quotedLength(text: string, from: number, quote: string, closer: number): number {
+  const unit = 2 * (closer + 1);
+  const limit = Math.min(text.length, from + MAX_QUOTED_VALUE + closer + 1);
+  let run = 0;
+  for (let i = from; i < limit; i++) {
+    const c = text.charAt(i);
+    if (c === '\\') run++;
+    else if (c === quote) {
+      if (run % unit === closer) return i - from - closer;
+      run = 0;
+    } else if (c === '\n' || c === '\r') return -1;
+    else run = 0;
+  }
+  return -1;
+}
 
 /** A credential key in free text: the last segment is a credential word, or the last two make one. */
 function credentialKey(key: string): boolean {
@@ -156,12 +179,11 @@ function scrubKeyValues(text: string): string {
     }
     // A quoted value runs to the closing quote (spaces included) only in a structured position: a quoted
     // key (`"password":"..."`), `=` (`password="..."`) or a query. After a prose `password: "` it is a word.
-    const quoteRe = sep.endsWith('"') ? VALUE_DQ : sep.endsWith("'") ? VALUE_SQ : undefined;
-    if (!whole && quoteRe && (/^\\*["']/.test(sep) || sep.includes('=') || flagOrQuery)) {
-      quoteRe.lastIndex = end;
-      length = (quoteRe.exec(text)?.[0].length ?? 1) - 1;
-      // An escaped quote closes the value: keep its backslash out of it.
-      while (length > 0 && sep.includes('\\') && text.charAt(end + length - 1) === '\\') length--;
+    const quote = sep.endsWith('"') ? '"' : sep.endsWith("'") ? "'" : '';
+    if (!whole && quote && (/^\\*["']/.test(sep) || sep.includes('=') || flagOrQuery)) {
+      // The backslashes in front of the opening quote are the ones the closing quote carries too.
+      const closer = (/(\\*)["']$/.exec(sep)?.[1] ?? '').length;
+      length = Math.max(quotedLength(text, end, quote, closer), 0);
       whole = length > 0;
     }
     if (!whole) {
