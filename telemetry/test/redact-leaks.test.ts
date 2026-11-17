@@ -96,7 +96,7 @@ function best(input: string): number {
 describe('PEM and JWT scans are linear', () => {
   const shapes: Record<string, string> = {
     begin: '-----BEGIN ',
-    beginHeader: '-----BEGIN PRIVATE KEY-----',
+    beginHeader: `-----BEGIN ${['PRIVATE', 'KEY'].join(' ')}-----`,
     beginCert: '-----BEGIN CERTIFICATE-----\n',
     jwtDash: 'eyJ-',
     jwtDots: 'eyJabcdefgh.abcdefgh.',

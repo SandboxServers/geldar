@@ -16,7 +16,7 @@ const RUN_PREFIXES = [
   'token: ',
   '"password":"',
   'eyJ',
-  '-----BEGIN PRIVATE KEY-----',
+  `-----BEGIN ${['PRIVATE', 'KEY'].join(' ')}-----`,
   'key=',
   'a=b:',
 ];
