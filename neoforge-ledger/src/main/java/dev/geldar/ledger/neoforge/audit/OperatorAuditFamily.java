@@ -21,7 +21,7 @@ import java.util.function.Supplier;
  * from the new level the event carries; an offline op or deop and a change to the same level emit nothing. Whitelist
  * changes, kick reasons, prelogin, sign and book edits have no NeoForge event (PT-N5): nothing is emitted for them.
  *
- * <p>The command text goes through {@link CommandText}. The token bucket comes first, so a flood costs no flatten or
+ * <p>Only the command name (geldar.command) and the argument count (geldar.amount) are exported ({@link CommandText}); no argument text. The token bucket comes first, so a flood costs no flatten or
  * scrub work. Commands may arrive on any thread; the guard is used only on the server thread.
  */
 public final class OperatorAuditFamily {
@@ -29,7 +29,7 @@ public final class OperatorAuditFamily {
     static final String CONSOLE = "console";
     static final String RCON = "rcon";
     private static final int RATE = 20;
-    private static final String[] COMMAND_FIELDS = {null, null, null, AttrKeys.COMMAND, AttrKeys.SUBTYPE, null};
+    private static final String[] COMMAND_FIELDS = {null, null, AttrKeys.AMOUNT, AttrKeys.COMMAND, AttrKeys.SUBTYPE, null};
     private static final String[] OP_FIELDS = {null, null, AttrKeys.FLAG, AttrKeys.LIFE_ID, null, null};
 
     private final EventLog events;
@@ -102,7 +102,10 @@ public final class OperatorAuditFamily {
             guarded.run(() -> events.record(rcon ? rconDropId : consoleDropId, 0, 0, 0, null, null, null));
             return;
         }
-        guarded.run(() -> events.record(rcon ? rconId : consoleId, 0, 0, 0, CommandText.exportable(text.get()), kind, null));
+        guarded.run(() -> {
+            CommandText.Parsed c = CommandText.parse(text.get());
+            events.record(rcon ? rconId : consoleId, 0, 0, c.argCount(), c.name(), kind, null);
+        });
     }
 
     public void operatorChange(String player, boolean opped) {
