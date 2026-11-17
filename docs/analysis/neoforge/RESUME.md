@@ -66,3 +66,5 @@ State 2026-11-17. Read this, then [p0-body-model.md](p0-body-model.md).
 Result: P0 probe run results (2026-11-17) are in [p0-findings.md](p0-findings.md).
 
 Mind route options (how to connect a Claude Mind to the NeoForge shard, desktop rehearsal first, final instance later): [mind-route.md](mind-route.md).
+
+Public NeoForge shard and the human route (owner decision 2026-11-17; design only, nothing public yet): [public-and-human-route.md](public-and-human-route.md).
