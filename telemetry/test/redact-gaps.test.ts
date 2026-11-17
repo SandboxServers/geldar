@@ -39,6 +39,7 @@ describe('credential flag followed by a space', () => {
       `my--${tk} ${val}`,
       `-p ${val}`,
       `--${pw}s ${val}`,
+      `--${tk}${val}`,
     ]) {
       expect(scrubText(text)).toBe(text);
     }
