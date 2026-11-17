@@ -19,6 +19,8 @@ import java.util.Map;
  *   <li>{@code stall.threshold_ms=2000}
  *   <li>{@code sample.world_every_ticks=200}, {@code sample.player_every_ticks=20}
  *   <li>{@code jfr.enabled=true}
+ *   <li>{@code container.cgroup_root=/sys/fs/cgroup} (PT-09c)
+ *   <li>{@code disk.area.<name>.path} for name in world, plugin_data, logs, bluemap, chunky (PT-10a; unset = none)
  * </ul>
  *
  * Unknown keys are errors. A key ending in {@code password}, {@code secret}, {@code token}, {@code key} or
@@ -36,8 +38,13 @@ public record LedgerConfig(
         long stallThresholdMs,
         int sampleWorldEveryTicks,
         int samplePlayerEveryTicks,
-        boolean jfrEnabled) {
+        boolean jfrEnabled,
+        String cgroupRoot,
+        Map<String, String> diskAreaPaths) {
 
+    public static final String DEFAULT_CGROUP_ROOT = "/sys/fs/cgroup";
+    /** The fixed disk area names (README section 4, {@code geldar_disk_bytes{area}}). */
+    public static final java.util.List<String> DISK_AREAS = java.util.List.of("world", "plugin_data", "logs", "bluemap", "chunky");
     public static final int DEFAULT_BUDGET_AVG_US = 50;
     public static final int DEFAULT_BUDGET_MAX_US = 250;
     public static final int DEFAULT_RATE_PER_SECOND = 20;
@@ -56,9 +63,28 @@ public record LedgerConfig(
         duty = Map.copyOf(duty);
         rates = Map.copyOf(rates);
         queueCapacity = Map.copyOf(queueCapacity);
+        diskAreaPaths = Map.copyOf(diskAreaPaths);
     }
 
-    /** All defaults. */
+    /** The original 12-component shape (kept for existing callers): default cgroup root, no disk areas. */
+    public LedgerConfig(
+            boolean enabled,
+            Map<String, Boolean> collectorEnabled,
+            Map<String, Integer> budgetAvgUs,
+            Map<String, Integer> budgetMaxUs,
+            Map<String, Duty> duty,
+            Map<String, Integer> rates,
+            Map<String, Integer> queueCapacity,
+            int contentMaxBytes,
+            long stallThresholdMs,
+            int sampleWorldEveryTicks,
+            int samplePlayerEveryTicks,
+            boolean jfrEnabled) {
+        this(enabled, collectorEnabled, budgetAvgUs, budgetMaxUs, duty, rates, queueCapacity, contentMaxBytes,
+                stallThresholdMs, sampleWorldEveryTicks, samplePlayerEveryTicks, jfrEnabled, DEFAULT_CGROUP_ROOT, Map.of());
+    }
+
+    /** All defaults (the file default {@code enabled=true}; {@link ConfigWatcher} serves {@link #disabled()} before the first load). */
     public static LedgerConfig defaults() {
         return new LedgerConfig(
                 true, Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), MAX_CONTENT_BYTES, 2000, 200, 20, true);
@@ -66,25 +92,24 @@ public record LedgerConfig(
 
     /** The master-off state: every collector off. */
     public static LedgerConfig disabled() {
-        LedgerConfig d = defaults();
-        return new LedgerConfig(
-                false,
-                d.collectorEnabled,
-                d.budgetAvgUs,
-                d.budgetMaxUs,
-                d.duty,
-                d.rates,
-                d.queueCapacity,
-                d.contentMaxBytes,
-                d.stallThresholdMs,
-                d.sampleWorldEveryTicks,
-                d.samplePlayerEveryTicks,
-                d.jfrEnabled);
+        return defaults().withEnabled(false);
+    }
+
+    /** A copy with the master switch set. */
+    public LedgerConfig withEnabled(boolean on) {
+        return new LedgerConfig(on, collectorEnabled, budgetAvgUs, budgetMaxUs, duty, rates, queueCapacity,
+                contentMaxBytes, stallThresholdMs, sampleWorldEveryTicks, samplePlayerEveryTicks, jfrEnabled,
+                cgroupRoot, diskAreaPaths);
+    }
+
+    /** The configured path of a disk area, or null when none is configured (the collector skips it). */
+    public String diskAreaPath(String area) {
+        return area == null ? null : diskAreaPaths.get(area);
     }
 
     /** True when the master switch is on and the collector is not switched off. */
     public boolean collectorEnabled(String id) {
-        return enabled && collectorEnabled.getOrDefault(id, Boolean.TRUE);
+        return enabled && id != null && collectorEnabled.getOrDefault(id, Boolean.TRUE);
     }
 
     public int budgetAvgUs(String id) {

@@ -135,9 +135,10 @@ class ConfigWatcherTest {
 
     @Test
     void credentialKeyIsRejectedNothingAppliedAndValueNotLogged() throws IOException {
-        write("rcon_password=hunter2\nenabled=false\n");
+        write("rcon_password=hunter2\ncollector.tick.budget_avg_us=77\n");
         sched.task.run();
         assertTrue(watcher.current().enabled());
+        assertEquals(50, watcher.current().budgetAvgUs("tick"), "nothing from a credential file is applied");
         assertEquals(1, logged.size());
         assertFalse(logged.get(0).contains("hunter2"));
     }
