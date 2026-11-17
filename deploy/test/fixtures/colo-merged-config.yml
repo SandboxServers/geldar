@@ -77,6 +77,7 @@ services:
       GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-eventsink.txt
       GELDAR_NATS_URL: nats://nats:4222
       GELDAR_NATS_USER: eventsink
+      GELDAR_TELEMETRY_URL: null
       POSTGRES_HOST: postgres
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres
     image: geldar-eventsink:c1
@@ -130,6 +131,7 @@ services:
       GELDAR_NATS_URL: nats://nats:4222
       GELDAR_NATS_USER: mcp
       GELDAR_SHARD: colo
+      GELDAR_TELEMETRY_URL: null
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
     healthcheck:

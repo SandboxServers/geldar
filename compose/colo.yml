@@ -221,6 +221,8 @@ services:
       GELDAR_NATS_URL: nats://nats:4222
       POSTGRES_HOST: postgres
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres
+      # Optional telemetry endpoint (C1-07). Unset in the host environment, it is unset in the container.
+      GELDAR_TELEMETRY_URL:
     secrets: [postgres]
     networks: [colo]
     depends_on:
@@ -359,6 +361,8 @@ services:
       GELDAR_NATS_URL: nats://nats:4222
       GELDAR_NATS_USER: mcp
       GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-mcp.txt
+      # Optional telemetry endpoint (C1-07). Unset in the host environment, it is unset in the container.
+      GELDAR_TELEMETRY_URL:
     secrets: [postgres-mcp.txt, mcp-token-pepper.txt, { source: nats-mcp, target: nats-mcp.txt }]
     volumes:
       # The shard file the MCP reads (repo root + shards/<GELDAR_SHARD>.yaml), the Mind's file: it carries sovereign.

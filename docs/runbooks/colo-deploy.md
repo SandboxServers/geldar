@@ -122,6 +122,17 @@ A host that crashed until its five restarts were used stays `exited` until the n
 not start a container after a reboot), and a host that the reboot stopped exits 0, which the CD skips. The CD does not start
 it; an operator must run `colo-admin.sh player-start <id>` for each such host.
 
+## Telemetry env on the node
+
+The operator-controlled deploy env file (the one `colo-cd.sh` reads) exports `GELDAR_TELEMETRY_URL` set to the in-network
+gateway address, `http://geldar-gateway:4318`: the container name, not an IP. It is not a secret, and no token is in any env
+or repo file. `compose/colo.yml` passes the name through with no value for `golem-body`, `eventsink` and `geldar-mcp` (and
+`animus`, which ignores it); a service whose host environment lacks it runs with telemetry off.
+
+A compose-only or env-only change restarts nothing. To apply it, recreate those services by hand or let the next image
+deploy do it. If an upstream change to `compose/colo.yml` drops the pass-through lines, telemetry turns off for `eventsink`
+and `geldar-mcp` without any error, so keep them.
+
 ## Rollback
 
 Two ways, and the first is the usual one:
