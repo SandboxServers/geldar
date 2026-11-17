@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 const CI = fileURLToPath(new URL('../../../.github/workflows/ci.yml', import.meta.url));
 
