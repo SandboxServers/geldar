@@ -9,11 +9,12 @@
 # scope, log, span, span event and datapoint attributes). It does NOT scrub free text for secrets or personal data. Known gaps (README, G4 and G8):
 # array and bytes bodies, nested map values, span link attributes and metric exemplar labels have no OTTL context here.
 #
-# Credential key rule, used by every delete_matching_keys below (case-insensitive, RE2):
-#   (?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)
-# A key is deleted when a segment (split on . _ -) is secret, password, passwd, authorization, cookie or api_key/api-key/apikey (anywhere),
-# or when the key ENDS in token (token, auth_token, access.token, accessToken, id_token, x-auth-token). Plural and count keys are kept:
-# gen_ai.usage.input_tokens, max_tokens, tokens, token_count, tokenizer.
+# Credential key rule, used by every delete_matching_keys below (case-insensitive substring match, RE2: no lookahead, so token is end-anchored):
+#   (?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|token$|token[._-]?(value|id|string)$)
+# A key is deleted when it CONTAINS secret, passw (password, passwd), pwd, authorization, cookie, credential, passphrase, jwt, bearer, api_key,
+# private_key, access_key, signing_key, ssh_key or session_id (each key form with or without a . _ - separator, any letter case, so camelCase and joined
+# names such as githubToken, clientSecret, dbPassword, xApiKey and sessionId go), or when it ENDS in token (token, auth_token, sessionToken) or in token_value/token.id/token_string.
+# Plural and count keys are kept: gen_ai.usage.input_tokens, max_tokens, tokens, token_count, token.count, tokenizer, token_type.
 
 receivers:
   otlp:
@@ -63,34 +64,34 @@ processors:
           - 'replace_all_patterns(log.body, "value", "\\b(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\b", "<addr>") where IsMap(log.body)'
           - 'replace_all_patterns(log.body, "value", "\\b(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}\\b", "<addr>") where IsMap(log.body)'
           - 'replace_all_patterns(log.body, "value", "\\B::(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4}\\b|\\b(?:[0-9A-Fa-f]{1,4}:){1,7}(?::[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6}\\b|:\\B)", "<addr>") where IsMap(log.body)'
-          - 'delete_matching_keys(log.body, "(?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)") where IsMap(log.body)'
-          - 'delete_matching_keys(log.attributes, "(?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)")'
+          - 'delete_matching_keys(log.body, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|token$|token[._-]?(value|id|string)$)") where IsMap(log.body)'
+          - 'delete_matching_keys(log.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|token$|token[._-]?(value|id|string)$)")'
           - 'delete_key(log.attributes, "user.email")'
       - context: resource
         statements:
-          - 'delete_matching_keys(resource.attributes, "(?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)")'
+          - 'delete_matching_keys(resource.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|token$|token[._-]?(value|id|string)$)")'
           - 'replace_all_patterns(resource.attributes, "value", "\\b(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\b", "<addr>")'
           - 'replace_all_patterns(resource.attributes, "value", "\\b(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}\\b", "<addr>")'
           - 'replace_all_patterns(resource.attributes, "value", "\\B::(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4}\\b|\\b(?:[0-9A-Fa-f]{1,4}:){1,7}(?::[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6}\\b|:\\B)", "<addr>")'
       - context: scope
         statements:
-          - 'delete_matching_keys(scope.attributes, "(?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)")'
+          - 'delete_matching_keys(scope.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|token$|token[._-]?(value|id|string)$)")'
     trace_statements:
       - context: resource
         statements:
-          - 'delete_matching_keys(resource.attributes, "(?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)")'
+          - 'delete_matching_keys(resource.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|token$|token[._-]?(value|id|string)$)")'
           - 'replace_all_patterns(resource.attributes, "value", "\\b(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\b", "<addr>")'
           - 'replace_all_patterns(resource.attributes, "value", "\\b(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}\\b", "<addr>")'
           - 'replace_all_patterns(resource.attributes, "value", "\\B::(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4}\\b|\\b(?:[0-9A-Fa-f]{1,4}:){1,7}(?::[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6}\\b|:\\B)", "<addr>")'
       - context: scope
         statements:
-          - 'delete_matching_keys(scope.attributes, "(?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)")'
+          - 'delete_matching_keys(scope.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|token$|token[._-]?(value|id|string)$)")'
       - context: span
         statements:
-          - 'delete_matching_keys(span.attributes, "(?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)")'
+          - 'delete_matching_keys(span.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|token$|token[._-]?(value|id|string)$)")'
       - context: spanevent
         statements:
-          - 'delete_matching_keys(spanevent.attributes, "(?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)")'
+          - 'delete_matching_keys(spanevent.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|token$|token[._-]?(value|id|string)$)")'
           - 'replace_all_patterns(spanevent.attributes, "value", "\\b(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\b", "<addr>")'
           - 'replace_all_patterns(spanevent.attributes, "value", "\\b(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}\\b", "<addr>")'
           - 'replace_all_patterns(spanevent.attributes, "value", "\\B::(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4}\\b|\\b(?:[0-9A-Fa-f]{1,4}:){1,7}(?::[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6}\\b|:\\B)", "<addr>")'
@@ -99,18 +100,18 @@ processors:
     metric_statements:
       - context: resource
         statements:
-          - 'delete_matching_keys(resource.attributes, "(?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)")'
+          - 'delete_matching_keys(resource.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|token$|token[._-]?(value|id|string)$)")'
           - 'delete_key(resource.attributes, "geldar.life_id")'
           - 'delete_key(resource.attributes, "player_id")'
       - context: scope
         statements:
-          - 'delete_matching_keys(scope.attributes, "(?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)")'
+          - 'delete_matching_keys(scope.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|token$|token[._-]?(value|id|string)$)")'
       - context: datapoint
         statements:
           # 0088 and 0350 item 1: metrics keep no life or player label
           - 'delete_key(datapoint.attributes, "geldar.life_id")'
           - 'delete_key(datapoint.attributes, "player_id")'
-          - 'delete_matching_keys(datapoint.attributes, "(?i)((^|[._-])(secret|password|passwd|authorization|cookie|api[._-]?key)($|[._-])|(^|[._-]|access|refresh|auth|id|bearer)token$)")'
+          - 'delete_matching_keys(datapoint.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|token$|token[._-]?(value|id|string)$)")'
   batch:
     # Item counts only (the batch processor cannot count bytes). The byte bound is the exporter's sending_queue.batch below.
     send_batch_size: 256
