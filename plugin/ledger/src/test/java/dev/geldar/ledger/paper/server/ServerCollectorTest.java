@@ -137,6 +137,16 @@ class ServerCollectorTest {
     }
 
     @Test
+    void aSecondDirectCallEmitsNothingMore() {
+        Rig r = new Rig();
+        r.start();
+        r.host.mainThread(false);
+        r.collector.snapshotOnce();
+        r.collector.snapshotOnce();
+        assertEquals(1, r.ledger.events(Names.Events.SERVER_CONFIG_SNAPSHOT).size());
+    }
+
+    @Test
     void theSnapshotTimerCancelsItselfAfterTheFirstRun() {
         Rig r = new Rig();
         r.start();
