@@ -6,7 +6,7 @@ A Gradle multi-project. Java 25 (see `.java-version`), Paper API 26.1.2 build 74
 |---|---|
 | `core-common` | Geldar-Core's platform-neutral code: nothing in it imports Bukkit, Paper, CoreProtect, BlueMap or another server API. It holds the event export, the NATS publishers and the block-owner, kino, lakitu, maintenance and proximity logic. Its tests live in `src/test`, its shared test helpers in `src/testFixtures`. |
 | `core` | Geldar-Core, the Paper adapter (spec Appendix F): the listeners and the Bukkit, CoreProtect and BlueMap wiring, plus `plugin.yml` and `config.yml`. It depends on `core-common`, which its jar packs. |
-| `velocity-identity` | The Velocity bot-ingress identity plugin (spec Appendix F, 8.4): on `LoginEvent` it admits only usernames in the JetStream KV bucket `geldar-life-registry` (key: lowercase username, value `{life_id, registered_at}`; a deleted key revokes). A local cache fed by a watcher answers the check; the gate fails closed until the first sync and while the bucket is absent (Golem creates it). One fixed deny message. Drops `geldar:cmd` messages from connections that were not admitted. Velocity API 3.5.1; its `velocity-brigadier` 1.0.0-SNAPSHOT dependency is excluded (no release exists, and it would make the locks float). Output `velocity-identity/build/libs/geldar-velocity-identity.jar`; reads `GELDAR_NATS_URL`. |
+| `velocity-identity` | The Velocity bot-ingress identity plugin (spec Appendix F, 8.4): on `LoginEvent` it admits only usernames in the JetStream KV bucket `geldar-life-registry` (key: lowercase username, value `{life_id, registered_at}`; a deleted key revokes). A local cache fed by a watcher answers the check; the gate fails closed until the first sync and while the bucket is absent (Golem creates it). One fixed deny message. Drops `geldar:cmd` messages from connections that were not admitted. Velocity API 3.5.1; its `velocity-brigadier` 1.0.0-SNAPSHOT dependency is excluded (no release exists, and it would make the locks float). Output `velocity-identity/build/libs/geldar-velocity-identity.jar`; reads `GELDAR_NATS_URL` and `GELDAR_IDENTITY_LANE` (see "Velocity identity: lanes"). |
 | `ledger-core` | Ledger's loader-neutral core (OpenTelemetry API only). See Ledger modules. |
 | `ledger` | Ledger's Paper adapter, `ledger/build/libs/ledger.jar`. See Ledger modules. |
 
@@ -42,6 +42,25 @@ Known gap: `CensusHookTest` pins the guarded `census.gradle.kts` apply in `ledge
 - **Ghosts.** Out of scope: Phase 0 has no ghosts, so there is no ghost handling here.
 
 Settings are in `plugins/GeldarCore/config.yml`; `GELDAR_NATS_URL` and `GELDAR_SHARD` in the environment override the file. Phase 0 runs one open NATS on the compose network, so there is no credential; per-service accounts arrive later (spec 6.5).
+
+## Velocity identity: lanes
+
+`GELDAR_IDENTITY_LANE` selects which logins the gate admits. It is read once, when the plugin loads.
+
+| Value | Lane | Admits | Refuses |
+|---|---|---|---|
+| unset | `agent` (default) | Only usernames in the life registry (`geldar-life-registry`), and only once the registry has synced. The bot ingress is offline-mode. | Everything else, with the one fixed message. Behaviour is unchanged from before the lane was added. |
+| `agent` | `agent` | As unset. | As unset. |
+| `human` | `human` | Any plain username (1 to 16 letters, digits or underscores) that is not agent-shaped, is not in the registry, and whose UUID is not the offline-mode UUID of its name. | A name that starts with `ag_` (any case), a registered name, a connection whose UUID is `UUIDv3("OfflinePlayer:" + name)`, and everything while a configured registry is unsynced. |
+
+Behind the human lane:
+
+- The proxy must run in online mode. An offline-mode proxy refuses the gate at init (the check reads `ProxyServer#getConfiguration().isOnlineMode()`, which the build compiles against velocity-api 3.5.1; the runtime answer is not tested against a live proxy).
+- `GELDAR_NATS_URL` may be unset: the registry is then not used, the name rules alone decide, and the proxy is ready once enabled. With the URL set, the human lane waits for the registry to sync and denies every login until it has.
+- A human is admitted to the proxy only. A human never opens `geldar:cmd` and is never a ghost (Paper's spectator marker is not sent to a human).
+- Any other value of `GELDAR_IDENTITY_LANE`, including an empty one, refuses the gate: every login is denied and the error is logged. The refusal reason is logged, never sent to a client.
+- Readiness: the ready file `/tmp/geldar-identity.ready` has the same contract in both lanes. The agent lane writes it when the registry syncs and removes it when the sync is lost. The human lane writes it at enable when no registry is configured, and otherwise on sync; it removes it on shutdown.
+- Denied connections get the same fixed message in both lanes, which names neither the lane nor the registry.
 
 ## Velocity identity: known limits
 

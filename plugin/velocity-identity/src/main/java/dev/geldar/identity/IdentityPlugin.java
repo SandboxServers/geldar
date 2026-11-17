@@ -54,7 +54,11 @@ public final class IdentityPlugin {
     private final ProxyServer proxy;
     private final Logger log;
     private final LifeRegistry registry = new LifeRegistry();
-    private final LoginGate gate = new LoginGate(registry);
+    /** The lane from {@link IdentityLane#ENV}; empty when the setting is not a lane, which refuses the gate. */
+    private final Optional<IdentityLane> lane;
+    private final LoginGate gate;
+    /** Set at init when the gate must not admit anyone: an invalid lane, or the human lane behind an offline proxy. */
+    private volatile boolean refused;
     /** The life registry's feed; it writes the readiness marker while the registry is synced. */
     private final ReadinessFeed lifeFeed;
     private final SkinRegistry skins;
@@ -71,7 +75,8 @@ public final class IdentityPlugin {
 
     @Inject
     public IdentityPlugin(ProxyServer proxy, Logger log) {
-        this(proxy, log, () -> System.getenv("GELDAR_NATS_URL"));
+        this(proxy, log, () -> System.getenv("GELDAR_NATS_URL"), new SkinRegistry(log),
+                ReadyMarker.forThisProcess(READY_FILE), () -> System.getenv(IdentityLane.ENV));
     }
 
     /** Takes the NATS URL source, so a test can leave it unset without touching the environment. */
@@ -84,12 +89,22 @@ public final class IdentityPlugin {
         this(proxy, log, natsUrl, skins, ReadyMarker.forThisProcess(READY_FILE));
     }
 
-    /** Takes the marker too, so a test can point it at a temporary directory. */
+    /** Takes the marker too, so a test can point it at a temporary directory. The lane is unset: the agent lane. */
     IdentityPlugin(ProxyServer proxy, Logger log, Supplier<String> natsUrl, SkinRegistry skins, ReadyMarker marker) {
+        this(proxy, log, natsUrl, skins, marker, () -> null);
+    }
+
+    /** Takes the lane source too, so a test can select the human lane without touching the environment. */
+    IdentityPlugin(ProxyServer proxy, Logger log, Supplier<String> natsUrl, SkinRegistry skins, ReadyMarker marker,
+            Supplier<String> laneSetting) {
         this.proxy = proxy;
         this.log = log;
         this.natsUrl = natsUrl;
         this.skins = skins;
+        this.lane = IdentityLane.parse(laneSetting.get());
+        String url = natsUrl.get();
+        boolean registryExpected = url != null && !url.isBlank();
+        this.gate = new LoginGate(registry, lane.orElse(IdentityLane.AGENT), registryExpected);
         this.lifeFeed = new ReadinessFeed(registry, marker, log);
         this.denials = new DenialLimiter(MAX_LOGGED_DENIALS, DENY_WINDOW_NANOS, System::nanoTime,
                 count -> log.info("{} more denials were not logged in the last window", count));
@@ -102,8 +117,22 @@ public final class IdentityPlugin {
         log.info("Geldar identity enabled");
         // Scheduled before the URL check: a missing URL denies every login, which is when the summary matters most.
         denialSummary = proxy.getScheduler().buildTask(this, denials::tick).repeat(DENY_WINDOW_NANOS, TimeUnit.NANOSECONDS).schedule();
+        if (lane.isEmpty()) {
+            refuse(IdentityLane.ENV + " must be unset, agent or human");
+            return;
+        }
+        if (lane.get() == IdentityLane.HUMAN && !humanProxyIsOnline()) {
+            refuse("the human lane needs an online-mode proxy");
+            return;
+        }
         String url = natsUrl.get();
         if (url == null || url.isBlank()) {
+            if (lane.get() == IdentityLane.HUMAN) {
+                // The human lane needs no registry: an enabled proxy is ready, and the name rules still apply.
+                lifeFeed.markReadyWithoutRegistry();
+                log.info("human lane: GELDAR_NATS_URL is not set; the registry is not used");
+                return;
+            }
             log.error("GELDAR_NATS_URL is not set; every login will be denied");
             return;
         }
@@ -139,7 +168,7 @@ public final class IdentityPlugin {
             }
             return;
         }
-        if (gate.admit(player.getUniqueId(), player.getUsername())) {
+        if (!refused && gate.admit(player.getUniqueId(), player.getUsername())) {
             String name = printable(player.getUsername());
             log.info(gate.isSpectator(player.getUniqueId()) ? "Admitted {} as a spectator" : "Admitted {}", name);
             return;
@@ -171,6 +200,21 @@ public final class IdentityPlugin {
             log.warn("Could not mark {} as a spectator; disconnecting", printable(player.getUsername()));
             player.disconnect(Component.text(LoginGate.DENY_MESSAGE));
         }
+    }
+
+    /** Refuses the gate: every login is denied from now on. The reason is logged, never sent to a client. */
+    private void refuse(String reason) {
+        refused = true;
+        log.error("Geldar identity gate refused: {}; every login will be denied", reason);
+    }
+
+    /**
+     * True when the proxy runs in online mode. The human lane refuses to start behind an offline-mode proxy.
+     * {@code ProxyServer#getConfiguration()} and {@code ProxyConfig#isOnlineMode()} are the velocity-api 3.5.1 calls
+     * this compiles against; a missing configuration counts as offline (fail closed).
+     */
+    private boolean humanProxyIsOnline() {
+        return proxy.getConfiguration() != null && proxy.getConfiguration().isOnlineMode();
     }
 
     /** True when another connection already holds this name. */
@@ -241,7 +285,7 @@ public final class IdentityPlugin {
                 properties.add(property);
             }
         }
-        if (gate.classify(profile.getName()) == LoginGate.Admission.LIVE) {
+        if (gate.decide(profile.getId(), profile.getName()) == LoginGate.Admission.LIVE) {
             properties.add(new GameProfile.Property(LIVE_PROPERTY, LIVE_VALUE, ""));
         }
         event.setGameProfile(profile.withProperties(properties));
