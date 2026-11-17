@@ -2,12 +2,14 @@ import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
+import { type AddressInfo, createServer as createTcpServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { type DiagProcess, installDiagnostics, startProxy } from '../alias-proxy/alias-proxy.ts';
+
+vi.setConfig({ testTimeout: 30_000 });
 
 // Why the alias proxy stops: one `alias-proxy: ...` line per event. Every alias and username here is made up.
 const SCRIPT = fileURLToPath(new URL('../alias-proxy/alias-proxy.ts', import.meta.url));
@@ -120,6 +122,17 @@ describe('alias proxy as a child process', () => {
     expect(child.text()).not.toContain(FAKE_ALIAS);
   });
 
+  it('GELDAR_ALIASES_FILE set to an empty string counts as unset', async () => {
+    const child = runScript(SCRIPT, await proxyEnv({ GELDAR_ALIASES_FILE: '' }));
+    try {
+      await waitForText(child, 'aliases=unset');
+    } finally {
+      child.kill('SIGKILL');
+      await child.closed;
+    }
+    expect(child.text()).not.toContain('aliases=set');
+  });
+
   it.skipIf(process.platform === 'win32')(
     'SIGTERM logs the signal and the exit, then exits 0',
     async () => {
@@ -165,10 +178,11 @@ describe('alias proxy as a child process', () => {
     expect(code).toBe(0);
   });
 
-  it('logs an uncaught error by name and message, never a stack, and exits 1', async () => {
+  it('logs an uncaught error by name only, never a message or a stack, and exits 1', async () => {
     const child = runScript(UNCAUGHT_FIXTURE, {});
     const code = await child.closed;
-    expect(child.text()).toContain('alias-proxy: uncaught uncaughtException Error: fixture boom');
+    expect(child.text()).toMatch(/alias-proxy: uncaught uncaughtException Error\r?\n/);
+    expect(child.text()).not.toContain('fixture boom');
     expect(child.text()).toMatch(/alias-proxy: exit code=1 uptime=\d+s/);
     expect(child.text()).not.toMatch(/\n\s+at /);
     expect(code).toBe(1);
@@ -213,6 +227,67 @@ describe('installDiagnostics with an in-process fake process', () => {
     }
   });
 
+  it('a second signal logs nothing new and does not exit early; the 2 s grace still applies', () => {
+    vi.useFakeTimers();
+    try {
+      const fake = new FakeProcess();
+      const lines: string[] = [];
+      const hung = { close: () => undefined, on: () => undefined } as unknown as Server;
+      installDiagnostics(fake.asProcess(), (l) => lines.push(l), hung);
+      fake.emit('SIGTERM');
+      fake.emit('SIGTERM');
+      vi.advanceTimersByTime(1999);
+      expect(fake.codes).toEqual([]);
+      expect(lines.filter((l) => l.includes('signal'))).toEqual([
+        'alias-proxy: signal SIGTERM uptime=42s',
+      ]);
+      vi.advanceTimersByTime(1);
+      expect(fake.codes).toEqual([0]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('the grace timer is unref()ed, so it never holds the process open', () => {
+    const unref = vi.fn();
+    const spy = vi
+      .spyOn(globalThis, 'setTimeout')
+      .mockReturnValue({ unref } as unknown as NodeJS.Timeout);
+    try {
+      const fake = new FakeProcess();
+      const hung = { close: () => undefined, on: () => undefined } as unknown as Server;
+      installDiagnostics(fake.asProcess(), () => {}, hung);
+      fake.emit('SIGTERM');
+      expect(spy).toHaveBeenCalledWith(expect.any(Function), 2000);
+      expect(unref).toHaveBeenCalledTimes(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('a failed listen reaches the diagnostics through startProxy: server error EADDRINUSE, exit 1', async () => {
+    const taken = createTcpServer();
+    await new Promise<void>((ok) => taken.listen(0, ok));
+    const port = (taken.address() as AddressInfo).port;
+    const fake = new FakeProcess();
+    const lines: string[] = [];
+    try {
+      // Never awaited: a failed listen rejects nothing, the diagnostics handle the error event.
+      void startProxy({
+        listen: port,
+        upstreamHost: '127.0.0.1',
+        upstreamPort: 9,
+        aliasesFile: undefined,
+        log: () => {},
+        onServer: (s) => installDiagnostics(fake.asProcess(), (l) => lines.push(l), s),
+      });
+      await vi.waitFor(() => expect(fake.codes).toEqual([1]));
+      expect(lines).toContain('alias-proxy: server error EADDRINUSE');
+    } finally {
+      taken.close();
+    }
+  });
+
   it('logs beforeExit as an empty event loop and does not exit by itself', () => {
     const fake = new FakeProcess();
     const lines: string[] = [];
@@ -222,25 +297,55 @@ describe('installDiagnostics with an in-process fake process', () => {
     expect(fake.codes).toEqual([]);
   });
 
-  it('logs an uncaught error as name and message only, then exits 1', () => {
+  it('logs an uncaught error as its name only, then exits 1', () => {
     const fake = new FakeProcess();
     const lines: string[] = [];
     installDiagnostics(fake.asProcess(), (l) => lines.push(l));
     const err = new TypeError('bad thing');
     err.stack = 'TypeError: bad thing\n    at secret (/private/place.ts:1:1)';
     fake.emit('uncaughtException', err, 'uncaughtException');
-    expect(lines).toContain('alias-proxy: uncaught uncaughtException TypeError: bad thing');
+    expect(lines).toContain('alias-proxy: uncaught uncaughtException TypeError');
+    expect(lines.join('\n')).not.toContain('bad thing');
     expect(lines.join('\n')).not.toContain('secret');
     expect(lines.join('\n')).not.toContain('    at ');
     expect(fake.codes).toEqual([1]);
   });
 
-  it('logs an unhandled rejection, including a non-Error reason, then exits 1', () => {
+  it('a JSON SyntaxError that echoes an input token logs no part of the input', () => {
+    const fake = new FakeProcess();
+    const lines: string[] = [];
+    installDiagnostics(fake.asProcess(), (l) => lines.push(l));
+    const err = new SyntaxError('Unexpected token \'a\', "ag_test_01" is not valid JSON');
+    fake.emit('uncaughtException', err, 'uncaughtException');
+    expect(lines).toContain('alias-proxy: uncaught uncaughtException SyntaxError');
+    expect(lines.join('\n')).not.toContain('ag_test_01');
+    expect(fake.codes).toEqual([1]);
+  });
+
+  it('an error with a code logs the name and the code only, never the path in the message', () => {
+    const fake = new FakeProcess();
+    const lines: string[] = [];
+    installDiagnostics(fake.asProcess(), (l) => lines.push(l));
+    const err = Object.assign(
+      new Error("EACCES: permission denied, open '/private/aliases/aliases.json'"),
+      {
+        code: 'EACCES',
+      },
+    );
+    fake.emit('uncaughtException', err, 'uncaughtException');
+    expect(lines).toContain('alias-proxy: uncaught uncaughtException Error EACCES');
+    expect(lines.join('\n')).not.toContain('/private');
+    expect(lines.join('\n')).not.toContain('aliases.json');
+    expect(fake.codes).toEqual([1]);
+  });
+
+  it('logs an unhandled rejection by name, including a non-Error reason, then exits 1', () => {
     const fake = new FakeProcess();
     const lines: string[] = [];
     installDiagnostics(fake.asProcess(), (l) => lines.push(l));
     fake.emit('unhandledRejection', new RangeError('nope'), Promise.resolve());
-    expect(lines).toContain('alias-proxy: uncaught unhandledRejection RangeError: nope');
+    expect(lines).toContain('alias-proxy: uncaught unhandledRejection RangeError');
+    expect(lines.join('\n')).not.toContain('nope');
     expect(fake.codes).toEqual([1]);
     fake.emit('unhandledRejection', 'text reason', Promise.resolve());
     expect(lines).toContain('alias-proxy: uncaught unhandledRejection non-Error value');

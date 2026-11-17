@@ -136,10 +136,15 @@ export type Log = (line: string) => void;
 
 const SIGNAL_GRACE_MS = 2000;
 
-/** One line, no stack, bounded: an error message can echo input, so keep it short. */
+/**
+ * The error name and code only. The message is left out on purpose: V8 JSON SyntaxError messages echo the parsed
+ * input (a token could be an alias or a secret), and fs and net errors carry paths and hosts.
+ */
 function errorText(err: unknown): string {
-  if (!(err instanceof Error)) return 'non-Error value';
-  return `${err.name}: ${err.message}`.replace(/\s+/g, ' ').slice(0, 200);
+  const code = (err as NodeJS.ErrnoException)?.code;
+  return err instanceof Error
+    ? `${err.name}${typeof code === 'string' ? ` ${code}` : ''}`
+    : 'non-Error value';
 }
 
 /**
@@ -197,7 +202,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
     aliasesFile: process.env.GELDAR_ALIASES_FILE,
     onServer: (server) => installDiagnostics(process, log, server),
   }).then((proxy) => {
-    const aliases = process.env.GELDAR_ALIASES_FILE === undefined ? 'unset' : 'set';
+    const aliases = process.env.GELDAR_ALIASES_FILE ? 'set' : 'unset';
     log(
       `alias-proxy: start pid=${process.pid} node=${process.version} listen=${proxy.port()} ` +
         `upstream=${upstreamHost}:${upstreamPort} aliases=${aliases}`,
