@@ -119,7 +119,7 @@ These are recorded in the runbooks with all sources, and flagged. No runbook pic
 | nats-auth-inplace.md | PR #415 "not merged" (three places) | Merged as `4bab81b3`. The drift table now compares the 2026-11-14 live record with the generator at `03c1f5de`, which gained the hearing denies (`3f6c1071`) and the body and eventsink state lines (`d2843e94`) on 2026-11-15, after that record; the `state.*.level` PubDeny (`a2d2a4e1`, 2026-11-14) was already drift in it. |
 | nats-auth-inplace.md | AN-12b line told the reader to run `shard nats-auth` on the live node | Now: add the two lines with the procedure; the old instruction contradicted the Notes rule and the generator's behaviour. |
 | node-only-config.md | Drifted `compose/colo.yml` line references | Gamerule 138, aliases mount 490, whitelist one-shot 674, `profiles: ["adam"]` 276, `node.env` note 701. Line references into other runbooks replaced by section names. |
-| node-only-config.md | Generator user count | 11 users at `03c1f5de` (was "10"); drift is 3 users plus deny lines (was "2 users"). |
+| node-only-config.md | Generator user count | 11 users in the colo table at `03c1f5de` (was "10"); drift is 3 colo users plus deny lines (was "2 users"). |
 | open-signup.md | PR #415 "not merged" (two places) | Merged as `4bab81b3`; the step 9 blocker now names only the node running the generator output. |
 | scratch-stack.md | "cannot test item 5" | Now "cannot test the NATS roles"; the "item 5" wording comes from the warning in `deploy/scratch/scratch.sh` line 87, and no file defines that list. |
 | signcheck-shard.md | Names a live test that is not on `main` | Stated as on the unmerged branch `phase1/body-edit-sign-live` (`37172f47`), with the unit tests that are on `main`. Still "no" (above). |

@@ -115,7 +115,7 @@ Repo facts, re-read 2026-11-16 at 03c1f5de:
 
 | Drift | Source, date, status |
 |---|---|
-| NATS users: on 2026-11-14 the live file had 8 users; the generator on `main` defines 11 (`Get-NatsUsers` in `geldar.ps1`, counted 2026-11-16 at 02e9ee34). | [nats-auth-inplace](../runbooks/nats-auth-inplace.md) (as of 2026-11-14); unverified. The [runbooks index](../runbooks/README.md#what-could-not-be-checked) **(a-n)** notes PR #415 has since merged, so the generator side has moved. |
+| NATS users: on 2026-11-14 the live file had 8 users; the generator on `main` defines 11 users for the colo table (`Get-NatsUsers` in `geldar.ps1`, counted 2026-11-16 at 02e9ee34). | [nats-auth-inplace](../runbooks/nats-auth-inplace.md) (as of 2026-11-14); unverified. The [runbooks index](../runbooks/README.md#what-could-not-be-checked) **(a-n)** notes PR #415 has since merged, so the generator side has moved. |
 | Deploy work copies: 111 old copies, never cleaned. | [node-only config](../runbooks/node-only-config.md) item 14 (2026-11-14/15); unverified |
 | Glass alias directory: the runbook's default differs from the directory in use on the node. | [node-only config](../runbooks/node-only-config.md) item 4; unverified |
 | The node's compose file: hand-synced, no sync check exists. | [node-only config](../runbooks/node-only-config.md) item 3; unverified |
