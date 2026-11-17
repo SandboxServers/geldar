@@ -2,7 +2,7 @@
 
 Date 2026-11-17. Branch phase1/nf-progression-defaults. Docs only. Source: [progression-design.md](progression-design.md) (2026-11-16).
 
-**Defaults chosen under the owner's delegation of 2026-11-17 ("Make reasonable default choices for the progression system."). Revisable. Nothing here is in force until the flagged decision record exists. The lead assigns its number; this note assigns none.**
+**Defaults chosen under the owner's delegation of 2026-11-17 ("Make reasonable default choices for the progression system."). Revisable. Nothing here is in force until the flagged decision record exists. The record is now [0385](../../decisions/0385-progression-flag-relaxes-principle-2-per-shard.md) (Proposed; the owner must accept it; not in force). Per-shard storage is recorded in 0380 to 0384 and 0386 ([per-shard-storage-design.md](per-shard-storage-design.md)).**
 
 ## Counting note
 
