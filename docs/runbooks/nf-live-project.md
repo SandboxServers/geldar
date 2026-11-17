@@ -135,6 +135,31 @@ colo-notice.sh, colo-cd-players.sh and .github/workflows/colo-deploy.yml. Not ru
 - **A compose action on this project must always pass** `-p geldar-nf -f compose/nf-live.yml`. No other project flag, no overlay.
   Never run it without `-p` and with a colo file in the same command.
 
+### Running the project on the node: deploy/nf-deploy.sh
+
+The operator script is `deploy/nf-deploy.sh`. Run it on the node from an exported tree (a directory with no `.git` at its
+root; a checkout is refused, and `--local` is for the tests only). Run it as the operator account, never as root.
+
+- Verbs: `plan` (runs every gate and prints the steps, changes nothing), `up`, `status`, `down` (stops and removes the
+  project's containers and networks; volumes are kept), `down --volumes` (also removes the volumes, after the operator types
+  `geldar-nf` at the prompt), `logs <service>`.
+- The project name (`geldar-nf`) and the file (`compose/nf-live.yml`) are constants. The script refuses to run when
+  `GELDAR_PROJECT` or `GELDAR_COLO_COMPOSE` is set, and it does not source `deploy/common.sh`.
+- `up` runs in this order: `up -d --wait nats postgres`, the `identity-seed` one-shot, `up -d --wait eventsink neoforge`, then
+  `up -d --wait velocity` (the only published port, `127.0.0.1:46565`). It never starts golem-body or players-host.
+- Inputs, all from the environment: `NF_MOD_JAR_HOST` and `NF_MOD_SHA256` (the pinned mod jar and its sha256);
+  `NF_BUNDLE_DIR` and `NF_BUNDLE_SHA256` (the offline bundle from `deploy/scratch/build-neoforge-bundle.sh`, and the sha256 of
+  its `.geldar-bundle.sha256` list); `NF_SECRETS_DIR` (default `compose/secrets-nf/`, which must hold the seven files the
+  script lists, owner `NF_SERVICE_UID` (default 1000), mode 0600 or 0400).
+- Refusals, before any state changes: a colo variable set; a checkout; a missing or badly owned secret file; a mod jar or
+  bundle list whose sha256 differs; free RAM below the 16640 MiB of caps plus an 8192 MiB margin; free disk below 50 GiB;
+  anything listening on 46565; a `geldar-nf` container with a geldar-colo label.
+- `DEPLOY_DRY_RUN=1` prints the steps of `up` and `down` without running them. The gates still run.
+- No CI workflow runs this script. It is operator-run. A continuous deploy for geldar-nf would be a separate change that the
+  owner must approve.
+- UNVERIFIED on a real node: the bundle is checked on the host, but nothing in this script copies it into the `neoforge-data`
+  volume (item 7.1 below). `up` has not been run against a live node.
+
 ### What must never restart the autonomous shard (concrete, from the repo)
 
 - `deploy/colo-down.sh` (stops the geldar-colo project), `deploy/colo-up.sh`, `deploy/colo-cd.sh`, `deploy/colo-rollback.sh`,

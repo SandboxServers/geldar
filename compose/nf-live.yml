@@ -70,6 +70,7 @@ services:
           memory: 512m
           pids: 256
     memswap_limit: 512m
+    cpu_shares: 256  # relative CPU weight (default 1024 on colo): this shard yields to the autonomous shard under contention
     pids_limit: 256
     logging: *logging
     labels: *nf-labels
@@ -99,6 +100,7 @@ services:
           memory: 2048m
           pids: 256
     memswap_limit: 2048m
+    cpu_shares: 256  # relative CPU weight (default 1024 on colo): this shard yields to the autonomous shard under contention
     pids_limit: 256
     logging: *logging
     labels: *nf-labels
@@ -131,6 +133,7 @@ services:
           memory: 512m
           pids: 256
     memswap_limit: 512m
+    cpu_shares: 256  # relative CPU weight (default 1024 on colo): this shard yields to the autonomous shard under contention
     pids_limit: 256
     logging: *logging
     labels: *nf-labels
@@ -183,6 +186,7 @@ services:
           memory: 256m
           pids: 256
     memswap_limit: 256m
+    cpu_shares: 256  # relative CPU weight (default 1024 on colo): this shard yields to the autonomous shard under contention
     pids_limit: 256
     logging: *logging
     labels: *nf-labels
@@ -202,6 +206,7 @@ services:
           memory: 1024m
           pids: 256
     memswap_limit: 1024m
+    cpu_shares: 256  # relative CPU weight (default 1024 on colo): this shard yields to the autonomous shard under contention
     pids_limit: 256
     logging: *logging
     labels: *nf-labels
@@ -253,6 +258,7 @@ services:
           memory: 12288m
           pids: 512
     memswap_limit: 12288m
+    cpu_shares: 256  # relative CPU weight (default 1024 on colo): this shard yields to the autonomous shard under contention
     pids_limit: 512
     logging: *logging
     labels: *nf-labels
