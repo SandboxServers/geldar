@@ -8,6 +8,7 @@
 # prints a warning. Secrets live in a per-user state directory, not a shared temp directory; down removes only that
 # directory.
 # Ports: deploy/scratch/<suffix>.env (SCRATCH_*_PORT lines only) is read by this script; required for telemetry.
+# SCRATCH_PLATFORM=neoforge adds compose/opt-in/scratch-neoforge.yml (the NeoForge game server); unset or paper is the default.
 set -u
 umask 077
 
@@ -16,7 +17,10 @@ RAM_MIN_KB=10485760  # 10 GB free RAM gate
 DISK_MIN_KB=20971520 # 20 GB free disk gate: the repo filesystem and the Docker data root, the smaller figure counts
 MIN_COMPOSE=2.24.4   # the !override tag in compose/opt-in/scratch.yml needs this compose or newer
 NATS_FILES="nats-auth.conf nats-paper.txt nats-velocity.txt nats-eventsink.txt"
-PLUGIN_JARS="plugin/core/build/libs/geldar-core.jar plugin/velocity-identity/build/libs/geldar-velocity-identity.jar"
+VELOCITY_JAR="plugin/velocity-identity/build/libs/geldar-velocity-identity.jar"
+PLUGIN_JARS="plugin/core/build/libs/geldar-core.jar $VELOCITY_JAR"
+# The NeoForge game server runs the forwarding mod instead of geldar-core, so only the Velocity identity jar is checked.
+NEOFORGE_PLUGIN_JARS="$VELOCITY_JAR"
 
 usage() {
   echo "usage: sh deploy/scratch/scratch.sh up|status|down [suffix]" >&2
@@ -40,10 +44,11 @@ if [ "${#suffix}" -gt 9 ]; then
   exit 2
 fi
 PROJECT="scratch-$suffix"
+PLATFORM=${SCRATCH_PLATFORM:-paper}
 
 # Host ports for this project come from deploy/scratch/<suffix>.env, which this script parses itself (never sourced, so
-# nothing in it runs). Only the four port keys are accepted, with digit values 1 to 65535; anything else exits 2. A
-# variable the operator already set wins over the file. The file is required for telemetry and optional otherwise.
+# nothing in it runs). Only the five port keys are accepted (the four, and SCRATCH_RCON_PORT for neoforge),
+# with digit values 1 to 65535; anything else exits 2. A variable the operator already set wins over the file. The file is required for telemetry and optional otherwise.
 load_ports() {
   portfile="$ROOT/deploy/scratch/$suffix.env"
   if [ ! -f "$portfile" ]; then
@@ -60,6 +65,7 @@ load_ports() {
       SCRATCH_NATS_PORT) cur=${SCRATCH_NATS_PORT:-} ;;
       SCRATCH_NATS_MON_PORT) cur=${SCRATCH_NATS_MON_PORT:-} ;;
       SCRATCH_MC_PORT) cur=${SCRATCH_MC_PORT:-} ;;
+      SCRATCH_RCON_PORT) cur=${SCRATCH_RCON_PORT:-} ;;
       *)
         echo "scratch: $portfile: unknown key; nothing started" >&2
         exit 2
@@ -176,19 +182,33 @@ write_nats_override() {
   } >"$NATS_OVERRIDE"
 }
 
-# Compose with the phase0 base and the scratch overlay. nats-auth.yml joins only when the override exists (up wrote it
-# for a prepared auth dir); the override goes last so its file paths win.
+# Compose with the phase0 base and the scratch overlay. The -f list is built by prepending, last file first, so the
+# command line reads: -p, phase0, nats-auth (only when the override exists), scratch, the NeoForge overlay (only for
+# SCRATCH_PLATFORM=neoforge), and the NATS override last so its file paths win. The verb arguments follow unchanged.
 compose_run() {
   if [ -f "$NATS_OVERRIDE" ]; then
-    docker compose -p "$PROJECT" -f "$ROOT/compose/phase0.yml" -f "$ROOT/compose/nats-auth.yml" \
-      -f "$ROOT/compose/opt-in/scratch.yml" -f "$NATS_OVERRIDE" "$@"
-  else
-    docker compose -p "$PROJECT" -f "$ROOT/compose/phase0.yml" -f "$ROOT/compose/opt-in/scratch.yml" "$@"
+    set -- -f "$NATS_OVERRIDE" "$@"
   fi
+  if [ "$PLATFORM" = neoforge ]; then
+    set -- -f "$ROOT/compose/opt-in/scratch-neoforge.yml" "$@"
+  fi
+  set -- -f "$ROOT/compose/opt-in/scratch.yml" "$@"
+  if [ -f "$NATS_OVERRIDE" ]; then
+    set -- -f "$ROOT/compose/nats-auth.yml" "$@"
+  fi
+  set -- -p "$PROJECT" -f "$ROOT/compose/phase0.yml" "$@"
+  docker compose "$@"
 }
 
 # Sets the variables the overlay reads. Status and down use the same paths; compose only needs them set.
 set_env() {
+  case "$PLATFORM" in
+    paper | neoforge) ;;
+    *)
+      echo "scratch: SCRATCH_PLATFORM must be paper or neoforge; nothing started" >&2
+      exit 2
+      ;;
+  esac
   GELDAR_WORLD_VOLUME="${PROJECT}_paper-data"
   SCRATCH_SECRETS_DIR="$SECRETS"
   export GELDAR_WORLD_VOLUME SCRATCH_SECRETS_DIR
@@ -203,7 +223,11 @@ check_uid() {
 }
 
 check_plugins() {
-  for jar in $PLUGIN_JARS; do
+  jars=$PLUGIN_JARS
+  if [ "$PLATFORM" = neoforge ]; then
+    jars=$NEOFORGE_PLUGIN_JARS
+  fi
+  for jar in $jars; do
     if [ ! -f "$ROOT/$jar" ]; then
       echo "scratch: missing $jar; build the plugins first: cd plugin; ./gradlew build (see the runbook). Nothing started." >&2
       exit 1
