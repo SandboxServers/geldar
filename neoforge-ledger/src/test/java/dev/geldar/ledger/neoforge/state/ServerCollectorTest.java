@@ -36,7 +36,7 @@ class ServerCollectorTest {
         m.put("rcon.password", "hunter2");
         m.put("rcon_port", "25575");
         m.put("query_port", "25565");
-        m.put("server-ip", "10.1.2.3");
+        m.put("server-ip", "server-ip-value");
         m.put("level-seed", "12345");
         m.put("jvm_xmx", "4G");
         return m;
@@ -66,7 +66,7 @@ class ServerCollectorTest {
         assertEquals("server", a.get(AttrKeys.COLLECTOR));
         assertEquals("server_version=26.1.2; max_players=20; jvm_xmx=4G", a.get(AttrKeys.TEXT));
         String all = a.toString();
-        for (String bad : new String[] {"hunter2", "25575", "10.1.2.3", "12345", "rcon", "seed"}) {
+        for (String bad : new String[] {"hunter2", "25575", "server-ip-value", "12345", "rcon", "seed"}) {
             assertFalse(all.contains(bad), bad);
         }
         assertTrue(r.tasks.stream().filter(t -> !t.main).allMatch(t -> t.cancelled.get()));
