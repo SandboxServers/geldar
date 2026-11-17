@@ -34,11 +34,17 @@ public final class AttrKeys {
     public static final String DURATION_MS = "geldar.duration_ms";
     /** Consecutive overrun count on {@code geldar.server.slow_tick} (PT-04b). */
     public static final String TICK_OVERRUNS = "geldar.tick_overruns";
+    // Player snapshot fields (PT-08b): event keys only, never metric attributes.
+    public static final String HEALTH = "geldar.health";
+    public static final String FOOD = "geldar.food";
+    public static final String XP_LEVEL = "geldar.xp_level";
+    public static final String GAMEMODE = "geldar.gamemode";
+    public static final String PING_BUCKET = "geldar.ping_bucket";
 
     private static final Set<String> ALLOWED = Set.of(
             LIFE_ID, PLAYER_UUID, WORLD, WORLD_TICK, SERVER_TICK, MC_SESSION, EVENT_CLASS, CANCELLED, COLLECTOR, QUEUE,
             CAUSE, RESULT, X, Y, Z, ITEM, BLOCK, CONTAINER_TYPE, AMOUNT, TEXT, COMMAND, EXCEPTION_CLASS, PLUGIN,
-            DURATION_MS, TICK_OVERRUNS);
+            DURATION_MS, TICK_OVERRUNS, HEALTH, FOOD, XP_LEVEL, GAMEMODE, PING_BUCKET);
 
     // Metric attribute keys: BARE, as in the README section 4 metric table (decision 2026-11-17). The prefixed
     // geldar.* keys above are for events and logs only.
