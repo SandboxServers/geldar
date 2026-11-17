@@ -8,7 +8,7 @@ State 2026-11-16. Read this, then [p0-body-model.md](p0-body-model.md).
 - No decision numbers until the main orchestrator assigns a block.
 
 ## PRs
-- Merged: #593 (P0 Body-model note), #594 (API notes and progression design), #596 (P2 plugin/core split: core-common, Paper adapter, golden jar guard), #600 (scratch NeoForge overlay, suffix nf, loopback RCON, entrypoint with sha512/sha256 pins), #601 (neoforge/ skeleton: NeoForge 26.1.2 (build 126), Java 25, ModDevGradle 2.0.148, Gradle 9.8.2, loaderVersion [11,), dependency verification and locking; no CI lane), #604 (earlier RESUME), #607 (installer fetch retry), #610 (scratch uid fix: SCRATCH_RUN_UID/GID), #611 (offline bundle: deploy/scratch/build-neoforge-bundle.sh and strict entrypoint bundle mode; node cannot reach maven.neoforged.net), #614 (declared source-scan inputs for plugin/core tests, so read-only guard tests rerun on source change).
+- Merged: #593 (P0 Body-model note), #594 (API notes and progression design), #596 (P2 plugin/core split: core-common, Paper adapter, golden jar guard), #600 (scratch NeoForge overlay, suffix nf, loopback RCON, entrypoint with sha512/sha256 pins), #601 (neoforge/ skeleton: NeoForge 26.1.2 (build 126), Java 25, ModDevGradle 2.0.148, Gradle 9.8.2, loaderVersion [11,), dependency verification and locking; the CI lane came later, see below), #604 (earlier RESUME), #607 (installer fetch retry), #610 (scratch uid fix: SCRATCH_RUN_UID/GID), #611 (offline bundle: deploy/scratch/build-neoforge-bundle.sh and strict entrypoint bundle mode; node cannot reach maven.neoforged.net), #614 (declared source-scan inputs for plugin/core tests, so read-only guard tests rerun on source change).
 - Open, CI running: #619 (message-only fix for the verifyTestSourceInputs failure text). The main orchestrator schedules its merge after P0.
 
 ## Packets
@@ -26,7 +26,7 @@ State 2026-11-16. Read this, then [p0-body-model.md](p0-body-model.md).
 - P3: NeoForge adapter event export and maintenance notices. On hold, after P0.
 - P4: own block-owner log and gravestones. P5: BlueMap and pregeneration. On hold.
 - P6 to P8 (progression): ON HOLD for the owner's six policy decisions in progression-design.md.
-- CI lane for neoforge/: on hold, needs a separate owner-approved PR.
+- CI lane for neoforge/ and neoforge-ledger/: the `neoforge` job in ci.yml (owner-approved; first real run pending, branch protection needs no change because `ci gate` already requires it).
 - Human connection route (tunnel or proxy): on hold, needs separate approval.
 - Pins: NeoForge 26.1.2 (build 126); Proxy Compatible Forge 1.3.1.
 

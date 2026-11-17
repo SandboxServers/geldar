@@ -12,7 +12,7 @@ Server-side NeoForge 26.1.2 (build 126) adapter for the loader-neutral `plugin/l
 - Fail-safe: any startup failure (bad config, missing class) leaves the ledger off and never stops the server; the ledger is closed on ServerStoppingEvent.
 - Logging uses java.util.logging. PT-N3 result: records print on stderr (root ConsoleHandler) but are NOT in `logs/latest.log`. See `docs/analysis/telemetry/neoforge-otel-spike.md`, which also records that the jar-in-jar API and the agent's `GlobalOpenTelemetry` work under a real server load (`OtelLoadTest` covers the no-agent half).
 - Own `gradle/verification-metadata.xml` and lockfiles.
-- No CI lane (a lane needs a separate owner-approved change).
+- CI: the `neoforge` job in `.github/workflows/ci.yml` runs `./gradlew build` here and in `neoforge/` (Java 25, dependency verification on, no server start) and feeds `ci gate`.
 
 ## Build
 

@@ -68,6 +68,45 @@ jobs:
         working-directory: plugin
         run: ./gradlew build --no-daemon
 
+  # neoforge/ (the progression mod) and neoforge-ledger/ (the telemetry adapter; it consumes plugin/ledger-core as a
+  # composite build) are separate Gradle builds. Not path filtered: a skipped job is not "success", so the gate would
+  # fail, and merge_group has no paths filter anyway. Dependency verification stays on (gradle/verification-metadata.xml
+  # in each build); locks are never rewritten here. No server start. The build is retried once, and only when the log
+  # shows a network error (never for a test failure). Gradle's dependency cache is kept by setup-gradle, as in `plugin`.
+  neoforge:
+    name: neoforge
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - name: gradle build (neoforge)
+        working-directory: neoforge
+        shell: bash
+        run: |
+          set -o pipefail
+          for attempt in 1 2; do
+            ./gradlew build --no-daemon 2>&1 | tee "$RUNNER_TEMP/gradle-neoforge.log" && exit 0
+            if [ "$attempt" = 2 ] || ! grep -Eqi 'HTTP (429|50[0-9])|Could not (GET|HEAD|resolve)|Read timed out|Connection (reset|timed out)|Premature end of Content-Length|Received status code (429|50[0-9])' "$RUNNER_TEMP/gradle-neoforge.log"; then exit 1; fi
+            echo "::warning::network error in the neoforge build; retrying once"
+            sleep 30
+          done
+      - name: gradle build (neoforge-ledger)
+        working-directory: neoforge-ledger
+        shell: bash
+        run: |
+          set -o pipefail
+          for attempt in 1 2; do
+            ./gradlew build --no-daemon 2>&1 | tee "$RUNNER_TEMP/gradle-ledger.log" && exit 0
+            if [ "$attempt" = 2 ] || ! grep -Eqi 'HTTP (429|50[0-9])|Could not (GET|HEAD|resolve)|Read timed out|Connection (reset|timed out)|Premature end of Content-Length|Received status code (429|50[0-9])' "$RUNNER_TEMP/gradle-ledger.log"; then exit 1; fi
+            echo "::warning::network error in the neoforge-ledger build; retrying once"
+            sleep 30
+          done
+
   compose:
     name: compose
     runs-on: ubuntu-24.04
@@ -329,7 +368,7 @@ jobs:
   gate:
     name: ci gate
     if: always()
-    needs: [typescript, plugin, compose, sql, images, integration]
+    needs: [typescript, plugin, neoforge, compose, sql, images, integration]
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
