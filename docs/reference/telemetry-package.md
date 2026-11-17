@@ -33,7 +33,7 @@ Measured on 2026-11-16 at `3f07a4be` unless a row says otherwise.
 
 ## Public surface
 
-`telemetry/src/index.ts` re-exports a start function (`startTelemetry`), a logger factory (`createLogger`), trace propagation helpers, the attribute filter, content helpers and their types. Names, behaviour and module roles are in the package's own [README](../../telemetry/README.md), "Modules" and "Operator notes"; this page does not restate them (decision [0361](../decisions/0361-agents-never-placement-and-public-detail.md)).
+`telemetry/src/index.ts` re-exports a start function (`startTelemetry`), a logger factory (`createLogger`), trace propagation helpers, the attribute filter, content helpers, redaction helpers (`redactContent`, `scrubText`, `errorFields`) and their types. Names, behaviour and module roles are in the package's own [README](../../telemetry/README.md), "Modules" and "Operator notes"; this page does not restate them (decision [0361](../decisions/0361-agents-never-placement-and-public-detail.md)).
 
 ## Configuration names
 
