@@ -53,7 +53,7 @@ Run the game server as NeoForge instead of Paper, behind the same scratch Veloci
 
     SCRATCH_PLATFORM=neoforge SCRATCH_NATS_AUTH_DIR=<dir> sh deploy/scratch/scratch.sh up nf
 
-- The `paper` service runs NeoForge 26.1.2.126 with Proxy Compatible Forge 1.3.1 (the mod that gives NeoForge Velocity's
+- The `paper` service runs NeoForge 26.1.2 (build 126) with Proxy Compatible Forge 1.3.1 (the mod that gives NeoForge Velocity's
   modern forwarding) instead of Paper with geldar-core. `compose/neoforge/neoforge-entrypoint.sh` fetches the installer
   and the mod and checks each against a pinned hash; a mismatch stops the start.
 - The overlay is `compose/opt-in/scratch-neoforge.yml`, layered after `scratch.yml`. Only `SCRATCH_PLATFORM=neoforge`

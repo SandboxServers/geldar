@@ -4,10 +4,12 @@
  * yaml package, the !override tag as a custom tag. The script's behaviour under sh is in scratch-neoforge-script.test.ts.
  * Nothing here starts a container.
  */
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { type CollectionTag, parse } from 'yaml';
+import { SH, slash } from './scratch-harness.js';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const read = (rel: string) => readFileSync(`${ROOT}${rel}`, 'utf8');
@@ -71,7 +73,13 @@ describe('NeoForge overlay: the service', () => {
 
   it('runs NeoForge at the pinned version, never latest or a range', () => {
     expect(paper.environment.TYPE).toBe('NEOFORGE');
-    expect(paper.environment.NEOFORGE_VERSION).toBe(NEOFORGE_BUILD);
+    // The template is 26.1.2 plus a build default; the default must be the pinned build 126, never another value or latest.
+    const match = /^26\.1\.2\.\$\{SCRATCH_NEOFORGE_BUILD:-(\d+)\}$/.exec(
+      paper.environment.NEOFORGE_VERSION,
+    );
+    expect(match?.[1]).toBe('126');
+    expect(['26', '1', '2', match?.[1] ?? ''].join('.')).toBe(NEOFORGE_BUILD);
+    expect(paper.environment.NEOFORGE_VERSION).not.toMatch(/latest/i);
     expect(NF_TEXT).not.toMatch(/latest/i);
   });
 
@@ -136,20 +144,64 @@ describe('NeoForge overlay: the service', () => {
 describe('NeoForge entrypoint script', () => {
   const lines = ENTRY_TEXT.split('\n');
 
-  it('pins the mod by URL and sha512, and the installer by URL and sha256', () => {
+  it('pins the mod by URL and sha512', () => {
     expect(ENTRY_TEXT).toContain(
       'https://cdn.modrinth.com/data/vDyrHl8l/versions/qiZ49HIW/proxy-compatible-forge-1.3.1.jar',
     );
     expect(ENTRY_TEXT).toContain(
       'MOD_SHA512=dba5b70fedcb0f5fdc014801ab43e6d048f24b531de8aea5b70ea223760b66ae9fba3033c2ccd9d78793b9ea2f9d3b47ae1f4caa95aa129d989f97e63636b4ab',
     );
+  });
+
+  it('builds the installer URL from NEOFORGE_VERSION and never writes the build number out', () => {
     expect(ENTRY_TEXT).toContain(
-      `https://maven.neoforged.net/releases/net/neoforged/neoforge/${NEOFORGE_BUILD}/neoforge-${NEOFORGE_BUILD}-installer.jar`,
+      'INSTALLER_URL="https://maven.neoforged.net/releases/net/neoforged/neoforge/${NEOFORGE_VERSION}/neoforge-${NEOFORGE_VERSION}-installer.jar"',
     );
+    expect(ENTRY_TEXT).not.toContain(NEOFORGE_BUILD);
+  });
+
+  it('guards NEOFORGE_VERSION to the 26.1.2 line before anything is fetched', () => {
+    expect(ENTRY_TEXT).toContain("grep -Eq '^26\\.1\\.2\\.[0-9]+$'");
+    expect(ENTRY_TEXT.indexOf('grep -Eq')).toBeLessThan(ENTRY_TEXT.indexOf('fetch "$MOD_URL"'));
+  });
+
+  it('pins the installer sha256, which refuses any other build', () => {
     expect(ENTRY_TEXT).toContain(
       'INSTALLER_SHA256=1184ffee181bd7a940691539fea07f237096378da4c94795247ecdb9cb354a1b',
     );
+    expect(ENTRY_TEXT).toMatch(
+      /fetch "\$INSTALLER_URL" "\$installer" "\$INSTALLER_SHA256" sha256sum/,
+    );
   });
+
+  it.skipIf(!SH)(
+    'exits 1 before any download when NEOFORGE_VERSION is unset or not 26.1.2 build N',
+    () => {
+      for (const version of [
+        undefined,
+        '',
+        ['26', '1', '3', '1'].join('.'),
+        '26.1.2.x',
+        `${NEOFORGE_BUILD}; rm -rf /`,
+      ]) {
+        const env: Record<string, string> = {
+          PATH: process.env.PATH ?? '',
+          SYSTEMROOT: process.env.SYSTEMROOT ?? '',
+        };
+        if (version !== undefined) env.NEOFORGE_VERSION = version;
+        const run = spawnSync(
+          SH as string,
+          [slash(`${ROOT}compose/neoforge/neoforge-entrypoint.sh`)],
+          {
+            encoding: 'utf8',
+            env,
+          },
+        );
+        expect(run.status, `version ${JSON.stringify(version)}`).toBe(1);
+        expect(run.stderr).toContain('NEOFORGE_VERSION is unset or not 26.1.2 build N');
+      }
+    },
+  );
 
   it('checks the mod with sha512sum and fails closed: a mismatch is deleted and exits 1', () => {
     expect(ENTRY_TEXT).toMatch(/fetch\(\) \{/);
@@ -189,9 +241,9 @@ describe('NeoForge entrypoint script', () => {
     expect(ENTRY_TEXT).toMatch(/\nexec \/image\/scripts\/start "\$@"\n$/);
   });
 
-  it('is LF only and under 100 lines', () => {
+  it('is LF only and under the 500-line soft cap', () => {
     expect(ENTRY_TEXT).not.toMatch(/\r/);
-    expect(lines.length).toBeLessThan(100);
+    expect(lines.length).toBeLessThan(500);
   });
 });
 

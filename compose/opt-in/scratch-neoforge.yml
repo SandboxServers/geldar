@@ -2,7 +2,7 @@
 # deploy/scratch/scratch.sh with SCRATCH_PLATFORM=neoforge (see docs/runbooks/scratch-stack.md):
 #   docker compose -p scratch-<suffix> -f compose/phase0.yml -f compose/opt-in/scratch.yml \
 #     -f compose/opt-in/scratch-neoforge.yml ...
-# Only the paper service changes: it runs NeoForge 26.1.2.126 with Proxy Compatible Forge 1.3.1 (the forwarding mod)
+# Only the paper service changes: it runs NeoForge 26.1.2 (build 126) with Proxy Compatible Forge 1.3.1 (the forwarding mod)
 # instead of Paper with geldar-core. The entrypoint compose/neoforge/neoforge-entrypoint.sh fetches and hash-checks both
 # artifacts. No geldar-core jar is mounted, so the eventsink sees no game events. Caps, secrets, the volume name and
 # every other port come from scratch.yml and phase0.yml. RCON is published on loopback only, for the Body-join test (P0).
@@ -10,7 +10,7 @@ services:
   paper:
     environment:
       TYPE: NEOFORGE
-      NEOFORGE_VERSION: "26.1.2.126"
+      NEOFORGE_VERSION: "26.1.2.${SCRATCH_NEOFORGE_BUILD:-126}"
     entrypoint: !override ["/bin/sh", "/geldar/neoforge-entrypoint.sh"]
     volumes: !override
       - paper-data:/data

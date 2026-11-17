@@ -6,11 +6,18 @@
 # only: never from an environment value or this file, and it is never printed.
 set -eu
 
+# NeoForge version from the environment (compose/opt-in/scratch-neoforge.yml sets it). Only the 26.1.2 line is accepted,
+# and the installer URL is built from it. The pinned sha256 below refuses any other installer, so a different build
+# cannot pass even if its URL is valid.
+if ! printf '%s\n' "${NEOFORGE_VERSION:-}" | grep -Eq '^26\.1\.2\.[0-9]+$'; then
+  echo "neoforge-entrypoint: NEOFORGE_VERSION is unset or not 26.1.2 build N; refusing to start" >&2
+  exit 1
+fi
+INSTALLER_URL="https://maven.neoforged.net/releases/net/neoforged/neoforge/${NEOFORGE_VERSION}/neoforge-${NEOFORGE_VERSION}-installer.jar"
 # Proxy Compatible Forge 1.3.1, published 2026-08-31, Modrinth
 MOD_URL=https://cdn.modrinth.com/data/vDyrHl8l/versions/qiZ49HIW/proxy-compatible-forge-1.3.1.jar
 MOD_SHA512=dba5b70fedcb0f5fdc014801ab43e6d048f24b531de8aea5b70ea223760b66ae9fba3033c2ccd9d78793b9ea2f9d3b47ae1f4caa95aa129d989f97e63636b4ab
-# NeoForge 26.1.2.126 installer, from the NeoForge Maven repository. The image reads NEOFORGE_INSTALLER as a local path.
-INSTALLER_URL=https://maven.neoforged.net/releases/net/neoforged/neoforge/26.1.2.126/neoforge-26.1.2.126-installer.jar
+# NeoForge 26.1.2 build 126 installer sha256, from the NeoForge Maven repository. The image reads NEOFORGE_INSTALLER as a local path.
 INSTALLER_SHA256=1184ffee181bd7a940691539fea07f237096378da4c94795247ecdb9cb354a1b
 
 secret_file=/run/secrets/velocity-forwarding
