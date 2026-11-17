@@ -113,7 +113,8 @@ services:
   eventsink:
     # Runs as the uid:gid of the account that started the stack (set_env in deploy/scratch/scratch.sh), not the image's
     # node user. The 0600 secret files and the NATS files in SCRATCH_NATS_AUTH_DIR are owned by that account, so this
-    # user can read them without any mode change or ACL. No other service gets a user override.
+    # user can read them without any mode change or ACL. identity-seed sets the same user (its 0600 seed password file).
+    # paper and velocity get the same uid:gid as UID and GID environment variables instead, for the itzg entrypoint.
     user: "${SCRATCH_RUN_UID:?set by deploy/scratch/scratch.sh}:${SCRATCH_RUN_GID:?set by deploy/scratch/scratch.sh}"
     deploy:
       resources:
