@@ -262,8 +262,25 @@ function scrubBudgeted(text: string, walk: Walk): string {
   return walk.chars > MAX_REDACT_CHARS ? `[omitted ${text.length} chars]` : scrubText(text);
 }
 
+/** The characters an Error will cost: message plus stack, each at most MAX_ERROR_TEXT_CHARS. Never throws. */
+function errorTextSize(error: Error): number {
+  try {
+    const stack = typeof error.stack === 'string' ? error.stack.length : 0;
+    return (
+      Math.min(String(error.message).length, MAX_ERROR_TEXT_CHARS) +
+      Math.min(stack, MAX_ERROR_TEXT_CHARS)
+    );
+  } catch {
+    return MAX_ERROR_TEXT_CHARS;
+  }
+}
+
 function redactAt(value: unknown, depth: number, walk: Walk): unknown {
   if (typeof value === 'string') return scrubBudgeted(value, walk);
+  // A boxed primitive is its primitive: `new String('password=...')` must not be split into one key per character.
+  if (value instanceof String) return scrubBudgeted(String.prototype.valueOf.call(value), walk);
+  if (value instanceof Number) return Number.prototype.valueOf.call(value);
+  if (value instanceof Boolean) return Boolean.prototype.valueOf.call(value);
   // JSON-safe plain data out: a bigint, symbol or function becomes text, never a value JSON.stringify rejects.
   if (typeof value === 'bigint') return value.toString();
   if (typeof value === 'symbol' || typeof value === 'function')
@@ -278,10 +295,12 @@ function redactAt(value: unknown, depth: number, walk: Walk): unknown {
     return `[binary ${value.byteLength} bytes]`;
   }
   if (value instanceof Error) {
+    // Charge the budget before scrubbing: a bounded size per message and stack (errorFields cuts both at
+    // MAX_ERROR_TEXT_CHARS), so an exhausted budget stops the work, not just the output.
+    const charge = errorTextSize(value);
+    walk.chars += charge;
+    if (walk.chars > MAX_REDACT_CHARS) return `[omitted ${charge} chars]`;
     const fields = errorFields(value);
-    walk.chars +=
-      fields['exception.message'].length + (fields['exception.stacktrace']?.length ?? 0);
-    if (walk.chars > MAX_REDACT_CHARS) return `[omitted error]`;
     return {
       name: fields['exception.type'],
       message: fields['exception.message'],
