@@ -2,6 +2,7 @@ package dev.geldar.ledger.neoforge.world;
 
 import dev.geldar.ledger.core.AttrKeys;
 import dev.geldar.ledger.core.Ledger;
+import dev.geldar.ledger.core.Names;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.Supplier;
@@ -10,12 +11,8 @@ import java.util.function.Supplier;
  * Per-dimension tick time (A2). The server keeps a ring of 100 nanosecond values per dimension, written by the server
  * thread; the exporter thread never reads it. {@link #onServerTick()} (main thread) copies an average into a volatile
  * once per {@link #SAMPLE_EVERY_TICKS} ticks, and the gauge reader returns that volatile.
- *
- * <p>The metric name is not in {@code Names} yet (it needs a README names row first); it is kept here until the
- * orchestrator adds it.
  */
 public final class WorldTickGauges {
-    public static final String WORLD_TICK_MS = "geldar_world_tick_ms";
     public static final int SAMPLE_EVERY_TICKS = 20;
     private static final double NANOS_PER_MS = 1_000_000.0;
 
@@ -39,7 +36,7 @@ public final class WorldTickGauges {
     /** Startup only. */
     public void register(Ledger ledger) {
         dims.forEach((name, d) -> ledger.gaugeDouble(
-                WORLD_TICK_MS, "ms", "average tick time of a dimension", () -> d.avgMs, AttrKeys.M_WORLD, name));
+                Names.World.TICK_MS, "ms", "average tick time of a dimension", () -> d.avgMs, AttrKeys.M_WORLD, name));
     }
 
     /** Main thread, once per tick. */

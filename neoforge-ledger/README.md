@@ -10,7 +10,7 @@ Server-side NeoForge 26.1.2 (build 126) adapter for the loader-neutral `plugin/l
 - `ledger-core` comes in as a composite build (`includeBuild("../plugin")`, substituting `dev.geldar:ledger-core`).
 - Jar-in-jar: ledger-core and opentelemetry-api, -common and -context are nested in the mod jar through `jarJar` with strict ranges (works with the composite-substituted ledger-core); `JarContentTest` opens the built jar. A real dedicated-server load is the PT-N3 spike.
 - Fail-safe: any startup failure (bad config, missing class) leaves the ledger off and never stops the server; the ledger is closed on ServerStoppingEvent.
-- Logging uses java.util.logging; whether it reaches the server log is unverified until the first runServer card.
+- Logging uses java.util.logging. PT-N3 result: records print on stderr (root ConsoleHandler) but are NOT in `logs/latest.log`. See `docs/analysis/telemetry/neoforge-otel-spike.md`, which also records that the jar-in-jar API and the agent's `GlobalOpenTelemetry` work under a real server load (`OtelLoadTest` covers the no-agent half).
 - Own `gradle/verification-metadata.xml` and lockfiles.
 - No CI lane (a lane needs a separate owner-approved change).
 
