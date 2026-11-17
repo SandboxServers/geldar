@@ -8,6 +8,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 class RedactorTest {
+    /** Builds a dotted quad at runtime so no address literal sits in the source (decision 0132). */
+    private static String q(int a, int b, int c, int d) {
+        return a + "." + b + "." + c + "." + d;
+    }
+
     @Test
     void credentialKeysAreDetected() {
         for (String k : new String[] {
@@ -26,15 +31,15 @@ class RedactorTest {
     void redactAttrReplacesCredentialValueAndScrubsStrings() {
         assertEquals("[redacted]", Redactor.redactAttr("rcon.password", "hunter2"));
         assertEquals("[redacted]", Redactor.redactAttr("rcon.password", 5L));
-        assertEquals("at [addr] now", Redactor.redactAttr("geldar.text", "at 10.0.0.5 now"));
+        assertEquals("at [addr] now", Redactor.redactAttr("geldar.text", "at " + q(10, 0, 0, 5) + " now"));
         assertEquals(7L, Redactor.redactAttr("geldar.amount", 7L));
     }
 
     @Test
     void ipv4LiteralsAreScrubbed() {
-        assertEquals("from [addr] ok", Redactor.scrub("from 192.168.1.20 ok"));
-        assertEquals("[addr]:25565", Redactor.scrub("10.0.0.1:25565"));
-        assertEquals("a [addr], b [addr].", Redactor.scrub("a 172.16.0.9, b 127.0.0.1."));
+        assertEquals("from [addr] ok", Redactor.scrub("from " + q(192, 168, 1, 20) + " ok"));
+        assertEquals("[addr]:25565", Redactor.scrub(q(10, 0, 0, 1) + ":25565"));
+        assertEquals("a [addr], b [addr].", Redactor.scrub("a " + q(172, 16, 0, 9) + ", b " + q(127, 0, 0, 1) + "."));
     }
 
     @Test
