@@ -1,5 +1,6 @@
 import java.security.MessageDigest
 import java.util.zip.ZipFile
+import org.gradle.api.tasks.PathSensitivity
 
 plugins {
     `java-library`
@@ -41,10 +42,32 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
+// The sources that tests read by path (relative to this project). KinoReadOnlyTest and LakituReadOnlyTest scan the kino
+// and lakitu packages in both modules, and KinoReadOnlyTest also reads GeldarCore.java and config.yml. Gradle does not
+// see a file that a test opens by path unless it is an input of the test task, so a comment-only edit to one of them
+// left :core:test UP-TO-DATE and a banned word went unnoticed until cleanTest. Each entry is an input of :core:test
+// (below). verifyTestSourceInputs (run by check) fails when a test names a src/main path that no entry covers.
+val scannedSourceRoots: List<java.nio.file.Path> = listOf(
+    "src/main/java/dev/geldar/core/kino",
+    "src/main/java/dev/geldar/core/lakitu",
+    "../core-common/src/main/java/dev/geldar/core/kino",
+    "../core-common/src/main/java/dev/geldar/core/lakitu",
+    "src/main/java/dev/geldar/core/GeldarCore.java",
+    "src/main/resources/config.yml",
+).map { projectDir.toPath().resolve(it).normalize() }
+
 tasks.test {
     useJUnitPlatform()
     // The tests validate envelopes against the shared contract schemas.
     systemProperty("geldar.schemas", rootProject.layout.projectDirectory.dir("../contract/schemas").asFile.absolutePath)
+    // Directories and files alike: a change to any of them reruns the tests.
+    scannedSourceRoots.forEachIndexed { index, target ->
+        if (target.toFile().isDirectory) {
+            inputs.dir(target.toFile()).withPropertyName("scannedSource$index").withPathSensitivity(PathSensitivity.RELATIVE)
+        } else {
+            inputs.file(target.toFile()).withPropertyName("scannedSource$index").withPathSensitivity(PathSensitivity.RELATIVE)
+        }
+    }
 }
 
 tasks.processResources {
@@ -108,6 +131,36 @@ tasks.register("verifyJarContents") {
     }
 }
 
+// Guard for the declarations above: every "src/main/..." path literal in a core test must resolve under a declared
+// root, so a test that starts reading another source, or a declaration that is removed, fails `check` with the
+// literal named. The test sources are declared inputs, so the task reruns when a test changes.
+val verifyTestSourceInputs = tasks.register("verifyTestSourceInputs") {
+    group = "verification"
+    description = "Fails when a core test reads a src/main path that is not a declared input of :core:test."
+    val testSources = layout.projectDirectory.dir("src/test/java")
+    val basePath = projectDir.toPath()
+    val declared = scannedSourceRoots
+    inputs.dir(testSources)
+    doLast {
+        val pathLiteral = Regex("\"((?:\\.\\./)?[^\"]*src/main/[^\"]*)\"")
+        val uncovered = testSources.asFile.walk()
+            .filter { it.isFile && it.name.endsWith(".java") }
+            .flatMap { file -> pathLiteral.findAll(file.readText()).map { it.groupValues[1] to file } }
+            .filter { (path, _) ->
+                val target = basePath.resolve(path).normalize()
+                declared.none { target.startsWith(it) }
+            }
+            .map { (path, file) -> "  ${file.relativeTo(projectDir).path}: \"$path\"" }
+            .toList()
+        if (uncovered.isNotEmpty()) {
+            throw GradleException(
+                "A core test reads source paths that are not declared test inputs of :core:test. Add a " +
+                    "declareScannedSource(...) line for each in plugin/core/build.gradle.kts:\n" + uncovered.joinToString("\n"),
+            )
+        }
+    }
+}
+
 tasks.check {
-    dependsOn("verifyJarContents")
+    dependsOn("verifyJarContents", verifyTestSourceInputs)
 }
