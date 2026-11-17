@@ -166,11 +166,75 @@ describe.skipIf(skipWithoutSh())('NeoForge entrypoint under sh', { timeout: 30_0
     expectNoSecret(second);
   });
 
-  it('the curl calls carry the connect timeout, the total timeout and the retry count', () => {
+  it('the curl calls carry the connect timeout, the total timeout, the retry count, the delay and retry-all-errors', () => {
     const c = setup();
     expect(run(c).status).toBe(0);
     const calls = readFileSync(c.curlLog, 'utf8');
-    expect(calls).toContain('--connect-timeout 30 --max-time 600 --retry 3');
+    expect(calls).toContain(
+      '--connect-timeout 60 --max-time 900 --retry 6 --retry-delay 10 --retry-all-errors',
+    );
+  });
+
+  it('a valid pre-seeded installer and mod are used as they are: curl is never called', () => {
+    const c = setup();
+    mkdirSync(join(c.data, 'mods'), { recursive: true });
+    writeFileSync(c.installer, INSTALLER_BODY);
+    writeFileSync(c.mod, MOD_BODY);
+    const r = run(c);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('started');
+    expect(curlCalls(c)).toBe(0);
+    expectNoSecret(r);
+  });
+
+  it('a valid pre-seeded installer alone: only the mod is downloaded', () => {
+    const c = setup();
+    mkdirSync(join(c.data, 'mods'), { recursive: true });
+    writeFileSync(c.installer, INSTALLER_BODY);
+    expect(run(c).status).toBe(0);
+    const log = readFileSync(c.curlLog, 'utf8');
+    expect(curlCalls(c)).toBe(1);
+    expect(log).toContain(MOD_NAME);
+    expect(log).not.toContain(INSTALLER_NAME);
+  });
+
+  it('a pre-seeded file with the wrong hash is replaced by a download', () => {
+    const c = setup();
+    mkdirSync(join(c.data, 'mods'), { recursive: true });
+    writeFileSync(c.mod, 'stale mod bytes');
+    const r = run(c);
+    expect(r.status).toBe(0);
+    expect(readFileSync(c.mod, 'utf8')).toBe(MOD_BODY);
+    expect(curlCalls(c)).toBe(2);
+    expectNoSecret(r);
+  });
+
+  it('a wrong pre-seeded file whose download also fails exits 1 with the pre-seed hint and is not used', () => {
+    const c = setup();
+    mkdirSync(join(c.data, 'mods'), { recursive: true });
+    writeFileSync(c.mod, 'stale mod bytes');
+    const r = run(c, { STUB_CURL_FIXTURES: slash(join(c.bin, 'no-fixtures')) });
+    expect(r.status).toBe(1);
+    expect(r.stdout).not.toContain('started');
+    expect(r.stderr).toContain(`download of ${slash(c.mod)} failed after retries`);
+    expect(r.stderr).toContain(`put a file at ${slash(c.mod)} (inside the container)`);
+    expect(r.stderr).toContain('whose sha512sum matches the pin MOD_SHA512');
+    // Documented behaviour: a failed download removes only the .part file; the wrong pre-seeded file stays, unused.
+    expect(readFileSync(c.mod, 'utf8')).toBe('stale mod bytes');
+    expect(existsSync(`${c.mod}.part`)).toBe(false);
+    expectNoSecret(r);
+  });
+
+  it('a failed download with nothing pre-seeded exits 1 after one curl call, naming the file and its pin', () => {
+    const c = setup();
+    const r = run(c, { STUB_CURL_FIXTURES: slash(join(c.bin, 'no-fixtures')) });
+    expect(r.status).toBe(1);
+    expect(r.stderr).toContain(`put a file at ${slash(c.mod)} (inside the container)`);
+    expect(r.stderr).toContain('whose sha512sum matches the pin MOD_SHA512');
+    expect(curlCalls(c)).toBe(1);
+    expect(existsSync(c.mod)).toBe(false);
+    expect(existsSync(c.installer)).toBe(false);
+    expectNoSecret(r);
   });
 
   it('a fresh config is written with the secret only in [forwarding], mode 600 where modes exist', () => {
