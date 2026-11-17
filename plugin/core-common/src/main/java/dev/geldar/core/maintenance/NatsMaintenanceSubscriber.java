@@ -3,6 +3,7 @@ package dev.geldar.core.maintenance;
 import io.nats.client.Connection;
 import io.nats.client.Nats;
 import io.nats.client.Options;
+import io.nats.client.impl.Headers;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -46,11 +47,48 @@ public final class NatsMaintenanceSubscriber implements AutoCloseable {
                 nc.close();
                 return;
             }
-            nc.createDispatcher(m -> notices.receive(new String(m.getData(), StandardCharsets.UTF_8)))
-                    .subscribe(subject(shard));
+            nc.createDispatcher(m -> handle(m.getHeaders(), m.getData(), notices)).subscribe(subject(shard));
             connection = nc;
         } catch (Exception e) {
             log.warning("Maintenance notices cannot reach NATS: " + e.getClass().getSimpleName());
+        }
+    }
+
+    /**
+     * Hands one notice on, inside the trace context its headers carry (only {@code traceparent} and
+     * {@code tracestate}). The trace helper lives in the Paper adapter (core), which this module cannot depend on, so
+     * it is found by name; without it or without an agent the notice is handled exactly as before.
+     */
+    static void handle(Headers headers, byte[] data, MaintenanceNotices notices) {
+        AutoCloseable scope = enterTrace(headers);
+        try {
+            notices.receive(new String(data, StandardCharsets.UTF_8));
+        } finally {
+            if (scope != null) {
+                try {
+                    scope.close();
+                } catch (Exception e) {
+                    // Tracing must never break notice handling.
+                }
+            }
+        }
+    }
+
+    private static AutoCloseable enterTrace(Headers headers) {
+        if (headers == null) {
+            return null;
+        }
+        try {
+            ClassLoader cl = NatsMaintenanceSubscriber.class.getClassLoader();
+            Object context = Class.forName("dev.geldar.core.trace.TraceHeaders", true, cl)
+                    .getMethod("extract", Headers.class)
+                    .invoke(null, headers);
+            Object scope = Class.forName("io.opentelemetry.context.Context", true, cl)
+                    .getMethod("makeCurrent")
+                    .invoke(context);
+            return scope instanceof AutoCloseable c ? c : null;
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            return null;
         }
     }
 

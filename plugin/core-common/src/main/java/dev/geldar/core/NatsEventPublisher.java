@@ -87,7 +87,36 @@ public final class NatsEventPublisher implements EventPublisher {
 
     /** The headers sent with an event: {@code Nats-Msg-Id} is the {@code source_event_id}, for de-duplication. */
     static Headers headers(EventEnvelope event) {
-        return new Headers().put(NatsJetStreamConstants.MSG_ID_HDR, event.sourceEventId());
+        Headers headers = new Headers().put(NatsJetStreamConstants.MSG_ID_HDR, event.sourceEventId());
+        injectTrace(headers);
+        return headers;
+    }
+
+    /**
+     * Adds {@code traceparent} and {@code tracestate} when a valid span is current on this thread. The trace helper
+     * lives in the Paper adapter (core), which this module cannot depend on, so it is found by name; without it, or
+     * without an OpenTelemetry agent, nothing is added.
+     */
+    private static void injectTrace(Headers headers) {
+        if (TRACE_INJECT == null) {
+            return;
+        }
+        try {
+            TRACE_INJECT.invoke(null, headers);
+        } catch (ReflectiveOperationException | RuntimeException | LinkageError e) {
+            // Tracing must never stop an event from being exported.
+        }
+    }
+
+    private static final java.lang.reflect.Method TRACE_INJECT = traceInject();
+
+    private static java.lang.reflect.Method traceInject() {
+        try {
+            return Class.forName("dev.geldar.core.trace.TraceHeaders", true, NatsEventPublisher.class.getClassLoader())
+                    .getMethod("inject", Headers.class);
+        } catch (ReflectiveOperationException | LinkageError e) {
+            return null;
+        }
     }
 
     /**
