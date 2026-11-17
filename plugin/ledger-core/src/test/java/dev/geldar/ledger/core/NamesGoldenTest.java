@@ -28,7 +28,8 @@ class NamesGoldenTest {
 
     private static final Set<String> EVENTS = Set.of(
             "geldar.player.join", "geldar.player.quit", "geldar.player.kick", "geldar.player.prelogin",
-            "geldar.player.snapshot", "geldar.player.advancement", "geldar.player.stats", "geldar.server.slow_tick",
+            "geldar.player.snapshot", "geldar.player.advancement", "geldar.player.stats", "geldar.player.client_tick",
+            "geldar.player.command_tree", "geldar.server.slow_tick",
             "geldar.server.stall", "geldar.server.config_snapshot", "geldar.server.exception",
             "geldar.server.plugin_enabled", "geldar.server.plugin_disabled", "geldar.collector.disabled",
             "geldar.trade", "geldar.chat", "geldar.sign", "geldar.book", "geldar.rcon.command",

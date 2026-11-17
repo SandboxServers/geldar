@@ -133,6 +133,8 @@ public final class Names {
         public static final String PLAYER_SNAPSHOT = "geldar.player.snapshot";
         public static final String PLAYER_ADVANCEMENT = "geldar.player.advancement";
         public static final String PLAYER_STATS = "geldar.player.stats";
+        public static final String PLAYER_CLIENT_TICK = "geldar.player.client_tick";
+        public static final String PLAYER_COMMAND_TREE = "geldar.player.command_tree";
         public static final String SERVER_SLOW_TICK = "geldar.server.slow_tick";
         public static final String SERVER_STALL = "geldar.server.stall";
         public static final String SERVER_CONFIG_SNAPSHOT = "geldar.server.config_snapshot";
