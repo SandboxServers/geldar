@@ -51,8 +51,8 @@ const FROZEN_METRICS = new Set([
 /**
  * Metric attribute keys a panel may group or filter by. Source of truth: AttrKeys.metricAllowed in
  * plugin/ledger-core (bare keys; per-player and free-text keys are rejected there). Frozen here on
- * purpose (not read from plugin/): a change there must be mirrored here. `geldar.event.class` and
- * `geldar.cancelled` are the census attributes the README section 4 metric table names.
+ * purpose (not read from plugin/): a change there must be mirrored here. `event_class` and
+ * `cancelled` are the census attributes the README section 4 metric table names.
  */
 const ALLOWED_METRIC_KEYS = new Set([
   'window',
@@ -67,8 +67,8 @@ const ALLOWED_METRIC_KEYS = new Set([
   'class_group',
   'op',
   'kind',
-  'geldar.event.class',
-  'geldar.cancelled',
+  'event_class',
+  'cancelled',
 ]);
 
 type Kind = 'counter' | 'gauge' | 'histogram' | 'monotonic-gauge';
@@ -294,6 +294,10 @@ describe('Paper dashboard JSON (PT-17a)', () => {
     const e = q('TPS by window');
     e.query.groupBy = [{ key: 'geldar.window' }];
     expect(problems(e.m).some((p) => p.includes('attribute key geldar.window'))).toBe(true);
+    // The census key is the bare event_class; the dotted form is not an allowed metric key.
+    const g = q('TPS by window');
+    g.query.groupBy = [{ key: 'geldar.event.class' }];
+    expect(problems(g.m).some((p) => p.includes('attribute key geldar.event.class'))).toBe(true);
     const f = q('Loaded chunks per world');
     f.query.groupBy = [{ key: 'minecraft.player.uuid' }];
     const found = problems(f.m);
@@ -308,7 +312,7 @@ describe('Paper dashboard JSON (PT-17a)', () => {
       ),
     );
     expect([...used].sort()).toEqual(
-      ['area', 'collector', 'geldar.event.class', 'group', 'queue', 'window', 'world'].sort(),
+      ['area', 'collector', 'event_class', 'group', 'queue', 'window', 'world'].sort(),
     );
   });
 });

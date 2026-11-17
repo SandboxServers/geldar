@@ -1,6 +1,6 @@
 {
   "title": "Geldar Paper",
-  "description": "Paper server health from the Ledger plugin (PT-17a). Metric names are the frozen PT names; metric attribute keys are the bare keys of AttrKeys.metricAllowed (window, world, queue, collector, group, area) plus geldar.event.class for the census (README section 4 table). The query shape is the v4 builder shape, which SigNoz v0.148.1 migrates on import; UNVERIFIED until the first import. Read-only: no panel acts in the world.",
+  "description": "Paper server health from the Ledger plugin (PT-17a). Metric names are the frozen PT names; metric attribute keys are the bare keys of AttrKeys.metricAllowed (window, world, queue, collector, group, area) plus event_class and cancelled for the census (README section 4 table). The query shape is the v4 builder shape, which SigNoz v0.148.1 migrates on import; UNVERIFIED until the first import. Read-only: no panel acts in the world.",
   "tags": [
     "geldar",
     "paper",
@@ -261,7 +261,7 @@
       "softMin": null,
       "timePreferance": "GLOBAL_TIME",
       "yAxisUnit": "none",
-      "query": {"queryType":"builder","id":"paper-09-query","promql":[{"name":"A","query":"","disabled":false,"legend":""}],"clickhouse_sql":[{"name":"A","query":"","disabled":false,"legend":""}],"builder":{"queryData":[{"dataSource":"metrics","queryName":"A","expression":"A","disabled":false,"aggregateOperator":"rate","aggregateAttribute":{"key":"geldar_event_count_total","dataType":"float64","type":"Sum","isColumn":true,"isJSON":false},"timeAggregation":"rate","spaceAggregation":"sum","functions":[],"filters":{"op":"AND","items":[]},"groupBy":[{"key":"geldar.event.class","dataType":"string","type":"tag","isColumn":false,"isJSON":false}],"having":[],"legend":"{{geldar.event.class}}","limit":20,"orderBy":[{"columnName":"#SIGNOZ_VALUE","order":"desc"}],"reduceTo":"avg","stepInterval":60}],"queryFormulas":[]}}
+      "query": {"queryType":"builder","id":"paper-09-query","promql":[{"name":"A","query":"","disabled":false,"legend":""}],"clickhouse_sql":[{"name":"A","query":"","disabled":false,"legend":""}],"builder":{"queryData":[{"dataSource":"metrics","queryName":"A","expression":"A","disabled":false,"aggregateOperator":"rate","aggregateAttribute":{"key":"geldar_event_count_total","dataType":"float64","type":"Sum","isColumn":true,"isJSON":false},"timeAggregation":"rate","spaceAggregation":"sum","functions":[],"filters":{"op":"AND","items":[]},"groupBy":[{"key":"event_class","dataType":"string","type":"tag","isColumn":false,"isJSON":false}],"having":[],"legend":"{{event_class}}","limit":20,"orderBy":[{"columnName":"#SIGNOZ_VALUE","order":"desc"}],"reduceTo":"avg","stepInterval":60}],"queryFormulas":[]}}
     },
     {
       "id": "paper-10",
