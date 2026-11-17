@@ -153,58 +153,65 @@ describe('geldar.ps1 shard secrets: static wiring', () => {
   });
 });
 
-describe.skipIf(!hasPwsh)('geldar.ps1 shard secrets: the files it writes', () => {
-  let dir = '';
-  let run: { status: number | null; stderr: string } | undefined;
+// Each case spawns pwsh to run the generator; under a parallel suite run one case can take longer than the 5 s default.
+describe.skipIf(!hasPwsh)(
+  'geldar.ps1 shard secrets: the files it writes',
+  { timeout: 30_000 },
+  () => {
+    let dir = '';
+    let run: { status: number | null; stderr: string } | undefined;
 
-  beforeAll(() => {
-    dir = copyGenerator();
-    run = shard(dir, 'secrets', 'colo');
-  });
+    beforeAll(() => {
+      dir = copyGenerator();
+      run = shard(dir, 'secrets', 'colo');
+    });
 
-  afterAll(() => {
-    if (dir) rmSync(dir, { recursive: true, force: true });
-  });
+    afterAll(() => {
+      if (dir) rmSync(dir, { recursive: true, force: true });
+    });
 
-  it('runs the generator without error and writes the three secret files', () => {
-    expect(run?.status, `exit ${run?.status}: ${run?.stderr}`).toBe(0);
-    const secrets = join(dir, 'compose', 'secrets');
-    expect(SECRETS.map((f) => existsSync(join(secrets, f)))).toEqual(SECRETS.map(() => true));
-  });
-
-  it('writes each secret as 32 URL-safe characters with no newline', () => {
-    const secrets = join(dir, 'compose', 'secrets');
-    // A boolean, not a toMatch: a failing matcher would print the secret.
-    const ok = SECRETS.map((f) =>
-      /^[A-Za-z0-9_-]{32}$/.test(readFileSync(join(secrets, f), 'utf8')),
-    );
-    expect(ok).toEqual(SECRETS.map(() => true));
-  });
-
-  it.skipIf(process.platform === 'win32')(
-    'makes the secrets directory 0700 and each secret file 0600',
-    () => {
+    it('runs the generator without error and writes the three secret files', () => {
+      expect(run?.status, `exit ${run?.status}: ${run?.stderr}`).toBe(0);
       const secrets = join(dir, 'compose', 'secrets');
-      expect(mode(secrets)).toBe(0o700);
-      expect(SECRETS.map((f) => mode(join(secrets, f)))).toEqual(SECRETS.map(() => 0o600));
-    },
-  );
+      expect(SECRETS.map((f) => existsSync(join(secrets, f)))).toEqual(SECRETS.map(() => true));
+    });
 
-  it('keeps existing secrets on a second run: no value changes and the modes stay owner-only', () => {
-    const secrets = join(dir, 'compose', 'secrets');
-    const before = SECRETS.map((f) => readFileSync(join(secrets, f), 'utf8'));
-    const again = shard(dir, 'secrets', 'colo');
-    expect(again.status, `exit ${again.status}: ${again.stderr}`).toBe(0);
-    const after = SECRETS.map((f) => readFileSync(join(secrets, f), 'utf8'));
-    expect(after.map((v, i) => v === before[i])).toEqual(SECRETS.map(() => true));
-    if (process.platform !== 'win32') {
-      expect(SECRETS.map((f) => mode(join(secrets, f)))).toEqual(SECRETS.map(() => 0o600));
-    }
-  });
-});
+    it('writes each secret as 32 URL-safe characters with no newline', () => {
+      const secrets = join(dir, 'compose', 'secrets');
+      // A boolean, not a toMatch: a failing matcher would print the secret.
+      const ok = SECRETS.map((f) =>
+        /^[A-Za-z0-9_-]{32}$/.test(readFileSync(join(secrets, f), 'utf8')),
+      );
+      expect(ok).toEqual(SECRETS.map(() => true));
+    });
 
+    it.skipIf(process.platform === 'win32')(
+      'makes the secrets directory 0700 and each secret file 0600',
+      () => {
+        const secrets = join(dir, 'compose', 'secrets');
+        expect(mode(secrets)).toBe(0o700);
+        expect(SECRETS.map((f) => mode(join(secrets, f)))).toEqual(SECRETS.map(() => 0o600));
+      },
+    );
+
+    it('keeps existing secrets on a second run: no value changes and the modes stay owner-only', () => {
+      const secrets = join(dir, 'compose', 'secrets');
+      const before = SECRETS.map((f) => readFileSync(join(secrets, f), 'utf8'));
+      const again = shard(dir, 'secrets', 'colo');
+      expect(again.status, `exit ${again.status}: ${again.stderr}`).toBe(0);
+      const after = SECRETS.map((f) => readFileSync(join(secrets, f), 'utf8'));
+      expect(after.map((v, i) => v === before[i])).toEqual(SECRETS.map(() => true));
+      if (process.platform !== 'win32') {
+        expect(SECRETS.map((f) => mode(join(secrets, f)))).toEqual(SECRETS.map(() => 0o600));
+      }
+    });
+  },
+);
+
+// Each case spawns pwsh to run the generator; under a parallel suite run one case can take longer than the 5 s default.
 describe.skipIf(!hasPwsh || process.platform === 'win32')(
   'geldar.ps1 shard secrets: a world-readable secret left by an older run',
+  { timeout: 30_000 },
   () => {
     it('is tightened to 0600 on the next run, and its value is kept', () => {
       const dir = copyGenerator();
@@ -226,72 +233,82 @@ describe.skipIf(!hasPwsh || process.platform === 'win32')(
   },
 );
 
-describe.skipIf(!hasPwsh)('geldar.ps1 shard up colo: the NATS secrets are checked first', () => {
-  it('fails before docker, names nats-body.txt and the command to run, and writes no secret', () => {
-    const dir = copyGenerator();
-    try {
-      const run = refusal(dir, 'up', 'colo');
-      expect(run.status).not.toBe(0);
-      expect(squash(run.message)).toContain(squash('compose/secrets/nats-body.txt'));
-      expect(squash(run.message)).toContain(squash('./geldar.ps1 shard nats-auth colo'));
-      expect(existsSync(join(dir, 'compose', 'secrets', 'postgres.txt'))).toBe(false);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it('fails the same way for an empty nats-body.txt', () => {
-    const dir = copyGenerator();
-    try {
-      mkdirSync(join(dir, 'compose', 'secrets'), { recursive: true });
-      writeFileSync(join(dir, 'compose', 'secrets', 'nats-body.txt'), '');
-      const run = refusal(dir, 'up', 'colo');
-      expect(run.status).not.toBe(0);
-      expect(squash(run.message)).toContain(squash('compose/secrets/nats-body.txt'));
-      expect(squash(run.message)).toContain(squash('is missing or empty'));
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it('gets past the NATS check once every NATS secret exists, so it fails later for another reason', () => {
-    const dir = copyGenerator();
-    try {
-      mkdirSync(join(dir, 'compose', 'secrets'), { recursive: true });
-      for (const name of NATS_SECRETS) {
-        writeFileSync(join(dir, 'compose', 'secrets', name), 'x'.repeat(32));
+// Each case spawns pwsh to run the generator; under a parallel suite run one case can take longer than the 5 s default.
+describe.skipIf(!hasPwsh)(
+  'geldar.ps1 shard up colo: the NATS secrets are checked first',
+  { timeout: 30_000 },
+  () => {
+    it('fails before docker, names nats-body.txt and the command to run, and writes no secret', () => {
+      const dir = copyGenerator();
+      try {
+        const run = refusal(dir, 'up', 'colo');
+        expect(run.status).not.toBe(0);
+        expect(squash(run.message)).toContain(squash('compose/secrets/nats-body.txt'));
+        expect(squash(run.message)).toContain(squash('./geldar.ps1 shard nats-auth colo'));
+        expect(existsSync(join(dir, 'compose', 'secrets', 'postgres.txt'))).toBe(false);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
       }
-      const run = refusal(dir, 'up', 'colo');
-      // The temp copy has no plugin jar, so the run stops at Assert-PluginJar, not at the NATS check.
-      expect(run.status).not.toBe(0);
-      expect(squash(run.message)).not.toContain(squash('shard nats-auth colo'));
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-});
+    });
 
-describe.skipIf(!hasPwsh)('geldar.ps1 shard up colo: --rcon-host is refused', () => {
-  it('refuses --rcon-host before anything starts, names the flag and the decision, and writes no secret', () => {
-    const dir = copyGenerator();
-    try {
-      const run = refusal(dir, 'up', 'colo', '--rcon-host');
-      expect(run.status).not.toBe(0);
-      expect(squash(run.message)).toContain(squash('shard up colo: --rcon-host is refused'));
-      expect(squash(run.message)).toContain(squash('decision 0082'));
-      expect(existsSync(join(dir, 'compose', 'secrets', 'postgres.txt'))).toBe(false);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+    it('fails the same way for an empty nats-body.txt', () => {
+      const dir = copyGenerator();
+      try {
+        mkdirSync(join(dir, 'compose', 'secrets'), { recursive: true });
+        writeFileSync(join(dir, 'compose', 'secrets', 'nats-body.txt'), '');
+        const run = refusal(dir, 'up', 'colo');
+        expect(run.status).not.toBe(0);
+        expect(squash(run.message)).toContain(squash('compose/secrets/nats-body.txt'));
+        expect(squash(run.message)).toContain(squash('is missing or empty'));
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
 
-  it('does not refuse --rcon-host for phase0: the refusal is for the colo shard only', () => {
-    const dir = copyGenerator();
-    try {
-      const run = refusal(dir, 'up', 'phase0', '--rcon-host');
-      expect(squash(run.message)).not.toContain(squash('--rcon-host is refused'));
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-});
+    it('gets past the NATS check once every NATS secret exists, so it fails later for another reason', () => {
+      const dir = copyGenerator();
+      try {
+        mkdirSync(join(dir, 'compose', 'secrets'), { recursive: true });
+        for (const name of NATS_SECRETS) {
+          writeFileSync(join(dir, 'compose', 'secrets', name), 'x'.repeat(32));
+        }
+        const run = refusal(dir, 'up', 'colo');
+        // The temp copy has no plugin jar, so the run stops at Assert-PluginJar, not at the NATS check.
+        expect(run.status).not.toBe(0);
+        expect(squash(run.message)).not.toContain(squash('shard nats-auth colo'));
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  },
+);
+
+// Each case spawns pwsh to run the generator; under a parallel suite run one case can take longer than the 5 s default.
+describe.skipIf(!hasPwsh)(
+  'geldar.ps1 shard up colo: --rcon-host is refused',
+  { timeout: 30_000 },
+  () => {
+    it('refuses --rcon-host before anything starts, names the flag and the decision, and writes no secret', () => {
+      const dir = copyGenerator();
+      try {
+        const run = refusal(dir, 'up', 'colo', '--rcon-host');
+        expect(run.status).not.toBe(0);
+        expect(squash(run.message)).toContain(squash('shard up colo: --rcon-host is refused'));
+        expect(squash(run.message)).toContain(squash('decision 0082'));
+        expect(existsSync(join(dir, 'compose', 'secrets', 'postgres.txt'))).toBe(false);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('does not refuse --rcon-host for phase0: the refusal is for the colo shard only', () => {
+      const dir = copyGenerator();
+      try {
+        const run = refusal(dir, 'up', 'phase0', '--rcon-host');
+        expect(squash(run.message)).not.toContain(squash('--rcon-host is refused'));
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    });
+  },
+);

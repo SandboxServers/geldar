@@ -238,7 +238,8 @@ function verify(args: string[], fixture: string | null = FIXTURE, unsetDir = fal
   }
 }
 
-describe.skipIf(!SH)('telemetry-verify.sh against a fixture JSONL', () => {
+// Each case spawns sh and a chain of MSYS tools; under a parallel suite run one case took about 7 s, over the 5 s default.
+describe.skipIf(!SH)('telemetry-verify.sh against a fixture JSONL', { timeout: 30_000 }, () => {
   it('metric: found prints the count and the last value, exit 0', () => {
     const r = verify(['metric', NAME]);
     expect(r.status, r.stderr).toBe(0);
