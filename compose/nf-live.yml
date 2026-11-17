@@ -193,9 +193,9 @@ services:
   velocity:
     # Budget: 0.5 CPU, 1024m, 256 pids (the colo velocity budget). Loopback game ingress: the only published port here.
     # The itzg image starts as root and drops to NF_SERVICE_UID, so it reads the 0600 forwarding secret.
-    # UNVERIFIED and a deploy blocker: the volume below points at a velocity config that names the backend `neoforge:25565`.
-    # The colo config (compose/velocity/velocity.toml) names the Paper backend, so it must not be mounted here. That file is
-    # not in this packet; without it, `up` creates an empty directory at the mount target and velocity does not start.
+    # The volume below mounts compose/velocity/velocity-nf.toml, which exists: the bot-ingress config (offline-mode, modern
+    # forwarding, one backend `neoforge:25565`). The online-mode human listener is a separate, later service, not this file.
+    # The colo config (compose/velocity/velocity.toml) names the Paper backend, so it must not be mounted here.
     deploy:
       resources:
         limits:
