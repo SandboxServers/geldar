@@ -21,20 +21,21 @@ State 2026-11-17. Read this, then [p0-body-model.md](p0-body-model.md).
   - Run 5 (2026-11-17) stopped at first-run check 1 (mod load): the scratch stack mounts no geldar jar. The runbook now marks check 1 N/A until a mod jar is mounted; the probe has not run yet.
   - Run 6: passed (the probe; see p0-findings.md section 2).
   - Run 7 (2026-11-17) passed: our own mod (geldar_neoforge) loaded on a dedicated server, and the vanilla probe still passed with it installed. Check 1 is blocking when a jar is mounted. Not exercised: a second start with the jar, a second probe, a Paper restart (no runbook step yet). See p0-findings.md section 8.
-- P0 verified (runs 1-4):
+- P0 verified (runs 1-7):
   - Proxy Compatible Forge 1.3.1 loads on NeoForge 26.1.2.
   - Server ticks at 20 TPS.
   - Paper JVM runs as uid 1001 (the account).
   - The eventsink `/app` is readable.
   - The PCF forwarding config is mode 600.
+  - A vanilla-protocol golem Body joins a NeoForge 26.1.2 server behind Velocity with Proxy Compatible Forge 1.3.1 (runs 6 and 7). The name and UUID agree across the stack; the UUID is the offline-mode one.
+  - The probe's goto and mine complete (run 6).
+  - Our own mod (geldar_neoforge) loads on a dedicated server (run 7).
 - P0 unverified:
-  - Vanilla join, and the UUID and name the server sees on 26.1.
-  - The probe's goto, mine and cleanup.
   - The netty `VarInt` line in the Paper log at 13:51:04 (no client; likely Paper's own healthcheck ping; UNVERIFIED). The runbook has a one-minute watch for it.
   - PCF config owner: uid 1000 on a mode 600 file, against the Paper JVM's 1001 (observed; cause unverified).
-- Next: the C design note, then P3. P3 also appears in the on-hold list below. This update does not change that list, so the lead settles it.
+- Next: P3, NeoForge adapter event export and maintenance notices (a design note is in progress). On hold: P4 and P5, progression (P6 to P8), and P0b.
 - Human connection route: the lead asks the owner for it (separate approval; not requested here). Progression (P6 to P8) stays on hold.
-- On hold: P0b (scratch golem-body and geldar-mcp for the Claude-mind test; the Mind-host route is not decided). P3 (NeoForge adapter event export and maintenance notices). P4 (own block-owner log and gravestones). P5 (BlueMap and pregeneration). P6 to P8 (progression): ON HOLD for the owner's six policy decisions in progression-design.md. Human connection route (tunnel or proxy): needs separate approval. CI lane for neoforge/: needs a separate owner-approved PR.
+- On hold: P0b (scratch golem-body and geldar-mcp for the Claude-mind test; the Mind-host route is not decided). P4 (own block-owner log and gravestones). P5 (BlueMap and pregeneration). P6 to P8 (progression): ON HOLD for the owner's six policy decisions in progression-design.md. Human connection route (tunnel or proxy): needs separate approval. CI lane for neoforge/: needs a separate owner-approved PR.
 - Pins: NeoForge 26.1.2 (build 126); Proxy Compatible Forge 1.3.1.
 
 ## Lessons
@@ -44,13 +45,18 @@ State 2026-11-17. Read this, then [p0-body-model.md](p0-body-model.md).
 - The mc-proxy image runs as root with our UID setting, on live too. Compose comments that say the itzg image "drops to this uid" are true for Paper, not for the proxy.
 
 ## Open questions
-- Does a vanilla-protocol golem Body join a NeoForge 26.1.2 server behind Velocity with no registered payloads? Which UUID and name does it see? (P0)
 - Confirm NeoForge 26.1 non-NeoForge handshake rules; the mirrors cover 1.20.4 to 1.21.5 only.
 - Mind-host route, MCP listen address, port and dev token file for the scriptorium seam; owner approval for the human connection route (tunnel or proxy). (P0b, P0)
+- Human vanilla client (P0 criterion 4): needs a separate approval.
+- Many Bodies: join and load are not run.
+- Registry absence, read from outside the probe.
+- Online-mode UUID forwarding.
+- A second start with the mod jar mounted.
+- Progression decisions: the owner's six policy decisions (P6 to P8).
 - Owner: whether the mc-proxy root setting is changed on live (a deploy change), and whether the PCF config owner must match the server user.
 
 ## Next actions
-1. C design note, then P3 (P3 is also on the on-hold list above; the lead settles that first). P0 runs 1 to 7 are done; run 7 passed.
+1. P3 is next (design note in progress). P0 runs 1 to 7 are done; run 7 passed.
 2. Main orchestrator schedules the merge of this runbook and RESUME update after review.
 3. P0b is written once the Mind-host-to-node route is decided.
 

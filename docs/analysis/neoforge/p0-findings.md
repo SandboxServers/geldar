@@ -77,19 +77,12 @@ This records the P0 join test of a vanilla-protocol golem Body against a scratch
 
 ## 8. Run 7: our own mod
 
-- 2026-11-17, main 423b6ceb, scratch NeoForge 26.1.2 (build 126), Java 25, suffix nf, dedicated server.
-- `/data/mods`: `geldar-neoforge.jar` (2,439 bytes, mode 644) and `proxy-compatible-forge.jar`. Built on the desktop from a clean export at 423b6ceb; two builds gave the same sha256; host and container hash checks passed.
-- Mod load: the paper log has `geldar_neoforge loaded on the dedicated server` once. The mod-list lines are
-  `Geldar NeoForge 0.1.0 (geldar_neoforge)` and ` - geldar_neoforge (jar(mods/geldar-neoforge.jar))`.
-- Vanilla Body probe, with the mod installed: join ok, goto completed, mine completed, cleanup registry=removed
-  whitelist=removed. The whitelist was empty afterwards. Name and UUID agree across the logs (values not recorded here).
-- Stack: `up` returned 0, all five services healthy, seed one-shot exited 0. Tick 20/s. `neoforge tps` 20.000 in every
-  dimension. Every service under 0.3% CPU. Paper 1.48 GiB of a 3 GiB cap (one run).
-- Users: Paper and eventsink uid 1001. Velocity uid 0 (recorded, as in run 4). PCF config mode 600, owner 1001:1000.
-- The offline bundle was rebuilt for this run (144,507,078 bytes, 78 files). The old tarball predated a change to the
-  build script. Bundle size and hash differ between builds, so none is pinned in the runbook.
-- Start-up noise, not from our code, logged before the mod line: the kqueue DebugFile ERROR (also runs 3 to 5) and the
-  one-off netty VarInt IndexOutOfBoundsException (also runs 4 to 6). Both are in the runbook's known noise list.
+- 2026-11-17, dedicated server, scratch NeoForge 26.1.2 (build 126), Java 25, suffix nf, one run.
+- Code: main at 423b6ceb (merge of #663, the mod mount).
+- Mod load: our mod (`geldar_neoforge`) loaded on the dedicated server. The count and log lines are in the run's report.
+- Vanilla Body join through Velocity, with the mod installed: passed. Name and UUID agree; the UUID is the offline-mode one.
+- Stack: `up` returned 0 and reported healthy. Tick, CPU and memory figures are in the run's report.
+- Start-up noise (the kqueue DebugFile ERROR and the one-off netty VarInt IndexOutOfBounds) is in the runbook's known noise list.
 
-- Proves: the skeleton loads on a dedicated server, logs its start line and adds no payloads; the vanilla Body still joins, moves, mines and cleans up with the mod installed.
-- Does not prove: that the mod does anything (no behaviour yet, no events exported); a second start with the jar; a human vanilla client (criterion 4 is still NOT RUN); many Bodies; the registry key read from outside; a second probe or a Paper restart (no safe runbook step exists for either).
+- Proves: the mod loads on a dedicated server, and the vanilla Body joins through Velocity with it installed.
+- Does not prove: that the mod does anything yet; a second start with the jar; a human vanilla client (criterion 4 is still NOT RUN); many Bodies; the registry key read from outside; online-mode UUID forwarding.

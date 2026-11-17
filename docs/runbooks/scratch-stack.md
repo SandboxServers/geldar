@@ -3,7 +3,7 @@ title: "Scratch stack"
 type: how-to
 audience: operators
 status: draft
-last_verified: 2026-11-16 against 03c1f5de
+last_verified: 2026-11-17 against 423b6ceb
 companions: [README.md, nats-auth-inplace.md]
 sources: [../../deploy/scratch/scratch.sh, compose/opt-in/scratch.yml, shards/character-fixture.yaml]
 ---
@@ -214,10 +214,9 @@ the real output in the run notes, and check it against the reply before calling 
    `docker logs <paper> 2>&1 | grep "geldar_neoforge loaded on the dedicated server"`. The expected count is exactly 1.
    If the count is 0, stop and copy the FULL paper log (`docker logs --timestamps <paper> 2>&1`) into the desktop temp dir,
    and record a load failure in the run's report. The grep matches the log line `GeldarNeoForge.java` writes at server
-   start; the id is `ModInfo.modId()`, equal to `modId` in `neoforge.mods.toml`. The mod-list lines expected are
-   `Geldar NeoForge 0.1.0 (geldar_neoforge)` and ` - geldar_neoforge (jar(mods/geldar-neoforge.jar))`. This was proven
-   once, by run 7 (2026-11-17, dedicated server, one run): the count was 1 and both lines were present. One run is not a
-   baseline, so the check stays blocking on every run that mounts the jar. The blocking mod check is also Proxy Compatible
+   start; the id is `ModInfo.modId()`, equal to `modId` in `neoforge.mods.toml`. Run 7 (2026-11-17, dedicated server)
+   proved the load once; the count and log lines are in that run's report, not here. The check stays blocking on every
+   run that mounts the jar. The blocking mod check is also Proxy Compatible
    Forge loading: the paper log must show the `Initializing ProxyCompatibleForge` and `Found status` lines. The loaded-mods
    list: `docker logs <paper> 2>&1 | grep -i "loaded"`; record the mod lines.
 2. Tick time. `docker exec <paper> rcon-cli tick query` (vanilla; UNVERIFIED on this image) shows the target tick rate and
@@ -260,9 +259,8 @@ confirm that.
 Known start-up noise on NeoForge. Neither item is caused by our mod, and neither is a failure by itself:
 
 - An ERROR `An exception occurred processing Appender DebugFile`, caused by a NoClassDefFoundError for
-  `io.netty.channel.kqueue.Native` ("Only supported on OSX/BSD"). It was in runs 3 to 5 (no mod) and run 7 (mod mounted).
-- The one-off netty IndexOutOfBoundsException at PCF VarInt.read (check 6). It was in runs 4 to 6 (no mod) and run 7
-  (mod mounted), once, at start-up.
+  `io.netty.channel.kqueue.Native` ("Only supported on OSX/BSD"). It was seen in runs 3 to 5 (no mod).
+- The one-off netty IndexOutOfBoundsException at PCF VarInt.read (check 6). It was seen once, at start-up, in run 5 (no mod).
 
 ### Mounting the mod jar
 
@@ -502,8 +500,8 @@ RCON value appears in its output, and none may be pasted into a report.
   requirement and the owner is recorded. Cause unverified (the itzg/minecraft-server remap). The owner decides whether it must match.
 - Our own mod loaded on a dedicated server once (run 7; see Mounting the mod jar). It does nothing yet and adds no payloads.
   Not yet exercised: a second start with the jar mounted, many Bodies, a human client.
-- A safe second-probe and Paper-restart step does not exist yet. The runbook has no step for either, so run 7 did not run
-  them. Write and review such a step before any run does either.
+- The runbook has no step for a second probe on one stack or for a Paper restart. None was run. Write and review such a
+  step before any run does either.
 
 ## Building the mod jar
 
@@ -551,5 +549,5 @@ The script refuses, and writes no jar: a relative or non-empty output dir; a dir
 without `META-INF/neoforge.mods.toml`, or one that packs in `.java` sources. A failed build writes nothing, and a failure after
 the jar is copied removes the files it wrote.
 
-Run 7 (2026-11-17) loaded a jar built this way on a dedicated server, once. If the server fails to load the
+Run 7 (2026-11-17) loaded the mounted jar on a dedicated server, once. If the server fails to load the
 mod, record that as a finding in the run's report. It is not a fault in `build-neoforge-mod.sh`.
