@@ -18,3 +18,11 @@ dependencyResolutionManagement {
     // Maven Central exclusive-content filter for the test libraries in build.gradle.kts.
     repositoriesMode = RepositoriesMode.PREFER_PROJECT
 }
+
+// core-common is consumed from the Paper plugin build as a composite build (no copy, no publishing), as
+// neoforge-ledger/ does for ledger-core. The plugin build is not edited; only :core-common is used.
+includeBuild("../plugin") {
+    dependencySubstitution {
+        substitute(module("dev.geldar:core-common")).using(project(":core-common"))
+    }
+}
