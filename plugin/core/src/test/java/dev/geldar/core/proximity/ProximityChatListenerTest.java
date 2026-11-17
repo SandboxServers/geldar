@@ -124,6 +124,75 @@ class ProximityChatListenerTest {
         assertEquals(Set.of(speaker), new HashSet<>(event.viewers()));
     }
 
+    /** Records every notice with the hash it was given (the 4-argument form). */
+    private static final class HashRecorder implements HearingNoticeSink {
+        final List<String> hashes = new ArrayList<>();
+
+        @Override
+        public void muffled(String lifeId, String direction, String band) {
+            hashes.add("three-argument");
+        }
+
+        @Override
+        public void muffled(String lifeId, String direction, String band, String speechHash) {
+            hashes.add(speechHash);
+        }
+    }
+
+    private static AsyncChatEvent muffledAgentChat(Set<Audience> out, Player[] players) {
+        World overworld = world("world");
+        Player speaker = player(at(overworld, 0.5, 64, 0.5), new ArrayList<>());
+        Player agent = player("ag_kestrel_01", at(overworld, 30.5, 64, 0.5), new ArrayList<>());
+        Player far = player(at(overworld, 500.5, 64, 500.5), new ArrayList<>());
+        players[0] = agent;
+        players[1] = far;
+        out.addAll(Set.of(speaker, agent, far));
+        return chat(speaker, out);
+    }
+
+    private static ProbeWorld wall() {
+        return new ProbeWorld()
+                .set(10, 65, 0, ProbeWorld.solid("minecraft:stone"))
+                .set(11, 65, 0, ProbeWorld.solid("minecraft:white_wool"));
+    }
+
+    @Test
+    void theSinkGetsOnlyTheSpeechHashNeverTheText() {
+        HashRecorder sink = new HashRecorder();
+        ProximityChatListener listener = new ProximityChatListener(work -> work.get(), () -> 1L, w -> wall(),
+                new ChatHearing(MuffleSettings.defaults(), line -> { }), sink);
+        Set<Audience> viewers = new HashSet<>();
+        listener.onChat(muffledAgentChat(viewers, new Player[2]));
+
+        assertEquals(1, sink.hashes.size());
+        String hash = sink.hashes.get(0);
+        assertEquals(dev.geldar.core.trace.SpeechHash.of("hello"), hash);
+        assertTrue(hash.matches("[0-9a-f]{16}"), hash);
+        assertFalse(hash.contains("hello"));
+    }
+
+    @Test
+    void aThrowingHasherNeverChangesWhoHearsTheLine() {
+        HashRecorder sink = new HashRecorder();
+        ProximityChatListener failing = new ProximityChatListener(work -> work.get(), () -> 1L, w -> wall(),
+                new ChatHearing(MuffleSettings.defaults(), line -> { }), sink, message -> {
+                    throw new NoClassDefFoundError("telemetry");
+                });
+        ProximityChatListener plain = new ProximityChatListener(work -> work.get(), () -> 1L, w -> wall(),
+                new ChatHearing(MuffleSettings.defaults(), line -> { }), (id, d, b) -> { });
+        Player[] a = new Player[2];
+        Player[] b = new Player[2];
+        AsyncChatEvent withFailure = muffledAgentChat(new HashSet<>(), a);
+        AsyncChatEvent without = muffledAgentChat(new HashSet<>(), b);
+
+        failing.onChat(withFailure);
+        plain.onChat(without);
+
+        assertEquals(withFailure.viewers().size(), without.viewers().size());
+        assertFalse(withFailure.viewers().contains(a[1]), "the far player is still removed");
+        assertEquals(java.util.Arrays.asList((String) null), sink.hashes, "the notice still goes, with no hash");
+    }
+
     private static AsyncChatEvent chat(Player speaker, Set<Audience> viewers) {
         return new AsyncChatEvent(true, speaker, viewers, null, LINE, LINE, null);
     }

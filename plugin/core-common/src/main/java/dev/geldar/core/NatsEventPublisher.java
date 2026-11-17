@@ -105,11 +105,15 @@ public final class NatsEventPublisher implements EventPublisher {
         Headers headers = new Headers().put(NatsJetStreamConstants.MSG_ID_HDR, event.sourceEventId());
         try {
             trace.inject(headers);
-        } catch (RuntimeException | LinkageError e) {
+        } catch (Throwable e) {
+            if (e instanceof VirtualMachineError vm) {
+                throw vm;
+            }
             // Tracing must never stop an event from being exported.
         }
         return headers;
     }
+
     /**
      * Adds the NATS user and password of decision 0067 when they are set: {@code GELDAR_NATS_USER}
      * and {@code GELDAR_NATS_PASSWORD_FILE} (a file holding the password), read by {@code setting}.

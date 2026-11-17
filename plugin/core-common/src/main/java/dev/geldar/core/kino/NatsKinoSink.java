@@ -28,6 +28,12 @@ public final class NatsKinoSink implements KinoSink, AutoCloseable {
         t.start();
     }
 
+    /** A sink over a connection that already exists, for tests: no connect thread and no server. */
+    NatsKinoSink(String shard, Connection connection) {
+        this.shard = shard;
+        this.connection = connection;
+    }
+
     static String subject(String shard, String agentId) {
         return "geldar." + shard + ".kino." + agentId + ".feed";
     }
@@ -63,6 +69,9 @@ public final class NatsKinoSink implements KinoSink, AutoCloseable {
                 // Closed or reconnect buffer full: drop the message; the server thread never throws or waits.
                 dropped.incrementAndGet();
             }
+        } else {
+            // No connection yet: drop and count it, as the hearing sink does. Nothing is queued.
+            dropped.incrementAndGet();
         }
     }
 

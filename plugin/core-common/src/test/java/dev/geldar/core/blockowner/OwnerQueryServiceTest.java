@@ -106,6 +106,31 @@ class OwnerQueryServiceTest {
         }
     }
 
+    @Test
+    void aSourceThatThrowsCountsAsAFailure() throws Exception {
+        OwnerQueryService service = service((w, cx, cz) -> {
+            throw new IllegalStateException("boom");
+        }, 1_000);
+        assertEmptyUnknown(await(service));
+        assertEquals(1, service.failures());
+        assertEquals(1, service.queries());
+    }
+
+    @Test
+    void aSlowSourceTimesOutWithoutCountingAFailure() throws Exception {
+        CountDownLatch release = new CountDownLatch(1);
+        OwnerQueryService service = service((w, cx, cz) -> {
+            awaitQuietly(release);
+            return new Owners(List.of(), false);
+        }, 50);
+        try {
+            assertEmptyUnknown(await(service));
+            assertEquals(0, service.failures(), "a timeout is not counted");
+        } finally {
+            release.countDown();
+        }
+    }
+
     private static void awaitQuietly(CountDownLatch latch) {
         try {
             latch.await(5, TimeUnit.SECONDS);

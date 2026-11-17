@@ -27,6 +27,14 @@ public final class NatsBlockOwnerLink implements BlockOwnerResponder.Reply, Auto
     private volatile Connection connection;
     private volatile boolean closed;
     private volatile TraceHook trace = TraceHook.NOOP;
+    /** Query contexts waiting for their reply, by reply inbox; bounded so an unanswered query cannot leak. */
+    private final java.util.Map<String, TraceHook.Captured> contexts = new java.util.LinkedHashMap<>() {
+        @Override
+        protected boolean removeEldestEntry(java.util.Map.Entry<String, TraceHook.Captured> eldest) {
+            return size() > MAX_PENDING_CONTEXTS;
+        }
+    };
+    static final int MAX_PENDING_CONTEXTS = 1024;
 
     public NatsBlockOwnerLink(String url, String shard, Function<String, String> setting, Logger log) {
         this.url = url;
@@ -45,8 +53,51 @@ public final class NatsBlockOwnerLink implements BlockOwnerResponder.Reply, Auto
     }
 
     void handle(Message m, BiConsumer<String, String> onQuery) {
-        try (TraceHook.Scope ignored = trace.enter(m.getHeaders())) {
+        TraceHook.Scope scope = TraceHook.Scope.NONE;
+        try {
+            TraceHook.Scope entered = trace.enter(m.getHeaders());
+            if (entered != null) {
+                scope = entered;
+            }
+            // The reply is sent later, on the lookup thread, where this scope is gone: keep the query's context.
+            TraceHook.Captured captured = trace.capture();
+            if (captured != null && m.getReplyTo() != null) {
+                synchronized (contexts) {
+                    contexts.put(m.getReplyTo(), captured);
+                }
+            }
+        } catch (Throwable e) {
+            if (e instanceof VirtualMachineError vm) {
+                throw vm;
+            }
+            // A telemetry failure never drops a query.
+        }
+        try {
             onQuery.accept(m.getReplyTo(), new String(m.getData(), StandardCharsets.UTF_8));
+        } finally {
+            try {
+                scope.close();
+            } catch (Throwable e) {
+                if (e instanceof VirtualMachineError vm) {
+                    throw vm;
+                }
+            }
+        }
+    }
+
+    /** The trace headers for the reply to {@code replyTo}, or null: never throws. */
+    private Headers replyHeaders(String replyTo) {
+        try {
+            TraceHook.Captured captured;
+            synchronized (contexts) {
+                captured = contexts.remove(replyTo);
+            }
+            return captured != null ? trace.inject(null, captured) : trace.inject(null);
+        } catch (Throwable e) {
+            if (e instanceof VirtualMachineError vm) {
+                throw vm;
+            }
+            return null;
         }
     }
 
@@ -93,7 +144,7 @@ public final class NatsBlockOwnerLink implements BlockOwnerResponder.Reply, Auto
         if (nc == null) {
             return;
         }
-        Headers headers = trace.inject(null);
+        Headers headers = replyHeaders(replyTo);
         byte[] body = json.getBytes(StandardCharsets.UTF_8);
         if (headers == null) {
             nc.publish(replyTo, body);

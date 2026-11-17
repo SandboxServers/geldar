@@ -121,6 +121,25 @@ class NatsHearingSinkTraceTest {
         assertEquals(1, none.dropped());
     }
     @Test
+    void aLinkageErrorFromTheHookStillPublishesTheNotice() {
+        Fake fake = new Fake();
+        new NatsHearingSink("phase0", fake.asConnection(), new dev.geldar.core.trace.TraceHook() {
+            public io.nats.client.impl.Headers inject(io.nats.client.impl.Headers target) {
+                throw new NoClassDefFoundError("bridge");
+            }
+
+            public Scope enter(io.nats.client.impl.Headers incoming) {
+                return Scope.NONE;
+            }
+
+            public void annotate(String key, String value) {
+                throw new NoSuchMethodError("bridge");
+            }
+        }).muffled(LIFE, "s", "far", "abc");
+        assertEquals(1, fake.publishes);
+    }
+
+    @Test
     void noSpanMeansTheOldPublishCall() {
         Fake fake = new Fake();
         new NatsHearingSink("phase0", fake.asConnection(), new OtelTraceHook()).muffled(LIFE, "s", "far");

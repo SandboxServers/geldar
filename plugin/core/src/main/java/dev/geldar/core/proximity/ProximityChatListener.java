@@ -1,58 +1,25 @@
 package dev.geldar.core.proximity;
 
-import dev.geldar.core.trace.SpeechHash;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import dev.geldar.core.EventEnvelope;
 import dev.geldar.core.trace.SpeechHash;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import io.papermc.paper.event.player.AsyncChatEvent;
-import dev.geldar.core.trace.SpeechHash;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import java.util.ArrayList;
-import dev.geldar.core.trace.SpeechHash;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import java.util.HashMap;
-import dev.geldar.core.trace.SpeechHash;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import java.util.HashSet;
-import dev.geldar.core.trace.SpeechHash;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import java.util.List;
-import dev.geldar.core.trace.SpeechHash;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import java.util.Map;
-import dev.geldar.core.trace.SpeechHash;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import java.util.Set;
-import dev.geldar.core.trace.SpeechHash;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import java.util.function.Function;
-import dev.geldar.core.trace.SpeechHash;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import java.util.function.LongSupplier;
-import dev.geldar.core.trace.SpeechHash;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import java.util.function.Supplier;
-import dev.geldar.core.trace.SpeechHash;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import net.kyori.adventure.audience.Audience;
-import dev.geldar.core.trace.SpeechHash;
+import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Location;
-import dev.geldar.core.trace.SpeechHash;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.World;
-import dev.geldar.core.trace.SpeechHash;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.entity.Player;
-import dev.geldar.core.trace.SpeechHash;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.event.EventHandler;
-import dev.geldar.core.trace.SpeechHash;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.event.EventPriority;
-import dev.geldar.core.trace.SpeechHash;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.event.Listener;
 
 /**
@@ -74,9 +41,18 @@ public final class ProximityChatListener implements Listener {
     private final Function<World, BlockReader> readers;
     private final ChatHearing hearing;
     private final HearingNoticeSink sink;
+    private final Function<Component, String> hasher;
 
     public ProximityChatListener(ServerHop hop, LongSupplier ticks, Function<World, BlockReader> readers,
             ChatHearing hearing, HearingNoticeSink sink) {
+        this(hop, ticks, readers, hearing, sink,
+                message -> SpeechHash.of(PlainTextComponentSerializer.plainText().serialize(message)));
+    }
+
+    /** As above with the speech hasher given, for tests. */
+    ProximityChatListener(ServerHop hop, LongSupplier ticks, Function<World, BlockReader> readers,
+            ChatHearing hearing, HearingNoticeSink sink, Function<Component, String> hasher) {
+        this.hasher = hasher;
         this.hop = hop;
         this.ticks = ticks;
         this.readers = readers;
@@ -93,15 +69,29 @@ public final class ProximityChatListener implements Listener {
                 others.add(listener);
             }
         }
-        // The text goes no further than this hash: it is the only thing of the speech that reaches a span.
-        String speechHash = SpeechHash.of(PlainTextComponentSerializer.plainText().serialize(event.message()));
-        Set<Player> heard = hop.call(() -> judge(speaker, others, speechHash));
+        Component message = event.message();
+        Set<Player> heard = hop.call(() -> judge(speaker, others, message));
         event.viewers().removeIf(audience -> audience instanceof Player listener
                 && listener != speaker && !heard.contains(listener));
     }
 
+    /**
+     * The hash of the speech: the only thing of it that goes past this class, and only when a notice is sent. Any
+     * failure gives null, so telemetry can never change who hears the line.
+     */
+    private String hashOf(Component message) {
+        try {
+            return hasher.apply(message);
+        } catch (Throwable e) {
+            if (e instanceof VirtualMachineError vm) {
+                throw vm;
+            }
+            return null;
+        }
+    }
+
     /** Runs on the server thread: the clear listeners are returned, and the muffled notices are sent. */
-    private Set<Player> judge(Player speaker, List<Player> others, String speechHash) {
+    private Set<Player> judge(Player speaker, List<Player> others, Component message) {
         Set<Player> clear = new HashSet<>();
         Location from = speaker.getLocation();
         World world = from.getWorld();
@@ -125,7 +115,7 @@ public final class ProximityChatListener implements Listener {
                 clear.add(listener);
             } else if (verdict.tier() == Tier.MUFFLED && EventEnvelope.isLifeId(verdict.key())) {
                 sink.muffled(verdict.key(), verdict.notice().direction(), verdict.notice().band(),
-                        speechHash);
+                        hashOf(message));
             }
         }
         return clear;

@@ -37,6 +37,24 @@ public final class OtelTraceHook implements TraceHook {
         return scope::close;
     }
 
+    private record Held(io.opentelemetry.context.Context context) implements Captured {}
+
+    @Override
+    public Captured capture() {
+        io.opentelemetry.context.Context current = io.opentelemetry.context.Context.current();
+        return Span.fromContext(current).getSpanContext().isValid() ? new Held(current) : null;
+    }
+
+    @Override
+    public Headers inject(Headers target, Captured from) {
+        if (!(from instanceof Held held)) {
+            return inject(target);
+        }
+        try (io.opentelemetry.context.Scope ignored = held.context().makeCurrent()) {
+            return inject(target);
+        }
+    }
+
     @Override
     public void annotate(String key, String value) {
         SpanAttributes a = attributes.get();

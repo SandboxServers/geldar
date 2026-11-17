@@ -28,6 +28,7 @@ public final class GeldarCore extends JavaPlugin {
     private ReadyMarker readyMarker;
     private volatile dev.geldar.core.blockowner.BlockOwnerSetup blockOwner;
     private volatile dev.geldar.core.proximity.NatsHearingSink hearingSink;
+    private volatile AutoCloseable metrics;
 
     @Override
     public void onEnable() {
@@ -57,11 +58,42 @@ public final class GeldarCore extends JavaPlugin {
         }
     }
 
+    /**
+     * The trace hook, or the no-op one when it cannot be built. A telemetry fault (even a LinkageError from an agent
+     * bridge) never reaches {@link #enableOrStop}, which would stop the server, nor leaves the plugin disabled.
+     */
+    static dev.geldar.core.trace.TraceHook telemetryHook(
+            java.util.function.Supplier<dev.geldar.core.trace.TraceHook> factory, Logger log) {
+        try {
+            dev.geldar.core.trace.TraceHook hook = factory.get();
+            return hook == null ? dev.geldar.core.trace.TraceHook.NOOP : hook;
+        } catch (Throwable e) {
+            if (e instanceof VirtualMachineError vm) {
+                throw vm;
+            }
+            log.warning("tracing is off: " + e.getClass().getSimpleName());
+            return dev.geldar.core.trace.TraceHook.NOOP;
+        }
+    }
+
+    /** Registers the core metrics; on any telemetry fault they are skipped (logged once) and null is returned. */
+    static AutoCloseable telemetryMetrics(java.util.function.Supplier<AutoCloseable> register, Logger log) {
+        try {
+            return register.get();
+        } catch (Throwable e) {
+            if (e instanceof VirtualMachineError vm) {
+                throw vm;
+            }
+            log.warning("core metrics are off: " + e.getClass().getSimpleName());
+            return null;
+        }
+    }
+
     private void enable() {
         saveDefaultConfig();
         CoreConfig config = CoreConfig.load(getConfig(), System::getenv, getLogger()::warning);
         // One trace hook for every sender; with no OpenTelemetry agent it injects nothing and enters no scope.
-        dev.geldar.core.trace.TraceHook trace = new dev.geldar.core.trace.OtelTraceHook();
+        dev.geldar.core.trace.TraceHook trace = telemetryHook(dev.geldar.core.trace.OtelTraceHook::new, getLogger());
         NatsEventPublisher nats = new NatsEventPublisher(config.natsUrl(), config.queueCapacity(), getLogger(), trace);
         publisher = nats;
         EventExporter exporter = new EventExporter(
@@ -109,7 +141,9 @@ public final class GeldarCore extends JavaPlugin {
                 getLogger()::warning);
         hearingSink = new dev.geldar.core.proximity.NatsHearingSink(
                 config.natsUrl(), config.shard(), System::getenv, getLogger(), trace);
-        dev.geldar.core.trace.CoreMetrics.register(nats, hearingSink, kinoSink.get(), owners.queryService());
+        metrics = telemetryMetrics(
+                () -> dev.geldar.core.trace.CoreMetrics.register(nats, hearingSink, kinoSink.get(), owners.queryService()),
+                getLogger());
         getServer().getPluginManager().registerEvents(new dev.geldar.core.proximity.ProximityChatListener(
                 dev.geldar.core.proximity.ChatHop.bukkit(this, getLogger()::warning),
                 org.bukkit.Bukkit::getCurrentTick,
@@ -188,6 +222,14 @@ public final class GeldarCore extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        AutoCloseable registered = metrics;
+        if (registered != null) {
+            try {
+                registered.close();
+            } catch (Exception | LinkageError e) {
+                getLogger().warning("core metrics did not close: " + e.getClass().getSimpleName());
+            }
+        }
         if (tpsTimer != null) {
             tpsTimer.shutdownNow();
         }

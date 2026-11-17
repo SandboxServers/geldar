@@ -35,6 +35,19 @@ public interface TraceHook {
     /** Makes the context carried by {@code incoming} (may be null) current until the scope is closed. */
     Scope enter(Headers incoming);
 
+    /** An opaque snapshot of the current trace context, to be injected later on another thread. */
+    interface Captured {}
+
+    /** The current trace context as a snapshot, or {@code null} when there is none (or for {@link #NOOP}). */
+    default Captured capture() {
+        return null;
+    }
+
+    /** As {@link #inject(Headers)} with a null target, but from a snapshot taken by {@link #capture()}. */
+    default Headers inject(Headers target, Captured from) {
+        return target;
+    }
+
     /** Sets a string attribute on the current span, if one is valid. */
     void annotate(String key, String value);
 

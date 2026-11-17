@@ -67,7 +67,10 @@ public final class NatsMaintenanceSubscriber implements AutoCloseable {
         } finally {
             try {
                 scope.close();
-            } catch (RuntimeException e) {
+            } catch (Throwable e) {
+                if (e instanceof VirtualMachineError vm) {
+                    throw vm;
+                }
                 // Tracing must never break notice handling.
             }
         }
@@ -80,7 +83,10 @@ public final class NatsMaintenanceSubscriber implements AutoCloseable {
         try {
             TraceHook.Scope scope = trace.enter(headers);
             return scope == null ? TraceHook.Scope.NONE : scope;
-        } catch (RuntimeException | LinkageError e) {
+        } catch (Throwable e) {
+            if (e instanceof VirtualMachineError vm) {
+                throw vm;
+            }
             return TraceHook.Scope.NONE;
         }
     }

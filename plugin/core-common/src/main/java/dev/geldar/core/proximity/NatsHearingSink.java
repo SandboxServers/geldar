@@ -101,7 +101,10 @@ public final class NatsHearingSink implements HearingNoticeSink, AutoCloseable {
                     trace.annotate("geldar.speech_hash", speechHash);
                 }
                 headers = trace.inject(null);
-            } catch (RuntimeException e) {
+            } catch (Throwable e) {
+                if (e instanceof VirtualMachineError vm) {
+                    throw vm;
+                }
                 // A telemetry failure never stops a notice (S8).
             }
             if (headers == null) {

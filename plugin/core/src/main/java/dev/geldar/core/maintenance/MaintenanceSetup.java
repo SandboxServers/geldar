@@ -2,9 +2,7 @@ package dev.geldar.core.maintenance;
 
 import dev.geldar.core.trace.TraceHook;
 import java.util.function.Function;
-import dev.geldar.core.trace.TraceHook;
 import org.bukkit.configuration.ConfigurationSection;
-import dev.geldar.core.trace.TraceHook;
 import org.bukkit.plugin.java.JavaPlugin;
 
 /**
