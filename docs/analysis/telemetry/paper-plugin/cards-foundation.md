@@ -81,6 +81,15 @@ Read [README.md](README.md) first: path aliases, frozen API, frozen names and th
 - Commit: `PT-03f Redactor and content cap (plugin)`.
 - Do NOT: log the redacted value; use regexes with catastrophic backtracking (the coder runs the IPv6 test on a 50 KB adversarial string and requires under 200 ms); touch gateway rules (PT-12).
 
+## PT-03n: newer TypeScript redaction rules in the Java free-text scrub
+
+- Loader: Neutral. Depends on: PT-03m (`CredentialScrub`) and T-06d1b (PR #606). Size: S.
+- Goal: the Java free-text scrub hides what the TypeScript `scrubText` hides after #606, with the same ordinary-text exceptions.
+- Files: CREATE `CORE/FlagScrub.java`; EDIT `CORE/CredentialScrub.java`, `CORE/KeyValueScrub.java`, `CORE/CredentialKeys.java`; tests `CORE_T/CredentialScrubFlagsTest.java`, `CORE_T/CredentialScrubLinearTest.java`.
+- Rules: (1) `--password`, `--passwd`, `--token`, `--secret`, `--api-key`, `--apikey` followed by a space or tab and a value (bare or quoted) hide the value when it looks secret; `--password-file /x`, `--secret-name abc`, `use --token option` and a value starting with `-` stay; `-p VALUE` is not a rule. (2) lower-case `curl -u` / `--user name:secret` keeps the name and hides the secret; a secret starting with `/` stays. (3) URL query (after `?` or `&`): `sig`, `X-Amz-Credential`, `X-Amz-Signature` always hidden; `key` and `code` only with a value of 16 or more characters. (4) `AccountKey` (pair `account` + `key`) hidden anywhere. All scanners are single hand-written passes (no regex on user text).
+- Checks: `:ledger-core:test`.
+- Commit: `PT-03n Port the newer TypeScript redaction rules (plugin)`.
+
 ## PT-03g: OpenTelemetry binding (`OtelLedger`)
 
 - Loader: Neutral. Depends on: PT-03 api, 03d, 03e, 03f (code against the frozen API meanwhile). Size: M.
