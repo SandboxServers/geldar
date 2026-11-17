@@ -1,5 +1,6 @@
 package dev.geldar.core;
 
+import dev.geldar.core.trace.TraceHook;
 import io.nats.client.Connection;
 import io.nats.client.JetStream;
 import io.nats.client.JetStreamApiException;
@@ -35,6 +36,7 @@ public final class NatsEventPublisher implements EventPublisher {
     private final Logger log;
     private final BoundedEventQueue<EventEnvelope> queue;
     private final Thread worker;
+    private final TraceHook trace;
     private final AtomicLong published = new AtomicLong();
     private final AtomicLong failed = new AtomicLong();
     private static final long FAILURE_PAUSE_MS = 250;
@@ -50,7 +52,12 @@ public final class NatsEventPublisher implements EventPublisher {
     private int consecutiveFailures;
 
     public NatsEventPublisher(String url, int queueCapacity, Logger log) {
+        this(url, queueCapacity, log, TraceHook.NOOP);
+    }
+
+    public NatsEventPublisher(String url, int queueCapacity, Logger log, TraceHook trace) {
         this.url = url;
+        this.trace = trace == null ? TraceHook.NOOP : trace;
         this.log = log;
         this.queue = new BoundedEventQueue<>(queueCapacity);
         this.worker = new Thread(this::run, "geldar-nats-publisher");
@@ -87,7 +94,24 @@ public final class NatsEventPublisher implements EventPublisher {
 
     /** The headers sent with an event: {@code Nats-Msg-Id} is the {@code source_event_id}, for de-duplication. */
     static Headers headers(EventEnvelope event) {
-        return new Headers().put(NatsJetStreamConstants.MSG_ID_HDR, event.sourceEventId());
+        return headers(event, TraceHook.NOOP);
+    }
+
+    /**
+     * As above, plus {@code traceparent} and {@code tracestate} when the hook finds a valid span current on this
+     * thread. A hook failure never stops an event from being exported.
+     */
+    static Headers headers(EventEnvelope event, TraceHook trace) {
+        Headers headers = new Headers().put(NatsJetStreamConstants.MSG_ID_HDR, event.sourceEventId());
+        try {
+            trace.inject(headers);
+        } catch (Throwable e) {
+            if (e instanceof VirtualMachineError vm) {
+                throw vm;
+            }
+            // Tracing must never stop an event from being exported.
+        }
+        return headers;
     }
 
     /**
@@ -247,7 +271,7 @@ public final class NatsEventPublisher implements EventPublisher {
 
     private boolean send(Sender sender, EventEnvelope event) {
         try {
-            sender.publish(event.subject(), headers(event), event.toBytes());
+            sender.publish(event.subject(), headers(event, trace), event.toBytes());
             published.incrementAndGet();
             return true;
         } catch (Exception e) {
@@ -263,7 +287,7 @@ public final class NatsEventPublisher implements EventPublisher {
     }
 
     /** The events waiting to be sent. */
-    int queued() {
+    public int queued() {
         return queue.size();
     }
 

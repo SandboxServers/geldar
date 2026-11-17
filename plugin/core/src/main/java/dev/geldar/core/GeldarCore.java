@@ -28,6 +28,7 @@ public final class GeldarCore extends JavaPlugin {
     private ReadyMarker readyMarker;
     private volatile dev.geldar.core.blockowner.BlockOwnerSetup blockOwner;
     private volatile dev.geldar.core.proximity.NatsHearingSink hearingSink;
+    private volatile AutoCloseable metrics;
 
     @Override
     public void onEnable() {
@@ -57,10 +58,44 @@ public final class GeldarCore extends JavaPlugin {
         }
     }
 
+    /**
+     * The trace hook, or the no-op one when it cannot be built. A telemetry fault (even a LinkageError from an agent
+     * bridge) never reaches {@link #enableOrStop}, which would stop the server, nor leaves the plugin disabled.
+     */
+    static dev.geldar.core.trace.TraceHook telemetryHook(
+            java.util.function.Supplier<dev.geldar.core.trace.TraceHook> factory, Logger log) {
+        try {
+            dev.geldar.core.trace.TraceHook hook = factory.get();
+            return hook == null ? dev.geldar.core.trace.TraceHook.NOOP : hook;
+        } catch (Throwable e) {
+            if (e instanceof VirtualMachineError vm) {
+                throw vm;
+            }
+            log.warning("tracing is off: " + e.getClass().getSimpleName());
+            return dev.geldar.core.trace.TraceHook.NOOP;
+        }
+    }
+
+    /** Registers the core metrics; on any telemetry fault they are skipped (logged once) and null is returned. */
+    static AutoCloseable telemetryMetrics(java.util.function.Supplier<AutoCloseable> register, Logger log) {
+        try {
+            return register.get();
+        } catch (Throwable e) {
+            if (e instanceof VirtualMachineError vm) {
+                throw vm;
+            }
+            log.warning("core metrics are off: " + e.getClass().getSimpleName());
+            return null;
+        }
+    }
+
     private void enable() {
         saveDefaultConfig();
         CoreConfig config = CoreConfig.load(getConfig(), System::getenv, getLogger()::warning);
-        publisher = new NatsEventPublisher(config.natsUrl(), config.queueCapacity(), getLogger());
+        // One trace hook for every sender; with no OpenTelemetry agent it injects nothing and enters no scope.
+        dev.geldar.core.trace.TraceHook trace = telemetryHook(dev.geldar.core.trace.OtelTraceHook::new, getLogger());
+        NatsEventPublisher nats = new NatsEventPublisher(config.natsUrl(), config.queueCapacity(), getLogger(), trace);
+        publisher = nats;
         EventExporter exporter = new EventExporter(
                 publisher, config.shard(), GeldarCore::overworldTick, Instant::now, getLogger());
         tpsExporter = exporter;
@@ -76,15 +111,17 @@ public final class GeldarCore extends JavaPlugin {
         }
         // Kino is registered always and applied from kino.enabled (default false: the feed starts killed, so it
         // publishes nothing). The config file is re-read every 5 s, so flipping kino.enabled needs no restart.
+        java.util.concurrent.atomic.AtomicReference<dev.geldar.core.kino.NatsKinoSink> kinoSink =
+                new java.util.concurrent.atomic.AtomicReference<>();
         dev.geldar.core.kino.KinoFeed kino = dev.geldar.core.kino.KinoSetup.register(
-                this, getConfig(), config.natsUrl(), config.shard(), System::getenv);
+                this, getConfig(), config.natsUrl(), config.shard(), System::getenv, kinoSink::set);
         dev.geldar.core.kino.KinoSetup.reload(kino, getConfig());
         // The maintenance notice broadcast (CD-1c): maintenance.broadcast, applied by the same 5 s reload.
         dev.geldar.core.maintenance.MaintenanceNotices maintenance = dev.geldar.core.maintenance.MaintenanceSetup
-                .register(this, getConfig(), config.natsUrl(), config.shard(), System::getenv);
+                .register(this, getConfig(), config.natsUrl(), config.shard(), System::getenv, trace);
         // Block ownership (CoreProtect-backed owner queries): blockowner.* is applied by the same 5 s reload.
         dev.geldar.core.blockowner.BlockOwnerSetup owners = dev.geldar.core.blockowner.BlockOwnerSetup.register(
-                this, config.natsUrl(), config.shard(), System::getenv);
+                this, config.natsUrl(), config.shard(), System::getenv, trace);
         blockOwner = owners;
         // Gravestones (no loot): a marker block and sign where an agent character dies. Read once at enable. Registered
         // after block ownership, because each gravestone is recorded as owned by the system through its recorder.
@@ -103,7 +140,10 @@ public final class GeldarCore extends JavaPlugin {
                 getConfig().getBoolean("chat.muffle.bench_log", false),
                 getLogger()::warning);
         hearingSink = new dev.geldar.core.proximity.NatsHearingSink(
-                config.natsUrl(), config.shard(), System::getenv, getLogger());
+                config.natsUrl(), config.shard(), System::getenv, getLogger(), trace);
+        metrics = telemetryMetrics(
+                () -> dev.geldar.core.trace.CoreMetrics.register(nats, hearingSink, kinoSink.get(), owners.queryService()),
+                getLogger());
         getServer().getPluginManager().registerEvents(new dev.geldar.core.proximity.ProximityChatListener(
                 dev.geldar.core.proximity.ChatHop.bukkit(this, getLogger()::warning),
                 org.bukkit.Bukkit::getCurrentTick,
@@ -182,6 +222,14 @@ public final class GeldarCore extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        AutoCloseable registered = metrics;
+        if (registered != null) {
+            try {
+                registered.close();
+            } catch (Exception | LinkageError e) {
+                getLogger().warning("core metrics did not close: " + e.getClass().getSimpleName());
+            }
+        }
         if (tpsTimer != null) {
             tpsTimer.shutdownNow();
         }

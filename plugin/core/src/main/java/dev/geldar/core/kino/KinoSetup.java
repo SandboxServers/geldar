@@ -30,7 +30,14 @@ public final class KinoSetup {
 
     public static KinoFeed register(
             JavaPlugin plugin, ConfigurationSection file, String natsUrl, String shard, Function<String, String> env) {
+        return register(plugin, file, natsUrl, shard, env, sink -> {});
+    }
+
+    /** As above; {@code onSink} receives the NATS sink so the caller can read its counters. */
+    public static KinoFeed register(JavaPlugin plugin, ConfigurationSection file, String natsUrl, String shard,
+            Function<String, String> env, java.util.function.Consumer<NatsKinoSink> onSink) {
         NatsKinoSink sink = new NatsKinoSink(natsUrl, shard, env, plugin.getLogger());
+        onSink.accept(sink);
         KinoFeed[] holder = new KinoFeed[1];
         KinoFeed feed = new KinoFeed(new BukkitKinoWorld(plugin.getServer(), Bukkit.getWorlds().get(0),
                 name -> holder[0] != null && holder[0].isTarget(name)), sink, radius(file));

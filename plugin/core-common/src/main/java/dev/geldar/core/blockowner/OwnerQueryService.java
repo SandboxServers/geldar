@@ -9,6 +9,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
 import java.util.logging.Logger;
 
@@ -37,6 +38,9 @@ public final class OwnerQueryService {
     private long nextMissLogAt;
     private int missedSinceLog;
     private volatile LookupDebugLog debug = LookupDebugLog.disabled();
+    private final AtomicLong queries = new AtomicLong();
+    private final AtomicLong cacheHits = new AtomicLong();
+    private final AtomicLong failedLookups = new AtomicLong();
 
     public OwnerQueryService(OwnerSource source, OwnerCache cache, ExecutorService lookups, long timeoutMs,
             Logger log) {
@@ -54,6 +58,21 @@ public final class OwnerQueryService {
         this.clockMs = clockMs;
     }
 
+    /** Chunk queries answered or being answered. */
+    public long queries() {
+        return queries.get();
+    }
+
+    /** Queries whose base answer came from a fresh cache entry, with no source lookup. */
+    public long cacheHits() {
+        return cacheHits.get();
+    }
+
+    /** Lookups that failed: the queue was full, the source was unavailable, or the lookup threw. */
+    public long failures() {
+        return failedLookups.get();
+    }
+
     /** Applies a new lookup timeout (the config reload). */
     public void setTimeoutMs(long ms) {
         timeoutMs = ms;
@@ -67,15 +86,18 @@ public final class OwnerQueryService {
     /** The answer for one chunk; completes within the timeout whatever the source does. */
     public CompletableFuture<Answer> answer(String world, int chunkX, int chunkZ) {
         ChunkKey key = new ChunkKey(world, chunkX, chunkZ);
+        queries.incrementAndGet();
         CompletableFuture<Owners> base;
         try {
             base = CompletableFuture.supplyAsync(() -> load(key), lookups);
         } catch (RejectedExecutionException e) {
+            failedLookups.incrementAndGet();
             failures.failed("the lookup queue is full", null);
             base = CompletableFuture.completedFuture(UNKNOWN);
         }
         return base.completeOnTimeout(UNKNOWN, timeoutMs, TimeUnit.MILLISECONDS)
                 .exceptionally(e -> {
+                    failedLookups.incrementAndGet();
                     failures.failed("the lookup failed", e);
                     return UNKNOWN;
                 })
@@ -117,12 +139,14 @@ public final class OwnerQueryService {
     private Owners load(ChunkKey key) {
         Optional<Owners> fresh = cache.freshBase(key);
         if (fresh.isPresent()) {
+            cacheHits.incrementAndGet();
             return fresh.get();
         }
         Owners owners;
         try {
             owners = source.ownersInChunk(key.world(), key.chunkX(), key.chunkZ());
         } catch (OwnerSource.Unavailable e) {
+            failedLookups.incrementAndGet();
             failures.failed(e.getMessage(), null);
             return UNKNOWN;
         }
