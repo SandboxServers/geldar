@@ -90,3 +90,14 @@ Positions follow D2 as built on Paper. The card line "item events without positi
 Privacy note: `geldar.container_type` is the menu class simple name, capped at 48 characters, and `unknown` when empty. `ChestMenu` is shared by chests, ender chests, barrels and minecarts, so they cannot be told apart. A modded menu class name discloses part of the mod stack, which is the mod-list question in the plan (P-N1).
 
 Not emitted (UNVERIFIED in the API spike or without a VERIFIED row): furnace extract, enchant, buckets, harvest, consume, pickup, drop, and placements by non-players.
+
+## Connections and mc_session (PT-N6)
+
+| Key | Default | Emits |
+| --- | --- | --- |
+| `collector.connections.enabled` | on (as Paper) | `geldar.player.join` (`amount` = roster size), `geldar.player.quit` (`duration_ms`) |
+
+- A name with the life id shape gets `geldar.life_id` and a per-connection ULID `geldar.mc_session` (opened at login, closed at logout, keyed by the player object, so a late logout of an old connection never closes a reconnected agent's session). The snapshot event carries the same `mc_session`.
+- A human gets neither, and no name, UUID or address is read or exported. Behind Velocity the server sees the same name as the Body and the standard offline UUID, which is reversible by dictionary, so no UUID is used. A human-client join is untested.
+- Gaps: no verified event for prelogin or kick reasons (nothing is emitted), and no quit cause.
+- Not yet wired to `mc_session`: the advancement event (follow-up; the progress collector is keyed by UUID).

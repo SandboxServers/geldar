@@ -56,6 +56,11 @@ public final class SnapshotCollector implements Collector {
         String name();
 
         Reading read();
+
+        /** The connection's {@code mc_session}, or null when none is open (read for agents only). */
+        default String session() {
+            return null;
+        }
     }
 
     /** The fields of one snapshot; plain values, copied on the main thread. */
@@ -227,7 +232,7 @@ public final class SnapshotCollector implements Collector {
             alive.put(name, r.run + INTERVAL_RUNS); // before the read, so a failing player is not retried every run
             try {
                 Reading v = refs.get(idx).read();
-                if (v != null && offer(r, name, v)) {
+                if (v != null && offer(r, name, v, refs.get(idx).session())) {
                     done++;
                 }
             } catch (Throwable t) {
@@ -241,13 +246,14 @@ public final class SnapshotCollector implements Collector {
         r.due.clear();
         r.due.putAll(alive); // a player who left is forgotten
     }
-    private boolean offer(Run r, String lifeId, Reading v) {
+
+    private boolean offer(Run r, String lifeId, Reading v, String session) {
         if (r.size.get() >= QUEUE_CAP) {
             r.dropped.incrementAndGet();
             return false;
         }
         r.size.incrementAndGet();
-        r.queue.add(attrs(lifeId, v));
+        r.queue.add(attrs(lifeId, v, session));
         return true;
     }
 
@@ -280,8 +286,17 @@ public final class SnapshotCollector implements Collector {
     }
 
     static Map<String, Object> attrs(String lifeId, Reading v) {
-        return Attrs.of()
-                .str(AttrKeys.LIFE_ID, lifeId)
+        return attrs(lifeId, v, null);
+    }
+
+    /** {@code session} (the join's {@code mc_session}) is exported only when not null or empty. */
+    static Map<String, Object> attrs(String lifeId, Reading v, String session) {
+        Attrs head = Attrs.of().str(AttrKeys.LIFE_ID, lifeId);
+        if (session != null && !session.isEmpty()) {
+            head = head.str(AttrKeys.MC_SESSION, session);
+        }
+        return head
+                .str(AttrKeys.WORLD, v.world())
                 .str(AttrKeys.WORLD, v.world())
                 .lng(AttrKeys.X, v.x())
                 .lng(AttrKeys.Y, v.y())
