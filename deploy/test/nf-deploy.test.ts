@@ -30,6 +30,14 @@ const LIST_BYTES = 'bundle list fixture\n';
 const sha = (text: string) => createHash('sha256').update(text).digest('hex');
 const MOD_SHA = sha(JAR_BYTES);
 const BUNDLE_SHA = sha(LIST_BYTES);
+const TARBALL_BYTES = 'bundle tarball fixture\n';
+const TARBALL_SHA = sha(TARBALL_BYTES);
+const GOOD_NAMES = ['mods/', 'mods/geldar.jar', '.geldar-bundle.sha256'];
+const GOOD_VERBOSE = [
+  'drwxr-xr-x 0/0 0 2026-11-01 10:00 mods/',
+  '-rw-r--r-- 0/0 12 2026-11-01 10:00 mods/geldar.jar',
+  '-rw-r--r-- 0/0 30 2026-11-01 10:00 .geldar-bundle.sha256',
+];
 const STUB_SCRIPTS: Record<string, string> = {
   // Logs the call. info, ps and config answer from the environment; everything else succeeds.
   docker: [
@@ -37,8 +45,25 @@ const STUB_SCRIPTS: Record<string, string> = {
     'echo "docker $*" >>"$STUB_LOG"',
     'case "$1" in',
     '  ps) printf "%s\\n" "$DOCKER_LABELS"; exit 0 ;;',
+    '  volume) exit "${VOLUME_MISSING:-0}" ;;',
+    '  run)',
+    '    case "$*" in',
+    '      *"ls -A"*) printf "%s\\n" "$VOLUME_CONTENT"; exit 0 ;;',
+    '      *"sha256sum -c"*) exit "${MARKER_STATUS:-0}" ;;',
+    '    esac',
+    '    exit 0 ;;',
     'esac',
     'exit 0',
+  ].join('\n'),
+  // The archive listings come from fixture files (names, and names with types), so no test depends on the host tar.
+  tar: [
+    '#!/bin/sh',
+    'echo "tar $*" >>"$STUB_LOG"',
+    'case "$*" in',
+    '  *-tzvf*) cat "$TAR_VERBOSE" ;;',
+    '  *-tzf*) cat "$TAR_NAMES" ;;',
+    '  *) exit 0 ;;',
+    'esac',
   ].join('\n'),
   ss: [
     '#!/bin/sh',
@@ -82,6 +107,8 @@ function makeRepo(): string {
     chmodSync(path, 0o755);
   }
   writeFileSync(join(repo, 'calls.log'), '');
+  writeFileSync(join(repo, 'bundle-tarball.tar.gz'), TARBALL_BYTES);
+  writeListing(repo, GOOD_NAMES, GOOD_VERBOSE);
   return repo;
 }
 
@@ -99,6 +126,13 @@ function envFor(repo: string, extra: Record<string, string> = {}): NodeJS.Proces
     NF_MOD_SHA256: MOD_SHA,
     NF_BUNDLE_DIR: join(repo, 'bundle'),
     NF_BUNDLE_SHA256: BUNDLE_SHA,
+    NF_BUNDLE_TARBALL: join(repo, 'bundle-tarball.tar.gz'),
+    NF_BUNDLE_TARBALL_SHA256: TARBALL_SHA,
+    TAR_NAMES: join(repo, 'archive-names.txt'),
+    TAR_VERBOSE: join(repo, 'archive-verbose.txt'),
+    VOLUME_MISSING: '0',
+    VOLUME_CONTENT: '',
+    MARKER_STATUS: '0',
     FREE_KB: '40000000',
     DISK_KB: '200000000',
     STAT_MODE: '600',
@@ -348,6 +382,157 @@ describe('nf-deploy.sh verbs', () => {
     const repo = makeRepo();
     expect(run(repo, ['status']).status).toBe(0);
     expect(composeCalls(repo).map((c) => c.split(' ').slice(6).join(' '))).toEqual(['ps -a']);
+  });
+});
+
+// The archive listing the tar stub prints: names (tar -tzf) and names with entry types (tar -tzvf).
+function writeListing(repo: string, names: string[], verbose: string[]): void {
+  writeFileSync(join(repo, 'archive-names.txt'), `${names.join('\n')}\n`);
+  writeFileSync(join(repo, 'archive-verbose.txt'), `${verbose.join('\n')}\n`);
+}
+
+// The extract call: the one docker run that unpacks the tarball.
+function extractCalls(repo: string): string[] {
+  return calls(repo).filter((c) => c.includes('tar -xzf'));
+}
+
+const NEOFORGE_IMAGE =
+  /^  neoforge:\n(?:(?!  \S).*\n)*?    image: (\S+)$/m.exec(NF_COMPOSE_TEXT)?.[1] ?? '';
+
+describe('nf-deploy.sh seed-bundle', () => {
+  it('takes the neoforge image from compose/nf-live.yml, and names the volume as compose does', () => {
+    expect(NEOFORGE_IMAGE).toMatch(/^itzg\/minecraft-server:[^@]+@sha256:[0-9a-f]{64}$/);
+    expect(SCRIPT_TEXT).not.toContain(NEOFORGE_IMAGE);
+    expect(NF_COMPOSE_TEXT).toMatch(/^  neoforge-data: \{\}$/m);
+    expect(NF_COMPOSE_TEXT).not.toContain('name: geldar-nf_neoforge-data');
+    expect(SCRIPT_TEXT).not.toMatch(/\bsudo\b/);
+  });
+
+  it('refuses a seeded volume and never extracts into it', () => {
+    const repo = makeRepo();
+    const r = run(repo, ['seed-bundle'], { VOLUME_CONTENT: 'server.properties' });
+    expect(r.status).toBe(1);
+    expect(r.out).toContain('is not empty');
+    expect(extractCalls(repo)).toEqual([]);
+  });
+
+  it('extracts into a volume that is absent or empty', () => {
+    const empty = makeRepo();
+    expect(run(empty, ['seed-bundle']).status).toBe(0);
+    expect(extractCalls(empty)).toHaveLength(1);
+    const absent = makeRepo();
+    expect(run(absent, ['seed-bundle'], { VOLUME_MISSING: '1' }).status).toBe(0);
+    expect(extractCalls(absent)).toHaveLength(1);
+  });
+
+  it('refuses a bad or malformed tarball sha256 before any extract', () => {
+    const repo = makeRepo();
+    expect(run(repo, ['seed-bundle'], { NF_BUNDLE_TARBALL_SHA256: 'f'.repeat(64) }).status).toBe(1);
+    expect(run(repo, ['seed-bundle'], { NF_BUNDLE_TARBALL_SHA256: 'ABC' }).status).toBe(1);
+    expect(extractCalls(repo)).toEqual([]);
+  });
+
+  it('refuses a relative or missing tarball path before any extract', () => {
+    const repo = makeRepo();
+    const rel = run(repo, ['seed-bundle'], { NF_BUNDLE_TARBALL: 'bundle-tarball.tar.gz' });
+    expect(rel.status).toBe(1);
+    expect(rel.out).toContain('absolute path');
+    const missing = run(repo, ['seed-bundle'], { NF_BUNDLE_TARBALL: join(repo, 'nope.tar.gz') });
+    expect(missing.status).toBe(1);
+    expect(extractCalls(repo)).toEqual([]);
+  });
+
+  it('refuses an archive with an absolute, ../ or link entry, or no marker, before any extract', () => {
+    const bad: Array<[string[], string[]]> = [
+      [
+        [...GOOD_NAMES, '/etc/passwd'],
+        [...GOOD_VERBOSE, '-rw-r--r-- 0/0 1 2026-11-01 10:00 /etc/passwd'],
+      ],
+      [
+        [...GOOD_NAMES, 'mods/../../x'],
+        [...GOOD_VERBOSE, '-rw-r--r-- 0/0 1 2026-11-01 10:00 mods/../../x'],
+      ],
+      [
+        [...GOOD_NAMES, 'libraries/a'],
+        [...GOOD_VERBOSE, 'lrwxrwxrwx 0/0 0 2026-11-01 10:00 libraries/a -> /etc'],
+      ],
+      [
+        [...GOOD_NAMES, 'mods/b'],
+        [...GOOD_VERBOSE, 'hrw-r--r-- 0/0 0 2026-11-01 10:00 mods/b link to mods/geldar.jar'],
+      ],
+      [['mods/geldar.jar'], ['-rw-r--r-- 0/0 12 2026-11-01 10:00 mods/geldar.jar']],
+    ];
+    for (const [names, verbose] of bad) {
+      const repo = makeRepo();
+      writeListing(repo, names, verbose);
+      expect(run(repo, ['seed-bundle']).status).toBe(1);
+      expect(extractCalls(repo)).toEqual([]);
+    }
+  });
+
+  it('extracts with --network none, the tarball read-only, --rm, root only in the container, the pinned image', () => {
+    const repo = makeRepo();
+    expect(run(repo, ['seed-bundle']).status).toBe(0);
+    const [extract] = extractCalls(repo);
+    expect(extract).toContain('docker run --rm --network none --user 0 ');
+    expect(extract).toMatch(/--mount type=bind,source=\S+,target=\/in\/bundle\.tar\.gz,readonly /);
+    expect(extract).toContain(
+      `--entrypoint /bin/sh ${NEOFORGE_IMAGE} -c tar -xzf /in/bundle.tar.gz -C /data`,
+    );
+    expect(extract).toContain('chown -R --reference=/data /data');
+    for (const c of calls(repo).filter((c) => c.startsWith('docker run '))) {
+      expect(c).toContain('--network none');
+    }
+  });
+
+  it('touches only the geldar-nf neoforge-data volume, and never prunes or removes a volume', () => {
+    const repo = makeRepo();
+    run(repo, ['seed-bundle']);
+    run(repo, ['up']);
+    run(repo, ['down', '--volumes'], {}, 'geldar-nf\n');
+    const volumeCalls = calls(repo).filter((c) => /docker (volume|run) /.test(c));
+    expect(volumeCalls.length).toBeGreaterThan(0);
+    for (const c of calls(repo)) {
+      expect(c).not.toMatch(/prune|volume rm|volume remove/);
+      for (const v of c.matchAll(/-v ([^:\s]+):/g)) expect(v[1]).toBe('geldar-nf_neoforge-data');
+    }
+    expect(volumeCalls.some((c) => c.includes('volume inspect geldar-nf_neoforge-data'))).toBe(
+      true,
+    );
+  });
+
+  it('DEPLOY_DRY_RUN=1 names the extract and runs none of it', () => {
+    const repo = makeRepo();
+    const r = run(repo, ['seed-bundle'], { DEPLOY_DRY_RUN: '1' });
+    expect(r.status).toBe(0);
+    expect(r.out).toContain('dry-run, not run: docker run --rm --network none --user 0');
+    expect(extractCalls(repo)).toEqual([]);
+  });
+
+  it('a marker that does not verify after the extract fails closed', () => {
+    const repo = makeRepo();
+    const r = run(repo, ['seed-bundle'], { MARKER_STATUS: '1' });
+    expect(r.status).toBe(1);
+    expect(r.out).toContain('marker check');
+  });
+
+  it('up refuses an unseeded volume and names seed-bundle; plan does not check the volume', () => {
+    const absent = makeRepo();
+    const r = run(absent, ['up'], { VOLUME_MISSING: '1' });
+    expect(r.status).toBe(1);
+    expect(r.out).toContain('seed-bundle');
+    expect(composeCalls(absent).map((c) => c.split(' ').slice(6).join(' '))).toEqual([
+      'config --quiet',
+    ]);
+    const badMarker = makeRepo();
+    expect(run(badMarker, ['up'], { MARKER_STATUS: '1' }).out).toContain('seed-bundle');
+    expect(run(makeRepo(), ['plan'], { VOLUME_MISSING: '1', MARKER_STATUS: '1' }).status).toBe(0);
+  });
+
+  it('up passes the seed check when the marker verifies', () => {
+    const repo = makeRepo();
+    expect(run(repo, ['up']).status).toBe(0);
+    expect(calls(repo).some((c) => c.includes('sha256sum -c --strict'))).toBe(true);
   });
 });
 
