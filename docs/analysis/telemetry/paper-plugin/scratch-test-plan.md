@@ -118,3 +118,27 @@ Rollback levels (use the lowest that fixes the problem; each is named in the req
 Stop rule (any one triggers L0 first, then L2 if not resolved in 10 minutes): TPS 1m under 19.5 for 2 minutes with no pregeneration running; MSPT p95 more than 1 ms above baseline for 5 minutes; throttle ratio above baseline; RSS above 90% of the limit; any Body restart or Velocity denial attributable to the window; a secret or address found in the sink output; `geldar_ledger_dropped_total` rising at steady state.
 
 After the window: a short note in `docs/analysis/telemetry/RESUME.md` with UTC times and the result (the orchestrator, not a coder).
+
+## 7. Rows pending a live scratch run
+
+No unit test can prove these. Each needs the scratch Paper run (owner-gated, after the NeoForge scratch re-run). The "Where" column names the row of section 3 that drives it; the card families are in [README.md](README.md).
+
+| Item | Why a unit test cannot prove it | Expected result | Where |
+|---|---|---|---|
+| Tick duration unit | `ServerTickEndEvent#getTickDuration` may be milliseconds or another unit | `geldar_tick_lag_ms` p50 under 10 ms idle and near `tick query` MSPT | T1, T2 (cards-metrics, PT-04) |
+| Census double counting | Shared handler lists may fire one event class under several registrations | each event counted once: `geldar_event_count_total` matches bench action counts | E1, E2 (cards-events, PT-06) |
+| Off-thread Bukkit getters | The server snapshot may call getters off the main thread | no async-access warning or exception in `latest.log`; snapshot fields present | S2 (cards-metrics, PT-05) |
+| Chunky task file layout | The bridge reads files that only a real Chunky run writes | `chunky_running` 1 during a run, 0 after; absent plugin gives 0 and no error | B1 (cards-metrics, PT-10) |
+| Item-event extractors | Item and block fields depend on real server objects | records for consume and craft with item names and block positions | V1, V2 (cards-events, PT-07) |
+| JFR real events | Mappers are tested on fixtures only | `geldar_jfr_*` series present; one `ledger-jfr` thread; no `.jfr` file | J1-J5 (cards-metrics, PT-09) |
+| Async exception capture | Needs a real off-thread failure | decision D-J applies; behaviour matches the chosen option | V6 (cards-events, PT-07) |
+| PlayerDeathEvent vs kill | Which event fires for a Body death or a pvp kill | one death record per death; no kill record for players (D-C) | V5 (cards-events, PT-07) |
+| V4 | Containers and sleep | open and close pairs; sleep enter with result; refused bed has its result | V4 |
+| V5 | Combat and movement | damage with cause; teleport COMMAND with operator flag; no mob-on-mob record | V5 |
+| V6 | Lifecycle, plugin enabled, tab | one plugin_enabled per plugin; tab has length, no text | V6 |
+| X1-X6 | Chat, sign, book, RCON, console, secrets | exact text; Body receives no extra message; 32,768 byte cap on books; rcon and console separate; no password, loopback or IPv4 anywhere | X1-X6 (cards-events, PT-07) |
+| P1-P4 | Join, prelogin, kick, snapshot | session id on join and quit with duration; no address; kick reason up to 200 chars; snapshots about once per 60 s, at most 2 per tick | P1-P4 (cards-events, PT-08) |
+| E1, E2 | Census counts and exclusions | series for the bench event classes; excluded classes absent; `PlayerMoveEvent` duty ratio 0.25 | E1, E2 |
+| S1, S2 | Players, operators, config snapshot | online equals `list`; operators 1 then 0; one snapshot per start without rcon keys | S1, S2 |
+| T1-T5 | Tick and TPS | see section 3 | T1-T5 |
+| J2-J5 | JFR gauges | see section 3 | J2-J5 |
