@@ -34,3 +34,5 @@ dependencyResolutionManagement {
 
 include("core")
 include("velocity-identity")
+include("ledger-core")
+include("ledger")

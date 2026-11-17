@@ -2,7 +2,8 @@
 <!--
   Authored for Geldar (0352 and 0370). [AUTH] Not upstream.
   Password hashes are NOT in git. Each hash is read from the container environment with from_env:
-  GELDAR_CH_WRITER_SHA256 and GELDAR_CH_READER_SHA256. Compose loads them from the node-only env file
+  GELDAR_CH_WRITER_SHA256 and GELDAR_CH_READER_SHA256 (the retention user geldar_signoz_admin and its hash variable were removed after the
+  2026-11-16 retention window; the node may still hold a GELDAR_CH_SIGNOZ_ADMIN_SHA256 line until the README teardown ends). Compose loads them from the node-only env file
   /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env (README, "Password hashes"). from_env in config is [INF, unverified on 25.12.5].
   Limits from 0352: writer max_memory_usage 2 GB, max_threads 4, max_execution_time 60, max_insert_threads 2.
   Reader limits follow 0352 (Read path, B): readonly 2, 1 GB, max_execution_time 30, max_result_rows 100000 with break,
@@ -35,6 +36,7 @@
             <result_overflow_mode>break</result_overflow_mode>
             <load_balancing>in_order</load_balancing>
         </geldar_reader>
+        <!-- geldar_signoz_admin (retention window user) was removed after the 2026-11-16 retention window; to open a later window re-add it through a reviewed PR together with a fresh password hash (see README: Opening a later retention window). -->
     </profiles>
     <users>
         <default>
@@ -58,7 +60,7 @@
                  clusterAllReplicas reach the shard as default. Its grants are limited to what that needs: SELECT and INSERT on the
                  six signoz_* databases and SELECT on system.*. Nothing else: no SOURCES, SYSTEM, FILE, URL, S3, REMOTE, ALTER,
                  CREATE, DROP, TABLE ENGINE or access management. Distributed DDL (ON CLUSTER) ran with these restricted grants in
-                 scratch report8; the initiating user was not recorded. Networks stay HOST LOCAL and the password stays
+                 scratch report8; which user the replica-side DDL ran as is not shown (README item 38). Networks stay HOST LOCAL and the password stays
                  empty. Residual: through remote() the writer can act as default, which gives SELECT and INSERT on the six signoz_*
                  databases and SELECT on system.*, no more than the writer already has on those databases. -->
             <grants>
@@ -124,5 +126,6 @@
                 <ip>::/0</ip>
             </networks>
         </geldar_reader>
+        <!-- geldar_signoz_admin (retention window user) was removed after the 2026-11-16 retention window; to open a later window re-add it through a reviewed PR together with a fresh password hash (see README: Opening a later retention window). -->
     </users>
 </clickhouse>

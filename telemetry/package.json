@@ -1,12 +1,32 @@
 {
   "name": "@geldar/telemetry",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
+  "description": "Shared OpenTelemetry setup for Geldar's Node services (OTLP/HTTP traces, logs, metrics)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SandboxServers/geldar.git",
+    "directory": "telemetry"
+  },
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      }
+    }
+  },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p . --noEmit",
     "test": "vitest run"
   },

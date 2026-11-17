@@ -23,7 +23,7 @@ Owner: freeze exemption for this session; full-text capture, no opt-out, 1-year 
 - Node stack steps N1-N13 in collector-design.md, one request each (caps, window, rollback).
 - N14: Caddy ingest window (after gateway).
 - N15: helper read-only stats route (separate window).
-- T-06d (content capture follow-up, see t06c card): not started.
+- T-06d (errors, pre-handler failures, capture order): cards written (t06d-errors-card.md: d1 telemetry, d2 MCP, d3 Body, d4 eventsink); not started. One batched deploy window: batch-deploy-plan.md.
 - Paper plugin cards: scratch shard first. JEP 509 CPU sampling stays off until owner says yes.
 - Paper limit edit in node colo.yml (repo copy stale).
 
@@ -47,9 +47,14 @@ Owner: freeze exemption for this session; full-text capture, no opt-out, 1-year 
 ## Next (each needs geldar-93 go + owner narrow exemption outside telemetry/)
 - Node steps N1-N15 and the Caddy ingest window (see Still held).
 - T-06d (not started).
-- T-13/14 scriptorium.
+- T-13/14 scriptorium: cards written in docs/analysis/telemetry/scriptorium/README.md (T-28); wave 1 can start now (TM-01, TM-16, TM-24, TM-26, TM-30, TM-35). TM-02 and TM-20 to TM-23 (MCP traceparent extraction, TRACEPARENT into the model child, run-id fallback) were dropped 2026-11-16 by owner ruling: spans join by player_id plus time (R3, 0350 point 7); see scriptorium/README.md, Dropped cards.
 - PT cards (Paper plugin) after scratch test.
 
 ## Rules
 No code by me; Haiku coders in worktrees; ops subagent pushes/queues; no agent sees telemetry; no node changes without geldar-93.
 Merge a PR only if no changed file is in the colo-images path filter (colo-deploy recreates all Bodies): golem, animus, eventsink, threshold/mcp|register, tools/admin|mcp-tokens|players-cli|migrate, glass, sql, contract, shards/phase0.yaml, root package.json, pnpm-workspace.yaml, pnpm-lock.yaml.
+
+## Paper plugin packet cards (2026-11-16, branch telemetry/t27-paper-cards)
+- Cards for the Ledger plugin (loader-neutral `plugin/ledger-core` plus thin Paper adapter `plugin/ledger`) are in `docs/analysis/telemetry/paper-plugin/`: README.md (index, dependency graph, start-now set), cards-*.md, scratch-test-plan.md, safety-rules.md.
+- Finding: `deploy/scratch/scratch.sh` allows suffixes of at most 8 characters; `telemetry` has 9 (PT-03j fixes).
+- Held cards (touch live compose or deploy files, PR-only until the PT-16 window): PT-02a, PT-03l, PT-16. PT-08e (Velocity) is optional and needs the owner's nod.
