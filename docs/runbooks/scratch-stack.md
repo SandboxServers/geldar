@@ -121,6 +121,62 @@ Exit codes: 2 usage or NATS auth refused, 3 a gate failed,
 1 anything else. On 2 and 3 nothing is started. `down` works after a failed `up`: run it to clean up. If `down` fails
 the secrets directory is kept, and `up` refuses until `down` succeeds.
 
+### Offline bundle (when the node cannot reach the NeoForge Maven)
+
+The node may not reach `maven.neoforged.net` at all. Then the image's installer cannot run there, and the offline bundle carries
+the install instead. It is built on a trusted machine that has network and docker, and it is never committed or pasted into chat.
+
+1. Build it on the trusted machine, from a checkout of this repo:
+
+        sh deploy/scratch/build-neoforge-bundle.sh <output-dir>
+
+   The output dir must not exist or must be empty. The script runs the image pinned in `compose/phase0.yml` (by digest) with the
+   real entrypoint and `SETUP_ONLY=TRUE`, which installs NeoForge and stops before the server starts. The forwarding secret is
+   a throwaway one made for the build. It is never printed.
+2. The output is two files: `neoforge-26.1.2-build<N>-bundle.tar.gz` and `bundle.sha256` (the sha256 of the tarball). The tarball
+   holds only the immutable install: `.neoforge-manifest.json`, `neoforge-installer.jar`, `run.sh`, `run.bat`, `libraries/` and
+   `mods/`, plus the marker `.geldar-bundle.sha256`, which lists each of those files with its sha256. It holds no
+   `server.properties`, `user_jvm_args.txt`, `.run-neoforge.env`, world, `config/`, `logs/`, `eula.txt`, ops or whitelist files, and
+   no secrets, so `up` regenerates them. The build prints the tarball size in bytes, the file count and the tarball sha256. Compare
+   that hash with the value ops receives over a DIFFERENT channel than the tarball: if both travel together, the check guards only
+   corruption. A mismatch means do not use the bundle. `bundle-files.sha256` is not delivered; the marker inside the tarball is the
+   list. Measured on 2026-11-16: 81 files, 144507643 bytes (about 138 MiB), 65 s, tarball sha256 starting `bc628311` (example: a
+   rebuild changes it if the content changes).
+3. Ops carries the tarball and `bundle.sha256` to the node (scp or similar). Nothing else is needed.
+4. Extract it into the volume with a throwaway container from the `paper` image in `compose/phase0.yml` (the same tag and digest),
+   run before `up`, so no container holds the volume:
+
+        docker run --rm --user 0 -v scratch-nf_paper-data:/data -v "<dir>:/in:ro" --entrypoint sh <image> -c \
+          'tar -xzf /in/neoforge-26.1.2-build<N>-bundle.tar.gz -C /data && chown -R --reference=/data /data'
+
+   `<dir>` holds the tarball. Check `sha256sum -c` against `bundle.sha256` before the extract. The volume must be empty before the
+   extract: an old `config/` or `server.properties` would break the bundle's assumptions. Check it with a throwaway container,
+   `docker run --rm -v scratch-nf_paper-data:/data --entrypoint sh <image> -c 'ls -A /data'` (no output means empty), or run
+   `down -v` first.
+5. Then `up` as before. The entrypoint reads `/data/.geldar-bundle.sha256`, the list in the tarball, and checks it strictly: a
+   malformed or truncated line fails. It refuses a list entry with an absolute path, a drive letter, a leading `-` or a `..`
+   segment; a list without the manifest, the installer, `mods/proxy-compatible-forge.jar` or `run.sh`; a symlink under `mods/` or
+   `libraries/`; and a jar in `mods/` that the list does not name (the name is printed). Each listed file must match its hash, and
+   all of this runs before anything is fetched. Extra files in `libraries/` are allowed: the classpath is fixed by the
+   `unix_args.txt` the installer wrote. The bundle mode never prints file contents. When every check passes, it sets
+   `NEOFORGE_FORCE_REINSTALL=false`, so the image's helper does not reinstall. The image rewrites `server.properties`,
+   `user_jvm_args.txt` and `.run-neoforge.env` on every start, so they are not listed: a second start must pass the same check
+   (UNVERIFIED until the first real node run).
+6. What the first start should log, if it worked: lines saying the install is already done (the helper's "already installed"
+   message) and that the server stays offline. These are UNVERIFIED expectations until the first real run; check them against the
+   real log, not this list.
+
+Limits:
+
+- A bundle is valid only for the itzg image digest it was built with. A digest bump in `compose/phase0.yml` means rebuild it.
+- The Java major of the bundle must match the image's (the image tag names it: `java25`). A bundle from another Java major is not
+  valid.
+- The installer pin is one network plus the Maven's own published checksums: the `.sha256`, `.sha1`, `.md5` and `.sha512` files
+  all agree with the local file. That protects against corruption and a bad copy. It is not an independent source, so it does not
+  protect against a compromised Maven server. The installer's sha512 is pinned next to its sha256 in the entrypoint; both must match.
+- 26.1.2 (build 126) is pinned on purpose, although the package-level metadata lists a later 26.3 build as the latest. Moving the pin
+  is a separate change with its own checks.
+
 ## NATS auth (fail closed)
 
 `up` needs `SCRATCH_NATS_AUTH_DIR`: a readable directory holding non-empty `nats-auth.conf`, `nats-paper.txt`,

@@ -101,6 +101,7 @@ function setup(secret = `${SECRET}\n`): Case {
       GELDAR_NF_START: slash(join(bin, 'start')),
       GELDAR_NF_MOD_SHA512: sha512(MOD_BODY),
       GELDAR_NF_INSTALLER_SHA256: sha256(INSTALLER_BODY),
+      GELDAR_NF_INSTALLER_SHA512: sha512(INSTALLER_BODY),
       NEOFORGE_VERSION: BUILD,
       STUB_CURL_LOG: slash(curlLog),
       STUB_CURL_FIXTURES: slash(fixtures),
@@ -321,5 +322,12 @@ describe.skipIf(skipWithoutSh())('NeoForge entrypoint under sh', { timeout: 30_0
     expect(mod.startsWith('dba5b70f')).toBe(true);
     expect(installer).toHaveLength(64);
     expect(installer.startsWith('1184ffee')).toBe(true);
+    const installer512 = pinDefault(
+      ENTRY_TEXT,
+      /INSTALLER_SHA512=\$\{GELDAR_NF_INSTALLER_SHA512:-([0-9a-f]+)\}/,
+      'INSTALLER_SHA512',
+    );
+    expect(installer512).toHaveLength(128);
+    expect(installer512.startsWith('3ecc1cef')).toBe(true);
   });
 });
