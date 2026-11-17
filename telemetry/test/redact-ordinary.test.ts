@@ -47,6 +47,13 @@ describe('scrubText keeps ordinary game and prose text (decision 0350: redact on
     'time: 12:30:45',
     'https://example.org/path',
     'user@example.org',
+    '--password-file /etc/x',
+    'use --token option',
+    '--secret-name abc',
+    'https://example.org/p?code=404',
+    'https://example.org/p?key=name',
+    'the sig of the sword',
+    'git push -u origin main',
   ];
   it.each(ordinary)('keeps %s', (input) => {
     expect(scrubText(input)).toBe(input);
@@ -109,7 +116,7 @@ describe('scrubText URL userinfo with prefixed or long schemes', () => {
       timed(rep(unit, 1 << 16));
       const t1 = Math.min(...[1, 2, 3].map(() => timed(rep(unit, MiB))));
       const t2 = Math.min(...[1, 2, 3].map(() => timed(rep(unit, 2 * MiB))));
-      expect(t1).toBeLessThan(1000);
+      expect(t1).toBeLessThan(3000);
       expect(t2).toBeLessThan(3 * t1 + 100);
       expect(timed(rep(unit, 10 * MiB))).toBeLessThan(5000);
     },

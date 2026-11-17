@@ -66,6 +66,19 @@ Run the game server as NeoForge instead of Paper, behind the same scratch Veloci
   `GELDAR_RCON_PORT=55575`, `GELDAR_RCON_PASSWORD_FILE` set to the path of that `rcon.txt` (a path, never the value),
   `GELDAR_MC_PORT=55565`, `GELDAR_NATS_URL` on 127.0.0.1 port 34222, and `GELDAR_MC_HOST` and `GELDAR_RCON_HOST` 127.0.0.1.
 
+### If the node cannot reach the NeoForge Maven or the Modrinth CDN
+
+Each download is retried 6 times, 10 s apart, with a 60 s connect timeout. If it still fails, the entrypoint stops and names the file to pre-seed. A file already in place with its pinned hash is used as it is, and curl is not called. To pre-seed the two files before `up`:
+
+1. On a machine that can reach them, download the installer from the `INSTALLER_URL` default and the mod from the `MOD_URL` default in `compose/neoforge/neoforge-entrypoint.sh`. The installer URL uses `NEOFORGE_VERSION`, which `compose/opt-in/scratch-neoforge.yml` builds from the 26.1.2 line and `SCRATCH_NEOFORGE_BUILD`.
+2. Check each file against its pin, the default after `:-` in `INSTALLER_SHA256` (sha256sum) and `MOD_SHA512` (sha512sum) in that script. On a mismatch, delete the file and do not copy it.
+3. Stage the two files in an empty directory `<dir>` as `<dir>/in/neoforge-installer.jar` and `<dir>/in/mods/proxy-compatible-forge.jar`. Then copy them into the world volume `scratch-nf_paper-data` (`<project>_paper-data`) with a throwaway container from the `paper` image in `compose/phase0.yml` (the tag and digest there), run before `up` so no container holds the volume:
+
+        docker run --rm --user 0 -v scratch-nf_paper-data:/data -v "<dir>/in:/in:ro" --entrypoint sh <image> -c \
+          'mkdir -p /data/mods && cp /in/neoforge-installer.jar /data/ && cp /in/mods/proxy-compatible-forge.jar /data/mods/ && chown --reference=/data /data/neoforge-installer.jar /data/mods /data/mods/proxy-compatible-forge.jar'
+
+4. The copies must be readable by the server user. The entrypoint re-owns them to the owner of `/data` on every start, and `chown --reference` above does the same, so the server user can read them. Then `up` as before. Delete `<dir>` afterwards.
+
 Exit codes: 2 usage or NATS auth refused, 3 a gate failed,
 1 anything else. On 2 and 3 nothing is started. `down` works after a failed `up`: run it to clean up. If `down` fails
 the secrets directory is kept, and `up` refuses until `down` succeeds.
