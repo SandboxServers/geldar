@@ -176,6 +176,8 @@ describe('NeoForge entrypoint script', () => {
 
   it.skipIf(!SH)(
     'exits 1 before any download when NEOFORGE_VERSION is unset or not 26.1.2 build N',
+    // Five sh starts: under load one start can pass vitest's 5 s default, so this test gets its own budget.
+    { timeout: 30_000 },
     () => {
       for (const version of [
         undefined,
