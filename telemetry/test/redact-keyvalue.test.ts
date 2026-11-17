@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { REDACTED as R, scrubText } from '../src/redact.ts';
-import { assertLinear } from './timing.ts';
+import { assertLinear, CEILING_MS } from './timing.ts';
 
 // Credential-shaped fixtures are built at run time.
 const pw = ['pass', 'word'].join('');
@@ -65,18 +65,15 @@ function timed(input: string): number {
 describe('scrubText key/value scan is linear', () => {
   const rep = (unit: string, size: number): string => unit.repeat(Math.ceil(size / unit.length));
 
-  it.each(Object.entries(shapes))(
-    '%s: 1 MiB and 2 MiB scale at most 3x, 1 MiB under 1 s',
-    (_n, unit) => {
-      const { t1 } = assertLinear((size) => scrubText(rep(unit, size)));
-      expect(t1).toBeLessThan(3000);
-    },
-  );
+  it.each(Object.entries(shapes))('%s: 1 MiB and 2 MiB scale at most 3x', (_n, unit) => {
+    const { t1 } = assertLinear((size) => scrubText(rep(unit, size)));
+    expect(t1).toBeLessThan(CEILING_MS);
+  });
 
   it.each(Object.entries(shapes))(
-    '%s: 10 MiB under 5 s',
+    '%s: 10 MiB under the ceiling',
     (_n, unit) => {
-      expect(timed(rep(unit, 10 * MiB))).toBeLessThan(5000);
+      expect(timed(rep(unit, 10 * MiB))).toBeLessThan(CEILING_MS);
     },
     60_000,
   );
