@@ -13,6 +13,7 @@ import {
   runEntry,
   runProbe,
 } from './probe.ts';
+import type { RegistryState } from './probe-verify.ts';
 
 const UUID = '6f1e0c2a-1b3d-4e5f-8a9b-0c1d2e3f4a5b';
 
@@ -37,6 +38,12 @@ interface Options {
   whitelistRemoveReply?: string;
   kvPutFails?: boolean;
   kvDeleteFails?: boolean;
+  /** When set, a registry delete reports success and leaves the key in place (a silent failure). */
+  kvDeleteSilent?: boolean;
+  /** When set, the verify read throws, so the verify reports unknown. */
+  verifyReadFails?: boolean;
+  /** When set, the verify read never answers, so the verify is bounded and reports unknown. */
+  verifyHangs?: boolean;
   openRconFails?: boolean;
   join?: 'ok' | 'kicked' | 'hang';
   noUuid?: boolean;
@@ -67,6 +74,8 @@ function harness(opts: Options = {}): Harness {
   const out: string[] = [];
   const err: string[] = [];
   const signals: Array<(name: NodeJS.Signals) => void> = [];
+  // The bucket's live keys: a put adds one, a delete removes it unless the delete fails silently.
+  const stored = new Set<string>();
   const kv: RegistryKv = {
     async put(key) {
       if (opts.putGate) {
@@ -75,10 +84,12 @@ function harness(opts: Options = {}): Harness {
       }
       events.push(`put:${key}`);
       if (opts.kvPutFails) throw new Error('nats: put failed');
+      stored.add(key);
     },
     async delete(key) {
       events.push(`delete:${key}`);
       if (opts.kvDeleteFails) throw new Error('nats: delete failed');
+      if (!opts.kvDeleteSilent) stored.delete(key);
     },
   };
   const bot = {
@@ -106,6 +117,12 @@ function harness(opts: Options = {}): Harness {
     },
     registry: () =>
       new LifeRegistration(async () => ({ kv, close: async () => undefined }), undefined),
+    async readRegistry(_cfg, key): Promise<RegistryState> {
+      events.push(`verify:${key}`);
+      if (opts.verifyHangs) return new Promise<RegistryState>(() => undefined);
+      if (opts.verifyReadFails) throw new Error('nats: read failed');
+      return stored.has(key) ? 'present' : 'absent';
+    },
     startBody(): BodyLink {
       events.push('start');
       let bot_: Promise<Bot>;
@@ -165,12 +182,14 @@ describe('the probe run order and exit', () => {
       'open',
       `cmd:whitelist remove ${PROBE_USERNAME}`,
       'close',
+      `verify:${PROBE_USERNAME}`,
     ]);
     expect(h.out).toEqual([
       `p0 join ok name=${PROBE_USERNAME} uuid=${UUID}`,
       'p0 goto completed status=completed latency_ms=5',
       'p0 mine completed status=completed latency_ms=5',
       'p0 cleanup registry=removed whitelist=removed',
+      'p0 verify registry=absent',
     ]);
     expect(h.err).toEqual([]);
   });
@@ -183,7 +202,7 @@ describe('the probe run order and exit', () => {
     expect(h.events).toContain(`delete:${PROBE_USERNAME}`);
     expect(h.events).toContain(`cmd:whitelist remove ${PROBE_USERNAME}`);
     expect(h.err).toContain('p0 failed: connection failed for good: kicked for whitelist');
-    expect(h.out.at(-1)).toBe('p0 cleanup registry=removed whitelist=removed');
+    expect(h.out.at(-2)).toBe('p0 cleanup registry=removed whitelist=removed');
   });
 
   it('a joined Body with no UUID is a failure: no join line, no action, cleanup runs, exit 1', async () => {
@@ -192,7 +211,7 @@ describe('the probe run order and exit', () => {
     expect(h.out.some((line) => line.startsWith('p0 join ok'))).toBe(false);
     expect(h.events).not.toContain('run:goto');
     expect(h.err).toContain('p0 failed: the Body joined without a UUID');
-    expect(h.out.at(-1)).toBe('p0 cleanup registry=removed whitelist=removed');
+    expect(h.out.at(-2)).toBe('p0 cleanup registry=removed whitelist=removed');
   });
 
   it('a failed goto stops the run: no mine, both entries removed, exit 1', async () => {
@@ -203,14 +222,14 @@ describe('the probe run order and exit', () => {
     expect(h.events).not.toContain('run:mine');
     expect(h.out).toContain('p0 goto failed status=failed reason=no_path latency_ms=5');
     expect(h.events).toContain(`delete:${PROBE_USERNAME}`);
-    expect(h.out.at(-1)).toBe('p0 cleanup registry=removed whitelist=removed');
+    expect(h.out.at(-2)).toBe('p0 cleanup registry=removed whitelist=removed');
   });
 
   it('a failed mine exits 1 after both actions were tried', async () => {
     const h = harness({ mine: 'failed' });
     expect(await runProbe(checkIsolation(scratchEnv()), h.deps)).toBe(1);
     expect(h.events).toContain('run:mine');
-    expect(h.out.at(-1)).toBe('p0 cleanup registry=removed whitelist=removed');
+    expect(h.out.at(-2)).toBe('p0 cleanup registry=removed whitelist=removed');
   });
 });
 
@@ -218,7 +237,7 @@ describe('the probe cleanup', () => {
   it('a failed registry delete is reported and exits 1, and the whitelist is still removed', async () => {
     const h = harness({ kvDeleteFails: true });
     expect(await runProbe(checkIsolation(scratchEnv()), h.deps)).toBe(1);
-    expect(h.out.at(-1)).toBe('p0 cleanup registry=failed whitelist=removed');
+    expect(h.out.at(-2)).toBe('p0 cleanup registry=failed whitelist=removed');
     expect(h.err).toContain('p0 registry delete failed: nats: delete failed');
     expect(h.events).toContain(`cmd:whitelist remove ${PROBE_USERNAME}`);
   });
@@ -226,7 +245,7 @@ describe('the probe cleanup', () => {
   it('a whitelist removal with an unexpected reply is reported and exits 1', async () => {
     const h = harness({ whitelistRemoveReply: 'Internal error' });
     expect(await runProbe(checkIsolation(scratchEnv()), h.deps)).toBe(1);
-    expect(h.out.at(-1)).toBe('p0 cleanup registry=removed whitelist=failed');
+    expect(h.out.at(-2)).toBe('p0 cleanup registry=removed whitelist=failed');
     expect(h.err.some((line) => line.startsWith('p0 whitelist remove failed:'))).toBe(true);
   });
 
@@ -236,7 +255,7 @@ describe('the probe cleanup', () => {
     expect(h.events).not.toContain('start');
     expect(h.events).not.toContain(`put:${PROBE_USERNAME}`);
     expect(h.err).toContain('p0 failed: RCON connect refused');
-    expect(h.out.at(-1)).toBe('p0 cleanup registry=removed whitelist=failed');
+    expect(h.out.at(-2)).toBe('p0 cleanup registry=removed whitelist=failed');
   });
 
   it('a failed registry put removes the key anyway, and exits 1', async () => {
@@ -244,7 +263,7 @@ describe('the probe cleanup', () => {
     expect(await runProbe(checkIsolation(scratchEnv()), h.deps)).toBe(1);
     expect(h.events).not.toContain('start');
     expect(h.events).toContain(`delete:${PROBE_USERNAME}`);
-    expect(h.out.at(-1)).toBe('p0 cleanup registry=removed whitelist=removed');
+    expect(h.out.at(-2)).toBe('p0 cleanup registry=removed whitelist=removed');
   });
 });
 
@@ -261,7 +280,7 @@ describe('the probe on a signal', () => {
     expect(h.events).toContain(`delete:${PROBE_USERNAME}`);
     expect(h.events).toContain(`cmd:whitelist remove ${PROBE_USERNAME}`);
     expect(h.out).toContain('p0 interrupted by SIGTERM');
-    expect(h.out.at(-1)).toBe('p0 cleanup registry=removed whitelist=removed');
+    expect(h.out.at(-2)).toBe('p0 cleanup registry=removed whitelist=removed');
     expect(h.err).toContain('p0 failed: interrupted: interrupted by SIGTERM');
   });
 
@@ -273,6 +292,66 @@ describe('the probe on a signal', () => {
     h.signals[0]?.('SIGTERM');
     expect(await run).toBe(1);
     expect(h.out.filter((line) => line.startsWith('p0 interrupted'))).toHaveLength(1);
+  });
+});
+
+describe('the probe verify step reads the registry after cleanup', () => {
+  it('a delete that reports success but leaves the key is caught: verify prints present, exit 1', async () => {
+    const h = harness({ kvDeleteSilent: true });
+    const code = await runProbe(checkIsolation(scratchEnv()), h.deps);
+    expect(code).toBe(1);
+    expect(h.out.slice(-2)).toEqual([
+      'p0 cleanup registry=removed whitelist=removed',
+      'p0 verify registry=present',
+    ]);
+    expect(h.err).toEqual([]);
+  });
+
+  it('a verify read that throws prints unknown with its reason on stderr, exit 1', async () => {
+    const h = harness({ verifyReadFails: true });
+    const code = await runProbe(checkIsolation(scratchEnv()), h.deps);
+    expect(code).toBe(1);
+    expect(h.out.at(-1)).toBe('p0 verify registry=unknown');
+    expect(h.err).toEqual(['p0 verify failed: nats: read failed']);
+  });
+
+  it('a verify read that never answers is bounded: unknown after the bound, exit 1', async () => {
+    const h = harness({ verifyHangs: true });
+    const code = await runProbe(checkIsolation(scratchEnv()), { ...h.deps, verifyMs: 50 });
+    expect(code).toBe(1);
+    expect(h.out.at(-1)).toBe('p0 verify registry=unknown');
+    expect(h.err).toEqual(['p0 verify failed: registry verify timed out']);
+  });
+
+  it('verify runs after a failed registry delete and reports the key still there', async () => {
+    const h = harness({ kvDeleteFails: true });
+    const code = await runProbe(checkIsolation(scratchEnv()), h.deps);
+    expect(code).toBe(1);
+    expect(h.events.indexOf(`verify:${PROBE_USERNAME}`)).toBeGreaterThan(
+      h.events.indexOf(`delete:${PROBE_USERNAME}`),
+    );
+    expect(h.out.slice(-2)).toEqual([
+      'p0 cleanup registry=failed whitelist=removed',
+      'p0 verify registry=present',
+    ]);
+  });
+
+  it('verify runs after a failed whitelist remove and still reports the registry absent', async () => {
+    const h = harness({ whitelistRemoveReply: 'unexpected reply' });
+    const code = await runProbe(checkIsolation(scratchEnv()), h.deps);
+    expect(code).toBe(1);
+    expect(h.out.slice(-2)).toEqual([
+      'p0 cleanup registry=removed whitelist=failed',
+      'p0 verify registry=absent',
+    ]);
+  });
+
+  it('a refused isolation check reads nothing and prints no verify line', async () => {
+    const h = harness();
+    const code = await main({ ...scratchEnv(), GELDAR_P0_PROJECT: 'colo' }, h.deps);
+    expect(code).toBe(2);
+    expect(h.events.some((e) => e.startsWith('verify:'))).toBe(false);
+    expect(h.out.some((line) => line.startsWith('p0 verify'))).toBe(false);
   });
 });
 
@@ -371,7 +450,7 @@ describe('the probe cleanup waits for a write still in flight', () => {
     expect(put).toBeGreaterThan(-1);
     expect(h.events.indexOf(`delete:${PROBE_USERNAME}`)).toBeGreaterThan(put);
     expect(h.events).not.toContain('start');
-    expect(h.out.at(-1)).toBe('p0 cleanup registry=removed whitelist=removed');
+    expect(h.out.at(-2)).toBe('p0 cleanup registry=removed whitelist=removed');
   });
 
   it('a registry put still in flight after the settle cap is reported failed, and nothing is deleted under it', async () => {
@@ -381,7 +460,7 @@ describe('the probe cleanup waits for a write still in flight', () => {
     h.signals[0]?.('SIGTERM');
     expect(await run).toBe(1);
     expect(h.events).not.toContain(`delete:${PROBE_USERNAME}`);
-    expect(h.out.at(-1)).toBe('p0 cleanup registry=failed whitelist=removed');
+    expect(h.out.at(-2)).toBe('p0 cleanup registry=failed whitelist=removed');
     expect(h.err).toContain('p0 registry delete failed: registry put still in flight after 50 ms');
   });
 
@@ -399,7 +478,7 @@ describe('the probe cleanup waits for a write still in flight', () => {
     const landed = h.events.indexOf(`landed:whitelist add ${PROBE_USERNAME}`);
     expect(landed).toBeGreaterThan(-1);
     expect(h.events.indexOf(`cmd:whitelist remove ${PROBE_USERNAME}`)).toBeGreaterThan(landed);
-    expect(h.out.at(-1)).toBe('p0 cleanup registry=removed whitelist=removed');
+    expect(h.out.at(-2)).toBe('p0 cleanup registry=removed whitelist=removed');
   });
 
   it('a whitelist add still in flight after the settle cap is reported failed, and no remove runs', async () => {
@@ -409,7 +488,7 @@ describe('the probe cleanup waits for a write still in flight', () => {
     h.signals[0]?.('SIGTERM');
     expect(await run).toBe(1);
     expect(h.events.some((event) => event.startsWith('cmd:whitelist remove'))).toBe(false);
-    expect(h.out.at(-1)).toBe('p0 cleanup registry=removed whitelist=failed');
+    expect(h.out.at(-2)).toBe('p0 cleanup registry=removed whitelist=failed');
     expect(h.err).toContain(
       'p0 whitelist remove failed: whitelist add still in flight after 50 ms',
     );

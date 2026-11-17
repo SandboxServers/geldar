@@ -432,18 +432,28 @@ against the file before a run. As of this section:
     ` reason=<text>` when the action gave one. The run passes only when both states are `completed`;
   - `p0 interrupted by SIGINT` or `p0 interrupted by SIGTERM`, if a signal arrived;
   - `p0 cleanup registry=<removed|failed> whitelist=<removed|failed>`. It is printed on every run that reaches the cleanup,
-    and it is the last stdout line. It is the receipt for the registry and whitelist entries.
+    and it is the second-to-last stdout line. It is the cleanup's receipt for the registry and whitelist entries;
+  - `p0 verify registry=<absent|present|unknown>`. It is the last stdout line, printed on every run that reaches the
+    cleanup. It reads the probe's registry key back after the cleanup, with the probe's own credentials, and does not
+    trust the delete call. `absent` means the key is gone (no entry, or a delete marker); `present` means the key still
+    holds an entry; `unknown` means the read failed or did not answer within 10 s. It never prints a value.
 - stderr (capture it too):
   - `p0 disconnect failed: <reason>`, `p0 registry delete failed: <reason>` or `p0 whitelist remove failed: <reason>`,
     one per failed cleanup step, printed before the cleanup line;
   - `p0 failed: <reason>` for the first failed step (admission, registry put, join, goto, mine, or a signal), printed
-    after the cleanup line;
+    after the cleanup line and before the verify line;
+  - `p0 verify failed: <reason>` only when the verify is `unknown`, printed before the verify line;
   - `p0 heartbeat failed for <username>: <reason>` when a registry heartbeat fails during the run;
   - `p0 probe refused: <rule>` for an isolation refusal. Nothing else is printed, and nothing is opened.
-- Exit codes: 0 only when join, goto and mine completed, both cleanup entries were removed and the disconnect was ok;
-  1 for any other run that started (a failed step, a signal, a failed cleanup step); 2 for the isolation refusal.
-  There is no separate exit-reason line: the reason for a non-zero exit is the `p0 failed:` line on stderr, or a
-  `failed` cleanup line.
+- Exit codes: 0 only when join, goto and mine completed, both cleanup entries were removed, the disconnect was ok and
+  the verify is `absent`; 1 for any other run that started (a failed step, a signal, a failed cleanup step, a verify
+  that is `present` or `unknown`); 2 for the isolation refusal. There is no separate exit-reason line: the reason for a
+  non-zero exit is the `p0 failed:` or `p0 verify failed:` line on stderr, a `failed` cleanup line, or a `present` or
+  `unknown` verify line.
+- Operator expectation: a passing run ends with `p0 verify registry=absent` and exit 0. A `present` verify means the
+  delete did not take effect: record the run and check the bucket by hand before calling the probe clean. An `unknown`
+  verify means nothing was learned about the key, so it is not a pass. The key also expires on its own about a minute
+  after its last put, so a later look at an absent key does not prove this run's delete; the verify line is the proof.
 
 Comparing the username and UUID with the server logs (the grep forms are unverified on the 26.1 server logs; record the
 raw output with the run, not a summary):

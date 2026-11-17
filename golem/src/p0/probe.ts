@@ -12,7 +12,8 @@
  *     p0 join ok name=ag_nfprobe_01 uuid=<uuid>          the receipt of the join
  *     p0 goto <state> status=<s> [reason=<r>] latency_ms=<ms>   receipt of the goto action
  *     p0 mine <state> status=<s> [reason=<r>] latency_ms=<ms>   receipt of the mine action
- *     p0 cleanup registry=<removed|failed> whitelist=<removed|failed>   the final line
+ *     p0 cleanup registry=<removed|failed> whitelist=<removed|failed>   the cleanup receipt
+ *     p0 verify registry=<absent|present|unknown>        the final line: the registry read after cleanup
  *   stderr (only when it applies):
  *     p0 probe refused: <rule>                           isolation refusal (exit 2), nothing else runs
  *     p0 rcon password file missing                      the RCON password could not be read (no path)
@@ -20,9 +21,11 @@
  *     p0 disconnect failed: <reason>
  *     p0 registry delete failed: <reason>
  *     p0 whitelist remove failed: <reason>
+ *     p0 verify failed: <reason>                         the verify read threw or did not answer (unknown)
  *     p0 heartbeat failed for <name>: <reason>
- *   exit codes: 0 when the join, goto and mine completed and both entries were removed;
- *   1 for any failure, interruption or failed cleanup step; 2 for an isolation refusal.
+ *   exit codes: 0 when the join, goto and mine completed, both entries were removed, the disconnect
+ *   was ok and the verify read found the key absent; 1 for any failure, interruption, failed cleanup
+ *   step, present or unknown verify; 2 for an isolation refusal.
  */
 import type { Bot } from 'mineflayer';
 import { createRegistry } from '../actions/index.ts';
@@ -37,10 +40,21 @@ import { ConnectionManager } from '../connection.ts';
 import type { AdmissionRcon } from '../players/whitelist.ts';
 import { admitLifeOverRcon, removeLifeOverRcon } from '../players/whitelist.ts';
 import { RconClient } from '../rcon.ts';
-import { type BotRegistry, LifeRegistration, openRegistryBucket } from '../registry.ts';
+import {
+  type BotRegistry,
+  LifeRegistration,
+  openRegistryBucket,
+  registryKey,
+} from '../registry.ts';
 import { checkIsolation, IsolationRefusal, type ProbePlan } from './isolation.ts';
 import { CLEANUP_SETTLE_MS, cleanupProbe } from './probe-cleanup.ts';
 import { bounded, gotoAction, mineAction, reasonOf, receiptOf } from './probe-steps.ts';
+import {
+  type RegistryState,
+  readRegistryKey,
+  VERIFY_TIMEOUT_MS,
+  verifyRegistry,
+} from './probe-verify.ts';
 
 /** The probe's Body. It is a valid LifeId (`ag_` a letter-led stem, `_01`), so the registry keeps it as is. */
 export const PROBE_USERNAME = 'ag_nfprobe_01';
@@ -73,6 +87,10 @@ export interface ProbeDeps {
   err(line: string): void;
   /** How long cleanup waits for an in-flight write before it reports the step failed. Tests shorten it. */
   cleanupSettleMs?: number;
+  /** Reads one key of the life registry, after cleanup, with the probe's own credentials. Read only. */
+  readRegistry(cfg: ProbePlan['config'], key: string): Promise<RegistryState>;
+  /** How long the verify read may take before it reports unknown. Tests shorten it. */
+  verifyMs?: number;
 }
 
 /** The production side effects. */
@@ -103,6 +121,7 @@ export const defaultDeps: ProbeDeps = {
     });
     return { bot: manager.start(), disconnect: () => manager.stop() };
   },
+  readRegistry: (cfg, key) => readRegistryKey(cfg.natsUrl, key),
   actions: createRegistry,
   runAction,
   onSignal(handler) {
@@ -185,11 +204,18 @@ export async function runProbe(plan: ProbePlan, deps: ProbeDeps): Promise<number
   );
   stopSignals();
   if (failure !== null) deps.err(`p0 failed: ${failure}`);
+  // The verify runs on every exit, after cleanup, and reads the key rather than trusting the delete.
+  const verify = await verifyRegistry(
+    () => deps.readRegistry(cfg, registryKey(PROBE_USERNAME)),
+    deps.verifyMs ?? VERIFY_TIMEOUT_MS,
+  );
+  if (verify.reason !== undefined) deps.err(`p0 verify failed: ${verify.reason}`);
+  deps.out(`p0 verify registry=${verify.state}`);
   const clean =
     cleanup.registry === 'removed' &&
     cleanup.whitelist === 'removed' &&
     cleanup.disconnect === 'ok';
-  return failure === null && clean ? 0 : 1;
+  return failure === null && clean && verify.state === 'absent' ? 0 : 1;
 }
 
 /**
