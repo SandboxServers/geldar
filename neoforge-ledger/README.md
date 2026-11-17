@@ -31,7 +31,7 @@ Config is `config/ledger.properties`; a missing file means defaults. The keys ar
 | `collector.audit.enabled` | off | every audit family below: chat text, console and RCON command text, combat, operator change |
 | `collector.combat.enabled`, `collector.operator.enabled` | on, but only matter once audit is on | switch one audit family off |
 
-Audit is opt-in, like Paper's curated data: absent or anything but `true` means off. It is checked at install and again on every event on whatever thread it arrives (chat and RCON are not server-thread events), so off means no read and no record. Nothing exports until the owner sets a window and the keys.
+Audit is opt-in, like Paper's curated data: absent or anything but `true` means off. It is checked at install and again on every event on whatever thread it arrives (chat and RCON are not server-thread events), so off means nothing is recorded and no chat or command text is read. The wiring handlers may still read player names, the dimension, the damage cause and the command source name before the gate (only when audit is on but `collector.combat.enabled` or `collector.operator.enabled` is false); none of that is recorded. Nothing exports until the owner sets a window and the keys.
 
 ## Tick (PT-N4a, package `tick`)
 
@@ -43,7 +43,7 @@ Tick lag, overruns, stalls (a watchdog on its own daemon thread) and the per-dim
 
 ## Audit events (PT-N8, package `audit`, opt-in: `collector.audit.enabled=true`)
 
-A rate denial for chat or a command goes to a rate-0 twin event (`<event>._rate_drop`), so the core's rate-drop counter counts it like a core drop. `geldar.operator.change` is not yet in the names table of the Paper plugin README (docs/analysis/telemetry/paper-plugin/README.md, section 4); that table is outside this module.
+A rate denial for chat or a command goes to a rate-0 twin event (`<event>._rate_drop`), so the core's rate-drop counter counts it like a core drop. The `._rate_drop` twins are internal: they carry no text and no attributes and must not be configured (do not set `rate.<event>._rate_drop`; a nonzero rate would emit an empty event). `geldar.operator.change` is in the names table of the Paper plugin README (docs/analysis/telemetry/paper-plugin/README.md, section 4).
 
 | Event | Source | Notes |
 |---|---|---|
