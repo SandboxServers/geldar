@@ -7,7 +7,8 @@ The scratch project `scratch-telemetry` runs Paper with the Ledger plugin and a 
 Build the jars first: `cd plugin; ./gradlew build` (needs `plugin/ledger/build/libs/ledger.jar` and `geldar-core.jar`; a missing `ledger.jar` makes Docker create a directory in its place, so check it exists). Then, from the repository root:
 
 ```
-export $(cat deploy/scratch/telemetry.env | xargs)                 # the project's own ports, no secrets
+# No export for the ports: scratch.sh reads deploy/scratch/telemetry.env itself (only the SCRATCH_*_PORT lines,
+# never sourced). A SCRATCH_*_PORT variable already exported wins. Do not export or source the file.
 export SCRATCH_TELEMETRY_OUT="$HOME/.local/state/geldar/scratch-telemetry-out"   # absolute, outside the repo
 mkdir -p "$SCRATCH_TELEMETRY_OUT"
 export SCRATCH_OTEL_AGENT_JAR=<absolute path of the verified agent jar>          # optional; unset runs without an agent
