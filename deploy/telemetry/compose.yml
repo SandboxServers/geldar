@@ -22,6 +22,10 @@ networks:
   geldar-telemetry-backend:
     driver: bridge
     internal: true
+  # Query network: project-scoped, NOT internal (SigNoz needs the loopback publish 127.0.0.1:8095). Joined ONLY by geldar-signoz and
+  # geldar-ch, so the OpAMP listener on 4320 is not reachable from geldar-gateway. Docker name: geldar-telemetry_geldar-telemetry-query.
+  geldar-telemetry-query:
+    driver: bridge
 
 secrets:
   ch_writer_password:
@@ -68,7 +72,8 @@ services:
     container_name: geldar-ch
     hostname: geldar-ch
     env_file:
-      # Node-only file with GELDAR_CH_WRITER_SHA256 and GELDAR_CH_READER_SHA256 (README, "Password hashes").
+      # Node-only file with GELDAR_CH_WRITER_SHA256, GELDAR_CH_READER_SHA256 and GELDAR_CH_SIGNOZ_ADMIN_SHA256 (README, "Password hashes").
+      # The whole file is passed through, so the retention user's hash (D3) needs no other compose change.
       # required: false only so that `compose config` runs off the node; on the node a missing hash makes ClickHouse fail to start.
       - path: /mnt/nvme/geldar-telemetry/secrets/ch-hashes.env
         required: false
@@ -79,13 +84,14 @@ services:
       - ./clickhouse/config.d:/etc/clickhouse-server/config.d:ro
       - ./clickhouse/users.d:/etc/clickhouse-server/users.d:ro
       - ./clickhouse/histogram_function.xml:/etc/clickhouse-server/histogram_function.xml:ro
-    # Both networks: geldar-telemetry for the Geldar clients, geldar-telemetry-backend for Keeper (cluster.xml reaches it by name there).
+    # Three networks (geldar-telemetry-query is for geldar-signoz only): geldar-telemetry for the Geldar clients, geldar-telemetry-backend for Keeper (cluster.xml reaches it by name there).
     # The alias geldar-ch-sql exists only on geldar-telemetry. cluster.xml advertises it, so the replica address ClickHouse reports is the
     # telemetry-network address on every client. Without it, the plain name geldar-ch can resolve to the backend IP, which the migrator cannot reach. [AUTH]
     networks:
       geldar-telemetry:
         aliases: [geldar-ch-sql]
       geldar-telemetry-backend:
+      geldar-telemetry-query:
     depends_on:
       geldar-ch-keeper:
         condition: service_healthy
@@ -155,13 +161,22 @@ services:
       # Vendor usage reporting off (analytics and segment reporter). The binary exposes this name; its default is not known from the
       # image (scratch report2, step 4), so it is set explicitly here. [AUTH]
       SIGNOZ_ANALYTICS_ENABLED: "false"
+      # Listeners found by reading the v0.148.1 source (not run). SIGNOZ_PPROF_ENABLED=false turns off the pprof server on 6060
+      # [SRC pkg/pprof/config.go: noop provider when disabled]. SIGNOZ_INSTRUMENTATION_METRICS_ENABLED=false turns off the self-metrics
+      # exporter on 9090 [SRC sdk.go: noop meter provider; [INF] that the 9090 listener is then not created, listener code not read].
+      # No empty address is set (its behaviour is [UNV]). The OpAMP server on 4320 is hardcoded to 0.0.0.0:4320 with no setting
+      # [SRC constants.go OpAmpWsEndpoint], so it is isolated by network instead (networks below). Effect at runtime [UNV].
+      SIGNOZ_PPROF_ENABLED: "false"
+      SIGNOZ_INSTRUMENTATION_METRICS_ENABLED: "false"
     volumes:
       - /mnt/nvme/geldar-telemetry/query:/var/lib/signoz
     secrets:
       # Owner and mode from the host file: ch_reader_password 0:0 0400 (README, "Secrets"). Not set here.
       - source: ch_reader_password
         target: ch_reader_password
-    networks: [geldar-telemetry]
+    # Query network only: SigNoz is NOT on geldar-telemetry, so geldar-gateway cannot reach the OpAMP port 4320 (hardcoded 0.0.0.0).
+    # A single-homed container's DNS lookup of geldar-ch returns geldar-ch's address on its own network (the query network). [INF]
+    networks: [geldar-telemetry-query]
     ports:
       - "127.0.0.1:8095:8080"
     depends_on:
