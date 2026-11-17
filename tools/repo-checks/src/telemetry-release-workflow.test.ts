@@ -8,7 +8,13 @@ import { checkActionPins } from './pin-rules.ts';
 const WORKFLOW = '.github/workflows/telemetry-release.yml';
 const text = readFileSync(new URL(`../../../${WORKFLOW}`, import.meta.url), 'utf8');
 
-type Step = { name?: string; uses?: string; run?: string; env?: Record<string, string> };
+type Step = {
+  name?: string;
+  uses?: string;
+  run?: string;
+  env?: Record<string, string>;
+  with?: Record<string, unknown>;
+};
 const workflow = parse(text) as {
   on: Record<string, unknown>;
   permissions?: Record<string, string>;
@@ -64,5 +70,43 @@ describe('telemetry-release.yml', () => {
     ].map((command) => steps.findIndex((s) => (s.run ?? '').includes(command)));
     expect(order.every((i) => i >= 0)).toBe(true);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  const indexOfRun = (needle: string) => steps.findIndex((s) => (s.run ?? '').includes(needle));
+
+  it('installs from the frozen lockfile', () => {
+    expect(steps.some((s) => (s.run ?? '').trim() === 'pnpm install --frozen-lockfile')).toBe(true);
+  });
+
+  it('never interpolates an expression into a run body', () => {
+    for (const s of steps) expect(s.run ?? '').not.toContain('${{');
+  });
+
+  it('checks main ancestry, the tag and the release before any install or build', () => {
+    const install = indexOfRun('pnpm install');
+    const build = indexOfRun('pnpm --filter @geldar/telemetry build');
+    const checks = [
+      indexOfRun('git merge-base --is-ancestor "$GITHUB_SHA" origin/main'),
+      indexOfRun('"$TAG" != "telemetry-v${version}"'),
+      indexOfRun('gh release view "$TAG"'),
+    ];
+    expect(install).toBeGreaterThan(0);
+    for (const i of checks) {
+      expect(i).toBeGreaterThanOrEqual(0);
+      expect(i).toBeLessThan(install);
+      expect(i).toBeLessThan(build);
+    }
+  });
+
+  it('checks out the full history without persisting credentials, and uses no cache', () => {
+    const checkout = steps.find((s) => s.uses?.startsWith('actions/checkout@'));
+    expect(checkout?.with?.['fetch-depth']).toBe(0);
+    expect(checkout?.with?.['persist-credentials']).toBe(false);
+    expect(steps.some((s) => s.uses?.startsWith('actions/cache'))).toBe(false);
+    for (const s of steps) expect(s.with ?? {}).not.toHaveProperty('cache');
+  });
+
+  it('does not mark the release as latest', () => {
+    expect(steps.map((s) => s.run ?? '').join('\n')).toContain('--latest=false');
   });
 });

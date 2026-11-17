@@ -23,12 +23,20 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: the tagged commit is on main
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::the tagged commit is not an ancestor of origin/main" >&2
+            exit 1
+          fi
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
       - name: the tag equals the package version
         env:
           TAG: ${{ github.ref_name }}
@@ -45,9 +53,10 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "::error::a release for $TAG already exists; releases are never overwritten" >&2
+            echo "::error::a release for $TAG already exists; this workflow never overwrites a release" >&2
             exit 1
           fi
+      - run: pnpm install --frozen-lockfile
       - name: typecheck
         run: pnpm --filter @geldar/telemetry typecheck
       - name: test
@@ -88,5 +97,6 @@ jobs:
             "$RUNNER_TEMP/out/geldar-telemetry-${VERSION}.tgz" \
             "$RUNNER_TEMP/out/SHA256SUMS" \
             --verify-tag \
+            --latest=false \
             --title "@geldar/telemetry ${VERSION}" \
             --notes-file "$RUNNER_TEMP/notes.md"
