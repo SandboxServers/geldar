@@ -18,6 +18,7 @@ State 2026-11-17. Read this, then [p0-body-model.md](p0-body-model.md).
   - Run 2 stopped at the identity buckets.
   - Run 3 came up healthy.
   - Run 4 stopped at the Velocity uid check. The Velocity java process is uid 0. The `itzg/mc-proxy` image drops privilege only when `$UID` is 0, so our `UID=1001` leaves it root; live colo does the same. Velocity is now recorded, not blocking, in the runbook.
+  - Run 5 (2026-11-17) stopped at first-run check 1 (mod load): the scratch stack mounts no geldar jar. The runbook now marks check 1 N/A until a mod jar is mounted; the probe has not run yet.
 - P0 verified (runs 1-4):
   - Proxy Compatible Forge 1.3.1 loads on NeoForge 26.1.2.
   - Server ticks at 20 TPS.
