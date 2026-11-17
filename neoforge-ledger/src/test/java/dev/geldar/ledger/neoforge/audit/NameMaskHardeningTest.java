@@ -148,6 +148,7 @@ class NameMaskHardeningTest {
         }
         assertTrue(bad.isEmpty(), "not masked: " + bad);
         assertEquals("<human>", mask("\ua731\u1d1b\u1d07\u1d20\u1d07", "steve"));
+        assertEquals("<human>", mask("\u051b\u051d\u0433\u043f", "qwrn")); // Cyrillic q w r n
         assertEquals("<human>", mask(new String(Character.toChars(0x1F1F8)) + new String(Character.toChars(0x1F1F9))
                 + new String(Character.toChars(0x1F1EA)) + new String(Character.toChars(0x1F1FB)) + new String(Character.toChars(0x1F1EA)), "Steve"));
         assertEquals("<human>", mask(new String(Character.toChars(0x1F162)) + "teve", "Steve"));
@@ -162,6 +163,8 @@ class NameMaskHardeningTest {
         assertEquals("<human>_<human>", mask("ab1_ab1", "ab1"));
         assertEquals("hi <human>.", mask("hi u_1.", "u_1"));
         assertEquals("B o b", mask("B o b", "Bob")); // stated weakness
+        // a match over 3 tokens with a longer token fully inside is ordinary text, not spaced-out letters
+        assertEquals("say the e d now", mask("say the e d now", "theed"));
     }
 
     @Test
