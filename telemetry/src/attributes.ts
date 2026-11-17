@@ -123,6 +123,8 @@ const FORBIDDEN_STEMS: readonly string[] = [
   'accesstoken',
   'passwd',
   'password',
+  'passphrase',
+  'signature',
   'secret',
   'cookie',
   'authorization',
@@ -155,7 +157,7 @@ export function allowLogKeys(keys: readonly string[]): void {
 export function hasForbiddenSegment(key: string): boolean {
   const words = key
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
-    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2')
+    .replace(/([A-Z])(?=[A-Z][a-z])/g, '$1_')
     .toLowerCase()
     .split(/[._-]/);
   if (words.some((word) => FORBIDDEN_WORDS.has(word))) return true;

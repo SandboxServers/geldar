@@ -1,0 +1,196 @@
+# Geldar telemetry gateway (T-25): OpenTelemetry Collector contrib 0.164.0, first-stage config.
+# Design: docs/analysis/telemetry/collector-design.md sections 5 to 7. Compose: deploy/telemetry/compose.gateway.yml.
+# Labels: [SRC] from collector-design; [AUTH] written here; [UNV] unverified until the node validate step (README, "Gateway (N8)").
+#
+# Content capture (decision 0350, full text, no opt-out): this gateway must NOT truncate or drop thoughts, speech, journals or prompts.
+# So there is NO attribute-size limit, NO log-body-length limit and NO sampling anywhere below. Do not add one.
+# Redaction here is narrow, per collector-design section 5: it masks IPv4 and IPv6 literals (log bodies that are strings, the top-level
+# string values of map bodies, resource attributes and span event attributes) and deletes credential-looking attribute KEYS (resource,
+# scope, log, span, span event and datapoint attributes). It does NOT scrub free text for secrets or personal data. Known gaps (README, G4 and G8):
+# array and bytes bodies, nested map values, span link attributes and metric exemplar labels have no OTTL context here.
+#
+# Credential key rule, used by every delete_matching_keys below (case-insensitive substring match, RE2: no lookahead, so token is end-anchored):
+#   (?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|auth[._-]?(header|key)|session[._-]?key|passcode|encryption[._-]?key|master[._-]?key|token$|token[._-]?(value|id|string)$)
+# A key is deleted when it CONTAINS secret, passw (password, passwd), pwd, authorization, cookie, credential, passphrase, jwt, bearer, api_key,
+# private_key, access_key, signing_key, ssh_key, session_id, auth_header, auth_key, session_key, passcode, encryption_key or master_key (each key form with or without a . _ - separator, any letter case, so camelCase and joined
+# names such as githubToken, clientSecret, dbPassword, xApiKey and sessionId go), or when it ENDS in token (token, auth_token, sessionToken) or in token_value/token.id/token_string.
+# Plural and count keys are kept: gen_ai.usage.input_tokens, max_tokens, tokens, token_count, token.count, tokenizer, token_type.
+
+receivers:
+  otlp:
+    protocols:
+      # geldar-colo and geldar-telemetry only. Not published, except the loopback publish of 4318 in compose.gateway.yml.
+      # Receive limits are set explicitly (not left to defaults). They equal the exporter batch max_size below (16 MiB); keep the three numbers together.
+      grpc:
+        endpoint: 0.0.0.0:4317
+        max_recv_msg_size_mib: 16
+      http:
+        endpoint: 0.0.0.0:4318
+        max_request_body_size: 16777216
+  # The gateway's own metrics (queue size and capacity, enqueue and send failures, memory limiter refusals) are served on 127.0.0.1:8888 inside the container.
+  # Scraping them here makes a drop or refusal visible in SigNoz (otelcol_exporter_enqueue_failed_*, otelcol_exporter_send_failed_*, otelcol_processor_refused_*).
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: geldar-gateway
+          scrape_interval: 30s
+          static_configs:
+            - targets: ['127.0.0.1:8888']
+  # Later steps (not enabled now; exact receiver names for 0.164.0):
+  # prometheus:   # N10, NATS exporter scrape (nats:<exporter port>, 30s): add a second scrape_config job to the receiver above
+  # postgresql:   # N11, monitoring role, password from ${file:/run/secrets/otel-pg.txt}
+  # host_metrics: # later step, the /mnt/nvme filesystem alarm (collector-design section 8)
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 800   # 80% of the 1 GiB container cap (compose.gateway.yml); GOMEMLIMIT is 800MiB
+    spike_limit_mib: 160
+  resource:
+    attributes:
+      - {key: deployment.environment.name, value: colo, action: upsert}
+      - {key: service.namespace, value: geldar, action: upsert}
+  filter/noise:
+    error_mode: ignore
+    logs:
+      log_record:
+        # Drops Paper's RCON thread lines; the [Rcon: ...] echoes are kept.
+        - 'IsMatch(body, ".*Thread RCON Client .*(started|shutting down).*")'
+    traces:
+      span:
+        - 'attributes["http.route"] == "/healthz"'   # route name to confirm [UNV]
+  transform/redact:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          # IPv4 (each octet 0-255). Boundaries are digit and dot only, so an address glued to a word (ip_203.0.113.1, x203.0.113.4) is masked, while versions (1.20.4) and longer dotted numbers (203.0.113.4.5) are not. The match consumes its neighbours, so each IPv4 statement is repeated once to catch addresses separated by a single character. Escaping: single-quoted YAML keeps \\ as two characters, OTTL turns them into one.
+          - 'replace_pattern(log.body, "(^|[^0-9.])(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)($|[^0-9.]|\\.(?:$|[^0-9]))", "$1<addr>$2")'
+          - 'replace_pattern(log.body, "(^|[^0-9.])(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)($|[^0-9.]|\\.(?:$|[^0-9]))", "$1<addr>$2")'
+          # IPv6, full form (8 groups).
+          - 'replace_pattern(log.body, "\\b(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}\\b", "<addr>")'
+          # IPv6, compressed form. It needs a "::". A leading "::" must not touch a word (\\B before it), a group before "::" must start on a word
+          # boundary, and "1::" must not run into a word (\\B after it), so Cache::get, std::vector and Foo::Bar::baz are kept, while ::1,
+          # fe80::1:2, 2001:db8::1 and 1:: are masked. Words made only of hex letters on both sides, such as a::b or face::cafe, ARE masked.
+          - 'replace_pattern(log.body, "\\B::(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4}\\b|\\b(?:[0-9A-Fa-f]{1,4}:){1,7}(?::[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6}\\b|:\\B)", "<addr>")'
+          # Map bodies (kvlist): the same masking on the top-level string values, and the credential keys. Nested maps, arrays and bytes bodies are not reached.
+          - 'replace_all_patterns(log.body, "value", "(^|[^0-9.])(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)($|[^0-9.]|\\.(?:$|[^0-9]))", "$1<addr>$2") where IsMap(log.body)'
+          - 'replace_all_patterns(log.body, "value", "(^|[^0-9.])(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)($|[^0-9.]|\\.(?:$|[^0-9]))", "$1<addr>$2") where IsMap(log.body)'
+          - 'replace_all_patterns(log.body, "value", "\\b(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}\\b", "<addr>") where IsMap(log.body)'
+          - 'replace_all_patterns(log.body, "value", "\\B::(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4}\\b|\\b(?:[0-9A-Fa-f]{1,4}:){1,7}(?::[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6}\\b|:\\B)", "<addr>") where IsMap(log.body)'
+          - 'delete_matching_keys(log.body, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|auth[._-]?(header|key)|session[._-]?key|passcode|encryption[._-]?key|master[._-]?key|token$|token[._-]?(value|id|string)$)") where IsMap(log.body)'
+          - 'delete_matching_keys(log.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|auth[._-]?(header|key)|session[._-]?key|passcode|encryption[._-]?key|master[._-]?key|token$|token[._-]?(value|id|string)$)")'
+          - 'delete_key(log.attributes, "user.email")'
+      - context: resource
+        statements:
+          - 'delete_matching_keys(resource.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|auth[._-]?(header|key)|session[._-]?key|passcode|encryption[._-]?key|master[._-]?key|token$|token[._-]?(value|id|string)$)")'
+          - 'replace_all_patterns(resource.attributes, "value", "(^|[^0-9.])(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)($|[^0-9.]|\\.(?:$|[^0-9]))", "$1<addr>$2")'
+          - 'replace_all_patterns(resource.attributes, "value", "(^|[^0-9.])(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)($|[^0-9.]|\\.(?:$|[^0-9]))", "$1<addr>$2")'
+          - 'replace_all_patterns(resource.attributes, "value", "\\b(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}\\b", "<addr>")'
+          - 'replace_all_patterns(resource.attributes, "value", "\\B::(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4}\\b|\\b(?:[0-9A-Fa-f]{1,4}:){1,7}(?::[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6}\\b|:\\B)", "<addr>")'
+      - context: scope
+        statements:
+          - 'delete_matching_keys(scope.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|auth[._-]?(header|key)|session[._-]?key|passcode|encryption[._-]?key|master[._-]?key|token$|token[._-]?(value|id|string)$)")'
+    trace_statements:
+      - context: resource
+        statements:
+          - 'delete_matching_keys(resource.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|auth[._-]?(header|key)|session[._-]?key|passcode|encryption[._-]?key|master[._-]?key|token$|token[._-]?(value|id|string)$)")'
+          - 'replace_all_patterns(resource.attributes, "value", "(^|[^0-9.])(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)($|[^0-9.]|\\.(?:$|[^0-9]))", "$1<addr>$2")'
+          - 'replace_all_patterns(resource.attributes, "value", "(^|[^0-9.])(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)($|[^0-9.]|\\.(?:$|[^0-9]))", "$1<addr>$2")'
+          - 'replace_all_patterns(resource.attributes, "value", "\\b(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}\\b", "<addr>")'
+          - 'replace_all_patterns(resource.attributes, "value", "\\B::(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4}\\b|\\b(?:[0-9A-Fa-f]{1,4}:){1,7}(?::[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6}\\b|:\\B)", "<addr>")'
+      - context: scope
+        statements:
+          - 'delete_matching_keys(scope.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|auth[._-]?(header|key)|session[._-]?key|passcode|encryption[._-]?key|master[._-]?key|token$|token[._-]?(value|id|string)$)")'
+      - context: span
+        statements:
+          - 'delete_matching_keys(span.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|auth[._-]?(header|key)|session[._-]?key|passcode|encryption[._-]?key|master[._-]?key|token$|token[._-]?(value|id|string)$)")'
+      - context: spanevent
+        statements:
+          - 'delete_matching_keys(spanevent.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|auth[._-]?(header|key)|session[._-]?key|passcode|encryption[._-]?key|master[._-]?key|token$|token[._-]?(value|id|string)$)")'
+          - 'replace_all_patterns(spanevent.attributes, "value", "(^|[^0-9.])(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)($|[^0-9.]|\\.(?:$|[^0-9]))", "$1<addr>$2")'
+          - 'replace_all_patterns(spanevent.attributes, "value", "(^|[^0-9.])(?:(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1?\\d?\\d)($|[^0-9.]|\\.(?:$|[^0-9]))", "$1<addr>$2")'
+          - 'replace_all_patterns(spanevent.attributes, "value", "\\b(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}\\b", "<addr>")'
+          - 'replace_all_patterns(spanevent.attributes, "value", "\\B::(?:[0-9A-Fa-f]{1,4}:){0,6}[0-9A-Fa-f]{1,4}\\b|\\b(?:[0-9A-Fa-f]{1,4}:){1,7}(?::[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4}){0,6}\\b|:\\B)", "<addr>")'
+  transform/metric_labels:
+    error_mode: ignore
+    metric_statements:
+      - context: resource
+        statements:
+          - 'delete_matching_keys(resource.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|auth[._-]?(header|key)|session[._-]?key|passcode|encryption[._-]?key|master[._-]?key|token$|token[._-]?(value|id|string)$)")'
+          - 'delete_key(resource.attributes, "geldar.life_id")'
+          - 'delete_key(resource.attributes, "player_id")'
+          - 'delete_key(resource.attributes, "geldar.player_id")'
+          - 'delete_key(resource.attributes, "geldar.mc_session")'
+      - context: scope
+        statements:
+          - 'delete_matching_keys(scope.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|auth[._-]?(header|key)|session[._-]?key|passcode|encryption[._-]?key|master[._-]?key|token$|token[._-]?(value|id|string)$)")'
+      - context: datapoint
+        statements:
+          # 0088 and 0350 item 1: metrics keep no life or player label
+          - 'delete_key(datapoint.attributes, "geldar.life_id")'
+          - 'delete_key(datapoint.attributes, "player_id")'
+          - 'delete_key(datapoint.attributes, "geldar.player_id")'
+          - 'delete_key(datapoint.attributes, "geldar.mc_session")'
+          - 'delete_matching_keys(datapoint.attributes, "(?i)(secret|passw|pwd|authorization|cookie|credential|passphrase|jwt|bearer|api[._-]?key|private[._-]?key|access[._-]?key|signing[._-]?key|ssh[._-]?key|session[._-]?id|auth[._-]?(header|key)|session[._-]?key|passcode|encryption[._-]?key|master[._-]?key|token$|token[._-]?(value|id|string)$)")'
+  batch:
+    # Item counts only (the batch processor cannot count bytes). The byte bound is the exporter's sending_queue.batch below.
+    send_batch_size: 256
+    send_batch_max_size: 256
+    timeout: 5s   # PROPOSED; not tuned
+
+exporters:
+  # Downstream: the Geldar SigNoz collector (OTLP gRPC on 4317, see signoz-otelcol-config.yaml). Set in compose.gateway.yml.
+  # `otlp_grpc` is the 0.164.0 type name; `otlp` is a deprecated alias.
+  otlp_grpc/geldar_signoz:
+    endpoint: ${env:GELDAR_SIGNOZ_OTLP_ENDPOINT}
+    tls:
+      insecure: true   # internal Geldar network only
+    compression: gzip
+    timeout: 5s
+    retry_on_failure:
+      enabled: true
+      max_elapsed_time: 0   # retry until delivered; the queue size below is the only limit (owner decision 0350 item 7: loss only when the queue is full)
+    sending_queue:
+      enabled: true
+      storage: file_storage
+      sizer: bytes
+      # bytes. 256 MiB per signal queue (traces, logs, metrics: three queues). Queued items also live in the heap (measured 0.75 to 0.9 x the queued bytes),
+      # so the bound is under the memory limiter soft limit (limit_mib 800 minus spike 160). When a queue is full the exporter drops new data (producer still gets 200)
+      # and logs sending queue is full; the counter otelcol_exporter_enqueue_failed_* reaches SigNoz through the prometheus receiver below.
+      queue_size: 268435456
+      block_on_overflow: false
+      batch:
+        # Exporter-side batching, by bytes: every exported request is merged or split to at most 16 MiB (OTLP proto size, before gzip).
+        # A single record cannot be split, so max_size must NOT be lower than the receivers' 16 MiB limit above: a record that the receiver accepted (200) but that is larger than max_size is dropped with only a warn log line and no counter. A body above 16 MiB is refused with 400 at the receiver, where the producer sees it.
+        # The SigNoz collector receiver must accept 32 MiB (signoz-otelcol-config.yaml, restarted first): at its 4 MiB default a request above 4 MiB is refused for good.
+        sizer: bytes
+        min_size: 1048576
+        max_size: 16777216
+        flush_timeout: 5s
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133   # inside the container only, not published
+  file_storage:
+    directory: /var/lib/otelcol/queue   # the mounted host directory, owner 10001:10001
+    create_directory: false
+
+service:
+  extensions: [health_check, file_storage]
+  telemetry:
+    logs:
+      level: warn
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, filter/noise, transform/redact, batch]
+      exporters: [otlp_grpc/geldar_signoz]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource, filter/noise, transform/redact, batch]
+      exporters: [otlp_grpc/geldar_signoz]
+    metrics:
+      receivers: [otlp, prometheus]   # prometheus: the gateway's own metrics (and later the N10 NATS scrape); add postgresql (N11), host_metrics (later) here when enabled
+      processors: [memory_limiter, resource, transform/metric_labels, batch]
+      exporters: [otlp_grpc/geldar_signoz]
