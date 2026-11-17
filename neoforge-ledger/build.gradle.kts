@@ -55,7 +55,17 @@ neoForge {
 }
 
 dependencies {
+    // Jar-in-jar: the server has neither ledger-core nor the OpenTelemetry API. Strict ranges, because the jarjar
+    // metadata records a version range.
     implementation("dev.geldar:ledger-core")
+    jarJar("dev.geldar:ledger-core") {
+        version { strictly("[0.1,0.2)"); prefer("0.1.0") }
+    }
+    for (artifact in listOf("opentelemetry-api", "opentelemetry-common", "opentelemetry-context")) {
+        jarJar("io.opentelemetry:$artifact") {
+            version { strictly("[1.67,1.68)"); prefer("1.67.0") }
+        }
+    }
     implementation(libs.opentelemetry.api)
 
     testImplementation(libs.junit.jupiter)
@@ -64,6 +74,9 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    // JarContentTest opens the built mod jar (jar-in-jar content).
+    dependsOn(tasks.jar)
+    systemProperty("ledger.mod.jar", tasks.jar.get().archiveFile.get().asFile.absolutePath)
     // The scan tests read these trees directly; declare them so an edit reruns the tests instead of being up to date.
     inputs.dir(layout.projectDirectory.dir("src/main"))
     inputs.dir(layout.projectDirectory.dir("../plugin/ledger-core/src/main"))

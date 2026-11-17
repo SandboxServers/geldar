@@ -25,6 +25,13 @@ class ModInfoTest {
     }
 
     @Test
+    void modVersionEqualsTheBuildVersion() throws IOException {
+        java.util.regex.Matcher build = java.util.regex.Pattern.compile("(?m)^version = \"([^\"]+)\"").matcher(read("build.gradle.kts"));
+        assertTrue(build.find(), "version not found in build.gradle.kts");
+        assertTrue(read("src", "main", "resources", "META-INF", "neoforge.mods.toml").contains("version = \"" + build.group(1) + "\""));
+    }
+
+    @Test
     void entryPointIsDedicatedServerOnly() throws IOException {
         String src = read("src", "main", "java", "dev", "geldar", "ledger", "neoforge", "LedgerMod.java");
         assertTrue(src.contains("@Mod(value = \"ledger\", dist = Dist.DEDICATED_SERVER)"));

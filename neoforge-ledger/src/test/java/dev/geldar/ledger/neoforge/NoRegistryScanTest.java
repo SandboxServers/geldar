@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /**
  * Keeps the mod server-only and vanilla-client compatible: no registry entries (which the client must
@@ -23,7 +24,9 @@ class NoRegistryScanTest {
             "DeferredRegister", "RegisterEvent", "registerPayload", "PayloadRegistrar",
             "RegisterPayloadHandlersEvent", "CustomPacketPayload", ".registrar(", "playToClient",
             "playToServer", "playBidirectional", "DeferredHolder", "DeferredBlock", "DeferredItem",
-            "BuiltInRegistries", "Registry.register", "NetworkRegistry", "RegistryObject");
+            "BuiltInRegistries", "Registry.register", "NetworkRegistry", "RegistryObject",
+            "NewRegistryEvent", "DataPackRegistryEvent", "RegisterConfigurationTasksEvent",
+            "net.neoforged.neoforge.network", "org.spongepowered", "[[mixins]]");
 
     private static final Path JAVA_ROOT = Path.of("src", "main", "java");
     private static final Path RESOURCE_ROOT = Path.of("src", "main", "resources");
@@ -36,6 +39,16 @@ class NoRegistryScanTest {
     @Test
     void mainResourcesIntroduceNoRegistriesOrPayloads() throws IOException {
         assertEquals(List.of(), scan(RESOURCE_ROOT, null), "registry or payload API found in main resources");
+    }
+
+    @Test
+    void scannerFlagsEveryForbiddenWord(@TempDir Path dir) throws IOException {
+        for (String word : FORBIDDEN) {
+            Files.writeString(dir.resolve("T.java"), "class T { /* " + word + " */ }");
+            assertTrue(scan(dir, ".java").stream().anyMatch(h -> h.endsWith(" contains " + word)), word);
+        }
+        Files.writeString(dir.resolve("T.java"), "class T {}");
+        assertEquals(List.of(), scan(dir, ".java"));
     }
 
     @Test
