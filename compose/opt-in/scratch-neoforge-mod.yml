@@ -1,0 +1,18 @@
+# Scratch NeoForge mod jar (suffix nf). Layers after compose/opt-in/scratch-neoforge.yml and is added by deploy/scratch/scratch.sh
+# only when SCRATCH_PLATFORM=neoforge and both SCRATCH_NEOFORGE_MOD_JAR and SCRATCH_NEOFORGE_MOD_SHA256 are set (see
+# docs/runbooks/scratch-stack.md, "Mounting the mod jar"). Without them this file is not in the compose command, so the
+# default render has no mod mount. The jar is mounted read-only; the entrypoint copies it into /data/mods after it checks the
+# sha256 that scratch.sh passes in, and scratch.sh checks the host file's hash before up.
+# The two variables are set by scratch.sh from the SCRATCH_NEOFORGE_* values: the required-variable markers make compose fail
+# if this file is used without them.
+services:
+  paper:
+    environment:
+      GELDAR_NF_MOD_SHA256: ${GELDAR_NF_MOD_SHA256:?set by deploy/scratch/scratch.sh from SCRATCH_NEOFORGE_MOD_SHA256}
+    volumes:
+      - type: bind
+        source: ${GELDAR_NF_MOD_JAR_HOST:?set by deploy/scratch/scratch.sh from SCRATCH_NEOFORGE_MOD_JAR}
+        target: /geldar/mods/geldar-neoforge.jar
+        read_only: true
+        bind:
+          create_host_path: false

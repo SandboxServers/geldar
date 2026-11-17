@@ -204,12 +204,14 @@ Run these after `up` returns healthy. Run the process-uid check in the section a
 UNVERIFIED are commands or reply wording not confirmed against the repo or a live NeoForge 26.1 server: run them, record
 the real output in the run notes, and check it against the reply before calling it a failure.
 
-1. Mod load: N/A until a geldar mod jar is mounted. Today the scratch NeoForge overlay (`compose/opt-in/scratch-neoforge.yml`)
-   mounts no geldar jar, so `/data/mods` holds only `proxy-compatible-forge.jar`. Record `docker exec <paper> ls /data/mods`
-   and the count from `docker logs <paper> 2>&1 | grep "geldar_neoforge loaded on the dedicated server"`. Today the expected
-   count is 0, and 0 is not a failure. The grep matches the log line `GeldarNeoForge.java` writes at server start; the id is
-   `ModInfo.modId()`, equal to `modId` in `neoforge.mods.toml`. This check becomes blocking when the mod-mount packet mounts
-   the jar. Until then the blocking mod check is Proxy Compatible Forge loading: the paper log must show the
+1. Mod load: N/A until a run proves the load. The scratch NeoForge overlay (`compose/opt-in/scratch-neoforge.yml`) can mount
+   one geldar jar (see Mounting the mod jar). With no jar mounted, `/data/mods` holds only `proxy-compatible-forge.jar`, the
+   expected count is 0, and 0 is not a failure. With the jar mounted, record `docker exec <paper> ls /data/mods` (it lists
+   `geldar-neoforge.jar`) and the count from `docker logs <paper> 2>&1 | grep "geldar_neoforge loaded on the dedicated server"`;
+   the expected count is 1, and a 0 is a load failure for the run's report. The grep matches the log line `GeldarNeoForge.java` writes at server start; the id is
+   `ModInfo.modId()`, equal to `modId` in `neoforge.mods.toml`. This check is non-blocking: it stays N/A until a run proves the
+   load, and the first dedicated-server run of `neoforge/` may find load failures, which go in the run's report. The blocking
+   mod check is Proxy Compatible Forge loading: the paper log must show the
    `Initializing ProxyCompatibleForge` and `Found status` lines. The loaded-mods list: UNVERIFIED,
    `docker logs <paper> 2>&1 | grep -i "loaded"`, record the mod lines.
 2. Tick time. `docker exec <paper> rcon-cli tick query` (vanilla; UNVERIFIED on this image) shows the target tick rate and
@@ -251,6 +253,21 @@ confirm that.
 
 Known noise: a log4j DebugFile error that names a netty kqueue class appears in the paper log on NeoForge. It is unrelated
 to the mod. Do not treat it as a failure.
+
+### Mounting the mod jar
+
+Only for SCRATCH_PLATFORM=neoforge. Two optional variables mount one mod jar read-only into the server at
+/geldar/mods/geldar-neoforge.jar: SCRATCH_NEOFORGE_MOD_JAR, the absolute path of the jar on this node (forward slashes; no
+quotes, backslashes or dollar signs), and SCRATCH_NEOFORGE_MOD_SHA256, its sha256 as 64 lowercase hex digits. Set both or
+neither. With SCRATCH_PLATFORM=paper, or with only one of them, scratch.sh exits 2 and starts nothing.
+
+- `up` checks the jar's sha256 on the host before anything starts, and exits 2 on a mismatch.
+- The entrypoint checks the same hash again inside the container. It copies the jar into the data dir's mods/ only when the
+  hash matches, and refuses to start otherwise. While the jar is mounted, each start removes the old copy before the
+  offline-bundle check and copies again after it, so the bundle's mods/ check still passes on a second start. Outside bundle mode nothing lists mods/, so a foreign jar placed beside a mounted one is not refused.
+- Check 1 stays N/A until a run proves the load. Do not make it blocking on the strength of this section.
+- This is the first dedicated-server run of neoforge/. A failure to load the mod (no geldar_neoforge line) is a finding to
+  record in the report. It is not a reason to change the check or the mod by hand.
 
 ## NATS auth (fail closed)
 
@@ -473,5 +490,54 @@ RCON value appears in its output, and none may be pasted into a report.
   not for mc-proxy. A compose change on live is a deploy change and the owner's call; this PR does not edit the compose files.
 - The Proxy Compatible Forge config owner: run 4 saw uid 1000 on a mode 600 file against the Paper JVM's 1001. The mode is the
   requirement and the owner is recorded. Cause unverified (the itzg/minecraft-server remap). The owner decides whether it must match.
-- Our own mod is not mounted in the scratch NeoForge stack yet (the overlay mounts only proxy-compatible-forge.jar), so no run
-  has exercised `neoforge/` on a dedicated server. A separate mod-mount packet covers this.
+- Our own mod can now be mounted (see Mounting the mod jar), but no run has yet exercised `neoforge/` on a dedicated server.
+  The first such run may find load failures; record them as findings in the run's report.
+
+## Building the mod jar
+
+Build the jar on the desktop when `neoforge/` changes and a scratch NeoForge run needs it. To put the jar into the server, see
+"Mounting the mod jar"; this section only produces the jar, its sha256 and a build-info file. Build from a clean export of `main`,
+never from the live checkout, as the nats-auth section does.
+
+1. Export `main` into an empty directory (absolute path). Take the commit first, so the build records the commit that was
+   exported. Keep `COMMIT` set in the shell for step 2:
+
+   ```
+   git fetch origin
+   COMMIT=$(git rev-parse origin/main)
+   git archive --format=tar --prefix=geldar/ "$COMMIT" | tar -x -C <empty-dir>
+   ```
+
+2. Build. The output dir is absolute and absent or empty. Pass the commit from step 1 as `GELDAR_MOD_BUILD_COMMIT` (exactly
+   40 lowercase hex):
+
+   ```
+   GELDAR_MOD_BUILD_COMMIT=$COMMIT GELDAR_MOD_BUILD_FROM_EXPORT=1 sh <empty-dir>/geldar/deploy/scratch/build-neoforge-mod.sh <absolute-output-dir>
+   ```
+
+   The script runs the pinned Gradle wrapper with the single task `build`, and dependency verification stays on. It needs Java 25
+   and network for the first build. It prints the jar's sha256 and size. In a git checkout (a `.git` in the tree) the script
+   refuses unless `neoforge/` has no changes and no untracked files, so the export mode is only for a tree without `.git`.
+   Export mode also refuses unless `GELDAR_MOD_BUILD_COMMIT` is exactly 40 lowercase hex; build-info then records
+   `commit=<sha> (export)`. The script clears `GRADLE_OPTS`, `JAVA_TOOL_OPTIONS`, `JDK_JAVA_OPTIONS`, `_JAVA_OPTIONS` and
+   `GRADLE_USER_HOME_OPTS` before it runs. A `~/.gradle/gradle.properties` that switches verification off is not cleared, so
+   build on a desktop without one.
+
+3. Compare the sha256 by a second channel. Read it from the desktop output or from `geldar-neoforge.jar.sha256`, send it to the
+   node by a route other than the copy, and run `sha256sum geldar-neoforge.jar` there. The two must match, as for the bundle.
+
+4. Copy only the jar and its `.sha256` to the node (scp or similar): `geldar-neoforge.jar` and `geldar-neoforge.jar.sha256`.
+   Never copy the build dir (`neoforge/build/` or the export tree).
+
+The output holds `geldar-neoforge.jar`, `geldar-neoforge.jar.sha256` (the sha256 in `sha256sum` format) and
+`geldar-neoforge.build-info`: the commit (for an export, `<sha> (export)` with the sha from step 1), the UTC build time, the Gradle wrapper version, the first line of
+`java -version`, and the jar's sha256 and size. Each build records its sha256 in those two files. The hash is not pinned in the
+repo: a pin would go stale on every change to `neoforge/`, so the run's brief states the hash it used.
+
+The script refuses, and writes no jar: a relative or non-empty output dir; a dirty tree or an untracked file under `neoforge/`; an export without a valid
+`GELDAR_MOD_BUILD_COMMIT`; a build that leaves no jar or more than one (the one that is not `-sources` or `-javadoc`); a jar
+without `META-INF/neoforge.mods.toml`, or one that packs in `.java` sources. A failed build writes nothing, and a failure after
+the jar is copied removes the files it wrote.
+
+This is the first dedicated-server run of `neoforge/`, so the jar has never loaded on a server. If the server fails to load the
+mod, record that as a finding in the run's report. It is not a fault in `build-neoforge-mod.sh`.
