@@ -214,6 +214,9 @@ export interface RenderOptions {
 export function renderGenerator(shard: string = SHARD, opts: RenderOptions = {}): Rendered {
   const dir = mkdtempSync(join(tmpdir(), 'geldar-nats-auth-'));
   copyFileSync(join(ROOT, 'geldar.ps1'), join(dir, 'geldar.ps1'));
+  // The nf set is dot-sourced from deploy/ (geldar.ps1 Invoke-Shard), so the temp copy needs that file too.
+  mkdirSync(join(dir, 'deploy'));
+  copyFileSync(join(ROOT, 'deploy', 'nats-auth-nf.ps1'), join(dir, 'deploy', 'nats-auth-nf.ps1'));
   cpSync(join(ROOT, 'shards'), join(dir, 'shards'), { recursive: true });
   mkdirSync(join(dir, 'compose'));
   for (const f of readdirSync(join(ROOT, 'compose'))) {
@@ -233,7 +236,12 @@ export function renderGenerator(shard: string = SHARD, opts: RenderOptions = {})
     ],
     { encoding: 'utf8', cwd: dir },
   );
-  const confPath = join(dir, 'compose', 'secrets', 'nats-auth.conf');
+  const confPath = join(
+    dir,
+    'compose',
+    shard === 'nf' ? 'secrets-nf' : 'secrets',
+    'nats-auth.conf',
+  );
   const conf = run.status === 0 ? readFileSync(confPath, 'utf8') : '';
   return { dir, conf, status: run.status, stderr: (run.stderr ?? '').trim().slice(0, 1500) };
 }

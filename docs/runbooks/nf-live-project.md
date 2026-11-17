@@ -61,6 +61,50 @@ Names, one file each, mode 0600, owned by the account:
 No secret value is in the file or in this runbook. The generator entries in geldar.ps1 are a later packet; do not create the files by hand
 outside that step. The NATS user table itself is the per-shard NATS auth packet's (a3 in the design).
 
+## 4b. The NATS auth set (generated on the node)
+
+When: on the NF node, once, before the first start (section 8). Never in a git checkout. Make a clean export
+(`git archive -o <file> <commit>`, extracted into an empty directory), run the command there, then keep the secrets
+directory with the node's secrets. The generator refuses a checkout (a `.git` entry) unless `--local` is also given; that
+flag is for the test harness only.
+
+Command: `./geldar.ps1 shard nats-auth nf --live`. Without `--live` it refuses and writes nothing. An unknown flag is refused.
+
+Files, in `compose/secrets-nf/` (git-ignored; `NF_SECRETS_DIR` points nf-live.yml at it): `nats-auth.conf` (the server
+config), then one password file per user: `nats-neoforge.txt`, `nats-sink.txt`, `nats-velocity.txt`, `nats-deploy.txt`,
+`nats-seed.txt`. Existing files are reused and never overwritten. If `nats-auth.conf` exists and a password file is missing,
+the run fails and writes nothing. Restore the missing file, or delete the directory and generate again before any start.
+The files are mode 0600 on POSIX and owner-only (ACL) on Windows.
+
+Mapping to nf-live.yml: `nats-auth.conf` is the nats service's config; `nats-sink.txt` the eventsink; `nats-neoforge.txt`
+the neoforge service; `nats-velocity.txt` velocity; `nats-seed.txt` identity-seed (user `seed`). `nats-deploy.txt` is
+declared but no compose service mounts it: the maintenance notice is published by the operator's deploy as that user, on
+the node, outside the stack.
+
+Not generated: `postgres.txt` and `velocity-forwarding.txt` (a later packet), and no Thinker token (this shard has no
+Thinker hub). A test checks that the files nf-live.yml declares are these, minus those two names.
+
+Users and allow lists (every subject is `geldar.nf.*`, a JetStream API subject for the two streams below or the two identity
+buckets, or the inbox; no user has `>` or `geldar.*`):
+
+| User | May publish | May subscribe |
+|------|-------------|---------------|
+| neoforge | `geldar.nf.*` except `geldar.nf.maintenance`; JetStream STREAM.INFO and STREAM.CREATE for the two streams; `_INBOX.>` | `geldar.nf.maintenance`; `_INBOX.>` |
+| sink | `geldar.nf.dlq`, `geldar.nf.state.>`; the durable consumer `eventsink` on the two streams; STREAM.INFO and CREATE; `_INBOX.>` | `geldar.nf.state.*.proficiency`; `_INBOX.>` |
+| deploy | `geldar.nf.maintenance` | `_INBOX.>` |
+| velocity | watch and get on the two identity buckets (read only) | `_INBOX.>` |
+| seed | `$JS.API.INFO`; create, inspect and update of the two identity buckets | `_INBOX.>` |
+
+The two stream names are `GELDAR_EVENTS` (the name the plugin and the sink use today) and `GELDAR_EVENTS_NF` (decision
+0380). The `GELDAR_EVENTS` allow is a default: remove it when the sink's per-shard config lands.
+
+The password is plaintext inside `nats-auth.conf`, as the colo shard's config is. Treat the directory as a secret: do not
+copy it into a checkout, a ticket or a log.
+
+UNVERIFIED: the JetStream API subjects above come from the code (NatsEventPublisher's ensureStream, the eventsink's consumer
+name), not from a live server. nats-server 2.15 acceptance of this config, and the POSIX mode, are checked only in the live
+packet. The mod's export type list is not defined yet, so its publish is `geldar.nf.*` and narrows later.
+
 ## 5. Environment (all optional at render time)
 
 `NF_SECRETS_DIR`, `NF_MOD_JAR_HOST` (the pinned geldar NeoForge mod jar; default path does not exist, so `up` refuses the bind),
