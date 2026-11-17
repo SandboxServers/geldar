@@ -219,7 +219,7 @@ The flow, in order:
    anywhere else.
 5. On the node: `SCRATCH_NATS_AUTH_DIR=<absolute path of the node temp dir> sh deploy/scratch/scratch.sh up [suffix]`.
    The path must be absolute and on one line; a relative path or a newline exits 2 with nothing started. The script
-   checks the four files, then points the `nats-auth.yml` secrets at that dir. It does not read, print or copy the files.
+   checks the five files, then points the `nats-auth.yml` secrets at that dir. It does not read, print or copy the files.
 6. At teardown run `sh deploy/scratch/scratch.sh down [suffix]`, then delete the node temp dir and the desktop temp dir
    (if it still exists). The node dir holds the password-bearing `nats-auth.conf`, so delete it even when the run failed.
    `down` never removes `SCRATCH_NATS_AUTH_DIR`.

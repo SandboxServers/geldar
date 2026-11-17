@@ -176,12 +176,14 @@ describe.skipIf(skipWithoutSh())(
 );
 
 describe('scratch overlay: the account uid and the modes', () => {
-  it('gives only the eventsink a user, as the account uid:gid, with no default node user', () => {
-    const block = serviceBlock(SCRATCH_YML, 'eventsink');
-    expect(block).toContain(
-      'user: "${SCRATCH_RUN_UID:?set by deploy/scratch/scratch.sh}:${SCRATCH_RUN_GID:?set by deploy/scratch/scratch.sh}"',
-    );
-    expect(SCRATCH_YML.match(/^\s+user:/gm)).toHaveLength(1);
+  it('gives only the eventsink and the identity seed a user, both as the account uid:gid', () => {
+    const userLine =
+      'user: "${SCRATCH_RUN_UID:?set by deploy/scratch/scratch.sh}:${SCRATCH_RUN_GID:?set by deploy/scratch/scratch.sh}"';
+    for (const name of ['eventsink', 'identity-seed']) {
+      expect(serviceBlock(SCRATCH_YML, name), name).toContain(userLine);
+    }
+    // Exactly two user overrides in the file: a third one, or a missing one in either block, fails here.
+    expect(SCRATCH_YML.match(/^\s+user:/gm)).toHaveLength(2);
   });
 
   it('the NeoForge overlay sets no user: the nf secrets are the same three files, read by the eventsink', () => {
