@@ -10,6 +10,8 @@ import dev.geldar.ledger.core.Names;
 import dev.geldar.ledger.core.Redactor;
 import dev.geldar.ledger.core.Severity;
 import dev.geldar.ledger.core.TokenBucket;
+import java.util.Collection;
+import java.util.List;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
@@ -19,8 +21,8 @@ import java.util.function.Supplier;
  * Observation only: nothing here changes the event. Sign and book text are not captured (no NeoForge event for them was
  * found: PT-N5). On 26.1.2 chat is handled on the server thread, but this path still never touches the {@code CollectorGuard} (bounded by the bucket instead). /say, /msg and /me do not fire the chat event: private messages are not captured.
  *
- * <p>Exported per message: the text, s1 = the speaker's life id or nothing (a human's name is never copied, D-F; the
- * text itself is kept verbatim apart from the credential scrub and the byte cap), s2 = the world. A cancelled message is
+ * <p>Exported per message: the text, s1 = the speaker's life id or nothing (a human's name is never copied; the
+ * text is kept verbatim apart from the name mask ({@link NameMask}, owner direct 2026-11-17, record 0375), the credential scrub and the byte cap), s2 = the world. A cancelled message is
  * not captured (D-I). Order: the token bucket first, so a flood costs no flatten, scrub or cap work.
  */
 public final class TextContentFamily {
@@ -35,6 +37,9 @@ public final class TextContentFamily {
     private final int chatId;
     private final int dropId;
     private final TokenBucket bucket;
+    private final NameMask mask = new NameMask();
+    private final LongAdder maskDrops = new LongAdder();
+    private volatile Supplier<Collection<String>> onlineNames = List::of;
     private final LongAdder errors = new LongAdder();
     private final LongAdder rateDrops = new LongAdder();
 
@@ -66,6 +71,24 @@ public final class TextContentFamily {
         return rateDrops.sum();
     }
 
+    long maskDrops() {
+        return maskDrops.sum();
+    }
+
+    /** A human name seen on login or logout (profile name only); feeds the mask. */
+    void noteName(String name) {
+        mask.seen(name);
+    }
+
+    /** The online player names for the mask; a supplier that throws makes every chat event fail closed. */
+    void onlineNames(Supplier<Collection<String>> online) {
+        this.onlineNames = online;
+    }
+
+    NameMask nameMask() {
+        return mask;
+    }
+
     /**
      * Records one chat message. {@code text} is only called once the message passed the bucket and was not cancelled.
      * {@code player} is the speaker's name (used only when it is a life id).
@@ -81,7 +104,21 @@ public final class TextContentFamily {
                 return;
             }
             String raw = text.get();
-            String clean = ContentCap.cap(Redactor.scrub(ContentCap.cap(raw == null ? "" : raw, PRE_SCRUB_MAX_BYTES)));
+            String masked;
+            try {
+                // the name mask runs first (bounded read, then mask, then scrub and cap); any failure emits nothing
+                List<String> names = new java.util.ArrayList<>(onlineNames.get());
+                names.add(player);
+                masked = mask.mask(ContentCap.cap(raw == null ? "" : raw, PRE_SCRUB_MAX_BYTES), names);
+            } catch (Throwable t) {
+                if (t instanceof VirtualMachineError vme) {
+                    throw vme;
+                }
+                maskDrops.increment();
+                events.record(dropId, 0, 0, 0, null, null, null);
+                return;
+            }
+            String clean = ContentCap.cap(Redactor.scrub(masked));
             content.record(chatId, clean, CombatFamily.lifeId(player), world, null);
         } catch (Throwable t) {
             if (t instanceof VirtualMachineError vme) {

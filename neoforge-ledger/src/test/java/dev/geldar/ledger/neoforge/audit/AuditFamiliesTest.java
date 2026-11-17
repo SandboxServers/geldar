@@ -382,7 +382,7 @@ class AuditFamiliesTest {
         assertTrue(code.contains("RECEIVE_CANCELED = false;"));
         int listeners = code.split("addListener\\(", -1).length - 1;
         int constant = code.split("addListener\\(PRIORITY, RECEIVE_CANCELED, ", -1).length - 1;
-        assertEquals(5, listeners);
+        assertEquals(8, listeners); // five audit listeners plus the three name-mask feeds (chat only)
         assertEquals(listeners, constant);
         // the speaker name and the decorated message never enter the chat read
         assertFalse(code.contains("getUsername"));
