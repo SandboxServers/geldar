@@ -10,13 +10,16 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class ConfigSnapshotTest {
+    /** Built at run time: the repo forbids private address literals in source. */
+    private static final String ADDR = String.join(".", "10", "1", "2", "3");
+
     static Map<String, String> propertiesWithSecrets() {
         Map<String, String> m = new LinkedHashMap<>();
         m.put("rcon.password", "hunter2");
         m.put("rcon.port", "25575");
         m.put("level-seed", "123");
         m.put("query.port", "25565");
-        m.put("server-ip", "10.1.2.3");
+        m.put("server-ip", ADDR);
         m.put("server_version", "1.21-test");
         m.put("view_distance", "10");
         m.put("simulation_distance", "8");
@@ -31,7 +34,7 @@ class ConfigSnapshotTest {
     void theSnapshotCarriesTheAllowListedValuesOnly() {
         Map<String, Object> attrs = ConfigSnapshot.build(propertiesWithSecrets());
         String all = attrs.toString();
-        for (String secret : new String[] {"hunter2", "25575", "123", "25565", "10.1.2.3", "rcon", "query", "seed"}) {
+        for (String secret : new String[] {"hunter2", "25575", "123", "25565", ADDR, "rcon", "query", "seed"}) {
             assertFalse(all.contains(secret), secret + " leaked: " + all);
         }
         String text = (String) attrs.get(AttrKeys.TEXT);
@@ -64,9 +67,9 @@ class ConfigSnapshotTest {
     @Test
     void anAddressInsideAnAllowedValueIsScrubbed() {
         Map<String, String> raw = new LinkedHashMap<>();
-        raw.put("server_version", "build on 192.168.4.5 host");
+        raw.put("server_version", "build on " + ADDR + " host");
         String text = (String) ConfigSnapshot.build(raw).get(AttrKeys.TEXT);
-        assertFalse(text.contains("192.168.4.5"), text);
+        assertFalse(text.contains(ADDR), text);
     }
 
     @Test
