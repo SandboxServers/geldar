@@ -58,6 +58,22 @@ class ProgressCollectorTest {
         return ConfigParser.parse(p).config();
     }
 
+    /**
+     * Maps a positional record to attributes the way the real sink does: names 0-2 bind the longs a, b, c and names 3-5
+     * bind the strings s1, s2, s3; an unnamed slot is dropped. The id prefix says which registration took the record.
+     */
+    private String slots(int id, Object[] a) {
+        List<String> names = registered.get(id);
+        Map<String, Object> out = new java.util.TreeMap<>();
+        for (int i = 0; i < names.size(); i++) {
+            Object v = i < 3 ? (Object) (Long) a[1 + i] : a[1 + i];
+            if (names.get(i) != null && !(v instanceof String s && s.isEmpty())) {
+                out.put(names.get(i), v);
+            }
+        }
+        return id + out.toString();
+    }
+
     private Ledger ledger(LedgerConfig cfg) {
         EventLog events = (EventLog) java.lang.reflect.Proxy.newProxyInstance(
                 getClass().getClassLoader(), new Class<?>[] {EventLog.class}, (p, m, a) -> {
@@ -69,9 +85,9 @@ class ProgressCollectorTest {
                                 f.add((String) o);
                             }
                             registered.add(f);
-                            return 5;
+                            return registered.size() - 1;
                         }
-                        case "record" -> recorded.add(a[0] + "," + a[1] + "," + a[4] + "," + a[5] + "," + a[6]);
+                        case "record" -> recorded.add(slots((int) a[0], a));
                         case "emitMap" -> emitted.add(a[0] + "|" + new java.util.TreeMap<>((Map<?, ?>) a[2]));
                         default -> throw new UnsupportedOperationException(m.getName());
                     }
@@ -164,17 +180,20 @@ class ProgressCollectorTest {
             assertTrue(recorded.isEmpty(), "record, enabled=" + v);
         }
         started("true");
-        assertEquals(1, registered.size());
+        assertEquals(2, registered.size());
         assertEquals(1, tasks.get());
     }
 
     @Test
     void earnAndGrantRecordLifeIdKeyAndFlagOnly() {
         ProgressCollector c = started("true");
-        assertEquals(List.of(AttrKeys.FLAG, AttrKeys.LIFE_ID, AttrKeys.SUBTYPE), registered.get(0));
+        List<String> layout = java.util.Arrays.asList(null, null, AttrKeys.FLAG, AttrKeys.LIFE_ID, AttrKeys.SUBTYPE);
+        assertEquals(List.of(layout, layout), registered, "three longs then three strings; earn and grant each have a bucket");
         c.advancement(LIFE, "minecraft:story/root", true);
         c.advancement(LIFE, "minecraft:story/root", false);
-        assertEquals(List.of("5,1," + LIFE + ",minecraft:story/root,", "5,0," + LIFE + ",minecraft:story/root,"), recorded);
+        String earn = "{geldar.flag=1, geldar.life_id=" + LIFE + ", geldar.subtype=minecraft:story/root}";
+        String grant = "{geldar.flag=0, geldar.life_id=" + LIFE + ", geldar.subtype=minecraft:story/root}";
+        assertEquals(List.of("0" + earn, "1" + grant), recorded);
         assertEquals(2, begun.get());
         assertEquals(2, ended.get());
     }
@@ -277,14 +296,48 @@ class ProgressCollectorTest {
     }
 
     @Test
-    void aMissingStatsDirectoryStartsNoTaskAndThrowsNothing() {
-        ProgressCollector c = new ProgressCollector(() -> dir.resolve("nope"), ms -> {});
+    void aMissingStatsDirectoryIsResolvedAgainOnEachRunUntilItExists() throws Exception {
+        Path later = dir.resolve("later");
+        ProgressCollector c = new ProgressCollector(() -> later, ms -> {});
         c.start(ctx(ledger(config("true"))));
-        assertEquals(0, tasks.get());
+        assertEquals(1, tasks.get(), "scheduled even when the directory does not exist yet");
+        c.join(AGENT, LIFE);
+        stats.run();
+        assertTrue(emitted.isEmpty());
+        Files.createDirectory(later);
+        Files.writeString(later.resolve(AGENT + ".json"), SAMPLE);
+        stats.run();
+        assertEquals(1, emitted.size());
         c.advancement(LIFE, "minecraft:story/root", true);
         assertEquals(1, recorded.size());
     }
 
+    @Test
+    void grantsAndEarnsHaveSeparateBuckets() {
+        ProgressCollector c = started("true");
+        c.advancement(LIFE, "minecraft:recipes/misc/stick", false);
+        c.advancement(LIFE, "minecraft:story/root", true);
+        assertTrue(recorded.get(0).startsWith("1{"), recorded.get(0));
+        assertTrue(recorded.get(1).startsWith("0{"), recorded.get(1));
+    }
+
+    @Test
+    void aBadStatsFileSleepsOnlyWithinTheRunBudget() throws Exception {
+        List<Long> slept = new ArrayList<>();
+        ProgressCollector c = new ProgressCollector(() -> dir, slept::add);
+        c.start(ctx(ledger(config("true"))));
+        for (int i = 0; i < 8; i++) {
+            UUID id = new UUID(7, i);
+            c.join(id, "ag_bad_0" + i);
+            Files.writeString(dir.resolve(id + ".json"), "{\"stats\":{\"minecraft:cus");
+        }
+        stats.run();
+        assertEquals(5, slept.size(), "5 s budget at 1 s per retry");
+        slept.clear();
+        stats.run();
+        assertEquals(5, slept.size(), "the budget is per run");
+        assertTrue(emitted.isEmpty());
+    }
     @Test
     void aThrowingStatsDirSupplierPropagatesOnlyFromStartNotFromEvents() {
         ProgressCollector c = new ProgressCollector(() -> {

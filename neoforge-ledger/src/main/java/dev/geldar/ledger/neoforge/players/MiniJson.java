@@ -4,8 +4,10 @@ import java.io.IOException;
 
 /**
  * A small pull reader for one complete JSON document held in memory; just enough for {@link StatsFileReader}. It has
- * no dependency, so it works the same in the mod layer and in unit tests. Strict about truncation: anything malformed (a truncated file,
- * a trailing comma, a bad escape, depth over {@value #MAX_DEPTH}) is an {@link IOException}. Values are consumed or
+ * no dependency, so it works the same in the mod layer and in unit tests. Strict about truncation, trailing commas, bad
+ * escapes and depth over {@value #MAX_DEPTH} (each is an {@link IOException}), but lenient on separators: a missing or a
+ * leading comma between members is accepted and a lone sign reads as a number token. That cannot export a wrong value:
+ * values still go through the allow-list and a checked {@code Long.parseLong}. Values are consumed or
  * skipped without being built into a tree; a number is handed back as its text.
  */
 final class MiniJson {

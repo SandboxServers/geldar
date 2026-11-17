@@ -40,21 +40,42 @@ public final class ProgressWiring {
         try {
             ProgressWiring w = new ProgressWiring(ledger, host, scheduler);
             NeoForge.EVENT_BUS.addListener(ServerStartedEvent.class, e -> w.start(e.getServer()));
-            NeoForge.EVENT_BUS.addListener(PlayerEvent.PlayerLoggedInEvent.class, e -> w.join(e.getEntity()));
-            NeoForge.EVENT_BUS.addListener(PlayerEvent.PlayerLoggedOutEvent.class, e -> w.quit(e.getEntity()));
             NeoForge.EVENT_BUS.addListener(
-                    AdvancementEvent.AdvancementEarnEvent.class, e -> w.advance(e.getEntity(), e.getAdvancement().id().toString(), true));
-            NeoForge.EVENT_BUS.addListener(AdvancementEvent.AdvancementProgressEvent.class, e -> {
-                if (e.getProgressType() == AdvancementEvent.AdvancementProgressEvent.ProgressType.GRANT) {
-                    w.advance(e.getEntity(), e.getAdvancement().id().toString(), false);
-                }
-            });
+                    PlayerEvent.PlayerLoggedInEvent.class, e -> guarded(() -> w.join(e.getEntity())));
+            NeoForge.EVENT_BUS.addListener(
+                    PlayerEvent.PlayerLoggedOutEvent.class, e -> guarded(() -> w.quit(e.getEntity())));
+            NeoForge.EVENT_BUS.addListener(
+                    AdvancementEvent.AdvancementEarnEvent.class,
+                    e -> guarded(() -> w.advance(e.getEntity(), e.getAdvancement().id().toString(), true)));
+            NeoForge.EVENT_BUS.addListener(
+                    AdvancementEvent.AdvancementProgressEvent.class,
+                    e -> guarded(() -> {
+                        if (exported(e.getProgressType().name())) {
+                            w.advance(e.getEntity(), e.getAdvancement().id().toString(), false);
+                        }
+                    }));
             NeoForge.EVENT_BUS.addListener(ServerStoppingEvent.class, e -> w.stop());
         } catch (Throwable t) {
             if (t instanceof VirtualMachineError vme) {
                 throw vme;
             }
             LOG.warning("ledger progress wiring failed: " + t.getClass().getName());
+        }
+    }
+
+    /** Only a criterion grant is exported; a revoke never is. */
+    static boolean exported(String progressType) {
+        return "GRANT".equals(progressType);
+    }
+
+    /** Runs a listener body, argument extraction included; nothing but a VM error escapes into the event bus. */
+    static void guarded(Runnable body) {
+        try {
+            body.run();
+        } catch (Throwable t) {
+            if (t instanceof VirtualMachineError vme) {
+                throw vme;
+            }
         }
     }
 

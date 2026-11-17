@@ -141,16 +141,37 @@ class StatsFileReaderTest {
         Files.delete(file());
         Files.writeString(file(), sample());
         assertEquals(true, StatsFileReader.eligible(file(), root), "regular file");
-        Files.writeString(file(), "x".repeat(StatsFileReader.MAX_BYTES + 1));
-        assertEquals(false, StatsFileReader.eligible(file(), root), "over the cap");
         Path other = Files.createTempDirectory("other");
         try {
-            assertEquals(false, StatsFileReader.eligible(file(), other.toRealPath()), "outside the root");
+            assertEquals(false, StatsFileReader.eligible(file(), other.toRealPath()), "small regular file outside the root");
         } finally {
             Files.delete(other);
         }
+        Files.writeString(file(), "x".repeat(StatsFileReader.MAX_BYTES + 1));
+        assertEquals(false, StatsFileReader.eligible(file(), root), "over the cap");
     }
 
+    @Test
+    void aSymlinkToAnotherFileInsideTheStatsDirIsNotFollowed() throws Exception {
+        Path target = dir.resolve("other-player.json");
+        Files.writeString(target, sample());
+        try {
+            Files.createSymbolicLink(file(), target);
+        } catch (IOException | UnsupportedOperationException | SecurityException e) {
+            assumeTrue(false, "no symlink support here (needs Linux or a privileged Windows run)");
+        }
+        assertNull(reader().read(ID), "only NOFOLLOW_LINKS rejects this: the target is inside the root");
+    }
+
+    @Test
+    void onlyAnObjectLikePrefixIsRetried() throws Exception {
+        for (String bad : new String[] {"", "   ", "\uFEFF{}", "[1]", "garbage"}) {
+            Files.writeString(file(), bad);
+            assertNull(reader().read(ID), bad);
+        }
+        assertEquals(List.of(), sleeps);
+        assertEquals(true, StatsFileReader.midWrite(" \n{\"stats\":".getBytes(StandardCharsets.UTF_8)));
+    }
     @Test
     void aMissingStatsDirectoryGivesNoReader() {
         assertNull(StatsFileReader.open(dir.resolve("nope"), sleeps::add));

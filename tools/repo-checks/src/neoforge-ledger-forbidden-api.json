@@ -73,7 +73,12 @@
     "Class.forName(",
     "setAccessible(",
     "HttpClient",
-    "URLConnection"
+    "URLConnection",
+    "FileChannel.open(",
+    "AsynchronousFileChannel.open(",
+    "newByteChannel(",
+    "newFileChannel(",
+    "Channels.newInputStream("
   ],
   "allow": [
     {
@@ -81,6 +86,12 @@
       "name": "newInputStream(",
       "text": "Files.newInputStream(file)",
       "reason": "Reads the ledger own properties file (the agent config path), never chat, agent or repo content."
+    },
+    {
+      "file": "neoforge-ledger/src/main/java/dev/geldar/ledger/neoforge/players/StatsFileReader.java",
+      "name": "FileChannel.open(",
+      "text": "FileChannel.open(file, StandardOpenOption.READ, LinkOption.NOFOLLOW_LINKS)",
+      "reason": "Reads only a life-id agent's own stats JSON: a path built from its UUID inside the world stats directory, a regular file, NOFOLLOW_LINKS, 256 KiB cap; never chat, agent or repo content."
     }
   ],
   "modsToml": {

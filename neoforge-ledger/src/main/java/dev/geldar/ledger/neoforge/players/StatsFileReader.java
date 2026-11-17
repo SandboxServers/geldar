@@ -77,12 +77,25 @@ final class StatsFileReader {
             if (out != null) {
                 return out;
             }
+            if (!midWrite(bytes)) {
+                return null;
+            }
             sleeper.accept(RETRY_MS);
             bytes = load(file);
             return bytes == null ? null : parse(bytes);
         } catch (Throwable t) {
             return null;
         }
+    }
+
+    /** A file that may be mid-write: non-empty and starting like a JSON object. Anything else is not retried. */
+    static boolean midWrite(byte[] bytes) {
+        for (byte b : bytes) {
+            if (b != ' ' && b != '\t' && b != '\n' && b != '\r') {
+                return b == '{';
+            }
+        }
+        return false;
     }
 
     private byte[] load(Path file) {
