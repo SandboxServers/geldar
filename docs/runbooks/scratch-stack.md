@@ -293,7 +293,7 @@ neither. With SCRATCH_PLATFORM=paper, or with only one of them, scratch.sh exits
 (`geldar-life-registry`, `geldar-skins`) and has no other subject. The `identity-seed` one-shot (`golem/src/seed-buckets.ts`,
 the admin image) runs once after NATS is healthy and before velocity starts; velocity waits for it to exit 0. Velocity
 only reads the buckets, and its healthcheck stays red until the life registry bucket exists. A failed seed fails `up`.
-The seed user exists only in the phase0 table of `./geldar.ps1 shard nats-auth phase0`, so a `nats-auth.conf` made
+The seed user exists only in the phase0 table of `./geldar.ps1 shard nats-auth phase0 --scratch`, so a `nats-auth.conf` made
 before this change lacks it: delete that file (no secret is lost; the generator rebuilds it from the password files)
 and run the generator again, or the seed fails with an authorization error. The JetStream subjects of the seed user are
 untested against a live server.

@@ -144,7 +144,7 @@ nats_dir_ok() {
 # The NATS gate. Runs first, before any file is written or any container is started.
 check_nats() {
   if [ "${SCRATCH_NATS_OPEN:-}" = 1 ]; then
-    echo "scratch: open NATS (SCRATCH_NATS_OPEN=1) is not supported: the identity seed needs the NATS auth dir. Set SCRATCH_NATS_AUTH_DIR to a directory holding the five files made by ./geldar.ps1 shard nats-auth <shard>. Nothing started." >&2
+    echo "scratch: open NATS (SCRATCH_NATS_OPEN=1) is not supported: the identity seed needs the NATS auth dir. Set SCRATCH_NATS_AUTH_DIR to a directory holding the five files made by ./geldar.ps1 shard nats-auth phase0 --scratch in a clean git archive export. Nothing started." >&2
     exit 2
   fi
   if [ -n "${SCRATCH_NATS_AUTH_DIR:-}" ]; then
@@ -165,7 +165,7 @@ check_nats() {
     return 0
   fi
   echo "scratch: NATS auth is required. Set SCRATCH_NATS_AUTH_DIR to a directory holding the five files made by" >&2
-  echo "scratch: ./geldar.ps1 shard nats-auth <shard>; see the runbook. Nothing started." >&2
+  echo "scratch: run ./geldar.ps1 shard nats-auth phase0 --scratch in a clean git archive export (no .git), not in a checkout; see the runbook, NATS auth section. Nothing started." >&2
   exit 2
 }
 
