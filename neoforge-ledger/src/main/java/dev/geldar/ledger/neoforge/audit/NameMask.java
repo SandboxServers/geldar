@@ -32,10 +32,18 @@ import java.util.regex.Pattern;
  * 4 or more characters is also masked when embedded in a longer word (longest match first). Names with a character
  * other than a letter, digit or underscore after folding, and names longer than {@link #NAME_MAX}, are ignored.
  *
- * <p>Second pass (fail closed): the masked text is squashed (folded, every non-alphanumeric removed, agent ids and
- * placeholders replaced by a separator); if it still contains a known name of 4 or more characters (for example
- * {@code S t e v e}, {@code S.t.e.v.e}), {@link #mask} throws and the caller emits nothing. Words that merely squash
- * into a name are rare false drops. Throws on any failure: the caller must fail closed. Weaknesses: see the README.
+ * <p>Folding also strips every unassigned, private-use, noncharacter and unpaired-surrogate code point (they carry no
+ * letter, so removing one cannot create a name; it neither splits nor joins), and applies the homoglyph map to the
+ * exact (cased) code point before lower-casing. A supplementary-plane letter or digit is a foreign letter, as a BMP one is.
+ *
+ * <p>Second pass (fail closed): the masked text is squashed (folded, only letters and digits kept, an underscore and
+ * a foreign letter are noise, agent ids are one separator); a known name is compared in the same form (letters and
+ * digits only, underscore removed), so {@code Alex_77} is found in {@code A l e x 7 7}. The text is cut only at the
+ * placeholders the mask itself inserted (recorded spans, never found by searching), so a {@code <human>}, {@code
+ * <uuid>} or agent id typed by a human cannot split a name: a typed placeholder is noise. If the squashed text
+ * still contains a known name of 4 or more characters (for example {@code S t e v e}, {@code S.t.e.v.e}),
+ * {@link #mask} throws and the caller emits nothing. Words that merely squash into a name are rare false drops.
+ * Throws on any failure: the caller must fail closed. Weaknesses: see the README.
  */
 final class NameMask {
     static final int SEEN_MAX = 4096;
@@ -45,37 +53,21 @@ final class NameMask {
     static final int INPUT_MAX = 4096;
     static final String HUMAN = "<human>";
     static final String UUID = "<uuid>";
-    private static final Pattern SEGMENT_BREAK = Pattern.compile(
-            "<human>|<uuid>|(?<![A-Za-z0-9_])ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}(?![A-Za-z0-9_])");
+    private static final Pattern AGENT_ID = Pattern.compile("(?<![A-Za-z0-9_])ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}(?![A-Za-z0-9_])");
+    /** A placeholder spelled by a human: in the second pass it is noise (neither splits nor joins), never a segment break. */
+    private static final Pattern TYPED_PLACEHOLDER = Pattern.compile("<(?:human|uuid)>", Pattern.CASE_INSENSITIVE);
+    /** Stands for a supplementary-plane letter or digit after folding: a foreign letter, like a BMP one. */
+    private static final char FOREIGN = '\u00aa';
     private static final Pattern UUID_SHAPE = Pattern.compile(
             "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|(?<![0-9a-zA-Z])[0-9a-fA-F]{32}(?![0-9a-zA-Z])");
-    /** Partial: common Cyrillic and Greek lookalikes (lower case) of Latin letters. */
-    private static final Map<Character, Character> LOOKALIKE = Map.ofEntries(
-            Map.entry('\u0430', 'a'), Map.entry('\u0435', 'e'), Map.entry('\u043e', 'o'), Map.entry('\u0440', 'p'),
-            Map.entry('\u0441', 'c'), Map.entry('\u0443', 'y'), Map.entry('\u0445', 'x'), Map.entry('\u043a', 'k'),
-            Map.entry('\u0456', 'i'), Map.entry('\u0455', 's'), Map.entry('\u0458', 'j'), Map.entry('\u04bb', 'h'),
-            Map.entry('\u0501', 'd'), Map.entry('\u043c', 'm'), Map.entry('\u043d', 'h'), Map.entry('\u0442', 't'),
-            Map.entry('\u0432', 'b'), Map.entry('\u0475', 'v'), Map.entry('\u04cf', 'l'), Map.entry('\u0131', 'i'),
-            Map.entry('\u03b1', 'a'), Map.entry('\u03b5', 'e'), Map.entry('\u03bf', 'o'), Map.entry('\u03c1', 'p'),
-            Map.entry('\u03bd', 'v'), Map.entry('\u03b9', 'i'), Map.entry('\u03ba', 'k'), Map.entry('\u03c4', 't'),
-            Map.entry('\u03c5', 'u'), Map.entry('\u03c7', 'x'), Map.entry('\u03b2', 'b'), Map.entry('\u03b7', 'n'),
-            Map.entry('\u03c9', 'w'), Map.entry('\u0261', 'g'),
-            Map.entry('\u0251', 'a'), Map.entry('\u1d00', 'a'), Map.entry('\u0299', 'b'), Map.entry('\u1d04', 'c'),
-            Map.entry('\u1d05', 'd'), Map.entry('\u1d07', 'e'), Map.entry('\ua730', 'f'), Map.entry('\u0262', 'g'),
-            Map.entry('\u029c', 'h'), Map.entry('\u026a', 'i'), Map.entry('\u1d0a', 'j'), Map.entry('\u1d0b', 'k'),
-            Map.entry('\u029f', 'l'), Map.entry('\u1d0d', 'm'), Map.entry('\u0274', 'n'), Map.entry('\u1d0f', 'o'),
-            Map.entry('\u1d18', 'p'), Map.entry('\u0280', 'r'), Map.entry('\ua731', 's'), Map.entry('\u1d1b', 't'),
-            Map.entry('\u1d1c', 'u'), Map.entry('\u1d20', 'v'), Map.entry('\u1d21', 'w'), Map.entry('\u1d22', 'z'),
-            Map.entry('\u051b', 'q'), Map.entry('\u051d', 'w'), Map.entry('\u0433', 'r'), Map.entry('\u043f', 'n'),
-            Map.entry('\u0437', 'z'), Map.entry('\u0448', 'w'), Map.entry('\u03b3', 'y'), Map.entry('\u03bc', 'u'),
-            Map.entry('\u03b6', 'z'), Map.entry('\u057d', 'u'), Map.entry('\u0585', 'o'), Map.entry('\u0570', 'h'),
-            Map.entry('\u0578', 'n'), Map.entry('\u0576', 'n'), Map.entry('\u0581', 'g'), Map.entry('\u0282', 's'),
-            Map.entry('\u028b', 'u'), Map.entry('\u028f', 'y'), Map.entry('\u0290', 'z'), Map.entry('\u0225', 'z'),
-            Map.entry('\u027c', 'r'), Map.entry('\u03c2', 'c'), Map.entry('\u0253', 'b'), Map.entry('\u0257', 'd'),
-            Map.entry('\u00f8', 'o'), Map.entry('\u0192', 'f'), Map.entry('\u03dd', 'f'), Map.entry('\u01c0', 'l'));
-
+    /** Lower-case lookalikes (the partial map): see {@link Lookalikes}. */
     static Map<Character, Character> lookalikes() {
-        return LOOKALIKE;
+        return Lookalikes.lower();
+    }
+
+    /** The direct (capital and caseless) lookalikes, by exact code point. */
+    static Map<Integer, Character> capitalLookalikes() {
+        return Lookalikes.direct();
     }
 
     /** The first code point of the three letter-block alphabets with no NFKD mapping: regional indicators, negative circled and squared. */
@@ -99,6 +91,14 @@ final class NameMask {
         }
         if (cp == 127 || (cp >= 0x80 && cp <= 0x9F && cp != 0x85)) {
             return true;
+        }
+        if (cp >= 0xFFF0 && cp <= 0xFFF8) {
+            return true;
+        }
+        int type = Character.getType(cp);
+        if (type == Character.UNASSIGNED || type == Character.PRIVATE_USE || type == Character.SURROGATE
+                || (cp >= 0xFDD0 && cp <= 0xFDEF) || (cp & 0xFFFE) == 0xFFFE) {
+            return true; // unassigned, private use, noncharacters, unpaired surrogates: no letter, stripped
         }
         return cp == 0xAD || cp == 0x34F || cp == 0x61C || (cp >= 0x115F && cp <= 0x1160) || (cp >= 0x17B4 && cp <= 0x17B5)
                 || (cp >= 0x180B && cp <= 0x180F) || (cp >= 0x200B && cp <= 0x200F) || (cp >= 0x202A && cp <= 0x202E)
@@ -155,16 +155,18 @@ final class NameMask {
         }
         Names ns = new Names(set);
         StringBuilder out = new StringBuilder(t.length());
+        List<int[]> marks = new ArrayList<>(); // where the MASK put a placeholder in the output; typed ones are not here
         Matcher m = UUID_SHAPE.matcher(t);
         int last = 0;
         while (m.find()) {
-            maskNames(t, last, m.start(), ns, out);
+            maskNames(t, last, m.start(), ns, out, marks);
+            marks.add(new int[] {out.length(), out.length() + UUID.length()});
             out.append(UUID);
             last = m.end();
         }
-        maskNames(t, last, t.length(), ns, out);
+        maskNames(t, last, t.length(), ns, out, marks);
         String masked = out.toString();
-        if (residual(masked, ns)) {
+        if (residual(masked, marks, ns)) {
             throw new IllegalStateException("residual name after masking");
         }
         return masked;
@@ -175,11 +177,19 @@ final class NameMask {
         final Set<String> all;
         final Set<String> shortLetters = new HashSet<>();
         final Set<String> shortOther = new HashSet<>();
+        /** The second pass keys: letters and digits only (underscore removed), 4 or more characters, ASCII. */
+        final Set<String> squashed = new HashSet<>();
         int maxLen;
+        int squashMax;
 
         Names(Set<String> all) {
             this.all = all;
             for (String k : all) {
+                String sq = squashKey(k);
+                if (sq != null) {
+                    squashed.add(sq);
+                    squashMax = Math.max(squashMax, sq.length());
+                }
                 if (k.length() >= EMBED_MIN) {
                     maxLen = Math.max(maxLen, k.length());
                 } else if (k.chars().allMatch(Character::isLetter)) {
@@ -189,6 +199,26 @@ final class NameMask {
                 }
             }
         }
+    }
+
+    /**
+     * The key as the second pass sees text: normalised the same way as the squashed text (only ASCII letters and
+     * digits; an underscore is removed, as it is in the text), or null if shorter than {@link #EMBED_MIN} or holding
+     * a character the squashed text can never hold.
+     */
+    static String squashKey(String key) {
+        StringBuilder sb = new StringBuilder(key.length());
+        for (int i = 0; i < key.length(); i++) {
+            char c = key.charAt(i);
+            if (c == '_') {
+                continue;
+            }
+            if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))) {
+                return null;
+            }
+            sb.append(c);
+        }
+        return sb.length() >= EMBED_MIN ? sb.toString() : null;
     }
 
     /** The folded text with, per folded char, the original range it came from. */
@@ -228,9 +258,10 @@ final class NameMask {
                 // stripped: it neither splits a name nor is matched
             } else if (blockLetter(cp) >= 0) {
                 out.add((char) blockLetter(cp), i, i + len);
+            } else if (Lookalikes.beforeNormalisation(cp) != 0) {
+                out.add(Lookalikes.beforeNormalisation(cp), i, i + len);
             } else {
-                String f = Normalizer.normalize(new String(Character.toChars(cp)), Normalizer.Form.NFKD)
-                        .toLowerCase(Locale.ROOT);
+                String f = Normalizer.normalize(new String(Character.toChars(cp)), Normalizer.Form.NFKD);
                 int j = 0;
                 while (j < f.length()) {
                     int fc = f.codePointAt(j);
@@ -243,7 +274,27 @@ final class NameMask {
         return out;
     }
 
+    /** One code point of the NFKD form: the homoglyph map first, on the exact (cased) code point, then lower-casing. */
     private static void foldOne(int cp, Folded out, int from, int to) {
+        char direct = Lookalikes.direct(cp);
+        if (direct != 0) {
+            out.add(direct, from, to);
+            return;
+        }
+        if (cp < 128) {
+            foldLower(Character.toLowerCase(cp), out, from, to);
+            return;
+        }
+        String lower = new String(Character.toChars(cp)).toLowerCase(Locale.ROOT);
+        int j = 0;
+        while (j < lower.length()) {
+            int lc = lower.codePointAt(j);
+            j += Character.charCount(lc);
+            foldLower(lc, out, from, to);
+        }
+    }
+
+    private static void foldLower(int cp, Folded out, int from, int to) {
         if (cp == 0xDF || cp == 0x1E9E) { // sharp s and capital sharp s fold to "ss"
             out.add('s', from, to);
             out.add('s', from, to);
@@ -263,12 +314,14 @@ final class NameMask {
             return;
         }
         if (cp > 0xFFFF) {
-            out.add('\u0000', from, to); // a delimiter: no supplementary letter is matchable
+            // a supplementary letter or digit is a foreign letter (noise inside a token, as a BMP one is); any other
+            // supplementary character (emoji, symbol) is a delimiter
+            out.add(Character.isLetterOrDigit(cp) ? FOREIGN : '\u0000', from, to);
             return;
         }
         char ch = (char) cp;
-        Character look = LOOKALIKE.get(ch);
-        out.add(look != null ? look : ch, from, to);
+        char look = Lookalikes.lower(ch);
+        out.add(look != 0 ? look : ch, from, to);
     }
 
     private static String key(String name) {
@@ -291,7 +344,7 @@ final class NameMask {
         return c == '_' || Character.isLetterOrDigit(c);
     }
 
-    private static void maskNames(String text, int from, int to, Names ns, StringBuilder out) {
+    private static void maskNames(String text, int from, int to, Names ns, StringBuilder out, List<int[]> marks) {
         if (from >= to) {
             return;
         }
@@ -324,6 +377,7 @@ final class NameMask {
                 out.append(text, pos, sp[0]);
             }
             if (sp[1] > pos) {
+                marks.add(new int[] {out.length(), out.length() + HUMAN.length()});
                 out.append(HUMAN);
                 pos = sp[1];
             }
@@ -381,23 +435,29 @@ final class NameMask {
      * from it) or when it spans 3 or more tokens and every token fully inside it has at most 2 characters (letters
      * genuinely spaced out). A match over two tokens, or over ordinary longer words, is not dropped.
      */
-    private static boolean residual(String masked, Names ns) {
-        if (ns.maxLen < EMBED_MIN) {
+    private static boolean residual(String masked, List<int[]> marks, Names ns) {
+        if (ns.squashMax < EMBED_MIN) {
             return false;
         }
-        Matcher m = SEGMENT_BREAK.matcher(masked);
         int last = 0;
-        while (m.find()) {
-            if (residualSegment(masked.substring(last, m.start()), ns)) {
+        for (int[] mark : marks) { // only the placeholders the mask itself inserted cut the text
+            if (residualSegment(masked.substring(last, mark[0]), ns)) {
                 return true;
             }
-            last = m.end();
+            last = mark[1];
         }
         return residualSegment(masked.substring(last), ns);
     }
 
-    private static boolean residualSegment(String segment, Names ns) {
+    private static boolean residualSegment(String raw, Names ns) {
+        // an agent id is one delimiter (its own letters never join a name); a placeholder typed by a human is noise
+        String segment = TYPED_PLACEHOLDER.matcher(AGENT_ID.matcher(raw).replaceAll(" ")).replaceAll("");
         Folded f = fold(segment, 0, segment.length());
+        // an underscore is read both ways: as noise inside a token (A_l_e_x, Alex_77 with a foreign letter) and as a delimiter (S_t_e-v-e)
+        return squashScan(f, ns, true) || squashScan(f, ns, false);
+    }
+
+    private static boolean squashScan(Folded f, Names ns, boolean underscoreIsNoise) {
         StringBuilder q = new StringBuilder(f.n);
         int[] tok = new int[f.n + 1];
         int token = 0;
@@ -412,8 +472,8 @@ final class NameMask {
                 }
                 tok[q.length()] = token;
                 q.append(c);
-            } else if (!(c > 127 && Character.isLetterOrDigit(c))) {
-                inToken = false; // a delimiter ends the token; a foreign letter is noise inside it
+            } else if (!((underscoreIsNoise && c == '_') || (c > 127 && Character.isLetterOrDigit(c)))) {
+                inToken = false; // a delimiter ends the token; a foreign letter (and, in one reading, an underscore) is noise inside it
             }
         }
         String s = q.toString();
@@ -425,8 +485,8 @@ final class NameMask {
             tokLast[tok[i]] = i;
         }
         for (int p = 0; p < s.length(); p++) {
-            for (int len = Math.min(ns.maxLen, s.length() - p); len >= EMBED_MIN; len--) {
-                if (ns.all.contains(s.substring(p, p + len)) && spacedOut(tok, tokFirst, tokLast, p, p + len)) {
+            for (int len = Math.min(ns.squashMax, s.length() - p); len >= EMBED_MIN; len--) {
+                if (ns.squashed.contains(s.substring(p, p + len)) && spacedOut(tok, tokFirst, tokLast, p, p + len)) {
                     return true;
                 }
             }
