@@ -4,6 +4,7 @@
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { isAlias, isMap, isScalar, parseAllDocuments, visit } from 'yaml';
 import lists from './plugin-ledger-forbidden-api.json' with { type: 'json' };
 
 export interface AllowEntry {
@@ -52,29 +53,64 @@ export function scanJava(file: string, text: string, scan: ScanLists = LISTS): s
   return hits;
 }
 
-/** Problems with a `plugin.yml` text: a key off the allow-list, a forbidden key, or a name with a telemetry word. */
+/**
+ * Problems with a `plugin.yml` text, from a real YAML parse (the `yaml` package): a top-level key off the allow-list,
+ * a forbidden key at any depth (quoted, indented or inside a flow mapping alike), or a name with a telemetry word.
+ * Fails closed: anything it cannot judge (a parse error, tab indentation, several documents, a top level that is not
+ * a mapping, a non-scalar key, an anchor, an alias or a merge key) is itself a problem.
+ */
 export function scanPluginYml(text: string, scan: ScanLists = LISTS): string[] {
-  const problems: string[] = [];
   const rules = scan.pluginYml;
-  const keys = [...text.matchAll(/^([A-Za-z][\w-]*)\s*:(.*)$/gm)];
-  for (const match of keys) {
-    const key = match[1] ?? '';
-    const lower = key.toLowerCase();
-    if (rules.forbiddenKeys.includes(lower)) problems.push(`plugin.yml declares ${key}:`);
-    else if (!rules.allowedKeys.includes(key))
+  const unreadable = (why: string): string[] => [`plugin.yml cannot be checked: ${why}`];
+  if (/^[ ]*\t/m.test(text)) return unreadable('tab indentation');
+  const docs = Array.from(parseAllDocuments(text));
+  if (docs.length !== 1) return unreadable(`${docs.length} documents, expected 1`);
+  const doc = docs[0];
+  if (doc === undefined) return unreadable('no document');
+  const firstError = doc.errors[0];
+  if (firstError !== undefined)
+    return unreadable(`parse error: ${firstError.message.split('\n')[0]}`);
+  const root = doc.contents;
+  if (!isMap(root)) return unreadable('the top level is not a mapping');
+
+  const problems: string[] = [];
+  let unsupported: string | undefined;
+  visit(doc, {
+    Node(_key, node) {
+      if (isAlias(node)) unsupported = 'an alias (*name)';
+      else if ('anchor' in node && node.anchor) unsupported = 'an anchor (&name)';
+      return unsupported === undefined ? undefined : visit.BREAK;
+    },
+    Pair(_key, pair) {
+      if (!isScalar(pair.key)) unsupported = 'a key that is not a plain scalar';
+      else if (String(pair.key.value) === '<<') unsupported = 'a merge key (<<)';
+      else if (rules.forbiddenKeys.includes(String(pair.key.value).toLowerCase())) {
+        problems.push(`plugin.yml declares ${String(pair.key.value)}:`);
+      }
+      return unsupported === undefined ? undefined : visit.BREAK;
+    },
+  });
+  if (unsupported !== undefined) return unreadable(`it uses ${unsupported}`);
+
+  for (const pair of root.items) {
+    const key = String((pair.key as { value: unknown }).value);
+    if (!rules.forbiddenKeys.includes(key.toLowerCase()) && !rules.allowedKeys.includes(key)) {
       problems.push(`plugin.yml key ${key}: is not allowed`);
-    if (key === 'name') {
-      const name = (match[2] ?? '').trim().replace(/^["']|["']$/g, '');
-      for (const word of rules.forbiddenNameWords) {
-        if (new RegExp(`${escapeRegex(word)}`, 'i').test(name)) {
-          problems.push(`plugin.yml name ${name} contains ${word}`);
-        }
+    }
+    if (key !== 'name') continue;
+    if (!isScalar(pair.value)) {
+      problems.push('plugin.yml name is not a plain string');
+      continue;
+    }
+    const name = String(pair.value.value ?? '');
+    for (const word of rules.forbiddenNameWords) {
+      if (new RegExp(`${escapeRegex(word)}`, 'i').test(name)) {
+        problems.push(`plugin.yml name ${name} contains ${word}`);
       }
     }
   }
   return problems;
 }
-
 function javaFiles(dir: string): string[] {
   let entries: string[];
   try {

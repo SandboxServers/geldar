@@ -44,6 +44,13 @@ describe('forbidden list shape', () => {
       'setCancelled',
       'getHostAddress',
       'purge',
+      'sendRichMessage',
+      'sendPlainMessage',
+      'kickPlayer',
+      'performCommand',
+      'chat(',
+      'createBossBar',
+      'getScoreboardManager',
     ]) {
       expect(LISTS.forbiddenNames).toContain(name);
     }
@@ -135,6 +142,59 @@ describe('scanPluginYml', () => {
       ]);
     },
   );
+
+  it.each([
+    ['a double-quoted key', `${GOOD_YML}"commands":\n  x: {}\n`, 'declares commands:'],
+    ['a single-quoted key', `${GOOD_YML}'permissions':\n  x: {}\n`, 'declares permissions:'],
+    ['a quoted key with other case', `${GOOD_YML}"Commands": {}\n`, 'declares Commands:'],
+  ])('catches %s', (_label, text, message) => {
+    expect(scanPluginYml(text)).toEqual([expect.stringContaining(message)]);
+  });
+
+  it('catches a forbidden word used as a key at any depth', () => {
+    const nested = GOOD_YML.replace(
+      'description: Server statistics.',
+      'description:\n  commands: x',
+    );
+    expect(scanPluginYml(nested)).toEqual([expect.stringContaining('declares commands:')]);
+    const deeper = `${GOOD_YML}extra:\n  a:\n    - b: 1\n      loadbefore: [x]\n`;
+    expect(scanPluginYml(deeper)).toEqual([
+      expect.stringContaining('declares loadbefore:'),
+      expect.stringContaining('key extra: is not allowed'),
+    ]);
+  });
+
+  it('reads flow mappings: the allowed form passes and a hidden commands key fails', () => {
+    const good =
+      "{name: Ledger, main: a.B, version: '1', api-version: '26.1', description: x, softdepend: [spark]}\n";
+    expect(scanPluginYml(good)).toEqual([]);
+    const bad = '{name: Ledger, main: a.B, commands: {a: {}}}\n';
+    expect(scanPluginYml(bad)).toEqual([expect.stringContaining('declares commands:')]);
+    const quoted = '{name: Ledger, "permissions": {a: {}}}\n';
+    expect(scanPluginYml(quoted)).toEqual([expect.stringContaining('declares permissions:')]);
+  });
+
+  it.each([
+    ['an anchor', `${GOOD_YML}x-base: &a {b: 1}\n`, 'an anchor'],
+    ['an anchor that an alias would use', `base: &a {commands: {}}\n${GOOD_YML}`, 'an anchor'],
+    ['a merge key', `${GOOD_YML}<<: {commands: {}}\n`, 'a merge key'],
+    ['tab indentation', `${GOOD_YML}description:\n\tcommands: x\n`, 'tab indentation'],
+    ['two documents', `${GOOD_YML}---\n${GOOD_YML}`, '2 documents'],
+    ['an empty file', '', '0 documents'],
+    ['a list at the top level', '- a\n- b\n', 'not a mapping'],
+    ['a complex key', `${GOOD_YML}? [a, b]\n: c\n`, 'not a plain scalar'],
+    ['a duplicate key', `${GOOD_YML}name: Other\n`, 'parse error'],
+    ['broken syntax', 'name: [Ledger\nmain: a.B\n', 'parse error'],
+  ])('fails closed on %s', (_label, text, message) => {
+    expect(scanPluginYml(text)).toEqual([expect.stringContaining('cannot be checked')]);
+    expect(scanPluginYml(text)[0]).toContain(message);
+  });
+
+  it('fails closed on an alias that stands in for a forbidden section', () => {
+    const text = `${GOOD_YML}x-a: &a {c: 1}\ncommands: *a\n`;
+    const out = scanPluginYml(text);
+    expect(out).toEqual([expect.stringContaining('cannot be checked')]);
+  });
 
   it('fails the tree when plugin.yml is missing or declares commands', () => {
     const missing = fixture({ 'plugin/ledger/src/main/java/A.java': CLEAN_JAVA });

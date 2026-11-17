@@ -38,7 +38,14 @@
     "pauseTask",
     "cancelTask",
     "renderMap",
-    "purge"
+    "purge",
+    "sendRichMessage",
+    "sendPlainMessage",
+    "kickPlayer",
+    "performCommand",
+    "chat(",
+    "createBossBar",
+    "getScoreboardManager"
   ],
   "allow": [
     {
