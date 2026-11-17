@@ -105,6 +105,11 @@ These changes touch compose and the Caddyfile, so the deploy plan reports `needs
    below), and the panel must not depend on the webroot copy.
 5. Check: `curl` the live `players.json` and confirm no `ag_` username appears.
 
+Alias proxy logs (BM-17): `start ... aliases=set|unset` on start (never the path or contents); `signal SIGTERM|SIGINT`,
+`server closed`, `exit code=N` on stop (SIGTERM exits 0 by design); `event loop empty (beforeExit ...)`, `uncaught ...`
+and `server error <code>` say why it stopped. The node copy of `alias-proxy.ts` is hand-synced, not taken from git:
+after an edit restart it alone with `docker restart bluemap-alias`, never compose against the node's `colo.yml` (drifted).
+
 ## Pinned settings.json (BM-16)
 
 BlueMap rewrites the webroot's `settings.json` on every Paper and BlueMap start, and it writes `"scripts": []` and
