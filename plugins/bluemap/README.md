@@ -100,9 +100,28 @@ These changes touch compose and the Caddyfile, so the deploy plan reports `needs
    needed for this; if it is, that needs owner approval first. Do not restart anything from a work packet.
 4. Head size: `web/geldar.css` is served by `bluemap-web` at `/assets/geldar.css`. The chat script loads that stylesheet
    itself (see the chat panel section), so a `"styles": ["assets/geldar.css"]` entry in `bluemap/web/settings.json` is
-   optional, and not doubled if present. BlueMap regenerates that file on every Paper restart and resets `styles` to
-   `[]` (seen on 2026-11-15), so the panel must not depend on that entry.
+   optional, and not doubled if present. BlueMap regenerates the webroot's `settings.json` on every Paper restart and resets
+   `styles` to `[]` (seen on 2026-11-15), so the public site reads the pinned file instead (see "Pinned settings.json"
+   below), and the panel must not depend on the webroot copy.
 5. Check: `curl` the live `players.json` and confirm no `ag_` username appears.
+
+## Pinned settings.json (BM-16)
+
+BlueMap rewrites the webroot's `settings.json` on every Paper and BlueMap start, and it writes `"scripts": []` and
+`"styles": []`. The public site does not read that file. Caddy serves `GET /settings.json` from `web/geldar-settings.json`:
+the file is mounted read only at `/etc/caddy/geldar-settings.json`, and the handler in `compose/bluemap-web/Caddyfile`
+answers it as `application/json` with `Cache-Control: no-cache`. The webroot's own `settings.json` is ignored by the
+public site; BlueMap may keep rewriting it.
+
+The pinned copy holds the BlueMap 5.29 keys, the chat panel and dial scripts, and the stylesheet. `version` must equal both
+`bluemap.lock.json` `version` and `known-keys.json` `bluemap`; `maps` must list the `config/maps/*.conf` names in the order of
+their `sorting:` values; `mapDataRoot` and `liveDataRoot` must be `maps`, and `clientDecompression` must be `false`.
+`plugins/bluemap/test/settings-pin.test.ts` checks all of these.
+
+**Upgrade step (BM-16).** After a BlueMap upgrade, or after a map is added or removed under `config/maps/`, run the node
+check in `docs/runbooks/map-chat-panel.md` section 2a, step 5: the webroot's `settings.json` with `scripts` and `styles`
+removed must equal the pinned file with the same keys removed. A difference means BlueMap's output changed. Update
+`web/geldar-settings.json` in the repo first, then re-run `settings-pin.test.ts`.
 
 ## Live chat panel (decision 0310)
 
@@ -119,7 +138,8 @@ live `players.json` of each map, joins each UUID to the alias name, and shows th
 links). An unknown speaker shows the neutral label `Ranger`. A speaker who has left keeps the name seen while they were
 listed. On a failed read the panel keeps what it shows and waits 10 seconds before the next try. A line shows within about 4 seconds of being said at worst: the plugin writes the file within 1 second and the panel polls every 3 seconds. Each fetch gives up after 8 seconds.
 
-The panel is loaded through the webroot's `settings.json`. Its `scripts` entry is all the panel needs; the time-of-day dial
+The panel is loaded through `settings.json`, which Caddy serves from the pinned `web/geldar-settings.json` (see "Pinned
+settings.json" above). Its `scripts` entry is all the panel needs; the time-of-day dial
 (below) is a second entry in the same list:
 
     "scripts": ["assets/geldar-chat.js", "assets/geldar-sky.js"]
