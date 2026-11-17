@@ -71,6 +71,16 @@ dependencies {
     testRuntimeOnly(libs.junit.platform.launcher)
 }
 
+// The listener-registration test names the NeoForge event classes. ModDevGradle puts NeoForge on main's compile
+// classpath only (not on any configuration the test set extends), so the test source set takes main's compile
+// classpath. The same artifacts already resolve for main, so no new artifact is downloaded.
+sourceSets {
+    test {
+        compileClasspath += main.get().compileClasspath
+        runtimeClasspath += main.get().compileClasspath
+    }
+}
+
 tasks.test {
     useJUnitPlatform()
 }

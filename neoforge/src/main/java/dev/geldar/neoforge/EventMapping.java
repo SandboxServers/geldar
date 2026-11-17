@@ -27,7 +27,7 @@ public final class EventMapping {
 
     /**
      * A {@code death} event: the cause, the death block, the dimension. Drops and the respawn point are not written
-     * on NeoForge yet (README, "Not yet exported"); the schema allows them absent. A null position is absent too.
+     * on NeoForge yet (README, Events); the schema allows them absent. A null position is absent too.
      */
     public static EventEnvelope death(
             String shard, Instant at, long tick, String player, String cause, Pos where, String dimensionId) {

@@ -1,12 +1,12 @@
 # geldar-neoforge
 
-A server-side NeoForge 26.1.2 mod for the Geldar vivarium. It builds, loads on a dedicated server, and carries the NATS export lifecycle (config and publisher; no events yet). There is no game logic yet. The progression mod and the later Core adapter go here.
+A server-side NeoForge 26.1.2 mod for the Geldar vivarium. It builds, loads on a dedicated server, carries the NATS export lifecycle, and exports four event types (damage, death, sleep, server_tps; see below). There is no game logic yet. The progression mod and the later Core adapter go here.
 
 ## Export: config and publisher lifecycle (P3-2)
 
 The mod starts a NATS publisher when the server starts and closes it when the server stops. It is **off by default**: with no config the mod logs `geldar_neoforge export disabled` and connects to nothing, so existing scratch runs are unchanged.
 
-**Not done yet:** no event listeners and no exported events (P3-3), and no maintenance notices (P3-4). The publisher carries the lifecycle only.
+**Not done yet:** the scratch-stack proof of the exported events (a later packet, see Events) and maintenance notices (P3-4). Drops and respawn are not exported.
 
 Config file: `config/geldar_neoforge.properties`, read from the server's working directory (its `config/` directory). A plain properties file is used instead of NeoForge's `ModConfigSpec`, because that API is UNVERIFIED for 26.1 and a properties file can be unit-tested without a server. Environment variables win over the file, as on Paper.
 
@@ -27,6 +27,28 @@ Rules:
 - Start hook: `ServerStartingEvent`, the event this mod already uses. `ServerStartedEvent` is not used anywhere in the repo, so it is UNVERIFIED. Stop hook: `ServerStoppingEvent` (VERIFIED in `neoforge-ledger`).
 
 Tests: `ExportConfigTest` (defaults, env over file, bad or credentialed URL, missing password file, shard rule, capacity, `toString` without the path), `ExportLifecycleTest` (order, factory failure, publish without waiting for NATS, NATS down with drops and a bounded stop, no password or user in the log), `OperatorLogBridgeTest` (one warning per outage). The NATS-up path needs a live NATS and is not covered by a unit test; it belongs to the live lane.
+
+## Events (P3-3)
+
+When the export is on, the mod publishes these events on the subject `geldar.<shard>.<type>`. The payload fields are Paper's, so a NeoForge shard and a Paper shard publish the same shape. The NeoForge classes below were checked with `javap` against the 26.1.2 jars.
+
+| Type | NeoForge event (verified) | Payload | Notes |
+|---|---|---|---|
+| `damage` | `LivingDamageEvent.Post`: `getInflictedDamage()`, `getSource()` | `player`, `cause`, `amount` | `ServerPlayer` only |
+| `death` | `LivingDeathEvent`: `getSource()` | `player`, `cause`, `x`, `y`, `z`, `dimension` | `ServerPlayer` only; no drops, no respawn |
+| `sleep` | `CanPlayerSleepEvent`: `getProblem()`, `getEntity()` | `player` | see below |
+| `server_tps` | `ServerTickEvent.Pre` and `.Post`: `getServer()` | `tps`, `players`, `dropped`, `connected` | every 400 ticks (20 s) |
+
+The listeners are registered only when the export is enabled. With the export off, the mod registers no listener at all (`ExportListenersTest`). The tick type uses two listeners (Pre starts the clock, Post ends it), so five listeners are registered in all.
+
+- **Sleep.** `PlayerSleepInBedEvent` does not exist in 26.1.2, so the mod uses `CanPlayerSleepEvent`. Its `getProblem()` is the reason the game refuses the sleep. `allowed` is not a field: a `sleep` event is written only when `getProblem()` is `null`, which is how an allowed sleep is mapped. A refused sleep writes nothing. The payload is the player only, as on Paper. UNVERIFIED: that a `null` problem means a bed was really used, and that the event fires only for an actual attempt.
+- **Damage.** The `amount` is `getInflictedDamage()`, which may differ from Paper's final damage (`getFinalDamage()`). UNVERIFIED on 26.1.2; check it with a GameTest or the first scratch run.
+- **Cause.** A best-effort table from the vanilla damage type's message id to Bukkit's cause names; an unknown id is written as `CUSTOM`.
+- **Not exported.** Drops: `LivingDropsEvent` is not listened to, because its order against the death event is UNVERIFIED, so death is written from `LivingDeathEvent` alone. Respawn: no listener yet. The schema allows both absent. Both are open for the owner.
+- **Shard token.** Read from config (`GELDAR_SHARD` or the properties file), with no default. The live NeoForge shard will be `nf` and the scratch shard `nf-scratch`; both are set in config and never written in code. A bad token leaves the export off.
+- **`server_tps`.** The `tps` field is derived from tick time on NeoForge, not Bukkit's TPS: the mean tick duration over the last 1200 ticks, capped at 20. The name and shape are Paper's. `contract/` has no payload schema for this type (Q8). The Paper payload shape is used, and no schema was invented; the owner decides whether one is needed.
+- **`source_event_id`.** A fresh ULID per envelope, as on Paper (`EventEnvelope.create`). It is reused only when the same envelope is retried, so it is not stable across a restart.
+- **Proof on the scratch stack.** Not done in this packet (`live: pending`). A later probe-style check, using read-only verbs, will confirm that an exported event appears in the NATS stream.
 
 ## Rules this project keeps
 
