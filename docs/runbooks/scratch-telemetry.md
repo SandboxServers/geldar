@@ -23,7 +23,7 @@ sh deploy/scratch/scratch.sh status telemetry
 
 ```
 sh deploy/scratch/telemetry-verify.sh metric <name> [expected]   # count and the LAST data point of that metric; exit 1 when none or not equal
-sh deploy/scratch/telemetry-verify.sh max <name> [min]           # largest data point over the exports read (a state held for a window)
+sh deploy/scratch/telemetry-verify.sh max <name>[@key=value] [min]           # largest data point over the exports read (a state held for a window)
 sh deploy/scratch/telemetry-verify.sh histcount <name> [min_growth]   # first, last and delta of a histogram count
 # SCRATCH_TELEMETRY_SINCE_LINE=<n> ignores the first n sink lines (n = cat "$SCRATCH_TELEMETRY_OUT"/*.jsonl | wc -l before the action)
 sh deploy/scratch/telemetry-verify.sh event <name> [text]        # count and last record; exit 1 when none or text missing

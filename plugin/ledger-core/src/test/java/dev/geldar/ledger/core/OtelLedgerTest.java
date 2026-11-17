@@ -4,7 +4,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.geldar.ledger.core.ids.OfflineUuid;
@@ -119,7 +118,11 @@ class OtelLedgerTest {
     void disabledCollectorIsVisibleAsGaugeAndOneEventPerSwitchOff() throws Exception {
         OtelLedger l = make(true);
         BudgetGuard g = (BudgetGuard) l.guard("census");
-        assertSame(g, l.guard("census"), "second call does not wire again");
+        int probeA = l.events().register("geldar.probe.a", Severity.INFO, 1);
+        l.guard("census");
+        l.guard("census");
+        int probeB = l.events().register("geldar.probe.b", Severity.INFO, 1);
+        assertEquals(probeA + 1, probeB, "later guard() calls register no further event definition (wired once)");
         assertEquals(0L, l.longGaugeValue(Names.Guard.COLLECTOR_DISABLED, AttrKeys.M_COLLECTOR, "census"));
         mainThread[0] = true; // the guard trips on the main thread: nothing may use emitMap
         g.disable("one call took 9 us");

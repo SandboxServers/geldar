@@ -75,7 +75,7 @@ public final class LedgerPlugin extends JavaPlugin {
     /** Ledgers swapped out whose async close has not run yet; guarded by LEDGER_LOCK; null until first used. */
     private List<Built> pendingCloses;
     private boolean buildWarned;
-    private JfrWiring jfr;
+    JfrWiring jfr; // package-private: tests inject a recording starter
 
     /** Used by the server. */
     public LedgerPlugin() {
@@ -159,7 +159,11 @@ public final class LedgerPlugin extends JavaPlugin {
             if (config.enabled()) {
                 ensureLedger(config);
                 collectors.apply(config);
-                jfrWiring().sync(config, currentLedger);
+                if (real != null) {
+                    jfrWiring().sync(config, currentLedger); // never stream into the no-op ledger
+                } else {
+                    jfrWiring().stop();
+                }
             } else {
                 jfrWiring().stop();
                 collectors.stopAll();

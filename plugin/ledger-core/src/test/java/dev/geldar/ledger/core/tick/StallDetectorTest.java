@@ -22,10 +22,14 @@ class StallDetectorTest {
     now = 1500 * MS;
     assertTrue(d.check());
     assertEquals(-1, d.takeRecoveredNanos(), "still stalled: no pause yet");
-    now = 3200 * MS;
+    assertEquals(1500 * MS, d.detectedNanos());
+    now = 4000 * MS;
+    d.heartbeat(); // the first beat after the stall
+    now = 4200 * MS;
     d.heartbeat();
+    now = 4400 * MS; // the poll comes later still
     assertFalse(d.check());
-    assertEquals(3200 * MS, d.takeRecoveredNanos());
+    assertEquals(4000 * MS, d.takeRecoveredNanos(), "first new beat, not the latest beat or the check time");
     assertEquals(-1, d.takeRecoveredNanos(), "taken once");
     now = 3300 * MS;
     d.heartbeat();

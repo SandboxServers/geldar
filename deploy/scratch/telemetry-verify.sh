@@ -5,6 +5,8 @@
 #        sh deploy/scratch/telemetry-verify.sh histcount <name> [min_growth]
 #        sh deploy/scratch/telemetry-verify.sh event <name> [text]
 #        sh deploy/scratch/telemetry-verify.sh absent <string>
+# metric, max and histcount take <name>@<key>=<value> to read one series of a labelled metric only (data points whose
+# attributes hold that string attribute, e.g. geldar_paper_collector_disabled@collector=census).
 # Reads $SCRATCH_TELEMETRY_OUT/*.jsonl (the sink's JSON lines, one OTLP export request per line). With
 # SCRATCH_TELEMETRY_SINCE_LINE=<n> the first n lines are ignored (note `cat *.jsonl | wc -l` before an action to read
 # only the exports after it).
@@ -33,6 +35,33 @@ case "$kind" in
   *) usage ;;
 esac
 [ -n "$needle" ] || usage
+fk=''
+fv=''
+case "$kind" in
+  metric | max | histcount)
+    case "$needle" in
+      *@*=*)
+        filter=${needle#*@}
+        needle=${needle%%@*}
+        fk=${filter%%=*}
+        fv=${filter#*=}
+        case "$fk$fv" in
+          '' | *[!A-Za-z0-9_.:-]*)
+            echo "telemetry-verify: the series filter must be <name>@<key>=<value> with [A-Za-z0-9_.:-]+" >&2
+            exit 2
+            ;;
+        esac
+        [ -n "$fk" ] && [ -n "$fv" ] || usage
+        ;;
+    esac
+    ;;
+esac
+case "${SCRATCH_TELEMETRY_SINCE_LINE:-0}" in
+  *[!0-9]*)
+    echo "telemetry-verify: SCRATCH_TELEMETRY_SINCE_LINE must be a non-negative integer" >&2
+    exit 2
+    ;;
+esac
 if [ "$kind" != absent ]; then
   case "$needle" in
     *[!A-Za-z0-9_.:-]*)
@@ -90,7 +119,14 @@ fi
 
 # The data points of the named metric only: the text after its last "name" on the line, cut at the next "name".
 segment() {
-  printf '%s' "$1" | sed "s/^.*\"$needle\"//" | sed 's/"name":".*$//'
+  seg=$(printf '%s' "$1" | sed "s/^.*\"$needle\"//" | sed 's/"name":".*$//')
+  if [ -n "$fk" ]; then
+    # Keep only the data points whose attributes hold key=value (attributes come first in a data point).
+    printf '%s' "$seg" | sed 's/{"attributes":/\
+{"attributes":/g' | grep -F -- "\"key\":\"$fk\",\"value\":{\"stringValue\":\"$fv\"}"
+  else
+    printf '%s' "$seg"
+  fi
 }
 numbers() {
   grep -o -E '"as(Double|Int)":"?-?[0-9.eE+-]+' | sed 's/^"as[A-Za-z]*":"\{0,1\}//'
