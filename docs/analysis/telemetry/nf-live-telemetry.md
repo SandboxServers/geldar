@@ -15,6 +15,36 @@ minutes, no soak, and the smallest possible edit to the geldar-neoforge files.
 Recorded from geldar-neoforge's answers, the node audit and the owner's direct decisions. Where this section and a later
 one disagree (Option B as "recommended", `deploy/scratch/` as the script's place, the open questions), this section wins.
 
+**Final names (settled with geldar-neoforge: #701 packet B at head 7b1e24b2 for the entrypoint, #704 for the nf-live host
+names). These supersede every name in the sections below.**
+- **Attach through `JVM_OPTS`, not `JAVA_AGENTS`.** The flags are
+  `-javaagent:/geldar/telemetry/opentelemetry-javaagent.jar -Dotel.javaagent.configuration-file=/geldar/telemetry/otel-agent.properties`.
+  Reason: `JAVA_AGENTS` goes through itzg's `addAgents`, which runs mc-image-helper `mcopy`, a download and manifest tool; that
+  is the wrong path for a local, hash-verified jar. For NeoForge, itzg's start-finalExec writes `JVM_XX_OPTS`, `JVM_OPTS` and the
+  `-D` options to `user_jvm_args.txt` at every start. **UNVERIFIED: that the attach works on NeoForge at all, until the scratch
+  run.** The check is `docker top` plus the start log, in section 3.
+- **One container switch: `GELDAR_NF_TELEMETRY=on|off`** (both extras: the ledger jar and the agent). `on` mounts and checks
+  both and sets the flags. `off` removes our own ledger jar copy from `mods/`, adds no agent flags, sets
+  `OTEL_SDK_DISABLED=true` and unsets `JAVA_AGENTS` and `OTEL_JAVAAGENT_CONFIGURATION_FILE`. An **unset** variable with a stale
+  copy in `mods/` refuses to start (the operator sets `off` to clear it); it is not silently ignored.
+- `GELDAR_NF_LEDGER_SHA256`: the pin of the host ledger jar (64 lowercase hex). The value `off` is no longer used for the switch.
+- `GELDAR_NF_OTEL_AGENT_SHA256`: set by the overlay to the repo constant (agent 2.33.1, sha256
+  `e43a270df53c6f423e0ab157be9c27ccc01d5dc3232e162fe54777573db2f149`, 26507624 bytes). **Not an operator input.**
+- Mounts, all read-only: `/geldar/mods/geldar-neoforge-ledger.jar`, `/geldar/telemetry/opentelemetry-javaagent.jar`,
+  `/geldar/telemetry/otel-agent.properties`, `/geldar/telemetry/ledger.properties`. The entrypoint **copies**
+  `ledger.properties` to `/data/config/ledger.properties` at every start, so there is no nested bind inside `/data`.
+- Scratch host variables (NeoForge scratch): `SCRATCH_NEOFORGE_LEDGER_JAR`, `SCRATCH_NEOFORGE_LEDGER_SHA256`,
+  `SCRATCH_NEOFORGE_OTEL_AGENT_JAR`, `SCRATCH_NEOFORGE_OTEL_AGENT_PROPS`, `SCRATCH_LEDGER_PROPS`: **all five or none**. The soft
+  kill is `SCRATCH_NEOFORGE_TELEMETRY=off`, which is refused together with any other of these variables. `SCRATCH_OTEL_AGENT_JAR`
+  stays the Paper scratch's variable and is not used by NeoForge.
+- nf-live host names (#704): `NF_TELEMETRY`, `NF_LEDGER_JAR_HOST`, `NF_LEDGER_SHA256`, `NF_OTEL_AGENT_HOST`,
+  `NF_OTEL_AGENT_PROPS_HOST`, `NF_LEDGER_PROPS_HOST`. The two properties files are host paths (staged like the jars), not repo
+  mounts. Retired names: `NF_TELEMETRY=off` mapping to two variables, `GELDAR_NF_OTEL_AGENT` (0 or 1), `JAVA_AGENTS` for NeoForge.
+- **Verification path before `geldar-nf`:** the scratch run through the NeoForge sink overlay, and the NeoForge row driver
+  `deploy/scratch/telemetry-rows-nf.sh`. **UNVERIFIED on origin/main at 3e7a9076: the row driver is not in that tree** (checked
+  2026-11-17); it exists only on geldar-neoforge's branch, so it is not yet reviewed here. Nothing on the node until the scratch
+  run has shown rows.
+
 **Network: Option A is the default now; the relay (Option B) is later hardening.**
 - Only the `neoforge` service joins the external network `geldar-telemetry` (endpoint `http://geldar-gateway:4318`). No relay
   service is added; the six-service list stays six. `nf-live-compose.test.ts` carries an allow-list for exactly that service
@@ -32,8 +62,8 @@ one disagree (Option B as "recommended", `deploy/scratch/` as the script's place
 
 **Entrypoint and compose switches (geldar-neoforge's files; their branch `phase1/nf-entrypoint-ledger` is in progress).**
 - The telemetry block is default **off** in the shared entrypoint (scratch is unchanged); `compose/nf-live.yml` sets it on.
-- Env names: `GELDAR_NF_LEDGER_SHA256` (the value `off` is an explicit soft kill that also removes our own previous ledger
-  copy from `mods/`), `GELDAR_NF_OTEL_AGENT` (0 or 1), `GELDAR_NF_OTEL_AGENT_SHA256`. `NF_TELEMETRY=off` maps to both.
+- Env names: superseded by "Final names" above. The switch is `GELDAR_NF_TELEMETRY` (on|off); `GELDAR_NF_LEDGER_SHA256` is
+  only the jar pin; `GELDAR_NF_OTEL_AGENT_SHA256` is set by the overlay.
 - Memory: the cap decision (`12288m` limit, 9G heap, trigger at 11 GiB container memory, heap 8G first) is geldar-neoforge's.
 - The first live stage needs no player. The live probe needs a `body` NATS user limited to the nf registry bucket, an rcon
   secret, `nf-deploy.sh probe`, an opt-in p0-probe overlay and a `golem/**` isolation-check change (geldar-93's window): that
@@ -45,9 +75,10 @@ one disagree (Option B as "recommended", `deploy/scratch/` as the script's place
   masked, agent names allow-listed, the mask applied before export and failing closed, tested with fake names, **no speaker
   id**. Stated weaknesses: emails, coordinates, nicknames and misspellings, names not yet seen can still pass. Record 0375
   (Proposed) holds it; 0387 item 8 ("nothing human-written is exported until answered") is answered by it.
-- Chat export stays **off** on geldar-nf (`collector.chat.enabled=false`, default false) until the mask is built and tested.
-  Branch `telemetry/nf-chat-switch` builds the switch, the command-name-only change and the mask. **Do not stage a ledger jar
-  built before that branch has merged**: without the switch, `collector.audit.enabled=true` exports chat text.
+- Chat export stays **off** on geldar-nf (`collector.chat.enabled=false`, default false). The switch (branch
+  `telemetry/nf-chat-switch`, merged as PR #702) and the hardened name mask (PR #703, merged at 3e7a9076, commits e9d69603,
+  1b28e655, 5e89f01f) are on main. Chat stays off until the owner says otherwise. **Do not stage a ledger jar built before
+  PR #702 merged**: without the switch, `collector.audit.enabled=true` exports chat text. The live jar below is from 3e7a9076.
 - geldar-neoforge found that their own event export wrote the human's name in `player` to NATS and Postgres and is fixing it in
   `neoforge/` only (not our files).
 
@@ -63,6 +94,14 @@ one disagree (Option B as "recommended", `deploy/scratch/` as the script's place
   compared over a second channel.
 - Staging: the ledger jar goes in the same 0700 directory as the geldar mod jar, under the ops account's home on the node,
   never in a repo; its sha256 comes from `build-neoforge-ledger.sh` on a clean export, with the commit recorded.
+- **Staged live artifacts (the bring-up checklist uses these exact values).** Ledger jar built from main 3e7a9076:
+  `geldar-neoforge-ledger-0.1.0.jar`, sha256 `969fd8be89a95f1d7b73f6ebe6516730c46f62ad2ebf76d0213f51544494abbd`, 465527 bytes,
+  from two byte-identical builds. Live `ledger.properties` sha256 `407e4759cb1bafa417ecd8eb75d03fd964578e5b89dc2586b41eff6047865f44`
+  (matches the repo file `compose/neoforge/ledger.properties` on main). Live `otel-agent.properties` sha256
+  `4a6ff9bcb4e0c890f7929f63dde39ceafb842683b8f914d8ab20c1cee7c0ab8f` (matches `compose/neoforge/otel-agent.properties`; its
+  endpoint is `http://geldar-gateway:4318`, the Option A default). Agent 2.33.1 is pinned as above. The 448749-byte figure
+  earlier in this section is not the staged artifact. **UNVERIFIED on the node:** that the staged files are the bytes that
+  were hashed here (the hashes are checked again at `nf-deploy.sh plan`).
 - Agent profile `compose/neoforge/otel-agent.properties` (minimum, from geldar-neoforge's privacy check): every
   auto-instrumentation off, then only the OpenTelemetry API bridge and the JVM runtime metrics on; the log4j, logback and
   java-util-logging appenders off; metrics and logs exporters `otlp`, traces `none`, `http/protobuf`, endpoint the gateway
@@ -160,20 +199,20 @@ Option B (the recommended network design, 1d) is assumed in the snippets; the Op
   file of PT-02a is to be compared). The pin is a constant in the entrypoint (as the installer pins are): it is a public
   artifact, not something we build. Host side: `NF_OTEL_AGENT_HOST` (path), read-only mount at
   `/geldar/telemetry/opentelemetry-javaagent.jar`, `nf-deploy.sh` gate checks the same sha256 before anything starts.
-- **JVM flag:** the pattern already used by `compose/opt-in/scratch-telemetry.yml` (PT-03k): the itzg `JAVA_AGENTS`
-  variable (a bare `-javaagent`) plus the profile by environment variable, because `JAVA_AGENTS` takes no options:
-
-```yaml
-      JAVA_AGENTS: /geldar/telemetry/opentelemetry-javaagent.jar
-      OTEL_JAVAAGENT_CONFIGURATION_FILE: /geldar/telemetry/otel-agent.properties
-      OTEL_SDK_DISABLED: "false"
-```
-  UNVERIFIED: that the pinned itzg image (2026.10.1-java25) applies `JAVA_AGENTS` on the NeoForge start path (the scratch
-  overlay proves it for Paper only). Checked in the first minute of bring-up with `docker top` (4a). Fallback if absent:
-  `JVM_OPTS: "-javaagent:/geldar/telemetry/opentelemetry-javaagent.jar -Dotel.javaagent.configuration-file=/geldar/telemetry/otel-agent.properties"`.
-  The entrypoint ends in `exec .../start "$@"`, so it needs no change to pass either variable; it only unsets them when
-  telemetry is off.
-- **Agent properties: new file `compose/neoforge/otel-agent.properties`** (read-only mount; no address, token or header;
+- **JVM flag (final, see "Final names"):** the agent is attached through `JVM_OPTS` with both flags:
+  `-javaagent:/geldar/telemetry/opentelemetry-javaagent.jar -Dotel.javaagent.configuration-file=/geldar/telemetry/otel-agent.properties`.
+  The earlier design used the itzg `JAVA_AGENTS` variable (the pattern of `compose/opt-in/scratch-telemetry.yml`, PT-03k). That is
+  **dropped for NeoForge**: `JAVA_AGENTS` goes through `addAgents` and mc-image-helper `mcopy` (a download and manifest tool), and
+  it takes no options, so the properties file would be read only through `OTEL_JAVAAGENT_CONFIGURATION_FILE`. The `JAVA_AGENTS`
+  pattern stays valid for the Paper scratch only.
+  **UNVERIFIED on NeoForge:** that itzg's start-finalExec writes these flags to `user_jvm_args.txt` at every start and that the
+  JVM then attaches the agent. Checked in the first minutes of bring-up with `docker top` and the start log (section 3, the
+  row "2 to 8 min"). The attach is proven only by the scratch run.
+  The entrypoint ends in `exec .../start "$@"`, so it passes no new arguments; the flags are carried in `JVM_OPTS`, and nothing is
+  added when telemetry is `off`.
+- **Agent properties: repo file `compose/neoforge/otel-agent.properties`** (staged to the host as `NF_OTEL_AGENT_PROPS_HOST`,
+  mounted read-only at `/geldar/telemetry/otel-agent.properties`; the staged file is the one with sha256 `4a6ff9...` in
+  section 0a, and its endpoint is the Option A gateway name, not the relay name in the draft below; no address, token or header;
   derived from `compose/paper/otel-agent.properties`, the same 2.33.1 key names):
 
 ```properties
@@ -206,7 +245,8 @@ otel.blrp.max.queue.size=2048
 
 ### 1c. The ledger config (all collectors on)
 
-New file `compose/neoforge/ledger.properties`, mounted read-only at `/geldar/telemetry/ledger.properties`, copied by the
+Repo file `compose/neoforge/ledger.properties` (staged to the host as `NF_LEDGER_PROPS_HOST`, sha256 `407e47...` in section
+0a), mounted read-only at `/geldar/telemetry/ledger.properties`, copied by the
 entrypoint to `/data/config/ledger.properties` at every start (copy, not a nested bind into the named volume: a bind inside
 `/data` makes Docker create a root-owned `config/` and the server could not write its own config files there). Keys are the
 README's; collector ids are NeoForge's (they differ from Paper's):
@@ -227,9 +267,9 @@ collector.operator.enabled=true
 ```
 Rate limits and budgets stay at their defaults (`rate.geldar.chat` 20/s, curated 20/s per event, and so on). The Paper-only
 ids in `deploy/scratch/ledger.properties` (`spark`, `census`, `cadence`, `bridge`, `container`, `disk`, `jfr.*`) do not exist
-in `neoforge-ledger` and are not copied. **Kill switch:** `enabled=false` here (the master stops every collector), or
-`NF_TELEMETRY=off` (below). Both take effect at the next start: the NeoForge README documents no reload (UNVERIFIED; Paper
-reloads), so plan on one server restart (question 13).
+in `neoforge-ledger` and are not copied. **Kill switch:** `enabled=false` here (the master stops every collector), or `GELDAR_NF_TELEMETRY=off` (host
+`NF_TELEMETRY=off`; section 0a and the kill switch in section 3). Both take effect at the next start: the NeoForge README
+documents no reload (UNVERIFIED; Paper reloads), so plan on one server restart (question 13).
 
 ### 1d. Network
 
@@ -348,9 +388,8 @@ Proposed diffs (inline; Option B):
        GELDAR_NF_MOD_SHA256: "${NF_MOD_SHA256:-}"
 +      GELDAR_NF_TELEMETRY: "${NF_TELEMETRY:-on}"      # on|off; the entrypoint's own default is off (scratch)
 +      GELDAR_NF_LEDGER_SHA256: "${NF_LEDGER_SHA256:-}"
-+      JAVA_AGENTS: /geldar/telemetry/opentelemetry-javaagent.jar
-+      OTEL_JAVAAGENT_CONFIGURATION_FILE: /geldar/telemetry/otel-agent.properties
-+      OTEL_SDK_DISABLED: "false"
++      # No agent variables here. The entrypoint adds the two -javaagent / -D flags to JVM_OPTS when on, and none when off
++      # (final names, section 0a). JAVA_AGENTS and OTEL_JAVAAGENT_CONFIGURATION_FILE are not used for NeoForge.
      volumes:
        ...
 +      - type: bind
@@ -363,11 +402,20 @@ Proposed diffs (inline; Option B):
 +        target: /geldar/telemetry/opentelemetry-javaagent.jar
 +        read_only: true
 +        bind: {create_host_path: false}
-+      - ./neoforge/otel-agent.properties:/geldar/telemetry/otel-agent.properties:ro
-+      - ./neoforge/ledger.properties:/geldar/telemetry/ledger.properties:ro
++      - type: bind
++        source: ${NF_OTEL_AGENT_PROPS_HOST:-./nf-live-unset/otel-agent.properties}
++        target: /geldar/telemetry/otel-agent.properties
++        read_only: true
++        bind: {create_host_path: false}
++      - type: bind
++        source: ${NF_LEDGER_PROPS_HOST:-./nf-live-unset/ledger.properties}
++        target: /geldar/telemetry/ledger.properties
++        read_only: true
++        bind: {create_host_path: false}
 ```
 plus the `telemetry-relay` service, the `telemetry` network and the `configs` block of 1d, and the header comment lines
-for the new variables (`NF_LEDGER_JAR_HOST`, `NF_LEDGER_SHA256`, `NF_OTEL_AGENT_HOST`, `NF_TELEMETRY`).
+for the new variables (`NF_TELEMETRY`, `NF_LEDGER_JAR_HOST`, `NF_LEDGER_SHA256`, `NF_OTEL_AGENT_HOST`, `NF_OTEL_AGENT_PROPS_HOST`,
+`NF_LEDGER_PROPS_HOST`).
 
 **compose/neoforge/neoforge-entrypoint.sh** (default off keeps scratch identical)
 ```sh
@@ -377,13 +425,19 @@ ledger_mounted=${GELDAR_NF_LEDGER_JAR:-/geldar/mods/geldar-neoforge-ledger.jar}
 ledger_copy=$data/mods/geldar-neoforge-ledger.jar
 agent_mounted=${GELDAR_NF_OTEL_AGENT:-/geldar/telemetry/opentelemetry-javaagent.jar}
 # OpenTelemetry Java agent 2.33.1, Maven Central, 26507624 bytes
-AGENT_SHA256=${GELDAR_NF_OTEL_AGENT_SHA256:-e43a270df53c6f423e0ab157be9c27ccc01d5dc3232e162fe54777573db2f149}
+# set by the nf-live / scratch overlay to the repo constant (2.33.1, sha256 e43a270d...f2db149); not an operator input
+AGENT_SHA256=${GELDAR_NF_OTEL_AGENT_SHA256:-}
 ledger_cfg_mounted=${GELDAR_NF_LEDGER_CONFIG:-/geldar/telemetry/ledger.properties}
 ledger_cfg=${GELDAR_NF_LEDGER_CFG_DEST:-$data/config/ledger.properties}
 
-# BEFORE the bundle check, next to the mod_copy removal: an earlier copy is removed always (bundle mode lists mods/ exactly;
-# the copy is made again after the check, only when telemetry is on).
-rm -f "$ledger_copy"
+# BEFORE the bundle check (bundle mode lists mods/ exactly). A copy left by an earlier start is removed only when the switch
+# is on or off; with the switch unset the start refuses (the operator sets off to clear it, final names in section 0a).
+if [ -e "$ledger_copy" ]; then
+  case "${GELDAR_NF_TELEMETRY-}" in
+    on | off) rm -f "$ledger_copy" ;;
+    *) echo "neoforge-entrypoint: a ledger copy is in mods/ and GELDAR_NF_TELEMETRY is unset; set it to off; refusing to start" >&2; exit 1 ;;
+  esac
+fi
 
 # AFTER the geldar mod jar copy block, BEFORE the PCF config block:
 case "$telemetry" in
@@ -414,8 +468,11 @@ else
   export OTEL_SDK_DISABLED=true
 fi
 ```
-`is_sha256_hex` is defined above that block in the current script, so it is available. Entrypoint tests to add (same seams as
-the existing ones): off leaves no copy and unsets `JAVA_AGENTS`; on copies jar and config with the data dir's owner; a
+`is_sha256_hex` is defined above that block in the current script, so it is available. Two rules the block must meet, from
+the final names: (1) when on, the two agent flags are added to `JVM_OPTS` (the exact line is geldar-neoforge's branch code,
+not reproduced here); when off, none are added. (2) `GELDAR_NF_OTEL_AGENT_SHA256` is checked as 64 lowercase hex and then
+against the agent's hash: it is set by the overlay, so an empty value refuses to start with telemetry on. Entrypoint tests to
+add (same seams as the existing ones): off leaves no copy and unsets `JAVA_AGENTS`; an unset switch with a stale copy refuses; on copies jar and config with the data dir's owner; a
 mismatching ledger hash, a mismatching agent hash, a symlinked jar, a bad hash format and a bad `GELDAR_NF_TELEMETRY` each
 refuse and copy nothing; a stale ledger copy is removed in bundle mode (second start passes the exact-`mods/` check); off after
 on removes the copy.
@@ -443,11 +500,25 @@ after merge and staging, recreate only the two changed services (the runbook all
 restart (the same as a rollback). Whether compose also recreates `velocity` because its dependency was recreated is UNVERIFIED;
 no human can join yet (loopback ingress only), so the impact is nil either way.
 
+### Scratch verification before geldar-nf (required first)
+Nothing goes to the node until this passes on scratch. Two parts, both UNVERIFIED until run:
+- The **NeoForge sink overlay** with the scratch variables `SCRATCH_NEOFORGE_LEDGER_JAR`, `SCRATCH_NEOFORGE_LEDGER_SHA256`,
+  `SCRATCH_NEOFORGE_OTEL_AGENT_JAR`, `SCRATCH_NEOFORGE_OTEL_AGENT_PROPS` and `SCRATCH_LEDGER_PROPS`: all five or none. The soft
+  kill is `SCRATCH_NEOFORGE_TELEMETRY=off`, refused together with any other of these. (`SCRATCH_OTEL_AGENT_JAR` is the Paper
+  scratch's and is not used here.)
+- The **NeoForge row driver** `deploy/scratch/telemetry-rows-nf.sh`. It is **not in origin/main at 3e7a9076** (checked
+  2026-11-17); it exists only on geldar-neoforge's branch, so it is unreviewed here.
+What it must show, in order: the agent flags in `JVM_OPTS` and the agent banner (2.33.1) (the attach, the first UNVERIFIED
+step); the first exported batch holds no `host.name`, `process.*` or `os.*` (finding in section 1b); the rows of section 3
+(`geldar_ledger_queue_depth`, `geldar_ledger_dropped_total`, then the others); and no `ledger chat export on` line in the log.
+A failure here is a finding and stops the packet; do not fix it on the node.
+
 ### Staging (desktop, then node), 30 minutes at most
 1. Clean export of the reviewed commit; build the ledger jar with `build-neoforge-ledger.sh`; build it a second time and note
    whether the hashes agree. Download the agent 2.33.1 and check its sha256 against the pin above.
-2. Compare both sha256 values over a second channel (as the runbook does for the geldar jar). Copy both jars to the ops-owned
-   directory on the node. `export NF_LEDGER_JAR_HOST NF_LEDGER_SHA256 NF_OTEL_AGENT_HOST`.
+2. Compare both sha256 values over a second channel (as the runbook does for the geldar jar). Copy both jars and both properties
+   files (`compose/neoforge/otel-agent.properties`, `compose/neoforge/ledger.properties`) to the ops-owned directory on the node.
+   `export NF_TELEMETRY NF_LEDGER_JAR_HOST NF_LEDGER_SHA256 NF_OTEL_AGENT_HOST NF_OTEL_AGENT_PROPS_HOST NF_LEDGER_PROPS_HOST`.
 3. Validate the relay config on the desktop. Confirm the external network `geldar-telemetry` exists on the node and the
    gateway is up (`docker network ls`, `docker ps` are read-only; the telemetry README's health check for `:13133`).
 4. `nf-deploy.sh plan`: every gate passes (jars hashed, free RAM, port, config renders).
@@ -456,8 +527,9 @@ no human can join yet (loopback ingress only), so the impact is nil either way.
 | T+ | Check (read-only verbs) | Pass |
 |----|-------------------------|------|
 | 0 to 2 min | `nf-deploy.sh up` (or the Case 2 command); no `refusing to start` line in `nf-deploy.sh logs neoforge` | jars verified, container running |
-| 2 to 8 min | `nf-deploy.sh logs neoforge` shows `Done`; `docker top geldar-nf-neoforge-1` shows `-javaagent:/geldar/telemetry/opentelemetry-javaagent.jar` and `-Xmx9G` | server up, agent flag present (if the flag is absent: `JAVA_AGENTS` is not honoured, use the `JVM_OPTS` fallback, one restart) |
-| Done+1 | log shows `ledger` / "Geldar Ledger" loaded and the agent banner (version 2.33.1). Ledger warnings go to **stderr**, not `latest.log` (spike finding): read them through `nf-deploy.sh logs`, not the log file | mod loaded, no "ledger off" warning |
+| 2 to 8 min | `nf-deploy.sh logs neoforge` shows `Done`; `docker top geldar-nf-neoforge-1` shows `-javaagent:/geldar/telemetry/opentelemetry-javaagent.jar` and `-Xmx9G` | server up, agent flag present (UNVERIFIED on NeoForge: if the flag is absent, read the start log and `user_jvm_args.txt` in the data directory; the fix is
+one restart; a failed attach is a finding for the scratch run, not a reason to edit the live file by hand) |
+| Done+1 | log shows `ledger` / "Geldar Ledger" loaded and the agent banner (version 2.33.1). Ledger warnings go to **stderr**, not `latest.log` (spike finding): read them through `nf-deploy.sh logs`, not the log file | mod loaded, no "ledger off" warning, and **no `ledger chat export on` line** in the first run's log (chat is off: `collector.chat.enabled=false`); if that line appears, stop and roll back | mod loaded, chat off |
 | Done+60 s (2 export intervals of 15 s plus up to 5+5 s of gateway batching) | in SigNoz (service `geldar-neoforge`, resource `service.namespace=geldar`, `geldar.shard=nf`): metrics `geldar_ledger_queue_depth`, `geldar_ledger_dropped_total` (the only ones the spike proved) | the gateway receives; if absent at 3 min, check in this order: relay logs (`docker compose ... logs telemetry-relay`, level warn), the gateway's own metrics `otelcol_receiver_refused_*` / `otelcol_exporter_send_failed_*`, the agent's export errors on stderr |
 | Done+3 min | metrics: tick (names per `deploy/signoz/neoforge-dashboard.json`; `geldar_world_tick_ms` is a proposed name and its panel may be empty), `geldar_world_loaded_chunks` / `geldar_world_entities` / `geldar_world_players` (attribute `world`, a dimension id such as `minecraft:overworld`), `geldar_players_online`, `geldar_operators_count`, `geldar_mods_loaded`; JVM runtime metrics from the agent. Log record `geldar.server.config_snapshot` (once, 5 s after start; carries `jvm_xmx`, `view_distance`, `max_players`; no rcon, query, address or seed key) | server, world and tick rows present |
 | Done+3 min | `docker stats --no-stream geldar-nf-neoforge-1` (memory vs the 12 GiB cap) | see Memory |
@@ -483,9 +555,10 @@ snapshot every 60 s for an agent) need a joined player. What is needed, and what
   first live P0 join that geldar-neoforge plans anyway.
 
 ### Kill switch and rollback
-- **Soft (no file edit):** `export NF_TELEMETRY=off` and `nf-deploy.sh up` (or the Case 2 command for `neoforge`): the entrypoint
-  removes the ledger copy, unsets `JAVA_AGENTS`, sets `OTEL_SDK_DISABLED=true`; the server runs with no agent and no mod. One
-  neoforge restart. The mounts must still exist (they are fail-closed).
+- **Soft (no file edit):** `export NF_TELEMETRY=off` (container: `GELDAR_NF_TELEMETRY=off`) and `nf-deploy.sh up` (or the Case 2
+  command for `neoforge`): the entrypoint removes the ledger copy, adds no agent flags, sets `OTEL_SDK_DISABLED=true` and unsets
+  `JAVA_AGENTS` and `OTEL_JAVAAGENT_CONFIGURATION_FILE`; the server runs with no agent and no mod. One neoforge restart. The
+  mounts must still exist (they are fail-closed). An unset switch with a stale copy refuses to start, so `off` is the way out.
 - **Ledger only:** `enabled=false` in `compose/neoforge/ledger.properties`, new export, one restart.
 - **Hard rollback:** redeploy the previous export (no relay, no mounts, no flags) and recreate `neoforge` only; `docker compose ...
   rm -sf telemetry-relay` for the relay. The external network is not removed by compose. Outage = one server restart.
@@ -508,6 +581,7 @@ measurement). The relay adds 192 MiB; the gateway's own 1 GiB cap is unchanged.
 - **What "everything on" captures on a human-directed shard**, key by key (the owner approved enabling everything after
   deployment; D-F, human chat verbatim with no speaker id, stands):
   - `collector.audit.enabled=true`: `geldar.chat` (raw typed text of **human and agent** chat, scrubbed and capped by the core;
+    **not exported while `collector.chat.enabled=false`, the live setting**, see the mask bullet below;
     speaker only as a life id, so a human speaker has none; cancelled chat not captured, D-I), `geldar.console.command` and
     `geldar.rcon.command` (the server console and RCON only; RCON is disabled on this shard; player and command-block commands are
     not exported), `geldar.combat.damage` / `player_death` / `kill` (with `collector.combat.enabled`), `geldar.operator.change`
@@ -522,7 +596,12 @@ measurement). The relay adds 192 MiB; the gateway's own 1 GiB cap is unchanged.
   - `tick`, `world`, `server`: server health and counts only (`geldar_mods_loaded` is a count; no names or versions).
   - Not enabled: the server log shipping (finding 8). The gateway additionally masks IPv4/IPv6 literals, drops
     credential-looking keys, and keeps metrics free of life ids.
-- A human who plays here has their chat text recorded verbatim. Today the ingress is bot-only on loopback, so until the later
+- Human chat (D-F, section 0a): when chat is on, the verbatim text goes out with a **name mask** (PR #703, merged at
+  3e7a9076; commits e9d69603, 1b28e655, 5e89f01f): human names are masked before export, agent names are allow-listed, the
+  mask fails closed, it is tested with fake names, and no speaker id is exported. **Stated weaknesses (the owner's list):** emails,
+  coordinates, nicknames and misspellings, and names not yet seen can still pass. **Live setting: chat is off**
+  (`collector.chat.enabled=false`), so no human chat text leaves the shard on the first run. The mask is **UNVERIFIED on a live
+  server**. A player's text is recorded verbatim only if the switch is turned on later. Today the ingress is bot-only on loopback, so until the later
   online-mode listener exists the only chat is the agents' and the operator's. The retention and the consent text for humans
   belong to the owner's decision records; this design does not decide them.
 

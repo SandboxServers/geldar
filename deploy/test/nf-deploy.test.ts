@@ -24,6 +24,7 @@ const ROOT = resolve(DEPLOY, '..');
 const SCRIPT_SRC = resolve(DEPLOY, 'nf-deploy.sh');
 const SCRIPT_TEXT = readFileSync(SCRIPT_SRC, 'utf8');
 const NF_COMPOSE_TEXT = readFileSync(resolve(ROOT, 'compose', 'nf-live.yml'), 'utf8');
+const NF_OVERLAY_TEXT = readFileSync(resolve(ROOT, 'compose', 'nf-live-telemetry.yml'), 'utf8');
 const SECRET_FILES = /^SECRET_FILES="([^"]+)"$/m.exec(SCRIPT_TEXT)?.[1].split(' ') ?? [];
 const JAR_BYTES = 'geldar neoforge mod fixture\n';
 const LIST_BYTES = 'bundle list fixture\n';
@@ -45,6 +46,7 @@ const STUB_SCRIPTS: Record<string, string> = {
     'case "$1" in',
     '  ps) printf "%s\\n" "$DOCKER_LABELS"; exit 0 ;;',
     '  volume) exit "${VOLUME_MISSING:-0}" ;;',
+    '  network) exit "${NETWORK_MISSING:-0}" ;;',
     '  run)',
     '    case "$*" in',
     '      *"ls -A"*) printf "%s\\n" "$VOLUME_CONTENT"; exit 0 ;;',
@@ -96,6 +98,7 @@ function makeRepo(): string {
   mkdirSync(join(repo, 'bundle'));
   copyFileSync(SCRIPT_SRC, join(repo, 'deploy', 'nf-deploy.sh'));
   writeFileSync(join(repo, 'compose', 'nf-live.yml'), NF_COMPOSE_TEXT);
+  writeFileSync(join(repo, 'compose', 'nf-live-telemetry.yml'), NF_OVERLAY_TEXT);
   for (const f of SECRET_FILES)
     writeFileSync(join(repo, 'compose', 'secrets-nf', f), `${f} fixture\n`);
   writeFileSync(join(repo, 'mod.jar'), JAR_BYTES);
@@ -172,7 +175,11 @@ describe('nf-deploy.sh constants and the one compose file', () => {
     const composeFileLines = SCRIPT_TEXT.split('\n').filter(
       (l) => l.includes('docker compose') && l.includes(' -f'),
     );
-    expect(composeFileLines).toEqual(['  docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"']);
+    // Two lines: the telemetry branch (the overlay added) and the default branch.
+    expect(composeFileLines).toEqual([
+      '    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$TELEMETRY_FILE" "$@"',
+      '    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"',
+    ]);
     expect(run(repo, ['up'], {}).status).toBe(0);
     // The script's ROOT is a POSIX-style path under Git Bash, so the test checks the tokens, not the path text.
     for (const c of composeCalls(repo)) {
