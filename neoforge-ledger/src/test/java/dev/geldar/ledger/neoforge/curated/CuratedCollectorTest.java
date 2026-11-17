@@ -154,6 +154,16 @@ class CuratedCollectorTest {
     }
 
     @Test
+    void masterOffStopsCuratedEvenWhenItsOwnKeyIsOn() {
+        extra.setProperty("enabled", "false");
+        CuratedCollector c = started(true);
+        c.handle(CuratedKind.BREAK, () -> at(LIFE, false));
+        assertFalse(c.active());
+        assertEquals(List.of(), names);
+        assertEquals(0, records.size());
+    }
+
+    @Test
     void registersEightEventsWithParityNamesAndFields() {
         started(true);
         assertEquals(

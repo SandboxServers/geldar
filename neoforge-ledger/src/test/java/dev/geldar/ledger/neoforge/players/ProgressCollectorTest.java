@@ -189,6 +189,7 @@ class ProgressCollectorTest {
         ProgressCollector c = started("true");
         List<String> layout = java.util.Arrays.asList(null, null, AttrKeys.FLAG, AttrKeys.LIFE_ID, AttrKeys.SUBTYPE);
         assertEquals(List.of(layout, layout), registered, "three longs then three strings; earn and grant each have a bucket");
+        main.set(true); // advancement events are server-thread events
         c.advancement(LIFE, "minecraft:story/root", true);
         c.advancement(LIFE, "minecraft:story/root", false);
         String earn = "{geldar.flag=1, geldar.life_id=" + LIFE + ", geldar.subtype=minecraft:story/root}";
@@ -199,8 +200,19 @@ class ProgressCollectorTest {
     }
 
     @Test
+    void anAdvancementOffTheServerThreadNeverTouchesTheGuardOrRecords() {
+        ProgressCollector c = started("true");
+        main.set(false);
+        c.advancement(LIFE, "minecraft:story/root", true);
+        assertTrue(recorded.isEmpty());
+        assertEquals(0, begun.get());
+        assertEquals(0, ended.get());
+    }
+
+    @Test
     void aHumanAdvancementIsDroppedAndNeverNamed() {
         ProgressCollector c = started("true");
+        main.set(true);
         for (String name : new String[] {"Steve", "ag_Ada_01", "", null, "ag_ada_1", "ag_ada_01\n"}) {
             c.advancement(name, "minecraft:story/root", true);
         }
@@ -224,6 +236,7 @@ class ProgressCollectorTest {
     @Test
     void guardRefusalAndAThrowingLedgerStopNothing() {
         ProgressCollector c = started("true");
+        main.set(true);
         allowed.set(false);
         c.advancement(LIFE, "minecraft:story/root", true);
         assertTrue(recorded.isEmpty());
@@ -308,6 +321,7 @@ class ProgressCollectorTest {
         Files.writeString(later.resolve(AGENT + ".json"), SAMPLE);
         stats.run();
         assertEquals(1, emitted.size());
+        main.set(true);
         c.advancement(LIFE, "minecraft:story/root", true);
         assertEquals(1, recorded.size());
     }
@@ -315,6 +329,7 @@ class ProgressCollectorTest {
     @Test
     void grantsAndEarnsHaveSeparateBuckets() {
         ProgressCollector c = started("true");
+        main.set(true);
         c.advancement(LIFE, "minecraft:recipes/misc/stick", false);
         c.advancement(LIFE, "minecraft:story/root", true);
         assertTrue(recorded.get(0).startsWith("1{"), recorded.get(0));

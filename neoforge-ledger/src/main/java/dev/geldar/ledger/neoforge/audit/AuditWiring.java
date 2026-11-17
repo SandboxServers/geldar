@@ -22,7 +22,7 @@ import net.neoforged.neoforge.event.entity.player.PermissionsChangedEvent;
  * and is tested; the readers below cannot be built without a running server. Fail-safe: a failure here leaves the families off.
  */
 public final class AuditWiring {
-    private static final Logger LOG = Logger.getLogger("ledger");
+    private static final Logger LOG = dev.geldar.ledger.neoforge.LedgerLog.server();
 
     /** Every listener runs after the other mods and never sees an event that was already cancelled (D-I). */
     static final EventPriority PRIORITY = EventPriority.LOWEST;
@@ -33,8 +33,8 @@ public final class AuditWiring {
 
     /** Registers the listeners on the NeoForge bus; call from the mod constructor. Does nothing for a null ledger. */
     public static void install(Ledger ledger, HostInfo host) {
-        if (ledger == null) {
-            return;
+        if (ledger == null || !new AuditGate(ledger, null).getAsBoolean()) {
+            return; // opt-in: nothing is registered or listened to unless collector.audit.enabled=true
         }
         try {
             CombatFamily combat = new CombatFamily(ledger, host);
@@ -49,7 +49,7 @@ public final class AuditWiring {
             if (t instanceof VirtualMachineError vme) {
                 throw vme;
             }
-            LOG.warning("ledger curated wiring failed: " + t.getClass().getName());
+            LOG.warning("ledger audit wiring failed: " + t.getClass().getName());
         }
     }
 
@@ -96,7 +96,11 @@ public final class AuditWiring {
     private static void command(OperatorAuditFamily audit, CommandEvent e) {
         try {
             CommandSourceStack source = e.getParseResults().getContext().getSource();
-            String kind = OperatorAuditFamily.commandKind(source.getEntity() != null, source.getTextName());
+            String kind = OperatorAuditFamily.commandKind(
+                    source.getEntity() != null,
+                    source.getTextName(),
+                    source.source instanceof net.minecraft.server.MinecraftServer,
+                    source.source instanceof net.minecraft.server.rcon.RconConsoleSource);
             audit.command(kind, e.isCanceled(), () -> e.getParseResults().getReader().getString());
         } catch (Throwable t) {
             rethrowVmError(t);

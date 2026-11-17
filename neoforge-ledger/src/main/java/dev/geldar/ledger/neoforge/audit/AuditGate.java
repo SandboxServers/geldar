@@ -1,0 +1,39 @@
+package dev.geldar.ledger.neoforge.audit;
+
+import dev.geldar.ledger.core.Ledger;
+import dev.geldar.ledger.core.LedgerConfig;
+import java.util.function.BooleanSupplier;
+
+/**
+ * The audit opt-in (chat text, console and RCON command text, combat, operator change). Off unless the master switch is
+ * on AND {@code collector.audit.enabled=true} is set explicitly (absent means off), and, for a family with its own id
+ * (combat, operator), that collector is not switched off. Read from the ledger's config on every call, so it holds on
+ * any thread (chat and RCON are not server-thread events) and a gate that is off means no read and no record.
+ */
+final class AuditGate implements BooleanSupplier {
+    static final String ID = "audit";
+
+    private final Ledger ledger;
+    private final String collectorId;
+
+    /** {@code collectorId} is the family's own collector id, or null when it has none (chat). */
+    AuditGate(Ledger ledger, String collectorId) {
+        this.ledger = ledger;
+        this.collectorId = collectorId;
+    }
+
+    @Override
+    public boolean getAsBoolean() {
+        try {
+            LedgerConfig c = ledger.config();
+            return c.collectorEnabled(ID)
+                    && Boolean.TRUE.equals(c.collectorEnabled().get(ID))
+                    && (collectorId == null || c.collectorEnabled(collectorId));
+        } catch (Throwable t) {
+            if (t instanceof VirtualMachineError vme) {
+                throw vme;
+            }
+            return false;
+        }
+    }
+}

@@ -68,6 +68,9 @@ public final class TickCollector implements Collector {
     public synchronized void start(CollectorContext ctx) {
         stop();
         Ledger l = ctx.ledger();
+        if (!l.config().collectorEnabled(ID)) {
+            return; // master off or collector.tick.enabled=false (default on): no listener, gauges or watchdog
+        }
         CollectorGuard guard = l.guard(ID);
         long thresholdMs = l.config().stallThresholdMs();
         StallDetector stall = new StallDetector(thresholdMs, nanoClock);

@@ -68,7 +68,8 @@ public final class CuratedCollector implements Collector {
     @Override
     public synchronized void start(CollectorContext ctx) {
         stop();
-        if (!Boolean.TRUE.equals(ctx.ledger().config().collectorEnabled().get(ID))) {
+        if (!ctx.ledger().config().collectorEnabled(ID)
+                || !Boolean.TRUE.equals(ctx.ledger().config().collectorEnabled().get(ID))) {
             return;
         }
         EventLog log = ctx.ledger().events();

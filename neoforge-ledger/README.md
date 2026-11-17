@@ -21,17 +21,37 @@ cd neoforge-ledger
 ./gradlew build
 ```
 
-Config is `config/ledger.properties` (same keys as the Paper plugin); a missing file means defaults. No collectors are registered yet.
+Config is `config/ledger.properties`; a missing file means defaults. The keys are the core's (`enabled`, `collector.<id>.enabled`, `rate.<eventName>`, budgets); the collector ids differ from Paper's. The master `enabled=false` stops every collector.
 
-## Audit events (PT-N8, package `audit`)
+| Key | Default | Covers |
+|---|---|---|
+| `collector.tick.enabled` | on | tick lag, overruns, stalls, per-world tick time (as Paper's tick) |
+| `collector.progress.enabled` | off | advancements and the 300 s stats read |
+| `collector.curated.enabled` | off | the curated block, item and container events |
+| `collector.audit.enabled` | off | every audit family below: chat text, console and RCON command text, combat, operator change |
+| `collector.combat.enabled`, `collector.operator.enabled` | on, but only matter once audit is on | switch one audit family off |
+
+Audit is opt-in, like Paper's curated data: absent or anything but `true` means off. It is checked at install and again on every event on whatever thread it arrives (chat and RCON are not server-thread events), so off means no read and no record. Nothing exports until the owner sets a window and the keys.
+
+## Tick (PT-N4a, package `tick`)
+
+Tick lag, overruns, stalls (a watchdog on its own daemon thread) and the per-dimension tick time. On unless `collector.tick.enabled=false` or the master is off; then no listener, gauge or watchdog starts.
+
+## Progress (PT-N9, package `players`, opt-in: `collector.progress.enabled=true`)
+
+`geldar.player.advancement` (earn and grant, two buckets under one `rate.` key) and `geldar.player.stats` (read from the player stats file every 300 s on the async scheduler, never the main thread). Life ids only; a human is never named; stat keys come from a constant allow-list. Advancement events off the server thread are ignored.
+
+## Audit events (PT-N8, package `audit`, opt-in: `collector.audit.enabled=true`)
+
+A rate denial for chat or a command goes to a rate-0 twin event (`<event>._rate_drop`), so the core's rate-drop counter counts it like a core drop. `geldar.operator.change` is not yet in the names table of the Paper plugin README (docs/analysis/telemetry/paper-plugin/README.md, section 4); that table is outside this module.
 
 | Event | Source | Notes |
 |---|---|---|
 | `geldar.combat.damage` | `LivingDamageEvent.Post` | player victim or attacker only; pvp keeps the victim |
 | `geldar.combat.player_death` | `LivingDeathEvent` | cause and dimension only, no message |
 | `geldar.combat.kill` | `LivingDeathEvent` | player killer, non-player victim |
-| `geldar.chat` | `ServerChatEvent` | raw typed text, scrubbed and capped; speaker only as a life id |
-| `geldar.console.command`, `geldar.rcon.command` | `CommandEvent` | only the console (`Server`) and RCON (`Rcon`) sources with no entity; player and command-block commands are not exported |
+| `geldar.chat` | `ServerChatEvent` | raw typed text, scrubbed and capped; speaker only as a life id; `rate.geldar.chat` (default 20/s) |
+| `geldar.console.command`, `geldar.rcon.command` | `CommandEvent` | only the console (the server itself as source) and RCON (an `RconConsoleSource`) with no entity and the matching name; player and command-block commands are not exported, even a block renamed `Server` or `Rcon`; `rate.<event>` per event (default 20/s) |
 | `geldar.operator.change` | `PermissionsChangedEvent` | online players only; `geldar.flag` 1 = opped, 0 = deopped (a literal in the family, not in `Names`) |
 
 Every listener runs at LOWEST priority and does not receive cancelled events. `/say`, `/msg` and `/me` do not fire `ServerChatEvent`, so private messages are not captured. Whitelist changes, kick reasons, prelogin, sign and book edits have no known NeoForge event: nothing is emitted for them.

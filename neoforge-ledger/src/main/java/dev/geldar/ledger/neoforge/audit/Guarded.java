@@ -3,6 +3,7 @@ package dev.geldar.ledger.neoforge.audit;
 import dev.geldar.ledger.core.CollectorGuard;
 import dev.geldar.ledger.core.HostInfo;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.function.BooleanSupplier;
 
 /**
  * Runs one handler body fail-safe: every throwable is swallowed and counted (a VM error is rethrown). On the server
@@ -12,11 +13,14 @@ import java.util.concurrent.atomic.LongAdder;
 final class Guarded {
     private final CollectorGuard guard;
     private final HostInfo host;
+    private final BooleanSupplier gate;
     private final LongAdder errors = new LongAdder();
 
-    Guarded(CollectorGuard guard, HostInfo host) {
+    /** {@code gate} is the opt-in: checked first on every thread, so off means no read and no record. */
+    Guarded(CollectorGuard guard, HostInfo host, BooleanSupplier gate) {
         this.guard = guard;
         this.host = host;
+        this.gate = gate;
     }
 
     long errors() {
@@ -28,6 +32,9 @@ final class Guarded {
         long token = 0;
         boolean begun = false;
         try {
+            if (!gate.getAsBoolean()) {
+                return;
+            }
             if (host.isMainThread()) {
                 if (!guard.allowed()) {
                     return;

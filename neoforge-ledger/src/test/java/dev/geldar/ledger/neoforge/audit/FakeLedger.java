@@ -1,6 +1,8 @@
 package dev.geldar.ledger.neoforge.audit;
 
 import dev.geldar.ledger.core.CollectorGuard;
+import dev.geldar.ledger.core.ConfigParser;
+import dev.geldar.ledger.core.LedgerConfig;
 import dev.geldar.ledger.core.ContentLog;
 import dev.geldar.ledger.core.EventLog;
 import dev.geldar.ledger.core.HostInfo;
@@ -23,6 +25,19 @@ final class FakeLedger {
     final AtomicBoolean guardAllowed = new AtomicBoolean(true);
     final AtomicBoolean main = new AtomicBoolean(true);
     final AtomicBoolean recordThrows = new AtomicBoolean();
+    /** Event name to the rate it was registered with (content registrations have none). */
+    final java.util.Map<String, Integer> registeredRates = new java.util.HashMap<>();
+    /** The ledger config, read on every event: audit is on by default here; tests swap it. */
+    volatile LedgerConfig config = config("collector.audit.enabled=true");
+
+    static LedgerConfig config(String... lines) {
+        java.util.Properties p = new java.util.Properties();
+        for (String l : lines) {
+            int i = l.indexOf('=');
+            p.setProperty(l.substring(0, i), l.substring(i + 1));
+        }
+        return ConfigParser.parse(p).config();
+    }
 
     final HostInfo host = new HostInfo() {
         @Override
@@ -46,6 +61,7 @@ final class FakeLedger {
                 case "events" -> eventLog();
                 case "content" -> contentLog();
                 case "guard" -> guard();
+                case "config" -> config;
                 default -> throw new UnsupportedOperationException(m.getName());
             });
 
@@ -54,6 +70,7 @@ final class FakeLedger {
             switch (m.getName()) {
                 case "register" -> {
                     registered.add((String) a[0]);
+                    registeredRates.put((String) a[0], (Integer) a[2]);
                     registeredFields.add(Arrays.asList((String[]) a[3]));
                     return registered.size() - 1;
                 }
