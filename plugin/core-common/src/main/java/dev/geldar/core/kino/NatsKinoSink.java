@@ -18,6 +18,7 @@ public final class NatsKinoSink implements KinoSink, AutoCloseable {
     private final String shard;
     private volatile Connection connection;
     private volatile boolean closed;
+    private final java.util.concurrent.atomic.AtomicLong published = new java.util.concurrent.atomic.AtomicLong();
     private final java.util.concurrent.atomic.AtomicLong dropped = new java.util.concurrent.atomic.AtomicLong();
 
     public NatsKinoSink(String url, String shard, Function<String, String> setting, Logger log) {
@@ -25,6 +26,12 @@ public final class NatsKinoSink implements KinoSink, AutoCloseable {
         Thread t = new Thread(() -> connect(url, setting, log), "geldar-kino-connect");
         t.setDaemon(true);
         t.start();
+    }
+
+    /** A sink over a connection that already exists, for tests: no connect thread and no server. */
+    NatsKinoSink(String shard, Connection connection) {
+        this.shard = shard;
+        this.connection = connection;
     }
 
     static String subject(String shard, String agentId) {
@@ -57,11 +64,20 @@ public final class NatsKinoSink implements KinoSink, AutoCloseable {
         if (nc != null) {
             try {
                 nc.publish(subject(shard, agentId), json.getBytes(StandardCharsets.UTF_8));
+                published.incrementAndGet();
             } catch (IllegalStateException e) {
                 // Closed or reconnect buffer full: drop the message; the server thread never throws or waits.
                 dropped.incrementAndGet();
             }
+        } else {
+            // No connection yet: drop and count it, as the hearing sink does. Nothing is queued.
+            dropped.incrementAndGet();
         }
+    }
+
+    /** Messages handed to the connection. */
+    public long published() {
+        return published.get();
     }
 
     /** Messages dropped because the connection refused them. */

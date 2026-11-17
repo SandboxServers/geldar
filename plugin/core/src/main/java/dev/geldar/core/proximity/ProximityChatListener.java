@@ -1,6 +1,7 @@
 package dev.geldar.core.proximity;
 
 import dev.geldar.core.EventEnvelope;
+import dev.geldar.core.trace.SpeechHash;
 import io.papermc.paper.event.player.AsyncChatEvent;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -12,6 +13,8 @@ import java.util.function.Function;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 import net.kyori.adventure.audience.Audience;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Player;
@@ -38,9 +41,18 @@ public final class ProximityChatListener implements Listener {
     private final Function<World, BlockReader> readers;
     private final ChatHearing hearing;
     private final HearingNoticeSink sink;
+    private final Function<Component, String> hasher;
 
     public ProximityChatListener(ServerHop hop, LongSupplier ticks, Function<World, BlockReader> readers,
             ChatHearing hearing, HearingNoticeSink sink) {
+        this(hop, ticks, readers, hearing, sink,
+                message -> SpeechHash.of(PlainTextComponentSerializer.plainText().serialize(message)));
+    }
+
+    /** As above with the speech hasher given, for tests. */
+    ProximityChatListener(ServerHop hop, LongSupplier ticks, Function<World, BlockReader> readers,
+            ChatHearing hearing, HearingNoticeSink sink, Function<Component, String> hasher) {
+        this.hasher = hasher;
         this.hop = hop;
         this.ticks = ticks;
         this.readers = readers;
@@ -57,13 +69,29 @@ public final class ProximityChatListener implements Listener {
                 others.add(listener);
             }
         }
-        Set<Player> heard = hop.call(() -> judge(speaker, others));
+        Component message = event.message();
+        Set<Player> heard = hop.call(() -> judge(speaker, others, message));
         event.viewers().removeIf(audience -> audience instanceof Player listener
                 && listener != speaker && !heard.contains(listener));
     }
 
+    /**
+     * The hash of the speech: the only thing of it that goes past this class, and only when a notice is sent. Any
+     * failure gives null, so telemetry can never change who hears the line.
+     */
+    private String hashOf(Component message) {
+        try {
+            return hasher.apply(message);
+        } catch (Throwable e) {
+            if (e instanceof VirtualMachineError vm) {
+                throw vm;
+            }
+            return null;
+        }
+    }
+
     /** Runs on the server thread: the clear listeners are returned, and the muffled notices are sent. */
-    private Set<Player> judge(Player speaker, List<Player> others) {
+    private Set<Player> judge(Player speaker, List<Player> others, Component message) {
         Set<Player> clear = new HashSet<>();
         Location from = speaker.getLocation();
         World world = from.getWorld();
@@ -86,7 +114,8 @@ public final class ProximityChatListener implements Listener {
             if (verdict.tier() == Tier.CLEAR) {
                 clear.add(listener);
             } else if (verdict.tier() == Tier.MUFFLED && EventEnvelope.isLifeId(verdict.key())) {
-                sink.muffled(verdict.key(), verdict.notice().direction(), verdict.notice().band());
+                sink.muffled(verdict.key(), verdict.notice().direction(), verdict.notice().band(),
+                        hashOf(message));
             }
         }
         return clear;

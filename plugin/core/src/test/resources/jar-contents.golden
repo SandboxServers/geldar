@@ -855,6 +855,7 @@ dev/geldar/core/blockowner/FirstRowResolver$Pos.class
 dev/geldar/core/blockowner/FirstRowResolver.class
 dev/geldar/core/blockowner/LookupDebugLog.class
 dev/geldar/core/blockowner/LookupFailureLog.class
+dev/geldar/core/blockowner/NatsBlockOwnerLink$1.class
 dev/geldar/core/blockowner/NatsBlockOwnerLink.class
 dev/geldar/core/blockowner/OwnerCache$1.class
 dev/geldar/core/blockowner/OwnerCache$Base.class
@@ -946,8 +947,18 @@ dev/geldar/core/speech/ChatRing.class
 dev/geldar/core/speech/SpeechChatListener.class
 dev/geldar/core/speech/SpeechSetup.class
 dev/geldar/core/speech/SpeechText.class
+dev/geldar/core/trace/CoreMetrics$Registration.class
+dev/geldar/core/trace/CoreMetrics.class
+dev/geldar/core/trace/OtelTraceHook$Held.class
+dev/geldar/core/trace/OtelTraceHook$SpanAttributes.class
+dev/geldar/core/trace/OtelTraceHook.class
+dev/geldar/core/trace/SpeechHash.class
 dev/geldar/core/trace/TraceHeaders$1.class
 dev/geldar/core/trace/TraceHeaders.class
+dev/geldar/core/trace/TraceHook$1.class
+dev/geldar/core/trace/TraceHook$Captured.class
+dev/geldar/core/trace/TraceHook$Scope.class
+dev/geldar/core/trace/TraceHook.class
 io/nats/client/AuthHandler.class
 io/nats/client/AuthenticationException.class
 io/nats/client/BaseConsumeOptions$Builder.class

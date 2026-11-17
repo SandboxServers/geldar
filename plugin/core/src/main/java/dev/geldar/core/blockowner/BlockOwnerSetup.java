@@ -1,5 +1,6 @@
 package dev.geldar.core.blockowner;
 
+import dev.geldar.core.trace.TraceHook;
 import java.util.Optional;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
@@ -46,6 +47,11 @@ public final class BlockOwnerSetup implements AutoCloseable {
         return placements;
     }
 
+    /** The query service, for its counters. */
+    public OwnerQueryService queryService() {
+        return service;
+    }
+
     /** The owner source the Body's queries use; the backfill reads owners through it, off the server thread. */
     public OwnerSource source() {
         return source;
@@ -53,7 +59,7 @@ public final class BlockOwnerSetup implements AutoCloseable {
 
     /** Starts the feature; call from {@code onEnable}. The config is read again by {@link #reload}. */
     public static BlockOwnerSetup register(JavaPlugin plugin, String natsUrl, String shard,
-            Function<String, String> env) {
+            Function<String, String> env, TraceHook trace) {
         Logger log = plugin.getLogger();
         LookupDebugLog debug = new LookupDebugLog(log, System::currentTimeMillis);
         Plugin coreProtect = plugin.getServer().getPluginManager().getPlugin(COREPROTECT);
@@ -68,6 +74,7 @@ public final class BlockOwnerSetup implements AutoCloseable {
         OwnerQueryService service = new OwnerQueryService(source, cache, lookups, DEFAULT_TIMEOUT_MS, log);
         service.attachDebug(debug);
         NatsBlockOwnerLink link = new NatsBlockOwnerLink(natsUrl, shard, env, log);
+        link.setTrace(trace);
         BlockOwnerPublisher publisher = new BlockOwnerPublisher(link::changed, log);
         PlacementRecorder placements = new PlacementRecorder(cache, publisher, writerFor(coreProtect, debug), log);
         BlockOwnerSetup setup = new BlockOwnerSetup(lookups, link, service, debug, placements, source);

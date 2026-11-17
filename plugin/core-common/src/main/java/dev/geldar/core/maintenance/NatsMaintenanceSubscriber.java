@@ -1,8 +1,10 @@
 package dev.geldar.core.maintenance;
 
+import dev.geldar.core.trace.TraceHook;
 import io.nats.client.Connection;
 import io.nats.client.Nats;
 import io.nats.client.Options;
+import io.nats.client.impl.Headers;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,8 +23,9 @@ public final class NatsMaintenanceSubscriber implements AutoCloseable {
     private volatile boolean closed;
 
     public NatsMaintenanceSubscriber(
-            String url, String shard, Function<String, String> setting, Logger log, MaintenanceNotices notices) {
-        Thread t = new Thread(() -> connect(url, shard, setting, log, notices), "geldar-maintenance");
+            String url, String shard, Function<String, String> setting, Logger log, MaintenanceNotices notices,
+            TraceHook trace) {
+        Thread t = new Thread(() -> connect(url, shard, setting, log, notices, trace), "geldar-maintenance");
         t.setDaemon(true);
         t.start();
     }
@@ -31,8 +34,8 @@ public final class NatsMaintenanceSubscriber implements AutoCloseable {
         return "geldar." + shard + ".maintenance";
     }
 
-    private void connect(
-            String url, String shard, Function<String, String> setting, Logger log, MaintenanceNotices notices) {
+    private void connect(String url, String shard, Function<String, String> setting, Logger log,
+            MaintenanceNotices notices, TraceHook trace) {
         try {
             Options.Builder b = Options.builder().server(url).connectionTimeout(Duration.ofSeconds(5))
                     .maxReconnects(-1);
@@ -46,14 +49,47 @@ public final class NatsMaintenanceSubscriber implements AutoCloseable {
                 nc.close();
                 return;
             }
-            nc.createDispatcher(m -> notices.receive(new String(m.getData(), StandardCharsets.UTF_8)))
-                    .subscribe(subject(shard));
+            nc.createDispatcher(m -> handle(m.getHeaders(), m.getData(), notices, trace)).subscribe(subject(shard));
             connection = nc;
         } catch (Exception e) {
             log.warning("Maintenance notices cannot reach NATS: " + e.getClass().getSimpleName());
         }
     }
 
+    /**
+     * Hands one notice on, inside the trace context its headers carry (only {@code traceparent} and
+     * {@code tracestate}). With {@link TraceHook#NOOP} or no agent the notice is handled exactly as before.
+     */
+    static void handle(Headers headers, byte[] data, MaintenanceNotices notices, TraceHook trace) {
+        TraceHook.Scope scope = enterTrace(headers, trace);
+        try {
+            notices.receive(new String(data, StandardCharsets.UTF_8));
+        } finally {
+            try {
+                scope.close();
+            } catch (Throwable e) {
+                if (e instanceof VirtualMachineError vm) {
+                    throw vm;
+                }
+                // Tracing must never break notice handling.
+            }
+        }
+    }
+
+    private static TraceHook.Scope enterTrace(Headers headers, TraceHook trace) {
+        if (headers == null) {
+            return TraceHook.Scope.NONE;
+        }
+        try {
+            TraceHook.Scope scope = trace.enter(headers);
+            return scope == null ? TraceHook.Scope.NONE : scope;
+        } catch (Throwable e) {
+            if (e instanceof VirtualMachineError vm) {
+                throw vm;
+            }
+            return TraceHook.Scope.NONE;
+        }
+    }
     @Override
     public void close() {
         closed = true;
