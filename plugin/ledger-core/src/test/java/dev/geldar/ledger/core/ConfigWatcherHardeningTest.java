@@ -194,20 +194,47 @@ class ConfigWatcherHardeningTest {
     }
 
     @Test
-    void emptyFileIsATornWriteUntilStableForTwoPolls() throws IOException {
+    void anEmptyFileNeverChangesTheConfigHoweverOftenItIsSeen() throws IOException {
         ConfigWatcher w = watcher(seen::add);
         write("collector.tick.budget_avg_us=77\n");
         task.run();
         write("");
-        task.run();
+        for (int i = 0; i < 5; i++) {
+            task.run();
+        }
         assertEquals(77, w.current().budgetAvgUs("tick"));
-        assertEquals(1, logged.size());
-        task.run();
-        assertEquals(50, w.current().budgetAvgUs("tick"), "stable empty file means defaults");
-        task.run();
-        assertEquals(2, seen.size());
+        assertEquals(1, logged.size(), "logged once");
+        assertEquals(1, seen.size(), "the consumer is not called for an empty file");
     }
 
+    @Test
+    void anEmptyFirstFileLeavesThePluginDisabledAndCallsTheConsumerOnce() throws IOException {
+        ConfigWatcher w = watcher(seen::add);
+        write("");
+        task.run();
+        task.run();
+        task.run();
+        assertEquals(List.of(LedgerConfig.disabled()), seen);
+        assertFalse(w.current().enabled());
+        assertEquals(1, logged.size());
+        write("collector.tick.budget_avg_us=61\n");
+        task.run();
+        assertTrue(w.current().enabled(), "a valid file after the empty one applies normally");
+        assertEquals(61, w.current().budgetAvgUs("tick"));
+    }
+
+    @Test
+    void anEmptyFileKeepsAKillSwitchedConfigOff() throws IOException {
+        ConfigWatcher w = watcher(seen::add);
+        write("enabled=false\n");
+        task.run();
+        write("");
+        task.run();
+        task.run();
+        task.run();
+        assertFalse(w.current().enabled());
+        assertEquals(1, seen.size());
+    }
     @Test
     void anEmptyFileThatIsThenFilledNeverResetsTheConfig() throws IOException {
         ConfigWatcher w = watcher(seen::add);
@@ -256,12 +283,12 @@ class ConfigWatcherHardeningTest {
     }
 
     @Test
-    void aBadFirstFileCallsTheConsumerOnceWithDefaults() throws IOException {
+    void aBadFirstFileCallsTheConsumerOnceWithDisabled() throws IOException {
         ConfigWatcher w = watcher(seen::add);
         write("bogus=1\n");
         task.run();
         task.run();
-        assertEquals(List.of(LedgerConfig.defaults()), seen);
+        assertEquals(List.of(LedgerConfig.disabled()), seen);
         assertTrue(w.loaded());
     }
 

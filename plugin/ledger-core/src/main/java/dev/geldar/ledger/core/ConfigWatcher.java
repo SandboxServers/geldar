@@ -28,13 +28,15 @@ import java.util.logging.Logger;
  *       kept. Every log line and every remembered error is at most {@link #MAX_LOG} chars.
  *   <li>The file is stat-ed, read, stat-ed again; if size, mtime or file key changed meanwhile the poll is skipped
  *       (torn write). A change is detected by (size, mtime, file key, SHA-256 of the bytes), so a same-size
- *       same-mtime rewrite is seen. An empty file counts as a torn write until it has been seen empty on two
- *       consecutive polls.
+ *       same-mtime rewrite is seen. An empty file NEVER changes the config: the previous snapshot is kept and one
+ *       line is logged; if nothing was loaded yet the plugin stays disabled (the consumer is called once with
+ *       {@link LedgerConfig#disabled()}).
  *   <li>A bad file keeps the previous snapshot and logs once per distinct error, except the kill switch: when the
  *       bad file says {@code enabled=false} the previous snapshot is applied with {@code enabled=false}.
  *   <li>Before the first load {@link #current()} is {@link LedgerConfig#disabled()} (the agent ships disabled; the
  *       file default {@code enabled=true} applies only once a file was read or found missing) and {@link #loaded()}
- *       is false. The first completed poll always calls the consumer once, with defaults when the first file is bad.
+ *       is false. The first completed poll always calls the consumer once; when the first file is bad (or empty) and
+ *       does not say {@code enabled=false} the consumer gets {@link LedgerConfig#disabled()}, never all-on defaults.
  *   <li>{@link #poll} is single-flight; {@link #stop} waits for a running poll and no consumer call happens after it
  *       returns. A consumer exception is logged as "config consumer failed" and never escapes.
  * </ul>
@@ -154,12 +156,14 @@ public final class ConfigWatcher {
         if (bytes.length == 0) {
             if (!before.equals(emptyStamp)) {
                 emptyStamp = before;
-                logOnce("empty config", "Ledger config is empty, treating it as a torn write and keeping the previous one");
-                return;
+                logOnce("empty config", "Ledger config is empty, ignored and the previous one is kept");
+                if (!loaded) {
+                    deliver(LedgerConfig.disabled());
+                }
             }
-        } else {
-            emptyStamp = null;
+            return;
         }
+        emptyStamp = null;
         Seen seen = new Seen(before, sha256(bytes));
         if (seen.equals(last)) {
             return;
@@ -192,12 +196,12 @@ public final class ConfigWatcher {
         reject("config larger than " + MAX_BYTES + " bytes, ignored", null);
     }
 
-    /** Logs once; applies the kill switch when the bad file says {@code enabled=false}; first load gets defaults. */
+    /** Logs once; applies the kill switch when the bad file says {@code enabled=false}; first load gets disabled. */
     private void reject(String msg, Properties props) {
         String enabled = props == null ? null : props.getProperty("enabled");
         boolean off = enabled != null && enabled.trim().equals("false");
         logOnce(msg, "Ledger config rejected, keeping the previous one" + (off ? " (enabled=false applied)" : "") + ": " + msg);
-        LedgerConfig base = loaded ? current.get() : LedgerConfig.defaults();
+        LedgerConfig base = loaded ? current.get() : LedgerConfig.disabled();
         if (off) {
             if (!loaded || base.enabled()) {
                 deliver(base.withEnabled(false));

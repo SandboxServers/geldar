@@ -107,6 +107,35 @@ class BudgetGuardTest {
     }
 
     @Test
+    void reenableClearsTheRunningAverageOnTheNextBeginOnTheCallingThread() {
+        BudgetGuard g = guard(100, 10_000);
+        for (int i = 0; i < BudgetGuard.MIN_AVG_SAMPLES - 1; i++) {
+            timedCall(g, 2000); // under the 10 ms max, far over the 100 us mean, but fewer than MIN_AVG_SAMPLES
+        }
+        assertTrue(g.allowed());
+        g.reenable();
+        timedCall(g, 1); // without the reset this would be sample 8 with a huge mean and trip
+        assertTrue(g.allowed(), "the old samples were dropped");
+    }
+
+    @Test
+    void reenableFromAnotherThreadOnlySetsAFlagAndTheMainThreadConsumesIt() throws Exception {
+        BudgetGuard g = guard(100, 10_000);
+        for (int i = 0; i < BudgetGuard.MIN_AVG_SAMPLES - 1; i++) {
+            timedCall(g, 2000);
+        }
+        java.lang.reflect.Field samples = BudgetGuard.class.getDeclaredField("samples");
+        samples.setAccessible(true);
+        long before = samples.getLong(g);
+        Thread config = new Thread(g::reenable);
+        config.start();
+        config.join();
+        assertEquals(before, samples.getLong(g), "the config thread does not write the main-thread counters");
+        assertTrue(g.allowed());
+        g.begin();
+        assertEquals(0, samples.getLong(g), "the next begin on the main thread consumed the request");
+    }
+    @Test
     void runningAverageOverBudgetDisables() {
         // Each call is under the max (10 ms) but the mean is over 50 us.
         BudgetGuard g = guard(50, 10_000);

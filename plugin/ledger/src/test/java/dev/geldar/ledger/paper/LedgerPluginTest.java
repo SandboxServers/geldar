@@ -85,6 +85,8 @@ class LedgerPluginTest {
     final List<String> schedulerCalls = new ArrayList<>();
     final List<Plugin> disabled = new ArrayList<>();
     int shutdowns;
+    boolean queueMain;
+    final List<Runnable> mainQueue = new ArrayList<>();
     boolean throwOnDisable;
 
     @BeforeEach
@@ -110,7 +112,13 @@ class LedgerPluginTest {
                 getClass().getClassLoader(), new Class<?>[] {BukkitScheduler.class}, (p, m, a) -> {
                     schedulerCalls.add(m.getName());
                     switch (m.getName()) {
-                        case "runTask" -> ((Runnable) a[1]).run(); // the main thread hop, run inline
+                        case "runTask" -> { // the main thread hop: run inline, or record it for the test to drain
+                            if (queueMain) {
+                                mainQueue.add((Runnable) a[1]);
+                            } else {
+                                ((Runnable) a[1]).run();
+                            }
+                        }
                         case "runTaskTimerAsynchronously" -> asyncTimers.add((Runnable) a[1]);
                         default -> {}
                     }
@@ -250,14 +258,47 @@ class LedgerPluginTest {
     }
 
     @Test
-    void theRealCollectorListSkipsEverythingNotYetBuiltWithoutFailing() {
+    void theRealCollectorListStartsOnlyTheCgroupCollectorAndSkipsTheRestWithoutAWarning() {
         LedgerPlugin plugin = plugin(tmp.resolve("data"));
         plugin.collectorNames = PaperCollectors.NAMES;
-        plugin.onEnable();
-        poll();
+        List<java.util.logging.LogRecord> logs = new ArrayList<>();
+        Logger log = Logger.getLogger("ledger-test");
+        java.util.logging.Handler h = new java.util.logging.Handler() {
+            public void publish(java.util.logging.LogRecord r) { logs.add(r); }
+            public void flush() {}
+            public void close() {}
+        };
+        log.addHandler(h);
+        try {
+            plugin.onEnable();
+            poll();
+        } finally {
+            log.removeHandler(h);
+        }
         assertTrue(disabled.isEmpty());
+        assertEquals(List.of("container"), plugin.collectors().builtIds());
+        assertEquals(List.of("container"), plugin.collectors().runningIds());
+        List<String> expectedSkipped = new ArrayList<>(PaperCollectors.NAMES);
+        expectedSkipped.remove(PaperCollectors.CGROUP);
+        assertEquals(expectedSkipped.stream().sorted().toList(), plugin.collectors().skippedNames().stream().sorted().toList());
+        assertTrue(plugin.collectors().skippedNames().contains(PaperCollectors.DISK), "no disk path configured");
+        assertFalse(logs.stream().anyMatch(r -> r.getLevel().intValue() >= java.util.logging.Level.WARNING.intValue()),
+                "no warning: " + logs.stream().map(java.util.logging.LogRecord::getMessage).toList());
+        assertFalse(logs.stream().anyMatch(r -> r.getMessage().contains("cannot")), "no 'cannot load' line");
     }
 
+    @Test
+    void theConfigIsAppliedOnTheMainThreadNotOnTheConfigThread() {
+        queueMain = true;
+        LedgerPlugin plugin = plugin(tmp.resolve("data"), GoodA.class, GoodB.class);
+        plugin.onEnable();
+        poll(); // the async poll delivers the config and asks for a main thread task
+        assertEquals(1, mainQueue.size());
+        assertTrue(plugin.collectors().runningIds().isEmpty(), "nothing starts on the config thread");
+        assertTrue(LOG.isEmpty());
+        mainQueue.get(0).run();
+        assertEquals(List.of("good_a", "good_b"), plugin.collectors().runningIds());
+    }
     @Test
     void aMissingConfigMeansDefaultsAndNothingIsCreatedOnDisk() {
         Path data = tmp.resolve("data");

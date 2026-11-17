@@ -225,8 +225,13 @@ class CgroupReaderTest {
     }
 
     @Test
-    void unavailableAtStartStopsOnceAndCancels() {
+    void unavailableAtStartStopsAfterFiveConsecutiveFailuresAndCancels() {
         var h = start();
+        for (int i = 1; i < CgroupCollector.MAX_FAILURES; i++) {
+            h.tasks().get(0).run();
+            assertFalse(h.c().isStopped(), "failure " + i);
+            assertFalse(h.cancelled()[0]);
+        }
         h.tasks().get(0).run();
         assertTrue(h.c().isStopped());
         assertTrue(h.cancelled()[0]);
@@ -241,12 +246,35 @@ class CgroupReaderTest {
         h.tasks().get(0).run();
         assertFalse(h.c().isStopped());
         Files.delete(dir.resolve("memory.current"));
-        h.tasks().get(0).run();
+        for (int i = 0; i < CgroupCollector.MAX_FAILURES; i++) {
+            h.tasks().get(0).run();
+        }
         assertTrue(h.c().isStopped());
         assertEquals(200, h.c().periodsTotal());
         w("memory.current", "9");
         h.tasks().get(0).run();
         assertEquals(123456, h.c().memoryBytes(), "stopped collector reads nothing more");
         h.c().stop();
+    }
+
+    @Test
+    void oneFailedReadDoesNotStopAndASuccessResetsTheCount() throws IOException {
+        full();
+        var h = start();
+        h.tasks().get(0).run();
+        Path mem = dir.resolve("memory.current");
+        Files.delete(mem);
+        for (int round = 0; round < 3; round++) {
+            for (int i = 0; i < CgroupCollector.MAX_FAILURES - 1; i++) {
+                h.tasks().get(0).run();
+                assertFalse(h.c().isStopped());
+            }
+            w("memory.current", "777");
+            h.tasks().get(0).run();
+            assertEquals(777, h.c().memoryBytes(), "recovered after a transient failure");
+            Files.delete(mem);
+        }
+        assertFalse(h.c().isStopped());
+        assertFalse(h.cancelled()[0]);
     }
 }
