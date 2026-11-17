@@ -11,7 +11,6 @@ import {
   type ErrorFields,
   type EventSpan,
   filterAttributes,
-  hasForbiddenSegment,
   redactContent,
 } from '@geldar/telemetry';
 
@@ -29,15 +28,11 @@ export const AUTH_REFUSED_SPAN_NAME = 'mcp.auth_refused';
 /** OpenTelemetry's SpanStatusCode.ERROR, written out so this file needs no new dependency. */
 const SPAN_STATUS_ERROR = 2;
 
-/** The value that replaces any argument whose key names a secret. */
-export const REDACTED = '[redacted]';
-
 /**
- * What one call carries into its span, as events only: the tool name as received, the raw arguments,
+ * What one call carries into its span, as events only: the raw arguments (the tool name as received is in the error and response text),
  * the handler's raw result, the full error, and the final text the agent was sent (set when it is not a success).
  */
 export interface ToolCallContent {
-  name: string;
   arguments: unknown;
   result?: unknown;
   error?: ErrorFields;
@@ -91,45 +86,6 @@ export function toolSpanAttributes(call: ToolCallSpan): Record<string, AttrValue
   return filterAttributes(picked, 'trace').attributes;
 }
 
-/**
- * A copy of the arguments with every secret-named key's value replaced by REDACTED. Nested objects and
- * arrays are copied too; the input is never changed.
- */
-export function redactArguments(value: unknown): unknown {
-  return redactAt(value, 0, new WeakSet<object>());
-}
-
-/** The deepest level copied; an object below it is replaced by TRUNCATED_MARK. */
-const MAX_REDACT_DEPTH = 32;
-const TRUNCATED_MARK = '[truncated]';
-const CYCLE_MARK = '[cycle]';
-
-/** One level of redactArguments; `ancestors` holds the objects on the path to this value (a cycle guard). */
-function redactAt(value: unknown, depth: number, ancestors: WeakSet<object>): unknown {
-  if (value === null || typeof value !== 'object') return value;
-  if (ancestors.has(value)) return CYCLE_MARK;
-  if (depth >= MAX_REDACT_DEPTH) return TRUNCATED_MARK;
-  ancestors.add(value);
-  try {
-    if (Array.isArray(value)) return value.map((item) => redactAt(item, depth + 1, ancestors));
-    const copy: Record<string, unknown> = {};
-    for (const [key, inner] of Object.entries(value)) {
-      // A key that names a credential (the telemetry package's forbidden-name rule): whole words or joined stems.
-      const kept = hasForbiddenSegment(key) ? REDACTED : redactAt(inner, depth + 1, ancestors);
-      // defineProperty, not assignment: a key named __proto__ stays an own key and never sets the prototype.
-      Object.defineProperty(copy, key, {
-        value: kept,
-        enumerable: true,
-        writable: true,
-        configurable: true,
-      });
-    }
-    return copy;
-  } finally {
-    ancestors.delete(value);
-  }
-}
-
 /** The JSON text of a value, or undefined when it cannot be serialized (a capture never fails a call). */
 function jsonText(value: unknown): string | undefined {
   try {
@@ -156,16 +112,29 @@ export function capturedResult(value: unknown): unknown {
  * redactContent, then the content helper, so it is capped at 32 KiB on a UTF-8 boundary.
  */
 export function addToolContentEvents(span: EventSpan, content: ToolCallContent): void {
-  const emit = (name: string, value: unknown): void => {
-    const text = jsonText(redactContent(value));
-    if (text !== undefined) addContentEvent(span, name, text);
+  // Each event is guarded alone: one that throws (a hostile value) loses itself, not the events after it.
+  const guarded = (add: () => void): void => {
+    try {
+      add();
+    } catch {
+      // This event is lost; the others stand.
+    }
   };
-  emit(TOOL_ARGUMENTS_EVENT, content.arguments);
+  const emit = (name: string, value: unknown): void =>
+    guarded(() => {
+      const text = jsonText(redactContent(value));
+      if (text !== undefined) addContentEvent(span, name, text);
+    });
+  // A call with no arguments is the empty object: callTool validates it as one.
+  emit(TOOL_ARGUMENTS_EVENT, content.arguments === undefined ? {} : content.arguments);
   if (content.result !== undefined) emit(TOOL_RESULT_EVENT, capturedResult(content.result));
   if (content.error !== undefined) emit(TOOL_ERROR_EVENT, content.error);
   if (content.response !== undefined) {
-    const text = redactContent(content.response);
-    if (typeof text === 'string') addContentEvent(span, TOOL_RESPONSE_EVENT, text);
+    const response = content.response;
+    guarded(() => {
+      const text = redactContent(response);
+      if (typeof text === 'string') addContentEvent(span, TOOL_RESPONSE_EVENT, text);
+    });
   }
 }
 

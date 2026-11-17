@@ -18,10 +18,11 @@ import {
 import { newId } from '@geldar/player-core/src/ids.ts';
 import { buildPlan } from '@geldar/player-core/src/loop/plan.ts';
 import type { OutputValidator } from '@geldar/player-core/src/ports/index.ts';
-import { type ErrorFields, errorFields } from '@geldar/telemetry';
+import { errorFields } from '@geldar/telemetry';
 import type { RunState } from './events/mapper.ts';
 import { FailureTracker } from './failures/tracker.ts';
 import { TOOL_OUTCOMES } from './http/log.ts';
+import { pending } from './pending-call.ts';
 import {
   type AgentProfiles,
   type BodyGateway,
@@ -422,31 +423,6 @@ function outcomeOf(err: unknown): string {
     return err.code;
   }
   return 'internal';
-}
-
-/** What one handler run knew when it finished: the session handler turns it into the call's span. */
-export interface PendingCall {
-  tool: string;
-  /** The outcome as the handler left it: ok, a ToolError code, or internal. */
-  handlerOutcome: string;
-  durationMs: number;
-  /** The validated input the handler got. */
-  arguments: unknown;
-  /** The handler's raw result, before the size cap and the output check. */
-  result?: unknown;
-  error?: ErrorFields;
-  /** Set when the handler threw a ToolError. */
-  code?: string;
-}
-
-/** Keyed by the per-call context object: the session builds a fresh one per call and callTool passes it on unchanged. */
-const pending = new WeakMap<object, PendingCall>();
-
-/** The record the handler left for this call's context, if the handler ran. Removes it. */
-export function takePendingCall(ctx: object): PendingCall | undefined {
-  const call = pending.get(ctx);
-  pending.delete(ctx);
-  return call;
 }
 
 /** The last tool and outcome code per session (keyed by the session's abort signal). Operators only. */

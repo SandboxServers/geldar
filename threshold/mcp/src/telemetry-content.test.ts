@@ -1,11 +1,15 @@
 import { ImageToolResult, type ToolContext } from '@geldar/mcp-mock';
-import { CONTENT_CAP_BYTES, startTelemetry, type TelemetryHandle } from '@geldar/telemetry';
+import {
+  CONTENT_CAP_BYTES,
+  REDACTED,
+  redactContent,
+  startTelemetry,
+  type TelemetryHandle,
+} from '@geldar/telemetry';
 import { afterEach, describe, expect, it } from 'vitest';
 import { worldFixture } from './fakes/world.fakes.ts';
 import type { PlayerRecord } from './ports.ts';
 import {
-  REDACTED,
-  redactArguments,
   type SpanTracer,
   TOOL_ARGUMENTS_EVENT,
   TOOL_RESULT_EVENT,
@@ -135,7 +139,7 @@ describe('tool content as span events (T-06c)', () => {
       tool: 'look',
       outcome: 'ok',
       durationMs: 1,
-      content: { name: 'look', arguments: {}, result: 'short' },
+      content: { arguments: {}, result: 'short' },
     });
     await provider.forceFlush();
 
@@ -153,7 +157,7 @@ describe('tool content as span events (T-06c)', () => {
       tool: 'see',
       outcome: 'ok',
       durationMs: 1,
-      content: { name: 'see', arguments: {}, result: new ImageToolResult(png, 'a view of stone') },
+      content: { arguments: {}, result: new ImageToolResult(png, 'a view of stone') },
     });
     await provider.forceFlush();
 
@@ -175,7 +179,7 @@ describe('tool content as span events (T-06c)', () => {
       tool: 'look',
       outcome: 'ok',
       durationMs: 1,
-      content: { name: 'look', arguments: {}, result: big },
+      content: { arguments: {}, result: big },
     });
     await provider.forceFlush();
 
@@ -269,10 +273,10 @@ describe('tool content as span events (T-06c)', () => {
     expect(input.token).toBe(secret);
   });
 
-  it('redactArguments replaces secret-named keys at any depth, in any case, and copies', () => {
+  it('redactContent replaces secret-named keys at any depth, in any case, and copies', () => {
     const secret = ['fake', 'key', Date.now().toString(36)].join('-');
     const input = { PassWord: secret, a: [{ SECRET_x: secret, keep: 1 }], b: { keep: 'yes' } };
-    const out = redactArguments(input) as Record<string, unknown>;
+    const out = redactContent(input) as Record<string, unknown>;
     expect(out).toEqual({
       PassWord: REDACTED,
       a: [{ SECRET_x: REDACTED, keep: 1 }],
@@ -290,7 +294,7 @@ describe('tool content as span events (T-06c)', () => {
       input_tokens: 12,
       max_tokens: 64,
     };
-    expect(redactArguments(input)).toEqual({
+    expect(redactContent(input)).toEqual({
       apiKey: REDACTED,
       bearer: REDACTED,
       sessionId: REDACTED,
@@ -301,7 +305,7 @@ describe('tool content as span events (T-06c)', () => {
 
   it('keeps a __proto__ key as an own key of the copy, with its value redacted or kept', () => {
     const input = JSON.parse('{"__proto__":{"a":1},"keep":2}');
-    const out = redactArguments(input);
+    const out = redactContent(input);
     expect(JSON.stringify(out)).toBe('{"__proto__":{"a":1},"keep":2}');
     expect(Object.getPrototypeOf(out)).toBe(Object.prototype);
   });
@@ -309,7 +313,7 @@ describe('tool content as span events (T-06c)', () => {
   it('stops copying at depth 32 with a [truncated] mark, and copies up to that depth', () => {
     let deep: unknown = 'leaf';
     for (let i = 0; i < 40; i += 1) deep = { n: deep };
-    const text = JSON.stringify(redactArguments(deep));
+    const text = JSON.stringify(redactContent(deep));
     expect(text.split('{"n":').length - 1).toBe(32);
     expect(text).toContain('"[truncated]"');
     expect(text).not.toContain('leaf');
@@ -323,7 +327,7 @@ describe('tool content as span events (T-06c)', () => {
       tool: 'look',
       outcome: 'ok',
       durationMs: 1,
-      content: { name: 'look', arguments: loop },
+      content: { arguments: loop },
     });
     await provider.forceFlush();
 
@@ -335,7 +339,7 @@ describe('tool content as span events (T-06c)', () => {
 
   it('a shared, non-cyclic reference is copied in full at each place it appears', () => {
     const shared = { a: 1 };
-    expect(redactArguments({ x: shared, y: [shared] })).toEqual({ x: { a: 1 }, y: [{ a: 1 }] });
+    expect(redactContent({ x: shared, y: [shared] })).toEqual({ x: { a: 1 }, y: [{ a: 1 }] });
   });
 });
 
@@ -359,13 +363,13 @@ describe('content failures never change the call (T-06c)', () => {
         tool: 'look',
         outcome: 'ok',
         durationMs: 1,
-        content: { name: 'look', arguments: {}, result: {} },
+        content: { arguments: {}, result: {} },
       }),
     ).not.toThrow();
     expect(ended).toBe(1);
   });
 
-  it('a result that cannot be serialized loses only its own event, and the arguments are still captured', () => {
+  it('a bigint result is captured as its digits (the shared redactor makes it text), with the arguments', () => {
     const events: string[] = [];
     const tracer: SpanTracer = {
       startSpan: () => ({
@@ -380,9 +384,12 @@ describe('content failures never change the call (T-06c)', () => {
       tool: 'look',
       outcome: 'ok',
       durationMs: 1,
-      content: { name: 'look', arguments: { a: 1 }, result: { big: 10n } },
+      content: { arguments: { a: 1 }, result: { big: 10n } },
     });
-    expect(events).toEqual([`geldar.content.${TOOL_ARGUMENTS_EVENT}`]);
+    expect(events).toEqual([
+      `geldar.content.${TOOL_ARGUMENTS_EVENT}`,
+      `geldar.content.${TOOL_RESULT_EVENT}`,
+    ]);
   });
 
   it('a failed call captures its arguments and no result', async () => {
@@ -419,13 +426,13 @@ describe('the content helper caps and serializes (T-06c)', () => {
       tool: 'look',
       outcome: 'ok',
       durationMs: 1,
-      content: { name: 'look', arguments: { big: 'é'.repeat(CONTENT_CAP_BYTES) } },
+      content: { arguments: { big: 'é'.repeat(CONTENT_CAP_BYTES) } },
     });
     record({
       tool: 'look',
       outcome: 'ok',
       durationMs: 1,
-      content: { name: 'look', arguments: { small: 'x' } },
+      content: { arguments: { small: 'x' } },
     });
 
     const key = `geldar.content.${TOOL_ARGUMENTS_EVENT}`;
@@ -434,16 +441,20 @@ describe('the content helper caps and serializes (T-06c)', () => {
     expect(added[1]?.attributes[`${key}.truncated`]).toBe(false);
   });
 
-  it('a bigint in the arguments drops only the arguments event; the result event is still emitted', () => {
+  it('a bigint in the arguments is captured as its digits, then the result event follows', () => {
     const added: { name: string; attributes: Record<string, unknown> }[] = [];
     toolSpanRecorder(fakeTracer(added))({
       tool: 'look',
       outcome: 'ok',
       durationMs: 1,
-      content: { name: 'look', arguments: { a: 1n }, result: 'ok' },
+      content: { arguments: { a: 1n }, result: 'ok' },
     });
 
-    expect(added.map((item) => item.name)).toEqual([`geldar.content.${TOOL_RESULT_EVENT}`]);
-    expect(added[0]?.attributes[`geldar.content.${TOOL_RESULT_EVENT}`]).toBe('"ok"');
+    expect(added.map((item) => item.name)).toEqual([
+      `geldar.content.${TOOL_ARGUMENTS_EVENT}`,
+      `geldar.content.${TOOL_RESULT_EVENT}`,
+    ]);
+    expect(added[0]?.attributes[`geldar.content.${TOOL_ARGUMENTS_EVENT}`]).toBe('{"a":"1"}');
+    expect(added[1]?.attributes[`geldar.content.${TOOL_RESULT_EVENT}`]).toBe('"ok"');
   });
 });

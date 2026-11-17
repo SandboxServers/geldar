@@ -20,6 +20,7 @@ import {
   type ServerNotification,
   SetLevelRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import { type PendingCall, takePendingCall } from './pending-call.ts';
 import type { KeepAlive, PlayerDirectory, PlayerRecord } from './ports.ts';
 import {
   causeOf,
@@ -32,7 +33,6 @@ import {
 } from './resources.ts';
 import type { ToolCallSpan } from './telemetry.ts';
 import { hiddenToolsFor, refuseHiddenCall } from './tools/unavailable.ts';
-import { type PendingCall, takePendingCall } from './world.ts';
 
 /** The text a keepalive carries. It names no observer (decision 0059). */
 export const KEEPALIVE_TEXT = 'keepalive: the call is still running.' as const;
@@ -148,7 +148,7 @@ function endToolSpan(
     const pending = ctx === undefined ? undefined : takePendingCall(ctx);
     const outcome = forced ?? finalOutcome(response, pending);
     const text = thrown ? thrownText(thrown.error) : responseText(response);
-    const content: ToolCallSpan['content'] = { name, arguments: args };
+    const content: ToolCallSpan['content'] = { arguments: args };
     if (pending?.result !== undefined) content.result = pending.result;
     if (thrown) content.error = errorFields(thrown.error);
     else if (pending?.error !== undefined) content.error = pending.error;

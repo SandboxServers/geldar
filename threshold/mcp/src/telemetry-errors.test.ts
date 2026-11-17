@@ -2,11 +2,12 @@ import { type ToolContext, ToolError } from '@geldar/mcp-mock';
 import { describe, expect, it } from 'vitest';
 import { ScriptedRateLimiter } from './fakes/stores.fakes.ts';
 import { worldFixture } from './fakes/world.fakes.ts';
+import { takePendingCall } from './pending-call.ts';
 import type { BodyGateway, PlayerRecord } from './ports.ts';
 import { PLAYER_FAULT } from './resources.ts';
 import { authRefusalRecorder, type SpanTracer, toolSpanRecorder } from './telemetry.ts';
 import { hiddenToolsFor } from './tools/unavailable.ts';
-import { createWorld, takePendingCall } from './world.ts';
+import { createWorld } from './world.ts';
 import { refuseHidden, runToolCall } from './world-session.ts';
 
 const PLAYER: PlayerRecord = {
@@ -161,6 +162,35 @@ describe('every call ends in one span (T-06d2)', () => {
     expect(eventText(spans[0], 'tool_error')).toContain('unknown_tool: no_such_tool');
   });
 
+  it('(b2) a call with no arguments still gets its arguments event, as the empty object', async () => {
+    const { deps, spans } = recorded(fixture().tools);
+    await runToolCall(deps, 'look', undefined, ctx());
+    expect(eventNames(spans[0])[0]).toBe('tool_arguments');
+    expect(eventText(spans[0], 'tool_arguments')).toBe('{}');
+  });
+
+  it('(b3) an event that throws loses only itself: the later events and the span stand', async () => {
+    const { tracer, spans } = fakeTracer();
+    let first = true;
+    const flaky: SpanTracer = {
+      startSpan: (name) => ({
+        ...tracer.startSpan(name),
+        addEvent: (eventName, attributes) => {
+          if (first) {
+            first = false;
+            throw new Error('first event fails');
+          }
+          spans[0]?.events.push({ name: eventName, attributes: { ...attributes } });
+        },
+      }),
+    };
+    const deps = { tools: fixture().tools, onToolSpan: toolSpanRecorder(flaky) };
+    await runToolCall(deps, 'look', {}, ctx());
+    expect(spans).toHaveLength(1);
+    expect(spans[0]?.ended).toBe(true);
+    expect(eventNames(spans[0])).toEqual(['tool_result']);
+  });
+
   it('(c) invalid input and a hidden tool give one span each, with the arguments', async () => {
     const { deps, spans } = recorded(fixture().tools);
     await runToolCall(deps, 'look', { bogus: true }, ctx());
@@ -218,7 +248,7 @@ describe('every call ends in one span (T-06d2)', () => {
       tool: 'look',
       outcome: 'ok',
       durationMs: 1,
-      content: { name: 'look', arguments: {}, result },
+      content: { arguments: {}, result },
     });
     const text = eventText(spans[0], 'tool_result');
     expect(text).not.toContain('k-1');
