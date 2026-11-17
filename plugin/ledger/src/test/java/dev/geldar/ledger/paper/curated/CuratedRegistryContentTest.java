@@ -11,6 +11,7 @@ import dev.geldar.ledger.paper.curated.TextContentFamilyTest.Spoken;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.List;
+import net.kyori.adventure.text.Component;
 import org.bukkit.event.Event;
 import org.bukkit.plugin.EventExecutor;
 import org.junit.jupiter.api.Test;
@@ -91,6 +92,116 @@ class CuratedRegistryContentTest {
         }
         assertEquals(1, ledger.content("geldar.chat").size());
         assertEquals(4, registry.contentRateDrops());
+    }
+
+    /** A guard that counts calls, for a main-thread registry. */
+    static final class CountingGuard {
+        int begins;
+        int ends;
+        boolean allowed = true;
+        final CollectorGuard guard = (CollectorGuard) Proxy.newProxyInstance(
+                CollectorGuard.class.getClassLoader(), new Class<?>[] {CollectorGuard.class}, (p, m, a) -> {
+                    switch (m.getName()) {
+                        case "allowed":
+                            return allowed;
+                        case "begin":
+                            begins++;
+                            return 7L;
+                        case "end":
+                            ends++;
+                            return null;
+                        default:
+                            throw new AssertionError("guard touched: " + m.getName());
+                    }
+                });
+    }
+
+    private CuratedRegistry mainRegistry(CountingGuard g, List<EventExecutor> out) {
+        FakeHostInfo main = new FakeHostInfo().mainThread(true);
+        return new CuratedRegistry(new RecordingLedger(main).events(), ledger.content(), g.guard, main,
+                new CuratedRegistry.Binder() {
+                    @Override
+                    public void bind(Class<? extends Event> type, EventExecutor executor, boolean ignoreCancelled) {
+                        out.add(executor);
+                    }
+
+                    @Override
+                    public void unbindAll() {}
+                });
+    }
+
+    @Test
+    void anExhaustedBucketNeverCallsTheExtractor() throws Exception {
+        int[] calls = {0};
+        registry.onContent(Spoken.class, "geldar.chat", 1, new String[] {"geldar.world"}, true, (e, s) -> {
+            calls[0]++;
+            s.text = "x";
+        });
+        for (int i = 0; i < 6; i++) {
+            executors.get(0).execute(null, new Spoken());
+        }
+        assertEquals(1, calls[0]);
+        assertEquals(5, registry.contentRateDrops());
+    }
+
+    @Test
+    void aMainThreadContentEventRunsUnderTheGuardAndEndsItEvenOnError() throws Exception {
+        CountingGuard g = new CountingGuard();
+        List<EventExecutor> ex = new ArrayList<>();
+        CuratedRegistry r = mainRegistry(g, ex);
+        r.onContent(Spoken.class, "geldar.sign", 20, new String[] {"geldar.world"}, true, (e, s) -> s.text = "x");
+        ex.get(0).execute(null, new Spoken());
+        assertEquals(1, g.begins);
+        assertEquals(1, g.ends);
+        assertEquals(1, ledger.content("geldar.sign").size());
+        r.onContent(Spoken.class, "geldar.book", 20, new String[] {"geldar.world"}, true, (e, s) -> {
+            throw new IllegalStateException("boom");
+        });
+        ex.get(1).execute(null, new Spoken());
+        assertEquals(2, g.begins);
+        assertEquals(2, g.ends);
+        assertEquals(1, r.errorCount());
+    }
+
+    @Test
+    void aMainThreadEventIsSkippedWhenTheGuardIsOffAndAnExhaustedBucketNeverBegins() throws Exception {
+        CountingGuard g = new CountingGuard();
+        g.allowed = false;
+        List<EventExecutor> ex = new ArrayList<>();
+        CuratedRegistry r = mainRegistry(g, ex);
+        int[] calls = {0};
+        r.onContent(Spoken.class, "geldar.sign", 20, new String[] {"geldar.world"}, true, (e, s) -> {
+            calls[0]++;
+            s.text = "x";
+        });
+        ex.get(0).execute(null, new Spoken());
+        assertEquals(0, calls[0]);
+        assertEquals(0, g.begins);
+        assertTrue(ledger.content("geldar.sign").isEmpty());
+        CountingGuard g2 = new CountingGuard();
+        List<EventExecutor> ex2 = new ArrayList<>();
+        CuratedRegistry r2 = mainRegistry(g2, ex2);
+        r2.onContent(Spoken.class, "geldar.book", 1, new String[] {"geldar.world"}, true, (e, s) -> {
+            calls[0]++;
+            s.text = "x";
+        });
+        ex2.get(0).execute(null, new Spoken());
+        ex2.get(0).execute(null, new Spoken()); // bucket empty: no begin, no extract
+        assertEquals(1, calls[0]);
+        assertEquals(1, g2.begins);
+        assertEquals(1, g2.ends);
+    }
+
+    @Test
+    void aComponentNestedSixHundredDeepIsSwallowedAndCounted() throws Exception {
+        Component deep = Component.text("x");
+        for (int i = 0; i < 600; i++) {
+            deep = Component.text("y").append(deep);
+        }
+        Component c = deep;
+        fire((e, s) -> s.text = PlainText.bounded(c, 1000), 20);
+        assertEquals(1, registry.errorCount());
+        assertTrue(ledger.content("geldar.chat").isEmpty());
     }
 
     @Test

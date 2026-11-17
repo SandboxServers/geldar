@@ -195,19 +195,38 @@ public final class CuratedRegistry {
                     if (!type.isInstance(event)) {
                         return;
                     }
+                    long token = 0;
+                    boolean begun = false;
                     try {
+                        // The bucket comes first: a flood costs no flatten or scrub work.
+                        if (!bucket.tryTake()) {
+                            contentRateDrops.increment();
+                            return;
+                        }
+                        // Main-thread events (sign, book) run under the guard; async ones never touch it (S6).
+                        if (host.isMainThread()) {
+                            if (!guard.allowed()) {
+                                return;
+                            }
+                            token = guard.begin();
+                            begun = true;
+                        }
                         ContentSink sink = new ContentSink();
                         extractor.extract(type.cast(event), sink);
                         if (sink.skipped) {
                             return;
                         }
-                        if (!bucket.tryTake()) {
-                            contentRateDrops.increment();
-                            return;
-                        }
                         content.record(id, sink.text, sink.s1, sink.s2, sink.s3);
                     } catch (Throwable t) {
                         errors.increment();
+                    } finally {
+                        if (begun) {
+                            try {
+                                guard.end(token);
+                            } catch (Throwable t) {
+                                errors.increment();
+                            }
+                        }
                     }
                 },
                 ignoreCancelled);

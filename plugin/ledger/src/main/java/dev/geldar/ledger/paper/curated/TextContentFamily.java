@@ -6,8 +6,10 @@ import dev.geldar.ledger.core.Names;
 import dev.geldar.ledger.core.Redactor;
 import dev.geldar.ledger.paper.curated.CuratedRegistry.ContentSink;
 import io.papermc.paper.event.player.AsyncChatEvent;
+import java.util.List;
 import java.util.function.IntFunction;
 import net.kyori.adventure.text.Component;
+import org.bukkit.entity.Player;
 import org.bukkit.event.block.SignChangeEvent;
 import org.bukkit.event.player.PlayerEditBookEvent;
 import org.bukkit.inventory.meta.BookMeta;
@@ -48,26 +50,42 @@ public final class TextContentFamily implements CuratedFamily {
 
     @Override
     public void register(CuratedRegistry r) {
-        r.onContent(AsyncChatEvent.class, Names.Events.CHAT, CHAT_RATE, FIELDS, true, (e, s) -> {
-            s.player(e.getPlayer());
-            s.s2 = e.getPlayer().getWorld().getName();
-            s.text = prepare(cut(PlainText.bounded(e.message(), MAX_TOTAL_CHARS), MAX_TOTAL_CHARS));
-        });
-        r.onContent(SignChangeEvent.class, Names.Events.SIGN, RARE_RATE, SIGN_FIELDS, true, (e, s) -> {
-            s.player(e.getPlayer());
-            s.s2 = e.getBlock().getWorld().getName();
-            s.s3 = position(e.getBlock().getX(), e.getBlock().getY(), e.getBlock().getZ());
-            java.util.List<Component> lines = e.lines();
-            s.text = prepare(sign(lines.size(), i -> PlainText.bounded(lines.get(i), MAX_LINE_CHARS)));
-        });
+        r.onContent(AsyncChatEvent.class, Names.Events.CHAT, CHAT_RATE, FIELDS, true, (e, s) ->
+                fillChat(s, e.getPlayer(), e.getPlayer().getWorld().getName(), e.message()));
+        r.onContent(SignChangeEvent.class, Names.Events.SIGN, RARE_RATE, SIGN_FIELDS, true, (e, s) ->
+                fillSign(s, e.getPlayer(), e.getBlock().getWorld().getName(), e.getBlock().getX(), e.getBlock().getY(),
+                        e.getBlock().getZ(), e.lines()));
         r.onContent(PlayerEditBookEvent.class, Names.Events.BOOK, RARE_RATE, FIELDS, true, (e, s) -> {
-            s.player(e.getPlayer());
-            s.s2 = e.getPlayer().getWorld().getName();
             BookMeta meta = e.getNewBookMeta();
-            String title = e.isSigning() ? PlainText.bounded(meta.title(), MAX_LINE_CHARS) : null;
             // the author is a human-chosen name: never read
-            s.text = prepare(book(title, meta.getPageCount(), (i, max) -> PlainText.bounded(meta.page(i + 1), max)));
+            fillBook(s, e.getPlayer(), e.getPlayer().getWorld().getName(), e.isSigning() ? meta.title() : null,
+                    e.isSigning(), meta.getPageCount(), i -> meta.page(i));
         });
+    }
+
+    /** Chat: s1 life id (or nothing), s2 world, text. Plain values in, so it is testable without a server. */
+    static void fillChat(ContentSink s, Player player, String world, Component message) {
+        s.player(player);
+        s.s2 = world;
+        s.text = prepare(cut(PlainText.bounded(message, MAX_TOTAL_CHARS), MAX_TOTAL_CHARS));
+    }
+
+    /** Sign: s1 life id, s2 world, s3 {@code x,y,z}, the lines joined with a newline. */
+    static void fillSign(ContentSink s, Player player, String world, int x, int y, int z, List<Component> lines) {
+        s.player(player);
+        s.s2 = world;
+        s.s3 = position(x, y, z);
+        s.text = prepare(sign(lines.size(), i -> PlainText.bounded(lines.get(i), MAX_LINE_CHARS)));
+    }
+
+    /** Book: s1 life id, s2 world; the title only when signing, then the pages (one-based in {@code page}). */
+    static void fillBook(
+            ContentSink s, Player player, String world, Component title, boolean signing, int pageCount,
+            IntFunction<Component> page) {
+        s.player(player);
+        s.s2 = world;
+        String t = signing ? PlainText.bounded(title, MAX_LINE_CHARS) : null;
+        s.text = prepare(book(t, pageCount, (i, max) -> PlainText.bounded(page.apply(i + 1), max)));
     }
 
     /** Cuts {@code s} at {@code max} characters (not inside a surrogate pair) and appends the marker. */

@@ -178,6 +178,93 @@ class OperatorAuditFamilyTest {
     }
 
     @Test
+    void everyAuthRootDropsItsArgumentsAndTheListIsComplete() {
+        List<String> required = List.of(
+                "login", "l", "log", "register", "reg", "changepassword", "changepass", "cp", "authme", "unregister", "unreg",
+                "passwd", "password", "auth", "pass", "2fa", "totp", "setpassword", "loginsecurity", "lpassword", "nlogin",
+                "captcha", "email", "setemail", "changeemail", "recovery", "pin", "setpin", "secret");
+        assertEquals(Set.copyOf(required), OperatorAuditFamily.AUTH_ROOTS);
+        for (String root : required) {
+            assertEquals(root, OperatorAuditFamily.exportable(root + " hunter2 hunter2"), root);
+            assertEquals(root, OperatorAuditFamily.exportable("/" + root.toUpperCase() + " hunter2"), root);
+            assertEquals(root, OperatorAuditFamily.exportable("plug:" + root + " hunter2"), root);
+            assertEquals("execute as x run " + root,
+                    OperatorAuditFamily.exportable("execute as x run " + root + " hunter2 more"), root);
+            assertEquals("lp user x " + root, OperatorAuditFamily.exportable("lp user x " + root + " hunter2"), root);
+        }
+    }
+
+    @Test
+    void wrappedAndSpacedFormsKeepOnlyTheTokensUpToTheRoot() {
+        assertEquals("execute as x run login", OperatorAuditFamily.exportable("execute as x run login pw"));
+        assertEquals("lp user x setpassword", OperatorAuditFamily.exportable("lp user x setpassword pw"));
+        assertEquals("login", OperatorAuditFamily.exportable("/ login x"));
+        assertEquals("login", OperatorAuditFamily.exportable(" login x")); // no-break space
+        assertEquals("login", OperatorAuditFamily.exportable("\tlogin x"));
+        assertEquals("l", OperatorAuditFamily.exportable("l hunter2")); // em space
+        assertEquals("login", OperatorAuditFamily.exportable("login\u0007hunter2")); // control character
+        assertEquals("execute as x run login", OperatorAuditFamily.exportable("execute as  x\trun login　pw"));
+        assertEquals("authme:login".substring(7), OperatorAuditFamily.exportable("AuthMe:Login x"));
+    }
+
+    @Test
+    void aZeroWidthSpaceFormIsExportedInFull() {
+        // Pinned: U+200B is not whitespace and the server would not run it as login either.
+        String zw = "​login hunter2";
+        assertEquals(zw, OperatorAuditFamily.exportable(zw));
+    }
+
+    @Test
+    void ordinaryCommandsAreUnchanged() {
+        assertEquals("say hello", OperatorAuditFamily.exportable("say hello"));
+        assertEquals("whitelist add Name", OperatorAuditFamily.exportable("whitelist add Name"));
+        assertEquals("give x diamond 1", OperatorAuditFamily.exportable("give x diamond 1"));
+        assertEquals("op alice", OperatorAuditFamily.exportable("op alice"));
+    }
+
+    /** A 1 KiB text component that counts how often its text is read. */
+    static net.kyori.adventure.text.TextComponent counted(int[] reads) {
+        String kib = "a".repeat(1024);
+        return (net.kyori.adventure.text.TextComponent) Proxy.newProxyInstance(
+                Component.class.getClassLoader(), new Class<?>[] {net.kyori.adventure.text.TextComponent.class},
+                (p, m, a) -> switch (m.getName()) {
+                    case "content" -> {
+                        reads[0]++;
+                        yield kib;
+                    }
+                    case "children" -> List.of();
+                    case "style" -> net.kyori.adventure.text.format.Style.empty();
+                    case "asComponent" -> p;
+                    case "equals" -> p == a[0];
+                    case "hashCode" -> 1;
+                    case "toString" -> "counted";
+                    default -> throw new UnsupportedOperationException(m.getName());
+                });
+    }
+
+    /** 10 MiB in 10240 children of 1 KiB each. */
+    static Component tenMebibytes(int[] reads) {
+        List<net.kyori.adventure.text.TextComponent> kids = new java.util.ArrayList<>();
+        for (int i = 0; i < 10 * 1024; i++) {
+            kids.add(counted(reads));
+        }
+        return Component.text("").children(kids);
+    }
+
+    @Test
+    void aTenMebibyteBroadcastIsReadOnlyUpToTheBound() throws Exception {
+        int[] reads = {0};
+        BroadcastMessageEvent big = new BroadcastMessageEvent(tenMebibytes(reads), Set.of());
+        org.junit.jupiter.api.Assertions.assertTimeoutPreemptively(java.time.Duration.ofSeconds(5), () -> {
+            fire(BroadcastMessageEvent.class, big);
+        });
+        assertTrue(reads[0] <= 16, "reads " + reads[0]); // 4 KiB of 1 KiB pieces, not the whole 10 MiB
+        String got = only("geldar.broadcast").s1();
+        assertTrue(got.getBytes(StandardCharsets.UTF_8).length <= OperatorAuditFamily.TEXT_MAX_BYTES);
+        assertEquals(0, registry.errorCount());
+    }
+
+    @Test
     void aCredentialLookingArgumentIsScrubbedBeforeTheRing() throws Exception {
         String secret = "Zq9xK2mP" + "7vL4AbR5tY";
         fire(ServerCommandEvent.class, console("give --password " + secret + " token=" + secret + "9"));

@@ -11,7 +11,6 @@ import com.destroystokyo.paper.event.server.WhitelistToggleEvent;
 import io.papermc.paper.event.server.WhitelistStateUpdateEvent;
 import java.util.Locale;
 import java.util.Set;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import org.bukkit.event.server.BroadcastMessageEvent;
 import org.bukkit.event.server.RemoteServerCommandEvent;
 import org.bukkit.event.server.ServerCommandEvent;
@@ -32,9 +31,11 @@ import org.bukkit.event.server.ServerCommandEvent;
  *
  * <p>Bounds: every text goes through {@link Redactor#scrub} and then {@link ContentCap#cap} to {@link #TEXT_MAX_BYTES}
  * (the core's per-attribute limit) before it reaches the ring, after a coarse pre-cap that bounds scrub work. A command
- * whose root is an authentication verb ({@link #AUTH_ROOTS}) is exported as its root only: the arguments are dropped,
- * because a password has no recognisable shape. A human operator is not named at all (these events carry no player
- * identity); the actor is the enum {@code console} or {@code rcon}.
+ * with an authentication verb ({@link #AUTH_ROOTS}) as any token is exported only up to and including that token (the
+ * arguments after it are dropped, because a password has no recognisable shape), so wrapped forms such as
+ * {@code execute as x run login pw} are covered. The sender is never named (these events carry no player identity; the
+ * actor is the enum {@code console} or {@code rcon}), but names an operator types inside a command (for example
+ * {@code whitelist add Name}) ARE exported as typed.
  *
  * <p>Documented limit: the plugin cannot know a secret typed as plain text in a command that is not an auth verb. The
  * scrub removes credential-shaped values ({@code key=value}, {@code --password x}, tokens, addresses); the gateway rules
@@ -54,7 +55,8 @@ public final class OperatorAuditFamily implements CuratedFamily {
     /** Command roots whose arguments are never exported (login-style plugins and password changes). */
     static final Set<String> AUTH_ROOTS = Set.of(
             "login", "l", "log", "register", "reg", "changepassword", "changepass", "cp", "authme", "unregister", "unreg",
-            "passwd", "password");
+            "passwd", "password", "auth", "pass", "2fa", "totp", "setpassword", "loginsecurity", "lpassword", "nlogin",
+            "captcha", "email", "setemail", "changeemail", "recovery", "pin", "setpin", "secret");
 
     private static final String[] COMMAND_FIELDS = {null, null, null, AttrKeys.COMMAND, AttrKeys.SUBTYPE, null};
     private static final String[] TEXT_FIELDS = {null, null, null, AttrKeys.TEXT, null, null};
@@ -74,7 +76,7 @@ public final class OperatorAuditFamily implements CuratedFamily {
                 command(s, e.getCommand(), RCON));
         // BroadcastMessageEvent is not deprecated as a class in this paper-api (only its String constructors are).
         r.on(BroadcastMessageEvent.class, Names.Events.BROADCAST, Severity.INFO, TEXT_FIELDS, true, (e, s) ->
-                s.s1 = bound(PlainTextComponentSerializer.plainText().serialize(e.message())));
+                s.s1 = bound(PlainText.bounded(e.message(), TEXT_MAX_BYTES * 4)));
         r.on(WhitelistStateUpdateEvent.class, Names.Events.WHITELIST_FAMILY + ".update", Severity.INFO, WHITELIST_FIELDS, true,
                 (e, s) -> {
                     String name = e.getPlayerProfile().getName();
@@ -90,7 +92,14 @@ public final class OperatorAuditFamily implements CuratedFamily {
         s.s2 = kind;
     }
 
-    /** The command text to export: the bare root for an auth command, else the scrubbed and capped text. */
+    /**
+     * The command text to export. The text is split into whitespace tokens (unicode spaces and control characters count as
+     * whitespace). If any token, lower-cased and without a leading slash or {@code plugin:} prefix, is an auth root, only
+     * the tokens up to and including that root are kept (so a wrapped form such as {@code execute as x run login pw}
+     * exports {@code execute as x run login}); the root itself is exported in its normalised form. Otherwise the scrubbed
+     * and capped text. A zero-width space is not whitespace (the server would not run it as that root either), so such
+     * a text is exported in full.
+     */
     static String exportable(String raw) {
         if (raw == null) {
             return "";
@@ -98,11 +107,46 @@ public final class OperatorAuditFamily implements CuratedFamily {
         if (raw.isBlank()) {
             return "";
         }
-        String root = root(raw);
-        if (AUTH_ROOTS.contains(root)) {
-            return root;
+        String text = ContentCap.cap(raw, PRE_CAP_BYTES);
+        StringBuilder kept = new StringBuilder();
+        int n = text.length();
+        int i = 0;
+        while (i < n) {
+            while (i < n && separator(text.charAt(i))) {
+                i++;
+            }
+            int j = i;
+            while (j < n && !separator(text.charAt(j))) {
+                j++;
+            }
+            if (j > i) {
+                String token = text.substring(i, j);
+                String norm = normalise(token);
+                if (!norm.isEmpty()) {
+                    boolean auth = AUTH_ROOTS.contains(norm);
+                    if (kept.length() > 0) {
+                        kept.append(' ');
+                    }
+                    kept.append(auth ? norm : token);
+                    if (auth) {
+                        return bound(kept.toString());
+                    }
+                }
+            }
+            i = j;
         }
-        return bound(raw);
+        return bound(text);
+    }
+
+    /** A token as a command word: lower case, leading slashes and any {@code plugin:} prefix dropped. */
+    private static String normalise(String token) {
+        int s = 0;
+        while (s < token.length() && token.charAt(s) == '/') {
+            s++;
+        }
+        String word = token.substring(s).toLowerCase(Locale.ROOT);
+        int colon = word.lastIndexOf(':');
+        return colon >= 0 ? word.substring(colon + 1) : word;
     }
 
     /** The lower-case command root: leading slashes and spaces dropped, up to the first space, without a plugin prefix. */
@@ -122,7 +166,7 @@ public final class OperatorAuditFamily implements CuratedFamily {
     }
 
     private static boolean separator(char c) {
-        return c <= ' ' || Character.isWhitespace(c) || Character.isSpaceChar(c);
+        return c <= ' ' || Character.isWhitespace(c) || Character.isSpaceChar(c) || Character.isISOControl(c);
     }
 
     /** Pre-cap (bounds work), scrub, then cap to the exported bound. */

@@ -146,6 +146,70 @@ class TextContentFamilyTest {
         assertEquals("ag_mira_01", agent.s1);
     }
 
+    private static List<String> all(ContentSink s) {
+        return java.util.Arrays.asList(s.s1, s.s2, s.s3);
+    }
+
+    @Test
+    void chatFillsLifeIdWorldAndText() {
+        ContentSink s = new ContentSink();
+        TextContentFamily.fillChat(s, player("ag_mira_01"), "overworld", Component.text("hi there"));
+        assertEquals("ag_mira_01", s.s1);
+        assertEquals("overworld", s.s2);
+        assertNull(s.s3);
+        assertEquals("hi there", s.text);
+    }
+
+    @Test
+    void aHumanNeverAppearsInAnyChatSignOrBookField() {
+        ContentSink chat = new ContentSink();
+        TextContentFamily.fillChat(chat, player("SomeHuman"), "overworld", Component.text("t"));
+        ContentSink sign = new ContentSink();
+        TextContentFamily.fillSign(sign, player("SomeHuman"), "nether", 1, 2, 3, List.of(Component.text("t")));
+        ContentSink book = new ContentSink();
+        TextContentFamily.fillBook(book, player("SomeHuman"), "the_end", Component.text("T"), true, 1,
+                i -> Component.text("p"));
+        for (ContentSink s : List.of(chat, sign, book)) {
+            assertNull(s.s1);
+            for (String f : all(s)) {
+                assertFalse(f != null && f.contains("SomeHuman"), f);
+            }
+        }
+        assertEquals("overworld", chat.s2);
+        assertEquals("nether", sign.s2);
+        assertEquals("the_end", book.s2);
+    }
+
+    @Test
+    void signPositionIsXyzInOrderAndLinesKeepTheirOrder() {
+        ContentSink s = new ContentSink();
+        TextContentFamily.fillSign(s, player("ag_mira_01"), "w", 1, 2, 3,
+                List.of(Component.text("a"), Component.text("b"), Component.text("c"), Component.text("d")));
+        assertEquals("1,2,3", s.s3);
+        assertEquals("ag_mira_01", s.s1);
+        assertEquals("a\nb\nc\nd", s.text);
+        ContentSink neg = new ContentSink();
+        TextContentFamily.fillSign(neg, player("ag_mira_01"), "w", -7, 64, 900, List.of());
+        assertEquals("-7,64,900", neg.s3);
+    }
+
+    @Test
+    void bookPagesAreOneBasedAndTheTitleComesFirstOnlyWhenSigning() {
+        List<Integer> asked = new ArrayList<>();
+        ContentSink signed = new ContentSink();
+        TextContentFamily.fillBook(signed, player("ag_mira_01"), "w", Component.text("TITLE"), true, 3, i -> {
+            asked.add(i);
+            return Component.text("p" + i);
+        });
+        assertEquals(List.of(1, 2, 3), asked);
+        assertEquals("TITLE\fp1\fp2\fp3", signed.text);
+        assertEquals("ag_mira_01", signed.s1);
+        ContentSink edited = new ContentSink();
+        TextContentFamily.fillBook(edited, player("ag_mira_01"), "w", Component.text("TITLE"), false, 2,
+                i -> Component.text("p" + i));
+        assertEquals("p1\fp2", edited.text);
+    }
+
     @Test
     void sourceNeverCallsASetterOrReadsRecipientsAuthorOrAddress() throws Exception {
         Path dir = Path.of("src/main/java/dev/geldar/ledger/paper/curated");
