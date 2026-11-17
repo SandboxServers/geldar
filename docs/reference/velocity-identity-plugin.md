@@ -60,6 +60,23 @@ sequenceDiagram
 | `geldar:cmd` | Messages on this channel from a connection that was not admitted as `LIVE` are dropped at the proxy. | `onPluginMessage`, `LoginGate.isAdmitted` |
 | Release | An admission is forgotten on disconnect, except after `CONFLICTING_LOGIN`, which shares the live player's UUID. | `release` |
 
+## Lanes
+
+`GELDAR_IDENTITY_LANE` (see [environment-variables](environment-variables.md#velocity-identity-plugin)) selects the lane, read once when the plugin loads. Unset or `agent` is the agent lane, unchanged from before the lane existed. `human` is the human lane. Any other value, including an empty one, refuses the gate: every login is denied and the refusal is logged, never sent to a client. The rest of this page describes the agent lane unless it says otherwise.
+
+| Lane | Admits | Refuses | Readiness (`/tmp/geldar-identity.ready`) |
+|---|---|---|---|
+| `agent` (unset or `agent`) | A username in the life registry, and only once the registry has synced. The bot ingress is offline-mode. | Everything else. | Written when the registry syncs; removed when the sync is lost and on shutdown. Until then every login is denied. |
+| `human` | A plain username (1 to 16 of `[A-Za-z0-9_]`) that does not start with `ag_` (any case), is not in the registry, and whose UUID is not the offline-mode UUID of its name. | Agent-shaped names, registered names, connections whose UUID is the offline-mode UUID of the name, and every login while a configured registry is unsynced. | With `GELDAR_NATS_URL` unset: written at enable (the name rules alone decide). With it set: written on registry sync, and every login is denied until then. Removed on shutdown. |
+
+Fixed deny text, both lanes: `LoginGate.DENY_MESSAGE`, one message that names neither the lane nor the registry. The refusal reason for a bad lane value or an offline-mode proxy is logged, never sent to a client.
+
+Fail-closed rules for the human lane:
+
+- The proxy must run in online mode. An offline-mode proxy refuses the gate at init. The check reads `ProxyServer#getConfiguration().isOnlineMode()`, which the build compiles against velocity-api 3.5.1; the runtime answer is not tested against a live proxy.
+- The registry is optional for this lane, but when `GELDAR_NATS_URL` is set the gate denies everything until the registry has synced.
+- A human is admitted to the proxy only. A human gets no `geldar_live` profile property, so Paper treats the human as a ghost (spectator) under the 0137 rule in `IdentityPlugin.markLive`. The NeoForge mod does not port that Core logic, so on the NeoForge shard humans are not forced into spectator mode. Whether that shard needs any human-specific handling is an open owner decision under decision 0387, "The NeoForge shard is human-directed" (`docs/decisions/0387-neoforge-shard-is-human-directed.md`, on another branch, not yet on main).
+
 ## Skins
 
 On `GameProfileRequestEvent` the plugin looks the life up and, when the `geldar-skins` bucket holds a valid record for it, replaces the profile's `textures` property with the stored signed texture. A record is valid only when its life id equals its key and its texture URL is on the Mojang texture host. The lookup is in memory; any failure keeps the default profile, and the skin never changes admission (`IdentityPlugin.onGameProfile`, `SkinRegistry`). Skins are written by `tools/players-cli skin set` (`SkinRegistry` comment). Decision [0140](../decisions/0140-agent-skins.md); runbook [skins](../runbooks/skins.md).
