@@ -37,6 +37,19 @@ Audit is opt-in, like Paper's curated data: absent or anything but `true` means 
 
 Tick lag, overruns, stalls (a watchdog on its own daemon thread) and the per-dimension tick time. On unless `collector.tick.enabled=false` or the master is off; then no listener, gauge or watchdog starts.
 
+## World, server and snapshot (PT-N4b)
+
+| Key | Default | What |
+|---|---|---|
+| `collector.world.enabled` | on (as Paper) | `geldar_world_loaded_chunks`, `geldar_world_entities`, `geldar_world_players`, attribute `world` = dimension name |
+| `collector.server.enabled` | on (as Paper) | `geldar_players_online`, `geldar_operators_count`, `geldar_plugins_enabled` (loaded mods), one `geldar.server.config_snapshot` event 5 s after start |
+| `collector.snapshot.enabled` | off (opt-in) | `geldar.player.snapshot` for each online agent every 60 s |
+
+- World counts are running counts from chunk load and unload and entity join and leave events (the server has no verified total accessor); they start counting in the mod constructor so spawn chunks are included. At most 16 dimensions, names up to 64 characters.
+- The config snapshot reads an allow-list only: `server_version`, `view_distance`, `simulation_distance`, `max_players`, `online_mode`, `jvm_xmx`. No `rcon.*`, `query.*`, address or seed key is ever read.
+- Snapshots carry life ids only (`geldar.life_id`, world, block position, health, food, xp level, game mode); a player whose name is not a life id is never read past the name. No session id (waits for the connection collector), ping, UUID or address. A stop or restart makes a fresh queue, so an old drain task cannot touch the new run.
+- No scheduler-pending-tasks gauge: NeoForge has no such count.
+
 ## Progress (PT-N9, package `players`, opt-in: `collector.progress.enabled=true`)
 
 `geldar.player.advancement` (earn and grant, two buckets under one `rate.` key) and `geldar.player.stats` (read from the player stats file every 300 s on the async scheduler, never the main thread). Life ids only; a human is never named; stat keys come from a constant allow-list. Advancement events off the server thread are ignored.
