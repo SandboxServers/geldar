@@ -78,9 +78,20 @@ fetch() {
 
 # A copy left by an earlier start is removed first, but only while a mounted jar is present, so the bundle check below sees mods/
 # as the bundle lists it. The copy is made again after that check (see the mounted jar block after the chown). With no mounted
-# jar nothing is removed, so a stale copy still fails the strict mods/ check.
+# jar nothing is removed: the refusal in the else branch stops the start instead, in every mode.
 if [ -e "$mounted_jar" ] || [ -L "$mounted_jar" ]; then
   rm -f "$mod_copy"
+else
+  # With no jar mounted, a geldar jar left in mods/ or a hash pin with no jar is refused before the bundle check. Only a
+  # mounted jar is checked against the pin, so a foreign jar beside a mounted one is refused only in bundle mode (below).
+  if [ -e "$mod_copy" ] || [ -L "$mod_copy" ]; then
+    echo "neoforge-entrypoint: a geldar mod jar is present in mods/ but none is mounted; remove it or mount the pinned jar; refusing to start" >&2
+    exit 1
+  fi
+  if [ -n "${GELDAR_NF_MOD_SHA256:-}" ]; then
+    echo "neoforge-entrypoint: GELDAR_NF_MOD_SHA256 is set but no mod jar is mounted; refusing to start" >&2
+    exit 1
+  fi
 fi
 
 # Bundle mode, before any fetch. The list holds the bundle's immutable files with their hashes; the image's start script rewrites

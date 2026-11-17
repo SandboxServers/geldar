@@ -10,6 +10,9 @@
 # directory.
 # Ports: deploy/scratch/<suffix>.env (SCRATCH_*_PORT lines only) is read by this script; required for telemetry.
 # SCRATCH_PLATFORM=neoforge adds compose/opt-in/scratch-neoforge.yml (the NeoForge game server); unset or paper is the default.
+# SCRATCH_NEOFORGE_MOD_JAR and SCRATCH_NEOFORGE_MOD_SHA256 (neoforge only, both or neither) mount one mod jar read-only. up checks
+# them on the host (path shape, the jar's sha256) and refuses with exit 2. down, status and probe never refuse on them: a malformed
+# or missing pair only leaves the mod overlay out, so a project can always be torn down.
 set -u
 umask 077
 
@@ -249,6 +252,20 @@ check_mod_env() {
   fi
 }
 
+# True when the pair is well formed enough to render the overlay: both set, the path shape check_mod_env applies, the hash shape.
+# The file is not read here, and nothing exits, so status, down and probe run whatever the jar's state.
+mod_render_ok() {
+  mjar=${SCRATCH_NEOFORGE_MOD_JAR:-}
+  msha=${SCRATCH_NEOFORGE_MOD_SHA256:-}
+  [ "$PLATFORM" = neoforge ] || return 1
+  [ -n "$mjar" ] && [ -n "$msha" ] || return 1
+  is_abs "$mjar" && ! has_newline "$mjar" || return 1
+  case "$mjar" in
+    *'"'* | *'\'* | *'$'*) return 1 ;;
+  esac
+  is_sha256_hex "$msha"
+}
+
 # up only, before compose: the jar's real sha256 on the host must equal SCRATCH_NEOFORGE_MOD_SHA256. The entrypoint checks it
 # again inside the container. The jar's bytes are never printed.
 check_mod_sha() {
@@ -276,10 +293,14 @@ set_env() {
   SCRATCH_RUN_UID=$(id -u)
   SCRATCH_RUN_GID=$(id -g)
   export GELDAR_WORLD_VOLUME SCRATCH_SECRETS_DIR SCRATCH_RUN_UID SCRATCH_RUN_GID
-  check_mod_env
-  # Empty unless both mod variables are set; compose_run adds the mod overlay only for a non-empty jar path.
-  GELDAR_NF_MOD_JAR_HOST=${SCRATCH_NEOFORGE_MOD_JAR:-}
-  GELDAR_NF_MOD_SHA256=${SCRATCH_NEOFORGE_MOD_SHA256:-}
+  # Empty unless the pair is well formed (mod_render_ok); compose_run adds the mod overlay only for a non-empty jar path.
+  # do_up runs check_mod_env, which refuses a malformed pair. The other verbs never refuse on the pair.
+  GELDAR_NF_MOD_JAR_HOST=
+  GELDAR_NF_MOD_SHA256=
+  if mod_render_ok; then
+    GELDAR_NF_MOD_JAR_HOST=$SCRATCH_NEOFORGE_MOD_JAR
+    GELDAR_NF_MOD_SHA256=$SCRATCH_NEOFORGE_MOD_SHA256
+  fi
   export GELDAR_NF_MOD_JAR_HOST GELDAR_NF_MOD_SHA256
 }
 
@@ -457,6 +478,7 @@ secrets_removable() {
 
 do_up() {
   set_env
+  check_mod_env
   check_nats
   check_mod_sha
   check_compose

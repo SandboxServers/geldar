@@ -174,6 +174,38 @@ describe.skipIf(skipWithoutSh())('scratch.sh: the mod jar variables', { timeout:
     expect(up).toContain('opt-in/scratch-neoforge.yml');
     expect(up).not.toContain('scratch-neoforge-mod.yml');
   });
+
+  it('down and status still run after the jar is deleted: only up refuses on the pair', () => {
+    const gone = (base: string): Env => {
+      const env = jarEnv(JAR_SHA)(base);
+      unlinkSync(join(base, 'real.jar'));
+      return env;
+    };
+    const down = runScript(['down'], gone, JARS);
+    expect(down.status).toBe(0);
+    expect(down.stderr).not.toContain('nothing started');
+    expect(down.calls.some((c) => c.includes(' down -v'))).toBe(true);
+    const status = runScript(['status'], gone, JARS);
+    expect(status.status).toBe(0);
+    expect(status.stderr).not.toContain('nothing started');
+    expect(status.calls.length).toBeGreaterThan(0);
+  });
+
+  it('down and status with SCRATCH_PLATFORM=paper and the pair set still run, with no mod overlay', () => {
+    for (const verb of ['status', 'down']) {
+      const r = runScript([verb], jarEnv(JAR_SHA, false, { SCRATCH_PLATFORM: 'paper' }), JARS);
+      expect(r.status, verb).toBe(0);
+      expect(r.stderr, verb).not.toContain('need SCRATCH_PLATFORM=neoforge');
+      expect(r.calls.join('\n'), verb).not.toContain('scratch-neoforge-mod.yml');
+    }
+  });
+
+  it('down with a malformed hash still runs, and renders without the mod overlay', () => {
+    const r = runScript(['down'], jarEnv('NOT-A-HASH'), JARS);
+    expect(r.status).toBe(0);
+    expect(r.stderr).not.toContain('64 lowercase hex digits');
+    expect(r.calls.join('\n')).not.toContain('scratch-neoforge-mod.yml');
+  });
 });
 
 interface ModOverlay {
@@ -306,6 +338,27 @@ describe.skipIf(skipWithoutSh())(
       expect(readdirSync(join(t.data, 'mods'))).toEqual(['proxy-compatible-forge.jar']);
     });
 
+    it('no jar mounted but a geldar copy in mods/ from an earlier start: refuses in the default mode and keeps the copy', () => {
+      const t = tree();
+      writeFileSync(t.copy, JAR);
+      const r = run(t);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain(
+        'a geldar mod jar is present in mods/ but none is mounted; remove it or mount the pinned jar',
+      );
+      expect(r.stdout).not.toContain('started');
+      expect(readFileSync(t.copy, 'utf8')).toBe(JAR);
+    });
+
+    it('no jar mounted but GELDAR_NF_MOD_SHA256 set: refuses, starts nothing and copies nothing', () => {
+      const t = tree();
+      const r = run(t, { GELDAR_NF_MOD_SHA256: JAR_SHA });
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain('GELDAR_NF_MOD_SHA256 is set but no mod jar is mounted');
+      expect(r.stdout).not.toContain('started');
+      expect(existsSync(t.copy)).toBe(false);
+    });
+
     it('a good jar is copied into mods/ with mode 644 and the same bytes', () => {
       const t = tree();
       mount(t);
@@ -364,6 +417,20 @@ describe.skipIf(skipWithoutSh())(
       expect(r.status).toBe(1);
       expect(existsSync(t.copy)).toBe(false);
     });
+
+    it('a copy that differs from the mounted jar after cp is removed by the post-copy hash, which alone refuses', () => {
+      const t = tree();
+      mount(t);
+      // The stub writes other bytes into the copy, so the pre-copy check passes and only the post-copy hash can refuse.
+      writeFileSync(join(t.bin, 'cp'), '#!/bin/sh\nprintf tampered > "$2"\n', { mode: 0o755 });
+      const r = run(t, { GELDAR_NF_MOD_SHA256: JAR_SHA });
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain(
+        'the copy of the mod jar in mods/ does not match GELDAR_NF_MOD_SHA256; removed it',
+      );
+      expect(r.stdout).not.toContain('started');
+      expect(existsSync(t.copy)).toBe(false);
+    });
   },
 );
 
@@ -371,7 +438,7 @@ describe.skipIf(skipWithoutSh())(
   'the entrypoint with a mounted mod jar, offline bundle',
   { timeout: 60_000 },
   () => {
-    it('first start copies the jar; a second start with the same jar passes the strict mods/ check', () => {
+    it('first start copies the jar; a second start with the same jar passes the bundle mods/ check', () => {
       const t = tree();
       writeBundle(t);
       mount(t);
@@ -406,7 +473,7 @@ describe.skipIf(skipWithoutSh())(
       expect(existsSync(t.copy)).toBe(false);
     });
 
-    it('a second start with no jar mounted still refuses the stale copy: the strict check is unchanged', () => {
+    it('a second start with no jar mounted refuses the stale copy before the bundle check, and keeps it', () => {
       const t = tree();
       writeBundle(t);
       mount(t);
@@ -414,9 +481,10 @@ describe.skipIf(skipWithoutSh())(
       unlinkSync(t.mounted);
       const r = run(t);
       expect(r.status).toBe(1);
-      expect(r.stderr).toContain('holds files the offline bundle does not list');
-      expect(r.stderr).toContain('mods/geldar-neoforge.jar');
+      expect(r.stderr).toContain('a geldar mod jar is present in mods/ but none is mounted');
+      expect(r.stderr).not.toContain('holds files the offline bundle does not list');
       expect(r.stdout).not.toContain('started');
+      expect(existsSync(t.copy)).toBe(true);
     });
 
     it('an unlisted mod beside the mounted jar still refuses: only the one copy is allowed', () => {

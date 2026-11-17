@@ -262,7 +262,7 @@ neither. With SCRATCH_PLATFORM=paper, or with only one of them, scratch.sh exits
 - `up` checks the jar's sha256 on the host before anything starts, and exits 2 on a mismatch.
 - The entrypoint checks the same hash again inside the container. It copies the jar into the data dir's mods/ only when the
   hash matches, and refuses to start otherwise. While the jar is mounted, each start removes the old copy before the
-  offline-bundle check and copies again after it, so the strict mods/ check still passes on a second start.
+  offline-bundle check and copies again after it, so the bundle's mods/ check still passes on a second start. Outside bundle mode nothing lists mods/, so a foreign jar placed beside a mounted one is not refused.
 - Check 1 stays N/A until a run proves the load. Do not make it blocking on the strength of this section.
 - This is the first dedicated-server run of neoforge/. A failure to load the mod (no geldar_neoforge line) is a finding to
   record in the report. It is not a reason to change the check or the mod by hand.
