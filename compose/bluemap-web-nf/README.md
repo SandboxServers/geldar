@@ -48,7 +48,9 @@ services:
     ports:
       # The loopback map port. Literal: the loopback rule rejects interpolation.
       - "127.0.0.1:8110:8110"
-    user: "${GELDAR_SERVICE_UID:-1000}:${GELDAR_SERVICE_UID:-1000}"
+    # Must match the neoforge service's uid:gid (NF_SERVICE_UID, NF_SERVICE_GID; the node runs as 1001) so it can read
+    # what BlueMap writes under bluemap/web. Same variables as compose/nf-live.yml and deploy/nf-deploy.sh.
+    user: "${NF_SERVICE_UID:-1000}:${NF_SERVICE_GID:-${NF_SERVICE_UID:-1000}}"
     read_only: true
     tmpfs:
       - /tmp

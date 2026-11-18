@@ -139,7 +139,10 @@ describe('bluemap-web-nf README snippet (text)', () => {
     expect(y).toMatch(/read_only: true/);
     expect(y).toMatch(/cap_drop: \[ALL\]/);
     expect(y).toMatch(/no-new-privileges:true/);
-    expect(y).toMatch(/user: "\$\{GELDAR_SERVICE_UID:-1000\}:\$\{GELDAR_SERVICE_UID:-1000\}"/);
+    expect(y).toMatch(
+      /user: "\$\{NF_SERVICE_UID:-1000\}:\$\{NF_SERVICE_GID:-\$\{NF_SERVICE_UID:-1000\}\}"/,
+    );
+    expect(y).toMatch(/Must match the neoforge service's uid:gid/);
     expect(y).toMatch(/neoforge:\n\s+condition: service_healthy/);
     expect(y).toMatch(/restart: unless-stopped/);
   });
