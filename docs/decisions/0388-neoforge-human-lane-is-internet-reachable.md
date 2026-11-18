@@ -117,3 +117,11 @@ Relayed by the lead, 2026-11-18. The record as offered asked the owner to:
 - The NeoForge human lane opens when the go-public gate in the status line holds (the plugin jar deployed on the human proxy and the node, the regenerated conf, MAX_PLAYERS 100 on neoforge, and the owner's approval of each node step). The gateway already forwards the public port to the node, so binding `velocity-human` is the moment it becomes reachable. DNS (the CNAME and the SRV record) is added last (runbook section 10).
 - No code or config changes in this record. The repo is unchanged by it.
 - Option (b) is NOT chosen, so this record plans no human registry. The S1 checks are no longer a precondition; they are first-join observations (status line).
+
+## Bring-up facts (first node attempt, 2026-11-18)
+
+- The geldar-nf project is deployed on the node. The human lane's first `up` was attempted on 2026-11-18. It failed at the volume ownership step: the fresh volume `geldar-nf_velocity-human-data` is root-owned and empty, and the non-root proxy could not write its jar download into `/server`. The lane was stopped and was not published. Nothing about a successful start is claimed here.
+- Before the next `up`, the volume root must be owned by the service uid (runbook 10.7, step (c1)): by the one-time ops chown that the owner approved on 2026-11-18, or by the one-shot `velocity-human-init` service only if that change is on origin/main. It was not there when this note was written. The step is not needed again unless the volume is recreated.
+- The netty tcnative warning about noexec at start is expected and harmless. The container's tmpfs is noexec, and `/tmp` is intentionally left noexec.
+- The port: 25565 is held on the node by another service, so the human port is never 25565 there. The gate also refuses 25566 and the live velocity port. Choose the port by the read-only `ss -ltn` check in runbook 10.2.
+- S1 was skipped by the owner on 2026-11-18. Its checks are first-join observations (runbook 10.8), not a gate.
