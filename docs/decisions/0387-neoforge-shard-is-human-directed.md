@@ -44,6 +44,11 @@
 - The human route work is ordered in the public-route note, section 7: scratch packets A1 to A4 first; B2, B3 and B4 wait for the owner's names and the live project; B5 and B6 do not start, because their paths are on the colo-images filter.
 - Public names, the game port and the bind are not decided here. The game port is decided as an SRV record (see the public-route note, section 3), and the port number, bind literal and DNS names still need the owner's explicit approval before anything is opened.
 
+**Player limits (2026-11-17).** The live NeoForge shard pins MAX_PLAYERS 10, VIEW_DISTANCE 8 and SIMULATION_DISTANCE 6
+(docs/runbooks/nf-live-project.md section 3b; the scratch overlay uses the same values). MAX_PLAYERS counts bodies as well
+as humans. The concurrent-human cap of item 3 is not enforced by any code yet, so the shard must not be made public before
+the human-lane packet that enforces it lands.
+
 ## Not settled by this record
 
 - The human registry bucket name, record shape, cap and admission list (public-route note D-2, D-9).

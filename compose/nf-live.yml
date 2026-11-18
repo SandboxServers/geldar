@@ -273,6 +273,12 @@ services:
       TYPE: NEOFORGE
       NEOFORGE_VERSION: "26.1.2.${NF_NEOFORGE_BUILD:-126}"
       MEMORY: "${NF_NEOFORGE_HEAP:-9G}"
+      # Player limits, pinned here and mirrored in compose/opt-in/scratch-neoforge.yml (the scratch run tests these values).
+      # Not environment-overridable on purpose. Chosen for 3 CPUs and a human-directed shard that starts small: see
+      # docs/runbooks/nf-live-project.md section 3b. MAX_PLAYERS bounds every player, bots included, not only humans.
+      MAX_PLAYERS: "10"
+      VIEW_DISTANCE: "8"
+      SIMULATION_DISTANCE: "6"
       ONLINE_MODE: "FALSE"
       # RCON on the project network only: the port (25575) is not in any ports: list, so it is not published. The probe
       # (compose/nf-live-probe.yml) and the operator's `rcon-cli` (runbook) reach it by the service name neoforge.
