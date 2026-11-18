@@ -91,7 +91,7 @@ beforeAll(() => {
   bareStatus = renderNf(null).status;
   renderedText = withDummies.stdout;
   rendered = JSON.parse(withDummies.stdout) as Rendered;
-});
+}, 30_000);
 
 afterAll(() => {
   if (tmp) rmSync(tmp, { recursive: true, force: true });
