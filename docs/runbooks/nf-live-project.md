@@ -598,3 +598,104 @@ UNVERIFIED, and not covered by this packet:
 - RCON is enabled on the project network for the probe (section 4c). The tick and TPS checks (checklist items 6 and 7) are outside the telemetry overlay.
 - The mechanism by which `JVM_OPTS` reaches `user_jvm_args.txt` on every start of the pinned itzg image is verified by the lead,
   not by this checkout. The attach is not.
+
+## 10. Public human lane (proposed; decision 0388; NOT open)
+
+Status: PROPOSED. The owner has not accepted decision 0388. The lane is not open to the internet, and no step below has been run on the node. Placeholders only: `<hostname>` (the public name), `<port>` (the human port), `<bind-ip>` (the address the human port binds on the node). The real values are the owner's and are not written in the repo.
+
+**Do not open the lane to the internet until all three hold:** (1) the owner has accepted 0388; (2) the cap PR (branch `phase1/nf-human-cap`, commits 7b646be1, 44352b8a and 851c2c8e: the concurrent-human cap of 5 and the fail-closed registry gate) is merged and shipped to the node; (3) S1 (10.8) has passed on the LAN.
+
+### 10.1 Architecture
+
+- **Agent lane:** `velocity`, loopback `127.0.0.1:46565` (section 2). Unchanged.
+- **Human lane:** `velocity-human` (compose/nf-live-human.yml), the only port that overlay publishes: `<bind-ip>:<port>` to container port 25565. Set at bring-up only, through node env: `NF_HUMAN=on`, `NF_HUMAN_BIND=<bind-ip>`, `NF_HUMAN_PORT=<port>`. Unset, the repo default renders as `127.0.0.1:46566`, which is loopback and not public.
+- `velocity-human` is on network `nf-human` only. `nats` and `neoforge` join `nf-human` as well. Nothing else does.
+- `velocity-human` reads NATS as user `human` (`nats-human.txt`), read-only on the two identity buckets.
+- `velocity-human` has no RCON and no postgres access (10.5).
+
+### 10.2 Choosing the port
+
+- Before choosing `<port>`, run a read-only `ss -ltn` on the node. `<port>` must not be listening, and must not collide with any node port in section 2 or with another shard.
+- `<port>` is never 25565 or 25566. The deploy gate refuses them, and refuses anything below 1024, the live velocity port, and any value above 65535.
+- `<bind-ip>` is one IPv4 address. A wildcard (all interfaces), an IPv6 value, brackets, a hostname or a blank are refused by the gate.
+- Neither value is committed to the repo or to a shared file. Set them in the shell that runs `nf-deploy.sh`.
+
+### 10.3 The public name
+
+- Players type only `<hostname>`, with no port.
+- The public name is an SRV owner name: the record is `_minecraft._tcp.<hostname>`, its port field is `<port>`, and its target is a name that resolves to the gateway's public address.
+- Caddy is NOT involved. The game port is TCP, and Caddy serves HTTP and HTTPS only.
+- The SRV record is an owner-owned DNS change. Add it only after S1 (10.7, step 9).
+
+### 10.4 The gateway rule (owner-owned)
+
+- The owner's gateway forwards TCP `<port>` on its public address to `<bind-ip>:<port>`. The repo sets none of it.
+- The owner removes the rule to roll back (10.9).
+
+### 10.5 RCON
+
+- The RCON password file is never mounted into `velocity-human`. Its secrets are `velocity-forwarding` and `nats-human.txt` only.
+- `neoforge` is on `nf-human`, so RCON is reachable by name from there. Whether RCON binds only to loopback inside the NeoForge container is UNVERIFIED.
+
+### 10.6 NATS generator upgrade (a node with the ten-file set)
+
+An older node holds `nats-auth.conf` and nine password files, and no `nats-human.txt`. The generator (`deploy/nats-auth-nf.ps1`, run as `./geldar.ps1 shard nats-auth nf --live`) refuses a re-run there: "compose/secrets-nf/nats-auth.conf exists but nats-human.txt is missing ... Nothing was written." It reuses the existing password files and creates only the missing one. Its test is `tools/repo-checks/src/nats-auth-nf-upgrade.test.ts`. The H5 report has the same procedure.
+
+Procedure (the owner runs it; the password values are never printed):
+
+1. On the trusted machine, in a clean export made with `git archive` (no `.git`), put the node's nine existing password files into `compose/secrets-nf/`, unchanged. Do NOT put the node's `nats-auth.conf` there.
+2. In that export, run `./geldar.ps1 shard nats-auth nf --live`. It creates `nats-human.txt` and a new `nats-auth.conf` with seven users (the six old ones and `human`), using the nine existing passwords.
+3. Copy back to the node ONLY `nats-human.txt` and the new `nats-auth.conf`, replacing the node's old config. Keep the node's nine password files as they are.
+4. Run `nf-deploy.sh refresh-secrets` (owner-OK, 10.7). It force-recreates `nats` first, then the services that mount the secrets (not postgres).
+- Whether a NATS config reload is enough instead of recreation is UNVERIFIED. This procedure uses recreation.
+
+### 10.7 Bring-up order (every step is a stop point)
+
+Each step is run by the owner. Steps marked OWNER-OK-REQUIRED are not run by an agent.
+
+1. **OWNER-OK-REQUIRED:** accept 0388; answer the 0135 question in it; choose the cap-abuse posture (residual risk 3).
+2. **OWNER-OK-REQUIRED:** merge the cap PR and ship it to the node (the identity jar is mounted read-only; a missing jar fails the start, per the overlay's comment).
+3. **OWNER-OK-REQUIRED:** if the node has the ten-file set, run 10.6 first.
+4. Choose `<port>` and `<bind-ip>` (10.2): read-only `ss -ltn` on the node. For S1, `<bind-ip>` is the node's LAN address; the owner decides the public gateway target later.
+5. `nf-deploy.sh plan` with `NF_HUMAN=on`, `NF_HUMAN_BIND`, `NF_HUMAN_PORT` and `NF_SERVICE_UID` exported (read only; it changes nothing).
+6. **OWNER-OK-REQUIRED:** `nf-deploy.sh up` with the same environment. With `NF_HUMAN=on` the plan lists `up -d --wait velocity-human` as its last step.
+7. **Verify from OUTSIDE the node (read only, no join):** a TCP connect to `<bind-ip>:<port>` answers. The same address on 46565 and on 25565 does not answer. Then `nf-deploy.sh logs velocity-human` and `status` (read only).
+8. **S1, on the LAN (10.8).** Owner-run.
+9. **OWNER-OK-REQUIRED, after S1 passes:** the gateway rule (10.4) and the SRV record (10.3).
+
+### 10.8 S1 checks (LAN first; the owner runs them)
+
+1. A plain Prism NeoForge 26.1.2 client with NO geldar mod connects to `<bind-ip>:<port>` and completes Microsoft login. Then a vanilla client does the same.
+2. An `ag_` name (any case) is refused. An offline-mode name (an offline launcher account) is refused.
+3. A sixth human is refused while five hold slots (requires the cap PR).
+4. A slot is released after a disconnect: a new human joins once one of the five disconnects.
+5. In the `velocity-human` logs, confirm that the same `Player` object appears in `LoginEvent` and in `DisconnectEvent` (residual risk 4). Until seen, the release claim is UNVERIFIED.
+6. The registry gate: with the registry unsynced (owner test only), every login is denied.
+
+### 10.9 Rollback (in this order)
+
+1. The owner removes the gateway rule (public traffic stops).
+2. The owner deletes the SRV record.
+3. `nf-deploy.sh human-down`. It runs `docker compose rm -sf velocity-human` and touches no other service. Plain `nf-deploy.sh down` stops the whole project, including the agent lane; do not use it for this.
+4. Unset `NF_HUMAN`, `NF_HUMAN_BIND` and `NF_HUMAN_PORT` for later runs.
+
+What is left behind: `human-down` removes the container only, so the `nf-human` network stays. `down` runs `docker compose down`, which should also remove the project's networks, including `nf-human`; that is UNVERIFIED on the node.
+
+### 10.10 UNVERIFIED (do not treat any of these as checked)
+
+- `itzg/mc-proxy` with `read_only` and the uid set, and whether it needs a writable path beyond `/server` and `/tmp`.
+- `create_host_path: false` behaviour on the node (a missing jar fails the start).
+- The real join: the Microsoft login, the refusals, and the slot release.
+- The `$JS.FC` flow-control subject form on a live NATS, and KV ACL enforcement on a live server.
+- Whether Proxy Compatible Forge accepts a second forwarding secret (0388 residual risk 1).
+- RCON binding inside the NeoForge container.
+- Whether the node can reach the Microsoft and Mojang session servers.
+- Whether a NATS config reload is enough (10.6).
+- The Velocity event order for slot release (0388 residual risk 4).
+- Whether the `nf-human` network is removed by `down` (10.9).
+
+### 10.11 Not built
+
+- Per-IP limits, login rate limiting beyond Velocity's default, and the idle kick (held packet H1b).
+- A human registry and a revocation path (0387 item 5(d)).
+- Chat export and the name mask: off. Per 0375, `collector.chat.enabled=false` keeps the ledger's NameMask off.
