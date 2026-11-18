@@ -119,8 +119,10 @@ Run the game server as NeoForge instead of Paper, behind the same scratch Veloci
   and the mod and checks each against a pinned hash; a mismatch stops the start.
 - The overlay is `compose/opt-in/scratch-neoforge.yml`, layered after `scratch.yml`. Only `SCRATCH_PLATFORM=neoforge`
   adds it. `status` and `down` take the same setting, so `down -v` removes what `up` made.
-- The paper service also pins MAX_PLAYERS 10, VIEW_DISTANCE 8 and SIMULATION_DISTANCE 6, the same values as the live NeoForge
-  shard (docs/runbooks/nf-live-project.md section 3b). They override phase0.yml's Paper values in this stack only.
+- The paper service also pins MAX_PLAYERS 10, VIEW_DISTANCE 8 and SIMULATION_DISTANCE 6. The scratch overlays keep these
+  values. The live NeoForge shard goes to MAX_PLAYERS 100 (view and simulation distance the same) once PR #732 and the
+  owner-approved node step land; until then the running NeoForge shard still enforces 10 (docs/runbooks/nf-live-project.md
+  section 3b). The scratch values do not track the live shard. They override phase0.yml's Paper values in this stack only.
 - The NeoForge variant uses the same three secret files as Paper (postgres, rcon, velocity-forwarding) in the same
   `scratch-nf` state directory, and the same eventsink user override from `scratch.yml` applies. The overlay itself
   sets no user.
