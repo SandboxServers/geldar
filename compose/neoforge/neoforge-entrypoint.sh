@@ -91,14 +91,27 @@ fetch() {
   mv -f "$2.part" "$2"
 }
 
-# extra_prep NAME: an extra mod's copy in mods/ (compose/neoforge/extra-mods.pins lists the names) is removed on every start, before the
-# bundle check, so a disabled or re-pinned mod is gone after the next start. A symlink or a directory there is refused and nothing is
-# removed. The world and config data the mod wrote are not touched.
+# extra_prep NAME ENABLED_PIN PIN: an extra mod's copy in mods/ is removed on every start, before the bundle check. A symlink or a
+# directory there is refused and nothing is removed. ENABLED_PIN is the overlay's pin (empty when the mod is off). Enabled: the stale
+# copy is removed and the verified jar is copied after the bundle check (extra_copy). Off: the copy is removed only when its sha256 is
+# PIN (our own copy, from compose/neoforge/extra-mods.pins); any other file there is refused and not deleted. The world and config
+# data the mod wrote are not touched.
 extra_prep() {
   extra_copy_path=$data/mods/$1.jar
   if [ -L "$extra_copy_path" ] || [ -d "$extra_copy_path" ]; then
     echo "neoforge-entrypoint: mods/$1.jar is a symlink or a directory; remove it; refusing to start" >&2
     exit 1
+  fi
+  if [ -z "$2" ] && [ -e "$extra_copy_path" ]; then
+    extra_actual=""
+    if [ -f "$extra_copy_path" ]; then
+      extra_actual=$(sha256sum "$extra_copy_path" 2>/dev/null || true)
+      extra_actual=${extra_actual%% *}
+    fi
+    if [ -z "$extra_actual" ] || [ "$extra_actual" != "$3" ]; then
+      echo "neoforge-entrypoint: mods/$1.jar is not the pinned jar: refusing to delete it or to start" >&2
+      exit 1
+    fi
   fi
   rm -f "$extra_copy_path"
 }
@@ -187,8 +200,8 @@ case "${GELDAR_NF_TELEMETRY:-}" in
 esac
 
 # Extra mods: the stale copies go before the bundle check (extra_prep), the pinned jars are copied after it (extra_copy).
-extra_prep chunky
-extra_prep bluemap
+extra_prep chunky "${GELDAR_NF_EXTRA_CHUNKY_SHA256:-}" 9f9303da0185fa0ae0e1d3f10a0f07b8d9e5a21e77931d4fc162dcc718a0ab4f
+extra_prep bluemap "${GELDAR_NF_EXTRA_BLUEMAP_SHA256:-}" 8938f4453af4b53970c86e43d0bd26b4a88980e4e6639f818fa770d0f61c43df
 
 # Bundle mode, before any fetch. The list holds the bundle's immutable files with their hashes; the image's start script rewrites
 # some other files on every start, so they are not listed. The list is checked in this order: paths (no entry may reach outside

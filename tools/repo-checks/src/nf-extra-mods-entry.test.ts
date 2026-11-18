@@ -97,9 +97,9 @@ function setup(): Case {
 }
 
 /** Runs the entrypoint under sh with exactly the case env plus extra (PATH and SYSTEMROOT are the only inherited values). */
-function run(c: Case, extra: Record<string, string> = {}) {
+function run(c: Case, extra: Record<string, string> = {}, script: string = ENTRY) {
   const { PATH_BIN, ...env } = c.env;
-  return spawnSync('sh', [slash(ENTRY)], {
+  return spawnSync('sh', [slash(script)], {
     encoding: 'utf8',
     env: {
       PATH: `${PATH_BIN}${delimiter}${process.env.PATH ?? ''}`,
@@ -113,6 +113,19 @@ function run(c: Case, extra: Record<string, string> = {}) {
 /** The pin on: the chunky pin. Without a mounted jar the mount dir is replaced by an empty dir in the case. */
 const ON = (): Record<string, string> => ({ GELDAR_NF_EXTRA_CHUNKY_SHA256: CHUNKY_PIN });
 const copyOf = (c: Case) => join(c.mods, 'chunky.jar');
+/** The real pins in compose/neoforge/extra-mods.pins, as the entrypoint's extra_prep calls spell them. */
+const REAL_PIN = {
+  chunky: '9f9303da0185fa0ae0e1d3f10a0f07b8d9e5a21e77931d4fc162dcc718a0ab4f',
+  bluemap: '8938f4453af4b53970c86e43d0bd26b4a88980e4e6639f818fa770d0f61c43df',
+} as const;
+/** The entrypoint with the real pin of NAME replaced by the sha256 of BODY: a fixture jar can then be the pinned one (off state). */
+function offScript(c: Case, name: keyof typeof REAL_PIN, body: string): string {
+  const text = readFileSync(ENTRY, 'utf8');
+  if (!text.includes(REAL_PIN[name])) throw new Error(`no ${name} pin literal in the entrypoint`);
+  const out = join(c.base, `entry-${name}.sh`);
+  writeFileSync(out, text.split(REAL_PIN[name]).join(sha256(body)));
+  return out;
+}
 const emptyMount = (c: Case) => {
   const dir = join(c.base, 'empty-mount');
   mkdirSync(dir, { recursive: true });
@@ -160,19 +173,47 @@ describe.skipIf(skipWithoutSh())(
       expect(existsSync(`${copyOf(c)}.part`)).toBe(false);
     });
 
-    it('not enabled: a stale copy is removed, and nothing is copied', () => {
+    for (const name of ['chunky', 'bluemap'] as const) {
+      it(`${name} not enabled: a pinned stale copy is removed, and nothing is copied`, () => {
+        const c = setup();
+        const body = `our own ${name} copy`;
+        writeFileSync(join(c.mods, `${name}.jar`), body);
+        const r = run(c, { GELDAR_NF_EXTRA_DIR: emptyMount(c) }, offScript(c, name, body));
+        expect(r.status, r.stderr).toBe(0);
+        expect(existsSync(join(c.mods, `${name}.jar`))).toBe(false);
+      });
+
+      it(`${name} not enabled: a differing jar at the copy path refuses, is not deleted, and nothing starts`, () => {
+        const c = setup();
+        const hand = `hand-installed ${name} bytes`;
+        writeFileSync(join(c.mods, `${name}.jar`), hand);
+        const r = run(
+          c,
+          { GELDAR_NF_EXTRA_DIR: emptyMount(c) },
+          offScript(c, name, `our own ${name} copy`),
+        );
+        expect(r.status).toBe(1);
+        expect(r.stderr).toContain(
+          `mods/${name}.jar is not the pinned jar: refusing to delete it or to start`,
+        );
+        expect(r.stdout).not.toContain('started');
+        expect(readFileSync(join(c.mods, `${name}.jar`), 'utf8')).toBe(hand);
+      });
+    }
+
+    it('enabled: a stale chunky copy is replaced by the verified jar', () => {
       const c = setup();
-      writeFileSync(copyOf(c), CHUNKY_BODY);
-      const r = run(c, { GELDAR_NF_EXTRA_DIR: emptyMount(c) });
+      writeFileSync(copyOf(c), 'an old copy');
+      const r = run(c, ON());
       expect(r.status, r.stderr).toBe(0);
-      expect(existsSync(copyOf(c))).toBe(false);
+      expect(sha256(readFileSync(copyOf(c), 'utf8'))).toBe(CHUNKY_PIN);
     });
 
     it('disabling after enabling removes the copy on the next start', () => {
       const c = setup();
       expect(run(c, ON()).status).toBe(0);
       expect(existsSync(copyOf(c))).toBe(true);
-      const r = run(c, { GELDAR_NF_EXTRA_DIR: emptyMount(c) });
+      const r = run(c, { GELDAR_NF_EXTRA_DIR: emptyMount(c) }, offScript(c, 'chunky', CHUNKY_BODY));
       expect(r.status, r.stderr).toBe(0);
       expect(existsSync(copyOf(c))).toBe(false);
     });
