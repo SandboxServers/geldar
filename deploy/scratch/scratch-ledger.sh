@@ -86,6 +86,35 @@ ledger_render_ok() {
   esac
 }
 
+# The OTLP receiver for the scratch NeoForge stack (compose/opt-in/scratch-neoforge-telemetry.yml), independent of the ledger
+# variables. SCRATCH_NEOFORGE_TELEMETRY_SINK=1 turns it on; unset or empty is off, any other value is refused on up. It needs
+# SCRATCH_PLATFORM=neoforge and SCRATCH_TELEMETRY_OUT: an absolute path (no newline, quotes, backslashes or dollar signs) naming an
+# existing writable directory, where the sink writes otlp.jsonl. up refuses with exit 2 before any docker call.
+# The sink is compatible with SCRATCH_NEOFORGE_TELEMETRY=off: the soft-kill refusal (check_ledger_env) lists only the five ledger and
+# agent variables, so off plus the sink runs the receiver with the agent off (the verify script's absent check then has something to read).
+ledger_check_sink() {
+  case "${SCRATCH_NEOFORGE_TELEMETRY_SINK:-}" in
+    '') return 0 ;;
+    1) ;;
+    *) ledger_refuse "SCRATCH_NEOFORGE_TELEMETRY_SINK must be 1 or unset" ;;
+  esac
+  [ "$PLATFORM" = neoforge ] || ledger_refuse "SCRATCH_NEOFORGE_TELEMETRY_SINK needs SCRATCH_PLATFORM=neoforge"
+  [ -n "${SCRATCH_TELEMETRY_OUT:-}" ] || ledger_refuse "SCRATCH_NEOFORGE_TELEMETRY_SINK=1 needs SCRATCH_TELEMETRY_OUT, an absolute host directory for the sink output"
+  ledger_shape_ok "$SCRATCH_TELEMETRY_OUT" || ledger_refuse "SCRATCH_TELEMETRY_OUT must be an absolute path with no newline, quotes, backslashes or dollar signs"
+  if [ -L "$SCRATCH_TELEMETRY_OUT" ] || [ ! -d "$SCRATCH_TELEMETRY_OUT" ] || [ ! -w "$SCRATCH_TELEMETRY_OUT" ]; then
+    ledger_refuse "SCRATCH_TELEMETRY_OUT must be an existing writable directory, not a symlink"
+  fi
+}
+
+# Sets GELDAR_NF_SINK_FILE, the overlay compose_run adds. Nothing is read from disk and nothing exits, so down and status render
+# the overlay exactly when the value and the path have the right shape, and never refuse.
+ledger_sink_set_env() {
+  GELDAR_NF_SINK_FILE=
+  if [ "${SCRATCH_NEOFORGE_TELEMETRY_SINK:-}" = 1 ] && [ "$PLATFORM" = neoforge ] && [ -n "${SCRATCH_TELEMETRY_OUT:-}" ] && ledger_shape_ok "$SCRATCH_TELEMETRY_OUT"; then
+    GELDAR_NF_SINK_FILE=$ROOT/compose/opt-in/scratch-neoforge-telemetry.yml
+  fi
+}
+
 # Sets the variables compose_run and the overlay read. GELDAR_NF_TELEMETRY is set to on or off, or left empty (the default path).
 ledger_set_env() {
   ledger_jar=${SCRATCH_NEOFORGE_LEDGER_JAR:-}
@@ -95,8 +124,10 @@ ledger_set_env() {
   ledger_agent_props=${SCRATCH_NEOFORGE_OTEL_AGENT_PROPS:-}
   ledger_telem=${SCRATCH_NEOFORGE_TELEMETRY:-}
   if [ "$verb" = up ]; then
+    ledger_check_sink
     check_ledger_env
   fi
+  ledger_sink_set_env
   GELDAR_NF_TELEMETRY=
   GELDAR_NF_LEDGER_JAR_HOST=
   GELDAR_NF_LEDGER_PROPS_HOST=

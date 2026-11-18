@@ -184,16 +184,15 @@ write_nats_override() {
 
 # Compose with the phase0 base and the scratch overlay. The -f list is built by prepending, last file first, so the
 # command line reads: -p, phase0, nats-auth (only when the override exists), scratch, compose/opt-in/scratch-telemetry.yml
-# (only for the project scratch-telemetry), the NeoForge overlay (only for SCRATCH_PLATFORM=neoforge), and the NATS override last so its file paths win. The verb arguments follow unchanged.
+# (only for the project scratch-telemetry), the NeoForge overlay (only for SCRATCH_PLATFORM=neoforge; its ledger, mod and telemetry-sink overlays follow it, in that order), and the NATS override last so its file paths win. The verb arguments follow unchanged.
 compose_run() {
   if [ -f "$NATS_OVERRIDE" ]; then
     set -- -f "$NATS_OVERRIDE" "$@"
   fi
+  [ "$PLATFORM" = neoforge ] && [ -n "${GELDAR_NF_SINK_FILE:-}" ] && set -- -f "$GELDAR_NF_SINK_FILE" "$@"
   [ "$PLATFORM" = neoforge ] && [ -n "${GELDAR_NF_MOD_JAR_HOST:-}" ] && set -- -f "$ROOT/compose/opt-in/scratch-neoforge-mod.yml" "$@"
   [ "$PLATFORM" = neoforge ] && [ -n "${GELDAR_NF_LEDGER_FILE:-}" ] && set -- -f "$GELDAR_NF_LEDGER_FILE" "$@"
-  if [ "$PLATFORM" = neoforge ]; then
-    set -- -f "$ROOT/compose/opt-in/scratch-neoforge.yml" "$@"
-  fi
+  [ "$PLATFORM" = neoforge ] && set -- -f "$ROOT/compose/opt-in/scratch-neoforge.yml" "$@"
   if [ "$PROJECT" = scratch-telemetry ]; then
     set -- -f "$ROOT/compose/opt-in/scratch-telemetry.yml" "$@"
   fi
@@ -308,8 +307,8 @@ set_env() {
     GELDAR_NF_MOD_SHA256=$SCRATCH_NEOFORGE_MOD_SHA256
   fi
   export GELDAR_NF_MOD_JAR_HOST GELDAR_NF_MOD_SHA256
-  # The ledger jar and the OpenTelemetry agent (scratch-ledger.sh, sourced only when one of their variables is set; up refuses on them there).
-  [ -z "${SCRATCH_NEOFORGE_LEDGER_JAR:-}${SCRATCH_NEOFORGE_LEDGER_SHA256:-}${SCRATCH_LEDGER_PROPS:-}${SCRATCH_NEOFORGE_OTEL_AGENT_JAR:-}${SCRATCH_NEOFORGE_TELEMETRY:-}${SCRATCH_NEOFORGE_OTEL_AGENT_PROPS:-}" ] || { . "$ROOT/deploy/scratch/scratch-ledger.sh"; ledger_set_env; }
+  # The ledger jar, the telemetry agent and the OTLP sink (SCRATCH_NEOFORGE_TELEMETRY_SINK; scratch-ledger.sh, sourced only when one of their variables is set; up refuses on them there).
+  GELDAR_NF_SINK_FILE=; [ -z "${SCRATCH_NEOFORGE_LEDGER_JAR:-}${SCRATCH_NEOFORGE_LEDGER_SHA256:-}${SCRATCH_LEDGER_PROPS:-}${SCRATCH_NEOFORGE_OTEL_AGENT_JAR:-}${SCRATCH_NEOFORGE_TELEMETRY:-}${SCRATCH_NEOFORGE_OTEL_AGENT_PROPS:-}${SCRATCH_NEOFORGE_TELEMETRY_SINK:-}" ] || { . "$ROOT/deploy/scratch/scratch-ledger.sh"; ledger_set_env; }
 }
 
 # Any non-root account may run. GELDAR_SERVICE_UID, when set, must be this account's uid. The secret modes never change:
