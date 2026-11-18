@@ -117,7 +117,11 @@ const EXPECTED: Record<string, { pub: string[]; deny: string[]; sub: string[] }>
   // The human lane (velocity-human): velocity's watch on the registry and the skins, read only, with its flow control scoped to
   // those two buckets. No $KV, no $JS.API wildcard, no event subject (tests/nats-human-grants-nf.test.ts pins it in full).
   human: {
-    pub: [...BUCKETS.flatMap(velocityApi), ...BUCKETS.map((b) => `$JS.FC.KV_${b}.>`), '_INBOX.human.>'],
+    pub: [
+      ...BUCKETS.flatMap(velocityApi),
+      ...BUCKETS.map((b) => `$JS.FC.KV_${b}.>`),
+      '_INBOX.human.>',
+    ],
     deny: [],
     sub: ['_INBOX.human.>'],
   },
