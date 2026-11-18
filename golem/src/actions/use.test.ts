@@ -37,6 +37,8 @@ interface Setup {
   onClick?: (pos: Vec3, world: Map<string, Stored>) => void;
   /** Runs inside the look, before the click (an abort here stops the use). */
   onLook?: () => void;
+  /** How `equip` misbehaves: it throws, or it resolves and the hand does not change. */
+  equip?: 'throws' | 'ignored';
 }
 
 const key = (p: { x: number; y: number; z: number }): string => `${p.x},${p.y},${p.z}`;
@@ -62,6 +64,11 @@ function fakeBot(setup: Setup = {}) {
       getProperties: () => stored?.props ?? {},
     };
   };
+  const equip = vi.fn(async (stack: { name: string }) => {
+    if (setup.equip === 'throws') throw new Error('no hand');
+    if (setup.equip === 'ignored') return;
+    held = stack.name;
+  });
   const bot = {
     username: 'Pike',
     entity: { position: BOT },
@@ -69,9 +76,7 @@ function fakeBot(setup: Setup = {}) {
       return held === null ? null : { name: held };
     },
     inventory: { items: () => items.filter((item) => item.name !== held) },
-    equip: vi.fn(async (stack: { name: string }) => {
-      held = stack.name;
-    }),
+    equip,
     lookAt: vi.fn(async () => setup.onLook?.()),
     waitForTicks: vi.fn(async () => undefined),
     blockAt: (p: Vec3) => snapshot(p),
@@ -80,7 +85,7 @@ function fakeBot(setup: Setup = {}) {
       setup.onClick?.(cell.position, world);
     }),
   };
-  return { bot: bot as unknown as Bot, world, clicks };
+  return { bot: bot as unknown as Bot, world, clicks, equip };
 }
 
 /** Runs the `use` at the default target. The shard flag is on unless `enabled` is false. */
@@ -148,10 +153,70 @@ describe('use: the shape of the action', () => {
     expect(clicks).toEqual([]);
   });
 
-  it('refuses a use with neither a block position nor an entity', async () => {
+  it('refuses a use with neither a block position, an entity nor an item', async () => {
     const { bot, clicks } = fakeBot();
     const outcome = await use(bot, {});
     expect(outcome).toEqual(failed('not_possible', USE_MESSAGE.noTarget));
+    expect(clicks).toEqual([]);
+  });
+});
+
+describe('use: an item and no target puts the item in hand (0389)', () => {
+  it('equips a carried sword into an empty hand, and clicks nothing', async () => {
+    const { bot, clicks } = fakeBot({ items: ['wooden_sword'] });
+    const outcome = await use(bot, { item: 'wooden_sword' });
+    expect(outcome).toEqual(completed({ held: 'wooden_sword', fact: 'wooden_sword in hand' }));
+    expect(bot.heldItem?.name).toBe('wooden_sword');
+    expect(clicks).toEqual([]);
+  });
+
+  it('reports ok and equips nothing when the item is already in hand', async () => {
+    const { bot, clicks, equip } = fakeBot({ held: 'wooden_sword', items: ['wooden_sword'] });
+    const outcome = await use(bot, { item: 'wooden_sword' });
+    expect(outcome).toEqual(completed({ held: 'wooden_sword', fact: 'wooden_sword in hand' }));
+    expect(equip).not.toHaveBeenCalled();
+    expect(clicks).toEqual([]);
+  });
+
+  it('refuses an item the inventory does not carry, and leaves the hand alone', async () => {
+    const { bot, clicks, equip } = fakeBot({ held: 'stone_sword' });
+    const outcome = await use(bot, { item: 'wooden_sword' });
+    expect(outcome).toEqual(failed('missing_materials', USE_MESSAGE.noItem));
+    expect(bot.heldItem?.name).toBe('stone_sword');
+    expect(equip).not.toHaveBeenCalled();
+    expect(clicks).toEqual([]);
+  });
+
+  it('refuses when equip resolves but the hand still holds something else', async () => {
+    const { bot, clicks } = fakeBot({ items: ['wooden_sword'], equip: 'ignored' });
+    const outcome = await use(bot, { item: 'wooden_sword' });
+    expect(outcome).toEqual(failed('not_possible', USE_MESSAGE.notHeld));
+    expect(bot.heldItem).toBeNull();
+    expect(clicks).toEqual([]);
+  });
+
+  it('refuses when equip throws, and clicks nothing', async () => {
+    const { bot, clicks } = fakeBot({ items: ['wooden_sword'], equip: 'throws' });
+    const outcome = await use(bot, { item: 'wooden_sword' });
+    expect(outcome).toEqual(failed('not_possible', USE_MESSAGE.notHeld));
+    expect(clicks).toEqual([]);
+  });
+
+  it('is refused while the shard flag is off, and the hand is unchanged', async () => {
+    const { bot, clicks, equip } = fakeBot({ items: ['wooden_sword'] });
+    const outcome = await use(bot, { item: 'wooden_sword' }, { enabled: false });
+    expect(outcome).toEqual(failed('not_possible', USE_MESSAGE.notYet));
+    expect(bot.heldItem).toBeNull();
+    expect(equip).not.toHaveBeenCalled();
+    expect(clicks).toEqual([]);
+  });
+
+  it('still refuses a sword used on a plain block, and the hand is unchanged', async () => {
+    const { bot, clicks, equip } = fakeBot({ block: 'stone', items: ['wooden_sword'] });
+    const outcome = await use(bot, { at: TARGET, item: 'wooden_sword' });
+    expect(outcome).toEqual(failed('not_possible', USE_MESSAGE.notUsable));
+    expect(bot.heldItem).toBeNull();
+    expect(equip).not.toHaveBeenCalled();
     expect(clicks).toEqual([]);
   });
 });

@@ -33,7 +33,7 @@ export interface ActionOutcomePayload {
    */
   message: string;
   /**
-   * On success, a few verbs send a plain fact: eat sends '<item>: hunger <before> to <after>' (read as 'You ate <item>: hunger <before> to <after>.'); sleep sends the sleepers count; till and place send their plain fact when the Body has one; goto sends its swim note when it has one (read as 'Your goto worked: <note>.'). On failure it names what blocked the action; an interrupted goto may add its detail (a swim stopped at low air).
+   * On success, a few verbs send a plain fact: eat sends '<item>: hunger <before> to <after>' (read as 'You ate <item>: hunger <before> to <after>.'); sleep sends the sleepers count; till, place and use send their plain fact when the Body has one (use with an item and no target sends '<item> in hand'); goto sends its swim note when it has one (read as 'Your goto worked: <note>.'). On failure it names what blocked the action; an interrupted goto may add its detail (a swim stopped at low air).
    */
   detail_text?: string;
   /**
