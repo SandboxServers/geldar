@@ -22,6 +22,10 @@ const BUILD = ['26', '1', '2', '126'].join('.');
 const MOD_BODY = 'fixture mod bytes';
 const INSTALLER_BODY = 'fixture installer bytes';
 const CHUNKY_BODY = 'fixture chunky jar bytes';
+const BLUEMAP_BODY = 'fixture bluemap jar bytes';
+const MODS = ['chunky', 'bluemap'] as const;
+type Mod = (typeof MODS)[number];
+const BODY: Record<Mod, string> = { chunky: CHUNKY_BODY, bluemap: BLUEMAP_BODY };
 const SECRET = 'nf-extra-secret-Z3_q';
 const ABSENT = '/nonexistent/geldar-fixture-absent.jar';
 
@@ -113,6 +117,14 @@ function run(c: Case, extra: Record<string, string> = {}, script: string = ENTRY
 /** The pin on: the chunky pin. Without a mounted jar the mount dir is replaced by an empty dir in the case. */
 const ON = (): Record<string, string> => ({ GELDAR_NF_EXTRA_CHUNKY_SHA256: CHUNKY_PIN });
 const copyOf = (c: Case) => join(c.mods, 'chunky.jar');
+const envOf = (name: Mod) => `GELDAR_NF_EXTRA_${name.toUpperCase()}_SHA256`;
+const pinOf = (name: Mod) => sha256(BODY[name]);
+const pinFor = (name: Mod): Record<string, string> => ({ [envOf(name)]: pinOf(name) });
+/** Mounts only NAME's fixture jar: the chunky jar from setup would otherwise refuse for its unset pin. */
+function mountOnly(c: Case, name: Mod) {
+  rmSync(join(c.mount, 'chunky.jar'), { force: true });
+  writeFileSync(join(c.mount, `${name}.jar`), BODY[name]);
+}
 /** The real pins in compose/neoforge/extra-mods.pins, as the entrypoint's extra_prep calls spell them. */
 const REAL_PIN = {
   chunky: '9f9303da0185fa0ae0e1d3f10a0f07b8d9e5a21e77931d4fc162dcc718a0ab4f',
@@ -281,6 +293,88 @@ describe.skipIf(skipWithoutSh())(
       const c = setup();
       expect(run(c, ON()).status).toBe(0);
       expect(readFileSync(join(c.mods, 'proxy-compatible-forge.jar'), 'utf8')).toBe(MOD_BODY);
+    });
+
+    it.each(MODS)(
+      '%s enabled: copies the mounted jar to mods/ with its pin, its content and mode 644',
+      (name) => {
+        const c = setup();
+        mountOnly(c, name);
+        const r = run(c, pinFor(name));
+        expect(r.status, r.stderr).toBe(0);
+        const copy = join(c.mods, `${name}.jar`);
+        expect(readFileSync(copy, 'utf8')).toBe(BODY[name]);
+        expect(sha256(readFileSync(copy, 'utf8'))).toBe(pinOf(name));
+        if (process.platform !== 'win32') expect(statSync(copy).mode & 0o777).toBe(0o644);
+        expect(existsSync(`${copy}.part`)).toBe(false);
+      },
+    );
+
+    it.each(MODS)(
+      '%s enabled: a pin that does not match the mounted jar refuses; neither the final file nor a .part is left',
+      (name) => {
+        const c = setup();
+        mountOnly(c, name);
+        const r = run(c, { [envOf(name)]: 'b'.repeat(64) });
+        expect(r.status).toBe(1);
+        expect(r.stderr).toContain('does not match');
+        expect(r.stderr).toContain('not copied');
+        expect(r.stdout).not.toContain('started');
+        const copy = join(c.mods, `${name}.jar`);
+        expect(existsSync(copy)).toBe(false);
+        expect(existsSync(`${copy}.part`)).toBe(false);
+      },
+    );
+
+    it.each(MODS)(
+      '%s enabled: a mounted jar with no pin refuses, and names its variable',
+      (name) => {
+        const c = setup();
+        mountOnly(c, name);
+        const r = run(c);
+        expect(r.status).toBe(1);
+        expect(r.stderr).toContain(`${envOf(name)} is unset`);
+        expect(existsSync(join(c.mods, `${name}.jar`))).toBe(false);
+      },
+    );
+
+    for (const name of MODS) {
+      it.skipIf(!CAN_LINK)(
+        `${name} enabled: a symlink at the copy path refuses, and its target is untouched`,
+        () => {
+          const c = setup();
+          mountOnly(c, name);
+          const target = join(c.base, `${name}-target.txt`);
+          writeFileSync(target, 'keep me');
+          symlinkSync(target, join(c.mods, `${name}.jar`));
+          const r = run(c, pinFor(name));
+          expect(r.status).toBe(1);
+          expect(r.stderr).toContain('symlink or a directory');
+          expect(readFileSync(target, 'utf8')).toBe('keep me');
+        },
+      );
+    }
+
+    it.each(MODS)(
+      '%s enabled: a directory at the copy path refuses, and the directory stays',
+      (name) => {
+        const c = setup();
+        mountOnly(c, name);
+        mkdirSync(join(c.mods, `${name}.jar`));
+        const r = run(c, pinFor(name));
+        expect(r.status).toBe(1);
+        expect(r.stderr).toContain('symlink or a directory');
+        expect(statSync(join(c.mods, `${name}.jar`)).isDirectory()).toBe(true);
+      },
+    );
+
+    it.each(MODS)('%s enabled: a second start with the same jar is idempotent', (name) => {
+      const c = setup();
+      mountOnly(c, name);
+      expect(run(c, pinFor(name)).status).toBe(0);
+      const r = run(c, pinFor(name));
+      expect(r.status, r.stderr).toBe(0);
+      expect(sha256(readFileSync(join(c.mods, `${name}.jar`), 'utf8'))).toBe(pinOf(name));
     });
   },
 );
