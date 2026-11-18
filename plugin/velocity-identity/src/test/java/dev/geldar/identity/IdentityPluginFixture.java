@@ -9,6 +9,7 @@ import com.velocitypowered.api.proxy.messages.ChannelRegistrar;
 import com.velocitypowered.api.scheduler.Scheduler;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Map;
 import java.util.Optional;
@@ -111,6 +112,16 @@ final class IdentityPluginFixture {
     /** Runs the disconnect handler for one connection object, whatever status Velocity reports for it. */
     void disconnect(Player player, DisconnectEvent.LoginStatus status) {
         plugin.onDisconnect(new DisconnectEvent(player, status));
+    }
+
+    /** Registers a life for this name, so the agent lane admits it. The registry is in memory: no NATS runs here. */
+    void register(String name) {
+        plugin.registry().put(name, "{\"life_id\":\"l\",\"registered_at\":\"t\"}".getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** Gives a player's slot back without the disconnect handler: the plugin does not record this release. */
+    void releaseSlotBehindThePlugin(Player player) {
+        plugin.gate().releaseSlot(player);
     }
 
     private static Player player(String name, UUID id) {
