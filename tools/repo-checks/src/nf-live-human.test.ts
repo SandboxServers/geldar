@@ -73,8 +73,13 @@ const hostPortOf = (entry: string) =>
     .split(':')[1];
 
 describe('the human lane overlay (compose/nf-live-human.yml) with the live base', () => {
-  it('adds velocity-human, and only re-declares nats and neoforge (for their nf-human network), no other service', () => {
-    expect(Object.keys(services(HUMAN)).sort()).toEqual(['nats', 'neoforge', 'velocity-human']);
+  it('adds velocity-human and its one-shot velocity-human-init, and only re-declares nats and neoforge (for their nf-human network), no other service', () => {
+    expect(Object.keys(services(HUMAN)).sort()).toEqual([
+      'nats',
+      'neoforge',
+      'velocity-human',
+      'velocity-human-init',
+    ]);
   });
 
   it('publishes exactly one entry, the human mapping on 127.0.0.1:46566 by default', () => {
@@ -163,7 +168,7 @@ describe('the human lane overlay (compose/nf-live-human.yml) with the live base'
     const svc = services(HUMAN)['velocity-human'] ?? {};
     expect(svc.networks).toEqual(['nf-human']);
     expect(Object.keys(svc.depends_on as Record<string, unknown>).sort()).toEqual(
-      ['identity-seed', 'nats', 'neoforge'].sort(),
+      ['identity-seed', 'nats', 'neoforge', 'velocity-human-init'].sort(),
     );
   });
 
@@ -255,5 +260,79 @@ describe('the human lane security settings (pinned)', () => {
     );
     expect(jar?.read_only).toBe(true);
     expect((jar?.bind as Record<string, unknown>)?.create_host_path).toBe(false);
+  });
+});
+
+// The one-shot that chowns the human proxy's fresh volume (velocity-human-init). It is root for one chown and nothing else:
+// no network, no secret, no port, one mount, CHOWN as its only capability. velocity-human stays non-root and read-only.
+describe('the velocity-human-init one-shot (volume chown)', () => {
+  const INIT = 'velocity-human-init';
+  const init = (): Record<string, unknown> => services(HUMAN)[INIT] as Record<string, unknown>;
+  const human = (): Record<string, unknown> =>
+    services(HUMAN)['velocity-human'] as Record<string, unknown>;
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: the compose variable syntax, not a template literal
+  const UID_GID = '${NF_SERVICE_UID:-1000}:${NF_SERVICE_GID:-${NF_SERVICE_UID:-1000}}';
+
+  it('exists, with the same image string (same digest) as velocity-human', () => {
+    expect(services(HUMAN)[INIT]).toBeDefined();
+    expect(init().image).toBe(human().image);
+    expect(String(init().image)).toMatch(/@sha256:[0-9a-f]{64}$/);
+  });
+
+  it('runs as root once (user 0:0), restart no, read_only, and no-new-privileges', () => {
+    expect(init().user).toBe('0:0');
+    expect(init().restart).toBe('no');
+    expect(init().read_only).toBe(true);
+    expect(init().security_opt).toEqual(['no-new-privileges:true']);
+  });
+
+  it('keeps only CHOWN: cap_add exactly [CHOWN], cap_drop [ALL]', () => {
+    expect(init().cap_add).toEqual(['CHOWN']);
+    expect(init().cap_drop).toEqual(['ALL']);
+  });
+
+  it('has no network at all: network_mode none and no networks key', () => {
+    expect(init().network_mode).toBe('none');
+    expect(init()).not.toHaveProperty('networks');
+  });
+
+  it('mounts exactly velocity-human-data at /server, no secret, no port, no other volume', () => {
+    expect(init().volumes).toEqual(['velocity-human-data:/server']);
+    expect(init()).not.toHaveProperty('secrets');
+    expect(init()).not.toHaveProperty('ports');
+    expect(init()).not.toHaveProperty('tmpfs');
+  });
+
+  it('chowns /server to the same uid:gid expression velocity-human runs as', () => {
+    expect(human().user).toBe(UID_GID);
+    expect(init().entrypoint).toEqual(['/bin/sh', '-c', `chown ${UID_GID} /server`]);
+  });
+
+  it('has the limits, logging and labels of velocity-human', () => {
+    expect(init().deploy).toEqual({
+      resources: { limits: { cpus: '0.1', memory: '64m', pids: 16 } },
+    });
+    expect(init().logging).toEqual(human().logging);
+    expect(init().labels).toEqual(human().labels);
+    expect(init().labels).toMatchObject({
+      'geldar.project': 'geldar-nf',
+      'com.centurylinklabs.watchtower.enable': 'false',
+    });
+  });
+
+  it('is depended on by velocity-human with service_completed_successfully, and depends on nothing itself', () => {
+    expect(init().depends_on).toBeUndefined();
+    const deps = human().depends_on as Record<string, { condition: unknown }>;
+    expect(deps[INIT]?.condition).toBe('service_completed_successfully');
+  });
+
+  it('leaves velocity-human non-root, read-only, cap_drop ALL, tmpfs /tmp without exec, and with no UID/GID env', () => {
+    expect(human().user).toBeDefined();
+    expect(human().read_only).toBe(true);
+    expect(human().cap_drop).toEqual(['ALL']);
+    expect(human().tmpfs).toEqual(['/tmp']);
+    const env = (human().environment ?? {}) as Record<string, unknown>;
+    expect(env).not.toHaveProperty('UID');
+    expect(env).not.toHaveProperty('GID');
   });
 });

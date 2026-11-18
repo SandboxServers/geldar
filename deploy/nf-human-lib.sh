@@ -125,12 +125,12 @@ check_human_orphan() {
   fi
 }
 
-# human-down: stops and removes velocity-human only. The overlay is always included, so it works with NF_HUMAN unset, and no
-# other service is named. Plain down is unchanged.
+# human-down: stops and removes velocity-human and its one-shot velocity-human-init only. The overlay is always included, so it
+# works with NF_HUMAN unset, and no other service is named. Plain down is unchanged.
 cmd_human_down() {
   check_operator
   check_no_colo_labels
   HUMAN=1
-  act dc rm -sf velocity-human
-  say "human-down: velocity-human stopped and removed (no other service was touched)"
+  act dc rm -sf velocity-human velocity-human-init
+  say "human-down: velocity-human and velocity-human-init stopped and removed (no other service was touched)"
 }

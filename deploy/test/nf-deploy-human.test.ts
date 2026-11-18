@@ -473,14 +473,16 @@ describe('nf-deploy.sh human lane: fail-closed fixes', () => {
     expect(after[0]).toMatch(/ compose -p geldar-nf .* stop velocity-human$/);
   });
 
-  it('human-down removes only velocity-human, with the overlay, and works with NF_HUMAN unset', () => {
+  it('human-down removes only velocity-human and velocity-human-init, with the overlay, and works with NF_HUMAN unset', () => {
     const repo = makeRepo({ human: false });
     const r = run(repo, { env: { NF_HUMAN: undefined }, args: ['human-down', '--local'] });
     expect(r.status).toBe(0);
     const compose = calls(repo).filter((l) => l.includes(' compose -p '));
     expect(compose).toHaveLength(1);
     expect(compose[0]).toMatch(/-f \S*compose\/nf-live-human\.yml/);
-    expect(compose[0]).toMatch(/ rm -sf velocity-human$/);
+    expect(compose[0]).toMatch(/ rm -sf velocity-human velocity-human-init$/);
+    // Exactly the two service names after rm -sf: no other service, no flag.
+    expect(compose[0]?.split(' rm -sf ')[1]).toBe('velocity-human velocity-human-init');
   });
 
   // Off with a velocity-human container (multi-row, as docker ps prints the project): these verbs refuse before any compose call.
