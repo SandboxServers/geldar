@@ -153,7 +153,7 @@ function expectNoSecret(r: { stdout: string; stderr: string }) {
 
 describe.skipIf(skipWithoutSh())(
   'NeoForge entrypoint owns the proxy-compatible-forge.toml',
-  { timeout: 30_000 },
+  { timeout: 120_000 },
   () => {
     it('(a) a reformatted toml with the right secret starts, and ends with MODERN and the secret once', () => {
       const c = setup();

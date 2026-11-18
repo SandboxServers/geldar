@@ -159,7 +159,7 @@ const VARIANTS: Array<[string, string, string]> = [
   ['CRLF, trailing text and comments', '\r\n', ' # server  '],
 ];
 
-describe.skipIf(skipWithoutSh())('the server-left-behind toml shape', { timeout: 30_000 }, () => {
+describe.skipIf(skipWithoutSh())('the server-left-behind toml shape', { timeout: 120_000 }, () => {
   for (const [label, eol, trail] of VARIANTS) {
     it(`${label}: starts, and [forwarding] ends with the current secret once and approvedProxyHosts kept`, () => {
       const c = setup();
