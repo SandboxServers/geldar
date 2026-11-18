@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { hasPwsh, parseEntries, type Rendered, renderGenerator } from './nats-auth-fixtures.ts';
 
 // The velocity NATS user of the nf set, read from the generator's output in a temp checkout (--live --local, never the live
-// checkout). velocity and velocity-human share this user (compose/nf-live.yml:224, compose/nf-live-human.yml:43).
+// checkout). The velocity service (compose/nf-live.yml) has this user; velocity-human has its own, human (nats-human-grants-nf.test.ts).
 // Registry client (plugin/velocity-identity/src/main/java/dev/geldar/identity/RegistryClient.java): nc.keyValue(bucket) binds
 // the bucket (line 88, STREAM.INFO on KV_<bucket>), and kv.watchAll (line 183) is a push watch: the consumer is created and
 // deleted under the KV_ stream, its flow control runs on $JS.FC, and its messages arrive on the inbox. Those are the subjects

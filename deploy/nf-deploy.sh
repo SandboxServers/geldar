@@ -425,6 +425,7 @@ gates() {
   check_no_colo_labels
   check_port
   check_human_port
+  check_human_orphan
   check_inputs
   check_resources
   check_config
@@ -444,7 +445,10 @@ cmd_plan() {
   say "  2. up --no-deps --exit-code-from identity-seed identity-seed (one-shot)"
   say "  3. up -d --wait eventsink neoforge"
   say "  4. up -d --wait velocity (the only published port: 127.0.0.1:$PORT)"
-  if [ "$HUMAN" = 1 ]; then say "  5. up -d --wait velocity-human (NF_HUMAN=on: publishes $HUMAN_BIND:$HUMAN_PORT only)"; fi
+  if [ "$HUMAN" = 1 ]; then
+    say "  5. up -d --wait velocity-human (NF_HUMAN=on: publishes $HUMAN_BIND:$HUMAN_PORT only)"
+    say "NF_HUMAN=on: the first on-run recreates nats, eventsink and neoforge (their network set changes). An off-run is refused while velocity-human exists (human-down first)."
+  fi
   say "up refuses until the neoforge-data volume is seeded (seed-bundle, once per volume); plan does not check it"
   say "golem-body and players-host are not in this project and are never started"
   say "all gates passed"
@@ -553,6 +557,8 @@ cmd_probe() {
   check_operator
   check_service_uid
   check_no_colo_labels
+  check_human_switch
+  check_human_orphan
   check_secrets
   check_probe_up
   [ -f "$PROBE_FILE" ] || die "probe overlay not found: $PROBE_FILE"

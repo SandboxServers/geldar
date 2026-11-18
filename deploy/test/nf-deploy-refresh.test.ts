@@ -82,7 +82,10 @@ function makeRepo(): string {
   copyFileSync(HUMAN_LIB_SRC, join(repo, 'deploy', 'nf-human-lib.sh'));
   writeFileSync(join(repo, 'compose', 'nf-live.yml'), NF_COMPOSE_TEXT);
   for (const f of SECRET_FILES)
-    writeFileSync(join(repo, 'compose', 'secrets-nf', f), `${f} fixture\n`);
+    writeFileSync(
+      join(repo, 'compose', 'secrets-nf', f),
+      f === 'nats-auth.conf' ? 'user: "human"\n' : `${f} fixture\n`,
+    );
   writeFileSync(join(repo, 'mod.jar'), JAR_BYTES);
   for (const [name, body] of Object.entries(STUB_SCRIPTS)) {
     const path = join(repo, 'stubs', name);
@@ -155,6 +158,8 @@ function addHuman(repo: string): void {
     join(repo, 'plugin', 'velocity-identity', 'build', 'libs', 'geldar-velocity-identity.jar'),
     'jar fixture\n',
   );
+  // check_human_inputs needs the human NATS password non-empty when NF_HUMAN=on (only addHuman sets the lane on).
+  writeFileSync(join(repo, 'compose', 'secrets-nf', 'nats-human.txt'), 'nats-human.txt fixture\n');
 }
 
 afterEach(() => {
@@ -278,6 +283,31 @@ describe('nf-deploy.sh refresh-secrets', () => {
       'up -d --wait --force-recreate --no-deps neoforge',
     ]);
     for (const c of compose(repo)) expect(c).toMatch(/-f \S*nf-live-human\.yml /);
+  });
+
+  // P5: a failed recreate of velocity, eventsink and velocity-human stops velocity-human and nothing else.
+  it('with NF_HUMAN=on, a failed velocity/eventsink/velocity-human recreate stops only velocity-human', () => {
+    const repo = makeRepo();
+    addHuman(repo);
+    const failing = [
+      '#!/bin/sh',
+      'echo "docker $*" >>"$STUB_LOG"',
+      'case "$*" in',
+      '  *"--force-recreate --no-deps velocity eventsink velocity-human"*) exit 1 ;;',
+      '  *"stop velocity-human"*) exit 0 ;;',
+      'esac',
+      STUB_SCRIPTS.docker.split('\n').slice(2).join('\n'),
+    ].join('\n');
+    writeFileSync(join(repo, 'stubs', 'docker'), `${failing}\n`);
+    const r = run(repo, ['refresh-secrets'], { NF_HUMAN: 'on', NF_HUMAN_BIND: '127.0.0.1' });
+    expect(r.status).not.toBe(0);
+    const stops = calls(repo).filter((l) => / stop /.test(l));
+    expect(stops).toHaveLength(1);
+    expect(stops[0]).toMatch(/ compose -p geldar-nf .* stop velocity-human$/);
+    for (const svc of ['velocity', 'nats', 'neoforge', 'eventsink', 'postgres']) {
+      expect(stops.some((l) => l.endsWith(` stop ${svc}`))).toBe(false);
+    }
+    expect(calls(repo).some((l) => l.includes('identity-seed'))).toBe(false);
   });
 
   // NF_HUMAN unset or off: the velocity step names no human service, so the recorded args are those of the default run.

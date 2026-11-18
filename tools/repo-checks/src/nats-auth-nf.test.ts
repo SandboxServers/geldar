@@ -21,8 +21,8 @@ import {
 } from './nats-auth-fixtures.ts';
 
 /** The users and files the nf set must have, in the generator's order (geldar.ps1 is not involved: deploy/nats-auth-nf.ps1). */
-const NF_USERS = ['neoforge', 'sink', 'deploy', 'velocity', 'seed', 'body'];
-/** The ten files the generator writes: the conf, the six NATS passwords, postgres.txt, velocity-forwarding.txt and rcon.txt. */
+const NF_USERS = ['neoforge', 'sink', 'deploy', 'velocity', 'seed', 'body', 'human'];
+/** The eleven files the generator writes: the conf, the seven NATS passwords (human included), postgres.txt, velocity-forwarding.txt and rcon.txt. */
 const NF_FILES = [
   'nats-auth.conf',
   ...NF_USERS.map((u) => `nats-${u}.txt`),
@@ -31,6 +31,7 @@ const NF_FILES = [
   'rcon.txt',
 ].sort();
 const NF_PROBE = readFileSync(join(ROOT, 'compose', 'nf-live-probe.yml'), 'utf8');
+const NF_HUMAN = readFileSync(join(ROOT, 'compose', 'nf-live-human.yml'), 'utf8');
 /** The two-way difference of two name lists: names only in `a`, and names only in `b`. */
 function setDiff(a: string[], b: string[]): { onlyA: string[]; onlyB: string[] } {
   return { onlyA: a.filter((f) => !b.includes(f)), onlyB: b.filter((f) => !a.includes(f)) };
@@ -113,6 +114,13 @@ const EXPECTED: Record<string, { pub: string[]; deny: string[]; sub: string[] }>
     deny: [],
     sub: ['_INBOX.>'],
   },
+  // The human lane (velocity-human): velocity's watch on the registry and the skins, read only, with its flow control scoped to
+  // those two buckets. No $KV, no $JS.API wildcard, no event subject (tests/nats-human-grants-nf.test.ts pins it in full).
+  human: {
+    pub: [...BUCKETS.flatMap(velocityApi), ...BUCKETS.map((b) => `$JS.FC.KV_${b}.>`), '_INBOX.>'],
+    deny: [],
+    sub: ['_INBOX.>'],
+  },
 };
 
 /** Whether a subject is one this shard's NATS may carry: geldar.nf.*, the inbox, $JS.FC, $JS.API.INFO, or a JetStream
@@ -120,6 +128,7 @@ const EXPECTED: Record<string, { pub: string[]; deny: string[]; sub: string[] }>
 function inScope(subject: string): boolean {
   if (subject.startsWith('geldar.nf.')) return true;
   if (['_INBOX.>', '$JS.FC.>', '$JS.API.INFO'].includes(subject)) return true;
+  if (/^\$JS\.FC\.KV_geldar-(life-registry|skins)\.>$/.test(subject)) return true;
   if (subject.startsWith('$KV.')) return BUCKETS.some((b) => subject.startsWith(`$KV.${b}.`));
   if (subject.startsWith('$JS.API.') || subject.startsWith('$JS.ACK.')) {
     const tokens = subject.split('.');
@@ -336,9 +345,12 @@ describe.skipIf(!hasPwsh)(
 
     it('makes the generator output equal the secrets of nf-live.yml and the SECRET_FILES of nf-deploy.sh', () => {
       const generated = readdirSync(dirOf()).sort();
-      // The declared set is nf-live.yml's plus the probe overlay's (nats-body.txt, which only the probe mounts).
+      // The declared set is nf-live.yml's plus the probe overlay's (nats-body.txt, which only the probe mounts) and the human
+      // overlay's (nats-human.txt, which only the human lane mounts).
       const names = [
-        ...`${NF_LIVE}\n${NF_PROBE}`.matchAll(/\$\{NF_SECRETS_DIR:-\.\/secrets-nf\}\/([\w.-]+)/g),
+        ...`${NF_LIVE}\n${NF_PROBE}\n${NF_HUMAN}`.matchAll(
+          /\$\{NF_SECRETS_DIR:-\.\/secrets-nf\}\/([\w.-]+)/g,
+        ),
       ].map((m) => m[1] ?? '');
       const declared = [...new Set(names)].sort();
       const deploy = deploySecretFiles().sort();
@@ -347,7 +359,14 @@ describe.skipIf(!hasPwsh)(
         onlyA: [],
         onlyB: [],
       });
-      expect(setDiff(generated, deploy), 'generator vs nf-deploy.sh SECRET_FILES').toEqual({
+      // nats-human.txt is required by nf-deploy.sh only with NF_HUMAN=on (deploy/nf-human-lib.sh), so the base SECRET_FILES omit it.
+      expect(
+        setDiff(
+          generated.filter((f) => f !== 'nats-human.txt'),
+          deploy,
+        ),
+        'generator vs nf-deploy.sh SECRET_FILES',
+      ).toEqual({
         onlyA: [],
         onlyB: [],
       });

@@ -1,7 +1,7 @@
 # Human listener for the live NeoForge shard (compose/nf-live-human.yml, service velocity-human). Opt-in: deploy/nf-deploy.sh
 # adds that overlay only with NF_HUMAN=on.
 # Humans are players: online-mode = true, so Mojang authentication decides the account and its UUID. This proxy reads the
-# life registry over NATS (the velocity user, compose/nf-live-human.yml) and refuses agent-shaped names; it has no agent
+# life registry over NATS (the human user, compose/nf-live-human.yml) and refuses agent-shaped names; it has no agent
 # route of its own. The bot ingress (compose/velocity/velocity-nf.toml, offline-mode, loopback only) is a separate proxy.
 # The forwarding secret is the Docker secret file, the same secret the NeoForge server's Proxy Compatible Forge reads.
 # Keep this file free of secrets and real hostnames: the motd is a fixed label and the forced host is a reserved name.

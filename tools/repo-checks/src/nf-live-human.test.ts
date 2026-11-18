@@ -47,7 +47,9 @@ const services = (f: string): Record<string, Service> => load(f).services ?? {};
 const humanPorts = (): string[] =>
   (services(HUMAN)['velocity-human']?.ports ?? []).map((p) =>
     String(p)
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the compose variable syntax, not a template literal
       .replace('${NF_HUMAN_BIND:-127.0.0.1}', DEFAULT_BIND)
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the compose variable syntax, not a template literal
       .replace('${NF_HUMAN_PORT:-46566}', DEFAULT_PORT),
   );
 
@@ -71,8 +73,8 @@ const hostPortOf = (entry: string) =>
     .split(':')[1];
 
 describe('the human lane overlay (compose/nf-live-human.yml) with the live base', () => {
-  it('adds exactly one service, velocity-human, and no other service', () => {
-    expect(Object.keys(services(HUMAN))).toEqual(['velocity-human']);
+  it('adds velocity-human, and only re-declares nats and neoforge (for their nf-human network), no other service', () => {
+    expect(Object.keys(services(HUMAN)).sort()).toEqual(['nats', 'neoforge', 'velocity-human']);
   });
 
   it('publishes exactly one entry, the human mapping on 127.0.0.1:46566 by default', () => {
@@ -85,6 +87,7 @@ describe('the human lane overlay (compose/nf-live-human.yml) with the live base'
     );
     const nonLoopback = all.filter((p) => !isLoopback(p.entry));
     expect(nonLoopback.map((p) => p.service)).toEqual(['velocity-human']);
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the compose variable syntax, not a template literal
     expect(nonLoopback[0]?.entry).toBe('${NF_HUMAN_BIND:-127.0.0.1}:${NF_HUMAN_PORT:-46566}:25565');
   });
 
@@ -122,9 +125,14 @@ describe('the human lane overlay (compose/nf-live-human.yml) with the live base'
     expect(svc.stop_grace_period).toBeDefined();
   });
 
-  it('mounts only the toml, the data volume and the identity jar, and reads only the velocity NATS password and the forwarding secret', () => {
+  it('mounts only the toml, the data volume and the identity jar, and reads only the human NATS password and the forwarding secret', () => {
     const svc = services(HUMAN)['velocity-human'] ?? {};
-    expect(svc.secrets).toEqual(['velocity-forwarding', 'nats-velocity.txt']);
+    expect(svc.secrets).toEqual(['velocity-forwarding', 'nats-human.txt']);
+    expect(svc.secrets).not.toContain('nats-velocity.txt');
+    expect(svc.environment).toMatchObject({
+      GELDAR_NATS_USER: 'human',
+      GELDAR_NATS_PASSWORD_FILE: '/run/secrets/nats-human.txt',
+    });
     const sources = (svc.volumes ?? []).map((v) =>
       typeof v === 'string' ? v.split(':')[0] : (v as { source: string }).source,
     );
@@ -151,17 +159,32 @@ describe('the human lane overlay (compose/nf-live-human.yml) with the live base'
     }
   });
 
-  it('is on the nf network only, and depends on neoforge and nats', () => {
+  it('is on the nf-human network only (not nf), and depends on neoforge and nats', () => {
     const svc = services(HUMAN)['velocity-human'] ?? {};
-    expect(svc.networks).toEqual(['nf']);
+    expect(svc.networks).toEqual(['nf-human']);
     expect(Object.keys(svc.depends_on as Record<string, unknown>).sort()).toEqual(
       ['identity-seed', 'nats', 'neoforge'].sort(),
     );
   });
 
-  it('declares no top-level secret or network that the base file lacks, except the data volume', () => {
+  it('puts nats and neoforge on nf-human as well as nf, and puts no other overlay service on nf-human', () => {
+    const over = services(HUMAN);
+    expect(over.nats?.networks).toEqual(['nf', 'nf-human']);
+    expect(over.neoforge?.networks).toEqual(['nf', 'nf-human']);
+    const onHuman = Object.keys(over).filter((name) =>
+      ((over[name]?.networks as string[] | undefined) ?? []).includes('nf-human'),
+    );
+    expect(onHuman.sort()).toEqual(['nats', 'neoforge', 'velocity-human']);
+    const human = load(HUMAN) as { networks?: Record<string, unknown> };
+    expect(Object.keys(human.networks ?? {})).toEqual(['nf-human']);
+  });
+
+  it('declares only its own network, its own NATS secret and the data volume on top of the base file', () => {
     const human = load(HUMAN) as Record<string, unknown>;
-    expect(Object.keys(human).sort()).toEqual(['name', 'services', 'volumes', 'x-logging'].sort());
+    expect(Object.keys(human).sort()).toEqual(
+      ['name', 'networks', 'secrets', 'services', 'volumes', 'x-logging'].sort(),
+    );
+    expect(Object.keys(human.secrets as Record<string, unknown>)).toEqual(['nats-human.txt']);
   });
 });
 
@@ -171,6 +194,11 @@ describe('the human lane toml (compose/velocity/velocity-nf-human.toml)', () => 
   it('is online-mode, with ping passthrough disabled', () => {
     expect(toml).toMatch(/^online-mode = true$/m);
     expect(toml).toMatch(/^ping-passthrough = "DISABLED"$/m);
+    // haproxy-protocol true would let any client spoof its source address; [query] is off (no UDP is published).
+    expect(toml).toMatch(/^haproxy-protocol = false$/m);
+    expect(toml).not.toMatch(/^haproxy-protocol\s*=\s*true/m);
+    expect(toml).toMatch(/^\[query\]\nenabled = false$/m);
+    expect(toml).not.toMatch(/^\[query\][\s\S]*?^enabled\s*=\s*true/m);
   });
 
   it('names no 0.0.0.0 address other than the container bind, and no secret value', () => {
@@ -202,6 +230,19 @@ describe('the human lane security settings (pinned)', () => {
     expect(env.GELDAR_NATS_URL).toBe('nats://nats:4222');
     expect(env.GELDAR_IDENTITY_LANE).toBe('human');
     expect(JSON.stringify(svc.healthcheck)).toContain('geldar-identity.ready');
+  });
+
+  it('pins the velocity-human healthcheck timings: a missing ready marker fails up --wait within 40 s', () => {
+    const hc = (services(HUMAN)['velocity-human'] as Record<string, unknown>).healthcheck as Record<
+      string,
+      unknown
+    >;
+    expect(hc.start_period).toBe('20s');
+    expect(hc.interval).toBe('5s');
+    expect(hc.timeout).toBe('3s');
+    expect(hc.retries).toBe(3);
+    expect(20 + 3 * 5).toBeLessThan(40);
+    expect(JSON.stringify(hc.test)).toContain('/tmp/geldar-identity.ready');
   });
 
   it('keeps tmpfs /tmp, the service user, restart "no" and the jar with create_host_path false', () => {
