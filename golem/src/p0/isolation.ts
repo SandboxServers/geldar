@@ -1,6 +1,6 @@
 /**
  * The P0 probe's isolation check. It runs before any network I/O, and it refuses anything that
- * could reach the live shard. The probe must run on one of two compose projects, each with the
+ * could reach the autonomous (colo) shard. The probe must run on one of two compose projects, each with the
  * in-network opt-in: a scratch project (`scratch-<suffix>`), whose bare service names are velocity,
  * paper and nats, or exactly `geldar-nf` (the nf stack), whose bare service names are velocity,
  * neoforge and nats. The host allow-list is per project class: `paper` is refused on geldar-nf and
@@ -142,7 +142,9 @@ export function planFromEnv(env: Env): ProbePlan {
 export function checkIsolation(env: Env): ProbePlan {
   const allowed = hostsFor(env.GELDAR_P0_PROJECT ?? '');
   if (allowed === undefined) {
-    refuse('GELDAR_P0_PROJECT must be scratch-<suffix> (1 to 9 lower-case letters or digits)');
+    refuse(
+      'GELDAR_P0_PROJECT must be scratch-<suffix> (1 to 9 lower-case letters or digits) or geldar-nf',
+    );
   }
   if (env.GELDAR_IN_NETWORK_HOSTS !== '1') refuse('GELDAR_IN_NETWORK_HOSTS must be exactly 1');
   const plan = planFromEnv(env);

@@ -396,7 +396,7 @@ describe('the script entry', () => {
     });
     expect(await runEntry(colo, h.deps)).toBe(2);
     expect(h.err).toEqual([
-      'p0 probe refused: GELDAR_P0_PROJECT must be scratch-<suffix> (1 to 9 lower-case letters or digits)',
+      'p0 probe refused: GELDAR_P0_PROJECT must be scratch-<suffix> (1 to 9 lower-case letters or digits) or geldar-nf',
     ]);
     expect(h.out).toEqual([]);
     expect(h.events).toEqual([]);
