@@ -311,21 +311,73 @@ if [ ! -e "$config" ]; then
   } > "$config"
   chown --reference="$data" "$cfgdir" "$config"
 else
-  sed -i "s|^\( *\)secret = .*|\1secret = \"$secret\"|" "$config"
+  # The mod (Proxy Compatible Forge) may have rewritten this file after the first start, so the entrypoint owns it at every
+  # start. The previous file is kept as $config.bak (mode 600, the data dir's owner). Only enabled, mode and secret under
+  # [forwarding] are rewritten, by a section-aware awk: every other line stays as it is, and a missing key is inserted into
+  # [forwarding] (or the table is appended). The secret reaches awk in its environment, never on a command line.
+  rm -f "$config.bak" "$config.part"
+  cp "$config" "$config.bak"
+  chmod 600 "$config.bak"
+  chown --reference="$data" "$config.bak"
+  NF_PCF_SECRET="$secret" awk '
+    function table_name(line,   name) {
+      name = line
+      sub(/^[ \t]*\[/, "", name)
+      sub(/\].*$/, "", name)
+      gsub(/[ \t]/, "", name)
+      return name
+    }
+    function emit_missing(   i, k) {
+      for (i = 1; i <= 3; i++) {
+        k = order[i]
+        if (!(k in seen)) print val[k]
+      }
+      in_fwd = 0
+    }
+    BEGIN {
+      order[1] = "enabled"; order[2] = "mode"; order[3] = "secret"
+      val["enabled"] = "enabled = true"
+      val["mode"] = "mode = \"MODERN\""
+      val["secret"] = "secret = \"" ENVIRON["NF_PCF_SECRET"] "\""
+    }
+    /^[ \t]*\[/ {
+      if (in_fwd) emit_missing()
+      in_fwd = (table_name($0) == "forwarding")
+      if (in_fwd) { fwd_seen = 1; split("", seen) }
+      print
+      next
+    }
+    in_fwd && /^[ \t]*(enabled|mode|secret)[ \t]*=/ {
+      key = $0
+      sub(/^[ \t]*/, "", key)
+      sub(/[ \t]*=.*$/, "", key)
+      print val[key]
+      seen[key] = 1
+      next
+    }
+    { print }
+    END {
+      if (in_fwd) emit_missing()
+      else if (!fwd_seen) { print ""; print "[forwarding]"; in_fwd = 1; emit_missing() }
+    }
+  ' "$config" > "$config.part"
+  chmod 600 "$config.part"
+  chown --reference="$data" "$config.part"
+  mv -f "$config.part" "$config"
 fi
 chmod 600 "$config"
 
-# A file left by an older run may carry another secret or disable forwarding: refuse to start the server if so. The check
-# is awk scoped to the [forwarding] section (enabled = true, mode = "MODERN" and the secret line must all be in it), so a
-# line in another section cannot pass. The secret is never printed.
-if ! awk -v secret="$secret" '
-  /^\[/ { inforwarding = ($0 == "[forwarding]") }
+# The rewrite above writes exact lines, so this check should always pass; it stays as a guard against a failed rewrite. The
+# check is awk scoped to the [forwarding] section (enabled = true, mode = "MODERN" and the secret line must all be in it).
+# The secret is passed in the environment and is never printed.
+if ! NF_PCF_SECRET="$secret" awk '
+  /^[ \t]*\[/ { inforwarding = ($0 ~ /^[ \t]*\[[ \t]*forwarding[ \t]*\]/) }
   inforwarding && $0 == "enabled = true" { enabled = 1 }
   inforwarding && $0 == "mode = \"MODERN\"" { mode = 1 }
-  inforwarding && $0 == "secret = \"" secret "\"" { found = 1 }
+  inforwarding && $0 == "secret = \"" ENVIRON["NF_PCF_SECRET"] "\"" { found = 1 }
   END { exit !(enabled && mode && found) }
 ' "$config"; then
-  echo "neoforge-entrypoint: $config does not enable MODERN forwarding with the current secret; delete it and restart the neoforge service" >&2
+  echo "neoforge-entrypoint: $config does not hold MODERN forwarding with the current secret after the rewrite; refusing to start" >&2
   exit 1
 fi
 

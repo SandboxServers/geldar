@@ -250,7 +250,7 @@ describe.skipIf(skipWithoutSh())('NeoForge entrypoint under sh', { timeout: 30_0
     if (process.platform !== 'win32') expect(statSync(c.config).mode & 0o777).toBe(0o600);
   });
 
-  it('a stale config with forwarding disabled exits 1, even though another section says enabled = true', () => {
+  it('a stale config with forwarding disabled is repaired (the entrypoint owns the file), and the old one is kept as .bak', () => {
     const c = setup();
     mkdirSync(join(c.data, 'config'), { recursive: true });
     writeFileSync(
@@ -258,13 +258,16 @@ describe.skipIf(skipWithoutSh())('NeoForge entrypoint under sh', { timeout: 30_0
       `[forwarding]\nenabled = false\nmode = "MODERN"\nsecret = "${SECRET}"\n\n[crossStitch]\nenabled = true\n`,
     );
     const r = run(c);
-    expect(r.status).toBe(1);
-    expect(r.stderr).toContain('does not enable MODERN forwarding with the current secret');
-    expect(r.stdout).not.toContain('started');
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('started');
+    expect(readFileSync(c.config, 'utf8')).toContain(
+      '[forwarding]\nenabled = true\nmode = "MODERN"\n',
+    );
+    expect(readFileSync(`${c.config}.bak`, 'utf8')).toContain('enabled = false');
     expectNoSecret(r);
   });
 
-  it('a stale config whose secret line sits in another section exits 1', () => {
+  it('a secret line in another section does not count: the secret is written into [forwarding], then it starts', () => {
     const c = setup();
     mkdirSync(join(c.data, 'config'), { recursive: true });
     writeFileSync(
@@ -272,7 +275,10 @@ describe.skipIf(skipWithoutSh())('NeoForge entrypoint under sh', { timeout: 30_0
       `[forwarding]\nenabled = true\nmode = "MODERN"\n\n[other]\nsecret = "${SECRET}"\n`,
     );
     const r = run(c);
-    expect(r.status).toBe(1);
+    expect(r.status).toBe(0);
+    expect(readFileSync(c.config, 'utf8')).toMatch(
+      /\[forwarding\][\s\S]*secret = "[^"]+"[\s\S]*\[other\]/,
+    );
     expectNoSecret(r);
   });
 
