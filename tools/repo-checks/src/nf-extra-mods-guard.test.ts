@@ -61,7 +61,10 @@ function drive(env: Record<string, string>, fx: Fixture = {}) {
   writeFileSync(chunky, JAR_BODY);
   writeFileSync(bluemap, JAR_BODY);
   const pins = join(base, 'pins');
-  writeFileSync(pins, `chunky ${JAR_PIN} Chunky-fixture.jar 0.0.0\nbluemap ${JAR_PIN} BlueMap-fixture.jar 0.0.0\n`);
+  writeFileSync(
+    pins,
+    `chunky ${JAR_PIN} Chunky-fixture.jar 0.0.0\nbluemap ${JAR_PIN} BlueMap-fixture.jar 0.0.0\n`,
+  );
   const start = DEPLOY_SH.indexOf('check_host_file() {');
   const checkHostFile = DEPLOY_SH.slice(start, DEPLOY_SH.indexOf('\n}\n', start) + 3);
   const driver = join(base, 'driver.sh');
@@ -137,67 +140,76 @@ describe('extra mods: where the drop guard is called (static)', () => {
   });
 });
 
-describe.skipIf(skipWithoutSh())('extra mods: the drop guard (sh, stub docker)', { timeout: 60_000 }, () => {
-  it('unset, with chunky and bluemap mounted in a running neoforge: refuses, names them, and gives the exact text', () => {
-    const r = drive({}, { ps: NEOFORGE_ROW, inspectOut: MOUNTS_BOTH });
-    expect(r.status).toBe(1);
-    expect(r.err).toContain(REFUSAL('chunky,bluemap'));
-    expect(r.docker).toContain('docker inspect');
-  });
+describe.skipIf(skipWithoutSh())(
+  'extra mods: the drop guard (sh, stub docker)',
+  { timeout: 60_000 },
+  () => {
+    it('unset, with chunky and bluemap mounted in a running neoforge: refuses, names them, and gives the exact text', () => {
+      const r = drive({}, { ps: NEOFORGE_ROW, inspectOut: MOUNTS_BOTH });
+      expect(r.status).toBe(1);
+      expect(r.err).toContain(REFUSAL('chunky,bluemap'));
+      expect(r.docker).toContain('docker inspect');
+    });
 
-  it('an empty NF_EXTRA_MODS counts as unset and refuses the same way', () => {
-    const r = drive({ NF_EXTRA_MODS: '' }, { ps: NEOFORGE_ROW, inspectOut: MOUNTS_BOTH });
-    expect(r.status).toBe(1);
-    expect(r.err).toContain(REFUSAL('chunky,bluemap'));
-  });
+    it('an empty NF_EXTRA_MODS counts as unset and refuses the same way', () => {
+      const r = drive({ NF_EXTRA_MODS: '' }, { ps: NEOFORGE_ROW, inspectOut: MOUNTS_BOTH });
+      expect(r.status).toBe(1);
+      expect(r.err).toContain(REFUSAL('chunky,bluemap'));
+    });
 
-  it('the same list set (NF_EXTRA_MODS=chunky,bluemap) allows, and the guard makes no docker call', () => {
-    const r = drive(
-      { NF_EXTRA_MODS: 'chunky,bluemap' },
-      { ps: NEOFORGE_ROW, inspectOut: MOUNTS_BOTH },
+    it('the same list set (NF_EXTRA_MODS=chunky,bluemap) allows, and the guard makes no docker call', () => {
+      const r = drive(
+        { NF_EXTRA_MODS: 'chunky,bluemap' },
+        { ps: NEOFORGE_ROW, inspectOut: MOUNTS_BOTH },
+      );
+      expect(r.status, r.err).toBe(0);
+      expect(r.out).toContain('ENABLED=[chunky bluemap]');
+      expect(r.docker).toBe('');
+    });
+
+    it('NF_EXTRA_MODS=none allows with the same mounts, enables nothing, and makes no docker call', () => {
+      const r = drive({ NF_EXTRA_MODS: 'none' }, { ps: NEOFORGE_ROW, inspectOut: MOUNTS_BOTH });
+      expect(r.status, r.err).toBe(0);
+      expect(r.out).toContain('ENABLED=[]');
+      expect(r.err).not.toContain('extra mods mounted');
+      expect(r.docker).toBe('');
+    });
+
+    it('no neoforge container: allows (ps answers no row, inspect is never called)', () => {
+      const r = drive({});
+      expect(r.status, r.err).toBe(0);
+      expect(r.out).toContain('ENABLED=[]');
+      expect(r.docker).toContain('docker ps');
+      expect(r.docker).not.toContain('docker inspect');
+    });
+
+    it('a neoforge container with no extra-mod mount (bluemap-config is not a mod): allows', () => {
+      const r = drive({}, { ps: NEOFORGE_ROW, inspectOut: MOUNTS_NONE });
+      expect(r.status, r.err).toBe(0);
+      expect(r.docker).toContain('docker inspect');
+    });
+
+    it('docker ps failing: refuses in one line, with the project name and no compose call', () => {
+      const r = drive({}, { psFail: true });
+      expect(r.status).toBe(1);
+      expect(r.err).toContain(
+        'cannot list the geldar-fixture containers (extra mods check); refusing',
+      );
+    });
+
+    it('docker inspect failing: refuses in one line', () => {
+      const r = drive({}, { ps: NEOFORGE_ROW, inspectFail: true });
+      expect(r.status).toBe(1);
+      expect(r.err).toContain('cannot inspect the neoforge container (extra mods check); refusing');
+    });
+
+    it.each(['none,chunky', 'chunky,none'])(
+      'NF_EXTRA_MODS=%s refuses: none is not combined with names',
+      (raw) => {
+        const r = drive({ NF_EXTRA_MODS: raw });
+        expect(r.status).toBe(1);
+        expect(r.err).toContain('NF_EXTRA_MODS=none cannot be combined with other names');
+      },
     );
-    expect(r.status, r.err).toBe(0);
-    expect(r.out).toContain('ENABLED=[chunky bluemap]');
-    expect(r.docker).toBe('');
-  });
-
-  it('NF_EXTRA_MODS=none allows with the same mounts, enables nothing, and makes no docker call', () => {
-    const r = drive({ NF_EXTRA_MODS: 'none' }, { ps: NEOFORGE_ROW, inspectOut: MOUNTS_BOTH });
-    expect(r.status, r.err).toBe(0);
-    expect(r.out).toContain('ENABLED=[]');
-    expect(r.err).not.toContain('extra mods mounted');
-    expect(r.docker).toBe('');
-  });
-
-  it('no neoforge container: allows (ps answers no row, inspect is never called)', () => {
-    const r = drive({});
-    expect(r.status, r.err).toBe(0);
-    expect(r.out).toContain('ENABLED=[]');
-    expect(r.docker).toContain('docker ps');
-    expect(r.docker).not.toContain('docker inspect');
-  });
-
-  it('a neoforge container with no extra-mod mount (bluemap-config is not a mod): allows', () => {
-    const r = drive({}, { ps: NEOFORGE_ROW, inspectOut: MOUNTS_NONE });
-    expect(r.status, r.err).toBe(0);
-    expect(r.docker).toContain('docker inspect');
-  });
-
-  it('docker ps failing: refuses in one line, with the project name and no compose call', () => {
-    const r = drive({}, { psFail: true });
-    expect(r.status).toBe(1);
-    expect(r.err).toContain('cannot list the geldar-fixture containers (extra mods check); refusing');
-  });
-
-  it('docker inspect failing: refuses in one line', () => {
-    const r = drive({}, { ps: NEOFORGE_ROW, inspectFail: true });
-    expect(r.status).toBe(1);
-    expect(r.err).toContain('cannot inspect the neoforge container (extra mods check); refusing');
-  });
-
-  it.each(['none,chunky', 'chunky,none'])('NF_EXTRA_MODS=%s refuses: none is not combined with names', (raw) => {
-    const r = drive({ NF_EXTRA_MODS: raw });
-    expect(r.status).toBe(1);
-    expect(r.err).toContain('NF_EXTRA_MODS=none cannot be combined with other names');
-  });
-});
+  },
+);

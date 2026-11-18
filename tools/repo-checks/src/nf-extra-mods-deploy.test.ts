@@ -1,6 +1,15 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -212,3 +221,66 @@ describe.skipIf(skipWithoutSh())(
     });
   },
 );
+
+describe.skipIf(skipWithoutSh())('extra mods: the real plan refuses before any docker call', () => {
+  const made: string[] = [];
+  afterEach(() => {
+    for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** A repo copy with the real deploy script, its two libs and the real pins file. A stub docker logs every call. */
+  function planRepo(): string {
+    const repo = mkdtempSync(join(tmpdir(), 'nf-extra-plan-'));
+    made.push(repo);
+    for (const dir of ['deploy', join('compose', 'neoforge'), 'stubs']) {
+      mkdirSync(join(repo, dir), { recursive: true });
+    }
+    copyFileSync(DEPLOY, join(repo, 'deploy', 'nf-deploy.sh'));
+    copyFileSync(`${ROOT}deploy/nf-human-lib.sh`, join(repo, 'deploy', 'nf-human-lib.sh'));
+    copyFileSync(LIB, join(repo, 'deploy', 'nf-extra-mods-lib.sh'));
+    copyFileSync(
+      `${ROOT}compose/neoforge/extra-mods.pins`,
+      join(repo, 'compose', 'neoforge', 'extra-mods.pins'),
+    );
+    writeFileSync(
+      join(repo, 'stubs', 'docker'),
+      '#!/bin/sh\necho "docker $*" >>"$STUB_LOG"\nexit 0\n',
+      { mode: 0o755 },
+    );
+    return repo;
+  }
+
+  /** Runs the real `plan --local` with NF_* and GELDAR_* removed from the inherited environment, then the given ones. */
+  function runPlan(repo: string, env: Record<string, string>) {
+    const inherited: Record<string, string> = {};
+    for (const [key, value] of Object.entries(process.env)) {
+      if (value !== undefined && !/^(NF_|GELDAR_)/.test(key)) inherited[key] = value;
+    }
+    const log = join(repo, 'docker.log');
+    const r = spawnSync('sh', [join(repo, 'deploy', 'nf-deploy.sh'), 'plan', '--local'], {
+      cwd: repo,
+      env: {
+        ...inherited,
+        PATH: `${join(repo, 'stubs')}${delimiter}${process.env.PATH ?? ''}`,
+        STUB_LOG: log,
+        ...env,
+      },
+      encoding: 'utf8',
+    });
+    return {
+      status: r.status,
+      out: `${r.stdout}${r.stderr}`,
+      docker: existsSync(log) ? readFileSync(log, 'utf8') : '',
+    };
+  }
+
+  it('NF_EXTRA_MODS=chunky with a jar that does not match its pin: plan refuses, and no docker call is made', () => {
+    const repo = planRepo();
+    const jar = join(repo, 'chunky.jar');
+    writeFileSync(jar, 'not the pinned chunky jar');
+    const r = runPlan(repo, { NF_EXTRA_MODS: 'chunky', NF_EXTRA_CHUNKY_JAR_HOST: slash(jar) });
+    expect(r.status, r.out).toBe(1);
+    expect(r.out).toContain('does not match its pin');
+    expect(r.docker).toBe('');
+  });
+});

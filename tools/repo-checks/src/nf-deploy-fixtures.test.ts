@@ -31,9 +31,9 @@ describe('deploy test fixtures copy the extra-mods lib wherever they copy the hu
 describe('nf-deploy.sh gates() calls the extra-mods check', () => {
   const script = readFileSync(join(ROOT, 'deploy', 'nf-deploy.sh'), 'utf8');
 
-  it('the body of gates() contains check_extra_mods', () => {
+  it('the body of gates() calls check_extra_mods as its own line (not only check_extra_mods_drop)', () => {
     const body = /^gates\(\) \{\n([\s\S]*?)^\}/m.exec(script);
     expect(body, 'gates() is defined in deploy/nf-deploy.sh').not.toBeNull();
-    expect(body?.[1]).toContain('check_extra_mods');
+    expect(body?.[1]).toMatch(/^\s*check_extra_mods\s*$/m);
   });
 });
