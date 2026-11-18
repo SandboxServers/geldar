@@ -34,7 +34,16 @@ describe.skipIf(!hasPwsh)('NF NATS set: the upgrade path from the ten-file node'
   const runGenerator = () =>
     spawnSync(
       'pwsh',
-      ['-NoProfile', '-File', join(r.dir, 'geldar.ps1'), 'shard', 'nats-auth', 'nf', '--live', '--local'],
+      [
+        '-NoProfile',
+        '-File',
+        join(r.dir, 'geldar.ps1'),
+        'shard',
+        'nats-auth',
+        'nf',
+        '--live',
+        '--local',
+      ],
       { encoding: 'utf8', cwd: r.dir },
     );
 

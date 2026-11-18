@@ -155,6 +155,8 @@ function addHuman(repo: string): void {
     join(repo, 'plugin', 'velocity-identity', 'build', 'libs', 'geldar-velocity-identity.jar'),
     'jar fixture\n',
   );
+  // check_human_inputs needs the human NATS password non-empty when NF_HUMAN=on (only addHuman sets the lane on).
+  writeFileSync(join(repo, 'compose', 'secrets-nf', 'nats-human.txt'), 'nats-human.txt fixture\n');
 }
 
 afterEach(() => {

@@ -28,6 +28,8 @@ const SECRET_FILES = /^SECRET_FILES="([^"]+)"$/m.exec(SCRIPT_TEXT)?.[1].split(' 
 const JAR_BYTES = 'geldar neoforge mod fixture\n';
 const MOD_SHA = createHash('sha256').update(JAR_BYTES).digest('hex');
 const IDENTITY_JAR = 'identity plugin fixture\n';
+// The human lane's NATS password. check_human_inputs needs it non-empty when NF_HUMAN=on; only the generator writes it.
+const HUMAN_SECRET = 'nats-human.txt';
 
 const STUB_SCRIPTS: Record<string, string> = {
   // Logs every call. ps answers the rows of the fixture for the service-label format and nothing for the labels format.
@@ -86,7 +88,8 @@ afterEach(() => {
 });
 
 // The fixture tree: the script, the real overlay, toml and compose file, the secrets, the mod jar and the identity jar.
-function makeRepo(): string {
+// human: false omits nats-human.txt (the NF_HUMAN off and unset cases, and the refusal without it).
+function makeRepo(opts: { human?: boolean } = {}): string {
   const repo = mkdtempSync(join(tmpdir(), 'nf-human-'));
   made.push(repo);
   for (const dir of [
@@ -110,6 +113,9 @@ function makeRepo(): string {
   );
   writeFileSync(join(repo, 'compose', 'neoforge', 'neoforge-entrypoint.sh'), '#!/bin/sh\n');
   for (const f of SECRET_FILES) writeFileSync(join(repo, 'compose', 'secrets-nf', f), `${f}\n`);
+  if (opts.human ?? true) {
+    writeFileSync(join(repo, 'compose', 'secrets-nf', HUMAN_SECRET), `${HUMAN_SECRET}\n`);
+  }
   writeFileSync(join(repo, 'mod.jar'), JAR_BYTES);
   writeFileSync(
     join(repo, 'plugin', 'velocity-identity', 'build', 'libs', 'geldar-velocity-identity.jar'),
@@ -174,7 +180,7 @@ const HUMAN_CALL = /-f \S*compose\/nf-live-human\.yml/;
 
 describe('nf-deploy.sh human lane (NF_HUMAN)', () => {
   it('off (unset) calls compose with the base file only, the same calls as before the lane', () => {
-    const repo = makeRepo();
+    const repo = makeRepo({ human: false });
     const res = run(repo, { env: { NF_HUMAN: undefined, NF_HUMAN_BIND: undefined } });
     expect(res.status).toBe(0);
     // Byte-identical to the pre-lane call: one -f (the base file) and nothing else.
@@ -186,7 +192,7 @@ describe('nf-deploy.sh human lane (NF_HUMAN)', () => {
   });
 
   it('off (explicit) is the same as unset: no human overlay in any compose call', () => {
-    const repo = makeRepo();
+    const repo = makeRepo({ human: false });
     const res = run(repo, {
       env: { NF_HUMAN: 'off', NF_HUMAN_BIND: undefined },
       args: ['up', '--local'],
@@ -347,6 +353,18 @@ describe('nf-deploy.sh human lane (NF_HUMAN)', () => {
     expect(calls(repo)).toEqual([]);
   });
 
+  // H5: NF_HUMAN=on without nats-human.txt refuses at plan and at up, names the file, and makes no docker call.
+  it.each(['plan', 'up'])(
+    'refuses NF_HUMAN=on without nats-human.txt at %s, names the file, and makes no docker call',
+    (verb) => {
+      const repo = makeRepo({ human: false });
+      const res = run(repo, { args: [verb, '--local'] });
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain('nats-human.txt');
+      expect(calls(repo)).toEqual([]);
+    },
+  );
+
   it('down reads the switch and removes velocity-human with the human overlay', () => {
     const repo = makeRepo();
     const res = run(repo, { args: ['down', '--local'] });
@@ -443,7 +461,7 @@ describe('nf-deploy.sh human lane: fail-closed fixes', () => {
   });
 
   it('human-down removes only velocity-human, with the overlay, and works with NF_HUMAN unset', () => {
-    const repo = makeRepo();
+    const repo = makeRepo({ human: false });
     const r = run(repo, { env: { NF_HUMAN: undefined }, args: ['human-down', '--local'] });
     expect(r.status).toBe(0);
     const compose = calls(repo).filter((l) => l.includes(' compose -p '));
@@ -453,7 +471,7 @@ describe('nf-deploy.sh human lane: fail-closed fixes', () => {
   });
 
   it('accepts logs velocity-human with NF_HUMAN unset, through the human overlay', () => {
-    const repo = makeRepo();
+    const repo = makeRepo({ human: false });
     const r = run(repo, {
       env: { NF_HUMAN: undefined },
       args: ['logs', 'velocity-human', '--local'],
