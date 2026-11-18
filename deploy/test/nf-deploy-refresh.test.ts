@@ -84,7 +84,9 @@ function makeRepo(): string {
   for (const f of SECRET_FILES)
     writeFileSync(
       join(repo, 'compose', 'secrets-nf', f),
-      f === 'nats-auth.conf' ? 'user: "human"\n' : `${f} fixture\n`,
+      f === 'nats-auth.conf'
+        ? 'user: "human", permissions: { publish: { allow: ["_INBOX.human.>"] }, subscribe: { allow: ["_INBOX.human.>"] } }\n'
+        : `${f} fixture\n`,
     );
   writeFileSync(join(repo, 'mod.jar'), JAR_BYTES);
   for (const [name, body] of Object.entries(STUB_SCRIPTS)) {

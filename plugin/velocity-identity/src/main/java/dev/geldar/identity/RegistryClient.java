@@ -17,8 +17,8 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
-import java.util.regex.Pattern;
 import java.util.function.Supplier;
+import java.util.regex.Pattern;
 import org.slf4j.Logger;
 
 /**

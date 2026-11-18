@@ -62,7 +62,7 @@ function Get-NfNatsUsers {
     # lane (plugin/velocity-identity IdentityPlugin.java:139-142), and reads the skin on each login (:259). Its flow control is
     # scoped to those two buckets. It publishes no $KV subject, no $JS.API wildcard, no create, update or purge, and no event subject.
     # Its inbox is _INBOX.human. only (never the shared _INBOX.>): a compromised proxy cannot read or forge another user's inbox.
-    # Publish keeps the narrowed inbox because the client may publish on its own inbox (UNVERIFIED until S1, see the overlay).
+    # The publish grant of _INBOX.human.> is kept until S1 proves the client never publishes to an inbox (UNVERIFIED until then).
     human = @{ Pub = $velocityApi + @(foreach ($b in $buckets) { "`$JS.FC.KV_$b.>" }) + @("$humanInbox>"); Sub = @("$humanInbox>") }
   }
 }

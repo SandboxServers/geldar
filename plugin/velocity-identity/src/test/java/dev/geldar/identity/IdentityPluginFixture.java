@@ -36,8 +36,10 @@ final class IdentityPluginFixture {
     /** Takes the logger too, so a test can read what the plugin logs. */
     IdentityPluginFixture(Path dir, String lane, boolean onlineMode, Logger log) {
         this.marker = dir.resolve("geldar-identity.ready");
+        // The human lane must have its own inbox prefix (it refuses without one); the agent lane keeps its prefix unset.
         this.plugin = new IdentityPlugin(proxy(onlineMode), log, () -> null,
-                new SkinRegistry(log), new ReadyMarker(marker, () -> "1 2"), () -> lane);
+                new SkinRegistry(log), new ReadyMarker(marker, () -> "1 2"), () -> lane,
+                () -> "human".equals(lane) ? "_INBOX.human." : null);
     }
 
     void init() {

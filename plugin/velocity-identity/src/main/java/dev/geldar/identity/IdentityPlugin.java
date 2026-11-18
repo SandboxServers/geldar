@@ -127,11 +127,17 @@ public final class IdentityPlugin {
             refuse(IdentityLane.ENV + " must be unset, agent or human");
             return;
         }
+        String prefix;
         try {
             // A malformed inbox prefix refuses the lane before any client connects: fail closed, never a wider inbox.
-            RegistryClient.validInboxPrefix(inboxPrefix.get());
+            prefix = RegistryClient.validInboxPrefix(inboxPrefix.get());
         } catch (IllegalStateException e) {
             refuse(e.getMessage());
+            return;
+        }
+        if (prefix == null && lane.get() == IdentityLane.HUMAN) {
+            // Unset or blank, the human lane would share the library default _INBOX.>: it must have its own prefix.
+            refuse(RegistryClient.INBOX_PREFIX_SETTING + " must be set on the human lane");
             return;
         }
         if (lane.get() == IdentityLane.HUMAN && !humanProxyIsOnline()) {
