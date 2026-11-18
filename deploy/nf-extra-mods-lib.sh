@@ -129,7 +129,7 @@ check_bluemap_bundle() {
 # The BlueMap config loader (compose/neoforge/extra-mods-bluemap-config.sh) is sourced by the entrypoint, so it is checked here too: the
 # same sha256 the BlueMap overlays pin (a test asserts the pins equal this constant and the file). A changed loader is refused before docker.
 BLUEMAP_LOADER=$ROOT/compose/neoforge/extra-mods-bluemap-config.sh
-BLUEMAP_LOADER_SHA256=05b56b57b9bf87e6c0e7ece278a81dbcf7af56b59aade0ac51ef5b19144ecb9e
+BLUEMAP_LOADER_SHA256=f7c6dce01dd7092b9a6b691553d0e9c2013058815cc47c1fbc348fc0aa3041aa
 
 # check_bluemap_loader: a regular, non-symlink file whose sha256 is BLUEMAP_LOADER_SHA256. Refused before any docker call otherwise.
 check_bluemap_loader() {

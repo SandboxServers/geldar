@@ -14,7 +14,7 @@ services:
     environment:
       GELDAR_NF_EXTRA_CHUNKY_SHA256: "9f9303da0185fa0ae0e1d3f10a0f07b8d9e5a21e77931d4fc162dcc718a0ab4f"
       GELDAR_NF_EXTRA_BLUEMAP_SHA256: "8938f4453af4b53970c86e43d0bd26b4a88980e4e6639f818fa770d0f61c43df"
-      GELDAR_NF_EXTRA_BLUEMAP_LOADER_SHA256: "05b56b57b9bf87e6c0e7ece278a81dbcf7af56b59aade0ac51ef5b19144ecb9e"
+      GELDAR_NF_EXTRA_BLUEMAP_LOADER_SHA256: "f7c6dce01dd7092b9a6b691553d0e9c2013058815cc47c1fbc348fc0aa3041aa"
     volumes:
       - type: bind
         source: ${SCRATCH_EXTRA_CHUNKY_JAR_HOST:-./scratch-unset/chunky.jar}

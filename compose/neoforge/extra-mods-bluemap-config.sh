@@ -103,4 +103,3 @@ geldar_bluemap_install_config() {
   bluemap_cfg=$data/config/bluemap
   bluemap_install
 }
-
