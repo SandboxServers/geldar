@@ -7,6 +7,10 @@ import { describe, expect, it } from 'vitest';
 // off, and bound the three maps. Each check reads the file it names, so a revert of any line fails the suite.
 const ROOT = join(import.meta.dirname, '..', '..', '..');
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
+// The 5.29 setting keys per config file, generated from the pinned jar (the same file config.test.ts reads).
+const KNOWN = JSON.parse(read('plugins/bluemap/known-keys.json')) as {
+  files: Record<string, string[]>;
+};
 
 const DIR = 'plugins/bluemap/neoforge';
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -23,9 +27,26 @@ const raw = (text: string, key: string): string => {
 const strings = (text: string, key: string): string[] =>
   [...raw(text, key).matchAll(/"([^"]*)"/g)].map((m) => m[1]);
 
-const pos = (text: string, key: string) => {
-  const m = /x:\s*(-?\d+(?:\.\d+)?)\s*,\s*z:\s*(-?\d+(?:\.\d+)?)/.exec(raw(text, key));
-  return m ? { x: Number(m[1]), z: Number(m[2]) } : undefined;
+// The top-level `key:` names of a config file, by the rule config.test.ts uses (an unindented `key:` line).
+const keysOf = (text: string): string[] =>
+  text.split('\n').flatMap((line) => {
+    const m = /^([a-z][a-z0-9-]*):/.exec(line);
+    return m ? [m[1]] : [];
+  });
+
+// The boxes of a `render-mask` list, `[ { min-x, max-x, min-z, max-z }, ... ]`. A bound that is absent or not a number
+// reads as NaN, so a missing bound fails the finite-number check.
+const mask = (text: string) => {
+  const num = (box: string, k: string) => {
+    const n = new RegExp(`${k}:\\s*(-?\\d+(?:\\.\\d+)?)`).exec(box);
+    return n ? Number(n[1]) : Number.NaN;
+  };
+  return [...raw(text, 'render-mask').matchAll(/\{([^{}]*)\}/g)].map(([, box]) => ({
+    minX: num(box, 'min-x'),
+    maxX: num(box, 'max-x'),
+    minZ: num(box, 'min-z'),
+    maxZ: num(box, 'max-z'),
+  }));
 };
 
 const lock = JSON.parse(read('plugins/bluemap/neoforge.lock.json')) as Record<string, unknown>;
@@ -63,8 +84,9 @@ describe('neoforge.lock.json: pin', () => {
     expect(lock.asset).toBe(`bluemap-${version}-neoforge.jar`);
   });
 
-  it('omits size_bytes (not pinned yet: the key is absent, not null)', () => {
-    expect(Object.keys(lock)).not.toContain('size_bytes');
+  it('pins the jar size as a positive integer byte count', () => {
+    expect(Number.isInteger(lock.size_bytes)).toBe(true);
+    expect(lock.size_bytes as number).toBeGreaterThan(0);
   });
 
   it('names Java 25 and the 26.1.2 Minecraft build the shard runs', () => {
@@ -139,14 +161,14 @@ describe('NeoForge configs: BlueMap webserver off, files served by Caddy', () =>
   });
 });
 
-describe('NeoForge maps: three maps with finite bounds', () => {
+describe('NeoForge maps: three maps with a bounded render-mask', () => {
   const expected: Record<
     string,
-    { min: { x: number; z: number }; max: { x: number; z: number }; sorting: number }
+    { box: { minX: number; maxX: number; minZ: number; maxZ: number }; sorting: number }
   > = {
-    overworld: { min: { x: -2048, z: -2048 }, max: { x: 2048, z: 2048 }, sorting: 0 },
-    nether: { min: { x: -512, z: -512 }, max: { x: 512, z: 512 }, sorting: 1 },
-    end: { min: { x: -1024, z: -1024 }, max: { x: 1024, z: 1024 }, sorting: 2 },
+    overworld: { box: { minX: -2048, maxX: 2048, minZ: -2048, maxZ: 2048 }, sorting: 0 },
+    nether: { box: { minX: -512, maxX: 512, minZ: -512, maxZ: 512 }, sorting: 1 },
+    end: { box: { minX: -1024, maxX: 1024, minZ: -1024, maxZ: 1024 }, sorting: 2 },
   };
 
   it('has exactly the overworld, nether and end maps', () => {
@@ -160,19 +182,22 @@ describe('NeoForge maps: three maps with finite bounds', () => {
     describe(name, () => {
       const text = read(`${DIR}/maps/${name}.conf`);
 
-      it('has finite min-pos and max-pos with min below max on both axes', () => {
-        const min = pos(text, 'min-pos');
-        const max = pos(text, 'max-pos');
-        expect(min).toBeDefined();
-        expect(max).toBeDefined();
-        for (const v of [min?.x, min?.z, max?.x, max?.z]) expect(Number.isFinite(v)).toBe(true);
-        expect(min?.x).toBeLessThan(max?.x ?? Number.NaN);
-        expect(min?.z).toBeLessThan(max?.z ?? Number.NaN);
+      it('has one render-mask box with four finite bounds, min below max on both axes', () => {
+        const boxes = mask(text);
+        expect(boxes).toHaveLength(1);
+        const [b] = boxes;
+        for (const v of [b.minX, b.maxX, b.minZ, b.maxZ]) expect(Number.isFinite(v)).toBe(true);
+        expect(b.minX).toBeLessThan(b.maxX);
+        expect(b.minZ).toBeLessThan(b.maxZ);
       });
 
       it('uses the default bounds the owner/worldops set', () => {
-        expect(pos(text, 'min-pos')).toEqual(want.min);
-        expect(pos(text, 'max-pos')).toEqual(want.max);
+        expect(mask(text)).toEqual([want.box]);
+      });
+
+      it('has no min-pos or max-pos key (not BlueMap 5.29 keys)', () => {
+        expect(() => raw(text, 'min-pos')).toThrow('key not found');
+        expect(() => raw(text, 'max-pos')).toThrow('key not found');
       });
 
       it('has the expected sorting (unique across maps)', () => {
@@ -190,6 +215,27 @@ describe('NeoForge maps: three maps with finite bounds', () => {
     const values = Object.values(expected).map((e) => e.sorting);
     expect(new Set(values).size).toBe(values.length);
   });
+});
+
+describe('NeoForge configs: every key is a 5.29 key', () => {
+  const ALL = Object.values(KNOWN.files).flat();
+  const files = [
+    'core.conf',
+    'plugin.conf',
+    'webapp.conf',
+    'webserver.conf',
+    ...readdirSync(join(ROOT, DIR, 'maps')).map((f) => `maps/${f}`),
+  ];
+
+  // webapp.conf has no per-file list in known-keys.json, so its keys are checked against every 5.29 key.
+  for (const rel of files) {
+    it(`${rel}: every top-level key is a 5.29 key`, () => {
+      const known = new Set(KNOWN.files[rel] ?? ALL);
+      for (const key of keysOf(read(`${DIR}/${rel}`))) {
+        expect(known.has(key), `${rel}: "${key}" is not a 5.29 key`).toBe(true);
+      }
+    });
+  }
 });
 
 describe('NeoForge configs: no host address', () => {
