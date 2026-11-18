@@ -51,33 +51,36 @@ describe('extra mods: the overlays (no docker needed)', () => {
     expect(Object.keys(overlay(name)).sort()).toEqual(['services']);
   });
 
-  it.each(MODS)('%s: read-only binds, create_host_path false, exactly the fixed targets', (name) => {
-    const volumes = overlay(name).services.neoforge.volumes as Record<string, unknown>[];
-    // Chunky mounts its jar only. BlueMap mounts its jar, the committed config bundle and the config loader (three binds, no other).
-    const targets =
-      name === 'bluemap'
-        ? [
-            '/geldar/extra-mods/bluemap.jar',
-            '/geldar/extra-mods/bluemap-config',
-            '/geldar/extra-mods/bluemap-config.sh',
-          ]
-        : [`/geldar/extra-mods/${name}.jar`];
-    expect(volumes.map((v) => v.target).sort()).toEqual([...targets].sort());
-    for (const vol of volumes) {
-      expect(vol).toMatchObject({
-        type: 'bind',
-        read_only: true,
-        bind: { create_host_path: false },
-      });
-    }
-    const vol = volumes.find((v) => v.target === `/geldar/extra-mods/${name}.jar`) as Record<
-      string,
-      unknown
-    >;
-    expect(String(vol.source)).toBe(
-      `\${NF_EXTRA_${name.toUpperCase()}_JAR_HOST:-./nf-live-unset/${name}.jar}`,
-    );
-  });
+  it.each(MODS)(
+    '%s: read-only binds, create_host_path false, exactly the fixed targets',
+    (name) => {
+      const volumes = overlay(name).services.neoforge.volumes as Record<string, unknown>[];
+      // Chunky mounts its jar only. BlueMap mounts its jar, the committed config bundle and the config loader (three binds, no other).
+      const targets =
+        name === 'bluemap'
+          ? [
+              '/geldar/extra-mods/bluemap.jar',
+              '/geldar/extra-mods/bluemap-config',
+              '/geldar/extra-mods/bluemap-config.sh',
+            ]
+          : [`/geldar/extra-mods/${name}.jar`];
+      expect(volumes.map((v) => v.target).sort()).toEqual([...targets].sort());
+      for (const vol of volumes) {
+        expect(vol).toMatchObject({
+          type: 'bind',
+          read_only: true,
+          bind: { create_host_path: false },
+        });
+      }
+      const vol = volumes.find((v) => v.target === `/geldar/extra-mods/${name}.jar`) as Record<
+        string,
+        unknown
+      >;
+      expect(String(vol.source)).toBe(
+        `\${NF_EXTRA_${name.toUpperCase()}_JAR_HOST:-./nf-live-unset/${name}.jar}`,
+      );
+    },
+  );
 
   it.each(MODS)('%s: no port, network or secret', (name) => {
     const text = overlayText(name);
