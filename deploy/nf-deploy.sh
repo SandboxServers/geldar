@@ -23,7 +23,7 @@
 #                                      GELDAR_NF_TELEMETRY=off, so the entrypoint removes our own stale ledger jar copy and starts
 #                                      no agent. Unset adds no overlay, so a stale jar makes the start refuse, by design.
 #   NF_HUMAN (default off)             on adds compose/nf-live-human.yml (the velocity-human lane; loopback unless NF_HUMAN_BIND
-#                                      says otherwise). NF_HUMAN_BIND must be one IPv4 address (not 0.0.0.0). human-down removes velocity-human only. Unset or off never starts it.
+#                                      says otherwise). NF_HUMAN_BIND must be one IPv4 address (not 0.0.0.0). human-down removes velocity-human and velocity-human-init only. Unset or off never starts it.
 #   The compose shapes: dc() renders six (the base, with telemetry on, with telemetry off or with neither, each with or without
 #   compose/nf-live-human.yml); probe_dc() renders a seventh, the base plus compose/nf-live-probe.yml, for one run.
 #   NF_SECRETS_DIR                     the secret files (default compose/secrets-nf)
@@ -446,7 +446,7 @@ cmd_plan() {
   say "  3. up -d --wait eventsink neoforge"
   say "  4. up -d --wait velocity (the only published port: 127.0.0.1:$PORT)"
   if [ "$HUMAN" = 1 ]; then
-    say "  5. up -d --wait velocity-human (NF_HUMAN=on: publishes $HUMAN_BIND:$HUMAN_PORT only)"
+    say "  5. up -d --wait velocity-human (NF_HUMAN=on: publishes $HUMAN_BIND:$HUMAN_PORT only; velocity-human-init chowns its volume first)"
     say "NF_HUMAN=on: the first on-run recreates nats, eventsink and neoforge (their network set changes). An off-run is refused while velocity-human exists (human-down first)."
   fi
   say "up refuses until the neoforge-data volume is seeded (seed-bundle, once per volume); plan does not check it"

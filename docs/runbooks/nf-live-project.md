@@ -753,12 +753,12 @@ What the S1 list above shows, as observations:
 
 1. The owner removes the gateway rule (public traffic stops).
 2. The owner deletes the SRV record.
-3. `nf-deploy.sh human-down`. It runs `docker compose rm -sf velocity-human` and touches no other service. Plain `nf-deploy.sh down` stops the whole project, including the agent lane; do not use it for this.
+3. `nf-deploy.sh human-down`. It runs `docker compose rm -sf velocity-human velocity-human-init` and touches no other service. Plain `nf-deploy.sh down` stops the whole project, including the agent lane; do not use it for this.
 4. Unset `NF_HUMAN`, `NF_HUMAN_BIND` and `NF_HUMAN_PORT` for later runs.
 
 `human-down` is the rollback that the orphan guard names: after it, `plan`, `up` and `refresh-secrets` run again with `NF_HUMAN` unset.
 
-What is left behind: `human-down` removes the container only, so the `nf-human` network stays. `down` runs `docker compose down`, which should also remove the project's networks, including `nf-human`; that is UNVERIFIED on the node.
+What is left behind: `human-down` removes the proxy (`velocity-human`) and its one-shot init (`velocity-human-init`), not the volume, so the `nf-human` network stays. `down` runs `docker compose down`, which should also remove the project's networks, including `nf-human`; that is UNVERIFIED on the node.
 
 ### 10.10 UNVERIFIED (do not treat any of these as checked)
 
