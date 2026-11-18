@@ -194,6 +194,12 @@ describe.skipIf(!DOCKER)('nf-live telemetry overlay: the render', () => {
     expect(off.networks?.telemetry).toBeUndefined();
   });
 
+  it('gives neoforge exactly two networks with telemetry (nf and geldar-telemetry), and one without', () => {
+    // RCON listens on all interfaces of neoforge, so every container on geldar-telemetry can reach port 25575 (only the password guards it).
+    expect(Object.keys(on.services.neoforge?.networks ?? {}).sort()).toEqual(['nf', 'telemetry']);
+    expect(Object.keys(off.services.neoforge?.networks ?? {})).toEqual(['nf']);
+  });
+
   it('joins only the neoforge service to the external network geldar-telemetry', () => {
     for (const [name, svc] of Object.entries(on.services)) {
       const joined = Object.keys(svc.networks ?? {}).includes('telemetry');

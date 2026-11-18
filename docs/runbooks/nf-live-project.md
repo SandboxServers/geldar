@@ -24,7 +24,7 @@ one sink per shard; see also docs/decisions/0026-one-database-per-shard.md). Rea
 | 46565     | velocity | 25565          | yes, `127.0.0.1` | the only published port; loopback game ingress |
 | 46222     | nats     | 4222           | no | reserved: NATS client, never published by this file |
 | 46432     | postgres | 5432           | no | reserved: Postgres, never published by this file |
-| 46575     | neoforge | 25575          | no | reserved: RCON is on the project network only (section 4c); the host port is unused |
+| 46575     | neoforge | 25575          | no | reserved: RCON is not published; inside Docker it is reachable from nf (and geldar-telemetry with telemetry), section 4c; the host port is unused |
 
 The block collides with none of compose/*.yml (the colo, phase0, opt-in and telemetry ports), deploy/scratch/*.env, or the
 scratch defaults. The repo test reads all of them and fails on a shared host port. 25565 and 25566 are never published
@@ -104,6 +104,19 @@ Files, in `compose/secrets-nf/` (git-ignored; `NF_SECRETS_DIR` points nf-live.ym
 config), then one password file per user: `nats-neoforge.txt`, `nats-sink.txt`, `nats-velocity.txt`, `nats-deploy.txt`,
 `nats-seed.txt`. Existing files are reused and never overwritten. If `nats-auth.conf` exists and a password file is missing,
 the run fails and writes nothing. Restore the missing file, or delete the directory and generate again before any start.
+
+**Upgrade: a node that already holds the older set.** A directory generated before the probe packet has eight files (no
+`rcon.txt`, no `nats-body.txt`), and the generator refuses to run on it. Do not regenerate it in place, and do not delete it
+when the node is running (postgres.txt and velocity-forwarding.txt must stay). The steps, in order:
+1. Keep the node's `postgres.txt` and `velocity-forwarding.txt`. The Postgres password applies only at the first initialisation
+   of the volume, and the forwarding secret must match the running velocity.
+2. On the trusted machine, in a clean export, run `./geldar.ps1 shard nats-auth nf --live` once. Copy to the node, from that one
+   run, `rcon.txt`, `nats-body.txt`, the new `nats-auth.conf` and all six `nats-*.txt` password files, and replace the node's
+   copies together: the conf and the password files must come from the same run.
+3. Restart with the existing verbs only: `nf-deploy.sh up` (compose re-creates the services whose config or secrets changed).
+   Start with nats, which reads the new conf; the passwords of eventsink, velocity, neoforge and identity-seed change with it.
+   Do not invent a restart; check `nf-deploy.sh status` after each step.
+The generator has no append mode, so this procedure is the only upgrade path. UNVERIFIED on a node.
 The files are mode 0600 and the directory 0700 on POSIX (checked by the test there); owner-only (ACL) on Windows. Each file is
 created empty, restricted, then written, so the secret is never in a file with a looser mode. On Windows the script sets no ACL on
 the directory: it inherits its parent's. A re-run restricts an existing file again; an existing empty secret file is refused by name.
@@ -143,14 +156,21 @@ nats-server 2.15 acceptance of this config is checked only there. The mod's expo
 ## 4c. RCON, the body user and the probe verb
 
 **RCON is enabled, on `neoforge` only.** The service sets `ENABLE_RCON: "TRUE"` and `RCON_PASSWORD_FILE: /run/secrets/rcon`
-(compose/nf-live.yml). Port 25575 is on the project network only: no `ports:` entry names it, so it is not published to the host
-or the node, and no other service of this file reaches it. The host port 46575 of section 2 stays reserved and unused. The
+(compose/nf-live.yml). Port 25575 is not published: no `ports:` entry names it, so it is not reachable from the host or the node. Inside the
+Docker networks, RCON listens on all interfaces of neoforge. Without telemetry, neoforge is on the nf network only, so any
+container on nf (velocity, nats, postgres, eventsink, identity-seed) can open a connection to 25575; only the RCON password
+guards it. With `NF_TELEMETRY=on`, neoforge is also on geldar-telemetry, so every container on that network can open it too.
+This is accepted (the password is the only guard); the render test in nf-live-telemetry.test.ts pins the two network lists. The host port 46575 of section 2 stays reserved and unused. The
 password is `rcon.txt` (section 4), read only by the neoforge service and the probe.
 
 **The body user.** `nats-body.txt` is the password of the NATS user `body`, the probe's own user (its allow list is in section 4b).
 It is mounted only by the probe overlay, compose/nf-live-probe.yml, and no base service reads it.
 
-**The probe verb.** `deploy/nf-deploy.sh probe` runs one golem Body probe, `ag_nfprobe_01`, over the project network, with the
+**The probe verb.** `deploy/nf-deploy.sh probe` first runs `compose build probe` on every run, so a stale tag cannot keep an old
+isolation guard. The first build needs network access (the golem image runs `pnpm install`) and takes a few minutes. Ctrl-C or
+TERM during the run removes the leftover probe with its 60 s stop grace period and exits 130 or 143. The probe service runs
+read-only, with no capabilities and no-new-privileges (UNVERIFIED on a node; compose/opt-in/scratch-probe.yml sets none of
+these). It then runs one golem Body probe, `ag_nfprobe_01`, over the project network, with the
 `body` NATS user and RCON. The overlay compose/nf-live-probe.yml (profile `probe`, image `geldar-body:geldar-nf`, built from
 golem/Dockerfile) runs as `run --rm --no-deps probe` on the project `geldar-nf`. It is a one-shot: it joins through Velocity,
 whitelists the name over RCON, registers it in the life registry, and cleans up.
@@ -175,8 +195,8 @@ Exit code: the probe's own. 0 means the join, the registration and the cleanup a
 `up` never starts the probe: the service is in profile `probe`, which `up` does not activate. `probe` runs with `--no-deps`, so
 compose starts and restarts nothing else.
 
-**Manual check before a second run: the bot must not be left over.** No NATS CLI exists on any machine we control, so there is
-no `nats kv get` command to run. The check is the wait below, for two reasons, both read from the code:
+**Manual check before a second run: the bot must not be left over.** This repo ships no NATS CLI
+wrapper, so the check below uses no `nats kv get` command. The check is the wait below, for two reasons, both read from the code:
 - The probe's registration is an unconditional put: golem/src/p0/probe.ts:165 calls `registry.register`, which puts the key
   (golem/src/registry.ts:165, `kv.put`). An existing `ag_nfprobe_01` key is overwritten, not refused, so a second run never fails
   on a leftover entry.
@@ -407,8 +427,8 @@ from the exported tree, with `NF_SERVICE_UID` exported in the shell (section 5).
    must be near 20. A count above 0 proves the NATS and sink path. The `events` columns `type` and `payload` are from
    sql/0001_init.sql. The event name `server_tps` is UNVERIFIED in this repo until the first node run.
 7. **Tick and TPS over RCON, after item 6 passes (section 4c).** Run
-   `docker compose -p geldar-nf -f compose/nf-live.yml exec neoforge rcon-cli tick query` (the tick rate and the average time per
-   tick) and `... exec neoforge rcon-cli neoforge tps`. The repo calls `rcon-cli` through `docker exec` (docs/runbooks/scratch-stack.md,
+   `docker compose -p geldar-nf -f compose/nf-live.yml exec -T neoforge rcon-cli tick query` (the tick rate and the average time per
+   tick) and `... exec -T neoforge rcon-cli neoforge tps`. The repo calls `rcon-cli` through `docker exec` (docs/runbooks/scratch-stack.md,
    deploy/scratch/telemetry-rows.sh), but `rcon-cli` in the itzg image and the reply format are UNVERIFIED on this image: record
    each reply, or the unknown-command reply. Item 6 remains the primary proof of the NATS and sink path.
 

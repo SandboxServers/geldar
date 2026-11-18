@@ -45,14 +45,11 @@ const STUB_SCRIPTS: Record<string, string> = {
     'echo "docker $*" >>"$STUB_LOG"',
     'case "$1" in',
     '  ps) printf "%s\\n" "$DOCKER_LABELS"; exit 0 ;;',
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: a shell fixture, not a template
     '  volume) exit "${VOLUME_MISSING:-0}" ;;',
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: a shell fixture, not a template
     '  network) exit "${NETWORK_MISSING:-0}" ;;',
     '  run)',
     '    case "$*" in',
     '      *"ls -A"*) printf "%s\\n" "$VOLUME_CONTENT"; exit 0 ;;',
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: a shell fixture, not a template
     '      *"sha256sum -c"*) exit "${MARKER_STATUS:-0}" ;;',
     '    esac',
     '    exit 0 ;;',
@@ -413,13 +410,13 @@ function extractCalls(repo: string): string[] {
 }
 
 const NEOFORGE_IMAGE =
-  /^ {2}neoforge:\n(?:(?! {2}\S).*\n)*? {4}image: (\S+)$/m.exec(NF_COMPOSE_TEXT)?.[1] ?? '';
+  /^  neoforge:\n(?:(?!  \S).*\n)*?    image: (\S+)$/m.exec(NF_COMPOSE_TEXT)?.[1] ?? '';
 
 describe('nf-deploy.sh seed-bundle', () => {
   it('takes the neoforge image from compose/nf-live.yml, and names the volume as compose does', () => {
     expect(NEOFORGE_IMAGE).toMatch(/^itzg\/minecraft-server:[^@]+@sha256:[0-9a-f]{64}$/);
     expect(SCRIPT_TEXT).not.toContain(NEOFORGE_IMAGE);
-    expect(NF_COMPOSE_TEXT).toMatch(/^ {2}neoforge-data: \{\}$/m);
+    expect(NF_COMPOSE_TEXT).toMatch(/^  neoforge-data: \{\}$/m);
     expect(NF_COMPOSE_TEXT).not.toContain('name: geldar-nf_neoforge-data');
     expect(SCRIPT_TEXT).not.toMatch(/\bsudo\b/);
   });
