@@ -29,7 +29,7 @@ public final class LoginGate {
     private final IdentityLane lane;
     private final Set<UUID> admitted = ConcurrentHashMap.newKeySet();
     private final Set<UUID> spectators = ConcurrentHashMap.newKeySet();
-    /** The concurrent-human cap. Only the human lane reserves from it; agents never do. */
+    /** The human slots of the shard's shared player limit. Only the human lane reserves from them; agents never do. */
     private final HumanSlots humanSlots = new HumanSlots();
 
     /**
@@ -103,7 +103,7 @@ public final class LoginGate {
 
     /**
      * Checks the login and records it. A live or ghost connection is remembered. A human takes one of the
-     * {@link HumanSlots#CAP} slots for its {@code owner}, the connection object that will give it back. A UUID that
+     * {@link HumanSlots#SHARD_MAX_PLAYERS} slots for its {@code owner}, the connection object that will give it back. A UUID that
      * already holds a slot is refused, and a refused human gets the same denial as any other (no reason is returned).
      */
     public Reservation reserve(Object owner, UUID connection, String username) {

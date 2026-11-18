@@ -273,10 +273,11 @@ services:
       TYPE: NEOFORGE
       NEOFORGE_VERSION: "26.1.2.${NF_NEOFORGE_BUILD:-126}"
       MEMORY: "${NF_NEOFORGE_HEAP:-9G}"
-      # Player limits, pinned here and mirrored in compose/opt-in/scratch-neoforge.yml (the scratch run tests these values).
-      # Not environment-overridable on purpose. Chosen for 3 CPUs and a human-directed shard that starts small: see
-      # docs/runbooks/nf-live-project.md section 3b. MAX_PLAYERS bounds every player, bots included, not only humans.
-      MAX_PLAYERS: "10"
+      # Player limits, pinned here. Not environment-overridable on purpose. MAX_PLAYERS 100 is the shard's one shared limit
+      # for humans and agents (owner decision 2026-11-18): it bounds every player, bots included. The scratch overlay
+      # (compose/opt-in/scratch-neoforge.yml) keeps its own values and is not a mirror of this limit. The shard has not
+      # been sized for 100 players (3 CPUs, 9G heap); see docs/runbooks/nf-live-project.md section 3b.
+      MAX_PLAYERS: "100"
       VIEW_DISTANCE: "8"
       SIMULATION_DISTANCE: "6"
       ONLINE_MODE: "FALSE"
