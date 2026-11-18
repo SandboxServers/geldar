@@ -101,6 +101,14 @@ SCRATCH_TELEMETRY_OUT=<out dir> SCRATCH_REPO_ROOT=<repo checkout on the node> \
   nohup sh telemetry-rows-nf.sh >rows-nf.out 2>&1 &
 ```
 
+Export list the row driver needs (names only). NF10 runs `docker compose config -q` against the labelled compose files of the running paper container, and compose refuses a missing required variable before it touches anything, so the driver's shell must export every one of these (it skips NF10 as `env-not-exported`, and names the first missing variable in `got=... missing=NAME`):
+
+- The section 6 exports (the block above): `SCRATCH_PLATFORM`, `SCRATCH_NATS_AUTH_DIR`, `SCRATCH_NEOFORGE_LEDGER_JAR`, `SCRATCH_NEOFORGE_LEDGER_SHA256`, `SCRATCH_LEDGER_PROPS`, `SCRATCH_NEOFORGE_OTEL_AGENT_JAR`, `SCRATCH_NEOFORGE_OTEL_AGENT_PROPS`, `SCRATCH_NEOFORGE_MOD_JAR`, `SCRATCH_NEOFORGE_MOD_SHA256`, `SCRATCH_NEOFORGE_TELEMETRY_SINK`, `SCRATCH_HUMAN_LANE`, `SCRATCH_TELEMETRY_OUT`.
+- Set by `scratch.sh` itself inside its own process, so a separate shell does not have them and must export them with the same values `up` used: `SCRATCH_SECRETS_DIR`, `GELDAR_WORLD_VOLUME` (`<project>_paper-data`), and `SCRATCH_RUN_UID`, `SCRATCH_RUN_GID` (`id -u`, `id -g` of the account that ran `up`). The ports (`SCRATCH_*_PORT`) come from `nf.env` and have defaults in the compose files.
+- Set by `scratch.sh` and `scratch-ledger.sh` (compose requires them, with no default): `GELDAR_NF_MOD_JAR_HOST`, `GELDAR_NF_MOD_SHA256` (from the two `SCRATCH_NEOFORGE_MOD_*` values), `GELDAR_NF_LEDGER_JAR_HOST`, `GELDAR_NF_LEDGER_PROPS_HOST`, `GELDAR_NF_LEDGER_SHA256`, `GELDAR_NF_OTEL_AGENT_JAR_HOST`, `GELDAR_NF_OTEL_AGENT_PROPS_HOST` (from the matching `SCRATCH_NEOFORGE_*` and `SCRATCH_LEDGER_PROPS` values). Also exported there and used by `scratch.sh` to pick the overlays: `GELDAR_NF_TELEMETRY`, `GELDAR_NF_LEDGER_OFF`.
+
+Simplest way to get all of them: run the driver from the same shell that sourced the environment of `up`, or use the driver in a shell where `scratch.sh`'s `set_env` has been run. No value is ever printed by the driver.
+
 The driver is started from the same shell as `up`, so the probe inherits the same environment (`SCRATCH_PLATFORM`, `SCRATCH_NATS_AUTH_DIR` and the rest). NF6 and NF7 use the scratch probe, `scratch.sh probe nf`; do not use the geldar-nf probe verb. The scratch probe works on scratch (golem on main accepts scratch-nf). Its whitelist add and remove are harmless with the whitelist off (geldar-neoforge is checking this).
 
 Optional per its header: `SCRATCH_ROWS_PROFILE`, `SCRATCH_ROWS_CGROUP_DIR`/`_ROOT`, `SCRATCH_ROWS_MEMINFO`, `SCRATCH_ROWS_SHARD` (default `nf`), `SCRATCH_ROWS_RCON_CMD` (default `rcon-cli` inside the container). A subset runs with `--only NF0,NF2`.

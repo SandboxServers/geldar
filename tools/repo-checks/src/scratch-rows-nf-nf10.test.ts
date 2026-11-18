@@ -87,6 +87,20 @@ describe.skipIf(!SH)(
       ]);
     });
 
+    it.concurrent('NF10 skip names only the first unset variable and leaks no values or other stderr text', async () => {
+      const r = await runRows(['--only', 'NF10'], {
+        env: {
+          FAKE_COMPOSE_FAIL: '1',
+          FAKE_COMPOSE_STDERR:
+            'level=warning msg="The GELDAR_NF_TESTNAME variable is not set. Defaulting to a blank string."\nlevel=warning msg="The SCRATCH_OTHER variable is not set."\nimage: registry.example/leaky:SECRETVALUE123',
+        },
+      });
+      expect(r.out).toMatch(/^ROW NF10 SKIP reason=env-not-exported got=compose-config-failed missing=GELDAR_NF_TESTNAME(\s|$)/m);
+      expect(r.out).not.toContain('SCRATCH_OTHER');
+      expect(r.out).not.toContain('SECRETVALUE123');
+      expect(r.out).not.toContain('Defaulting');
+    });
+
     it.concurrent('a copy write that silently does not land prints RESTORE-FAILED and exits 6, keeping the saved profile', async () => {
       const r = await runRows(['--only', 'NF10'], { env: { FAKE_COPY_SHA: 'b'.repeat(64) } });
       expect(r.out).toMatch(/^RESTORE-FAILED copy_sha=b{64} want=[0-9a-f]{64}$/m);
