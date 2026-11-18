@@ -24,6 +24,7 @@ const DUMMY_MARKER = 'DUMMY-NF-SECRET-MARKER-7f3a9c';
 const DUMMY_SHA256 = 'a'.repeat(64);
 const SECRET_FILES = [
   'postgres.txt',
+  'rcon.txt',
   'velocity-forwarding.txt',
   'nats-auth.conf',
   'nats-sink.txt',
@@ -297,6 +298,21 @@ describe('nf-live compose: secret mounts', () => {
 
   it('mounts the Postgres password into exactly postgres and eventsink', () => {
     expect(servicesMounting('postgres')).toEqual(['eventsink', 'postgres']);
+  });
+
+  it('mounts rcon.txt into exactly neoforge (the RCON password file of the itzg image)', () => {
+    expect(servicesMounting('rcon')).toEqual(['neoforge']);
+  });
+});
+
+describe('nf-live compose: RCON', () => {
+  it('enables RCON on neoforge from the rcon secret file, and publishes no port', () => {
+    const neo = services().find(([name]) => name === 'neoforge')?.[1] as
+      | { environment?: Record<string, string>; ports?: unknown[] }
+      | undefined;
+    expect(neo?.environment?.ENABLE_RCON).toBe('TRUE');
+    expect(neo?.environment?.RCON_PASSWORD_FILE).toBe('/run/secrets/rcon');
+    expect(neo?.ports ?? [], 'RCON (25575) is reachable on the project network only').toEqual([]);
   });
 });
 
