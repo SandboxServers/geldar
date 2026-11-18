@@ -501,6 +501,8 @@ restart (the same as a rollback; a rollback must be run with `NF_TELEMETRY=off` 
 no human can join yet (loopback ingress only), so the impact is nil either way.
 
 ### Scratch verification before geldar-nf (required first)
+Status of the NeoForge scratch run on 2026-11-18: rows NF2, NF4, NF5, NF6 and NF9C were NOT verified (no player; the owner skipped the human run), and NF10 was skipped as `env-not-exported` (the export list the driver needs is in `node-requests/06-scratch-nf-telemetry-human-run.md`). NF7 is optional. The first real player join on live geldar-nf is therefore the first data for those rows. Unrelated observation: Body hosts log a repeating NATS `block owner query ... no responders` about every 5 s; cause unknown.
+
 Nothing goes to the node until this passes on scratch. Two parts, both UNVERIFIED until run:
 - The **NeoForge sink overlay** with the scratch variables `SCRATCH_NEOFORGE_LEDGER_JAR`, `SCRATCH_NEOFORGE_LEDGER_SHA256`,
   `SCRATCH_NEOFORGE_OTEL_AGENT_JAR`, `SCRATCH_NEOFORGE_OTEL_AGENT_PROPS` and `SCRATCH_LEDGER_PROPS`: all five or none. The soft

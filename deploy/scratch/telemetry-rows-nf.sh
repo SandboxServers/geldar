@@ -525,7 +525,14 @@ COPY_STAT0=''
 RESTORE_BAD=0
 row_NF10() {
   WANT="no geldar points 15 s plus one export after enabled=false (live reload, else after one restart); resume after restore"
-  COMPOSE_ARGS='config -q' compose_run || { SKIP_REASON=env-not-exported; GOT="compose-config-failed (export the SCRATCH_* and GELDAR_NF_* variables)"; return 2; }
+  n0=$(wc -l <"$LOG")
+  COMPOSE_ARGS='config -q' compose_run || {
+    SKIP_REASON=env-not-exported
+    GOT="compose-config-failed (export the SCRATCH_* and GELDAR_NF_* variables)"
+    miss=$(tail -n +$((n0 + 1)) "$LOG" | sed -n 's/.*The \([A-Za-z_][A-Za-z0-9_]*\) variable is not set.*/\1/p;s/.*required variable \([A-Za-z_][A-Za-z0-9_]*\) is missing.*/\1/p' | head -n 1) # the name only, never other stderr text
+    [ -n "$miss" ] && GOT="compose-config-failed missing=$miss"
+    return 2
+  }
   SINCE=$(lines_now)
   write_profile 'enabled=false' enabled
   COPY_STAT0=$(copy_stat)
