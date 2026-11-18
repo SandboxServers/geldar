@@ -20,7 +20,7 @@ Today the live node is assembled by hand. Jars are copied, a `.bak` rollback is 
 5. **State restores; secrets regenerate.** Postgres, both worlds, the skins bucket, tokens and the roster restore from an off-host backup during the drill. Secrets are regenerated on the target.
 6. **Drift is reported.** A scheduled plan job reports drift and fails on a hand edit.
 7. **Allowed leftovers are checked prerequisites, not steps:** the gateway firewall policy, the domain registration and the owner's one-time tenant consent.
-8. **Open questions stay open** until the owner rules. They stay open: the NeoForge world's "no backup" decision (from the pregeneration note) and the skins source. `docs/analysis/genesis/README.md` does not list them yet and should; `RESUME.md` does.
+8. **Open questions stay open** until the owner rules. They stay open: the NeoForge world's "no backup" decision (from the pregeneration note) and the skins source. They are listed in `docs/analysis/genesis/README.md` under open owner questions.
 
 ## Why
 
