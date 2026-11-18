@@ -66,7 +66,16 @@ jobs:
       - name: gradle build
         if: hashFiles('plugin/build.gradle.kts') != ''
         working-directory: plugin
-        run: ./gradlew build --no-daemon
+        shell: bash
+        run: |
+          set -o pipefail
+          for attempt in 1 2; do
+            ./gradlew build --no-daemon 2>&1 | tee "$RUNNER_TEMP/gradle-plugin.log" && exit 0
+            if grep -Eqi 'Dependency verification failed|lock state' "$RUNNER_TEMP/gradle-plugin.log"; then exit 1; fi
+            if [ "$attempt" = 2 ] || ! grep -Eqi 'HTTP (429|50[0-9])|Could not (GET|HEAD) |Read timed out|Connect(ion)? (reset|timed out)|Premature end of Content-Length|Received status code (429|50[0-9])' "$RUNNER_TEMP/gradle-plugin.log"; then exit 1; fi
+            echo "::warning::network error in the plugin build; retrying once"
+            sleep 30
+          done
 
   # neoforge/ (the progression mod) and neoforge-ledger/ (the telemetry adapter; it consumes plugin/ledger-core as a
   # composite build) are separate Gradle builds. Not path filtered: a skipped job is not "success", so the gate would
