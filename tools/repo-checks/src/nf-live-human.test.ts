@@ -194,6 +194,11 @@ describe('the human lane toml (compose/velocity/velocity-nf-human.toml)', () => 
   it('is online-mode, with ping passthrough disabled', () => {
     expect(toml).toMatch(/^online-mode = true$/m);
     expect(toml).toMatch(/^ping-passthrough = "DISABLED"$/m);
+    // haproxy-protocol true would let any client spoof its source address; [query] is off (no UDP is published).
+    expect(toml).toMatch(/^haproxy-protocol = false$/m);
+    expect(toml).not.toMatch(/^haproxy-protocol\s*=\s*true/m);
+    expect(toml).toMatch(/^\[query\]\nenabled = false$/m);
+    expect(toml).not.toMatch(/^\[query\][\s\S]*?^enabled\s*=\s*true/m);
   });
 
   it('names no 0.0.0.0 address other than the container bind, and no secret value', () => {
@@ -225,6 +230,19 @@ describe('the human lane security settings (pinned)', () => {
     expect(env.GELDAR_NATS_URL).toBe('nats://nats:4222');
     expect(env.GELDAR_IDENTITY_LANE).toBe('human');
     expect(JSON.stringify(svc.healthcheck)).toContain('geldar-identity.ready');
+  });
+
+  it('pins the velocity-human healthcheck timings: a missing ready marker fails up --wait within 40 s', () => {
+    const hc = (services(HUMAN)['velocity-human'] as Record<string, unknown>).healthcheck as Record<
+      string,
+      unknown
+    >;
+    expect(hc.start_period).toBe('20s');
+    expect(hc.interval).toBe('5s');
+    expect(hc.timeout).toBe('3s');
+    expect(hc.retries).toBe(3);
+    expect(20 + 3 * 5).toBeLessThan(40);
+    expect(JSON.stringify(hc.test)).toContain('/tmp/geldar-identity.ready');
   });
 
   it('keeps tmpfs /tmp, the service user, restart "no" and the jar with create_host_path false', () => {

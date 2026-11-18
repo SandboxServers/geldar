@@ -66,6 +66,12 @@ check_human_inputs() {
   # The human lane's NATS password (velocity-human reads it as nats-human.txt). Only the generator writes it; no path is printed.
   secdir=${NF_SECRETS_DIR:-$ROOT/compose/secrets-nf}
   [ -s "$secdir/nats-human.txt" ] || die "nats-human.txt is missing or empty in the NF secrets directory (NF_HUMAN=on needs it); re-run the NATS auth generator (./geldar.ps1 shard nats-auth nf --live, on the trusted machine), then copy the result to the node; refusing"
+  # The deployed NATS auth must name the human user (names only: the file is never printed). A conf without it fails every login.
+  if [ -f "$secdir/nats-auth.conf" ] && ! grep -Eq '(^|[^A-Za-z0-9_-])human([^A-Za-z0-9_-]|$)' "$secdir/nats-auth.conf"; then
+    die "the deployed nats-auth.conf has no human user (NF_HUMAN=on needs it); regenerate it (./geldar.ps1 shard nats-auth nf --live) and copy it to the node; refusing"
+  fi
+  # Exported, so compose takes these validated values over any compose/.env entry (the shell environment wins over .env).
+  export NF_HUMAN_BIND=$HUMAN_BIND NF_HUMAN_PORT=$HUMAN_PORT
   say "human lane on: velocity-human publishes $HUMAN_BIND:$HUMAN_PORT->25565 (the only human publish)"
 }
 
@@ -85,6 +91,22 @@ human_fail() {
     state="velocity-human could not be stopped: check docker ps before you do anything else"
   fi
   die "$1; $state"
+}
+
+# Off (NF_HUMAN unset or off): plan, up, refresh-secrets and probe refuse while a velocity-human container exists in the project,
+# before any compose call. Their calls leave the overlay out, so they would recreate nats and neoforge without the human network
+# and leave the public proxy running. status, logs, down and human-down do not call this. Rows are read by project and service
+# label; a docker failure refuses.
+check_human_orphan() {
+  if [ "$HUMAN" = 1 ]; then return 0; fi
+  rows=$(docker ps -a --filter "label=com.docker.compose.project=$PROJECT" \
+    --filter "label=com.docker.compose.service=velocity-human" \
+    --format '{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.service"}}') ||
+    die "cannot list the $PROJECT containers (velocity-human check); refusing"
+  found=$(printf '%s\n' "$rows" | awk -F'|' -v p="$PROJECT" '$1 == p && $2 == "velocity-human" { n++ } END { print n + 0 }')
+  if [ "$found" != 0 ]; then
+    die "a velocity-human container exists in $PROJECT but NF_HUMAN is off or unset; refusing. Two ways out: human-down (removes it) or NF_HUMAN=on (keeps it)"
+  fi
 }
 
 # human-down: stops and removes velocity-human only. The overlay is always included, so it works with NF_HUMAN unset, and no

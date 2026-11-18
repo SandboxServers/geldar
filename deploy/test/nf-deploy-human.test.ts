@@ -112,7 +112,12 @@ function makeRepo(opts: { human?: boolean } = {}): string {
     join(repo, 'compose', 'velocity', 'velocity-nf-human.toml'),
   );
   writeFileSync(join(repo, 'compose', 'neoforge', 'neoforge-entrypoint.sh'), '#!/bin/sh\n');
-  for (const f of SECRET_FILES) writeFileSync(join(repo, 'compose', 'secrets-nf', f), `${f}\n`);
+  // nats-auth.conf names the human user, as the generator writes it (check_human_inputs reads the names, never the file).
+  for (const f of SECRET_FILES)
+    writeFileSync(
+      join(repo, 'compose', 'secrets-nf', f),
+      f === 'nats-auth.conf' ? 'user: "human"\n' : `${f}\n`,
+    );
   if (opts.human ?? true) {
     writeFileSync(join(repo, 'compose', 'secrets-nf', HUMAN_SECRET), `${HUMAN_SECRET}\n`);
   }
@@ -181,7 +186,10 @@ const HUMAN_CALL = /-f \S*compose\/nf-live-human\.yml/;
 describe('nf-deploy.sh human lane (NF_HUMAN)', () => {
   it('off (unset) calls compose with the base file only, the same calls as before the lane', () => {
     const repo = makeRepo({ human: false });
-    const res = run(repo, { env: { NF_HUMAN: undefined, NF_HUMAN_BIND: undefined } });
+    const res = run(repo, {
+      env: { NF_HUMAN: undefined, NF_HUMAN_BIND: undefined },
+      rows: LIVE_ROW,
+    });
     expect(res.status).toBe(0);
     // Byte-identical to the pre-lane call: one -f (the base file) and nothing else.
     const compose = calls(repo).filter((l) => l.startsWith('docker compose -p'));
@@ -195,6 +203,7 @@ describe('nf-deploy.sh human lane (NF_HUMAN)', () => {
     const repo = makeRepo({ human: false });
     const res = run(repo, {
       env: { NF_HUMAN: 'off', NF_HUMAN_BIND: undefined },
+      rows: LIVE_ROW,
       args: ['up', '--local'],
     });
     expect(res.status).toBe(0);
@@ -378,6 +387,8 @@ describe('nf-deploy.sh human lane (NF_HUMAN)', () => {
 // human-down with the flag unset, and logs for velocity-human.
 describe('nf-deploy.sh human lane: fail-closed fixes', () => {
   const BAD_BINDS = [
+    '192.0.2.010',
+    '192.0.2.04',
     '::0',
     '0::',
     '0:0:0:0:0:0:0:0',
@@ -468,6 +479,78 @@ describe('nf-deploy.sh human lane: fail-closed fixes', () => {
     expect(compose).toHaveLength(1);
     expect(compose[0]).toMatch(/-f \S*compose\/nf-live-human\.yml/);
     expect(compose[0]).toMatch(/ rm -sf velocity-human$/);
+  });
+
+  // Off with a velocity-human container (multi-row, as docker ps prints the project): these verbs refuse before any compose call.
+  const NO_HUMAN_ROWS = FIVE_ROWS.split('\n')
+    .filter((l) => !l.includes('velocity-human'))
+    .join('\n');
+  const OFF = { NF_HUMAN: undefined, NF_HUMAN_BIND: undefined } as Record<
+    string,
+    string | undefined
+  >;
+  it.each([
+    ['plan', ['plan', '--local']],
+    ['up', ['up', '--local']],
+    ['refresh-secrets', ['refresh-secrets', '--local']],
+    ['probe', ['probe', '--local']],
+  ])(
+    'off refuses %s while a velocity-human container exists, naming both ways out, with no compose call',
+    (_verb, args) => {
+      const repo = makeRepo({ human: false });
+      const res = run(repo, { env: OFF, rows: FIVE_ROWS, args });
+      expect(res.status).not.toBe(0);
+      expect(res.stderr).toContain('velocity-human container exists');
+      expect(res.stderr).toContain('human-down');
+      expect(res.stderr).toContain('NF_HUMAN=on');
+      expect(calls(repo).filter((l) => l.startsWith('docker compose -p'))).toEqual([]);
+    },
+  );
+
+  it.each([
+    ['status', ['status', '--local']],
+    ['logs', ['logs', 'velocity', '--local']],
+    ['down', ['down', '--local']],
+    ['human-down', ['human-down', '--local']],
+  ])('off still runs %s with a velocity-human container present', (_verb, args) => {
+    const repo = makeRepo({ human: false });
+    expect(run(repo, { env: OFF, rows: FIVE_ROWS, args }).status).toBe(0);
+  });
+
+  it('off runs plan when no velocity-human container exists (the other project rows are not refused)', () => {
+    const repo = makeRepo({ human: false });
+    expect(run(repo, { env: OFF, rows: NO_HUMAN_ROWS, args: ['plan', '--local'] }).status).toBe(0);
+  });
+
+  it('plan with the lane on says the first on-run recreates nats, eventsink and neoforge, and that off is refused', () => {
+    const repo = makeRepo();
+    const res = run(repo, { args: ['plan', '--local'] });
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain('recreates nats, eventsink and neoforge');
+    expect(res.stdout).toContain('An off-run is refused while velocity-human exists');
+  });
+
+  it('refuses NF_HUMAN=on when the deployed nats-auth.conf has no human user, before any compose call', () => {
+    const repo = makeRepo();
+    writeFileSync(join(repo, 'compose', 'secrets-nf', 'nats-auth.conf'), 'user: "velocity"\n');
+    const res = run(repo, { args: ['plan', '--local'] });
+    expect(res.status).not.toBe(0);
+    expect(res.stderr).toContain('has no human user');
+    expect(calls(repo).filter((l) => l.startsWith('docker compose -p'))).toEqual([]);
+  });
+
+  it('reports velocity-human could not be stopped when its stop fails too', () => {
+    const repo = makeRepo();
+    const failing = [
+      '#!/bin/sh',
+      'echo "docker $*" >>"$STUB_LOG"',
+      'case "$*" in *"up -d --wait velocity-human"*|*"stop velocity-human"*) exit 1 ;; esac',
+      STUB_SCRIPTS.docker.split('\n').slice(2).join('\n'),
+    ].join('\n');
+    writeFileSync(join(repo, 'stubs', 'docker'), `${failing}\n`);
+    const r = run(repo, { args: ['up', '--local'] });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('could not be stopped');
   });
 
   it('accepts logs velocity-human with NF_HUMAN unset, through the human overlay', () => {

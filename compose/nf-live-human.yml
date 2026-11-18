@@ -80,10 +80,12 @@ services:
       # Port open AND the identity plugin enabled in this proxy process (as the live velocity service; the ready file is in
       # this container's own /tmp, a tmpfs here). ($$ is Compose's escape.)
       test: ["CMD", "bash", "-c", "read -r pid start < /tmp/geldar-identity.ready && [ -n \"$$start\" ] && [ \"$$(cut -d' ' -f22 /proc/$$pid/stat 2>/dev/null)\" = \"$$start\" ] && exec 3<>/dev/tcp/127.0.0.1/25565"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 1m
+      # Short on purpose: a plugin that never writes the ready marker (missing, empty or invalid jar, registry unsynced) makes
+      # `up --wait` fail after start_period plus retries x interval, 20 s + 3 x 5 s = 35 s (under 40 s), not after 110 s.
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
     deploy:
       resources:
         limits:
