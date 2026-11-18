@@ -35,7 +35,7 @@ Literal loopback ports (the compose repo-check forbids interpolation for them); 
 
 ## 4. Test environment on node 3
 
-The owner wants a Hyper-V Debian VM on node 3 as the first non-production stamp, built from a fresh install with no dependencies pre-installed, ending with bodies connected and a real ranger on the test world. Plan: G3-04 creates the VM (PowerShell over SSH from an operator machine that holds the node 3 key; CI does not hold it; it reuses scriptorium's parameterised `New-HostVm.ps1` rather than a second script, see the card); G3-01 bootstraps from bare Debian; G4 stamps it; G6 verifies it with the scripted test player; the owner then points a real ranger at it as acceptance (human step, scriptorium side).
+The owner wants a Hyper-V Debian VM on node 3 as the first non-production stamp, built from a fresh install with no dependencies pre-installed, ending with bodies connected and a real ranger on the test world. Plan: G3-04 creates the VM (PowerShell over SSH from an operator machine that holds the node 3 key; CI does not hold it; it reuses scriptorium's parameterised `New-HostVm.ps1` rather than a second script, see the card); G3-01 bootstraps from bare Debian; G4 stamps it; G6 verifies it with the scripted test player; the owner then points a real ranger at it as acceptance (human step, scriptorium side). Sizing: 24 GB RAM and 8 vCPUs (owner, 2026-11-14); the switch name and the node 3 totals are verified in G3-04.
 
 ## 5. Principles
 
@@ -52,7 +52,7 @@ Idempotent everywhere (create-if-missing, upsert, no silent rotation); plan befo
 | Entra sign-in app per environment | redirect URI of that environment; one client secret | created and rotated by the stamp (`credential reset --append`, then delete the old key); secret goes straight to the vault and the host file, never printed | secret expiry tracked; rotation is its own recorded run |
 | Key Vault per environment | holds only secrets that must outlive a host (Entra client secret, backup key) | created by the Azure bootstrap | host-generated secrets are not copied here (D-GN-04) |
 | node 3 Hyper-V SSH key | create and manage VMs on node 3 | **operator machine only** (owner's desktop); never in CI | G3-04 runs from the operator machine or a dedicated runner on node 3 |
-| Backup destination credential | write-only to the off-node backup location; restore uses a separate read credential | decision open (location); the write credential is the only one on the host | G5-01 names it |
+| Backup destination credential | write-only to the off-node backup location; restore uses a separate read credential | another LAN node (owner, 2026-11-14); the write credential is the only one on the host | G5-01 names it |
 | GitHub token for the workflow | `contents: read`, `packages: read`, `id-token: write`; nothing broader | the workflow's own `GITHUB_TOKEN` | pinned actions by commit SHA |
 | Registry pull | GHCR pull of public images | none needed for public packages | private packages need a read token |
 | Things the workflow never holds | subscription logins, deploy keys of player repos, the gateway (UniFi) credentials, the live node's `nats-auth.conf` passwords | humans and scriptorium | checked as prerequisites |
@@ -69,6 +69,19 @@ Genesis provides, for each environment, to scriptorium's fleet campaign (reviewe
 6. **Kit identity fields.** The kit also needs the player id, the display name and a skin (the skin only if the environment has a skin step).
 
 The final acceptance (a real ranger connected) is a human step recorded in G7-02 and G6-05; the subscription login is the owner's on scriptorium's side.
+
+## Exit criteria (decision 0240)
+
+The campaign's exit is the scorched-earth drill, not the merge of the packets. Decision [0240](../../decisions/0240-genesis-exit-is-the-scorched-earth-drill.md) sets eight points:
+
+1. Exit is the drill: delete every Geldar-owned host, VM, volume, container, network, secret, DNS record, Entra app and runner; keep only GitHub and the owner's bootstrap credential; regenerate from pipelines; verify and the smoke suite pass; a ranger can join.
+2. Scope is Geldar-owned things only. Shared host services (ClickHouse, SigNoz, the telemetry gateway, the GitHub runner stacks, other projects) are prerequisites and are not stamped.
+3. Every jar and mod (ours and community, Paper, NeoForge and Velocity) is built or fetched by CI, locked with digests, verified and placed by the pipeline.
+4. Every manual node step becomes a workflow job or an audited owner function in register or glass. A runbook may explain it, never perform it.
+5. State (Postgres, both worlds, the skins bucket, tokens, roster) restores from an off-host backup; secrets regenerate.
+6. A scheduled plan job reports drift and fails on a hand edit.
+7. Allowed leftovers are checked prerequisites: the gateway firewall policy, the domain registration, the owner's one-time tenant consent.
+8. Open until the owner rules: the NeoForge world's "no backup" decision and the skins source. Both are listed in the open owner questions of [README.md](README.md).
 
 ## 8. Risks and mitigations
 
