@@ -523,6 +523,23 @@ alone, and makes no network call. The base file is not changed, and a render tes
 **`NF_TELEMETRY=on` has no effect on the JVM until the entrypoint of PR #701 (packet B) is merged. Do not set it before.**
 Until then the script refuses `on`, because the entrypoint in the tree has no `GELDAR_NF_TELEMETRY`.
 
+**Rollback (explicit off).** To clear a stale ledger jar copy from the mods folder, run `NF_TELEMETRY=off sh deploy/nf-deploy.sh up`
+(or `plan` first). That adds `compose/nf-live-telemetry-off.yml`, which sets `GELDAR_NF_TELEMETRY=off` on `neoforge` only. The
+entrypoint then removes our own stale ledger jar copy and starts no agent. Unset is NOT the same: with NF_TELEMETRY unset the
+script adds no overlay, so a stale jar left in place makes the start refuse, BY DESIGN. The start refuses rather than run a jar
+it did not install. Use `NF_TELEMETRY=off` for the rollback, then unset it for the normal start.
+
+**Forwarding config (`proxy-compatible-forge.toml`).** The entrypoint rewrites only the `[forwarding]` table, from the secret
+file. Backups: `.bak` is the FIRST original file, written once and kept; `.bak.prev` is the previous start's file (rolling, one
+start back). A toml in an unusual form is refused with exit 1 before any write: a quoted header (`["forwarding"]` or
+`['forwarding']`), a dotted key (`forwarding.secret = ...`), or an inline table (`forwarding = { ... }`). A UTF-8 BOM before the
+first header is stripped from the rewritten copy. A symlink or a directory at the config, `.bak`, `.bak.prev` or `.part` path is
+refused, and nothing is followed or written through it. The symlink and directory refusal tests skip on Windows.
+
+**Root cause of the original rejection: NOT established.** The masked node shape would have passed the old exact-line guard,
+so the cause is not known from the repo. The rewrite makes the exact shape irrelevant (any form the rewrite accepts ends with one
+`[forwarding]` table), but it does not explain why the node rejected the earlier file. Confirm on the node before you rely on it.
+
 Inputs, read by `deploy/nf-deploy.sh` (all optional; `NF_TELEMETRY=on` needs the five others):
 
 - `NF_TELEMETRY`: `on` or `off`. Any other value refuses.

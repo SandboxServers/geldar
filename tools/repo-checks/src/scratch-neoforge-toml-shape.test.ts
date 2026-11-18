@@ -39,6 +39,15 @@ const CURL_STUB = [
   '',
 ].join('\n');
 
+/** Dumps its environment and arguments to files, and prints its arguments, so a test can check what the start command receives. */
+const START_STUB = [
+  '#!/bin/sh',
+  'env >"$STUB_START_ENV"',
+  'printf "%s\\n" "$*" >"$STUB_START_ARGS"',
+  'echo "started $*"',
+  '',
+].join('\n');
+
 const sha512 = (text: string) => createHash('sha512').update(text).digest('hex');
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 
@@ -46,6 +55,26 @@ interface Case {
   data: string;
   config: string;
   env: Record<string, string>;
+}
+
+/** What a stub recorded, or '' when the stub never ran (a refused start). */
+const recorded = (path: string | undefined) =>
+  path && existsSync(path) ? readFileSync(path, 'utf8') : '';
+
+/**
+ * Both secrets (the current one and the one the old file held) must be absent from stdout and stderr and from the start
+ * command's arguments and environment. A case that exits before the start command leaves those files empty.
+ */
+function expectNoSecret(out: { stdout: string; stderr: string }, c: Case) {
+  const seen = [
+    out.stdout + out.stderr,
+    recorded(c.env.STUB_START_ENV),
+    recorded(c.env.STUB_START_ARGS),
+  ];
+  for (const text of seen) {
+    expect(text).not.toContain(SECRET);
+    expect(text).not.toContain(OLD_SECRET);
+  }
 }
 
 const dirs: string[] = [];
@@ -64,7 +93,7 @@ function setup(): Case {
   writeFileSync(join(fixtures, MOD_NAME), PCF_BODY);
   writeFileSync(join(fixtures, INSTALLER_NAME), INSTALLER_BODY);
   writeFileSync(join(bin, 'curl'), CURL_STUB, { mode: 0o755 });
-  writeFileSync(join(bin, 'start'), '#!/bin/sh\necho "started $*"\n', { mode: 0o755 });
+  writeFileSync(join(bin, 'start'), START_STUB, { mode: 0o755 });
   const mountedMod = join(mount, 'geldar-neoforge.jar');
   writeFileSync(mountedMod, GEO_BODY);
   const secretFile = join(base, 'velocity-forwarding');
@@ -85,12 +114,14 @@ function setup(): Case {
       GELDAR_NF_LEDGER_JAR: slash(join(base, 'absent-ledger.jar')),
       NEOFORGE_VERSION: BUILD,
       STUB_CURL_FIXTURES: slash(fixtures),
+      STUB_START_ENV: slash(join(base, 'start-env.txt')),
+      STUB_START_ARGS: slash(join(base, 'start-args.txt')),
     },
   };
 }
 
 function run(c: Case) {
-  return spawnSync('sh', [slash(ENTRY)], {
+  const r = spawnSync('sh', [slash(ENTRY)], {
     encoding: 'utf8',
     env: {
       PATH: `${c.env.PATH_BIN}${delimiter}${process.env.PATH ?? ''}`,
@@ -99,6 +130,8 @@ function run(c: Case) {
       STUB_CURL_LOG: slash(join(c.data, '..', 'curl.log')),
     },
   });
+  expectNoSecret(r, c);
+  return r;
 }
 
 /**
@@ -168,7 +201,7 @@ describe.skipIf(skipWithoutSh())('the server-left-behind toml shape', { timeout:
       const r = run(c);
       expect(r.status).toBe(0);
       expect(r.stdout).toContain('started');
-      expect(r.stdout + r.stderr).not.toContain(SECRET);
+      expectNoSecret(r, c);
       expectShape(readFileSync(c.config, 'utf8'));
     });
 
@@ -178,12 +211,60 @@ describe.skipIf(skipWithoutSh())('the server-left-behind toml shape', { timeout:
       writeFileSync(c.config, leftBehind(OLD_SECRET, eol, trail));
       const r = run(c);
       expect(r.status).toBe(0);
-      expect(r.stdout + r.stderr).not.toContain(SECRET);
+      expectNoSecret(r, c);
       expect(r.stdout + r.stderr).not.toContain(OLD_SECRET);
       expectShape(readFileSync(c.config, 'utf8'));
       expect(readFileSync(`${c.config}.bak`, 'utf8')).toContain(OLD_SECRET);
     });
   }
+
+  it('a UTF-8 BOM before the first header is stripped from the rewritten copy, and [forwarding] appears once', () => {
+    const c = setup();
+    mkdirSync(join(c.data, 'config'), { recursive: true });
+    writeFileSync(c.config, `﻿${leftBehind(OLD_SECRET, '\n', '')}`);
+    const r = run(c);
+    expect(r.status).toBe(0);
+    expectNoSecret(r, c);
+    expect(r.stdout + r.stderr).not.toContain(OLD_SECRET);
+    const text = readFileSync(c.config, 'utf8');
+    expect(text.startsWith('﻿')).toBe(false);
+    expect(text.split('[forwarding]').length - 1).toBe(1);
+    expectShape(text);
+  });
+
+  // Each form the rewrite does not handle is refused before any write: exit 1, the file is unchanged, nothing starts and no
+  // secret (old or current) is printed. Without the refusal the rewrite appends a second [forwarding] table.
+  const REFUSED: Array<[string, string]> = [
+    [
+      'a quoted [forwarding] header',
+      `["forwarding"]\nenabled = true\nmode = "MODERN"\nsecret = "${OLD_SECRET}"\n`,
+    ],
+    [
+      'a single-quoted [forwarding] header after a BOM',
+      `﻿['forwarding']\nenabled = true\nsecret = "${OLD_SECRET}"\n`,
+    ],
+    ['a dotted forwarding key', `forwarding.enabled = true\nforwarding.secret = "${OLD_SECRET}"\n`],
+    [
+      'an inline forwarding table',
+      `forwarding = { enabled = true, mode = "MODERN", secret = "${OLD_SECRET}" }\n`,
+    ],
+  ];
+  it.each(REFUSED)(
+    'refuses %s: exit 1, the file is unchanged, nothing starts, no secret is printed',
+    (_label, body) => {
+      const c = setup();
+      mkdirSync(join(c.data, 'config'), { recursive: true });
+      writeFileSync(c.config, body);
+      const r = run(c);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain('refusing to start');
+      expect(r.stdout).not.toContain('started');
+      expectNoSecret(r, c);
+      expect(r.stdout + r.stderr).not.toContain(OLD_SECRET);
+      expect(readFileSync(c.config, 'utf8')).toBe(body);
+      expect(existsSync(`${c.config}.bak`)).toBe(false);
+    },
+  );
 
   it('the first-restart sequence on the left-behind shape: first start, the server leaves this file, then two more starts', () => {
     const c = setup();

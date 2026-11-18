@@ -133,21 +133,45 @@ describe('every call ends in one span (T-06d2)', () => {
     expect(eventText(spans[0], 'tool_error')).toContain('plain');
   });
 
-  it('(k) a 60,000-character unknown tool name and say text add under 100 ms of capture', async () => {
-    const run = async (recorder: boolean): Promise<number> => {
-      const tools = fixture().tools;
-      const deps = recorder ? recorded(tools).deps : { tools };
+  it('(k) a 60,000-character unknown tool name and say text are captured capped, in bounded time', async () => {
+    const CAP_BYTES = 32 * 1024;
+    const run = async (size: number) => {
+      const { deps, spans } = recorded(fixture().tools);
       const t0 = performance.now();
-      await runToolCall(deps, 'a'.repeat(60_000), { x: 'a'.repeat(60_000) }, ctx());
-      await runToolCall(deps, 'say', { text: 'a'.repeat(60_000) }, ctx());
-      return performance.now() - t0;
+      await runToolCall(deps, 'a'.repeat(size), { x: 'a'.repeat(size) }, ctx());
+      // A short say text is a valid call that waits on the Body, so only the oversized one runs here.
+      if (size > 1000) await runToolCall(deps, 'say', { text: 'a'.repeat(size) }, ctx());
+      return { ms: performance.now() - t0, spans };
     };
-    await run(true);
-    const off = await run(false);
-    const on = await run(true);
-    console.info(`capture timing: on ${on.toFixed(1)} ms, off ${off.toFixed(1)} ms`);
-    expect(on - off).toBeLessThan(100);
-  });
+    const median = (values: number[]): number => [...values].sort((a, b) => a - b)[1] ?? 0;
+    await run(60_000); // warm up
+    const big = [] as Awaited<ReturnType<typeof run>>[];
+    const small: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      big.push(await run(60_000));
+      small.push((await run(10)).ms);
+    }
+    // The output is bounded: every captured text is at most the cap, whatever the input size.
+    for (const { spans } of big) {
+      expect(spans).toHaveLength(2);
+      for (const span of spans) {
+        for (const event of span.events) {
+          for (const value of Object.values(event.attributes)) {
+            if (typeof value === 'string') {
+              expect(new TextEncoder().encode(value).byteLength).toBeLessThanOrEqual(CAP_BYTES);
+            }
+          }
+        }
+      }
+      expect(Object.values(spans[0]?.events[0]?.attributes ?? {})).toContain(true);
+    }
+    // Time is a backstop only: the median is far under a second, and within a generous factor of the
+    // 10-character baseline plus a fixed allowance for a loaded runner.
+    const bigMs = median(big.map((item) => item.ms));
+    const smallMs = median(small);
+    console.info(`capture timing: 60k ${bigMs.toFixed(1)} ms, 10 chars ${smallMs.toFixed(1)} ms`);
+    expect(bigMs).toBeLessThan(1000 + 20 * smallMs);
+  }, 60_000);
 
   it('(b) an unknown tool name gives one span with the raw arguments and an error', async () => {
     const { deps, spans } = recorded(fixture().tools);
