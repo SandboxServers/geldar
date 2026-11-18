@@ -228,12 +228,33 @@ describe('NeoForge entrypoint script', () => {
     expect(ENTRY_TEXT).toMatch(/umask 077/);
   });
 
-  it('writes the mod config from its README layout and verifies the secret line by grep', () => {
+  it('writes the PCF config from its README layout, rewrites it each start with the secret in the environment, keeps a .bak and guards the result', () => {
+    // (a) the first-start file under the data dir, from the README layout
+    expect(ENTRY_TEXT).toMatch(/data=\$\{GELDAR_NF_DATA_DIR:-\/data\}/);
+    expect(ENTRY_TEXT).toMatch(
+      /config=\$\{GELDAR_NF_CONFIG:-\$data\/config\/proxy-compatible-forge\.toml\}/,
+    );
     expect(ENTRY_TEXT).toContain("echo '[forwarding]'");
+    expect(ENTRY_TEXT).toContain("echo 'enabled = true'");
     expect(ENTRY_TEXT).toContain('echo \'mode = "MODERN"\'');
+    expect(ENTRY_TEXT).toContain('printf \'secret = "%s"\\n\' "$secret"');
     expect(ENTRY_TEXT).toContain('echo \'modernForwardingVersion = "NO_OVERRIDE"\'');
-    expect(ENTRY_TEXT).toMatch(/awk -v secret="\$secret"/);
+    // (b) the secret reaches awk in its environment, never on an awk command line (argv leaks in ps)
+    expect(ENTRY_TEXT).not.toMatch(/awk\s+-v\s+secret=/);
+    const argvLeaks = lines.filter(
+      (l) => /awk/.test(l) && /"\$\{?secret\}?"/.test(l) && !/NF_PCF_SECRET="\$secret" awk/.test(l),
+    );
+    expect(argvLeaks).toEqual([]);
+    expect(ENTRY_TEXT).toMatch(/NF_PCF_SECRET="\$secret" awk '/);
+    expect(ENTRY_TEXT).toContain('ENVIRON["NF_PCF_SECRET"]');
+    // (c) the previous file is kept as .bak, and the section-scoped guard checks the result after the rewrite
+    expect(ENTRY_TEXT).toContain('cp "$config" "$config.bak"');
+    expect(ENTRY_TEXT).toMatch(/chmod 600 "\$config\.bak"/);
     expect(ENTRY_TEXT).toMatch(/inforwarding && \$0 == "enabled = true"/);
+    expect(ENTRY_TEXT).toContain('if ! NF_PCF_SECRET="$secret" awk \'');
+    expect(ENTRY_TEXT).toContain(
+      'does not hold MODERN forwarding with the current secret after the rewrite',
+    );
     expect(ENTRY_TEXT).toMatch(/chmod 600 "\$config"/);
   });
 
