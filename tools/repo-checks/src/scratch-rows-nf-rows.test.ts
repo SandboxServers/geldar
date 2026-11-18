@@ -14,7 +14,9 @@ import {
   PROBE,
   quit1,
   runRows,
+  SID,
   sattr,
+  snapText,
   ULID_A,
   ULID_B,
   withRes,
@@ -67,10 +69,46 @@ describe.skipIf(!SH)(
       expect(empty.out).toMatch(/^ROW NF0 FAIL got=export_lines=0 /m);
     });
 
+    it.concurrent('NF0 detects the agent through the NeoForge args file, whose java cmdline never carries -javaagent', async () => {
+      const NF_CMD =
+        'java @user_jvm_args.txt @libraries/net/neoforged/neoforge/21.1.77/unix_args.txt nogui';
+      const a = await runRows(['--only', 'NF0'], { env: { FAKE_CMDLINE: NF_CMD } });
+      expect(a.out).toMatch(/^ROW NF0 PASS got=\S+ agent=yes via=argfile /m);
+      const scanned = await runRows(['--only', 'NF0'], {
+        env: { FAKE_CMDLINE: 'sh /entry.sh', FAKE_PROCS: `sh -c x\n${NF_CMD}` },
+      });
+      expect(scanned.out).toMatch(/^ROW NF0 PASS got=\S+ agent=yes via=argfile /m);
+      const noFlag = await runRows(['--only', 'NF0'], {
+        env: { FAKE_CMDLINE: NF_CMD, FAKE_JVM_ARGS: '-Xmx9G' },
+      });
+      expect(noFlag.out).toMatch(/^ROW NF0 FAIL got=\S+ agent=no .*user_jvm_args_flag=no /m);
+      const direct = await runRows(['--only', 'NF0'], {
+        env: { FAKE_CMDLINE: 'java -javaagent:/geldar/a.jar -jar x.jar' },
+      });
+      expect(direct.out).toMatch(/^ROW NF0 PASS got=\S+ agent=yes via=pid1 /m);
+      const noJava = await runRows(['--only', 'NF0'], {
+        env: { FAKE_CMDLINE: 'sh /entry.sh', FAKE_PROCS: 'sleep 1000' },
+      });
+      expect(noJava.out).toMatch(/^ROW NF0 FAIL got=\S+ agent=no via=proc-scan /m);
+      const noLog = await runRows(['--only', 'NF0'], {
+        env: { FAKE_CMDLINE: NF_CMD, FAKE_LOGS: 'Geldar Ledger loaded' },
+      });
+      expect(noLog.out).toMatch(/^ROW NF0 FAIL got=\S+ agent=no .*agent_log_lines=0 /m);
+    });
+
     it.concurrent('NF1 passes on the minimal resource and fails on a host, process, os, container, address or uuid attribute', async () => {
       const good = await runRows(['--only', 'NF1'], { initial: [withRes(GOOD_RES)] });
       expect(good.out).toMatch(
-        /^ROW NF1 PASS got=service\.name=geldar-neoforge geldar\.shard=nf forbidden_keys=none /m,
+        /^ROW NF1 PASS got=service\.name=geldar-neoforge geldar\.shard=nf instance_id_uuid=yes forbidden_keys=none address_or_uuid_blocks=0/m,
+      );
+      // service.instance.id must be present and UUID-shaped; any other uuid still fails
+      const noSid = GOOD_RES.replace(`,${sattr('service.instance.id', SID)}`, '');
+      expect((await runRows(['--only', 'NF1'], { initial: [withRes(noSid)] })).out).toMatch(
+        /^ROW NF1 FAIL .*instance_id_uuid=no /m,
+      );
+      const badSid = GOOD_RES.replace(SID, 'not-a-uuid');
+      expect((await runRows(['--only', 'NF1'], { initial: [withRes(badSid)] })).out).toMatch(
+        /^ROW NF1 FAIL .*instance_id_uuid=no /m,
       );
       const bad = async (extra: string, first = false) =>
         runRows(['--only', 'NF1'], {
@@ -104,9 +142,7 @@ describe.skipIf(!SH)(
       const snap = (extra: string[] = []) =>
         ev(
           'geldar.server.config_snapshot',
-          iattr('view_distance', 10),
-          sattr('jvm_xmx', '9G'),
-          ...extra,
+          snapText('view_distance=10', 'jvm_xmx=9G', 'difficulty=normal', ...extra),
         );
       const base = (mods: number) => [
         gauge('geldar_players_online', 0),
@@ -115,16 +151,24 @@ describe.skipIf(!SH)(
       ];
       const pass = await runRows(['--only', 'NF3'], { initial: [snap()], pending: base(3) });
       expect(pass.out).toMatch(
-        /^ROW NF3 PASS got=list=0 online=0 mods=3 ops=0 snapshot_keys=jvm_xmx,view_distance forbidden=0/m,
+        /^ROW NF3 PASS got=list=0 online=0 mods=3 ops=0 snapshot_keys=difficulty,jvm_xmx,view_distance forbidden=0/m,
       );
+      // the key list is read from the text, not from the attribute keys (event.name, geldar.text)
+      expect(pass.out).not.toMatch(/snapshot_keys=\S*geldar\.text/);
       expect(
         (await runRows(['--only', 'NF3'], { initial: [snap()], pending: base(1) })).out,
       ).toMatch(/^ROW NF3 FAIL /m);
       const leak = await runRows(['--only', 'NF3'], {
-        initial: [snap([sattr('rcon.password', 'x')])],
+        initial: [snap(['rcon.password=x'])],
         pending: base(3),
       });
       expect(leak.out).toMatch(/^ROW NF3 FAIL .*forbidden=1/m);
+      for (const name of ['query.port', 'level-seed', 'motd', 'ip', 'address'])
+        expect(
+          (await runRows(['--only', 'NF3'], { initial: [snap([`${name}=v`])], pending: base(3) }))
+            .out,
+          name,
+        ).toMatch(/^ROW NF3 FAIL .*forbidden=1/m);
       expect((await runRows(['--only', 'NF3'], { pending: base(3) })).out).toMatch(
         /^ROW NF3 FAIL /m,
       );
@@ -143,13 +187,19 @@ describe.skipIf(!SH)(
         gauge('geldar_world_entities', 12, w),
         gauge('geldar_world_players', pl, w),
       ];
-      const ok = await runRows(['--only', 'NF4'], { pending: g(0) });
+      const online = { FAKE_ONLINE: '1' }; // an empty server is paused: the row skips (below)
+      const ok = await runRows(['--only', 'NF4'], { pending: g(0), env: online });
       expect(ok.out).toMatch(
-        /^ROW NF4 PASS got=overworld chunks=441 entities=12 players=0 list=0 server_chunk_count=unavailable /m,
+        /^ROW NF4 PASS got=overworld chunks=441 entities=12 players=0 list=1 server_chunk_count=unavailable /m,
       );
       expect(ok.log).toContain('NF4 server reply (neoforge tps)');
-      expect((await runRows(['--only', 'NF4'], { pending: g(1) })).out).toMatch(/^ROW NF4 FAIL /m);
-      expect((await runRows(['--only', 'NF4'])).out).toMatch(/^ROW NF4 FAIL /m);
+      expect((await runRows(['--only', 'NF4'], { pending: g(2), env: online })).out).toMatch(
+        /^ROW NF4 FAIL /m,
+      );
+      expect((await runRows(['--only', 'NF4'], { env: online })).out).toMatch(/^ROW NF4 FAIL /m);
+      expect((await runRows(['--only', 'NF4'], { pending: g(0) })).out).toMatch(
+        /^ROW NF4 SKIP reason=no-player-online /m,
+      );
     });
 
     const stallRec = (flag: number, ms: number) =>
@@ -158,6 +208,7 @@ describe.skipIf(!SH)(
     it.concurrent('NF5 pauses the server only and expects flag 1 at 2000-2500 ms then flag 0 at 4000 ms +-10%', async () => {
       const run = async (recs: string[], stalls = 1) =>
         runRows(['--only', 'NF2,NF5'], {
+          env: { FAKE_ONLINE: '1' },
           pending: T,
           pendingAt: { 4: [gauge('geldar_tick_stalls_total', stalls), ...recs] },
         });
@@ -175,6 +226,10 @@ describe.skipIf(!SH)(
       expect((await run([stallRec(1, 2100), stallRec(0, 4000)], 2)).out).toMatch(
         /^ROW NF5 FAIL got=stalls=0->2 /m,
       );
+      const empty = await runRows(['--only', 'NF2,NF5'], { pending: T }); // 0 players: nothing ticks, nothing is paused
+      expect(empty.out).toMatch(/^ROW NF2 SKIP reason=no-player-online /m);
+      expect(empty.out).toMatch(/^ROW NF5 SKIP reason=no-player-online /m);
+      expect(empty.docker.filter((c) => /^(un)?pause /.test(c))).toEqual([]);
     });
 
     it.concurrent('NF6 passes with a join and a quit of one ULID session; fails on two sessions, a bad session or no duration', async () => {
@@ -230,7 +285,7 @@ describe.skipIf(!SH)(
       const rec = (v: string) => ev('geldar.x', sattr('geldar.note', v));
       const body = (v: string) =>
         `{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"body":{"stringValue":"${v}"},"eventName":"geldar.x"}]}]}]}`;
-      const [clean, allowed, bareQuad, bodyQuad, v6, uuid, empty] = await many([
+      const [clean, allowed, bareQuad, bodyQuad, v6, uuid, empty, sidOnly, sidPlus] = await many([
         [['--only', 'NF8']],
         [
           ['--only', 'NF8'],
@@ -252,7 +307,20 @@ describe.skipIf(!SH)(
         [['--only', 'NF8'], { initial: [rec('fe80::1')] }],
         [['--only', 'NF8'], { initial: [rec('123e4567-e89b-12d3-a456-426614174000')] }],
         [['--only', 'NF8'], { initial: [] }],
+        [['--only', 'NF8'], { initial: [withRes(GOOD_RES), withRes(GOOD_RES)] }], // the SDK's service.instance.id only
+        [
+          ['--only', 'NF8'],
+          {
+            initial: [
+              withRes(
+                `${GOOD_RES},${sattr('geldar.note', '123e4567-e89b-12d3-a456-426614174000')}`,
+              ),
+            ],
+          },
+        ],
       ]);
+      expect(sidOnly?.out).toMatch(/^ROW NF8 PASS got=ipv4_hits=0 ipv6_lines=0 uuid_lines=0 /m);
+      expect(sidPlus?.out).toMatch(/^ROW NF8 FAIL .*uuid_lines=1/m); // any other UUID still fails
       expect(clean?.out).toMatch(/^ROW NF8 PASS got=ipv4_hits=0 ipv6_lines=0 uuid_lines=0 /m);
       expect(allowed?.out).toMatch(/^ROW NF8 PASS got=ipv4_hits=0 /m);
       expect(bareQuad?.out).toMatch(/^ROW NF8 FAIL got=ipv4_hits=1 /m); // a bare quad in a non-version attribute

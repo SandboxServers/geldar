@@ -51,25 +51,54 @@ describe.skipIf(!SH)(
       expect(housekeeping.out).toMatch(/^ROW NF10 PASS got=mode=live /m);
     });
 
-    it.concurrent('a failed recreate restores the profile and ends with exit 5 and the default-stack message', async () => {
+    it.concurrent('a recreate that fails after a passing preflight is a FAIL; the stack is intact and the profile and copy are restored', async () => {
       const r = await runRows(['--only', 'NF10'], {
         pendingAt: { 2: [pt(1)] },
-        env: { FAKE_COMPOSE_FAIL: '1' },
+        env: { FAKE_UP_FAIL: '1' },
       });
       expect(r.out).toMatch(/^ROW NF10 FAIL got=live-edit-ignored restart-failed /m);
-      expect(r.status).toBe(5);
-      expect(r.out).toMatch(/^ABORT reason=default-stack-not-restored$/m);
+      // compose refused before touching the container (StartedAt unchanged): the stack needs no repair, the copy is rewritten and verified
+      expect(r.out).not.toContain('ABORT');
+      expect(r.out).not.toContain('RESTORE-FAILED');
+      expect(r.status).toBe(1);
       expect(r.profile).toBe(PROFILE_TEXT);
-      expect(
-        (await runRows(['--only', 'NF10'], { env: { FAKE_CF: '' }, pendingAt: { 2: [pt(1)] } }))
-          .out,
-      ).toMatch(/^ROW NF10 FAIL /m);
+    });
+
+    it.concurrent('NF10 skips with env-not-exported when the compose labels are missing (no preflight is possible), touching nothing', async () => {
+      const r = await runRows(['--only', 'NF10'], {
+        env: { FAKE_CF: '' },
+        pendingAt: { 2: [pt(1)] },
+      });
+      expect(r.out).toMatch(/^ROW NF10 SKIP reason=env-not-exported /m);
+      expect(r.out).not.toContain('RESTORE-FAILED');
+      expect(r.status).toBe(0);
+      expect(r.profile).toBe(PROFILE_TEXT);
+      expect(compose(r)).toHaveLength(0);
+    });
+
+    it.concurrent('NF10 skips with env-not-exported when compose config fails, touching nothing', async () => {
+      const r = await runRows(['--only', 'NF10'], { env: { FAKE_COMPOSE_FAIL: '1' } });
+      expect(r.out).toMatch(/^ROW NF10 SKIP reason=env-not-exported /m);
+      expect(r.status).toBe(0);
+      expect(r.profile).toBe(PROFILE_TEXT);
+      expect(r.out).not.toContain('RESTORE-FAILED');
+      expect(r.docker.filter((c) => c.startsWith('compose'))).toEqual([
+        expect.stringMatching(/ config -q$/),
+      ]);
+    });
+
+    it.concurrent('a copy write that silently does not land prints RESTORE-FAILED and exits 6, keeping the saved profile', async () => {
+      const r = await runRows(['--only', 'NF10'], { env: { FAKE_COPY_SHA: 'b'.repeat(64) } });
+      expect(r.out).toMatch(/^RESTORE-FAILED copy_sha=b{64} want=[0-9a-f]{64}$/m);
+      expect(r.out).toMatch(/^ABORT reason=copy-not-restored /m);
+      expect(r.status).toBe(6);
     });
 
     it.concurrent('every docker and compose call is project-scoped or on the one label-resolved scratch container', async () => {
       const r = await runRows(['--only', 'NF0,NF2,NF5,NF9A,NF9B,NF9C,NF10,NF11'], {
         pending: T0(),
         pendingAt: { 2: [pt(1)], 8: [pt(0)] },
+        env: { FAKE_ONLINE: '1' },
       });
       expect(r.docker.length).toBeGreaterThan(20);
       for (const c of r.docker) {
@@ -78,7 +107,7 @@ describe.skipIf(!SH)(
         if (verb === 'ps') continue;
         if (verb === 'compose') {
           expect(c, c).toMatch(
-            /^compose -p scratch-nf --project-directory \/srv\/geldar\/compose -f \S+phase0\.yml -f \S+scratch-neoforge\.yml up -d --no-deps --force-recreate paper$/,
+            /^compose -p scratch-nf --project-directory \/srv\/geldar\/compose -f \S+phase0\.yml -f \S+scratch-neoforge\.yml (config -q|up -d --no-deps --force-recreate paper)$/,
           );
         } else if (verb === 'inspect') {
           expect(['fake-paper', 'live-nats'], c).toContain(w[w.length - 1]);

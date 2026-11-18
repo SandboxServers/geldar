@@ -73,6 +73,7 @@ case "$1" in
   logs) printf '%s\\n' "\${FAKE_LOGS-Geldar Ledger 0.1.0 loaded\nopentelemetry-javaagent - version: 2.33.1}" ;;
   compose)
     [ -n "\${FAKE_COMPOSE_FAIL:-}" ] && exit 1
+    case "$*" in *" up "*) [ -n "\${FAKE_UP_FAIL:-}" ] && exit 1 ;; esac
     # A recreate runs the entrypoint again: it copies the mounted host file over the copy the mod reads.
     case "$*" in *force-recreate*) echo id2 >"$FAKE_DIR/cid"; cp "$SCRATCH_ROWS_PROFILE" "$FAKE_DIR/copy" ;; esac ;;
   exec)
@@ -85,7 +86,8 @@ case "$1" in
           *) printf '%s' "\${FAKE_CMDLINE-}" ;;
         esac ;;
       sha256sum)
-        if [ -f "$FAKE_DIR/copy" ]; then sha256sum <"$FAKE_DIR/copy" | sed 's/ .*/  x/'; else sha256sum <"$SCRATCH_ROWS_PROFILE" | sed 's/ .*/  x/'; fi ;;
+        if [ -n "\${FAKE_COPY_SHA:-}" ]; then echo "$FAKE_COPY_SHA  x"; # a copy write that silently did not land
+        elif [ -f "$FAKE_DIR/copy" ]; then sha256sum <"$FAKE_DIR/copy" | sed 's/ .*/  x/'; else sha256sum <"$SCRATCH_ROWS_PROFILE" | sed 's/ .*/  x/'; fi ;;
       sh)
         case "$*" in
           *"cat >"*) cat >"$FAKE_DIR/copy" ;;
@@ -217,7 +219,10 @@ export const withRes = (attrs: string) =>
   `{"resourceMetrics":[{"resource":{"attributes":[${attrs}]},"scopeMetrics":[]}]}`;
 export const sattr = (k: string, v: string) => `{"key":"${k}","value":{"stringValue":"${v}"}}`;
 export const iattr = (k: string, v: number) => `{"key":"${k}","value":{"intValue":"${v}"}}`;
-export const GOOD_RES = `${sattr('service.name', 'geldar-neoforge')},${sattr('service.namespace', 'geldar')},${sattr('geldar.shard', 'nf')}`;
+export const SID = '9f1c2d3e-4a5b-4c6d-8e7f-0123456789ab'; // the OTel SDK's per-process service.instance.id
+export const GOOD_RES = `${sattr('service.name', 'geldar-neoforge')},${sattr('service.namespace', 'geldar')},${sattr('geldar.shard', 'nf')},${sattr('service.instance.id', SID)}`;
+// The real snapshot shape (ConfigSnapshot.java): one geldar.text attribute of `name=value; name=value`.
+export const snapText = (...pairs: string[]) => sattr('geldar.text', pairs.join('; '));
 export const ev = (name: string, ...attrs: string[]) =>
   `{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"eventName":"${name}","attributes":[${attrs.join(',')}]}]}]}]}`;
 export const ULID_A = '01HZX3Q8M6K2V4N7P9R5T1WBCD';
@@ -233,7 +238,8 @@ export const quit1 = (s: string) =>
   );
 export const PROBE = { SCRATCH_ROWS_PROBE_CMD: 'echo p0 join ok name=ag_nfprobe_01' };
 export const shaLine = (out: string) => /ledger\.properties_sha256 start=(\S+) end=(\S+)/.exec(out);
-export const compose = (r: Run) => r.docker.filter((c) => c.startsWith('compose'));
+export const compose = (r: Run) =>
+  r.docker.filter((c) => c.startsWith('compose') && !c.endsWith(' config -q')); // the preflight is not a recreate
 
 /** Several runs at once (each in its own temp dir): the script forks a lot, so the suite runs them in parallel. */
 export function many(specs: [string[], Opts?][]): Promise<Run[]> {
