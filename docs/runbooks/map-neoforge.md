@@ -5,7 +5,7 @@ audience: agents-never
 status: draft
 last_verified: 2026-11-18 against the NF-BM design note and its addendum (2026-11-18)
 companions: [map-chat-panel.md, scratch-stack.md, nf-live-project.md, README.md]
-sources: [docs/analysis/bluemap/neoforge-map-design.md (untracked, not in the repo), compose/nf-live.yml, deploy/nf-deploy.sh, deploy/scratch/scratch.sh, compose/neoforge/neoforge-entrypoint.sh, deploy/caddy/README.md, deploy/caddy/validate.sh, deploy/caddy/map.caddy, deploy/caddy/map-neoforge.caddy (NF-BM-4), compose/bluemap-web-nf/ (NF-BM-3)]
+sources: [docs/analysis/bluemap/neoforge-map-design.md (tracked, the NF-BM design note), compose/nf-live.yml, deploy/nf-deploy.sh, deploy/scratch/scratch.sh, compose/neoforge/neoforge-entrypoint.sh, deploy/caddy/README.md, deploy/caddy/validate.sh, deploy/caddy/map.caddy, deploy/caddy/map-neoforge.caddy (NF-BM-4), compose/bluemap-web-nf/ (NF-BM-3)]
 ---
 
 # BlueMap on the NeoForge shard: manual steps
@@ -219,6 +219,34 @@ test -s <backup dir>/edge-$STAMP/Caddyfile
 The env file holds other credentials. Never print it, and never `cat` it into a log. The backup is the rollback for both
 the file and the environment. Also run the baseline probe from `deploy/caddy/README.md` (step 3, "Baseline"): one request
 per existing site, status and TLS result only. A site failing in the baseline is reported and cannot be compared.
+
+### 4.1a Pre-step: the edge certificate must cover the host
+
+Run before staging (4.2). Read only: nothing on the node is changed, reloaded or restarted. The host is
+`map.neoforge.geldar.<zone>`, which has three labels before the zone. A wildcard for `*.<zone>` or `*.geldar.<zone>`
+does NOT cover it, because a wildcard matches exactly one label. Only `*.neoforge.geldar.<zone>` covers it. Ops confirms
+each name below before running it; the storage path is Caddy's default in its official image, and the repo does not set it.
+
+1. List the certificate files Caddy has stored (paths only, no key files):
+   `docker exec board-proxy sh -c 'find /data/caddy/certificates -name "*.crt" -not -name "*.key"'`
+2. For each path from step 1, print its names. The `.crt` is public; the `.key` next to it is never opened:
+   `docker exec board-proxy cat <path from step 1> | openssl x509 -noout -ext subjectAltName`
+3. Decision rule:
+   - A stored certificate lists `*.neoforge.geldar.<zone>` or the exact host: the edge covers the name. Section 4 runs as
+     written; the DNS order in section 5 is unchanged.
+   - No stored certificate covers the name (the normal case before the first site load): Caddy issues a certificate for
+     the new host when the site is loaded (ops confirms this in the first window). The repo's `deploy/caddy/README.md`
+     says the certificate comes through the DNS plugin (DNS-01: a TXT record in the zone, which needs the provider
+     credentials on the host, not a CNAME). Under DNS-01 the CNAME is not needed for issuance and the DNS order stays
+     last. Ops confirms the challenge type from the global options of the host Caddyfile (read the option names only;
+     never print values).
+   - If the challenge is HTTP-01 or TLS-ALPN-01 instead, the name must resolve to the node before the reload, so the
+     CNAME goes before section 4.4 step 2. That changes when the name becomes public. It is an owner and geldar-93
+     decision, to be taken before the window. Do not change the order on ops' own judgement.
+4. After section 4.4 step 2 (the site is live), confirm the served certificate on loopback (the host network shares
+   port 443 with the node). This is a read-only handshake:
+   `openssl s_client -connect 127.0.0.1:443 -servername map.neoforge.geldar.<zone> </dev/null 2>/dev/null | openssl x509 -noout -subject -ext subjectAltName`
+   The output must name the host. Before the site is live this command shows another site's certificate, so do not run it earlier.
 
 ### 4.2 Stage
 
