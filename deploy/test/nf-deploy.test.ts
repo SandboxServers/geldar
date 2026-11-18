@@ -22,6 +22,7 @@ vi.setConfig({ testTimeout: 120000 });
 const DEPLOY = fileURLToPath(new URL('..', import.meta.url));
 const ROOT = resolve(DEPLOY, '..');
 const SCRIPT_SRC = resolve(DEPLOY, 'nf-deploy.sh');
+const HUMAN_LIB_SRC = resolve(DEPLOY, 'nf-human-lib.sh');
 const SCRIPT_TEXT = readFileSync(SCRIPT_SRC, 'utf8');
 const NF_COMPOSE_TEXT = readFileSync(resolve(ROOT, 'compose', 'nf-live.yml'), 'utf8');
 const NF_OVERLAY_TEXT = readFileSync(resolve(ROOT, 'compose', 'nf-live-telemetry.yml'), 'utf8');
@@ -97,6 +98,7 @@ function makeRepo(): string {
   mkdirSync(join(repo, 'stubs'));
   mkdirSync(join(repo, 'bundle'));
   copyFileSync(SCRIPT_SRC, join(repo, 'deploy', 'nf-deploy.sh'));
+  copyFileSync(HUMAN_LIB_SRC, join(repo, 'deploy', 'nf-human-lib.sh'));
   writeFileSync(join(repo, 'compose', 'nf-live.yml'), NF_COMPOSE_TEXT);
   writeFileSync(join(repo, 'compose', 'nf-live-telemetry.yml'), NF_OVERLAY_TEXT);
   for (const f of SECRET_FILES)
@@ -171,16 +173,21 @@ describe('nf-deploy.sh constants and the one compose file', () => {
     const repo = makeRepo();
     expect(SCRIPT_TEXT).toMatch(/^PROJECT=geldar-nf$/m);
     expect(SCRIPT_TEXT).toMatch(/^COMPOSE_FILE=\$ROOT\/compose\/nf-live\.yml$/m);
-    // Every script line that runs docker compose (the version probe excepted) must be one of exactly four known
-    // shapes, each present once: dc with the telemetry overlay, dc with the explicit-off overlay (the rollback),
-    // dc with the base only, and probe_dc with the probe overlay.
-    // Any other compose line, or a compose line without the project and file flags, fails here.
+    // Every script line that runs docker compose (the version probe excepted) must be one of exactly two known
+    // shapes, each present once: dc (every call; the overlays are prepended to "$@" by set -- inside dc) and probe_dc
+    // (the probe overlay, one run). Any other compose line, or one without the project and file flags, fails here.
     const allowed = [
-      'docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$TELEMETRY_FILE" "$@"',
-      'docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$OFF_FILE" "$@"',
       'docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"',
       'docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$PROBE_FILE" --profile probe "$@"',
     ];
+    // Each overlay is one guarded set -- in dc(): human (NF_HUMAN=on), then telemetry (on) or the explicit off (rollback).
+    expect(SCRIPT_TEXT).toContain('if [ "$HUMAN" = 1 ]; then set -- -f "$HUMAN_FILE" "$@"; fi');
+    expect(SCRIPT_TEXT).toContain(
+      'if [ "$TELEMETRY" = 1 ]; then\n    set -- -f "$TELEMETRY_FILE" "$@"',
+    );
+    expect(SCRIPT_TEXT).toContain(
+      'elif [ "$TELEMETRY_OFF" = 1 ]; then\n    set -- -f "$OFF_FILE" "$@"',
+    );
     const composeLines = SCRIPT_TEXT.split('\n')
       .map((l) => l.trim())
       // Command position only: a die message that names "docker compose ps" is not a call.

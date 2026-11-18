@@ -151,9 +151,10 @@ function Invoke-Check {
     Invoke-Step 'repo checks (line caps, line endings, control characters)' { pnpm check:repo }
     Invoke-Step 'generated code is up to date' { pnpm check:generated }
     # Overlays (rcon-host.yml, nats-auth.yml, nats-auth-mcp.yml) only add to a base file, so each is checked merged with its base.
-    foreach ($file in Get-ChildItem -Path compose -Filter *.yml -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin @('rcon-host.yml', 'nats-auth.yml', 'nats-auth-mcp.yml', 'colo-public.yml', 'colo-kino.yml', 'colo-kino-session.yml', 'colo-notice.yml') }) {
+    foreach ($file in Get-ChildItem -Path compose -Filter *.yml -ErrorAction SilentlyContinue | Where-Object { $_.Name -notin @('rcon-host.yml', 'nats-auth.yml', 'nats-auth-mcp.yml', 'colo-public.yml', 'colo-kino.yml', 'colo-kino-session.yml', 'colo-notice.yml', 'nf-live-human.yml') }) {
       Invoke-Step "docker compose config ($($file.Name))" { docker compose -f $file.FullName config --quiet }
     }
+    Invoke-Step 'docker compose config (nf-live.yml with nf-live-human.yml)' { docker compose -p geldar-nf -f (Join-Path $Root 'compose/nf-live.yml') -f (Join-Path $Root 'compose/nf-live-human.yml') config --quiet }
     Invoke-Step 'docker compose config (colo.yml with nats-auth.yml, the merge `shard up colo` starts)' { docker compose -f (Join-Path $Root 'compose/colo.yml') -f (Join-Path $Root 'compose/nats-auth.yml') config --quiet }
     # The public overlay needs GELDAR_MC_BIND and GELDAR_MC_PORT (no values in the repo): dummy values for this check only.
     Invoke-Step 'docker compose config (colo.yml + nats-auth.yml + colo-public.yml, dummy bind and port)' {

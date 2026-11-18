@@ -30,9 +30,9 @@ describe('the explicit telemetry-off overlay', () => {
     expect(SCRIPT).toMatch(
       /off\) TELEMETRY=0; \[ -z "\$\{NF_TELEMETRY\+x\}" \] \|\| TELEMETRY_OFF=1 ;;/,
     );
-    expect(SCRIPT).toContain(
-      'elif [ "$TELEMETRY_OFF" = 1 ]; then\n    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$OFF_FILE" "$@"',
-    );
+    // dc() prepends the off file with set --, after the telemetry branch; the -f order is fixed by dc() itself.
+    expect(SCRIPT).toContain('elif [ "$TELEMETRY_OFF" = 1 ]; then\n    set -- -f "$OFF_FILE" "$@"');
+    expect(SCRIPT).toContain('docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"\n}');
     expect(SCRIPT).toContain(
       'if [ "$TELEMETRY_OFF" = 1 ]; then\n    say "telemetry off (explicit NF_TELEMETRY=off)',
     );

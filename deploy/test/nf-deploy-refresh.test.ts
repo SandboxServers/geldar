@@ -21,6 +21,7 @@ vi.setConfig({ testTimeout: 120000 });
 const DEPLOY = fileURLToPath(new URL('..', import.meta.url));
 const ROOT = resolve(DEPLOY, '..');
 const SCRIPT_SRC = resolve(DEPLOY, 'nf-deploy.sh');
+const HUMAN_LIB_SRC = resolve(DEPLOY, 'nf-human-lib.sh');
 const SCRIPT_TEXT = readFileSync(SCRIPT_SRC, 'utf8');
 const NF_COMPOSE_TEXT = readFileSync(resolve(ROOT, 'compose', 'nf-live.yml'), 'utf8');
 const SECRET_FILES = /^SECRET_FILES="([^"]+)"$/m.exec(SCRIPT_TEXT)?.[1].split(' ') ?? [];
@@ -78,6 +79,7 @@ function makeRepo(): string {
   mkdirSync(join(repo, 'compose', 'secrets-nf'), { recursive: true });
   mkdirSync(join(repo, 'stubs'));
   copyFileSync(SCRIPT_SRC, join(repo, 'deploy', 'nf-deploy.sh'));
+  copyFileSync(HUMAN_LIB_SRC, join(repo, 'deploy', 'nf-human-lib.sh'));
   writeFileSync(join(repo, 'compose', 'nf-live.yml'), NF_COMPOSE_TEXT);
   for (const f of SECRET_FILES)
     writeFileSync(join(repo, 'compose', 'secrets-nf', f), `${f} fixture\n`);
@@ -135,6 +137,24 @@ function compose(repo: string): string[] {
 // assertions read the service and the flags only.
 function tail(call: string): string {
   return call.replace(/^docker compose -p geldar-nf (-f \S+ )+/, '').replace(/^ps .*$/, 'ps');
+}
+
+// The human lane's inputs, as nf-deploy-human.test.ts stages them: the overlay, the proxy config and the identity jar.
+function addHuman(repo: string): void {
+  mkdirSync(join(repo, 'compose', 'velocity'), { recursive: true });
+  mkdirSync(join(repo, 'plugin', 'velocity-identity', 'build', 'libs'), { recursive: true });
+  copyFileSync(
+    join(ROOT, 'compose', 'nf-live-human.yml'),
+    join(repo, 'compose', 'nf-live-human.yml'),
+  );
+  copyFileSync(
+    join(ROOT, 'compose', 'velocity', 'velocity-nf-human.toml'),
+    join(repo, 'compose', 'velocity', 'velocity-nf-human.toml'),
+  );
+  writeFileSync(
+    join(repo, 'plugin', 'velocity-identity', 'build', 'libs', 'geldar-velocity-identity.jar'),
+    'jar fixture\n',
+  );
 }
 
 afterEach(() => {
@@ -240,5 +260,33 @@ describe('nf-deploy.sh refresh-secrets', () => {
       'up --force-recreate --no-deps --exit-code-from identity-seed identity-seed',
     );
     expect(names.some((n) => n.includes('neoforge'))).toBe(false);
+  });
+
+  // NF_HUMAN=on: velocity-human is recreated in the velocity step (one call, after nats is healthy), so a rotated secret reaches it.
+  it('with NF_HUMAN=on recreates velocity-human with velocity and eventsink, after nats, under the human overlay', () => {
+    const repo = makeRepo();
+    addHuman(repo);
+    const r = run(repo, ['refresh-secrets'], { NF_HUMAN: 'on', NF_HUMAN_BIND: '127.0.0.1' });
+    expect(r.status, r.out).toBe(0);
+    expect(compose(repo).map(tail)).toEqual([
+      'config --quiet',
+      'ps',
+      'up -d --force-recreate --no-deps nats',
+      'ps',
+      'up -d --wait --force-recreate --no-deps velocity eventsink velocity-human',
+      'up --force-recreate --no-deps --exit-code-from identity-seed identity-seed',
+      'up -d --wait --force-recreate --no-deps neoforge',
+    ]);
+    for (const c of compose(repo)) expect(c).toMatch(/-f \S*nf-live-human\.yml /);
+  });
+
+  // NF_HUMAN unset or off: the velocity step names no human service, so the recorded args are those of the default run.
+  it('with NF_HUMAN=off the velocity step is unchanged and names no human service', () => {
+    const repo = makeRepo();
+    expect(run(repo, ['refresh-secrets'], { NF_HUMAN: 'off' }).status).toBe(0);
+    expect(compose(repo).map(tail)).toContain(
+      'up -d --wait --force-recreate --no-deps velocity eventsink',
+    );
+    expect(compose(repo).some((c) => c.includes('human'))).toBe(false);
   });
 });

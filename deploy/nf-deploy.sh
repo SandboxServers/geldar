@@ -2,7 +2,7 @@
 # Operator script for the live NeoForge project (compose project geldar-nf, compose/nf-live.yml). Run it on the node from an
 # exported tree (a git checkout is refused unless --local, which the tests use), as the operator account (never root, and
 # never with elevated rights). Verbs: plan (prints the gates and the steps, changes nothing), up (refuses an unseeded
-# neoforge-data volume), seed-bundle (once per volume: extracts the offline bundle tarball into it), status, down [--volumes], logs <service>,
+# neoforge-data volume), seed-bundle (once per volume: extracts the offline bundle tarball into it), refresh-secrets (after a secret file's content changes; no volume removed), status, down [--volumes], logs <service>,
 # probe (one golem body probe run, with the overlay compose/nf-live-probe.yml added for that run only; section 4c of the runbook).
 # The project name and the base compose file are constants here. deploy/common.sh (the colo model) is NOT sourced, and the script
 # refuses to run when GELDAR_PROJECT or GELDAR_COLO_COMPOSE is set, so no colo setting can reach this project.
@@ -22,9 +22,10 @@
 #   NF_TELEMETRY=off (explicit)        the rollback: adds compose/nf-live-telemetry-off.yml (plan and up only). It sets
 #                                      GELDAR_NF_TELEMETRY=off, so the entrypoint removes our own stale ledger jar copy and starts
 #                                      no agent. Unset adds no overlay, so a stale jar makes the start refuse, by design.
-#   The four compose shapes dc() and probe_dc() render: the base file alone (NF_TELEMETRY unset); the base plus
-#   compose/nf-live-telemetry.yml (on); the base plus compose/nf-live-telemetry-off.yml (off); the base plus
-#   compose/nf-live-probe.yml (probe only, for one run).
+#   NF_HUMAN (default off)             on adds compose/nf-live-human.yml (the velocity-human lane; loopback unless NF_HUMAN_BIND
+#                                      says otherwise). NF_HUMAN_BIND must be one IPv4 address (not 0.0.0.0). human-down removes velocity-human only. Unset or off never starts it.
+#   The compose shapes: dc() renders six (the base, with telemetry on, with telemetry off or with neither, each with or without
+#   compose/nf-live-human.yml); probe_dc() renders a seventh, the base plus compose/nf-live-probe.yml, for one run.
 #   NF_SECRETS_DIR                     the secret files (default compose/secrets-nf)
 #   NF_SERVICE_UID (default 1000), NF_SERVICE_GID (default NF_SERVICE_UID): the uid:gid the services run as and that owns
 #                                      the seeded volume. The default 1000 is not the node: its ops account is uid 1001, so the
@@ -58,6 +59,8 @@ TELEMETRY=0
 # so the entrypoint removes our own stale ledger jar copy. Unset adds nothing; the default render is unchanged.
 OFF_FILE=$ROOT/compose/nf-live-telemetry-off.yml
 TELEMETRY_OFF=0
+# The human lane (velocity-human, NF_HUMAN=on only) lives in deploy/nf-human-lib.sh: its paths, its flag and its functions.
+. "$(dirname "$0")/nf-human-lib.sh"
 
 die() {
   echo "nf-deploy: error: $*" >&2
@@ -74,13 +77,14 @@ need() {
 
 # Every compose call goes through here: the constant project and the one compose file, nothing else.
 dc() {
+  # Each set -- prepends one overlay: the human file first, so the -f order is compose, telemetry or off, then human.
+  if [ "$HUMAN" = 1 ]; then set -- -f "$HUMAN_FILE" "$@"; fi
   if [ "$TELEMETRY" = 1 ]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$TELEMETRY_FILE" "$@"
+    set -- -f "$TELEMETRY_FILE" "$@"
   elif [ "$TELEMETRY_OFF" = 1 ]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$OFF_FILE" "$@"
-  else
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"
+    set -- -f "$OFF_FILE" "$@"
   fi
+  docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"
 }
 
 # Runs a state-changing step, or names it in dry-run mode.
@@ -119,16 +123,17 @@ done
 case $verb in
   plan | up | status | seed-bundle | probe) [ -z "$SERVICE" ] || die "$verb takes no service name" ;;
   down) [ -z "$SERVICE" ] || die "down takes no service name" ;;
+  human-down) [ -z "$SERVICE" ] || die "human-down takes no service name" ;;
   refresh-secrets) [ -z "$SERVICE" ] || die "refresh-secrets takes no service name" ;;
   logs)
     [ -n "$SERVICE" ] || die "logs needs a service: one of $SERVICES"
-    case " $SERVICES " in
+    case " $SERVICES velocity-human " in
       *" $SERVICE "*) ;;
       *) die "unknown service: $SERVICE (one of $SERVICES)" ;;
     esac
     ;;
   *)
-    echo "usage: nf-deploy.sh plan|up|refresh-secrets|status|down [--volumes] [--local]|logs <service> [--local]|seed-bundle [--local]|probe [--local]" >&2
+    echo "usage: nf-deploy.sh plan|up|refresh-secrets|status|down [--volumes] [--local]|human-down [--local]|logs <service> [--local]|seed-bundle [--local]|probe [--local]" >&2
     exit 2
     ;;
 esac
@@ -180,15 +185,17 @@ check_no_colo_labels() {
 # container (velocity, neoforge, eventsink, postgres, nats), so only the rows whose service is velocity are counted: the
 # awk counts every row for the parse check, then keeps exactly one velocity row. On refusal it prints one reason on
 # stdout and returns 1. Called only once a listener is found.
-own_velocity_on_port() {
+# Generalised for the human lane: $1 is the service (velocity, or velocity-human), $2 the bind address and $3 the host port; the
+# one published mapping must be exactly $2:$3->25565/tcp. Only rows of service $1 count; the other services' rows are ignored.
+own_service_on_port() {
   rows=$(docker ps --filter "label=com.docker.compose.project=$PROJECT" \
     --format '{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.service"}}|{{.Ports}}') ||
     { echo "docker ps failed"; return 1; }
-  printf '%s\n' "$rows" | awk -F'|' -v p="$PROJECT" -v want="127.0.0.1:$PORT->25565/tcp" '
+  printf '%s\n' "$rows" | awk -F'|' -v p="$PROJECT" -v svc="$1" -v want="$2:$3->25565/tcp" '
     NF == 0 { next }
     NF != 3 { bad = 1; next }
     { all++ }
-    $2 != "velocity" { next }
+    $2 != svc { next }
     { n++; proj = $1; ports = $3 }
     END {
       if (bad) { print "docker output does not parse"; exit 1 }
@@ -206,17 +213,21 @@ own_velocity_on_port() {
 }
 
 check_port() {
+  check_listener "$PORT" 127.0.0.1 velocity
+}
+
+# Host port $1 on address $2 must be free, or held only by $PROJECT's own service $3 with its one mapping $2:$1->25565/tcp.
+# Every listener socket must be on $2:$1 (a second socket on another address refuses). Otherwise the message names the check.
+check_listener() {
   need ss
-  listeners=$(ss -Hltn "sport = :$PORT") || die "cannot read the listening sockets (ss)"
+  listeners=$(ss -Hltn "sport = :$1") || die "cannot read the listening sockets (ss)"
   [ -n "$listeners" ] || return 0
-  # Every listener socket must be on 127.0.0.1:$PORT (a second socket on another address refuses), and the project's own
-  # velocity must own the published binding. Otherwise the port is taken; the message names the check that failed.
-  if printf '%s\n' "$listeners" | awk -v want="127.0.0.1:$PORT" 'NF && $4 != want { bad = 1 } END { exit bad + 0 }'; then
-    reason=$(own_velocity_on_port) && return 0
+  if printf '%s\n' "$listeners" | awk -v want="$2:$1" 'NF && $4 != want { bad = 1 } END { exit bad + 0 }'; then
+    reason=$(own_service_on_port "$3" "$2" "$1") && return 0
   else
-    reason="ss socket not 127.0.0.1:$PORT"
+    reason="ss socket not $2:$1"
   fi
-  die "something already listens on port $PORT; the project's published port must be free (only $PROJECT's own velocity on 127.0.0.1:$PORT is accepted); own velocity check failed: $reason"
+  die "something already listens on port $1; the project's published port must be free (only $PROJECT's own $3 on $2:$1 is accepted); own $3 check failed: $reason"
 }
 
 check_secrets() {
@@ -407,11 +418,13 @@ check_config() {
 # Every gate that up and plan run, in order. Refusing here stops before any state changes.
 gates() {
   check_telemetry
+  check_human_inputs
   check_operator
   check_telemetry_network
   check_service_uid
   check_no_colo_labels
   check_port
+  check_human_port
   check_inputs
   check_resources
   check_config
@@ -431,6 +444,7 @@ cmd_plan() {
   say "  2. up --no-deps --exit-code-from identity-seed identity-seed (one-shot)"
   say "  3. up -d --wait eventsink neoforge"
   say "  4. up -d --wait velocity (the only published port: 127.0.0.1:$PORT)"
+  if [ "$HUMAN" = 1 ]; then say "  5. up -d --wait velocity-human (NF_HUMAN=on: publishes $HUMAN_BIND:$HUMAN_PORT only)"; fi
   say "up refuses until the neoforge-data volume is seeded (seed-bundle, once per volume); plan does not check it"
   say "golem-body and players-host are not in this project and are never started"
   say "all gates passed"
@@ -443,6 +457,7 @@ cmd_up() {
   act dc up --no-deps --exit-code-from identity-seed identity-seed
   act dc up -d --wait eventsink neoforge
   act dc up -d --wait velocity
+  if [ "$HUMAN" = 1 ] && ! act dc up -d --wait velocity-human; then human_fail "velocity-human did not become healthy"; fi
   say "up: project $PROJECT started (no volume removed)"
 }
 
@@ -474,11 +489,13 @@ cmd_seed_bundle() {
 
 cmd_status() {
   check_operator
+  check_human_switch
   dc ps -a
 }
 
 cmd_down() {
   check_operator
+  check_human_switch
   check_no_colo_labels
   if [ "$VOLUMES" = 1 ]; then
     printf 'Type the project name (%s) to remove its volumes too: ' "$PROJECT" >&2
@@ -495,6 +512,8 @@ cmd_down() {
 
 cmd_logs() {
   check_operator
+  check_human_switch
+  if [ "$SERVICE" = velocity-human ]; then HUMAN=1; fi
   dc logs --tail 200 "$SERVICE"
 }
 
@@ -586,7 +605,7 @@ cmd_refresh_secrets() {
   esac
   gates
   check_refresh_up
-  say "refresh-secrets: force-recreate nats, then velocity and eventsink, identity-seed, neoforge (postgres is never touched)"
+  say "refresh-secrets: force-recreate nats, then velocity and eventsink (and velocity-human with NF_HUMAN=on), identity-seed, neoforge (postgres is never touched)"
   act dc up -d --force-recreate --no-deps nats ||
     die "nats did not recreate; nothing else was touched"
   if [ "${DEPLOY_DRY_RUN:-0}" = 1 ]; then
@@ -594,8 +613,14 @@ cmd_refresh_secrets() {
   else
     wait_nats_healthy
   fi
-  act dc up -d --wait --force-recreate --no-deps velocity eventsink ||
-    die "velocity or eventsink did not recreate or become healthy; identity-seed and neoforge were not run"
+  # NF_HUMAN=on: velocity-human joins this step. Its bind mounts follow inodes, so a rotated forwarding secret or NATS password
+  # reaches it only by a recreate. Unset adds no word, so the recorded args are unchanged.
+  human=
+  if [ "$HUMAN" = 1 ]; then human=velocity-human; fi
+  if ! act dc up -d --wait --force-recreate --no-deps velocity eventsink $human; then
+    [ "$HUMAN" != 1 ] || human_fail "velocity, eventsink or velocity-human did not recreate or become healthy; identity-seed and neoforge were not run"
+    die "velocity, eventsink or velocity-human did not recreate or become healthy; identity-seed and neoforge were not run"
+  fi
   act dc up --force-recreate --no-deps --exit-code-from identity-seed identity-seed ||
     die "identity-seed did not exit 0 (the one-shot seed); neoforge was not recreated; fix it and run refresh-secrets again"
   act dc up -d --wait --force-recreate --no-deps neoforge ||
@@ -612,4 +637,5 @@ case $verb in
   logs) cmd_logs ;;
   probe) cmd_probe ;;
   seed-bundle) cmd_seed_bundle ;;
+  human-down) cmd_human_down ;;
 esac
