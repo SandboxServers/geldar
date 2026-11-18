@@ -51,8 +51,8 @@ services:
         limits:
           memory: 768m
           cpus: "0.5"
+          pids: 256
     memswap_limit: 768m
-    pids_limit: 256
     labels:
       geldar.scratch: "true"
     restart: "no"
