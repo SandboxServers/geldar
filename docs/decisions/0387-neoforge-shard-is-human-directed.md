@@ -13,7 +13,7 @@
 3. **0137 is superseded in part, for the NeoForge shard's human listener only.** The spectator-proxy rule of 0137 (humans are held in spectator mode, the ghost rule, the ghost signal, and the public proxy admitting humans as ghosts) does not apply to the NeoForge human listener. Its admission rules are replaced by item 5 of this record. The rest of 0137 still applies to that listener:
    - the deploy guards of its item 4 (a strict IPv4 bind that is not `0.0.0.0`; a port from 1 to 65535 that is never 25565 or 25566; the publish merged only after the proxy reports healthy);
    - its item 3 (least privilege: the human listener reads the life registry and skins read-only, and holds no KV publish).
-   - The concurrent-player cap and the login rate limit of 0137 item 1 stay at their defaults (5 and on) until the owner changes them (D-9 of the public-route note).
+   - The concurrent-player cap and the login rate limit of 0137 item 1 stay at their defaults (5 and on) until the owner changes them (D-9 of the public-route note). (Superseded: see the Amendment at the end.)
    - The text of 0137 is not edited. This record is cited from 0137 by path, as 0381 does for 0041.
 4. **Two listeners on the NeoForge shard.**
    - The bot ingress stays offline-mode, reachable only on the compose network, and is never published. Bodies connect to it. No human reaches it.
@@ -48,9 +48,9 @@ The NeoForge shard has no server whitelist. On 2026-11-17 the owner decided, in 
 - The human route work is ordered in the public-route note, section 7: scratch packets A1 to A4 first; B2, B3 and B4 wait for the owner's names and the live project; B5 and B6 do not start, because their paths are on the colo-images filter.
 - Public names, the game port and the bind are not decided here. The game port is decided as an SRV record (see the public-route note, section 3), and the port number, bind literal and DNS names still need the owner's explicit approval before anything is opened.
 
-**Player limits (2026-11-17).** The live NeoForge shard pins MAX_PLAYERS 10, VIEW_DISTANCE 8 and SIMULATION_DISTANCE 6
+**Player limits (2026-11-17).** (Superseded in part: see the Amendment at the end.) The live NeoForge shard pins MAX_PLAYERS 10, VIEW_DISTANCE 8 and SIMULATION_DISTANCE 6
 (docs/runbooks/nf-live-project.md section 3b; the scratch overlay uses the same values). MAX_PLAYERS counts bodies as well
-as humans. The concurrent-human cap of item 3 is not enforced by any code yet, so the shard must not be made public before
+as humans. The concurrent-human cap of item 3 (superseded: the cap code merged in #726 is the slot mechanism) is not enforced by any code yet, so the shard must not be made public before
 the human-lane packet that enforces it lands.
 
 ## Not settled by this record
@@ -61,3 +61,16 @@ the human-lane packet that enforces it lands.
 - `identity_mode` for the NeoForge shard file (D-11).
 - Telemetry D-F (D-5 of the public-route note).
 - The registration route for humans, Microsoft only or GitHub and Discord too (D-4; 0135).
+
+## Amendment (owner decision: shared player limit)
+
+Dated 2026-11-18. The status line above is unchanged: this record is still PROPOSED.
+
+- **Owner decision:** "Set max players to 100 and players and agents share that number".
+- For the NeoForge shard, the figures 5 and 10 in the body above are superseded by one shared limit of 100 for humans and agents. This covers the cap of item 3, the `MAX_PLAYERS 10` in the player limits paragraph and in the server cap sentence of the whitelist section, and the "5 and on" defaults in item 3.
+- Implementation: PR #732 sets MAX_PLAYERS to 100 for the NeoForge shard. The running `geldar-nf` still enforces 10 until a later owner-approved node step. The scratch overlays stay at 10.
+- The human cap of 5 from 0137 is dropped for this shard by decision 0388 (PROPOSED, in PR #730), which amends 0137 for the NeoForge shard only. The cap mechanism merged in #726 remains the slot mechanism.
+- The shard has NOT been sized for 100 players. Nothing in this amendment shows that its container caps (3 CPUs, 12 GiB, 512 pids) or its view and simulation distances hold at 100.
+- Per-IP and login-rate limits (H1b) are NOT built. They are an open owner item.
+- The `ag-` versus `ag_` question (item 5 (b)) stays open.
+- The text above is not edited, so a reader sees both the original statement and the amendment that supersedes it.
