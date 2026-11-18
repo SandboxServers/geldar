@@ -2,9 +2,9 @@
 
 - Status: Proposed. The owner accepts or edits this record. Nothing here is in force, built on a node or opened. See the status line below.
 - Date: 2026-11-18
-- Spec: section 2 (Principle 1), section 8.4 (spectator proxy). Builds on 0387 (items 3, 4 and 5), 0137 (item 1: the cap of 5 and the login rate limit; item 3: least privilege), 0375 (chat export off), 0386 (the compose project). Its operator steps are in [docs/runbooks/nf-live-project.md](../runbooks/nf-live-project.md), section 10. Admission on the registration route is a question for the owner (section "Owner question").
+- Spec: section 2 (Principle 1), section 8.4 (spectator proxy). Builds on 0387 (items 3, 4 and 5), 0137 (item 1: the cap of 5 and the login rate limit, with the cap amended for the NeoForge shard below; item 3: least privilege), 0375 (chat export off), 0386 (the compose project). Its operator steps are in [docs/runbooks/nf-live-project.md](../runbooks/nf-live-project.md), section 10. Admission on the registration route is a question for the owner (section "Owner question").
 
-**Status line (explicit).** This record is PROPOSED. The lane must NOT go public until (1) the merged #726 plugin (the concurrent-human cap of 5 and the fail-closed registry gate) is DEPLOYED on the human proxy (the jar the human proxy mounts on the node is the one built from main with #726), (2) the H6 PR (the lane's own NATS inbox prefix) is merged and deployed AND the node's `nats-auth.conf` has been regenerated so the `human` user holds `_INBOX.human.>` only (the NF_HUMAN gate will refuse a conf that still has the broad grant; that refusal is required in the H6 PR and is NOT yet in the code, see residual risk 9), (3) S1 (runbook section 10) has passed on the LAN, and (4) the owner has accepted this record and approved each step. Until all four hold, the human port is closed to the internet.
+**Status line (explicit).** This record is PROPOSED. The lane must NOT go public until (1) the merged #726 plugin (the concurrent-human cap of 5 as merged, and the fail-closed registry gate) is DEPLOYED on the human proxy (the jar the human proxy mounts on the node is the one built from main with #726), (2) the H6 PR (the lane's own NATS inbox prefix) is merged and deployed AND the node's `nats-auth.conf` has been regenerated so the `human` user holds `_INBOX.human.>` only (the NF_HUMAN gate will refuse a conf that still has the broad grant; that refusal is required in the H6 PR and is NOT yet in the code, see residual risk 9), (3) S1 (runbook section 10) has passed on the LAN, and (4) the owner has accepted this record and approved each step. Until all four hold, the human port is closed to the internet.
 
 ## Decision
 
@@ -26,10 +26,31 @@ On the human-lane stack (branch `phase1/nf-human-inbox`, H6, tip 46cdf15a, which
 
 Built on the cap branch and merged to main as #726 (the lane must not open until #726 is deployed on the human proxy):
 
-- **The concurrent-human cap of 5** (`HumanSlots.CAP`, commit 7b646be1, refined in 851c2c8e). A human reserves a slot at the login decision and gives it back on its own disconnect or on a refused login after the reservation. The sixth human gets the same fixed denial as every other refusal. A UUID that logs in again while it holds a slot is refused; a denied duplicate frees nothing (per the sibling reference doc, `docs/reference/velocity-identity-plugin.md`).
+- **The concurrent-human cap of 5** (`HumanSlots.CAP`, commit 7b646be1, refined in 851c2c8e). This is the code as merged. By owner decision the cap of 5 is dropped for the NeoForge shard; see "Amends 0137 for the NeoForge shard" below. A human reserves a slot at the login decision and gives it back on its own disconnect or on a refused login after the reservation. The sixth human gets the same fixed denial as every other refusal, until the H1c PR changes the limit. A UUID that logs in again while it holds a slot is refused; a denied duplicate frees nothing (per the sibling reference doc, `docs/reference/velocity-identity-plugin.md`).
 - **The fail-closed registry gate** (commit 44352b8a). The human lane denies every login while the life registry is unsynced, including when `GELDAR_NATS_URL` is unset. The registry marker is removed when the sync is lost.
 
 The human lane's refusals, as built (the reference doc's lane table): an agent-shaped name (`ag_`, any case), a name in the life registry, a connection whose UUID is the offline-mode UUID of its name, and every login while the registry is unsynced.
+
+## Amends 0137 for the NeoForge shard
+
+0137 (and spec section 8.4) set the spectator proxy's "max 5 concurrent". That figure was for ghost spectators on the autonomous shard. On the NeoForge shard humans are players (0387, decision item 1). **BY OWNER DECISION (relayed by the lead, 2026-11-18) the cap of 5 is dropped for the NeoForge shard. Humans and agents share one limit: MAX_PLAYERS = 100. There is no separate human cap.**
+
+0137 and spec section 8.4 are NOT edited. The autonomous shard's spectator proxy keeps its own rules.
+
+What changes in code (a separate PR, H1c, NOT built here):
+
+- The human slot capacity becomes the shared limit of 100. On main it is `HumanSlots.CAP = 5` (`plugin/velocity-identity/src/main/java/dev/geldar/identity/HumanSlots.java:18`).
+- The backend's MAX_PLAYERS is the real enforcement of the shared total. It is `MAX_PLAYERS: "10"` in `compose/nf-live.yml:279` today.
+- The slot mechanism stays: the slot belongs to the connection object, the human gives it back on its own disconnect or on a refused login after the reservation, and the fail-closed registry gate (commit 44352b8a) stays.
+
+This amendment is PROPOSED, like the rest of this record. It takes effect only if the owner accepts 0388. The status line's gate names #726 and is not changed here. Whether H1c must also be deployed before the lane opens is an owner decision, UNDECIDED.
+
+What this amendment does NOT establish, stated plainly:
+
+- (a) **The shard has NOT been sized for 100 players.** The neoforge container has 3 CPU and 12 GiB, JVM heap 9G, view distance 8 and simulation distance 6 (runbook section 3b). The figures for 100 players are unmeasured. The 3b chunk estimate is for 10 players and is itself unmeasured.
+- (b) **With no whitelist and no human cap, a per-IP limit and a login rate limit matter MORE.** Held packet H1b (a per-IP limit, login rate limiting beyond Velocity's default, and an idle kick) is NOT built. It is an OPEN OWNER ITEM.
+- (c) **The `ag-` versus `ag_` question is still OPEN.** The owner has not answered it. The lane refuses names starting `ag_` today (see the lane refusals above).
+- (d) **Until the live geldar-nf's MAX_PLAYERS is changed by an owner-approved node step, the running shard still enforces 10** (`compose/nf-live.yml:279`). This record does not change the node.
 
 ## Residual risks
 
@@ -37,7 +58,7 @@ These are stated plainly. The owner accepts or rejects each one with this record
 
 1. **One forwarding secret is shared by three proxies.** The agent proxy, the human proxy and the NeoForge server all use the same Proxy Compatible Forge forwarding secret (`compose/velocity/velocity-nf-human.toml` line 6 says so; the agent velocity reads the same file). Whether Proxy Compatible Forge accepts a second secret was NOT verified: no artefact was available to check it. Consequence: a compromised public proxy could forge any identity, including an agent name, to the NeoForge server. Mitigations in place: Velocity is the only path to NeoForge; NeoForge publishes nothing; `nf-human` holds only `velocity-human`, `nats` and `neoforge`, so the human proxy cannot reach postgres or the event sink by name; the human proxy has no shell, runs with `cap_drop: ALL`, `read_only`, `no-new-privileges` and the service uid, and holds only a read-only NATS credential. The lane identity is not carried in modern forwarding data, so the separation between the lanes rests on the human proxy's `LoginGate` refusals alone (the review of H2, finding F6, recorded this as an accepted risk).
 2. **RCON reachability.** The NeoForge RCON port is reachable by name from `nf-human`, because `neoforge` is on that network. The RCON password is never mounted into `velocity-human`, so a compromised proxy holds no RCON password. Whether RCON binds only to loopback inside the NeoForge container was NOT verified.
-3. **Cap abuse.** With no whitelist, five throwaway Microsoft accounts can hold all five slots, and a sixth human is refused for as long as they stay. There is no idle kick and no per-IP limit (held packet H1b). The owner chooses how to accept this (section "Owner question").
+3. **Cap abuse.** With no whitelist, anyone with a Microsoft account may join. Under the cap of 5 as merged on main, five throwaway Microsoft accounts can hold all five slots, and a sixth human is refused for as long as they stay. Under the shared limit of 100 (section "Amends 0137 for the NeoForge shard"), the abuse becomes filling the shared limit: enough throwaway accounts to fill the 100 shared slots would also lock out every agent trying to join, because agents share that limit. There is no idle kick and no per-IP limit (held packet H1b, an open owner item). The owner chooses how to accept this (section "Owner question").
 4. **Slot release depends on Velocity event order.** The cap assumes that Velocity hands the same `Player` object to `LoginEvent` and to `DisconnectEvent`, and that `DisconnectEvent` fires for every connection that ends after a login. Neither is verified on a live proxy. The first real join settles it (runbook section 10, S1).
 5. **Login rate limit is Velocity's default.** `login-ratelimit` is not set (3000 ms per source address). If the public connections reach the proxy through a Docker userland proxy, every client may appear as the bridge gateway, and one client connecting every few seconds could lock out the others. Not verified on a node.
 6. **Player addresses are logged.** `enable-player-address-logging = true` writes public players' addresses to the container's JSON log (three files of 10 MB).
@@ -75,7 +96,7 @@ The owner is asked to:
 
 1. Accept, edit or reject this record (0388).
 2. Answer the Owner question above (a or b).
-3. Choose the cap-abuse posture (residual risk 3): (i) run with the cap of 5 and no per-IP limit and accept the abuse, (ii) hold the lane until H1b (per-IP limit and idle kick) is built, or (iii) keep the lane closed. The owner chooses. This packet recommends neither.
+3. Choose the cap-abuse posture (residual risk 3): (i) run with the shared limit of 100 (MAX_PLAYERS, the cap of 5 dropped) and no per-IP limit, and accept the abuse, (ii) hold the lane until H1b (per-IP limit and idle kick) is built, or (iii) keep the lane closed. The owner chooses. This packet recommends neither.
 4. Note the hardening already done: the human lane has its own NATS user (read-only) and its own network `nf-human` (review H2 finding F6 and H5 items a, e and f). The shared forwarding secret (residual risk 1) is NOT removed by that hardening.
 
 ## Not built

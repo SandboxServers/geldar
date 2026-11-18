@@ -4,9 +4,12 @@ Status: the compose file and its repo test exist (compose/nf-live.yml, tools/rep
 Nothing here is deployed. The file renders; it has not been started on the node. Public exposure, the shared Caddy and
 the human route are out of scope (owner decisions for the final-instance step). Nothing is published beyond loopback.
 
-**THE NEOFORGE SHARD MUST NOT BE MADE PUBLIC BEFORE THE CONCURRENT-HUMAN CAP IS LIVE ON THE HUMAN PROXY.** The cap of 5
-concurrent humans is enforced in the identity plugin's human lane (merged as #726), but only on a human proxy that runs
-a jar built from main containing #726 (section 3b). Until that jar runs on the human proxy and S1 (section 10.8) passes,
+**THE NEOFORGE SHARD MUST NOT BE MADE PUBLIC BEFORE THE CONCURRENT-HUMAN CAP IS LIVE ON THE HUMAN PROXY.** The cap merged
+as #726 is 5 concurrent humans, enforced in the identity plugin's human lane, but only on a human proxy that runs a jar
+built from main containing #726 (section 3b). By owner decision (0388, "Amends 0137 for the NeoForge shard") the cap of 5
+is dropped: humans and agents share MAX_PLAYERS = 100. That change is the separate H1c PR, which is NOT built. The values
+in section 3b apply once the H1c PR is merged AND an owner-approved node step changes the live shard; before that the
+running shard still enforces MAX_PLAYERS 10. Until the jar with #726 runs on the human proxy and S1 (section 10.8) passes,
 a public listener has no proven human bound: its only bound is MAX_PLAYERS, which counts bodies too.
 
 The per-shard storage design is in docs/analysis/neoforge/per-shard-storage-design.md (one NATS, one Postgres database,
@@ -59,17 +62,20 @@ Other tenants (as the lead gave them): autonomous Paper 14 GiB, scratch-telemetr
 Their other services are UNVERIFIED here. Paper-equivalent sum about 32 GiB plus this shard's 16.25 GiB leaves room in the
 100 GiB headline. Every service has memswap equal to memory (no swap), and a restart policy of unless-stopped (identity-seed: no).
 
-## 3b. Player limits (pinned; the scratch overlay uses the same values)
+## 3b. Player limits (pinned in compose/nf-live.yml; values apply only after H1c and the node step)
 
 The neoforge service pins three itzg variables in compose/nf-live.yml. The scratch overlay
-(compose/opt-in/scratch-neoforge.yml, the paper service) pins the same three, so a scratch run tests what live runs.
-Names are the itzg image's, as the colo Paper uses them (compose/colo.yml and compose/phase0.yml).
+(compose/opt-in/scratch-neoforge.yml, the paper service) pins MAX_PLAYERS 10 and is SCRATCH-ONLY: it does not follow the
+live value. Names are the itzg image's, as the colo Paper uses them (compose/colo.yml and compose/phase0.yml).
 
-| Variable | Live and scratch NeoForge | Autonomous Paper (compose/phase0.yml, unchanged) |
-|----------|---------------------------|---------------------------------------------------|
-| MAX_PLAYERS | 10 | 400 |
-| VIEW_DISTANCE | 8 | 6 |
-| SIMULATION_DISTANCE | 6 | 5 |
+| Variable | compose/nf-live.yml in the repo now | Live NeoForge after the H1c PR is merged AND the owner-approved node step | Autonomous Paper (compose/phase0.yml, unchanged) |
+|----------|-------------------------------------|---------------------------------------------------------------------------|---------------------------------------------------|
+| MAX_PLAYERS | 10 | 100 (humans and agents share it) | 400 |
+| VIEW_DISTANCE | 8 | 8 (unchanged; NOT sized for 100 players) | 6 |
+| SIMULATION_DISTANCE | 6 | 6 (unchanged; NOT sized for 100 players) | 5 |
+
+Until the H1c PR is merged and the node step changes the live shard, the running shard still enforces MAX_PLAYERS 10.
+The shard has NOT been sized for 100 players: the figures for 100 are unmeasured.
 
 Reasoning. The vanilla world tick runs on one server thread (general Minecraft server behaviour, not measured here), so
 3 CPUs do not raise the tick rate; the load is the loaded chunks and the ticked entities. Vanilla keeps about (2V+1)^2
@@ -79,30 +85,37 @@ before overlap, which is too high for 3 CPUs on a shard whose first players are 
 289 chunks per player, up to about 2,900; simulation 6 ticks 169 chunks per player against 289 at simulation 8. The 9G
 heap and 12 GiB cap are unchanged (the colo Paper ratio). The memory figure for about 2,900 chunks is an estimate, not a
 measurement: UNVERIFIED. Re-measure at the first start with `tick query` and the heap before raising any value. The owner
-may raise MAX_PLAYERS; a higher view or simulation distance needs the same re-measure first.
+set MAX_PLAYERS to 100 by owner decision (0388). That figure is not measured here; a higher view or simulation distance needs the same re-measure first.
 
 The image writes server.properties from these variables on each start (section 6, the bundle notes). That the NeoForge
 server honours them is UNVERIFIED until a live start reads them back from its log or server.properties.
 
 Three things these values do not do, stated plainly:
 
-- **The concurrent-human cap of 5 (spec section 8.4, decision 0137 item 1) is enforced in the identity plugin's human
-  lane, merged as #726.** A human reserves one of `HumanSlots.CAP` slots at the login decision. The slot belongs to the
-  connection object, and the human gives it back on its own disconnect or on a refused login after the reservation. The
-  sixth human gets the generic denial. A UUID that already holds a slot is refused, and a refused duplicate frees nothing.
-  Agents never take a slot. MAX_PLAYERS is a different number: it is 10 and bounds ALL players, bots included.
+- **The concurrent-human cap of 5 (spec section 8.4, decision 0137 item 1) is the code merged as #726.** On main,
+  `HumanSlots.CAP` is 5 (`plugin/velocity-identity/src/main/java/dev/geldar/identity/HumanSlots.java:18`). By owner
+  decision (0388, "Amends 0137 for the NeoForge shard") the cap is dropped for the NeoForge shard, and the H1c PR (NOT
+  built) makes the human slot capacity the shared limit of 100. A human reserves one slot at the login decision. The slot
+  belongs to the connection object, and the human gives it back on its own disconnect or on a refused login after the
+  reservation. Until H1c, the sixth human gets the generic denial. A UUID that already holds a slot is refused, and a
+  refused duplicate frees nothing. On main today agents never take a slot. MAX_PLAYERS is a different number: it is 10
+  in the repo now (`compose/nf-live.yml:279`) and bounds ALL players, bots included; after the node step it is 100.
 - **The cap binds only on a human proxy that runs that plugin build.** The node must run a jar built from main containing
   #726 before the lane is public (section 10, gate item 1). Until the human proxy runs it, no code enforces the cap.
 - **Not built, and not part of #726:** per-IP limits, login rate limiting beyond Velocity's default, and an idle kick
-  (held packet H1b). An idle account can hold its slot, so five idle accounts block a sixth human.
+  (held packet H1b, an open owner item). An idle account can hold its slot, so on main five idle accounts block a sixth
+  human. With the shared limit of 100 (after H1c), idle accounts that fill it would also block agents joining. With no
+  whitelist and no human cap, a per-IP limit matters more, not less.
 - **UNVERIFIED until S1:** whether Velocity hands the same `Player` object to `LoginEvent` and to `DisconnectEvent`, and
   whether `DisconnectEvent` fires for every connection that ends after a login. Until S1 (section 10.8, step 5) shows it,
   the slot release is not proven.
 - **The NeoForge shard must not be made public before the cap is live on the human proxy** (the bold note at the top of
   this runbook).
-- **The show-max-players values are display only, and they do not match.** compose/velocity/velocity-nf.toml shows 400 and
-  compose/velocity/velocity-nf-human.toml shows 10. Neither file is edited here. Whether Velocity refuses a login over its own
-  count is UNVERIFIED (not checked in this packet). The real server cap is MAX_PLAYERS (10).
+- **The show-max-players values are display only, and they do not match.** compose/velocity/velocity-nf.toml shows 400
+  (line 9) and compose/velocity/velocity-nf-human.toml shows 10 (line 12). After the H1c PR is merged and the node step
+  changes the live shard, velocity-nf-human.toml is to show 100; that edit is not in this packet. Neither file is edited
+  here. Whether Velocity refuses a login over its own count is UNVERIFIED (not checked in this packet). The real server
+  cap is MAX_PLAYERS: 10 on the running shard until the node step, 100 after it.
 
 ## 4. Secrets
 
@@ -613,7 +626,7 @@ UNVERIFIED, and not covered by this packet:
 
 Status: PROPOSED. The owner has not accepted decision 0388. The lane is not open to the internet, and no step below has been run on the node. Placeholders only: `<hostname>` (the public name), `<port>` (the human port), `<bind-ip>` (the address the human port binds on the node). The real values are the owner's and are not written in the repo.
 
-**The lane must NOT go public until (1) the merged #726 plugin (the concurrent-human cap of 5 and the fail-closed registry gate) is DEPLOYED on the human proxy (the jar the human proxy mounts on the node is the one built from main with #726), (2) the H6 PR (the lane's own NATS inbox prefix) is merged and deployed AND the node's `nats-auth.conf` has been regenerated so the `human` user holds `_INBOX.human.>` only (the NF_HUMAN gate will refuse a conf that still has the broad grant; that refusal is required in the H6 PR and is NOT yet in the code, see 10.6), (3) S1 (10.8) has passed on the LAN, and (4) the owner has accepted 0388 and approved each step.**
+**The lane must NOT go public until (1) the merged #726 plugin (the concurrent-human cap of 5 as merged, and the fail-closed registry gate) is DEPLOYED on the human proxy (the jar the human proxy mounts on the node is the one built from main with #726), (2) the H6 PR (the lane's own NATS inbox prefix) is merged and deployed AND the node's `nats-auth.conf` has been regenerated so the `human` user holds `_INBOX.human.>` only (the NF_HUMAN gate will refuse a conf that still has the broad grant; that refusal is required in the H6 PR and is NOT yet in the code, see 10.6), (3) S1 (10.8) has passed on the LAN, and (4) the owner has accepted 0388 and approved each step.**
 
 ### 10.1 Architecture
 
@@ -684,8 +697,8 @@ Ordering note (PR numbers are references only). #726 (the concurrent-human cap, 
 
 1. A plain Prism NeoForge 26.1.2 client with NO geldar mod connects to `<bind-ip>:<port>` and completes Microsoft login. Then a vanilla client does the same.
 2. An `ag_` name (any case) is refused. An offline-mode name (an offline launcher account) is refused.
-3. A sixth human is refused while five hold slots (requires #726 deployed on the human proxy).
-4. A slot is released after a disconnect: a new human joins once one of the five disconnects.
+3. The 101st player is refused by MAX_PLAYERS (100 once the node step has changed the live shard; 10 before it). This is not testable with real humans: state that in the S1 report and do not claim it passed. Requires #726 deployed on the human proxy.
+4. A slot is released after a disconnect: a human who was refused because the limit was full joins once a slot is freed. The limit is 5 on main until H1c and 100 after it (section 3b); a full-limit test with real humans at 100 is not testable, state that.
 5. In the `velocity-human` logs, confirm that the same `Player` object appears in `LoginEvent` and in `DisconnectEvent` (residual risk 4). Until seen, the release claim is UNVERIFIED.
 6. The registry gate: with the registry unsynced (owner test only), every login is denied.
 
@@ -717,6 +730,6 @@ What is left behind: `human-down` removes the container only, so the `nf-human` 
 
 ### 10.11 Not built
 
-- Per-IP limits, login rate limiting beyond Velocity's default, and the idle kick (held packet H1b).
+- Per-IP limits, login rate limiting beyond Velocity's default, and the idle kick (held packet H1b). H1b is an open owner item (0388, "Amends 0137 for the NeoForge shard").
 - A human registry and a revocation path (0387 item 5(d)).
 - Chat export and the name mask: off. Per 0375, `collector.chat.enabled=false` keeps the ledger's NameMask off.
