@@ -1,0 +1,393 @@
+---
+title: "BlueMap on the NeoForge shard: manual steps"
+type: how-to
+audience: agents-never
+status: draft
+last_verified: 2026-11-18 against the NF-BM design note and its addendum (2026-11-18)
+companions: [map-chat-panel.md, scratch-stack.md, nf-live-project.md, README.md]
+sources: [docs/analysis/bluemap/neoforge-map-design.md (tracked, the NF-BM design note), compose/nf-live.yml, deploy/nf-deploy.sh, deploy/scratch/scratch.sh, compose/neoforge/neoforge-entrypoint.sh, deploy/caddy/README.md, deploy/caddy/validate.sh, deploy/caddy/map.caddy, deploy/caddy/map-neoforge.caddy (NF-BM-4), compose/bluemap-web-nf/ (NF-BM-3)]
+---
+
+# BlueMap on the NeoForge shard: manual steps
+
+This runbook puts the owner's BlueMap map on the NeoForge shard. BlueMap renders inside the NeoForge server, a second
+Caddy-fronted web container serves the output read only, and the host edge Caddy publishes it on its own name. Players
+are hidden on this map: no markers, no names, no positions.
+
+The steps run in this order, and each step is a gate for the next one: preconditions, scratch test, live jar, edge,
+DNS, privacy check, and only then is the map public. Section 8 is a warning that applies to every section. Nothing here
+edits `deploy/nf-deploy.sh` or `compose/nf-live.yml`. Those belong to geldar-neoforge.
+
+Placeholders: `<zone>` is the owner's DNS zone, `<edge-target>` the target of the Paper map's record, `<extra-mods variable,
+see geldar-neoforge's note>` the variable that mounts a second mod jar (not final), `<nf-web-upstream>` the loopback address
+of the NeoForge web container (NF-BM-3's compose snippet sets the port), `<neoforge-container>`, `<nf-web-container>`,
+`<project>`, `<host Caddyfile>`, `<host config dir>`, `<env-file>`, `<node-checkout>` and `<backup dir>`. Never paste real
+values into this file or into a ticket.
+
+## 1. Preconditions
+
+Do not start section 2 until every line is true. Ops records the date and who confirmed each one.
+
+- [ ] NF-BM-1 (lock file `plugins/bluemap/neoforge.lock.json` and its test), NF-BM-2 (NeoForge configs and the
+      players-hidden test), NF-BM-3 (`compose/bluemap-web-nf/` and its real-Caddy tests) and NF-BM-4
+      (`deploy/caddy/map-neoforge.caddy`, `map-neoforge-off.caddy`, README rows, `validate.sh` entry) are merged to `main`.
+      PR numbers: `<PR for NF-BM-1>` to `<PR for NF-BM-4>`.
+- [ ] The owner approved every BlueMap decision on 2026-11-18 (the design note's section 1 to section 5, and the
+      addendum). The approval is in the orchestrator's record; this runbook does not restate it.
+- [ ] The jar is the one the lock file names: BlueMap 5.29 NeoForge, sha256 `8938f4453af4b53970c86e43d0bd26b4a88980e4e6639f818fa770d0f61c43df`,
+      size as recorded in the lock file. Check the lock file, not this line, if they differ.
+- [ ] The NeoForge image is the digest in `compose/nf-live.yml` on `main`:
+      `itzg/minecraft-server:2026.10.1-java25@sha256:d12aed7e35981dfe259b60fbfee77d23a19b5898a7a31dca298d18b47b7b5776`.
+      Java must be 25: `docker exec <neoforge-container> java -version` prints `openjdk version "25`. BlueMap 5.17 and
+      later need Java 25, and a lower Java means the mod does not load.
+- [ ] geldar-neoforge confirmed heap headroom under the 9G heap (`-Xmx` unchanged) for one render thread and bounded maps,
+      and confirmed the mod mount: the BlueMap jar is a second read-only bind, copied into `/data/mods` by the entrypoint
+      after its sha256 check (the `GELDAR_NF_MOD_SHA256` mechanism, reused with `<extra-mods variable, see geldar-neoforge's note>`).
+- [ ] BLOCKER, owned by geldar-neoforge: the repo has no second-jar mount yet. `scratch.sh` and the NeoForge entrypoint
+      accept only the geldar jar and the ledger jar, and the offline bundle refuses any jar it does not list. The variable
+      that mounts a second jar is in geldar-neoforge's interface note and is not on `main`. Sections 2 and 3 cannot start
+      until that variable is merged and this line is ticked. Do not treat `<extra-mods variable>` as existing.
+- [ ] The data volume is `neoforge-data`, mounted at `/data` in the NeoForge service. The web container mounts only its
+      `bluemap/web` subpath, read only, at `/srv`. It never mounts `/data` itself.
+- [ ] The owner has approved a window for the NeoForge recreate (section 3) and a separate window for the edge (section 4).
+      Players disconnect during a NeoForge recreate, and every site on the edge drops during a `board-proxy` restart.
+- [ ] Section 2 passed on the scratch stack, with the result written in the report of that run.
+
+## 2. Scratch compatibility test (before any live step)
+
+Purpose: prove that BlueMap loads next to the geldar mod on the same image, that it writes web files, and that it
+renders, before the live shard is touched. The scratch stack is a separate project with no players and no live data.
+
+Bring-up, with the same image digest as `compose/nf-live.yml`, the geldar jar as today, and BlueMap as a second mod.
+Blocker (section 1): no second-jar mount exists on `main`, so the placeholders below name a variable that does not exist
+yet. Do not run this until geldar-neoforge's interface note variable is merged:
+
+```
+SCRATCH_PLATFORM=neoforge \
+  <extra-mods variable, see geldar-neoforge's note>=<absolute path to bluemap-5.29-neoforge.jar> \
+  <extra-mods sha variable, see geldar-neoforge's note>=<sha256 from neoforge.lock.json> \
+  deploy/scratch/scratch.sh <bring-up verb from its usage header>
+```
+
+`scratch.sh` checks the BlueMap jar's sha256 before anything starts and refuses on a mismatch. A refusal means nothing
+started: fix the path or the lock value and start again. The jar must be a regular file, not a symlink, at an absolute path.
+
+Observation steps, in order. Record each result with its timestamp (`date -u`).
+
+1. Host check of the jar: `Get-FileHash -Algorithm SHA256 <jar path>` (or `sha256sum`) equals the lock file's sha256.
+2. Log, BlueMap lines: `docker logs <scratch-neoforge-container> 2>&1 | grep -i bluemap | head -n 40`. Expect the mod
+   to name itself at load time, with no exception attached.
+3. Log, failure shapes (section 2.1 below): `docker logs <scratch-neoforge-container> 2>&1 | grep -E -i 'incompatible|requires|missing dependency|Mod loading has failed|loading error|de\.bluecolored|geldar' | head -n 40`.
+   Any line here is a failure until it is explained.
+4. Wait for start: `docker logs <scratch-neoforge-container> 2>&1 | grep -c 'Server started'` prints at least `1`. Wait up to 10
+   minutes; if it does not appear, go to the failure shapes.
+5. Web files: `docker exec <scratch-neoforge-container> ls -l /data/bluemap/web/index.html` lists the file, and
+   `docker exec <scratch-neoforge-container> ls /data/bluemap/web/maps` lists `overworld`, `nether` and `end` (the map names in the NF-BM-2 config).
+6. Status, read only: in the scratch server console send `/bluemap` with no arguments (status and help only, no render).
+   It must answer with BlueMap's status. If it answers `Unknown command`, BlueMap did not load: failure shape 3.
+7. Bounded render of a small box: start one render of one map, inside the bounds from NF-BM-2, using the render command
+   BlueMap 5.29 lists in its help (ops confirms the exact syntax from `/bluemap` help; this runbook does not guess it).
+   Stamp the start with `date -u`, stamp the end when the log says the render finished, and record both.
+8. Needs a scratch web overlay, to be added. No command is given until it exists. The check is a tile served with `200`
+   through a scratch web container, using a tile name taken from `ls` on the scratch volume (no tile name is guessed).
+9. Needs a scratch web overlay, to be added. No command is given until it exists. The check is the live path refused with
+   `404` on the scratch web container.
+10. Memory: `docker stats --no-stream <scratch-neoforge-container>` and the RSS line of section 3.3, both taken after the
+    render finished. Record RSS in the report.
+
+### 2.1 The three failure shapes
+
+These come from the design addendum. Each one stops the test.
+
+| Shape | What the log and the stack show | Players | Action |
+| --- | --- | --- | --- |
+| 1. Mod skipped | An incompatible-mod, "requires NeoForge", or missing-dependency line. The server starts. No `bluemap` directory, no web files. | Not affected | Stop. Report the line. Do not go live. |
+| 2. Crash | Loading error screen text, "Mod loading has failed", the server exits. The compose restart loop shows in `docker ps`. | Affected only on a live server | Stop the scratch project. Report the text. Live must wait for a clean scratch run. |
+| 3. Loads, no render | An exception stack with `de.bluecolored` classes. `/bluemap` answers `Unknown command` or no status. | Not affected | Stop. Report the stack. Do not go live. |
+
+### 2.2 Pass criteria
+
+All of these, and only these:
+
+- no exception in the log from `de.bluecolored` or from the geldar classes (`grep` in step 3 is empty, or every hit is a
+  line that the report explains);
+- the server reaches `Server started` (step 4);
+- `bluemap/web/index.html` exists in the scratch volume (step 5), and at least one tile file is written by the bounded render;
+- `/bluemap` status answers (step 6);
+- the scratch web container serves a tile with `200` and the live path with `404` (steps 8 and 9, pending the scratch web
+  overlay);
+- RSS is recorded, with the render start and end stamps.
+
+The scratch project is torn down by its own verb after the report is written. Its volume is never copied to the live shard.
+
+## 3. Live jar step: NeoForge recreate and the first bounded render
+
+Owner window, short restart. Players disconnect when the container is recreated, so announce it first.
+
+### 3.1 Before the recreate
+
+1. Confirm section 2.2 passed, and that the live `compose/nf-live.yml` on the node is the `main` file (its image digest
+   matches section 1). Do not run compose with any file except the NeoForge live compose file.
+2. Confirm that geldar-neoforge placed the BlueMap jar through its mod mount, and that the entrypoint's sha256 check
+   accepted it. The log line for the check is in the NeoForge log (the entrypoint's `copy_pinned_jar` message).
+3. Confirm that the BlueMap configs from NF-BM-2 are the ones mounted, and that the render bounds are set (no
+   full-world render is configured, see section 6).
+
+### 3.2 Recreate
+
+Run the recreate through the operator script, not through compose. The script holds the project (`geldar-nf`) and the
+compose file as constants. Run it from an exported `main` tree on the node (a git checkout is refused without `--local`),
+as the operator account and never as root. Inputs come from the environment only:
+
+```
+NF_SERVICE_UID=1001 NF_MOD_JAR_HOST=<absolute path to the geldar NeoForge jar> NF_MOD_SHA256=<its sha256> deploy/nf-deploy.sh plan
+NF_SERVICE_UID=1001 NF_MOD_JAR_HOST=<absolute path to the geldar NeoForge jar> NF_MOD_SHA256=<its sha256> deploy/nf-deploy.sh up
+```
+
+`plan` prints the gates and the steps and changes nothing; read it first. `up` runs the gates (it refuses an unseeded
+`neoforge-data` volume, and a jar whose sha256 differs from `NF_MOD_SHA256`), then starts `nats`, `postgres`,
+`identity-seed` (one shot), `eventsink`, `neoforge` and `velocity` in that order, each with `--wait`. It does not pass
+`--force-recreate`. Compose recreates `neoforge` when its config changes, which a new jar or sha does; services already
+running with the same config are not touched. If `neoforge` must be recreated with no config change, the script has no
+verb for it: ask geldar-neoforge, and do not run compose directly.
+
+The NF_* values must match the running shard. `NF_SERVICE_UID` is 1001 on this node (the script default 1000 is not this
+node's ops account). `NF_MOD_JAR_HOST` and `NF_MOD_SHA256` must name the geldar jar that the shard runs now, and a
+different pair recreates `neoforge` with that jar. `NF_TELEMETRY` and `NF_HUMAN` must be set as the shard runs now (both
+default off). Compare with the running container, read only (`docker inspect <neoforge-container>`, reading the mounts and
+the `GELDAR_NF_MOD_SHA256` entry only). A mismatch is a stop.
+
+`up` waits for each service's healthcheck (`--wait`). If it fails, the rollback is
+section 7, row "BlueMap off on the NeoForge server". Do not retry in a loop.
+
+The web container comes up after the NeoForge service is healthy (its `depends_on` is set in NF-BM-3's snippet). Start it
+with the same compose file and `--no-deps` the first time: `sudo docker compose -p <project> -f <nf-live compose file> up -d --wait --no-deps <nf-web-container>`.
+
+### 3.3 Bounded first render at 0 players
+
+No player may be online for this step. Check first: `list` prints `There are 0 of a max of ...`. If a player is online,
+stop and wait; do not start the render.
+
+1. Time the server start: `docker logs <neoforge-container> 2>&1 | grep -c 'Server started'` prints `1` after the recreate.
+2. Stamp the render start with `date -u`, then start one bounded render of the overworld with the NF-BM-2 bounds (the same
+   command as section 2 step 7). Stamp the end when the log says it has finished.
+3. Memory sampling, every 60 seconds until the render ends and for 5 minutes after:
+   - host view: `docker stats --no-stream <neoforge-container>` (memory and CPU columns);
+   - process view, read from `/proc` in the container (no `ps` needed, nothing is written):
+     `docker exec <neoforge-container> sh -c 'for p in /proc/[0-9]*; do case "$(tr "\0" " " < $p/cmdline)" in *java*) grep -H -E "VmRSS|VmHWM" $p/status;; esac; done'`
+   - GC: `docker exec <neoforge-container> sh -c 'for p in /proc/[0-9]*; do case "$(tr "\0" " " < $p/cmdline)" in *java*) echo $p;; esac; done'`
+     gives the JVM pid; then `docker exec <neoforge-container> jcmd <pid> GC.heap_info` (a read-only snapshot). If geldar-neoforge
+     enabled the GC log, its path is in the JVM options (`JVM_OPTS`); copy the last 50 lines of it into the report.
+4. Record in the report: render start and end stamps (UTC), wall time, peak `VmHWM`, last `VmRSS`, the `GC.heap_info`
+   output, and the container's `docker stats` memory column.
+5. Stop rule: if RSS plus 1.5 GiB reaches 11 GiB (against the 12 GiB, 12288m, container limit), stop the render, report,
+   and lower the bounds (the design's fallback). Do not raise `-Xmx`.
+6. A second measurement with players online is a separate window. It is not part of this step.
+
+Pass for section 3: the NeoForge service is healthy, `bluemap/web/index.html` exists on the `neoforge-data` volume, the
+render ended with no exception from `de.bluecolored`, the stop rule was not hit, and the numbers are in the report.
+
+## 4. Edge window: publish the map through the shared Caddy
+
+The edge is the host Caddy on the node (`board-proxy`). Its admin API is off (owner ruling R39), so `caddy reload` does not
+work there. The rules are the ones in `deploy/caddy/README.md` (section "Reload procedure", and the OTLP steps 3 to 5):
+
+- a change to a live file (`map-neoforge.caddy`, the off file swapped in) is one `docker restart board-proxy`;
+- a new environment value (`GELDAR_MAP_NF_UPSTREAM` is new) needs one recreate, because a running Caddy cannot see a new
+  variable and `docker restart` keeps the old environment.
+
+This section uses one recreate that loads the env value and the site file together, as in README step 3. Its cost is an
+outage on every site on the node (estimate 5 to 15 seconds; measure it and write it into the report). Batch it.
+
+The edge goes after section 3 passed. The order is: web container and mod first, edge last, DNS after.
+
+### 4.1 Backup the running configuration
+
+Run from `<node-checkout>` on the node, in a directory only the operator can read.
+
+```
+umask 077
+STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+mkdir -p <backup dir>/edge-$STAMP
+sudo cp -p <host Caddyfile> <backup dir>/edge-$STAMP/Caddyfile
+sudo cp -a <host config dir>/geldar <backup dir>/edge-$STAMP/geldar
+sudo stat -c '%U:%G %a %n' <host config dir>/geldar/map.caddy <env-file> > <backup dir>/edge-$STAMP/modes.txt
+sudo cp -p <env-file> <env-file>.bak-$STAMP
+test -s <backup dir>/edge-$STAMP/Caddyfile
+```
+
+The env file holds other credentials. Never print it, and never `cat` it into a log. The backup is the rollback for both
+the file and the environment. Also run the baseline probe from `deploy/caddy/README.md` (step 3, "Baseline"): one request
+per existing site, status and TLS result only. A site failing in the baseline is reported and cannot be compared.
+
+### 4.1a Pre-step: the edge certificate must cover the host
+
+Run before staging (4.2). Read only: nothing on the node is changed, reloaded or restarted. The host is
+`map.neoforge.geldar.<zone>`, which has three labels before the zone. A wildcard for `*.<zone>` or `*.geldar.<zone>`
+does NOT cover it, because a wildcard matches exactly one label. Only `*.neoforge.geldar.<zone>` covers it. Ops confirms
+each name below before running it; the storage path is Caddy's default in its official image, and the repo does not set it.
+
+1. List the certificate files Caddy has stored (paths only, no key files):
+   `docker exec board-proxy sh -c 'find /data/caddy/certificates -name "*.crt" -not -name "*.key"'`
+2. For each path from step 1, print its names. The `.crt` is public; the `.key` next to it is never opened:
+   `docker exec board-proxy cat <path from step 1> | openssl x509 -noout -ext subjectAltName`
+3. Decision rule:
+   - A stored certificate lists `*.neoforge.geldar.<zone>` or the exact host: the edge covers the name. Section 4 runs as
+     written; the DNS order in section 5 is unchanged.
+   - No stored certificate covers the name (the normal case before the first site load): Caddy issues a certificate for
+     the new host when the site is loaded (ops confirms this in the first window). The repo's `deploy/caddy/README.md`
+     says the certificate comes through the DNS plugin (DNS-01: a TXT record in the zone, which needs the provider
+     credentials on the host, not a CNAME). Under DNS-01 the CNAME is not needed for issuance and the DNS order stays
+     last. Ops confirms the challenge type from the global options of the host Caddyfile (read the option names only;
+     never print values).
+   - If the challenge is HTTP-01 or TLS-ALPN-01 instead, the name must resolve to the node before the reload, so the
+     CNAME goes before section 4.4 step 2. That changes when the name becomes public. It is an owner and geldar-93
+     decision, to be taken before the window. Do not change the order on ops' own judgement.
+4. After section 4.4 step 2 (the site is live), confirm the served certificate on loopback (the host network shares
+   port 443 with the node). This is a read-only handshake:
+   `openssl s_client -connect 127.0.0.1:443 -servername map.neoforge.geldar.<zone> </dev/null 2>/dev/null | openssl x509 -noout -subject -ext subjectAltName`
+   The output must name the host. Before the site is live this command shows another site's certificate, so do not run it earlier.
+
+### 4.2 Stage
+
+Place the site file outside the live directory, with the owner and mode of `map.caddy`:
+
+```
+sudo stat -c '%U:%G %a' <host config dir>/geldar/map.caddy
+sudo install -m <mode> -o <owner> -g <group> <node-checkout>/deploy/caddy/map-neoforge.caddy <backup dir>/edge-$STAMP/staged/map-neoforge.caddy
+```
+
+Do not place it in `<host config dir>/geldar/` yet. The live directory is imported at start, and a bad file there breaks
+the next start of every site.
+
+### 4.3 Validate
+
+1. In the repo: `bash deploy/caddy/validate.sh` (pinned Caddy image, `docker run --rm` only). It must print `Valid configuration`
+   for the NeoForge set. The NF-BM-4 entry supplies the placeholder value for `GELDAR_MAP_NF_UPSTREAM`.
+2. On the node, in a throwaway container of the running image, with the new env file and the staged file, exactly as
+   README step 3 (pre-validation) describes. Stop on any error. Do not recreate anything until this passes.
+
+Note: `GELDAR_MAP_NF_UPSTREAM` goes into `<env-file>` as `GELDAR_MAP_NF_UPSTREAM=<nf-web-upstream>` (the value only, read
+by docker and never printed). Append it with the guarded append that README step 2 uses.
+
+### 4.4 Load
+
+1. Copy the staged file into the live directory with the same owner and mode (`sudo install -m <mode> -o <owner> -g <group> ...`).
+2. Recreate `board-proxy` once, from the compose project directory that the labels precheck of README step 3 reports:
+   `sudo docker compose -p <project> up -d --force-recreate board-proxy`.
+   Do not use `docker restart` here: the new environment value is not loaded by a restart.
+3. Immediately after: `docker inspect -f '{{.State.Running}}' board-proxy` prints `true`;
+   `docker exec board-proxy caddy validate --config /etc/caddy/Caddyfile` passes; the baseline comparison prints nothing.
+
+If any of these fails: remove the live file (`sudo rm -f <host config dir>/geldar/map-neoforge.caddy`), restore the env
+file from `<env-file>.bak-$STAMP` (`sudo cp -p`), recreate once more, check again, and report. This is the failure path
+of README step 4. It is a second outage.
+
+### 4.5 Verify the edge (before DNS)
+
+Use `--resolve` so that nothing depends on DNS yet. `<edge-ip>` is the node's public address (never written here).
+
+```
+curl -s -o /dev/null -w '%{http_code}\n' --resolve map.neoforge.geldar.<zone>:443:<edge-ip> https://map.neoforge.geldar.<zone>/
+curl -s -o /dev/null -w '%{http_code}\n' -X POST --resolve map.neoforge.geldar.<zone>:443:<edge-ip> https://map.neoforge.geldar.<zone>/
+curl -s -o /dev/null -w '%{http_code}\n' --resolve map.neoforge.geldar.<zone>:443:<edge-ip> https://map.neoforge.geldar.<zone>/maps/overworld/live/players.json
+curl -sI --resolve map.neoforge.geldar.<zone>:443:<edge-ip> https://map.neoforge.geldar.<zone>/ | grep -i -E 'x-content-type-options|referrer-policy|content-security-policy|^server'
+```
+
+Expected: `200`, `405`, `404`. The header grep shows `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
+`Content-Security-Policy: frame-ancestors 'none'`, and no `Server:` line.
+
+The public host is `map.neoforge.geldar.<zone>`: the design's `map.neoforge.geldar` under the owner's zone. The Caddy
+site address is `map.neoforge.{$GELDAR_DOMAIN}`, so the owner confirms that `GELDAR_DOMAIN` is `geldar.<zone>` before
+the first recreate. A mismatch is a stop: fix the value first.
+
+The TLS certificate is issued by the same DNS-challenge path as the other sites. Wait for the `certificate obtained`
+log line for the host before the first request; without it these requests fail on TLS.
+
+### 4.6 Rollback for the edge
+
+Pick the row that matches the failure. Both rows are outages on every site: the restart or recreate drops connections
+on the whole node.
+
+- Swap to the off file (the normal kill switch): stage `map-neoforge-off.caddy` into the live directory under the same
+  name `map-neoforge.caddy` (the two files never coexist; they name the same host), then `docker restart board-proxy`
+  (file-only change, R39). The env value stays. Re-run the baseline comparison.
+- Restore the backup: `sudo rm -f <host config dir>/geldar/map-neoforge.caddy`, then copy the `geldar` backup over
+  the live directory (`sudo cp -a <backup dir>/edge-$STAMP/geldar/. <host config dir>/geldar/`), restore the env file
+  from `<env-file>.bak-$STAMP` if `GELDAR_MAP_NF_UPSTREAM` was added, and run one recreate if the env file changed or one
+  `docker restart board-proxy` if only files changed. Check the baseline comparison after it.
+
+## 5. DNS: the name goes last
+
+Created only after section 4.5 passed, with the owner's OK, and never before. The record is a CNAME:
+
+- Name: `map.neoforge.geldar` in zone `<zone>`.
+- Value: `<edge-target>`, the same target the Paper map's record uses. Look up the Paper record's value at packet time
+  (the owner's DNS panel); do not copy it from this file or from a ticket.
+- TTL: the zone default.
+
+Verify, from the operator workstation, after the record is published:
+
+```
+nslookup -type=CNAME map.neoforge.geldar.<zone>
+curl -s -o /dev/null -w '%{http_code}\n' https://map.neoforge.geldar.<zone>/
+```
+
+The CNAME prints `<edge-target>`, and the request prints `200`. A failed answer is a rollback, not a retry.
+
+Rollback: delete the CNAME. Resolvers keep the old answer until its TTL runs out, so the kill switch in section 4.6 is the
+fast one. Deleting the record does not stop an open browser tab; the edge row is what stops content.
+
+## 6. Privacy checklist
+
+The owner's map shows every build, including private ones. Players are real people. Every box must be ticked before the
+map is announced. Ops writes the result of each check into the report.
+
+- [ ] Players are hidden in the NeoForge BlueMap configs (NF-BM-2). Read the deployed copy and confirm the player-marker
+      and hide options are the values NF-BM-2's test asserts. Ops reads it from the BlueMap config mount, not from memory.
+- [ ] The web container returns `404` for `/maps/overworld/live/players.json` and `/maps/overworld/live/markers.json` on
+      loopback (scratch and live), and through the edge (section 4.5). Two layers, both checked.
+- [ ] No markers exist in any map. `markers.json` for each map is absent or empty, and none is configured. Markers wait
+      for the owner's word: builds can reveal player homes.
+- [ ] No custom scripts or styles are served. `curl -s https://map.neoforge.geldar.<zone>/settings.json` has no entry in
+      `scripts` or `styles`, and the page source (`curl -s https://map.neoforge.geldar.<zone>/`) names no `geldar-` asset.
+- [ ] No chat panel, follow feature or dial files are on the `bluemap/web` subpath (`ls` of that directory shows no `geldar-*` file).
+- [ ] No live data is published: the live path returns `404` (the check above, on loopback and through the edge), and
+      `players.json` is absent from the webroot: `docker exec <neoforge-container> find /data/bluemap/web -name players.json`
+      prints nothing. Read only, on the live volume.
+- [ ] Render bounds are set by render-mask box masks (branch nfbm-a). `remove-caves-below-y` is left at its default, so
+      underground builds are rendered. This is an owner decision: the owner was told the map shows every build, including
+      private ones.
+- [ ] Abuse is handled by the edge cap (1 KiB body, GET and HEAD only, the 405 handle) and the container CPU cap. If abuse
+      appears, the fix is a Cloudflare rate rule at the zone (an owner action), not code.
+
+## 7. Kill switch and rollback summary
+
+| Need | Action | Cost and scope |
+| --- | --- | --- |
+| Take the public page down now | Swap `map-neoforge-off.caddy` in as `map-neoforge.caddy` (section 4.6), `docker restart board-proxy` | Outage of every site on the node, 5 to 15 s estimate |
+| Stop only the NeoForge web container | `docker stop <nf-web-container>` | The NeoForge name answers 502. Other sites are not affected |
+| Stop rendering and remove BlueMap from the NeoForge server | Remove the BlueMap entry from the mod mount (geldar-neoforge's change), then the section 3.2 recreate | Players disconnect during the recreate; geldar jar unaffected |
+| Remove the name | Delete the CNAME (section 5) | Ends at the record's TTL |
+| Roll back the edge in full | Restore the backup (section 4.6) | Outage of every site, one restart or recreate |
+| Roll back the mod on a failed recreate | Section 3.2 failure path: geldar-neoforge removes the BlueMap jar, recreate once | Players disconnect |
+
+Order of rollback when in doubt: DNS first (it stops new visitors), then the edge (it stops the content), then the NeoForge
+web container and the mod.
+
+## 8. Warning
+
+> **WARNING: never run `docker compose` against the node's drifted `compose/colo.yml`.** The node's file differs from
+> `main` (literal project and network names, a different Paper cap, literal ports and a missing gamerule). Compose recreates
+> the shared `colo` network, and on 2026-11-17 that failed with "active endpoints". The drift is described in
+> `docs/runbooks/map-chat-panel.md`, section 2a. Until it is reconciled in the repo, every node change in this runbook is
+> either a file change, a `docker restart`, or a run of `deploy/nf-deploy.sh` for the NeoForge project (section 3.2)
+> or the edge compose project (section 4.4), never a compose run against `colo.yml`.
+
+> **WARNING: this runbook never edits `deploy/nf-deploy.sh` or `compose/nf-live.yml`.** Those files belong to
+> geldar-neoforge. If the mod mount or a service name in them is wrong for this map, ask geldar-neoforge to change them.
+> Do not patch them on the node.
+
+> **WARNING: never `systemctl restart caddy`, never `caddy reload` on the node (the admin API is off, R39), and never
+> recreate `board-proxy` outside an approved window.** Every restart or recreate of the shared Caddy is an outage of every
+> site on the node, not only the NeoForge map.
