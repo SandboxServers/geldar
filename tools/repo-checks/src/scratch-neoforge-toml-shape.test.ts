@@ -185,6 +185,54 @@ describe.skipIf(skipWithoutSh())('the server-left-behind toml shape', { timeout:
     });
   }
 
+  it('a UTF-8 BOM before the first header is stripped from the rewritten copy, and [forwarding] appears once', () => {
+    const c = setup();
+    mkdirSync(join(c.data, 'config'), { recursive: true });
+    writeFileSync(c.config, `﻿${leftBehind(OLD_SECRET, '\n', '')}`);
+    const r = run(c);
+    expect(r.status).toBe(0);
+    expect(r.stdout + r.stderr).not.toContain(SECRET);
+    expect(r.stdout + r.stderr).not.toContain(OLD_SECRET);
+    const text = readFileSync(c.config, 'utf8');
+    expect(text.startsWith('﻿')).toBe(false);
+    expect(text.split('[forwarding]').length - 1).toBe(1);
+    expectShape(text);
+  });
+
+  // Each form the rewrite does not handle is refused before any write: exit 1, the file is unchanged, nothing starts and no
+  // secret (old or current) is printed. Without the refusal the rewrite appends a second [forwarding] table.
+  const REFUSED: Array<[string, string]> = [
+    [
+      'a quoted [forwarding] header',
+      `["forwarding"]\nenabled = true\nmode = "MODERN"\nsecret = "${OLD_SECRET}"\n`,
+    ],
+    [
+      'a single-quoted [forwarding] header after a BOM',
+      `﻿['forwarding']\nenabled = true\nsecret = "${OLD_SECRET}"\n`,
+    ],
+    ['a dotted forwarding key', `forwarding.enabled = true\nforwarding.secret = "${OLD_SECRET}"\n`],
+    [
+      'an inline forwarding table',
+      `forwarding = { enabled = true, mode = "MODERN", secret = "${OLD_SECRET}" }\n`,
+    ],
+  ];
+  it.each(REFUSED)(
+    'refuses %s: exit 1, the file is unchanged, nothing starts, no secret is printed',
+    (_label, body) => {
+      const c = setup();
+      mkdirSync(join(c.data, 'config'), { recursive: true });
+      writeFileSync(c.config, body);
+      const r = run(c);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain('refusing to start');
+      expect(r.stdout).not.toContain('started');
+      expect(r.stdout + r.stderr).not.toContain(SECRET);
+      expect(r.stdout + r.stderr).not.toContain(OLD_SECRET);
+      expect(readFileSync(c.config, 'utf8')).toBe(body);
+      expect(existsSync(`${c.config}.bak`)).toBe(false);
+    },
+  );
+
   it('the first-restart sequence on the left-behind shape: first start, the server leaves this file, then two more starts', () => {
     const c = setup();
     expect(run(c).status).toBe(0);

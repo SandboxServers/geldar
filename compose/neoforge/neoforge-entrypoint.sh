@@ -294,6 +294,17 @@ fi
 # The mod's config, from its README layout. Written once; on later starts only the secret line is replaced, because the
 # mod may have rewritten the file.
 cfgdir=$(dirname "$config")
+# A TOML form the rewrite below does not handle is refused before any write: a quoted [forwarding] header, a dotted or quoted
+# forwarding key, or an inline forwarding table. A UTF-8 BOM on line 1 is ignored here, as in the rewrite. No value is printed.
+if [ -f "$config" ] && LC_ALL=C awk '
+  NR == 1 { sub(/^\357\273\277/, "") }
+  /^[ \t]*\[[ \t]*[\042\047][ \t]*forwarding[ \t]*[\042\047]/ { bad = 1 }
+  /^[ \t]*[\042\047]?forwarding[\042\047]?[ \t]*[.=]/ { bad = 1 }
+  END { exit !bad }
+' "$config"; then
+  echo "neoforge-entrypoint: the PCF config uses a TOML form the entrypoint does not rewrite (a quoted [forwarding] header, a dotted or quoted forwarding key, or an inline forwarding table); delete it or fix it by hand; refusing to start" >&2
+  exit 1
+fi
 mkdir -p "$cfgdir"
 if [ ! -e "$config" ]; then
   {
@@ -319,7 +330,8 @@ else
   cp "$config" "$config.bak"
   chmod 600 "$config.bak"
   chown --reference="$data" "$config.bak"
-  NF_PCF_SECRET="$secret" awk '
+  NF_PCF_SECRET="$secret" LC_ALL=C awk '
+    NR == 1 { sub(/^\357\273\277/, "") }
     function table_name(line,   name) {
       name = line
       sub(/^[ \t]*\[/, "", name)
