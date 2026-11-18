@@ -15,6 +15,10 @@ one sink per shard; see also docs/decisions/0026-one-database-per-shard.md). Rea
   other compose file.
 - Services: `nats`, `postgres`, `eventsink`, `identity-seed` (one-shot), `velocity`, `neoforge` (the NeoForge 26.1.2 server
   with Proxy Compatible Forge for forwarding, bundle install, pinned mod jar).
+- No server whitelist: `neoforge` sets `ENABLE_WHITELIST` and `ENFORCE_WHITELIST` to `FALSE` (owner decision 2026-11-17,
+  decision 0387). Admission is the human lane only (online-mode login, the agent-name refusal); the bot ingress stays
+  offline-mode and unpublished. The probe's `whitelist add` and `whitelist remove` are harmless on this shard. The
+  autonomous Paper shard (compose/phase0.yml) keeps its whitelist. Enforced by tools/repo-checks/src/nf-no-whitelist.test.ts.
 
 ## 2. Port block (loopback only)
 

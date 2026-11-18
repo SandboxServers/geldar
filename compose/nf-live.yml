@@ -274,6 +274,10 @@ services:
       NEOFORGE_VERSION: "26.1.2.${NF_NEOFORGE_BUILD:-126}"
       MEMORY: "${NF_NEOFORGE_HEAP:-9G}"
       ONLINE_MODE: "FALSE"
+      # No server whitelist on the NeoForge shard (owner decision 2026-11-17, decision 0387): anyone with a valid
+      # online-mode account through the human listener may join. The agent lane is unchanged (offline-mode, unpublished).
+      ENABLE_WHITELIST: "FALSE"
+      ENFORCE_WHITELIST: "FALSE"
       ENABLE_RCON: "FALSE"
       GELDAR_NATS_URL: nats://nats:4222
       GELDAR_NATS_USER: neoforge
