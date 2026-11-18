@@ -1,0 +1,77 @@
+# The BlueMap web overlay for the live NeoForge project (project geldar-nf): one service, bluemap-web-nf, a read-only Caddy
+# that serves the NeoForge BlueMap tiles on loopback port 8110. The service and its Caddyfile are the BlueMap team's
+# (compose/bluemap-web-nf/README.md and Caddyfile, merged in #747); this file places the snippet as an overlay, unchanged.
+# Render alone (as ci.yml does) or merged with the base:
+#   docker compose -f compose/nf-live-bluemap-web.yml config --quiet
+#   docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-bluemap-web.yml config --quiet
+#
+# Bring-up is a separate, explicit step, and only after BlueMap has rendered (docs/runbooks/nf-bluemap-web.md):
+#   docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-bluemap-web.yml up -d --no-deps bluemap-web-nf
+# The subpath bluemap/web of the neoforge-data volume must exist before the container starts. There is no depends_on:
+# a static file server does not need the game server, and the alone render has no neoforge service to depend on.
+#
+# What the container sees: only the subpath bluemap/web of neoforge-data, read only, at /srv. Never /data, never the
+# whole volume. The Caddyfile is a read-only bind. No secret, no env_file, no other mount.
+# Network: its own bluemap-web-nf network, not nf and not nf-human. It needs no NATS, no game server and no RCON, so it
+# joins none of them; the published loopback port does not need any other network.
+#
+# Environment: none required. NF_SERVICE_UID and NF_SERVICE_GID (the same variables as nf-live.yml) set the user; the
+# defaults are 1000 and the uid, as in the base file.
+name: geldar-nf
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-labels: &nf-labels
+  geldar.project: geldar-nf
+  com.centurylinklabs.watchtower.enable: "false"
+
+services:
+  bluemap-web-nf:
+    # Budget: 0.25 CPU, 128 MiB, 64 pids (deploy.resources.limits only). memswap equals memory, so no swap.
+    image: caddy@sha256:c3d7ee5d2b11f9dc54f947f68a734c84e9c9666c92c88a7f30b9cba5da182adb
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    # Caddy writes its autosave and state under these; the root filesystem is read only, /tmp is a tmpfs.
+    environment:
+      XDG_CONFIG_HOME: /tmp/config
+      XDG_DATA_HOME: /tmp/data
+    volumes:
+      # Only the bluemap/web subpath of the NeoForge data volume, read only. Never the volume root.
+      - type: volume
+        source: neoforge-data
+        target: /srv
+        read_only: true
+        volume:
+          subpath: bluemap/web
+      - ./bluemap-web-nf/Caddyfile:/etc/caddy/Caddyfile:ro
+    ports:
+      # The loopback map port. Literal: the loopback rule rejects interpolation.
+      - "127.0.0.1:8110:8110"
+    # The same uid:gid as the other nf services, so the read of bluemap/web matches the account BlueMap writes as.
+    user: "${NF_SERVICE_UID:-1000}:${NF_SERVICE_GID:-${NF_SERVICE_UID:-1000}}"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    networks: [bluemap-web-nf]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128m
+          pids: 64
+    memswap_limit: 128m
+    logging: *logging
+    labels: *nf-labels
+    restart: unless-stopped
+
+networks:
+  bluemap-web-nf: {}
+
+volumes:
+  neoforge-data: {}
