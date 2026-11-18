@@ -71,8 +71,8 @@ const hostPortOf = (entry: string) =>
     .split(':')[1];
 
 describe('the human lane overlay (compose/nf-live-human.yml) with the live base', () => {
-  it('adds exactly one service, velocity-human, and no other service', () => {
-    expect(Object.keys(services(HUMAN))).toEqual(['velocity-human']);
+  it('adds velocity-human, and only re-declares nats and neoforge (for their nf-human network), no other service', () => {
+    expect(Object.keys(services(HUMAN)).sort()).toEqual(['nats', 'neoforge', 'velocity-human']);
   });
 
   it('publishes exactly one entry, the human mapping on 127.0.0.1:46566 by default', () => {
@@ -122,9 +122,14 @@ describe('the human lane overlay (compose/nf-live-human.yml) with the live base'
     expect(svc.stop_grace_period).toBeDefined();
   });
 
-  it('mounts only the toml, the data volume and the identity jar, and reads only the velocity NATS password and the forwarding secret', () => {
+  it('mounts only the toml, the data volume and the identity jar, and reads only the human NATS password and the forwarding secret', () => {
     const svc = services(HUMAN)['velocity-human'] ?? {};
-    expect(svc.secrets).toEqual(['velocity-forwarding', 'nats-velocity.txt']);
+    expect(svc.secrets).toEqual(['velocity-forwarding', 'nats-human.txt']);
+    expect(svc.secrets).not.toContain('nats-velocity.txt');
+    expect(svc.environment).toMatchObject({
+      GELDAR_NATS_USER: 'human',
+      GELDAR_NATS_PASSWORD_FILE: '/run/secrets/nats-human.txt',
+    });
     const sources = (svc.volumes ?? []).map((v) =>
       typeof v === 'string' ? v.split(':')[0] : (v as { source: string }).source,
     );
@@ -151,17 +156,32 @@ describe('the human lane overlay (compose/nf-live-human.yml) with the live base'
     }
   });
 
-  it('is on the nf network only, and depends on neoforge and nats', () => {
+  it('is on the nf-human network only (not nf), and depends on neoforge and nats', () => {
     const svc = services(HUMAN)['velocity-human'] ?? {};
-    expect(svc.networks).toEqual(['nf']);
+    expect(svc.networks).toEqual(['nf-human']);
     expect(Object.keys(svc.depends_on as Record<string, unknown>).sort()).toEqual(
       ['identity-seed', 'nats', 'neoforge'].sort(),
     );
   });
 
-  it('declares no top-level secret or network that the base file lacks, except the data volume', () => {
+  it('puts nats and neoforge on nf-human as well as nf, and puts no other overlay service on nf-human', () => {
+    const over = services(HUMAN);
+    expect(over.nats?.networks).toEqual(['nf', 'nf-human']);
+    expect(over.neoforge?.networks).toEqual(['nf', 'nf-human']);
+    const onHuman = Object.keys(over).filter((name) =>
+      ((over[name]?.networks as string[] | undefined) ?? []).includes('nf-human'),
+    );
+    expect(onHuman.sort()).toEqual(['nats', 'neoforge', 'velocity-human']);
+    const human = load(HUMAN) as { networks?: Record<string, unknown> };
+    expect(Object.keys(human.networks ?? {})).toEqual(['nf-human']);
+  });
+
+  it('declares only its own network, its own NATS secret and the data volume on top of the base file', () => {
     const human = load(HUMAN) as Record<string, unknown>;
-    expect(Object.keys(human).sort()).toEqual(['name', 'services', 'volumes', 'x-logging'].sort());
+    expect(Object.keys(human).sort()).toEqual(
+      ['name', 'networks', 'secrets', 'services', 'volumes', 'x-logging'].sort(),
+    );
+    expect(Object.keys(human.secrets as Record<string, unknown>)).toEqual(['nats-human.txt']);
   });
 });
 

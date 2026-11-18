@@ -54,6 +54,11 @@ function Get-NfNatsUsers {
     # geldar.nf.* subject, no other bucket, no other key, and no direct get. Real Bodies on geldar-nf will need their own
     # role and a later owner decision; this user is the probe's only.
     body = @{ Pub = @('$KV.geldar-life-registry.ag_nfprobe_01', '$JS.API.INFO', '$JS.API.STREAM.INFO.KV_geldar-life-registry', '$JS.API.STREAM.MSG.GET.KV_geldar-life-registry', '_INBOX.>'); Sub = @('_INBOX.>') }
+    # The human lane (velocity-human, compose/nf-live-human.yml) has its own user, nats-human.txt. It watches the same two buckets
+    # as velocity, read only: IdentityPlugin starts a registry client and a skin client whenever GELDAR_NATS_URL is set, in either
+    # lane (plugin/velocity-identity IdentityPlugin.java:139-142), and reads the skin on each login (:259). Its flow control is
+    # scoped to those two buckets. It publishes no $KV subject, no $JS.API wildcard, no create, update or purge, and no event subject.
+    human = @{ Pub = $velocityApi + @(foreach ($b in $buckets) { "`$JS.FC.KV_$b.>" }) + @('_INBOX.>'); Sub = @('_INBOX.>') }
   }
 }
 
@@ -115,7 +120,7 @@ function Initialize-NfNatsAuth([string[]] $Flags = @()) {
   $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
   # The NATS passwords, then the Postgres password, the Velocity forwarding secret and the RCON password (nf-live.yml declares
   # them; rcon is read by the neoforge service's RCON_PASSWORD_FILE). Each is 32 symbols from $alphabet (the neoforge entrypoint
-  # accepts [A-Za-z0-9_-] only), no trailing newline, never overwritten. Ten files in all with the conf (nats-body.txt is the probe's).
+  # accepts [A-Za-z0-9_-] only), no trailing newline, never overwritten. Eleven files in all with the conf (nats-body.txt is the probe's, nats-human.txt the human lane's).
   $names = @($users.Keys | ForEach-Object { "nats-$_" }) + 'postgres', 'velocity-forwarding', 'rcon'
   foreach ($name in $names) {
     $path = Join-Path $dir "$name.txt"

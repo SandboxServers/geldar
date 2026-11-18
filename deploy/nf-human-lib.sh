@@ -63,6 +63,9 @@ check_human_inputs() {
   [ -f "$HUMAN_TOML" ] || die "compose/velocity/velocity-nf-human.toml is missing (the human proxy config); refusing"
   [ -f "$HUMAN_JAR" ] || die "the identity plugin jar is missing (build plugin/velocity-identity first; the overlay mounts it); refusing"
   [ -s "$HUMAN_JAR" ] || die "the identity plugin jar is empty (zero bytes); build plugin/velocity-identity again; refusing"
+  # The human lane's NATS password (velocity-human reads it as nats-human.txt). Only the generator writes it; no path is printed.
+  secdir=${NF_SECRETS_DIR:-$ROOT/compose/secrets-nf}
+  [ -s "$secdir/nats-human.txt" ] || die "nats-human.txt is missing or empty in the NF secrets directory (NF_HUMAN=on needs it); re-run the NATS auth generator (./geldar.ps1 shard nats-auth nf --live, on the trusted machine), then copy the result to the node; refusing"
   say "human lane on: velocity-human publishes $HUMAN_BIND:$HUMAN_PORT->25565 (the only human publish)"
 }
 
