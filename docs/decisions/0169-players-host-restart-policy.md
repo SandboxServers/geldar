@@ -1,6 +1,6 @@
 # 0169: A player host restarts itself on failure, up to five times, and keeps its logs
 
-- Status: Accepted (owner instruction, 2026-11-13, after the incident of the same day). Known limit, may need an owner call: see Consequences.
+- Status: Accepted (owner instruction, 2026-11-13, after the incident of the same day). Restart policy (items 2 and 3, and the reboot consequence) superseded in part by 0342. Known limit, may need an owner call: see Consequences.
 - Date: 2026-11-13
 - Amends: the run line of `deploy/colo-admin.sh player-start` (it was `run -d --rm`) and the `restart` key of the `players-host` service in `compose/colo.yml`; extends decision 0082 (log rotation) to the player hosts with the same cap.
 

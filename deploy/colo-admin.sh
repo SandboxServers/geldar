@@ -173,8 +173,8 @@ verify_token() {
 # `unless-stopped` (docker update; decision 0342, which supersedes the on-failure:5 part of 0169). A crash restarts it, and so
 # does a clean exit by a node reboot (SIGTERM exits 0), so the hosts come back after an unattended reboot. Docker backs off
 # exponentially between restarts. There is no five-restart cap any more: a crash loop keeps restarting with a growing delay,
-# and its restart count shows it. `player-stop` (docker stop) is the way to stop one: docker does not restart a container that
-# was stopped by hand, so unless-stopped holds it down until player-start. The container is kept
+# and its restart count shows it. `player-stop` stops the host and removes its container, so nothing restarts it until
+# player-start. A raw `docker stop` leaves an exited container, which unless-stopped keeps down. The container is kept
 # after it exits (no --rm), so its logs survive; player-start removes a stopped leftover with `rm -f` before it starts again.
 # Only containers that carry the geldar-colo compose project label and that exact name are ever listed, started or stopped.
 SHARD_FILE=${GELDAR_COLO_SHARD:-$ROOT/shards/colo-mind.yaml}

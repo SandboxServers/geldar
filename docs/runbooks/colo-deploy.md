@@ -120,8 +120,9 @@ the run exits 1 with "needs manual": the shared services stay on the new release
 The hosts use `unless-stopped` (decision 0342, which supersedes the `on-failure:5` part of decision 0169): a crash and a clean
 exit by a node reboot both restart the host, with Docker's back-off and no restart cap. After an unattended reboot the
 hosts come back on their own; check them with the list in "After an unattended reboot" below. A host that is still not
-running after a reboot was stopped by hand (`player-stop`, which holds it down), or its `docker update` failed in
-`player-start`; start it with `colo-admin.sh player-start <id>`.
+running after a reboot was stopped by hand with `player-stop` (which removes the container, so nothing restarts it), or its
+`docker update` failed in `player-start`; start it with `colo-admin.sh player-start <id>`. A host that is up but has no
+player in game after the reboot (step 2 of the check below) is idle: re-run `player-start` for it (decision 0342).
 
 ## After an unattended reboot
 
@@ -131,19 +132,19 @@ read-only commands, from the repo root on the node. None of them changes anythin
 1. The roster: the expected count is the number of `player_id` entries in the shard file. The online count from Paper must match it once every Body has joined.
    `grep -Eo 'player_id:[[:space:]]*ag-[a-z0-9-]+' shards/colo-mind.yaml | wc -l`
    `docker exec geldar-colo-paper-1 rcon-cli list`
-2. The player hosts: all of them are Up. The count of `players-host` containers equals the roster count from step 1.
+2. The player hosts: the running ones are Up. A hibernating or never-started player has no container, so the count of running hosts is at most the roster of desired-up players from step 1; a player with no container shows `not running` in player-list.
    `docker ps --filter "label=com.docker.compose.project=geldar-colo" --filter "name=players-host" --format '{{.Names}}\t{{.Status}}'`
-   `deploy/colo-admin.sh player-list` (`running` for each player; a host that is `exited` was stopped by hand or its update failed)
-   `docker inspect -f '{{.Name}} {{.HostConfig.RestartPolicy.Name}}' $(docker ps -aq --filter name=geldar-colo-players-host-ag-)`
-   (read-only; every player host prints a line ending in `unless-stopped`, and the count of lines is the roster count from step 1, 19 hosts on the current roster; a line that ends in `no` or `on-failure` was not updated by `player-start`, so re-run `player-start` for that player)
+   `deploy/colo-admin.sh player-list` (`running` for each player; `exited` means stopped by hand or a failed update, or a crash that left it so)
+   `docker inspect -f '{{.Name}} {{.HostConfig.RestartPolicy.Name}} {{.RestartCount}}' $(docker ps -aq --filter name=geldar-colo-players-host-ag-)`
+   (read-only; each host prints its name, `unless-stopped` and its restart count; a policy other than `unless-stopped` was not set by `player-start`, so re-run `player-start` for that player; a restart count that keeps growing is a crash loop, see [failure modes](../operations/failure-modes.md). With no host container the command prints an error, which means none exists.)
 3. The shared services: `nats` and `paper` show `(healthy)` in the Status column.
    `docker ps --filter "label=com.docker.compose.project=geldar-colo" --format '{{.Names}}\t{{.Status}}'`
-4. The telemetry stack: the `geldar-gateway` container and the other telemetry services are Up (same `docker ps` output as step 3).
+4. The telemetry stack: the `geldar-gateway` container and the other telemetry services are Up. It is a separate compose project, so use the telemetry check in [deploy/telemetry/README.md](../../deploy/telemetry/README.md), not step 3's `docker ps` (which filters on `geldar-colo`).
 5. The NF project: every `geldar-nf` container is Up.
    `docker ps --filter "label=com.docker.compose.project=geldar-nf" --format '{{.Names}}\t{{.Status}}'`
 
 Not verified from the repo: the exact container names of `nats`, `paper` and the telemetry services (`geldar-colo-paper-1`
-is the name the performance section uses; the others follow the same compose naming and were not checked on a node), and the
+is the name [deploy/README.md](../../deploy/README.md) uses; the others follow the same compose naming and were not checked on a node), and the
 `rcon-cli list` output format, which the roster count reads from the online-players line.
 
 ## Telemetry env on the node
