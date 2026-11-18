@@ -7,6 +7,7 @@ const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const PINS = 'compose/neoforge/extra-mods.pins';
 const ENTRY = 'compose/neoforge/neoforge-entrypoint.sh';
 const NF_LIVE_TELEMETRY = 'compose/nf-live-telemetry.yml';
+const SCRATCH = 'compose/opt-in/scratch-neoforge-extra-mods.yml';
 const MODS = ['chunky', 'bluemap'] as const;
 
 const pinLines = readFileSync(`${ROOT}${PINS}`, 'utf8')
@@ -94,4 +95,24 @@ describe('extra mods: the entrypoint names match the pins file (no docker needed
       expect(entry).toContain(`extra_copy ${name} ${env} "\${${env}:-}"`);
     }
   });
+
+  // With the feature off the entrypoint's extra_prep literal is the only pin it knows, so its value is checked, not only its call text.
+  it.each(MODS)(
+    '%s: the extra_prep pin literal equals the pins file, the overlay and the scratch overlay',
+    (name) => {
+      const env = `GELDAR_NF_EXTRA_${name.toUpperCase()}_SHA256`;
+      const calls = [
+        ...entry.matchAll(
+          new RegExp(`^extra_prep ${name}\\s+"[^"\\n]*"\\s+([0-9a-f]{64})[ \\t]*$`, 'gm'),
+        ),
+      ];
+      expect(calls).toHaveLength(1);
+      const literal = calls[0]?.[1];
+      expect(literal).toBe(pins.get(name)?.sha);
+      expect(literal).toBe(overlay(name).services.neoforge.environment[env]);
+      const scratch = parse(readFileSync(`${ROOT}${SCRATCH}`, 'utf8'));
+      // The scratch overlay changes only the paper service (the NeoForge service of the scratch stack).
+      expect(scratch.services.paper.environment[env]).toBe(literal);
+    },
+  );
 });
