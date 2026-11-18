@@ -12,7 +12,11 @@ import {
 import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+// Each case runs the shell script through sh, which is slow on Windows and under load: the file's tests get an explicit 30 s
+// timeout (the vitest default is 5 s).
+vi.setConfig({ testTimeout: 30000 });
 
 // The port gate of deploy/nf-deploy.sh: 127.0.0.1:46565 may be held by the project's own velocity container (plan and up
 // pass); any other listener refuses. Stub docker, ss, free, df, stat and tar sit first on PATH and log every docker call.
