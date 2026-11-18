@@ -14,7 +14,8 @@ one sink per shard; see also docs/decisions/0026-one-database-per-shard.md). Rea
   (`geldar-nf_nf`) and its own named volumes (`geldar-nf_*`). None is external. The file is not an overlay and names no
   other compose file.
 - Services: `nats`, `postgres`, `eventsink`, `identity-seed` (one-shot), `velocity`, `neoforge` (the NeoForge 26.1.2 server
-  with Proxy Compatible Forge for forwarding, bundle install, pinned mod jar).
+  with Proxy Compatible Forge for forwarding, bundle install, pinned mod jar). The `probe` one-shot (section 4c) is opt-in;
+  `up` never starts it.
 
 ## 2. Port block (loopback only)
 
@@ -23,7 +24,7 @@ one sink per shard; see also docs/decisions/0026-one-database-per-shard.md). Rea
 | 46565     | velocity | 25565          | yes, `127.0.0.1` | the only published port; loopback game ingress |
 | 46222     | nats     | 4222           | no | reserved: NATS client, never published by this file |
 | 46432     | postgres | 5432           | no | reserved: Postgres, never published by this file |
-| 46575     | neoforge | 25575          | no | reserved: RCON, not used (ENABLE_RCON is FALSE) |
+| 46575     | neoforge | 25575          | no | reserved: RCON is not published; inside Docker it is reachable from nf (and geldar-telemetry with telemetry), section 4c; the host port is unused |
 
 The block collides with none of compose/*.yml (the colo, phase0, opt-in and telemetry ports), deploy/scratch/*.env, or the
 scratch defaults. The repo test reads all of them and fails on a shared host port. 25565 and 25566 are never published
@@ -54,9 +55,13 @@ Their other services are UNVERIFIED here. Paper-equivalent sum about 32 GiB plus
 Per-project directory `compose/secrets-nf/` (gitignored; the repo ignore line is added). The file reads `${NF_SECRETS_DIR:-./secrets-nf}`.
 Names, one file each, mode 0600, owned by the ops account (uid `NF_SERVICE_UID`, 1001 on this node; section 5):
 
-- `nats-auth.conf` (the per-shard NATS server config), `nats-sink.txt`, `nats-neoforge.txt`, `nats-velocity.txt`, `nats-deploy.txt`, `nats-seed.txt`
-  (the five NATS users of the design: neoforge, sink, deploy, velocity, seed; the `nats-auth.conf` file is the server side);
-- `postgres.txt` (the Postgres password), `velocity-forwarding.txt` (the Velocity forwarding secret, shared with the NeoForge side).
+The directory holds TEN files: the list is `SECRET_FILES` in `deploy/nf-deploy.sh`, and the generator writes exactly these ten.
+
+- `nats-auth.conf` (the per-shard NATS server config; the server side of the six NATS users);
+- six NATS password files, one per user: `nats-neoforge.txt`, `nats-sink.txt`, `nats-deploy.txt`, `nats-velocity.txt`, `nats-seed.txt`
+  and `nats-body.txt` (the users neoforge, sink, deploy, velocity, seed and body; body is the probe's, section 4c);
+- `postgres.txt` (the Postgres password), `velocity-forwarding.txt` (the Velocity forwarding secret, shared with the NeoForge side),
+  `rcon.txt` (the RCON password, section 4c).
 
 No secret value is in the file or in this runbook. The files are written by `./geldar.ps1 shard nats-auth nf --live` (section 4b,
 deploy/nats-auth-nf.ps1); do not create them by hand. The NATS user table itself is the per-shard NATS auth packet's (a3 in the design).
@@ -77,9 +82,9 @@ Shown in POSIX shell; on the Windows desktop run the same steps in pwsh 7 (`tar`
 3. Assert `$EXP` is an existing, empty directory (`[ -z "$(ls -A "$EXP")" ]`), then `tar -xf "$ARCH" -C "$EXP"`.
 4. `cd "$EXP"`, assert `[ "$(pwd -P)" = "$EXP" ]` and `[ ! -e .git ]`. Only now run the generator, from this directory:
    `./geldar.ps1 shard nats-auth nf --live`. Never run it from the live checkout or from any other directory.
-5. Check the set: `compose/secrets-nf/` holds `nats-auth.conf`, the five NATS password files (`nats-neoforge.txt`, `nats-sink.txt`,
-   `nats-velocity.txt`, `nats-deploy.txt`, `nats-seed.txt`), `postgres.txt` and `velocity-forwarding.txt`, with no other file
-   (eight names, the generator's full output).
+5. Check the set: `compose/secrets-nf/` holds `nats-auth.conf`, the six NATS password files (`nats-neoforge.txt`, `nats-sink.txt`,
+   `nats-velocity.txt`, `nats-deploy.txt`, `nats-seed.txt`, `nats-body.txt`), `postgres.txt`, `velocity-forwarding.txt` and `rcon.txt`, with no other file
+   (ten names, the generator's full output).
 
 **Copy to the node (the SAFE-EXPORT ends here on the desktop).**
 
@@ -87,7 +92,7 @@ Shown in POSIX shell; on the Windows desktop run the same steps in pwsh 7 (`tar`
    so the files arrive owned by its uid (1001, section 5). Do not copy the rest of the export.
 7. On the node, as the ops account, set the modes explicitly (scp does not keep them): `chmod 700 <dir>` and
    `chmod 600 <dir>/*`. Then check `stat -c '%a %u %n' <dir> <dir>/*`: the directory must show `700 1001`, every file `600 1001`,
-   and the file list must be the eight names of step 5. A wrong owner or mode stops the run here (the script refuses it too).
+   and the file list must be the ten names of step 5. A wrong owner or mode stops the run here (the script refuses it too).
 8. On the desktop, delete the copies: `rm -rf "$EXP" "$ARCH" "$LIST"` (the export holds the generated secrets). Keep no other copy.
 
 The generator's output is owned by the desktop account, and its modes are set on the desktop only; the node copy is set by
@@ -99,6 +104,19 @@ Files, in `compose/secrets-nf/` (git-ignored; `NF_SECRETS_DIR` points nf-live.ym
 config), then one password file per user: `nats-neoforge.txt`, `nats-sink.txt`, `nats-velocity.txt`, `nats-deploy.txt`,
 `nats-seed.txt`. Existing files are reused and never overwritten. If `nats-auth.conf` exists and a password file is missing,
 the run fails and writes nothing. Restore the missing file, or delete the directory and generate again before any start.
+
+**Upgrade: a node that already holds the older set.** A directory generated before the probe packet has eight files (no
+`rcon.txt`, no `nats-body.txt`), and the generator refuses to run on it. Do not regenerate it in place, and do not delete it
+when the node is running (postgres.txt and velocity-forwarding.txt must stay). The steps, in order:
+1. Keep the node's `postgres.txt` and `velocity-forwarding.txt`. The Postgres password applies only at the first initialisation
+   of the volume, and the forwarding secret must match the running velocity.
+2. On the trusted machine, in a clean export, run `./geldar.ps1 shard nats-auth nf --live` once. Copy to the node, from that one
+   run, `rcon.txt`, `nats-body.txt`, the new `nats-auth.conf` and all six `nats-*.txt` password files, and replace the node's
+   copies together: the conf and the password files must come from the same run.
+3. Restart with the existing verbs only: `nf-deploy.sh up` (compose re-creates the services whose config or secrets changed).
+   Start with nats, which reads the new conf; the passwords of eventsink, velocity, neoforge and identity-seed change with it.
+   Do not invent a restart; check `nf-deploy.sh status` after each step.
+The generator has no append mode, so this procedure is the only upgrade path. UNVERIFIED on a node.
 The files are mode 0600 and the directory 0700 on POSIX (checked by the test there); owner-only (ACL) on Windows. Each file is
 created empty, restricted, then written, so the secret is never in a file with a looser mode. On Windows the script sets no ACL on
 the directory: it inherits its parent's. A re-run restricts an existing file again; an existing empty secret file is refused by name.
@@ -107,14 +125,14 @@ An empty password file, or one with a double quote or a line break, is refused b
 Mapping to nf-live.yml: `nats-auth.conf` is the nats service's config; `nats-sink.txt` the eventsink; `nats-neoforge.txt`
 the neoforge service; `nats-velocity.txt` velocity; `nats-seed.txt` identity-seed (user `seed`). `nats-deploy.txt` is
 declared but no compose service mounts it: the maintenance notice is published by the operator's deploy as that user, on
-the node, outside the stack.
+the node, outside the stack. `rcon.txt` is the neoforge service's `RCON_PASSWORD_FILE` (section 4c). `nats-body.txt` is read
+only by the probe overlay (section 4c).
 
-Generated: the eight files of section 4b (`nats-auth.conf`, the five NATS password files, `postgres.txt` and
-`velocity-forwarding.txt`). Not generated: no Thinker token (this shard has no Thinker hub). A test checks that the files
-nf-live.yml declares are these eight.
+Generated: the ten files of section 4b (`nats-auth.conf`, the six NATS password files, `postgres.txt`,
+`velocity-forwarding.txt` and `rcon.txt`). Not generated: no Thinker token (this shard has no Thinker hub).
 
 Users and allow lists (every subject is `geldar.nf.*`, a JetStream API subject for the two streams below or the two identity
-buckets, or the inbox; no user has `>` or `geldar.*`):
+buckets, the life registry bucket (body only), or the inbox; no user has `>` or `geldar.*`):
 
 | User | May publish | May subscribe |
 |------|-------------|---------------|
@@ -123,6 +141,7 @@ buckets, or the inbox; no user has `>` or `geldar.*`):
 | deploy | `geldar.nf.maintenance` | `_INBOX.>` |
 | velocity | watch and get on the two identity buckets (read only) | `_INBOX.>` |
 | seed | `$JS.API.INFO`; create, inspect and update of the two identity buckets | `_INBOX.>` |
+| body | `$KV.geldar-life-registry.ag_nfprobe_01` (the probe's one key); `$JS.API.INFO`; stream info and message get of `KV_geldar-life-registry` (the registry only) | `_INBOX.>` |
 
 The two stream names are `GELDAR_EVENTS` (the name the plugin and the sink use today) and `GELDAR_EVENTS_NF` (decision
 0380). The `GELDAR_EVENTS` allow is a default: remove it when the sink's per-shard config lands.
@@ -133,6 +152,65 @@ copy it into a checkout, a ticket or a log.
 UNVERIFIED: the JetStream API subjects above come from the code and the @nats-io/jetstream 3.4.0 client; the test computes the
 sink's subjects from that client. The sink and seed permissions remain UNVERIFIED against a live server until the node run;
 nats-server 2.15 acceptance of this config is checked only there. The mod's export type list is not defined yet, so its publish is `geldar.nf.*` and narrows later.
+
+## 4c. RCON, the body user and the probe verb
+
+**RCON is enabled, on `neoforge` only.** The service sets `ENABLE_RCON: "TRUE"` and `RCON_PASSWORD_FILE: /run/secrets/rcon`
+(compose/nf-live.yml). Port 25575 is not published: no `ports:` entry names it, so it is not reachable from the host or the node. Inside the
+Docker networks, RCON listens on all interfaces of neoforge. Without telemetry, neoforge is on the nf network only, so any
+container on nf (velocity, nats, postgres, eventsink, identity-seed) can open a connection to 25575; only the RCON password
+guards it. With `NF_TELEMETRY=on`, neoforge is also on geldar-telemetry, so every container on that network can open it too.
+This is accepted (the password is the only guard); the render test in nf-live-telemetry.test.ts pins the two network lists. The host port 46575 of section 2 stays reserved and unused. The
+password is `rcon.txt` (section 4), read only by the neoforge service and the probe.
+
+**The body user.** `nats-body.txt` is the password of the NATS user `body`, the probe's own user (its allow list is in section 4b).
+It is mounted only by the probe overlay, compose/nf-live-probe.yml, and no base service reads it.
+
+**The probe verb.** `deploy/nf-deploy.sh probe` first runs `compose build probe` on every run, so a stale tag cannot keep an old
+isolation guard. The first build needs network access (the golem image runs `pnpm install`) and takes a few minutes. Ctrl-C or
+TERM during the run removes the leftover probe with its 60 s stop grace period and exits 130 or 143. The probe service runs
+read-only, with no capabilities and no-new-privileges (UNVERIFIED on a node; compose/opt-in/scratch-probe.yml sets none of
+these). It then runs one golem Body probe, `ag_nfprobe_01`, over the project network, with the
+`body` NATS user and RCON. The overlay compose/nf-live-probe.yml (profile `probe`, image `geldar-body:geldar-nf`, built from
+golem/Dockerfile) runs as `run --rm --no-deps probe` on the project `geldar-nf`. It is a one-shot: it joins through Velocity,
+whitelists the name over RCON, registers it in the life registry, and cleans up.
+
+Preconditions, all checked by the script before the run (a failed check starts nothing):
+- The project is up: `nats`, `postgres`, `eventsink`, `velocity` and `neoforge` are running, and `identity-seed` has exited 0.
+  Run `nf-deploy.sh up` first.
+- `nats-body.txt` and `rcon.txt` are in the secrets directory and pass the secret check.
+- The isolation guard of the golem probe (golem/src/p0/isolation.ts) admits this project only once the golem + sink window lands:
+  the held probe-isolation packet (branch `phase1/nf-probe-isolation`, golem/**) accepts project `geldar-nf` with the hosts
+  velocity, neoforge and nats. Until it lands, the probe exits 2 with an isolation refusal and nothing else runs. Do not run
+  `probe` before that window.
+
+Cleanup: the probe process removes its own registry entry and its RCON whitelist entry (golem/src/p0/probe-cleanup.ts), on every
+exit including a signal, then reads the registry key back. The script's part is the container: `run --rm` removes it, and the
+script then runs `rm -f probe`, which removes one a crash left behind. The script does not touch the registry or the whitelist.
+
+Exit code: the probe's own. 0 means the join, the registration and the cleanup all succeeded and the read found the key absent
+(golem/src/p0/probe.ts header). 1 means any other failure, an interruption, a failed cleanup step, or a present or unknown read.
+2 means an isolation refusal. The script returns that code unchanged.
+
+`up` never starts the probe: the service is in profile `probe`, which `up` does not activate. `probe` runs with `--no-deps`, so
+compose starts and restarts nothing else.
+
+**Manual check before a second run: the bot must not be left over.** This repo ships no NATS CLI
+wrapper, so the check below uses no `nats kv get` command. The check is the wait below, for two reasons, both read from the code:
+- The probe's registration is an unconditional put: golem/src/p0/probe.ts:165 calls `registry.register`, which puts the key
+  (golem/src/registry.ts:165, `kv.put`). An existing `ag_nfprobe_01` key is overwritten, not refused, so a second run never fails
+  on a leftover entry.
+- A key that a killed or crashed run did not delete expires with the registry TTL: `REGISTRY_TTL_MS = 60_000`
+  (golem/src/registry.ts:15), and the bucket is created with that TTL (golem/src/registry.ts:80). After a failed or killed probe,
+  wait at least 60 s before `probe` runs again.
+
+**UNVERIFIED (probe and RCON):**
+- The `body` user's permissions. They derive from docs/security/authn-authz-map.md and the registry-KV use (section 4b), not from
+  a scratch auth run.
+- The probe's NATS and RCON behaviour on geldar-nf: nothing has run against this project.
+- The itzg `RCON_PASSWORD_FILE` handling on the pinned image: that the image reads the file and enables RCON with it.
+- The real `probe` run: the join, the whitelist, the registration and the cleanup on the node.
+- `rcon-cli` in the itzg image (section 8, item 7).
 
 ## 5. Environment (all optional at render time)
 
@@ -191,7 +269,7 @@ root; a checkout is refused, and `--local` is for the tests only). Run it as the
 - Verbs: `plan` (runs every gate and prints the steps, changes nothing), `up` (refuses an unseeded neoforge-data volume),
   `seed-bundle` (once per volume; see "Seeding the NeoForge bundle" below), `status`, `down` (stops and removes the
   project's containers and networks; volumes are kept), `down --volumes` (also removes the volumes, after the operator types
-  `geldar-nf` at the prompt), `logs <service>`.
+  `geldar-nf` at the prompt), `logs <service>`, `probe` (a one-shot, section 4c; `up` never starts it).
 - The project name (`geldar-nf`) and the file (`compose/nf-live.yml`) are constants. The script refuses to run when
   `GELDAR_PROJECT` or `GELDAR_COLO_COMPOSE` is set, and it does not source `deploy/common.sh`.
 - `up` runs in this order: `up -d --wait nats postgres`, the `identity-seed` one-shot, `up -d --wait eventsink neoforge`, then
@@ -199,9 +277,9 @@ root; a checkout is refused, and `--local` is for the tests only). Run it as the
 - Inputs, all from the environment: `NF_MOD_JAR_HOST` and `NF_MOD_SHA256` (the pinned mod jar and its sha256);
   `NF_BUNDLE_TARBALL` and `NF_BUNDLE_TARBALL_SHA256` (the offline bundle tarball from `deploy/scratch/build-neoforge-bundle.sh`
   and its sha256; `seed-bundle` reads them, plan and up take no bundle input, see "What is staged on the node"); `NF_SECRETS_DIR`
-  (default `compose/secrets-nf/`, which must hold the eight files the script lists, owner `NF_SERVICE_UID` (1001 on this node; the
-  script's default is 1000, so export it, section 5), mode 0600 or 0400). The list is eight names: `postgres.txt` and
-  `velocity-forwarding.txt` as well as the six NATS files of section 4b. The generator writes all eight (section 4b), so the
+  (default `compose/secrets-nf/`, which must hold the ten files the script lists, owner `NF_SERVICE_UID` (1001 on this node; the
+  script's default is 1000, so export it, section 5), mode 0600 or 0400). The list is ten names (`SECRET_FILES`): `rcon.txt`, `nats-auth.conf`, the six NATS files of section 4b, and
+  `postgres.txt` and `velocity-forwarding.txt`. The generator writes all ten (section 4b), so the
   files it wrote satisfy the list.
   `plan` and `up` read the secrets (through the gates); `seed-bundle`, `status`, `down` and `logs` do not.
 - Refusals, before any state changes: a colo variable set; a checkout; a missing or badly owned secret file; a mod jar or
@@ -231,8 +309,9 @@ root; a checkout is refused, and `--local` is for the tests only). Run it as the
   `chmod -R u+rwX /data` in the same throwaway container. The marker check runs as that same uid:gid
   (`NF_SERVICE_GID` defaults to `NF_SERVICE_UID`). Whether itzg re-owns `/data` when the uid is 1001 is UNVERIFIED on a node.
 - The NATS and secret generator (`./geldar.ps1 shard nats-auth nf --live`) runs on the trusted machine in a clean export, and
-  its result is copied to the node. It writes eight files: `nats-auth.conf`, five NATS password files (`nats-neoforge.txt`,
-  `nats-sink.txt`, `nats-deploy.txt`, `nats-velocity.txt`, `nats-seed.txt`), `postgres.txt` and `velocity-forwarding.txt`.
+  its result is copied to the node. It writes ten files: `nats-auth.conf`, six NATS password files (`nats-neoforge.txt`,
+  `nats-sink.txt`, `nats-deploy.txt`, `nats-velocity.txt`, `nats-seed.txt`, `nats-body.txt`), `postgres.txt`, `velocity-forwarding.txt`
+  and `rcon.txt`.
   Existing files are reused, never overwritten.
 
 ### Seeding the NeoForge bundle: `nf-deploy.sh seed-bundle`
@@ -327,7 +406,7 @@ from the exported tree, with `NF_SERVICE_UID` exported in the shell (section 5).
 4. **Seed (node):** `nf-deploy.sh seed-bundle` with `NF_BUNDLE_TARBALL` and `NF_BUNDLE_TARBALL_SHA256` (section 6). Once per volume.
    Then check the volume's owner and the marker as section 5 describes.
 5. **Plan (node, read-only):** `nf-deploy.sh plan` runs every gate and changes nothing. It refuses until `postgres.txt` and
-   `velocity-forwarding.txt` exist, so the eight secret files of section 4b must all be present (section 6).
+   `velocity-forwarding.txt` exist, so the ten secret files of section 4b must all be present (section 6).
 6. **Up (node):** `nf-deploy.sh up`. It starts the services in its own order (section 6): `nats` and `postgres`, then
    `identity-seed`, then `eventsink` and `neoforge`, then `velocity` (the only published port, loopback). Probes after it are
    read-only (`nf-deploy.sh status`, `logs`, and `tick query`, `list`, `version` in the game).
@@ -335,7 +414,7 @@ from the exported tree, with `NF_SERVICE_UID` exported in the shell (section 5).
 ### Checklist
 
 1. The NATS auth set is generated on the trusted machine and copied to the node (order steps 1 and 2). `postgres.txt` and
-   `velocity-forwarding.txt` are generated with the other six (section 4b); the secret files must be 0600 (or 0400) and owned by the ops account.
+   `velocity-forwarding.txt` and `rcon.txt` are generated with the other seven (section 4b, ten files in all); the secret files must be 0600 (or 0400) and owned by the ops account.
 2. The neoforge bundle seeded (order step 4; item 7.1 is done in the repo); compose/velocity/velocity-nf.toml is in place (bot
    ingress, backend neoforge:25565).
 3. `docker compose -p geldar-nf -f compose/nf-live.yml config --quiet` with the real environment, including `NF_SERVICE_UID=1001`.
@@ -343,13 +422,18 @@ from the exported tree, with `NF_SERVICE_UID` exported in the shell (section 5).
 5. Start with `up` (order step 6), not by hand. The old by-hand order (`nats`, `postgres`, `eventsink`, `identity-seed`,
    `neoforge`, `velocity`) differed from `up`'s order, so it is no longer the procedure.
 6. **Tick and TPS check, without RCON** (added with the telemetry overlay; used from the probe packet; outside this packet's scope).
-   RCON stays disabled (`ENABLE_RCON` is FALSE) until the probe packet, so this
+   RCON is enabled on the project network (section 4c), but this check does not use it, so this
    check reads the database. After about 30 s of neoforge uptime, run these read-only through the project's postgres service
    (database `geldar_nf`, user `geldar`, from compose/nf-live.yml):
    `docker compose -p geldar-nf -f compose/nf-live.yml exec -T postgres psql -U geldar -d geldar_nf -tAc "SELECT count(*) FROM events WHERE type = 'server_tps'"`
    The count must be greater than 0. Then `SELECT payload->>'tps' FROM events WHERE type = 'server_tps' ORDER BY at DESC LIMIT 1`
    must be near 20. A count above 0 proves the NATS and sink path. The `events` columns `type` and `payload` are from
    sql/0001_init.sql. The event name `server_tps` is UNVERIFIED in this repo until the first node run.
+7. **Tick and TPS over RCON, after item 6 passes (section 4c).** Run
+   `docker compose -p geldar-nf -f compose/nf-live.yml exec -T neoforge rcon-cli tick query` (the tick rate and the average time per
+   tick) and `... exec -T neoforge rcon-cli neoforge tps`. The repo calls `rcon-cli` through `docker exec` (docs/runbooks/scratch-stack.md,
+   deploy/scratch/telemetry-rows.sh), but `rcon-cli` in the itzg image and the reply format are UNVERIFIED on this image: record
+   each reply, or the unknown-command reply. Item 6 remains the primary proof of the NATS and sink path.
 
 ## 9. Telemetry (optional)
 
@@ -414,6 +498,6 @@ UNVERIFIED, and not covered by this packet:
   mount target of the overlay appears in `compose/neoforge/neoforge-entrypoint.sh`, that the `GELDAR_NF_TELEMETRY` grep of
   `deploy/nf-deploy.sh` matches, and that the old `GELDAR_NF_OTEL_AGENT_PIN` and `GELDAR_NF_OTEL_AGENT=` names are gone. It does
   NOT check that the entrypoint builds the `-javaagent` flag itself; that check is still open.
-- RCON stays disabled until the probe packet; the tick and TPS check (checklist item 6) is outside this packet.
+- RCON is enabled on the project network for the probe (section 4c). The tick and TPS checks (checklist items 6 and 7) are outside the telemetry overlay.
 - The mechanism by which `JVM_OPTS` reaches `user_jvm_args.txt` on every start of the pinned itzg image is verified by the lead,
   not by this checkout. The attach is not.

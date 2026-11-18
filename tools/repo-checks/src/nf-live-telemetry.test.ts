@@ -20,6 +20,7 @@ const AGENT_PIN = 'e43a270df53c6f423e0ab157be9c27ccc01d5dc3232e162fe54777573db2f
 const DUMMY_SHA = 'a'.repeat(64);
 const SECRET_NAMES = [
   'postgres.txt',
+  'rcon.txt',
   'velocity-forwarding.txt',
   'nats-auth.conf',
   'nats-sink.txt',
@@ -191,6 +192,12 @@ describe.skipIf(!DOCKER)('nf-live telemetry overlay: the render', () => {
       false,
     );
     expect(off.networks?.telemetry).toBeUndefined();
+  });
+
+  it('gives neoforge exactly two networks with telemetry (nf and geldar-telemetry), and one without', () => {
+    // RCON listens on all interfaces of neoforge, so every container on geldar-telemetry can reach port 25575 (only the password guards it).
+    expect(Object.keys(on.services.neoforge?.networks ?? {}).sort()).toEqual(['nf', 'telemetry']);
+    expect(Object.keys(off.services.neoforge?.networks ?? {})).toEqual(['nf']);
   });
 
   it('joins only the neoforge service to the external network geldar-telemetry', () => {

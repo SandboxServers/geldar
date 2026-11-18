@@ -2,8 +2,9 @@
 # Operator script for the live NeoForge project (compose project geldar-nf, compose/nf-live.yml). Run it on the node from an
 # exported tree (a git checkout is refused unless --local, which the tests use), as the operator account (never root, and
 # never with elevated rights). Verbs: plan (prints the gates and the steps, changes nothing), up (refuses an unseeded
-# neoforge-data volume), seed-bundle (once per volume: extracts the offline bundle tarball into it), status, down [--volumes], logs <service>.
-# The project name and the compose file are constants here. deploy/common.sh (the colo model) is NOT sourced, and the script
+# neoforge-data volume), seed-bundle (once per volume: extracts the offline bundle tarball into it), status, down [--volumes], logs <service>,
+# probe (one golem body probe run, with the overlay compose/nf-live-probe.yml added for that run only; section 4c of the runbook).
+# The project name and the base compose file are constants here. deploy/common.sh (the colo model) is NOT sourced, and the script
 # refuses to run when GELDAR_PROJECT or GELDAR_COLO_COMPOSE is set, so no colo setting can reach this project.
 # It never names golem-body or players-host (they are not services of compose/nf-live.yml). down removes containers and
 # networks; --volumes also removes the project's volumes, after the operator types the project name. DEPLOY_DRY_RUN=1 prints
@@ -28,9 +29,10 @@ set -eu
 PROJECT=geldar-nf
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 COMPOSE_FILE=$ROOT/compose/nf-live.yml
+PROBE_FILE=$ROOT/compose/nf-live-probe.yml
 SERVICES="nats postgres eventsink identity-seed velocity neoforge"
 # The secret files compose/nf-live.yml declares under ${NF_SECRETS_DIR:-./secrets-nf}. A test keeps this list in sync.
-SECRET_FILES="postgres.txt velocity-forwarding.txt nats-auth.conf nats-sink.txt nats-neoforge.txt nats-velocity.txt nats-deploy.txt nats-seed.txt"
+SECRET_FILES="postgres.txt velocity-forwarding.txt nats-auth.conf nats-sink.txt nats-neoforge.txt nats-velocity.txt nats-deploy.txt nats-seed.txt rcon.txt nats-body.txt"
 # The one published host port (127.0.0.1:46565, velocity). Nothing else may listen on it.
 PORT=46565
 # Memory: the sum of the memory caps in compose/nf-live.yml, in MiB (neoforge 12288, postgres 2048, velocity 1024, nats 512,
@@ -109,7 +111,7 @@ for arg in "$@"; do
   esac
 done
 case $verb in
-  plan | up | status | seed-bundle) [ -z "$SERVICE" ] || die "$verb takes no service name" ;;
+  plan | up | status | seed-bundle | probe) [ -z "$SERVICE" ] || die "$verb takes no service name" ;;
   down) [ -z "$SERVICE" ] || die "down takes no service name" ;;
   logs)
     [ -n "$SERVICE" ] || die "logs needs a service: one of $SERVICES"
@@ -119,7 +121,7 @@ case $verb in
     esac
     ;;
   *)
-    echo "usage: nf-deploy.sh plan|up|status|down [--volumes] [--local]|logs <service> [--local]|seed-bundle [--local]" >&2
+    echo "usage: nf-deploy.sh plan|up|status|down [--volumes] [--local]|logs <service> [--local]|seed-bundle [--local]|probe [--local]" >&2
     exit 2
     ;;
 esac
@@ -489,11 +491,62 @@ cmd_logs() {
   dc logs --tail 200 "$SERVICE"
 }
 
+# The probe: one run of the body probe (compose/nf-live-probe.yml, profile probe) on a project that `up` started. It refuses
+# unless the five long-running services run (nats, velocity and neoforge healthy too), identity-seed exited 0, and unless the secret files pass check_secrets (it
+# reads nats-body.txt and rcon.txt). The run is --no-deps, so nothing is started or restarted. Its exit code is the probe's.
+# Cleanup runs even when the run fails: run --rm removes the container, and rm -f removes any left behind. The probe's own
+# cleanup (the registry entry and the RCON whitelist entry) runs inside the probe process (golem/src/p0/probe-cleanup.ts).
+probe_dc() {
+  docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$PROBE_FILE" --profile probe "$@"
+}
+
+check_probe_up() {
+  states=$(dc ps -a --format '{{.Service}} {{.State}} {{.Health}} {{.ExitCode}}') || die "docker compose ps failed (is docker running?); nothing started"
+  # nats, velocity and neoforge must be healthy, not only running: a neoforge in its start period is `starting` (mc-health
+  # allows 15 minutes) and would fail the join after the probe's timeout. postgres and eventsink need only be running.
+  for svc in nats velocity neoforge; do
+    printf '%s\n' "$states" | grep -q "^$svc running healthy " ||
+      die "$svc is not running and healthy in $PROJECT (wait for it, or run: nf-deploy.sh up first). Nothing started."
+  done
+  for svc in postgres eventsink; do
+    printf '%s\n' "$states" | grep -q "^$svc running " || die "$svc is not running in $PROJECT; run: nf-deploy.sh up first. Nothing started."
+  done
+  printf '%s\n' "$states" | grep -Eq '^identity-seed exited +0$' ||
+    die "identity-seed has not exited 0 in $PROJECT; run: nf-deploy.sh up first. Nothing started."
+}
+
+# Ctrl-C (INT) and TERM: the terminal signals the whole foreground group, so the run ends first. Then the leftover probe is
+# stopped and removed with its stop_grace_period (60 s in compose/nf-live-probe.yml, enough for the probe's own cleanup),
+# and the script exits 130 (INT) or 143 (TERM), the usual 128 + signal number.
+probe_signal() {
+  probe_dc rm -f -s probe >/dev/null 2>&1 || true
+  exit "$1"
+}
+
+cmd_probe() {
+  check_operator
+  check_service_uid
+  check_no_colo_labels
+  check_secrets
+  check_probe_up
+  [ -f "$PROBE_FILE" ] || die "probe overlay not found: $PROBE_FILE"
+  rc=0
+  trap 'probe_signal 130' INT
+  trap 'probe_signal 143' TERM
+  # build first: `run --no-deps` reuses an existing tag, so a stale image would keep an old isolation guard.
+  act probe_dc build probe
+  act probe_dc run --rm --no-deps probe || rc=$?
+  trap - INT TERM
+  act probe_dc rm -f probe >/dev/null 2>&1 || true
+  exit "$rc"
+}
+
 case $verb in
   plan) cmd_plan ;;
   up) cmd_up ;;
   status) cmd_status ;;
   down) cmd_down ;;
   logs) cmd_logs ;;
+  probe) cmd_probe ;;
   seed-bundle) cmd_seed_bundle ;;
 esac

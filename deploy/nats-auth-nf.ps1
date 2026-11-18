@@ -48,6 +48,12 @@ function Get-NfNatsUsers {
     deploy = @{ Pub = @("geldar.$s.maintenance"); Sub = @('_INBOX.>') }
     velocity = @{ Pub = $velocityApi + @('$JS.FC.>', '_INBOX.>'); Sub = @('_INBOX.>') }
     seed = @{ Pub = @('$JS.API.INFO') + $seedApi + @('_INBOX.>'); Sub = @('_INBOX.>') }
+    # The body (the golem p0 probe, ag_nfprobe_01): it writes and reads that one key of the life registry bucket only. A KV
+    # put, get and delete publish on $KV.<bucket>.<key>; the message get and the stream info are the JetStream calls the
+    # probe's bound KV bucket makes (its verify reads by message get). It publishes nothing else: no event stream, no
+    # geldar.nf.* subject, no other bucket, no other key, and no direct get. Real Bodies on geldar-nf will need their own
+    # role and a later owner decision; this user is the probe's only.
+    body = @{ Pub = @('$KV.geldar-life-registry.ag_nfprobe_01', '$JS.API.INFO', '$JS.API.STREAM.INFO.KV_geldar-life-registry', '$JS.API.STREAM.MSG.GET.KV_geldar-life-registry', '_INBOX.>'); Sub = @('_INBOX.>') }
   }
 }
 
@@ -107,9 +113,10 @@ function Initialize-NfNatsAuth([string[]] $Flags = @()) {
     Assert-OwnerOnlyMode $dir '700'
   }
   $alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_'
-  # The NATS passwords, then the Postgres password and the Velocity forwarding secret (nf-live.yml declares both). Each is 32
-  # symbols from $alphabet (the neoforge entrypoint accepts [A-Za-z0-9_-] only), no trailing newline, never overwritten.
-  $names = @($users.Keys | ForEach-Object { "nats-$_" }) + 'postgres', 'velocity-forwarding'
+  # The NATS passwords, then the Postgres password, the Velocity forwarding secret and the RCON password (nf-live.yml declares
+  # them; rcon is read by the neoforge service's RCON_PASSWORD_FILE). Each is 32 symbols from $alphabet (the neoforge entrypoint
+  # accepts [A-Za-z0-9_-] only), no trailing newline, never overwritten. Ten files in all with the conf (nats-body.txt is the probe's).
+  $names = @($users.Keys | ForEach-Object { "nats-$_" }) + 'postgres', 'velocity-forwarding', 'rcon'
   foreach ($name in $names) {
     $path = Join-Path $dir "$name.txt"
     if (Test-Path -LiteralPath $path) {

@@ -184,7 +184,9 @@ describe.skipIf(skipWithoutSh())(
       expect(backup).not.toContain(SECRET);
       expectNoSecret(r);
       expect(r.stdout + r.stderr).not.toContain(OLD_SECRET);
-      expect(read(c.env.STUB_START_ENV)).not.toContain(SECRET);
+      const startEnv = c.env.STUB_START_ENV ?? '';
+      expect(startEnv).not.toBe('');
+      expect(read(startEnv)).not.toContain(SECRET);
     });
 
     it('(c) forwarding disabled or mode NONE is repaired to enabled = true and MODERN', () => {
