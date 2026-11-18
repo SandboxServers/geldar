@@ -3,9 +3,9 @@ title: "BlueMap on the NeoForge shard: manual steps"
 type: how-to
 audience: agents-never
 status: draft
-last_verified: 2026-11-18 against the NF-BM design note and its addendum (2026-11-18)
-companions: [map-chat-panel.md, scratch-stack.md, nf-live-project.md, README.md]
-sources: [docs/analysis/bluemap/neoforge-map-design.md (tracked, the NF-BM design note), compose/nf-live.yml, deploy/nf-deploy.sh, deploy/scratch/scratch.sh, compose/neoforge/neoforge-entrypoint.sh, deploy/caddy/README.md, deploy/caddy/validate.sh, deploy/caddy/map.caddy, deploy/caddy/map-neoforge.caddy (NF-BM-4), compose/bluemap-web-nf/ (NF-BM-3)]
+last_verified: 2026-11-18 against the NF-BM design note and its addendum (2026-11-18), and origin/main a8063b0a (PR #750, #755, #757, #759 merged)
+companions: [map-chat-panel.md, scratch-stack.md, nf-live-project.md, nf-extra-mods.md, nf-bluemap-web.md, README.md]
+sources: [docs/analysis/bluemap/neoforge-map-design.md (tracked, the NF-BM design note), compose/nf-live.yml, deploy/nf-deploy.sh, deploy/scratch/scratch.sh, deploy/scratch/scratch-extra-mods.sh, compose/neoforge/neoforge-entrypoint.sh, compose/neoforge/extra-mods-bluemap-config.sh, plugins/bluemap/neoforge/ (config bundle), deploy/caddy/README.md, deploy/caddy/validate.sh, deploy/caddy/map.caddy, deploy/caddy/map-neoforge.caddy (NF-BM-4), compose/bluemap-web-nf/ (NF-BM-3), compose/nf-live-bluemap-web.yml]
 ---
 
 # BlueMap on the NeoForge shard: manual steps
@@ -39,14 +39,15 @@ Do not start section 2 until every line is true. Ops records the date and who co
       `itzg/minecraft-server:2026.10.1-java25@sha256:d12aed7e35981dfe259b60fbfee77d23a19b5898a7a31dca298d18b47b7b5776`.
       Java must be 25: `docker exec <neoforge-container> java -version` prints `openjdk version "25`. BlueMap 5.17 and
       later need Java 25, and a lower Java means the mod does not load.
-- [ ] geldar-neoforge confirmed heap headroom under the 9G heap (`-Xmx` unchanged) for one render thread and bounded maps,
-      and confirmed the mod mount: the BlueMap jar is a second read-only bind, copied into `/data/mods` by the entrypoint
-      after its sha256 check (the extra-mods mechanism of PR #750, available once PR #750 is on main: `NF_EXTRA_MODS=bluemap` and
-      `NF_EXTRA_BLUEMAP_JAR_HOST=<absolute host path>`, see `docs/runbooks/nf-extra-mods.md`).
-- [ ] BLOCKER, owned by geldar-neoforge: the second-jar mount is in PR #750 (`origin/phase1/nf-extra-mods`), not on `main`.
-      Available once PR #750 is on main: `NF_EXTRA_MODS` and `NF_EXTRA_BLUEMAP_JAR_HOST` (live), and
-      `SCRATCH_EXTRA_BLUEMAP_JAR_HOST` with `SCRATCH_EXTRA_CHUNKY_JAR_HOST` (scratch; the scratch overlay mounts both jars,
-      so both must name real files). Sections 2 and 3 cannot start until PR #750 is on main and this line is ticked.
+- [ ] geldar-neoforge confirmed heap headroom under the 9G heap (`-Xmx` unchanged) for one render thread and bounded maps.
+- [x] RESOLVED (was a BLOCKER owned by geldar-neoforge): the second-jar mount is merged (PR #750). Live: `NF_EXTRA_MODS=bluemap`
+      and `NF_EXTRA_BLUEMAP_JAR_HOST=<absolute host path>` (see `docs/runbooks/nf-extra-mods.md`). Scratch: the hook of PR #757,
+      `SCRATCH_EXTRA_MODS=1` with `SCRATCH_EXTRA_BLUEMAP_JAR_HOST` and `SCRATCH_EXTRA_CHUNKY_JAR_HOST`. Both scratch host
+      variables are always required, because the overlay mounts both jars. Sections 2 and 3 may start when the other lines
+      are ticked.
+- [x] RESOLVED (OI-1, PR #759): BlueMap's config is seeded by the entrypoint, not by hand. On every start it installs the
+      committed bundle `plugins/bluemap/neoforge` (checked against `MANIFEST.sha256`), and it refuses to start without that
+      bundle. No manual seed is needed on scratch or live. Ops confirms the first start's log line.
 - [ ] The data volume is `neoforge-data`, mounted at `/data` in the NeoForge service. The web container mounts only its
       `bluemap/web` subpath, read only, at `/srv`. It never mounts `/data` itself.
 - [ ] The owner has approved a window for the NeoForge recreate (section 3) and a separate window for the edge (section 4).
@@ -58,18 +59,25 @@ Do not start section 2 until every line is true. Ops records the date and who co
 Purpose: prove that BlueMap loads next to the geldar mod on the same image, that it writes web files, and that it
 renders, before the live shard is touched. The scratch stack is a separate project with no players and no live data.
 
-Bring-up uses the manual route in `docs/runbooks/nf-extra-mods.md` ("Scratch stack"). `deploy/scratch/scratch.sh` on `main`
-does not mount the extra jars. The overlay `compose/opt-in/scratch-neoforge-extra-mods.yml` and the variables below are in
-PR #750 (`origin/phase1/nf-extra-mods`), available once PR #750 is on main. Do not run this section before then.
+Bring-up uses the scratch hook (`deploy/scratch/scratch-extra-mods.sh`, PR #757; see `docs/runbooks/scratch-stack.md`,
+section "Extra mods (BlueMap, Chunky) on scratch"). The hook adds the overlay `compose/opt-in/scratch-neoforge-extra-mods.yml`
+when `SCRATCH_EXTRA_MODS=1`. The manual overlay route and the hand seed of BlueMap's config are retired: the entrypoint seeds
+the config (OI-1). Do not run this section unless the tree you run it from contains `compose/neoforge/extra-mods-bluemap-config.sh`
+(`scratch.sh up` refuses without it).
 
 The overlay mounts BOTH jars, so both host variables must name real files, even for a test that only needs BlueMap:
 `SCRATCH_EXTRA_BLUEMAP_JAR_HOST` (`bluemap-5.29-neoforge.jar`) and `SCRATCH_EXTRA_CHUNKY_JAR_HOST` (`Chunky-NeoForge-1.5.66.jar`).
 The NeoForge service in scratch is `paper`. The scratch project is `scratch-nf` (suffix `nf`) and its world volume is
 `scratch-nf_paper-data` (`${PROJECT}_paper-data` in `deploy/scratch/scratch.sh`). Run everything below from a clean
-`git archive` export of `main` with no `.git`, as `docs/runbooks/scratch-stack.md` requires. Steps 1 and 2 run on the
-operator's desktop (PowerShell); steps 3 to 6 run on the scratch host (sh). Never touch the live project `geldar-nf`.
+`git archive` export of `main` with no `.git`, as `docs/runbooks/scratch-stack.md` requires. Steps 0 and 1 run on the
+operator's desktop (PowerShell) or the build host; steps 2 to 6 run on the scratch host (sh). Never touch the live project `geldar-nf`.
 
 ### 2.0 Command list, in order
+
+Step 0, build host, sh. Build both plugin jars before scratch up: `(cd plugin; ./gradlew build)` produces
+`plugin/core/build/libs/geldar-core.jar` and `plugin/velocity-identity/build/libs/geldar-velocity-identity.jar`. The NeoForge
+scratch export run lost time because geldar-core.jar was missing. `scratch.sh up` refuses (exit 1) if either jar is missing
+(`docs/runbooks/scratch-stack.md`, "Before up").
 
 Step 1, desktop, PowerShell. Download from the GitHub release only, into a new empty folder outside the repository:
 
@@ -93,44 +101,44 @@ Step 2, desktop, PowerShell. Chunky, which the same overlay mounts. Stage it in 
 
 Expect `9f9303da0185fa0ae0e1d3f10a0f07b8d9e5a21e77931d4fc162dcc718a0ab4f` (the `chunky` line of the pins file). Its download
 source is not in the repository (UNVERIFIED here). Same stop rule. Both jars must be regular files, not symlinks, at absolute
-paths that the Docker host can read.
+paths that the Docker host can read. The hook reads the host paths on the machine that runs `scratch.sh`: if that is not
+this desktop, copy both files to the scratch host first (ops confirms the host path).
 
-Step 3, scratch host, sh. Set the variables, then create the containers WITHOUT starting them, so the config seed in step 4
-lands before the first NeoForge start:
+Step 2a, scratch host, sh, only if the node cannot reach `maven.neoforged.net` or the Modrinth CDN. Pre-seed the NeoForge
+installer and the Proxy Compatible Forge mod into the scratch data volume before `up`, with the steps of
+`docs/runbooks/scratch-stack.md`, section "If the node cannot reach the NeoForge Maven or the Modrinth CDN" (NeoForge variant).
+Ops confirms the node's reachability before choosing this step.
+
+Step 3, scratch host, sh. Run the hook and bring the project up. There is no dry run here yet: a dry run that prints the
+resolved compose config with no containers (`scratch.sh config nf`) is once geldar-neoforge's PR merges (this tree's
+`scratch.sh` has no `config` verb; its usage is `up|status|down|probe|mind-up|mind-token`).
 
 ```
 export SCRATCH_PLATFORM=neoforge
-export SCRATCH_NATS_AUTH_DIR=<absolute NATS auth dir, made by the scratch runbook>
-export SCRATCH_EXTRA_BLUEMAP_JAR_HOST=<absolute host path of bluemap-5.29-neoforge.jar>
+export SCRATCH_EXTRA_MODS=1
 export SCRATCH_EXTRA_CHUNKY_JAR_HOST=<absolute host path of Chunky-NeoForge-1.5.66.jar>
-# plus the other variables deploy/scratch/scratch.sh exports for up (open item OI-2)
-docker compose -p scratch-nf -f compose/phase0.yml -f compose/opt-in/scratch.yml \
-  -f compose/opt-in/scratch-neoforge.yml -f compose/opt-in/scratch-neoforge-extra-mods.yml \
-  up -d --no-start --build
+export SCRATCH_EXTRA_BLUEMAP_JAR_HOST=<absolute host path of bluemap-5.29-neoforge.jar>
+export SCRATCH_NATS_AUTH_DIR=<absolute NATS auth dir, made by the scratch runbook>
+sh deploy/scratch/scratch.sh up nf
 ```
 
-Step 4, scratch host, sh. Seed BlueMap's config (open item OI-1). The source is the repository's `plugins/bluemap/neoforge/`
-in the export. `<paper image>` is the image of the `paper` service in `compose/phase0.yml` (same tag and digest):
+`up` checks both jars on the host (readable, regular file, not a symlink, sha256 equal to the pin) and refuses with exit 2
+before any docker call. The scratch stack starts the project when `up` passes its checks: there is no create-only mode
+(`docs/runbooks/scratch-stack.md`). The entrypoint then installs BlueMap's config bundle on the first start.
 
-```
-docker run --rm --user 0 -v scratch-nf_paper-data:/data \
-  -v "<clean export dir>/plugins/bluemap/neoforge:/in:ro" \
-  --entrypoint sh <paper image> -c \
-  'mkdir -p /data/config/bluemap && cp -r /in/. /data/config/bluemap/ && chown -R --reference=/data /data/config'
-docker run --rm -v scratch-nf_paper-data:/data --entrypoint sh <paper image> -c 'ls -l /data/config/bluemap /data/config/bluemap/maps'
-docker compose -p scratch-nf -f compose/phase0.yml -f compose/opt-in/scratch.yml \
-  -f compose/opt-in/scratch-neoforge.yml -f compose/opt-in/scratch-neoforge-extra-mods.yml \
-  up -d --wait
-```
-
-The `ls` must list `core.conf`, `plugin.conf`, `webapp.conf`, `webserver.conf` and `maps/` holding `end.conf`, `nether.conf`
-and `overworld.conf`. Then check, after the start, that `/data/config/bluemap` still holds those files.
-
-Step 5, scratch host, sh. Observation, in order. Record each result with `date -u`. First set the container:
+Step 4, scratch host, sh. Check the seeded config (no seed by hand). The entrypoint installs `plugins/bluemap/neoforge` into
+`/data/config/bluemap/` (PR #759). Read only:
 
 ```
 P=$(docker ps -q --filter label=com.docker.compose.project=scratch-nf --filter label=com.docker.compose.service=paper)
+docker exec "$P" ls /data/config/bluemap /data/config/bluemap/maps
+docker exec "$P" ls -l /data/config/bluemap/.geldar-config.sha256
 ```
+
+The `ls` must list `core.conf`, `plugin.conf`, `webapp.conf`, `webserver.conf` and `maps/` holding `end.conf`, `nether.conf`
+and `overworld.conf`, and `.geldar-config.sha256` must exist. If any of these is missing, the start is a failure: stop and report.
+
+Step 5, scratch host, sh. Observation, in order. Record each result with `date -u`. `$P` is set in step 4:
 
 a. BlueMap lines: `docker logs "$P" 2>&1 | grep -i bluemap | head -n 40`. Expect the mod to name itself at load time, with
    no exception attached.
@@ -154,9 +162,10 @@ i. Memory, before step h and after it: `docker stats --no-stream "$P"`, and the 
 j. One tile: `docker exec "$P" find /data/bluemap/web/maps/overworld -type f | head -n 5` lists paths; copy one of them out
    with `docker cp "$P:<path from that list>" "<sample dir>/"`. Never guess the tile name.
 k. No live files: `docker exec "$P" sh -c 'ls -d /data/bluemap/web/maps/*/live 2>/dev/null'` prints nothing, and
-   `docker exec "$P" find /data/bluemap/web -name players.json` and `... -name markers.json` each print nothing.
-l. Steps 8 and 9 of the section 2 test need a scratch web overlay, which is pending (no overlay exists yet; geldar-neoforge
-   places the web service from `compose/bluemap-web-nf/README.md`). No command is given until it exists.
+   `docker exec "$P" find /data/bluemap -name players.json` and `... -name markers.json` each print nothing.
+l. Web checks (section 2.2): the scratch web overlay is not on `main`, and `docs/runbooks/scratch-stack.md` says it belongs to
+   the BlueMap team. No command is given until it exists. When it exists, follow the order rule in section 3.2: the web service
+   starts only AFTER step 5e shows `bluemap/web` (the first render), with `up -d --no-deps <web service>`.
 
 Step 6, scratch host, sh. Tear down with the scratch runbook's verb, after the report is written. Check the live project
 before and after (read only), and expect no change:
@@ -168,7 +177,7 @@ docker volume ls --filter name=scratch-nf
 ```
 
 `down` runs `down -v --rmi local`: it removes the scratch containers, the `scratch-nf_paper-data` volume (and the seeded
-config with it), the eventsink image and the secrets directory. The build cache stays. Record the leftover-volume list
+config and the pre-seeded installer with it), the eventsink image and the secrets directory. The build cache stays. Record the leftover-volume list
 that `down` prints.
 
 ### 2.1 The three failure shapes
@@ -200,16 +209,11 @@ copied to the live shard.
 
 ### 2.3 Open items
 
-- OI-1, config seeding (owner: geldar-neoforge). PR #750 does not seed BlueMap's config. The BlueMap NeoForge config
-  directory `/data/config/bluemap/` is taken from the design brief and is UNVERIFIED in the repository. Without a seed,
-  BlueMap writes its own defaults and the test runs those, not the NF-BM-2 files in `plugins/bluemap/neoforge/`. The repo's
-  `core.conf` sets `accept-download: true` (decision 0094), so the stop-until-edited behaviour does not apply to these files;
-  the seed is needed for the test to run the repo's configs. The scratch test seeds by hand (step 4). The live shard has the
-  same gap: a decision is needed between an entrypoint seed-if-absent hook (geldar-neoforge) and a manual step before
-  section 3.2. Section 3 cannot start until that is decided.
-- OI-2, the manual route's environment. `deploy/scratch/scratch.sh up` exports more than the variables above (the volume
-  name, the secrets directory, the run uid and gid, the image and the NATS auth). The full set is not in the runbook; copy
-  it from the `up` section of `deploy/scratch/scratch.sh` and record it before the first run.
+- OI-1, config seeding: RESOLVED by PR #759. The entrypoint installs the committed bundle `plugins/bluemap/neoforge` (with
+  `MANIFEST.sha256`) on every start, and refuses to start without it. The hand seed of the earlier draft is retired. Ops
+  confirms the first scratch start against `.geldar-config.sha256` (step 4).
+- OI-2, the environment of the scratch bring-up: the hook (PR #757) sets the variables that `scratch.sh up` needs for the
+  overlay. Ops confirms that nothing else is needed for the first run (the variables `up` reads are in `deploy/scratch/scratch.sh`).
 - OI-3, the render command and its bounds. The `rcon-cli bluemap` help output decides the syntax (step 5h). Not guessed.
 - OI-4, the start line. `Server started` is the grep this runbook has used since the design note. `Done (` is the vanilla line;
   its wording on this NeoForge build is UNVERIFIED.
@@ -224,26 +228,38 @@ Owner window, short restart. Players disconnect when the container is recreated,
    matches section 1). Do not run compose with any file except the NeoForge live compose file.
 2. Confirm that geldar-neoforge placed the BlueMap jar through its mod mount, and that the entrypoint's sha256 check
    accepted it. The log line for the check is in the NeoForge log (the entrypoint's `copy_pinned_jar` message).
-3. Confirm that the BlueMap configs from NF-BM-2 are the ones mounted, and that the render bounds are set (no
-   full-world render is configured, see section 6).
+3. Confirm that the BlueMap config is the committed bundle (the entrypoint installs it on every start; PR #759). After the
+   first start, `/data/config/bluemap/.geldar-config.sha256` holds the manifest's sha256 (read only), and the render bounds
+   are set (no full-world render is configured, see section 6).
 
 ### 3.2 Recreate
+
+Enable BlueMap on the node through its environment, never in the repository (`docs/runbooks/nf-extra-mods.md`, "Enabling a
+mod on a node" and "Keep NF_EXTRA_MODS in the ops env file"). Ops adds these to a NEW revision of the ops env file, and sources it
+before every plan and up:
+
+- `NF_EXTRA_MODS=bluemap`
+- `NF_EXTRA_BLUEMAP_JAR_HOST=<absolute host path of bluemap-5.29-neoforge.jar>`
+
+Enabling recreates the `neoforge` container. That is a restart of the game server: players disconnect. Announce it first.
 
 Run the recreate through the operator script, not through compose. The script holds the project (`geldar-nf`) and the
 compose file as constants. Run it from an exported `main` tree on the node (a git checkout is refused without `--local`),
 as the operator account and never as root. Inputs come from the environment only:
 
 ```
-NF_SERVICE_UID=1001 NF_MOD_JAR_HOST=<absolute path to the geldar NeoForge jar> NF_MOD_SHA256=<its sha256> deploy/nf-deploy.sh plan
-NF_SERVICE_UID=1001 NF_MOD_JAR_HOST=<absolute path to the geldar NeoForge jar> NF_MOD_SHA256=<its sha256> deploy/nf-deploy.sh up
+NF_EXTRA_MODS=bluemap NF_EXTRA_BLUEMAP_JAR_HOST=<absolute host path of bluemap-5.29-neoforge.jar> NF_SERVICE_UID=1001 NF_MOD_JAR_HOST=<absolute path to the geldar NeoForge jar> NF_MOD_SHA256=<its sha256> deploy/nf-deploy.sh plan
+NF_EXTRA_MODS=bluemap NF_EXTRA_BLUEMAP_JAR_HOST=<absolute host path of bluemap-5.29-neoforge.jar> NF_SERVICE_UID=1001 NF_MOD_JAR_HOST=<absolute path to the geldar NeoForge jar> NF_MOD_SHA256=<its sha256> deploy/nf-deploy.sh up
 ```
 
-`plan` prints the gates and the steps and changes nothing; read it first. `up` runs the gates (it refuses an unseeded
-`neoforge-data` volume, and a jar whose sha256 differs from `NF_MOD_SHA256`), then starts `nats`, `postgres`,
+(Or source the ops env file that holds them, and run the same two commands with only `NF_SERVICE_UID`, `NF_MOD_JAR_HOST` and `NF_MOD_SHA256` set in the shell.)
+
+`plan` prints the gates and the steps and changes nothing; read it first, and read its extra-mod lines (the BlueMap line with its
+pin). `up` runs the gates (it refuses an unseeded `neoforge-data` volume, and a jar whose sha256 differs from `NF_MOD_SHA256`), then starts `nats`, `postgres`,
 `identity-seed` (one shot), `eventsink`, `neoforge` and `velocity` in that order, each with `--wait`. It does not pass
-`--force-recreate`. Compose recreates `neoforge` when its config changes, which a new jar or sha does; services already
-running with the same config are not touched. If `neoforge` must be recreated with no config change, the script has no
-verb for it: ask geldar-neoforge, and do not run compose directly.
+`--force-recreate`. Compose recreates `neoforge` when its config changes, which a new jar, a new sha or the BlueMap overlay does;
+services already running with the same config are not touched. If `neoforge` must be recreated with no config change, the script
+has no verb for it: ask geldar-neoforge, and do not run compose directly.
 
 The NF_* values must match the running shard. `NF_SERVICE_UID` is 1001 on this node (the script default 1000 is not this
 node's ops account). `NF_MOD_JAR_HOST` and `NF_MOD_SHA256` must name the geldar jar that the shard runs now, and a
@@ -254,8 +270,13 @@ the `GELDAR_NF_MOD_SHA256` entry only). A mismatch is a stop.
 `up` waits for each service's healthcheck (`--wait`). If it fails, the rollback is
 section 7, row "BlueMap off on the NeoForge server". Do not retry in a loop.
 
-The web container comes up after the NeoForge service is healthy (its `depends_on` is set in NF-BM-3's snippet). Start it
-with the same compose file and `--no-deps` the first time: `sudo docker compose -p <project> -f <nf-live compose file> up -d --wait --no-deps <nf-web-container>`.
+The web container is NOT started here. It starts after the first render in section 3.3 (order rule below).
+
+> **ORDER RULE (scratch and live): `bluemap-web-nf` starts only AFTER BlueMap has produced `/data/bluemap/web`, its first
+> render.** Docker refuses a missing volume subpath, so the web container cannot start before that directory exists.
+> `docs/runbooks/nf-bluemap-web.md` ("Precondition") states the rule; Docker's behaviour on a missing subpath is UNVERIFIED
+> there, so the rule stands until a run proves otherwise. Start the web service with `up -d --no-deps bluemap-web-nf` only,
+> never a full project `up`, and never before section 3.3 step 7.
 
 ### 3.3 Bounded first render at 0 players
 
@@ -264,7 +285,7 @@ stop and wait; do not start the render.
 
 1. Time the server start: `docker logs <neoforge-container> 2>&1 | grep -c 'Server started'` prints `1` after the recreate.
 2. Stamp the render start with `date -u`, then start one bounded render of the overworld with the NF-BM-2 bounds (the same
-   command as section 2 step 7). Stamp the end when the log says it has finished.
+   command as section 2.0 step 5h, once OI-3 has its syntax). Stamp the end when the log says it has finished.
 3. Memory sampling, every 60 seconds until the render ends and for 5 minutes after:
    - host view: `docker stats --no-stream <neoforge-container>` (memory and CPU columns);
    - process view, read from `/proc` in the container (no `ps` needed, nothing is written):
@@ -277,9 +298,19 @@ stop and wait; do not start the render.
 5. Stop rule: if RSS plus 1.5 GiB reaches 11 GiB (against the 12 GiB, 12288m, container limit), stop the render, report,
    and lower the bounds (the design's fallback). Do not raise `-Xmx`.
 6. A second measurement with players online is a separate window. It is not part of this step.
+7. Only now, after the render ended and `bluemap/web/index.html` exists (`docker exec <neoforge-container> ls -l /data/bluemap/web/index.html`),
+   start the web container, with the overlay and no dependencies (`docs/runbooks/nf-bluemap-web.md`, "Bring-up"; the
+   `NF_SERVICE_UID` and `NF_SERVICE_GID` that the deploy run exports; ops confirms the GID):
+
+   ```
+   sudo docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-bluemap-web.yml up -d --no-deps bluemap-web-nf
+   ```
+
+   Check it on loopback with the section 6 404 checks before the edge (section 4) is touched.
 
 Pass for section 3: the NeoForge service is healthy, `bluemap/web/index.html` exists on the `neoforge-data` volume, the
-render ended with no exception from `de.bluecolored`, the stop rule was not hit, and the numbers are in the report.
+render ended with no exception from `de.bluecolored`, the stop rule was not hit, the web container was started after the
+render (step 7), and the numbers are in the report.
 
 ## 4. Edge window: publish the map through the shared Caddy
 
@@ -293,7 +324,8 @@ work there. The rules are the ones in `deploy/caddy/README.md` (section "Reload 
 This section uses one recreate that loads the env value and the site file together, as in README step 3. Its cost is an
 outage on every site on the node (estimate 5 to 15 seconds; measure it and write it into the report). Batch it.
 
-The edge goes after section 3 passed. The order is: web container and mod first, edge last, DNS after.
+The edge goes after section 3 passed. The order is: web container and mod first, edge last, DNS after. The edge certificate
+pre-step (section 4.1a) remains, and runs before staging (4.2); this update does not change it.
 
 ### 4.1 Backup the running configuration
 
@@ -437,17 +469,27 @@ fast one. Deleting the record does not stop an open browser tab; the edge row is
 The owner's map shows every build, including private ones. Players are real people. Every box must be ticked before the
 map is announced. Ops writes the result of each check into the report.
 
+> **HARD RULE (owner accepted): ops must NEVER run `/bluemap reload` and NEVER delete BlueMap config files on a running shard.**
+> A deleted file plus a reload makes BlueMap write its DEFAULTS in their place: web server on (port 8100), live players shown.
+> RCON can run every `/bluemap` command, so the rule covers RCON too. The only repair is a restart, which reinstalls the bundle
+> (`docs/runbooks/nf-extra-mods.md`, "BlueMap config seeding"). No `/bluemap` subcommand lists other players' positions (v5.29;
+> ops confirms against the command's help output).
+
 - [ ] Players are hidden in the NeoForge BlueMap configs (NF-BM-2). Read the deployed copy and confirm the player-marker
-      and hide options are the values NF-BM-2's test asserts. Ops reads it from the BlueMap config mount, not from memory.
-- [ ] The web container returns `404` for `/maps/overworld/live/players.json` and `/maps/overworld/live/markers.json` on
-      loopback (scratch and live), and through the edge (section 4.5). Two layers, both checked.
+      and hide options are the values NF-BM-2's test asserts. Ops reads it from `/data/config/bluemap` (the installed bundle,
+      checked against `.geldar-config.sha256`), not from memory.
+- [ ] The web container returns `404` for the live paths on loopback (scratch and live) and through the edge (section 4.5):
+      `/maps/overworld/live/players.json`, `/maps/overworld/live/markers.json`, and the variants: case changes
+      (`/MAPS/x/LIVE/players.json`), `//`, and `..` segments. The variant cases are the web container's tests (PR #760;
+      not on this tree: ops confirms they are on `main` before the check). Two layers, both checked.
+- [ ] BlueMap's own webserver stays off: `ss -ltn` shows nothing on port 8100 (`docs/runbooks/nf-extra-mods.md`, read-only checks).
 - [ ] No markers exist in any map. `markers.json` for each map is absent or empty, and none is configured. Markers wait
       for the owner's word: builds can reveal player homes.
 - [ ] No custom scripts or styles are served. `curl -s https://map.neoforge.geldar.<zone>/settings.json` has no entry in
       `scripts` or `styles`, and the page source (`curl -s https://map.neoforge.geldar.<zone>/`) names no `geldar-` asset.
 - [ ] No chat panel, follow feature or dial files are on the `bluemap/web` subpath (`ls` of that directory shows no `geldar-*` file).
 - [ ] No live data is published: the live path returns `404` (the check above, on loopback and through the edge), and
-      `players.json` is absent from the webroot: `docker exec <neoforge-container> find /data/bluemap/web -name players.json`
+      `players.json` is absent from the volume: `docker exec <neoforge-container> find /data/bluemap -name players.json`
       prints nothing. Read only, on the live volume.
 - [ ] Render bounds are set by render-mask box masks (branch nfbm-a). `remove-caves-below-y` is left at its default, so
       underground builds are rendered. This is an owner decision: the owner was told the map shows every build, including
@@ -457,11 +499,16 @@ map is announced. Ops writes the result of each check into the report.
 
 ## 7. Kill switch and rollback summary
 
+> **HARD RULE (owner accepted): never run `/bluemap reload` and never delete BlueMap config files on a running shard.**
+> A deleted file plus a reload makes BlueMap write its DEFAULTS (web server on, live players shown). RCON can run every
+> `/bluemap` command. No rollback row below deletes a config file: the mod is removed by its environment and a recreate,
+> and the config bundle stays.
+
 | Need | Action | Cost and scope |
 | --- | --- | --- |
 | Take the public page down now | Swap `map-neoforge-off.caddy` in as `map-neoforge.caddy` (section 4.6), `docker restart board-proxy` | Outage of every site on the node, 5 to 15 s estimate |
 | Stop only the NeoForge web container | `docker stop <nf-web-container>` | The NeoForge name answers 502. Other sites are not affected |
-| Stop rendering and remove BlueMap from the NeoForge server | Remove the BlueMap entry from the mod mount (geldar-neoforge's change), then the section 3.2 recreate | Players disconnect during the recreate; geldar jar unaffected |
+| Stop rendering and remove BlueMap from the NeoForge server | Set `NF_EXTRA_MODS=none` (or unset it) for the run, `plan`, then the section 3.2 recreate through `deploy/nf-deploy.sh up` (`docs/runbooks/nf-extra-mods.md`) | Players disconnect during the recreate; geldar jar unaffected; the config bundle stays on the volume |
 | Remove the name | Delete the CNAME (section 5) | Ends at the record's TTL |
 | Roll back the edge in full | Restore the backup (section 4.6) | Outage of every site, one restart or recreate |
 | Roll back the mod on a failed recreate | Section 3.2 failure path: geldar-neoforge removes the BlueMap jar, recreate once | Players disconnect |
