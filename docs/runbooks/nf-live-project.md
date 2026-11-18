@@ -208,10 +208,13 @@ root; a checkout is refused, and `--local` is for the tests only). Run it as the
   bundle tarball whose sha256 differs (seed-bundle only); free RAM below the 16640 MiB of caps plus an 8192 MiB margin; free disk below 50 GiB;
   a listener on 46565 other than the project's own velocity; a `geldar-nf` container with a geldar-colo label.
 - Port 46565: `plan` and `up` accept the project's own running velocity on it. That is a container with the exact
-  project label `geldar-nf` and service label `velocity`, published as exactly `127.0.0.1:46565->25565/tcp`, with every
-  listener socket on `127.0.0.1:46565`. So a re-`up` on a running project passes this gate. They still refuse any other
-  listener: another project (colo or scratch), another service, a binding on `0.0.0.0` or `[::]`, a host process with no
-  container, or a `docker ps` failure or unreadable output.
+  project label `geldar-nf` and service label `velocity`, with exactly one published mapping, `127.0.0.1:46565->25565/tcp`,
+  and every listener socket on `127.0.0.1:46565`. The Ports text of `docker ps` may also list an unpublished exposed port
+  (for example `25577/tcp`, from the image's EXPOSE) before or after that mapping, as in `25577/tcp, 127.0.0.1:46565->25565/tcp`;
+  an entry without `->` is ignored. So a re-`up` on a running project passes this gate. They still refuse any other
+  listener: another project (colo or scratch), another service, a second published mapping, a binding on `0.0.0.0` or `[::]`,
+  a host process with no container, or a `docker ps` failure or unreadable output. A refusal prints the failed check
+  (`own velocity check failed: <reason>`).
 - `DEPLOY_DRY_RUN=1` prints the steps of `up` and `down` without running them. The gates still run.
 - No CI workflow runs this script. It is operator-run. A continuous deploy for geldar-nf would be a separate change that the
   owner must approve.
