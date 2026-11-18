@@ -4,8 +4,8 @@
 # deploy/nats-auth-nf.ps1). The probe service is a one-shot, wired as compose/opt-in/scratch-probe.yml is wired to a scratch
 # stack, but on this project's network only (nf): no ports, restart no, and the profile `probe`, which `up` never activates.
 # It runs the same golem image as the scratch probe (golem/Dockerfile), built under the tag geldar-body:geldar-nf.
-# Its isolation check (golem/src/p0/isolation.ts) accepts only a scratch-<suffix> project and the hosts velocity, paper and
-# nats; so the probe refuses this project until the probe-isolation change lands (it is held). Its RCON host is neoforge.
+# Its isolation check (golem/src/p0/isolation.ts) accepts a scratch-<suffix> project (hosts velocity, paper and nats) and this
+# project (hosts velocity, neoforge and nats) once the probe-isolation change (PR #737) is merged and deployed in the golem image. Its RCON host is neoforge.
 name: geldar-nf
 
 services:

@@ -190,3 +190,164 @@ describe('checkIsolation refuses', () => {
     expect(message.startsWith('p0 probe refused: ')).toBe(true);
   });
 });
+
+/** A geldar-nf env that passes every rule: the nf service names, one key changed per test. */
+function nfEnv(over: Record<string, string | undefined> = {}): Record<string, string | undefined> {
+  return scratchEnv({
+    GELDAR_P0_PROJECT: 'geldar-nf',
+    GELDAR_MC_HOST: 'velocity',
+    GELDAR_RCON_HOST: 'neoforge',
+    GELDAR_NATS_URL: 'nats://nats:4222',
+    ...over,
+  });
+}
+
+const NF_HOSTS = ['velocity', 'neoforge', 'nats'];
+
+describe('checkIsolation accepts the geldar-nf project with velocity, neoforge and nats', () => {
+  it('passes with the nf service names and the geldar-nf project', () => {
+    const plan = checkIsolation(nfEnv());
+    expect(plan.project).toBe('geldar-nf');
+    expect(plan.config).toEqual({
+      mcHost: 'velocity',
+      mcPort: 25565,
+      rconHost: 'neoforge',
+      rconPort: 25575,
+      rconPasswordFile: '/run/secrets/rcon',
+      natsUrl: 'nats://nats:4222',
+    });
+  });
+
+  it('accepts each of the three hosts in each of the three host slots', () => {
+    for (const host of NF_HOSTS) {
+      expect(checkIsolation(nfEnv({ GELDAR_MC_HOST: host })).config.mcHost).toBe(host);
+      expect(checkIsolation(nfEnv({ GELDAR_RCON_HOST: host })).config.rconHost).toBe(host);
+      expect(checkIsolation(nfEnv({ GELDAR_NATS_URL: `nats://${host}:4222` })).config.natsUrl).toBe(
+        `nats://${host}:4222`,
+      );
+    }
+  });
+
+  it('accepts the NATS URL with or without a port, and loopback with non-live ports', () => {
+    expect(checkIsolation(nfEnv({ GELDAR_NATS_URL: 'nats://neoforge' })).config.natsUrl).toBe(
+      'nats://neoforge:4222',
+    );
+    expect(checkIsolation(nfEnv({ GELDAR_NATS_URL: 'nats://nats:34222' })).config.natsUrl).toBe(
+      'nats://nats:34222',
+    );
+    const plan = checkIsolation(
+      nfEnv({
+        GELDAR_MC_HOST: '127.0.0.1',
+        GELDAR_MC_PORT: '35565',
+        GELDAR_RCON_HOST: 'localhost',
+        GELDAR_RCON_PORT: '35575',
+      }),
+    );
+    expect(plan.config.mcHost).toBe('127.0.0.1');
+    expect(plan.config.rconHost).toBe('localhost');
+  });
+});
+
+describe('checkIsolation refuses anything else around the geldar-nf project', () => {
+  it('a project that is not exactly geldar-nf', () => {
+    for (const project of [
+      'geldar-colo',
+      'geldar-nf-x',
+      'geldar-nfx',
+      'GELDAR-NF',
+      'geldar-nf ',
+      ' geldar-nf',
+      'geldar-nf\n',
+      'geldar-n',
+      'geldar-nf/x',
+      '',
+    ]) {
+      expect(refusalOf(nfEnv({ GELDAR_P0_PROJECT: project }))).toContain('GELDAR_P0_PROJECT');
+    }
+  });
+
+  it('paper, a scratch-only name, as a host of geldar-nf', () => {
+    expect(refusalOf(nfEnv({ GELDAR_MC_HOST: 'paper' }))).toContain(
+      'GELDAR_MC_HOST is not a geldar-nf service name',
+    );
+    expect(refusalOf(nfEnv({ GELDAR_RCON_HOST: 'paper' }))).toContain(
+      'GELDAR_RCON_HOST is not a geldar-nf service name',
+    );
+    expect(refusalOf(nfEnv({ GELDAR_NATS_URL: 'nats://paper:4222' }))).toContain(
+      'GELDAR_NATS_URL host is not a geldar-nf service name',
+    );
+  });
+
+  it('neoforge, a geldar-nf-only name, as a host of a scratch project', () => {
+    expect(refusalOf(scratchEnv({ GELDAR_RCON_HOST: 'neoforge' }))).toContain(
+      'GELDAR_RCON_HOST is not a scratch service name',
+    );
+    expect(
+      refusalOf(scratchEnv({ GELDAR_P0_PROJECT: 'scratch-nf', GELDAR_RCON_HOST: 'neoforge' })),
+    ).toContain('GELDAR_RCON_HOST is not a scratch service name');
+    expect(refusalOf(scratchEnv({ GELDAR_MC_HOST: 'neoforge' }))).toContain(
+      'GELDAR_MC_HOST is not a scratch service name',
+    );
+  });
+
+  it('a dotted host or an IP literal on geldar-nf', () => {
+    expect(refusalOf(nfEnv({ GELDAR_MC_HOST: 'velocity.evil' }))).toContain(
+      'not a dotted or IP host',
+    );
+    expect(refusalOf(nfEnv({ GELDAR_RCON_HOST: 'neoforge.example' }))).toContain(
+      'GELDAR_RCON_HOST must be',
+    );
+    expect(refusalOf(nfEnv({ GELDAR_NATS_URL: 'nats://203.0.113.5:4222' }))).toContain(
+      'GELDAR_NATS_URL host must be',
+    );
+  });
+
+  it('a service name outside the nf set on geldar-nf', () => {
+    expect(refusalOf(nfEnv({ GELDAR_MC_HOST: 'postgres' }))).toContain(
+      'GELDAR_MC_HOST is not a geldar-nf service name',
+    );
+    expect(refusalOf(nfEnv({ GELDAR_RCON_HOST: 'golem' }))).toContain(
+      'GELDAR_RCON_HOST is not a geldar-nf service name',
+    );
+  });
+
+  it('a live default port on loopback, and a missing in-network opt-in, on geldar-nf', () => {
+    expect(refusalOf(nfEnv({ GELDAR_MC_HOST: '127.0.0.1', GELDAR_MC_PORT: '25565' }))).toContain(
+      'GELDAR_MC_HOST uses a live default port',
+    );
+    expect(refusalOf(nfEnv({ GELDAR_IN_NETWORK_HOSTS: undefined }))).toContain(
+      'GELDAR_IN_NETWORK_HOSTS must be exactly 1',
+    );
+  });
+});
+
+describe('checkIsolation keeps the nf and scratch host sets apart', () => {
+  it('refuses geldar-nf with an RCON host that is a typo of neoforge, or an IP literal', () => {
+    expect(refusalOf(nfEnv({ GELDAR_RCON_HOST: 'neoforgee' }))).toContain(
+      'GELDAR_RCON_HOST is not a geldar-nf service name',
+    );
+    expect(refusalOf(nfEnv({ GELDAR_RCON_HOST: '203.0.113.5' }))).toContain(
+      'GELDAR_RCON_HOST must be',
+    );
+  });
+
+  it('refuses scratch-x with the RCON host neoforge, the geldar-nf name', () => {
+    expect(
+      refusalOf(scratchEnv({ GELDAR_P0_PROJECT: 'scratch-x', GELDAR_RCON_HOST: 'neoforge' })),
+    ).toContain('GELDAR_RCON_HOST is not a scratch service name');
+  });
+
+  it('refuses lookalike and other project names, including the live colo project', () => {
+    for (const project of [
+      'geldar-nf2',
+      'geldar-nf-scratch',
+      'scratch-geldar-nf',
+      'geldar',
+      'geldar-ch',
+      'colo',
+      'phase0',
+    ]) {
+      expect(refusalOf(nfEnv({ GELDAR_P0_PROJECT: project }))).toContain('GELDAR_P0_PROJECT');
+    }
+  });
+});

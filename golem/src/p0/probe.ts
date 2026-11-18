@@ -1,7 +1,8 @@
 /**
- * The P0 scratch probe: one join, one goto and one mine through the Body path, on the scratch
- * compose network only. Run it as `node src/p0/probe.ts` inside the golem image. The isolation
- * check runs first and refuses (exit 2) anything that is not the scratch shape; then the probe
+ * The P0 probe: one join, one goto and one mine through the Body path, on the scratch compose
+ * network or on the geldar-nf project (velocity, neoforge and nats; see isolation.ts). Run it as
+ * `node src/p0/probe.ts` inside the golem image. The isolation check runs first and refuses (exit
+ * 2) anything that is not one of those shapes; then the probe
  * admits the username to the Paper whitelist over RCON, registers it in the life registry, joins
  * through Velocity, runs the two actions, and cleans up on every exit. It prints no password, no
  * file contents and no credential: only the username, the UUID the Body was given and the receipts.

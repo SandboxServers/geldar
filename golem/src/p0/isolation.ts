@@ -1,8 +1,11 @@
 /**
  * The P0 probe's isolation check. It runs before any network I/O, and it refuses anything that
- * could reach the live shard: the probe must run on a scratch compose project (`scratch-<suffix>`)
- * with the in-network opt-in, and each host must be loopback or a bare scratch service name. The
- * live default ports are refused on loopback, so a loopback address can never stand in for the
+ * could reach the autonomous (colo) shard. The probe must run on one of two compose projects, each with the
+ * in-network opt-in: a scratch project (`scratch-<suffix>`), whose bare service names are velocity,
+ * paper and nats, or exactly `geldar-nf` (the nf stack), whose bare service names are velocity,
+ * neoforge and nats. The host allow-list is per project class: `paper` is refused on geldar-nf and
+ * `neoforge` on a scratch project. Each host must be loopback or a bare service name of its project.
+ * The live default ports are refused on loopback, so a loopback address can never stand in for the
  * live stack. Refusals name the rule, never a value, so no secret or path reaches the output.
  */
 import type { GolemConfig } from '../config.ts';
@@ -12,6 +15,12 @@ export const SCRATCH_PROJECT_PATTERN = /^scratch-[a-z0-9]{1,9}$/;
 
 /** The in-network service names a scratch probe may reach (the colo names it shares with the live stack). */
 export const SCRATCH_SERVICE_HOSTS: ReadonlySet<string> = new Set(['velocity', 'paper', 'nats']);
+
+/** The one nf project name the probe may run on. Exact match: no prefix, suffix, case or whitespace variant. */
+export const NF_PROJECT = 'geldar-nf';
+
+/** The in-network service names of the geldar-nf project. `paper` is not one of them. */
+export const NF_SERVICE_HOSTS: ReadonlySet<string> = new Set(['velocity', 'neoforge', 'nats']);
 
 /** The live default ports (Minecraft, NATS, RCON). Refused on loopback, where they would be the live stack. */
 export const LIVE_DEFAULT_PORTS: ReadonlySet<number> = new Set([25565, 4222, 25575]);
@@ -41,8 +50,28 @@ function refuse(rule: string): never {
   throw new IsolationRefusal(rule);
 }
 
-/** A bare service name or loopback host; anything with a dot or a colon (an IP literal or a domain) is refused. */
-function checkHost(name: string, host: string, port: number): void {
+/**
+ * The host allow-list for a project, or undefined when the project is neither a scratch project
+ * nor exactly geldar-nf. Each project class has its own list; the lists are never merged.
+ */
+function hostsFor(
+  project: string,
+): { hosts: ReadonlySet<string>; serviceClass: string } | undefined {
+  if (SCRATCH_PROJECT_PATTERN.test(project)) {
+    return { hosts: SCRATCH_SERVICE_HOSTS, serviceClass: 'scratch service name' };
+  }
+  if (project === NF_PROJECT)
+    return { hosts: NF_SERVICE_HOSTS, serviceClass: 'geldar-nf service name' };
+  return undefined;
+}
+
+/** A bare service name of the project or loopback host; anything with a dot or a colon (an IP literal or a domain) is refused. */
+function checkHost(
+  name: string,
+  host: string,
+  port: number,
+  allowed: { hosts: ReadonlySet<string>; serviceClass: string },
+): void {
   if (LOOPBACK_HOSTS.has(host)) {
     if (LIVE_DEFAULT_PORTS.has(port)) refuse(`${name} uses a live default port on loopback`);
     return;
@@ -50,7 +79,7 @@ function checkHost(name: string, host: string, port: number): void {
   if (host.includes('.') || host.includes(':')) {
     refuse(`${name} must be 127.0.0.1, localhost or a bare service name, not a dotted or IP host`);
   }
-  if (!SCRATCH_SERVICE_HOSTS.has(host)) refuse(`${name} is not a scratch service name`);
+  if (!allowed.hosts.has(host)) refuse(`${name} is not a ${allowed.serviceClass}`);
 }
 
 /** A TCP port from 1 to 65535 with digits only; anything else is refused. */
@@ -111,15 +140,18 @@ export function planFromEnv(env: Env): ProbePlan {
  * opens a socket or reads a file; the caller runs it before any connection.
  */
 export function checkIsolation(env: Env): ProbePlan {
-  if (!SCRATCH_PROJECT_PATTERN.test(env.GELDAR_P0_PROJECT ?? '')) {
-    refuse('GELDAR_P0_PROJECT must be scratch-<suffix> (1 to 9 lower-case letters or digits)');
+  const allowed = hostsFor(env.GELDAR_P0_PROJECT ?? '');
+  if (allowed === undefined) {
+    refuse(
+      'GELDAR_P0_PROJECT must be scratch-<suffix> (1 to 9 lower-case letters or digits) or geldar-nf',
+    );
   }
   if (env.GELDAR_IN_NETWORK_HOSTS !== '1') refuse('GELDAR_IN_NETWORK_HOSTS must be exactly 1');
   const plan = planFromEnv(env);
   const { mcHost, mcPort, rconHost, rconPort } = plan.config;
   const nats = parseNats(env.GELDAR_NATS_URL);
-  checkHost('GELDAR_MC_HOST', mcHost, mcPort);
-  checkHost('GELDAR_NATS_URL host', nats.host, nats.port);
-  checkHost('GELDAR_RCON_HOST', rconHost, rconPort);
+  checkHost('GELDAR_MC_HOST', mcHost, mcPort, allowed);
+  checkHost('GELDAR_NATS_URL host', nats.host, nats.port, allowed);
+  checkHost('GELDAR_RCON_HOST', rconHost, rconPort, allowed);
   return plan;
 }
