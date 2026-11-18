@@ -157,10 +157,46 @@ when the node is running (postgres.txt and velocity-forwarding.txt must stay). T
 2. On the trusted machine, in a clean export, run `./geldar.ps1 shard nats-auth nf --live` once. Copy to the node, from that one
    run, `rcon.txt`, `nats-body.txt`, the new `nats-auth.conf` and all six `nats-*.txt` password files, and replace the node's
    copies together: the conf and the password files must come from the same run.
-3. Restart with the existing verbs only: `nf-deploy.sh up` (compose re-creates the services whose config or secrets changed).
-   Start with nats, which reads the new conf; the passwords of eventsink, velocity, neoforge and identity-seed change with it.
-   Do not invent a restart; check `nf-deploy.sh status` after each step.
+3. Install the new files with `mv` (see the install method below), in one window, then run the one command
+   `sh deploy/nf-deploy.sh refresh-secrets` (below). It force-recreates nats first, waits until nats is healthy, then recreates
+   velocity, eventsink, identity-seed (a one-shot: it must exit 0) and neoforge. Do not use `up` for this step: `up` leaves a
+   service whose compose config did not change running, and that is every service here (the files keep their paths).
+   postgres is not recreated: its password file is kept and its password applies only at the first start of the volume.
+   Check `nf-deploy.sh status` after the command.
 The generator has no append mode, so this procedure is the only upgrade path. UNVERIFIED on a node.
+
+**Why a refresh is needed, and the install method.** Docker bind-mounts a single file by its inode. `mv` gives the name a new
+inode, and a running container keeps the old inode, so it keeps serving the old bytes. Compose compares a service's config
+(paths, image, environment), not the content of a mounted file, so `up` sees no change and does not recreate nats. Two install
+methods exist. In-place `cat new > existing` keeps the inode, so the container sees the new bytes, but the write is not atomic (a
+half-written conf can be read) and NATS reads its config only at start or reload. `mv` is atomic: the container keeps the old
+file until it is recreated. **Use `mv`**: write the new file, set mode 0600 on it before the move, `mv` it over the node's file,
+then run `refresh-secrets`. Never rely on an in-place edit. A hand recreate is never needed: `refresh-secrets` is the one path.
+
+**`refresh-secrets`: run it after ANY change to a secret file's content** (an upgrade, a rotated password, a new `rcon.txt`).
+Command: `sh deploy/nf-deploy.sh refresh-secrets` (no service name). It runs the same gates as `up` (the operator account,
+not root; the secret files present, mode 0600 or 0400 and owned by NF_SERVICE_UID; the mod jar; the port; no colo labels;
+the RAM and disk floors; NF_TELEMETRY on, off or unset, as `up` reads it; the compose config). It refuses unless the project is
+up (nats, postgres, velocity, eventsink and neoforge running): then there is nothing to refresh, and you run `up`. Then, in order:
+1. `up -d --force-recreate --no-deps nats`, then it polls until nats is running and healthy (one check per second, at most
+   NF_REFRESH_HEALTH_TRIES checks, default 120).
+2. `up -d --wait --force-recreate --no-deps velocity eventsink`.
+3. `up --force-recreate --no-deps --exit-code-from identity-seed identity-seed`: the seed re-runs with the new `seed` password.
+4. `up -d --wait --force-recreate --no-deps neoforge`.
+Each step prints its name. Every compose call goes through the script's own wrapper: the project `geldar-nf`, the base file
+compose/nf-live.yml, and the telemetry overlay only as NF_TELEMETRY sets it. `DEPLOY_DRY_RUN=1` prints the steps without running
+them (the nats wait is skipped in a dry run).
+It never recreates postgres, never removes a volume or the network, never touches the colo stack, and never names
+golem-body or players-host.
+Failure modes, all leave the project as it was for the step that failed, and a rerun is safe (each step is a recreate):
+- A gate refuses (a missing or mis-moded secret, a non-numeric NF_REFRESH_HEALTH_TRIES, the project not up): nothing is
+  recreated. Fix the input and run it again.
+- nats is not healthy after the checks: the verb stops. velocity, eventsink, identity-seed and neoforge are NOT recreated, so
+  they still hold the old passwords. Read `sh deploy/nf-deploy.sh logs nats`, fix it, and run the verb again.
+- velocity or eventsink does not recreate or become healthy: the verb stops before identity-seed and neoforge.
+- identity-seed exits non-zero (the verb names it; an `Authorization Violation` for user `seed` in the nats log means nats
+  still runs the old conf): the verb stops before neoforge. Fix nats first, then run the verb again.
+- neoforge does not become healthy: the verb stops; it is the last step, so nothing after it is left to refresh.
 The files are mode 0600 and the directory 0700 on POSIX (checked by the test there); owner-only (ACL) on Windows. Each file is
 created empty, restricted, then written, so the secret is never in a file with a looser mode. On Windows the script sets no ACL on
 the directory: it inherits its parent's. A re-run restricts an existing file again; an existing empty secret file is refused by name.
