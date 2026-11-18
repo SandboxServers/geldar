@@ -155,6 +155,36 @@ describe('startConsumer', () => {
   const idleBatch = (): Promise<AsyncIterable<unknown>> =>
     new Promise((resolve) => setTimeout(() => resolve(batchOf([])), 1000));
 
+  it('binds the configured stream and its filter, not the default stream', async () => {
+    const jsm = fakeJsm();
+    jsm.streams.info.mockRejectedValueOnce(new Error('stream not found'));
+    jsm.consumers.info.mockRejectedValueOnce(new Error('consumer not found'));
+    vi.mocked(jetstreamManager).mockImplementation((async () => jsm) as never);
+    fetch = async () => idleBatch();
+    const stream = {
+      name: 'GELDAR_EVENTS_NF',
+      subjects: ['geldar.nf.*'],
+      storage: 'file' as const,
+      retentionDays: 30,
+      maxBytes: 1024 * 1024 * 1024,
+    };
+    const running = await startConsumer({} as NatsConnection, writer, {
+      batchSize: 10,
+      fetchWaitMs: 1000,
+      stream,
+    });
+    expect(jsm.streams.add).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'GELDAR_EVENTS_NF', subjects: ['geldar.nf.*'] }),
+    );
+    expect(jsm.consumers.add).toHaveBeenCalledWith(
+      'GELDAR_EVENTS_NF',
+      expect.objectContaining({ durable_name: CONSUMER_NAME, filter_subject: 'geldar.nf.*' }),
+    );
+    const stopped = running.stop();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await stopped;
+  });
+
   it('re-ensures the stream and consumer after 5 failed fetches in a row, then recovers', async () => {
     fetch = async (n) => {
       if (n <= 5) throw new Error('no responders');

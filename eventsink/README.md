@@ -53,6 +53,20 @@ The same definition is created by the Geldar-Core plugin (P0-11, see `plugin/REA
 | storage | file |
 | retention | limits: `max_age` 30 days and `max_bytes` 2147483648 bytes (2 GiB), oldest messages go first at the byte cap |
 
+### Per-shard settings
+
+Every key is optional; each default is today's colo value, so an unset sink behaves as before.
+
+| variable | default | meaning |
+| --- | --- | --- |
+| `GELDAR_EVENTS_STREAM` | `GELDAR_EVENTS` | stream name (1 to 64 letters, digits, `-`, `_`) |
+| `GELDAR_EVENTS_SUBJECTS` | `geldar.*.*` | the one subject filter the consumer reads (`geldar.<shard or *>.<type or *>`) |
+| `GELDAR_EVENTS_MAX_AGE_DAYS` | `30` | retention in days, 1 to 3650 |
+| `GELDAR_EVENTS_MAX_BYTES` | `2147483648` | size cap in bytes, 1 MiB to 1 TiB |
+| `GELDAR_EVENTSINK_SHARD` | unset | the shard token this sink serves; an event for another shard is dead-lettered to `geldar.<shard>.dlq` with reason `shard_mismatch` (decision 0382); unset accepts any shard |
+
+A bad value stops the sink at start-up. The stream is created with these limits only when it does not exist; an existing stream is left as it is. The durable consumer name `eventsink` does not change.
+
 The byte cap bounds the JetStream stream only. Both creators call create and skip it when the stream exists, so a changed constant does not reach a stream that is already there; an operator applies it with `nats stream edit GELDAR_EVENTS --max-bytes=<bytes>` (and `--max-age` for the age).
 
 ### Retention of the Postgres `events` table (open follow-up)
