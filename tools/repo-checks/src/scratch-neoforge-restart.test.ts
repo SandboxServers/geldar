@@ -9,10 +9,12 @@ import { createHash } from 'node:crypto';
 import {
   existsSync,
   mkdirSync,
+  lstatSync,
   mkdtempSync,
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -267,6 +269,69 @@ describe.skipIf(skipWithoutSh())(
         expect(st.uid).toBe(data.uid);
         expect(st.gid).toBe(data.gid);
       }
+    });
+
+    const CAN_LINK = (() => {
+      const dir = mkdtempSync(join(tmpdir(), 'nf-restart-link-'));
+      try {
+        symlinkSync(dir, join(dir, 'probe'));
+        return true;
+      } catch {
+        return false;
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    })();
+
+    // A symlink at the toml or a backup path is refused before any write: exit 1, nothing starts, the link's target is not
+    // written, and the link is still a link. Without the refusal the entrypoint writes through a dangling link.
+    it.runIf(CAN_LINK)(
+      'a symlink at the toml path is refused: exit 1, the target is untouched, nothing starts',
+      () => {
+        const c = setup();
+        mkdirSync(join(c.data, 'config'), { recursive: true });
+        const target = join(c.data, '..', 'link-target.toml');
+        writeFileSync(target, 'link-target-body');
+        symlinkSync(target, c.config);
+        const r = run(c);
+        expect(r.status).toBe(1);
+        expect(r.stderr).toContain('symlink');
+        expect(r.stdout).not.toContain('started');
+        expect(lstatSync(c.config).isSymbolicLink()).toBe(true);
+        expect(read(target)).toBe('link-target-body');
+        expectNoSecret(r);
+      },
+    );
+
+    it.runIf(CAN_LINK)(
+      'a dangling symlink at the toml path writes nothing through the link',
+      () => {
+        const c = setup();
+        mkdirSync(join(c.data, 'config'), { recursive: true });
+        const absent = join(c.data, '..', 'absent-target.toml');
+        symlinkSync(absent, c.config);
+        const r = run(c);
+        expect(r.status).toBe(1);
+        expect(r.stdout).not.toContain('started');
+        expect(existsSync(absent)).toBe(false);
+        expect(lstatSync(c.config).isSymbolicLink()).toBe(true);
+        expectNoSecret(r);
+      },
+    );
+
+    it.runIf(CAN_LINK)('a symlink at the .bak path is refused before the toml is rewritten', () => {
+      const c = setup();
+      writeToml(c, reformatted(OLD_SECRET));
+      const target = join(c.data, '..', 'bak-target.toml');
+      writeFileSync(target, 'bak-target-body');
+      symlinkSync(target, `${c.config}.bak`);
+      const r = run(c);
+      expect(r.status).toBe(1);
+      expect(r.stdout).not.toContain('started');
+      expect(read(c.config)).toBe(reformatted(OLD_SECRET));
+      expect(read(target)).toBe('bak-target-body');
+      expectNoSecret(r);
+      expect(r.stdout + r.stderr).not.toContain(OLD_SECRET);
     });
 
     it('three starts: .bak keeps the first original, .bak.prev holds the file the previous start left', () => {

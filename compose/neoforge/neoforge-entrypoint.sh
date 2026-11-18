@@ -294,6 +294,14 @@ fi
 # The mod's config, from its README layout. Written once; on later starts only the secret line is replaced, because the
 # mod may have rewritten the file.
 cfgdir=$(dirname "$config")
+# A symlink (dangling too) or a directory at the config or a backup path is refused before anything is written, so no write
+# goes through a link. A refusal changes nothing.
+for p in "$config" "$config.bak" "$config.bak.prev" "$config.part"; do
+  if [ -L "$p" ] || [ -d "$p" ]; then
+    echo "neoforge-entrypoint: $p is a symlink or a directory; refusing to start" >&2
+    exit 1
+  fi
+done
 # A TOML form the rewrite below does not handle is refused before any write: a quoted [forwarding] header, a dotted or quoted
 # forwarding key, or an inline forwarding table. A UTF-8 BOM on line 1 is ignored here, as in the rewrite. No value is printed.
 if [ -f "$config" ] && LC_ALL=C awk '
