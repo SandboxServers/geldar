@@ -41,6 +41,24 @@ human_ipv4_ok() {
 # from 1024 to 65535 with no leading zero, and not 25565, 25566 or the live port. The overlay's mounted files must exist, and the
 # identity jar must not be empty. All of it runs before any docker call. HUMAN_BIND and HUMAN_PORT (default 46566, as the overlay)
 # are set for the port gate.
+# Proves the deployed nats-auth.conf narrows the human user (names only: the file is never printed). The generator writes one line
+# per user, and the human line is the only one that names it. A conf from before the human lane had its own inbox still grants
+# the shared _INBOX.> to that user; the generator never rewrites an existing conf, so only this check catches it. Refused: no
+# human line, two of them, a shared _INBOX.> in its publish or subscribe, or no _INBOX.human.> in it.
+check_human_conf() {
+  conf=$1
+  n=$(grep -cF 'user: "human"' "$conf" || true)
+  [ "$n" = 1 ] || die "the deployed nats-auth.conf has no human user (NF_HUMAN=on needs it); regenerate it (./geldar.ps1 shard nats-auth nf --live) and copy it to the node; refusing"
+  line=$(grep -F 'user: "human"' "$conf")
+  case $line in
+    *'"_INBOX.>"'*) die "the deployed nats-auth.conf still has the broad inbox grant for the human user; re-run the generator procedure in the runbook, then refresh-secrets; refusing" ;;
+  esac
+  case $line in
+    *'"_INBOX.human.>"'*) ;;
+    *) die "the deployed nats-auth.conf does not give the human user its own inbox; re-run the generator procedure in the runbook, then refresh-secrets; refusing" ;;
+  esac
+}
+
 check_human_inputs() {
   check_human_switch
   [ "$HUMAN" = 1 ] || return 0
@@ -66,10 +84,8 @@ check_human_inputs() {
   # The human lane's NATS password (velocity-human reads it as nats-human.txt). Only the generator writes it; no path is printed.
   secdir=${NF_SECRETS_DIR:-$ROOT/compose/secrets-nf}
   [ -s "$secdir/nats-human.txt" ] || die "nats-human.txt is missing or empty in the NF secrets directory (NF_HUMAN=on needs it); re-run the NATS auth generator (./geldar.ps1 shard nats-auth nf --live, on the trusted machine), then copy the result to the node; refusing"
-  # The deployed NATS auth must name the human user (names only: the file is never printed). A conf without it fails every login.
-  if [ -f "$secdir/nats-auth.conf" ] && ! grep -Eq '(^|[^A-Za-z0-9_-])human([^A-Za-z0-9_-]|$)' "$secdir/nats-auth.conf"; then
-    die "the deployed nats-auth.conf has no human user (NF_HUMAN=on needs it); regenerate it (./geldar.ps1 shard nats-auth nf --live) and copy it to the node; refusing"
-  fi
+  # The deployed NATS auth must narrow the human user (names only: the file is never printed; see check_human_conf).
+  if [ -f "$secdir/nats-auth.conf" ]; then check_human_conf "$secdir/nats-auth.conf"; fi
   # Exported, so compose takes these validated values over any compose/.env entry (the shell environment wins over .env).
   export NF_HUMAN_BIND=$HUMAN_BIND NF_HUMAN_PORT=$HUMAN_PORT
   say "human lane on: velocity-human publishes $HUMAN_BIND:$HUMAN_PORT->25565 (the only human publish)"

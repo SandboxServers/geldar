@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.helpers.NOPLogger;
@@ -254,5 +255,71 @@ class RegistryClientTest {
                 () -> RegistryClient.withCredentials(Options.builder(), settings(values)));
         assertTrue(error.getMessage().contains("GELDAR_NATS_PASSWORD_FILE"));
         assertFalse(error.getMessage().contains("pw-"));
+    }
+
+    private static final String HUMAN_PREFIX = "_INBOX.human.";
+    private static final String URL = "nats://127.0.0.1:4222";
+
+    private static RegistryClient clientOn(String bucket) {
+        return new RegistryClient(URL, bucket, null, org.slf4j.helpers.NOPLogger.NOP_LOGGER);
+    }
+
+    @Test
+    void theHumanPrefixIsOnTheOptionsOfBothRegistryClientsWhenSet() {
+        java.util.function.Function<String, String> values = settings(Map.of("GELDAR_NATS_INBOX_PREFIX", HUMAN_PREFIX));
+        assertEquals(HUMAN_PREFIX, clientOn(RegistryClient.BUCKET).connectOptions(values).getInboxPrefix(), "registry client");
+        assertEquals(HUMAN_PREFIX, clientOn(SkinRegistry.BUCKET).connectOptions(values).getInboxPrefix(), "skin client");
+    }
+
+    @Test
+    void anUnsetOrBlankPrefixLeavesTheOptionsAsTheyWere() {
+        String defaultInbox = Options.builder().server(URL).build().getInboxPrefix();
+        assertEquals(defaultInbox, clientOn(RegistryClient.BUCKET).connectOptions(settings(Map.of())).getInboxPrefix());
+        assertEquals(defaultInbox, clientOn(SkinRegistry.BUCKET).connectOptions(settings(Map.of("GELDAR_NATS_INBOX_PREFIX", " "))).getInboxPrefix());
+    }
+
+    @Test
+    void refusesAMalformedPrefixNamingTheSettingNeverTheValue() {
+        String[] malformed = {"_INBOX.", "human.", "_INBOX.human", "_INBOX.a b.", "_INBOX..x.", "_INBOX.>", "_INBOX.human.>",
+            " _INBOX.human. ", "x_INBOX.human."};
+        for (String bad : malformed) {
+            IllegalStateException error = assertThrows(IllegalStateException.class, () -> RegistryClient.validInboxPrefix(bad), bad);
+            assertTrue(error.getMessage().contains("GELDAR_NATS_INBOX_PREFIX"), bad);
+            assertThrows(IllegalStateException.class,
+                    () -> clientOn(RegistryClient.BUCKET).connectOptions(settings(Map.of("GELDAR_NATS_INBOX_PREFIX", bad))), bad);
+        }
+    }
+
+    @Test
+    void acceptsOneOrMoreDottedTokensEndingInADot() {
+        assertEquals("_INBOX.human.", RegistryClient.validInboxPrefix("_INBOX.human."));
+        assertEquals("_INBOX.a-b_1.c.", RegistryClient.validInboxPrefix("_INBOX.a-b_1.c."));
+        assertEquals(null, RegistryClient.validInboxPrefix(""));
+    }
+
+    @Test
+    void theProductionConnectOptionsCarryTheHumanPrefix() {
+        // The no-argument connectOptions() reads RegistryClient.setting: the environment, else a system property of that name.
+        Assumptions.assumeTrue(System.getenv("GELDAR_NATS_INBOX_PREFIX") == null, "the environment sets the prefix");
+        String previous = System.getProperty("GELDAR_NATS_INBOX_PREFIX");
+        System.setProperty("GELDAR_NATS_INBOX_PREFIX", HUMAN_PREFIX);
+        try {
+            assertEquals(HUMAN_PREFIX, clientOn(RegistryClient.BUCKET).connectOptions().getInboxPrefix(), "registry client");
+            assertEquals(HUMAN_PREFIX, clientOn(SkinRegistry.BUCKET).connectOptions().getInboxPrefix(), "skin client");
+        } finally {
+            if (previous == null) {
+                System.clearProperty("GELDAR_NATS_INBOX_PREFIX");
+            } else {
+                System.setProperty("GELDAR_NATS_INBOX_PREFIX", previous);
+            }
+        }
+    }
+
+    @Test
+    void theRefusalNeverCarriesTheMalformedValue() {
+        for (String bad : new String[] {"_INBOX.S3cr3t b.", "x_INBOX.S3cr3t.", "S3cr3t."}) {
+            IllegalStateException error = assertThrows(IllegalStateException.class, () -> RegistryClient.validInboxPrefix(bad), bad);
+            assertFalse(error.getMessage().contains("S3cr3t"), "the refusal must not carry the value");
+        }
     }
 }

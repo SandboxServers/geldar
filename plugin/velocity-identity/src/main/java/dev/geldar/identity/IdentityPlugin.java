@@ -69,6 +69,7 @@ public final class IdentityPlugin {
     static final String TEXTURES = "textures";
 
     private final Supplier<String> natsUrl;
+    private final Supplier<String> inboxPrefix;
     private RegistryClient client;
     private RegistryClient skinClient;
     private ScheduledTask denialSummary;
@@ -97,9 +98,16 @@ public final class IdentityPlugin {
     /** Takes the lane source too, so a test can select the human lane without touching the environment. */
     IdentityPlugin(ProxyServer proxy, Logger log, Supplier<String> natsUrl, SkinRegistry skins, ReadyMarker marker,
             Supplier<String> laneSetting) {
+        this(proxy, log, natsUrl, skins, marker, laneSetting, () -> RegistryClient.setting(RegistryClient.INBOX_PREFIX_SETTING));
+    }
+
+    /** Takes the inbox prefix source too, so a test can give a malformed prefix without touching the environment. */
+    IdentityPlugin(ProxyServer proxy, Logger log, Supplier<String> natsUrl, SkinRegistry skins, ReadyMarker marker,
+            Supplier<String> laneSetting, Supplier<String> inboxPrefix) {
         this.proxy = proxy;
         this.log = log;
         this.natsUrl = natsUrl;
+        this.inboxPrefix = inboxPrefix;
         this.skins = skins;
         this.lane = IdentityLane.parse(laneSetting.get());
         this.gate = new LoginGate(registry, lane.orElse(IdentityLane.AGENT));
@@ -117,6 +125,19 @@ public final class IdentityPlugin {
         denialSummary = proxy.getScheduler().buildTask(this, denials::tick).repeat(DENY_WINDOW_NANOS, TimeUnit.NANOSECONDS).schedule();
         if (lane.isEmpty()) {
             refuse(IdentityLane.ENV + " must be unset, agent or human");
+            return;
+        }
+        String prefix;
+        try {
+            // A malformed inbox prefix refuses the lane before any client connects: fail closed, never a wider inbox.
+            prefix = RegistryClient.validInboxPrefix(inboxPrefix.get());
+        } catch (IllegalStateException e) {
+            refuse(e.getMessage());
+            return;
+        }
+        if (prefix == null && lane.get() == IdentityLane.HUMAN) {
+            // Unset or blank, the human lane would share the library default _INBOX.>: it must have its own prefix.
+            refuse(RegistryClient.INBOX_PREFIX_SETTING + " must be set on the human lane");
             return;
         }
         if (lane.get() == IdentityLane.HUMAN && !humanProxyIsOnline()) {

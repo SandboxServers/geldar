@@ -112,11 +112,13 @@ function makeRepo(opts: { human?: boolean } = {}): string {
     join(repo, 'compose', 'velocity', 'velocity-nf-human.toml'),
   );
   writeFileSync(join(repo, 'compose', 'neoforge', 'neoforge-entrypoint.sh'), '#!/bin/sh\n');
-  // nats-auth.conf names the human user, as the generator writes it (check_human_inputs reads the names, never the file).
+  // nats-auth.conf holds the human line as the generator writes it now (own inbox only): check_human_conf reads it, never printed.
+  const humanLine =
+    'user: "human", permissions: { publish: { allow: ["_INBOX.human.>"] }, subscribe: { allow: ["_INBOX.human.>"] } }\n';
   for (const f of SECRET_FILES)
     writeFileSync(
       join(repo, 'compose', 'secrets-nf', f),
-      f === 'nats-auth.conf' ? 'user: "human"\n' : `${f}\n`,
+      f === 'nats-auth.conf' ? humanLine : `${f}\n`,
     );
   if (opts.human ?? true) {
     writeFileSync(join(repo, 'compose', 'secrets-nf', HUMAN_SECRET), `${HUMAN_SECRET}\n`);

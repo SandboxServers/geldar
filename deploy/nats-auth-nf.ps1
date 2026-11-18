@@ -22,6 +22,9 @@ function Get-NfNatsUsers {
   $s = 'nf'
   $streams = 'GELDAR_EVENTS', 'GELDAR_EVENTS_NF'
   $buckets = 'geldar-life-registry', 'geldar-skins'
+  # The human lane's own inbox prefix (GELDAR_NATS_INBOX_PREFIX in compose/nf-live-human.yml, the same value). Its client
+  # sends and receives under this prefix only; the shared _INBOX.> is not granted to it.
+  $humanInbox = '_INBOX.human.'
   $streamApi = @(foreach ($st in $streams) { "`$JS.API.STREAM.INFO.$st"; "`$JS.API.STREAM.CREATE.$st" })
   # The sink is the durable pull consumer 'eventsink' (eventsink/src/config.ts); it creates its stream if it starts first.
   # Its client (@nats-io/jetstream 3.4.0) sends the consumer create with the filter in the subject,
@@ -58,7 +61,9 @@ function Get-NfNatsUsers {
     # as velocity, read only: IdentityPlugin starts a registry client and a skin client whenever GELDAR_NATS_URL is set, in either
     # lane (plugin/velocity-identity IdentityPlugin.java:139-142), and reads the skin on each login (:259). Its flow control is
     # scoped to those two buckets. It publishes no $KV subject, no $JS.API wildcard, no create, update or purge, and no event subject.
-    human = @{ Pub = $velocityApi + @(foreach ($b in $buckets) { "`$JS.FC.KV_$b.>" }) + @('_INBOX.>'); Sub = @('_INBOX.>') }
+    # Its inbox is _INBOX.human. only (never the shared _INBOX.>): a compromised proxy cannot read or forge another user's inbox.
+    # The publish grant of _INBOX.human.> is kept until S1 proves the client never publishes to an inbox (UNVERIFIED until then).
+    human = @{ Pub = $velocityApi + @(foreach ($b in $buckets) { "`$JS.FC.KV_$b.>" }) + @("$humanInbox>"); Sub = @("$humanInbox>") }
   }
 }
 
