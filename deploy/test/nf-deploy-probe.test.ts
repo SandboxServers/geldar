@@ -11,7 +11,11 @@ import {
 import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+// Each case runs the shell script through sh, which is slow on Windows and under load: the file's tests get an explicit 30 s
+// timeout (the vitest default is 5 s).
+vi.setConfig({ testTimeout: 30000 });
 
 // The `probe` verb of nf-deploy.sh, against stubbed docker: nothing starts. The stub answers `compose ps` from COMPOSE_PS
 // and the probe's `run` with PROBE_STATUS, and logs every call.

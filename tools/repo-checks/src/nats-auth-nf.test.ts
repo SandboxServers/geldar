@@ -207,14 +207,18 @@ describe.skipIf(!hasPwsh)('NF NATS auth set: refusals write nothing', () => {
     ['an unknown flag', ['--live', '--force'], false, /unknown flag/],
     ['--LIVE in capitals (case-sensitive)', ['--LIVE'], false, /unknown flag/],
   ];
-  it.each(cases)('refuses %s and writes nothing', (_name, flags, checkout, message) => {
-    const r = renderGenerator('nf', { flags, checkout });
-    made.push(r.dir);
-    expect(r.status).not.toBe(0);
-    expect(r.stderr).toMatch(message);
-    expect(existsSync(join(r.dir, 'compose', 'secrets-nf'))).toBe(false);
-    expect(existsSync(join(r.dir, 'compose', 'secrets'))).toBe(false);
-  });
+  it.each(cases)(
+    'refuses %s and writes nothing',
+    (_name, flags, checkout, message) => {
+      const r = renderGenerator('nf', { flags, checkout });
+      made.push(r.dir);
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toMatch(message);
+      expect(existsSync(join(r.dir, 'compose', 'secrets-nf'))).toBe(false);
+      expect(existsSync(join(r.dir, 'compose', 'secrets'))).toBe(false);
+    },
+    30_000,
+  );
 });
 
 describe.skipIf(!hasPwsh)('NF NATS auth set: password files that would break the config', () => {

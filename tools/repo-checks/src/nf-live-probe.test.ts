@@ -96,7 +96,7 @@ beforeAll(() => {
   if (probeRun.status !== 0)
     throw new Error('compose config of base plus the probe overlay failed');
   probed = JSON.parse(probeRun.stdout) as Rendered;
-});
+}, 30_000);
 
 afterAll(() => {
   if (tmp) rmSync(tmp, { recursive: true, force: true });
@@ -164,7 +164,7 @@ describe.skipIf(!DOCKER)('nf-live probe overlay: the render', () => {
       'nats-body.txt',
       'rcon',
     ]);
-  });
+  }, 30_000);
 
   it('the probe runs as the service user, with no volumes and the project memswap and pids caps', () => {
     const probe = probed.services.probe;
