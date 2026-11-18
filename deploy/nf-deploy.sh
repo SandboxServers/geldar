@@ -113,6 +113,7 @@ done
 case $verb in
   plan | up | status | seed-bundle | probe) [ -z "$SERVICE" ] || die "$verb takes no service name" ;;
   down) [ -z "$SERVICE" ] || die "down takes no service name" ;;
+  refresh-secrets) [ -z "$SERVICE" ] || die "refresh-secrets takes no service name" ;;
   logs)
     [ -n "$SERVICE" ] || die "logs needs a service: one of $SERVICES"
     case " $SERVICES " in
@@ -121,7 +122,7 @@ case $verb in
     esac
     ;;
   *)
-    echo "usage: nf-deploy.sh plan|up|status|down [--volumes] [--local]|logs <service> [--local]|seed-bundle [--local]|probe [--local]" >&2
+    echo "usage: nf-deploy.sh plan|up|refresh-secrets|status|down [--volumes] [--local]|logs <service> [--local]|seed-bundle [--local]|probe [--local]" >&2
     exit 2
     ;;
 esac
@@ -541,9 +542,65 @@ cmd_probe() {
   exit "$rc"
 }
 
+# refresh-secrets: the verb to run after ANY change to a secret file's content (an upgrade included). A bind-mounted file is
+# followed by inode, and compose compares config, not file content, so a new file under the same name changes nothing for a
+# running container: each service that reads a secret is force-recreated here, nats first. postgres is never recreated.
+# Same gates as up, and the project must be up (refused otherwise: use up). NF_REFRESH_HEALTH_TRIES (default 120, one
+# check per second) bounds the wait for nats to be healthy.
+check_refresh_up() {
+  states=$(dc ps --format '{{.Service}} {{.State}} {{.Health}}') ||
+    die "docker compose ps failed (is docker running?); nothing refreshed"
+  for svc in nats postgres velocity eventsink neoforge; do
+    printf '%s\n' "$states" | grep -q "^$svc running" ||
+      die "$svc is not running in $PROJECT: the project is not up, so there is nothing to refresh (run: nf-deploy.sh up). Nothing changed."
+  done
+}
+
+wait_nats_healthy() {
+  tries=0
+  limit=$REFRESH_HEALTH_LIMIT
+  while :; do
+    states=$(dc ps --format '{{.Service}} {{.State}} {{.Health}}') ||
+      die "docker compose ps failed while waiting for nats; nothing else was recreated"
+    if printf '%s\n' "$states" | grep -q '^nats running healthy'; then
+      say "nats: running and healthy"
+      return 0
+    fi
+    tries=$((tries + 1))
+    [ "$tries" -lt "$limit" ] ||
+      die "nats is not healthy after $limit checks; stopped: velocity, eventsink, identity-seed and neoforge were not recreated"
+    sleep 1
+  done
+}
+
+cmd_refresh_secrets() {
+  REFRESH_HEALTH_LIMIT=${NF_REFRESH_HEALTH_TRIES:-120}
+  case $REFRESH_HEALTH_LIMIT in
+    '' | *[!0-9]* | 0) die "NF_REFRESH_HEALTH_TRIES must be a positive number (default 120); refusing" ;;
+  esac
+  gates
+  check_refresh_up
+  say "refresh-secrets: force-recreate nats, then velocity and eventsink, identity-seed, neoforge (postgres is never touched)"
+  act dc up -d --force-recreate --no-deps nats ||
+    die "nats did not recreate; nothing else was touched"
+  if [ "${DEPLOY_DRY_RUN:-0}" = 1 ]; then
+    say "dry-run, not run: wait until nats is healthy"
+  else
+    wait_nats_healthy
+  fi
+  act dc up -d --wait --force-recreate --no-deps velocity eventsink ||
+    die "velocity or eventsink did not recreate or become healthy; identity-seed and neoforge were not run"
+  act dc up --force-recreate --no-deps --exit-code-from identity-seed identity-seed ||
+    die "identity-seed did not exit 0 (the one-shot seed); neoforge was not recreated; fix it and run refresh-secrets again"
+  act dc up -d --wait --force-recreate --no-deps neoforge ||
+    die "neoforge did not recreate or become healthy"
+  say "refresh-secrets: project $PROJECT refreshed (no volume removed, postgres not touched)"
+}
+
 case $verb in
   plan) cmd_plan ;;
   up) cmd_up ;;
+  refresh-secrets) cmd_refresh_secrets ;;
   status) cmd_status ;;
   down) cmd_down ;;
   logs) cmd_logs ;;
