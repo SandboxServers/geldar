@@ -1,4 +1,6 @@
-# Node request 05: combined scratch-nf telemetry session (machine rows, then the owner's human join, then teardown)
+# Node request 05 (scratch NeoForge telemetry and human run, file 06-...): combined scratch-nf telemetry session (machine rows, then the owner's human join, then teardown)
+
+Numbering: geldar-93 calls this session "request 05" in chat. The file is numbered 06 because `05-tag-ruleset.md` already exists.
 
 Status: DRAFT. Nothing has been run and the node has not been contacted. Every step needs the owner's direct approval before it touches the node. Written against origin/main at abb799b3. Anything not read from a file in this tree is marked UNVERIFIED. No address, account name, player name or secret appears here: placeholders only (`<node-ssh-host>`, `<owner-mc-name>`, `<stage dir>`, `<out dir>`).
 
@@ -80,7 +82,7 @@ export SCRATCH_NEOFORGE_TELEMETRY_SINK=1
 export SCRATCH_TELEMETRY_OUT=<out dir>                # absolute, existing, writable, not a symlink, mode 0700
 ```
 
-Note on the variable count: the task names "five SCRATCH_NEOFORGE_* variables plus SCRATCH_LEDGER_PROPS". The runbook and `nf-live-telemetry.md` section 0a define "all five or none" as `SCRATCH_NEOFORGE_LEDGER_JAR`, `_LEDGER_SHA256`, `_OTEL_AGENT_JAR`, `_OTEL_AGENT_PROPS` and `SCRATCH_LEDGER_PROPS`; the mod jar pair `SCRATCH_NEOFORGE_MOD_JAR` and `_MOD_SHA256` is the separate overlay (`scratch-neoforge-mod.yml`, both or neither). The block above sets all of them. `SCRATCH_NEOFORGE_TELEMETRY` is NOT set (it is the soft kill and is refused together with the five).
+Note on the variable count: the runbook ("Ledger jar and OTel agent on the scratch NeoForge stack") and `nf-live-telemetry.md` section 0a name exactly five variables that are set together or not at all: `SCRATCH_NEOFORGE_LEDGER_JAR`, `SCRATCH_NEOFORGE_LEDGER_SHA256`, `SCRATCH_LEDGER_PROPS`, `SCRATCH_NEOFORGE_OTEL_AGENT_JAR` and `SCRATCH_NEOFORGE_OTEL_AGENT_PROPS` (only four carry the `SCRATCH_NEOFORGE_` prefix; `SCRATCH_LEDGER_PROPS` does not). The mod jar pair `SCRATCH_NEOFORGE_MOD_JAR` and `SCRATCH_NEOFORGE_MOD_SHA256` is a separate overlay (`scratch-neoforge-mod.yml`, both or neither). The block above sets all seven. `SCRATCH_NEOFORGE_TELEMETRY` is NOT set (it is the soft kill and is refused together with the five).
 
 Then, without the human variables (the human phase is section 9):
 
