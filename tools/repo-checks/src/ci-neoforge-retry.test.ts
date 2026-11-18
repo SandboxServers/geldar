@@ -9,8 +9,8 @@ import { parse } from 'yaml';
 const CI = fileURLToPath(new URL('../../../.github/workflows/ci.yml', import.meta.url));
 
 type Step = { name?: string; run?: string };
-const steps = (parse(readFileSync(CI, 'utf8')) as { jobs: { neoforge: { steps: Step[] } } }).jobs
-  .neoforge.steps;
+const jobs = (parse(readFileSync(CI, 'utf8')) as { jobs: Record<string, { steps: Step[] }> }).jobs;
+const steps = [...(jobs.neoforge?.steps ?? []), ...(jobs.plugin?.steps ?? [])];
 
 // Git's bash (the retry blocks use `set -o pipefail`); on Windows the PATH `bash` may be WSL, so look for Git first.
 function findBash(): string | undefined {
@@ -59,7 +59,7 @@ function runBlock(stepName: string, fixture: string) {
   }
 }
 
-const BLOCKS = ['gradle build (neoforge)', 'gradle build (neoforge-ledger)'];
+const BLOCKS = ['gradle build (neoforge)', 'gradle build (neoforge-ledger)', 'gradle build'];
 
 const REAL_FLAKE = `FAILURE: Build failed with an exception.
 * What went wrong:
@@ -86,6 +86,11 @@ const CASES: Array<[string, string, boolean]> = [
     false,
   ],
   ['HTTP 429', 'Received status code 429 from server: Too Many Requests', true],
+  [
+    'real plugin job 429 (jnats pom)',
+    "Could not GET 'https://repo.maven.apache.org/maven2/io/nats/jnats/2.26.4/jnats-2.26.4.pom'. Received status code 429 from server: Too Many Requests\nBUILD FAILED in 13s",
+    true,
+  ],
   ['test failure', '12 tests completed, 1 FAILED\n> Task :test FAILED', false],
   [
     'verification failure plus Could not GET',
