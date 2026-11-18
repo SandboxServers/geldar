@@ -18,10 +18,13 @@
 		respond 405
 	}
 
-	# Never served on this map: no /maps/<map>/live and nothing below it, whether or not the file exists in the webroot.
-	# The 404 is answered here, before file_server, and there is no proxy behind it.
-	@live path_regexp live ^/maps/[^/]*/live(/.*)?$
-	handle @live {
+	# Never served on this map, whether or not the file exists in the webroot: any path with a segment named live or
+	# players.json (any case), any empty segment (//) and any .. segment, after decoding. The cleaned path
+	# ({http.request.uri.path}) and the original path ({http.request.orig_uri.path}) are both tested, so neither the
+	# path cleaning nor an encoded slash can hide a segment. The 404 is answered here, before file_server, and there is
+	# no proxy behind it.
+	@blocked expression "{http.request.uri.path}.matches('(?i)(^|/)(live|players[.]json)(/|$)') || {http.request.orig_uri.path}.matches('(?i)(^|/)(live|players[.]json)(/|$)') || {http.request.uri.path}.matches('(^|/)[.][.](/|$)') || {http.request.orig_uri.path}.matches('(^|/)[.][.](/|$)') || {http.request.uri.path}.contains('//') || {http.request.orig_uri.path}.contains('//')"
+	handle @blocked {
 		respond 404
 	}
 

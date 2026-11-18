@@ -99,6 +99,10 @@ function makeRepo(): string {
   mkdirSync(join(repo, 'bundle'));
   copyFileSync(SCRIPT_SRC, join(repo, 'deploy', 'nf-deploy.sh'));
   copyFileSync(HUMAN_LIB_SRC, join(repo, 'deploy', 'nf-human-lib.sh'));
+  copyFileSync(
+    resolve(DEPLOY, 'nf-extra-mods-lib.sh'),
+    join(repo, 'deploy', 'nf-extra-mods-lib.sh'),
+  );
   writeFileSync(join(repo, 'compose', 'nf-live.yml'), NF_COMPOSE_TEXT);
   writeFileSync(join(repo, 'compose', 'nf-live-telemetry.yml'), NF_OVERLAY_TEXT);
   for (const f of SECRET_FILES)
@@ -419,13 +423,13 @@ function extractCalls(repo: string): string[] {
 }
 
 const NEOFORGE_IMAGE =
-  /^  neoforge:\n(?:(?!  \S).*\n)*?    image: (\S+)$/m.exec(NF_COMPOSE_TEXT)?.[1] ?? '';
+  /^ {2}neoforge:\n(?:(?! {2}\S).*\n)*? {4}image: (\S+)$/m.exec(NF_COMPOSE_TEXT)?.[1] ?? '';
 
 describe('nf-deploy.sh seed-bundle', () => {
   it('takes the neoforge image from compose/nf-live.yml, and names the volume as compose does', () => {
     expect(NEOFORGE_IMAGE).toMatch(/^itzg\/minecraft-server:[^@]+@sha256:[0-9a-f]{64}$/);
     expect(SCRIPT_TEXT).not.toContain(NEOFORGE_IMAGE);
-    expect(NF_COMPOSE_TEXT).toMatch(/^  neoforge-data: \{\}$/m);
+    expect(NF_COMPOSE_TEXT).toMatch(/^ {2}neoforge-data: \{\}$/m);
     expect(NF_COMPOSE_TEXT).not.toContain('name: geldar-nf_neoforge-data');
     expect(SCRIPT_TEXT).not.toMatch(/\bsudo\b/);
   });

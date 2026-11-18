@@ -17,7 +17,18 @@ State at 2026-11-15. PR numbers are GitHub pull requests on `main`.
 | G1-01 | #446 | Merged (artifact `plugin-jars`) |
 | G1-02 | #445 | Merged |
 | G1-03 | #454 | merged 2026-11-15 06:02Z (3c563c72) |
-| All other cards (G0-06, G1-04, G2-01 to G2-07, G3-01 to G3-04, G4-01 to G4-05, G5-01 to G5-04, G6-01 to G6-05, G7-01 to G7-04) | none | Not started |
+| G0-06 | none | Satisfied by decision 0240 (0240 written in this change) |
+| All other cards (G1-04, G2-01 to G2-07, G3-01 to G3-04, G4-01 to G4-05, G5-01 to G5-04, G6-01 to G6-05, G7-01 to G7-04) | none | Not started |
+| GE-01 | none | Not started |
+| GE-02 | none | Not started |
+| GE-03 | none | Not started |
+| GE-04 | none | Not started |
+| GE-05 | none | Not started |
+| GE-06 | none | Not started |
+| GE-07 | none | Not started |
+| GE-08 | none | Not started |
+| GE-09 | none | Not started |
+| GE-10 | none | Not started |
 
 Cards for the campaign in [README.md](README.md), built on [plan.md](plan.md). **Level of detail:** these are planning cards (goal, files to read or add, dependency, proof, who must be consulted). Before dispatch the coordinator turns each into a prescriptive packet (exact files, code shapes, revert-checks) against the then-current `main`; a card with a `(to confirm)` is not Ready. Numbers (ADR, SQL, prompt) are never taken here: `<allocate via registry>`. Branches are `phase1/gn-<id>-<slug>`, one worktree per card under `.claude/worktrees/`. Shared files with a single owner per wave: `compose/colo.yml` and `compose/*.yml` (G0-03, then G4), `.github/workflows/*` (G1-01, then G4-01, one owner at a time), `docs/decisions/README.md` (the session that merges last in a window resolves it).
 
@@ -39,7 +50,7 @@ Legend: **Dep** dependency; **Who** sessions to consult; **Size** S (about 20k),
 - **G1-01 Publish plugin jars.** Dep none. Who geldar-93, geldar-ops. M. Build `geldar-core` and `velocity-identity` in CI (`plugin/`), publish with sha256 (and an OCI artifact digest) as a release artifact on `main`, write both into the release manifest. Do not change the existing deploy of jars yet. **Prove**: a workflow run on a branch produces the artifacts; a test recomputes the digest; the manifest lists them. Touches `.github/workflows/`: single owner.
 - **G1-02 Third-party plugin locks.** Dep none. S. Check sha512 as well as sha256 in `fetch_chunky` and `fetch_coreprotect` (`deploy/common.sh`), add a CI job that downloads each locked jar and verifies it, and a failing case for a mismatched hash. **Prove**: tests with a tampered fixture.
 - **G1-03 Config bundle.** Dep G0-05. M. Package compose files, shard files, plugin configs (BlueMap, CoreProtect templates), Caddy snippets and `deploy/` scripts as one versioned archive with a digest, published by CI and recorded in the manifest, so the target needs no git checkout. **Prove**: the bundle contents list is a golden file; extracting it on a clean directory passes `docker compose config`.
-- **G1-04 Release manifest v2.** Dep G1-01, G1-03. S. Extend `release.env` (or add `release.json`) with plugin and bundle digests and the environment definition hash; keep the existing fields; `colo-cd.sh` ignores unknown keys. **Prove**: the manifest parser tests; the old manifest still parses.
+- **G1-04 Release manifest v2.** Dep G1-01, G1-03. S. Extend the release manifest with plugin and bundle digests and the environment definition hash; format to be chosen in G1-04; colo-cd must ignore unknown keys; keep the existing fields of `release.env`. **Prove**: the manifest parser tests; the old manifest still parses.
 
 ## Wave G2: secrets and identity
 
@@ -87,6 +98,21 @@ Legend: **Dep** dependency; **Who** sessions to consult; **Size** S (about 20k),
 - **G7-02 Stamp the test environment on node 3.** Dep G3-04, G4-05, G6-01. Who owner, geldar-93. M. The exit run of plan.md section 9 on the Hyper-V VM, end to end from a freshly installed Debian, including the second apply being a no-op and the restore drill.
 - **G7-03 Production rebuild drill.** Dep G7-02, G5-04. Who owner, geldar-93. M. Stamp a spare host as production from the definition and backups, verify, and compare with the live node; cutover is the owner's separate decision and its own window. `node`.
 - **G7-04 Docs and retro.** Dep G7-02. S. A runbook for stamping an environment, restoring, rotating the Entra secret and adding an environment; the campaign retro; update `docs/runbooks/colo-deploy.md` and the "needs manual" notes that are now automated.
+
+## Wave GE: exit-criteria cards (added 2026-11-18, decision 0240)
+
+Each card is wave GE, not started. These cards exist so that the scorched-earth drill of decision 0240 can pass. Dependencies are in parentheses.
+
+- **GE-01 Plugin and mod delivery** (G1-01, G1-04). Publish the plugin and mod jars from CI with digests, commit a lock for each of ours, and have the deploy job fetch, verify and place them and restart Paper or Velocity through the deploy channel. Replaces hand-built jars, `scp` and the hand-kept `.bak` rollback.
+- **GE-02 NeoForge build and mods** (G1-04). CI builds `geldar-neoforge` and the ledger mod. Commit locks for the community mods (BlueMap 5.29 and Chunky 1.5.66) and land the `extra-mods.pins` consumer in the NeoForge entrypoint. Build and publish the offline server bundle from a workflow. The OTel agent jar gets a lock.
+- **GE-03 Config apply by CD** (G3-02). `colo-cd` applies compose, Velocity, NATS and Caddy changes with safe restarts and retires the "needs manual" list. `nf-deploy.sh` and the human lane become workflow inputs, not operator shell.
+- **GE-04 Node scaffolding in repo** (G3-01). The root-owned deploy entrypoint, its wrapper and `colo-env.sh` live in the repo, and bootstrap installs them.
+- **GE-05 State as code** (G2-02). Committed templates for glass aliases, the CoreProtect config, gamerules and BlueMap player heads. NATS auth is generated on the target (adopt mode first), with a generator-versus-live check.
+- **GE-06 Data and backup** (G5-01). Off-host backup and restore for Postgres, both worlds and the skins bucket. Chunky pregeneration becomes a pipeline job. Resolves the NeoForge "no backup" question once the owner rules.
+- **GE-07 Owner functions in register or glass** (C7-03b2). Roster add, token mint, skin import, owner admin set, cap changes and human-lane toggles become audited owner API calls instead of node shell. Completes the node-facing supervisor step.
+- **GE-08 Edge and identity** (G2-05, G2-06). Caddy snippets, DNS and Entra automation, a gateway prerequisite check, and the NeoForge map site with its edge certificate step.
+- **GE-09 Scorched-earth drill** (all). Run the drill from decision 0240 on the Hyper-V test VM first, production last.
+- **GE-10 Bootstrap outside the host** (G3-01). Decide where the stamp runs when the host and its runners are gone (a hosted runner or a separate bootstrap). Replace the node's hand-synced source snapshot and its `src.bak` copies with a CI-published bundle and an atomic switch. Replace the hand-staged NeoForge mod folders.
 
 ## Open items
 
