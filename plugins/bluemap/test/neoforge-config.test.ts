@@ -117,9 +117,14 @@ describe('NeoForge configs: render budget', () => {
     expect(Number(raw(core, 'region-file-check-interval'))).toBe(30);
   });
 
-  it('sends no metrics and downloads no Mojang client assets', () => {
+  it('sends no metrics', () => {
     expect(raw(core, 'metrics')).toBe('false');
-    expect(raw(core, 'accept-download')).toBe('false');
+  });
+
+  // Owner ruling 2026-11-11 (C2-07o): accept-download is true, as on Paper. BlueMap needs the Mojang client assets to
+  // render textures, so a false here would break the render. Flipping it back to false must fail this test.
+  it('accepts the Mojang client asset download (owner ruling C2-07o)', () => {
+    expect(raw(core, 'accept-download')).toBe('true');
   });
 });
 
