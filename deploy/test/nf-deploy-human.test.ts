@@ -538,7 +538,11 @@ describe('nf-deploy.sh human lane: fail-closed fixes', () => {
 
   it('on passes the port gate with the exited init row present: the init row is not a listener or a velocity-human row', () => {
     const repo = makeRepo();
-    const res = run(repo, { live: LISTEN_LIVE, human: LISTEN_HUMAN, rows: [FIVE_ROWS, INIT_ROW].join('\n') });
+    const res = run(repo, {
+      live: LISTEN_LIVE,
+      human: LISTEN_HUMAN,
+      rows: [FIVE_ROWS, INIT_ROW].join('\n'),
+    });
     expect(res.status).toBe(0);
     expect(res.stdout).toContain('all gates passed');
   });
