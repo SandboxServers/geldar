@@ -1,7 +1,14 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
-import { type ActionOutcome, cancelled, completed, failed, type JsonValue } from './outcome.ts';
+import {
+  type ActionOutcome,
+  cancelled,
+  completed,
+  errorText,
+  failed,
+  type JsonValue,
+} from './outcome.ts';
 import { isOwnPlacement } from './own-placements.ts';
 import { MESSAGE, reachTarget, SEED_CROPS } from './place.ts';
 import { ownerRecordAt, prefetchOwners } from './protected-blocks.ts';
@@ -136,8 +143,9 @@ async function hold(ctx: ActionContext, item: string): Promise<ActionOutcome> {
   if (stack) {
     try {
       await bot.equip(stack, 'hand');
-    } catch {
-      return failed('not_possible', USE_MESSAGE.notHeld);
+    } catch (error) {
+      if (signal.aborted) return cancelled();
+      return failed('not_possible', USE_MESSAGE.notHeld, {}, errorText(error));
     }
     if (signal.aborted) return cancelled();
   }

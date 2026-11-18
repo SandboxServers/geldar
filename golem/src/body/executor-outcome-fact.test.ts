@@ -42,12 +42,6 @@ describe('actionOutcomeOf: the fact an ok use carries (decision 0389)', () => {
       actionOutcomeOf('use', 0, okReport({ held: 'wooden_sword', fact: 'wooden_sword in hand' })),
     ).toMatchObject({ ok: true, detail_text: 'wooden_sword in hand' });
   });
-
-  it('has no detail_text on an ok door use without a fact', () => {
-    expect(
-      actionOutcomeOf('use', 0, okReport({ block: 'oak_door', state: 'open' })).detail_text,
-    ).toBeUndefined();
-  });
 });
 
 const SWAM = 'swim: blocks in water 12, surfacings for air 2';

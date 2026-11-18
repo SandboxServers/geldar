@@ -39,6 +39,8 @@ interface Setup {
   onLook?: () => void;
   /** How `equip` misbehaves: it throws, or it resolves and the hand does not change. */
   equip?: 'throws' | 'ignored';
+  /** Runs after `equip` puts the item in the hand (an abort here is seen after the equip). */
+  onEquip?: () => void;
 }
 
 const key = (p: { x: number; y: number; z: number }): string => `${p.x},${p.y},${p.z}`;
@@ -68,6 +70,7 @@ function fakeBot(setup: Setup = {}) {
     if (setup.equip === 'throws') throw new Error('no hand');
     if (setup.equip === 'ignored') return;
     held = stack.name;
+    setup.onEquip?.();
   });
   const bot = {
     username: 'Pike',
@@ -195,10 +198,10 @@ describe('use: an item and no target puts the item in hand (0389)', () => {
     expect(clicks).toEqual([]);
   });
 
-  it('refuses when equip throws, and clicks nothing', async () => {
+  it('refuses when equip throws, keeps the cause as raw, and clicks nothing', async () => {
     const { bot, clicks } = fakeBot({ items: ['wooden_sword'], equip: 'throws' });
     const outcome = await use(bot, { item: 'wooden_sword' });
-    expect(outcome).toEqual(failed('not_possible', USE_MESSAGE.notHeld));
+    expect(outcome).toEqual(failed('not_possible', USE_MESSAGE.notHeld, {}, 'no hand'));
     expect(clicks).toEqual([]);
   });
 
@@ -217,6 +220,34 @@ describe('use: an item and no target puts the item in hand (0389)', () => {
     expect(outcome).toEqual(failed('not_possible', USE_MESSAGE.notUsable));
     expect(bot.heldItem).toBeNull();
     expect(equip).not.toHaveBeenCalled();
+    expect(clicks).toEqual([]);
+  });
+});
+
+describe('use: holding an item, its abort and its stacks (0389, review 7 and 8)', () => {
+  it('stops with cancelled when the signal aborts after the equip, and the item stays in hand', async () => {
+    const controller = new AbortController();
+    const { bot, clicks } = fakeBot({ items: ['wooden_sword'], onEquip: () => controller.abort() });
+    const outcome = await use(bot, { item: 'wooden_sword' }, { signal: controller.signal });
+    expect(outcome).toEqual(cancelled());
+    expect(bot.heldItem?.name).toBe('wooden_sword');
+    expect(clicks).toEqual([]);
+  });
+
+  it('equips one of two stacks of the same item, and reports it held once', async () => {
+    const { bot, clicks, equip } = fakeBot({ items: ['wooden_sword', 'wooden_sword'] });
+    const outcome = await use(bot, { item: 'wooden_sword' });
+    expect(outcome).toEqual(completed({ held: 'wooden_sword', fact: 'wooden_sword in hand' }));
+    expect(equip).toHaveBeenCalledTimes(1);
+    expect(clicks).toEqual([]);
+  });
+
+  it('equips an item carried in the off-hand into the main hand, as heldItem is the main hand only', async () => {
+    // The fake has no off-hand slot: the sword is an inventory item and the main hand is empty.
+    const { bot, clicks, equip } = fakeBot({ items: ['wooden_sword'] });
+    const outcome = await use(bot, { item: 'wooden_sword' });
+    expect(outcome).toEqual(completed({ held: 'wooden_sword', fact: 'wooden_sword in hand' }));
+    expect(equip).toHaveBeenCalledWith(expect.objectContaining({ name: 'wooden_sword' }), 'hand');
     expect(clicks).toEqual([]);
   });
 });

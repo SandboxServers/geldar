@@ -200,10 +200,11 @@ const DETAIL_VERBS_BY_REASON: ReadonlyMap<string, readonly string[]> = new Map([
 ]);
 
 /**
- * The verbs whose successful outcome may carry a plain fact (decisions 0215, 0216, 0194): eat, sleep, till,
- * place and goto (the swim note). Any other verb's success drops its detail. Extend here.
+ * The verbs whose successful outcome may carry a plain fact (decisions 0215, 0216, 0194, 0389): eat, sleep,
+ * till, place, goto (the swim note) and use (the item in hand). Any other verb's success drops its detail.
+ * Extend here.
  */
-export const PLAIN_FACT_VERBS: readonly string[] = ['eat', 'sleep', 'till', 'place', 'goto'];
+export const PLAIN_FACT_VERBS: readonly string[] = ['eat', 'sleep', 'till', 'place', 'goto', 'use'];
 
 /** The cleaned plain fact of a successful outcome, or undefined for a verb outside `PLAIN_FACT_VERBS`. */
 function plainFactText(verb: string, raw: unknown): string | undefined {
