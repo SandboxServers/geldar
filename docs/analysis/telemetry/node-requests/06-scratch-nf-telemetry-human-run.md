@@ -172,6 +172,12 @@ The node is back at the baseline: same containers, same ports, same free RAM wit
 - A failed `up`: run the "clean up with: ... down" line it prints.
 - Driver abort (exit 3), exit 4 or 5: restore the profile from the saved copy named by `RECOVERY` (copy over the mounted host file in place, never replace the file), rerun nothing, `down`.
 - Any doubt about the stack: `down nf` with the same variables is always the rollback; it only touches `scratch-nf`.
+- Telemetry soft kill (the NeoForge ledger and agent only, the stack keeps running): set `SCRATCH_NEOFORGE_TELEMETRY=off` as an
+  explicit value and run `up` again. The switch is refused together with the five `SCRATCH_NEOFORGE_*` and `SCRATCH_LEDGER_PROPS`
+  variables, so remove those five in the same shell. Do not roll back by unsetting the switch: a stale ledger copy in `mods/`
+  then refuses to start. After it, run the four checks in `nf-live-telemetry.md`, section 3, "Kill switch and rollback": ledger jar
+  absent from `mods/`, no `-javaagent` in `user_jvm_args.txt`, not in `geldar-telemetry`, container healthy. The first live attempt
+  (2026-11-18) is recorded there as the "Rollback lesson".
 - No repo change is made by the run, so there is nothing to revert in the repo.
 
 ## 14. Report back
