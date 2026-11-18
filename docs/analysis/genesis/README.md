@@ -1,6 +1,6 @@
 # Genesis: stamp a whole Geldar environment from a GitHub Actions workflow
 
-Ledger for the campaign. Written 2026-11-14 by the geldar coordinator `geldar-3b` after interviews with geldar-93 (deploys and the node), geldar-ops (Body and the CD), geldar-registration (register, owner API, supervisor) and scriptorium-orchestrator (kit and player hosts), a read of the repo and the sibling repos, and online research. Status (2026-11-15): **wave G0 mostly merged, G1 in progress**; the card states are in the Ledger at the top of [packets.md](packets.md). The plan is in [plan.md](plan.md), the cards in [packets.md](packets.md), the architecture decision in [0188](../../decisions/0188-genesis-environment-stamp.md) (Proposed).
+Ledger for the campaign. Written 2026-11-14 by the geldar coordinator `geldar-3b` after interviews with geldar-93 (deploys and the node), geldar-ops (Body and the CD), geldar-registration (register, owner API, supervisor) and scriptorium-orchestrator (kit and player hosts), a read of the repo and the sibling repos, and online research. Status (2026-11-15): **wave G0 mostly merged, G1 in progress**; the card states are in the Ledger at the top of [packets.md](packets.md). The plan is in [plan.md](plan.md), the cards in [packets.md](packets.md), the architecture decision in [0188](../../decisions/0188-genesis-environment-stamp.md) (Proposed). Update 2026-11-18: the exit is the scorched-earth drill of [0240](../../decisions/0240-genesis-exit-is-the-scorched-earth-drill.md), and wave GE (cards GE-01 to GE-10 in [packets.md](packets.md)) is added to close the gap.
 
 ## The owner's goal
 
@@ -13,14 +13,24 @@ Owner answers taken in this session:
 
 ## Exit criteria
 
-The campaign ends when the exit run in [plan.md](plan.md) section 9 passes, not when the packets merge:
+The campaign is done when the scorched-earth drill of [decision 0240](../../decisions/0240-genesis-exit-is-the-scorched-earth-drill.md) passes, not when the packets merge. The eight points of 0240:
 
-1. A `workflow_dispatch` stamp of a **new environment on a clean host** reaches a green verify (stack health, a bot joins through the proxy, MCP and register answer, schema at head, NATS round trip) with no step done by hand except the listed human prerequisites.
-2. A **re-stamp of the same environment is a no-op** (plan mode reports no drift; apply changes nothing).
-3. A **restore drill** rebuilds Postgres, JetStream state and the world from backups into a fresh stamp and passes the same verify.
-4. An **ephemeral CI stamp** runs on a hosted runner on every change to the stamp surface and on a schedule.
-5. **Production is described by the same definition** as the other environments; a drift report between the live node and its definition is empty or every difference is recorded and accepted.
-6. No secret, account name or address is in the repo; every credential the workflow holds is listed with its scope and holder ([plan.md](plan.md) section 6).
+1. Exit is the drill: delete every Geldar-owned host, VM, volume, container, network, secret, DNS record, Entra app and runner, regenerate from pipelines, and pass verify and the smoke suite with a ranger able to join.
+2. Scope is Geldar-owned things only; shared host services (telemetry, runner stacks, other projects) are prerequisites and are not stamped.
+3. Every jar and mod, ours and community, is built or fetched by CI, locked with digests, verified and placed by the pipeline.
+4. Every manual node step becomes a workflow job or an audited owner function; a runbook may explain it but never performs it.
+5. State restores from an off-host backup; secrets regenerate on the target.
+6. A scheduled plan job reports drift and fails on a hand edit.
+7. The gateway firewall policy, the domain registration and the owner's one-time tenant consent are checked prerequisites.
+8. The NeoForge "no backup" decision and the skins source stay open until the owner rules.
+
+## Open owner questions
+
+- The NeoForge world's "no backup" decision (0240 point 8).
+- The skins source: a backed-up store or an owner-supplied one.
+- The GitHub Environments and Azure identities (G2-04): the owner runs them.
+- The first DNS and Entra run (G2-05, G2-06) needs the owner's tenant.
+- The backup credential (write-only, G5-01).
 
 ## Rules this campaign holds
 

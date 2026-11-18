@@ -192,6 +192,7 @@ compose_run() {
   [ "$PLATFORM" = neoforge ] && [ -n "${GELDAR_NF_SINK_FILE:-}" ] && set -- -f "$GELDAR_NF_SINK_FILE" "$@"
   [ "$PLATFORM" = neoforge ] && [ -n "${GELDAR_NF_MOD_JAR_HOST:-}" ] && set -- -f "$ROOT/compose/opt-in/scratch-neoforge-mod.yml" "$@"
   [ "$PLATFORM" = neoforge ] && [ -n "${GELDAR_NF_LEDGER_FILE:-}" ] && set -- -f "$GELDAR_NF_LEDGER_FILE" "$@"
+  [ "$PLATFORM" = neoforge ] && [ "${SCRATCH_EXTRA_MODS:-}" = 1 ] && set -- -f "$ROOT/compose/opt-in/scratch-neoforge-extra-mods.yml" "$@"
   [ "$PLATFORM" = neoforge ] && set -- -f "$ROOT/compose/opt-in/scratch-neoforge.yml" "$@"
   if [ "$PROJECT" = scratch-telemetry ]; then
     set -- -f "$ROOT/compose/opt-in/scratch-telemetry.yml" "$@"
@@ -485,7 +486,7 @@ secrets_removable() {
 
 do_up() {
   set_env
-  check_mod_env
+  check_mod_env; [ -z "${SCRATCH_EXTRA_MODS:-}" ] || { . "$ROOT/deploy/scratch/scratch-extra-mods.sh"; extra_mods_check; }
   check_nats
   check_mod_sha
   if [ -n "${SCRATCH_HUMAN_LANE:-}" ]; then

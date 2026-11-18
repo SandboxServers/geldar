@@ -1,0 +1,7 @@
+# Allowlist and pins for the optional extra mod jars on the live NeoForge shard (docs/runbooks/nf-extra-mods.md).
+# One line per mod: <name> <sha256-lowercase-hex> <jar-file-name> <version>, the fields separated by one space. The names here
+# are the whole allowlist: NF_EXTRA_MODS may name only these, and the entrypoint's extra_prep/extra_copy calls must match them.
+# Lines starting with # are comments. Tests in tools/repo-checks/src/nf-extra-mods.test.ts keep this file, the overlays and the
+# entrypoint in step.
+chunky 9f9303da0185fa0ae0e1d3f10a0f07b8d9e5a21e77931d4fc162dcc718a0ab4f Chunky-NeoForge-1.5.66.jar 1.5.66
+bluemap 8938f4453af4b53970c86e43d0bd26b4a88980e4e6639f818fa770d0f61c43df bluemap-5.29-neoforge.jar 5.29
