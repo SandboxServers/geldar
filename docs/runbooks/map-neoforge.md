@@ -18,8 +18,7 @@ The steps run in this order, and each step is a gate for the next one: precondit
 DNS, privacy check, and only then is the map public. Section 8 is a warning that applies to every section. Nothing here
 edits `deploy/nf-deploy.sh` or `compose/nf-live.yml`. Those belong to geldar-neoforge.
 
-Placeholders: `<zone>` is the owner's DNS zone, `<edge-target>` the target of the Paper map's record, `<extra-mods variable,
-see geldar-neoforge's note>` the variable that mounts a second mod jar (not final), `<nf-web-upstream>` the loopback address
+Placeholders: `<zone>` is the owner's DNS zone, `<edge-target>` the target of the Paper map's record, `<nf-web-upstream>` the loopback address
 of the NeoForge web container (NF-BM-3's compose snippet sets the port), `<neoforge-container>`, `<nf-web-container>`,
 `<project>`, `<host Caddyfile>`, `<host config dir>`, `<env-file>`, `<node-checkout>` and `<backup dir>`. Never paste real
 values into this file or into a ticket.
@@ -42,11 +41,12 @@ Do not start section 2 until every line is true. Ops records the date and who co
       later need Java 25, and a lower Java means the mod does not load.
 - [ ] geldar-neoforge confirmed heap headroom under the 9G heap (`-Xmx` unchanged) for one render thread and bounded maps,
       and confirmed the mod mount: the BlueMap jar is a second read-only bind, copied into `/data/mods` by the entrypoint
-      after its sha256 check (the `GELDAR_NF_MOD_SHA256` mechanism, reused with `<extra-mods variable, see geldar-neoforge's note>`).
-- [ ] BLOCKER, owned by geldar-neoforge: the repo has no second-jar mount yet. `scratch.sh` and the NeoForge entrypoint
-      accept only the geldar jar and the ledger jar, and the offline bundle refuses any jar it does not list. The variable
-      that mounts a second jar is in geldar-neoforge's interface note and is not on `main`. Sections 2 and 3 cannot start
-      until that variable is merged and this line is ticked. Do not treat `<extra-mods variable>` as existing.
+      after its sha256 check (the extra-mods mechanism of PR #750, available once PR #750 is on main: `NF_EXTRA_MODS=bluemap` and
+      `NF_EXTRA_BLUEMAP_JAR_HOST=<absolute host path>`, see `docs/runbooks/nf-extra-mods.md`).
+- [ ] BLOCKER, owned by geldar-neoforge: the second-jar mount is in PR #750 (`origin/phase1/nf-extra-mods`), not on `main`.
+      Available once PR #750 is on main: `NF_EXTRA_MODS` and `NF_EXTRA_BLUEMAP_JAR_HOST` (live), and
+      `SCRATCH_EXTRA_BLUEMAP_JAR_HOST` with `SCRATCH_EXTRA_CHUNKY_JAR_HOST` (scratch; the scratch overlay mounts both jars,
+      so both must name real files). Sections 2 and 3 cannot start until PR #750 is on main and this line is ticked.
 - [ ] The data volume is `neoforge-data`, mounted at `/data` in the NeoForge service. The web container mounts only its
       `bluemap/web` subpath, read only, at `/srv`. It never mounts `/data` itself.
 - [ ] The owner has approved a window for the NeoForge recreate (section 3) and a separate window for the edge (section 4).
@@ -58,42 +58,118 @@ Do not start section 2 until every line is true. Ops records the date and who co
 Purpose: prove that BlueMap loads next to the geldar mod on the same image, that it writes web files, and that it
 renders, before the live shard is touched. The scratch stack is a separate project with no players and no live data.
 
-Bring-up, with the same image digest as `compose/nf-live.yml`, the geldar jar as today, and BlueMap as a second mod.
-Blocker (section 1): no second-jar mount exists on `main`, so the placeholders below name a variable that does not exist
-yet. Do not run this until geldar-neoforge's interface note variable is merged:
+Bring-up uses the manual route in `docs/runbooks/nf-extra-mods.md` ("Scratch stack"). `deploy/scratch/scratch.sh` on `main`
+does not mount the extra jars. The overlay `compose/opt-in/scratch-neoforge-extra-mods.yml` and the variables below are in
+PR #750 (`origin/phase1/nf-extra-mods`), available once PR #750 is on main. Do not run this section before then.
+
+The overlay mounts BOTH jars, so both host variables must name real files, even for a test that only needs BlueMap:
+`SCRATCH_EXTRA_BLUEMAP_JAR_HOST` (`bluemap-5.29-neoforge.jar`) and `SCRATCH_EXTRA_CHUNKY_JAR_HOST` (`Chunky-NeoForge-1.5.66.jar`).
+The NeoForge service in scratch is `paper`. The scratch project is `scratch-nf` (suffix `nf`) and its world volume is
+`scratch-nf_paper-data` (`${PROJECT}_paper-data` in `deploy/scratch/scratch.sh`). Run everything below from a clean
+`git archive` export of `main` with no `.git`, as `docs/runbooks/scratch-stack.md` requires. Steps 1 and 2 run on the
+operator's desktop (PowerShell); steps 3 to 6 run on the scratch host (sh). Never touch the live project `geldar-nf`.
+
+### 2.0 Command list, in order
+
+Step 1, desktop, PowerShell. Download from the GitHub release only, into a new empty folder outside the repository:
 
 ```
-SCRATCH_PLATFORM=neoforge \
-  <extra-mods variable, see geldar-neoforge's note>=<absolute path to bluemap-5.29-neoforge.jar> \
-  <extra-mods sha variable, see geldar-neoforge's note>=<sha256 from neoforge.lock.json> \
-  deploy/scratch/scratch.sh <bring-up verb from its usage header>
+Invoke-WebRequest -Uri 'https://github.com/BlueMap-Minecraft/BlueMap/releases/download/v5.29/bluemap-5.29-neoforge.jar' -OutFile '<empty download dir>\bluemap-5.29-neoforge.jar'
+(Get-Item '<empty download dir>\bluemap-5.29-neoforge.jar').Length
+(Get-FileHash -Algorithm SHA256 '<empty download dir>\bluemap-5.29-neoforge.jar').Hash.ToLower()
+Select-String -Path compose\neoforge\extra-mods.pins -Pattern '^bluemap '
 ```
 
-`scratch.sh` checks the BlueMap jar's sha256 before anything starts and refuses on a mismatch. A refusal means nothing
-started: fix the path or the lock value and start again. The jar must be a regular file, not a symlink, at an absolute path.
+Expect the length `7060044` (`size_bytes` in `plugins/bluemap/neoforge.lock.json`) and the hash
+`8938f4453af4b53970c86e43d0bd26b4a88980e4e6639f818fa770d0f61c43df` (the `bluemap` line of the pins file). A hash mismatch
+is a STOP: delete the download, change no pin, and report. A length that differs from the lock file is also a STOP.
+Record the length and the hash in the report.
 
-Observation steps, in order. Record each result with its timestamp (`date -u`).
+Step 2, desktop, PowerShell. Chunky, which the same overlay mounts. Stage it in the same folder and compare by hand:
 
-1. Host check of the jar: `Get-FileHash -Algorithm SHA256 <jar path>` (or `sha256sum`) equals the lock file's sha256.
-2. Log, BlueMap lines: `docker logs <scratch-neoforge-container> 2>&1 | grep -i bluemap | head -n 40`. Expect the mod
-   to name itself at load time, with no exception attached.
-3. Log, failure shapes (section 2.1 below): `docker logs <scratch-neoforge-container> 2>&1 | grep -E -i 'incompatible|requires|missing dependency|Mod loading has failed|loading error|de\.bluecolored|geldar' | head -n 40`.
-   Any line here is a failure until it is explained.
-4. Wait for start: `docker logs <scratch-neoforge-container> 2>&1 | grep -c 'Server started'` prints at least `1`. Wait up to 10
-   minutes; if it does not appear, go to the failure shapes.
-5. Web files: `docker exec <scratch-neoforge-container> ls -l /data/bluemap/web/index.html` lists the file, and
-   `docker exec <scratch-neoforge-container> ls /data/bluemap/web/maps` lists `overworld`, `nether` and `end` (the map names in the NF-BM-2 config).
-6. Status, read only: in the scratch server console send `/bluemap` with no arguments (status and help only, no render).
-   It must answer with BlueMap's status. If it answers `Unknown command`, BlueMap did not load: failure shape 3.
-7. Bounded render of a small box: start one render of one map, inside the bounds from NF-BM-2, using the render command
-   BlueMap 5.29 lists in its help (ops confirms the exact syntax from `/bluemap` help; this runbook does not guess it).
-   Stamp the start with `date -u`, stamp the end when the log says the render finished, and record both.
-8. Needs a scratch web overlay, to be added. No command is given until it exists. The check is a tile served with `200`
-   through a scratch web container, using a tile name taken from `ls` on the scratch volume (no tile name is guessed).
-9. Needs a scratch web overlay, to be added. No command is given until it exists. The check is the live path refused with
-   `404` on the scratch web container.
-10. Memory: `docker stats --no-stream <scratch-neoforge-container>` and the RSS line of section 3.3, both taken after the
-    render finished. Record RSS in the report.
+```
+(Get-FileHash -Algorithm SHA256 '<empty download dir>\Chunky-NeoForge-1.5.66.jar').Hash.ToLower()
+```
+
+Expect `9f9303da0185fa0ae0e1d3f10a0f07b8d9e5a21e77931d4fc162dcc718a0ab4f` (the `chunky` line of the pins file). Its download
+source is not in the repository (UNVERIFIED here). Same stop rule. Both jars must be regular files, not symlinks, at absolute
+paths that the Docker host can read.
+
+Step 3, scratch host, sh. Set the variables, then create the containers WITHOUT starting them, so the config seed in step 4
+lands before the first NeoForge start:
+
+```
+export SCRATCH_PLATFORM=neoforge
+export SCRATCH_NATS_AUTH_DIR=<absolute NATS auth dir, made by the scratch runbook>
+export SCRATCH_EXTRA_BLUEMAP_JAR_HOST=<absolute host path of bluemap-5.29-neoforge.jar>
+export SCRATCH_EXTRA_CHUNKY_JAR_HOST=<absolute host path of Chunky-NeoForge-1.5.66.jar>
+# plus the other variables deploy/scratch/scratch.sh exports for up (open item OI-2)
+docker compose -p scratch-nf -f compose/phase0.yml -f compose/opt-in/scratch.yml \
+  -f compose/opt-in/scratch-neoforge.yml -f compose/opt-in/scratch-neoforge-extra-mods.yml \
+  up -d --no-start --build
+```
+
+Step 4, scratch host, sh. Seed BlueMap's config (open item OI-1). The source is the repository's `plugins/bluemap/neoforge/`
+in the export. `<paper image>` is the image of the `paper` service in `compose/phase0.yml` (same tag and digest):
+
+```
+docker run --rm --user 0 -v scratch-nf_paper-data:/data \
+  -v "<clean export dir>/plugins/bluemap/neoforge:/in:ro" \
+  --entrypoint sh <paper image> -c \
+  'mkdir -p /data/config/bluemap && cp -r /in/. /data/config/bluemap/ && chown -R --reference=/data /data/config'
+docker run --rm -v scratch-nf_paper-data:/data --entrypoint sh <paper image> -c 'ls -l /data/config/bluemap /data/config/bluemap/maps'
+docker compose -p scratch-nf -f compose/phase0.yml -f compose/opt-in/scratch.yml \
+  -f compose/opt-in/scratch-neoforge.yml -f compose/opt-in/scratch-neoforge-extra-mods.yml \
+  up -d --wait
+```
+
+The `ls` must list `core.conf`, `plugin.conf`, `webapp.conf`, `webserver.conf` and `maps/` holding `end.conf`, `nether.conf`
+and `overworld.conf`. Then check, after the start, that `/data/config/bluemap` still holds those files.
+
+Step 5, scratch host, sh. Observation, in order. Record each result with `date -u`. First set the container:
+
+```
+P=$(docker ps -q --filter label=com.docker.compose.project=scratch-nf --filter label=com.docker.compose.service=paper)
+```
+
+a. BlueMap lines: `docker logs "$P" 2>&1 | grep -i bluemap | head -n 40`. Expect the mod to name itself at load time, with
+   no exception attached.
+b. Failure shapes (section 2.1): `docker logs "$P" 2>&1 | grep -E -i 'incompatible|requires|missing dependency|Mod loading has failed|loading error|de\.bluecolored|geldar' | head -n 40`.
+   Any line is a failure until it is explained.
+c. Start: `docker logs "$P" 2>&1 | grep -c 'Server started'` prints at least `1`, within 10 minutes. `grep -c 'Done ('` is the
+   vanilla start line; its wording on this NeoForge build is UNVERIFIED, so record what the log prints.
+d. Mods: `docker exec "$P" ls -l /data/mods` lists `bluemap.jar` and `chunky.jar` (the entrypoint copies each as `<name>.jar`),
+   and `docker exec "$P" sha256sum /data/mods/bluemap.jar` prints the pin of step 1.
+e. Web files: `docker exec "$P" ls -l /data/bluemap/web/index.html` lists the file, and
+   `docker exec "$P" ls /data/bluemap/web/maps` lists `overworld`, `nether` and `end`.
+f. Status, read only, no render: `docker exec "$P" rcon-cli bluemap`. It must answer with BlueMap's status or help. An
+   `Unknown command` answer means BlueMap did not load: failure shape 3. The `rcon-cli` form follows the repository's
+   convention (`deploy/scratch/telemetry-rows.sh`); the reply wording is UNVERIFIED until captured.
+g. Players: `docker exec "$P" rcon-cli list` must print `There are 0 of a max of`. If a player is online, stop; do not render.
+h. Bounded render: the render subcommand and its exact syntax come from the help that step f printed (OI-3); this runbook
+   does not guess them. Use one map and the bounds from NF-BM-2. Stamp `date -u` at the start, and stamp the end when the
+   log shows the render finished (`docker logs "$P" 2>&1 | tail -n 20`).
+i. Memory, before step h and after it: `docker stats --no-stream "$P"`, and the RSS of the JVM:
+   `docker exec "$P" sh -c 'for p in /proc/[0-9]*; do case "$(tr "\0" " " < $p/cmdline)" in *java*) grep -H -E "VmRSS|VmHWM" $p/status;; esac; done'`.
+j. One tile: `docker exec "$P" find /data/bluemap/web/maps/overworld -type f | head -n 5` lists paths; copy one of them out
+   with `docker cp "$P:<path from that list>" "<sample dir>/"`. Never guess the tile name.
+k. No live files: `docker exec "$P" sh -c 'ls -d /data/bluemap/web/maps/*/live 2>/dev/null'` prints nothing, and
+   `docker exec "$P" find /data/bluemap/web -name players.json` and `... -name markers.json` each print nothing.
+l. Steps 8 and 9 of the section 2 test need a scratch web overlay, which is pending (no overlay exists yet; geldar-neoforge
+   places the web service from `compose/bluemap-web-nf/README.md`). No command is given until it exists.
+
+Step 6, scratch host, sh. Tear down with the scratch runbook's verb, after the report is written. Check the live project
+before and after (read only), and expect no change:
+
+```
+docker ps -a --filter label=com.docker.compose.project=geldar-nf --format '{{.Names}} {{.Status}}'
+cd <clean export dir> && SCRATCH_PLATFORM=neoforge SCRATCH_NATS_AUTH_DIR=<same NATS auth dir> sh deploy/scratch/scratch.sh down nf
+docker volume ls --filter name=scratch-nf
+```
+
+`down` runs `down -v --rmi local`: it removes the scratch containers, the `scratch-nf_paper-data` volume (and the seeded
+config with it), the eventsink image and the secrets directory. The build cache stays. Record the leftover-volume list
+that `down` prints.
 
 ### 2.1 The three failure shapes
 
@@ -109,16 +185,34 @@ These come from the design addendum. Each one stops the test.
 
 All of these, and only these:
 
-- no exception in the log from `de.bluecolored` or from the geldar classes (`grep` in step 3 is empty, or every hit is a
+- no exception in the log from `de.bluecolored` or from the geldar classes (step 5b is empty, or every hit is a
   line that the report explains);
-- the server reaches `Server started` (step 4);
-- `bluemap/web/index.html` exists in the scratch volume (step 5), and at least one tile file is written by the bounded render;
-- `/bluemap` status answers (step 6);
-- the scratch web container serves a tile with `200` and the live path with `404` (steps 8 and 9, pending the scratch web
-  overlay);
-- RSS is recorded, with the render start and end stamps.
+- the server reaches `Server started` (step 5c);
+- `bluemap/web/index.html` exists in the scratch volume (step 5e), and at least one tile file is written by the bounded
+  render (step 5j);
+- `rcon-cli bluemap` status answers (step 5f);
+- the scratch web container serves a tile with `200` and the live path with `404` (section 2.0 step 5l, pending the scratch
+  web overlay);
+- RSS is recorded, with the render start and end stamps (steps 5h and 5i).
 
-The scratch project is torn down by its own verb after the report is written. Its volume is never copied to the live shard.
+The scratch project is torn down by its own verb after the report is written (section 2.0 step 6). Its volume is never
+copied to the live shard.
+
+### 2.3 Open items
+
+- OI-1, config seeding (owner: geldar-neoforge). PR #750 does not seed BlueMap's config. The BlueMap NeoForge config
+  directory `/data/config/bluemap/` is taken from the design brief and is UNVERIFIED in the repository. Without a seed,
+  BlueMap writes its own defaults and the test runs those, not the NF-BM-2 files in `plugins/bluemap/neoforge/`. The repo's
+  `core.conf` sets `accept-download: true` (decision 0094), so the stop-until-edited behaviour does not apply to these files;
+  the seed is needed for the test to run the repo's configs. The scratch test seeds by hand (step 4). The live shard has the
+  same gap: a decision is needed between an entrypoint seed-if-absent hook (geldar-neoforge) and a manual step before
+  section 3.2. Section 3 cannot start until that is decided.
+- OI-2, the manual route's environment. `deploy/scratch/scratch.sh up` exports more than the variables above (the volume
+  name, the secrets directory, the run uid and gid, the image and the NATS auth). The full set is not in the runbook; copy
+  it from the `up` section of `deploy/scratch/scratch.sh` and record it before the first run.
+- OI-3, the render command and its bounds. The `rcon-cli bluemap` help output decides the syntax (step 5h). Not guessed.
+- OI-4, the start line. `Server started` is the grep this runbook has used since the design note. `Done (` is the vanilla line;
+  its wording on this NeoForge build is UNVERIFIED.
 
 ## 3. Live jar step: NeoForge recreate and the first bounded render
 
