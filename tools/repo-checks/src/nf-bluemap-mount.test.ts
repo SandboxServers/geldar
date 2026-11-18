@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
 
 // The BlueMap config bundle mount. The jar mount and the bundle mount sit in the same overlay file, so the jar cannot be mounted
 // without the bundle: the entrypoint refuses a BlueMap start without it. Both overlays (live and scratch) are checked.
@@ -16,7 +16,9 @@ function volumesOf(file: string, service: string): Volume[] {
   const doc = parse(readFileSync(file, 'utf8')) as {
     services: Record<string, { volumes: Volume[] }>;
   };
-  return doc.services[service].volumes;
+  const svc = doc.services[service];
+  if (!svc) throw new Error(`${file}: no service ${service}`);
+  return svc.volumes;
 }
 
 describe.each([

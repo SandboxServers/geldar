@@ -8,7 +8,10 @@ import { describe, expect, it } from 'vitest';
 // These tests assert all three equal the real file, so an edit to the loader fails here until the pins are regenerated.
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const LOADER = `${ROOT}compose/neoforge/extra-mods-bluemap-config.sh`;
-const OVERLAYS = ['compose/nf-live-mod-bluemap.yml', 'compose/opt-in/scratch-neoforge-extra-mods.yml'];
+const OVERLAYS = [
+  'compose/nf-live-mod-bluemap.yml',
+  'compose/opt-in/scratch-neoforge-extra-mods.yml',
+];
 const LIB = 'deploy/nf-extra-mods-lib.sh';
 const actual = createHash('sha256').update(readFileSync(LOADER)).digest('hex');
 const REGEN =
@@ -23,7 +26,10 @@ describe('BlueMap config loader: its pins equal the file', () => {
     it(`${path} pins the loader's sha256 and mounts the loader read-only at /geldar/extra-mods/bluemap-config.sh`, () => {
       const text = readFileSync(`${ROOT}${path}`, 'utf8');
       const pin = /GELDAR_NF_EXTRA_BLUEMAP_LOADER_SHA256: "([0-9a-f]{64})"/.exec(text)?.[1];
-      expect(pin, `${path} has no GELDAR_NF_EXTRA_BLUEMAP_LOADER_SHA256 literal. ${REGEN}`).toBeDefined();
+      expect(
+        pin,
+        `${path} has no GELDAR_NF_EXTRA_BLUEMAP_LOADER_SHA256 literal. ${REGEN}`,
+      ).toBeDefined();
       expect(pin, `${path} loader pin is stale. ${REGEN}`).toBe(actual);
       expect(text).toContain('target: /geldar/extra-mods/bluemap-config.sh');
     });

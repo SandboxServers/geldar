@@ -62,7 +62,10 @@ describe('scratch extra mods: the overlay shape (no docker needed)', () => {
   it('mounts exactly the two jars and the BlueMap config bundle, nothing else', () => {
     const volumes = doc.services.paper.volumes as Record<string, unknown>[];
     expect(volumes.map((v) => v.target).sort()).toEqual(
-      [...MODS.map((name) => `/geldar/extra-mods/${name}.jar`), '/geldar/extra-mods/bluemap-config'].sort(),
+      [
+        ...MODS.map((name) => `/geldar/extra-mods/${name}.jar`),
+        '/geldar/extra-mods/bluemap-config',
+      ].sort(),
     );
   });
 

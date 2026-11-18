@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -77,10 +77,13 @@ describe('BlueMap privacy: the maps', () => {
     ]);
   });
 
-  it.each(['overworld', 'nether', 'end'])('%s: no static marker set and no hide-* weakened', (map) => {
-    const text = bare(read(`maps/${map}.conf`));
-    expect(text).toMatch(/marker-sets:\s*\{\s*\}/);
-    expect(text).not.toMatch(/hide-[a-z-]+:\s*false/);
-    expect(text).not.toMatch(/player/i);
-  });
+  it.each(['overworld', 'nether', 'end'])(
+    '%s: no static marker set and no hide-* weakened',
+    (map) => {
+      const text = bare(read(`maps/${map}.conf`));
+      expect(text).toMatch(/marker-sets:\s*\{\s*\}/);
+      expect(text).not.toMatch(/hide-[a-z-]+:\s*false/);
+      expect(text).not.toMatch(/player/i);
+    },
+  );
 });

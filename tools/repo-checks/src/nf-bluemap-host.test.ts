@@ -104,67 +104,74 @@ const existsSync2 = (path: string) => {
   }
 };
 
-describe.skipIf(skipWithoutSh())('BlueMap bundle: the host check (sh, no docker)', { timeout: 60_000 }, () => {
-  it('the committed bundle passes, and the check names BlueMap as enabled', () => {
-    const base = mkdtempSync(join(tmpdir(), 'nf-bm-host-'));
-    dirs.push(base);
-    const r = drive(base, REAL_BUNDLE);
-    expect(r.status, r.stderr).toBe(0);
-    expect(r.stdout).toContain('checked: bluemap');
-    expect(existsSync2(join(base, 'docker.log'))).toBe(false);
-  });
+describe.skipIf(skipWithoutSh())(
+  'BlueMap bundle: the host check (sh, no docker)',
+  { timeout: 60_000 },
+  () => {
+    it('the committed bundle passes, and the check names BlueMap as enabled', () => {
+      const base = mkdtempSync(join(tmpdir(), 'nf-bm-host-'));
+      dirs.push(base);
+      const r = drive(base, REAL_BUNDLE);
+      expect(r.status, r.stderr).toBe(0);
+      expect(r.stdout).toContain('checked: bluemap');
+      expect(existsSync2(join(base, 'docker.log'))).toBe(false);
+    });
 
-  it('a fixture bundle that matches passes', () => {
-    const base = mkdtempSync(join(tmpdir(), 'nf-bm-host-'));
-    dirs.push(base);
-    const r = drive(base, fixtureBundle(base, OK_FILES));
-    expect(r.status, r.stderr).toBe(0);
-  });
+    it('a fixture bundle that matches passes', () => {
+      const base = mkdtempSync(join(tmpdir(), 'nf-bm-host-'));
+      dirs.push(base);
+      const r = drive(base, fixtureBundle(base, OK_FILES));
+      expect(r.status, r.stderr).toBe(0);
+    });
 
-  it('BlueMap not enabled: the bundle is not checked at all (a missing bundle is fine)', () => {
-    const base = mkdtempSync(join(tmpdir(), 'nf-bm-host-'));
-    dirs.push(base);
-    const r = drive(base, join(base, 'no-such-bundle'), '');
-    expect(r.status, r.stderr).toBe(0);
-  });
+    it('BlueMap not enabled: the bundle is not checked at all (a missing bundle is fine)', () => {
+      const base = mkdtempSync(join(tmpdir(), 'nf-bm-host-'));
+      dirs.push(base);
+      const r = drive(base, join(base, 'no-such-bundle'), '');
+      expect(r.status, r.stderr).toBe(0);
+    });
 
-  it('a missing MANIFEST.sha256 refuses, and no docker call is made', () => {
-    const base = mkdtempSync(join(tmpdir(), 'nf-bm-host-'));
-    dirs.push(base);
-    const bundle = fixtureBundle(base, OK_FILES);
-    rmSync(join(bundle, 'MANIFEST.sha256'));
-    refused(base, drive(base, bundle), /MANIFEST\.sha256 is missing/);
-  });
+    it('a missing MANIFEST.sha256 refuses, and no docker call is made', () => {
+      const base = mkdtempSync(join(tmpdir(), 'nf-bm-host-'));
+      dirs.push(base);
+      const bundle = fixtureBundle(base, OK_FILES);
+      rmSync(join(bundle, 'MANIFEST.sha256'));
+      refused(base, drive(base, bundle), /MANIFEST\.sha256 is missing/);
+    });
 
-  it('a changed byte refuses and names the file', () => {
-    const base = mkdtempSync(join(tmpdir(), 'nf-bm-host-'));
-    dirs.push(base);
-    const bundle = fixtureBundle(base, OK_FILES);
-    writeFileSync(join(bundle, 'core.conf'), 'accept-download: false\n');
-    refused(base, drive(base, bundle), /core\.conf does not match MANIFEST/);
-  });
+    it('a changed byte refuses and names the file', () => {
+      const base = mkdtempSync(join(tmpdir(), 'nf-bm-host-'));
+      dirs.push(base);
+      const bundle = fixtureBundle(base, OK_FILES);
+      writeFileSync(join(bundle, 'core.conf'), 'accept-download: false\n');
+      refused(base, drive(base, bundle), /core\.conf does not match MANIFEST/);
+    });
 
-  it('an extra file (a stray default) refuses', () => {
-    const base = mkdtempSync(join(tmpdir(), 'nf-bm-host-'));
-    dirs.push(base);
-    const bundle = fixtureBundle(base, OK_FILES);
-    writeFileSync(join(bundle, 'maps', 'foo.conf'), 'x\n');
-    refused(base, drive(base, bundle), /holds maps\/foo\.conf, which MANIFEST/);
-  });
+    it('an extra file (a stray default) refuses', () => {
+      const base = mkdtempSync(join(tmpdir(), 'nf-bm-host-'));
+      dirs.push(base);
+      const bundle = fixtureBundle(base, OK_FILES);
+      writeFileSync(join(bundle, 'maps', 'foo.conf'), 'x\n');
+      refused(base, drive(base, bundle), /holds maps\/foo\.conf, which MANIFEST/);
+    });
 
-  it('a file the manifest lists but the directory lacks refuses', () => {
-    const base = mkdtempSync(join(tmpdir(), 'nf-bm-host-'));
-    dirs.push(base);
-    const bundle = fixtureBundle(base, OK_FILES);
-    rmSync(join(bundle, 'maps', 'end.conf'));
-    refused(base, drive(base, bundle), /lacks the regular file maps\/end\.conf/);
-  });
+    it('a file the manifest lists but the directory lacks refuses', () => {
+      const base = mkdtempSync(join(tmpdir(), 'nf-bm-host-'));
+      dirs.push(base);
+      const bundle = fixtureBundle(base, OK_FILES);
+      rmSync(join(bundle, 'maps', 'end.conf'));
+      refused(base, drive(base, bundle), /lacks the regular file maps\/end\.conf/);
+    });
 
-  it.skipIf(!CAN_LINK)('a symlink in the bundle refuses (skipped where symlinks are not allowed)', () => {
-    const base = mkdtempSync(join(tmpdir(), 'nf-bm-host-'));
-    dirs.push(base);
-    const bundle = fixtureBundle(base, OK_FILES);
-    symlinkSync(join(bundle, 'core.conf'), join(bundle, 'link.conf'));
-    refused(base, drive(base, bundle), /holds a symlink/);
-  });
-});
+    it.skipIf(!CAN_LINK)(
+      'a symlink in the bundle refuses (skipped where symlinks are not allowed)',
+      () => {
+        const base = mkdtempSync(join(tmpdir(), 'nf-bm-host-'));
+        dirs.push(base);
+        const bundle = fixtureBundle(base, OK_FILES);
+        symlinkSync(join(bundle, 'core.conf'), join(bundle, 'link.conf'));
+        refused(base, drive(base, bundle), /holds a symlink/);
+      },
+    );
+  },
+);

@@ -124,7 +124,9 @@ const pinOf = (name: Mod) => sha256(BODY[name]);
 /** With BlueMap enabled the entrypoint also needs its loader's pin (the overlays' GELDAR_NF_EXTRA_BLUEMAP_LOADER_SHA256). */
 const pinFor = (name: Mod): Record<string, string> => ({
   [envOf(name)]: pinOf(name),
-  ...(name === 'bluemap' ? { GELDAR_NF_EXTRA_BLUEMAP_LOADER_SHA256: sha256(readFileSync(BLUEMAP_LOADER, 'utf8')) } : {}),
+  ...(name === 'bluemap'
+    ? { GELDAR_NF_EXTRA_BLUEMAP_LOADER_SHA256: sha256(readFileSync(BLUEMAP_LOADER, 'utf8')) }
+    : {}),
 });
 /** The committed BlueMap config bundle (plugins/bluemap/neoforge). With BlueMap enabled the entrypoint refuses without it. */
 const BUNDLE_DIR = `${ROOT}plugins/bluemap/neoforge`;

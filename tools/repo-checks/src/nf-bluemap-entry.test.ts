@@ -6,8 +6,8 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
-  readFileSync,
   readdirSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -56,7 +56,9 @@ function setup(withJar = true): Case {
   const mount = join(base, 'mount');
   const mods = join(data, 'mods');
   for (const dir of [bin, data, mount, mods]) mkdirSync(dir);
-  writeFileSync(join(bin, 'curl'), '#!/bin/sh\necho "curl was reached" >&2\nexit 9\n', { mode: 0o755 });
+  writeFileSync(join(bin, 'curl'), '#!/bin/sh\necho "curl was reached" >&2\nexit 9\n', {
+    mode: 0o755,
+  });
   writeFileSync(join(mods, 'proxy-compatible-forge.jar'), MOD_BODY);
   writeFileSync(join(data, 'neoforge-installer.jar'), INSTALLER_BODY);
   const files: Record<string, string> = {
@@ -144,7 +146,10 @@ describe.skipIf(skipWithoutSh())(
     it('enabled with a loader that does not match its pin (one byte changed): refuses before it is sourced', () => {
       const c = setup();
       mountBundle(c);
-      writeFileSync(join(c.mount, 'bluemap-config.sh'), `${readFileSync(LOADER, 'utf8')}# changed\n`);
+      writeFileSync(
+        join(c.mount, 'bluemap-config.sh'),
+        `${readFileSync(LOADER, 'utf8')}# changed\n`,
+      );
       const r = run(c, ON());
       expect(r.status).not.toBe(0);
       expect(r.stderr).toMatch(/does not match its pin/);
@@ -162,7 +167,11 @@ describe.skipIf(skipWithoutSh())(
         const [want, rel] = line.split(/ {2}/);
         expect(sha256File(installed(c, rel ?? ''))).toBe(want);
       }
-      expect(readdirSync(join(cfgDir(c), 'maps')).sort()).toEqual(['end.conf', 'nether.conf', 'overworld.conf']);
+      expect(readdirSync(join(cfgDir(c), 'maps')).sort()).toEqual([
+        'end.conf',
+        'nether.conf',
+        'overworld.conf',
+      ]);
       expect(readFileSync(join(cfgDir(c), '.geldar-config.sha256'), 'utf8').trim()).toBe(
         sha256File(join(BUNDLE, 'MANIFEST.sha256')),
       );
