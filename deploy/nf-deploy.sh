@@ -24,9 +24,8 @@
 #                                      no agent. Unset adds no overlay, so a stale jar makes the start refuse, by design.
 #   NF_HUMAN (default off)             on adds compose/nf-live-human.yml (the velocity-human lane; loopback unless NF_HUMAN_BIND
 #                                      says otherwise). NF_HUMAN_BIND must be set explicitly, non-empty, and not 0.0.0.0. Unset or off never starts it.
-#   The four compose shapes dc() and probe_dc() render: the base file alone (NF_TELEMETRY unset); the base plus
-#   compose/nf-live-telemetry.yml (on); the base plus compose/nf-live-telemetry-off.yml (off); the base plus
-#   compose/nf-live-probe.yml (probe only, for one run).
+#   The compose shapes: dc() renders six (the base, with telemetry on, with telemetry off or with neither, each with or without
+#   compose/nf-live-human.yml); probe_dc() renders a seventh, the base plus compose/nf-live-probe.yml, for one run.
 #   NF_SECRETS_DIR                     the secret files (default compose/secrets-nf)
 #   NF_SERVICE_UID (default 1000), NF_SERVICE_GID (default NF_SERVICE_UID): the uid:gid the services run as and that owns
 #                                      the seeded volume. The default 1000 is not the node: its ops account is uid 1001, so the
@@ -649,7 +648,7 @@ cmd_refresh_secrets() {
   esac
   gates
   check_refresh_up
-  say "refresh-secrets: force-recreate nats, then velocity and eventsink, identity-seed, neoforge (postgres is never touched)"
+  say "refresh-secrets: force-recreate nats, then velocity and eventsink (and velocity-human with NF_HUMAN=on), identity-seed, neoforge (postgres is never touched)"
   act dc up -d --force-recreate --no-deps nats ||
     die "nats did not recreate; nothing else was touched"
   if [ "${DEPLOY_DRY_RUN:-0}" = 1 ]; then
@@ -657,8 +656,12 @@ cmd_refresh_secrets() {
   else
     wait_nats_healthy
   fi
-  act dc up -d --wait --force-recreate --no-deps velocity eventsink ||
-    die "velocity or eventsink did not recreate or become healthy; identity-seed and neoforge were not run"
+  # NF_HUMAN=on: velocity-human joins this step. Its bind mounts follow inodes, so a rotated forwarding secret or NATS password
+  # reaches it only by a recreate. Unset adds no word, so the recorded args are unchanged.
+  human=
+  if [ "$HUMAN" = 1 ]; then human=velocity-human; fi
+  act dc up -d --wait --force-recreate --no-deps velocity eventsink $human ||
+    die "velocity, eventsink or velocity-human did not recreate or become healthy; identity-seed and neoforge were not run"
   act dc up --force-recreate --no-deps --exit-code-from identity-seed identity-seed ||
     die "identity-seed did not exit 0 (the one-shot seed); neoforge was not recreated; fix it and run refresh-secrets again"
   act dc up -d --wait --force-recreate --no-deps neoforge ||
