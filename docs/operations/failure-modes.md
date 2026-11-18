@@ -301,7 +301,7 @@ Known gaps: two manifest copies kept in step by hand, so a missed step can leave
 |---|---|---|---|---|---|
 | `colo-admin.sh` exits 1 | Any refusal or failed run; the CLI's own exit code is not passed through | Re-run with dry run where offered; read stderr | [exit codes](../reference/admin-service.md#exit-codes) | Run the admin CLI with a hand-made `docker run` | The one admin task |
 | `admin.sh` exits 1 at once | The Postgres password file is missing or empty | Check the secret file exists, by name only (R5) | [admin-service](../reference/admin-service.md) | Print the file | The one admin task |
-| `player-start` prints that it cannot set the restart policy | `docker update` failed; the host runs without a restart policy until the next `player-start` (0169 item 7) | Note it; in a quiet moment run `player-stop <id>` then `player-start <id>` (`player-start` alone leaves a running host as it is) | [colo-deploy](../runbooks/colo-deploy.md#per-player-host-containers) | None recorded | One player host |
+| `player-start` prints that it cannot set the restart policy | `docker update` failed; a running host keeps no restart policy until it is stopped with `player-stop` and started again with `player-start` (0169 item 7) | Note it; in a quiet moment run `player-stop <id>` then `player-start <id>`, which sets `unless-stopped` (`player-start` alone leaves a running host as it is) | [colo-deploy](../runbooks/colo-deploy.md#per-player-host-containers) | None recorded | One player host |
 
 Known gaps: `roster remove` and `roster seed` cannot run through the container; the superuser password default differs between two files ([conflicts and gaps](../reference/admin-service.md#conflicts-and-gaps-recorded)).
 
