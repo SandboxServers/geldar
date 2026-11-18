@@ -58,7 +58,8 @@ interface Case {
 }
 
 /** What a stub recorded, or '' when the stub never ran (a refused start). */
-const recorded = (path: string) => (existsSync(path) ? readFileSync(path, 'utf8') : '');
+const recorded = (path: string | undefined) =>
+  path && existsSync(path) ? readFileSync(path, 'utf8') : '';
 
 /**
  * Both secrets (the current one and the one the old file held) must be absent from stdout and stderr and from the start

@@ -139,7 +139,8 @@ const curlCalls = (c: Case) =>
   existsSync(c.curlLog) ? readFileSync(c.curlLog, 'utf8').split('\n').filter(Boolean).length : 0;
 
 /** What a stub recorded, or '' when the stub never ran (a refused start). */
-const recorded = (path: string) => (existsSync(path) ? readFileSync(path, 'utf8') : '');
+const recorded = (path: string | undefined) =>
+  path && existsSync(path) ? readFileSync(path, 'utf8') : '';
 
 /**
  * The secret must be absent from stdout and stderr, from the start command's arguments and environment, and from the curl
