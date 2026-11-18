@@ -171,11 +171,13 @@ describe('nf-deploy.sh constants and the one compose file', () => {
     const repo = makeRepo();
     expect(SCRIPT_TEXT).toMatch(/^PROJECT=geldar-nf$/m);
     expect(SCRIPT_TEXT).toMatch(/^COMPOSE_FILE=\$ROOT\/compose\/nf-live\.yml$/m);
-    // Every script line that runs docker compose (the version probe excepted) must be one of exactly three known
-    // shapes, each present once: dc with the telemetry overlay, dc with the base only, and probe_dc with the probe overlay.
+    // Every script line that runs docker compose (the version probe excepted) must be one of exactly four known
+    // shapes, each present once: dc with the telemetry overlay, dc with the explicit-off overlay (the rollback),
+    // dc with the base only, and probe_dc with the probe overlay.
     // Any other compose line, or a compose line without the project and file flags, fails here.
     const allowed = [
       'docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$TELEMETRY_FILE" "$@"',
+      'docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$OFF_FILE" "$@"',
       'docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"',
       'docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$PROBE_FILE" --profile probe "$@"',
     ];
