@@ -40,3 +40,20 @@ describe('ci.yml compose render list', () => {
     expect([...skipped].filter((f) => f !== '' && !composeFiles.includes(f))).toEqual([]);
   });
 });
+
+// geldar.ps1 `check` renders every compose/*.yml alone too, except the names in its exclusion list on the Filter line.
+// nf-live-human.yml needs the nf network of nf-live.yml, so it is excluded there and rendered merged with it.
+const PS1 = readFileSync(resolve(ROOT, 'geldar.ps1'), 'utf8');
+
+describe('geldar.ps1 check render list', () => {
+  it('names nf-live-human.yml in the exclusion list', () => {
+    const exclusion = /Filter \*\.yml[^\n]*-notin @\(([^)]*)\)/.exec(PS1)?.[1] ?? '';
+    expect(exclusion).toContain("'nf-live-human.yml'");
+  });
+
+  it('renders nf-live.yml merged with nf-live-human.yml under the geldar-nf project', () => {
+    expect(PS1).toMatch(
+      /docker compose -p geldar-nf -f \(Join-Path \$Root 'compose\/nf-live\.yml'\) -f \(Join-Path \$Root 'compose\/nf-live-human\.yml'\) config --quiet/,
+    );
+  });
+});
