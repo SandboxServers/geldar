@@ -11,6 +11,10 @@ services:
     environment:
       TYPE: NEOFORGE
       NEOFORGE_VERSION: "26.1.2.${SCRATCH_NEOFORGE_BUILD:-126}"
+      # No server whitelist on the NeoForge shard (owner decision 2026-11-17, decision 0387). Compose merges environment
+      # maps, so without these two lines phase0's TRUE values would reach this service.
+      ENABLE_WHITELIST: "FALSE"
+      ENFORCE_WHITELIST: "FALSE"
     entrypoint: !override ["/bin/sh", "/geldar/neoforge-entrypoint.sh"]
     volumes: !override
       - paper-data:/data

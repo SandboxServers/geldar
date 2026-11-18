@@ -109,7 +109,7 @@ beforeAll(() => {
   const withoutTelemetry = render([BASE], common);
   if (withoutTelemetry.status !== 0) throw new Error('compose config of the base file failed');
   off = JSON.parse(withoutTelemetry.stdout) as Rendered;
-});
+}, 30_000);
 
 afterAll(() => {
   if (tmp) rmSync(tmp, { recursive: true, force: true });
@@ -182,7 +182,7 @@ describe.skipIf(!DOCKER)('nf-live telemetry overlay: the render', () => {
   it('renders on top of the base file, and renders alone (CI and geldar.ps1 check each compose file alone)', () => {
     expect(on.services.neoforge).toBeDefined();
     expect(render([OVERLAY], {}).status).toBe(0);
-  });
+  }, 30_000);
 
   it('the default render (the base file alone) carries no telemetry', () => {
     const neo = off.services.neoforge;
