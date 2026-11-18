@@ -153,6 +153,9 @@ describe.skipIf(skipWithoutSh())(
       const r = run(c, { GELDAR_NF_EXTRA_CHUNKY_SHA256: 'b'.repeat(64) });
       expect(r.status).toBe(1);
       expect(r.stderr).toContain('does not match');
+      // The refusal is the pre-copy check: nothing is copied, so the copy is never made and then removed.
+      expect(r.stderr).toContain('not copied');
+      expect(r.stderr).not.toContain('removed it');
       expect(existsSync(copyOf(c))).toBe(false);
       expect(existsSync(`${copyOf(c)}.part`)).toBe(false);
     });
