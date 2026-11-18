@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { delimiter, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -72,6 +72,8 @@ const STUB_SCRIPTS: Record<string, string> = {
 // mapping), nats (exposed only) and postgres (exposed only).
 const LIVE_ROW = 'geldar-nf|velocity|127.0.0.1:46565->25565/tcp';
 const HUMAN_ROW = 'geldar-nf|velocity-human|127.0.0.1:46566->25565/tcp';
+// The one-shot init after it has exited: docker ps -a prints the row with an empty Ports field.
+const INIT_ROW = 'geldar-nf|velocity-human-init|';
 const FIVE_ROWS = [
   'geldar-nf|neoforge|25565/tcp',
   LIVE_ROW,
@@ -148,7 +150,7 @@ interface Opts {
 // Runs the script in the fixture with the stubs first on PATH. A key set to undefined is removed from the environment.
 function run(repo: string, opts: Opts = {}) {
   const env: Record<string, string> = {
-    PATH: `${join(repo, 'stubs')}:${process.env.PATH ?? ''}`,
+    PATH: `${join(repo, 'stubs')}${delimiter}${process.env.PATH ?? ''}`,
     STUB_LOG: join(repo, 'calls.log'),
     DOCKER_PS_ROWS: opts.rows ?? FIVE_ROWS,
     SS_LIVE: opts.live ?? '',
@@ -524,6 +526,21 @@ describe('nf-deploy.sh human lane: fail-closed fixes', () => {
   it('off runs plan when no velocity-human container exists (the other project rows are not refused)', () => {
     const repo = makeRepo({ human: false });
     expect(run(repo, { env: OFF, rows: NO_HUMAN_ROWS, args: ['plan', '--local'] }).status).toBe(0);
+  });
+
+  it('off runs plan with an exited velocity-human-init row (the orphan guard counts only service velocity-human)', () => {
+    const repo = makeRepo({ human: false });
+    const rows = [...NO_HUMAN_ROWS.split('\n'), INIT_ROW].join('\n');
+    const res = run(repo, { env: OFF, rows, args: ['plan', '--local'] });
+    expect(res.status).toBe(0);
+    expect(res.stderr).not.toContain('velocity-human container exists');
+  });
+
+  it('on passes the port gate with the exited init row present: the init row is not a listener or a velocity-human row', () => {
+    const repo = makeRepo();
+    const res = run(repo, { live: LISTEN_LIVE, human: LISTEN_HUMAN, rows: [FIVE_ROWS, INIT_ROW].join('\n') });
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain('all gates passed');
   });
 
   it('plan with the lane on says the first on-run recreates nats, eventsink and neoforge, and that off is refused', () => {

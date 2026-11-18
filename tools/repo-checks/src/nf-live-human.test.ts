@@ -303,9 +303,36 @@ describe('the velocity-human-init one-shot (volume chown)', () => {
     expect(init()).not.toHaveProperty('tmpfs');
   });
 
-  it('chowns /server to the same uid:gid expression velocity-human runs as', () => {
+  it('chowns /server to the same uid:gid expression velocity-human runs as, argv form with no shell', () => {
     expect(human().user).toBe(UID_GID);
-    expect(init().entrypoint).toEqual(['/bin/sh', '-c', `chown ${UID_GID} /server`]);
+    expect(init().entrypoint).toEqual(['/usr/bin/chown', UID_GID, '/server']);
+  });
+
+  it('has exactly the allowlisted keys: any other key (privileged, pid, volumes_from, environment, ...) fails', () => {
+    expect(Object.keys(init()).sort()).toEqual(
+      [
+        'cap_add',
+        'cap_drop',
+        'deploy',
+        'entrypoint',
+        'healthcheck',
+        'image',
+        'labels',
+        'logging',
+        'network_mode',
+        'read_only',
+        'restart',
+        'security_opt',
+        'user',
+        'volumes',
+        'working_dir',
+      ].sort(),
+    );
+  });
+
+  it('does not inherit the image HEALTHCHECK (disabled) or the /server WORKDIR (working_dir /)', () => {
+    expect(init().healthcheck).toEqual({ disable: true });
+    expect(init().working_dir).toBe('/');
   });
 
   it('has the limits, logging and labels of velocity-human', () => {

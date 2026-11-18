@@ -24,9 +24,9 @@
 # exact publish and nothing else. Live velocity (127.0.0.1:46565) is unchanged, and no other service here publishes.
 #
 # UNPROVEN (read before any run): the scratch human lane has never had a real human join. Nothing here has been started.
-# UNVERIFIED: whether itzg/mc-proxy has /bin/sh and chown (velocity-human-init needs both; the repo's evidence is the itzg
-# minecraft-server entrypoint in nf-live.yml, not mc-proxy), whether itzg/mc-proxy runs with read_only and the uid set here (it may need a writable path beyond /server and
-# /tmp); that the human NATS user may read the registry and skins buckets (its grant copies velocity's read set; the server's KV ACL
+# UNVERIFIED: that chown runs in velocity-human-init as uutils with only CAP_CHOWN (the image's /usr/bin/chown was inspected,
+# the run was not), so it is UNVERIFIED until a run; whether itzg/mc-proxy runs with read_only and the uid set here (it may
+# need a writable path beyond /server and /tmp); that the human NATS user may read the registry and skins buckets (its grant copies velocity's read set; the server's KV ACL
 # is not re-read here, and the flow-control subject form $JS.FC.KV_<bucket>.> is not checked against a live server). ISOLATION
 # IS PROVEN ONLY BY RENDER AND ACL TESTS (nf-live-human.test.ts, nats-human-grants-nf.test.ts, nf-human-gate.test.ts): no node,
 # no container was started. The first real join, and that velocity-human reaches nats and neoforge on nf-human, are the owner's S1 test on live.
@@ -123,7 +123,12 @@ services:
   velocity-human-init:
     image: *human-image
     user: "0:0"
-    entrypoint: ["/bin/sh", "-c", "chown ${NF_SERVICE_UID:-1000}:${NF_SERVICE_GID:-${NF_SERVICE_UID:-1000}} /server"]
+    # Argv form, no shell: one chown of /server to the same uid:gid velocity-human runs as (one list element).
+    entrypoint: ["/usr/bin/chown", "${NF_SERVICE_UID:-1000}:${NF_SERVICE_GID:-${NF_SERVICE_UID:-1000}}", "/server"]
+    # The image's HEALTHCHECK and /server WORKDIR are not inherited: the init exits at once and runs from /.
+    healthcheck:
+      disable: true
+    working_dir: /
     volumes:
       - velocity-human-data:/server
     network_mode: none
