@@ -1,0 +1,75 @@
+# The opt-in probe overlay for the live NeoForge shard (compose project geldar-nf). It is never part of the default file set:
+# `deploy/nf-deploy.sh probe` adds it to compose/nf-live.yml for one run and nothing else. This file holds the one secret the
+# probe alone reads: nats-body.txt, the body NATS password (the user `body`, limited to the life registry bucket by
+# deploy/nats-auth-nf.ps1). The probe service is a one-shot, wired as compose/opt-in/scratch-probe.yml is wired to a scratch
+# stack, but on this project's network only (nf): no ports, restart no, and the profile `probe`, which `up` never activates.
+# It runs the same golem image as the scratch probe (golem/Dockerfile), built under the tag geldar-body:geldar-nf.
+# Its isolation check (golem/src/p0/isolation.ts) accepts only a scratch-<suffix> project and the hosts velocity, paper and
+# nats; so the probe refuses this project until the probe-isolation change lands (it is held). Its RCON host is neoforge.
+name: geldar-nf
+
+services:
+  probe:
+    profiles: ["probe"]
+    build:
+      context: ..
+      dockerfile: golem/Dockerfile
+    image: geldar-body:geldar-nf
+    working_dir: /opt/geldar/golem
+    entrypoint: ["node", "src/p0/probe.ts"]
+    # As identity-seed and the scratch probe: the 0600 secret files are the account's, so the image's uid 1000 cannot read them.
+    user: "${NF_SERVICE_UID:-1000}:${NF_SERVICE_GID:-${NF_SERVICE_UID:-1000}}"
+    environment:
+      # The isolation check (golem/src/p0/isolation.ts): the project name, the in-network opt-in, and the host names.
+      GELDAR_P0_PROJECT: geldar-nf
+      GELDAR_IN_NETWORK_HOSTS: "1"
+      GELDAR_MC_HOST: velocity
+      GELDAR_MC_PORT: "25565"
+      GELDAR_NATS_URL: nats://nats:4222
+      GELDAR_NATS_USER: body
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-body.txt
+      GELDAR_RCON_HOST: neoforge
+      GELDAR_RCON_PORT: "25575"
+      GELDAR_RCON_PASSWORD_FILE: /run/secrets/rcon
+    secrets: [nats-body.txt, rcon]
+    # No depends_on: it names services this file does not declare, so the file would not render alone (CI and geldar.ps1 check
+    # render it alone, with the probe profile active in the self-contained test). The probe verb runs with --no-deps, and
+    # deploy/nf-deploy.sh checks that nats, velocity and neoforge are healthy before it runs the probe.
+    networks: [nf]
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1"
+          pids: 256
+    memswap_limit: 1g
+    cpu_shares: 256  # relative CPU weight (default 1024 on colo): this probe yields to the autonomous shard under contention
+    pids_limit: 256
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    labels:
+      geldar.project: geldar-nf
+      geldar.probe: "true"
+      com.centurylinklabs.watchtower.enable: "false"
+    restart: "no"
+    # Hardening (UNVERIFIED on a node: the probe writes nothing and needs no capability, but no container of this project has
+    # run it yet). compose/opt-in/scratch-probe.yml sets none of these, and the base services set only read_only on one service.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # The probe's own cleanup (registry entry, RCON whitelist, verify) takes about 30 s, and the Docker default is 10 s: a stop
+    # or a `compose rm -s` must not SIGKILL it mid-cleanup. The verb's Ctrl-C and TERM path uses this grace period.
+    stop_grace_period: 60s
+
+# Declared here so that the file renders alone: the same definitions as compose/nf-live.yml (the nf network, the rcon secret).
+networks:
+  nf: {}
+
+secrets:
+  nats-body.txt:
+    file: ${NF_SECRETS_DIR:-./secrets-nf}/nats-body.txt
+  rcon:
+    file: ${NF_SECRETS_DIR:-./secrets-nf}/rcon.txt
