@@ -117,9 +117,9 @@ const EXPECTED: Record<string, { pub: string[]; deny: string[]; sub: string[] }>
   // The human lane (velocity-human): velocity's watch on the registry and the skins, read only, with its flow control scoped to
   // those two buckets. No $KV, no $JS.API wildcard, no event subject (tests/nats-human-grants-nf.test.ts pins it in full).
   human: {
-    pub: [...BUCKETS.flatMap(velocityApi), ...BUCKETS.map((b) => `$JS.FC.KV_${b}.>`), '_INBOX.>'],
+    pub: [...BUCKETS.flatMap(velocityApi), ...BUCKETS.map((b) => `$JS.FC.KV_${b}.>`), '_INBOX.human.>'],
     deny: [],
-    sub: ['_INBOX.>'],
+    sub: ['_INBOX.human.>'],
   },
 };
 
@@ -127,7 +127,7 @@ const EXPECTED: Record<string, { pub: string[]; deny: string[]; sub: string[] }>
  * API or ack subject whose tokens include exactly one of this shard's stream or bucket names. */
 function inScope(subject: string): boolean {
   if (subject.startsWith('geldar.nf.')) return true;
-  if (['_INBOX.>', '$JS.FC.>', '$JS.API.INFO'].includes(subject)) return true;
+  if (['_INBOX.>', '_INBOX.human.>', '$JS.FC.>', '$JS.API.INFO'].includes(subject)) return true;
   if (/^\$JS\.FC\.KV_geldar-(life-registry|skins)\.>$/.test(subject)) return true;
   if (subject.startsWith('$KV.')) return BUCKETS.some((b) => subject.startsWith(`$KV.${b}.`));
   if (subject.startsWith('$JS.API.') || subject.startsWith('$JS.ACK.')) {

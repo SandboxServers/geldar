@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
+import java.util.regex.Pattern;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 
@@ -133,16 +134,41 @@ public final class RegistryClient implements AutoCloseable {
         Object identity() throws Exception;
     }
 
-    /** The connect options, with credentials when configured; read on each attempt, inside its try. */
+    /** The connect options, with credentials and the inbox prefix when configured; read on each attempt, inside its try. */
     Options connectOptions() {
-        return withCredentials(
-                        Options.builder()
-                                .server(url)
-                                .connectionTimeout(Duration.ofSeconds(5))
-                                .maxReconnects(-1)
-                                .connectionListener(this::onConnectionEvent),
-                        RegistryClient::setting)
-                .build();
+        return connectOptions(RegistryClient::setting);
+    }
+
+    /** The connect options read through {@code setting}; both registry clients share this, so both get the prefix. */
+    Options connectOptions(Function<String, String> setting) {
+        Options.Builder builder = Options.builder()
+                .server(url)
+                .connectionTimeout(Duration.ofSeconds(5))
+                .maxReconnects(-1)
+                .connectionListener(this::onConnectionEvent);
+        return withInboxPrefix(withCredentials(builder, setting), setting).build();
+    }
+
+    /** The setting that names this process's inbox prefix (the human lane's {@code _INBOX.human.}). */
+    static final String INBOX_PREFIX_SETTING = "GELDAR_NATS_INBOX_PREFIX";
+    private static final Pattern INBOX_PREFIX = Pattern.compile("_INBOX(\\.[A-Za-z0-9_-]+)+\\.");
+
+    /** Adds {@code GELDAR_NATS_INBOX_PREFIX} as the inbox prefix when it is set; unset or blank, the builder is unchanged. */
+    static Options.Builder withInboxPrefix(Options.Builder builder, Function<String, String> setting) {
+        String prefix = validInboxPrefix(setting.apply(INBOX_PREFIX_SETTING));
+        return prefix == null ? builder : builder.inboxPrefix(prefix);
+    }
+
+    /**
+     * The inbox prefix, or null when unset or blank. Any other value is refused: it must be {@code _INBOX.} then one or more
+     * tokens of letters, digits, {@code _} and {@code -}, each ending in a dot. The message names the setting, never the value.
+     */
+    static String validInboxPrefix(String value) {
+        if (isBlank(value)) return null;
+        if (!INBOX_PREFIX.matcher(value).matches()) {
+            throw new IllegalStateException("GELDAR_NATS_INBOX_PREFIX must look like _INBOX.<token>. (letters, digits, _ and -)");
+        }
+        return value;
     }
 
     /**

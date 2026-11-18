@@ -255,4 +255,44 @@ class RegistryClientTest {
         assertTrue(error.getMessage().contains("GELDAR_NATS_PASSWORD_FILE"));
         assertFalse(error.getMessage().contains("pw-"));
     }
+
+    private static final String HUMAN_PREFIX = "_INBOX.human.";
+    private static final String URL = "nats://127.0.0.1:4222";
+
+    private static RegistryClient clientOn(String bucket) {
+        return new RegistryClient(URL, bucket, null, org.slf4j.helpers.NOPLogger.NOP_LOGGER);
+    }
+
+    @Test
+    void theHumanPrefixIsOnTheOptionsOfBothRegistryClientsWhenSet() {
+        java.util.function.Function<String, String> values = settings(Map.of("GELDAR_NATS_INBOX_PREFIX", HUMAN_PREFIX));
+        assertEquals(HUMAN_PREFIX, clientOn(RegistryClient.BUCKET).connectOptions(values).getInboxPrefix(), "registry client");
+        assertEquals(HUMAN_PREFIX, clientOn(SkinRegistry.BUCKET).connectOptions(values).getInboxPrefix(), "skin client");
+    }
+
+    @Test
+    void anUnsetOrBlankPrefixLeavesTheOptionsAsTheyWere() {
+        String defaultInbox = Options.builder().server(URL).build().getInboxPrefix();
+        assertEquals(defaultInbox, clientOn(RegistryClient.BUCKET).connectOptions(settings(Map.of())).getInboxPrefix());
+        assertEquals(defaultInbox, clientOn(SkinRegistry.BUCKET).connectOptions(settings(Map.of("GELDAR_NATS_INBOX_PREFIX", " "))).getInboxPrefix());
+    }
+
+    @Test
+    void refusesAMalformedPrefixNamingTheSettingNeverTheValue() {
+        String[] malformed = {"_INBOX.", "human.", "_INBOX.human", "_INBOX.a b.", "_INBOX..x.", "_INBOX.>", "_INBOX.human.>",
+            " _INBOX.human. ", "x_INBOX.human."};
+        for (String bad : malformed) {
+            IllegalStateException error = assertThrows(IllegalStateException.class, () -> RegistryClient.validInboxPrefix(bad), bad);
+            assertTrue(error.getMessage().contains("GELDAR_NATS_INBOX_PREFIX"), bad);
+            assertThrows(IllegalStateException.class,
+                    () -> clientOn(RegistryClient.BUCKET).connectOptions(settings(Map.of("GELDAR_NATS_INBOX_PREFIX", bad))), bad);
+        }
+    }
+
+    @Test
+    void acceptsOneOrMoreDottedTokensEndingInADot() {
+        assertEquals("_INBOX.human.", RegistryClient.validInboxPrefix("_INBOX.human."));
+        assertEquals("_INBOX.a-b_1.c.", RegistryClient.validInboxPrefix("_INBOX.a-b_1.c."));
+        assertEquals(null, RegistryClient.validInboxPrefix(""));
+    }
 }
