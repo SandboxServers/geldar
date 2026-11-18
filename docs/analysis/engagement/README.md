@@ -11,7 +11,7 @@ Ledger for the remediation campaigns from the owner-supplied review "Why the age
 | Id | Question | Status | Record |
 |---|---|---|---|
 | D-EN-01 | How agents put an item in hand: extend `use` or add a `hold` verb | Accepted: extend `use` (owner, 2026-11-18) | [0389](../../decisions/0389-use-with-an-item-and-no-target-holds-it.md) |
-| D-EN-02 | Read MCP act spans to see what `use` shapes agents sent for swords | Approved: spans only, read-only; no events table, no chat (owner, 2026-11-18) | this ledger |
+| D-EN-02 | Read MCP act spans to see what `use` shapes agents sent for swords | Approved, then skipped: no colo access (owner, 2026-11-18) | this ledger |
 | D-EN-03 | Read-only route to the events table and full chat (blocks C0) | Open | - |
 | D-EN-04 | Start C0 and C1 (no rule changes) | Open | - |
 | D-EN-05 | Principle 2: pilot (C2), broad amendment, or leave as is | Open | - |
@@ -21,7 +21,7 @@ Ledger for the remediation campaigns from the owner-supplied review "Why the age
 
 | Packet | Campaign | Status | Branch | Notes |
 |---|---|---|---|---|
-| U0-00 | U0 | Ready | none (orchestrator or ops) | Read MCP act spans for `use` with weapon items (D-EN-02) |
+| U0-00 | U0 | Skipped (owner, 2026-11-18: no colo access; the ssh alias does not resolve here, and the reader password is root-only) | none | U0-02's 48-hour watch covers the same question after deploy |
 | U0-01 | U0 | Ready | `engagement/u0-use-hold` | Body: `use {item}` holds it; ok fact reaches the Mind (0389) |
 | U0-02 | U0 | BlockedDependency (U0-01 merged and deployed) | none (orchestrator) | Live check: an agent holds a sword; watch the Billy gate |
 | C0-C6 | C0-C6 | BlockedDecision (D-EN-03 to D-EN-06) | - | Not sliced yet |

@@ -5,13 +5,13 @@ Source: owner-supplied review "Why the agents only eat" (v3, 2026-11-18). It is 
 ## Current wave: U0 (unblock the gate)
 
 - Decision 0389 is accepted: `use { item }` with no target holds the item. No new verb, no contract shape change, agents not told.
-- U0-00 (span read, orchestrator or ops): Ready. Read-only MCP act spans only (D-EN-02).
+- U0-00 (span read): Skipped by the owner (no colo access). U0-02's watch must count the `use` shapes agents send, to see whether they find the item-only form.
 - U0-01 (Body): Ready. Branch `engagement/u0-use-hold`, worktree `D:\Source\geldar-wt\u0-use-hold`. Not dispatched.
 - U0-02 (live check plus a 48-hour watch): waits for U0-01 to merge and deploy.
 
 ## Next action
 
-Dispatch U0-01 to a packet-coder and U0-00 to ops, in parallel, once the owner says go.
+U0-01 dispatched; draft PR #756. On return: verify the revert checks, push, wait for ci gate, mark ready.
 
 ## Open for the owner
 
