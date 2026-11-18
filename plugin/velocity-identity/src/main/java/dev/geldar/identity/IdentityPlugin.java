@@ -24,9 +24,9 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.function.Supplier;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import net.kyori.adventure.text.Component;
 import org.slf4j.Logger;
 
@@ -284,11 +284,24 @@ public final class IdentityPlugin {
         // The slot goes to this exact connection, whatever status Velocity reports: a denied duplicate of the same UUID
         // is another object and frees nothing. The status is consulted only for the live and ghost admissions below.
         boolean heldAsHuman = heldHumans.remove(player);
-        if (!gate.releaseSlot(player) && heldAsHuman) {
+        boolean freed = gate.releaseSlot(player);
+        release(player.getUniqueId(), event.getLoginStatus());
+        if (!freed && heldAsHuman) {
+            warnNoSlot();
+        }
+    }
+
+    /**
+     * A defensive tripwire, not expected in normal operation: no real event sequence reaches it today, only the test hook.
+     * It runs after both releases, so a logger that throws here cannot stop them.
+     */
+    private void warnNoSlot() {
+        try {
             // Counts only: an admitted human reached its disconnect with its slot already given back.
             log.warn("human slot release found no slot");
+        } catch (Throwable ignored) {
+            // Both releases are done; only the line is lost.
         }
-        release(player.getUniqueId(), event.getLoginStatus());
     }
 
     /**

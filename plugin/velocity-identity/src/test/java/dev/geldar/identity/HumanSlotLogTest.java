@@ -1,5 +1,6 @@
 package dev.geldar.identity;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -185,5 +186,115 @@ class HumanSlotLogTest {
         lines.clear();
         fixture.disconnect(player, CLEAN);
         assertEquals(List.of(NO_SLOT_WARN), lines);
+    }
+
+    /** The cap boundary with the logging in place: the 100th reservation logs 100/100, the 101st logs no reserve line. */
+    @Test
+    void theHundredthHumanLogsTheFullCountAndTheHundredFirstIsRefusedWithNoReserveLine(@TempDir Path dir) {
+        List<String> lines = new ArrayList<>();
+        IdentityPluginFixture fixture = humanProxy(dir, lines);
+        List<UUID> ids = new ArrayList<>();
+        List<String> expected = new ArrayList<>();
+        for (int held = 1; held <= CAP; held++) {
+            UUID id = UUID.randomUUID();
+            ids.add(id);
+            assertTrue(fixture.loginAllowed("Human" + held, id), "login " + held);
+            expected.add(reserved(held));
+        }
+        assertEquals(expected, reserveLines(lines));
+        assertEquals(reserved(CAP), reserveLines(lines).get(CAP - 1));
+        lines.clear();
+        assertFalse(fixture.loginAllowed("Human" + (CAP + 1), UUID.randomUUID()));
+        assertTrue(reserveLines(lines).isEmpty(), lines.toString());
+        assertTrue(lines.stream().noneMatch(line -> line.contains("human slot released")), lines.toString());
+        lines.clear();
+        fixture.disconnect(ids.get(0), CLEAN);
+        assertEquals(List.of(released(CAP - 1)), lines);
+    }
+
+    /** A broken slot logger changes no decision: the reservation, the duplicate refusal, the cap and the release all hold. */
+    @Test
+    void aFailingSlotLoggerNeverRefusesAReservationOrChangesTheCount(@TempDir Path dir) {
+        List<String> lines = new ArrayList<>();
+        IdentityPluginFixture fixture = failingProxy(dir, lines);
+        List<UUID> ids = new ArrayList<>();
+        for (int held = 1; held <= CAP; held++) {
+            UUID id = UUID.randomUUID();
+            ids.add(id);
+            assertTrue(fixture.loginAllowed("Human" + held, id), "login " + held);
+        }
+        assertFalse(fixture.loginAllowed("Human" + (CAP + 1), UUID.randomUUID()), "the cap still holds");
+        assertFalse(fixture.loginAllowed("Human1", ids.get(0)), "the holder's slot is still held");
+        assertDoesNotThrow(() -> fixture.disconnect(ids.get(0), CLEAN));
+        assertTrue(fixture.loginAllowed("Human" + (CAP + 1), UUID.randomUUID()), "the freed slot admits the next human");
+        assertFalse(fixture.loginAllowed("Human" + (CAP + 2), UUID.randomUUID()), "and the count is full again");
+    }
+
+    /** A broken slot logger cannot stop the settle release: the UUID that was refused gets its slot back. */
+    @Test
+    void aFailingSlotLoggerNeverBreaksTheSettleRelease(@TempDir Path dir) {
+        List<String> lines = new ArrayList<>();
+        IdentityPluginFixture fixture = failingProxy(dir, lines);
+        UUID id = UUID.randomUUID();
+        LoginEvent event = fixture.login(fixture.newPlayer("Human0", id));
+        assertTrue(fixture.allowed(event));
+        event.setResult(ResultedEvent.ComponentResult.denied(Component.text(LoginGate.DENY_MESSAGE)));
+        assertDoesNotThrow(() -> fixture.settle(event));
+        assertTrue(fixture.loginAllowed("Human0", id), "the settle release freed the slot, so the UUID is not TAKEN");
+        assertDoesNotThrow(() -> fixture.disconnect(id, CLEAN));
+    }
+
+    /**
+     * The disconnect warns, and the warning's logger throws. The handler must still return normally, and the count must
+     * stay exact: after the warned disconnect the cap admits one more human and then refuses.
+     */
+    @Test
+    void aThrowingWarnAtDisconnectNeverStopsTheDisconnect(@TempDir Path dir) {
+        List<String> lines = new ArrayList<>();
+        IdentityPluginFixture fixture = failingProxy(dir, lines);
+        List<Player> players = new ArrayList<>();
+        for (int held = 1; held <= CAP; held++) {
+            Player player = fixture.newPlayer("Human" + held, UUID.randomUUID());
+            players.add(player);
+            assertTrue(fixture.allowed(fixture.login(player)), "login " + held);
+        }
+        fixture.releaseSlotBehindThePlugin(players.get(0));
+        assertDoesNotThrow(() -> fixture.disconnect(players.get(0), CLEAN));
+        assertTrue(fixture.allowed(fixture.login(fixture.newPlayer("Human" + (CAP + 1), UUID.randomUUID()))),
+                "one slot is free after the warned disconnect");
+        assertFalse(fixture.allowed(fixture.login(fixture.newPlayer("Human" + (CAP + 2), UUID.randomUUID()))));
+    }
+
+    private static IdentityPluginFixture failingProxy(Path dir, List<String> lines) {
+        IdentityPluginFixture fixture = new IdentityPluginFixture(dir, "human", true, failingSlotLog(lines));
+        fixture.init();
+        fixture.syncRegistry();
+        return fixture;
+    }
+
+    /** The reserve lines only. A full shard's refusal warns with "human slots", so the match is on "reserved". */
+    private static List<String> reserveLines(List<String> lines) {
+        return lines.stream().filter(line -> line.contains("human slot reserved")).collect(Collectors.toList());
+    }
+
+    /** A logger whose three slot lines throw, as a broken logging backend would. Every other call goes to {@link #recordingLog}. */
+    private static Logger failingSlotLog(List<String> lines) {
+        Logger inner = recordingLog(lines);
+        return (Logger) Proxy.newProxyInstance(Logger.class.getClassLoader(), new Class<?>[] {Logger.class}, (p, m, a) -> {
+            if (isSlotLine(m.getName(), a)) {
+                throw new IllegalStateException("the logging backend is down");
+            }
+            return m.invoke(inner, a);
+        });
+    }
+
+    /** Whether a call is one of the slot lines. Only those throw, so the plugin's other lines run as before. */
+    private static boolean isSlotLine(String level, Object[] a) {
+        if (!("info".equals(level) || "warn".equals(level)) || a == null || a.length == 0) {
+            return false;
+        }
+        String format = String.valueOf(a[0]);
+        return format.startsWith("human slot reserved") || format.startsWith("human slot released")
+                || format.startsWith("human slot release found");
     }
 }
