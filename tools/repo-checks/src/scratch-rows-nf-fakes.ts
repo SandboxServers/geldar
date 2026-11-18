@@ -72,7 +72,7 @@ case "$1" in
     esac ;;
   logs) printf '%s\\n' "\${FAKE_LOGS-Geldar Ledger 0.1.0 loaded\nopentelemetry-javaagent - version: 2.33.1}" ;;
   compose)
-    [ -n "\${FAKE_COMPOSE_STDERR:-}" ] && printf '%s\\n' "\$FAKE_COMPOSE_STDERR" >&2
+    [ -n "\${FAKE_COMPOSE_STDERR:-}" ] && printf '%s\\n' "$FAKE_COMPOSE_STDERR" >&2
     [ -n "\${FAKE_COMPOSE_FAIL:-}" ] && exit 1
     case "$*" in *" up "*) [ -n "\${FAKE_UP_FAIL:-}" ] && exit 1 ;; esac
     # A recreate runs the entrypoint again: it copies the mounted host file over the copy the mod reads.

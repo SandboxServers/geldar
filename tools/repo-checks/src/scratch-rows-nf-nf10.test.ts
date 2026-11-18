@@ -95,7 +95,9 @@ describe.skipIf(!SH)(
             'level=warning msg="The GELDAR_NF_TESTNAME variable is not set. Defaulting to a blank string."\nlevel=warning msg="The SCRATCH_OTHER variable is not set."\nimage: registry.example/leaky:SECRETVALUE123',
         },
       });
-      expect(r.out).toMatch(/^ROW NF10 SKIP reason=env-not-exported got=compose-config-failed missing=GELDAR_NF_TESTNAME(\s|$)/m);
+      expect(r.out).toMatch(
+        /^ROW NF10 SKIP reason=env-not-exported got=compose-config-failed missing=GELDAR_NF_TESTNAME(\s|$)/m,
+      );
       expect(r.out).not.toContain('SCRATCH_OTHER');
       expect(r.out).not.toContain('SECRETVALUE123');
       expect(r.out).not.toContain('Defaulting');
