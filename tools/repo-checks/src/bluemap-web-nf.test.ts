@@ -31,6 +31,30 @@ const dockerUp =
 const mustRun = process.env.GELDAR_REQUIRE_DOCKER === '1';
 const skip = !dockerUp && !mustRun;
 
+// Paths that must never be served, sent raw (no client-side normalising). Each one has a file behind it that a
+// normalised or case-folded match would serve: `live`/`players.json` exist in the webroot under several spellings.
+const HIDDEN = [
+  '/maps/overworld/live/players.json',
+  '/maps/overworld/live/markers.json',
+  '/maps/overworld/live',
+  '/maps/overworld/live/',
+  '//maps/overworld/live/players.json',
+  '/maps/x//live/players.json',
+  '/MAPS/x/LIVE/players.json',
+  '/maps/y/LIVE/players.json',
+  '/maps/x/%6Cive/players.json',
+  '/maps/x/live',
+  '/maps/x/live/',
+  '/maps/x/live/players.json',
+  '/maps/x/../x/live/players.json',
+  '/maps/x/%2e%2e/x/live/players.json',
+  '/maps/x%2Flive%2Fplayers.json',
+  '/maps/overworld/players.json',
+  '/maps/overworld/%70layers.json',
+  '/maps/overworld/%2e%2e/overworld/textures.json',
+  '/maps/overworld//tiles/0/x-1/z-1.prbm',
+];
+
 type Reply = { status: number; headers: Record<string, string>; body: Buffer };
 function call(port: number, method: string, path: string): Promise<Reply> {
   return new Promise((ok, fail) => {
@@ -100,9 +124,10 @@ describe('bluemap-web-nf Caddyfile (text)', () => {
     expect(caddyText).not.toMatch(/settings\.json/);
   });
 
-  it('answers /maps/<map>/live and below with 404 before file_server', () => {
-    expect(caddyText).toMatch(/@live path_regexp live \^\/maps\/\[\^\/\]\*\/live\(\/\.\*\)\?\$/);
-    expect(caddyText).toMatch(/handle @live \{\s*respond 404\s*\}/);
+  it('answers live segments, case and encoding variants, // and .. with 404 before file_server', () => {
+    expect(caddyText).toMatch(/@blocked expression/);
+    expect(caddyText).toMatch(/handle @blocked \{\s*respond 404\s*\}/);
+    expect(caddyText.indexOf('handle @blocked')).toBeLessThan(caddyText.indexOf('handle @gz'));
   });
 
   it('refuses every method but GET and HEAD with 405, and sends nosniff without Server', () => {
@@ -162,6 +187,13 @@ describe.skipIf(skip)('bluemap-web-nf served by the pinned caddy image', () => {
     // The live file exists in the webroot: the 404 must come from the rule, not from a missing file.
     writeFileSync(join(map, 'live', 'players.json'), '{"players":[{"name":"Alex"}]}');
     writeFileSync(join(map, 'live', 'markers.json'), '{"markers":[]}');
+    // Variants: a live file under another map, a LIVE directory (case), a players.json at the map root, and index.html.
+    mkdirSync(join(root, 'maps', 'x', 'live'), { recursive: true });
+    writeFileSync(join(root, 'maps', 'x', 'live', 'players.json'), '{"players":[{"name":"Alex"}]}');
+    mkdirSync(join(root, 'maps', 'y', 'LIVE'), { recursive: true });
+    writeFileSync(join(root, 'maps', 'y', 'LIVE', 'players.json'), '{"players":[{"name":"Alex"}]}');
+    writeFileSync(join(map, 'players.json'), '{"players":[{"name":"Alex"}]}');
+    writeFileSync(join(root, 'index.html'), '<!doctype html><title>map</title>');
     port = await startCaddy(name, root);
   }, 120_000);
 
@@ -183,18 +215,25 @@ describe.skipIf(skip)('bluemap-web-nf served by the pinned caddy image', () => {
     expect(r.headers['content-type']).toContain('application/json');
   });
 
-  it('answers /maps/overworld/live/players.json with 404 even though the file exists', async () => {
-    const r = await call(port, 'GET', '/maps/overworld/live/players.json');
+  it.each(HIDDEN)('answers %s with 404 and never the file body', async (path) => {
+    const r = await call(port, 'GET', path);
     expect(r.status).toBe(404);
     expect(r.body.toString()).not.toContain('Alex');
   });
 
-  it('answers any other live path and the bare live directory with 404', async () => {
-    expect((await call(port, 'GET', '/maps/overworld/live/markers.json')).status).toBe(404);
-    expect((await call(port, 'GET', '/maps/overworld/live')).status).toBe(404);
-    expect((await call(port, 'GET', '/maps/overworld/live/')).status).toBe(404);
+  it('answers the hidden paths with 404 on HEAD too', async () => {
     expect((await call(port, 'HEAD', '/maps/overworld/live/players.json')).status).toBe(404);
+    for (const path of HIDDEN) {
+      expect((await call(port, 'HEAD', path)).status).toBe(404);
+    }
   });
+
+  it.each(['/', '/maps/overworld/textures.json', '/maps/overworld/tiles/0/x-1/z-1.prbm'])(
+    'still serves %s with 200',
+    async (path) => {
+      expect((await call(port, 'GET', path)).status).toBe(200);
+    },
+  );
 
   it('refuses POST with 405, including on the live path', async () => {
     expect((await call(port, 'POST', '/maps/overworld/textures.json')).status).toBe(405);

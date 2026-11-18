@@ -9,7 +9,7 @@ What the container can see, stated plainly:
 - **Only the subpath `bluemap/web` of the volume `neoforge-data` is mounted, read only, at `/srv`.** The container never
   mounts `/data`: the world, `server.properties` (RCON password), the mod jars and the mod configs are not visible to it.
 - The `Caddyfile` is a read-only bind. Nothing else is mounted.
-- It serves GET and HEAD only. `/maps/<map>/live` and anything below it return 404, even if a file exists in the webroot.
+- It serves GET and HEAD only. `/maps/<map>/live` and anything below it return 404, even if a file exists in the webroot. So does any path with a `live` or `players.json` segment (any case), an empty `//` segment or a `..` segment.
   There is no reverse proxy and no custom script or style on this map.
 - The directory `bluemap/web` must exist before this container starts. The service waits for the `neoforge` service to be
   healthy, and nothing is created by hand.
