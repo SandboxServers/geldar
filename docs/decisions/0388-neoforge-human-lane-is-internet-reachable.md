@@ -29,7 +29,7 @@ Built on the cap branch and merged to main as #726 (the lane must not open until
 - **The concurrent-human cap of 5** (`HumanSlots.CAP`, commit 7b646be1, refined in 851c2c8e). This is the code as merged. By owner decision the cap of 5 is dropped for the NeoForge shard; see "Amends 0137 for the NeoForge shard" below. A human reserves a slot at the login decision and gives it back on its own disconnect or on a refused login after the reservation. The sixth human gets the same fixed denial as every other refusal, until the H1c PR changes the limit. A UUID that logs in again while it holds a slot is refused; a denied duplicate frees nothing (per the sibling reference doc, `docs/reference/velocity-identity-plugin.md`).
 - **The fail-closed registry gate** (commit 44352b8a). The human lane denies every login while the life registry is unsynced, including when `GELDAR_NATS_URL` is unset. The registry marker is removed when the sync is lost.
 
-The human lane's refusals, as built (the reference doc's lane table): an agent-shaped name (`ag_`, any case), a name in the life registry, a connection whose UUID is the offline-mode UUID of its name, and every login while the registry is unsynced.
+The human lane's refusals, as built (the reference doc's lane table): an agent-shaped name (`ag_`, any case; `ag-` as well only once the H1c2 PR is deployed), a name in the life registry, a connection whose UUID is the offline-mode UUID of its name, and every login while the registry is unsynced.
 
 ## Amends 0137 for the NeoForge shard
 
@@ -81,7 +81,7 @@ What 0135 requires, read from `docs/decisions/0135-self-registration-with-github
 - Line 1, decision item 5: "Registration stays **off** until the C2 gates pass."
 - 0387 (the Not settled section) cites 0135 as the registration route for humans and leaves "Microsoft only or GitHub and Discord too" open.
 
-What is deployed, as read in this tree: Microsoft online-mode login through Mojang (`online-mode = true`); any valid username of 1 to 16 characters except a name starting `ag_`; names in the life registry refused; offline-mode UUIDs refused. There is no registration step, no owner or token record and no human record for a human on the NeoForge shard.
+What is deployed, as read in this tree: Microsoft online-mode login through Mojang (`online-mode = true`); any valid username of 1 to 16 characters except a name starting `ag_` (and `ag-` once the H1c2 PR is deployed); names in the life registry refused; offline-mode UUIDs refused. There is no registration step, no owner or token record and no human record for a human on the NeoForge shard.
 
 The gap: 0135 creates agent players and tokens; it does not define a human registration. 0387 cites it for humans. The deployed human route follows neither 0135's registration nor 0387 item 5(d) (the human registry).
 

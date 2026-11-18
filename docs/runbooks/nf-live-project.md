@@ -696,7 +696,7 @@ Ordering note (PR numbers are references only). #726 (the concurrent-human cap, 
 ### 10.8 S1 checks (LAN first; the owner runs them)
 
 1. A plain Prism NeoForge 26.1.2 client with NO geldar mod connects to `<bind-ip>:<port>` and completes Microsoft login. Then a vanilla client does the same.
-2. An `ag_` name (any case) is refused. An offline-mode name (an offline launcher account) is refused.
+2. An `ag_` name (any case) is refused, and an `ag-` name (any case) is refused. The `ag-` refusal ships with the H1c2 PR and applies only after that PR is deployed on the human proxy; before it, S1 must expect an `ag-` name to be ADMITTED (that is why H1c2 is a go-public gate condition, 0388 status line item 5). An offline-mode name (an offline launcher account) is refused.
 3. The 101st player is refused by MAX_PLAYERS (100 once the node step has changed the live shard; 10 before it). This is not testable with real humans: state that in the S1 report and do not claim it passed. Requires #726 deployed on the human proxy.
 4. A slot is released after a disconnect: a human who was refused because the limit was full joins once a slot is freed. The limit is 5 on main until H1c and 100 after it (section 3b); a full-limit test with real humans at 100 is not testable, state that.
 5. In the `velocity-human` logs, confirm that the same `Player` object appears in `LoginEvent` and in `DisconnectEvent` (residual risk 4). Until seen, the release claim is UNVERIFIED.
