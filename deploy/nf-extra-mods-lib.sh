@@ -34,10 +34,13 @@ check_extra_jar() {
 # outside letters, digits, underscore, comma and space; an empty entry; a name not in the allowlist; a name given twice.
 check_extra_mods() {
   EXTRA_ENABLED=""
+  dups=$(awk '$0 !~ /^#/ && NF > 0 { print $1 }' "$EXTRA_PINS" | sort | uniq -d | tr '\n' ' ')
+  [ -z "$dups" ] || die "compose/neoforge/extra-mods.pins lists ${dups% } more than once; refusing"
   raw=${NF_EXTRA_MODS:-}
   [ -n "$raw" ] || return 0
-  printf '%s\n' "$raw" | grep -Eq '^[A-Za-z0-9_, ]+$' ||
-    die "NF_EXTRA_MODS has a character outside letters, digits, underscore, comma and space; refusing"
+  case $raw in
+    *[!A-Za-z0-9_,\ ]*) die "NF_EXTRA_MODS has a character outside letters, digits, underscore, comma and space (a tab or a newline counts); refusing" ;;
+  esac
   squeezed=$(printf '%s' "$raw" | tr -d ' ')
   case $squeezed in
     ,* | *, | *,,*) die "NF_EXTRA_MODS has an empty entry (a leading, trailing or doubled comma); refusing" ;;

@@ -5,7 +5,7 @@
 #     -f compose/opt-in/scratch-neoforge.yml -f compose/opt-in/scratch-neoforge-extra-mods.yml ...
 # Only the paper service changes (scratch-neoforge.yml names the NeoForge service paper). It adds two read-only bind mounts with
 # create_host_path false: a missing host file fails the start. SCRATCH_EXTRA_CHUNKY_JAR_HOST and SCRATCH_EXTRA_BLUEMAP_JAR_HOST name
-# the host jars; with either unset, compose renders a placeholder path, so the file renders alone with no env. The entrypoint copies
+# the host jars; with either unset, compose renders a placeholder path, so the file renders only merged with the scratch stack (phase0.yml, scratch.yml, scratch-neoforge.yml). Alone it does not render: paper has neither an image nor a build context. The entrypoint copies
 # each mounted jar into mods/ only when its pin constant matches the one in compose/neoforge/extra-mods.pins (a test asserts it).
 # Both jars are mounted, so both host variables must name real files for a start. It joins no network, publishes no port and
 # mounts nothing else. Nothing here names the live stack, a live network, a secret or a host address.

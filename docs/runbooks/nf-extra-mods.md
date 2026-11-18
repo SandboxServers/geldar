@@ -85,7 +85,7 @@ applies to the first enable.
 
 The scratch stack (docs/runbooks/scratch-stack.md) uses the same entrypoint, and deploy/scratch/scratch.sh does not add the extra
 mods. The scratch overlay is compose/opt-in/scratch-neoforge-extra-mods.yml: it changes only the scratch service (paper, which runs
-NeoForge in scratch), adds the two read-only mounts and both pin constants, and renders alone with no environment. Both jars are
+NeoForge in scratch), adds the two read-only mounts and both pin constants, and renders only merged with the scratch stack (the header of compose/opt-in/scratch-neoforge-extra-mods.yml lists the files; alone, it does not render). Both jars are
 mounted, so both host variables must name real files for a start. The manual route, with the scratch variables set by hand:
 
     SCRATCH_EXTRA_CHUNKY_JAR_HOST=/srv/geldar/mods/Chunky-NeoForge-1.5.66.jar \

@@ -104,6 +104,29 @@ describe.skipIf(skipWithoutSh())(
       expect(r.docker).toBe('');
     });
 
+    it('a multi-line NF_EXTRA_MODS (an embedded newline, or a tab) refuses by the character rule', () => {
+      for (const raw of [
+        'chunky\nbluemap',
+        'chunky\n\nbluemap',
+        'chunky\tbluemap',
+        'chunky\n../x',
+      ]) {
+        const r = drive({ NF_EXTRA_MODS: raw });
+        expect(r.status, JSON.stringify(raw)).toBe(1);
+        expect(r.err, JSON.stringify(raw)).toContain('outside letters, digits');
+      }
+    });
+
+    it('a name listed twice in the pins file refuses, even when NF_EXTRA_MODS is unset', () => {
+      const pins = `chunky ${JAR_PIN} Chunky-fixture.jar 0.0.0\nchunky ${JAR_PIN} Chunky-fixture.jar 0.0.0\n`;
+      const r = drive({ NF_EXTRA_MODS: 'chunky', NF_EXTRA_CHUNKY_JAR_HOST: '/x' }, pins);
+      expect(r.status).toBe(1);
+      expect(r.err).toContain('lists chunky more than once');
+      const unset = drive({}, pins);
+      expect(unset.status).toBe(1);
+      expect(unset.err).toContain('lists chunky more than once');
+    });
+
     it('a name given twice refuses', () => {
       const r = drive({ NF_EXTRA_MODS: 'chunky,chunky', NF_EXTRA_CHUNKY_JAR_HOST: '/x' });
       expect(r.status).toBe(1);
