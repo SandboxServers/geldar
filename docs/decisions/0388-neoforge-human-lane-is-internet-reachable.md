@@ -1,19 +1,21 @@
 # 0388. The NeoForge human lane is internet-reachable
 
-- Status: Accepted (owner, 2026-11-18). The owner accepted this record on that date, with the decisions in section "Owner decisions (2026-11-18)". Accepting it did not by itself open the lane. The owner approved the node steps, and the human lane was published on the owner's gateway port on 2026-11-18 (runbook section 10.8, "Node result"). The go-public gate in the status line below was the owner's condition for that bind; the repo does not record its state at the bind.
+- Status: Accepted (owner, 2026-11-18). The owner accepted this record on that date, with the decisions in section "Owner decisions (2026-11-18)". Accepting it did not by itself open the lane. The owner approved the node steps, and the human lane was published on the owner's gateway port on 2026-11-18 (runbook section 10.8, "Node result"). The go-public gate in the status line below was the owner's condition for that bind; its items 2 and 3 were observed by ops at the bind (see below).
 - Date: 2026-11-18 (proposed and accepted the same day)
 - Spec: section 2 (Principle 1), section 8.4 (spectator proxy). Builds on 0387 (items 3, 4 and 5), 0137 (item 1: the cap of 5 and the login rate limit, with the cap amended for the NeoForge shard below; item 3: least privilege), 0375 (chat export off), 0386 (the compose project). Its operator steps are in [docs/runbooks/nf-live-project.md](../runbooks/nf-live-project.md), section 10. The owner chose identity option (a) on 2026-11-18 (section "Identity route").
 
 **Status line (explicit).** This record is ACCEPTED (owner, 2026-11-18). The go-public gate, as written on 2026-11-18, required all four items before the lane was published (it was published on 2026-11-18; see the bring-up facts):
 
 1. The plugin jar built from merged main is DEPLOYED on the human proxy and on the node. It must contain #726 (the concurrent-human slots and the fail-closed registry gate), #731 (the inbox prefix) and #732 (the shared limit of 100).
-2. The node's `nats-auth.conf` is regenerated so the `human` user holds `_INBOX.human.>` only. The NF_HUMAN gate refuses a deployed conf that still grants `_INBOX.>` (`deploy/nf-human-lib.sh`, on main since #731).
-3. neoforge enforces MAX_PLAYERS 100 (a node step; the running shard still enforces 10 until then).
+2. The node's `nats-auth.conf` is regenerated so the `human` user holds `_INBOX.human.>` only. The NF_HUMAN gate refuses a deployed conf that still grants `_INBOX.>` (`deploy/nf-human-lib.sh`, on main since #731). Observed by ops at the bind (see below).
+3. neoforge enforces MAX_PLAYERS 100 (a node step; observed by ops at 100 from 15:39Z on 2026-11-18, see below).
 4. The owner has approved each node step.
 
 The S1 checks (runbook section 10.8) are NOT a gate. The owner SKIPPED the LAN-only S1 on 2026-11-18. Those checks are recommended first-join observations, run on the first real join, not a precondition. The first real join is the first test of: (i) Velocity handing the same `Player` object to `LoginEvent` and to `DisconnectEvent` (residual risk 4); (ii) the inbox-prefix KV watch on a live NATS (residual risk 9); (iii) the Microsoft login through the node's network. The first join (2026-11-18, runbook 10.8) observed (ii) only as "no NATS violation" and (iii) the Microsoft login; (i) was not shown, because no slot line was logged.
 
 The gateway already forwards the public port to the node, so the moment `velocity-human` binds it, the lane is reachable from the internet. It has bound: the lane has been reachable from the internet on the owner's gateway port since 2026-11-18. DNS (the CNAME for the target name and the SRV record) is added last; the SRV name is live.
+
+Gate facts observed by ops (ops record, UTC 2026-11-18; the repo cannot show them; runbook 10.8, "Node result"): item 2 held at the bind: node step A ran 15:44:50-15:46Z, the regenerated `human` line holds `_INBOX.human.>` and no bare `_INBOX.>`, `refresh-secrets` exited 0, and the gate-checked `up` (16:00:34-16:01:01Z, `NF_HUMAN=on`) passed "all gates passed". Item 3 held: `MAX_PLAYERS=100` in the neoforge container env and `max-players=100` in server.properties, observed 15:39-15:40Z, 15:45Z and 16:01Z. Item 1: the velocity-identity jar on the node has sha256 beginning 3ac5005d (6490207 bytes), equal to the desktop build of main 3a706c41 (it contains HumanSlots and HumanRules), built 15:43Z and installed before refresh-secrets.
 
 ## Decision
 
@@ -49,15 +51,15 @@ The human lane's refusals, as built (the reference doc's lane table): an agent-s
 The code change is merged as #732 (the shared limit):
 
 - The human slot capacity is the shared limit of 100. Before #732 it was `HumanSlots.CAP = 5` (`plugin/velocity-identity/src/main/java/dev/geldar/identity/HumanSlots.java:18`).
-- The backend's MAX_PLAYERS is the real enforcement of the shared total. The repo sets it to 100 (#732). The running `geldar-nf` still enforces `MAX_PLAYERS: "10"` (`compose/nf-live.yml:279` before the node step) until the node step (gate item 3).
+- The backend's MAX_PLAYERS is the real enforcement of the shared total. The repo sets it to 100 (#732). The running `geldar-nf` enforced `MAX_PLAYERS: "10"` (`compose/nf-live.yml:279` before the node step) until the node step (gate item 3), which ops observed at 100 on 2026-11-18.
 - The slot mechanism stays: the slot belongs to the connection object, the human gives it back on its own disconnect or on a refused login after the reservation, and the fail-closed registry gate (commit 44352b8a) stays.
 
 What this amendment does NOT establish, stated plainly:
 
 - (a) **The shard has NOT been sized for 100 players.** The neoforge container has 3 CPU and 12 GiB, JVM heap 9G, view distance 8 and simulation distance 6 (runbook section 3b). The figures for 100 players are unmeasured. The 3b chunk estimate is for 10 players and is itself unmeasured.
 - (b) **With no whitelist and no human cap, a per-IP limit and a login rate limit matter MORE.** Held packet H1b (a per-IP limit, login rate limiting beyond Velocity's default, and an idle kick) is NOT built and is DROPPED by the owner (2026-11-18, "rate limits: leave alone"). That is an ACCEPTED RISK: see residual risks 3 and 5.
-- (c) **The `ag-` versus `ag_` question is DECIDED (owner, 2026-11-18).** The owner asked that the human lane refuse both prefixes, case-insensitive. For `ag-` that is already true by username validity: the life registry's username pattern is `[A-Za-z0-9_]{1,16}` (`plugin/velocity-identity/.../LifeRegistry.java:42`), and `LoginGate.isValidUsername` denies any other name (`LoginGate.java:64` and `:78`), so a hyphen name never reaches a prefix check. The explicit `ag-` and `ag_` prefix rule in HumanRules is added by the H1c2 PR (#736). #736 is NOT merged (not on origin/main on 2026-11-18) and it is NOT a go-public condition. Until it is merged the lane refuses `ag_` by the prefix rule and `ag-` by validity.
-- (d) **Until the node step changes the live geldar-nf's MAX_PLAYERS to 100, the running shard still enforces 10** (`compose/nf-live.yml:279`). This record does not change the node; the step is gate item 3.
+- (c) **The `ag-` versus `ag_` question is DECIDED (owner, 2026-11-18).** The owner asked that the human lane refuse both prefixes, case-insensitive. For `ag-` that is already true by username validity: the life registry's username pattern is `[A-Za-z0-9_]{1,16}` (`plugin/velocity-identity/.../LifeRegistry.java:42`), and `LoginGate.isValidUsername` denies any other name (`LoginGate.java:64` and `:78`), so a hyphen name never reaches a prefix check. The explicit `ag-` and `ag_` prefix rule in HumanRules is added by the H1c2 PR (#736). #736 is merged to main (`AGENT_PREFIXES` in HumanRules) and it is NOT a go-public condition. The lane refuses `ag_` and `ag-` by the prefix rule, and `ag-` also by validity.
+- (d) **Until the node step changes the live geldar-nf's MAX_PLAYERS to 100, the running shard enforced 10** (`compose/nf-live.yml:279`). This record does not change the node; the step is gate item 3, run by ops and observed at 100.
 
 ## Residual risks
 
@@ -102,13 +104,13 @@ Relayed by the lead, 2026-11-18. The record as offered asked the owner to:
 3. Choose the cap-abuse posture (residual risk 3): (i) run with the shared limit of 100 (MAX_PLAYERS, the cap of 5 dropped) and no per-IP limit, and accept the abuse, (ii) hold the lane until H1b (per-IP limit and idle kick) is built, or (iii) keep the lane closed. **Decided: (i). Rate limits left alone; H1b DROPPED; the abuse is an ACCEPTED RISK.** Options (ii) and (iii) are not chosen.
 4. Note the hardening already done: the human lane has its own NATS user (read-only) and its own network `nf-human` (review H2 finding F6 and H5 items a, e and f). The shared forwarding secret (residual risk 1) is NOT removed by that hardening; it is an ACCEPTED RISK.
 5. The S1 checks on the LAN. **Decided: SKIPPED by the owner.** The gateway already forwards the public port to the node. The lane opens by the gate in the status line; the S1 checks are first-join observations.
-6. Other decisions relayed on 2026-11-18: the NATS consumer `deliver_subject` residual is accepted for now (residual risk 10); the shared MAX_PLAYERS is 100; the 10 to 100 recreate of neoforge is being done by ops, as gate item 3.
+6. Other decisions relayed on 2026-11-18: the NATS consumer `deliver_subject` residual is accepted for now (residual risk 10); the shared MAX_PLAYERS is 100; the 10 to 100 recreate of neoforge was done by ops, as gate item 3 (observed at 100, see below).
 
 ## Not built
 
 - **Per-IP limits, login rate limiting beyond Velocity's default, and an idle kick** (held packet H1b). DROPPED by the owner on 2026-11-18 ("rate limits: leave alone"). ACCEPTED RISK: residual risks 3 and 5.
 - **A human registry and a revocation path** (0387 item 5(d)). DROPPED by the owner on 2026-11-18 (online identity is enough). ACCEPTED RISK: residual risk 7.
-- **The H1c2 PR (#736)**: an explicit `ag-` and `ag_` prefix rule in HumanRules. NOT merged. Defence in depth, not a gate.
+- **The H1c2 PR (#736)**: an explicit `ag-` and `ag_` prefix rule in HumanRules. Merged to main. Defence in depth, not a gate.
 - **Chat export and the name mask: off.** Per 0375, human chat is not exported, because `collector.chat.enabled=false` keeps the ledger's NameMask off (taken from 0375 as stated; not re-verified here).
 - **The spec.** `docs/spec.md` is not edited (0073). Principle 1 still reads as written for the whole project; 0387 is the exception.
 
