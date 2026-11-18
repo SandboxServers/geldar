@@ -67,15 +67,19 @@ sequenceDiagram
 | Lane | Admits | Refuses | Readiness (`/tmp/geldar-identity.ready`) |
 |---|---|---|---|
 | `agent` (unset or `agent`) | A username in the life registry, and only once the registry has synced. The bot ingress is offline-mode. | Everything else. | Written when the registry syncs; removed when the sync is lost and on shutdown. Until then every login is denied. |
-| `human` | A plain username (1 to 16 of `[A-Za-z0-9_]`) that does not start with `ag_` (any case), is not in the registry, and whose UUID is not the offline-mode UUID of its name. | Agent-shaped names, registered names, connections whose UUID is the offline-mode UUID of the name, and every login while a configured registry is unsynced. | With `GELDAR_NATS_URL` unset: written at enable (the name rules alone decide). With it set: written on registry sync, and every login is denied until then. Removed on shutdown. |
+| `human` | A plain username (1 to 16 of `[A-Za-z0-9_]`) that does not start with `ag_` (any case), is not in the registry, and whose UUID is not the offline-mode UUID of its name. | Agent-shaped names, registered names, connections whose UUID is the offline-mode UUID of the name, and every login while the registry is unsynced, including when `GELDAR_NATS_URL` is unset. | Written on registry sync, and every login is denied until then. With `GELDAR_NATS_URL` unset the registry never syncs: the marker is never written and every login is denied. Removed when the registry sync is lost, and on shutdown. |
 
 Fixed deny text, both lanes: `LoginGate.DENY_MESSAGE`, one message that names neither the lane nor the registry. The refusal reason for a bad lane value or an offline-mode proxy is logged, never sent to a client.
 
 Fail-closed rules for the human lane:
 
 - The proxy must run in online mode. An offline-mode proxy refuses the gate at init. The check reads `ProxyServer#getConfiguration().isOnlineMode()`, which the build compiles against velocity-api 3.5.1; the runtime answer is not tested against a live proxy.
-- The registry is optional for this lane, but when `GELDAR_NATS_URL` is set the gate denies everything until the registry has synced.
+- The registry is required for this lane and fails closed. Without `GELDAR_NATS_URL`, with an unsynced registry, or after a registry error (`RegistryClient` marks the registry unsynced), the gate denies every login and the ready marker is not written. A healthy synced registry admits.
 - A human is admitted to the proxy only. A human gets no `geldar_live` profile property, so Paper treats the human as a ghost (spectator) under the 0137 rule in `IdentityPlugin.markLive`. The NeoForge mod does not port that Core logic, so on the NeoForge shard humans are not forced into spectator mode. Whether that shard needs any human-specific handling is an open owner decision under decision 0387, "The NeoForge shard is human-directed" (`docs/decisions/0387-neoforge-shard-is-human-directed.md`, on another branch, not yet on main).
+
+### Concurrent-human cap
+
+The human lane admits at most 5 concurrent human connections (`HumanSlots.CAP`, a constant, not configurable). The cap is enforced IN THE PLUGIN: a human reserves a slot at the login decision and gives it back on disconnect, or when its login is refused after the reservation. The sixth human gets the same fixed denial as every other refusal, so the message reveals neither the cap nor who is online. Agents never take a slot (they come through the agent lane), and a UUID that logs in again while it holds a slot is refused: only the connection that reserved the slot gives it back (on its own disconnect or a refused login), so a denied duplicate frees nothing. Per-IP limits are NOT built: they are the follow-up H1b. An idle account can hold its slot: there is no idle kick. Whether real Velocity fires `DisconnectEvent` for every connection that ends after `LoginEvent` is not verified on a live proxy.
 
 ## Skins
 

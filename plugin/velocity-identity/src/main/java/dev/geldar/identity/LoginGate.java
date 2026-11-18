@@ -27,19 +27,24 @@ public final class LoginGate {
 
     private final LifeRegistry registry;
     private final IdentityLane lane;
-    /** True when a NATS URL is configured: the human lane then denies while the registry is unsynced. */
-    private final boolean registryExpected;
     private final Set<UUID> admitted = ConcurrentHashMap.newKeySet();
     private final Set<UUID> spectators = ConcurrentHashMap.newKeySet();
+    /** The concurrent-human cap. Only the human lane reserves from it; agents never do. */
+    private final HumanSlots humanSlots = new HumanSlots();
+
+    /**
+     * What {@link #reserve} did with a login. {@link #NEW_SLOT} is the only result that owes the caller a release if the
+     * login is refused after the reservation. {@link #FULL} is a human refused by the cap, which the caller logs apart.
+     */
+    public enum Reservation { DENIED, ADMITTED, NEW_SLOT, FULL }
 
     public LoginGate(LifeRegistry registry) {
-        this(registry, IdentityLane.AGENT, false);
+        this(registry, IdentityLane.AGENT);
     }
 
-    public LoginGate(LifeRegistry registry, IdentityLane lane, boolean registryExpected) {
+    public LoginGate(LifeRegistry registry, IdentityLane lane) {
         this.registry = registry;
         this.lane = lane;
-        this.registryExpected = registryExpected;
     }
 
     /**
@@ -52,8 +57,8 @@ public final class LoginGate {
 
     /**
      * The human lane. Refused: a name that is not a plain username, the agent prefix, a name in the registry, and the
-     * offline-mode UUID of the name. While a configured registry is unsynced, every login is refused (fail closed).
-     * With no registry configured the registry is absent and the name rules alone decide.
+     * offline-mode UUID of the name. Every login is refused unless the registry has synced (fail closed): with no NATS
+     * URL the registry never syncs, a registry error marks it unsynced, and a sync lost later refuses again.
      */
     private Admission classifyHuman(UUID connection, String username) {
         if (!LifeRegistry.isValidUsername(username) || HumanRules.isAgentShaped(username)) {
@@ -62,10 +67,10 @@ public final class LoginGate {
         if (HumanRules.offlineUuid(username).equals(connection)) {
             return Admission.DENIED;
         }
-        if (registry.isSynced()) {
-            return registry.find(username).isPresent() ? Admission.DENIED : Admission.HUMAN;
+        if (!registry.isSynced()) {
+            return Admission.DENIED;
         }
-        return registryExpected ? Admission.DENIED : Admission.HUMAN;
+        return registry.find(username).isPresent() ? Admission.DENIED : Admission.HUMAN;
     }
 
     /** Classifies a username under the agent lane. Pure cache lookup, safe on the event loop; the human lane denies. */
@@ -87,21 +92,45 @@ public final class LoginGate {
 
     /** Checks the login and, when it passes, remembers the connection as admitted. */
     public boolean admit(UUID connection, String username) {
+        Reservation reservation = reserve(connection, username);
+        return reservation == Reservation.ADMITTED || reservation == Reservation.NEW_SLOT;
+    }
+
+    /** {@link #reserve(Object, UUID, String)} with the UUID as the owner: for a caller that has no connection object. */
+    public Reservation reserve(UUID connection, String username) {
+        return reserve(connection, connection, username);
+    }
+
+    /**
+     * Checks the login and records it. A live or ghost connection is remembered. A human takes one of the
+     * {@link HumanSlots#CAP} slots for its {@code owner}, the connection object that will give it back. A UUID that
+     * already holds a slot is refused, and a refused human gets the same denial as any other (no reason is returned).
+     */
+    public Reservation reserve(Object owner, UUID connection, String username) {
         Admission admission = decide(connection, username);
         switch (admission) {
             case LIVE -> admitted.add(connection);
             case SPECTATOR -> spectators.add(connection);
             case HUMAN -> {
-                // Admitted to the proxy only: not to geldar:cmd, and not a ghost.
+                return switch (humanSlots.reserve(owner, connection)) {
+                    case FULL -> Reservation.FULL;
+                    case TAKEN -> Reservation.DENIED;
+                    case NEW -> Reservation.NEW_SLOT;
+                };
             }
             case DENIED -> {
-                return false;
+                return Reservation.DENIED;
             }
         }
-        return true;
+        return Reservation.ADMITTED;
     }
 
-    /** Forgets a connection that disconnected. */
+    /** Gives back the human slot that this owner reserved. Only that owner's slot is freed; any other owner is a no-op. */
+    public void releaseSlot(Object owner) {
+        humanSlots.release(owner);
+    }
+
+    /** Forgets a live or ghost connection that disconnected. Safe to repeat. Human slots are given back by {@link #releaseSlot}. */
     public void release(UUID connection) {
         admitted.remove(connection);
         spectators.remove(connection);

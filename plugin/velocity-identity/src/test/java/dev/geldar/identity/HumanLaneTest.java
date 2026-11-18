@@ -27,8 +27,8 @@ class HumanLaneTest {
         registry.beginReplay();
     }
 
-    private LoginGate humanGate(boolean registryExpected) {
-        return new LoginGate(registry, IdentityLane.HUMAN, registryExpected);
+    private LoginGate humanGate() {
+        return new LoginGate(registry, IdentityLane.HUMAN);
     }
 
     @Test
@@ -39,7 +39,7 @@ class HumanLaneTest {
     @Test
     void humanAdmitsAnOrdinaryNameButNeverOpensTheCommandChannel() {
         registry.markSynced();
-        LoginGate gate = humanGate(false);
+        LoginGate gate = humanGate();
         UUID id = UUID.randomUUID();
         assertEquals(LoginGate.Admission.HUMAN, gate.decide(id, "Kiki"));
         assertTrue(gate.admit(id, "Kiki"));
@@ -51,7 +51,7 @@ class HumanLaneTest {
     void humanDeniesARegisteredAgentName() {
         registry.put("alice", VALID);
         registry.markSynced();
-        LoginGate gate = humanGate(false);
+        LoginGate gate = humanGate();
         assertEquals(LoginGate.Admission.DENIED, gate.decide(UUID.randomUUID(), "alice"));
         assertEquals(LoginGate.Admission.DENIED, gate.decide(UUID.randomUUID(), "Alice"));
         assertFalse(gate.admit(UUID.randomUUID(), "alice"));
@@ -60,7 +60,7 @@ class HumanLaneTest {
     @Test
     void humanDeniesAnAgentShapedNameThatIsNotRegistered() {
         registry.markSynced();
-        LoginGate gate = humanGate(false);
+        LoginGate gate = humanGate();
         // The reserved prefix is ag_, in any case; the contract's life id (ag_x_nn) lies inside it.
         for (String name : new String[] {"ag_alice_01", "AG_Bob", "ag_x"}) {
             assertEquals(LoginGate.Admission.DENIED, gate.decide(UUID.randomUUID(), name), name);
@@ -74,29 +74,28 @@ class HumanLaneTest {
     @Test
     void humanDeniesTheOfflineUuidOfItsName() {
         registry.markSynced();
-        LoginGate gate = humanGate(false);
+        LoginGate gate = humanGate();
         assertEquals(LoginGate.Admission.DENIED, gate.decide(OFFLINE_NOTCH, "Notch"));
         assertFalse(gate.admit(OFFLINE_NOTCH, "Notch"));
         assertEquals(LoginGate.Admission.HUMAN, gate.decide(UUID.randomUUID(), "Notch"));
     }
 
+    /** Fail closed: with no registry check possible (unsynced, errored or lost), every human login is refused. */
     @Test
-    void humanDeniesWhileAConfiguredRegistryIsUnsynced() {
-        LoginGate strict = humanGate(true);
-        assertEquals(LoginGate.Admission.DENIED, strict.decide(UUID.randomUUID(), "Kiki"));
+    void humanRefusesEveryLoginWhileTheRegistryIsNotSynced() {
+        LoginGate gate = humanGate();
+        assertEquals(LoginGate.Admission.DENIED, gate.decide(UUID.randomUUID(), "Kiki"), "never synced");
         registry.markSynced();
-        assertEquals(LoginGate.Admission.HUMAN, strict.decide(UUID.randomUUID(), "Kiki"));
+        assertEquals(LoginGate.Admission.HUMAN, gate.decide(UUID.randomUUID(), "Kiki"), "healthy registry admits");
         registry.markUnsynced();
-        assertEquals(LoginGate.Admission.DENIED, strict.decide(UUID.randomUUID(), "Kiki"));
-        // With no registry configured, the name rules alone decide, sync or not.
-        assertEquals(LoginGate.Admission.HUMAN, humanGate(false).decide(UUID.randomUUID(), "Kiki"));
+        assertEquals(LoginGate.Admission.DENIED, gate.decide(UUID.randomUUID(), "Kiki"), "a registry error or lost sync refuses");
     }
 
     @Test
     void theHumanLaneNeverAnswersThroughTheAgentPath() {
         registry.put("alice", VALID);
         registry.markSynced();
-        assertEquals(LoginGate.Admission.DENIED, humanGate(false).classify("kiki"));
+        assertEquals(LoginGate.Admission.DENIED, humanGate().classify("kiki"));
     }
 
     @Test
@@ -116,18 +115,33 @@ class HumanLaneTest {
         }
     }
 
+    /** No NATS URL means no registry check, so the human lane is not ready and refuses every login, with the generic message. */
     @Test
-    void humanLaneWithoutARegistryIsReadyAndAdmitsAnOrdinaryName(@TempDir Path dir) {
+    void humanLaneWithoutAUrlRefusesEveryLoginAndWritesNoMarker(@TempDir Path dir) {
         IdentityPluginFixture fixture = new IdentityPluginFixture(dir, "human", true);
         fixture.init();
-        assertTrue(Files.exists(fixture.marker()), "the human lane writes its ready marker without a registry");
-        assertTrue(fixture.loginAllowed("Kiki", UUID.randomUUID()));
+        assertFalse(Files.exists(fixture.marker()), "no registry, no ready marker");
+        assertFalse(fixture.loginAllowed("Kiki", UUID.randomUUID()));
+        assertEquals(LoginGate.DENY_MESSAGE, fixture.lastDenyMessage());
+    }
+
+    /** A healthy registry admits an ordinary name; a registry error after that refuses it again. */
+    @Test
+    void humanLaneWithAHealthyRegistryAdmitsAndARegistryErrorRefuses(@TempDir Path dir) {
+        IdentityPluginFixture fixture = new IdentityPluginFixture(dir, "human", true);
+        fixture.init();
+        fixture.syncRegistry();
+        assertTrue(fixture.loginAllowed("Kiki", UUID.randomUUID()), "healthy registry admits");
+        fixture.unsyncRegistry();
+        assertFalse(fixture.loginAllowed("Kiki", UUID.randomUUID()), "registry error refuses");
+        assertEquals(LoginGate.DENY_MESSAGE, fixture.lastDenyMessage());
     }
 
     @Test
     void anOfflineModeProxyRefusesTheHumanLane(@TempDir Path dir) {
         IdentityPluginFixture fixture = new IdentityPluginFixture(dir, "human", false);
         fixture.init();
+        fixture.syncRegistry();
         assertFalse(Files.exists(fixture.marker()), "a refused gate writes no ready marker");
         assertFalse(fixture.loginAllowed("Kiki", UUID.randomUUID()));
         assertEquals(LoginGate.DENY_MESSAGE, fixture.lastDenyMessage());
@@ -138,6 +152,7 @@ class HumanLaneTest {
         for (String lane : new String[] {"Human", "HUMAN", "", " human", "both"}) {
             IdentityPluginFixture fixture = new IdentityPluginFixture(dir, lane, true);
             fixture.init();
+            fixture.syncRegistry();
             assertFalse(Files.exists(fixture.marker()), lane);
             assertFalse(fixture.loginAllowed("Kiki", UUID.randomUUID()), lane);
         }

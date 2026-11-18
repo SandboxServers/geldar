@@ -102,9 +102,7 @@ public final class IdentityPlugin {
         this.natsUrl = natsUrl;
         this.skins = skins;
         this.lane = IdentityLane.parse(laneSetting.get());
-        String url = natsUrl.get();
-        boolean registryExpected = url != null && !url.isBlank();
-        this.gate = new LoginGate(registry, lane.orElse(IdentityLane.AGENT), registryExpected);
+        this.gate = new LoginGate(registry, lane.orElse(IdentityLane.AGENT));
         this.lifeFeed = new ReadinessFeed(registry, marker, log);
         this.denials = new DenialLimiter(MAX_LOGGED_DENIALS, DENY_WINDOW_NANOS, System::nanoTime,
                 count -> log.info("{} more denials were not logged in the last window", count));
@@ -127,12 +125,7 @@ public final class IdentityPlugin {
         }
         String url = natsUrl.get();
         if (url == null || url.isBlank()) {
-            if (lane.get() == IdentityLane.HUMAN) {
-                // The human lane needs no registry: an enabled proxy is ready, and the name rules still apply.
-                lifeFeed.markReadyWithoutRegistry();
-                log.info("human lane: GELDAR_NATS_URL is not set; the registry is not used");
-                return;
-            }
+            // Both lanes fail closed: with no registry there is no check to make, so nothing is admitted or marked ready.
             log.error("GELDAR_NATS_URL is not set; every login will be denied");
             return;
         }
@@ -168,14 +161,35 @@ public final class IdentityPlugin {
             }
             return;
         }
-        if (!refused && gate.admit(player.getUniqueId(), player.getUsername())) {
+        // The slot is owned by this Player object: a duplicate login of the same UUID is a different object.
+        LoginGate.Reservation reservation = refused
+                ? LoginGate.Reservation.DENIED
+                : gate.reserve(player, player.getUniqueId(), player.getUsername());
+        if (reservation == LoginGate.Reservation.ADMITTED || reservation == LoginGate.Reservation.NEW_SLOT) {
             String name = printable(player.getUsername());
             log.info(gate.isSpectator(player.getUniqueId()) ? "Admitted {} as a spectator" : "Admitted {}", name);
             return;
         }
         event.setResult(ResultedEvent.ComponentResult.denied(Component.text(LoginGate.DENY_MESSAGE)));
-        if (denials.allow()) {
+        if (reservation == LoginGate.Reservation.FULL) {
+            // Its own line, count only: no name or UUID, so the cap refusal is told apart from an ordinary denial.
+            if (denials.allow()) {
+                log.warn("Refused a human login: all {} human slots are held", HumanSlots.CAP);
+            }
+        } else if (denials.allow()) {
             log.info("Denied {}", printable(player.getUsername()));
+        }
+    }
+
+    /**
+     * Gives back a human slot whose login ends refused after the reservation, whether a later handler denied it or none
+     * did. The slot is released only by the connection object that reserved it: any other login of the same UUID is a
+     * different object, so its refusal cannot free the holder's slot. A kept login holds its slot until its disconnect.
+     */
+    @Subscribe(order = PostOrder.LAST)
+    public void onLoginSettled(LoginEvent event) {
+        if (!event.getResult().isAllowed()) {
+            gate.releaseSlot(event.getPlayer());
         }
     }
 
@@ -200,6 +214,11 @@ public final class IdentityPlugin {
             log.warn("Could not mark {} as a spectator; disconnecting", printable(player.getUsername()));
             player.disconnect(Component.text(LoginGate.DENY_MESSAGE));
         }
+    }
+
+    /** The life registry the gate reads. A unit test syncs it, since no NATS runs there. */
+    LifeRegistry registry() {
+        return registry;
     }
 
     /** Refuses the gate: every login is denied from now on. The reason is logged, never sent to a client. */
@@ -227,11 +246,15 @@ public final class IdentityPlugin {
 
     @Subscribe
     public void onDisconnect(DisconnectEvent event) {
-        release(event.getPlayer().getUniqueId(), event.getLoginStatus());
+        Player player = event.getPlayer();
+        // The slot goes to this exact connection, whatever status Velocity reports: a denied duplicate of the same UUID
+        // is another object and frees nothing. The status is consulted only for the live and ghost admissions below.
+        gate.releaseSlot(player);
+        release(player.getUniqueId(), event.getLoginStatus());
     }
 
     /**
-     * Forgets an admission when its connection ends. A login that lost to an already connected player of the
+     * Forgets a live or ghost admission when its connection ends. A login that lost to an already connected player of the
      * same name ends with CONFLICTING_LOGIN and shares that player's UUID: it must not revoke the live admission.
      */
     void release(UUID connection, DisconnectEvent.LoginStatus status) {
