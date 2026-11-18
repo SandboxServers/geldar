@@ -118,8 +118,66 @@ A pin in the environment with no jar mounted is a mismatch between the overlay a
 out (the mod would silently not load) or the jar path is wrong. The start stops with one line, so the operator sees it. Refusing
 also matches the ledger jar rule. The same stop applies to a mounted jar with no pin.
 
+## BlueMap config seeding (privacy: no player shown)
+
+BlueMap's defaults show players, so BlueMap cannot start on its defaults. With BlueMap enabled the NeoForge shard uses the committed
+config bundle plugins/bluemap/neoforge (plugin.conf, core.conf, webserver.conf, webapp.conf, maps/end, nether, overworld, and
+storages/file.conf), listed with sha256 in plugins/bluemap/neoforge/MANIFEST.sha256. The overlay mounts the bundle read-only at
+/geldar/extra-mods/bluemap-config, and the path is fixed in the repository.
+
+The install is done by a sourced loader, compose/neoforge/extra-mods-bluemap-config.sh, which is mounted read-only at
+/geldar/extra-mods/bluemap-config.sh by the two BlueMap overlays only (compose/nf-live-mod-bluemap.yml and
+compose/opt-in/scratch-neoforge-extra-mods.yml). The loader's sha256 is pinned in GELDAR_NF_EXTRA_BLUEMAP_LOADER_SHA256 in both
+overlays and in BLUEMAP_LOADER_SHA256 in deploy/nf-extra-mods-lib.sh. The entrypoint checks the loader against the pin before it
+sources the file. To change the loader, run `sha256sum compose/neoforge/extra-mods-bluemap-config.sh` (the loader test prints the
+same line when it differs) and set the new value in all three places. The loader is never edited without that step.
+
+- Before any docker call, deploy/nf-extra-mods-lib.sh checks the bundle: the manifest exists, every listed file matches its hash, and
+  the directory holds no other file (no stray BlueMap default). It also checks the loader against its pin. A mismatch stops the
+  deploy and names the first problem.
+- The entrypoint refuses to start (before anything is copied) when: the pin is not 64 hex; the loader is missing, a link or
+  unreadable; the loader's sha256 does not match the pin; the bundle mount is missing, not a directory, or unreadable; the bundle has
+  no regular MANIFEST.sha256, a manifest with no final LF or with CR line endings, a symlink, a file the manifest does not list, or
+  a file that is missing or differs from its hash.
+  The bundle is verified again by the loader. It then installs the bundle into config/bluemap/ and writes
+  config/bluemap/.geldar-config.sha256 (the manifest's sha256). The java process runs in /data, because BlueMap reads its config
+  path relative to the working directory.
+- The install replaces a file that differs from the bundle. The operator's previous file is kept, as <name>.operator-bak (not a
+  .conf, so BlueMap never loads it). If .operator-bak already exists and differs, the displaced file is kept as
+  <name>.operator-bak.<first 8 hex of its sha256> instead. An existing backup is never overwritten, so an operator's file is never
+  lost; a backup name that already holds other content refuses the start. A restart with identical files changes nothing.
+- The manifest must end with LF. A manifest with no final newline, or with CRLF line endings, refuses (the host check and the
+  loader both). Without the newline, `read` would skip the last line, which is webserver.conf, the file that turns the web server off.
+- The sweep covers every non-manifest regular file in config/bluemap/, maps/ and storages/, *.conf and *.json alike, because BlueMap
+  loads both. Each one is moved aside as <name>.operator-bak (or the <8 hex> form above). A subdirectory in maps/ or storages/
+  refuses the start; a symlink or other non-regular stray refuses; a stray that survives the sweep refuses. packs/ and other
+  subdirectories of config/bluemap/ are not touched. Every rm, mv, cp, chmod and chown failure refuses the start.
+- The loader counts the manifest's files against the installed ones and refuses on a difference.
+- Editing a bundle file means regenerating MANIFEST.sha256: tools/repo-checks/src/nf-bluemap-bundle.test.ts prints the lines to
+  paste. The privacy settings (no player markers, no skins, all game modes hidden, no players.json, webserver off) are asserted by
+  tools/repo-checks/src/nf-bluemap-privacy.test.ts.
+- BlueMap must NEVER be enabled on the live NeoForge shard without this branch merged. BlueMap's defaults show players; only this
+  bundle and loader keep them hidden.
+
+Do NOT run `/bluemap reload`, and do not delete any file in config/bluemap/. A config file deleted after the start, followed by a reload,
+makes BlueMap write its DEFAULT in its place: web server on (port 8100), live players shown. This branch cannot stop it, because
+the loader runs only at container start. RCON can trigger the reload too (every /bluemap command is open to RCON). A restart
+reinstalls the bundle, which is the only repair.
+
+Read-only checks after the first start (ops; do not run /bluemap reload unless the config dir is intact):
+
+- `ls /data/config/bluemap/maps` prints `end.conf nether.conf overworld.conf`.
+- `sha256sum` of the installed files equals the manifest, and `/data/config/bluemap/.geldar-config.sha256` holds the manifest's sha256.
+- `find /data/bluemap -name players.json` prints nothing.
+- `ss -ltn` shows nothing on port 8100.
+- The log has the BlueMap load line, and neither "You must accept the required file download" nor "Failed to create default".
+- The java process runs in /data: `readlink /proc/<pid>/cwd` prints /data.
+
 ## UNVERIFIED
 
+- The BlueMap config: the cwd of the java process in the image (the entrypoint now does cd /data before exec, but the image's start
+  script was not read), the real default storages/file.conf format (storages/file.conf follows the researcher's reading of v5.29),
+  and a real BlueMap start on the node: none of these was run here.
 - Whether the NeoForge server loads Chunky 1.5.66 and BlueMap 5.29 when the jar is copied this way: only a run proves it.
 - Whether each mod's own config or first-run behaviour needs anything beyond the jar: not checked.
 - The sha256 of the Chunky jar was computed from the downloaded file; the BlueMap sha256 was supplied by its owner and has not

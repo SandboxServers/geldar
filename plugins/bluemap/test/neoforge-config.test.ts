@@ -104,6 +104,10 @@ describe('NeoForge configs: no player is shown', () => {
     expect(raw(plugin, 'skin-download')).toBe('false');
   });
 
+  it('writes no players.json (write-players-interval is 0)', () => {
+    expect(raw(plugin, 'write-players-interval')).toBe('0');
+  });
+
   it('hides vanished, invisible and sneaking players', () => {
     expect(raw(plugin, 'hide-vanished')).toBe('true');
     expect(raw(plugin, 'hide-invisible')).toBe('true');

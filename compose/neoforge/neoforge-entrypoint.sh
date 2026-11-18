@@ -314,6 +314,19 @@ extra_copy() {
 extra_copy chunky GELDAR_NF_EXTRA_CHUNKY_SHA256 "${GELDAR_NF_EXTRA_CHUNKY_SHA256:-}"
 extra_copy bluemap GELDAR_NF_EXTRA_BLUEMAP_SHA256 "${GELDAR_NF_EXTRA_BLUEMAP_SHA256:-}"
 
+# BlueMap's config bundle is installed by a loader beside it, mounted read-only (compose/neoforge/extra-mods-bluemap-config.sh).
+# Only when the BlueMap jar is mounted (extra_copy has checked its pin): the loader must be present and match the sha256 the overlay
+# pins before it is sourced. BlueMap reads config/bluemap relative to the working directory, so the java process runs in $data.
+if [ -e "$extra_dir/bluemap.jar" ] || [ -L "$extra_dir/bluemap.jar" ]; then
+  bm_loader=$extra_dir/bluemap-config.sh
+  printf '%s\n' "${GELDAR_NF_EXTRA_BLUEMAP_LOADER_SHA256:-}" | grep -Eq '^[0-9a-f]{64}$' || { echo "neoforge-entrypoint: GELDAR_NF_EXTRA_BLUEMAP_LOADER_SHA256 is not a sha256; refusing to start" >&2; exit 1; }
+  [ -f "$bm_loader" ] && [ ! -L "$bm_loader" ] && [ -r "$bm_loader" ] || { echo "neoforge-entrypoint: the BlueMap loader is missing, a link or unreadable; refusing to start" >&2; exit 1; }
+  [ "$(sha256sum "$bm_loader" | awk '{print $1}')" = "${GELDAR_NF_EXTRA_BLUEMAP_LOADER_SHA256:-}" ] || { echo "neoforge-entrypoint: the BlueMap loader does not match its pin; refusing to start" >&2; exit 1; }
+  . "$bm_loader"
+  geldar_bluemap_install_config "$extra_dir/bluemap-config" "$data" || { echo "neoforge-entrypoint: the BlueMap config install refused; refusing to start" >&2; exit 1; }
+  cd "$data" || { echo "neoforge-entrypoint: cannot change to $data; refusing to start" >&2; exit 1; }
+fi
+
 # The mod's config, from its README layout, is written once. On later starts only the secret line is replaced, because the mod may have rewritten it.
 cfgdir=$(dirname "$config")
 # A symlink (dangling too) or directory at the config or a backup path is refused before any write, so no write follows a link.

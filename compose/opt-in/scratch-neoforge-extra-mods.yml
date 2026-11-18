@@ -1,9 +1,9 @@
 # Scratch NeoForge extra mods (suffix nf): the optional Chunky and BlueMap jars, the scratch twin of compose/nf-live-mod-chunky.yml and
-# compose/nf-live-mod-bluemap.yml. Layers after compose/opt-in/scratch-neoforge.yml. It is not added by deploy/scratch/scratch.sh: an
-# operator adds it by hand (docs/runbooks/nf-extra-mods.md, "Scratch stack"):
+# compose/nf-live-mod-bluemap.yml. Layers after compose/opt-in/scratch-neoforge.yml. deploy/scratch/scratch.sh adds it when
+# SCRATCH_EXTRA_MODS=1; otherwise an operator adds it by hand (docs/runbooks/nf-extra-mods.md, "Scratch stack"):
 #   docker compose -p scratch-<suffix> -f compose/phase0.yml -f compose/opt-in/scratch.yml \
 #     -f compose/opt-in/scratch-neoforge.yml -f compose/opt-in/scratch-neoforge-extra-mods.yml ...
-# Only the paper service changes (scratch-neoforge.yml names the NeoForge service paper). It adds two read-only bind mounts with
+# Only the paper service changes (scratch-neoforge.yml names the NeoForge service paper). It adds four read-only bind mounts (the chunky jar, the bluemap jar, the bundle dir, the loader) with
 # create_host_path false: a missing host file fails the start. SCRATCH_EXTRA_CHUNKY_JAR_HOST and SCRATCH_EXTRA_BLUEMAP_JAR_HOST name
 # the host jars; with either unset, compose renders a placeholder path, so the file renders only merged with the scratch stack (phase0.yml, scratch.yml, scratch-neoforge.yml). Alone it does not render: paper has neither an image nor a build context. The entrypoint copies
 # each mounted jar into mods/ only when its pin constant matches the one in compose/neoforge/extra-mods.pins (a test asserts it).
@@ -14,6 +14,7 @@ services:
     environment:
       GELDAR_NF_EXTRA_CHUNKY_SHA256: "9f9303da0185fa0ae0e1d3f10a0f07b8d9e5a21e77931d4fc162dcc718a0ab4f"
       GELDAR_NF_EXTRA_BLUEMAP_SHA256: "8938f4453af4b53970c86e43d0bd26b4a88980e4e6639f818fa770d0f61c43df"
+      GELDAR_NF_EXTRA_BLUEMAP_LOADER_SHA256: "f80bdfe6392912b666f7a10be57d023c5a79de6199262be9e198894df1193cad"
     volumes:
       - type: bind
         source: ${SCRATCH_EXTRA_CHUNKY_JAR_HOST:-./scratch-unset/chunky.jar}
@@ -24,6 +25,18 @@ services:
       - type: bind
         source: ${SCRATCH_EXTRA_BLUEMAP_JAR_HOST:-./scratch-unset/bluemap.jar}
         target: /geldar/extra-mods/bluemap.jar
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../plugins/bluemap/neoforge
+        target: /geldar/extra-mods/bluemap-config
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../neoforge/extra-mods-bluemap-config.sh
+        target: /geldar/extra-mods/bluemap-config.sh
         read_only: true
         bind:
           create_host_path: false
