@@ -40,7 +40,9 @@ function drive(env: Record<string, string>, pins = `chunky ${JAR_PIN} Chunky-fix
   const bin = join(base, 'bin');
   mkdirSync(bin);
   const log = join(base, 'docker.log');
-  writeFileSync(join(bin, 'docker'), `#!/bin/sh\necho "$*" >> "${slash(log)}"\nexit 0\n`, { mode: 0o755 });
+  writeFileSync(join(bin, 'docker'), `#!/bin/sh\necho "$*" >> "${slash(log)}"\nexit 0\n`, {
+    mode: 0o755,
+  });
   const pinsFile = join(base, 'pins');
   writeFileSync(pinsFile, pins);
   const driver = join(base, 'driver.sh');
@@ -84,96 +86,106 @@ const goodJar = (base: string) => {
   return p;
 };
 
-describe.skipIf(skipWithoutSh())('extra mods: the deploy helper (sh, no docker)', { timeout: 60_000 }, () => {
-  it('unset NF_EXTRA_MODS enables nothing and does not look at any jar', () => {
-    const r = drive({});
-    expect(r.status, r.err).toBe(0);
-    expect(r.out).toContain('ENABLED=[]');
-    expect(r.docker).toBe('');
-  });
+describe.skipIf(skipWithoutSh())(
+  'extra mods: the deploy helper (sh, no docker)',
+  { timeout: 60_000 },
+  () => {
+    it('unset NF_EXTRA_MODS enables nothing and does not look at any jar', () => {
+      const r = drive({});
+      expect(r.status, r.err).toBe(0);
+      expect(r.out).toContain('ENABLED=[]');
+      expect(r.docker).toBe('');
+    });
 
-  it('a name that is not in the allowlist refuses, with no docker call', () => {
-    const r = drive({ NF_EXTRA_MODS: 'unknownmod' });
-    expect(r.status).toBe(1);
-    expect(r.err).toContain('not in compose/neoforge/extra-mods.pins');
-    expect(r.docker).toBe('');
-  });
+    it('a name that is not in the allowlist refuses, with no docker call', () => {
+      const r = drive({ NF_EXTRA_MODS: 'unknownmod' });
+      expect(r.status).toBe(1);
+      expect(r.err).toContain('not in compose/neoforge/extra-mods.pins');
+      expect(r.docker).toBe('');
+    });
 
-  it('a name given twice refuses', () => {
-    const r = drive({ NF_EXTRA_MODS: 'chunky,chunky', NF_EXTRA_CHUNKY_JAR_HOST: '/x' });
-    expect(r.status).toBe(1);
-    expect(r.err).toContain('more than once');
-  });
+    it('a name given twice refuses', () => {
+      const r = drive({ NF_EXTRA_MODS: 'chunky,chunky', NF_EXTRA_CHUNKY_JAR_HOST: '/x' });
+      expect(r.status).toBe(1);
+      expect(r.err).toContain('more than once');
+    });
 
-  it.each(['chunky,,bluemap', ',chunky', 'chunky,', 'chunky, ,bluemap'])('an empty entry in %j refuses', (raw) => {
-    const r = drive({ NF_EXTRA_MODS: raw });
-    expect(r.status).toBe(1);
-    expect(r.err).toContain('empty entry');
-  });
+    it.each(['chunky,,bluemap', ',chunky', 'chunky,', 'chunky, ,bluemap'])(
+      'an empty entry in %j refuses',
+      (raw) => {
+        const r = drive({ NF_EXTRA_MODS: raw });
+        expect(r.status).toBe(1);
+        expect(r.err).toContain('empty entry');
+      },
+    );
 
-  it.each(['chunky;rm', 'chunky$(x)', 'chunky"', 'chunky`x`'])('a shell metacharacter in %j refuses', (raw) => {
-    const r = drive({ NF_EXTRA_MODS: raw });
-    expect(r.status).toBe(1);
-    expect(r.err).toContain('outside letters, digits');
-  });
+    it.each(['chunky;rm', 'chunky$(x)', 'chunky"', 'chunky`x`'])(
+      'a shell metacharacter in %j refuses',
+      (raw) => {
+        const r = drive({ NF_EXTRA_MODS: raw });
+        expect(r.status).toBe(1);
+        expect(r.err).toContain('outside letters, digits');
+      },
+    );
 
-  it('an enabled name with no host path refuses, and names the variable', () => {
-    const r = drive({ NF_EXTRA_MODS: 'chunky' });
-    expect(r.status).toBe(1);
-    expect(r.err).toContain('NF_EXTRA_CHUNKY_JAR_HOST is not set');
-  });
+    it('an enabled name with no host path refuses, and names the variable', () => {
+      const r = drive({ NF_EXTRA_MODS: 'chunky' });
+      expect(r.status).toBe(1);
+      expect(r.err).toContain('NF_EXTRA_CHUNKY_JAR_HOST is not set');
+    });
 
-  it('a relative host path refuses', () => {
-    const r = drive({ NF_EXTRA_MODS: 'chunky', NF_EXTRA_CHUNKY_JAR_HOST: 'chunky.jar' });
-    expect(r.status).toBe(1);
-    expect(r.err).toContain('must be an absolute path');
-  });
+    it('a relative host path refuses', () => {
+      const r = drive({ NF_EXTRA_MODS: 'chunky', NF_EXTRA_CHUNKY_JAR_HOST: 'chunky.jar' });
+      expect(r.status).toBe(1);
+      expect(r.err).toContain('must be an absolute path');
+    });
 
-  it('an empty jar refuses on its hash, not as accepted', () => {
-    const base = mkdtempSync(join(tmpdir(), 'nf-extra-empty-'));
-    dirs.push(base);
-    writeFileSync(goodJar(base), '');
-    const r = drive({ NF_EXTRA_MODS: 'chunky', NF_EXTRA_CHUNKY_JAR_HOST: slash(goodJar(base)) });
-    expect(r.status).toBe(1);
-    expect(r.err).toContain('does not match its pin');
-    expect(r.docker).toBe('');
-  });
+    it('an empty jar refuses on its hash, not as accepted', () => {
+      const base = mkdtempSync(join(tmpdir(), 'nf-extra-empty-'));
+      dirs.push(base);
+      writeFileSync(goodJar(base), '');
+      const r = drive({ NF_EXTRA_MODS: 'chunky', NF_EXTRA_CHUNKY_JAR_HOST: slash(goodJar(base)) });
+      expect(r.status).toBe(1);
+      expect(r.err).toContain('does not match its pin');
+      expect(r.docker).toBe('');
+    });
 
-  it('a jar whose hash does not match its pin refuses, with no docker call', () => {
-    const base = mkdtempSync(join(tmpdir(), 'nf-extra-wrong-'));
-    dirs.push(base);
-    writeFileSync(goodJar(base), 'some other bytes');
-    const r = drive({ NF_EXTRA_MODS: 'chunky', NF_EXTRA_CHUNKY_JAR_HOST: slash(goodJar(base)) });
-    expect(r.status).toBe(1);
-    expect(r.err).toContain('does not match its pin');
-    expect(r.docker).toBe('');
-  });
+    it('a jar whose hash does not match its pin refuses, with no docker call', () => {
+      const base = mkdtempSync(join(tmpdir(), 'nf-extra-wrong-'));
+      dirs.push(base);
+      writeFileSync(goodJar(base), 'some other bytes');
+      const r = drive({ NF_EXTRA_MODS: 'chunky', NF_EXTRA_CHUNKY_JAR_HOST: slash(goodJar(base)) });
+      expect(r.status).toBe(1);
+      expect(r.err).toContain('does not match its pin');
+      expect(r.docker).toBe('');
+    });
 
-  it.skipIf(!CAN_LINK)('a symlink to the right jar refuses', () => {
-    const base = mkdtempSync(join(tmpdir(), 'nf-extra-link-'));
-    dirs.push(base);
-    const real = join(base, 'real.jar');
-    writeFileSync(real, JAR_BODY);
-    symlinkSync(real, goodJar(base));
-    const r = drive({ NF_EXTRA_MODS: 'chunky', NF_EXTRA_CHUNKY_JAR_HOST: slash(goodJar(base)) });
-    expect(r.status).toBe(1);
-    expect(r.err).toContain('is a symlink');
-  });
+    it.skipIf(!CAN_LINK)('a symlink to the right jar refuses', () => {
+      const base = mkdtempSync(join(tmpdir(), 'nf-extra-link-'));
+      dirs.push(base);
+      const real = join(base, 'real.jar');
+      writeFileSync(real, JAR_BODY);
+      symlinkSync(real, goodJar(base));
+      const r = drive({ NF_EXTRA_MODS: 'chunky', NF_EXTRA_CHUNKY_JAR_HOST: slash(goodJar(base)) });
+      expect(r.status).toBe(1);
+      expect(r.err).toContain('is a symlink');
+    });
 
-  it('the right jar is accepted, with no docker call (the helper never calls docker)', () => {
-    const base = mkdtempSync(join(tmpdir(), 'nf-extra-ok-'));
-    dirs.push(base);
-    writeFileSync(goodJar(base), JAR_BODY);
-    const r = drive({ NF_EXTRA_MODS: 'chunky', NF_EXTRA_CHUNKY_JAR_HOST: slash(goodJar(base)) });
-    expect(r.status, r.err).toBe(0);
-    expect(r.out, r.err).toContain('ENABLED=[chunky]');
-    expect(r.docker).toBe('');
-  });
+    it('the right jar is accepted, with no docker call (the helper never calls docker)', () => {
+      const base = mkdtempSync(join(tmpdir(), 'nf-extra-ok-'));
+      dirs.push(base);
+      writeFileSync(goodJar(base), JAR_BODY);
+      const r = drive({ NF_EXTRA_MODS: 'chunky', NF_EXTRA_CHUNKY_JAR_HOST: slash(goodJar(base)) });
+      expect(r.status, r.err).toBe(0);
+      expect(r.out, r.err).toContain('ENABLED=[chunky]');
+      expect(r.docker).toBe('');
+    });
 
-  it('the real pins file lists chunky and bluemap, so both names pass the allowlist', () => {
-    const real = readFileSync(`${ROOT}compose/neoforge/extra-mods.pins`, 'utf8');
-    const r = drive({ NF_EXTRA_MODS: 'chunky bluemap' }, real);
-    expect(r.err).not.toContain('not in compose/neoforge/extra-mods.pins');
-    expect(r.err).toContain('NF_EXTRA_CHUNKY_JAR_HOST is not set');
-  });
-});
+    it('the real pins file lists chunky and bluemap, so both names pass the allowlist', () => {
+      const real = readFileSync(`${ROOT}compose/neoforge/extra-mods.pins`, 'utf8');
+      const r = drive({ NF_EXTRA_MODS: 'chunky bluemap' }, real);
+      expect(r.err).not.toContain('not in compose/neoforge/extra-mods.pins');
+      expect(r.err).toContain('NF_EXTRA_CHUNKY_JAR_HOST is not set');
+    });
+  },
+);

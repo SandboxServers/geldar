@@ -1,0 +1,29 @@
+# Scratch NeoForge extra mods (suffix nf): the optional Chunky and BlueMap jars, the scratch twin of compose/nf-live-mod-chunky.yml and
+# compose/nf-live-mod-bluemap.yml. Layers after compose/opt-in/scratch-neoforge.yml. It is not added by deploy/scratch/scratch.sh: an
+# operator adds it by hand (docs/runbooks/nf-extra-mods.md, "Scratch stack"):
+#   docker compose -p scratch-<suffix> -f compose/phase0.yml -f compose/opt-in/scratch.yml \
+#     -f compose/opt-in/scratch-neoforge.yml -f compose/opt-in/scratch-neoforge-extra-mods.yml ...
+# Only the paper service changes (scratch-neoforge.yml names the NeoForge service paper). It adds two read-only bind mounts with
+# create_host_path false: a missing host file fails the start. SCRATCH_EXTRA_CHUNKY_JAR_HOST and SCRATCH_EXTRA_BLUEMAP_JAR_HOST name
+# the host jars; with either unset, compose renders a placeholder path, so the file renders alone with no env. The entrypoint copies
+# each mounted jar into mods/ only when its pin constant matches the one in compose/neoforge/extra-mods.pins (a test asserts it).
+# Both jars are mounted, so both host variables must name real files for a start. It joins no network, publishes no port and
+# mounts nothing else. Nothing here names the live stack, a live network, a secret or a host address.
+services:
+  paper:
+    environment:
+      GELDAR_NF_EXTRA_CHUNKY_SHA256: "9f9303da0185fa0ae0e1d3f10a0f07b8d9e5a21e77931d4fc162dcc718a0ab4f"
+      GELDAR_NF_EXTRA_BLUEMAP_SHA256: "8938f4453af4b53970c86e43d0bd26b4a88980e4e6639f818fa770d0f61c43df"
+    volumes:
+      - type: bind
+        source: ${SCRATCH_EXTRA_CHUNKY_JAR_HOST:-./scratch-unset/chunky.jar}
+        target: /geldar/extra-mods/chunky.jar
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${SCRATCH_EXTRA_BLUEMAP_JAR_HOST:-./scratch-unset/bluemap.jar}
+        target: /geldar/extra-mods/bluemap.jar
+        read_only: true
+        bind:
+          create_host_path: false

@@ -1,6 +1,15 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -54,7 +63,9 @@ function setup(): Case {
   const mount = join(base, 'mount');
   const mods = join(data, 'mods');
   for (const dir of [bin, data, mount, mods]) mkdirSync(dir);
-  writeFileSync(join(bin, 'curl'), '#!/bin/sh\necho "curl was reached" >&2\nexit 9\n', { mode: 0o755 });
+  writeFileSync(join(bin, 'curl'), '#!/bin/sh\necho "curl was reached" >&2\nexit 9\n', {
+    mode: 0o755,
+  });
   writeFileSync(join(mods, 'proxy-compatible-forge.jar'), MOD_BODY);
   writeFileSync(join(data, 'neoforge-installer.jar'), INSTALLER_BODY);
   const start = join(bin, 'start');
@@ -124,104 +135,108 @@ function writeBundle(c: Case) {
 }
 
 // Each case runs the entrypoint under sh (several processes); the 60 s budget is for a loaded machine, not a weaker assertion.
-describe.skipIf(skipWithoutSh())('extra mods: the entrypoint (sh, no docker)', { timeout: 60_000 }, () => {
-  it('enabled: copies the mounted chunky jar to mods/chunky.jar with its pin and mode 644', () => {
-    const c = setup();
-    const r = run(c, ON());
-    expect(r.status, r.stderr).toBe(0);
-    expect(sha256(readFileSync(copyOf(c), 'utf8'))).toBe(CHUNKY_PIN);
-    if (process.platform !== 'win32') expect(statSync(copyOf(c)).mode & 0o777).toBe(0o644);
-    expect(existsSync(`${copyOf(c)}.part`)).toBe(false);
-  });
+describe.skipIf(skipWithoutSh())(
+  'extra mods: the entrypoint (sh, no docker)',
+  { timeout: 60_000 },
+  () => {
+    it('enabled: copies the mounted chunky jar to mods/chunky.jar with its pin and mode 644', () => {
+      const c = setup();
+      const r = run(c, ON());
+      expect(r.status, r.stderr).toBe(0);
+      expect(sha256(readFileSync(copyOf(c), 'utf8'))).toBe(CHUNKY_PIN);
+      if (process.platform !== 'win32') expect(statSync(copyOf(c)).mode & 0o777).toBe(0o644);
+      expect(existsSync(`${copyOf(c)}.part`)).toBe(false);
+    });
 
-  it('a pin that does not match the mounted jar refuses, and neither the final file nor a .part is left', () => {
-    const c = setup();
-    const r = run(c, { GELDAR_NF_EXTRA_CHUNKY_SHA256: 'b'.repeat(64) });
-    expect(r.status).toBe(1);
-    expect(r.stderr).toContain('does not match');
-    expect(existsSync(copyOf(c))).toBe(false);
-    expect(existsSync(`${copyOf(c)}.part`)).toBe(false);
-  });
+    it('a pin that does not match the mounted jar refuses, and neither the final file nor a .part is left', () => {
+      const c = setup();
+      const r = run(c, { GELDAR_NF_EXTRA_CHUNKY_SHA256: 'b'.repeat(64) });
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain('does not match');
+      expect(existsSync(copyOf(c))).toBe(false);
+      expect(existsSync(`${copyOf(c)}.part`)).toBe(false);
+    });
 
-  it('not enabled: a stale copy is removed, and nothing is copied', () => {
-    const c = setup();
-    writeFileSync(copyOf(c), CHUNKY_BODY);
-    const r = run(c, { GELDAR_NF_EXTRA_DIR: emptyMount(c) });
-    expect(r.status, r.stderr).toBe(0);
-    expect(existsSync(copyOf(c))).toBe(false);
-  });
+    it('not enabled: a stale copy is removed, and nothing is copied', () => {
+      const c = setup();
+      writeFileSync(copyOf(c), CHUNKY_BODY);
+      const r = run(c, { GELDAR_NF_EXTRA_DIR: emptyMount(c) });
+      expect(r.status, r.stderr).toBe(0);
+      expect(existsSync(copyOf(c))).toBe(false);
+    });
 
-  it('disabling after enabling removes the copy on the next start', () => {
-    const c = setup();
-    expect(run(c, ON()).status).toBe(0);
-    expect(existsSync(copyOf(c))).toBe(true);
-    const r = run(c, { GELDAR_NF_EXTRA_DIR: emptyMount(c) });
-    expect(r.status, r.stderr).toBe(0);
-    expect(existsSync(copyOf(c))).toBe(false);
-  });
+    it('disabling after enabling removes the copy on the next start', () => {
+      const c = setup();
+      expect(run(c, ON()).status).toBe(0);
+      expect(existsSync(copyOf(c))).toBe(true);
+      const r = run(c, { GELDAR_NF_EXTRA_DIR: emptyMount(c) });
+      expect(r.status, r.stderr).toBe(0);
+      expect(existsSync(copyOf(c))).toBe(false);
+    });
 
-  it('a mounted jar with no pin refuses, and names the variable', () => {
-    const c = setup();
-    const r = run(c);
-    expect(r.status).toBe(1);
-    expect(r.stderr).toContain('GELDAR_NF_EXTRA_CHUNKY_SHA256 is unset');
-    expect(existsSync(copyOf(c))).toBe(false);
-  });
+    it('a mounted jar with no pin refuses, and names the variable', () => {
+      const c = setup();
+      const r = run(c);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain('GELDAR_NF_EXTRA_CHUNKY_SHA256 is unset');
+      expect(existsSync(copyOf(c))).toBe(false);
+    });
 
-  it('a pin with no mounted jar refuses', () => {
-    const c = setup();
-    const r = run(c, { ...ON(), GELDAR_NF_EXTRA_DIR: emptyMount(c) });
-    expect(r.status).toBe(1);
-    expect(r.stderr).toContain('no chunky jar is mounted');
-  });
+    it('a pin with no mounted jar refuses', () => {
+      const c = setup();
+      const r = run(c, { ...ON(), GELDAR_NF_EXTRA_DIR: emptyMount(c) });
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain('no chunky jar is mounted');
+    });
 
-  it('a pin that is not 64 lowercase hex refuses before any copy', () => {
-    const c = setup();
-    const r = run(c, { GELDAR_NF_EXTRA_CHUNKY_SHA256: CHUNKY_PIN.toUpperCase() });
-    expect(r.status).toBe(1);
-    expect(r.stderr).toContain('not 64 lowercase hex digits');
-    expect(existsSync(copyOf(c))).toBe(false);
-  });
+    it('a pin that is not 64 lowercase hex refuses before any copy', () => {
+      const c = setup();
+      const r = run(c, { GELDAR_NF_EXTRA_CHUNKY_SHA256: CHUNKY_PIN.toUpperCase() });
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain('not 64 lowercase hex digits');
+      expect(existsSync(copyOf(c))).toBe(false);
+    });
 
-  it.skipIf(!CAN_LINK)('a symlink at the copy path refuses, and its target is untouched', () => {
-    const c = setup();
-    const target = join(c.base, 'target.txt');
-    writeFileSync(target, 'keep me');
-    symlinkSync(target, copyOf(c));
-    const r = run(c, ON());
-    expect(r.status).toBe(1);
-    expect(r.stderr).toContain('symlink or a directory');
-    expect(readFileSync(target, 'utf8')).toBe('keep me');
-  });
+    it.skipIf(!CAN_LINK)('a symlink at the copy path refuses, and its target is untouched', () => {
+      const c = setup();
+      const target = join(c.base, 'target.txt');
+      writeFileSync(target, 'keep me');
+      symlinkSync(target, copyOf(c));
+      const r = run(c, ON());
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain('symlink or a directory');
+      expect(readFileSync(target, 'utf8')).toBe('keep me');
+    });
 
-  it('a directory at the copy path refuses, and the directory stays', () => {
-    const c = setup();
-    mkdirSync(copyOf(c));
-    const r = run(c, ON());
-    expect(r.status).toBe(1);
-    expect(r.stderr).toContain('symlink or a directory');
-    expect(statSync(copyOf(c)).isDirectory()).toBe(true);
-  });
+    it('a directory at the copy path refuses, and the directory stays', () => {
+      const c = setup();
+      mkdirSync(copyOf(c));
+      const r = run(c, ON());
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain('symlink or a directory');
+      expect(statSync(copyOf(c)).isDirectory()).toBe(true);
+    });
 
-  it('bundle mode passes with the extra jar mounted: it is copied after the bundle check', () => {
-    const c = setup();
-    writeBundle(c);
-    const r = run(c, ON());
-    expect(r.status, r.stderr).toBe(0);
-    expect(sha256(readFileSync(copyOf(c), 'utf8'))).toBe(CHUNKY_PIN);
-  });
+    it('bundle mode passes with the extra jar mounted: it is copied after the bundle check', () => {
+      const c = setup();
+      writeBundle(c);
+      const r = run(c, ON());
+      expect(r.status, r.stderr).toBe(0);
+      expect(sha256(readFileSync(copyOf(c), 'utf8'))).toBe(CHUNKY_PIN);
+    });
 
-  it('a second start with the same jar is idempotent', () => {
-    const c = setup();
-    expect(run(c, ON()).status).toBe(0);
-    const r = run(c, ON());
-    expect(r.status, r.stderr).toBe(0);
-    expect(sha256(readFileSync(copyOf(c), 'utf8'))).toBe(CHUNKY_PIN);
-  });
+    it('a second start with the same jar is idempotent', () => {
+      const c = setup();
+      expect(run(c, ON()).status).toBe(0);
+      const r = run(c, ON());
+      expect(r.status, r.stderr).toBe(0);
+      expect(sha256(readFileSync(copyOf(c), 'utf8'))).toBe(CHUNKY_PIN);
+    });
 
-  it('the geldar mod copy is unchanged by an extra mod start', () => {
-    const c = setup();
-    expect(run(c, ON()).status).toBe(0);
-    expect(readFileSync(join(c.mods, 'proxy-compatible-forge.jar'), 'utf8')).toBe(MOD_BODY);
-  });
-});
+    it('the geldar mod copy is unchanged by an extra mod start', () => {
+      const c = setup();
+      expect(run(c, ON()).status).toBe(0);
+      expect(readFileSync(join(c.mods, 'proxy-compatible-forge.jar'), 'utf8')).toBe(MOD_BODY);
+    });
+  },
+);

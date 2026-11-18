@@ -83,9 +83,23 @@ applies to the first enable.
 
 ## Scratch stack
 
-The scratch stack (docs/runbooks/scratch-stack.md) uses the same entrypoint. The manual route is
-`docker compose -f compose/opt-in/... -f compose/nf-live... ` (no scratch overlay for extra mods is provided in this change: the
-deploy path above is the only route). A scratch overlay can be added later with the same pattern.
+The scratch stack (docs/runbooks/scratch-stack.md) uses the same entrypoint, and deploy/scratch/scratch.sh does not add the extra
+mods. The scratch overlay is compose/opt-in/scratch-neoforge-extra-mods.yml: it changes only the scratch service (paper, which runs
+NeoForge in scratch), adds the two read-only mounts and both pin constants, and renders alone with no environment. Both jars are
+mounted, so both host variables must name real files for a start. The manual route, with the scratch variables set by hand:
+
+    SCRATCH_EXTRA_CHUNKY_JAR_HOST=/srv/geldar/mods/Chunky-NeoForge-1.5.66.jar \
+    SCRATCH_EXTRA_BLUEMAP_JAR_HOST=/srv/geldar/mods/bluemap-5.29-neoforge.jar \
+    docker compose -p scratch-<suffix> -f compose/phase0.yml -f compose/opt-in/scratch.yml \
+      -f compose/opt-in/scratch-neoforge.yml -f compose/opt-in/scratch-neoforge-extra-mods.yml ...
+
+The deploy helper's sha256 check does not run on this route: check the two jars by hand (the checklist above) before `up`.
+
+## Why a pin with no mounted jar refuses
+
+A pin in the environment with no jar mounted is a mismatch between the overlay and the environment: either the overlay was left
+out (the mod would silently not load) or the jar path is wrong. The start stops with one line, so the operator sees it. Refusing
+also matches the ledger jar rule. The same stop applies to a mounted jar with no pin.
 
 ## UNVERIFIED
 
@@ -93,4 +107,5 @@ deploy path above is the only route). A scratch overlay can be added later with 
 - Whether each mod's own config or first-run behaviour needs anything beyond the jar: not checked.
 - The sha256 of the Chunky jar was computed from the downloaded file; the BlueMap sha256 was supplied by its owner and has not
   been re-computed on the node.
-- The scratch overlay for extra mods is not written (see the scratch section).
+- The scratch overlay is rendered only by the parse test (tools/repo-checks/src/scratch-neoforge-extra-mods.test.ts); no
+  scratch stack was started with it.

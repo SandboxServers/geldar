@@ -18,7 +18,8 @@ const pins = new Map(
     return [name as string, { sha, file, version }] as const;
   }),
 );
-const overlayText = (name: string) => readFileSync(`${ROOT}compose/nf-live-mod-${name}.yml`, 'utf8');
+const overlayText = (name: string) =>
+  readFileSync(`${ROOT}compose/nf-live-mod-${name}.yml`, 'utf8');
 const overlay = (name: string) => parse(overlayText(name));
 const imageOf = (doc: { services: { neoforge: { image: string } } }) => doc.services.neoforge.image;
 
