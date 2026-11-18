@@ -113,6 +113,10 @@ function makeRepo(): string {
   mkdirSync(join(repo, 'bundle'));
   copyFileSync(SCRIPT_SRC, join(repo, 'deploy', 'nf-deploy.sh'));
   copyFileSync(HUMAN_LIB_SRC, join(repo, 'deploy', 'nf-human-lib.sh'));
+  copyFileSync(
+    resolve(DEPLOY, 'nf-extra-mods-lib.sh'),
+    join(repo, 'deploy', 'nf-extra-mods-lib.sh'),
+  );
   writeFileSync(join(repo, 'compose', 'nf-live.yml'), NF_COMPOSE_TEXT);
   writeFileSync(join(repo, 'compose', 'nf-live-telemetry.yml'), NF_OVERLAY_TEXT);
   // The fixture entrypoint carries the GELDAR_NF_TELEMETRY string that on requires (the real one lands with PR #701).
