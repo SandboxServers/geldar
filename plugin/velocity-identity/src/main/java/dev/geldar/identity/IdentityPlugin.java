@@ -21,9 +21,11 @@ import com.velocitypowered.api.util.GameProfile;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import net.kyori.adventure.text.Component;
 import org.slf4j.Logger;
@@ -63,6 +65,8 @@ public final class IdentityPlugin {
     private final ReadinessFeed lifeFeed;
     private final SkinRegistry skins;
     private final DenialLimiter denials;
+    /** The login that reserved a new human slot, by UUID. Only that login gives the slot back if it is refused. */
+    private final Map<UUID, LoginEvent> slotOwners = new ConcurrentHashMap<>();
     private static final int MAX_LOGGED_DENIALS = 10;
     private static final long DENY_WINDOW_NANOS = TimeUnit.SECONDS.toNanos(10);
     /** The profile property Mojang's session servers use for skins. */
@@ -168,7 +172,13 @@ public final class IdentityPlugin {
             }
             return;
         }
-        if (!refused && gate.admit(player.getUniqueId(), player.getUsername())) {
+        LoginGate.Reservation reservation = refused
+                ? LoginGate.Reservation.DENIED
+                : gate.reserve(player.getUniqueId(), player.getUsername());
+        if (reservation != LoginGate.Reservation.DENIED) {
+            if (reservation == LoginGate.Reservation.NEW_SLOT) {
+                slotOwners.put(player.getUniqueId(), event);
+            }
             String name = printable(player.getUsername());
             log.info(gate.isSpectator(player.getUniqueId()) ? "Admitted {} as a spectator" : "Admitted {}", name);
             return;
@@ -176,6 +186,19 @@ public final class IdentityPlugin {
         event.setResult(ResultedEvent.ComponentResult.denied(Component.text(LoginGate.DENY_MESSAGE)));
         if (denials.allow()) {
             log.info("Denied {}", printable(player.getUsername()));
+        }
+    }
+
+    /**
+     * Gives back a human slot that its login reserved and did not keep: the login ends refused after the reservation,
+     * whether a later handler denied it or none did. Only the login that reserved the slot can give it back, so a second
+     * login that shared the slot cannot free it. A slot whose login was kept stays held until its disconnect.
+     */
+    @Subscribe(order = PostOrder.LAST)
+    public void onLoginSettled(LoginEvent event) {
+        UUID connection = event.getPlayer().getUniqueId();
+        if (slotOwners.remove(connection, event) && !event.getResult().isAllowed()) {
+            gate.release(connection);
         }
     }
 

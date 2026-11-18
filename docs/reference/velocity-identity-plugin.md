@@ -77,6 +77,10 @@ Fail-closed rules for the human lane:
 - The registry is optional for this lane, but when `GELDAR_NATS_URL` is set the gate denies everything until the registry has synced.
 - A human is admitted to the proxy only. A human gets no `geldar_live` profile property, so Paper treats the human as a ghost (spectator) under the 0137 rule in `IdentityPlugin.markLive`. The NeoForge mod does not port that Core logic, so on the NeoForge shard humans are not forced into spectator mode. Whether that shard needs any human-specific handling is an open owner decision under decision 0387, "The NeoForge shard is human-directed" (`docs/decisions/0387-neoforge-shard-is-human-directed.md`, on another branch, not yet on main).
 
+### Concurrent-human cap
+
+The human lane admits at most 5 concurrent human connections (`HumanSlots.CAP`, a constant, not configurable). The cap is enforced IN THE PLUGIN: a human reserves a slot at the login decision and gives it back on disconnect, or when its login is refused after the reservation. The sixth human gets the same fixed denial as every other refusal, so the message reveals neither the cap nor who is online. Agents never take a slot (they come through the agent lane), and a UUID that logs in again while it holds a slot shares that slot. Per-IP limits are NOT built: they are the follow-up H1b. Whether real Velocity fires `DisconnectEvent` for every connection that ends after `LoginEvent` is not verified on a live proxy.
+
 ## Skins
 
 On `GameProfileRequestEvent` the plugin looks the life up and, when the `geldar-skins` bucket holds a valid record for it, replaces the profile's `textures` property with the stored signed texture. A record is valid only when its life id equals its key and its texture URL is on the Mojang texture host. The lookup is in memory; any failure keeps the default profile, and the skin never changes admission (`IdentityPlugin.onGameProfile`, `SkinRegistry`). Skins are written by `tools/players-cli skin set` (`SkinRegistry` comment). Decision [0140](../decisions/0140-agent-skins.md); runbook [skins](../runbooks/skins.md).

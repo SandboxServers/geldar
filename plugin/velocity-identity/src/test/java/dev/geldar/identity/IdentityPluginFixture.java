@@ -1,5 +1,6 @@
 package dev.geldar.identity;
 
+import com.velocitypowered.api.event.connection.DisconnectEvent;
 import com.velocitypowered.api.event.connection.LoginEvent;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
@@ -49,6 +50,23 @@ final class IdentityPluginFixture {
 
     String lastDenyMessage() {
         return lastDeny;
+    }
+
+    /** Runs the login handler only and returns its event, so a test can settle the login later. */
+    LoginEvent login(String name, UUID id) {
+        LoginEvent event = new LoginEvent(player(name, id));
+        plugin.onLogin(event);
+        return event;
+    }
+
+    /** Runs the last-ordered login handler, as Velocity does once every handler has seen the event. */
+    void settle(LoginEvent event) {
+        plugin.onLoginSettled(event);
+    }
+
+    /** Runs the disconnect handler for a connection of this UUID. */
+    void disconnect(UUID id, DisconnectEvent.LoginStatus status) {
+        plugin.onDisconnect(new DisconnectEvent(player("", id), status));
     }
 
     private static Player player(String name, UUID id) {

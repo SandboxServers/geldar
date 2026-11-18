@@ -31,6 +31,14 @@ public final class LoginGate {
     private final boolean registryExpected;
     private final Set<UUID> admitted = ConcurrentHashMap.newKeySet();
     private final Set<UUID> spectators = ConcurrentHashMap.newKeySet();
+    /** The concurrent-human cap. Only the human lane reserves from it; agents never do. */
+    private final HumanSlots humanSlots = new HumanSlots();
+
+    /**
+     * What {@link #reserve} did with a login. {@link #NEW_SLOT} is the only result that owes the caller a release if the
+     * login is refused after the reservation.
+     */
+    public enum Reservation { DENIED, ADMITTED, NEW_SLOT }
 
     public LoginGate(LifeRegistry registry) {
         this(registry, IdentityLane.AGENT, false);
@@ -87,24 +95,37 @@ public final class LoginGate {
 
     /** Checks the login and, when it passes, remembers the connection as admitted. */
     public boolean admit(UUID connection, String username) {
+        return reserve(connection, username) != Reservation.DENIED;
+    }
+
+    /**
+     * Checks the login and records it. A live or ghost connection is remembered; a human takes one of the
+     * {@link HumanSlots#CAP} slots, and a refused human gets the same denial as any other (no reason is returned).
+     */
+    public Reservation reserve(UUID connection, String username) {
         Admission admission = decide(connection, username);
         switch (admission) {
             case LIVE -> admitted.add(connection);
             case SPECTATOR -> spectators.add(connection);
             case HUMAN -> {
-                // Admitted to the proxy only: not to geldar:cmd, and not a ghost.
+                return switch (humanSlots.reserve(connection)) {
+                    case FULL -> Reservation.DENIED;
+                    case HELD -> Reservation.ADMITTED;
+                    case NEW -> Reservation.NEW_SLOT;
+                };
             }
             case DENIED -> {
-                return false;
+                return Reservation.DENIED;
             }
         }
-        return true;
+        return Reservation.ADMITTED;
     }
 
-    /** Forgets a connection that disconnected. */
+    /** Forgets a connection that disconnected, or whose login was refused after it reserved a slot. Safe to repeat. */
     public void release(UUID connection) {
         admitted.remove(connection);
         spectators.remove(connection);
+        humanSlots.release(connection);
     }
 
     /** True for a live connection that passed {@link #admit}; the {@code geldar:cmd} channel is open only to these. */
