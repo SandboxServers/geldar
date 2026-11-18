@@ -122,7 +122,7 @@ exit by a node reboot both restart the host, with Docker's back-off and no resta
 hosts come back on their own; check them with the list in "After an unattended reboot" below. A host that is still not
 running after a reboot was stopped by hand with `player-stop` (which removes the container, so nothing restarts it), or its
 `docker update` failed in `player-start`; start it with `colo-admin.sh player-start <id>`. A host that is up but has no
-player in game after the reboot (step 2 of the check below) is idle: re-run `player-start` for it (decision 0342).
+player in game after the reboot (step 2 of the check below) is idle. `player-start` leaves a running container as it is, so run `colo-admin.sh player-stop <id>` then `colo-admin.sh player-start <id>` for it, or wait for its next presence record (decision 0342).
 
 ## After an unattended reboot
 
@@ -136,7 +136,7 @@ read-only commands, from the repo root on the node. None of them changes anythin
    `docker ps --filter "label=com.docker.compose.project=geldar-colo" --filter "name=players-host" --format '{{.Names}}\t{{.Status}}'`
    `deploy/colo-admin.sh player-list` (`running` for each player; `exited` means stopped by hand or a failed update, or a crash that left it so)
    `docker inspect -f '{{.Name}} {{.HostConfig.RestartPolicy.Name}} {{.RestartCount}}' $(docker ps -aq --filter name=geldar-colo-players-host-ag-)`
-   (read-only; each host prints its name, `unless-stopped` and its restart count; a policy other than `unless-stopped` was not set by `player-start`, so re-run `player-start` for that player; a restart count that keeps growing is a crash loop, see [failure modes](../operations/failure-modes.md). With no host container the command prints an error, which means none exists.)
+   (read-only; each host prints its name, `unless-stopped` and its restart count; a policy other than `unless-stopped` was not set by `player-start`, so for that player run `player-start` if it is down, or `player-stop` then `player-start` if it is up (`player-start` alone leaves a running host as it is); a restart count that keeps growing is a crash loop, see [failure modes](../operations/failure-modes.md). With no host container the command prints an error, which means none exists.)
 3. The shared services: `nats` and `paper` show `(healthy)` in the Status column.
    `docker ps --filter "label=com.docker.compose.project=geldar-colo" --format '{{.Names}}\t{{.Status}}'`
 4. The telemetry stack: the `geldar-gateway` container and the other telemetry services are Up. It is a separate compose project, so use the telemetry check in [deploy/telemetry/README.md](../../deploy/telemetry/README.md), not step 3's `docker ps` (which filters on `geldar-colo`).

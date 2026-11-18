@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 // Decision 0342: a per-player host restarts after a crash and after a clean exit by a node reboot. Only a stop by hand
-// (player-stop, docker stop) holds it down, which is what unless-stopped does. on-failure:5 did not restart a clean exit.
+// (player-stop, or a raw docker stop) holds it down, which is what unless-stopped does. on-failure:5 did not restart a clean exit.
 const DEPLOY = fileURLToPath(new URL('..', import.meta.url));
 const COMPOSE_TEXT = readFileSync(resolve(DEPLOY, '..', 'compose', 'colo.yml'), 'utf8');
 
