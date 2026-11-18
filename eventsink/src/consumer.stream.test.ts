@@ -1,5 +1,11 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it, vi } from 'vitest';
-import { defaultStreamSettings, loadStreamSettings, type StreamSettings } from './config.ts';
+import {
+  defaultStreamSettings,
+  loadConfig,
+  loadStreamSettings,
+  type StreamSettings,
+} from './config.ts';
 import { ensureStream } from './consumer.ts';
 import { consumingLine } from './main.ts';
 
@@ -82,5 +88,23 @@ describe('consume log line', () => {
 
   it('names the configured stream otherwise', () => {
     expect(consumingLine('GELDAR_EVENTS_NF')).toBe('eventsink: consuming GELDAR_EVENTS_NF');
+  });
+
+  it('prints exactly the CI line for the default config', () => {
+    const config = loadConfig({ POSTGRES_PASSWORD_FILE: '/run/secret' }, () => 'pw');
+    expect(consumingLine(config.stream?.name)).toBe('eventsink: consuming GELDAR_EVENTS');
+  });
+
+  it('prints the per-shard stream name for a per-shard config', () => {
+    const config = loadConfig(
+      { POSTGRES_PASSWORD_FILE: '/run/secret', GELDAR_EVENTS_STREAM: 'GELDAR_EVENTS_NF' },
+      () => 'pw',
+    );
+    expect(consumingLine(config.stream?.name)).toBe('eventsink: consuming GELDAR_EVENTS_NF');
+  });
+
+  it('is the line main.ts prints at start-up', () => {
+    const main = readFileSync(new URL('./main.ts', import.meta.url), 'utf8');
+    expect(main).toContain('console.log(consumingLine(config.stream?.name));');
   });
 });

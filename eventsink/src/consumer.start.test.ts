@@ -364,4 +364,63 @@ describe('startConsumer', () => {
     await vi.advanceTimersByTimeAsync(2_000);
     await stopped;
   });
+
+  /** Fetches one message on `subject` through startConsumer and returns the spies after it settles. */
+  async function deliverOne(subject: string, event: WorldEvent, servedShard?: string) {
+    const ack = vi.fn();
+    const nak = vi.fn();
+    const publish = vi.fn(async (_subject: string, _body: unknown) => ({}));
+    const insertBatch = vi.fn(async () => undefined);
+    const message = {
+      subject,
+      data: new TextEncoder().encode(JSON.stringify(event)),
+      info: { deliveryCount: 1 },
+      ack,
+      nak,
+    };
+    let calls = 0;
+    vi.mocked(jetstream).mockReturnValue({
+      consumers: {
+        get: async () => ({
+          fetch: async () => {
+            calls += 1;
+            return calls === 1 ? batchOf([message]) : idleBatch();
+          },
+        }),
+      },
+      publish,
+    } as never);
+    const running = await startConsumer(
+      {} as NatsConnection,
+      { insertBatch },
+      {
+        batchSize: 10,
+        fetchWaitMs: 1000,
+        servedShard,
+      },
+    );
+    await vi.advanceTimersByTimeAsync(100);
+    const stopped = running.stop();
+    await vi.advanceTimersByTimeAsync(2_000);
+    await stopped;
+    return { ack, nak, publish, insertBatch };
+  }
+
+  it('dead-letters a shard it does not serve, and stores nothing, when servedShard is set', async () => {
+    const colo: WorldEvent = { ...EVENT, shard: 'colo' };
+    const { ack, nak, publish, insertBatch } = await deliverOne('geldar.colo.damage', colo, 'nf');
+    expect(insertBatch).not.toHaveBeenCalled();
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(publish.mock.calls[0]?.[0]).toBe('geldar.nf.dlq');
+    expect(ack).toHaveBeenCalledTimes(1);
+    expect(nak).not.toHaveBeenCalled();
+  });
+
+  it('stores a shard of any name when servedShard is unset', async () => {
+    const colo: WorldEvent = { ...EVENT, shard: 'colo' };
+    const { ack, publish, insertBatch } = await deliverOne('geldar.colo.damage', colo);
+    expect(insertBatch).toHaveBeenCalledTimes(1);
+    expect(publish).not.toHaveBeenCalled();
+    expect(ack).toHaveBeenCalledTimes(1);
+  });
 });
