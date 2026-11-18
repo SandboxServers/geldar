@@ -4,13 +4,14 @@ Status: the compose file and its repo test exist (compose/nf-live.yml, tools/rep
 Nothing here is deployed. The file renders; it has not been started on the node. Public exposure, the shared Caddy and
 the human route are out of scope (owner decisions for the final-instance step). Nothing is published beyond loopback.
 
-**THE NEOFORGE SHARD MUST NOT BE MADE PUBLIC BEFORE THE CONCURRENT-HUMAN CAP IS LIVE ON THE HUMAN PROXY.** The cap merged
-as #726 is 5 concurrent humans, enforced in the identity plugin's human lane, but only on a human proxy that runs a jar
-built from main containing #726 (section 3b). By owner decision (0388, "Amends 0137 for the NeoForge shard") the cap of 5
-is dropped: humans and agents share MAX_PLAYERS = 100. That change is the separate H1c PR, which is NOT built. The values
-in section 3b apply once the H1c PR is merged AND an owner-approved node step changes the live shard; before that the
-running shard still enforces MAX_PLAYERS 10. Until the jar with #726 runs on the human proxy and S1 (section 10.8) passes,
-a public listener has no proven human bound: its only bound is MAX_PLAYERS, which counts bodies too.
+**THE NEOFORGE SHARD MUST NOT BE MADE PUBLIC BEFORE THE CONCURRENT-HUMAN CAP IS LIVE ON THE HUMAN PROXY.** The slot cap
+merged as #726 is enforced in the identity plugin's human lane, but only on a human proxy that runs a jar built from main
+containing #726 and #732 (section 3b). The cap of 5 from 0137 is dropped by owner decision (0388, ACCEPTED 2026-11-18,
+"Amends 0137 for the NeoForge shard"): humans and agents share MAX_PLAYERS = 100. That shared limit of 100 is on main
+(#732: `SHARD_MAX_PLAYERS = 100` in HumanSlots.java; `MAX_PLAYERS: "100"` in compose/nf-live.yml). The running geldar-nf
+enforced MAX_PLAYERS 10 until the owner-approved node step that recreates neoforge at 100. Ops is running that step now;
+this runbook does not claim it is done. Until a jar with #726 and #732 runs on the human proxy and S1 (section 10.8)
+passes, a public listener has no proven human bound: its only bound is MAX_PLAYERS, which counts bodies too.
 
 The per-shard storage design is in docs/analysis/neoforge/per-shard-storage-design.md (one NATS, one Postgres database,
 one sink per shard; see also docs/decisions/0026-one-database-per-shard.md). Read that first for why the shard is separate.
@@ -62,19 +63,19 @@ Other tenants (as the lead gave them): autonomous Paper 14 GiB, scratch-telemetr
 Their other services are UNVERIFIED here. Paper-equivalent sum about 32 GiB plus this shard's 16.25 GiB leaves room in the
 100 GiB headline. Every service has memswap equal to memory (no swap), and a restart policy of unless-stopped (identity-seed: no).
 
-## 3b. Player limits (pinned in compose/nf-live.yml; values apply only after H1c and the node step)
+## 3b. Player limits (pinned in compose/nf-live.yml; the running shard reaches these values at the node step)
 
 The neoforge service pins three itzg variables in compose/nf-live.yml. The scratch overlay
 (compose/opt-in/scratch-neoforge.yml, the paper service) pins MAX_PLAYERS 10 and is SCRATCH-ONLY: it does not follow the
 live value. Names are the itzg image's, as the colo Paper uses them (compose/colo.yml and compose/phase0.yml).
 
-| Variable | compose/nf-live.yml in the repo now | Live NeoForge after the H1c PR is merged AND the owner-approved node step | Autonomous Paper (compose/phase0.yml, unchanged) |
+| Variable | compose/nf-live.yml on main now | Live NeoForge after the owner-approved node step (ops is running it now) | Autonomous Paper (compose/phase0.yml, unchanged) |
 |----------|-------------------------------------|---------------------------------------------------------------------------|---------------------------------------------------|
-| MAX_PLAYERS | 10 | 100 (humans and agents share it) | 400 |
+| MAX_PLAYERS | 100 | 100 (humans and agents share it) | 400 |
 | VIEW_DISTANCE | 8 | 8 (unchanged; NOT sized for 100 players) | 6 |
 | SIMULATION_DISTANCE | 6 | 6 (unchanged; NOT sized for 100 players) | 5 |
 
-Until the H1c PR is merged and the node step changes the live shard, the running shard still enforces MAX_PLAYERS 10.
+The shared limit (#732) is on main. The running shard still enforces MAX_PLAYERS 10 until the node step recreates neoforge at 100.
 The shard has NOT been sized for 100 players: the figures for 100 are unmeasured.
 
 Reasoning. The vanilla world tick runs on one server thread (general Minecraft server behaviour, not measured here), so
@@ -92,29 +93,28 @@ server honours them is UNVERIFIED until a live start reads them back from its lo
 
 Three things these values do not do, stated plainly:
 
-- **The concurrent-human cap of 5 (spec section 8.4, decision 0137 item 1) is the code merged as #726.** On main,
-  `HumanSlots.CAP` is 5 (`plugin/velocity-identity/src/main/java/dev/geldar/identity/HumanSlots.java:18`). By owner
-  decision (0388, "Amends 0137 for the NeoForge shard") the cap is dropped for the NeoForge shard, and the H1c PR (NOT
-  built) makes the human slot capacity the shared limit of 100. A human reserves one slot at the login decision. The slot
-  belongs to the connection object, and the human gives it back on its own disconnect or on a refused login after the
-  reservation. Until H1c, the sixth human gets the generic denial. A UUID that already holds a slot is refused, and a
-  refused duplicate frees nothing. On main today agents never take a slot. MAX_PLAYERS is a different number: it is 10
-  in the repo now (`compose/nf-live.yml:279`) and bounds ALL players, bots included; after the node step it is 100.
+- **The concurrent-human cap is the slot code merged as #726, and its capacity is now the shared limit of 100 (#732).**
+  The cap of 5 from spec section 8.4 and decision 0137 item 1 is dropped for the NeoForge shard by 0388 (ACCEPTED). On
+  main, `HumanSlots.SHARD_MAX_PLAYERS` is 100 (`plugin/velocity-identity/src/main/java/dev/geldar/identity/HumanSlots.java:24`).
+  A human reserves one slot at the login decision. The slot belongs to the connection object, and the human gives it back
+  on its own disconnect or on a refused login after the reservation. At 100 held slots the next human gets the generic
+  denial; until the node step, the running shard's MAX_PLAYERS 10 is the lower bound. A UUID that already holds a slot is
+  refused, and a refused duplicate frees nothing. On main today agents never take a slot. MAX_PLAYERS is a different
+  number: it is 100 in the repo (`compose/nf-live.yml:280`) and bounds ALL players, bots included; the running shard
+  enforces 10 until the node step recreates neoforge at 100.
 - **The cap binds only on a human proxy that runs that plugin build.** The node must run a jar built from main containing
-  #726 before the lane is public (section 10, gate item 1). Until the human proxy runs it, no code enforces the cap.
+  #726 and #732 before the lane is public (section 10, gate item 1). Until the human proxy runs it, no code enforces the cap.
 - **Not built, and not part of #726:** per-IP limits, login rate limiting beyond Velocity's default, and an idle kick
-  (held packet H1b, an open owner item). An idle account can hold its slot, so on main five idle accounts block a sixth
-  human. With the shared limit of 100 (after H1c), idle accounts that fill it would also block agents joining. With no
-  whitelist and no human cap, a per-IP limit matters more, not less.
+  (held packet H1b, dropped by the owner on 2026-11-18; not built). An idle account can hold its slot, so idle accounts can
+  fill the shared limit of 100 and block humans and agents joining. With no whitelist and a limit only at 100, a per-IP
+  limit matters more, not less.
 - **UNVERIFIED until S1:** whether Velocity hands the same `Player` object to `LoginEvent` and to `DisconnectEvent`, and
   whether `DisconnectEvent` fires for every connection that ends after a login. Until S1 (section 10.8, step 5) shows it,
   the slot release is not proven.
 - **The NeoForge shard must not be made public before the cap is live on the human proxy** (the bold note at the top of
   this runbook).
-- **The show-max-players values are display only, and they do not match.** compose/velocity/velocity-nf.toml shows 400
-  (line 9) and compose/velocity/velocity-nf-human.toml shows 10 (line 12). After the H1c PR is merged and the node step
-  changes the live shard, velocity-nf-human.toml is to show 100; that edit is not in this packet. Neither file is edited
-  here. Whether Velocity refuses a login over its own count is UNVERIFIED (not checked in this packet). The real server
+- **The show-max-players values are display only, and they now agree at 100.** compose/velocity/velocity-nf.toml shows
+  100 (line 9) and compose/velocity/velocity-nf-human.toml shows 100 (line 12). Neither file is edited by this runbook. Whether Velocity refuses a login over its own count is UNVERIFIED (not checked in this packet). The real server
   cap is MAX_PLAYERS: 10 on the running shard until the node step, 100 after it.
 
 ## 4. Secrets
