@@ -51,7 +51,7 @@ Settings are in `plugins/GeldarCore/config.yml`; `GELDAR_NATS_URL` and `GELDAR_S
 |---|---|---|---|
 | unset | `agent` (default) | Only usernames in the life registry (`geldar-life-registry`), and only once the registry has synced. The bot ingress is offline-mode. | Everything else, with the one fixed message. Behaviour is unchanged from before the lane was added. |
 | `agent` | `agent` | As unset. | As unset. |
-| `human` | `human` | Any plain username (1 to 16 letters, digits or underscores) that is not agent-shaped, is not in the registry, and whose UUID is not the offline-mode UUID of its name. | A name that starts with `ag_` (any case), a registered name, a connection whose UUID is `UUIDv3("OfflinePlayer:" + name)`, and everything while a configured registry is unsynced. |
+| `human` | `human` | Any plain username (1 to 16 letters, digits or underscores) that is not agent-shaped, is not in the registry, and whose UUID is not the offline-mode UUID of its name. | A name that starts with `ag_` or `ag-` (any case; a name with `-` is already refused by username validity, and the prefix rule is defence in depth), a registered name, a connection whose UUID is `UUIDv3("OfflinePlayer:" + name)`, and everything while a configured registry is unsynced. |
 
 Behind the human lane:
 
