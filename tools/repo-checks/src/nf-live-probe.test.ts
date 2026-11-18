@@ -47,6 +47,10 @@ interface Svc {
   volumes?: unknown[];
   pids_limit?: unknown;
   memswap_limit?: unknown;
+  read_only?: boolean;
+  cap_drop?: string[];
+  security_opt?: string[];
+  stop_grace_period?: string;
   deploy?: { resources?: { limits?: Record<string, unknown> } };
 }
 interface Rendered {
@@ -177,6 +181,15 @@ describe.skipIf(!DOCKER)('nf-live probe overlay: the render', () => {
   it('the probe mounts exactly the nats-body and rcon secrets', () => {
     const names = (probed.services.probe?.secrets ?? []).map((s) => s.source).sort();
     expect(names).toEqual(['nats-body.txt', 'rcon']);
+  });
+
+  it('the probe is hardened: read-only root, no capabilities, no new privileges, a 60 s stop grace period', () => {
+    const probe = probed.services.probe;
+    expect(probe?.read_only).toBe(true);
+    expect(probe?.cap_drop).toEqual(['ALL']);
+    expect(probe?.security_opt).toEqual(['no-new-privileges:true']);
+    // compose normalises the duration in its rendered output: 60s is '1m0s'
+    expect(probe?.stop_grace_period).toBe('1m0s');
   });
 
   it('the probe environment has no plain password, and no RCON_PASSWORD', () => {

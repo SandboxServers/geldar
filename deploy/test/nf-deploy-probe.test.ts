@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
   chmodSync,
   copyFileSync,
@@ -35,7 +35,8 @@ const STUB_SCRIPTS: Record<string, string> = {
     '  compose)',
     '    case "$*" in',
     // biome-ignore lint/suspicious/noTemplateCurlyInString: a shell fixture, not a template
-    '      *" run "*) exit "${PROBE_STATUS:-0}" ;;',
+    // PROBE_BLOCK makes the run block (the signal test kills it); otherwise it exits at once with PROBE_STATUS.
+    '      *" run "*) [ -z "${PROBE_BLOCK:-}" ] || sleep 30; exit "${PROBE_STATUS:-0}" ;;',
     '      *" ps "*) printf "%s\\n" "$COMPOSE_PS"; exit 0 ;;',
     '    esac',
     '    exit 0 ;;',
@@ -251,6 +252,43 @@ describe('nf-deploy.sh probe: the run', () => {
     expect(r.status, r.out).toBe(0);
     expect(rmCalls(repo)).toHaveLength(1);
   });
+});
+
+describe('nf-deploy.sh probe: the image and the signals', () => {
+  it('builds the probe image before the run, so a stale tag is rebuilt (run --no-deps reuses an existing tag)', () => {
+    const repo = makeRepo();
+    expect(run(repo, ['probe'], {}).status).toBe(0);
+    const list = composeCalls(repo);
+    const build = list.findIndex((c) => c.endsWith(' --profile probe build probe'));
+    const exec = list.findIndex((c) => c.endsWith(' run --rm --no-deps probe'));
+    expect(build).toBeGreaterThanOrEqual(0);
+    expect(build).toBeLessThan(exec);
+  });
+
+  // Linux CI only: a POSIX signal to the process group, as a terminal's Ctrl-C sends it. Skipped on Windows (no SIGINT to sh).
+  it.runIf(process.platform !== 'win32')(
+    'on SIGINT, removes the leftover probe with its stop grace period and exits 130',
+    async () => {
+      const repo = makeRepo();
+      const child = spawn('sh', [join(repo, 'deploy', 'nf-deploy.sh'), 'probe'], {
+        env: envFor(repo, { PROBE_BLOCK: '1' }),
+        detached: true,
+        stdio: 'ignore',
+      });
+      const exited = new Promise<number | null>((res) => child.on('exit', (code) => res(code)));
+      // The run is recorded when the stub starts it; it then blocks in sleep, as a probe does.
+      for (let i = 0; i < 200; i++) {
+        if (composeCalls(repo).some((c) => c.endsWith(' run --rm --no-deps probe'))) break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      process.kill(-(child.pid ?? 0), 'SIGINT');
+      expect(await exited).toBe(130);
+      expect(composeCalls(repo).some((c) => c.endsWith(' --profile probe rm -f -s probe'))).toBe(
+        true,
+      );
+    },
+    20000,
+  );
 });
 
 describe('nf-deploy.sh probe: the other verbs are unchanged', () => {

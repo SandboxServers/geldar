@@ -2,8 +2,9 @@
 # Operator script for the live NeoForge project (compose project geldar-nf, compose/nf-live.yml). Run it on the node from an
 # exported tree (a git checkout is refused unless --local, which the tests use), as the operator account (never root, and
 # never with elevated rights). Verbs: plan (prints the gates and the steps, changes nothing), up (refuses an unseeded
-# neoforge-data volume), seed-bundle (once per volume: extracts the offline bundle tarball into it), status, down [--volumes], logs <service>.
-# The project name and the compose file are constants here. deploy/common.sh (the colo model) is NOT sourced, and the script
+# neoforge-data volume), seed-bundle (once per volume: extracts the offline bundle tarball into it), status, down [--volumes], logs <service>,
+# probe (one golem body probe run, with the overlay compose/nf-live-probe.yml added for that run only; section 4c of the runbook).
+# The project name and the base compose file are constants here. deploy/common.sh (the colo model) is NOT sourced, and the script
 # refuses to run when GELDAR_PROJECT or GELDAR_COLO_COMPOSE is set, so no colo setting can reach this project.
 # It never names golem-body or players-host (they are not services of compose/nf-live.yml). down removes containers and
 # networks; --volumes also removes the project's volumes, after the operator types the project name. DEPLOY_DRY_RUN=1 prints
@@ -491,6 +492,14 @@ check_probe_up() {
     die "identity-seed has not exited 0 in $PROJECT; run: nf-deploy.sh up first. Nothing started."
 }
 
+# Ctrl-C (INT) and TERM: the terminal signals the whole foreground group, so the run ends first. Then the leftover probe is
+# stopped and removed with its stop_grace_period (60 s in compose/nf-live-probe.yml, enough for the probe's own cleanup),
+# and the script exits 130 (INT) or 143 (TERM), the usual 128 + signal number.
+probe_signal() {
+  probe_dc rm -f -s probe >/dev/null 2>&1 || true
+  exit "$1"
+}
+
 cmd_probe() {
   check_operator
   check_service_uid
@@ -499,7 +508,12 @@ cmd_probe() {
   check_probe_up
   [ -f "$PROBE_FILE" ] || die "probe overlay not found: $PROBE_FILE"
   rc=0
+  trap 'probe_signal 130' INT
+  trap 'probe_signal 143' TERM
+  # build first: `run --no-deps` reuses an existing tag, so a stale image would keep an old isolation guard.
+  act probe_dc build probe
   act probe_dc run --rm --no-deps probe || rc=$?
+  trap - INT TERM
   act probe_dc rm -f probe >/dev/null 2>&1 || true
   exit "$rc"
 }

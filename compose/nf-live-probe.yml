@@ -55,6 +55,14 @@ services:
       geldar.probe: "true"
       com.centurylinklabs.watchtower.enable: "false"
     restart: "no"
+    # Hardening (UNVERIFIED on a node: the probe writes nothing and needs no capability, but no container of this project has
+    # run it yet). compose/opt-in/scratch-probe.yml sets none of these, and the base services set only read_only on one service.
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    # The probe's own cleanup (registry entry, RCON whitelist, verify) takes about 30 s, and the Docker default is 10 s: a stop
+    # or a `compose rm -s` must not SIGKILL it mid-cleanup. The verb's Ctrl-C and TERM path uses this grace period.
+    stop_grace_period: 60s
 
 # Declared here so that the file renders alone: the same definitions as compose/nf-live.yml (the nf network, the rcon secret).
 networks:
