@@ -611,6 +611,7 @@ Status: PROPOSED. The owner has not accepted decision 0388. The lane is not open
 - **Human lane:** `velocity-human` (compose/nf-live-human.yml), the only port that overlay publishes: `<bind-ip>:<port>` to container port 25565. Set at bring-up only, through node env: `NF_HUMAN=on`, `NF_HUMAN_BIND=<bind-ip>`, `NF_HUMAN_PORT=<port>`. Unset, the repo default renders as `127.0.0.1:46566`, which is loopback and not public.
 - `velocity-human` is on network `nf-human` only. `nats` and `neoforge` join `nf-human` as well. Nothing else does.
 - `velocity-human` reads NATS as user `human` (`nats-human.txt`), read-only on the two identity buckets.
+- `velocity-human` has its own NATS inbox prefix, `_INBOX.human.` (`GELDAR_NATS_INBOX_PREFIX`, set on `velocity-human` only, `compose/nf-live-human.yml:54`). The user `human` is limited to `_INBOX.human.>`. This is account-level isolation only: the human user shares the one NATS account with the others. A separate NATS account is NOT built and NOT in scope. Not yet verified on a live NATS (10.10).
 - `velocity-human` has no RCON and no postgres access (10.5).
 
 ### 10.2 Choosing the port
@@ -653,12 +654,15 @@ Procedure (the owner runs it; the password values are never printed):
 
 Each step is run by the owner. Steps marked OWNER-OK-REQUIRED are not run by an agent.
 
+Ordering note (PR numbers are references only). Merge the cap PR first: #726 (the concurrent-human cap, the fail-closed registry gate and the human slots) must be merged and shipped before the lane opens. The other PRs by number: #727 (chat guard), #728 (overlay), #729 (NATS user and network). The H6 PR (the inbox prefix) has no number yet. The lane stays closed until #726 is merged and shipped, because only then is registry sync gated.
+
 1. **OWNER-OK-REQUIRED:** accept 0388; answer the 0135 question in it; choose the cap-abuse posture (residual risk 3).
 2. **OWNER-OK-REQUIRED:** merge the cap PR and ship it to the node (the identity jar is mounted read-only; a missing jar fails the start, per the overlay's comment).
 3. **OWNER-OK-REQUIRED:** if the node has the ten-file set, run 10.6 first.
 4. Choose `<port>` and `<bind-ip>` (10.2): read-only `ss -ltn` on the node. For S1, `<bind-ip>` is the node's LAN address; the owner decides the public gateway target later.
-5. `nf-deploy.sh plan` with `NF_HUMAN=on`, `NF_HUMAN_BIND`, `NF_HUMAN_PORT` and `NF_SERVICE_UID` exported (read only; it changes nothing).
-6. **OWNER-OK-REQUIRED:** `nf-deploy.sh up` with the same environment. With `NF_HUMAN=on` the plan lists `up -d --wait velocity-human` as its last step.
+5. `nf-deploy.sh plan` with `NF_HUMAN=on`, `NF_HUMAN_BIND`, `NF_HUMAN_PORT` and `NF_SERVICE_UID` exported (read only; it changes nothing). The first `NF_HUMAN=on` plan says that it recreates `nats`, `eventsink` and `neoforge`, because their network set changes. `NF_HUMAN=on` needs `nats-human.txt` and a deployed `nats-auth.conf` that names the `human` user; the gate refuses otherwise (`deploy/nf-human-lib.sh`).
+6. **OWNER-OK-REQUIRED:** `nf-deploy.sh up` with the same environment. With `NF_HUMAN=on` the plan lists `up -d --wait velocity-human` as its last step. If the proxy does not become healthy, `up` stops and stops only `velocity-human`. The healthcheck waits for the identity plugin's ready marker (`/tmp/geldar-identity.ready`) with a 35 s window (20 s start period, 3 retries at 5 s), so a missing or invalid plugin fails in 35 s. `restart` is `"no"`, so nothing restarts the proxy by itself.
+   Orphan guard: while `velocity-human` exists, `plan`, `up`, `refresh-secrets` and `probe` refuse with `NF_HUMAN` unset or `off`, and name `human-down` and `NF_HUMAN=on`. `status`, `logs`, `down` and `human-down` stay allowed.
 7. **Verify from OUTSIDE the node (read only, no join):** a TCP connect to `<bind-ip>:<port>` answers. The same address on 46565 and on 25565 does not answer. Then `nf-deploy.sh logs velocity-human` and `status` (read only).
 8. **S1, on the LAN (10.8).** Owner-run.
 9. **OWNER-OK-REQUIRED, after S1 passes:** the gateway rule (10.4) and the SRV record (10.3).
@@ -679,6 +683,8 @@ Each step is run by the owner. Steps marked OWNER-OK-REQUIRED are not run by an 
 3. `nf-deploy.sh human-down`. It runs `docker compose rm -sf velocity-human` and touches no other service. Plain `nf-deploy.sh down` stops the whole project, including the agent lane; do not use it for this.
 4. Unset `NF_HUMAN`, `NF_HUMAN_BIND` and `NF_HUMAN_PORT` for later runs.
 
+`human-down` is the rollback that the orphan guard names: after it, `plan`, `up` and `refresh-secrets` run again with `NF_HUMAN` unset.
+
 What is left behind: `human-down` removes the container only, so the `nf-human` network stays. `down` runs `docker compose down`, which should also remove the project's networks, including `nf-human`; that is UNVERIFIED on the node.
 
 ### 10.10 UNVERIFIED (do not treat any of these as checked)
@@ -693,6 +699,8 @@ What is left behind: `human-down` removes the container only, so the `nf-human` 
 - Whether a NATS config reload is enough (10.6).
 - The Velocity event order for slot release (0388 residual risk 4).
 - Whether the `nf-human` network is removed by `down` (10.9).
+- The H6 inbox prefix on a live NATS: the KV watch under `_INBOX.human.`, the exact permission set a push watch needs, whether the server enforces `_INBOX.human.>` as written, and whether the client ever publishes to an inbox (0388 residual risk 9).
+- Whether the ready marker is written only while the registry is synced (`docs/reference/velocity-identity-plugin.md:98`). The healthcheck proves plugin load and an open port; registry sync is proven only once the cap PR (#726) is merged and shipped.
 
 ### 10.11 Not built
 
