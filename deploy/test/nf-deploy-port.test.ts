@@ -37,8 +37,20 @@ const GOOD_VERBOSE = [
 ];
 // The one listener socket of a project velocity published on loopback only (ss -Hltn columns: state, recv, send, local, peer).
 const LISTEN_LOOPBACK = 'LISTEN 0 4096 127.0.0.1:46565 0.0.0.0:*';
-// A `docker ps --format` row: project label, service label, published ports (the format the script asks for).
-const OWN_ROW = 'geldar-nf|velocity|127.0.0.1:46565->25565/tcp';
+// A `docker ps --format` row: project label, service label, Ports. The real velocity lists its EXPOSE 25577/tcp (no "->")
+// before the one published mapping, so the Ports field has two comma-separated tokens.
+const OWN_ROW = 'geldar-nf|velocity|25577/tcp, 127.0.0.1:46565->25565/tcp';
+const PUBLISHED_ONLY_ROW = 'geldar-nf|velocity|127.0.0.1:46565->25565/tcp';
+// The real `docker ps` output for the project: one row per container (five), each with its own Ports text. Only the velocity
+// row publishes 46565; the eventsink row has no published or exposed port (an empty Ports field).
+const PROJECT_ROWS = [
+  'geldar-nf|velocity|25577/tcp, 127.0.0.1:46565->25565/tcp',
+  'geldar-nf|neoforge|25565/tcp, 25575/tcp',
+  'geldar-nf|eventsink|',
+  'geldar-nf|postgres|5432/tcp',
+  'geldar-nf|nats|4222/tcp, 6222/tcp, 8222/tcp',
+];
+const FIVE_ROWS = PROJECT_ROWS.join('\n');
 const STUB_SCRIPTS: Record<string, string> = {
   // ps with the port format (it names the service label) answers from PS_ROWS, or fails with PS_EXIT. Other ps calls answer
   // from DOCKER_LABELS (the colo check). Everything else succeeds.
@@ -182,6 +194,13 @@ describe("nf-deploy.sh port gate: the project's own velocity may hold 127.0.0.1:
     expect(composeCalls(repo).length).toBeGreaterThan(0);
   });
 
+  it('plan and up pass with the five real project rows when exactly one velocity row publishes 46565', () => {
+    const repo = makeRepo();
+    const env = { SS_BUSY: '1', PS_ROWS: FIVE_ROWS };
+    expect(run(repo, ['plan'], env).status).toBe(0);
+    expect(run(repo, ['up'], env).status).toBe(0);
+  });
+
   it('a free port still passes with no container (the gate is only consulted once a listener exists)', () => {
     const repo = makeRepo();
     expect(run(repo, ['plan']).status).toBe(0);
@@ -203,6 +222,22 @@ describe("nf-deploy.sh port gate: the project's own velocity may hold 127.0.0.1:
       {},
     ],
     ['a host process (no container owns the port)', '', {}],
+    [
+      'a second published mapping on loopback',
+      'geldar-nf|velocity|127.0.0.1:46565->25565/tcp, 127.0.0.1:46566->25566/tcp',
+      {},
+    ],
+    [
+      '0.0.0.0 published after an exposed port',
+      'geldar-nf|velocity|25577/tcp, 0.0.0.0:46565->25565/tcp',
+      {},
+    ],
+    [
+      '[::] published after an exposed port',
+      'geldar-nf|velocity|25577/tcp, [::]:46565->25565/tcp',
+      {},
+    ],
+    ['only exposed ports with the listener', 'geldar-nf|velocity|25577/tcp', {}],
     ['the own row listed twice (two containers)', `${OWN_ROW}\n${OWN_ROW}`, {}],
     ['a docker ps failure', OWN_ROW, { PS_EXIT: '1' }],
     ['docker output that does not parse', 'not a container line', {}],
@@ -233,4 +268,89 @@ describe("nf-deploy.sh port gate: the project's own velocity may hold 127.0.0.1:
       expect(composeCalls(repo)).toEqual([]);
     },
   );
+
+  const accepted: [string, string][] = [
+    ['the real line (an exposed port before the published mapping)', OWN_ROW],
+    [
+      'an exposed port after the published mapping',
+      'geldar-nf|velocity|127.0.0.1:46565->25565/tcp, 25577/tcp',
+    ],
+    [
+      'two exposed ports around the published mapping',
+      'geldar-nf|velocity|25577/tcp, 127.0.0.1:46565->25565/tcp, 25578/tcp',
+    ],
+    ['the published mapping alone', PUBLISHED_ONLY_ROW],
+  ];
+
+  it.each(accepted)('plan and up pass with %s', (_label, rows) => {
+    const repo = makeRepo();
+    const env = { SS_BUSY: '1', PS_ROWS: rows };
+    for (const verb of ['plan', 'up']) expect(run(repo, [verb], env).status).toBe(0);
+  });
+
+  // Each refusal names the check that failed (the message keeps "already listens on port 46565" before it).
+  const reasons: [string, string, Record<string, string>, string][] = [
+    ['a host process (no row)', '', {}, 'no docker row'],
+    ['the own row listed twice', `${OWN_ROW}\n${OWN_ROW}`, {}, 'more than one docker ps row'],
+    [
+      'two velocity rows among the five project rows',
+      `${FIVE_ROWS}\ngeldar-nf|velocity|127.0.0.1:46565->25565/tcp`,
+      {},
+      'more than one docker ps row',
+    ],
+    [
+      'the velocity of the five rows on 0.0.0.0',
+      FIVE_ROWS.replace('127.0.0.1:46565->25565/tcp', '0.0.0.0:46565->25565/tcp'),
+      {},
+      'published mapping is not exactly 127.0.0.1:46565->25565/tcp: 0.0.0.0:46565->25565/tcp',
+    ],
+    [
+      'five project rows with no velocity row',
+      PROJECT_ROWS.slice(1).join('\n'),
+      {},
+      'wrong service',
+    ],
+    ['a docker ps failure', OWN_ROW, { PS_EXIT: '1' }, 'docker ps failed'],
+    ['output that does not parse', 'not a container line', {}, 'docker output does not parse'],
+    [
+      'another project',
+      'geldar-colo|velocity|127.0.0.1:46565->25565/tcp',
+      {},
+      'wrong compose project',
+    ],
+    ['another service', 'geldar-nf|neoforge|127.0.0.1:46565->25565/tcp', {}, 'wrong service'],
+    ['only exposed ports', 'geldar-nf|velocity|25577/tcp', {}, 'unpublished only'],
+    [
+      'a published mapping on another port',
+      'geldar-nf|velocity|25577/tcp, 127.0.0.1:46566->25566/tcp',
+      {},
+      'published mapping is not exactly 127.0.0.1:46565->25565/tcp: 127.0.0.1:46566->25566/tcp',
+    ],
+    [
+      'a second published mapping',
+      'geldar-nf|velocity|127.0.0.1:46565->25565/tcp, 127.0.0.1:46566->25566/tcp',
+      {},
+      'more than one published mapping',
+    ],
+    [
+      '0.0.0.0 after an exposed port',
+      'geldar-nf|velocity|25577/tcp, 0.0.0.0:46565->25565/tcp',
+      {},
+      'published mapping is not exactly 127.0.0.1:46565->25565/tcp: 0.0.0.0:46565->25565/tcp',
+    ],
+    [
+      'the listener on 0.0.0.0',
+      OWN_ROW,
+      { SS_LINES: 'LISTEN 0 4096 0.0.0.0:46565 0.0.0.0:*' },
+      'ss socket not 127.0.0.1:46565',
+    ],
+  ];
+
+  it.each(reasons)('names the failed check when it refuses %s', (_label, rows, extra, reason) => {
+    const repo = makeRepo();
+    const r = run(repo, ['plan'], { SS_BUSY: '1', PS_ROWS: rows, ...extra });
+    expect(r.status).toBe(1);
+    expect(r.out).toContain('already listens on port 46565');
+    expect(r.out).toContain(`own velocity check failed: ${reason}`);
+  });
 });

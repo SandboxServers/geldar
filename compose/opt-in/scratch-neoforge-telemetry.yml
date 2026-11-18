@@ -1,0 +1,67 @@
+# Scratch NeoForge OTLP receiver (suffix nf). Layers after compose/opt-in/scratch-neoforge-ledger.yml and is added by deploy/scratch/scratch.sh
+# only when SCRATCH_PLATFORM=neoforge and SCRATCH_NEOFORGE_TELEMETRY_SINK=1 (see deploy/scratch/scratch-ledger.sh and
+# docs/runbooks/scratch-stack.md, "Telemetry sink on the scratch NeoForge stack"). Without it this file is not in the compose command, so
+# the default render has no sink. The receiver answers as geldar-gateway on the scratch project network only, so the agent properties
+# file (compose/neoforge/otel-agent.properties, http://geldar-gateway:4318) works unchanged. It publishes no port and declares no network
+# of its own: the project's default network is the only one. Output: otlp.jsonl in SCRATCH_TELEMETRY_OUT (an absolute host directory
+# that scratch.sh checks on up).
+# The otel-sink service and its config are a copy of compose/opt-in/scratch-telemetry.yml (the Paper scratch sink): same image digest,
+# same receiver config, same caps. Change both together; scratch-neoforge-script.test.ts compares the digest.
+# Nothing here names the live stack, a live network, a secret or a host address.
+services:
+  paper:
+    depends_on:
+      - otel-sink
+
+  # Image reused from deploy/telemetry/compose.gateway.yml (same digest, 0.164.0, released 2026-10-26).
+  # It runs as the account that started the stack, so it can write the bind-mounted output directory.
+  otel-sink:
+    image: otel/opentelemetry-collector-contrib@sha256:340c9ca6a36617084c6661bdc4f0fe92b7cda5a805d61673ec8db375fddc522b # 0.164.0
+    command: ["--config=/etc/otelcol/sink.yaml"]
+    user: "${SCRATCH_RUN_UID:?set by deploy/scratch/scratch.sh}:${SCRATCH_RUN_GID:?set by deploy/scratch/scratch.sh}"
+    configs:
+      - source: otel-sink
+        target: /etc/otelcol/sink.yaml
+    volumes:
+      # Absolute host directory outside the repo; one JSON object per OTLP export request goes to otlp.jsonl in it.
+      - ${SCRATCH_TELEMETRY_OUT:?set an absolute host directory for the sink output}:/out
+    networks:
+      default:
+        aliases:
+          - geldar-gateway
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "0.5"
+    memswap_limit: 512m
+    labels:
+      geldar.scratch: "true"
+    restart: "no"
+
+configs:
+  otel-sink:
+    content: |
+      receivers:
+        otlp:
+          protocols:
+            http:
+              endpoint: ":4318"
+      exporters:
+        file:
+          path: /out/otlp.jsonl
+          flush_interval: 1s
+      service:
+        telemetry:
+          metrics:
+            level: none
+        pipelines:
+          metrics:
+            receivers: [otlp]
+            exporters: [file]
+          logs:
+            receivers: [otlp]
+            exporters: [file]
+          traces:
+            receivers: [otlp]
+            exporters: [file]
