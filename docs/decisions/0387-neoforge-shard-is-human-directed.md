@@ -74,3 +74,4 @@ Dated 2026-11-18. The status line above is unchanged: this record is still PROPO
 - Per-IP and login-rate limits (H1b) are NOT built. They are an open owner item.
 - The `ag-` versus `ag_` question (item 5 (b)) stays open.
 - The text above is not edited, so a reader sees both the original statement and the amendment that supersedes it.
+- 2026-11-18: owner dropped item 5(d) (online identity is enough) and H1b (rate limits left alone); decision 0388 is ACCEPTED.
