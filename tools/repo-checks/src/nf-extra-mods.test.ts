@@ -53,7 +53,8 @@ describe('extra mods: the overlays (no docker needed)', () => {
 
   it.each(MODS)('%s: one read-only bind, create_host_path false, the fixed target', (name) => {
     const volumes = overlay(name).services.neoforge.volumes as Record<string, unknown>[];
-    expect(volumes).toHaveLength(1);
+    // BlueMap also mounts the committed config bundle (nf-bluemap-bundle.test.ts, nf-bluemap-mount.test.ts); the jar mount is first.
+    expect(volumes).toHaveLength(name === 'bluemap' ? 2 : 1);
     const vol = volumes[0] as Record<string, unknown>;
     expect(vol).toMatchObject({
       type: 'bind',

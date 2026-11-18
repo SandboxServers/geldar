@@ -66,12 +66,15 @@ check_extra_mods() {
     esac
   done
   EXTRA_ENABLED=${EXTRA_ENABLED# }
+  case " $EXTRA_ENABLED " in
+    *" bluemap "*) check_bluemap_bundle; check_bluemap_loader ;;
+  esac
   if [ -n "$EXTRA_ENABLED" ]; then
     say "extra mods: the host jars match their pins (no docker call made yet)"
   fi
 }
 
-# check_extra_mods_drop: with NF_EXTRA_MODS unset or empty, a running neoforge container that still has extra mod jars mounted
+# check_extra_mods_drop:with NF_EXTRA_MODS unset or empty, a running neoforge container that still has extra mod jars mounted
 # would be recreated without them, so the run is refused before any compose call. Any non-empty value passes here (check_extra_mods
 # has parsed it; NF_EXTRA_MODS=none is the deliberate removal). Read-only docker calls: ps (the project's neoforge rows), then
 # inspect (the mounts of each row). A failure of either refuses. Mounts under /geldar/extra-mods are mods, except bluemap-config.
@@ -94,6 +97,46 @@ check_extra_mods_drop() {
   done
   names=$(printf '%s\n' "$all" | awk 'index($0, "/geldar/extra-mods") == 1 && $0 != "/geldar/extra-mods/bluemap-config" { n = substr($0, 19); sub(/^\//, "", n); sub(/\.jar$/, "", n); if (n == "") n = $0; printf "%s%s", (c++ ? "," : ""), n }')
   [ -z "$names" ] || die "the running neoforge container has extra mods mounted ($names) but NF_EXTRA_MODS is unset: it would be recreated WITHOUT them; source the ops env file that sets NF_EXTRA_MODS (a sourced shell file in the ops user's home on the node), or set NF_EXTRA_MODS=none to remove them on purpose"
+}
+
+# BlueMap's committed config bundle, mounted into the container by compose/nf-live-mod-bluemap.yml. Tests point it at a fixture.
+BLUEMAP_BUNDLE=$ROOT/plugins/bluemap/neoforge
+
+# check_bluemap_bundle: with BlueMap enabled, the bundle must match its MANIFEST.sha256 before any docker call: a regular directory, a
+# regular manifest, every listed file a regular non-symlink file with its sha256, no symlink, and no other file in the directory (a stray
+# default would be installed). The first problem is named; file contents are never printed.
+check_bluemap_bundle() {
+  b=$BLUEMAP_BUNDLE
+  [ -d "$b" ] && [ ! -L "$b" ] || die "BlueMap is enabled but its config bundle $b is not a directory; refusing"
+  m=$b/MANIFEST.sha256
+  [ -f "$m" ] && [ ! -L "$m" ] || die "BlueMap is enabled but $m is missing or not a regular file; refusing"
+  link=$(cd "$b" && find . -type l | head -n 1)
+  [ -z "$link" ] || die "the BlueMap config bundle holds a symlink ($link); refusing"
+  bad=$(awk 'NF != 2 || length($1) != 64 || $1 ~ /[^0-9a-f]/ || $2 !~ /^([A-Za-z0-9_-]+\/)?[A-Za-z0-9_-]+\.conf$/ { print NR; exit }' "$m")
+  [ -z "$bad" ] || die "the BlueMap MANIFEST.sha256 line $bad is not '<sha256>  <path>'; refusing"
+  while read -r want rel; do
+    f=$b/$rel
+    [ -f "$f" ] && [ ! -L "$f" ] || die "the BlueMap config bundle lacks the regular file $rel; refusing"
+    got=$(sha256sum <"$f" | awk '{print $1}')
+    [ "$got" = "$want" ] || die "the BlueMap config bundle file $rel does not match MANIFEST.sha256; refusing"
+  done <"$m"
+  want_list=$(awk 'NF > 0 { print $2 }' "$m"; echo MANIFEST.sha256)
+  for f in $(cd "$b" && find . -type f | sed 's|^\./||' | LC_ALL=C sort); do
+    printf '%s\n' "$want_list" | grep -qxF -- "$f" || die "the BlueMap config bundle holds $f, which MANIFEST.sha256 does not list; refusing"
+  done
+}
+
+# The BlueMap config loader (compose/neoforge/extra-mods-bluemap-config.sh) is sourced by the entrypoint, so it is checked here too: the
+# same sha256 the BlueMap overlays pin (a test asserts the pins equal this constant and the file). A changed loader is refused before docker.
+BLUEMAP_LOADER=$ROOT/compose/neoforge/extra-mods-bluemap-config.sh
+BLUEMAP_LOADER_SHA256=05b56b57b9bf87e6c0e7ece278a81dbcf7af56b59aade0ac51ef5b19144ecb9e
+
+# check_bluemap_loader: a regular, non-symlink file whose sha256 is BLUEMAP_LOADER_SHA256. Refused before any docker call otherwise.
+check_bluemap_loader() {
+  f=$BLUEMAP_LOADER
+  [ -f "$f" ] && [ ! -L "$f" ] || die "BlueMap is enabled but its config loader $f is missing or not a regular file; refusing"
+  got=$(sha256sum <"$f" | awk '{print $1}')
+  [ "$got" = "$BLUEMAP_LOADER_SHA256" ] || die "the BlueMap config loader $f does not match its pinned sha256; refusing (regenerate the pin with: sha256sum $f)"
 }
 
 # extra_plan_lines: one plan line per enabled mod, with its version and the first 12 hex digits of its pin.

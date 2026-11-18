@@ -1,6 +1,8 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -119,11 +121,23 @@ const ON = (): Record<string, string> => ({ GELDAR_NF_EXTRA_CHUNKY_SHA256: CHUNK
 const copyOf = (c: Case) => join(c.mods, 'chunky.jar');
 const envOf = (name: Mod) => `GELDAR_NF_EXTRA_${name.toUpperCase()}_SHA256`;
 const pinOf = (name: Mod) => sha256(BODY[name]);
-const pinFor = (name: Mod): Record<string, string> => ({ [envOf(name)]: pinOf(name) });
-/** Mounts only NAME's fixture jar: the chunky jar from setup would otherwise refuse for its unset pin. */
+/** With BlueMap enabled the entrypoint also needs its loader's pin (the overlays' GELDAR_NF_EXTRA_BLUEMAP_LOADER_SHA256). */
+const pinFor = (name: Mod): Record<string, string> => ({
+  [envOf(name)]: pinOf(name),
+  ...(name === 'bluemap' ? { GELDAR_NF_EXTRA_BLUEMAP_LOADER_SHA256: sha256(readFileSync(BLUEMAP_LOADER, 'utf8')) } : {}),
+});
+/** The committed BlueMap config bundle (plugins/bluemap/neoforge). With BlueMap enabled the entrypoint refuses without it. */
+const BUNDLE_DIR = `${ROOT}plugins/bluemap/neoforge`;
+/** The loader the entrypoint sources, mounted beside the bundle as /geldar/extra-mods/bluemap-config.sh. */
+const BLUEMAP_LOADER = `${ROOT}compose/neoforge/extra-mods-bluemap-config.sh`;
+/** Mounts only NAME's fixture jar: the chunky jar from setup would otherwise refuse for its unset pin. BlueMap also gets its bundle. */
 function mountOnly(c: Case, name: Mod) {
   rmSync(join(c.mount, 'chunky.jar'), { force: true });
   writeFileSync(join(c.mount, `${name}.jar`), BODY[name]);
+  if (name === 'bluemap') {
+    cpSync(BUNDLE_DIR, join(c.mount, 'bluemap-config'), { recursive: true });
+    copyFileSync(BLUEMAP_LOADER, join(c.mount, 'bluemap-config.sh'));
+  }
 }
 /** The real pins in compose/neoforge/extra-mods.pins, as the entrypoint's extra_prep calls spell them. */
 const REAL_PIN = {
@@ -375,6 +389,17 @@ describe.skipIf(skipWithoutSh())(
       const r = run(c, pinFor(name));
       expect(r.status, r.stderr).toBe(0);
       expect(sha256(readFileSync(join(c.mods, `${name}.jar`), 'utf8'))).toBe(pinOf(name));
+    });
+
+    it('bluemap enabled without its config bundle mount: refuses, installs no config, and nothing starts', () => {
+      const c = setup();
+      mountOnly(c, 'bluemap');
+      rmSync(join(c.mount, 'bluemap-config'), { recursive: true, force: true });
+      const r = run(c, pinFor('bluemap'));
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain('config bundle');
+      expect(r.stdout).not.toContain('started');
+      expect(existsSync(join(c.data, 'config', 'bluemap'))).toBe(false);
     });
   },
 );

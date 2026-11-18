@@ -118,8 +118,40 @@ A pin in the environment with no jar mounted is a mismatch between the overlay a
 out (the mod would silently not load) or the jar path is wrong. The start stops with one line, so the operator sees it. Refusing
 also matches the ledger jar rule. The same stop applies to a mounted jar with no pin.
 
+## BlueMap config seeding (privacy: no player shown)
+
+BlueMap's defaults show players, so BlueMap cannot start on its defaults. With BlueMap enabled the NeoForge shard uses the committed
+config bundle plugins/bluemap/neoforge (plugin.conf, core.conf, webserver.conf, webapp.conf, maps/overworld, nether, end, and
+storages/file.conf), listed with sha256 in plugins/bluemap/neoforge/MANIFEST.sha256. The overlay mounts it read-only at
+/geldar/extra-mods/bluemap-config, and the path is fixed in the repository.
+
+- Before any docker call, deploy/nf-extra-mods-lib.sh checks the bundle: the manifest exists, every listed file matches its hash, and
+  the directory holds no other file (no stray BlueMap default). A mismatch stops the deploy and names the first problem.
+- The entrypoint verifies the mounted bundle again. A missing mount, a changed byte, an extra file or a symlink refuses the start
+  before anything is copied. Then it installs the bundle into config/bluemap/ and writes config/bluemap/.geldar-config.sha256 (the
+  manifest's sha256). The java process runs in /data, because BlueMap reads its config path relative to the working directory.
+- The install replaces a file that differs from the bundle. The operator's previous file is kept once, as <name>.operator-bak (not a
+  .conf, so BlueMap never loads it). An existing .operator-bak is not overwritten. A second divergence replaces the file and keeps the
+  first backup. maps/ and storages/ end with exactly the bundle's files: a stray *.conf there is moved to <name>.operator-bak.
+  packs/ and the rest of config/bluemap/ are not touched. A restart with identical files changes nothing.
+- Editing a bundle file means regenerating MANIFEST.sha256: tools/repo-checks/src/nf-bluemap-bundle.test.ts prints the lines to
+  paste. The privacy settings (no player markers, no skins, all game modes hidden, no players.json, webserver off) are asserted by
+  tools/repo-checks/src/nf-bluemap-privacy.test.ts.
+
+Read-only checks after the first start (ops; do not run /bluemap reload unless the config dir is intact):
+
+- `ls /data/config/bluemap/maps` prints `end.conf nether.conf overworld.conf`.
+- `sha256sum` of the installed files equals the manifest, and `/data/config/bluemap/.geldar-config.sha256` holds the manifest's sha256.
+- `find /data/bluemap -name players.json` prints nothing.
+- `ss -ltn` shows nothing on port 8100.
+- The log has the BlueMap load line, and neither "You must accept the required file download" nor "Failed to create default".
+- The java process runs in /data: `readlink /proc/<pid>/cwd` prints /data.
+
 ## UNVERIFIED
 
+- The BlueMap config: the cwd of the java process in the image (the entrypoint now does cd /data before exec, but the image's start
+  script was not read), the real default storages/file.conf format (storages/file.conf follows the researcher's reading of v5.29),
+  and a real BlueMap start on the node: none of these was run here.
 - Whether the NeoForge server loads Chunky 1.5.66 and BlueMap 5.29 when the jar is copied this way: only a run proves it.
 - Whether each mod's own config or first-run behaviour needs anything beyond the jar: not checked.
 - The sha256 of the Chunky jar was computed from the downloaded file; the BlueMap sha256 was supplied by its owner and has not

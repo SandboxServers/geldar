@@ -14,6 +14,7 @@ services:
     environment:
       GELDAR_NF_EXTRA_CHUNKY_SHA256: "9f9303da0185fa0ae0e1d3f10a0f07b8d9e5a21e77931d4fc162dcc718a0ab4f"
       GELDAR_NF_EXTRA_BLUEMAP_SHA256: "8938f4453af4b53970c86e43d0bd26b4a88980e4e6639f818fa770d0f61c43df"
+      GELDAR_NF_EXTRA_BLUEMAP_LOADER_SHA256: "05b56b57b9bf87e6c0e7ece278a81dbcf7af56b59aade0ac51ef5b19144ecb9e"
     volumes:
       - type: bind
         source: ${SCRATCH_EXTRA_CHUNKY_JAR_HOST:-./scratch-unset/chunky.jar}
@@ -24,6 +25,18 @@ services:
       - type: bind
         source: ${SCRATCH_EXTRA_BLUEMAP_JAR_HOST:-./scratch-unset/bluemap.jar}
         target: /geldar/extra-mods/bluemap.jar
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../plugins/bluemap/neoforge
+        target: /geldar/extra-mods/bluemap-config
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../neoforge/extra-mods-bluemap-config.sh
+        target: /geldar/extra-mods/bluemap-config.sh
         read_only: true
         bind:
           create_host_path: false

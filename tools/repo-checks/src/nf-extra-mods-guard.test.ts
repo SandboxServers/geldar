@@ -22,6 +22,8 @@ const NEOFORGE_ROW = `abc123|${PROJECT}|neoforge`;
 const MOUNTS_BOTH =
   '/geldar/extra-mods/chunky.jar\n/geldar/extra-mods/bluemap.jar\n/geldar/extra-mods/bluemap-config\n/data\n';
 const MOUNTS_NONE = '/data\n/geldar/extra-mods/bluemap-config\n';
+/** The inspect output of a container with the BlueMap jar and its config bundle mounted (no chunky). */
+const MOUNTS_BLUEMAP = '/data\n/geldar/extra-mods/bluemap.jar\n/geldar/extra-mods/bluemap-config\n';
 const REFUSAL = (names: string) =>
   `the running neoforge container has extra mods mounted (${names}) but NF_EXTRA_MODS is unset: it would be recreated WITHOUT them; source the ops env file that sets NF_EXTRA_MODS (a sourced shell file in the ops user's home on the node), or set NF_EXTRA_MODS=none to remove them on purpose`;
 
@@ -78,6 +80,8 @@ function drive(env: Record<string, string>, fx: Fixture = {}) {
       'need() { command -v "$1" >/dev/null 2>&1 || die "missing command: $1"; }',
       checkHostFile,
       `. "${slash(LIB)}"`,
+      // The committed bundle, so the BlueMap check passes; the real directory is the one the lib names.
+      `BLUEMAP_BUNDLE="${slash(join(LIB, '..', '..', 'plugins', 'bluemap', 'neoforge'))}"`,
       `PROJECT="${PROJECT}"`,
       `EXTRA_PINS="${slash(pins)}"`,
       'check_extra_mods',
@@ -187,6 +191,13 @@ describe.skipIf(skipWithoutSh())(
       const r = drive({}, { ps: NEOFORGE_ROW, inspectOut: MOUNTS_NONE });
       expect(r.status, r.err).toBe(0);
       expect(r.docker).toContain('docker inspect');
+    });
+
+    it('bluemap.jar and bluemap-config mounted, NF_EXTRA_MODS unset: names bluemap only, never bluemap-config', () => {
+      const r = drive({}, { ps: NEOFORGE_ROW, inspectOut: MOUNTS_BLUEMAP });
+      expect(r.status).toBe(1);
+      expect(r.err).toContain(REFUSAL('bluemap'));
+      expect(r.err).not.toContain('bluemap-config');
     });
 
     it('docker ps failing: refuses in one line, with the project name and no compose call', () => {
