@@ -242,7 +242,10 @@ describe('NeoForge entrypoint script', () => {
     // (b) the secret reaches awk in its environment, never on an awk command line (argv leaks in ps)
     expect(ENTRY_TEXT).not.toMatch(/awk\s+-v\s+secret=/);
     const argvLeaks = lines.filter(
-      (l) => /awk/.test(l) && /"\$\{?secret\}?"/.test(l) && !/NF_PCF_SECRET="\$secret" awk/.test(l),
+      (l) =>
+        /awk/.test(l) &&
+        /"\$\{?secret\}?"/.test(l) &&
+        !/NF_PCF_SECRET="\$secret" (LC_ALL=C )?awk/.test(l),
     );
     expect(argvLeaks).toEqual([]);
     expect(ENTRY_TEXT).toMatch(/NF_PCF_SECRET="\$secret" awk '/);
