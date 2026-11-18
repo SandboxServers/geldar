@@ -166,7 +166,7 @@ recreate_players() {
 }
 
 # Waits for the player host container to be Up, lets it settle (a host that dies on join is not Up afterwards), then checks
-# that it is still running with no restart since it was created (with on-failure a crash-looping image is restarted, so it
+# that it is still running with no restart since it was created (a crash-looping image is restarted, so it
 # can be running again at the sample; its restart count shows it), and that its image carries the release revision label.
 host_up_and_current() {
   id=$1
@@ -201,7 +201,7 @@ restore_host() {
 }
 
 # Refreshes each acted-on player host that is not current (host_current): one whose image differs from the new body image, and
-# one that is not running (a crash that used up its restarts, or a restart loop), even on that image. One at a time, after the
+# one that is not running (a crash that left it exited non-zero, or a restart loop), even on that image. One at a time, after the
 # shared services. On a failure the loop stops, the host is put back on its previous image if possible, and the run is needs-manual.
 refresh_hosts() {
   want=${GELDAR_BODY_IMAGE:-}

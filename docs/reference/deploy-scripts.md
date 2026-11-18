@@ -203,7 +203,7 @@ Re-derive the subcommand list with `git grep -n 'migrate | owner-add' -- deploy/
 | `whitelist-house-body` | none | Whitelists the house Body and every sovereign player's life id from `shards/colo-mind.yaml` over RCON |
 | `skin-import` | `<player-id> --file /run/skins/<name>.json` | Needs `GELDAR_SKINS_DIR` (outside the checkout, mode 0700), mounted read-only |
 | `player-flags` | `<player-id> ...` | Per-player operator flags (`sql/0034_operator_player_flags.sql`) |
-| `player-start` | `<player-id>` | `run -d --no-deps --name <project>-players-host-<id>` under profile `sovereign`, then `docker update --restart on-failure:5` (decision [0169](../decisions/0169-players-host-restart-policy.md)). Idempotent. The id must match `^ag-[a-z0-9-]{1,40}$` and be listed under `sovereign.players` in the shard file (`GELDAR_COLO_SHARD`, default `shards/colo-mind.yaml`). |
+| `player-start` | `<player-id>` | `run -d --no-deps --name <project>-players-host-<id>` under profile `sovereign`, then `docker update --restart unless-stopped` (decision [0342](../decisions/0342-body-hosts-unless-stopped.md), which supersedes the policy of [0169](../decisions/0169-players-host-restart-policy.md)). Idempotent. The id must match `^ag-[a-z0-9-]{1,40}$` and be listed under `sovereign.players` in the shard file (`GELDAR_COLO_SHARD`, default `shards/colo-mind.yaml`). |
 | `player-stop` | `<player-id>` | `docker stop` and `docker rm` of that exact container |
 | `player-list` | none | State of each listed player's host |
 

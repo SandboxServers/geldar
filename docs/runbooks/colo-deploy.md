@@ -108,8 +108,8 @@ says the maintenance has finished.
 started by `colo-admin.sh player-start`) are one-off containers and keep the image they were started with.
 After the shared services, the deploy lists the running hosts and the hosts that exited non-zero (`colo-admin.sh player-list`,
 which prints each host's actual state: `running`, `exited`, `created` or `dead`), and refreshes each one that is not current:
-one whose image differs from the release's body image, or one that is not running (a crash that used up its restarts, even
-on the current image). It does this one at a time: a `bodies` maintenance notice, `player-stop`,
+one whose image differs from the release's body image, or one that is not running (exited or stopped by hand, even on the
+current image). It does this one at a time: a `bodies` maintenance notice, `player-stop`,
 `player-start` (pinned to the node's manifest copy), a wait for the container to be Up and stay Up, and a check of its
 image revision label. Hosts that are already current and hibernating players (no container) are not touched, and no
 other container is. The plan (`plan: player host <id> stale|current`) and `--dry-run` show what would happen.
@@ -117,10 +117,35 @@ If a refresh fails, the loop stops, the host is started again from its previous 
 the run exits 1 with "needs manual": the shared services stay on the new release, and the next run retries the stale hosts.
 `COLO_CD_PLAYER_WAIT` (seconds to wait for Up, default 60) and `COLO_CD_PLAYER_SETTLE` (seconds the host must stay Up, default 5) tune the wait.
 
-A host that crashed until its five restarts were used stays `exited` until the next deploy refreshes it or an operator runs
-`colo-admin.sh player-start <id>`. After a node reboot the player hosts do not start again (decision 0169: `on-failure` does
-not start a container after a reboot), and a host that the reboot stopped exits 0, which the CD skips. The CD does not start
-it; an operator must run `colo-admin.sh player-start <id>` for each such host.
+The hosts use `unless-stopped` (decision 0342, which supersedes the `on-failure:5` part of decision 0169): a crash and a clean
+exit by a node reboot both restart the host, with Docker's back-off and no restart cap. After an unattended reboot the
+hosts come back on their own; check them with the list in "After an unattended reboot" below. A host that is still not
+running after a reboot was stopped by hand with `player-stop` (which removes the container, so nothing restarts it), or its
+`docker update` failed in `player-start`; start it with `colo-admin.sh player-start <id>`. A host that is up but has no
+player in game after the reboot (step 2 of the check below) is idle. `player-start` leaves a running container as it is, so run `colo-admin.sh player-stop <id>` then `colo-admin.sh player-start <id>` for it, or wait for its next presence record (decision 0342).
+
+## After an unattended reboot
+
+The player hosts restart by themselves after a node reboot (decision 0342). After a reboot, check the node with these
+read-only commands, from the repo root on the node. None of them changes anything, and none prints a secret.
+
+1. The roster: the expected count is the number of `player_id` entries in the shard file. The online count from Paper must match it once every Body has joined.
+   `grep -Eo 'player_id:[[:space:]]*ag-[a-z0-9-]+' shards/colo-mind.yaml | wc -l`
+   `docker exec geldar-colo-paper-1 rcon-cli list`
+2. The player hosts: the running ones are Up. A hibernating or never-started player has no container, so the count of running hosts is at most the roster of desired-up players from step 1; a player with no container shows `not running` in player-list.
+   `docker ps --filter "label=com.docker.compose.project=geldar-colo" --filter "name=players-host" --format '{{.Names}}\t{{.Status}}'`
+   `deploy/colo-admin.sh player-list` (`running` for each player; `exited` means stopped by hand or a failed update, or a crash that left it so)
+   `docker inspect -f '{{.Name}} {{.HostConfig.RestartPolicy.Name}} {{.RestartCount}}' $(docker ps -aq --filter name=geldar-colo-players-host-ag-)`
+   (read-only; each host prints its name, `unless-stopped` and its restart count; a policy other than `unless-stopped` was not set by `player-start`, so for that player run `player-start` if it is down, or `player-stop` then `player-start` if it is up (`player-start` alone leaves a running host as it is); a restart count that keeps growing is a crash loop, see [failure modes](../operations/failure-modes.md). With no host container the command prints an error, which means none exists.)
+3. The shared services: `nats` and `paper` show `(healthy)` in the Status column.
+   `docker ps --filter "label=com.docker.compose.project=geldar-colo" --format '{{.Names}}\t{{.Status}}'`
+4. The telemetry stack: the `geldar-gateway` container and the other telemetry services are Up. It is a separate compose project, so use the telemetry check in [deploy/telemetry/README.md](../../deploy/telemetry/README.md), not step 3's `docker ps` (which filters on `geldar-colo`).
+5. The NF project: every `geldar-nf` container is Up.
+   `docker ps --filter "label=com.docker.compose.project=geldar-nf" --format '{{.Names}}\t{{.Status}}'`
+
+Not verified from the repo: the exact container names of `nats`, `paper` and the telemetry services (`geldar-colo-paper-1`
+is the name [deploy/README.md](../../deploy/README.md) uses; the others follow the same compose naming and were not checked on a node), and the
+`rcon-cli list` output format, which the roster count reads from the online-players line.
 
 ## Telemetry env on the node
 

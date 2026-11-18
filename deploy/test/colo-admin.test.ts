@@ -365,8 +365,9 @@ describe('colo-admin.sh (decision 0133)', () => {
       );
       expect(s[0]).not.toMatch(/--rm/);
       // The restart policy is set on the container after it starts (compose run has no --restart flag).
-      expect(log).toContain(`update --restart on-failure:5 ${HOST}`);
-      expect(log.indexOf(`update --restart on-failure:5 ${HOST}`)).toBeGreaterThan(
+      expect(log).toContain(`update --restart unless-stopped ${HOST}`);
+      expect(log).not.toContain(`update --restart on-failure:5 ${HOST}`);
+      expect(log.indexOf(`update --restart unless-stopped ${HOST}`)).toBeGreaterThan(
         log.findIndex((c) => c === s[0]),
       );
     });

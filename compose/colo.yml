@@ -639,9 +639,10 @@ services:
       nats:
         condition: service_healthy
     # Per-player hosts are started by deploy/colo-admin.sh player-start with `compose run`, which may not apply this key; the
-    # script sets the policy on the container with `docker update --restart on-failure:5` either way. Five restarts after a
-    # crash, none after a clean exit (player-stop, a CD refresh). Logs: the x-logging json-file cap above (10m, 3 files).
-    restart: on-failure:5
+    # script sets the same policy on the container with `docker update --restart unless-stopped` either way (decision 0342).
+    # A crash and a clean exit by a node reboot both restart it; a stop by hand holds it down (player-stop removes the container). No restart cap.
+    # Logs: the x-logging json-file cap above (10m, 3 files).
+    restart: unless-stopped
 
   # [C1-11b] The admin one-shot (decision 0133): tools/migrate and tools/mcp-tokens, never started by `shard up colo` (the profile).
   #   docker compose -p geldar-colo -f compose/colo.yml --profile admin run --rm admin <subcommand>   (from the repo root)

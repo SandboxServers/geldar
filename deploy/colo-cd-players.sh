@@ -1,8 +1,8 @@
 #!/bin/sh
 # Per-player host helpers for the Colo CD pipeline. Sourced by colo-cd.sh and colo-cd-plan.sh (needs DEPLOY_DIR).
 # A player host is the one-off container geldar-colo-players-host-<player-id> that colo-admin.sh player-start runs. Only the
-# ids that `colo-admin.sh player-list` reports as running, or as exited with a non-zero code (a crash that used up its
-# restarts), are ever looked at, and only containers with exactly that name are inspected, stopped or started. A hibernating
+# ids that `colo-admin.sh player-list` reports as running, or as exited with a non-zero code (a crash that left it so),
+# are ever looked at, and only containers with exactly that name are inspected, stopped or started. A hibernating
 # player (no container) and a host that exited 0 are not acted on, so they are skipped.
 
 # colo-admin reads the manifest named by GELDAR_RELEASE_FILE (the root-owned /etc copy on the node, which colo-cd does not update).
@@ -41,7 +41,7 @@ running_hosts() {
 }
 
 # Prints the ids the CD acts on, one listing of player-list: the running hosts, and the stopped hosts whose last exit code was
-# not 0 (a crash that used up the five restarts, or a dead container), so a deploy brings a crashed host back. A clean exit (0)
+# not 0 (a crash, or a dead container), so a deploy brings a crashed host back. A clean exit (0)
 # is not listed, so a host that was stopped on purpose stays down. A created container has exit code 0, so it is not listed.
 # Returns 1 when the list cannot be read.
 acted_hosts() {

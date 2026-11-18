@@ -158,7 +158,7 @@ Re-derive the list: the first `case $cmd` in `deploy/colo-admin.sh` (around line
 | `skin-import <player-id> --file /run/skins/<name>.json` | `admin skin-import` with a read-only skins overlay | see [skin-import](#skin-import) |
 | `ensure-skins-bucket` | `admin ensure-skins-bucket` | none |
 | `whitelist-house-body` | `admin whitelist-house-body` | none |
-| `player-start <player-id>` | `compose --profile sovereign run -d --no-deps --name <project>-players-host-<id> players-host --player <id>`, then `docker update --restart on-failure:5` | see [per-player hosts](#per-player-hosts) |
+| `player-start <player-id>` | `compose --profile sovereign run -d --no-deps --name <project>-players-host-<id> players-host --player <id>`, then `docker update --restart unless-stopped` | see [per-player hosts](#per-player-hosts) |
 | `player-stop <player-id>` | `docker stop`, then `docker rm` | the same |
 | `player-list` | `docker ps` per listed player | no arguments |
 
@@ -198,7 +198,7 @@ Decision [0169](../decisions/0169-players-host-restart-policy.md); `deploy/colo-
 
 - The id must match `^ag-[a-z0-9-]{1,40}$` and appear as `player_id:` in the shard file (`GELDAR_COLO_SHARD`, default `shards/colo-mind.yaml`).
 - Container name: `<project>-players-host-<player-id>`. Only containers with that exact name and the project's compose label are listed, started or stopped.
-- `player-start` leaves a running host alone (exit 0), removes a stopped leftover with `rm -f`, starts the host detached, then sets `on-failure:5`. When `docker update` fails it still exits 0 and says the restart policy is missing, so the CD does not treat a healthy host as failed.
+- `player-start` leaves a running host alone (exit 0), removes a stopped leftover with `rm -f`, starts the host detached, then sets `unless-stopped` (decision 0342). When `docker update` fails it still exits 0 and says the restart policy is missing, so the CD does not treat a healthy host as failed.
 - `player-stop` exits 0 when the container does not exist.
 - `player-list` prints `<id>: running`, `<id>: <docker state>` or `<id>: not running` for each listed id.
 - `deploy/colo-cd-players.sh` calls these through `host_admin`, which points `GELDAR_RELEASE_FILE` at `HOST_MANIFEST` when set.
