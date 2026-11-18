@@ -1,0 +1,11 @@
+# Rollback overlay for the live NeoForge project (compose/nf-live.yml). deploy/nf-deploy.sh adds it only when NF_TELEMETRY=off is
+# set explicitly, as `-f compose/nf-live.yml -f compose/nf-live-telemetry-off.yml` (plan and up). Unset, nothing is added.
+# It sets one variable on the neoforge service: GELDAR_NF_TELEMETRY=off. The entrypoint then removes our own stale ledger jar
+# copy from mods/ (never a mounted one, never a followed link) and adds no OpenTelemetry agent. It mounts nothing, joins no
+# network and publishes nothing. CI renders this file alone, so it repeats the neoforge image (a test asserts it equals the
+# one in nf-live.yml).
+services:
+  neoforge:
+    image: itzg/minecraft-server:2026.10.1-java25@sha256:d12aed7e35981dfe259b60fbfee77d23a19b5898a7a31dca298d18b47b7b5776
+    environment:
+      GELDAR_NF_TELEMETRY: "off"

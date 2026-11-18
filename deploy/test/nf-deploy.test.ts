@@ -175,9 +175,10 @@ describe('nf-deploy.sh constants and the one compose file', () => {
     const composeFileLines = SCRIPT_TEXT.split('\n').filter(
       (l) => l.includes('docker compose') && l.includes(' -f'),
     );
-    // Two lines: the telemetry branch (the overlay added) and the default branch.
+    // Three lines: the telemetry branch (the overlay added), the explicit-off branch (the rollback overlay added) and the default.
     expect(composeFileLines).toEqual([
       '    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$TELEMETRY_FILE" "$@"',
+      '    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$OFF_FILE" "$@"',
       '    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"',
     ]);
     expect(run(repo, ['up'], {}).status).toBe(0);

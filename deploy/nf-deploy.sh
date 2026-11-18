@@ -46,6 +46,10 @@ VOLUME=${PROJECT}_neoforge-data
 TELEMETRY_FILE=$ROOT/compose/nf-live-telemetry.yml
 TELEMETRY_NETWORK=geldar-telemetry
 TELEMETRY=0
+# Rollback (NF_TELEMETRY=off set explicitly; plan and up only, like the overlay above): the off overlay sets GELDAR_NF_TELEMETRY=off,
+# so the entrypoint removes our own stale ledger jar copy. Unset adds nothing; the default render is unchanged.
+OFF_FILE=$ROOT/compose/nf-live-telemetry-off.yml
+TELEMETRY_OFF=0
 
 die() {
   echo "nf-deploy: error: $*" >&2
@@ -64,6 +68,8 @@ need() {
 dc() {
   if [ "$TELEMETRY" = 1 ]; then
     docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$TELEMETRY_FILE" "$@"
+  elif [ "$TELEMETRY_OFF" = 1 ]; then
+    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$OFF_FILE" "$@"
   else
     docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"
   fi
@@ -276,7 +282,7 @@ check_telemetry_inputs() {
 
 check_telemetry() {
   case ${NF_TELEMETRY-off} in
-    off) TELEMETRY=0 ;;
+    off) TELEMETRY=0; [ -z "${NF_TELEMETRY+x}" ] || TELEMETRY_OFF=1 ;;
     on)
       # The entrypoint of packet B (PR #701) reads GELDAR_NF_TELEMETRY. Without it the overlay mounts and joins, and no agent loads.
       grep -Fq GELDAR_NF_TELEMETRY "$ROOT/compose/neoforge/neoforge-entrypoint.sh" 2>/dev/null ||
@@ -407,6 +413,9 @@ cmd_plan() {
   say "project $PROJECT; compose file $COMPOSE_FILE"
   if [ "$TELEMETRY" = 1 ]; then
     say "telemetry on: overlay $TELEMETRY_FILE is added; neoforge joins the external network $TELEMETRY_NETWORK (never created or removed here)"
+  fi
+  if [ "$TELEMETRY_OFF" = 1 ]; then
+    say "telemetry off (explicit NF_TELEMETRY=off): overlay $OFF_FILE is added; the entrypoint removes our own stale ledger jar copy and adds no agent"
   fi
   say "plan, nothing changed: up runs these steps in order"
   say "  1. up -d --wait nats postgres"
