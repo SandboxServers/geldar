@@ -4,9 +4,10 @@ Status: the compose file and its repo test exist (compose/nf-live.yml, tools/rep
 Nothing here is deployed. The file renders; it has not been started on the node. Public exposure, the shared Caddy and
 the human route are out of scope (owner decisions for the final-instance step). Nothing is published beyond loopback.
 
-**THE NEOFORGE SHARD MUST NOT BE MADE PUBLIC BEFORE THE CONCURRENT-HUMAN CAP LANDS.** No code enforces the cap of 5
-concurrent humans today (section 3b). Until the human lane counts live humans and refuses the sixth, a public listener
-has no human bound at all: its only bound is MAX_PLAYERS, which counts bodies too.
+**THE NEOFORGE SHARD MUST NOT BE MADE PUBLIC BEFORE THE CONCURRENT-HUMAN CAP IS LIVE ON THE HUMAN PROXY.** The cap of 5
+concurrent humans is enforced in the identity plugin's human lane (merged as #726), but only on a human proxy that runs
+a jar built from main containing #726 (section 3b). Until that jar runs on the human proxy and S1 (section 10.8) passes,
+a public listener has no proven human bound: its only bound is MAX_PLAYERS, which counts bodies too.
 
 The per-shard storage design is in docs/analysis/neoforge/per-shard-storage-design.md (one NATS, one Postgres database,
 one sink per shard; see also docs/decisions/0026-one-database-per-shard.md). Read that first for why the shard is separate.
@@ -85,11 +86,20 @@ server honours them is UNVERIFIED until a live start reads them back from its lo
 
 Three things these values do not do, stated plainly:
 
-- **The concurrent-human cap of 5 (spec section 8.4, decision 0137 item 1) IS NOT ENFORCED by any code today.**
-  MAX_PLAYERS bounds ALL players on the server, bots included, and it is 10: a different and larger number. Enforcing
-  the human cap needs the human lane in the identity plugin to count live humans and refuse the sixth with a generic
-  message. That is a separate plugin-only packet; it is not in this change.
-- **The NeoForge shard must not be made public before that cap lands** (the bold note at the top of this runbook).
+- **The concurrent-human cap of 5 (spec section 8.4, decision 0137 item 1) is enforced in the identity plugin's human
+  lane, merged as #726.** A human reserves one of `HumanSlots.CAP` slots at the login decision. The slot belongs to the
+  connection object, and the human gives it back on its own disconnect or on a refused login after the reservation. The
+  sixth human gets the generic denial. A UUID that already holds a slot is refused, and a refused duplicate frees nothing.
+  Agents never take a slot. MAX_PLAYERS is a different number: it is 10 and bounds ALL players, bots included.
+- **The cap binds only on a human proxy that runs that plugin build.** The node must run a jar built from main containing
+  #726 before the lane is public (section 10, gate item 1). Until the human proxy runs it, no code enforces the cap.
+- **Not built, and not part of #726:** per-IP limits, login rate limiting beyond Velocity's default, and an idle kick
+  (held packet H1b). An idle account can hold its slot, so five idle accounts block a sixth human.
+- **UNVERIFIED until S1:** whether Velocity hands the same `Player` object to `LoginEvent` and to `DisconnectEvent`, and
+  whether `DisconnectEvent` fires for every connection that ends after a login. Until S1 (section 10.8, step 5) shows it,
+  the slot release is not proven.
+- **The NeoForge shard must not be made public before the cap is live on the human proxy** (the bold note at the top of
+  this runbook).
 - **The show-max-players values are display only, and they do not match.** compose/velocity/velocity-nf.toml shows 400 and
   compose/velocity/velocity-nf-human.toml shows 10. Neither file is edited here. Whether Velocity refuses a login over its own
   count is UNVERIFIED (not checked in this packet). The real server cap is MAX_PLAYERS (10).
