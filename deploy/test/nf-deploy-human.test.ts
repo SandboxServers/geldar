@@ -565,4 +565,21 @@ describe('nf-deploy.sh human lane: fail-closed fixes', () => {
       /-f \S*compose\/nf-live-human\.yml .*logs --tail 200 velocity-human$/,
     );
   });
+
+  // G: a compose/.env entry must not reach docker. The script exports the validated port, so the child env carries it.
+  it('passes the validated NF_HUMAN_PORT in the docker env, not the compose/.env value', () => {
+    const repo = makeRepo();
+    writeFileSync(join(repo, 'compose', '.env'), 'NF_HUMAN_PORT=47000\n');
+    const logged = [
+      '#!/bin/sh',
+      'echo "docker $* PORT=$NF_HUMAN_PORT" >>"$STUB_LOG"',
+      STUB_SCRIPTS.docker.split('\n').slice(2).join('\n'),
+    ].join('\n');
+    writeFileSync(join(repo, 'stubs', 'docker'), `${logged}\n`);
+    const r = run(repo, { env: { NF_HUMAN_PORT: undefined }, args: ['up', '--local'] });
+    expect(r.status).toBe(0);
+    const compose = calls(repo).filter((l) => l.startsWith('docker compose -p'));
+    expect(compose.length).toBeGreaterThan(0);
+    for (const line of compose) expect(line).toMatch(/PORT=46566$/);
+  });
 });
