@@ -19,6 +19,12 @@
 #                                      regular files). Any other NF_TELEMETRY value refuses, and so does on while compose/neoforge/neoforge-entrypoint.sh has no
 #                                      GELDAR_NF_TELEMETRY. NF_TELEMETRY=on has NO effect on the JVM until entrypoint packet B (PR #701)
 #                                      is merged: do not set it before.
+#   NF_TELEMETRY=off (explicit)        the rollback: adds compose/nf-live-telemetry-off.yml (plan and up only). It sets
+#                                      GELDAR_NF_TELEMETRY=off, so the entrypoint removes our own stale ledger jar copy and starts
+#                                      no agent. Unset adds no overlay, so a stale jar makes the start refuse, by design.
+#   The four compose shapes dc() and probe_dc() render: the base file alone (NF_TELEMETRY unset); the base plus
+#   compose/nf-live-telemetry.yml (on); the base plus compose/nf-live-telemetry-off.yml (off); the base plus
+#   compose/nf-live-probe.yml (probe only, for one run).
 #   NF_SECRETS_DIR                     the secret files (default compose/secrets-nf)
 #   NF_SERVICE_UID (default 1000), NF_SERVICE_GID (default NF_SERVICE_UID): the uid:gid the services run as and that owns
 #                                      the seeded volume. The default 1000 is not the node: its ops account is uid 1001, so the

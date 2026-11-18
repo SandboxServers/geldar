@@ -294,6 +294,25 @@ fi
 # The mod's config, from its README layout. Written once; on later starts only the secret line is replaced, because the
 # mod may have rewritten the file.
 cfgdir=$(dirname "$config")
+# A symlink (dangling too) or a directory at the config or a backup path is refused before anything is written, so no write
+# goes through a link. A refusal changes nothing.
+for p in "$config" "$config.bak" "$config.bak.prev" "$config.part"; do
+  if [ -L "$p" ] || [ -d "$p" ]; then
+    echo "neoforge-entrypoint: $p is a symlink or a directory; refusing to start" >&2
+    exit 1
+  fi
+done
+# A TOML form the rewrite below does not handle is refused before any write: a quoted [forwarding] header, a dotted or quoted
+# forwarding key, or an inline forwarding table. A UTF-8 BOM on line 1 is ignored here, as in the rewrite. No value is printed.
+if [ -f "$config" ] && LC_ALL=C awk '
+  NR == 1 { sub(/^\357\273\277/, "") }
+  /^[ \t]*\[[ \t]*[\042\047][ \t]*forwarding[ \t]*[\042\047]/ { bad = 1 }
+  /^[ \t]*[\042\047]?forwarding[\042\047]?[ \t]*[.=]/ { bad = 1 }
+  END { exit !bad }
+' "$config"; then
+  echo "neoforge-entrypoint: the PCF config uses a TOML form the entrypoint does not rewrite (a quoted [forwarding] header, a dotted or quoted forwarding key, or an inline forwarding table); delete it or fix it by hand; refusing to start" >&2
+  exit 1
+fi
 mkdir -p "$cfgdir"
 if [ ! -e "$config" ]; then
   {
@@ -312,14 +331,22 @@ if [ ! -e "$config" ]; then
   chown --reference="$data" "$cfgdir" "$config"
 else
   # The mod (Proxy Compatible Forge) may have rewritten this file after the first start, so the entrypoint owns it at every
-  # start. The previous file is kept as $config.bak (mode 600, the data dir's owner). Only enabled, mode and secret under
-  # [forwarding] are rewritten, by a section-aware awk: every other line stays as it is, and a missing key is inserted into
-  # [forwarding] (or the table is appended). The secret reaches awk in its environment, never on a command line.
-  rm -f "$config.bak" "$config.part"
-  cp "$config" "$config.bak"
-  chmod 600 "$config.bak"
-  chown --reference="$data" "$config.bak"
-  NF_PCF_SECRET="$secret" awk '
+  # start. Two copies are kept, both mode 600 with the data dir's owner: $config.bak is the first original, written once and
+  # never replaced; $config.bak.prev is the file this start found, rewritten at every start. Only enabled, mode and secret
+  # under [forwarding] are rewritten, by a section-aware awk: every other line stays as it is, and a missing key is inserted
+  # into [forwarding] (or the table is appended). The secret reaches awk in its environment, never on a command line.
+  rm -f "$config.part"
+  if [ ! -e "$config.bak" ]; then
+    cp "$config" "$config.bak"
+    chmod 600 "$config.bak"
+    chown --reference="$data" "$config.bak"
+  fi
+  rm -f "$config.bak.prev"
+  cp "$config" "$config.bak.prev"
+  chmod 600 "$config.bak.prev"
+  chown --reference="$data" "$config.bak.prev"
+  NF_PCF_SECRET="$secret" LC_ALL=C awk '
+    NR == 1 { sub(/^\357\273\277/, "") }
     function table_name(line,   name) {
       name = line
       sub(/^[ \t]*\[/, "", name)

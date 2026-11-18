@@ -8,11 +8,13 @@ import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -49,8 +51,14 @@ const CURL_STUB = [
   'cp "$STUB_CURL_FIXTURES/$(basename "$url")" "$out"',
   '',
 ].join('\n');
-/** Prints its arguments and dumps its environment, so a test can check what the server start command receives. */
-const START_STUB = ['#!/bin/sh', 'env >"$STUB_START_ENV"', 'echo "started $*"', ''].join('\n');
+/** Prints its arguments, and dumps its environment and arguments to files, so a test can check what the start command receives. */
+const START_STUB = [
+  '#!/bin/sh',
+  'env >"$STUB_START_ENV"',
+  'printf "%s\\n" "$*" >"$STUB_START_ARGS"',
+  'echo "started $*"',
+  '',
+].join('\n');
 
 const sha512 = (text: string) => createHash('sha512').update(text).digest('hex');
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
@@ -100,6 +108,7 @@ function setup(secret = `${SECRET}\n`): Case {
       STUB_CURL_LOG: slash(join(base, 'curl.log')),
       STUB_CURL_FIXTURES: slash(fixtures),
       STUB_START_ENV: slash(join(base, 'start-env.txt')),
+      STUB_START_ARGS: slash(join(base, 'start-args.txt')),
       PATH_BIN: slash(bin),
     },
   };
@@ -107,7 +116,7 @@ function setup(secret = `${SECRET}\n`): Case {
 
 /** Runs the entrypoint under sh with the stub curl and start command first on PATH. */
 function run(c: Case, extra: Record<string, string> = {}) {
-  return spawnSync('sh', [slash(ENTRY)], {
+  const r = spawnSync('sh', [slash(ENTRY)], {
     encoding: 'utf8',
     env: {
       PATH: `${c.env.PATH_BIN}${delimiter}${process.env.PATH ?? ''}`,
@@ -116,6 +125,8 @@ function run(c: Case, extra: Record<string, string> = {}) {
       ...extra,
     },
   });
+  expectNoSecret(r, c);
+  return r;
 }
 
 const read = (path: string) => readFileSync(path, 'utf8');
@@ -147,8 +158,25 @@ function reformatted(secret: string): string {
   ].join('\n');
 }
 
-function expectNoSecret(r: { stdout: string; stderr: string }) {
-  expect(r.stdout + r.stderr).not.toContain(SECRET);
+/** What a stub recorded, or '' when the stub never ran (a refused start). */
+const recorded = (path: string | undefined) =>
+  path && existsSync(path) ? readFileSync(path, 'utf8') : '';
+
+/**
+ * The secrets must be absent from stdout and stderr, from the start command's arguments and environment, and from the curl
+ * arguments. Checked for every case that runs the entrypoint; a case that exits before the start command leaves those files empty.
+ */
+function expectNoSecret(r: { stdout: string; stderr: string }, c: Case) {
+  const seen = [
+    r.stdout + r.stderr,
+    recorded(c.env.STUB_START_ENV),
+    recorded(c.env.STUB_START_ARGS),
+    recorded(c.env.STUB_CURL_LOG),
+  ];
+  for (const text of seen) {
+    expect(text).not.toContain(SECRET);
+    expect(text).not.toContain(OLD_SECRET);
+  }
 }
 
 describe.skipIf(skipWithoutSh())(
@@ -168,7 +196,7 @@ describe.skipIf(skipWithoutSh())(
       expect(text).not.toContain("mode='MODERN'");
       expect(text).toContain('  modernForwardingVersion = "NO_OVERRIDE"  # kept');
       expect(text).toContain('[extra]\nkey = "value"');
-      expectNoSecret(r);
+      expectNoSecret(r, c);
     });
 
     it('(b) a toml with a different secret is repaired: the new secret is written, the backup holds the old file', () => {
@@ -182,7 +210,7 @@ describe.skipIf(skipWithoutSh())(
       const backup = read(`${c.config}.bak`);
       expect(backup).toContain(OLD_SECRET);
       expect(backup).not.toContain(SECRET);
-      expectNoSecret(r);
+      expectNoSecret(r, c);
       expect(r.stdout + r.stderr).not.toContain(OLD_SECRET);
       const startEnv = c.env.STUB_START_ENV ?? '';
       expect(startEnv).not.toBe('');
@@ -204,7 +232,7 @@ describe.skipIf(skipWithoutSh())(
       expect(text).not.toContain('enabled = false');
       expect(text).not.toContain('mode = "NONE"');
       expect(read(`${c.config}.bak`)).toContain('enabled = false');
-      expectNoSecret(r);
+      expectNoSecret(r, c);
     });
 
     it('(c2) a secret line in another table is not enough: the secret is inserted into [forwarding], other lines stay', () => {
@@ -218,7 +246,7 @@ describe.skipIf(skipWithoutSh())(
       const text = read(c.config);
       expect(text).toContain('[other]\nsecret = "' + SECRET + '"\n');
       expect(text.split(`secret = "${SECRET}"`).length - 1).toBe(2);
-      expectNoSecret(r);
+      expectNoSecret(r, c);
     });
 
     it('(d) with no toml the config is created as before, and no backup is made', () => {
@@ -229,7 +257,7 @@ describe.skipIf(skipWithoutSh())(
         `[forwarding]\nenabled = true\nmode = "MODERN"\nsecret = "${SECRET}"\napprovedProxyHosts = []\n`,
       );
       expect(existsSync(`${c.config}.bak`)).toBe(false);
-      expectNoSecret(r);
+      expectNoSecret(r, c);
     });
 
     it('(e) the first restart: a first start, the server rewrites the toml and makes its dirs, then starts again and a third time', () => {
@@ -251,7 +279,7 @@ describe.skipIf(skipWithoutSh())(
       expect(afterSecond.split(SECRET).length - 1).toBe(1);
       expect(existsSync(join(c.data, 'logs'))).toBe(true);
       expect(existsSync(join(c.data, 'world'))).toBe(true);
-      for (const r of [first, second, third]) expectNoSecret(r);
+      for (const r of [first, second, third]) expectNoSecret(r, c);
     });
 
     it('(f) the toml and its backup are mode 600 with the data dir owner (POSIX only)', () => {
@@ -267,6 +295,87 @@ describe.skipIf(skipWithoutSh())(
         expect(st.uid).toBe(data.uid);
         expect(st.gid).toBe(data.gid);
       }
+    });
+
+    const CAN_LINK = (() => {
+      const dir = mkdtempSync(join(tmpdir(), 'nf-restart-link-'));
+      try {
+        symlinkSync(dir, join(dir, 'probe'));
+        return true;
+      } catch {
+        return false;
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    })();
+
+    // A symlink at the toml or a backup path is refused before any write: exit 1, nothing starts, the link's target is not
+    // written, and the link is still a link. Without the refusal the entrypoint writes through a dangling link.
+    it.runIf(CAN_LINK)(
+      'a symlink at the toml path is refused: exit 1, the target is untouched, nothing starts',
+      () => {
+        const c = setup();
+        mkdirSync(join(c.data, 'config'), { recursive: true });
+        const target = join(c.data, '..', 'link-target.toml');
+        writeFileSync(target, 'link-target-body');
+        symlinkSync(target, c.config);
+        const r = run(c);
+        expect(r.status).toBe(1);
+        expect(r.stderr).toContain('symlink');
+        expect(r.stdout).not.toContain('started');
+        expect(lstatSync(c.config).isSymbolicLink()).toBe(true);
+        expect(read(target)).toBe('link-target-body');
+        expectNoSecret(r, c);
+      },
+    );
+
+    it.runIf(CAN_LINK)(
+      'a dangling symlink at the toml path writes nothing through the link',
+      () => {
+        const c = setup();
+        mkdirSync(join(c.data, 'config'), { recursive: true });
+        const absent = join(c.data, '..', 'absent-target.toml');
+        symlinkSync(absent, c.config);
+        const r = run(c);
+        expect(r.status).toBe(1);
+        expect(r.stdout).not.toContain('started');
+        expect(existsSync(absent)).toBe(false);
+        expect(lstatSync(c.config).isSymbolicLink()).toBe(true);
+        expectNoSecret(r, c);
+      },
+    );
+
+    it.runIf(CAN_LINK)('a symlink at the .bak path is refused before the toml is rewritten', () => {
+      const c = setup();
+      writeToml(c, reformatted(OLD_SECRET));
+      const target = join(c.data, '..', 'bak-target.toml');
+      writeFileSync(target, 'bak-target-body');
+      symlinkSync(target, `${c.config}.bak`);
+      const r = run(c);
+      expect(r.status).toBe(1);
+      expect(r.stdout).not.toContain('started');
+      expect(read(c.config)).toBe(reformatted(OLD_SECRET));
+      expect(read(target)).toBe('bak-target-body');
+      expectNoSecret(r, c);
+      expect(r.stdout + r.stderr).not.toContain(OLD_SECRET);
+    });
+
+    it('three starts: .bak keeps the first original, .bak.prev holds the file the previous start left', () => {
+      const THIRD = 'nf-restart-third-Q7';
+      const c = setup();
+      writeToml(c, reformatted(OLD_SECRET));
+      expect(run(c).status).toBe(0);
+      // The mod rewrites the file again with a third secret before the next start.
+      writeToml(c, reformatted(THIRD));
+      const second = run(c);
+      expect(second.status).toBe(0);
+      expectNoSecret(second, c);
+      expect(second.stdout + second.stderr).not.toContain(THIRD);
+      expect(read(`${c.config}.bak`)).toContain(OLD_SECRET);
+      expect(read(`${c.config}.bak`)).not.toContain(THIRD);
+      expect(read(`${c.config}.bak.prev`)).toContain(THIRD);
+      expect(read(`${c.config}.bak.prev`)).not.toContain(OLD_SECRET);
+      expect(read(c.config).split(SECRET).length - 1).toBe(1);
     });
 
     it('a second start over an intact file leaves it byte-identical', () => {
@@ -292,7 +401,7 @@ describe.skipIf(skipWithoutSh())(
       expect(r.status).toBe(0);
       expect(r.stdout).toContain('started');
       expect(existsSync(ledgerCopy)).toBe(false);
-      expectNoSecret(r);
+      expectNoSecret(r, c);
     });
 
     it('the same volume with GELDAR_NF_TELEMETRY unset still refuses to start (the guard stays)', () => {
