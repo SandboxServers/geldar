@@ -36,10 +36,13 @@ describe('scratch extra mods: the overlay shape (no docker needed)', () => {
     expect(env[`GELDAR_NF_EXTRA_${name.toUpperCase()}_SHA256`]).toBe(pins.get(name));
   });
 
-  it('has exactly one pin constant per allowlisted mod, and no other', () => {
+  it('has one pin constant per allowlisted mod plus the BlueMap loader pin, and no other', () => {
     const env = doc.services.paper.environment as Record<string, string>;
     expect(Object.keys(env).sort()).toEqual(
-      MODS.map((name) => `GELDAR_NF_EXTRA_${name.toUpperCase()}_SHA256`).sort(),
+      [
+        ...MODS.map((name) => `GELDAR_NF_EXTRA_${name.toUpperCase()}_SHA256`),
+        'GELDAR_NF_EXTRA_BLUEMAP_LOADER_SHA256',
+      ].sort(),
     );
   });
 
@@ -59,14 +62,38 @@ describe('scratch extra mods: the overlay shape (no docker needed)', () => {
     },
   );
 
-  it('mounts exactly the two jars and the BlueMap config bundle, nothing else', () => {
+  it('mounts exactly the two jars, the BlueMap config bundle and the BlueMap loader, nothing else', () => {
     const volumes = doc.services.paper.volumes as Record<string, unknown>[];
     expect(volumes.map((v) => v.target).sort()).toEqual(
       [
-        ...MODS.map((name) => `/geldar/extra-mods/${name}.jar`),
+        '/geldar/extra-mods/chunky.jar',
+        '/geldar/extra-mods/bluemap.jar',
         '/geldar/extra-mods/bluemap-config',
+        '/geldar/extra-mods/bluemap-config.sh',
       ].sort(),
     );
+    for (const vol of volumes) {
+      expect(vol).toMatchObject({
+        type: 'bind',
+        read_only: true,
+        bind: { create_host_path: false },
+      });
+    }
+  });
+
+  it('bluemap mounts its jar, the config bundle and the loader; chunky mounts its jar only', () => {
+    const volumes = doc.services.paper.volumes as Record<string, unknown>[];
+    const targetsOf = (name: string) =>
+      volumes
+        .map((v) => v.target as string)
+        .filter((t) => t.startsWith(`/geldar/extra-mods/${name}`))
+        .sort();
+    expect(targetsOf('bluemap')).toEqual([
+      '/geldar/extra-mods/bluemap-config',
+      '/geldar/extra-mods/bluemap-config.sh',
+      '/geldar/extra-mods/bluemap.jar',
+    ]);
+    expect(targetsOf('chunky')).toEqual(['/geldar/extra-mods/chunky.jar']);
   });
 
   it('publishes no port, declares no network or secret, and names no live host', () => {

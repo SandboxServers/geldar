@@ -82,6 +82,8 @@ function drive(env: Record<string, string>, fx: Fixture = {}) {
       `. "${slash(LIB)}"`,
       // The committed bundle, so the BlueMap check passes; the real directory is the one the lib names.
       `BLUEMAP_BUNDLE="${slash(join(LIB, '..', '..', 'plugins', 'bluemap', 'neoforge'))}"`,
+      // The committed loader (its sha is the lib's pin), so the BlueMap loader check passes: ROOT is /unused in this driver.
+      `BLUEMAP_LOADER="${slash(join(LIB, '..', '..', 'compose', 'neoforge', 'extra-mods-bluemap-config.sh'))}"`,
       `PROJECT="${PROJECT}"`,
       `EXTRA_PINS="${slash(pins)}"`,
       'check_extra_mods',
