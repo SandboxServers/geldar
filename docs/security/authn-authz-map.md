@@ -89,7 +89,7 @@ What a token may call, and the budgets and rate limits per player, are in [MCP t
 
 ## NATS users
 
-One account, `GELDAR`. Anything not allowed is refused, a deny wins over an allow, and every user except `human` may answer requests on its own inbox (decision 0067). The `human` user (the human lane, decision 0388) is limited to `_INBOX.human.>` and uses its own inbox prefix, `_INBOX.human.` (`GELDAR_NATS_INBOX_PREFIX`), so it does not share the `_INBOX.>` of the other users. Re-derived from `Get-NatsUsers` in `geldar.ps1` at `03c1f5de` (the colo table has 11 users). `<s>` is the shard; "JS" means `$JS.API.>`, `$JS.ACK.>` and `_INBOX.>`. Why each list looks as it does: [NATS topology](../architecture/nats-topology.md#users-by-role).
+One account, `GELDAR`. Anything not allowed is refused, a deny wins over an allow, and every user except `human` may answer requests on its own inbox (decision 0067). The `human` user (the human lane, decision 0388) is limited to `_INBOX.human.>` and uses its own inbox prefix, `_INBOX.human.` (`GELDAR_NATS_INBOX_PREFIX`), so it does not share the `_INBOX.>` of the other users. On main today the `human` user is still on the H5 grant (`_INBOX.>`) until the H6 PR is merged and the conf regenerated. Re-derived from `Get-NatsUsers` in `geldar.ps1` at `03c1f5de` (the colo table has 11 users). `<s>` is the shard; "JS" means `$JS.API.>`, `$JS.ACK.>` and `_INBOX.>`. Why each list looks as it does: [NATS topology](../architecture/nats-topology.md#users-by-role).
 
 | User | Connected by (Colo) | Publish | Publish denied | Subscribe |
 |---|---|---|---|---|
