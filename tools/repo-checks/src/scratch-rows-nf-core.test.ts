@@ -47,10 +47,12 @@ describe.skipIf(!SH)('telemetry-rows-nf.sh', { timeout: 900_000 }, () => {
 
   it.concurrent('NF2 passes at 20 histogram counts per second and fails at 21.7', async () => {
     const pass = await runRows(['--only', 'NF2'], {
+      env: { FAKE_ONLINE: '1' },
       pending: [histo('1700000000000000000', 1000), histo('1700000062500000000', 2250)],
     });
     expect(pass.out).toMatch(/^ROW NF2 PASS got=delta=1250 elapsed=62\.5s rate=20\.00\/s want=/m);
     const fail = await runRows(['--only', 'NF2'], {
+      env: { FAKE_ONLINE: '1' },
       pending: [histo('1700000000000000000', 1000), histo('1700000060000000000', 2300)],
     });
     expect(fail.out).toMatch(/^ROW NF2 FAIL got=delta=1300 elapsed=60\.0s rate=21\.67\/s/m);
@@ -58,7 +60,7 @@ describe.skipIf(!SH)('telemetry-rows-nf.sh', { timeout: 900_000 }, () => {
   });
 
   it.concurrent('skips only the dependents of a failed row; an independent row still runs', async () => {
-    const r = await runRows(['--only', 'NF2,NF5,NF8']);
+    const r = await runRows(['--only', 'NF2,NF5,NF8'], { env: { FAKE_ONLINE: '1' } });
     expect(r.out).toMatch(/^ROW NF2 FAIL /m);
     expect(r.out).toMatch(/^ROW NF5 SKIP reason=dep-failed:NF2 got=none want=dependency-met$/m);
     expect(r.out).toMatch(/^ROW NF8 PASS /m);
@@ -94,7 +96,7 @@ describe.skipIf(!SH)('telemetry-rows-nf.sh', { timeout: 900_000 }, () => {
     expect(b.status).toBe(3);
     expect(b.out).toMatch(/^ABORT reason=non-scratch-container-restarted$/m);
     expect(b.out).not.toMatch(/^ROW /m);
-    const c = await runRows(['--only', 'NF2'], { vanish: true });
+    const c = await runRows(['--only', 'NF2'], { vanish: true, env: { FAKE_ONLINE: '1' } });
     expect(c.status).toBe(3);
     expect(c.out).toMatch(/^ABORT reason=neoforge-memory-current-unreadable$/m);
     const none = await runRows(['--only', 'NF8'], { tree: true });

@@ -208,6 +208,7 @@ UUID='[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12
 geldar_points() {
   sink_lines | grep -o -E '"name":"geldar_[a-z0-9_]*"|"eventName":"geldar\.[a-z._]*"' | grep -v 'geldar_ledger_' | wc -l | tr -d ' '
 }
+sid_strip() { sed 's/"key":"service\.instance\.id","value":{"stringValue":"[^"]*"}//g'; }
 SESSION=''
 
 # --- rows. Each sets GOT and WANT and returns 0 (pass), 1 (fail) or 2 (skip, SKIP_REASON set). ---
@@ -220,18 +221,24 @@ row_NF0() {
   via=pid1
   case "$cmd" in
     *-javaagent:*) ;;
+    *java*@user_jvm_args.txt*) ;; # pid 1 is the NeoForge java process itself
     *)
-      cmd=$(docker exec "$PAPER" sh -c 'for f in /proc/[0-9]*/cmdline; do tr "\0" " " <"$f"; echo; done' 2>>"$LOG" | grep -- '-javaagent' | head -n 1)
+      cmd=$(docker exec "$PAPER" sh -c 'for f in /proc/[0-9]*/cmdline; do tr "\0" " " <"$f"; echo; done' 2>>"$LOG" | grep 'java' | grep -E -- '-javaagent|@user_jvm_args\.txt|unix_args\.txt|-jar' | head -n 1)
       via=proc-scan
       ;;
   esac
   agent=$(echo "$cmd" | grep -o -- '-javaagent:[^ ]*' | head -n 1) # only the flags are kept: the rest of a command line stays out of the log
   xmx=$(echo "$cmd" | grep -o -- '-Xmx[^ ]*' | head -n 1)
   argfile=$(echo "$cmd" | grep -c -- '@user_jvm_args.txt')
-  log "java args via=$via agent=${agent:-none} xmx=${xmx:-none} argfile=$argfile"
   # The entrypoint appends the flag to JVM_OPTS and itzg writes it to user_jvm_args.txt at every start: both must carry it.
   fileflag=$(docker exec "$PAPER" cat "$NF_JVM_ARGS_FILE" 2>>"$LOG" | grep -o -- '-javaagent:[^ ]*' | head -n 1)
   agentlog=$(docker logs "$PAPER" 2>&1 | grep -c "$NF_AGENT_LOG_MARK")
+  # NeoForge starts as java @user_jvm_args.txt @.../unix_args.txt: the flag is then only in the args file, never in a cmdline.
+  if [ -z "$agent" ] && [ "$argfile" -gt 0 ] && [ -n "$fileflag" ] && [ "$agentlog" -ge 1 ]; then
+    agent=$fileflag
+    via=argfile
+  fi
+  log "java args via=$via agent=${agent:-none} xmx=${xmx:-none} argfile=$argfile"
   rw=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "'"$NF_PROPS_MOUNT"'"}}{{.RW}}{{end}}{{end}}' "$PAPER" 2>>"$LOG")
   present=$(docker exec "$PAPER" sh -c "test -f $NF_PROPS_COPY && echo present" 2>>"$LOG")
   copy_sha=$(docker exec "$PAPER" sha256sum "$NF_PROPS_COPY" 2>>"$LOG" | awk '{print $1}')
@@ -255,12 +262,20 @@ row_NF1() {
   # Resource attribute blocks of every batch, not only the first: a restart or a late provider must not add a forbidden key.
   allres=$(cat "$OUT"/*.jsonl 2>/dev/null | grep -o '"resource":{"attributes":\[[^]]*\]')
   bad=$(printf '%s\n' "$allres" | grep -o -E '"key":"(host|process|os)\.[^"]*"|"key":"container\.id"' | sort -u | tr '\n' ' ')
-  addr=$(printf '%s\n' "$allres" | grep -c -E "$IPV4|$IPV6|$UUID")
-  GOT="service.name=${svc:-none} geldar.shard=${shd:-none} forbidden_keys=${bad:-none} address_or_uuid_blocks=$addr"
-  [ "$svc" = geldar-neoforge ] && [ "$shd" = "$SHARD" ] && [ -z "$bad" ] && [ "$addr" -eq 0 ]
+  # service.instance.id is the OTel SDK's per-process UUID (kept by decision): it must be present and UUID-shaped, and only
+  # that key's value is excluded from the address scan.
+  sid=$(printf '%s' "$res" | str_values service.instance.id | head -n 1)
+  sidok=no
+  printf '%s' "$sid" | grep -q -E "^$UUID\$" && sidok=yes
+  addr=$(printf '%s\n' "$allres" | sid_strip | grep -c -E "$IPV4|$IPV6|$UUID")
+  GOT="service.name=${svc:-none} geldar.shard=${shd:-none} instance_id_uuid=$sidok forbidden_keys=${bad:-none} address_or_uuid_blocks=$addr"
+  [ "$svc" = geldar-neoforge ] && [ "$shd" = "$SHARD" ] && [ "$sidok" = yes ] && [ -z "$bad" ] && [ "$addr" -eq 0 ]
 }
+# A paused empty server (pause-when-empty) has no ticks and no chunks: the row needs a human join.
+no_player() { [ "$(rc list | sed -n 's/^There are \([0-9]*\) of a max.*/\1/p' | head -n 1)" = 0 ]; }
 row_NF2() {
   WANT="tick lag histogram delta/elapsed 20/s +-5%"
+  no_player && { SKIP_REASON=no-player-online; GOT=none; return 2; }
   SINCE=$(lines_now)
   nap 80
   hc=$(vf histcount "$NF_TICK_HISTOGRAM")
@@ -287,7 +302,8 @@ row_NF3() {
   ops=$(lastv geldar_operators_count)
   SINCE=0 # the snapshot event is written once, 5 s after the server start
   snap=$(recs | grep -F 'geldar.server.config_snapshot' | tail -n 1)
-  keys=$(printf '%s' "$snap" | grep -o '"key":"[^"]*"' | sed 's/"key":"\(geldar\.\)\{0,1\}//; s/"$//' | sort -u | tr '\n' ',')
+  # One attribute geldar.text holds `name=value; name=value` (ConfigSnapshot.java): the setting names are parsed out of it.
+  keys=$(printf '%s' "$snap" | str_values geldar.text | head -n 1 | tr ';' '\n' | sed 's/^ *//; s/=.*//' | sort -u | tr '\n' ',')
   forbidden=$(printf '%s' "$keys" | tr ',' '\n' | grep -c -i -E 'rcon|query|address|seed|password|secret|motd|^ip$')
   GOT="list=${n:-none} online=$on mods=$mods ops=$ops snapshot_keys=${keys%,} forbidden=$forbidden"
   isnum "$n" && isnum "$on" && isnum "$mods" && isnum "$ops" && [ -n "$snap" ] && [ "$forbidden" -eq 0 ] &&
@@ -295,6 +311,7 @@ row_NF3() {
 }
 row_NF4() {
   WANT="world gauges present and plausible (approximate by design); players per dimension equal list"
+  no_player && { SKIP_REASON=no-player-online; GOT=none; return 2; }
   SINCE=$(lines_now)
   nap 30
   w=$NF_WORLD
@@ -309,6 +326,7 @@ row_NF4() {
 }
 row_NF5() {
   WANT="stalls +1; flag=1 2000-2500ms; flag=0 4000ms +-10% (the TickCollector reuses core StallDetector, as Paper's T3)"
+  no_player && { SKIP_REASON=no-player-online; GOT=none; return 2; }
   s0=$(lastv geldar_tick_stalls_total)
   isnum "$s0" || s0=0
   SINCE=$(lines_now)
@@ -378,7 +396,7 @@ row_NF8() {
   v4=$(cat "$OUT"/*.jsonl | sed 's/"key":"[^"]*[Vv]ersion[^"]*","value":{"[A-Za-z]*":"[^"]*"}//g' | grep -o -E "$IPV4" |
     grep -v -c -E '0\.0\.0\.0|(^|[^0-9.])26\.[0-9]+\.[0-9]+\.[0-9]+')
   v6=$(cat "$OUT"/*.jsonl | grep -c -E "$IPV6")
-  ui=$(cat "$OUT"/*.jsonl | grep -c -E "$UUID")
+  ui=$(cat "$OUT"/*.jsonl | sid_strip | grep -c -E "$UUID") # service.instance.id (the SDK's per-process UUID) is the one allowed value
   GOT="ipv4_hits=$v4 ipv6_lines=$v6 uuid_lines=$ui"
   [ "$v4" -eq 0 ] && [ "$v6" -eq 0 ] && [ "$ui" -eq 0 ]
 }
@@ -471,7 +489,7 @@ wait_healthy() {
 # Recreates the server with exactly the files and working dir its own compose labels name, in the project scope; the
 # SCRATCH_* and GELDAR_NF_* variables of the shell that ran scratch.sh up must be exported (compose refuses without them,
 # before it touches anything).
-recreate() {
+compose_run() { # $COMPOSE_ARGS after the labelled files, in the project scope
   cf=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.config_files"}}' "$PAPER" 2>>"$LOG")
   wd=$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$PAPER" 2>>"$LOG")
   [ -n "$cf" ] && [ -n "$wd" ] || return 1
@@ -479,20 +497,39 @@ recreate() {
     IFS=,
     set --
     for f in $cf; do set -- "$@" -f "$f"; done
-    docker compose -p "$PROJECT" --project-directory "$wd" "$@" up -d --no-deps --force-recreate paper
-  ) >>"$LOG" 2>&1 || return 1
+    IFS=' '
+    docker compose -p "$PROJECT" --project-directory "$wd" "$@" $COMPOSE_ARGS
+  ) >>"$LOG" 2>&1
+}
+recreate() {
+  COMPOSE_ARGS='up -d --no-deps --force-recreate paper' compose_run || return 1
   refresh_paper && wait_healthy
 }
+started_at() { docker inspect -f '{{.State.StartedAt}}' "$PAPER" 2>>"$LOG"; }
+STACK_WHY=''
 stack_default() {
   ARM_OFF=0
+  s0=$(started_at)
   recreate && return 0
+  if [ "$(started_at)" = "$s0" ]; then # compose refused before touching anything: the stack is intact, restore_all rewrites the copy
+    log "stack: the container was not recreated (StartedAt unchanged)"
+    return 1
+  fi
+  STACK_WHY=recreated-but-not-healthy
   STACK_OK=0
   return 1
 }
+copy_stat() { docker exec "$PAPER" stat -c '%U %a' "$NF_PROPS_COPY" 2>>"$LOG"; }
+COPY_TOUCHED=0
+COPY_STAT0=''
+RESTORE_BAD=0
 row_NF10() {
   WANT="no geldar points 15 s plus one export after enabled=false (live reload, else after one restart); resume after restore"
+  COMPOSE_ARGS='config -q' compose_run || { SKIP_REASON=env-not-exported; GOT="compose-config-failed (export the SCRATCH_* and GELDAR_NF_* variables)"; return 2; }
   SINCE=$(lines_now)
   write_profile 'enabled=false' enabled
+  COPY_STAT0=$(copy_stat)
+  COPY_TOUCHED=1
   COPY_DIRTY=1
   write_copy "$PROFILE" || log "NF10: the copy in the container could not be written"
   nap 30 # 15 s plus one 15 s export
@@ -576,7 +613,21 @@ run_row() {
 restore_all() {
   [ "$PAUSED" -eq 1 ] && docker unpause "$PAPER" >>"$LOG" 2>&1
   restore_profile
-  if [ "$ARM_OFF" -eq 1 ]; then stack_default; elif [ "$COPY_DIRTY" -eq 1 ]; then write_copy "$ORIG"; fi
+  # The copy is rewritten whenever it is still dirty, whatever ARM_OFF says: a failed recreate leaves the old container and the edited copy.
+  if [ "$ARM_OFF" -eq 1 ] && stack_default; then COPY_DIRTY=0; fi
+  if [ "$COPY_DIRTY" -eq 1 ]; then write_copy "$ORIG"; fi
+  if [ "$COPY_TOUCHED" -eq 1 ]; then
+    cs=$(copy_sha)
+    st1=$(copy_stat)
+    if [ "$cs" != "$START_SHA" ]; then
+      echo "RESTORE-FAILED copy_sha=${cs:-none} want=$START_SHA"
+      RESTORE_BAD=1
+    fi
+    if [ "$st1" != "$COPY_STAT0" ]; then
+      echo "ABORT reason=copy-owner-or-mode-changed before='$COPY_STAT0' after='$st1'"
+      RESTORE_BAD=1
+    fi
+  fi
   END_SHA=$(sha_of "$PROFILE")
 }
 summary() {
@@ -602,11 +653,14 @@ on_exit() {
   if [ "${END_SHA:-}" != "$START_SHA" ]; then
     echo "ABORT reason=profile-sha256-differs-after-restore saved_profile=$ORIG" # the saved copy is kept
     code=4
+  elif [ "$RESTORE_BAD" -eq 1 ]; then
+    echo "ABORT reason=copy-not-restored saved_profile=$ORIG" # the saved copy is kept
+    code=6
   else
     rm -f "$ORIG"
   fi
   if [ "$STACK_OK" -eq 0 ]; then
-    echo "ABORT reason=default-stack-not-restored"
+    echo "ABORT reason=default-stack-not-restored cause=${STACK_WHY:-recreate-failed}"
     code=5
   fi
   [ "$SUMMARY_DONE" -eq 1 ] || summary
