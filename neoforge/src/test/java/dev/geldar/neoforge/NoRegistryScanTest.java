@@ -27,8 +27,9 @@ class NoRegistryScanTest {
 
     /** Chat is not exported and no name mask exists (README, Events). Matched case-insensitively, as FORBIDDEN is. */
     private static final List<String> CHAT_WORDS = List.of(
-            "ChatEvent", "ChatReceivedEvent", "PlayerChatMessage", "name mask", "name_mask", "namemask",
-            "chat_export", "chatexport");
+            "ChatEvent", "ChatReceivedEvent", "PlayerChatMessage", "ServerChatEvent", "ChatType", "CommandEvent",
+            "broadcastChatMessage", "handleChat", "name mask", "name_mask", "namemask", "name-mask", "name.mask",
+            "chat_export", "chatexport", "chat-export", "chat.export", "chat.enabled");
 
     private static final Path JAVA_ROOT = Path.of("src", "main", "java");
     private static final Path RESOURCE_ROOT = Path.of("src", "main", "resources");
@@ -57,8 +58,32 @@ class NoRegistryScanTest {
     }
 
     @Test
+    void packedCoreCommonSourcesReferenceNoChatEventOrNameMask() throws IOException {
+        assertEquals(List.of(), scan(CORE_COMMON_JAVA_ROOT, ".java", CHAT_WORDS),
+                "chat event or name mask found in packed core-common sources");
+    }
+
+    @Test
     void mainResourcesHaveNoChatExportOrNameMaskKey() throws IOException {
         assertEquals(List.of(), scan(RESOURCE_ROOT, null, CHAT_WORDS), "chat export or name mask found in main resources");
+    }
+
+    /** A command event carries /say, /me and /msg text, so it is chat too. The scan is textual: comments count. */
+    @Test
+    void mainSourcesReferenceNoCommandEvent() throws IOException {
+        assertEquals(List.of(), scan(JAVA_ROOT, ".java", List.of("CommandEvent")), "command event found in main sources");
+    }
+
+    @Test
+    void mainSourcesReferenceNoChatBroadcastOrChatHandler() throws IOException {
+        assertEquals(List.of(), scan(JAVA_ROOT, ".java", List.of("broadcastChatMessage", "handleChat")),
+                "chat broadcast or chat handler found in main sources");
+    }
+
+    @Test
+    void mainResourcesHaveNoChatOrNameMaskSetting() throws IOException {
+        assertEquals(List.of(), scan(RESOURCE_ROOT, null, List.of("chat.enabled", "name-mask", "name.mask")),
+                "chat or name-mask setting found in main resources");
     }
 
     @Test
