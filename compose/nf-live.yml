@@ -27,7 +27,7 @@
 #
 # Environment: every variable has a default, so the file renders with no environment set (ci.yml renders every compose file
 # with none). The variables an operator sets for this project, all optional at render time:
-#   NF_SECRETS_DIR         the per-project secret files (default ./secrets-nf, gitignored; written by `./geldar.ps1 shard nats-auth nf --live`, runbook section 4b, which writes all ten files)
+#   NF_SECRETS_DIR         the per-project secret files (default ./secrets-nf, gitignored; written by `./geldar.ps1 shard nats-auth nf --live`, runbook section 4b, which writes all eleven files)
 #   NF_MOD_JAR_HOST        host path of the pinned geldar NeoForge mod jar (read-only mount). Unset, the default path does not
 #                          exist and `up` refuses to start the bind (create_host_path is false), which is the fail-closed path.
 #   NF_MOD_SHA256          the jar's sha256, 64 lowercase hex; the entrypoint refuses a mounted jar that does not match
@@ -323,7 +323,8 @@ volumes:
 # File-based secrets under the per-project directory (compose/secrets-nf/, gitignored). The names are the per-shard NATS
 # auth set's: nats-auth.conf (the server config), nats-sink.txt, nats-neoforge.txt, nats-velocity.txt, nats-deploy.txt,
 # nats-seed.txt (one password file per user), and the Postgres, forwarding and RCON secrets. `./geldar.ps1 shard nats-auth nf --live`
-# writes all ten files of the set: these nine, and nats-body.txt, which only compose/nf-live-probe.yml declares (runbook section 4b).
+# writes all eleven files of the set (nats-auth.conf and ten password files): the ones named above, nats-body.txt (which only
+# compose/nf-live-probe.yml declares) and nats-human.txt (which only compose/nf-live-human.yml declares) (runbook section 4b).
 # No value is in this file.
 secrets:
   postgres:

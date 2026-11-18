@@ -47,7 +47,9 @@ const services = (f: string): Record<string, Service> => load(f).services ?? {};
 const humanPorts = (): string[] =>
   (services(HUMAN)['velocity-human']?.ports ?? []).map((p) =>
     String(p)
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the compose variable syntax, not a template literal
       .replace('${NF_HUMAN_BIND:-127.0.0.1}', DEFAULT_BIND)
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: the compose variable syntax, not a template literal
       .replace('${NF_HUMAN_PORT:-46566}', DEFAULT_PORT),
   );
 
@@ -85,6 +87,7 @@ describe('the human lane overlay (compose/nf-live-human.yml) with the live base'
     );
     const nonLoopback = all.filter((p) => !isLoopback(p.entry));
     expect(nonLoopback.map((p) => p.service)).toEqual(['velocity-human']);
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the compose variable syntax, not a template literal
     expect(nonLoopback[0]?.entry).toBe('${NF_HUMAN_BIND:-127.0.0.1}:${NF_HUMAN_PORT:-46566}:25565');
   });
 
