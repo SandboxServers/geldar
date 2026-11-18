@@ -99,12 +99,13 @@ check_human_port() {
 }
 
 # A failed start of velocity-human stops that one service, so a proxy with no identity gate never keeps running and publishing its
-# port. The overlay sets restart: "no", so the operator starts it again on purpose. Then the script exits non-zero.
+# port. The overlay sets restart: unless-stopped, and a `stop` is remembered across host reboots, so the proxy stays down until the
+# next `up`. If the stop fails, unless-stopped keeps restarting the failed proxy (a loop with backoff): the message says so.
 human_fail() {
   if act dc stop velocity-human; then
-    state="velocity-human is stopped (the human lane stays closed until you start it again)"
+    state="velocity-human is stopped (the human lane stays closed across reboots until you start it again)"
   else
-    state="velocity-human could not be stopped: check docker ps before you do anything else"
+    state="velocity-human could not be stopped and may be restart-looping (unless-stopped): check docker ps, then docker stop velocity-human"
   fi
   die "$1; $state"
 }

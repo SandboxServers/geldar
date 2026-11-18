@@ -250,11 +250,11 @@ describe('the human lane security settings (pinned)', () => {
     expect(JSON.stringify(hc.test)).toContain('/tmp/geldar-identity.ready');
   });
 
-  it('keeps tmpfs /tmp, the service user, restart "no" and the jar with create_host_path false', () => {
+  it('keeps tmpfs /tmp, the service user, restart unless-stopped and the jar with create_host_path false', () => {
     const svc = services(HUMAN)['velocity-human'] as Record<string, unknown>;
     expect(svc.tmpfs).toEqual(['/tmp']);
     expect(svc.user).toBeDefined();
-    expect(svc.restart).toBe('no');
+    expect(svc.restart).toBe('unless-stopped');
     const jar = (svc.volumes as Record<string, unknown>[]).find(
       (v) => typeof v === 'object' && v.target === '/plugins/geldar-velocity-identity.jar',
     );

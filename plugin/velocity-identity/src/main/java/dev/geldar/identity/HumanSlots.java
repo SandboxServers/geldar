@@ -78,8 +78,9 @@ final class HumanSlots {
         }
         try {
             log.info(message, held, SHARD_MAX_PLAYERS);
-        } catch (RuntimeException ignored) {
-            // The slot is already reserved or released; the line is lost, the login decision stands.
+        } catch (Throwable ignored) {
+            // Only the log call is inside this try, and it runs after the slot is reserved or released. An Error from a
+            // logger (as warnNoSlot also guards) loses the line; it must not hold a slot or stop the login decision.
         }
     }
 }
