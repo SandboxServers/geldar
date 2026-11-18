@@ -13,7 +13,7 @@ import {
   StorageType,
 } from '@nats-io/jetstream';
 import type { NatsConnection } from '@nats-io/transport-node';
-import { CONSUMER_NAME, STREAM_CONFIG } from './config.ts';
+import { CONSUMER_NAME, defaultStreamSettings, type StreamSettings } from './config.ts';
 import { type EventsinkMetrics, type FailReason, samplePending } from './metrics.ts';
 import { DLQ_TYPE, isNonEventSubject, shardOfSubject, validateMessage } from './validate.ts';
 import { type EventWriter, isPermanentDbError } from './writer.ts';
@@ -67,6 +67,11 @@ export interface BatchDeps {
    * never the event body.
    */
   errorLog?: ErrorLog | undefined;
+  /**
+   * The shard this sink serves. When set, an event for another shard is dead-lettered to
+   * `geldar.<servedShard>.dlq` (decision 0382); when absent, every shard is accepted.
+   */
+  servedShard?: string | undefined;
 }
 
 /** The sink for the error logs: an event name and its fields. */
@@ -187,7 +192,10 @@ async function deadLetter(
   deps: BatchDeps,
   log: (line: string) => void,
 ): Promise<void> {
-  const dlq = dlqSubject(message.subject);
+  const dlq =
+    deps.servedShard === undefined
+      ? dlqSubject(message.subject)
+      : `geldar.${deps.servedShard}.${DLQ_TYPE}`;
   try {
     await deps.publishDlq(dlq, dlqBody(reason, message.subject, message.data));
     log(
@@ -275,7 +283,7 @@ export async function handleBatch(
       message.ack();
       continue;
     }
-    const verdict = validateMessage(message.subject, message.data);
+    const verdict = validateMessage(message.subject, message.data, deps.servedShard);
     if (verdict.ok) {
       valid.push({ message, event: verdict.event, traceId: traceIdOf(message) });
       continue;
@@ -315,26 +323,32 @@ export async function handleBatch(
   for (const { message } of valid) message.ack();
 }
 
-/** Creates GELDAR_EVENTS from the shared definition if it does not exist. */
-export async function ensureStream(jsm: JetStreamManager): Promise<void> {
+/**
+ * Creates the stream with the configured limits if it does not exist. An existing stream is left
+ * as it is, whatever its limits: a changed setting reaches it only through an operator's edit.
+ */
+export async function ensureStream(
+  jsm: JetStreamManager,
+  stream: StreamSettings = defaultStreamSettings(),
+): Promise<void> {
   try {
-    await jsm.streams.info(STREAM_CONFIG.name);
+    await jsm.streams.info(stream.name);
     return;
   } catch {
     // Not found (or a transient error): try to create it below.
   }
   try {
     await jsm.streams.add({
-      name: STREAM_CONFIG.name,
-      subjects: [...STREAM_CONFIG.subjects],
+      name: stream.name,
+      subjects: [...stream.subjects],
       storage: StorageType.File,
       retention: RetentionPolicy.Limits,
-      max_age: STREAM_CONFIG.retentionDays * 24 * 3600 * 1_000_000_000,
-      max_bytes: STREAM_CONFIG.maxBytes,
+      max_age: stream.retentionDays * 24 * 3600 * 1_000_000_000,
+      max_bytes: stream.maxBytes,
     });
   } catch (error) {
     // The plugin may have created it between the two calls.
-    await jsm.streams.info(STREAM_CONFIG.name).catch(() => {
+    await jsm.streams.info(stream.name).catch(() => {
       throw error;
     });
   }
@@ -344,20 +358,24 @@ export async function ensureStream(jsm: JetStreamManager): Promise<void> {
  * Creates the durable consumer if it does not exist, and lifts the redelivery cap on one created
  * with an older `max_deliver` (an outage longer than the cap would otherwise lose events).
  */
-export async function ensureConsumer(jsm: JetStreamManager): Promise<void> {
-  const existing = await jsm.consumers.info(STREAM_CONFIG.name, CONSUMER_NAME).catch(() => null);
+export async function ensureConsumer(
+  jsm: JetStreamManager,
+  stream: StreamSettings = defaultStreamSettings(),
+): Promise<void> {
+  const existing = await jsm.consumers.info(stream.name, CONSUMER_NAME).catch(() => null);
   if (existing === null) {
-    await jsm.consumers.add(STREAM_CONFIG.name, {
+    await jsm.consumers.add(stream.name, {
       durable_name: CONSUMER_NAME,
       ack_policy: AckPolicy.Explicit,
-      filter_subject: STREAM_CONFIG.subjects[0],
+      // loadStreamSettings always sets exactly one filter; the fallback only satisfies the index type.
+      filter_subject: stream.subjects[0] ?? '',
       ack_wait: 30 * 1_000_000_000,
       max_deliver: MAX_DELIVER,
     });
     return;
   }
   if (existing.config?.max_deliver !== MAX_DELIVER) {
-    await jsm.consumers.update(STREAM_CONFIG.name, CONSUMER_NAME, { max_deliver: MAX_DELIVER });
+    await jsm.consumers.update(stream.name, CONSUMER_NAME, { max_deliver: MAX_DELIVER });
   }
 }
 
@@ -386,11 +404,15 @@ const REENSURE_AFTER = 5;
 const FATAL_AFTER = 20;
 
 /** Ensures the stream and consumer, then returns the consumer handle. */
-async function bindConsumer(nc: NatsConnection, js: JetStreamClient): Promise<Consumer> {
+async function bindConsumer(
+  nc: NatsConnection,
+  js: JetStreamClient,
+  stream: StreamSettings,
+): Promise<Consumer> {
   const jsm = await jetstreamManager(nc);
-  await ensureStream(jsm);
-  await ensureConsumer(jsm);
-  return js.consumers.get(STREAM_CONFIG.name, CONSUMER_NAME);
+  await ensureStream(jsm, stream);
+  await ensureConsumer(jsm, stream);
+  return js.consumers.get(stream.name, CONSUMER_NAME);
 }
 
 /**
@@ -412,10 +434,15 @@ export async function startConsumer(
     lagIntervalMs?: number | undefined;
     /** The OTLP error log; absent when telemetry is off. */
     errorLog?: ErrorLog | undefined;
+    /** The stream and its filter; absent means the default stream. */
+    stream?: StreamSettings | undefined;
+    /** The shard this sink serves; absent accepts any shard. */
+    servedShard?: string | undefined;
   },
 ): Promise<RunningConsumer> {
   const js = jetstream(nc);
-  let consumer = await bindConsumer(nc, js);
+  const stream = options.stream ?? defaultStreamSettings();
+  let consumer = await bindConsumer(nc, js, stream);
   const deps: BatchDeps = {
     writer,
     publishDlq: async (subject, body) => {
@@ -423,6 +450,7 @@ export async function startConsumer(
     },
     metrics: options.metrics,
     errorLog: options.errorLog,
+    servedShard: options.servedShard,
   };
   const metrics = options.metrics;
   const lagTimer = metrics
@@ -436,7 +464,7 @@ export async function startConsumer(
     while (!stopping) {
       try {
         if (failures >= REENSURE_AFTER && failures % REENSURE_AFTER === 0) {
-          consumer = await bindConsumer(nc, js);
+          consumer = await bindConsumer(nc, js, stream);
         }
         const batch = await consumer.fetch({
           max_messages: options.batchSize,

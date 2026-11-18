@@ -35,6 +35,11 @@ export function consumerOptions(
 /** The one service name of the log and the metrics push. */
 export const SERVICE_NAME = 'geldar-eventsink';
 
+/** The start-up line. CI waits for the default text (`consuming GELDAR_EVENTS`); keep it. */
+export function consumingLine(stream: string | undefined): string {
+  return `eventsink: consuming ${stream ?? 'GELDAR_EVENTS'}`;
+}
+
 export { flushTelemetry, TELEMETRY_FLUSH_MS };
 
 /**
@@ -156,7 +161,7 @@ export async function main(): Promise<void> {
       errorLogs,
     ),
   );
-  console.log('eventsink: consuming GELDAR_EVENTS');
+  console.log(consumingLine(config.stream?.name));
 
   let shuttingDown = false;
   async function shutdown(): Promise<void> {

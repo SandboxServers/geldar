@@ -31,9 +31,11 @@ export function shardOfSubject(subject: string): string {
 
 /**
  * Parses and validates a message body against the generated WorldEvent validator, then checks
- * that the subject agrees with the event (`geldar.<shard>.<type>`). Never throws.
+ * that the subject agrees with the event (`geldar.<shard>.<type>`). With `servedShard` set (decision
+ * 0382), an event whose shard field is another shard is refused with reason `shard_mismatch`; the
+ * caller dead-letters it. Without it, every shard is accepted (the colo behaviour). Never throws.
  */
-export function validateMessage(subject: string, data: Uint8Array): Verdict {
+export function validateMessage(subject: string, data: Uint8Array, servedShard?: string): Verdict {
   let value: unknown;
   try {
     value = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(data));
@@ -42,6 +44,12 @@ export function validateMessage(subject: string, data: Uint8Array): Verdict {
   }
   const result = validateWorldEvent(value);
   if (!result.ok) return { ok: false, reason: result.errors.join('; ') };
+  if (servedShard !== undefined && result.value.shard !== servedShard) {
+    return {
+      ok: false,
+      reason: `shard_mismatch: event shard ${result.value.shard} is not served by this sink (serves ${servedShard})`,
+    };
+  }
   const expected = `geldar.${result.value.shard}.${result.value.type}`;
   if (subject !== expected) {
     return { ok: false, reason: `subject ${subject} does not match the event (${expected})` };
