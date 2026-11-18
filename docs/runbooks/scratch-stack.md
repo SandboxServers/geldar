@@ -589,6 +589,40 @@ the jar is copied removes the files it wrote.
 Run 7 (2026-11-17) loaded the mounted jar on a dedicated server, once. If the server fails to load the
 mod, record that as a finding in the run's report. It is not a fault in `build-neoforge-mod.sh`.
 
+## Extra mods (BlueMap, Chunky) on scratch
+
+`sh deploy/scratch/scratch.sh` mounts the two optional jars on the NeoForge project when `SCRATCH_EXTRA_MODS=1`. The hook is
+`deploy/scratch/scratch-extra-mods.sh`; the overlay is `compose/opt-in/scratch-neoforge-extra-mods.yml`. With the variable unset,
+nothing changes. The overlay is added only for `SCRATCH_PLATFORM=neoforge`, to every verb of that project (up, status, down,
+probe). Paper projects never get it.
+
+Commands (replace the placeholders; the NeoForge variables of the section above apply as well):
+
+```sh
+export SCRATCH_PLATFORM=neoforge
+export SCRATCH_EXTRA_MODS=1
+export SCRATCH_EXTRA_CHUNKY_JAR_HOST=<absolute path of the Chunky jar on this node>
+export SCRATCH_EXTRA_BLUEMAP_JAR_HOST=<absolute path of the BlueMap jar on this node>
+export SCRATCH_NATS_AUTH_DIR=<absolute path of the NATS auth directory>
+sh deploy/scratch/scratch.sh up <suffix>
+sh deploy/scratch/scratch.sh down <suffix>
+```
+
+Both host variables are required, and each must name an absolute path (forward slashes; no quotes, backslashes or dollar
+signs), a readable, non-empty regular file (not a symlink) whose sha256 equals its pin in `compose/neoforge/extra-mods.pins`.
+`up` checks all of this on the host and refuses with exit 2 before any docker call. `SCRATCH_EXTRA_MODS` must be `1` or unset,
+and `SCRATCH_PLATFORM` must be `neoforge`. `down` and `status` never refuse on these variables.
+
+Privacy rule: never run BlueMap on scratch without its config seeding. `up` refuses with `SCRATCH_EXTRA_MODS=1` when
+`compose/neoforge/extra-mods-bluemap-config.sh` is absent from the tree you run it from. Run the scratch stack from a tree that
+contains the config seeding change (`git show origin/main:compose/neoforge/extra-mods-bluemap-config.sh` must succeed). On
+origin/main before that change is merged, `up` refuses by design.
+
+Not automated here: the scratch web overlay for the player-privacy 404 check. That belongs to the BlueMap team and
+`docs/runbooks/map-neoforge.md` (section 2.0). The open items there are OI-2 (a clean export, the built jars, the NATS auth
+directory, the secrets and the images) and OI-3 (the render syntax). This section adds no `--no-start` or create-only mode:
+`scratch.sh` still starts the project when `up` passes its checks.
+
 ## Mind test on the scratch stack
 
 This section runs one Claude Mind against one test player on a scratch stack (`compose/opt-in/scratch-mind.yml`, option A' in `docs/analysis/neoforge/mind-scratch-design.md`). Nothing here is a default: a plain `up` never starts a mind service. Every step that touches the Colo node needs the owner's direct approval first. The Mind host is reached only through the owner's ssh forward (step 6), never by any other route.
