@@ -4,6 +4,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import org.slf4j.Logger;
 
 /**
  * The bot-ingress decision (spec Appendix F, 8.4): a username is admitted only when the registry has
@@ -30,7 +31,7 @@ public final class LoginGate {
     private final Set<UUID> admitted = ConcurrentHashMap.newKeySet();
     private final Set<UUID> spectators = ConcurrentHashMap.newKeySet();
     /** The human slots of the shard's shared player limit. Only the human lane reserves from them; agents never do. */
-    private final HumanSlots humanSlots = new HumanSlots();
+    private final HumanSlots humanSlots;
 
     /**
      * What {@link #reserve} did with a login. {@link #NEW_SLOT} is the only result that owes the caller a release if the
@@ -43,8 +44,14 @@ public final class LoginGate {
     }
 
     public LoginGate(LifeRegistry registry, IdentityLane lane) {
+        this(registry, lane, null);
+    }
+
+    /** Logs the human slot counts to {@code log}, one line per reservation or release. Null logs nothing. */
+    public LoginGate(LifeRegistry registry, IdentityLane lane, Logger log) {
         this.registry = registry;
         this.lane = lane;
+        this.humanSlots = new HumanSlots(log);
     }
 
     /**
@@ -125,9 +132,12 @@ public final class LoginGate {
         return Reservation.ADMITTED;
     }
 
-    /** Gives back the human slot that this owner reserved. Only that owner's slot is freed; any other owner is a no-op. */
-    public void releaseSlot(Object owner) {
-        humanSlots.release(owner);
+    /**
+     * Gives back the human slot that this owner reserved, and returns true. Only that owner's slot is freed; any other owner
+     * is a no-op that returns false.
+     */
+    public boolean releaseSlot(Object owner) {
+        return humanSlots.release(owner);
     }
 
     /** Forgets a live or ghost connection that disconnected. Safe to repeat. Human slots are given back by {@link #releaseSlot}. */

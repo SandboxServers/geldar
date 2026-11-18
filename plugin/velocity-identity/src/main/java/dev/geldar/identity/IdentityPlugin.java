@@ -22,9 +22,11 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
-import java.util.function.Supplier;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import net.kyori.adventure.text.Component;
 import org.slf4j.Logger;
 
@@ -63,6 +65,8 @@ public final class IdentityPlugin {
     private final ReadinessFeed lifeFeed;
     private final SkinRegistry skins;
     private final DenialLimiter denials;
+    /** The connections that reserved a human slot and have not given it back. A disconnect of one of these must find its slot. */
+    private final Set<Player> heldHumans = ConcurrentHashMap.newKeySet();
     private static final int MAX_LOGGED_DENIALS = 10;
     private static final long DENY_WINDOW_NANOS = TimeUnit.SECONDS.toNanos(10);
     /** The profile property Mojang's session servers use for skins. */
@@ -110,7 +114,7 @@ public final class IdentityPlugin {
         this.inboxPrefix = inboxPrefix;
         this.skins = skins;
         this.lane = IdentityLane.parse(laneSetting.get());
-        this.gate = new LoginGate(registry, lane.orElse(IdentityLane.AGENT));
+        this.gate = new LoginGate(registry, lane.orElse(IdentityLane.AGENT), log);
         this.lifeFeed = new ReadinessFeed(registry, marker, log);
         this.denials = new DenialLimiter(MAX_LOGGED_DENIALS, DENY_WINDOW_NANOS, System::nanoTime,
                 count -> log.info("{} more denials were not logged in the last window", count));
@@ -186,6 +190,9 @@ public final class IdentityPlugin {
         LoginGate.Reservation reservation = refused
                 ? LoginGate.Reservation.DENIED
                 : gate.reserve(player, player.getUniqueId(), player.getUsername());
+        if (reservation == LoginGate.Reservation.NEW_SLOT) {
+            heldHumans.add(player);
+        }
         if (reservation == LoginGate.Reservation.ADMITTED || reservation == LoginGate.Reservation.NEW_SLOT) {
             String name = printable(player.getUsername());
             log.info(gate.isSpectator(player.getUniqueId()) ? "Admitted {} as a spectator" : "Admitted {}", name);
@@ -210,6 +217,7 @@ public final class IdentityPlugin {
     @Subscribe(order = PostOrder.LAST)
     public void onLoginSettled(LoginEvent event) {
         if (!event.getResult().isAllowed()) {
+            heldHumans.remove(event.getPlayer());
             gate.releaseSlot(event.getPlayer());
         }
     }
@@ -235,6 +243,11 @@ public final class IdentityPlugin {
             log.warn("Could not mark {} as a spectator; disconnecting", printable(player.getUsername()));
             player.disconnect(Component.text(LoginGate.DENY_MESSAGE));
         }
+    }
+
+    /** The login gate the handlers use. A unit test releases a slot through it to build a case the handlers never reach. */
+    LoginGate gate() {
+        return gate;
     }
 
     /** The life registry the gate reads. A unit test syncs it, since no NATS runs there. */
@@ -270,8 +283,25 @@ public final class IdentityPlugin {
         Player player = event.getPlayer();
         // The slot goes to this exact connection, whatever status Velocity reports: a denied duplicate of the same UUID
         // is another object and frees nothing. The status is consulted only for the live and ghost admissions below.
-        gate.releaseSlot(player);
+        boolean heldAsHuman = heldHumans.remove(player);
+        boolean freed = gate.releaseSlot(player);
         release(player.getUniqueId(), event.getLoginStatus());
+        if (!freed && heldAsHuman) {
+            warnNoSlot();
+        }
+    }
+
+    /**
+     * A defensive tripwire, not expected in normal operation: no real event sequence reaches it today, only the test hook.
+     * It runs after both releases, so a logger that throws here cannot stop them.
+     */
+    private void warnNoSlot() {
+        try {
+            // Counts only: an admitted human reached its disconnect with its slot already given back.
+            log.warn("human slot release found no slot");
+        } catch (Throwable ignored) {
+            // Both releases are done; only the line is lost.
+        }
     }
 
     /**

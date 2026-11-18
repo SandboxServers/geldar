@@ -3,6 +3,7 @@ package dev.geldar.identity;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.UUID;
+import org.slf4j.Logger;
 
 /**
  * The human slots of the NeoForge shard. A human reserves one at the login decision and gives it back on disconnect,
@@ -14,7 +15,9 @@ import java.util.UUID;
  *
  * <p>A slot belongs to the connection object that reserved it (its owner), not to its UUID. A second login of a UUID
  * that already holds a slot is refused, so it never shares, replaces or frees the holder's slot. Only the owner gives
- * the slot back. Every method is synchronized on this map, so simultaneous logins cannot overshoot the capacity.
+ * the slot back. Every read and write of the map is under the lock on this object, so simultaneous logins cannot
+ * overshoot the capacity. Each reservation and release logs one INFO line with the count held after it: no name, UUID
+ * or IP is ever logged.
  */
 final class HumanSlots {
     /**
@@ -28,21 +31,55 @@ final class HumanSlots {
 
     /** Each held slot, by its owner. Owners compare by identity, so two connections of one UUID are two owners. */
     private final Map<Object, UUID> owners = new IdentityHashMap<>();
+    /** Where the counts are logged. Null logs nothing. */
+    private final Logger log;
+
+    HumanSlots(Logger log) {
+        this.log = log;
+    }
 
     /** Reserves a slot for this owner. A full shard refuses; so does a UUID that already holds a slot ({@link Outcome#TAKEN}). */
-    synchronized Outcome reserve(Object owner, UUID connection) {
-        if (owners.containsValue(connection)) {
-            return Outcome.TAKEN;
+    Outcome reserve(Object owner, UUID connection) {
+        int held;
+        synchronized (this) {
+            if (owners.containsValue(connection)) {
+                return Outcome.TAKEN;
+            }
+            if (owners.size() >= SHARD_MAX_PLAYERS) {
+                return Outcome.FULL;
+            }
+            owners.put(owner, connection);
+            held = owners.size();
         }
-        if (owners.size() >= SHARD_MAX_PLAYERS) {
-            return Outcome.FULL;
-        }
-        owners.put(owner, connection);
+        count("human slot reserved: {}/{}", held);
         return Outcome.NEW;
     }
 
-    /** Gives back the slot this owner holds. An owner that holds nothing, or already gave it back, does nothing. */
-    synchronized void release(Object owner) {
-        owners.remove(owner);
+    /**
+     * Gives back the slot this owner holds, and returns true. An owner that holds nothing, or already gave it back, does
+     * nothing and returns false.
+     */
+    boolean release(Object owner) {
+        int held;
+        synchronized (this) {
+            if (owners.remove(owner) == null) {
+                return false;
+            }
+            held = owners.size();
+        }
+        count("human slot released: {}/{}", held);
+        return true;
+    }
+
+    /** One INFO line with the count and the capacity. A logger that fails must not refuse a login or a disconnect. */
+    private void count(String message, int held) {
+        if (log == null) {
+            return;
+        }
+        try {
+            log.info(message, held, SHARD_MAX_PLAYERS);
+        } catch (RuntimeException ignored) {
+            // The slot is already reserved or released; the line is lost, the login decision stands.
+        }
     }
 }
