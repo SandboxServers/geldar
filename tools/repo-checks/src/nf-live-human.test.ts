@@ -125,7 +125,9 @@ describe('the human lane overlay (compose/nf-live-human.yml) with the live base'
   it('mounts only the toml, the data volume and the identity jar, and reads only the velocity NATS password and the forwarding secret', () => {
     const svc = services(HUMAN)['velocity-human'] ?? {};
     expect(svc.secrets).toEqual(['velocity-forwarding', 'nats-velocity.txt']);
-    const sources = (svc.volumes ?? []).map((v) => String(v).split(':')[0]);
+    const sources = (svc.volumes ?? []).map((v) =>
+      typeof v === 'string' ? v.split(':')[0] : (v as { source: string }).source,
+    );
     expect(sources).toEqual([
       './velocity/velocity-nf-human.toml',
       'velocity-human-data',
@@ -175,5 +177,42 @@ describe('the human lane toml (compose/velocity/velocity-nf-human.toml)', () => 
     const lines = toml.split('\n').filter((l) => l.includes('0.0.0.0'));
     expect(lines).toEqual(['bind = "0.0.0.0:25565"']);
     expect(toml).toMatch(/^forwarding-secret-file = "\/run\/secrets\/velocity-forwarding"$/m);
+  });
+});
+
+// The security settings the human lane depends on. Each is a mutation the suite must catch: forwarding mode, the one-backend
+// route, the NATS URL (without it the plugin admits without a registry), the lane marker, the healthcheck, tmpfs, user, restart
+// and the jar's create_host_path.
+describe('the human lane security settings (pinned)', () => {
+  const sectionLines = (name: string): string[] => {
+    const after = read(TOML).split(`\n[${name}]\n`)[1] ?? '';
+    const body = after.split('\n[')[0] ?? '';
+    return body.split('\n').filter((l) => /^[^#\s].* = /.test(l));
+  };
+
+  it('forwards with modern forwarding, and the toml routes only to neoforge', () => {
+    expect(read(TOML)).toMatch(/^player-info-forwarding-mode = "modern"$/m);
+    expect(sectionLines('servers')).toEqual(['neoforge = "neoforge:25565"', 'try = ["neoforge"]']);
+    expect(sectionLines('forced-hosts')).toEqual(['"geldar-human.invalid" = ["neoforge"]']);
+  });
+
+  it('sets the NATS URL, the human lane marker and the healthcheck on velocity-human', () => {
+    const svc = services(HUMAN)['velocity-human'] as Record<string, unknown>;
+    const env = svc.environment as Record<string, string>;
+    expect(env.GELDAR_NATS_URL).toBe('nats://nats:4222');
+    expect(env.GELDAR_IDENTITY_LANE).toBe('human');
+    expect(JSON.stringify(svc.healthcheck)).toContain('geldar-identity.ready');
+  });
+
+  it('keeps tmpfs /tmp, the service user, restart "no" and the jar with create_host_path false', () => {
+    const svc = services(HUMAN)['velocity-human'] as Record<string, unknown>;
+    expect(svc.tmpfs).toEqual(['/tmp']);
+    expect(svc.user).toBeDefined();
+    expect(svc.restart).toBe('no');
+    const jar = (svc.volumes as Record<string, unknown>[]).find(
+      (v) => typeof v === 'object' && v.target === '/plugins/geldar-velocity-identity.jar',
+    );
+    expect(jar?.read_only).toBe(true);
+    expect((jar?.bind as Record<string, unknown>)?.create_host_path).toBe(false);
   });
 });

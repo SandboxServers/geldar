@@ -23,7 +23,7 @@
 #                                      GELDAR_NF_TELEMETRY=off, so the entrypoint removes our own stale ledger jar copy and starts
 #                                      no agent. Unset adds no overlay, so a stale jar makes the start refuse, by design.
 #   NF_HUMAN (default off)             on adds compose/nf-live-human.yml (the velocity-human lane; loopback unless NF_HUMAN_BIND
-#                                      says otherwise). NF_HUMAN_BIND must be set explicitly, non-empty, and not 0.0.0.0. Unset or off never starts it.
+#                                      says otherwise). NF_HUMAN_BIND must be one IPv4 address (not 0.0.0.0). human-down removes velocity-human only. Unset or off never starts it.
 #   The compose shapes: dc() renders six (the base, with telemetry on, with telemetry off or with neither, each with or without
 #   compose/nf-live-human.yml); probe_dc() renders a seventh, the base plus compose/nf-live-probe.yml, for one run.
 #   NF_SECRETS_DIR                     the secret files (default compose/secrets-nf)
@@ -59,11 +59,8 @@ TELEMETRY=0
 # so the entrypoint removes our own stale ledger jar copy. Unset adds nothing; the default render is unchanged.
 OFF_FILE=$ROOT/compose/nf-live-telemetry-off.yml
 TELEMETRY_OFF=0
-# Human lane (NF_HUMAN=on only): the overlay, the two files it needs, and the flag. HUMAN is 1 only after check_human_inputs sees on.
-HUMAN_FILE=$ROOT/compose/nf-live-human.yml
-HUMAN_TOML=$ROOT/compose/velocity/velocity-nf-human.toml
-HUMAN_JAR=$ROOT/plugin/velocity-identity/build/libs/geldar-velocity-identity.jar
-HUMAN=0
+# The human lane (velocity-human, NF_HUMAN=on only) lives in deploy/nf-human-lib.sh: its paths, its flag and its functions.
+. "$(dirname "$0")/nf-human-lib.sh"
 
 die() {
   echo "nf-deploy: error: $*" >&2
@@ -126,16 +123,17 @@ done
 case $verb in
   plan | up | status | seed-bundle | probe) [ -z "$SERVICE" ] || die "$verb takes no service name" ;;
   down) [ -z "$SERVICE" ] || die "down takes no service name" ;;
+  human-down) [ -z "$SERVICE" ] || die "human-down takes no service name" ;;
   refresh-secrets) [ -z "$SERVICE" ] || die "refresh-secrets takes no service name" ;;
   logs)
     [ -n "$SERVICE" ] || die "logs needs a service: one of $SERVICES"
-    case " $SERVICES " in
+    case " $SERVICES velocity-human " in
       *" $SERVICE "*) ;;
       *) die "unknown service: $SERVICE (one of $SERVICES)" ;;
     esac
     ;;
   *)
-    echo "usage: nf-deploy.sh plan|up|refresh-secrets|status|down [--volumes] [--local]|logs <service> [--local]|seed-bundle [--local]|probe [--local]" >&2
+    echo "usage: nf-deploy.sh plan|up|refresh-secrets|status|down [--volumes] [--local]|human-down [--local]|logs <service> [--local]|seed-bundle [--local]|probe [--local]" >&2
     exit 2
     ;;
 esac
@@ -323,48 +321,6 @@ check_telemetry_network() {
     die "docker network $TELEMETRY_NETWORK does not exist on this node; start the geldar-telemetry stack first (nothing started)"
 }
 
-# NF_HUMAN: on adds compose/nf-live-human.yml; unset or off adds nothing; any other value refuses. status, down and logs read
-# only this switch (no refusals), so they can see velocity-human; gates() runs the full checks below for plan, up and refresh.
-check_human_switch() {
-  case ${NF_HUMAN-off} in
-    off) HUMAN=0 ;;
-    on) HUMAN=1 ;;
-    *) die "NF_HUMAN must be on or off (default off); refusing" ;;
-  esac
-}
-
-# On: NF_HUMAN_BIND is set, non-empty, an IP literal (no spaces, quotes or brackets) and not a wildcard (0.0.0.0 or ::). NF_HUMAN_PORT,
-# if set, is a canonical number from 1 to 65535 other than 25565, 25566 and the live port. The overlay's two mounted files must
-# exist. All of it runs before any docker call. HUMAN_BIND and HUMAN_PORT (default 46566, as the overlay) are set for the port gate.
-check_human_inputs() {
-  check_human_switch
-  [ "$HUMAN" = 1 ] || return 0
-  HUMAN_BIND=${NF_HUMAN_BIND-}
-  case $HUMAN_BIND in
-    '' | *[!0-9A-Fa-f.:]*) die "NF_HUMAN_BIND must be set to an IP address literal, not empty or blank (NF_HUMAN=on); refusing" ;;
-    0.0.0.0 | ::) die "NF_HUMAN_BIND $HUMAN_BIND is a wildcard address; the human lane never binds all interfaces; refusing" ;;
-  esac
-  HUMAN_PORT=${NF_HUMAN_PORT-46566}
-  case $HUMAN_PORT in
-    '' | *[!0-9]* | 0*) die "NF_HUMAN_PORT must be a number with no leading zero (default 46566); refusing" ;;
-  esac
-  [ "${#HUMAN_PORT}" -le 5 ] && [ "$HUMAN_PORT" -le 65535 ] || die "NF_HUMAN_PORT $HUMAN_PORT is above 65535; refusing"
-  case $HUMAN_PORT in
-    25565 | 25566 | "$PORT") die "NF_HUMAN_PORT $HUMAN_PORT is reserved (25565, 25566 and the live velocity port $PORT); refusing" ;;
-  esac
-  [ -f "$HUMAN_FILE" ] || die "overlay $HUMAN_FILE is missing; refusing"
-  [ -f "$HUMAN_TOML" ] || die "compose/velocity/velocity-nf-human.toml is missing (the human proxy config); refusing"
-  [ -f "$HUMAN_JAR" ] || die "the identity plugin jar is missing (build plugin/velocity-identity first; the overlay mounts it); refusing"
-  say "human lane on: velocity-human publishes $HUMAN_BIND:$HUMAN_PORT->25565 (the only human publish)"
-}
-
-# On: the human port is free, or held only by velocity-human's own mapping $HUMAN_BIND:$HUMAN_PORT->25565/tcp (the agent port check is
-# check_port, which counts only the velocity row).
-check_human_port() {
-  [ "$HUMAN" = 1 ] || return 0
-  check_listener "$HUMAN_PORT" "$HUMAN_BIND" velocity-human
-}
-
 # The image of the neoforge service in compose/nf-live.yml: the one pinned reference, read from the file (no second copy here).
 compose_image() {
   img=$(awk '/^  [a-z][a-z-]*:$/ { svc = ($1 == "neoforge:") } svc && /^    image: / { print $2; exit }' "$COMPOSE_FILE")
@@ -501,7 +457,7 @@ cmd_up() {
   act dc up --no-deps --exit-code-from identity-seed identity-seed
   act dc up -d --wait eventsink neoforge
   act dc up -d --wait velocity
-  if [ "$HUMAN" = 1 ]; then act dc up -d --wait velocity-human; fi
+  if [ "$HUMAN" = 1 ] && ! act dc up -d --wait velocity-human; then human_fail "velocity-human did not become healthy"; fi
   say "up: project $PROJECT started (no volume removed)"
 }
 
@@ -557,6 +513,7 @@ cmd_down() {
 cmd_logs() {
   check_operator
   check_human_switch
+  if [ "$SERVICE" = velocity-human ]; then HUMAN=1; fi
   dc logs --tail 200 "$SERVICE"
 }
 
@@ -660,8 +617,10 @@ cmd_refresh_secrets() {
   # reaches it only by a recreate. Unset adds no word, so the recorded args are unchanged.
   human=
   if [ "$HUMAN" = 1 ]; then human=velocity-human; fi
-  act dc up -d --wait --force-recreate --no-deps velocity eventsink $human ||
+  if ! act dc up -d --wait --force-recreate --no-deps velocity eventsink $human; then
+    [ "$HUMAN" != 1 ] || human_fail "velocity, eventsink or velocity-human did not recreate or become healthy; identity-seed and neoforge were not run"
     die "velocity, eventsink or velocity-human did not recreate or become healthy; identity-seed and neoforge were not run"
+  fi
   act dc up --force-recreate --no-deps --exit-code-from identity-seed identity-seed ||
     die "identity-seed did not exit 0 (the one-shot seed); neoforge was not recreated; fix it and run refresh-secrets again"
   act dc up -d --wait --force-recreate --no-deps neoforge ||
@@ -678,4 +637,5 @@ case $verb in
   logs) cmd_logs ;;
   probe) cmd_probe ;;
   seed-bundle) cmd_seed_bundle ;;
+  human-down) cmd_human_down ;;
 esac

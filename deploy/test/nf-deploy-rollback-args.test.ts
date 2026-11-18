@@ -22,6 +22,7 @@ vi.setConfig({ testTimeout: 120000 });
 const DEPLOY = fileURLToPath(new URL('..', import.meta.url));
 const ROOT = resolve(DEPLOY, '..');
 const SCRIPT_SRC = resolve(DEPLOY, 'nf-deploy.sh');
+const HUMAN_LIB_SRC = resolve(DEPLOY, 'nf-human-lib.sh');
 const SCRIPT_TEXT = readFileSync(SCRIPT_SRC, 'utf8');
 const NF_COMPOSE_TEXT = readFileSync(resolve(ROOT, 'compose', 'nf-live.yml'), 'utf8');
 const NF_OVERLAY_TEXT = readFileSync(resolve(ROOT, 'compose', 'nf-live-telemetry.yml'), 'utf8');
@@ -81,6 +82,7 @@ function makeRepo(): string {
   mkdirSync(join(repo, 'compose', 'neoforge'), { recursive: true });
   mkdirSync(join(repo, 'stubs'));
   copyFileSync(SCRIPT_SRC, join(repo, 'deploy', 'nf-deploy.sh'));
+  copyFileSync(HUMAN_LIB_SRC, join(repo, 'deploy', 'nf-human-lib.sh'));
   writeFileSync(join(repo, 'compose', 'nf-live.yml'), NF_COMPOSE_TEXT);
   writeFileSync(join(repo, 'compose', 'nf-live-telemetry.yml'), NF_OVERLAY_TEXT);
   writeFileSync(join(repo, 'compose', 'nf-live-telemetry-off.yml'), NF_OFF_TEXT);

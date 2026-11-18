@@ -21,6 +21,7 @@ vi.setConfig({ testTimeout: 120000 });
 const DEPLOY = fileURLToPath(new URL('..', import.meta.url));
 const ROOT = resolve(DEPLOY, '..');
 const SCRIPT_SRC = resolve(DEPLOY, 'nf-deploy.sh');
+const HUMAN_LIB_SRC = resolve(DEPLOY, 'nf-human-lib.sh');
 const SCRIPT_TEXT = readFileSync(SCRIPT_SRC, 'utf8');
 const NF_COMPOSE_TEXT = readFileSync(resolve(ROOT, 'compose', 'nf-live.yml'), 'utf8');
 const SECRET_FILES = /^SECRET_FILES="([^"]+)"$/m.exec(SCRIPT_TEXT)?.[1].split(' ') ?? [];
@@ -78,6 +79,7 @@ function makeRepo(): string {
   mkdirSync(join(repo, 'compose', 'secrets-nf'), { recursive: true });
   mkdirSync(join(repo, 'stubs'));
   copyFileSync(SCRIPT_SRC, join(repo, 'deploy', 'nf-deploy.sh'));
+  copyFileSync(HUMAN_LIB_SRC, join(repo, 'deploy', 'nf-human-lib.sh'));
   writeFileSync(join(repo, 'compose', 'nf-live.yml'), NF_COMPOSE_TEXT);
   for (const f of SECRET_FILES)
     writeFileSync(join(repo, 'compose', 'secrets-nf', f), `${f} fixture\n`);

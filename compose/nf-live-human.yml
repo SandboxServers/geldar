@@ -46,7 +46,13 @@ services:
     volumes:
       - ./velocity/velocity-nf-human.toml:/config/velocity.toml:ro
       - velocity-human-data:/server
-      - ../plugin/velocity-identity/build/libs/geldar-velocity-identity.jar:/plugins/geldar-velocity-identity.jar:ro
+      # The identity jar, read-only. create_host_path false: a missing jar fails the start; compose never creates an empty directory there.
+      - type: bind
+        source: ../plugin/velocity-identity/build/libs/geldar-velocity-identity.jar
+        target: /plugins/geldar-velocity-identity.jar
+        read_only: true
+        bind:
+          create_host_path: false
     ports:
       # The one non-loopback-capable publish in the repo, bound only by NF_HUMAN_BIND (default 127.0.0.1). Exact string,
       # checked by loopback-ports.ts. Never 25565 or 25566.
@@ -85,7 +91,9 @@ services:
     labels:
       geldar.project: geldar-nf
       com.centurylinklabs.watchtower.enable: "false"
-    restart: unless-stopped
+    # "no": nothing restarts this proxy after a failed start or a host reboot. nf-deploy.sh stops it when its start fails; the operator
+    # starts it again on purpose (human-down removes it).
+    restart: "no"
 
 volumes:
   velocity-human-data: {}

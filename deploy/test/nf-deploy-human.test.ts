@@ -22,6 +22,7 @@ vi.setConfig({ testTimeout: 120000 });
 const DEPLOY = fileURLToPath(new URL('..', import.meta.url));
 const ROOT = resolve(DEPLOY, '..');
 const SCRIPT_SRC = resolve(DEPLOY, 'nf-deploy.sh');
+const HUMAN_LIB_SRC = resolve(DEPLOY, 'nf-human-lib.sh');
 const SCRIPT_TEXT = readFileSync(SCRIPT_SRC, 'utf8');
 const SECRET_FILES = /^SECRET_FILES="([^"]+)"$/m.exec(SCRIPT_TEXT)?.[1].split(' ') ?? [];
 const JAR_BYTES = 'geldar neoforge mod fixture\n';
@@ -99,6 +100,7 @@ function makeRepo(): string {
   }
   mkdirSync(join(repo, 'plugin', 'velocity-identity', 'build', 'libs'), { recursive: true });
   copyFileSync(SCRIPT_SRC, join(repo, 'deploy', 'nf-deploy.sh'));
+  copyFileSync(HUMAN_LIB_SRC, join(repo, 'deploy', 'nf-human-lib.sh'));
   for (const f of ['nf-live.yml', 'nf-live-human.yml']) {
     copyFileSync(join(ROOT, 'compose', f), join(repo, 'compose', f));
   }
@@ -351,5 +353,115 @@ describe('nf-deploy.sh human lane (NF_HUMAN)', () => {
     expect(res.status).toBe(0);
     const line = calls(repo).find((l) => l.startsWith('docker compose -p') && l.endsWith(' down'));
     expect(line).toMatch(HUMAN_CALL);
+  });
+});
+
+// The fail-closed fixes: the bind and port rules, the empty identity jar, a failed start (only velocity-human is stopped),
+// human-down with the flag unset, and logs for velocity-human.
+describe('nf-deploy.sh human lane: fail-closed fixes', () => {
+  const BAD_BINDS = [
+    '::0',
+    '0::',
+    '0:0:0:0:0:0:0:0',
+    '::ffff:0.0.0.0',
+    '::1',
+    '2001:db8::1',
+    '[::1]',
+    '0',
+    '00.0.0.0',
+    '0.0.0.0',
+    '256.1.1.1',
+    '192.0.2',
+    '192.0.2.4.5',
+    '192.0.2.4.',
+    '1..2.3',
+    '0192.0.2.4',
+    '192.0.2.1\n',
+    '192.0.2.1 ',
+    '192.0.2.1;x',
+    'localhost',
+    '',
+  ];
+  it.each(BAD_BINDS)('refuses NF_HUMAN_BIND %s before any compose call', (bind) => {
+    const repo = makeRepo();
+    const r = run(repo, { env: { NF_HUMAN_BIND: bind } });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('NF_HUMAN_BIND');
+    expect(calls(repo).filter((l) => l.includes(' compose -p '))).toEqual([]);
+  });
+
+  it.each(['192.0.2.10', '127.0.0.1'])('accepts NF_HUMAN_BIND %s', (bind) => {
+    const repo = makeRepo();
+    expect(run(repo, { env: { NF_HUMAN_BIND: bind } }).status).toBe(0);
+  });
+
+  it.each(['25565', '25566', '46565', '025565', '1023', '65536', '0', '1', ''])(
+    'refuses NF_HUMAN_PORT %s',
+    (port) => {
+      const repo = makeRepo();
+      const r = run(repo, { env: { NF_HUMAN_PORT: port } });
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toContain('NF_HUMAN_PORT');
+    },
+  );
+
+  it.each(['1024', '65535'])('accepts NF_HUMAN_PORT %s (the range ends)', (port) => {
+    const repo = makeRepo();
+    expect(run(repo, { env: { NF_HUMAN_PORT: port } }).status).toBe(0);
+  });
+
+  it('refuses an empty identity jar (zero bytes) before any compose call', () => {
+    const repo = makeRepo();
+    writeFileSync(
+      join(repo, 'plugin', 'velocity-identity', 'build', 'libs', 'geldar-velocity-identity.jar'),
+      '',
+    );
+    const r = run(repo);
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('empty');
+    expect(calls(repo).filter((l) => l.includes(' compose -p '))).toEqual([]);
+  });
+
+  it('stops only velocity-human when its up --wait fails, and exits non-zero', () => {
+    const repo = makeRepo();
+    const failing = [
+      '#!/bin/sh',
+      'echo "docker $*" >>"$STUB_LOG"',
+      'case "$*" in *"up -d --wait velocity-human"*) exit 1 ;; esac',
+      STUB_SCRIPTS.docker.split('\n').slice(2).join('\n'),
+    ].join('\n');
+    writeFileSync(join(repo, 'stubs', 'docker'), `${failing}\n`);
+    const r = run(repo, { args: ['up', '--local'] });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('velocity-human is stopped');
+    const all = calls(repo);
+    const at = all.findIndex((l) => l.includes('up -d --wait velocity-human'));
+    expect(at).toBeGreaterThan(-1);
+    const after = all.slice(at + 1);
+    expect(after).toHaveLength(1);
+    expect(after[0]).toMatch(/ compose -p geldar-nf .* stop velocity-human$/);
+  });
+
+  it('human-down removes only velocity-human, with the overlay, and works with NF_HUMAN unset', () => {
+    const repo = makeRepo();
+    const r = run(repo, { env: { NF_HUMAN: undefined }, args: ['human-down', '--local'] });
+    expect(r.status).toBe(0);
+    const compose = calls(repo).filter((l) => l.includes(' compose -p '));
+    expect(compose).toHaveLength(1);
+    expect(compose[0]).toMatch(/-f \S*compose\/nf-live-human\.yml/);
+    expect(compose[0]).toMatch(/ rm -sf velocity-human$/);
+  });
+
+  it('accepts logs velocity-human with NF_HUMAN unset, through the human overlay', () => {
+    const repo = makeRepo();
+    const r = run(repo, {
+      env: { NF_HUMAN: undefined },
+      args: ['logs', 'velocity-human', '--local'],
+    });
+    expect(r.status).toBe(0);
+    const compose = calls(repo).filter((l) => l.includes(' compose -p '));
+    expect(compose.at(-1)).toMatch(
+      /-f \S*compose\/nf-live-human\.yml .*logs --tail 200 velocity-human$/,
+    );
   });
 });
