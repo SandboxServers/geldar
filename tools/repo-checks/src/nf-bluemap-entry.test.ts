@@ -274,6 +274,72 @@ describe.skipIf(skipWithoutSh())(
       expect(readFileSync(join(cfgDir(c), 'packs', 'pack.zip'), 'utf8')).toBe('operator pack\n');
     });
 
+    it('a manifest with no final newline refuses: the last line would be skipped, so nothing is installed or started', () => {
+      const c = setup();
+      mountBundle(c);
+      const m = join(c.mount, 'bluemap-config', 'MANIFEST.sha256');
+      writeFileSync(m, readFileSync(m, 'utf8').replace(/\n$/, ''));
+      const r = run(c, ON());
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toMatch(/no final newline/);
+      expect(existsSync(cfgDir(c))).toBe(false);
+      expect(r.stdout).not.toContain('cwd=');
+    });
+
+    it('a CRLF manifest refuses: nothing is installed and nothing starts', () => {
+      const c = setup();
+      mountBundle(c);
+      const m = join(c.mount, 'bluemap-config', 'MANIFEST.sha256');
+      writeFileSync(m, readFileSync(m, 'utf8').replace(/\n/g, '\r\n'));
+      const r = run(c, ON());
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toMatch(/has CR line endings/);
+      expect(existsSync(cfgDir(c))).toBe(false);
+      expect(r.stdout).not.toContain('cwd=');
+    });
+
+    it('a tampered webserver.conf (enabled: true, final newline removed) is the last manifest line and refuses', () => {
+      const c = setup();
+      mountBundle(c);
+      writeFileSync(join(c.mount, 'bluemap-config', 'webserver.conf'), 'enabled: true');
+      const r = run(c, ON());
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toMatch(/webserver\.conf does not match MANIFEST/);
+      expect(existsSync(cfgDir(c))).toBe(false);
+      expect(r.stdout).not.toContain('cwd=');
+    });
+
+    it('a stray maps/x.json, storages/sql.json and a top-level plugin.json are moved aside and not left in place', () => {
+      const c = setup();
+      mountBundle(c);
+      expect(run(c, ON()).status).toBe(0);
+      writeFileSync(join(cfgDir(c), 'maps', 'x.json'), '{}\n');
+      writeFileSync(join(cfgDir(c), 'storages', 'sql.json'), '{}\n');
+      writeFileSync(join(cfgDir(c), 'plugin.json'), '{}\n');
+      const r = run(c, ON());
+      expect(r.status, r.stderr).toBe(0);
+      for (const rel of ['maps/x.json', 'storages/sql.json', 'plugin.json']) {
+        expect(existsSync(installed(c, rel))).toBe(false);
+        expect(readFileSync(installed(c, `${rel}.operator-bak`), 'utf8')).toBe('{}\n');
+      }
+      expect(r.stdout).toMatch(/cwd=/);
+    });
+
+    it('a file that cannot be removed (rm fails under config/bluemap) refuses before anything is copied', () => {
+      const c = setup();
+      mountBundle(c);
+      writeFileSync(
+        join(c.env.PATH_BIN ?? '', 'rm'),
+        '#!/bin/sh\ncase "$*" in *config*bluemap*) exit 1 ;; esac\nexec "$(PATH=/usr/bin:/bin command -v rm)" "$@"\n',
+        { mode: 0o755 },
+      );
+      const r = run(c, ON());
+      expect(r.status).not.toBe(0);
+      expect(r.stderr).toMatch(/cannot remove core\.conf\.part/);
+      expect(existsSync(installed(c, 'core.conf'))).toBe(false);
+      expect(r.stdout).not.toContain('cwd=');
+    });
+
     it('BlueMap not enabled (no jar mounted): the config dir is not touched and the cwd is not changed', () => {
       const c = setup(false);
       const r = run(c);

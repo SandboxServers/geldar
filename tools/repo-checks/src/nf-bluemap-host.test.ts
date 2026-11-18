@@ -12,6 +12,7 @@ import { skipWithoutSh, slash } from './scratch-harness.js';
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const LIB = `${ROOT}deploy/nf-extra-mods-lib.sh`;
 const REAL_BUNDLE = `${ROOT}plugins/bluemap/neoforge`;
+const LOADER = `${ROOT}compose/neoforge/extra-mods-bluemap-config.sh`;
 const JAR_BODY = 'fixture bluemap jar';
 const sha256 = (text: string | Buffer) => createHash('sha256').update(text).digest('hex');
 
@@ -50,7 +51,7 @@ function fixtureBundle(base: string, files: Record<string, string>): string {
 const OK_FILES = { 'core.conf': 'accept-download: true\n', 'maps/end.conf': 'marker-sets: {\n}\n' };
 
 /** Runs the driver: enabled bluemap with the given bundle; the docker stub logs any call (there must be none). */
-function drive(base: string, bundle: string, mods = 'bluemap') {
+function drive(base: string, bundle: string, mods = 'bluemap', loader?: string) {
   const bin = join(base, 'bin');
   mkdirSync(bin, { recursive: true });
   const log = join(base, 'docker.log');
@@ -71,6 +72,7 @@ function drive(base: string, bundle: string, mods = 'bluemap') {
       'check_host_file() { [ -f "$2" ] || die "$1 is not a regular file"; }',
       `ROOT='${slash(ROOT).replace(/\/$/, '')}'`,
       `. '${slash(LIB)}'`,
+      ...(loader ? [`BLUEMAP_LOADER='${slash(loader)}'`] : []),
       `EXTRA_PINS='${slash(pins)}'`,
       `BLUEMAP_BUNDLE='${slash(bundle)}'`,
       `NF_EXTRA_MODS='${mods}'`,
@@ -161,6 +163,41 @@ describe.skipIf(skipWithoutSh())(
       const bundle = fixtureBundle(base, OK_FILES);
       rmSync(join(bundle, 'maps', 'end.conf'));
       refused(base, drive(base, bundle), /lacks the regular file maps\/end\.conf/);
+    });
+
+    it('a manifest with no final newline refuses before any docker call (its last line would be skipped)', () => {
+      const base = mkdtempSync(join(tmpdir(), 'nf-bm-host-'));
+      dirs.push(base);
+      const bundle = fixtureBundle(base, { ...OK_FILES, 'webserver.conf': 'enabled: false\n' });
+      const m = join(bundle, 'MANIFEST.sha256');
+      writeFileSync(m, readFileSync(m, 'utf8').replace(/\n$/, ''));
+      refused(base, drive(base, bundle), /no final newline/);
+    });
+
+    it('a CRLF manifest refuses before any docker call', () => {
+      const base = mkdtempSync(join(tmpdir(), 'nf-bm-host-'));
+      dirs.push(base);
+      const bundle = fixtureBundle(base, OK_FILES);
+      const m = join(bundle, 'MANIFEST.sha256');
+      writeFileSync(m, readFileSync(m, 'utf8').replace(/\n/g, '\r\n'));
+      refused(base, drive(base, bundle), /has CR line endings/);
+    });
+
+    it('a tampered webserver.conf with its final newline removed refuses (it is the last manifest line)', () => {
+      const base = mkdtempSync(join(tmpdir(), 'nf-bm-host-'));
+      dirs.push(base);
+      const bundle = fixtureBundle(base, { ...OK_FILES, 'webserver.conf': 'enabled: false\n' });
+      writeFileSync(join(bundle, 'webserver.conf'), 'enabled: true');
+      refused(base, drive(base, bundle), /webserver\.conf does not match MANIFEST/);
+    });
+
+    it('the loader changed by one byte refuses before any docker call, naming the pin', () => {
+      const base = mkdtempSync(join(tmpdir(), 'nf-bm-host-'));
+      dirs.push(base);
+      const bundle = fixtureBundle(base, OK_FILES);
+      const loader = join(base, 'loader.sh');
+      writeFileSync(loader, `${readFileSync(LOADER, 'utf8')}# changed\n`);
+      refused(base, drive(base, bundle, 'bluemap', loader), /does not match its pinned sha256/);
     });
 
     it.skipIf(!CAN_LINK)(

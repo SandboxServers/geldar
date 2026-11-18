@@ -36,6 +36,11 @@ describe('BlueMap config bundle: MANIFEST.sha256', () => {
     expect(text).toBe(want);
   });
 
+  it('ends with LF and has no CR: a last line without LF is skipped by read, so the manifest must end in a newline', () => {
+    expect(text.endsWith('\n')).toBe(true);
+    expect(text.includes('\r')).toBe(false);
+  });
+
   it('every line is "<64 lowercase hex>  <relative .conf path>" and the lines are sorted', () => {
     const lines = text.replace(/\n$/, '').split('\n');
     for (const line of lines) {

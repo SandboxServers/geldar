@@ -15,7 +15,7 @@ services:
     image: itzg/minecraft-server:2026.10.1-java25@sha256:d12aed7e35981dfe259b60fbfee77d23a19b5898a7a31dca298d18b47b7b5776
     environment:
       GELDAR_NF_EXTRA_BLUEMAP_SHA256: "8938f4453af4b53970c86e43d0bd26b4a88980e4e6639f818fa770d0f61c43df"
-      GELDAR_NF_EXTRA_BLUEMAP_LOADER_SHA256: "f7c6dce01dd7092b9a6b691553d0e9c2013058815cc47c1fbc348fc0aa3041aa"
+      GELDAR_NF_EXTRA_BLUEMAP_LOADER_SHA256: "f80bdfe6392912b666f7a10be57d023c5a79de6199262be9e198894df1193cad"
     volumes:
       - type: bind
         source: ${NF_EXTRA_BLUEMAP_JAR_HOST:-./nf-live-unset/bluemap.jar}

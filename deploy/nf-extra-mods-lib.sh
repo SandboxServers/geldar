@@ -110,11 +110,13 @@ check_bluemap_bundle() {
   [ -d "$b" ] && [ ! -L "$b" ] || die "BlueMap is enabled but its config bundle $b is not a directory; refusing"
   m=$b/MANIFEST.sha256
   [ -f "$m" ] && [ ! -L "$m" ] || die "BlueMap is enabled but $m is missing or not a regular file; refusing"
+  [ -s "$m" ] && [ -z "$(tail -c 1 "$m")" ] || die "the BlueMap MANIFEST.sha256 is empty or has no final newline; refusing"
   link=$(cd "$b" && find . -type l | head -n 1)
   [ -z "$link" ] || die "the BlueMap config bundle holds a symlink ($link); refusing"
+  [ -z "$(tr -cd '\r' < "$m")" ] || die "the BlueMap MANIFEST.sha256 has CR line endings (CRLF), not LF; refusing"
   bad=$(awk 'NF != 2 || length($1) != 64 || $1 ~ /[^0-9a-f]/ || $2 !~ /^([A-Za-z0-9_-]+\/)?[A-Za-z0-9_-]+\.conf$/ { print NR; exit }' "$m")
   [ -z "$bad" ] || die "the BlueMap MANIFEST.sha256 line $bad is not '<sha256>  <path>'; refusing"
-  while read -r want rel; do
+  while read -r want rel || [ -n "$want" ]; do
     f=$b/$rel
     [ -f "$f" ] && [ ! -L "$f" ] || die "the BlueMap config bundle lacks the regular file $rel; refusing"
     got=$(sha256sum <"$f" | awk '{print $1}')
@@ -129,7 +131,7 @@ check_bluemap_bundle() {
 # The BlueMap config loader (compose/neoforge/extra-mods-bluemap-config.sh) is sourced by the entrypoint, so it is checked here too: the
 # same sha256 the BlueMap overlays pin (a test asserts the pins equal this constant and the file). A changed loader is refused before docker.
 BLUEMAP_LOADER=$ROOT/compose/neoforge/extra-mods-bluemap-config.sh
-BLUEMAP_LOADER_SHA256=f7c6dce01dd7092b9a6b691553d0e9c2013058815cc47c1fbc348fc0aa3041aa
+BLUEMAP_LOADER_SHA256=f80bdfe6392912b666f7a10be57d023c5a79de6199262be9e198894df1193cad
 
 # check_bluemap_loader: a regular, non-symlink file whose sha256 is BLUEMAP_LOADER_SHA256. Refused before any docker call otherwise.
 check_bluemap_loader() {

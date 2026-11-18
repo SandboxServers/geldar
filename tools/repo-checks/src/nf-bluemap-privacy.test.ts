@@ -13,10 +13,17 @@ const read = (rel: string) => readFileSync(join(BUNDLE, rel), 'utf8');
 /** The text with comments removed: a '#' at line start or after whitespace (a '#' inside a quoted colour is kept). */
 const bare = (text: string) => text.replace(/(^|\s)#.*$/gm, '');
 
-/** The value of a top-level "key: value" line (quotes kept), or undefined when the key is absent or only commented out. */
+/** The value of a "key: value" line (quotes kept), or undefined when the key is absent or only commented out. HOCON keeps the LAST
+ *  of repeated keys, so the last match is the one BlueMap uses; a repeated top-level key is refused by the duplicate-key test. */
 function value(text: string, key: string): string | undefined {
-  const m = bare(text).match(new RegExp(`^[ \\t]*${key}:[ \\t]*(.+?)[ \\t]*$`, 'm'));
-  return m?.[1];
+  const all = [...bare(text).matchAll(new RegExp(`^[ \\t]*${key}:[ \\t]*(.+?)[ \\t]*$`, 'gm'))];
+  return all.at(-1)?.[1];
+}
+
+/** The top-level keys (no indent) that appear more than once in a file. */
+function repeatedKeys(text: string): string[] {
+  const keys = [...bare(text).matchAll(/^([A-Za-z][\w-]*)[ \t]*[:={]/gm)].map((m) => m[1] ?? '');
+  return keys.filter((k, i) => keys.indexOf(k) !== i);
 }
 
 const GAME_MODES = ['adventure', 'creative', 'spectator', 'survival'];
@@ -41,11 +48,27 @@ describe('BlueMap privacy: plugin.conf (no player shown)', () => {
     expect(value(read('plugin.conf'), key)).toBe('true');
   });
 
-  it('write-players-interval is unset or 0 in every bundle file (players.json is never written)', () => {
-    for (const rel of ['plugin.conf', 'core.conf', 'webserver.conf', 'webapp.conf']) {
+  it('write-players-interval is present and exactly 0 in plugin.conf (players.json is never written)', () => {
+    expect(value(read('plugin.conf'), 'write-players-interval')).toBe('0');
+  });
+
+  it('write-players-interval is unset or 0 in the other bundle files', () => {
+    for (const rel of ['core.conf', 'webserver.conf', 'webapp.conf']) {
       const v = value(read(rel), 'write-players-interval');
       expect(v === undefined || v === '0', rel).toBe(true);
     }
+  });
+});
+
+describe('BlueMap privacy: every committed .conf', () => {
+  it('no top-level key appears twice (HOCON keeps the last one, so a repeat could change a value without this test seeing it)', () => {
+    const confs = read('MANIFEST.sha256')
+      .trim()
+      .split('\n')
+      .map((line) => line.split(/ {2}/)[1] ?? '')
+      .filter((rel) => rel.endsWith('.conf'));
+    expect(confs.length).toBeGreaterThan(0);
+    for (const rel of confs) expect(repeatedKeys(read(rel)), rel).toEqual([]);
   });
 });
 
