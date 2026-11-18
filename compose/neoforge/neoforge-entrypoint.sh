@@ -48,6 +48,9 @@ ledger_props_mounted=${GELDAR_NF_LEDGER_PROPS:-/geldar/telemetry/ledger.properti
 ledger_props_copy=$data/config/ledger.properties
 agent_jar=${GELDAR_NF_OTEL_JAR:-/geldar/telemetry/opentelemetry-javaagent.jar}
 agent_props=${GELDAR_NF_OTEL_PROPS:-/geldar/telemetry/otel-agent.properties}
+# The optional extra mods: each is mounted read-only at $extra_dir/<name>.jar and copied to mods/<name>.jar after the bundle check, only
+# when its GELDAR_NF_EXTRA_<NAME>_SHA256 pin matches (see extra_copy below). Only the names in compose/neoforge/extra-mods.pins exist.
+extra_dir=${GELDAR_NF_EXTRA_DIR:-/geldar/extra-mods}
 
 # Drop the CR/LF that editors and echo leave behind; nothing else is removed.
 secret=$(tr -d '\r\n' < "$secret_file")
@@ -86,6 +89,18 @@ fetch() {
     exit 1
   fi
   mv -f "$2.part" "$2"
+}
+
+# extra_prep NAME: an extra mod's copy in mods/ (compose/neoforge/extra-mods.pins lists the names) is removed on every start, before the
+# bundle check, so a disabled or re-pinned mod is gone after the next start. A symlink or a directory there is refused and nothing is
+# removed. The world and config data the mod wrote are not touched.
+extra_prep() {
+  extra_copy_path=$data/mods/$1.jar
+  if [ -L "$extra_copy_path" ] || [ -d "$extra_copy_path" ]; then
+    echo "neoforge-entrypoint: mods/$1.jar is a symlink or a directory; remove it; refusing to start" >&2
+    exit 1
+  fi
+  rm -f "$extra_copy_path"
 }
 
 # A copy left by an earlier start is removed first, but only while a mounted jar is present, so the bundle check below sees mods/
@@ -170,6 +185,10 @@ case "${GELDAR_NF_TELEMETRY:-}" in
     exit 1
     ;;
 esac
+
+# Extra mods: the stale copies go before the bundle check (extra_prep), the pinned jars are copied after it (extra_copy).
+extra_prep chunky
+extra_prep bluemap
 
 # Bundle mode, before any fetch. The list holds the bundle's immutable files with their hashes; the image's start script rewrites
 # some other files on every start, so they are not listed. The list is checked in this order: paths (no entry may reach outside
@@ -290,6 +309,25 @@ if [ "${GELDAR_NF_TELEMETRY:-}" = on ]; then
   copy_pinned_jar "$ledger_mounted" "$ledger_copy" "${GELDAR_NF_LEDGER_SHA256:-}" ledger GELDAR_NF_LEDGER_SHA256
   copy_ledger_props
 fi
+
+# extra_copy NAME ENVNAME PIN: a mounted extra jar is copied to mods/NAME.jar only when the overlay pins it (copy_pinned_jar checks the
+# hash, writes .part, re-hashes and renames). A mounted jar with no pin refuses the start; so does a pin with no mounted jar. Nothing
+# is copied on a refusal. ENVNAME is only printed in the messages.
+extra_copy() {
+  extra_mounted="$extra_dir/$1.jar"
+  if [ -e "$extra_mounted" ] || [ -L "$extra_mounted" ]; then
+    if [ -z "$3" ]; then
+      echo "neoforge-entrypoint: $extra_mounted is mounted but $2 is unset; refusing to start" >&2
+      exit 1
+    fi
+    copy_pinned_jar "$extra_mounted" "$data/mods/$1.jar" "$3" "$1" "$2"
+  elif [ -n "$3" ]; then
+    echo "neoforge-entrypoint: $2 is set but no $1 jar is mounted at $extra_mounted; refusing to start" >&2
+    exit 1
+  fi
+}
+extra_copy chunky GELDAR_NF_EXTRA_CHUNKY_SHA256 "${GELDAR_NF_EXTRA_CHUNKY_SHA256:-}"
+extra_copy bluemap GELDAR_NF_EXTRA_BLUEMAP_SHA256 "${GELDAR_NF_EXTRA_BLUEMAP_SHA256:-}"
 
 # The mod's config, from its README layout. Written once; on later starts only the secret line is replaced, because the
 # mod may have rewritten the file.

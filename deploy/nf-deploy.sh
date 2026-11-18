@@ -61,6 +61,8 @@ OFF_FILE=$ROOT/compose/nf-live-telemetry-off.yml
 TELEMETRY_OFF=0
 # The human lane (velocity-human, NF_HUMAN=on only) lives in deploy/nf-human-lib.sh: its paths, its flag and its functions.
 . "$(dirname "$0")/nf-human-lib.sh"
+# The optional extra mods (NF_EXTRA_MODS, deploy/nf-extra-mods-lib.sh): one overlay per enabled name, checked in gates().
+. "$(dirname "$0")/nf-extra-mods-lib.sh"
 
 die() {
   echo "nf-deploy: error: $*" >&2
@@ -77,6 +79,11 @@ need() {
 
 # Every compose call goes through here: the constant project and the one compose file, nothing else.
 dc() {
+  # Each set -- prepends one overlay. The extra mod overlays go in first (in reverse, so they keep the allowlist order), so the -f
+  # order is compose, telemetry or off, human, then the extra mods. Unset NF_EXTRA_MODS: EXTRA_ENABLED is empty and nothing is added.
+  rev=""
+  for name in $EXTRA_ENABLED; do rev="$name $rev"; done
+  for name in $rev; do set -- -f "$ROOT/compose/nf-live-mod-$name.yml" "$@"; done
   # Each set -- prepends one overlay: the human file first, so the -f order is compose, telemetry or off, then human.
   if [ "$HUMAN" = 1 ]; then set -- -f "$HUMAN_FILE" "$@"; fi
   if [ "$TELEMETRY" = 1 ]; then
@@ -418,6 +425,7 @@ check_config() {
 # Every gate that up and plan run, in order. Refusing here stops before any state changes.
 gates() {
   check_telemetry
+  check_extra_mods
   check_human_inputs
   check_operator
   check_telemetry_network
@@ -440,6 +448,7 @@ cmd_plan() {
   if [ "$TELEMETRY_OFF" = 1 ]; then
     say "telemetry off (explicit NF_TELEMETRY=off): overlay $OFF_FILE is added; the entrypoint removes our own stale ledger jar copy and adds no agent"
   fi
+  extra_plan_lines
   say "plan, nothing changed: up runs these steps in order"
   say "  1. up -d --wait nats postgres"
   say "  2. up --no-deps --exit-code-from identity-seed identity-seed (one-shot)"
