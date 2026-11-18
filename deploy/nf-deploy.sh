@@ -437,6 +437,7 @@ gates() {
   check_inputs
   check_resources
   check_config
+  check_extra_mods_drop
 }
 
 cmd_plan() {
@@ -570,6 +571,7 @@ cmd_probe() {
   check_human_orphan
   check_secrets
   check_probe_up
+  check_extra_mods_drop
   [ -f "$PROBE_FILE" ] || die "probe overlay not found: $PROBE_FILE"
   rc=0
   trap 'probe_signal 130' INT

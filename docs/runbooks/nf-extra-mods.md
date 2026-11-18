@@ -59,18 +59,35 @@ On every start, for each allowlisted mod:
 - After the bundle check, when the overlay is in place, the mounted jar is hashed against its pin, copied to a .part file, mode
   644, owned like the other data files, hashed again and renamed. A mismatch leaves no .part and no final file, and stops the start.
 - A mounted jar with no pin, or a pin with no mounted jar, stops the start.
-- When the mod is not enabled, nothing is copied, and the stale copy stays removed. Disabling a mod therefore removes its jar on
-  the next start. Files the mod wrote in the world or config folders are not removed.
+- When the mod is not enabled, nothing is copied. With the feature off, only a copy at mods/<name>.jar that is equal to the pin is
+  removed on the next start. A different file at mods/<name>.jar makes the start refuse, and nothing is deleted. Files the mod wrote
+  in the world or config folders are not removed.
+- An offline bundle list that names chunky.jar or bluemap.jar is refused by the entrypoint's mods/ check, after the stale removal.
 
 ## Rollback and disabling
 
 To disable a mod, remove its name from `NF_EXTRA_MODS` (or unset the variable) and run `up`. The overlay is no longer added, so
-the mount and the environment constant go, and the entrypoint removes /data/mods/<name>.jar. The mod's world and config data
-stay.
+the mount and the environment constant go, and the entrypoint removes /data/mods/<name>.jar when that file is a copy equal to the
+pin (a different file there makes the start refuse). The mod's world and config data stay.
 
 Important: enabling or disabling a mod CHANGES the neoforge service's mount and environment set, so `up` RECREATES the neoforge
 container. That is a restart of the game server, with the players disconnected. Plan it like any other restart. The same
 applies to the first enable.
+
+## Keep NF_EXTRA_MODS in the ops env file
+
+There is no wrapper script and no shell profile. Ops keeps a plain shell env file in the ops user's home on the node: one per
+bring-up, timestamped, in private mode. Ops sources that file by name before every run of the deploy script. The file holds
+NF_TELEMETRY and its pins, NF_MOD_JAR_HOST, NF_MOD_SHA256 and similar. NF_SERVICE_UID, NF_HUMAN, NF_HUMAN_BIND and NF_HUMAN_PORT are
+set in the shell for each run, not in the file.
+
+To enable a mod, ops adds NF_EXTRA_MODS and NF_EXTRA_<NAME>_JAR_HOST to a NEW revision of that file, and sources it on every
+plan, up, refresh-secrets and probe. The file is never committed, and no value from it goes in the repository. The first enable
+or disable recreates neoforge (see above).
+
+To remove the mods on purpose, type `NF_EXTRA_MODS=none` in the shell for that run. Without it, when the running neoforge container
+still has extra mods mounted and NF_EXTRA_MODS is unset, plan, up, refresh-secrets and probe refuse, and the refusal names the mods.
+status, logs and down are not checked.
 
 ## Staging a jar on the node
 

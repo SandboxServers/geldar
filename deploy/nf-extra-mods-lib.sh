@@ -38,6 +38,8 @@ check_extra_mods() {
   [ -z "$dups" ] || die "compose/neoforge/extra-mods.pins lists ${dups% } more than once; refusing"
   raw=${NF_EXTRA_MODS:-}
   [ -n "$raw" ] || return 0
+  # NF_EXTRA_MODS=none is the deliberate "no extra mods": nothing is enabled, and check_extra_mods_drop lets it through.
+  if [ "$raw" = none ]; then return 0; fi
   case $raw in
     *[!A-Za-z0-9_,\ ]*) die "NF_EXTRA_MODS has a character outside letters, digits, underscore, comma and space (a tab or a newline counts); refusing" ;;
   esac
@@ -48,6 +50,7 @@ check_extra_mods() {
   seen=""
   # The loop variable is not "name": check_host_file (deploy/nf-deploy.sh) sets a global name, which clobbered this loop once.
   for mod in $(printf '%s' "$raw" | tr ',' ' '); do
+    if [ "$mod" = none ]; then die "NF_EXTRA_MODS=none cannot be combined with other names; refusing"; fi
     extra_allowed "$mod" || die "NF_EXTRA_MODS names $mod, which is not in compose/neoforge/extra-mods.pins; refusing"
     case " $seen " in
       *" $mod "*) die "NF_EXTRA_MODS names $mod more than once; refusing" ;;
@@ -66,6 +69,31 @@ check_extra_mods() {
   if [ -n "$EXTRA_ENABLED" ]; then
     say "extra mods: the host jars match their pins (no docker call made yet)"
   fi
+}
+
+# check_extra_mods_drop: with NF_EXTRA_MODS unset or empty, a running neoforge container that still has extra mod jars mounted
+# would be recreated without them, so the run is refused before any compose call. Any non-empty value passes here (check_extra_mods
+# has parsed it; NF_EXTRA_MODS=none is the deliberate removal). Read-only docker calls: ps (the project's neoforge rows), then
+# inspect (the mounts of each row). A failure of either refuses. Mounts under /geldar/extra-mods are mods, except bluemap-config.
+check_extra_mods_drop() {
+  case ${NF_EXTRA_MODS:-} in
+    '') ;;
+    *) return 0 ;;
+  esac
+  rows=$(docker ps -a --filter "label=com.docker.compose.project=$PROJECT" \
+    --filter "label=com.docker.compose.service=neoforge" \
+    --format '{{.ID}}|{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.service"}}') ||
+    die "cannot list the $PROJECT containers (extra mods check); refusing"
+  ids=$(printf '%s\n' "$rows" | awk -F'|' -v p="$PROJECT" '$2 == p && $3 == "neoforge" { print $1 }')
+  all=""
+  for id in $ids; do
+    mounts=$(docker inspect --format '{{range .Mounts}}{{.Destination}}{{"\n"}}{{end}}' "$id") ||
+      die "cannot inspect the neoforge container (extra mods check); refusing"
+    all="$all$mounts
+"
+  done
+  names=$(printf '%s\n' "$all" | awk 'index($0, "/geldar/extra-mods") == 1 && $0 != "/geldar/extra-mods/bluemap-config" { n = substr($0, 19); sub(/^\//, "", n); sub(/\.jar$/, "", n); if (n == "") n = $0; printf "%s%s", (c++ ? "," : ""), n }')
+  [ -z "$names" ] || die "the running neoforge container has extra mods mounted ($names) but NF_EXTRA_MODS is unset: it would be recreated WITHOUT them; source the ops env file that sets NF_EXTRA_MODS (a sourced shell file in the ops user's home on the node), or set NF_EXTRA_MODS=none to remove them on purpose"
 }
 
 # extra_plan_lines: one plan line per enabled mod, with its version and the first 12 hex digits of its pin.
