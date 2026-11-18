@@ -55,6 +55,15 @@ const CURL_STUB = [
   '',
 ].join('\n');
 
+/** Dumps its environment and arguments to files, and prints its arguments, so a test can check what the start command receives. */
+const START_STUB = [
+  '#!/bin/sh',
+  'env >"$STUB_START_ENV"',
+  'printf "%s\\n" "$*" >"$STUB_START_ARGS"',
+  'echo "started $*"',
+  '',
+].join('\n');
+
 const sha512 = (text: string) => createHash('sha512').update(text).digest('hex');
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 
@@ -84,7 +93,7 @@ function setup(secret = `${SECRET}\n`): Case {
   writeFileSync(join(fixtures, MOD_NAME), MOD_BODY);
   writeFileSync(join(fixtures, INSTALLER_NAME), INSTALLER_BODY);
   writeFileSync(join(bin, 'curl'), CURL_STUB, { mode: 0o755 });
-  writeFileSync(join(bin, 'start'), '#!/bin/sh\necho "started $*"\n', { mode: 0o755 });
+  writeFileSync(join(bin, 'start'), START_STUB, { mode: 0o755 });
   const secretFile = join(base, 'velocity-forwarding');
   writeFileSync(secretFile, secret);
   const curlLog = join(base, 'curl.log');
@@ -105,13 +114,15 @@ function setup(secret = `${SECRET}\n`): Case {
       NEOFORGE_VERSION: BUILD,
       STUB_CURL_LOG: slash(curlLog),
       STUB_CURL_FIXTURES: slash(fixtures),
+      STUB_START_ENV: slash(join(base, 'start-env.txt')),
+      STUB_START_ARGS: slash(join(base, 'start-args.txt')),
     },
   };
 }
 
 /** Runs the entrypoint under sh with the stub curl first on PATH. */
 function run(c: Case, extra: Record<string, string> = {}, args: string[] = []) {
-  return spawnSync('sh', [slash(ENTRY), ...args], {
+  const r = spawnSync('sh', [slash(ENTRY), ...args], {
     encoding: 'utf8',
     env: {
       PATH: `${c.bin}${delimiter}${process.env.PATH ?? ''}`,
@@ -120,13 +131,28 @@ function run(c: Case, extra: Record<string, string> = {}, args: string[] = []) {
       ...extra,
     },
   });
+  expectNoSecret(r, c);
+  return r;
 }
 
 const curlCalls = (c: Case) =>
   existsSync(c.curlLog) ? readFileSync(c.curlLog, 'utf8').split('\n').filter(Boolean).length : 0;
 
-function expectNoSecret(out: { stdout: string; stderr: string }) {
-  expect(out.stdout + out.stderr).not.toContain(SECRET);
+/** What a stub recorded, or '' when the stub never ran (a refused start). */
+const recorded = (path: string) => (existsSync(path) ? readFileSync(path, 'utf8') : '');
+
+/**
+ * The secret must be absent from stdout and stderr, from the start command's arguments and environment, and from the curl
+ * arguments. Checked for every case that runs the entrypoint; a case that exits before the start command leaves those files empty.
+ */
+function expectNoSecret(out: { stdout: string; stderr: string }, c: Case) {
+  const seen = [
+    out.stdout + out.stderr,
+    recorded(c.env.STUB_START_ENV),
+    recorded(c.env.STUB_START_ARGS),
+    recorded(c.curlLog),
+  ];
+  for (const text of seen) expect(text).not.toContain(SECRET);
 }
 
 describe.skipIf(skipWithoutSh())('NeoForge entrypoint under sh', { timeout: 30_000 }, () => {
@@ -138,7 +164,7 @@ describe.skipIf(skipWithoutSh())('NeoForge entrypoint under sh', { timeout: 30_0
     expect(existsSync(c.mod)).toBe(false);
     expect(existsSync(`${c.mod}.part`)).toBe(false);
     expect(curlCalls(c)).toBe(1);
-    expectNoSecret(r);
+    expectNoSecret(r, c);
   });
 
   it('an installer download that does not match its pinned sha256 exits 1 and is deleted', () => {
@@ -149,7 +175,7 @@ describe.skipIf(skipWithoutSh())('NeoForge entrypoint under sh', { timeout: 30_0
     expect(existsSync(c.installer)).toBe(false);
     expect(existsSync(`${c.installer}.part`)).toBe(false);
     expect(existsSync(c.mod)).toBe(true);
-    expectNoSecret(r);
+    expectNoSecret(r, c);
   });
 
   it('matching downloads are kept, and a rerun does not call curl again', () => {
@@ -163,8 +189,8 @@ describe.skipIf(skipWithoutSh())('NeoForge entrypoint under sh', { timeout: 30_0
     const second = run(c);
     expect(second.status).toBe(0);
     expect(curlCalls(c)).toBe(2);
-    expectNoSecret(first);
-    expectNoSecret(second);
+    expectNoSecret(first, c);
+    expectNoSecret(second, c);
   });
 
   it('the curl calls carry the connect timeout, the total timeout, the retry count, the delay and retry-all-errors', () => {
@@ -185,7 +211,7 @@ describe.skipIf(skipWithoutSh())('NeoForge entrypoint under sh', { timeout: 30_0
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('started');
     expect(curlCalls(c)).toBe(0);
-    expectNoSecret(r);
+    expectNoSecret(r, c);
   });
 
   it('a valid pre-seeded installer alone: only the mod is downloaded', () => {
@@ -207,7 +233,7 @@ describe.skipIf(skipWithoutSh())('NeoForge entrypoint under sh', { timeout: 30_0
     expect(r.status).toBe(0);
     expect(readFileSync(c.mod, 'utf8')).toBe(MOD_BODY);
     expect(curlCalls(c)).toBe(2);
-    expectNoSecret(r);
+    expectNoSecret(r, c);
   });
 
   it('a wrong pre-seeded file whose download also fails exits 1 with the pre-seed hint and is not used', () => {
@@ -223,7 +249,7 @@ describe.skipIf(skipWithoutSh())('NeoForge entrypoint under sh', { timeout: 30_0
     // Documented behaviour: a failed download removes only the .part file; the wrong pre-seeded file stays, unused.
     expect(readFileSync(c.mod, 'utf8')).toBe('stale mod bytes');
     expect(existsSync(`${c.mod}.part`)).toBe(false);
-    expectNoSecret(r);
+    expectNoSecret(r, c);
   });
 
   it('a failed download with nothing pre-seeded exits 1 after one curl call, naming the file and its pin', () => {
@@ -235,7 +261,7 @@ describe.skipIf(skipWithoutSh())('NeoForge entrypoint under sh', { timeout: 30_0
     expect(curlCalls(c)).toBe(1);
     expect(existsSync(c.mod)).toBe(false);
     expect(existsSync(c.installer)).toBe(false);
-    expectNoSecret(r);
+    expectNoSecret(r, c);
   });
 
   it('a fresh config is written with the secret only in [forwarding], mode 600 where modes exist', () => {
@@ -264,7 +290,7 @@ describe.skipIf(skipWithoutSh())('NeoForge entrypoint under sh', { timeout: 30_0
       '[forwarding]\nenabled = true\nmode = "MODERN"\n',
     );
     expect(readFileSync(`${c.config}.bak`, 'utf8')).toContain('enabled = false');
-    expectNoSecret(r);
+    expectNoSecret(r, c);
   });
 
   it('a secret line in another section does not count: the secret is written into [forwarding], then it starts', () => {
@@ -279,7 +305,7 @@ describe.skipIf(skipWithoutSh())('NeoForge entrypoint under sh', { timeout: 30_0
     expect(readFileSync(c.config, 'utf8')).toMatch(
       /\[forwarding\][\s\S]*secret = "[^"]+"[\s\S]*\[other\]/,
     );
-    expectNoSecret(r);
+    expectNoSecret(r, c);
   });
 
   it('a stale config with an old secret gets the secret replaced in place, then starts', () => {
@@ -294,7 +320,7 @@ describe.skipIf(skipWithoutSh())('NeoForge entrypoint under sh', { timeout: 30_0
     const text = readFileSync(c.config, 'utf8');
     expect(text).toContain(`secret = "${SECRET}"`);
     expect(text).not.toContain('old-secret');
-    expectNoSecret(r);
+    expectNoSecret(r, c);
   });
 
   it('a secret outside [A-Za-z0-9_-] or empty exits 1 before any download', () => {
