@@ -43,6 +43,8 @@ When the export is on, the mod publishes these events on the subject `geldar.<sh
 
 The listeners are registered only when the export is enabled. With the export off, the mod registers no listener at all (`ExportListenersTest`). The tick type uses two listeners (Pre starts the clock, Post ends it), so five listeners are registered in all.
 
+Chat is not exported and no name mask exists; D-F stays off until built. `ExportListenersTest` and `NoRegistryScanTest` guard this.
+
 - **Sleep.** `PlayerSleepInBedEvent` does not exist in 26.1.2, so the mod uses `CanPlayerSleepEvent`. Its `getProblem()` is the reason the game refuses the sleep. `allowed` is not a field: a `sleep` event is written only when `getProblem()` is `null`, which is how an allowed sleep is mapped. A refused sleep writes nothing. The payload is the player only, as on Paper, for a life id; for a human it is an empty payload (see Privacy). UNVERIFIED: that a `null` problem means a bed was really used, and that the event fires only for an actual attempt.
 - **Damage.** The `amount` is `getInflictedDamage()`, which may differ from Paper's final damage (`getFinalDamage()`). UNVERIFIED on 26.1.2; check it with a GameTest or the first scratch run.
 - **Cause.** A best-effort table from the vanilla damage type's message id to Bukkit's cause names; an unknown id is written as `CUSTOM`.
