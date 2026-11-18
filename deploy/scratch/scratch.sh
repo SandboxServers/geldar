@@ -28,14 +28,14 @@ PLUGIN_JARS="plugin/core/build/libs/geldar-core.jar $VELOCITY_JAR"
 NEOFORGE_PLUGIN_JARS="$VELOCITY_JAR"
 
 usage() {
-  echo "usage: sh deploy/scratch/scratch.sh up|status|down|probe|mind-up|mind-token [suffix] [player]" >&2
+  echo "usage: sh deploy/scratch/scratch.sh up|status|down|probe|mind-up|mind-token|config [suffix] [player]" >&2
   exit 2
 }
 
 verb=${1:-}
 suffix=${2:-a}
 case "$verb" in
-  up | status | down | probe | mind-up | mind-token) ;;
+  up | status | down | probe | mind-up | mind-token | config) ;;
   *) usage ;;
 esac
 case "$suffix" in
@@ -647,7 +647,6 @@ do_probe() {
   compose_run --profile p0 run --rm --no-deps --build p0-probe
   exit $?
 }
-
 case "$verb" in
   up) do_up ;;
   status) do_status ;;
@@ -655,4 +654,5 @@ case "$verb" in
   probe) do_probe ;;
   mind-up) . "$ROOT/deploy/scratch/scratch-mind.sh"; do_mind_up ;;
   mind-token) . "$ROOT/deploy/scratch/scratch-mind.sh"; do_mind_token "${3:-}" ;;
+  config) . "$ROOT/deploy/scratch/scratch-config.sh"; do_config ;;
 esac

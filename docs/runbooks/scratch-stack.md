@@ -27,9 +27,15 @@ Not approved for any run on the shared node: open NATS (see NATS auth below).
 
 ## Before up
 
-1. Build the two plugin jars on the machine that runs the stack: `cd plugin; ./gradlew build`. The stack bind-mounts
-   `plugin/core/build/libs/geldar-core.jar` and `plugin/velocity-identity/build/libs/geldar-velocity-identity.jar`.
-   `up` refuses (exit 1) if either is missing, and does not create anything.
+1. Build BOTH plugin jars before `up`, on the machine that runs the stack: `(cd plugin; ./gradlew build)`. It produces
+   `plugin/core/build/libs/geldar-core.jar` and `plugin/velocity-identity/build/libs/geldar-velocity-identity.jar`, the two
+   jars the stack bind-mounts. The NeoForge export run lost time because geldar-core.jar was missing. `up` refuses (exit 1)
+   if either is missing, and does not create anything.
+   Then check the rendered mounts with `sh deploy/scratch/scratch.sh config nf` (add `SCRATCH_PLATFORM=neoforge` and
+   `SCRATCH_EXTRA_MODS=1` for the NeoForge extra mods). It runs `docker compose config` with the same -f list as `up`, starts
+   nothing, creates no volume and needs no jars. Exit 0 means compose rendered it. In the extra-mods bind sources, each
+   BlueMap source must resolve to a real path in the tree (`plugins/bluemap/neoforge` and
+   `compose/neoforge/extra-mods-bluemap-config.sh`); a `bind source path does not exist` error means a source is wrong.
 2. Run as any non-root account. The eventsink runs as that account's uid:gid (see the next section), so it reads the
    secret files, which are mode 0600 and owned by the account. If `GELDAR_SERVICE_UID` is set it must be digits and equal
    the account's uid: digits-only fails with exit 2, a different uid with exit 1. `up` refuses (exit 1) under root.
@@ -136,7 +142,9 @@ Run the game server as NeoForge instead of Paper, behind the same scratch Veloci
 
 ### If the node cannot reach the NeoForge Maven or the Modrinth CDN
 
-Each download is retried 6 times, 10 s apart, with a 60 s connect timeout. If it still fails, the entrypoint stops and names the file to pre-seed. A file already in place with its pinned hash is used as it is, and curl is not called. To pre-seed the two files before `up`:
+Each download is retried 6 times, 10 s apart, with a 60 s connect timeout. If it still fails, the entrypoint stops and names the file to pre-seed. A file already in place with its pinned hash is used as it is, and curl is not called.
+
+On this node the pre-seed route is the normal route, not a fallback: the node cannot reach `maven.neoforged.net` (HTTP 000). The pins are `INSTALLER_SHA256` and `INSTALLER_SHA512` (the installer) and `MOD_SHA512` (Proxy Compatible Forge 1.3.1), all in `compose/neoforge/neoforge-entrypoint.sh`. To pre-seed the two files before `up`:
 
 1. On a machine that can reach them, download the installer from the `INSTALLER_URL` default and the mod from the `MOD_URL` default in `compose/neoforge/neoforge-entrypoint.sh`. The installer URL uses `NEOFORGE_VERSION`, which `compose/opt-in/scratch-neoforge.yml` builds from the 26.1.2 line and `SCRATCH_NEOFORGE_BUILD`.
 2. Check each file against its pin, the default after `:-` in `INSTALLER_SHA256` (sha256sum) and `MOD_SHA512` (sha512sum) in that script. On a mismatch, delete the file and do not copy it.
@@ -144,6 +152,9 @@ Each download is retried 6 times, 10 s apart, with a 60 s connect timeout. If it
 
         docker run --rm --user 0 -v scratch-nf_paper-data:/data -v "<dir>/in:/in:ro" --entrypoint sh <image> -c \
           'mkdir -p /data/mods && cp /in/neoforge-installer.jar /data/ && cp /in/mods/proxy-compatible-forge.jar /data/mods/ && chown --reference=/data /data/neoforge-installer.jar /data/mods /data/mods/proxy-compatible-forge.jar'
+
+UNVERIFIED: this pre-seed was not reached in the real run. `up` MAY complain that the pre-seeded volume lacks the compose project
+labels; no fix for that is recorded here yet. Do not run `down -v` to clear it: that removes the pre-seeded files.
 
 4. The copies must be readable by the server user. The entrypoint re-owns them to the owner of `/data` on every start, and `chown --reference` above does the same, so the server user can read them. Then `up` as before. Delete `<dir>` afterwards.
 
