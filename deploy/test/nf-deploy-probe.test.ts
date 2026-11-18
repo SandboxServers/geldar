@@ -43,6 +43,7 @@ const STUB_SCRIPTS: Record<string, string> = {
     'exit 0',
   ].join('\n'),
   // The probe verb asks only `id -u` (check_operator); the uid is STUB_ID, 1000 unless a test says otherwise.
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: a shell fixture, not a template
   id: ['#!/bin/sh', 'echo "${STUB_ID:-1000}"', 'exit 0'].join('\n'),
   stat: [
     '#!/bin/sh',
