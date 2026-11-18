@@ -691,7 +691,7 @@ Ordering note (PR numbers are references only). Merged to main: #726 (the human 
 - **(b) OWNER-OK-REQUIRED: node step A (the conf and the secrets).** Generate `nats-human.txt` and the new `nats-auth.conf` by the 10.6 procedure. The conf must grant `human` `_INBOX.human.>` only. Copy both to the node, then run `nf-deploy.sh refresh-secrets`. It force-recreates `nats` first, then the services that mount the secrets. The gate refuses `on` while the deployed conf still grants `_INBOX.>`.
 - **(c) OWNER-OK-REQUIRED: the neoforge recreate with MAX_PLAYERS 100.** The first `NF_HUMAN=on` `up` also recreates `neoforge`, because its network set changes. Do (c) and (d) together, in one owner-approved recreate, so that neoforge comes up with MAX_PLAYERS 100. The live shard enforced 10 until then. Ops ran the 10 to 100 recreate on 2026-11-18 (observed; section 10.8).
 - **(c1) OWNER-OK (approved 2026-11-18; a one-time step, run by ops): volume ownership, BEFORE the first `up`.** A fresh named volume is root-owned and empty. The proxy runs as the service uid (`user: uid:gid`) with a read-only root, `cap_drop: ALL` and `no-new-privileges`, so it cannot write into `/server`. The first `up` failed there: install-paper got AccessDeniedException writing its jar download into `/server`. The agent `velocity` avoids this by starting as root; `velocity-human` does not. Before the first `up`, the root of the volume `geldar-nf_velocity-human-data` must be owned by `NF_SERVICE_UID:NF_SERVICE_GID`. Use one route: (i) the one-shot `velocity-human-init` service, which chowns the volume root. It is NOT in `compose/nf-live-human.yml` on origin/main as of 2026-11-18, so use it only after `git show origin/main:compose/nf-live-human.yml | grep -n velocity-human-init` shows it; or (ii) the one-time ops chown of the empty volume root to the service uid and gid, run in a throwaway container that mounts only that volume. The exact command is ops's and is UNVERIFIED here. Not needed again unless the volume is recreated. On 2026-11-18 route (ii) was used: the owner-approved one-time chown of the empty `velocity-human-data` volume root to the service uid (ops ran it; the command is not recorded here). The second `up` then succeeded. Route (i) makes the fix reproducible once the volume-init change (PR #740, branch `phase1/nf-human-volume-init`) is merged; `git show origin/main:compose/nf-live-human.yml` had no `velocity-human-init` on 2026-11-18, so it was not on main then. The netty tcnative warning about noexec at start is expected and harmless: the tmpfs is noexec, and `/tmp` is intentionally left noexec.
-- **(d) OWNER-OK-REQUIRED: plan, then up.** Run `nf-deploy.sh plan` with `NF_HUMAN=on`, `NF_HUMAN_BIND=<bind-ip>`, `NF_HUMAN_PORT=<port>` and `NF_SERVICE_UID` exported, plus the telemetry env the live shard already runs with: `NF_TELEMETRY=on`, its ledger and agent pins (`NF_LEDGER_JAR_HOST`, `NF_LEDGER_SHA256`, `NF_OTEL_AGENT_HOST`, `NF_MOD_JAR_HOST`, `NF_MOD_SHA256`). `plan` is read only. Then run `nf-deploy.sh up` with the same environment. An `up` without the telemetry env hits the by-design stale-jar guard and refuses. The plan lists `up -d --wait velocity-human` as its last step. If the proxy does not become healthy, `up` stops and stops only `velocity-human`. The healthcheck waits for the identity plugin's ready marker (`/tmp/geldar-identity.ready`) with a 35 s window (20 s start period, 3 retries at 5 s), so a missing or invalid plugin fails in 35 s. `restart` is `"no"` in the repo file, so nothing restarts the proxy by itself. The live `velocity-human` container was changed to `unless-stopped` with `docker update` on 2026-11-18 (open item, 10.8).
+- **(d) OWNER-OK-REQUIRED: plan, then up.** Run `nf-deploy.sh plan` with `NF_HUMAN=on`, `NF_HUMAN_BIND=<bind-ip>`, `NF_HUMAN_PORT=<port>` and `NF_SERVICE_UID` exported, plus the telemetry env the live shard already runs with: `NF_TELEMETRY=on`, its ledger and agent pins (`NF_LEDGER_JAR_HOST`, `NF_LEDGER_SHA256`, `NF_OTEL_AGENT_HOST`, `NF_MOD_JAR_HOST`, `NF_MOD_SHA256`). `plan` is read only. Then run `nf-deploy.sh up` with the same environment. An `up` without the telemetry env hits the by-design stale-jar guard and refuses. The plan lists `up -d --wait velocity-human` as its last step. If the proxy does not become healthy, `up` stops and stops only `velocity-human`. The healthcheck waits for the identity plugin's ready marker (`/tmp/geldar-identity.ready`) with a 35 s window (20 s start period, 3 retries at 5 s), so a missing or invalid plugin fails in 35 s. `restart` is `unless-stopped` in the repo file, which matches the live container: ops set it with `docker update --restart unless-stopped velocity-human` on 2026-11-18. Section 10.9A covers the reboot case.
    Orphan guard: while `velocity-human` exists, `plan`, `up`, `refresh-secrets` and `probe` refuse with `NF_HUMAN` unset or `off`, and name `human-down` and `NF_HUMAN=on`. `status`, `logs`, `down` and `human-down` stay allowed.
 - **(e) Verify from OUTSIDE the node (read only, no join).** A TCP connect to `<bind-ip>:<port>` answers. The same address on 46565 and on 25565 does not answer. Then `nf-deploy.sh logs velocity-human` and `status` (read only). A TCP answer proves the port is open, not that the login works.
 - **(f) DNS, last (owner-owned).** The SRV record and the CNAME for its target (10.3). Caddy is not involved.
@@ -731,7 +731,7 @@ First-join observations:
 - 16:05:18Z: the owner's desktop joined on the LAN with a plain NeoForge client (no geldar mod, Microsoft login). Admitted (`[geldar-identity]: Admitted <name>`); skin lookup skipped (not a sovereign life); forwarding to neoforge accepted (no secret mismatch); in the world about 2 m 06 s; clean disconnect on both proxy and server. No NATS violation and no exception in any log.
 - 16:12:13Z: a join through the public `<hostname>` over the physical (non-VPN) route, with the SRV record supplying `<port>` and no port typed: worked.
 - At the two joins above, HumanSlots logged NOTHING on reserve or release, so slot release was not shown then.
-- Later on 2026-11-18, the velocity-identity jar from main 591f3e7f (sha256 prefix f2031976) was installed on the node and went live in `velocity` and `velocity-human` from 16:58Z. That replaced the jar in the Node result above. The human port was down about 15 s during the swap. `velocity-human`'s restart policy was set to `unless-stopped` live with `docker update` (open item below).
+- Later on 2026-11-18, the velocity-identity jar from main 591f3e7f (sha256 prefix f2031976) was installed on the node and went live in `velocity` and `velocity-human` from 16:58Z. That replaced the jar in the Node result above. The human port was down about 15 s during the swap. `velocity-human`'s restart policy was set to `unless-stopped` live with `docker update` (closed below: the repo now matches).
 - Slot-logging PR #741 is merged (merge commit a583114b), and its logs exist. One join and leave on the live human proxy, through the public name, reserved and released a slot (counts only):
   - 17:01:13Z: join through the public name.
   - 17:01:27Z: `human slot reserved: 1/100` in `velocity-human`, then `Admitted`, then forwarding to neoforge connected.
@@ -741,7 +741,7 @@ First-join observations:
   - No NATS `Permissions` or `Authorization Violation` has been logged since 16:58Z.
 - Slot release on disconnect is therefore OBSERVED for one join and leave. It shows that the same `Player` object reaches `LoginEvent` and `DisconnectEvent` for that one sequential human. It does NOT show concurrency, the cap at 100, or that `DisconnectEvent` fires for every connection that ends after a login.
 - neoforge logs `SERVER IS RUNNING IN OFFLINE/INSECURE MODE`. That is expected behind the proxy: online-mode is the proxy's.
-- OPEN ITEM (2026-11-18): `velocity-human` runs with restart `unless-stopped` LIVE, set with `docker update`. The repo file `compose/nf-live-human.yml:108` still says `"no"`. A later `up` would recreate the container with the repo's policy, so the reboot-policy PR must flip the file before the next `up`. Until then, the live policy and the repo disagree.
+- Restart policy (closed): `velocity-human` runs with restart `unless-stopped`. Ops set the live container with `docker update --restart unless-stopped velocity-human` on 2026-11-18. This PR makes the repo match the live setting (`compose/nf-live-human.yml`, 10.9A), so a later `up` recreates the container with the same policy.
 
 What the S1 list above shows, as observations:
 
@@ -759,6 +759,34 @@ What the S1 list above shows, as observations:
 `human-down` is the rollback that the orphan guard names: after it, `plan`, `up` and `refresh-secrets` run again with `NF_HUMAN` unset.
 
 What is left behind: `human-down` removes the proxy (`velocity-human`) and its one-shot init (`velocity-human-init`), not the volume, so the `nf-human` network stays. `down` runs `docker compose down`, which should also remove the project's networks, including `nf-human`; that is UNVERIFIED on the node.
+
+### 10.9A After a reboot (the human lane)
+
+`velocity-human` has `restart: unless-stopped`. The live container was set the same way by hand on 2026-11-18 (`docker update --restart unless-stopped velocity-human`); the repo now matches it. Compose is not re-run at boot: the proxy comes back with the config it was created with.
+
+What to check after a host reboot:
+
+1. `docker ps`: `velocity-human` healthy, with `nats`, `neoforge`, `velocity` and `eventsink` up. Healthy implies the identity plugin's ready marker (`/tmp/geldar-identity.ready`) exists.
+2. `nf-deploy.sh status`.
+3. `docker logs velocity-human --tail 100`: the registry reports synced.
+4. A join, by an owner account, through the gateway.
+
+What comes back by itself, and when: the identity plugin retries NATS forever, so the registry syncs within seconds of `nats` being ready. The proxy accepts logins before `neoforge` is listening and kicks them with "unable to connect" until the backend answers: minutes after boot, not seconds.
+
+GAPS that keep the lane from coming back by itself:
+
+- The identity jar bind source (`plugin/velocity-identity/build/libs/geldar-velocity-identity.jar`). A clean rebuild that deletes the file, or a moved checkout, makes the container fail to start at boot (`create_host_path` is false).
+- The secrets under `compose/secrets-nf` and `NF_MOD_JAR_HOST`, likewise.
+- A recreated `velocity-human-data` volume is root-owned again: the one-time chown, or the `velocity-human-init` service, has to run again.
+- itzg may need the network at boot if the volume is cold. A warm volume that skips the download is UNVERIFIED.
+- A container stopped by `human_fail`, `human-down` or `docker stop` stays down across reboots by design.
+- Config refusals (a bad `GELDAR_IDENTITY_LANE` or inbox prefix, online-mode off, a missing NATS URL) are permanent until a recreate.
+- Compose is not re-run at boot, so the container comes back with the config it was created with.
+- No alert exists for a running-but-unhealthy proxy.
+
+If it does not come back: `docker ps -a`, then `docker logs velocity-human --tail 100`. Then `nf-deploy.sh up` (owner OK), or `nf-deploy.sh human-down` followed by `up`.
+
+A reboot test on the node is the real proof. UNVERIFIED until the next reboot.
 
 ### 10.10 UNVERIFIED (do not treat any of these as checked)
 

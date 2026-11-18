@@ -116,9 +116,12 @@ services:
     labels:
       geldar.project: geldar-nf
       com.centurylinklabs.watchtower.enable: "false"
-    # "no": nothing restarts this proxy after a failed start or a host reboot. nf-deploy.sh stops it when its start fails; the operator
-    # starts it again on purpose (human-down removes it).
-    restart: "no"
+    # unless-stopped: the proxy comes back after a host reboot with the config it was created with (compose is not re-run at boot).
+    # The identity plugin retries NATS forever, so at boot it recovers within seconds of nats being ready (docker restarts all
+    # containers at once and does not honour depends_on there). A failed FIRST start is a restart loop with backoff and the public
+    # port refuses between attempts: fail-closed, nobody admitted. nf-deploy.sh human_fail runs `stop`, which Docker remembers
+    # across reboots, so a stopped proxy stays down until the next `up`. A stop that fails leaves the loop running (see the runbook).
+    restart: unless-stopped
 
   velocity-human-init:
     image: *human-image
@@ -147,6 +150,7 @@ services:
     labels:
       geldar.project: geldar-nf
       com.centurylinklabs.watchtower.enable: "false"
+    # "no", deliberately: this is a one-shot. With unless-stopped it would run the chown again at every boot.
     restart: "no"
 
   # The two services the human proxy reaches by name join nf-human as well. Their nf membership is unchanged (nf-live.yml); compose
