@@ -274,6 +274,10 @@ services:
       NEOFORGE_VERSION: "26.1.2.${NF_NEOFORGE_BUILD:-126}"
       MEMORY: "${NF_NEOFORGE_HEAP:-9G}"
       ONLINE_MODE: "FALSE"
+      # No server whitelist on the NeoForge shard (owner decision 2026-11-17, decision 0387): anyone with a valid
+      # online-mode account through the human listener may join. The agent lane is unchanged (offline-mode, unpublished).
+      ENABLE_WHITELIST: "FALSE"
+      ENFORCE_WHITELIST: "FALSE"
       # RCON on the project network only: the port (25575) is not in any ports: list, so it is not published. The probe
       # (compose/nf-live-probe.yml) and the operator's `rcon-cli` (runbook) reach it by the service name neoforge.
       ENABLE_RCON: "TRUE"
