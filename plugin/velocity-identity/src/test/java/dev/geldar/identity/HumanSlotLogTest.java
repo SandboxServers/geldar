@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import net.kyori.adventure.text.Component;
 import org.junit.jupiter.api.Test;
@@ -245,6 +246,26 @@ class HumanSlotLogTest {
     }
 
     /**
+     * An Error from the slot logger is not a RuntimeException. It must not refuse a reservation, must not leave the count
+     * wrong, and must not stop a release or the next login.
+     */
+    @Test
+    void anErrorFromTheSlotLoggerNeverStopsAReservationOrARelease(@TempDir Path dir) {
+        List<String> lines = new ArrayList<>();
+        IdentityPluginFixture fixture = errorProxy(dir, lines);
+        List<UUID> ids = new ArrayList<>();
+        for (int held = 1; held <= CAP; held++) {
+            UUID id = UUID.randomUUID();
+            ids.add(id);
+            assertTrue(fixture.loginAllowed("Human" + held, id), "login " + held);
+        }
+        assertFalse(fixture.loginAllowed("Human" + (CAP + 1), UUID.randomUUID()), "the count is exact: the cap still holds");
+        assertDoesNotThrow(() -> fixture.disconnect(ids.get(0), CLEAN));
+        assertTrue(fixture.loginAllowed("Human" + (CAP + 1), UUID.randomUUID()), "the freed slot admits the next human");
+        assertFalse(fixture.loginAllowed("Human" + (CAP + 2), UUID.randomUUID()), "and the count is full again");
+    }
+
+    /**
      * The disconnect warns, and the warning's logger throws. The handler must still return normally, and the count must
      * stay exact: after the warned disconnect the cap admits one more human and then refuses.
      */
@@ -279,10 +300,24 @@ class HumanSlotLogTest {
 
     /** A logger whose three slot lines throw, as a broken logging backend would. Every other call goes to {@link #recordingLog}. */
     private static Logger failingSlotLog(List<String> lines) {
+        return slotLogThrowing(lines, () -> new IllegalStateException("the logging backend is down"));
+    }
+
+    /** A proxy on the human lane whose slot lines throw an Error, not a RuntimeException. */
+    private static IdentityPluginFixture errorProxy(Path dir, List<String> lines) {
+        Logger log = slotLogThrowing(lines, () -> new AssertionError("the logging backend is down"));
+        IdentityPluginFixture fixture = new IdentityPluginFixture(dir, "human", true, log);
+        fixture.init();
+        fixture.syncRegistry();
+        return fixture;
+    }
+
+    /** A logger whose slot lines throw what {@code failure} makes. Every other call goes to {@link #recordingLog}. */
+    private static Logger slotLogThrowing(List<String> lines, Supplier<Throwable> failure) {
         Logger inner = recordingLog(lines);
         return (Logger) Proxy.newProxyInstance(Logger.class.getClassLoader(), new Class<?>[] {Logger.class}, (p, m, a) -> {
             if (isSlotLine(m.getName(), a)) {
-                throw new IllegalStateException("the logging backend is down");
+                throw failure.get();
             }
             return m.invoke(inner, a);
         });
