@@ -51,7 +51,7 @@ describe.skipIf(!SH)(
       expect(housekeeping.out).toMatch(/^ROW NF10 PASS got=mode=live /m);
     });
 
-    it.concurrent('a failed recreate restores the profile and ends with exit 5 and the default-stack message', async () => {
+    it.concurrent('a recreate that fails after a passing preflight is a FAIL; the stack is intact and the profile and copy are restored', async () => {
       const r = await runRows(['--only', 'NF10'], {
         pendingAt: { 2: [pt(1)] },
         env: { FAKE_UP_FAIL: '1' },
@@ -62,10 +62,18 @@ describe.skipIf(!SH)(
       expect(r.out).not.toContain('RESTORE-FAILED');
       expect(r.status).toBe(1);
       expect(r.profile).toBe(PROFILE_TEXT);
-      expect(
-        (await runRows(['--only', 'NF10'], { env: { FAKE_CF: '' }, pendingAt: { 2: [pt(1)] } }))
-          .out,
-      ).toMatch(/^ROW NF10 FAIL /m);
+    });
+
+    it.concurrent('NF10 skips with env-not-exported when the compose labels are missing (no preflight is possible), touching nothing', async () => {
+      const r = await runRows(['--only', 'NF10'], {
+        env: { FAKE_CF: '' },
+        pendingAt: { 2: [pt(1)] },
+      });
+      expect(r.out).toMatch(/^ROW NF10 SKIP reason=env-not-exported /m);
+      expect(r.out).not.toContain('RESTORE-FAILED');
+      expect(r.status).toBe(0);
+      expect(r.profile).toBe(PROFILE_TEXT);
+      expect(compose(r)).toHaveLength(0);
     });
 
     it.concurrent('NF10 skips with env-not-exported when compose config fails, touching nothing', async () => {
