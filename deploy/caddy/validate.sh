@@ -15,6 +15,7 @@ trap 'rm -rf "$work"' EXIT
 env_args=(
   -e GELDAR_DOMAIN=example.test
   -e GELDAR_MAP_UPSTREAM=map.example.test:8100
+  -e GELDAR_MAP_NF_UPSTREAM=map-nf.example.test:8110
   -e GELDAR_GLASS_UPSTREAM=glass.example.test:8080
   -e GELDAR_MCP_UPSTREAM=mcp.example.test:8788
   -e GELDAR_REGISTER_UPSTREAM=register.example.test:18090
@@ -43,3 +44,6 @@ check killed map-off.caddy glass-off.caddy mcp-off.caddy
 # The ingest site and its kill switch name the same host, so they are never in one set. Test values only, never the real token.
 check live-otel map.caddy glass.caddy mcp.caddy otel.caddy
 check killed-otel map-off.caddy glass-off.caddy mcp-off.caddy otel-off.caddy
+# The NeoForge map is a separate host (map.neoforge.<domain>), so its live and kill-switch files may share a set with the others.
+check live-nf map.caddy glass.caddy mcp.caddy map-neoforge.caddy
+check killed-nf map-off.caddy glass-off.caddy mcp-off.caddy map-neoforge-off.caddy

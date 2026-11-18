@@ -10,6 +10,9 @@ Decisions: [0071](../../docs/decisions/0071-public-endpoints-and-ports.md) (the 
 | Glass | `glass.caddy` | `glass-off.caddy` | `{$GELDAR_GLASS_UPSTREAM}` |
 | MCP (`/p/<player_id>` only) | `mcp.caddy` | `mcp-off.caddy` | `{$GELDAR_MCP_UPSTREAM}` |
 | OTLP ingest (see the OTLP section) | `otel.caddy` | `otel-off.caddy` | `{$GELDAR_INGEST_UPSTREAM}` |
+| BlueMap NeoForge map | `map-neoforge.caddy` | `map-neoforge-off.caddy` | `{$GELDAR_MAP_NF_UPSTREAM}` |
+
+The NeoForge map is host `map.neoforge.<domain>`. Its upstream is the loopback `bluemap-web-nf` container on port 8110, not the Paper map on 8100. It has no live proxy: the files are in the repo only, and nothing has been loaded on a node.
 
 The live and kill-switch files stay in this directory, `deploy/caddy/<site>.caddy`. That is where C2-04 and `deploy/colo-public.sh` look; the `deploy/caddy/sites/` path in the C2-07 card is superseded.
 
