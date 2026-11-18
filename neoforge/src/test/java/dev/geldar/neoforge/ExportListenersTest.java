@@ -1,6 +1,7 @@
 package dev.geldar.neoforge;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import dev.geldar.core.InMemoryEventPublisher;
@@ -9,6 +10,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Consumer;
 import net.neoforged.bus.api.Event;
+import net.neoforged.neoforge.event.CommandEvent;
+import net.neoforged.neoforge.event.ServerChatEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.player.CanPlayerSleepEvent;
@@ -68,5 +71,30 @@ class ExportListenersTest {
                         ServerTickEvent.Pre.class,
                         ServerTickEvent.Post.class),
                 bus.types);
+    }
+
+    @Test
+    void anEnabledExportRegistersNoChatListener() {
+        ExportConfig on = config(true);
+        RecordingBus bus = new RecordingBus();
+        ExportListeners.install(on, bus, handlers(on), new Quiet());
+        assertFalse(bus.types.contains(ServerChatEvent.class), "chat is not exported: ServerChatEvent has a listener");
+        assertFalse(
+                bus.types.contains(CommandEvent.class),
+                "chat is not exported, but a command event (/say, /me, /msg text) has a listener: " + bus.types);
+        assertTrue(
+                bus.types.stream().noneMatch(type -> type.getSimpleName().contains("Chat")),
+                "chat is not exported, but a chat event type has a listener: " + bus.types);
+    }
+
+    @Test
+    void anEnabledExportRegistersNoCommandListener() {
+        ExportConfig on = config(true);
+        RecordingBus bus = new RecordingBus();
+        ExportListeners.install(on, bus, handlers(on), new Quiet());
+        assertTrue(
+                bus.types.stream().noneMatch(type -> type.getSimpleName().contains("Command")),
+                "a command event carries /say, /me and /msg text, so no command listener may be registered: "
+                        + bus.types);
     }
 }

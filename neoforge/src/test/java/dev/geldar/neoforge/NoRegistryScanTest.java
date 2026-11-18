@@ -25,6 +25,12 @@ class NoRegistryScanTest {
             "playToServer", "playBidirectional", "DeferredHolder", "DeferredBlock", "DeferredItem",
             "BuiltInRegistries", "Registry.register", "NetworkRegistry", "RegistryObject");
 
+    /** Chat is not exported and no name mask exists (README, Events). Matched case-insensitively, as FORBIDDEN is. */
+    private static final List<String> CHAT_WORDS = List.of(
+            "ChatEvent", "ChatReceivedEvent", "PlayerChatMessage", "ServerChatEvent", "ChatType", "CommandEvent",
+            "broadcastChatMessage", "handleChat", "name mask", "name_mask", "namemask", "name-mask", "name.mask",
+            "chat_export", "chatexport", "chat-export", "chat.export", "chat.enabled");
+
     private static final Path JAVA_ROOT = Path.of("src", "main", "java");
     private static final Path RESOURCE_ROOT = Path.of("src", "main", "resources");
     /** core-common is a composite build input and is packed into this jar (build.gradle.kts), so it is scanned too. */
@@ -47,6 +53,40 @@ class NoRegistryScanTest {
     }
 
     @Test
+    void mainSourcesReferenceNoChatEventOrNameMask() throws IOException {
+        assertEquals(List.of(), scan(JAVA_ROOT, ".java", CHAT_WORDS), "chat event or name mask found in main sources");
+    }
+
+    @Test
+    void packedCoreCommonSourcesReferenceNoChatEventOrNameMask() throws IOException {
+        assertEquals(List.of(), scan(CORE_COMMON_JAVA_ROOT, ".java", CHAT_WORDS),
+                "chat event or name mask found in packed core-common sources");
+    }
+
+    @Test
+    void mainResourcesHaveNoChatExportOrNameMaskKey() throws IOException {
+        assertEquals(List.of(), scan(RESOURCE_ROOT, null, CHAT_WORDS), "chat export or name mask found in main resources");
+    }
+
+    /** A command event carries /say, /me and /msg text, so it is chat too. The scan is textual: comments count. */
+    @Test
+    void mainSourcesReferenceNoCommandEvent() throws IOException {
+        assertEquals(List.of(), scan(JAVA_ROOT, ".java", List.of("CommandEvent")), "command event found in main sources");
+    }
+
+    @Test
+    void mainSourcesReferenceNoChatBroadcastOrChatHandler() throws IOException {
+        assertEquals(List.of(), scan(JAVA_ROOT, ".java", List.of("broadcastChatMessage", "handleChat")),
+                "chat broadcast or chat handler found in main sources");
+    }
+
+    @Test
+    void mainResourcesHaveNoChatOrNameMaskSetting() throws IOException {
+        assertEquals(List.of(), scan(RESOURCE_ROOT, null, List.of("chat.enabled", "name-mask", "name.mask")),
+                "chat or name-mask setting found in main resources");
+    }
+
+    @Test
     void mainResourcesHaveNoMixinConfig() throws IOException {
         assertTrue(Files.isDirectory(RESOURCE_ROOT), "scan root missing: " + RESOURCE_ROOT.toAbsolutePath());
         List<String> mixins = new ArrayList<>();
@@ -63,6 +103,10 @@ class NoRegistryScanTest {
 
     /** One hit per file and forbidden word; a null extension scans every regular file under the root. */
     private static List<String> scan(Path root, String extension) throws IOException {
+        return scan(root, extension, FORBIDDEN);
+    }
+
+    private static List<String> scan(Path root, String extension, List<String> words) throws IOException {
         assertTrue(Files.isDirectory(root), "scan root missing: " + root.toAbsolutePath());
         List<String> hits = new ArrayList<>();
         try (Stream<Path> files = Files.walk(root)) {
@@ -71,7 +115,7 @@ class NoRegistryScanTest {
                     continue;
                 }
                 String text = Files.readString(file, StandardCharsets.UTF_8).toLowerCase(Locale.ROOT);
-                for (String word : FORBIDDEN) {
+                for (String word : words) {
                     if (text.contains(word.toLowerCase(Locale.ROOT))) {
                         hits.add(root.relativize(file) + " contains " + word);
                     }
