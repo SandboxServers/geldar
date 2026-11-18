@@ -497,7 +497,7 @@ Two cases. **Case 1 (nf not yet started, runbook status):** merge the diffs, the
 (runbook section 8) with the extra staging below; telemetry costs no extra restart. **Case 2 (nf already running):**
 after merge and staging, recreate only the two changed services (the runbook allows hand compose with the two flags):
 `docker compose -p geldar-nf -f compose/nf-live.yml up -d --no-deps neoforge telemetry-relay`. Outage = one neoforge
-restart (the same as a rollback). Whether compose also recreates `velocity` because its dependency was recreated is UNVERIFIED;
+restart (the same as a rollback; a rollback must be run with `NF_TELEMETRY=off` set, never by unsetting it, see "Kill switch and rollback"). Whether compose also recreates `velocity` because its dependency was recreated is UNVERIFIED;
 no human can join yet (loopback ingress only), so the impact is nil either way.
 
 ### Scratch verification before geldar-nf (required first)
@@ -523,7 +523,7 @@ A failure here is a finding and stops the packet; do not fix it on the node.
    gateway is up (`docker network ls`, `docker ps` are read-only; the telemetry README's health check for `:13133`).
 4. `nf-deploy.sh plan`: every gate passes (jars hashed, free RAM, port, config renders).
 
-### Bring-up verification checklist (every box time-limited; stop at the first failure and use the rollback)
+### Bring-up verification checklist (every box time-limited; stop at the first failure and use the rollback: `NF_TELEMETRY=off` set explicitly, then `up`, then the four checks in "Kill switch and rollback")
 | T+ | Check (read-only verbs) | Pass |
 |----|-------------------------|------|
 | 0 to 2 min | `nf-deploy.sh up` (or the Case 2 command); no `refusing to start` line in `nf-deploy.sh logs neoforge` | jars verified, container running |
@@ -555,10 +555,25 @@ snapshot every 60 s for an agent) need a joined player. What is needed, and what
   first live P0 join that geldar-neoforge plans anyway.
 
 ### Kill switch and rollback
-- **Soft (no file edit):** `export NF_TELEMETRY=off` (container: `GELDAR_NF_TELEMETRY=off`) and `nf-deploy.sh up` (or the Case 2
+- **Rollback = the soft switch, run as an explicit `off` (no file edit):** `export NF_TELEMETRY=off` (container: `GELDAR_NF_TELEMETRY=off`) and `nf-deploy.sh up` (or the Case 2
   command for `neoforge`): the entrypoint removes the ledger copy, adds no agent flags, sets `OTEL_SDK_DISABLED=true` and unsets
   `JAVA_AGENTS` and `OTEL_JAVAAGENT_CONFIGURATION_FILE`; the server runs with no agent and no mod. One neoforge restart. The
-  mounts must still exist (they are fail-closed). An unset switch with a stale copy refuses to start, so `off` is the way out.
+  mounts must still exist (they are fail-closed; keep the `NF_*_HOST` variables set in the same shell). **Never roll back by
+  unsetting `NF_TELEMETRY` or `GELDAR_NF_TELEMETRY`.** An unset switch with a stale ledger copy in `mods/` refuses to start, by
+  design (a forgotten setting cannot silently run a stale jar), so only an explicit `off` clears it.
+- **After any rollback, the checks (read-only verbs; all four must hold):** the ledger jar is absent from `mods/`
+  (`/data/mods/geldar-neoforge-ledger.jar` in the data directory, or `docker exec` into the container); no `-javaagent` line in
+  `user_jvm_args.txt` in the data directory; the container is not a member of the `geldar-telemetry` network
+  (`docker inspect`, Networks field); the container is healthy (`docker ps` status; UNVERIFIED whether the image has a
+  healthcheck, else the `Done` line in `nf-deploy.sh logs neoforge`).
+- **Rollback lesson (2026-11-18).** First live attempt: the rollback `up` ran without the off switch. The ledger jar copy stayed
+  in `mods/` and the entrypoint's refusal fired, so the server did not start. This is the deliberate refusal working as designed,
+  and the rollback step was wrong, not the guard. The live server was repaired by deleting exactly the stale jar
+  (`geldar-neoforge-ledger.jar` in `mods/`) through a throwaway container, nothing else. geldar-neoforge's entrypoint restart PR
+  is in work. Until it is merged, every rollback is run with `NF_TELEMETRY=off` set explicitly, and the four checks above run after it.
+- **Not a telemetry file:** the same attempt's entrypoint rejection of `/data/config/proxy-compatible-forge.toml` (after the mod
+  reformatted it) is Proxy Compatible Forge's config. It is not a telemetry file, the telemetry rollback does not touch it, and
+  the telemetry checks do not cover it.
 - **Ledger only:** `enabled=false` in `compose/neoforge/ledger.properties`, new export, one restart.
 - **Hard rollback:** redeploy the previous export (no relay, no mounts, no flags) and recreate `neoforge` only; `docker compose ...
   rm -sf telemetry-relay` for the relay. The external network is not removed by compose. Outage = one server restart.
