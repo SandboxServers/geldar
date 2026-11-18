@@ -41,5 +41,7 @@ describe('BlueMap config loader: its pins equal the file', () => {
     expect(pin, `${LIB} has no BLUEMAP_LOADER_SHA256 constant. ${REGEN}`).toBeDefined();
     expect(pin, `${LIB} loader pin is stale. ${REGEN}`).toBe(actual);
     expect(text).toContain('check_bluemap_loader');
+    // The comparison itself: a function that only exists by name would pass the line above but not refuse a changed loader.
+    expect(text).toMatch(/\[ "\$got" = "\$BLUEMAP_LOADER_SHA256" \] \|\| die/);
   });
 });
