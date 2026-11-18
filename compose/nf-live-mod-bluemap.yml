@@ -24,7 +24,6 @@ services:
         bind:
           create_host_path: false
       - type: bind
-      - type: bind
         source: ../plugins/bluemap/neoforge
         target: /geldar/extra-mods/bluemap-config
         read_only: true
