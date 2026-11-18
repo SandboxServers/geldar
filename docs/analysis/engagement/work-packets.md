@@ -19,20 +19,19 @@
 | U0-01 | U0-02 | With U0-00 |
 | U0-02 | Closes U0 | After U0-01 is deployed |
 
-### U0-00: what `use` shapes agents sent for weapons (orchestrator or ops, read-only)
+### U0-00: what `use` shapes agents sent for weapons (done, 2026-11-18)
 
-Owner approval D-EN-02 covers MCP act spans only: no events table, no chat, no writes.
+Done by the orchestrator session. Results and queries: `docs/analysis/engagement/worknotes/U0-00.md`.
 
-1. On the telemetry node, query ClickHouse read-only as the reader user (`deploy/telemetry/README.md`) for MCP `act` tool spans since 2026-11-17 03:48Z. Tool arguments are span events (T-06c, `threshold/mcp/src/telemetry.ts`), not attributes.
-2. Count act items with `do: "use"` whose `item` ends in `_sword` or `_axe`, by shape: `item+at`, `item` alone, `item+entity`, no item. List the refusal text for each shape.
-3. Also count act items whose verb is not a known verb but whose text says hold, equip or wield.
-4. Write the counts to `worknotes/U0-00.md`. If `item` alone is close to zero, flag it for the owner. Discoverability then becomes a question (a `hold` verb, 0389 Consequences), and it does not block U0-01.
-
-If the span events do not carry the arguments, record that and stop. Do not fall back to the events table.
+- The route actually used: `docker exec` into `geldar-ch` as ClickHouse `default` with `readonly=1`. This was a one-off owner ruling (D-EN-02), because the `geldar_reader` password is root-only on the node. It is not a standing route; D-EN-03 is.
+- The scope actually used: MCP `mcp.tool_call` span arguments. Shape counts came from `act`; phrase counts came over `act`, `journal` and `say` arguments, and only counts were published. The events table and chat were not read.
+- The planned step 3 (hold, equip or wield text) did not produce a usable count. The note marks it unmeasured.
 
 ### U0-01: `use` with an item and no target holds the item
 
-Implements [decision 0389](../../decisions/0389-use-with-an-item-and-no-target-holds-it.md). Branch `engagement/u0-use-hold`, worktree `D:\Source\geldar-wt\u0-use-hold`.
+Implements [decision 0389](../../decisions/0389-use-with-an-item-and-no-target-holds-it.md). Branch `engagement/u0-use-hold`, in its own worktree.
+
+**Merging deploys.** `golem/**` and `contract/**` match the colo-images filter. A merge to `main` builds new images, and colo-deploy restarts the shared services and then each live Body in turn.
 
 **1. `golem/src/actions/use.ts`**
 - Add `notHeld: 'the item did not go into the hand'` to `USE_MESSAGE`.
@@ -88,5 +87,9 @@ Implements [decision 0389](../../decisions/0389-use-with-an-item-and-no-target-h
 ### U0-02: live check (orchestrator, after U0-01 deploys)
 
 1. Live lane (exclusive): a `test:live` case, or a manual Body run on the local shard. Craft a wooden sword, send `use { item: wooden_sword }`, then confirm `self.held_item` is `wooden_sword` in the next snapshot and that the outcome text reads "wooden_sword in hand".
-2. After the colo deploy, watch the journals and MCP spans for 48 hours. Record which agents hold weapons and when, whether Billy names a walk, and the first group to leave the village. Agents are not told about the change, and their gate stays theirs (Principle 5).
-3. Write the result to `worknotes/U0-02.md`, then close U0 in the ledger.
+2. The U0-01 merge deploys it (see U0-01). For 48 hours after that, measure from the journals and MCP spans. Nothing here is a target: what agents do is data, and their gate stays theirs (Principles 2 and 5). Agents are not told about the change. Measure:
+   - `use` shapes over time: item-only, item+at and item+entity actions, and the item-only success rate.
+   - `held_item` over time, not once. The eat and burrow reflexes swap the hand to food or a pickaxe, and nothing restores the sword.
+   - Talk of being named, walks and leaving the row, and any change in where agents are.
+3. Hypothesis to test (from U0-00): the item-only shape was refused "use needs a block position", so agents added `at`. The first item-only action, 11-17 06:08:49Z, came 19 seconds before the first item+at, 06:09:08Z. If so, the 178 item+at actions still meet "that block cannot be used that way" after the fix, and item-only use may rise once it starts succeeding.
+4. Write the result to `docs/analysis/engagement/worknotes/U0-02.md`, then close U0 in the ledger.
