@@ -203,6 +203,57 @@ describe('register shares the Glass host (decision 0135, amendment R42)', () => 
   });
 });
 
+describe('map-neoforge site (NF-BM-4, the BlueMap NeoForge shard)', () => {
+  const live = read('map-neoforge.caddy');
+  const off = read('map-neoforge-off.caddy');
+
+  it('serves map.neoforge from the project domain placeholder, live and off alike', () => {
+    expect(live).toContain('map.neoforge.{$GELDAR_DOMAIN} {');
+    expect(off).toContain('map.neoforge.{$GELDAR_DOMAIN} {');
+  });
+
+  it('refuses every method but GET and HEAD with 405, as the first handle', () => {
+    expect(live).toMatch(/^\s*@not_allowed not method GET HEAD$/m);
+    expect(live).toMatch(/handle @not_allowed \{\s*respond 405\s*\}/);
+    expect(live.indexOf('handle @not_allowed')).toBeLessThan(live.indexOf('reverse_proxy'));
+  });
+
+  it('strips the incoming address headers and sets its own in its one reverse_proxy', () => {
+    for (const line of STRIPS) {
+      expect(live).toContain(line);
+    }
+    expect(live).not.toMatch(/^\s*request_header x-geldar-client-ip/m);
+    const blocks = proxyBlocks(live);
+    expect(blocks.length).toBe(1);
+    expect(blocks[0]).toContain(SET);
+  });
+
+  it('proxies to the NeoForge upstream placeholder only, never to the Paper map upstream', () => {
+    expect(live).toMatch(/reverse_proxy \{\$GELDAR_MAP_NF_UPSTREAM\} \{/);
+    expect(live).not.toContain('{$GELDAR_MAP_UPSTREAM}');
+  });
+
+  it('caps the request body at 1 KiB', () => {
+    expect(live).toMatch(/request_body \{\s+max_size 1KiB\s+\}/);
+  });
+
+  it('keeps the map.caddy response header block: -Server, nosniff, no-referrer and frame-ancestors', () => {
+    expect(live).toMatch(/^\s*-Server$/m);
+    expect(live).toMatch(/^\s*X-Content-Type-Options nosniff$/m);
+    expect(live).toMatch(/^\s*Referrer-Policy no-referrer$/m);
+    expect(live).toMatch(/^\s*Content-Security-Policy "frame-ancestors 'none'"$/m);
+  });
+
+  it('kill switch answers 503 on the same host and never proxies or names the upstream', () => {
+    expect(off).toMatch(
+      /respond `\{"error":\{"code":"unavailable","message":"Service unavailable"\}\}` 503/,
+    );
+    expect(off).not.toContain('reverse_proxy');
+    expect(off).not.toContain('GELDAR_MAP_NF_UPSTREAM');
+    expect(off).toMatch(/^\s*-Server$/m);
+  });
+});
+
 describe('OTLP ingest route (otel.caddy, caddy-ingest-route.md)', () => {
   const text = read('otel.caddy');
   const off = read('otel-off.caddy');

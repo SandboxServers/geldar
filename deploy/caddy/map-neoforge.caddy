@@ -1,0 +1,34 @@
+# BlueMap on the NeoForge shard, public and read-only (NF-BM-4). Load this file, then `caddy reload`.
+# Placeholders, never real values: GELDAR_DOMAIN (the project domain) and GELDAR_MAP_NF_UPSTREAM (the address of the loopback
+# bluemap-web-nf container, port 8110, set by the integration packet). This site has no live proxy until the owner's window
+# (runbook NF-BM-5). Its kill switch is map-neoforge-off.caddy.
+map.neoforge.{$GELDAR_DOMAIN} {
+	# GET and HEAD only; every other method is refused at Caddy.
+	@not_allowed not method GET HEAD
+	# A site-level respond sorts after handle, so the 405 is a handle that comes first.
+	handle @not_allowed {
+		respond 405
+	}
+
+	# Drop any address header a client sent. Caddy sets the one it vouches for inside reverse_proxy.
+	request_header -x-geldar-client-ip
+	request_header -X-Forwarded-For
+	request_header -CF-Connecting-IP
+
+	# The NeoForge shard renders no live player JSON (players hidden, no /maps/*/live/* route), so no request body is needed.
+	request_body {
+		max_size 1KiB
+	}
+
+	# Response headers that BlueMap needs no exception for. The full CSP is checked in C2-07 (0094).
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		Content-Security-Policy "frame-ancestors 'none'"
+	}
+
+	reverse_proxy {$GELDAR_MAP_NF_UPSTREAM} {
+		header_up x-geldar-client-ip {remote_host}
+	}
+}
