@@ -27,9 +27,8 @@ interface HumanService {
   volumes: string[];
   ports: string[];
   depends_on: Record<string, { condition: string }>;
-  deploy: { resources: { limits: { memory: string; cpus: string } } };
+  deploy: { resources: { limits: { memory: string; cpus: string; pids?: number } } };
   memswap_limit: string;
-  pids_limit?: number;
   labels: Record<string, string>;
   restart: string;
   healthcheck: { test: string[] };
@@ -67,9 +66,10 @@ describe('human overlay: the service', () => {
   });
 
   it('is capped: memory 768m with no swap, 0.5 CPU, and a pids limit', () => {
-    expect(svc.deploy.resources.limits).toEqual({ memory: '768m', cpus: '0.5' });
+    expect(svc.deploy.resources.limits).toEqual({ memory: '768m', cpus: '0.5', pids: 256 });
     expect(svc.memswap_limit).toBe('768m');
-    expect(svc.pids_limit).toBeGreaterThan(0);
+    // One pids form only: a top-level pids_limit beside deploy.resources.limits.pids breaks the combined render.
+    expect(svc).not.toHaveProperty('pids_limit');
   });
 
   it('is labelled geldar.scratch, restart no, and has no user override', () => {
