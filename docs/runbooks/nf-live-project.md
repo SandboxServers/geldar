@@ -91,7 +91,7 @@ Three things these values do not do, stated plainly:
   message. That is a separate plugin-only packet; it is not in this change.
 - **The NeoForge shard must not be made public before that cap lands** (the bold note at the top of this runbook).
 - **The show-max-players values are display only, and they do not match.** compose/velocity/velocity-nf.toml shows 400 and
-  compose/velocity/velocity-human.toml shows 20. Neither file is edited here. Whether Velocity refuses a login over its own
+  compose/velocity/velocity-nf-human.toml shows 10. Neither file is edited here. Whether Velocity refuses a login over its own
   count is UNVERIFIED (not checked in this packet). The real server cap is MAX_PLAYERS (10).
 
 ## 4. Secrets
