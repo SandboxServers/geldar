@@ -1,0 +1,53 @@
+# Human listener for the live NeoForge shard (compose/nf-live-human.yml, service velocity-human). Opt-in: deploy/nf-deploy.sh
+# adds that overlay only with NF_HUMAN=on.
+# Humans are players: online-mode = true, so Mojang authentication decides the account and its UUID. This proxy reads the
+# life registry over NATS (the velocity user, compose/nf-live-human.yml) and refuses agent-shaped names; it has no agent
+# route of its own. The bot ingress (compose/velocity/velocity-nf.toml, offline-mode, loopback only) is a separate proxy.
+# The forwarding secret is the Docker secret file, the same secret the NeoForge server's Proxy Compatible Forge reads.
+# Keep this file free of secrets and real hostnames: the motd is a fixed label and the forced host is a reserved name.
+config-version = "2.7"
+# Inside the container only: the overlay publishes this port on the host (NF_HUMAN_BIND, NF_HUMAN_PORT) and nothing else.
+bind = "0.0.0.0:25565"
+motd = "Geldar shard (human lane)"
+show-max-players = 10
+online-mode = true
+force-key-authentication = false
+prevent-client-proxy-connections = false
+player-info-forwarding-mode = "modern"
+forwarding-secret-file = "/run/secrets/velocity-forwarding"
+announce-forge = false
+kick-existing-players = false
+ping-passthrough = "DISABLED"
+sample-players-in-ping = false
+enable-player-address-logging = true
+
+[servers]
+# The NeoForge game server is reachable only on the compose network (the same backend the bot ingress uses).
+neoforge = "neoforge:25565"
+try = ["neoforge"]
+
+[forced-hosts]
+# Reserved name: no real hostname is configured here. Connections for it go to the NeoForge backend.
+"geldar-human.invalid" = ["neoforge"]
+
+[advanced]
+compression-threshold = 256
+compression-level = -1
+# login-ratelimit is deliberately not set: Velocity's default applies. Humans share no source address, so the default is kept.
+connection-timeout = 5000
+read-timeout = 30000
+haproxy-protocol = false
+tcp-fast-open = false
+bungee-plugin-message-channel = true
+show-ping-requests = false
+failover-on-unexpected-server-disconnect = true
+announce-proxy-commands = true
+log-command-executions = false
+log-player-connections = true
+accepts-transfers = false
+
+[query]
+enabled = false
+port = 25565
+map = "Velocity"
+show-plugins = false

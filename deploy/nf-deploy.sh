@@ -2,7 +2,7 @@
 # Operator script for the live NeoForge project (compose project geldar-nf, compose/nf-live.yml). Run it on the node from an
 # exported tree (a git checkout is refused unless --local, which the tests use), as the operator account (never root, and
 # never with elevated rights). Verbs: plan (prints the gates and the steps, changes nothing), up (refuses an unseeded
-# neoforge-data volume), seed-bundle (once per volume: extracts the offline bundle tarball into it), status, down [--volumes], logs <service>,
+# neoforge-data volume), seed-bundle (once per volume: extracts the offline bundle tarball into it), refresh-secrets (after a secret file's content changes; no volume removed), status, down [--volumes], logs <service>,
 # probe (one golem body probe run, with the overlay compose/nf-live-probe.yml added for that run only; section 4c of the runbook).
 # The project name and the base compose file are constants here. deploy/common.sh (the colo model) is NOT sourced, and the script
 # refuses to run when GELDAR_PROJECT or GELDAR_COLO_COMPOSE is set, so no colo setting can reach this project.
@@ -22,6 +22,8 @@
 #   NF_TELEMETRY=off (explicit)        the rollback: adds compose/nf-live-telemetry-off.yml (plan and up only). It sets
 #                                      GELDAR_NF_TELEMETRY=off, so the entrypoint removes our own stale ledger jar copy and starts
 #                                      no agent. Unset adds no overlay, so a stale jar makes the start refuse, by design.
+#   NF_HUMAN (default off)             on adds compose/nf-live-human.yml (the velocity-human lane; loopback unless NF_HUMAN_BIND
+#                                      says otherwise). NF_HUMAN_BIND must be set explicitly, non-empty, and not 0.0.0.0. Unset or off never starts it.
 #   The four compose shapes dc() and probe_dc() render: the base file alone (NF_TELEMETRY unset); the base plus
 #   compose/nf-live-telemetry.yml (on); the base plus compose/nf-live-telemetry-off.yml (off); the base plus
 #   compose/nf-live-probe.yml (probe only, for one run).
@@ -58,6 +60,11 @@ TELEMETRY=0
 # so the entrypoint removes our own stale ledger jar copy. Unset adds nothing; the default render is unchanged.
 OFF_FILE=$ROOT/compose/nf-live-telemetry-off.yml
 TELEMETRY_OFF=0
+# Human lane (NF_HUMAN=on only): the overlay, the two files it needs, and the flag. HUMAN is 1 only after check_human_inputs sees on.
+HUMAN_FILE=$ROOT/compose/nf-live-human.yml
+HUMAN_TOML=$ROOT/compose/velocity/velocity-nf-human.toml
+HUMAN_JAR=$ROOT/plugin/velocity-identity/build/libs/geldar-velocity-identity.jar
+HUMAN=0
 
 die() {
   echo "nf-deploy: error: $*" >&2
@@ -74,13 +81,14 @@ need() {
 
 # Every compose call goes through here: the constant project and the one compose file, nothing else.
 dc() {
+  # Each set -- prepends one overlay: the human file first, so the -f order is compose, telemetry or off, then human.
+  if [ "$HUMAN" = 1 ]; then set -- -f "$HUMAN_FILE" "$@"; fi
   if [ "$TELEMETRY" = 1 ]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$TELEMETRY_FILE" "$@"
+    set -- -f "$TELEMETRY_FILE" "$@"
   elif [ "$TELEMETRY_OFF" = 1 ]; then
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$OFF_FILE" "$@"
-  else
-    docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"
+    set -- -f "$OFF_FILE" "$@"
   fi
+  docker compose -p "$PROJECT" -f "$COMPOSE_FILE" "$@"
 }
 
 # Runs a state-changing step, or names it in dry-run mode.
@@ -180,15 +188,17 @@ check_no_colo_labels() {
 # container (velocity, neoforge, eventsink, postgres, nats), so only the rows whose service is velocity are counted: the
 # awk counts every row for the parse check, then keeps exactly one velocity row. On refusal it prints one reason on
 # stdout and returns 1. Called only once a listener is found.
-own_velocity_on_port() {
+# Generalised for the human lane: $1 is the service (velocity, or velocity-human), $2 the bind address and $3 the host port; the
+# one published mapping must be exactly $2:$3->25565/tcp. Only rows of service $1 count; the other services' rows are ignored.
+own_service_on_port() {
   rows=$(docker ps --filter "label=com.docker.compose.project=$PROJECT" \
     --format '{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.service"}}|{{.Ports}}') ||
     { echo "docker ps failed"; return 1; }
-  printf '%s\n' "$rows" | awk -F'|' -v p="$PROJECT" -v want="127.0.0.1:$PORT->25565/tcp" '
+  printf '%s\n' "$rows" | awk -F'|' -v p="$PROJECT" -v svc="$1" -v want="$2:$3->25565/tcp" '
     NF == 0 { next }
     NF != 3 { bad = 1; next }
     { all++ }
-    $2 != "velocity" { next }
+    $2 != svc { next }
     { n++; proj = $1; ports = $3 }
     END {
       if (bad) { print "docker output does not parse"; exit 1 }
@@ -206,17 +216,21 @@ own_velocity_on_port() {
 }
 
 check_port() {
+  check_listener "$PORT" 127.0.0.1 velocity
+}
+
+# Host port $1 on address $2 must be free, or held only by $PROJECT's own service $3 with its one mapping $2:$1->25565/tcp.
+# Every listener socket must be on $2:$1 (a second socket on another address refuses). Otherwise the message names the check.
+check_listener() {
   need ss
-  listeners=$(ss -Hltn "sport = :$PORT") || die "cannot read the listening sockets (ss)"
+  listeners=$(ss -Hltn "sport = :$1") || die "cannot read the listening sockets (ss)"
   [ -n "$listeners" ] || return 0
-  # Every listener socket must be on 127.0.0.1:$PORT (a second socket on another address refuses), and the project's own
-  # velocity must own the published binding. Otherwise the port is taken; the message names the check that failed.
-  if printf '%s\n' "$listeners" | awk -v want="127.0.0.1:$PORT" 'NF && $4 != want { bad = 1 } END { exit bad + 0 }'; then
-    reason=$(own_velocity_on_port) && return 0
+  if printf '%s\n' "$listeners" | awk -v want="$2:$1" 'NF && $4 != want { bad = 1 } END { exit bad + 0 }'; then
+    reason=$(own_service_on_port "$3" "$2" "$1") && return 0
   else
-    reason="ss socket not 127.0.0.1:$PORT"
+    reason="ss socket not $2:$1"
   fi
-  die "something already listens on port $PORT; the project's published port must be free (only $PROJECT's own velocity on 127.0.0.1:$PORT is accepted); own velocity check failed: $reason"
+  die "something already listens on port $1; the project's published port must be free (only $PROJECT's own $3 on $2:$1 is accepted); own $3 check failed: $reason"
 }
 
 check_secrets() {
@@ -308,6 +322,48 @@ check_telemetry_network() {
   [ "$TELEMETRY" = 1 ] || return 0
   docker network inspect "$TELEMETRY_NETWORK" >/dev/null 2>&1 ||
     die "docker network $TELEMETRY_NETWORK does not exist on this node; start the geldar-telemetry stack first (nothing started)"
+}
+
+# NF_HUMAN: on adds compose/nf-live-human.yml; unset or off adds nothing; any other value refuses. status, down and logs read
+# only this switch (no refusals), so they can see velocity-human; gates() runs the full checks below for plan, up and refresh.
+check_human_switch() {
+  case ${NF_HUMAN-off} in
+    off) HUMAN=0 ;;
+    on) HUMAN=1 ;;
+    *) die "NF_HUMAN must be on or off (default off); refusing" ;;
+  esac
+}
+
+# On: NF_HUMAN_BIND is set, non-empty, an IP literal (no spaces, quotes or brackets) and not a wildcard (0.0.0.0 or ::). NF_HUMAN_PORT,
+# if set, is a canonical number from 1 to 65535 other than 25565, 25566 and the live port. The overlay's two mounted files must
+# exist. All of it runs before any docker call. HUMAN_BIND and HUMAN_PORT (default 46566, as the overlay) are set for the port gate.
+check_human_inputs() {
+  check_human_switch
+  [ "$HUMAN" = 1 ] || return 0
+  HUMAN_BIND=${NF_HUMAN_BIND-}
+  case $HUMAN_BIND in
+    '' | *[!0-9A-Fa-f.:]*) die "NF_HUMAN_BIND must be set to an IP address literal, not empty or blank (NF_HUMAN=on); refusing" ;;
+    0.0.0.0 | ::) die "NF_HUMAN_BIND $HUMAN_BIND is a wildcard address; the human lane never binds all interfaces; refusing" ;;
+  esac
+  HUMAN_PORT=${NF_HUMAN_PORT-46566}
+  case $HUMAN_PORT in
+    '' | *[!0-9]* | 0*) die "NF_HUMAN_PORT must be a number with no leading zero (default 46566); refusing" ;;
+  esac
+  [ "${#HUMAN_PORT}" -le 5 ] && [ "$HUMAN_PORT" -le 65535 ] || die "NF_HUMAN_PORT $HUMAN_PORT is above 65535; refusing"
+  case $HUMAN_PORT in
+    25565 | 25566 | "$PORT") die "NF_HUMAN_PORT $HUMAN_PORT is reserved (25565, 25566 and the live velocity port $PORT); refusing" ;;
+  esac
+  [ -f "$HUMAN_FILE" ] || die "overlay $HUMAN_FILE is missing; refusing"
+  [ -f "$HUMAN_TOML" ] || die "compose/velocity/velocity-nf-human.toml is missing (the human proxy config); refusing"
+  [ -f "$HUMAN_JAR" ] || die "the identity plugin jar is missing (build plugin/velocity-identity first; the overlay mounts it); refusing"
+  say "human lane on: velocity-human publishes $HUMAN_BIND:$HUMAN_PORT->25565 (the only human publish)"
+}
+
+# On: the human port is free, or held only by velocity-human's own mapping $HUMAN_BIND:$HUMAN_PORT->25565/tcp (the agent port check is
+# check_port, which counts only the velocity row).
+check_human_port() {
+  [ "$HUMAN" = 1 ] || return 0
+  check_listener "$HUMAN_PORT" "$HUMAN_BIND" velocity-human
 }
 
 # The image of the neoforge service in compose/nf-live.yml: the one pinned reference, read from the file (no second copy here).
@@ -407,11 +463,13 @@ check_config() {
 # Every gate that up and plan run, in order. Refusing here stops before any state changes.
 gates() {
   check_telemetry
+  check_human_inputs
   check_operator
   check_telemetry_network
   check_service_uid
   check_no_colo_labels
   check_port
+  check_human_port
   check_inputs
   check_resources
   check_config
@@ -431,6 +489,7 @@ cmd_plan() {
   say "  2. up --no-deps --exit-code-from identity-seed identity-seed (one-shot)"
   say "  3. up -d --wait eventsink neoforge"
   say "  4. up -d --wait velocity (the only published port: 127.0.0.1:$PORT)"
+  if [ "$HUMAN" = 1 ]; then say "  5. up -d --wait velocity-human (NF_HUMAN=on: publishes $HUMAN_BIND:$HUMAN_PORT only)"; fi
   say "up refuses until the neoforge-data volume is seeded (seed-bundle, once per volume); plan does not check it"
   say "golem-body and players-host are not in this project and are never started"
   say "all gates passed"
@@ -443,6 +502,7 @@ cmd_up() {
   act dc up --no-deps --exit-code-from identity-seed identity-seed
   act dc up -d --wait eventsink neoforge
   act dc up -d --wait velocity
+  if [ "$HUMAN" = 1 ]; then act dc up -d --wait velocity-human; fi
   say "up: project $PROJECT started (no volume removed)"
 }
 
@@ -474,11 +534,13 @@ cmd_seed_bundle() {
 
 cmd_status() {
   check_operator
+  check_human_switch
   dc ps -a
 }
 
 cmd_down() {
   check_operator
+  check_human_switch
   check_no_colo_labels
   if [ "$VOLUMES" = 1 ]; then
     printf 'Type the project name (%s) to remove its volumes too: ' "$PROJECT" >&2
@@ -495,6 +557,7 @@ cmd_down() {
 
 cmd_logs() {
   check_operator
+  check_human_switch
   dc logs --tail 200 "$SERVICE"
 }
 

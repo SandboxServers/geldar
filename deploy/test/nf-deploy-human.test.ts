@@ -1,0 +1,355 @@
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import {
+  chmodSync,
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+// The NF_HUMAN cases of deploy/nf-deploy.sh: the overlay (compose/nf-live-human.yml), the refusals, the port gate with
+// multi-row docker ps fixtures, and the byte-identical calls when the lane is off. The fixture tree and stubs are small
+// copies of the ones in nf-deploy-telemetry.test.ts (the same stub contract: docker, ss, free, df, stat, tar).
+vi.setConfig({ testTimeout: 120000 });
+
+const DEPLOY = fileURLToPath(new URL('..', import.meta.url));
+const ROOT = resolve(DEPLOY, '..');
+const SCRIPT_SRC = resolve(DEPLOY, 'nf-deploy.sh');
+const SCRIPT_TEXT = readFileSync(SCRIPT_SRC, 'utf8');
+const SECRET_FILES = /^SECRET_FILES="([^"]+)"$/m.exec(SCRIPT_TEXT)?.[1].split(' ') ?? [];
+const JAR_BYTES = 'geldar neoforge mod fixture\n';
+const MOD_SHA = createHash('sha256').update(JAR_BYTES).digest('hex');
+const IDENTITY_JAR = 'identity plugin fixture\n';
+
+const STUB_SCRIPTS: Record<string, string> = {
+  // Logs every call. ps answers the rows of the fixture for the service-label format and nothing for the labels format.
+  docker: [
+    '#!/bin/sh',
+    'echo "docker $*" >>"$STUB_LOG"',
+    'case "$1" in',
+    '  ps) case "$*" in *compose.service*) printf "%s\\n" "$DOCKER_PS_ROWS" ;; esac; exit 0 ;;',
+    '  volume) exit 0 ;;',
+    '  run) exit 0 ;;',
+    'esac',
+    'exit 0',
+  ].join('\n'),
+  // The listener of each host port: 46565 is the live velocity port, 46566 the human port.
+  ss: [
+    '#!/bin/sh',
+    'case "$*" in',
+    '  *46565*) [ -n "$SS_LIVE" ] && printf "%s\\n" "$SS_LIVE" ;;',
+    '  *46566*) [ -n "$SS_HUMAN" ] && printf "%s\\n" "$SS_HUMAN" ;;',
+    'esac',
+    'exit 0',
+  ].join('\n'),
+  free: ['#!/bin/sh', 'printf "Mem: 1 1 1 1 1 %s\\n" "$FREE_KB"'].join('\n'),
+  df: [
+    '#!/bin/sh',
+    'printf "Filesystem 1024-blocks Used Available Capacity Mounted\\n"',
+    'printf "fixture 1 1 %s 1%% /\\n" "$DISK_KB"',
+  ].join('\n'),
+  stat: [
+    '#!/bin/sh',
+    'case "$*" in',
+    '  *%a*) echo "$STAT_MODE" ;;',
+    '  *%u*) echo "$STAT_UID" ;;',
+    'esac',
+  ].join('\n'),
+  tar: ['#!/bin/sh', 'exit 0'].join('\n'),
+};
+
+// Five project rows as docker ps prints them: neoforge (exposed only), velocity (the live mapping), velocity-human (the human
+// mapping), nats (exposed only) and postgres (exposed only).
+const LIVE_ROW = 'geldar-nf|velocity|127.0.0.1:46565->25565/tcp';
+const HUMAN_ROW = 'geldar-nf|velocity-human|127.0.0.1:46566->25565/tcp';
+const FIVE_ROWS = [
+  'geldar-nf|neoforge|25565/tcp',
+  LIVE_ROW,
+  HUMAN_ROW,
+  'geldar-nf|nats|4222/tcp, 6222/tcp, 8222/tcp',
+  'geldar-nf|postgres|5432/tcp',
+].join('\n');
+const LISTEN_LIVE = 'LISTEN 0 4096 127.0.0.1:46565 0.0.0.0:*';
+const LISTEN_HUMAN = 'LISTEN 0 4096 127.0.0.1:46566 0.0.0.0:*';
+
+const made: string[] = [];
+afterEach(() => {
+  for (const dir of made.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
+
+// The fixture tree: the script, the real overlay, toml and compose file, the secrets, the mod jar and the identity jar.
+function makeRepo(): string {
+  const repo = mkdtempSync(join(tmpdir(), 'nf-human-'));
+  made.push(repo);
+  for (const dir of [
+    'deploy',
+    'compose/secrets-nf',
+    'compose/velocity',
+    'compose/neoforge',
+    'stubs',
+  ]) {
+    mkdirSync(join(repo, dir), { recursive: true });
+  }
+  mkdirSync(join(repo, 'plugin', 'velocity-identity', 'build', 'libs'), { recursive: true });
+  copyFileSync(SCRIPT_SRC, join(repo, 'deploy', 'nf-deploy.sh'));
+  for (const f of ['nf-live.yml', 'nf-live-human.yml']) {
+    copyFileSync(join(ROOT, 'compose', f), join(repo, 'compose', f));
+  }
+  copyFileSync(
+    join(ROOT, 'compose', 'velocity', 'velocity-nf-human.toml'),
+    join(repo, 'compose', 'velocity', 'velocity-nf-human.toml'),
+  );
+  writeFileSync(join(repo, 'compose', 'neoforge', 'neoforge-entrypoint.sh'), '#!/bin/sh\n');
+  for (const f of SECRET_FILES) writeFileSync(join(repo, 'compose', 'secrets-nf', f), `${f}\n`);
+  writeFileSync(join(repo, 'mod.jar'), JAR_BYTES);
+  writeFileSync(
+    join(repo, 'plugin', 'velocity-identity', 'build', 'libs', 'geldar-velocity-identity.jar'),
+    IDENTITY_JAR,
+  );
+  for (const [name, body] of Object.entries(STUB_SCRIPTS)) {
+    const path = join(repo, 'stubs', name);
+    writeFileSync(path, `${body}\n`);
+    chmodSync(path, 0o755);
+  }
+  writeFileSync(join(repo, 'calls.log'), '');
+  return repo;
+}
+
+interface Opts {
+  env?: Record<string, string | undefined>;
+  rows?: string;
+  live?: string;
+  human?: string;
+  args?: string[];
+}
+
+// Runs the script in the fixture with the stubs first on PATH. A key set to undefined is removed from the environment.
+function run(repo: string, opts: Opts = {}) {
+  const env: Record<string, string> = {
+    PATH: `${join(repo, 'stubs')}:${process.env.PATH ?? ''}`,
+    STUB_LOG: join(repo, 'calls.log'),
+    DOCKER_PS_ROWS: opts.rows ?? FIVE_ROWS,
+    SS_LIVE: opts.live ?? '',
+    SS_HUMAN: opts.human ?? '',
+    FREE_KB: '100000000',
+    DISK_KB: '100000000',
+    STAT_MODE: '600',
+    STAT_UID: '1000',
+    NF_MOD_JAR_HOST: join(repo, 'mod.jar'),
+    NF_MOD_SHA256: MOD_SHA,
+    NF_HUMAN: 'on',
+    NF_HUMAN_BIND: '127.0.0.1',
+    NF_SECRETS_DIR: join(repo, 'compose', 'secrets-nf'),
+  };
+  for (const [key, value] of Object.entries(opts.env ?? {})) {
+    if (value === undefined) delete env[key];
+    else env[key] = value;
+  }
+  return spawnSync(
+    'sh',
+    [join(repo, 'deploy', 'nf-deploy.sh'), ...(opts.args ?? ['plan', '--local'])],
+    {
+      cwd: repo,
+      env: { ...process.env, ...env } as NodeJS.ProcessEnv,
+      encoding: 'utf8',
+    },
+  );
+}
+
+const calls = (repo: string): string[] =>
+  readFileSync(join(repo, 'calls.log'), 'utf8')
+    .split('\n')
+    .filter((l) => l !== '');
+const COMPOSE_CALL = /-f \S*compose\/nf-live\.yml/;
+const HUMAN_CALL = /-f \S*compose\/nf-live-human\.yml/;
+
+describe('nf-deploy.sh human lane (NF_HUMAN)', () => {
+  it('off (unset) calls compose with the base file only, the same calls as before the lane', () => {
+    const repo = makeRepo();
+    const res = run(repo, { env: { NF_HUMAN: undefined, NF_HUMAN_BIND: undefined } });
+    expect(res.status).toBe(0);
+    // Byte-identical to the pre-lane call: one -f (the base file) and nothing else.
+    const compose = calls(repo).filter((l) => l.startsWith('docker compose -p'));
+    expect(compose).toHaveLength(1);
+    expect(compose[0]).toMatch(
+      /^docker compose -p geldar-nf -f \S*compose\/nf-live\.yml config --quiet$/,
+    );
+  });
+
+  it('off (explicit) is the same as unset: no human overlay in any compose call', () => {
+    const repo = makeRepo();
+    const res = run(repo, {
+      env: { NF_HUMAN: 'off', NF_HUMAN_BIND: undefined },
+      args: ['up', '--local'],
+    });
+    expect(res.status).toBe(0);
+    const compose = calls(repo).filter((l) => l.startsWith('docker compose -p'));
+    expect(compose.length).toBeGreaterThan(0);
+    for (const line of compose) expect(line).not.toContain('nf-live-human');
+    expect(compose.some((l) => l.endsWith('up -d --wait velocity'))).toBe(true);
+  });
+
+  it('on adds the human overlay after the base file to every compose call, and up adds velocity-human with no force-recreate', () => {
+    const repo = makeRepo();
+    const res = run(repo, {
+      env: { NF_HUMAN_PORT: undefined },
+      args: ['up', '--local'],
+      live: LISTEN_LIVE,
+      rows: [LIVE_ROW, HUMAN_ROW].join('\n'),
+    });
+    expect(res.status).toBe(0);
+    const compose = calls(repo).filter((l) => l.startsWith('docker compose -p'));
+    for (const line of compose) {
+      expect(line).toMatch(COMPOSE_CALL);
+      expect(line).toMatch(HUMAN_CALL);
+      expect(line.indexOf('nf-live.yml')).toBeLessThan(line.indexOf('nf-live-human.yml'));
+    }
+    const up = compose.find((l) => l.endsWith('up -d --wait velocity-human'));
+    expect(up).toBeDefined();
+    expect(compose.join('\n')).not.toMatch(/force-recreate|\bstop\b|\brm\b|\bdown\b/);
+  });
+
+  it('status with the lane on adds the human overlay only (status never reads the telemetry switch)', () => {
+    const repo = makeRepo();
+    const res = run(repo, { env: { NF_TELEMETRY: 'off' }, args: ['status', '--local'] });
+    expect(res.status).toBe(0);
+    const line = calls(repo).find((l) => l.startsWith('docker compose -p') && l.endsWith('ps -a'));
+    expect(line).toMatch(/-f \S*nf-live\.yml -f \S*nf-live-human\.yml ps -a$/);
+  });
+
+  it('plan with the lane on prints the human line and changes no state', () => {
+    const repo = makeRepo();
+    const res = run(repo, { live: LISTEN_LIVE, human: LISTEN_HUMAN });
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain('velocity-human publishes 127.0.0.1:46566->25565');
+    expect(res.stdout).toContain('5. up -d --wait velocity-human');
+    expect(
+      calls(repo).some(
+        (l) => /\b(up|down|rm|stop)\b/.test(l) && !l.startsWith('docker compose version'),
+      ),
+    ).toBe(false);
+  });
+
+  it('passes the port gate with five project rows, the human mapping held by velocity-human, and exposed-only tokens', () => {
+    const repo = makeRepo();
+    const res = run(repo, { live: LISTEN_LIVE, human: LISTEN_HUMAN });
+    expect(res.status).toBe(0);
+    expect(res.stdout).toContain('all gates passed');
+  });
+
+  it('refuses a human port listener when velocity-human publishes a second mapping on another address', () => {
+    const repo = makeRepo();
+    const rows = [
+      LIVE_ROW,
+      'geldar-nf|velocity-human|127.0.0.1:46566->25565/tcp, 0.0.0.0:46567->25565/tcp',
+    ].join('\n');
+    const res = run(repo, { rows, human: LISTEN_HUMAN });
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('more than one published mapping');
+  });
+
+  it('refuses when velocity-human publishes 0.0.0.0 on the human port', () => {
+    const repo = makeRepo();
+    const rows = [LIVE_ROW, 'geldar-nf|velocity-human|0.0.0.0:46566->25565/tcp'].join('\n');
+    const res = run(repo, { rows, human: LISTEN_HUMAN });
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('is not exactly 127.0.0.1:46566->25565/tcp');
+  });
+
+  it('refuses when the human port is held and no velocity-human row exists (only the exposed token of another service)', () => {
+    const repo = makeRepo();
+    const res = run(repo, {
+      rows: FIVE_ROWS.replace(HUMAN_ROW, 'geldar-nf|velocity-human|25565/tcp'),
+      human: LISTEN_HUMAN,
+    });
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('unpublished only');
+  });
+
+  it('refuses a human listener that is not on the human bind address', () => {
+    const repo = makeRepo();
+    const res = run(repo, { rows: FIVE_ROWS, human: 'LISTEN 0 4096 0.0.0.0:46566 0.0.0.0:*' });
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('ss socket not 127.0.0.1:46566');
+  });
+
+  it('keeps the live gate on velocity rows only: a velocity-human row never satisfies the live port', () => {
+    const repo = makeRepo();
+    const rows =
+      'geldar-nf|velocity-human|127.0.0.1:46565->25565/tcp\n' +
+      FIVE_ROWS.replace(LIVE_ROW, 'geldar-nf|velocity|25565/tcp');
+    const res = run(repo, { rows, live: LISTEN_LIVE, human: LISTEN_HUMAN });
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('unpublished only (no published mapping)');
+  });
+
+  it('refuses a human port that is not free of a second velocity-human row', () => {
+    const repo = makeRepo();
+    const res = run(repo, {
+      rows: [LIVE_ROW, HUMAN_ROW, HUMAN_ROW].join('\n'),
+      human: LISTEN_HUMAN,
+    });
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('more than one docker ps row');
+  });
+
+  const refusals: [string, Record<string, string | undefined>, string][] = [
+    ['NF_HUMAN_BIND unset', { NF_HUMAN_BIND: undefined }, 'NF_HUMAN_BIND must be set'],
+    ['NF_HUMAN_BIND empty', { NF_HUMAN_BIND: '' }, 'NF_HUMAN_BIND must be set'],
+    ['NF_HUMAN_BIND blank (spaces)', { NF_HUMAN_BIND: '   ' }, 'NF_HUMAN_BIND must be set'],
+    ['NF_HUMAN_BIND 0.0.0.0', { NF_HUMAN_BIND: '0.0.0.0' }, 'wildcard'],
+    ['NF_HUMAN_BIND ::', { NF_HUMAN_BIND: '::' }, 'wildcard'],
+    ['NF_HUMAN_PORT 25565', { NF_HUMAN_PORT: '25565' }, 'reserved'],
+    ['NF_HUMAN_PORT 25566', { NF_HUMAN_PORT: '25566' }, 'reserved'],
+    ['NF_HUMAN_PORT 46565 (the live port)', { NF_HUMAN_PORT: '46565' }, 'reserved'],
+    ['NF_HUMAN_PORT with a leading zero', { NF_HUMAN_PORT: '046566' }, 'leading zero'],
+    ['NF_HUMAN_PORT not numeric', { NF_HUMAN_PORT: 'abc' }, 'leading zero'],
+    ['NF_HUMAN_PORT above 65535', { NF_HUMAN_PORT: '70000' }, 'above 65535'],
+    ['NF_HUMAN value yes', { NF_HUMAN: 'yes' }, 'NF_HUMAN must be on or off'],
+  ];
+  it.each(refusals)(
+    'refuses %s, names the reason, and makes no docker call',
+    (_name, env, reason) => {
+      const repo = makeRepo();
+      const res = run(repo, { env });
+      expect(res.status).toBe(1);
+      expect(res.stderr).toContain(reason);
+      expect(calls(repo)).toEqual([]);
+    },
+  );
+
+  it('refuses when the human toml is missing, and makes no docker call', () => {
+    const repo = makeRepo();
+    rmSync(join(repo, 'compose', 'velocity', 'velocity-nf-human.toml'));
+    const res = run(repo);
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('velocity-nf-human.toml is missing');
+    expect(calls(repo)).toEqual([]);
+  });
+
+  it('refuses when the identity plugin jar is missing, and makes no docker call', () => {
+    const repo = makeRepo();
+    rmSync(
+      join(repo, 'plugin', 'velocity-identity', 'build', 'libs', 'geldar-velocity-identity.jar'),
+    );
+    const res = run(repo);
+    expect(res.status).toBe(1);
+    expect(res.stderr).toContain('identity plugin jar is missing');
+    expect(calls(repo)).toEqual([]);
+  });
+
+  it('down reads the switch and removes velocity-human with the human overlay', () => {
+    const repo = makeRepo();
+    const res = run(repo, { args: ['down', '--local'] });
+    expect(res.status).toBe(0);
+    const line = calls(repo).find((l) => l.startsWith('docker compose -p') && l.endsWith(' down'));
+    expect(line).toMatch(HUMAN_CALL);
+  });
+});

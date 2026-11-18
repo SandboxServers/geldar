@@ -23,6 +23,15 @@ export const PUBLIC_OVERLAY_PATH = 'compose/colo-public.yml';
 export const PUBLIC_OVERLAY_SERVICE = 'velocity';
 export const PUBLIC_OVERLAY_PORT = `\${GELDAR_MC_BIND:?}:\${GELDAR_MC_PORT:?}:25565`;
 
+/**
+ * The one human-lane exception (compose/nf-live-human.yml, opt-in, NF_HUMAN=on): the velocity-human service publishes
+ * the Minecraft port on the host bind and port taken from NF_HUMAN_BIND and NF_HUMAN_PORT, with loopback defaults. The
+ * match is exact: any other variable, default, file, service or a literal 0.0.0.0 is still rejected.
+ */
+export const HUMAN_OVERLAY_PATH = 'compose/nf-live-human.yml';
+export const HUMAN_OVERLAY_SERVICE = 'velocity-human';
+export const HUMAN_OVERLAY_PORT = '${NF_HUMAN_BIND:-127.0.0.1}:${NF_HUMAN_PORT:-46566}:25565';
+
 /** True for the compose files the rule applies to, by repo-relative, forward-slash path. */
 export function isComposeFile(path: string): boolean {
   return /^compose\/[^/]+\.ya?ml$/.test(path);
@@ -396,6 +405,14 @@ export function findPublicPorts(path: string, text: string): PortFinding[] {
         path === PUBLIC_OVERLAY_PATH &&
         service === PUBLIC_OVERLAY_SERVICE &&
         entry === PUBLIC_OVERLAY_PORT
+      ) {
+        continue;
+      }
+      // The single human-lane exception (see HUMAN_OVERLAY_PORT): exact string, one file, one service.
+      if (
+        path === HUMAN_OVERLAY_PATH &&
+        service === HUMAN_OVERLAY_SERVICE &&
+        entry === HUMAN_OVERLAY_PORT
       ) {
         continue;
       }

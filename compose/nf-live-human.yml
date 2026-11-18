@@ -1,0 +1,91 @@
+# Opt-in human lane for the live NeoForge shard (project geldar-nf). It renders TOGETHER with compose/nf-live.yml:
+#   docker compose -p geldar-nf -f compose/nf-live.yml -f compose/nf-live-human.yml config --quiet
+# deploy/nf-deploy.sh adds it only with NF_HUMAN=on. It adds one service, velocity-human: an online-mode Velocity for human
+# players, forwarding to the existing neoforge backend with the same forwarding secret the live velocity uses.
+# NATS: the identity plugin's human lane reads the life registry (LoginGate denies every login while a configured registry is
+# unsynced, plugin/velocity-identity LoginGate.java:55 and :68). So this service takes the EXISTING velocity NATS user and its
+# password file (nats-velocity.txt, the same credential the live velocity uses). It adds no NATS user, no secret file and no
+# RCON or postgres access.
+#
+# THE ONLY PUBLISHED PORT THIS FILE ADDS: host side ${NF_HUMAN_BIND:-127.0.0.1}:${NF_HUMAN_PORT:-46566}, container 25565.
+# The defaults render on loopback. The bind address is an owner decision: it is NOT approved to be public, and no public
+# name, port or bind is set anywhere in the repo. The loopback rule (tools/repo-checks/src/loopback-ports.ts) allows this one
+# exact publish and nothing else. Live velocity (127.0.0.1:46565) is unchanged, and no other service here publishes.
+#
+# UNPROVEN (read before any run): the scratch human lane has never had a real human join. Nothing here has been started.
+# UNVERIFIED: whether itzg/mc-proxy runs with read_only and the uid set here (it may need a writable path beyond /server and
+# /tmp); that the velocity NATS user may read the life registry bucket (it is the same user the scratch human lane uses, and
+# the registry ACL is not re-read here); and the first real join, which is the owner's S1 test on live.
+#
+# Budget: 0.5 CPU, 768 MiB, 256 pids, via deploy.resources.limits (the only pids setting: no pids_limit here).
+name: geldar-nf
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  velocity-human:
+    image: itzg/mc-proxy:2026.10.2-java25@sha256:0b969bd3000d6e21ebb58444d062d63202cb552b5264b57a274fed7d2b411c0d
+    # The service user, not root: the forwarding secret (0600, the account's) is read as this uid. No UID/GID env is set,
+    # so the image does not drop privileges from root here.
+    user: "${NF_SERVICE_UID:-1000}:${NF_SERVICE_GID:-${NF_SERVICE_UID:-1000}}"
+    environment:
+      TYPE: VELOCITY
+      VELOCITY_VERSION: "3.5.1"
+      VELOCITY_BUILD_ID: "615"
+      MEMORY: 512M
+      # The identity plugin's human lane: online-mode names, agent-shaped names refused (plugin/velocity-identity).
+      GELDAR_IDENTITY_LANE: human
+      GELDAR_NATS_URL: nats://nats:4222
+      GELDAR_NATS_USER: velocity
+      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-velocity.txt
+    secrets: [velocity-forwarding, nats-velocity.txt]
+    volumes:
+      - ./velocity/velocity-nf-human.toml:/config/velocity.toml:ro
+      - velocity-human-data:/server
+      - ../plugin/velocity-identity/build/libs/geldar-velocity-identity.jar:/plugins/geldar-velocity-identity.jar:ro
+    ports:
+      # The one non-loopback-capable publish in the repo, bound only by NF_HUMAN_BIND (default 127.0.0.1). Exact string,
+      # checked by loopback-ports.ts. Never 25565 or 25566.
+      - "${NF_HUMAN_BIND:-127.0.0.1}:${NF_HUMAN_PORT:-46566}:25565"
+    networks: [nf]
+    depends_on:
+      neoforge:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+      identity-seed:
+        condition: service_completed_successfully
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      # Port open AND the identity plugin enabled in this proxy process (as the live velocity service; the ready file is in
+      # this container's own /tmp, a tmpfs here). ($$ is Compose's escape.)
+      test: ["CMD", "bash", "-c", "read -r pid start < /tmp/geldar-identity.ready && [ -n \"$$start\" ] && [ \"$$(cut -d' ' -f22 /proc/$$pid/stat 2>/dev/null)\" = \"$$start\" ] && exec 3<>/dev/tcp/127.0.0.1/25565"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 1m
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 768m
+          pids: 256
+    memswap_limit: 768m
+    stop_grace_period: 30s
+    logging: *logging
+    labels:
+      geldar.project: geldar-nf
+      com.centurylinklabs.watchtower.enable: "false"
+    restart: unless-stopped
+
+volumes:
+  velocity-human-data: {}
