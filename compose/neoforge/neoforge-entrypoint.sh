@@ -1,19 +1,12 @@
 #!/bin/sh
-# Entrypoint for the scratch NeoForge variant (SCRATCH_PLATFORM=neoforge, compose/opt-in/scratch-neoforge.yml): wraps the
-# image's own start script. It fetches two artifacts, each checked against a pinned hash before use (fail closed): the
-# NeoForge installer, which the image runs, and the Proxy Compatible Forge mod, which provides Velocity's modern
-# forwarding. It writes the mod's config from the Docker secret at container start. The secret comes from /run/secrets
-# only: never from an environment value or this file, and it is never printed.
-# The GELDAR_NF_* variables are seams for the behaviour tests (scratch-neoforge-entrypoint.test.ts). Unset, each one is the
-# real value: the data dir, the secret file, the config, the two URLs, the two pinned hashes and the start command.
-# Optional telemetry (GELDAR_NF_TELEMETRY=on|off, unset = nothing): on copies the ledger jar (pin GELDAR_NF_LEDGER_SHA256), copies the
-# ledger properties into config/ and adds the OpenTelemetry agent to JVM_OPTS (pin GELDAR_NF_OTEL_AGENT_SHA256); off removes only our own
-# stale ledger copy and adds no agent. See the telemetry blocks below.
+# Entrypoint for the scratch NeoForge variant (compose/opt-in/scratch-neoforge.yml): wraps the image's start script. It fetches the
+# NeoForge installer and the Proxy Compatible Forge mod, each checked against a pinned hash before use (fail closed), and writes the
+# mod's config from the Docker secret. The secret comes from /run/secrets only, never from an env value or this file, and is never printed.
+# GELDAR_NF_* variables are test seams (unset, each is the real value). GELDAR_NF_TELEMETRY=on|off (unset = nothing) drives the ledger and the agent.
 set -eu
 
-# NeoForge version from the environment (compose/opt-in/scratch-neoforge.yml sets it). Only the 26.1.2 line is accepted,
-# and the installer URL is built from it. The pinned sha256 below refuses any other installer, so a different build
-# cannot pass even if its URL is valid.
+# NeoForge version from the environment (scratch-neoforge.yml sets it). Only 26.1.2 build N is accepted; the pinned installer sha256
+# below refuses any other installer, even if its URL is valid.
 if ! printf '%s\n' "${NEOFORGE_VERSION:-}" | grep -Eq '^26\.1\.2\.[0-9]+$'; then
   echo "neoforge-entrypoint: NEOFORGE_VERSION is unset or not 26.1.2 build N; refusing to start" >&2
   exit 1
@@ -22,9 +15,9 @@ INSTALLER_URL="${GELDAR_NF_INSTALLER_URL:-https://maven.neoforged.net/releases/n
 # Proxy Compatible Forge 1.3.1, published 2026-08-31, Modrinth
 MOD_URL=${GELDAR_NF_MOD_URL:-https://cdn.modrinth.com/data/vDyrHl8l/versions/qiZ49HIW/proxy-compatible-forge-1.3.1.jar}
 MOD_SHA512=${GELDAR_NF_MOD_SHA512:-dba5b70fedcb0f5fdc014801ab43e6d048f24b531de8aea5b70ea223760b66ae9fba3033c2ccd9d78793b9ea2f9d3b47ae1f4caa95aa129d989f97e63636b4ab}
-# NeoForge 26.1.2 build 126 installer sha256, from the NeoForge Maven repository. The image reads NEOFORGE_INSTALLER as a local path.
+# NeoForge 26.1.2 build 126 installer sha256 (NeoForge Maven). The image reads NEOFORGE_INSTALLER as a local path.
 INSTALLER_SHA256=${GELDAR_NF_INSTALLER_SHA256:-1184ffee181bd7a940691539fea07f237096378da4c94795247ecdb9cb354a1b}
-# The same installer's sha512, from the Maven's published .sha512 file. The installer must match both pins (fail closed).
+# The same installer's sha512 (the Maven's .sha512 file). The installer must match both pins.
 INSTALLER_SHA512=${GELDAR_NF_INSTALLER_SHA512:-3ecc1cef40def9af5086449249dc621a860fb3c2af36084635396d152b5617560bfa0ace9376ef9ba05bfc9ab3d92348829472548e57e29a1fab4b63ad621bdb}
 
 data=${GELDAR_NF_DATA_DIR:-/data}
@@ -32,24 +25,21 @@ secret_file=${GELDAR_NF_SECRET_FILE:-/run/secrets/velocity-forwarding}
 config=${GELDAR_NF_CONFIG:-$data/config/proxy-compatible-forge.toml}
 mod=$data/mods/proxy-compatible-forge.jar
 installer=$data/neoforge-installer.jar
-# The offline bundle's list (deploy/scratch/build-neoforge-bundle.sh writes it into the bundle as .geldar-bundle.sha256). Present
-# means bundle mode: the bundle is checked before anything is fetched. Absent means the normal path.
+# The offline bundle's list (written into the bundle as .geldar-bundle.sha256). Present means bundle mode: checked before any fetch.
 bundle_list=${GELDAR_NF_BUNDLE_LIST:-$data/.geldar-bundle.sha256}
-# The mod jar that compose/opt-in/scratch-neoforge-mod.yml mounts read-only (only when scratch.sh gets SCRATCH_NEOFORGE_MOD_JAR),
-# and the copy of it this script makes in mods/. GELDAR_NF_MOD_JAR is the test seam for the mount path.
+# The mod jar mounted read-only by compose/opt-in/scratch-neoforge-mod.yml, and its copy in mods/.
 mounted_jar=${GELDAR_NF_MOD_JAR:-/geldar/mods/geldar-neoforge.jar}
 mod_copy=$data/mods/geldar-neoforge.jar
-# The second optional jar, the ledger (compose/opt-in/scratch-neoforge-ledger.yml mounts it read-only at /geldar/mods/geldar-neoforge-ledger.jar),
-# and its copy in mods/. Same rules as the mod. The ledger properties are mounted read-only at /geldar/telemetry/ledger.properties and
-# copied to config/ at every start. The agent jar and properties are mounted read-only under /geldar/telemetry and used in place, never copied.
+# The ledger jar (mounted read-only by compose/opt-in/scratch-neoforge-ledger.yml), its copy in mods/, and its properties (copied to
+# config/ every start). The agent jar and properties are mounted under /geldar/telemetry and used in place, never copied.
 ledger_mounted=${GELDAR_NF_LEDGER_JAR:-/geldar/mods/geldar-neoforge-ledger.jar}
 ledger_copy=$data/mods/geldar-neoforge-ledger.jar
 ledger_props_mounted=${GELDAR_NF_LEDGER_PROPS:-/geldar/telemetry/ledger.properties}
 ledger_props_copy=$data/config/ledger.properties
 agent_jar=${GELDAR_NF_OTEL_JAR:-/geldar/telemetry/opentelemetry-javaagent.jar}
 agent_props=${GELDAR_NF_OTEL_PROPS:-/geldar/telemetry/otel-agent.properties}
-# The optional extra mods: each is mounted read-only at $extra_dir/<name>.jar and copied to mods/<name>.jar after the bundle check, only
-# when its GELDAR_NF_EXTRA_<NAME>_SHA256 pin matches (see extra_copy below). Only the names in compose/neoforge/extra-mods.pins exist.
+# Optional extra mods: mounted read-only at $extra_dir/<name>.jar, copied to mods/ after the bundle check only when the pin matches
+# (see extra_copy). The names are those in compose/neoforge/extra-mods.pins.
 extra_dir=${GELDAR_NF_EXTRA_DIR:-/geldar/extra-mods}
 
 # Drop the CR/LF that editors and echo leave behind; nothing else is removed.
@@ -69,10 +59,8 @@ esac
 # Files written below are readable by their owner only.
 umask 077
 
-# fetch URL DEST HASH SUM PIN: keeps DEST when it already has the pinned hash, so a file pre-seeded into the volume with the
-# right hash is used and curl is never called. Otherwise downloads (6 retries, 10 s apart, on any error), checks the hash,
-# and moves the file into place. A download that does not match is deleted and the script exits 1. PIN names the script
-# constant holding the hash, for the error message.
+# fetch URL DEST HASH SUM PIN: keeps DEST when it already has HASH (a pre-seeded file with the right hash is used and curl is never called).
+# Otherwise downloads (6 retries), checks the hash and moves the file into place; a mismatch deletes the download and exits 1.
 fetch() {
   if [ -f "$2" ] && printf '%s  %s\n' "$3" "$2" | "$4" -c --status; then
     return 0
@@ -91,11 +79,8 @@ fetch() {
   mv -f "$2.part" "$2"
 }
 
-# extra_prep NAME ENABLED_PIN PIN: an extra mod's copy in mods/ is removed on every start, before the bundle check. A symlink or a
-# directory there is refused and nothing is removed. ENABLED_PIN is the overlay's pin (empty when the mod is off). Enabled: the stale
-# copy is removed and the verified jar is copied after the bundle check (extra_copy). Off: the copy is removed only when its sha256 is
-# PIN (our own copy, from compose/neoforge/extra-mods.pins); any other file there is refused and not deleted. The world and config
-# data the mod wrote are not touched.
+# extra_prep NAME ENABLED_PIN PIN: removes mods/NAME.jar before the bundle check. A symlink or directory there is refused. Enabled: the stale
+# copy goes and extra_copy re-copies the verified jar. Off: the copy is removed only when its sha256 is PIN (our own copy); any other file is refused.
 extra_prep() {
   extra_copy_path=$data/mods/$1.jar
   if [ -L "$extra_copy_path" ] || [ -d "$extra_copy_path" ]; then
@@ -116,14 +101,12 @@ extra_prep() {
   rm -f "$extra_copy_path"
 }
 
-# A copy left by an earlier start is removed first, but only while a mounted jar is present, so the bundle check below sees mods/
-# as the bundle lists it. The copy is made again after that check (see the mounted jar block after the chown). With no mounted
-# jar nothing is removed: the refusal in the else branch stops the start instead, in every mode.
+# A copy left by an earlier start is removed first, but only while a mounted jar is present, so the bundle check sees mods/ as the bundle
+# lists it. With no mounted jar nothing is removed: the else branch refuses the start instead.
 if [ -e "$mounted_jar" ] || [ -L "$mounted_jar" ]; then
   rm -f "$mod_copy"
 else
-  # With no jar mounted, a geldar jar left in mods/ or a hash pin with no jar is refused before the bundle check. Only a
-  # mounted jar is checked against the pin, so a foreign jar beside a mounted one is refused only in bundle mode (below).
+  # No mounted jar: a leftover jar in mods/ or a hash pin with no jar is refused here. A foreign jar beside a mounted one is refused in bundle mode.
   if [ -e "$mod_copy" ] || [ -L "$mod_copy" ]; then
     echo "neoforge-entrypoint: a geldar mod jar is present in mods/ but none is mounted; remove it or mount the pinned jar; refusing to start" >&2
     exit 1
@@ -134,15 +117,11 @@ else
   fi
 fi
 
-# The ledger jar follows GELDAR_NF_TELEMETRY (the case below), with GELDAR_NF_LEDGER_SHA256 as its pin. Our own stale copy (exact name,
-# no glob) is removed only for on or off. A regular file or a symlink (dangling too) is unlinked by rm -f, which never follows a link.
-# A directory or any other non-file there is refused with exit 1: it is not ours to remove.
-# GELDAR_NF_TELEMETRY is the one switch for the ledger and the agent: on, off, or unset (nothing changes).
-#   on: the ledger jar must be mounted; a directory at the copy path is refused; a stale copy is replaced only by a verified copy
-#     (copy_pinned_jar below), so a mismatched mount leaves the old copy in place.
-#   off: a mounted ledger jar is refused; our own stale copy is removed (exact name, never followed: a regular file or a symlink,
-#     dangling too; a directory or other non-file is refused). No agent is added (see the telemetry block below).
-#   unset: a mounted ledger jar, a stale copy or a pin with no jar stops the start, as before. Any other value stops the start.
+# The ledger jar follows GELDAR_NF_TELEMETRY (the case below), with GELDAR_NF_LEDGER_SHA256 as its pin. Our stale copy (exact name, no glob) is
+# removed only for on or off; rm -f never follows a link. A directory or other non-file there is refused: it is not ours to remove.
+# on: the ledger jar must be mounted; a stale copy is replaced only by a verified copy (copy_pinned_jar), so a mismatch keeps the old copy.
+# off: a mounted ledger jar is refused; our stale copy is removed; no agent is added. unset: a mounted jar, a stale copy or a pin with no jar stops the start.
+# Any other value stops the start.
 ledger_jar_present=0
 if [ -e "$ledger_mounted" ] || [ -L "$ledger_mounted" ]; then
   ledger_jar_present=1
@@ -157,8 +136,7 @@ case "${GELDAR_NF_TELEMETRY:-}" in
       echo "neoforge-entrypoint: the geldar ledger path in mods/ is a directory; remove it; refusing to start" >&2
       exit 1
     fi
-    # The stale copy goes before the bundle check, but only when the mounted jar already matches its pin (a plain hash here,
-    # not a copy). A mismatch or a symlink leaves the old copy in place; copy_pinned_jar refuses it later.
+    # A stale copy goes before the bundle check only when the mounted jar already matches its pin (a plain hash, not a copy).
     if [ -f "$ledger_mounted" ] && [ ! -L "$ledger_mounted" ]; then
       actual=$(sha256sum "$ledger_mounted" 2>/dev/null || true)
       actual=${actual%% *}
@@ -203,10 +181,9 @@ esac
 extra_prep chunky "${GELDAR_NF_EXTRA_CHUNKY_SHA256:-}" 9f9303da0185fa0ae0e1d3f10a0f07b8d9e5a21e77931d4fc162dcc718a0ab4f
 extra_prep bluemap "${GELDAR_NF_EXTRA_BLUEMAP_SHA256:-}" 8938f4453af4b53970c86e43d0bd26b4a88980e4e6639f818fa770d0f61c43df
 
-# Bundle mode, before any fetch. The list holds the bundle's immutable files with their hashes; the image's start script rewrites
-# some other files on every start, so they are not listed. The list is checked in this order: paths (no entry may reach outside
-# the data dir), the required files, symlinks, strict hashes, then mods/ holds exactly the jars the list names. Only file names
-# are printed, never contents. libraries/ may hold extra files: the classpath is fixed by unix_args.txt, so they are not on it.
+# Bundle mode, before any fetch. The list holds the bundle's immutable files with their hashes (the start script rewrites other files on every
+# start, so they are not listed). Checks, in order: paths (none may leave the data dir), required files, symlinks, strict hashes, then mods/ holds
+# exactly the listed jars. Only file names are printed, never contents. unix_args.txt fixes the classpath, so extra files under libraries/ are fine.
 if [ -f "$bundle_list" ]; then
   bad=$(awk '$2 ~ /^\// || $2 ~ /^[A-Za-z]:/ || $2 ~ /^-/ || $2 ~ /(^|\/)\.\.(\/|$)/ { print $2; exit }' "$bundle_list")
   if [ -n "$bad" ]; then
@@ -246,7 +223,7 @@ fi
 mkdir -p "$data/mods"
 fetch "$MOD_URL" "$mod" "$MOD_SHA512" sha512sum MOD_SHA512
 fetch "$INSTALLER_URL" "$installer" "$INSTALLER_SHA256" sha256sum INSTALLER_SHA256
-# The installer must match its sha512 pin too. A file that passes the sha256 but not the sha512 is deleted, so the image never uses it.
+# The installer must also match its sha512 pin; a file that fails it is deleted, so the image never uses it.
 if ! printf '%s  %s\n' "$INSTALLER_SHA512" "$installer" | sha512sum -c --status; then
   rm -f "$installer"
   echo "neoforge-entrypoint: $installer does not match its pinned sha512sum hash (INSTALLER_SHA512); deleted it" >&2
@@ -264,10 +241,9 @@ is_sha256_hex() {
   [ "${#1}" -eq 64 ]
 }
 
-# copy_pinned_jar SRC DEST SHA LABEL ENVNAME: a mounted jar (the mod or the ledger) is copied into mods/ only after it matches SHA,
-# the value of ENVNAME (the pin scratch.sh also checks on the host). A symlink or a non-file is refused; a missing, short, long or
-# non-lowercase-hex hash is refused. Nothing is copied on a refusal. The copy is mode 644 with the data dir's owner, like the other
-# written files, and is read back and hashed once more. Only file names and the fixed messages are printed, never the jar's bytes.
+# copy_pinned_jar SRC DEST SHA LABEL ENVNAME: copies a mounted jar (the mod or the ledger) into mods/ only when it matches SHA (the value of
+# ENVNAME, the pin scratch.sh also checks). Refused: a symlink or non-file, a hash that is not 64 lowercase hex, a mismatch. Nothing is copied on a refusal.
+# The copy is .part, mode 644, the data dir's owner, re-hashed, then renamed. Only file names and fixed messages are printed.
 copy_pinned_jar() {
   rm -f "$2.part"
   if [ -L "$1" ] || [ ! -f "$1" ]; then
@@ -284,8 +260,7 @@ copy_pinned_jar() {
     echo "neoforge-entrypoint: the mounted $4 jar does not match $5; not copied; refusing to start" >&2
     exit 1
   fi
-  # The copy goes to $2.part and is renamed onto $2 only once its hash matches, so a kill or a full disk never leaves a partial jar
-  # under the final name. A mismatch removes the .part and any final file.
+  # The copy is renamed onto $2 only once its hash matches, so a kill or a full disk never leaves a partial jar under the final name.
   cp "$1" "$2.part"
   chmod 644 "$2.part"
   chown --reference="$data" "$2.part"
@@ -298,9 +273,7 @@ copy_pinned_jar() {
   mv -f "$2.part" "$2"
 }
 
-# copy_ledger_props: the ledger properties are mounted read-only at ledger_props_mounted and copied to config/ at every start, so a host
-# edit takes effect on the next start. The copy is written to .part (mode 644, the data dir's owner) and renamed into place. A
-# symlink or a non-file source is refused, and nothing is removed. Only the fixed messages are printed, never the file's contents.
+# copy_ledger_props: the mounted ledger properties are copied to config/ on every start (mode 644, the data dir's owner, via .part). A symlink or non-file source is refused.
 copy_ledger_props() {
   if [ -L "$ledger_props_mounted" ] || [ ! -f "$ledger_props_mounted" ]; then
     echo "neoforge-entrypoint: $ledger_props_mounted is a symlink or not a regular file; refusing to start" >&2
@@ -323,9 +296,8 @@ if [ "${GELDAR_NF_TELEMETRY:-}" = on ]; then
   copy_ledger_props
 fi
 
-# extra_copy NAME ENVNAME PIN: a mounted extra jar is copied to mods/NAME.jar only when the overlay pins it (copy_pinned_jar checks the
-# hash, writes .part, re-hashes and renames). A mounted jar with no pin refuses the start; so does a pin with no mounted jar. Nothing
-# is copied on a refusal. ENVNAME is only printed in the messages.
+# extra_copy NAME ENVNAME PIN: copies a mounted extra jar to mods/NAME.jar only when the overlay pins it (copy_pinned_jar checks the hash).
+# A mounted jar with no pin, or a pin with no mounted jar, refuses the start. Nothing is copied on a refusal.
 extra_copy() {
   extra_mounted="$extra_dir/$1.jar"
   if [ -e "$extra_mounted" ] || [ -L "$extra_mounted" ]; then
@@ -342,19 +314,17 @@ extra_copy() {
 extra_copy chunky GELDAR_NF_EXTRA_CHUNKY_SHA256 "${GELDAR_NF_EXTRA_CHUNKY_SHA256:-}"
 extra_copy bluemap GELDAR_NF_EXTRA_BLUEMAP_SHA256 "${GELDAR_NF_EXTRA_BLUEMAP_SHA256:-}"
 
-# The mod's config, from its README layout. Written once; on later starts only the secret line is replaced, because the
-# mod may have rewritten the file.
+# The mod's config, from its README layout, is written once. On later starts only the secret line is replaced, because the mod may have rewritten it.
 cfgdir=$(dirname "$config")
-# A symlink (dangling too) or a directory at the config or a backup path is refused before anything is written, so no write
-# goes through a link. A refusal changes nothing.
+# A symlink (dangling too) or directory at the config or a backup path is refused before any write, so no write follows a link.
 for p in "$config" "$config.bak" "$config.bak.prev" "$config.part"; do
   if [ -L "$p" ] || [ -d "$p" ]; then
     echo "neoforge-entrypoint: $p is a symlink or a directory; refusing to start" >&2
     exit 1
   fi
 done
-# A TOML form the rewrite below does not handle is refused before any write: a quoted [forwarding] header, a dotted or quoted
-# forwarding key, or an inline forwarding table. A UTF-8 BOM on line 1 is ignored here, as in the rewrite. No value is printed.
+# A TOML form the rewrite below does not handle is refused before any write (quoted [forwarding] header, dotted or quoted forwarding key,
+# inline forwarding table). A UTF-8 BOM on line 1 is ignored, as in the rewrite. No value is printed.
 if [ -f "$config" ] && LC_ALL=C awk '
   NR == 1 { sub(/^\357\273\277/, "") }
   /^[ \t]*\[[ \t]*[\042\047][ \t]*forwarding[ \t]*[\042\047]/ { bad = 1 }
@@ -381,11 +351,10 @@ if [ ! -e "$config" ]; then
   } > "$config"
   chown --reference="$data" "$cfgdir" "$config"
 else
-  # The mod (Proxy Compatible Forge) may have rewritten this file after the first start, so the entrypoint owns it at every
-  # start. Two copies are kept, both mode 600 with the data dir's owner: $config.bak is the first original, written once and
-  # never replaced; $config.bak.prev is the file this start found, rewritten at every start. Only enabled, mode and secret
-  # under [forwarding] are rewritten, by a section-aware awk: every other line stays as it is, and a missing key is inserted
-  # into [forwarding] (or the table is appended). The secret reaches awk in its environment, never on a command line.
+  # The mod may have rewritten this file after the first start, so the entrypoint owns it at every start. $config.bak is the first original,
+  # written once and never replaced; $config.bak.prev is the file this start found, rewritten each start. Both are mode 600, the data dir's owner.
+  # Only enabled, mode and secret under [forwarding] are rewritten, by a section-aware awk (a missing key is inserted). The secret reaches awk
+  # in its environment, never on a command line.
   rm -f "$config.part"
   if [ ! -e "$config.bak" ]; then
     cp "$config" "$config.bak"
@@ -445,9 +414,7 @@ else
 fi
 chmod 600 "$config"
 
-# The rewrite above writes exact lines, so this check should always pass; it stays as a guard against a failed rewrite. The
-# check is awk scoped to the [forwarding] section (enabled = true, mode = "MODERN" and the secret line must all be in it).
-# The secret is passed in the environment and is never printed.
+# The rewrite above writes exact lines, so this should always pass; it guards against a failed rewrite. The secret is passed in the environment, never printed.
 if ! NF_PCF_SECRET="$secret" awk '
   /^[ \t]*\[/ { inforwarding = ($0 ~ /^[ \t]*\[[ \t]*forwarding[ \t]*\]/) }
   inforwarding && $0 == "enabled = true" { enabled = 1 }
@@ -459,13 +426,11 @@ if ! NF_PCF_SECRET="$secret" awk '
   exit 1
 fi
 
-# The OpenTelemetry Java agent, only with GELDAR_NF_TELEMETRY=on. The agent is added to JVM_OPTS, never JAVA_AGENTS: on the pinned image
-# JAVA_AGENTS goes through addAgents and mc-image-helper mcopy (a download list), so it is not used. The start script writes JVM_OPTS
-# into user_jvm_args.txt on every start for NeoForge (start-finalExec, lines 634-635 of the pinned image's start script). That reaching
-# user_jvm_args.txt is verified by those lines. The agent ATTACH is UNVERIFIED until a scratch run shows it in ps or the logs, and whether
-# run.sh reads user_jvm_args.txt for NeoForge (start-deployNeoForge) is not confirmed. The jar is mounted read-only under /geldar/telemetry,
-# never copied, and must match GELDAR_NF_OTEL_AGENT_SHA256 (a repo constant set in the overlay, not an operator value).
-# The properties file must be present. Only the fixed messages are printed, never either file's contents.
+# The OpenTelemetry Java agent, only with GELDAR_NF_TELEMETRY=on. It goes in JVM_OPTS, never JAVA_AGENTS (on the pinned image JAVA_AGENTS goes
+# through addAgents and mc-image-helper mcopy). JVM_OPTS reaches user_jvm_args.txt on every NeoForge start (start-finalExec, lines 634-635 of the
+# pinned start script). The agent ATTACH is UNVERIFIED until a scratch run shows it in ps or the logs; whether run.sh reads user_jvm_args.txt for
+# NeoForge (start-deployNeoForge) is not confirmed. The jar is mounted read-only, never copied, and must match GELDAR_NF_OTEL_AGENT_SHA256 (a repo
+# constant set in the overlay). Both files must be present. Only fixed messages are printed, never either file's contents.
 case "${GELDAR_NF_TELEMETRY:-}" in
   off)
     # Off adds no agent and makes the shared script's own agent and OTel SDK settings inert.
