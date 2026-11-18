@@ -5,7 +5,7 @@ Source: owner-supplied review "Why the agents only eat" (v3, 2026-11-18). It is 
 ## Current wave: U0 (unblock the gate)
 
 - Decision 0389 is accepted: `use { item }` with no target holds the item. No new verb, no contract shape change, agents not told.
-- U0-00 (span read): Skipped by the owner (no colo access). U0-02's watch must count the `use` shapes agents send, to see whether they find the item-only form.
+- U0-00: Done. 29 item-only sword `use` calls, 178 item+at, 11 item+entity (worknotes/U0-00.md). Spans do not name agents. ClickHouse route: `default` at `readonly=1`; a reader credential for the node user is still needed before C0.
 - U0-01 (Body): Ready. Branch `engagement/u0-use-hold`, worktree `D:\Source\geldar-wt\u0-use-hold`. Not dispatched.
 - U0-02 (live check plus a 48-hour watch): waits for U0-01 to merge and deploy.
 
