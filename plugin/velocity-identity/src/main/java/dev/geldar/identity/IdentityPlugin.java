@@ -195,7 +195,7 @@ public final class IdentityPlugin {
         if (reservation == LoginGate.Reservation.FULL) {
             // Its own line, count only: no name or UUID, so the cap refusal is told apart from an ordinary denial.
             if (denials.allow()) {
-                log.warn("Refused a human login: all {} human slots are held", HumanSlots.CAP);
+                log.warn("Refused a human login: all {} human slots are held", HumanSlots.SHARD_MAX_PLAYERS);
             }
         } else if (denials.allow()) {
             log.info("Denied {}", printable(player.getUsername()));

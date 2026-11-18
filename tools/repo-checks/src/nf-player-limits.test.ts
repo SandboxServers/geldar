@@ -1,9 +1,11 @@
 /**
- * The NeoForge shard's player limits. compose/nf-live.yml (the neoforge service) and the scratch NeoForge overlay
- * (compose/opt-in/scratch-neoforge.yml, the paper service, merged over phase0.yml and scratch.yml) must both give the
- * itzg image the same three values: MAX_PLAYERS, VIEW_DISTANCE and SIMULATION_DISTANCE. The autonomous Paper values in
- * compose/phase0.yml must not change. Both files are rendered with `docker compose config`, so the values are what
- * compose hands the container after merging. Nothing here starts a container.
+ * The NeoForge shard's player limits. compose/nf-live.yml (the neoforge service) gives the itzg image MAX_PLAYERS 100,
+ * the one shared limit for humans and agents (owner decision 2026-11-18), with VIEW_DISTANCE 8 and SIMULATION_DISTANCE 6.
+ * The scratch NeoForge overlay (compose/opt-in/scratch-neoforge.yml, the paper service, merged over phase0.yml and
+ * scratch.yml) keeps its own MAX_PLAYERS 10 and the same view and simulation distances: it is a scratch run, not a
+ * mirror of the live limit. The autonomous Paper values in compose/phase0.yml must not change. Both files are rendered
+ * with `docker compose config`, so the values are what compose hands the container after merging. Nothing here starts a
+ * container. The two velocity configs that show the limit to the client must show the live MAX_PLAYERS.
  */
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -14,11 +16,17 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
-const LIMITS: Record<string, string> = {
+const LIVE_LIMITS: Record<string, string> = {
+  MAX_PLAYERS: '100',
+  VIEW_DISTANCE: '8',
+  SIMULATION_DISTANCE: '6',
+};
+const SCRATCH_LIMITS: Record<string, string> = {
   MAX_PLAYERS: '10',
   VIEW_DISTANCE: '8',
   SIMULATION_DISTANCE: '6',
 };
+const LIVE_MAX_PLAYERS = LIVE_LIMITS.MAX_PLAYERS;
 const DOCKER = spawnSync('docker', ['compose', 'version'], { encoding: 'utf8' }).status === 0;
 if (!DOCKER && process.env.CI) {
   throw new Error(
@@ -119,16 +127,16 @@ suite('NeoForge player limits in the rendered compose config', () => {
     if (dummyDir) rmSync(dummyDir, { recursive: true, force: true });
   });
 
-  it('pins the three values on the live neoforge service, exactly', () => {
+  it('pins the live values on the neoforge service, exactly: MAX_PLAYERS 100', () => {
     const env = live.services.neoforge?.environment ?? {};
-    for (const [key, value] of Object.entries(LIMITS)) {
+    for (const [key, value] of Object.entries(LIVE_LIMITS)) {
       expect(env[key], `neoforge ${key}`).toBe(value);
     }
   });
 
-  it('pins the same three values on the scratch paper service, after the merge over phase0.yml', () => {
+  it('pins the scratch values on the scratch paper service, after the merge over phase0.yml: MAX_PLAYERS 10', () => {
     const env = scratch.services.paper?.environment ?? {};
-    for (const [key, value] of Object.entries(LIMITS)) {
+    for (const [key, value] of Object.entries(SCRATCH_LIMITS)) {
       expect(env[key], `scratch paper ${key}`).toBe(value);
     }
   });
@@ -137,4 +145,16 @@ suite('NeoForge player limits in the rendered compose config', () => {
     expect(scratch.services.paper?.environment?.TYPE).toBe('NEOFORGE');
     expect(live.services.neoforge?.environment?.TYPE).toBe('NEOFORGE');
   });
+});
+
+describe('velocity configs of the live shard show the live MAX_PLAYERS (no docker needed)', () => {
+  for (const file of [
+    'compose/velocity/velocity-nf.toml',
+    'compose/velocity/velocity-nf-human.toml',
+  ]) {
+    it(`${file} shows show-max-players ${LIVE_MAX_PLAYERS}`, () => {
+      const text = readFileSync(join(ROOT, file), 'utf8');
+      expect(text.match(/^show-max-players = (\d+)$/m)?.[1], file).toBe(LIVE_MAX_PLAYERS);
+    });
+  }
 });

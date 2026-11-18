@@ -9,7 +9,7 @@ config-version = "2.7"
 # Inside the container only: the overlay publishes this port on the host (NF_HUMAN_BIND, NF_HUMAN_PORT) and nothing else.
 bind = "0.0.0.0:25565"
 motd = "Geldar shard (human lane)"
-show-max-players = 10
+show-max-players = 100
 online-mode = true
 force-key-authentication = false
 prevent-client-proxy-connections = false

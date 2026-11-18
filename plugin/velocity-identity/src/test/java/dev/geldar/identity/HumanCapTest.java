@@ -26,13 +26,15 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.slf4j.Logger;
 
-/** The concurrent-human cap (decision 0137), through the plugin's login and disconnect handlers. */
+/** The human slots of the shard's shared player limit (MAX_PLAYERS 100), through the plugin's login and disconnect handlers. */
 class HumanCapTest {
     private static final DisconnectEvent.LoginStatus CLEAN = DisconnectEvent.LoginStatus.SUCCESSFUL_LOGIN;
+    /** The shard's MAX_PLAYERS as the plugin sees it. The tests fill to it, so a change here moves every expectation. */
+    private static final int CAP = HumanSlots.SHARD_MAX_PLAYERS;
     /** Rounds of the simultaneous-login race; each round starts with a fresh proxy. */
     private static final int ROUNDS = 50;
-    /** Logins that start together in one round. */
-    private static final int LOGINS = 200;
+    /** Logins that start together in one round: three times the capacity, so the race has many losers. */
+    private static final int LOGINS = 300;
 
     private static IdentityPluginFixture humanProxy(Path dir) {
         IdentityPluginFixture fixture = new IdentityPluginFixture(dir, "human", true);
@@ -63,11 +65,18 @@ class HumanCapTest {
         });
     }
 
+    /** The capacity is the shard's shared limit of 100. A change to it must be a deliberate change to MAX_PLAYERS too. */
     @Test
-    void fifthHumanIsAdmittedAndSixthIsRefusedWithTheGenericMessage(@TempDir Path dir) {
+    void theCapacityIsTheShardsSharedLimitOfOneHundred() {
+        assertEquals(100, HumanSlots.SHARD_MAX_PLAYERS, "SHARD_MAX_PLAYERS tracks MAX_PLAYERS 100 in compose/nf-live.yml");
+    }
+
+    @Test
+    void hundredthHumanIsAdmittedAndHundredAndFirstIsRefusedWithTheGenericMessage(@TempDir Path dir) {
         IdentityPluginFixture fixture = humanProxy(dir);
-        fillTo(fixture, 5);
-        assertFalse(fixture.loginAllowed("Human5", UUID.randomUUID()));
+        fillTo(fixture, CAP - 1);
+        assertTrue(fixture.loginAllowed("Human" + (CAP - 1), UUID.randomUUID()), "the hundredth human reserves the last slot");
+        assertFalse(fixture.loginAllowed("Human" + CAP, UUID.randomUUID()), "the hundred and first is refused");
         String message = fixture.lastDenyMessage();
         assertEquals(LoginGate.DENY_MESSAGE, message, "the refusal is the one message every denial gets");
         // The message reveals neither the cap nor who is online.
@@ -80,16 +89,16 @@ class HumanCapTest {
     @Test
     void aDisconnectFreesTheSlotForTheNextLogin(@TempDir Path dir) {
         IdentityPluginFixture fixture = humanProxy(dir);
-        List<UUID> ids = fillTo(fixture, 5);
-        assertFalse(fixture.loginAllowed("Human5", UUID.randomUUID()));
+        List<UUID> ids = fillTo(fixture, CAP);
+        assertFalse(fixture.loginAllowed("Human" + CAP, UUID.randomUUID()));
         fixture.disconnect(ids.get(0), CLEAN);
-        assertTrue(fixture.loginAllowed("Human5", UUID.randomUUID()), "the freed slot admits the next human");
-        assertFalse(fixture.loginAllowed("Human6", UUID.randomUUID()), "and only that one slot was freed");
+        assertTrue(fixture.loginAllowed("Human" + CAP, UUID.randomUUID()), "the freed slot admits the next human");
+        assertFalse(fixture.loginAllowed("Human" + (CAP + 1), UUID.randomUUID()), "and only that one slot was freed");
     }
 
     /**
      * Holder UUID X holds a slot. A second connection of X is denied; its disconnect carries X and any status Velocity
-     * may report. Whatever that status, the holder keeps its slot: five humans are held and a sixth is refused.
+     * may report. Whatever that status, the holder keeps its slot: the capacity is held and the next human is refused.
      */
     @ParameterizedTest
     @EnumSource(DisconnectEvent.LoginStatus.class)
@@ -97,13 +106,13 @@ class HumanCapTest {
         IdentityPluginFixture fixture = humanProxy(dir);
         UUID shared = UUID.randomUUID();
         assertTrue(fixture.loginAllowed("Human0", shared), "the holder is admitted");
-        fillTo(fixture, 4);
+        fillTo(fixture, CAP - 1);
         Player duplicate = fixture.newPlayer("Human0", shared);
         LoginEvent denied = fixture.login(duplicate);
         assertFalse(denied.getResult().isAllowed(), "a second login of a held UUID is refused");
         fixture.settle(denied);
         fixture.disconnect(duplicate, status);
-        assertFalse(fixture.loginAllowed("Human5", UUID.randomUUID()), status + ": the holder still holds its slot");
+        assertFalse(fixture.loginAllowed("Human" + CAP, UUID.randomUUID()), status + ": the holder still holds its slot");
     }
 
     /** A refused duplicate that the settle step gives back must not free the holder's slot either. */
@@ -112,11 +121,11 @@ class HumanCapTest {
         IdentityPluginFixture fixture = humanProxy(dir);
         UUID shared = UUID.randomUUID();
         assertTrue(fixture.loginAllowed("Human0", shared));
-        fillTo(fixture, 4);
+        fillTo(fixture, CAP - 1);
         LoginEvent duplicate = fixture.login(fixture.newPlayer("Human0", shared));
         fixture.settle(duplicate);
         fixture.settle(duplicate);
-        assertFalse(fixture.loginAllowed("Human5", UUID.randomUUID()), "the holder keeps its slot through a refused duplicate");
+        assertFalse(fixture.loginAllowed("Human" + CAP, UUID.randomUUID()), "the holder keeps its slot through a refused duplicate");
     }
 
     /** The holder's own disconnect frees exactly one slot: the next human fits and the one after is refused. */
@@ -125,11 +134,11 @@ class HumanCapTest {
         IdentityPluginFixture fixture = humanProxy(dir);
         Player holder = fixture.newPlayer("Human0", UUID.randomUUID());
         assertTrue(fixture.allowed(fixture.login(holder)));
-        fillTo(fixture, 4);
-        assertFalse(fixture.loginAllowed("Human5", UUID.randomUUID()));
+        fillTo(fixture, CAP - 1);
+        assertFalse(fixture.loginAllowed("Human" + CAP, UUID.randomUUID()));
         fixture.disconnect(holder, CLEAN);
-        assertTrue(fixture.loginAllowed("Human5", UUID.randomUUID()), "the holder's disconnect frees its slot");
-        assertFalse(fixture.loginAllowed("Human6", UUID.randomUUID()), "and exactly one");
+        assertTrue(fixture.loginAllowed("Human" + CAP, UUID.randomUUID()), "the holder's disconnect frees its slot");
+        assertFalse(fixture.loginAllowed("Human" + (CAP + 1), UUID.randomUUID()), "and exactly one");
     }
 
     /** Giving back the same owner's slot twice frees one slot, not two. */
@@ -138,35 +147,35 @@ class HumanCapTest {
         IdentityPluginFixture fixture = humanProxy(dir);
         Player holder = fixture.newPlayer("Human0", UUID.randomUUID());
         assertTrue(fixture.allowed(fixture.login(holder)));
-        fillTo(fixture, 4);
+        fillTo(fixture, CAP - 1);
         fixture.disconnect(holder, CLEAN);
         fixture.disconnect(holder, CLEAN);
-        assertTrue(fixture.loginAllowed("Human5", UUID.randomUUID()), "the first disconnect frees one slot");
-        assertFalse(fixture.loginAllowed("Human6", UUID.randomUUID()), "the second disconnect frees nothing more");
+        assertTrue(fixture.loginAllowed("Human" + CAP, UUID.randomUUID()), "the first disconnect frees one slot");
+        assertFalse(fixture.loginAllowed("Human" + (CAP + 1), UUID.randomUUID()), "the second disconnect frees nothing more");
     }
 
     @Test
     void aLoginRefusedAfterItsReservationGivesTheSlotBackOnce(@TempDir Path dir) {
         IdentityPluginFixture fixture = humanProxy(dir);
-        fillTo(fixture, 4);
-        LoginEvent fifth = fixture.login("Human4", UUID.randomUUID());
-        assertTrue(fifth.getResult().isAllowed(), "the fifth reserves the last slot");
+        fillTo(fixture, CAP - 1);
+        LoginEvent last = fixture.login("Human" + (CAP - 1), UUID.randomUUID());
+        assertTrue(last.getResult().isAllowed(), "the hundredth reserves the last slot");
         // A later handler denies the login after the reservation.
-        fifth.setResult(ResultedEvent.ComponentResult.denied(Component.text(LoginGate.DENY_MESSAGE)));
-        fixture.settle(fifth);
-        assertTrue(fixture.loginAllowed("Human5", UUID.randomUUID()), "the refused login's slot is free again");
+        last.setResult(ResultedEvent.ComponentResult.denied(Component.text(LoginGate.DENY_MESSAGE)));
+        fixture.settle(last);
+        assertTrue(fixture.loginAllowed("Human" + CAP, UUID.randomUUID()), "the refused login's slot is free again");
         // Settling the same event again must not give back a second slot.
-        fixture.settle(fifth);
-        assertFalse(fixture.loginAllowed("Human6", UUID.randomUUID()), "a double settle freed nothing extra");
+        fixture.settle(last);
+        assertFalse(fixture.loginAllowed("Human" + (CAP + 1), UUID.randomUUID()), "a double settle freed nothing extra");
     }
 
     @Test
     void aLoginThatIsKeptHoldsItsSlotThroughSettle(@TempDir Path dir) {
         IdentityPluginFixture fixture = humanProxy(dir);
-        fillTo(fixture, 4);
-        LoginEvent fifth = fixture.login("Human4", UUID.randomUUID());
-        fixture.settle(fifth);
-        assertFalse(fixture.loginAllowed("Human5", UUID.randomUUID()), "a kept login keeps its slot until disconnect");
+        fillTo(fixture, CAP - 1);
+        LoginEvent last = fixture.login("Human" + (CAP - 1), UUID.randomUUID());
+        fixture.settle(last);
+        assertFalse(fixture.loginAllowed("Human" + CAP, UUID.randomUUID()), "a kept login keeps its slot until disconnect");
     }
 
     @Test
@@ -175,19 +184,19 @@ class HumanCapTest {
         UUID shared = UUID.randomUUID();
         assertTrue(fixture.loginAllowed("Human0", shared));
         assertFalse(fixture.loginAllowed("Human0", shared), "the same UUID is not charged a second slot: it is refused");
-        fillTo(fixture, 4);
-        assertFalse(fixture.loginAllowed("Human5", UUID.randomUUID()), "four others and the holder fill the cap");
+        fillTo(fixture, CAP - 1);
+        assertFalse(fixture.loginAllowed("Human" + CAP, UUID.randomUUID()), "the holder and the others fill the capacity");
     }
 
     @Test
     void agentNamesAreNeitherCountedNorBlockedByTheCap(@TempDir Path dir) {
         IdentityPluginFixture fixture = humanProxy(dir);
-        fillTo(fixture, 4);
+        fillTo(fixture, CAP - 1);
         // Agent names are refused by the human lane's rules before any slot is reserved.
         for (String name : new String[] {"ag_alice_01", "AG_Bob", "ag_x_02", "ag_carol_03", "ag_dan_04", "ag_eve_05"}) {
             assertFalse(fixture.loginAllowed(name, UUID.randomUUID()), name);
         }
-        assertTrue(fixture.loginAllowed("Human4", UUID.randomUUID()), "the fifth human still gets the last slot");
+        assertTrue(fixture.loginAllowed("Human" + (CAP - 1), UUID.randomUUID()), "the hundredth human still gets the last slot");
     }
 
     /** A cap refusal logs its own line with the count only: no name and no UUID reach the log. */
@@ -197,14 +206,14 @@ class HumanCapTest {
         IdentityPluginFixture fixture = new IdentityPluginFixture(dir, "human", true, recordingLog(lines));
         fixture.init();
         fixture.syncRegistry();
-        fillTo(fixture, 5);
+        fillTo(fixture, CAP);
         lines.clear();
-        UUID sixth = UUID.randomUUID();
-        assertFalse(fixture.loginAllowed("Human5", sixth));
+        UUID refused = UUID.randomUUID();
+        assertFalse(fixture.loginAllowed("Human" + CAP, refused));
         assertEquals(1, lines.size(), lines.toString());
-        assertEquals("warn Refused a human login: all {} human slots are held [5]", lines.get(0));
-        assertFalse(lines.get(0).contains("Human5"), "no name in the cap line");
-        assertFalse(lines.get(0).contains(sixth.toString()), "no UUID in the cap line");
+        assertEquals("warn Refused a human login: all {} human slots are held [" + CAP + "]", lines.get(0));
+        assertFalse(lines.get(0).contains("Human" + CAP), "no name in the cap line");
+        assertFalse(lines.get(0).contains(refused.toString()), "no UUID in the cap line");
     }
 
     /** An ordinary denial keeps its own line and never logs the cap line. */
@@ -222,8 +231,9 @@ class HumanCapTest {
     }
 
     /**
-     * Fifty rounds of 200 logins that start together through the plugin's login handler. Each round has a fresh proxy, so
-     * it can admit exactly the cap; every twentieth login uses one shared UUID, which holds at most one slot.
+     * Fifty rounds of 300 logins that start together through the plugin's login handler. Each round has a fresh proxy,
+     * so it can admit exactly the capacity of 100 and no more; every twentieth login uses one shared UUID, which holds
+     * at most one slot.
      */
     @Test
     void simultaneousLoginsThroughThePluginAdmitExactlyTheCap(@TempDir Path dir) throws Exception {
@@ -255,7 +265,7 @@ class HumanCapTest {
                         }
                     }
                 }
-                assertEquals(HumanSlots.CAP, admitted, "round " + round + ": exactly the cap is admitted");
+                assertEquals(CAP, admitted, "round " + round + ": exactly the cap is admitted");
                 assertTrue(sharedAdmitted <= 1, "round " + round + ": one UUID holds at most one slot");
             }
         } finally {
