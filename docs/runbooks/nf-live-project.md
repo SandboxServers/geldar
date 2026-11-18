@@ -4,6 +4,10 @@ Status: the compose file and its repo test exist (compose/nf-live.yml, tools/rep
 Nothing here is deployed. The file renders; it has not been started on the node. Public exposure, the shared Caddy and
 the human route are out of scope (owner decisions for the final-instance step). Nothing is published beyond loopback.
 
+**THE NEOFORGE SHARD MUST NOT BE MADE PUBLIC BEFORE THE CONCURRENT-HUMAN CAP LANDS.** No code enforces the cap of 5
+concurrent humans today (section 3b). Until the human lane counts live humans and refuses the sixth, a public listener
+has no human bound at all: its only bound is MAX_PLAYERS, which counts bodies too.
+
 The per-shard storage design is in docs/analysis/neoforge/per-shard-storage-design.md (one NATS, one Postgres database,
 one sink per shard; see also docs/decisions/0026-one-database-per-shard.md). Read that first for why the shard is separate.
 
@@ -53,6 +57,42 @@ autonomous Paper at a 14 GiB cap. Re-measure before the first start.
 Other tenants (as the lead gave them): autonomous Paper 14 GiB, scratch-telemetry Paper 15 GiB, nf scratch Paper 3 GiB.
 Their other services are UNVERIFIED here. Paper-equivalent sum about 32 GiB plus this shard's 16.25 GiB leaves room in the
 100 GiB headline. Every service has memswap equal to memory (no swap), and a restart policy of unless-stopped (identity-seed: no).
+
+## 3b. Player limits (pinned; the scratch overlay uses the same values)
+
+The neoforge service pins three itzg variables in compose/nf-live.yml. The scratch overlay
+(compose/opt-in/scratch-neoforge.yml, the paper service) pins the same three, so a scratch run tests what live runs.
+Names are the itzg image's, as the colo Paper uses them (compose/colo.yml and compose/phase0.yml).
+
+| Variable | Live and scratch NeoForge | Autonomous Paper (compose/phase0.yml, unchanged) |
+|----------|---------------------------|---------------------------------------------------|
+| MAX_PLAYERS | 10 | 400 |
+| VIEW_DISTANCE | 8 | 6 |
+| SIMULATION_DISTANCE | 6 | 5 |
+
+Reasoning. The vanilla world tick runs on one server thread (general Minecraft server behaviour, not measured here), so
+3 CPUs do not raise the tick rate; the load is the loaded chunks and the ticked entities. Vanilla keeps about (2V+1)^2
+chunks loaded per player at view distance V, and ticks entities in about (2S+1)^2 chunks per player at simulation
+distance S. At the lead's example (20 players, view 10) that is about 441 chunks per player, up to about 8,800 in all
+before overlap, which is too high for 3 CPUs on a shard whose first players are few. At 10 players, view 8, it is about
+289 chunks per player, up to about 2,900; simulation 6 ticks 169 chunks per player against 289 at simulation 8. The 9G
+heap and 12 GiB cap are unchanged (the colo Paper ratio). The memory figure for about 2,900 chunks is an estimate, not a
+measurement: UNVERIFIED. Re-measure at the first start with `tick query` and the heap before raising any value. The owner
+may raise MAX_PLAYERS; a higher view or simulation distance needs the same re-measure first.
+
+The image writes server.properties from these variables on each start (section 6, the bundle notes). That the NeoForge
+server honours them is UNVERIFIED until a live start reads them back from its log or server.properties.
+
+Three things these values do not do, stated plainly:
+
+- **The concurrent-human cap of 5 (spec section 8.4, decision 0137 item 1) IS NOT ENFORCED by any code today.**
+  MAX_PLAYERS bounds ALL players on the server, bots included, and it is 10: a different and larger number. Enforcing
+  the human cap needs the human lane in the identity plugin to count live humans and refuse the sixth with a generic
+  message. That is a separate plugin-only packet; it is not in this change.
+- **The NeoForge shard must not be made public before that cap lands** (the bold note at the top of this runbook).
+- **The show-max-players values are display only, and they do not match.** compose/velocity/velocity-nf.toml shows 400 and
+  compose/velocity/velocity-human.toml shows 20. Neither file is edited here. Whether Velocity refuses a login over its own
+  count is UNVERIFIED (not checked in this packet). The real server cap is MAX_PLAYERS (10).
 
 ## 4. Secrets
 

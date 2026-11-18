@@ -15,6 +15,10 @@ services:
       # maps, so without these two lines phase0's TRUE values would reach this service.
       ENABLE_WHITELIST: "FALSE"
       ENFORCE_WHITELIST: "FALSE"
+      # The same player limits as compose/nf-live.yml (runbook nf-live-project.md section 3b). Overrides phase0.yml's Paper values.
+      MAX_PLAYERS: "10"
+      VIEW_DISTANCE: "8"
+      SIMULATION_DISTANCE: "6"
     entrypoint: !override ["/bin/sh", "/geldar/neoforge-entrypoint.sh"]
     volumes: !override
       - paper-data:/data
