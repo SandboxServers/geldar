@@ -323,13 +323,20 @@ if [ ! -e "$config" ]; then
   chown --reference="$data" "$cfgdir" "$config"
 else
   # The mod (Proxy Compatible Forge) may have rewritten this file after the first start, so the entrypoint owns it at every
-  # start. The previous file is kept as $config.bak (mode 600, the data dir's owner). Only enabled, mode and secret under
-  # [forwarding] are rewritten, by a section-aware awk: every other line stays as it is, and a missing key is inserted into
-  # [forwarding] (or the table is appended). The secret reaches awk in its environment, never on a command line.
-  rm -f "$config.bak" "$config.part"
-  cp "$config" "$config.bak"
-  chmod 600 "$config.bak"
-  chown --reference="$data" "$config.bak"
+  # start. Two copies are kept, both mode 600 with the data dir's owner: $config.bak is the first original, written once and
+  # never replaced; $config.bak.prev is the file this start found, rewritten at every start. Only enabled, mode and secret
+  # under [forwarding] are rewritten, by a section-aware awk: every other line stays as it is, and a missing key is inserted
+  # into [forwarding] (or the table is appended). The secret reaches awk in its environment, never on a command line.
+  rm -f "$config.part"
+  if [ ! -e "$config.bak" ]; then
+    cp "$config" "$config.bak"
+    chmod 600 "$config.bak"
+    chown --reference="$data" "$config.bak"
+  fi
+  rm -f "$config.bak.prev"
+  cp "$config" "$config.bak.prev"
+  chmod 600 "$config.bak.prev"
+  chown --reference="$data" "$config.bak.prev"
   NF_PCF_SECRET="$secret" LC_ALL=C awk '
     NR == 1 { sub(/^\357\273\277/, "") }
     function table_name(line,   name) {

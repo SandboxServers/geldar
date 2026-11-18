@@ -269,6 +269,24 @@ describe.skipIf(skipWithoutSh())(
       }
     });
 
+    it('three starts: .bak keeps the first original, .bak.prev holds the file the previous start left', () => {
+      const THIRD = 'nf-restart-third-Q7';
+      const c = setup();
+      writeToml(c, reformatted(OLD_SECRET));
+      expect(run(c).status).toBe(0);
+      // The mod rewrites the file again with a third secret before the next start.
+      writeToml(c, reformatted(THIRD));
+      const second = run(c);
+      expect(second.status).toBe(0);
+      expectNoSecret(second);
+      expect(second.stdout + second.stderr).not.toContain(THIRD);
+      expect(read(`${c.config}.bak`)).toContain(OLD_SECRET);
+      expect(read(`${c.config}.bak`)).not.toContain(THIRD);
+      expect(read(`${c.config}.bak.prev`)).toContain(THIRD);
+      expect(read(`${c.config}.bak.prev`)).not.toContain(OLD_SECRET);
+      expect(read(c.config).split(SECRET).length - 1).toBe(1);
+    });
+
     it('a second start over an intact file leaves it byte-identical', () => {
       const c = setup();
       expect(run(c).status).toBe(0);
