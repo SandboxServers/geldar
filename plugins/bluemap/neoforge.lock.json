@@ -1,0 +1,13 @@
+{
+  "name": "BlueMap (NeoForge)",
+  "version": "5.29",
+  "released_at": "2026-10-10T17:31:34Z",
+  "asset": "bluemap-5.29-neoforge.jar",
+  "url": "https://github.com/BlueMap-Minecraft/BlueMap/releases/download/v5.29/bluemap-5.29-neoforge.jar",
+  "sha256": "8938f4453af4b53970c86e43d0bd26b4a88980e4e6639f818fa770d0f61c43df",
+  "size_bytes": 7060044,
+  "release_page": "https://github.com/BlueMap-Minecraft/BlueMap/releases/tag/v5.29",
+  "license": "MIT",
+  "minecraft_versions": ["26.1", "26.1.1", "26.1.2", "26.2", "26.3"],
+  "java": 25
+}
