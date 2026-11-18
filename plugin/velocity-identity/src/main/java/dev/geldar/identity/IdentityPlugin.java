@@ -21,11 +21,9 @@ import com.velocitypowered.api.util.GameProfile;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Supplier;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import net.kyori.adventure.text.Component;
 import org.slf4j.Logger;
@@ -65,8 +63,6 @@ public final class IdentityPlugin {
     private final ReadinessFeed lifeFeed;
     private final SkinRegistry skins;
     private final DenialLimiter denials;
-    /** The login that reserved a new human slot, by UUID. Only that login gives the slot back if it is refused. */
-    private final Map<UUID, LoginEvent> slotOwners = new ConcurrentHashMap<>();
     private static final int MAX_LOGGED_DENIALS = 10;
     private static final long DENY_WINDOW_NANOS = TimeUnit.SECONDS.toNanos(10);
     /** The profile property Mojang's session servers use for skins. */
@@ -165,33 +161,35 @@ public final class IdentityPlugin {
             }
             return;
         }
+        // The slot is owned by this Player object: a duplicate login of the same UUID is a different object.
         LoginGate.Reservation reservation = refused
                 ? LoginGate.Reservation.DENIED
-                : gate.reserve(player.getUniqueId(), player.getUsername());
-        if (reservation != LoginGate.Reservation.DENIED) {
-            if (reservation == LoginGate.Reservation.NEW_SLOT) {
-                slotOwners.put(player.getUniqueId(), event);
-            }
+                : gate.reserve(player, player.getUniqueId(), player.getUsername());
+        if (reservation == LoginGate.Reservation.ADMITTED || reservation == LoginGate.Reservation.NEW_SLOT) {
             String name = printable(player.getUsername());
             log.info(gate.isSpectator(player.getUniqueId()) ? "Admitted {} as a spectator" : "Admitted {}", name);
             return;
         }
         event.setResult(ResultedEvent.ComponentResult.denied(Component.text(LoginGate.DENY_MESSAGE)));
-        if (denials.allow()) {
+        if (reservation == LoginGate.Reservation.FULL) {
+            // Its own line, count only: no name or UUID, so the cap refusal is told apart from an ordinary denial.
+            if (denials.allow()) {
+                log.warn("Refused a human login: all {} human slots are held", HumanSlots.CAP);
+            }
+        } else if (denials.allow()) {
             log.info("Denied {}", printable(player.getUsername()));
         }
     }
 
     /**
-     * Gives back a human slot that its login reserved and did not keep: the login ends refused after the reservation,
-     * whether a later handler denied it or none did. Only the login that reserved the slot can give it back, so a second
-     * login that shared the slot cannot free it. A slot whose login was kept stays held until its disconnect.
+     * Gives back a human slot whose login ends refused after the reservation, whether a later handler denied it or none
+     * did. The slot is released only by the connection object that reserved it: any other login of the same UUID is a
+     * different object, so its refusal cannot free the holder's slot. A kept login holds its slot until its disconnect.
      */
     @Subscribe(order = PostOrder.LAST)
     public void onLoginSettled(LoginEvent event) {
-        UUID connection = event.getPlayer().getUniqueId();
-        if (slotOwners.remove(connection, event) && !event.getResult().isAllowed()) {
-            gate.release(connection);
+        if (!event.getResult().isAllowed()) {
+            gate.releaseSlot(event.getPlayer());
         }
     }
 
@@ -248,11 +246,15 @@ public final class IdentityPlugin {
 
     @Subscribe
     public void onDisconnect(DisconnectEvent event) {
-        release(event.getPlayer().getUniqueId(), event.getLoginStatus());
+        Player player = event.getPlayer();
+        // The slot goes to this exact connection, whatever status Velocity reports: a denied duplicate of the same UUID
+        // is another object and frees nothing. The status is consulted only for the live and ghost admissions below.
+        gate.releaseSlot(player);
+        release(player.getUniqueId(), event.getLoginStatus());
     }
 
     /**
-     * Forgets an admission when its connection ends. A login that lost to an already connected player of the
+     * Forgets a live or ghost admission when its connection ends. A login that lost to an already connected player of the
      * same name ends with CONFLICTING_LOGIN and shares that player's UUID: it must not revoke the live admission.
      */
     void release(UUID connection, DisconnectEvent.LoginStatus status) {

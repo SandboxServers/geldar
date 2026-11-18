@@ -67,7 +67,7 @@ sequenceDiagram
 | Lane | Admits | Refuses | Readiness (`/tmp/geldar-identity.ready`) |
 |---|---|---|---|
 | `agent` (unset or `agent`) | A username in the life registry, and only once the registry has synced. The bot ingress is offline-mode. | Everything else. | Written when the registry syncs; removed when the sync is lost and on shutdown. Until then every login is denied. |
-| `human` | A plain username (1 to 16 of `[A-Za-z0-9_]`) that does not start with `ag_` (any case), is not in the registry, and whose UUID is not the offline-mode UUID of its name. | Agent-shaped names, registered names, connections whose UUID is the offline-mode UUID of the name, and every login while the registry is unsynced, including when `GELDAR_NATS_URL` is unset. | Written on registry sync, and every login is denied until then. With `GELDAR_NATS_URL` unset the registry never syncs: the marker is never written and every login is denied. Removed on shutdown. |
+| `human` | A plain username (1 to 16 of `[A-Za-z0-9_]`) that does not start with `ag_` (any case), is not in the registry, and whose UUID is not the offline-mode UUID of its name. | Agent-shaped names, registered names, connections whose UUID is the offline-mode UUID of the name, and every login while the registry is unsynced, including when `GELDAR_NATS_URL` is unset. | Written on registry sync, and every login is denied until then. With `GELDAR_NATS_URL` unset the registry never syncs: the marker is never written and every login is denied. Removed when the registry sync is lost, and on shutdown. |
 
 Fixed deny text, both lanes: `LoginGate.DENY_MESSAGE`, one message that names neither the lane nor the registry. The refusal reason for a bad lane value or an offline-mode proxy is logged, never sent to a client.
 
@@ -79,7 +79,7 @@ Fail-closed rules for the human lane:
 
 ### Concurrent-human cap
 
-The human lane admits at most 5 concurrent human connections (`HumanSlots.CAP`, a constant, not configurable). The cap is enforced IN THE PLUGIN: a human reserves a slot at the login decision and gives it back on disconnect, or when its login is refused after the reservation. The sixth human gets the same fixed denial as every other refusal, so the message reveals neither the cap nor who is online. Agents never take a slot (they come through the agent lane), and a UUID that logs in again while it holds a slot shares that slot. Per-IP limits are NOT built: they are the follow-up H1b. Whether real Velocity fires `DisconnectEvent` for every connection that ends after `LoginEvent` is not verified on a live proxy.
+The human lane admits at most 5 concurrent human connections (`HumanSlots.CAP`, a constant, not configurable). The cap is enforced IN THE PLUGIN: a human reserves a slot at the login decision and gives it back on disconnect, or when its login is refused after the reservation. The sixth human gets the same fixed denial as every other refusal, so the message reveals neither the cap nor who is online. Agents never take a slot (they come through the agent lane), and a UUID that logs in again while it holds a slot is refused: only the connection that reserved the slot gives it back (on its own disconnect or a refused login), so a denied duplicate frees nothing. Per-IP limits are NOT built: they are the follow-up H1b. An idle account can hold its slot: there is no idle kick. Whether real Velocity fires `DisconnectEvent` for every connection that ends after `LoginEvent` is not verified on a live proxy.
 
 ## Skins
 

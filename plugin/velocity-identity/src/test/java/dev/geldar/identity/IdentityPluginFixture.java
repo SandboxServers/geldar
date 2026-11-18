@@ -10,23 +10,34 @@ import com.velocitypowered.api.scheduler.Scheduler;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
 import java.nio.file.Path;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import org.slf4j.Logger;
 import org.slf4j.helpers.NOPLogger;
 
 /**
  * Builds the plugin for a human-lane test, with a Velocity proxy double that reports the online mode it is given.
  * The readiness marker goes to a temporary directory and the NATS URL is unset, so no network is touched.
+ * Each login uses its own {@link Player} object, as Velocity does: a second login of a UUID is a different connection.
  */
 final class IdentityPluginFixture {
     private final IdentityPlugin plugin;
     private final Path marker;
-    private String lastDeny;
+    /** The first connection each UUID logged in on, so {@link #disconnect(UUID, DisconnectEvent.LoginStatus)} names the holder. */
+    private final Map<UUID, Player> firstLogin = new ConcurrentHashMap<>();
+    private volatile String lastDeny;
 
     IdentityPluginFixture(Path dir, String lane, boolean onlineMode) {
+        this(dir, lane, onlineMode, NOPLogger.NOP_LOGGER);
+    }
+
+    /** Takes the logger too, so a test can read what the plugin logs. */
+    IdentityPluginFixture(Path dir, String lane, boolean onlineMode, Logger log) {
         this.marker = dir.resolve("geldar-identity.ready");
-        this.plugin = new IdentityPlugin(proxy(onlineMode), NOPLogger.NOP_LOGGER, () -> null,
-                new SkinRegistry(NOPLogger.NOP_LOGGER), new ReadyMarker(marker, () -> "1 2"), () -> lane);
+        this.plugin = new IdentityPlugin(proxy(onlineMode), log, () -> null,
+                new SkinRegistry(log), new ReadyMarker(marker, () -> "1 2"), () -> lane);
     }
 
     void init() {
@@ -50,8 +61,11 @@ final class IdentityPluginFixture {
 
     /** Runs one login and returns whether it was allowed; a refusal keeps its plain-text reason for {@link #lastDenyMessage}. */
     boolean loginAllowed(String name, UUID id) {
-        LoginEvent event = new LoginEvent(player(name, id));
-        plugin.onLogin(event);
+        return allowed(login(name, id));
+    }
+
+    /** Whether this login's result allowed it. A refusal keeps its plain-text reason for {@link #lastDenyMessage}. */
+    boolean allowed(LoginEvent event) {
         if (!event.getResult().isAllowed()) {
             lastDeny = net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer.plainText()
                     .serialize(event.getResult().getReasonComponent().orElseThrow());
@@ -63,11 +77,23 @@ final class IdentityPluginFixture {
         return lastDeny;
     }
 
-    /** Runs the login handler only and returns its event, so a test can settle the login later. */
+    /** Runs the login handler for a new connection of this name and UUID, and returns its event so it can be settled later. */
     LoginEvent login(String name, UUID id) {
-        LoginEvent event = new LoginEvent(player(name, id));
+        Player player = newPlayer(name, id);
+        firstLogin.putIfAbsent(id, player);
+        return login(player);
+    }
+
+    /** Runs the login handler for one connection object. */
+    LoginEvent login(Player player) {
+        LoginEvent event = new LoginEvent(player);
         plugin.onLogin(event);
         return event;
+    }
+
+    /** A new connection object (a distinct Velocity player) for this name and UUID. */
+    Player newPlayer(String name, UUID id) {
+        return player(name, id);
     }
 
     /** Runs the last-ordered login handler, as Velocity does once every handler has seen the event. */
@@ -75,9 +101,14 @@ final class IdentityPluginFixture {
         plugin.onLoginSettled(event);
     }
 
-    /** Runs the disconnect handler for a connection of this UUID. */
+    /** Runs the disconnect handler for the first connection of this UUID: the one that holds its slot. */
     void disconnect(UUID id, DisconnectEvent.LoginStatus status) {
-        plugin.onDisconnect(new DisconnectEvent(player("", id), status));
+        disconnect(firstLogin.getOrDefault(id, player("", id)), status);
+    }
+
+    /** Runs the disconnect handler for one connection object, whatever status Velocity reports for it. */
+    void disconnect(Player player, DisconnectEvent.LoginStatus status) {
+        plugin.onDisconnect(new DisconnectEvent(player, status));
     }
 
     private static Player player(String name, UUID id) {

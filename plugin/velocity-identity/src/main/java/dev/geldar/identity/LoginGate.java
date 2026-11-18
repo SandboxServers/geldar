@@ -34,9 +34,9 @@ public final class LoginGate {
 
     /**
      * What {@link #reserve} did with a login. {@link #NEW_SLOT} is the only result that owes the caller a release if the
-     * login is refused after the reservation.
+     * login is refused after the reservation. {@link #FULL} is a human refused by the cap, which the caller logs apart.
      */
-    public enum Reservation { DENIED, ADMITTED, NEW_SLOT }
+    public enum Reservation { DENIED, ADMITTED, NEW_SLOT, FULL }
 
     public LoginGate(LifeRegistry registry) {
         this(registry, IdentityLane.AGENT);
@@ -92,22 +92,29 @@ public final class LoginGate {
 
     /** Checks the login and, when it passes, remembers the connection as admitted. */
     public boolean admit(UUID connection, String username) {
-        return reserve(connection, username) != Reservation.DENIED;
+        Reservation reservation = reserve(connection, username);
+        return reservation == Reservation.ADMITTED || reservation == Reservation.NEW_SLOT;
+    }
+
+    /** {@link #reserve(Object, UUID, String)} with the UUID as the owner: for a caller that has no connection object. */
+    public Reservation reserve(UUID connection, String username) {
+        return reserve(connection, connection, username);
     }
 
     /**
-     * Checks the login and records it. A live or ghost connection is remembered; a human takes one of the
-     * {@link HumanSlots#CAP} slots, and a refused human gets the same denial as any other (no reason is returned).
+     * Checks the login and records it. A live or ghost connection is remembered. A human takes one of the
+     * {@link HumanSlots#CAP} slots for its {@code owner}, the connection object that will give it back. A UUID that
+     * already holds a slot is refused, and a refused human gets the same denial as any other (no reason is returned).
      */
-    public Reservation reserve(UUID connection, String username) {
+    public Reservation reserve(Object owner, UUID connection, String username) {
         Admission admission = decide(connection, username);
         switch (admission) {
             case LIVE -> admitted.add(connection);
             case SPECTATOR -> spectators.add(connection);
             case HUMAN -> {
-                return switch (humanSlots.reserve(connection)) {
-                    case FULL -> Reservation.DENIED;
-                    case HELD -> Reservation.ADMITTED;
+                return switch (humanSlots.reserve(owner, connection)) {
+                    case FULL -> Reservation.FULL;
+                    case TAKEN -> Reservation.DENIED;
                     case NEW -> Reservation.NEW_SLOT;
                 };
             }
@@ -118,11 +125,15 @@ public final class LoginGate {
         return Reservation.ADMITTED;
     }
 
-    /** Forgets a connection that disconnected, or whose login was refused after it reserved a slot. Safe to repeat. */
+    /** Gives back the human slot that this owner reserved. Only that owner's slot is freed; any other owner is a no-op. */
+    public void releaseSlot(Object owner) {
+        humanSlots.release(owner);
+    }
+
+    /** Forgets a live or ghost connection that disconnected. Safe to repeat. Human slots are given back by {@link #releaseSlot}. */
     public void release(UUID connection) {
         admitted.remove(connection);
         spectators.remove(connection);
-        humanSlots.release(connection);
     }
 
     /** True for a live connection that passed {@link #admit}; the {@code geldar:cmd} channel is open only to these. */

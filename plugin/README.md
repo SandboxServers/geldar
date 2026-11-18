@@ -59,7 +59,7 @@ Behind the human lane:
 - `GELDAR_NATS_URL` may be unset: the registry is then not used, the name rules alone decide, and the proxy is ready once enabled. With the URL set, the human lane waits for the registry to sync and denies every login until it has.
 - A human is admitted to the proxy only. A human never opens `geldar:cmd` and is never a ghost (Paper's spectator marker is not sent to a human).
 - Any other value of `GELDAR_IDENTITY_LANE`, including an empty one, refuses the gate: every login is denied and the error is logged. The refusal reason is logged, never sent to a client.
-- Readiness: the ready file `/tmp/geldar-identity.ready` has the same contract in both lanes. The agent lane writes it when the registry syncs and removes it when the sync is lost. The human lane writes it at enable when no registry is configured, and otherwise on sync; it removes it on shutdown.
+- Readiness: the ready file `/tmp/geldar-identity.ready` has the same contract in both lanes. The agent lane writes it when the registry syncs and removes it when the sync is lost. The human lane writes it on registry sync and removes it when the sync is lost and on shutdown. With no registry configured (`GELDAR_NATS_URL` unset) it is never written and every human login is denied: the human lane fails closed.
 - Denied connections get the same fixed message in both lanes, which names neither the lane nor the registry.
 
 ## Velocity identity: known limits
