@@ -106,9 +106,7 @@ public final class IdentityPlugin {
         this.natsUrl = natsUrl;
         this.skins = skins;
         this.lane = IdentityLane.parse(laneSetting.get());
-        String url = natsUrl.get();
-        boolean registryExpected = url != null && !url.isBlank();
-        this.gate = new LoginGate(registry, lane.orElse(IdentityLane.AGENT), registryExpected);
+        this.gate = new LoginGate(registry, lane.orElse(IdentityLane.AGENT));
         this.lifeFeed = new ReadinessFeed(registry, marker, log);
         this.denials = new DenialLimiter(MAX_LOGGED_DENIALS, DENY_WINDOW_NANOS, System::nanoTime,
                 count -> log.info("{} more denials were not logged in the last window", count));
@@ -131,12 +129,7 @@ public final class IdentityPlugin {
         }
         String url = natsUrl.get();
         if (url == null || url.isBlank()) {
-            if (lane.get() == IdentityLane.HUMAN) {
-                // The human lane needs no registry: an enabled proxy is ready, and the name rules still apply.
-                lifeFeed.markReadyWithoutRegistry();
-                log.info("human lane: GELDAR_NATS_URL is not set; the registry is not used");
-                return;
-            }
+            // Both lanes fail closed: with no registry there is no check to make, so nothing is admitted or marked ready.
             log.error("GELDAR_NATS_URL is not set; every login will be denied");
             return;
         }
@@ -223,6 +216,11 @@ public final class IdentityPlugin {
             log.warn("Could not mark {} as a spectator; disconnecting", printable(player.getUsername()));
             player.disconnect(Component.text(LoginGate.DENY_MESSAGE));
         }
+    }
+
+    /** The life registry the gate reads. A unit test syncs it, since no NATS runs there. */
+    LifeRegistry registry() {
+        return registry;
     }
 
     /** Refuses the gate: every login is denied from now on. The reason is logged, never sent to a client. */

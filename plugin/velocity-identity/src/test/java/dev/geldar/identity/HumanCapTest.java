@@ -28,6 +28,7 @@ class HumanCapTest {
     private static IdentityPluginFixture humanProxy(Path dir) {
         IdentityPluginFixture fixture = new IdentityPluginFixture(dir, "human", true);
         fixture.init();
+        fixture.syncRegistry();
         return fixture;
     }
 
@@ -140,7 +141,10 @@ class HumanCapTest {
 
     @Test
     void simultaneousLoginsAdmitExactlyTheCap() throws Exception {
-        LoginGate gate = new LoginGate(new LifeRegistry(), IdentityLane.HUMAN, false);
+        LifeRegistry registry = new LifeRegistry();
+        registry.beginReplay();
+        registry.markSynced();
+        LoginGate gate = new LoginGate(registry, IdentityLane.HUMAN);
         int logins = 64;
         ExecutorService pool = Executors.newFixedThreadPool(16);
         try {

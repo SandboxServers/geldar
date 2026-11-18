@@ -33,6 +33,17 @@ final class IdentityPluginFixture {
         plugin.onProxyInitialization(null);
     }
 
+    /** Marks the registry synced, as a healthy NATS sync would. No NATS runs in these tests. */
+    void syncRegistry() {
+        plugin.registry().beginReplay();
+        plugin.registry().markSynced();
+    }
+
+    /** Marks the registry unsynced, as a registry error or a lost sync would. */
+    void unsyncRegistry() {
+        plugin.registry().markUnsynced();
+    }
+
     Path marker() {
         return marker;
     }

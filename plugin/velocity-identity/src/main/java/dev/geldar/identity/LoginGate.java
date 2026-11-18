@@ -27,8 +27,6 @@ public final class LoginGate {
 
     private final LifeRegistry registry;
     private final IdentityLane lane;
-    /** True when a NATS URL is configured: the human lane then denies while the registry is unsynced. */
-    private final boolean registryExpected;
     private final Set<UUID> admitted = ConcurrentHashMap.newKeySet();
     private final Set<UUID> spectators = ConcurrentHashMap.newKeySet();
     /** The concurrent-human cap. Only the human lane reserves from it; agents never do. */
@@ -41,13 +39,12 @@ public final class LoginGate {
     public enum Reservation { DENIED, ADMITTED, NEW_SLOT }
 
     public LoginGate(LifeRegistry registry) {
-        this(registry, IdentityLane.AGENT, false);
+        this(registry, IdentityLane.AGENT);
     }
 
-    public LoginGate(LifeRegistry registry, IdentityLane lane, boolean registryExpected) {
+    public LoginGate(LifeRegistry registry, IdentityLane lane) {
         this.registry = registry;
         this.lane = lane;
-        this.registryExpected = registryExpected;
     }
 
     /**
@@ -60,8 +57,8 @@ public final class LoginGate {
 
     /**
      * The human lane. Refused: a name that is not a plain username, the agent prefix, a name in the registry, and the
-     * offline-mode UUID of the name. While a configured registry is unsynced, every login is refused (fail closed).
-     * With no registry configured the registry is absent and the name rules alone decide.
+     * offline-mode UUID of the name. Every login is refused unless the registry has synced (fail closed): with no NATS
+     * URL the registry never syncs, a registry error marks it unsynced, and a sync lost later refuses again.
      */
     private Admission classifyHuman(UUID connection, String username) {
         if (!LifeRegistry.isValidUsername(username) || HumanRules.isAgentShaped(username)) {
@@ -70,10 +67,10 @@ public final class LoginGate {
         if (HumanRules.offlineUuid(username).equals(connection)) {
             return Admission.DENIED;
         }
-        if (registry.isSynced()) {
-            return registry.find(username).isPresent() ? Admission.DENIED : Admission.HUMAN;
+        if (!registry.isSynced()) {
+            return Admission.DENIED;
         }
-        return registryExpected ? Admission.DENIED : Admission.HUMAN;
+        return registry.find(username).isPresent() ? Admission.DENIED : Admission.HUMAN;
     }
 
     /** Classifies a username under the agent lane. Pure cache lookup, safe on the event loop; the human lane denies. */
