@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -69,6 +71,80 @@ class HumanLaneTest {
         for (String name : new String[] {"agatha", "magic_01", "ag"}) {
             assertEquals(LoginGate.Admission.HUMAN, gate.decide(UUID.randomUUID(), name), name);
         }
+    }
+
+    /** Both reserved prefixes, in any case, are refused and take no slot: a full cap of ordinary humans still fits. */
+    @Test
+    void humanDeniesBothAgentPrefixesInAnyCaseAndTakesNoSlot() {
+        registry.markSynced();
+        LoginGate gate = humanGate();
+        for (String name : new String[] {"ag-x", "AG-x", "Ag-x", "ag_x", "AG_x"}) {
+            UUID id = UUID.randomUUID();
+            assertEquals(LoginGate.Admission.DENIED, gate.decide(id, name), name);
+            assertEquals(LoginGate.Reservation.DENIED, gate.reserve(new Object(), id, name), name);
+        }
+        for (int i = 0; i < HumanSlots.SHARD_MAX_PLAYERS; i++) {
+            assertEquals(LoginGate.Reservation.NEW_SLOT, gate.reserve(new Object(), UUID.randomUUID(), "Kiki" + i), "slot " + i);
+        }
+        assertEquals(LoginGate.Reservation.FULL, gate.reserve(new Object(), UUID.randomUUID(), "Kiki"));
+    }
+
+    /** The refusal reaches the login with the same generic message as the agent-prefix refusal before it. */
+    @Test
+    void humanRefusesTheHyphenPrefixWithTheGenericMessage(@TempDir Path dir) {
+        IdentityPluginFixture fixture = new IdentityPluginFixture(dir, "human", true);
+        fixture.init();
+        fixture.syncRegistry();
+        assertFalse(fixture.loginAllowed("ag-x", UUID.randomUUID()));
+        assertEquals(LoginGate.DENY_MESSAGE, fixture.lastDenyMessage());
+    }
+
+    /** Names that only contain a prefix, or start with its letters, are ordinary human names. */
+    @Test
+    void humanAdmitsNamesThatMerelyContainAPrefixOrAreOnlyAPrefixOrPrefixLetters() {
+        registry.markSynced();
+        LoginGate gate = humanGate();
+        for (String name : new String[] {"ag", "ag1", "agx", "bag_x", "x_ag_y", "magic_01", "agatha"}) {
+            assertEquals(LoginGate.Admission.HUMAN, gate.decide(UUID.randomUUID(), name), name);
+        }
+    }
+
+    /** The rule matches only at the start, in any case; the prefix list is exactly ag_ and ag-. */
+    @Test
+    void theAgentPrefixRuleMatchesOnlyAtTheStartInAnyCase() {
+        assertEquals(List.of("ag_", "ag-"), HumanRules.AGENT_PREFIXES);
+        for (String name : new String[] {"ag-x", "AG-x", "Ag-x", "aG-x", "ag_x", "AG_x", "aG_x"}) {
+            assertTrue(HumanRules.isAgentShaped(name), name);
+        }
+        for (String name : new String[] {"bag-x", "bag_x", "x_ag_y", "x-ag-y", "ag", "ag1", "ag2x", "agx", "ga-x"}) {
+            assertFalse(HumanRules.isAgentShaped(name), name);
+        }
+    }
+
+    /** The lower-casing uses Locale.ROOT, so a Turkish default locale cannot change the answer. */
+    @Test
+    void theAgentPrefixRuleDoesNotDependOnTheDefaultLocale() {
+        Locale before = Locale.getDefault();
+        try {
+            Locale.setDefault(Locale.forLanguageTag("tr-TR"));
+            assertTrue(HumanRules.isAgentShaped("AG-x"));
+            assertTrue(HumanRules.isAgentShaped("AG_x"));
+            assertFalse(HumanRules.isAgentShaped("bag-x"));
+        } finally {
+            Locale.setDefault(before);
+        }
+    }
+
+    /** The agent lane keeps its rules: it still refuses hyphen names and still admits its own registered prefix. */
+    @Test
+    void theAgentLaneKeepsItsRulesForBothPrefixSpellings() {
+        registry.put("ag_alice_01", VALID);
+        registry.markSynced();
+        LoginGate agent = new LoginGate(registry);
+        for (String name : new String[] {"ag-alice", "AG-alice"}) {
+            assertEquals(LoginGate.Admission.DENIED, agent.decide(UUID.randomUUID(), name), name);
+        }
+        assertEquals(LoginGate.Admission.LIVE, agent.decide(UUID.randomUUID(), "ag_alice_01"));
     }
 
     @Test

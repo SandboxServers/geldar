@@ -1,8 +1,9 @@
 package dev.geldar.identity;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
-import java.util.regex.Pattern;
 
 /**
  * The human lane's rules that do not depend on the registry. A human connection is refused when its name looks like an
@@ -11,17 +12,28 @@ import java.util.regex.Pattern;
  */
 final class HumanRules {
     /**
-     * An agent name, in any case: the prefix {@code ag_}. The contract's life id, {@code ^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$}
-     * (contract/schemas/common.schema.json), lies inside this prefix, so the rule is wider than the contract on purpose.
-     * Minecraft names allow no hyphen, so {@code ag-} is not needed.
+     * The reserved agent prefixes, in lower case and matched in any case: {@code ag_} (the contract's life id,
+     * {@code ^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$} in contract/schemas/common.schema.json, lies inside it) and {@code ag-}
+     * (the hyphen form that decision 0135 uses for player ids). Minecraft names allow no hyphen, so
+     * {@link LifeRegistry#isValidUsername} already refuses an {@code ag-} name; the entry keeps this rule from depending on
+     * that validator.
      */
-    private static final Pattern AGENT_NAME = Pattern.compile("(?i)^ag_.*");
+    static final List<String> AGENT_PREFIXES = List.of("ag_", "ag-");
 
     private HumanRules() {}
 
-    /** True when the name carries the reserved agent prefix. The caller checks that the name is a plain username first. */
+    /**
+     * True when the name starts with a reserved agent prefix, in any case. Lower-casing uses {@link Locale#ROOT}, so the
+     * default locale cannot change the result. The caller checks that the name is a plain username first.
+     */
     static boolean isAgentShaped(String username) {
-        return AGENT_NAME.matcher(username).matches();
+        String lower = username.toLowerCase(Locale.ROOT);
+        for (String prefix : AGENT_PREFIXES) {
+            if (lower.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** The UUID an offline-mode proxy gives this name: UUIDv3 of the bytes of {@code OfflinePlayer:} plus the name. */
