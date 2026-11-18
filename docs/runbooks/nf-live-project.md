@@ -680,9 +680,9 @@ Procedure (the owner runs it; the password values are never printed):
 
 Each step is run by the owner. Steps marked OWNER-OK-REQUIRED are not run by an agent.
 
-Ordering note (PR numbers are references only). #726 (the concurrent-human cap, the fail-closed registry gate and the human slots) is merged to main; it must be deployed on the human proxy before the lane opens. #727 (chat guard), #728 (overlay) and #729 (NATS user and network) are merged too. The H6 PR (the inbox prefix) is NOT merged and has no number yet. The lane stays closed until the H6 PR is merged and deployed and the conf is regenerated (10.6), because only then does the `human` user hold the narrowed grant.
+Ordering note (PR numbers are references only). #726 (the concurrent-human cap, the fail-closed registry gate and the human slots) is merged to main; it must be deployed on the human proxy before the lane opens. #727 (chat guard), #728 (overlay) and #729 (NATS user and network) are merged too. The H6 PR (the inbox prefix) is NOT merged and has no number yet. The lane stays closed until the H6 PR is merged and deployed and the conf is regenerated (10.6), because only then does the `human` user hold the narrowed grant. The H1c2 PR (an explicit `ag-` and `ag_` prefix rule in HumanRules, owner decision 2026-11-18) is NOT merged and has no number yet. It is defence in depth and NOT a go-public condition: an `ag-` name is already refused by username validity, because Minecraft usernames cannot contain `-` (`LifeRegistry.java:42`, `LoginGate.isValidUsername`).
 
-1. **OWNER-OK-REQUIRED:** accept 0388; answer the 0135 question in it; choose the cap-abuse posture (residual risk 3).
+1. **OWNER-OK-REQUIRED:** accept 0388 (the owner chose identity option (a) on 2026-11-18; confirm the 0387 item 5(d) question in it); choose the cap-abuse posture (residual risk 3).
 2. **OWNER-OK-REQUIRED:** deploy the #726 jar to the node (the identity jar is mounted read-only; a missing jar fails the start, per the overlay's comment). Merge and deploy the H6 PR when the owner approves it.
 3. **OWNER-OK-REQUIRED:** if the node has the ten-file set, or a conf from H5 (`_INBOX.>` for `human`), run 10.6 first.
 4. Choose `<port>` and `<bind-ip>` (10.2): read-only `ss -ltn` on the node. For S1, `<bind-ip>` is the node's LAN address; the owner decides the public gateway target later.
@@ -696,7 +696,7 @@ Ordering note (PR numbers are references only). #726 (the concurrent-human cap, 
 ### 10.8 S1 checks (LAN first; the owner runs them)
 
 1. A plain Prism NeoForge 26.1.2 client with NO geldar mod connects to `<bind-ip>:<port>` and completes Microsoft login. Then a vanilla client does the same.
-2. An `ag_` name (any case) is refused. An offline-mode name (an offline launcher account) is refused.
+2. An `ag_` name (any case) is refused by the prefix rule. An `ag-` name (any case) is refused by username validity, because a name with `-` is not a valid Minecraft username; S1 expects that refusal. The H1c2 PR adds an explicit `ag-` rule as defence in depth; it is not a go-public condition, and no `ag-` name is admitted before it. An offline-mode name (an offline launcher account) is refused.
 3. The 101st player is refused by MAX_PLAYERS (100 once the node step has changed the live shard; 10 before it). This is not testable with real humans: state that in the S1 report and do not claim it passed. Requires #726 deployed on the human proxy.
 4. A slot is released after a disconnect: a human who was refused because the limit was full joins once a slot is freed. The limit is 5 on main until H1c and 100 after it (section 3b); a full-limit test with real humans at 100 is not testable, state that.
 5. In the `velocity-human` logs, confirm that the same `Player` object appears in `LoginEvent` and in `DisconnectEvent` (residual risk 4). Until seen, the release claim is UNVERIFIED.
