@@ -2,16 +2,18 @@
 
 Status: the compose file and its repo test exist (compose/nf-live.yml, tools/repo-checks/src/nf-live-compose.test.ts).
 The geldar-nf project is deployed on the node. The human lane's first `up` was attempted on 2026-11-18: it failed at the
-volume ownership step (section 10.7, step (c1)) and was stopped; the lane was not published. Public exposure, the shared Caddy and
-the human route are out of scope (owner decisions for the final-instance step). Nothing is published beyond loopback.
+volume ownership step (section 10.7, step (c1)) and was stopped. After the owner-approved one-time ownership fix, the human lane
+came up the same day and is OPEN: `velocity-human` publishes `<bind-ip>:<port>` on the owner's gateway, and players reach it through
+the SRV name (section 10.8, "Node result"). The agent lane is still loopback only (`127.0.0.1:46565`). Caddy and the owner's gateway
+are outside this repo (owner decisions for the final-instance step).
 
 **THE NEOFORGE SHARD MUST NOT BE MADE PUBLIC BEFORE THE CONCURRENT-HUMAN CAP IS LIVE ON THE HUMAN PROXY.** The slot cap
 merged as #726 is enforced in the identity plugin's human lane, but only on a human proxy that runs a jar built from main
 containing #726 and #732 (section 3b). The cap of 5 from 0137 is dropped by owner decision (0388, ACCEPTED 2026-11-18,
 "Amends 0137 for the NeoForge shard"): humans and agents share MAX_PLAYERS = 100. That shared limit of 100 is on main
 (#732: `SHARD_MAX_PLAYERS = 100` in HumanSlots.java; `MAX_PLAYERS: "100"` in compose/nf-live.yml). The running geldar-nf
-enforced MAX_PLAYERS 10 until the owner-approved node step that recreates neoforge at 100. Ops is running that step now;
-this runbook does not claim it is done. Until a jar with #726 and #732 runs on the human proxy and S1 (section 10.8)
+enforced MAX_PLAYERS 10 until the owner-approved node step that recreates neoforge at 100. Ops ran that step on 2026-11-18 (observed by ops; section 10.8);
+until a jar with #726 and #732 runs on the human proxy and S1 (section 10.8)
 passes, a public listener has no proven human bound: its only bound is MAX_PLAYERS, which counts bodies too.
 
 The per-shard storage design is in docs/analysis/neoforge/per-shard-storage-design.md (one NATS, one Postgres database,
@@ -70,13 +72,13 @@ The neoforge service pins three itzg variables in compose/nf-live.yml. The scrat
 (compose/opt-in/scratch-neoforge.yml, the paper service) pins MAX_PLAYERS 10 and is SCRATCH-ONLY: it does not follow the
 live value. Names are the itzg image's, as the colo Paper uses them (compose/colo.yml and compose/phase0.yml).
 
-| Variable | compose/nf-live.yml on main now | Live NeoForge after the owner-approved node step (ops is running it now) | Autonomous Paper (compose/phase0.yml, unchanged) |
+| Variable | compose/nf-live.yml on main now | Live NeoForge after the owner-approved node step (ops ran it on 2026-11-18) | Autonomous Paper (compose/phase0.yml, unchanged) |
 |----------|-------------------------------------|---------------------------------------------------------------------------|---------------------------------------------------|
 | MAX_PLAYERS | 100 | 100 (humans and agents share it) | 400 |
 | VIEW_DISTANCE | 8 | 8 (unchanged; NOT sized for 100 players) | 6 |
 | SIMULATION_DISTANCE | 6 | 6 (unchanged; NOT sized for 100 players) | 5 |
 
-The shared limit (#732) is on main. The running shard still enforces MAX_PLAYERS 10 until the node step recreates neoforge at 100.
+The shared limit (#732) is on main. The running shard enforced MAX_PLAYERS 10 until the node step; ops observed 100 on 2026-11-18 (section 10.8).
 The shard has NOT been sized for 100 players: the figures for 100 are unmeasured.
 
 Reasoning. The vanilla world tick runs on one server thread (general Minecraft server behaviour, not measured here), so
@@ -90,7 +92,7 @@ measurement: UNVERIFIED. Re-measure at the first start with `tick query` and the
 set MAX_PLAYERS to 100 by owner decision (0388). That figure is not measured here; a higher view or simulation distance needs the same re-measure first.
 
 The image writes server.properties from these variables on each start (section 6, the bundle notes). That the NeoForge
-server honours them is UNVERIFIED until a live start reads them back from its log or server.properties.
+server honours them is UNVERIFIED until a live start reads them back from its log or server.properties. The one exception is MAX_PLAYERS: ops observed `max-players=100` in /data/server.properties on 2026-11-18 (section 10.8).
 
 Three things these values do not do, stated plainly:
 
@@ -102,7 +104,7 @@ Three things these values do not do, stated plainly:
   denial; until the node step, the running shard's MAX_PLAYERS 10 is the lower bound. A UUID that already holds a slot is
   refused, and a refused duplicate frees nothing. On main today agents never take a slot. MAX_PLAYERS is a different
   number: it is 100 in the repo (`compose/nf-live.yml:280`) and bounds ALL players, bots included; the running shard
-  enforces 10 until the node step recreates neoforge at 100.
+  enforced 10 until the node step, and 100 after it (observed by ops; section 10.8).
 - **The cap binds only on a human proxy that runs that plugin build.** The node must run a jar built from main containing
   #726 and #732 before the lane is public (section 10, gate item 1). Until the human proxy runs it, no code enforces the cap.
 - **Not built, and not part of #726:** per-IP limits, login rate limiting beyond Velocity's default, and an idle kick
@@ -187,7 +189,7 @@ when the node is running (postgres.txt and velocity-forwarding.txt must stay). T
    service whose compose config did not change running, and that is every service here (the files keep their paths).
    postgres is not recreated: its password file is kept and its password applies only at the first start of the volume.
    Check `nf-deploy.sh status` after the command.
-The generator has no append mode, so this procedure is the only upgrade path. UNVERIFIED on a node.
+The generator has no append mode, so this procedure is the only upgrade path. UNVERIFIED on a node until ops's run on 2026-11-18 (section 10.8).
 
 **Why a refresh is needed, and the install method.** Docker bind-mounts a single file by its inode. `mv` gives the name a new
 inode, and a running container keeps the old inode, so it keeps serving the old bytes. Compose compares a service's config
@@ -402,7 +404,7 @@ root; a checkout is refused, and `--local` is for the tests only). Run it as the
   owner must approve.
 - `up` checks that `geldar-nf_neoforge-data` is seeded: the volume exists and its `.geldar-bundle.sha256` marker verifies
   (`sha256sum -c --strict` in a throwaway container). If not, `up` refuses and names `seed-bundle`. `plan` does not check it.
-- UNVERIFIED on a real node: `seed-bundle` and the `up` check have run only against stubs. `up` has not been run against a live node.
+- UNVERIFIED on a real node: `seed-bundle`. The `up` check ran only against stubs before the node; `up` was run on the node on 2026-11-18 (section 10.8).
 
 ### What is staged on the node
 
@@ -625,9 +627,9 @@ UNVERIFIED, and not covered by this packet:
 
 ## 10. Public human lane (accepted; decision 0388, ACCEPTED 2026-11-18; opened by the node steps in 10.7)
 
-Status: ACCEPTED (0388, 2026-11-18). The lane is opened by the node steps listed in 10.7, each one approved by the owner. The gateway already forwards the public port to the node, so the moment `velocity-human` binds it, the lane is reachable from the internet. No step below has been run on the node by an agent. Placeholders only: `<hostname>` (the public name), `<port>` (the human port), `<bind-ip>` (the address the human port binds on the node). The real values are the owner's and are not written in the repo.
+Status: ACCEPTED (0388, 2026-11-18). The lane was opened by the node steps listed in 10.7, each one approved by the owner, and it is OPEN as of 2026-11-18 (10.8). The gateway already forwards the public port to the node, so from the moment `velocity-human` bound it, the lane was reachable from the internet. No step below has been run on the node by an agent. Placeholders only: `<hostname>` (the public name), `<port>` (the human port), `<bind-ip>` (the address the human port binds on the node). The real values are the owner's and are not written in the repo.
 
-**The go-public gate (0388 status line). The lane must NOT go public until (1) the plugin jar built from merged main (it contains #726, the slots and the fail-closed registry gate; #731, the inbox prefix; #732, the shared limit of 100) is DEPLOYED on the human proxy and on the node, (2) the node's `nats-auth.conf` is regenerated so the `human` user holds `_INBOX.human.>` only (the NF_HUMAN gate refuses a conf that still grants `_INBOX.>`, see 10.6), (3) neoforge enforces MAX_PLAYERS 100 (a node step), and (4) the owner has approved each node step.** S1 (10.8) is NOT a gate: the owner skipped it on 2026-11-18, and its checks are first-join observations.
+**The go-public gate (0388 status line). The lane must NOT go public until (1) the plugin jar built from merged main (it contains #726, the slots and the fail-closed registry gate; #731, the inbox prefix; #732, the shared limit of 100) is DEPLOYED on the human proxy and on the node, (2) the node's `nats-auth.conf` is regenerated so the `human` user holds `_INBOX.human.>` only (the NF_HUMAN gate refuses a conf that still grants `_INBOX.>`, see 10.6), (3) neoforge enforces MAX_PLAYERS 100 (a node step), and (4) the owner has approved each node step.** S1 (10.8) is NOT a gate: the owner skipped it on 2026-11-18, and its checks are first-join observations. The repo does not record the state of items (2) and (3) at the bind on 2026-11-18; that is the owner's record, and this section does not claim them.
 
 ### 10.1 Architecture
 
@@ -635,7 +637,7 @@ Status: ACCEPTED (0388, 2026-11-18). The lane is opened by the node steps listed
 - **Human lane:** `velocity-human` (compose/nf-live-human.yml), the only port that overlay publishes: `<bind-ip>:<port>` to container port 25565. Set at bring-up only, through node env: `NF_HUMAN=on`, `NF_HUMAN_BIND=<bind-ip>`, `NF_HUMAN_PORT=<port>`. Unset, the repo default renders as `127.0.0.1:46566`, which is loopback and not public.
 - `velocity-human` is on network `nf-human` only. `nats` and `neoforge` join `nf-human` as well. Nothing else does.
 - `velocity-human` reads NATS as user `human` (`nats-human.txt`), read-only on the two identity buckets.
-- `velocity-human` has its own NATS inbox prefix, `_INBOX.human.` (`GELDAR_NATS_INBOX_PREFIX`, set on `velocity-human` only, `compose/nf-live-human.yml:54`). The user `human` is limited to `_INBOX.human.>`. This is account-level isolation only: the human user shares the one NATS account with the others. A separate NATS account is NOT built and NOT in scope. Not yet verified on a live NATS (10.10). The generator on main (since #731) gives `human` `_INBOX.human.>` only; a deployed conf that still grants `_INBOX.>` keeps the H5 grant until it is regenerated (10.6).
+- `velocity-human` has its own NATS inbox prefix, `_INBOX.human.` (`GELDAR_NATS_INBOX_PREFIX`, set on `velocity-human` only, `compose/nf-live-human.yml:54`). The user `human` is limited to `_INBOX.human.>`. This is account-level isolation only: the human user shares the one NATS account with the others. A separate NATS account is NOT built and NOT in scope. Not yet verified on a live NATS (10.10). The generator on main (since #731) gives `human` `_INBOX.human.>` only; a deployed conf that still grants `_INBOX.>` keeps the H5 grant until it is regenerated (10.6). On the first join (2026-11-18) the watches ran under this prefix with no violation logged (10.8); the rest is UNVERIFIED (10.10).
 - `velocity-human` has no RCON and no postgres access (10.5).
 
 ### 10.2 Choosing the port
@@ -682,12 +684,12 @@ Procedure (the owner runs it; the password values are never printed):
 
 Each step is run by the owner. Steps marked OWNER-OK-REQUIRED are not run by an agent.
 
-Ordering note (PR numbers are references only). Merged to main: #726 (the human slots and the fail-closed registry gate), #727 (chat guard), #728 (overlay), #729 (NATS user and network), #731 (the inbox prefix and the NF_HUMAN conf check) and #732 (the shared limit of 100). #733 and #734 are docs, and #735 is this docs packet (queued). #736 (H1c2, an explicit `ag-` and `ag_` prefix rule in HumanRules, defence in depth) is NOT merged and is not a go-public condition: an `ag-` name is already refused by username validity, because Minecraft usernames cannot contain `-` (`LifeRegistry.java:42`, `LoginGate.isValidUsername`). The steps below are the node work, in order. Each one is approved by the owner before it runs, and none is run by an agent.
+Ordering note (PR numbers are references only). Merged to main: #726 (the human slots and the fail-closed registry gate), #727 (chat guard), #728 (overlay), #729 (NATS user and network), #731 (the inbox prefix and the NF_HUMAN conf check) and #732 (the shared limit of 100). #733 and #734 are docs, and #735 is this docs packet (queued). #736 (H1c2, an explicit `ag-` and `ag_` prefix rule in HumanRules, defence in depth) is merged to main (`AGENT_PREFIXES` in HumanRules) and is not a go-public condition: an `ag-` name is already refused by username validity, because Minecraft usernames cannot contain `-` (`LifeRegistry.java:42`, `LoginGate.isValidUsername`). The steps below are the node work, in order. Each one is approved by the owner before it runs, and none is run by an agent.
 
 - **(a) OWNER-OK-REQUIRED: the jar.** Sync the node tree to merged main. Build the plugin jar on the trusted machine from `plugin/velocity-identity` (merged main, with #726, #731 and #732). Stage it with its sha256 and place it at `plugin/velocity-identity/build/libs/geldar-velocity-identity.jar` relative to the node tree, before any recreate. The overlay mounts it read-only with `create_host_path: false`. A missing or empty jar makes the start refuse (`deploy/nf-human-lib.sh`).
 - **(b) OWNER-OK-REQUIRED: node step A (the conf and the secrets).** Generate `nats-human.txt` and the new `nats-auth.conf` by the 10.6 procedure. The conf must grant `human` `_INBOX.human.>` only. Copy both to the node, then run `nf-deploy.sh refresh-secrets`. It force-recreates `nats` first, then the services that mount the secrets. The gate refuses `on` while the deployed conf still grants `_INBOX.>`.
-- **(c) OWNER-OK-REQUIRED: the neoforge recreate with MAX_PLAYERS 100.** The first `NF_HUMAN=on` `up` also recreates `neoforge`, because its network set changes. Do (c) and (d) together, in one owner-approved recreate, so that neoforge comes up with MAX_PLAYERS 100. The live shard enforces 10 until then. The 10 to 100 recreate is being done by ops.
-- **(c1) OWNER-OK (approved 2026-11-18; a one-time step, run by ops): volume ownership, BEFORE the first `up`.** A fresh named volume is root-owned and empty. The proxy runs as the service uid (`user: uid:gid`) with a read-only root, `cap_drop: ALL` and `no-new-privileges`, so it cannot write into `/server`. The first `up` failed there: install-paper got AccessDeniedException writing its jar download into `/server`. The agent `velocity` avoids this by starting as root; `velocity-human` does not. Before the first `up`, the root of the volume `geldar-nf_velocity-human-data` must be owned by `NF_SERVICE_UID:NF_SERVICE_GID`. Use one route: (i) the one-shot `velocity-human-init` service, which chowns the volume root. It is NOT in `compose/nf-live-human.yml` on origin/main as of 2026-11-18, so use it only after `git show origin/main:compose/nf-live-human.yml | grep -n velocity-human-init` shows it; or (ii) the one-time ops chown of the empty volume root to the service uid and gid, run in a throwaway container that mounts only that volume. The exact command is ops's and is UNVERIFIED here. Not needed again unless the volume is recreated. The netty tcnative warning about noexec at start is expected and harmless: the tmpfs is noexec, and `/tmp` is intentionally left noexec.
+- **(c) OWNER-OK-REQUIRED: the neoforge recreate with MAX_PLAYERS 100.** The first `NF_HUMAN=on` `up` also recreates `neoforge`, because its network set changes. Do (c) and (d) together, in one owner-approved recreate, so that neoforge comes up with MAX_PLAYERS 100. The live shard enforced 10 until then. Ops ran the 10 to 100 recreate on 2026-11-18 (observed; section 10.8).
+- **(c1) OWNER-OK (approved 2026-11-18; a one-time step, run by ops): volume ownership, BEFORE the first `up`.** A fresh named volume is root-owned and empty. The proxy runs as the service uid (`user: uid:gid`) with a read-only root, `cap_drop: ALL` and `no-new-privileges`, so it cannot write into `/server`. The first `up` failed there: install-paper got AccessDeniedException writing its jar download into `/server`. The agent `velocity` avoids this by starting as root; `velocity-human` does not. Before the first `up`, the root of the volume `geldar-nf_velocity-human-data` must be owned by `NF_SERVICE_UID:NF_SERVICE_GID`. Use one route: (i) the one-shot `velocity-human-init` service, which chowns the volume root. It is NOT in `compose/nf-live-human.yml` on origin/main as of 2026-11-18, so use it only after `git show origin/main:compose/nf-live-human.yml | grep -n velocity-human-init` shows it; or (ii) the one-time ops chown of the empty volume root to the service uid and gid, run in a throwaway container that mounts only that volume. The exact command is ops's and is UNVERIFIED here. Not needed again unless the volume is recreated. On 2026-11-18 route (ii) was used: the owner-approved one-time chown of the empty `velocity-human-data` volume root to the service uid (ops ran it; the command is not recorded here). The second `up` then succeeded. Route (i) makes the fix reproducible once the volume-init change (PR #740, branch `phase1/nf-human-volume-init`) is merged; `git show origin/main:compose/nf-live-human.yml` had no `velocity-human-init` on 2026-11-18, so it was not on main then. The netty tcnative warning about noexec at start is expected and harmless: the tmpfs is noexec, and `/tmp` is intentionally left noexec.
 - **(d) OWNER-OK-REQUIRED: plan, then up.** Run `nf-deploy.sh plan` with `NF_HUMAN=on`, `NF_HUMAN_BIND=<bind-ip>`, `NF_HUMAN_PORT=<port>` and `NF_SERVICE_UID` exported, plus the telemetry env the live shard already runs with: `NF_TELEMETRY=on`, its ledger and agent pins (`NF_LEDGER_JAR_HOST`, `NF_LEDGER_SHA256`, `NF_OTEL_AGENT_HOST`, `NF_MOD_JAR_HOST`, `NF_MOD_SHA256`). `plan` is read only. Then run `nf-deploy.sh up` with the same environment. An `up` without the telemetry env hits the by-design stale-jar guard and refuses. The plan lists `up -d --wait velocity-human` as its last step. If the proxy does not become healthy, `up` stops and stops only `velocity-human`. The healthcheck waits for the identity plugin's ready marker (`/tmp/geldar-identity.ready`) with a 35 s window (20 s start period, 3 retries at 5 s), so a missing or invalid plugin fails in 35 s. `restart` is `"no"`, so nothing restarts the proxy by itself.
    Orphan guard: while `velocity-human` exists, `plan`, `up`, `refresh-secrets` and `probe` refuse with `NF_HUMAN` unset or `off`, and name `human-down` and `NF_HUMAN=on`. `status`, `logs`, `down` and `human-down` stay allowed.
 - **(e) Verify from OUTSIDE the node (read only, no join).** A TCP connect to `<bind-ip>:<port>` answers. The same address on 46565 and on 25565 does not answer. Then `nf-deploy.sh logs velocity-human` and `status` (read only). A TCP answer proves the port is open, not that the login works.
@@ -701,11 +703,40 @@ The first real join is the first test of the lane. Its observations are listed i
 S1 was the LAN-only check. The owner skipped it on 2026-11-18. The checks below are RECOMMENDED first-join observations, run on the first real join (the owner or a tester on a real account). They are not a precondition of the lane (0388 status line). Record what each one shows; do not claim a check that was not run.
 
 1. A plain Prism NeoForge 26.1.2 client with NO geldar mod connects to `<bind-ip>:<port>` and completes Microsoft login. Then a vanilla client does the same.
-2. An `ag_` name (any case) is refused by the prefix rule. An `ag-` name (any case) is refused by username validity, because a name with `-` is not a valid Minecraft username; S1 expects that refusal. The H1c2 PR (#736, not merged) adds an explicit `ag-` rule as defence in depth; it is not a go-public condition, and an `ag-` name is refused by validity with or without it. An offline-mode name (an offline launcher account) is refused.
+2. An `ag_` name (any case) is refused by the prefix rule. An `ag-` name (any case) is refused by username validity, because a name with `-` is not a valid Minecraft username; S1 expects that refusal. The H1c2 PR (#736, merged) adds an explicit `ag-` rule as defence in depth; it is not a go-public condition, and an `ag-` name is refused by validity with or without it. An offline-mode name (an offline launcher account) is refused.
 3. The 101st player is refused by MAX_PLAYERS (100 once the node step has changed the live shard; 10 before it). This is not testable with real humans: state that in the S1 report and do not claim it passed. Requires #726 deployed on the human proxy.
 4. A slot is released after a disconnect: a human who was refused because the limit was full joins once a slot is freed. The limit is the shared 100 (#732) once the node step has run (section 3b); before it, the live shard enforces 10. A full-limit test with real humans is not testable, state that.
 5. In the `velocity-human` logs, confirm that the same `Player` object appears in `LoginEvent` and in `DisconnectEvent` (residual risk 4). Until seen, the release claim is UNVERIFIED.
 6. The registry gate: with the registry unsynced (owner test only), every login is denied.
+
+### Node result and first-join observations (2026-11-18)
+
+Times are UTC, from the ops logs of 2026-11-18. These are OBSERVATIONS, not passed checks. Placeholders only, as above.
+
+Node result:
+
+- The first `up` failed at the volume ownership step (10.7 (c1)). After the owner-approved one-time chown, the second `up` ran 16:00:34 to 16:01:01Z. `velocity-human` became healthy.
+- It published exactly `<bind-ip>:<port>` to 25565/tcp: the node's LAN address, not a wildcard. The agent `velocity` still listens only on `127.0.0.1:46565`.
+- No NATS `Permissions` or `Authorization Violation` for any user in the logs. The identity plugin loaded in the human lane, the skin bucket synced, and the registry watches ran (under `_INBOX.human.`).
+- `docker diff` on `velocity-human` showed no writes outside `/server` and `/tmp`: `read_only` holds with those two paths writable.
+- The second `up` did not recreate `nats`, `eventsink` or `neoforge`.
+- From the owner's desktop on the LAN, a TCP connect to `<bind-ip>:<port>` succeeded and a connect to port 46565 was refused.
+- The identity plugin jar's sha256 on the node equals the desktop build of main 3a706c41.
+- The jansi and netty native libraries warn that `/tmp` is noexec. The warning is non-fatal; `/tmp` stays noexec.
+- Gate facts observed by ops (ops record, UTC 2026-11-18; the repo cannot show them): (1) NATS: node step A ran 15:44:50-15:46Z on a clean export of main 3a706c41; the auth generator created `nats-human.txt` and a new `nats-auth.conf` with seven users; ops checked that the `human` line holds `_INBOX.human.>` and no bare `_INBOX.>`; the nine existing password files were unchanged by sha256; `refresh-secrets` exited 0; the gate-checked `plan` (15:47:54Z) and `up` (16:00:34-16:01:01Z) with `NF_HUMAN=on` passed ("all gates passed"), so the gate's conf check held; no Permissions or Authorization Violation in nats since. (2) neoforge: `MAX_PLAYERS=100` in the container env and `max-players=100` in /data/server.properties, observed 15:39-15:40Z after the first recreate, 15:45Z after refresh-secrets, and 16:01Z after the human `up` (this answers the earlier UNVERIFIED on the itzg write). (3) Jar: the velocity-identity jar installed on the node has sha256 beginning 3ac5005d (6490207 bytes), equal to the desktop build of main 3a706c41 (it contains HumanSlots and HumanRules), built 15:43Z and installed before refresh-secrets; the agent `velocity` runs the same jar after its recreate.
+
+First-join observations:
+
+- 16:05:18Z: the owner's desktop joined on the LAN with a plain NeoForge client (no geldar mod, Microsoft login). Admitted (`[geldar-identity]: Admitted <name>`); skin lookup skipped (not a sovereign life); forwarding to neoforge accepted (no secret mismatch); in the world about 2 m 06 s; clean disconnect on both proxy and server. No NATS violation and no exception in any log.
+- 16:12:13Z: a join through the public `<hostname>` over the physical (non-VPN) route, with the SRV record supplying `<port>` and no port typed: worked.
+- HumanSlots logged NOTHING on reserve or release. Slot release (the same `Player` object at `LoginEvent` and `DisconnectEvent`) is neither proven nor disproven. It stays UNVERIFIED until the slot-logging PR (branch `phase1/nf-slot-logs`, not merged on 2026-11-18) is merged and deployed and a join and a leave show the count go 0 -> 1 -> 0.
+- neoforge logs `SERVER IS RUNNING IN OFFLINE/INSECURE MODE`. That is expected behind the proxy: online-mode is the proxy's.
+
+What the S1 list above shows, as observations:
+
+- Seen: forwarding works; admission works; a plain NeoForge client without the geldar mod joins (this answers the open question about the client mod for a plain NeoForge client; a vanilla client was not tried); the Microsoft login works through the node's network (item 1).
+- The H6 inbox prefix: the watches ran under `_INBOX.human.` with no violation logged. Server enforcement of the narrowed grant is only seen as "no violation"; no violation was attempted.
+- NOT observed: the `ag_` refusal and the `ag-` refusal (item 2); the offline-name refusal (item 2); the 101st-player refusal and the cap at 100 (item 3); slot release (items 4 and 5); the registry-unsynced denial (item 6); a second human.
 
 ### 10.9 Rollback (in this order)
 
@@ -720,17 +751,16 @@ What is left behind: `human-down` removes the container only, so the `nf-human` 
 
 ### 10.10 UNVERIFIED (do not treat any of these as checked)
 
-- `itzg/mc-proxy` with `read_only` and the uid set, and whether it needs a writable path beyond `/server` and `/tmp`.
-- `create_host_path: false` behaviour on the node (a missing jar fails the start).
-- The real join: the Microsoft login, the refusals, and the slot release.
-- The `$JS.FC` flow-control subject form on a live NATS, and KV ACL enforcement on a live server.
+- `create_host_path: false` with a MISSING jar (the start refusal). With the jar present it worked on the node (10.8).
+- The refusals on a live server: `ag_`, `ag-`, the offline-mode name, and the registry-unsynced denial. None was tested with a real attempt (10.8).
+- The 101st-player refusal and the shared cap of 100 (section 3b, item 3 of the gate).
+- Slot release: the same `Player` object at `LoginEvent` and `DisconnectEvent`, and the Velocity event order behind it (0388 residual risk 4). The first join logged no slot line (10.8).
+- The `$JS.FC` flow-control subject form beyond "no violation" (10.8), and KV ACL enforcement against an attempted violation (none was attempted).
 - Whether Proxy Compatible Forge accepts a second forwarding secret (0388 residual risk 1).
 - RCON binding inside the NeoForge container.
-- Whether the node can reach the Microsoft and Mojang session servers.
 - Whether a NATS config reload is enough (10.6).
-- The Velocity event order for slot release (0388 residual risk 4).
 - Whether the `nf-human` network is removed by `down` (10.9).
-- The H6 inbox prefix on a live NATS: the KV watch under `_INBOX.human.`, the exact permission set a push watch needs, whether the server enforces `_INBOX.human.>` as written, and whether the client ever publishes to an inbox (0388 residual risk 9).
+- The H6 inbox prefix beyond "no violation" (10.8): the exact permission set a push watch needs, whether the server enforces `_INBOX.human.>` against an attempted violation, and whether the client ever publishes to an inbox (0388 residual risk 9).
 - Whether the ready marker is written only while the registry is synced (`docs/reference/velocity-identity-plugin.md:98`). The healthcheck proves plugin load and an open port; registry sync is proven only once #726 is deployed on the human proxy.
 
 ### 10.11 Not built
