@@ -3,6 +3,7 @@
  * no coordinates. `bearing` is where the attacker stood relative to the Body's facing, never compass.
  * Shape: contract/schemas/hurt-event.schema.json.
  */
+import type { ObservedActor } from '@geldar/contract';
 
 export const HURT_SOURCES = [
   'melee',
@@ -25,6 +26,8 @@ export interface HurtEvent {
   amount: number;
   /** The cause entity's log name (`player` for a player), when the damage names one. */
   attacker?: string;
+  /** The visible player who caused the hurt, when one is named (AN-25). Absent for a mob or no cause. */
+  actor?: ObservedActor;
 }
 
 /** What the Body knows at a hurt: the cause code, who hit it (if known), its pose and the damage. */
@@ -41,6 +44,8 @@ export interface HurtInput {
   rawDamage: number;
   /** The cause entity's log name, from the trigger; absent when the damage names no entity. */
   attackerName?: string | undefined;
+  /** The visible player who caused the hurt, from the trigger's resolver (AN-25). */
+  actor?: ObservedActor | undefined;
 }
 
 const CAUSE_SOURCE: Readonly<Record<string, HurtSource>> = {
@@ -98,6 +103,7 @@ export function hurtEvent(input: HurtInput): HurtEvent | null {
   const source = attacker === null && ATTACK_SOURCES.includes(sourced) ? 'other' : sourced;
   const event: HurtEvent = { type: 'hurt', source, amount };
   if (input.attackerName !== undefined) event.attacker = input.attackerName;
+  if (input.actor !== undefined) event.actor = input.actor;
   if (attacker !== null) event.bearing = bearingOf(input.self, attacker);
   return event;
 }

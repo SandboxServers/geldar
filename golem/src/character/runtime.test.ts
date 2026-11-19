@@ -88,7 +88,7 @@ describe('lifeThreatPolicy keys, fx and inputs (AN-12a)', () => {
 });
 
 describe('lifeThreatPolicy decisions and the combat level (AN-12a)', () => {
-  it('records a deterministic decision with no roll, under this generation', () => {
+  it('records no decision for a deterministic decision that drew no roll', () => {
     const audit = recorder();
     const policy = lifeThreatPolicy({
       sheet: STANDARD_SHEET,
@@ -100,13 +100,28 @@ describe('lifeThreatPolicy decisions and the combat level (AN-12a)', () => {
     });
     expect(policy.decide(BAND).roll).toBeNull();
     expect(audit.keys).toHaveLength(0);
-    const [decision] = audit.decisions;
-    expect(decision?.key.generation).toBe(7);
-    expect(decision?.fields.kind).toBe('deterministic');
-    expect(decision?.fields.result?.decision).toBe('fight');
+    expect(audit.decisions).toHaveLength(0);
   });
 
-  it('records a d20 decision keyed like its roll, citing the roll', () => {
+  it('records no decision for a roll-less decision even when rolls are on', () => {
+    const audit = recorder();
+    const policy = lifeThreatPolicy({
+      sheet: STANDARD_SHEET,
+      rolls: true,
+      lifeId: LIFE,
+      generation: 7,
+      tick: () => 100,
+      audit,
+    });
+    // At the floor, above the band, and an unarmed flee at aggression 3: each draws no roll.
+    expect(policy.decide({ health: 6, armed: true, suicideMob: false }).roll).toBeNull();
+    expect(policy.decide({ health: 20, armed: true, suicideMob: false }).roll).toBeNull();
+    expect(policy.decide({ health: 8, armed: false, suicideMob: false }).roll).toBeNull();
+    expect(audit.keys).toHaveLength(0);
+    expect(audit.decisions).toHaveLength(0);
+  });
+
+  it('still records a rolled decision as a d20 decision keyed like its roll, citing the roll', () => {
     const audit = recorder();
     const policy = lifeThreatPolicy({
       sheet: STANDARD_SHEET,

@@ -9,7 +9,6 @@ import {
 } from '../../src/body/reflexes/threat-policy.ts';
 import { isSuicideMob } from '../../src/body/reflexes/threats.ts';
 import { lifeThreatPolicy, type ThreatRecorder } from '../../src/character/runtime.ts';
-import { ALWAYS_HOSTILE } from '../../src/perception/hostile-types.ts';
 
 vi.mock('@geldar/psyche', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@geldar/psyche')>();
@@ -22,7 +21,7 @@ const HEALTHS = [
   Number.POSITIVE_INFINITY,
   Number.NEGATIVE_INFINITY,
 ];
-const HOSTILE_NAMES = [...ALWAYS_HOSTILE];
+const HOSTILE_NAMES = ['creeper', 'zombie'];
 
 function recorder() {
   return {
@@ -43,7 +42,7 @@ function sheetPolicy(audit: ThreatRecorder): ThreatPolicy {
   });
 }
 
-/** Every fact combination the reflexes can ask: health 0 to 20 (and non-finite), armed or not, every always-hostile name. */
+/** Every fact combination the reflexes can ask: health 0 to 20 (and non-finite), armed or not, two hostile names. */
 function allFacts(): ThreatFacts[] {
   const out: ThreatFacts[] = [];
   for (const name of HOSTILE_NAMES) {
@@ -142,17 +141,12 @@ describe('the all-3 sheet with rolls off equals today’s Body', () => {
     expect(audit.recordRoll).not.toHaveBeenCalled();
   });
 
-  it('records only deterministic decisions, with no roll event cited, for decisions that use no roll', () => {
-    // This pins current behaviour, not equivalence of emitted events. The sheet path records one
-    // deterministic decision event per threat decision; today's bot with no character option records none.
-    // Outcomes are equal; emitted audit events are not (Deviation 1, ruled by the orchestrator).
+  it('records no decision and no roll for any decision that uses no roll', () => {
+    // The sheet path now emits no audit events where today's Body emits none (S12-03b).
     const audit = recorder();
     const sheet = sheetPolicy(audit);
     for (const facts of allFacts()) sheet.decide(facts);
-    expect(audit.recordDecision).toHaveBeenCalled();
-    for (const [, fields] of audit.recordDecision.mock.calls) {
-      expect(fields.kind).toBe('deterministic');
-      expect('roll_event_ids' in fields).toBe(false);
-    }
+    expect(audit.recordDecision).not.toHaveBeenCalled();
+    expect(audit.recordRoll).not.toHaveBeenCalled();
   });
 });

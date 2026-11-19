@@ -1,7 +1,7 @@
 // AN-12a: the threat policy of one life. The sheet's aggression, the roll switch and the roller are bound
 // here; every d20 the policy draws uses the Body's generation in its DrawKey, so a restart never replays
-// a draw. Each roll is recorded through the audit publisher before the decision uses it, and every decision
-// (rolled or not) is recorded as a decision event (AN-12a).
+// a draw. Each roll is recorded through the audit publisher before the decision uses it, and only a decision
+// that drew a roll is recorded as a decision event, citing that roll (AN-12a).
 import {
   type CharacterSheet,
   type DrawKey,
@@ -60,17 +60,19 @@ export function lifeThreatPolicy(options: LifePolicyOptions): ThreatPolicy {
     lastRoll = { key, id };
     return drawn;
   };
-  // A decision with a roll is a d20 decision keyed by that roll; one without is deterministic (rolls off,
-  // a flee at or below the floor, an unarmed flee). Both are recorded through the audit publisher.
+  // Only a decision that drew a roll is recorded: a d20 decision keyed by that roll and citing it. A decision
+  // that drew no roll (rolls off, a flee at or below the floor, an unarmed flee) records nothing, so the sheet
+  // path emits no audit event where today's Body emits none.
   const record = (
     call: ThreatCall,
     facts: { health: number; armed: boolean; suicideMob: boolean },
   ) => {
     // A non-finite health is not a valid decision input (the event schema rejects it): nothing is recorded.
     if (!Number.isFinite(facts.health)) return;
-    const fields: DecisionFields = {
-      fx: call.roll === null ? 'threat' : call.roll.fx,
-      kind: 'deterministic',
+    if (call.roll === null || lastRoll === null) return;
+    audit.recordDecision(lastRoll.key, {
+      fx: call.roll.fx,
+      kind: 'd20',
       result: { decision: call.action },
       inputs: {
         health: facts.health,
@@ -79,12 +81,8 @@ export function lifeThreatPolicy(options: LifePolicyOptions): ThreatPolicy {
         floor: call.floor,
         why: call.why,
       },
-    };
-    if (call.roll !== null && lastRoll !== null) {
-      audit.recordDecision(lastRoll.key, { ...fields, kind: 'd20', roll_event_ids: [lastRoll.id] });
-    } else {
-      audit.recordDecision(newKey('threat'), fields);
-    }
+      roll_event_ids: [lastRoll.id],
+    });
   };
   const decideWith = (combat: Level): ThreatPolicy => {
     const policy = createThreatPolicy({
