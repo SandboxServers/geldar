@@ -1,5 +1,7 @@
 # 0329. On the NeoForge shard players and agents are equals; 0387 item 7 and 0059 do not apply there
 
+> **Operator revision pending (2026-11-18):** NF-1..NF-6 as recorded do not match the operator's intent. Intended model: humans act as an invisible hand; agents perceive the effects as acts of nature, not named people. Do not build from these rulings.
+
 - Status: Proposed (operator rulings NF-1 to NF-6 of 2026-11-18, written up by the sheet campaign; questions Q1 and Q7 answered by the operator the same day; the operator accepts or edits this record)
 - Date: 2026-11-18
 - Spec: none edited. Section 2 (Principles 1 and 7), 5.8 (communication), 5.13 (Ghosts row), 5.14 (Watched row), 5.15.8 are read only; the Principle text is the operator's to edit (0073).
