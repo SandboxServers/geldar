@@ -6,6 +6,17 @@
 #   --dry-run  (default) prints every action and runs no mutating command.
 #   --apply    converges the host (root only). A second --apply on a converged host issues no mutating command.
 #
+# Required settings, with no default: the run stops before any call when one is unset, and the message names the
+# variable but never its value. They are the four Docker apt pins (GELDAR_DOCKER_CE_VERSION, GELDAR_CONTAINERD_VERSION,
+# GELDAR_DOCKER_BUILDX_VERSION, GELDAR_DOCKER_COMPOSE_VERSION), the Docker repository key fingerprint
+# (GELDAR_DOCKER_KEY_FPR) and the Docker address pool (GELDAR_DOCKER_POOL_BASE, an IPv4 CIDR).
+#
+# First run, by the owner: this repository carries no Docker trust anchor and no package versions. Copy
+# GELDAR_DOCKER_KEY_FPR from the Docker Engine installation page on docs.docker.com (Debian), and copy the four package
+# versions from the Docker apt repository (download.docker.com/linux/debian, the stable package index for the host's
+# codename). Take both before the first --apply. Do not take either value from this file, from a previous run or from
+# memory: the key check is only as good as the fingerprint it is given.
+#
 # ENV_FILE holds KEY=VALUE lines with GELDAR_* and BOOTSTRAP_* keys only: non-secret settings, produced from
 # envs/<name>.yaml. Any other line stops the run, reported by line number and never by content. Secret values are
 # never read, written or printed here: the secrets directory is created with its mode and its files are left alone.
@@ -137,6 +148,7 @@ apply_defaults() {
   : "${GELDAR_DOCKER_BUILDX_VERSION:?GELDAR_DOCKER_BUILDX_VERSION is required: pin the docker-buildx-plugin apt version}"
   : "${GELDAR_DOCKER_POOL_BASE:?GELDAR_DOCKER_POOL_BASE is required: the Docker address pool as an IPv4 CIDR}"
   : "${GELDAR_DOCKER_COMPOSE_VERSION:?GELDAR_DOCKER_COMPOSE_VERSION is required: pin the docker-compose-plugin apt version}"
+  : "${GELDAR_DOCKER_KEY_FPR:?GELDAR_DOCKER_KEY_FPR is required: the Docker repository key fingerprint, copied from docs.docker.com}"
   [[ "$GELDAR_ENV_NAME" =~ ^[a-z][a-z0-9-]{1,30}$ ]] || die "GELDAR_ENV_NAME must be lowercase letters, digits and dashes"
   [[ "$GELDAR_DOCKER_CE_VERSION$GELDAR_CONTAINERD_VERSION$GELDAR_DOCKER_BUILDX_VERSION$GELDAR_DOCKER_COMPOSE_VERSION" =~ ^[A-Za-z0-9:.+~_-]+$ ]] ||
     die "docker package versions contain characters that are not allowed in an apt version"
@@ -145,7 +157,6 @@ apply_defaults() {
   GELDAR_OPERATOR_UID=${GELDAR_OPERATOR_UID:-1001}
   GELDAR_DOCKER_GID=${GELDAR_DOCKER_GID:-999}
   GELDAR_DOCKER_POOL_SIZE=${GELDAR_DOCKER_POOL_SIZE:-24}
-  GELDAR_DOCKER_KEY_FPR=${GELDAR_DOCKER_KEY_FPR:-9DC858229FC7DD38854AE2D88D81803C0EBFCD88}
   GELDAR_PUBLIC_TCP_PORTS=${GELDAR_PUBLIC_TCP_PORTS:-}
   BOOTSTRAP_SSH_PORT=${BOOTSTRAP_SSH_PORT:-22}
   GELDAR_STATE_DIR=${GELDAR_STATE_DIR:-/var/lib/geldar-$GELDAR_ENV_NAME}

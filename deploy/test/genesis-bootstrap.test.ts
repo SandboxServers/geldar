@@ -18,7 +18,8 @@ import { afterAll, describe, expect, it } from 'vitest';
 import { DEPLOY, posix, SH } from './colo-deploy-fixture';
 
 const BOOT = join(DEPLOY, 'genesis', 'bootstrap.sh');
-const FPR = '9DC858229FC7DD38854AE2D88D81803C0EBFCD88';
+// A placeholder, not a Docker key: the gpg stub prints it and the bootstrap matches it. The real value is owner-supplied.
+const FPR = 'PLACEHOLDER-TEST-FINGERPRINT';
 const CANARY = 'CANARY-SECRET-7f3a';
 // The docker step merges daemon.json with jq, so an apply that reaches it needs jq on the test PATH (Linux CI has it).
 // Where it is absent those apply tests are skipped and the skip is visible in the run output.
@@ -156,6 +157,7 @@ function settings(root: string): Record<string, string> {
     GELDAR_DOCKER_BUILDX_VERSION: '0.29.1-1~debian.12~bookworm',
     GELDAR_DOCKER_COMPOSE_VERSION: '2.39.4-1~debian.12~bookworm',
     GELDAR_DOCKER_POOL_BASE: '198.51.100.0/24',
+    GELDAR_DOCKER_KEY_FPR: FPR,
     GELDAR_PUBLIC_TCP_PORTS: '25565',
     GELDAR_STATE_DIR: join(root, 'var/lib/geldar-test'),
     GELDAR_SECRETS_DIR: join(root, 'etc/geldar-test/secrets'),
@@ -311,6 +313,14 @@ describe('G3-01 deploy/genesis/bootstrap.sh', () => {
     const r = run(host, []);
     expect(r.code).not.toBe(0);
     expect(r.out).toContain('GELDAR_DOCKER_CE_VERSION is required');
+    expect(r.calls).toEqual([]);
+  });
+
+  it('stops before any call when the Docker key fingerprint is unset, and names only the variable', () => {
+    const host = makeHost({ drop: ['GELDAR_DOCKER_KEY_FPR'] });
+    const r = run(host, ['--apply']);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('GELDAR_DOCKER_KEY_FPR is required');
     expect(r.calls).toEqual([]);
   });
 
