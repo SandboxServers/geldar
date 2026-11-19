@@ -1,10 +1,28 @@
+import type { Vec3 } from 'vec3';
 import { describe, expect, it } from 'vitest';
 import type { ProgramCheckpoint, ProgramContext, StepResult } from '../program.ts';
+import { reportBlocked } from '../reflexes/blocked-path.ts';
 import type { HostileView } from '../view.ts';
+import { ProgramError } from './args.ts';
 import { ExploreProgram } from './explore.ts';
 import { contextFor, type FakeWorld, newWorld } from './programs.fakes.ts';
 
 type Columns = (cx: number, cz: number) => object | null;
+type Block = { name: string; boundingBox: 'block' | 'empty' };
+type BlockAt = (at: Vec3) => Block | undefined;
+
+const STONE: Block = { name: 'stone', boundingBox: 'block' };
+const WATER: Block = { name: 'water', boundingBox: 'empty' };
+const AIR: Block = { name: 'air', boundingBox: 'empty' };
+
+/** Stone at the listed heights in every column, water at the listed heights, air elsewhere. */
+function blocksAt(solid: number[], liquid: number[] = []): BlockAt {
+  return (at) => {
+    if (solid.includes(at.y)) return STONE;
+    if (liquid.includes(at.y)) return WATER;
+    return AIR;
+  };
+}
 
 /** Columns loaded exactly at the listed "cx,cz" keys. */
 function loaded(keys: string[]): Columns {
@@ -15,9 +33,14 @@ function loaded(keys: string[]): Columns {
 const EVERY_COLUMN: Columns = () => ({});
 const FOUR_AROUND_ORIGIN = ['0,0', '0,-1', '1,0', '0,1', '-1,0'];
 
-function contextOver(columns: Columns, world: FakeWorld, signal?: AbortSignal): ProgramContext {
+function contextOver(
+  columns: Columns,
+  world: FakeWorld,
+  signal?: AbortSignal,
+  blockAt: BlockAt = () => undefined,
+): ProgramContext {
   const ctx = contextFor(world, signal);
-  Object.assign(ctx.bot, { world: { getColumn: columns } });
+  Object.assign(ctx.bot, { world: { getColumn: columns }, blockAt });
   return ctx;
 }
 
@@ -38,8 +61,9 @@ async function runOver(
   args: Record<string, unknown> = {},
   cut: number | null = null,
   saved?: ProgramCheckpoint,
+  blockAt?: BlockAt,
 ): Promise<Run> {
-  const ctx = contextOver(columns, world);
+  const ctx = contextOver(columns, world, undefined, blockAt);
   let program = new ExploreProgram();
   if (saved) await program.resume(saved, ctx);
   else await program.start(args, ctx);
@@ -279,5 +303,193 @@ describe('ExploreProgram resume', () => {
     await expect(
       new ExploreProgram().resume(atOrigin(visited, null), ctx),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('ExploreProgram landing', () => {
+  it('the landing is one above the highest solid block', async () => {
+    const run = await runOver(
+      EVERY_COLUMN,
+      newWorld(),
+      { legs: 1 },
+      null,
+      undefined,
+      blocksAt([66, 70]),
+    );
+    expect(gotoTargets(run.world)).toEqual([{ x: 0, y: 71, z: -24 }]);
+  });
+
+  it('with no solid block in the scan the landing is the feet floor', async () => {
+    const run = await runOver(EVERY_COLUMN, newWorld(), { legs: 1 }, null, undefined, blocksAt([]));
+    expect(gotoTargets(run.world)).toEqual([{ x: 0, y: 64, z: -24 }]);
+  });
+
+  it('a leg into an unloaded column is pulled back into loaded terrain', async () => {
+    // Chunk 3 (x 48) and chunk 2 (x 32 to 47) are unloaded, so the end moves back to x 31 in chunk 1.
+    const run = await runOver(loaded(['0,0', '1,0']), newWorld(), { legs: 1, leg_blocks: 48 });
+    expect(gotoTargets(run.world)).toEqual([{ x: 31, y: 64, z: 0 }]);
+  });
+
+  it('a water landing is skipped when avoid_water is true', async () => {
+    // A lake over stone at y 60: every candidate lands in water, so nothing is a target.
+    const lake = Array.from({ length: 12 }, (_, i) => 61 + i);
+    const run = await runOver(
+      EVERY_COLUMN,
+      newWorld(),
+      { legs: 1 },
+      null,
+      undefined,
+      blocksAt([60], lake),
+    );
+    expect(run.last).toEqual({
+      status: 'completed',
+      detail: { legs: 0, chunks_new: 0, stopped: 'no_frontier' },
+    });
+    expect(gotoTargets(run.world)).toEqual([]);
+  });
+
+  it('a water landing is a target when avoid_water is false', async () => {
+    const lake = Array.from({ length: 12 }, (_, i) => 61 + i);
+    const run = await runOver(
+      EVERY_COLUMN,
+      newWorld(),
+      { legs: 1, avoid_water: false },
+      null,
+      undefined,
+      blocksAt([60], lake),
+    );
+    expect(gotoTargets(run.world)).toEqual([{ x: 0, y: 61, z: -24 }]);
+  });
+
+  it('a water candidate is passed over for the next dry one', async () => {
+    // Water stands only north of the origin, so north (first with a null heading) is skipped for east.
+    const northWater: BlockAt = (at) => {
+      if (at.y === 60) return STONE;
+      return at.z < 0 && at.y > 60 ? WATER : AIR;
+    };
+    const run = await runOver(EVERY_COLUMN, newWorld(), { legs: 1 }, null, undefined, northWater);
+    expect(gotoTargets(run.world)).toEqual([{ x: 24, y: 61, z: 0 }]);
+  });
+});
+
+describe('ExploreProgram limits in detail', () => {
+  it('the oldest visited chunk drops when the 97th arrives', async () => {
+    const visited = Array.from({ length: 96 }, (_, i): [number, number] => [i + 1, 0]);
+    const run = await runOver(EVERY_COLUMN, newWorld(), {}, null, atOrigin(visited, null, 1));
+    const list = (run.checkpoint?.visited ?? []) as Array<[number, number]>;
+    expect(list).toHaveLength(96);
+    expect(list[0]).toEqual([2, 0]);
+    expect(list.at(-1)).toEqual([0, -2]);
+  });
+
+  it('the heading carries from one leg into the next', async () => {
+    // North and the origin are visited, so the first leg goes east; the second goes east again.
+    const saved = atOrigin(
+      [
+        [0, 0],
+        [0, -1],
+      ],
+      null,
+      2,
+    );
+    const run = await runOver(EVERY_COLUMN, newWorld(), {}, null, saved);
+    expect(gotoTargets(run.world)).toEqual([
+      { x: 24, y: 64, z: 0 },
+      { x: 48, y: 64, z: 0 },
+    ]);
+  });
+
+  it('health 8 is not danger', async () => {
+    const run = await runOver(EVERY_COLUMN, newWorld({ health: 8 }), { legs: 1 });
+    expect(gotoTargets(run.world)).toHaveLength(1);
+  });
+
+  it('a hostile 8 blocks away is danger', async () => {
+    const world = newWorld({ hostiles: [{ distance: 8 } as HostileView] });
+    const run = await runOver(EVERY_COLUMN, world, { legs: 3 });
+    expect(run.last).toEqual({
+      status: 'completed',
+      detail: { legs: 0, chunks_new: 0, stopped: 'danger' },
+    });
+    expect(gotoTargets(world)).toEqual([]);
+  });
+
+  it('a hostile 9 blocks away is not danger', async () => {
+    const world = newWorld({ hostiles: [{ distance: 9 } as HostileView] });
+    const run = await runOver(EVERY_COLUMN, world, { legs: 1 });
+    expect(gotoTargets(world)).toHaveLength(1);
+    expect(run.last.status).toBe('completed');
+  });
+
+  it('a failed goto fails the step and counts no leg', async () => {
+    const run = await runOver(EVERY_COLUMN, newWorld({ failing: { goto: 'timeout' } }), {
+      legs: 2,
+    });
+    expect(run.last).toMatchObject({
+      status: 'failed',
+      message: expect.stringContaining('timeout'),
+    });
+    expect(run.checkpoint?.legs_done).toBe(0);
+  });
+
+  it('a blocked goto with no report fails the step', async () => {
+    const run = await runOver(EVERY_COLUMN, newWorld({ failing: { goto: 'blocked' } }), {
+      legs: 2,
+    });
+    expect(run.last).toMatchObject({
+      status: 'failed',
+      message: expect.stringContaining('blocked'),
+    });
+  });
+
+  it('a blocked goto with a live report keeps the step running', async () => {
+    const world = newWorld({ failing: { goto: 'blocked' } });
+    const ctx = contextOver(EVERY_COLUMN, world);
+    const program = new ExploreProgram();
+    await program.start({ legs: 1 }, ctx);
+    reportBlocked(ctx.view, {} as never);
+    expect(await program.step(ctx)).toEqual({ status: 'running' });
+    expect(program.checkpoint()?.legs_done).toBe(0);
+  });
+});
+
+describe('ExploreProgram arguments', () => {
+  it.each([
+    [{ legs: 0 }],
+    [{ legs: 13 }],
+    [{ leg_blocks: 7 }],
+    [{ leg_blocks: 49 }],
+    [{ avoid_water: 'yes' }],
+    [{ extra: 1 }],
+    [null],
+  ])('rejects %j at start', async (args) => {
+    const ctx = contextOver(EVERY_COLUMN, newWorld());
+    const error = await new ExploreProgram().start(args as never, ctx).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ProgramError);
+    expect((error as ProgramError).reason).toBe('invalid_args');
+  });
+
+  it.each([
+    [{ legs: 1 }],
+    [{ legs: 12 }],
+    [{ leg_blocks: 8 }],
+    [{ leg_blocks: 48 }],
+    [{ avoid_water: false }],
+  ])('accepts %j at start', async (args) => {
+    const ctx = contextOver(EVERY_COLUMN, newWorld());
+    await expect(new ExploreProgram().start(args, ctx)).resolves.toBeUndefined();
+  });
+});
+
+describe('ExploreProgram chunks', () => {
+  it('a negative position keeps chunk (-1,-1) and its frontier', async () => {
+    // Chunk -1 is -1 / 16 floored, so the start is (-1,-1); the north leg ends at z -25, chunk -2.
+    const world = newWorld({ position: { x: -1, y: 64, z: -1 } });
+    const run = await runOver(EVERY_COLUMN, world, { legs: 1 });
+    expect(run.checkpoint?.visited).toEqual([
+      [-1, -1],
+      [-1, -2],
+    ]);
+    expect(gotoTargets(world)).toEqual([{ x: -1, y: 64, z: -25 }]);
   });
 });

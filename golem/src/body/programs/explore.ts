@@ -41,7 +41,8 @@ interface ExploreState {
  * `{ legs?, leg_blocks?, avoid_water? }` (defaults 6, 24 and true; legs 1 to 12, leg_blocks 8 to 48).
  * Each step takes one candidate: the loaded axis neighbours of the Body's chunk that are not in
  * `visited`, straight ahead first, then right, left and back (`null` heading counts as `n`). One
- * leg is one `goto` of `leg_blocks` along that axis. It stops completed with `legs`, `no_frontier`
+ * leg is one `goto` of `leg_blocks` along that axis (pulled back into loaded terrain). With
+ * `avoid_water`, a candidate whose landing is water or lava is skipped. It stops completed with `legs`, `no_frontier`
  * or `danger` (a hostile within 8 blocks, or health under 8). The program never attacks.
  */
 export class ExploreProgram implements IntentProgram {
@@ -74,18 +75,24 @@ export class ExploreProgram implements IntentProgram {
     const here = ctx.view.position;
     const [cx, cz] = chunkOf(here);
     const visited = new Set(state.visited.map(([x, z]) => keyOf(x, z)));
-    const next = loadedNeighbours(ctx.bot, cx, cz)
+    const candidates = loadedNeighbours(ctx.bot, cx, cz)
       .filter((candidate) => !visited.has(keyOf(candidate.cx, candidate.cz)))
-      .sort((a, b) => turnRank(state.heading, a.heading) - turnRank(state.heading, b.heading))[0];
-    if (!next) return finished(state, 'no_frontier');
-    const x = Math.floor(here.x) + (next.cx - cx) * state.legBlocks;
-    const z = Math.floor(here.z) + (next.cz - cz) * state.legBlocks;
-    const y = landingY(ctx.bot, x, z, here.y);
-    const run = await runStepAction(ctx, { do: 'goto', target: { x, y, z } });
+      .sort((a, b) => turnRank(state.heading, a.heading) - turnRank(state.heading, b.heading));
+    let leg: { heading: ChunkHeading; target: { x: number; y: number; z: number } } | null = null;
+    for (const candidate of candidates) {
+      const axis = { dx: candidate.cx - cx, dz: candidate.cz - cz };
+      const end = legEnd(ctx.bot, here, axis, state.legBlocks);
+      const landing = landingOf(ctx.bot, end.x, end.z, here.y);
+      if (state.avoidWater && landing.liquid) continue;
+      leg = { heading: candidate.heading, target: { x: end.x, y: landing.y, z: end.z } };
+      break;
+    }
+    if (!leg) return finished(state, 'no_frontier');
+    const run = await runStepAction(ctx, { do: 'goto', target: leg.target });
     const stop = stopOf(run, ctx);
     if (stop) return stop;
     state.legsDone += 1;
-    state.heading = next.heading;
+    state.heading = leg.heading;
     this.visit(state, chunkOf(ctx.view.position));
     return { status: 'running' };
   }
@@ -163,14 +170,42 @@ function turnRank(heading: ChunkHeading | null, candidate: ChunkHeading): number
   return [0, 1, 3, 2][turn] ?? 0;
 }
 
-/** The first solid block at or below the scan top, one block above it; the feet's floor when none. */
-function landingY(bot: Bot, x: number, z: number, feetY: number): number {
+function columnLoaded(bot: Bot, x: number, z: number): boolean {
+  return bot.world.getColumn(Math.floor(x / 16), Math.floor(z / 16)) != null;
+}
+
+/**
+ * The goto end of a leg: `legBlocks` along the axis from the Body. When that block is in an
+ * unloaded column, the end moves back toward the Body one block at a time until it is loaded.
+ */
+function legEnd(
+  bot: Bot,
+  here: { x: number; z: number },
+  axis: { dx: number; dz: number },
+  legBlocks: number,
+): { x: number; z: number } {
+  let x = Math.floor(here.x) + axis.dx * legBlocks;
+  let z = Math.floor(here.z) + axis.dz * legBlocks;
+  for (let back = 0; back < legBlocks && !columnLoaded(bot, x, z); back += 1) {
+    x -= axis.dx;
+    z -= axis.dz;
+  }
+  return { x, z };
+}
+
+/**
+ * The first solid block at or below the scan top gives the landing one block above it, and whether
+ * the cell the Body would stand in is water or lava. The feet's floor, dry, when there is no solid block.
+ */
+function landingOf(bot: Bot, x: number, z: number, feetY: number): { y: number; liquid: boolean } {
   const top = Math.floor(feetY) + SCAN_UP;
   for (let y = top; y >= top - SCAN_DEPTH; y -= 1) {
-    const block = bot.blockAt(new Vec3(x, y, z));
-    if (block?.boundingBox === 'block') return y + 1;
+    if (bot.blockAt(new Vec3(x, y, z))?.boundingBox === 'block') {
+      const feet = bot.blockAt(new Vec3(x, y + 1, z));
+      return { y: y + 1, liquid: feet?.name === 'water' || feet?.name === 'lava' };
+    }
   }
-  return Math.floor(feetY);
+  return { y: Math.floor(feetY), liquid: false };
 }
 
 function visitedOf(value: unknown): Array<[number, number]> {
