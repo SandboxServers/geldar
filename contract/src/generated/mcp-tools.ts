@@ -2162,7 +2162,9 @@ export const mcpToolSchemas: Record<
                 "hurt",
                 "heard_sound",
                 "gift_received",
-                "property_broken"
+                "property_broken",
+                "fight_seen",
+                "container_taken"
               ]
             },
             "actor": {
@@ -2871,7 +2873,9 @@ export const mcpToolSchemas: Record<
                 "hurt",
                 "heard_sound",
                 "gift_received",
-                "property_broken"
+                "property_broken",
+                "fight_seen",
+                "container_taken"
               ]
             },
             "actor": {

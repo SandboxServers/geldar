@@ -128,6 +128,18 @@ export function provenancePickupSubject(shard: string): string {
   return `geldar.${shard}.provenance.pickup`;
 }
 
+/** Where the plugin publishes a container take provenance (AN-46, decision 0345): `geldar.<shard>.provenance.take`. Four tokens. */
+export function provenanceTakeSubject(shard: string): string {
+  if (!SHARD.test(shard)) throw new Error(`invalid shard name for a subject: ${shard}`);
+  return `geldar.${shard}.provenance.take`;
+}
+
+/** Where the plugin publishes a combat provenance (AN-46): `geldar.<shard>.provenance.combat`. Four tokens. */
+export function provenanceCombatSubject(shard: string): string {
+  if (!SHARD.test(shard)) throw new Error(`invalid shard name for a subject: ${shard}`);
+  return `geldar.${shard}.provenance.combat`;
+}
+
 /**
  * The wildcard over the provenance tokens (AN-24): `geldar.<shard>.provenance.>`. Four tokens.
  * Throws on a shard name the contract rejects.

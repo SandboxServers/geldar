@@ -3,7 +3,12 @@
   "$id": "https://geldar.dev/schemas/provenance.schema.json",
   "title": "Provenance",
   "description": "Raw infrastructure messages from the plugin on geldar.<shard>.provenance.<tail> (AN-24, decision 0343). Body-only: never agent-facing, never a source of an observation by itself. Each message is one event the server saw; a Body turns it into an observation only through its own rules.",
-  "oneOf": [{ "$ref": "#/$defs/BreakProvenance" }, { "$ref": "#/$defs/PickupProvenance" }],
+  "oneOf": [
+    { "$ref": "#/$defs/BreakProvenance" },
+    { "$ref": "#/$defs/PickupProvenance" },
+    { "$ref": "#/$defs/TakeProvenance" },
+    { "$ref": "#/$defs/CombatProvenance" }
+  ],
   "$defs": {
     "BreakProvenance": {
       "description": "A block broken by a player. prior_owner is the owner the plugin's cache held before the break, or null.",
@@ -55,6 +60,48 @@
         "count": { "type": "integer", "minimum": 1, "maximum": 2304 },
         "age_ticks": { "type": "integer", "minimum": 0 },
         "distance": { "anyOf": [{ "type": "number", "minimum": 0 }, { "type": "null" }] },
+        "tick": { "$ref": "common.schema.json#/$defs/WorldTick" }
+      }
+    },
+    "TakeProvenance": {
+      "description": "Items taken from a container by a player (AN-46). actor and prior_owner are null when unknown. No kind field: the shape is told apart by its fields.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["world", "x", "y", "z", "actor", "prior_owner", "item", "count", "tick"],
+      "properties": {
+        "world": { "$ref": "block-owner.schema.json#/$defs/WorldName" },
+        "x": { "$ref": "block-owner.schema.json#/$defs/BlockCoordinateXZ" },
+        "y": { "$ref": "block-owner.schema.json#/$defs/BlockCoordinateY" },
+        "z": { "$ref": "block-owner.schema.json#/$defs/BlockCoordinateXZ" },
+        "actor": {
+          "anyOf": [
+            { "$ref": "observation-event.schema.json#/$defs/ActorName" },
+            { "type": "null" }
+          ]
+        },
+        "prior_owner": {
+          "anyOf": [{ "$ref": "block-owner.schema.json#/$defs/OwnerId" }, { "type": "null" }]
+        },
+        "item": { "$ref": "common.schema.json#/$defs/ItemName" },
+        "count": { "type": "integer", "minimum": 1, "maximum": 2304 },
+        "tick": { "$ref": "common.schema.json#/$defs/WorldTick" }
+      }
+    },
+    "CombatProvenance": {
+      "description": "An engagement or a kill between a player and a hostile mob (AN-46). Body-only raw fact.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["world", "actor", "target", "kind", "tick"],
+      "properties": {
+        "world": { "$ref": "block-owner.schema.json#/$defs/WorldName" },
+        "actor": {
+          "anyOf": [
+            { "$ref": "observation-event.schema.json#/$defs/ActorName" },
+            { "type": "null" }
+          ]
+        },
+        "target": { "type": "string", "pattern": "^[a-z_]{1,64}$" },
+        "kind": { "type": "string", "enum": ["engaged", "killed"] },
         "tick": { "$ref": "common.schema.json#/$defs/WorldTick" }
       }
     }

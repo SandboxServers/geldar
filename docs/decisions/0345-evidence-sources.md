@@ -1,0 +1,11 @@
+# 0345. Evidence sources for observed fights, container takes and conversation exchanges
+
+- Status: Proposed
+- Date: 2026-11-19
+- Spec: D-CS-04, D-CS-06, D-CS-15. Settles only the contract shapes and the combat key format that the character-sheet evidence cards (AN-46, AN-47a, AN-47b) build on. `docs/spec.md` is not touched.
+- Why: a fight near the Body, a container take and a conversation exchange are evidence the Body may later see or be told about. Each source needs one contract shape, and a kill and a survive of one encounter must name the same XP key, so one fight pays once. The combat key ruling is decision 0321 (Accepted); this record cites it and does not restate it.
+- What (1), the combat key: the encounter key of 0321. `encounter_key` is `enc:<life_id>:<mob entity UUID in lowercase>`, pattern `^enc:ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`. The helper `encounterKey` in `contract/src/evidence.ts` builds it from a life id and a mob UUID in either case. The Body's completed kill, the plugin's `hostile_kill` and its `fight_survived` all use this one key in the domain `combat`.
+- What (2), the combat fact: `combat_fact` payload `{life_id, kind, mob, encounter_key}`, with `kind` one of `hostile_kill` or `fight_survived`. It is XP only and is not a Mind event. `fled` is not a kind. The schema accepts a key whose life part differs from `life_id`; the sink refuses that pair.
+- What (3), observations: `fight_seen` (target a mob type, optional visible actor) and `container_taken` (item, count, optional visible actor) join the observation shapes of 0343. Both sentences are drafts, OWNER APPROVAL REQUIRED, and no producer is on.
+- What (4), provenance: `take` (a container take, no kind field) and `combat` (`engaged` or `killed`) join the raw provenance shapes of 0343. Both are Body-only, outside the sink's `geldar.*.*` filter, with subjects `geldar.<shard>.provenance.take` and `.combat`.
+- Not in this record: any producer, any promise or commitment shape, activation of the sentences (OD-E), the sink's life check (AN-47b), and any change to the XP ruling of 0321.

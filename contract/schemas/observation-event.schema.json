@@ -3,7 +3,12 @@
   "$id": "https://geldar.dev/schemas/observation-event.schema.json",
   "title": "ObservationPayload",
   "description": "An event a Body observed and reports to its own agent (AN-24, decision 0343). Proposed: the wording is unapproved (OD-E) and nothing publishes an observation yet. The actor is set only when a visible causal actor caused the event; otherwise the actor is absent and the event stays unattributed.",
-  "oneOf": [{ "$ref": "#/$defs/GiftReceived" }, { "$ref": "#/$defs/PropertyBroken" }],
+  "oneOf": [
+    { "$ref": "#/$defs/GiftReceived" },
+    { "$ref": "#/$defs/PropertyBroken" },
+    { "$ref": "#/$defs/FightSeen" },
+    { "$ref": "#/$defs/ContainerTaken" }
+  ],
   "$defs": {
     "ActorName": {
       "description": "A Minecraft player name, as the game allows it.",
@@ -46,6 +51,37 @@
           "$ref": "#/$defs/ObservedActor"
         },
         "block": { "type": "string", "pattern": "^[a-z_]{1,64}$" },
+        "key": { "type": "string", "pattern": "^[a-z0-9:_-]{8,96}$" }
+      }
+    },
+    "FightSeen": {
+      "description": "A fight near the Body, with a visible player or none. target is the mob type without namespace (AN-46). Producers are off by default.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "target", "key"],
+      "properties": {
+        "kind": { "const": "fight_seen" },
+        "actor": {
+          "description": "The visible fighter. Absent when no fighter is visible: the observation is unattributed.",
+          "$ref": "#/$defs/ObservedActor"
+        },
+        "target": { "type": "string", "pattern": "^[a-z_]{1,64}$" },
+        "key": { "type": "string", "pattern": "^[a-z0-9:_-]{8,96}$" }
+      }
+    },
+    "ContainerTaken": {
+      "description": "Items taken from a container of the Body's. Producers are off by default (AN-46).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "item", "count", "key"],
+      "properties": {
+        "kind": { "const": "container_taken" },
+        "actor": {
+          "description": "The visible taker. Absent when the taker is not visible: the observation is unattributed.",
+          "$ref": "#/$defs/ObservedActor"
+        },
+        "item": { "$ref": "common.schema.json#/$defs/ItemName" },
+        "count": { "type": "integer", "minimum": 1, "maximum": 2304 },
         "key": { "type": "string", "pattern": "^[a-z0-9:_-]{8,96}$" }
       }
     }

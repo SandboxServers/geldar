@@ -20,6 +20,7 @@ export interface ObservationSentenceInput {
   item?: unknown;
   count?: unknown;
   block?: unknown;
+  target?: unknown;
 }
 
 /** The generic sentence, also the fallback when a built sentence would carry a marker word. */
@@ -41,6 +42,21 @@ export function observationSentence(input: ObservationSentenceInput): string {
     BLOCK.test(input.block)
   ) {
     sentence = `Someone broke one of your blocks (${input.block.replace(/_/g, ' ')}).`;
+  } else if (
+    input.kind === 'fight_seen' &&
+    typeof input.target === 'string' &&
+    BLOCK.test(input.target)
+  ) {
+    // OWNER APPROVAL REQUIRED (AN-46): a draft wording; the producers are off by default.
+    sentence = `Someone fought a ${input.target.replace(/_/g, ' ')} nearby.`;
+  } else if (
+    input.kind === 'container_taken' &&
+    isCount(input.count) &&
+    typeof input.item === 'string' &&
+    ITEM.test(input.item)
+  ) {
+    // OWNER APPROVAL REQUIRED (AN-46): a draft wording; the producers are off by default.
+    sentence = `Someone took ${input.count} ${input.item.replace(/_/g, ' ')} from your container.`;
   }
   return markedWords(sentence).length > 0 ? GENERIC : sentence;
 }
