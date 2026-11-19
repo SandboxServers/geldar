@@ -10,6 +10,7 @@ import dev.geldar.core.blockowner.OwnerSource.Owners;
 import java.util.Optional;
 import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
+import java.util.logging.Logger;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -27,6 +28,7 @@ import org.bukkit.event.block.BlockPlaceEvent;
 public final class BlockChangeListener implements Listener {
     /** Nulls are written out: a break with no prior owner sends "prior_owner":null, not no key at all. */
     private static final Gson GSON = new GsonBuilder().serializeNulls().create();
+    private static final Logger LOG = Logger.getLogger(BlockChangeListener.class.getName());
 
     private final OwnerCache cache;
     private final BlockOwnerPublisher publisher;
@@ -58,7 +60,12 @@ public final class BlockChangeListener implements Listener {
     public void onBreak(BlockBreakEvent event) {
         Block block = event.getBlock();
         if (enabled.getAsBoolean() && sink != null && provenanceEnabled.getAsBoolean()) {
-            sendBreakProvenance(event.getPlayer(), block);
+            try {
+                sendBreakProvenance(event.getPlayer(), block);
+            } catch (RuntimeException e) {
+                // The break is the server's business: a failed provenance send must not skip the owner change.
+                LOG.fine("break provenance not sent: " + e);
+            }
         }
         record(block, null);
     }
