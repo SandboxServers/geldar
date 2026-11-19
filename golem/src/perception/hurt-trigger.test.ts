@@ -309,3 +309,115 @@ describe('hurtWorldEvent: the damage event the Mind reads', () => {
     ).toBeNull();
   });
 });
+
+const NOW = '2026-11-19T12:00:00.000Z';
+
+/** A player entity with the given username, standing at (x, 64, z). */
+function playerAt(id: number, username: string, x: number, z: number) {
+  return { ...entityAt(id, x, z), type: 'player', username };
+}
+
+/**
+ * A resolver that names only `Ada` and `Ben` (as if both were visible). It records every username it
+ * is asked for, so a test can see which entities the trigger looked at.
+ */
+function namingStub(asked: (string | undefined)[]) {
+  return (username: string | undefined) => {
+    asked.push(username);
+    return username === 'Ada' || username === 'Ben'
+      ? { name: username, life: `ag_${username.toLowerCase()}_01` }
+      : null;
+  };
+}
+
+/** One health drop of 5 from a melee-style `cause` (or none), with the resolver given. */
+function hurtBy(
+  cause: object | undefined,
+  options: { resolve?: ReturnType<typeof namingStub>; nearby?: FakeEntity[] } = {},
+): HurtEvent | undefined {
+  const self = entityAt(1, 0, 0, 0);
+  const bot = fakeBot(self, options.nearby ?? []);
+  const seen: [HurtEvent, number][] = [];
+  const reporter = new HurtReporter((hurt, tick) => seen.push([hurt, tick]));
+  watchHurts(bot as unknown as Bot, reporter, () => 77, options.resolve);
+  bot.emit('entityHurt', self, cause);
+  bot.health = 15;
+  bot.emit('health');
+  return seen[0]?.[0];
+}
+
+describe('watchHurts: the named attacker', () => {
+  it('melee by a visible player names the player', () => {
+    const hurt = hurtBy(playerAt(2, 'Ada', 1, 0), { resolve: namingStub([]) });
+    expect(hurt?.actor).toEqual({ name: 'Ada', life: 'ag_ada_01' });
+    expect(hurt?.attacker).toBe('player');
+  });
+
+  it('an arrow whose shooter is a visible player names the shooter', () => {
+    const shooter = playerAt(3, 'Ben', 0, 4);
+    const hurt = hurtBy(shooter, { resolve: namingStub([]) });
+    expect(hurt?.actor).toEqual({ name: 'Ben', life: 'ag_ben_01' });
+  });
+
+  it('a player out of sight stays anonymous', () => {
+    const hurt = hurtBy(playerAt(2, 'Cy', 1, 0), { resolve: namingStub([]) });
+    expect(hurt?.actor).toBeUndefined();
+    expect(hurt?.attacker).toBe('player');
+  });
+
+  it('a zombie hit with an innocent player nearby has no actor', () => {
+    const asked: (string | undefined)[] = [];
+    const zombie = { ...entityAt(3, 1, 0), name: 'zombie' };
+    const hurt = hurtBy(zombie, {
+      resolve: namingStub(asked),
+      nearby: [playerAt(2, 'Ada', 0.5, 0)],
+    });
+    expect(hurt?.actor).toBeUndefined();
+    expect(asked).toEqual([undefined]);
+  });
+
+  it('fall, fire and starvation have no actor', () => {
+    const asked: (string | undefined)[] = [];
+    const hurt = hurtBy(undefined, {
+      resolve: namingStub(asked),
+      nearby: [playerAt(2, 'Ada', 0.5, 0)],
+    });
+    expect(hurt?.actor).toBeUndefined();
+    expect(asked).toEqual([undefined]);
+  });
+
+  it('two players nearby: only the cause is named', () => {
+    const asked: (string | undefined)[] = [];
+    const hurt = hurtBy(playerAt(3, 'Ada', 1, 0), {
+      resolve: namingStub(asked),
+      nearby: [playerAt(2, 'Ben', 0.5, 0)],
+    });
+    expect(asked).toEqual(['Ada']);
+    expect(hurt?.actor).toEqual({ name: 'Ada', life: 'ag_ada_01' });
+  });
+
+  it('a display name used by another entity is not named', () => {
+    const asked: (string | undefined)[] = [];
+    const mob = { ...entityAt(3, 1, 0), name: 'Ada' };
+    const hurt = hurtBy(mob, { resolve: namingStub(asked) });
+    expect(hurt?.actor).toBeUndefined();
+    expect(asked).toEqual([undefined]);
+  });
+
+  it('no resolver: the damage event carries no actor and is the same as before', () => {
+    const hurt = hurtBy(playerAt(2, 'Ada', 1, 0));
+    expect(hurt?.actor).toBeUndefined();
+    const ctx = { shard: 'dev', lifeId: 'ag_kestrel_01', worldTick: 5, at: NOW, sequence: 1 };
+    const event = hurtWorldEvent(hurt as HurtEvent, ctx);
+    expect(event?.payload).not.toHaveProperty('actor');
+    expect(JSON.stringify(event?.payload)).toBe(
+      JSON.stringify({ source: 'melee', amount: 5, bearing: hurt?.bearing }),
+    );
+  });
+
+  it('a named hurt carries the actor in its damage payload', () => {
+    const hurt = hurtBy(playerAt(2, 'Ada', 1, 0), { resolve: namingStub([]) }) as HurtEvent;
+    const ctx = { shard: 'dev', lifeId: 'ag_kestrel_01', worldTick: 5, at: NOW, sequence: 1 };
+    expect(hurtWorldEvent(hurt, ctx)?.payload).toMatchObject({ actor: { name: 'Ada' } });
+  });
+});

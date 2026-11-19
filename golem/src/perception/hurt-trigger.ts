@@ -4,7 +4,7 @@
  * `HurtReporter`. A hurt leaves the Body as a `damage` WorldEvent that carries `source`, `bearing`
  * and `amount` (`hurtWorldEvent`).
  */
-import { validateWorldEvent, type WorldEvent } from '@geldar/contract';
+import { type ObservedActor, validateWorldEvent, type WorldEvent } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { eventIdFor } from '../body/derived-id.ts';
 import type { HurtEvent, HurtReporter } from './hurt.ts';
@@ -52,14 +52,38 @@ export function attackerNameOf(cause: unknown, selfId: number | undefined): stri
  * that names no entity other than the Body, is a hurt with no known cause (`other`, no bearing). Returns
  * the detach function.
  */
-export function watchHurts(bot: Bot, reporter: HurtReporter, tick: () => number): () => void {
+/**
+ * The username of the player behind a hurt, when the cause is a player other than the Body. A mob or
+ * no cause has none, so a nearby player is never named for it (AN-25).
+ */
+function actorUsernameOf(cause: unknown, selfId: number | undefined): string | undefined {
+  const entity = cause as { id?: number; type?: unknown; username?: unknown } | null | undefined;
+  if (!entity || entity.id === selfId || entity.type !== 'player') return undefined;
+  return typeof entity.username === 'string' ? entity.username : undefined;
+}
+
+/**
+ * `resolve` (AN-25, optional) turns a cause's username into a visible actor, or null. It is called
+ * once per `entityHurt` on the Body; nobody passes it yet, so a hurt carries no actor.
+ */
+export function watchHurts(
+  bot: Bot,
+  reporter: HurtReporter,
+  tick: () => number,
+  resolve?: (username: string | undefined) => ObservedActor | null,
+): () => void {
   let health: number | undefined = bot.health;
-  let pending: { attacker: Point | null; name: string | undefined } | null = null;
+  let pending: {
+    attacker: Point | null;
+    name: string | undefined;
+    actor: ObservedActor | undefined;
+  } | null = null;
   const onEntityHurt = (entity: unknown, cause?: unknown): void => {
     if (entity !== bot.entity) return;
     pending = {
       attacker: attackerOf(cause, bot.entity?.id),
       name: attackerNameOf(cause, bot.entity?.id),
+      actor: resolve?.(actorUsernameOf(cause, bot.entity?.id)) ?? undefined,
     };
   };
   const onHealth = (): void => {
@@ -75,6 +99,7 @@ export function watchHurts(bot: Bot, reporter: HurtReporter, tick: () => number)
         cause: attack?.attacker ? 'ENTITY_ATTACK' : undefined,
         attacker: attack?.attacker ?? null,
         attackerName: attack?.name,
+        actor: attack?.actor,
         self: { x: self.position.x, z: self.position.z, yaw: self.yaw },
         healthBefore: before,
         rawDamage: before - now,
@@ -106,6 +131,7 @@ export interface HurtEventContext {
 export function hurtWorldEvent(hurt: HurtEvent, ctx: HurtEventContext): WorldEvent | null {
   const payload: Record<string, unknown> = { source: hurt.source, amount: hurt.amount };
   if (hurt.bearing !== undefined) payload.bearing = hurt.bearing;
+  if (hurt.actor !== undefined) payload.actor = hurt.actor;
   const event: WorldEvent = {
     source_event_id: eventIdFor(`hurt:${ctx.lifeId}:${ctx.at}:${ctx.sequence}`),
     at: ctx.at,
