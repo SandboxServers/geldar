@@ -111,6 +111,33 @@ export function blockownerChangedSubject(shard: string): string {
 }
 
 /**
+ * Where the plugin publishes a break provenance (AN-24, decision 0343): `geldar.<shard>.provenance.break`.
+ * Four tokens, so outside the sink's `geldar.*.*` filter. Throws on a shard name the contract rejects.
+ */
+export function provenanceBreakSubject(shard: string): string {
+  if (!SHARD.test(shard)) throw new Error(`invalid shard name for a subject: ${shard}`);
+  return `geldar.${shard}.provenance.break`;
+}
+
+/**
+ * Where the plugin publishes a pickup provenance (AN-24): `geldar.<shard>.provenance.pickup`.
+ * Four tokens, so outside the sink's `geldar.*.*` filter. Throws on a shard name the contract rejects.
+ */
+export function provenancePickupSubject(shard: string): string {
+  if (!SHARD.test(shard)) throw new Error(`invalid shard name for a subject: ${shard}`);
+  return `geldar.${shard}.provenance.pickup`;
+}
+
+/**
+ * The wildcard over the provenance tokens (AN-24): `geldar.<shard>.provenance.>`. Four tokens.
+ * Throws on a shard name the contract rejects.
+ */
+export function provenanceWildcard(shard: string): string {
+  if (!SHARD.test(shard)) throw new Error(`invalid shard name for a subject: ${shard}`);
+  return `geldar.${shard}.provenance.>`;
+}
+
+/**
  * Where the deploy publishes a maintenance notice (maintenance-notice.schema.json, CD-1):
  * `geldar.<shard>.maintenance`. Three tokens, like the event subjects; the notice is not a WorldEvent.
  * Throws on a shard name the contract rejects.
