@@ -164,7 +164,7 @@ makes BlueMap write its DEFAULT in its place: web server on (port 8100), live pl
 the loader runs only at container start. RCON can trigger the reload too (every /bluemap command is open to RCON). A restart
 reinstalls the bundle, which is the only repair.
 
-Read-only checks after the first start (ops; do not run /bluemap reload unless the config dir is intact):
+Read-only checks after the first start (ops; never run /bluemap reload and never delete a config file on a running shard):
 
 - `ls /data/config/bluemap/maps` prints `end.conf nether.conf overworld.conf`.
 - `sha256sum` of the installed files equals the manifest, and `/data/config/bluemap/.geldar-config.sha256` holds the manifest's sha256.

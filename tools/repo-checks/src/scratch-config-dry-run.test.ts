@@ -81,47 +81,69 @@ function expectedLayers(): string[] {
 }
 
 const SKIP = !HAS_SH;
+// Every test spawns sh; under load the 5 s default is too short for a cold sh + script run.
+const SH_TIMEOUT = 30_000;
 
 describe.skipIf(SKIP)('scratch.sh config nf: renders, starts nothing', () => {
-  it('exits with compose config status 0 and runs compose config as its only compose call', () => {
-    const r = run(['config', 'nf']);
-    expect(r.status, r.out).toBe(0);
-    const compose = r.calls.filter((c) => c[0] === 'compose' && c[1] === '-p');
-    expect(compose.length).toBe(1);
-    expect(compose[0]?.at(-1)).toBe('config');
-  });
+  it(
+    'exits with compose config status 0 and runs compose config as its only compose call',
+    () => {
+      const r = run(['config', 'nf']);
+      expect(r.status, r.out).toBe(0);
+      const compose = r.calls.filter((c) => c[0] === 'compose' && c[1] === '-p');
+      expect(compose.length).toBe(1);
+      expect(compose[0]?.at(-1)).toBe('config');
+    },
+    SH_TIMEOUT,
+  );
 
-  it('never calls up, create, run, start or volume create', () => {
-    const r = run(['config', 'nf']);
-    const verbs = r.calls.flatMap((c) =>
-      c.filter((t) => ['up', 'create', 'run', 'start', 'volume'].includes(t)),
-    );
-    expect(verbs).toEqual([]);
-  });
+  it(
+    'never calls up, create, run, start or volume create',
+    () => {
+      const r = run(['config', 'nf']);
+      const verbs = r.calls.flatMap((c) =>
+        c.filter((t) => ['up', 'create', 'run', 'start', 'volume'].includes(t)),
+      );
+      expect(verbs).toEqual([]);
+    },
+    SH_TIMEOUT,
+  );
 
-  it('passes the same -f list that compose_run builds, with compose/phase0.yml first and the extra-mods overlay', () => {
-    const r = run(['config', 'nf']);
-    const call = r.calls.find((c) => c[1] === '-p');
-    expect(call).toBeDefined();
-    const files = composeFiles(call ?? []);
-    expect(files[0]).toBe('compose/phase0.yml');
-    expect(files).toContain('compose/opt-in/scratch-neoforge-extra-mods.yml');
-    // Some layers sit inside runtime `if` blocks (NATS, probe, mind, telemetry), so the list is checked as an ordered subset.
-    const expected = expectedLayers();
-    expect(files.every((f) => expected.includes(f))).toBe(true);
-    expect(expected.filter((f) => files.includes(f))).toEqual(files);
-  });
+  it(
+    'passes the same -f list that compose_run builds, with compose/phase0.yml first and the extra-mods overlay',
+    () => {
+      const r = run(['config', 'nf']);
+      const call = r.calls.find((c) => c[1] === '-p');
+      expect(call).toBeDefined();
+      const files = composeFiles(call ?? []);
+      expect(files[0]).toBe('compose/phase0.yml');
+      expect(files).toContain('compose/opt-in/scratch-neoforge-extra-mods.yml');
+      // Some layers sit inside runtime `if` blocks (NATS, probe, mind, telemetry), so the list is checked as an ordered subset.
+      const expected = expectedLayers();
+      expect(files.every((f) => expected.includes(f))).toBe(true);
+      expect(expected.filter((f) => files.includes(f))).toEqual(files);
+    },
+    SH_TIMEOUT,
+  );
 
-  it('without SCRATCH_EXTRA_MODS the extra-mods overlay is not in the list', () => {
-    const r = run(['config', 'nf'], { SCRATCH_EXTRA_MODS: '' });
-    const call = r.calls.find((c) => c[1] === '-p');
-    expect(composeFiles(call ?? [])).not.toContain(
-      'compose/opt-in/scratch-neoforge-extra-mods.yml',
-    );
-  });
+  it(
+    'without SCRATCH_EXTRA_MODS the extra-mods overlay is not in the list',
+    () => {
+      const r = run(['config', 'nf'], { SCRATCH_EXTRA_MODS: '' });
+      const call = r.calls.find((c) => c[1] === '-p');
+      expect(composeFiles(call ?? [])).not.toContain(
+        'compose/opt-in/scratch-neoforge-extra-mods.yml',
+      );
+    },
+    SH_TIMEOUT,
+  );
 
-  it('exits with compose config failure status when compose config fails', () => {
-    const r = run(['config', 'nf'], { DOCKER_FAIL: '1' });
-    expect(r.status).toBe(3);
-  });
+  it(
+    'exits with compose config failure status when compose config fails',
+    () => {
+      const r = run(['config', 'nf'], { DOCKER_FAIL: '1' });
+      expect(r.status).toBe(3);
+    },
+    SH_TIMEOUT,
+  );
 });
