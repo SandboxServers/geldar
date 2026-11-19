@@ -255,7 +255,13 @@ load_release() {
     esac
     key=${line%%=*}
     val=${line#*=}
-    printf '%s' "$key" | grep -Eq '^[A-Z][A-Z0-9_]*_IMAGE$' || die "not an image variable: $key"
+    printf '%s' "$key" | grep -Eq '^[A-Z][A-Z0-9_]*$' || die "not an upper-case key in release manifest $1: $key"
+    # Only *_IMAGE keys are read. Any other key (the genesis v2 digests, GELDAR_MANIFEST_VERSION, a future key) is
+    # ignored here, as colo-cd-verify.sh ignores it (genesis manifest v2, decision 0188; deploy/genesis/manifest.sh).
+    case $key in
+      *_IMAGE) ;;
+      *) continue ;;
+    esac
     case $val in
       *:latest | *:latest@*) die "$key uses the latest tag; pin a digest" ;;
     esac
