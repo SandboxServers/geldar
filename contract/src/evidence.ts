@@ -20,9 +20,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * the life id is not a LifeId or the mob id is not a UUID. The UUID may come in either case.
  */
 export function encounterKey(lifeId: string, mobUuid: string): string | null {
-  if (typeof lifeId !== 'string' || typeof mobUuid !== 'string') {
-    throw new TypeError('encounterKey: lifeId and mobUuid must be strings');
-  }
+  if (typeof lifeId !== 'string' || typeof mobUuid !== 'string') return null;
   if (!LIFE_ID.test(lifeId) || !UUID.test(mobUuid)) return null;
   return `enc:${lifeId}:${mobUuid.toLowerCase()}`;
 }

@@ -88,6 +88,12 @@ describe('evidence sources (AN-46, decision 0345)', () => {
     expect(validateObservationPayload({ ...TAKEN, key: `${take128}b` })).toBe(false);
   });
 
+  it('an observation key of 7 characters is refused for fight_seen and container_taken', () => {
+    expect(validateObservationPayload({ ...FIGHT, key: 'fight:a' })).toBe(false);
+    expect(validateObservationPayload({ ...TAKEN, key: 'tak:bbb' })).toBe(false);
+    expect(validateObservationPayload({ ...FIGHT, key: 'a'.repeat(8) })).toBe(true);
+  });
+
   it('a combat fact without mob is invalid', () => {
     const { mob: _unused, ...noMob } = COMBAT;
     expect(validateCombatFactPayload(noMob).ok).toBe(false);
@@ -101,7 +107,7 @@ describe('evidence sources (AN-46, decision 0345)', () => {
   });
 
   it('provenance take rejects a missing field, a bad count, an extra field and a short actor', () => {
-    for (const field of ['x', 'y', 'z', 'item', 'count', 'tick', 'actor']) {
+    for (const field of ['world', 'x', 'y', 'z', 'item', 'count', 'tick', 'actor', 'prior_owner']) {
       const { [field]: _unused, ...missing } = TAKE as Record<string, unknown>;
       expect(validateProvenance(missing)).toBe(false);
     }
@@ -170,6 +176,18 @@ describe('evidence sources (AN-46, decision 0345)', () => {
     expect(validateProvenance({ ...COMBAT_PROVENANCE, kind: 'fled' })).toBe(false);
   });
 
+  it('combat provenance rejects a missing field, a bad target or actor and an extra field', () => {
+    for (const field of ['world', 'actor', 'target', 'kind', 'tick']) {
+      const { [field]: _unused, ...missing } = COMBAT_PROVENANCE as Record<string, unknown>;
+      expect(validateProvenance(missing)).toBe(false);
+    }
+    expect(validateProvenance({ ...COMBAT_PROVENANCE, target: 'Zombie' })).toBe(false);
+    expect(validateProvenance({ ...COMBAT_PROVENANCE, target: 'minecraft:zombie' })).toBe(false);
+    expect(validateProvenance({ ...COMBAT_PROVENANCE, actor: 'ab' })).toBe(false);
+    expect(validateProvenance({ ...COMBAT_PROVENANCE, actor: '' })).toBe(false);
+    expect(validateProvenance({ ...COMBAT_PROVENANCE, extra: 1 })).toBe(false);
+  });
+
   it('the provenance subjects have four tokens', () => {
     expect(provenanceTakeSubject('main')).toBe('geldar.main.provenance.take');
     expect(provenanceCombatSubject('main')).toBe('geldar.main.provenance.combat');
@@ -205,14 +223,16 @@ describe('the combat key (decision 0321)', () => {
     expect(encounterKey('ag_kestrel_1', MOB)).toBeNull();
   });
 
-  it('a non-string mob id is refused with a clear error, not coerced', () => {
-    expect(() => encounterKey('ag_kestrel_01', {} as never)).toThrow(TypeError);
-    expect(() => encounterKey('ag_kestrel_01', {} as never)).toThrow(/must be strings/);
-    expect(() => encounterKey('ag_kestrel_01', null as never)).toThrow(TypeError);
+  it('a non-string mob id gives null, not a coerced key', () => {
+    expect(encounterKey('ag_kestrel_01', {} as never)).toBeNull();
+    expect(encounterKey('ag_kestrel_01', null as never)).toBeNull();
+    expect(encounterKey('ag_kestrel_01', undefined as never)).toBeNull();
   });
 
-  it('a non-string life id is refused with a clear error', () => {
-    expect(() => encounterKey(undefined as never, MOB)).toThrow(TypeError);
+  it('a non-string life id gives null, not a coerced key', () => {
+    expect(encounterKey(undefined as never, MOB)).toBeNull();
+    expect(encounterKey(42 as never, MOB)).toBeNull();
+    expect(encounterKey({ toString: () => 'ag_kestrel_01' } as never, MOB)).toBeNull();
   });
 });
 
@@ -232,6 +252,21 @@ describe('the two draft sentences (AN-46, OWNER APPROVAL REQUIRED)', () => {
     );
     expect(observationSentence({ kind: 'fight_seen', target: 'creeper' })).toBe(
       'Someone fought a creeper nearby.',
+    );
+  });
+
+  it('the article is an before a, e, i, o and u, and a before any other letter', () => {
+    expect(observationSentence({ kind: 'fight_seen', target: 'axolotl' })).toBe(
+      'Someone fought an axolotl nearby.',
+    );
+    expect(observationSentence({ kind: 'fight_seen', target: 'ocelot' })).toBe(
+      'Someone fought an ocelot nearby.',
+    );
+    expect(observationSentence({ kind: 'fight_seen', target: 'umbrella' })).toBe(
+      'Someone fought an umbrella nearby.',
+    );
+    expect(observationSentence({ kind: 'fight_seen', target: 'zombie' })).toBe(
+      'Someone fought a zombie nearby.',
     );
   });
 
