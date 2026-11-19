@@ -16,6 +16,7 @@ import java.util.UUID;
 import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.entity.Item;
+import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.junit.jupiter.api.Test;
@@ -144,6 +145,43 @@ class PickupProvenanceListenerTest {
         l.publish("world", "Picker", at(0, 0), THROWER_ID, "cobblestone", 1, 1, tick);
         assertEquals(65, tails.size());
         assertEquals(1, l.dropped());
+    }
+
+    @Test
+    void aPickupOfZeroItemsSendsNothing() {
+        PickupProvenanceListener l = listener(sink, true);
+
+        for (int i = 0; i < 64; i++) {
+            l.publish("world", "Picker", at(0, 0), THROWER_ID, "cobblestone", 0, 1, tick);
+        }
+        assertTrue(tails.isEmpty());
+
+        l.publish("world", "Picker", at(0, 0), THROWER_ID, "cobblestone", 1, 1, tick);
+        assertEquals(1, tails.size());
+        assertEquals(0, l.dropped());
+    }
+
+    @Test
+    void throwerInAnotherWorldSendsDistanceNull() {
+        World nether = stub(World.class, "getName", "nether");
+        online.put(THROWER_ID, stub(Player.class, "getName", "Thrower", "getUniqueId", THROWER_ID, "getWorld", nether,
+                "getLocation", at(0, 0)));
+
+        listener(sink, true).publish("world", "Picker", at(0, 0), THROWER_ID, "cobblestone", 1, 1, tick);
+
+        JsonObject json = parse(bodies.get(0));
+        assertEquals("Thrower", json.get("thrower").getAsString());
+        assertTrue(json.get("distance").isJsonNull());
+    }
+
+    @Test
+    void aNonPlayerPickupSendsNothing() {
+        LivingEntity mob = stub(LivingEntity.class);
+        EntityPickupItemEvent event = new EntityPickupItemEvent(mob, item(THROWER_ID, 1), 0);
+
+        listener(sink, true).onPickup(event);
+
+        assertTrue(tails.isEmpty());
     }
 
     @Test

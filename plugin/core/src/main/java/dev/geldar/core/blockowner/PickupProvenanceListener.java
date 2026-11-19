@@ -64,6 +64,9 @@ public final class PickupProvenanceListener implements Listener {
      */
     void publish(String world, String picker, Location pickerAt, UUID throwerId, String itemKey, int count,
             int ageTicks, long now) {
+        if (count < 1) {
+            return;
+        }
         if (now != cappedTick) {
             cappedTick = now;
             sentThisTick = 0;
