@@ -69,10 +69,10 @@ export function lifeThreatPolicy(options: LifePolicyOptions): ThreatPolicy {
   ) => {
     // A non-finite health is not a valid decision input (the event schema rejects it): nothing is recorded.
     if (!Number.isFinite(facts.health)) return;
-    if (call.roll === null) return;
-    const fields: DecisionFields = {
+    if (call.roll === null || lastRoll === null) return;
+    audit.recordDecision(lastRoll.key, {
       fx: call.roll.fx,
-      kind: 'deterministic',
+      kind: 'd20',
       result: { decision: call.action },
       inputs: {
         health: facts.health,
@@ -81,12 +81,8 @@ export function lifeThreatPolicy(options: LifePolicyOptions): ThreatPolicy {
         floor: call.floor,
         why: call.why,
       },
-    };
-    if (call.roll !== null && lastRoll !== null) {
-      audit.recordDecision(lastRoll.key, { ...fields, kind: 'd20', roll_event_ids: [lastRoll.id] });
-    } else {
-      audit.recordDecision(newKey('threat'), fields);
-    }
+      roll_event_ids: [lastRoll.id],
+    });
   };
   const decideWith = (combat: Level): ThreatPolicy => {
     const policy = createThreatPolicy({
