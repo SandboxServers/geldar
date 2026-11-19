@@ -94,6 +94,14 @@ describe('planDnsDiff', () => {
     );
   });
 
+  it('treats a repeated request, in another case or with a trailing dot, as one change', () => {
+    const diff = planDnsDiff(
+      input([], { requested: ['GLASS.example.test.', 'glass.example.test'] }),
+    );
+    expect(diff.create).toHaveLength(1);
+    expect(azureCommands(diff, RG).filter((line) => line.includes('--name glass'))).toHaveLength(1);
+  });
+
   it('a second run on the snapshot the first run left yields zero writes', () => {
     const first = planDnsDiff(input([]));
     const after = NAMES.map((fqdn) => recordAt(relativeName(fqdn, ZONE), 300, ADDRESS));
@@ -108,6 +116,31 @@ describe('planDnsDiff', () => {
     expect(() => planDnsDiff(input([], { ttl: 10 }))).toThrow(/ttl 10/);
     expect(() => planDnsDiff(input([], { ttl: 7200 }))).toThrow(/ttl 7200/);
     expect(() => planDnsDiff(input([], { address: '192.0.2.300' }))).toThrow(/IPv4/);
+    expect(() => planDnsDiff(input([], { address: '192.0.2.1; x' }))).toThrow(/IPv4/);
+  });
+
+  it('refuses a snapshot record whose TTL is not a number, or missing', () => {
+    const textTtl = [{ name: 'glass', ttl: '300', aRecords: [] }] as unknown as SnapshotRecord[];
+    expect(() => planDnsDiff(input(textTtl))).toThrow(/glass has no numeric ttl/);
+    const noTtl = [{ name: 'glass', aRecords: [] }] as unknown as SnapshotRecord[];
+    expect(() => planDnsDiff(input(noTtl))).toThrow(/glass has no numeric ttl/);
+  });
+
+  it('refuses a snapshot A record whose address is not IPv4', () => {
+    const snapshot = [recordAt('glass', 300, '192.0.2.1; x')];
+    expect(() => planDnsDiff(input(snapshot))).toThrow(/glass has a non-IPv4 address/);
+  });
+
+  it('refuses a snapshot that is not a list of record sets', () => {
+    expect(() => planDnsDiff(input({} as unknown as SnapshotRecord[]))).toThrow(/not an array/);
+  });
+});
+
+describe('azureCommands', () => {
+  it('refuses a resource group with characters that are not plain names', () => {
+    const diff = planDnsDiff(input([]));
+    expect(() => azureCommands(diff, 'rg(x)')).toThrow(/resource group name is not valid/);
+    expect(() => azureCommands(diff, 'rg; rm -rf x')).toThrow(/resource group name is not valid/);
   });
 });
 

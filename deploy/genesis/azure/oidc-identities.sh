@@ -1,9 +1,15 @@
 #!/bin/sh
 # Creates the Azure workload identity per environment (G2-04): an app and service principal, a federated credential
-# bound to the GitHub Environment subject environment:<name>, and the role assignments of plan.md section 6.
-# Run by the subscription owner with `az` logged in to the right tenant and subscription (az account set).
+# matched to the GitHub Environment subject repo:<owner/name>:environment:<name>, and the role assignments of plan.md
+# section 6. Run by the subscription owner with `az` logged in to the right tenant and subscription (az account set).
 # Dry-run is the default: it prints what it would create and makes no az call. --apply lists before each create,
 # so a second run creates nothing. No client secret is created: the federated credential replaces it.
+#
+# BINDING LIMIT (docs/analysis/genesis/g2-04-oidc-binding.md): the credential is bound by the name-based subject only.
+# --repository-id is printed for the record and is NOT ENFORCED: a renamed or recreated repository that takes the same
+# name could obtain a token for that environment. The owner must add a custom subject claim or a claims-matching
+# expression that includes repository_id, and verify its syntax at the first owner run. Until then, required reviewers
+# on each GitHub Environment are the interim control.
 #
 # Roles (plan.md section 6): production gets DNS Zone Contributor on the DNS zone and Key Vault Secrets Officer on
 # kv-geldar-production; test gets Key Vault Secrets Officer on kv-geldar-test only (record-set scoping is not
@@ -34,11 +40,10 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-case "$REPO" in
-  */*/*|/*|*/|'') echo "--repo must be owner/name" >&2; exit 2 ;;
-  */*) ;;
-  *) echo "--repo must be owner/name" >&2; exit 2 ;;
-esac
+if ! printf '%s' "$REPO" | grep -Eq '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$'; then
+  echo "--repo must be owner/name (letters, digits, dot, underscore, hyphen)" >&2
+  exit 2
+fi
 case "$REPO_ID" in
   ''|*[!0-9]*) echo "--repository-id must be the numeric GitHub repository id" >&2; exit 2 ;;
 esac
@@ -46,6 +51,7 @@ if [ -z "$RG" ] || [ -z "$DNS_ZONE_ID" ]; then
   echo "--resource-group and --dns-zone-id are required" >&2
   exit 2
 fi
+echo "info: repository id $REPO_ID is NOT ENFORCED (printed only; the credential matches the name-based subject)"
 
 ISSUER="https://token.actions.githubusercontent.com"
 AUDIENCE="api://AzureADTokenExchange"
@@ -71,7 +77,7 @@ for ENV in $ENVIRONMENTS; do
   APP="geldar-$ENV-deploy"
   FIC_NAME="geldar-$ENV-environment"
   SUBJECT="repo:$REPO:environment:$ENV"
-  FIC_JSON="{\"name\":\"$FIC_NAME\",\"issuer\":\"$ISSUER\",\"subject\":\"$SUBJECT\",\"audiences\":[\"$AUDIENCE\"],\"description\":\"repository_id=$REPO_ID\"}"
+  FIC_JSON="{\"name\":\"$FIC_NAME\",\"issuer\":\"$ISSUER\",\"subject\":\"$SUBJECT\",\"audiences\":[\"$AUDIENCE\"]}"
   VAULT="kv-geldar-$ENV"
   WANT_DNS=0
   WANT_VAULT=0

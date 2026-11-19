@@ -10,7 +10,8 @@ const MAX_TTL_SECONDS = 3600;
 const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 const HOSTNAME =
   /^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/;
-const AZ_NAME = /^[A-Za-z0-9._()-]{1,90}$/;
+// Only characters that need no quoting in the printed shell lines.
+const AZ_NAME = /^[A-Za-z0-9._-]{1,90}$/;
 
 /** One record set as `az network dns record-set a list` prints it. `name` is relative to the zone ("@" is the apex). */
 export interface SnapshotRecord {
@@ -77,10 +78,30 @@ function sameAddresses(a: readonly string[], b: readonly string[]): boolean {
   return [...a].sort().join(',') === [...b].sort().join(',');
 }
 
-function validIpv4(address: string): boolean {
+function validIpv4(address: unknown): boolean {
+  if (typeof address !== 'string') return false;
   const match = IPV4.exec(address);
   if (!match) return false;
   return match.slice(1).every((octet) => Number(octet) <= 255);
+}
+
+/** Refuses a snapshot whose shape the diff cannot trust: a list of named record sets, each with a numeric TTL and IPv4 A records. */
+function validateSnapshot(snapshot: unknown): void {
+  if (!Array.isArray(snapshot)) throw new Error('snapshot is not an array of record sets');
+  for (const record of snapshot as Partial<SnapshotRecord>[]) {
+    if (typeof record?.name !== 'string') throw new Error('snapshot record has no name');
+    if (typeof record.ttl !== 'number' || !Number.isFinite(record.ttl)) {
+      throw new Error(`snapshot record ${record.name} has no numeric ttl (parse error)`);
+    }
+    if (record.aRecords !== undefined && !Array.isArray(record.aRecords)) {
+      throw new Error(`snapshot record ${record.name} has aRecords that are not a list`);
+    }
+    for (const a of record.aRecords ?? []) {
+      if (!validIpv4(a?.ipv4Address)) {
+        throw new Error(`snapshot record ${record.name} has a non-IPv4 address`);
+      }
+    }
+  }
 }
 
 /** Returns the diff for the requested names. Throws, and writes nothing, when any requested name is refused. */
@@ -91,6 +112,7 @@ export function planDnsDiff(input: DnsDiffInput): DnsDiff {
     throw new Error(`ttl ${input.ttl} is outside ${MIN_TTL_SECONDS}..${MAX_TTL_SECONDS} seconds`);
   }
   if (!validIpv4(input.address)) throw new Error('address is not an IPv4 address');
+  validateSnapshot(input.snapshot);
 
   const owned = new Set(input.environmentNames.map(normalizeName));
   const refused: string[] = [];

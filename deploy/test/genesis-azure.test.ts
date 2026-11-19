@@ -25,7 +25,7 @@ const REPO = 'example-owner/example-repo';
 const DNS_ZONE_ID =
   '/subscriptions/stub/resourceGroups/stub/providers/Microsoft.Network/dnszones/example.test';
 
-// The stubs print one value for list/show calls when FAKE_EXISTS=1, and exit 1 for a GET when it is 0.
+// The az stub prints one value for list/show calls when FAKE_EXISTS=1, and exits 0 always.
 const FAKE_AZ = `#!/bin/sh
 echo "az $*" >> "$FAKE_LOG"
 case "$*" in
@@ -33,10 +33,15 @@ case "$*" in
 esac
 exit 0
 `;
+// The gh stub: a PUT succeeds. A GET fails with a 5xx when FAKE_GET_FAIL=1, succeeds when FAKE_EXISTS=1, and
+// otherwise reports a 404 on stderr the way gh does for a missing environment.
 const FAKE_GH = `#!/bin/sh
 echo "gh $*" >> "$FAKE_LOG"
 case "$*" in *"-X PUT"*) exit 0 ;; esac
-[ "\${FAKE_EXISTS:-0}" = 1 ]
+if [ "\${FAKE_GET_FAIL:-0}" = 1 ]; then echo "gh: Server Error (HTTP 500)" >&2; exit 1; fi
+if [ "\${FAKE_EXISTS:-0}" = 1 ]; then exit 0; fi
+echo "gh: Not Found (HTTP 404)" >&2
+exit 1
 `;
 
 let dir: string;
@@ -81,7 +86,16 @@ function findSh(): string {
 const SH = findSh();
 const posix = (p: string) => p.replace(/\\/g, '/');
 
-function run(script: string, args: string[], exists = false) {
+interface RunOptions {
+  exists?: boolean;
+  getFails?: boolean;
+}
+
+function run(
+  script: string,
+  args: string[],
+  { exists = false, getFails = false }: RunOptions = {},
+) {
   const env: Record<string, string> = {
     PATH: [
       posix(fakeBin),
@@ -93,6 +107,7 @@ function run(script: string, args: string[], exists = false) {
       .join(delimiter),
     FAKE_LOG: log,
     FAKE_EXISTS: exists ? '1' : '0',
+    FAKE_GET_FAIL: getFails ? '1' : '0',
   };
   return spawnSync(SH, [posix(script), ...args], { env, encoding: 'utf8', timeout: 30_000 });
 }
@@ -122,21 +137,40 @@ describe('github-environments.sh', () => {
   });
 
   it('apply with every environment present writes nothing', () => {
-    const r = run(GH_SCRIPT, [...GH_ARGS, '--apply'], true);
+    const r = run(GH_SCRIPT, [...GH_ARGS, '--apply'], { exists: true });
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('exists environment production (no write)');
     expect(calls()).not.toMatch(/-X PUT/);
   });
 
   it('apply with nothing present PUTs each environment once', () => {
-    const r = run(GH_SCRIPT, [...GH_ARGS, '--apply'], false);
+    const r = run(GH_SCRIPT, [...GH_ARGS, '--apply']);
     expect(r.status).toBe(0);
     expect(calls().match(/-X PUT/g)?.length).toBe(3);
+  });
+
+  it('a GET that fails with a 5xx exits non-zero and makes no PUT', () => {
+    const r = run(GH_SCRIPT, [...GH_ARGS, '--apply'], { getFails: true });
+    expect(r.status).not.toBe(0);
+    expect(r.stderr).toContain('not a 404');
+    expect(calls()).toMatch(/gh api repos\/.*\/environments\/production/);
+    expect(calls()).not.toMatch(/-X PUT/);
+  });
+
+  it('--reviewer-type team prints a Team reviewer; an unknown type is refused', () => {
+    const r = run(GH_SCRIPT, [...GH_ARGS, '--reviewer-type', 'team']);
+    expect(r.status).toBe(0);
+    expect(r.stdout).toContain('"reviewers":[{"type":"Team","id":4242}]');
+    expect(run(GH_SCRIPT, [...GH_ARGS, '--reviewer-type', 'robot']).status).toBe(2);
+    expect(calls()).toBe('');
   });
 
   it('refuses a reviewer id that is not numeric and a repo that is not owner/name', () => {
     expect(run(GH_SCRIPT, ['--repo', REPO, '--reviewer-id', 'abc']).status).toBe(2);
     expect(run(GH_SCRIPT, ['--repo', 'no-slash', '--reviewer-id', '1']).status).toBe(2);
+    expect(run(GH_SCRIPT, ['--repo', 'a/b/c', '--reviewer-id', '1']).status).toBe(2);
+    expect(run(GH_SCRIPT, ['--repo', 'x/y z', '--reviewer-id', '1']).status).toBe(2);
+    expect(run(GH_SCRIPT, ['--repo', 'x/y$(id)', '--reviewer-id', '1']).status).toBe(2);
     expect(calls()).toBe('');
   });
 });
@@ -147,14 +181,40 @@ describe('oidc-identities.sh', () => {
     expect(r.status).toBe(0);
     expect(r.stdout).toContain('geldar-production-deploy');
     expect(r.stdout).toContain(`repo:${REPO}:environment:production`);
-    expect(r.stdout).toContain(`repository_id=123456`);
     expect(r.stdout).toContain('DNS Zone Contributor');
     expect(r.stdout).toContain('kv-geldar-test');
     expect(calls()).toBe('');
   });
 
+  it('the repository id is printed as NOT ENFORCED and is not written into the credential', () => {
+    const r = run(OIDC_SCRIPT, OIDC_ARGS);
+    expect(r.stdout).toContain('123456 is NOT ENFORCED');
+    expect(r.stdout).not.toContain('repository_id=');
+    expect(r.stdout).not.toContain('"description"');
+    expect(readFileSync(OIDC_SCRIPT, 'utf8')).toContain('NOT ENFORCED');
+  });
+
+  it('dry-run role matrix: production gets DNS and its vault, test only its vault, ephemeral none', () => {
+    const r = run(OIDC_SCRIPT, OIDC_ARGS);
+    const block = (env: string) =>
+      r.stdout
+        .split('dry-run: identity ')
+        .find((part) => part.startsWith(`geldar-${env}-deploy`)) ?? '';
+    const production = block('production');
+    expect(production).toContain('DNS Zone Contributor');
+    expect(production).toContain('Key Vault Secrets Officer on vault kv-geldar-production');
+    const test = block('test');
+    expect(test).toContain('Key Vault Secrets Officer on vault kv-geldar-test');
+    expect(test).not.toContain('DNS Zone Contributor');
+    const ephemeral = block('ephemeral');
+    expect(ephemeral).toContain('no role assignment for ephemeral');
+    expect(ephemeral).not.toContain('Key Vault Secrets Officer');
+    expect(ephemeral).not.toContain('DNS Zone Contributor');
+    expect(calls()).toBe('');
+  });
+
   it('apply with everything present creates no app, credential or role', () => {
-    const r = run(OIDC_SCRIPT, [...OIDC_ARGS, '--apply'], true);
+    const r = run(OIDC_SCRIPT, [...OIDC_ARGS, '--apply'], { exists: true });
     expect(r.status).toBe(0);
     expect(calls()).not.toMatch(/ create|federated-credential create/);
     expect(calls()).toMatch(/az ad app list/);
@@ -162,18 +222,19 @@ describe('oidc-identities.sh', () => {
   });
 
   it('apply with nothing present creates the app and the credential, and assigns roles', () => {
-    const r = run(OIDC_SCRIPT, [...OIDC_ARGS, '--apply'], false);
+    const r = run(OIDC_SCRIPT, [...OIDC_ARGS, '--apply']);
     expect(r.status).toBe(0);
     expect(calls()).toMatch(/az ad app create --display-name geldar-production-deploy/);
     expect(calls()).toMatch(/az ad app federated-credential create/);
     expect(calls()).toMatch(/az role assignment create .*DNS Zone Contributor/);
   }, 60_000);
 
-  it('refuses a missing dns zone id and a non-numeric repository id', () => {
+  it('refuses a missing dns zone id, a non-numeric repository id and a bad repo', () => {
     expect(
       run(OIDC_SCRIPT, ['--repo', REPO, '--repository-id', '1', '--resource-group', 'rg']).status,
     ).toBe(2);
     expect(run(OIDC_SCRIPT, [...OIDC_ARGS.slice(0, 3), 'x', ...OIDC_ARGS.slice(4)]).status).toBe(2);
+    expect(run(OIDC_SCRIPT, ['--repo', 'a/b/c', ...OIDC_ARGS.slice(2)]).status).toBe(2);
     expect(calls()).toBe('');
   });
 });

@@ -6,7 +6,7 @@
  *     --zone <zone> --resource-group <group> --address <ipv4>
  *
  * The snapshot is the JSON array from `az network dns record-set a list --zone-name <zone> -g <group> -o json`.
- * Exit 0 for a plan, 1 for an invalid definition or a refused record, 2 for bad arguments.
+ * Exit 0 for a plan, 1 for an invalid definition, snapshot or refused record, 2 for bad arguments.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -32,39 +32,55 @@ interface Definition {
   dns_ttl_seconds?: number;
 }
 
+/** The parsed options, or null after printing why the arguments are bad (an unknown option, for one). */
+function readOptions(): Record<string, string | undefined> | null {
+  try {
+    return parseArgs({
+      options: {
+        env: { type: 'string' },
+        snapshot: { type: 'string' },
+        zone: { type: 'string' },
+        'resource-group': { type: 'string' },
+        address: { type: 'string' },
+      },
+      strict: true,
+    }).values;
+  } catch (error) {
+    console.log(`error: ${(error as Error).message}`);
+    return null;
+  }
+}
+
 function main(): number {
-  const { values } = parseArgs({
-    options: {
-      env: { type: 'string' },
-      snapshot: { type: 'string' },
-      zone: { type: 'string' },
-      'resource-group': { type: 'string' },
-      address: { type: 'string' },
-    },
-    strict: true,
-  });
-  const { env, snapshot, zone, 'resource-group': group, address } = values;
-  if (!env || !snapshot || !zone || !group || !address) {
+  const values = readOptions();
+  const {
+    env,
+    snapshot,
+    zone,
+    'resource-group': group,
+    address,
+  } = values ?? ({} as Record<string, string | undefined>);
+  if (!values || !env || !snapshot || !zone || !group || !address) {
     console.log(USAGE);
     return 2;
   }
 
-  const root = fileURLToPath(new URL('../../../', import.meta.url));
-  const schema = JSON.parse(
-    readFileSync(join(root, 'envs', 'environment.schema.json'), 'utf8'),
-  ) as object;
-  const text = readFileSync(env, 'utf8');
-  const problems = validateEnvironment(text, env, schema);
-  if (problems.length > 0) {
-    for (const problem of problems) console.log(`error: ${problem}`);
-    return 1;
-  }
-
-  const definition = parse(text) as Definition;
-  const names = definitionRecordNames(definition);
-  const records = JSON.parse(readFileSync(snapshot, 'utf8')) as SnapshotRecord[];
-  const ttl = definition.dns_ttl_seconds ?? DEFAULT_DNS_TTL_SECONDS;
   try {
+    const root = fileURLToPath(new URL('../../../', import.meta.url));
+    const schema = JSON.parse(
+      readFileSync(join(root, 'envs', 'environment.schema.json'), 'utf8'),
+    ) as object;
+    const text = readFileSync(env, 'utf8');
+    const problems = validateEnvironment(text, env, schema);
+    if (problems.length > 0) {
+      for (const problem of problems) console.log(`error: ${problem}`);
+      return 1;
+    }
+
+    const definition = parse(text) as Definition;
+    const names = definitionRecordNames(definition);
+    const records = JSON.parse(readFileSync(snapshot, 'utf8')) as SnapshotRecord[];
+    const ttl = definition.dns_ttl_seconds ?? DEFAULT_DNS_TTL_SECONDS;
     const diff = planDnsDiff({
       zone,
       environmentNames: names,
