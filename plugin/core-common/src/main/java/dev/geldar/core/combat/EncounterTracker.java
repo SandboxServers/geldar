@@ -31,7 +31,7 @@ public final class EncounterTracker {
     /** The first engagement of an encounter. kind is always engaged. */
     public record Step(String kind, String player, String mob) {}
 
-    /** Open encounters by slot, oldest first. */
+    /** Open encounters by slot, oldest opened first (a touch does not move an encounter). */
     private final Map<String, Encounter> open = new LinkedHashMap<>();
     /** Keys already closed, oldest first; the last MAX_CLOSED are remembered. */
     private final Set<String> closed = new LinkedHashSet<>();
@@ -41,7 +41,10 @@ public final class EncounterTracker {
         touch(player, mobUuid, mobType, tick);
     }
 
-    /** A player damaged a hostile mob. Returns engaged the first time in an encounter, empty after. */
+    /**
+     * A player damaged a hostile mob. Returns engaged once per encounter, on the player's first hit, even if the mob
+     * hurt the player first (hurt then hit still engages once). Empty after that, and empty for a closed encounter.
+     */
     public Optional<Step> playerHitMob(String player, String playerUuid, String mobUuid, String mobType, long tick) {
         Encounter e = touch(player, mobUuid, mobType, tick);
         if (e == null || e.engaged) {
@@ -93,7 +96,9 @@ public final class EncounterTracker {
 
     /**
      * The open encounter for (player, mob), opened if it is new. Null when the key is already closed, so a closed
-     * encounter never reopens and never emits again. A new encounter at MAX_OPEN drops the oldest open one.
+     * encounter never reopens and never emits again. A new encounter at MAX_OPEN drops the oldest open one: oldest means
+     * oldest opened, not least recently active. A dropped key is not remembered as closed, so a fight still going on
+     * opens fresh and can still pay once.
      */
     private Encounter touch(String player, String mobUuid, String mobType, long tick) {
         String mob = mobUuid.toLowerCase(Locale.ROOT);
@@ -106,7 +111,6 @@ public final class EncounterTracker {
             if (open.size() >= MAX_OPEN) {
                 Encounter oldest = open.values().iterator().next();
                 open.remove(oldest.slot);
-                rememberClosed(oldest.key());
             }
             e = new Encounter(slot, player, mob, mobType);
             open.put(slot, e);

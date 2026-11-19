@@ -34,6 +34,28 @@ backup afterwards (`git diff --stat` empty after each restore).
    `playerDeathEmitsNothingForItsEncounters`.
 4. The `isLifeId` check: part 2 (listener filter).
 
+## Review 1 fixes (part 1)
+
+Rulings from the owner:
+
+- Cap-dropped encounters are not remembered as closed. Nothing was emitted for them, so a fight still going on opens
+  fresh and can pay once (the sink dedups by key anyway). `oldest` means oldest opened, not least recently active.
+- `playerHitMob` returns `engaged` once per encounter, on the player's first hit, even if the mob hurt the player first.
+  Hurt then hit still engages once.
+- Shared provenance file: `ProvenanceJson.java` is created here with only `combatJson`. Whichever of AN-27a and AN-47a
+  lands second keeps both `combatJson` and `breakJson` in it (AN-27a is already merged without `ProvenanceJson`).
+
+New tests and their mutation proofs (`EncounterTracker.java` mutated, run, restored from a backup; `git diff` checked):
+
+1. `closedKeyBoundRemembers512AndForgetsTheOldest` (513 closes, key 1 still closed, key 0 forgotten):
+   - `MAX_CLOSED = 1`: fails at line 163 (key 1 emits again).
+   - `MAX_CLOSED = 511`: fails at line 163.
+   - `MAX_CLOSED = 513`: fails at line 166 (key 0 stays closed).
+   - `MAX_CLOSED = 100000`: fails at line 166.
+2. `cappedDropIsNotRememberedSoItOpensFreshAndPaysOnce` (513 opens, touch the dropped key):
+   - `rememberClosed(oldest.key())` restored on the cap drop: fails at line 177 (no kill emitted).
+3. `hurtThenHitStillEngagesOnce`: passes on the current rule (no code change for it).
+
 ## Index line for AN-50a
 
 Part 2 pending. The expected registration lines are `all.add(new CombatFactListener(...))` and the tick task; they are

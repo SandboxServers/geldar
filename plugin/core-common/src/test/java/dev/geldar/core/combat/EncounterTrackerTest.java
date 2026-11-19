@@ -147,4 +147,42 @@ class EncounterTrackerTest {
 
         assertEquals(List.of(), tracker.mobDied(String.format("00000000-0000-0000-0000-%012d", 599), "zombie", LIFE, PLAYER_UUID, 3));
     }
+
+    private static String mobId(int i) {
+        return String.format("00000000-0000-0000-0000-%012d", i);
+    }
+
+    @Test
+    void closedKeyBoundRemembers512AndForgetsTheOldest() {
+        for (int i = 0; i <= 512; i++) {
+            hurt(LIFE, mobId(i), 0);
+            assertEquals(1, tracker.mobDied(mobId(i), "zombie", LIFE, PLAYER_UUID, 1).size());
+        }
+
+        // key 1 is the 512th most recent closed key: still closed
+        assertEquals(List.of(), tracker.mobDied(mobId(1), "zombie", LIFE, PLAYER_UUID, 2));
+        // key 0 is the 513th: forgotten, so a new fight pays once more
+        hurt(LIFE, mobId(0), 3);
+        assertEquals(1, tracker.mobDied(mobId(0), "zombie", LIFE, PLAYER_UUID, 4).size());
+    }
+
+    @Test
+    void cappedDropIsNotRememberedSoItOpensFreshAndPaysOnce() {
+        for (int i = 0; i <= EncounterTracker.MAX_OPEN; i++) {
+            hurt(LIFE, mobId(i), 0);
+        }
+
+        // mob 0 was the oldest opened and was dropped at the cap; touching it again opens it fresh
+        hurt(LIFE, mobId(0), 1);
+        assertEquals(1, tracker.mobDied(mobId(0), "zombie", LIFE, PLAYER_UUID, 2).size());
+        assertEquals(List.of(), tracker.mobDied(mobId(0), "zombie", LIFE, PLAYER_UUID, 3));
+    }
+
+    @Test
+    void hurtThenHitStillEngagesOnce() {
+        hurt(LIFE, MOB, 0);
+
+        assertEquals(Optional.of(new Step("engaged", LIFE, "zombie")), tracker.playerHitMob(LIFE, PLAYER_UUID, MOB, "zombie", 1));
+        assertEquals(Optional.empty(), tracker.playerHitMob(LIFE, PLAYER_UUID, MOB, "zombie", 2));
+    }
 }
