@@ -240,6 +240,46 @@ describe('bilateral exchange', () => {
     ]);
   });
 
+  it('a rolled-back batch with a later window re-awards the earlier window', () => {
+    const tracker = new ExchangeTracker();
+    const events = [
+      own('ag_ann', 'Ann', 'hello', 100),
+      heard('ag_ben', 'Ann', 'hello', 101),
+      own('ag_ben', 'Ben', 'hi', 110),
+      heard('ag_ann', 'Ben', 'hi', 111),
+      own('ag_ann', 'Ann', 'later', 700),
+      heard('ag_ben', 'Ann', 'later', 701),
+    ];
+    const first = run(tracker, events).flat();
+    expect(first.map((a) => a.evidenceKey)).toEqual([
+      'exch:ag_ann:ag_ben:0',
+      'exch:ag_ann:ag_ben:0',
+    ]);
+    expect(run(tracker, events).flat()).toEqual(first);
+  });
+
+  it('a rolled-back batch with two windows re-awards both windows', () => {
+    const tracker = new ExchangeTracker();
+    const events = [
+      own('ag_ann', 'Ann', 'hello', 100),
+      heard('ag_ben', 'Ann', 'hello', 101),
+      own('ag_ben', 'Ben', 'hi', 110),
+      heard('ag_ann', 'Ben', 'hi', 111),
+      own('ag_ann', 'Ann', 'later', 700),
+      heard('ag_ben', 'Ann', 'later', 701),
+      own('ag_ben', 'Ben', 'yes', 710),
+      heard('ag_ann', 'Ben', 'yes', 711),
+    ];
+    const first = run(tracker, events).flat();
+    expect(first.map((a) => a.evidenceKey)).toEqual([
+      'exch:ag_ann:ag_ben:0',
+      'exch:ag_ann:ag_ben:0',
+      'exch:ag_ann:ag_ben:1',
+      'exch:ag_ann:ag_ben:1',
+    ]);
+    expect(run(tracker, events).flat()).toEqual(first);
+  });
+
   it('greeting spam still fails to qualify after a redelivery', () => {
     const tracker = new ExchangeTracker();
     const events = [
@@ -426,5 +466,26 @@ describe('bilateral exchange', () => {
     delete ghost.agent_id;
     expect(tracker.awardsFor(ghost as unknown as WorldEvent)).toEqual([]);
     expect(tracker.awardsFor(heard('ag_ann', 'Ben', 'hi', 111))).toHaveLength(2);
+  });
+
+  it('a speech line with an empty agent_id does not rebind a name', () => {
+    const tracker = new ExchangeTracker();
+    run(tracker, [
+      own('ag_ann', 'Ann', 'hello', 100),
+      heard('ag_ben', 'Ann', 'hello', 101),
+      own('ag_ben', 'Ben', 'hi', 110),
+    ]);
+    expect(tracker.awardsFor(own('', 'Ben', 'bye', 105))).toEqual([]);
+    expect(tracker.awardsFor(heard('ag_ann', 'Ben', 'hi', 111))).toHaveLength(2);
+  });
+
+  it('a numeric text does not qualify', () => {
+    expect(replyAfterOpening(patched(heard('ag_ann', 'Ben', 'hi', 111), { text: 5 }))).toEqual([]);
+  });
+
+  it('a numeric name does not qualify and does not throw', () => {
+    const bad = patched(heard('ag_ann', 'Ben', 'hi', 111), { from: 5 });
+    expect(() => replyAfterOpening(bad)).not.toThrow();
+    expect(replyAfterOpening(bad)).toEqual([]);
   });
 });
