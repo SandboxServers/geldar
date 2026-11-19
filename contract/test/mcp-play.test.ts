@@ -1,6 +1,40 @@
 import { describe, expect, it } from 'vitest';
 import { validateThought, validateToolInput, validateToolResult } from '../src/index.ts';
 
+describe('McpPlayerEvent observation fields (AN-24)', () => {
+  const gift = {
+    seq: 5,
+    type: 'gift_received',
+    tick: 12402,
+    text: 'You received 3 bread.',
+    actor: { name: 'Kestrel' },
+    item: 'bread',
+    count: 3,
+  };
+  const withEvent = (event: unknown) =>
+    validateToolResult('wait', { ...WAIT_RESULT, events: [event] });
+
+  it('an attributed gift and an unattributed property break validate', () => {
+    expect(withEvent(gift).ok).toBe(true);
+    expect(
+      withEvent({
+        seq: 6,
+        type: 'property_broken',
+        tick: 12403,
+        text: 'Something happened.',
+        block: 'chest',
+      }).ok,
+    ).toBe(true);
+  });
+
+  it('a count above 2304 or an actor with a life fails', () => {
+    expect(withEvent({ ...gift, count: 2305 }).ok).toBe(false);
+    expect(withEvent({ ...gift, actor: { name: 'Kestrel', life: 'ag_kestrel_01' } }).ok).toBe(
+      false,
+    );
+  });
+});
+
 /** The Appendix C intent, with a valid skill-style program name. */
 const intent = {
   goal: 'maintain_food_supply',

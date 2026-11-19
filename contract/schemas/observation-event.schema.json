@@ -46,7 +46,7 @@
           "$ref": "#/$defs/ObservedActor"
         },
         "block": { "type": "string", "pattern": "^[a-z_]{1,64}$" },
-        "key": { "type": "string" }
+        "key": { "type": "string", "pattern": "^[a-z0-9:_-]{8,96}$" }
       }
     }
   }

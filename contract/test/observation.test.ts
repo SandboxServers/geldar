@@ -89,6 +89,28 @@ describe('observed-actor contract (AN-24, decision 0343)', () => {
     expect(observationSentence({ kind: 'other' })).toBe('Something happened.');
   });
 
+  it('a marker word in an item or block gives the generic sentence', () => {
+    expect(observationSentence({ kind: 'gift_received', item: 'amethyst_shard', count: 1 })).toBe(
+      'Something happened.',
+    );
+    expect(observationSentence({ kind: 'gift_received', item: 'white_harness', count: 1 })).toBe(
+      'Something happened.',
+    );
+    expect(observationSentence({ kind: 'property_broken', block: 'observer' })).toBe(
+      'Something happened.',
+    );
+    expect(
+      observationSentence({ kind: 'gift_received', item: 'happy_ghast_harness', count: 1 }),
+    ).toBe('You received 1 happy ghast harness.');
+  });
+
+  it('a property key that is empty or outside 8 to 96 characters fails', () => {
+    for (const key of ['', 'short', 'x'.repeat(97)]) {
+      expect(validateObservationPayload({ ...BROKEN, key })).toBe(false);
+    }
+    expect(validateObservationPayload(BROKEN)).toBe(true);
+  });
+
   it('subject helpers reject a dot or a wildcard in the shard', () => {
     for (const shard of ['bad.shard', '*', '>']) {
       expect(() => provenanceBreakSubject(shard)).toThrow();

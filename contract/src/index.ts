@@ -52,9 +52,9 @@ export function validateReceipt(value: unknown): ValidationResult<Receipt> {
   return { ok: false, errors: (validateReceiptSchema.errors ?? []).map(formatError) };
 }
 
+/** Observed-actor contract (AN-24, decision 0343, Proposed; nothing publishes these yet). */
 export type { ObservationPayload, ObservedActor, Provenance } from './generated/types.ts';
 /** Checks a heard_sound payload against heard-sound-event.schema.json (PX-4). Coordinates are rejected. */
-/** Observed-actor contract (AN-24, decision 0343, Proposed; nothing publishes these yet). */
 export {
   validateHeardSoundEvent,
   validateObservationPayload,
