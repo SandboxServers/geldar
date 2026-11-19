@@ -1,0 +1,41 @@
+/**
+ * Agent-visible sentences for an observation (AN-24, decision 0343). Proposed: the wording is
+ * unapproved (OD-E) and only AN-28a calls this, after AN-28b and AN-28c are switched on. The
+ * sentence never reads an actor, so a name never reaches the agent through it.
+ */
+
+const ITEM = /^[a-z_]{1,64}$/;
+const BLOCK = /^[a-z_]{1,64}$/;
+
+/** A count the gift schema accepts: an integer from 1 to 2304. */
+function isCount(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 2304;
+}
+
+/** The fields the sentence reads. Anything else in an observation is ignored here. */
+export interface ObservationSentenceInput {
+  kind: unknown;
+  item?: unknown;
+  count?: unknown;
+  block?: unknown;
+}
+
+/** One sentence per observation kind; anything unrecognised gives the generic sentence. */
+export function observationSentence(input: ObservationSentenceInput): string {
+  if (
+    input.kind === 'gift_received' &&
+    isCount(input.count) &&
+    typeof input.item === 'string' &&
+    ITEM.test(input.item)
+  ) {
+    return `You received ${input.count} ${input.item.replace(/_/g, ' ')}.`;
+  }
+  if (
+    input.kind === 'property_broken' &&
+    typeof input.block === 'string' &&
+    BLOCK.test(input.block)
+  ) {
+    return `Someone broke one of your blocks (${input.block.replace(/_/g, ' ')}).`;
+  }
+  return 'Something happened.';
+}
