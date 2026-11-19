@@ -299,13 +299,14 @@ Wave branch `phase1/sheet-w7` (created by the orchestrator from `origin/main` af
   ```jsonc
   // every integer bounded, no free text, no coordinate the Body did not observe; hard caps are schema `maximum`s (oversize is invalid, not clamped)
   ExploreArguments:  { "program":"explore","legs": int 1..12 (6), "leg_blocks": int 8..48 (24), "avoid_water": bool (true) }
-  ExploreCheckpoint: { "legs_done": int 0..12, "visited": [[cx,cz] x max 96], "heading": "n"|"e"|"s"|"w"|null }
+  ExploreCheckpoint: { "legs_done": int 0..12, "legs": int 1..12, "leg_blocks": int 8..48, "avoid_water": bool, "chunks_new": int 0..12, "visited": [[cx,cz] x max 96], "heading": "n"|"e"|"s"|"w"|null }   // legs, leg_blocks, avoid_water carry the start arguments because resume() receives none (AN-39 review, 2026-11-18)
   ExploreDetail:     { "legs": int, "chunks_new": int, "stopped": "legs"|"no_frontier"|"danger"|"limit" }
   FarmArguments:     { "program":"farm","radius": int 4..24 (12), "max_cells": int 1..32 (16), "replant": bool (true) }
   FarmCheckpoint:    { "cells": [[x,y,z,"ripe"|"unripe"|"empty"] x max 32], "next": int, "harvested": int, "sown": int, "skipped": int }
+  // FarmCheckpoint: the AN-40 coder added keys (replant, max_cells, split skip counts) beyond this shape; confirm and amend this line after the AN-40 review, before AN-44 is dispatched.
   FarmDetail:        { "harvested": int, "sown": int, "skipped_owned": int, "skipped_unknown": int, "stopped": "done"|"no_cells"|"no_seeds"|"limit" }
   PatrolArguments:   { "program":"patrol","route": [{x,y,z} x 2..8], "laps": int 1..5 (1), "loop": bool (true) }
-  PatrolCheckpoint:  { "leg": int 0..8, "laps_done": int 0..5 }
+  PatrolCheckpoint:  { "leg": int 0..7, "laps_done": int 0..5, "route": [{x,y,z} x 2..8], "loop": bool, "laps": int 1..5 }   // route, loop, laps carry the start arguments because resume() receives none (AN-41 review, 2026-11-18); the program never returns `limit`: the executor's max_world_ticks is the only bound
   PatrolDetail:      { "laps": int, "stopped": "laps"|"danger"|"limit" }
   ```
   `INTENT_WHY.explore/farm/patrol`: fixed fact templates keyed by outcome reason (for example `explore.not_found`: "You found no new direction to explore nearby."), added to the existing `const INTENT_WHY` object at `contract/src/outcome-words.ts:36`; keep its type. Checkpoints stay under 2 KiB serialized (the validator cap for an echoed checkpoint is `MAX_CHECKPOINT_BYTES = 4096` in `player-core/src/validate/bounds.ts`). `thought.schema.json` needs no change (`program` and `arguments` are untyped there).
