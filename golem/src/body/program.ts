@@ -1,10 +1,17 @@
 import type { Action, Intent } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
+import type { Position } from '../actions/bot-types.ts';
 import type { JsonValue } from '../actions/outcome.ts';
 import type { ActionRegistry, ActionRun } from '../actions/registry.ts';
 import type { RecordSink } from './records.ts';
 import type { BodyView } from './view.ts';
 import type { WakeReason } from './wake.ts';
+
+/** Program-only options for one action (decision 0349). A Mind's action never carries them. */
+export interface StepActionOptions {
+  /** The one cell a `mine` digs: the action fails rather than dig any other block. */
+  mineAt?: Position;
+}
 
 /** What a program gets: the bot to act through, the view to read, and the Body's identity. */
 export interface ProgramContext {
@@ -19,9 +26,10 @@ export interface ProgramContext {
   /**
    * Runs one action in the Body's current-action slot (the one reflexes pre-empt through
    * `cancelAction`), at `timeScale`, and counts its block operations against the intent's limit.
-   * Programs act through this and never call the registry themselves.
+   * Programs act through this and never call the registry themselves. `opts` is for program-only
+   * options (`StepActionOptions`).
    */
-  runAction(action: Action, signal: AbortSignal): Promise<ActionRun>;
+  runAction(action: Action, signal: AbortSignal, opts?: StepActionOptions): Promise<ActionRun>;
   /** Aborted when the intent is cancelled or the runtime stops. */
   signal: AbortSignal;
 }
