@@ -13,6 +13,7 @@ Every card here is written for one Haiku `packet-coder` at low effort. The dispa
 5. HC-27b takes its own pure input (actor ids, positions, event ids as plain fields), so it can be coded and tested now; the adapter from the kit `Observation` is HC-30a's and reads the position and id fields that HC-46 adds under decision 0324 ("The kit's instinct observation carries positions and ids").
 6. Kit card set (decision 0320): the kit's own kit-b cards are authoritative for HC-19 to HC-26c; HC-30a and HC-31 depend on those (HC-24, HC-21a), not on the retired in-repo copies.
 7. No user-profile path or account name: the kit is "the sibling `geldar-scriptorium` checkout"; the dispatch gives absolute worktree paths.
+8. New card **AN-40a** (operator ruling 2026-11-18, option (a) of AN-40 open item 1): a program's `mine` digs one exact cell, as a program-only run option (no contract field, no regeneration slot, no prompt change; decision 0349). AN-40 gains an amendment: it passes the cell and prefetches owners before its first step.
 
 ## Ground rules that shape every card
 
@@ -61,7 +62,8 @@ Names that W5 cards create (AN-24 to AN-28c in [work-packets-sheet-w3-w5.md](wor
 | HC-30b W6 close (docs) | kit | HC-30a | BLOCKED | no |
 | AN-44 program shapes and contract | geldar | AN-24 merged (contract slot 1) | READY | write yes; regen at slot 2 |
 | AN-39 explore program | geldar | AN-44 (merge order) | READY | yes |
-| AN-40 farm program | geldar | AN-44 (merge order) | READY | yes |
+| AN-40a a program's `mine` digs one exact cell (0349) | geldar | none (no contract slot) | READY | yes |
+| AN-40 farm program | geldar | AN-44 (merge order), AN-40a (code and merge order; amendment) | READY after AN-40a | amendment after AN-40a merges |
 | AN-41 patrol program | geldar | AN-44 (merge order) | READY | yes |
 | AN-45a register, allow-list, drift test | geldar | AN-39, AN-40, AN-41, AN-44 | READY after deps | no |
 | AN-45b body-api v11 unselected (OWNER APPROVAL) | geldar | AN-45a | READY after deps | no |
@@ -85,6 +87,7 @@ W6 may overlap W7 (different repos). W8 follows W7 only for the contract slot; A
 |---|---|
 | `contract/**` and `contract/src/generated/**` | AN-44, then AN-46 |
 | `golem/src/body/programs/index.ts`, `player-core/src/validate/bounds.ts`, `player-core/src/validate/*.test.ts` | AN-45a |
+| `golem/src/actions/mine.ts`, `golem/src/actions/registry.ts`, `golem/src/body/program.ts`, `golem/src/body/runtime.ts`, `golem/src/body/executor-intent.ts`, `golem/src/body/programs/action-step.ts` | AN-40a only |
 | `prompts/body-api/v11.json` (new) | AN-45b |
 | `eventsink/src/xp/awards.ts`, `awards.test.ts`, `fixtures.ts` | AN-47b (the `attack` row only), then AN-50a (the registration `case` arms, 0321) |
 | `golem/src/actions/attack.ts`, `attack.test.ts` | AN-47b |
@@ -106,6 +109,7 @@ This refines the `eventsink/src/xp/awards.ts` row of [sheet-next-wave-order.md](
 | HC-29 | **OWNER APPROVAL REQUIRED** for the 8-sentence bank and the uncertainty sentence; D-CS-10 for activation |
 | HC-30a | 0320 (kit-b HC-24 is the base), 0324 (HC-46 fields); D-CS-10 |
 | AN-44, AN-39 to AN-41, AN-45a | D-CS-14 (program boundaries); AN-40 also the property rule (own and world-generated cells only; unknown is protected, 0164); AN-41 "route is supplied, never looked up" |
+| AN-40a | Operator ruling 2026-11-18 (option (a): an exact cell for `mine`), recorded as 0349 by the card; no owner approval (nothing agent-visible) |
 | AN-45b | **OWNER APPROVAL REQUIRED** for the three program summaries in body-api v11 and AN-44's `INTENT_WHY` templates |
 | HC-31 | D-CS-14, D-CS-01 |
 | AN-46 | **OWNER APPROVAL REQUIRED** for the two observation sentences; D-CS-04, D-CS-06, D-CS-15. Ruling 2 (combat key) is decided. |
@@ -334,9 +338,163 @@ Wave branch `phase1/sheet-w7` (created by the orchestrator from `origin/main` af
 - **exit criteria** both test files pass; four revert-checks recorded; worknote has "index line to add" for `programs/index.ts` (`registry.register('explore', () => new ExploreProgram());`).
 - **worknote** `AN-39.md`. **commit** `feat(character): explore program over the observed frontier`. **split line** `observed-chunks` / program.
 
+## AN-40a: a program's `mine` digs one exact cell (operator ruling 2026-11-18, option (a))
+
+- **id** AN-40a. **repo** geldar (`golem/`). **wave** W7. **status** READY. **depends-on** none (AN-40 depends on this card, code and merge order). **size** 40-50k. **branch** `phase1/sheet-an-40a-mine-at`. **worktree** a fresh worktree named `an-40a` cut from the dispatch's base (the W7 wave branch `origin/phase1/sheet-w7`, itself cut from `origin/main`); the dispatch gives the absolute path.
+- **why** AN-40 open item 1: `mineBlocks` (`golem/src/actions/mine.ts:71-192`) takes the nearest block of the wanted name (`bot.findBlocks`, `mine.ts:94-99`) and has no ownership gate (`digSafetyRefusal` in `golem/src/actions/dig-safety.ts:95` checks fluids and falling blocks only). A farm step that chose its own wheat can dig a nearer wheat of another player. The operator chose option (a): an exact cell for `mine`. Requirements: the Body digs exactly that cell or fails with a typed reason, never a different block; with no cell, `mine` behaves exactly as today; everything inert.
+- **answers (verified on `origin/main` = `c6ff6b9f`)**
+  1. **Contract and regeneration slot: none.** The `mine` variant of `Action` is `contract/schemas/thought.schema.json:116-125` (`additionalProperties: false`). `contract/schemas/mcp-play.schema.json:95` puts that `Action` in the `act` tool's input; the generator copies it into `contract/src/generated/mcp-tools.ts` (the `mine` variant at line 82), and the MCP server serves it to every agent through `listTools` (`threshold/mcp/src/world-session.ts:252`). A field added there is agent-visible at once, to every agent, with no version that could stay unselected, and any agent could send it. So the cell is **not** a contract field: it travels as a program-only run option, the pattern already used by `ownPlanksLast` and `highLedge` (`golem/src/actions/registry.ts:26-29`, `:137-140`, `:193-194`; decisions 0330, 0333). `runAction` still validates the action itself against the contract (`registry.ts:156`, `validateThought`), so a `mine` with an `at` field stays invalid from every source. The contract slots stay as they are (AN-24 = 1, AN-44 = 2, AN-46 = 3, then S9-01, S10-01a, S11-01). AN-40a touches no file of AN-44 and can merge before or after it; it must merge **before AN-40**. (If the operator wants the field in the contract instead, that is a different card: it takes slot 3 right after AN-44, AN-46 and later move down one, and it needs OWNER APPROVAL for the `act` tool schema, which cannot ship inactive.)
+  2. **body-api and prompt-template version: no bump.** No file under `prompts/` changes. `prompts/body-api/v10.json:18-23` (`"Dig nearest blocks of one kind."`) stays true for every `mine` an agent sends, because an agent cannot name a cell. AN-45b's v11 must not mention a cell for `mine`. Nothing new is agent-visible: the three failure texts reuse existing strings (`MESSAGE.notLoaded` = `'target is not loaded'`, `golem/src/actions/place.ts:75`; `'the target is out of reach'`, `place.ts:236` and `:239`; `` `that block is ${name}` ``, as `golem/src/actions/till.ts:83`); `out_of_reach` is not in `DETAIL_REASONS` (`contract/src/outcome-words.ts:183-191`), so its message is dropped and the player hears the existing `REASON_PHRASE.out_of_reach`. Only a program can pass a cell, and the only caller (AN-40's `farm`) is unregistered until AN-45a and unselected until AN-45b. **Owner approval: none.**
+  3. **Decision record: yes, 0349** (the spare of the sheet allocation in `docs/analysis/phase1/packets/decision-number-registry.md`, section "Sheet campaign numbers" on `origin/main`). The spec is silent on a program-only action option; CLAUDE.md says to settle that in a record. Title "A program mines one exact cell".
+  4. **File caps (soft 500, hard 700; counts on `c6ff6b9f`).** `golem/src/actions/mine.ts` 414, about 445 after; `golem/src/actions/registry.ts` 349, about 362; `golem/src/body/program.ts` 80, about 88; `golem/src/body/runtime.ts` 259, about 262; `golem/src/body/executor-intent.ts` 151, about 154; `golem/src/body/programs/action-step.ts` 34, about 44. New: `golem/src/actions/mine-cell.ts` about 45, `golem/src/actions/mine-cell.test.ts` about 200, `golem/src/body/executor-mine-at.test.ts` about 50. `mine.test.ts` (385) and `mine.fakes.ts` (110) are not edited: the new tests go in `mine-cell.test.ts`. No split needed; if `mine.ts` passes 500, STOP `on-cap: mine.ts` (do not split it in this card).
+- **may-edit** `golem/src/actions/mine-cell.ts` (new), `golem/src/actions/mine-cell.test.ts` (new), `golem/src/actions/mine.ts`, `golem/src/actions/registry.ts`, `golem/src/body/program.ts`, `golem/src/body/programs/action-step.ts`, `golem/src/body/executor-intent.ts`, `golem/src/body/runtime.ts`, `golem/src/body/executor-mine-at.test.ts` (new), `docs/decisions/0349-a-program-mines-one-exact-cell.md` (new), the worknote `docs/analysis/harness/worknotes/AN-40a.md`. **must-not-edit** baseline; `contract/**`; `prompts/**`; `player-core/**`; `plugin/**`; `neoforge/**`; `golem/src/actions/mine.test.ts`, `mine.fakes.ts`, `mine-drops.test.ts`, `mine-falling.test.ts`, `place.ts`, `till.ts`, `protected-blocks.ts`; `golem/src/body/programs/**` except `action-step.ts`; `golem/src/body/executor-action.ts` (the Mind's action path never passes a cell).
+- **decisions** 0349 (this card writes it), 0154 (failure texts are facts), 0330 and 0333 (the run-option pattern). **owner approval** none.
+- **Step 0.** Each command prints exactly one line, otherwise STOP `blocked: base <file>`:
+  `Select-String -Path golem/src/actions/mine.ts -SimpleMatch -Pattern 'const found = bot.findBlocks({'`;
+  `Select-String -Path golem/src/actions/registry.ts -SimpleMatch -Pattern 'highLedge: opts.highLedge === true,'`;
+  `Select-String -Path golem/src/body/program.ts -SimpleMatch -Pattern 'runAction(action: Action, signal: AbortSignal): Promise<ActionRun>;'`;
+  `Select-String -Path golem/src/body/executor-intent.ts -SimpleMatch -Pattern 'return runtime.runAction(action, signal);'`;
+  `Select-String -Path golem/src/body/runtime.ts -SimpleMatch -Pattern 'async runAction(action: unknown, signal?: AbortSignal): Promise<ActionRun> {'`;
+  `Select-String -Path golem/src/body/programs/action-step.ts -SimpleMatch -Pattern 'return ctx.runAction(action, ctx.signal);'`;
+  `Select-String -Path golem/src/actions/bot-types.ts -SimpleMatch -Pattern 'export type Position = { x: number; y: number; z: number };'`.
+  And `(Get-ChildItem docs/decisions -Filter '0349-*').Count` prints `0`, otherwise STOP `blocked: 0349 taken`.
+- **Step 1. New `golem/src/actions/mine-cell.ts`**, exactly these exports:
+  ```ts
+  import { Vec3 } from 'vec3';
+  import type { Block, Position } from './bot-types.ts';
+  import { type ActionOutcome, failed } from './outcome.ts';
+  import { MESSAGE } from './place.ts';
+
+  /** Fixed failure texts for a mine of one exact cell: facts only (decision 0154). Decision 0349. */
+  export const MINE_CELL_MESSAGE = {
+    notWhole: 'the cell must be whole block numbers',
+    oneBlock: 'an exact cell is one block',
+    notLoaded: MESSAGE.notLoaded,
+    outOfReach: 'the target is out of reach',
+  } as const;
+
+  /** The cell as a block position, or null when a coordinate is not an integer. */
+  export function cellOf(at: Position): Vec3 | null {
+    return [at.x, at.y, at.z].every((v) => Number.isInteger(v)) ? new Vec3(at.x, at.y, at.z) : null;
+  }
+
+  /** The failure for an exact cell that is not loaded (null) or holds another block. */
+  export function cellFailure(block: Block | null, mined: number): ActionOutcome {
+    if (!block) return failed('not_possible', MINE_CELL_MESSAGE.notLoaded, { mined });
+    return failed('not_found', `that block is ${block.name}`, { mined });
+  }
+  ```
+  Each export gets the doc comment shown. If `place.ts` imports `mine.ts` or `mine-cell.ts` (a cycle), STOP `blocked: import cycle`.
+- **Step 2. `golem/src/actions/registry.ts`.** (a) Add `import type { Position } from './bot-types.ts';` to the imports. (b) In `interface ActionContext`, after the `highLedge?: boolean;` member, add `/** Set only by a program step (decision 0349): the one cell a \`mine\` digs. */` and `mineAt?: Position;`. (c) In `interface ActionRunOptions`, after its `highLedge?: boolean;` member, add `/** Handed to the handler as \`ActionContext.mineAt\`. Only \`mine\` takes it (decision 0349). */` and `mineAt?: Position;`. (d) In `runUnobserved`, directly after the `if (!handler) { ... }` block, add:
+  ```ts
+  // An exact cell is for a program's mine only (decision 0349).
+  if (opts.mineAt !== undefined && valid.do !== 'mine') {
+    return finish(failed('invalid_args', 'an exact cell is for mine only'), 0, 0);
+  }
+  ```
+  (e) In the `const ctx: ActionContext = { ... }` literal, after `highLedge: opts.highLedge === true,` add `...(opts.mineAt === undefined ? {} : { mineAt: opts.mineAt }),`. Nothing else in the file changes.
+- **Step 3. `golem/src/actions/mine.ts`.** (a) Add `import { cellFailure, cellOf, MINE_CELL_MESSAGE } from './mine-cell.ts';`. (b) Directly after the line `if (!info) return failed('invalid_args', \`unknown block ${action.block}\`);` add:
+  ```ts
+  // A program may name the one cell to dig (decision 0349): only that block is dug, or the action
+  // fails with the reason. The nearest-block search is not used for it.
+  const cell = ctx.mineAt === undefined ? null : cellOf(ctx.mineAt);
+  if (ctx.mineAt !== undefined) {
+    if (cell === null) return failed('invalid_args', MINE_CELL_MESSAGE.notWhole);
+    if (action.count !== 1) return failed('invalid_args', MINE_CELL_MESSAGE.oneBlock);
+    const first = bot.blockAt(cell);
+    if (!first || first.type !== info.id) return cellFailure(first, 0);
+  }
+  ```
+  (c) Replace the six lines from `const found = bot.findBlocks({` to `const at = found[0];` with `const at = nextCandidate(bot, cell, wanted, tried);`, and add this function after `wantedAt`:
+  ```ts
+  /** The next cell to try: the exact cell once (decision 0349), else the nearest untried wanted block. */
+  function nextCandidate(
+    bot: Bot,
+    cell: Vec3 | null,
+    wanted: Set<number>,
+    tried: Set<string>,
+  ): Vec3 | undefined {
+    if (cell !== null) return tried.size === 0 ? cell : undefined;
+    const found = bot.findBlocks({
+      matching: (block: Block) => wantedAt(wanted, tried, block),
+      maxDistance: SEARCH_DISTANCE,
+      count: 1,
+    });
+    return found[0];
+  }
+  ```
+  (d) In the `if (!at) {` branch, after the `skippedFloor` line and before the `not_found` line, add `if (cell !== null) return cellFailure(bot.blockAt(cell), mined);`. (e) Directly after the closing `}` of the `if (!(target && bot.canDigBlock(target))) { ... }` walk block (before `if (signal.aborted) return abort(bot, mined);`), add:
+  ```ts
+  // An exact cell must be in dig reach after the walk; it is never swapped for a nearer block.
+  if (cell !== null) {
+    const inReach = bot.blockAt(at);
+    if (!(inReach && bot.canDigBlock(inReach))) {
+      return failed('out_of_reach', MINE_CELL_MESSAGE.outOfReach, { mined });
+    }
+  }
+  ```
+  (f) Replace `if (!block || !wanted.has(block.type)) continue;` with:
+  ```ts
+  if (!block || !wanted.has(block.type)) {
+    // The exact cell changed during the walk: fail with what it holds now.
+    if (cell !== null) return cellFailure(block, mined);
+    continue;
+  }
+  ```
+  Nothing else changes: with no cell, every line runs as before (the findBlocks call only moved into `nextCandidate`).
+- **Step 4. `golem/src/body/program.ts`.** Add `import type { Position } from '../actions/bot-types.ts';`. Before `export interface ProgramContext`, add:
+  ```ts
+  /** Program-only options for one action (decision 0349). A Mind's action never carries them. */
+  export interface StepActionOptions {
+    /** The one cell a `mine` digs: the action fails rather than dig any other block. */
+    mineAt?: Position;
+  }
+  ```
+  Change the member to `runAction(action: Action, signal: AbortSignal, opts?: StepActionOptions): Promise<ActionRun>;` and add one sentence to its doc comment: `` `opts` is for program-only options (`StepActionOptions`). ``
+- **Step 5. `golem/src/body/programs/action-step.ts`.** Import `type StepActionOptions` from `'../program.ts'` (same import line as `ProgramContext`). Change `runStepAction` to:
+  ```ts
+  export function runStepAction(
+    ctx: ProgramContext,
+    action: Action,
+    opts?: StepActionOptions,
+  ): Promise<ActionRun> {
+    return opts === undefined ? ctx.runAction(action, ctx.signal) : ctx.runAction(action, ctx.signal, opts);
+  }
+  ```
+  and add to its doc comment: `` `opts` carries a program-only option, for example a `mine`'s exact cell (decision 0349). `` (The two-argument call is kept when `opts` is absent so existing `toHaveBeenCalledWith(action, signal)` assertions stay exact.)
+- **Step 6. `golem/src/body/executor-intent.ts`.** Replace the `runAction: (action, signal) => { ... }` member with:
+  ```ts
+  runAction: (action, signal, opts) => {
+    a.ownActions.add(action);
+    return opts === undefined
+      ? runtime.runAction(action, signal)
+      : runtime.runAction(action, signal, opts);
+  },
+  ```
+- **Step 7. `golem/src/body/runtime.ts`.** Change `import { ProgramRegistry } from './program.ts';` to `import { ProgramRegistry, type StepActionOptions } from './program.ts';`. Change the signature to `async runAction(action: unknown, signal?: AbortSignal, opts: StepActionOptions = {}): Promise<ActionRun> {`, add to its doc comment `` `opts.mineAt` reaches a `mine` handler as its exact cell (decision 0349). ``, and in the `runAction(this.actions, this.bot, action, { ... })` options, after `receipts: this.receipts,`, add `...(opts.mineAt === undefined ? {} : { mineAt: opts.mineAt }),`.
+- **Step 8. The decision record** `docs/decisions/0349-a-program-mines-one-exact-cell.md`, in the format of `0330-boxed-in-on-own-blocks-unsticks-after-120s.md`: heading `# 0349: A program mines one exact cell`; `- Status: Accepted (operator ruling 2026-11-18, option (a) of AN-40 open item 1)`; `- Date: 2026-11-18`; `- Why:` the nearest-block search can dig another player's same-name block a program never chose. Sections: **Ruling** (a program step may name the one cell a `mine` digs; the Body digs that cell or fails, never another block); **Facts** (the option is `ActionRunOptions.mineAt` / `ActionContext.mineAt`, `Position` in block coordinates, given only through `ProgramContext.runAction`'s third argument; count must be 1; reasons: `invalid_args` for a non-integer cell, a count other than 1 or a verb other than `mine`; `not_possible` `target is not loaded`; `not_found` `that block is <name>`; `out_of_reach` `the target is out of reach` after the walk; the existing `would drop you` and dig-safety refusals apply unchanged); **Why not the contract** (answer 1 above, with its file references); **What is unchanged** (a `mine` without a cell, the `Action` schema, the `act` tool schema, body-api v1 to v10, `player-core`, Paper and NeoForge; `mine` still has no ownership gate of its own: the caller's program gates ownership, as `farm` does under 0164). The index line for `docs/decisions/README.md` goes in the worknote, not in the README.
+- **tests** (new `golem/src/actions/mine-cell.test.ts`: `vi.mock('./pathing.ts', () => ({ moveNear: vi.fn(), ensurePathfinder: vi.fn() }));` as `mine.test.ts` does; fakes from `./mine.fakes.ts`; a helper `mineCell(bot, at, name = 'oak_log', count = 1)` calling `mineAction.run({ ...ctxFor(bot), mineAt: at }, { do: 'mine', block: name, count })`; `beforeEach` resets `moveNear` to resolve `{ ok: true, distance: 0 }`):
+  1. "digs exactly the named cell, never a nearer block of the same name": `other` = `block(OAK_LOG, new Vec3(-1, 64, 0), [OAK_LOG])` listed **first**, `target` = `block(OAK_LOG, new Vec3(1, 64, 0), [OAK_LOG])`; `bot.entity.position = new Vec3(-2, 64, 0)`; `bot.canDigBlock.mockReturnValue(true)`; cell `{ x: 1, y: 64, z: 0 }`: completed, `bot.dig` called once with `target`, `other.type` still `OAK_LOG`, `bot.findBlocks` not called.
+  2. "fails not_possible when the cell is not loaded, and walks and digs nothing": `fakeBot([])`, cell `{ x: 5, y: 64, z: 5 }`: `{ status: 'failed', reason: 'not_possible', message: 'target is not loaded', detail: { mined: 0 } }`; `moveNear` and `bot.dig` not called.
+  3. "fails not_found when the cell holds another block": stone (`block(STONE, new Vec3(1, 64, 0), [], undefined, 'stone')`) at the cell and an oak log at `(2, 64, 0)`; mine `oak_log` at the cell: `reason: 'not_found'`, `message: 'that block is stone'`; `bot.dig` and `bot.findBlocks` not called.
+  4. "fails out_of_reach when the walk ends out of dig reach": oak log at the cell, `canDigBlock` false (the default): `reason: 'out_of_reach'`, `message: 'the target is out of reach'`, `detail: { mined: 0 }`; `moveNear` called once; `bot.dig` not called.
+  5. "fails not_found when the cell changed during the walk": `canDigBlock` `mockReturnValueOnce(false)` then `mockReturnValue(true)`; `moveNear` `mockImplementationOnce` sets `target.type = 0; target.name = 'air'` and resolves ok: `reason: 'not_found'`, `message: 'that block is air'`; `bot.dig` not called.
+  6. "refuses a cell that is not whole numbers and a count other than 1": cell `{ x: 1.5, y: 64, z: 0 }` gives `invalid_args` `the cell must be whole block numbers`; count 2 gives `invalid_args` `an exact cell is one block`; `bot.dig` not called.
+  7. "fails would drop you for the cell under the feet": oak log at `(0, 63, 0)`, bot at `(0, 64, 0)`, `canDigBlock` true: `reason: 'not_possible'`, `message: 'would drop you'`; `bot.dig` not called.
+  8. "without a cell, mine still takes the nearest block": the two logs of test 1, `mine(bot, 1)` from `mine.fakes.ts`: `bot.findBlocks` called, `bot.dig` called with `other` (the first the fake finds).
+  9. "runAction refuses an exact cell on any verb but mine, and the contract refuses `at` on a mine": a new `ActionRegistry` with one `eat` handler `{ kind: 'eat', timeoutMs: 1000, run: vi.fn(async () => completed()) }`; `bot = { time: { age: 0 } } as unknown as Bot`; `runAction(registry, bot, { do: 'eat' }, { mineAt: { x: 1, y: 64, z: 0 } })` gives `state: 'failed'`, `result.reason: 'invalid_args'`, the handler not called; `runAction(registry, bot, { do: 'mine', block: 'stone', count: 1, at: { x: 1, y: 64, z: 0 } })` gives `result.reason: 'invalid_args'`.
+  New `golem/src/body/executor-mine-at.test.ts` (harness from `./executor.fakes.ts`, as `executor-ticks.test.ts` uses it):
+  10. "a program's exact cell reaches the mine handler, and an action without one carries none": `const h = executorHarness();` register on `h.runtime.actions` a `mine` handler `{ kind: 'mine', timeoutMs: 1000, run: async (ctx) => { seen.push(ctx.mineAt); return completed({ mined: 1 }); } }`; set `h.program.current` to a program named `fake` whose `start`/`resume` do nothing, `checkpoint` returns `null`, and whose `step` calls `runStepAction(ctx, { do: 'mine', block: 'stone', count: 1 }, { mineAt: { x: 1, y: 64, z: 0 } })`, then `runStepAction(ctx, { do: 'mine', block: 'stone', count: 1 })`, then returns `{ status: 'completed' }`; `await h.executor.submit(thought({ intent: {} }), planFor(0)); await h.executor.onTick(1);`: `seen` equals `[{ x: 1, y: 64, z: 0 }, undefined]`.
+  Unchanged and green: `golem/src/actions/mine.test.ts`, `mine-drops.test.ts`, `mine-falling.test.ts`, `registry.test.ts`, every `golem/src/body/executor*.test.ts`, `golem/src/body/programs/*.test.ts`.
+- **checks** G1 `./geldar.ps1 pnpm test golem/src/actions/mine golem/src/actions/registry golem/src/body/executor golem/src/body/runtime golem/src/body/programs`, G2 golem, G3, G4, G7 against the W7 wave branch. `git diff --stat` lists only the may-edit files; `git diff --stat -- contract prompts player-core plugin neoforge` prints nothing.
+- **revert-checks** (each: make the one edit, run the named test, see it fail, `git checkout -- <path>`, rerun green, record in the worknote): in `mine.ts`, make `nextCandidate` ignore `cell` (delete its first line): test 1 fails. Delete the reach block of step 3(e): test 4 fails. Change step 3(f) back to `continue`: test 5 fails. Delete the registry check of step 2(d): test 9 fails. In `executor-intent.ts`, call `runtime.runAction(action, signal)` in both branches: test 10 fails. In `runtime.ts`, drop the `mineAt` spread: test 10 fails.
+- **exit criteria** both new test files pass with the ten cases; the existing mine, registry, executor and program tests pass unchanged; six revert-checks recorded; decision record written; no file outside may-edit changed; every touched file under 500 lines.
+- **stop-and-report** STOP and report (do not improvise) when: a Step 0 line is missing; a name in this card is not exported as written; an existing test fails and the fix would need a file outside may-edit; `mine.ts` passes 500 lines; Biome rejects a construct here (report the rule, keep the behaviour); the dispatch's base already has a `mineAt` or a `mine` `at` field.
+- **worknote** `AN-40a.md`: base SHA, the ten tests, the six revert-checks, and "index line to add" for `docs/decisions/README.md` (`| [0349](0349-a-program-mines-one-exact-cell.md) | A program mines one exact cell | Accepted |`, in the README's existing column style). **commit** `feat(golem): a program's mine digs one exact cell (AN-40a, decision 0349)`, then the attribution lines the dispatch gives. **split line** `mine-cell` and `mine.ts` / registry, program context, executor and runtime plumbing.
+
 ## AN-40: farm program
 
-- **repo** geldar (`golem/`). **status** READY (import paths fixed). **depends-on** AN-44 (merge order only). **size** 45-50k. **branch** `phase1/sheet-an-40-farm`.
+- **repo** geldar (`golem/`). **status** READY (import paths fixed); the amendment below is a review-fix round on the existing branch, after AN-40a. **depends-on** AN-44 (merge order only); **AN-40a (code and merge order: AN-40a merges first, and the AN-40 branch takes it in before the amendment)**. **size** 45-50k; amendment 20-25k. **branch** `phase1/sheet-an-40-farm`.
 - **may-edit (all new)** `golem/src/body/programs/farm.ts`, `farm-field.ts`, `farm.test.ts`, `farm-field.test.ts`, the worknote. **must-not-edit** baseline; `golem/src/actions/place.ts`, `till.ts`, `mine.ts`, `protected-blocks.ts`, `own-placements.ts`, `golem/src/perception/surroundings/food-known.ts`, `golem/src/perception/notable-blocks.ts`.
 - **imports (exact)** `CROP_MAX_AGE`, `FOOD_RANGE` from `../../perception/surroundings/food-known.ts`; `SEED_CROPS` from `../../actions/place.ts`; `canSeeBlock` from `../../perception/notable-blocks.ts`; `ownerRecordAt` and `type OwnerAnswer` from `../../actions/protected-blocks.ts`; `isOwnPlacement` from `../../actions/own-placements.ts`; `runStepAction`, `stopOf` from `./action-step.ts`. If one is not exported under that name, STOP `blocked: import <name>`.
 - **decisions** D-CS-14, 0164 (unknown ownership is protected). **owner approval** none.
@@ -346,6 +504,18 @@ Wave branch `phase1/sheet-w7` (created by the orchestrator from `origin/main` af
 - **revert-checks** skip the `ownerRecordAt` check: "another life's crop is skipped" fails. Treat `known: false` as allowed: "unknown is skipped" fails. Count a failed `mine`: "failure counts nothing" fails. Harvest an unripe crop: "unripe is left" fails.
 - **exit criteria** both test files pass; four revert-checks recorded; index line for `programs/index.ts` in the worknote.
 - **worknote** `AN-40.md`. **commit** `feat(character): farm program over observed crop cells`. **split line** `farm-field` / program.
+- **amendment (operator rulings 2026-11-18: AN-40 open items 1 and 3).** Applies to the branch as it stands (`farm.ts` 231 lines, `farm.test.ts` 522 lines). The ops step before dispatch merges the branch that holds AN-40a (the W7 wave branch) into `phase1/sheet-an-40-farm`; the coder never merges.
+  - **Step 0.** Each prints the line count given (one unless stated), otherwise STOP `blocked: AN-40a`: `Select-String -Path golem/src/actions/registry.ts -SimpleMatch -Pattern 'mineAt?: Position;'` (two lines: `ActionContext` and `ActionRunOptions`); `Select-String -Path golem/src/body/programs/action-step.ts -SimpleMatch -Pattern 'opts?: StepActionOptions,'`; `Select-String -Path golem/src/actions/protected-blocks.ts -SimpleMatch -Pattern 'export function prefetchOwners(points: ReadonlyArray<Vec3>, signal: AbortSignal): Promise<void> {'`.
+  - **may-edit (amendment)** `golem/src/body/programs/farm.ts`, `golem/src/body/programs/farm.test.ts`, the worknote. Everything else stays as above.
+  - **imports (added, exact)** `prefetchOwners` from `../../actions/protected-blocks.ts` (as `golem/src/actions/use.ts:189` and `golem/src/actions/edit-sign.ts:251` call it); in the test, `type ActionContext` from `../../actions/registry.ts`.
+  - **A1. Exact cell (item 1, option (a)).** In `harvest`, the mine becomes `runStepAction(ctx, { do: 'mine', block: name, count: 1 }, { mineAt: { x: pos.x, y: pos.y, z: pos.z } })`. The program relies on no nearest-block behaviour: the cell it gated for ownership is the only cell dug, or the `mine` fails (`not_found`, `not_possible`, `out_of_reach`) and `stopOf` fails the run with nothing counted, as for any failed mine. `harvestShown` stays (it still proves the crop is gone or reset). The worknote's open item 1 is closed with "AN-40a, decision 0349".
+  - **A2. Owner prefetch (item 3), decided: yes, fail closed.** In `start()`, after `readField(...)` and before `this.state = ...`, add `await prefetchOwners(cells.map((c) => new Vec3(c.x, c.y, c.z)), ctx.signal);`. In `resume()`, rename `_ctx` to `ctx` and, after `parseCells(...)` and `reader.done()` and the `next` check, add `await prefetchOwners(cells.map(([x, y, z]) => new Vec3(x, y, z)), ctx.signal);` (a Body restart is the same cold cache). The prefetch waits a bounded time and resolves (`protected-blocks.ts:38-42`, `:61-63`); whatever `ownerRecordAt` answers after it is used as before, so a cell still `unknown` is skipped (`skipped_unknown`) and never dug. A rejected prefetch rejects `start`/`resume`, which fails the intent before anything is dug. The worknote's open item 3 is closed.
+  - **Test fakes.** In `farm.test.ts`: the `vi.mock('../../actions/protected-blocks.ts', ...)` factory returns `{ ownerRecordAt: vi.fn(() => null), prefetchOwners: vi.fn(async () => undefined) }`, and `prefetchOwners` is imported beside `ownerRecordAt`; `beforeEach` adds `vi.mocked(prefetchOwners).mockReset(); vi.mocked(prefetchOwners).mockImplementation(async () => undefined);`. The fake `mine` handler becomes `run: async (ctx: ActionContext, action: { block: string }) => { ... }` and picks its key as `const key = ctx.mineAt ? \`${ctx.mineAt.x},${ctx.mineAt.y},${ctx.mineAt.z}\` : nearest(world, action.block);`; with a cell, a tile that is missing or not `action.block` returns `failed('not_found', 'that block is other')` and digs nothing. `nearest()` stays only as the model of a mine **without** a cell (so the revert-check below bites); its doc comment becomes "The block a mine without a cell takes: the nearest mature block of that name." `contextFor`'s `runAction` becomes `async (action, signal, opts) => { ...unchanged cancel branch...; return runAction(registry, bot, action, { signal, ...(opts?.mineAt ? { mineAt: opts.mineAt } : {}) }); }`. In the test "resumed at every boundary keeps the owner skip counts", delete the comment line "Each crop has its own name: the fake mine takes the nearest block of a name, not a position." and leave the crops as they are.
+  - **tests (added)** (a) "digs only the targeted cell, never a nearer crop of another player" (the reviewer's probe): `world.feet = new Vec3(-2, 64, 0)` before `drive`; `crop(world, 1, 64, 0, 'wheat', 7)` (own: `ownerRecordAt` gives `{ known: true, owner: null }`) and `crop(world, -1, 64, 0, 'wheat', 7)` (`ownerRecordAt` gives `{ known: true, owner: 'ag_other_01' }` when `pos.x === -1`); `drive(world, { radius: 8, replant: false })`: tile `1,64,0` is `{ name: 'air' }`, tile `-1,64,0` is still `{ name: 'wheat', age: 7 }`, `world.log` is `['mine:wheat']`, detail has `harvested: 1`, `skipped_owned: 1`. (b) "a cold owner cache does not skip the first cells as unknown": two own ripe wheat cells; `let warm = false`; `prefetchOwners` mocked to set `warm = true`; `ownerRecordAt` gives `{ known: true, owner: null }` when `warm`, else `{ known: false }`; `drive(world, { radius: 8, replant: false })`: `harvested: 2`, `skipped_unknown: 0`, and the first `prefetchOwners` call's first argument has length 2. (c) "a cell still unknown after the prefetch is skipped and never dug": as (b) but `ownerRecordAt` always `{ known: false }`: `harvested: 0`, `skipped_unknown: 2`, `world.log` empty. (d) "a resume prefetches before its first step": `drive(world, args, 0)` on the world of (b): `harvested: 2`, `skipped_unknown: 0`.
+  - **revert-checks (added)** drop the third argument of the harvest `runStepAction`: test (a) fails (the nearer, other player's wheat is dug). Delete the `prefetchOwners` line in `start()`: test (b) fails. Delete it in `resume()`: test (d) fails.
+  - **checks** as above (G1 `./geldar.ps1 pnpm test golem/src/body/programs/farm`, G2 golem, G3, G4, G7). `farm.test.ts` ends near 590 lines (soft cap passed, hard cap 700 holds; G4 enforces); if it would pass 700, STOP `on-cap: farm.test.ts`.
+  - **exit (amendment)** the four new tests and every existing farm test pass; three new revert-checks recorded; worknote open items 1 and 3 closed. **commit** `fix(golem): farm digs the exact cell it chose and prefetches owners (AN-40 amendment)`.
+  - **AN-44 is not amended for this:** `FarmArguments` still takes a radius, never a position, and `FarmCheckpoint` already holds the integer cells (`cells: [[x,y,z,state]]`), which is where `mineAt` comes from.
 
 ## AN-41: patrol program
 
