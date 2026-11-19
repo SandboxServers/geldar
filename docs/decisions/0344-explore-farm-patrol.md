@@ -20,6 +20,7 @@ The three programs share one rule: the Body acts only on what it can see, and th
 
 ## What it changes
 
-- A contract schema and validators; no generated change to the `act` tool input beyond one placeholder sentence in the `ActInput.intent` description.
+- A contract schema and validators; no change to the `act` tool input (see the last item).
 - Outcome wording for explore, farm and patrol in `contract/src/outcome-words.ts`. These sentences are placeholders awaiting owner approval (D-CS-14); they reach an agent only through version selection, which is not part of this record.
 - No change to the thought schema, the action set or the prompt versions. Rollback is revert.
+- The `ActInput.intent` description line is NOT part of this record. Its wording moves to AN-45a/AN-45b, where version selection exists, because the generated tool list serves that description to agents now. The `INTENT_WHY` sentences become reachable when AN-45a registers the programs, so AN-45a must not register them without owner approval of those sentences.

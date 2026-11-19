@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { intentWhy } from '../src/outcome-words.ts';
 import {
   validateExploreArguments,
   validateExploreCheckpoint,
@@ -38,6 +39,7 @@ const farmCheckpoint: Shape = {
   next: 1,
   harvested: 1,
   sown: 1,
+  skipped: 0,
   skipped_owned: 0,
   skipped_unknown: 0,
   replant: true,
@@ -240,5 +242,200 @@ describe('patrol shapes', () => {
       expect(validatePatrolDetail(withKey(patrolDetail, 'stopped', stopped)).ok).toBe(true);
     }
     expect(validatePatrolDetail(withKey(patrolDetail, 'stopped', 'done')).ok).toBe(false);
+  });
+});
+
+/** The checkpoint the AN-40 farm program emits (its checkpoint() and resume() keys). */
+const emittedFarmCheckpoint: Shape = {
+  replant: true,
+  max_cells: 16,
+  cells: [[1, 64, 2, 'ripe']],
+  next: 1,
+  harvested: 1,
+  sown: 0,
+  skipped: 0,
+  skipped_owned: 0,
+  skipped_unknown: 0,
+};
+
+/** A copy of `base` without `key`. */
+function withoutKey(base: Shape, key: string): Shape {
+  const copy = { ...base };
+  delete copy[key];
+  return copy;
+}
+
+/** Accepts `limit` and `-limit`, refuses one past each. */
+function expectBothSigns(accepts: (n: number) => boolean, limit: number, label: string): void {
+  expect(accepts(limit), `${label} ${limit}`).toBe(true);
+  expect(accepts(-limit), `${label} ${-limit}`).toBe(true);
+  expect(accepts(limit + 1), `${label} ${limit + 1}`).toBe(false);
+  expect(accepts(-limit - 1), `${label} ${-limit - 1}`).toBe(false);
+}
+
+describe('keys, constants and booleans', () => {
+  const cases: [string, Check, Shape][] = [
+    ['ExploreCheckpoint', validateExploreCheckpoint, exploreCheckpoint],
+    ['ExploreDetail', validateExploreDetail, exploreDetail],
+    ['FarmCheckpoint', validateFarmCheckpoint, farmCheckpoint],
+    ['FarmDetail', validateFarmDetail, farmDetail],
+    ['PatrolCheckpoint', validatePatrolCheckpoint, patrolCheckpoint],
+    ['PatrolDetail', validatePatrolDetail, patrolDetail],
+  ];
+  it.each(cases)('%s refuses an unknown key', (_name, check, base) => {
+    expect(check(withKey(base, 'extra', 1)).ok).toBe(false);
+  });
+
+  it('a start argument needs its own program name', () => {
+    expect(validateExploreArguments(withKey(exploreArgs, 'program', 'farm')).ok).toBe(false);
+    expect(validateFarmArguments(withKey(farmArgs, 'program', 'explore')).ok).toBe(false);
+    expect(validatePatrolArguments(withKey(patrolArgs, 'program', 'explore')).ok).toBe(false);
+  });
+
+  it('PatrolArguments without a route is refused', () => {
+    expect(validatePatrolArguments({}).ok).toBe(false);
+    expect(validatePatrolArguments({ program: 'patrol' }).ok).toBe(false);
+  });
+
+  it('a checkpoint without heading or skipped is refused', () => {
+    expect(validateExploreCheckpoint(withoutKey(exploreCheckpoint, 'heading')).ok).toBe(false);
+    expect(validateFarmCheckpoint(withoutKey(farmCheckpoint, 'skipped')).ok).toBe(false);
+  });
+
+  it('loop, avoid_water and replant are booleans', () => {
+    expect(validatePatrolCheckpoint(withKey(patrolCheckpoint, 'loop', 'yes')).ok).toBe(false);
+    expect(validateExploreCheckpoint(withKey(exploreCheckpoint, 'avoid_water', 'yes')).ok).toBe(
+      false,
+    );
+    expect(validateFarmArguments(withKey(farmArgs, 'replant', 'yes')).ok).toBe(false);
+  });
+
+  it('a patrol checkpoint route of one point is refused', () => {
+    expect(validatePatrolCheckpoint(withKey(patrolCheckpoint, 'route', [route[0]])).ok).toBe(false);
+  });
+
+  it('accepts every heading, null included', () => {
+    for (const heading of ['n', 'e', 's', 'w', null]) {
+      expect(validateExploreCheckpoint(withKey(exploreCheckpoint, 'heading', heading)).ok).toBe(
+        true,
+      );
+    }
+  });
+
+  it('accepts each farm cell state', () => {
+    for (const state of ['ripe', 'unripe', 'empty']) {
+      expect(validateFarmCheckpoint(withKey(farmCheckpoint, 'cells', [[1, 64, 2, state]])).ok).toBe(
+        true,
+      );
+    }
+  });
+
+  it('bounds skipped and its split counts', () => {
+    expectBounds(validateFarmCheckpoint, farmCheckpoint, 'skipped', 0, 32);
+    expectBounds(validateFarmCheckpoint, farmCheckpoint, 'skipped_owned', 0, 32);
+    expectBounds(validateFarmCheckpoint, farmCheckpoint, 'skipped_unknown', 0, 32);
+    expectBounds(validateFarmDetail, farmDetail, 'skipped_owned', 0, 32);
+    expectBounds(validateFarmDetail, farmDetail, 'skipped_unknown', 0, 32);
+  });
+
+  it('replays the checkpoint the AN-40 farm program emits', () => {
+    expect(validateFarmCheckpoint(emittedFarmCheckpoint).ok).toBe(true);
+  });
+});
+
+describe('coordinate and chunk bounds', () => {
+  const patrolAt = (point: Shape) => withKey(patrolArgs, 'route', [point, { x: 0, y: 64, z: 0 }]);
+  const cellAt = (x: number, y: number, z: number) =>
+    withKey(farmCheckpoint, 'cells', [[x, y, z, 'ripe']]);
+  const visitedAt = (cx: number, cz: number) => withKey(exploreCheckpoint, 'visited', [[cx, cz]]);
+
+  it('block x and z take ±30000000 and refuse one past, both signs', () => {
+    const limit = 30000000;
+    expectBothSigns(
+      (n) => validatePatrolArguments(patrolAt({ x: n, y: 64, z: 0 })).ok,
+      limit,
+      'route x',
+    );
+    expectBothSigns(
+      (n) => validatePatrolArguments(patrolAt({ x: 0, y: 64, z: n })).ok,
+      limit,
+      'route z',
+    );
+    expectBothSigns((n) => validateFarmCheckpoint(cellAt(n, 64, 0)).ok, limit, 'cell x');
+    expectBothSigns((n) => validateFarmCheckpoint(cellAt(0, 64, n)).ok, limit, 'cell z');
+  });
+
+  it('block y takes -64 to 320 and refuses one either side', () => {
+    const routeY = (y: number) => validatePatrolArguments(patrolAt({ x: 0, y, z: 0 })).ok;
+    const cellY = (y: number) => validateFarmCheckpoint(cellAt(0, y, 0)).ok;
+    for (const accepts of [routeY, cellY]) {
+      expect(accepts(-64)).toBe(true);
+      expect(accepts(320)).toBe(true);
+      expect(accepts(-65)).toBe(false);
+      expect(accepts(321)).toBe(false);
+    }
+  });
+
+  it('chunk coordinates take ±1875000 and refuse one past, both signs', () => {
+    const limit = 1875000;
+    expectBothSigns((n) => validateExploreCheckpoint(visitedAt(n, 0)).ok, limit, 'chunk cx');
+    expectBothSigns((n) => validateExploreCheckpoint(visitedAt(0, n)).ok, limit, 'chunk cz');
+  });
+});
+
+describe('intent sentences and worst-case size', () => {
+  it('returns the drafted sentences, so a deletion is seen', () => {
+    expect(intentWhy('explore', 'not_found')).toBe('You found no new direction to explore nearby.');
+    expect(intentWhy('farm', 'missing_materials')).toBe('You have no seeds to plant.');
+    expect(intentWhy('patrol', 'blocked')).toBe('The way along the route was blocked.');
+  });
+
+  it('worst-case checkpoints stay under 2 KiB', () => {
+    const chunks = Array.from({ length: 96 }, (_, i) =>
+      i % 2 ? [1875000, -1875000] : [-1875000, 1875000],
+    );
+    const explore = {
+      ...exploreCheckpoint,
+      legs_done: 12,
+      legs: 12,
+      leg_blocks: 48,
+      chunks_new: 12,
+      visited: chunks,
+      heading: 'n',
+    };
+    const farm = {
+      ...farmCheckpoint,
+      cells: Array.from({ length: 32 }, (_, i) => [
+        i % 2 ? 30000000 : -30000000,
+        i % 2 ? 320 : -64,
+        -30000000,
+        'unripe',
+      ]),
+      next: 32,
+      harvested: 32,
+      sown: 32,
+      skipped: 32,
+      skipped_owned: 32,
+      skipped_unknown: 32,
+      max_cells: 32,
+    };
+    const patrol = {
+      ...patrolCheckpoint,
+      leg: 7,
+      laps_done: 5,
+      laps: 5,
+      loop: false,
+      route: Array.from({ length: 8 }, (_, i) => ({
+        x: i % 2 ? 30000000 : -30000000,
+        y: i % 2 ? 320 : -64,
+        z: 30000000,
+      })),
+    };
+    expect(validateExploreCheckpoint(explore).ok).toBe(true);
+    expect(validateFarmCheckpoint(farm).ok).toBe(true);
+    expect(validatePatrolCheckpoint(patrol).ok).toBe(true);
+    expect(JSON.stringify(explore).length).toBeLessThan(2048);
+    expect(JSON.stringify(farm).length).toBeLessThan(2048);
+    expect(JSON.stringify(patrol).length).toBeLessThan(2048);
   });
 });

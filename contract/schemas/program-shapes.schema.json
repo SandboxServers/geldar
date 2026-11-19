@@ -92,6 +92,7 @@
       "type": "array",
       "minItems": 4,
       "maxItems": 4,
+      "tsType": "[number, number, number, 'ripe' | 'unripe' | 'empty']",
       "prefixItems": [
         { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
         { "type": "integer", "minimum": -64, "maximum": 320 },
@@ -108,6 +109,7 @@
         "next",
         "harvested",
         "sown",
+        "skipped",
         "skipped_owned",
         "skipped_unknown",
         "replant",
@@ -118,6 +120,7 @@
         "next": { "type": "integer", "minimum": 0, "maximum": 32 },
         "harvested": { "type": "integer", "minimum": 0, "maximum": 32 },
         "sown": { "type": "integer", "minimum": 0, "maximum": 32 },
+        "skipped": { "type": "integer", "minimum": 0, "maximum": 32 },
         "skipped_owned": { "type": "integer", "minimum": 0, "maximum": 32 },
         "skipped_unknown": { "type": "integer", "minimum": 0, "maximum": 32 },
         "replant": { "type": "boolean" },

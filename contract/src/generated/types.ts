@@ -10707,7 +10707,7 @@ export type ProgramChunk = [number, number];
 
 export type ProgramHeading = "n" | "e" | "s" | "w" | null;
 
-export type FarmCell = [unknown, unknown, unknown, unknown];
+export type FarmCell = [number, number, number, "ripe" | "unripe" | "empty"];
 
 export interface ProgramBlock {
   x: number;
@@ -10756,6 +10756,7 @@ export interface FarmCheckpoint {
   next: number;
   harvested: number;
   sown: number;
+  skipped: number;
   skipped_owned: number;
   skipped_unknown: number;
   replant: boolean;
