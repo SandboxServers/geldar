@@ -29,13 +29,13 @@ services:
         bind:
           create_host_path: false
       - type: bind
-        source: ../../plugins/bluemap/neoforge
+        source: ../plugins/bluemap/neoforge
         target: /geldar/extra-mods/bluemap-config
         read_only: true
         bind:
           create_host_path: false
       - type: bind
-        source: ../neoforge/extra-mods-bluemap-config.sh
+        source: ./neoforge/extra-mods-bluemap-config.sh
         target: /geldar/extra-mods/bluemap-config.sh
         read_only: true
         bind:

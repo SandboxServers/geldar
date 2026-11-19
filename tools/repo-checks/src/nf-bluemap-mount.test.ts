@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
@@ -23,7 +23,7 @@ function volumesOf(file: string, service: string): Volume[] {
 
 describe.each([
   ['compose/nf-live-mod-bluemap.yml', 'neoforge', '../plugins/bluemap/neoforge'],
-  ['compose/opt-in/scratch-neoforge-extra-mods.yml', 'paper', '../../plugins/bluemap/neoforge'],
+  ['compose/opt-in/scratch-neoforge-extra-mods.yml', 'paper', '../plugins/bluemap/neoforge'],
 ])('%s: the BlueMap config bundle mount', (rel, service, source) => {
   const file = `${ROOT}${rel}`;
   const volumes = volumesOf(file, service);
@@ -43,9 +43,9 @@ describe.each([
     expect(cfg).toBeDefined();
   });
 
-  it('its source is the committed bundle directory, relative to the compose file, and exists there', () => {
+  it('its source is the committed bundle directory, relative to the project directory (compose/), and exists there', () => {
     expect(cfg?.source).toBe(source);
-    const dir = join(dirname(file), source);
+    const dir = join(ROOT, 'compose', source);
     expect(statSync(dir).isDirectory()).toBe(true);
     expect(existsSync(join(dir, 'MANIFEST.sha256'))).toBe(true);
   });
