@@ -55,6 +55,7 @@ describe('listMigrations', () => {
       '0050_character_sheet_xp.sql',
       '0051_character_audit.sql',
       '0052_character_erase_comments.sql',
+      '0053_turn_records_erase.sql',
       '0060_turn_records.sql',
       '0061_roster_auto.sql',
       '0062_owner_export.sql',

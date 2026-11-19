@@ -90,9 +90,11 @@ export async function startIntentRun(
       bodyGeneration: runtime.bodyGeneration,
       timeScale: runtime.timeScale,
       // Every action a program runs goes through the runtime's one slot; the executor counts it.
-      runAction: (action, signal) => {
+      runAction: (action, signal, opts) => {
         a.ownActions.add(action);
-        return runtime.runAction(action, signal);
+        return opts === undefined
+          ? runtime.runAction(action, signal)
+          : runtime.runAction(action, signal, opts);
       },
     },
     controller,

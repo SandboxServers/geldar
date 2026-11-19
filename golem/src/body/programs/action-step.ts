@@ -1,6 +1,6 @@
 import type { Action } from '@geldar/contract';
 import type { ActionRun } from '../../actions/registry.ts';
-import type { ProgramContext, StepResult } from '../program.ts';
+import type { ProgramContext, StepActionOptions, StepResult } from '../program.ts';
 import { hasBlockedReport } from '../reflexes/blocked-path.ts';
 
 /** Fail reasons that mean the Mind must change the plan, not that the program broke. */
@@ -8,10 +8,17 @@ const PRECONDITION_REASONS = new Set(['missing_materials', 'missing_station']);
 
 /**
  * Runs one action in the Body's current-action slot, tied to the step's abort signal, so a reflex
- * can pre-empt it and `timeScale` applies.
+ * can pre-empt it and `timeScale` applies. `opts` carries a program-only option, for example a
+ * `mine`'s exact cell (decision 0349). The two-argument call is kept when `opts` is absent.
  */
-export function runStepAction(ctx: ProgramContext, action: Action): Promise<ActionRun> {
-  return ctx.runAction(action, ctx.signal);
+export function runStepAction(
+  ctx: ProgramContext,
+  action: Action,
+  opts?: StepActionOptions,
+): Promise<ActionRun> {
+  return opts === undefined
+    ? ctx.runAction(action, ctx.signal)
+    : ctx.runAction(action, ctx.signal, opts);
 }
 
 /**
