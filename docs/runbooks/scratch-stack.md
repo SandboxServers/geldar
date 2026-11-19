@@ -142,7 +142,7 @@ Run the game server as NeoForge instead of Paper, behind the same scratch Veloci
 
 ### If the node cannot reach the NeoForge Maven or the Modrinth CDN
 
-Each download is retried 6 times, 10 s apart, with a 60 s connect timeout. If it still fails, the entrypoint stops and names the file to pre-seed. A file already in place with its pinned hash is used as it is, and curl is not called.
+Each download is retried 6 times, 10 s apart, with a 60 s connect timeout. If it still fails, the entrypoint stops and names the file to pre-seed. A file already in place with its pinned hash is used as it is, and curl is not called. The copy-pasteable form, with the pinned values and each command in order, is [Pre-seed, copy-pasteable](#pre-seed-copy-pasteable), at the end of this section.
 
 On this node the pre-seed route is the normal route, not a fallback: the node cannot reach `maven.neoforged.net` (HTTP 000). The pins are `INSTALLER_SHA256` and `INSTALLER_SHA512` (the installer) and `MOD_SHA512` (Proxy Compatible Forge 1.3.1), all in `compose/neoforge/neoforge-entrypoint.sh`. To pre-seed the two files before `up`:
 
@@ -161,6 +161,71 @@ labels; no fix for that is recorded here yet. Do not run `down -v` to clear it: 
 Exit codes: 2 usage or NATS auth refused, 3 a gate failed,
 1 anything else. On 2 and 3 nothing is started. `down` works after a failed `up`: run it to clean up. If `down` fails
 the secrets directory is kept, and `up` refuses until `down` succeeds.
+
+#### Pre-seed, copy-pasteable
+
+The values are for NeoForge 26.1.2 build 126: the `SCRATCH_NEOFORGE_BUILD` default in `compose/opt-in/scratch-neoforge.yml`. Block A sets `B` to that build and `V` to `26.1.2.$B`, which is the `NEOFORGE_VERSION` the overlay builds. The steps above say the same in prose. A new build needs a new installer pin in `compose/neoforge/neoforge-entrypoint.sh` first; until then the entrypoint refuses the installer. `tools/repo-checks/src/scratch-preseed-docs.test.ts` keeps the blocks below equal to the pins and URLs in the repo.
+
+**A. On a machine that can fetch.** `<dir>` is an empty absolute directory:
+
+```sh
+mkdir -p <dir>/in/mods <dir>/extra && cd <dir>
+B=126
+V=26.1.2.$B
+curl -fLo in/neoforge-installer.jar "https://maven.neoforged.net/releases/net/neoforged/neoforge/$V/neoforge-$V-installer.jar"
+curl -fLo in/mods/proxy-compatible-forge.jar 'https://cdn.modrinth.com/data/vDyrHl8l/versions/qiZ49HIW/proxy-compatible-forge-1.3.1.jar'
+curl -fLo extra/chunky.jar 'https://cdn.modrinth.com/data/fALzjamp/versions/sDFaDSkE/Chunky-NeoForge-1.5.66.jar'
+curl -fLo extra/bluemap.jar 'https://github.com/BlueMap-Minecraft/BlueMap/releases/download/v5.29/bluemap-5.29-neoforge.jar'
+cat > SHA256SUMS <<'EOF'
+1184ffee181bd7a940691539fea07f237096378da4c94795247ecdb9cb354a1b  in/neoforge-installer.jar
+9f9303da0185fa0ae0e1d3f10a0f07b8d9e5a21e77931d4fc162dcc718a0ab4f  extra/chunky.jar
+8938f4453af4b53970c86e43d0bd26b4a88980e4e6639f818fa770d0f61c43df  extra/bluemap.jar
+EOF
+cat > SHA512SUMS <<'EOF'
+3ecc1cef40def9af5086449249dc621a860fb3c2af36084635396d152b5617560bfa0ace9376ef9ba05bfc9ab3d92348829472548e57e29a1fab4b63ad621bdb  in/neoforge-installer.jar
+dba5b70fedcb0f5fdc014801ab43e6d048f24b531de8aea5b70ea223760b66ae9fba3033c2ccd9d78793b9ea2f9d3b47ae1f4caa95aa129d989f97e63636b4ab  in/mods/proxy-compatible-forge.jar
+EOF
+sha256sum -c SHA256SUMS && sha512sum -c SHA512SUMS
+```
+
+On a mismatch, delete the file and do not copy it (step 2 above).
+
+**B. Copy to the node, then re-verify there.** `<node>` is the ssh name. The node's `<dir>` must not exist yet, and it is the same path as on this machine:
+
+```sh
+scp -r <dir> <node>:<dir>
+ssh <node> 'cd <dir> && sha256sum -c SHA256SUMS && sha512sum -c SHA512SUMS'
+```
+
+**C. On the node, before `up`.** This fills the world volume `scratch-nf_paper-data` (`<project>_paper-data`; the project is `scratch-<suffix>` in `deploy/scratch/scratch.sh`). The image is the `paper` service's image in `compose/phase0.yml`, tag and digest; re-read that line if the pin has moved. No container may hold the volume:
+
+```sh
+docker run --rm --user 0 -v scratch-nf_paper-data:/data -v "<dir>/in:/in:ro" --entrypoint sh itzg/minecraft-server:2026.10.1-java25@sha256:d12aed7e35981dfe259b60fbfee77d23a19b5898a7a31dca298d18b47b7b5776 -c 'mkdir -p /data/mods && cp /in/neoforge-installer.jar /data/ && cp /in/mods/proxy-compatible-forge.jar /data/mods/ && chown --reference=/data /data/neoforge-installer.jar /data/mods /data/mods/proxy-compatible-forge.jar'
+```
+
+The paths match the entrypoint: the installer is `$data/neoforge-installer.jar` and the mod is `$data/mods/proxy-compatible-forge.jar`, with `data=/data` (lines 23 to 27). The entrypoint re-owns both to the owner of `/data` on every start (line 234).
+
+**D. Start, with the extra mods.** `up` reads the two extra jars from `<dir>/extra`, so keep that directory until `up` has returned:
+
+```sh
+export SCRATCH_PLATFORM=neoforge
+export SCRATCH_NATS_AUTH_DIR=<auth dir>
+export SCRATCH_EXTRA_MODS=1
+export SCRATCH_EXTRA_CHUNKY_JAR_HOST=<dir>/extra/chunky.jar
+export SCRATCH_EXTRA_BLUEMAP_JAR_HOST=<dir>/extra/bluemap.jar
+sh deploy/scratch/scratch.sh config nf
+sh deploy/scratch/scratch.sh up nf
+```
+
+`config nf` renders the compose file and starts nothing. Step 4 above says to delete `<dir>`: delete `<dir>/in` after block C, and the rest only after `up` has returned.
+
+**UNVERIFIED.** None of blocks A to D has run on the node. Each was checked against the entrypoint and overlay text only.
+
+- `up` may refuse the pre-seeded volume. Block C creates it outside compose, so it has no compose project label. No fix is recorded. Do not run `down -v` to clear it: that removes the pre-seeded files.
+- The download skip. The entrypoint's comment (line 62) says a file already in place with its pinned hash is used and curl is not called. `fetch` returns 0 before curl when the check passes (lines 65 to 67). The code reads that way; no run has shown it. The installer's sha512 is checked again on lines 226 to 231.
+- Block C's command, including `--entrypoint sh` on the paper image, has not been run.
+- The Chunky URL is the "Download URL" row of `docs/analysis/neoforge/pregen-and-extra-mods-design.md`. The BlueMap URL is in `docs/runbooks/map-neoforge.md` (line 77). Neither was fetched here. The sha256 pins come from the repo, and block A's `sha256sum -c` checks the downloaded bytes against them.
+- Nothing is copied to the node for the BlueMap loader or config. The overlay mounts them from the checkout (`compose/neoforge/extra-mods-bluemap-config.sh` and `plugins/bluemap/neoforge`), so the checkout must have them.
 
 ### Offline bundle (when the node cannot reach the NeoForge Maven)
 
