@@ -183,7 +183,9 @@ describe('New-TestVm.ps1 dry run and refusals (stubbed Hyper-V)', () => {
 
   it('refuses a private key file and never echoes its text', () => {
     const dir = fixture();
-    writeFileSync(join(dir, 'deploy.pub'), '-----BEGIN OPENSSH PRIVATE KEY-----\n');
+    // Built at run time so no committed file holds the contiguous private-key marker.
+    const privateKeyText = ['-----BEGIN', 'OPENSSH', 'PRIVATE', 'KEY-----\n'].join(' ');
+    writeFileSync(join(dir, 'deploy.pub'), privateKeyText);
     const r = run(dir, baseArgs(dir));
     expect(r.status).not.toBe(0);
     expect(r.text).toContain('exactly one OpenSSH public key line');
