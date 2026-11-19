@@ -23,6 +23,9 @@ interface Pair {
   openTick: number;
   qualified: boolean;
   lastTick: number;
+  /** The source event id of the line that qualified the open window, and the awards it gave. */
+  qualifyingEvent: string | null;
+  awards: XpAward[];
 }
 
 interface Line {
@@ -89,11 +92,13 @@ export class ExchangeTracker {
   }
 
   private speechAwards(line: Line, event: WorldEvent): XpAward[] {
+    // Names are folded to lowercase, so the own line and the heard line match whatever the case.
+    const name = line.from.toLowerCase();
     if (line.own) {
-      remember(this.lives, line.from, line.life, this.maxPairs);
+      remember(this.lives, name, line.life, this.maxPairs);
       return [];
     }
-    const speaker = this.lives.get(line.from);
+    const speaker = this.lives.get(name);
     if (speaker === undefined || speaker === line.life) return [];
     return this.hear(line.life, speaker, line.text, event);
   }
@@ -105,9 +110,19 @@ export class ExchangeTracker {
     const existing = this.pairs.get(id);
     const fresh = !existing || tick - existing.lastTick >= EXPIRY_WINDOWS * EXCHANGE_WINDOW_TICKS;
     const pair: Pair = fresh
-      ? { lastText: new Map(), opener: null, openTick: tick, qualified: false, lastTick: tick }
+      ? {
+          lastText: new Map(),
+          opener: null,
+          openTick: tick,
+          qualified: false,
+          lastTick: tick,
+          qualifyingEvent: null,
+          awards: [],
+        }
       : existing;
     remember(this.pairs, id, pair, this.maxPairs);
+    // A redelivered qualifying line re-emits the awards it gave; the ledger key drops the duplicate.
+    if (pair.qualifyingEvent === event.source_event_id) return [...pair.awards];
     pair.lastTick = tick;
     // A repeated line (the same text from the same speaker) opens nothing and qualifies nothing.
     if (pair.lastText.get(speaker) === text) return [];
@@ -116,11 +131,15 @@ export class ExchangeTracker {
       pair.opener = speaker;
       pair.openTick = tick;
       pair.qualified = false;
+      pair.qualifyingEvent = null;
+      pair.awards = [];
       return [];
     }
     if (speaker === pair.opener || pair.qualified) return [];
     pair.qualified = true;
-    return this.bothAwards(low, high, pair.openTick, event);
+    pair.qualifyingEvent = event.source_event_id;
+    pair.awards = this.bothAwards(low, high, pair.openTick, event);
+    return [...pair.awards];
   }
 
   private bothAwards(low: string, high: string, openTick: number, event: WorldEvent): XpAward[] {
