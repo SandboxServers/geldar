@@ -106,6 +106,12 @@
     "mcp_public_host": {
       "$ref": "#/definitions/hostname"
     },
+    "dns_ttl_seconds": {
+      "type": "integer",
+      "minimum": 30,
+      "maximum": 3600,
+      "description": "TTL of the environment's DNS A records (G2-06). Short by design; 300 when absent."
+    },
     "register_shard": {
       "$ref": "#/definitions/name"
     },
