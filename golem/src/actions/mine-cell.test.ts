@@ -1,7 +1,7 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { block, ctxFor, fakeBot, mine, OAK_LOG, STONE } from './mine.fakes.ts';
+import { BEDROCK, block, ctxFor, fakeBot, mine, OAK_LOG, STONE } from './mine.fakes.ts';
 import { mineAction } from './mine.ts';
 import { completed } from './outcome.ts';
 import { moveNear } from './pathing.ts';
@@ -125,6 +125,20 @@ describe('mineAction with an exact cell', () => {
       status: 'failed',
       reason: 'not_possible',
       message: 'would drop you',
+    });
+    expect(bot.dig).not.toHaveBeenCalled();
+  });
+
+  it('fails not_possible with the refusal text when the cell holds an unbreakable block', async () => {
+    const bedrock = block(BEDROCK, new Vec3(1, 64, 0), [], undefined, 'bedrock');
+    const bot = fakeBot([bedrock]);
+    bot.canDigBlock.mockReturnValue(true);
+    const outcome = await mineCell(bot, CELL, 'bedrock');
+    expect(outcome).toMatchObject({
+      status: 'failed',
+      reason: 'not_possible',
+      message: 'bedrock cannot be broken by anyone, with any tool',
+      detail: { mined: 0 },
     });
     expect(bot.dig).not.toHaveBeenCalled();
   });

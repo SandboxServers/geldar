@@ -138,11 +138,9 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     if (signal.aborted) return abort(bot, mined);
 
     const block = bot.blockAt(at);
-    if (!block || !wanted.has(block.type)) {
-      // The exact cell changed during the walk: fail with what it holds now.
-      if (cell !== null) return cellFailure(block, mined);
-      continue;
-    }
+    // A block that is not wanted is skipped. An exact cell that changed during the walk has no
+    // candidate left, so the `!at` branch above fails with what the cell holds now.
+    if (!block || !wanted.has(block.type)) continue;
 
     // The fastest tool in the inventory; null when no item helps. A block that needs a tool
     // cannot be harvested without one of the listed tools.
