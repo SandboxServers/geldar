@@ -22,11 +22,23 @@ export function formatPlanLine(line: PlanLine): string {
   return `${line.life}: ${line.verdict}${line.field === undefined ? '' : ` (${line.field})`}`;
 }
 
-/** The lives the shard file names under `mind.lives` (the tier table); absent means none. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The lives the shard file names: the values of `mind.lives` (the tier table) and the `life_id` of
+ * each `sovereign.players` entry (the rangers). A missing or wrongly shaped section adds nothing.
+ */
 export function readShardLives(text: string): string[] {
-  const doc = parse(text) as { mind?: { lives?: Record<string, unknown> } } | null;
-  const lives = doc?.mind?.lives ?? {};
-  return Object.values(lives).filter((v): v is string => typeof v === 'string');
+  const doc: unknown = parse(text);
+  if (!isRecord(doc)) return [];
+  const mind = isRecord(doc.mind) ? doc.mind : {};
+  const tier = isRecord(mind.lives) ? Object.values(mind.lives) : [];
+  const sovereign = isRecord(doc.sovereign) ? doc.sovereign : {};
+  const players = Array.isArray(sovereign.players) ? sovereign.players : [];
+  const rangers = players.filter(isRecord).map((player) => player.life_id);
+  return [...tier, ...rangers].filter((v): v is string => typeof v === 'string');
 }
 
 /** The first bad field of an adoptedSheet refusal: `character sheet refused: <path>: <message>; ...`. */

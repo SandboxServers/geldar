@@ -102,6 +102,31 @@ describe('readShardLives', () => {
     const text = 'shard: phase0\nmind:\n  lives: { strong: ag_adam_03, fast: ag_adam_04 }\n';
     expect(readShardLives(text)).toEqual(['ag_adam_03', 'ag_adam_04']);
   });
+
+  it('reads the rangers from sovereign.players, as colo-mind.yaml lists them', () => {
+    const text = [
+      'mind:',
+      '  lives: { strong: ag_adam_04 }',
+      'sovereign:',
+      '  players:',
+      '    - { player_id: p1, life_id: ag_ranger_01, name: R1 }',
+      '    - { player_id: p2, name: NoLife }',
+      '',
+    ].join('\n');
+    expect(readShardLives(text)).toEqual(['ag_adam_04', 'ag_ranger_01']);
+  });
+
+  it('lets the planner accept a ranger life listed only under sovereign.players', async () => {
+    const text =
+      'sovereign:\n  players:\n    - { player_id: p1, life_id: ag_ranger_01, name: R1 }\n';
+    const sql = new AgentsSql([agent('ag_ranger_01', null)]);
+    const lines = await planAdoption(sql, readShardLives(text), { ag_ranger_01: 'standard' });
+    expect(lines).toEqual([{ life: 'ag_ranger_01', verdict: 'would-adopt' }]);
+  });
+
+  it('reads nothing from a mind.lives that is a string rather than a mapping', () => {
+    expect(readShardLives('mind:\n  lives: "ag_x_01"\n')).toEqual([]);
+  });
 });
 
 describe('player adopt-sheets (dry run)', () => {
