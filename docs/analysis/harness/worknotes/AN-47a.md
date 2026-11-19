@@ -60,3 +60,33 @@ New tests and their mutation proofs (`EncounterTracker.java` mutated, run, resto
 
 Part 2 pending. The expected registration lines are `all.add(new CombatFactListener(...))` and the tick task; they are
 written in part 2's worknote update.
+
+## Part 2: the Paper listener (`CombatFactListener`)
+
+Files: `plugin/core/src/main/java/dev/geldar/core/CombatFactListener.java` (new), its test, and one line in
+`plugin/core/src/test/resources/jar-contents.golden` (the jar test lists every class). Nothing registers the listener;
+`GeldarCore.java` and `EventExporter.java` are untouched.
+
+- Events: `EntityDamageByEntityEvent` (player hurt by a hostile: `playerHurtByMob`; player hitting a hostile: `playerHitMob`,
+  an `engaged` step goes to `sink.send("combat", ProvenanceJson.combatJson(...))`) and `EntityDeathEvent` (a player's death
+  calls `playerDied`; a mob's death calls `mobDied` with the killer only when the killer's name is a life id). Both are
+  `MONITOR`, `ignoreCancelled = true`. `tick()` calls `advance`; the registrant schedules it once per tick.
+- Every handler and seam checks `enabled` first; a name failing `EventEnvelope.isLifeId` is ignored; non-hostile mob
+  types are ignored through `HostileMobs.isHostile`.
+- The handlers read the entity (`getType().getKey().getKey()`, UUID, world name) and call package-private seams that take
+  strings (`playerHurt`, `playerHit`, `mobDied`, `playerDied`). The tests drive the seams, because entity types need a
+  server (same pattern as AN-26a). Ops capture covers the glue lines.
+- Deviation: `EventExporter.emit` adds a `player` property to every payload (as `death-event` also carries). The envelope
+  payload therefore has five keys: `life_id`, `kind`, `mob`, `encounter_key` and `player`. The listener builds exactly the
+  four. The test asserts the five and says why.
+- Mutation proofs (the file restored from a backup, `git diff` empty afterwards):
+  1. Drop the `isLifeId` filter in `playerHurt`: `aHumanNamedPlayerEmitsNothing` fails (line 55).
+  2. Drop the `enabled` check in `mobDied`: `disabledEmitsNothing` fails (line 68).
+
+## Index line for AN-50a
+
+- `all.add(new CombatFactListener(exporter, sink, enabledSupplier, worldTickSupplier));` in `GeldarCore`'s listener list
+  (it needs the `EventExporter` and a `ProvenanceSink`, both already present for AN-47a's sink).
+- A once-per-tick task that calls `combatFactListener.tick()`.
+
+Ops capture pending: a real kill and a real survived payload before AN-47b fixtures freeze.
