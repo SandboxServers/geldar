@@ -251,6 +251,7 @@ export interface ChunkVisitedPayload {
 }
 
 export interface CombatFactPayload {
+  player?: string;
   /**
    * Permanent identity of one life, such as ag_kestrel_01.
    */

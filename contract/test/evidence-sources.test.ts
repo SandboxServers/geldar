@@ -144,6 +144,34 @@ describe('evidence sources (AN-46, decision 0345)', () => {
     expect(validateCombatFactPayload({ ...COMBAT, kind: 'fight_survived' }).ok).toBe(true);
   });
 
+  it("accepts the plugin's real five-key payload", () => {
+    const wire = {
+      player: 'ag_kestrel_01',
+      life_id: 'ag_kestrel_01',
+      kind: 'hostile_kill',
+      mob: 'zombie',
+      encounter_key: KEY,
+    };
+    expect(validateCombatFactPayload(wire).ok).toBe(true);
+  });
+
+  it('a four-key payload without player still validates', () => {
+    const { player: _unused, ...fourKeys } = { player: 'ag_kestrel_01', ...COMBAT };
+    expect(Object.keys(fourKeys)).toHaveLength(4);
+    expect(validateCombatFactPayload(fourKeys).ok).toBe(true);
+  });
+
+  it('an empty or 65-character player is rejected', () => {
+    for (const player of ['', 'a'.repeat(65)]) {
+      expect(validateCombatFactPayload({ ...COMBAT, player }).ok).toBe(false);
+    }
+    expect(validateCombatFactPayload({ ...COMBAT, player: 'a'.repeat(64) }).ok).toBe(true);
+  });
+
+  it('an unknown extra key is still rejected', () => {
+    expect(validateCombatFactPayload({ ...COMBAT, name: 'Kestrel' }).ok).toBe(false);
+  });
+
   it('a combat fact without encounter_key is invalid', () => {
     const { encounter_key: _unused, ...noKey } = COMBAT;
     expect(validateCombatFactPayload(noKey).ok).toBe(false);
