@@ -56,7 +56,70 @@ New tests and their mutation proofs (`EncounterTracker.java` mutated, run, resto
    - `rememberClosed(oldest.key())` restored on the cap drop: fails at line 177 (no kill emitted).
 3. `hurtThenHitStillEngagesOnce`: passes on the current rule (no code change for it).
 
+## Part 2: the Paper listener (`CombatFactListener`)
+
+Files: `plugin/core/src/main/java/dev/geldar/core/CombatFactListener.java` (new), its test, and one line in
+`plugin/core/src/test/resources/jar-contents.golden` (the jar test lists every class). Nothing registers the listener;
+`GeldarCore.java` and `EventExporter.java` are untouched.
+
+- Events: `EntityDamageByEntityEvent` (player hurt by a hostile: `playerHurtByMob`; player hitting a hostile: `playerHitMob`,
+  an `engaged` step goes to `sink.send("combat", ProvenanceJson.combatJson(...))`) and `EntityDeathEvent` (a player's death
+  calls `playerDied`; a mob's death calls `mobDied` with the killer only when the killer's name is a life id). Both are
+  `MONITOR`, `ignoreCancelled = true`. `tick()` calls `advance`; the registrant schedules it once per tick.
+- Every handler and seam checks `enabled` first; a name failing `EventEnvelope.isLifeId` is ignored; non-hostile mob
+  types are ignored through `HostileMobs.isHostile`.
+- The handlers are one-line delegates to package-private seams that take entities: `damage(victim, damager, now)` (the
+  `enabled` check, `shooterOf`, `isPlayerHurt`/`isPlayerHit`, the UUID, name, world and type reads, then `playerHurt` or
+  `playerHit`) and `death(dead, now)` (the `enabled` check, the Player branch, the `getKiller()` null handling, then
+  `playerDied` or `mobDied`). `EntityType.getKey().getKey()` works without a server, so `getType()` is answered by a
+  `Proxy` double (`EntityType.ZOMBIE`, `SKELETON`, `ARROW`, `PLAYER`). The `tripwire` double throws on any call, so a
+  seam that reads an entity while disabled fails its test. The `@EventHandler` priority `MONITOR` and
+  `ignoreCancelled = true` on both handlers are pinned by reflection.
+- Projectiles: a ranged hit is credited to its shooter (`shooterOf`), so a skeleton's arrow opens a hostile encounter
+  against the player and a player's bow hit sends `engaged`. A projectile with no living shooter is not a hostile hit.
+- Toggling: the `enabled` supplier gates every handler and seam, but disabling does not reset the tracker. Encounters
+  open when it goes off stay open; `tick()` is silent while disabled, and after re-enabling it may emit a stale
+  `fight_survived` for them (including for a player who died while disabled). This is reachable only if the supplier
+  toggles at runtime. Pinned by `theTickIsSilentWhileDisabledAndAnOpenEncounterClosesOnReenable`; no code change.
+- Deviation: `EventExporter.emit` adds a `player` property to every payload (as `death-event` also carries). The envelope
+  payload therefore has five keys: `life_id`, `kind`, `mob`, `encounter_key` and `player`. The listener builds exactly the
+  four. The test asserts the five and says why.
+- Open item: payload vs combat-fact schema (extra `player` key from EventExporter). The schema has
+  `additionalProperties: false` and no `player`, so the real payload does not validate against it; the test checks the
+  envelope only. Owner ruling: option (a), an optional `player` property in `combat-fact-event.schema.json`, shipped on
+  branch `phase1/sheet-an-46b-combat-player` @ `46ebfa53`, not yet merged. Follow-up, once AN-46b is on main: validate
+  `e.payload()` against `combat-fact-event.schema.json` in `aRealShapedKillEmitsOneValidFactWithTheFourKeys`, require the
+  life part of `encounter_key` to equal `life_id`, and carry `player` in the AN-47b `combat_fact_kill` fixture. The
+  five-key assertion stays until then.
+- Mutation proofs (each run as one line changed in `CombatFactListener.java`, the class test run, the file restored from
+  a backup with a hash check afterwards). Killed, with the test that fails:
+  - A `playerHurt` drops `isHostile`: `nonHostileMobsOpenNothingAndEmitNothing`.
+  - B `mobDied` drops `isHostile`: `nonHostileMobsOpenNothingAndEmitNothing`.
+  - C `tick()` drops `enabled`: `theTickIsSilentWhileDisabledAndAnOpenEncounterClosesOnReenable`.
+  - F `playerHit` drops `isHostile`: `nonHostileMobsOpenNothingAndEmitNothing`.
+  - G `playerDied` no longer calls `tracker.playerDied`: `aPlayersDeathClosesTheirOpenEncounterWithNoFact`.
+  - I `playerHurt` drops `enabled`: `aHurtWhileDisabledOpensNothing`.
+  - K `playerDied` drops `enabled`: `aDeathWhileDisabledKeepsTheEncounterOpen`.
+  - L `combatJson` world and player swapped: `theFirstHitOfAnEncounterSendsOneExactEngagedMessage`.
+  - M `tick()` advances at tick 0: five tests, including `tickClosesAQuietEncounterAfterMoreThanTwoHundredTicks`.
+  - N `combatJson` mob replaced by the player name: `theFirstHitOfAnEncounterSendsOneExactEngagedMessage`.
+  - Earlier, from part 2: `mobDied` killer filter (`aHumanNamedPlayerEmitsNothing`) and `playerHit` `isLifeId`
+    (`aHumanNamedPlayerEmitsNothing`).
+  - Handler glue (review 2, mutants on the seams; each run as one line changed, restored and hash-checked):
+    - S6 `damage` reads `damager` instead of `shooterOf(damager)`: `aSkeletonsArrowHittingAPlayerIsOneSkeletonEncounter`
+      and `aPlayersArrowHittingAZombieSendsOneEngagedMessage`.
+    - S7 `damage` drops its `enabled` check: `theHandlerSeamsDoNothingWhileDisabledAndReadNoEntity` (tripwire doubles).
+    - S8 `death` drops its `enabled` check: `theHandlerSeamsDoNothingWhileDisabledAndReadNoEntity`.
+    - S9 `death` Player branch disabled: `aPlayersDeathThroughTheHandlerSeamClosesTheEncounter`.
+    - S14 `shooterOf` rewritten as `getShooter() != null` then a cast: `aProjectileShotByADispenserStaysTheProjectile`.
+  - Equivalent, not killed: H `playerDied` drops `isLifeId`. The tracker closes only encounters of the named player, and
+    the hurt and hit seams never open one for a non-life name, so the mutant is behaviourally identical. The test
+    `aDeathOfAnotherNameLeavesALivesEncounterOpen` pins the behaviour and does not kill it.
+
 ## Index line for AN-50a
 
-Part 2 pending. The expected registration lines are `all.add(new CombatFactListener(...))` and the tick task; they are
-written in part 2's worknote update.
+- `all.add(new CombatFactListener(exporter, sink, enabledSupplier, worldTickSupplier));` in `GeldarCore`'s listener list
+  (it needs the `EventExporter` and a `ProvenanceSink`, both already present for AN-47a's sink).
+- A once-per-tick task that calls `combatFactListener.tick()`.
+
+Ops capture pending: a real kill and a real survived payload before AN-47b fixtures freeze.

@@ -812,6 +812,7 @@ META-INF/versions/9/org/bouncycastle/util/io/StreamOverflowException.class
 META-INF/versions/9/org/bouncycastle/util/io/Streams.class
 config.yml
 dev/geldar/core/BoundedEventQueue.class
+dev/geldar/core/CombatFactListener.class
 dev/geldar/core/CommandBlockListener.class
 dev/geldar/core/CoreConfig.class
 dev/geldar/core/EventEnvelope.class
