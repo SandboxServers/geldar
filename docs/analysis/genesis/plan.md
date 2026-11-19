@@ -81,7 +81,7 @@ The campaign's exit is the scorched-earth drill, not the merge of the packets. D
 5. State (Postgres, both worlds, the skins bucket, tokens, roster) restores from an off-host backup; secrets regenerate.
 6. A scheduled plan job reports drift and fails on a hand edit.
 7. Allowed leftovers are checked prerequisites: the gateway firewall policy, the domain registration, the owner's one-time tenant consent.
-8. Open until the owner rules: the NeoForge world's "no backup" decision and the skins source. Both are listed in the open owner questions of [README.md](README.md).
+8. Open until the owner rules: whether the drill must preserve the NeoForge world (a backup and restore design for it; today no backup of that world exists) and the skins source. Both are listed in the open owner questions of [README.md](README.md).
 
 ## 8. Risks and mitigations
 

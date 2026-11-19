@@ -22,11 +22,11 @@ The campaign is done when the scorched-earth drill of [decision 0240](../../deci
 5. State restores from an off-host backup; secrets regenerate on the target.
 6. A scheduled plan job reports drift and fails on a hand edit.
 7. The gateway firewall policy, the domain registration and the owner's one-time tenant consent are checked prerequisites.
-8. The NeoForge "no backup" decision and the skins source stay open until the owner rules.
+8. Whether the drill must preserve the NeoForge world (a backup and restore design for it) and the skins source stay open until the owner rules. Today no backup of the NeoForge world exists (a fact, not a rule).
 
 ## Open owner questions
 
-- The NeoForge world's "no backup" decision (0240 point 8).
+- Whether the drill must preserve the NeoForge world (a backup and restore design for it), 0240 point 8 and GE-06. Fact: today no backup of the NeoForge world exists. The owner's 2026-11-18 answer covered only skipping a backup before the Chunky pregeneration; it is not a standing rule.
 - The skins source: a backed-up store or an owner-supplied one.
 - The GitHub Environments and Azure identities (G2-04): the owner runs them.
 - The first DNS and Entra run (G2-05, G2-06) needs the owner's tenant.
