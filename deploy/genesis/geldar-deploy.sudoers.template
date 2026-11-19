@@ -1,0 +1,5 @@
+# Sudoers fragment for the forced-command deploy channel (G3-02). deploy/genesis/install-deploy-channel.sh installs it as
+# /etc/sudoers.d/geldar-deploy (mode 0440) after replacing @OPERATOR@ with the operator account name. Nothing here names a
+# real account. The operator account may run the root entrypoint with the four verbs, and with no other arguments.
+# SETENV lets the channel pass GELDAR_DEPLOY_ENV (the allow-listed environment name) and nothing else.
+@OPERATOR@ ALL=(root) NOPASSWD: SETENV: /usr/local/libexec/geldar-deploy/run plan *, /usr/local/libexec/geldar-deploy/run deploy *, /usr/local/libexec/geldar-deploy/run verify *, /usr/local/libexec/geldar-deploy/run restore *
