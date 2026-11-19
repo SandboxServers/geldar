@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { encounterKey, validateCombatFactPayload } from '../src/evidence.ts';
 import { validateObservationPayload, validateProvenance } from '../src/generated/validators.js';
@@ -59,12 +60,77 @@ describe('evidence sources (AN-46, decision 0345)', () => {
     ];
     for (const actor of bad) {
       expect(validateObservationPayload({ ...FIGHT, actor })).toBe(false);
+      expect(validateObservationPayload({ ...TAKEN, actor })).toBe(false);
     }
   });
 
   it('a fight or take with a target or item outside its pattern is invalid', () => {
     expect(validateObservationPayload({ ...FIGHT, target: 'Creeper' })).toBe(false);
     expect(validateObservationPayload({ ...TAKEN, count: 0 })).toBe(false);
+    expect(validateObservationPayload({ ...TAKEN, count: 2305 })).toBe(false);
+    expect(validateObservationPayload({ ...TAKEN, count: 2304 })).toBe(true);
+  });
+
+  it('mixed-case actor names fit the observation keys (infrastructure dedup keys)', () => {
+    expect(validateObservationPayload({ ...FIGHT, key: 'fight:12:Kestrel:creeper' })).toBe(true);
+    expect(validateObservationPayload({ ...TAKEN, key: 'take:12:1:64:-2:Kestrel:bread' })).toBe(
+      true,
+    );
+  });
+
+  it('an observation key of 128 characters is accepted and 129 is refused', () => {
+    const key128 = `fight:${'a'.repeat(128 - 'fight:'.length)}`;
+    expect(key128.length).toBe(128);
+    expect(validateObservationPayload({ ...FIGHT, key: key128 })).toBe(true);
+    expect(validateObservationPayload({ ...FIGHT, key: `${key128}a` })).toBe(false);
+    const take128 = `tak:${'b'.repeat(128 - 'tak:'.length)}`;
+    expect(validateObservationPayload({ ...TAKEN, key: take128 })).toBe(true);
+    expect(validateObservationPayload({ ...TAKEN, key: `${take128}b` })).toBe(false);
+  });
+
+  it('a combat fact without mob is invalid', () => {
+    const { mob: _unused, ...noMob } = COMBAT;
+    expect(validateCombatFactPayload(noMob).ok).toBe(false);
+  });
+
+  it('a combat mob is a lowercase name: casing, namespace and length are refused', () => {
+    for (const mob of ['Zombie', 'minecraft:zombie', 'a'.repeat(65), '']) {
+      expect(validateCombatFactPayload({ ...COMBAT, mob }).ok).toBe(false);
+    }
+    expect(validateCombatFactPayload({ ...COMBAT, mob: 'a'.repeat(64) }).ok).toBe(true);
+  });
+
+  it('provenance take rejects a missing field, a bad count, an extra field and a short actor', () => {
+    for (const field of ['x', 'y', 'z', 'item', 'count', 'tick', 'actor']) {
+      const { [field]: _unused, ...missing } = TAKE as Record<string, unknown>;
+      expect(validateProvenance(missing)).toBe(false);
+    }
+    expect(validateProvenance({ ...TAKE, count: 0 })).toBe(false);
+    expect(validateProvenance({ ...TAKE, count: 2305 })).toBe(false);
+    expect(validateProvenance({ ...TAKE, extra: 1 })).toBe(false);
+    expect(validateProvenance({ ...TAKE, actor: 'ab' })).toBe(false);
+  });
+
+  it('the MCP player event type names fight_seen and container_taken', () => {
+    const schema: unknown = JSON.parse(
+      readFileSync(new URL('../schemas/mcp-common.schema.json', import.meta.url), 'utf8'),
+    );
+    const enums: unknown[][] = [];
+    const walk = (node: unknown): void => {
+      if (Array.isArray(node)) {
+        node.forEach(walk);
+      } else if (node && typeof node === 'object') {
+        const record = node as Record<string, unknown>;
+        if (Array.isArray(record.enum)) enums.push(record.enum);
+        Object.values(record).forEach(walk);
+      }
+    };
+    walk(schema);
+    const withFight = enums.filter((list) => list.includes('fight_seen'));
+    expect(withFight.length).toBeGreaterThan(0);
+    for (const list of withFight) {
+      expect(list).toContain('container_taken');
+    }
   });
 
   it('a combat fact validates with its four keys', () => {
@@ -138,10 +204,32 @@ describe('the combat key (decision 0321)', () => {
     expect(encounterKey('Kestrel', MOB)).toBeNull();
     expect(encounterKey('ag_kestrel_1', MOB)).toBeNull();
   });
+
+  it('a non-string mob id is refused with a clear error, not coerced', () => {
+    expect(() => encounterKey('ag_kestrel_01', {} as never)).toThrow(TypeError);
+    expect(() => encounterKey('ag_kestrel_01', {} as never)).toThrow(/must be strings/);
+    expect(() => encounterKey('ag_kestrel_01', null as never)).toThrow(TypeError);
+  });
+
+  it('a non-string life id is refused with a clear error', () => {
+    expect(() => encounterKey(undefined as never, MOB)).toThrow(TypeError);
+  });
 });
 
 describe('the two draft sentences (AN-46, OWNER APPROVAL REQUIRED)', () => {
   it('a fight gives the draft sentence with the mob name through the pattern', () => {
+    expect(observationSentence({ kind: 'fight_seen', target: 'creeper' })).toBe(
+      'Someone fought a creeper nearby.',
+    );
+  });
+
+  it('the fight sentence picks a or an by the first letter of the mob name', () => {
+    expect(observationSentence({ kind: 'fight_seen', target: 'iron_golem' })).toBe(
+      'Someone fought an iron golem nearby.',
+    );
+    expect(observationSentence({ kind: 'fight_seen', target: 'evoker' })).toBe(
+      'Someone fought an evoker nearby.',
+    );
     expect(observationSentence({ kind: 'fight_seen', target: 'creeper' })).toBe(
       'Someone fought a creeper nearby.',
     );
