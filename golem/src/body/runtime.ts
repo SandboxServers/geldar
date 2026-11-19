@@ -1,7 +1,7 @@
 import type { Bot } from 'mineflayer';
 import { ActionRegistry, type ActionRun, runAction } from '../actions/registry.ts';
 import type { InflightStore } from './inflight.ts';
-import { ProgramRegistry } from './program.ts';
+import { ProgramRegistry, type StepActionOptions } from './program.ts';
 import type { RecordSink } from './records.ts';
 import { type Reflex, type ReflexContext, ReflexRunner } from './reflex.ts';
 import { allReflexesOn, type ReflexConfig } from './reflex-config.ts';
@@ -159,9 +159,13 @@ export class BodyRuntime {
   /**
    * Runs one action through the registry (validation, timeout, abort). Throws when another action
    * is still running: the Body does one thing at a time. `signal` also cancels it, as do
-   * `cancelAction` and `stop`.
+   * `cancelAction` and `stop`. `opts.mineAt` reaches a `mine` handler as its exact cell (decision 0349).
    */
-  async runAction(action: unknown, signal?: AbortSignal): Promise<ActionRun> {
+  async runAction(
+    action: unknown,
+    signal?: AbortSignal,
+    opts: StepActionOptions = {},
+  ): Promise<ActionRun> {
     if (this.stopped) throw new Error('body runtime stopped');
     if (this.current || this.reflexHolds > 0) throw new ActionBusyError();
     if (this.winding) {
@@ -179,6 +183,7 @@ export class BodyRuntime {
       timeScale: this.timeScale,
       signal: controller.signal,
       receipts: this.receipts,
+      ...(opts.mineAt === undefined ? {} : { mineAt: opts.mineAt }),
       // Called before runAction's first await, so it is set before the slot is filled.
       onHandler: (ended) => {
         handlerEnded = ended;
