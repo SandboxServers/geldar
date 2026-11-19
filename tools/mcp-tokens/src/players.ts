@@ -163,7 +163,7 @@ export function sheetHash(sheet: CharacterSheet): string {
 }
 
 /** The sheet a roster life adopts: the given one, refused field by field if malformed, or the standard one. */
-function adoptedSheet(given: unknown): CharacterSheet {
+export function adoptedSheet(given: unknown): CharacterSheet {
   if (given === undefined) return STANDARD_SHEET;
   const result = normalizeSheet(given);
   if (!result.ok) throw new Error(`character sheet refused: ${result.errors.join('; ')}`);

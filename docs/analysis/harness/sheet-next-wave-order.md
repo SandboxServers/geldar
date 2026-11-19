@@ -24,6 +24,8 @@ Rules for this order:
 
 Other campaigns share the regen slot: ask the contract slot holder (geldar-3b) before each one.
 
+AN-40a (a program's `mine` digs one exact cell, decision 0349) takes **no** slot: it changes no `contract/` file (the cell is a program-only run option, not an `Action` field), so it can merge before or after AN-44; it merges before AN-40.
+
 ### Decision numbers (free on main and every remote branch: 0283 to 0289, 0320 to 0329)
 
 Proposal (the orchestrator confirms in the registry before each dispatch):
@@ -44,6 +46,7 @@ Proposal (the orchestrator confirms in the registry before each dispatch):
 | 0324 | HC-23a | sanity veto, same condition |
 | 0325 | HC-25 | temperament route and wording, after OD-A |
 | 0326 to 0329 | spare | |
+| 0349 | AN-40a | a program mines one exact cell (the spare of the 0343 to 0349 sheet allocation in the registry on `main`, where its row still reads `spare`) |
 
 Owner or orchestrator choice: keep W9 to W12 on 0283 to 0288 (as written) and put W3 to W8 in the overflow block (above), or renumber in wave order. Either way, one list, allocated serially.
 
@@ -71,6 +74,7 @@ Each SQL card and S9-00 append one ` -f sql/test/<file>.sql` to the single psql 
 | `plugin/core-common/.../blockowner/NatsBlockOwnerLink.java`, `plugin/core/.../blockowner/BlockChangeListener.java` | AN-27a only |
 | `player-core/src/link/mind-event.ts`, `player-core/src/ports/body.ts`, `threshold/mcp/src/events/handlers/index.ts`, `present-handlers/index.ts` | AN-28a, then AN-50b (only if a presenter row is needed) |
 | `golem/src/body/programs/index.ts`, `player-core/src/validate/bounds.ts`, `prompts/body-api/v11.json` | AN-45 only |
+| `golem/src/actions/mine.ts`, `golem/src/actions/registry.ts`, `golem/src/body/program.ts`, `golem/src/body/runtime.ts`, `golem/src/body/executor-intent.ts`, `golem/src/body/programs/action-step.ts` | AN-40a only |
 | `eventsink/src/xp/awards.ts` (registration `case` arms) | AN-50a only; AN-47b and AN-49 hand "index line to add" |
 | `eventsink/src/writer.ts`, `eventsink/src/main.ts` | S10-03, then S11-04 |
 | `psyche/**` and tags | S10-02 only; tag `psyche-v1.1.0` (owner approval) before it |
@@ -91,7 +95,8 @@ Parallel-safe set (disjoint files; geldar cards from a fresh `phase1/sheet-w5` w
 | AN-24 | geldar | contract slot 1 | READY |
 | AN-27a | geldar (plugin) | `ProvenanceSink.java` (core-common), `NatsBlockOwnerLink.java`, `BlockChangeListener.java`, new test | fix first: core-common paths and Gradle tasks |
 | AN-39 | geldar | new `explore.ts`, `observed-chunks.ts` | READY; merge after AN-44 |
-| AN-40 | geldar | new `farm.ts`, `farm-field.ts` | fix first: import paths |
+| AN-40a | geldar | new `mine-cell.ts`; `mine.ts`, `registry.ts`, `program.ts`, `runtime.ts`, `executor-intent.ts`, `action-step.ts` | READY; no contract slot; merge before AN-40 |
+| AN-40 | geldar | new `farm.ts`, `farm-field.ts` | amendment after AN-40a merges (exact cell, owner prefetch); merge after AN-44 and AN-40a |
 | AN-41 | geldar | new `patrol.ts` | READY; merge after AN-44 |
 | S12-03 | geldar | new `golem/test/character-control/*` | READY; test-only |
 | HC-27a | kit | new `packages/instinct/src/social/{rules,model,store}.ts` | READY |

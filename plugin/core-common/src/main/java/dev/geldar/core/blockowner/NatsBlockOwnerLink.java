@@ -19,7 +19,9 @@ import java.util.logging.Logger;
  * {@code geldar.<shard>.blockowner.changed} and the replies on the request's inbox. Connected on a daemon thread and
  * reconnects forever, like {@link dev.geldar.core.kino.NatsKinoSink}. A message with no connection is dropped.
  */
-public final class NatsBlockOwnerLink implements BlockOwnerResponder.Reply, AutoCloseable {
+public final class NatsBlockOwnerLink implements BlockOwnerResponder.Reply, ProvenanceSink, AutoCloseable {
+    /** The only provenance tails that reach NATS; anything else is dropped. */
+    private static final java.util.Set<String> PROVENANCE_TAILS = java.util.Set.of("break", "pickup", "take", "combat");
     private final String url;
     private final String shard;
     private final Function<String, String> setting;
@@ -107,6 +109,19 @@ public final class NatsBlockOwnerLink implements BlockOwnerResponder.Reply, Auto
 
     static String changedSubject(String shard) {
         return "geldar." + shard + ".blockowner.changed";
+    }
+
+    static String provenanceSubject(String shard, String tail) {
+        return "geldar." + shard + ".provenance." + tail;
+    }
+
+    /** Publishes provenance on {@code provenance.<tail>}; a tail outside the known four is dropped silently. */
+    @Override
+    public void send(String tail, String json) {
+        if (tail == null || !PROVENANCE_TAILS.contains(tail)) {
+            return;
+        }
+        publish(provenanceSubject(shard, tail), json);
     }
 
     /** Starts the connection; each query body is handed to {@code onQuery} with its reply inbox, on the NATS thread. */

@@ -870,6 +870,7 @@ dev/geldar/core/blockowner/OwnerSource$Owners.class
 dev/geldar/core/blockowner/OwnerSource$Unavailable.class
 dev/geldar/core/blockowner/OwnerSource.class
 dev/geldar/core/blockowner/PlacementRecorder.class
+dev/geldar/core/blockowner/ProvenanceSink.class
 dev/geldar/core/kino/BukkitKinoWorld.class
 dev/geldar/core/kino/KinoBlockListener.class
 dev/geldar/core/kino/KinoControl$Command.class

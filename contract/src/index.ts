@@ -8,7 +8,33 @@ import { validateSnapshot as validateSnapshotSchema } from './generated/validato
 import { formatError, type ValidationResult } from './validation.ts';
 
 export { MARKER_WORD, markedWords } from './agent-text.ts';
-export type { MaintenanceNotice, Snapshot } from './generated/types.ts';
+export type {
+  ExploreArguments,
+  ExploreCheckpoint,
+  ExploreDetail,
+  FarmArguments,
+  FarmCell,
+  FarmCheckpoint,
+  FarmDetail,
+  MaintenanceNotice,
+  PatrolArguments,
+  PatrolCheckpoint,
+  PatrolDetail,
+  ProgramBlock,
+  ProgramChunk,
+  Snapshot,
+} from './generated/types.ts';
+export {
+  validateExploreArguments,
+  validateExploreCheckpoint,
+  validateExploreDetail,
+  validateFarmArguments,
+  validateFarmCheckpoint,
+  validateFarmDetail,
+  validatePatrolArguments,
+  validatePatrolCheckpoint,
+  validatePatrolDetail,
+} from './programs.ts';
 export type { ValidationResult } from './validation.ts';
 
 // --- P0-01 snapshot ---
@@ -52,8 +78,20 @@ export function validateReceipt(value: unknown): ValidationResult<Receipt> {
   return { ok: false, errors: (validateReceiptSchema.errors ?? []).map(formatError) };
 }
 
+/** Observed-actor contract (AN-24, decision 0343, Proposed; nothing publishes these yet). */
+export type { ObservationPayload, ObservedActor, Provenance } from './generated/types.ts';
 /** Checks a heard_sound payload against heard-sound-event.schema.json (PX-4). Coordinates are rejected. */
-export { validateHeardSoundEvent } from './generated/validators.js';
+export {
+  validateHeardSoundEvent,
+  validateObservationPayload,
+  validateProvenance,
+} from './generated/validators.js';
+export { observationSentence } from './observation.ts';
+export {
+  provenanceBreakSubject,
+  provenancePickupSubject,
+  provenanceWildcard,
+} from './subjects.ts';
 
 /** Checks a value against event.schema.json. Never throws; unknown properties are rejected. */
 export function validateWorldEvent(value: unknown): ValidationResult<WorldEvent> {
