@@ -31,16 +31,33 @@ export function ageOf(block: Block): number {
   }
 }
 
-/**
- * Who owns the cell: the Body's own placement, a world-generated block (no owner), another
- * player's block, or unknown (no record, or the record is unreadable). Decision 0164: unknown
- * ownership is protected, so the program never treats it as its own.
- */
-export function ownerOf(bot: Bot, cell: { x: number; y: number; z: number }): CellOwner {
+/** Ranks the owners by how strictly the program must keep off them: other > unknown > own. */
+const STRICTNESS: Record<CellOwner, number> = { own: 0, unknown: 1, other: 2 };
+
+/** Who owns one block: the Body's own placement, a world-generated block (no owner), another player's, or unknown. */
+function blockOwner(bot: Bot, cell: { x: number; y: number; z: number }): CellOwner {
   if (isOwnPlacement(bot, cell)) return 'own';
   const answer = ownerRecordAt(new Vec3(cell.x, cell.y, cell.z));
   if (answer === null || !answer.known) return 'unknown';
   return answer.owner === null ? 'own' : 'other';
+}
+
+/**
+ * Who owns the cell: the Body's own placement, a world-generated block (no owner), another
+ * player's block, or unknown (no record, or the record is unreadable). Decision 0164: unknown
+ * ownership is protected, so the program never treats it as its own. An `empty` cell is air, so
+ * its farmland below is read too and the stricter of the two records wins (`other` beats
+ * `unknown` beats `own`): a cell whose farmland belongs to someone else is never sown.
+ */
+export function ownerOf(
+  bot: Bot,
+  cell: { x: number; y: number; z: number },
+  state?: CropState,
+): CellOwner {
+  const own = blockOwner(bot, cell);
+  if (state !== 'empty') return own;
+  const below = blockOwner(bot, { x: cell.x, y: cell.y - 1, z: cell.z });
+  return STRICTNESS[below] > STRICTNESS[own] ? below : own;
 }
 
 /**
@@ -95,6 +112,6 @@ export function readField(bot: Bot, radius: number, maxCells: number, replant = 
     y,
     z,
     state,
-    owner: ownerOf(bot, { x, y, z }),
+    owner: ownerOf(bot, { x, y, z }, state),
   }));
 }

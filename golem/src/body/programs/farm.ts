@@ -96,13 +96,13 @@ export class FarmProgram implements IntentProgram {
     }
     const [x, y, z] = s.cells[s.next] as SavedCell;
     const pos = new Vec3(x, y, z);
+    const seen = cropStateAt(ctx.bot, pos, s.replant);
     if (s.gated !== s.next) {
-      const owner = ownerOf(ctx.bot, { x, y, z });
+      const owner = ownerOf(ctx.bot, { x, y, z }, seen?.state);
       if (owner === 'other') return this.skip(s, 'owned');
       if (owner === 'unknown') return this.skip(s, 'unknown');
       s.gated = s.next;
     }
-    const seen = cropStateAt(ctx.bot, pos, s.replant);
     if (!seen || seen.state === 'unripe') return this.advance(s);
     if (seen.state === 'ripe') return this.harvest(ctx, s, pos, seen.name);
     return this.sow(ctx, s, pos);

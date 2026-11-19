@@ -288,6 +288,51 @@ describe('farm', () => {
     expect(world.log).toEqual([]);
   });
 
+  it("skips an empty cell whose farmland is another player's, and sows nothing", async () => {
+    const world = newWorld();
+    farmland(world, 1, 64, 0);
+    world.inventory.wheat_seeds = 1;
+    vi.mocked(ownerRecordAt).mockImplementation((pos) =>
+      pos.y === 63 ? { known: true, owner: 'other-player' } : { known: true, owner: null },
+    );
+    const run = await drive(world, {});
+    expect(detailOf(run.last)).toMatchObject({
+      sown: 0,
+      skipped_owned: 1,
+      skipped_unknown: 0,
+    });
+    expect(world.log.filter((l) => l.startsWith('place:'))).toEqual([]);
+  });
+
+  it('skips an empty cell whose farmland is of unknown ownership, and sows nothing', async () => {
+    const world = newWorld();
+    farmland(world, 1, 64, 0);
+    world.inventory.wheat_seeds = 1;
+    vi.mocked(ownerRecordAt).mockImplementation((pos) =>
+      pos.y === 63 ? { known: false } : { known: true, owner: null },
+    );
+    const run = await drive(world, {});
+    expect(detailOf(run.last)).toMatchObject({
+      sown: 0,
+      skipped_owned: 0,
+      skipped_unknown: 1,
+    });
+    expect(world.log.filter((l) => l.startsWith('place:'))).toEqual([]);
+  });
+
+  it('sows an empty cell whose air and farmland are both its own', async () => {
+    const world = newWorld();
+    farmland(world, 1, 64, 0);
+    world.inventory.wheat_seeds = 1;
+    const run = await drive(world, {});
+    expect(detailOf(run.last)).toMatchObject({
+      sown: 1,
+      skipped_owned: 0,
+      skipped_unknown: 0,
+    });
+    expect(world.log.filter((l) => l.startsWith('place:'))).toHaveLength(1);
+  });
+
   it('harvests the Body own placement even when the record says another player', async () => {
     const world = newWorld();
     crop(world, 1, 64, 0, 'wheat', 7);
