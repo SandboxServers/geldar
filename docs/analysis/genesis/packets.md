@@ -18,11 +18,17 @@ State at 2026-11-15. PR numbers are GitHub pull requests on `main`.
 | G1-02 | #445 | Merged |
 | G1-03 | #454 | merged 2026-11-15 06:02Z (3c563c72) |
 | G0-06 | none | Satisfied by decision 0240 (0240 written in this change) |
-| All other cards (G1-04, G2-01 to G2-07, G3-01 to G3-04, G4-01 to G4-05, G5-01 to G5-04, G6-01 to G6-05, G7-01 to G7-04) | none | Not started |
+| G1-04 | none | In progress (coder dispatched 2026-11-18) |
+| G2-01 | none | In progress (coder dispatched 2026-11-18) |
+| G2-03 | none | In progress (coder dispatched 2026-11-18) |
+| G2-04 | none | In progress (coder dispatched 2026-11-18) |
+| G2-06 | none | In progress (coder dispatched 2026-11-18) |
+| G3-02 | none | In progress (coder dispatched 2026-11-18) |
+| All other cards (G2-02, G2-05, G2-07, G3-01, G3-03, G3-04, G4-01 to G4-05, G5-01 to G5-04, G6-01 to G6-05, G7-01 to G7-04) | none | Not started |
 | GE-01 | none | Not started |
 | GE-02 | none | Not started |
 | GE-03 | none | Not started |
-| GE-04 | none | Not started |
+| GE-04 | none | In progress (coder dispatched 2026-11-18) |
 | GE-05 | none | Not started |
 | GE-06 | none | Not started |
 | GE-07 | none | Not started |
@@ -103,12 +109,12 @@ Legend: **Dep** dependency; **Who** sessions to consult; **Size** S (about 20k),
 
 Each card is wave GE, not started. These cards exist so that the scorched-earth drill of decision 0240 can pass. Dependencies are in parentheses.
 
-- **GE-01 Plugin and mod delivery** (G1-01, G1-04). Publish the plugin and mod jars from CI with digests, commit a lock for each of ours, and have the deploy job fetch, verify and place them and restart Paper or Velocity through the deploy channel. Replaces hand-built jars, `scp` and the hand-kept `.bak` rollback.
-- **GE-02 NeoForge build and mods** (G1-04). CI builds `geldar-neoforge` and the ledger mod. Commit locks for the community mods (BlueMap 5.29 and Chunky 1.5.66) and land the `extra-mods.pins` consumer in the NeoForge entrypoint. Build and publish the offline server bundle from a workflow. The OTel agent jar gets a lock.
+- **GE-01 Plugin and mod delivery** (G1-01, G1-04). Publish the plugin and mod jars from CI with digests, commit a lock for each of ours, and have the deploy job fetch, verify and place them and restart Paper or Velocity through the deploy channel. Replaces hand-built jars, `scp` and the hand-kept `.bak` rollback. Current state: the velocity-identity jar was hand-swapped on 2026-11-18 (backups are at the operator's home); GE-01 must replace that swap with a locked, CI-placed jar. The NeoForge side of the mod delivery is in GE-02.
+- **GE-02 NeoForge build and mods** (G1-04). CI builds `geldar-neoforge` and the ledger mod. Commit locks for the community mods (BlueMap 5.29 and Chunky 1.5.66) and land the `extra-mods.pins` consumer in the NeoForge entrypoint. Build and publish the offline server bundle from a workflow. The OTel agent jar gets a lock. The extra-mods mechanism has landed (#750, pins in `compose/neoforge/extra-mods.pins`), so GE-02 locks and publishes what that mechanism consumes. The `geldar-nf` human lane and the BlueMap and Chunky NeoForge pieces are in scope of GE-02 and GE-09; the drill touches the human lane only with a separate approval (decision 0240 point 9).
 - **GE-03 Config apply by CD** (G3-02). `colo-cd` applies compose, Velocity, NATS and Caddy changes with safe restarts and retires the "needs manual" list. `nf-deploy.sh` and the human lane become workflow inputs, not operator shell.
 - **GE-04 Node scaffolding in repo** (G3-01). The root-owned deploy entrypoint, its wrapper and `colo-env.sh` live in the repo, and bootstrap installs them.
 - **GE-05 State as code** (G2-02). Committed templates for glass aliases, the CoreProtect config, gamerules and BlueMap player heads. NATS auth is generated on the target (adopt mode first), with a generator-versus-live check.
-- **GE-06 Data and backup** (G5-01). Off-host backup and restore for Postgres, both worlds and the skins bucket. Chunky pregeneration becomes a pipeline job. Resolves the NeoForge "no backup" question once the owner rules.
+- **GE-06 Data and backup** (G5-01). Off-host backup and restore for Postgres, both worlds and the skins bucket. Chunky pregeneration becomes a pipeline job. Fact: today no backup of the NeoForge world exists. Open owner question: whether the drill must preserve the world (a backup and restore design for it). This card does not decide that; it is resolved only when the owner rules.
 - **GE-07 Owner functions in register or glass** (C7-03b2). Roster add, token mint, skin import, owner admin set, cap changes and human-lane toggles become audited owner API calls instead of node shell. Completes the node-facing supervisor step.
 - **GE-08 Edge and identity** (G2-05, G2-06). Caddy snippets, DNS and Entra automation, a gateway prerequisite check, and the NeoForge map site with its edge certificate step.
 - **GE-09 Scorched-earth drill** (all). Run the drill from decision 0240 on the Hyper-V test VM first, production last.
