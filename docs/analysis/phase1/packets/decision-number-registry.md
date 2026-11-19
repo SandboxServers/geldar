@@ -185,6 +185,6 @@ Never reuse 0283 to 0285 and 0289: they are reserved for the retired refusal, li
 | 0346 | HC-23a (kit) | sanity veto, only if the kit records it in this register | allocated, not written |
 | 0347 | HC-24 (kit) | instinct step wave close, same condition | allocated, not written |
 | 0348 | HC-25 (kit) | temperament route and wording, after OD-A | allocated, not written |
-| 0349 | spare | | free |
+| 0349 | AN-40a | a program mines one exact cell | allocated, not written |
 
 A card that writes its record also adds its row to `docs/decisions/README.md`. A card without a number in this table writes a worknote question; it does not take a number.
