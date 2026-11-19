@@ -1,6 +1,6 @@
 # 0329. On the NeoForge shard players and agents are equals; 0387 item 7 and 0059 do not apply there
 
-- Status: Proposed (operator rulings NF-1 to NF-6 of 2026-11-18, written up by the sheet campaign; the operator accepts or edits this record)
+- Status: Proposed (operator rulings NF-1 to NF-6 of 2026-11-18, written up by the sheet campaign; questions Q1 and Q7 answered by the operator the same day; the operator accepts or edits this record)
 - Date: 2026-11-18
 - Spec: none edited. Section 2 (Principles 1 and 7), 5.8 (communication), 5.13 (Ghosts row), 5.14 (Watched row), 5.15.8 are read only; the Principle text is the operator's to edit (0073).
 - Related: 0059, 0387 (item 7, and item 6 with 0385), 0322, 0375, 0383, 0385, 0388; [neoforge-delta.md](../analysis/sheet/neoforge-delta.md); [work-packets-sheet-neoforge.md](../analysis/harness/work-packets-sheet-neoforge.md); [neoforge-chat-plan.md](../analysis/sheet/neoforge-chat-plan.md)
@@ -21,14 +21,14 @@ What "do not apply" means, and does not mean:
 
 **The rulings (the operator's words, condensed).**
 
-- **NF-1 (answers OD-NF-1). Human names are not blanked. An agent is told nothing it did not natively see through its own viewport.** When it witnesses a human doing something, the human's name is used as any actor's is. So no out-of-sight event reaches an agent on the NeoForge shard, from a twin card or any other path. What survives of the provenance feed under this rule is set out in the delta note section 3a. Whether the provenance feed is needed on NeoForge at all is an open question (Q1); the NATS widening `geldar.<s>.provenance.>` for the `neoforge` user (a 0383 amendment) is not written.
+- **NF-1 (answers OD-NF-1). Human names are not blanked. An agent is told nothing it did not natively see through its own viewport.** When it witnesses a human doing something, the human's name is used as any actor's is. So no out-of-sight event reaches an agent on the NeoForge shard, from a twin card or any other path. What survives of the provenance feed under this rule is set out in the delta note section 3a. The provenance feed is skipped on NeoForge for v1 (Q1, answered 2026-11-18); the NATS widening `geldar.<s>.provenance.>` for the `neoforge` user (a 0383 amendment) is not written, and v2 would need it.
 - **NF-2 (answers OD-NF-2). The attacker is named in every case, human or agent.** Amendment A5 (a human attacker is never named) is withdrawn for NeoForge. `observedActor` must name a visible human, who has no life id; the contract gains a name-keyed player actor (`PlayerActor { kind: 'player', name }`) beside today's life actor, and the Body gains a naming mode, both inert on Paper (delta note amendments A6 and A7, twin card AN-NF-25). "Every case" is read as "human or agent alike"; the attacker must still be visible (NF-1). The operator confirms this reading on acceptance.
 - **NF-3 (answers OD-NF-3). Container-taking stays inactive on NeoForge.** Whether someone stole from the agent is for the agent to notice itself. Card AN-NF-51a is **Dropped** (not blocked).
 - **NF-4 (answers OD-NF-4). Kill credit goes to the player who dealt the killing blow** (`LivingDeathEvent` source). Paper credits the last player to damage the mob within a window (`LivingEntity#getKiller`). The difference is accepted and recorded in AN-NF-47a and the delta note.
 - **NF-5 (answers OD-NF-5). Proximity chat on NeoForge (NF-CHAT, spec 5.8) is planned** as its own prerequisite card set ([neoforge-chat-plan.md](../analysis/sheet/neoforge-chat-plan.md)). It belongs to the NeoForge campaign, which owns `neoforge/`. It narrows the `NoRegistryScanTest` chat ban, which needs its own record when the cards are dispatched. Until it merges and is switched on, HC-27b `spoke_first` and AN-49 stay inactive on NeoForge.
 - **NF-6 (answers OD-NF-6). Human block owners are logged by name, like agent owners. No placeholder.** The P4 requirements in the delta note section 4 say so. `OwnerId` (`contract/schemas/block-owner.schema.json`, "The placer's agent or player id. Opaque", 1 to 64 characters) already takes a player name, so the contract does not change.
 
-**Open (not ruled here).** OD-NF-8 (progression and proficiency) stays open. Q1 to Q7 below are new open questions.
+**Open (not ruled here).** OD-NF-8 (progression and proficiency) stays open. Q1 to Q7 below are new questions; Q1 and Q7 were answered by the operator on 2026-11-18 (marked there), Q2 to Q6 are still open.
 
 ## Places that rely on the old rule
 
@@ -40,8 +40,8 @@ Decisions:
 |---|---|---|
 | 0059 | Agents are never told humans watch; `identity_mode` says nothing to agents | Paper unchanged. Does not apply on NeoForge (scope above); no observer sentence is added (Q6) |
 | 0387 item 7 | "No observation of humans reaches agents. 0059 holds." | Does not apply on NeoForge |
-| 0387 item 6 | Humans earn nothing; cites "0385 items 3 and 4" | Question for the operator (Q7). The citation does not match 0385 as written: "humans earn nothing" is 0385 item 8; items 3 and 4 are "agents see only their own marks" and "a starter stipend" |
-| 0385 items 3, 4, 8 | Own marks only, starter stipend, humans earn nothing (from `progression-defaults.md` Q2, Q5, Q9) | Question for the operator (Q7); 0385 is Proposed and progression is on hold |
+| 0387 item 6 | Humans earn nothing; cites "0385 items 3 and 4" | Stands for this version (Q7, answered 2026-11-18). The citation does not match 0385 as written: "humans earn nothing" is 0385 item 8; items 3 and 4 are "agents see only their own marks" and "a starter stipend" |
+| 0385 items 3, 4, 8 | Own marks only, starter stipend, humans earn nothing (from `progression-defaults.md` Q2, Q5, Q9) | Item 8 stands for now (Q7, answered 2026-11-18, v1 scope only); items 3 and 4 are per-life rules, unaffected. 0385 is Proposed and progression is on hold |
 | 0322, Consequences | "No human name leaves the NeoForge server in any sheet message" | Replaced for the twin cards by NF-1, NF-2 and NF-6. 0322 is Accepted and is not edited; its other items stand |
 | 0058 | A character knows only what its in-world knowledge gives it | Stands on both shards; NF-1 is the same boundary applied to humans |
 | 0068 | Prompt v4: no observer meta in agent-visible text | Stands (no template changes); its `MARKER_WORD` list is below |
@@ -53,7 +53,7 @@ Decisions:
 | 0366 | Open: spec 5.14 Watched wording versus 0059 | Unchanged; still open |
 | 0137 | Ghosts held in spectator and invisible to agents | Paper unchanged; on NeoForge already superseded for the human listener by 0387 item 3 |
 | 0375 | Human chat export with a name mask | Telemetry privacy, not agent perception: unchanged (Q5) |
-| 0383 | The `neoforge` user publishes `geldar.<s>.*` only | Unchanged. The provenance widening is not written (Q1); NF-CHAT's muffled notices would need a grant of their own (chat plan, NF-CHAT-3) |
+| 0383 | The `neoforge` user publishes `geldar.<s>.*` only | Unchanged. The provenance widening is not written (Q1: not needed for v1; v2 would need it); NF-CHAT's muffled notices would need a grant of their own (chat plan, NF-CHAT-3) |
 
 Code and tests (shard-neutral unless stated):
 
@@ -79,15 +79,15 @@ Spec (read only, not edited): section 2 Principle 1 ("No humans inside") and Pri
 
 Docs that state the old rule and would need a sweep after acceptance (not edited here): `docs/security/agent-visibility-rules.md`, `docs/concepts/observation-and-privacy.md`, `docs/concepts/principles-in-practice.md`, `docs/concepts/sovereign-players.md`, `docs/analysis/neoforge/public-and-human-route.md`, `docs/analysis/neoforge/progression-defaults.md` (Q2 and Q9), `docs/analysis/neoforge/progression-design.md`, `neoforge/README.md` (Privacy).
 
-## Open questions for the operator
+## Questions for the operator (Q1 and Q7 answered 2026-11-18; Q2 to Q6 open)
 
-- **Q1. Is the provenance feed needed on NeoForge at all?** Analysis in the delta note section 3a: under NF-1 every surviving observation is one the Body can derive from its own perception, and the feed adds only a few cases (an instant break with no break-progress packet, which of several visible players tossed an item, a Body's block placed in an earlier session). It costs the 0383 widening, a Body subscription that receives every break and pickup on the shard, and NF-BODY grants. The sheet campaign's proposal: not needed for v1. AN-NF-26a, AN-NF-27a and AN-NF-28b stay BlockedDecision until this is answered.
+- **Q1. Is the provenance feed needed on NeoForge at all?** **Answered 2026-11-18 (operator): skip it for v1; the Body derives observations itself; raise its priority for v2.** AN-NF-26a, AN-NF-27a and AN-NF-28b are **Deferred to v2 (0329 Q1: not needed for v1)**: kept in full, not dispatched in v1, revisited for v2. The 0383 widening stays unwritten; v2 would need it. What v1 loses on NeoForge (the `gave_me` and `took_mine` evidence) is in the delta note section 3b. The Body-derived cards (AN-NF-26b-native, AN-NF-27b-native, AN-NF-47c-native) are not written; their names stay reserved. The analysis as it was put to the operator: under NF-1 every surviving observation is one the Body can derive from its own perception, and the feed adds only a few cases (an instant break with no break-progress packet, which of several visible players tossed an item, a Body's block placed in an earlier session). It costs the 0383 widening, a Body subscription that receives every break and pickup on the shard, and NF-BODY grants. The sheet campaign proposed: not needed for v1.
 - **Q2. Names that contain a marker word.** Should a visible player's name always reach the agent as the actor (it is what the agent sees on the player), or keep AN-28a's marked-word drop? NF-2 suggests the former on NeoForge. The same question applies to the snapshot's visible-agents list (UNVERIFIED whether it filters names).
 - **Q3. Proximity chat for humans too.** Does spec 5.8 (no global chat, 32 blocks) apply to every listener on NeoForge, humans included (equals), and to commands that carry chat (`/msg`, `/tell`, `/me`, `/say`, `/teammsg`)? Chat plan section 5.
 - **Q4. Server log of chat.** With proximity chat the mod cancels the vanilla chat event, which also drops vanilla's server log line. Keep a log line (human-written text in the server log, as vanilla does today) or not? Chat plan section 5.
 - **Q5. Telemetry.** Does NF-6's "by name" extend to the P3 export events (today anonymous for humans), or does telemetry privacy stay as built (0375, 0387 item 8)? This record changes nothing there.
 - **Q6. Observer disclosure on NeoForge.** 0059 not applying removes a ban; it adds no text. Should a NeoForge agent's identity block say that humans play there or that the world is watched (0059 item 2, `observer_disclosure`)? Does 0072's public-link rule still bind there?
-- **Q7. Progression for humans (0385 items 3, 4 and 8; 0387 item 6).** Progression is an encouragement mechanism: it rewards agents for engaging with mechanics and gives them the feedback humans get from playing. Seen that way, humans earning nothing fits: they already get that feedback. But marks are also an in-world medium (contracts, trade, post, accept and award in `progression-defaults.md` Q9), and a human who cannot hold or pay marks is not an equal trading partner. Item 3 (each agent sees only its own marks, no leaderboards) and item 4 (a starter stipend per life) are per-life rules and do not depend on humans either way. Do items 3, 4 and 8 still fit now that players and agents are equals? This is a question, not a decision; OD-NF-8 stays open with it.
+- **Q7. Progression for humans (0385 items 3, 4 and 8; 0387 item 6).** **Answered 2026-11-18 (operator), for this version only: humans do not earn or hold marks in this version; agents still earn marks.** This is a v1 scope ruling, not a statement that humans never will. 0385 item 8 stands for now; items 3 and 4 are per-life rules and are unaffected. OD-NF-8 (how progression and sheet proficiency relate) stays open. 0387 item 6 still cites "0385 items 3 and 4" while the rule is item 8; the citation is left for the operator to correct. The analysis as it was put to the operator: progression is an encouragement mechanism: it rewards agents for engaging with mechanics and gives them the feedback humans get from playing. Seen that way, humans earning nothing fits: they already get that feedback. But marks are also an in-world medium (contracts, trade, post, accept and award in `progression-defaults.md` Q9), and a human who cannot hold or pay marks is not an equal trading partner. Item 3 (each agent sees only its own marks, no leaderboards) and item 4 (a starter stipend per life) are per-life rules and do not depend on humans either way. Do items 3, 4 and 8 still fit now that players and agents are equals?
 
 ## Why
 
@@ -95,8 +95,9 @@ The operator set the NeoForge shard up as its own experiment: humans and agents 
 
 ## Consequences
 
-- The twin cards are rewritten (twin file): AN-NF-27a and AN-NF-26a name every actor and stay BlockedDecision on Q1; AN-NF-28b loses its NATS steps and stays BlockedDecision on Q1; AN-NF-47a keeps the combat facts only (lives only, because a fact is keyed by life id, not for privacy) with the NF-4 kill credit; AN-NF-51a is Dropped; AN-NF-50 no longer waits for AN-NF-28b; AN-NF-25 is new.
+- The twin cards are rewritten (twin file): AN-NF-27a and AN-NF-26a name every actor and are Deferred to v2 (Q1: not needed for v1); AN-NF-28b loses its NATS steps and is Deferred to v2 (Q1); AN-NF-47a keeps the combat facts only (lives only, because a fact is keyed by life id, not for privacy) with the NF-4 kill credit; AN-NF-51a is Dropped; AN-NF-50 no longer waits for AN-NF-28b; AN-NF-25 is new.
 - Amendment A5 is withdrawn; A6 (contract) and A7 (golem) are added; AN-24 and AN-25 should carry them before dispatch, or AN-NF-25 adds them after.
 - The delta note's OD-NF-1 to OD-NF-6 are ruled by this record, pending its acceptance.
+- On NeoForge in v1 the social model's `good` and `law` estimates of other agents and players get no evidence (Q1; delta note section 3b). Humans hold no marks in v1 (Q7).
 - Paper: no card, code, test or text changes. Every NeoForge-only change is behind a default that keeps Paper byte-identical.
 - Until the operator accepts this record, a reader who cites 0387 item 7 or 0059 for the NeoForge shard must also cite this record.

@@ -6,7 +6,7 @@ Status: planning note, docs only, 2026-11-18, against `origin/main` = `a8063b0a`
 
 **Decision 0321 (operator ruling, 2026-11-18):** combat XP is keyed by encounter. The Body's own kill record and the `combat_fact` (Paper or NeoForge) pay one shared key, `enc:<life_id>:<mob_uuid>` (AN-46, AN-47b), so a kill is paid once whichever source reports it.
 
-**Decision 0329 (Proposed; operator rulings NF-1 to NF-6, 2026-11-18):** on the NeoForge shard players and agents are equals and agents are fully aware of players. 0387 item 7, and 0059 as far as 0387 item 7 relies on it, do not apply to the NeoForge shard. That is scope, not a change for Paper: on the Paper shard agents do not know humans exist and nothing changes. The rulings: NF-1 no blanked human names, and an agent is told nothing it did not see itself; NF-2 the attacker is named, human or agent (A5 withdrawn); NF-3 container-taking inactive, AN-NF-51a dropped; NF-4 kill credit to the killing blow; NF-5 proximity chat planned (NF-CHAT); NF-6 human block owners logged by name.
+**Decision 0329 (Proposed; operator rulings NF-1 to NF-6, 2026-11-18):** on the NeoForge shard players and agents are equals and agents are fully aware of players. 0387 item 7, and 0059 as far as 0387 item 7 relies on it, do not apply to the NeoForge shard. That is scope, not a change for Paper: on the Paper shard agents do not know humans exist and nothing changes. The rulings: NF-1 no blanked human names, and an agent is told nothing it did not see itself; NF-2 the attacker is named, human or agent (A5 withdrawn); NF-3 container-taking inactive, AN-NF-51a dropped; NF-4 kill credit to the killing blow; NF-5 proximity chat planned (NF-CHAT); NF-6 human block owners logged by name. Two of its questions were answered on 2026-11-18: **Q1** skip the provenance feed on NeoForge for v1, the Body derives observations itself, raise its priority for v2 (section 3a; the v1 cost is section 3b); **Q7** humans do not earn or hold marks in this version, agents still do (section 7 item 7).
 
 Tags, as in [../neoforge/p3-adapter-design.md](../neoforge/p3-adapter-design.md): **VERIFIED** = read in this repo (path given), or a class name that a merged NeoForge module compiles against NeoForge 26.1.2 (build 126). **UNVERIFIED** = needs a GameTest, a first server run, a node check, an owner answer, or a source read this note did not do. A NeoForge name is VERIFIED here only when merged code under `neoforge/` or `neoforge-ledger/` already compiles against it.
 
@@ -25,12 +25,12 @@ Tags, as in [../neoforge/p3-adapter-design.md](../neoforge/p3-adapter-design.md)
 | WorldEvents `damage`, `death`, `sleep`, `server_tps` | `plugin/core/.../EventExporter.java` | Merged: `neoforge/.../ExportListeners.java`, `ExportHandlers.java`, `EventMapping.java` (P3-3). Scratch proof `live: pending` (`neoforge/README.md`) |
 | Block ownership: `geldar.<shard>.blockowner.query` (reply) and `blockowner.changed` (decision 0165) | `plugin/core/.../blockowner/BlockOwnerSetup.java`, `BlockChangeListener.java`; core-common `NatsBlockOwnerLink`, `OwnerCache`, `CoreProtectOwnerSource` | None. P4 (own block-owner log) is on hold and has no design note. Every Body ownership read on NeoForge answers `known: false` (`golem/src/body/block-owners.ts`: a failed query is unknown) |
 | Proximity chat (spec 5.8, decision 0199: speech reaches only players within 32 blocks; "There is no global chat") | `plugin/core/.../proximity/ProximityChatListener.java` (Bukkit); the judge is Bukkit-free in core-common (`ChatHearing`, `ProximityRule`, `Absorption`, `NatsHearingSink`) | None. P3 put chat out of scope, and `NoRegistryScanTest` forbids chat event names in `neoforge/src/main` (decision 0375, Proposed). So on NeoForge a Body hears whatever vanilla chat delivers (UNVERIFIED: no NeoForge run with chat). Planned: [neoforge-chat-plan.md](neoforge-chat-plan.md) (NF-CHAT) |
-| Provenance subjects (W5, W8; not built on either platform yet) | Planned in `plugin/` by AN-26a, AN-27a, AN-47a (AN-51a on Paper only) | Whether NeoForge needs them at all is open (0329 Q1; section 3a) |
+| Provenance subjects (W5, W8; not built on either platform yet) | Planned in `plugin/` by AN-26a, AN-27a, AN-47a (AN-51a on Paper only) | Skipped for v1 (0329 Q1, answered 2026-11-18), v2 priority; only AN-NF-47a's combat facts (not provenance) are planned (section 3a) |
 
 **Shard facts that change the world side on NeoForge** (all VERIFIED as written records; their status is Proposed unless stated):
 
 - **Per-shard storage** (0380, 0381): the NeoForge shard has its own NATS, database (`geldar_nf`) and eventsink; stream `GELDAR_EVENTS_NF`, subjects `geldar.nf.*`. Each NeoForge database runs every migration from empty, so the sheet tables (`sql/0050` to `0052`) exist there once migrated.
-- **NeoForge NATS users** (0383, `deploy/nats-auth-nf.ps1`): the mod's user `neoforge` may publish `geldar.<s>.*` (three tokens) only. The `body` user is the P0 probe's only (one registry key); the file says real Bodies on `geldar-nf` "will need their own role and a later owner decision". So **no sheet Body can run on the NeoForge shard today**: it cannot publish its events, request its proficiency state or hear level pushes. The provenance widening (`geldar.<s>.provenance.>` for `neoforge`) is **not written** (0329 Q1).
+- **NeoForge NATS users** (0383, `deploy/nats-auth-nf.ps1`): the mod's user `neoforge` may publish `geldar.<s>.*` (three tokens) only. The `body` user is the P0 probe's only (one registry key); the file says real Bodies on `geldar-nf` "will need their own role and a later owner decision". So **no sheet Body can run on the NeoForge shard today**: it cannot publish its events, request its proficiency state or hear level pushes. The provenance widening (`geldar.<s>.provenance.>` for `neoforge`) is **not written** (0329 Q1: not needed for v1; v2 would need it).
 - **Human-directed shard, players and agents equals** (0387, 0388 Accepted, 0329 Proposed): humans play on the NeoForge shard. Agents perceive them as players. In agent-facing observations a human is an actor like any agent and is named when the agent saw them (NF-1, NF-2). Human block owners are logged by name (NF-6). The merged NeoForge **export** (P3) still writes human events without a name (`EventEnvelope.isLifeId`, `neoforge/README.md`, Privacy); that is telemetry privacy, not agent perception, and 0329 does not change it (0329 Q5).
 - **Agent usernames on NeoForge.** The human lane refuses any name starting with `ag_` or `ag-`, any case (0388, "What is built"), and the bot ingress is unpublished, so a player whose username starts with `ag_` is never a human there. Not every agent username is a `LifeId`, though: managed lives are `ag_` plus 1 to 12 characters (`golem/src/players/managed-config.ts`, `MANAGED_LIFE_ID`), which does not match the contract `LifeId` pattern (`contract/schemas/common.schema.json`). Which username shape NeoForge Bodies will use is part of NF-BODY (UNVERIFIED).
 
@@ -56,7 +56,7 @@ Tags, as in [../neoforge/p3-adapter-design.md](../neoforge/p3-adapter-design.md)
 |---|---|
 | HC-18 to HC-26c, HC-33, HC-24 | Neutral (the kit talks to the MCP, not the server) |
 | HC-27a, HC-28a/b, HC-29, HC-30a/b | Neutral. HC-30a's adapter must read a `PlayerActor` (no `life`) as `actorName` only; HC-27b already keys an actor with no life by its name (`SAFE_ID` takes a Minecraft name). Message the kit owner when AN-NF-25 lands |
-| HC-27b observation reader | Neutral, degraded: `spoke_first` reads `speech` with `to_me`; on NeoForge, without proximity chat, a Body hears speech from any distance, so `spoke_first` is **inactive on NeoForge until NF-CHAT merges and is on** (NF-5). `hit_me` works on NeoForge once AN-NF-25 lands (the hurt actor is Body-derived). `gave_me` and `took_mine` (from `property_broken`) depend on 0329 Q1 (section 3a) |
+| HC-27b observation reader | Neutral, degraded: `spoke_first` reads `speech` with `to_me`; on NeoForge, without proximity chat, a Body hears speech from any distance, so `spoke_first` is **inactive on NeoForge until NF-CHAT merges and is on** (NF-5). `hit_me` works on NeoForge once AN-NF-25 lands (the hurt actor is Body-derived). `gave_me` and `took_mine` (from `property_broken`) get no input on NeoForge in v1 (0329 Q1; cost in section 3b) |
 
 ### W5
 
@@ -64,13 +64,13 @@ Tags, as in [../neoforge/p3-adapter-design.md](../neoforge/p3-adapter-design.md)
 |---|---|---|
 | AN-24 observed-actor contract | contract | Neutral, plus amendment **A6** (a `PlayerActor`) for NF-2 |
 | AN-25 visible attacker identity | Body (`golem/src/perception/hurt-trigger.ts`: cause entity from the damage packet) | Neutral code, plus amendment **A7** (a naming mode). A visible human attacker is named (NF-2). If A6 and A7 are not folded into AN-24 and AN-25 before dispatch, **twin AN-NF-25** adds them after |
-| AN-26a pickup provenance | **plugin** (`EntityPickupItemEvent`, `Item#getThrower()`) | Twin AN-NF-26a, **BlockedDecision (0329 Q1)**: provenance needed or not |
-| AN-26b gift observation | Body | Neutral code. On NeoForge only the attributed gift survives NF-1 (section 3a) |
-| AN-27a break provenance | **plugin** (`BlockBreakEvent`, prior owner from `OwnerCache`) | Twin AN-NF-27a, **BlockedDecision (0329 Q1)**; needs P4 for a populated owner cache |
-| AN-27b property-break observation | Body | Neutral code. On NeoForge only the attributed break survives NF-1 (section 3a); without P4, `prior_owner` is null for every block the Body did not place in its current session |
+| AN-26a pickup provenance | **plugin** (`EntityPickupItemEvent`, `Item#getThrower()`) | Twin AN-NF-26a, **Deferred to v2 (0329 Q1: not needed for v1)** |
+| AN-26b gift observation | Body | Neutral code, but no input on NeoForge in v1 (no pickup provenance). In v2 only the attributed gift survives NF-1 (section 3a) |
+| AN-27a break provenance | **plugin** (`BlockBreakEvent`, prior owner from `OwnerCache`) | Twin AN-NF-27a, **Deferred to v2 (0329 Q1: not needed for v1)**; needs P4 for a populated owner cache |
+| AN-27b property-break observation | Body | Neutral code, but no input on NeoForge in v1 (no break provenance). In v2 only the attributed break survives NF-1 (section 3a); without P4, `prior_owner` is null for every block the Body did not place in its current session |
 | AN-28a delivery path | MCP | Neutral. Its marked-word drop of actor names conflicts with NF-2 for some human names (0329 Q2) |
 | AN-28b Body wiring and leakage gate | Body + leakage test | Neutral code; needs NF-BODY to run on NeoForge; on NeoForge it passes naming `'named'` (A7) |
-| AN-28c plugin setup and ACL (split out of AN-28b) | `BlockOwnerSetup.java` and `geldar.ps1` (Paper) | Twin AN-NF-28b for the mod setup, **BlockedDecision (0329 Q1)**; its NATS rows are removed (the 0383 widening is not written) |
+| AN-28c plugin setup and ACL (split out of AN-28b) | `BlockOwnerSetup.java` and `geldar.ps1` (Paper) | Twin AN-NF-28b for the mod setup, **Deferred to v2 (0329 Q1: not needed for v1)**; its NATS rows are removed (the 0383 widening is not written; v2 would need it) |
 
 ### W7
 
@@ -110,11 +110,11 @@ Tags, as in [../neoforge/p3-adapter-design.md](../neoforge/p3-adapter-design.md)
 | S12-01 exporter, S12-02 to S12-07 | Neutral code; the exporter and cohort runs must name which shard database they read (0380: one database per shard) |
 | GX-03 operator sheet read | Neutral (per-shard database) |
 
-Twins in total: AN-NF-00 (unblocker), AN-NF-25 (new, named player actor), AN-NF-26a, AN-NF-27a, AN-NF-28b (these three BlockedDecision on 0329 Q1), AN-NF-47a, AN-NF-50; AN-NF-51a Dropped. Under 0322 all of them are inert code: merged but off, each merging only after P3-LIVE and P4. NF-CHAT-0 to NF-CHAT-3 are prerequisite cards owned by the NeoForge campaign ([neoforge-chat-plan.md](neoforge-chat-plan.md)).
+Twins in total: AN-NF-00 (unblocker), AN-NF-25 (new, named player actor), AN-NF-26a, AN-NF-27a, AN-NF-28b (these three Deferred to v2, 0329 Q1), AN-NF-47a, AN-NF-50; AN-NF-51a Dropped. The Body-derived cards AN-NF-26b-native, AN-NF-27b-native and AN-NF-47c-native are not written (names reserved). Under 0322 all of them are inert code: merged but off, each merging only after P3-LIVE and P4. NF-CHAT-0 to NF-CHAT-3 are prerequisite cards owned by the NeoForge campaign ([neoforge-chat-plan.md](neoforge-chat-plan.md)).
 
 ## 3. Amendments to the Paper cards (so the twins reuse code)
 
-The P3 design rejects copying sources between `plugin/` and `neoforge/` ("drifts", p3-adapter-design section 4.1); `neoforge/` already consumes `plugin/core-common` as a composite build and packs it in its jar (VERIFIED, `neoforge/README.md`). The Paper cards as first written put their logic in Bukkit classes in `plugin/core`, which NeoForge cannot use. **Applied in the W8 cards (2026-11-18):** AN-47a carries A2 (`combatJson`) and A3, AN-51a carries A2 (`takeJson`) and A4 ([../harness/work-packets-sheet-w6-w8.md](../harness/work-packets-sheet-w6-w8.md)). A1, A2 (`breakJson`, `pickupJson`), A4, A6 and A7 belong to the W5 cards (AN-24, AN-25, AN-26a, AN-27a), whose file is owned elsewhere; the twin cards check for each item and **stop** if it is missing. A1, A2 and A4 matter on NeoForge only if 0329 Q1 is answered "needed"; they are harmless on Paper either way.
+The P3 design rejects copying sources between `plugin/` and `neoforge/` ("drifts", p3-adapter-design section 4.1); `neoforge/` already consumes `plugin/core-common` as a composite build and packs it in its jar (VERIFIED, `neoforge/README.md`). The Paper cards as first written put their logic in Bukkit classes in `plugin/core`, which NeoForge cannot use. **Applied in the W8 cards (2026-11-18):** AN-47a carries A2 (`combatJson`) and A3, AN-51a carries A2 (`takeJson`) and A4 ([../harness/work-packets-sheet-w6-w8.md](../harness/work-packets-sheet-w6-w8.md)). A1, A2 (`breakJson`, `pickupJson`), A4, A6 and A7 belong to the W5 cards (AN-24, AN-25, AN-26a, AN-27a), whose file is owned elsewhere; the twin cards check for each item and **stop** if it is missing. A1, A2 and A4 matter on NeoForge only for the v2 provenance cards (0329 Q1: not needed for v1); they are harmless on Paper either way.
 
 | Id | Card | Amendment (exact shapes the twins rely on) |
 |---|---|---|
@@ -141,23 +141,73 @@ The rule (0329 NF-1): an agent is told nothing it did not natively see through i
 | **combat provenance** (AN-47a `engaged`, `killed`: AN-47c `fight_seen`) | A visible fight, from the Body's own perception | The server-sourced `engaged` and `killed` messages: removed from AN-NF-47a | The damage packet names the source entity (`entityHurt` with its cause, VERIFIED for the Body's own hurts in `golem/src/perception/hurt-trigger.ts`; UNVERIFIED that mineflayer 4.39 passes the cause for another entity's hurt), and a death is seen (`entityDead`). Both entities visible gives "X fought a zombie" |
 | **own hurt** (AN-25: `hurt` with `actor`) | All of it: the damage packet is the Body's own perception, the attacker named only when visible, human or agent (NF-2) | Nothing | Already Body-derived |
 
-**Open question 0329 Q1: is the provenance feed needed on NeoForge?** Not written as a decision; this is the analysis.
+**0329 Q1, answered 2026-11-18 (operator): skip the provenance feed for v1; the Body derives observations itself; raise its priority for v2.** The "Survives" column above is what a v2 feed may carry; in v1 no break or pickup provenance exists on NeoForge. The analysis that was put to the operator:
 
 - What the feed would add under NF-1: (a) the breaker of a break the Body watched when no break-progress packet arrived (an instant break) while the breaker stood in view; (b) which of several visible players tossed a stack; (c) the owner of a Body's block placed before its current session, which P4's owner query also answers. Each is a case where the Body saw the event and the actor, and the server only says which of the things it saw goes with which.
 - What it costs: the 0383 widening (`neoforge` publishes `geldar.<s>.provenance.>`), which this note does not write; NF-BODY grants for a Body subscription; and a Body process that receives every break and pickup on the shard, out of sight included, which the leakage gate must then keep from the agent. That last point is exactly what NF-1 forbids at the agent, held back one layer below it.
-- If the answer is "needed": AN-NF-26a, AN-NF-27a and AN-NF-28b are dispatched as written (they already name every actor), AN-NF-28b gets its NATS steps back in a new card after a 0383 amendment is accepted, and AN-26b and AN-27b need a Body option that drops the unattributed results on NeoForge (a new card, not written).
-- If the answer is "not needed": AN-NF-26a, AN-NF-27a and AN-NF-28b close as "not needed". The NeoForge rows `gave_me` and `took_mine` (from `property_broken`) come from Body-derived observation cards, written only if the operator wants those rows on NeoForge (not written; names reserved: AN-NF-26b-native, AN-NF-27b-native, AN-NF-47c-native).
-- Proposal (the sheet campaign's, for the operator): not needed for v1.
+- The sheet campaign proposed: not needed for v1.
+
+The outcome:
+
+- **v1.** AN-NF-26a, AN-NF-27a and AN-NF-28b are **Deferred to v2 (0329 Q1: not needed for v1)**. They are kept in full in the twin file and are not dispatched in v1. The 0383 widening (`geldar.<s>.provenance.>` for `neoforge`) is not written. The NeoForge rows `gave_me` and `took_mine` (from `property_broken`) get no input; section 3b is the cost.
+- **Body-derived cards.** AN-NF-26b-native, AN-NF-27b-native and AN-NF-47c-native are **not written**; the names stay reserved for a Body-derived path (section 3b says what each could cover, all UNVERIFIED).
+- **v2 (revisit, raised priority).** Dispatching the deferred cards needs: a 0383 amendment and a grant card (AN-NF-28b's NATS steps, removed from that card); a Body option that drops the unattributed results on NeoForge for AN-26b and AN-27b (a new card, not written); P4's `provenanceSink()` (section 4 item 1) and its break-order statement (section 4 item 5).
+
+## 3b. What v1 loses on NeoForge (0329 Q1)
+
+The social model (W6, [work-packets-sheet-w6-w8.md](../harness/work-packets-sheet-w6-w8.md) HC-27a) learns four fields of another agent or player from observations: `curiosity`, `aggression`, `law`, `good`. `common_sense` and `cleverness` are never learned on either shard. Rule values are HC-27a's `OBS_RULES`; event kinds are HC-27b's event table.
+
+**Rows, Paper versus NeoForge v1:**
+
+| HC-27a row {field evidence} | Source (Paper) | NeoForge v1 | Why |
+|---|---|---|---|
+| `gave_me` {good 4.5} | `gift_received` (AN-26b over AN-26a pickup provenance) | **Lost** | AN-NF-26a deferred to v2 (Q1) |
+| `took_mine` from a break {law 1.5, good 2.0} | `property_broken` (AN-27b over AN-27a break provenance) | **Lost** | AN-NF-27a deferred to v2 (Q1) |
+| `took_mine` from a take {law 1.5, good 2.0} | `container_taken` (AN-51b over AN-51a; HC-27c) | **Lost** | NF-3 (AN-NF-51a Dropped); not a Q1 effect |
+| `fought_mob` {aggression 4.5} | `fight_seen` (AN-47c; HC-27c) | Inactive | Inactive on Paper too until HC-27c; on NeoForge also no source (AN-NF-47a sends no combat provenance; AN-NF-47c-native not written) |
+| `spoke_first` {curiosity 4.0} | `speech_to_me` | Inactive until NF-CHAT | Without proximity chat a Body hears speech from any distance (NF-5); not a Q1 effect |
+| `approached` {curiosity 3.5}, `kept_away` {curiosity 2.5} | Body distance samples (HC-27b; positions from HC-46) | **Kept** | Body sightings, shard-neutral |
+| `hit_me` {aggression 4.5} | `hurt` with a visible actor (AN-25) | **Kept** (after AN-NF-25) | The Body's own hurt; a human attacker is a `PlayerActor`, keyed by name (NF-2) |
+| `fled_mob`, `kept_promise`, `broke_promise` | none | Inactive | Inactive on both shards |
+
+**Fields, Paper versus NeoForge v1:**
+
+| Field | Paper v1 evidence | NeoForge v1 evidence |
+|---|---|---|
+| `curiosity` | `spoke_first`, `approached`, `kept_away` | `approached`, `kept_away` (plus `spoke_first` once NF-CHAT is on) |
+| `aggression` | `hit_me` (plus `fought_mob` after HC-27c) | `hit_me` (after AN-NF-25) |
+| `law` | `took_mine` (break; take after HC-27c) | **none** |
+| `good` | `gave_me`, `took_mine` | **none** |
+| `common_sense`, `cleverness` | none (prior) | none (prior) |
+
+**On NeoForge in v1 the `good` field gets no evidence at all, and `law` gets none.** Both stay at their prior with `n = 0` for every other agent and every human: `estimateOf` returns `priorFor(f, own)` = `3 + 0.25 * (5 - own.common_sense) * (own[f] - 3)`, clamped 1 to 5, `supported: false` (HC-27a; `PRIOR_STRENGTH` 2 never applies, because no evidence is ever applied). What that means downstream, exactly as the cards are written:
+
+- **Predictions (HC-28a).** `estimatedScores` passes that prior to `predict`, so any prediction that reads another's `law` or `good` uses the observer's own projection ("they are like me", pulled toward 3 by the observer's common sense), the same value for everyone it meets. It is not the stranger policy.
+- **Stranger policy (HC-28b).** It does not read another's `law` or `good`: `approach = (curiosity-3) + (good-3) + 0.5*socialProficiency` uses the observer's **own** curiosity and good, and `threat = estAggression - own aggression` uses the learned aggression, which `hit_me` still feeds. So the stranger step works the same on NeoForge; it never had law or good evidence to lose.
+- **Prose (HC-29).** A field is shown only when `n >= 1`, so no `law` or `good` line ever reaches a NeoForge agent in v1.
+
+**Body-derived paths that could cover part of it** (not written; names reserved; every signal UNVERIFIED, section 8 item 8):
+
+| Reserved card | Could restore | Body signal | UNVERIFIED |
+|---|---|---|---|
+| AN-NF-26b-native | part of `gave_me` (`good`) | An item entity spawns (`entitySpawn`) at a visible player within `GIVE_REACH + 3`, and the Body collects it (`playerCollect`, VERIFIED in use) | The protocol sends no thrower, so the link is a heuristic; several visible players make it ambiguous; an item dropped by accident would count as a gift |
+| AN-NF-27b-native | part of `took_mine` from a break (`law`, `good`) | A block update in view (`blockUpdate`, VERIFIED in use) on a cell the Body placed this session (or, with P4, whose owner names the Body), with the breaker from `blockBreakProgressObserved` | The mineflayer 4.39 event, and whether NeoForge sends break progress to a watching player; an instant break names no breaker; own-placement records are lost at restart without P4 |
+| AN-NF-47c-native | `fought_mob` (`aggression`), once HC-27c is on | `entityHurt` with its cause for another entity, then `entityDead` | Whether mineflayer 4.39 passes the cause for another entity's hurt |
+| none | `took_mine` from a take | none (NF-3) | n/a |
+
+**XP (W8) is unaffected.** No XP row reads pickup or break provenance on either shard (W8 evidence table, AN-50b). Combat XP pays one key per encounter from the Body's kill record (AN-47b) and AN-NF-47a's `combat_fact` (0321), both still planned on NeoForge. Social XP for a give (`give:<action_id>`) is the Body's own action. W2's farming, mining, building, crafting and exploring rows are Body-produced (`action`, `intent`, `chunk_visited`). The social exchange award (AN-49) is inactive on NeoForge until NF-CHAT (NF-5), which is not a Q1 effect.
+
+v2 priority: the deferred provenance cards (section 3a, outcome) restore `gave_me` and the break half of `took_mine`, and with them all NeoForge evidence for `good` and `law`.
 
 ## 4. What P4 must provide for the sheet
 
 P4 (the NeoForge block-owner log) has no design note yet. For the twins to wire without guessing, P4 should expose, in `neoforge/src/main/java/dev/geldar/neoforge/`:
 
-1. A class `NeoForgeBlockOwners` with `public OwnerCache cache()` (the core-common `OwnerCache`, filled from the NeoForge owner log the way Paper fills it from CoreProtect). Only if 0329 Q1 is answered "needed": also `public ProvenanceSink provenanceSink()` (a core-NATS publisher on `geldar.<shard>.provenance.<tail>`, accepting only the tails `break`, `pickup`, `combat`). Both may return null when the block-owner feature is off.
+1. A class `NeoForgeBlockOwners` with `public OwnerCache cache()` (the core-common `OwnerCache`, filled from the NeoForge owner log the way Paper fills it from CoreProtect). Only for v2 (0329 Q1: not needed for v1; P4 need not provide it now): also `public ProvenanceSink provenanceSink()` (a core-NATS publisher on `geldar.<shard>.provenance.<tail>`, accepting only the tails `break`, `pickup`, `combat`). Both may return null when the block-owner feature is off.
 2. The Paper world names (decision 0164; the Body maps `overworld` to `world`, `the_nether` to `world_nether`, `the_end` to `world_the_end` in `golem/src/body/block-owners.ts`). AN-NF-00 adds the same mapping in `WorldNames.java`; P4 should use it so `OwnerCache.Pos.world` and the Body agree.
 3. **Human owners are logged by name, like agent owners (0329 NF-6).** A human's placement is recorded with the human's player name as the owner (`ServerPlayer#getGameProfile().name()`, VERIFIED compile in `NeoForgeFacts.java`; its runtime value behind Velocity is a P0 open item). There is no placeholder value and no anonymous owner. The name fits `OwnerId` (`contract/schemas/block-owner.schema.json`: "The placer's agent or player id. Opaque", 1 to 64 characters, VERIFIED), so the contract does not change. A Body then treats the block as someone else's (`golem/src/actions/protected-blocks.ts`), as for an agent owner. The agent-facing refusal text names no owner ("that block is someone else's work", `golem/src/actions/edit-sign.ts`, VERIFIED), so no owner name reaches an agent through it.
-4. Its NATS rows in `deploy/nats-auth-nf.ps1`: `neoforge` answers `geldar.<s>.blockowner.query` and publishes `blockowner.changed`. No provenance row (0329 Q1).
-5. **Read before write on a break** (only if 0329 Q1 is "needed"). Paper's AN-27a reads the prior owner *before* the cache records the break. On NeoForge the sheet's break listener runs at `EventPriority.LOWEST` (so a cancelled break is skipped), so P4 must record its own break change in the cache after that listener has run: a P4 break listener at `LOWEST` registered after `EvidenceSetup.install`, or P4 recording the change on the next server tick. Registration order inside one priority on the 26.1 bus is UNVERIFIED. P4's README must state which it does; AN-NF-28b checks for that statement and stops without it.
+4. Its NATS rows in `deploy/nats-auth-nf.ps1`: `neoforge` answers `geldar.<s>.blockowner.query` and publishes `blockowner.changed`. No provenance row (0329 Q1: not needed for v1; v2 would need a 0383 amendment).
+5. **Read before write on a break** (v2 only: it binds AN-NF-27a and AN-NF-28b, Deferred to v2 by 0329 Q1; P4 need not meet it for v1, but stating its choice now saves v2 a P4 change). Paper's AN-27a reads the prior owner *before* the cache records the break. On NeoForge the sheet's break listener runs at `EventPriority.LOWEST` (so a cancelled break is skipped), so P4 must record its own break change in the cache after that listener has run: a P4 break listener at `LOWEST` registered after `EvidenceSetup.install`, or P4 recording the change on the next server tick. Registration order inside one priority on the 26.1 bus is UNVERIFIED. P4's README must state which it does; AN-NF-28b checks for that statement and stops without it.
 
 If P4 chooses other names, the twins' step 0 stops and the orchestrator updates the twin cards.
 
@@ -177,16 +227,16 @@ Owner decisions. OD-NF-1 to OD-NF-6 are **ruled by decision 0329 (Proposed; pend
 
 | Id | Question | Ruling or state | Cards |
 |---|---|---|---|
-| OD-NF-1 | On the human-directed shard, a human breaks an agent's block, gives an agent an item, or takes from an agent's container: blank the human's name, or send nothing? | **Ruled by 0329 NF-1 (pending acceptance):** no blanking; an agent is told only what it saw itself, and a human it saw acting is named. Section 3a says what survives; whether the provenance feed is needed at all is 0329 Q1 | AN-NF-26a, 27a, 28b |
+| OD-NF-1 | On the human-directed shard, a human breaks an agent's block, gives an agent an item, or takes from an agent's container: blank the human's name, or send nothing? | **Ruled by 0329 NF-1 (pending acceptance):** no blanking; an agent is told only what it saw itself, and a human it saw acting is named. Section 3a says what survives. The provenance feed is skipped for v1 (0329 Q1, answered 2026-11-18; v2 priority; cost in section 3b) | AN-NF-26a, 27a, 28b (Deferred to v2) |
 | OD-NF-2 | May a Body name a visible human attacker in a `hurt` observation? | **Ruled by 0329 NF-2 (pending acceptance):** yes, the attacker is named, human or agent; A5 withdrawn; A6, A7, AN-NF-25 | AN-24, AN-25, AN-NF-25 |
 | OD-NF-3 | Container-take detection on NeoForge (no click-level event in the verified set), or keep it inactive? | **Ruled by 0329 NF-3 (pending acceptance):** inactive on NeoForge; the agent notices a theft itself. AN-NF-51a Dropped | AN-NF-51a (Dropped) |
 | OD-NF-4 | Kill credit on NeoForge: the death source's player (killing blow) versus Paper's last damager within a window? | **Ruled by 0329 NF-4 (pending acceptance):** accepted. A mob that dies of a fall after a player's hit gives no kill on NeoForge; on Paper it does | AN-NF-47a |
 | OD-NF-5 | Proximity chat on NeoForge, or the speech rows stay inactive? | **Ruled by 0329 NF-5 (pending acceptance):** NF-CHAT is planned ([neoforge-chat-plan.md](neoforge-chat-plan.md)); HC-27b `spoke_first` and AN-49 stay inactive on NeoForge until it merges and is on | HC-27b, AN-49, NF-CHAT-0 to 3 |
 | OD-NF-6 | Human owners in the NeoForge block-owner log | **Ruled by 0329 NF-6 (pending acceptance):** logged by name, like agent owners; no placeholder (section 4 item 3) | P4 |
 | OD-NF-7 | Does the sheet campaign include the NeoForge shard at all? | **Answered yes (decision 0322, 2026-11-18):** inert code, merged but off, each twin merging after P3-LIVE and P4; activation follows the held-live ruling on each shard | all twins |
-| OD-NF-8 | Progression and proficiency (section 7) | Open, no recommendation here. 0329 Q7 adds the human side (0385 items 3, 4, 8) | P6 to P8, AN-10a |
+| OD-NF-8 | Progression and proficiency (section 7) | **Open**, no recommendation here. The human side is answered for this version only (0329 Q7, 2026-11-18): humans do not earn or hold marks in v1, agents still earn marks; 0385 item 8 stands for now. How progression and sheet proficiency relate is still open | P6 to P8, AN-10a |
 
-New open questions from 0329 (Q1 to Q7) are listed in that record; Q1 (provenance needed or not) and Q2 (actor names with a marker word) bind cards in this campaign.
+The questions from 0329 (Q1 to Q7) are listed in that record. Q1 (provenance) and Q7 (progression for humans) were answered on 2026-11-18; Q2 to Q6 are open. Q2 (actor names with a marker word) binds cards in this campaign.
 
 ## 6. NeoForge event candidates for each twin
 
@@ -221,9 +271,9 @@ Where they meet, as questions for the owner:
 4. **Visibility.** The sheet never shows proficiency levels to an agent; progression shows level, points and limits as tool text. If both read the same `proficiency-state`, showing it on NeoForge would expose to agents a number the sheet treats as hidden.
 5. **Scale.** Progression's level table runs 0 to 8 over 0 to 2600 points; the domain scale is 0 to 3. progression-defaults Q3 notes the thresholds would be re-derived.
 6. **Scope.** OD-NF-7 is answered yes as inert code (0322), so questions 1 to 5 will arise on the NeoForge shard the day its sheet code is activated; while it is off they do not bind behaviour. The shared contract binds both shards either way: a second meaning of `xp` in the same schema would change 0280.
-7. **Humans (0329 Q7).** 0387 item 6 says humans earn nothing and cites "0385 items 3 and 4"; in 0385 as written that rule is item 8, and items 3 and 4 are "agents see only their own marks" and "a starter stipend". Progression is an encouragement mechanism that gives agents the feedback humans get from playing, which fits humans earning nothing; but marks are also an in-world medium (contracts, trade), where a human who cannot hold marks is not an equal partner. Whether items 3, 4 and 8 still fit with players and agents as equals is the operator's question.
+7. **Humans (0329 Q7, answered 2026-11-18 for this version only).** Humans do not earn or hold marks in this version; agents still earn marks. This is a v1 scope ruling, not a statement that humans never will. 0385 item 8 stands for now; items 3 and 4 are per-life rules and are unaffected. 0387 item 6 says humans earn nothing and cites "0385 items 3 and 4"; in 0385 as written that rule is item 8, and items 3 and 4 are "agents see only their own marks" and "a starter stipend" (citation left for the operator). The analysis put to the operator: progression is an encouragement mechanism that gives agents the feedback humans get from playing, which fits humans earning nothing; but marks are also an in-world medium (contracts, trade), where a human who cannot hold marks is not an equal partner. Questions 1 to 6 (OD-NF-8) stay open.
 
-Nothing in the twin cards depends on these answers: the twins produce combat facts (and, if 0329 Q1 says so, provenance) only, and award nothing themselves.
+Nothing in the twin cards depends on these answers: the twins produce combat facts only (provenance is deferred to v2, 0329 Q1), and award nothing themselves.
 
 ## 8. UNVERIFIED claims in this note (for an owner or node check)
 

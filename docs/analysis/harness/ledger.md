@@ -4,7 +4,7 @@ Regenerated 2026-11-18 against geldar `origin/main` = `a8063b0a` and kit `origin
 
 File column: `geldar A` / `geldar C` / `kit A` / `kit B` / `kit C` / `extra` are the 2026-11-14 card files in this folder; `sheet W3-W5`, `sheet W6-W8`, `sheet W9-W12`, `sheet NF` are `work-packets-sheet-*.md`; `kit-b (kit repo)` is `docs/analysis/harness/work-packets-kit-b.md` in `geldar-scriptorium`, authoritative for HC-19 to HC-26c (0320).
 
-Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged on the kit's `scriptorium/hw0`; `Ready` the card can be dispatched once the global fixes G1 to G13 are in its brief; `FixNeeded` the card must be corrected first (reason given); `Writing` written, not yet verified; `BlockedDependency` / `BlockedDecision` not dispatchable (reason given); `Retired (NNNN)` will not be built, by that decision; `Inactive (NNNN)` not dispatched this campaign, feature stays off, by that decision; `Superseded by X` replaced by another card; `Kit-owned` tracked in the kit's own ledger. Every merged sheet card is inactive by default, and every feature is held on the live server (2026-11-15 ruling).
+Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged on the kit's `scriptorium/hw0`; `Ready` the card can be dispatched once the global fixes G1 to G13 are in its brief; `FixNeeded` the card must be corrected first (reason given); `Writing` written, not yet verified; `BlockedDependency` / `BlockedDecision` not dispatchable (reason given); `Retired (NNNN)` will not be built, by that decision; `Inactive (NNNN)` not dispatched this campaign, feature stays off, by that decision; `Deferred to v2 (NNNN Qn)` kept in full, not dispatched in v1, revisited for v2, by that answer; `Superseded by X` replaced by another card; `Kit-owned` tracked in the kit's own ledger. Every merged sheet card is inactive by default, and every feature is held on the live server (2026-11-15 ruling).
 
 | Card | Title | File | Depends on | Size | Status |
 |---|---|---|---|---|---|
@@ -145,9 +145,9 @@ Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged o
 | S12-07 | campaign review and rollout close | sheet W9-W12 | S12-06 | 25k | BlockedDependency |
 | AN-NF-00 | evidence config, bus, world names, setup skeleton | sheet NF | P3-1 to P3-3 (merged), AN-24 | 35k | BlockedDependency (AN-24; P3-LIVE, P4 for merge) |
 | AN-NF-25 | named player actor, contract and golem, inert on Paper (0329 NF-2; A6, A7) | sheet NF | AN-24, AN-25 | 35k | BlockedDependency (AN-24, AN-25; P3-LIVE, P4 for merge); closes if A6, A7 are folded into AN-24, AN-25 |
-| AN-NF-27a | break provenance on NeoForge, every actor named | sheet NF | 0329 Q1, AN-NF-00, AN-27a with A1, A2, A4, P4 | 35k | BlockedDecision (0329 Q1: provenance needed or not) |
-| AN-NF-26a | pickup provenance on NeoForge, thrower named | sheet NF | 0329 Q1, AN-NF-00, AN-26a with A1, A2, P4 | 35k | BlockedDecision (0329 Q1) |
-| AN-NF-28b | W5 wiring on NeoForge (no NATS rows) | sheet NF | 0329 Q1, AN-NF-26a, AN-NF-27a, AN-NF-50, P4 | 30k | BlockedDecision (0329 Q1) |
+| AN-NF-27a | break provenance on NeoForge, every actor named | sheet NF | 0329 Q1, AN-NF-00, AN-27a with A1, A2, A4, P4 | 35k | Deferred to v2 (0329 Q1: not needed for v1) |
+| AN-NF-26a | pickup provenance on NeoForge, thrower named | sheet NF | 0329 Q1, AN-NF-00, AN-26a with A1, A2, P4 | 35k | Deferred to v2 (0329 Q1: not needed for v1) |
+| AN-NF-28b | W5 wiring on NeoForge (no NATS rows) | sheet NF | 0329 Q1, AN-NF-26a, AN-NF-27a, AN-NF-50, P4 | 30k | Deferred to v2 (0329 Q1: not needed for v1) |
 | AN-NF-47a | combat facts on NeoForge (killing-blow credit, 0329 NF-4; no combat provenance) | sheet NF | AN-NF-00, AN-46, AN-47a with A3, P3-LIVE, P4 | 40k | BlockedDependency (AN-46, AN-47a; P3-LIVE, P4) |
 | AN-NF-51a | container-take provenance on NeoForge | sheet NF | none | | Dropped (0329 NF-3: container-taking inactive on NeoForge) |
 | AN-NF-50 | W8 wiring on NeoForge (combat facts) | sheet NF | AN-NF-47a, AN-NF-00, P3-LIVE, P4 | 25k | BlockedDependency (AN-NF-47a; P3-LIVE, P4) |
