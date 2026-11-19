@@ -6,10 +6,22 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.gson.JsonObject;
+import com.networknt.schema.Error;
+import com.networknt.schema.InputFormat;
+import com.networknt.schema.Schema;
+import com.networknt.schema.SchemaLocation;
+import com.networknt.schema.SchemaRegistry;
+import com.networknt.schema.SchemaRegistryConfig;
+import com.networknt.schema.SpecificationVersion;
 import dev.geldar.core.blockowner.ProvenanceSink;
 import dev.geldar.core.provenance.ProvenanceJson;
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -53,7 +65,7 @@ class CombatFactListenerTest {
     private final CombatFactListener listener = new CombatFactListener(exporter, sink, enabled::get, now::get);
 
     @Test
-    void aRealShapedKillEmitsOneValidFactWithTheFourKeys() {
+    void aRealShapedKillEmitsOneSchemaValidFactWithFiveKeys() {
         listener.playerHurt(LIFE, PLAYER_UUID, MOB_UUID, "zombie", 10);
         listener.mobDied(MOB_UUID, "zombie", LIFE, PLAYER_UUID, 20);
 
@@ -62,11 +74,17 @@ class CombatFactListenerTest {
         assertEquals("geldar.phase0.combat_fact", e.subject());
         assertEquals(LIFE, e.agentId());
         assertTrue(EventSchemaCheck.errors(e).isEmpty(), () -> EventSchemaCheck.errors(e).toString());
-        // EventExporter.emit adds "player" to every payload; the listener's own four are the rest.
+        // The emitted payload, including "player" that EventExporter.emit adds, against the combat-fact schema.
+        assertTrue(payloadErrors(e.payload()).isEmpty(), () -> payloadErrors(e.payload()).toString());
         assertEquals(Set.of("life_id", "kind", "mob", "encounter_key", "player"), e.payload().keySet());
         assertEquals("hostile_kill", e.payload().get("kind").getAsString());
         assertEquals("zombie", e.payload().get("mob").getAsString());
-        assertEquals("enc:" + LIFE + ":" + MOB_UUID, e.payload().get("encounter_key").getAsString());
+        String key = e.payload().get("encounter_key").getAsString();
+        assertEquals("enc:" + LIFE + ":" + MOB_UUID, key);
+        // The life part of the key is the text between "enc:" and the last ":".
+        String lifePart = key.substring("enc:".length(), key.lastIndexOf(':'));
+        assertEquals(e.payload().get("life_id").getAsString(), lifePart);
+        assertEquals(e.payload().get("player").getAsString(), lifePart);
     }
 
     @Test
@@ -375,6 +393,36 @@ class CombatFactListenerTest {
         assertNotNull(annotation, handler.getName());
         assertEquals(EventPriority.MONITOR, annotation.priority(), handler.getName());
         assertTrue(annotation.ignoreCancelled(), handler.getName());
+    }
+
+    private static final String SCHEMA_BASE = "https://geldar.dev/schemas/";
+    private static final Schema COMBAT_FACT = loadCombatFactSchema();
+
+    private static Schema loadCombatFactSchema() {
+        Path dir = Path.of(System.getProperty("geldar.schemas")).toAbsolutePath().normalize();
+        SchemaRegistry registry = SchemaRegistry.withDefaultDialect(
+                SpecificationVersion.DRAFT_2020_12,
+                builder -> builder.schemas(id -> readSchema(dir, id))
+                        .schemaRegistryConfig(
+                                SchemaRegistryConfig.builder().formatAssertionsEnabled(true).build()));
+        return registry.getSchema(SchemaLocation.of(SCHEMA_BASE + "combat-fact-event.schema.json"));
+    }
+
+    /** The schema text for a geldar.dev schema id, read from the contract directory; null for other ids. */
+    private static String readSchema(Path dir, String id) {
+        if (!id.startsWith(SCHEMA_BASE)) {
+            return null;
+        }
+        try {
+            return Files.readString(dir.resolve(id.substring(SCHEMA_BASE.length())));
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /** Schema errors for an emitted combat_fact payload against combat-fact-event.schema.json; empty when valid. */
+    private static List<Error> payloadErrors(JsonObject payload) {
+        return COMBAT_FACT.validate(payload.toString(), InputFormat.JSON);
     }
 
     /** A proxy that throws on any call: a seam that reads an entity while disabled fails the test. */
