@@ -41,12 +41,15 @@ public final class CombatFactListener implements Listener {
     /** A player hurt by a hostile mob, or a player hitting one. Players hitting players are not combat facts. */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onDamageByEntity(EntityDamageByEntityEvent event) {
+        damage(event.getEntity(), event.getDamager(), worldTick.getAsLong());
+    }
+
+    /** Package-private seam: the logic of {@link #onDamageByEntity}, with the event's entities as arguments. */
+    void damage(Entity victim, Entity damager, long now) {
         if (!enabled.getAsBoolean()) {
             return;
         }
-        Entity victim = event.getEntity();
-        Entity source = shooterOf(event.getDamager());
-        long now = worldTick.getAsLong();
+        Entity source = shooterOf(damager);
         if (isPlayerHurt(victim, source)) {
             Player hurt = (Player) victim;
             playerHurt(
@@ -88,11 +91,14 @@ public final class CombatFactListener implements Listener {
     /** A mob died (possibly to a player) or a player died (closes that player's encounters with no fact). */
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onDeath(EntityDeathEvent event) {
+        death(event.getEntity(), worldTick.getAsLong());
+    }
+
+    /** Package-private seam: the logic of {@link #onDeath}. */
+    void death(LivingEntity dead, long now) {
         if (!enabled.getAsBoolean()) {
             return;
         }
-        LivingEntity dead = event.getEntity();
-        long now = worldTick.getAsLong();
         if (dead instanceof Player player) {
             playerDied(player.getName(), now);
             return;

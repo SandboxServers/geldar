@@ -19,7 +19,9 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Logger;
+import org.bukkit.World;
 import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Projectile;
@@ -27,6 +29,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.projectiles.BlockProjectileSource;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -38,6 +41,7 @@ class CombatFactListenerTest {
     private static final String PLAYER_UUID = "11111111-2222-3333-4444-555555555555";
     private static final String MOB_UUID = "0f8e2a3c-1b4d-4e5f-8a6b-7c8d9e0f1a2b";
     private static final String SKELETON_UUID = "9a1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d";
+    private static final String ARROW_UUID = "5c6d7e8f-9a0b-4c1d-8e2f-3a4b5c6d7e8f";
 
     private final InMemoryEventPublisher mem = new InMemoryEventPublisher();
     private final EventExporter exporter = new EventExporter(
@@ -243,6 +247,123 @@ class CombatFactListenerTest {
     }
 
     @Test
+    void aProjectileShotByADispenserStaysTheProjectile() {
+        BlockProjectileSource dispenser = fake(BlockProjectileSource.class, Map.<String, Object>of());
+        Entity arrow = fake(Projectile.class, Map.<String, Object>of("getShooter", dispenser));
+
+        assertSame(arrow, CombatFactListener.shooterOf(arrow));
+    }
+
+    @Test
+    void aSkeletonsArrowHittingAPlayerIsOneSkeletonEncounter() {
+        Entity skeleton = fake(
+                LivingEntity.class,
+                Map.<String, Object>of("getType", EntityType.SKELETON, "getUniqueId", UUID.fromString(SKELETON_UUID)));
+        Entity arrow = fake(
+                Projectile.class,
+                Map.<String, Object>of(
+                        "getType", EntityType.ARROW, "getUniqueId", UUID.fromString(ARROW_UUID), "getShooter", skeleton));
+        Entity player = fake(
+                Player.class, Map.<String, Object>of("getName", LIFE, "getUniqueId", UUID.fromString(PLAYER_UUID)));
+
+        listener.damage(player, arrow, 10);
+        now.set(300);
+        listener.tick();
+
+        assertEquals(1, mem.events().size());
+        assertEquals("fight_survived", mem.events().get(0).payload().get("kind").getAsString());
+        assertEquals("skeleton", mem.events().get(0).payload().get("mob").getAsString());
+        assertEquals(
+                "enc:" + LIFE + ":" + SKELETON_UUID,
+                mem.events().get(0).payload().get("encounter_key").getAsString());
+    }
+
+    @Test
+    void aPlayersArrowHittingAZombieSendsOneEngagedMessage() {
+        World world = fake(World.class, Map.<String, Object>of("getName", "world"));
+        Entity player = fake(
+                Player.class,
+                Map.<String, Object>of(
+                        "getName", LIFE, "getUniqueId", UUID.fromString(PLAYER_UUID), "getWorld", world));
+        Entity zombie = fake(
+                LivingEntity.class,
+                Map.<String, Object>of("getType", EntityType.ZOMBIE, "getUniqueId", UUID.fromString(MOB_UUID)));
+        Entity arrow = fake(Projectile.class, Map.<String, Object>of("getShooter", player));
+
+        listener.damage(zombie, arrow, 5);
+        listener.damage(zombie, arrow, 6);
+
+        assertEquals(List.of("combat " + ProvenanceJson.combatJson("world", LIFE, "zombie", "engaged", 5)), sent);
+    }
+
+    @Test
+    void aPlayerHittingAPlayerThroughTheHandlerSeamIsNeitherAHurtNorAHit() {
+        Entity attacker = fake(
+                Player.class, Map.<String, Object>of("getName", LIFE, "getUniqueId", UUID.fromString(PLAYER_UUID)));
+        Entity victim = fake(
+                Player.class, Map.<String, Object>of("getName", LIFE, "getUniqueId", UUID.fromString(MOB_UUID)));
+
+        listener.damage(victim, attacker, 10);
+        now.set(500);
+        listener.tick();
+
+        assertTrue(mem.events().isEmpty());
+        assertTrue(sent.isEmpty());
+    }
+
+    @Test
+    void aPlayersDeathThroughTheHandlerSeamClosesTheEncounter() {
+        listener.playerHurt(LIFE, PLAYER_UUID, MOB_UUID, "zombie", 10);
+        LivingEntity player = fake(
+                Player.class,
+                Map.<String, Object>of(
+                        "getType", EntityType.PLAYER, "getName", LIFE, "getUniqueId", UUID.fromString(PLAYER_UUID)));
+
+        listener.death(player, 20);
+        now.set(500);
+        listener.tick();
+
+        assertTrue(mem.events().isEmpty());
+    }
+
+    @Test
+    void aZombieWithNoKillerEmitsNothingAndALifeKillerEmitsOneKill() {
+        LivingEntity noKiller = fake(
+                LivingEntity.class,
+                Map.<String, Object>of("getType", EntityType.ZOMBIE, "getUniqueId", UUID.fromString(MOB_UUID)));
+        listener.death(noKiller, 20);
+        assertTrue(mem.events().isEmpty());
+
+        listener.playerHurt(LIFE, PLAYER_UUID, MOB_UUID, "zombie", 10);
+        LivingEntity killed = fake(
+                LivingEntity.class,
+                Map.<String, Object>of(
+                        "getType",
+                        EntityType.ZOMBIE,
+                        "getUniqueId",
+                        UUID.fromString(MOB_UUID),
+                        "getKiller",
+                        fake(Player.class, Map.<String, Object>of("getName", LIFE, "getUniqueId", UUID.fromString(PLAYER_UUID)))));
+        listener.death(killed, 20);
+
+        assertEquals(1, mem.events().size());
+        assertEquals("hostile_kill", mem.events().get(0).payload().get("kind").getAsString());
+    }
+
+    @Test
+    void theHandlerSeamsDoNothingWhileDisabledAndReadNoEntity() {
+        enabled.set(false);
+        listener.damage(tripwire(Player.class), tripwire(Projectile.class), 10);
+        listener.death(tripwire(LivingEntity.class), 20);
+        listener.death(tripwire(Player.class), 20);
+        now.set(500);
+        listener.tick();
+
+        assertTrue(mem.events().isEmpty());
+        assertTrue(sent.isEmpty());
+    }
+
+    @Test
     void bothDamageHandlersAreMonitorAndIgnoreCancelled() throws NoSuchMethodException {
         assertMonitorIgnoreCancelled(
                 CombatFactListener.class.getMethod("onDamageByEntity", EntityDamageByEntityEvent.class));
@@ -254,6 +375,16 @@ class CombatFactListenerTest {
         assertNotNull(annotation, handler.getName());
         assertEquals(EventPriority.MONITOR, annotation.priority(), handler.getName());
         assertTrue(annotation.ignoreCancelled(), handler.getName());
+    }
+
+    /** A proxy that throws on any call: a seam that reads an entity while disabled fails the test. */
+    private static <T> T tripwire(Class<T> type) {
+        return type.cast(Proxy.newProxyInstance(
+                CombatFactListenerTest.class.getClassLoader(),
+                new Class<?>[] {type},
+                (proxy, method, args) -> {
+                    throw new IllegalStateException("entity read while disabled: " + method.getName());
+                }));
     }
 
     /** A proxy that answers the named methods from {@code values} and null for the rest. */
