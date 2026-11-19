@@ -47,6 +47,8 @@ const EVENT_TEXT: Record<McpPlayerEvent['type'], string> = {
   wake: 'You wake with nothing underway.',
   hurt: 'Something hurt you.',
   heard_sound: 'You heard a sound.',
+  gift_received: 'Something happened.',
+  property_broken: 'Something happened.',
 };
 
 /** Maps a sim event kind to a player event type; unknown kinds are not digested. */

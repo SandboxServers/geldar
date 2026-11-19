@@ -35,6 +35,10 @@
           "type": "string",
           "pattern": "^[a-z_]{1,64}$"
         },
+        "actor": {
+          "description": "The visible player who caused the hit (AN-24). Absent for falls, fire, starvation, mobs, and any attacker that is not a visible player.",
+          "$ref": "observation-event.schema.json#/$defs/ObservedActor"
+        },
         "amount": {
           "description": "Health lost, rounded and capped at the health left. Zero-amount hurts are not emitted.",
           "type": "integer",
