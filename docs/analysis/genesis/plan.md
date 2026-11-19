@@ -78,10 +78,10 @@ The campaign's exit is the scorched-earth drill, not the merge of the packets. D
 2. Scope is Geldar-owned things only. Shared host services (ClickHouse, SigNoz, the telemetry gateway, the GitHub runner stacks, other projects) are prerequisites and are not stamped.
 3. Every jar and mod (ours and community, Paper, NeoForge and Velocity) is built or fetched by CI, locked with digests, verified and placed by the pipeline.
 4. Every manual node step becomes a workflow job or an audited owner function in register or glass. A runbook may explain it, never perform it.
-5. State (Postgres, both worlds, the skins bucket, tokens, roster) restores from an off-host backup; secrets regenerate.
+5. State that has a backup (Postgres, the Paper world, the skins bucket, tokens, roster) restores from the off-host backup in the drill. The NeoForge world is covered only if the owner decides it must survive the drill (open question under GE-06). Secrets regenerate.
 6. A scheduled plan job reports drift and fails on a hand edit.
 7. Allowed leftovers are checked prerequisites: the gateway firewall policy, the domain registration, the owner's one-time tenant consent.
-8. Open until the owner rules: the NeoForge world's "no backup" decision and the skins source. Both are listed in the open owner questions of [README.md](README.md).
+8. Open until the owner rules: whether the drill must preserve the NeoForge world (a backup and restore design for it; today no backup of that world exists) and the skins source. Both are listed in the open owner questions of [README.md](README.md).
 
 ## 8. Risks and mitigations
 

@@ -17,10 +17,11 @@ Today the live node is assembled by hand. Jars are copied, a `.bak` rollback is 
 2. **Scope is only Geldar-owned things.** Shared services on the host are prerequisites and are not stamped: the telemetry stack (ClickHouse and SigNoz), the telemetry gateway, the GitHub runner stacks and other projects. The owner agreed this on 2026-11-18. The stamp must still not break them.
 3. **No hand-placed artifact.** Every jar and mod (ours and community; Paper, NeoForge and Velocity) is built or fetched by CI, locked in the repo with digests, verified and placed by the pipeline. No `scp`, no `docker cp`, no hand-built tarball.
 4. **No manual node step.** Each step becomes a workflow job or an audited owner function in register or glass (supervisor over NATS). A runbook may explain a step, but never performs it.
-5. **State restores; secrets regenerate.** Postgres, both worlds, the skins bucket, tokens and the roster restore from an off-host backup during the drill. Secrets are regenerated on the target.
+5. **State restores; secrets regenerate.** State that has a backup (Postgres, the Paper world, the skins bucket, tokens and the roster) restores from the off-host backup during the drill. The NeoForge world is covered only if the owner decides it must survive the drill (open question under GE-06). Secrets are regenerated on the target.
 6. **Drift is reported.** A scheduled plan job reports drift and fails on a hand edit.
 7. **Allowed leftovers are checked prerequisites, not steps:** the gateway firewall policy, the domain registration and the owner's one-time tenant consent.
-8. **Open questions stay open** until the owner rules. They stay open: the NeoForge world's "no backup" decision (from the pregeneration note) and the skins source. They are listed in `docs/analysis/genesis/README.md` under open owner questions.
+8. **Open questions stay open** until the owner rules. Fact: today no backup of the NeoForge world exists. Open owner question: whether the drill must preserve the world (a backup and restore design for it), tracked under GE-06. The skins source is also open. Both are listed in `docs/analysis/genesis/README.md` under open owner questions. The owner's 2026-11-18 answer was only about skipping a backup before the Chunky pregeneration; it is not a standing rule.
+9. **Drill safety.** Genesis builds no tooling that deletes or rebuilds on the node or in Azure without the owner's explicit approval of that exact step (one dialog each, exact names, rollback). The drill never touches the `geldar-nf` human lane, Key Vault contents or the DNS zone without a separate approval. The drill runs first on the Hyper-V test VM and an ephemeral stamp.
 
 ## Why
 
