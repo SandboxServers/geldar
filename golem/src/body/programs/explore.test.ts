@@ -15,11 +15,13 @@ const STONE: Block = { name: 'stone', boundingBox: 'block' };
 const WATER: Block = { name: 'water', boundingBox: 'empty' };
 const AIR: Block = { name: 'air', boundingBox: 'empty' };
 
-/** Stone at the listed heights in every column, water at the listed heights, air elsewhere. */
-function blocksAt(solid: number[], liquid: number[] = []): BlockAt {
+const LAVA: Block = { name: 'lava', boundingBox: 'empty' };
+
+/** Stone at the listed heights in every column, water (or `fluid`) at the listed heights, air elsewhere. */
+function blocksAt(solid: number[], liquid: number[] = [], fluid: Block = WATER): BlockAt {
   return (at) => {
     if (solid.includes(at.y)) return STONE;
-    if (liquid.includes(at.y)) return WATER;
+    if (liquid.includes(at.y)) return fluid;
     return AIR;
   };
 }
@@ -229,6 +231,13 @@ describe('ExploreProgram stops and limits', () => {
     expect(gotoTargets(run.world)).toHaveLength(4);
   });
 
+  it('the defaults are 6 legs of 24 blocks with avoid_water true', async () => {
+    const run = await runOver(EVERY_COLUMN, newWorld(), {});
+    expect(run.last).toMatchObject({ status: 'completed', detail: { legs: 6, stopped: 'legs' } });
+    expect(gotoTargets(run.world)).toHaveLength(6);
+    expect(run.checkpoint).toMatchObject({ legs: 6, leg_blocks: 24, avoid_water: true });
+  });
+
   it('a hostile within 8 blocks stops with danger and no goto', async () => {
     const world = newWorld({ hostiles: [{ distance: 3 } as HostileView] });
     const run = await runOver(EVERY_COLUMN, world, { legs: 3 });
@@ -328,6 +337,102 @@ describe('ExploreProgram landing', () => {
     // Chunk 3 (x 48) and chunk 2 (x 32 to 47) are unloaded, so the end moves back to x 31 in chunk 1.
     const run = await runOver(loaded(['0,0', '1,0']), newWorld(), { legs: 1, leg_blocks: 48 });
     expect(gotoTargets(run.world)).toEqual([{ x: 31, y: 64, z: 0 }]);
+  });
+
+  it('a south leg into an unloaded column is pulled back along z', async () => {
+    // z 48 is chunk 3 and z 32 to 47 is chunk 2, both unloaded: the end steps back to z 31 in chunk 1.
+    const run = await runOver(loaded(['0,0', '0,1']), newWorld(), { legs: 1, leg_blocks: 48 });
+    expect(gotoTargets(run.world)).toEqual([{ x: 0, y: 64, z: 31 }]);
+  });
+
+  it('a north leg into an unloaded column is pulled back along z', async () => {
+    // z -48 is chunk -3 and z -47 to -17 is chunk -2, both unloaded: the end steps back to z -16.
+    const run = await runOver(loaded(['0,0', '0,-1']), newWorld(), { legs: 1, leg_blocks: 48 });
+    expect(gotoTargets(run.world)).toEqual([{ x: 0, y: 64, z: -16 }]);
+  });
+
+  it('a west leg pulled back from a negative end uses floored chunks', async () => {
+    // x -20 is chunk -2 and x -17 is chunk -2 too (floor, not trunc), so the end is x -16 in chunk -1.
+    const run = await runOver(loaded(['0,0', '-1,0']), newWorld(), { legs: 1, leg_blocks: 20 });
+    expect(gotoTargets(run.world)).toEqual([{ x: -16, y: 64, z: 0 }]);
+  });
+
+  it('a fractional position gives integer goto targets', async () => {
+    const world = newWorld({ position: { x: 0.5, y: 64.5, z: 0.5 } });
+    const run = await runOver(EVERY_COLUMN, world, { legs: 1 });
+    expect(run.last.status).toBe('completed');
+    expect(gotoTargets(world)).toEqual([{ x: 0, y: 64, z: -24 }]);
+  });
+
+  it('a fractional feet height scans from its floor', async () => {
+    const world = newWorld({ position: { x: 0.5, y: 64.5, z: 0.5 } });
+    await runOver(EVERY_COLUMN, world, { legs: 1 }, null, undefined, blocksAt([66]));
+    expect(gotoTargets(world)).toEqual([{ x: 0, y: 67, z: -24 }]);
+  });
+
+  it('the landing height follows the column, so an x and z swap fails', async () => {
+    // Stone at y 70 over column (0,-24) and at y 60 everywhere else.
+    const heights: BlockAt = (at) =>
+      at.y === (at.x === 0 && at.z === -24 ? 70 : 60) ? STONE : AIR;
+    const north = await runOver(EVERY_COLUMN, newWorld(), { legs: 1 }, null, undefined, heights);
+    expect(gotoTargets(north.world)).toEqual([{ x: 0, y: 71, z: -24 }]);
+    const east = await runOver(
+      EVERY_COLUMN,
+      newWorld(),
+      {},
+      null,
+      atOrigin([[0, 0]], 'e', 1),
+      heights,
+    );
+    expect(gotoTargets(east.world)).toEqual([{ x: 24, y: 61, z: 0 }]);
+  });
+
+  it('a lava landing is skipped when avoid_water is true', async () => {
+    const lava = Array.from({ length: 12 }, (_, i) => 61 + i);
+    const run = await runOver(
+      EVERY_COLUMN,
+      newWorld(),
+      { legs: 1 },
+      null,
+      undefined,
+      blocksAt([60], lava, LAVA),
+    );
+    expect(run.last).toEqual({
+      status: 'completed',
+      detail: { legs: 0, chunks_new: 0, stopped: 'no_frontier' },
+    });
+    expect(gotoTargets(run.world)).toEqual([]);
+  });
+
+  it('water at the feet floor with no solid block is skipped when avoid_water is true', async () => {
+    // Water from y 30 to 80 and no solid block: the feet cell at y 64 is water.
+    const sea = Array.from({ length: 51 }, (_, i) => 30 + i);
+    const run = await runOver(
+      EVERY_COLUMN,
+      newWorld(),
+      { legs: 1 },
+      null,
+      undefined,
+      blocksAt([], sea),
+    );
+    expect(run.last).toEqual({
+      status: 'completed',
+      detail: { legs: 0, chunks_new: 0, stopped: 'no_frontier' },
+    });
+    expect(gotoTargets(run.world)).toEqual([]);
+  });
+
+  it('water at the feet floor with no solid block is a target when avoid_water is false', async () => {
+    const sea = Array.from({ length: 51 }, (_, i) => 30 + i);
+    const run = await runOver(
+      EVERY_COLUMN,
+      newWorld(),
+      { legs: 1, avoid_water: false },
+      null,
+      undefined,
+      blocksAt([], sea),
+    );
+    expect(gotoTargets(run.world)).toEqual([{ x: 0, y: 64, z: -24 }]);
   });
 
   it('a water landing is skipped when avoid_water is true', async () => {

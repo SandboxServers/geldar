@@ -195,7 +195,8 @@ function legEnd(
 
 /**
  * The first solid block at or below the scan top gives the landing one block above it, and whether
- * the cell the Body would stand in is water or lava. The feet's floor, dry, when there is no solid block.
+ * the cell the Body would stand in is water or lava. With no solid block the landing is the feet's
+ * floor, and the liquid check reads that cell too.
  */
 function landingOf(bot: Bot, x: number, z: number, feetY: number): { y: number; liquid: boolean } {
   const top = Math.floor(feetY) + SCAN_UP;
@@ -205,7 +206,9 @@ function landingOf(bot: Bot, x: number, z: number, feetY: number): { y: number; 
       return { y: y + 1, liquid: feet?.name === 'water' || feet?.name === 'lava' };
     }
   }
-  return { y: Math.floor(feetY), liquid: false };
+  const floor = Math.floor(feetY);
+  const feet = bot.blockAt(new Vec3(x, floor, z));
+  return { y: floor, liquid: feet?.name === 'water' || feet?.name === 'lava' };
 }
 
 function visitedOf(value: unknown): Array<[number, number]> {
