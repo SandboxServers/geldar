@@ -8,7 +8,33 @@ import { validateSnapshot as validateSnapshotSchema } from './generated/validato
 import { formatError, type ValidationResult } from './validation.ts';
 
 export { MARKER_WORD, markedWords } from './agent-text.ts';
-export type { MaintenanceNotice, Snapshot } from './generated/types.ts';
+export type {
+  ExploreArguments,
+  ExploreCheckpoint,
+  ExploreDetail,
+  FarmArguments,
+  FarmCell,
+  FarmCheckpoint,
+  FarmDetail,
+  MaintenanceNotice,
+  PatrolArguments,
+  PatrolCheckpoint,
+  PatrolDetail,
+  ProgramBlock,
+  ProgramChunk,
+  Snapshot,
+} from './generated/types.ts';
+export {
+  validateExploreArguments,
+  validateExploreCheckpoint,
+  validateExploreDetail,
+  validateFarmArguments,
+  validateFarmCheckpoint,
+  validateFarmDetail,
+  validatePatrolArguments,
+  validatePatrolCheckpoint,
+  validatePatrolDetail,
+} from './programs.ts';
 export type { ValidationResult } from './validation.ts';
 
 // --- P0-01 snapshot ---
