@@ -1,7 +1,7 @@
 // AN-12a: the threat policy of one life. The sheet's aggression, the roll switch and the roller are bound
 // here; every d20 the policy draws uses the Body's generation in its DrawKey, so a restart never replays
-// a draw. Each roll is recorded through the audit publisher before the decision uses it, and every decision
-// (rolled or not) is recorded as a decision event (AN-12a).
+// a draw. Each roll is recorded through the audit publisher before the decision uses it, and only a decision
+// that drew a roll is recorded as a decision event, citing that roll (AN-12a).
 import {
   type CharacterSheet,
   type DrawKey,
@@ -60,16 +60,18 @@ export function lifeThreatPolicy(options: LifePolicyOptions): ThreatPolicy {
     lastRoll = { key, id };
     return drawn;
   };
-  // A decision with a roll is a d20 decision keyed by that roll; one without is deterministic (rolls off,
-  // a flee at or below the floor, an unarmed flee). Both are recorded through the audit publisher.
+  // Only a decision that drew a roll is recorded: a d20 decision keyed by that roll and citing it. A decision
+  // that drew no roll (rolls off, a flee at or below the floor, an unarmed flee) records nothing, so the sheet
+  // path emits no audit event where today's Body emits none.
   const record = (
     call: ThreatCall,
     facts: { health: number; armed: boolean; suicideMob: boolean },
   ) => {
     // A non-finite health is not a valid decision input (the event schema rejects it): nothing is recorded.
     if (!Number.isFinite(facts.health)) return;
+    if (call.roll === null) return;
     const fields: DecisionFields = {
-      fx: call.roll === null ? 'threat' : call.roll.fx,
+      fx: call.roll.fx,
       kind: 'deterministic',
       result: { decision: call.action },
       inputs: {
