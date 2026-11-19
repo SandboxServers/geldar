@@ -5,6 +5,7 @@ import { digTicks, handNote, unbreakableReason } from './bare-hand.ts';
 import type { Block, Item } from './bot-types.ts';
 import { digSafetyRefusal } from './dig-safety.ts';
 import { feetCell } from './feet-cell.ts';
+import { cellFailure, cellOf, MINE_CELL_MESSAGE } from './mine-cell.ts';
 import { outcomeOfMove } from './move-outcome.ts';
 import { type ActionOutcome, cancelled, completed, errorText, failed } from './outcome.ts';
 import { ensurePathfinder, type MoveResult, moveNear } from './pathing.ts';
@@ -74,6 +75,15 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
     ? bot.registry.blocksByName[action.block]
     : undefined;
   if (!info) return failed('invalid_args', `unknown block ${action.block}`);
+  // A program may name the one cell to dig (decision 0349): only that block is dug, or the action
+  // fails with the reason. The nearest-block search is not used for it.
+  const cell = ctx.mineAt === undefined ? null : cellOf(ctx.mineAt);
+  if (ctx.mineAt !== undefined) {
+    if (cell === null) return failed('invalid_args', MINE_CELL_MESSAGE.notWhole);
+    if (action.count !== 1) return failed('invalid_args', MINE_CELL_MESSAGE.oneBlock);
+    const first = bot.blockAt(cell);
+    if (!first || first.type !== info.id) return cellFailure(first, 0);
+  }
   // `bestHarvestTool` and `stop` need the pathfinder, which only exists after this call.
   ensurePathfinder(bot);
   const wanted = new Set<number>([info.id]);
@@ -91,15 +101,11 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
 
   while (mined < action.count) {
     if (signal.aborted) return abort(bot, mined);
-    const found = bot.findBlocks({
-      matching: (block: Block) => wantedAt(wanted, tried, block),
-      maxDistance: SEARCH_DISTANCE,
-      count: 1,
-    });
-    const at = found[0];
+    const at = nextCandidate(bot, cell, wanted, tried);
     if (!at) {
       if (refused) return failed('not_possible', refused, { mined });
       if (skippedFloor) return failed('not_possible', 'would drop you', { mined });
+      if (cell !== null) return cellFailure(bot.blockAt(cell), mined);
       return failed('not_found', `no ${action.block} within ${SEARCH_DISTANCE} blocks`, { mined });
     }
     // Every pass adds a new cell to `tried`, so the loop ends within the blocks in range.
@@ -122,10 +128,21 @@ async function mineBlocks(ctx: ActionContext, action: MineAction): Promise<Actio
         continue;
       }
     }
+    // An exact cell must be in dig reach after the walk; it is never swapped for a nearer block.
+    if (cell !== null) {
+      const inReach = bot.blockAt(at);
+      if (!(inReach && bot.canDigBlock(inReach))) {
+        return failed('out_of_reach', MINE_CELL_MESSAGE.outOfReach, { mined });
+      }
+    }
     if (signal.aborted) return abort(bot, mined);
 
     const block = bot.blockAt(at);
-    if (!block || !wanted.has(block.type)) continue;
+    if (!block || !wanted.has(block.type)) {
+      // The exact cell changed during the walk: fail with what it holds now.
+      if (cell !== null) return cellFailure(block, mined);
+      continue;
+    }
 
     // The fastest tool in the inventory; null when no item helps. A block that needs a tool
     // cannot be harvested without one of the listed tools.
@@ -270,6 +287,22 @@ function wantedAt(wanted: Set<number>, tried: Set<string>, block: Block): boolea
   if (!wanted.has(block.type)) return false;
   const at = block.position as Vec3 | null;
   return !at || !tried.has(at.toString());
+}
+
+/** The next cell to try: the exact cell once (decision 0349), else the nearest untried wanted block. */
+function nextCandidate(
+  bot: Bot,
+  cell: Vec3 | null,
+  wanted: Set<number>,
+  tried: Set<string>,
+): Vec3 | undefined {
+  if (cell !== null) return tried.size === 0 ? cell : undefined;
+  const found = bot.findBlocks({
+    matching: (block: Block) => wantedAt(wanted, tried, block),
+    maxDistance: SEARCH_DISTANCE,
+    count: 1,
+  });
+  return found[0];
 }
 
 /** Whether the bot stands on the block at `at`: breaking it would drop you. */
