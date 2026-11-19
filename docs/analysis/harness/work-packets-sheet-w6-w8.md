@@ -302,8 +302,7 @@ Wave branch `phase1/sheet-w7` (created by the orchestrator from `origin/main` af
   ExploreCheckpoint: { "legs_done": int 0..12, "legs": int 1..12, "leg_blocks": int 8..48, "avoid_water": bool, "chunks_new": int 0..12, "visited": [[cx,cz] x max 96], "heading": "n"|"e"|"s"|"w"|null }   // legs, leg_blocks, avoid_water carry the start arguments because resume() receives none (AN-39 review, 2026-11-18)
   ExploreDetail:     { "legs": int, "chunks_new": int, "stopped": "legs"|"no_frontier"|"danger"|"limit" }
   FarmArguments:     { "program":"farm","radius": int 4..24 (12), "max_cells": int 1..32 (16), "replant": bool (true) }
-  FarmCheckpoint:    { "cells": [[x,y,z,"ripe"|"unripe"|"empty"] x max 32], "next": int, "harvested": int, "sown": int, "skipped": int }
-  // FarmCheckpoint: the AN-40 coder added keys (replant, max_cells, split skip counts) beyond this shape; confirm and amend this line after the AN-40 review, before AN-44 is dispatched.
+  FarmCheckpoint:    { "cells": [[x,y,z,"ripe"|"unripe"|"empty"] x max 32], "next": int, "harvested": int, "sown": int, "skipped_owned": int, "skipped_unknown": int, "replant": bool, "max_cells": int 1..32 }   // replant, max_cells, skipped_owned, skipped_unknown carry the start arguments and the split counts because resume() receives none (AN-40 review, 2026-11-18)
   FarmDetail:        { "harvested": int, "sown": int, "skipped_owned": int, "skipped_unknown": int, "stopped": "done"|"no_cells"|"no_seeds"|"limit" }
   PatrolArguments:   { "program":"patrol","route": [{x,y,z} x 2..8], "laps": int 1..5 (1), "loop": bool (true) }
   PatrolCheckpoint:  { "leg": int 0..7, "laps_done": int 0..5, "route": [{x,y,z} x 2..8], "loop": bool, "laps": int 1..5 }   // route, loop, laps carry the start arguments because resume() receives none (AN-41 review, 2026-11-18); the program never returns `limit`: the executor's max_world_ticks is the only bound
