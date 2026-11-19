@@ -293,6 +293,51 @@ describe('bilateral exchange', () => {
     expect(run(tracker, events).flat()).toEqual([]);
   });
 
+  it('a stale redelivered line does not award a later window it never answered', () => {
+    const tracker = new ExchangeTracker();
+    const batch = [
+      own('ag_ann', 'Ann', 'hello', 100),
+      heard('ag_ben', 'Ann', 'hello', 101),
+      own('ag_ben', 'Ben', 'hi', 110),
+      heard('ag_ann', 'Ben', 'hi', 111),
+      heard('ag_ann', 'Ben', 'ok', 112),
+      heard('ag_ann', 'Ben', 'hi', 113),
+      own('ag_ann', 'Ann', 'later', 700),
+      heard('ag_ben', 'Ann', 'later', 701),
+    ];
+    const first = run(tracker, batch).flat();
+    expect(first.map((a) => a.evidenceKey)).toEqual([
+      'exch:ag_ann:ag_ben:0',
+      'exch:ag_ann:ag_ben:0',
+    ]);
+    // The batch is redelivered on the same tracker: the stale lines must give nothing new.
+    const second = run(tracker, batch).flat();
+    expect(second).toEqual(first);
+  });
+
+  it('the replay map is bounded: a qualifier evicted past the bound re-awards nothing', () => {
+    const tracker = new ExchangeTracker(1);
+    const qualifyA = heard('ag_a1', 'A2', 'hi', 111);
+    const qualifyB = heard('ag_b1', 'B2', 'hi', 131);
+    const pairA = [
+      own('ag_a1', 'A1', 'hello', 100),
+      heard('ag_a2', 'A1', 'hello', 101),
+      own('ag_a2', 'A2', 'hi', 110),
+      qualifyA,
+    ];
+    const pairB = [
+      own('ag_b1', 'B1', 'hello', 120),
+      heard('ag_b2', 'B1', 'hello', 121),
+      own('ag_b2', 'B2', 'hi', 130),
+      qualifyB,
+    ];
+    expect(run(tracker, pairA).flat()).toHaveLength(2);
+    expect(run(tracker, pairB).flat()).toHaveLength(2);
+    // Only the first pair's qualifier is replayed: it was evicted, so it re-awards nothing.
+    expect(tracker.awardsFor(qualifyA)).toEqual([]);
+    expect(tracker.awardsFor(qualifyB)).toHaveLength(2);
+  });
+
   it('a sink restart loses an open window', () => {
     const before = run(new ExchangeTracker(), [
       own('ag_ann', 'Ann', 'hello', 100),

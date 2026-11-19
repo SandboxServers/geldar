@@ -120,6 +120,8 @@ export class ExchangeTracker {
           lastTick: tick,
         }
       : existing;
+    // A line older than the open window is a stale redelivery: it changes nothing, not even the tick.
+    if (!fresh && tick < pair.openTick) return [];
     remember(this.pairs, id, pair, this.maxPairs);
     pair.lastTick = tick;
     // A repeated line (the same text from the same speaker) opens nothing and qualifies nothing.
