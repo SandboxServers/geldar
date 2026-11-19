@@ -7,10 +7,10 @@ import { ArgReader, checkpointReader, type Position, ProgramError } from './args
 const MIN_POINTS = 2;
 const MAX_POINTS = 8;
 /** The most laps a looping route may run. */
-const MAX_LAPS = 20;
+const MAX_LAPS = 5;
 /** A point counts as reached when the Body is this close to it (horizontal distance). */
 const ARRIVAL_BLOCKS = 2;
-/** A hostile within this many blocks ends the patrol, when the Body is also below this health. */
+/** A hostile within this many blocks ends the patrol. The Body's health under DANGER_HEALTH does too. */
 const DANGER_RADIUS = 8;
 const DANGER_HEALTH = 8;
 const ARGUMENT_FIELDS = ['route', 'loop', 'laps'];
@@ -39,13 +39,13 @@ function readRoute(value: unknown, what: string): Position[] {
 /**
  * `patrol`: walk a supplied route, point by point. Arguments: `{ route, loop?, laps? }`. `route`
  * is 2 to 8 positions `{ x, y, z }` of integers; the caller supplies them, the Body never looks a
- * position up. `loop` (default false) wraps from the last point to the first. With `loop`,
- * `laps` (1 to 20, default 1) is how many full rounds to run; without `loop` the route is walked
- * once and `laps` must be 1. Each step walks one `goto` to the next point; within 2 blocks of it
- * the leg advances. The program completes with `{ laps, stopped: 'laps' }` when the laps are done.
- * It completes with `{ laps, stopped: 'danger' }` when a hostile is within 8 blocks and the Body's
- * health is under 8. It never attacks. A blocked leg fails the intent through `stopOf`. Checkpoint:
- * the route, the flags, the current leg and the laps done.
+ * position up. `loop` (default true) wraps from the last point to the first, and `laps` (1 to 5,
+ * default 1) is how many full rounds to run. Without `loop` the route is walked once and `laps`
+ * does not apply. Each step walks one `goto` to the next point; within 2 blocks of it the leg
+ * advances. The program completes with `{ laps, stopped: 'laps' }` when the laps are done. It
+ * completes with `{ laps, stopped: 'danger' }` when a hostile is within 8 blocks or the Body's
+ * health is under 8. It never attacks. A blocked leg fails the intent through `stopOf`.
+ * Checkpoint: the route, the flags, the current leg and the laps done (`laps_done`).
  */
 export class PatrolProgram implements IntentProgram {
   readonly name = 'patrol';
@@ -60,7 +60,7 @@ export class PatrolProgram implements IntentProgram {
       }
     }
     const route = readRoute(source.route, 'arguments');
-    const loop = source.loop === undefined ? false : source.loop;
+    const loop = source.loop === undefined ? true : source.loop;
     if (typeof loop !== 'boolean') {
       throw new ProgramError('invalid_args', 'patrol', 'arguments loop must be true or false');
     }
@@ -72,15 +72,12 @@ export class PatrolProgram implements IntentProgram {
         `arguments laps must be an integer from 1 to ${MAX_LAPS}`,
       );
     }
-    if (!loop && laps !== 1) {
-      throw new ProgramError('invalid_args', 'patrol', 'arguments laps must be 1 without loop');
-    }
     this.state = { route, loop, laps, leg: 0, lapsDone: 0 };
   }
 
   async step(ctx: ProgramContext): Promise<StepResult> {
     const state = this.need();
-    if (ctx.view.health < DANGER_HEALTH && ctx.view.nearbyHostiles(DANGER_RADIUS).length > 0) {
+    if (ctx.view.health < DANGER_HEALTH || ctx.view.nearbyHostiles(DANGER_RADIUS).length > 0) {
       return { status: 'completed', detail: { laps: state.lapsDone, stopped: 'danger' } };
     }
     const point = state.route[state.leg] as Position;
@@ -103,7 +100,7 @@ export class PatrolProgram implements IntentProgram {
       loop: state.loop,
       laps: state.laps,
       leg: state.leg,
-      lapsDone: state.lapsDone,
+      laps_done: state.lapsDone,
     };
   }
 
@@ -111,13 +108,16 @@ export class PatrolProgram implements IntentProgram {
     const { route: savedRoute, ...rest } = saved;
     const reader = checkpointReader('patrol', rest);
     const laps = reader.int('laps', 1, MAX_LAPS);
-    const lapsDone = reader.int('lapsDone', 0, MAX_LAPS);
+    const lapsDone = reader.int('laps_done', 0, MAX_LAPS);
     const leg = reader.int('leg', 0, MAX_POINTS - 1);
     const loop = reader.bool('loop');
     reader.done();
     const route = readRoute(savedRoute, 'checkpoint');
     if (leg >= route.length) {
       throw new ProgramError('invalid_args', 'patrol', 'checkpoint leg is past the route');
+    }
+    if (lapsDone > laps) {
+      throw new ProgramError('invalid_args', 'patrol', 'checkpoint laps_done is past laps');
     }
     this.state = { route, loop, laps, leg, lapsDone };
   }
