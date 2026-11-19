@@ -69,11 +69,11 @@ Names that W5 cards create (AN-24 to AN-28c in [work-packets-sheet-w3-w5.md](wor
 | AN-45b body-api v11 unselected (OWNER APPROVAL) | geldar | AN-45a | READY after deps | no |
 | HC-31 idle binding | kit | HC-21a (kit-b), AN-45a | BLOCKED | no |
 | AN-46 evidence contract and combat key (OWNER APPROVAL for two sentences) | geldar | AN-44 merged (slot 3), AN-24 | READY | write yes; regen at slot 3 |
-| AN-47a combat facts in the plugin (A2, A3) | geldar | AN-46, AN-27a (A1, A2) | READY after deps | no |
+| AN-47a combat facts in the plugin (A2, A3) | geldar | AN-46, AN-27a (A1) | READY after deps (creates `ProvenanceJson`) | no |
 | AN-47b combat key: the Body's kill pays the encounter key (0321) | geldar | AN-46 | READY after AN-46 | no |
 | AN-47c visible-fight observation | geldar | AN-46, AN-25, AN-28b (subject helpers) | READY after deps | no |
 | AN-49 conversation exchange award | geldar | AN-46 (ADR) | READY | yes |
-| AN-51a container-take facts in the plugin (A2, A4) | geldar | AN-46, AN-27a (A1, A2, A4) | READY after deps | no |
+| AN-51a container-take facts in the plugin (A2, A4) | geldar | AN-46, AN-27a (A1, A4), AN-47a (`ProvenanceJson`) | READY after deps | no |
 | AN-51b observed take, owner's Body | geldar | AN-46, AN-51a, AN-25 | READY after deps | no |
 | HC-27c kit reader for `fight_seen`, `container_taken` | kit | HC-27b, AN-46 | READY after deps | no |
 | AN-50a sink and plugin registration | geldar | AN-47a, AN-47b, AN-49, AN-51a, AN-28c | READY after deps | no |
@@ -91,7 +91,7 @@ W6 may overlap W7 (different repos). W8 follows W7 only for the contract slot; A
 | `prompts/body-api/v11.json` (new) | AN-45b |
 | `eventsink/src/xp/awards.ts`, `awards.test.ts`, `fixtures.ts` | AN-47b (the `attack` row only), then AN-50a (the registration `case` arms, 0321) |
 | `golem/src/actions/attack.ts`, `attack.test.ts` | AN-47b |
-| `plugin/core-common/src/main/java/dev/geldar/core/provenance/ProvenanceJson.java` | AN-27a creates (W5); AN-47a adds `combatJson`; AN-51a adds `takeJson` |
+| `plugin/core-common/src/main/java/dev/geldar/core/provenance/ProvenanceJson.java` | AN-47a creates it (AN-27a did not; corrected 2026-11-19) with `combatJson`; AN-51a adds `takeJson` |
 | `plugin/core/src/main/java/dev/geldar/core/GeldarCore.java`, `.../blockowner/BlockOwnerSetup.java` | AN-28c (W5), then AN-50a |
 | `golem/src/perception/provenance/subscribe.ts`, `threshold/mcp/src/events/leakage.test.ts`, `player-core/src/link/mind-event.ts` | AN-28a/b (W5), then AN-50b |
 | kit `packages/instinct/src/social/observe.ts`, `rules.ts` | HC-27a/HC-27b, then HC-27c |
@@ -594,8 +594,8 @@ Wave branch `phase1/sheet-w8` (from `origin/main` after W7 merges). Promises and
 
 ## AN-47a: combat facts in the plugin (amendments A2, A3)
 
-- **repo** geldar (`plugin/`). **status** READY after AN-46 and AN-27a merge. **depends-on** AN-46, AN-27a (with A1 `ProvenanceSink`, A2 `ProvenanceJson`). **size** 45-50k. **branch** `phase1/sheet-an-47a-combat-plugin`.
-- **Step 0.** Each prints one line, otherwise STOP `blocked: <file>`: `Select-String -Path plugin/core-common/src/main/java/dev/geldar/core/provenance/ProvenanceSink.java -SimpleMatch -Pattern 'void send(String tail, String json);'`; `Select-String -Path plugin/core-common/src/main/java/dev/geldar/core/provenance/ProvenanceJson.java -SimpleMatch -Pattern 'public static String breakJson('`; `Select-String -Path contract/schemas/combat-fact-event.schema.json -SimpleMatch -Pattern '"life_id"'`.
+- **repo** geldar (`plugin/`). **status** READY after AN-46 and AN-27a merge. **depends-on** AN-46, AN-27a (with A1 `ProvenanceSink`; A2 `ProvenanceJson` does not exist on main: **AN-47a creates it** with `combatJson` only, in package `dev.geldar.core.provenance`; AN-27a built no JSON class). **size** 45-50k. **branch** `phase1/sheet-an-47a-combat-plugin`.
+- **Step 0.** Each prints one line, otherwise STOP `blocked: <file>`: `Select-String -Path plugin/core-common/src/main/java/dev/geldar/core/blockowner/ProvenanceSink.java -SimpleMatch -Pattern 'void send(String tail, String json);'` (corrected 2026-11-19: `ProvenanceSink` is under `blockowner/`, not `provenance/`); `Select-String -Path contract/schemas/combat-fact-event.schema.json -SimpleMatch -Pattern '"life_id"'`.
 - **may-edit** new: `plugin/core-common/src/main/java/dev/geldar/core/combat/EncounterTracker.java`, `HostileMobs.java`, `plugin/core-common/src/test/java/dev/geldar/core/combat/EncounterTrackerTest.java`, `HostileMobsTest.java`, `plugin/core/src/main/java/dev/geldar/core/CombatFactListener.java`, `plugin/core/src/test/java/dev/geldar/core/CombatFactListenerTest.java`; edit: `plugin/core-common/src/main/java/dev/geldar/core/provenance/ProvenanceJson.java` (add `combatJson` only); the worknote. **must-not-edit** baseline; `EventExporter.java` (use its public `emit`), `GeldarCore.java` (AN-50a registers), `OwnerCache.java`.
 - **decisions** D-CS-04, D-CS-06, 0321. **owner approval** none (events only, never to an agent).
 - **shapes (A3; the NeoForge twin AN-NF-47a compiles against these exact lines)**
@@ -675,8 +675,8 @@ Wave branch `phase1/sheet-w8` (from `origin/main` after W7 merges). Promises and
 
 ## AN-51a: container-taking facts in the plugin (amendments A2, A4)
 
-- **repo** geldar (`plugin/`). **status** READY after AN-46 and AN-27a merge. **depends-on** AN-46, AN-27a (A1, A2, A4). **size** 40-45k. **branch** `phase1/sheet-an-51a-container-take-plugin`.
-- **Step 0.** One line each, otherwise STOP: `ProvenanceSink.java` as in AN-47a; `Select-String -Path plugin/core-common/src/main/java/dev/geldar/core/provenance/PriorOwner.java -SimpleMatch -Pattern 'public static String of(OwnerCache cache, OwnerCache.Pos pos)'`.
+- **repo** geldar (`plugin/`). **status** READY after AN-46 and AN-27a merge. **depends-on** AN-46, AN-27a (A1, A4), AN-47a (creates `ProvenanceJson`; A2 is not in AN-27a). **size** 40-45k. **branch** `phase1/sheet-an-51a-container-take-plugin`.
+- **Step 0.** One line each, otherwise STOP: `ProvenanceSink.java` as in AN-47a (corrected path: `.../blockowner/ProvenanceSink.java`); `ProvenanceJson.java` exists (AN-47a created it with `combatJson`; if AN-47a is not merged, STOP `blocked: AN-47a`). **`PriorOwner.java` does not exist on main** (corrected 2026-11-19): AN-51a creates `plugin/core-common/src/main/java/dev/geldar/core/provenance/PriorOwner.java` itself (new; add it and its test to may-edit) unless the packet writer finds an equivalent in `OwnerCache`; do not assume it exists.
 - **may-edit** new: `plugin/core-common/src/main/java/dev/geldar/core/provenance/TakeDiff.java`, `plugin/core-common/src/test/java/dev/geldar/core/provenance/TakeDiffTest.java`, `plugin/core/src/main/java/dev/geldar/core/blockowner/ContainerTakeListener.java`, `plugin/core/src/test/java/dev/geldar/core/blockowner/ContainerTakeListenerTest.java`; edit: `ProvenanceJson.java` (add `takeJson` only); the worknote. **must-not-edit** baseline; `BlockOwnerSetup.java` (AN-50a registers), `OwnerCache.java`.
 - **decisions** D-CS-06. **owner approval** none.
 - **shapes**
