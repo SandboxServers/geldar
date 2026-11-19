@@ -604,4 +604,17 @@ describe('farm', () => {
     expect(vi.mocked(prefetchOwners)).toHaveBeenCalledTimes(1);
     expect(detailOf(last)).toMatchObject({ harvested: 2, skipped_unknown: 0 });
   });
+
+  it('does not re-gate the owner on the sow after a harvest', async () => {
+    const world = newWorld();
+    crop(world, 1, 64, 0, 'wheat', 7);
+    world.inventory.wheat_seeds = 1;
+    // The Body's own crop: its record is dropped once the block changes, so the sow must not re-read the owner.
+    vi.mocked(isOwnPlacement).mockImplementation(
+      (_b, c) => world.tiles.get(`${c.x},${c.y},${c.z}`)?.name === 'wheat',
+    );
+    vi.mocked(ownerRecordAt).mockImplementation(() => ({ known: true, owner: 'ag_self' }));
+    const run = await drive(world, { radius: 8 });
+    expect(detailOf(run.last)).toMatchObject({ harvested: 1, sown: 1, skipped_owned: 0 });
+  });
 });
