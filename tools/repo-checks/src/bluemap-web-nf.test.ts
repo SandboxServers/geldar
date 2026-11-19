@@ -248,4 +248,26 @@ describe.skipIf(skip)('bluemap-web-nf served by the pinned caddy image', () => {
       expect(r.headers['x-content-type-options']).toBe('nosniff');
     }
   });
+
+  // Double-encoded and malformed forms. Caddy decodes the raw path once, so %25 becomes a literal % and the decoded
+  // path names a file that does not exist: 404. A malformed escape is refused by the server (400) or falls through to
+  // 404. In every case the hidden body (players.json, markers.json) must never come back.
+  it.each([
+    ['/maps/overworld/%2570layers.json', 404],
+    ['/maps/x/%256Cive/players.json', 404],
+    ['/maps/overworld/%252e%252e/overworld/textures.json', 404],
+  ] as const)(
+    'answers double-encoded %s with %i and never the hidden body',
+    async (path, status) => {
+      const r = await call(port, 'GET', path);
+      expect(r.status).toBe(status);
+      expect(r.body.toString()).not.toMatch(/Alex|"markers"/);
+    },
+  );
+
+  it('answers the malformed escape /maps/overworld/%zz with 400 or 404 and never the hidden body', async () => {
+    const r = await call(port, 'GET', '/maps/overworld/%zz');
+    expect([400, 404]).toContain(r.status);
+    expect(r.body.toString()).not.toMatch(/Alex|"markers"/);
+  });
 });
