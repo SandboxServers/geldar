@@ -47,12 +47,6 @@ export function attackerNameOf(cause: unknown, selfId: number | undefined): stri
 }
 
 /**
- * Passes each loss of the Body's health to `reporter`, with `tick` as the world age. An `entityHurt` on
- * the Body sets the attacker for the next health drop only; a drop with no such event, or with a cause
- * that names no entity other than the Body, is a hurt with no known cause (`other`, no bearing). Returns
- * the detach function.
- */
-/**
  * The username of the player behind a hurt, when the cause is a player other than the Body. A mob or
  * no cause has none, so a nearby player is never named for it (AN-25).
  */
@@ -63,6 +57,27 @@ function actorUsernameOf(cause: unknown, selfId: number | undefined): string | u
 }
 
 /**
+ * The actor `resolve` gives for `username`, or undefined: none with no resolver, and none when the
+ * resolver throws, so a fault in it never reaches mineflayer's packet handler (AN-25).
+ */
+function actorFor(
+  resolve: ((username: string | undefined) => ObservedActor | null) | undefined,
+  username: string | undefined,
+): ObservedActor | undefined {
+  if (!resolve) return undefined;
+  try {
+    return resolve(username) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Passes each loss of the Body's health to `reporter`, with `tick` as the world age. An `entityHurt` on
+ * the Body sets the attacker for the next health drop only; a drop with no such event, or with a cause
+ * that names no entity other than the Body, is a hurt with no known cause (`other`, no bearing). Returns
+ * the detach function.
+ *
  * `resolve` (AN-25, optional) turns a cause's username into a visible actor, or null. It is called
  * once per `entityHurt` on the Body; nobody passes it yet, so a hurt carries no actor.
  */
@@ -83,7 +98,7 @@ export function watchHurts(
     pending = {
       attacker: attackerOf(cause, bot.entity?.id),
       name: attackerNameOf(cause, bot.entity?.id),
-      actor: resolve?.(actorUsernameOf(cause, bot.entity?.id)) ?? undefined,
+      actor: actorFor(resolve, actorUsernameOf(cause, bot.entity?.id)),
     };
   };
   const onHealth = (): void => {

@@ -1,7 +1,10 @@
+import { EventEmitter } from 'node:events';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { describe, expect, it } from 'vitest';
 import { lifeIdFor } from '../../registry.ts';
+import { type HurtEvent, HurtReporter } from '../hurt.ts';
+import { watchHurts } from '../hurt-trigger.ts';
 import { FakeWorld } from '../perception.fakes.ts';
 import { observedActor } from './visible-actor.ts';
 
@@ -64,6 +67,17 @@ describe('observedActor', () => {
     expect(observedActor(asBot(world), 'x.y')).toBeNull();
   });
 
+  it('a loose spelling of a visible player is not named', () => {
+    const world = new FakeWorld();
+    world.entities[2] = {
+      type: 'player',
+      username: 'ag_bob',
+      position: new Vec3(0.5, 64, 2.5),
+    };
+    expect(observedActor(asBot(world), 'Bob')).toBeNull();
+    expect(observedActor(asBot(world), 'bob')).toBeNull();
+  });
+
   it('a player out of sight stays anonymous', () => {
     const world = walled();
     world.entities[2] = {
@@ -76,5 +90,29 @@ describe('observedActor', () => {
 
   it('a player who is not in the world at all stays anonymous', () => {
     expect(observedActor(asBot(new FakeWorld()), 'ag_chapman_01')).toBeNull();
+  });
+});
+
+describe('observedActor as the watchHurts resolver', () => {
+  it('a hurt caused by a visible player names that player', () => {
+    const world = new FakeWorld();
+    // The cause needs an id that differs from the Body's (which has none), as a mineflayer entity does.
+    world.entities[2] = Object.assign(
+      { type: 'player', username: 'ag_ada_01', position: new Vec3(0.5, 64, 2.5) },
+      { id: 2 },
+    );
+    const bot = Object.assign(new EventEmitter(), asBot(world), { health: 20 });
+    const seen: HurtEvent[] = [];
+    const reporter = new HurtReporter((hurt) => seen.push(hurt));
+    watchHurts(
+      bot as unknown as Bot,
+      reporter,
+      () => 1,
+      (username) => observedActor(bot as unknown as Bot, username, (u) => `life_${u}`),
+    );
+    bot.emit('entityHurt', bot.entity, world.entities[2]);
+    bot.health = 15;
+    bot.emit('health');
+    expect(seen[0]?.actor).toEqual({ name: 'ag_ada_01', life: 'life_ag_ada_01' });
   });
 });

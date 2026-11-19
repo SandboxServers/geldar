@@ -333,7 +333,10 @@ function namingStub(asked: (string | undefined)[]) {
 /** One health drop of 5 from a melee-style `cause` (or none), with the resolver given. */
 function hurtBy(
   cause: object | undefined,
-  options: { resolve?: ReturnType<typeof namingStub>; nearby?: FakeEntity[] } = {},
+  options: {
+    resolve?: ReturnType<typeof namingStub> | (() => never);
+    nearby?: FakeEntity[];
+  } = {},
 ): HurtEvent | undefined {
   const self = entityAt(1, 0, 0, 0);
   const bot = fakeBot(self, options.nearby ?? []);
@@ -353,7 +356,9 @@ describe('watchHurts: the named attacker', () => {
     expect(hurt?.attacker).toBe('player');
   });
 
-  it('an arrow whose shooter is a visible player names the shooter', () => {
+  it('the shooter the server names as the cause is the one named', () => {
+    // mineflayer passes a projectile's shooter as the cause, so this is a player-shaped cause, the
+    // same input as melee; it checks the shooter is named, not a projectile path.
     const shooter = playerAt(3, 'Ben', 0, 4);
     const hurt = hurtBy(shooter, { resolve: namingStub([]) });
     expect(hurt?.actor).toEqual({ name: 'Ben', life: 'ag_ben_01' });
@@ -404,7 +409,34 @@ describe('watchHurts: the named attacker', () => {
     expect(asked).toEqual([undefined]);
   });
 
-  it('no resolver: the damage event carries no actor and is the same as before', () => {
+  it('a non-player cause with a username is not asked', () => {
+    const asked: (string | undefined)[] = [];
+    const zombie = { ...entityAt(3, 1, 0), name: 'zombie', username: 'Ada' };
+    const hurt = hurtBy(zombie, { resolve: namingStub(asked) });
+    expect(hurt?.actor).toBeUndefined();
+    expect(asked).toEqual([undefined]);
+  });
+
+  it('the Body as its own cause is not asked', () => {
+    const asked: (string | undefined)[] = [];
+    const self = { ...entityAt(1, 0, 0, 0), type: 'player', username: 'Self' };
+    const hurt = hurtBy(self, { resolve: namingStub(asked) });
+    expect(hurt?.actor).toBeUndefined();
+    expect(asked).toEqual([undefined]);
+  });
+
+  it('a resolver that throws gives no actor and does not throw', () => {
+    // A throw would fail this test before the expectations run.
+    const hurt = hurtBy(playerAt(2, 'Ada', 1, 0), {
+      resolve: () => {
+        throw new Error('resolver fault');
+      },
+    });
+    expect(hurt?.actor).toBeUndefined();
+    expect(hurt?.attacker).toBe('player');
+  });
+
+  it('no resolver: the damage event bytes are identical to today', () => {
     const hurt = hurtBy(playerAt(2, 'Ada', 1, 0));
     expect(hurt?.actor).toBeUndefined();
     const ctx = { shard: 'dev', lifeId: 'ag_kestrel_01', worldTick: 5, at: NOW, sequence: 1 };
