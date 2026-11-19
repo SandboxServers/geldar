@@ -51,6 +51,21 @@ const INTENT_WHY: Readonly<Record<string, Readonly<Record<string, string>>>> = {
     not_possible: 'You cannot make that right now.',
     blocked: 'The way to the furnace was blocked.',
   },
+  explore: {
+    not_found: 'You found no new direction to explore nearby.',
+    blocked: 'You could not explore: the way was blocked.',
+    timeout: 'You ran out of time exploring.',
+  },
+  farm: {
+    not_found: 'You found no crop ready to harvest nearby.',
+    missing_materials: 'You have no seeds to plant.',
+    blocked: 'The way to the crops was blocked.',
+    timeout: 'You ran out of time farming.',
+  },
+  patrol: {
+    blocked: 'The way along the route was blocked.',
+    timeout: 'You ran out of time on the patrol.',
+  },
   rest: {
     not_found: 'There is no bed within reach to rest in.',
     not_possible: 'You cannot rest right now.',

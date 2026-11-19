@@ -168,3 +168,23 @@ Numbers 0147 to 0153 are not free for wave PX. 0147 and 0148 (body events) and 0
 | 0174 to 0179 | reserve | For design points the C7 coders raise through the orchestrator | Reserved |
 
 0170 to 0179 are reserved for this work (geldar-93 informed). The highest decision on `main` at this date is 0165. C3-04s uses 0108 from the C3 block for its own record. SQL migrations 0024 to 0033 are reserved for C7 in the table in [c7-wave-plan.md](c7-wave-plan.md); the highest on `main` is 0023.
+
+## Sheet campaign numbers (added 2026-11-18)
+
+Checked on `origin/main` and every remote branch's `docs/decisions/` on 2026-11-18: used numbers in the 0280 to 0399 range are 0280 to 0282, 0310, 0320 to 0339, 0341, 0342, 0350 to 0352, 0360 to 0366, 0370 to 0376, 0380 to 0389. No document under `docs/` (outside `docs/decisions/`) names 0340, 0343 to 0349, 0353 to 0359, 0367 to 0369, 0377 to 0379 or 0390 and up.
+
+Never reuse 0283 to 0285 and 0289: they are reserved for the retired refusal, lineage and drift records and the spare, and other documents cite them. 0286 to 0288 stay with S12-01, S12-04 and S12-05.
+
+| Number | Card | Use | Status |
+|---|---|---|---|
+| 0320 to 0328 | sheet rulings of 2026-11-18 | kit-b authority, combat XP by encounter, NeoForge inert, erasure scope, observation fields, psyche tag, no refusal hook, no births or drift, control sheet first | Accepted (operator) |
+| 0329 | sheet NeoForge pass | players and agents are equals on the NeoForge shard | Proposed (operator accepts) |
+| 0343 | AN-24 | observed-actor contract and the observed-evidence rules (W5) | allocated, not written |
+| 0344 | AN-44 | explore, farm and patrol program shapes | allocated, not written |
+| 0345 | AN-46 | evidence sources | allocated, not written |
+| 0346 | HC-23a (kit) | sanity veto, only if the kit records it in this register | allocated, not written |
+| 0347 | HC-24 (kit) | instinct step wave close, same condition | allocated, not written |
+| 0348 | HC-25 (kit) | temperament route and wording, after OD-A | allocated, not written |
+| 0349 | AN-40a | a program mines one exact cell | allocated, not written |
+
+A card that writes its record also adds its row to `docs/decisions/README.md`. A card without a number in this table writes a worknote question; it does not take a number.

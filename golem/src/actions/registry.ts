@@ -1,6 +1,7 @@
 import { type Action, validateThought } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { worldAge } from '../world-clock.ts';
+import type { Position } from './bot-types.ts';
 import { judge, snapshot, withReceipt } from './effect.ts';
 import {
   type ActionOutcome,
@@ -27,6 +28,8 @@ export interface ActionContext {
   ownPlanksLast?: boolean;
   /** Set only by idle_stuck's high_ledge run (decision 0333): `unstick` runs its `dig_descend` rung. */
   highLedge?: boolean;
+  /** Set only by a program step (decision 0349): the one cell a `mine` digs. */
+  mineAt?: Position;
 }
 
 /** The code that carries out one verb. */
@@ -138,6 +141,8 @@ export interface ActionRunOptions {
   ownPlanksLast?: boolean;
   /** Handed to the handler as `ActionContext.highLedge`. Default false. */
   highLedge?: boolean;
+  /** Handed to the handler as `ActionContext.mineAt`. Only `mine` takes it (decision 0349). */
+  mineAt?: Position;
   /**
    * Called once, before the first await, with a promise that settles when the handler itself has
    * ended. `runAction` may return earlier (an abort or a timeout wins the race), so a caller that
@@ -161,6 +166,10 @@ async function runUnobserved(
   const handler = registry.get(valid.do);
   if (!handler) {
     return finish(failed('unsupported', `no handler for ${valid.do}`), 0, 0);
+  }
+  // An exact cell is for a program's mine only (decision 0349).
+  if (opts.mineAt !== undefined && valid.do !== 'mine') {
+    return finish(failed('invalid_args', 'an exact cell is for mine only'), 0, 0);
   }
   if (opts.signal?.aborted) return finish(cancelled(), 0, 0);
 
@@ -192,6 +201,7 @@ async function runUnobserved(
     timeScale,
     ownPlanksLast: opts.ownPlanksLast === true,
     highLedge: opts.highLedge === true,
+    ...(opts.mineAt === undefined ? {} : { mineAt: opts.mineAt }),
   };
   // Clocks are read before the handler starts: a handler may run synchronously up to its first await.
   const startedAt = now();
