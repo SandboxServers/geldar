@@ -96,7 +96,7 @@ The operator set the NeoForge shard up as its own experiment: humans and agents 
 ## Consequences
 
 - The twin cards are rewritten (twin file): AN-NF-27a and AN-NF-26a name every actor and are Deferred to v2 (Q1: not needed for v1); AN-NF-28b loses its NATS steps and is Deferred to v2 (Q1); AN-NF-47a keeps the combat facts only (lives only, because a fact is keyed by life id, not for privacy) with the NF-4 kill credit; AN-NF-51a is Dropped; AN-NF-50 no longer waits for AN-NF-28b; AN-NF-25 is new.
-- Amendment A5 is withdrawn; A6 (contract) and A7 (golem) are added; AN-24 and AN-25 should carry them before dispatch, or AN-NF-25 adds them after.
+- Amendment A5 is withdrawn; A6 (contract) and A7 (golem) were proposed but are ON HOLD with this record pending the operator's revision (invisible-hand model): AN-24 and AN-25 do not carry them.
 - The delta note's OD-NF-1 to OD-NF-6 are ruled by this record, pending its acceptance.
 - On NeoForge in v1 the social model's `good` and `law` estimates of other agents and players get no evidence (Q1; delta note section 3b). Humans hold no marks in v1 (Q7).
 - Paper: no card, code, test or text changes. Every NeoForge-only change is behind a default that keeps Paper byte-identical.

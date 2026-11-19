@@ -85,7 +85,7 @@ Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged o
 | HC-33 | promises and due wakes (question card) | sheet W3-W5 (kit C copy is history) | none | 15k | Ready (docs only; D-HC-06 deferred) |
 | HC-46 | kit observation carries positions and ids (`observe.ts` and the world output it parses), per 0324 | new card (being written; title to confirm) | HC-18 | | Writing |
 | AN-24 | observed-actor contract | sheet W5 | AN-12, contract slot 1 | 40k | Ready (OD-E text ships unused) |
-| AN-25 | visible attacker identity | sheet W5 | AN-24 | 40k | Ready (A5 withdrawn for NeoForge, 0329 NF-2) |
+| AN-25 | visible attacker identity | sheet W5 | AN-24 | 40k | Ready (A5, A6, A7 on hold with 0329; do not fold them in) |
 | AN-26a | pickup provenance in the plugin | sheet W5 | AN-24, AN-27a | 40k | FixNeeded (test location; Paper API lines; A2) |
 | AN-26b | observed gift in the recipient's Body | sheet W5 | AN-24, AN-25, AN-26a | 40k | Ready |
 | AN-27a | break provenance in the plugin | sheet W5 | AN-24 | 40k | FixNeeded (core-common paths, two Gradle tasks; A1, A2, A4) |
@@ -144,7 +144,7 @@ Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged o
 | S12-06 | run protocol, fixtures and run evidence | sheet W9-W12 | S12-02, S12-03, HC-38, HC-37b | 45k | BlockedDecision (OD-11) |
 | S12-07 | campaign review and rollout close | sheet W9-W12 | S12-06 | 25k | BlockedDependency |
 | AN-NF-00 | evidence config, bus, world names, setup skeleton | sheet NF | P3-1 to P3-3 (merged), AN-24 | 35k | BlockedDependency (AN-24; P3-LIVE, P4 for merge) |
-| AN-NF-25 | named player actor, contract and golem, inert on Paper (0329 NF-2; A6, A7) | sheet NF | AN-24, AN-25 | 35k | BlockedDependency (AN-24, AN-25; P3-LIVE, P4 for merge); closes if A6, A7 are folded into AN-24, AN-25 |
+| AN-NF-25 | named player actor, contract and golem, inert on Paper (0329 NF-2; A6, A7) | sheet NF | AN-24, AN-25 | 35k | BlockedDependency (AN-24, AN-25; P3-LIVE, P4 for merge); A6, A7 on hold with 0329 |
 | AN-NF-27a | break provenance on NeoForge, every actor named | sheet NF | 0329 Q1, AN-NF-00, AN-27a with A1, A2, A4, P4 | 35k | Deferred to v2 (0329 Q1: not needed for v1) |
 | AN-NF-26a | pickup provenance on NeoForge, thrower named | sheet NF | 0329 Q1, AN-NF-00, AN-26a with A1, A2, P4 | 35k | Deferred to v2 (0329 Q1: not needed for v1) |
 | AN-NF-28b | W5 wiring on NeoForge (no NATS rows) | sheet NF | 0329 Q1, AN-NF-26a, AN-NF-27a, AN-NF-50, P4 | 30k | Deferred to v2 (0329 Q1: not needed for v1) |
