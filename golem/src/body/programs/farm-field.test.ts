@@ -169,4 +169,32 @@ describe('readField', () => {
     vi.mocked(isOwnPlacement).mockImplementation(() => false);
     vi.mocked(ownerRecordAt).mockImplementation(() => null);
   });
+
+  it('marks a cell unknown when the owner record cannot be read at all', () => {
+    const tiles = new Map<string, Tile>();
+    crop(tiles, 1, 64, 0, 'wheat', 7);
+    vi.mocked(ownerRecordAt).mockImplementation(() => null);
+    expect(readField(botWith(tiles), 12, 16).map((c) => c.owner)).toEqual(['unknown']);
+  });
+
+  it('reads three blocks above and below the feet and no further', () => {
+    const tiles = new Map<string, Tile>();
+    crop(tiles, 1, 67, 0, 'wheat', 7);
+    crop(tiles, 2, 68, 0, 'wheat', 7);
+    crop(tiles, 3, 61, 0, 'wheat', 7);
+    crop(tiles, 4, 60, 0, 'wheat', 7);
+    expect(states(botWith(tiles))).toEqual([
+      [1, 67, 0, 'ripe'],
+      [3, 61, 0, 'ripe'],
+    ]);
+  });
+
+  it('ray-casts only a crop on farmland, never a block that is not a crop', () => {
+    const tiles = new Map<string, Tile>();
+    crop(tiles, 1, 64, 0, 'stone', 7);
+    tiles.set('5,64,0', { name: 'stone' });
+    vi.mocked(canSeeBlock).mockClear();
+    expect(states(botWith(tiles))).toEqual([]);
+    expect(canSeeBlock).not.toHaveBeenCalled();
+  });
 });

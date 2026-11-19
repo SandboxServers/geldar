@@ -26,6 +26,8 @@ interface FarmState {
   skippedUnknown: number;
   /** The index whose owner was already checked, so a harvest is not re-gated on its next step. */
   gated: number | null;
+  /** The crop name harvested from the current cell, so the sow after it takes a matching seed. Not checkpointed. */
+  lastCrop: string | null;
 }
 
 /** Why the program stopped, as the detail's `stopped` value. */
@@ -41,9 +43,15 @@ function harvestShown(after: Block | null, name: string): boolean {
   return ageOf(after) < (CROP_MAX_AGE[name] ?? 0);
 }
 
-/** The first seed item the Body carries; its crop is the value in `SEED_CROPS`. */
-function carriedSeed(ctx: ProgramContext): string | null {
-  for (const seed of SEED_CROPS.keys()) if (ctx.view.inventoryCount(seed) > 0) return seed;
+/**
+ * The first seed item the Body carries whose crop is `crop` (a value in `SEED_CROPS`); when `crop`
+ * is null (an empty cell, or after a resume) the first carried seed of any crop.
+ */
+function carriedSeed(ctx: ProgramContext, crop: string | null): string | null {
+  for (const [seed, seedCrop] of SEED_CROPS) {
+    if (crop !== null && seedCrop !== crop) continue;
+    if (ctx.view.inventoryCount(seed) > 0) return seed;
+  }
   return null;
 }
 
@@ -65,7 +73,7 @@ export class FarmProgram implements IntentProgram {
     const maxCells = reader.optionalInt('max_cells', 1, MAX_CELLS_LIMIT, 16);
     const replant = Object.hasOwn(args, 'replant') ? reader.bool('replant') : true;
     reader.done();
-    const cells = readField(ctx.bot, radius, maxCells);
+    const cells = readField(ctx.bot, radius, maxCells, replant);
     this.state = {
       replant,
       maxCells,
@@ -76,6 +84,7 @@ export class FarmProgram implements IntentProgram {
       skippedOwned: 0,
       skippedUnknown: 0,
       gated: null,
+      lastCrop: null,
     };
   }
 
@@ -110,12 +119,13 @@ export class FarmProgram implements IntentProgram {
     if (stop) return stop;
     if (!harvestShown(ctx.bot.blockAt(pos), name)) return this.advance(s);
     s.harvested += 1;
+    s.lastCrop = name;
     return s.replant ? { status: 'running' } : this.advance(s);
   }
 
   private async sow(ctx: ProgramContext, s: FarmState, pos: Vec3): Promise<StepResult> {
     if (!s.replant) return this.advance(s);
-    const seed = carriedSeed(ctx);
+    const seed = carriedSeed(ctx, s.lastCrop);
     if (seed === null) return this.finish(s, 'no_seeds');
     const run = await runStepAction(ctx, {
       do: 'place',
@@ -136,6 +146,7 @@ export class FarmProgram implements IntentProgram {
 
   private advance(s: FarmState): StepResult {
     s.next += 1;
+    s.lastCrop = null;
     return { status: 'running' };
   }
 
@@ -191,6 +202,7 @@ export class FarmProgram implements IntentProgram {
       skippedOwned,
       skippedUnknown,
       gated: null,
+      lastCrop: null,
     };
   }
 

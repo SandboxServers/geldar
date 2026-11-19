@@ -28,7 +28,10 @@ interface World {
   log: string[];
   feet: Vec3;
   failMine: boolean;
+  failPlace: boolean;
   cancelNextMine: boolean;
+  /** What a mine leaves at the block: air (broken), kept, age reset to 0, or unloaded. */
+  afterMine: 'air' | 'keep' | 'reset' | 'unloaded';
 }
 
 function newWorld(): World {
@@ -38,7 +41,9 @@ function newWorld(): World {
     log: [],
     feet: new Vec3(0, 64, 0),
     failMine: false,
+    failPlace: false,
     cancelNextMine: false,
+    afterMine: 'air',
   };
 }
 
@@ -88,7 +93,10 @@ function registryFor(world: World): ActionRegistry {
       const key = nearest(world, action.block);
       if (!key) return failed('not_found', 'no block');
       world.log.push(`mine:${action.block}`);
-      world.tiles.set(key, { name: 'air' });
+      const tile = world.tiles.get(key) as Tile;
+      if (world.afterMine === 'air') world.tiles.set(key, { name: 'air' });
+      if (world.afterMine === 'reset') world.tiles.set(key, { name: tile.name, age: 0 });
+      if (world.afterMine === 'unloaded') world.tiles.delete(key);
       return completed({ mined: 1 });
     },
   } as never);
@@ -100,6 +108,7 @@ function registryFor(world: World): ActionRegistry {
       action: { block: string; at: { x: number; y: number; z: number } },
     ) => {
       const { x, y, z } = action.at;
+      if (world.failPlace) return failed('not_possible', 'fake place failure');
       const crop = SEED_CROPS.get(action.block);
       world.log.push(`place:${action.block}@${x},${y},${z}`);
       world.inventory[action.block] = (world.inventory[action.block] ?? 0) - 1;
@@ -208,12 +217,32 @@ describe('farm', () => {
     expect(world.inventory.wheat_seeds).toBe(0);
   });
 
-  it('leaves an unripe crop alone', async () => {
+  it('leaves an unripe crop alone, even with a seed carried', async () => {
     const world = newWorld();
     crop(world, 1, 64, 0, 'wheat', 3);
+    world.inventory.wheat_seeds = 1;
     const run = await drive(world, {});
     expect(detailOf(run.last)).toMatchObject({ harvested: 0, sown: 0 });
     expect(world.log).toEqual([]);
+  });
+
+  it('sows only a seed of the harvested crop, and ends no_seeds without one', async () => {
+    const world = newWorld();
+    crop(world, 1, 64, 0, 'beetroots', 7);
+    world.inventory.wheat_seeds = 1;
+    const run = await drive(world, {});
+    expect(detailOf(run.last)).toMatchObject({ harvested: 1, sown: 0, stopped: 'no_seeds' });
+    expect(world.log).toEqual(['mine:beetroots']);
+  });
+
+  it('prefers the harvested crop seed over another carried seed', async () => {
+    const world = newWorld();
+    crop(world, 1, 64, 0, 'beetroots', 7);
+    world.inventory.wheat_seeds = 1;
+    world.inventory.beetroot_seeds = 1;
+    const run = await drive(world, {});
+    expect(detailOf(run.last)).toMatchObject({ harvested: 1, sown: 1 });
+    expect(world.log).toEqual(['mine:beetroots', 'place:beetroot_seeds@1,64,0']);
   });
 
   it('ends no_seeds when a sow is due and no seed is carried', async () => {
@@ -296,6 +325,104 @@ describe('farm', () => {
     crop(world, 3, 64, 0, 'wheat', 7);
     const run = await drive(world, { max_cells: 2, replant: false });
     expect(detailOf(run.last)).toMatchObject({ harvested: 2, stopped: 'limit' });
+  });
+
+  it('a mine that leaves the crop in place counts no harvest', async () => {
+    const world = newWorld();
+    crop(world, 1, 64, 0, 'wheat', 7);
+    world.afterMine = 'keep';
+    const run = await drive(world, { replant: false });
+    expect(detailOf(run.last)).toMatchObject({ harvested: 0, stopped: 'done' });
+  });
+
+  it('a mine that resets the crop age counts the harvest', async () => {
+    const world = newWorld();
+    crop(world, 1, 64, 0, 'wheat', 7);
+    world.afterMine = 'reset';
+    const run = await drive(world, { replant: false });
+    expect(detailOf(run.last)).toMatchObject({ harvested: 1, stopped: 'done' });
+  });
+
+  it('a cell that reads unloaded after the mine counts no harvest', async () => {
+    const world = newWorld();
+    crop(world, 1, 64, 0, 'wheat', 7);
+    world.afterMine = 'unloaded';
+    const run = await drive(world, { replant: false });
+    expect(detailOf(run.last)).toMatchObject({ harvested: 0, stopped: 'done' });
+  });
+
+  it('reads no empty cell when replant is off, so a ripe crop past them is reached', async () => {
+    const world = newWorld();
+    farmland(world, 1, 64, 0);
+    farmland(world, -1, 64, 0);
+    crop(world, 5, 64, 0, 'wheat', 7);
+    const run = await drive(world, { replant: false, max_cells: 2 });
+    expect(detailOf(run.last)).toMatchObject({ harvested: 1, stopped: 'done' });
+  });
+
+  it('a failed place fails the run and counts no sow', async () => {
+    const world = newWorld();
+    farmland(world, 1, 64, 0);
+    world.inventory.wheat_seeds = 1;
+    world.failPlace = true;
+    const run = await drive(world, {});
+    expect(run.last.status).toBe('failed');
+    expect(run.program.checkpoint()).toMatchObject({ sown: 0 });
+  });
+
+  it('resumed at every boundary keeps the owner skip counts', async () => {
+    const makeWorld = () => {
+      const world = newWorld();
+      // Each crop has its own name: the fake mine takes the nearest block of a name, not a position.
+      crop(world, 1, 64, 0, 'wheat', 7);
+      crop(world, -1, 64, 0, 'carrots', 7);
+      crop(world, 0, 64, 2, 'potatoes', 7);
+      crop(world, 0, 64, -2, 'beetroots', 7);
+      world.inventory.wheat_seeds = 1;
+      world.inventory.beetroot_seeds = 1;
+      return world;
+    };
+    vi.mocked(ownerRecordAt).mockImplementation((pos) => {
+      if (pos.x === -1) return { known: true, owner: 'other-player' };
+      if (pos.z === 2) return { known: false };
+      return { known: true, owner: null };
+    });
+    const straightWorld = makeWorld();
+    const straight = await drive(straightWorld, {});
+    expect(detailOf(straight.last)).toMatchObject({
+      harvested: 2,
+      sown: 2,
+      skipped_owned: 1,
+      skipped_unknown: 1,
+      stopped: 'done',
+    });
+    for (let boundary = 0; boundary < straight.steps; boundary += 1) {
+      const world = makeWorld();
+      const cut = await drive(world, {}, boundary);
+      expect(cut.last, `interrupted after ${boundary}`).toEqual(straight.last);
+      expect(snapshot(world), `interrupted after ${boundary}`).toEqual(snapshot(straightWorld));
+    }
+  });
+
+  it('resumed at every boundary keeps replant off and the max_cells limit', async () => {
+    const makeWorld = () => {
+      const world = newWorld();
+      crop(world, 1, 64, 0, 'wheat', 7);
+      crop(world, 2, 64, 0, 'wheat', 7);
+      crop(world, 3, 64, 0, 'wheat', 7);
+      world.inventory.wheat_seeds = 3;
+      return world;
+    };
+    const args = { replant: false, max_cells: 2 };
+    const straightWorld = makeWorld();
+    const straight = await drive(straightWorld, args);
+    expect(detailOf(straight.last)).toMatchObject({ harvested: 2, sown: 0, stopped: 'limit' });
+    for (let boundary = 0; boundary < straight.steps; boundary += 1) {
+      const world = makeWorld();
+      const cut = await drive(world, args, boundary);
+      expect(cut.last, `interrupted after ${boundary}`).toEqual(straight.last);
+      expect(snapshot(world), `interrupted after ${boundary}`).toEqual(snapshot(straightWorld));
+    }
   });
 
   it('reads nothing outside line of sight', async () => {

@@ -54,9 +54,16 @@ export function cropStateAt(
   replant: boolean,
 ): { name: string; state: CropState } | null {
   const block = bot.blockAt(pos);
-  if (!block || !canSeeBlock(bot, block)) return null;
+  if (!block) return null;
   const below = bot.blockAt(pos.offset(0, -1, 0));
-  if (!below || below.name !== 'farmland') return null;
+  if (below?.name !== 'farmland') return null;
+  const seen = stateOfBlock(block, replant);
+  if (!seen || !canSeeBlock(bot, block)) return null;
+  return seen;
+}
+
+/** The state a block on farmland reads as, before the line-of-sight check; null for anything else. */
+function stateOfBlock(block: Block, replant: boolean): { name: string; state: CropState } | null {
   if (block.name === 'air') return replant ? { name: 'air', state: 'empty' } : null;
   if (!Object.hasOwn(CROP_MAX_AGE, block.name)) return null;
   const max = CROP_MAX_AGE[block.name] as number;
