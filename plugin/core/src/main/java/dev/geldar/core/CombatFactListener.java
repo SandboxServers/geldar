@@ -12,6 +12,7 @@ import java.util.function.LongSupplier;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Projectile;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -44,11 +45,18 @@ public final class CombatFactListener implements Listener {
             return;
         }
         Entity victim = event.getEntity();
-        Entity damager = event.getDamager();
+        Entity source = shooterOf(event.getDamager());
         long now = worldTick.getAsLong();
-        if (victim instanceof Player hurt && !(damager instanceof Player)) {
-            playerHurt(hurt.getName(), hurt.getUniqueId().toString(), damager.getUniqueId().toString(), mobType(damager), now);
-        } else if (damager instanceof Player hitter && !(victim instanceof Player)) {
+        if (isPlayerHurt(victim, source)) {
+            Player hurt = (Player) victim;
+            playerHurt(
+                    hurt.getName(),
+                    hurt.getUniqueId().toString(),
+                    source.getUniqueId().toString(),
+                    mobType(source),
+                    now);
+        } else if (isPlayerHit(victim, source)) {
+            Player hitter = (Player) source;
             playerHit(
                     hitter.getWorld().getName(),
                     hitter.getName(),
@@ -57,6 +65,24 @@ public final class CombatFactListener implements Listener {
                     mobType(victim),
                     now);
         }
+    }
+
+    /** A projectile counts as the entity that shot it, so an arrow from a skeleton is the skeleton's hit. */
+    static Entity shooterOf(Entity damager) {
+        if (damager instanceof Projectile projectile && projectile.getShooter() instanceof Entity shooter) {
+            return shooter;
+        }
+        return damager;
+    }
+
+    /** A player was hurt by something that is not a player. */
+    static boolean isPlayerHurt(Entity victim, Entity source) {
+        return victim instanceof Player && !(source instanceof Player);
+    }
+
+    /** A player hit something that is not a player. */
+    static boolean isPlayerHit(Entity victim, Entity source) {
+        return source instanceof Player && !(victim instanceof Player);
     }
 
     /** A mob died (possibly to a player) or a player died (closes that player's encounters with no fact). */

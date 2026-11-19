@@ -75,13 +75,40 @@ Files: `plugin/core/src/main/java/dev/geldar/core/CombatFactListener.java` (new)
   types are ignored through `HostileMobs.isHostile`.
 - The handlers read the entity (`getType().getKey().getKey()`, UUID, world name) and call package-private seams that take
   strings (`playerHurt`, `playerHit`, `mobDied`, `playerDied`). The tests drive the seams, because entity types need a
-  server (same pattern as AN-26a). Ops capture covers the glue lines.
+  server (same pattern as AN-26a). The decisions in the glue are static and tested with `Proxy` doubles of the interfaces:
+  `shooterOf` (a projectile is its shooter, so a skeleton's arrow is the skeleton's hit; a shooterless projectile stays
+  itself), `isPlayerHurt` and `isPlayerHit` (a player hitting a player is excluded). Not tested: the `getType()` read, the
+  `getKiller()` null branch and the Player-death dispatch in `onDeath`, because they need a real event or entity type.
+  The `@EventHandler` priority `MONITOR` and `ignoreCancelled = true` on both handlers are pinned by reflection.
+- Projectiles: a ranged hit is credited to its shooter (`shooterOf`), so a skeleton's arrow opens a hostile encounter
+  against the player and a player's bow hit sends `engaged`. A projectile with no living shooter is not a hostile hit.
+- Toggling: the `enabled` supplier gates every handler and seam, but disabling does not reset the tracker. Encounters
+  open when it goes off stay open; `tick()` is silent while disabled, and after re-enabling it may emit a stale
+  `fight_survived` for them (including for a player who died while disabled). This is reachable only if the supplier
+  toggles at runtime. Pinned by `theTickIsSilentWhileDisabledAndAnOpenEncounterClosesOnReenable`; no code change.
 - Deviation: `EventExporter.emit` adds a `player` property to every payload (as `death-event` also carries). The envelope
   payload therefore has five keys: `life_id`, `kind`, `mob`, `encounter_key` and `player`. The listener builds exactly the
   four. The test asserts the five and says why.
-- Mutation proofs (the file restored from a backup, `git diff` empty afterwards):
-  1. Drop the `isLifeId` filter in `playerHurt`: `aHumanNamedPlayerEmitsNothing` fails (line 55).
-  2. Drop the `enabled` check in `mobDied`: `disabledEmitsNothing` fails (line 68).
+- Open item: payload vs combat-fact schema (extra `player` key from EventExporter): open, awaiting ruling. The schema has
+  `additionalProperties: false` and no `player`, so the real payload does not validate against it; the test checks the
+  envelope only.
+- Mutation proofs (each run as one line changed in `CombatFactListener.java`, the class test run, the file restored from
+  a backup with a hash check afterwards). Killed, with the test that fails:
+  - A `playerHurt` drops `isHostile`: `nonHostileMobsOpenNothingAndEmitNothing`.
+  - B `mobDied` drops `isHostile`: `nonHostileMobsOpenNothingAndEmitNothing`.
+  - C `tick()` drops `enabled`: `theTickIsSilentWhileDisabledAndAnOpenEncounterClosesOnReenable`.
+  - F `playerHit` drops `isHostile`: `nonHostileMobsOpenNothingAndEmitNothing`.
+  - G `playerDied` no longer calls `tracker.playerDied`: `aPlayersDeathClosesTheirOpenEncounterWithNoFact`.
+  - I `playerHurt` drops `enabled`: `aHurtWhileDisabledOpensNothing`.
+  - K `playerDied` drops `enabled`: `aDeathWhileDisabledKeepsTheEncounterOpen`.
+  - L `combatJson` world and player swapped: `theFirstHitOfAnEncounterSendsOneExactEngagedMessage`.
+  - M `tick()` advances at tick 0: five tests, including `tickClosesAQuietEncounterAfterMoreThanTwoHundredTicks`.
+  - N `combatJson` mob replaced by the player name: `theFirstHitOfAnEncounterSendsOneExactEngagedMessage`.
+  - Earlier, from part 2: `mobDied` killer filter (`aHumanNamedPlayerEmitsNothing`) and `playerHit` `isLifeId`
+    (`aHumanNamedPlayerEmitsNothing`).
+  - Equivalent, not killed: H `playerDied` drops `isLifeId`. The tracker closes only encounters of the named player, and
+    the hurt and hit seams never open one for a non-life name, so the mutant is behaviourally identical. The test
+    `aDeathOfAnotherNameLeavesALivesEncounterOpen` pins the behaviour and does not kill it.
 
 ## Index line for AN-50a
 
