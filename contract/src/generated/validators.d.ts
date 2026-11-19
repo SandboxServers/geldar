@@ -9,6 +9,7 @@ export declare const validateBookRequest: ValidateFunction;
 export declare const validateCharacterSheet: ValidateFunction;
 export declare const validateCheckpointManifest: ValidateFunction;
 export declare const validateChunkVisitedPayload: ValidateFunction;
+export declare const validateCombatFactPayload: ValidateFunction;
 export declare const validateDayNightPayload: ValidateFunction;
 export declare const validateDeathPayload: ValidateFunction;
 export declare const validateDecisionEventPayload: ValidateFunction;
