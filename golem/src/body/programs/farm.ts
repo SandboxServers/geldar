@@ -3,6 +3,7 @@ import { Vec3 } from 'vec3';
 import type { Block } from '../../actions/bot-types.ts';
 import type { JsonValue } from '../../actions/outcome.ts';
 import { SEED_CROPS } from '../../actions/place.ts';
+import { prefetchOwners } from '../../actions/protected-blocks.ts';
 import { CROP_MAX_AGE } from '../../perception/surroundings/food-known.ts';
 import type { IntentProgram, ProgramCheckpoint, ProgramContext, StepResult } from '../program.ts';
 import { runStepAction, stopOf } from './action-step.ts';
@@ -74,6 +75,10 @@ export class FarmProgram implements IntentProgram {
     const replant = Object.hasOwn(args, 'replant') ? reader.bool('replant') : true;
     reader.done();
     const cells = readField(ctx.bot, radius, maxCells, replant);
+    await prefetchOwners(
+      cells.map((c) => new Vec3(c.x, c.y, c.z)),
+      ctx.signal,
+    );
     this.state = {
       replant,
       maxCells,
@@ -114,7 +119,11 @@ export class FarmProgram implements IntentProgram {
     pos: Vec3,
     name: string,
   ): Promise<StepResult> {
-    const run = await runStepAction(ctx, { do: 'mine', block: name, count: 1 });
+    const run = await runStepAction(
+      ctx,
+      { do: 'mine', block: name, count: 1 },
+      { mineAt: { x: pos.x, y: pos.y, z: pos.z } },
+    );
     const stop = stopOf(run, ctx);
     if (stop) return stop;
     if (!harvestShown(ctx.bot.blockAt(pos), name)) return this.advance(s);
@@ -177,7 +186,7 @@ export class FarmProgram implements IntentProgram {
     };
   }
 
-  async resume(saved: ProgramCheckpoint, _ctx: ProgramContext): Promise<void> {
+  async resume(saved: ProgramCheckpoint, ctx: ProgramContext): Promise<void> {
     const { cells: rawCells, ...scalars } = saved;
     const reader = checkpointReader('farm', scalars);
     const replant = reader.bool('replant');
@@ -192,6 +201,10 @@ export class FarmProgram implements IntentProgram {
     reader.done();
     if (next > cells.length)
       throw new ProgramError('invalid_args', 'farm', 'next is past the cells');
+    await prefetchOwners(
+      cells.map((c) => new Vec3(c[0], c[1], c[2])),
+      ctx.signal,
+    );
     this.state = {
       replant,
       maxCells,

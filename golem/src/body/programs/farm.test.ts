@@ -4,8 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { completed, failed } from '../../actions/outcome.ts';
 import { isOwnPlacement } from '../../actions/own-placements.ts';
 import { SEED_CROPS } from '../../actions/place.ts';
-import { ownerRecordAt } from '../../actions/protected-blocks.ts';
-import { ActionRegistry, type ActionRun, runAction } from '../../actions/registry.ts';
+import { ownerRecordAt, prefetchOwners } from '../../actions/protected-blocks.ts';
+import {
+  type ActionContext,
+  ActionRegistry,
+  type ActionRun,
+  runAction,
+} from '../../actions/registry.ts';
 import { canSeeBlock } from '../../perception/notable-blocks.ts';
 import type { ProgramContext, StepResult } from '../program.ts';
 import { MemorySink } from '../records.ts';
@@ -13,7 +18,10 @@ import type { BodyView } from '../view.ts';
 import { FarmProgram } from './farm.ts';
 
 vi.mock('../../actions/own-placements.ts', () => ({ isOwnPlacement: vi.fn(() => false) }));
-vi.mock('../../actions/protected-blocks.ts', () => ({ ownerRecordAt: vi.fn(() => null) }));
+vi.mock('../../actions/protected-blocks.ts', () => ({
+  ownerRecordAt: vi.fn(() => null),
+  prefetchOwners: vi.fn(async () => undefined),
+}));
 vi.mock('../../perception/notable-blocks.ts', () => ({ canSeeBlock: vi.fn(() => true) }));
 
 interface Tile {
@@ -68,9 +76,8 @@ function readTile(world: World, pos: Vec3): ReturnType<Bot['blockAt']> {
   } as never;
 }
 
-/** The nearest tile of a block name to the Body's feet (a mine names no position). */
+/** The block a mine without a cell takes: the nearest mature block of that name. */
 function nearest(world: World, name: string): string | undefined {
-  // A mine names no position: the Body takes the nearest mature block of that name.
   const keys = [...world.tiles.keys()].filter((k) => {
     const tile = world.tiles.get(k);
     return tile?.name === name && (tile.age ?? 1) > 0;
@@ -88,12 +95,16 @@ function registryFor(world: World): ActionRegistry {
   registry.register({
     kind: 'mine',
     timeoutMs: 1000,
-    run: async (_ctx: unknown, action: { block: string }) => {
+    run: async (ctx: ActionContext, action: { block: string }) => {
       if (world.failMine) return failed('not_possible', 'fake mine failure');
-      const key = nearest(world, action.block);
-      if (!key) return failed('not_found', 'no block');
+      const key = ctx.mineAt
+        ? `${ctx.mineAt.x},${ctx.mineAt.y},${ctx.mineAt.z}`
+        : nearest(world, action.block);
+      const tile = key ? world.tiles.get(key) : undefined;
+      if (!key || !tile || tile.name !== action.block) {
+        return failed('not_found', 'that block is other');
+      }
       world.log.push(`mine:${action.block}`);
-      const tile = world.tiles.get(key) as Tile;
       if (world.afterMine === 'air') world.tiles.set(key, { name: 'air' });
       if (world.afterMine === 'reset') world.tiles.set(key, { name: tile.name, age: 0 });
       if (world.afterMine === 'unloaded') world.tiles.delete(key);
@@ -137,12 +148,15 @@ function contextFor(world: World): ProgramContext {
     lifeId: 'life-1',
     bodyGeneration: 1,
     timeScale: 1,
-    runAction: async (action, signal) => {
+    runAction: async (action, signal, opts) => {
       if (world.cancelNextMine && action.do === 'mine') {
         world.cancelNextMine = false;
         return { state: 'cancelled', result: {} } as unknown as ActionRun;
       }
-      return runAction(registry, bot, action, { signal });
+      return runAction(registry, bot, action, {
+        signal,
+        ...(opts?.mineAt ? { mineAt: opts.mineAt } : {}),
+      });
     },
     signal: new AbortController().signal,
   };
@@ -193,7 +207,13 @@ function detailOf(last: StepResult): Record<string, unknown> {
 }
 
 describe('farm', () => {
+  /** Whether the owner cache has been prefetched: a cold cache answers unknown. */
+  let warm = false;
+
   beforeEach(() => {
+    warm = false;
+    vi.mocked(prefetchOwners).mockReset();
+    vi.mocked(prefetchOwners).mockImplementation(async () => undefined);
     vi.mocked(canSeeBlock).mockImplementation(() => true);
     vi.mocked(isOwnPlacement).mockImplementation(() => false);
     vi.mocked(ownerRecordAt).mockImplementation(() => ({ known: true, owner: null }));
@@ -418,7 +438,6 @@ describe('farm', () => {
   it('resumed at every boundary keeps the owner skip counts', async () => {
     const makeWorld = () => {
       const world = newWorld();
-      // Each crop has its own name: the fake mine takes the nearest block of a name, not a position.
       crop(world, 1, 64, 0, 'wheat', 7);
       crop(world, -1, 64, 0, 'carrots', 7);
       crop(world, 0, 64, 2, 'potatoes', 7);
@@ -518,5 +537,71 @@ describe('farm', () => {
       extra: 1,
     };
     await expect(new FarmProgram().resume(saved, ctx)).rejects.toThrow();
+  });
+
+  it('digs only the targeted cell, never a nearer crop of another player', async () => {
+    const world = newWorld();
+    world.feet = new Vec3(-2, 64, 0);
+    crop(world, 1, 64, 0, 'wheat', 7);
+    crop(world, -1, 64, 0, 'wheat', 7);
+    vi.mocked(ownerRecordAt).mockImplementation((pos) =>
+      pos.x === -1 ? { known: true, owner: 'ag_other_01' } : { known: true, owner: null },
+    );
+    const run = await drive(world, { radius: 8, replant: false });
+    expect(detailOf(run.last)).toMatchObject({ harvested: 1, skipped_owned: 1 });
+    expect(world.tiles.get('1,64,0')).toEqual({ name: 'air' });
+    expect(world.tiles.get('-1,64,0')).toEqual({ name: 'wheat', age: 7 });
+    expect(world.log).toEqual(['mine:wheat']);
+  });
+
+  it('a cold owner cache does not skip the first cells as unknown', async () => {
+    const world = newWorld();
+    crop(world, 1, 64, 0, 'wheat', 7);
+    crop(world, -1, 64, 0, 'wheat', 7);
+    vi.mocked(prefetchOwners).mockImplementation(async () => {
+      warm = true;
+    });
+    vi.mocked(ownerRecordAt).mockImplementation(() =>
+      warm ? { known: true, owner: null } : { known: false },
+    );
+    const run = await drive(world, { replant: false });
+    expect(detailOf(run.last)).toMatchObject({ harvested: 2, skipped_unknown: 0 });
+    expect(vi.mocked(prefetchOwners).mock.calls[0]?.[0]).toHaveLength(2);
+  });
+
+  it('a cell still unknown after the prefetch is skipped and never dug', async () => {
+    const world = newWorld();
+    crop(world, 1, 64, 0, 'wheat', 7);
+    crop(world, -1, 64, 0, 'wheat', 7);
+    vi.mocked(ownerRecordAt).mockImplementation(() => ({ known: false }));
+    const run = await drive(world, { replant: false });
+    expect(detailOf(run.last)).toMatchObject({ harvested: 0, skipped_unknown: 2 });
+    expect(world.log).toEqual([]);
+  });
+
+  it('a resume prefetches the owners before its first step', async () => {
+    const world = newWorld();
+    crop(world, 1, 64, 0, 'wheat', 7);
+    crop(world, -1, 64, 0, 'wheat', 7);
+    vi.mocked(prefetchOwners).mockImplementation(async () => {
+      warm = true;
+    });
+    vi.mocked(ownerRecordAt).mockImplementation(() =>
+      warm ? { known: true, owner: null } : { known: false },
+    );
+    const ctx = contextFor(world);
+    const first = new FarmProgram();
+    await first.start({ replant: false } as never, ctx);
+    const saved = JSON.parse(JSON.stringify(first.checkpoint()));
+    warm = false;
+    vi.mocked(prefetchOwners).mockClear();
+    const resumed = new FarmProgram();
+    await resumed.resume(saved, ctx);
+    let last: StepResult = { status: 'running' };
+    for (let i = 0; i < 50 && last.status === 'running'; i += 1) {
+      last = await resumed.step(ctx);
+    }
+    expect(vi.mocked(prefetchOwners)).toHaveBeenCalledTimes(1);
+    expect(detailOf(last)).toMatchObject({ harvested: 2, skipped_unknown: 0 });
   });
 });
