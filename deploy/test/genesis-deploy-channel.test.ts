@@ -58,11 +58,18 @@ function setup() {
   );
   const failing = join(root, 'failing.sh');
   writeFileSync(failing, 'echo "ARGS:$*"\nexit 3\n');
+  // A flock stand-in on PATH for the accepted-path tests (flock is absent on Windows). It records its arguments.
+  const shimDir = join(root, 'flock-shim');
+  mkdirSync(shimDir);
+  const flockCalls = join(root, 'flock.log');
+  writeFileSync(join(shimDir, 'flock'), `#!/bin/sh\necho "flock $*" >> ${p(flockCalls)}\nexit 0\n`);
   return {
     root,
     envDir,
     entry,
     failing,
+    shimDir: p(shimDir),
+    flockCalls,
     log: join(root, 'channel.log'),
     lock: join(root, 'channel.lock'),
   };
@@ -83,7 +90,7 @@ function shEnv(over: Record<string, string>): Record<string, string> {
 
 // Writes the test copy of the wrapper: each fixed production path is replaced by a path in fx's temp dir, and the sudo call
 // is removed. Throws when a substitution finds nothing, so the copy is always the real script with only those changes.
-function wrapperCopy(fx: Fx, entry: string): string {
+function wrapperCopy(fx: Fx, entry: string, noFlock: boolean): string {
   let text = readFileSync(WRAPPER, 'utf8');
   const subs: [string, string][] = [
     ['ENTRY=/usr/local/libexec/geldar-deploy/run', `ENTRY=${p(entry)}`],
@@ -92,6 +99,8 @@ function wrapperCopy(fx: Fx, entry: string): string {
     ['LOCK=/var/lib/geldar-deploy/channel.lock', `LOCK=${p(fx.lock)}`],
     ['sudo -n "$ENTRY"', '"$ENTRY"'],
   ];
+  // noFlock makes the copy's flock test fail, whatever flock this machine has, to test the refusal.
+  if (noFlock) subs.push(['command -v flock >/dev/null 2>&1', 'false']);
   for (const [from, to] of subs) {
     if (!text.includes(from)) throw new Error('wrapper substitution target missing');
     text = text.split(from).join(to);
@@ -107,13 +116,16 @@ interface ChannelOpts {
   bound?: string | null;
   input?: string;
   env?: Record<string, string>;
+  // true: the copy behaves as if flock were missing (no flock stand-in on PATH either).
+  noFlock?: boolean;
 }
 
 // Runs the wrapper copy with SSH_ORIGINAL_COMMAND set to cmd (or unset when cmd is undefined, which is a shell request).
 function channel(fx: Fx, cmd: string | undefined, opts: ChannelOpts = {}) {
   const env = shEnv({ GELDAR_CANARY: CANARY, ...(opts.env ?? {}) });
+  if (!opts.noFlock) env.PATH = [fx.shimDir, env.PATH].join(delimiter);
   if (cmd !== undefined) env.SSH_ORIGINAL_COMMAND = cmd;
-  const args = [wrapperCopy(fx, opts.entry ?? fx.entry)];
+  const args = [wrapperCopy(fx, opts.entry ?? fx.entry, opts.noFlock === true)];
   if (opts.bound !== null) args.push(opts.bound ?? 'colo');
   const r = spawnSync(SH, args.map(p), {
     env,
@@ -318,11 +330,20 @@ describe('deploy channel: accepted requests (G3-02)', () => {
 
   it('serialises the run on the lock file next to the allow-list', () => {
     const fx = setup();
-    const hasFlock = spawnSync(SH, ['-c', 'command -v flock'], { env: shEnv({}) }).status === 0;
     const r = channel(fx, `plan ${SHA} colo`);
     expect(r.code).toBe(0);
-    if (hasFlock) expect(existsSync(fx.lock)).toBe(true);
-    else expect(r.out).toContain('flock is missing; deploys on this node are not serialised');
+    expect(existsSync(fx.lock)).toBe(true);
+    expect(readFileSync(fx.flockCalls, 'utf8')).toContain('flock 9');
+  });
+
+  it('refuses to run, and runs nothing, when flock is missing', () => {
+    const fx = setup();
+    const r = channel(fx, `plan ${SHA} colo`, { noFlock: true });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('refused: flock is missing; deploys on this node are not serialised');
+    expect(r.out).not.toContain('started');
+    expect(existsSync(fx.log)).toBe(false);
+    expect(existsSync(fx.flockCalls)).toBe(false);
   });
 
   it('sets umask 077 before it creates the log (static: the production script says so)', () => {

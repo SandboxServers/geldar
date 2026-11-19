@@ -22,7 +22,7 @@ State at 2026-11-15. PR numbers are GitHub pull requests on `main`.
 | GE-01 | none | Not started |
 | GE-02 | none | Not started |
 | GE-03 | none | Not started |
-| GE-04 | none | Not started |
+| GE-04 | none | partly done (wrapper, sudoers, key template, installer; entrypoint move is GE-04b) |
 | GE-05 | none | Not started |
 | GE-06 | none | Not started |
 | GE-07 | none | Not started |

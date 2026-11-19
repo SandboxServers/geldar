@@ -64,12 +64,12 @@ case $verb in
 esac
 # The log and the lock are created by the installer for the operator; umask keeps anything new private.
 umask 077
-# One deploy at a time on this node. Without flock the channel says so and runs unserialised.
+# One deploy at a time on this node. Without flock the channel refuses to run: an unserialised deploy is not allowed.
 if command -v flock >/dev/null 2>&1; then
   exec 9>>"$LOCK"
   flock 9
 else
-  echo "geldar-deploy: flock is missing; deploys on this node are not serialised"
+  refuse "flock is missing; deploys on this node are not serialised"
 fi
 echo "geldar-deploy: $verb $env_name started"
 rc=0
