@@ -1,5 +1,7 @@
 # Template for the operator account's authorized_keys (G3-02). Bootstrap replaces the placeholder with the public key of the
-# deploy key for one environment. The public key is not in the repo. The options force the wrapper, so the key cannot
-# get a shell, a terminal, port forwarding, agent forwarding or X11. The command path is the install path of the wrapper.
-# Do not put a real key in this file. One line per environment.
-command="/usr/local/libexec/geldar-deploy/channel",no-pty,no-port-forwarding,no-agent-forwarding,no-X11-forwarding ssh-ed25519 <PUBLIC_KEY_PLACEHOLDER> geldar-deploy-<ENVIRONMENT>
+# deploy key for one environment. The public key is not in the repo. The command= option forces the wrapper with the bound
+# environment as its argument. restrict turns on every restriction, which includes these, so the key cannot get a shell,
+# a terminal, port forwarding, agent forwarding, X11, a user rc file or any other option: no-pty, no-port-forwarding,
+# no-agent-forwarding, no-X11-forwarding, no-user-rc. The command path is the install path of the wrapper.
+# Do not put a real key in this file. One line per environment, with <ENVIRONMENT> replaced by that environment's name.
+command="/usr/local/libexec/geldar-deploy/channel <ENVIRONMENT>",restrict ssh-ed25519 <PUBLIC_KEY_PLACEHOLDER> geldar-deploy-<ENVIRONMENT>
