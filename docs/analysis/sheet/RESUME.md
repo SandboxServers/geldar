@@ -1,40 +1,37 @@
 # Character sheet and psyche campaign (geldar-sheet) resume
-Coordinator: geldar-sheet. Decisions: 0280-0282 used, next 0283-0289 then 0320-0329. SQL: 0050-0052 used, next 0053-0059 (0038-0049 registration, 0060-0069 geldar-3b). Updated 2026-11-15 ~16:00Z.
-Plans: docs/analysis/character-sheet/ (AN-00..AN-61, waves W0-W12); cards: docs/analysis/harness/ (ledger.md, work-packets-geldar-a.md).
+Coordinator: geldar-sheet. Updated 2026-11-18 at `origin/main` = `a8063b0a`. State and evidence: [assessment-2026-11-18.md](assessment-2026-11-18.md); NeoForge: [neoforge-delta.md](neoforge-delta.md); cards and order: [../harness/ledger.md](../harness/ledger.md), [sheet-next-wave-order.md](../harness/sheet-next-wave-order.md), [verification](../harness/sheet-cards-verification-2026-11-18.md).
+Numbers. Decisions used: 0280-0282, 0320-0329. Free: 0283-0285 (released by 0326, 0327; never write 0283 as Accepted), 0289; 0286-0288 stay with S12-01, S12-04, S12-05. W3-W8 need up to six records (AN-24, AN-44, AN-46, HC-23a, HC-24, HC-25): ask the registry for a block. SQL used 0050-0052; 0053 free (proposed for the `turn_records` erase fix), 0054, 0055 released (0327), 0056, 0057 S12, 0058, 0059 spare.
 
-## Owner ruling (2026-11-15)
-- ALL sheet-campaign features stay HELD on the live server until the whole campaign is complete. Each is validated first by agent runs on a test shard (Colo node, worldops' scratch stack, scratch- prefix, caps ~3 CPUs / 7 GB) with evidence of intended use. Inert code still merges. OD-10 adoption waits.
-- Test-shard plan draft 2 ($1/life/run, 4 lives/run, 3 h/run, ~$20 total): agreed in principle with geldar-93. Owners: worldops (scratch stack); scriptorium-orchestrator (agent runs 8 and 10, planning only, not before rc22 is rolled and a clean day has passed). The draft exists only in the session scratchpad; geldar-sheet commits it under docs/analysis/sheet/.
+## Held-live ruling (2026-11-15, unchanged)
+Every sheet feature stays held on the live server until the whole campaign is complete; each is validated first by agent runs on a test shard. Inert code still merges. The test-shard plan (draft 2, about $20) is still not in the repo: commit it under `docs/analysis/sheet/` or rewrite it.
 
-## Done (merged on origin/main)
-- Contract AN-02a (#372), AN-02b (#386); decisions 0280-0282; ACL #394; SQL 0050-0052 (#395, #403, #455). Psyche AN-03a/b (#401, #409), AN-03c temperament bank INACTIVE (#411), GX-02 tag psyche-v1.0.0 (#413), AN-08a (#458; psyche 1.1.0, tag NOT pushed).
-- W1: AN-05 (#439), AN-05b (#467), AN-06a (#426, CI #433), AN-06b (#431), AN-07 (#453, inactive wiring), AN-S0 (#456).
-- W2 code complete: AN-08b (#476), AN-09a (#473), AN-09b (#468), AN-10a (#472), AN-10b (#478), AN-11b (#471). AN-11a not merged: PR #480 open, in the queue.
-- Since last resume: GX-06 #504 (instinct key and `source` tag, inert, key unset); AN-09c #509 (program on intent events; building XP row enabled in code, inert); step-0 test-shard driver #519 (bench paths only, scratch guard, leak check, snapshot+mine-once; roll trigger and RCON recipe UNVERIFIED); kit HC-18 merged as 4ab4493 on scriptorium/hw0 (instinct package; HC-18b split off).
-- Cards merged: harness/work-packets-sheet-w3-w5.md (#457), -w6-w8.md (#463), -w9-w12.md (#464; supersedes older geldar-b W9 and geldar-c W10-W12 cards).
+## Operator rulings (2026-11-18)
+- 0320 kit-b is authoritative for HC-19 to HC-26c; in-repo copies retired; OD-C: HC-20 proficiency all zero, degraded, round one.
+- 0321 combat XP keyed by encounter: the `kill:` row and AN-47b share one evidence key.
+- 0322 OD-NF-7: NeoForge included as inert code; twins blocked on P3-LIVE and P4.
+- 0323 erasure covers every life-keyed table (S9-00 checks both erase functions; `turn_records` gap); OD-12 confirmed (0282 as merged).
+- 0324 the kit observation carries positions and ids: accepted in principle; agent-visible wording pending OD approval.
+- 0325 tag `psyche-v1.1.0` approved on the #458 merge (`4cff991d`); push by a credentialed operator or ops. NOT pushed yet.
+- 0326 OD-1 no: mining stays free, no W9 refusal hook (S9-01 to S9-04 retired), does not amend 0164; OD-2 to OD-4 approved only if revisited.
+- 0327 no births (OD-5; W10 inactive, OD-6, OD-7 moot), no drift (OD-8; W11 inactive), no persona refresh (OD-9).
+- 0328 OD-10: existing agents adopt all-3 first; named sheets one ranger at a time with operator approval; behind held-live.
+
+## Done
+W0, W1, W2 all merged inactive, including AN-11a (#480), AN-11c (#487, reply refuses `sheet` and `sheet_hash`; 0280 item 3 is stale on that point, see the ledger note), AN-12a (#493), AN-12b (#492), GX-08 (#526), nats-auth split (#534). Kit: HC-04 to HC-11, HC-17a, HC-17b, HC-18 on `scriptorium/hw0`. Full list in the ledger.
 
 ## Next (order)
-1. Contract card: drop sheet and sheet_hash from the proficiency state reply. Contract slot third, after geldar-ops 'interrupted' PR and geldar-vitals MH-1, via geldar-3b. Regen serial.
-2. AN-12: integration, default off; needs the NATS ACL step.
-3. Recapture AN-09a chunk fixtures from AN-09b's real builder.
-4. Split tools/repo-checks/src/nats-auth.test.ts (544 lines per brief).
-5. W3-W5 kit cards HC-18.. (geldar-scriptorium): message scriptorium-orchestrator before touching shared files. Then W6+. Re-ask the owner for the W3-W12 coding order when W2 closes (its remaining ops evidence moves to the test shard).
+1. Push tag `psyche-v1.1.0` (ops); then the kit re-mirror card (G13).
+2. Card edits before dispatch: A1 to A4 on AN-27a, AN-26a, AN-47a, AN-51a; G1 to G13 fixes; AN-47b to 0321; S9-00 to 0323; kit-b HC-20 to OD-C; HC-22, HC-27b to 0324; splits AN-28b/c, AN-45a/b, AN-50a/b; scrub the user-profile path (G2).
+3. Wave A (sheet-next-wave-order section 2): AN-24 (contract slot 1, ask geldar-3b), AN-27a, AN-39, AN-40, AN-41, S12-03, HC-27a, HC-28a, HC-29, HC-33.
+4. Wave K (kit, kit-b): re-verify HC-19 to HC-26c against hw0, then dispatch with the scriptorium orchestrator's go.
+5. Recapture AN-09a chunk fixtures from AN-09b's builder (unchecked; check the AN-09a worknote).
 
-## Open
-- GX-08 (non-advancing wait `peek` for the instinct; card in harness/work-packets-geldar-a2.md) must land before GELDAR_INSTINCT is enabled on any life.
-- HC-19 (supervisor instinct step): sliced with scriptorium-orchestrator after hw0 CI and main merge. HC-L1 (key plumbing): after the rc22 roll. x-geldar-instinct-key not sent yet (world.ts has its own connector). psyche-v1.1.0 tag: not pushed (owner approval).
+## Still open (operator)
+- NeoForge: accept or edit **0329 (Proposed)**, which records rulings NF-1 to NF-6 (OD-NF-1 to OD-NF-6 ruled pending acceptance; players and agents equals on NeoForge, Paper unchanged). Answered 2026-11-18: Q1 skip provenance on NeoForge for v1, v2 priority (AN-NF-26a, 27a, 28b Deferred to v2; 0383 widening not written; v1 cost: `good` and `law` get no evidence, delta note 3b); Q7 humans hold no marks in this version, agents still earn (0385 item 8 stands; 0387 item 6 cites "items 3 and 4" but the rule is item 8). Still open: Q2 actor names holding a marker word (AN-28a drop), Q3 and Q4 proximity chat for humans and the chat log line, Q5 telemetry and NF-6, Q6 observer disclosure on NeoForge; OD-NF-8 (progression vs proficiency); NF-BODY (sheet Bodies on `geldar-nf`, and their username shape).
+- NeoForge hand-offs: [neoforge-chat-plan.md](neoforge-chat-plan.md) (NF-CHAT-0 to 3) goes to the NeoForge campaign; NF-CHAT-0 needs its own decision record. A6 and A7 (named player actor) should be folded into AN-24 and AN-25 before dispatch, else AN-NF-25 after; A5 withdrawn. The AN-25 row in the ledger still says "A5 waits for OD-NF-2": orchestrator to update it.
+- OD-11 (cohort, spend, success bars). OD-A, OD-B, OD-E sentences (OD-C ruled by 0320; OD-D moot after GX-04a).
+- D-CS-04 (non-combat rows, crop list, torchflower and pitcher gap), D-CS-05 (incl. aggression-5 unarmed row), D-CS-06, D-CS-14, D-CS-15.
+- Other wording: 0324 position and id text, HC-29 prose bank, AN-44/AN-45 summaries and `INTENT_WHY`, AN-46 sentences. Per-life NATS ACL scoping.
 
 ## Kit handoff (scriptorium-orchestrator, confirmed 2026-11-15)
-- Mine: HC-17a/b, HC-18..HC-39 except his list (HC-26c: model never sees the sheet; HC-23a/b after his HC-10/11). HC-18 merged (above).
-- His: HC-05..HC-16, HC-40, kit text/releases. Message him before editing packages/supervisor/src, mind-loop, chatgpt, launcher/*, messages.d, seams.json, template-src/instructions.md.
-
-## Kept inert
-- AN-11a service, AN-10b publisher, AN-11b cache, AN-12 stay inert until the batched NATS ACL step is complete (batch A live: worldops, reloaded 14:31:12Z) and the reply-shape change lands.
-
-## Owner decisions open (parked; geldar-93 holds the list)
-- Temperament delivery route and wording; D-CS-05 aggression-5 unarmed rolls:false row; D-CS-04 XP matrix rows, crop list '...', torchflower/pitcher gap.
-- Moral hook amending 0164 (OD-1..4); births/lineage (OD-5..7); attribute drift (OD-8,9); adoption (OD-10); cohort, spend, success bars (OD-11).
-- AN-28a exception to touch frozen animus/; per-life NATS ACL scoping.
-
-## Follow-ups
-- Generate migrate.test.ts migration list (ask geldar-3b; tools/migrate/src/migrate.test.ts); worktree cleanup under .claude/worktrees (keep node_modules junction targets intact); AN-11a open items in docs/analysis/harness/worknotes/AN-11a.md (not on main; check PR #480).
+Mine: HC-17a/b, HC-18 to HC-39 except his list (HC-26c, HC-23a/b after his HC-10/11). His: HC-05 to HC-16, HC-40, kit text and releases. Message him before editing `packages/supervisor/src`, `mind-loop`, `chatgpt`, `launcher/*`, `messages.d`, `seams.json`, `template-src/instructions.md`.
