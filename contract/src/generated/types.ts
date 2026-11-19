@@ -10703,6 +10703,115 @@ export interface DomainLevel {
   xp: number;
 }
 
+export type ProgramChunk = [number, number];
+
+export type ProgramHeading = "n" | "e" | "s" | "w" | null;
+
+export type FarmCell = [unknown, unknown, unknown, unknown];
+
+export interface ProgramBlock {
+  x: number;
+  y: number;
+  z: number;
+}
+
+export interface ExploreArguments {
+  program?: "explore";
+  legs?: number;
+  leg_blocks?: number;
+  avoid_water?: boolean;
+}
+
+export interface ExploreCheckpoint {
+  legs_done: number;
+  legs: number;
+  leg_blocks: number;
+  avoid_water: boolean;
+  chunks_new: number;
+  /**
+   * @maxItems 96
+   */
+  visited: ProgramChunk[];
+  heading: ProgramHeading;
+}
+
+export interface ExploreDetail {
+  legs: number;
+  chunks_new: number;
+  stopped: "legs" | "no_frontier" | "danger" | "limit";
+}
+
+export interface FarmArguments {
+  program?: "farm";
+  radius?: number;
+  max_cells?: number;
+  replant?: boolean;
+}
+
+export interface FarmCheckpoint {
+  /**
+   * @maxItems 32
+   */
+  cells: FarmCell[];
+  next: number;
+  harvested: number;
+  sown: number;
+  skipped_owned: number;
+  skipped_unknown: number;
+  replant: boolean;
+  max_cells: number;
+}
+
+export interface FarmDetail {
+  harvested: number;
+  sown: number;
+  skipped_owned: number;
+  skipped_unknown: number;
+  stopped: "done" | "no_cells" | "no_seeds" | "limit";
+}
+
+export interface PatrolArguments {
+  program?: "patrol";
+  /**
+   * @minItems 2
+   * @maxItems 8
+   */
+  route:
+    | [ProgramBlock, ProgramBlock]
+    | [ProgramBlock, ProgramBlock, ProgramBlock]
+    | [ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock]
+    | [ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock]
+    | [ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock]
+    | [ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock]
+    | [ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock];
+  laps?: number;
+  loop?: boolean;
+}
+
+export interface PatrolCheckpoint {
+  leg: number;
+  laps_done: number;
+  /**
+   * @minItems 2
+   * @maxItems 8
+   */
+  route:
+    | [ProgramBlock, ProgramBlock]
+    | [ProgramBlock, ProgramBlock, ProgramBlock]
+    | [ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock]
+    | [ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock]
+    | [ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock]
+    | [ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock]
+    | [ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock, ProgramBlock];
+  loop: boolean;
+  laps: number;
+}
+
+export interface PatrolDetail {
+  laps: number;
+  stopped: "laps" | "danger" | "limit";
+}
+
 export type Provenance = BreakProvenance | PickupProvenance;
 
 export interface BreakProvenance {

@@ -1,0 +1,186 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/program-shapes.schema.json",
+  "description": "Argument, checkpoint and detail shapes of the explore, farm and patrol programs (decision 0344, AN-44). Proposed and inert: nothing selects these shapes yet. Every integer is bounded; a hard cap is a maximum, so an oversize value is invalid, never clamped. Every shape rejects an unknown key. A checkpoint repeats the start arguments because resume() receives none. Coordinates are integers the Body observed.",
+  "type": "object",
+  "$defs": {
+    "ProgramBlock": {
+      "description": "A block position: integers only.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+        "y": { "type": "integer", "minimum": -64, "maximum": 320 },
+        "z": { "type": "integer", "minimum": -30000000, "maximum": 30000000 }
+      }
+    },
+    "ProgramChunk": {
+      "description": "A chunk column [cx, cz]: integers only.",
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "items": { "type": "integer", "minimum": -1875000, "maximum": 1875000 }
+    },
+    "ProgramHeading": {
+      "description": "The way the last leg faced, or null before the first leg.",
+      "type": ["string", "null"],
+      "enum": ["n", "e", "s", "w", null]
+    },
+    "ExploreArguments": {
+      "description": "Start arguments of explore. Defaults: legs 6, leg_blocks 24, avoid_water true.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "program": { "const": "explore" },
+        "legs": { "type": "integer", "minimum": 1, "maximum": 12, "default": 6 },
+        "leg_blocks": { "type": "integer", "minimum": 8, "maximum": 48, "default": 24 },
+        "avoid_water": { "type": "boolean", "default": true }
+      }
+    },
+    "ExploreCheckpoint": {
+      "description": "Explore's resumable state. The start arguments travel with it; visited holds at most 96 chunks.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "legs_done",
+        "legs",
+        "leg_blocks",
+        "avoid_water",
+        "chunks_new",
+        "visited",
+        "heading"
+      ],
+      "properties": {
+        "legs_done": { "type": "integer", "minimum": 0, "maximum": 12 },
+        "legs": { "type": "integer", "minimum": 1, "maximum": 12 },
+        "leg_blocks": { "type": "integer", "minimum": 8, "maximum": 48 },
+        "avoid_water": { "type": "boolean" },
+        "chunks_new": { "type": "integer", "minimum": 0, "maximum": 12 },
+        "visited": {
+          "type": "array",
+          "maxItems": 96,
+          "items": { "$ref": "#/$defs/ProgramChunk" }
+        },
+        "heading": { "$ref": "#/$defs/ProgramHeading" }
+      }
+    },
+    "ExploreDetail": {
+      "description": "Final detail of an explore run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["legs", "chunks_new", "stopped"],
+      "properties": {
+        "legs": { "type": "integer", "minimum": 0, "maximum": 12 },
+        "chunks_new": { "type": "integer", "minimum": 0, "maximum": 12 },
+        "stopped": { "type": "string", "enum": ["legs", "no_frontier", "danger", "limit"] }
+      }
+    },
+    "FarmArguments": {
+      "description": "Start arguments of farm. It takes a radius around the Body, never a position. Defaults: radius 12, max_cells 16, replant true.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "program": { "const": "farm" },
+        "radius": { "type": "integer", "minimum": 4, "maximum": 24, "default": 12 },
+        "max_cells": { "type": "integer", "minimum": 1, "maximum": 32, "default": 16 },
+        "replant": { "type": "boolean", "default": true }
+      }
+    },
+    "FarmCell": {
+      "description": "A crop cell [x, y, z, state]: the coordinates are integers, the state is one of three words.",
+      "type": "array",
+      "minItems": 4,
+      "maxItems": 4,
+      "prefixItems": [
+        { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+        { "type": "integer", "minimum": -64, "maximum": 320 },
+        { "type": "integer", "minimum": -30000000, "maximum": 30000000 },
+        { "type": "string", "enum": ["ripe", "unripe", "empty"] }
+      ]
+    },
+    "FarmCheckpoint": {
+      "description": "Farm's resumable state. The start arguments and the split counts travel with it; cells holds at most 32 cells.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "cells",
+        "next",
+        "harvested",
+        "sown",
+        "skipped_owned",
+        "skipped_unknown",
+        "replant",
+        "max_cells"
+      ],
+      "properties": {
+        "cells": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/FarmCell" } },
+        "next": { "type": "integer", "minimum": 0, "maximum": 32 },
+        "harvested": { "type": "integer", "minimum": 0, "maximum": 32 },
+        "sown": { "type": "integer", "minimum": 0, "maximum": 32 },
+        "skipped_owned": { "type": "integer", "minimum": 0, "maximum": 32 },
+        "skipped_unknown": { "type": "integer", "minimum": 0, "maximum": 32 },
+        "replant": { "type": "boolean" },
+        "max_cells": { "type": "integer", "minimum": 1, "maximum": 32 }
+      }
+    },
+    "FarmDetail": {
+      "description": "Final detail of a farm run.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["harvested", "sown", "skipped_owned", "skipped_unknown", "stopped"],
+      "properties": {
+        "harvested": { "type": "integer", "minimum": 0, "maximum": 32 },
+        "sown": { "type": "integer", "minimum": 0, "maximum": 32 },
+        "skipped_owned": { "type": "integer", "minimum": 0, "maximum": 32 },
+        "skipped_unknown": { "type": "integer", "minimum": 0, "maximum": 32 },
+        "stopped": { "type": "string", "enum": ["done", "no_cells", "no_seeds", "limit"] }
+      }
+    },
+    "PatrolArguments": {
+      "description": "Start arguments of patrol. The route is points the caller gives, 2 to 8 of them. Defaults: laps 1, loop true.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["route"],
+      "properties": {
+        "program": { "const": "patrol" },
+        "route": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/ProgramBlock" }
+        },
+        "laps": { "type": "integer", "minimum": 1, "maximum": 5, "default": 1 },
+        "loop": { "type": "boolean", "default": true }
+      }
+    },
+    "PatrolCheckpoint": {
+      "description": "Patrol's resumable state. The route, loop and laps travel with it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["leg", "laps_done", "route", "loop", "laps"],
+      "properties": {
+        "leg": { "type": "integer", "minimum": 0, "maximum": 7 },
+        "laps_done": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "route": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/ProgramBlock" }
+        },
+        "loop": { "type": "boolean" },
+        "laps": { "type": "integer", "minimum": 1, "maximum": 5 }
+      }
+    },
+    "PatrolDetail": {
+      "description": "Final detail of a patrol run. The program has no limit of its own: max_world_ticks is the only bound.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["laps", "stopped"],
+      "properties": {
+        "laps": { "type": "integer", "minimum": 0, "maximum": 5 },
+        "stopped": { "type": "string", "enum": ["laps", "danger", "limit"] }
+      }
+    }
+  }
+}

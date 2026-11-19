@@ -86,7 +86,7 @@
         },
         "intent": {
           "$ref": "thought.schema.json#/$defs/Intent",
-          "description": "The durable thing to pursue. Replaces the current intent. To put up a structure use program build with arguments {blueprint: shelter, wall or pillar; block: one exact item id you carry, such as oak_planks, not planks}. A shelter takes 25 blocks of that one kind, a wall 15, a pillar 3. Free-form build actions are not available."
+          "description": "The durable thing to pursue. Replaces the current intent. To put up a structure use program build with arguments {blueprint: shelter, wall or pillar; block: one exact item id you carry, such as oak_planks, not planks}. A shelter takes 25 blocks of that one kind, a wall 15, a pillar 3. Free-form build actions are not available. - Programs explore (walk to unseen nearby ground), farm (harvest and replant nearby crops within a radius) and patrol (walk a route you were given) are placeholders, not yet offered."
         },
         "actions": {
           "type": "array",
