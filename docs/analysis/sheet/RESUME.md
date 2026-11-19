@@ -1,6 +1,7 @@
 # Character sheet and psyche campaign (geldar-sheet) resume
 Coordinator: geldar-sheet. Updated 2026-11-18 at `origin/main` = `a8063b0a`. State and evidence: [assessment-2026-11-18.md](assessment-2026-11-18.md); NeoForge: [neoforge-delta.md](neoforge-delta.md); cards and order: [../harness/ledger.md](../harness/ledger.md), [sheet-next-wave-order.md](../harness/sheet-next-wave-order.md), [verification](../harness/sheet-cards-verification-2026-11-18.md).
 Numbers. Decisions used: 0280-0282, 0320-0329. Free: 0283-0285 (released by 0326, 0327; never write 0283 as Accepted), 0289; 0286-0288 stay with S12-01, S12-04, S12-05. W3-W8 need up to six records (AN-24, AN-44, AN-46, HC-23a, HC-24, HC-25): ask the registry for a block. SQL used 0050-0052; 0053 free (proposed for the `turn_records` erase fix), 0054, 0055 released (0327), 0056, 0057 S12, 0058, 0059 spare.
+> **Operator revision pending (2026-11-18): NF-1..NF-6 as recorded do not match the operator's intent (humans as an invisible hand, acts of nature). Do not build from 0329 or the NeoForge twins.**
 
 ## Held-live ruling (2026-11-15, unchanged)
 Every sheet feature stays held on the live server until the whole campaign is complete; each is validated first by agent runs on a test shard. Inert code still merges. The test-shard plan (draft 2, about $20) is still not in the repo: commit it under `docs/analysis/sheet/` or rewrite it.

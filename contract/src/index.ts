@@ -52,8 +52,20 @@ export function validateReceipt(value: unknown): ValidationResult<Receipt> {
   return { ok: false, errors: (validateReceiptSchema.errors ?? []).map(formatError) };
 }
 
+/** Observed-actor contract (AN-24, decision 0343, Proposed; nothing publishes these yet). */
+export type { ObservationPayload, ObservedActor, Provenance } from './generated/types.ts';
 /** Checks a heard_sound payload against heard-sound-event.schema.json (PX-4). Coordinates are rejected. */
-export { validateHeardSoundEvent } from './generated/validators.js';
+export {
+  validateHeardSoundEvent,
+  validateObservationPayload,
+  validateProvenance,
+} from './generated/validators.js';
+export { observationSentence } from './observation.ts';
+export {
+  provenanceBreakSubject,
+  provenancePickupSubject,
+  provenanceWildcard,
+} from './subjects.ts';
 
 /** Checks a value against event.schema.json. Never throws; unknown properties are rejected. */
 export function validateWorldEvent(value: unknown): ValidationResult<WorldEvent> {
