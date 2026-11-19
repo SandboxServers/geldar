@@ -55,8 +55,8 @@ function sleepFactText(verb: string, result: unknown): string | undefined {
   return `${asleep} of ${needed} needed are asleep`;
 }
 
-/** The farmland fact an ok till or seed planting carries in its `detail.fact`, cut to 160 characters. */
-function farmlandFactText(result: unknown): string | undefined {
+/** The fact an ok till, planting or use carries in its `detail.fact`, cut to 160 characters (use: decision 0389). */
+function detailFactText(result: unknown): string | undefined {
   const fact = (result as { detail?: { fact?: unknown } } | null)?.detail?.fact;
   return typeof fact === 'string' ? fact.slice(0, 160) : undefined;
 }
@@ -78,9 +78,9 @@ function interruptedText(verb: string, result: unknown): string | undefined {
   return typeof message === 'string' && isSwimStopText(message) ? message.slice(0, 160) : undefined;
 }
 
-/** The fact an ok action carries, by verb: an eat's hunger change, a sleep's sleepers line, a till's or planting's farmland fact, or a goto's swim note. */
+/** The fact an ok action carries, by verb: an eat's hunger change, a sleep's sleepers line, a till's, planting's or use's `detail.fact`, or a goto's swim note. */
 function okFactText(verb: string, result: unknown): string | undefined {
-  if (verb === 'till' || verb === 'place') return farmlandFactText(result);
+  if (verb === 'till' || verb === 'place' || verb === 'use') return detailFactText(result);
   if (verb === 'goto') return gotoNoteText(result);
   return verb === 'sleep' ? sleepFactText(verb, result) : eatFactText(verb, result);
 }

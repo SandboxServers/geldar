@@ -1,7 +1,14 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
-import { type ActionOutcome, cancelled, completed, failed, type JsonValue } from './outcome.ts';
+import {
+  type ActionOutcome,
+  cancelled,
+  completed,
+  errorText,
+  failed,
+  type JsonValue,
+} from './outcome.ts';
 import { isOwnPlacement } from './own-placements.ts';
 import { MESSAGE, reachTarget, SEED_CROPS } from './place.ts';
 import { ownerRecordAt, prefetchOwners } from './protected-blocks.ts';
@@ -41,6 +48,7 @@ export const USE_MESSAGE = {
   entityNotYet: 'use on an entity is not available',
   noTarget: 'use needs a block position',
   noItem: 'no such item in the inventory',
+  notHeld: 'the item did not go into the hand',
   container: 'that block is a container',
   bed: 'that block is a bed',
   sign: 'that block is a sign',
@@ -127,7 +135,28 @@ function itemToHold(
   return { stack, missing: stack === null };
 }
 
-/** Turns one `use` into its result. Every `await` checks the signal. */
+/** Puts `item` in the main hand and reads the hand back. Clicks nothing (decision 0389). */
+async function hold(ctx: ActionContext, item: string): Promise<ActionOutcome> {
+  const { bot, signal } = ctx;
+  const { stack, missing } = itemToHold(bot, item);
+  if (missing) return failed('missing_materials', USE_MESSAGE.noItem);
+  if (stack) {
+    try {
+      await bot.equip(stack, 'hand');
+    } catch (error) {
+      if (signal.aborted) return cancelled();
+      return failed('not_possible', USE_MESSAGE.notHeld, {}, errorText(error));
+    }
+    if (signal.aborted) return cancelled();
+  }
+  if (bot.heldItem?.name !== item) return failed('not_possible', USE_MESSAGE.notHeld);
+  return completed({ held: item, fact: `${item} in hand` });
+}
+
+/**
+ * Turns one `use` into its result. Every `await` checks the signal. With an item and no target, the
+ * item is put in hand (decision 0389).
+ */
 async function use(
   ctx: ActionContext,
   action: Extract<Action, { do: 'use' }>,
@@ -137,7 +166,10 @@ async function use(
     return failed('invalid_args', USE_MESSAGE.both);
   }
   if (action.entity !== undefined) return failed('not_possible', USE_MESSAGE.entityNotYet);
-  if (action.at === undefined) return failed('not_possible', USE_MESSAGE.noTarget);
+  if (action.at === undefined) {
+    if (action.item === undefined) return failed('not_possible', USE_MESSAGE.noTarget);
+    return hold(ctx, action.item);
+  }
 
   const target = new Vec3(action.at.x, action.at.y, action.at.z);
   const cell = bot.blockAt(target);

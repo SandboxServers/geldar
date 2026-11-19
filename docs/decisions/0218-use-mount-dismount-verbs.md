@@ -1,6 +1,6 @@
 # 0218: the `use`, `mount` and `dismount` actions let every agent click with an item and ride
 
-- Status: Accepted (owner ruling, relayed by geldar-93, 2026-11-14)
+- Status: Accepted (owner ruling, relayed by geldar-93, 2026-11-14). Amended by 0389 (no-target shape).
 - Date: 2026-11-14
 
 ## Context

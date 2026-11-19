@@ -54,6 +54,13 @@ describe('failure detail text', () => {
     );
   });
 
+  it('an ok use appends the item in hand after the fixed line (decision 0389)', () => {
+    expect(playerOutcomeText({ verb: 'use', ok: true, detail: 'wooden_sword in hand' })).toBe(
+      'Your use worked: wooden_sword in hand.',
+    );
+    expect(playerOutcomeText({ verb: 'use', ok: true })).toBe('Your use worked.');
+  });
+
   it('an ok till or place appends its plain fact after the fixed line', () => {
     expect(playerOutcomeText({ verb: 'till', ok: true, detail: 'dirt to farmland' })).toBe(
       'Your till worked: dirt to farmland.',

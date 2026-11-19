@@ -104,8 +104,8 @@ describe('action_outcome mapping (C5-02)', () => {
       texts({ verb: 'give', index: 0, ok: true, message: 'x', detail_text: 'moved 12 blocks' }),
     ).toEqual(['action|Your give worked.']);
     expect(
-      texts({ verb: 'use', index: 0, ok: true, message: 'x', detail_text: 'flint_and_steel lit' }),
-    ).toEqual(['action|Your use worked.']);
+      texts({ verb: 'mine', index: 0, ok: true, message: 'x', detail_text: 'flint_and_steel lit' }),
+    ).toEqual(['action|Your mine worked.']);
   });
 
   it('an ok till or place keeps its plain fact, as eat and sleep do', () => {
@@ -126,6 +126,26 @@ describe('action_outcome mapping (C5-02)', () => {
     ).toEqual(['action|Your till worked.']);
   });
 
+  it('an ok use keeps the item in hand as its Mind event detail (decision 0389)', () => {
+    const events = mapMindEvent(
+      outcome({
+        verb: 'use',
+        index: 0,
+        ok: true,
+        message: 'x',
+        detail_text: 'wooden_sword in hand',
+      }),
+      7,
+      ctx(),
+    );
+    expect(events).toEqual(
+      expect.arrayContaining([expect.objectContaining({ detail: 'wooden_sword in hand' })]),
+    );
+    expect(
+      texts({ verb: 'use', index: 0, ok: true, message: 'x', detail_text: 'wooden_sword in hand' }),
+    ).toEqual(['action|Your use worked: wooden_sword in hand.']);
+  });
+
   it('an ok eat cleans control characters, caps length and drops unsafe text', () => {
     expect(
       texts({
@@ -144,13 +164,10 @@ describe('action_outcome mapping (C5-02)', () => {
     ).toEqual(['action|Your eat worked.']);
   });
 
-  it('an ok goto carries its swim note; an ok use or give still drops its detail', () => {
+  it('an ok goto carries its swim note; an ok give still drops its detail', () => {
     expect(
       texts({ verb: 'goto', index: 0, ok: true, message: 'x', detail_text: 'swam 4 blocks' }),
     ).toEqual(['action|Your goto worked: swam 4 blocks.']);
-    expect(
-      texts({ verb: 'use', index: 0, ok: true, message: 'x', detail_text: 'a lever' }),
-    ).toEqual(['action|Your use worked.']);
     expect(
       texts({ verb: 'give', index: 0, ok: true, message: 'x', detail_text: 'the items' }),
     ).toEqual(['action|Your give worked.']);

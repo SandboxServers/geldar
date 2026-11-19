@@ -36,6 +36,14 @@ describe('actionOutcomeOf: the farmland fact an ok till or seed planting carries
   });
 });
 
+describe('actionOutcomeOf: the fact an ok use carries (decision 0389)', () => {
+  it('carries the held fact as detail_text on an ok use', () => {
+    expect(
+      actionOutcomeOf('use', 0, okReport({ held: 'wooden_sword', fact: 'wooden_sword in hand' })),
+    ).toMatchObject({ ok: true, detail_text: 'wooden_sword in hand' });
+  });
+});
+
 const SWAM = 'swim: blocks in water 12, surfacings for air 2';
 const STOPPED_AT_10 = 'swim stopped at air 10 with your head in the water';
 
