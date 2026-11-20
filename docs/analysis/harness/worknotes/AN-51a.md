@@ -32,6 +32,7 @@ Inert: `ContainerTakeListener` is not registered. Nothing is registered in `Geld
 ## Pending (ops evidence, not run)
 
 - Real-payload capture: a `take` message from a live shard has not been captured. Record the first real reply here when the ops run happens. Nothing was run against a shard for AN-51a.
+  Procedure: [capture-real-payloads](../../../runbooks/capture-real-payloads.md).
 - Real capture of which holders report a location and a storage type: chest, double chest, crafting table, furnace, anvil. Not yet captured. Until it is, the holder rule is by type only, unverified against a server.
 - The `onClick` argument wiring (the player check, the location check, the holder check, and the `sink`/`enabled` guard at the top of `onClick`) is not run by any unit test: a test would need a real `InventoryClickEvent`, which needs a server. It is covered only by the live capture above.
 - Index line for AN-50a: not written in this packet (not in the may-edit list).

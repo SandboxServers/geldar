@@ -10,3 +10,5 @@ Ops (not run here, serial, scratch shard, after merge): capture one real `break`
 
 - CoreProtect present: pending
 - CoreProtect absent: pending
+
+Procedure: [capture-real-payloads](../../../runbooks/capture-real-payloads.md).

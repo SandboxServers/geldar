@@ -123,3 +123,5 @@ Files: `plugin/core/src/main/java/dev/geldar/core/CombatFactListener.java` (new)
 - A once-per-tick task that calls `combatFactListener.tick()`.
 
 Ops capture pending: a real kill and a real survived payload before AN-47b fixtures freeze.
+
+Procedure: [capture-real-payloads](../../../runbooks/capture-real-payloads.md).
