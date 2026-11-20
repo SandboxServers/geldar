@@ -63,3 +63,9 @@ No captured combat provenance payload exists in the repo. The fixture in `fight-
 - Context per call: `{ bot, tick: <world age now>, self: <Body username>, world: <the Body's world name, e.g. from bukkitWorldOf(bot)>, windows: <one FightWindows per Body> }`. Omit `resolve` in production.
 - Dedupe state to hold: one `FightWindows` per Body, kept for that Body's session and not persisted. A restart clears it, so a fight in the window after a restart can be observed again.
 - Wire only on the Paper combat subject (`provenanceCombatSubject`). Do not enable on NeoForge.
+
+## Real fixture (replaces the hand-made-only note)
+
+The two real `engaged` payloads captured 2026-11-20 at 73788889 (AN-47a worknote, capture section: kill tick 2631, survived tick 3202) are in `golem/src/perception/provenance/fixtures/combat-real.json`, field for field and biome-formatted. The test `the captured real engaged payloads validate with validateProvenance and give one observation` validates both with `validateProvenance` and runs `observeFight` on each (a visible `ag_capa_01`, Body `ag_capb_02`, world `world`). The `engaged()` helper stays for the edge cases (ticks, actors, kinds). The earlier statement that no captured payload exists was wrong.
+
+Revert-check on the new case: the key prefix `fight:` changed to another word fails 3 tests, among them the new real-payload case. Building the key from `msg.actor` instead of `actor.name` is an equivalent mutant (the message carries the same name) and survives.

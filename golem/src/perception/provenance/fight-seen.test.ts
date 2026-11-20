@@ -1,4 +1,5 @@
-import { validateObservationPayload } from '@geldar/contract';
+import { readFileSync } from 'node:fs';
+import { validateObservationPayload, validateProvenance } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { describe, expect, it } from 'vitest';
@@ -208,6 +209,23 @@ describe('observeFight', () => {
     expect(observeFight(engaged(), ctxFor(far))).toBeNull();
     const none = scene({ ag_capb_02: WEST }, null);
     expect(observeFight(engaged(), ctxFor(none))).toBeNull();
+  });
+
+  it('the captured real engaged payloads validate with validateProvenance and give one observation', () => {
+    const path = new URL('./fixtures/combat-real.json', import.meta.url);
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as Record<string, CombatProvenance>;
+    expect(Object.keys(parsed)).toEqual(['kill_engaged', 'survived_engaged']);
+    for (const msg of Object.values(parsed)) {
+      expect(validateProvenance(msg)).toBe(true);
+      const world = scene({ ag_capa_01: WEST });
+      const out = observeFight(msg, ctxFor(world, { self: 'ag_capb_02', world: 'world' }));
+      expect(out).toEqual({
+        kind: 'fight_seen',
+        actor: { name: 'ag_capa_01', life: 'ag_capa_01' },
+        target: 'zombie',
+        key: `fight:${msg.tick}:ag_capa_01:zombie`,
+      });
+    }
   });
 });
 
