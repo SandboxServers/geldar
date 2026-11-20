@@ -124,6 +124,22 @@ describe('the renderers connect to nothing', () => {
     expect(plan).toContain('WAIT for READY');
     expect(plan).toContain('RCON');
     expect(plan).toContain('needs CoreProtect present');
+    expect(plan).toContain('NOT checked by the script');
+    expect(plan).toContain('blockowner.query');
+    expect(plan).toContain('30 s or more');
+  });
+
+  it('prints no CoreProtect precondition for a case that does not need it', () => {
+    const plan = renderPlan(
+      CAPTURE_CASES.filter((c) => c.id === 'chest-double'),
+      { shard: 'phase0', natsUrl: 'nats://127.0.0.1:4222', out: '.capture' },
+    );
+    expect(plan).not.toContain('NOT checked by the script');
+    expect(plan).not.toContain('blockowner.query');
+  });
+
+  it('describes the double chest as a two-chest case in the table', () => {
+    expect(findCase('chest-double')?.summary).toContain('double chest');
   });
 });
 

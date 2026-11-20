@@ -11,8 +11,11 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { blockownerQuerySubject } from '@geldar/contract';
+import { connectNats } from '@geldar/contract/nats';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
+import { bukkitWorldOf, OWNER_REQUEST_TIMEOUT_MS } from '../../../src/body/block-owners.ts';
 import { type LiveContext, withLiveBot } from '../fixture.ts';
 import {
   BOT_A,
@@ -31,11 +34,32 @@ const NATS_CAPTURE = join(REPO_ROOT, 'tools/capture/src/nats-capture.ts');
 const VALIDATE = join(REPO_ROOT, 'tools/capture/src/validate-captures.ts');
 const READY_TIMEOUT_MS = 30_000;
 const SETTLE_TICKS = 400;
+/** The Body's owner-query window (AN-27a, runbook): the break must come within 30 s of the owner query. */
+const OWNER_WINDOW_MS = 30_000;
+/** How long a window or an enchant reply may take before the case fails instead of hanging. */
+const OPEN_TIMEOUT_MS = 10_000;
 
-/** The bots of one case: `b` only for the two-life cases. */
+/** The bots of one case: `b` only for the two-life cases. `natsUrl` and `shard` are for the owner query. */
 interface Scene {
   a: LiveContext;
   b?: LiveContext;
+  natsUrl: string;
+  shard: string;
+}
+
+type Block = NonNullable<ReturnType<Bot['blockAt']>>;
+type OpenWindow = NonNullable<Bot['currentWindow']>;
+type Slot = OpenWindow['slots'][number];
+/** Plugin methods mineflayer adds at runtime (lib/plugins/anvil.js, enchantment_table.js); typed here by hand. */
+interface AnvilWindow extends OpenWindow {
+  rename(item: unknown, name: string): Promise<void>;
+}
+interface EnchantWindow extends OpenWindow {
+  enchant(choice: number): Promise<unknown>;
+}
+interface PluginBot {
+  openAnvil(block: Block): Promise<AnvilWindow>;
+  openEnchantmentTable(block: Block): Promise<EnchantWindow>;
 }
 
 /** Starts nats-capture and resolves when it prints READY; rejects if it exits or stays silent. */
@@ -126,11 +150,99 @@ async function takeFromBlock(
   if (bot.currentWindow !== null) bot.closeWindow(bot.currentWindow);
 }
 
-/** The send-nothing cases: the output slot must hold an item before the click, or the zero result proves nothing. */
-async function sendNothingGuard(what: string): Promise<never> {
-  throw new Error(
-    `${what}: the ingredient setup is not implemented in CAP-2 (no output to take): the case is INVALID, not a zero`,
+function note(line: string): void {
+  process.stdout.write(`   ${line}\n`);
+}
+
+/** Resolves with `p`, or fails with a clear message after `ms`: a window or reply that never comes fails the case. */
+function within<T>(what: string, p: Promise<T>, ms = OPEN_TIMEOUT_MS): Promise<T> {
+  const giveUp = new Promise<never>((_, fail) => {
+    setTimeout(() => fail(new Error(`${what}: no answer within ${ms} ms`)), ms);
+  });
+  return Promise.race([p, giveUp]);
+}
+
+/** Places `block` at x on the arena row and returns the block the bot can open. */
+async function placeTarget(s: Scene, block: string, x: number): Promise<Block> {
+  const { bot, ctl, arena } = s.a;
+  await ctl.setblock(x, 200, arena.center.z, block);
+  await bot.waitForTicks(10);
+  const target = bot.blockAt(new Vec3(x, 200, arena.center.z));
+  if (target === null) throw new Error(`no ${block} at ${x},200`);
+  return target;
+}
+
+/** The window must exist and be the expected kind; a window that did not open fails the case with the reason. */
+function expectWindow(win: OpenWindow, what: string, kind: RegExp): OpenWindow {
+  const type = String(win.type);
+  if (!kind.test(type)) throw new Error(`${what}: the open window is ${type}, not ${kind.source}`);
+  note(`${what}: window ${type} is open with ${win.slots.length} slots`);
+  return win;
+}
+
+/** The first slot at or after `from` that holds `name`; throws when the window has none. */
+function slotHolding(win: OpenWindow, name: string, from: number): number {
+  const index = win.slots.findIndex((item, i) => i >= from && item?.name === name);
+  if (index < 0) throw new Error(`no ${name} in the window from slot ${from}`);
+  return index;
+}
+
+/** The craft that makes planks: one oak log in grid slot 1 (planks from logs is shapeless, one ingredient). */
+async function logIntoGrid(bot: Bot, win: OpenWindow, from: number, what: string): Promise<void> {
+  const slot = slotHolding(win, 'oak_log', from);
+  await bot.clickWindow(slot, 0, 0);
+  await bot.clickWindow(1, 0, 0);
+  await bot.waitForTicks(10);
+  note(`${what}: moved the oak_log from slot ${slot} into grid slot 1`);
+}
+
+/** Takes the output in `slot`. Throws first if no output appeared: a zero from an empty output proves nothing. */
+async function takeOutput(bot: Bot, win: OpenWindow, slot: number, what: string): Promise<void> {
+  let item: Slot = null;
+  for (let i = 0; i < 40 && item === null; i++) {
+    item = win.slots[slot] ?? null;
+    if (item === null) await bot.waitForTicks(1);
+  }
+  if (item === null) {
+    throw new Error(
+      `${what}: output slot ${slot} is empty, so the case produced no output (INVALID, not a zero)`,
+    );
+  }
+  note(`${what}: output slot ${slot} holds ${item.count} ${item.name}`);
+  await bot.clickWindow(slot, 0, 0);
+  await bot.waitForTicks(10);
+  const left = win.slots[slot] ?? null;
+  if (left !== null)
+    throw new Error(`${what}: output slot ${slot} still holds ${left.name} after the click`);
+  note(
+    `${what}: clicked output slot ${slot}; ${item.name} x${item.count} picked up, slot now empty`,
   );
+}
+
+/** The owner query the Body sends before a break (golem/src/body/block-owners.ts): a NATS request to blockowner.query. */
+async function queryOwnerBeforeBreak(s: Scene, bot: Bot, pos: Vec3): Promise<number> {
+  const world = bukkitWorldOf(bot);
+  if (world === null) throw new Error('owner query: the bot reports no dimension');
+  const query = { world, chunk_x: Math.floor(pos.x / 16), chunk_z: Math.floor(pos.z / 16) };
+  const nc = await connectNats({ name: 'provenance-capture', servers: s.natsUrl }, () => undefined);
+  try {
+    const subject = blockownerQuerySubject(s.shard);
+    const data = new TextEncoder().encode(JSON.stringify(query));
+    const msg = await nc.request(subject, data, { timeout: OWNER_REQUEST_TIMEOUT_MS });
+    const answeredAt = Date.now();
+    const reply = JSON.parse(new TextDecoder().decode(msg.data)) as {
+      blocks?: Array<{ x: number; y: number; z: number; owner: string }>;
+    };
+    const hit = (reply.blocks ?? []).find((b) => b.x === pos.x && b.y === pos.y && b.z === pos.z);
+    note(
+      `owner query ${subject} for ${world} chunk ${query.chunk_x},${query.chunk_z} answered at ${answeredAt}; owner of ${pos.x},${pos.y},${pos.z}: ${hit?.owner ?? 'not in the reply'}`,
+    );
+    return answeredAt;
+  } catch (error) {
+    throw new Error(`owner query failed, so prior_owner would be null: ${String(error)}`);
+  } finally {
+    await nc.close().catch(() => undefined);
+  }
 }
 
 /** The case actions. Each one performs the case on the shard; the subscriber is already running. */
@@ -145,11 +257,11 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
     await s.b?.bot.waitForTicks(100);
   },
   async 'break-coreprotect-absent'(s) {
-    await breakPair(s);
+    await breakPair(s, false);
   },
   async 'break-coreprotect-present'(s) {
-    // The owner query (the Body's goto dig, or blockowner.query) must run within 30 s of the break; not scripted yet.
-    await breakPair(s);
+    // The owner query runs right before the break, by the Body's route (blockowner.query), inside the 30 s window.
+    await breakPair(s, true);
   },
   async kill(s) {
     const c = s.a.arena.center;
@@ -177,13 +289,32 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
     );
   },
   async 'chest-double'(s) {
-    await takeFromBlock(
-      s,
-      'minecraft:chest',
-      s.a.arena.center.x + 2,
-      'Items:[{Slot:0b,id:"minecraft:cobblestone",count:8b}]',
-      [0, 0, 0],
+    // Two chests on the x axis, facing north: the left one's partner is east (getClockWise), so x+3 is `right`.
+    const { bot, ctl, arena } = s.a;
+    const x = arena.center.x + 2;
+    const z = arena.center.z;
+    await ctl.setblock(x, 200, z, 'minecraft:chest[facing=north,type=left]');
+    await ctl.setblock(x + 1, 200, z, 'minecraft:chest[facing=north,type=right]');
+    await ctl.command(
+      `data merge block ${x} 200 ${z} {Items:[{Slot:0b,id:"minecraft:cobblestone",count:8b}]}`,
     );
+    await bot.waitForTicks(10);
+    const target = bot.blockAt(new Vec3(x, 200, z));
+    if (target === null) throw new Error(`no chest at ${x},200`);
+    const win = expectWindow(
+      await within('chest-double', bot.openBlock(target)),
+      'chest-double',
+      /generic_9x6|chest/,
+    );
+    // A double chest is 54 container slots plus the 36 player slots: 90 in all. A single chest is 63.
+    if (win.slots.length !== 90) {
+      throw new Error(
+        `chest-double: the window has ${win.slots.length} slots, not 90 (54 + 36): not a double chest`,
+      );
+    }
+    note('chest-double: 54 container slots + 36 player slots: a double chest');
+    await takeOutput(bot, win, 0, 'chest-double');
+    bot.closeWindow(win);
   },
   async 'chest-shift-click'(s) {
     await takeFromBlock(
@@ -221,22 +352,79 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
       [0, 0, 1],
     );
   },
-  async 'crafting-table'() {
-    await sendNothingGuard('crafting-table');
+  // The send-nothing cases: each opens its window (or its own inventory), fills the input, takes the output.
+  async 'crafting-table'(s) {
+    const { bot, ctl, arena } = s.a;
+    await ctl.give(BOT_A, 'oak_log', 1);
+    const target = await placeTarget(s, 'minecraft:crafting_table', arena.center.x + 2);
+    const win = expectWindow(
+      await within('crafting-table', bot.openBlock(target)),
+      'crafting-table',
+      /crafting/,
+    );
+    await logIntoGrid(bot, win, 10, 'crafting-table');
+    await takeOutput(bot, win, 0, 'crafting-table');
+    bot.closeWindow(win);
   },
-  async anvil() {
-    await sendNothingGuard('anvil');
+  async anvil(s) {
+    const { bot, ctl, arena } = s.a;
+    await ctl.give(BOT_A, 'stick', 1);
+    await ctl.command(`experience add ${BOT_A} 10 levels`);
+    const target = await placeTarget(s, 'minecraft:anvil', arena.center.x + 2);
+    const plugin = bot as unknown as PluginBot;
+    const win = expectWindow(
+      await within('anvil', plugin.openAnvil(target)),
+      'anvil',
+      /anvil/,
+    ) as AnvilWindow;
+    // mineflayer's rename puts the stick into input slot 0 and sends the name; the output then fills slot 2.
+    await win.rename(heldItem(bot, 'stick'), 'capture');
+    await takeOutput(bot, win, 2, 'anvil');
+    bot.closeWindow(win);
   },
-  async 'enchanting-table'() {
-    await sendNothingGuard('enchanting-table');
+  async 'enchanting-table'(s) {
+    const { bot, ctl, arena } = s.a;
+    await ctl.give(BOT_A, 'stone_sword', 1);
+    await ctl.give(BOT_A, 'lapis_lazuli', 3);
+    await ctl.command(`experience add ${BOT_A} 10 levels`);
+    const target = await placeTarget(s, 'minecraft:enchanting_table', arena.center.x + 2);
+    const plugin = bot as unknown as PluginBot;
+    const win = expectWindow(
+      await within('enchanting-table', plugin.openEnchantmentTable(target)),
+      'enchanting-table',
+      /enchant/,
+    ) as EnchantWindow;
+    await bot.clickWindow(slotHolding(win, 'stone_sword', 2), 0, 0);
+    await bot.clickWindow(0, 0, 0);
+    await bot.clickWindow(slotHolding(win, 'lapis_lazuli', 2), 0, 0);
+    await bot.clickWindow(1, 0, 0);
+    const result = await within('enchanting-table: enchant option 0', win.enchant(0));
+    if (result === null || result === undefined)
+      throw new Error('enchanting-table: enchant returned no item');
+    note('enchanting-table: enchant option 0 applied');
+    await takeOutput(bot, win, 0, 'enchanting-table');
+    bot.closeWindow(win);
   },
-  async 'player-2x2'() {
-    await sendNothingGuard('player-2x2');
+  async 'player-2x2'(s) {
+    const { bot, ctl } = s.a;
+    await ctl.give(BOT_A, 'oak_log', 1);
+    await bot.waitForTicks(10);
+    if (bot.currentWindow !== null)
+      throw new Error('player-2x2: a window is open; only the own inventory may be used');
+    if (bot.inventory.slots.length !== 46) {
+      throw new Error(`player-2x2: the inventory has ${bot.inventory.slots.length} slots, not 46`);
+    }
+    note('player-2x2: the own inventory window (no container open) has 46 slots');
+    await logIntoGrid(bot, bot.inventory, 9, 'player-2x2');
+    await takeOutput(bot, bot.inventory, 0, 'player-2x2');
   },
 };
 
-/** Bot A places cobblestone on the arena floor; bot B breaks it. Both steps are bot actions, so A owns the block. */
-async function breakPair(s: Scene): Promise<void> {
+/**
+ * Bot A places cobblestone on the arena floor; bot B breaks it. Both steps are bot actions, so A owns the block.
+ * With `ownerQuery`, B sends the owner query right before the break and the case fails if the break is 30 s or more later.
+ */
+async function breakPair(s: Scene, ownerQuery: boolean): Promise<void> {
   if (s.b === undefined) throw new Error('break cases need two bots');
   const c = s.a.arena.center;
   await s.a.ctl.give(BOT_A, 'cobblestone', 1);
@@ -250,7 +438,14 @@ async function breakPair(s: Scene): Promise<void> {
   await s.b.ctl.tp(BOT_B, c.x + 2, 200, c.z);
   const placed = s.b.bot.blockAt(new Vec3(c.x + 1, 200, c.z));
   if (placed === null) throw new Error('placed block not visible to bot B');
+  const answeredAt = ownerQuery ? await queryOwnerBeforeBreak(s, s.b.bot, placed.position) : null;
   await s.b.bot.dig(placed);
+  if (answeredAt !== null) {
+    const gap = Date.now() - answeredAt;
+    note(`break ${gap} ms after the owner query (window ${OWNER_WINDOW_MS} ms)`);
+    if (gap >= OWNER_WINDOW_MS)
+      throw new Error(`break came ${gap} ms after the owner query: outside the 30 s window`);
+  }
   await s.b.bot.waitForTicks(20);
 }
 
@@ -272,12 +467,13 @@ async function runCase(
       await body(scene);
       await scene.a.bot.waitForTicks(SETTLE_TICKS);
     };
+    const shared = { natsUrl: url, shard };
     if (c.bots === 2) {
       await withLiveBot({ name: BOT_A, slot: SLOT_A }, (a) =>
-        withLiveBot({ name: BOT_B, slot: SLOT_B }, (b) => run({ a, b })),
+        withLiveBot({ name: BOT_B, slot: SLOT_B }, (b) => run({ a, b, ...shared })),
       );
     } else {
-      await withLiveBot({ name: BOT_A, slot: SLOT_A }, (a) => run({ a }));
+      await withLiveBot({ name: BOT_A, slot: SLOT_A }, (a) => run({ a, ...shared }));
     }
   } finally {
     await stopSubscriber(sub);

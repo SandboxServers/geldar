@@ -20,7 +20,7 @@ export interface CaptureCase {
 }
 
 const RCON =
-  'RCON (127.0.0.1:25575, --rcon-host): whitelist add/remove, tp, give, clear, summon, setblock, fill, kill';
+  'RCON (127.0.0.1:25575, --rcon-host): whitelist add/remove, tp, give, clear, summon, setblock, fill, kill, experience add (anvil, enchanting table)';
 
 /** The fifteen cases. The runbook's run sheet names each one (a test checks both lists match). */
 export const CAPTURE_CASES: readonly CaptureCase[] = [
@@ -45,7 +45,7 @@ export const CAPTURE_CASES: readonly CaptureCase[] = [
     expect: 'break=1',
     bots: 2,
     coreprotect: 'present',
-    ops: `${RCON}; compose/opt-in/coreprotect.yml`,
+    ops: `${RCON}; NATS request blockowner.query before the break (the Body's route); CoreProtect checked by ops`,
   },
   {
     id: 'kill',
@@ -239,6 +239,14 @@ export function renderPlan(
     const cp = c.coreprotect === undefined ? '' : `; needs CoreProtect ${c.coreprotect}`;
     lines.push(`- ${c.id}: ${c.bots} bot(s), validate --expect ${c.expect}${cp}`);
     lines.push(`    ops/RCON: ${c.ops}`);
+    if (c.coreprotect === 'present') {
+      lines.push(
+        '    precondition (ops, NOT checked by the script): CoreProtect is loaded (`plugins` lists it) and the overlay is mounted',
+      );
+      lines.push(
+        '    owner query: NATS request blockowner.query right before the break; the case FAILS if the break is 30 s or more after it',
+      );
+    }
   }
   lines.push(
     'ops privileges: RCON on 127.0.0.1 only; the bots are whitelisted and removed in finally; world areas are restored.',
