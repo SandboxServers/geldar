@@ -29,7 +29,7 @@ Review-1 mutations (fix pass, each restored from a backup copy and checked with 
 - Earlier review-1 mutations (pattern removed, marker check removed, pattern bounds, anchors, presenter field drops, literal text, forced type, handler stops setting kind, damage actor default) were run in review 1 and fail their named tests.
 
 Owner decisions and open items:
-- Item and block (review-1 note 1): a field holding a marker word is dropped and the event is kept with the generic sentence. This is the stricter inert choice, applied without an OD-E owner call. Real names such as `observer`, `echo_shard` and `*_harness` now give no field.
+- Item and block (review-1 note 1): a field holding a marker word is dropped and the event is kept with the generic sentence. This is the stricter inert choice, applied without an OD-E owner call. A field is dropped when the item or block name, read with underscores as spaces, holds a marker word after the Minecraft phrases (observer block, echo shard, happy ghast harness) are removed. So `observer`, `white_harness` and `amethyst_shard` give no field; `echo_shard`, `observer_block` and `happy_ghast_harness` keep it, as the sentence keeps them.
 - `fight_seen` and `container_taken` are AN-24 kinds with no approved wording (AN-46). The presenter drops them: a valid one normalises to an event and maps, and gives no player line.
 - `link.fixtures.ts` has one `observation` fixture; the other kinds are inline in the tests. Owner to accept.
 - The five `SimEvent` fields in `mcp-mock/src/sim/events.ts` and the registry test edits outside the card list are owner-accepted as forced by the Mind type and the handler design. Owner to confirm.

@@ -127,6 +127,41 @@ describe('observation events on the player log', () => {
     ]);
   });
 
+  it('an item with underscores is read as words: a phrase item is kept, a bare marker item is dropped', () => {
+    const phrase = presented(
+      event('observation', { ...GIFT_UNATTRIBUTED, item: 'echo_shard', count: 3 }),
+    );
+    expect(phrase).toEqual([
+      {
+        seq: 3,
+        tick: 100,
+        type: 'gift_received',
+        text: 'You received 3 echo shard.',
+        item: 'echo_shard',
+        count: 3,
+      },
+    ]);
+    const bare = presented(
+      event('observation', { ...GIFT_UNATTRIBUTED, item: 'white_harness', count: 3 }),
+    );
+    expect(bare).toEqual([
+      { seq: 3, tick: 100, type: 'gift_received', text: 'Something happened.', count: 3 },
+    ]);
+    const plain = presented(
+      event('observation', { ...GIFT_UNATTRIBUTED, item: 'iron_ingot', count: 3 }),
+    );
+    expect(plain).toEqual([
+      {
+        seq: 3,
+        tick: 100,
+        type: 'gift_received',
+        text: 'You received 3 iron ingot.',
+        item: 'iron_ingot',
+        count: 3,
+      },
+    ]);
+  });
+
   it('a fight_seen or container_taken observation maps and presents no line', () => {
     const fight = { kind: 'fight_seen', target: 'zombie', key: 'fight:100:zombie:0' };
     const taken = { kind: 'container_taken', item: 'bread', count: 3, key: 'ctr:100:zack:bread:3' };
