@@ -58,7 +58,7 @@ import {
   verifyRenamedStick,
   within,
 } from './capture-windows.ts';
-import { ensureIdentityBuckets } from './identity-buckets.ts';
+import { ensureIdentityBuckets, errorText } from './identity-buckets.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 const NATS_CAPTURE = join(REPO_ROOT, 'tools/capture/src/nats-capture.ts');
@@ -478,9 +478,8 @@ async function main(): Promise<number> {
   try {
     await ensureIdentityBuckets(args.natsUrl, (line) => process.stdout.write(`${line}\n`));
   } catch (error) {
-    process.stderr.write(
-      `identity buckets: ${error instanceof Error ? error.message : String(error)}\n`,
-    );
+    // The message already starts with `identity buckets:` (identity-buckets.ts), so it is printed as it is.
+    process.stderr.write(`${errorText(error)}\n`);
     return 2;
   }
   let worst = 0;

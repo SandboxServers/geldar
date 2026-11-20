@@ -14,9 +14,12 @@ import { type SeedKvm, seedIdentityBuckets } from '../../../src/seed-buckets.ts'
 /** The buckets the identity plugin reads, in the order the seed creates them. */
 export const IDENTITY_BUCKETS: readonly string[] = [REGISTRY_BUCKET, SKINS_BUCKET];
 
-/** The operator hint printed in place of a seed error: the registry.ts text (golem/src/registry.ts:105-107), same command. */
+/** The operator hint added to a seed failure: the registry.ts text (golem/src/registry.ts:105-107), same command. */
 export const REGISTRY_TTL_HINT =
   'if the life registry was created before its TTL existed, remove it once (nats stream rm KV_geldar-life-registry) and run again';
+
+/** A stream that exists with another config: the case the registry hint names. Any other error gets no hint. */
+const CONFIG_MISMATCH = /already in use|different configuration|already exists/i;
 
 /** The decision for one preflight: the buckets to create, and the line to log before creating them. */
 export interface BucketPreflight {
@@ -29,6 +32,21 @@ export type PreflightKvm = SeedKvm & { open(name: string): Promise<unknown> };
 
 /** Creates the missing buckets with the given seed function, or returns the names it created. */
 export type SeedFn = (kvm: SeedKvm) => Promise<string[]>;
+
+/** The text of an error, or of anything thrown that is not an Error. */
+export function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Pure: the message a failed seed throws. It always carries the raw cause. The registry hint is added only when the
+ * life registry is among the missing buckets and the cause is a config mismatch (mirrors registry.ts:102-109).
+ */
+export function seedFailureMessage(missing: readonly string[], why: string): string {
+  const head = `identity buckets: could not create ${missing.join(', ')} (${why})`;
+  const hint = missing.includes(REGISTRY_BUCKET) && CONFIG_MISMATCH.test(why);
+  return hint ? `${head}; ${REGISTRY_TTL_HINT}` : head;
+}
 
 /** Pure: given whether each bucket already opens, names the missing ones and the log line. */
 export function planBucketPreflight(
@@ -53,7 +71,7 @@ async function bucketOpens(kvm: PreflightKvm, name: string): Promise<boolean> {
 
 /**
  * Checks the two buckets on an open KV manager, logs the plan, and runs the seed only when one is missing. A seed
- * failure throws the operator hint (the raw error stays on `cause`). Returns the names that were missing.
+ * failure throws seedFailureMessage (the raw error stays on `cause`). Returns the names that were missing.
  */
 export async function preflightBuckets(
   kvm: PreflightKvm,
@@ -68,10 +86,7 @@ export async function preflightBuckets(
   try {
     await seed(kvm);
   } catch (error) {
-    throw new Error(
-      `identity buckets: could not create ${plan.missing.join(', ')}; ${REGISTRY_TTL_HINT}`,
-      { cause: error },
-    );
+    throw new Error(seedFailureMessage(plan.missing, errorText(error)), { cause: error });
   }
   log(`identity buckets created: ${plan.missing.join(', ')}`);
   return plan.missing;
@@ -87,6 +102,10 @@ export async function ensureIdentityBuckets(
     servers: natsUrl,
     name: 'provenance-capture-buckets',
     ...golemNatsAuth(),
+  }).catch((error: unknown) => {
+    throw new Error(`identity buckets: could not connect to NATS (${errorText(error)})`, {
+      cause: error,
+    });
   });
   try {
     return await preflightBuckets(new Kvm(jetstream(nc)) as PreflightKvm, log, seed);

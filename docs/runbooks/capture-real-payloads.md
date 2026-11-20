@@ -3,7 +3,7 @@ title: "Capture the owed real provenance payloads"
 type: how-to
 audience: agents-never
 status: draft
-last_verified: 2026-11-19 against origin/main cef94f2513a701a07d63d584fabd2e1ea6b0595b (read, not run)
+last_verified: 2026-11-20 against origin/main 593db8150d6e3209e1eafa42909317cec226dcfb (read, not run)
 companions: [README.md, block-owner.md, scratch-stack.md, ../analysis/harness/test-package-design.md, ../analysis/harness/worknotes/AN-26a.md, ../analysis/harness/worknotes/AN-27a.md, ../analysis/harness/worknotes/AN-47a.md, ../analysis/harness/worknotes/AN-51a.md]
 sources: [../../.claude/skills/run-shard/SKILL.md, ../../.claude/skills/body-bench/SKILL.md, ../../plugin/core/src/main/java/dev/geldar/core/blockowner/BlockOwnerSetup.java, ../../plugin/core/src/main/java/dev/geldar/core/GeldarCore.java, ../../geldar.ps1, ../../bench/sheet/run.sh]
 ---
@@ -12,7 +12,7 @@ sources: [../../.claude/skills/run-shard/SKILL.md, ../../.claude/skills/body-ben
 
 ## OPS RUN SHEET (one page; read this, then the rest only for the reasons given)
 
-Status (branch `phase1/sheet-capture-prep`, CAP-fix-2): the capture script exists
+Status (after CAP-3 review 2): the capture script exists
 (`golem/test/live/scratch/provenance-capture.ts`, runner; pure table in `capture-cases.ts`), the subscriber and validator
 exist (`tools/capture/`, see its README), and the CoreProtect overlay exists (`compose/opt-in/coreprotect.yml`). All
 fifteen cases have a bot action; none is manual. NOTHING BELOW HAS BEEN RUN. Every server reply, every expected output
@@ -28,15 +28,18 @@ Rules: one shard, used by you alone. Never `adam up` (CLAUDE.md). Stop at the fi
 
 ```
 git status                                  # expected: clean, on the commit under test
+node --version                              # expected: a v22 release (package.json engines pin the major line)
+pnpm --version                              # expected: the major version in package.json packageManager (pnpm 12)
+pwsh --version                              # expected: PowerShell 7 or later (needed for ./geldar.ps1)
 docker compose version                      # expected: 2.24.4 or later
 git ls-files --eol compose                  # expected: w/lf for every file
-ls plugin/core/build/libs/geldar-core.jar plugin/velocity-identity/build/libs/geldar-velocity-identity.jar
 ```
 
 ### Stage 2: environment proof (the unproven items, first)
 
 ```
 (cd plugin; ./gradlew build)                                  # expected: BUILD SUCCESSFUL
+ls plugin/core/build/libs/geldar-core.jar plugin/velocity-identity/build/libs/geldar-velocity-identity.jar   # expected: both listed (absent on a clean clone before this build)
 ./geldar.ps1 shard secrets phase0                             # expected: creates the missing secret files, overwrites none (UNPROVEN here)
 docker compose -p geldar-phase0 -f compose/phase0.yml -f compose/rcon-host.yml up -d --wait nats   # expected: nats healthy
 docker inspect -f '{{.State.Health.Status}}' geldar-phase0-nats-1   # expected: healthy (docker-only check of the line above)
@@ -50,7 +53,7 @@ compose lines here carry their own `-p` and `-f` files, and each one that reads 
 names the container (`docker logs`, `docker exec`, `docker inspect`). Use the docker form if a compose line errors.
 
 Why the bucket seed comes before `shard up` (CAP-3; ops saw `shard up` exit 1 on a fresh NATS volume):
-- Velocity's healthcheck (`compose/phase0.yml:131`) passes only when the identity plugin has written
+- Velocity's healthcheck (`compose/phase0.yml:130`) passes only when the identity plugin has written
   `/tmp/geldar-identity.ready` (`IdentityPlugin.java:54`) and port 25565 accepts. The plugin writes the file once it has
   synced the life registry. The plugin never creates a bucket (decision 0087 correction). Golem creates the life
   registry when it connects with `GELDAR_NATS_URL` (`golem/src/registry.ts:84`). Nothing on phase0 creates `geldar-skins`
@@ -66,14 +69,16 @@ Why the bucket seed comes before `shard up` (CAP-3; ops saw `shard up` exit 1 on
   (`golem/test/live/scratch/identity-buckets.ts`, unit-tested; the live run is UNPROVEN here).
 
 Fallback, only when `shard up` already exited 1 and velocity is the only unhealthy service. Do not tear down.
-- F1. Run the seed line above. Expected: `buckets geldar-life-registry, geldar-skins: present`. Any other output, or a
-  line starting `seed-buckets:`, is a stop condition.
+- F1. Run the seed line above, then record when it finished: `SEED_DONE=$(date -u +%Y-%m-%dT%H:%M:%SZ)`. Expected:
+  `buckets geldar-life-registry, geldar-skins: present`. Any other output, or a line starting `seed-buckets:`, is a stop condition.
 - F2. Wait up to 60 s for velocity: `docker inspect -f '{{.State.Health.Status}}' geldar-phase0-velocity-1` must print
   `healthy`. Docker keeps running the healthcheck after `unhealthy` (UNPROVEN here). Still unhealthy after 60 s: stop.
 - F3. The ready file exists: `docker exec geldar-phase0-velocity-1 test -f /tmp/geldar-identity.ready` exits 0 (no output;
-  UNPROVEN that `test` is in the image). The seed left no retry behind: `docker logs --tail 40 geldar-phase0-velocity-1 2>&1 | grep -c "is absent"`
-  prints `0`. `docker logs geldar-phase0-velocity-1 2>&1 | grep "Geldar identity enabled"` prints one line (the check `shard up`
-  would have run). A line `Bucket ... is absent` after the seed is the log signal that a bucket is still missing.
+  UNPROVEN that `test` is in the image). F2 and F3 are the pass criteria.
+- F3a. Informational, not a pass criterion: `docker logs --since "$SEED_DONE" geldar-phase0-velocity-1 2>&1 | grep -c "is absent"`.
+  `--since` leaves out the lines logged before the seed finished, so the retries from before the seed do not count. Expect `0`.
+  A count above `0` is a line logged after the seed: read it, and trust F2 and F3 over the count.
+  `docker logs geldar-phase0-velocity-1 2>&1 | grep "Geldar identity enabled"` prints one line (the check `shard up` would have run).
 - F4. `./geldar.ps1 shard status phase0`: every row healthy.
 
 `Watching bucket` is not a readiness check. `RegistryClient.java:245` logs `Watching bucket {}` with the shadowed
@@ -379,7 +384,7 @@ owner) too. Unproven end to end.
 
 ### The script (exists; not run)
 
-`golem/test/live/scratch/provenance-capture.ts` (483 lines, committed on this branch; pure table in `capture-cases.ts`).
+`golem/test/live/scratch/provenance-capture.ts` (committed on this branch; read only the parts the sheet names; pure table in `capture-cases.ts`).
 Run with `node --experimental-strip-types`. It is not a `*.live.test.ts`, so the live lane does not pick it up. It starts
 two life-id bots, `ag_capa_01` and `ag_capb_02`. For each case it starts the subscriber, waits for READY (a READY timeout
 kills the child), performs the case, settles 400 ticks, stops the subscriber, and validates `<out>/<case>/`. A non-empty

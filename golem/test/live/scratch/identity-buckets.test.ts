@@ -1,4 +1,8 @@
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
   IDENTITY_BUCKETS,
@@ -6,6 +10,7 @@ import {
   planBucketPreflight,
   preflightBuckets,
   REGISTRY_TTL_HINT,
+  seedFailureMessage,
 } from './identity-buckets.ts';
 
 const readSource = (name: string): string => readFileSync(new URL(name, import.meta.url), 'utf8');
@@ -105,22 +110,43 @@ describe('preflightBuckets (the wiring of the seed, CAP-3 review 1)', () => {
     ]);
   });
 
-  it('throws the operator hint, not the raw seed error, and keeps the raw error as the cause', async () => {
-    const raw = new Error('wrong stream config RAW-JS-DETAIL');
+  it('keeps the raw seed error in the message and as the cause; the hint only for a registry config mismatch', async () => {
+    const raw = new Error(
+      'stream name already in use with a different configuration RAW-JS-DETAIL',
+    );
     const lines: string[] = [];
     const attempt = preflightBuckets(
-      fakeKvm(['geldar-skins']),
+      fakeKvm(['geldar-life-registry']),
       (l) => lines.push(l),
       async () => {
         throw raw;
       },
     );
     const error = (await attempt.catch((e: unknown) => e)) as Error;
+    expect(
+      error.message.startsWith('identity buckets: could not create geldar-life-registry ('),
+    ).toBe(true);
+    expect(error.message).toContain('RAW-JS-DETAIL');
     expect(error.message).toContain(REGISTRY_TTL_HINT);
-    expect(error.message).toContain('nats stream rm KV_geldar-life-registry');
-    expect(error.message).not.toContain('RAW-JS-DETAIL');
     expect(error.cause).toBe(raw);
-    expect(lines).not.toContain('identity buckets created: geldar-skins');
+    expect(lines).not.toContain('identity buckets created: geldar-life-registry');
+  });
+
+  it('shows the real permission error and no destructive hint when the registry create is denied', async () => {
+    const raw = new Error(
+      'permission violation for publish to $JS.API.STREAM.CREATE.KV_geldar-life-registry',
+    );
+    const attempt = preflightBuckets(
+      fakeKvm(['geldar-life-registry']),
+      () => undefined,
+      async () => {
+        throw raw;
+      },
+    );
+    const error = (await attempt.catch((e: unknown) => e)) as Error;
+    expect(error.message).toContain('permission violation for publish');
+    expect(error.message).not.toContain('nats stream rm');
+    expect(error.cause).toBe(raw);
   });
 
   it('keeps the hint text in step with golem/src/registry.ts (the command it names)', () => {
@@ -128,6 +154,71 @@ describe('preflightBuckets (the wiring of the seed, CAP-3 review 1)', () => {
       'nats stream rm KV_geldar-life-registry',
     );
   });
+});
+
+describe('seedFailureMessage (CAP-3 review 2: the real cause; the hint only for a config mismatch)', () => {
+  it('names the buckets and the raw cause, with no destructive hint, for a permission error', () => {
+    const cause =
+      'permission violation for publish to $JS.API.STREAM.CREATE.KV_geldar-life-registry';
+    expect(seedFailureMessage(['geldar-life-registry', 'geldar-skins'], cause)).toBe(
+      `identity buckets: could not create geldar-life-registry, geldar-skins (${cause})`,
+    );
+  });
+
+  it('adds the registry hint for a config mismatch on the life registry', () => {
+    const cause = 'stream name already in use with a different configuration';
+    expect(seedFailureMessage(['geldar-life-registry'], cause)).toBe(
+      `identity buckets: could not create geldar-life-registry (${cause}); ${REGISTRY_TTL_HINT}`,
+    );
+  });
+
+  it('gives no hint for a config mismatch on the skins bucket alone', () => {
+    const cause = 'stream name already in use with a different configuration';
+    expect(seedFailureMessage(['geldar-skins'], cause)).not.toContain('nats stream rm');
+  });
+});
+
+const CAPTURE = fileURLToPath(new URL('./provenance-capture.ts', import.meta.url));
+const NOT_CREATED = join(tmpdir(), 'geldar-cap-preflight-test-never-created');
+
+/** Runs the real capture entry point. Port 1 on loopback refuses at once, so a real run fails in the preflight. */
+function runEntry(args: string[]) {
+  return spawnSync(process.execPath, ['--experimental-strip-types', CAPTURE, ...args], {
+    encoding: 'utf8',
+    timeout: 60_000,
+  });
+}
+
+describe('the capture entry point runs the preflight on a real run only (CAP-3 review 2)', () => {
+  it('--list prints the list and never reaches the bucket preflight', () => {
+    const run = runEntry(['--list']);
+    expect(run.status).toBe(0);
+    expect(run.stdout.length).toBeGreaterThan(0);
+    expect(run.stdout + run.stderr).not.toContain('identity buckets');
+  });
+
+  it('--dry-run prints the plan and never reaches the bucket preflight', () => {
+    const run = runEntry(['--case', 'all', '--dry-run', '--out', NOT_CREATED]);
+    expect(run.status).toBe(0);
+    expect(run.stdout + run.stderr).not.toContain('identity buckets');
+  });
+
+  it('a real run fails in the preflight before the first case, with the real cause and no doubled prefix', () => {
+    const run = runEntry([
+      '--case',
+      'toss',
+      '--nats-url',
+      'nats://127.0.0.1:1',
+      '--out',
+      NOT_CREATED,
+    ]);
+    expect(run.status).toBe(2);
+    expect(run.stdout).not.toContain('== case');
+    const lines = run.stderr.split('\n').filter((line) => line.startsWith('identity buckets'));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^identity buckets: could not connect to NATS \(/);
+    expect(run.stderr).not.toContain('identity buckets: identity buckets');
+  }, 60_000);
 });
 
 describe('capture wiring (source checks, CAP-3 review 1)', () => {
