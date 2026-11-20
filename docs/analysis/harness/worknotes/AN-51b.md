@@ -14,7 +14,7 @@ Status: `observeTake` returns a `container_taken` observation for a take from a 
   - The built payload goes through `validateObservationPayload` (`@geldar/contract`) before the key is admitted. The contract has the last word on key shape and length, count and item.
   - `TakeKeyLru`: a bounded memory of 256 keys. A repeat is refused and moves to the front; past 256 the least recently seen key goes. A key is admitted only when an observation is returned, so a refused take takes no slot.
   - `TakeProvenance` is derived locally as `Exclude<Provenance, { kind: string }>`, because `@geldar/contract` exports `Provenance` but not `TakeProvenance` by name. The contract is unchanged.
-- `golem/src/perception/provenance/container-take.test.ts` (new): 29 tests (`observeTake` and `TakeKeyLru`). The key is asserted on the hidden, loosely spelt and empty-actor takes; the container set is a table over `chest`, `trapped_chest`, `barrel` and a non-container `ender_chest`; the bounds, the validator on both the named and the unattributed result, and the `seen` type are tested.
+- `golem/src/perception/provenance/container-take.test.ts` (new): 32 tests (`observeTake`, the contract gate, and `TakeKeyLru`). The key is asserted on the hidden, loosely spelt and empty-actor takes; the container set is a table over `chest`, `trapped_chest`, `barrel` and a non-container `ender_chest`; the bounds, the validator on both the named and the unattributed result, and the `seen` type are tested.
 
 ## Deviations from the card
 
@@ -37,11 +37,15 @@ Review 1 mutations (each a one-line edit, restored from a scratchpad backup; `gi
 
 4. Key uses the raw message actor (`${msg.actor ?? '-'}`). Fails `hidden taker unattributed`, `a visible taker with a loose spelling is not named but the take is seen`, `an empty actor name is unattributed, never named`.
 5. The explicit `msg.tick >= 0` removed. Fails `a take past the contract bounds is refused: count, item length, tick, coordinates`.
-6. The validator gate removed (`validateObservationPayload` line deleted). Passes all 29 tests. Surviving: the explicit checks reject every case the suite reaches, so the validator's only unique reach is key length (129 characters needs ±30000000 coordinates and a 16-digit tick, which the FakeWorld cannot host). Kept as the backstop; not covered by a test.
+6. The validator gate removed (`validateObservationPayload` line deleted). Review 1 passed all 29 tests; after review 2 it fails `the contract gate in observeTake: a take the contract refuses is null and takes no LRU slot` (the validator is a `vi.mock` spy queued to return false).
 7. `seen` made optional again (`seen?`, and the previous `ctx.seen && ...` guard). `tsc --noEmit` fails: `Unused '@ts-expect-error' directive` in `container-take.test.ts`.
 8. `barrel` removed from the container set. Fails `a take from a barrel is observed`.
 9. `trapped_chest` removed from the container set. Fails `a take from a trapped_chest is observed`.
 
+Review 2 fix (AN-51b-review-2, notes 1 and 2):
+
+10. The validator and its order are now pinned. The test file wraps `validateObservationPayload` in a `vi.fn` that calls through; two tests queue its result. Validator line deleted: fails the refused-take case. Validator swapped after `admit`: fails the same case (`seen.size` is 1, not 0).
+11. The bounds test is renamed to what it pins (count, item length, tick). The three coordinate cases moved to `far coordinates are refused for lack of a block, so this does not pin the coordinate bound`: no block exists there in FakeWorld, so they are refused without the bound. Mutation `inBounds` replaced by `true`: passes 32/32. The coordinate bound is defence in depth, not pinned by a test.
 ## Notes
 
 - Nothing passes a `seen` yet, so the LRU is inert. The wiring must pass one; `tsc` enforces it.

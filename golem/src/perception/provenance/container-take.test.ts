@@ -1,7 +1,7 @@
 import { validateObservationPayload } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FakeWorld } from '../perception.fakes.ts';
 import {
   observeTake,
@@ -9,6 +9,12 @@ import {
   TakeKeyLru,
   type TakeProvenance,
 } from './container-take.ts';
+
+// The real contract, with the validator wrapped in a spy that calls through unless a test queues a result.
+vi.mock('@geldar/contract', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@geldar/contract')>();
+  return { ...actual, validateObservationPayload: vi.fn(actual.validateObservationPayload) };
+});
 
 /** A world with the Body at the origin, an owned `block` (a chest by default) at (0, 64, 2) and nothing else. */
 function watched(block = 'chest'): { world: FakeWorld; bot: Bot; self: string } {
@@ -196,13 +202,19 @@ describe('observeTake', () => {
     expect(observeTake(take(self, { count: 1.5 }), ctx)).toBeNull();
   });
 
-  it('a take past the contract bounds is refused: count, item length, tick, coordinates', () => {
+  it('a take past the count, item length or tick bounds is refused', () => {
     const { world, bot, self } = watched();
     visiblePlayer(world, 'ag_chapman_01');
     const ctx = ctxFor(bot, self);
     expect(observeTake(take(self, { count: 2305 }), ctx)).toBeNull();
     expect(observeTake(take(self, { item: 'a'.repeat(65) }), ctx)).toBeNull();
     expect(observeTake(take(self, { tick: -1 }), ctx)).toBeNull();
+  });
+
+  it('far coordinates are refused for lack of a block, so this does not pin the coordinate bound', () => {
+    const { world, bot, self } = watched();
+    visiblePlayer(world, 'ag_chapman_01');
+    const ctx = ctxFor(bot, self);
     expect(observeTake(take(self, { x: 30_000_001 }), ctx)).toBeNull();
     expect(observeTake(take(self, { z: -30_000_001 }), ctx)).toBeNull();
     expect(observeTake(take(self, { y: 2049 }), ctx)).toBeNull();
@@ -249,6 +261,26 @@ describe('observeTake', () => {
       // @ts-expect-error seen is required, so a redelivery is never observed twice
       observeTake(take(self), { bot, tick: 100, self });
     expect(typeof omitsSeen).toBe('function');
+  });
+});
+
+describe('the contract gate in observeTake', () => {
+  it('a take the contract refuses is null and takes no LRU slot', () => {
+    const { world, bot, self } = watched();
+    visiblePlayer(world, 'ag_chapman_01');
+    const seen = new TakeKeyLru();
+    vi.mocked(validateObservationPayload).mockReturnValueOnce(false);
+    expect(observeTake(take(self), ctxFor(bot, self, seen))).toBeNull();
+    expect(seen.size).toBe(0);
+  });
+
+  it('a take the contract accepts is returned and takes one LRU slot', () => {
+    const { world, bot, self } = watched();
+    visiblePlayer(world, 'ag_chapman_01');
+    const seen = new TakeKeyLru();
+    vi.mocked(validateObservationPayload).mockReturnValueOnce(true);
+    expect(observeTake(take(self), ctxFor(bot, self, seen))?.kind).toBe('container_taken');
+    expect(seen.size).toBe(1);
   });
 });
 
