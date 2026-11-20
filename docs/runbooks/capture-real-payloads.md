@@ -3,7 +3,7 @@ title: "Capture the owed real provenance payloads"
 type: how-to
 audience: agents-never
 status: draft
-last_verified: 2026-11-19 against 7efad8ca
+last_verified: 2026-11-19 against origin/main cef94f2513a701a07d63d584fabd2e1ea6b0595b (read, not run)
 companions: [README.md, block-owner.md, scratch-stack.md, ../analysis/harness/test-package-design.md, ../analysis/harness/worknotes/AN-26a.md, ../analysis/harness/worknotes/AN-27a.md, ../analysis/harness/worknotes/AN-47a.md, ../analysis/harness/worknotes/AN-51a.md]
 sources: [../../.claude/skills/run-shard/SKILL.md, ../../.claude/skills/body-bench/SKILL.md, ../../plugin/core/src/main/java/dev/geldar/core/blockowner/BlockOwnerSetup.java, ../../plugin/core/src/main/java/dev/geldar/core/GeldarCore.java, ../../geldar.ps1, ../../bench/sheet/run.sh]
 ---
@@ -12,13 +12,15 @@ sources: [../../.claude/skills/run-shard/SKILL.md, ../../.claude/skills/body-ben
 
 ## OPS RUN SHEET (one page; read this, then the rest only for the reasons given)
 
-Status, CAP-2 (branch `phase1/sheet-capture-prep`): the capture script exists
-(`golem/test/live/scratch/provenance-capture.ts`), the subscriber and validator exist (`tools/capture/`, see its
-README), and the CoreProtect overlay exists (`compose/opt-in/coreprotect.yml`). All fifteen cases have an action; none
-is manual. The four send-nothing cases open their window, fill the input and take the output; the double chest is two
-chests; the break with CoreProtect sends the owner query before the break. Nothing below was run: every expected
-output is UNPROVEN until stage 2 and stage 3 produce it. The flag and listener gap below ("Read this first") still
-applies: check the merged code for AN-28c and AN-50a before stage 2.
+Status (branch `phase1/sheet-capture-prep`, CAP-fix-2): the capture script exists
+(`golem/test/live/scratch/provenance-capture.ts`, runner; pure table in `capture-cases.ts`), the subscriber and validator
+exist (`tools/capture/`, see its README), and the CoreProtect overlay exists (`compose/opt-in/coreprotect.yml`). All
+fifteen cases have a bot action; none is manual. NOTHING BELOW HAS BEEN RUN. Every server reply, every expected output
+and every Docker, WSL, bind-mount and CoreProtect-jar step is UNPROVEN until stage 2 and stage 3 produce it. The
+plugin flags are merged on `origin/main` (see "Merged state" below), so the flags are the only switch.
+
+Run order, fixed: every case except `break-coreprotect-present` first; then the CoreProtect overlay step; then
+`break-coreprotect-present` as the LAST case. The "absent" break runs before the overlay exists on the stack.
 
 Rules: one shard, used by you alone. Never `adam up` (CLAUDE.md). Stop at the first stop condition.
 
@@ -38,22 +40,27 @@ ls plugin/core/build/libs/geldar-core.jar plugin/velocity-identity/build/libs/ge
 ./geldar.ps1 shard up phase0 --rcon-host                      # expected: stack up, RCON on 127.0.0.1:25575
 ```
 
+What `shard up` does (`geldar.ps1:460-496`): rebuilds the repo images, adds `compose/rcon-host.yml` when `--rcon-host` is
+given (`:471`), starts the stack and waits until healthy, then runs `Assert-PluginsEnabled` (`:212-222,488`), which
+looks in the paper log for `Geldar-Core enabled` and in the velocity log for `Geldar identity enabled`. A plain
+`docker compose ... up -d` does none of this: no `--wait`, no plugin check, and no `rcon-host.yml` unless you add it.
+Any recreate in this runbook therefore needs the explicit `-f compose/rcon-host.yml`, or RCON on 127.0.0.1:25575 stops.
+
 Health rows (run-shard skill; skip Ollama). Each must be green:
 Minecraft joins through Velocity; NATS 127.0.0.1:4222 answers; RCON `version` replies; `list` replies with 0 players.
 
-Then the unproven items, with the expected output:
+Then the unproven items, with the expected output. Commands marked UNPROVEN were not run on this machine.
 
-| Item | Command (RCON or shell) | Expected |
+| Item | Command | Expected |
 |---|---|---|
-| Plugin config reads the flag | `docker compose -f compose/phase0.yml exec paper cat /data/plugins/GeldarCore/config.yml` | file exists; `provenance:` and `blockowner:` blocks may be absent |
-| CoreProtect absent (the "absent" case) | RCON `plugins` | no `CoreProtect` in the list |
-| CoreProtect present (the "present" case, overlay) | `docker compose -f compose/phase0.yml -f compose/opt-in/coreprotect.yml up -d paper`, then RCON `plugins` | `CoreProtect` listed; restart paper only with the owner's word |
-| Flag on (scratch only) | edit the `provenance:` / `blockowner:` `enabled: true` keys in that file, wait 10 s | the next capture shows the message; no log line is promised |
+| Paper loaded GeldarCore | `docker compose -p geldar-phase0 -f compose/phase0.yml -f compose/rcon-host.yml logs --no-color paper \| grep "Geldar-Core enabled"` (UNPROVEN: the project name `geldar-phase0` is assumed; `geldar.ps1` `Assert-PluginsEnabled` uses `docker compose` with the shard's files and checks the same text) | one line `Geldar-Core enabled for shard phase0` (`GeldarCore.java:195`); no line means the plugin did not load: stop |
+| CoreProtect absent (the "absent" case) | RCON `plugins` (UNPROVEN: the RCON client; see "RCON commands" below) | no `CoreProtect` in the list |
+| Plugin config reads the flags | `docker compose -f compose/phase0.yml exec paper cat /data/plugins/GeldarCore/config.yml` (UNPROVEN: the path comes from `saveDefaultConfig()` and `plugin.yml` name `GeldarCore`; not read in a container) | file exists; `blockowner:` block is there (`enabled: true`, repo default, `plugin/core/src/main/resources/config.yml:38`); no `provenance:` block (the default is false, `BlockOwnerSetup.java:27,152-153`) |
 | Subscriber gets READY | the script prints `== case <name>` and waits; a READY timeout is a stop condition | READY in under 30 s |
 
-Flag key names: `provenance.enabled` is the AN-28c key and `blockowner.enabled` the existing one; read both keys in the
-merged plugin source before editing (`grep -rn "provenance\|blockowner" plugin/core/src/main/resources/config.yml`).
-Edit only the container's volume copy. Never edit `plugin/core/src/main/resources/config.yml`.
+Flag key names, verified in the merged source: `provenance.enabled` (default false, read by `getBoolean` at
+`BlockOwnerSetup.java:153`) and `blockowner.enabled` (default true, `config.yml:38`). Edit only the container's volume
+copy. Never edit `plugin/core/src/main/resources/config.yml`.
 
 ### Stage 3: captures (flag on, shard exclusive, one case at a time)
 
@@ -64,7 +71,6 @@ node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --
 node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case all --dry-run
 node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case toss
 node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case break-coreprotect-absent
-node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case break-coreprotect-present
 node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case kill
 node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case survived
 node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case chest-single
@@ -79,15 +85,34 @@ node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --
 node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case player-2x2
 ```
 
+The CoreProtect step, after the last row above and before the last case. Nothing here was run.
+
+1. Jar (UNPROVEN source). The overlay mounts `${GELDAR_COREPROTECT_JAR:-../.data/coreprotect/coreprotect.jar}` read-only
+   with `create_host_path: false` (`compose/opt-in/coreprotect.yml`), so compose FAILS if the file is absent. Put the
+   jar at `.data/coreprotect/coreprotect.jar` in the clone, or export `GELDAR_COREPROTECT_JAR` to its path. The version
+   and the expected sha256 are in `plugins/coreprotect/coreprotect.lock.json` (version 24.1, file
+   `CoreProtect-CE-24.1.jar`). The lock's URL is the only documented source; `deploy/common.sh` `fetch_coreprotect`
+   downloads it and checks sha256 on the colo deploy path, which this phase0 path does not run. So the jar's origin on
+   this machine is UNPROVEN until you download it yourself and check its sha256 against the lock (`sha256sum`, in WSL).
+   Do not use a jar of unknown origin.
+2. Recreate Paper with the overlay, keeping the RCON publish (the same files `shard up --rcon-host` uses, `geldar.ps1:471`):
+   `docker compose -f compose/phase0.yml -f compose/rcon-host.yml -f compose/opt-in/coreprotect.yml up -d --wait paper`
+   (UNPROVEN). `--wait` is required: `shard up` waits for health, plain `up -d` does not.
+3. Check the plugin loaded, as `Assert-PluginsEnabled` does: `docker compose -f compose/phase0.yml -f compose/rcon-host.yml -f compose/opt-in/coreprotect.yml logs --no-color paper | grep "Geldar-Core enabled"`
+   (UNPROVEN) must print one line. Then check CoreProtect with RCON `plugins` (see "RCON commands").
+4. Only then: `node ... --case break-coreprotect-present`. It is the LAST case; after it, go to teardown and reverse the overlay.
+
+The Stage 3 table above lists `break-coreprotect-present` in its row order; it is run last, per step 4.
+
 Each run writes `.capture/<case>/` (gitignored) and prints the validator table.
 
 | Case | Expected files in `.capture/<case>/` | Validator `--expect` | Worknote to fill |
 |---|---|---|---|
-| toss | 1 `pickup` (the thrower's own pickup adds none) | `pickup=1` | AN-26a, `## Ops evidence (pending, not run in this packet)` |
+| toss | 1 `pickup`. There is NO own-pickup negative: no case in the table sends it (the table has no `toss-own` row), so the negative is dropped from this sheet | `pickup=1` | AN-26a, `## Ops evidence (pending, not run in this packet)` |
 | break-coreprotect-absent | 1 `break`, `prior_owner` null | `break=1` | AN-27a, bullet `- CoreProtect absent:` |
-| break-coreprotect-present | 1 `break`; `prior_owner` non-null only if the owner query ran within 30 s. The script logs the query answer and the gap to the break (the case fails at 30 s or more) | `break=1` | AN-27a, bullet `- CoreProtect present:` |
-| kill | 1 `combat_fact` (hostile_kill) | `combat_fact=1` | AN-47a, below `Ops capture pending:` |
-| survived | 1 `combat_fact` (fight_survived) | `combat_fact=1` | AN-47a, same place |
+| break-coreprotect-present (LAST) | 1 `break`; `prior_owner` non-null only if the owner query answered before the break (`QUERY_TIMEOUT_MS = 2500` in the script; the plugin's `blockowner.lookup_timeout_ms` default is 2000, `config.yml:40`). The script logs the answer and the gap to the break; the case fails if the reply has no `blocks` array or no owner string, or the gap is 30 s or more. The validator's `--expect-prior-owner` fails a null owner on a break | `break=1` | AN-27a, bullet `- CoreProtect present:` |
+| kill | 1 `combat_fact` (hostile_kill). The bot holds an iron sword; the zombie has `NoAI`. The `engaged` message (`combat=1`) is asserted too | `combat_fact=1,combat=1` | AN-47a, below `Ops capture pending:` |
+| survived | 1 `combat_fact` (fight_survived). One hit, then 260 quiet ticks, no kill; the zombie has `NoAI`. UNPROVEN that the encounter closes this way (`EncounterTracker`: more than 200 quiet ticks) | `combat_fact=1,combat=1` | AN-47a, same place |
 | chest-single | 1 `take` | `take=1` | AN-51a, `## Pending (ops evidence, not run)` |
 | chest-double | 1 `take`; the script prints "a double chest" only when the window has 90 slots (54 + 36), else the case fails | `take=1` | AN-51a, same |
 | chest-shift-click | 1 `take` | `take=1` | AN-51a, same |
@@ -115,7 +140,7 @@ Format: `Captured 2026-MM-DD at <commit sha>, shard phase0, case <id>, subject <
 then a `json` fence with the message exactly as received. A case with no message: `case <id>: no message in <n> s,
 subscriber active since <time>`.
 
-- `docs/analysis/harness/worknotes/AN-26a.md`: heading `## Ops evidence (pending, not run in this packet)`. Toss pickup, plus the negative (own pickup sends nothing).
+- `docs/analysis/harness/worknotes/AN-26a.md`: heading `## Ops evidence (pending, not run in this packet)`. Toss pickup only (no own-pickup negative: no case sends it).
 - `docs/analysis/harness/worknotes/AN-27a.md`: replace the word `pending` on the bullets `- CoreProtect present:` and `- CoreProtect absent:`.
 - `docs/analysis/harness/worknotes/AN-47a.md`: the line `Ops capture pending:` at the end; kill and survived `combat_fact` and `engaged` (the `combat` kind).
 - `docs/analysis/harness/worknotes/AN-51a.md`: heading `## Pending (ops evidence, not run)`, both bullets: each take case, and a holder table (chest, double chest, crafting table, furnace, anvil, enchanting table, brewing stand: reports a location? storage type? sent a message?).
@@ -145,34 +170,21 @@ the card's worknote, so the Body-side cards (AN-26b, AN-27b, AN-47b, AN-51b) fre
 | AN-47a | one real kill and one survived fight: `combat_fact` events (check the `player` key) and the `engaged` message | `geldar.phase0.combat_fact`, `geldar.phase0.provenance.combat` |
 | AN-51a | container takes: single chest, double chest, shift-click, number-key swap; furnace and brewing stand (these SEND a take); crafting table, anvil, enchanting table and the player's own 2x2 view (these send nothing) | `geldar.phase0.provenance.take` |
 
-## Read this first: the capture cannot run on `main` today
+## Merged state: the flags and the listeners (checked on origin/main cef94f25, read, not run)
 
-Checked 2026-11-19 on `origin/main` at `7efad8ca`. This is a gap, not a procedure step.
+The earlier "cannot run on main" section is withdrawn: the gap it described is closed on `origin/main`.
 
-1. **No flag exists in code.** `grep -rn "provenance\.enabled" plugin geldar.ps1 compose shards` finds nothing. The
-   only default named anywhere is in a card: AN-28c adds `c.getBoolean("provenance.enabled", false)`
-   (`docs/analysis/harness/work-packets-sheet-w3-w5.md`, AN-28c step 1, line 447 at this commit). Setting a key by hand
-   today changes nothing. `plugin/core/src/main/resources/config.yml` has no `provenance:` block, and AN-28c must not
-   add one (its must-not-edit list).
-2. **Break and pickup listeners are not wired to a sink.** `BlockOwnerSetup.java:83-84` registers
-   `new BlockChangeListener(cache, publisher, () -> setup.enabled)`. That is the three-argument constructor
-   (`BlockChangeListener.java:40`), which passes `sink = null` and `() -> false`
-   (`BlockChangeListener.java:41`), so `onBreak` never reaches `sendBreakProvenance` (guard at
-   `BlockChangeListener.java:62`). `PickupProvenanceListener` is constructed nowhere in `plugin/core/src/main`
-   (`grep -rn "new PickupProvenanceListener" plugin/core/src/main` is empty). Both belong to AN-28c.
-3. **Combat and take listeners are registered, behind the flag.** `CombatFactListener` is registered and ticked in
-   `GeldarCore` (`owners.combatFacts` and `runTaskTimer`), and `ContainerTakeListener` is registered in
-   `BlockOwnerSetup.register` (AN-50a). With `provenance.enabled` and `blockowner.enabled` both true the plugin publishes
-   break, pickup, take and combat provenance messages; all of them are inert while the flag is false.
-4. **Order conflict.** `docs/analysis/harness/sheet-next-wave-order.md:120` says AN-26b and AN-27b run "once ... the
-   payload captures exist", then AN-28b and AN-28c "serial and last". But the captures need AN-28c (break, pickup) and
-   AN-50a (combat, take) merged first. Both orders cannot hold. The orchestrator must choose: (a) run the capture
-   after AN-28c and AN-50a and let AN-26b, AN-27b, AN-47b and AN-51b wait for it, or (b) have a `packet-coder` make a
-   throwaway, never-merged registration branch (this runbook does not name or write it; an `ops` agent cannot).
-   Do not invent a flag or a registration to get around this. If neither (a) nor (b) is decided, stop with
-   `blocked: listeners unregistered` and report which of the four are missing.
-
-Everything below assumes a plugin jar that has AN-28c and AN-50a (or the throwaway branch of option b) built into it.
+1. Break, pickup and container-take listeners are registered by `BlockOwnerSetup.java:95-101`, behind the same gate.
+2. The flag is read by `provenanceEnabled` (`BlockOwnerSetup.java:152-153`: `getBoolean("provenance.enabled", false)`;
+   no `provenance:` block in `plugin/core/src/main/resources/config.yml`). The plugin re-applies `blockowner.*` and
+   `provenance.enabled` on its reload (`BlockOwnerSetup.java:142`; `GeldarCore.java:122`, `reloadConfig()` at `:172`).
+3. The combat listener is registered in `GeldarCore` (`GeldarCore.java:127-129`) and is inert until
+   `provenance.enabled` is true (`CombatFactListener.java:24`).
+4. With BOTH `provenance.enabled` and `blockowner.enabled` true, the plugin publishes break, pickup, take and combat
+   provenance messages. With the flag false they are inert. A break has a non-null `prior_owner` only with CoreProtect
+   present (see the CoreProtect step in Stage 3).
+5. Wave order is an orchestrator decision and is not settled here: `docs/analysis/harness/sheet-next-wave-order.md:120`
+   places the AN-26b and AN-27b captures before AN-28b and AN-28c. The captures need the merged listeners above.
 
 ## Safety limits (CLAUDE.md)
 
@@ -222,27 +234,34 @@ connection settings"), and `docs/spec.md:313` bars a spectator from commands and
 
 ## Set the flag on the scratch shard
 
-Only after the gap above is closed. The key `provenance.enabled` (AN-28c, default false) lives in the plugin's
-`config.yml`. `saveDefaultConfig()` (`GeldarCore.java:93`) writes it into the plugin data directory in the Paper
-volume (`compose/phase0.yml:88`, `paper-data:/data`); with `plugin.yml` name `GeldarCore` that path is
-`/data/plugins/GeldarCore/config.yml` inside the Paper container. Unproven: I did not read a running container.
+Only on the throwaway shard, after the health rows. Nothing below was run; each command is UNPROVEN until read on the container.
 
-1. Add, by hand, in that file in the container, a top-level block `provenance:` with `enabled: true`. This is
-   operator test setup on a scratch volume, not a repo change. Do not edit `plugin/core/src/main/resources/config.yml`
-   (its hash is in `jar-contents.golden`, per the AN-26a card).
-2. The plugin re-reads the config every 100 ticks, about 5 s at 20 TPS (`GeldarCore.java:167-171`:
-   `reloadConfig()` then `owners.reload(getConfig())`). AN-28c's `reload` sets the flag from it. Wait 10 s, then
-   confirm with the first capture, not with a log line (no log line is promised by the card).
-3. The combat and take listeners share the same value as their `enabled` supplier (AN-50a card, may-edit list in
-   `work-packets-sheet-w6-w8.md`). Verify that sentence against the merged code before relying on it.
-4. `shard down phase0` keeps volumes (run-shard skill, "Stop"), so a hand-set flag survives a restart. Reset it in
-   teardown.
+1. Read the file: `docker compose -f compose/phase0.yml exec paper cat /data/plugins/GeldarCore/config.yml` (UNPROVEN path: from
+   `saveDefaultConfig()` and the plugin name `GeldarCore`; the volume is `paper-data`, `compose/phase0.yml:88`).
+2. Check the file ends in a newline before you append: `docker compose -f compose/phase0.yml exec paper tail -c 1 /data/plugins/GeldarCore/config.yml | od -c`
+   (UNPROVEN; expect `\n`). If it does not, stop and fix it by hand, or the appended key joins the last line.
+3. Add the flag in the container's copy only: `docker compose -f compose/phase0.yml exec paper sh -c 'printf "provenance:\n  enabled: true\n" >> /data/plugins/GeldarCore/config.yml'`
+   (UNPROVEN: that the Paper image has `sh` and `printf`). `blockowner.enabled` is already `true` by default (`config.yml:38`);
+   to turn it off, edit that line, not a second key.
+4. The plugin reloads its config on a timer (`GeldarCore.java:122,172`; the 5 s figure is the comment's, not re-measured).
+   Wait 10 s, then confirm with the first capture. No log line is promised.
+5. Teardown: remove the appended `provenance:` block (or set `enabled: false`), wait 10 s.
 
-CoreProtect: `compose/phase0.yml` mounts no CoreProtect jar; only `compose/colo.yml:148` does. So on phase0 CoreProtect
-is absent, `sourceFor` answers "unavailable" (`BlockOwnerSetup.java:100-102`) and every `prior_owner` is null. The
-"present" case needs an overlay that mounts the pinned jar (`plugins/coreprotect/coreprotect.lock.json`, version 24.1,
-size and hashes in the lock) at `/plugins/coreprotect.jar` read-only. No such overlay exists in the repo: this is a
-gap, not a flag. Writing it is a `packet-coder` or operator job. See also [coreprotect.md](coreprotect.md).
+## CoreProtect on phase0 (absent by default)
+
+`compose/phase0.yml` mounts no CoreProtect jar; `compose/colo.yml:148` does. So on phase0 CoreProtect is absent, the owner
+source answers unavailable, and every `prior_owner` is null. The overlay `compose/opt-in/coreprotect.yml` mounts the jar
+for the present case; its jar steps are Stage 3 step 1. The jar's origin is UNPROVEN on this machine: the lock names
+the URL (`plugins/coreprotect/coreprotect.lock.json`), and only the colo deploy fetches and checks it. See
+[coreprotect.md](coreprotect.md).
+
+## RCON commands (client UNPROVEN)
+
+The repo's RCON client is the one golem uses (`golem/src/test-control.ts`), on `127.0.0.1:25575` with `--rcon-host`.
+A shell form inside the Paper container is UNPROVEN: the image's RCON tooling was not checked. Read-only verbs:
+- `plugins`: lists `CoreProtect` once the overlay loaded it (the absent and present checks);
+- `list`: players online (0 before a case, and 0 after teardown);
+- `tick query`: TPS (20 expected).
 
 ## Run two bots
 
@@ -255,12 +274,12 @@ and `GolemChest`, which fail it, so reusing them yields no combat or take messag
 
 | Case | Existing fixture that gives it | Gap |
 |---|---|---|
-| Toss (AN-26a) | none in the live lane. `golem/src/actions/give.ts` is the Body action; only unit tests (`give*.test.ts`) call it | NEW throwaway script: bot A gets items by `ctl.give`, runs `{do:'give', to, item, count}`, bot B picks up |
+| Toss (AN-26a) | none in the live lane. `golem/src/actions/give.ts` is the Body action; only unit tests (`give*.test.ts`) call it | `provenance-capture.ts` toss case: bot A gets cobblestone by `ctl.give`, tosses it, bot B picks it up |
 | Break (AN-27a) | `golem/test/live/mine.live.test.ts:33-50` breaks logs with `{do:'mine'}` | needs a life-id name and, for non-null `prior_owner`, a warm owner cache (see below) |
 | Kill (AN-47a) | `golem/test/live/reflex-combat.live.test.ts:190-205` kills a summoned zombie through the registry (`summonZombie`, line 20) | name is `GolemCombat`; needs a life-id name |
 | Survived fight (AN-47a) | `reflex-combat.live.test.ts:122-150` (unarmed bot flees) is the closest | the fact closes after more than 200 quiet ticks (`AN-47a.md` tick rule); script must wait that long |
 | Chest take (AN-51a) | `golem/test/live/container.live.test.ts:93-118` withdraws through `{do:'withdraw'}` | life-id name; one withdraw is not a shift-click or number-key swap |
-| Double chest, shift-click, number-key swap, crafting table, anvil, enchanting table, 2x2 view (send nothing), furnace and brewing stand (send a take) | none | NEW script using `bot.clickWindow(slot, mouseButton, mode)` (shift-click mode 1, number-key mode 2) |
+| Double chest, shift-click, number-key swap, crafting table, anvil, enchanting table, 2x2 view (send nothing), furnace and brewing stand (send a take) | none | `provenance-capture.ts` (`bot.clickWindow`: shift-click mode 1, number-key mode 2; send-nothing windows) |
 
 Rules for the capture bots: the fixture whitelists a bot before it joins and removes it in `finally`, and registers
 it in the life registry (`golem/test/live/fixture.ts:24-80`, run-shard skill "Golem connection settings"); set
@@ -274,15 +293,14 @@ for CoreProtect to log it, send one owner query for that chunk (the Body does th
 `geldar.phase0.blockowner.query`), then bot B breaks the block inside 30 s. Capture the natural-block break (null
 owner) too. Unproven end to end.
 
-### The new throwaway script
+### The script (exists; not run)
 
-Propose `golem/test/live/scratch/provenance-capture.ts` (not `*.live.test.ts`, so the live lane
-`golem/vitest.live.config.ts:7`, `include: ['test/live/**/*.live.test.ts']`, does not pick it up). Run it with
-`node --experimental-strip-types` (the pattern in `golem/src/bench/sheet/cli.ts:3-5`). It would nest two
-`withLiveBot` calls with distinct slots, run the cases in the table, and also subscribe (see next section) and write each
-message to a file. Do not write it in this job. Keep it untracked, or commit it only through a reviewed packet:
-`pnpm check:repo` and the 500-line soft cap apply to anything committed. No existing live case runs two bots at
-once; `golem/test/live/chatter-bot.ts` is the nearest precedent (a scripted second life next to a case).
+`golem/test/live/scratch/provenance-capture.ts` (483 lines, committed on this branch; pure table in `capture-cases.ts`).
+Run with `node --experimental-strip-types`. It is not a `*.live.test.ts`, so the live lane does not pick it up. It starts
+two life-id bots, `ag_capa_01` and `ag_capb_02`. For each case it starts the subscriber, waits for READY (a READY timeout
+kills the child), performs the case, settles 400 ticks, stops the subscriber, and validates `<out>/<case>/`. A non-empty
+case folder is refused unless `--clean`. A shard other than `phase0` needs `--i-know-this-is-a-scratch-shard`; names
+matching colo, live or prod are refused even with it.
 
 ## Capture raw NATS payloads
 
@@ -427,42 +445,11 @@ unproven on this machine.
 
 If any row fails, stop and report; do not work around it by touching the live stack.
 
-## Do AN-28b and AN-28c change the default path? Is a per-card benchmark needed?
+## Design notes for the card owners
 
-AN-28b and AN-28c are not on `main` (`golem/src/adam/adam-body.ts` has no `observations`;
-`golem/src/perception/provenance/` holds only `container-take.ts` and `visible-actor.ts` plus tests; `BlockOwnerSetup`
-is as quoted above). The statements below combine the cards (`work-packets-sheet-w3-w5.md` lines 424-457) with the
-current code. Anything about the final diff is unverified until the PR exists.
-
-- **AN-28b** (`adam-body.ts`: one option and one block). The card says: absent or false `observations`, "the code path
-  is byte-for-byte today's (three-argument `watchHurts`, no subscription)", and nothing sets it in W5. Current code:
-  `watchHurts(bot, hurts, tick)` at `adam-body.ts:340`, the block-owner transport only when `env.owners` is defined
-  (`adam-body.ts:121-125`). So with the option unset the Body runs exactly today's code, provided the diff keeps
-  the new block behind `env.observations === true && env.owners`. Verify in review that no line outside that block moves
-  and that the "observations off" spy test exists. `startAdamBody` is called by `golem/src/adam/main.ts:248` and
-  `golem/src/players/body-host.ts:46`; the card says player Bodies do not use it, which `body-host.ts` contradicts:
-  flagged. The benchmark harness imports no `adam-body` (`golem/src/bench/runner.ts` imports, lines 1-20): it runs
-  actions through the registry, so AN-28b cannot change a benchmark number.
-- **AN-28c plugin part.** The default path does change in code, harmlessly if written as carded: `BlockOwnerSetup`
-  would register `BlockChangeListener` with the six-argument constructor and add a `PickupProvenanceListener`. With the
-  flag unset (code default false) nothing is sent: `onBreak` short-circuits on `provenanceEnabled` before any read
-  (`BlockChangeListener.java:62`) and then runs the unchanged `record` (line 70), and `onPickup` returns on its first
-  line (`PickupProvenanceListener.java:45-47`). What is added is one boolean read per break and one extra listener
-  dispatch per pickup event. That is a cost on the server thread, not a behaviour change; its size is unmeasured.
-- **AN-28c NATS role part** (`geldar.ps1`, the `body` entry of `Get-NatsUsers`: `provenance.>` added to `Sub` and
-  `PubDeny`; today lines 403 and 407). It only matters where the auth overlay is used (`compose/nats-auth.yml`, opt-in;
-  the default `compose/phase0.yml` NATS is open, `phase0.yml:39`). Where it is used, it changes the permissions of every
-  `body` connection, so a bad entry would break the generated conf for every user: that is what the extended
-  `nats-auth.test.ts` and `nats-auth.it.test.ts` prove. Today no Body publishes or subscribes on `provenance.*` (no
-  such publish in `golem/src`), and the plugin's `paper` role already may publish `geldar.<shard>.>`
-  (`geldar.ps1:424`), so no existing behaviour is denied. The card says the live node's conf is changed by hand by the
-  operator, and nothing is switched on there. Unverified until the diff exists.
-- **Benchmark.** The run-shard skill says to run the benchmark "once per wave, after the wave branch is merged and
-  checked", at step 4 of the Wave test procedure. The body-bench skill's own trigger is "after any change to golem/
-  actions or reflexes"; AN-28b touches `golem/src/adam`, not actions or reflexes. So neither card needs its own
-  benchmark: run it once at the wave's end with the flag off. The AN-28c card itself says "the 20 TPS bench" at W5
-  close. The one residual risk is the per-event plugin cost above; the end-of-wave 20 TPS gate (body-bench skill, "Gate")
-  covers it.
+The earlier per-card analysis of AN-28b and AN-28c (default-path cost, NATS role, benchmark need) was removed from this
+runbook: AN-28c and AN-50a are merged on `origin/main` (cef94f25), so it no longer describes the code. Benchmark timing is
+the wave owner's decision.
 
 ## Failure modes
 

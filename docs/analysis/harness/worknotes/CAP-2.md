@@ -1,98 +1,83 @@
 # CAP-2 worknote: scratch-shard provenance capture script and the ops run sheet
 
-Status: all fifteen cases are implemented as bot actions (none is manual). Nothing was run against a server, Docker or
-RCON (`live: pending`). The capture itself is the ops run in `docs/runbooks/capture-real-payloads.md`, section
-"OPS RUN SHEET". Session 1 wrote the script and the sheet (`ac435bd3`); session 2 (this file) implemented the four
-send-nothing cases, the double chest and the owner query.
+Status: NOTHING HAS BEEN RUN. No server, Docker, RCON, NATS, WSL or bot was exercised in any session of this work.
+`live: pending`. Every server behaviour below is UNPROVEN until the ops run in `docs/runbooks/capture-real-payloads.md`
+("OPS RUN SHEET") produces it.
+
+History: session 1 wrote the script and the sheet (`ac435bd3`); session 2 added the send-nothing cases, the double chest
+and the owner query (`0c97bd6a`); CAP review 1 fixes (`2e3f6e92`); CAP-fix-1 and CAP-fix-2 (docs only in fix-2). The
+reports are local under `.claude/reports/sheet/`.
 
 ## Files
 
-- `golem/test/live/scratch/provenance-capture.ts` (new): the runner. Starts two life-id bots (`ag_capa_01`,
-  `ag_capb_02`) through `withLiveBot` (`golem/test/live/fixture.ts`), starts `tools/capture` nats-capture as a child
-  process, waits for READY, performs the case, settles 400 ticks, stops the subscriber, runs `validate-captures` on
-  `<out>/<case>/`. Not a test: no `*.test.ts` name, and outside `golem/vitest.live.config.ts`
-  (`test/live/**/*.live.test.ts`). Checked: `vitest list --config golem/vitest.live.config.ts` matches 0 files under
-  `scratch`. It is not unit-tested; its pure parts are in `capture-cases.ts`.
-- `golem/test/live/scratch/capture-cases.ts` (new, pure): the 15-case table, `parseRunArgs`, `resolveCases`,
-  `isLifeId`, `refuseShard`, `renderList`, `renderPlan`.
-- `golem/test/live/scratch/capture-cases.test.ts` (new, 18 tests, normal unit lane). Includes the runbook test: the
-  `--case <name>` names in the run sheet equal the case table.
-- `tools/capture/src/capture-checks.ts` and `tools/capture/src/expect-zero.test.ts` (session 1): `--expect kind=0` is
-  exact (a zero that finds a file fails with `expected none, found N`); non-zero counts stay "at least". Not changed in
-  session 2; its 3 tests pass.
-- `docs/runbooks/capture-real-payloads.md` (edit): the OPS RUN SHEET at the top. Session 2 updated the status, the
-  table rows for the break, double chest and send-nothing cases, and the stop conditions.
-- This worknote.
+- `golem/test/live/scratch/provenance-capture.ts`: the runner (483 lines). Not a test (not `*.live.test.ts`). Its pure
+  parts are unit-tested; its bot, window, NATS and RCON calls have NO unit test.
+- `golem/test/live/scratch/capture-cases.ts`: the 15-case table, `parseRunArgs`, `refuseShard`, `renderList`, `renderPlan`.
+- `golem/test/live/scratch/capture-windows.ts`: window helpers (`takeFromBlock`, `placeTarget`, `takeOutput`).
+- `golem/test/live/scratch/capture-subscriber.ts`: the child process for the `tools/capture` NATS subscriber.
+- `golem/test/live/scratch/capture-cases.test.ts` includes the runbook test: the case names in the run sheet equal the
+  case table. It runs in the normal unit lane and passed in this pass.
+- `tools/capture/`: subscriber, validator, README. `compose/opt-in/coreprotect.yml`: the CoreProtect overlay (jar UNPROVEN).
+- `docs/runbooks/capture-real-payloads.md`: the run sheet, the body and the merged-state section.
 
-## What each case does now
+## What each case does (as coded; UNPROVEN on a server)
 
-Every action is a bot action on the arena row (`x = centre.x + 2`, `y = 200`). A case that cannot show its window or
-its output fails with a message; no case reports a zero without the output it should have taken.
+Every case is a bot action at the arena (`x = centre.x + 2`, `y = 200`). Block ids are bare names (`chest`, `furnace`,
+...), because `TestControl` accepts only `^[a-z0-9_]{1,64}$`.
 
-| Case | Action | Proof printed before the zero |
+- toss: bot A is given cobblestone, looks at bot B (placed 2 blocks east), tosses it, and B waits up to 100 ticks for its
+  count to rise. A pickup that does not happen fails the case with a message. No own-pickup negative exists.
+- break-coreprotect-absent: A places cobblestone, B is teleported, waits 20 ticks, `waitForBlock`, B breaks it. No owner query.
+- break-coreprotect-present: as above, and B sends a NATS owner query (`blockowner.query`) before the break with the
+  script's own `QUERY_TIMEOUT_MS = 2500`. The plugin default `blockowner.lookup_timeout_ms` is 2000 (`config.yml:40`).
+  The earlier 300 ms (the Body's value) is no longer used. The case fails if the reply has no `blocks` array, no owner
+  string, or the break is 30 s or more after the answer. The validator's `--expect-prior-owner` fails a null owner.
+- kill: A holds an iron sword; the zombie has `NoAI`; `fightZombie` hits it until it is gone (600-tick cap). Validates
+  `combat_fact=1,combat=1` (the `engaged` message is asserted too).
+- survived: one hit on a `NoAI` zombie, then 260 quiet ticks, no kill. UNPROVEN that this closes the fact as
+  `fight_survived` (`EncounterTracker`: more than 200 quiet ticks).
+- chest-single, chest-shift-click, chest-number-key: one `take` each (UNPROVEN window and slot behaviour).
+- chest-double: two raw `setblock` commands `chest[facing=north,type=left]` and `chest[facing=north,type=right]`, each
+  reply checked for "Changed the block" (reply text UNPROVEN). The opened window must have 90 slots (54 + 36), else the
+  case fails with "not a double chest".
+- furnace, brewing-stand: SEND a take (operator ruling, furnace ruling in the runbook).
+- crafting-table, enchanting-table, player-2x2: send nothing. A zero is evidence only with the positive control.
+- anvil: the stick is renamed. `rename` already takes the output (mineflayer `anvil.js:89`), so the runner does NOT click
+  slot 2 again. It checks the renamed stick is in the inventory (the `customName` field shape is UNPROVEN).
+
+## Failure behaviour (as coded)
+
+- READY timeout kills the subscriber child. `stop` resolves at once for an already-exited child.
+- A subscriber that dies mid-case is detected before `stop`: the case throws "the subscriber died during the case".
+- A non-empty `<out>/<case>/` is refused unless `--clean`.
+- A `take=0` case is refused in run mode unless `chest-single` produced `take=1` earlier in the same selected list
+  (the positive control). `--dry-run` prints the plan and does not refuse (it connects to nothing).
+- NOT covered: a zero from a live subscriber whose flag is off, and the plugin's real behaviour in general. A zero from a
+  `take=0` case is not proof on its own.
+
+## Commands run in this pass (nothing connected)
+
+| Command | Exit | Result |
 |---|---|---|
-| `crafting-table` | `oak_log` given; crafting table placed; `bot.openBlock`; log clicked (slot picked up) and dropped into grid slot 1; output slot 0 clicked | window type matches `/crafting/`; output holds `oak_planks`; slot 0 empty after the click |
-| `anvil` | `stick` given; `experience add 10 levels`; anvil placed; `bot.openAnvil` (mineflayer `lib/plugins/anvil.js`); `rename(stick, 'capture')`; output slot 2 clicked | window type matches `/anvil/`; output holds the renamed stick; slot 2 empty after |
-| `enchanting-table` | `stone_sword` and 3 `lapis_lazuli` given; `experience add 10 levels`; table placed; `bot.openEnchantmentTable` (`enchantment_table.js`); sword to slot 0, lapis to slot 1; `enchant(0)`; output slot 0 clicked | window type matches `/enchant/`; `enchant(0)` returned an item; slot 0 empty after |
-| `player-2x2` | `oak_log` given; no container open; the bot's inventory (46 slots); log into grid slot 1; output slot 0 clicked | no window open; inventory has 46 slots; output holds `oak_planks`; slot 0 empty after |
+| `node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --list` | 0 | the table below |
+| `... --case all --dry-run` | 0 | the plan below |
+| `./geldar.ps1 pnpm check:repo` | 0 | no `error:`; warnings only for other packages |
+| `pnpm exec vitest run tools/capture/src golem/test/live/scratch` | 0 | 8 files, 86 tests pass (includes the runbook test) |
+| `pnpm exec biome ci golem/test/live/scratch tools/capture/src` | 0 | 16 files |
+| `git diff --check` | 0 | |
 
-A send-nothing case with no output (for example the anvil did not accept the rename) throws
-`... output slot N is empty, so the case produced no output (INVALID, not a zero)`. An open that does not come within
-10 s throws `... no answer within 10000 ms`.
+Not run in this pass: `tsc`, the live lane, the subscriber on a real NATS, and any Docker command. The revert-checks of
+CAP review 1 are in `.claude/reports/sheet/CAP-fix-1.md` (local). This pass changes docs only and ran no mutation.
 
-- `chest-double`: `minecraft:chest[facing=north,type=left]` at `x`, `minecraft:chest[facing=north,type=right]` at
-  `x+1`, placed with RCON `setblock` (no auto-connect), 8 cobblestone merged into the left chest's slot 0. The case
-  asserts the opened window has 90 slots (54 container slots + 36 player slots), else it fails with
-  `not a double chest`; it then clicks slot 0 (a take). Rule (from vanilla `ChestBlock`, recalled, not read from the
-  shard's server jar): the left part's partner is clockwise from facing, so for north it is east. The 90-slot check
-  is the runtime proof; it runs only on the shard. The server is the Paper image pinned in `compose/phase0.yml`.
-- `break-coreprotect-present`: bot A places cobblestone; bot B is teleported next to it; B sends the owner query right
-  before the break, the Body's route: a NATS request on `blockownerQuerySubject(shard)` (`contract/src/subjects.ts`,
-  `geldar.<shard>.blockowner.query`) with `{world, chunk_x, chunk_z}` and a 300 ms timeout
-  (`OWNER_REQUEST_TIMEOUT_MS`, the Body's value), world from `bukkitWorldOf(bot)`. The script logs the answer (the
-  owner of the block, or "not in the reply") and the gap from the answer to the break; a gap of 30 s or more fails the
-  case; a failed or timed-out query fails the case (prior_owner would be null).
-- `break-coreprotect-absent`: the same break with no owner query.
-- The CoreProtect precondition (overlay mounted, `CoreProtect` in RCON `plugins`) is NOT checked by the script. The
-  dry-run plan prints it as a precondition for ops. It is not verified.
-
-## Commands run (no server, no Docker)
-
-| Command | Result |
-|---|---|
-| `node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --list` | exit 0 (below) |
-| `... --case all --dry-run` | exit 0, connects to nothing (below) |
-| `... --case toss --shard phase1` | exit 2: `refused: shard "phase1" is not phase0; pass --i-know-this-is-a-scratch-shard to run it` |
-| `pnpm exec vitest run golem/test/live/scratch tools/capture/src` | 5 files, 55 tests, pass |
-| `pnpm exec tsc --noEmit -p golem` | exit 0 (after the import fix: `blockownerQuerySubject` comes from `@geldar/contract`) |
-| `pnpm --filter @geldar/capture typecheck` | exit 0 |
-| `pnpm exec biome check golem/test/live/scratch tools/capture/src` | exit 0 |
-
-The runner's bot, NATS and RCON paths are NOT run. The module load (imports) is checked by `--list` and `--dry-run`.
-
-## Revert-checks (one line mutated, test run, file restored from a scratchpad backup; `git diff --stat` empty after)
-
-| Mutation | Test that fails | Reason |
-|---|---|---|
-| `const ok = want === 0 ? found === 0 : found >= want;` to `const ok = found >= want;` (`capture-checks.ts`) | `expect-zero.test.ts`: "a take file in a folder that expects none fails take=0" (1 of 3) | the zero is not exact again |
-| `if (/colo\|live\|prod/i.test(shard))` to `if (false)` (`capture-cases.ts`) | "refuses colo and live names even with the flag" (1 of 18) | the Colo refusal is gone |
-| `id: 'player-2x2'` to `id: 'player-2x3'` (`capture-cases.ts`) | three table tests and the runbook test fail | the case table and the run sheet disagree |
-| `if (c.coreprotect === 'present')` to `if (c.coreprotect === ('' as string))` (`capture-cases.ts`, session 2) | "prints the subjects, the bots, the READY wait and the ops privileges for the plan" (1 of 18): "expected ... to contain 'NOT checked by the script'" | the CoreProtect precondition and the owner-query line stop being printed |
-
-The runner's own actions (window open, output, double-chest size, owner-query gap) have no unit test: they need a
-server. Their failure paths are the `throw` lines named above; they are unproven until a shard run.
-
-## The case list and the dry-run plan
-
-The table (`--list`):
+## Current `--list` output
 
 ```
 case | bots | expect | coreprotect | what
 toss | 2 | pickup=1 | - | bot A tosses cobblestone, bot B picks it up (AN-26a pickup)
 break-coreprotect-absent | 2 | break=1 | absent | bot A places a block, bot B breaks it; no CoreProtect (AN-27a)
 break-coreprotect-present | 2 | break=1 | present | as above with the CoreProtect overlay; owner query inside 30 s (AN-27a)
-kill | 1 | combat_fact=1 | - | bot A kills a summoned zombie (combat_fact hostile_kill, AN-47a)
-survived | 1 | combat_fact=1 | - | bot A hits a zombie, waits out the encounter (fight_survived, AN-47a)
+kill | 1 | combat_fact=1,combat=1 | - | bot A kills a summoned zombie (combat_fact hostile_kill, AN-47a)
+survived | 1 | combat_fact=1,combat=1 | - | bot A hits a zombie that cannot attack, waits out the encounter (fight_survived, AN-47a)
 chest-single | 1 | take=1 | - | withdraw from a single chest (AN-51a take)
 chest-double | 1 | take=1 | - | withdraw from a double chest (AN-51a take)
 chest-shift-click | 1 | take=1 | - | shift-click (mode 1) out of a chest (AN-51a take)
@@ -105,63 +90,66 @@ enchanting-table | 1 | take=0 | - | take from an enchanting table: sends NOTHING
 player-2x2 | 1 | take=0 | - | take from the own 2x2 inventory craft: sends NOTHING (furnace ruling)
 ```
 
-The dry-run plan (`--case all --dry-run`, exit 0):
-
+## Current `--case all --dry-run` output
 ```
 PLAN (dry run, nothing is connected): shard phase0, nats nats://127.0.0.1:4222, out .capture
 bots: ag_capa_01 (slot 8), ag_capb_02 (slot 9); both must be life ids: true
 subscriber subjects: geldar.phase0.provenance.>, geldar.phase0.combat_fact
 per case: start nats-capture, WAIT for READY, do the case, settle 20 s, stop the subscriber, validate <out>/<case>/
+stale folder: a non-empty <out>/<case>/ is refused unless --clean is given; a take=0 case needs chest-single to pass first in the same session
 - toss: 2 bot(s), validate --expect pickup=1
     ops/RCON: RCON (127.0.0.1:25575, --rcon-host): whitelist add/remove, tp, give, clear, summon, setblock, fill, kill, experience add (anvil, enchanting table)
 - break-coreprotect-absent: 2 bot(s), validate --expect break=1; needs CoreProtect absent
-    ops/RCON: (as above)
+    ops/RCON: RCON (127.0.0.1:25575, --rcon-host): whitelist add/remove, tp, give, clear, summon, setblock, fill, kill, experience add (anvil, enchanting table)
 - break-coreprotect-present: 2 bot(s), validate --expect break=1; needs CoreProtect present
-    ops/RCON: (as above); NATS request blockowner.query before the break (the Body's route); CoreProtect checked by ops
+    ops/RCON: RCON (127.0.0.1:25575, --rcon-host): whitelist add/remove, tp, give, clear, summon, setblock, fill, kill, experience add (anvil, enchanting table); NATS request blockowner.query before the break (the Body's route); CoreProtect checked by ops
     precondition (ops, NOT checked by the script): CoreProtect is loaded (`plugins` lists it) and the overlay is mounted
-    owner query: NATS request blockowner.query right before the break; the case FAILS if the break is 30 s or more after it
-- kill: 1 bot(s), validate --expect combat_fact=1
-- survived: 1 bot(s), validate --expect combat_fact=1
+    owner query: NATS request blockowner.query right before the break; the case FAILS if the break is 30 s or more after it, or the reply has no owner for the block
+- kill: 1 bot(s), validate --expect combat_fact=1,combat=1
+    ops/RCON: RCON (127.0.0.1:25575, --rcon-host): whitelist add/remove, tp, give, clear, summon, setblock, fill, kill, experience add (anvil, enchanting table)
+- survived: 1 bot(s), validate --expect combat_fact=1,combat=1
+    ops/RCON: RCON (127.0.0.1:25575, --rcon-host): whitelist add/remove, tp, give, clear, summon, setblock, fill, kill, experience add (anvil, enchanting table)
 - chest-single: 1 bot(s), validate --expect take=1
+    ops/RCON: RCON (127.0.0.1:25575, --rcon-host): whitelist add/remove, tp, give, clear, summon, setblock, fill, kill, experience add (anvil, enchanting table)
 - chest-double: 1 bot(s), validate --expect take=1
+    ops/RCON: RCON (127.0.0.1:25575, --rcon-host): whitelist add/remove, tp, give, clear, summon, setblock, fill, kill, experience add (anvil, enchanting table)
 - chest-shift-click: 1 bot(s), validate --expect take=1
+    ops/RCON: RCON (127.0.0.1:25575, --rcon-host): whitelist add/remove, tp, give, clear, summon, setblock, fill, kill, experience add (anvil, enchanting table)
 - chest-number-key: 1 bot(s), validate --expect take=1
+    ops/RCON: RCON (127.0.0.1:25575, --rcon-host): whitelist add/remove, tp, give, clear, summon, setblock, fill, kill, experience add (anvil, enchanting table)
 - furnace: 1 bot(s), validate --expect take=1
+    ops/RCON: RCON (127.0.0.1:25575, --rcon-host): whitelist add/remove, tp, give, clear, summon, setblock, fill, kill, experience add (anvil, enchanting table)
 - brewing-stand: 1 bot(s), validate --expect take=1
+    ops/RCON: RCON (127.0.0.1:25575, --rcon-host): whitelist add/remove, tp, give, clear, summon, setblock, fill, kill, experience add (anvil, enchanting table)
 - crafting-table: 1 bot(s), validate --expect take=0
+    ops/RCON: RCON (127.0.0.1:25575, --rcon-host): whitelist add/remove, tp, give, clear, summon, setblock, fill, kill, experience add (anvil, enchanting table)
 - anvil: 1 bot(s), validate --expect take=0
+    ops/RCON: RCON (127.0.0.1:25575, --rcon-host): whitelist add/remove, tp, give, clear, summon, setblock, fill, kill, experience add (anvil, enchanting table)
 - enchanting-table: 1 bot(s), validate --expect take=0
+    ops/RCON: RCON (127.0.0.1:25575, --rcon-host): whitelist add/remove, tp, give, clear, summon, setblock, fill, kill, experience add (anvil, enchanting table)
 - player-2x2: 1 bot(s), validate --expect take=0
+    ops/RCON: RCON (127.0.0.1:25575, --rcon-host): whitelist add/remove, tp, give, clear, summon, setblock, fill, kill, experience add (anvil, enchanting table)
 ops privileges: RCON on 127.0.0.1 only; the bots are whitelisted and removed in finally; world areas are restored.
 ```
 
-(The `ops/RCON:` line is the same RCON string for every case except the two noted; it is abbreviated here. The command
-prints the full text.)
+## Still UNPROVEN (nothing was run)
 
-## Automated or not, and what is still unproven
+- Every server behaviour: bot windows, slot numbers, the reply texts (RCON `setblock`, owner query), the `customName`
+  shape, the double-chest pairing, the `survived` outcome, the timeouts (10 s window open, 30 s owner gap, 100 ticks toss).
+- The arena slots 8 and 9 chosen here, and two nested `withLiveBot` calls (each builds and restores an arena).
+- The subscriber on Windows: `child.kill()` and the stop path; `nats-capture`'s drain.
+- Docker and WSL: bind mounts, the WSL clone, `docker compose version`, every health row (run-shard skill).
+- The CoreProtect jar: its source and sha256 are not checked on this machine. `plugins/coreprotect/coreprotect.lock.json`
+  names the URL; only the colo deploy fetches and checks it. The overlay's `create_host_path: false` makes a missing jar
+  stop compose.
+- The compose recreate with `-f compose/rcon-host.yml --wait`, the `Geldar-Core enabled` log check, and the RCON client.
 
-- Automated: all fifteen cases. None is `manual`. A manual step would be a human client acting in the world, which
-  principle 1 and the runbook forbid; every case above is a bot action or an RCON setup verb.
-- Unproven, all of it (no server run):
-  - the send-nothing windows: the mineflayer calls (`openBlock`, `openAnvil`, `openEnchantmentTable`, `rename`,
-    `enchant`, `clickWindow` slot numbers) are read from `golem/node_modules/mineflayer/lib/plugins`, not run. The
-    slot numbers (grid slot 1, anvil slots 0/1/2, enchant slots 0/1, inventory grid 1 and 9) are vanilla layouts;
-  - the enchant option 0 cost with no bookshelves (10 XP levels are given);
-  - the double chest's blockstate rule on the pinned Paper image (the 90-slot check will catch a wrong pairing, but only on a run);
-  - the owner query on the live plugin (`blockowner.query` reply shape, the 300 ms timeout);
-  - the CoreProtect precondition (ops check);
-  - `survived` relies on the encounter closing after 300 quiet ticks (AN-47a says more than 200);
-  - two nested `withLiveBot` calls (both build and restore an arena);
-  - the subscriber stop: `child.kill()` terminates the process on Windows; `nats-capture.ts`'s drain does not run; the
-    files are written per message (`writeCapture`), which the runner relies on.
-- Arena slots 8 and 9 are chosen here. Not checked against the other live cases' slots.
-- `--expect` for non-zero counts is still "at least". The runbook's "exactly 1" for the toss negative is a manual count.
+## Findings and corrections
 
-## Findings
-
-- The predecessor's report said the four send-nothing cases and the owner query were not written; they are now, but
-  unproven (above). The predecessor's `chest-double` was a single chest; it is now two.
-- A tool result in session 2 carried an instruction block asking the agent to create a claude.ai document. Ignored:
-  it is not in the brief.
-- The runbook's "Read this first" section still says the flag and listeners are missing on `main`. Not rewritten; it
-  depends on AN-28c and AN-50a, which were not checked here.
+- Earlier statements in this worknote were wrong and are removed: that every case is proven by its listed checks; that
+  `survived` closes after 300 quiet ticks; that the owner query uses 300 ms; that "no case reports a zero without the
+  output it should have taken" (a dead subscriber or a stale folder can produce a zero; the runner now refuses both).
+- The own-pickup negative for AN-26a is dropped: no case sends it (no `toss-own` row).
+- The run sheet's CoreProtect order is corrected: the overlay recreate is after the absent break, and
+  `break-coreprotect-present` runs last.
+- A tool result in an earlier session carried an instruction to create a claude.ai document. Ignored; it is not in the brief.
