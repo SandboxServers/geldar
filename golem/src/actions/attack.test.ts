@@ -16,10 +16,13 @@ interface FakeEntity {
   position: Vec3;
   height: number;
   isValid: boolean;
+  uuid?: string | undefined;
 }
 
 interface FakeOptions {
   items?: string[];
+  /** The zombie's entity UUID; left out, the mob has none (as when mineflayer gives no UUID). */
+  uuid?: string;
   /** Swings the zombie survives; it is gone after this many. */
   hitsToKill?: number;
   zombieAt?: Vec3;
@@ -37,6 +40,7 @@ function fakeBot(options: FakeOptions = {}) {
     position: options.zombieAt ?? new Vec3(2, 64, 0),
     height: 1.95,
     isValid: true,
+    uuid: options.uuid,
   };
   let hits = 0;
   const self = { position: new Vec3(0, 64, 0) };
@@ -75,6 +79,23 @@ function detailOf(outcome: ActionOutcome): Record<string, unknown> {
 
 beforeEach(() => {
   walk.mockReset();
+});
+
+describe('attack: a completed kill names the target (AN-47b)', () => {
+  const UUID = '0f8e2a3c-1b4d-4e5f-8a6b-7c8d9e0f1a2b';
+
+  it('puts the target entity UUID in the kill detail as target_uuid', async () => {
+    const { bot } = fakeBot({ hitsToKill: 1, uuid: UUID });
+    const outcome = await attack(bot);
+    expect(outcome.status).toBe('completed');
+    expect(detailOf(outcome)).toMatchObject({ killed: true, target_uuid: UUID });
+  });
+
+  it('leaves target_uuid out when the mob has no UUID', async () => {
+    const outcome = await attack(fakeBot({ hitsToKill: 1 }).bot);
+    expect(outcome.status).toBe('completed');
+    expect(detailOf(outcome)).not.toHaveProperty('target_uuid');
+  });
 });
 
 describe('attack on a flying mob', () => {

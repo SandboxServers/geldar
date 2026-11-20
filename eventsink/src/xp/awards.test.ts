@@ -87,8 +87,13 @@ describe('matrix sets hold exactly the pinned members', () => {
 });
 
 describe('combat row', () => {
-  it('awards a kill of a mob', () => {
-    expect(keysOf('kill_completed')).toEqual([`kill:${actionIdOf('kill_completed')}`]);
+  it('awards nothing from the attack row for a kill with no target_uuid (AN-47b)', () => {
+    expect(keysOf('kill_completed')).toEqual([]);
+  });
+  it('awards a kill of a mob by its encounter key', () => {
+    expect(keysOf('kill_uuid_completed')).toEqual([
+      'enc:ag_kestrel_01:0f8e2a3c-1b4d-4e5f-8a6b-7c8d9e0f1a2b',
+    ]);
   });
   it('awards nothing for a failed or cancelled attack', () => {
     expect(keysOf('kill_failed')).toEqual([]);
