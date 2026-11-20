@@ -11,6 +11,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -49,7 +50,6 @@ function setup() {
     [
       '#!/bin/sh',
       'echo "ARGS:$*"',
-      `echo "ENV:\${GELDAR_DEPLOY_ENV-unset}"`,
       `echo "CANARY:\${GELDAR_CANARY-unset}"`,
       'echo "STDIN:$(cat)"',
       'echo "stderr line" >&2',
@@ -59,13 +59,14 @@ function setup() {
   );
   const failing = join(root, 'failing.sh');
   writeExecutable(failing, '#!/bin/sh\necho "ARGS:$*"\nexit 3\n');
-  // A flock stand-in on PATH for the accepted-path tests (flock is absent on Windows). It records its arguments.
+  // A flock stand-in on PATH for the accepted-path tests (flock is absent on Windows). It records its arguments and exits
+  // with FAKE_FLOCK_RC (0 unless a test sets it: 1 stands for a lock that is not free before the timeout).
   const shimDir = join(root, 'flock-shim');
   mkdirSync(shimDir);
   const flockCalls = join(root, 'flock.log');
   writeExecutable(
     join(shimDir, 'flock'),
-    `#!/bin/sh\necho "flock $*" >> ${p(flockCalls)}\nexit 0\n`,
+    `#!/bin/sh\necho "flock $*" >> ${p(flockCalls)}\nexit \${FAKE_FLOCK_RC:-0}\n`,
   );
   return {
     root,
@@ -171,11 +172,16 @@ function shim(root: string) {
   return { dir: p(dir), calls };
 }
 
-function install(
-  dest: string,
-  user: string,
-  opts: { args?: string[]; env?: Record<string, string> } = {},
-) {
+interface InstallOpts {
+  args?: string[];
+  env?: Record<string, string>;
+  // A directory put first on PATH (a visudo shim, for one).
+  prefix?: string;
+  // Replaces the PATH the installer sees (the chmod and chown shim is still first).
+  path?: string;
+}
+
+function install(dest: string, user: string, opts: InstallOpts = {}) {
   const env = shEnv({
     GELDAR_DEPLOY_DEST: p(dest),
     GELDAR_OPERATOR_USER: user,
@@ -183,7 +189,9 @@ function install(
     ...(opts.env ?? {}),
   });
   // Every install runs with the chmod and chown shim first on PATH (the shim lives next to the test's dest directory).
-  env.PATH = [shim(dirname(dest)).dir, env.PATH].join(delimiter);
+  env.PATH = [shim(dirname(dest)).dir, opts.prefix ?? '', opts.path ?? env.PATH]
+    .filter((s) => s !== '')
+    .join(delimiter);
   // Tests pass --skip-visudo by default, so they do not depend on visudo being installed; the absent-visudo test passes [].
   return spawnSync(SH, [p(INSTALLER), ...(opts.args ?? ['--skip-visudo'])], {
     env,
@@ -191,6 +199,22 @@ function install(
     timeout: INSTALL_TIMEOUT,
   });
 }
+
+// A PATH with no visudo on it, for every machine: an empty directory first, then the PATH entries (and sh's own directory)
+// with any visudo removed from view. The installer then finds no visudo and must refuse without --skip-visudo.
+function pathWithoutVisudo(root: string): string {
+  const empty = join(root, 'no-visudo');
+  mkdirSync(empty, { recursive: true });
+  const dirsOnPath = [
+    ...(SH === 'sh' ? [] : [dirname(SH)]),
+    ...(process.env.PATH ?? '').split(delimiter),
+  ];
+  const rest = dirsOnPath.filter((d) => d !== '' && !existsSync(join(d, 'visudo')));
+  return [p(empty), ...rest].join(delimiter);
+}
+
+// The permission bits of a file (POSIX only: the callers skip on Windows).
+const modeOf = (file: string) => statSync(file).mode & 0o777;
 
 // Whether this machine can make symlinks (Windows needs developer mode or admin for them).
 function canSymlink(): boolean {
@@ -202,11 +226,6 @@ function canSymlink(): boolean {
   } catch {
     return false;
   }
-}
-
-// Whether this machine's sh finds visudo; the absent-visudo test runs only when it does not.
-function hasVisudo(): boolean {
-  return spawnSync(SH, ['-c', 'command -v visudo'], { env: shEnv({}) }).status === 0;
 }
 
 describe('deploy channel: refused requests (G3-02)', () => {
@@ -295,15 +314,28 @@ describe('deploy channel: refused requests (G3-02)', () => {
     }
     expect(existsSync(fx.log)).toBe(false);
   });
+
+  // The lock is busy for the whole 60-second wait: the wrapper refuses with a fixed line that names no input.
+  it('refuses with a fixed message when the lock is not free within the timeout, and runs nothing', () => {
+    const fx = setup();
+    const r = channel(fx, `plan ${SHA} colo`, { env: { FAKE_FLOCK_RC: '1' } });
+    expect(r.code).toBe(1);
+    expect(r.out).toContain(
+      'refused: the deploy lock was not free within 60 seconds; try again later',
+    );
+    expect(r.out).not.toContain(SHA);
+    expect(r.out).not.toContain('colo');
+    expect(readFileSync(fx.flockCalls, 'utf8')).toContain('flock -w 60 9');
+    expect(existsSync(fx.log)).toBe(false);
+  });
 });
 
 describe('deploy channel: accepted requests (G3-02)', () => {
-  it('runs apply as the entrypoint deploy verb, with the environment name and a scrubbed environment', () => {
+  it('runs apply as the entrypoint deploy verb, with a scrubbed environment', () => {
     const fx = setup();
     const r = channel(fx, `apply ${SHA} colo`);
     expect(r.code).toBe(0);
     expect(r.log).toContain(`ARGS:deploy ${SHA}`);
-    expect(r.log).toContain('ENV:colo');
     expect(r.log).toContain('CANARY:unset');
   });
 
@@ -339,12 +371,26 @@ describe('deploy channel: accepted requests (G3-02)', () => {
     expect(r.log).not.toContain('piped-request-text');
   });
 
+  // The entrypoint runs with the lock descriptor closed: a write to fd 9 must fail inside it.
+  it('closes the lock descriptor (fd 9) for the entrypoint', () => {
+    const fx = setup();
+    const stub = join(fx.root, 'fd9.sh');
+    writeExecutable(
+      stub,
+      '#!/bin/sh\nif (: >&9) 2>/dev/null; then echo "FD9:open"; else echo "FD9:closed"; fi\n',
+    );
+    const r = channel(fx, `plan ${SHA} colo`, { entry: stub });
+    expect(r.code).toBe(0);
+    expect(r.log).toContain('FD9:closed');
+    expect(r.log).not.toContain('FD9:open');
+  });
+
   it('serialises the run on the lock file next to the allow-list', () => {
     const fx = setup();
     const r = channel(fx, `plan ${SHA} colo`);
     expect(r.code).toBe(0);
     expect(existsSync(fx.lock)).toBe(true);
-    expect(readFileSync(fx.flockCalls, 'utf8')).toContain('flock 9');
+    expect(readFileSync(fx.flockCalls, 'utf8')).toContain('flock -w 60 9');
   });
 
   it('refuses to run, and runs nothing, when flock is missing', () => {
@@ -389,35 +435,47 @@ describe('deploy channel: sudoers fragment (G3-02)', () => {
       expect(rule.split('[0-9a-f]').length - 1).toBe(40);
     }
     expect(rules.join('\n')).not.toMatch(/verify|restore/);
-    expect(lines()).toContain(
-      'Defaults!/usr/local/libexec/geldar-deploy/run env_keep += "GELDAR_DEPLOY_ENV"',
-    );
+  });
+
+  // The wrapper keeps no variable through sudo: no Defaults line of any kind may keep one.
+  it('has no Defaults line, so sudo keeps no environment variable', () => {
+    expect(lines().some((l) => l.startsWith('Defaults'))).toBe(false);
   });
 });
 
 describe('deploy channel: installer (GE-04)', () => {
   it(
-    'places the wrapper, the sudoers fragment and the env template, and a second run changes nothing',
+    'places the wrapper, the sudoers fragment, the env template and the two channel files, with their modes',
     () => {
       const fx = setup();
       const dest = join(fx.root, 'dest');
-      const sh = shim(fx.root);
       const first = install(dest, 'op-user');
       expect(first.status).toBe(0);
+      for (const label of [
+        '/usr/local/libexec/geldar-deploy/channel',
+        '/etc/sudoers.d/geldar-deploy',
+        '/home/op-user/colo-env.sh',
+        '/var/lib/geldar-deploy/channel.log',
+        '/var/lib/geldar-deploy/channel.lock',
+      ]) {
+        expect(first.stdout, label).toContain(`installed ${label}`);
+      }
       const libexec = join(dest, 'usr', 'local', 'libexec', 'geldar-deploy', 'channel');
       expect(readFileSync(libexec, 'utf8')).toContain('Forced-command deploy channel');
-      const sudoers = readFileSync(join(dest, 'etc', 'sudoers.d', 'geldar-deploy'), 'utf8');
-      expect(sudoers).toContain(
+      const sudoers = join(dest, 'etc', 'sudoers.d', 'geldar-deploy');
+      expect(readFileSync(sudoers, 'utf8')).toContain(
         'op-user ALL=(root) NOPASSWD: /usr/local/libexec/geldar-deploy/run plan ',
       );
-      expect(sudoers).not.toContain('@OPERATOR@');
-      expect(existsSync(join(dest, 'home', 'op-user', 'colo-env.sh'))).toBe(true);
-      const calls = readFileSync(sh.calls, 'utf8');
-      expect(calls).toMatch(/^chmod 0755 \S+$/m);
-      expect(calls).toMatch(/^chmod 0440 \S+$/m);
-      expect(calls).toMatch(/^chmod 0600 \S+$/m);
-      expect(calls).toMatch(/^chown root:root \S+$/m);
-      expect(calls).toMatch(/^chown op-user:op-user \S+$/m);
+      expect(readFileSync(sudoers, 'utf8')).not.toContain('@OPERATOR@');
+      const envFile = join(dest, 'home', 'op-user', 'colo-env.sh');
+      expect(existsSync(envFile)).toBe(true);
+      if (process.platform !== 'win32') {
+        expect(modeOf(libexec)).toBe(0o755);
+        expect(modeOf(sudoers)).toBe(0o440);
+        expect(modeOf(envFile)).toBe(0o600);
+        expect(modeOf(join(dest, 'var', 'lib', 'geldar-deploy', 'channel.log'))).toBe(0o600);
+        expect(modeOf(join(dest, 'var', 'lib', 'geldar-deploy', 'channel.lock'))).toBe(0o600);
+      }
     },
     INSTALL_TIMEOUT,
   );
@@ -439,7 +497,7 @@ describe('deploy channel: installer (GE-04)', () => {
   );
 
   it.skipIf(process.platform === 'win32')(
-    'repairs drifted modes on every run and never changes the env file contents',
+    'repairs drifted modes on every run, never changes the env file contents, and never chowns or chmods it by path',
     () => {
       const fx = setup();
       const dest = join(fx.root, 'dest');
@@ -455,10 +513,11 @@ describe('deploy channel: installer (GE-04)', () => {
       expect(drift.stdout).toContain('repaired /usr/local/libexec/geldar-deploy/channel');
       expect(drift.stdout).toContain('repaired /etc/sudoers.d/geldar-deploy');
       expect(drift.stdout).toContain('repaired /home/op-user/colo-env.sh');
-      const calls = readFileSync(sh.calls, 'utf8');
-      expect(calls).toMatch(/^chmod 0755 \S+$/m);
-      expect(calls).toMatch(/^chmod 0440 \S+$/m);
-      expect(calls).toMatch(/^chmod 0600 \S+$/m);
+      expect(modeOf(chan)).toBe(0o755);
+      expect(modeOf(sudoers)).toBe(0o440);
+      expect(modeOf(envFile)).toBe(0o600);
+      // The env file is repaired in the root-owned work dir and renamed into place: no chown or chmod names its path.
+      expect(readFileSync(sh.calls, 'utf8')).not.toContain('home/op-user');
       expect(readFileSync(envFile, 'utf8')).toBe(
         readFileSync(join(GENESIS, 'colo-env.sh.template'), 'utf8'),
       );
@@ -496,6 +555,24 @@ describe('deploy channel: installer (GE-04)', () => {
   );
 
   it.skipIf(!canSymlink())(
+    'refuses a symlinked colo-env.sh in the operator home and leaves its target alone',
+    () => {
+      const fx = setup();
+      const dest = join(fx.root, 'dest');
+      const home = join(dest, 'home', 'op-user');
+      mkdirSync(home, { recursive: true });
+      const target = join(fx.root, 'target-env');
+      writeFileSync(target, 'export NODE_VALUE=target\n');
+      symlinkSync(target, join(home, 'colo-env.sh'));
+      const r = install(dest, 'op-user');
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain('symlink; refused');
+      expect(readFileSync(target, 'utf8')).toBe('export NODE_VALUE=target\n');
+    },
+    INSTALL_TIMEOUT,
+  );
+
+  it.skipIf(!canSymlink())(
     'refuses a symlinked *.yaml in the allow-list',
     () => {
       const fx = setup();
@@ -510,13 +587,30 @@ describe('deploy channel: installer (GE-04)', () => {
     INSTALL_TIMEOUT,
   );
 
+  // A visudo that rejects the fragment: the installer stops and nothing is placed under sudoers.
+  it(
+    'stops, and installs no sudoers file, when visudo rejects the fragment',
+    () => {
+      const fx = setup();
+      const dest = join(fx.root, 'dest');
+      const visudoDir = join(fx.root, 'visudo-reject');
+      mkdirSync(visudoDir);
+      writeExecutable(join(visudoDir, 'visudo'), '#!/bin/sh\nexit 1\n');
+      const r = install(dest, 'op-user', { args: [], prefix: p(visudoDir) });
+      expect(r.status).toBe(1);
+      expect(r.stderr).toContain('does not check');
+      expect(existsSync(join(dest, 'etc', 'sudoers.d', 'geldar-deploy'))).toBe(false);
+    },
+    INSTALL_TIMEOUT,
+  );
+
+  // Runs everywhere: the PATH has no visudo on it, so the installer must refuse unless --skip-visudo is given.
   it(
     'fails when visudo is absent unless --skip-visudo is given',
     () => {
-      if (hasVisudo()) return;
       const fx = setup();
       const dest = join(fx.root, 'dest');
-      const r = install(dest, 'op-user', { args: [] });
+      const r = install(dest, 'op-user', { args: [], path: pathWithoutVisudo(fx.root) });
       expect(r.status).toBe(1);
       expect(r.stderr).toContain('visudo is absent');
       expect(install(dest, 'op-user', { args: ['--skip-visudo'] }).status).toBe(0);
@@ -539,5 +633,18 @@ describe('deploy channel: installer (GE-04)', () => {
     }
     expect(text).toContain('<PUBLIC_KEY_PLACEHOLDER>');
     expect(text).not.toMatch(/AAAA[A-Za-z0-9+/]{20,}/);
+  });
+
+  // The key line is the only non-comment line: it must start with the forced command, bound to <ENVIRONMENT>, and restrict.
+  it('the authorized_keys key line starts with the forced command and restrict, and nothing else is on it', () => {
+    const keyLines = readFileSync(join(GENESIS, 'authorized-keys.template'), 'utf8')
+      .split('\n')
+      .filter((l) => l.length > 0 && !l.startsWith('#'));
+    expect(keyLines).toHaveLength(1);
+    expect(
+      keyLines[0].startsWith(
+        'command="/usr/local/libexec/geldar-deploy/channel <ENVIRONMENT>",restrict ssh-ed25519 ',
+      ),
+    ).toBe(true);
   });
 });

@@ -4,8 +4,7 @@
 # deploy), each followed by exactly one 40-character lowercase hex sha. The sha is a character class per position, so no
 # extra words can match. verify and restore are not authorised: the entrypoint's support for them is not in the repo, and
 # the wrapper refuses them on this node until it is.
-# The wrapper calls sudo with no preserve-env option. GELDAR_DEPLOY_ENV (the allow-listed environment name) is kept for this
-# one command only, through the Defaults line below.
-Defaults!/usr/local/libexec/geldar-deploy/run env_keep += "GELDAR_DEPLOY_ENV"
+# The wrapper calls sudo with no preserve-env option and no env_keep, so sudo's default env_reset drops every variable the
+# wrapper sets, GELDAR_DEPLOY_ENV included. No line of this fragment keeps a variable.
 @OPERATOR@ ALL=(root) NOPASSWD: /usr/local/libexec/geldar-deploy/run plan [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]
 @OPERATOR@ ALL=(root) NOPASSWD: /usr/local/libexec/geldar-deploy/run deploy [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]

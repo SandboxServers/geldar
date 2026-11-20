@@ -2,7 +2,8 @@
 # Forced-command deploy channel (G3-02). The operator's authorized_keys line runs this as
 #   command="/usr/local/libexec/geldar-deploy/channel <ENVIRONMENT>",restrict
 # and sshd passes the client's request in SSH_ORIGINAL_COMMAND. $1 is the environment the key is bound to. The request
-# must be exactly: <verb> <sha> <environment>, and the environment must be the bound one.
+# must be exactly: <verb> <sha> <environment>, and the environment must be the bound one. The entrypoint receives no
+# environment name: the environment is bound by the allow-list file and the per-environment key, not by an env variable.
 #   verb:        plan | apply. apply is the entrypoint's deploy verb. verify and restore are refused until the entrypoint
 #                supports them (they are not visible in the repo).
 #   sha:         40 lowercase hex characters, the main commit.
@@ -64,19 +65,20 @@ case $verb in
 esac
 # The log and the lock are created by the installer for the operator; umask keeps anything new private.
 umask 077
-# One deploy at a time on this node. Without flock the channel refuses to run: an unserialised deploy is not allowed.
+# One deploy at a time on this node. The channel waits up to 60 seconds for the lock and then refuses. Without flock it
+# refuses to run: an unserialised deploy is not allowed.
 if command -v flock >/dev/null 2>&1; then
   exec 9>>"$LOCK"
-  flock 9
+  flock -w 60 9 || refuse "the deploy lock was not free within 60 seconds; try again later"
 else
   refuse "flock is missing; deploys on this node are not serialised"
 fi
 echo "geldar-deploy: $verb $env_name started"
 rc=0
-# env -i: the entrypoint gets only PATH and the environment name, never the sshd environment. stdin is /dev/null and the
-# lock descriptor is closed for the entrypoint.
+# env -i: the entrypoint gets only PATH, never the sshd environment. stdin is /dev/null and the lock descriptor is closed
+# for the entrypoint.
 # shellcheck disable=SC2086
-env -i PATH="$PATH" GELDAR_DEPLOY_ENV="$env_name" sudo -n "$ENTRY" "$entry_verb" "$sha" </dev/null >>"$LOG" 2>&1 9>&- || rc=$?
+env -i PATH="$PATH" sudo -n "$ENTRY" "$entry_verb" "$sha" </dev/null >>"$LOG" 2>&1 9>&- || rc=$?
 if [ "$rc" -eq 0 ]; then
   echo "geldar-deploy: $verb $env_name ok"
 else
