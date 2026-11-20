@@ -4,6 +4,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
+  BLOCK_CASE_OFFSET,
   blockIdProblem,
   CAPTURE_CASES,
   CASE_BLOCKS,
@@ -196,6 +197,27 @@ describe('the runner wiring (source scans: the runner talks to a server and is n
     expect(calls).toHaveLength(8);
     expect(sites).toHaveLength(8);
     for (const m of calls) expect(m[2]?.trim(), m[0]).toMatch(/^CASE_BLOCKS\.[a-zA-Z]+$/);
+  });
+
+  it('the anvil action closes the window before its proof (renameAndVerify)', () => {
+    expect(runner).toContain('renameAndVerify(bot, win, ANVIL_NAME');
+    expect(runner).not.toContain('verifyRenamedStick(bot, win, ANVIL_NAME)');
+  });
+
+  it('each block-placing action passes its own id to caseBlockPosition, and no other id', () => {
+    // An action starts at a two-space indented `name(s) {` line and runs to the next one.
+    const headers = [...runner.matchAll(/^ {2}(?:async )?'?([a-z0-9-]+)'?\(s\) \{$/gm)];
+    for (const id of Object.keys(BLOCK_CASE_OFFSET)) {
+      const at = headers.findIndex((h) => h[1] === id);
+      expect(at, `${id} has an action`).toBeGreaterThanOrEqual(0);
+      const from = headers[at]?.index ?? 0;
+      const body = runner.slice(from, headers[at + 1]?.index ?? runner.length);
+      expect(body, `${id} action`).toContain(`caseBlockPosition('${id}'`);
+      const others = [...body.matchAll(/caseBlockPosition\('([a-z-]+)'/g)]
+        .map((m) => m[1])
+        .filter((other) => other !== id);
+      expect(others, `${id} action passes another id`).toEqual([]);
+    }
   });
 });
 
