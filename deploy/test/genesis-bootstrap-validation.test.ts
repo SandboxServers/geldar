@@ -77,6 +77,40 @@ describe('G3-01 bootstrap settings checks', () => {
     expect(run(host, []).code).toBe(0);
   });
 
+  it('refuses a Docker pool base octet with a leading zero before any call', () => {
+    const r = run(
+      makeHost({
+        drop: ['GELDAR_DOCKER_POOL_BASE'],
+        extra: ['GELDAR_DOCKER_POOL_BASE=08.1.1.0/24'],
+      }),
+      [],
+    );
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('leading zero');
+    expect(r.calls).toEqual([]);
+  });
+
+  it('refuses a Docker pool base with non-zero host bits, naming them, before any call', () => {
+    const r = run(
+      makeHost({
+        drop: ['GELDAR_DOCKER_POOL_BASE'],
+        extra: ['GELDAR_DOCKER_POOL_BASE=127.0.0.1/16'],
+      }),
+      [],
+    );
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('host bits');
+    expect(r.calls).toEqual([]);
+  });
+
+  it('accepts a Docker pool base whose host bits are zero: 127.0.0.0/16 with size 24', () => {
+    const host = makeHost({
+      drop: ['GELDAR_DOCKER_POOL_BASE', 'GELDAR_DOCKER_POOL_SIZE'],
+      extra: ['GELDAR_DOCKER_POOL_BASE=127.0.0.0/16', 'GELDAR_DOCKER_POOL_SIZE=24'],
+    });
+    expect(run(host, []).code).toBe(0);
+  });
+
   it('reads BOOTSTRAP_SSH_PORT=0022 as port 22, so the SSH guard agrees with sshd on 22', () => {
     const host = makeHost({ drop: ['BOOTSTRAP_SSH_PORT'], extra: ['BOOTSTRAP_SSH_PORT=0022'] });
     writeFileSync(st(host, 'sshd-config'), 'port 22\n');
