@@ -69,16 +69,25 @@ Could not resolve all dependencies for configuration ':testRuntimeClasspath'.
    > Could not GET 'https://repo.maven.apache.org/maven2/org/junit/jupiter/junit-jupiter/6.1.3/junit-jupiter-6.1.3.pom'.
 `;
 
-// Synthetic text in Gradle's shape for a remote Maven miss (not a verbatim CI log): Gradle prints the "lock state"
-// sentence in every such failure, so it must not be an early exit.
-const MAVEN_MISS = `> Could not resolve io.nats:jnats:2.26.4.
+// Lifted verbatim from the failing plugin job of CI run 44701279418 (runner timestamps and the "Searched in" URL lines
+// dropped; the build retried nothing because the "lock state" early exit fired). Gradle prints the "lock state"
+// sentence in every such failure, so it must not be an early exit, and `Could not find g:a:v.` ends in a period.
+const MAVEN_MISS = `FAILURE: Build failed with an exception.
+* What went wrong:
+Could not determine the dependencies of task ':core:jar'.
+   > Did not resolve 'org.bouncycastle:bcprov-lts8on:2.73.12.1' which is part of the dependency lock state
+   > Did not resolve 'io.opentelemetry:opentelemetry-context:1.67.0' which is part of the dependency lock state
+   > Did not resolve 'org.jspecify:jspecify:1.0.0' which is part of the dependency lock state
+   > Did not resolve 'io.nats:jnats:2.26.4' which is part of the dependency lock state
+   > Did not resolve 'io.opentelemetry:opentelemetry-api:1.67.0' which is part of the dependency lock state
+   > Did not resolve 'io.opentelemetry:opentelemetry-common:1.67.0' which is part of the dependency lock state
    > Could not find io.nats:jnats:2.26.4.
      Searched in the following locations:
-       - https://repo.maven.apache.org/maven2/io/nats/jnats/2.26.4/jnats-2.26.4.pom
      Required by:
-         project :core
-
-Did not resolve 'io.nats:jnats:2.26.4' which is part of the dependency lock state
+   > Could not find io.opentelemetry:opentelemetry-api:1.67.0.
+     Searched in the following locations:
+     Required by:
+BUILD FAILED in 16s
 `;
 
 const CASES: Array<[string, string, boolean]> = [
@@ -105,7 +114,7 @@ const CASES: Array<[string, string, boolean]> = [
     true,
   ],
   ['test failure', '12 tests completed, 1 FAILED\n> Task :test FAILED', false],
-  ['Gradle-shaped Maven miss (synthetic text)', MAVEN_MISS, true],
+  ['Maven miss from CI run 44701279418', MAVEN_MISS, true],
   [
     'Maven miss plus dependency verification failure',
     `Dependency verification failed for configuration ':x'\n${MAVEN_MISS}`,

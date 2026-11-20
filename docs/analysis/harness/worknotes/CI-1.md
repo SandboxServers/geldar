@@ -26,14 +26,12 @@ verification failures stay non-retryable through `Dependency verification failed
 `tools/repo-checks/src/ci-neoforge-retry.test.ts` runs the real run-blocks against a fake `./gradlew`, for all three
 step names.
 
-- New cases: Gradle-shaped Maven miss (synthetic text) retries; Maven miss plus verification failure does not retry;
+- New cases: Maven miss from CI run 44701279418 retries; Maven miss plus verification failure does not retry;
   `Could not find method ...` does not retry; `Could not find property ...` does not retry; `error: cannot find symbol`
   does not retry.
 - New structural test: the early-exit and transient-retry grep lines are identical across the three blocks (log path
   normalised).
-- The fixture "Gradle-shaped Maven miss (synthetic text)" is **synthetic**. The real CI log lines were not available to
-  the coder. The orchestrator should replace it with verbatim lines from one of the four failing runs when they can be
-  pulled. Its shape follows the card's description of Gradle's output.
+- The fixture `Maven miss from CI run 44701279418` is lifted verbatim from the failing plugin job of that run (supplied by the orchestrator; runner timestamps and the `Searched in` URL lines dropped). Six `Did not resolve ... lock state` lines plus `Could not find io.nats:jnats:2.26.4.` and `Could not find io.opentelemetry:opentelemetry-api:1.67.0.` (trailing period): the regex matches the trailing-period form.
 - Test discovery: this machine has Git for Windows at `%LOCALAPPDATA%\Programs\Git`, not at
   `C:\Program Files\Git`, so the bash-backed cases skipped. The candidate list now includes
   `%LOCALAPPDATA%\Programs\Git\bin\bash.exe`.
@@ -41,10 +39,10 @@ step names.
 ## Revert-checks (run for real; each mutation touched only ci.yml, restored from a backup afterwards)
 
 Before the fix, the new Maven-miss case failed in all three blocks (`gradle build (neoforge)`,
-`gradle build (neoforge-ledger)`, `gradle build`, case "retries once: Gradle-shaped Maven miss (synthetic text)").
+`gradle build (neoforge-ledger)`, `gradle build`, case "retries once: Maven miss from CI run 44701279418").
 
 - M1, `lock state` back in the early exit (all three blocks): 3 failed. "retries once: Gradle-shaped Maven miss
-  (synthetic text)" in each block.
+ " in each block.
 - M2, `Could not find` alternative removed (all three blocks): 3 failed. Same case in each block.
 - M3, loosened to plain `Could not find ` (all three blocks): 6 failed. "does not retry: script error: Could not find
   method" and "does not retry: script error: Could not find property" in each block.
@@ -52,10 +50,14 @@ Before the fix, the new Maven-miss case failed in all three blocks (`gradle buil
   miss plus dependency verification failure" and "does not retry: verification failure plus Could not GET" in each
   block.
 - M5, the early-exit line of the plugin block only, reverted to `Dependency verification failed|lock state`: 2 failed.
-  "retries once: Gradle-shaped Maven miss (synthetic text)" in the plugin block, and "have identical early-exit and
+  "retries once: Maven miss from CI run 44701279418" in the plugin block, and "have identical early-exit and
   transient-retry grep lines".
 
 ## ops
 
 Nothing to run. The next real Maven flake is the live proof: a `Could not find` miss should now show a
 `::warning::network error in the ... build; retrying once` line and a second Gradle run.
+
+## Re-run on the verbatim fixture
+
+With the fixture lifted from run 44701279418, M1 (lock state back, 3 blocks): 3 failed, M2 (alternative removed): 3 failed, M3 (plain Could not find): 6 failed (method and property cases in each block), M4 (verification exit removed): 6 failed, M5 (plugin block only reverted): 2 failed (the Maven miss case in the plugin block and the identical-grep-lines test). Each mutation touched only ci.yml and was restored.
