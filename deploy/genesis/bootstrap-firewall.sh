@@ -79,7 +79,7 @@ table inet $table {
     meta l4proto { icmp, ipv6-icmp } accept
     iifname "docker0" accept
     iifname "br-*" accept
-    tcp dport { $FW_PORTS } accept
+    tcp dport { ${FW_PORTS//,/, } } accept
   }
 }
 EOF

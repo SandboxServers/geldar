@@ -154,7 +154,7 @@ fi
 `,
   git: 'echo "git version $(cat "$STUB_STATE/git-version")"\n',
   id: 'echo 0\n',
-  docker: 'exit 0\n',
+  docker: 'if [ "$1" = compose ] && [ -f "$STUB_STATE/compose-fail" ]; then exit 1; fi\nexit 0\n',
   nft: `case "$1" in
   -c) [ ! -f "$STUB_STATE/nft-fail" ] ;;
   -f) [ ! -f "$STUB_STATE/nft-fail" ] && touch "$STUB_STATE/nft-loaded" ;;
@@ -165,10 +165,10 @@ esac
   sysctl: `if [ "$1" = -n ]; then cat "$STUB_STATE/sysctl/$2" 2>/dev/null; exit 0; fi
 grep '=' "$3" | while read -r k _ v; do printf '%s' "$v" >"$STUB_STATE/sysctl/$k"; done
 `,
-  sshd: `[ "$1" = -T ] && cat "$STUB_STATE/sshd-config"
+  sshd: `if [ "$1" = -T ]; then [ ! -f "$STUB_STATE/sshd-fail" ] || exit 1; cat "$STUB_STATE/sshd-config"; fi
 exit 0
 `,
-  ss: 'exit 0\n',
+  ss: 'if [ -f "$STUB_STATE/ss-out" ]; then cat "$STUB_STATE/ss-out"; fi\nexit 0\n',
   tee: real('tee'),
   mktemp: real('mktemp'),
   chown: real('chown'),
@@ -245,6 +245,8 @@ export function makeHost(
 
 // A file of the host's stub state (sshd config, active units, loaded nft table, and so on).
 export const st = (h: Host, ...p: string[]) => join(h.sandbox, 'state', ...p);
+// The stub record of a directory's mode and owner (install and stat share it), as 'mode uid:gid'.
+export const attrFile = (h: Host, dir: string) => st(h, 'attrs', bashAbs(dir).replace(/\//g, '_'));
 
 export interface Run {
   code: number;
@@ -260,6 +262,7 @@ export function run(host: Host, args: string[], extra: Record<string, string> = 
   for (const [k, v] of Object.entries(process.env))
     if (v !== undefined && !/^path$/i.test(k)) env[k] = v;
   const path = join(host.sandbox, 'bin');
+  rmSync(host.log, { force: true }); // the log holds this run's calls only
   const res = spawnSync(BASH, [posix(BOOT), posix(host.env), ...args], {
     encoding: 'utf8',
     env: {
