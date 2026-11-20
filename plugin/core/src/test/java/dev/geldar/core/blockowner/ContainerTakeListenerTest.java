@@ -18,6 +18,7 @@ import dev.geldar.core.blockowner.OwnerSource.Owners;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -25,9 +26,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+import org.bukkit.block.Container;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.inventory.InventoryHolder;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -171,16 +174,123 @@ class ContainerTakeListenerTest {
     @Test
     void thePerTickCapDropsTheRestAndTheNextTickStartsAgain() {
         for (int i = 0; i < ContainerTakeListener.PER_TICK_CAP + 6; i++) {
-            click(ACTOR, Map.of("stone", 1), Map.of());
+            listener.clicked(ACTOR, new Pos("world", i, 64, 0), Map.of("stone", 1), Map::of);
         }
         runNextTick();
         assertEquals(ContainerTakeListener.PER_TICK_CAP, sent.size());
         assertEquals(6, listener.dropped());
 
         tick.set(51L);
-        click(ACTOR, Map.of("stone", 1), Map.of());
+        listener.clicked(ACTOR, new Pos("world", 999, 64, 0), Map.of("stone", 1), Map::of);
         runNextTick();
         assertEquals(ContainerTakeListener.PER_TICK_CAP + 1, sent.size());
+    }
+
+    @Test
+    void theSameActorAndChestInOneTickCountsTheTakeOnce() {
+        storeOwner(OWNER);
+        click(ACTOR, Map.of("stone", 128), Map.of());
+        click(ACTOR, Map.of("stone", 64), Map.of());
+        assertEquals(1, nextTick.size());
+        runNextTick();
+
+        assertEquals(1, sent.size());
+        assertEquals(128, take(0).get("count").getAsInt());
+    }
+
+    @Test
+    void aTakeIsSettledOnTheNextTickNotAtTheClick() {
+        storeOwner(OWNER);
+        click(ACTOR, Map.of("diamond", 64), Map.of());
+        assertTrue(sent.isEmpty());
+        assertEquals(1, nextTick.size());
+
+        runNextTick();
+        assertEquals(1, sent.size());
+    }
+
+    @Test
+    void aTakeAboveTheSchemaMaximumIsClampedToIt() {
+        storeOwner(OWNER);
+        click(ACTOR, Map.of("stone", 3000), Map.of());
+        runNextTick();
+
+        assertEquals(2304, take(0).get("count").getAsInt());
+        assertTrue(PROVENANCE.validate(sent.get(0).substring("take ".length()), InputFormat.JSON).isEmpty());
+    }
+
+    @Test
+    void anOwnContainerNamesTheActorAsThePriorOwner() {
+        storeOwner(ACTOR);
+        click(ACTOR, Map.of("diamond", 64), Map.of());
+        runNextTick();
+
+        assertEquals(ACTOR, take(0).get("prior_owner").getAsString());
+    }
+
+    @Test
+    void aTakeAfterTheListenerIsSwitchedOffBeforeTheTickSendsNothing() {
+        storeOwner(OWNER);
+        click(ACTOR, Map.of("diamond", 64), Map.of());
+        enabled.set(false);
+        runNextTick();
+
+        assertTrue(sent.isEmpty());
+    }
+
+    @Test
+    void aClickWhileDisabledOrWithoutASinkSchedulesNothing() {
+        enabled.set(false);
+        click(ACTOR, Map.of("diamond", 64), Map.of());
+        assertTrue(nextTick.isEmpty());
+
+        enabled.set(true);
+        ContainerTakeListener noSink = new ContainerTakeListener(null, cache, enabled::get, tick::get, nextTick::add);
+        noSink.clicked(ACTOR, CHEST, Map.of("diamond", 64), Map::of);
+        assertTrue(nextTick.isEmpty());
+    }
+
+    @Test
+    void settleWithoutASinkSendsNothingAndDoesNotThrow() {
+        ContainerTakeListener noSink = new ContainerTakeListener(null, cache, enabled::get, tick::get, nextTick::add);
+        noSink.settle(ACTOR, CHEST, OWNER, Map.of("diamond", 64), Map.of());
+
+        assertTrue(sent.isEmpty());
+    }
+
+    @Test
+    void onlyAPlayerClickingALocatedStorageHolderIsATakeSource() {
+        assertTrue(ContainerTakeListener.isTakeSource(true, true, true));
+    }
+
+    @Test
+    void aNonPlayerClickSendsNothing() {
+        assertFalse(ContainerTakeListener.isTakeSource(false, true, true));
+    }
+
+    @Test
+    void aClickWithNoLocationSendsNothing() {
+        assertFalse(ContainerTakeListener.isTakeSource(true, false, true));
+    }
+
+    @Test
+    void aClickOnANonStorageMenuSendsNothing() {
+        assertFalse(ContainerTakeListener.isTakeSource(true, true, false));
+        assertTrue(ContainerTakeListener.isStorage(holderOf(Container.class)));
+        assertFalse(ContainerTakeListener.isStorage(holderOf(InventoryHolder.class)));
+        assertFalse(ContainerTakeListener.isStorage(null));
+    }
+
+    @Test
+    void twoStacksOfOneItemAddUp() {
+        Map<String, Integer> counts = ContainerTakeListener.countsOf(
+                List.of(Map.entry("stone", 64), Map.entry("stone", 64), Map.entry("dirt", 3)));
+
+        assertEquals(Map.of("stone", 128, "dirt", 3), counts);
+    }
+
+    private static Object holderOf(Class<?> type) {
+        return Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[] {type}, (proxy, method, args) -> null);
     }
 
     @Test

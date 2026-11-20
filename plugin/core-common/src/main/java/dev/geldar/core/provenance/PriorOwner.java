@@ -10,6 +10,10 @@ import java.util.Optional;
 /**
  * The owner the plugin's cache holds for a block, read from the cache only (no CoreProtect call). Null when the chunk
  * is not in the cache, when the block is not owned, or when the owner is not a life id.
+ *
+ * <p>This is the same lookup as {@code BlockChangeListener.priorOwner} (the base answer plus recorded changes, matched
+ * on x, y and z). The intended difference: that copy returns any owner string, while this one returns only life ids, so
+ * a take never names a non-agent as the prior owner.
  */
 public final class PriorOwner {
     private PriorOwner() {}

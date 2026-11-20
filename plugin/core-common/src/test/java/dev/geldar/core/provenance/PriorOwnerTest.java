@@ -42,4 +42,23 @@ class PriorOwnerTest {
         store("Steve");
         assertNull(PriorOwner.of(cache, CHEST));
     }
+
+    @Test
+    void aChangeRecordedAfterTheBaseGivesTheChangedOwner() {
+        store("ag_kestrel_01");
+        cache.recordChange(CHEST, "ag_other_09");
+        assertEquals("ag_other_09", PriorOwner.of(cache, CHEST));
+    }
+
+    @Test
+    void theSameXAndZButAnotherYIsNull() {
+        store("ag_kestrel_01");
+        assertNull(PriorOwner.of(cache, new Pos("world", 10, 65, -3)));
+    }
+
+    @Test
+    void theSameXAndYButAnotherZIsNull() {
+        store("ag_kestrel_01");
+        assertNull(PriorOwner.of(cache, new Pos("world", 10, 64, -2)));
+    }
 }

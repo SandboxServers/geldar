@@ -13,7 +13,23 @@ Inert: `ContainerTakeListener` is not registered. Nothing is registered in `Geld
 - Tests: `TakeDiffTest`, `PriorOwnerTest`, `ContainerTakeListenerTest` (includes a schema check of the emitted payload against `provenance.schema.json`).
 - `plugin/core/src/test/resources/jar-contents.golden`: three class lines added.
 
+## Review 1 fixes
+
+- One pending click per (actor, world, x, y, z) per tick. A second click by the same actor on the same block before the next tick adds nothing; the first click's counts and prior owner stand. A removal is counted once per actor.
+- A click is a take source only for a player clicking a located storage holder: `Container` or `DoubleChest`. Other block menus (crafting table, anvil, enchanting table, the player's own 2x2 view) are not takes. Furnace and brewing stand are `Container`s and still pass; whether their output slot should count is open.
+- `count` is clamped to 2304 (the schema maximum) in `send`.
+- The next tick checks `enabled` again: a listener switched off between the click and the tick sends nothing. Click time does not decide; settle time does.
+- `PriorOwner.of` and `BlockChangeListener.priorOwner` are two copies of one lookup; the only intended difference is the life-id filter (documented in `PriorOwner`).
+
+## Known limits
+
+- Double chest: `getLocation()` of a double-chest inventory is the midpoint of the two halves, so `prior_owner` is read for one half only. That half may belong to another owner.
+- Two viewers, or a hopper, removing from the same chest in one tick: each click's snapshot differs, so a removal can be attributed to a clicker who did not make it, and a removal seen by two clicking players in one tick is reported once per clicker.
+- Drag: `InventoryDragEvent` is not listened to. Drag over the top inventory only places items.
+- Shift-click, number-key swap, double-click collect and drop-key removals are all covered by the snapshot diff.
+
 ## Pending (ops evidence, not run)
 
 - Real-payload capture: a `take` message from a live shard has not been captured. Record the first real reply here when the ops run happens. Nothing was run against a shard for AN-51a.
+- Real capture of which holders report a location and a storage type: chest, double chest, crafting table, furnace, anvil. Not yet captured. Until it is, the holder rule is by type only, unverified against a server.
 - Index line for AN-50a: not written in this packet (not in the may-edit list).

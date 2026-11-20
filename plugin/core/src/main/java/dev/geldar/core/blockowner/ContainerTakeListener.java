@@ -5,6 +5,9 @@ import dev.geldar.core.blockowner.OwnerCache.Pos;
 import dev.geldar.core.provenance.PriorOwner;
 import dev.geldar.core.provenance.ProvenanceJson;
 import dev.geldar.core.provenance.TakeDiff;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.function.BooleanSupplier;
@@ -12,6 +15,8 @@ import java.util.function.Consumer;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 import org.bukkit.Location;
+import org.bukkit.block.Container;
+import org.bukkit.block.DoubleChest;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -28,15 +33,22 @@ import org.bukkit.inventory.ItemStack;
 public final class ContainerTakeListener implements Listener {
     /** At most this many sends in one server tick; the rest are dropped and counted. */
     static final int PER_TICK_CAP = 64;
+    /** The largest count the provenance schema accepts (TakeProvenance.count). */
+    static final int MAX_TAKE_COUNT = 2304;
 
     private final ProvenanceSink sink;
     private final OwnerCache cache;
     private final BooleanSupplier enabled;
     private final LongSupplier tick;
     private final Consumer<Runnable> nextTick;
+    /** One pending settle per actor and position: the first click of a tick keeps its counts and owner. */
+    private final Map<String, Pending> pending = new HashMap<>();
     private long cappedTick = Long.MIN_VALUE;
     private int sentThisTick;
     private long dropped;
+
+    /** A click's snapshot taken before the click, and the prior owner read at the click. */
+    private record Pending(String priorOwner, Map<String, Integer> before) {}
 
     /** {@code nextTick} runs a task on the next server tick; production passes the Bukkit scheduler. */
     public ContainerTakeListener(ProvenanceSink sink, OwnerCache cache, BooleanSupplier enabled, LongSupplier tick,
@@ -54,28 +66,39 @@ public final class ContainerTakeListener implements Listener {
         if (sink == null || !enabled.getAsBoolean()) {
             return;
         }
-        if (!(event.getWhoClicked() instanceof Player player)) {
-            return;
-        }
         Inventory top = event.getView().getTopInventory();
         Location at = top.getLocation();
-        if (at == null || at.getWorld() == null) {
+        boolean located = at != null && at.getWorld() != null;
+        if (!isTakeSource(event.getWhoClicked() instanceof Player, located, isStorage(top.getHolder()))) {
             return;
         }
         Pos pos = new Pos(at.getWorld().getName(), at.getBlockX(), at.getBlockY(), at.getBlockZ());
-        clicked(player.getName(), pos, counts(top.getContents()), () -> counts(top.getContents()));
+        clicked(event.getWhoClicked().getName(), pos, counts(top.getContents()), () -> counts(top.getContents()));
     }
 
     /**
      * Package-private seam: one click on a block-backed container. The prior owner is read now, so an owner that
      * changes before the next tick does not change who is named. Nothing is taken for a name that is not a life id.
+     * A second click by the same actor on the same position before the next tick adds nothing: the first click's
+     * counts stand, so several clicks in one tick cannot count the same removal twice.
      */
     void clicked(String actor, Pos pos, Map<String, Integer> before, Supplier<Map<String, Integer>> after) {
         if (sink == null || !enabled.getAsBoolean() || !EventEnvelope.isLifeId(actor)) {
             return;
         }
-        String prior = PriorOwner.of(cache, pos);
-        nextTick.accept(() -> settle(actor, pos, prior, before, after.get()));
+        String key = key(actor, pos);
+        if (pending.containsKey(key)) {
+            return;
+        }
+        pending.put(key, new Pending(PriorOwner.of(cache, pos), before));
+        nextTick.accept(() -> settleKey(key, actor, pos, after));
+    }
+
+    private void settleKey(String key, String actor, Pos pos, Supplier<Map<String, Integer>> after) {
+        Pending click = pending.remove(key);
+        if (click != null) {
+            settle(actor, pos, click.priorOwner(), click.before(), after.get());
+        }
     }
 
     /** Package-private seam: the next tick's half of a click. Sends one take per item whose count went down. */
@@ -101,7 +124,16 @@ public final class ContainerTakeListener implements Listener {
         sentThisTick++;
         sink.send(
                 "take",
-                ProvenanceJson.takeJson(pos.world(), pos.x(), pos.y(), pos.z(), actor, priorOwner, item, count, now));
+                ProvenanceJson.takeJson(
+                        pos.world(),
+                        pos.x(),
+                        pos.y(),
+                        pos.z(),
+                        actor,
+                        priorOwner,
+                        item,
+                        Math.min(count, MAX_TAKE_COUNT),
+                        now));
     }
 
     /** Takes dropped by the per-tick cap since the server started. */
@@ -109,17 +141,42 @@ public final class ContainerTakeListener implements Listener {
         return dropped;
     }
 
+    /**
+     * Package-private seam for the click's decision: a take is recorded only for a player clicking a located storage
+     * holder (a chest, a barrel, a double chest, or another container block).
+     */
+    static boolean isTakeSource(boolean player, boolean located, boolean storage) {
+        return player && located && storage;
+    }
+
+    /** True for a storage holder: a container block or a double chest. Other block menus are not takes. */
+    static boolean isStorage(Object holder) {
+        return holder instanceof Container || holder instanceof DoubleChest;
+    }
+
     /** Item key (without its namespace) to count, over the stacks of a container. Null slots are empty. */
     static Map<String, Integer> counts(ItemStack[] contents) {
-        Map<String, Integer> counts = new TreeMap<>();
-        if (contents == null) {
-            return counts;
-        }
-        for (ItemStack stack : contents) {
-            if (stack != null) {
-                counts.merge(stack.getType().getKey().getKey(), stack.getAmount(), Integer::sum);
+        List<Map.Entry<String, Integer>> stacks = new ArrayList<>();
+        if (contents != null) {
+            for (ItemStack stack : contents) {
+                if (stack != null) {
+                    stacks.add(Map.entry(stack.getType().getKey().getKey(), stack.getAmount()));
+                }
             }
         }
+        return countsOf(stacks);
+    }
+
+    /** Sums (item key, amount) stacks into counts: two stacks of one item add up. */
+    static Map<String, Integer> countsOf(List<Map.Entry<String, Integer>> stacks) {
+        Map<String, Integer> counts = new TreeMap<>();
+        for (Map.Entry<String, Integer> stack : stacks) {
+            counts.merge(stack.getKey(), stack.getValue(), Integer::sum);
+        }
         return counts;
+    }
+
+    private static String key(String actor, Pos pos) {
+        return actor + "|" + pos.world() + "|" + pos.x() + "|" + pos.y() + "|" + pos.z();
     }
 }

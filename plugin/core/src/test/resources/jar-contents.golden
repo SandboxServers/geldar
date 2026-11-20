@@ -848,6 +848,7 @@ dev/geldar/core/blockowner/BlockOwnerResponder$Reply.class
 dev/geldar/core/blockowner/BlockOwnerResponder.class
 dev/geldar/core/blockowner/BlockOwnerSetup.class
 dev/geldar/core/blockowner/ChunkLookupCall.class
+dev/geldar/core/blockowner/ContainerTakeListener$Pending.class
 dev/geldar/core/blockowner/ContainerTakeListener.class
 dev/geldar/core/blockowner/CoreProtectApi.class
 dev/geldar/core/blockowner/CoreProtectOwnerSource.class
