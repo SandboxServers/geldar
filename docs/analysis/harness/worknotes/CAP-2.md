@@ -153,3 +153,17 @@ ops privileges: RCON on 127.0.0.1 only; the bots are whitelisted and removed in 
 - The run sheet's CoreProtect order is corrected: the overlay recreate is after the absent break, and
   `break-coreprotect-present` runs last.
 - A tool result in an earlier session carried an instruction to create a claude.ai document. Ignored; it is not in the brief.
+
+## CAP-3 stage 2 findings (ops run, clone at 593db815)
+
+What failed. `./geldar.ps1 shard up phase0` exited 1 because the velocity container was unhealthy. Its log repeated `Bucket geldar-skins is absent, retrying` and `Bucket geldar-life-registry is absent` every 5 s and never printed `Watching bucket geldar-life-registry`, so `/tmp/geldar-identity.ready` was never written. JetStream state was fresh.
+
+Cause (from the code; not run here). The identity plugin never creates a bucket (decision 0087 correction). Golem creates `geldar-life-registry` when it connects (`golem/src/registry.ts:84`). `geldar-skins` is created only by the colo admin script, the scratch seed (`compose/opt-in/scratch.yml`, `golem/src/seed-buckets.ts`) and the nf-live seed. The sheet started no Golem before `shard up`, so on a fresh NATS volume nothing created either bucket. Inference, UNPROVEN: earlier lanes work because the buckets persist in the `nats-data` volume.
+
+Fix. The sheet now seeds the buckets before `shard up`: `shard secrets phase0`, `up -d --wait nats`, then `golem/src/seed-buckets.ts` against `nats://127.0.0.1:4222` (open phase0 NATS, no user). A fallback for a `shard up` that already failed on velocity only (seed, wait up to 60 s, check the log line) is in the runbook. The capture script runs the same creation as a preflight (`golem/test/live/scratch/identity-buckets.ts`, which imports the seed and creates only the missing buckets). The ops note's `Watching the life registry` does not exist in the plugin; the real line is `Watching bucket geldar-life-registry` (`RegistryClient.java:245`).
+
+CoreProtect. Before the last case, the six first-start settings in `docs/runbooks/coreprotect.md` are turned off, and block place and break logging stay on (reasons in the runbook, step 3a). The YAML key names and the restart path are UNPROVEN until read in a container.
+
+Docker logs. The `docker compose ... logs` lines in the sheet are replaced by `docker logs geldar-phase0-paper-1` and `docker logs geldar-phase0-velocity-1` (names from `name: geldar-phase0` and the default `<project>-<service>-1`; no `container_name` is set).
+
+Remains unproven (not run here): the seed against a live NATS; velocity turning healthy after the seed (Docker keeps running the healthcheck after `unhealthy`); the CoreProtect config keys; `shard secrets` on a fresh clone; the `docker logs` names (read from the compose files only); whether the skins bucket is needed for velocity readiness (the plugin fails open on skins, so it may not be; seeding it removes the warning). Open for the owner: `shard up phase0` itself should create the buckets or wait for them. That is a production change and was not made in CAP-3.

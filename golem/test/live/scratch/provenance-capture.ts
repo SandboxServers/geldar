@@ -58,6 +58,7 @@ import {
   verifyRenamedStick,
   within,
 } from './capture-windows.ts';
+import { ensureIdentityBuckets } from './identity-buckets.ts';
 
 const REPO_ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
 const NATS_CAPTURE = join(REPO_ROOT, 'tools/capture/src/nats-capture.ts');
@@ -471,6 +472,15 @@ async function main(): Promise<number> {
   const session = sessionRefusal(args.cases, readControlMarker(outRoot));
   if (session !== null) {
     process.stderr.write(`${session}\n`);
+    return 2;
+  }
+  // CAP-3: velocity is healthy only once the life registry is watched, so the buckets exist before the first bot joins.
+  try {
+    await ensureIdentityBuckets(args.natsUrl, (line) => process.stdout.write(`${line}\n`));
+  } catch (error) {
+    process.stderr.write(
+      `identity buckets: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
     return 2;
   }
   let worst = 0;
