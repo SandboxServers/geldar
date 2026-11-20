@@ -14,6 +14,7 @@ Where scope creep goes. An idea that isn't in [the spec](spec.md) or the current
 
 | Idea | Why it might matter | Earliest phase |
 |---|---|---|
+| Shadowed parameter in the identity registry log: `RegistryClient.java:236` declares `Bucket bucket`, which shadows the field `String bucket`, so `:245` logs `Watching bucket` with an object (`RegistryClient$1@<hash>`), not the bucket name. The skins client logs one such line too. | Ops reads the log line as a readiness signal; a fixed line would show the bucket name. It is a one-line production change, so it waits for a plugin card. | Phase 1 (next plugin change) |
 | Kino thought ticker: the agent's latest public thought as a caption strip under its monitor. | Fits the Back to the Future II wall of screens, but puts location and thought on one page; needs a privacy look under decision 0138. Left out of decision 0166 (assumption A5). | Phase 1 (Kino) |
 | Kino with more than 4 monitors (a 3x3 wall). | The Back to the Future II wall shows more screens; the cap of 4 is an owner ruling (decision 0075) enforced by the relay, and the feed load has to be measured first. | After the Kino load budget |
 | Maven mirror or caching proxy for CI runners. | Maven Central HTTP 429s keep failing the plugin and neoforge jobs (main push run 44209178309 on 2026-11-17/18, earlier merge-queue ejections); the retry-once step in ci.yml is a mitigation. A mirror or proxy is a larger infrastructure change; the owner approves PRs, not infrastructure, so it is parked. | Unscheduled (needs an owner decision) |

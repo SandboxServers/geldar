@@ -153,3 +153,21 @@ ops privileges: RCON on 127.0.0.1 only; the bots are whitelisted and removed in 
 - The run sheet's CoreProtect order is corrected: the overlay recreate is after the absent break, and
   `break-coreprotect-present` runs last.
 - A tool result in an earlier session carried an instruction to create a claude.ai document. Ignored; it is not in the brief.
+
+## CAP-3 stage 2 findings (ops run, clone at 593db815)
+
+What failed. `./geldar.ps1 shard up phase0` exited 1 because the velocity container was unhealthy. Its log repeated `Bucket geldar-skins is absent, retrying` and `Bucket geldar-life-registry is absent` every 5 s and never wrote `/tmp/geldar-identity.ready`. (The ops note's `Watching bucket` line is not a readiness signal; see the finding below.) JetStream state was fresh.
+
+Cause (from the code; not run here). The identity plugin never creates a bucket (decision 0087 correction). Golem creates `geldar-life-registry` when it connects (`golem/src/registry.ts:84`). `geldar-skins` is created only by the colo admin script (`tools/admin/admin.sh`), players-cli `skin set` (`tools/players-cli/src/skin-store.ts`), the scratch seed (`compose/opt-in/scratch.yml`, `golem/src/seed-buckets.ts`) and the nf-live seed. The sheet started no Golem before `shard up`, so on a fresh NATS volume nothing created either bucket. Inference, UNPROVEN: earlier lanes work because the buckets persist in the `nats-data` volume.
+
+Fix. The sheet now seeds the buckets before `shard up`: `shard secrets phase0`, `up -d --wait nats`, then `golem/src/seed-buckets.ts` against `nats://127.0.0.1:4222` (open phase0 NATS, no user). A fallback for a `shard up` that already failed on velocity only (seed, wait up to 60 s, check the health state and the ready file; a log count is informational, after `docker logs --since`) is in the runbook. The capture script runs the same creation as a preflight (`golem/test/live/scratch/identity-buckets.ts`, which imports the seed and creates only the missing buckets). The ops note's `Watching the life registry` does not exist in the plugin. The line `Watching bucket` (`RegistryClient.java:245`) is not usable: the shadowed parameter prints an object, not the bucket name. Readiness is checked by `/tmp/geldar-identity.ready` (`docker exec ... test -f`) and the velocity health state, and the bucket preflight's failure prints the registry.ts hint.
+
+CoreProtect. Before the last case, the six first-start settings in `docs/runbooks/coreprotect.md` are turned off, and block place and break logging stay on. `player-interactions` stays at its default, because the owner lookup also reads click rows (`ChunkLookupCall.java:17-31`; reasons in the runbook, step 3a). The YAML key names and the restart path are UNPROVEN until read in a container.
+
+Docker logs. The `docker compose ... logs` lines in the sheet are replaced by `docker logs geldar-phase0-paper-1` and `docker logs geldar-phase0-velocity-1` (names from `name: geldar-phase0` and the default `<project>-<service>-1`; no `container_name` is set).
+
+The runbook's `docker compose ... exec` forms are replaced by `docker exec <container>`; the cause of the ops `no configuration file provided` error is UNPROVEN, so each compose line that stays has a stop condition.
+
+Finding for a later card (not fixed in CAP-3; production change): `RegistryClient.java:236` declares the parameter `Bucket bucket`, which shadows the field `String bucket`, so `RegistryClient.java:245` (`log.info("Watching bucket {}", bucket)`) prints the object (`RegistryClient$1@<hash>`). The log should print the bucket name. The skins client logs one `Watching bucket` line too.
+
+Remains unproven (not run here): the seed against a live NATS; the `test -f` and the `docker inspect` nats check (read from the files, not run); the CoreProtect owner check and the `chown` fix after `docker cp`; velocity turning healthy after the seed (Docker keeps running the healthcheck after `unhealthy`); the CoreProtect config keys; `shard secrets` on a fresh clone; the `docker logs` names (read from the compose files only); whether the skins bucket is needed for velocity readiness (the plugin fails open on skins, so it may not be; seeding it removes the warning). Open for the owner: `shard up phase0` itself should create the buckets or wait for them. That is a production change and was not made in CAP-3.
