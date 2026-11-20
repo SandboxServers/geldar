@@ -554,30 +554,25 @@ describe('deploy channel: installer (GE-04)', () => {
       expect(statSync(log).ino).toBe(inode);
       expect(readFileSync(log, 'utf8')).toBe('run in progress\n');
       expect(modeOf(log)).toBe(0o600);
-      expect(readFileSync(sh.calls, 'utf8')).toContain('chown op-user:op-user');
-      expect(readFileSync(sh.calls, 'utf8')).toContain('chmod 0600 ');
+      expect(readFileSync(sh.calls, 'utf8')).toMatch(/chown op-user:op-user .*\nchmod 0600 /);
     },
     INSTALL_TIMEOUT,
   );
 
-  // A directory where the operator file or the log should be is refused (a directory is a portable non-regular file).
-  it(
-    'refuses a directory in place of colo-env.sh or channel.log',
-    () => {
-      const fx = setup();
-      const dest = join(fx.root, 'dest');
-      mkdirSync(join(dest, 'home', 'op-user', 'colo-env.sh'), { recursive: true });
-      const envRefused = install(dest, 'op-user');
-      expect(envRefused.status).toBe(1);
-      expect(envRefused.stderr).toContain('colo-env.sh is not a regular file; refused');
-      const dest2 = join(fx.root, 'dest2');
-      mkdirSync(join(dest2, 'var', 'lib', 'geldar-deploy', 'channel.log'), { recursive: true });
-      const logRefused = install(dest2, 'op-user');
-      expect(logRefused.status).toBe(1);
-      expect(logRefused.stderr).toContain('channel.log is not a regular file; refused');
-    },
-    INSTALL_TIMEOUT,
-  );
+  // A directory is a portable non-regular file: refused where the operator file or the log should be.
+  it('refuses a directory in place of colo-env.sh or channel.log', () => {
+    const fx = setup();
+    const dest = join(fx.root, 'dest');
+    mkdirSync(join(dest, 'home', 'op-user', 'colo-env.sh'), { recursive: true });
+    const envRefused = install(dest, 'op-user');
+    expect(envRefused.status).toBe(1);
+    expect(envRefused.stderr).toContain('colo-env.sh is not a regular file; refused');
+    const dest2 = join(fx.root, 'dest2');
+    mkdirSync(join(dest2, 'var', 'lib', 'geldar-deploy', 'channel.log'), { recursive: true });
+    const logRefused = install(dest2, 'op-user');
+    expect(logRefused.status).toBe(1);
+    expect(logRefused.stderr).toContain('channel.log is not a regular file; refused');
+  });
 
   it('keeps an existing node env file and refuses a bad operator account name', () => {
     const fx = setup();
@@ -591,8 +586,7 @@ describe('deploy channel: installer (GE-04)', () => {
     expect(bad.status).toBe(1);
   });
 
-  // The temp file is made by mktemp next to the destination, so a symlink planted at an old temp name is ignored, and the
-  // move replaces links without writing through them: the victim is never written.
+  // mktemp names the temp file, so a symlink planted at the old temp name is ignored and never written through.
   it.skipIf(!canSymlink())(
     'never writes through a symlink planted at the old sudoers temp name',
     () => {
