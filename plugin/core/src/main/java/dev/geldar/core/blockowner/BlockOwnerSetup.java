@@ -8,6 +8,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.logging.Logger;
+import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -16,6 +17,9 @@ import org.bukkit.plugin.java.JavaPlugin;
  * Wires block ownership: the CoreProtect owner source (when CoreProtect is present), the lookup thread, the chunk
  * cache, the change listener, the batched change publisher and the NATS query link. Settings: {@code blockowner.enabled}
  * (default true; false stops the listener and the replies) and {@code blockowner.lookup_timeout_ms} (default 2000).
+ * {@code provenance.enabled} (default false, no config.yml default) turns on the provenance messages of breaks and
+ * pickups; with it off the listeners return before they read anything. Paper-only; do not enable on NeoForge until the
+ * human-handling question is decided.
  */
 public final class BlockOwnerSetup implements AutoCloseable {
     static final String COREPROTECT = "CoreProtect";
@@ -31,6 +35,7 @@ public final class BlockOwnerSetup implements AutoCloseable {
     private final PlacementRecorder placements;
     private final OwnerSource source;
     private volatile boolean enabled = true;
+    private volatile boolean provenance;
 
     private BlockOwnerSetup(ExecutorService lookups, NatsBlockOwnerLink link, OwnerQueryService service,
             LookupDebugLog debug, PlacementRecorder placements, OwnerSource source) {
@@ -80,19 +85,27 @@ public final class BlockOwnerSetup implements AutoCloseable {
         BlockOwnerSetup setup = new BlockOwnerSetup(lookups, link, service, debug, placements, source);
         BlockOwnerResponder responder = new BlockOwnerResponder(service, link, () -> setup.enabled);
         link.start(responder::receive);
-        plugin.getServer().getPluginManager().registerEvents(
-                new BlockChangeListener(cache, publisher, () -> setup.enabled), plugin);
+        plugin.getServer().getPluginManager().registerEvents(new BlockChangeListener(cache, publisher,
+                () -> setup.enabled, link, () -> setup.enabled && setup.provenance, Bukkit::getCurrentTick), plugin);
+        plugin.getServer().getPluginManager().registerEvents(new PickupProvenanceListener(link,
+                () -> setup.enabled && setup.provenance, Bukkit::getCurrentTick, Bukkit::getPlayer), plugin);
         plugin.getServer().getScheduler().runTaskTimer(plugin, publisher::flush, 1L, 1L);
         setup.reload(plugin.getConfig());
         return setup;
     }
 
-    /** Applies {@code blockowner.*} from the config; the plugin calls it with the 5 s config reload. */
+    /** Applies {@code blockowner.*} and {@code provenance.enabled} from the config; the plugin calls it on the 5 s reload. */
     public void reload(FileConfiguration config) {
+        provenance = provenanceEnabled(config);
         enabled = config.getBoolean("blockowner.enabled", true);
         long timeout = config.getLong("blockowner.lookup_timeout_ms", DEFAULT_TIMEOUT_MS);
         service.setTimeoutMs(Math.max(MIN_TIMEOUT_MS, Math.min(MAX_TIMEOUT_MS, timeout)));
         debug.setEnabled(config.getBoolean("blockowner.debug", false));
+    }
+
+    /** The provenance flag: {@code provenance.enabled}, false when the key is absent. */
+    static boolean provenanceEnabled(FileConfiguration config) {
+        return config.getBoolean("provenance.enabled", false);
     }
 
     /** The owner source: CoreProtect when it is loaded, enabled and new enough; otherwise one that always says unknown. */

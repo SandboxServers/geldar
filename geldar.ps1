@@ -400,11 +400,12 @@ function Get-NatsUsers([string] $Shard) {
       # State (0280): the body never publishes a level push, so it cannot forge a domain level. It still requests the
       # proficiency subject (state.<life>.proficiency), which this deny does not match.
       # Hearing (decision 0199, MH-CH): only the plugin publishes a hearing notice, so the body cannot forge one.
-      PubDeny = @("geldar.$s.kino.>", "geldar.$s.blockowner.changed", "geldar.$s.ctl.body.>", "geldar.$s.helper.body.>", "geldar.$s.state.*.level", "geldar.$s.body.*.hearing");
+      # Provenance (AN-28c): the body hears provenance and cannot forge it (the plugin is the only publisher).
+      PubDeny = @("geldar.$s.kino.>", "geldar.$s.blockowner.changed", "geldar.$s.ctl.body.>", "geldar.$s.helper.body.>", "geldar.$s.state.*.level", "geldar.$s.body.*.hearing", "geldar.$s.provenance.>");
       # Block ownership (decision 0165): the body queries geldar.<s>.blockowner.query (inside its geldar.<s>.> allow) and
       # hears blockowner.changed; it is denied publishing changed, so it cannot forge an owner.
       # State (AN-12b): the body hears only the level pushes (state.<life>.level); its request is in its Pub, and replies come on _INBOX.>.
-      Sub = @("geldar.$s.body.>", "geldar.$s.blockowner.changed", "geldar.$s.state.*.level", '_INBOX.>') }
+      Sub = @("geldar.$s.body.>", "geldar.$s.blockowner.changed", "geldar.$s.state.*.level", "geldar.$s.provenance.>", '_INBOX.>') }
     # Hearing (decision 0199, MH-CH): the mind's body.> allow would cover the hearing subject, so it is denied by name.
     mind = @{ Pub = @($mindTypes | ForEach-Object { "geldar.$s.$_" }) + $js + @("geldar.$s.body.>");
       PubDeny = @("geldar.$s.body.*.hearing");
