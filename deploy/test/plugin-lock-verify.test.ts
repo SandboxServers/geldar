@@ -27,7 +27,8 @@ const SH = findSh();
 const CORE = 'geldar-core.jar';
 const VELOCITY = 'geldar-velocity-identity.jar';
 const COMMIT = '0123456789abcdef0123456789abcdef01234567';
-const LOCK = 'plugin-jars.lock';
+// The lock sits beside the artifact dir, never inside it: the verifier refuses unexpected entries in the artifact dir.
+const lockPath = (): string => `${dir}.lock`;
 
 let root: string;
 let dir: string;
@@ -52,7 +53,7 @@ function publish(): void {
 
 // Writes the lock beside the artifact. The jar lines default to the digests publish() wrote.
 function writeLock(header: string, coreLine = CORE_LINE, velocityLine = VELOCITY_LINE): string {
-  const path = join(dir, LOCK);
+  const path = lockPath();
   writeFileSync(
     path,
     [
@@ -132,7 +133,7 @@ describe('verify-plugin-lock.sh', () => {
     writeFileSync(join(dir, 'other.jar'), 'other jar bytes');
     const result = runScript([dir, lock]);
     expect(result.status).toBe(1);
-    expect(result.stderr).toContain('extra jar in the artifact dir, not in the lock');
+    expect(result.stderr).toContain('unexpected entry in the artifact dir');
   });
 
   itRuns('fails when the lock and plugin-jars.sha256 disagree on a digest', () => {
@@ -174,4 +175,111 @@ describe('verify-plugin-lock.sh', () => {
     expect(result.status).toBe(2);
     expect(result.stderr).toContain('malformed line in lock file');
   });
+
+  itRuns('fails on an artifact file named with two locked jar names', () => {
+    publish();
+    const lock = writeLock(COMMIT);
+    writeFileSync(join(dir, `${CORE} ${VELOCITY}`), 'spaced bytes');
+    const result = runScript([dir, lock]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('unexpected entry in the artifact dir');
+  });
+
+  itRuns('fails on an upper-case EVIL.JAR the lock does not name', () => {
+    publish();
+    const lock = writeLock(COMMIT);
+    writeFileSync(join(dir, 'evil.JAR'), 'evil bytes');
+    const result = runScript([dir, lock]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('unexpected entry in the artifact dir');
+  });
+
+  itRuns('fails on a dot-file jar the lock does not name', () => {
+    publish();
+    const lock = writeLock(COMMIT);
+    writeFileSync(join(dir, '.evil.jar'), 'evil bytes');
+    const result = runScript([dir, lock]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('unexpected entry in the artifact dir');
+  });
+
+  itRuns('fails a PENDING lock checked with --allow-pending when a jar was tampered with', () => {
+    publish();
+    const lock = writeLock('PENDING');
+    writeFileSync(join(dir, CORE), 'core jar bytes, with one extra byte');
+    const result = runScript([dir, lock, '--allow-pending']);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(`digest mismatch: ${CORE}`);
+  });
+
+  itRuns('exits 2 on a source commit that is not 40 characters', () => {
+    publish();
+    const lock = writeLock('0123456789abcdef');
+    const result = runScript([dir, lock]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('lock source commit must be 40 lowercase hex or PENDING');
+  });
+
+  itRuns('exits 2 on a source commit with upper-case hex', () => {
+    publish();
+    const lock = writeLock(COMMIT.toUpperCase());
+    const result = runScript([dir, lock]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('lock source commit must be 40 lowercase hex or PENDING');
+  });
+
+  itRuns('exits 2 when the lock has two source commit lines', () => {
+    publish();
+    writeFileSync(
+      lockPath(),
+      [
+        `# source commit: ${COMMIT}`,
+        `# source commit: ${COMMIT}`,
+        CORE_LINE,
+        VELOCITY_LINE,
+        '',
+      ].join('\n'),
+    );
+    const result = runScript([dir, lockPath()]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain("needs exactly one '# source commit:' line");
+  });
+
+  itRuns('exits 2 when a jar name is listed twice in the lock', () => {
+    publish();
+    writeFileSync(
+      lockPath(),
+      [`# source commit: ${COMMIT}`, CORE_LINE, CORE_LINE, VELOCITY_LINE, ''].join('\n'),
+    );
+    const result = runScript([dir, lockPath()]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('duplicate jar name in lock file');
+  });
+
+  itRuns('exits 2 when the lock names no jars', () => {
+    publish();
+    writeFileSync(lockPath(), `# source commit: ${COMMIT}\n`);
+    const result = runScript([dir, lockPath()]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('lock file lists no jars');
+  });
+
+  itRuns('exits 2 on an unknown third argument', () => {
+    publish();
+    const lock = writeLock(COMMIT);
+    const result = runScript([dir, lock, '--bogus']);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('usage:');
+  });
+
+  itRuns(
+    'fails when the lock source commit differs from the commit plugin-jars.sha256 was built from',
+    () => {
+      publish();
+      const lock = writeLock('f'.repeat(40));
+      const result = runScript([dir, lock]);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain('lock source commit differs from plugin-jars.sha256');
+    },
+  );
 });

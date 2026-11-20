@@ -136,6 +136,18 @@ if [ "$lock_pairs" != "$pairs" ]; then
   echo "plugin-jars.sha256 does not list the same jars and digests as the lock" >&2
   status=1
 fi
+# plugin-jars.sha256 names the commit it was built from (plugin-jars.yml). The lock must name the same commit unless PENDING.
+if [ "$commit" != PENDING ]; then
+  built_line=$(grep '^# Geldar plugin jars, built from commit ' "$sums" || true)
+  if [ -n "$built_line" ]; then
+    built_commit=${built_line#'# Geldar plugin jars, built from commit '}
+    built_commit=${built_commit%%.*}
+    if [ "$built_commit" != "$commit" ]; then
+      echo "lock source commit differs from plugin-jars.sha256" >&2
+      status=1
+    fi
+  fi
+fi
 for name in $sums_names; do
   case " $lock_names " in
     *" $name "*) ;;
@@ -169,15 +181,26 @@ while IFS= read -r line || [ -n "$line" ]; do
   fi
 done <"$lock"
 
-for file in "$dir"/*.jar; do
-  if [ ! -f "$file" ]; then
+# Every entry in the directory, dot-files and any case included, must be plugin-jars.sha256 or a locked jar name. Each name is
+# compared with an exact test, so a file name that holds two names does not match either of them.
+for entry in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do
+  if [ ! -e "$entry" ] && [ ! -L "$entry" ]; then
     continue
   fi
-  base=${file##*/}
-  case " $lock_names " in
-    *" $base "*) ;;
-    *) echo "extra jar in the artifact dir, not in the lock" >&2; status=1 ;;
-  esac
+  base=${entry##*/}
+  if [ "$base" = plugin-jars.sha256 ]; then
+    continue
+  fi
+  found=0
+  for locked in $lock_names; do
+    if [ "$base" = "$locked" ]; then
+      found=1
+    fi
+  done
+  if [ "$found" -ne 1 ]; then
+    echo "unexpected entry in the artifact dir, not plugin-jars.sha256 or a locked jar" >&2
+    status=1
+  fi
 done
 
 exit "$status"
