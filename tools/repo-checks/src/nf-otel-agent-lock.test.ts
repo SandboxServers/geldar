@@ -40,10 +40,10 @@ describe('OTel agent lock (no docker needed)', () => {
     expect(lock.get('sha256')).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('has an https url that contains the version', () => {
-    const url = lock.get('url') ?? '';
-    expect(url).toMatch(/^https:\/\//);
-    expect(url).toContain(lock.get('version') as string);
+  it('has the exact upstream GitHub release asset url for its version', () => {
+    expect(lock.get('url')).toBe(
+      `https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v${lock.get('version')}/opentelemetry-javaagent.jar`,
+    );
   });
 
   it('has a version in the form x.y.z', () => {
