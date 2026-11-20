@@ -195,6 +195,38 @@ describe('colo-rollback, colo-down, colo-status (decision 0084)', () => {
   });
 });
 
+describe('colo-status inode warning', () => {
+  // A df stand-in first on PATH: the `df -Pi` table with the given IUse% for the deploy volume.
+  const withDf = (pct: number) => {
+    const fx = fixture();
+    const table = `Filesystem Inodes IUsed IFree IUse% Mounted
+fake 1000 ${pct * 10} ${1000 - pct * 10} ${pct}% /`;
+    writeFileSync(
+      join(fx.dir, 'bin', 'df'),
+      `#!/bin/sh
+cat <<'EOT'
+${table}
+EOT
+`,
+      { mode: 0o755 },
+    );
+    return { ...fx, env: { ...fx.env, GELDAR_INODE_PATH: posix(fx.dir) } };
+  };
+
+  it('warns when the inodes of the deploy volume are 80% used or more, and still exits 0', () => {
+    const r = run('colo-status.sh', withDf(95));
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('inodes of the deploy volume are 95% used');
+    expect(r.out).toContain('prune-deploy-work.sh');
+  });
+
+  it('prints nothing about inodes below the threshold', () => {
+    const r = run('colo-status.sh', withDf(12));
+    expect(r.code).toBe(0);
+    expect(r.out).not.toContain('inodes');
+  });
+});
+
 describe('deploy scripts: docker scope and volumes (decision 0084)', () => {
   it('every docker call names the geldar-colo project or its label, and no script runs down -v', () => {
     const fx = fixture();

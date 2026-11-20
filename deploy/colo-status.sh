@@ -21,3 +21,16 @@ if [ -n "$ids" ]; then
 else
   say "no containers in $PROJECT"
 fi
+# Inode headroom of the deploy volume (the 2026-11-20 deploys failed on inodes, not bytes). Silent below the threshold,
+# so the output above is unchanged on a healthy node. A failed df never fails the status.
+inode_path=${GELDAR_INODE_PATH:-/var/lib/geldar-deploy}
+[ -d "$inode_path" ] || inode_path=/var
+inode_pct=$(df -Pi "$inode_path" 2>/dev/null | awk 'NR == 2 {gsub("%", "", $5); print $5}') || inode_pct=
+case $inode_pct in
+  '' | *[!0-9]*) ;;
+  *)
+    if [ "$inode_pct" -ge "${GELDAR_INODE_WARN_PCT:-80}" ]; then
+      say "WARNING: inodes of the deploy volume are ${inode_pct}% used; run deploy/genesis/prune-deploy-work.sh (dry run first)"
+    fi
+    ;;
+esac
