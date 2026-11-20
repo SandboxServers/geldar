@@ -9,8 +9,9 @@
 # *.yaml in the allow-list and a symlinked env file.
 # Idempotent: an identical file with the right mode and owner is left alone (unchanged). Identical bytes with a drifted mode
 # or owner are repaired (repaired); the env file's contents are never changed. A file that did not exist is installed.
-# Every file is built in the root-owned work dir (install sets its owner and mode there) and moved into place with mv -T.
-# No chown or chmod is run by path inside an operator-writable directory.
+# Root-owned destinations are staged next to the destination and moved into place with mv -T (a same-filesystem rename).
+# The operator's env file is built in the root-owned work dir and moved in. No chown or chmod is run by path inside an
+# operator-writable directory.
 # The authorized_keys line is not installed here: authorized-keys.template is filled by bootstrap with the per-environment key.
 # Usage: GELDAR_OPERATOR_USER=<account> sh install-deploy-channel.sh [--skip-visudo]
 # Env: GELDAR_DEPLOY_DEST, a root prefix for tests (empty on a node, which then needs root); GELDAR_OPERATOR_HOME
@@ -64,6 +65,7 @@ attrs_ok() {
 # the copy over the file. No chown or chmod runs by path in the operator's directory.
 fix_existing() {
   if [ -L "$1" ]; then die "$4 is a symlink; refused"; fi
+  if [ ! -f "$1" ]; then die "$4 is not a regular file; refused"; fi
   if attrs_ok "$1" "$2" "$3"; then
     echo "kept $4"
     return 0
@@ -76,15 +78,31 @@ fix_existing() {
   echo "repaired $4"
 }
 
-# place SRC DST MODE OWNER: installs SRC at DST. The file is built in the work dir, with install setting its owner and mode,
-# and moved over DST with mv -T. DST is the path under DEST; the label printed is the path without it. A file that did not
-# exist is installed; identical bytes with drifted attributes are repaired.
+# fix_in_place PATH MODE OWNER LABEL: repairs the mode and owner of a file kept in place, so its inode is kept (a running deploy
+# holds flock on it). Only for files in the root-owned log directory, which the operator cannot rename within, so chown and
+# chmod by path are safe there.
+fix_in_place() {
+  if [ -L "$1" ]; then die "$4 is a symlink; refused"; fi
+  if [ ! -f "$1" ]; then die "$4 is not a regular file; refused"; fi
+  if attrs_ok "$1" "$2" "$3"; then
+    echo "kept $4"
+    return 0
+  fi
+  chown "$3" "$1"
+  chmod "$2" "$1"
+  echo "repaired $4"
+}
+
+# place SRC LABEL MODE OWNER STAGE: installs SRC at DEST+LABEL. The file is built by install (owner and mode set there) and
+# moved over the destination with mv -T. STAGE=root stages it next to the destination, so the move is a same-filesystem
+# rename; STAGE=work stages it in the root-owned work dir (the operator's env file only). A file that did not exist is
+# installed; identical bytes with drifted attributes are repaired.
 place() {
   src=$1
   dst=$DEST$2
   mode=$3
   owner=$4
-  if [ -e "$dst.new" ] || [ -L "$dst.new" ]; then die "$2.new exists; remove it and run again"; fi
+  stage=$5
   same=no
   if [ -f "$dst" ] && [ ! -L "$dst" ] && cmp -s "$src" "$dst"; then same=yes; fi
   if [ "$same" = yes ] && attrs_ok "$dst" "$mode" "$owner"; then
@@ -92,13 +110,17 @@ place() {
     return 0
   fi
   mkdir -p "$(dirname "$dst")"
-  stage=$(mktemp "$WORK/place.XXXXXX") || die "cannot create a staging file for $2"
-  if [ -z "$DEST" ]; then
-    install -m "$mode" -o "${owner%%:*}" -g "${owner#*:}" "$src" "$stage"
+  if [ "$stage" = work ]; then
+    tmp=$(mktemp "$WORK/place.XXXXXX") || die "cannot create a staging file for $2"
   else
-    install -m "$mode" "$src" "$stage"
+    tmp=$(mktemp "$dst.XXXXXX") || die "cannot create a staging file for $2"
   fi
-  mv -T -f "$stage" "$dst"
+  if [ -z "$DEST" ]; then
+    install -m "$mode" -o "${owner%%:*}" -g "${owner#*:}" "$src" "$tmp" || { rm -f "$tmp"; die "cannot install $2"; }
+  else
+    install -m "$mode" "$src" "$tmp" || { rm -f "$tmp"; die "cannot install $2"; }
+  fi
+  mv -T -f "$tmp" "$dst"
   if [ "$same" = yes ]; then echo "repaired $2"; else echo "installed $2"; fi
 }
 
@@ -109,7 +131,7 @@ if [ -n "$(find "$DEST$ENVS" -maxdepth 1 -name '*.yaml' -type l)" ]; then
   die "a symlinked *.yaml is in the allow-list; refused"
 fi
 
-place "$HERE/geldar-deploy-channel.sh" /usr/local/libexec/geldar-deploy/channel 0755 root:root
+place "$HERE/geldar-deploy-channel.sh" /usr/local/libexec/geldar-deploy/channel 0755 root:root root
 
 sed "s/@OPERATOR@/$OP/g" "$HERE/geldar-deploy.sudoers.template" >"$WORK/sudoers"
 if command -v visudo >/dev/null 2>&1; then
@@ -117,22 +139,22 @@ if command -v visudo >/dev/null 2>&1; then
 elif [ -z "$SKIP_VISUDO" ]; then
   die "visudo is absent, so the sudoers fragment cannot be checked; install sudo or pass --skip-visudo"
 fi
-place "$WORK/sudoers" /etc/sudoers.d/geldar-deploy 0440 root:root
+place "$WORK/sudoers" /etc/sudoers.d/geldar-deploy 0440 root:root root
 
 # The operator's env file is the node's own: copied from the template only when absent, never overwritten.
 if [ -e "$DEST$OP_HOME/colo-env.sh" ] || [ -L "$DEST$OP_HOME/colo-env.sh" ]; then
   fix_existing "$DEST$OP_HOME/colo-env.sh" 0600 "$OP:$OP" "$OP_HOME/colo-env.sh"
 else
-  place "$HERE/colo-env.sh.template" "$OP_HOME/colo-env.sh" 0600 "$OP:$OP"
+  place "$HERE/colo-env.sh.template" "$OP_HOME/colo-env.sh" 0600 "$OP:$OP" work
 fi
 
 # The channel log and lock live in the root-owned log directory; the operator owns those two files. A missing file is
-# installed empty; an existing one is kept, with only its mode and owner repaired.
+# installed empty; an existing one is kept in place, with only its mode and owner repaired (never replaced: its inode is kept).
 : >"$WORK/empty"
 for f in channel.log channel.lock; do
   if [ -e "$DEST/var/lib/geldar-deploy/$f" ] || [ -L "$DEST/var/lib/geldar-deploy/$f" ]; then
-    fix_existing "$DEST/var/lib/geldar-deploy/$f" 0600 "$OP:$OP" "/var/lib/geldar-deploy/$f"
+    fix_in_place "$DEST/var/lib/geldar-deploy/$f" 0600 "$OP:$OP" "/var/lib/geldar-deploy/$f"
   else
-    place "$WORK/empty" "/var/lib/geldar-deploy/$f" 0600 "$OP:$OP"
+    place "$WORK/empty" "/var/lib/geldar-deploy/$f" 0600 "$OP:$OP" root
   fi
 done

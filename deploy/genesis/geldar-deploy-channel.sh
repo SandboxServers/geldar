@@ -77,7 +77,6 @@ echo "geldar-deploy: $verb $env_name started"
 rc=0
 # env -i: the entrypoint gets only PATH, never the sshd environment. stdin is /dev/null and the lock descriptor is closed
 # for the entrypoint.
-# shellcheck disable=SC2086
 env -i PATH="$PATH" sudo -n "$ENTRY" "$entry_verb" "$sha" </dev/null >>"$LOG" 2>&1 9>&- || rc=$?
 if [ "$rc" -eq 0 ]; then
   echo "geldar-deploy: $verb $env_name ok"

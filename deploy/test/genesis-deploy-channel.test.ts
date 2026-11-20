@@ -51,6 +51,7 @@ function setup() {
       '#!/bin/sh',
       'echo "ARGS:$*"',
       `echo "CANARY:\${GELDAR_CANARY-unset}"`,
+      `echo "GELDAR_DEPLOY_ENV:\${GELDAR_DEPLOY_ENV-unset}"`,
       'echo "STDIN:$(cat)"',
       'echo "stderr line" >&2',
       'exit 0',
@@ -339,6 +340,15 @@ describe('deploy channel: accepted requests (G3-02)', () => {
     expect(r.log).toContain('CANARY:unset');
   });
 
+  // The wrapper does not pass GELDAR_DEPLOY_ENV on: the entrypoint sees it unset even when the wrapper inherits it.
+  it('does not pass GELDAR_DEPLOY_ENV to the entrypoint', () => {
+    const fx = setup();
+    const r = channel(fx, `apply ${SHA} colo`, { env: { GELDAR_DEPLOY_ENV: 'colo' } });
+    expect(r.code).toBe(0);
+    expect(r.log).toContain('GELDAR_DEPLOY_ENV:unset');
+    expect(r.log).not.toContain('GELDAR_DEPLOY_ENV:colo');
+  });
+
   it('runs plan as the entrypoint plan verb', () => {
     const fx = setup();
     expect(channel(fx, `plan ${SHA} colo`).code).toBe(0);
@@ -525,6 +535,50 @@ describe('deploy channel: installer (GE-04)', () => {
     INSTALL_TIMEOUT,
   );
 
+  // A running deploy holds flock on the log's inode: a drifted log is repaired in place, so its contents and inode stay.
+  it.skipIf(process.platform === 'win32')(
+    'repairs a drifted channel.log in place: its contents and inode are kept',
+    () => {
+      const fx = setup();
+      const dest = join(fx.root, 'dest');
+      const sh = shim(fx.root);
+      expect(install(dest, 'op-user').status).toBe(0);
+      const log = join(dest, 'var', 'lib', 'geldar-deploy', 'channel.log');
+      writeFileSync(log, 'run in progress\n');
+      chmodSync(log, 0o644);
+      const inode = statSync(log).ino;
+      rmSync(sh.calls, { force: true });
+      const r = install(dest, 'op-user');
+      expect(r.status).toBe(0);
+      expect(r.stdout).toContain('repaired /var/lib/geldar-deploy/channel.log');
+      expect(statSync(log).ino).toBe(inode);
+      expect(readFileSync(log, 'utf8')).toBe('run in progress\n');
+      expect(modeOf(log)).toBe(0o600);
+      expect(readFileSync(sh.calls, 'utf8')).toContain('chown op-user:op-user');
+      expect(readFileSync(sh.calls, 'utf8')).toContain('chmod 0600 ');
+    },
+    INSTALL_TIMEOUT,
+  );
+
+  // A directory where the operator file or the log should be is refused (a directory is a portable non-regular file).
+  it(
+    'refuses a directory in place of colo-env.sh or channel.log',
+    () => {
+      const fx = setup();
+      const dest = join(fx.root, 'dest');
+      mkdirSync(join(dest, 'home', 'op-user', 'colo-env.sh'), { recursive: true });
+      const envRefused = install(dest, 'op-user');
+      expect(envRefused.status).toBe(1);
+      expect(envRefused.stderr).toContain('colo-env.sh is not a regular file; refused');
+      const dest2 = join(fx.root, 'dest2');
+      mkdirSync(join(dest2, 'var', 'lib', 'geldar-deploy', 'channel.log'), { recursive: true });
+      const logRefused = install(dest2, 'op-user');
+      expect(logRefused.status).toBe(1);
+      expect(logRefused.stderr).toContain('channel.log is not a regular file; refused');
+    },
+    INSTALL_TIMEOUT,
+  );
+
   it('keeps an existing node env file and refuses a bad operator account name', () => {
     const fx = setup();
     const dest = join(fx.root, 'dest');
@@ -537,8 +591,10 @@ describe('deploy channel: installer (GE-04)', () => {
     expect(bad.status).toBe(1);
   });
 
+  // The temp file is made by mktemp next to the destination, so a symlink planted at an old temp name is ignored, and the
+  // move replaces links without writing through them: the victim is never written.
   it.skipIf(!canSymlink())(
-    'refuses a pre-planted symlink at the sudoers temp name',
+    'never writes through a symlink planted at the old sudoers temp name',
     () => {
       const fx = setup();
       const dest = join(fx.root, 'dest');
@@ -547,8 +603,7 @@ describe('deploy channel: installer (GE-04)', () => {
       writeFileSync(victim, 'keep\n');
       symlinkSync(victim, join(dest, 'etc', 'sudoers.d', 'geldar-deploy.new'));
       const r = install(dest, 'op-user');
-      expect(r.status).toBe(1);
-      expect(r.stderr).toContain('.new exists');
+      expect(r.status).toBe(0);
       expect(readFileSync(victim, 'utf8')).toBe('keep\n');
     },
     INSTALL_TIMEOUT,
