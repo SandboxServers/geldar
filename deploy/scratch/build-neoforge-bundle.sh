@@ -166,7 +166,10 @@ write_bundle_tar() {
   wt_vflag=""
   if tar --help 2>/dev/null | grep -q -- --verbatim-files-from; then wt_vflag=--verbatim-files-from; fi
   # The archive goes to stdout, as in the default path: GNU tar reads a Windows drive letter in -f (C:/...) as a host name.
-  LC_ALL=C sort "$wt_list" | tar $wt_vflag --mtime=@0 --owner=0 --group=0 --numeric-owner -cf - -C "$wt_dir" -T - > "$wt_tar"
+  # --mode=go-w,u+rw sets the stored modes: group and other lose write, the owner gains read and write, and the exec bit stays.
+  # So a umask of 022 or 002 gives the same bytes. A failed tar removes the partial archive, so no half-written tar is left.
+  LC_ALL=C sort "$wt_list" | tar $wt_vflag --mtime=@0 --owner=0 --group=0 --numeric-owner --mode=go-w,u+rw -cf - -C "$wt_dir" -T - > "$wt_tar" ||
+    { rm -f "$wt_tar"; echo "build-neoforge-bundle: tar failed; removed the partial $wt_tar" >&2; return 1; }
   wt_name=$(basename -- "$wt_tar")
   wt_256=$(sha256sum < "$wt_tar" | awk '{ print $1 }')
   wt_512=$(sha512sum < "$wt_tar" | awk '{ print $1 }')
