@@ -1,0 +1,24 @@
+{
+  "coreprotect_absent": {
+    "kind": "break",
+    "world": "world",
+    "x": 1313,
+    "y": 200,
+    "z": 800,
+    "actor": "ag_capb_02",
+    "prior_owner": null,
+    "block": "cobblestone",
+    "tick": 2064
+  },
+  "coreprotect_present": {
+    "kind": "break",
+    "world": "world",
+    "x": 1313,
+    "y": 200,
+    "z": 800,
+    "actor": "ag_capb_02",
+    "prior_owner": "ag_capa_01",
+    "block": "cobblestone",
+    "tick": 411
+  }
+}
