@@ -19,12 +19,14 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { bukkitWorldOf } from '../../../src/body/block-owners.ts';
 import { type LiveContext, withLiveBot } from '../fixture.ts';
+import { dumpSlots } from './capture-anvil.ts';
 import {
   BOT_A,
   BOT_B,
   CASE_BLOCKS,
   type CaptureCase,
   CONTROL_MARKER,
+  caseBlockPosition,
   controlFromMarker,
   controlWarning,
   doubleChestCommands,
@@ -52,10 +54,10 @@ import {
   type OpenWindow,
   type PluginBot,
   placeTarget,
+  renameAndVerify,
   slotHolding,
   takeFromBlock,
   takeOutput,
-  verifyRenamedStick,
   within,
 } from './capture-windows.ts';
 import { ensureIdentityBuckets, errorText } from './identity-buckets.ts';
@@ -177,11 +179,11 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
     await waitForPickup(s.b.bot, 'cobblestone', before, 100);
   },
   async 'break-coreprotect-absent'(s) {
-    await breakPair(s, false);
+    await breakPair(s, caseBlockPosition('break-coreprotect-absent', s.a.arena.center), false);
   },
   async 'break-coreprotect-present'(s) {
     // The owner query runs right before the break, by the Body's route (blockowner.query), inside the 30 s window.
-    await breakPair(s, true);
+    await breakPair(s, caseBlockPosition('break-coreprotect-present', s.a.arena.center), true);
   },
   async kill(s) {
     const c = s.a.arena.center;
@@ -207,7 +209,7 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
     await takeFromBlock(
       s.a,
       CASE_BLOCKS.chest,
-      s.a.arena.center.x + 2,
+      caseBlockPosition('chest-single', s.a.arena.center),
       'Items:[{Slot:0b,id:"minecraft:cobblestone",count:8b}]',
       [0, 0, 0],
     );
@@ -215,13 +217,13 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
   async 'chest-double'(s) {
     // Two chests on the x axis, facing north (block states: raw commands, see doubleChestCommands).
     const { bot, ctl, arena } = s.a;
-    const x = arena.center.x + 2;
-    const z = arena.center.z;
+    const { x, z } = caseBlockPosition('chest-double', arena.center);
     for (const cmd of doubleChestCommands(x, 200, z)) {
       const reply = await ctl.command(cmd);
       if (!String(reply).includes('Changed the block'))
         throw new Error(`chest-double: "${cmd}" did not change a block: ${String(reply)}`);
     }
+    await ctl.tp(bot.username, x - 2, 200, z);
     // The stack goes in both halves, so window slot 0 holds it whichever half the pairing puts first (UNPROVEN here).
     for (const half of [x, x + 1]) {
       await ctl.command(
@@ -252,7 +254,7 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
     await takeFromBlock(
       s.a,
       CASE_BLOCKS.chest,
-      s.a.arena.center.x + 2,
+      caseBlockPosition('chest-shift-click', s.a.arena.center),
       'Items:[{Slot:0b,id:"minecraft:cobblestone",count:8b}]',
       [0, 0, 1],
     );
@@ -261,7 +263,7 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
     await takeFromBlock(
       s.a,
       CASE_BLOCKS.chest,
-      s.a.arena.center.x + 2,
+      caseBlockPosition('chest-number-key', s.a.arena.center),
       'Items:[{Slot:0b,id:"minecraft:cobblestone",count:8b}]',
       [0, 0, 2],
     );
@@ -270,7 +272,7 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
     await takeFromBlock(
       s.a,
       CASE_BLOCKS.furnace,
-      s.a.arena.center.x + 2,
+      caseBlockPosition('furnace', s.a.arena.center),
       'Items:[{Slot:2b,id:"minecraft:iron_ingot",count:1b}]',
       [2, 0, 1],
     );
@@ -279,7 +281,7 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
     await takeFromBlock(
       s.a,
       CASE_BLOCKS.brewingStand,
-      s.a.arena.center.x + 2,
+      caseBlockPosition('brewing-stand', s.a.arena.center),
       'Items:[{Slot:0b,id:"minecraft:potion",count:1b}]',
       [0, 0, 1],
     );
@@ -288,7 +290,11 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
   async 'crafting-table'(s) {
     const { bot, ctl, arena } = s.a;
     await ctl.give(BOT_A, 'oak_log', 1);
-    const target = await placeTarget(s.a, CASE_BLOCKS.craftingTable, arena.center.x + 2);
+    const target = await placeTarget(
+      s.a,
+      CASE_BLOCKS.craftingTable,
+      caseBlockPosition('crafting-table', arena.center),
+    );
     const win = expectWindow(
       await within('crafting-table', bot.openBlock(target)),
       'crafting-table',
@@ -302,31 +308,52 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
     const { bot, ctl, arena } = s.a;
     await ctl.give(BOT_A, 'stick', 1);
     await ctl.command(`experience add ${BOT_A} 10 levels`);
-    const target = await placeTarget(s.a, CASE_BLOCKS.anvil, arena.center.x + 2);
+    const target = await placeTarget(
+      s.a,
+      CASE_BLOCKS.anvil,
+      caseBlockPosition('anvil', arena.center),
+    );
     const plugin = bot as unknown as PluginBot;
     const win = expectWindow(
       await within('anvil', plugin.openAnvil(target)),
       'anvil',
       /anvil/,
     ) as AnvilWindow;
+    // CAP-4: mineflayer's rename refuses with "not enough xp" when the bot is short of levels, so the level count is
+    // printed and a bot with none fails INVALID before the rename.
+    note(`anvil: the bot has ${bot.experience.level} levels before the rename`);
+    if (bot.experience.level < 1) {
+      bot.closeWindow(win);
+      throw new Error(
+        `anvil: the bot has ${bot.experience.level} levels, the rename needs levels (INVALID)`,
+      );
+    }
+    for (const line of dumpSlots('anvil window before the rename', win.slots)) note(line);
     // mineflayer's rename already takes the output out of slot 2 (lib/plugins/anvil.js putAway), so there is no
-    // takeOutput here: the proof is the renamed stick in the inventory.
-    await within('anvil: rename', win.rename(heldItem(bot, 'stick'), ANVIL_NAME), 20_000);
-    bot.closeWindow(win);
-    await verifyRenamedStick(bot, ANVIL_NAME);
+    // takeOutput here. CAP-4 review 1: the window closes before the proof (capture-windows.ts renameAndVerify).
+    await renameAndVerify(bot, win, ANVIL_NAME, () =>
+      win.rename(heldItem(bot, 'stick'), ANVIL_NAME),
+    );
   },
   async 'enchanting-table'(s) {
     const { bot, ctl, arena } = s.a;
     await ctl.give(BOT_A, 'stone_sword', 1);
     await ctl.give(BOT_A, 'lapis_lazuli', 3);
     await ctl.command(`experience add ${BOT_A} 10 levels`);
-    const target = await placeTarget(s.a, CASE_BLOCKS.enchantingTable, arena.center.x + 2);
+    const target = await placeTarget(
+      s.a,
+      CASE_BLOCKS.enchantingTable,
+      caseBlockPosition('enchanting-table', arena.center),
+    );
     const plugin = bot as unknown as PluginBot;
     const win = expectWindow(
       await within('enchanting-table', plugin.openEnchantmentTable(target)),
       'enchanting-table',
       /enchant/,
     ) as EnchantWindow;
+    note(
+      `enchanting-table: offered levels ${JSON.stringify((win.enchantments ?? []).map((e) => e.level))} (only option 0 is applied; the other costs are not captured)`,
+    );
     await bot.clickWindow(slotHolding(win, 'stone_sword', 2), 0, 0);
     await bot.clickWindow(0, 0, 0);
     await bot.clickWindow(slotHolding(win, 'lapis_lazuli', 2), 0, 0);
@@ -354,22 +381,27 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
 };
 
 /**
- * Bot A places cobblestone on the arena floor; bot B breaks it. Both steps are bot actions, so A owns the block.
+ * Bot A places cobblestone on the arena floor at `cell`; bot B breaks it. Both steps are bot actions, so A owns the
+ * block. A stands at x - 1 and B at x + 1 (on the cell's z), so the cell is in reach of both (CAP-4 review 1).
  * With `ownerQuery`, B sends the owner query right before the break and the case fails if the break is 30 s or more later.
  */
-async function breakPair(s: Scene, ownerQuery: boolean): Promise<void> {
+async function breakPair(
+  s: Scene,
+  cell: { x: number; z: number },
+  ownerQuery: boolean,
+): Promise<void> {
   if (s.b === undefined) throw new Error('break cases need two bots');
-  const c = s.a.arena.center;
   await s.a.ctl.give(BOT_A, 'cobblestone', 1);
+  await s.a.ctl.tp(BOT_A, cell.x - 1, 200, cell.z);
   await s.a.bot.waitForTicks(10);
   await s.a.bot.equip(heldItem(s.a.bot, 'cobblestone'), 'hand');
-  const floor = s.a.bot.blockAt(new Vec3(c.x + 1, 199, c.z));
+  const floor = s.a.bot.blockAt(new Vec3(cell.x, 199, cell.z));
   if (floor === null) throw new Error('no floor block under the placement');
   await s.a.bot.placeBlock(floor, new Vec3(0, 1, 0));
   await s.a.bot.waitForTicks(20);
-  await s.b.ctl.tp(BOT_B, c.x + 2, 200, c.z);
+  await s.b.ctl.tp(BOT_B, cell.x + 1, 200, cell.z);
   await s.b.bot.waitForTicks(20);
-  const placed = await waitForBlock(s.b.bot, new Vec3(c.x + 1, 200, c.z), 100);
+  const placed = await waitForBlock(s.b.bot, new Vec3(cell.x, 200, cell.z), 100);
   const answeredAt = ownerQuery ? await queryOwnerBeforeBreak(s, s.b.bot, placed.position) : null;
   await s.b.bot.dig(placed);
   if (answeredAt !== null) {
