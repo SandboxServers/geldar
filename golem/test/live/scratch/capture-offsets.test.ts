@@ -2,14 +2,21 @@
 // a fixed table; these tests check that the table covers the block-placing cases, that no two cases share a cell (a
 // double chest fills two), and that every cell is inside the arena platform with bot A's stance (2 blocks west).
 import { describe, expect, it } from 'vitest';
-import { CAPTURE_CASES, CASE_BLOCK_OFFSET, caseBlockPosition, findCase } from './capture-cases.ts';
+import {
+  BLOCK_CASE_OFFSET,
+  type BlockCaseId,
+  CAPTURE_CASES,
+  CASE_BLOCK_OFFSET,
+  caseBlockPosition,
+  findCase,
+} from './capture-cases.ts';
 
 const CENTRE = { x: 1312, z: 800 };
 /** The platform's half width (arena.ts HALF_WIDTH): every block and bot A's stance must stay inside it. */
 const HALF_WIDTH = 15;
 
 /** The cells a case fills: its block, and the second half for the double chest. */
-function cellsOf(id: keyof typeof CASE_BLOCK_OFFSET): Array<[number, number]> {
+function cellsOf(id: BlockCaseId): Array<[number, number]> {
   const { x, z } = caseBlockPosition(id, CENTRE);
   return id === 'chest-double'
     ? [
@@ -51,21 +58,27 @@ describe('CASE_BLOCK_OFFSET covers the block-placing cases', () => {
   });
 });
 
-describe('every container case has its own position', () => {
+describe('every block-placing case has its own position', () => {
   it('no two cases share a cell (a double chest fills two cells)', () => {
     const seen = new Map<string, string>();
-    for (const id of Object.keys(CASE_BLOCK_OFFSET) as Array<keyof typeof CASE_BLOCK_OFFSET>) {
+    for (const id of Object.keys(BLOCK_CASE_OFFSET) as BlockCaseId[]) {
       for (const [x, z] of cellsOf(id)) {
         const key = `${x},${z}`;
         expect(seen.get(key), `${id} and ${seen.get(key)} both at ${key}`).toBeUndefined();
         seen.set(key, id);
       }
     }
-    expect(seen.size).toBe(10);
+    // 9 containers (the double chest fills 2 cells) and the 2 break cells.
+    expect(seen.size).toBe(12);
+  });
+
+  it('the break cases sit off the container rows, one cell each', () => {
+    expect(caseBlockPosition('break-coreprotect-absent', CENTRE)).toEqual({ x: 1313, z: 804 });
+    expect(caseBlockPosition('break-coreprotect-present', CENTRE)).toEqual({ x: 1313, z: 806 });
   });
 
   it('every cell and bot A stance (2 blocks west) is inside the arena platform', () => {
-    for (const id of Object.keys(CASE_BLOCK_OFFSET) as Array<keyof typeof CASE_BLOCK_OFFSET>) {
+    for (const id of Object.keys(BLOCK_CASE_OFFSET) as BlockCaseId[]) {
       for (const [x, z] of cellsOf(id)) {
         expect(Math.abs(x - CENTRE.x), `${id} x`).toBeLessThanOrEqual(HALF_WIDTH);
         expect(Math.abs(x - 2 - CENTRE.x), `${id} stance x`).toBeLessThanOrEqual(HALF_WIDTH);

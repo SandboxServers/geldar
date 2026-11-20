@@ -1,14 +1,19 @@
 // CAP-4: the flag-setting and teardown commands of the run sheet (docs/runbooks/capture-real-payloads.md, "Set the flag on
 // the scratch shard"). The form that broke at teardown nested a `sed` with its own single quotes inside `sh -c '...'`. The
-// fix is a heredoc (`sh <<'EOF'`), so the lint rejects a `sh -c '` command and any single-quoted string that holds a
-// second single quote. Windows has no bash to run `bash -n`, so this is a text lint; the fixtures are hand-built.
+// fix is a heredoc (`sh <<'EOF'`), so the lint rejects a shell with a `-c` flag (`sh -c '`, `sh -ec '`) and any single-quoted
+// string that holds a second single quote. The lint is text-only; `bash -n` also runs on each block when a bash is on
+// PATH (Git Bash or WSL) and is skipped, visibly, when there is none. The blocks are the trimmed lines of the section.
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const RUNBOOK = new URL('../../../../docs/runbooks/capture-real-payloads.md', import.meta.url);
 const SECTION = '## Set the flag on the scratch shard';
 const HEREDOC_OPEN = /<<\s*'([A-Za-z]+)'\s*$/;
-const SHELL_C_QUOTE = /\b(?:sh|bash) -c '/;
+/** A shell run with a `-c` flag, alone or combined (`-c`, `-ec`, `-lc`), then a single quote. */
+const SHELL_C_QUOTE = /\b(?:sh|bash|dash|zsh)\s+-[a-z]*c\s+'/;
+/** True when `bash -n` runs (an empty script exits 0); false on a box with no bash, or a WSL that has no distro. */
+const BASH_PRESENT = spawnSync('bash', ['-n'], { input: '' }).status === 0;
 
 /** The fenced code blocks under `heading`, up to the next `## ` heading; each block is its trimmed lines. */
 export function fencedBlocks(md: string, heading: string): string[][] {
@@ -80,6 +85,16 @@ describe('the run sheet commands for the flag have no nested single quotes', () 
   });
 });
 
+describe('bash -n accepts every block of the run sheet section (skipped when no bash is on PATH)', () => {
+  const blocks = fencedBlocks(readFileSync(RUNBOOK, 'utf8'), SECTION);
+  blocks.forEach((block, i) => {
+    it.skipIf(!BASH_PRESENT)(`block ${i + 1} parses`, () => {
+      const run = spawnSync('bash', ['-n'], { input: `${block.join('\n')}\n`, encoding: 'utf8' });
+      expect(run.status, `block ${i + 1}: ${run.stderr}`).toBe(0);
+    });
+  });
+});
+
 describe('the lint catches the forms that broke, and passes the heredoc form', () => {
   it('refuses the sh -c printf line the sheet used before CAP-4', () => {
     const before = [
@@ -93,6 +108,11 @@ describe('the lint catches the forms that broke, and passes the heredoc form', (
       `docker exec geldar-phase0-paper-1 sh -c 'sed -i 's/provenance:.*//' /data/plugins/GeldarCore/config.yml'`,
     ];
     expect(quoteProblems(nested).some((p) => p.includes('nested single quote'))).toBe(true);
+  });
+
+  it('refuses the combined flag form sh -ec with a quoted string', () => {
+    const combined = [`docker exec geldar-phase0-paper-1 sh -ec 'sed -i s/a/b/ /data/x.yml'`];
+    expect(quoteProblems(combined).some((p) => p.includes('sh -c'))).toBe(true);
   });
 
   it('refuses an unbalanced quote', () => {

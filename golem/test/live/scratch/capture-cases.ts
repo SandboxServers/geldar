@@ -155,7 +155,6 @@ export const CASE_BLOCKS = {
  * CAP-4: each case that places a container block sits at its own (x, z) offset from the arena centre, so the coordinates
  * of a take payload name its case (before, every take sat at the same block: the holder type was not separable). The
  * double chest also fills x + 1. Bot A stands at x - 2 beside its block (windows.ts), so the offsets stay within reach.
- * The break cases keep their place: bot B's stance and reach are set by the break geometry.
  */
 export const CASE_BLOCK_OFFSET = {
   'chest-single': [2, 0],
@@ -169,14 +168,29 @@ export const CASE_BLOCK_OFFSET = {
   'enchanting-table': [7, 2],
 } as const satisfies Record<string, readonly [number, number]>;
 
-export type BlockCaseId = keyof typeof CASE_BLOCK_OFFSET;
+/**
+ * CAP-4 (review 1): the two break cases place their block on cells of their own, off the container rows. Bot A stands
+ * at x - 1 and bot B at x + 1, both on the block's z (provenance-capture.ts breakPair), so the cell is in reach of both.
+ */
+export const BREAK_BLOCK_OFFSET = {
+  'break-coreprotect-absent': [1, 4],
+  'break-coreprotect-present': [1, 6],
+} as const satisfies Record<string, readonly [number, number]>;
+
+export type BlockCaseId = keyof typeof CASE_BLOCK_OFFSET | keyof typeof BREAK_BLOCK_OFFSET;
+
+/** Every case that places a block at its own cell: the containers and the two breaks. */
+export const BLOCK_CASE_OFFSET: Record<BlockCaseId, readonly [number, number]> = {
+  ...CASE_BLOCK_OFFSET,
+  ...BREAK_BLOCK_OFFSET,
+};
 
 /** The block position of a case: the arena centre plus the case's own offset. */
 export function caseBlockPosition(
   id: BlockCaseId,
   centre: { x: number; z: number },
 ): { x: number; z: number } {
-  const [dx, dz] = CASE_BLOCK_OFFSET[id];
+  const [dx, dz] = BLOCK_CASE_OFFSET[id];
   return { x: centre.x + dx, z: centre.z + dz };
 }
 

@@ -154,7 +154,7 @@ The CoreProtect steps go after the fourteen cases above and before the last line
 3. Check the plugin loaded, as `Assert-PluginsEnabled` does: `docker logs geldar-phase0-paper-1 2>&1 | grep "Geldar-Core enabled"`
    (UNPROVEN) must print one line. Then check CoreProtect with RCON `plugins` (see "RCON commands").
 3a. CoreProtect settings for the capture (CAP-3; the runbook's "First start" list in `docs/runbooks/coreprotect.md`).
-   Turn off these six: chat recording, command recording, session recording, container transaction recording (its CoreProtect key is `container-transactions`, `docs/runbooks/block-owner.md:61`; `item-transactions` is another key, `block-owner.md:60`), error
+   Turn off these six: chat recording, command recording, session recording, container transaction recording (its CoreProtect key is `container-transactions` per `docs/runbooks/block-owner.md:61`, which hedges it as "or the 24.1 key for container logging" (UNPROVEN: read the key from the written config with the grep below); `item-transactions` is another key, `block-owner.md:60`), error
    reporting, update checks. Leave `player-interactions` at CoreProtect's default (on), and keep block place and break
    logging on (leave them as the plugin wrote them). Do not follow the `player-interactions: false` row of
    `docs/runbooks/block-owner.md:60` for this capture: the owner lookup asks CoreProtect for action 2 (click) as well as
@@ -320,7 +320,7 @@ connection settings"), and `docs/spec.md:313` bars a spectator from commands and
 
 ## Set the flag on the scratch shard
 
-Only on the throwaway shard, after the health rows. Nothing below was run; each command is UNPROVEN until read on the container.
+Only on the throwaway shard, after the health rows. Nothing below was run; each command is UNPROVEN until read on the container. Copy each block from the rendered page, not from the raw file: the heredoc terminators (`EOF`) are indented in the raw markdown and close the heredoc only once dedented.
 
 1. Read the file: `docker exec geldar-phase0-paper-1 cat /data/plugins/GeldarCore/config.yml` (UNPROVEN path: from
    `saveDefaultConfig()` and the plugin name `GeldarCore`; the volume is `paper-data`, `compose/phase0.yml:88`).

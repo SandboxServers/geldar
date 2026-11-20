@@ -143,7 +143,27 @@ export async function takeOutput(
 }
 
 /**
- * After an anvil rename: mineflayer's rename already moved the output out of slot 2 (anvil.js `putAway`), so the
+ * The anvil rename, then its proof. The window closes FIRST: mineflayer's `bot.inventory` is only brought up to date
+ * by `closeWindow` (lib/plugins/inventory.js copyInventory), so the renamed stick is read only after the close. A
+ * rename that throws closes the window too; a window the rename already closed is not closed a second time.
+ */
+export async function renameAndVerify(
+  bot: Bot,
+  win: OpenWindow,
+  name: string,
+  rename: () => Promise<void>,
+): Promise<void> {
+  try {
+    await within('anvil: rename', rename(), 20_000);
+  } finally {
+    if (bot.currentWindow !== null) bot.closeWindow(win);
+  }
+  await verifyRenamedStick(bot, win, name);
+}
+
+/**
+ * After an anvil rename, with the window closed (renameAndVerify): mineflayer's rename moves the output out of slot 2
+ * (anvil.js `putAway`) into the window's copy of the inventory, which reaches `bot.inventory` only at the close. The
  * proof is the renamed stick in the inventory, read through its custom name (capture-anvil.ts). On a miss the throw
  * carries the inventory and the anvil window dump, so the shape of the name on the shard is printed, not guessed.
  */
