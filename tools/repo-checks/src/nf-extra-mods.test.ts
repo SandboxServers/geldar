@@ -5,6 +5,7 @@ import { parse } from 'yaml';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const PINS = 'compose/neoforge/extra-mods.pins';
+const SOURCES = 'compose/neoforge/extra-mods.sources';
 const ENTRY = 'compose/neoforge/neoforge-entrypoint.sh';
 const NF_LIVE_TELEMETRY = 'compose/nf-live-telemetry.yml';
 const SCRATCH = 'compose/opt-in/scratch-neoforge-extra-mods.yml';
@@ -23,6 +24,46 @@ const overlayText = (name: string) =>
   readFileSync(`${ROOT}compose/nf-live-mod-${name}.yml`, 'utf8');
 const overlay = (name: string) => parse(overlayText(name));
 const imageOf = (doc: { services: { neoforge: { image: string } } }) => doc.services.neoforge.image;
+
+// Each pin has one download source line: <jar file name> <https URL> <sha512 hex or UNSET>. UNSET is allowed and only noted.
+describe('extra mods: the download sources (no docker needed)', () => {
+  const sources = readFileSync(`${ROOT}${SOURCES}`, 'utf8')
+    .split('\n')
+    .filter((line) => line !== '' && !line.startsWith('#'))
+    .map((line) => line.split(' '));
+
+  it('gives each pin exactly one source line', () => {
+    for (const [name, { file }] of pins) {
+      const count = sources.filter((fields) => fields[0] === file).length;
+      expect(count, `${name}: source lines for ${file}`).toBe(1);
+    }
+  });
+
+  it('has no source line without a pin', () => {
+    const pinFiles = new Set([...pins.values()].map((pin) => pin.file));
+    for (const [file] of sources) {
+      expect(pinFiles.has(file), `source line for ${file} has no pin`).toBe(true);
+    }
+    expect(sources.length).toBe(pins.size);
+  });
+
+  it('gives each source line three fields: the pin file, an https URL, a sha512 or UNSET', () => {
+    for (const fields of sources) {
+      expect(fields, `source line ${fields[0]}`).toHaveLength(3);
+      const [file, url = '', sha = ''] = fields;
+      expect(url.startsWith('https://'), `${file}: URL is not https`).toBe(true);
+      expect(
+        sha === 'UNSET' || /^[0-9a-f]{128}$/.test(sha),
+        `${file}: sha512 is neither 128 lowercase hex nor UNSET`,
+      ).toBe(true);
+    }
+  });
+
+  it('notes the UNSET sha512 values without failing', () => {
+    const unset = sources.filter((fields) => fields[2] === 'UNSET').map((fields) => fields[0]);
+    console.info(`extra mods: sha512 UNSET (not taken from the release) for: ${unset.join(', ')}`);
+  });
+});
 
 describe('extra mods: the pins file (no docker needed)', () => {
   it('lists exactly the two allowlisted mods, each once', () => {

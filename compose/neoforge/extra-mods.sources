@@ -1,0 +1,6 @@
+# Download source for each pin in compose/neoforge/extra-mods.pins (GE-02b). One line per pin, the same jar file name as the pins file:
+# <jar file name> <https URL> <sha512 lowercase hex, or UNSET>, the fields separated by one space. Lines starting with # are comments.
+# UNSET means the sha512 of that jar has not been taken from its release yet; the sha256 in the pins file still governs the host jar check.
+# The URLs are the release assets named in docs/analysis/neoforge/pregen-and-extra-mods-design.md and docs/analysis/bluemap/.
+Chunky-NeoForge-1.5.66.jar https://cdn.modrinth.com/data/fALzjamp/versions/sDFaDSkE/Chunky-NeoForge-1.5.66.jar UNSET
+bluemap-5.29-neoforge.jar https://github.com/BlueMap-Minecraft/BlueMap/releases/download/v5.29/bluemap-5.29-neoforge.jar UNSET
