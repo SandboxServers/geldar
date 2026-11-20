@@ -5,10 +5,11 @@
 #   prune-deploy-work.sh [--keep N] [--apply]
 # Rules: only direct children of <root>/work that are real directories (never symlinks) named by exactly 40
 # lowercase hex characters are candidates. The newest N by modification time are kept (default 5), and so is the
-# live commit, the first line of <root>/staged/release.env (only that line is read, and it is never printed).
+# live commit, named on the first line of <root>/staged/release.env (only that line is read, and it is never printed).
 # With the live commit unreadable, or not 40 hex, nothing is removed and the exit code is 1. The deploy lock
-# (<root>/channel.lock, the one the deploy channel takes) must be free: it is held for the whole run, and a busy or
-# unavailable lock refuses. Output is names only. Nothing here touches docker. POSIX sh.
+# (<root>/channel.lock, the one the deploy channel takes) and the colo-cd lock directory ($GELDAR_STATE_DIR/cd.lock,
+# default /var/lib/geldar-colo) must both be free: they are held for the whole run, and a busy or unavailable lock refuses.
+# Output is names only. Nothing here touches docker. POSIX sh.
 set -eu
 unset BASH_ENV ENV
 ROOT=${GELDAR_DEPLOY_ROOT:-/var/lib/geldar-deploy}
@@ -39,20 +40,36 @@ esac
 WORKDIR=$ROOT/work
 [ -d "$WORKDIR" ] || fail "no work directory"
 
-# The live commit comes first: no live commit, no deletion.
+# The live commit comes first: no live commit, no deletion. The first line of release.env is the comment the
+# colo-images workflow writes: "# Release manifest for the Colo node (decision 0084). Commit <40 hex>." Anything else
+# (a missing file, another shape, a short or uppercase sha) refuses.
 live=
 if [ -f "$ROOT/staged/release.env" ] && [ -r "$ROOT/staged/release.env" ]; then
-  IFS= read -r live <"$ROOT/staged/release.env" || true
+  IFS= read -r first <"$ROOT/staged/release.env" || true
+  prefix='# Release manifest for the Colo node (decision 0084). Commit '
+  case $first in
+    "$prefix"*.)
+      live=${first#"$prefix"}
+      live=${live%.}
+      ;;
+  esac
 fi
 case $live in
   '' | *[!0-9a-f]*) fail "the live commit could not be read; nothing removed" ;;
 esac
 [ "${#live}" -eq 40 ] || fail "the live commit could not be read; nothing removed"
 
-# One run at a time, and never beside a deploy.
+# One run at a time, and never beside a deploy. Two locks: the deploy channel's flock file, and the directory lock
+# deploy/colo-cd.sh takes (<state dir>/cd.lock, mkdir-atomic). The directory is taken here too, so a deploy cannot start
+# mid-prune, and is removed on exit. The root-owned entrypoint may hold a lock of its own that is not in the repo.
 command -v flock >/dev/null 2>&1 || fail "flock is missing; cannot take the deploy lock"
 exec 9>>"$ROOT/channel.lock" || fail "the deploy lock cannot be opened"
 flock -n 9 || fail "the deploy lock is held; a deploy may be running"
+STATE_DIR=${GELDAR_STATE_DIR:-/var/lib/geldar-colo}
+[ -d "$STATE_DIR" ] || fail "the state directory is missing; cannot take the colo-cd lock"
+CDLOCK=$STATE_DIR/cd.lock
+mkdir "$CDLOCK" 2>/dev/null || fail "the colo-cd lock is held (or cannot be created); a deploy may be running"
+trap 'rmdir "$CDLOCK" 2>/dev/null || true' EXIT
 
 kept=0
 removed=0

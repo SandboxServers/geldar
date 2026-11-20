@@ -25,8 +25,13 @@ afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
 });
 
+const HEAD = '# Release manifest for the Colo node (decision 0084). Commit ';
+const manifest = (commit: string) =>
+  `${HEAD}${commit}.
+GELDAR_BODY_IMAGE=registry.example.invalid/body@sha256:${'1'.repeat(64)}`;
+
 /** A root with `count` checkouts, sha(1) the oldest and sha(count) the newest, and a live commit. */
-function fixture(count: number, live: string | null = sha(count)) {
+function fixture(count: number, live: string | null = manifest(sha(count))) {
   const root = mkdtempSync(join(tmpdir(), 'prune-work-'));
   dirs.push(root);
   mkdirSync(join(root, 'work'));
@@ -42,6 +47,7 @@ function fixture(count: number, live: string | null = sha(count)) {
   }
   if (live !== null)
     writeFileSync(join(root, 'staged', 'release.env'), `${live}\nSECRET=do-not-print\n`);
+  mkdirSync(join(root, 'state'));
   return root;
 }
 
@@ -51,6 +57,7 @@ function run(root: string, args: string[] = [], env: Record<string, string> = {}
     env: {
       ...process.env,
       GELDAR_DEPLOY_ROOT: p(root),
+      GELDAR_STATE_DIR: p(join(root, 'state')),
       PATH: [p(join(root, 'shim')), dirname(SH), process.env.PATH ?? ''].join(delimiter),
       ...env,
     },
@@ -94,7 +101,7 @@ describe('prune-deploy-work.sh', () => {
   });
 
   it('keeps the live commit even when it is old', () => {
-    const root = fixture(8, sha(1));
+    const root = fixture(8, manifest(sha(1)));
     run(root, ['--keep', '2', '--apply']);
     expect(has(root, sha(1))).toBe(true);
     expect(has(root, sha(2))).toBe(false);
@@ -136,14 +143,42 @@ describe('prune-deploy-work.sh', () => {
   it.each([
     ['missing', null],
     ['empty', ''],
-    ['not a commit', 'not-a-commit'],
-    ['a short commit', 'abc123'],
+    ['a bare commit with no manifest line', sha(8)],
+    ['a short commit', manifest('abc123')],
+    ['an uppercase commit', manifest(sha(8).toUpperCase().replace(/0/g, 'A'))],
+    ['two commits on the line', `${HEAD}${sha(8)}. Commit ${sha(7)}.`],
+    ['no trailing period', `${HEAD}${sha(8)}`],
   ])('an unreadable live commit (%s) removes nothing and exits 1', (_label, live) => {
     const root = fixture(8, live);
     const r = run(root, ['--keep', '1', '--apply']);
     expect(r.code).toBe(1);
     expect(r.out).not.toContain('removed');
     for (let i = 1; i <= 8; i++) expect(has(root, sha(i))).toBe(true);
+  });
+
+  it('a held colo-cd lock directory removes nothing and exits 1', () => {
+    const root = fixture(8);
+    mkdirSync(join(root, 'state', 'cd.lock'));
+    const r = run(root, ['--keep', '1', '--apply']);
+    expect(r.code).toBe(1);
+    expect(has(root, sha(1))).toBe(true);
+    expect(existsSync(join(root, 'state', 'cd.lock'))).toBe(true);
+  });
+
+  it('takes the colo-cd lock during the run and releases it after, even when it refuses', () => {
+    const root = fixture(8);
+    expect(run(root, ['--apply']).code).toBe(0);
+    expect(existsSync(join(root, 'state', 'cd.lock'))).toBe(false);
+    const bad = fixture(8, null);
+    run(bad, ['--apply']);
+    expect(existsSync(join(bad, 'state', 'cd.lock'))).toBe(false);
+  });
+
+  it('a missing state directory refuses', () => {
+    const root = fixture(8);
+    rmSync(join(root, 'state'), { recursive: true });
+    expect(run(root, ['--apply']).code).toBe(1);
+    expect(has(root, sha(1))).toBe(true);
   });
 
   it('never prints the rest of release.env', () => {
