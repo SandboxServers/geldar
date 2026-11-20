@@ -1,0 +1,153 @@
+import { readFileSync } from 'node:fs';
+import type { SimEvent } from '@geldar/mcp-mock';
+import type { MindEvent } from '@geldar/player-core/src/ports/body.ts';
+import { describe, expect, it } from 'vitest';
+import type { MapContext } from './handlers/types.ts';
+import { mapMindEvent } from './mapper.ts';
+import { PRESENT_HANDLERS, presentEvents } from './present-handlers/index.ts';
+
+/*
+ * The leakage gate (AN-28b). The golem cannot be imported here, so the observations below are built by
+ * hand from the shapes of golem/src/perception/provenance/fixtures/{break,pickup}-real.json, with the
+ * Body's view decided by the case: a player in line of sight is named (name and life id), one out of
+ * sight is not. The output the player sees must never carry a life id, a provenance record, a key, a
+ * coordinate, or a name the Body could not see.
+ */
+
+const LIFE = 'ag_adam_01';
+const AT = '2026-11-20T10:00:00.000Z';
+/** The player the Body can see: named, with a life id that must never reach the player. */
+const VISIBLE = { name: 'Zack', life: 'ag_zack_01' };
+/** The name of a player out of sight: it must never reach the player. */
+const HIDDEN_NAME = 'Hidden_Walker';
+
+const ctx = (): MapContext => ({ identity: { name: 'Adam', username: LIFE }, runs: new Map() });
+
+function mind(type: string, payload: unknown, tick: number): MindEvent {
+  return {
+    type,
+    payload,
+    eventId: `evt-${type}-${tick}`,
+    lifeId: LIFE,
+    tick,
+    day: 1,
+    at: AT,
+  } as unknown as MindEvent;
+}
+
+/** The player-facing events for a list of Mind events, the way the stream presents them. */
+function presented(events: MindEvent[]): { sim: SimEvent[]; out: unknown[] } {
+  const sim = events.flatMap((event, i) => mapMindEvent(event, i + 1, ctx()));
+  return { sim, out: presentEvents(PRESENT_HANDLERS, sim) };
+}
+
+/** The leaks in a serialised output: a life id, a provenance record, a key, or a coordinate triple. */
+function leaksOf(out: unknown[]): string[] {
+  const text = JSON.stringify(out);
+  const leaks: string[] = [];
+  if (/ag_[a-z0-9_]+/.test(text)) leaks.push('life id');
+  if (/provenance/i.test(text)) leaks.push('provenance');
+  if (/"key"/.test(text) || /\b(brk|gift):/.test(text)) leaks.push('key');
+  if (/\b\d{2,}\b\D{1,3}\b\d{2,}\b\D{1,3}\b\d{2,}\b/.test(text)) leaks.push('coordinates');
+  if (text.includes(HIDDEN_NAME)) leaks.push('hidden name');
+  return leaks;
+}
+
+/** The observation outputs only: the presented lines whose type is an observation kind. */
+const observationsOf = (out: unknown[]): unknown[] =>
+  out.filter((e) => {
+    const type = (e as { type?: unknown }).type;
+    return type === 'gift_received' || type === 'property_broken';
+  });
+
+/** A break of an owned block, in sight: the breaker is named (`observedActor`). From break-real.json. */
+const BREAK_VISIBLE = mind(
+  'observation',
+  {
+    kind: 'property_broken',
+    actor: VISIBLE,
+    block: 'cobblestone',
+    key: 'brk:411:1313:200:800:ag_zack_01',
+  },
+  411,
+);
+/** The same break by a player out of sight: unattributed, the key says `none`. */
+const BREAK_HIDDEN = mind(
+  'observation',
+  { kind: 'property_broken', block: 'cobblestone', key: 'brk:411:1313:200:800:none' },
+  411,
+);
+/** A pickup of items thrown by a visible player. From pickup-real.json (distance 2). */
+const GIFT_VISIBLE = mind(
+  'observation',
+  {
+    kind: 'gift_received',
+    actor: VISIBLE,
+    item: 'cobblestone',
+    count: 4,
+    key: 'gift:1178:ag_zack_01:cobblestone:4:0',
+  },
+  1178,
+);
+/** A pickup of items thrown by a player out of sight: unattributed. */
+const GIFT_HIDDEN = mind(
+  'observation',
+  { kind: 'gift_received', item: 'cobblestone', count: 4, key: 'gift:1178:none:cobblestone:4:0' },
+  1178,
+);
+/** A hurt by a visible player: the actor is named; the hidden one has no actor at all. */
+const HURT_VISIBLE = mind(
+  'damage',
+  { source: 'zombie', amount: 3, bearing: 'left', actor: VISIBLE },
+  1178,
+);
+const HURT_HIDDEN = mind('damage', { source: 'zombie', amount: 3, bearing: 'left' }, 1178);
+
+describe('the leakage gate: observed evidence reaches the player without ids, keys or hidden names', () => {
+  it('a visible breaker and a visible thrower are named, with no life id, key or coordinate', () => {
+    const { out } = presented([BREAK_VISIBLE, GIFT_VISIBLE, HURT_VISIBLE]);
+    expect(observationsOf(out)).toHaveLength(2);
+    expect(leaksOf(out)).toEqual([]);
+    expect(JSON.stringify(out)).toContain('Zack');
+  });
+
+  it('a hidden breaker and a hidden thrower are unattributed: no name, no actor field', () => {
+    const { out } = presented([BREAK_HIDDEN, GIFT_HIDDEN, HURT_HIDDEN]);
+    expect(observationsOf(out)).toHaveLength(2);
+    expect(leaksOf(out)).toEqual([]);
+    for (const event of observationsOf(out)) expect(event).not.toHaveProperty('actor');
+    expect(JSON.stringify(out)).not.toContain('Zack');
+  });
+
+  it('the real Body events replay with no life id, provenance, key or coordinate', () => {
+    const real = JSON.parse(
+      readFileSync(new URL('../../test/fixtures/real-body-events.json', import.meta.url), 'utf8'),
+    ) as { events: Array<{ type: string; payload: unknown; world_tick: number }> };
+    const events = real.events.map((e) => mind(e.type, e.payload, e.world_tick));
+    expect(leaksOf(presented(events).out)).toEqual([]);
+  });
+
+  it('an injected life id in an observation is reported as a leak', () => {
+    const leaky = mind(
+      'observation',
+      {
+        kind: 'gift_received',
+        actor: { name: 'ag_zack_01', life: 'ag_zack_01' },
+        item: 'bread',
+        count: 1,
+        key: 'gift:1:x:bread:1:0',
+      },
+      1,
+    );
+    expect(leaksOf(presented([leaky]).out)).toContain('life id');
+  });
+
+  it('an injected coordinate in an observation is reported as a leak', () => {
+    const leaky = mind(
+      'observation',
+      { kind: 'property_broken', block: 'stone 1313 200 800', key: 'brk:411:1313:200:800:none' },
+      411,
+    );
+    expect(leaksOf(presented([leaky]).out)).toContain('coordinates');
+  });
+});

@@ -38,6 +38,11 @@ import { HurtReporter } from '../perception/hurt.ts';
 import { hurtLogLine } from '../perception/hurt-log.ts';
 import { hurtWorldEvent, watchHurts } from '../perception/hurt-trigger.ts';
 import { createPerception } from '../perception/index.ts';
+import {
+  type ObservationSubscription,
+  startBodyObservations,
+} from '../perception/provenance/subscribe.ts';
+import { observedActor } from '../perception/provenance/visible-actor.ts';
 import { watchSounds } from '../perception/sounds.ts';
 import { viewTextFromBot } from '../perception/view/view-from-bot.ts';
 import { buildSnapshot } from '../snapshot.ts';
@@ -66,6 +71,12 @@ export interface AdamBodyEnv {
   server: RequestServer;
   /** The Body's NATS connection for the block ownership record (decision 0165); absent in tests. */
   owners?: OwnerTransport;
+  /**
+   * Turns on the Body's observed evidence (AN-28b): the provenance subscription and the actor a hurt
+   * may name. Absent or false: off, and the code path is today's. On needs `owners` too (the Body's
+   * own connection). Nothing sets it in W5.
+   */
+  observations?: boolean;
   log: (line: string) => void;
   /**
    * Where the hurt line goes: one JSON line per hurt, written as its own line (not wrapped in `log`'s
@@ -123,6 +134,8 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     env.owners === undefined
       ? undefined
       : wireBlockOwners({ bot, shard: config.shard, transport: env.owners, log, diag });
+  // The observed evidence (AN-28b) is on only when asked for, and then needs the Body's own connection.
+  const observeTransport = env.observations === true ? env.owners : undefined;
   const revision = new SnapshotRevision();
   const tick = (): number => worldAge(bot) ?? 0;
   const speech = new SpeechEvents({
@@ -261,6 +274,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
   let link: MindLinkServer | undefined;
   let renders: RenderHost | undefined;
   let stopImages: (() => void) | undefined;
+  let stopObservations: ObservationSubscription | undefined;
   try {
     const digest = wrapped.recent;
     if (digest === null) throw new Error('the Body did not wrap its record sink');
@@ -337,7 +351,20 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
         .publish(`geldar.${config.shard}.damage`, JSON.stringify(event), event.source_event_id)
         .catch((error: unknown) => log(`hurt event not published: ${String(error)}`));
     });
-    detachHurts = watchHurts(bot, hurts, tick);
+    detachHurts =
+      observeTransport === undefined
+        ? watchHurts(bot, hurts, tick)
+        : watchHurts(bot, hurts, tick, (username) => observedActor(bot, username));
+    if (observeTransport !== undefined) {
+      stopObservations = startBodyObservations({
+        transport: observeTransport,
+        shard: config.shard,
+        lifeId: config.lifeId,
+        bot,
+        publisher,
+        log,
+      });
+    }
     link = new MindLinkServer({
       shard: config.shard,
       lifeId: config.lifeId,
@@ -369,6 +396,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     detachChunks();
     hurts?.close();
     detachEars();
+    stopObservations?.stop();
     stopImages?.();
     await renders?.close();
     audit?.close();
@@ -394,6 +422,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
       hurts?.close();
       detachEars();
       owners?.stop();
+      stopObservations?.stop();
       // No new plan is accepted from here on. Then the executor and the running action end, so a
       // plan the link awaits can finish; only after that is the link waited for.
       link?.stopServing();
