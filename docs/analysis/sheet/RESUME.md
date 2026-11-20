@@ -5,6 +5,7 @@ Numbers. Decisions used: 0280-0282, 0320-0329. Free: 0283-0285 (released by 0326
 
 ## Held-live ruling (2026-11-15, unchanged)
 Every sheet feature stays held on the live server until the whole campaign is complete; each is validated first by agent runs on a test shard. Inert code still merges. The test-shard plan (draft 2, about $20) is still not in the repo: commit it under `docs/analysis/sheet/` or rewrite it.
+- Colo manual apply (plugin jar and the body NATS rule, per `docs/runbooks/nats-auth-inplace.md`): NOT to be applied until the sheet campaign is validated on a test shard and the operator says so. Why: merges to main auto-deploy only inert code; the Colo gets neither the new plugin jar nor the NATS conf by auto-deploy (`deploy/colo-cd-plan.sh` sets the NATS flag only for `nats/*` and `*nats*.conf`; a plugin change prints "manual plugin jar or plugin config changed (plugin/): not applied").
 
 ## Operator rulings (2026-11-18)
 - 0320 kit-b is authoritative for HC-19 to HC-26c; in-repo copies retired; OD-C: HC-20 proficiency all zero, degraded, round one.
