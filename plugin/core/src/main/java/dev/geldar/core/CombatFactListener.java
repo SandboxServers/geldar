@@ -21,7 +21,7 @@ import org.bukkit.event.entity.EntityDeathEvent;
 
 /**
  * Turns Paper combat events into combat facts (AN-47a part 2). {@link EncounterTracker} decides what is a fact;
- * this class reads the events, filters them, and emits. It is inert until AN-50a registers it.
+ * this class reads the events, filters them, and emits. GeldarCore registers it; it is inert until provenance.enabled is true.
  */
 public final class CombatFactListener implements Listener {
     private final EventExporter exporter;

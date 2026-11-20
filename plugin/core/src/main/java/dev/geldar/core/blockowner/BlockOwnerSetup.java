@@ -1,5 +1,7 @@
 package dev.geldar.core.blockowner;
 
+import dev.geldar.core.CombatFactListener;
+import dev.geldar.core.EventExporter;
 import dev.geldar.core.trace.TraceHook;
 import java.util.Optional;
 import java.util.UUID;
@@ -8,6 +10,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.LongSupplier;
 import java.util.logging.Logger;
@@ -93,6 +96,8 @@ public final class BlockOwnerSetup implements AutoCloseable {
                 () -> setup.enabled, link, setup.gate, Bukkit::getCurrentTick), plugin);
         plugin.getServer().getPluginManager().registerEvents(pickupListener(link, setup.gate,
                 Bukkit::getCurrentTick, Bukkit::getPlayer), plugin);
+        plugin.getServer().getPluginManager().registerEvents(containerTakeListener(link, cache, setup.gate,
+                Bukkit::getCurrentTick, task -> plugin.getServer().getScheduler().runTask(plugin, task)), plugin);
         plugin.getServer().getScheduler().runTaskTimer(plugin, publisher::flush, 1L, 1L);
         setup.reload(plugin.getConfig());
         return setup;
@@ -112,6 +117,26 @@ public final class BlockOwnerSetup implements AutoCloseable {
     static PickupProvenanceListener pickupListener(ProvenanceSink sink, ProvenanceGate gate, LongSupplier tick,
             Function<UUID, Player> online) {
         return new PickupProvenanceListener(sink, gate::on, tick, online);
+    }
+
+    /** The container-take listener {@link #register} installs, gated by {@code enabled} as {@link #breakListener} is. */
+    static ContainerTakeListener containerTakeListener(ProvenanceSink sink, OwnerCache cache, ProvenanceGate gate,
+            LongSupplier tick, Consumer<Runnable> nextTick) {
+        return new ContainerTakeListener(sink, cache, gate::on, tick, nextTick);
+    }
+
+    /**
+     * The combat-fact listener GeldarCore registers and ticks (AN-50a). Its switch is the provenance gate the break,
+     * pickup and take listeners share (blockowner.enabled and provenance.enabled), and it publishes to the NATS link.
+     */
+    public CombatFactListener combatFacts(EventExporter exporter, LongSupplier tick) {
+        return combatFactListener(exporter, link, gate, tick);
+    }
+
+    /** The seam {@link #combatFacts} calls: the switch is always {@code gate::on}, never a caller's supplier. */
+    static CombatFactListener combatFactListener(EventExporter exporter, ProvenanceSink sink, ProvenanceGate gate,
+            LongSupplier tick) {
+        return new CombatFactListener(exporter, sink, gate::on, tick);
     }
 
     /** Applies {@code blockowner.*} and {@code provenance.enabled} from the config; the plugin calls it on the 5 s reload. */

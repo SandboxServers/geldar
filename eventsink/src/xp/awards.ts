@@ -1,6 +1,6 @@
 import type { WorldEvent } from '@geldar/contract';
 import type { Domain } from '@geldar/psyche';
-import { killKey } from './combat.ts';
+import { combatFactAwards, killKey } from './combat.ts';
 import { CROP_BLOCKS, CROP_ITEMS, isMiningItem } from './matrix.ts';
 
 /**
@@ -47,6 +47,8 @@ function collectedItems(detail: Fields): string[] {
  * `[]` for anything that is not an accomplishment (a running or failed record, another event
  * type, an unknown `kind`, a malformed payload, or an event whose `agent_id` is not the life).
  * `action_outcome` and `receipt` are not sources: each is a view of an action already counted.
+ * A `combat_fact` (the plugin's view of a fight, AN-47b) pays the same encounter key as the Body's
+ * completed kill, so one encounter pays once.
  */
 export function awardsFor(event: WorldEvent): XpAward[] {
   try {
@@ -80,6 +82,8 @@ function awardsOf(event: WorldEvent): XpAward[] {
       return intentAwards(payload, award);
     case 'chunk_visited':
       return chunkAwards(payload, award);
+    case 'combat_fact':
+      return combatFactAwards(payload, award);
     default:
       return [];
   }

@@ -3,9 +3,18 @@ package dev.geldar.core.blockowner;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.geldar.core.CombatFactListener;
+import dev.geldar.core.EventExporter;
+import dev.geldar.core.InMemoryEventPublisher;
+import dev.geldar.core.blockowner.OwnerCache.Pos;
+import dev.geldar.core.blockowner.OwnerSource.OwnedBlock;
+import dev.geldar.core.blockowner.OwnerSource.Owners;
+import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.logging.Logger;
 import org.bukkit.Location;
@@ -178,5 +187,111 @@ class ProvenanceWiringTest {
     @DisplayName("a pickup sends nothing before the first reload")
     void pickupSilentBeforeReload() {
         assertTrue(pickupThrough(new ProvenanceGate()).isEmpty());
+    }
+
+    private static final Pos CHEST = new Pos("world", 10, 64, -3);
+
+    /** One full-stack take from a chest the owner holds, through the take listener built with {@code gate}. */
+    private static List<String> takeThrough(ProvenanceGate gate) {
+        List<String> sent = new ArrayList<>();
+        ProvenanceSink sink = (tail, json) -> sent.add(tail + " " + json);
+        OwnerCache cache = new OwnerCache(() -> 1_000L);
+        cache.storeBase(OwnerCache.chunkOf(CHEST), new Owners(
+                List.of(new OwnedBlock(CHEST.x(), CHEST.y(), CHEST.z(), "ag_kestrel_01", "chest")), false));
+        ContainerTakeListener listener = BlockOwnerSetup.containerTakeListener(sink, cache,
+                gate, () -> 42L, Runnable::run);
+        listener.clicked("ag_wren_02", CHEST, Map.of("diamond", 64), Map::of);
+        return sent;
+    }
+
+    @Test
+    @DisplayName("a take sends nothing when provenance.enabled is false, with blockowner.enabled true")
+    void takeSilentWhenProvenanceOff() {
+        assertTrue(takeThrough(gateReloadedFrom(config(true, false))).isEmpty());
+    }
+
+    @Test
+    @DisplayName("a take sends one take message when both blockowner.enabled and provenance.enabled are true")
+    void takeSendsWhenBothOn() {
+        List<String> sent = takeThrough(gateReloadedFrom(config(true, true)));
+        assertEquals(1, sent.size(), "exactly one take message: " + sent);
+        assertTrue(sent.get(0).startsWith("take "), sent.get(0));
+    }
+
+    @Test
+    @DisplayName("a take sends nothing when blockowner.enabled is false, even with provenance.enabled true")
+    void takeSilentWhenBlockOwnerOff() {
+        assertTrue(takeThrough(gateReloadedFrom(config(false, true))).isEmpty());
+    }
+
+    private static final String LIFE = "ag_wren_02";
+    private static final String PLAYER = "11111111-2222-3333-4444-555555555555";
+    private static final String MOB = "0f8e2a3c-1b4d-4e5f-8a6b-7c8d9e0f1a2b";
+
+    /**
+     * A zombie hurts the player, the player hits it (the first hit sends {@code engaged}), then it dies by the player's
+     * hand, through the combat listener that {@code BlockOwnerSetup.combatFactListener} builds with {@code gate}. The
+     * publish paths are package-private in {@code dev.geldar.core}, so they are called by reflection; the public
+     * handlers take Bukkit entity events.
+     */
+    private static void combatThrough(ProvenanceGate gate, List<String> sent, InMemoryEventPublisher mem)
+            throws ReflectiveOperationException {
+        EventExporter exporter = new EventExporter(
+                mem, "phase0", () -> 100, () -> Instant.parse("2026-11-09T00:00:00Z"), Logger.getLogger("test"));
+        CombatFactListener listener = BlockOwnerSetup.combatFactListener(
+                exporter, (tail, json) -> sent.add(tail + " " + json), gate, () -> 10L);
+        Method hurt = CombatFactListener.class.getDeclaredMethod(
+                "playerHurt", String.class, String.class, String.class, String.class, long.class);
+        Method hit = CombatFactListener.class.getDeclaredMethod(
+                "playerHit", String.class, String.class, String.class, String.class, String.class, long.class);
+        Method died = CombatFactListener.class.getDeclaredMethod(
+                "mobDied", String.class, String.class, String.class, String.class, long.class);
+        hurt.setAccessible(true);
+        hit.setAccessible(true);
+        died.setAccessible(true);
+        hurt.invoke(listener, LIFE, PLAYER, MOB, "zombie", 30L);
+        hit.invoke(listener, "world", LIFE, PLAYER, MOB, "zombie", 31L);
+        died.invoke(listener, MOB, "zombie", LIFE, PLAYER, 40L);
+    }
+
+    @Test
+    @DisplayName("a combat fact sends nothing before the first reload")
+    void combatSilentBeforeReload() throws ReflectiveOperationException {
+        List<String> sent = new ArrayList<>();
+        InMemoryEventPublisher mem = new InMemoryEventPublisher();
+        combatThrough(new ProvenanceGate(), sent, mem);
+        assertTrue(sent.isEmpty(), "no sink message: " + sent);
+        assertTrue(mem.events().isEmpty(), "no combat_fact event");
+    }
+
+    @Test
+    @DisplayName("a combat fact is silent when blockowner.enabled is true and provenance.enabled is false")
+    void combatSilentWhenProvenanceOff() throws ReflectiveOperationException {
+        List<String> sent = new ArrayList<>();
+        InMemoryEventPublisher mem = new InMemoryEventPublisher();
+        combatThrough(gateReloadedFrom(config(true, false)), sent, mem);
+        assertTrue(sent.isEmpty(), "no sink message: " + sent);
+        assertTrue(mem.events().isEmpty(), "no combat_fact event");
+    }
+
+    @Test
+    @DisplayName("a combat fact publishes when both blockowner.enabled and provenance.enabled are true")
+    void combatPublishesWhenBothOn() throws ReflectiveOperationException {
+        List<String> sent = new ArrayList<>();
+        InMemoryEventPublisher mem = new InMemoryEventPublisher();
+        combatThrough(gateReloadedFrom(config(true, true)), sent, mem);
+        assertEquals(1, sent.size(), "exactly one provenance message: " + sent);
+        assertTrue(sent.get(0).startsWith("combat "), sent.get(0));
+        assertEquals(1, mem.events().size(), "exactly one combat_fact event");
+    }
+
+    @Test
+    @DisplayName("a combat fact is silent when blockowner.enabled is false and provenance.enabled is true")
+    void combatSilentWhenBlockOwnerOff() throws ReflectiveOperationException {
+        List<String> sent = new ArrayList<>();
+        InMemoryEventPublisher mem = new InMemoryEventPublisher();
+        combatThrough(gateReloadedFrom(config(false, true)), sent, mem);
+        assertTrue(sent.isEmpty(), "no sink message: " + sent);
+        assertTrue(mem.events().isEmpty(), "no combat_fact event");
     }
 }

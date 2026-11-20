@@ -117,8 +117,8 @@ describe('the attack row and the combat fact share one key (AN-47b)', () => {
     expect(validateWorldEvent(fixture('combat_fact_kill')).ok).toBe(true);
   });
 
-  it('no awards row registers combat_fact yet (AN-50a owns the case arm)', () => {
-    expect(awardsFor(fixture('combat_fact_kill'))).toEqual([]);
+  it('the combat_fact case arm pays the fixture its one encounter key (AN-50a registers it)', () => {
+    expect(awardsFor(fixture('combat_fact_kill'))).toHaveLength(1);
   });
 
   it.each([
