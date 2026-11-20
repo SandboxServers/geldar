@@ -49,12 +49,15 @@ dependencies {
 // see a file that a test opens by path unless it is an input of the test task, so a comment-only edit to one of them
 // left :core:test UP-TO-DATE and a banned word went unnoticed until cleanTest. Each entry is an input of :core:test
 // (below). verifyTestSourceInputs (run by check) fails when a test names a src/main path that no entry covers.
+// RegisterWiringGuardTest reads every main source, so the whole src/main/java tree is one entry (it covers BlockOwnerSetup).
 val scannedSourceRoots: List<java.nio.file.Path> = listOf(
     "src/main/java/dev/geldar/core/kino",
     "src/main/java/dev/geldar/core/lakitu",
     "../core-common/src/main/java/dev/geldar/core/kino",
     "../core-common/src/main/java/dev/geldar/core/lakitu",
     "src/main/java/dev/geldar/core/GeldarCore.java",
+    "src/main/java", // RegisterWiringGuardTest scans every main source, so the whole tree is an input.
+    "src/main/java/dev/geldar/core/blockowner/BlockOwnerSetup.java",
     "src/main/resources/config.yml",
 ).map { projectDir.toPath().resolve(it).normalize() }
 
