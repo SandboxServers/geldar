@@ -105,20 +105,20 @@ Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged o
 | AN-39 | explore program | sheet W6-W8 | AN-44 (merge order) | 45-50k | Done (#789; inert, unregistered) |
 | AN-40 | farm program | sheet W6-W8 | AN-44 (merge order) | 45-50k | Done (#791; inert, unregistered) |
 | AN-41 | patrol program | sheet W6-W8 | AN-44 (merge order) | 35-45k | Done (#790; inert, unregistered) |
-| AN-40a | a program mines one exact cell (mineAt; decision 0349; no contract slot) | sheet W6-W8 | none | | Done (#783; card #785) |
+| AN-40a | a program mines one exact cell (`mineAt`; decision 0349; no contract slot) | sheet W6-W8 | none | | Done (#783; card #785) |
 | AN-45a, AN-45b | register the programs, drift test, body-api v11 (split) | sheet W6-W8 | AN-39, AN-40, AN-41, AN-44, AN-28b | 45-50k plus ops | Held: operator approval of the `INTENT_WHY` sentences is pending (note #787); deps AN-39, AN-40, AN-41, AN-44 merged, AN-28b not. The old FixNeeded list (v11 not v10, pin v1, default-version source, split) was applied to the card per the W6-W8 file, which now reads READY after deps; unverified here |
 | HC-31 | idle binding for explore, farm and patrol | sheet W6-W8 (supersedes kit C) | HC-21a, AN-44, AN-45 | 25k | BlockedDependency |
 | AN-46 | evidence-source contract | sheet W6-W8 | AN-45 (contract order), AN-24, contract slot 3 | 40-50k | Done (#792) |
-| AN-46b | optional player on the combat-fact event (follow-up to AN-46) | sheet W6-W8 | AN-46 | | Done (#801) |
+| AN-46b | optional `player` on the combat-fact event (follow-up to AN-46) | sheet W6-W8 | AN-46 | | Done (#801) |
 | AN-47a | combat facts in the plugin | sheet W6-W8 | AN-46, AN-27a | 45-50k | Done (#799, #802, #804; real `combat_fact` captures 2026-11-20, #823) |
 | AN-47b | combat award normaliser (0321 shared encounter key; the visible-fight half is AN-47c) | sheet W6-W8 | AN-46, AN-47a, AN-25, AN-09a | 45-50k | Done (#814; its worknote still lists a real-payload capture as owed, and whether the fixtures were refreshed from the #823 captures is unverified) |
-| AN-47c | visible-fight observation in the Body (ight_seen) | sheet W6-W8 | AN-46, AN-25, AN-28b (subject helpers) | | Queued, strict serial chain after AN-28b |
+| AN-47c | visible-fight observation in the Body (`fight_seen`) | sheet W6-W8 | AN-46, AN-25, AN-28b (subject helpers) | | Queued, strict serial chain after AN-28b |
 | AN-49 | conversation exchange and social award keys | sheet W6-W8 | AN-46, AN-09a | 40-50k | Done (#800) |
 | AN-51a | container-taking facts in the plugin | sheet W6-W8 | AN-46, AN-27a | 35-45k | Done (#810; captures #823, anvil and enchanting-table re-run #826) |
 | AN-51b | observed container taking in the owner's Body | sheet W6-W8 | AN-46, AN-51a, AN-25 | 30-40k | Done (#811) |
-| AN-50a | evidence registration: sink case arms and plugin registration behind the default-off gate | sheet W6-W8 | AN-47b, AN-49, AN-51a, AN-28c | 45-50k plus ops | Done (#820; combat and container-take provenance registered, combat_fact awards, inert) |
+| AN-50a | evidence registration: sink `case` arms and plugin registration behind the default-off gate | sheet W6-W8 | AN-47b, AN-49, AN-51a, AN-28c | 45-50k plus ops | Done (#820; combat and container-take provenance registered, `combat_fact` awards, inert) |
 | AN-50b | Body subscription and leakage gate for the evidence observations | sheet W6-W8 | AN-50a, AN-47c, AN-51b, AN-28b | 45-50k plus ops | Queued, last link of the serial chain AN-27b, AN-28b, AN-47c, AN-50b |
-| S9-00a | 	urn_records joins the account-deletion path (SQL 0053; 0323) | sheet W9-W12 | none | | Done (#778) |
+| S9-00a | `turn_records` joins the account-deletion path (SQL 0053; 0323) | sheet W9-W12 | none | | Done (#778) |
 | S9-00 | erasure gate: every life-keyed table is erased | sheet W9-W12 | turn_records erase fix | 20k | Ready (S9-00a merged in #778; no gate PR on main as of 2026-11-20) |
 | S9-01 | refusal reason code and decision key | sheet W9-W12 | | 35k | Retired (0326) |
 | S9-02a, S9-02b | the property-refusal hook | sheet W9-W12 | | 50k | Retired (0326) |
@@ -156,10 +156,10 @@ Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged o
 | AN-NF-47a | combat facts on NeoForge (killing-blow credit, 0329 NF-4; no combat provenance) | sheet NF | AN-NF-00, AN-46, AN-47a with A3, P3-LIVE, P4 | 40k | BlockedDependency (AN-46, AN-47a; P3-LIVE, P4) | **Operator revision pending (2026-11-18): NF-1..NF-6 as recorded do not match the operator's intent. Intended model: humans act as an invisible hand; agents perceive the effects as acts of nature, not named people. Do not build from these rulings.** |
 | AN-NF-51a | container-take provenance on NeoForge | sheet NF | none | | Dropped (0329 NF-3: container-taking inactive on NeoForge) | **Operator revision pending (2026-11-18): NF-1..NF-6 as recorded do not match the operator's intent. Intended model: humans act as an invisible hand; agents perceive the effects as acts of nature, not named people. Do not build from these rulings.** |
 | AN-NF-50 | W8 wiring on NeoForge (combat facts) | sheet NF | AN-NF-47a, AN-NF-00, P3-LIVE, P4 | 25k | BlockedDependency (AN-NF-47a; P3-LIVE, P4) | **Operator revision pending (2026-11-18): NF-1..NF-6 as recorded do not match the operator's intent. Intended model: humans act as an invisible hand; agents perceive the effects as acts of nature, not named people. Do not build from these rulings.** |
-| CS-0 | contract public-surface golden test before the index.ts split | contract-index-split-plan | none | | Done (#805) |
-| CS-1 | split contract/src/index.ts into nine domain files (pure move) | contract-index-split-plan | CS-0 | | Done (#813; rule 9 note #812) |
-| CS-2 | split contract/test/mcp-world.test.ts into drift tests and fixtures | contract-index-split-plan | CS-0 | | Done (#806) |
-| CAP-1 to CAP-5 | provenance capture workstream: capture tool, scratch-shard script and run sheet, ops runs, fresh-session wipe | worknotes CAP-1, CAP-2; runbook capture-real-payloads | AN-26a, AN-27a, AN-47a, AN-51a | | Done (PRs #821, #822, #824, #827; evidence #823, #826). The CAP-n split by PR is not recorded in the worknotes: unverified |
+| CS-0 | contract public-surface golden test before the `index.ts` split | contract-index-split-plan | none | | Done (#805) |
+| CS-1 | split `contract/src/index.ts` into nine domain files (pure move) | contract-index-split-plan | CS-0 | | Done (#813; rule 9 note #812) |
+| CS-2 | split `contract/test/mcp-world.test.ts` into drift tests and fixtures | contract-index-split-plan | CS-0 | | Done (#806) |
+| CAP-1 to CAP-5 | provenance capture workstream: capture tool, scratch-shard script and run sheet, ops runs, fresh-session wipe | worknotes CAP-1, CAP-2; runbook `capture-real-payloads` | AN-26a, AN-27a, AN-47a, AN-51a | | Done (PRs #821, #822, #824, #827; evidence #823, #826). The CAP-n split by PR is not recorded in the worknotes: unverified |
 | NF-CHAT-0 | guard narrowing: chat event names in `HearingChat.java` only | NF chat plan (NeoForge campaign) | a decision record | | BlockedDecision (record not written) |
 | NF-CHAT-1 | `HearingJudge` over `ChatHearing` | NF chat plan (NeoForge campaign) | none | | Ready (NeoForge campaign's to dispatch) |
 | NF-CHAT-S | delivery spike, scratch shard | NF chat plan (NeoForge campaign) | NF-CHAT-0, NF-CHAT-1 | ops | BlockedDependency |
