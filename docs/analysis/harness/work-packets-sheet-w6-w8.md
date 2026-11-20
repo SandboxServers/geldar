@@ -14,6 +14,7 @@ Every card here is written for one Haiku `packet-coder` at low effort. The dispa
 6. Kit card set (decision 0320): the kit's own kit-b cards are authoritative for HC-19 to HC-26c; HC-30a and HC-31 depend on those (HC-24, HC-21a), not on the retired in-repo copies.
 7. No user-profile path or account name: the kit is "the sibling `geldar-scriptorium` checkout"; the dispatch gives absolute worktree paths.
 8. New card **AN-40a** (operator ruling 2026-11-18, option (a) of AN-40 open item 1): a program's `mine` digs one exact cell, as a program-only run option (no contract field, no regeneration slot, no prompt change; decision 0349). AN-40 gains an amendment: it passes the cell and prefetches owners before its first step.
+9. Contract file rule (CS-1, 2026-11-19): `contract/src/index.ts` is a re-export file. A card adds its exports to its own domain file under `contract/src/` (or a new domain file named for its content) and at most one `export * from` line to `contract/src/index.ts`; nothing else goes in `index.ts`. Line caps still apply (soft 500, hard 700): `index.ts` was 599 of 700 before the split, so a card that pushes any contract file past 500 lines splits it first. The `contract/test/public-surface.golden.json` and `public-types.check.ts` files pin the public surface: a card that adds an export updates both in the same commit, and a card that drops or renames one needs an owner call.
 
 ## Ground rules that shape every card
 
