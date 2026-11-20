@@ -141,10 +141,14 @@ export function checkExpect(rows: CheckRow[], expected: Map<CaseKind, number>): 
   const out: CheckRow[] = [];
   for (const [kase, want] of expected) {
     const found = rows.filter((r) => r.case === kase && r.schema !== 'n/a').length;
-    const ok = found >= want;
-    out.push(
-      row(kase, '-', 'n/a', ok ? 'pass' : 'fail', `expected at least ${want}, found ${found}`),
-    );
+    // CAP-2: an expected zero is exact (a send-nothing case must capture nothing); any other count is "at least".
+    const ok = want === 0 ? found === 0 : found >= want;
+    // A failing zero says "none" (CAP-1's pass text for a zero stays as it was).
+    const detail =
+      want === 0 && !ok
+        ? `expected none, found ${found}`
+        : `expected at least ${want}, found ${found}`;
+    out.push(row(kase, '-', 'n/a', ok ? 'pass' : 'fail', detail));
   }
   return out;
 }

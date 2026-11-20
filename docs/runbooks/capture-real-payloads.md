@@ -10,6 +10,124 @@ sources: [../../.claude/skills/run-shard/SKILL.md, ../../.claude/skills/body-ben
 
 # Capture the owed real provenance payloads
 
+## OPS RUN SHEET (one page; read this, then the rest only for the reasons given)
+
+Status, CAP-2 (branch `phase1/sheet-capture-prep`): the capture script exists
+(`golem/test/live/scratch/provenance-capture.ts`), the subscriber and validator exist (`tools/capture/`, see its
+README), and the CoreProtect overlay exists (`compose/opt-in/coreprotect.yml`). Nothing below was run by the packet
+that wrote it. Every expected output is UNPROVEN until stage 2 and stage 3 produce it. The flag and listener gap
+below ("Read this first") still applies: check the merged code for AN-28c and AN-50a before stage 2.
+
+Rules: one shard, used by you alone. Never `adam up` (CLAUDE.md). Stop at the first stop condition.
+
+### Stage 1: pre-flight (WSL, the clone on the WSL filesystem)
+
+```
+git status                                  # expected: clean, on the commit under test
+docker compose version                      # expected: 2.24.4 or later
+git ls-files --eol compose                  # expected: w/lf for every file
+ls plugin/core/build/libs/geldar-core.jar plugin/velocity-identity/build/libs/geldar-velocity-identity.jar
+```
+
+### Stage 2: environment proof (the unproven items, first)
+
+```
+(cd plugin; ./gradlew build)                                  # expected: BUILD SUCCESSFUL
+./geldar.ps1 shard up phase0 --rcon-host                      # expected: stack up, RCON on 127.0.0.1:25575
+```
+
+Health rows (run-shard skill; skip Ollama). Each must be green:
+Minecraft joins through Velocity; NATS 127.0.0.1:4222 answers; RCON `version` replies; `list` replies with 0 players.
+
+Then the unproven items, with the expected output:
+
+| Item | Command (RCON or shell) | Expected |
+|---|---|---|
+| Plugin config reads the flag | `docker compose -f compose/phase0.yml exec paper cat /data/plugins/GeldarCore/config.yml` | file exists; `provenance:` and `blockowner:` blocks may be absent |
+| CoreProtect absent (the "absent" case) | RCON `plugins` | no `CoreProtect` in the list |
+| CoreProtect present (the "present" case, overlay) | `docker compose -f compose/phase0.yml -f compose/opt-in/coreprotect.yml up -d paper`, then RCON `plugins` | `CoreProtect` listed; restart paper only with the owner's word |
+| Flag on (scratch only) | edit the `provenance:` / `blockowner:` `enabled: true` keys in that file, wait 10 s | the next capture shows the message; no log line is promised |
+| Subscriber gets READY | the script prints `== case <name>` and waits; a READY timeout is a stop condition | READY in under 30 s |
+
+Flag key names: `provenance.enabled` is the AN-28c key and `blockowner.enabled` the existing one; read both keys in the
+merged plugin source before editing (`grep -rn "provenance\|blockowner" plugin/core/src/main/resources/config.yml`).
+Edit only the container's volume copy. Never edit `plugin/core/src/main/resources/config.yml`.
+
+### Stage 3: captures (flag on, shard exclusive, one case at a time)
+
+Dry run first (connects to nothing), then each case. Expected files are the count the validator must show.
+
+```
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --list
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case all --dry-run
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case toss
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case break-coreprotect-absent
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case break-coreprotect-present
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case kill
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case survived
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case chest-single
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case chest-double
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case chest-shift-click
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case chest-number-key
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case furnace
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case brewing-stand
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case crafting-table
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case anvil
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case enchanting-table
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case player-2x2
+```
+
+Each run writes `.capture/<case>/` (gitignored) and prints the validator table.
+
+| Case | Expected files in `.capture/<case>/` | Validator `--expect` | Worknote to fill |
+|---|---|---|---|
+| toss | 1 `pickup` (the thrower's own pickup adds none) | `pickup=1` | AN-26a, `## Ops evidence (pending, not run in this packet)` |
+| break-coreprotect-absent | 1 `break`, `prior_owner` null | `break=1` | AN-27a, bullet `- CoreProtect absent:` |
+| break-coreprotect-present | 1 `break`; `prior_owner` non-null only if the owner query ran within 30 s | `break=1` | AN-27a, bullet `- CoreProtect present:` |
+| kill | 1 `combat_fact` (hostile_kill) | `combat_fact=1` | AN-47a, below `Ops capture pending:` |
+| survived | 1 `combat_fact` (fight_survived) | `combat_fact=1` | AN-47a, same place |
+| chest-single | 1 `take` | `take=1` | AN-51a, `## Pending (ops evidence, not run)` |
+| chest-double | 1 `take` | `take=1` | AN-51a, same |
+| chest-shift-click | 1 `take` | `take=1` | AN-51a, same |
+| chest-number-key | 1 `take` | `take=1` | AN-51a, same |
+| furnace | 1 `take` (SENDS; furnace ruling) | `take=1` | AN-51a, holder table |
+| brewing-stand | 1 `take` (SENDS) | `take=1` | AN-51a, holder table |
+| crafting-table | 0 files: "send nothing" | `take=0` (exact) | AN-51a, holder table |
+| anvil | 0 files | `take=0` (exact) | AN-51a, holder table |
+| enchanting-table | 0 files | `take=0` (exact) | AN-51a, holder table |
+| player-2x2 | 0 files | `take=0` (exact) | AN-51a, holder table |
+
+Stop conditions (stop, do not retry in a loop, report):
+- any health row red, or RCON or NATS refuses (NATS auth refusing included);
+- the subscriber does not print READY within 30 s;
+- a send-nothing case (`take=0`) writes a file: a finding for the AN-51 owner, not a capture failure;
+- a validator row reads `fail` (a fail means the capture refutes a worknote claim, or the payload breaks the contract);
+- a case stops with `INVALID` (the send-nothing cases have no ingredient setup in CAP-2: they report INVALID, not a
+  zero, until it is written);
+- a bot name is refused at join.
+
+### Where each result goes (exact headings; paste the JSON verbatim, one per capture, plus the validator row)
+
+Format: `Captured 2026-MM-DD at <commit sha>, shard phase0, case <id>, subject <subject>, validator: ok | <error>`
+then a `json` fence with the message exactly as received. A case with no message: `case <id>: no message in <n> s,
+subscriber active since <time>`.
+
+- `docs/analysis/harness/worknotes/AN-26a.md`: heading `## Ops evidence (pending, not run in this packet)`. Toss pickup, plus the negative (own pickup sends nothing).
+- `docs/analysis/harness/worknotes/AN-27a.md`: replace the word `pending` on the bullets `- CoreProtect present:` and `- CoreProtect absent:`.
+- `docs/analysis/harness/worknotes/AN-47a.md`: the line `Ops capture pending:` at the end; kill and survived `combat_fact` and `engaged` (the `combat` kind).
+- `docs/analysis/harness/worknotes/AN-51a.md`: heading `## Pending (ops evidence, not run)`, both bullets: each take case, and a holder table (chest, double chest, crafting table, furnace, anvil, enchanting table, brewing stand: reports a location? storage type? sent a message?).
+
+Do not edit anything else in those worknotes, and do not create `fixtures/*.json` (AN-26b and the others own those).
+
+### Stage 4: teardown
+
+1. Stop the script (Ctrl+C). Confirm no bot online: RCON `list`.
+2. Reset the flag: remove the `provenance:` and `blockowner:` `enabled` edits in the container's config, wait 10 s.
+3. RCON `tick query` reads 20 TPS; `gamerule <name>` for any gamerule the case changed (none in CAP-2).
+4. `git diff shards/phase0.yaml` must be empty (restore it with the owner's word if it is not; never `adam select`).
+5. `./geldar.ps1 shard down phase0` (volumes are kept). Deleting the world volume needs the owner's word (run-shard skill).
+6. Delete `.capture/` only after the worknotes are pasted. Then `git status` must be clean.
+
 Type: how-to. Audience: the `ops` agent (it never edits code) and the orchestrator that dispatches it. This is
 operator documentation about raw plugin messages that only a Body may ever read. Never copy it into a prompt, skill,
 kit file, tool text, `identity.md`, player repo or sign.
