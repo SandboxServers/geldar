@@ -19,4 +19,18 @@ No new agent-visible wording. Observation text is `observationSentence` output o
 
 ## Revert-checks
 
-Not run in this session (tool budget). Planned, per the card: (1) drop `observation` from `MIND_EVENT_TYPES` (fails "observation is in MIND_EVENT_TYPES"); (2) copy `actor.life` into the presented event (fails the `ag_` scan); (3) skip the name re-check in `visibleActorName` (fails "a name failing the pattern ... is dropped"); (4) remove the damage `actor` copy (fails the attributed damage case).
+Card revert-checks, run in review 1 and recorded there: (1) drop `observation` from `MIND_EVENT_TYPES` (fails "observation is in MIND_EVENT_TYPES"); (2) copy `actor.life` into the presented event (fails the `ag_` scan); (3) skip the name re-check in `visibleActorName` (fails "a name failing the pattern ... is dropped"); (4) remove the damage `actor` copy (fails the attributed damage case). All four fail the named test.
+
+Review-1 mutations (fix pass, each restored from a backup copy and checked with `git diff --stat`):
+- Item guard removed (`const item = typeof p.item === 'string' ? p.item : undefined`): "an item or block holding a marker word is dropped and the event kept" fails (`item: 'watch'` leaks).
+- Block guard removed (same shape for `block`): the same test fails (`block: 'observer'` leaks).
+- Presenter `observationKind === undefined` guard deleted: "a fight_seen or container_taken observation maps and presents no line" fails. Before the fix this mutation survived (all six tests passed).
+- Payload check replaced by a null-only check: "an unknown observation kind is invalid" and "a gift with a name failing the LifeId" both fail (`foo` is accepted). The first test now uses a valid key, so only the kind can cause `invalid`.
+- Earlier review-1 mutations (pattern removed, marker check removed, pattern bounds, anchors, presenter field drops, literal text, forced type, handler stops setting kind, damage actor default) were run in review 1 and fail their named tests.
+
+Owner decisions and open items:
+- Item and block (review-1 note 1): a field holding a marker word is dropped and the event is kept with the generic sentence. This is the stricter inert choice, applied without an OD-E owner call. Real names such as `observer`, `echo_shard` and `*_harness` now give no field.
+- `fight_seen` and `container_taken` are AN-24 kinds with no approved wording (AN-46). The presenter drops them: a valid one normalises to an event and maps, and gives no player line.
+- `link.fixtures.ts` has one `observation` fixture; the other kinds are inline in the tests. Owner to accept.
+- The five `SimEvent` fields in `mcp-mock/src/sim/events.ts` and the registry test edits outside the card list are owner-accepted as forced by the Mind type and the handler design. Owner to confirm.
+- OD-E wording approval is still pending; no new agent-visible wording is added; the only agent-visible sentences are AN-24's `observationSentence` output and the unchanged damage text.

@@ -31,13 +31,21 @@ describe('observation events in the Mind normaliser', () => {
     }
   });
 
-  it('an unknown observation kind is invalid in the normaliser (counted, not thrown)', () => {
+  it('an unknown observation kind is invalid in the normaliser (not thrown)', () => {
     const bad = {
       ...eventOf('observation'),
-      payload: { kind: 'fight_seen', target: 'zombie', key: 'x' },
+      payload: { kind: 'foo', key: 'gift:100:none:bread:3:0' },
     };
     expect(() => normaliseEvent(bad)).not.toThrow();
     expect(normaliseEvent(bad).status).toBe('invalid');
+  });
+
+  it('a known AN-24 kind with a valid payload normalises to an event (the presenter drops it)', () => {
+    const fight = {
+      ...eventOf('observation'),
+      payload: { kind: 'fight_seen', target: 'zombie', key: 'fight:100:zombie:0' },
+    };
+    expect(normaliseEvent(fight).status).toBe('event');
   });
 
   it('a gift with a name failing the LifeId or the name pattern is invalid', () => {

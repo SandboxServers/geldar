@@ -14,6 +14,16 @@ export function visibleActorName(value: unknown): string | undefined {
     : undefined;
 }
 
+/**
+ * A block or item name the player may see: a string with no marker word in it (underscores read as spaces,
+ * as in the sentence), else undefined. The sentence falls back to the generic text on the same test.
+ */
+function visibleField(value: unknown): string | undefined {
+  return typeof value === 'string' && markedWords(value.replace(/_/g, ' ')).length === 0
+    ? value
+    : undefined;
+}
+
 /** The observation fields the player line reads; the contract has already checked the payload. */
 interface ObservationFields {
   kind?: unknown;
@@ -31,9 +41,9 @@ export const observationHandler = defineMindHandler('observation', (event, base)
   const p: ObservationFields = event.payload;
   const kind = p.kind === 'gift_received' || p.kind === 'property_broken' ? p.kind : undefined;
   const actor = visibleActorName(p.actor?.name);
-  const item = typeof p.item === 'string' ? p.item : undefined;
+  const item = visibleField(p.item);
   const count = typeof p.count === 'number' ? p.count : undefined;
-  const block = typeof p.block === 'string' ? p.block : undefined;
+  const block = visibleField(p.block);
   return [
     {
       ...base,

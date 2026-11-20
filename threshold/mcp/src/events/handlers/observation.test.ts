@@ -110,6 +110,30 @@ describe('observation events on the player log', () => {
     expect(out).toEqual([{ seq: 3, tick: 100, type: 'damage', text: 'Something hit you.' }]);
   });
 
+  it('an item or block holding a marker word is dropped and the event kept', () => {
+    const item = presented(event('observation', { ...GIFT_UNATTRIBUTED, item: 'watch' }));
+    expect(item).toEqual([
+      { seq: 3, tick: 100, type: 'gift_received', text: 'Something happened.', count: 3 },
+    ]);
+    const block = presented(
+      event('observation', {
+        kind: 'property_broken',
+        block: 'observer',
+        key: 'brk:100:1:64:3:none',
+      }),
+    );
+    expect(block).toEqual([
+      { seq: 3, tick: 100, type: 'property_broken', text: 'Something happened.' },
+    ]);
+  });
+
+  it('a fight_seen or container_taken observation maps and presents no line', () => {
+    const fight = { kind: 'fight_seen', target: 'zombie', key: 'fight:100:zombie:0' };
+    const taken = { kind: 'container_taken', item: 'bread', count: 3, key: 'ctr:100:zack:bread:3' };
+    expect(presented(event('observation', fight))).toEqual([]);
+    expect(presented(event('observation', taken))).toEqual([]);
+  });
+
   it('the presented event serialised holds no ag_ id, no key, no provenance and no coordinates', () => {
     const lines = [
       ...presented(event('observation', GIFT)),
