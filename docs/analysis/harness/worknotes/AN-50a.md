@@ -1,9 +1,9 @@
 # AN-50a worknote: combat, exchange and take evidence registration
 
-Branch `phase1/sheet-an-50a-evidence-registration-v2`. True base: `origin/main` at `2bcff3cc`, which already holds AN-28c
-(PR #817, #818). AN-28c2 v2 (`phase1/an-28c2-register-guard-v2`, head `2b6a48c2`) is not on main; this branch contains it
-as its first commits, so `git diff origin/main...HEAD` lists four AN-28c2 files (`docs/analysis/harness/worknotes/AN-28c.md`,
-`plugin/core/build.gradle.kts`, `RegisterWiringGuardTest.java`, the AN-28c2 hunk of `ProvenanceWiringTest.java`).
+Branch `phase1/sheet-an-50a-evidence-registration-v2`. True base: `origin/main` at `8d420e0d`, which holds AN-28c
+(PR #817, #818) and AN-28c2 v2 (PR #819). This branch is merged with it (merge `c1bafcbb`), so `git diff origin/main...HEAD`
+lists 16 files: the AN-50a changes, `RegisterWiringGuardTest.java` (created by AN-28c2, extended here) and the three docs
+corrected in review 2. `GeldarCoreTest.java` is back to its origin/main content, so it is not listed. The AN-28c2 `AN-28c.md` and `build.gradle.kts` changes are on main, not in this diff.
 Paper-only; do not enable on NeoForge until the human-handling question is decided.
 
 ## What changed
@@ -22,13 +22,21 @@ Paper-only; do not enable on NeoForge until the human-handling question is decid
   builds `new CombatFactListener(exporter, sink, gate::on, tick)`. No accessor exposes the gate or the sink.
 - `plugin/core/src/main/java/dev/geldar/core/GeldarCore.java`: `CombatFactListener combat = owners.combatFacts(exporter,
   Bukkit::getCurrentTick)`, registered once, ticked once (`runTaskTimer(this, combat::tick, 1L, 1L)`).
-- `plugin/core/src/test/java/dev/geldar/core/blockowner/RegisterWiringGuardTest.java` (AN-28c2 v2, extended here): each seam
+- `plugin/core/src/test/java/dev/geldar/core/blockowner/RegisterWiringGuardTest.java` (from AN-28c2, extended here): each seam
   call exactly once; comments and literals removed before matching; `ContainerTakeListener` and `CombatFactListener` are
   constructors only a seam may build; `GeldarCore` checked by `geldarCoreViolations` (one `owners.combatFacts(` call, one
   combat registration, one tick); `combatFacts()` must hand the gate to `combatFactListener`. Each rule has a synthetic test.
 - `GeldarCoreTest.java` and `ProvenanceWiringTest.java`: the exact-text count guards for the take and combat listeners are
   deleted. The extended guard covers the same facts (construction count, gate argument, one registration, one tick).
-- `plugin/core/build.gradle.kts`: AN-28c2 v2's entry for `BlockOwnerSetup.java` in `scannedSourceRoots`, not AN-50a's.
+- `ProvenanceWiringTest.java` (review 2): the take tests (`takeSilentWhenProvenanceOff`, `takeSendsWhenBothOn`,
+  `takeSilentWhenBlockOwnerOff`) and the combat matrix (`combatSilentBeforeReload`, `combatSilentWhenProvenanceOff`,
+  `combatPublishesWhenBothOn`, `combatSilentWhenBlockOwnerOff`). The matrix builds the listener through
+  `BlockOwnerSetup.combatFactListener` and calls the package-private publish paths by reflection. `GeldarCoreTest.java`
+  loses its combat case, which built the listener itself and so guarded nothing AN-50a added.
+- `CombatFactListener.java`, `ContainerTakeListener.java`: one-line javadoc edits (review-1 finding 5), outside the packet's
+  may-edit list.
+- `docs/runbooks/block-owner.md`, `docs/runbooks/capture-real-payloads.md`, `docs/reference/geldar-core-plugin.md`: stale
+  sentences about combat and take registration corrected (review-2 finding 3; see the index section).
 
 ## Revert-checks (card list)
 
@@ -58,6 +66,13 @@ from a scratchpad backup (`git diff --stat` empty after each; restore verified b
 5b. Combat seam, blockowner-only switch (`combatFacts()` returns `new CombatFactListener(exporter, link, () -> enabled, tick)`):
    `RegisterWiringGuardTest > register() hands setup.gate ... FAILED`, `expected: <[]> but was: <[combatFacts() does not hand
    the gate to combatFactListener(, new CombatFactListener( outside a seam]>`.
+6. (review 2) Combat seam switch `gate::on` replaced by `() -> true` in `BlockOwnerSetup.combatFactListener`:
+   `ProvenanceWiringTest` FAILED 3 of 15: `a combat fact sends nothing before the first reload`, `a combat fact is silent when
+   blockowner.enabled is true and provenance.enabled is false`, `a combat fact is silent when blockowner.enabled is false and
+   provenance.enabled is true`. Restored by hash.
+7. (review 2) The three combat lines in `GeldarCore.java` (`owners.combatFacts`, `registerEvents`, `runTaskTimer`) deleted:
+   `RegisterWiringGuardTest > GeldarCore takes its combat listener from the owner's combatFacts(), and registers and ticks
+   it once` FAILED (1 of 35). `GeldarCoreTest` still passes: the matrix does not reach `GeldarCore`, which needs a server.
 Also run: a second combat construction in `GeldarCore` (`RegisterWiringGuardTest`, `foreign scan` and `GeldarCore takes its
 combat listener ...`: `GeldarCore builds CombatFactListener itself`); a removed take registration (`register() does not call
 containerTakeListener(`); the overheard mutant (`exchange.ts` speaker guard replaced by `if (pair.qualified)`):
@@ -66,10 +81,10 @@ to deeply equal []`.
 
 ## Gaps
 
-- Combat gate behaviour (blockowner on, provenance off: silent; both on: publishes): not driven. `CombatFactListener`'s
-  publish paths (`playerHurt`, `playerHit`, `mobDied`) are package-private in `dev.geldar.core`, and the public handlers take
-  Bukkit entity events. The blockowner test package cannot reach either without widening production code. The gate itself
-  (`ProvenanceGate`) and the seam's switch are covered by the source guard and `ProvenanceWiringTest`.
+- Combat gate behaviour: driven in `ProvenanceWiringTest` (the four `combat*` tests). It goes through
+  `BlockOwnerSetup.combatFactListener`, the seam `combatFacts()` calls, and calls the package-private publish paths
+  (`playerHurt`, `playerHit`, `mobDied`) by reflection. Not driven: `GeldarCore`'s own wiring (the `combatFacts` call, its
+  `registerEvents` and its tick). That needs a server, so `RegisterWiringGuardTest` checks it by source (mutant 7).
 - Evidence table: 8 active rows, flee (fact and action) and one-way overheard speech are covered. Not covered: third-party
   gift, break and take rows; promise (AN-48, deferred); estimates.
 - The `writer.projection.test.ts` file mocks `./xp/awards.ts`, so it cannot check give or craft rules.
@@ -85,5 +100,10 @@ to deeply equal []`.
 - AN-47b's index (`case 'combat_fact'`): done in `awards.ts`.
 - AN-49's index (sink-held `ExchangeTracker` replacing the stateless call): done in `writer.ts`.
 - AN-51a's index (`ContainerTakeListener` registration): done in `BlockOwnerSetup.register`.
+- Docs corrected in this branch (review 2, finding 3): `docs/runbooks/block-owner.md` (the `provenance.enabled` paragraph),
+  `docs/runbooks/capture-real-payloads.md` (item 3) and `docs/reference/geldar-core-plugin.md` (the `provenance.enabled` row)
+  now say: with `provenance.enabled` and `blockowner.enabled` both true the plugin publishes break, pickup, take and combat
+  provenance messages; `CombatFactListener` is registered and ticked in `GeldarCore`, `ContainerTakeListener` in
+  `BlockOwnerSetup.register`; all are inert while the flag is false.
 - AN-50b: the subscriptions and the leakage gate are still its job; the plugin publishes `take` and `combat` when both keys
   are on.

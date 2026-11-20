@@ -39,11 +39,10 @@ Checked 2026-11-19 on `origin/main` at `7efad8ca`. This is a gap, not a procedur
    (`BlockChangeListener.java:41`), so `onBreak` never reaches `sendBreakProvenance` (guard at
    `BlockChangeListener.java:62`). `PickupProvenanceListener` is constructed nowhere in `plugin/core/src/main`
    (`grep -rn "new PickupProvenanceListener" plugin/core/src/main` is empty). Both belong to AN-28c.
-3. **Combat and take listeners are not registered.** `CombatFactListener` and `ContainerTakeListener` are constructed
-   nowhere in `plugin/core/src/main`. `GeldarCore.java:200-205` builds the listener list with the exporter,
-   `RecipeGrantListener`, `CommandBlockListener` and `GhostListener` only. The AN-47a worknote says "Nothing registers
-   the listener" and the AN-51a worknote says "registration is AN-50a". The card for it,
-   `work-packets-sheet-w6-w8.md` AN-50a, also schedules `CombatFactListener.tick()` each tick.
+3. **Combat and take listeners are registered, behind the flag.** `CombatFactListener` is registered and ticked in
+   `GeldarCore` (`owners.combatFacts` and `runTaskTimer`), and `ContainerTakeListener` is registered in
+   `BlockOwnerSetup.register` (AN-50a). With `provenance.enabled` and `blockowner.enabled` both true the plugin publishes
+   break, pickup, take and combat provenance messages; all of them are inert while the flag is false.
 4. **Order conflict.** `docs/analysis/harness/sheet-next-wave-order.md:120` says AN-26b and AN-27b run "once ... the
    payload captures exist", then AN-28b and AN-28c "serial and last". But the captures need AN-28c (break, pickup) and
    AN-50a (combat, take) merged first. Both orders cannot hold. The orchestrator must choose: (a) run the capture

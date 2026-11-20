@@ -3,14 +3,8 @@ package dev.geldar.core;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import dev.geldar.core.blockowner.BlockOwnerSetup;
-import dev.geldar.core.blockowner.ProvenanceSink;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 import org.bukkit.event.Listener;
 import org.bukkit.plugin.messaging.Messenger;
@@ -76,28 +70,4 @@ class GeldarCoreTest {
         GeldarCore.enableOrStop(() -> calls.add("enable"), () -> calls.add("disable"), () -> calls.add("shutdown"), Logger.getLogger("test"));
         assertEquals(List.of("enable"), calls);
     }
-
-    private static final String LIFE = "ag_wren_02";
-    private static final String PLAYER = "11111111-2222-3333-4444-555555555555";
-    private static final String MOB = "0f8e2a3c-1b4d-4e5f-8a6b-7c8d9e0f1a2b";
-
-    @Test
-    void combatFactIsSilentWhileTheProvenanceSwitchIsOffAndPublishesOnceItIsOn() {
-        AtomicBoolean on = new AtomicBoolean(false);
-        InMemoryEventPublisher mem = new InMemoryEventPublisher();
-        EventExporter ex = new EventExporter(
-                mem, "phase0", () -> 100, () -> Instant.parse("2026-11-09T00:00:00Z"), Logger.getLogger("test"));
-        ProvenanceSink sink = (tail, json) -> { };
-        CombatFactListener listener = new CombatFactListener(ex, sink, on::get, () -> 10L);
-
-        listener.playerHurt(LIFE, PLAYER, MOB, "zombie", 10);
-        listener.mobDied(MOB, "zombie", LIFE, PLAYER, 20);
-        assertTrue(mem.events().isEmpty(), "no fact while the switch is off");
-
-        on.set(true);
-        listener.playerHurt(LIFE, PLAYER, MOB, "zombie", 30);
-        listener.mobDied(MOB, "zombie", LIFE, PLAYER, 40);
-        assertEquals(1, mem.events().size(), "one fact once the switch is on");
-    }
-
 }
