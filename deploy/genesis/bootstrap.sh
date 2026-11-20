@@ -170,15 +170,20 @@ valid_port() {
 }
 
 # check_pool_settings: GELDAR_DOCKER_POOL_BASE is an IPv4 CIDR (four octets 0-255, prefix 1-32). GELDAR_DOCKER_POOL_SIZE
-# is the pool prefix length, 1 to 32, and not shorter than the base prefix. Octets are read in base ten (08 is 8).
+# is the pool prefix length, 1 to 32, and not shorter than the base prefix. An octet with a leading zero (08) is refused,
+# and the host bits of the base must be zero for its prefix (127.0.0.1/16 is refused, 127.0.0.0/16 is accepted).
 check_pool_settings() {
-  local re='^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})/([0-9]{1,2})$' o bits size
+  local re='^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})/([0-9]{1,2})$' o bits size ip mask
   [[ "$GELDAR_DOCKER_POOL_BASE" =~ $re ]] || die "GELDAR_DOCKER_POOL_BASE must be an IPv4 CIDR"
   for o in "${BASH_REMATCH[@]:1:4}"; do
     [ "$((10#$o))" -le 255 ] || die "GELDAR_DOCKER_POOL_BASE must be an IPv4 CIDR (octets 0-255)"
+    case "$o" in 0?*) die "GELDAR_DOCKER_POOL_BASE must be an IPv4 CIDR (no leading zero in an octet)" ;; esac
   done
   bits=$((10#${BASH_REMATCH[5]}))
   [ "$bits" -ge 1 ] && [ "$bits" -le 32 ] || die "GELDAR_DOCKER_POOL_BASE prefix must be 1 to 32"
+  ip=$(( (10#${BASH_REMATCH[1]} << 24) | (10#${BASH_REMATCH[2]} << 16) | (10#${BASH_REMATCH[3]} << 8) | (10#${BASH_REMATCH[4]}) ))
+  mask=$(( (0xFFFFFFFF << (32 - bits)) & 0xFFFFFFFF ))
+  [ $(( ip & ~mask & 0xFFFFFFFF )) -eq 0 ] || die "GELDAR_DOCKER_POOL_BASE host bits must be zero for its /$bits prefix"
   [[ "$GELDAR_DOCKER_POOL_SIZE" =~ ^[0-9]{1,2}$ ]] || die "GELDAR_DOCKER_POOL_SIZE must be a number from 1 to 32"
   size=$((10#$GELDAR_DOCKER_POOL_SIZE))
   [ "$size" -ge 1 ] && [ "$size" -le 32 ] || die "GELDAR_DOCKER_POOL_SIZE must be a number from 1 to 32"

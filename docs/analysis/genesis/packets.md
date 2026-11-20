@@ -18,13 +18,15 @@ State at 2026-11-15. PR numbers are GitHub pull requests on `main`.
 | G1-02 | #445 | Merged |
 | G1-03 | #454 | merged 2026-11-15 06:02Z (3c563c72) |
 | G0-06 | none | Satisfied by decision 0240 (0240 written in this change) |
-| G1-04 | none | In progress (coder dispatched 2026-11-18) |
-| G2-01 | none | In progress (coder dispatched 2026-11-18) |
+| G1-04 | #766 | Merged (#766) |
+| G2-01 | #767 | Merged (#767) |
 | G2-03 | none | In progress (coder dispatched 2026-11-18) |
-| G2-04 | none | In progress (coder dispatched 2026-11-18) |
-| G2-06 | none | In progress (coder dispatched 2026-11-18) |
-| G3-02 | none | In progress (coder dispatched 2026-11-18); wrapper verbs `plan` and `apply` only; `verify` and `restore` are GE-04b |
-| All other cards (G2-02, G2-05, G2-07, G3-01, G3-03, G3-04, G4-01 to G4-05, G5-01 to G5-04, G6-01 to G6-05, G7-01 to G7-04) | none | Not started |
+| G2-04 | #768 | Merged (#768) |
+| G2-06 | #768 | Merged (#768) |
+| G3-02 | #769 | Merged (#769), installer not yet installed; wrapper verbs `plan` and `apply` only; `verify` and `restore` are GE-04b |
+| G3-01 | #772 | Merged (#772) |
+| G3-04 | #770 | Merged (#770), script only, not run |
+| All other cards (G2-02, G2-05, G2-07, G3-03, G4-01 to G4-05, G5-01 to G5-04, G6-01 to G6-05, G7-01 to G7-04) | none | Not started |
 | GE-01 | none | Not started |
 | GE-02 | none | Not started |
 | GE-03 | none | Not started |
