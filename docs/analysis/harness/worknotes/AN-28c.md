@@ -117,10 +117,68 @@ the break mutation uses the blockowner switch the old line mutation named, the p
 6. Pickup seam, `gate::on` replaced by `() -> true`: FAILED `a pickup reads no event and sends nothing when provenance.enabled
    is false` (`NullPointerException` at ProvenanceWiringTest.java:105, because the null event is read). 1 of 5 failed.
    Restored from a scratchpad copy. `git diff --stat` empty after each restore.
-   Residual: a pickup-only mis-wire that keeps the pickup gate off forever is not caught. `EntityPickupItemEvent` needs an
+   Residual, CLOSED by AN-28c2 (see the AN-28c2 section): a pickup-only mis-wire that keeps the pickup gate off forever was not caught. `EntityPickupItemEvent` needs an
    `ItemStack`, which cannot be built outside a server, so a pickup with provenance on is not driven through `onPickup`.
    The break path with the same gate is driven on and off.
 7. `geldar.ps1` is 696 of 700 lines: any further change to it needs a split first.
+
+## AN-28c2
+
+Closes the two residuals of AN-28c review 3 (`.claude/reports/sheet/AN-28c-review-3.md`, in the AN-28c worktree).
+
+- Review 3, finding 1, "nothing enforces that `register()` keeps calling them": CLOSED for what the guard reads, with the
+  residuals listed here. `RegisterWiringGuardTest` reads `BlockOwnerSetup.java` by path (listed in `scannedSourceRoots`,
+  `plugin/core/build.gradle.kts`, so the input is tracked). It strips comments and literals and collapses whitespace, then
+  asserts: each `registerEvents(` argument in `register()` is a seam call result, or a variable assigned from one; each seam is
+  called once per registration, with `setup.gate` as its gate argument; `register()` builds no `ProvenanceGate`; `reload()`
+  calls `gate.reload(config)`; and `new BlockChangeListener(`, `new PickupProvenanceListener(` and their `::new` references
+  appear only inside the seam bodies. A second test scans every other main source under `plugin/core/src/main/java` for either
+  construction. Whitespace is tolerant wherever the guard matches: `name (`, `registerEvents (` and `new X (` are all read.
+  Each seam carries its own expected gate expression (`Seam(name, gateIndex, gate)`; `setup.gate` for both current seams), and
+  `seamDeclaration` accepts `public static`. `violations(source, seams)` takes the seam list, so both are tested
+  (`guardChecksGateExpressionPerSeam`, `guardFindsPublicSeam`).
+  Extension for AN-50a, one line each: `containerTakeListener` is one `Seam` line (`new Seam("containerTakeListener", 2,
+  "setup.gate::on")`) plus its class in the constructor list. The combat-fact seam is NOT covered: it is built and registered
+  in `GeldarCore.onEnable` (`new CombatFactListener(` and `registerEvents(combat, this)`), which this guard does not scan.
+  AN-50a must add a GeldarCore check of its own, or keep its exact-text `count()` guards in `GeldarCoreTest` and
+  `ProvenanceWiringTest`. A seam body that ignores its gate is caught only by the wiring tests.
+  Residuals: the guard is text-based, so a construction by reflection, or a unicode-escaped name (`BlockChangeListener`),
+  is not seen. It reads only `register()`, the seam bodies and `reload()` of `BlockOwnerSetup.java`: a `registerEvents(` in a
+  helper that `register()` calls is not read. The foreign scan exempts `BlockChangeListener.java`, `PickupProvenanceListener.java`
+  and `BlockOwnerSetup.java` by simple file name, so a same-named file in another package, or a construction inside a listener
+  file, is not scanned. The evasion self-tests' fail-before status is argued, and the mutations are recorded in the fix report.
+- Review 3, finding 2, "no pickup test with the gate on": CLOSED by AN-28c2. `ProvenanceWiringTest.pickupPublishesWhenBothOn`
+  drives a real `EntityPickupItemEvent` through `onPickup` with both flags true and asserts the published `pickup` message
+  (kind, picker, count). The item is an `ItemStack` subclass (protected no-arg constructor, `getType` and `getAmount`
+  overridden), so no server registry is needed. `pickupSilentWhenProvenanceOff`, `pickupSilentWhenBlockOwnerOff` and
+  `pickupSilentBeforeReload` pin the other gate states. Residual: the player and item are `Proxy` doubles and the thrower
+  lookup is a stub (`id -> null`), so Paper's own event and entity code are not exercised.
+- `plugin/core/build.gradle.kts` is outside the original may-edit list for AN-28c2. Two lines change: a comment, and
+  `src/main/java` (the whole main tree) added to `scannedSourceRoots`. The entry is required: `noOtherMainSourceBuildsAListener`
+  reads every main source, and `:core:verifyTestSourceInputs` needs each path a test reads to be listed. Any main edit now
+  reruns `:core:test`. It adds a test input only; the jar is unchanged. An earlier draft also listed `BlockOwnerSetup.java`;
+  the tree entry covers it, so that line was dropped.
+
+Revert-checks, AN-28c2 (one line each in `BlockOwnerSetup.java` unless noted; each restored from a scratchpad copy; `git diff`
+empty after each; both wiring test classes run):
+
+1. Break call as a direct, unspaced constructor added to `register()`: FAILED
+   `RegisterWiringGuardTest > register() hands setup.gate to every seam, builds no listener itself, and reload() feeds the gate`.
+2. Pickup call as a direct, unspaced constructor: same guard test FAILED.
+3. Pickup call as a direct constructor with a space before the paren (`new PickupProvenanceListener (`): same guard test FAILED.
+4. `new ProvenanceGate()` passed to `pickupListener` instead of `setup.gate`: same guard test FAILED.
+5. Pickup seam hard-wired to `() -> false`: FAILED
+   `ProvenanceWiringTest > a pickup publishes its provenance when both blockowner.enabled and provenance.enabled are true`;
+   the guard stays green, since it checks placement and not the gate.
+6. `gate.reload(config);` removed from `reload()`: same guard test FAILED.
+7. Scan case, in `GeldarCore.java` (not `BlockOwnerSetup.java`): a field `new dev.geldar.core.blockowner.PickupProvenanceListener(null,
+   null, null, null)` makes `RegisterWiringGuardTest > no main source other than ... builds a listener` FAILED. (A version with an
+   unqualified name did not compile, since GeldarCore does not import the class; the scan's case is the qualified one.)
+
+Not run as revert-checks: the evasion self-tests (spaced, newline, qualified, method reference, helper, discarded result, comment
+and string cases) were checked against the new `violations` only; they were not run against the previous blacklist.
+
+`geldar.ps1` is 696 of 700 lines (unchanged by this packet).
 
 ## Checks
 
