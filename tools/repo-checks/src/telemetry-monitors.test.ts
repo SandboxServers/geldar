@@ -169,6 +169,24 @@ describe('deploy/telemetry/gateway.yaml (G2)', () => {
   });
 });
 
+describe('deploy/telemetry/compose.gateway.yml secret mount (G2)', () => {
+  const compose = parse(readText('deploy/telemetry/compose.gateway.yml')) as {
+    services: Record<string, { secrets?: { source?: string; target?: string }[] }>;
+    secrets?: Record<string, { file?: string }>;
+  };
+
+  it('mounts the otel-pg secret into geldar-gateway at /run/secrets/otel-pg.txt', () => {
+    const mounts = compose.services['geldar-gateway']?.secrets ?? [];
+    expect(mounts).toContainEqual({ source: 'otel-pg', target: 'otel-pg.txt' });
+  });
+
+  it('takes the secret file from a node secrets path variable, with no literal path to a real secret', () => {
+    const file = compose.secrets?.['otel-pg']?.file ?? '';
+    expect(file.startsWith(`$` + '{GELDAR_SECRETS_DIR')).toBe(true);
+    expect(file.endsWith('/otel-pg.txt')).toBe(true);
+  });
+});
+
 describe('deploy/telemetry/postgres-monitor.sql (G2, T-10)', () => {
   it('has no password literal: the password comes from the psql variable', () => {
     expect(sqlCode()).not.toMatch(/PASSWORD\s+'/i);

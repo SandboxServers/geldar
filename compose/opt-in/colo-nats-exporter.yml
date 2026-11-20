@@ -3,10 +3,11 @@
 # It is not part of compose/colo.yml: the default colo stack runs without it. Design: docs/analysis/telemetry/collector-design.md section 11.
 # Scope: /varz and /jsz only. Do not add a flag for subsz, connz, routez, gatewayz, leafz or accstatz.
 # network_mode: service:nats, so the exporter shares the NATS network namespace and reads the monitor on 127.0.0.1:8222 there.
-# Neither this service nor the NATS monitor publishes a port. The gateway scrapes nats:7777 on geldar-colo (deploy/telemetry/gateway.yaml).
-# Starting this does not restart NATS. It needs the NATS monitor listening on 127.0.0.1:8222 inside the container, and colo.yml does not
-# enable that (the base has no monitor port). Enabling it is a separate node request. Never probe the monitor from a healthcheck.
-# UNVERIFIED for 0.20.3: the flag names (-varz, -jsz, -port) and the digest's release date (two weeks or more). Check `--help` in the pinned image.
+# Neither this service nor the NATS monitor publishes a port. NATS is on the geldar-colo network, as the gateway is, so the gateway
+# scrapes nats:7777 (deploy/telemetry/gateway.yaml).
+# No NATS change is needed: the NATS monitor already listens on 127.0.0.1:8222 inside the container on the node (read 2026-11-20).
+# Starting this does not restart NATS. Never probe the monitor from a healthcheck.
+# Flags verified against the 0.20.3 README (2026-11-20): -varz, -jsz (a string: all, consumer, stream, ...), -port. Release date 2026-10-21.
 services:
   nats-exporter:
     image: natsio/prometheus-nats-exporter:0.20.3@sha256:4b8ddc1c86fec360b5cd3d5e1fbc6fb52bdafd5805bba3901cc52926538af255
