@@ -61,6 +61,7 @@ export const PAYLOADS: Record<string, Record<string, unknown>> = {
   damage: { amount: 2 },
   death: { cause: 'fall' },
   sleep: { slept: true },
+  observation: { kind: 'gift_received', item: 'bread', count: 3, key: 'gift:100:none:bread:3:0' },
 };
 
 /** A valid event of `type` for `agentId`; `n` keeps ids apart. */

@@ -121,7 +121,7 @@ describe('stream', () => {
       expect(subjects).not.toContain(`geldar.phase0.${kind}`);
     }
     expect(subjects).toContain('geldar.phase0.action_outcome');
-    expect(subjects).toHaveLength(14);
+    expect(subjects).toHaveLength(15);
   });
 });
 
