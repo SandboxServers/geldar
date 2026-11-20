@@ -44,12 +44,13 @@ function setup() {
   mkdirSync(envDir);
   writeFileSync(join(envDir, 'colo.yaml'), `token: ${CANARY}\n`);
   const entry = join(root, 'entry.sh');
-  writeFileSync(
+  writeExecutable(
     entry,
     [
+      '#!/bin/sh',
       'echo "ARGS:$*"',
-      'echo "ENV:${GELDAR_DEPLOY_ENV-unset}"',
-      'echo "CANARY:${GELDAR_CANARY-unset}"',
+      `echo "ENV:\${GELDAR_DEPLOY_ENV-unset}"`,
+      `echo "CANARY:\${GELDAR_CANARY-unset}"`,
       'echo "STDIN:$(cat)"',
       'echo "stderr line" >&2',
       'exit 0',
@@ -57,12 +58,15 @@ function setup() {
     ].join('\n'),
   );
   const failing = join(root, 'failing.sh');
-  writeFileSync(failing, 'echo "ARGS:$*"\nexit 3\n');
+  writeExecutable(failing, '#!/bin/sh\necho "ARGS:$*"\nexit 3\n');
   // A flock stand-in on PATH for the accepted-path tests (flock is absent on Windows). It records its arguments.
   const shimDir = join(root, 'flock-shim');
   mkdirSync(shimDir);
   const flockCalls = join(root, 'flock.log');
-  writeFileSync(join(shimDir, 'flock'), `#!/bin/sh\necho "flock $*" >> ${p(flockCalls)}\nexit 0\n`);
+  writeExecutable(
+    join(shimDir, 'flock'),
+    `#!/bin/sh\necho "flock $*" >> ${p(flockCalls)}\nexit 0\n`,
+  );
   return {
     root,
     envDir,
@@ -73,6 +77,13 @@ function setup() {
     log: join(root, 'channel.log'),
     lock: join(root, 'channel.lock'),
   };
+}
+
+// Writes a file that the tests execute directly (a stub entrypoint, a PATH shim): it needs a shebang and the execute bit.
+// writeFileSync alone makes a 0644 file on Linux, and the exec then fails with exit 126.
+function writeExecutable(path: string, text: string) {
+  writeFileSync(path, text);
+  chmodSync(path, 0o755);
 }
 
 type Fx = ReturnType<typeof setup>;
@@ -152,11 +163,11 @@ function shim(root: string) {
   const dir = join(root, 'shim');
   mkdirSync(dir, { recursive: true });
   const calls = join(root, 'calls.log');
-  writeFileSync(
+  writeExecutable(
     join(dir, 'chmod'),
     `#!/bin/sh\necho "chmod $*" >> ${p(calls)}\nexec ${realChmod()} "$@"\n`,
   );
-  writeFileSync(join(dir, 'chown'), `#!/bin/sh\necho "chown $*" >> ${p(calls)}\nexit 0\n`);
+  writeExecutable(join(dir, 'chown'), `#!/bin/sh\necho "chown $*" >> ${p(calls)}\nexit 0\n`);
   return { dir: p(dir), calls };
 }
 
