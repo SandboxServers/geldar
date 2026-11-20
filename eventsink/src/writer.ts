@@ -5,7 +5,7 @@ import type { Pool } from 'pg';
 import { AUDIT_TYPES, projectAudit } from './audit/projection.ts';
 import { pgAuditStore } from './audit/store.ts';
 import { isProjected, pgProjectionStore, projectEvent } from './projection.ts';
-import { awardsFor } from './xp/awards.ts';
+import { ExchangeTracker } from './xp/exchange.ts';
 import { applyAward } from './xp/ledger.ts';
 import { pgXpStore } from './xp/pg-xp-store.ts';
 import type { XpThresholds } from './xp/xp-config.ts';
@@ -84,6 +84,8 @@ function needsTransaction(event: WorldEvent): boolean {
  * off the branch is never reached.
  */
 export function pgEventWriter(pool: Pool, xp: XpWriting = XP_OFF): EventWriter {
+  // One tracker per sink: it holds the open exchange windows and name bindings across batches.
+  const exchange = new ExchangeTracker();
   return {
     async insertBatch(events, traceIds = []) {
       if (events.length === 0) return;
@@ -104,7 +106,7 @@ export function pgEventWriter(pool: Pool, xp: XpWriting = XP_OFF): EventWriter {
           await projectEvent(event, store);
           if (AUDIT_TYPES.has(event.type)) await projectAudit(event, audit);
           if (xp.enabled) {
-            for (const award of awardsFor(event)) {
+            for (const award of exchange.awardsFor(event)) {
               await applyAward(xpStore, award, xp.thresholds);
             }
           }

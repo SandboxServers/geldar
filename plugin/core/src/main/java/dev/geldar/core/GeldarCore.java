@@ -123,6 +123,10 @@ public final class GeldarCore extends JavaPlugin {
         dev.geldar.core.blockowner.BlockOwnerSetup owners = dev.geldar.core.blockowner.BlockOwnerSetup.register(
                 this, config.natsUrl(), config.shard(), System::getenv, trace);
         blockOwner = owners;
+        // Combat facts (AN-50a): the same provenance switch as the break and take listeners, ticked every server tick.
+        CombatFactListener combat = owners.combatFacts(exporter, Bukkit::getCurrentTick);
+        getServer().getPluginManager().registerEvents(combat, this);
+        getServer().getScheduler().runTaskTimer(this, combat::tick, 1L, 1L);
         // Gravestones (no loot): a marker block and sign where an agent character dies. Read once at enable. Registered
         // after block ownership, because each gravestone is recorded as owned by the system through its recorder.
         getServer().getPluginManager().registerEvents(new GravestoneListener(

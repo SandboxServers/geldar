@@ -36,7 +36,8 @@ class RegisterWiringGuardTest {
      * here: it is read from GeldarCore.onEnable, which this guard does not scan (see the worknote, AN-50a must add that).
      */
     private static final List<Seam> SEAMS =
-            List.of(new Seam("breakListener", 4, "setup.gate"), new Seam("pickupListener", 1, "setup.gate"));
+            List.of(new Seam("breakListener", 4, "setup.gate"), new Seam("pickupListener", 1, "setup.gate"),
+            new Seam("containerTakeListener", 2, "setup.gate"));
 
     /**
      * The listener constructors only a seam may build, in any spelling. AN-50a adds ContainerTakeListener and

@@ -28,7 +28,7 @@ import org.bukkit.inventory.ItemStack;
 /**
  * Publishes what a player took out of a block-backed container, as the provenance "take" message (AN-51a). A click
  * snapshots the container's item counts and its prior owner; the next tick snapshots the counts again and sends one
- * message per item whose count went down. Paper-only. Inert until AN-50a registers it.
+ * message per item whose count went down. Paper-only. Registered by BlockOwnerSetup; inert until provenance.enabled is true.
  */
 public final class ContainerTakeListener implements Listener {
     /** At most this many sends in one server tick; the rest are dropped and counted. */

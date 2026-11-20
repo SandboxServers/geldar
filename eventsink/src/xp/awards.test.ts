@@ -406,6 +406,24 @@ describe('sources and shared fields', () => {
   });
 });
 
+describe('one combat key per encounter', () => {
+  it('the Body kill and the plugin kill of the same mob give the same single key', () => {
+    const body = keysOf('kill_uuid_completed');
+    const plugin = keysOf('combat_fact_kill');
+    expect(body).toHaveLength(1);
+    expect(plugin).toHaveLength(1);
+    expect(new Set([...body, ...plugin]).size).toBe(1);
+  });
+
+  it('a combat_fact whose encounter key belongs to another life gives []', () => {
+    const key = (fixture('combat_fact_kill').payload as { encounter_key: string }).encounter_key;
+    const other = withPayload('combat_fact_kill', {
+      encounter_key: key.replace(LIFE, 'ag_other_02'),
+    });
+    expect(awardsFor(other)).toEqual([]);
+  });
+});
+
 describe('detail gates on a completed record', () => {
   it('a mining award needs at least one block mined, even with a mining item listed', () => {
     expect(

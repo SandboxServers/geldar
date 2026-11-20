@@ -4,6 +4,7 @@ import type { Pool } from 'pg';
 import { describe, expect, it } from 'vitest';
 import { loadConfig, STREAM_CONFIG } from './config.ts';
 import { pgEventWriter } from './writer.ts';
+import { XP_FIXTURES } from './xp/fixtures.ts';
 
 const EVENT: WorldEvent = {
   source_event_id: 'ev_01HZZZZZZZZZZZZZZZZZZZZZZZ',
@@ -15,6 +16,20 @@ const EVENT: WorldEvent = {
   agent_id: 'ag_kestrel_01',
   payload: { bed: [1, 2, 3] },
 };
+
+/** A speech event as the Body publishes it: `own` is the speaker's copy, otherwise the line is heard. */
+function speech(agent: string, from: string, text: string, own: boolean, tick: number, id: string) {
+  return {
+    source_event_id: id,
+    at: '2026-11-09T12:00:00.000Z',
+    shard: 'phase0',
+    world_day: 2,
+    world_tick: tick,
+    type: 'speech',
+    agent_id: agent,
+    payload: { from, text, distance: own ? null : 2, own },
+  } as WorldEvent;
+}
 
 describe('pgEventWriter', () => {
   it('issues one idempotent INSERT with one array per column', async () => {
@@ -74,6 +89,59 @@ describe('pgEventWriter', () => {
     );
     const insert = texts.find((t) => t.sql.includes('INSERT INTO events'));
     expect(insert?.params[10]).toEqual([traced, null]);
+  });
+
+  it('exchange is active: a give award is produced once, by the tracker, never twice', async () => {
+    const texts: string[] = [];
+    const client = {
+      query: async (sql: string) => {
+        texts.push(sql);
+        if (/FROM agents/.test(sql)) return { rows: [{ '?column?': 1 }] };
+        if (/INSERT INTO xp_evidence/.test(sql)) return { rows: [{ '?column?': 1 }] };
+        if (/INSERT INTO proficiency /.test(sql)) return { rows: [{ xp: 1 }] };
+        if (/SUM\(xp\)/.test(sql)) return { rows: [{ total: 1 }] };
+        return { rows: [] };
+      },
+      release: () => undefined,
+    };
+    const pool = { connect: async () => client } as unknown as Pool;
+    const give = XP_FIXTURES.give_completed;
+    if (!give) throw new Error('no give_completed fixture');
+    const xp = { enabled: true, thresholds: DEFAULT_THRESHOLDS };
+    await pgEventWriter(pool, xp).insertBatch([give]);
+    expect(texts.filter((sql) => /INSERT INTO xp_evidence/.test(sql))).toHaveLength(1);
+    expect(texts.filter((sql) => /INSERT INTO proficiency /.test(sql))).toHaveLength(1);
+  });
+
+  it('an exchange is paid across two batches on one writer: opener in batch one, reply in batch two', async () => {
+    const calls: { sql: string; params: unknown[] }[] = [];
+    const client = {
+      query: async (sql: string, params: unknown[] = []) => {
+        calls.push({ sql, params });
+        if (/FROM agents/.test(sql)) return { rows: [{ '?column?': 1 }] };
+        if (/INSERT INTO xp_evidence/.test(sql)) return { rows: [{ '?column?': 1 }] };
+        if (/INSERT INTO proficiency /.test(sql)) return { rows: [{ xp: 1 }] };
+        if (/SUM\(xp\)/.test(sql)) return { rows: [{ total: 1 }] };
+        return { rows: [] };
+      },
+      release: () => undefined,
+    };
+    const pool = { connect: async () => client } as unknown as Pool;
+    const xp = { enabled: true, thresholds: DEFAULT_THRESHOLDS };
+    const writer = pgEventWriter(pool, xp);
+    await writer.insertBatch([
+      speech('ag_ann', 'Ann', 'hello', true, 100, 'ev_EXCHANGE_0001'),
+      speech('ag_ben', 'Ann', 'hello', false, 101, 'ev_EXCHANGE_0002'),
+    ]);
+    await writer.insertBatch([
+      speech('ag_ben', 'Ben', 'hi', true, 110, 'ev_EXCHANGE_0003'),
+      speech('ag_ann', 'Ben', 'hi', false, 111, 'ev_EXCHANGE_0004'),
+    ]);
+    const evidence = calls.filter((c) => /INSERT INTO xp_evidence/.test(c.sql));
+    expect(evidence).toHaveLength(2);
+    for (const call of evidence) {
+      expect(JSON.stringify(call.params)).toContain('exch:ag_ann:ag_ben:0');
+    }
   });
 
   it('binds harness and model per event, null when the envelope has none', async () => {

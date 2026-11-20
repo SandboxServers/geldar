@@ -3,9 +3,16 @@ package dev.geldar.core.blockowner;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import dev.geldar.core.blockowner.OwnerCache.Pos;
+import dev.geldar.core.blockowner.OwnerSource.OwnedBlock;
+import dev.geldar.core.blockowner.OwnerSource.Owners;
+import java.io.IOException;
 import java.lang.reflect.Proxy;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.logging.Logger;
 import org.bukkit.Location;
@@ -178,5 +185,54 @@ class ProvenanceWiringTest {
     @DisplayName("a pickup sends nothing before the first reload")
     void pickupSilentBeforeReload() {
         assertTrue(pickupThrough(new ProvenanceGate()).isEmpty());
+    }
+
+    private static final Pos CHEST = new Pos("world", 10, 64, -3);
+
+    /** One full-stack take from a chest the owner holds, through the take listener built with {@code gate}. */
+    private static List<String> takeThrough(ProvenanceGate gate) {
+        List<String> sent = new ArrayList<>();
+        ProvenanceSink sink = (tail, json) -> sent.add(tail + " " + json);
+        OwnerCache cache = new OwnerCache(() -> 1_000L);
+        cache.storeBase(OwnerCache.chunkOf(CHEST), new Owners(
+                List.of(new OwnedBlock(CHEST.x(), CHEST.y(), CHEST.z(), "ag_kestrel_01", "chest")), false));
+        ContainerTakeListener listener = BlockOwnerSetup.containerTakeListener(sink, cache,
+                gate, () -> 42L, Runnable::run);
+        listener.clicked("ag_wren_02", CHEST, Map.of("diamond", 64), Map::of);
+        return sent;
+    }
+
+    @Test
+    @DisplayName("a take sends nothing when provenance.enabled is false, with blockowner.enabled true")
+    void takeSilentWhenProvenanceOff() {
+        assertTrue(takeThrough(gateReloadedFrom(config(true, false))).isEmpty());
+    }
+
+    @Test
+    @DisplayName("a take sends one take message when both blockowner.enabled and provenance.enabled are true")
+    void takeSendsWhenBothOn() {
+        List<String> sent = takeThrough(gateReloadedFrom(config(true, true)));
+        assertEquals(1, sent.size(), "exactly one take message: " + sent);
+        assertTrue(sent.get(0).startsWith("take "), sent.get(0));
+    }
+
+    @Test
+    @DisplayName("a take sends nothing when blockowner.enabled is false, even with provenance.enabled true")
+    void takeSilentWhenBlockOwnerOff() {
+        assertTrue(takeThrough(gateReloadedFrom(config(false, true))).isEmpty());
+    }
+
+    /** Counts the non-overlapping occurrences of {@code needle} in {@code source}. */
+    private static int count(String source, String needle) {
+        return (source.length() - source.replace(needle, "").length()) / needle.length();
+    }
+
+    @Test
+    @DisplayName("ContainerTakeListener is built once and registered once, with the provenance gate as its switch")
+    void takeListenerRegisteredOnceWithTheGate() throws IOException {
+        String source = Files.readString(Path.of("src/main/java/dev/geldar/core/blockowner/BlockOwnerSetup.java"));
+        assertEquals(1, count(source, "new ContainerTakeListener("), "one construction site");
+        assertEquals(1, count(source, "containerTakeListener(link, cache, setup.gate,"),
+                "one registration, switched by the gate and not by blockowner.enabled alone");
     }
 }
