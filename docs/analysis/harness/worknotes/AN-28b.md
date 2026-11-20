@@ -69,10 +69,11 @@ with no leak; an injected life id and an injected coordinate are reported; a `ke
   the visible actor's life id, which the Mind needs; the scan rejects any other.
 - The real-body replay does not show a hidden actor: the recorded Body events hold no observation or damage
   event. The hidden-actor cases are the hand-built ones above.
-- Not yet tested: `startBodyObservations` itself (the `Vec3` cell passed to `blockAt`, `canSeeBlock` as
-  the sight check, `selfName` = life id, `observedActor` as the resolver), and the fourth argument that
-  `watchHurts` receives in `adam-body.ts`. A bot that delivers a message with a `blockAt` stub would show
-  these. Until then, mutations to those lines are not caught by any test.
+- `startBodyObservations` is tested in `subscribe.test.ts` (describe `startBodyObservations (AN-28b wiring)`):
+  a break is observed only when `blockAt` is called with a `Vec3` of its cell and `canSeeBlock` accepts it;
+  a block behind another block, or no block, gives nothing; `selfName` is the life id; a breaker out of
+  sight is unattributed (`observedActor`). The fourth argument of `watchHurts` is tested in
+  `adam-body-observations.test.ts`: it returns what `observedActor(bot, name)` returns.
 - The third-party, unowned and self cases are now tested at the subscription level (ownership tests above),
   not inferred from `property-break.test.ts` or `gift.test.ts`.
 
@@ -107,10 +108,21 @@ that failed.
 11. `provenance` scan removed (`leakage.test.ts`): killed by `the word provenance in an output is reported as a leak`.
 12. `"key"`/`brk:`/`gift:` scan removed (`leakage.test.ts`): killed by `a key in an output is reported as a leak`.
 
-Still open (no test yet): the `startBodyObservations` mutants (`canSee` replaced by `() => true` there,
-`resolve` replaced by `() => null`, `selfName` replaced by a constant) and the `watchHurts` fourth argument
-replaced by `(u) => null`. The first is killed only by the subscription tests above when the mutation is in
-`startObservations`, not in the Body's wiring.
+Body-wiring mutants (review 1, note 3), each one line in the production file, restored by copy from a
+scratchpad backup (`git diff --stat` empty after each restore):
+13. `canSee` in `startBodyObservations` replaced by `return true;` (`subscribe.ts`): KILLED by
+    `a break in a cell behind another block gives nothing, even with a visible breaker` and
+    `a break with no block at its cell gives nothing`.
+14. Vec3 argument order swapped to `new Vec3(z, y, x)` (`subscribe.ts`): KILLED by
+    `a break is observed when the Body sees its cell: blockAt gets the cell as a Vec3 and the visible breaker is named`
+    (and two more in the same describe).
+15. `resolve` replaced by `null` (`observedActor(opts.bot, username)` in `subscribe.ts`): KILLED by
+    `a break is observed when the Body sees its cell: blockAt gets the cell as a Vec3 and the visible breaker is named`.
+16. `selfName: opts.lifeId` replaced by a constant (`subscribe.ts`): KILLED by
+    `selfName is the life id: a break whose prior owner is this Body is observed, another owner is not`
+    (and two more in the same describe).
+17. `watchHurts` fourth argument replaced by `(u) => null` (`adam-body.ts`): KILLED by
+    `watchHurts gets this Body observed-actor function: it names the visible player and no one else`.
 
 ## Index lines
 

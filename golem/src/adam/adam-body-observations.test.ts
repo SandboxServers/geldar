@@ -1,10 +1,12 @@
 import { EventEmitter } from 'node:events';
 import { provenanceBreakSubject, provenancePickupSubject } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
+import { Vec3 } from 'vec3';
 import { describe, expect, it, vi } from 'vitest';
 import type { RestartBodyOptions, RestartedBody } from '../body/restart.ts';
 import type { RequestServer } from '../mind-link/server.ts';
 import { watchHurts } from '../perception/hurt-trigger.ts';
+import { observedActor } from '../perception/provenance/visible-actor.ts';
 import { type AdamBodyEnv, startAdamBody } from './adam-body.ts';
 import { parseAdamConfig } from './adam-config.ts';
 
@@ -144,6 +146,28 @@ describe('the observed evidence in a Body (AN-28b)', () => {
     expect(
       subs.filter((s) => s.subject === BREAK || s.subject === PICKUP).map((s) => s.unsubscribed),
     ).toEqual([true, true]);
+  });
+
+  it('watchHurts gets this Body observed-actor function: it names the visible player and no one else', async () => {
+    vi.mocked(watchHurts).mockClear();
+    const bot = Object.assign(fakeBot() as unknown as Record<string, unknown>, {
+      username: 'ag_adam_01',
+      entity: { position: new Vec3(0, 64, 0) },
+      entities: {
+        7: { type: 'player', username: 'ag_capb_02', position: new Vec3(4, 64, 0), height: 1.8 },
+      },
+      world: { raycast: () => null },
+    }) as unknown as Bot;
+    const { env } = envWith({ observations: true });
+    const running = await startAdamBody(env, bot);
+    const observed = vi.mocked(watchHurts).mock.calls[0]?.[3];
+    expect(observed).toBeTypeOf('function');
+    for (const name of ['ag_capb_02', 'ag_absent_03', 'ag_adam_01', undefined]) {
+      expect(observed?.(name)).toEqual(observedActor(bot, name));
+    }
+    expect(observed?.('ag_capb_02')).toMatchObject({ name: 'ag_capb_02' });
+    expect(observed?.('ag_absent_03')).toBeNull();
+    await running.stop();
   });
 
   it('a start that fails after the subscription unsubscribes both subjects', async () => {

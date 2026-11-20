@@ -2,10 +2,15 @@ import { readFileSync } from 'node:fs';
 import { provenanceBreakSubject, provenancePickupSubject } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { OwnerTransport } from '../../body/block-owners.ts';
 import type { EventPublisher } from '../../body/records-nats.ts';
-import { MAX_PROVENANCE_BYTES, type ObservationOptions, startObservations } from './subscribe.ts';
+import {
+  MAX_PROVENANCE_BYTES,
+  type ObservationOptions,
+  startBodyObservations,
+  startObservations,
+} from './subscribe.ts';
 
 const SHARD = 'phase0';
 const BODY = 'ag_capa_01';
@@ -394,6 +399,121 @@ describe('the leakage gate at the subscription: what a published observation car
     for (const body of [visible ?? '', hidden ?? '']) {
       expect(leaksIn(body, [OTHER, BODY])).toEqual([]);
     }
+    net.sub.stop();
+  });
+});
+
+// The Body's wiring (`startBodyObservations`): sight of a cell is `blockAt` plus `canSeeBlock`, and
+// the world is a small set of solid cells that a ray meets in order.
+const CELL = new Vec3(1313, 200, 800);
+const WALL = new Vec3(1311, 200, 800);
+const SIDE_WALL = new Vec3(1310, 201, 803);
+const VISIBLE_BREAKER = { username: OTHER, position: new Vec3(1306, 200, 800) };
+const BEHIND_WALL_BREAKER = { username: OTHER, position: new Vec3(1310, 200, 806) };
+
+/** A world whose only solid cells are `solids`: a ray stops at the first one it passes within `range`. */
+function solidWorld(solids: Vec3[]) {
+  return {
+    raycast: (start: Vec3, dir: Vec3, range: number) => {
+      for (let t = 0; t <= range; t += 0.05) {
+        const cell = start.plus(dir.scaled(t)).floored();
+        const hit = solids.find((solid) => solid.equals(cell));
+        if (hit) return { position: hit };
+      }
+      return null;
+    },
+  };
+}
+
+/** A Body at (1310, 200, 800) in the overworld, with the given players and solid cells. */
+function bodyBot(
+  opts: {
+    players?: Array<{ username: string; position: Vec3 }>;
+    solids?: Vec3[];
+    blockAt?: (p: Vec3) => unknown;
+  } = {},
+): Bot {
+  const entities = Object.fromEntries(
+    (opts.players ?? []).map((p, i) => [
+      i + 1,
+      { type: 'player', username: p.username, position: p.position, height: 1.8 },
+    ]),
+  );
+  return {
+    username: BODY,
+    entity: { position: new Vec3(1310, 200, 800) },
+    entities,
+    game: { dimension: 'minecraft:overworld' },
+    time: { age: 411 },
+    world: solidWorld(opts.solids ?? [CELL]),
+    blockAt: opts.blockAt ?? ((p: Vec3) => ({ position: p, name: 'cobblestone' })),
+  } as unknown as Bot;
+}
+
+function bodyNet(bot: Bot) {
+  const net = fakeTransport();
+  const published: string[] = [];
+  const logs: string[] = [];
+  const sub = startBodyObservations({
+    transport: net.transport,
+    shard: SHARD,
+    lifeId: BODY,
+    bot,
+    publisher: {
+      publish: async (_subject, body) => {
+        published.push(body);
+      },
+    },
+    log: (line) => logs.push(line),
+  });
+  return { ...net, sub, published, logs };
+}
+
+describe('startBodyObservations (AN-28b wiring)', () => {
+  it('a break is observed when the Body sees its cell: blockAt gets the cell as a Vec3 and the visible breaker is named', async () => {
+    const blockAt = vi.fn((p: Vec3) => ({ position: p, name: 'cobblestone' }));
+    const net = bodyNet(bodyBot({ players: [VISIBLE_BREAKER], blockAt }));
+    net.deliver(BREAK_SUBJECT, JSON.stringify(fixture('break-real.json').coreprotect_present));
+    await flush();
+    expect(blockAt).toHaveBeenCalledWith(CELL);
+    expect(net.published).toHaveLength(1);
+    expect(JSON.parse(net.published[0] ?? '{}').payload.actor).toMatchObject({ name: OTHER });
+    net.sub.stop();
+  });
+
+  it('a break in a cell behind another block gives nothing, even with a visible breaker', async () => {
+    const net = bodyNet(bodyBot({ players: [VISIBLE_BREAKER], solids: [CELL, WALL] }));
+    net.deliver(BREAK_SUBJECT, JSON.stringify(fixture('break-real.json').coreprotect_present));
+    await flush();
+    expect(net.published).toHaveLength(0);
+    net.sub.stop();
+  });
+
+  it('a break with no block at its cell gives nothing', async () => {
+    const net = bodyNet(bodyBot({ players: [VISIBLE_BREAKER], blockAt: () => null }));
+    net.deliver(BREAK_SUBJECT, JSON.stringify(fixture('break-real.json').coreprotect_present));
+    await flush();
+    expect(net.published).toHaveLength(0);
+    net.sub.stop();
+  });
+
+  it('selfName is the life id: a break whose prior owner is this Body is observed, another owner is not', async () => {
+    const net = bodyNet(bodyBot({ players: [VISIBLE_BREAKER] }));
+    const break_ = fixture('break-real.json').coreprotect_present as Record<string, unknown>;
+    net.deliver(BREAK_SUBJECT, JSON.stringify(break_));
+    net.deliver(BREAK_SUBJECT, JSON.stringify({ ...break_, prior_owner: OTHER, tick: 412 }));
+    await flush();
+    expect(net.published).toHaveLength(1);
+    expect(JSON.parse(net.published[0] ?? '{}').agent_id).toBe(BODY);
+    net.sub.stop();
+  });
+
+  it('a breaker the Body cannot see is not named: the cell is in sight, the observation has no actor', async () => {
+    const net = bodyNet(bodyBot({ players: [BEHIND_WALL_BREAKER], solids: [CELL, SIDE_WALL] }));
+    net.deliver(BREAK_SUBJECT, JSON.stringify(fixture('break-real.json').coreprotect_present));
+    await flush();
+    expect(net.published).toHaveLength(1);
+    expect(JSON.parse(net.published[0] ?? '{}').payload).not.toHaveProperty('actor');
     net.sub.stop();
   });
 });
