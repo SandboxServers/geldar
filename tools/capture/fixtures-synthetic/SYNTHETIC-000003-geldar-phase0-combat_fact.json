@@ -1,0 +1,16 @@
+{
+  "source_event_id": "ev_01ARZ3NDEKTSV4RRFFQ69G5FAV",
+  "at": "2026-11-19T12:00:02Z",
+  "shard": "phase0",
+  "world_day": 3,
+  "world_tick": 1400,
+  "type": "combat_fact",
+  "agent_id": "ag_kestrel_01",
+  "payload": {
+    "player": "ag_kestrel_01",
+    "life_id": "ag_kestrel_01",
+    "kind": "hostile_kill",
+    "mob": "zombie",
+    "encounter_key": "enc:ag_kestrel_01:6f1c2b8e-3d4a-4b5c-9e6f-7a8b9c0d1e2f"
+  }
+}

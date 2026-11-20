@@ -1,0 +1,15 @@
+{
+  "name": "@geldar/capture",
+  "private": true,
+  "description": "CAP-1/CAP-2 developer tools for the provenance capture session: a NATS subscriber that writes raw payloads, and a validator for the captured files.",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p . --noEmit",
+    "test": "vitest run",
+    "capture": "node src/nats-capture.ts",
+    "validate": "node src/validate-captures.ts"
+  },
+  "dependencies": {
+    "@geldar/contract": "workspace:*"
+  }
+}
