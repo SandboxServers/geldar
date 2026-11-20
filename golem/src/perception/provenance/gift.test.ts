@@ -156,4 +156,70 @@ describe('observeGift', () => {
     expect(seen.has('gift:0:ag_capa_01:cobblestone:4:0')).toBe(false);
     expect(seen.has('gift:299:ag_capa_01:cobblestone:4:0')).toBe(true);
   });
+
+  it('a hidden or offline thrower gives an unattributed gift whatever the distance', () => {
+    const cases: Array<Partial<PickupProvenance>> = [
+      { thrower: null, distance: null },
+      { distance: null },
+      { distance: 20 },
+    ];
+    for (const overrides of cases) {
+      const got = observeGift(
+        toss(overrides),
+        ctxFor(new Set(), () => null),
+      );
+      expect(got, JSON.stringify(overrides)).not.toBeNull();
+      expect(got).not.toHaveProperty('actor');
+      expect(got?.key).toBe('gift:1178:none:cobblestone:4:0');
+    }
+  });
+
+  it('a key already in seen gives nothing', () => {
+    const seen = new Set(['gift:1178:ag_capa_01:cobblestone:5:1']);
+    expect(observeGift(toss({ count: 5 }), ctxFor(seen))).toBeNull();
+    expect(seen.size).toBe(1);
+  });
+
+  it('a replay into a fresh seen gives the same keys', () => {
+    const sequence = [toss(), toss(), toss({ count: 5 })];
+    const expected = [
+      'gift:1178:ag_capa_01:cobblestone:4:0',
+      'gift:1178:ag_capa_01:cobblestone:4:1',
+      'gift:1178:ag_capa_01:cobblestone:5:2',
+    ];
+    for (let pass = 0; pass < 2; pass++) {
+      const seen = new Set<string>();
+      const keys = sequence.map((msg) => observeGift(msg, ctxFor(seen))?.key);
+      expect(keys).toEqual(expected);
+    }
+  });
+
+  it('a replay into the same seen continues the ordinals', () => {
+    const seen = new Set<string>();
+    const sequence = [toss(), toss(), toss({ count: 5 })];
+    const first = sequence.map((msg) => observeGift(msg, ctxFor(seen))?.key);
+    expect(first).toEqual([
+      'gift:1178:ag_capa_01:cobblestone:4:0',
+      'gift:1178:ag_capa_01:cobblestone:4:1',
+      'gift:1178:ag_capa_01:cobblestone:5:2',
+    ]);
+    const second = sequence.map((msg) => observeGift(msg, ctxFor(seen))?.key);
+    expect(second).toEqual([
+      'gift:1178:ag_capa_01:cobblestone:4:3',
+      'gift:1178:ag_capa_01:cobblestone:4:4',
+      'gift:1178:ag_capa_01:cobblestone:5:5',
+    ]);
+  });
+
+  it('a mixed-case giver gives a lower-case key', () => {
+    const resolve = () => ({ name: 'Steve_One', life: THROWER });
+    const got = observeGift(toss({ thrower: 'Steve_One' }), ctxFor(new Set(), resolve));
+    expect(got).toEqual({
+      kind: 'gift_received',
+      actor: { name: 'Steve_One', life: THROWER },
+      item: 'cobblestone',
+      count: 4,
+      key: 'gift:1178:steve_one:cobblestone:4:0',
+    });
+  });
 });
