@@ -154,7 +154,7 @@ The CoreProtect steps go after the fourteen cases above and before the last line
 3. Check the plugin loaded, as `Assert-PluginsEnabled` does: `docker logs geldar-phase0-paper-1 2>&1 | grep "Geldar-Core enabled"`
    (UNPROVEN) must print one line. Then check CoreProtect with RCON `plugins` (see "RCON commands").
 3a. CoreProtect settings for the capture (CAP-3; the runbook's "First start" list in `docs/runbooks/coreprotect.md`).
-   Turn off these six: chat recording, command recording, session recording, container transaction recording, error
+   Turn off these six: chat recording, command recording, session recording, container transaction recording (its CoreProtect key is `container-transactions`, `docs/runbooks/block-owner.md:61`; `item-transactions` is another key, `block-owner.md:60`), error
    reporting, update checks. Leave `player-interactions` at CoreProtect's default (on), and keep block place and break
    logging on (leave them as the plugin wrote them). Do not follow the `player-interactions: false` row of
    `docs/runbooks/block-owner.md:60` for this capture: the owner lookup asks CoreProtect for action 2 (click) as well as
@@ -236,8 +236,8 @@ Do not edit anything else in those worknotes, and do not create `fixtures/*.json
 ### Stage 4: teardown
 
 1. Stop the script (Ctrl+C). Confirm no bot online: RCON `list`.
-2. Reset the flag: remove the `provenance:` block that Set-the-flag step 3 appended (or set `enabled: false`); set
-   `blockowner.enabled` back only if you changed it; wait 10 s.
+2. Reset the flag: restore the backup, with the commands in "Set the flag on the scratch shard", step 5 (this also undoes a
+   `blockowner.enabled` edit); wait 10 s.
 3. RCON `tick query` reads 20 TPS; `gamerule <name>` for any gamerule the case changed (none in CAP-2).
 4. `git diff shards/phase0.yaml` must be empty (restore it with the owner's word if it is not; never `adam select`).
 5. `./geldar.ps1 shard down phase0` (volumes are kept). Deleting the world volume needs the owner's word (run-shard skill).
@@ -326,13 +326,33 @@ Only on the throwaway shard, after the health rows. Nothing below was run; each 
    `saveDefaultConfig()` and the plugin name `GeldarCore`; the volume is `paper-data`, `compose/phase0.yml:88`).
 2. Check the file ends in a newline before you append: `docker exec geldar-phase0-paper-1 tail -c 1 /data/plugins/GeldarCore/config.yml | od -c`
    (UNPROVEN; expect `\n`). If it does not, stop and fix it by hand, or the appended key joins the last line.
-3. Add the flag in the container's copy only: `docker exec geldar-phase0-paper-1 sh -c 'printf "provenance:\n  enabled: true\n" >> /data/plugins/GeldarCore/config.yml'`
-   (UNPROVEN: that the Paper image has `sh` and `printf`). `blockowner.enabled` is already `true` by default (`config.yml:38`);
-   if step 1 shows `enabled: false` under `blockowner:`, set that line to `enabled: true` in the container copy (UNPROVEN
-mechanism: `sed -i` in the Paper image; read the file again to confirm). Never add a second `blockowner:` key.
+3. Back up the container's copy, then add the flag to it. The backup is what teardown restores (CAP-4). The append uses a
+   heredoc, so there is no quote inside a quote (`sh -c '...'` with a quote in it is what broke at teardown):
+   ```bash
+   docker exec geldar-phase0-paper-1 cp /data/plugins/GeldarCore/config.yml /tmp/geldar-config-cap.bak
+   docker exec -i geldar-phase0-paper-1 sh <<'EOF'
+   printf 'provenance:\n  enabled: true\n' >> /data/plugins/GeldarCore/config.yml
+   EOF
+   ```
+   (UNPROVEN: that the Paper image has `sh`, `cp`, `printf` and a writable `/tmp`; the first command must print nothing.)
+   `blockowner.enabled` is already `true` by default (`config.yml:38`). Only if step 1 shows `enabled: false` under
+   `blockowner:`, set that one line in the container copy (UNPROVEN mechanism: `sed -i` in the Paper image; read the file
+   again to confirm). Teardown restores the backup, so this edit is undone too. Never add a second `blockowner:` key.
+   ```bash
+   docker exec -i geldar-phase0-paper-1 sh <<'EOF'
+   sed -i '/^blockowner:/,/^[^ ]/ s/enabled: false/enabled: true/' /data/plugins/GeldarCore/config.yml
+   EOF
+   ```
 4. The plugin reloads its config on a timer (`GeldarCore.java:122,172`; the 5 s figure is the comment's, not re-measured).
    Wait 10 s, then confirm with the first capture. No log line is promised.
-5. Teardown: remove the appended `provenance:` block (or set `enabled: false`), wait 10 s.
+5. Teardown: restore the backup from step 3 (the block below), then wait 10 s. The restore refuses to run without the backup.
+    ```bash
+    docker exec -i geldar-phase0-paper-1 sh <<'EOF'
+    if [ -f /tmp/geldar-config-cap.bak ]; then cp /tmp/geldar-config-cap.bak /data/plugins/GeldarCore/config.yml && echo restored; else echo "no backup: stop and edit the file by hand"; fi
+    EOF
+    docker exec geldar-phase0-paper-1 grep -c '^provenance:' /data/plugins/GeldarCore/config.yml
+    ```
+    The count must print `0` (`grep -c` exits 1 when it counts 0; that is expected here).
 
 ## CoreProtect on phase0 (absent by default)
 
@@ -504,7 +524,7 @@ tree; (5) the capture pass (flag on, throwaway script, subscriber); (6) teardown
 ## Clean up and tear down
 
 1. Stop the throwaway script. Confirm no bot is online (`list` over RCON, or `shard logs phase0 paper`).
-2. Reset the flag: remove the `provenance:` block or set `enabled: false` in the container's config file, wait 10 s.
+2. Reset the flag: restore the backup, with the commands in "Set the flag on the scratch shard", step 5, wait 10 s.
    `shard down` keeps the volume, so this step matters.
 3. Restore world, whitelist and tick rate. The fixture restores the world and removes the whitelist entry in `finally`;
    if a run was killed, `./geldar.ps1 bench --restore` restores 20 TPS and the world (body-bench skill, flags).

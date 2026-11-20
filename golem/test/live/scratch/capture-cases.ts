@@ -151,6 +151,35 @@ export const CASE_BLOCKS = {
   enchantingTable: 'enchanting_table',
 } as const;
 
+/**
+ * CAP-4: each case that places a container block sits at its own (x, z) offset from the arena centre, so the coordinates
+ * of a take payload name its case (before, every take sat at the same block: the holder type was not separable). The
+ * double chest also fills x + 1. Bot A stands at x - 2 beside its block (windows.ts), so the offsets stay within reach.
+ * The break cases keep their place: bot B's stance and reach are set by the break geometry.
+ */
+export const CASE_BLOCK_OFFSET = {
+  'chest-single': [2, 0],
+  'chest-double': [4, 0],
+  'chest-shift-click': [7, 0],
+  'chest-number-key': [9, 0],
+  furnace: [11, 0],
+  'brewing-stand': [13, 0],
+  'crafting-table': [2, 2],
+  anvil: [4, 2],
+  'enchanting-table': [7, 2],
+} as const satisfies Record<string, readonly [number, number]>;
+
+export type BlockCaseId = keyof typeof CASE_BLOCK_OFFSET;
+
+/** The block position of a case: the arena centre plus the case's own offset. */
+export function caseBlockPosition(
+  id: BlockCaseId,
+  centre: { x: number; z: number },
+): { x: number; z: number } {
+  const [dx, dz] = CASE_BLOCK_OFFSET[id];
+  return { x: centre.x + dx, z: centre.z + dz };
+}
+
 const BARE_BLOCK_ID = /^[a-z0-9_]{1,64}$/;
 
 /** Null for a bare block id; otherwise the reason `TestControl.setblock` would throw on it. */

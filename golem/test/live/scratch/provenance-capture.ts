@@ -19,12 +19,14 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { bukkitWorldOf } from '../../../src/body/block-owners.ts';
 import { type LiveContext, withLiveBot } from '../fixture.ts';
+import { dumpSlots } from './capture-anvil.ts';
 import {
   BOT_A,
   BOT_B,
   CASE_BLOCKS,
   type CaptureCase,
   CONTROL_MARKER,
+  caseBlockPosition,
   controlFromMarker,
   controlWarning,
   doubleChestCommands,
@@ -207,7 +209,7 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
     await takeFromBlock(
       s.a,
       CASE_BLOCKS.chest,
-      s.a.arena.center.x + 2,
+      caseBlockPosition('chest-single', s.a.arena.center),
       'Items:[{Slot:0b,id:"minecraft:cobblestone",count:8b}]',
       [0, 0, 0],
     );
@@ -215,13 +217,13 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
   async 'chest-double'(s) {
     // Two chests on the x axis, facing north (block states: raw commands, see doubleChestCommands).
     const { bot, ctl, arena } = s.a;
-    const x = arena.center.x + 2;
-    const z = arena.center.z;
+    const { x, z } = caseBlockPosition('chest-double', arena.center);
     for (const cmd of doubleChestCommands(x, 200, z)) {
       const reply = await ctl.command(cmd);
       if (!String(reply).includes('Changed the block'))
         throw new Error(`chest-double: "${cmd}" did not change a block: ${String(reply)}`);
     }
+    await ctl.tp(bot.username, x - 2, 200, z);
     // The stack goes in both halves, so window slot 0 holds it whichever half the pairing puts first (UNPROVEN here).
     for (const half of [x, x + 1]) {
       await ctl.command(
@@ -252,7 +254,7 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
     await takeFromBlock(
       s.a,
       CASE_BLOCKS.chest,
-      s.a.arena.center.x + 2,
+      caseBlockPosition('chest-shift-click', s.a.arena.center),
       'Items:[{Slot:0b,id:"minecraft:cobblestone",count:8b}]',
       [0, 0, 1],
     );
@@ -261,7 +263,7 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
     await takeFromBlock(
       s.a,
       CASE_BLOCKS.chest,
-      s.a.arena.center.x + 2,
+      caseBlockPosition('chest-number-key', s.a.arena.center),
       'Items:[{Slot:0b,id:"minecraft:cobblestone",count:8b}]',
       [0, 0, 2],
     );
@@ -270,7 +272,7 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
     await takeFromBlock(
       s.a,
       CASE_BLOCKS.furnace,
-      s.a.arena.center.x + 2,
+      caseBlockPosition('furnace', s.a.arena.center),
       'Items:[{Slot:2b,id:"minecraft:iron_ingot",count:1b}]',
       [2, 0, 1],
     );
@@ -279,7 +281,7 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
     await takeFromBlock(
       s.a,
       CASE_BLOCKS.brewingStand,
-      s.a.arena.center.x + 2,
+      caseBlockPosition('brewing-stand', s.a.arena.center),
       'Items:[{Slot:0b,id:"minecraft:potion",count:1b}]',
       [0, 0, 1],
     );
@@ -288,7 +290,11 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
   async 'crafting-table'(s) {
     const { bot, ctl, arena } = s.a;
     await ctl.give(BOT_A, 'oak_log', 1);
-    const target = await placeTarget(s.a, CASE_BLOCKS.craftingTable, arena.center.x + 2);
+    const target = await placeTarget(
+      s.a,
+      CASE_BLOCKS.craftingTable,
+      caseBlockPosition('crafting-table', arena.center),
+    );
     const win = expectWindow(
       await within('crafting-table', bot.openBlock(target)),
       'crafting-table',
@@ -302,31 +308,55 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
     const { bot, ctl, arena } = s.a;
     await ctl.give(BOT_A, 'stick', 1);
     await ctl.command(`experience add ${BOT_A} 10 levels`);
-    const target = await placeTarget(s.a, CASE_BLOCKS.anvil, arena.center.x + 2);
+    const target = await placeTarget(
+      s.a,
+      CASE_BLOCKS.anvil,
+      caseBlockPosition('anvil', arena.center),
+    );
     const plugin = bot as unknown as PluginBot;
     const win = expectWindow(
       await within('anvil', plugin.openAnvil(target)),
       'anvil',
       /anvil/,
     ) as AnvilWindow;
-    // mineflayer's rename already takes the output out of slot 2 (lib/plugins/anvil.js putAway), so there is no
-    // takeOutput here: the proof is the renamed stick in the inventory.
-    await within('anvil: rename', win.rename(heldItem(bot, 'stick'), ANVIL_NAME), 20_000);
-    bot.closeWindow(win);
-    await verifyRenamedStick(bot, ANVIL_NAME);
+    // CAP-4: mineflayer's rename refuses with "not enough xp" when the bot is short of levels, so the level count is
+    // printed and a bot with none fails INVALID before the rename.
+    note(`anvil: the bot has ${bot.experience.level} levels before the rename`);
+    if (bot.experience.level < 1) {
+      bot.closeWindow(win);
+      throw new Error(
+        `anvil: the bot has ${bot.experience.level} levels, the rename needs levels (INVALID)`,
+      );
+    }
+    for (const line of dumpSlots('anvil window before the rename', win.slots)) note(line);
+    try {
+      // mineflayer's rename already takes the output out of slot 2 (lib/plugins/anvil.js putAway), so there is no
+      // takeOutput here: the proof is the renamed stick in the inventory (capture-anvil.ts).
+      await within('anvil: rename', win.rename(heldItem(bot, 'stick'), ANVIL_NAME), 20_000);
+      await verifyRenamedStick(bot, win, ANVIL_NAME);
+    } finally {
+      bot.closeWindow(win);
+    }
   },
   async 'enchanting-table'(s) {
     const { bot, ctl, arena } = s.a;
     await ctl.give(BOT_A, 'stone_sword', 1);
     await ctl.give(BOT_A, 'lapis_lazuli', 3);
     await ctl.command(`experience add ${BOT_A} 10 levels`);
-    const target = await placeTarget(s.a, CASE_BLOCKS.enchantingTable, arena.center.x + 2);
+    const target = await placeTarget(
+      s.a,
+      CASE_BLOCKS.enchantingTable,
+      caseBlockPosition('enchanting-table', arena.center),
+    );
     const plugin = bot as unknown as PluginBot;
     const win = expectWindow(
       await within('enchanting-table', plugin.openEnchantmentTable(target)),
       'enchanting-table',
       /enchant/,
     ) as EnchantWindow;
+    note(
+      `enchanting-table: offered levels ${JSON.stringify((win.enchantments ?? []).map((e) => e.level))} (only option 0 is applied; the other costs are not captured)`,
+    );
     await bot.clickWindow(slotHolding(win, 'stone_sword', 2), 0, 0);
     await bot.clickWindow(0, 0, 0);
     await bot.clickWindow(slotHolding(win, 'lapis_lazuli', 2), 0, 0);

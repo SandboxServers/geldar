@@ -4,6 +4,7 @@
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import type { LiveContext } from '../fixture.ts';
+import { dumpSlots, findRenamedStick } from './capture-anvil.ts';
 import { CASE_BLOCKS } from './capture-cases.ts';
 
 export type Block = NonNullable<ReturnType<Bot['blockAt']>>;
@@ -13,8 +14,10 @@ type Slot = OpenWindow['slots'][number];
 export interface AnvilWindow extends OpenWindow {
   rename(item: unknown, name: string): Promise<void>;
 }
+/** `enchantments` is mineflayer's offered list (enchantment_table.js): `level` is the offered cost in levels. */
 export interface EnchantWindow extends OpenWindow {
   enchant(choice: number): Promise<unknown>;
+  enchantments?: Array<{ level: number }>;
 }
 export interface PluginBot {
   openAnvil(block: Block): Promise<AnvilWindow>;
@@ -44,30 +47,39 @@ export function heldItem(bot: Bot, name: string) {
   return item;
 }
 
-/** Places `block` (a bare id) at x on the arena row and returns the block the bot can open. */
-export async function placeTarget(ctx: LiveContext, block: string, x: number): Promise<Block> {
-  const { bot, ctl, arena } = ctx;
-  await ctl.setblock(x, 200, arena.center.z, block);
+/**
+ * Places `block` (a bare id) at `pos` (its own case offset, see CASE_BLOCK_OFFSET), moves bot A to stand 2 blocks west
+ * of it (in reach; the block is then no more than 2 blocks away), and returns the block the bot can open.
+ */
+export async function placeTarget(
+  ctx: LiveContext,
+  block: string,
+  pos: { x: number; z: number },
+): Promise<Block> {
+  const { bot, ctl } = ctx;
+  await ctl.setblock(pos.x, 200, pos.z, block);
+  await ctl.tp(bot.username, pos.x - 2, 200, pos.z);
   await bot.waitForTicks(10);
-  const target = bot.blockAt(new Vec3(x, 200, arena.center.z));
-  if (target === null) throw new Error(`no ${block} at ${x},200`);
+  const target = bot.blockAt(new Vec3(pos.x, 200, pos.z));
+  if (target === null) throw new Error(`no ${block} at ${pos.x},200,${pos.z}`);
   return target;
 }
 
-/** A chest-like container at the arena's row, with stacks set by data merge; then the bot opens and clicks it. */
+/** A chest-like container at `pos`, with stacks set by data merge; then the bot opens and clicks it. */
 export async function takeFromBlock(
   ctx: LiveContext,
   block: string,
-  x: number,
+  pos: { x: number; z: number },
   items: string,
   click: [slot: number, button: number, mode: number],
 ): Promise<void> {
-  const { bot, ctl, arena } = ctx;
-  await ctl.setblock(x, 200, arena.center.z, block);
-  await ctl.command(`data merge block ${x} 200 ${arena.center.z} {${items}}`);
+  const { bot, ctl } = ctx;
+  await ctl.setblock(pos.x, 200, pos.z, block);
+  await ctl.command(`data merge block ${pos.x} 200 ${pos.z} {${items}}`);
+  await ctl.tp(bot.username, pos.x - 2, 200, pos.z);
   await bot.waitForTicks(10);
-  const target = bot.blockAt(new Vec3(x, 200, arena.center.z));
-  if (target === null) throw new Error(`no ${block} at ${x},200`);
+  const target = bot.blockAt(new Vec3(pos.x, 200, pos.z));
+  if (target === null) throw new Error(`no ${block} at ${pos.x},200,${pos.z}`);
   await within(`open ${block}`, bot.openBlock(target));
   await bot.clickWindow(click[0], click[1], click[2]);
   if (bot.currentWindow !== null) bot.closeWindow(bot.currentWindow);
@@ -132,16 +144,21 @@ export async function takeOutput(
 
 /**
  * After an anvil rename: mineflayer's rename already moved the output out of slot 2 (anvil.js `putAway`), so the
- * proof is the renamed stick in the inventory. Its custom name is read raw; the field's shape is UNPROVEN on the shard.
+ * proof is the renamed stick in the inventory, read through its custom name (capture-anvil.ts). On a miss the throw
+ * carries the inventory and the anvil window dump, so the shape of the name on the shard is printed, not guessed.
  */
-export async function verifyRenamedStick(bot: Bot, name: string): Promise<void> {
+export async function verifyRenamedStick(bot: Bot, win: OpenWindow, name: string): Promise<void> {
   await bot.waitForTicks(20);
-  const renamed = bot.inventory.items().find((i) => {
-    const custom = (i as { customName?: unknown }).customName;
-    return i.name === 'stick' && String(custom ?? '').includes(name);
-  });
+  const inventory = bot.inventory.items();
+  const renamed = findRenamedStick(inventory, name);
   if (renamed === undefined) {
-    throw new Error(`anvil: no stick named "${name}" in the inventory after the rename (INVALID)`);
+    const dump = [
+      ...dumpSlots('anvil window after the rename', win.slots),
+      ...dumpSlots('inventory after the rename', inventory),
+    ];
+    throw new Error(
+      `anvil: no stick named "${name}" in the inventory after the rename (INVALID)\n${dump.join('\n')}`,
+    );
   }
   note(`anvil: the inventory holds the renamed stick (${renamed.count} x stick, name ${name})`);
 }
