@@ -52,7 +52,8 @@ node tools/capture/src/validate-captures.ts <capture-dir> [--expect <case=N,...>
   - `break`: `prior_owner` is printed; with `--expect-prior-owner` a null or empty value fails (AN-27a: null without CoreProtect, non-null with it).
   - `take`: `item` and `count` are printed (AN-51a).
 - A claim row that says `fail` means the capture refutes that claim. It is not a validator error, but it does exit 1.
-- `--expect break=2,combat_fact=1` adds one row per case: `fail` when that case has fewer files than asked.
+- `--expect break=2,combat_fact=1` adds one row per case: `fail` when that case has fewer files than asked. `case=N` with N above 0 means "at least N" (the detail reads `expected at least N, found M`).
+- `case=0` is exact (CAP-5: the send-nothing cases, `take=0` in the runbook): the detail reads `expected exactly 0, found M` and the row fails on any file of that case. There is no `--at-least` flag, because the sheet marks only the zero cases as exact.
 - `--expect-prior-owner` (flag): the `break` rows also fail a null or empty `prior_owner`. The present case uses it.
 
 **Table.** Columns `case`, `file`, `schema`, `result`, `detail`, then `N row(s), M failing`.

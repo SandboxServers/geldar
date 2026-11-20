@@ -35,6 +35,44 @@ docker compose version                      # expected: 2.24.4 or later
 git ls-files --eol compose                  # expected: w/lf for every file
 ```
 
+### Fresh session: start from the CoreProtect-absent state (CAP-5)
+
+A rerun must not inherit CoreProtect from an earlier session. The paper container keeps its plugins and data in the
+`paper-data` volume (`compose/phase0.yml:88` mounts it at `/data`; `compose/phase0.yml:169-170` names it
+`${GELDAR_WORLD_VOLUME:-geldar-phase0_paper-data}`). The CoreProtect jar comes only from the overlay, but its plugin
+folder (config, and the database by CoreProtect's default: UNPROVEN, read the written config) lives under `/data/plugins`
+in that volume. So an earlier session's CoreProtect data survives a `shard down`: `./geldar.ps1 shard down` keeps volumes
+(`geldar.ps1`, the command list: "volumes are kept").
+
+What the wipe DESTROYS: the `paper-data` volume and everything under `/data` in it. That is the phase0 world, the
+GeldarCore and CoreProtect plugin data and the CoreProtect database. The `postgres-data` and `nats-data` volumes are not
+touched here. Ops must confirm the shard is scratch before the `docker volume rm` below (the owner's word, run-shard
+skill). Whether the removed name is the default is UNPROVEN until `docker volume ls` shows it; if `GELDAR_WORLD_VOLUME`
+is set, remove that name instead.
+
+```
+./geldar.ps1 shard down phase0
+docker volume ls --filter name=geldar-phase0
+# DESTRUCTIVE (ops must confirm the shard is scratch first): removes the paper-data volume; a volume in use cannot be removed
+docker volume rm geldar-phase0_paper-data
+```
+
+Then run Stage 2's `shard up` as written, so the paper container starts on the empty volume. After `shard up` and before
+the absent case, run the check below (the RCON `plugins` list, `rcon-cli plugins` in the `docker exec` form at "RCON
+commands", is the other read-only check). Expected: the grep prints nothing and the block prints `absent: continue`.
+
+```
+# CAP-5 check, read-only: STOP unless CoreProtect is absent from /data/plugins
+if docker exec geldar-phase0-paper-1 ls /data/plugins | grep -qi coreprotect; then
+  echo "STOP: CoreProtect is present; do not run break-coreprotect-absent"
+else
+  echo "absent: continue"
+fi
+```
+
+Stop condition (CAP-5): if the check prints `STOP`, do not run `break-coreprotect-absent`; the volume was not wiped, so
+repeat the wipe above with ops, or stop and report. A `STOP` is a finding, not a retry.
+
 ### Stage 2: environment proof (the unproven items, first)
 
 ```
@@ -121,6 +159,7 @@ that case with `--clean` and the same `--out`; never retry in a loop. Expected f
 node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --list
 node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case all --dry-run --out .capture/cap-phase0
 node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case toss --out .capture/cap-phase0
+# CAP-5 stop condition: run the CoreProtect-absent check ("Fresh session", above) first; STOP if it prints "STOP"
 node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case break-coreprotect-absent --out .capture/cap-phase0
 node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case kill --out .capture/cap-phase0
 node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case survived --out .capture/cap-phase0
