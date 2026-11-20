@@ -1,257 +1,44 @@
-// G3-01: deploy/genesis/bootstrap.sh converges a clean Debian host. These tests run it with stubs on PATH (apt-get,
-// dpkg-query, getent, useradd, groupadd, install, stat, systemctl, nft, sysctl, apt-mark, curl, gpg, git, docker, id)
-// and a temp target root. The stubs keep their state in files: a package is a file, an owner and mode are a file
-// (what stat reports). Every stub call is logged, so a run's mutating calls can be counted. Nothing touches a real host.
-import { spawnSync } from 'node:child_process';
+// G3-01: deploy/genesis/bootstrap.sh converges a clean Debian host. These tests run it with stubs on PATH (see
+// genesis-bootstrap-fixture.ts) against a temp target root. Tests marked jqTest need jq and fail in CI without it.
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { posix } from './colo-deploy-fixture';
 import {
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { afterAll, describe, expect, it } from 'vitest';
-import { DEPLOY, posix, SH } from './colo-deploy-fixture';
+  CANARY,
+  DEBIAN_13,
+  FPR,
+  type Host,
+  indexOfCall,
+  jqTest,
+  makeHost,
+  mutating,
+  run,
+  snapshot,
+  st,
+  WRONG_FPR,
+} from './genesis-bootstrap-fixture';
 
-const BOOT = join(DEPLOY, 'genesis', 'bootstrap.sh');
-// The script needs bash (set -o pipefail, [[ ]]). SH is sh, which on Ubuntu CI is dash and rejects pipefail with exit 2;
-// on Windows it is Git's sh.exe, and bash.exe sits beside it. The other suites keep using SH.
-const BASH = process.platform === 'win32' && SH !== 'sh' ? join(dirname(SH), 'bash.exe') : 'bash';
-// A placeholder, not a Docker key: the gpg stub prints it and the bootstrap matches it. The real value is owner-supplied.
-const FPR = 'PLACEHOLDER-TEST-FINGERPRINT';
-const CANARY = 'CANARY-SECRET-7f3a';
-// The docker step merges daemon.json with jq, so an apply that reaches it needs jq on the test PATH (Linux CI has it).
-// Where it is absent those apply tests are skipped and the skip is visible in the run output.
-const HAS_JQ =
-  spawnSync(SH, ['-c', 'command -v jq'], { env: { PATH: '/usr/bin:/bin' } }).status === 0;
-// Verbs that change a host. A run whose log has none of these issued no mutating call.
-const MUTATING =
-  /^(apt-get (install|update)|apt-mark hold|systemctl (enable|restart)|useradd|groupadd|install|nft|sysctl|curl)( |$)/;
-const DEBIAN_12 = 'ID=debian\nVERSION_ID="12"\nVERSION_CODENAME=bookworm\n';
-const DEBIAN_13 = 'ID=debian\nVERSION_ID="13"\nVERSION_CODENAME=trixie\n';
-
-// Stub preamble: every call is logged; last_arg returns the final argument.
-const PRE = `echo "$(basename "$0") $*" >>"$STUB_LOG"
-last_arg() { for a in "$@"; do last=$a; done; printf '%s' "$last"; }
-`;
-const STUBS: Record<string, string> = {
-  'apt-get': `verb=$1; shift
-[ "$verb" = install ] || exit 0
-skip=
-for a in "$@"; do
-  if [ "$skip" = 1 ]; then skip=0; continue; fi
-  case "$a" in
-    -t) skip=1 ;;
-    -*) ;;
-    *=*) printf '%s' "$(echo "$a" | cut -d= -f2)" >"$STUB_STATE/pkgs/$(echo "$a" | cut -d= -f1)" ;;
-    *) printf 'stub' >"$STUB_STATE/pkgs/$a" ;;
-  esac
-done
-`,
-  'dpkg-query': `last=$(last_arg "$@")
-[ -f "$STUB_STATE/pkgs/$last" ] || exit 1
-cat "$STUB_STATE/pkgs/$last"
-`,
-  getent: `db=$1; name=$2
-case "$db" in
-  passwd) f="$STUB_STATE/users/$name"; [ -f "$f" ] || exit 2; read -r u g <"$f"; echo "$name:x:$u:$g::/home/$name:/bin/sh" ;;
-  group) f="$STUB_STATE/groups/$name"; [ -f "$f" ] || exit 2; echo "$name:x:$(cat "$f"):" ;;
-  *) exit 2 ;;
-esac
-`,
-  useradd: `uid=; gid=; name=
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --uid) uid=$2; shift ;;
-    --gid) gid=$2; shift ;;
-    --shell) shift ;;
-    -*) ;;
-    *) name=$1 ;;
-  esac
-  shift
-done
-echo "$uid $gid" >"$STUB_STATE/users/$name"
-`,
-  groupadd: `gid=; name=
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --gid) gid=$2; shift ;;
-    -*) ;;
-    *) name=$1 ;;
-  esac
-  shift
-done
-echo "$gid" >"$STUB_STATE/groups/$name"
-`,
-  install: `dir=0; mode=755; owner=0; group=0; pos=
-while [ $# -gt 0 ]; do
-  case "$1" in
-    -d) dir=1 ;;
-    -m) mode=$2; shift ;;
-    -o) owner=$2; shift ;;
-    -g) group=$2; shift ;;
-    *) pos="$pos $1" ;;
-  esac
-  shift
-done
-set -- $pos
-if [ "$dir" = 1 ]; then dest=$1; mkdir -p "$dest"; else cp "$1" "$2"; dest=$2; fi
-key=$(printf '%s' "$dest" | tr / _)
-printf '%s %s:%s' "$mode" "$owner" "$group" >"$STUB_STATE/attrs/$key"
-`,
-  stat: `key=$(printf '%s' "$3" | tr / _)
-f="$STUB_STATE/attrs/$key"
-[ -f "$f" ] || exit 1
-cat "$f"
-`,
-  systemctl: `verb=$1; unit=$(last_arg "$@")
-case "$verb" in
-  is-enabled) [ -f "$STUB_STATE/svc/$unit" ] ;;
-  enable) touch "$STUB_STATE/svc/$unit" ;;
-  *) exit 0 ;;
-esac
-`,
-  'apt-mark': `case "$1" in
-  showhold) ls "$STUB_STATE/holds" 2>/dev/null ;;
-  hold) shift; for p in "$@"; do touch "$STUB_STATE/holds/$p"; done ;;
-esac
-exit 0
-`,
-  curl: `out=
-while [ $# -gt 0 ]; do case "$1" in -o) out=$2; shift ;; esac; shift; done
-echo 'stub key block' >"$out"
-`,
-  gpg: 'echo "fpr:::::::::$STUB_FPR:"\n',
-  git: 'echo "git version $(cat "$STUB_STATE/git-version")"\n',
-  id: 'echo 0\n',
-  docker: 'exit 0\n',
-  nft: 'exit 0\n',
-  sysctl: 'exit 0\n',
-};
-
-interface Host {
-  root: string; // target root: etc, var, opt
-  sandbox: string; // stubs, state and the call log
-  env: string;
-  osRelease: string;
-  log: string;
-}
-const temps: string[] = [];
-function tempDir(): string {
-  const d = mkdtempSync(join(tmpdir(), 'geldar-boot-'));
-  temps.push(d);
-  return d;
-}
-afterAll(() => {
-  for (const d of temps) rmSync(d, { recursive: true, force: true });
-});
-
-// Non-secret settings, as envs/<name>.yaml would produce them. The version pins are fixture values for the stubs.
-function settings(root: string): Record<string, string> {
-  return {
-    GELDAR_ENV_NAME: 'test',
-    GELDAR_OPERATOR_USER: 'operator',
-    GELDAR_DOCKER_CE_VERSION: '5:28.5.1-1~debian.12~bookworm',
-    GELDAR_CONTAINERD_VERSION: '1.7.28-1~debian.12~bookworm',
-    GELDAR_DOCKER_BUILDX_VERSION: '0.29.1-1~debian.12~bookworm',
-    GELDAR_DOCKER_COMPOSE_VERSION: '2.39.4-1~debian.12~bookworm',
-    GELDAR_DOCKER_POOL_BASE: '198.51.100.0/24',
-    GELDAR_DOCKER_KEY_FPR: FPR,
-    GELDAR_PUBLIC_TCP_PORTS: '25565',
-    GELDAR_STATE_DIR: join(root, 'var/lib/geldar-test'),
-    GELDAR_SECRETS_DIR: join(root, 'etc/geldar-test/secrets'),
-    GELDAR_TOKENS_DIR: join(root, 'etc/geldar-test/tokens'),
-    GELDAR_SRC_DIR: join(root, 'opt/geldar-test/src'),
-  };
-}
-
-function makeHost(
-  opts: { git?: string; osRelease?: string; drop?: string[]; extra?: string[] } = {},
-): Host {
-  const root = tempDir();
-  const sandbox = tempDir();
-  const bin = join(sandbox, 'bin');
-  mkdirSync(bin);
-  for (const d of ['pkgs', 'users', 'groups', 'attrs', 'svc', 'holds'])
-    mkdirSync(join(sandbox, 'state', d), { recursive: true });
-  writeFileSync(join(sandbox, 'state', 'git-version'), opts.git ?? '2.52.0');
-  for (const [name, body] of Object.entries(STUBS)) {
-    writeFileSync(join(bin, name), `#!/usr/bin/env bash\n${PRE}${body}`, { mode: 0o755 });
-  }
-  // A secret file that already exists: the bootstrap must leave it exactly as it is.
-  mkdirSync(join(root, 'etc/geldar-test/secrets'), { recursive: true });
-  writeFileSync(join(root, 'etc/geldar-test/secrets/nats.txt'), CANARY);
-  const osRelease = join(root, 'os-release');
-  writeFileSync(osRelease, opts.osRelease ?? DEBIAN_12);
-  const cfg = settings(root);
-  for (const k of opts.drop ?? []) delete cfg[k];
-  const lines = [...Object.entries(cfg).map(([k, v]) => `${k}=${v}`), ...(opts.extra ?? [])];
-  const env = join(sandbox, 'test.env');
-  writeFileSync(env, `${lines.join('\n')}\n`);
-  return { root, sandbox, env, osRelease, log: join(sandbox, 'calls.log') };
-}
-
-interface Run {
-  code: number;
-  out: string;
-  calls: string[];
-}
-function readCalls(host: Host): string[] {
-  return existsSync(host.log) ? readFileSync(host.log, 'utf8').split('\n').filter(Boolean) : [];
-}
-function run(host: Host, args: string[]): Run {
-  const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(process.env))
-    if (v !== undefined && !/^path$/i.test(k)) env[k] = v;
-  const path = join(host.sandbox, 'bin');
-  const res = spawnSync(BASH, [posix(BOOT), posix(host.env), ...args], {
-    encoding: 'utf8',
-    env: {
-      ...env,
-      // Stubs first, then the POSIX system bins for the real coreutils (sed, cmp, mktemp, jq, ...).
-      PATH: `${posix(path)}:/usr/bin:/bin`,
-      STUB_LOG: posix(host.log),
-      STUB_STATE: posix(join(host.sandbox, 'state')),
-      STUB_FPR: FPR,
-      BOOTSTRAP_ROOT: posix(host.root),
-      BOOTSTRAP_OS_RELEASE: posix(host.osRelease),
-    },
-  });
-  return { code: res.status ?? -1, out: `${res.stdout}${res.stderr}`, calls: readCalls(host) };
-}
-const mutating = (calls: string[]) => calls.filter((c) => MUTATING.test(c));
-
-// Every file under the target root, by path relative to it.
-function snapshot(
-  dir: string,
-  base = dir,
-  acc: Record<string, string> = {},
-): Record<string, string> {
-  if (!existsSync(dir)) return acc;
-  for (const e of readdirSync(dir, { withFileTypes: true })) {
-    const p = join(dir, e.name);
-    if (e.isDirectory()) snapshot(p, base, acc);
-    else acc[p.slice(base.length)] = readFileSync(p, 'utf8');
-  }
-  return acc;
-}
+const nftFile = (h: Host) => join(h.root, 'etc/nftables.d/geldar-test.nft');
+const daemonFile = (h: Host) => join(h.root, 'etc/docker/daemon.json');
+const confFile = (h: Host) => join(h.root, 'etc/nftables.conf');
+const secretText = (h: Host) =>
+  readFileSync(join(h.root, 'etc/geldar-test/secrets/nats.txt'), 'utf8');
 
 describe('G3-01 deploy/genesis/bootstrap.sh', () => {
-  it('dry-run is the default and calls nothing mutating', () => {
+  it('dry-run is the default: nothing mutating, root unchanged, effective ports printed', () => {
     const host = makeHost();
+    const before = snapshot(host.root);
     const r = run(host, []);
     expect(r.code).toBe(0);
     expect(r.out).toContain('dry-run:');
+    expect(r.out).toContain('effective TCP ports: 22,25565');
     expect(mutating(r.calls)).toEqual([]);
-    expect(existsSync(join(host.root, 'etc/docker/daemon.json'))).toBe(false);
-    expect(readFileSync(join(host.root, 'etc/geldar-test/secrets/nats.txt'), 'utf8')).toBe(CANARY);
+    expect(snapshot(host.root)).toEqual(before);
+    expect(secretText(host)).toBe(CANARY);
   });
 
-  it.skipIf(!HAS_JQ)(
+  jqTest(
     'apply twice: the second run issues no mutating call and the end state does not change',
     () => {
       const host = makeHost();
@@ -263,29 +50,48 @@ describe('G3-01 deploy/genesis/bootstrap.sh', () => {
       expect(second.code).toBe(0);
       expect(mutating(second.calls)).toEqual([]);
       expect(snapshot(host.root)).toEqual(before);
-      // The secret value is untouched and never printed.
-      expect(readFileSync(join(host.root, 'etc/geldar-test/secrets/nats.txt'), 'utf8')).toBe(
-        CANARY,
-      );
+      expect(secretText(host)).toBe(CANARY);
       expect(first.out + second.out).not.toContain(CANARY);
     },
   );
 
-  it.skipIf(!HAS_JQ)('merges the address pools into daemon.json and keeps the other keys', () => {
+  jqTest('merges the address pools into daemon.json and keeps the other keys', () => {
     const host = makeHost();
-    const daemon = join(host.root, 'etc/docker/daemon.json');
     mkdirSync(join(host.root, 'etc/docker'), { recursive: true });
     writeFileSync(
-      daemon,
+      daemonFile(host),
       JSON.stringify({
         'log-driver': 'json-file',
         'default-address-pools': [{ base: '203.0.113.0/24', size: 20 }],
       }),
     );
     expect(run(host, ['--apply']).code).toBe(0);
-    const merged = JSON.parse(readFileSync(daemon, 'utf8'));
+    const merged = JSON.parse(readFileSync(daemonFile(host), 'utf8'));
     expect(merged['log-driver']).toBe('json-file');
     expect(merged['default-address-pools']).toEqual([{ base: '198.51.100.0/24', size: 24 }]);
+  });
+
+  jqTest('an empty or blank daemon.json counts as {} and gets the pools', () => {
+    for (const content of ['', '  \n\n']) {
+      const host = makeHost();
+      mkdirSync(join(host.root, 'etc/docker'), { recursive: true });
+      writeFileSync(daemonFile(host), content);
+      expect(run(host, ['--apply']).code).toBe(0);
+      const merged = JSON.parse(readFileSync(daemonFile(host), 'utf8'));
+      expect(merged).toEqual({ 'default-address-pools': [{ base: '198.51.100.0/24', size: 24 }] });
+    }
+  });
+
+  jqTest('refuses a daemon.json that is not a JSON object and leaves it as it is', () => {
+    for (const content of ['[1,2]', '{"log-driver":']) {
+      const host = makeHost();
+      mkdirSync(join(host.root, 'etc/docker'), { recursive: true });
+      writeFileSync(daemonFile(host), content);
+      const r = run(host, ['--apply']);
+      expect(r.code).not.toBe(0);
+      expect(r.out).toContain('must hold a JSON object');
+      expect(readFileSync(daemonFile(host), 'utf8')).toBe(content);
+    }
   });
 
   it.each([
@@ -305,40 +111,265 @@ describe('G3-01 deploy/genesis/bootstrap.sh', () => {
     expect(r.out).toContain('debian=13');
   });
 
-  it.skipIf(!HAS_JQ)(
-    'fails the apply when git stays below 2.40, and accepts 2.40.0 at the floor',
-    () => {
-      const low = makeHost({ git: '2.39.2' });
-      const lowRun = run(low, ['--apply']);
-      expect(lowRun.code).not.toBe(0);
-      expect(lowRun.out).toContain('the floor is 2.40');
-      const floor = makeHost({ git: '2.40.0' });
-      expect(run(floor, ['--apply']).code).toBe(0);
-    },
-  );
+  it('fails the apply when git stays below 2.40 (no jq needed: the run stops before docker)', () => {
+    const r = run(makeHost({ git: '2.39.2' }), ['--apply']);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('the floor is 2.40');
+  });
+
+  jqTest('accepts git 2.40.0 at the floor', () => {
+    expect(run(makeHost({ git: '2.40.0' }), ['--apply']).code).toBe(0);
+  });
 
   it('stops before any call when a required Docker pin is unset, and names the variable', () => {
-    const host = makeHost({ drop: ['GELDAR_DOCKER_CE_VERSION'] });
-    const r = run(host, []);
+    const r = run(makeHost({ drop: ['GELDAR_DOCKER_CE_VERSION'] }), []);
     expect(r.code).not.toBe(0);
     expect(r.out).toContain('GELDAR_DOCKER_CE_VERSION is required');
     expect(r.calls).toEqual([]);
   });
 
   it('stops before any call when the Docker key fingerprint is unset, and names only the variable', () => {
-    const host = makeHost({ drop: ['GELDAR_DOCKER_KEY_FPR'] });
-    const r = run(host, ['--apply']);
+    const r = run(makeHost({ drop: ['GELDAR_DOCKER_KEY_FPR'] }), ['--apply']);
     expect(r.code).not.toBe(0);
     expect(r.out).toContain('GELDAR_DOCKER_KEY_FPR is required');
     expect(r.calls).toEqual([]);
   });
 
-  it('refuses a line that is not a GELDAR_ or BOOTSTRAP_ setting without echoing its value', () => {
-    const host = makeHost({ extra: [`STRAY_TOKEN=${CANARY}`] });
+  it('refuses a malformed fingerprint before any call', () => {
+    const r = run(
+      makeHost({
+        drop: ['GELDAR_DOCKER_KEY_FPR'],
+        extra: ['GELDAR_DOCKER_KEY_FPR=not-a-fingerprint'],
+      }),
+      [],
+    );
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('GELDAR_DOCKER_KEY_FPR must be the 40 hex digits');
+    expect(r.calls).toEqual([]);
+  });
+
+  jqTest('normalises a fingerprint written in lower case with spaces', () => {
+    const spaced =
+      FPR.toLowerCase()
+        .match(/.{1,4}/g)
+        ?.join(' ') ?? '';
+    const host = makeHost({
+      drop: ['GELDAR_DOCKER_KEY_FPR'],
+      extra: [`GELDAR_DOCKER_KEY_FPR=${spaced}`],
+    });
+    expect(run(host, ['--apply']).code).toBe(0);
+  });
+
+  it('a wrong fingerprint dies and installs no docker.asc', () => {
+    const host = makeHost();
+    const r = run(host, ['--apply'], { STUB_FPR: WRONG_FPR });
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('does not match the pinned fingerprint');
+    expect(existsSync(join(host.root, 'etc/apt/keyrings/docker.asc'))).toBe(false);
+  });
+
+  it('a keyring with an extra primary key dies and installs no docker.asc', () => {
+    const host = makeHost();
+    writeFileSync(st(host, 'gpg-extra'), `${WRONG_FPR}\n`);
     const r = run(host, ['--apply']);
     expect(r.code).not.toBe(0);
-    expect(r.out).toContain('is not a GELDAR_ or BOOTSTRAP_ KEY=VALUE setting');
-    expect(r.out).not.toContain(CANARY);
+    expect(existsSync(join(host.root, 'etc/apt/keyrings/docker.asc'))).toBe(false);
+  });
+
+  it('fetches the Docker key over https only, with a timeout and --fail', () => {
+    const r = run(makeHost(), ['--apply']);
+    const curl = r.calls.find((c) => c.startsWith('curl '));
+    expect(curl).toMatch(/--fail .*--proto =https --tlsv1\.2 --max-time 60/);
+  });
+
+  it.each([
+    ['GELDAR_PUBLIC_TCP_PORTS', '0'],
+    ['GELDAR_PUBLIC_TCP_PORTS', '65536'],
+    ['GELDAR_PUBLIC_TCP_PORTS', '123456'],
+    ['GELDAR_PUBLIC_TCP_PORTS', '99999999999999999999'],
+    ['BOOTSTRAP_SSH_PORT', '0'],
+    ['BOOTSTRAP_SSH_PORT', '65536'],
+  ])('refuses %s=%s before any call', (key, value) => {
+    const r = run(makeHost({ drop: [key], extra: [`${key}=${value}`] }), ['--apply']);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('TCP port');
+    expect(r.calls).toEqual([]);
+  });
+
+  it('accepts the port range edges 1 and 65535', () => {
+    const host = makeHost({
+      drop: ['GELDAR_PUBLIC_TCP_PORTS'],
+      extra: ['GELDAR_PUBLIC_TCP_PORTS=1,65535'],
+    });
+    expect(run(host, []).out).toContain('effective TCP ports: 1,22,65535');
+  });
+
+  it.each([
+    ['GELDAR_STATE_DIR', '/etc'],
+    ['GELDAR_SECRETS_DIR', 'relative/secrets'],
+    ['GELDAR_TOKENS_DIR', '/etc/geldar-test/tokens/'],
+    ['GELDAR_SRC_DIR', '/opt/geldar-test/../src'],
+  ])('refuses the directory setting %s=%s before any call', (key, value) => {
+    const r = run(makeHost({ drop: [key], extra: [`${key}=${value}`] }), ['--apply']);
+    expect(r.code).not.toBe(0);
+    expect(r.calls).toEqual([]);
+  });
+
+  it.each([['--dry-run'], ['--apply']])('refuses a taken uid before any change (%s)', (mode) => {
+    const host = makeHost();
+    writeFileSync(st(host, 'users', 'debian'), '1000 1000\n');
+    writeFileSync(st(host, 'groups', 'debian'), '1000\n');
+    const r = run(host, [mode]);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('belongs to debian');
     expect(mutating(r.calls)).toEqual([]);
+  });
+
+  it('dies before any rule when sshd listens on a port the settings do not allow', () => {
+    const host = makeHost();
+    writeFileSync(st(host, 'sshd-config'), 'port 2222\n');
+    const r = run(host, ['--apply']);
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('SSH lockout');
+    expect(mutating(r.calls)).toEqual([]);
+    expect(existsSync(nftFile(host))).toBe(false);
+  });
+
+  it('dies when the server port of this SSH session is not allowed', () => {
+    const r = run(makeHost(), ['--apply'], { SSH_CONNECTION: 'x 50000 y 2233' });
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('2233');
+    expect(mutating(r.calls)).toEqual([]);
+  });
+
+  jqTest('loads a sshd port that BOOTSTRAP_SSH_PORT names, and the generated file lists it', () => {
+    const host = makeHost({ extra: ['BOOTSTRAP_SSH_PORT=2222'] });
+    writeFileSync(st(host, 'sshd-config'), 'port 2222\n');
+    expect(run(host, ['--apply']).code).toBe(0);
+    expect(readFileSync(nftFile(host), 'utf8')).toContain('tcp dport { 2222, 25565 } accept');
+  });
+
+  jqTest(
+    'the generated nft file has policy drop, loopback, SSH and the public ports from the setting',
+    () => {
+      const host = makeHost();
+      expect(run(host, ['--apply']).code).toBe(0);
+      const nft = readFileSync(nftFile(host), 'utf8');
+      expect(nft).toContain('add table inet geldar_test');
+      expect(nft).toContain('policy drop;');
+      expect(nft).toContain('iif "lo" accept');
+      expect(nft).toContain('tcp dport { 22, 25565 } accept');
+    },
+  );
+
+  jqTest(
+    'a file that does not parse adds no include; a rerun after a failed load completes it',
+    () => {
+      const host = makeHost();
+      writeFileSync(st(host, 'nft-fail'), '');
+      const first = run(host, ['--apply']);
+      expect(first.code).not.toBe(0);
+      expect(existsSync(confFile(host)) ? readFileSync(confFile(host), 'utf8') : '').not.toContain(
+        posix(nftFile(host)),
+      );
+      expect(first.calls.some((c) => c.startsWith('nft -f'))).toBe(false);
+      rmSync(st(host, 'nft-fail'));
+      const second = run(host, ['--apply']);
+      expect(second.code).toBe(0);
+      expect(second.calls).toContain(`nft -f ${posix(nftFile(host))}`);
+      expect(readFileSync(confFile(host), 'utf8')).toContain(posix(nftFile(host)));
+    },
+  );
+
+  jqTest('the include line goes on its own line after a file with no trailing newline', () => {
+    const host = makeHost();
+    mkdirSync(join(host.root, 'etc'), { recursive: true });
+    writeFileSync(confFile(host), 'include "/etc/other.nft"');
+    expect(run(host, ['--apply']).code).toBe(0);
+    expect(readFileSync(confFile(host), 'utf8').split('\n')).toContain(
+      `include "${posix(nftFile(host))}"`,
+    );
+  });
+
+  jqTest('sysctl is reloaded when the live value drifts, though the file is unchanged', () => {
+    const host = makeHost();
+    expect(run(host, ['--apply']).code).toBe(0);
+    writeFileSync(st(host, 'sysctl', 'vm.max_map_count'), '65530');
+    const again = run(host, ['--apply']);
+    expect(again.code).toBe(0);
+    expect(again.calls.some((c) => c.startsWith('sysctl -q -p'))).toBe(true);
+    expect(readFileSync(st(host, 'sysctl', 'vm.max_map_count'), 'utf8')).toBe('262144');
+  });
+
+  jqTest('a rerun after a failed docker restart restarts the daemon again', () => {
+    const host = makeHost();
+    writeFileSync(st(host, 'restart-fail'), '');
+    expect(run(host, ['--apply']).code).not.toBe(0);
+    expect(existsSync(join(host.root, 'etc/docker/geldar-pools.sha256'))).toBe(false);
+    rmSync(st(host, 'restart-fail'));
+    const second = run(host, ['--apply']);
+    expect(second.code).toBe(0);
+    expect(second.calls).toContain('systemctl restart docker');
+  });
+
+  jqTest('a changed pin unholds the Docker packages, installs, then holds them again', () => {
+    const host = makeHost();
+    expect(run(host, ['--apply']).code).toBe(0);
+    const next = '5:28.6.0-1~debian.12~bookworm';
+    writeFileSync(
+      host.env,
+      readFileSync(host.env, 'utf8').replace('5:28.5.1-1~debian.12~bookworm', next),
+    );
+    const r = run(host, ['--apply']);
+    expect(r.code).toBe(0);
+    const un = indexOfCall(r.calls, /^apt-mark unhold docker-ce$/);
+    const ins = indexOfCall(r.calls, /^apt-get install .*docker-ce=5:28\.6\.0/);
+    const hold = indexOfCall(r.calls, /^apt-mark hold /);
+    expect(un).toBeGreaterThanOrEqual(0);
+    expect(ins).toBeGreaterThan(un);
+    expect(hold).toBeGreaterThan(ins);
+  });
+
+  it('creates the docker group before the packages step, so the Docker postinst reuses its gid', () => {
+    const r = run(makeHost(), ['--apply']);
+    const group = indexOfCall(r.calls, /^groupadd --gid 999 docker$/);
+    const pkgs = indexOfCall(r.calls, /^apt-get install/);
+    expect(group).toBeGreaterThanOrEqual(0);
+    expect(pkgs).toBeGreaterThan(group);
+  });
+
+  jqTest('installs systemd-timesyncd and enables it when no other time-sync service runs', () => {
+    const r = run(makeHost(), ['--apply']);
+    expect(r.calls).toContain('apt-get install -y --no-install-recommends systemd-timesyncd');
+    expect(r.calls).toContain('systemctl enable --now systemd-timesyncd');
+  });
+
+  jqTest('leaves systemd-timesyncd alone when chrony is active', () => {
+    const host = makeHost();
+    mkdirSync(st(host, 'active'), { recursive: true });
+    writeFileSync(st(host, 'active', 'chrony'), '');
+    const r = run(host, ['--apply']);
+    expect(r.code).toBe(0);
+    expect(r.calls.filter((c) => c.includes('timesyncd'))).toEqual([]);
+  });
+
+  jqTest(
+    'dies with a named message when no time-sync service is available, and enables nothing',
+    () => {
+      const host = makeHost();
+      rmSync(st(host, 'units', 'systemd-timesyncd'));
+      const r = run(host, ['--apply']);
+      expect(r.code).not.toBe(0);
+      expect(r.out).toContain('no time-sync service');
+      expect(r.calls).not.toContain('systemctl enable --now systemd-timesyncd');
+    },
+  );
+
+  jqTest('the logrotate stanza names the service user and group', () => {
+    const host = makeHost();
+    expect(run(host, ['--apply']).code).toBe(0);
+    expect(readFileSync(join(host.root, 'etc/logrotate.d/geldar-test'), 'utf8')).toContain(
+      '  su geldar geldar\n',
+    );
   });
 });

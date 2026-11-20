@@ -9,7 +9,8 @@
 # Required settings, with no default: the run stops before any call when one is unset, and the message names the
 # variable but never its value. They are the four Docker apt pins (GELDAR_DOCKER_CE_VERSION, GELDAR_CONTAINERD_VERSION,
 # GELDAR_DOCKER_BUILDX_VERSION, GELDAR_DOCKER_COMPOSE_VERSION), the Docker repository key fingerprint
-# (GELDAR_DOCKER_KEY_FPR) and the Docker address pool (GELDAR_DOCKER_POOL_BASE, an IPv4 CIDR).
+# (GELDAR_DOCKER_KEY_FPR, 40 hex digits; spaces and case are normalised) and the Docker address pool
+# (GELDAR_DOCKER_POOL_BASE, an IPv4 CIDR).
 #
 # First run, by the owner: this repository carries no Docker trust anchor and no package versions. Copy
 # GELDAR_DOCKER_KEY_FPR from the Docker Engine installation page on docs.docker.com (Debian), and copy the four package
@@ -71,20 +72,37 @@ ensure_dir() {
 }
 
 # write_if_changed DEST MODE UID GID < CONTENT: installs CONTENT only when DEST differs. Sets CHANGED=1 on a write.
+# The compare is in memory. A dry run writes no temporary file: it prints the install and stops there.
 write_if_changed() {
-  local dest=$1 tmp
-  tmp=$(mktemp)
-  cat >"$tmp"
-  if [ -f "$dest" ] && cmp -s "$tmp" "$dest" && attr_is "$dest" "$2" "$3" "$4"; then
-    rm -f "$tmp"
+  local dest=$1 content current=
+  content=$(
+    cat
+    printf x
+  )
+  content=${content%x}
+  if [ -f "$dest" ]; then
+    current=$(
+      cat "$dest"
+      printf x
+    )
+    current=${current%x}
+  fi
+  if [ -f "$dest" ] && [ "$content" = "$current" ] && attr_is "$dest" "$2" "$3" "$4"; then
     return 0
   fi
   CHANGED=1
   if [ ! -d "$(dirname "$dest")" ]; then
     mut install -d -m 755 "$(dirname "$dest")"
   fi
-  mut install -m "$2" -o "$3" -g "$4" "$tmp" "$dest"
-  rm -f "$tmp"
+  if [ "$MODE" = apply ]; then
+    local tmp
+    tmp=$(mktemp)
+    printf '%s' "$content" >"$tmp"
+    mut install -m "$2" -o "$3" -g "$4" "$tmp" "$dest"
+    rm -f "$tmp"
+  else
+    say "dry-run: install -m $2 $dest"
+  fi
 }
 
 usage() {
@@ -139,6 +157,25 @@ load_env() {
   done <"$ENV_FILE"
 }
 
+# valid_port N: a decimal TCP port, 1 to 65535. The length is checked before any arithmetic.
+valid_port() {
+  [[ "$1" =~ ^[0-9]{1,5}$ ]] || return 1
+  [ "$((10#$1))" -ge 1 ] && [ "$((10#$1))" -le 65535 ]
+}
+
+# check_dir_setting NAME PATH: an absolute, normalised path that is not a system directory itself.
+check_dir_setting() {
+  case "$2" in
+    / | /bin | /boot | /dev | /etc | /home | /lib | /opt | /proc | /root | /run | /sbin | /sys | /tmp | /usr | /var)
+      die "$1 must not be a system directory" ;;
+    /*) ;;
+    *) die "$1 must be an absolute path" ;;
+  esac
+  case "$2" in
+    *//* | */ | */. | */.. | */./* | */../*) die "$1 must be a normalised path: no trailing slash, no . or .. or //" ;;
+  esac
+}
+
 # apply_defaults: the required pins stop the run when unset; everything else has a default.
 apply_defaults() {
   : "${GELDAR_ENV_NAME:?GELDAR_ENV_NAME is required in the environment file}"
@@ -152,6 +189,9 @@ apply_defaults() {
   [[ "$GELDAR_ENV_NAME" =~ ^[a-z][a-z0-9-]{1,30}$ ]] || die "GELDAR_ENV_NAME must be lowercase letters, digits and dashes"
   [[ "$GELDAR_DOCKER_CE_VERSION$GELDAR_CONTAINERD_VERSION$GELDAR_DOCKER_BUILDX_VERSION$GELDAR_DOCKER_COMPOSE_VERSION" =~ ^[A-Za-z0-9:.+~_-]+$ ]] ||
     die "docker package versions contain characters that are not allowed in an apt version"
+  GELDAR_DOCKER_KEY_FPR=$(printf '%s' "$GELDAR_DOCKER_KEY_FPR" | tr -d ' ' | tr 'a-f' 'A-F')
+  [[ "$GELDAR_DOCKER_KEY_FPR" =~ ^[0-9A-F]{40}$ ]] ||
+    die "GELDAR_DOCKER_KEY_FPR must be the 40 hex digits of the Docker key fingerprint"
   GELDAR_SERVICE_USER=${GELDAR_SERVICE_USER:-geldar}
   GELDAR_SERVICE_UID=${GELDAR_SERVICE_UID:-1000}
   GELDAR_OPERATOR_UID=${GELDAR_OPERATOR_UID:-1001}
@@ -163,11 +203,19 @@ apply_defaults() {
   GELDAR_SECRETS_DIR=${GELDAR_SECRETS_DIR:-/etc/geldar-$GELDAR_ENV_NAME/secrets}
   GELDAR_TOKENS_DIR=${GELDAR_TOKENS_DIR:-/etc/geldar-$GELDAR_ENV_NAME/tokens}
   GELDAR_SRC_DIR=${GELDAR_SRC_DIR:-/opt/geldar-$GELDAR_ENV_NAME/src}
-  local v
-  for v in GELDAR_SERVICE_UID GELDAR_OPERATOR_UID GELDAR_DOCKER_GID GELDAR_DOCKER_POOL_SIZE BOOTSTRAP_SSH_PORT; do
+  local v p
+  for v in GELDAR_SERVICE_UID GELDAR_OPERATOR_UID GELDAR_DOCKER_GID GELDAR_DOCKER_POOL_SIZE; do
     [[ "${!v}" =~ ^[0-9]+$ ]] || die "$v must be a number"
   done
+  valid_port "$BOOTSTRAP_SSH_PORT" || die "BOOTSTRAP_SSH_PORT must be a TCP port (1-65535)"
+  for p in ${GELDAR_PUBLIC_TCP_PORTS//,/ }; do
+    valid_port "$p" || die "GELDAR_PUBLIC_TCP_PORTS has an entry that is not a TCP port (1-65535)"
+  done
   [[ "$GELDAR_DOCKER_POOL_BASE" =~ ^[0-9.]+/[0-9]+$ ]] || die "GELDAR_DOCKER_POOL_BASE must be an IPv4 CIDR"
+  check_dir_setting GELDAR_STATE_DIR "$GELDAR_STATE_DIR"
+  check_dir_setting GELDAR_SECRETS_DIR "$GELDAR_SECRETS_DIR"
+  check_dir_setting GELDAR_TOKENS_DIR "$GELDAR_TOKENS_DIR"
+  check_dir_setting GELDAR_SRC_DIR "$GELDAR_SRC_DIR"
 }
 
 # check_os: Debian 12 or 13 only. The os-release file is read from BOOTSTRAP_OS_RELEASE when set (tests).
@@ -193,6 +241,11 @@ main() {
     die "--apply must run as root"
   fi
   say "mode=$MODE environment=$GELDAR_ENV_NAME debian=$OS_VERSION"
+  # Refusals come before any change: a taken uid or gid, and an sshd port the settings do not allow.
+  preflight_ids
+  firewall_ports_check
+  # The docker group exists before the packages, so the Docker postinst reuses GELDAR_DOCKER_GID.
+  ensure_group docker "$GELDAR_DOCKER_GID"
   packages_step
   verify_git_floor
   users_step

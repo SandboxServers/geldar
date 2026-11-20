@@ -6,7 +6,7 @@
 # write_if_changed, CHANGED and BOOT_ROOT.
 
 GIT_FLOOR=2.40
-BASE_PACKAGES="ca-certificates curl gnupg jq openssl xz-utils unattended-upgrades"
+BASE_PACKAGES="ca-certificates curl gnupg jq nftables openssl xz-utils unattended-upgrades"
 DOCKER_PACKAGES="docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin"
 export DEBIAN_FRONTEND=noninteractive
 
@@ -28,7 +28,7 @@ git_version() {
   git --version | sed -n 's/^git version \([0-9][0-9.]*[0-9]\).*/\1/p'
 }
 
-# base_packages: installs the missing base packages (curl is needed for the Docker key).
+# base_packages: installs the missing base packages (curl is needed for the Docker key, nftables for the firewall).
 base_packages() {
   local missing=() pkg
   for pkg in $BASE_PACKAGES; do
@@ -42,9 +42,15 @@ base_packages() {
   fi
 }
 
-# docker_key_ok FILE: the keyring holds the pinned Docker repository key.
+# docker_key_ok FILE: the keyring holds exactly one primary key and its fingerprint is the pinned one. A dry run only
+# checks that the file is present and non-empty; it calls no gpg.
 docker_key_ok() {
-  [ -s "$1" ] && gpg --show-keys --with-colons "$1" 2>/dev/null | grep -q "^fpr:.*:$GELDAR_DOCKER_KEY_FPR:\$"
+  [ -s "$1" ] || return 1
+  [ "$MODE" = apply ] || return 0
+  gpg --show-keys --with-colons "$1" 2>/dev/null | awk -F: -v want="$GELDAR_DOCKER_KEY_FPR" '
+    $1 == "pub" { pubs++; want_fpr = 1; next }
+    $1 == "fpr" && want_fpr { if ($10 == want) ok = 1; want_fpr = 0 }
+    END { exit !(pubs == 1 && ok) }'
 }
 
 # write_docker_key: fetches the Docker key only when it is missing, and checks its fingerprint before installing.
@@ -58,8 +64,12 @@ write_docker_key() {
     return 0
   fi
   tmp=$(mktemp)
-  curl -fsSL -o "$tmp" https://download.docker.com/linux/debian/gpg
-  docker_key_ok "$tmp" || die "the Docker repository key does not match the pinned fingerprint"
+  curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 --max-time 60 \
+    -o "$tmp" https://download.docker.com/linux/debian/gpg
+  if ! docker_key_ok "$tmp"; then
+    rm -f "$tmp"
+    die "the Docker repository key does not match the pinned fingerprint; nothing was installed"
+  fi
   CHANGED=1
   ensure_dir "$(dirname "$keyring")" 755 0 0
   mut install -m 644 -o 0 -g 0 "$tmp" "$keyring"
@@ -88,9 +98,10 @@ EOF
   fi
 }
 
-# docker_packages: the Docker packages at the pinned versions (each one checked against its own pin).
+# docker_packages: the Docker packages at the pinned versions (each one checked against its own pin). A held package
+# is unheld for the pinned install; unattended_step holds the set again afterwards.
 docker_packages() {
-  local entry name ver want=()
+  local entry name ver held pkg want=()
   for entry in \
     "docker-ce:$GELDAR_DOCKER_CE_VERSION" \
     "docker-ce-cli:$GELDAR_DOCKER_CE_VERSION" \
@@ -104,6 +115,12 @@ docker_packages() {
     fi
   done
   if [ "${#want[@]}" -gt 0 ]; then
+    held=$(apt-mark showhold 2>/dev/null || true)
+    for pkg in $DOCKER_PACKAGES; do
+      if grep -qx "$pkg" <<<"$held"; then
+        mut apt-mark unhold "$pkg"
+      fi
+    done
     mut apt-get install -y --no-install-recommends "${want[@]}"
   fi
 }
@@ -161,14 +178,40 @@ unattended_step() {
   fi
 }
 
-# timesync_step: systemd-timesyncd keeps the clock right (Paper and the TLS edge both need it).
+# time_sync_active UNIT: true when the time-sync unit is running.
+time_sync_active() {
+  systemctl is-active -q "$1" 2>/dev/null
+}
+
+# timesync_step: a running chrony or ntpsec is left alone. Otherwise systemd-timesyncd is installed and enabled. A
+# missing unit is never enabled; apply stops with a named message when no time-sync service can be had.
 timesync_step() {
+  if time_sync_active chrony || time_sync_active ntpsec; then
+    say "time sync: another service is active; systemd-timesyncd is left alone"
+    return 0
+  fi
+  if [ -z "$(installed_version systemd-timesyncd)" ]; then
+    mut apt-get install -y --no-install-recommends systemd-timesyncd
+  fi
+  if ! systemctl cat systemd-timesyncd >/dev/null 2>&1; then
+    if [ "$MODE" = apply ]; then
+      die "no time-sync service: systemd-timesyncd is not available and neither chrony nor ntpsec is active"
+    fi
+    say "dry-run: the systemd-timesyncd unit appears after the install; apply checks it then"
+    return 0
+  fi
   if ! systemctl is-enabled -q systemd-timesyncd 2>/dev/null; then
     mut systemctl enable --now systemd-timesyncd
   fi
 }
 
-# sysctl_step: the map count Paper's JVM needs; reloaded only when the file changes.
+# sysctl_live_ok: the running values match the file. A reload is needed whenever they differ, not only on a file change.
+sysctl_live_ok() {
+  [ "$(sysctl -n vm.max_map_count 2>/dev/null)" = 262144 ] &&
+    [ "$(sysctl -n fs.inotify.max_user_instances 2>/dev/null)" = 512 ]
+}
+
+# sysctl_step: the map count Paper's JVM needs; reloaded when the file changes or the live values differ.
 sysctl_step() {
   CHANGED=0
   write_if_changed "$BOOT_ROOT/etc/sysctl.d/90-geldar-paper.conf" 644 0 0 <<'EOF'
@@ -176,7 +219,7 @@ sysctl_step() {
 vm.max_map_count = 262144
 fs.inotify.max_user_instances = 512
 EOF
-  if [ "$CHANGED" = 1 ]; then
+  if [ "$CHANGED" = 1 ] || ! sysctl_live_ok; then
     mut sysctl -q -p "$BOOT_ROOT/etc/sysctl.d/90-geldar-paper.conf"
   fi
 }
@@ -193,6 +236,7 @@ $GELDAR_STATE_DIR/logs/*.log {
   missingok
   notifempty
   copytruncate
+  su $GELDAR_SERVICE_USER $GELDAR_SERVICE_USER
 }
 EOF
 }
