@@ -124,4 +124,39 @@ Files: `plugin/core/src/main/java/dev/geldar/core/CombatFactListener.java` (new)
 
 Ops capture pending: a real kill and a real survived payload before AN-47b fixtures freeze.
 
+Captured 2026-11-20 at 73788889 (shard phase0). Kill and survived each give one `engaged` message and one `combat_fact`.
+
+Kill, `engaged` (subject geldar.phase0.provenance.combat):
+
+Captured 2026-11-20 at 73788889, shard phase0, case kill, subject geldar.phase0.provenance.combat, validator: ok
+
+```json
+{"world":"world","actor":"ag_capa_01","target":"zombie","kind":"engaged","tick":2631}
+```
+
+Kill, `combat_fact` (subject geldar.phase0.combat_fact; the `player` key is present):
+
+Captured 2026-11-20 at 73788889, shard phase0, case kill, subject geldar.phase0.combat_fact, validator: ok
+
+```json
+{"source_event_id":"ev_01M7VTK8EF4K1WCGB1ZNF1C49G","at":"2026-11-20T06:34:11.791142928Z","shard":"phase0","world_day":4,"world_tick":102000,"type":"combat_fact","agent_id":"ag_capa_01","payload":{"life_id":"ag_capa_01","kind":"hostile_kill","mob":"zombie","encounter_key":"enc:ag_capa_01:a8b0fd4e-a08e-4953-9cca-61e00e541222","player":"ag_capa_01"}}
+```
+
+Survived, `engaged`:
+
+Captured 2026-11-20 at 73788889, shard phase0, case survived, subject geldar.phase0.provenance.combat, validator: ok
+
+```json
+{"world":"world","actor":"ag_capa_01","target":"zombie","kind":"engaged","tick":3202}
+```
+
+Survived, `combat_fact` (the `player` key is present):
+
+Captured 2026-11-20 at 73788889, shard phase0, case survived, subject geldar.phase0.combat_fact, validator: ok
+
+```json
+{"source_event_id":"ev_01M7VTMC5HZYZRDP4KC7BR5CNW","at":"2026-11-20T06:34:48.369084616Z","shard":"phase0","world_day":5,"world_tick":126000,"type":"combat_fact","agent_id":"ag_capa_01","payload":{"life_id":"ag_capa_01","kind":"fight_survived","mob":"zombie","encounter_key":"enc:ag_capa_01:b428b0aa-4807-4daf-8536-bd0afc5e9c3d","player":"ag_capa_01"}}
+```
+
+
 Procedure: [capture-real-payloads](../../../runbooks/capture-real-payloads.md).

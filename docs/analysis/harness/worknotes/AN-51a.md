@@ -36,3 +36,73 @@ Inert: `ContainerTakeListener` is not registered. Nothing is registered in `Geld
 - Real capture of which holders report a location and a storage type: chest, double chest, crafting table, furnace, anvil. Not yet captured. Until it is, the holder rule is by type only, unverified against a server.
 - The `onClick` argument wiring (the player check, the location check, the holder check, and the `sink`/`enabled` guard at the top of `onClick`) is not run by any unit test: a test would need a real `InventoryClickEvent`, which needs a server. It is covered only by the live capture above.
 - Index line for AN-50a: not written in this packet (not in the may-edit list).
+
+Captured 2026-11-20 at 73788889 (shard phase0). Take cases that sent a message:
+
+single chest, withdraw:
+
+Captured 2026-11-20 at 73788889, shard phase0, case chest-single, subject geldar.phase0.provenance.take, validator: ok
+
+```json
+{"world":"world","x":1314,"y":200,"z":800,"actor":"ag_capa_01","prior_owner":null,"item":"cobblestone","count":8,"tick":3982}
+```
+
+double chest (window generic_9x6 with 90 slots: 54 + 36):
+
+Captured 2026-11-20 at 73788889, shard phase0, case chest-double, subject geldar.phase0.provenance.take, validator: ok
+
+```json
+{"world":"world","x":1314,"y":200,"z":800,"actor":"ag_capa_01","prior_owner":null,"item":"cobblestone","count":8,"tick":4513}
+```
+
+shift-click (mode 1) out of a chest:
+
+Captured 2026-11-20 at 73788889, shard phase0, case chest-shift-click, subject geldar.phase0.provenance.take, validator: ok
+
+```json
+{"world":"world","x":1314,"y":200,"z":800,"actor":"ag_capa_01","prior_owner":null,"item":"cobblestone","count":8,"tick":5055}
+```
+
+number-key swap (mode 2) out of a chest:
+
+Captured 2026-11-20 at 73788889, shard phase0, case chest-number-key, subject geldar.phase0.provenance.take, validator: ok
+
+```json
+{"world":"world","x":1314,"y":200,"z":800,"actor":"ag_capa_01","prior_owner":null,"item":"cobblestone","count":8,"tick":5562}
+```
+
+furnace output (SENDS):
+
+Captured 2026-11-20 at 73788889, shard phase0, case furnace, subject geldar.phase0.provenance.take, validator: ok
+
+```json
+{"world":"world","x":1314,"y":200,"z":800,"actor":"ag_capa_01","prior_owner":null,"item":"iron_ingot","count":1,"tick":6065}
+```
+
+brewing stand output (SENDS):
+
+Captured 2026-11-20 at 73788889, shard phase0, case brewing-stand, subject geldar.phase0.provenance.take, validator: ok
+
+```json
+{"world":"world","x":1314,"y":200,"z":800,"actor":"ag_capa_01","prior_owner":null,"item":"potion","count":1,"tick":6606}
+```
+
+Send-nothing cases (no file written, validator `take=0` pass): crafting-table (window minecraft:crafting, 46 slots), enchanting-table (window minecraft:enchantment, 38 slots), player-2x2 (own inventory, 46 slots).
+
+anvil: NOT CAPTURED. The case failed INVALID before any take, twice (the first run and one `--clean` rerun, same message): `anvil: Error: anvil: no stick named "capture" in the inventory after the rename (INVALID)`. The `anvil` folder is empty, so its `take=0` validator row is vacuous. Script defect, reported, not fixed.
+
+Holder table (what each capture shows; storage type is not in the payload, the window kind is what the script read):
+
+| holder | location in message | storage type in message | sent a take | window seen by the script |
+|---|---|---|---|---|
+| chest, single | yes (1314,200,800) | no | yes, cobblestone x8 | generic_9x6 |
+| chest, double | yes (1314,200,800) | no | yes, cobblestone x8 | generic_9x6, 90 slots |
+| chest, shift-click | yes (1314,200,800) | no | yes, cobblestone x8 | generic_9x6 |
+| chest, number-key | yes (1314,200,800) | no | yes, cobblestone x8 | generic_9x6 |
+| furnace | yes (1314,200,800) | no | yes, iron_ingot x1 | not logged |
+| brewing stand | yes (1314,200,800) | no | yes, potion x1 | not logged |
+| crafting table | no message | - | no | minecraft:crafting, 46 slots |
+| anvil | not captured (INVALID) | - | not run | minecraft:anvil, 39 slots |
+| enchanting table | no message | - | no | minecraft:enchantment, 38 slots |
+| player 2x2 | no message | - | no | own inventory, 46 slots |
+
