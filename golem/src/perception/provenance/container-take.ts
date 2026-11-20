@@ -6,7 +6,11 @@
  * nothing. Paper-only in behaviour; do not enable on NeoForge until the human-handling question is
  * decided.
  */
-import type { ObservationPayload, Provenance } from '@geldar/contract';
+import {
+  type ObservationPayload,
+  type Provenance,
+  validateObservationPayload,
+} from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { canSeeBlock } from '../notable-blocks.ts';
@@ -22,6 +26,11 @@ export type TakeProvenance = Exclude<Provenance, { kind: string }>;
 const CONTAINER_NAMES = new Set(['chest', 'trapped_chest', 'barrel']);
 const ITEM = /^[a-z0-9_]+$/;
 const TAKE_KEY_LIMIT = 256;
+/** The contract's bounds (WorldCoord, the observation count and ItemName), checked before any lookup. */
+const MAX_COORD = 30_000_000;
+const MAX_Y = 2048;
+const MAX_COUNT = 2304;
+const MAX_ITEM = 64;
 
 /**
  * Bounded memory of take keys. A key seen again is refused; past 256 keys the least recently seen is
@@ -53,16 +62,18 @@ export interface TakeContext {
   tick: number;
   /** The Body's own username. */
   self: string;
-  /** Keys already observed. Without it nothing is deduplicated. */
-  seen?: TakeKeyLru;
+  /** Keys already observed. Required: a redelivered take is observed once only if every caller passes it. */
+  seen: TakeKeyLru;
 }
 
-/** Whether the take's numbers and names are the kind a server sends (integers, a real item, a count). */
+/** Whether the take's numbers and names are the kind a server sends, inside the contract's bounds. */
 function wellFormed(msg: TakeProvenance, now: number): boolean {
   const whole = [msg.x, msg.y, msg.z, msg.tick].every((n) => Number.isInteger(n));
-  const item = typeof msg.item === 'string' && ITEM.test(msg.item);
-  const count = Number.isInteger(msg.count) && msg.count > 0;
-  return whole && msg.tick <= now && item && count;
+  const inBounds =
+    Math.abs(msg.x) <= MAX_COORD && Math.abs(msg.z) <= MAX_COORD && Math.abs(msg.y) <= MAX_Y;
+  const item = typeof msg.item === 'string' && ITEM.test(msg.item) && msg.item.length <= MAX_ITEM;
+  const count = Number.isInteger(msg.count) && msg.count > 0 && msg.count <= MAX_COUNT;
+  return whole && inBounds && msg.tick >= 0 && msg.tick <= now && item && count;
 }
 
 /** Whether the block at the cell is a container the Body can see now. An unloaded or missing block is not. */
@@ -87,12 +98,15 @@ export function observeTake(msg: TakeProvenance, ctx: TakeContext): ObservationP
   if (!isSeenContainer(ctx.bot, msg.x, msg.y, msg.z)) return null;
   const actor = observedActor(ctx.bot, msg.actor ?? undefined);
   const key = `take:${msg.tick}:${msg.x}:${msg.y}:${msg.z}:${actor?.name ?? '-'}:${msg.item}`;
-  if (ctx.seen && !ctx.seen.admit(key)) return null;
-  return {
+  const payload: ObservationPayload = {
     kind: 'container_taken',
     ...(actor ? { actor } : {}),
     item: msg.item,
     count: msg.count,
     key,
   };
+  // The contract has the last word (key shape and length, count, item); a refused take takes no slot.
+  if (!validateObservationPayload(payload)) return null;
+  if (!ctx.seen.admit(key)) return null;
+  return payload;
 }
