@@ -93,7 +93,7 @@ One account, `GELDAR`. Anything not allowed is refused, a deny wins over an allo
 
 | User | Connected by (Colo) | Publish | Publish denied | Subscribe |
 |---|---|---|---|---|
-| `body` | `golem-body`, `players-host`, `admin` | `geldar.<s>.>`; JS; KV writes on `geldar-life-registry`, `geldar-checkpoints`, `geldar-body-generation`, `geldar-skins` | Kino subjects, `blockowner.changed`, `ctl.body.>`, `helper.body.>`, `state.*.level`, `body.*.hearing` | `geldar.<s>.body.>`, `blockowner.changed`, `state.*.level`, inbox |
+| `body` | `golem-body`, `players-host`, `admin` | `geldar.<s>.>`; JS; KV writes on `geldar-life-registry`, `geldar-checkpoints`, `geldar-body-generation`, `geldar-skins` | Kino subjects, `blockowner.changed`, `ctl.body.>`, `helper.body.>`, `state.*.level`, `body.*.hearing`, `geldar.<s>.provenance.>` | `geldar.<s>.body.>`, `blockowner.changed`, `state.*.level`, `geldar.<s>.provenance.>`, inbox |
 | `mind` | `animus` (profile `mind`) | Its nine event types; `geldar.<s>.body.>`; JS | `body.*.hearing` | inbox |
 | `mcp` | `geldar-mcp` | `sovereign_call`; `geldar.<s>.body.>`; KV `geldar-presence`; JS | `body.*.hearing` | inbox |
 | `eventsink` | `eventsink` | `dlq`; `state.>`; JS | none | `state.*.proficiency`, inbox |

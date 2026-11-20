@@ -35,7 +35,7 @@ public final class BlockOwnerSetup implements AutoCloseable {
     private final PlacementRecorder placements;
     private final OwnerSource source;
     private volatile boolean enabled = true;
-    private volatile boolean provenance;
+    private final ProvenanceGate gate = new ProvenanceGate();
 
     private BlockOwnerSetup(ExecutorService lookups, NatsBlockOwnerLink link, OwnerQueryService service,
             LookupDebugLog debug, PlacementRecorder placements, OwnerSource source) {
@@ -86,9 +86,9 @@ public final class BlockOwnerSetup implements AutoCloseable {
         BlockOwnerResponder responder = new BlockOwnerResponder(service, link, () -> setup.enabled);
         link.start(responder::receive);
         plugin.getServer().getPluginManager().registerEvents(new BlockChangeListener(cache, publisher,
-                () -> setup.enabled, link, () -> setup.enabled && setup.provenance, Bukkit::getCurrentTick), plugin);
+                () -> setup.enabled, link, setup.gate::on, Bukkit::getCurrentTick), plugin);
         plugin.getServer().getPluginManager().registerEvents(new PickupProvenanceListener(link,
-                () -> setup.enabled && setup.provenance, Bukkit::getCurrentTick, Bukkit::getPlayer), plugin);
+                setup.gate::on, Bukkit::getCurrentTick, Bukkit::getPlayer), plugin);
         plugin.getServer().getScheduler().runTaskTimer(plugin, publisher::flush, 1L, 1L);
         setup.reload(plugin.getConfig());
         return setup;
@@ -96,7 +96,7 @@ public final class BlockOwnerSetup implements AutoCloseable {
 
     /** Applies {@code blockowner.*} and {@code provenance.enabled} from the config; the plugin calls it on the 5 s reload. */
     public void reload(FileConfiguration config) {
-        provenance = provenanceEnabled(config);
+        gate.reload(config);
         enabled = config.getBoolean("blockowner.enabled", true);
         long timeout = config.getLong("blockowner.lookup_timeout_ms", DEFAULT_TIMEOUT_MS);
         service.setTimeoutMs(Math.max(MIN_TIMEOUT_MS, Math.min(MAX_TIMEOUT_MS, timeout)));

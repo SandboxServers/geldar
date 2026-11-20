@@ -345,6 +345,7 @@ describe.skipIf(!enabled)('the NATS accounts overlay against a live nats-server'
   }, 30_000);
 
   it('provenance routing: the body subscribes and cannot publish; mind, eventsink and mcp cannot subscribe', async () => {
+    const shard = 'alpha';
     const provenance = `geldar.${shard}.provenance.>`;
     const brk = `geldar.${shard}.provenance.break`;
     // body: hears provenance (sub), and cannot forge it (the publish is denied by the deny list).
