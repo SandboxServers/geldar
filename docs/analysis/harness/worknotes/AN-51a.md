@@ -16,7 +16,7 @@ Inert: `ContainerTakeListener` is not registered. Nothing is registered in `Geld
 ## Review 1 fixes
 
 - One pending click per (actor, world, x, y, z) per tick. A second click by the same actor on the same block before the next tick adds nothing; the first click's counts and prior owner stand. A removal is counted once per actor.
-- A click is a take source only for a player clicking a located storage holder: `Container` or `DoubleChest`. Other block menus (crafting table, anvil, enchanting table, the player's own 2x2 view) are not takes. Furnace and brewing stand are `Container`s and still pass; whether their output slot should count is open.
+- A click is a take source only for a player clicking a located storage holder: `Container` or `DoubleChest`. Other block menus (crafting table, anvil, enchanting table, the player's own 2x2 view) are not takes. Furnace and brewing stand are `Container`s and still pass. Operator ruling (2026-11-19, relayed by the orchestrator): DECIDED, keep furnaces and brewing stands as containers; taking a smelted or brewed item counts as taking from an owner's container, so a furnace and a brewing stand SEND a take. No fix card.
 - `count` is clamped to 2304 (the schema maximum) in `send`.
 - The next tick checks `enabled` again: a listener switched off between the click and the tick sends nothing. Click time does not decide; settle time does.
 - `PriorOwner.of` and `BlockChangeListener.priorOwner` are two copies of one lookup; the only intended difference is the life-id filter (documented in `PriorOwner`).

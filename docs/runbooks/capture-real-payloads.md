@@ -22,7 +22,7 @@ the card's worknote, so the Body-side cards (AN-26b, AN-27b, AN-47b, AN-51b) fre
 | AN-26a | one two-player item toss: a `pickup` message | `geldar.phase0.provenance.pickup` |
 | AN-27a | one block break with CoreProtect present, one with it absent: two `break` messages | `geldar.phase0.provenance.break` |
 | AN-47a | one real kill and one survived fight: `combat_fact` events (check the `player` key) and the `engaged` message | `geldar.phase0.combat_fact`, `geldar.phase0.provenance.combat` |
-| AN-51a | container takes: single chest, double chest, shift-click, number-key swap; crafting table and furnace | `geldar.phase0.provenance.take` |
+| AN-51a | container takes: single chest, double chest, shift-click, number-key swap; furnace and brewing stand (these SEND a take); crafting table, anvil, enchanting table and the player's own 2x2 view (these send nothing) | `geldar.phase0.provenance.take` |
 
 ## Read this first: the capture cannot run on `main` today
 
@@ -139,7 +139,7 @@ and `GolemChest`, which fail it, so reusing them yields no combat or take messag
 | Kill (AN-47a) | `golem/test/live/reflex-combat.live.test.ts:190-205` kills a summoned zombie through the registry (`summonZombie`, line 20) | name is `GolemCombat`; needs a life-id name |
 | Survived fight (AN-47a) | `reflex-combat.live.test.ts:122-150` (unarmed bot flees) is the closest | the fact closes after more than 200 quiet ticks (`AN-47a.md` tick rule); script must wait that long |
 | Chest take (AN-51a) | `golem/test/live/container.live.test.ts:93-118` withdraws through `{do:'withdraw'}` | life-id name; one withdraw is not a shift-click or number-key swap |
-| Double chest, shift-click, number-key swap, crafting table, furnace | none | NEW script using `bot.clickWindow(slot, mouseButton, mode)` (shift-click mode 1, number-key mode 2) |
+| Double chest, shift-click, number-key swap, crafting table, anvil, enchanting table, 2x2 view (send nothing), furnace and brewing stand (send a take) | none | NEW script using `bot.clickWindow(slot, mouseButton, mode)` (shift-click mode 1, number-key mode 2) |
 
 Rules for the capture bots: the fixture whitelists a bot before it joins and removes it in `finally`, and registers
 it in the life registry (`golem/test/live/fixture.ts:24-80`, run-shard skill "Golem connection settings"); set
@@ -217,9 +217,9 @@ builds (`AN-47a.md`, "Deviation"). The AN-47a worknote says the schema forbids i
 optional `player` (`contract/schemas/combat-fact-event.schema.json:10`, description names AN-46). The worknote text is
 stale. Record the real keys, whether `player` is present, and whether `validateCombatFactPayload` accepts it.
 
-Furnace conflict, record both: the AN-51a worknote says a furnace is a `Container` and "still passes" the holder rule,
-and that whether its output slot counts is open (`AN-51a.md`, "Review 1 fixes"); the brief for this capture expects the
-furnace to send nothing. A furnace take that sends a `take` is a finding for the AN-51 owner, not a capture failure.
+Furnace ruling (operator, 2026-11-19, decided): a furnace and a brewing stand are containers, so taking a smelted or
+brewed item SENDS a `take`; a crafting table, anvil, enchanting table and the player's own 2x2 view send nothing. A
+case that deviates from this is a finding for the AN-51 owner, not a capture failure.
 
 ### Where to write each capture
 
