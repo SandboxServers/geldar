@@ -1,10 +1,16 @@
 import { readFileSync } from 'node:fs';
-import { provenanceBreakSubject, provenancePickupSubject } from '@geldar/contract';
+import {
+  provenanceBreakSubject,
+  provenanceCombatSubject,
+  provenancePickupSubject,
+  provenanceTakeSubject,
+} from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { describe, expect, it, vi } from 'vitest';
 import type { OwnerTransport } from '../../body/block-owners.ts';
 import type { EventPublisher } from '../../body/records-nats.ts';
+import { HIDDEN_LIFE, HIDDEN_NAME, leaksIn } from './leakage-scan.ts';
 import {
   MAX_PROVENANCE_BYTES,
   type ObservationOptions,
@@ -17,6 +23,8 @@ const BODY = 'ag_capa_01';
 const OTHER = 'ag_capb_02';
 const BREAK_SUBJECT = provenanceBreakSubject(SHARD);
 const PICKUP_SUBJECT = provenancePickupSubject(SHARD);
+const TAKE_SUBJECT = provenanceTakeSubject(SHARD);
+const COMBAT_SUBJECT = provenanceCombatSubject(SHARD);
 
 const fixture = (name: string): Record<string, unknown> =>
   JSON.parse(readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8'));
@@ -90,11 +98,16 @@ function setup(overrides: Partial<ObservationOptions> = {}) {
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 describe('startObservations', () => {
-  it('observations on: both subjects subscribed and stop unsubscribes both', () => {
+  it('observations on: all four subjects subscribed and stop unsubscribes all four', () => {
     const net = setup();
-    expect(net.subs.map((s) => s.subject)).toEqual([BREAK_SUBJECT, PICKUP_SUBJECT]);
+    expect(net.subs.map((s) => s.subject)).toEqual([
+      BREAK_SUBJECT,
+      PICKUP_SUBJECT,
+      TAKE_SUBJECT,
+      COMBAT_SUBJECT,
+    ]);
     net.sub.stop();
-    expect(net.subs.map((s) => s.unsubscribed)).toEqual([true, true]);
+    expect(net.subs.map((s) => s.unsubscribed)).toEqual([true, true, true, true]);
   });
 
   it('subscribes with a callback only: no replay option, no JetStream', () => {
@@ -329,32 +342,6 @@ describe('startObservations', () => {
     expect(unsubscribed).toEqual([BREAK_SUBJECT]);
   });
 });
-
-/** A life id and a username that must never reach a published body when the actor is out of sight. */
-const HIDDEN_LIFE = 'ag_capc_03';
-const HIDDEN_NAME = 'Hidden_Walker';
-
-/**
- * The leaks in one published observation. The payload's `key` carries the coordinates and the breaker's
- * name by design, so the coordinate scan reads the payload without it. Every other scan reads the whole
- * body, the key included: the key is lowercased, so the hidden-actor check is case-insensitive.
- */
-function leaksIn(body: string, allowedIds: string[]): string[] {
-  const event = JSON.parse(body) as { payload: Record<string, unknown> };
-  const shown = JSON.stringify({ ...event.payload, key: undefined });
-  const lower = body.toLowerCase();
-  const allowed = allowedIds.map((id) => id.toLowerCase());
-  const leaks: string[] = [];
-  if (/provenance/i.test(body)) leaks.push('provenance');
-  if (/\b\d{2,}\b\D{1,3}\b\d{2,}\b\D{1,3}\b\d{2,}\b/.test(shown)) leaks.push('coordinates');
-  for (const id of body.match(/ag_[a-z0-9_]+/g) ?? []) {
-    if (!allowed.includes(id)) leaks.push(`life id ${id}`);
-  }
-  if (lower.includes(HIDDEN_NAME.toLowerCase()) || lower.includes(HIDDEN_LIFE)) {
-    leaks.push('hidden actor');
-  }
-  return leaks;
-}
 
 describe('the leakage gate at the subscription: what a published observation carries', () => {
   it('a visible breaker is named and a hidden one is unattributed; neither leaks', async () => {

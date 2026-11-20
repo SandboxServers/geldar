@@ -1,5 +1,10 @@
 import { EventEmitter } from 'node:events';
-import { provenanceBreakSubject, provenancePickupSubject } from '@geldar/contract';
+import {
+  provenanceBreakSubject,
+  provenanceCombatSubject,
+  provenancePickupSubject,
+  provenanceTakeSubject,
+} from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { describe, expect, it, vi } from 'vitest';
@@ -19,6 +24,9 @@ vi.mock('../perception/hurt-trigger.ts', async (importOriginal) => {
 const SHARD = 'phase0';
 const BREAK = provenanceBreakSubject(SHARD);
 const PICKUP = provenancePickupSubject(SHARD);
+const TAKE = provenanceTakeSubject(SHARD);
+const COMBAT = provenanceCombatSubject(SHARD);
+const PROVENANCE = [BREAK, PICKUP, TAKE, COMBAT];
 
 const CONFIG = {
   shard: SHARD,
@@ -102,7 +110,7 @@ function fakeBot(): Bot {
 }
 
 const provenanceSubjects = (subs: Sub[]) =>
-  subs.map((s) => s.subject).filter((s) => s === BREAK || s === PICKUP);
+  subs.map((s) => s.subject).filter((s) => PROVENANCE.includes(s));
 
 describe('the observed evidence in a Body (AN-28b)', () => {
   it('observations off (absent): no provenance subscription and watchHurts gets three arguments', async () => {
@@ -133,19 +141,22 @@ describe('the observed evidence in a Body (AN-28b)', () => {
     await running.stop();
   });
 
-  it('observations on: both subjects subscribed with no replay option, watchHurts gets four arguments, and stop unsubscribes both', async () => {
+  it('observations on: all four subjects subscribed with no replay option, watchHurts gets four arguments, and stop unsubscribes both', async () => {
     vi.mocked(watchHurts).mockClear();
     const { env, subs } = envWith({ observations: true });
     const running = await startAdamBody(env, fakeBot());
-    expect(provenanceSubjects(subs)).toEqual([BREAK, PICKUP]);
-    for (const sub of subs.filter((s) => s.subject === BREAK || s.subject === PICKUP)) {
+    expect(provenanceSubjects(subs)).toEqual([BREAK, PICKUP, TAKE, COMBAT]);
+    for (const sub of subs.filter((s) => PROVENANCE.includes(s.subject))) {
       expect(Object.keys(sub.opts)).toEqual(['callback']);
     }
     expect(vi.mocked(watchHurts).mock.calls[0]).toHaveLength(4);
     await running.stop();
-    expect(
-      subs.filter((s) => s.subject === BREAK || s.subject === PICKUP).map((s) => s.unsubscribed),
-    ).toEqual([true, true]);
+    expect(subs.filter((s) => PROVENANCE.includes(s.subject)).map((s) => s.unsubscribed)).toEqual([
+      true,
+      true,
+      true,
+      true,
+    ]);
   });
 
   it('watchHurts gets this Body observed-actor function: it names the visible player and no one else', async () => {
@@ -173,9 +184,12 @@ describe('the observed evidence in a Body (AN-28b)', () => {
   it('a start that fails after the subscription unsubscribes both subjects', async () => {
     const { env, subs } = envWith({ observations: true }, true);
     await expect(startAdamBody(env, fakeBot())).rejects.toThrow('serve refused');
-    expect(provenanceSubjects(subs)).toEqual([BREAK, PICKUP]);
-    expect(
-      subs.filter((s) => s.subject === BREAK || s.subject === PICKUP).map((s) => s.unsubscribed),
-    ).toEqual([true, true]);
+    expect(provenanceSubjects(subs)).toEqual([BREAK, PICKUP, TAKE, COMBAT]);
+    expect(subs.filter((s) => PROVENANCE.includes(s.subject)).map((s) => s.unsubscribed)).toEqual([
+      true,
+      true,
+      true,
+      true,
+    ]);
   });
 });

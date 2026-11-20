@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { SimEvent } from '@geldar/mcp-mock';
+import { MIND_EVENT_TYPES } from '@geldar/player-core/src/link/mind-event.ts';
 import type { MindEvent } from '@geldar/player-core/src/ports/body.ts';
 import { describe, expect, it } from 'vitest';
 import type { MapContext } from './handlers/types.ts';
@@ -166,5 +167,78 @@ describe('the leakage gate: observed evidence reaches the player without ids, ke
     expect(leaksOf([{ type: 'property_broken', text: 'a provenance record' }])).toContain(
       'provenance',
     );
+  });
+});
+
+/*
+ * AN-50b: the two rows the Body's subscription adds to the active set. A fight names its fighter only when
+ * the fighter is visible; a take names its taker only when the taker is visible. Hidden here means the
+ * observation carries no actor at all.
+ */
+const FIGHT_VISIBLE = mind(
+  'observation',
+  { kind: 'fight_seen', actor: VISIBLE, target: 'zombie', key: 'fight:2631:ag_zack_01:zombie' },
+  2631,
+);
+const FIGHT_HIDDEN = mind(
+  'observation',
+  { kind: 'fight_seen', target: 'zombie', key: 'fight:2631:none:zombie' },
+  2631,
+);
+const TAKE_VISIBLE = mind(
+  'observation',
+  {
+    kind: 'container_taken',
+    actor: VISIBLE,
+    item: 'cobblestone',
+    count: 8,
+    key: 'take:3982:1314:200:800:ag_zack_01:cobblestone',
+  },
+  3982,
+);
+const TAKE_HIDDEN = mind(
+  'observation',
+  {
+    kind: 'container_taken',
+    item: 'cobblestone',
+    count: 8,
+    key: 'take:3982:1314:200:800:-:cobblestone',
+  },
+  3982,
+);
+
+describe('the leakage gate: fight_seen and container_taken (AN-50b)', () => {
+  it('a visible fighter and a visible taker are presented with no life id, key or coordinate', () => {
+    const { out } = presented([FIGHT_VISIBLE, TAKE_VISIBLE]);
+    expect(leaksOf(out)).toEqual([]);
+    expect(JSON.stringify(out)).not.toContain('ag_zack_01');
+  });
+
+  it('a hidden fighter and a hidden taker are presented with no actor and no hidden name', () => {
+    const { out } = presented([FIGHT_HIDDEN, TAKE_HIDDEN]);
+    expect(leaksOf(out)).toEqual([]);
+    expect(JSON.stringify(out)).not.toContain(HIDDEN_NAME);
+    expect(JSON.stringify(out)).not.toContain('"actor"');
+  });
+
+  it('an injected life field on a container_taken is reported as a leak', () => {
+    const leaky = { type: 'container_taken', actor: { name: 'Zack', life: 'ag_zack_01' } };
+    expect(leaksOf([leaky])).toContain('life id');
+  });
+
+  it('an injected key on a fight_seen is reported as a leak', () => {
+    expect(leaksOf([{ type: 'fight_seen', key: 'fight:2631:ag_zack_01:zombie' }])).toContain('key');
+  });
+
+  it('a raw provenance record and a combat_fact never reach the agent', () => {
+    expect(MIND_EVENT_TYPES).not.toContain('combat_fact');
+    expect(MIND_EVENT_TYPES.some((type) => type.includes('provenance'))).toBe(false);
+    const raw = [
+      mind('provenance.break', { kind: 'break', world: 'world', x: 1313, y: 200, z: 800 }, 411),
+      mind('combat_fact', { kind: 'engaged', actor: 'ag_zack_01', target: 'zombie' }, 1200),
+    ];
+    const { sim, out } = presented(raw);
+    expect(sim).toEqual([]);
+    expect(out).toEqual([]);
   });
 });
