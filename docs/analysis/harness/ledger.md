@@ -1,10 +1,10 @@
 # Card ledger (generated)
 
-Regenerated 2026-11-18 against geldar `origin/main` = `a8063b0a` and kit `origin/scriptorium/hw0` = `673d756`, from the card files, the merge commits on main, [sheet-cards-verification-2026-11-18.md](sheet-cards-verification-2026-11-18.md) (verdicts) and the operator rulings 0320 to 0328 of 2026-11-18. It replaces the 2026-11-14 list, which predated the sheet card files. The README ledger summarises these; this file is the exact list. Regenerate it after any card edit.
+Regenerated 2026-11-20 against geldar `origin/main` = `0e0d795e` (merge of #827). The geldar rows come from the merged PRs (`gh pr list --state merged`, `git log --first-parent`), the worknotes in [worknotes/](worknotes/), the card files and the origin branches. Kit rows (HC-nn) are carried unchanged from the 2026-11-18 regeneration (kit `origin/scriptorium/hw0` = `673d756`, not re-checked on 2026-11-20: unverified). The 2026-11-18 inputs were [sheet-cards-verification-2026-11-18.md](sheet-cards-verification-2026-11-18.md) (verdicts) and the operator rulings 0320 to 0328. The README ledger summarises these; this file is the exact list. Regenerate it after any card edit.
 
 File column: `geldar A` / `geldar C` / `kit A` / `kit B` / `kit C` / `extra` are the 2026-11-14 card files in this folder; `sheet W3-W5`, `sheet W6-W8`, `sheet W9-W12`, `sheet NF` are `work-packets-sheet-*.md`; `kit-b (kit repo)` is `docs/analysis/harness/work-packets-kit-b.md` in `geldar-scriptorium`, authoritative for HC-19 to HC-26c (0320).
 
-Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged on the kit's `scriptorium/hw0`; `Ready` the card can be dispatched once the global fixes G1 to G13 are in its brief; `FixNeeded` the card must be corrected first (reason given); `Writing` written, not yet verified; `BlockedDependency` / `BlockedDecision` not dispatchable (reason given); `Retired (NNNN)` will not be built, by that decision; `Inactive (NNNN)` not dispatched this campaign, feature stays off, by that decision; `Deferred to v2 (NNNN Qn)` kept in full, not dispatched in v1, revisited for v2, by that answer; `Superseded by X` replaced by another card; `Kit-owned` tracked in the kit's own ledger. Every merged sheet card is inactive by default, and every feature is held on the live server (2026-11-15 ruling).
+Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged on the kit's `scriptorium/hw0`; `Ready` the card can be dispatched once the global fixes G1 to G13 are in its brief; `FixNeeded` the card must be corrected first (reason given); `Writing` written, not yet verified; `BlockedDependency` / `BlockedDecision` not dispatchable (reason given); `Retired (NNNN)` will not be built, by that decision; `Inactive (NNNN)` not dispatched this campaign, feature stays off, by that decision; `Deferred to v2 (NNNN Qn)` kept in full, not dispatched in v1, revisited for v2, by that answer; `Queued` not started, waiting its place in a strict serial chain; `In revival` work exists on a branch with no PR and is being resumed; `Held` finished or nearly so but not dispatchable until the operator approves wording; `Superseded by X` replaced by another card; `Kit-owned` tracked in the kit's own ledger. Every merged sheet card is inactive by default, and every feature is held on the live server (2026-11-15 ruling).
 
 | Card | Title | File | Depends on | Size | Status |
 |---|---|---|---|---|---|
@@ -37,7 +37,7 @@ Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged o
 | GX-01a | the harness and model stamp, contract, SQL column and sink write | geldar A | HC-04, P0 | 35k | Done (#353) |
 | GX-01b | the Body stamps its events | geldar A | GX-01a | 40k | Done (#427) |
 | GX-01c | the MCP stamps `sovereign_call`; the operator sets the declared model | geldar A | GX-01a | 40k | Done (#437) |
-| GX-02 | release the `psyche/` engine so the kit can mirror it (tag `psyche-v1.0.0`) | geldar A | AN-03b | 30k | Done (#413); `psyche-v1.1.0` approved (0325), not pushed |
+| GX-02 | release the `psyche/` engine so the kit can mirror it (tag `psyche-v1.0.0`) | geldar A | AN-03b | 30k | Done (#413); `psyche-v1.1.0` is on origin (tag object `f4ecf342`, commit `194680f6`; `psyche/` identical to the #458 merge `4cff991d`, checked 2026-11-20) |
 | GX-03 | operator read of an owner's own life sheet (for the kit's launcher) | geldar C | AN-04, AN-05 | about 45k | Writing |
 | GX-04a | move the `animus/` pieces the live player path imports to `player-core/` | extra | none | about 45k | Done (#347) |
 | GX-05a | turn record schema | turn-record | none | | Done (#452) |
@@ -84,15 +84,15 @@ Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged o
 | HC-26c | supervisor-side sheet reading; the model never sees it | kit-b (kit repo) | HC-26b, HC-19 | 35k | Writing (re-verify) |
 | HC-33 | promises and due wakes (question card) | sheet W3-W5 (kit C copy is history) | none | 15k | Ready (docs only; D-HC-06 deferred) |
 | HC-46 | kit observation carries positions and ids (`observe.ts` and the world output it parses), per 0324 | new card (being written; title to confirm) | HC-18 | | Writing |
-| AN-24 | observed-actor contract | sheet W5 | AN-12, contract slot 1 | 40k | Ready (OD-E text ships unused) |
-| AN-25 | visible attacker identity | sheet W5 | AN-24 | 40k | Ready (A5, A6, A7 on hold with 0329; do not fold them in) |
-| AN-26a | pickup provenance in the plugin | sheet W5 | AN-24, AN-27a | 40k | FixNeeded (test location; Paper API lines; A2) |
-| AN-26b | observed gift in the recipient's Body | sheet W5 | AN-24, AN-25, AN-26a | 40k | Ready |
-| AN-27a | break provenance in the plugin | sheet W5 | AN-24 | 40k | FixNeeded (core-common paths, two Gradle tasks; A1, A2, A4) |
-| AN-27b | observed property break in the owner's Body | sheet W5 | AN-24, AN-25, AN-27a | 35k | Ready |
-| AN-28a | delivery path to the player log | sheet W5 | AN-24, AN-25 | 45k | FixNeeded (`player-core` paths; OD-D moot) |
-| AN-28b | Body subscription and leakage gate (split) | sheet W5 | AN-25, AN-26b, AN-27b, AN-28a | 50k plus ops | FixNeeded (split from AN-28c; G9) |
-| AN-28c | plugin setup, `geldar.ps1` NATS rows, nats-auth tests (split from AN-28b) | sheet W5 | AN-28b | | FixNeeded (split card to write) |
+| AN-24 | observed-actor contract | sheet W5 | AN-12, contract slot 1 | 40k | Done (#782) |
+| AN-25 | visible attacker identity | sheet W5 | AN-24 | 40k | Done (#797) |
+| AN-26a | pickup provenance in the plugin | sheet W5 | AN-24, AN-27a | 40k | Done (#798; real toss capture 2026-11-20, #823) |
+| AN-26b | observed gift in the recipient's Body | sheet W5 | AN-24, AN-25, AN-26a | 40k | Done (#825; built from the real toss capture) |
+| AN-27a | break provenance in the plugin | sheet W5 | AN-24 | 40k | Done (#781; real break captures with CoreProtect present and absent, 2026-11-20, #823) |
+| AN-27b | observed property break in the owner's Body | sheet W5 | AN-24, AN-25, AN-27a | 35k | In revival: branch `phase1/an-27b-break-observation`, tip `d0f39ddc` (feat `68b49717`, review tests `d0f39ddc`), no PR; first link of the serial chain AN-27b, AN-28b, AN-47c, AN-50b |
+| AN-28a | delivery path to the player log | sheet W5 | AN-24, AN-25 | 45k | Done (#809) |
+| AN-28b | Body subscription and leakage gate (split) | sheet W5 | AN-25, AN-26b, AN-27b, AN-28a | 50k plus ops | Queued, strict serial chain after AN-27b (the earlier `FixNeeded (G9)` is stale; the card in `work-packets-sheet-w3-w5.md` is current) |
+| AN-28c | plugin setup, `geldar.ps1` NATS rows, nats-auth tests (split from AN-28b) | sheet W5 | AN-28b | | Done (#817; follow-ups #818; guard redo v2 #819, which supersedes the first guard branch). Merged before AN-28b, so the depends-on order on the card was not enforced |
 | HC-27a | social model rules, update arithmetic and store | sheet W6-W8 (supersedes kit C) | HC-18, HC-17b | 30k | Ready |
 | HC-27b | observations: scope, dedup, sampling and apply | sheet W6-W8 (supersedes kit C) | HC-27a, AN-28a, HC-46 | 38k | FixNeeded (read the 0324 id and position fields; W5 merged) |
 | HC-28a | prediction by interpolation and exact branches | sheet W6-W8 (supersedes kit C) | HC-27a, HC-17b | 28k | Ready |
@@ -101,20 +101,25 @@ Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged o
 | HC-30a | W6 integration, inactive | sheet W6-W8 (supersedes kit C) | HC-27b, HC-28b, HC-29, HC-24, HC-19 | 38k | FixNeeded (S-INSTINCT names) |
 | HC-30b | W6 wave close (docs) | sheet W6-W8 (supersedes kit C) | HC-30a | 20k | BlockedDependency |
 | HC-27c | kit reader for `fight_seen` and `container_taken` | sheet W6-W8 | HC-27b, AN-46 | 18k | Ready (after deps) |
-| AN-44 | program shapes and the body-api contract change | sheet W6-W8 | W5 contract merged, contract slot 2 | 40-50k | Ready |
-| AN-39 | explore program | sheet W6-W8 | AN-44 (merge order) | 45-50k | Ready |
-| AN-40 | farm program | sheet W6-W8 | AN-44 (merge order) | 45-50k | FixNeeded (six import paths) |
-| AN-41 | patrol program | sheet W6-W8 | AN-44 (merge order) | 35-45k | Ready |
-| AN-45a, AN-45b | register the programs, drift test, body-api v11 (split) | sheet W6-W8 | AN-39, AN-40, AN-41, AN-44, AN-28b | 45-50k plus ops | FixNeeded (v11 not v10; pin v1 to v10; real default-version source; split) |
+| AN-44 | program shapes and the body-api contract change | sheet W6-W8 | W5 contract merged, contract slot 2 | 40-50k | Done (#788) |
+| AN-39 | explore program | sheet W6-W8 | AN-44 (merge order) | 45-50k | Done (#789; inert, unregistered) |
+| AN-40 | farm program | sheet W6-W8 | AN-44 (merge order) | 45-50k | Done (#791; inert, unregistered) |
+| AN-41 | patrol program | sheet W6-W8 | AN-44 (merge order) | 35-45k | Done (#790; inert, unregistered) |
+| AN-40a | a program mines one exact cell (mineAt; decision 0349; no contract slot) | sheet W6-W8 | none | | Done (#783; card #785) |
+| AN-45a, AN-45b | register the programs, drift test, body-api v11 (split) | sheet W6-W8 | AN-39, AN-40, AN-41, AN-44, AN-28b | 45-50k plus ops | Held: operator approval of the `INTENT_WHY` sentences is pending (note #787); deps AN-39, AN-40, AN-41, AN-44 merged, AN-28b not. The old FixNeeded list (v11 not v10, pin v1, default-version source, split) was applied to the card per the W6-W8 file, which now reads READY after deps; unverified here |
 | HC-31 | idle binding for explore, farm and patrol | sheet W6-W8 (supersedes kit C) | HC-21a, AN-44, AN-45 | 25k | BlockedDependency |
-| AN-46 | evidence-source contract | sheet W6-W8 | AN-45 (contract order), AN-24, contract slot 3 | 40-50k | Ready (sentences ship unselected) |
-| AN-47a | combat facts in the plugin | sheet W6-W8 | AN-46, AN-27a | 45-50k | FixNeeded (`EventSchemaCheck` testFixture; `getKiller`; A2, A3) |
-| AN-47b | combat award normaliser and visible-fight observation | sheet W6-W8 | AN-46, AN-47a, AN-25, AN-09a | 45-50k | FixNeeded (0321 shared encounter key; `eventsink/src/xp/`) |
-| AN-49 | conversation exchange and social award keys | sheet W6-W8 | AN-46, AN-09a | 40-50k | FixNeeded (`eventsink/src/xp/exchange.ts`, `XpAward`) |
-| AN-51a | container-taking facts in the plugin | sheet W6-W8 | AN-46, AN-27a | 35-45k | FixNeeded (Paper inventory API; A2, A4) |
-| AN-51b | observed container taking in the owner's Body | sheet W6-W8 | AN-46, AN-51a, AN-25 | 30-40k | Ready (after deps) |
-| AN-50a, AN-50b | evidence integration and leakage gate (split: sink `case` arms and plugin setup; Body and presenter) | sheet W6-W8 | AN-47b, AN-49, AN-51b, AN-28b, AN-28c | 45-50k plus ops | FixNeeded (register in `xp/awards.ts`; split) |
-| S9-00 | erasure gate: every life-keyed table is erased | sheet W9-W12 | turn_records erase fix | 20k | FixNeeded (0323: check both erase functions; `turn_records` gap) |
+| AN-46 | evidence-source contract | sheet W6-W8 | AN-45 (contract order), AN-24, contract slot 3 | 40-50k | Done (#792) |
+| AN-46b | optional player on the combat-fact event (follow-up to AN-46) | sheet W6-W8 | AN-46 | | Done (#801) |
+| AN-47a | combat facts in the plugin | sheet W6-W8 | AN-46, AN-27a | 45-50k | Done (#799, #802, #804; real `combat_fact` captures 2026-11-20, #823) |
+| AN-47b | combat award normaliser (0321 shared encounter key; the visible-fight half is AN-47c) | sheet W6-W8 | AN-46, AN-47a, AN-25, AN-09a | 45-50k | Done (#814; its worknote still lists a real-payload capture as owed, and whether the fixtures were refreshed from the #823 captures is unverified) |
+| AN-47c | visible-fight observation in the Body (ight_seen) | sheet W6-W8 | AN-46, AN-25, AN-28b (subject helpers) | | Queued, strict serial chain after AN-28b |
+| AN-49 | conversation exchange and social award keys | sheet W6-W8 | AN-46, AN-09a | 40-50k | Done (#800) |
+| AN-51a | container-taking facts in the plugin | sheet W6-W8 | AN-46, AN-27a | 35-45k | Done (#810; captures #823, anvil and enchanting-table re-run #826) |
+| AN-51b | observed container taking in the owner's Body | sheet W6-W8 | AN-46, AN-51a, AN-25 | 30-40k | Done (#811) |
+| AN-50a | evidence registration: sink case arms and plugin registration behind the default-off gate | sheet W6-W8 | AN-47b, AN-49, AN-51a, AN-28c | 45-50k plus ops | Done (#820; combat and container-take provenance registered, combat_fact awards, inert) |
+| AN-50b | Body subscription and leakage gate for the evidence observations | sheet W6-W8 | AN-50a, AN-47c, AN-51b, AN-28b | 45-50k plus ops | Queued, last link of the serial chain AN-27b, AN-28b, AN-47c, AN-50b |
+| S9-00a | 	urn_records joins the account-deletion path (SQL 0053; 0323) | sheet W9-W12 | none | | Done (#778) |
+| S9-00 | erasure gate: every life-keyed table is erased | sheet W9-W12 | turn_records erase fix | 20k | Ready (S9-00a merged in #778; no gate PR on main as of 2026-11-20) |
 | S9-01 | refusal reason code and decision key | sheet W9-W12 | | 35k | Retired (0326) |
 | S9-02a, S9-02b | the property-refusal hook | sheet W9-W12 | | 50k | Retired (0326) |
 | S9-03 | bind the hook behind `morality_hooks` | sheet W9-W12 | | 35k | Retired (0326) |
@@ -136,8 +141,8 @@ Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged o
 | HC-39 | campaign close (kit) | kit C | every other card | about 25k | Writing |
 | S12-01 | exporter role and world exporter (SQL 0056) | sheet W9-W12 | AN-04b (S11-02 dropped by 0327) | 50k | FixNeeded (dependency; split role/SQL from exporter) |
 | S12-02 | cohort metrics core | sheet W9-W12 | S12-01 | 50k | BlockedDependency |
-| S12-03 | control equivalence proof (all-3 equals today's bot) | sheet W9-W12 | AN-12 | 35k | Ready |
-| S12-04a | roster conversion: loader and dry run | sheet W9-W12 | AN-05, AN-04b | | Ready (after split; `cli.ts` 545 lines, verb in its own module) |
+| S12-03 | control equivalence proof (all-3 equals today's bot) | sheet W9-W12 | AN-12 | 35k | Done (#780; silent record when no roll was drawn, S12-03b #795) |
+| S12-04a | roster conversion: loader and dry run | sheet W9-W12 | AN-05, AN-04b | | Done (#786; dry-run plan, inactive) |
 | S12-04b | roster conversion: write (SQL 0057), all-3 only | sheet W9-W12 | S12-04a | | BlockedDecision (held-live ruling; 0328) |
 | HC-45 | per-player sheet and instinct switch, staged enable, rollback | sheet W9-W12 | HC-19, HC-26 | 35k | FixNeeded (no exact file named) |
 | S12-05 | staged enable per ranger and rollback | sheet W9-W12 | S12-03, S12-04, HC-45 | 30k docs | BlockedDecision (OD-11; per-ranger approval, 0328) |
@@ -151,6 +156,10 @@ Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged o
 | AN-NF-47a | combat facts on NeoForge (killing-blow credit, 0329 NF-4; no combat provenance) | sheet NF | AN-NF-00, AN-46, AN-47a with A3, P3-LIVE, P4 | 40k | BlockedDependency (AN-46, AN-47a; P3-LIVE, P4) | **Operator revision pending (2026-11-18): NF-1..NF-6 as recorded do not match the operator's intent. Intended model: humans act as an invisible hand; agents perceive the effects as acts of nature, not named people. Do not build from these rulings.** |
 | AN-NF-51a | container-take provenance on NeoForge | sheet NF | none | | Dropped (0329 NF-3: container-taking inactive on NeoForge) | **Operator revision pending (2026-11-18): NF-1..NF-6 as recorded do not match the operator's intent. Intended model: humans act as an invisible hand; agents perceive the effects as acts of nature, not named people. Do not build from these rulings.** |
 | AN-NF-50 | W8 wiring on NeoForge (combat facts) | sheet NF | AN-NF-47a, AN-NF-00, P3-LIVE, P4 | 25k | BlockedDependency (AN-NF-47a; P3-LIVE, P4) | **Operator revision pending (2026-11-18): NF-1..NF-6 as recorded do not match the operator's intent. Intended model: humans act as an invisible hand; agents perceive the effects as acts of nature, not named people. Do not build from these rulings.** |
+| CS-0 | contract public-surface golden test before the index.ts split | contract-index-split-plan | none | | Done (#805) |
+| CS-1 | split contract/src/index.ts into nine domain files (pure move) | contract-index-split-plan | CS-0 | | Done (#813; rule 9 note #812) |
+| CS-2 | split contract/test/mcp-world.test.ts into drift tests and fixtures | contract-index-split-plan | CS-0 | | Done (#806) |
+| CAP-1 to CAP-5 | provenance capture workstream: capture tool, scratch-shard script and run sheet, ops runs, fresh-session wipe | worknotes CAP-1, CAP-2; runbook capture-real-payloads | AN-26a, AN-27a, AN-47a, AN-51a | | Done (PRs #821, #822, #824, #827; evidence #823, #826). The CAP-n split by PR is not recorded in the worknotes: unverified |
 | NF-CHAT-0 | guard narrowing: chat event names in `HearingChat.java` only | NF chat plan (NeoForge campaign) | a decision record | | BlockedDecision (record not written) |
 | NF-CHAT-1 | `HearingJudge` over `ChatHearing` | NF chat plan (NeoForge campaign) | none | | Ready (NeoForge campaign's to dispatch) |
 | NF-CHAT-S | delivery spike, scratch shard | NF chat plan (NeoForge campaign) | NF-CHAT-0, NF-CHAT-1 | ops | BlockedDependency |
@@ -159,4 +168,6 @@ Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged o
 
 Work merged without a card id: the state-subject NATS ACL (#394), the step-0 test-shard driver (#519), the nats-auth test split (#534), the card files (#457, #463, #464).
 
-Cards needed and not yet written: the `turn_records` erase fix (0323; S9-00 waits for it); the kit psyche re-mirror to 1.1.0 (G13; after the `psyche-v1.1.0` tag, 0325); the NeoForge Body halves of AN-28b and AN-50 (wait for NF-BODY).
+Cards needed and not yet written: the NeoForge Body halves of AN-28b and AN-50 (wait for NF-BODY). The `turn_records` erase fix is written and merged (S9-00a, #778; S9-00 is now Ready). The kit psyche re-mirror to 1.1.0 (G13, card HC-48) is unblocked: the `psyche-v1.1.0` tag is on origin; its kit-side state was not checked.
+
+Open flags (2026-11-20): (1) 0325 approved the tag on the #458 merge `4cff991d`; the tag on origin points at `194680f6` (the #764 merge). `psyche/` is identical between the two, so the content is the same; the record and the tag differ only in commit. (2) Decision 0390 (NeoForge hybrid human model) is Proposed and, if accepted, supersedes 0329; the NF rows keep their operator-revision flag until then. (3) Held-live ruling of 2026-11-15 still applies: every merged card above is inert, with no Colo apply, no plugin jar and no NATS conf change.
