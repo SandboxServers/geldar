@@ -19,6 +19,7 @@ import { assertLoopbackNatsUrl, openRestartKv } from '../body/restart.ts';
 import { startProficiency } from '../character/proficiency-host.ts';
 import { loadStackConfig, readRconPassword, repoRoot } from '../config.ts';
 import { ConnectionManager } from '../connection.ts';
+import { type GolemTelemetry, startGolemTelemetry } from '../metrics.ts';
 import { natsRequestServer } from '../mind-link/server.ts';
 import { golemNatsAuth } from '../nats-credentials.ts';
 import { RconClient } from '../rcon.ts';
@@ -51,6 +52,19 @@ export function playerIdFromArgs(argv: string[]): string {
 const jsonLog = (line: Record<string, unknown>): void => {
   console.log(JSON.stringify({ at: new Date().toISOString(), ...line }));
 };
+
+/**
+ * The player host's Body metrics (decision 0088). Pushes only when `GELDAR_TELEMETRY_URL` is set; unset,
+ * it starts no timer and makes no request, and the Body still records in memory. Labels stay aggregate:
+ * no life and no player id reaches a metric.
+ */
+export function startPlayerTelemetry(
+  env: Record<string, string | undefined>,
+  log: (line: Record<string, unknown>) => void,
+  options: { fetch?: typeof fetch; intervalMs?: number; timeoutMs?: number } = {},
+): GolemTelemetry {
+  return startGolemTelemetry(env, { service: 'geldar-golem-player', log, ...options });
+}
 
 /** The values of one life's presence key: the record text, or null for a deletion or purge. */
 async function* presenceEntries(kv: KV, lifeId: string): AsyncGenerator<string | null> {
@@ -106,6 +120,7 @@ export async function runPlayer(
     await nc.close();
     throw error;
   }
+  const telemetry = startPlayerTelemetry(env, log);
   const bodyEnv = playerBodyEnv({
     proficiency,
     config,
@@ -114,6 +129,7 @@ export async function runPlayer(
     nc,
     server,
     log: (line) => log({ event: 'body', line }),
+    metrics: telemetry.metrics,
   });
   const serve =
     extraServe ??
@@ -169,6 +185,7 @@ export async function runPlayer(
   // The watch has ended, so no `up` is in progress: stop the Body, then the connections.
   await session.down();
   proficiency?.stop();
+  await telemetry.stop();
   await restartKv.close();
   await nc.close();
   log({ event: 'player_stopped' });

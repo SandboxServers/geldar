@@ -9,6 +9,7 @@ import type { connectNats } from '@geldar/contract/nats';
 import type { Bot } from 'mineflayer';
 import { type AdamBodyEnv, type RunningAdamBody, startAdamBody } from '../adam/adam-body.ts';
 import { serveBooks } from '../books/book-server.ts';
+import type { GolemMetrics } from '../metrics.ts';
 import type { RequestServer } from '../mind-link/server.ts';
 import { installFatalHandlers } from '../process-fatal.ts';
 
@@ -77,6 +78,8 @@ export function playerBodyEnv(input: {
   server: AdamBodyEnv['server'];
   log: AdamBodyEnv['log'];
   proficiency?: AdamBodyEnv['proficiency'];
+  /** The host's Body metrics (`startPlayerTelemetry`); absent means the Body records nothing. */
+  metrics?: GolemMetrics;
 }): AdamBodyEnv {
   return {
     config: input.config,
@@ -87,6 +90,7 @@ export function playerBodyEnv(input: {
     owners: input.nc,
     log: input.log,
     ...(input.proficiency === undefined ? {} : { proficiency: input.proficiency }),
+    ...(input.metrics === undefined ? {} : { metrics: input.metrics }),
   };
 }
 
