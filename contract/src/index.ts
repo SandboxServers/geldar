@@ -1,6 +1,7 @@
 /**
  * Public surface of @geldar/contract: the generated types and one typed validator
- * per schema. Each packet fills only its own marked block below.
+ * per schema. Re-exports each domain file; a card adds its exports to its own domain
+ * file (or a new domain file) and adds at most one `export * from` line here.
  */
 
 export { MARKER_WORD, markedWords } from './agent-text.ts';
@@ -22,7 +23,6 @@ export type {
   ProgramChunk,
   Snapshot,
 } from './generated/types.ts';
-// --- SC-30a mcp ---
 export * from './mcp.ts';
 export * from './mind-channel.ts';
 export * from './perception-events.ts';

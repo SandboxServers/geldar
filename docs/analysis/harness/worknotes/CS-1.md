@@ -44,10 +44,15 @@ No name was renamed. No file under `contract/src/generated`, no schema, no test,
    `core-records.ts`, as the WorldEvent type belongs to P0-03. The evidence, observation, heard-sound
    and heard-muffled re-exports moved to `perception-events.ts`.
 5. Lint-fix commit (`289eae7a`, a separate subject): biome organize-imports on `contract/src` (import and
-   export order only) plus the two unused imports above. No behaviour change.
-6. Header comment of `index.ts` still says "Each packet fills only its own marked block below". That is
-   now stale (there are no marked blocks). Not changed here; a follow-up can rewrite it to "re-exports
-   each domain file".
+   export order) plus the two unused imports above. It also merged the heard-muffled export into the shared
+   `./generated/validators.js` export in `perception-events.ts`, and stacked the two heard comments on it. The
+   fix-1 commit puts the heard-muffled comment back on its own name inside that export. A separate
+   `export { validateHeardMuffledPayload } from ...` line cannot pass `biome ci`: its organize-imports merges
+   same-source exports and sorts names. No behaviour change.
+6. Header comment of `index.ts` still said "Each packet fills only its own marked block below", which was stale
+   (there are no marked blocks). The fix-1 commit rewrote it to state the rule: a card adds its exports to its
+   own domain file (or a new domain file) and adds at most one `export * from` line here. The leftover
+   `// --- SC-30a mcp ---` marker above `export * from './mcp.ts'` is removed.
 7. Commits: one per domain file as the brief asked, plus the lint-fix commit. Not squashed.
 
 ## Commits
