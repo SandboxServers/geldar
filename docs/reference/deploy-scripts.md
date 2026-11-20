@@ -225,11 +225,14 @@ Installs, switches and removes the public sites (`map`, `glass`, `mcp`) in the s
 
 ## gen-secrets.sh
 
-- **Invocation:** `sudo sh deploy/gen-secrets.sh` on the node, or run as the `GELDAR_SERVICE_UID` account (lines 4 to 5, 25 to 27).
-- **What it does:** creates the secrets directory with mode 0700 and each missing file in its `GENERATED` list (ten files: Postgres, RCON, Velocity forwarding, Body NATS, the MCP, Glass and register Postgres roles, the register and MCP token peppers, the register session key; line 13) with 32 random bytes as hex. Never overwrites (`set -C`), never prints a value. As root it gives the directory and the created files to `GELDAR_SERVICE_UID`.
-- **Never creates:** any NATS file other than the Body password, `nats-auth.conf`, or the owner-provided Microsoft client secret for the register service (lines 6 to 12). The NATS files come from `./geldar.ps1 shard nats-auth <shard>` on a trusted machine.
-- **Exit:** 1 on a uid refusal or a failed create.
-- **Tests:** `deploy/test/colo-deploy.test.ts`, `colo-deploy-secrets.test.ts`.
+- **Invocation:** `sudo sh deploy/gen-secrets.sh` on the node, or run as the `GELDAR_SERVICE_UID` account. `GELDAR_SECRETS_LIST` names another list; the default is `deploy/genesis/secret-names.list`.
+- **The list:** one bare file name per line (`#` starts a comment). A name that is not a bare `*.txt` file name, a name listed twice, an empty list, and a CRLF line each stop the script before anything is created, and the message names the file and the line.
+- **What it does:** creates the secrets directory with mode 0700 and each missing file in the list (12 names by default: `postgres.txt`, `rcon.txt`, `velocity-forwarding.txt`, `nats-body.txt`, `postgres-mcp.txt`, `postgres-glass.txt`, `postgres-register.txt`, `register-pepper.txt`, `mcp-token-pepper.txt`, `register-session-key.txt`, `postgres-supervisor.txt`, `nats-supervisor.txt`) with 32 random bytes as hex. Never overwrites (`set -C`), never prints or changes a value.
+- **Owner and mode report:** prints one line per name, names only: `created: <name>`, `kept (exists): <name>`, `kept (exists), owner fixed: <name>` or `kept (exists), mode fixed to 0600: <name>` (root only), and `wrong-owner: <name>` or `wrong-mode: <name>` (any other account, which cannot change them). As root it gives the directory and the created files to `GELDAR_SERVICE_UID` and sets an existing file's owner and mode.
+- **Symlinks:** a symlink at the directory or at a listed file is refused before any stat, chown or chmod (`refusing a symlink (not followed): <name>`), so root never changes a file outside the directory.
+- **Never creates:** the owner-provided names, which a list may not name: `register-ms-secret.txt` (the Microsoft/Entra client secret, placed by the owner) and the stale `register-github-secret.txt` and `register-discord-secret.txt`. A list that names one is refused. Also any NATS file other than the Body password and `nats-supervisor.txt`, and `nats-auth.conf`: the other NATS per-role passwords are card G2-02 (decision 0080), and the NATS files come from `./geldar.ps1 shard nats-auth <shard>` on a trusted machine.
+- **Exit:** 1 on a uid refusal, a list refusal, a symlink refusal, a failed create or a wrong owner or mode that this account cannot fix (the last names the files; no value is printed or changed). 0 otherwise.
+- **Tests:** `deploy/test/gen-secrets.test.ts`, `colo-deploy-secrets.test.ts`.
 
 ## install-body-helper.sh
 

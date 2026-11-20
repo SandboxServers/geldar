@@ -41,6 +41,7 @@ deploy/compose.secrets.yml
 deploy/gen-secrets.sh
 deploy/genesis/build-config-bundle.sh
 deploy/genesis/config-bundle.list
+deploy/genesis/secret-names.list
 deploy/install-body-helper.sh
 deploy/release.env.example
 plugins/bluemap/alias-proxy/alias-proxy.ts
