@@ -1,0 +1,31 @@
+# G2 (T-09), opt-in: the NATS monitor exporter for the colo stack, merged with compose/colo.yml:
+#   docker compose -f compose/colo.yml -f compose/opt-in/colo-nats-exporter.yml up -d nats-exporter
+# It is not part of compose/colo.yml: the default colo stack runs without it. Design: docs/analysis/telemetry/collector-design.md section 11.
+# Scope: /varz and /jsz only. Do not add a flag for subsz, connz, routez, gatewayz, leafz or accstatz.
+# network_mode: service:nats, so the exporter shares the NATS network namespace and reads the monitor on 127.0.0.1:8222 there.
+# Neither this service nor the NATS monitor publishes a port. The gateway scrapes nats:7777 on geldar-colo (deploy/telemetry/gateway.yaml).
+# Starting this does not restart NATS. It needs the NATS monitor listening on 127.0.0.1:8222 inside the container, and colo.yml does not
+# enable that (the base has no monitor port). Enabling it is a separate node request. Never probe the monitor from a healthcheck.
+# UNVERIFIED for 0.20.3: the flag names (-varz, -jsz, -port) and the digest's release date (two weeks or more). Check `--help` in the pinned image.
+services:
+  nats-exporter:
+    image: natsio/prometheus-nats-exporter:0.20.3@sha256:4b8ddc1c86fec360b5cd3d5e1fbc6fb52bdafd5805bba3901cc52926538af255
+    network_mode: service:nats
+    command: ["-varz", "-jsz", "all", "-port", "7777", "http://127.0.0.1:8222"]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.1"
+          memory: "64m"
+          pids: 64
+    memswap_limit: "64m"
+    pids_limit: 64
+    labels:
+      com.centurylinklabs.watchtower.enable: "false"
+      com.geldar.stack: colo
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    restart: unless-stopped
