@@ -848,6 +848,8 @@ dev/geldar/core/blockowner/BlockOwnerResponder$Reply.class
 dev/geldar/core/blockowner/BlockOwnerResponder.class
 dev/geldar/core/blockowner/BlockOwnerSetup.class
 dev/geldar/core/blockowner/ChunkLookupCall.class
+dev/geldar/core/blockowner/ContainerTakeListener$Pending.class
+dev/geldar/core/blockowner/ContainerTakeListener.class
 dev/geldar/core/blockowner/CoreProtectApi.class
 dev/geldar/core/blockowner/CoreProtectOwnerSource.class
 dev/geldar/core/blockowner/CoreProtectPort$LogRow.class
@@ -917,7 +919,9 @@ dev/geldar/core/maintenance/MaintenanceNotice.class
 dev/geldar/core/maintenance/MaintenanceNotices.class
 dev/geldar/core/maintenance/MaintenanceSetup.class
 dev/geldar/core/maintenance/NatsMaintenanceSubscriber.class
+dev/geldar/core/provenance/PriorOwner.class
 dev/geldar/core/provenance/ProvenanceJson.class
+dev/geldar/core/provenance/TakeDiff.class
 dev/geldar/core/proximity/Absorption$Effective.class
 dev/geldar/core/proximity/Absorption$Sealed.class
 dev/geldar/core/proximity/Absorption$Walk.class
