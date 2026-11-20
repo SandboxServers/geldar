@@ -36,3 +36,5 @@ Fix 1 checks, run on the fix-1 head (commit after 50978ff8):
 ## Ops evidence (pending, not run in this packet)
 
 One real two-player toss on the scratch shard with `provenance.enabled` set by hand, after merge to the wave branch. The captured `pickup` JSON goes here before AN-26b writes its fixtures. This capture is the evidence for the ItemStack-reading lines of `onPickup`.
+
+Procedure: [capture-real-payloads](../../../runbooks/capture-real-payloads.md).
