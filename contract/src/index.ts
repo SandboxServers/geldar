@@ -77,33 +77,12 @@ export function validateReceipt(value: unknown): ValidationResult<Receipt> {
   return { ok: false, errors: (validateReceiptSchema.errors ?? []).map(formatError) };
 }
 
-export type { CombatFactPayload } from './evidence.ts';
-export { encounterKey, validateCombatFactPayload } from './evidence.ts';
-/** Observed-actor contract (AN-24, decision 0343, Proposed; nothing publishes these yet). */
-export type { ObservationPayload, ObservedActor, Provenance } from './generated/types.ts';
-/** Checks a heard_sound payload against heard-sound-event.schema.json (PX-4). Coordinates are rejected. */
-export {
-  validateHeardSoundEvent,
-  validateObservationPayload,
-  validateProvenance,
-} from './generated/validators.js';
-export { observationSentence } from './observation.ts';
-export {
-  provenanceBreakSubject,
-  provenanceCombatSubject,
-  provenancePickupSubject,
-  provenanceTakeSubject,
-  provenanceWildcard,
-} from './subjects.ts';
-
+export * from './perception-events.ts';
 /** Checks a value against event.schema.json. Never throws; unknown properties are rejected. */
 export function validateWorldEvent(value: unknown): ValidationResult<WorldEvent> {
   if (validateWorldEventSchema(value)) return { ok: true, value: value as WorldEvent };
   return { ok: false, errors: (validateWorldEventSchema.errors ?? []).map(formatError) };
 }
-
-/** Checks a heard_muffled payload against heard-muffled-event.schema.json (decision 0199, MH-1). Coordinates are rejected. */
-export { validateHeardMuffledPayload } from './generated/validators.js';
 
 // --- P0-17 record events ---
 import type { IntentEventPayload, ReflexFiredPayload, WakePayload } from './generated/types.ts';
