@@ -28,10 +28,13 @@ describe('the case table', () => {
   });
 
   it('gives every case a validator spec with a known kind and a count', () => {
+    // A spec is one or more comma-separated `kind=N` parts (kill and survived also assert combat=1).
     for (const c of CAPTURE_CASES) {
-      const [kind, count] = c.expect.split('=');
-      expect(CASE_KINDS, c.id).toContain(kind);
-      expect(Number.isInteger(Number(count)) && Number(count) >= 0, c.id).toBe(true);
+      for (const part of c.expect.split(',')) {
+        const [kind, count] = part.split('=');
+        expect(CASE_KINDS, c.id).toContain(kind);
+        expect(Number.isInteger(Number(count)) && Number(count) >= 0, c.id).toBe(true);
+      }
     }
   });
 

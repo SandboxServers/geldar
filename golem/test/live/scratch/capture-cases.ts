@@ -1,7 +1,8 @@
-// CAP-2: the pure parts of the scratch-shard provenance capture: the case table, argument parsing, the life-id
-// and shard guards, and the list and dry-run renderers. No bot, no NATS, no RCON. The runner is provenance-capture.ts.
-// Scratch-shard test tooling only: never run it against a live or Colo shard (principle 1; runbook
-// docs/runbooks/capture-real-payloads.md, "OPS RUN SHEET").
+// CAP-2: the pure parts of the scratch-shard provenance capture: the case table, argument parsing, the life-id,
+// block-id, loopback and shard guards, the positive-control and stale-folder rules, and the list and dry-run
+// renderers. No bot, no NATS, no RCON. The runner is provenance-capture.ts; its windows are capture-windows.ts and its
+// subscriber is capture-subscriber.ts. Scratch-shard test tooling only: never run it against a live or Colo shard
+// (principle 1; runbook docs/runbooks/capture-real-payloads.md, "OPS RUN SHEET").
 import { parseArgs } from 'node:util';
 
 /** One case of the capture. `expect` is the validator's `--expect` spec for the case's own folder. */
@@ -21,6 +22,9 @@ export interface CaptureCase {
 
 const RCON =
   'RCON (127.0.0.1:25575, --rcon-host): whitelist add/remove, tp, give, clear, summon, setblock, fill, kill, experience add (anvil, enchanting table)';
+
+/** The case that proves the send-nothing cases can see a take: a take=0 counts only when it ran in the same session. */
+export const POSITIVE_CONTROL = 'chest-single';
 
 /** The fifteen cases. The runbook's run sheet names each one (a test checks both lists match). */
 export const CAPTURE_CASES: readonly CaptureCase[] = [
@@ -50,14 +54,15 @@ export const CAPTURE_CASES: readonly CaptureCase[] = [
   {
     id: 'kill',
     summary: 'bot A kills a summoned zombie (combat_fact hostile_kill, AN-47a)',
-    expect: 'combat_fact=1',
+    expect: 'combat_fact=1,combat=1',
     bots: 1,
     ops: RCON,
   },
   {
     id: 'survived',
-    summary: 'bot A hits a zombie, waits out the encounter (fight_survived, AN-47a)',
-    expect: 'combat_fact=1',
+    summary:
+      'bot A hits a zombie that cannot attack, waits out the encounter (fight_survived, AN-47a)',
+    expect: 'combat_fact=1,combat=1',
     bots: 1,
     ops: RCON,
   },
@@ -133,6 +138,38 @@ export const CAPTURE_CASES: readonly CaptureCase[] = [
   },
 ];
 
+/**
+ * The block ids the cases place with `TestControl.setblock`. That method accepts only bare ids
+ * (`^[a-z0-9_]{1,64}$`, golem/src/test-control.ts): no `minecraft:` namespace and no block state.
+ */
+export const CASE_BLOCKS = {
+  chest: 'chest',
+  furnace: 'furnace',
+  brewingStand: 'brewing_stand',
+  craftingTable: 'crafting_table',
+  anvil: 'anvil',
+  enchantingTable: 'enchanting_table',
+} as const;
+
+const BARE_BLOCK_ID = /^[a-z0-9_]{1,64}$/;
+
+/** Null for a bare block id; otherwise the reason `TestControl.setblock` would throw on it. */
+export function blockIdProblem(id: string): string | null {
+  if (BARE_BLOCK_ID.test(id)) return null;
+  return `"${id}" is not a bare block id (no namespace, no block state, lower case only)`;
+}
+
+/**
+ * The double chest: two `chest` blocks with block states, placed by a raw command (TestControl.setblock cannot take
+ * a state). The left half faces north with its partner to the east, so the partner is `right`.
+ */
+export function doubleChestCommands(x: number, y: number, z: number): [string, string] {
+  return [
+    `setblock ${x} ${y} ${z} chest[facing=north,type=left]`,
+    `setblock ${x + 1} ${y} ${z} chest[facing=north,type=right]`,
+  ];
+}
+
 /** The life-id pattern the plugin and the contract use (EventEnvelope.java:27, contract evidence.ts). */
 const LIFE_ID = /^ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}$/;
 
@@ -147,12 +184,70 @@ export function isLifeId(name: string): boolean {
   return LIFE_ID.test(name);
 }
 
-/** The scratch shard is `phase0`. Any other name needs the explicit flag, and live or Colo names are always refused. */
+/** The shard name the subjects are built from: lower case, digits and dashes (no spaces, no dots, no wildcards). */
+const SHARD_NAME = /^[a-z][a-z0-9-]{1,31}$/;
+
+export function shardNameProblem(shard: string): string | null {
+  return SHARD_NAME.test(shard)
+    ? null
+    : `shard "${shard}" is not a shard name (lower case, letters, digits, dashes)`;
+}
+
+/**
+ * True only for a loopback URL. The script's `--nats-url` is separate from the registry's GELDAR_NATS_URL, so this
+ * check is what keeps the owner query and the subscriber on the machine (config.ts uses the same host rule).
+ */
+export function isLoopbackUrl(url: string): boolean {
+  try {
+    const host = new URL(url).hostname;
+    return host === '127.0.0.1' || host === 'localhost';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The scratch shard is `phase0`. Any other name needs the explicit flag, and live or Colo names are always refused.
+ * This is a name check only; the loopback host rule (`isLoopbackUrl`) is the guard that keeps a non-scratch server
+ * unreachable from this script.
+ */
 export function refuseShard(shard: string, knowingScratch: boolean): string | null {
   if (/colo|live|prod/i.test(shard)) return `refused: shard "${shard}" is not a scratch shard`;
   if (shard === 'phase0') return null;
   if (knowingScratch) return null;
   return `refused: shard "${shard}" is not phase0; pass --i-know-this-is-a-scratch-shard to run it`;
+}
+
+/**
+ * A take=0 case is evidence only when `chest-single` ran and passed in the same session (a zero from a dead or
+ * unflagged listener is an empty folder too). Returns the refusal text, or null when the zero may count.
+ */
+export function zeroIsEvidence(c: CaptureCase, controlPassed: boolean): string | null {
+  if (c.expect !== 'take=0' || controlPassed) return null;
+  return `refused: ${c.id} expects take=0 and counts only after ${POSITIVE_CONTROL} passed (take=1) in the same session`;
+}
+
+/**
+ * Refuses up front a take=0 case that has no positive control before it in the selected cases. The runner also
+ * checks at run time that the control actually passed (its validator exit was 0).
+ */
+export function sessionRefusal(cases: readonly CaptureCase[]): string | null {
+  const earlier = new Set<string>();
+  for (const c of cases) {
+    const refusal = zeroIsEvidence(c, earlier.has(POSITIVE_CONTROL));
+    if (refusal !== null) return refusal;
+    earlier.add(c.id);
+  }
+  return null;
+}
+
+/**
+ * What to do with `<out>/<case>/` at case start: use an empty folder, refuse a folder with files unless `--clean`
+ * is given, or clear it. A stale file would otherwise pass `take=1` or fail `take=0` for a reason that is not the run.
+ */
+export function staleFolderAction(entries: number, clean: boolean): 'use' | 'clean' | 'refuse' {
+  if (entries === 0) return 'use';
+  return clean ? 'clean' : 'refuse';
 }
 
 export function findCase(id: string): CaptureCase | undefined {
@@ -181,9 +276,13 @@ export interface RunArgs {
   natsUrl: string;
   out: string;
   knowingScratch: boolean;
+  clean: boolean;
 }
 
-/** Parses the CLI. Throws with a usage message for a bad argument; a refused shard is reported by `refuseShard`. */
+/**
+ * Parses the CLI. Throws with a usage message for a bad argument, a bad shard name, or a non-loopback NATS URL.
+ * A refused shard (name) is reported by `refuseShard`.
+ */
 export function parseRunArgs(argv: string[]): RunArgs {
   const { values } = parseArgs({
     args: argv,
@@ -196,21 +295,30 @@ export function parseRunArgs(argv: string[]): RunArgs {
       list: { type: 'boolean', default: false },
       'dry-run': { type: 'boolean', default: false },
       'i-know-this-is-a-scratch-shard': { type: 'boolean', default: false },
+      clean: { type: 'boolean', default: false },
     },
   });
   const mode = values.list ? 'list' : values['dry-run'] ? 'dry-run' : 'run';
   if (mode !== 'list' && values.case === undefined) {
     throw new Error(
-      'usage: provenance-capture --case <name|all> [--shard phase0] [--nats-url URL] [--out DIR] [--dry-run] | --list',
+      'usage: provenance-capture --case <name|all> [--shard phase0] [--nats-url URL] [--out DIR] [--clean] [--dry-run] | --list',
     );
+  }
+  const shard = values.shard ?? 'phase0';
+  const shardProblem = shardNameProblem(shard);
+  if (shardProblem !== null) throw new Error(shardProblem);
+  const natsUrl = values['nats-url'] ?? 'nats://127.0.0.1:4222';
+  if (!isLoopbackUrl(natsUrl)) {
+    throw new Error(`--nats-url must be a loopback URL (127.0.0.1 or localhost), not ${natsUrl}`);
   }
   return {
     mode,
     cases: mode === 'list' || values.case === undefined ? [] : resolveCases(values.case),
-    shard: values.shard ?? 'phase0',
-    natsUrl: values['nats-url'] ?? 'nats://127.0.0.1:4222',
+    shard,
+    natsUrl,
     out: values.out ?? '.capture',
     knowingScratch: values['i-know-this-is-a-scratch-shard'] ?? false,
+    clean: values.clean ?? false,
   };
 }
 
@@ -234,6 +342,7 @@ export function renderPlan(
     `bots: ${BOT_A} (slot ${SLOT_A}), ${BOT_B} (slot ${SLOT_B}); both must be life ids: ${isLifeId(BOT_A) && isLifeId(BOT_B)}`,
     `subscriber subjects: ${subjects}`,
     'per case: start nats-capture, WAIT for READY, do the case, settle 20 s, stop the subscriber, validate <out>/<case>/',
+    `stale folder: a non-empty <out>/<case>/ is refused unless --clean is given; a take=0 case needs ${POSITIVE_CONTROL} to pass first in the same session`,
   ];
   for (const c of cases) {
     const cp = c.coreprotect === undefined ? '' : `; needs CoreProtect ${c.coreprotect}`;
@@ -244,7 +353,7 @@ export function renderPlan(
         '    precondition (ops, NOT checked by the script): CoreProtect is loaded (`plugins` lists it) and the overlay is mounted',
       );
       lines.push(
-        '    owner query: NATS request blockowner.query right before the break; the case FAILS if the break is 30 s or more after it',
+        '    owner query: NATS request blockowner.query right before the break; the case FAILS if the break is 30 s or more after it, or the reply has no owner for the block',
       );
     }
   }

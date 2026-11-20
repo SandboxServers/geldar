@@ -40,12 +40,14 @@ export function parseExpect(spec: string): Map<CaseKind, number> {
   for (const part of spec.split(',')) {
     const trimmed = part.trim();
     if (trimmed.length === 0) continue;
-    const [name, count] = trimmed.split('=');
+    const parts = trimmed.split('=');
+    const [name, count] = parts;
+    if (parts.length !== 2) throw new Error(`--expect: bad count in "${trimmed}"`);
     if (!CASE_KINDS.includes(name as CaseKind)) throw new Error(`--expect: unknown case "${name}"`);
-    const n = Number(count);
-    if (count === undefined || !Number.isInteger(n) || n < 0)
+    // Digits only: `take=`, `take=-1` and `take=1=2` are refused, not read as a zero or a count.
+    if (count === undefined || !/^\d+$/.test(count))
       throw new Error(`--expect: bad count in "${trimmed}"`);
-    expected.set(name as CaseKind, n);
+    expected.set(name as CaseKind, Number(count));
   }
   return expected;
 }
