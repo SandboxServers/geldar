@@ -228,8 +228,7 @@ connection settings"), and `docs/spec.md:313` bars a spectator from commands and
    helper "modelled on PR #507's harness (not yet on main)" (stale text) and I did not run it. If you use it, point
    Golem at those ports (`GELDAR_MC_PORT`, `GELDAR_RCON_PORT`, `GELDAR_NATS_URL`; names in `golem/src/config.ts` per the
    run-shard skill) and the NATS subscriber too. `deploy/scratch/scratch.sh` is the other scratch tool; it refuses open
-   NATS (`scratch.sh:7-9`), and under the auth overlay no role could subscribe to `provenance.*` until AN-28c is
-   merged (branch `phase1/an-28c-provenance-setup-acl`); see "Capture raw NATS payloads". It still does not suit
+   NATS (`scratch.sh:7-9`), and under the auth overlay no role could subscribe to `provenance.*` before AN-28c (merged, #817); see "Capture raw NATS payloads". It still does not suit
    this capture.
 
 ## Set the flag on the scratch shard
@@ -325,8 +324,8 @@ three tokens and goes through `exporter.emit` (`CombatFactListener.java:170`) in
 Who may subscribe: the default `compose/phase0.yml` NATS is open (`phase0.yml:39`, "without it NATS stays open"), so
 any client on `127.0.0.1:4222` may subscribe. Under the auth overlay (`compose/nats-auth.yml`), the role table
 `Get-NatsUsers` in `geldar.ps1` gave no role `Sub` on `provenance` before AN-28c: `body` heard `body.>`,
-`blockowner.changed`, `state.*.level`; `mind`, `eventsink`, `mcp` heard only the inbox. Once AN-28c is merged
-(branch `phase1/an-28c-provenance-setup-acl`), the `body` role has `Sub` and `PubDeny` on
+`blockowner.changed`, `state.*.level`; `mind`, `eventsink`, `mcp` heard only the inbox. Since AN-28c (merged, #817)
+the `body` role has `Sub` and `PubDeny` on
 `geldar.<s>.provenance.>`; no other role changes. A capture subscriber needs a role that may subscribe, so after
 AN-28c it is either the open phase0 NATS or the `body` credential. Unproven: I have not run a capture with the
 `body` credential, so treat the open default shard as the proven path and the `body` credential as untested. Do not
