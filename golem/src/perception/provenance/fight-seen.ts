@@ -79,6 +79,7 @@ export interface FightContext {
 /** Whether the message's fields are the kind a server sends, inside the contract's bounds. */
 function wellFormed(msg: CombatProvenance): boolean {
   return (
+    (msg.actor === null || typeof msg.actor === 'string') &&
     typeof msg.world === 'string' &&
     msg.world.length > 0 &&
     Number.isInteger(msg.tick) &&

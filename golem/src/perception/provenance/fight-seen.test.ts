@@ -81,6 +81,15 @@ describe('observeFight', () => {
     expect(observeFight(engaged(), ctxFor(far))).toBeNull();
   });
 
+  it('a mob behind a wall gives null; a mob in the open to the north or west is in sight', () => {
+    const behind = scene({ ag_capb_02: WEST }, new Vec3(103.5, 64, 100.5));
+    expect(observeFight(engaged(), ctxFor(behind))).toBeNull();
+    const north = scene({ ag_capb_02: WEST }, new Vec3(100.5, 64, 94.5));
+    expect(observeFight(engaged(), ctxFor(north))).not.toBeNull();
+    const west = scene({ ag_capb_02: WEST }, new Vec3(94.5, 64, 100.5));
+    expect(observeFight(engaged(), ctxFor(west))).not.toBeNull();
+  });
+
   it('two attackers, only the visible one is observed', () => {
     const world = scene({ ag_hidden_09: EAST, ag_visible_01: WEST });
     const ctx = ctxFor(world);
@@ -131,6 +140,11 @@ describe('observeFight', () => {
     expect(observeFight(engaged({ actor: null }), ctxFor(world))).toBeNull();
   });
 
+  it('a non-string actor gives null, not a throw', () => {
+    const world = scene({ ag_capb_02: WEST });
+    expect(observeFight(engaged({ actor: 5 as never }), ctxFor(world))).toBeNull();
+  });
+
   it('the payload keys are exactly kind, actor, target and key', () => {
     const world = scene({ ag_capb_02: WEST });
     const out = observeFight(engaged(), ctxFor(world));
@@ -151,10 +165,42 @@ describe('observeFight', () => {
     expect(observeFight(engaged(), ctxFor(world, { resolve }))).toBeNull();
   });
 
+  it('a throwing sight read gives null, not a throw', () => {
+    const world = scene({ ag_capb_02: WEST });
+    const ctx = ctxFor(world, { resolve: () => ({ name: 'ag_capb_02', life: 'ag_capb_02' }) });
+    // The Body mid-respawn: no entity to read the sight line from.
+    (ctx.bot as unknown as { entity?: unknown }).entity = undefined;
+    expect(observeFight(engaged(), ctx)).toBeNull();
+  });
+
+  it('a payload the contract refuses gives null and takes no window slot', () => {
+    const world = scene({ ag_capb_02: WEST });
+    const windows = new FightWindows();
+    const resolve = () => ({ name: 'ag_capb_02', life: 'BAD LIFE!' });
+    expect(observeFight(engaged(), ctxFor(world, { windows, resolve }))).toBeNull();
+    expect(windows.size).toBe(0);
+  });
+
   it('a hostile or malformed name gives null', () => {
     const world = scene({ ag_capb_02: WEST });
     expect(observeFight(engaged({ actor: 'bad name!' }), ctxFor(world))).toBeNull();
     expect(observeFight(engaged({ target: 'Zombie' }), ctxFor(world))).toBeNull();
+  });
+
+  it.each([
+    ['an empty world', { world: '' }],
+    ['a negative tick', { tick: -1 }],
+    ['a fractional tick', { tick: 1.5 }],
+    ['a namespaced target', { target: 'minecraft:zombie' }],
+  ] as const)('%s gives null even with a zombie in sight', (_label, overrides) => {
+    const world = scene({ ag_capb_02: WEST });
+    expect(observeFight(engaged(overrides), ctxFor(world))).toBeNull();
+  });
+
+  it('a player named like the target is not a mob, gives null', () => {
+    const world = scene({ ag_capb_02: WEST }, null);
+    world.entities[9] = { type: 'player', name: 'zombie', position: MOB };
+    expect(observeFight(engaged(), ctxFor(world))).toBeNull();
   });
 
   it('a mob out of 24 blocks, or no such mob nearby, gives null', () => {
@@ -172,5 +218,17 @@ describe('FightWindows', () => {
     expect(windows.size).toBe(256);
     // The first pair was dropped, so it is admitted again at the same tick.
     expect(windows.admit('ag_p0:zombie', 0)).toBe(true);
+  });
+
+  it('a re-admitted pair is the newest, so the next pair drops another', () => {
+    const windows = new FightWindows();
+    for (let i = 0; i < 256; i++) windows.admit(`ag_p${i}:zombie`, 0);
+    expect(windows.admit('ag_p0:zombie', 600)).toBe(true);
+    expect(windows.admit('ag_p256:zombie', 600)).toBe(true);
+    expect(windows.size).toBe(256);
+    // p0 was observed at tick 600, so at 601 it is still inside its window.
+    expect(windows.admit('ag_p0:zombie', 601)).toBe(false);
+    // p1 was the least recently observed, so it was dropped and is admitted again.
+    expect(windows.admit('ag_p1:zombie', 601)).toBe(true);
   });
 });

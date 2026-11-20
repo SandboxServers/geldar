@@ -7,7 +7,7 @@ Status: done as an inert module. Nothing wires it (AN-50b does). Paper-only in b
 `golem/src/perception/provenance/fight-seen.ts` exports `observeFight(msg, ctx)`, the class `FightWindows`, and the type `CombatProvenance`.
 
 - Only `engaged` is observed. `killed` gives null.
-- The message must be well formed: `world` a non-empty string, `tick` an integer at least 0, `target` matching `^[a-z_]{1,64}$`.
+- The message must be well formed: `actor` null or a string, `world` a non-empty string, `tick` an integer at least 0, `target` matching `^[a-z_]{1,64}$`.
 - `ctx.world`, when given, must equal `msg.world`.
 - A null actor, or an actor equal to `ctx.self` (case-insensitive), gives null.
 - The fighter is named only through `observedActor(ctx.bot, msg.actor)` (or `ctx.resolve` when injected). A throwing resolver gives null.
@@ -29,7 +29,7 @@ Status: done as an inert module. Nothing wires it (AN-50b does). Paper-only in b
 - The card's `ctx` had no place for the window state. `ctx.windows: FightWindows` is required, so the caller holds the dedupe state.
 - `CombatProvenance` is defined locally as `Extract<Provenance, { kind: 'engaged' | 'killed' }>`. The contract index exports no `CombatProvenance` name (tsc failed on a direct import). The union `Provenance` does include it.
 - `ctx.resolve` is optional. It defaults to `observedActor(ctx.bot, name)`. It exists so the throwing-resolver test can inject a throw.
-- The mob is matched by `entity.name` (mineflayer's registry name), with `type !== 'player'`.
+- The mob is matched by `entity.name` (mineflayer's registry name), with `type !== 'player'`. The match is by type only, not tied to the fight: any mob of the target type in reach and in sight counts, not necessarily the mob the actor hit (a known limit, as the card specifies).
 
 ## Fixture and real shape
 
@@ -46,6 +46,16 @@ No captured combat provenance payload exists in the repo. The fixture in `fight-
 | remove the 24-block reach (`true &&`) | `a mob out of 24 blocks, or no such mob nearby, gives null` |
 | remove the self check | `the own fight of the Body gives null` |
 | unbounded map (`if (false) {` on the size check) | `FightWindows holds 256 pairs and forgets the oldest` |
+| sight rule replaced by `true` (the `canSeePoint(...)` call) | `a mob behind a wall gives null; a mob in the open to the north or west is in sight` |
+| contract line deleted (`if (!validateObservationPayload(payload)) return null;`) | `a payload the contract refuses gives null and takes no window slot` |
+| sight `catch` replaced by `finally` (exception propagates) | `a throwing sight read gives null, not a throw` |
+| recency delete removed (`this.last.delete(pair);`) | `a re-admitted pair is the newest, so the next pair drops another` |
+| player type check removed (`entity.type !== 'player' &&`) | `a player named like the target is not a mob, gives null` |
+| actor type check removed (`(msg.actor === null \|\| typeof msg.actor === 'string') &&`) | `a non-string actor gives null, not a throw` |
+| world length check removed (`msg.world.length > 0 &&`) | `an empty world gives null even with a zombie in sight` |
+| tick minimum removed (`msg.tick >= 0 &&`) | `a negative tick gives null even with a zombie in sight` |
+| tick integer check removed (`Number.isInteger(msg.tick) &&`) | none: the test passes without the line, because the contract refuses the key `fight:1.5:...` (kept as a behaviour test) |
+| target pattern removed (`TARGET.test(msg.target)`) | none: the test passes without the line, because a namespaced target matches no mob name and the contract refuses it (kept as a behaviour test) |
 
 ## Index for AN-50b
 
