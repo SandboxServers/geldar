@@ -73,7 +73,8 @@ describe('inactive rows give nothing', () => {
         world_tick: tick,
         agent_id: agent,
         type: 'speech',
-        payload: { from, text: 'hello there', distance: own ? null : 2, own },
+        // Distinct text per line: a repeated line is already dropped by its own rule, which would hide the speaker guard.
+        payload: { from, text: `hello at ${tick}`, distance: own ? null : 2, own },
       }) as WorldEvent;
     // Both in-game names are bound first, by each life's own line, far apart so each opens its own window.
     tracker.awardsFor(line('ag_ben', 'Ben', true, 0, 'ev_own_ben'));
