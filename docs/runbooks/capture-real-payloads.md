@@ -39,16 +39,23 @@ ls plugin/core/build/libs/geldar-core.jar plugin/velocity-identity/build/libs/ge
 (cd plugin; ./gradlew build)                                  # expected: BUILD SUCCESSFUL
 ./geldar.ps1 shard secrets phase0                             # expected: creates the missing secret files, overwrites none (UNPROVEN here)
 docker compose -p geldar-phase0 -f compose/phase0.yml -f compose/rcon-host.yml up -d --wait nats   # expected: nats healthy
+docker inspect -f '{{.State.Health.Status}}' geldar-phase0-nats-1   # expected: healthy (docker-only check of the line above)
+pnpm install                                                  # once per clone (./geldar.ps1 setup); the seed imports workspace packages
 GELDAR_NATS_URL=nats://127.0.0.1:4222 node --experimental-strip-types golem/src/seed-buckets.ts    # expected: buckets geldar-life-registry, geldar-skins: present
 ./geldar.ps1 shard up phase0 --rcon-host                      # expected: stack up, RCON on 127.0.0.1:25575
 ```
 
+The ops error `no configuration file provided` came from a `docker compose ... logs` run. Its cause is UNPROVEN: the
+compose lines here carry their own `-p` and `-f` files, and each one that reads a container has a `docker` form that
+names the container (`docker logs`, `docker exec`, `docker inspect`). Use the docker form if a compose line errors.
+
 Why the bucket seed comes before `shard up` (CAP-3; ops saw `shard up` exit 1 on a fresh NATS volume):
-- Velocity's healthcheck passes only when the identity plugin has written its ready file, and the plugin writes it once it
-  watches `geldar-life-registry` (`RegistryClient.java:245` logs `Watching bucket geldar-life-registry`). The plugin never
-  creates a bucket (decision 0087 correction). Golem creates the life registry when it connects with `GELDAR_NATS_URL`
-  (`golem/src/registry.ts:84`), and nothing on phase0 creates `geldar-skins` except the scratch and nf-live seeds and
-  the colo admin script. Before Golem has run on the NATS volume, velocity waits and `up --wait` fails with velocity
+- Velocity's healthcheck (`compose/phase0.yml:131`) passes only when the identity plugin has written
+  `/tmp/geldar-identity.ready` (`IdentityPlugin.java:54`) and port 25565 accepts. The plugin writes the file once it has
+  synced the life registry. The plugin never creates a bucket (decision 0087 correction). Golem creates the life
+  registry when it connects with `GELDAR_NATS_URL` (`golem/src/registry.ts:84`). Nothing on phase0 creates `geldar-skins`
+  except the scratch and nf-live seeds, the colo admin script (`tools/admin/admin.sh`) and players-cli `skin set`
+  (`tools/players-cli/src/skin-store.ts`). Before the buckets exist, velocity waits and `up --wait` fails with velocity
   unhealthy. The earlier runs of a lane that left the buckets in the `nats-data` volume are the only other way these
   buckets exist (inference from the code; UNPROVEN on this machine).
 - `up --wait` exits 1 on any unhealthy service, and the plugin check at `geldar.ps1:488` then never runs.
@@ -63,12 +70,15 @@ Fallback, only when `shard up` already exited 1 and velocity is the only unhealt
   line starting `seed-buckets:`, is a stop condition.
 - F2. Wait up to 60 s for velocity: `docker inspect -f '{{.State.Health.Status}}' geldar-phase0-velocity-1` must print
   `healthy`. Docker keeps running the healthcheck after `unhealthy` (UNPROVEN here). Still unhealthy after 60 s: stop.
-- F3. `docker logs geldar-phase0-velocity-1 2>&1 | grep "Watching bucket geldar-life-registry"` prints at least one line,
-  and `docker logs geldar-phase0-velocity-1 2>&1 | grep "Geldar identity enabled"` prints one line (the check `shard up`
-  would have run).
+- F3. The ready file exists: `docker exec geldar-phase0-velocity-1 test -f /tmp/geldar-identity.ready` exits 0 (no output;
+  UNPROVEN that `test` is in the image). The seed left no retry behind: `docker logs --tail 40 geldar-phase0-velocity-1 2>&1 | grep -c "is absent"`
+  prints `0`. `docker logs geldar-phase0-velocity-1 2>&1 | grep "Geldar identity enabled"` prints one line (the check `shard up`
+  would have run). A line `Bucket ... is absent` after the seed is the log signal that a bucket is still missing.
 - F4. `./geldar.ps1 shard status phase0`: every row healthy.
 
-The ops log line `Watching the life registry` does not exist in the plugin source; the line to look for is `Watching bucket geldar-life-registry`.
+`Watching bucket` is not a readiness check. `RegistryClient.java:245` logs `Watching bucket {}` with the shadowed
+parameter (`RegistryClient.java:236`), so the line prints an object (`dev.geldar.identity.RegistryClient$1@<hash>`), not
+the bucket name, and the skins client prints a second one. Do not grep for it. The readiness evidence is F2 and F3.
 
 What `shard up` does (`geldar.ps1:460-496`): rebuilds the repo images, adds `compose/rcon-host.yml` when `--rcon-host` is
 given (`:471`), starts the stack and waits until healthy, then runs `Assert-PluginsEnabled` (`:212-222,488`), which
@@ -85,7 +95,7 @@ Then the unproven items, with the expected output. Commands marked UNPROVEN were
 |---|---|---|
 | Paper loaded GeldarCore | `docker logs geldar-phase0-paper-1 2>&1 \| grep "Geldar-Core enabled"` (the name is the compose project `geldar-phase0`, `compose/phase0.yml:6`, plus the default `<project>-<service>-1`; no `container_name` is set. Read from the files, not run here. `docker logs` names the container directly, so no compose file is needed in the shell; ops saw `no configuration file provided` with the `compose ... logs` form, and the exact cause of that error is UNPROVEN) | one line `Geldar-Core enabled for shard phase0` (`GeldarCore.java:195`); no line means the plugin did not load: stop |
 | CoreProtect absent (the "absent" case) | RCON `plugins` (UNPROVEN: the RCON client; see "RCON commands" below) | no `CoreProtect` in the list |
-| Plugin config reads the flags | `docker compose -f compose/phase0.yml exec paper cat /data/plugins/GeldarCore/config.yml` (UNPROVEN: the path comes from `saveDefaultConfig()` and `plugin.yml` name `GeldarCore`; not read in a container) | file exists; `blockowner:` block is there (`enabled: true`, repo default, `plugin/core/src/main/resources/config.yml:38`); no `provenance:` block (the default is false, `BlockOwnerSetup.java:27,152-153`) |
+| Plugin config reads the flags | `docker exec geldar-phase0-paper-1 cat /data/plugins/GeldarCore/config.yml` (UNPROVEN: the path comes from `saveDefaultConfig()` and `plugin.yml` name `GeldarCore`; not read in a container) | file exists; `blockowner:` block is there (`enabled: true`, repo default, `plugin/core/src/main/resources/config.yml:38`); no `provenance:` block (the default is false, `BlockOwnerSetup.java:27,152-153`) |
 | Subscriber gets READY | the script prints `== case <name>` and waits; a READY timeout is a stop condition | READY in under 30 s |
 
 Flag key names, verified in the merged source: `provenance.enabled` (default false, read by `getBoolean` at
@@ -140,17 +150,27 @@ The CoreProtect steps go after the fourteen cases above and before the last line
    (UNPROVEN) must print one line. Then check CoreProtect with RCON `plugins` (see "RCON commands").
 3a. CoreProtect settings for the capture (CAP-3; the runbook's "First start" list in `docs/runbooks/coreprotect.md`).
    Turn off these six: chat recording, command recording, session recording, container transaction recording, error
-   reporting, update checks. Keep block place and break logging ON (leave them as the plugin wrote them). Reasons:
-   the owner lookup reads the block rows, not the chat, command, session or container tables (read in the plugin:
-   `CoreProtectOwnerSource` consumes the port's rows; the exact CoreProtect table choice is UNPROVEN here); the four
-   recorders store player chat and commands (personal data and noise on a scratch box); update checks make an outbound
-   request. Do this after step 2 has written the config, and before the last case.
+   reporting, update checks. Leave `player-interactions` at CoreProtect's default (on), and keep block place and break
+   logging on (leave them as the plugin wrote them). Do not follow the `player-interactions: false` row of
+   `docs/runbooks/block-owner.md:60` for this capture: the owner lookup asks CoreProtect for action 2 (click) as well as
+   break (0) and place (1) (`plugin/core-common/src/main/java/dev/geldar/core/blockowner/ChunkLookupCall.java:17-31`), so
+   click rows are read too. Reasons for the six: the chat and command recorders store player chat and commands (personal
+   data and noise on a scratch box); the session and container-transaction recorders store rows that the owner lookup
+   does not read (which rows each key writes is UNPROVEN here); error reporting and update checks keep reports and
+   version checks off the node (the outbound request of update checks is UNPROVEN here). Do this after step 2 has
+   written the config, and before the last case.
    - Read the key names the plugin wrote (UNPROVEN: this runbook does not list the YAML keys):
-     `docker exec geldar-phase0-paper-1 grep -n -i -E "chat|command|session|container|error|update|block" /data/plugins/CoreProtect/config.yml`
-   - Copy it out, set the six to `false` (block place and break stay `true`), copy it back, then restart Paper:
+     `docker exec geldar-phase0-paper-1 grep -n -i -E "chat|message|command|session|container|transaction|error|update|block|interaction|hopper|item" /data/plugins/CoreProtect/config.yml`
+   - Copy it out, set the six to `false` (`player-interactions` and block place and break stay `true`), copy it back,
+     then restart Paper:
      `docker cp geldar-phase0-paper-1:/data/plugins/CoreProtect/config.yml .capture/coreprotect-config.yml`, edit that file,
-     `docker cp .capture/coreprotect-config.yml geldar-phase0-paper-1:/data/plugins/CoreProtect/config.yml`,
-     `docker restart geldar-phase0-paper-1`. Wait for `docker inspect -f '{{.State.Health.Status}}' geldar-phase0-paper-1`
+     `docker cp .capture/coreprotect-config.yml geldar-phase0-paper-1:/data/plugins/CoreProtect/config.yml`.
+   - Check the owner (UNPROVEN that `docker cp` keeps the Paper user's ownership; the copy may be root-owned):
+     `docker exec geldar-phase0-paper-1 ls -ln /data/plugins/CoreProtect/config.yml /data/plugins/GeldarCore/config.yml`.
+     The two uid:gid pairs must match. If they do not, fix it as root:
+     `docker exec -u root geldar-phase0-paper-1 chown <uid>:<gid> /data/plugins/CoreProtect/config.yml` (UNPROVEN; use the
+     numbers from the `ls` line for `GeldarCore`). Stop if the owner cannot be matched.
+   - Restart: `docker restart geldar-phase0-paper-1` (UNPROVEN). Wait for `docker inspect -f '{{.State.Health.Status}}' geldar-phase0-paper-1`
      to print `healthy`, then repeat step 3. `/co reload` may work instead (UNPROVEN; not used here).
    - Do not commit `.capture/`. The file is gitignored; check with `git status` before the commit.
 4. Only then: the block's last line. It is the LAST case; after it, go to teardown and remove the flag (Stage 4 step 2).
@@ -189,6 +209,10 @@ Stop conditions (stop, do not retry in a loop, report):
   down, paste `docker logs geldar-phase0-velocity-1 2>&1 | tail -n 40`;
 - CAP-3: the bucket seed exits non-zero, or prints a line starting `seed-buckets:` (no retry in a loop; a refused NATS
   connection is the same stop as a refused NATS row);
+- CAP-3: `docker compose ... up -d --wait nats` (Stage 2) or `... up -d --wait paper` (CoreProtect step 2) exits non-zero,
+  or `docker inspect -f '{{.State.Health.Status}}' geldar-phase0-nats-1` does not print `healthy` after the nats line:
+  stop, paste the command's output, and do not retry in a loop (the cause of the ops compose error is UNPROVEN);
+- CAP-3: the CoreProtect config owner check does not match after `docker cp` and the `chown` fix: stop;
 - CAP-3: the capture preflight prints `identity buckets: ` with an error, or exits 2 before the first case.
 
 ### Where each result goes (exact headings; paste the JSON verbatim, one per capture, plus the validator row)
@@ -293,11 +317,11 @@ connection settings"), and `docs/spec.md:313` bars a spectator from commands and
 
 Only on the throwaway shard, after the health rows. Nothing below was run; each command is UNPROVEN until read on the container.
 
-1. Read the file: `docker compose -f compose/phase0.yml exec paper cat /data/plugins/GeldarCore/config.yml` (UNPROVEN path: from
+1. Read the file: `docker exec geldar-phase0-paper-1 cat /data/plugins/GeldarCore/config.yml` (UNPROVEN path: from
    `saveDefaultConfig()` and the plugin name `GeldarCore`; the volume is `paper-data`, `compose/phase0.yml:88`).
-2. Check the file ends in a newline before you append: `docker compose -f compose/phase0.yml exec paper tail -c 1 /data/plugins/GeldarCore/config.yml | od -c`
+2. Check the file ends in a newline before you append: `docker exec geldar-phase0-paper-1 tail -c 1 /data/plugins/GeldarCore/config.yml | od -c`
    (UNPROVEN; expect `\n`). If it does not, stop and fix it by hand, or the appended key joins the last line.
-3. Add the flag in the container's copy only: `docker compose -f compose/phase0.yml exec paper sh -c 'printf "provenance:\n  enabled: true\n" >> /data/plugins/GeldarCore/config.yml'`
+3. Add the flag in the container's copy only: `docker exec geldar-phase0-paper-1 sh -c 'printf "provenance:\n  enabled: true\n" >> /data/plugins/GeldarCore/config.yml'`
    (UNPROVEN: that the Paper image has `sh` and `printf`). `blockowner.enabled` is already `true` by default (`config.yml:38`);
    if step 1 shows `enabled: false` under `blockowner:`, set that line to `enabled: true` in the container copy (UNPROVEN
 mechanism: `sed -i` in the Paper image; read the file again to confirm). Never add a second `blockowner:` key.
@@ -317,8 +341,8 @@ the URL (`plugins/coreprotect/coreprotect.lock.json`), and only the colo deploy 
 
 The repo's RCON client is the one golem uses (`golem/src/test-control.ts`), on `127.0.0.1:25575` with `--rcon-host`.
 Concrete form (UNPROVEN in this image; the repo's precedent is `docs/runbooks/scratch-stack.md:307,311`), for example
-`docker compose -p geldar-phase0 -f compose/phase0.yml -f compose/rcon-host.yml exec paper rcon-cli plugins`; the same
-prefix with `rcon-cli list` or `rcon-cli tick query`. Read-only verbs:
+`docker exec geldar-phase0-paper-1 rcon-cli plugins` (the docker form; the ops error was from a `compose ... logs` run, so
+the cause of any compose error is UNPROVEN); the same prefix with `rcon-cli list` or `rcon-cli tick query`. Read-only verbs:
 - `plugins`: lists `CoreProtect` once the overlay loaded it (the absent and present checks);
 - `list`: players online (0 before a case, and 0 after teardown);
 - `tick query`: TPS (20 expected).
