@@ -1,5 +1,5 @@
 # Character sheet and psyche campaign (geldar-sheet) resume
-Coordinator: geldar-sheet. Updated 2026-11-20 at `origin/main` = `0e0d795e` (merge of #827). State and evidence: [assessment-2026-11-18.md](assessment-2026-11-18.md) (a 2026-11-18 snapshot; the ledger supersedes its status); NeoForge: [neoforge-delta.md](neoforge-delta.md); cards and order: [../harness/ledger.md](../harness/ledger.md) (regenerated 2026-11-20), [sheet-next-wave-order.md](../harness/sheet-next-wave-order.md), [verification](../harness/sheet-cards-verification-2026-11-18.md).
+Coordinator: geldar-sheet. Updated 2026-11-20 at `origin/main` = `f03ab6e1` (merge of #832). State and evidence: [assessment-2026-11-18.md](assessment-2026-11-18.md) (a 2026-11-18 snapshot; the ledger supersedes its status); NeoForge: [neoforge-delta.md](neoforge-delta.md); cards and order: [../harness/ledger.md](../harness/ledger.md) (regenerated 2026-11-20), [sheet-next-wave-order.md](../harness/sheet-next-wave-order.md), [verification](../harness/sheet-cards-verification-2026-11-18.md).
 Numbers (checked on main 2026-11-20). Decisions on main: 0280-0282, 0320-0329, 0343-0345, 0349, 0385-0390. 0346-0348 are not on main (status unverified). 0283-0285 stay free (released by 0326, 0327; never write 0283 as Accepted); 0286-0288 stay with S12-01, S12-04, S12-05. SQL: 0050-0053 used (0053 is the `turn_records` erase, S9-00a, #778); 0054, 0055 released (0327); 0056, 0057 S12; 0058, 0059 spare.
 > **Operator revision pending (2026-11-18): NF-1..NF-6 as recorded do not match the operator's intent (humans as an invisible hand, acts of nature). Do not build from 0329 or the NeoForge twins.** Decision 0390 (Proposed) records the hybrid model that would supersede 0329; its open questions (a) to (g) are held, see below.
 
@@ -20,8 +20,8 @@ Every sheet feature stays held on the live server until the whole campaign is co
 
 ## Done (merged inactive; the ledger has the PR numbers)
 - W0, W1, W2 (see the ledger), GX-08 (#526), nats-auth split (#534).
-- W5 world half: AN-24 (#782), AN-25 (#797), AN-26a (#798), AN-26b (#825), AN-27a (#781), AN-28a (#809), AN-28c (#817, #818, #819 v2 redo).
-- W6 to W8 world half: AN-44 (#788), AN-39 (#789), AN-40a (#783), AN-40 (#791), AN-41 (#790), AN-46 (#792) and AN-46b (#801), AN-47a (#799, #802, #804), AN-47b (#814), AN-49 (#800), AN-51a (#810), AN-51b (#811), AN-50a (#820).
+- W5 world half: AN-24 (#782), AN-25 (#797), AN-26a (#798), AN-26b (#825), AN-27a (#781), AN-27b (#829), AN-28a (#809), AN-28b (#830), AN-28c (#817, #818, #819 v2 redo).
+- W6 to W8 world half: AN-44 (#788), AN-39 (#789), AN-40a (#783), AN-40 (#791), AN-41 (#790), AN-46 (#792) and AN-46b (#801), AN-47a (#799, #802, #804), AN-47b (#814), AN-47c (#831), AN-49 (#800), AN-51a (#810), AN-51b (#811), AN-50a (#820), AN-50b (#832).
 - W9 and W12: S9-00a (#778), S12-03 (#780, #795), S12-04a (#786).
 - Contract split: CS-0 (#805), CS-1 (#813), CS-2 (#806).
 - Capture workstream: CAP-1 to CAP-5 done. PRs #821, #822, #824, #827; evidence #823 and #826. Real payloads for the AN-26a, AN-27a, AN-47a and AN-51a fixtures are in their worknotes (captured 2026-11-20 at `73788889`); AN-26b was built from the real toss capture. Procedure: [capture-real-payloads](../../runbooks/capture-real-payloads.md).
@@ -29,7 +29,7 @@ Every sheet feature stays held on the live server until the whole campaign is co
 
 ## Next (order)
 1. G13, the kit re-mirror to psyche 1.1.0 (card HC-48): unblocked, the tag `psyche-v1.1.0` is on origin. It runs in the kit repo with the scriptorium orchestrator's go.
-2. The W5/W8 serial chain, strictly in this order, one card at a time: AN-27b (in revival: branch `phase1/an-27b-break-observation`, tip `d0f39ddc`, no PR yet) then AN-28b then AN-47c then AN-50b. The `FixNeeded (G9)` on AN-28b in the old ledger is stale; the card in `work-packets-sheet-w3-w5.md` is current.
+2. The W5/W8 serial chain is COMPLETE on main: AN-27b #829, AN-28b #830, AN-47c #831, AN-50b #832 (all inert; `observations` stays absent in every production config). Its live items are pending operator approval and need a shard: real NATS role denial of raw `provenance.>` to the MCP, eventsink and mind roles, observer-to-player-event for every active row, the full `./geldar.ps1 check`, the integration floor and the 20 TPS bench. Do not run them before the operator approves. CI-1 (the Maven `Could not find` retry in `ci.yml`, branch `phase1/ci-1-maven-retry`) is in flight, off the sheet chain.
 3. S9-00 (erasure coverage gate): Ready. S12-04b (apply) stays held by 0328 and the held-live ruling.
 4. Wave K (kit, kit-b): re-verify HC-19 to HC-26c against hw0, then dispatch with the scriptorium orchestrator's go (not re-checked on 2026-11-20).
 5. Recapture AN-09a chunk fixtures from AN-09b's builder (unchecked; check the AN-09a worknote). AN-47b's fixtures are hand-built per its worknote; whether they were refreshed from the #823 `combat_fact` captures is unverified.

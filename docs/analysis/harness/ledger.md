@@ -1,6 +1,6 @@
 # Card ledger (generated)
 
-Regenerated 2026-11-20 against geldar `origin/main` = `0e0d795e` (merge of #827). The geldar rows come from the merged PRs (`gh pr list --state merged`, `git log --first-parent`), the worknotes in [worknotes/](worknotes/), the card files and the origin branches. Kit rows (HC-nn) are carried unchanged from the 2026-11-18 regeneration (kit `origin/scriptorium/hw0` = `673d756`, not re-checked on 2026-11-20: unverified). The 2026-11-18 inputs were [sheet-cards-verification-2026-11-18.md](sheet-cards-verification-2026-11-18.md) (verdicts) and the operator rulings 0320 to 0328. The README ledger summarises these; this file is the exact list. Regenerate it after any card edit.
+Regenerated 2026-11-20 against geldar `origin/main` = `0e0d795e` (merge of #827); rows AN-27b, AN-28b, AN-47c and AN-50b updated for the chain completion at `f03ab6e1` (merge of #832). The geldar rows come from the merged PRs (`gh pr list --state merged`, `git log --first-parent`), the worknotes in [worknotes/](worknotes/), the card files and the origin branches. Kit rows (HC-nn) are carried unchanged from the 2026-11-18 regeneration (kit `origin/scriptorium/hw0` = `673d756`, not re-checked on 2026-11-20: unverified). The 2026-11-18 inputs were [sheet-cards-verification-2026-11-18.md](sheet-cards-verification-2026-11-18.md) (verdicts) and the operator rulings 0320 to 0328. The README ledger summarises these; this file is the exact list. Regenerate it after any card edit.
 
 File column: `geldar A` / `geldar C` / `kit A` / `kit B` / `kit C` / `extra` are the 2026-11-14 card files in this folder; `sheet W3-W5`, `sheet W6-W8`, `sheet W9-W12`, `sheet NF` are `work-packets-sheet-*.md`; `kit-b (kit repo)` is `docs/analysis/harness/work-packets-kit-b.md` in `geldar-scriptorium`, authoritative for HC-19 to HC-26c (0320).
 
@@ -89,9 +89,9 @@ Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged o
 | AN-26a | pickup provenance in the plugin | sheet W5 | AN-24, AN-27a | 40k | Done (#798; real toss capture 2026-11-20, #823) |
 | AN-26b | observed gift in the recipient's Body | sheet W5 | AN-24, AN-25, AN-26a | 40k | Done (#825; built from the real toss capture) |
 | AN-27a | break provenance in the plugin | sheet W5 | AN-24 | 40k | Done (#781; real break captures with CoreProtect present and absent, 2026-11-20, #823) |
-| AN-27b | observed property break in the owner's Body | sheet W5 | AN-24, AN-25, AN-27a | 35k | In revival: branch `phase1/an-27b-break-observation`, tip `d0f39ddc` (feat `68b49717`, review tests `d0f39ddc`), no PR; first link of the serial chain AN-27b, AN-28b, AN-47c, AN-50b |
+| AN-27b | observed property break in the owner's Body | sheet W5 | AN-24, AN-25, AN-27a | 35k | Done (#829, merge `d0ae058d`; first link of the serial chain, review 2 ship; revert-checks re-run on current main) |
 | AN-28a | delivery path to the player log | sheet W5 | AN-24, AN-25 | 45k | Done (#809) |
-| AN-28b | Body subscription and leakage gate (split) | sheet W5 | AN-25, AN-26b, AN-27b, AN-28a | 50k plus ops | Queued, strict serial chain after AN-27b (the earlier `FixNeeded (G9)` is stale; the card in `work-packets-sheet-w3-w5.md` is current) |
+| AN-28b | Body subscription and leakage gate (split) | sheet W5 | AN-25, AN-26b, AN-27b, AN-28a | 50k plus ops | Done (#830, merge `6aef7a32`; inert: the Body option `observations` is absent by default; leakage gate runs the Body code; three review rounds) |
 | AN-28c | plugin setup, `geldar.ps1` NATS rows, nats-auth tests (split from AN-28b) | sheet W5 | AN-28b | | Done (#817; follow-ups #818; guard redo v2 #819, which supersedes the first guard branch). Merged before AN-28b, so the depends-on order on the card was not enforced |
 | HC-27a | social model rules, update arithmetic and store | sheet W6-W8 (supersedes kit C) | HC-18, HC-17b | 30k | Ready |
 | HC-27b | observations: scope, dedup, sampling and apply | sheet W6-W8 (supersedes kit C) | HC-27a, AN-28a, HC-46 | 38k | FixNeeded (read the 0324 id and position fields; W5 merged) |
@@ -112,12 +112,12 @@ Status: `Done (#n)` merged on geldar main (PR number); `Done (kit hw0)` merged o
 | AN-46b | optional `player` on the combat-fact event (follow-up to AN-46) | sheet W6-W8 | AN-46 | | Done (#801) |
 | AN-47a | combat facts in the plugin | sheet W6-W8 | AN-46, AN-27a | 45-50k | Done (#799, #802, #804; real `combat_fact` captures 2026-11-20, #823) |
 | AN-47b | combat award normaliser (0321 shared encounter key; the visible-fight half is AN-47c) | sheet W6-W8 | AN-46, AN-47a, AN-25, AN-09a | 45-50k | Done (#814; its worknote still lists a real-payload capture as owed, and whether the fixtures were refreshed from the #823 captures is unverified) |
-| AN-47c | visible-fight observation in the Body (`fight_seen`) | sheet W6-W8 | AN-46, AN-25, AN-28b (subject helpers) | | Queued, strict serial chain after AN-28b |
+| AN-47c | visible-fight observation in the Body (`fight_seen`) | sheet W6-W8 | AN-46, AN-25, AN-28b (subject helpers) | | Done (#831, merge `49868434`; built from the real `engaged` captures in `fixtures/combat-real.json`) |
 | AN-49 | conversation exchange and social award keys | sheet W6-W8 | AN-46, AN-09a | 40-50k | Done (#800) |
 | AN-51a | container-taking facts in the plugin | sheet W6-W8 | AN-46, AN-27a | 35-45k | Done (#810; captures #823, anvil and enchanting-table re-run #826) |
 | AN-51b | observed container taking in the owner's Body | sheet W6-W8 | AN-46, AN-51a, AN-25 | 30-40k | Done (#811) |
 | AN-50a | evidence registration: sink `case` arms and plugin registration behind the default-off gate | sheet W6-W8 | AN-47b, AN-49, AN-51a, AN-28c | 45-50k plus ops | Done (#820; combat and container-take provenance registered, `combat_fact` awards, inert) |
-| AN-50b | Body subscription and leakage gate for the evidence observations | sheet W6-W8 | AN-50a, AN-47c, AN-51b, AN-28b | 45-50k plus ops | Queued, last link of the serial chain AN-27b, AN-28b, AN-47c, AN-50b |
+| AN-50b | Body subscription and leakage gate for the evidence observations | sheet W6-W8 | AN-50a, AN-47c, AN-51b, AN-28b | 45-50k plus ops | Done (#832, merge `f03ab6e1`; last link of the chain; take and combat subjects subscribed, `fight_seen` and `container_taken` map but present no line; live items pending operator approval) |
 | S9-00a | `turn_records` joins the account-deletion path (SQL 0053; 0323) | sheet W9-W12 | none | | Done (#778) |
 | S9-00 | erasure gate: every life-keyed table is erased | sheet W9-W12 | turn_records erase fix | 20k | Ready (S9-00a merged in #778; no gate PR on main as of 2026-11-20) |
 | S9-01 | refusal reason code and decision key | sheet W9-W12 | | 35k | Retired (0326) |
