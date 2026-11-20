@@ -1,4 +1,5 @@
 import { hurtSentence } from '@geldar/contract';
+import { visibleActorName } from './observation.ts';
 import { defineMindHandler } from './types.ts';
 
 /** Bukkit damage causes to what the player is told hit them. The plugin does not send the attacker,
@@ -39,7 +40,24 @@ function damageText(payload: Record<string, unknown>, amount: number): string {
   return hurtText(payload.cause);
 }
 
+/** The raw `actor.name` of a damage payload (AN-25), or undefined when there is none. */
+function actorNameOf(payload: Record<string, unknown>): unknown {
+  const actor = payload.actor;
+  return typeof actor === 'object' && actor !== null
+    ? (actor as { name?: unknown }).name
+    : undefined;
+}
+
 export const damageHandler = defineMindHandler('damage', (event, base) => {
   const amount = amountOf(event.payload);
-  return [{ ...base, kind: 'damage', amount, cause: damageText(event.payload, amount) }];
+  const actor = visibleActorName(actorNameOf(event.payload));
+  return [
+    {
+      ...base,
+      kind: 'damage',
+      amount,
+      cause: damageText(event.payload, amount),
+      ...(actor !== undefined ? { actor } : {}),
+    },
+  ];
 });

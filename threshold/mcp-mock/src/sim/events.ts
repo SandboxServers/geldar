@@ -18,6 +18,16 @@ export interface SimEvent extends WakeEvent {
   trigger?: Readonly<Record<string, string | number | boolean | null>>;
   /** For death and damage: the fixed cause phrase (one of the mapper's templates, never world text). */
   cause?: string;
+  /** For observation: the observation kind (AN-24). Absent for any other kind. */
+  observationKind?: 'gift_received' | 'property_broken';
+  /** For observation and damage: the visible actor's name, already checked against the name pattern. */
+  actor?: string;
+  /** For observation: the gift's item name, without namespace. */
+  item?: string;
+  /** For observation: the gift's count. */
+  count?: number;
+  /** For observation: the property's block name, without namespace. */
+  block?: string;
   /** For death: the coarse place, x and z only (the contract's `where`). Absent when the place is unknown. */
   where?: { x: number; z: number };
   /** For death: the number of items dropped. Absent or 0 means none dropped. */
