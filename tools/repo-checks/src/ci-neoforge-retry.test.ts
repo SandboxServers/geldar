@@ -17,6 +17,7 @@ function findBash(): string | undefined {
   const candidates = [
     'C:\\Program Files\\Git\\bin\\bash.exe',
     'C:\\Program Files\\Git\\usr\\bin\\bash.exe',
+    join(process.env.LOCALAPPDATA ?? '', 'Programs', 'Git', 'bin', 'bash.exe'),
     '/bin/bash',
     '/usr/bin/bash',
   ];
@@ -68,6 +69,18 @@ Could not resolve all dependencies for configuration ':testRuntimeClasspath'.
    > Could not GET 'https://repo.maven.apache.org/maven2/org/junit/jupiter/junit-jupiter/6.1.3/junit-jupiter-6.1.3.pom'.
 `;
 
+// Synthetic text in Gradle's shape for a remote Maven miss (not a verbatim CI log): Gradle prints the "lock state"
+// sentence in every such failure, so it must not be an early exit.
+const MAVEN_MISS = `> Could not resolve io.nats:jnats:2.26.4.
+   > Could not find io.nats:jnats:2.26.4.
+     Searched in the following locations:
+       - https://repo.maven.apache.org/maven2/io/nats/jnats/2.26.4/jnats-2.26.4.pom
+     Required by:
+         project :core
+
+Did not resolve 'io.nats:jnats:2.26.4' which is part of the dependency lock state
+`;
+
 const CASES: Array<[string, string, boolean]> = [
   ['real Maven GET failure wrapped in "Could not resolve all"', REAL_FLAKE, true],
   [
@@ -92,6 +105,23 @@ const CASES: Array<[string, string, boolean]> = [
     true,
   ],
   ['test failure', '12 tests completed, 1 FAILED\n> Task :test FAILED', false],
+  ['Gradle-shaped Maven miss (synthetic text)', MAVEN_MISS, true],
+  [
+    'Maven miss plus dependency verification failure',
+    `Dependency verification failed for configuration ':x'\n${MAVEN_MISS}`,
+    false,
+  ],
+  [
+    'script error: Could not find method',
+    'Could not find method foo() for arguments [] on object of type org.gradle.api.Project.',
+    false,
+  ],
+  [
+    'script error: Could not find property',
+    "Could not find property 'x' on project ':core'.",
+    false,
+  ],
+  ['compile failure', 'e: error: cannot find symbol\n  symbol: class Foo', false],
   [
     'verification failure plus Could not GET',
     `Dependency verification failed for configuration ':x'\n${REAL_FLAKE}`,
@@ -111,6 +141,22 @@ describe.skipIf(!bash)('neoforge CI retry order', () => {
       }
     });
   }
+});
+
+// The three retry blocks must share one early-exit line and one transient-retry line, so they cannot drift apart.
+describe('the three Gradle retry blocks share one retry policy', () => {
+  it('have identical early-exit and transient-retry grep lines', () => {
+    const policies = BLOCKS.map((name) => {
+      const run = steps.find((s) => s.name === name)?.run ?? '';
+      return run
+        .split('\n')
+        .filter((l) => l.includes('grep -Eqi'))
+        .map((l) => l.replace(/"\$RUNNER_TEMP\/[^"]+"/, '"$LOG"'))
+        .join('\n');
+    });
+    expect(policies[0]?.split('\n') ?? []).toHaveLength(2);
+    expect(new Set(policies).size).toBe(1);
+  });
 });
 
 describe.skipIf(bash)('neoforge CI retry order (skipped: no bash/sh available)', () => {
