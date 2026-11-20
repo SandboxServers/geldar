@@ -1,0 +1,11 @@
+{
+  "kind": "break",
+  "world": "world",
+  "x": 10,
+  "y": 64,
+  "z": -3,
+  "actor": null,
+  "prior_owner": null,
+  "block": "stone",
+  "tick": 1200
+}
