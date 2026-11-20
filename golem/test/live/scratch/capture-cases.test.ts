@@ -8,11 +8,13 @@ import {
   CAPTURE_CASES,
   findCase,
   isLifeId,
+  POSITIVE_CONTROL,
   parseRunArgs,
   refuseShard,
   renderList,
   renderPlan,
   resolveCases,
+  sessionRefusal,
 } from './capture-cases.ts';
 
 const RUNBOOK = new URL('../../../../docs/runbooks/capture-real-payloads.md', import.meta.url);
@@ -154,5 +156,38 @@ describe('the runbook run sheet and the case table', () => {
     );
     const table = new Set(CAPTURE_CASES.map((c) => c.id));
     expect([...named].sort()).toEqual([...table].sort());
+  });
+
+  it('the sheet commands parse, share one --out, and run as a valid session in sheet order', () => {
+    const text = readFileSync(RUNBOOK, 'utf8');
+    const lines = [
+      ...text.matchAll(
+        /^node --experimental-strip-types golem\/test\/live\/scratch\/provenance-capture\.ts (.+)$/gm,
+      ),
+    ].map((m) => m[1] ?? '');
+    expect(lines.length).toBeGreaterThanOrEqual(16);
+    const runs = lines.map((l) => ({
+      args: parseRunArgs(l.split(' ')),
+      out: l.match(/--out (\S+)/)?.[1] ?? '.capture',
+    }));
+    const outs = new Set(runs.filter((r) => r.args.mode === 'run').map((r) => r.out));
+    expect(outs.size).toBe(1);
+    // The marker a previous run leaves on disk: chest-single's passed validation in the same --out.
+    let control = false;
+    const executed = runs.filter((r) => r.args.mode === 'run').map((r) => r.args.cases);
+    for (const cases of executed) {
+      expect(sessionRefusal(cases, control)).toBeNull();
+      if (cases.some((c) => c.id === POSITIVE_CONTROL)) control = true;
+    }
+    expect(new Set(executed.flat().map((c) => c.id)).size).toBe(15);
+    expect(executed.at(-1)?.map((c) => c.id)).toEqual(['break-coreprotect-present']);
+  });
+
+  it('the sheet names the flags, the RCON commands and the full step-4 command', () => {
+    const text = readFileSync(RUNBOOK, 'utf8');
+    expect(text).toContain('rcon-cli plugins');
+    expect(text).toContain('provenance.enabled');
+    expect(text).toContain('blockowner.enabled');
+    expect(text).toContain('--case break-coreprotect-present');
   });
 });

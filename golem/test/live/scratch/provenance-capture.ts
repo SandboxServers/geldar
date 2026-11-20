@@ -9,7 +9,8 @@
 // by the unit lane (not *.test.ts).
 // Run: node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case <name|all>
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { blockownerQuerySubject } from '@geldar/contract';
@@ -23,7 +24,11 @@ import {
   BOT_B,
   CASE_BLOCKS,
   type CaptureCase,
+  CONTROL_MARKER,
+  controlFromMarker,
+  controlWarning,
   doubleChestCommands,
+  nextControlState,
   POSITIVE_CONTROL,
   parseRunArgs,
   refuseShard,
@@ -33,6 +38,7 @@ import {
   SLOT_B,
   sessionRefusal,
   staleFolderAction,
+  validatorArgs,
   zeroIsEvidence,
 } from './capture-cases.ts';
 import { hasExited, startSubscriber, stopSubscriber } from './capture-subscriber.ts';
@@ -66,6 +72,8 @@ const OWNER_WINDOW_MS = 30_000;
  */
 const QUERY_TIMEOUT_MS = 2500;
 const ANVIL_NAME = 'capture';
+/** The whole case (bots, action, settle) must end within this; a case with no answer at all is INVALID. */
+const CASE_DEADLINE_MS = 5 * 60_000;
 
 /** The bots of one case: `b` only for the two-life cases. `natsUrl` and `shard` are for the owner query. */
 interface Scene {
@@ -213,9 +221,12 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
       if (!String(reply).includes('Changed the block'))
         throw new Error(`chest-double: "${cmd}" did not change a block: ${String(reply)}`);
     }
-    await ctl.command(
-      `data merge block ${x} 200 ${z} {Items:[{Slot:0b,id:"minecraft:cobblestone",count:8b}]}`,
-    );
+    // The stack goes in both halves, so window slot 0 holds it whichever half the pairing puts first (UNPROVEN here).
+    for (const half of [x, x + 1]) {
+      await ctl.command(
+        `data merge block ${half} 200 ${z} {Items:[{Slot:0b,id:"minecraft:cobblestone",count:8b}]}`,
+      );
+    }
     await bot.waitForTicks(10);
     const target = bot.blockAt(new Vec3(x, 200, z));
     if (target === null) throw new Error(`no chest at ${x},200`);
@@ -230,7 +241,9 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
         `chest-double: the window has ${win.slots.length} slots, not 90 (54 + 36): not a double chest`,
       );
     }
-    note('chest-double: 54 container slots + 36 player slots: a double chest');
+    note(
+      'chest-double: 54 container slots + 36 player slots: a double chest; the stack is in both halves',
+    );
     await takeOutput(bot, win, 0, 'chest-double');
     bot.closeWindow(win);
   },
@@ -297,7 +310,7 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
     ) as AnvilWindow;
     // mineflayer's rename already takes the output out of slot 2 (lib/plugins/anvil.js putAway), so there is no
     // takeOutput here: the proof is the renamed stick in the inventory.
-    await win.rename(heldItem(bot, 'stick'), ANVIL_NAME);
+    await within('anvil: rename', win.rename(heldItem(bot, 'stick'), ANVIL_NAME), 20_000);
     bot.closeWindow(win);
     await verifyRenamedStick(bot, ANVIL_NAME);
   },
@@ -410,20 +423,31 @@ async function runCase(c: CaptureCase, opts: RunOptions): Promise<number> {
       await scene.a.bot.waitForTicks(SETTLE_TICKS);
     };
     const shared = { natsUrl: opts.url, shard: opts.shard };
-    if (c.bots === 2) {
-      await withLiveBot({ name: BOT_A, slot: SLOT_A }, (a) =>
-        withLiveBot({ name: BOT_B, slot: SLOT_B }, (b) => run({ a, b, ...shared })),
-      );
-    } else {
-      await withLiveBot({ name: BOT_A, slot: SLOT_A }, (a) => run({ a, ...shared }));
-    }
+    const play =
+      c.bots === 2
+        ? withLiveBot({ name: BOT_A, slot: SLOT_A }, (a) =>
+            withLiveBot({ name: BOT_B, slot: SLOT_B }, (b) => run({ a, b, ...shared })),
+          )
+        : withLiveBot({ name: BOT_A, slot: SLOT_A }, (a) => run({ a, ...shared }));
+    // No answer at all (a window or a reply that never comes) makes the case INVALID after the deadline.
+    await within(`case ${c.id} (INVALID if it times out)`, play, CASE_DEADLINE_MS);
     if (hasExited(sub))
       throw new Error('the subscriber died during the case: the capture is INVALID, not a zero');
   } finally {
     await stopSubscriber(sub);
   }
-  const extra = c.coreprotect === 'present' ? ['--expect-prior-owner'] : [];
-  return validateFolder(folder, c.expect, extra);
+  return validateFolder(folder, c.expect, validatorArgs(c));
+}
+
+/** True when `<out>/positive-control.json` says chest-single passed in an earlier run of this session. */
+function readControlMarker(outRoot: string): boolean {
+  const path = join(outRoot, CONTROL_MARKER);
+  if (!existsSync(path)) return false;
+  try {
+    return controlFromMarker(JSON.parse(readFileSync(path, 'utf8')));
+  } catch {
+    return false;
+  }
 }
 
 async function main(): Promise<number> {
@@ -437,18 +461,20 @@ async function main(): Promise<number> {
     process.stderr.write(`${refusal}\n`);
     return 2;
   }
+  const outRoot = resolve(args.out);
   if (args.mode === 'dry-run') {
     process.stdout.write(`${renderPlan(args.cases, args)}\n`);
+    const warning = controlWarning(args.cases, readControlMarker(outRoot));
+    if (warning !== null) process.stdout.write(`${warning}\n`);
     return 0;
   }
-  const session = sessionRefusal(args.cases);
+  const session = sessionRefusal(args.cases, readControlMarker(outRoot));
   if (session !== null) {
     process.stderr.write(`${session}\n`);
     return 2;
   }
-  const outRoot = resolve(args.out);
   let worst = 0;
-  let controlPassed = false;
+  let controlPassed = readControlMarker(outRoot);
   for (const c of args.cases) {
     process.stdout.write(`== case ${c.id}\n`);
     const notEvidence = zeroIsEvidence(c, controlPassed);
@@ -457,6 +483,8 @@ async function main(): Promise<number> {
       worst = 2;
       continue;
     }
+    // A re-run of the control starts unproven: the marker goes until this run passes again.
+    if (c.id === POSITIVE_CONTROL) rmSync(join(outRoot, CONTROL_MARKER), { force: true });
     const code = await runCase(c, {
       url: args.natsUrl,
       outRoot,
@@ -466,7 +494,16 @@ async function main(): Promise<number> {
       process.stderr.write(`case ${c.id}: ${String(error)}\n`);
       return 2;
     });
-    if (c.id === POSITIVE_CONTROL && code === 0) controlPassed = true;
+    controlPassed = nextControlState(c, code, controlPassed);
+    if (c.id === POSITIVE_CONTROL && code === 0) {
+      const marker = {
+        case: c.id,
+        expect: c.expect,
+        session: randomUUID(),
+        validatedAt: new Date().toISOString(),
+      };
+      writeFileSync(join(outRoot, CONTROL_MARKER), `${JSON.stringify(marker, null, 2)}\n`);
+    }
     worst = Math.max(worst, code);
   }
   return worst;

@@ -228,17 +228,60 @@ export function zeroIsEvidence(c: CaptureCase, controlPassed: boolean): string |
 }
 
 /**
- * Refuses up front a take=0 case that has no positive control before it in the selected cases. The runner also
- * checks at run time that the control actually passed (its validator exit was 0).
+ * The session marker: `<out>/positive-control.json`, written by the runner when chest-single passes its validator.
+ * A later run with the same `--out` (the run sheet runs the send-nothing cases one per command) reads it, so a zero
+ * counts only after the control passed in this capture session.
  */
-export function sessionRefusal(cases: readonly CaptureCase[]): string | null {
-  const earlier = new Set<string>();
+export const CONTROL_MARKER = 'positive-control.json';
+
+/** True only for a marker that says chest-single passed its take=1 validation in some run (the session id is set). */
+export function controlFromMarker(marker: unknown): boolean {
+  if (typeof marker !== 'object' || marker === null) return false;
+  const m = marker as Record<string, unknown>;
+  return (
+    m.case === POSITIVE_CONTROL &&
+    m.expect === 'take=1' &&
+    typeof m.session === 'string' &&
+    m.session.length > 0
+  );
+}
+
+/** The control state after one case: only chest-single changes it, and only by its validator's exit (0 = passed). */
+export function nextControlState(c: CaptureCase, code: number, passed: boolean): boolean {
+  if (c.id !== POSITIVE_CONTROL) return passed;
+  return code === 0;
+}
+
+/** The extra validator flags of a case. The present case must show a prior owner (null fails). */
+export function validatorArgs(c: CaptureCase): string[] {
+  return c.coreprotect === 'present' ? ['--expect-prior-owner'] : [];
+}
+
+/**
+ * Refuses up front a take=0 case with no positive control before it: chest-single earlier in the selected cases, or
+ * a passed control already on disk (`controlOnDisk`, read from the session marker in `--out`). The runner also
+ * checks at run time that the control passed (its validator exit was 0).
+ */
+export function sessionRefusal(
+  cases: readonly CaptureCase[],
+  controlOnDisk = false,
+): string | null {
+  let control = controlOnDisk;
   for (const c of cases) {
-    const refusal = zeroIsEvidence(c, earlier.has(POSITIVE_CONTROL));
+    const refusal = zeroIsEvidence(c, control);
     if (refusal !== null) return refusal;
-    earlier.add(c.id);
+    if (c.id === POSITIVE_CONTROL) control = true;
   }
   return null;
+}
+
+/** The dry-run's warning: what a real run would refuse. Null when the selected cases are a valid session. */
+export function controlWarning(
+  cases: readonly CaptureCase[],
+  controlOnDisk: boolean,
+): string | null {
+  const refusal = sessionRefusal(cases, controlOnDisk);
+  return refusal === null ? null : `warning (a real run refuses this): ${refusal}`;
 }
 
 /**

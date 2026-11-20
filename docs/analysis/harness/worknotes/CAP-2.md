@@ -61,7 +61,7 @@ Every case is a bot action at the arena (`x = centre.x + 2`, `y = 200`). Block i
 |---|---|---|
 | `node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --list` | 0 | the table below |
 | `... --case all --dry-run` | 0 | the plan below |
-| `./geldar.ps1 pnpm check:repo` | 0 | no `error:`; warnings only for other packages |
+| `./geldar.ps1 pnpm check:repo` | 0 (CAP-fix-3 re-run, after the three RFC 5737 literal fix) | no `error:`; warnings only for other packages. The earlier "0" for this row was false: b37f8a07 exited 1 |
 | `pnpm exec vitest run tools/capture/src golem/test/live/scratch` | 0 | 8 files, 86 tests pass (includes the runbook test) |
 | `pnpm exec biome ci golem/test/live/scratch tools/capture/src` | 0 | 16 files |
 | `git diff --check` | 0 | |

@@ -49,10 +49,11 @@ node tools/capture/src/validate-captures.ts <capture-dir> [--expect <case=N,...>
   `validateCombatFactPayload`.
 - Claim rows, printed next to the file they belong to (schema column `n/a`):
   - `combat_fact`: the payload has the `player` key (AN-47a); `encounter_key`'s life part equals `life_id` (decision 0321).
-  - `break`: `prior_owner` is printed, never judged (AN-27a: null without CoreProtect, non-null with it).
+  - `break`: `prior_owner` is printed; with `--expect-prior-owner` a null or empty value fails (AN-27a: null without CoreProtect, non-null with it).
   - `take`: `item` and `count` are printed (AN-51a).
 - A claim row that says `fail` means the capture refutes that claim. It is not a validator error, but it does exit 1.
 - `--expect break=2,combat_fact=1` adds one row per case: `fail` when that case has fewer files than asked.
+- `--expect-prior-owner` (flag): the `break` rows also fail a null or empty `prior_owner`. The present case uses it.
 
 **Table.** Columns `case`, `file`, `schema`, `result`, `detail`, then `N row(s), M failing`.
 

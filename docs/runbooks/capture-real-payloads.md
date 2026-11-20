@@ -64,32 +64,40 @@ copy. Never edit `plugin/core/src/main/resources/config.yml`.
 
 ### Stage 3: captures (flag on, shard exclusive, one case at a time)
 
-Dry run first (connects to nothing), then each case. Expected files are the count the validator must show.
+Flag on first (UNPROVEN until the first capture): do Stage 2's flag steps ("Set the flag on the scratch shard", steps 1-4,
+below) before the first line of the block. Step 1 must show `blockowner:` with `enabled: true` (repo default,
+`config.yml:38`), and `provenance:` with `enabled: true` after step 3. Run every line from the repo root with the same
+`--out .capture/cap-phase0`. The send-nothing cases (`take=0`) count only after `chest-single` passed in that `--out`:
+its pass writes `.capture/cap-phase0/positive-control.json`, which later runs read. So a lone `--case crafting-table`
+exits 2 when the marker is missing; run `chest-single` first (it is in the block's order). After a failed case, rerun
+that case with `--clean` and the same `--out`; never retry in a loop. Expected files are the count the validator shows.
 
 ```
 node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --list
-node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case all --dry-run
-node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case toss
-node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case break-coreprotect-absent
-node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case kill
-node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case survived
-node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case chest-single
-node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case chest-double
-node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case chest-shift-click
-node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case chest-number-key
-node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case furnace
-node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case brewing-stand
-node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case crafting-table
-node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case anvil
-node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case enchanting-table
-node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case player-2x2
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case all --dry-run --out .capture/cap-phase0
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case toss --out .capture/cap-phase0
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case break-coreprotect-absent --out .capture/cap-phase0
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case kill --out .capture/cap-phase0
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case survived --out .capture/cap-phase0
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case chest-single --out .capture/cap-phase0
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case chest-double --out .capture/cap-phase0
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case chest-shift-click --out .capture/cap-phase0
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case chest-number-key --out .capture/cap-phase0
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case furnace --out .capture/cap-phase0
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case brewing-stand --out .capture/cap-phase0
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case crafting-table --out .capture/cap-phase0
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case anvil --out .capture/cap-phase0
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case enchanting-table --out .capture/cap-phase0
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case player-2x2 --out .capture/cap-phase0
+# CoreProtect steps 1-3 below must be done before the next line (it is the last case)
+node --experimental-strip-types golem/test/live/scratch/provenance-capture.ts --case break-coreprotect-present --out .capture/cap-phase0
 ```
 
-The CoreProtect step, after the last row above and before the last case. Nothing here was run.
+The CoreProtect steps go after the fourteen cases above and before the last line of the block. Nothing here was run.
 
 1. Jar (UNPROVEN source). The overlay mounts `${GELDAR_COREPROTECT_JAR:-../.data/coreprotect/coreprotect.jar}` read-only
    with `create_host_path: false` (`compose/opt-in/coreprotect.yml`), so compose FAILS if the file is absent. Put the
-   jar at `.data/coreprotect/coreprotect.jar` in the clone, or export `GELDAR_COREPROTECT_JAR` to its path. The version
+   jar at `.data/coreprotect/coreprotect.jar` in the clone, or export `GELDAR_COREPROTECT_JAR` to its absolute path (a relative value resolves against `compose/`, not your shell). The version
    and the expected sha256 are in `plugins/coreprotect/coreprotect.lock.json` (version 24.1, file
    `CoreProtect-CE-24.1.jar`). The lock's URL is the only documented source; `deploy/common.sh` `fetch_coreprotect`
    downloads it and checks sha256 on the colo deploy path, which this phase0 path does not run. So the jar's origin on
@@ -100,9 +108,8 @@ The CoreProtect step, after the last row above and before the last case. Nothing
    (UNPROVEN). `--wait` is required: `shard up` waits for health, plain `up -d` does not.
 3. Check the plugin loaded, as `Assert-PluginsEnabled` does: `docker compose -f compose/phase0.yml -f compose/rcon-host.yml -f compose/opt-in/coreprotect.yml logs --no-color paper | grep "Geldar-Core enabled"`
    (UNPROVEN) must print one line. Then check CoreProtect with RCON `plugins` (see "RCON commands").
-4. Only then: `node ... --case break-coreprotect-present`. It is the LAST case; after it, go to teardown and reverse the overlay.
-
-The Stage 3 table above lists `break-coreprotect-present` in its row order; it is run last, per step 4.
+4. Only then: the block's last line. It is the LAST case; after it, go to teardown and remove the flag (Stage 4 step 2).
+   The overlay is gone after `shard down`; the next `shard up` recreates Paper without it.
 
 Each run writes `.capture/<case>/` (gitignored) and prints the validator table.
 
@@ -150,7 +157,8 @@ Do not edit anything else in those worknotes, and do not create `fixtures/*.json
 ### Stage 4: teardown
 
 1. Stop the script (Ctrl+C). Confirm no bot online: RCON `list`.
-2. Reset the flag: remove the `provenance:` and `blockowner:` `enabled` edits in the container's config, wait 10 s.
+2. Reset the flag: remove the `provenance:` block that Set-the-flag step 3 appended (or set `enabled: false`); set
+   `blockowner.enabled` back only if you changed it; wait 10 s.
 3. RCON `tick query` reads 20 TPS; `gamerule <name>` for any gamerule the case changed (none in CAP-2).
 4. `git diff shards/phase0.yaml` must be empty (restore it with the owner's word if it is not; never `adam select`).
 5. `./geldar.ps1 shard down phase0` (volumes are kept). Deleting the world volume needs the owner's word (run-shard skill).
@@ -241,7 +249,8 @@ Only on the throwaway shard, after the health rows. Nothing below was run; each 
    (UNPROVEN; expect `\n`). If it does not, stop and fix it by hand, or the appended key joins the last line.
 3. Add the flag in the container's copy only: `docker compose -f compose/phase0.yml exec paper sh -c 'printf "provenance:\n  enabled: true\n" >> /data/plugins/GeldarCore/config.yml'`
    (UNPROVEN: that the Paper image has `sh` and `printf`). `blockowner.enabled` is already `true` by default (`config.yml:38`);
-   to turn it off, edit that line, not a second key.
+   if step 1 shows `enabled: false` under `blockowner:`, set that line to `enabled: true` in the container copy (UNPROVEN
+mechanism: `sed -i` in the Paper image; read the file again to confirm). Never add a second `blockowner:` key.
 4. The plugin reloads its config on a timer (`GeldarCore.java:122,172`; the 5 s figure is the comment's, not re-measured).
    Wait 10 s, then confirm with the first capture. No log line is promised.
 5. Teardown: remove the appended `provenance:` block (or set `enabled: false`), wait 10 s.
@@ -257,7 +266,9 @@ the URL (`plugins/coreprotect/coreprotect.lock.json`), and only the colo deploy 
 ## RCON commands (client UNPROVEN)
 
 The repo's RCON client is the one golem uses (`golem/src/test-control.ts`), on `127.0.0.1:25575` with `--rcon-host`.
-A shell form inside the Paper container is UNPROVEN: the image's RCON tooling was not checked. Read-only verbs:
+Concrete form (UNPROVEN in this image; the repo's precedent is `docs/runbooks/scratch-stack.md:307,311`), for example
+`docker compose -p geldar-phase0 -f compose/phase0.yml -f compose/rcon-host.yml exec paper rcon-cli plugins`; the same
+prefix with `rcon-cli list` or `rcon-cli tick query`. Read-only verbs:
 - `plugins`: lists `CoreProtect` once the overlay loaded it (the absent and present checks);
 - `list`: players online (0 before a case, and 0 after teardown);
 - `tick query`: TPS (20 expected).
@@ -370,7 +381,7 @@ Record in the worknote only; the Body-side cards copy fixtures later (do not cre
 
 | Worknote | Section to fill | What goes in |
 |---|---|---|
-| `docs/analysis/harness/worknotes/AN-26a.md` | `## Ops evidence (pending, not run in this packet)` | one `pickup` JSON, plus a negative: the thrower picking up its own item sends nothing |
+| `docs/analysis/harness/worknotes/AN-26a.md` | `## Ops evidence (pending, not run in this packet)` | one `pickup` JSON |
 | `docs/analysis/harness/worknotes/AN-27a.md` | the two bullets `- CoreProtect present:` and `- CoreProtect absent:` | one `break` JSON each; replace the word `pending` |
 | `docs/analysis/harness/worknotes/AN-47a.md` | below `Ops capture pending:` at the end | the kill `combat_fact` and `engaged`, the survived `combat_fact` |
 | `docs/analysis/harness/worknotes/AN-51a.md` | `## Pending (ops evidence, not run)`, both bullets | each take case, and a holder table (chest, double chest, crafting table, furnace, anvil: reports a location? storage type? sent a message?) |
@@ -454,7 +465,7 @@ the wave owner's decision.
 
 | Symptom | Cause | Action |
 |---|---|---|
-| No message for any case | flag unset, listener unregistered (gap above), subscriber started late | stop; check the gap list; restart the subscriber first |
+| No message for any case | flag unset, listener unregistered (see "Merged state" and the flag steps), subscriber started late | stop; check the gap list; restart the subscriber first |
 | Combat or take silent, others fine | bot name is not a life id | rename the bot |
 | `prior_owner` always null | CoreProtect absent, or the chunk base is older than 30 s | expected without CoreProtect; see the break case |
 | Bot denied at join | not registered in the life registry (`GELDAR_NATS_URL` unset) | set it; read the Velocity log row |

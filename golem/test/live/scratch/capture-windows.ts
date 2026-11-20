@@ -29,10 +29,12 @@ export function note(line: string): void {
 
 /** Resolves with `p`, or fails with a clear message after `ms`: a window or reply that never comes fails the case. */
 export function within<T>(what: string, p: Promise<T>, ms = 10_000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const giveUp = new Promise<never>((_, fail) => {
-    setTimeout(() => fail(new Error(`${what}: no answer within ${ms} ms`)), ms);
+    timer = setTimeout(() => fail(new Error(`${what}: no answer within ${ms} ms`)), ms);
   });
-  return Promise.race([p, giveUp]);
+  // The timer is cleared when `p` settles, so a finished case does not keep the process alive for the deadline.
+  return Promise.race([p, giveUp]).finally(() => clearTimeout(timer));
 }
 
 /** Takes the item named `name` out of the bot's inventory; throws when the bot has none. */
@@ -66,7 +68,7 @@ export async function takeFromBlock(
   await bot.waitForTicks(10);
   const target = bot.blockAt(new Vec3(x, 200, arena.center.z));
   if (target === null) throw new Error(`no ${block} at ${x},200`);
-  await bot.openBlock(target);
+  await within(`open ${block}`, bot.openBlock(target));
   await bot.clickWindow(click[0], click[1], click[2]);
   if (bot.currentWindow !== null) bot.closeWindow(bot.currentWindow);
 }

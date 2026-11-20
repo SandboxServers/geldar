@@ -8,13 +8,17 @@ import {
   CAPTURE_CASES,
   CASE_BLOCKS,
   type CaptureCase,
+  controlFromMarker,
+  controlWarning,
   doubleChestCommands,
   findCase,
   isLoopbackUrl,
+  nextControlState,
   parseRunArgs,
   sessionRefusal,
   shardNameProblem,
   staleFolderAction,
+  validatorArgs,
   zeroIsEvidence,
 } from './capture-cases.ts';
 
@@ -64,14 +68,15 @@ describe('the loopback and shard guards', () => {
   });
 
   it('refuses a LAN, a public or a hostname URL, and text that is not a URL', () => {
-    expect(isLoopbackUrl('nats://10.0.0.5:4222')).toBe(false);
-    expect(isLoopbackUrl('nats://192.168.1.2:4222')).toBe(false);
+    // RFC 5737 documentation addresses: not loopback, and not private literals for the repo IP check.
+    expect(isLoopbackUrl('nats://203.0.113.9:4222')).toBe(false);
+    expect(isLoopbackUrl('nats://198.51.100.7:4222')).toBe(false);
     expect(isLoopbackUrl('nats://example.com:4222')).toBe(false);
     expect(isLoopbackUrl('not a url')).toBe(false);
   });
 
   it('parseRunArgs refuses a non-loopback --nats-url before anything runs', () => {
-    expect(() => parseRunArgs(['--case', 'toss', '--nats-url', 'nats://10.0.0.5:4222'])).toThrow(
+    expect(() => parseRunArgs(['--case', 'toss', '--nats-url', 'nats://203.0.113.9:4222'])).toThrow(
       /loopback/,
     );
   });
@@ -121,6 +126,76 @@ describe('the stale case folder', () => {
     expect(staleFolderAction(0, false)).toBe('use');
     expect(staleFolderAction(3, false)).toBe('refuse');
     expect(staleFolderAction(3, true)).toBe('clean');
+  });
+});
+
+describe('the session marker: the positive control across runs', () => {
+  it('a lone zero is refused unless a passed control is on disk', () => {
+    expect(sessionRefusal(pick('crafting-table'), false)).toMatch(/chest-single/);
+    expect(sessionRefusal(pick('crafting-table'), true)).toBeNull();
+  });
+
+  it('the marker counts only for chest-single with take=1 and a session id', () => {
+    const good = { case: 'chest-single', expect: 'take=1', session: 'abc' };
+    expect(controlFromMarker(good)).toBe(true);
+    expect(controlFromMarker({ ...good, case: 'anvil' })).toBe(false);
+    expect(controlFromMarker({ ...good, expect: 'take=0' })).toBe(false);
+    expect(controlFromMarker({ ...good, session: '' })).toBe(false);
+    expect(controlFromMarker({ ...good, session: undefined })).toBe(false);
+    expect(controlFromMarker(null)).toBe(false);
+    expect(controlFromMarker('chest-single')).toBe(false);
+  });
+
+  it('only chest-single changes the control, and only its exit 0 sets it; a failed control clears it', () => {
+    const control = findCase('chest-single') as CaptureCase;
+    const zero = findCase('anvil') as CaptureCase;
+    expect(nextControlState(control, 0, false)).toBe(true);
+    expect(nextControlState(control, 1, true)).toBe(false);
+    expect(nextControlState(zero, 0, false)).toBe(false);
+    expect(nextControlState(zero, 1, true)).toBe(true);
+  });
+
+  it('the dry-run warns about a lone zero and not about a valid session', () => {
+    expect(controlWarning(pick('anvil'), false)).toMatch(/warning/);
+    expect(controlWarning(pick('anvil'), true)).toBeNull();
+    expect(controlWarning(pick('chest-single', 'anvil'), false)).toBeNull();
+  });
+});
+
+describe('the validator arguments of each case', () => {
+  it('only the present case passes --expect-prior-owner', () => {
+    for (const c of CAPTURE_CASES) {
+      const want = c.id === 'break-coreprotect-present' ? ['--expect-prior-owner'] : [];
+      expect(validatorArgs(c), c.id).toEqual(want);
+    }
+  });
+});
+
+describe('the runner wiring (source scans: the runner talks to a server and is not unit-tested)', () => {
+  const runner = readFileSync(new URL('./provenance-capture.ts', import.meta.url), 'utf8');
+
+  it('the stale folder action comes from the folder entries and --clean', () => {
+    expect(runner).toContain('staleFolderAction(entries, opts.clean)');
+  });
+
+  it('a dead subscriber makes the case INVALID before its zero can count', () => {
+    expect(runner).toContain('if (hasExited(sub))');
+  });
+
+  it('the validator gets its flags from validatorArgs', () => {
+    expect(runner).toContain('validateFolder(folder, c.expect, validatorArgs(c))');
+  });
+
+  it('the control state after each case comes from nextControlState', () => {
+    expect(runner).toContain('controlPassed = nextControlState(c, code, controlPassed);');
+  });
+
+  it('every takeFromBlock and placeTarget call passes a CASE_BLOCKS id, so no namespaced id reaches setblock', () => {
+    const calls = [...runner.matchAll(/(takeFromBlock|placeTarget)\(\s*s\.a,\s*([^,\n]+),/g)];
+    const sites = runner.match(/(takeFromBlock|placeTarget)\(/g) ?? [];
+    expect(calls).toHaveLength(8);
+    expect(sites).toHaveLength(8);
+    for (const m of calls) expect(m[2]?.trim(), m[0]).toMatch(/^CASE_BLOCKS\.[a-zA-Z]+$/);
   });
 });
 
