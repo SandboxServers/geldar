@@ -1,9 +1,6 @@
-import { formatError, type ValidationResult } from './validation.ts';
-import type { ActionOutcomePayload } from './generated/types.ts';
-import { validateActionOutcomePayload as validateActionOutcomePayloadSchema } from './generated/validators.js';
-
 // --- WM-01 sovereign ---
 import type {
+  ActionOutcomePayload,
   BookReply,
   BookRequest,
   DayNightPayload,
@@ -11,12 +8,14 @@ import type {
   SovereignCallPayload,
 } from './generated/types.ts';
 import {
+  validateActionOutcomePayload as validateActionOutcomePayloadSchema,
   validateBookReply as validateBookReplySchema,
   validateBookRequest as validateBookRequestSchema,
   validateDayNightPayload as validateDayNightPayloadSchema,
   validatePresenceRecord as validatePresenceRecordSchema,
   validateSovereignCallPayload as validateSovereignCallPayloadSchema,
 } from './generated/validators.js';
+import { formatError, type ValidationResult } from './validation.ts';
 
 export type {
   BlockOwnerChanged,

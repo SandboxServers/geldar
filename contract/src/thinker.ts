@@ -1,7 +1,4 @@
 import type { ValidateFunction } from 'ajv';
-import { formatError, type ValidationResult } from './validation.ts';
-import { MAX_RESPONSE_FORMAT_BYTES } from './mind-channel.ts';
-
 // --- P0-04 thinker ---
 import type { ThinkerFrame } from './generated/types.ts';
 import {
@@ -16,6 +13,8 @@ import {
   validateThinkerFrame as validateThinkerFrameSchema,
   validateWelcomeFrame,
 } from './generated/validators.js';
+import { MAX_RESPONSE_FORMAT_BYTES } from './mind-channel.ts';
+import { formatError, type ValidationResult } from './validation.ts';
 
 export type {
   CancelFrame,

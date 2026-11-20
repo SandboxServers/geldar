@@ -1,7 +1,6 @@
-import { formatError, type ValidationResult } from './validation.ts';
-
 // --- PX-8b reach ---
 import { validateReachInput as validateReachInputSchema } from './generated/validators.js';
+import { formatError, type ValidationResult } from './validation.ts';
 
 /** The position a `reach` call names: three integers, each checked against mcp-reach.schema.json. */
 export interface ReachPosition {

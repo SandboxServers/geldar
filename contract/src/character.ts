@@ -1,5 +1,3 @@
-import { formatError, type ValidationResult } from './validation.ts';
-
 // --- AN-02a character ---
 import type {
   CharacterSheet,
@@ -13,6 +11,7 @@ import {
   validateRollEventPayload as validateRollEventPayloadSchema,
   validateSheetAdoptedPayload as validateSheetAdoptedPayloadSchema,
 } from './generated/validators.js';
+import { formatError, type ValidationResult } from './validation.ts';
 
 export type {
   CharacterSheet,

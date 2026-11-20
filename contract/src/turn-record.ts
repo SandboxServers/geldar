@@ -1,8 +1,7 @@
-import { formatError, type ValidationResult } from './validation.ts';
-
 // --- GX-05a turn record ---
 import type { TurnRecordPayload } from './generated/types.ts';
 import { validateTurnRecordPayload as validateTurnRecordPayloadSchema } from './generated/validators.js';
+import { formatError, type ValidationResult } from './validation.ts';
 
 export type { TurnRecordPayload } from './generated/types.ts';
 

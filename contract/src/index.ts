@@ -4,6 +4,8 @@
  */
 
 export { MARKER_WORD, markedWords } from './agent-text.ts';
+export * from './character.ts';
+export * from './core-records.ts';
 export type {
   ExploreArguments,
   ExploreCheckpoint,
@@ -20,6 +22,11 @@ export type {
   ProgramChunk,
   Snapshot,
 } from './generated/types.ts';
+// --- SC-30a mcp ---
+export * from './mcp.ts';
+export * from './mind-channel.ts';
+export * from './perception-events.ts';
+export * from './proficiency.ts';
 export {
   validateExploreArguments,
   validateExploreCheckpoint,
@@ -31,17 +38,8 @@ export {
   validatePatrolCheckpoint,
   validatePatrolDetail,
 } from './programs.ts';
-export type { ValidationResult } from './validation.ts';
-
-export * from './core-records.ts';
-export * from './perception-events.ts';
-export * from './world-tool-inputs.ts';
-// --- SC-30a mcp ---
-export * from './mcp.ts';
-
-export * from './thinker.ts';
-export * from './mind-channel.ts';
 export * from './sovereign.ts';
-export * from './character.ts';
-export * from './proficiency.ts';
+export * from './thinker.ts';
 export * from './turn-record.ts';
+export type { ValidationResult } from './validation.ts';
+export * from './world-tool-inputs.ts';

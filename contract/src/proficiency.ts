@@ -1,5 +1,3 @@
-import { formatError, type ValidationResult } from './validation.ts';
-
 // --- AN-02b proficiency ---
 import type {
   ChunkVisitedPayload,
@@ -13,6 +11,7 @@ import {
   validateProficiencyRequest as validateProficiencyRequestSchema,
   validateProficiencyState as validateProficiencyStateSchema,
 } from './generated/validators.js';
+import { formatError, type ValidationResult } from './validation.ts';
 
 export type {
   ChunkVisitedPayload,

@@ -1,8 +1,5 @@
-import { formatError, type ValidationResult } from './validation.ts';
-
 // --- P0-20 Mind channel ---
 import type {
-  ActionOutcomePayload,
   PlanAck,
   PlanMessage,
   PlanResultPayload,
@@ -12,7 +9,6 @@ import type {
   ThoughtEventPayload,
 } from './generated/types.ts';
 import {
-  validateActionOutcomePayload as validateActionOutcomePayloadSchema,
   validatePlanAck as validatePlanAckSchema,
   validatePlanMessage as validatePlanMessageSchema,
   validatePlanResultPayload as validatePlanResultPayloadSchema,
@@ -21,6 +17,7 @@ import {
   validateSpeechPayload as validateSpeechPayloadSchema,
   validateThoughtEventPayload as validateThoughtEventPayloadSchema,
 } from './generated/validators.js';
+import { formatError, type ValidationResult } from './validation.ts';
 
 export type {
   ActionOutcomePayload,
