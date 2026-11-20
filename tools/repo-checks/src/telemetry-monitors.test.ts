@@ -12,11 +12,28 @@ const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const OVERLAY = 'compose/opt-in/colo-nats-exporter.yml';
 const GATEWAY = 'deploy/telemetry/gateway.yaml';
 const SQL = 'deploy/telemetry/postgres-monitor.sql';
+const RUNBOOK = 'docs/runbooks/telemetry-monitors.md';
+const README = 'deploy/telemetry/README.md';
 const EXPORTER_IMAGE =
   'natsio/prometheus-nats-exporter:0.20.3@sha256:4b8ddc1c86fec360b5cd3d5e1fbc6fb52bdafd5805bba3901cc52926538af255';
 const EXPORTER_PORT = '7777';
 const MONITOR_URL = 'http://127.0.0.1:8222';
 const DOCKER = spawnSync('docker', ['compose', 'version'], { encoding: 'utf8' }).status === 0;
+/**
+ * The exporter start command: the deploy's overlay set (deploy/common.sh, dc: colo.yml, nats-auth.yml, compose.secrets.yml, then the
+ * extra overlay) and --no-deps, so compose converges only the exporter and never nats.
+ */
+const DEPLOY_CMD =
+  'docker compose -p "$' +
+  '{GELDAR_PROJECT:-geldar-colo}" -f compose/colo.yml -f compose/nats-auth.yml -f deploy/compose.secrets.yml -f compose/opt-in/colo-nats-exporter.yml up -d --no-deps nats-exporter';
+/** The whole role script, statement by statement, in order. Any other statement (a GRANT in particular) fails the exact test. */
+const EXPECTED_SQL = [
+  '\\set otel_pg_password `cat "$GELDAR_SECRETS_DIR/otel-pg.txt"`',
+  "SELECT format('CREATE ROLE geldar_monitor LOGIN') WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'geldar_monitor') \\gexec",
+  "SELECT format('ALTER ROLE geldar_monitor LOGIN PASSWORD %L', :'otel_pg_password') \\gexec",
+  'GRANT pg_read_all_stats TO geldar_monitor;',
+  'GRANT CONNECT ON DATABASE geldar TO geldar_monitor;',
+];
 
 /** Skips the render test without docker; in CI a missing docker fails the run instead. */
 if (!DOCKER && process.env.CI)
@@ -42,12 +59,18 @@ type Overlay = {
 };
 
 const readText = (rel: string) => readFileSync(`${ROOT}${rel}`, 'utf8');
-/** The SQL with its comment lines removed, so a word in a comment never counts as a grant. */
+/** The SQL with its comment lines removed, so a word in a comment never counts as a statement. */
 const sqlCode = () =>
   readText(SQL)
     .split('\n')
     .filter((l) => !l.trim().startsWith('--'))
     .join('\n');
+/** The non-comment, non-empty lines of the SQL, trimmed, in file order. */
+const sqlStatements = () =>
+  sqlCode()
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l.length > 0);
 
 /** The exporter's flag list, joined, so checks read the flags as the container gets them. */
 function exporterCommand(doc: Overlay): string {
@@ -111,13 +134,35 @@ describe('compose/opt-in/colo-nats-exporter.yml (G2, T-09)', () => {
     expect(svc?.restart).toBe('unless-stopped');
   });
 
+  it('is started with the deploy overlay set and --no-deps, in its header and in the runbook', () => {
+    expect(readText(OVERLAY)).toContain(DEPLOY_CMD);
+    expect(readText(RUNBOOK)).toContain(DEPLOY_CMD);
+  });
+
   it.skipIf(!DOCKER)(
-    'renders merged onto compose/colo.yml with the same caps, no ports and the same command',
+    'renders merged onto the deploy overlay set (colo.yml, nats-auth.yml, compose.secrets.yml) with the same caps, no ports and the same command',
     () => {
       const result = spawnSync(
         'docker',
-        ['compose', '-f', 'compose/colo.yml', '-f', OVERLAY, 'config', '--format', 'json'],
-        { cwd: ROOT, encoding: 'utf8' },
+        [
+          'compose',
+          '-f',
+          'compose/colo.yml',
+          '-f',
+          'compose/nats-auth.yml',
+          '-f',
+          'deploy/compose.secrets.yml',
+          '-f',
+          OVERLAY,
+          'config',
+          '--format',
+          'json',
+        ],
+        {
+          cwd: ROOT,
+          encoding: 'utf8',
+          env: { ...process.env, GELDAR_SECRETS_DIR: '/render-only/secrets' },
+        },
       );
       expect(result.status, result.stderr).toBe(0);
       const rendered = JSON.parse(result.stdout) as {
@@ -133,6 +178,45 @@ describe('compose/opt-in/colo-nats-exporter.yml (G2, T-09)', () => {
       expect(exporter?.command).toEqual(svc?.command);
     },
   );
+});
+
+describe('docs/runbooks/telemetry-monitors.md (G2)', () => {
+  const runbook = readText(RUNBOOK);
+
+  it('never starts the exporter without --no-deps', () => {
+    expect(runbook).not.toMatch(/up -d (?!--no-deps)nats-exporter/);
+  });
+
+  it('says the exporter needs --no-deps and the deploy overlay set, and that it is not run any other way', () => {
+    expect(runbook).toContain('--no-deps');
+    expect(runbook).toContain(DEPLOY_CMD);
+  });
+
+  it('restarts nats-exporter after any nats recreate', () => {
+    expect(runbook).toMatch(/restart[^\n]*nats-exporter/);
+  });
+
+  it('gives the secret file in GELDAR_SECRETS_DIR, with the owner and mode the gateway user reads', () => {
+    expect(runbook).toContain('$GELDAR_SECRETS_DIR/otel-pg.txt');
+    expect(runbook).toMatch(/10001:10001/);
+    expect(runbook).toMatch(/0400/);
+  });
+
+  it('validates the gateway config before the restage, with the password secret mounted', () => {
+    expect(runbook).toContain('validate --config=/etc/otelcol/gateway.yaml');
+    expect(runbook).toContain('/run/secrets/otel-pg.txt:ro');
+  });
+
+  it('states that /jsz is reachable on nats:7777 from the colo network and is accepted for now', () => {
+    expect(runbook).toMatch(/nats:7777[^\n]*\/jsz|\/jsz[^\n]*nats:7777/);
+    expect(runbook).toMatch(/accepted for now/i);
+  });
+});
+
+describe('deploy/telemetry/README.md (G2)', () => {
+  it('no longer calls the postgresql receiver a commented placeholder', () => {
+    expect(readText(README)).not.toMatch(/postgresql[^\n]*placeholder/i);
+  });
 });
 
 describe('deploy/telemetry/gateway.yaml (G2)', () => {
@@ -191,6 +275,14 @@ describe('deploy/telemetry/postgres-monitor.sql (G2, T-10)', () => {
   it('has no password literal: the password comes from the psql variable', () => {
     expect(sqlCode()).not.toMatch(/PASSWORD\s+'/i);
     expect(sqlCode()).toContain(":'otel_pg_password'");
+  });
+
+  it('reads the password from the secret file in psql, not from argv', () => {
+    expect(sqlCode()).toContain('\\set otel_pg_password `cat "$GELDAR_SECRETS_DIR/otel-pg.txt"`');
+  });
+
+  it('has exactly the expected statements, and no other GRANT', () => {
+    expect(sqlStatements()).toEqual(EXPECTED_SQL);
   });
 
   it('grants pg_read_all_stats and CONNECT only', () => {

@@ -1,7 +1,10 @@
-# G2 (T-09), opt-in: the NATS monitor exporter for the colo stack, merged with compose/colo.yml:
-#   docker compose -f compose/colo.yml -f compose/opt-in/colo-nats-exporter.yml up -d nats-exporter
+# G2 (T-09), opt-in: the NATS monitor exporter for the colo stack. Start it with the overlay set the deploy uses (deploy/common.sh, dc):
+#   docker compose -p "${GELDAR_PROJECT:-geldar-colo}" -f compose/colo.yml -f compose/nats-auth.yml -f deploy/compose.secrets.yml -f compose/opt-in/colo-nats-exporter.yml up -d --no-deps nats-exporter
+# --no-deps is required: this service uses network_mode: service:nats, so without it compose also converges nats, and without the
+# auth and secrets overlays nats would be recreated with open auth and no monitor. Runbook: docs/runbooks/telemetry-monitors.md.
 # It is not part of compose/colo.yml: the default colo stack runs without it. Design: docs/analysis/telemetry/collector-design.md section 11.
-# Scope: /varz and /jsz only. Do not add a flag for subsz, connz, routez, gatewayz, leafz or accstatz.
+# Scope: /varz and /jsz only. Do not add a flag for subsz, connz, routez, gatewayz, leafz or accstatz. /jsz series are reachable on nats:7777
+# from the colo network (accepted for now, runbook "Risks").
 # network_mode: service:nats, so the exporter shares the NATS network namespace and reads the monitor on 127.0.0.1:8222 there.
 # Neither this service nor the NATS monitor publishes a port. NATS is on the geldar-colo network, as the gateway is, so the gateway
 # scrapes nats:7777 (deploy/telemetry/gateway.yaml).
