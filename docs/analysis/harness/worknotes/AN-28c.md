@@ -143,3 +143,8 @@ Review fix pass 2 checks:
 - `(cd plugin; ./gradlew build --rerun-tasks)` with the JDK 25 Adoptium `JAVA_HOME`: BUILD SUCCESSFUL.
 - `./geldar.ps1 pnpm check:repo`: `repo checks: ok`, no `error:` line.
 - `git diff --check`: clean.
+
+Fix pass 3:
+
+- typecheck of tools/repo-checks was not run in review; ops found TS2532; fixed (`nats-auth.test.ts` body pub assertion narrowed).
+- `ProvenanceSetupTest.java` is intentionally in the diff: it is this card's new test for the plugin provenance setup.

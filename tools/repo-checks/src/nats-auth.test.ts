@@ -215,7 +215,9 @@ describe.skipIf(!hasPwsh)('provenance routing (AN-28c): the body role table', ()
           `geldar.${SHARD}.body.*.hearing`,
           p,
         ]);
-        expect(body?.pub).toEqual(expectedTable(SHARD).body.pub);
+        const expectedBody = expectedTable(SHARD).body;
+        expect(expectedBody, 'body role in the expected table').toBeDefined();
+        expect(body?.pub).toEqual(expectedBody?.pub);
       } finally {
         rmSync(r.dir, { recursive: true, force: true });
       }
