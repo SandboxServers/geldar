@@ -96,6 +96,11 @@ describe('combatFactAwards', () => {
     expect(combatFactAwards(factPayload({ encounter_key: other }), factAward)).toEqual([]);
   });
 
+  it('gives [] for an uppercase UUID in the key, which is not the lowercase key of the kill', () => {
+    const upper = `enc:${LIFE}:${MOB.toUpperCase()}`;
+    expect(combatFactAwards(factPayload({ encounter_key: upper }), factAward)).toEqual([]);
+  });
+
   it('gives [] for a key that is not the life and UUID form, or an unknown kind, mob or key', () => {
     expect(
       combatFactAwards(factPayload({ encounter_key: `enc:${LIFE}:zombie` }), factAward),

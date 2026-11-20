@@ -50,3 +50,13 @@ The Body change (`attack.ts` adds `target_uuid` to the kill detail) runs only on
 - `tsc -p eventsink --noEmit`, `tsc -p golem --noEmit`: clean.
 - `biome check` on the seven changed files: clean.
 - `pnpm test eventsink/src/xp golem/src/actions/attack`: 8 files, 247 tests passed.
+
+## Review 1 mutations (AN-47b-fix-1: tests only, no source change)
+
+Each mutation was run on the fix commit, then the file was restored from a scratchpad backup; `git diff --stat` was empty after each restore. Baseline after the new tests: 251 passed.
+
+- `awards.ts` attack case, `detail.killed === true && detail.target_kind === 'mob'` -> `detail.target_kind === 'mob'`: 1 fails ("a kill needs killed true, not only a mob target").
+- Same line -> `detail.killed === true`: 2 fail (the two "target_kind" combat-row tests with a target_uuid).
+- Same line -> `true`: 3 fail (the two above, plus the killed test).
+- `combat.ts` `combatFactAwards`, `encounterKey(...) === key` -> `encounterKey(...) !== null`: 1 fails ("gives [] for an uppercase UUID in the key").
+- `attack.ts` `typeof first.uuid === 'string' ? first.uuid : null` -> `(first.uuid as string | undefined) ?? null`: 1 fails ("leaves target_uuid out when the mob uuid is not a string").

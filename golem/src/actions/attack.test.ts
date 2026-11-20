@@ -96,6 +96,14 @@ describe('attack: a completed kill names the target (AN-47b)', () => {
     expect(outcome.status).toBe('completed');
     expect(detailOf(outcome)).not.toHaveProperty('target_uuid');
   });
+
+  it('leaves target_uuid out when the mob uuid is not a string', async () => {
+    const { bot } = fakeBot({ hitsToKill: 1, uuid: 42 as unknown as string });
+    const outcome = await attack(bot);
+    expect(outcome.status).toBe('completed');
+    expect(detailOf(outcome)).toMatchObject({ killed: true });
+    expect(detailOf(outcome)).not.toHaveProperty('target_uuid');
+  });
 });
 
 describe('attack on a flying mob', () => {

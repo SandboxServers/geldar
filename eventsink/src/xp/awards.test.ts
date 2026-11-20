@@ -39,6 +39,17 @@ function withDetail(name: string, detail: Record<string, unknown>): WorldEvent {
   return withPayload(name, { result: { ...result, detail } });
 }
 
+/**
+ * A copy of kill_uuid_completed (which carries a target_uuid) with its detail changed. A key set to
+ * undefined is removed, so the copy can lack target_kind or killed rather than hold undefined.
+ */
+function uuidKillWith(change: Record<string, unknown>): WorldEvent {
+  const result = (fixture('kill_uuid_completed').payload as { result: { detail: object } }).result;
+  const detail: Record<string, unknown> = { ...result.detail, ...change };
+  for (const key of Object.keys(detail)) if (detail[key] === undefined) delete detail[key];
+  return withDetail('kill_uuid_completed', detail);
+}
+
 /** The action id of a fixture, read from its payload (the key is `<prefix>:<action_id>`). */
 function actionIdOf(name: string): string {
   return (fixture(name).payload as { action_id: string }).action_id;
@@ -102,6 +113,13 @@ describe('combat row', () => {
   it('awards no combat for a player target, or when the target kind is not set', () => {
     expect(keysOf('kill_player_completed')).toEqual([]);
     expect(keysOf('kill_unlabelled_completed')).toEqual([]);
+  });
+  it('awards no combat for a player target even with a target_uuid (AN-47b)', () => {
+    expect(keysOf('kill_uuid_completed')).toHaveLength(1);
+    expect(awardsFor(uuidKillWith({ target_kind: 'player' }))).toEqual([]);
+  });
+  it('awards no combat when target_kind is removed, even with a target_uuid (AN-47b)', () => {
+    expect(awardsFor(uuidKillWith({ target_kind: undefined }))).toEqual([]);
   });
   it('awards nothing while the attack runs', () => {
     expect(keysOf('kill_running')).toEqual([]);
@@ -400,9 +418,10 @@ describe('detail gates on a completed record', () => {
     );
   });
   it('a kill needs killed true, not only a mob target', () => {
-    expect(awardsFor(withDetail('kill_completed', { target_kind: 'mob', killed: false }))).toEqual(
-      [],
-    );
+    expect(awardsFor(uuidKillWith({ killed: false }))).toEqual([]);
+    expect(awardsFor(uuidKillWith({ killed: undefined }))).toEqual([]);
+    expect(awardsFor(uuidKillWith({ target_kind: 'mob', killed: false }))).toEqual([]);
+    expect(awardsFor(uuidKillWith({ killed: true }))).toHaveLength(1);
   });
 });
 
