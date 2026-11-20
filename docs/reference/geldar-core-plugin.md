@@ -122,7 +122,7 @@ Every row is from the class named and from `GeldarCore.java`. Gravestone and com
 | `blockowner.enabled` | `true` | reload | `false` stops the change listener and the query replies. |
 | `blockowner.lookup_timeout_ms` | `2000` | reload | Clamped to 100 to 60000 (`BlockOwnerSetup`). A slower lookup answers an empty list with `truncated: true`. |
 | `blockowner.debug` | `false` | reload | Extra INFO lines per lookup, rate-limited, no player names. |
-| `provenance.enabled` | `false` | reload | True once AN-28c is merged (branch `phase1/an-28c-provenance-setup-acl`). Read in `BlockOwnerSetup`, reloaded with the `blockowner.*` keys on the 5 s timer; no `config.yml` default (absent reads as false). On only when `blockowner.enabled` is also true. Gates the break provenance message (`BlockChangeListener` sink) and the pickup message (`PickupProvenanceListener`); both are inert unless set. Paper-only: do not enable on NeoForge until the human-handling question is decided. |
+| `provenance.enabled` | `false` | reload | Added by AN-28c (merged, #817). Read in `BlockOwnerSetup`, reloaded with the `blockowner.*` keys on the 5 s timer; no `config.yml` default (absent reads as false). On only when `blockowner.enabled` is also true. Gates the break provenance message (`BlockChangeListener` sink) and the pickup message (`PickupProvenanceListener`); both are inert unless set. Paper-only: do not enable on NeoForge until the human-handling question is decided. |
 | `chat.muffle.margin` | `8.0` | enable | Below 0 becomes 0; not finite becomes 8. |
 | `chat.muffle.sealed_penalty` | `4.0` | enable | Below 0 becomes 0; not finite becomes 4.0. |
 | `chat.muffle.per_line_cap` | `512` | enable | At least 1. |
