@@ -14,9 +14,11 @@ sources: [../../.claude/skills/run-shard/SKILL.md, ../../.claude/skills/body-ben
 
 Status, CAP-2 (branch `phase1/sheet-capture-prep`): the capture script exists
 (`golem/test/live/scratch/provenance-capture.ts`), the subscriber and validator exist (`tools/capture/`, see its
-README), and the CoreProtect overlay exists (`compose/opt-in/coreprotect.yml`). Nothing below was run by the packet
-that wrote it. Every expected output is UNPROVEN until stage 2 and stage 3 produce it. The flag and listener gap
-below ("Read this first") still applies: check the merged code for AN-28c and AN-50a before stage 2.
+README), and the CoreProtect overlay exists (`compose/opt-in/coreprotect.yml`). All fifteen cases have an action; none
+is manual. The four send-nothing cases open their window, fill the input and take the output; the double chest is two
+chests; the break with CoreProtect sends the owner query before the break. Nothing below was run: every expected
+output is UNPROVEN until stage 2 and stage 3 produce it. The flag and listener gap below ("Read this first") still
+applies: check the merged code for AN-28c and AN-50a before stage 2.
 
 Rules: one shard, used by you alone. Never `adam up` (CLAUDE.md). Stop at the first stop condition.
 
@@ -83,27 +85,28 @@ Each run writes `.capture/<case>/` (gitignored) and prints the validator table.
 |---|---|---|---|
 | toss | 1 `pickup` (the thrower's own pickup adds none) | `pickup=1` | AN-26a, `## Ops evidence (pending, not run in this packet)` |
 | break-coreprotect-absent | 1 `break`, `prior_owner` null | `break=1` | AN-27a, bullet `- CoreProtect absent:` |
-| break-coreprotect-present | 1 `break`; `prior_owner` non-null only if the owner query ran within 30 s | `break=1` | AN-27a, bullet `- CoreProtect present:` |
+| break-coreprotect-present | 1 `break`; `prior_owner` non-null only if the owner query ran within 30 s. The script logs the query answer and the gap to the break (the case fails at 30 s or more) | `break=1` | AN-27a, bullet `- CoreProtect present:` |
 | kill | 1 `combat_fact` (hostile_kill) | `combat_fact=1` | AN-47a, below `Ops capture pending:` |
 | survived | 1 `combat_fact` (fight_survived) | `combat_fact=1` | AN-47a, same place |
 | chest-single | 1 `take` | `take=1` | AN-51a, `## Pending (ops evidence, not run)` |
-| chest-double | 1 `take` | `take=1` | AN-51a, same |
+| chest-double | 1 `take`; the script prints "a double chest" only when the window has 90 slots (54 + 36), else the case fails | `take=1` | AN-51a, same |
 | chest-shift-click | 1 `take` | `take=1` | AN-51a, same |
 | chest-number-key | 1 `take` | `take=1` | AN-51a, same |
 | furnace | 1 `take` (SENDS; furnace ruling) | `take=1` | AN-51a, holder table |
 | brewing-stand | 1 `take` (SENDS) | `take=1` | AN-51a, holder table |
-| crafting-table | 0 files: "send nothing" | `take=0` (exact) | AN-51a, holder table |
-| anvil | 0 files | `take=0` (exact) | AN-51a, holder table |
-| enchanting-table | 0 files | `take=0` (exact) | AN-51a, holder table |
-| player-2x2 | 0 files | `take=0` (exact) | AN-51a, holder table |
+| crafting-table | 0 files: "send nothing". The script prints the window, the log moved into grid slot 1, the output it took; no output means the case fails | `take=0` (exact) | AN-51a, holder table |
+| anvil | 0 files. Window, rename of a stick (`experience add` first), output slot 2 taken | `take=0` (exact) | AN-51a, holder table |
+| enchanting-table | 0 files. Window, sword and lapis placed, enchant option 0, output slot 0 taken | `take=0` (exact) | AN-51a, holder table |
+| player-2x2 | 0 files. The own inventory (46 slots, no container open), oak log in grid slot 1, output taken | `take=0` (exact) | AN-51a, holder table |
 
 Stop conditions (stop, do not retry in a loop, report):
 - any health row red, or RCON or NATS refuses (NATS auth refusing included);
 - the subscriber does not print READY within 30 s;
 - a send-nothing case (`take=0`) writes a file: a finding for the AN-51 owner, not a capture failure;
 - a validator row reads `fail` (a fail means the capture refutes a worknote claim, or the payload breaks the contract);
-- a case stops with `INVALID` (the send-nothing cases have no ingredient setup in CAP-2: they report INVALID, not a
-  zero, until it is written);
+- a case fails with a message saying the window did not open within 10 s, the output slot was empty, the window is the
+  wrong kind, or the chest is not a double chest: no zero is claimed, the case is not evidence;
+- a break case: the owner query failed, or the break came 30 s or more after it;
 - a bot name is refused at join.
 
 ### Where each result goes (exact headings; paste the JSON verbatim, one per capture, plus the validator row)
