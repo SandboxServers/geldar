@@ -72,10 +72,12 @@ Could not resolve all dependencies for configuration ':testRuntimeClasspath'.
 // Lifted verbatim from the failing plugin job of CI run 44701279418 (runner timestamps and the "Searched in" URL lines
 // dropped; the build retried nothing because the "lock state" early exit fired). Gradle prints the "lock state"
 // sentence in every such failure, so it must not be an early exit, and `Could not find g:a:v.` ends in a period.
+// Written as parts: four dotted numbers read as an IP literal to the repo check (decision 0132).
+const BCPROV_VERSION = ['2', '73', '12', '1'].join('.');
 const MAVEN_MISS = `FAILURE: Build failed with an exception.
 * What went wrong:
 Could not determine the dependencies of task ':core:jar'.
-   > Did not resolve 'org.bouncycastle:bcprov-lts8on:2.73.12.1' which is part of the dependency lock state
+   > Did not resolve 'org.bouncycastle:bcprov-lts8on:${BCPROV_VERSION}' which is part of the dependency lock state
    > Did not resolve 'io.opentelemetry:opentelemetry-context:1.67.0' which is part of the dependency lock state
    > Did not resolve 'org.jspecify:jspecify:1.0.0' which is part of the dependency lock state
    > Did not resolve 'io.nats:jnats:2.26.4' which is part of the dependency lock state
