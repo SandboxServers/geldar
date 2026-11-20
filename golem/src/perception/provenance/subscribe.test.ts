@@ -220,4 +220,180 @@ describe('startObservations', () => {
     expect(net.logs.some((line) => line.includes('not published'))).toBe(true);
     net.sub.stop();
   });
+
+  it('a pickup in another world gives nothing; the same world gives one', async () => {
+    const net = setup({
+      selfName: OTHER,
+      lifeId: OTHER,
+      resolve: (name) => (name === BODY ? { name: BODY, life: BODY } : null),
+    });
+    const pickup = fixture('pickup-real.json');
+    net.deliver(PICKUP_SUBJECT, JSON.stringify({ ...pickup, world: 'world_nether' }));
+    await flush();
+    expect(net.published).toHaveLength(0);
+    net.deliver(PICKUP_SUBJECT, JSON.stringify(pickup));
+    await flush();
+    expect(net.published).toHaveLength(1);
+    net.sub.stop();
+  });
+
+  it('a break the Body does not own gives nothing: another prior owner, or no owner', async () => {
+    const net = setup();
+    const break_ = fixture('break-real.json').coreprotect_present as Record<string, unknown>;
+    net.deliver(BREAK_SUBJECT, JSON.stringify({ ...break_, prior_owner: 'ag_capc_03' }));
+    net.deliver(BREAK_SUBJECT, JSON.stringify(fixture('break-real.json').coreprotect_absent));
+    await flush();
+    expect(net.published).toHaveLength(0);
+    net.sub.stop();
+  });
+
+  it('a break the Body made itself gives nothing', async () => {
+    const net = setup();
+    const break_ = fixture('break-real.json').coreprotect_present as Record<string, unknown>;
+    net.deliver(BREAK_SUBJECT, JSON.stringify({ ...break_, actor: BODY }));
+    await flush();
+    expect(net.published).toHaveLength(0);
+    net.sub.stop();
+  });
+
+  it('a pickup the Body does not receive gives nothing: another picker, or the Body threw it', async () => {
+    const net = setup();
+    const pickup = fixture('pickup-real.json');
+    net.deliver(PICKUP_SUBJECT, JSON.stringify({ ...pickup, picker: 'ag_capc_03' }));
+    net.deliver(PICKUP_SUBJECT, JSON.stringify({ ...pickup, picker: BODY, thrower: BODY }));
+    await flush();
+    expect(net.published).toHaveLength(0);
+    net.sub.stop();
+  });
+
+  it('a message of exactly MAX_PROVENANCE_BYTES is read; one byte more is dropped', async () => {
+    const net = setup();
+    const json = JSON.stringify(fixture('break-real.json').coreprotect_present);
+    const padded = json + ' '.repeat(MAX_PROVENANCE_BYTES - json.length);
+    net.deliver(BREAK_SUBJECT, padded);
+    await flush();
+    expect(net.sub.dropped().oversize).toBe(0);
+    expect(net.published).toHaveLength(1);
+    net.deliver(BREAK_SUBJECT, `${padded} `);
+    expect(net.sub.dropped()).toEqual({ oversize: 1, malformed: 0, failed: 0 });
+    net.sub.stop();
+  });
+
+  it('a publisher that throws synchronously is counted as failed and does not escape', () => {
+    const net = setup({
+      publisher: {
+        publish: () => {
+          throw new Error('nats closed');
+        },
+      },
+    });
+    const body = JSON.stringify(fixture('break-real.json').coreprotect_present);
+    expect(() => net.deliver(BREAK_SUBJECT, body)).not.toThrow();
+    expect(net.sub.dropped()).toEqual({ oversize: 0, malformed: 0, failed: 1 });
+    net.sub.stop();
+  });
+
+  it('an event the contract refuses is logged and not published', async () => {
+    const net = setup({ lifeId: 'not a life id' });
+    const body = JSON.stringify(fixture('break-real.json').coreprotect_present);
+    net.deliver(BREAK_SUBJECT, body);
+    await flush();
+    expect(net.published).toHaveLength(0);
+    expect(net.logs).toContain('observation: dropped an event the contract refuses');
+    net.sub.stop();
+  });
+
+  it('a subscribe that fails after the first unsubscribes the first and throws', () => {
+    const unsubscribed: string[] = [];
+    let calls = 0;
+    const transport: OwnerTransport = {
+      request: async () => {
+        throw new Error('not used');
+      },
+      subscribe(subject) {
+        calls += 1;
+        if (calls === 2) throw new Error('nats closed');
+        return {
+          unsubscribe() {
+            unsubscribed.push(subject);
+          },
+        };
+      },
+    };
+    expect(() => setup({ transport })).toThrow('nats closed');
+    expect(unsubscribed).toEqual([BREAK_SUBJECT]);
+  });
+});
+
+/** A life id and a username that must never reach a published body when the actor is out of sight. */
+const HIDDEN_LIFE = 'ag_capc_03';
+const HIDDEN_NAME = 'Hidden_Walker';
+
+/**
+ * The leaks in one published observation. The payload's `key` is the contract's dedupe key and is
+ * scanned by the Mind's presenter (threshold leakage gate), so it is set aside here.
+ */
+function leaksIn(body: string, allowedIds: string[]): string[] {
+  const event = JSON.parse(body) as { payload: Record<string, unknown> };
+  const shown = JSON.stringify({ ...event.payload, key: undefined });
+  const leaks: string[] = [];
+  if (/provenance/i.test(body)) leaks.push('provenance');
+  if (/\b\d{2,}\b\D{1,3}\b\d{2,}\b\D{1,3}\b\d{2,}\b/.test(shown)) leaks.push('coordinates');
+  for (const id of shown.match(/ag_[a-z0-9_]+/g) ?? []) {
+    if (!allowedIds.includes(id)) leaks.push(`life id ${id}`);
+  }
+  if (body.includes(HIDDEN_NAME) || body.includes(HIDDEN_LIFE)) leaks.push('hidden actor');
+  return leaks;
+}
+
+describe('the leakage gate at the subscription: what a published observation carries', () => {
+  it('a visible breaker is named and a hidden one is unattributed; neither leaks', async () => {
+    const break_ = fixture('break-real.json').coreprotect_present as Record<string, unknown>;
+    const net = setup({
+      resolve: (name) => (name === OTHER ? { name: OTHER, life: OTHER } : null),
+    });
+    net.deliver(BREAK_SUBJECT, JSON.stringify(break_));
+    net.deliver(BREAK_SUBJECT, JSON.stringify({ ...break_, actor: HIDDEN_NAME, tick: 412 }));
+    await flush();
+    expect(net.published).toHaveLength(2);
+    const [visible, hidden] = net.published.map((p) => p.body);
+    expect(JSON.parse(visible ?? '{}').payload.actor).toEqual({ name: OTHER, life: OTHER });
+    expect(JSON.parse(hidden ?? '{}').payload).not.toHaveProperty('actor');
+    for (const body of [visible ?? '', hidden ?? '']) {
+      expect(leaksIn(body, [BODY, OTHER])).toEqual([]);
+    }
+    net.sub.stop();
+  });
+
+  it('a break in a cell the Body cannot see gives nothing, even with a visible breaker', async () => {
+    const break_ = fixture('break-real.json').coreprotect_present as Record<string, unknown>;
+    const net = setup({
+      canSee: () => false,
+      resolve: (name) => (name === OTHER ? { name: OTHER, life: OTHER } : null),
+    });
+    net.deliver(BREAK_SUBJECT, JSON.stringify(break_));
+    await flush();
+    expect(net.published).toHaveLength(0);
+    net.sub.stop();
+  });
+
+  it('a pickup names a visible thrower and not a hidden one', async () => {
+    const net = setup({
+      selfName: OTHER,
+      lifeId: OTHER,
+      resolve: (name) => (name === BODY ? { name: BODY, life: BODY } : null),
+    });
+    const pickup = fixture('pickup-real.json');
+    net.deliver(PICKUP_SUBJECT, JSON.stringify(pickup));
+    net.deliver(PICKUP_SUBJECT, JSON.stringify({ ...pickup, thrower: HIDDEN_NAME, tick: 1179 }));
+    await flush();
+    expect(net.published).toHaveLength(2);
+    const [visible, hidden] = net.published.map((p) => p.body);
+    expect(JSON.parse(visible ?? '{}').payload.actor).toEqual({ name: BODY, life: BODY });
+    expect(JSON.parse(hidden ?? '{}').payload).not.toHaveProperty('actor');
+    for (const body of [visible ?? '', hidden ?? '']) {
+      expect(leaksIn(body, [OTHER, BODY])).toEqual([]);
+    }
+    net.sub.stop();
+  });
 });

@@ -1,7 +1,8 @@
 # AN-28b: Body subscription and the leakage gate
 
-Status: built on `phase1/an-28b-observation-wiring` (base `d0ae058d`). Off by default: nothing in
-production sets `AdamBodyEnv.observations`, and `main.ts` and `body-host.ts` are unchanged.
+Status: built on `phase1/an-28b-observation-wiring` (base `d0ae058d`), reviewed in `AN-28b-review-1`
+and fixed in one pass on top of `07710902`. Off by default: nothing in production sets
+`AdamBodyEnv.observations`, and `main.ts` and `body-host.ts` are unchanged.
 
 ## Files
 
@@ -14,78 +15,103 @@ production sets `AdamBodyEnv.observations`, and `main.ts` and `body-host.ts` are
   `source_event_id = eventIdFor('observation:' + lifeId + ':' + key)`, checked by `validateWorldEvent`,
   and published on `geldar.<shard>.observation` (a publish failure is logged). `startBodyObservations`
   is the Body's wiring: selfName = life id, `observedActor` for names, `canSeeBlock` for sight.
-- `golem/src/perception/provenance/subscribe.test.ts` (new, 13 tests).
+- `golem/src/perception/provenance/subscribe.test.ts` (new, 24 tests).
 - `golem/src/adam/adam-body.ts` (442 lines): `observations?: boolean` on `AdamBodyEnv`. When it is
   `true` and `owners` is set, `watchHurts` gets a fourth argument (`observedActor`) and
   `startBodyObservations` runs; both are stopped in `stop()` and in the failed-start cleanup. Otherwise
   the code path is today's.
 - `golem/src/adam/adam-body-observations.test.ts` (new, 5 tests).
-- `threshold/mcp/src/events/leakage.test.ts` (new, 5 tests).
+- `threshold/mcp/src/events/leakage.test.ts` (new, 7 tests).
 
 ## Tests
 
-Golem, `subscribe.test.ts`: both subjects subscribed and stop unsubscribes both; a subscription has
-only a `callback` key; a message after stop is ignored; a bad shape is dropped and counted; a wrong
-kind for its subject is dropped; an oversize message is dropped unread; a valid break for the owner
-publishes one observation event; a break in another world gives nothing, the same world gives one; a
-break the Body cannot see gives nothing; a break with an unseen breaker is published unattributed; a
-repeated break is published once; a valid pickup publishes one gift; a publish failure is logged, not
-thrown.
+Golem, `subscribe.test.ts`:
+- Subscription: both subjects subscribed and stop unsubscribes both; a subscription has only a
+  `callback` key; a message after stop is ignored; a bad shape is dropped and counted; a wrong kind for
+  its subject is dropped; an oversize message is dropped unread; a message of exactly
+  `MAX_PROVENANCE_BYTES` is read and one byte more is dropped; a publish failure is logged, not thrown;
+  a publisher that throws synchronously is counted as failed and does not escape the callback; an event
+  the contract refuses is logged and not published; a subscribe that fails after the first unsubscribes
+  the first and throws.
+- Ownership and world: a valid break for the owner publishes one observation event; a break in another
+  world gives nothing, the same world gives one; a pickup in another world gives nothing, the same world
+  gives one; a break with another prior owner, or with no owner, gives nothing; a break the Body made
+  itself gives nothing; a pickup with another picker, or one the Body threw itself, gives nothing; a
+  repeated break is published once; a valid pickup of the Body publishes one gift observation.
+- Sight and names: a break the Body cannot see gives nothing; a break whose breaker is out of sight is
+  published unattributed.
+- Leakage at the subscription (`the leakage gate at the subscription`): a visible breaker is named and a
+  hidden one (`Hidden_Walker`) is unattributed; a break in a cell the Body cannot see gives nothing even
+  with a visible breaker; a pickup names a visible thrower and not a hidden one. Each published body is
+  scanned by `leaksIn`: no `provenance`, no coordinate triple, no `ag_` id other than the Body's own
+  agent id and the visible actor's life id, and no hidden name or life id anywhere in the body.
 
 Golem, `adam-body-observations.test.ts`: observations absent, false, or on without `owners` give no
 provenance subscription and `watchHurts` gets three arguments; observations on subscribe both subjects
 with no replay option, `watchHurts` gets four, and stop unsubscribes both; a start that fails after
 the subscription unsubscribes both.
 
-Threshold, `leakage.test.ts`: a visible breaker and thrower are named, with no life id, key or
-coordinate; a hidden breaker and thrower are unattributed, with no `actor` field; the real Body events
-(`test/fixtures/real-body-events.json`) replay with no leak; the two injected-leak cases report a life
-id and a coordinate.
+Threshold, `leakage.test.ts` (the delivery-side gate): a visible breaker and thrower are named, with no
+life id, key or coordinate; a hidden breaker and thrower are unattributed, with no `actor` field; the
+recorded Body events (`test/fixtures/real-body-events.json`: intent, plan and wake, no observation) replay
+with no leak; an injected life id and an injected coordinate are reported; a `key` and the word
+`provenance` in an output are reported.
 
-Deviation: golem is not importable from threshold, so the leakage test does not run the golem
-observers over the fake bot. Its observation payloads are built by hand from the shapes of
-`golem/src/perception/provenance/fixtures/{break,pickup}-real.json`, with the sight of each actor
-decided by the case (a player in sight is named; one out of sight is not). The sight decision is
-therefore tested in golem (`subscribe.test.ts`, "a break the Body cannot see gives nothing").
-The third-party, unowned and self cases are not repeated here; they rest on the existing
-`property-break.test.ts` and `gift.test.ts`, which this packet did not re-read.
+## What is enforced, and what is not
 
-## Revert-checks (run for real, on the final code)
+- The threshold test does not run the golem observers, because golem is not importable from threshold.
+  Its observation payloads are hand-built from the fixtures' shapes, and its visibility is stated per case.
+  It does not show that the Body decides sight correctly. That is tested in golem: the leakage cases and
+  the subscription cases in `subscribe.test.ts` run `startObservations` with a fake sight decision.
+- The golem leakage scan is not a scan of every byte. The payload's `key` is the contract's dedupe key,
+  and it carries the coordinates and the breaker's name by design, so it is set aside; the Mind's presenter
+  (threshold) is what keeps it from the player. The `ag_` ids the body may carry are the Body's agent id and
+  the visible actor's life id, which the Mind needs; the scan rejects any other.
+- The real-body replay does not show a hidden actor: the recorded Body events hold no observation or damage
+  event. The hidden-actor cases are the hand-built ones above.
+- Not yet tested: `startBodyObservations` itself (the `Vec3` cell passed to `blockAt`, `canSeeBlock` as
+  the sight check, `selfName` = life id, `observedActor` as the resolver), and the fourth argument that
+  `watchHurts` receives in `adam-body.ts`. A bot that delivers a message with a `blockAt` stub would show
+  these. Until then, mutations to those lines are not caught by any test.
+- The third-party, unowned and self cases are now tested at the subscription level (ownership tests above),
+  not inferred from `property-break.test.ts` or `gift.test.ts`.
 
-Each mutation changed one line; the file was restored from a scratchpad copy afterwards, and
-`git diff --stat` was empty before the squash.
+## Revert-checks (run for real, on the fixed code)
+
+Each mutation changed one line (or one multi-line block, by regex), with the file restored from a
+scratchpad copy afterwards and every file's hash checked against its original. Each row names the tests
+that failed.
 
 1. Default path and "observations off" (`adam-body.ts`):
    `const observeTransport = env.observations === true ? env.owners : undefined;` became
-   `const observeTransport = env.owners;`. Failing:
-   - `observations off (absent): no provenance subscription and watchHurts gets three arguments`
-   - `observations false: the same as absent`
+   `const observeTransport = env.owners;`. Killed by
+   `observations off (absent): ...three arguments` and `observations false: the same as absent`.
 2. Bad shape dropped (`subscribe.ts`): `if (!validateProvenance(msg)) {` became
-   `if (typeof msg !== "object" || msg === null) {`. Failing:
+   `if (typeof msg !== "object" || msg === null) {`. Killed by
    `a provenance message with a bad shape is dropped and counted`.
-3. Sight (`subscribe.ts`): `canSee: opts.canSee,` became `canSee: () => true,`. Failing:
-   `a break the Body cannot see gives nothing`. The card's "fixture bot sees through the wall" case
-   cannot run in threshold; this is its golem-side equivalent.
-4. `ag_` scan removed (`leakage.test.ts`): the line
-   `if (/ag_[a-z0-9_]+/.test(text)) leaks.push('life id');` was deleted. Failing:
-   `an injected life id in an observation is reported as a leak`. The card expected both
-   injected-leak cases to fail, but the coordinate case uses its own scan and still passes. Kept as
-   written: each scan has its own case.
-5. World filter (`subscribe.ts`): `const inWorld = ... === bukkitWorldOf(opts.bot);` became
-   `const inWorld = true;`. Failing: `a break in another world gives nothing; the same world gives one`.
+3. Sight (`subscribe.ts`): `canSee: opts.canSee,` became `canSee: () => true,` (a fake bot that sees
+   through the wall). Killed by `a break the Body cannot see gives nothing` and by the leakage-gate case
+   `a break in a cell the Body cannot see gives nothing, even with a visible breaker`.
+4. `ag_` scan removed (`leakage.test.ts`): killed by
+   `an injected life id in an observation is reported as a leak`.
+5. Break world filter (`subscribe.ts`): `const inWorld = ... === bukkitWorldOf(opts.bot);` became
+   `const inWorld = true;`. Killed by `a break in another world gives nothing; the same world gives one`
+   and `a pickup in another world gives nothing; the same world gives one` (the second kills the
+   pickup filter's own mutant too).
+6. Pickup world filter removed (`subscribe.ts`, the `if (!inWorld) return;` line of the pickup branch).
+   Killed by `a pickup in another world gives nothing; the same world gives one`.
+7. Size cap `>` to `>=`: killed by `a message of exactly MAX_PROVENANCE_BYTES is read; one byte more is dropped`.
+8. try/catch around `handle` removed: killed by `a publisher that throws synchronously is counted as failed and does not escape`.
+9. Partial-subscribe cleanup removed: killed by `a subscribe that fails after the first unsubscribes the first and throws`.
+10. `validateWorldEvent` branch removed (`return event;`): killed by `an event the contract refuses is logged and not published`.
+11. `provenance` scan removed (`leakage.test.ts`): killed by `the word provenance in an output is reported as a leak`.
+12. `"key"`/`brk:`/`gift:` scan removed (`leakage.test.ts`): killed by `a key in an output is reported as a leak`.
 
-Both the default path and the world filter are in the list above (1 and 5).
+Still open (no test yet): the `startBodyObservations` mutants (`canSee` replaced by `() => true` there,
+`resolve` replaced by `() => null`, `selfName` replaced by a constant) and the `watchHurts` fourth argument
+replaced by `(u) => null`. The first is killed only by the subscription tests above when the mutation is in
+`startObservations`, not in the Body's wiring.
 
 ## Index lines
 
 None for `ledger.md` or `RESUME.md`. The worknote is the only index entry for this packet.
-
-## Final checks
-
-- `pnpm exec biome ci .`: exit 0 (2345 files; 75 warnings and 38 infos repo-wide, none failing).
-- `pnpm exec tsc --noEmit -p golem`: exit 0.
-- `pnpm exec tsc --noEmit -p threshold/mcp`: exit 0.
-- `pnpm exec vitest run golem/src/perception/provenance golem/src/adam threshold/mcp/src/events`:
-  40 files, 434 tests passed.
-- `./geldar.ps1 pnpm check:repo`: no `error:` lines.
-- `git diff --check`: clean.

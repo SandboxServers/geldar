@@ -7,11 +7,12 @@ import { mapMindEvent } from './mapper.ts';
 import { PRESENT_HANDLERS, presentEvents } from './present-handlers/index.ts';
 
 /*
- * The leakage gate (AN-28b). The golem cannot be imported here, so the observations below are built by
- * hand from the shapes of golem/src/perception/provenance/fixtures/{break,pickup}-real.json, with the
- * Body's view decided by the case: a player in line of sight is named (name and life id), one out of
- * sight is not. The output the player sees must never carry a life id, a provenance record, a key, a
- * coordinate, or a name the Body could not see.
+ * The leakage gate, delivery side (AN-28b). The golem cannot be imported here, so the observations below
+ * are built by hand from the shapes of golem/src/perception/provenance/fixtures/{break,pickup}-real.json,
+ * and each case states whether its actor was visible. This file checks only what the player is shown for
+ * those inputs: no life id, provenance record, key, coordinate, or hidden name. Whether an actor is seen
+ * at all is decided in golem, and is tested there by the leakage cases in
+ * golem/src/perception/provenance/subscribe.test.ts.
  */
 
 const LIFE = 'ag_adam_01';
@@ -119,7 +120,7 @@ describe('the leakage gate: observed evidence reaches the player without ids, ke
     expect(JSON.stringify(out)).not.toContain('Zack');
   });
 
-  it('the real Body events replay with no life id, provenance, key or coordinate', () => {
+  it('the recorded Body events (intent, plan, wake; no observation) replay with no leak', () => {
     const real = JSON.parse(
       readFileSync(new URL('../../test/fixtures/real-body-events.json', import.meta.url), 'utf8'),
     ) as { events: Array<{ type: string; payload: unknown; world_tick: number }> };
@@ -149,5 +150,17 @@ describe('the leakage gate: observed evidence reaches the player without ids, ke
       411,
     );
     expect(leaksOf(presented([leaky]).out)).toContain('coordinates');
+  });
+
+  it('a key in an output is reported as a leak', () => {
+    expect(leaksOf([{ type: 'property_broken', key: 'brk:411:1313:200:800:none' }])).toContain(
+      'key',
+    );
+  });
+
+  it('the word provenance in an output is reported as a leak', () => {
+    expect(leaksOf([{ type: 'property_broken', text: 'a provenance record' }])).toContain(
+      'provenance',
+    );
   });
 });
