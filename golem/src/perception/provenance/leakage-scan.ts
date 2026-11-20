@@ -20,7 +20,7 @@ export function leaksIn(body: string, allowedIds: string[]): string[] {
   const leaks: string[] = [];
   if (/provenance/i.test(body)) leaks.push('provenance');
   if (/\b\d{2,}\b\D{1,3}\b\d{2,}\b\D{1,3}\b\d{2,}\b/.test(shown)) leaks.push('coordinates');
-  for (const id of body.match(/ag_[a-z0-9_]+/g) ?? []) {
+  for (const id of lower.match(/ag_[a-z0-9_]+/g) ?? []) {
     if (!allowed.includes(id)) leaks.push(`life id ${id}`);
   }
   if (lower.includes(HIDDEN_NAME.toLowerCase()) || lower.includes(HIDDEN_LIFE)) {

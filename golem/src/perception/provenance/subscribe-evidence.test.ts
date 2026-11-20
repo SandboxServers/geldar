@@ -15,7 +15,7 @@ import { type ObservationOptions, startObservations } from './subscribe.ts';
 
 /*
  * The four active observation rows of the Body's subscription (AN-50b): gift, break, take and fight. Each
- * row has a positive control, a hidden control, a duplicate and a restart control. The rest of the file
+ * row has a positive control, a hidden control, a repeat control and a restart control. The rest of the file
  * covers the guards that stop a row from being observed at all (world, kind, ownership, age), the wrong
  * subject, and the golem-side leakage scan over every published body, with each scan injected.
  */
@@ -216,7 +216,7 @@ describe('gift row (AN-26): the Body receives an item', () => {
     sub.stop();
   });
 
-  it('duplicate: an identical pickup twice is two gifts with ordinal keys (the AN-26 key design)', () => {
+  it('identical pickups in one tick are two observations, keys :0 and :1 (ordinal by design, no dedupe; not a duplicate control)', () => {
     const { net, published, sub } = giftOpen();
     net.deliver(SUBJECT.pickup, PICKUP);
     net.deliver(SUBJECT.pickup, PICKUP);
@@ -332,6 +332,17 @@ describe("take row (AN-51): the Body's container is taken from", () => {
     net.deliver(SUBJECT.take, take());
     expect(published).toHaveLength(2);
     again.stop();
+  });
+
+  it('the take keys and the break keys have separate LRUs: 257 takes do not evict a break key', () => {
+    const { net, published, sub } = open(botFor({ players: [[OTHER, WEST]] }));
+    net.deliver(SUBJECT.break, BREAK);
+    for (let i = 0; i < 257; i += 1) net.deliver(SUBJECT.take, take({ tick: 3000 + i }));
+    net.deliver(SUBJECT.break, BREAK);
+    const kinds = payloadsOf(published).map((p) => p.payload.kind);
+    expect(kinds.filter((kind) => kind === 'property_broken')).toHaveLength(1);
+    expect(kinds.filter((kind) => kind === 'container_taken')).toHaveLength(257);
+    sub.stop();
   });
 
   it('a container the Body cannot see gives nothing', () => {
@@ -497,6 +508,13 @@ describe('the golem-side leakage scan over every published observation', () => {
         OTHER,
       ]),
     ).toEqual(['life id ag_capz_09']);
+  });
+
+  it('injected: an uppercase life id in a payload is reported in lower case, and an uppercase allow-list entry still matches', () => {
+    expect(leaksIn(bodyWith({ kind: 'x', note: 'AG_ZACK_01' }), [BODY, OTHER])).toEqual([
+      'life id ag_zack_01',
+    ]);
+    expect(leaksIn(bodyWith({ kind: 'x', note: 'AG_CAPA_01' }), [BODY.toUpperCase()])).toEqual([]);
   });
 
   it('injected: a hidden name or life id in any case is reported, in the key too', () => {

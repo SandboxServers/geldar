@@ -43,13 +43,18 @@ function presented(events: MindEvent[]): { sim: SimEvent[]; out: unknown[] } {
   return { sim, out: presentEvents(PRESENT_HANDLERS, sim) };
 }
 
+/** The mapped sim events for Mind events: what the mapper hands to the presenter, before any presenting. */
+function mapped(events: MindEvent[]): SimEvent[] {
+  return events.flatMap((event, i) => mapMindEvent(event, i + 1, ctx()));
+}
+
 /** The leaks in a serialised output: a life id, a provenance record, a key, or a coordinate triple. */
 function leaksOf(out: unknown[]): string[] {
   const text = JSON.stringify(out);
   const leaks: string[] = [];
   if (/ag_[a-z0-9_]+/.test(text)) leaks.push('life id');
   if (/provenance/i.test(text)) leaks.push('provenance');
-  if (/"key"/.test(text) || /\b(brk|gift):/.test(text)) leaks.push('key');
+  if (/"key"/.test(text) || /\b(brk|gift|take|fight):/.test(text)) leaks.push('key');
   if (/\b\d{2,}\b\D{1,3}\b\d{2,}\b\D{1,3}\b\d{2,}\b/.test(text)) leaks.push('coordinates');
   if (text.includes(HIDDEN_NAME)) leaks.push('hidden name');
   return leaks;
@@ -153,17 +158,17 @@ describe('the leakage gate: observed evidence reaches the player without ids, ke
     expect(leaksOf(presented([leaky]).out)).toContain('coordinates');
   });
 
-  it('a key in an output is reported as a leak', () => {
+  it('scanner test: a key in an output is reported as a leak', () => {
     expect(leaksOf([{ type: 'property_broken', key: 'brk:411:1313:200:800:none' }])).toContain(
       'key',
     );
   });
 
-  it('a hidden name in an output is reported as a leak', () => {
+  it('scanner test: a hidden name in an output is reported as a leak', () => {
     expect(leaksOf([{ type: 'x', text: 'Hidden_Walker' }])).toContain('hidden name');
   });
 
-  it('the word provenance in an output is reported as a leak', () => {
+  it('scanner test: the word provenance in an output is reported as a leak', () => {
     expect(leaksOf([{ type: 'property_broken', text: 'a provenance record' }])).toContain(
       'provenance',
     );
@@ -208,26 +213,64 @@ const TAKE_HIDDEN = mind(
 );
 
 describe('the leakage gate: fight_seen and container_taken (AN-50b)', () => {
-  it('a visible fighter and a visible taker are presented with no life id, key or coordinate', () => {
-    const { out } = presented([FIGHT_VISIBLE, TAKE_VISIBLE]);
-    expect(leaksOf(out)).toEqual([]);
-    expect(JSON.stringify(out)).not.toContain('ag_zack_01');
+  // Both kinds are mapped but present no line: the observation handler sets no observationKind for them,
+  // and the presenter returns nothing for an observation without one (handlers/observation.test.ts).
+  it('a visible fighter and a visible taker present no line: mapped, not presented', () => {
+    const { sim, out } = presented([FIGHT_VISIBLE, TAKE_VISIBLE]);
+    expect(sim).toHaveLength(2);
+    expect(out).toEqual([]);
   });
 
-  it('a hidden fighter and a hidden taker are presented with no actor and no hidden name', () => {
-    const { out } = presented([FIGHT_HIDDEN, TAKE_HIDDEN]);
-    expect(leaksOf(out)).toEqual([]);
-    expect(JSON.stringify(out)).not.toContain(HIDDEN_NAME);
-    expect(JSON.stringify(out)).not.toContain('"actor"');
+  it('a hidden fighter and a hidden taker present no line either', () => {
+    const { sim, out } = presented([FIGHT_HIDDEN, TAKE_HIDDEN]);
+    expect(sim).toHaveLength(2);
+    expect(out).toEqual([]);
   });
 
-  it('an injected life field on a container_taken is reported as a leak', () => {
+  it('the mapped visible fight and take carry the visible name, and no life id, key or coordinate', () => {
+    const sim = mapped([FIGHT_VISIBLE, TAKE_VISIBLE]);
+    expect(sim).toHaveLength(2);
+    expect(JSON.stringify(sim)).toContain('Zack');
+    expect(leaksOf(sim)).toEqual([]);
+  });
+
+  it('the mapped hidden fight and take carry no actor and no hidden name', () => {
+    const sim = mapped([FIGHT_HIDDEN, TAKE_HIDDEN]);
+    expect(sim).toHaveLength(2);
+    for (const event of sim) expect(event).not.toHaveProperty('actor');
+    expect(leaksOf(sim)).toEqual([]);
+  });
+
+  it('an input container_taken that carries actor.life maps with no life id', () => {
+    const injected = mind(
+      'observation',
+      {
+        kind: 'container_taken',
+        actor: { name: 'Zack', life: 'ag_zack_01' },
+        item: 'cobblestone',
+        count: 8,
+        key: 'take:3982:1314:200:800:ag_zack_01:cobblestone',
+      },
+      3982,
+    );
+    const sim = mapped([injected]);
+    expect(sim).toHaveLength(1);
+    expect(JSON.stringify(sim)).toContain('Zack');
+    expect(leaksOf(sim)).toEqual([]);
+  });
+
+  it('scanner test: a life field on a container_taken object is reported as a leak', () => {
     const leaky = { type: 'container_taken', actor: { name: 'Zack', life: 'ag_zack_01' } };
     expect(leaksOf([leaky])).toContain('life id');
   });
 
-  it('an injected key on a fight_seen is reported as a leak', () => {
+  it('scanner test: a key on a fight_seen object is reported as a leak', () => {
     expect(leaksOf([{ type: 'fight_seen', key: 'fight:2631:ag_zack_01:zombie' }])).toContain('key');
+  });
+
+  it('scanner test: a take or fight key prefix in an output is reported as a leak', () => {
+    expect(leaksOf([{ type: 'x', text: 'take:3982:1314:200:800:-:cobblestone' }])).toContain('key');
+    expect(leaksOf([{ type: 'x', text: 'fight:2631:none:zombie' }])).toContain('key');
   });
 
   it('a raw provenance record and a combat_fact never reach the agent', () => {

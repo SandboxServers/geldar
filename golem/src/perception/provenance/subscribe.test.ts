@@ -134,10 +134,42 @@ describe('startObservations', () => {
     net.sub.stop();
   });
 
-  it('a message of the wrong kind for its subject is dropped as malformed', () => {
+  it('a message of the wrong kind for its subject is dropped as malformed: all 12 pairings publish nothing', () => {
     const net = setup();
-    net.deliver(PICKUP_SUBJECT, JSON.stringify(fixture('break-real.json').coreprotect_present));
-    expect(net.sub.dropped().malformed).toBe(1);
+    type Channel = 'break' | 'pickup' | 'take' | 'combat';
+    const records: Record<Channel, unknown> = {
+      break: fixture('break-real.json').coreprotect_present,
+      pickup: fixture('pickup-real.json'),
+      take: fixture('take-real.json').chest_single_withdraw,
+      combat: fixture('combat-real.json').kill_engaged,
+    };
+    const subjects: Record<Channel, string> = {
+      break: BREAK_SUBJECT,
+      pickup: PICKUP_SUBJECT,
+      take: TAKE_SUBJECT,
+      combat: COMBAT_SUBJECT,
+    };
+    let pairings = 0;
+    for (const channel of Object.keys(subjects) as Channel[]) {
+      for (const kind of Object.keys(records) as Channel[]) {
+        if (kind === channel) continue;
+        net.deliver(subjects[channel], JSON.stringify(records[kind]));
+        pairings += 1;
+      }
+    }
+    expect(pairings).toBe(12);
+    expect(net.sub.dropped()).toEqual({ oversize: 0, malformed: 12, failed: 0 });
+    expect(net.published).toEqual([]);
+    net.sub.stop();
+  });
+
+  it('a take or a combat record with a bad shape is dropped as malformed and nothing is observed', () => {
+    const net = setup();
+    const take = fixture('take-real.json').chest_single_withdraw as Record<string, unknown>;
+    net.deliver(TAKE_SUBJECT, JSON.stringify({ ...take, world: 5 }));
+    net.deliver(COMBAT_SUBJECT, JSON.stringify({ kind: 'engaged', world: 5 }));
+    expect(net.sub.dropped()).toEqual({ oversize: 0, malformed: 2, failed: 0 });
+    expect(net.published).toEqual([]);
     net.sub.stop();
   });
 
@@ -321,26 +353,33 @@ describe('startObservations', () => {
     net.sub.stop();
   });
 
-  it('a subscribe that fails after the first unsubscribes the first and throws', () => {
-    const unsubscribed: string[] = [];
-    let calls = 0;
-    const transport: OwnerTransport = {
-      request: async () => {
-        throw new Error('not used');
-      },
-      subscribe(subject) {
-        calls += 1;
-        if (calls === 2) throw new Error('nats closed');
-        return {
-          unsubscribe() {
-            unsubscribed.push(subject);
-          },
-        };
-      },
-    };
-    expect(() => setup({ transport })).toThrow('nats closed');
-    expect(unsubscribed).toEqual([BREAK_SUBJECT]);
-  });
+  it.each<[number, string[]]>([
+    [2, [BREAK_SUBJECT]],
+    [3, [BREAK_SUBJECT, PICKUP_SUBJECT]],
+    [4, [BREAK_SUBJECT, PICKUP_SUBJECT, TAKE_SUBJECT]],
+  ])(
+    'a subscribe that fails at call %i unsubscribes every subscription before it and throws',
+    (failAt, before) => {
+      const unsubscribed: string[] = [];
+      let calls = 0;
+      const transport: OwnerTransport = {
+        request: async () => {
+          throw new Error('not used');
+        },
+        subscribe(subject) {
+          calls += 1;
+          if (calls === failAt) throw new Error('nats closed');
+          return {
+            unsubscribe() {
+              unsubscribed.push(subject);
+            },
+          };
+        },
+      };
+      expect(() => setup({ transport })).toThrow('nats closed');
+      expect(unsubscribed).toEqual(before);
+    },
+  );
 });
 
 describe('the leakage gate at the subscription: what a published observation carries', () => {
