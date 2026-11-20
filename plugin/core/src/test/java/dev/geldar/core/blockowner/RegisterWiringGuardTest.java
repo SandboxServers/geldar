@@ -58,7 +58,10 @@ class RegisterWiringGuardTest {
     private static final String GOOD_REGISTER =
             "        manager.registerEvents(breakListener(cache, publisher, () -> setup.enabled, link,"
             + " setup.gate, tick), plugin);\n"
-            + "        manager.registerEvents(pickupListener(link, setup.gate, tick, online), plugin);\n";
+            + "        manager.registerEvents(pickupListener(link, setup.gate, tick, online), plugin);\n"
+            + "        manager.registerEvents(containerTakeListener(link, cache, setup.gate, tick, nextTick), plugin);\n";
+    private static final String GOOD_TAKE =
+            "        return new ContainerTakeListener(sink, cache, gate::on, tick, nextTick);\n";
     private static final String GOOD_BREAK =
             "        return new BlockChangeListener(cache, publisher, enabled, sink, gate::on, tick);\n";
     private static final String GOOD_PICKUP = "        return new PickupProvenanceListener(sink, gate::on, tick, online);\n";
@@ -259,6 +262,7 @@ class RegisterWiringGuardTest {
         return "\n    public static BlockOwnerSetup register(JavaPlugin plugin) {\n" + registerBody + END
                 + "    static BlockChangeListener breakListener(OwnerCache cache) {\n" + breakSeam + END
                 + "\n    static PickupProvenanceListener pickupListener(ProvenanceSink sink) {\n" + pickupSeam + END
+                + "\n    static ContainerTakeListener containerTakeListener(ProvenanceSink sink) {\n" + GOOD_TAKE + END
                 + "\n    public void reload(FileConfiguration config) {\n" + GOOD_RELOAD + END;
     }
 
@@ -401,7 +405,8 @@ class RegisterWiringGuardTest {
     void guardAcceptsSeamResultInVariable() {
         String variable = "        var seam = breakListener(cache, publisher, () -> setup.enabled, link, setup.gate, tick);\n"
                 + "        manager.registerEvents(seam, plugin);\n"
-                + "        manager.registerEvents(pickupListener(link, setup.gate, tick, online), plugin);\n";
+                + "        manager.registerEvents(pickupListener(link, setup.gate, tick, online), plugin);\n"
+                + "        manager.registerEvents(containerTakeListener(link, cache, setup.gate, tick, nextTick), plugin);\n";
         assertEquals(List.of(), violations(source(variable, GOOD_BREAK, GOOD_PICKUP)));
     }
 
@@ -478,13 +483,14 @@ class RegisterWiringGuardTest {
         String bare = GOOD_REGISTER.replace("manager.registerEvents(pickupListener(link, setup.gate, tick, online), plugin);\n",
                 "pickupListener(link, setup.gate, tick, online);\n");
         assertTrue(violations(source(bare, GOOD_BREAK, GOOD_PICKUP)).stream()
-                .anyMatch(v -> v.startsWith("register() has 2 seam call(s) but 1 registerEvents( call(s)")));
+                .anyMatch(v -> v.startsWith("register() has 3 seam call(s) but 2 registerEvents( call(s)")));
     }
 
     @Test
     @DisplayName("each seam's gate argument is checked against the expression its Seam declares")
     void guardChecksGateExpressionPerSeam() {
-        List<Seam> seams = List.of(new Seam("breakListener", 4, "setup.gate"), new Seam("pickupListener", 1, "setup.gate::on"));
+        List<Seam> seams = List.of(new Seam("breakListener", 4, "setup.gate"), new Seam("pickupListener", 1, "setup.gate::on"),
+                new Seam("containerTakeListener", 2, "setup.gate"));
         String onGate = GOOD_REGISTER.replace("pickupListener(link, setup.gate, tick, online)",
                 "pickupListener(link, setup.gate::on, tick, online)");
         assertEquals(List.of(), violations(source(onGate, GOOD_BREAK, GOOD_PICKUP), seams));
