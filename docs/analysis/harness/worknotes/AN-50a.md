@@ -1,74 +1,89 @@
 # AN-50a worknote: combat, exchange and take evidence registration
 
-Branch `phase1/sheet-an-50a-evidence-registration`, on top of AN-28c (`phase1/an-28c-provenance-setup-acl`, merged at `27c86a49`).
+Branch `phase1/sheet-an-50a-evidence-registration-v2`. True base: `origin/main` at `2bcff3cc`, which already holds AN-28c
+(PR #817, #818). AN-28c2 v2 (`phase1/an-28c2-register-guard-v2`, head `2b6a48c2`) is not on main; this branch contains it
+as its first commits, so `git diff origin/main...HEAD` lists four AN-28c2 files (`docs/analysis/harness/worknotes/AN-28c.md`,
+`plugin/core/build.gradle.kts`, `RegisterWiringGuardTest.java`, the AN-28c2 hunk of `ProvenanceWiringTest.java`).
 Paper-only; do not enable on NeoForge until the human-handling question is decided.
 
 ## What changed
 
-- `eventsink/src/xp/awards.ts`: `case 'combat_fact': return combatFactAwards(payload, award);` before `default`; the `awardsFor`
-  doc comment names `combat_fact`.
-- `eventsink/src/writer.ts`: one `ExchangeTracker` per `pgEventWriter`; its `awardsFor(event)` replaces the stateless one
+- `eventsink/src/xp/awards.ts`: `case 'combat_fact': return combatFactAwards(payload, award);` before `default`.
+- `eventsink/src/writer.ts`: one `ExchangeTracker` per `pgEventWriter`; its `awardsFor(event)` replaces the stateless call
   (the tracker already returns the stateless awards, so appending would count a give or craft twice).
-- `eventsink/src/xp/awards.test.ts`: `describe('one combat key per encounter')`, two cases.
-- `eventsink/src/xp/combat.test.ts`: one assertion changed. It asserted that `combat_fact_kill` gives `[]` (the case arm
-  was owned by AN-50a). It now asserts that `combat_fact_kill` gives one key, the same key as `kill_uuid_completed`. This is
-  the intended AN-50a change, not a weakened check.
-- `eventsink/src/xp/evidence-table.test.ts` (new): every active XP row gives exactly one key on both paths; the inactive
-  rows (flee by combat fact, flee by action, one-way overheard speech) give `[]`.
-- `eventsink/src/writer.test.ts`: `exchange is active: a give award is produced once, by the tracker, never twice` (a real
-  `give_completed` fixture, one `xp_evidence` insert and one `proficiency` insert).
-- `plugin/core/src/main/java/dev/geldar/core/blockowner/BlockOwnerSetup.java`: `register` installs the take listener once,
-  through the package-private seam `containerTakeListener(sink, cache, BooleanSupplier, tick, nextTick)`, switched by
-  `setup.gate::on` (blockowner.enabled and provenance.enabled). The public seam `combatFactListener(exporter, sink, enabled,
-  tick)` is the only construction site of `CombatFactListener`. It is public because `GeldarCore` (another package) calls it.
-  Accessors `provenanceSwitch()` and `provenanceSink()` give GeldarCore the same gate and the NATS sink.
-- `plugin/core/src/main/java/dev/geldar/core/GeldarCore.java`: builds the combat listener through the seam with
-  `owners.provenanceSwitch()`, registers it, and ticks it every server tick (`runTaskTimer(this, combat::tick, 1L, 1L)`).
-- `plugin/core/src/test/java/dev/geldar/core/GeldarCoreTest.java`: the combat seam is silent while the switch is off and
-  publishes one fact once it is on; source-text guards that `CombatFactListener` is constructed once, and that GeldarCore
-  registers it once, ticks it once and switches it by `owners.provenanceSwitch()`.
-- `plugin/core/src/test/java/dev/geldar/core/blockowner/ProvenanceWiringTest.java`: take listener silent with
-  provenance off, one `take` message with both keys on, silent with blockowner off; a source-text guard that the take
-  listener is constructed once and registered once with `setup.gate::on`.
-- `plugin/core/build.gradle.kts`: `src/main/java/dev/geldar/core/blockowner/BlockOwnerSetup.java` added to
-  `scannedSourceRoots`. Reason: `verifyTestSourceInputs` fails when a test names a src/main path that no entry covers, and
-  the two source-text guards name `BlockOwnerSetup.java`. Outside the card's may-edit list; a one-line change, reported.
-- `plugin/core/src/test/resources/jar-contents.golden`: unchanged (no new classes).
+- `eventsink/src/xp/combat.test.ts`: `combat_fact_kill` now gives one key (the intended AN-50a change, not a weakened check).
+- `eventsink/src/xp/evidence-table.test.ts` (new): every active XP row gives exactly one key on both paths; flee by combat
+  fact, flee by action and one-way overheard speech give `[]`. The overheard test binds both names and gives each heard line
+  its own text, so the speaker guard (`exchange.ts`, `if (speaker === pair.opener || pair.qualified)`) is what it tests.
+- `eventsink/src/writer.test.ts`: `exchange is active` and `an exchange is paid across two batches on one writer`.
+- `plugin/core/src/main/java/dev/geldar/core/blockowner/BlockOwnerSetup.java`: `register` installs the take listener through
+  `containerTakeListener(sink, cache, ProvenanceGate gate, tick, nextTick)` with `setup.gate`. `combatFacts(exporter, tick)`
+  is the one public combat entry point; it calls the package-private `combatFactListener(exporter, sink, gate, tick)`, which
+  builds `new CombatFactListener(exporter, sink, gate::on, tick)`. No accessor exposes the gate or the sink.
+- `plugin/core/src/main/java/dev/geldar/core/GeldarCore.java`: `CombatFactListener combat = owners.combatFacts(exporter,
+  Bukkit::getCurrentTick)`, registered once, ticked once (`runTaskTimer(this, combat::tick, 1L, 1L)`).
+- `plugin/core/src/test/java/dev/geldar/core/blockowner/RegisterWiringGuardTest.java` (AN-28c2 v2, extended here): each seam
+  call exactly once; comments and literals removed before matching; `ContainerTakeListener` and `CombatFactListener` are
+  constructors only a seam may build; `GeldarCore` checked by `geldarCoreViolations` (one `owners.combatFacts(` call, one
+  combat registration, one tick); `combatFacts()` must hand the gate to `combatFactListener`. Each rule has a synthetic test.
+- `GeldarCoreTest.java` and `ProvenanceWiringTest.java`: the exact-text count guards for the take and combat listeners are
+  deleted. The extended guard covers the same facts (construction count, gate argument, one registration, one tick).
+- `plugin/core/build.gradle.kts`: AN-28c2 v2's entry for `BlockOwnerSetup.java` in `scannedSourceRoots`, not AN-50a's.
 
-## Revert-checks (output recorded)
+## Revert-checks (card list)
 
-Each mutant was applied to one file, the named test was run, and the file was restored from a backup in the scratchpad
-(`git diff --stat` empty after each).
+Run in this session unless marked. Each mutant was applied to one file, the named tests were run, and the file was restored
+from a scratchpad backup (`git diff --stat` empty after each; restore verified by hash).
 
-1. Delete the `combat_fact` case (`awards.ts`). `awards.test.ts`:
-   `FAIL one combat key per encounter > the Body kill and the plugin kill of the same mob give the same single key`
-   `AssertionError: expected [] to have a length of 1 but got +0`. `Tests 1 failed | 123 passed (124)`.
-2. Register `ContainerTakeListener` twice (`BlockOwnerSetup.java`, one duplicate `registerEvents` line). Gradle:
-   `ProvenanceWiringTest > ContainerTakeListener is built once and registered once, with the provenance gate as its switch FAILED`
-   `AssertionFailedError at ProvenanceWiringTest.java:161`. `16 tests completed, 1 failed`.
-3. Make the tracker produce a flee key (`awards.ts`: an action event yields `flee:<id>`). `evidence-table.test.ts`:
-   `FAIL inactive rows give nothing > a flee action gives []`
-   `AssertionError: expected [ { lifeId: 'ag_kestrel_01', …(4) } ] to deeply equal []`. `Tests 1 failed | 10 passed (11)`.
-   Note: a first mutant on the `default:` branch was not caught, because unknown event types never reach the action rows.
-4. Drop the exchange path, i.e. append the stateless awards to the tracker's (`writer.ts`, with the import). `writer.test.ts`:
-   `FAIL pgEventWriter > exchange is active: a give award is produced once, by the tracker, never twice`
-   `AssertionError: expected [ …(2) ] to have a length of 1 but got 2`. `Tests 1 failed | 8 passed (9)`.
-5. Seam (take): hand `() -> setup.enabled` to the take listener in `register` (`BlockOwnerSetup.java`). Gradle:
-   `ProvenanceWiringTest > ContainerTakeListener is built once ... FAILED`, `AssertionFailedError at ProvenanceWiringTest.java:161`.
-5b. Seam (combat): replace `owners.provenanceSwitch()` in `GeldarCore.java` with `() -> true`. Gradle:
-   `GeldarCoreTest > combatListenerIsBuiltOnceAndRegisteredOnceWithTheProvenanceSwitch() FAILED`,
-   `AssertionFailedError at GeldarCoreTest.java:109`. `16 tests completed, 1 failed`.
+1. Delete the `combat_fact` case (`awards.ts`). Recorded in an earlier AN-50a run, not re-run this session:
+   `FAIL one combat key per encounter > the Body kill and the plugin kill of the same mob give the same single key`,
+   `AssertionError: expected [] to have a length of 1 but got +0`.
+2. Register `ContainerTakeListener` twice (`BlockOwnerSetup.java`, second registration with no space before the paren):
+   `RegisterWiringGuardTest > register() hands setup.gate to every seam ... FAILED`,
+   `expected: <[]> but was: <[register() calls containerTakeListener( 2 times, not once]>`.
+3. Exchange tracker flee key (`awards.ts`: an action event yields `flee:<id>`). Recorded in an earlier run, not re-run:
+   `FAIL inactive rows give nothing > a flee action gives []`, `expected [ { lifeId: 'ag_kestrel_01', ...(4) } ] to deeply equal []`.
+4. Drop the exchange path, three writer mutants (`writer.ts`), `writer.test.ts`:
+   - (a) stateless `awardsFor` only (`const exchange = { awardsFor };`, with import): FAIL `an exchange is paid across two
+     batches ...`, `AssertionError: expected [] to have a length of 2 but got +0`.
+   - (b) tracker built inside `insertBatch` (`new ExchangeTracker().awardsFor(event)`): same failure as (a).
+   - (c) stateless appended to the tracker's awards: FAIL `exchange is active: a give award is produced once, by the tracker,
+     never twice`, `AssertionError: expected [ ...(2) ] to have a length of 1 but got 2`.
+5. Take seam handed `() -> setup.enabled`. The seam takes `ProvenanceGate`, so that lambda does not compile: the mutant fails
+   `compileTestJava` at `ProvenanceWiringTest.java:200` (`ProvenanceGate cannot be converted to BooleanSupplier`). The
+   compile-valid variant (`new ProvenanceGate()` with `/* setup.gate, */` in the comment) is caught by
+   `RegisterWiringGuardTest > register() hands setup.gate ...`:
+   `expected: <[]> but was: <[register() builds its own ProvenanceGate, register() passes containerTakeListener( something
+   other than setup.gate as argument 2]>`.
+5b. Combat seam, blockowner-only switch (`combatFacts()` returns `new CombatFactListener(exporter, link, () -> enabled, tick)`):
+   `RegisterWiringGuardTest > register() hands setup.gate ... FAILED`, `expected: <[]> but was: <[combatFacts() does not hand
+   the gate to combatFactListener(, new CombatFactListener( outside a seam]>`.
+Also run: a second combat construction in `GeldarCore` (`RegisterWiringGuardTest`, `foreign scan` and `GeldarCore takes its
+combat listener ...`: `GeldarCore builds CombatFactListener itself`); a removed take registration (`register() does not call
+containerTakeListener(`); the overheard mutant (`exchange.ts` speaker guard replaced by `if (pair.qualified)`):
+`evidence-table.test.ts > an overheard line that is not a reply ... FAIL`, `expected [ { lifeId: 'ag_ann', ...(4) }, ...(1) ]
+to deeply equal []`.
 
 ## Gaps
 
-- The "registered once" tests are source-text guards. Registration happens in `BlockOwnerSetup.register` and `onEnable`,
-  which need a live Paper server; no test can count real `PluginManager.registerEvents` calls.
-- The combat seam's behavioural test uses a plain `BooleanSupplier`, because `ProvenanceGate` is package-private in
-  `blockowner` and `CombatFactListener.playerHurt` / `mobDied` are package-private in `dev.geldar.core`. The
-  blockowner-on, provenance-off case at the combat seam is therefore covered by the gate's own tests and the source guard,
-  not by a driven test.
-- `writer.test.ts` catches the duplicate-append mutant, not a mutant that drops the tracker and uses the stateless
-  awards alone. The exchange-window behaviour is covered by the exchange tests.
+- Combat gate behaviour (blockowner on, provenance off: silent; both on: publishes): not driven. `CombatFactListener`'s
+  publish paths (`playerHurt`, `playerHit`, `mobDied`) are package-private in `dev.geldar.core`, and the public handlers take
+  Bukkit entity events. The blockowner test package cannot reach either without widening production code. The gate itself
+  (`ProvenanceGate`) and the seam's switch are covered by the source guard and `ProvenanceWiringTest`.
+- Evidence table: 8 active rows, flee (fact and action) and one-way overheard speech are covered. Not covered: third-party
+  gift, break and take rows; promise (AN-48, deferred); estimates.
 - The `writer.projection.test.ts` file mocks `./xp/awards.ts`, so it cannot check give or craft rules.
-- Index line: the worknote index was not updated in this pass (its location was not checked within the budget).
 - No live lane run. `live: pending`.
+
+## Index section (Fix note 6)
+
+- Index line: `AN-50a | phase1/sheet-an-50a-evidence-registration-v2 | <final head sha, see the packet report> | no decision |
+  worknote AN-50a.md`.
+- AN-47a's index (`CombatFactListener` registered and ticked): done. It deviates in one place: the listener is built through
+  `BlockOwnerSetup.combatFacts(...)` (it needs the owner's link and gate), not in a `listeners()` list in `GeldarCore`. The
+  call sits at `GeldarCore.java` after the owners are created.
+- AN-47b's index (`case 'combat_fact'`): done in `awards.ts`.
+- AN-49's index (sink-held `ExchangeTracker` replacing the stateless call): done in `writer.ts`.
+- AN-51a's index (`ContainerTakeListener` registration): done in `BlockOwnerSetup.register`.
+- AN-50b: the subscriptions and the leakage gate are still its job; the plugin publishes `take` and `combat` when both keys
+  are on.
