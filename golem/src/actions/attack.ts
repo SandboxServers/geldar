@@ -108,6 +108,7 @@ export const attackAction: ActionHandler<'attack'> = {
     }
     const armed = weapon?.name ?? null;
     const targetKind = targetKindOf(first);
+    const targetUuid = typeof first.uuid === 'string' ? first.uuid : null;
     attackDiag(bot, name, first, targetKind);
 
     let swings = 0;
@@ -124,6 +125,7 @@ export const attackAction: ActionHandler<'attack'> = {
           at: lastAt,
           start,
           targetKind,
+          targetUuid,
         });
       }
       lastAt = entity.position.clone();
@@ -197,6 +199,7 @@ interface KillRecord {
   at: Vec3;
   start: ItemStack[];
   targetKind: TargetKind;
+  targetUuid: string | null;
 }
 
 /**
@@ -204,7 +207,7 @@ interface KillRecord {
  * was picked up, or that drops were left. An abort during the pickup cancels the action.
  */
 async function afterKill(ctx: ActionContext, kill: KillRecord): Promise<ActionOutcome> {
-  const { target, swings, weapon, at, start, targetKind } = kill;
+  const { target, swings, weapon, at, start, targetKind, targetUuid } = kill;
   const pickup = await pickUpDrops(ctx, at, start);
   if (pickup.aborted) return cancelled({ target, swings, killed: true, picked: pickup.picked });
   const note = pickupNote(pickup);
@@ -215,6 +218,7 @@ async function afterKill(ctx: ActionContext, kill: KillRecord): Promise<ActionOu
     killed: true,
     weapon,
     picked: pickup.picked,
+    ...(targetUuid ? { target_uuid: targetUuid } : {}),
     ...(note ? { note } : {}),
   });
 }

@@ -1,5 +1,6 @@
 import type { WorldEvent } from '@geldar/contract';
 import type { Domain } from '@geldar/psyche';
+import { killKey } from './combat.ts';
 import { CROP_BLOCKS, CROP_ITEMS, isMiningItem } from './matrix.ts';
 
 /**
@@ -27,7 +28,7 @@ export interface XpAward {
 }
 
 type Fields = Record<string, unknown>;
-type Award = (domain: Domain, evidenceKey: string) => XpAward[];
+export type Award = (domain: Domain, evidenceKey: string) => XpAward[];
 
 function fieldsOf(value: unknown): Fields | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -90,10 +91,14 @@ function actionAwards(payload: Fields, award: Award): XpAward[] {
   const id = payload.action_id;
   const detail = fieldsOf(fieldsOf(payload.result)?.detail) ?? {};
   switch (payload.kind) {
-    case 'attack':
-      return detail.killed === true && detail.target_kind === 'mob'
-        ? award('combat', `kill:${id}`)
-        : [];
+    case 'attack': {
+      // The kill pays the encounter key (AN-47b): a completed kill with no valid target_uuid pays nothing here.
+      const key =
+        detail.killed === true && detail.target_kind === 'mob'
+          ? killKey(payload.life_id as string, detail)
+          : null;
+      return key ? award('combat', key) : [];
+    }
     case 'mine': {
       // A crop mined is farming, not mining: the harvest row takes it first.
       const items = collectedItems(detail);
