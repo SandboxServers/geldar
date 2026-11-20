@@ -50,8 +50,9 @@ mkdir_owned() {
 }
 
 # attrs_ok PATH MODE OWNER: 0 when the mode is MODE and, on a node, the owner is OWNER (user:group).
+# stat prints the mode without its leading zero (644, not 0644), so MODE is compared with that zero removed.
 attrs_ok() {
-  [ "$(stat -c %a "$1")" = "$2" ] || return 1
+  [ "$(stat -c %a "$1")" = "${2#0}" ] || return 1
   [ -n "$DEST" ] || [ "$(stat -c %U:%G "$1")" = "$3" ]
 }
 
