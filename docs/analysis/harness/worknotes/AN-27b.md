@@ -81,3 +81,13 @@ The dead guard (`actor === prior_owner`, review M9) was deleted, and the test as
 
 - AN-28b (Body subscription and leakage gate) calls `observeBreak` from `golem/src/perception/provenance/property-break.ts` with `canSee` built from `canSeeBlock` (`golem/src/perception/notable-blocks.ts`); `resolve` is `(u) => observedActor(bot, u)` from `visible-actor.ts`; `seen` is a `TakeKeyLru`. The module is inert until AN-28b wires it.
 - `world` is not compared with the Body's dimension: `observeBreak` delivers a break in another world at the same x, y, z. AN-28b must filter on `world` or accept it before it reaches `canSee`.
+
+## Revival re-run (2026-11-20, merged origin/main 0e0d795e)
+
+Merge of origin/main: no conflict. `git diff --stat origin/main...HEAD` and `origin/main HEAD` list the same 4 files. Whole-repo `pnpm exec biome ci` exit 0, `tsc -p golem` exit 0, `pnpm check:repo` "repo checks: ok", property-break vitest 18 passed.
+
+Revert-checks re-run on the merged tree (one line mutated, restored after each):
+
+- prior_owner check changed to `msg.prior_owner === null ||`: 2 failed (`someone else's block gives nothing`, `the captured real payloads validate with validateProvenance`), 16 passed.
+- `seesCell` line skipped: 2 failed (`a block out of sight gives nothing`, `a throwing resolver ... a throwing sight check sees nothing`), 16 passed.
+- actor named from `msg.actor` without `resolve`: 9 failed (named, unattributed, same-message-twice, reach and others), 9 passed.
