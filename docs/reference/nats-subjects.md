@@ -113,7 +113,7 @@ Select-String -Path geldar.ps1 -Pattern '^\s+(body|mind|eventsink|mcp|velocity|p
 
 | User | Publish allow | Publish deny | Subscribe allow |
 |---|---|---|---|
-| `body` | `geldar.<s>.>`; JetStream API; KV `geldar-life-registry`, `geldar-checkpoints`, `geldar-body-generation`, `geldar-skins` | Kino subjects, `geldar.<s>.blockowner.changed`, `geldar.<s>.ctl.body.>`, `geldar.<s>.helper.body.>`, `geldar.<s>.state.*.level`, `geldar.<s>.body.*.hearing` | `geldar.<s>.body.>`, `geldar.<s>.blockowner.changed`, `geldar.<s>.state.*.level`, `_INBOX.>` |
+| `body` | `geldar.<s>.>`; JetStream API; KV `geldar-life-registry`, `geldar-checkpoints`, `geldar-body-generation`, `geldar-skins` | Kino subjects, `geldar.<s>.blockowner.changed`, `geldar.<s>.ctl.body.>`, `geldar.<s>.helper.body.>`, `geldar.<s>.state.*.level`, `geldar.<s>.body.*.hearing`, `geldar.<s>.provenance.>` | `geldar.<s>.body.>`, `geldar.<s>.blockowner.changed`, `geldar.<s>.state.*.level`, `geldar.<s>.provenance.>`, `_INBOX.>` |
 | `mind` | `geldar.<s>.` + `wake`, `intent`, `action`, `plan_result`, `reflex_fired`, `speech`, `damage`, `death`, `sleep`; JetStream API; `geldar.<s>.body.>` | `geldar.<s>.body.*.hearing` | `_INBOX.>` |
 | `eventsink` | `geldar.<s>.dlq`, `geldar.<s>.state.>`; JetStream API | none | `geldar.<s>.state.*.proficiency`, `_INBOX.>` |
 | `mcp` | `geldar.<s>.sovereign_call`, `geldar.<s>.body.>`, KV `geldar-presence`; JetStream API | `geldar.<s>.body.*.hearing` | `_INBOX.>` |

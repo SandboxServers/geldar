@@ -2,13 +2,18 @@ package dev.geldar.core.blockowner;
 
 import dev.geldar.core.trace.TraceHook;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import java.util.function.Function;
+import java.util.function.LongSupplier;
 import java.util.logging.Logger;
+import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -16,6 +21,9 @@ import org.bukkit.plugin.java.JavaPlugin;
  * Wires block ownership: the CoreProtect owner source (when CoreProtect is present), the lookup thread, the chunk
  * cache, the change listener, the batched change publisher and the NATS query link. Settings: {@code blockowner.enabled}
  * (default true; false stops the listener and the replies) and {@code blockowner.lookup_timeout_ms} (default 2000).
+ * {@code provenance.enabled} (default false, no config.yml default) turns on the provenance messages of breaks and
+ * pickups; with it off the listeners return before they read anything. Paper-only; do not enable on NeoForge until the
+ * human-handling question is decided.
  */
 public final class BlockOwnerSetup implements AutoCloseable {
     static final String COREPROTECT = "CoreProtect";
@@ -31,6 +39,7 @@ public final class BlockOwnerSetup implements AutoCloseable {
     private final PlacementRecorder placements;
     private final OwnerSource source;
     private volatile boolean enabled = true;
+    private final ProvenanceGate gate = new ProvenanceGate();
 
     private BlockOwnerSetup(ExecutorService lookups, NatsBlockOwnerLink link, OwnerQueryService service,
             LookupDebugLog debug, PlacementRecorder placements, OwnerSource source) {
@@ -80,19 +89,43 @@ public final class BlockOwnerSetup implements AutoCloseable {
         BlockOwnerSetup setup = new BlockOwnerSetup(lookups, link, service, debug, placements, source);
         BlockOwnerResponder responder = new BlockOwnerResponder(service, link, () -> setup.enabled);
         link.start(responder::receive);
-        plugin.getServer().getPluginManager().registerEvents(
-                new BlockChangeListener(cache, publisher, () -> setup.enabled), plugin);
+        plugin.getServer().getPluginManager().registerEvents(breakListener(cache, publisher,
+                () -> setup.enabled, link, setup.gate, Bukkit::getCurrentTick), plugin);
+        plugin.getServer().getPluginManager().registerEvents(pickupListener(link, setup.gate,
+                Bukkit::getCurrentTick, Bukkit::getPlayer), plugin);
         plugin.getServer().getScheduler().runTaskTimer(plugin, publisher::flush, 1L, 1L);
         setup.reload(plugin.getConfig());
         return setup;
     }
 
-    /** Applies {@code blockowner.*} from the config; the plugin calls it with the 5 s config reload. */
+    /**
+     * The break listener {@link #register} installs. Its provenance switch is {@code gate}, which is on only when
+     * {@code blockowner.enabled} and {@code provenance.enabled} are both true. Package-private so the wiring test can
+     * build it the same way and drive it.
+     */
+    static BlockChangeListener breakListener(OwnerCache cache, BlockOwnerPublisher publisher, BooleanSupplier enabled,
+            ProvenanceSink sink, ProvenanceGate gate, LongSupplier tick) {
+        return new BlockChangeListener(cache, publisher, enabled, sink, gate::on, tick);
+    }
+
+    /** The pickup listener {@link #register} installs, gated by {@code gate} as {@link #breakListener} is. */
+    static PickupProvenanceListener pickupListener(ProvenanceSink sink, ProvenanceGate gate, LongSupplier tick,
+            Function<UUID, Player> online) {
+        return new PickupProvenanceListener(sink, gate::on, tick, online);
+    }
+
+    /** Applies {@code blockowner.*} and {@code provenance.enabled} from the config; the plugin calls it on the 5 s reload. */
     public void reload(FileConfiguration config) {
+        gate.reload(config);
         enabled = config.getBoolean("blockowner.enabled", true);
         long timeout = config.getLong("blockowner.lookup_timeout_ms", DEFAULT_TIMEOUT_MS);
         service.setTimeoutMs(Math.max(MIN_TIMEOUT_MS, Math.min(MAX_TIMEOUT_MS, timeout)));
         debug.setEnabled(config.getBoolean("blockowner.debug", false));
+    }
+
+    /** The provenance flag: {@code provenance.enabled}, false when the key is absent. */
+    static boolean provenanceEnabled(FileConfiguration config) {
+        return config.getBoolean("provenance.enabled", false);
     }
 
     /** The owner source: CoreProtect when it is loaded, enabled and new enough; otherwise one that always says unknown. */

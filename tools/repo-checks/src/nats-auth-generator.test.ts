@@ -169,6 +169,7 @@ describe.skipIf(!hasPwsh)('geldar.ps1 NATS auth generator: rendered output', () 
       `geldar.${SHARD}.helper.body.>`,
       `geldar.${SHARD}.state.*.level`,
       `geldar.${SHARD}.body.*.hearing`,
+      `geldar.${SHARD}.provenance.>`,
     ]);
     expect(by('paper')?.deny).toEqual([
       control,
