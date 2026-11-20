@@ -6,7 +6,7 @@
 # write_if_changed, CHANGED and BOOT_ROOT.
 
 GIT_FLOOR=2.40
-BASE_PACKAGES="ca-certificates curl gnupg jq nftables openssl xz-utils unattended-upgrades"
+BASE_PACKAGES="ca-certificates curl gnupg jq logrotate nftables openssl xz-utils unattended-upgrades"
 DOCKER_PACKAGES="docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin"
 export DEBIAN_FRONTEND=noninteractive
 

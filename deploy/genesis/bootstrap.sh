@@ -12,6 +12,12 @@
 # (GELDAR_DOCKER_KEY_FPR, 40 hex digits; spaces and case are normalised) and the Docker address pool
 # (GELDAR_DOCKER_POOL_BASE, an IPv4 CIDR).
 #
+# Service and operator ids: the service user is GELDAR_SERVICE_USER (default geldar) with uid GELDAR_SERVICE_UID
+# (default 1000; its group takes the same gid, there is no separate gid setting). The operator uid is
+# GELDAR_OPERATOR_UID (default 1001) and the docker group gid is GELDAR_DOCKER_GID (default 999). A Debian generic cloud
+# image's first user already holds uid 1000, so on that image set GELDAR_SERVICE_UID explicitly to a free uid (and
+# GELDAR_OPERATOR_UID and GELDAR_DOCKER_GID when they clash). The run refuses a taken id and names its holder.
+#
 # First run, by the owner: this repository carries no Docker trust anchor and no package versions. Copy
 # GELDAR_DOCKER_KEY_FPR from the Docker Engine installation page on docs.docker.com (Debian), and copy the four package
 # versions from the Docker apt repository (download.docker.com/linux/debian, the stable package index for the host's
@@ -163,11 +169,30 @@ valid_port() {
   [ "$((10#$1))" -ge 1 ] && [ "$((10#$1))" -le 65535 ]
 }
 
-# check_dir_setting NAME PATH: an absolute, normalised path that is not a system directory itself.
+# check_pool_settings: GELDAR_DOCKER_POOL_BASE is an IPv4 CIDR (four octets 0-255, prefix 1-32). GELDAR_DOCKER_POOL_SIZE
+# is the pool prefix length, 1 to 32, and not shorter than the base prefix. Octets are read in base ten (08 is 8).
+check_pool_settings() {
+  local re='^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})/([0-9]{1,2})$' o bits size
+  [[ "$GELDAR_DOCKER_POOL_BASE" =~ $re ]] || die "GELDAR_DOCKER_POOL_BASE must be an IPv4 CIDR"
+  for o in "${BASH_REMATCH[@]:1:4}"; do
+    [ "$((10#$o))" -le 255 ] || die "GELDAR_DOCKER_POOL_BASE must be an IPv4 CIDR (octets 0-255)"
+  done
+  bits=$((10#${BASH_REMATCH[5]}))
+  [ "$bits" -ge 1 ] && [ "$bits" -le 32 ] || die "GELDAR_DOCKER_POOL_BASE prefix must be 1 to 32"
+  [[ "$GELDAR_DOCKER_POOL_SIZE" =~ ^[0-9]{1,2}$ ]] || die "GELDAR_DOCKER_POOL_SIZE must be a number from 1 to 32"
+  size=$((10#$GELDAR_DOCKER_POOL_SIZE))
+  [ "$size" -ge 1 ] && [ "$size" -le 32 ] || die "GELDAR_DOCKER_POOL_SIZE must be a number from 1 to 32"
+  [ "$size" -ge "$bits" ] || die "GELDAR_DOCKER_POOL_SIZE must not be shorter than the GELDAR_DOCKER_POOL_BASE prefix"
+}
+
+# check_dir_setting NAME PATH: an absolute, normalised path. The system directories themselves are refused, and so is
+# anything under /etc/ssh, /etc/sudoers.d or /usr. Paths under /etc/geldar-*, /var/lib/geldar-* and /opt/geldar-* pass.
 check_dir_setting() {
   case "$2" in
-    / | /bin | /boot | /dev | /etc | /home | /lib | /opt | /proc | /root | /run | /sbin | /sys | /tmp | /usr | /var)
+    / | /bin | /boot | /dev | /etc | /home | /lib | /opt | /proc | /root | /run | /sbin | /sys | /tmp | /usr | /var | /var/lib)
       die "$1 must not be a system directory" ;;
+    /etc/ssh | /etc/ssh/* | /etc/sudoers.d | /etc/sudoers.d/* | /usr/*)
+      die "$1 must not be under a system directory" ;;
     /*) ;;
     *) die "$1 must be an absolute path" ;;
   esac
@@ -204,14 +229,14 @@ apply_defaults() {
   GELDAR_TOKENS_DIR=${GELDAR_TOKENS_DIR:-/etc/geldar-$GELDAR_ENV_NAME/tokens}
   GELDAR_SRC_DIR=${GELDAR_SRC_DIR:-/opt/geldar-$GELDAR_ENV_NAME/src}
   local v p
-  for v in GELDAR_SERVICE_UID GELDAR_OPERATOR_UID GELDAR_DOCKER_GID GELDAR_DOCKER_POOL_SIZE; do
+  for v in GELDAR_SERVICE_UID GELDAR_OPERATOR_UID GELDAR_DOCKER_GID; do
     [[ "${!v}" =~ ^[0-9]+$ ]] || die "$v must be a number"
   done
   valid_port "$BOOTSTRAP_SSH_PORT" || die "BOOTSTRAP_SSH_PORT must be a TCP port (1-65535)"
   for p in ${GELDAR_PUBLIC_TCP_PORTS//,/ }; do
     valid_port "$p" || die "GELDAR_PUBLIC_TCP_PORTS has an entry that is not a TCP port (1-65535)"
   done
-  [[ "$GELDAR_DOCKER_POOL_BASE" =~ ^[0-9.]+/[0-9]+$ ]] || die "GELDAR_DOCKER_POOL_BASE must be an IPv4 CIDR"
+  check_pool_settings
   check_dir_setting GELDAR_STATE_DIR "$GELDAR_STATE_DIR"
   check_dir_setting GELDAR_SECRETS_DIR "$GELDAR_SECRETS_DIR"
   check_dir_setting GELDAR_TOKENS_DIR "$GELDAR_TOKENS_DIR"

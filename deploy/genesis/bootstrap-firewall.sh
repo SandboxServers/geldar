@@ -24,8 +24,9 @@ sshd_ports() {
 # ports that the settings do not allow).
 firewall_ports() {
   local allowed detected p
-  allowed=$(printf '%s\n' ${GELDAR_PUBLIC_TCP_PORTS//,/ } "$BOOTSTRAP_SSH_PORT" | sort -un)
-  detected=$(sshd_ports | grep -E '^[0-9]+$' | sort -un || true)
+  # Ports are read in base ten, so 0022 and 22 are the same port in the list and in the SSH guard.
+  allowed=$(for p in ${GELDAR_PUBLIC_TCP_PORTS//,/ } "$BOOTSTRAP_SSH_PORT"; do printf '%s\n' "$((10#$p))"; done | sort -un)
+  detected=$(sshd_ports | grep -E '^[0-9]+$' | while read -r p; do printf '%s\n' "$((10#$p))"; done | sort -un || true)
   FW_UNLISTED=
   for p in $detected; do
     grep -qx "$p" <<<"$allowed" || FW_UNLISTED="$FW_UNLISTED $p"
