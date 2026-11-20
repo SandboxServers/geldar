@@ -222,17 +222,4 @@ class ProvenanceWiringTest {
         assertTrue(takeThrough(gateReloadedFrom(config(false, true))).isEmpty());
     }
 
-    /** Counts the non-overlapping occurrences of {@code needle} in {@code source}. */
-    private static int count(String source, String needle) {
-        return (source.length() - source.replace(needle, "").length()) / needle.length();
-    }
-
-    @Test
-    @DisplayName("ContainerTakeListener is built once and registered once, with the provenance gate as its switch")
-    void takeListenerRegisteredOnceWithTheGate() throws IOException {
-        String source = Files.readString(Path.of("src/main/java/dev/geldar/core/blockowner/BlockOwnerSetup.java"));
-        assertEquals(1, count(source, "new ContainerTakeListener("), "one construction site");
-        assertEquals(1, count(source, "containerTakeListener(link, cache, setup.gate,"),
-                "one registration, switched by the gate and not by blockowner.enabled alone");
-    }
 }

@@ -100,18 +100,4 @@ class GeldarCoreTest {
         assertEquals(1, mem.events().size(), "one fact once the switch is on");
     }
 
-    @Test
-    void combatListenerIsBuiltOnceAndRegisteredOnceWithTheProvenanceSwitch() throws IOException {
-        String core = Files.readString(Path.of("src/main/java/dev/geldar/core/GeldarCore.java"));
-        String owner = Files.readString(Path.of("src/main/java/dev/geldar/core/blockowner/BlockOwnerSetup.java"));
-        assertEquals(1, count(owner, "new CombatFactListener("), "one construction site");
-        assertEquals(1, count(core, "owners.combatFacts(exporter,"), "one seam call in onEnable");
-        assertEquals(0, count(core, "new CombatFactListener("), "GeldarCore never builds the listener itself");
-        assertEquals(1, count(core, "registerEvents(combat, this)"), "one event registration");
-        assertEquals(1, count(core, "runTaskTimer(this, combat::tick, 1L, 1L)"), "one tick per server tick");
-    }
-
-    private static int count(String source, String needle) {
-        return (source.length() - source.replace(needle, "").length()) / needle.length();
-    }
 }

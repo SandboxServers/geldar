@@ -32,24 +32,28 @@ class RegisterWiringGuardTest {
 
     /**
      * The seams {@code register} calls. To add one (AN-50a: containerTakeListener, {@code new Seam("containerTakeListener",
-     * 2, "setup.gate::on")}), append one line here and add its constructor to LISTENER_CTORS. The combat-fact seam is NOT
-     * here: it is read from GeldarCore.onEnable, which this guard does not scan (see the worknote, AN-50a must add that).
+     * 2, "setup.gate::on")}), append one line here and add its constructor to LISTENER_CTORS. The combat-fact seam is not
+     * here: it is not called by register(). GeldarCore is checked by {@link #geldarCoreViolations}, and combatFacts by
+     * {@link #violations}.
      */
     private static final List<Seam> SEAMS =
             List.of(new Seam("breakListener", 4, "setup.gate"), new Seam("pickupListener", 1, "setup.gate"),
             new Seam("containerTakeListener", 2, "setup.gate"));
 
     /**
-     * The listener constructors only a seam may build, in any spelling. AN-50a adds ContainerTakeListener and
-     * CombatFactListener here, one line each, when they are registered.
+     * The listener constructors only a seam may build, in any spelling, in any main source: BlockOwnerSetup's seams.
+     * BlockOwnerSetup is checked by {@link #violations}, every other main source by {@link #foreignConstructions}.
      */
-    private static final List<String> LISTENER_CTORS = List.of("BlockChangeListener", "PickupProvenanceListener");
+    private static final List<String> LISTENER_CTORS =
+            List.of("BlockChangeListener", "PickupProvenanceListener", "ContainerTakeListener", "CombatFactListener");
 
     /** The files that define the listeners, and BlockOwnerSetup, which {@link #violations} checks on its own. */
     private static final Set<String> OWN_FILES =
-            Set.of("BlockChangeListener.java", "PickupProvenanceListener.java", "BlockOwnerSetup.java");
+            Set.of("BlockChangeListener.java", "PickupProvenanceListener.java", "ContainerTakeListener.java",
+                    "CombatFactListener.java", "BlockOwnerSetup.java");
 
     private static final Path SOURCE = Path.of("src/main/java/dev/geldar/core/blockowner/BlockOwnerSetup.java");
+    private static final Path CORE = Path.of("src/main/java/dev/geldar/core/GeldarCore.java");
     private static final Path MAIN = Path.of("src/main/java");
     private static final Pattern REGISTER = Pattern.compile("\\n {4}public static BlockOwnerSetup register\\(");
     private static final Pattern RELOAD = Pattern.compile("\\n {4}public void reload\\(");
@@ -68,6 +72,14 @@ class RegisterWiringGuardTest {
     private static final String GOOD_RELOAD =
             "        gate.reload(config);\n"
             + "        enabled = config.getBoolean(\"blockowner.enabled\", true);\n";
+
+    private static final Pattern COMBAT_FACTS = Pattern.compile("\\n {4}public CombatFactListener combatFacts\\(");
+    private static final String GOOD_COMBAT = "        return combatFactListener(exporter, link, gate, tick);\n";
+    private static final String GOOD_COMBAT_SEAM = "        return new CombatFactListener(exporter, sink, gate::on, tick);\n";
+    private static final String GOOD_CORE =
+            "        CombatFactListener combat = owners.combatFacts(exporter, Bukkit::getCurrentTick);\n"
+            + "        getServer().getPluginManager().registerEvents(combat, this);\n"
+            + "        getServer().getScheduler().runTaskTimer(this, combat::tick, 1L, 1L);\n";
 
     /** The text of the method declared by {@code declaration}, through its closing four-space brace; null if absent. */
     private static String method(String source, Pattern declaration) {
@@ -215,6 +227,8 @@ class RegisterWiringGuardTest {
             seamCalls += calls.size();
             if (calls.isEmpty()) {
                 out.add("register() does not call " + seam.name() + "(");
+            } else if (calls.size() > 1) {
+                out.add("register() calls " + seam.name() + "( " + calls.size() + " times, not once");
             }
             for (List<String> args : calls) {
                 if (args.size() <= seam.gateIndex() || !seam.gate().equals(flat(args.get(seam.gateIndex())))) {
@@ -234,6 +248,19 @@ class RegisterWiringGuardTest {
             out.add("register() has " + seamCalls + " seam call(s) but " + registrations.size()
                     + " registerEvents( call(s): a seam result is discarded or not registered");
         }
+        String combatSeam = method(code, seamDeclaration("combatFactListener"));
+        if (combatSeam == null) {
+            out.add("combatFactListener( seam not found");
+        } else {
+            outsideSeams = outsideSeams.replace(combatSeam, "");
+            if (!flat(combatSeam).contains("return new CombatFactListener(exporter, sink, gate::on, tick);")) {
+                out.add("combatFactListener( does not build its listener with gate::on");
+            }
+        }
+        String combatFacts = method(code, COMBAT_FACTS);
+        if (combatFacts == null || !flat(combatFacts).contains("return combatFactListener(exporter, link, gate, tick);")) {
+            out.add("combatFacts() does not hand the gate to combatFactListener(");
+        }
         for (String ctor : LISTENER_CTORS) {
             if (constructs(flat(outsideSeams), ctor)) {
                 out.add("new " + ctor + "( outside a seam");
@@ -242,6 +269,28 @@ class RegisterWiringGuardTest {
         String reload = method(code, RELOAD);
         if (reload == null || !flat(reload).contains("gate.reload(config);")) {
             out.add("reload() does not call gate.reload(config)");
+        }
+        return out;
+    }
+
+    /** What is wrong with GeldarCore's combat wiring in {@code source}; empty when the guard holds. */
+    static List<String> geldarCoreViolations(String source) {
+        List<String> out = new ArrayList<>();
+        String code = flat(strip(source));
+        List<List<String>> combat = callsOf(code, "combatFacts");
+        if (combat.size() != 1 || combat.get(0).size() != 2
+                || !code.contains("CombatFactListener combat = owners.combatFacts(")) {
+            out.add("GeldarCore does not call owners.combatFacts( exactly once, with the exporter and a tick");
+        }
+        if (constructs(code, "CombatFactListener")) {
+            out.add("GeldarCore builds CombatFactListener itself");
+        }
+        if (callsOf(code, "registerEvents").stream().filter(a -> a.equals(List.of("combat", "this"))).count() != 1) {
+            out.add("GeldarCore registers combat other than once");
+        }
+        if (callsOf(code, "runTaskTimer").stream().filter(a -> a.equals(List.of("this", "combat::tick", "1L", "1L")))
+                .count() != 1) {
+            out.add("GeldarCore ticks combat other than once per server tick");
         }
         return out;
     }
@@ -263,6 +312,9 @@ class RegisterWiringGuardTest {
                 + "    static BlockChangeListener breakListener(OwnerCache cache) {\n" + breakSeam + END
                 + "\n    static PickupProvenanceListener pickupListener(ProvenanceSink sink) {\n" + pickupSeam + END
                 + "\n    static ContainerTakeListener containerTakeListener(ProvenanceSink sink) {\n" + GOOD_TAKE + END
+                + "\n    public CombatFactListener combatFacts(EventExporter exporter, LongSupplier tick) {\n" + GOOD_COMBAT + END
+                + "\n    static CombatFactListener combatFactListener(EventExporter exporter, ProvenanceSink sink,"
+                + " ProvenanceGate gate, LongSupplier tick) {\n" + GOOD_COMBAT_SEAM + END
                 + "\n    public void reload(FileConfiguration config) {\n" + GOOD_RELOAD + END;
     }
 
@@ -504,5 +556,60 @@ class RegisterWiringGuardTest {
         String publicSeam = source(GOOD_REGISTER, GOOD_BREAK, GOOD_PICKUP).replace(
                 "\n    static BlockChangeListener breakListener(", "\n    public static BlockChangeListener breakListener(");
         assertEquals(List.of(), violations(publicSeam));
+    }
+
+    @Test
+    @DisplayName("GeldarCore takes its combat listener from the owner's combatFacts(), and registers and ticks it once")
+    void geldarCoreWiresCombatThroughTheOwner() throws IOException {
+        assertEquals(List.of(), geldarCoreViolations(Files.readString(CORE)));
+        assertEquals(List.of(), geldarCoreViolations(GOOD_CORE));
+    }
+
+    @Test
+    @DisplayName("the guard names a second take registration, even with no space before its paren")
+    void guardCountsSecondTakeRegistration() {
+        String second = GOOD_REGISTER + "        manager.registerEvents(containerTakeListener (link, cache, setup.gate,"
+                + " tick, nextTick), plugin);\n";
+        assertTrue(violations(source(second, GOOD_BREAK, GOOD_PICKUP))
+                .contains("register() calls containerTakeListener( 2 times, not once"));
+    }
+
+    @Test
+    @DisplayName("the guard reads the take gate from code, so a comment that holds the right text does not satisfy it")
+    void guardReadsTakeGateNotComment() {
+        String commented = GOOD_REGISTER.replace("containerTakeListener(link, cache, setup.gate, tick, nextTick), plugin);",
+                "containerTakeListener(link, cache, () -> setup.enabled, tick, nextTick), plugin); // containerTakeListener"
+                + "(link, cache, setup.gate, tick, nextTick)");
+        assertTrue(violations(source(commented, GOOD_BREAK, GOOD_PICKUP)).contains(
+                "register() passes containerTakeListener( something other than setup.gate as argument 2"));
+    }
+
+    @Test
+    @DisplayName("the guard names a second combatFacts() call in GeldarCore, and a second CombatFactListener construction")
+    void guardCatchesSecondCombatWiring() {
+        String twice = GOOD_CORE + "        owners.combatFacts(exporter, Bukkit::getCurrentTick);\n";
+        assertTrue(geldarCoreViolations(twice).contains(
+                "GeldarCore does not call owners.combatFacts( exactly once, with the exporter and a tick"));
+        String extra = GOOD_CORE + "        new CombatFactListener(exporter, null, () -> true, Bukkit::getCurrentTick);\n";
+        assertTrue(geldarCoreViolations(extra).contains("GeldarCore builds CombatFactListener itself"));
+        assertFalse(foreignConstructions("GeldarCore.java", extra).isEmpty());
+    }
+
+    @Test
+    @DisplayName("the guard names a combatFacts() whose listener is switched by a blockowner-only supplier")
+    void guardCatchesBlockownerOnlyCombatSwitch() {
+        String blockownerOnly = source(GOOD_REGISTER, GOOD_BREAK, GOOD_PICKUP).replace(GOOD_COMBAT,
+                "        return new CombatFactListener(exporter, link, () -> enabled, tick);\n");
+        List<String> found = violations(blockownerOnly);
+        assertTrue(found.contains("combatFacts() does not hand the gate to combatFactListener("), found.toString());
+        assertTrue(found.contains("new CombatFactListener( outside a seam"), found.toString());
+    }
+
+    @Test
+    @DisplayName("the guard names a combat seam whose listener is not switched by gate::on")
+    void guardCatchesCombatSeamSwitch() {
+        String seam = source(GOOD_REGISTER, GOOD_BREAK, GOOD_PICKUP).replace(GOOD_COMBAT_SEAM,
+                "        return new CombatFactListener(exporter, sink, () -> true, tick);\n");
+        assertTrue(violations(seam).contains("combatFactListener( does not build its listener with gate::on"));
     }
 }
