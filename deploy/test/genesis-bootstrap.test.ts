@@ -13,11 +13,14 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
 import { DEPLOY, posix, SH } from './colo-deploy-fixture';
 
 const BOOT = join(DEPLOY, 'genesis', 'bootstrap.sh');
+// The script needs bash (set -o pipefail, [[ ]]). SH is sh, which on Ubuntu CI is dash and rejects pipefail with exit 2;
+// on Windows it is Git's sh.exe, and bash.exe sits beside it. The other suites keep using SH.
+const BASH = process.platform === 'win32' && SH !== 'sh' ? join(dirname(SH), 'bash.exe') : 'bash';
 // A placeholder, not a Docker key: the gpg stub prints it and the bootstrap matches it. The real value is owner-supplied.
 const FPR = 'PLACEHOLDER-TEST-FINGERPRINT';
 const CANARY = 'CANARY-SECRET-7f3a';
@@ -205,7 +208,7 @@ function run(host: Host, args: string[]): Run {
   for (const [k, v] of Object.entries(process.env))
     if (v !== undefined && !/^path$/i.test(k)) env[k] = v;
   const path = join(host.sandbox, 'bin');
-  const res = spawnSync(SH, [posix(BOOT), posix(host.env), ...args], {
+  const res = spawnSync(BASH, [posix(BOOT), posix(host.env), ...args], {
     encoding: 'utf8',
     env: {
       ...env,
@@ -294,6 +297,12 @@ describe('G3-01 deploy/genesis/bootstrap.sh', () => {
     expect(r.code).not.toBe(0);
     expect(r.out).toContain('needs Debian 12 or 13');
     expect(mutating(r.calls)).toEqual([]);
+  });
+
+  it('accepts Debian 13 as a host for a dry run', () => {
+    const r = run(makeHost({ osRelease: DEBIAN_13 }), []);
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('debian=13');
   });
 
   it.skipIf(!HAS_JQ)(
