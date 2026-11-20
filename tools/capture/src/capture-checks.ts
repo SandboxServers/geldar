@@ -144,11 +144,11 @@ export function checkExpect(rows: CheckRow[], expected: Map<CaseKind, number>): 
   for (const [kase, want] of expected) {
     const found = rows.filter((r) => r.case === kase && r.schema !== 'n/a').length;
     // CAP-2: an expected zero is exact (a send-nothing case must capture nothing); any other count is "at least".
+    // CAP-5: the zero is printed as "exactly 0" on pass and fail alike, so the table matches the sheet's `(exact)`.
     const ok = want === 0 ? found === 0 : found >= want;
-    // A failing zero says "none" (CAP-1's pass text for a zero stays as it was).
     const detail =
-      want === 0 && !ok
-        ? `expected none, found ${found}`
+      want === 0
+        ? `expected exactly 0, found ${found}`
         : `expected at least ${want}, found ${found}`;
     out.push(row(kase, '-', 'n/a', ok ? 'pass' : 'fail', detail));
   }

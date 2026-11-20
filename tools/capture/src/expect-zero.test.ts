@@ -18,7 +18,7 @@ describe('--expect kind=0 is exact (send-nothing cases)', () => {
     const rows = validateCaptureDir(freshDir(), 'take=0');
     const row = rows.find((r) => r.case === 'take' && r.file === '-');
     expect(row?.result).toBe('pass');
-    expect(row?.detail).toBe('expected at least 0, found 0');
+    expect(row?.detail).toBe('expected exactly 0, found 0');
   });
 
   it('a take file in a folder that expects none fails take=0', () => {
@@ -26,7 +26,7 @@ describe('--expect kind=0 is exact (send-nothing cases)', () => {
     writeCapture(dir, 1, TAKE, new TextEncoder().encode('{}'), new Date(0));
     const row = validateCaptureDir(dir, 'take=0').find((r) => r.case === 'take' && r.file === '-');
     expect(row?.result).toBe('fail');
-    expect(row?.detail).toBe('expected none, found 1');
+    expect(row?.detail).toBe('expected exactly 0, found 1');
   });
 
   it('a non-zero count is still "at least": one take file passes take=1', () => {

@@ -43,6 +43,7 @@ import {
   validatorArgs,
   zeroIsEvidence,
 } from './capture-cases.ts';
+import { waitForEnchantOffers } from './capture-enchant.ts';
 import { hasExited, startSubscriber, stopSubscriber } from './capture-subscriber.ts';
 import {
   type AnvilWindow,
@@ -351,13 +352,23 @@ const ACTIONS: Record<string, (s: Scene) => Promise<void>> = {
       'enchanting-table',
       /enchant/,
     ) as EnchantWindow;
-    note(
-      `enchanting-table: offered levels ${JSON.stringify((win.enchantments ?? []).map((e) => e.level))} (only option 0 is applied; the other costs are not captured)`,
-    );
     await bot.clickWindow(slotHolding(win, 'stone_sword', 2), 0, 0);
     await bot.clickWindow(0, 0, 0);
     await bot.clickWindow(slotHolding(win, 'lapis_lazuli', 2), 0, 0);
     await bot.clickWindow(1, 0, 0);
+    // CAP-5: the offers are filled in by the server after the sword and lapis are placed, so read them only then.
+    // Informational: a case never fails on the offered levels (a -1 is logged, not asserted).
+    const offers = await waitForEnchantOffers(
+      () => (win.enchantments ?? []).map((e) => e.level),
+      () => bot.waitForTicks(1),
+    );
+    note(
+      `enchanting-table: offered levels ${JSON.stringify(offers.levels)} after ${offers.ticks} ticks (populated=${offers.populated}; only option 0 is applied; the other costs are not captured)`,
+    );
+    if (!offers.populated)
+      note(
+        'enchanting-table: no offer above 0 within the bound; the case goes on (informational only)',
+      );
     const result = await within('enchanting-table: enchant option 0', win.enchant(0));
     if (result === null || result === undefined)
       throw new Error('enchanting-table: enchant returned no item');

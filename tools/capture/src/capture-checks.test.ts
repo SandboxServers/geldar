@@ -196,7 +196,7 @@ describe('parseExpect and checkExpect', () => {
     const out = checkExpect(rows, parseExpect('break=2,pickup=0'));
     expect(out.map((r) => [r.case, r.result, r.detail])).toEqual([
       ['break', 'fail', 'expected at least 2, found 1'],
-      ['pickup', 'pass', 'expected at least 0, found 0'],
+      ['pickup', 'pass', 'expected exactly 0, found 0'],
     ]);
   });
 
