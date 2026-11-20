@@ -26,10 +26,12 @@ Inert: `ContainerTakeListener` is not registered. Nothing is registered in `Geld
 - Double chest: `getLocation()` of a double-chest inventory is the midpoint of the two halves, so `prior_owner` is read for one half only. That half may belong to another owner.
 - Two viewers, or a hopper, removing from the same chest in one tick: each click's snapshot differs, so a removal can be attributed to a clicker who did not make it, and a removal seen by two clicking players in one tick is reported once per clicker.
 - Drag: `InventoryDragEvent` is not listened to. Drag over the top inventory only places items.
-- Shift-click, number-key swap, double-click collect and drop-key removals are all covered by the snapshot diff.
+- Shift-click, number-key swap, double-click collect and drop-key removals are expected to be covered by the snapshot diff; unverified until the capture. No test exercises them: the tests call the seam with a hand-built before and after.
+- Storage minecarts and other non-block holders are not takes: their holder is not a `Container` or `DoubleChest`, so they are excluded even when they report a location.
 
 ## Pending (ops evidence, not run)
 
 - Real-payload capture: a `take` message from a live shard has not been captured. Record the first real reply here when the ops run happens. Nothing was run against a shard for AN-51a.
 - Real capture of which holders report a location and a storage type: chest, double chest, crafting table, furnace, anvil. Not yet captured. Until it is, the holder rule is by type only, unverified against a server.
+- The `onClick` argument wiring (the player check, the location check, the holder check, and the `sink`/`enabled` guard at the top of `onClick`) is not run by any unit test: a test would need a real `InventoryClickEvent`, which needs a server. It is covered only by the live capture above.
 - Index line for AN-50a: not written in this packet (not in the may-edit list).

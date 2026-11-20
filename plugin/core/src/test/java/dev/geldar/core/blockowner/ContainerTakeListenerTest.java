@@ -2,6 +2,7 @@ package dev.geldar.core.blockowner;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import com.google.gson.JsonObject;
@@ -27,6 +28,7 @@ import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import org.bukkit.block.Container;
+import org.bukkit.block.DoubleChest;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -199,6 +201,45 @@ class ContainerTakeListenerTest {
     }
 
     @Test
+    void twoActorsClickingTheSameChestInOneTickEachCountTheirOwnTake() {
+        storeOwner(OWNER);
+        click(ACTOR, Map.of("diamond", 64), Map.of());
+        click("ag_other_03", Map.of("gold_ingot", 8), Map.of());
+        assertEquals(2, nextTick.size());
+        runNextTick();
+
+        assertEquals(2, sent.size());
+        assertEquals(ACTOR, take(0).get("actor").getAsString());
+        assertEquals("ag_other_03", take(1).get("actor").getAsString());
+    }
+
+    @Test
+    void positionsDifferingOnlyInYZOrWorldEachGetTheirOwnPendingSettle() {
+        click(ACTOR, Map.of("stone", 1), Map.of());
+        listener.clicked(ACTOR, new Pos("world", 10, 65, -3), Map.of("stone", 1), Map::of);
+        listener.clicked(ACTOR, new Pos("world", 10, 64, -2), Map.of("stone", 1), Map::of);
+        listener.clicked(ACTOR, new Pos("nether", 10, 64, -3), Map.of("stone", 1), Map::of);
+        assertEquals(4, nextTick.size());
+    }
+
+    @Test
+    void aFailedScheduleReleasesTheKeySoALaterClickSchedulesAgain() {
+        storeOwner(OWNER);
+        AtomicBoolean failNext = new AtomicBoolean(true);
+        ContainerTakeListener flaky = new ContainerTakeListener(sink, cache, enabled::get, tick::get, task -> {
+            if (failNext.getAndSet(false)) {
+                throw new IllegalStateException("scheduler refused");
+            }
+            nextTick.add(task);
+        });
+
+        assertThrows(IllegalStateException.class,
+                () -> flaky.clicked(ACTOR, CHEST, Map.of("diamond", 64), Map::of));
+        flaky.clicked(ACTOR, CHEST, Map.of("diamond", 64), () -> Map.of());
+        assertEquals(1, nextTick.size());
+    }
+
+    @Test
     void aTakeIsSettledOnTheNextTickNotAtTheClick() {
         storeOwner(OWNER);
         click(ACTOR, Map.of("diamond", 64), Map.of());
@@ -287,6 +328,13 @@ class ContainerTakeListenerTest {
                 List.of(Map.entry("stone", 64), Map.entry("stone", 64), Map.entry("dirt", 3)));
 
         assertEquals(Map.of("stone", 128, "dirt", 3), counts);
+    }
+
+    @Test
+    void theStorageTypesAreContainerBlocksAndDoubleChests() {
+        assertTrue(ContainerTakeListener.isStorageType(Container.class));
+        assertTrue(ContainerTakeListener.isStorageType(DoubleChest.class));
+        assertFalse(ContainerTakeListener.isStorageType(InventoryHolder.class));
     }
 
     private static Object holderOf(Class<?> type) {

@@ -91,7 +91,12 @@ public final class ContainerTakeListener implements Listener {
             return;
         }
         pending.put(key, new Pending(PriorOwner.of(cache, pos), before));
-        nextTick.accept(() -> settleKey(key, actor, pos, after));
+        try {
+            nextTick.accept(() -> settleKey(key, actor, pos, after));
+        } catch (RuntimeException e) {
+            pending.remove(key);
+            throw e;
+        }
     }
 
     private void settleKey(String key, String actor, Pos pos, Supplier<Map<String, Integer>> after) {
@@ -151,7 +156,12 @@ public final class ContainerTakeListener implements Listener {
 
     /** True for a storage holder: a container block or a double chest. Other block menus are not takes. */
     static boolean isStorage(Object holder) {
-        return holder instanceof Container || holder instanceof DoubleChest;
+        return holder != null && isStorageType(holder.getClass());
+    }
+
+    /** Package-private seam: whether a holder's class is a container block or a double chest. */
+    static boolean isStorageType(Class<?> holderType) {
+        return Container.class.isAssignableFrom(holderType) || DoubleChest.class.isAssignableFrom(holderType);
     }
 
     /** Item key (without its namespace) to count, over the stacks of a container. Null slots are empty. */
