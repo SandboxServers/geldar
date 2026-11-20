@@ -25,7 +25,7 @@ const overlayText = (name: string) =>
 const overlay = (name: string) => parse(overlayText(name));
 const imageOf = (doc: { services: { neoforge: { image: string } } }) => doc.services.neoforge.image;
 
-// Each pin has one download source line: <jar file name> <https URL> <sha512 hex or UNSET>. UNSET is allowed and only noted.
+// Each pin has one download source line: <jar file name> <https URL ending in /<jar file name>> <sha512 lowercase hex>.
 describe('extra mods: the download sources (no docker needed)', () => {
   const sources = readFileSync(`${ROOT}${SOURCES}`, 'utf8')
     .split('\n')
@@ -47,21 +47,14 @@ describe('extra mods: the download sources (no docker needed)', () => {
     expect(sources.length).toBe(pins.size);
   });
 
-  it('gives each source line three fields: the pin file, an https URL, a sha512 or UNSET', () => {
+  it('gives each source line three fields: the pin file, an https URL ending in /<file>, a 128-hex sha512', () => {
     for (const fields of sources) {
       expect(fields, `source line ${fields[0]}`).toHaveLength(3);
       const [file, url = '', sha = ''] = fields;
       expect(url.startsWith('https://'), `${file}: URL is not https`).toBe(true);
-      expect(
-        sha === 'UNSET' || /^[0-9a-f]{128}$/.test(sha),
-        `${file}: sha512 is neither 128 lowercase hex nor UNSET`,
-      ).toBe(true);
+      expect(url.endsWith(`/${file}`), `${file}: URL does not name this jar file`).toBe(true);
+      expect(/^[0-9a-f]{128}$/.test(sha), `${file}: sha512 is not 128 lowercase hex`).toBe(true);
     }
-  });
-
-  it('notes the UNSET sha512 values without failing', () => {
-    const unset = sources.filter((fields) => fields[2] === 'UNSET').map((fields) => fields[0]);
-    console.info(`extra mods: sha512 UNSET (not taken from the release) for: ${unset.join(', ')}`);
   });
 });
 
