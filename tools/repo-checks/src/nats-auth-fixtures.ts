@@ -73,6 +73,7 @@ export function expectedTable(s: string): Record<string, { pub: string[]; sub: s
         `geldar.${s}.body.>`,
         `geldar.${s}.blockowner.changed`,
         `geldar.${s}.state.*.level`,
+        `geldar.${s}.provenance.>`,
         '_INBOX.>',
       ],
     },
