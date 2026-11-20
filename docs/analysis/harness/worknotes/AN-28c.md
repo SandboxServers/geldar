@@ -103,9 +103,24 @@ Run on the review fix pass (base 245f6b0f; each mutation on one line, restored f
    FAILED (`the gate is off before any reload`, `the gate goes off when a reload finds the key removed`). `reload` sets
    `provenance = true`: FAILED (`the gate goes off when a reload finds the key removed`). `reload` sets `provenance = false`:
    FAILED (`the gate is on after a reload with provenance.enabled true`). Each restored from a scratchpad copy; `git diff --stat` empty.
-4. Wiring mutation (on `BlockOwnerSetup.java`, first listener `setup.gate::on` replaced by `() -> setup.enabled`): BUILD
-   SUCCESSFUL. NOT caught by any unit test: the listener wiring is in `register`, which needs a Bukkit server. The gate's
-   behaviour is pinned; the one line that hands it to the listeners is covered by review only.
+4. Wiring mutation: superseded by pass 2 (below). Before pass 2 the listeners were built inline in `register`, and this
+   mutation passed every unit test.
+
+Review fix pass 2 (base b53dc86b). The listeners are now built by package-private seams, `BlockOwnerSetup.breakListener`
+and `pickupListener`, which `register` calls with the real gate. `ProvenanceWiringTest` (5 tests) drives them. The
+`setup.gate::on` lines sit inside the seams, so the mutations below are on the seam lines (`setup` is not in scope there;
+the break mutation uses the blockowner switch the old line mutation named, the pickup one uses `() -> true`).
+
+5. Break seam, `gate::on` replaced by `() -> enabled.getAsBoolean()`: `./gradlew :core:test --tests ...ProvenanceWiringTest`
+   FAILED: `a break sends nothing before the first reload` (ProvenanceWiringTest.java:94) and `a break sends nothing when
+   provenance.enabled is false, with blockowner.enabled true` (:74). 2 of 5 failed. Restored from a scratchpad copy.
+6. Pickup seam, `gate::on` replaced by `() -> true`: FAILED `a pickup reads no event and sends nothing when provenance.enabled
+   is false` (`NullPointerException` at ProvenanceWiringTest.java:105, because the null event is read). 1 of 5 failed.
+   Restored from a scratchpad copy. `git diff --stat` empty after each restore.
+   Residual: a pickup-only mis-wire that keeps the pickup gate off forever is not caught. `EntityPickupItemEvent` needs an
+   `ItemStack`, which cannot be built outside a server, so a pickup with provenance on is not driven through `onPickup`.
+   The break path with the same gate is driven on and off.
+7. `geldar.ps1` is 696 of 700 lines: any further change to it needs a split first.
 
 ## Checks
 
@@ -120,3 +135,11 @@ Run on the review fix pass (base 245f6b0f; each mutation on one line, restored f
   removed. The rest are `TAG_RESOLVE_FAILED ... !override` warnings from the host tooling, the same on main.
 - `threshold/mcp/test/nats-auth.it.test.ts`: NOT RUN (live: needs a real NATS; ops). `tsc` on the file is clean after the `shard` fix.
 - `./geldar.ps1 check`: not run on this pass; the narrower checks above were run instead, as the review brief asked.
+
+Review fix pass 2 checks:
+
+- `(cd plugin; ./gradlew :core:test --tests "dev.geldar.core.blockowner.*")`: pass; `ProvenanceWiringTest` 5 of 5.
+- `(cd plugin; ./gradlew :core:verifyJarContents)`: BUILD SUCCESSFUL (no golden change; the seams add no class).
+- `(cd plugin; ./gradlew build --rerun-tasks)` with the JDK 25 Adoptium `JAVA_HOME`: BUILD SUCCESSFUL.
+- `./geldar.ps1 pnpm check:repo`: `repo checks: ok`, no `error:` line.
+- `git diff --check`: clean.

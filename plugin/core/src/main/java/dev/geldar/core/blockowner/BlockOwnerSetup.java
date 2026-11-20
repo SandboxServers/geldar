@@ -2,14 +2,18 @@ package dev.geldar.core.blockowner;
 
 import dev.geldar.core.trace.TraceHook;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 import java.util.function.Function;
+import java.util.function.LongSupplier;
 import java.util.logging.Logger;
 import org.bukkit.Bukkit;
 import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -85,13 +89,29 @@ public final class BlockOwnerSetup implements AutoCloseable {
         BlockOwnerSetup setup = new BlockOwnerSetup(lookups, link, service, debug, placements, source);
         BlockOwnerResponder responder = new BlockOwnerResponder(service, link, () -> setup.enabled);
         link.start(responder::receive);
-        plugin.getServer().getPluginManager().registerEvents(new BlockChangeListener(cache, publisher,
-                () -> setup.enabled, link, setup.gate::on, Bukkit::getCurrentTick), plugin);
-        plugin.getServer().getPluginManager().registerEvents(new PickupProvenanceListener(link,
-                setup.gate::on, Bukkit::getCurrentTick, Bukkit::getPlayer), plugin);
+        plugin.getServer().getPluginManager().registerEvents(breakListener(cache, publisher,
+                () -> setup.enabled, link, setup.gate, Bukkit::getCurrentTick), plugin);
+        plugin.getServer().getPluginManager().registerEvents(pickupListener(link, setup.gate,
+                Bukkit::getCurrentTick, Bukkit::getPlayer), plugin);
         plugin.getServer().getScheduler().runTaskTimer(plugin, publisher::flush, 1L, 1L);
         setup.reload(plugin.getConfig());
         return setup;
+    }
+
+    /**
+     * The break listener {@link #register} installs. Its provenance switch is {@code gate}, which is on only when
+     * {@code blockowner.enabled} and {@code provenance.enabled} are both true. Package-private so the wiring test can
+     * build it the same way and drive it.
+     */
+    static BlockChangeListener breakListener(OwnerCache cache, BlockOwnerPublisher publisher, BooleanSupplier enabled,
+            ProvenanceSink sink, ProvenanceGate gate, LongSupplier tick) {
+        return new BlockChangeListener(cache, publisher, enabled, sink, gate::on, tick);
+    }
+
+    /** The pickup listener {@link #register} installs, gated by {@code gate} as {@link #breakListener} is. */
+    static PickupProvenanceListener pickupListener(ProvenanceSink sink, ProvenanceGate gate, LongSupplier tick,
+            Function<UUID, Player> online) {
+        return new PickupProvenanceListener(sink, gate::on, tick, online);
     }
 
     /** Applies {@code blockowner.*} and {@code provenance.enabled} from the config; the plugin calls it on the 5 s reload. */
