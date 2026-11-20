@@ -335,19 +335,24 @@ const HIDDEN_LIFE = 'ag_capc_03';
 const HIDDEN_NAME = 'Hidden_Walker';
 
 /**
- * The leaks in one published observation. The payload's `key` is the contract's dedupe key and is
- * scanned by the Mind's presenter (threshold leakage gate), so it is set aside here.
+ * The leaks in one published observation. The payload's `key` carries the coordinates and the breaker's
+ * name by design, so the coordinate scan reads the payload without it. Every other scan reads the whole
+ * body, the key included: the key is lowercased, so the hidden-actor check is case-insensitive.
  */
 function leaksIn(body: string, allowedIds: string[]): string[] {
   const event = JSON.parse(body) as { payload: Record<string, unknown> };
   const shown = JSON.stringify({ ...event.payload, key: undefined });
+  const lower = body.toLowerCase();
+  const allowed = allowedIds.map((id) => id.toLowerCase());
   const leaks: string[] = [];
   if (/provenance/i.test(body)) leaks.push('provenance');
   if (/\b\d{2,}\b\D{1,3}\b\d{2,}\b\D{1,3}\b\d{2,}\b/.test(shown)) leaks.push('coordinates');
-  for (const id of shown.match(/ag_[a-z0-9_]+/g) ?? []) {
-    if (!allowedIds.includes(id)) leaks.push(`life id ${id}`);
+  for (const id of body.match(/ag_[a-z0-9_]+/g) ?? []) {
+    if (!allowed.includes(id)) leaks.push(`life id ${id}`);
   }
-  if (body.includes(HIDDEN_NAME) || body.includes(HIDDEN_LIFE)) leaks.push('hidden actor');
+  if (lower.includes(HIDDEN_NAME.toLowerCase()) || lower.includes(HIDDEN_LIFE)) {
+    leaks.push('hidden actor');
+  }
   return leaks;
 }
 
@@ -358,12 +363,13 @@ describe('the leakage gate at the subscription: what a published observation car
       resolve: (name) => (name === OTHER ? { name: OTHER, life: OTHER } : null),
     });
     net.deliver(BREAK_SUBJECT, JSON.stringify(break_));
-    net.deliver(BREAK_SUBJECT, JSON.stringify({ ...break_, actor: HIDDEN_NAME, tick: 412 }));
+    net.deliver(BREAK_SUBJECT, JSON.stringify({ ...break_, actor: HIDDEN_LIFE, tick: 412 }));
     await flush();
     expect(net.published).toHaveLength(2);
     const [visible, hidden] = net.published.map((p) => p.body);
     expect(JSON.parse(visible ?? '{}').payload.actor).toEqual({ name: OTHER, life: OTHER });
     expect(JSON.parse(hidden ?? '{}').payload).not.toHaveProperty('actor');
+    expect(JSON.parse(hidden ?? '{}').payload.key).toMatch(/:none(:|$)/);
     for (const body of [visible ?? '', hidden ?? '']) {
       expect(leaksIn(body, [BODY, OTHER])).toEqual([]);
     }
@@ -396,10 +402,36 @@ describe('the leakage gate at the subscription: what a published observation car
     const [visible, hidden] = net.published.map((p) => p.body);
     expect(JSON.parse(visible ?? '{}').payload.actor).toEqual({ name: BODY, life: BODY });
     expect(JSON.parse(hidden ?? '{}').payload).not.toHaveProperty('actor');
+    expect(JSON.parse(hidden ?? '{}').payload.key).toMatch(/:none(:|$)/);
     for (const body of [visible ?? '', hidden ?? '']) {
       expect(leaksIn(body, [OTHER, BODY])).toEqual([]);
     }
     net.sub.stop();
+  });
+
+  it('leaksIn reports each leak it scans for, one per scan, on hand-built bodies', () => {
+    const body = (payload: Record<string, unknown>) => JSON.stringify({ agent_id: BODY, payload });
+    const allowed = [BODY, OTHER];
+    expect(leaksIn(body({ kind: 'x', note: 'a provenance record' }), allowed)).toEqual([
+      'provenance',
+    ]);
+    expect(leaksIn(body({ kind: 'x', block: 'stone 1313 200 800' }), allowed)).toEqual([
+      'coordinates',
+    ]);
+    expect(leaksIn(body({ kind: 'x', actor: { name: 'a', life: 'ag_capz_09' } }), allowed)).toEqual(
+      ['life id ag_capz_09'],
+    );
+    expect(leaksIn(body({ kind: 'x', actor: { name: HIDDEN_NAME } }), allowed)).toEqual([
+      'hidden actor',
+    ]);
+    const keyed = JSON.stringify({
+      agent_id: BODY,
+      payload: { kind: 'x', key: 'brk:412:1313:200:800:hidden_walker' },
+    });
+    expect(leaksIn(keyed, allowed)).toEqual(['hidden actor']);
+    const hiddenLife = body({ kind: 'x', key: 'brk:412:1313:200:800:ag_capc_03' });
+    expect(leaksIn(hiddenLife, allowed)).toContain('hidden actor');
+    expect(leaksIn(body({ kind: 'x', key: 'brk:412:1313:200:800:none' }), allowed)).toEqual([]);
   });
 });
 

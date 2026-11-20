@@ -158,6 +158,10 @@ describe('the leakage gate: observed evidence reaches the player without ids, ke
     );
   });
 
+  it('a hidden name in an output is reported as a leak', () => {
+    expect(leaksOf([{ type: 'x', text: 'Hidden_Walker' }])).toContain('hidden name');
+  });
+
   it('the word provenance in an output is reported as a leak', () => {
     expect(leaksOf([{ type: 'property_broken', text: 'a provenance record' }])).toContain(
       'provenance',

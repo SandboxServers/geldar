@@ -15,13 +15,13 @@ and fixed in one pass on top of `07710902`. Off by default: nothing in productio
   `source_event_id = eventIdFor('observation:' + lifeId + ':' + key)`, checked by `validateWorldEvent`,
   and published on `geldar.<shard>.observation` (a publish failure is logged). `startBodyObservations`
   is the Body's wiring: selfName = life id, `observedActor` for names, `canSeeBlock` for sight.
-- `golem/src/perception/provenance/subscribe.test.ts` (new, 24 tests).
+- `golem/src/perception/provenance/subscribe.test.ts` (new, 30 tests).
 - `golem/src/adam/adam-body.ts` (442 lines): `observations?: boolean` on `AdamBodyEnv`. When it is
   `true` and `owners` is set, `watchHurts` gets a fourth argument (`observedActor`) and
   `startBodyObservations` runs; both are stopped in `stop()` and in the failed-start cleanup. Otherwise
   the code path is today's.
-- `golem/src/adam/adam-body-observations.test.ts` (new, 5 tests).
-- `threshold/mcp/src/events/leakage.test.ts` (new, 7 tests).
+- `golem/src/adam/adam-body-observations.test.ts` (new, 6 tests).
+- `threshold/mcp/src/events/leakage.test.ts` (new, 8 tests).
 
 ## Tests
 
@@ -41,10 +41,14 @@ Golem, `subscribe.test.ts`:
 - Sight and names: a break the Body cannot see gives nothing; a break whose breaker is out of sight is
   published unattributed.
 - Leakage at the subscription (`the leakage gate at the subscription`): a visible breaker is named and a
-  hidden one (`Hidden_Walker`) is unattributed; a break in a cell the Body cannot see gives nothing even
-  with a visible breaker; a pickup names a visible thrower and not a hidden one. Each published body is
-  scanned by `leaksIn`: no `provenance`, no coordinate triple, no `ag_` id other than the Body's own
-  agent id and the visible actor's life id, and no hidden name or life id anywhere in the body.
+  hidden one (life id `ag_capc_03`) is unattributed; a break in a cell the Body cannot see gives nothing
+  even with a visible breaker; a pickup names a visible thrower and not a hidden one (`Hidden_Walker`).
+  A hidden break's key
+  ends in `:none` and a hidden gift's key has `:none:`. Each published body is scanned by `leaksIn`: no
+  `provenance`; no coordinate triple in the payload without its `key`; no `ag_` id other than the Body's
+  own agent id and the visible actor's life id, in the whole body; and no hidden name or life id anywhere
+  in the body, the key included, matched case-insensitively (the producers lowercase the key). `leaksIn`
+  itself is tested on hand-built bodies, one leak per scan, including a hidden name in a key.
 
 Golem, `adam-body-observations.test.ts`: observations absent, false, or on without `owners` give no
 provenance subscription and `watchHurts` gets three arguments; observations on subscribe both subjects
@@ -55,7 +59,7 @@ Threshold, `leakage.test.ts` (the delivery-side gate): a visible breaker and thr
 life id, key or coordinate; a hidden breaker and thrower are unattributed, with no `actor` field; the
 recorded Body events (`test/fixtures/real-body-events.json`: intent, plan and wake, no observation) replay
 with no leak; an injected life id and an injected coordinate are reported; a `key` and the word
-`provenance` in an output are reported.
+`provenance` in an output are reported; a hidden name in an output is reported.
 
 ## What is enforced, and what is not
 
@@ -64,9 +68,12 @@ with no leak; an injected life id and an injected coordinate are reported; a `ke
   It does not show that the Body decides sight correctly. That is tested in golem: the leakage cases and
   the subscription cases in `subscribe.test.ts` run `startObservations` with a fake sight decision.
 - The golem leakage scan is not a scan of every byte. The payload's `key` is the contract's dedupe key,
-  and it carries the coordinates and the breaker's name by design, so it is set aside; the Mind's presenter
-  (threshold) is what keeps it from the player. The `ag_` ids the body may carry are the Body's agent id and
-  the visible actor's life id, which the Mind needs; the scan rejects any other.
+  and it carries the coordinates and the breaker's name by design, so the coordinate scan reads the payload
+  without it. The name and life-id scans read the whole body, the key included, so a hidden name or life id
+  written into a key is caught. The Mind's presenter (threshold) is what keeps the key from the player; the
+  threshold gate does not see the key at all, since its presenter drops `key`. The `ag_` ids
+  the body may carry are the Body's agent id and the visible actor's life id, which the Mind needs; the scan
+  rejects any other, in the key too.
 - The real-body replay does not show a hidden actor: the recorded Body events hold no observation or damage
   event. The hidden-actor cases are the hand-built ones above.
 - `startBodyObservations` is tested in `subscribe.test.ts` (describe `startBodyObservations (AN-28b wiring)`):
@@ -123,6 +130,27 @@ scratchpad backup (`git diff --stat` empty after each restore):
     (and two more in the same describe).
 17. `watchHurts` fourth argument replaced by `(u) => null` (`adam-body.ts`): KILLED by
     `watchHurts gets this Body observed-actor function: it names the visible player and no one else`.
+
+Review 2 (fix pass 2): each mutation changed one line, run through `vitest run` on the file named, then
+restored with `git checkout --` on that file (`git status --short` empty after each). The test files were
+committed first, so the restore brings back the committed test.
+18. `property-break.ts:91`: `${actor?.name ?? 'none'}` became `${msg.actor ?? 'none'}` (the breaker's
+    name in the key, unresolved). KILLED by
+    `a visible breaker is named and a hidden one is unattributed; neither leaks`.
+19. `gift.ts:95`: `${who}` became `${msg.thrower ?? 'none'}` (the thrower's name in the key, unresolved).
+    KILLED by `a pickup names a visible thrower and not a hidden one`.
+20. `leaksIn` provenance scan (`if (/provenance/i.test(body))` became `if (false)`): KILLED by
+    `leaksIn reports each leak it scans for, one per scan, on hand-built bodies`.
+21. `leaksIn` coordinate scan: KILLED by the same test.
+22. `leaksIn` `ag_` scan (`if (!allowed.includes(id))`): KILLED by the same test.
+23. `leaksIn` hidden-actor scan: KILLED by the same test.
+24. `leakage.test.ts` life-id scan (`if (/ag_[a-z0-9_]+/.test(text))`): KILLED by
+    `an injected life id in an observation is reported as a leak`.
+25. `leakage.test.ts` provenance scan: KILLED by `the word provenance in an output is reported as a leak`.
+26. `leakage.test.ts` key scan: KILLED by `a key in an output is reported as a leak`.
+27. `leakage.test.ts` coordinate scan: KILLED by `an injected coordinate in an observation is reported as a leak`.
+28. `leakage.test.ts` hidden-name scan (`if (text.includes(HIDDEN_NAME))`): KILLED by
+    `a hidden name in an output is reported as a leak`.
 
 ## Index lines
 
