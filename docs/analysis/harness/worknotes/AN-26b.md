@@ -6,7 +6,7 @@ Inert: nothing wires `observeGift` yet; wiring is AN-28b.
 
 Code: `golem/src/perception/provenance/gift.ts` and `gift.test.ts`. Fixture: `golem/src/perception/provenance/fixtures/pickup-real.json`.
 
-The fixture is the real capture of 2026-11-20 at commit 73788889 (shard phase0, case toss), copied byte for byte from the JSON line in `worknotes/AN-26a.md` ("Ops evidence"). The worknote's JSON was not edited.
+The fixture is the real capture of 2026-11-20 at commit 73788889 (shard phase0, case toss), copied field for field from the JSON line in `worknotes/AN-26a.md` ("Ops evidence"). The fixture file is that JSON re-flowed by biome format (the repo lint requires it; one line became several): the field names, values and their order are unchanged, and the original one-line bytes stay in the AN-26a worknote, which was not edited. "Verbatim" here means field for field.
 
 Index: AN-28b (Body subscription and leakage gate) takes `observeGift` from this card; it depends on AN-25, AN-26b, AN-27b and AN-28a. AN-28b must not resubscribe to provenance pickups with a replay policy: a duplicated delivery counts as a second toss (see the decision below).
 
