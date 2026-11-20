@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/combat-fact-event.schema.json",
+  "title": "CombatFactPayload",
+  "description": "The payload of a combat_fact event (AN-46, decision 0345; the key is decision 0321). XP only: not a Mind event. encounter_key is the one combat key of an encounter, enc:<life_id>:<mob entity UUID in lowercase>; a kill and a survive of one encounter pay once. The schema accepts a key whose life part differs from life_id; the sink refuses that pair (AN-47b). The optional player field is the exporter's uniform envelope-convention field (the agent name on Paper), a duplicate of life_id's subject; it is never agent-visible.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["life_id", "kind", "mob", "encounter_key"],
+  "properties": {
+    "player": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "life_id": { "$ref": "common.schema.json#/$defs/LifeId" },
+    "kind": { "type": "string", "enum": ["hostile_kill", "fight_survived"] },
+    "mob": { "type": "string", "pattern": "^[a-z_]{1,64}$" },
+    "encounter_key": {
+      "type": "string",
+      "pattern": "^enc:ag_[a-z][a-z0-9]{0,15}_[0-9]{2,}:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    }
+  }
+}

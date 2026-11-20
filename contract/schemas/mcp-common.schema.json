@@ -57,8 +57,36 @@
             "reflex",
             "wake",
             "hurt",
-            "heard_sound"
+            "heard_sound",
+            "gift_received",
+            "property_broken",
+            "fight_seen",
+            "container_taken"
           ]
+        },
+        "actor": {
+          "description": "Observation events: the visible actor, when the event is attributed (AN-24).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["name"],
+          "properties": {
+            "name": { "$ref": "observation-event.schema.json#/$defs/ActorName" }
+          }
+        },
+        "item": {
+          "description": "Gift observations: the item name, without its namespace.",
+          "$ref": "common.schema.json#/$defs/ItemName"
+        },
+        "count": {
+          "description": "Gift observations: the number received.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2304
+        },
+        "block": {
+          "description": "Property observations: the block name, without its namespace.",
+          "type": "string",
+          "pattern": "^[a-z_]{1,64}$"
         },
         "tick": { "$ref": "common.schema.json#/$defs/WorldTick" },
         "text": { "type": "string", "maxLength": 200 },

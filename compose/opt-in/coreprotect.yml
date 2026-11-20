@@ -1,0 +1,14 @@
+# CAP-1, opt-in: mounts the pinned CoreProtect jar into the phase0 paper service, read-only, the way compose/colo.yml:148 does.
+# It is not part of compose/phase0.yml: the default phase0 stack runs without CoreProtect (the AN-27a "absent" case).
+# Use it only with:
+#   docker compose -f compose/phase0.yml -f compose/opt-in/coreprotect.yml up -d paper
+# The jar is a runtime artefact and is never committed. Its host path is GELDAR_COREPROTECT_JAR, default
+# .data/coreprotect/coreprotect.jar (.data/ is gitignored). Put the jar there by hand, after checking its sha256 against
+# plugins/coreprotect/coreprotect.lock.json (docs/runbooks/coreprotect.md, "How the jar is verified").
+# create_host_path: false, so a missing jar stops compose with an error; it never creates an empty directory at the path.
+# The plugin writes its config into the writable paper-data volume on first start; turn off the recording settings
+# named in docs/runbooks/coreprotect.md ("First start") before the capture.
+services:
+  paper:
+    volumes:
+      - {type: bind, source: '${GELDAR_COREPROTECT_JAR:-../.data/coreprotect/coreprotect.jar}', target: /plugins/coreprotect.jar, read_only: true, bind: {create_host_path: false}}

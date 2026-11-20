@@ -6,7 +6,8 @@ import { definePresentHandler } from './types.ts';
  */
 export const damagePresenter = definePresentHandler('damage', (e, base) => {
   if (typeof e.amount === 'number' && e.amount > 0) {
-    return [{ ...base, type: 'damage', text: e.cause ?? 'You were hurt.' }];
+    const actor = e.actor !== undefined ? { actor: { name: e.actor } } : {};
+    return [{ ...base, type: 'damage', text: e.cause ?? 'You were hurt.', ...actor }];
   }
   return [];
 });

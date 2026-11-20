@@ -73,8 +73,9 @@ function roleAllows(shard: string): Record<Role, Allow> {
         kv('geldar-skins'),
       ],
       // Kino (decision 0075, review fix A): the body never publishes, and so never forges, the Kino subjects.
-      pubDeny: [`geldar.${s}.kino.>`],
-      sub: [`geldar.${s}.body.>`, '_INBOX.>'],
+      // Provenance (AN-28c): the body hears provenance and cannot forge it.
+      pubDeny: [`geldar.${s}.kino.>`, `geldar.${s}.provenance.>`],
+      sub: [`geldar.${s}.body.>`, `geldar.${s}.provenance.>`, '_INBOX.>'],
     },
     mind: {
       pub: [...MIND_TYPES.map((t) => `geldar.${s}.${t}`), ...JS, `geldar.${s}.body.>`],
@@ -341,6 +342,27 @@ describe.skipIf(!enabled)('the NATS accounts overlay against a live nats-server'
     const x = await as('bravo-kino', [sub(feed), pub(control)]);
     expect(x.replies[1]).toContain('Permissions Violation for Subscription');
     expect(x.replies[2]).toContain('Permissions Violation for Publish');
+  }, 30_000);
+
+  it('provenance routing: the body subscribes and cannot publish; mind, eventsink and mcp cannot subscribe', async () => {
+    const shard = 'alpha';
+    const provenance = `geldar.${shard}.provenance.>`;
+    const brk = `geldar.${shard}.provenance.break`;
+    // body: hears provenance (sub), and cannot forge it (the publish is denied by the deny list).
+    const b = await as('alpha-body', [sub(concrete(provenance)), pub(concrete(brk))]);
+    expect(b.connected).toBe(true);
+    expect(b.replies[1], 'body subscribes provenance').toBe('+OK');
+    expect(b.replies[2], 'body publishes provenance').toContain(
+      'Permissions Violation for Publish',
+    );
+    // mind, eventsink and mcp: no subscribe on provenance (their allow lists do not cover it).
+    for (const role of ['mind', 'eventsink', 'mcp']) {
+      const r = await as(`alpha-${role}`, [sub(concrete(provenance))]);
+      expect(r.connected, role).toBe(true);
+      expect(r.replies[1], `${role} subscribes provenance`).toContain(
+        'Permissions Violation for Subscription',
+      );
+    }
   }, 30_000);
 
   it('a store_dir in the conf next to -sd on the command line is refused at startup', async () => {

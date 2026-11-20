@@ -4,16 +4,23 @@
  * the generator is in nats-auth-generator.test.ts; the shared fixtures are in nats-auth-fixtures.ts.
  */
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  expectedTable,
   functionBody,
   GENERATOR_TIMEOUT_MS,
   hasDocker,
+  hasPwsh,
   OVERLAYS,
+  parseEntries,
+  ROLES,
   ROOT,
+  renderGenerator,
   SCRIPT,
+  SHARD,
+  subjectMatches,
 } from './nats-auth-fixtures.ts';
 
 /**
@@ -150,5 +157,105 @@ describe('geldar.ps1 NATS auth generator: static wiring', () => {
           ),
         ),
     ).toBe(true);
+  });
+});
+
+/** The body role of the phase0 table, as the generator renders it: the lists before AN-28c, and the one new entry each. */
+describe.skipIf(!hasPwsh)('provenance routing (AN-28c): the body role table', () => {
+  const p = `geldar.${SHARD}.provenance.>`;
+
+  it(
+    'provenance routing: the body subscribes and cannot publish; mind, eventsink and mcp cannot subscribe',
+    () => {
+      const r = renderGenerator(SHARD);
+      try {
+        expect(r.status, r.stderr).toBe(0);
+        const entries = parseEntries(r.conf);
+        const user = (name: string) => entries.find((e) => e.user === name);
+        expect(user('body')?.sub).toContain(p);
+        expect(user('body')?.deny).toContain(p);
+        for (const role of ['mind', 'eventsink', 'mcp']) {
+          const subs = user(role)?.sub ?? [];
+          expect(
+            subs.some((s) => subjectMatches(s, `geldar.${SHARD}.provenance.break`)),
+            role,
+          ).toBe(false);
+          expect(
+            subs.some((s) => subjectMatches(s, `geldar.${SHARD}.provenance.pickup`)),
+            role,
+          ).toBe(false);
+        }
+      } finally {
+        rmSync(r.dir, { recursive: true, force: true });
+      }
+    },
+    GENERATOR_TIMEOUT_MS,
+  );
+
+  it(
+    'the body keeps every earlier subject: provenance is the only addition to its lists',
+    () => {
+      const r = renderGenerator(SHARD);
+      try {
+        expect(r.status, r.stderr).toBe(0);
+        const body = parseEntries(r.conf).find((e) => e.user === 'body');
+        expect(body?.sub).toEqual([
+          `geldar.${SHARD}.body.>`,
+          `geldar.${SHARD}.blockowner.changed`,
+          `geldar.${SHARD}.state.*.level`,
+          p,
+          '_INBOX.>',
+        ]);
+        expect(body?.deny).toEqual([
+          `geldar.${SHARD}.kino.>`,
+          `geldar.${SHARD}.blockowner.changed`,
+          `geldar.${SHARD}.ctl.body.>`,
+          `geldar.${SHARD}.helper.body.>`,
+          `geldar.${SHARD}.state.*.level`,
+          `geldar.${SHARD}.body.*.hearing`,
+          p,
+        ]);
+        const expectedBody = expectedTable(SHARD).body;
+        expect(expectedBody, 'body role in the expected table').toBeDefined();
+        expect(body?.pub).toEqual(expectedBody?.pub);
+      } finally {
+        rmSync(r.dir, { recursive: true, force: true });
+      }
+    },
+    GENERATOR_TIMEOUT_MS,
+  );
+
+  it(
+    'every other role keeps its publish and subscribe lists and holds no provenance subject',
+    () => {
+      const r = renderGenerator(SHARD);
+      try {
+        expect(r.status, r.stderr).toBe(0);
+        const table = expectedTable(SHARD);
+        const entries = parseEntries(r.conf);
+        for (const role of ROLES.filter((x) => x !== 'body')) {
+          const e = entries.find((x) => x.user === role);
+          expect(e, role).toBeDefined();
+          expect(e?.pub, role).toEqual(table[role]?.pub);
+          expect(e?.sub, role).toEqual(table[role]?.sub);
+          const all = [...(e?.pub ?? []), ...(e?.sub ?? []), ...(e?.deny ?? [])];
+          expect(
+            all.some((s) => s.includes('provenance')),
+            role,
+          ).toBe(false);
+        }
+      } finally {
+        rmSync(r.dir, { recursive: true, force: true });
+      }
+    },
+    GENERATOR_TIMEOUT_MS,
+  );
+
+  // A source-text check only: it fails if Get-NatsUsers reads an overlay or config file. It does not prove the
+  // rendered table is the same with an overlay off; the main-versus-branch render comparison is in the worknote.
+  it('Get-NatsUsers reads no overlay or config file (the table has no switch)', () => {
+    expect(functionBody('Get-NatsUsers')).not.toMatch(
+      /nats-auth\.yml|colo\.yml|config\.yml|provenance\.enabled/,
+    );
   });
 });

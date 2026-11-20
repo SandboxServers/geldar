@@ -1,0 +1,13 @@
+{
+  "chest_single_withdraw": {
+    "world": "world",
+    "x": 1314,
+    "y": 200,
+    "z": 800,
+    "actor": "ag_capa_01",
+    "prior_owner": null,
+    "item": "cobblestone",
+    "count": 8,
+    "tick": 3982
+  }
+}

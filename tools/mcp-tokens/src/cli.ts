@@ -6,6 +6,13 @@ import { fileURLToPath } from 'node:url';
 import { Client } from 'pg';
 import { removeLifeFromShard } from '../../../golem/src/players/life-removal.ts';
 import { identityHash } from '../../../threshold/register/src/identity.ts';
+import {
+  formatPlanLine,
+  type PlanLine,
+  planAdoption,
+  readShardLives,
+  sheetsObject,
+} from './convert-sheets.ts';
 import { banIdentity, grantKinoAdmin, revokeKinoAdmin, unbanIdentity } from './identities.ts';
 import { parseOwnerAdmin, runOwnerAdmin } from './owner-admin.ts';
 import { addOwner, capForOwnerAdd, parseCap, type Sql, setOwnerCap } from './owners.ts';
@@ -100,7 +107,14 @@ export interface Io {
 }
 
 /** Flags that take no value. Every other --flag takes the next argument. */
-const SWITCHES = new Set(['--force', '--i-understand', '--all', '--allow-meta', '--dry-run']);
+const SWITCHES = new Set([
+  '--force',
+  '--i-understand',
+  '--all',
+  '--allow-meta',
+  '--dry-run',
+  '--apply',
+]);
 
 export interface Parsed {
   positional: string[];
@@ -386,6 +400,23 @@ async function runPlayerFlags(
   return result.exit;
 }
 
+/** `player adopt-sheets --shard <file> --sheets <json>`: prints the dry-run plan; `--apply` waits for S12-04b. */
+async function runAdoptSheets(parsed: Parsed, io: Io, env: Env, args: string[]): Promise<number> {
+  if (args.length !== 0) throw new Error(USAGE);
+  if (parsed.flags.has('--apply')) {
+    io.err('adopt-sheets: --apply is S12-04b');
+    return 2;
+  }
+  const sheets = sheetsObject(await readSheetFile(resolve(requireFlag(parsed, '--sheets'))));
+  const lives = readShardLives(await readFile(resolve(requireFlag(parsed, '--shard')), 'utf8'));
+  let plan: PlanLine[] = [];
+  await withSql(env, async (sql) => {
+    plan = await planAdoption(sql, lives, sheets);
+  });
+  for (const line of plan) io.out(formatPlanLine(line));
+  return 0;
+}
+
 async function runRoster(parsed: Parsed, io: Io, env: Env, args: string[]): Promise<void> {
   const [verb, name] = args;
   if (verb === 'list' && args.length === 1) {
@@ -509,6 +540,8 @@ export async function run(
       await runAdmin(io, env, rest, parsed);
     } else if (command === 'player' && rest[0] === 'flags') {
       return await runPlayerFlags(parsed, io, env, rest.slice(1));
+    } else if (command === 'player' && rest[0] === 'adopt-sheets') {
+      return await runAdoptSheets(parsed, io, env, rest.slice(1));
     } else if (command === 'player') {
       await runPlayer(parsed, io, env, rest);
     } else if (command === 'roster') {

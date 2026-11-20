@@ -1,0 +1,15 @@
+#cloud-config
+# Template for deploy/genesis/New-TestVm.ps1. Placeholders only: the script fills @@...@@ at run time and never prints the key.
+hostname: @@HOSTNAME@@
+manage_etc_hosts: true
+ssh_pwauth: false
+disable_root: true
+package_update: false
+package_upgrade: false
+users:
+  - name: debian
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    shell: /bin/bash
+    lock_passwd: true
+    ssh_authorized_keys:
+      - @@SSH_PUBLIC_KEY@@

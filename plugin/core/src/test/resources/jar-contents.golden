@@ -812,6 +812,7 @@ META-INF/versions/9/org/bouncycastle/util/io/StreamOverflowException.class
 META-INF/versions/9/org/bouncycastle/util/io/Streams.class
 config.yml
 dev/geldar/core/BoundedEventQueue.class
+dev/geldar/core/CombatFactListener.class
 dev/geldar/core/CommandBlockListener.class
 dev/geldar/core/CoreConfig.class
 dev/geldar/core/EventEnvelope.class
@@ -847,6 +848,8 @@ dev/geldar/core/blockowner/BlockOwnerResponder$Reply.class
 dev/geldar/core/blockowner/BlockOwnerResponder.class
 dev/geldar/core/blockowner/BlockOwnerSetup.class
 dev/geldar/core/blockowner/ChunkLookupCall.class
+dev/geldar/core/blockowner/ContainerTakeListener$Pending.class
+dev/geldar/core/blockowner/ContainerTakeListener.class
 dev/geldar/core/blockowner/CoreProtectApi.class
 dev/geldar/core/blockowner/CoreProtectOwnerSource.class
 dev/geldar/core/blockowner/CoreProtectPort$LogRow.class
@@ -869,7 +872,15 @@ dev/geldar/core/blockowner/OwnerSource$OwnedBlock.class
 dev/geldar/core/blockowner/OwnerSource$Owners.class
 dev/geldar/core/blockowner/OwnerSource$Unavailable.class
 dev/geldar/core/blockowner/OwnerSource.class
+dev/geldar/core/blockowner/PickupProvenanceListener.class
 dev/geldar/core/blockowner/PlacementRecorder.class
+dev/geldar/core/blockowner/ProvenanceGate.class
+dev/geldar/core/blockowner/ProvenanceSink.class
+dev/geldar/core/combat/EncounterTracker$Encounter.class
+dev/geldar/core/combat/EncounterTracker$Fact.class
+dev/geldar/core/combat/EncounterTracker$Step.class
+dev/geldar/core/combat/EncounterTracker.class
+dev/geldar/core/combat/HostileMobs.class
 dev/geldar/core/kino/BukkitKinoWorld.class
 dev/geldar/core/kino/KinoBlockListener.class
 dev/geldar/core/kino/KinoControl$Command.class
@@ -909,6 +920,9 @@ dev/geldar/core/maintenance/MaintenanceNotice.class
 dev/geldar/core/maintenance/MaintenanceNotices.class
 dev/geldar/core/maintenance/MaintenanceSetup.class
 dev/geldar/core/maintenance/NatsMaintenanceSubscriber.class
+dev/geldar/core/provenance/PriorOwner.class
+dev/geldar/core/provenance/ProvenanceJson.class
+dev/geldar/core/provenance/TakeDiff.class
 dev/geldar/core/proximity/Absorption$Effective.class
 dev/geldar/core/proximity/Absorption$Sealed.class
 dev/geldar/core/proximity/Absorption$Walk.class

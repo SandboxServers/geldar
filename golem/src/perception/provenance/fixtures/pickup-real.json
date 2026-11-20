@@ -1,0 +1,11 @@
+{
+  "kind": "pickup",
+  "world": "world",
+  "picker": "ag_capb_02",
+  "thrower": "ag_capa_01",
+  "item": "cobblestone",
+  "count": 4,
+  "age_ticks": 40,
+  "distance": 2.0,
+  "tick": 1178
+}

@@ -46,7 +46,7 @@ The generator defines 11 users for the colo table (`Get-NatsUsers`, counted 2026
 
 | User | Role | Connected by (Colo) | May publish | Denied | May subscribe |
 |---|---|---|---|---|---|
-| `body` | A Body; also the admin container's bucket and RCON steps | `golem-body`, `players-host`, `admin` | `geldar.<s>.>`; JS; KV `geldar-life-registry`, `geldar-checkpoints`, `geldar-body-generation`, `geldar-skins` | Kino subjects, `blockowner.changed`, `ctl.body.>`, `helper.body.>`, `state.*.level`, `body.*.hearing` | `geldar.<s>.body.>`, `blockowner.changed`, `state.*.level`, inbox |
+| `body` | A Body; also the admin container's bucket and RCON steps | `golem-body`, `players-host`, `admin` | `geldar.<s>.>`; JS; KV `geldar-life-registry`, `geldar-checkpoints`, `geldar-body-generation`, `geldar-skins` | Kino subjects, `blockowner.changed`, `ctl.body.>`, `helper.body.>`, `state.*.level`, `body.*.hearing`, `geldar.<s>.provenance.>` | `geldar.<s>.body.>`, `blockowner.changed`, `state.*.level`, `geldar.<s>.provenance.>`, inbox |
 | `mind` | The Mind | `animus` (profile `mind`) | its event types (`wake`, `intent`, `action`, `plan_result`, `reflex_fired`, `speech`, `damage`, `death`, `sleep`); `geldar.<s>.body.>`; JS | `body.*.hearing` | inbox |
 | `mcp` | The Geldar MCP | `geldar-mcp` | `geldar.<s>.sovereign_call`; `geldar.<s>.body.>`; KV `geldar-presence`; JS | `body.*.hearing` | inbox |
 | `eventsink` | The sink and its state service | `eventsink` | `geldar.<s>.dlq`; `geldar.<s>.state.>`; JS | none | `state.*.proficiency`, inbox |

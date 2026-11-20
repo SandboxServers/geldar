@@ -80,6 +80,10 @@ and with it the ownership of old structures. Do not purge without deciding what 
 | `enabled` | true | false stops the change listener and the query replies; the Body reads every chunk as unknown |
 | `lookup_timeout_ms` | 2000 | a lookup longer than this answers an empty list with `truncated: true` |
 
+## Provenance flag (`provenance.enabled`)
+
+Added by AN-28c (merged, #817). `provenance.enabled` is a boolean, default false, with no default in `config.yml`; a missing key reads as false. `BlockOwnerSetup` reads it and reloads it with the `blockowner.*` keys on the 5 s timer, and it only takes effect while `blockowner.enabled` is true. It gates four plugin messages, all inert unless the flag is set: a break (`geldar.<shard>.provenance.break`), a pickup (`geldar.<shard>.provenance.pickup`), a take and a combat (names in `contract/src/subjects.ts`). Paper only: do not enable it on NeoForge until the human-handling question is decided. `CombatFactListener` is registered and ticked in `GeldarCore`, and `ContainerTakeListener` is registered in `BlockOwnerSetup.register` (AN-50a), so with `provenance.enabled` and `blockowner.enabled` both true the plugin publishes break, pickup, take and combat provenance messages. See [../reference/geldar-core-plugin.md](../reference/geldar-core-plugin.md) for the config table.
+
 ## Live checks
 
 Run on a shard with CoreProtect installed, after a bot places and breaks a block.

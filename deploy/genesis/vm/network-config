@@ -1,0 +1,16 @@
+# Template for deploy/genesis/New-TestVm.ps1 (netplan v2, pinned address). Placeholders only.
+version: 2
+ethernets:
+  nic0:
+    match:
+      driver: hv_netvsc
+    set-name: eth0
+    dhcp4: false
+    addresses:
+      - @@ADDRESS@@/@@PREFIX@@
+    routes:
+      - to: default
+        via: @@GATEWAY@@
+    nameservers:
+      addresses:
+        - @@DNS@@

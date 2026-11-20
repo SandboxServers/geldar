@@ -32,6 +32,8 @@ bench-results/
 compose/secrets/
 compose/secrets-nf/
 .data/
+# CAP-1: the raw NATS capture output (tools/capture/README.md); payloads of a live session, never committed
+.capture/
 # Pid files and logs of the host processes of ./geldar.ps1 adam
 .geldar/
 

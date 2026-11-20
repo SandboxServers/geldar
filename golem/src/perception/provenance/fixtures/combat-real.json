@@ -1,0 +1,16 @@
+{
+  "kill_engaged": {
+    "world": "world",
+    "actor": "ag_capa_01",
+    "target": "zombie",
+    "kind": "engaged",
+    "tick": 2631
+  },
+  "survived_engaged": {
+    "world": "world",
+    "actor": "ag_capa_01",
+    "target": "zombie",
+    "kind": "engaged",
+    "tick": 3202
+  }
+}

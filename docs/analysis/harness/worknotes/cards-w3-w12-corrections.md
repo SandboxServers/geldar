@@ -68,3 +68,54 @@ Line numbers are the line in the file before this commit.
 - Which domain the law refusal reads for proficiency (w9-w12 line 199); no psyche Domain is law.
 - How `InheritInput.seed` enters the draw (w9-w12 line 289).
 - Route for the temperament bank (w3-w5 line 360, OD-A).
+
+## 2026-11-18: the W3 to W5 file rewritten to the verified code and the operator rulings
+
+Sources: [../sheet-cards-verification-2026-11-18.md](../sheet-cards-verification-2026-11-18.md) (G1 to G13 and the per-card mismatch table), [../sheet-next-wave-order.md](../sheet-next-wave-order.md), geldar `origin/main` `a8063b0a` and the kit `origin/scriptorium/hw0` `673d756` (read with `git -C`; nothing changed there), and the decision records the decisions session drafted the same day (0320, 0324, 0325, 0327). Only `work-packets-sheet-w3-w5.md` changed; the W6 to W8, W9 to W12 and NeoForge card files, the decisions, RESUME and the ledger are other sessions' files.
+
+### Operator rulings applied
+
+| # | Ruling | Where in the file |
+|---|---|---|
+| 1 | the kit repo's `work-packets-kit-b.md` is the authority for HC-19 to HC-26c (drafted 0320) | HC-18 marked Done; HC-19 to HC-26c replaced by stubs (status Retired, ids kept in the dependency table, "re-verify on dispatch" lines for the kit orchestrator); the "common shapes" block (`types.ts`, `store.ts`, `step.ts`, `InstinctStore`, `runStep`, `SnapshotView`) removed. The OD-C correction to kit-b HC-20 (all-zero, degraded round one; never read `sheet.proficiency`) is stated on the HC-20 stub and carried by the new kit change card HC-47, which also fixes kit-b HC-22's `proficiency('exploring')` |
+| 2 | a kit change card for positions and ids in `observe.ts` (drafted 0324) | HC-46a (Code now: keep the `x, y, z` the world already sends on notable blocks and entities, and measure notable distance from the agent's position; no new agent-visible field) and HC-46b (BlockedDecision: "decision: observation fields (number assigned in the registry)", OWNER APPROVAL REQUIRED, lists what the agent is told today and the proposed agent position and id fields). Both ship inactive |
+| 3 | the `psyche-v1.1.0` tag is approved (drafted 0325) | HC-48: annotated tag on merge `4cff991d` (PR #458; `psyche/` unchanged since), then the kit re-mirror at 1.1.0 (`vendor.ts` `RELEASE_TAG`, `MIRROR.json`, `engine/threat.ts`, the two pinned literals in `mirror.test.ts`); placed before HC-42. The push needs the operator when the pushing session lacks tag-push credentials |
+| 4 | name the unruled item per card | "Status words and the unruled items" section and an "Unruled item that blocks it" column. OD-A, OD-B, OD-E are the unruled sentence items; OD-C ruled for round one by ruling 1; OD-D moot (GX-04) |
+
+### Global fixes applied
+
+| Fix | Change |
+|---|---|
+| G1 | kit base `scriptorium/hw0`; `scriptorium/hw2` removed from R2, R7 and the HC-24 stub |
+| G2 | the local user-profile kit path removed; the kit is "the sibling repo `geldar-scriptorium`, path given in the brief"; a personal pronoun for the kit orchestrator replaced by the role |
+| G3 | kit worknote `docs/analysis/harness/worknotes/HC-<nn>.md` |
+| G4 | world worknote `docs/analysis/harness/worknotes/AN-<nn>.md` (was `docs/analysis/character-sheet/worknotes/`) |
+| G5 | `phase1/sheet-w5` is created by the orchestrator from `origin/main` and named in the brief |
+| G6 | 0320 to 0328 are now drafted by the decisions session, so the wave-order note's "AN-24 = 0320" is void: AN-24 takes the next free registry number at dispatch; a record-writing card adds its own `docs/decisions/README.md` row (`check:repo` fails an unlisted record, `tools/repo-checks/src/cli.test.ts` "decision index wiring") |
+| G7 | no SQL in this file; 0053 stays free |
+| G8 | `contract/src/index.ts` 557 lines; `observationSentence` moved to a new `contract/src/observation.ts`; `index.ts` gets named export lines only; `outcome-words.ts` is must-not-edit for AN-24 |
+| G9 | `adam-body.ts` 413 lines; AN-28b tests go in a new `golem/src/adam/adam-body-observations.test.ts` |
+| G10, G11 | RESUME and ledger belong to another session; new ids for the ledger are listed at the end of the card file: HC-46a, HC-46b, HC-47, HC-48, AN-28c |
+| G12 | GATE-K spells out the kit commands (`format`, `lint`, `typecheck`, `pnpm exec vitest run`, `check:repo`, `lint:md`; `./scriptorium.ps1 setup` in a new worktree) |
+| G13 | HC-48 is the tag and re-mirror card; no W3 to W5 card imports a 1.1.0 export |
+
+### Per-card changes
+
+| Card | Before | After | Why (verified) |
+|---|---|---|---|
+| HC-33 | worknote under `docs/analysis/scriptorium/worknotes/`; checks `check:repo` only | kit worknote path (G3); four fixed headings; checks add `lint:md` and `check:specs`; stop rule if `check:specs` needs an index entry | kit scripts on hw0 |
+| AN-24 | `observationSentence` in `outcome-words.ts`; "about 535 lines"; number "allocate" | new `contract/src/observation.ts`; exact `$id`, titles, `$defs` and refs (`WorldName`, `BlockCoordinateXZ/Y`, `OwnerId` in `block-owner.schema.json`; `LifeId`, `ItemName` in `common.schema.json`); validators `validateObservationPayload`, `validateProvenance` (named after the schema title, `contract/scripts/generator.ts:78`); `McpPlayerEvent.type` enum edit; its README row | G8; generator rule; no `$defs` name collision |
+| AN-25 | `lifeIdFor` "to confirm"; resolver behaviour loose | `observedActor(bot, username, lifeIdOf = lifeIdFor)`; new `actorUsernameOf` beside `attackerOf`; line refs (`hurt-trigger.ts:32, 55, 106`, `hurt.ts:21, 31, 92`, `registry.ts:51`, `visible-agent.ts:112`); byte-identical test without a resolver | verified in golem |
+| AN-26a | test "built like `OwnerOverlayTest` with `ListenerDoubles.java`"; `getThrower` "to confirm"; "drop beyond 1024 pending" | own Proxy doubles (`ListenerDoubles` and `EventSchemaCheck` are package-private in `dev.geldar.core`); constructor with injected tick and online lookup; per-tick cap 64 only (the undefined pending queue dropped); static `pickupJson`; one `jar-contents.golden` line; compile-is-the-check stop rule for `Item#getThrower`, `Material#getKey` and the event constructor (the Paper jar is not in the local cache, so not confirmed here) | `plugin/core/build.gradle.kts` `verifyJarContents` |
+| AN-26b | no resolver in ctx; `seen` LRU loose | `resolve` injected; exact attribution and loot rule including a null distance; the AN-26a capture as a fixture file | testability |
+| AN-27a | `ProvenanceSink` under `plugin/.../blockowner/`; test with `:core:test`; "read the prior owner from the cache" | `ProvenanceSink` and the link `send` in `plugin/core-common`; static `priorOwner` over `freshBase` and `withChanges` (`OwnerCache` has no single-block read and is must-not-edit); link test in core-common (`:core-common:test`), listener test in core (`:core:test`); one golden line; `config.yml` must-not-edit | verified `OwnerCache`, `OwnerSource.OwnedBlock` |
+| AN-27b | `canSee` implicit | `canSee(x, y, z)` injected; AN-28b builds it from `canSeeBlock(bot, block)` (`notable-blocks.ts:72`) and `bot.blockAt` | the real function takes a `Block` |
+| AN-28a | three `animus/` files under OD-D | `player-core/src/ports/body.ts`, `player-core/src/link/mind-event.ts`, `player-core/src/link/link.fixtures.ts`, new `player-core/src/link/observation-event.test.ts`; `animus/**` must-not-edit; `handler-registry.test.ts` path corrected to `threshold/mcp/src/events/` | GX-04 landed; the animus files are 2-line stubs |
+| AN-28b | one card for Body, plugin, ACL and leakage; extends `adam-body.test.ts`; gate unnamed | split: AN-28b keeps the Body subscription (`startObservations`), an `observations?: boolean` option on `AdamBodyEnv` (absent means off; nothing in production sets it) and the leakage test | the verification's split; G9 |
+| AN-28c | (new) | plugin setup (`provenanceEnabled(FileConfiguration)`, the six-argument listener, the pickup listener registration), `geldar.ps1` `body` `Sub` and `PubDeny` gain `geldar.$s.provenance.>`, the two nats-auth tests; no `config.yml` default (its hash is in the golden) | split from AN-28b |
+
+### Open after this edit (for the orchestrator)
+
+- Drafted 0324 says the observation card is "HC-46, to be confirmed by the card author": it is split into HC-46a (no new agent-visible field) and HC-46b (the agent fields, waiting on the OD approval of the fields and wording). The world-side geldar card that adds agent fields to the MCP output is not written.
+- Kit-b HC-21a's `goals.md` goal source versus merged `run.ts` (`obs.intent?.goal`) is noted on the HC-21a stub for the kit orchestrator.
+- The Paper API names in AN-26a and AN-28c (`Item#getThrower`, `Material#getKey`, `Bukkit::getCurrentTick`, `Bukkit::getPlayer(UUID)`) are compile-checked by the coder with a stop rule; they were not confirmed against the jar here.

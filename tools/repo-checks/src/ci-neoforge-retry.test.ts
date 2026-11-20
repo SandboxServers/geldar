@@ -17,6 +17,7 @@ function findBash(): string | undefined {
   const candidates = [
     'C:\\Program Files\\Git\\bin\\bash.exe',
     'C:\\Program Files\\Git\\usr\\bin\\bash.exe',
+    join(process.env.LOCALAPPDATA ?? '', 'Programs', 'Git', 'bin', 'bash.exe'),
     '/bin/bash',
     '/usr/bin/bash',
   ];
@@ -68,6 +69,29 @@ Could not resolve all dependencies for configuration ':testRuntimeClasspath'.
    > Could not GET 'https://repo.maven.apache.org/maven2/org/junit/jupiter/junit-jupiter/6.1.3/junit-jupiter-6.1.3.pom'.
 `;
 
+// Lifted verbatim from the failing plugin job of CI run 44701279418 (runner timestamps and the "Searched in" URL lines
+// dropped; the build retried nothing because the "lock state" early exit fired). Gradle prints the "lock state"
+// sentence in every such failure, so it must not be an early exit, and `Could not find g:a:v.` ends in a period.
+// Written as parts: four dotted numbers read as an IP literal to the repo check (decision 0132).
+const BCPROV_VERSION = ['2', '73', '12', '1'].join('.');
+const MAVEN_MISS = `FAILURE: Build failed with an exception.
+* What went wrong:
+Could not determine the dependencies of task ':core:jar'.
+   > Did not resolve 'org.bouncycastle:bcprov-lts8on:${BCPROV_VERSION}' which is part of the dependency lock state
+   > Did not resolve 'io.opentelemetry:opentelemetry-context:1.67.0' which is part of the dependency lock state
+   > Did not resolve 'org.jspecify:jspecify:1.0.0' which is part of the dependency lock state
+   > Did not resolve 'io.nats:jnats:2.26.4' which is part of the dependency lock state
+   > Did not resolve 'io.opentelemetry:opentelemetry-api:1.67.0' which is part of the dependency lock state
+   > Did not resolve 'io.opentelemetry:opentelemetry-common:1.67.0' which is part of the dependency lock state
+   > Could not find io.nats:jnats:2.26.4.
+     Searched in the following locations:
+     Required by:
+   > Could not find io.opentelemetry:opentelemetry-api:1.67.0.
+     Searched in the following locations:
+     Required by:
+BUILD FAILED in 16s
+`;
+
 const CASES: Array<[string, string, boolean]> = [
   ['real Maven GET failure wrapped in "Could not resolve all"', REAL_FLAKE, true],
   [
@@ -92,6 +116,23 @@ const CASES: Array<[string, string, boolean]> = [
     true,
   ],
   ['test failure', '12 tests completed, 1 FAILED\n> Task :test FAILED', false],
+  ['Maven miss from CI run 44701279418', MAVEN_MISS, true],
+  [
+    'Maven miss plus dependency verification failure',
+    `Dependency verification failed for configuration ':x'\n${MAVEN_MISS}`,
+    false,
+  ],
+  [
+    'script error: Could not find method',
+    'Could not find method foo() for arguments [] on object of type org.gradle.api.Project.',
+    false,
+  ],
+  [
+    'script error: Could not find property',
+    "Could not find property 'x' on project ':core'.",
+    false,
+  ],
+  ['compile failure', 'e: error: cannot find symbol\n  symbol: class Foo', false],
   [
     'verification failure plus Could not GET',
     `Dependency verification failed for configuration ':x'\n${REAL_FLAKE}`,
@@ -111,6 +152,22 @@ describe.skipIf(!bash)('neoforge CI retry order', () => {
       }
     });
   }
+});
+
+// The three retry blocks must share one early-exit line and one transient-retry line, so they cannot drift apart.
+describe('the three Gradle retry blocks share one retry policy', () => {
+  it('have identical early-exit and transient-retry grep lines', () => {
+    const policies = BLOCKS.map((name) => {
+      const run = steps.find((s) => s.name === name)?.run ?? '';
+      return run
+        .split('\n')
+        .filter((l) => l.includes('grep -Eqi'))
+        .map((l) => l.replace(/"\$RUNNER_TEMP\/[^"]+"/, '"$LOG"'))
+        .join('\n');
+    });
+    expect(policies[0]?.split('\n') ?? []).toHaveLength(2);
+    expect(new Set(policies).size).toBe(1);
+  });
 });
 
 describe.skipIf(bash)('neoforge CI retry order (skipped: no bash/sh available)', () => {

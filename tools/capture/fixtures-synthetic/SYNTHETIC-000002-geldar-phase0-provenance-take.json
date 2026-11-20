@@ -1,0 +1,11 @@
+{
+  "world": "world",
+  "x": 10,
+  "y": 64,
+  "z": -3,
+  "actor": "GolemChest",
+  "prior_owner": "ag_kestrel_01",
+  "item": "iron_ingot",
+  "count": 2,
+  "tick": 1300
+}

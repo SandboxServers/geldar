@@ -1,0 +1,4 @@
+# Template for colo-env.sh on the node (GE-04). deploy/colo-cd.sh sources this file when it is present (COLO_CD_ENV_FILE,
+# default /home/<operator>/colo-env.sh). The install script copies it only when the node has no file yet, so node values
+# are never overwritten. This template sets no value. Values belong on the node, never in the repo, and are not printed.
+# Add only the variables a node needs, one `export NAME=value` per line, and keep the file mode 0600.
