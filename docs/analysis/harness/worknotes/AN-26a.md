@@ -37,4 +37,13 @@ Fix 1 checks, run on the fix-1 head (commit after 50978ff8):
 
 One real two-player toss on the scratch shard with `provenance.enabled` set by hand, after merge to the wave branch. The captured `pickup` JSON goes here before AN-26b writes its fixtures. This capture is the evidence for the ItemStack-reading lines of `onPickup`.
 
+Captured 2026-11-20 at 73788889, shard phase0, case toss, subject geldar.phase0.provenance.pickup, validator: ok
+
+```json
+{"kind":"pickup","world":"world","picker":"ag_capb_02","thrower":"ag_capa_01","item":"cobblestone","count":4,"age_ticks":40,"distance":2.0,"tick":1178}
+```
+
+Two-player toss: ag_capa_01 tossed the cobblestone, ag_capb_02 picked it up (`count` 4, `age_ticks` 40). Own-pickup negative: not captured (no case).
+
+
 Procedure: [capture-real-payloads](../../../runbooks/capture-real-payloads.md).
