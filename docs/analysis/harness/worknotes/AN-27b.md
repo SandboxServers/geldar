@@ -48,11 +48,36 @@ Each mutation changes one line of `property-break.ts`, runs `golem/src/perceptio
 | M6 | `REACH` 24 changed to 26 | killed: the same reach test |
 | M7 | `seen` not consulted (no admit) | killed: `the same message twice gives one` |
 | M8 | Contract validation removed | killed by `a tick too large for the key shape gives nothing` (key carries `+`); before that test was added the mutant survived |
-| M9 | `msg.actor === ctx.selfName` guard removed | survived: equivalent, because `msg.actor === msg.prior_owner` (also a guard) refuses the same input; the two guards are each redundant with the other |
+| M9 | `actor === prior_owner` guard | removed in review 1 fix: dead, since `prior_owner` is the Body's name at that point, so `actor === prior_owner` is `actor === selfName`, already refused |
 | M10 | `tick >= 0` bound removed | killed: `a malformed break gives nothing` |
 
-Mutations R1, R2, R3, M4, M5, M6, M7, M8 and M10 were each run; M9 was run and survived for the reason above.
+Mutations R1, R2, R3, M4, M5, M6, M7, M8 and M10 were each run.
+
+## Review 1 mutations (fix pass 1)
+
+Each mutation changes one line of `property-break.ts`, runs `golem/src/perception/provenance/property-break`, and is restored from a backup copy. Every row fails at least one named test.
+
+| Mutation | Failing test (first named) |
+|---|---|
+| distance ignores x | `reach is measured from the cell centre to 24 blocks, on every axis and sign` |
+| distance ignores y | `reach is measured from the cell centre to 24 blocks, on every axis and sign` |
+| cell must be at higher z than the Body | `reach is measured from the cell centre...` and `negative and edge coordinates...` |
+| `<=` changed to `<` | `reach is measured from the cell centre...` (exact 24 cases) |
+| corner `(x,y,z)` instead of centre | `reach is measured from the cell centre...` (exact 24 cases) |
+| reach `catch` returns true | `a Body with no position gives nothing` |
+| `.toLowerCase()` removed | `a breaker with capitals in the name is keyed in lower case` |
+| x bound removed | `a malformed break gives nothing, refused by the bounds and integer checks themselves` |
+| z bound removed | the same malformed-break test |
+| y bound removed | the same malformed-break test |
+| `Number.isInteger` removed | the same malformed-break test (cases `x: 1e-7`, `y: 1e-7`) |
+| `seen.admit` moved before validation | `a refused key takes no slot in seen` |
+| `canSee === true` changed to truthy | `a block out of sight gives nothing` (`canSee: () => 1` case) |
+
+Notes on the bounds rows: the string `z: '800'` case is refused by the reach arithmetic (`'800' + 0.5` is a string), so it does not isolate `Number.isInteger`; the `1e-7` cases do, because the key pattern accepts `1e-7` and only the integer check refuses it.
+
+The dead guard (`actor === prior_owner`, review M9) was deleted, and the test assertion that only reached it was removed with it; the Body's own break is still refused by the `actor === selfName` clause, which the first assertion covers.
 
 ## Index line for AN-28b
 
 - AN-28b (Body subscription and leakage gate) calls `observeBreak` from `golem/src/perception/provenance/property-break.ts` with `canSee` built from `canSeeBlock` (`golem/src/perception/notable-blocks.ts`); `resolve` is `(u) => observedActor(bot, u)` from `visible-actor.ts`; `seen` is a `TakeKeyLru`. The module is inert until AN-28b wires it.
+- `world` is not compared with the Body's dimension: `observeBreak` delivers a break in another world at the same x, y, z. AN-28b must filter on `world` or accept it before it reaches `canSee`.

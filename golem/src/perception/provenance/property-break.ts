@@ -84,7 +84,6 @@ function breakerOf(ctx: BreakContext, username: string | undefined): ObservedAct
  */
 export function observeBreak(msg: BreakProvenance, ctx: BreakContext): ObservationPayload | null {
   if (msg.prior_owner !== ctx.selfName || msg.actor === ctx.selfName) return null;
-  if (msg.actor === msg.prior_owner) return null;
   if (!wellFormed(msg)) return null;
   if (!inReach(ctx.bot, msg.x, msg.y, msg.z)) return null;
   if (!seesCell(ctx, msg.x, msg.y, msg.z)) return null;

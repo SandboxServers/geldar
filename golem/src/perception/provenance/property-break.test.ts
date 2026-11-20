@@ -18,6 +18,9 @@ const WORKNOTE = fileURLToPath(
 const SELF = 'ag_capa_01';
 const CELL = { x: 1313, y: 200, z: 800 };
 
+/** The centre of the cell at (x, y, z), the point reach is measured to. */
+const centreOf = (x: number, y: number, z: number) => new Vec3(x + 0.5, y + 0.5, z + 0.5);
+
 const asBot = (world: FakeWorld) => world.bot as unknown as Bot;
 
 /** A world with the Body 10 blocks from the cell, on the cell's level. */
@@ -94,6 +97,9 @@ describe('observeBreak', () => {
     const world = bench();
     playerAt(world, 'ag_capb_02');
     expect(observeBreak(brk(SELF), ctxFor(world, SELF, { canSee: () => false }))).toBeNull();
+    // Only a true sight check counts: a truthy non-boolean does not.
+    const truthy = ctxFor(world, SELF, { canSee: () => 1 as unknown as boolean });
+    expect(observeBreak(brk(SELF), truthy)).toBeNull();
   });
 
   it("someone else's block gives nothing", () => {
@@ -112,8 +118,6 @@ describe('observeBreak', () => {
     const world = bench();
     playerAt(world, SELF);
     expect(observeBreak(brk(SELF, { actor: SELF }), ctxFor(world))).toBeNull();
-    // A break where the named owner is also the breaker is refused whoever the owner is.
-    expect(observeBreak(brk('ag_capb_02', { actor: 'ag_capb_02' }), ctxFor(world))).toBeNull();
   });
 
   it('the same message twice gives one', () => {
@@ -130,33 +134,118 @@ describe('observeBreak', () => {
     expect(observeBreak(brk(null, { tick: 411 }), ctxFor(world))).toBeNull();
   });
 
-  it('a cell 23 blocks away is in reach, one 25 blocks away is not', () => {
-    const at = (z: number) => bench(new Vec3(1313.5, 200, z));
-    expect(observeBreak(brk(SELF), ctxFor(at(777.5)))).toMatchObject({ kind: 'property_broken' });
-    expect(observeBreak(brk(SELF), ctxFor(at(775.5)))).toBeNull();
+  it('reach is measured from the cell centre to 24 blocks, on every axis and sign', () => {
+    const cell = centreOf(CELL.x, CELL.y, CELL.z);
+    const from = (dx: number, dy: number, dz: number) => {
+      const world = new FakeWorld();
+      world.me.position = cell.offset(dx, dy, dz);
+      return ctxFor(world);
+    };
+    const inside: Array<[number, number, number]> = [
+      [23, 0, 0],
+      [-23, 0, 0],
+      [0, 0, 23],
+      [0, 0, -23],
+      [0, 23, 0],
+      [0, -23, 0],
+      [16, 0, 16],
+      [-16, 0, -16],
+      [24, 0, 0],
+      [0, 0, -24],
+      [0, -24, 0],
+    ];
+    const outside: Array<[number, number, number]> = [
+      [25, 0, 0],
+      [-25, 0, 0],
+      [0, 0, 25],
+      [0, 0, -25],
+      [0, 25, 0],
+      [0, -25, 0],
+      [17, 0, 17],
+      [-17, 0, -17],
+    ];
+    for (const [dx, dy, dz] of inside) {
+      expect(observeBreak(brk(SELF), from(dx, dy, dz))).toMatchObject({ kind: 'property_broken' });
+    }
+    for (const [dx, dy, dz] of outside) {
+      expect(observeBreak(brk(SELF), from(dx, dy, dz))).toBeNull();
+    }
   });
 
-  it('a malformed break gives nothing', () => {
-    const hostile: Array<Partial<BreakProvenance>> = [
-      { x: 1.5 },
-      { y: Number.NaN },
-      { z: '800' as unknown as number },
-      { tick: -1 },
-      { tick: 2.5 },
-      { block: 'Cobblestone' },
-      { block: 'minecraft:cobblestone' },
-      { block: '' },
-      { x: 30_000_001 },
-      { y: 2049 },
+  it('a Body with no position gives nothing', () => {
+    const ctx = ctxFor(bench());
+    (ctx.bot as unknown as { entity?: unknown }).entity = undefined;
+    expect(observeBreak(brk(SELF), ctx)).toBeNull();
+  });
+
+  it('a malformed break gives nothing, refused by the bounds and integer checks themselves', () => {
+    // Each Body stands at the odd cell, so reach passes and only the break's own numbers can refuse it.
+    const home = centreOf(CELL.x, CELL.y, CELL.z);
+    const hostile: Array<[Partial<BreakProvenance>, Vec3]> = [
+      [{ x: 1e-7 }, centreOf(1e-7, CELL.y, CELL.z)],
+      [{ x: 1.5 }, centreOf(1.5, CELL.y, CELL.z)],
+      [{ y: 1e-7 }, centreOf(CELL.x, 1e-7, CELL.z)],
+      [{ y: Number.NaN }, home],
+      [{ z: '800' as unknown as number }, home],
+      [{ tick: -1 }, home],
+      [{ tick: 2.5 }, home],
+      [{ tick: 1e-7 }, home],
+      [{ block: 'Cobblestone' }, home],
+      [{ block: 'minecraft:cobblestone' }, home],
+      [{ block: '' }, home],
+      [{ x: 30_000_001 }, centreOf(30_000_001, CELL.y, CELL.z)],
+      [{ x: -30_000_001 }, centreOf(-30_000_001, CELL.y, CELL.z)],
+      [{ y: 2049 }, centreOf(CELL.x, 2049, CELL.z)],
+      [{ y: -2049 }, centreOf(CELL.x, -2049, CELL.z)],
+      [{ z: 30_000_001 }, centreOf(CELL.x, CELL.y, 30_000_001)],
+      [{ z: -30_000_001 }, centreOf(CELL.x, CELL.y, -30_000_001)],
     ];
-    for (const overrides of hostile) {
-      expect(observeBreak(brk(SELF, overrides), ctxFor(bench()))).toBeNull();
+    for (const [overrides, at] of hostile) {
+      expect(observeBreak(brk(SELF, overrides), ctxFor(bench(at)))).toBeNull();
+    }
+  });
+
+  it('a breaker with capitals in the name is keyed in lower case', () => {
+    const world = bench();
+    playerAt(world, 'Ag_Mixed_09');
+    const out = observeBreak(brk(SELF, { actor: 'Ag_Mixed_09' }), ctxFor(world));
+    expect(out).toMatchObject({
+      kind: 'property_broken',
+      actor: { name: 'Ag_Mixed_09' },
+      key: 'brk:2064:1313:200:800:ag_mixed_09',
+    });
+    expect(validateObservationPayload(out)).toBe(true);
+  });
+
+  it('negative and edge coordinates are keyed as written and validate', () => {
+    for (const cell of [
+      { x: -5, y: -60, z: -7 },
+      { x: 30_000_000, y: 64, z: -30_000_000 },
+    ]) {
+      const world = new FakeWorld();
+      world.me.position = centreOf(cell.x, cell.y, cell.z).offset(-10, 0, 0);
+      playerAt(world, 'ag_capb_02', world.me.position.offset(3, 0, 0));
+      const out = observeBreak(brk(SELF, cell), ctxFor(world));
+      expect(out).toEqual({
+        kind: 'property_broken',
+        actor: { name: 'ag_capb_02', life: 'ag_capb_02' },
+        block: 'cobblestone',
+        key: `brk:2064:${cell.x}:${cell.y}:${cell.z}:ag_capb_02`,
+      });
+      expect(validateObservationPayload(out)).toBe(true);
     }
   });
 
   it('a tick too large for the key shape gives nothing (the contract refuses the key)', () => {
     // `${1e21}` renders as "1e+21": the '+' is outside the observation key pattern.
     expect(observeBreak(brk(SELF, { tick: 1e21 }), ctxFor(bench()))).toBeNull();
+  });
+
+  it('a refused key takes no slot in seen', () => {
+    // The contract refuses this key, so the observation is null and the key was never admitted.
+    const ctx = ctxFor(bench());
+    expect(observeBreak(brk(SELF, { tick: 1e21 }), ctx)).toBeNull();
+    expect(ctx.seen.admit('brk:1e+21:1313:200:800:none')).toBe(true);
   });
 
   it('a throwing resolver leaves the breaker unnamed, and a throwing sight check sees nothing', () => {
