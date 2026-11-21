@@ -136,7 +136,7 @@ Failure text is read by agents. `golem/src/actions/failure-texts.test.ts` scans 
 | Executor | `executor.ts`, `executor-*.ts` | Checks plan validity, runs at most 6 immediate actions in order (`MAX_ACTIONS`, `executor-types.ts`), the first failure stops the list, then installs one durable intent |
 | Validity | `validity.ts` | Why a plan is refused (other life, stale `body_generation`, stale snapshot revision, expiry) |
 | Runtime | `runtime.ts` | The world-tick loop (20 Hz client physics), reflexes, receipts switch |
-| Programs | `programs/` | Durable intents: `travel`, `gather`, `craft`, `build`, `rest`, `flee`, `follow`; `trade_wait` is registered and refuses with `unsupported` (`programs/index.ts`) |
+| Programs | `programs/` | Durable intents: `travel`, `gather`, `craft`, `build`, `rest`, `flee`, `follow`, `explore`, `farm`, `patrol` (the last three registered by AN-45a, named by no body-api version yet); `trade_wait` is registered and refuses with `unsupported` (`programs/index.ts`) |
 | Reflexes | `reflexes/`, `reflex-config.ts` | See the next table |
 | Wake | `wake.ts`, `wake-conditions.ts` | Why the Body asks the Mind for a thought: the contract's `wake_on` set plus four reasons the Body raises itself |
 | Records | `records.ts`, `records-nats.ts` | The record sink; `intent`, `action`, `receipt` go to JetStream with a de-duplication id |
@@ -301,7 +301,7 @@ The benchmark sets the tick rate over RCON and restores 20 TPS when it ends (ski
 
 Recorded, not resolved (persona rule 8). Each needs a code-side comment fix or a decision; this page does not choose.
 
-1. **`build` program.** `golem/src/body/programs/index.ts` says the registry has "the six built-in programs, plus `build` and `trade_wait` which refuse with `unsupported`". The same function registers `BuildProgram` for `build`, and `UNSUPPORTED_PROGRAMS` holds only `trade_wait`. In `player-core/src/validate/bounds.ts` the comment says `build` is refused while `PHASE0_PROGRAMS` includes `build`.
+1. **`build` program.** `golem/src/body/programs/index.ts` said the registry had "the six built-in programs, plus `build` and `trade_wait` which refuse with `unsupported`" (AN-45a rewrote it to count the ten registered programs, with `trade_wait` the only refusal). The function registers `BuildProgram` for `build`, and `UNSUPPORTED_PROGRAMS` holds only `trade_wait`. In `player-core/src/validate/bounds.ts` the comment says `build` is refused while `PHASE0_PROGRAMS` includes `build`.
 2. **`till` contract.** `golem/src/actions/index.ts` marks the till block "contract PR pending: see till.ts". `contract/schemas/thought.schema.json` at `1b114276` already names `till`.
 3. **Viewport wiring.** `golem/src/viewport/index.ts` says the renderer is "Not wired into any tool yet". `golem/src/body-image/image-serve.ts` serves it on `geldar.<shard>.body.<life_id>.image` (VP-2).
 4. **Managed Body entry point.** Decision [0261](../decisions/0261-open-signup-player-host-bodies-and-auto-roster.md) point 2 says a managed Body runs `golem/src/players/main.ts` with `player-config.ts`. The code runs `golem/src/players/managed-main.ts` (`MANAGED_ENTRYPOINT` in `body-helper/src/managed-template.ts`), whose header cites decisions 0260 and 0261.

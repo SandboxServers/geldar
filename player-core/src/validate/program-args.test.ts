@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import {
+  BORDER_MARGIN,
   checkProgramArguments,
   DEFAULT_BOUNDS,
   ErrorList,
   PHASE0_PROGRAMS,
   PROGRAM_ARGS,
 } from './bounds.ts';
+import { createOutputValidator } from './index.ts';
 
 const check = (program: string, args: Record<string, unknown>) => {
   const errors = new ErrorList();
@@ -56,6 +58,17 @@ describe('explore, farm and patrol are allowed, with bounded arguments (AN-45a)'
     expect(check('patrol', { route: [pt(0), { x: 1, y: 64 }] })).not.toEqual([]);
   });
 
+  it('checks each route point as a position: height, border and unknown keys (a packet-silent choice)', () => {
+    const route = (p: Record<string, unknown>) => ({ route: [pt(0), p] });
+    const edge = DEFAULT_BOUNDS.worldBorderRadius + BORDER_MARGIN;
+    expect(check('patrol', route({ x: edge, y: 320, z: -edge }))).toEqual([]);
+    expect(check('patrol', route({ x: 0, y: 321, z: 0 }))).not.toEqual([]);
+    expect(check('patrol', route({ x: 0, y: -65, z: 0 }))).not.toEqual([]);
+    expect(check('patrol', route({ x: edge + 1, y: 64, z: 0 }))).not.toEqual([]);
+    expect(check('patrol', route({ x: 0, y: 64, z: -edge - 1 }))).not.toEqual([]);
+    expect(check('patrol', route({ x: 0, y: 64, z: 0, w: 1 }))).not.toEqual([]);
+  });
+
   it('accepts only true or false for a bool', () => {
     for (const bad of ['true', 1, 0, null]) {
       expect(check('explore', { avoid_water: bad }), String(bad)).not.toEqual([]);
@@ -70,5 +83,41 @@ describe('explore, farm and patrol are allowed, with bounded arguments (AN-45a)'
     );
     expect(check('farm', { radius: 4, max_cells: 2, replant: true, field: 1 })).not.toEqual([]);
     expect(check('patrol', { route: [pt(0), pt(1)], laps: 1, loop: true, x: 1 })).not.toEqual([]);
+  });
+});
+
+describe('explore, farm and patrol through the whole output validator (AN-45a)', () => {
+  const validator = createOutputValidator();
+  const thought = (program: string, args: Record<string, unknown>) =>
+    validator.parseThought(
+      JSON.stringify({
+        reasoning: 'ok',
+        intent: {
+          goal: 'look_around',
+          program,
+          arguments: args,
+          wake_on: ['goal_completed'],
+          limits: { max_world_ticks: 6000, max_block_operations: 100 },
+        },
+      }),
+    );
+
+  it('accepts a valid intent for each program', () => {
+    expect(thought('explore', { legs: 3, leg_blocks: 24, avoid_water: true }).ok).toBe(true);
+    expect(thought('farm', { radius: 12, max_cells: 16, replant: true }).ok).toBe(true);
+    expect(thought('patrol', { route: [pt(0), pt(5)], laps: 2, loop: false }).ok).toBe(true);
+  });
+
+  it('refuses bad arguments for each program', () => {
+    expect(thought('explore', { legs: 99 }).ok).toBe(false);
+    expect(thought('farm', { radius: 2 }).ok).toBe(false);
+    expect(thought('patrol', { route: [pt(0)] }).ok).toBe(false);
+    expect(thought('patrol', {}).ok).toBe(false);
+    expect(thought('explore', { speed: 1 }).ok).toBe(false);
+  });
+
+  it('still refuses a program that is not on the allow-list', () => {
+    expect(thought('trade_wait', {}).ok).toBe(false);
+    expect(thought('dance', {}).ok).toBe(false);
   });
 });

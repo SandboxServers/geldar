@@ -72,7 +72,7 @@ From `src/validate/bounds.ts`:
 | List | Values |
 |---|---|
 | `PHASE0_VERBS` (may appear in `actions`) | `goto`, `mine`, `craft`, `place`, `eat`, `sleep`, `open`, `deposit`, `withdraw`, `attack`, `wait`, `unstick`, `give`, `note`, `write_sign`, `till`, `edit_sign`, `use` |
-| `PHASE0_PROGRAMS` (may be named by an intent) | `travel`, `gather`, `craft`, `rest`, `flee`, `follow`, `build` |
+| `PHASE0_PROGRAMS` (may be named by an intent) | `travel`, `gather`, `craft`, `rest`, `flee`, `follow`, `build`, `explore`, `farm`, `patrol` (the last three added by AN-45a: registered and allowed by the validator, but listed by no body-api version and absent from the decode schema) |
 | `MAX_OUTPUT_BYTES` | 32 KiB (the Thinker's `text` cap) |
 | `MAX_CHECKPOINT_BYTES` | 4096 |
 
