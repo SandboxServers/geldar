@@ -7,12 +7,12 @@ Read this first, then [README.md](README.md) and [plan.md](plan.md). Card states
 - Merged: G0 and G1 except the workflow packets (GE-01w1, GE-01w2, GE-02w1 to GE-02w4, not started); G2-01, G2-04, G2-06; G3-01, G3-02, G3-04; GE-01a, GE-01b, GE-02a, GE-02b, GE-02c, GE-02e, GE-02f.
 - Held: GE-01c (branch `phase1/gn-ge-01c`, a03c9f9d, not pushed; geldar-69 holds it until after the next deploy). GE-02d waits for GE-02w1.
 - Exit criterion ([0240](../../decisions/0240-genesis-exit-is-the-scorched-earth-drill.md)): the scorched-earth drill. Delete every Geldar-owned host, VM, volume, container, network, secret, DNS record, Entra app and runner; keep only GitHub and the owner's bootstrap credential; regenerate from pipelines; verify and the smoke suite pass; a ranger can join.
-- Decisions: [0240](../../decisions/0240-genesis-exit-is-the-scorched-earth-drill.md); [0241](../../decisions/0241-genesis-bootstrap-scope-cut.md) (bootstrap scope cut, GE-04b added); [0242](../../decisions/0242-genesis-includes-neoforge.md) (genesis includes NeoForge, GE-11 added).
+- Decisions: [0240](../../decisions/0240-genesis-exit-is-the-scorched-earth-drill.md); [0241](../../decisions/0241-genesis-bootstrap-scope-cut.md) (bootstrap scope cut, GE-04b added); [0242](../../decisions/0242-genesis-includes-neoforge.md) (genesis includes NeoForge, GE-11 added); [0243](../../decisions/0243-genesis-drill-preserves-world-files.md) (drill preserves world files, burns the rest).
 - The node source tree is a hand-synced snapshot; NeoForge mod folders are hand-staged; the velocity-identity jar was hand-swapped on 2026-11-18 (GE-01 replaces it).
 
 ## Open for the owner
 
-- The world question for the drill (0242): whether the drill keeps the NeoForge world.
+- Decided (0243): world files preserved, everything else burned. Open: which database-resident data, if any, must survive the burn.
 - The skins source.
 - G2-04 and G2-05 Environments and Entra runs, and the G2-06 DNS run: owner's tenant.
 - The backup credential (write-only, G5-01).
