@@ -2,7 +2,7 @@
 
 - Status: Accepted (owner)
 - Date: 2026-11-21
-- Spec: section 13 (release scope); 0134 and 0212 (animus and golem-body stay off); HC-08c and HC-09 (harness work)
+- Spec: no spec section; decision-only (owner ruling of 2026-11-21). Related: 0134 and 0212 (animus and golem-body stay off); HC-08c and HC-09 (harness work)
 - Related: 0392 (held-live exception), 0391 (operator rulings of 2026-11-20)
 
 ## Decision
@@ -13,13 +13,13 @@
 4. Release tags:
    - `geldar-v0.1.0`: a new tag namespace. The repo has only `psyche-v*` tags today.
    - `kit-v0.1.0`.
-5. Tags are made by Sam by hand, and no bot tags anything:
+5. Tags are made by the owner by hand, and no bot tags anything:
    - `kit-v0.1.0-rc23` at the release-check step.
    - The stable pair (`geldar-v0.1.0` and `kit-v0.1.0`) after the 24-hour report (0392, step 8).
 
 ## Why
 
-Sam's ruling of 2026-11-21. The MCP route is the one the harnesses already use. The local route is shipped code that the launcher does not yet offer, and HC-08c and HC-09 are its missing parts. Hand tagging keeps the release decision with the owner.
+The owner's ruling of 2026-11-21. The MCP route is the one the harnesses already use. The local route is shipped code that the launcher does not yet offer, and HC-08c and HC-09 are its missing parts. Hand tagging keeps the release decision with the owner.
 
 ## Consequences
 
