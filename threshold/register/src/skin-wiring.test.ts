@@ -1,8 +1,7 @@
-import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { ApiRoute } from './api/route.ts';
 import type { QueryClient } from './owner-keys-pg.ts';
-import { withSkinRoutes } from './skin-wiring.ts';
+import { mountOwnerApi, withSkinRoutes } from './skin-wiring.ts';
 
 const db = { query: async () => ({ rows: [] }) } as unknown as QueryClient;
 
@@ -24,10 +23,19 @@ describe('withSkinRoutes', () => {
   });
 });
 
-describe('main.ts wiring', () => {
-  it('passes the body through withSkinRoutes before mountAccountDelete', () => {
-    const main = readFileSync(new URL('./main.ts', import.meta.url), 'utf8');
-    expect(main).toContain('withSkinRoutes(body, db)');
-    expect(main).not.toContain('mountSkinRoutes(skinStoreOf(db))');
+describe('mountOwnerApi (the owner API as main.ts mounts it)', () => {
+  it('mounts the skin POST and GET on the API it returns, next to the body routes', () => {
+    const store = {} as Parameters<typeof mountOwnerApi>[0];
+    const out = mountOwnerApi(store, { link: null, routes: [] }, {}, db, () => {});
+    const skin = out.api.routes.filter((r) => r.pattern.test('/agents/abc/skin'));
+    expect(skin.map((r) => r.method)).toEqual(expect.arrayContaining(['POST', 'GET']));
+  });
+
+  it('keeps a body route that is already mounted', () => {
+    const store = {} as Parameters<typeof mountOwnerApi>[0];
+    const existing = { method: 'GET', pattern: /^\/body$/ } as unknown as ApiRoute;
+    const out = mountOwnerApi(store, { link: null, routes: [existing] }, {}, db, () => {});
+    expect(out.api.routes).toContain(existing);
+    expect(out.api.routes.some((r) => r.pattern.test('/agents/abc/skin'))).toBe(true);
   });
 });

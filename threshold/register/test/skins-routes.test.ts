@@ -323,6 +323,10 @@ describe('skin store failures and logs (C7-13a review fix 2)', () => {
     for (const line of logged) {
       expect(line).not.toContain(IDENT);
       expect(line).not.toContain('valid-stand-in');
+      // A hex, base64 or latin1 dump of the PNG is the same bytes in another encoding; none may reach the log.
+      expect(line).not.toContain(VALID.toString('hex'));
+      expect(line).not.toContain(VALID.toString('base64'));
+      expect(line).not.toContain(VALID.toString('latin1'));
     }
   });
 });
