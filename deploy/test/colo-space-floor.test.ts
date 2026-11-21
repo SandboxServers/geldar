@@ -2,7 +2,7 @@
 // Docker's data root have their own, lower block floor (GELDAR_MIN_FREE_KB_DEPLOY, default 1 GiB: /var is a small volume);
 // colo-rollback.sh does not refuse on volumes it does not write to.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { cdRun, cdSetup } from './colo-cd-fixture';
 import {
@@ -46,7 +46,10 @@ describe('colo-cd.sh checks the floors before its first write', () => {
     const log = join(cd.fx.dir, 'mktemp.log');
     shims(cd.fx.dir, log);
     // Docker's root comes from the daemon config (docker info is silent here, and sudo cannot answer: no real sudo runs).
-    writeFileSync(join(cd.fx.dir, 'daemon.json'), JSON.stringify({ 'data-root': posix(cd.fx.dir) }));
+    writeFileSync(
+      join(cd.fx.dir, 'daemon.json'),
+      JSON.stringify({ 'data-root': posix(cd.fx.dir) }),
+    );
     writeFileSync(join(cd.fx.dir, 'bin', 'sudo'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
     const env = {
       GELDAR_MIN_FREE_INODES: '100',
@@ -134,7 +137,9 @@ describe("Docker's data root is refused when it cannot be determined (fail close
   it('stops the deploy with a plain refusal when docker info, sudo and the daemon config all fail', () => {
     const fx = fixture();
     const bin = join(fx.dir, 'bin');
-    writeFileSync(join(bin, 'docker.orig'), readFileSync(join(bin, 'docker'), 'utf8'), { mode: 0o755 });
+    writeFileSync(join(bin, 'docker.orig'), readFileSync(join(bin, 'docker'), 'utf8'), {
+      mode: 0o755,
+    });
     writeFileSync(
       join(bin, 'docker'),
       '#!/bin/sh\ncase "$*" in *"info --format"*) exit 1;; esac\nexec "$(dirname "$0")/docker.orig" "$@"\n',
@@ -149,7 +154,6 @@ describe("Docker's data root is refused when it cannot be determined (fail close
     expect(out).not.toContain('compose config: valid');
   });
 });
-
 
 describe("Docker's data root has the same block floor as the deploy volume", () => {
   const GIB = 1048576;

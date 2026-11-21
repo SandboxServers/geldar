@@ -72,7 +72,10 @@ function setup(
   const sudoSay = opts.sudoRoot ? `echo "${posix(droot)}"` : 'exit 1';
   // The daemon config names a data root only when the test says so (a poor or fine directory of this fixture).
   if (opts.daemonRoot) {
-    writeFileSync(join(dir, 'daemon.json'), JSON.stringify({ 'data-root': posix(join(dir, opts.daemonRoot)) }));
+    writeFileSync(
+      join(dir, 'daemon.json'),
+      JSON.stringify({ 'data-root': posix(join(dir, opts.daemonRoot)) }),
+    );
   }
   writeFileSync(join(bin, 'docker'), `#!/bin/bash\n${say}\n`, { mode: 0o755 });
   writeFileSync(join(bin, 'sudo'), `#!/bin/bash\n${sudoSay}\n`, { mode: 0o755 });
