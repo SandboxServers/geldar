@@ -51,7 +51,12 @@ exit 0
 function setup(
   kind: 'inodes' | 'blocks' | 'none',
   where: 'inbox' | 'docker' | 'nowhere',
-  opts: { env?: Record<string, string | undefined>; dockerSilent?: boolean; sudoRoot?: boolean } = {},
+  opts: {
+    env?: Record<string, string | undefined>;
+    dockerSilent?: boolean;
+    sudoRoot?: boolean;
+    daemonRoot?: string;
+  } = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), 'inbox-floor-'));
   dirs.push(dir);
@@ -65,6 +70,10 @@ function setup(
   const say = opts.dockerSilent ? '' : `echo "${posix(droot)}"`;
   // sudo -n docker info: silent unless the test says it answers, so CI never reaches the real sudo.
   const sudoSay = opts.sudoRoot ? `echo "${posix(droot)}"` : 'exit 1';
+  // The daemon config names a data root only when the test says so (a poor or fine directory of this fixture).
+  if (opts.daemonRoot) {
+    writeFileSync(join(dir, 'daemon.json'), JSON.stringify({ 'data-root': posix(join(dir, opts.daemonRoot)) }));
+  }
   writeFileSync(join(bin, 'docker'), `#!/bin/bash\n${say}\n`, { mode: 0o755 });
   writeFileSync(join(bin, 'sudo'), `#!/bin/bash\n${sudoSay}\n`, { mode: 0o755 });
   const log = join(dir, 'mktemp.log');
@@ -85,7 +94,7 @@ function setup(
       GELDAR_MIN_FREE_INODES: '100',
       GELDAR_MIN_FREE_KB_DEPLOY: '10',
       ...opts.env,
-      GELDAR_DOCKER_DAEMON_JSON: posix(join(dir, 'no-daemon.json')),
+      GELDAR_DOCKER_DAEMON_JSON: posix(join(dir, 'daemon.json')),
     },
   });
   return { code: r.status, err: r.stderr, out: r.stdout, log, inbox };
@@ -167,5 +176,12 @@ describe('colo-deploy.yml inbox write: the space floor runs before the mktemp', 
     const r = setup('none', 'nowhere', { dockerSilent: true, sudoRoot: true });
     expect(r.code).toBe(0);
     expect(r.err).not.toContain("cannot determine Docker's data root");
+  });
+
+  it('takes the data root from the daemon config before docker info: a fine daemon root wins over a poor docker answer (#866)', () => {
+    // docker info answers the poor directory (kind blocks, where docker); the daemon config names the fine one and must win.
+    const r = setup('blocks', 'docker', { daemonRoot: 'fine' });
+    expect(r.code).toBe(0);
+    expect(r.err).not.toContain('out of BLOCKS on the docker data root');
   });
 });

@@ -30,14 +30,15 @@ space_floor() {
 
 # The three filesystems a deploy writes to: the checkout (MIN_FREE_KB), the deploy volume (/var/lib/geldar-deploy) and
 # Docker's data root (both MIN_FREE_KB_DEPLOY, much smaller: /var is a small volume). Docker's data root is read by
-# docker_data_root: `docker info`, then `sudo -n docker info` (the node needs passwordless sudo for it, see
-# docs/runbooks/node-only-config.md), then the data-root key of the daemon config (GELDAR_DOCKER_DAEMON_JSON, default
-# /etc/docker/daemon.json). Prints nothing when none of them answers. Fail closed: space_floors refuses then (CI-DR1, #866).
+# docker_data_root, in this order: the data-root key of the daemon config (GELDAR_DOCKER_DAEMON_JSON, default
+# /etc/docker/daemon.json; an absent or unreadable file or a file without the key falls through), then `docker info`,
+# then `sudo -n docker info` (the node needs passwordless sudo for it, see docs/runbooks/node-only-config.md). Prints
+# nothing when none of them answers. Fail closed: space_floors refuses then (CI-DR1, #866).
 docker_data_root() {
   local d
-  d=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null) || d=
+  d=$(sed -n 's/.*"data-root"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${GELDAR_DOCKER_DAEMON_JSON:-/etc/docker/daemon.json}" 2>/dev/null | head -n 1) || d=
+  [ -n "$d" ] || d=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null) || d=
   [ -n "$d" ] || d=$(sudo -n docker info --format '{{.DockerRootDir}}' 2>/dev/null) || d=
-  [ -n "$d" ] || d=$(sed -n 's/.*"data-root"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${GELDAR_DOCKER_DAEMON_JSON:-/etc/docker/daemon.json}" 2>/dev/null | head -n 1) || d=
   printf '%s' "$d"
 }
 
