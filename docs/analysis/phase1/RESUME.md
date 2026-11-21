@@ -66,18 +66,27 @@ Every brief carries the list in [packet-conventions.md](packet-conventions.md) s
 - **Agents must not learn they are watched** (decisions [0059](../../decisions/0059-identity-mode-is-about-human-observation-not-agent-belief.md) and [0068](../../decisions/0068-prompt-v4-and-agent-visible-text.md)). Agent-visible text, including prompts and wake strings, passes the scans in the packet cards and never shows operator, Glass, BlueMap or observer data.
 - **Prompts are versioned and released versions are never edited.** v1 to v5 are released and not edited; v6 is reserved by C3-03 and v7 by C4-06 (neither released); each creates a new version.
 
-## C7 status (2026-11-14, after window B)
+## C7 status (2026-11-20, checked against origin/main a62ceb44)
 
-- **Waves 1 to 4 merged and deployed.** Wave 3 is #336 (12:53Z), wave 4 is #346 (16:33Z; C7-04c, C7-04e, C7-06, C7-06b). Window B: C7-04c2 body routes wiring (#358, 18:23Z; unconfigured NATS gives 404) and C7-14b owner admin verbs (#359, 18:29Z). Plan and waves: [packets/c7-wave-plan.md](packets/c7-wave-plan.md); cards: [packets/c7d-packets.md](packets/c7d-packets.md).
-- **Unbuilt:** C7-04d retire and C7-06c account items (Ready); C7-03b2 supervisor compose (un-shelved by decision 0260; waits for the body helper cards C7-03c1, c2, c3 and C7-03b5, then geldar-93 node steps); C7-06d account body controls (un-shelved; its page script and CSP can start now); C7-07 rename; C7-09 deletion and export; C7-10 operator console; C7-11 sign-up gate; C7-13a to c skin upload (needs the owner's explicit approval beyond the six ranger skins). Carry-forward CF-W4-1 to CF-W4-5 is scheduled later; CF-W4-5 (`__Host-` cookie prefix) is recommended before sign-up opens.
-- **Owner rulings 2026-11-14 (decision 0261):** sign-up is open for everyone, unannounced once M1 is ready (kill switch still ON); a sign-up agent's Body runs the player-host path with identity from the database; auto-roster on registration, per-owner cap 3; global cap 40 running Bodies (alert and review at 30). M1 = sign-up works; M2 = account-page start, stop and restart. Ordered plan: [packets/c7-wave-plan.md](packets/c7-wave-plan.md).
-  - Still open: deletion and export (C7-09) and the sign-up gate (C7-11) before outside users (0153); MineSkin beyond the six rangers; the RCON whitelist verb and life key (BODY-HOST, geldar-93).
+- **Merged:** C7-01 to C7-08 waves 1 to 4 (#315, #321, #336, #346); C7-14 and C7-14b (#338, #359); C7-04d and its mount (#365, #380); C7-06c status line (#366) and C7-06d account page (#539); C7-03c1 to c3 (#415, #421, #447); C7-03b5 (#503); LEGAL-SERVE (#404); SIGNUP-RUNBOOK (#517); ROSTER-AUTO (#515, migration 0061); BH-1 (#525), BH-2 (#527), BH-3 (#530), BH-5a (#537), BH-5b (#573), BH-6 (#575); C7-09a2 (#470), C7-09b (#524, #541), C7-09c (#577); the sign-up gate C7-11 (#576).
+- **Open:** C7-03b2 (PR #522, held); C7-03b4-live; BH-4 (no merged PR found); C7-13a to c (skin upload); C7-07 rename; C7-10 operator console; the account-page export link and the PATCH visibility toggles; GX-05c turn_records (geldar-3b); CF-W4-1 to CF-W4-5.
+- **Not recorded here:** which merged migrations (0061 to 0065) are applied on geldar-93. Check the deploy record first.
+
+## What is left to open sign-up (owner-facing)
+
+1. Rule on whether M1 waits for C7-09 and C7-13 (the open 0261 question).
+2. Legal review of the erasure rule (0171; gates C7-11).
+3. Ship or drop C7-03b2 (PR #522); give the geldar-93 node steps (helper, RCON whitelist verb, life key).
+4. BH-4 merged, and the BH-6 live check, before sign-up opens (row 25a, an owner decision).
+5. The account-page export link and the PATCH toggles, or an owner call to open without them.
+6. CF-W4-5 (`__Host-` cookie prefix) before sign-up opens.
+7. Open sign-up by `docs/runbooks/open-signup.md`, kill switch off, only after items 1 to 6.
 
 ## For the owner
 
 - (a) Kept agent rows may carry a typed real name: anonymise on deletion, or accept.
 - (b) built (geldar-93 default, revertable before sign-up opens): `kino_audit` rows of the deleted identity are erased on deletion.
-- (c) Cleanup of accounts deleted before 0040 (under 0039): card `C7-09c`.
+- (c) Cleanup of accounts deleted before 0040 (under 0039): card `C7-09c` (merged #577; the operator run is still open).
 
 ## Open contradictions
 
