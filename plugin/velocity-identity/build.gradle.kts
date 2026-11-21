@@ -37,7 +37,7 @@ tasks.jar {
     archiveVersion = ""
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     from({
-        configurations.runtimeClasspath.get().filter { it.name.endsWith(".jar") }.map { zipTree(it) }
+        configurations.runtimeClasspath.get().filter { it.name.endsWith(".jar") }.sortedBy { it.name }.map { zipTree(it) }
     }) {
         exclude("META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA", "META-INF/MANIFEST.MF", "module-info.class")
     }

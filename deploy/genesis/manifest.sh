@@ -9,6 +9,7 @@
 #   GELDAR_ENV_DEFINITION_SHA256       sha256 of the environment definition
 # Each digest is 64 lowercase hex characters. Errors name the key or the line number, never a value.
 # Usage: manifest.sh validate <release.env> | value <release.env> <KEY> | version <release.env>
+#        manifest.sh from-lock <plugin-jars.lock>   (GE-01w1a: the two plugin lines of a v2 manifest, see below)
 # Functions only when sourced. The file is read as data and is never sourced. POSIX sh.
 
 MANIFEST_DIGEST_KEYS="GELDAR_PLUGIN_CORE_SHA256 GELDAR_PLUGIN_VELOCITY_IDENTITY_SHA256 GELDAR_CONFIG_BUNDLE_SHA256 GELDAR_ENV_DEFINITION_SHA256"
@@ -74,10 +75,93 @@ manifest_validate() {
   [ "$errors" = 0 ]
 }
 
+# Prints the v2 plugin lines for the lock $1 (plugin/plugin-jars.lock, the plugin-jars.sha256 format with a header
+# `# source commit: <40 lowercase hex or PENDING>`): GELDAR_PLUGIN_CORE_SHA256, GELDAR_PLUGIN_VELOCITY_IDENTITY_SHA256,
+# then GELDAR_MANIFEST_VERSION=2. A PENDING lock prints nothing and returns 0, so the caller writes a version 1 manifest.
+# Returns 2 with a fixed message (no lock content echoed) when the lock is malformed. The rules are verify-plugin-lock.sh's,
+# copied here rather than sourced: one header line, exactly the two plugin jars once each, `<64 lowercase hex>  <name>`
+# lines, and no CR bytes.
+manifest_from_lock() {
+  lock=$1
+  if [ ! -f "$lock" ] || ! tr -d '\r' <"$lock" | cmp -s - "$lock"; then
+    echo "plugin lock: file not found or contains CR bytes" >&2
+    return 2
+  fi
+  commits=$(grep -c '^# source commit: ' "$lock" || true)
+  if [ "$commits" != 1 ]; then
+    echo "plugin lock: needs exactly one '# source commit:' line" >&2
+    return 2
+  fi
+  commit=$(sed -n 's/^# source commit: //p' "$lock")
+  pending=0
+  if [ "$commit" = PENDING ]; then
+    pending=1
+  elif [ "${#commit}" -ne 40 ] || [ -n "$(printf '%s' "$commit" | tr -d '0-9a-f')" ]; then
+    echo "plugin lock: source commit must be 40 lowercase hex or PENDING" >&2
+    return 2
+  fi
+  core_hex=""
+  velocity_hex=""
+  core_n=0
+  velocity_n=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    case $line in
+      ''|'#'*) continue ;;
+      *"  "*) ;;
+      *)
+        echo "plugin lock: a jar line is not '<64 lowercase hex>  <name>'" >&2
+        return 2
+        ;;
+    esac
+    hex=${line%%  *}
+    name=${line#*  }
+    case $hex in
+      *[!0-9a-f]*) hex= ;;
+    esac
+    if [ "${#hex}" -ne 64 ]; then
+      echo "plugin lock: a jar line is not '<64 lowercase hex>  <name>'" >&2
+      return 2
+    fi
+    case $name in
+      ''|*[!A-Za-z0-9._-]*)
+        echo "plugin lock: a jar line is not '<64 lowercase hex>  <name>'" >&2
+        return 2
+        ;;
+      geldar-core.jar)
+        [ "$core_n" -eq 0 ] || { echo "plugin lock: geldar-core.jar is listed twice" >&2; return 2; }
+        core_n=1
+        core_hex=$hex
+        ;;
+      geldar-velocity-identity.jar)
+        [ "$velocity_n" -eq 0 ] || { echo "plugin lock: geldar-velocity-identity.jar is listed twice" >&2; return 2; }
+        velocity_n=1
+        velocity_hex=$hex
+        ;;
+      *)
+        echo "plugin lock: unknown jar name (only geldar-core.jar and geldar-velocity-identity.jar)" >&2
+        return 2
+        ;;
+    esac
+  done <"$lock"
+  if [ "$core_n" != 1 ] || [ "$velocity_n" != 1 ]; then
+    echo "plugin lock: needs one line each for geldar-core.jar and geldar-velocity-identity.jar" >&2
+    return 2
+  fi
+  [ "$pending" = 0 ] || return 0
+  printf 'GELDAR_PLUGIN_CORE_SHA256=%s\n' "$core_hex"
+  printf 'GELDAR_PLUGIN_VELOCITY_IDENTITY_SHA256=%s\n' "$velocity_hex"
+  echo 'GELDAR_MANIFEST_VERSION=2'
+  return 0
+}
+
 manifest_main() {
   cmd=${1:-}
   [ $# -gt 0 ] && shift
   case $cmd in
+    from-lock)
+      [ $# -eq 1 ] || { echo "usage: manifest.sh from-lock <plugin-jars.lock>" >&2; return 2; }
+      manifest_from_lock "$1"
+      ;;
     validate)
       [ $# -eq 1 ] || { echo "usage: manifest.sh validate <release.env>" >&2; return 2; }
       manifest_validate "$1"
@@ -91,7 +175,7 @@ manifest_main() {
       manifest_version "$1"
       ;;
     *)
-      echo "usage: manifest.sh validate|value|version <release.env> [KEY]" >&2
+      echo "usage: manifest.sh validate|value|version|from-lock <release.env|plugin-jars.lock> [KEY]" >&2
       return 2
       ;;
   esac
