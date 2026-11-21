@@ -324,6 +324,14 @@ exec "${p(dirname(SH))}/ls" "$@"
       for (let i = 1; i <= 8; i++) expect(has(root, sha(i))).toBe(true);
     });
 
+    it("a refusal for want of a record names GELDAR_STATE_DIR and the node's state directory", () => {
+      const root = fixture(8, null);
+      const r = run(root, ['--keep', '2', '--apply']);
+      expect(r.code).toBe(1);
+      expect(r.err).toContain('GELDAR_STATE_DIR');
+      expect(r.err).toContain('/mnt/nvme/geldar-colo/state');
+    });
+
     it('refuses when every record is malformed (short, upper-case, no commit line)', () => {
       const root = fixture(8, 'abc');
       put(root, 'state/current.env', `${manifest('abc123')}\n`);

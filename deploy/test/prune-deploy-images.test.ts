@@ -156,6 +156,14 @@ describe('prune-deploy-images.sh', () => {
       expect(run(root).out).toBe(`would remove ${body('1')}\n`);
     });
 
+    it("a refusal for want of a record names GELDAR_STATE_DIR and the node's state directory", () => {
+      const root = fixture(all, null, null);
+      const r = run(root, ['--apply']);
+      expect(r.code).toBe(1);
+      expect(r.err).toContain('GELDAR_STATE_DIR');
+      expect(r.err).toContain('/mnt/nvme/geldar-colo/state');
+    });
+
     it('refuses when only previous.env lists images: it is not a record of what is live', () => {
       const root = fixture(all, null, null);
       put(root, 'previous.env', env(body('2')));

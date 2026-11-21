@@ -6,7 +6,7 @@
 # Rules: only direct children of <root>/work that are real directories (never symlinks) named by exactly 40
 # lowercase hex characters are candidates. The newest N by modification time are kept (default 5; N must be 2 to 1000, so an
 # in-flight deploy's fresh checkout is never among the removed), and so is every commit a record of the live release names
-# (see "The live commit" below: release.commit, the manifests in the state directory, the staged and inbox manifests). With no
+# (the node's state directory is GELDAR_STATE_DIR=/mnt/nvme/geldar-colo/state, not the default, so set it; dry run first; see "The live commit" below: release.commit, the manifests in the state directory, the staged and inbox manifests). With no
 # readable record of the live commit, nothing is removed and the exit code is 1. The deploy lock
 # (<root>/channel.lock, the one the deploy channel takes) and the colo-cd lock directory ($GELDAR_STATE_DIR/cd.lock,
 # default /var/lib/geldar-colo) must both be free: they are held for the whole run, and a busy or unavailable lock refuses.
@@ -85,7 +85,7 @@ manifest_commit "$STATE_DIR/current.env" 1
 manifest_commit "$STATE_DIR/previous.env" 0
 manifest_commit "$ROOT/staged/release.env" 0
 manifest_commit "$ROOT/inbox/release.env" 0
-[ "$liveknown" -eq 1 ] || fail "no record of the live commit could be read (release.commit, release.env, current.env in $STATE_DIR); nothing removed"
+[ "$liveknown" -eq 1 ] || fail "no record of the live commit could be read (release.commit, release.env, current.env in $STATE_DIR); nothing removed. Is GELDAR_STATE_DIR set to the node's state directory (/mnt/nvme/geldar-colo/state)?"
 
 # One run at a time, and never beside a deploy. Two locks: the deploy channel's flock file, and the directory lock
 # deploy/colo-cd.sh takes (<state dir>/cd.lock, mkdir-atomic). The directory is taken here too, so a deploy cannot start
@@ -93,7 +93,7 @@ manifest_commit "$ROOT/inbox/release.env" 0
 command -v flock >/dev/null 2>&1 || fail "flock is missing; cannot take the deploy lock"
 exec 9>>"$ROOT/channel.lock" || fail "the deploy lock cannot be opened"
 flock -n 9 || fail "the deploy lock is held; a deploy may be running"
-[ -d "$STATE_DIR" ] || fail "the state directory is missing; cannot take the colo-cd lock"
+[ -d "$STATE_DIR" ] || fail "the state directory $STATE_DIR is missing; cannot take the colo-cd lock. Set GELDAR_STATE_DIR to the node's state directory (/mnt/nvme/geldar-colo/state)"
 CDLOCK=$STATE_DIR/cd.lock
 mkdir "$CDLOCK" 2>/dev/null || fail "the colo-cd lock is held (or cannot be created); a deploy may be running"
 trap 'rmdir "$CDLOCK" 2>/dev/null || true' EXIT

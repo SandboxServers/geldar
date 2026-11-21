@@ -7,7 +7,7 @@
 # one the kept manifests name and whose digest is in none of them. The manifests are every one that exists of
 # $GELDAR_RELEASE_FILE (default /etc/geldar-colo/release.env, root-only on the node), $GELDAR_STATE_DIR/release.env and
 # current.env, and previous.env (the rollback target; it may be missing on a first deploy), with $GELDAR_STATE_DIR defaulting to
-# /var/lib/geldar-colo. docker itself refuses an image a container uses; that is reported and does not stop the run. If no
+# /var/lib/geldar-colo; the node's state directory is GELDAR_STATE_DIR=/mnt/nvme/geldar-colo/state, so set it (dry run first). docker itself refuses an image a container uses; that is reported and does not stop the run. If no
 # record of the current release lists images, nothing is removed and the exit code is 1.
 # The colo-cd lock directory ($GELDAR_STATE_DIR/cd.lock) must be free and is held for the run. Output is references only. POSIX sh.
 set -eu
@@ -40,12 +40,12 @@ refs() {
 # $RELEASE_FILE (the operator account usually cannot read it), the copy colo-cd.sh keeps in the state directory
 # ($STATE_DIR/release.env) and current.env; previous.env is the rollback target. Nothing is removed unless a live record lists images.
 live=$(refs "$RELEASE_FILE"; refs "$STATE_DIR/release.env"; refs "$STATE_DIR/current.env")
-[ -n "$live" ] || fail "no readable record of the current release lists images (release.env, current.env); nothing removed"
+[ -n "$live" ] || fail "no readable record of the current release lists images (release.env, current.env in $STATE_DIR); nothing removed. Is GELDAR_STATE_DIR set to the node's state directory (/mnt/nvme/geldar-colo/state)?"
 keep=$(printf '%s
 ' "$live"; refs "$STATE_DIR/previous.env")
 repos=$(printf '%s\n' "$keep" | sed 's/@.*//' | sort -u)
 
-[ -d "$STATE_DIR" ] || fail "no state directory"
+[ -d "$STATE_DIR" ] || fail "no state directory $STATE_DIR; set GELDAR_STATE_DIR to the node's state directory (/mnt/nvme/geldar-colo/state)"
 mkdir "$STATE_DIR/cd.lock" 2>/dev/null || fail "the colo-cd lock is held or unavailable; nothing removed"
 trap 'rmdir "$STATE_DIR/cd.lock" 2>/dev/null || true' EXIT
 # A signal ends the run through exit, so the EXIT trap releases the lock (as deploy/colo-cd.sh does).
