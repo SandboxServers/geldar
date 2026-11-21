@@ -212,7 +212,8 @@ it('offers a closed About disclosure under the banner with only two fixed links'
     ['https://map.geldar.sandboxservers.games', 'noopener noreferrer', 'Live map'],
     ['https://github.com/SandboxServers/geldar', 'noopener noreferrer', 'Source code'],
   ]);
-  expect(HTML.match(/<a\s/g)).toHaveLength(2);
+  // Two About links, plus the sign-in link under the banner (checked in register-link.test.ts).
+  expect(HTML.match(/<a\s/g)).toHaveLength(3);
 });
 it('sets the tier apart from the "died" tag with the same dot as the other facts', () => {
   const base = baseRules(FLAT).replace(/\s+/g, ' ');
