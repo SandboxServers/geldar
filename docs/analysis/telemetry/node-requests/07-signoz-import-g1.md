@@ -194,6 +194,7 @@ Verified in the SigNoz v0.148.1 source (`gh api repos/SigNoz/signoz/contents/<pa
 - The notification channel `geldar-owner-channel`: its type, its receiver settings, and whether `POST /api/v1/rules` accepts the `preferredChannels` field.
 - Where SigNoz v0.148.1 stores dashboards and rules.
 - The `--replace` path and the rule `PUT` on a live node.
+- `--replace` deletes the dashboard before it POSTs. If the POST fails, the dashboard is missing until the next run recreates it (`docs/runbooks/signoz-import.md`).
 - Whether a token can be revoked through the API, the `docker inspect` format strings, and the tunnel form (carried over from sections 5 and 10).
  (the orchestrator records it; this request edits no repo file)
 

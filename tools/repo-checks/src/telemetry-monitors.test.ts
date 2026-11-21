@@ -200,6 +200,9 @@ describe('docs/runbooks/telemetry-monitors.md (G2)', () => {
     expect(runbook).toContain('$GELDAR_SECRETS_DIR/otel-pg.txt');
     expect(runbook).toMatch(/10001:10001/);
     expect(runbook).toMatch(/0400/);
+    // Owner option (a): the secret lives in the telemetry secrets directory, never the colo one or a bare placeholder name.
+    expect(runbook).toContain('<TELEMETRY_PG_SECRETS_DIR>');
+    expect(runbook).not.toContain('<the node secrets directory>');
   });
 
   it('validates the gateway config before the restage, with the password secret mounted', () => {
