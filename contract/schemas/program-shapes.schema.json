@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://geldar.dev/schemas/program-shapes.schema.json",
-  "description": "Argument, checkpoint and detail shapes of the explore, farm and patrol programs (decision 0344, AN-44). Proposed and inert: nothing selects these shapes yet. Every integer is bounded; a hard cap is a maximum, so an oversize value is invalid, never clamped. Every shape rejects an unknown key. A checkpoint repeats the start arguments because resume() receives none. Coordinates are integers the Body observed.",
+  "description": "Argument, checkpoint and detail shapes of the explore, farm and patrol programs (decision 0344, AN-44). Enforced through PROGRAM_ARGS in player-core (bounds.ts), which program-shapes-drift.test.ts keeps equal to these shapes. Every integer is bounded; a hard cap is a maximum, so an oversize value is invalid, never clamped. Every shape rejects an unknown key. A checkpoint repeats the start arguments because resume() receives none. Coordinates are integers the Body observed.",
   "type": "object",
   "$defs": {
     "ProgramBlock": {
