@@ -74,7 +74,8 @@ paths:
         '429':
           $ref: '#/components/responses/Problem'
         '500':
-          $ref: '#/components/responses/Problem'  /agents/{playerId}/skin:
+          $ref: '#/components/responses/Problem'
+  /agents/{playerId}/skin:
     post:
       operationId: postAgentSkin
       summary: Upload a skin for one agent (cookie session only, CSRF on the write; held for approval, decision 0172).

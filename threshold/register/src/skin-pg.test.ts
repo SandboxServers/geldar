@@ -67,6 +67,12 @@ describe('skinStoreOf submitSkin', () => {
     expect(db.calls[0]?.values.slice(1)).toEqual(['player-1', PNG, SHA]);
   });
 
+  it('names the arguments in the query text in the same order as the values', async () => {
+    const db = fakeDb({ rows: [{ upload_id: '42' }] });
+    await skinStoreOf(db).submitSkin(HASH, 'player-1', PNG, SHA);
+    expect(db.calls[0]?.text).toBe('SELECT register_skin_submit($1, $2, $3, $4) AS upload_id');
+  });
+
   it('returns the refusal code for a mapped error', async () => {
     const db = fakeDb(pgError('23505', 'skin_upload_pending'));
     expect(await skinStoreOf(db).submitSkin(HASH, 'p', PNG, SHA)).toEqual({
@@ -89,6 +95,13 @@ describe('skinStoreOf submitSkin', () => {
 });
 
 describe('skinStoreOf skinStatus', () => {
+  it('names the arguments in the query text: the identity hash first, the player second', async () => {
+    const db = fakeDb({ rows: [] });
+    await skinStoreOf(db).skinStatus(HASH, 'p');
+    expect(db.calls[0]?.text).toBe('SELECT * FROM register_skin_status($1, $2)');
+    expect(db.calls[0]?.values).toEqual([Buffer.from(HASH, 'hex'), 'p']);
+  });
+
   it('converts the newest row: id to number, timestamps to ISO, null decided kept', async () => {
     const created = new Date('2026-11-01T10:00:00.000Z');
     const db = fakeDb({
