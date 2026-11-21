@@ -108,6 +108,16 @@ describe('explore, farm and patrol through the whole output validator (AN-45a)',
     expect(thought('patrol', { route: [pt(0), pt(5)], laps: 2, loop: false }).ok).toBe(true);
   });
 
+  it('accepts the bound values for each program through the whole validator', () => {
+    const eight = Array.from({ length: 8 }, (_, i) => pt(i));
+    expect(thought('explore', { legs: 12, leg_blocks: 48, avoid_water: true }).ok).toBe(true);
+    expect(thought('explore', { legs: 1, leg_blocks: 8 }).ok).toBe(true);
+    expect(thought('farm', { radius: 24, max_cells: 32, replant: true }).ok).toBe(true);
+    expect(thought('farm', { radius: 4, max_cells: 1 }).ok).toBe(true);
+    expect(thought('patrol', { route: eight, laps: 5, loop: true }).ok).toBe(true);
+    expect(thought('patrol', { route: [pt(0), pt(1)], laps: 1 }).ok).toBe(true);
+  });
+
   it('refuses bad arguments for each program', () => {
     expect(thought('explore', { legs: 99 }).ok).toBe(false);
     expect(thought('farm', { radius: 2 }).ok).toBe(false);
