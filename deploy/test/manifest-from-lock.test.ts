@@ -115,6 +115,14 @@ describe('manifest.sh from-lock: malformed locks exit 2 with a fixed message', (
   const cases: [string, string][] = [
     ['no source commit line', ['# Geldar plugin jars lock.', CORE, VELOCITY, ''].join('\n')],
     ['two source commit lines', lockText(`${HEADER}\n${HEADER}`, [CORE, VELOCITY])],
+    [
+      'a valid first header and a second source commit line with an empty value',
+      lockText(`${HEADER}\n# source commit: `, [CORE, VELOCITY]),
+    ],
+    [
+      'a PENDING first header and a second source commit line with an empty value',
+      lockText('# source commit: PENDING\n# source commit: ', [CORE, VELOCITY]),
+    ],
     ['a commit that is not 40 lowercase hex', lockText('# source commit: abc', [CORE, VELOCITY])],
     [
       'an upper-case commit',
