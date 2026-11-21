@@ -1,8 +1,9 @@
 // Tests for deploy/genesis/prune-deploy-work.sh. The script runs under `sh` against a fixture root (GELDAR_DEPLOY_ROOT)
 // with a flock stand-in on PATH (flock is absent on Windows): FAKE_FLOCK_RC=1 makes the lock busy. Nothing real is touched.
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
   existsSync,
+  lutimesSync,
   mkdirSync,
   mkdtempSync,
   rmSync,
@@ -31,7 +32,7 @@ const manifest = (commit: string) =>
 GELDAR_BODY_IMAGE=registry.example.invalid/body@sha256:${'1'.repeat(64)}`;
 
 /** A root with `count` checkouts, sha(1) the oldest and sha(count) the newest, and a live commit. */
-function fixture(count: number, live: string | null = manifest(sha(count))) {
+function fixture(count: number, live: string | null = sha(count), staged: string | null = null) {
   const root = mkdtempSync(join(tmpdir(), 'prune-work-'));
   dirs.push(root);
   mkdirSync(join(root, 'work'));
@@ -45,9 +46,10 @@ function fixture(count: number, live: string | null = manifest(sha(count))) {
     writeFileSync(join(d, 'f'), 'x');
     utimesSync(d, 1_700_000_000 + i * 1000, 1_700_000_000 + i * 1000);
   }
-  if (live !== null)
-    writeFileSync(join(root, 'staged', 'release.env'), `${live}\nSECRET=do-not-print\n`);
   mkdirSync(join(root, 'state'));
+  if (live !== null) writeFileSync(join(root, 'state', 'release.commit'), `${live}\n`);
+  if (staged !== null)
+    writeFileSync(join(root, 'staged', 'release.env'), `${staged}\nSECRET=do-not-print\n`);
   return root;
 }
 
@@ -101,7 +103,7 @@ describe('prune-deploy-work.sh', () => {
   });
 
   it('keeps the live commit even when it is old', () => {
-    const root = fixture(8, manifest(sha(1)));
+    const root = fixture(8, sha(1));
     run(root, ['--keep', '2', '--apply']);
     expect(has(root, sha(1))).toBe(true);
     expect(has(root, sha(2))).toBe(false);
@@ -116,7 +118,7 @@ describe('prune-deploy-work.sh', () => {
       mkdirSync(join(root, 'work', n));
       utimesSync(join(root, 'work', n), 1_600_000_000, 1_600_000_000);
     }
-    run(root, ['--keep', '1', '--apply']);
+    run(root, ['--keep', '2', '--apply']);
     for (const n of odd) expect(has(root, n)).toBe(true);
     expect(has(root, sha(1))).toBe(false);
   });
@@ -132,9 +134,11 @@ describe('prune-deploy-work.sh', () => {
     } catch {
       return; // no symlink right on this machine; the Linux CI run covers it
     }
-    utimesSync(join(root, 'work', sha(1)), 1_600_000_000, 1_600_000_000);
+    // Both are the oldest entries, so a missing guard would put them in the removed set.
+    lutimesSync(link, 1_500_000_000, 1_500_000_000);
     writeFileSync(join(root, 'work', 'c'.repeat(40)), 'a file');
-    run(root, ['--keep', '0', '--apply']);
+    utimesSync(join(root, 'work', 'c'.repeat(40)), 1_500_000_000, 1_500_000_000);
+    run(root, ['--keep', '2', '--apply']);
     expect(has(root, 'b'.repeat(40))).toBe(true);
     expect(has(root, 'c'.repeat(40))).toBe(true);
     expect(existsSync(join(target, 'precious'))).toBe(true);
@@ -143,23 +147,41 @@ describe('prune-deploy-work.sh', () => {
   it.each([
     ['missing', null],
     ['empty', ''],
-    ['a bare commit with no manifest line', sha(8)],
-    ['a short commit', manifest('abc123')],
-    ['an uppercase commit', manifest(sha(8).toUpperCase().replace(/0/g, 'A'))],
-    ['two commits on the line', `${HEAD}${sha(8)}. Commit ${sha(7)}.`],
-    ['no trailing period', `${HEAD}${sha(8)}`],
+    ['a short commit', 'abc123'],
+    ['an uppercase commit', sha(8).toUpperCase().replace(/0/g, 'A')],
+    ['two words', `${sha(8)} ${sha(7)}`],
   ])('an unreadable live commit (%s) removes nothing and exits 1', (_label, live) => {
     const root = fixture(8, live);
-    const r = run(root, ['--keep', '1', '--apply']);
+    const r = run(root, ['--keep', '2', '--apply']);
     expect(r.code).toBe(1);
     expect(r.out).not.toContain('removed');
     for (let i = 1; i <= 8; i++) expect(has(root, sha(i))).toBe(true);
   });
 
+  it('tolerates a CRLF release.commit', () => {
+    const root = fixture(8, `${sha(1)}${String.fromCharCode(13)}`);
+    run(root, ['--keep', '2', '--apply']);
+    expect(has(root, sha(1))).toBe(true);
+    expect(has(root, sha(2))).toBe(false);
+  });
+
+  it('also keeps the commit named by an existing staged manifest', () => {
+    const root = fixture(8, sha(8), manifest(sha(1)));
+    run(root, ['--keep', '2', '--apply']);
+    expect(has(root, sha(1))).toBe(true);
+    expect(has(root, sha(2))).toBe(false);
+  });
+
+  it('a malformed staged manifest is ignored; release.commit alone decides', () => {
+    const root = fixture(8, sha(8), 'garbage');
+    expect(run(root, ['--keep', '2', '--apply']).code).toBe(0);
+    expect(has(root, sha(1))).toBe(false);
+  });
+
   it('a held colo-cd lock directory removes nothing and exits 1', () => {
     const root = fixture(8);
     mkdirSync(join(root, 'state', 'cd.lock'));
-    const r = run(root, ['--keep', '1', '--apply']);
+    const r = run(root, ['--keep', '2', '--apply']);
     expect(r.code).toBe(1);
     expect(has(root, sha(1))).toBe(true);
     expect(existsSync(join(root, 'state', 'cd.lock'))).toBe(true);
@@ -189,7 +211,7 @@ describe('prune-deploy-work.sh', () => {
 
   it('a busy deploy lock removes nothing and exits 1', () => {
     const root = fixture(8);
-    const r = run(root, ['--keep', '1', '--apply'], { FAKE_FLOCK_RC: '1' });
+    const r = run(root, ['--keep', '2', '--apply'], { FAKE_FLOCK_RC: '1' });
     expect(r.code).toBe(1);
     expect(has(root, sha(1))).toBe(true);
   });
@@ -201,4 +223,62 @@ describe('prune-deploy-work.sh', () => {
     }
     expect(has(root, sha(1))).toBe(true);
   });
+
+  it.each(['0', '1', '1001', '99999999999999999999', '00005000'])(
+    '--keep %s refuses and removes nothing',
+    (n) => {
+      const root = fixture(8);
+      expect(run(root, ['--keep', n, '--apply']).code).toBe(1);
+      for (let i = 1; i <= 8; i++) expect(has(root, sha(i))).toBe(true);
+    },
+  );
+
+  // A fatal signal needs a POSIX kill; on Windows child.kill is a hard terminate, so the Linux CI run covers this.
+  it.skipIf(process.platform === 'win32')(
+    'a TERM during --apply releases the colo-cd lock and removes nothing',
+    () => {
+      const root = fixture(8);
+      // An ls stand-in that marks that the lock is held, waits, then lists.
+      writeFileSync(
+        join(root, 'shim', 'ls'),
+        `#!/bin/sh
+: > "${p(root)}/ls.started"
+sleep 3
+exec "${p(dirname(SH))}/ls" "$@"
+`,
+        { mode: 0o755 },
+      );
+      const child = spawn(SH, [p(SCRIPT), '--keep', '2', '--apply'], {
+        env: {
+          ...process.env,
+          GELDAR_DEPLOY_ROOT: p(root),
+          GELDAR_STATE_DIR: p(join(root, 'state')),
+          PATH: [p(join(root, 'shim')), dirname(SH), process.env.PATH ?? ''].join(delimiter),
+        },
+      });
+      return new Promise<void>((resolve, reject) => {
+        const t0 = Date.now();
+        const poll = setInterval(() => {
+          if (existsSync(join(root, 'ls.started'))) {
+            clearInterval(poll);
+            child.kill('SIGTERM');
+          } else if (Date.now() - t0 > 20_000) {
+            clearInterval(poll);
+            child.kill('SIGKILL');
+            reject(new Error('the script never reached the listing'));
+          }
+        }, 50);
+        child.on('exit', () => {
+          clearInterval(poll);
+          try {
+            expect(existsSync(join(root, 'state', 'cd.lock'))).toBe(false);
+            expect(has(root, sha(1))).toBe(true);
+            resolve();
+          } catch (e) {
+            reject(e);
+          }
+        });
+      });
+    },
+  );
 });

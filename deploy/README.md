@@ -56,7 +56,7 @@ volumes and networks. No script runs `down`, and no script removes a volume.
   daemon (the docker group, or root).
 - Free disk on the filesystem that holds the repo checkout: at least `GELDAR_MIN_FREE_KB` KiB (default `10485760`,
   which is 10 GiB). `colo-up.sh` refuses below it.
-- Free inodes on the same filesystem: at least `GELDAR_MIN_FREE_INODES` (default `100000`). `colo-up.sh` refuses below it,
+- Free inodes: at least `GELDAR_MIN_FREE_INODES` (default `100000`), on the checkout, on `GELDAR_DEPLOY_VOLUME` (default `/var/lib/geldar-deploy`) and on Docker's data root. `colo-up.sh` and `colo-cd.sh` check this before their first write, and refuse below it,
   naming `deploy/genesis/prune-deploy-work.sh`. A filesystem that reports no inode count is skipped.
 - Secret files in the secrets directory (`GELDAR_SECRETS_DIR`, default `/etc/geldar-colo/secrets`):
   - the directory is root-only (`gen-secrets.sh` sets mode `0700`);

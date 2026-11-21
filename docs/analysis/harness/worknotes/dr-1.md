@@ -23,6 +23,36 @@ Not verified on the node: that the image references `docker images --digests` pr
 
 `deploy/common.sh`, `deploy/genesis/*`, `deploy/test/*`, `deploy/README.md` and `docs/**` are all outside the colo-images `paths:` filter, so merging starts no image build. Caution: `colo-deploy` runs the repo's `deploy/common.sh` on the next deploy, so the inode floor takes effect then; the node has about 12% inodes used, far above the floor.
 
+## Review fixes (second commit set)
+
+Thresholds, defaults: free blocks at least `GELDAR_MIN_FREE_KB` = 10485760 KiB (10 GiB); free inodes at least `GELDAR_MIN_FREE_INODES` = 100000. After the operator's cleanup the node was at about 12% inode use (610,800 inodes on the volume), so roughly 540,000 free: well above the floor. A deploy checkout is about 4,400 inodes. CD is live, so this lands on the very next deploy: `deploy/common.sh` is read from the repo checkout each run.
+
+1. **Where the floor looks, and when.** `space_floors` checks blocks (`df -Pk`) and inodes (`df -Pi`) on three paths: the repo checkout (`$ROOT`, on the nvme mount), the deploy volume (`GELDAR_DEPLOY_VOLUME`, default `/var/lib/geldar-deploy`) and Docker's data root (`docker info --format '{{.DockerRootDir}}'`). A missing path, or a `docker info` that fails or prints nothing, is skipped with a clear `colo: space check skipped for ...` line, never a pass for another filesystem; a filesystem that reports no inode count skips only its inode half. `colo-up.sh` and `colo-cd.sh` set `COLO_SPACE_FLOOR_FIRST=1` before sourcing `common.sh`, so the floors run BEFORE the work-directory `mktemp -d` (which now also dies with a message naming the cause). The other scripts that call `check_prereqs` get the same floors there, once per process.
+2. **Workflow step.** `.github/workflows/colo-deploy.yml`, "write the release manifest into the inbox": the same check (deploy volume = the inbox's filesystem, and Docker's data root) runs before the `mktemp`, failing with `out of INODES on ...` or `out of BLOCKS on ...`. That job has no repo checkout at that point (no `uses:` at all in the file), so `common.sh` cannot be sourced; the logic is repeated inline with the same variable names and defaults. `colo-deploy.yml` is not on the colo-images `paths:` filter (the filter lists `colo-images.yml`, not this file); `deploy/**` and `docs/**` are not either.
+3. **Live commit source (review item 2).** There is no evidence in the repo of `staged/release.env`. The live commit is now `$GELDAR_STATE_DIR/release.commit` (default `/var/lib/geldar-colo/release.commit`): `colo-cd.sh` reads it at line 310 ("the commit the node runs") and writes it on success at line 423. It must be 40 lowercase hex (a trailing CR is tolerated), or the prune refuses everything. If `<root>/staged/release.env` also exists and its first line is the workflow's manifest comment, that commit is kept as well; a missing or malformed staged file is ignored. Node step still open: confirm on the node that `release.commit` holds the full sha (a dry run prints what would go).
+4. Both prune scripts: `trap 'exit 1' HUP INT TERM` (as `colo-cd.sh` line 77) so a dropped ssh or Ctrl-C releases `cd.lock`. `--keep` is a whole number from 2 to 1000 (so an in-flight deploy's newest checkout is never removed, and a 20-digit value refuses instead of overflowing). SC2045 removed by feeding the loop from a here-document. `prune-deploy-images.sh` reads previous manifests with CRLF, quotes and tagged references, and lists each image row once.
+
+### Revert-check evidence for the review fixes (mutation applied, tests run, file restored)
+
+| Mutation | Failing tests |
+|---|---|
+| `COLO_SPACE_FLOOR_FIRST=1` removed from `colo-up.sh` | `the floor fires before the first write: nothing calls mktemp when the deploy volume is out of inodes` |
+| deploy-volume floor removed from `space_floors` | `refuses on inodes of the deploy volume ...`, `refuses on blocks of the deploy volume ...`, `a missing deploy volume or a silent docker info is skipped ...` |
+| docker-root floor removed | `refuses on inodes of the docker data root ...` |
+| skip message for a silent `docker info` removed | `a missing deploy volume or a silent docker info is skipped with a message ...` |
+| `sf_total -gt 0` guard removed | `a filesystem that reports no inode count (total 0) is not refused on inodes` |
+| workflow: inbox floor removed | `refuses an inbox volume out of inodes ...`, `... out of blocks ...` |
+| workflow: docker-root floor removed | `refuses Docker's data root out of inodes, before any mktemp` (and the control, which the broken block also fails) |
+| workflow: inode comparison neutered | the inbox and docker-root inode tests |
+| `--keep` bounds removed | `--keep 0`, `1`, `1001`, `00005000` refuse (four cases) |
+| staged-manifest second keep removed | `also keeps the commit named by an existing staged manifest` |
+| CR strip removed from `release.commit` | `tolerates a CRLF release.commit` |
+| image prune: `grep -x` dropped | `a repository whose name is only a substring of a kept repository is not touched` |
+| image prune: CR/quote strip dropped | `reads a previous manifest with CRLF, quotes and tagged references` |
+| image prune: `sort -u` dropped | `a duplicated image row is reported once` |
+
+Not verified locally: the two `a TERM during --apply releases the colo-cd lock` tests (one per prune script) are skipped on Windows, where a child kill is a hard terminate; Linux CI is the first real run. The `trap` mutation is therefore unproven here. The 9 `colo-up` tests of `colo-deploy.test.ts` and 5 of `colo-fetch-manifest.test.ts` fail on this desktop with and without these changes (environment); Linux CI is the verdict.
+
 ## Inode prune (option A), carried over
 
 ## What changed
@@ -34,7 +64,7 @@ Not verified on the node: that the image references `docker images --digests` pr
 
 ## Rules as built
 
-The live commit is read from the first line of `staged/release.env`, which the colo-images workflow writes as `# Release manifest for the Colo node (decision 0084). Commit <40 hex>.` (`.github/workflows/colo-images.yml`, the release.env step). A strict match on that shape; a bare sha, a short or uppercase sha, two commits on the line, a missing final period, or no file all refuse with nothing removed.
+SUPERSEDED by "Review fixes" above: the live commit now comes from `release.commit`; the staged manifest line is an optional second keep.
 
 Candidates are direct children of `<root>/work` that are real directories (not symlinks) named by exactly 40 lowercase hex. The newest N by modification time are kept, and the commit on the first line of `<root>/staged/release.env` (only that line is read; it must be 40 hex or nothing is removed, exit 1). Two locks, both held for the run: the deploy channel's `<root>/channel.lock` (`flock -n`; busy or no `flock` refuses) and the directory lock `deploy/colo-cd.sh` uses, `$GELDAR_STATE_DIR/cd.lock` (default `/var/lib/geldar-colo`, taken with the same atomic `mkdir`, released on exit; a held lock, a missing state directory or a failed mkdir refuses). Output is names only. No `docker`.
 
@@ -73,5 +103,5 @@ Equivalent survivor: removing the `[ -d "$STATE_DIR" ]` check changes only the m
 
 ## Open items for the node step (not done)
 
-- Confirm on the node with a dry run that `staged/release.env` has the workflow's first line (an operator step).
+- Confirm on the node with a dry run that `release.commit` in the state directory holds the full sha (an operator step).
 - OPEN: the root-owned entrypoint `/usr/local/libexec/geldar-deploy/run` is untracked and may hold a lock of its own; the script takes the channel lock and the colo-cd lock only.

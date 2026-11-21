@@ -1,5 +1,5 @@
 // Tests for deploy/genesis/prune-deploy-images.sh against a docker stand-in that lists images from a file and records `image rm` calls.
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
@@ -114,5 +114,65 @@ describe('prune-deploy-images.sh', () => {
     run(root, ['--apply']);
     expect(existsSync(join(root, 'state', 'cd.lock'))).toBe(false);
     expect(run(root, ['--force']).code).toBe(1);
+  });
+
+  it('a repository whose name is only a substring of a kept repository is not touched', () => {
+    const longer = `registry.example.invalid/geldar/body-extra@${d('3')}`;
+    const root = fixture([body('1'), longer], env(longer), null);
+    const r = run(root, ['--apply']);
+    expect(r.calls).not.toContain('image rm');
+  });
+
+  it('reads a previous manifest with CRLF, quotes and tagged references', () => {
+    const prev = `GELDAR_X_IMAGE="registry.example.invalid/geldar/body:1.2@${d('2')}"\r\nGELDAR_Y_IMAGE='${mind('1')}'\r\n`;
+    const root = fixture(all, env(body('3'), mind('2')), prev);
+    const r = run(root);
+    expect(r.out).toBe(`would remove ${body('1')}\n`);
+  });
+
+  it('a duplicated image row is reported once', () => {
+    const root = fixture([body('1'), body('1'), body('3')], env(body('3')), null);
+    expect(run(root).out).toBe(`would remove ${body('1')}\n`);
+  });
+
+  // A fatal signal needs a POSIX kill; on Windows child.kill is a hard terminate, so the Linux CI run covers this.
+  it.skipIf(process.platform === 'win32')('a TERM during --apply releases the colo-cd lock', () => {
+    const root = fixture(all, env(body('3')), null);
+    writeFileSync(
+      join(root, 'bin', 'docker'),
+      `#!/bin/sh\n: > "${p(root)}/docker.started"\nsleep 3\ncat "$DOCKER_IMAGES"\n`,
+      { mode: 0o755 },
+    );
+    const child = spawn(SH, [p(SCRIPT), '--apply'], {
+      env: {
+        ...process.env,
+        GELDAR_RELEASE_FILE: p(join(root, 'release.env')),
+        GELDAR_STATE_DIR: p(join(root, 'state')),
+        DOCKER_IMAGES: p(join(root, 'images.txt')),
+        PATH: [p(join(root, 'bin')), dirname(SH), process.env.PATH ?? ''].join(delimiter),
+      },
+    });
+    return new Promise<void>((resolve, reject) => {
+      const t0 = Date.now();
+      const poll = setInterval(() => {
+        if (existsSync(join(root, 'docker.started'))) {
+          clearInterval(poll);
+          child.kill('SIGTERM');
+        } else if (Date.now() - t0 > 20_000) {
+          clearInterval(poll);
+          child.kill('SIGKILL');
+          reject(new Error('the script never reached docker'));
+        }
+      }, 50);
+      child.on('exit', () => {
+        clearInterval(poll);
+        try {
+          expect(existsSync(join(root, 'state', 'cd.lock'))).toBe(false);
+          resolve();
+        } catch (e) {
+          reject(e);
+        }
+      });
+    });
   });
 });

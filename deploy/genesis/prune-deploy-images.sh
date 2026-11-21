@@ -28,10 +28,13 @@ for a in "$@"; do
 done
 
 [ -f "$RELEASE_FILE" ] && [ -r "$RELEASE_FILE" ] || fail "the current release manifest is not readable; nothing removed"
-# KEY=VALUE lines named *_IMAGE hold name@sha256:<64 hex>; nothing is sourced.
+# KEY=VALUE lines named *_IMAGE hold name@sha256:<64 hex>; nothing is sourced. CR and quotes are dropped, and a tag
+# (name:tag@sha256:...) is removed, because docker lists the repository without it.
 refs() {
   [ -f "$1" ] || return 0
-  sed -n 's/^[A-Z0-9_]*_IMAGE=\([^[:space:]]*@sha256:[0-9a-f]\{64\}\)$/\1/p' "$1"
+  tr -d "\\r\"'" <"$1" |
+    sed -n 's/^[A-Z0-9_]*_IMAGE=\([^[:space:]]*@sha256:[0-9a-f]\{64\}\)$/\1/p' |
+    sed 's#:[^/@]*@#@#'
 }
 keep=$(refs "$RELEASE_FILE"; refs "$STATE_DIR/previous.env")
 [ -n "$(refs "$RELEASE_FILE")" ] || fail "the current release manifest lists no images; nothing removed"
@@ -40,9 +43,11 @@ repos=$(printf '%s\n' "$keep" | sed 's/@.*//' | sort -u)
 [ -d "$STATE_DIR" ] || fail "no state directory"
 mkdir "$STATE_DIR/cd.lock" 2>/dev/null || fail "the colo-cd lock is held or unavailable; nothing removed"
 trap 'rmdir "$STATE_DIR/cd.lock" 2>/dev/null || true' EXIT
+# A signal ends the run through exit, so the EXIT trap releases the lock (as deploy/colo-cd.sh does).
+trap 'exit 1' HUP INT TERM
 
 all=$(docker images --digests --no-trunc --format '{{.Repository}}@{{.Digest}}') || fail "cannot list docker images; nothing removed"
-printf '%s\n' "$all" | while IFS= read -r ref; do
+printf '%s\n' "$all" | sort -u | while IFS= read -r ref; do
   repo=${ref%%@*}
   case $ref in *@sha256:*) ;; *) continue ;; esac
   printf '%s\n' "$repos" | grep -qxF -- "$repo" || continue
