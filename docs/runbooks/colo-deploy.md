@@ -158,6 +158,28 @@ A compose-only or env-only change restarts nothing. To apply it, recreate those 
 deploy do it. If an upstream change to `compose/colo.yml` drops the pass-through lines, telemetry turns off for `eventsink`
 and `geldar-mcp` without any error, so keep them.
 
+## Body metrics on the player hosts
+
+A player host (`geldar-colo-players-host-<player-id>`) pushes Body metrics only when `GELDAR_TELEMETRY_URL` is set in the
+environment of the compose command that starts it. Unset or blank, the host starts no timer, sends nothing, and reports nothing.
+
+- Start (`deploy/colo-admin.sh player-start <id>`): the variable must be exported in the shell that runs the script. The script
+  sources no env file (`common.sh` only reads its own settings), so it takes the value from its caller. `compose/colo.yml` lists
+  it for `players-host` with no value, so compose passes it through from that environment.
+- Refresh (the CD's per-player loop in `colo-cd.sh`): `colo-cd.sh` sources the deploy env file (`COLO_CD_ENV_FILE`, default
+  `/home/claude/colo-env.sh`) before it runs `colo-admin.sh`, so the file must export the variable. `state/node.env` is not the
+  place: it holds only the trusted proxy lists and is never sourced.
+- Not checked on a node: the `colo.yml` comment says `compose run` may not apply the pass-through key. Run the check below after
+  the first start to see whether it did.
+- The value is the gateway's in-network OTLP/HTTP base URL, written in the node's deploy env file. Never put it in the repo,
+  a message, a log or a PR. Do not copy it anywhere else.
+- A refresh that runs without the variable exported restarts each stale host with telemetry off. `player-start` leaves a running
+  host alone, so to turn telemetry on for a running host, run `player-stop <id>` and then `player-start <id>`.
+- Check after a start (read-only; the value is never printed):
+  `docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' geldar-colo-players-host-<id> | grep -c '^GELDAR_TELEMETRY_URL=.'`
+  prints `1` when the host has the variable set and non-empty, `0` when it does not. Then, in SigNoz, Body metric series with a
+  `service.instance.id` for that host appear after its first push. No series means the host runs with telemetry off.
+
 ## Rollback
 
 Two ways, and the first is the usual one:
