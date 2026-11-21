@@ -29,3 +29,8 @@ The body-api v11 file and its sha pins are AN-45b ("OWNER APPROVAL REQUIRED": wo
 ## Checks
 
 `tsc --noEmit` 0 for golem, player-core, animus. Tests: `golem/src/body/programs`, `player-core/src/validate`, `animus/src/validate` 283 passed. Whole-repo `biome ci`, `check:repo`, `git diff --check`: see the report.
+
+## Packet-silent decisions (for the reviewer)
+
+1. **Route points use `checkPosition`.** The packet says a `route` accepts "an array of `min` to `max` objects `{x, y, z}` with integer values". It does not say which range each coordinate may have. `checkPosition` (the check a `travel` target gets) adds: y from -64 to 320, x and z inside the world border plus the 16-block margin, and no unknown keys. The contract schema allows x and z up to 30,000,000, so the validator is deliberately stricter than the schema for a route: a point outside the shard border is refused as `out_of_bounds`. The drift test compares counts, kinds and required flags only, not the coordinate range.
+2. **The animus test change** (above) is scoped, not loosened: the two tests still assert exact equality of the table and the allow-list, less the three named programs, and a new test pins that the three are in no table.
