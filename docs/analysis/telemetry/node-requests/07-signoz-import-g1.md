@@ -1,0 +1,194 @@
+# Node request 07: import the Geldar dashboards and alert rules into SigNoz (G1)
+
+Status: DRAFT for the owner and the orchestrator geldar-69. Nothing here has been run. Nothing in this request runs on the node
+except read-only checks; the import itself is API calls made from the operator's machine through the SSH tunnel.
+Format: the step layout of `docs/analysis/telemetry/node-requests/01-gateway-restage-and-clickhouse-recreate.md`.
+Facts come from `docs/runbooks/signoz-import.md` and `deploy/signoz/import.sh`. Labels: **UNVERIFIED** = not checked
+against the repo or the node; `[UNV]` marks one command or fact inside a step that has no repo source.
+No URL, address, token, password or account name is written in this file. Placeholders: `<node ssh host alias>`,
+`<OP_TMP>` (the operator temp directory, section 2), `<merge>` (the commit that holds `deploy/signoz/`), `<ts>` (UTC timestamp).
+
+Owner approval needed: yes. Each step below needs a fresh direct owner OK with a window from the orchestrator geldar-69
+before it runs. Any step that is not named in that OK does not run.
+
+## Rules for the operator
+
+1. Every compose or deploy-script command carries `GELDAR_SERVICE_UID=1001` (under sudo write `sudo env GELDAR_SERVICE_UID=1001 ...`).
+2. Any compose command on the node carries the explicit deploy environment from the colo env files and always `up -d --no-deps <service>`.
+3. Prove that the render matches the RUNNING container before restarting anything (docker compose config diff against docker inspect of the running container).
+4. NOTHING may be written outside the named paths (list them explicitly in each document: the stage directory, the secrets file, a temp dir that is removed).
+5. No scratch files.
+6. Never run anything that stops, removes or recreates containers or networks other than the one named.
+7. No secrets, account names or IPs in the document.
+8. Each step needs a fresh direct owner OK with a window from the orchestrator geldar-69 before it runs.
+
+This request runs no compose command. Rule 1 still applies to the import script, which is a deploy script (`deploy/signoz/import.sh`).
+
+## 1. What changes
+
+1. SigNoz (`geldar-signoz`, version v0.148.1 per `docs/runbooks/signoz-import.md`) gets two dashboards: "Geldar Paper" (`deploy/signoz/paper-dashboard.json`)
+   and "Geldar NeoForge" (`deploy/signoz/neoforge-dashboard.json`). A dashboard is matched by its title.
+2. SigNoz gets the alert rules of four files: `paper-alerts-capacity.json`, `paper-alerts-server.json`,
+   `neoforge-alerts-capacity.json`, `neoforge-alerts-server.json`. A rule is matched by its alert name (`.rules[].alert`).
+   Every rule names the notification channel `geldar-owner-channel` in `preferredChannels`.
+3. Running the import again updates what is there. It does not duplicate (runbook).
+
+Nothing else changes: no container is started, stopped, recreated or restarted; no compose file, no config and no data directory is touched.
+
+## 2. Named paths (the only places anything is written)
+
+Operator machine (outside the repo checkout; the import script refuses a token file inside it):
+
+- `<OP_TMP>`: one new, empty directory created at the start and removed at the end (section 10). It holds only:
+  `login.json` (the login body, written by the owner, deleted after the token is written), `token.txt` (the token, first line only),
+  `hdr.txt` (the `Authorization` header line for the list calls), and the list copies `dashboards-before.json`,
+  `rules-before.json`, `dashboards-after.json`, `rules-after.json`.
+
+Repo checkout: read only (the import script and the alert and dashboard files are read from it; nothing is written).
+
+Node: nothing is written. The node receives read-only verbs only (section 5, step 4 and section 8).
+
+## 3. Blast radius
+
+- SigNoz metadata only: two dashboard rows and the rule rows for the four files. The brief says these live in SigNoz's own
+  ClickHouse database. **UNVERIFIED**: where v0.148.1 stores dashboards and rules.
+- No telemetry data is written. The dashboards and rules read metrics; they do not act in the world (runbook section 4).
+- No restart of `geldar-signoz`, `geldar-signoz-otelcol`, `geldar-ch`, `geldar-gateway`, Paper, NeoForge, any Body, Mind or other tenant.
+- No effect on Paper or Body ticks. The API calls are small; the load they put on SigNoz is **UNVERIFIED** (not measured).
+- Rules that fire send to `geldar-owner-channel`. Its target is the owner's and is never written here. A rule that is `firing` on
+  import would send a real notification; the owner decides whether to import while the shard runs (section 11, decision 3).
+
+## 4. Caps and window
+
+- No cap changes (no container is changed).
+- Window: owner-chosen, 30 minutes reserved, given by geldar-69 with the step OK. No Paper, NeoForge or Body restart in the same window.
+- The notification channel (section 5) is created in the same window or before it.
+
+## 5. Pre-checks (read-only)
+
+1. Node, read-only. The output goes to `<OP_TMP>` on the operator machine, not onto the node:
+   ```
+   docker inspect -f '{{.State.Health.Status}} {{.RestartCount}} {{.Config.Image}}' geldar-signoz   # [UNV] expect healthy, restarts 0, image of v0.148.1
+   docker ps --format '{{.Names}} {{.Status}}'                                                       # save the list
+   ```
+2. The notification channel exists in the SigNoz UI (section 6 is the prerequisite; this checks it before the dry run).
+3. Open the SSH tunnel to the SigNoz API port named in `docs/runbooks/signoz-import.md` section 2, in its own terminal, and keep it open:
+   `ssh -N -L <local port>:<loopback host>:<API port> <node ssh host alias>`, where the loopback host is the node's own loopback
+   (**UNVERIFIED** for this host). Set `API` to the local end of the tunnel in the form that `import.sh --url` accepts (the runbook gives the form). Not written here.
+4. Token. Get it the way the runbook says (its section 2 and the retention window step 3 in `deploy/telemetry/README.md`, verified there
+   on a local run, round 9):
+   - `GET /api/v2/sessions/context` for the organisation id.
+   - `POST /api/v2/sessions/email_password` with the body in `<OP_TMP>/login.json` (email, password and the organisation id). The owner
+     types the account values into that file; nothing is printed, and the file is deleted once the token is written.
+   - Take `data.accessToken` from the answer. Write only the token, on its first line, to `<OP_TMP>/token.txt`, with `umask 077`.
+   - Write `Authorization: Bearer <token>` to `<OP_TMP>/hdr.txt`, the same way. Never put the token in a command line or a chat.
+5. Repo checkout at `<merge>`: `git -C <repo> rev-parse <merge>` matches the merge that holds `deploy/signoz/`. Read `deploy/signoz/` file names
+   (six files: two dashboards, four alert files).
+
+Stop if `geldar-signoz` is not `healthy`, its restart count is not 0, or the channel is missing.
+
+## 6. Notification channel prerequisite (owner decides the window)
+
+- The four alert files name `geldar-owner-channel` in `preferredChannels`. The import script imports rules, not channels. A rule that names a
+  missing channel is refused or has no route (runbook section 1).
+- Create the channel in the SigNoz UI with exactly that name. **UNVERIFIED**: its type and receiver settings. The receiver target is the
+  owner's and is entered by the owner in the UI; it is never written in this file, the repo or a log.
+- Check it exists in the UI (read-only) before section 7.
+
+## 7. Dry run, list output, then the real run
+
+Run from the repo checkout at `<merge>`, on the operator machine:
+
+1. Dry run (sends nothing and reads no token):
+   ```
+   GELDAR_SERVICE_UID=1001 deploy/signoz/import.sh --dry-run
+   ```
+   Expect one `dry-run:` line per dashboard file (2) and one per alert file (4), and the line `dry run against ...: nothing will be sent`.
+   Any other output stops the step.
+2. List what is there now (the list calls are the UNVERIFIED shape check):
+   ```
+   curl -sS -H @<OP_TMP>/hdr.txt "$API/api/v1/dashboards" > <OP_TMP>/dashboards-before.json
+   curl -sS -H @<OP_TMP>/hdr.txt "$API/api/v1/rules" > <OP_TMP>/rules-before.json
+   ```
+   `$API` is the tunnel base URL (step 5.3). **UNVERIFIED** routes and shapes (runbook section 1: from SigNoz source knowledge, not the repo).
+3. Read the shape before the real run. Record the answers in the report (not in the repo):
+   - dashboards: top-level keys; `.data` is an array; each item has `.id` and `.data.title`; how many items have the titles
+     "Geldar Paper" or "Geldar NeoForge" (`jq -r '.data[]?.data.title'`).
+   - rules: whether `.data` is an array or an object with `.rules`; each item has `.id` and `.alert`; how many have a Geldar alert name.
+   - If a list call returns another shape, or is an error, stop. The script fails at its jq step and sends nothing more. The fix is a
+     new packet that changes the script and its test together (runbook section 1), not this request.
+4. The real run, only after the owner OK for this step:
+   ```
+   GELDAR_SERVICE_UID=1001 deploy/signoz/import.sh --token-file <OP_TMP>/token.txt
+   ```
+   Expect `created` or `updated` per dashboard and per rule, then `done: 2 dashboard file(s), 4 alert file(s)`. Any `error` line stops the step; do not re-run it blindly.
+
+## 8. Verification (after the real run)
+
+1. Lists after the run (`dashboards-after.json`, `rules-after.json`): "Geldar Paper" and "Geldar NeoForge" each appear exactly once.
+   The script refuses to update when a title or alert name appears twice, so a second match is a finding.
+2. Each alert name in the four alert files appears exactly once in `rules-after.json`. The names come from the files:
+   `jq -r '.rules[].alert' deploy/signoz/*-alerts-*.json`.
+3. In the SigNoz UI, through the tunnel, open "Geldar Paper" and "Geldar NeoForge". While the shard runs, panels with a live metric
+   (for example `geldar_tps`, `geldar_tick_lag_ms`, `geldar_players_online`, runbook section 4) show points for the last hour.
+   A panel empty on a stopped shard is expected; a panel empty while the shard runs is a finding.
+4. The rules list shows each Geldar rule once with a state. `inactive` is normal. A `firing` rule is reported to the owner at once.
+5. Second run, only if the owner OK covers it: `deploy/signoz/import.sh --token-file <OP_TMP>/token.txt` prints `updated` lines only and
+   no `created` line, and the lists keep the same counts. (This shows idempotence; it writes the same content again.)
+6. Node, read-only: `docker ps --format '{{.Names}} {{.Status}}'` equals the list saved in section 5. The start times of
+   `geldar-signoz`, `geldar-signoz-otelcol`, `geldar-ch`, `geldar-ch-keeper`, `geldar-gateway` and the Paper and NeoForge containers are
+   unchanged. [UNV: the inspect format; use `docker inspect -f '{{.Name}} {{.State.StartedAt}}'`.]
+
+Any failed check stops the step, and the owner is told the check number.
+
+## 9. Rollback (delete by title and alert name)
+
+Rollback removes what the import created. It does not restore an earlier version of an updated dashboard or rule, unless the
+pre-run copy is put back (step 3 below). Rollback needs the owner's OK in the same way.
+
+1. From `dashboards-before.json` and `rules-before.json` (and the after copies), list the ids of the items that were NOT there before the import:
+   the titles "Geldar Paper" and "Geldar NeoForge", and the alert names of the four files, found in the after copies but not the before copies.
+2. Delete each of those created items: `curl -sS -X DELETE -H @<OP_TMP>/hdr.txt "$API/api/v1/dashboards/<id>"` and
+   `curl -sS -X DELETE -H @<OP_TMP>/hdr.txt "$API/api/v1/rules/<id>"`. **UNVERIFIED** route and method (runbook section 5).
+3. For an item that was UPDATED (it was in the before copy): put back the body from the before copy with `PUT`. **UNVERIFIED**: whether
+   the list call returns the full dashboard or rule body. If it does not, the rollback of an update cannot be done from this file; say so to the owner.
+4. List again. No created title or alert name remains; updated ones show the before content.
+5. Rules deleted by this rollback lose their history in SigNoz. That is an owner decision (section 11).
+
+## 10. Clean up
+
+- Remove `<OP_TMP>` with all its files (`Remove-Item -Recurse -Force` or `rm -rf` on that one directory only), once the report is written.
+- Remove `login.json` as soon as `token.txt` exists (step 4 of section 5).
+- Close the tunnel.
+- The token is not revoked by this step. **UNVERIFIED**: whether a token can be revoked through the API; the owner decides.
+
+## 11. Must not touch
+
+- Every container on the node (section 8 step 6), the SigNoz data directory, ClickHouse data and users, the SigNoz collector and its config.
+- The notification channels other than `geldar-owner-channel`, and the alert rules of other tenants.
+- Paper, NeoForge, Velocity, Body and Mind containers and their config. Nothing in this request restarts them.
+- The repo: no file is edited. `docs/analysis/telemetry/RESUME.md` is not touched by this request.
+
+## 12. Owner decisions
+
+1. Go or no-go, and the window (geldar-69 gives the OK).
+2. The notification channel: its type and receiver, entered by the owner in the UI.
+3. Import while the shard runs (rules may fire at once) or while it is stopped (panels empty; rules inactive).
+4. Accept the UNVERIFIED routes and list shapes for this run (the first real run is the check on them).
+5. Whether a rollback may delete rules and so their history.
+
+## 13. UNVERIFIED list
+
+- The dashboard and rule routes, their methods, the list shapes and the delete and update routes (runbook section 1 and 5; `deploy/signoz/import.sh`).
+- Where SigNoz v0.148.1 stores dashboards and rules (the brief says the SigNoz ClickHouse database; not checked).
+- The notification channel type and receiver settings for `geldar-owner-channel`.
+- That the import adds no measurable load on SigNoz or the Paper and NeoForge ticks.
+- Whether a token can be revoked through the API.
+- The `docker inspect` format strings in sections 5 and 8.
+- The local tunnel port choice and the `-L` form on the operator machine.
+
+## 14. Report-back (the orchestrator records it; this request edits no repo file)
+
+UTC start and end; the dry-run output; the shapes found in section 7 step 3; the import output lines; the result of each check in section 8;
+the rule and dashboard count before and after; whether the second run was done; the rollback used, if any; and the node's container list
+before and after (names and start times only).
