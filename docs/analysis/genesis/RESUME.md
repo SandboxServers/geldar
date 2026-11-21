@@ -1,40 +1,40 @@
 # Genesis resume
 
-Read this first, then [README.md](README.md) and [plan.md](plan.md). Keep it under 40 lines; rewrite at each wave boundary. Card states are in the Ledger at the top of [packets.md](packets.md).
+Read this first, then [README.md](README.md) and [plan.md](plan.md). Card states are in the Ledger at the top of [packets.md](packets.md). Follow-ups: [followups.md](followups.md). Keep this under 40 lines; rewrite at each wave boundary.
 
 ## Where it is (2026-11-20)
 
-- Waves G0 and G1 are merged except G0-06 (satisfied by [0240](../../decisions/0240-genesis-exit-is-the-scorched-earth-drill.md)). Wave G3 has G3-01 and G3-02 merged.
+- Merged: G0 and G1 except the workflow packets (GE-01w1, GE-01w2, GE-02w1 to GE-02w4, not started); G2-01, G2-04, G2-06; G3-01, G3-02, G3-04; GE-01a, GE-01b, GE-02a, GE-02b, GE-02c, GE-02e, GE-02f.
+- Held: GE-01c (branch `phase1/gn-ge-01c`, a03c9f9d, not pushed; geldar-69 holds it until after the next deploy). GE-02d waits for GE-02w1.
 - Exit criterion ([0240](../../decisions/0240-genesis-exit-is-the-scorched-earth-drill.md)): the scorched-earth drill. Delete every Geldar-owned host, VM, volume, container, network, secret, DNS record, Entra app and runner; keep only GitHub and the owner's bootstrap credential; regenerate from pipelines; verify and the smoke suite pass; a ranger can join.
-- Scope: Geldar-owned things only. Shared host services (ClickHouse, SigNoz, the telemetry gateway, GitHub runner stacks, other projects) are prerequisites, not stamped (owner, 2026-11-18).
-- Decisions 2026-11-20: [0241](../../decisions/0241-genesis-bootstrap-scope-cut.md) (bootstrap scope cut; GE-04b added) and [0242](../../decisions/0242-genesis-includes-neoforge.md) (genesis includes NeoForge; GE-11 added for the NeoForge stamp).
-- The NeoForge shard (0386 to 0388) was built after the plan. The node source tree is a hand-synced snapshot; NeoForge mod folders are hand-staged.
-- GE-01 and GE-02 text was extended (extra-mods landed #750; velocity-identity jar hand-swapped). Gap map artifact: https://claude.ai/artifact/1tVqhJTF3FZVMgu6rzKzxj
-- Test VM: Hyper-V Debian on node 3, 24 GB RAM and 8 vCPUs; backups go to another LAN node (owner). `Application.ReadWrite.OwnedBy` covers app updates (owner ruling 2026-11-14, not run by us).
-
-## Next actions, in order
-
-1. GE-01 and GE-02.
-2. G2-03, owned by geldar-registration.
-3. G2-02, G2-05 and G3-03.
-4. G2 to G4, with GE-03 to GE-05.
-5. GE-06 and GE-07.
-6. G5 to G7, and GE-09 (the drill).
+- Decisions: [0240](../../decisions/0240-genesis-exit-is-the-scorched-earth-drill.md); [0241](../../decisions/0241-genesis-bootstrap-scope-cut.md) (bootstrap scope cut, GE-04b added); [0242](../../decisions/0242-genesis-includes-neoforge.md) (genesis includes NeoForge, GE-11 added).
+- The node source tree is a hand-synced snapshot; NeoForge mod folders are hand-staged; the velocity-identity jar was hand-swapped on 2026-11-18 (GE-01 replaces it).
 
 ## Open for the owner
 
-- NeoForge is in (0242); open: whether the drill preserves the world content.
+- The world question for the drill (0242): whether the drill keeps the NeoForge world.
 - The skins source.
-- G2-04 Environments and identities (the owner runs them).
-- The first DNS and Entra run (G2-05, G2-06) needs the owner's tenant.
+- G2-04 and G2-05 Environments and Entra runs, and the G2-06 DNS run: owner's tenant.
 - The backup credential (write-only, G5-01).
+- Approval of each workflow PR (GE-01w1, GE-01w2, GE-02w1 to GE-02w4).
+
+## Next actions, in order
+
+1. Workflow packets GE-01w1 and GE-02w1 to GE-02w4 after the owner's approval; GE-01w2 last, after GE-04b and the channel.
+2. GE-01c after geldar-69's say; GE-04b.
+3. GE-06 backup and restore design.
+4. G2-03, owned by geldar-registration.
+5. G2-02, G2-05 and G3-03.
+6. G2 to G4 with GE-03 to GE-05; GE-07; G5 to G7 and GE-09 (the drill).
 
 ## Rules for queueing
 
-- Nothing reaches the live node outside geldar-93's deploy window. No deploy may be running when a PR is queued.
-- geldar-93 owns the node and the deploy queue; tell geldar-93 for every deploy-path PR. Workflow PRs say "touches .github/workflows" in the title or body.
-- geldar-registration owns G2-03, the body-helper and the supervisor work.
-- colo-cd must ignore unknown manifest keys (G1-04 release manifest v2); tell geldar-93 before queueing it.
+- Repo-only PRs queue themselves.
+- A PR touching deploy-run scripts or a colo-images path goes to geldar-69 first; tell geldar-93 for every deploy-path PR. Workflow PRs say "touches .github/workflows" in the title or body.
+- Nothing reaches the live node outside geldar-93's deploy window. No queueing during a deploy window.
 - No overnight step touches the node or Azure; overnight work is repo and docs only (2026-11-18).
-- Production is never rebuilt in place. The workflow changes only through owner-approved PRs.
+- No force, no rebase.
+- Remove a worktree's node_modules junction with `cmd /c rmdir` first; never `git worktree remove --force` (see [followups.md](followups.md)).
+- colo-cd must ignore unknown manifest keys (G1-04); tell geldar-93 before queueing it.
+- Production is never rebuilt in place; the workflow changes only through owner-approved PRs.
 - No secrets, account names or addresses in the repo.
