@@ -5,6 +5,7 @@ import { parse } from 'yaml';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const PINS = 'compose/neoforge/extra-mods.pins';
+const SOURCES = 'compose/neoforge/extra-mods.sources';
 const ENTRY = 'compose/neoforge/neoforge-entrypoint.sh';
 const NF_LIVE_TELEMETRY = 'compose/nf-live-telemetry.yml';
 const SCRATCH = 'compose/opt-in/scratch-neoforge-extra-mods.yml';
@@ -23,6 +24,39 @@ const overlayText = (name: string) =>
   readFileSync(`${ROOT}compose/nf-live-mod-${name}.yml`, 'utf8');
 const overlay = (name: string) => parse(overlayText(name));
 const imageOf = (doc: { services: { neoforge: { image: string } } }) => doc.services.neoforge.image;
+
+// Each pin has one download source line: <jar file name> <https URL ending in /<jar file name>> <sha512 lowercase hex>.
+describe('extra mods: the download sources (no docker needed)', () => {
+  const sources = readFileSync(`${ROOT}${SOURCES}`, 'utf8')
+    .split('\n')
+    .filter((line) => line !== '' && !line.startsWith('#'))
+    .map((line) => line.split(' '));
+
+  it('gives each pin exactly one source line', () => {
+    for (const [name, { file }] of pins) {
+      const count = sources.filter((fields) => fields[0] === file).length;
+      expect(count, `${name}: source lines for ${file}`).toBe(1);
+    }
+  });
+
+  it('has no source line without a pin', () => {
+    const pinFiles = new Set([...pins.values()].map((pin) => pin.file));
+    for (const [file] of sources) {
+      expect(pinFiles.has(file), `source line for ${file} has no pin`).toBe(true);
+    }
+    expect(sources.length).toBe(pins.size);
+  });
+
+  it('gives each source line three fields: the pin file, an https URL ending in /<file>, a 128-hex sha512', () => {
+    for (const fields of sources) {
+      expect(fields, `source line ${fields[0]}`).toHaveLength(3);
+      const [file, url = '', sha = ''] = fields;
+      expect(url.startsWith('https://'), `${file}: URL is not https`).toBe(true);
+      expect(url.endsWith(`/${file}`), `${file}: URL does not name this jar file`).toBe(true);
+      expect(/^[0-9a-f]{128}$/.test(sha), `${file}: sha512 is not 128 lowercase hex`).toBe(true);
+    }
+  });
+});
 
 describe('extra mods: the pins file (no docker needed)', () => {
   it('lists exactly the two allowlisted mods, each once', () => {
