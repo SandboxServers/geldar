@@ -87,6 +87,7 @@ On 2026-11-20 at the C7-13a fix commit this prints 47 numbers from 0001 to 0066.
 | 0063 | `0063_body_host_roles.sql` | `mcp_players.host_key`; role `geldar_body_host`; `managed_life_id`, `supervisor_player_life_id`, `player_host_config`; `geldar_mcp` narrowed to six `mcp_players` columns | 0260, 0261 (BH-1) |
 | 0065 | `0065_owner_export_budget.sql` | `register_owner_export` replaced with lower byte budget and row caps | C7-09b |
 | 0066 | `0066_events_trace_id.sql` | `events.trace_id TEXT` (nullable, no default, no index); hidden from `geldar_glass` and `geldar_mcp` | T-08 |
+| 0067 | `0067_skin_upload_rules.sql` | `register_skin_submit` (PNG and sha256 checked; one pending, 3 rejects in 30 days lock, 1 hour after a reject, 3 a day; admin exempt from the rate rules) and `register_skin_status`; `register_account_delete` (0040 body) also deletes the owner's `skin_uploads` rows | C7-13a |
 
 ## Tables
 

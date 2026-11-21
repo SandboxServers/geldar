@@ -63,6 +63,7 @@ describe('listMigrations', () => {
       '0063_body_host_roles.sql',
       '0065_owner_export_budget.sql',
       '0066_events_trace_id.sql',
+      '0067_skin_upload_rules.sql',
     ]);
   });
 
