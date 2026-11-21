@@ -68,6 +68,7 @@ On 2026-11-16 at 1b114276 this prints 45 numbers from 0001 to 0066. Numbers 0028
 | 0025 | `0025_admin_flag_and_register_audit.sql` | `mcp_owners.is_admin`; `register_is_admin`; `register_audit` with its append-only trigger | 0170 (C7-12) |
 | 0026 | `0026_owner_api_keys.sql` | `owner_api_keys`; `register_owner_key_resolve`, `register_mint_owner_key`, `register_revoke_owner_key`, `register_list_owner_keys` | 0170 point 2, 0152 (C7-02b) |
 | 0027 | `0027_body_ops.sql` | `body_ops`; role `geldar_supervisor`; `supervisor_is_admin` | 0170 (C7-03a) |
+| 0031 | `0031_skin_uploads.sql` | `skin_uploads`: owner skin uploads held as `pending` (PNG bytes, sha256, status, reason code); register may INSERT and SELECT, not UPDATE | C7-13a |
 | 0032 | `0032_token_lifecycle.sql` | token life 90 days in `register_mint_token`; `register_renew_token`, `register_revoke_tokens`, `register_token_info` | 0170 point 1 (C7-02a) |
 | 0033 | `0033_supervisor_display_name.sql` | `supervisor_player_display_name` | C7-03b3 |
 | 0034 | `0034_operator_player_flags.sql` | `operator_set_player_flags`, EXECUTE for the operator role `geldar` | 0138, 0014 (C7-14) |
