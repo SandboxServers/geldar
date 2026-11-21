@@ -56,8 +56,14 @@ volumes and networks. No script runs `down`, and no script removes a volume.
   daemon (the docker group, or root).
 - Free disk on the filesystem that holds the repo checkout: at least `GELDAR_MIN_FREE_KB` KiB (default `10485760`,
   which is 10 GiB). `colo-up.sh` refuses below it.
-- Free inodes: at least `GELDAR_MIN_FREE_INODES` (default `100000`), on the checkout, on `GELDAR_DEPLOY_VOLUME` (default `/var/lib/geldar-deploy`) and on Docker's data root. `colo-up.sh` and `colo-cd.sh` check this before their first write, and refuse below it,
-  naming `deploy/genesis/prune-deploy-work.sh`. A filesystem that reports no inode count is skipped.
+- Free space on the deploy volume (`GELDAR_DEPLOY_VOLUME`, default `/var/lib/geldar-deploy`) and on Docker's data root
+  (`docker info`): at least `GELDAR_MIN_FREE_KB_DEPLOY` KiB of blocks (default `1048576`, 1 GiB; these volumes are small, so
+  this is separate from the 10 GiB checkout floor). The checkout, the deploy volume and Docker's root must each also have at
+  least `GELDAR_MIN_FREE_INODES` free inodes (default `100000`). `colo-up.sh` and `colo-cd.sh` check this before their first
+  write and refuse below it, printing the measured and the required value (an inode refusal names
+  `deploy/genesis/prune-deploy-work.sh`). A missing path, a `docker info` that says nothing, or a filesystem with no inode count
+  is skipped with a message. `colo-admin.sh` and `colo-rollback.sh` check the checkout block floor only. Confirm the
+  thresholds against `df -Pk` and `df -Pi` of those volumes on the node.
 - Secret files in the secrets directory (`GELDAR_SECRETS_DIR`, default `/etc/geldar-colo/secrets`):
   - the directory is root-only (`gen-secrets.sh` sets mode `0700`);
   - the required list is not kept by hand. The scripts read the secret names and their files from the merged compose
@@ -329,7 +335,7 @@ Until step 2 is done, `colo-notice.sh` publishes nothing and warns; `colo-up.sh`
 
 - docker or compose v2 is missing, or the daemon cannot be reached;
 - the compose file or the secrets overlay is missing;
-- free disk is below `GELDAR_MIN_FREE_KB`, or free inodes are below `GELDAR_MIN_FREE_INODES`;
+- free disk is below `GELDAR_MIN_FREE_KB` (checkout) or `GELDAR_MIN_FREE_KB_DEPLOY` (deploy volume, Docker root), or free inodes are below `GELDAR_MIN_FREE_INODES`;
 - the secrets directory is missing, or a secret file is missing, empty, or not mode `0600`/`0400`;
 - the release manifest is missing, has a line that is not `KEY=VALUE`, has a key that does not end in `_IMAGE`,
   uses the `latest` tag, is not a digest reference, or lists no images;

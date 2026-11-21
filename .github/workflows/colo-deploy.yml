@@ -241,9 +241,11 @@ jobs:
           fi
           # Space floor BEFORE the first write. A filesystem can be out of inodes with blocks to spare (2026-11-20: 100% inodes,
           # 64% bytes, and 22 runs died at the mktemp below), so check both on the inbox's filesystem and on Docker's data root.
-          # This job has no checkout of the repo here, so deploy/common.sh (space_floor) cannot be sourced; the same logic and
-          # the same variable names and defaults are repeated.
-          min_kb="${GELDAR_MIN_FREE_KB:-10485760}"
+          # This job has no checkout of the repo here, so deploy/space-floor.sh cannot be sourced; the same logic and the same
+          # variable names are repeated. The deploy volume floor is GELDAR_MIN_FREE_KB_DEPLOY (default 1 GiB: /var is small).
+          # The Docker-root half is best effort: the runner account is unprivileged and probably cannot run `docker info`, in which
+          # case it is an explicit warning, not a pass; the node-side scripts check Docker's root as the operator account.
+          min_kb="${GELDAR_MIN_FREE_KB_DEPLOY:-1048576}"
           min_inodes="${GELDAR_MIN_FREE_INODES:-100000}"
           floor() {
             local label="$1" path="$2" kb total free
@@ -271,7 +273,7 @@ jobs:
           if [[ -n "$droot" ]]; then
             floor "docker data root" "$droot"
           else
-            echo "::warning::space check skipped for the docker data root: docker info did not report it"
+            echo "::warning::Docker data root NOT checked here: docker info did not answer (this runner account is unprivileged and is not documented as able to reach docker); colo-up.sh and colo-cd.sh check it on the node as the operator account"
           fi
           tmp="$(mktemp "$INBOX/.release.env.XXXXXX")"
           cat "$SRC" > "$tmp"

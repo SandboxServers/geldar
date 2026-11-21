@@ -19,6 +19,8 @@ RELEASE_FILE=${GELDAR_RELEASE_FILE:-/etc/geldar-colo/release.env}
 STATE_DIR=${GELDAR_STATE_DIR:-/var/lib/geldar-colo}
 export GELDAR_STATE_DIR=$STATE_DIR # compose mounts $GELDAR_STATE_DIR/bluemap/bluemap.jar into Paper (C2-07o)
 MIN_FREE_KB=${GELDAR_MIN_FREE_KB:-10485760}
+# The deploy volume (/var, about 9 GB) and Docker's data root are small, so their block floor is separate and lower (1 GiB).
+MIN_FREE_KB_DEPLOY=${GELDAR_MIN_FREE_KB_DEPLOY:-1048576}
 DEPLOY_VOLUME=${GELDAR_DEPLOY_VOLUME:-/var/lib/geldar-deploy}
 MIN_FREE_INODES=${GELDAR_MIN_FREE_INODES:-100000} # a deploy checkout is about 4,400 inodes
 BLUEMAP_LOCK=${GELDAR_BLUEMAP_LOCK:-$ROOT/plugins/bluemap/bluemap.lock.json}
@@ -39,44 +41,7 @@ say() {
   echo "colo: $*"
 }
 
-# Blocks AND inodes free on the filesystem holding PATH (df -Pk, df -Pi). They run out independently: on 2026-11-20 /var was at
-# 100% inodes and 64% bytes and 22 deploys failed. A missing path is skipped with a message (never a pass for another
-# filesystem); a filesystem that reports no inode count skips only the inode half.
-space_floor() {
-  sf_label=$1
-  sf_path=$2
-  if [ ! -d "$sf_path" ]; then
-    say "space check skipped for the $sf_label: $sf_path is missing"
-    return 0
-  fi
-  sf_free=$(df -Pk "$sf_path" | awk 'NR == 2 {print $4}')
-  case $sf_free in '' | *[!0-9]*) die "cannot read free blocks of the $sf_label ($sf_path)" ;; esac
-  if [ "$sf_free" -lt "$MIN_FREE_KB" ]; then
-    die "free disk $sf_free KiB (blocks) of the $sf_label ($sf_path) is below the threshold of $MIN_FREE_KB KiB"
-  fi
-  sf_inodes=$(df -Pi "$sf_path" | awk 'NR == 2 {print $2, $4}')
-  sf_total=${sf_inodes%% *}
-  sf_ifree=${sf_inodes#* }
-  case $sf_total$sf_ifree in *[!0-9]* | '') sf_total=0 ;; esac
-  if [ "$sf_total" -gt 0 ] && [ "$sf_ifree" -lt "$MIN_FREE_INODES" ]; then
-    die "free inodes $sf_ifree of the $sf_label ($sf_path) is below the threshold of $MIN_FREE_INODES; run deploy/genesis/prune-deploy-work.sh (dry run first)"
-  fi
-}
-
-# The three filesystems a deploy writes to: the checkout, the deploy volume (/var/lib/geldar-deploy) and Docker's data root.
-# Docker's data root is read from `docker info`; a failed or empty answer is said, not hidden. Runs once per process.
-space_floors() {
-  if [ "${SPACE_FLOORS_DONE:-0}" = 1 ]; then return 0; fi
-  SPACE_FLOORS_DONE=1
-  space_floor "repo checkout" "$ROOT"
-  space_floor "deploy volume" "$DEPLOY_VOLUME"
-  droot=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null) || droot=
-  if [ -n "$droot" ]; then
-    space_floor "docker data root" "$droot"
-  else
-    say "space check skipped for the docker data root: docker info did not report it"
-  fi
-}
+. "$DEPLOY_DIR/space-floor.sh"
 
 # A deploy script that sets COLO_SPACE_FLOOR_FIRST=1 before sourcing this file gets the floors checked BEFORE the first
 # write (the work directory below), so a full filesystem is named as inodes or blocks instead of dying at mktemp.
@@ -174,7 +139,7 @@ check_prereqs() {
   [ -f "$COMPOSE_FILE" ] || die "compose file not found: $COMPOSE_FILE"
   [ -f "$SECRETS_OVERLAY" ] || die "secrets overlay not found: $SECRETS_OVERLAY"
   [ -f "$NATS_OVERLAY" ] || die "NATS auth overlay not found: $NATS_OVERLAY"
-  space_floors
+  prereq_space
 }
 
 # Writes the merged compose config (read-only) to $WORK/config.yml once. Every check below reads that file.

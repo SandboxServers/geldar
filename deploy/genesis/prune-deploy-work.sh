@@ -6,8 +6,8 @@
 # Rules: only direct children of <root>/work that are real directories (never symlinks) named by exactly 40
 # lowercase hex characters are candidates. The newest N by modification time are kept (default 5; N must be 2 to 1000, so an
 # in-flight deploy's fresh checkout is never among the removed), and so is the live commit. The live commit is the one line
-# of <state dir>/release.commit (default /var/lib/geldar-colo/release.commit), which deploy/colo-cd.sh reads (line 310) and
-# writes on success (line 423); it must be 40 lowercase hex. If <root>/staged/release.env exists and its first line is the
+# of <state dir>/release.commit (default /var/lib/geldar-colo/release.commit), which deploy/colo-cd.sh reads before a run and
+# writes on success; it must be 40 lowercase hex. If <root>/staged/release.env exists and its first line is the
 # workflow's manifest comment, that commit is kept too (the repo does not show this file, so it is optional).
 # With release.commit unreadable, or not 40 hex, nothing is removed and the exit code is 1. The deploy lock
 # (<root>/channel.lock, the one the deploy channel takes) and the colo-cd lock directory ($GELDAR_STATE_DIR/cd.lock,

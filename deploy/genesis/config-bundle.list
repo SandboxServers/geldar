@@ -44,6 +44,7 @@ deploy/genesis/config-bundle.list
 deploy/genesis/secret-names.list
 deploy/install-body-helper.sh
 deploy/release.env.example
+deploy/space-floor.sh
 plugins/bluemap/alias-proxy/alias-proxy.ts
 plugins/bluemap/bluemap.lock.json
 plugins/bluemap/config/core.conf

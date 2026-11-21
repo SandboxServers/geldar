@@ -47,7 +47,8 @@ trap 'rmdir "$STATE_DIR/cd.lock" 2>/dev/null || true' EXIT
 trap 'exit 1' HUP INT TERM
 
 all=$(docker images --digests --no-trunc --format '{{.Repository}}@{{.Digest}}') || fail "cannot list docker images; nothing removed"
-printf '%s\n' "$all" | sort -u | while IFS= read -r ref; do
+# The loop runs in this shell (a here-document, not a pipeline), so the trap above stops it at the next step.
+while IFS= read -r ref; do
   repo=${ref%%@*}
   case $ref in *@sha256:*) ;; *) continue ;; esac
   printf '%s\n' "$repos" | grep -qxF -- "$repo" || continue
@@ -57,4 +58,6 @@ printf '%s\n' "$all" | sort -u | while IFS= read -r ref; do
   else
     echo "would remove $ref"
   fi
-done
+done <<EOF
+$(printf '%s\n' "$all" | sort -u)
+EOF

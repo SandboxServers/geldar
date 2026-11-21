@@ -326,7 +326,9 @@ describe('deploy scripts: docker scope and volumes (decision 0084)', () => {
     expect(log.length).toBeGreaterThan(0);
     for (const c of log) {
       const allowed =
-        PROJECT_FILTER.test(c) || STATS_BY_ID.test(c) || /^(compose version|info)$/.test(c);
+        PROJECT_FILTER.test(c) ||
+        STATS_BY_ID.test(c) ||
+        /^(compose version|info( --format \{\{\.DockerRootDir\}\})?)$/.test(c);
       expect(allowed, `unscoped docker call: ${c}`).toBe(true);
       expect(c).not.toMatch(/\bdown\b.*(-v\b|--volumes)|--volumes/);
     }

@@ -74,7 +74,7 @@ function setup(kind: 'inodes' | 'blocks' | 'none', where: 'inbox' | 'docker' | '
       INBOX: posix(inbox),
       SRC: posix(src),
       GELDAR_MIN_FREE_INODES: '100',
-      GELDAR_MIN_FREE_KB: '10',
+      GELDAR_MIN_FREE_KB_DEPLOY: '10',
     },
   });
   return { code: r.status, err: r.stderr, out: r.stdout, log, inbox };
