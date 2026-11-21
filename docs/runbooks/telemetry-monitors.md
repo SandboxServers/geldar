@@ -5,8 +5,14 @@ packet's operator guide. Nothing here restarts NATS or Postgres, and nothing her
 
 ## Facts checked (2026-11-20)
 
-- **NATS monitor is already on.** Inside the running NATS container it listens on `127.0.0.1:8222` (read on the node, 2026-11-20).
-  The exporter needs no NATS change.
+- **NATS monitor is already on.** Inside the running NATS container (`geldar-colo-nats-1`, compose service `nats`) it listens on
+  `127.0.0.1:8222` (read on the node, 2026-11-20). The exporter needs no NATS change.
+- **Container names (verified on the node, 2026-11-20).** The colo NATS is `geldar-colo-nats-1` (compose project `geldar-colo`, service `nats`).
+  The exporter container will be `geldar-colo-nats-exporter-1` (the overlay sets no `container_name`; compose commands still name the
+  service `nats-exporter`). `geldar-gateway` is the gateway container.
+- **Scope: the exporter covers the colo NATS only.** The NeoForge NATS (`geldar-nf-nats-1`, a separate compose project) has no exporter
+  and no gateway scrape. Adding it would need its own overlay in that project and the gateway on that network: a separate packet and an
+  owner decision.
 - **Same network.** NATS is on the `geldar-colo` network, as the gateway is, so the gateway scrape `nats:7777` resolves.
 - **Exporter release.** `natsio/prometheus-nats-exporter` v0.20.3 was released 2026-10-21, more than two weeks before the pin.
   Source: the GitHub releases page of `nats-io/prometheus-nats-exporter` and its README, both read 2026-11-20.

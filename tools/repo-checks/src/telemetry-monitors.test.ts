@@ -222,6 +222,36 @@ describe('docs/runbooks/telemetry-monitors.md (G2)', () => {
   });
 });
 
+describe('node request 08 and the runbook name the real colo containers (G2)', () => {
+  const BRIEF_08 = 'docs/analysis/telemetry/node-requests/08-monitors-g2.md';
+  // Node, 2026-11-20: the colo NATS container is geldar-colo-nats-1 (compose service nats); the exporter is geldar-colo-nats-exporter-1.
+  // A docker inspect, stats, port, logs or exec argument must name the container, so a bare `nats` or `nats-exporter` there is wrong.
+  const CONTAINER_CMD = /docker (inspect|stats|port|logs|exec)\b/;
+  const BARE_NAME = /^[`'"]?(nats|nats-exporter)[`'"]?$/;
+
+  it('names no bare nats or nats-exporter as the container in a docker command of request 08', () => {
+    const offenders = readText(BRIEF_08)
+      .split('\n')
+      .filter((line) => CONTAINER_CMD.test(line))
+      .filter((line) => line.split(/\s+/).some((token) => BARE_NAME.test(token)));
+    expect(offenders).toEqual([]);
+  });
+
+  it('names the verified colo containers in request 08 and in the runbook', () => {
+    for (const doc of [readText(BRIEF_08), readText(RUNBOOK)]) {
+      expect(doc).toContain('geldar-colo-nats-1');
+      expect(doc).toContain('geldar-colo-nats-exporter-1');
+    }
+  });
+
+  it('says the exporter covers the colo NATS only, and the NeoForge NATS has no exporter', () => {
+    for (const doc of [readText(BRIEF_08), readText(RUNBOOK)]) {
+      expect(doc).toContain('geldar-nf-nats-1');
+      expect(doc).toMatch(/NeoForge[^\n]*no exporter/);
+    }
+  });
+});
+
 describe('deploy/telemetry/README.md (G2)', () => {
   it('no longer calls the postgresql receiver a commented placeholder', () => {
     expect(readText(README)).not.toMatch(/postgresql[^\n]*placeholder/i);

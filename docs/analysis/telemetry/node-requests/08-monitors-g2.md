@@ -37,11 +37,16 @@ S5 exporter start (window W2). W1 and W2 are separate windows, never the same wi
 4. S4 (W1): `geldar-gateway` is recreated, with the secret mounted at `/run/secrets/otel-pg.txt` (read-only) and the new receivers. Nothing else is recreated.
 5. S5 (W2): `nats-exporter` is started (`natsio/prometheus-nats-exporter`, flags `-varz -jsz all -port 7777`) in the NATS network namespace. `nats` is not recreated.
 
+Scope (verified on the node 2026-11-20): this exporter covers the colo NATS only, the container `geldar-colo-nats-1` (compose project
+`geldar-colo`, service `nats`). The exporter container is `geldar-colo-nats-exporter-1` (service `nats-exporter` in compose commands).
+The NeoForge NATS (`geldar-nf-nats-1`, a separate compose project) has no exporter and no gateway scrape. Adding it would need its own
+overlay in that project and the gateway on that network: a separate packet and an owner decision.
+
 ## 2. Not touched
 
-- Every container except `geldar-gateway` (S4) and `nats-exporter` (S5). Named: `geldar-ch`, `geldar-ch-keeper`, `geldar-signoz`,
+- Every container except `geldar-gateway` (S4) and `geldar-colo-nats-exporter-1` (S5). Named: `geldar-ch`, `geldar-ch-keeper`, `geldar-signoz`,
   `geldar-signoz-otelcol`, `geldar-signoz-query`, `geldar-signoz-ui`, `board-proxy` (Caddy), Paper, Velocity, Bodies, Minds, every other tenant.
-- `nats` (never recreated; no restart; its config and permissions are not changed). The Postgres server, its config and its restart
+- `geldar-colo-nats-1` (compose service `nats`; never recreated; no restart; its config and permissions are not changed). The Postgres server, its config and its restart
   (`pg_stat_statements` is a separate request that needs a Postgres restart).
 - Every other file in the colo secrets directory, and the ClickHouse password files in `/mnt/nvme/geldar-telemetry/secrets/` (the telemetry
   secrets directory holds only `otel-pg.txt`); the queue directory's contents (the gateway writes them at run time, nothing here writes them);
@@ -66,22 +71,22 @@ S5 exporter start (window W2). W1 and W2 are separate windows, never the same wi
 | Container | CPU | Memory | pids | Source |
 |---|---|---|---|---|
 | geldar-gateway | 0.5 (NanoCpus 500000000) | 1g (bytes 1073741824), memswap 1g, GOMEMLIMIT 800MiB | 256 | `deploy/telemetry/compose.gateway.yml` |
-| nats-exporter | 0.1 (NanoCpus 100000000) | 64m (bytes 67108864), memswap 64m | 64 | `compose/opt-in/colo-nats-exporter.yml` |
+| geldar-colo-nats-exporter-1 | 0.1 (NanoCpus 100000000) | 64m (bytes 67108864), memswap 64m | 64 | `compose/opt-in/colo-nats-exporter.yml` |
 
 Expected: `docker inspect -f '{{.HostConfig.NanoCpus}} {{.HostConfig.Memory}} {{.HostConfig.PidsLimit}}' geldar-gateway` prints `500000000 1073741824 256`;
-the same for `nats-exporter` prints `100000000 67108864 64`. Measured usage: `docker stats --no-stream geldar-gateway nats-exporter` shows memory under the limit.
+the same for `geldar-colo-nats-exporter-1` prints `100000000 67108864 64`. Measured usage: `docker stats --no-stream geldar-gateway geldar-colo-nats-exporter-1` shows memory under the limit.
 
 ## 5. Baseline and pre-checks (read-only)
 
 1. Node, read-only, into `/mnt/nvme/geldar-telemetry/stage/baseline-g2-<ts>.txt` (umask 077), in the style of request 01 section 5:
    ```
    docker ps --format '{{.Names}} {{.Image}} {{.Status}}'
-   docker inspect -f '{{.Name}} {{.RestartCount}} {{.State.StartedAt}} {{.Id}}' geldar-ch geldar-ch-keeper geldar-signoz geldar-signoz-otelcol geldar-gateway nats
+   docker inspect -f '{{.Name}} {{.RestartCount}} {{.State.StartedAt}} {{.Id}}' geldar-ch geldar-ch-keeper geldar-signoz geldar-signoz-otelcol geldar-gateway geldar-colo-nats-1
    docker inspect -f '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{println}}{{end}}' geldar-gateway
    docker stats --no-stream geldar-gateway
    df -h /mnt/nvme
    ```
-   [UNV: `nats` as the container name; the colo stack's names are in `compose/colo.yml`, not checked.] Do NOT record `docker inspect` of `.Config.Env`:
+   Container names verified on the node 2026-11-20: `geldar-colo-nats-1` (compose project `geldar-colo`, service `nats`). Do NOT record `docker inspect` of `.Config.Env`:
    the values are not needed and must not be written to a file.
 2. Gateway queue (the queue must be under 50 percent of capacity, as in request 01): read the gateway's own metrics endpoint (loopback port 8888 inside the container,
    `deploy/telemetry/gateway.yaml`) from the gateway's network namespace with the pinned curl image (`curlimages/curl`, digest in `deploy/telemetry/README.md`, "Gateway (N8)").
@@ -89,7 +94,7 @@ the same for `nats-exporter` prints `100000000 67108864 64`. Measured usage: `do
    `otelcol_processor_refused_*`. The failure series appear only after a first increment (README N10), so an absent series is recorded as absent.
 3. Colo deploy environment, names only, never values: the release file is `GELDAR_RELEASE_FILE` (default `/etc/geldar-colo/release.env`, `deploy/common.sh`).
    Check the keys with `sudo grep -o '^[A-Z_]*=' /etc/geldar-colo/release.env` (prints names, not values). [UNV: whether the file is sourced as shell; `deploy/common.sh` is the reference.]
-4. Stop if `geldar-gateway` is not running, if the queue is above 50 percent, or if `nats` is not running.
+4. Stop if `geldar-gateway` is not running, if the queue is above 50 percent, or if `geldar-colo-nats-1` (compose service `nats`) is not running.
 
 ## 6. Secrets directory (settled: owner option (a), geldar-69, 2026-11-21)
 
@@ -220,14 +225,14 @@ Stop criteria during W1: the gateway not running after 120 s; a `password authen
 
 Owner OK and window for W2, given after W1 has passed and has been quiet for at least 30 minutes. W2 is a separate window of at most 20 minutes.
 
-1. Render and hash, before the start (rule 3). `nats` must not change:
+1. Render and hash, before the start (rule 3). `geldar-colo-nats-1` must not change:
    ```
    cd <colo checkout> && set -a && . /etc/geldar-colo/release.env && set +a
    docker compose -p "${GELDAR_PROJECT:-geldar-colo}" -f compose/colo.yml -f compose/nats-auth.yml -f deploy/compose.secrets.yml -f compose/opt-in/colo-nats-exporter.yml config --hash=nats
-   docker inspect -f '{{index .Config.Labels "com.docker.compose.config-hash"}}' nats
+   docker inspect -f '{{index .Config.Labels "com.docker.compose.config-hash"}}' geldar-colo-nats-1
    ```
    The two hashes must be equal. Any difference stops the step: `nats` would be recreated by this compose set.
-   [UNV: the colo release file is sourced like this; `deploy/common.sh` is the reference; the colo checkout path; `--hash` on the node's Compose; the `nats` container name.]
+   [UNV: the colo release file is sourced like this; `deploy/common.sh` is the reference; the colo checkout path; `--hash` on the node's Compose.]
    The release file is `GELDAR_RELEASE_FILE`, default `/etc/geldar-colo/release.env`. Its values are not printed.
 2. The dry run (names only): `GELDAR_SERVICE_UID=1001 docker compose -p "${GELDAR_PROJECT:-geldar-colo}" -f compose/colo.yml -f compose/nats-auth.yml -f deploy/compose.secrets.yml -f compose/opt-in/colo-nats-exporter.yml up -d --no-deps --dry-run nats-exporter`
    [UNV: `--dry-run`]. The plan names `nats-exporter` only.
@@ -240,10 +245,10 @@ Owner OK and window for W2, given after W1 has passed and has been quiet for at 
 
 ### W2 verification (exporter)
 
-1. `nats-exporter` running, restarts 0. `nats` StartedAt unchanged (baseline value).
-2. Caps: `docker inspect -f '{{.HostConfig.NanoCpus}} {{.HostConfig.Memory}} {{.HostConfig.PidsLimit}}' nats-exporter` prints `100000000 67108864 64`;
-   `docker stats --no-stream nats-exporter` memory under 64 MiB.
-3. No published port: `docker port nats-exporter` prints nothing.
+1. `geldar-colo-nats-exporter-1` running, restarts 0. `geldar-colo-nats-1` StartedAt unchanged (baseline value).
+2. Caps: `docker inspect -f '{{.HostConfig.NanoCpus}} {{.HostConfig.Memory}} {{.HostConfig.PidsLimit}}' geldar-colo-nats-exporter-1` prints `100000000 67108864 64`;
+   `docker stats --no-stream geldar-colo-nats-exporter-1` memory under 64 MiB.
+3. No published port: `docker port geldar-colo-nats-exporter-1` prints nothing.
 4. Series `nats` present in SigNoz (through the tunnel), and no series derived from `/subsz`, `/connz`, `/routez`, `/gatewayz`, `/leafz` or `/accstatz`
    (the overlay reads `/varz` and `/jsz` only). [UNV: the exporter's exact series names.]
 5. The gateway scrape of `nats:7777` succeeds (`otelcol_*` gateway counters flat; no new `connection refused` after the first scrape interval).
@@ -255,7 +260,7 @@ Each rollback needs its own owner OK and window, as the step did. Do them in thi
 R1 (secret). Nothing is deleted except the named files and the named role.
 
 - **R5 exporter:** `docker compose -p "${GELDAR_PROJECT:-geldar-colo}" -f compose/colo.yml -f compose/nats-auth.yml -f deploy/compose.secrets.yml -f compose/opt-in/colo-nats-exporter.yml rm -sf nats-exporter`
-  (the runbook's command; the output must name `nats-exporter` only). `nats` StartedAt unchanged. NATS is untouched.
+  (the runbook's command; the output must name `nats-exporter` only). `geldar-colo-nats-1` StartedAt unchanged. NATS is untouched.
   The gateway's `nats` scrape then logs `connection refused` (expected until R4).
 - **R4 gateway (after R3):** restore the previous tree and recreate the gateway from it:
   `cd /mnt/nvme/geldar-telemetry && mv src src.failed-g2 && mv src.old-g2 src`, then render-check as in section 11 (the expected difference is now the removed secret mount),
@@ -270,7 +275,7 @@ R1 (secret). Nothing is deleted except the named files and the named role.
 - **R3 swap:** part of R4 above (`mv src src.failed-g2 && mv src.old-g2 src`). The tarball `telemetry-<merge>.tar.gz` and `src.failed-g2` are kept.
 
 Verification after each rollback: the gateway is running with restarts 0 and no mount of the secret; `pg_roles` has no `geldar_monitor` row; the secret file and its directory are absent;
-`nats` StartedAt unchanged; the other containers are unchanged (section 5 baseline).
+`geldar-colo-nats-1` StartedAt unchanged; the other containers are unchanged (section 5 baseline).
 
 ## 14. Blast radius and risks (from the repo; the owner accepts them at each OK)
 
@@ -295,7 +300,7 @@ Verification after each rollback: the gateway is running with restarts 0 and no 
 
 - The telemetry secrets directory `/mnt/nvme/geldar-telemetry/pg-secrets` is not yet created on the node (S1).
 - The migration role's OS user and the psql connection method; whether root or the 10001 user reads the secret for psql.
-- The colo checkout path on the node; the sourcing of `/etc/geldar-colo/release.env`; the `nats` container name.
+- The colo checkout path on the node; the sourcing of `/etc/geldar-colo/release.env`.
 - `docker compose ... config --format json`, `config --hash`, `up --dry-run` and `--no-deps` behaviour on the node's Compose version (Compose 2.24 or later is also an unchecked need).
 - The jq paths of the render diff in section 11, and the non-jq method if jq is absent.
 - The exact `postgresql.*` and nats exporter series names in SigNoz.
@@ -307,6 +312,6 @@ Verification after each rollback: the gateway is running with restarts 0 and no 
 ## 17. Report-back (the orchestrator records it in the telemetry window log)
 
 UTC start and end of each window (W1, W2) and the step numbers that ran; the baseline file name; the render-diff result for S4 (the accepted
-differences only); the config-hash equality for `nats` before S5 and for `geldar-gateway` after S4; the restart counts and StartedAt of every container
+differences only); the config-hash equality for `geldar-colo-nats-1` (compose service `nats`) before S5 and for `geldar-gateway` after S4; the restart counts and StartedAt of every container
 in the baseline; the queue size before and after; each W1 and W2 check result; any rollback with its step; the series checks in SigNoz; and every UNVERIFIED item
 that was verified during the run, with the evidence (names and counts only, no values).
