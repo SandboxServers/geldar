@@ -8,12 +8,14 @@
 # Rules are v1 (GET and POST /api/v1/rules, PUT /api/v1/rules/{id}); the list is {status, data: {rules: [{id, alert}]}}.
 # UNVERIFIED on a live node: that POST /api/v1/rules accepts the rule bodies in the alert files, that the v1 dashboard
 # bodies convert to v2 as intended, and the notification channel. The runbook says how to check them.
-# Usage: import.sh --token-file PATH [--url http://127.0.0.1:PORT] [--dry-run] [--replace]
+# Usage: import.sh --token-file PATH [--url http://127.0.0.1:PORT] [--dry-run] [--replace] [--dashboards-only]
 #   --token-file PATH  file whose first line is the admin API token. Read into a header file in a temp dir; never
 #                      printed, never in argv. The file must live outside the repo checkout.
 #   --url              the loopback end of the SSH tunnel (default http://127.0.0.1:8095). Anything else is refused.
 #   --dry-run          print what would be sent. Sends nothing and reads no token.
 #   --replace          a dashboard whose title is already listed is deleted by id and created again. Default: skip it.
+#   --dashboards-only  import only the *-dashboard.json files. Makes no call to /api/v1/rules and reads no channel; the
+#                      rules list is not read. Alert rules are a later run without this flag (the channel comes first).
 # Needs bash, jq and (for a real run) curl. Writes only under a temp dir that it removes on exit.
 set -euo pipefail
 umask 077
@@ -26,6 +28,7 @@ URL="http://127.0.0.1:8095"
 TOKEN_FILE=""
 DRY_RUN=0
 REPLACE=0
+DASHBOARDS_ONLY=0
 
 die() {
   echo "import.sh: $*" >&2
@@ -33,7 +36,7 @@ die() {
 }
 
 usage() {
-  echo "usage: import.sh --token-file PATH [--url http://127.0.0.1:PORT] [--dry-run] [--replace]" >&2
+  echo "usage: import.sh --token-file PATH [--url http://127.0.0.1:PORT] [--dry-run] [--replace] [--dashboards-only]" >&2
   exit 2
 }
 
@@ -55,6 +58,10 @@ while [ $# -gt 0 ]; do
       ;;
     --replace)
       REPLACE=1
+      shift
+      ;;
+    --dashboards-only)
+      DASHBOARDS_ONLY=1
       shift
       ;;
     *) usage ;;
@@ -184,6 +191,11 @@ for f in "$SCRIPT_DIR"/*-alerts-*.json; do
   if [ -e "$f" ]; then ALERTS+=("$f"); fi
 done
 [ "${#DASHBOARDS[@]}" -gt 0 ] || die "no *-dashboard.json files next to this script"
+if [ "$DASHBOARDS_ONLY" -eq 1 ]; then
+  # Alert files are not read or sent: no rules list, no rules call, no channel check.
+  echo "alert rules skipped (--dashboards-only): ${#ALERTS[@]} alert file(s) not imported; run without --dashboards-only once the channel exists"
+  ALERTS=()
+fi
 
 # Validate every file before the first request, so a bad file sends nothing.
 for f in "${DASHBOARDS[@]}"; do
@@ -200,7 +212,9 @@ else
   # Read both lists and check every name before the first write: a list of another shape, or a name that matches
   # more than one listed item, stops the run before anything is sent.
   list_dashboards
-  list_rules
+  if [ "$DASHBOARDS_ONLY" -eq 0 ]; then
+    list_rules
+  fi
   for f in "${DASHBOARDS[@]}"; do
     title="$(jq -r '.title' "$f")"
     mapfile -t matches < <(dashboard_ids "$title")

@@ -333,6 +333,89 @@ describe.skipIf(!RUNNABLE)('import.sh run (fake curl on PATH)', () => {
     expect(readLog()).toMatch(/GET .*offset=0/);
     expect(readLog()).toMatch(/GET .*offset=1/);
   });
+
+  it('without --dashboards-only the rules are still listed before any write', () => {
+    setup('{"status":"success"}');
+    writeFileSync(join(work, 'token.txt'), 'fake-token-for-test\n');
+    const run = runScript(work, ['--token-file', bashPath(join(work, 'token.txt'))]);
+    expect(run.status).toBe(0);
+    expect(readLog()).toMatch(/-X GET .*\/api\/v1\/rules\n/);
+    expect(run.stdout).not.toMatch(/alert rules skipped/);
+  });
+
+  it('--dashboards-only makes no rules or channel call, lists and posts the dashboards, and says the rules were skipped', () => {
+    setup(listBody([]));
+    writeFileSync(join(work, 'token.txt'), 'fake-token-for-test\n');
+    const run = runScript(work, [
+      '--token-file',
+      bashPath(join(work, 'token.txt')),
+      '--dashboards-only',
+    ]);
+    expect(run.status).toBe(0);
+    const log = readLog();
+    expect(log).not.toMatch(/\/api\/v1\/rules/);
+    expect(log).not.toMatch(/channels/);
+    expect(log).toMatch(/-X GET .*\/api\/v2\/dashboards\?limit=200&offset=0/);
+    expect(log).toMatch(/-X POST .*paper-dashboard\.json.*\/api\/v2\/dashboards\n/);
+    expect(log).toMatch(/-X POST .*neoforge-dashboard\.json.*\/api\/v2\/dashboards\n/);
+    expect(run.stdout).toMatch(/alert rules skipped \(--dashboards-only\)/);
+  });
+
+  it('--dashboards-only skips a listed dashboard title (no --replace) and makes no rules call', () => {
+    setup(listBody([[PAPER_ID, PAPER]]));
+    writeFileSync(join(work, 'token.txt'), 'fake-token-for-test\n');
+    const run = runScript(work, [
+      '--token-file',
+      bashPath(join(work, 'token.txt')),
+      '--dashboards-only',
+    ]);
+    expect(run.status).toBe(0);
+    expect(run.stdout).toMatch(/skipped dashboard "Geldar Paper"/);
+    const log = readLog();
+    expect(log).not.toMatch(/\/api\/v1\/rules|channels|-X (PUT|DELETE)/);
+    expect(log).toMatch(/-X POST .*neoforge-dashboard\.json/);
+  });
+
+  it('--dashboards-only dry run makes zero calls (no rules, no channels) and names the skipped rules', () => {
+    setup();
+    const run = runScript(work, ['--dry-run', '--dashboards-only']);
+    expect(run.status).toBe(0);
+    expect(readLog()).toBe('');
+    expect(run.stdout).toMatch(/dry-run: dashboard "Geldar Paper"/);
+    expect(run.stdout).not.toMatch(/rule\(s\) from/);
+    expect(run.stdout).toMatch(/alert rules skipped \(--dashboards-only\)/);
+  });
+
+  it('--dashboards-only still refuses a dashboard list that is not the v2 shape, before any write', () => {
+    setup('{"status":"success","data":[{"id":"x"}]}');
+    writeFileSync(join(work, 'token.txt'), 'fake-token-for-test\n');
+    const run = runScript(work, [
+      '--token-file',
+      bashPath(join(work, 'token.txt')),
+      '--dashboards-only',
+    ]);
+    expect(run.status).not.toBe(0);
+    expect(run.stderr).toMatch(/not the v2 shape/);
+    expect(readLog()).not.toMatch(/-X (POST|PUT|DELETE)/);
+  });
+
+  it('--dashboards-only still refuses a title that two listed dashboards share, before any write', () => {
+    setup(
+      listBody([
+        ['a', PAPER],
+        ['b', PAPER],
+      ]),
+    );
+    writeFileSync(join(work, 'token.txt'), 'fake-token-for-test\n');
+    const run = runScript(work, [
+      '--token-file',
+      bashPath(join(work, 'token.txt')),
+      '--dashboards-only',
+    ]);
+    expect(run.status).not.toBe(0);
+    expect(run.stderr).toMatch(/more than one dashboard titled/);
+    expect(readLog()).not.toMatch(/-X (POST|PUT|DELETE)/);
+  });
 });
 
 describe('signoz-import runbook', () => {
@@ -351,5 +434,11 @@ describe('signoz-import runbook', () => {
 
   it('names the notification channel the alert files need, as a prerequisite', () => {
     expect(runbook).toMatch(/geldar-owner-channel/);
+  });
+
+  it('documents the dashboards-only run, the held alert import and the jq and curl check', () => {
+    expect(runbook).toMatch(/--dashboards-only/);
+    expect(runbook).toMatch(/command -v jq curl/);
+    expect(runbook).toMatch(/HELD/);
   });
 });
