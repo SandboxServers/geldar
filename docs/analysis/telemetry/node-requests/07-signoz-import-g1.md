@@ -113,8 +113,10 @@ Node: nothing is written. The node receives read-only verbs only (section 5, ste
    gives it). Run this on the operator machine, from any directory:
    ```
    mkdir -m 700 <SCRATCH>
-   git -C <repo> archive <merge> deploy/signoz | tar -x -C <SCRATCH>
+   git -C <repo> archive --format=tar -o <SCRATCH>/signoz.tar <merge> deploy/signoz
+   tar -x -f <SCRATCH>/signoz.tar -C <SCRATCH>
    ```
+   The archive is written to a file first and never piped into `tar`, so a failed export is not half-read. `signoz.tar` stays inside `<SCRATCH>` and is removed with it.
    `ls <SCRATCH>/deploy/signoz` must list `import.sh` and the six JSON files (two dashboards, four alert files). Any other file stops the step.
 
 Stop if `geldar-signoz` is not `healthy`, its restart count is not 0, or the channel is missing.

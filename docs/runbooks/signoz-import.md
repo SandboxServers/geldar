@@ -67,13 +67,14 @@ Run the script from an export, not from the checkout. `<commit>` is the commit t
 ```
 SCRATCH=<SCRATCH>
 mkdir -m 700 "$SCRATCH"
-git -C <repo> archive <commit> deploy/signoz | tar -x -C "$SCRATCH"
+git -C <repo> archive --format=tar -o "$SCRATCH/signoz.tar" <commit> deploy/signoz
+tar -x -f "$SCRATCH/signoz.tar" -C "$SCRATCH"
 ls "$SCRATCH/deploy/signoz"
 "$SCRATCH/deploy/signoz/import.sh" --token-file <path outside the repo> --dry-run
 "$SCRATCH/deploy/signoz/import.sh" --token-file <path outside the repo>
 ```
 
-The `ls` must list `import.sh` and the six JSON files (two dashboards, four alert files). When the import is done, remove `<SCRATCH>` with `rm -rf` on that one directory.
+The archive is written to a file first and never piped into `tar`, so a failed export is not half-read. `signoz.tar` stays inside `<SCRATCH>`. The `ls` must list `import.sh` and the six JSON files (two dashboards, four alert files). When the import is done, remove `<SCRATCH>` with `rm -rf` on that one directory.
 
 The dry run prints one line per file: the PUT or POST it would send. It sends nothing and reads no token. The real run
 prints `created`, `skipped` or `replaced` per dashboard, `created` or `updated` per rule, then `done`. Before the real run, list what is there so you can
