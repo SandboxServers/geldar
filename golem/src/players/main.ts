@@ -31,12 +31,20 @@ import {
   startPlayerBody,
 } from './body-host.ts';
 import { parsePlayerConfig } from './player-config.ts';
+import { startPlayerTelemetry } from './player-telemetry.ts';
 import { watchPresence } from './presence.ts';
 import { PlayerSession } from './session.ts';
 import { admitLifeOverRcon } from './whitelist.ts';
 
 // The Body wiring lives in body-host.ts (no RCON there); these names stay exported from this module.
-export { bookServe, type ExtraServe, installEntryHandlers, playerBodyEnv, startPlayerBody };
+export {
+  bookServe,
+  type ExtraServe,
+  installEntryHandlers,
+  playerBodyEnv,
+  startPlayerBody,
+  startPlayerTelemetry,
+};
 
 /** The player id after `--player`; throws with the usage line when it is missing. */
 export function playerIdFromArgs(argv: string[]): string {
@@ -106,6 +114,7 @@ export async function runPlayer(
     await nc.close();
     throw error;
   }
+  const telemetry = startPlayerTelemetry(env, log);
   const bodyEnv = playerBodyEnv({
     proficiency,
     config,
@@ -114,6 +123,7 @@ export async function runPlayer(
     nc,
     server,
     log: (line) => log({ event: 'body', line }),
+    metrics: telemetry.metrics,
   });
   const serve =
     extraServe ??
@@ -169,6 +179,7 @@ export async function runPlayer(
   // The watch has ended, so no `up` is in progress: stop the Body, then the connections.
   await session.down();
   proficiency?.stop();
+  await telemetry.stop();
   await restartKv.close();
   await nc.close();
   log({ event: 'player_stopped' });

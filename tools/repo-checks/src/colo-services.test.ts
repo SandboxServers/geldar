@@ -105,6 +105,8 @@ describe('compose/colo.yml: the Body and Mind services (C1-03)', () => {
     // The sink and the MCP read it too: dropping the line turns their telemetry off with no error.
     expect(env(colo.services.eventsink ?? {})).toHaveProperty('GELDAR_TELEMETRY_URL', null);
     expect(env(colo.services['geldar-mcp'] ?? {})).toHaveProperty('GELDAR_TELEMETRY_URL', null);
+    // The player host pushes its Body metrics (G3, decision 0353): dropping its line silences them.
+    expect(env(colo.services['players-host'] ?? {})).toHaveProperty('GELDAR_TELEMETRY_URL', null);
   });
 
   it('the merged-config fixture agrees: GELDAR_TELEMETRY_URL is null for the services it holds (animus is not in it)', () => {

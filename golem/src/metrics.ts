@@ -8,6 +8,7 @@
  * package yet; see the worknote for the follow-up).
  */
 
+import { randomUUID } from 'node:crypto';
 import type { RecordSink } from './body/records.ts';
 
 export type MetricKind = 'counter' | 'gauge' | 'histogram';
@@ -143,6 +144,8 @@ export interface PushOptions {
   /** The telemetry endpoint's base URL (the OTLP/HTTP port). Only `startTelemetry` pushes, and only with one. */
   url: string;
   service: string;
+  /** Random per process (made once by `startTelemetry`), so two processes never overwrite each other's series. */
+  instanceId: string;
   log: (line: Record<string, string | number>) => void;
   fetch?: typeof fetch | undefined;
   now?: (() => number) | undefined;
@@ -161,7 +164,12 @@ export async function pushMetrics(registry: MetricRegistry, options: PushOptions
   const payload = {
     resourceMetrics: [
       {
-        resource: { attributes: toAttributes({ 'service.name': options.service }) },
+        resource: {
+          attributes: toAttributes({
+            'service.name': options.service,
+            'service.instance.id': options.instanceId,
+          }),
+        },
         scopeMetrics: [{ scope: { name: 'geldar' }, metrics: registry.otlp(timeUnixNano) }],
       },
     ],
@@ -188,11 +196,15 @@ export async function pushMetrics(registry: MetricRegistry, options: PushOptions
  */
 export function startTelemetry(
   registry: MetricRegistry,
-  options: Omit<PushOptions, 'url'> & { url: string | undefined; intervalMs: number },
+  options: Omit<PushOptions, 'url' | 'instanceId'> & {
+    url: string | undefined;
+    intervalMs: number;
+  },
 ): { stop(): Promise<void> } {
   const { url, intervalMs, ...rest } = options;
   if (!url) return { stop: async () => {} };
-  const pushOptions: PushOptions = { ...rest, url };
+  // One id per started handle: the process starts one telemetry handle, so the id is per process.
+  const pushOptions: PushOptions = { ...rest, url, instanceId: randomUUID() };
   const inFlight = new Set<Promise<void>>();
   let stopped = false;
   const push = (): void => {

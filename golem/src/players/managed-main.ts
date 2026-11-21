@@ -34,6 +34,7 @@ import { bookServe, installEntryHandlers, playerBodyEnv, startPlayerBody } from 
 import { managedLifeId, NO_HOST_CONFIG_EXIT, parseManagedPlayerConfig } from './managed-config.ts';
 import { type HostDb, type HostDbOptions, openPgHostDb } from './managed-pg.ts';
 import type { PlayerConfig } from './player-config.ts';
+import { startPlayerTelemetry } from './player-telemetry.ts';
 import { watchPresence } from './presence.ts';
 import { PlayerSession } from './session.ts';
 
@@ -120,6 +121,8 @@ export async function runManagedBody(
     await nc.close();
     throw error;
   }
+  // Pushes only with GELDAR_TELEMETRY_URL in this container's env (decision 0088); unset, nothing is sent.
+  const telemetry = startPlayerTelemetry(env, log);
   const bodyEnv = playerBodyEnv({
     proficiency,
     config,
@@ -128,6 +131,7 @@ export async function runManagedBody(
     nc,
     server,
     log: (line) => log({ event: 'body', line }),
+    metrics: telemetry.metrics,
   });
   const serve = bookServe({
     shard: config.shard,
@@ -169,6 +173,7 @@ export async function runManagedBody(
   });
   await session.down();
   proficiency?.stop();
+  await telemetry.stop();
   await restartKv.close();
   await nc.close();
   log({ event: 'player_stopped' });

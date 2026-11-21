@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AdamBodyEnv } from '../adam/adam-body.ts';
 import { playerBodyEnv, runPlayer } from './main.ts';
 
@@ -117,6 +117,42 @@ describe('runPlayer shutdown and the connections (AN-12a)', () => {
     state.failProficiency = true;
     await expect(runPlayer('ag-jason-01', undefined, ENV)).rejects.toThrow('proficiency failed');
     expect(state.log).toEqual(['kv.close', 'nc.close']);
+  });
+});
+
+// runPlayer starts the host's Body telemetry from the env: a fake global fetch records each push.
+describe('runPlayer starts the host telemetry (decision 0088)', () => {
+  beforeEach(() => {
+    state.log.length = 0;
+    state.failKv = false;
+    state.failPresence = false;
+    state.failProficiency = false;
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('with GELDAR_TELEMETRY_URL set, pushes once to /v1/metrics', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+      urls.push(url);
+      return new Response(null, { status: 200 });
+    });
+    await runPlayer('ag-jason-01', undefined, {
+      ...ENV,
+      GELDAR_TELEMETRY_URL: 'http://127.0.0.1:4318',
+    });
+    expect(urls).toEqual(['http://127.0.0.1:4318/v1/metrics']);
+  });
+
+  it('with GELDAR_TELEMETRY_URL unset, makes no request', async () => {
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+      urls.push(url);
+      return new Response(null, { status: 200 });
+    });
+    await runPlayer('ag-jason-01', undefined, ENV);
+    expect(urls).toEqual([]);
   });
 });
 

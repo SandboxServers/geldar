@@ -377,3 +377,70 @@ describe('startGolemTelemetry: push only', () => {
     }
   }, 3000);
 });
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const INSTANCE_URL = 'http://127.0.0.1:4318';
+
+/** A fetch that records each request body and answers 200. */
+function recordingFetch(bodies: string[]): typeof fetch {
+  return (async (_url: string, init: RequestInit) => {
+    bodies.push(String(init.body));
+    return new Response(null, { status: 200 });
+  }) as unknown as typeof fetch;
+}
+
+/** The `service.instance.id` resource attribute of one pushed OTLP payload. */
+function instanceIdOf(body: string): string {
+  const payload = JSON.parse(body) as {
+    resourceMetrics: {
+      resource: { attributes: { key: string; value: { stringValue: string } }[] };
+    }[];
+  };
+  const attribute = payload.resourceMetrics[0]?.resource.attributes.find(
+    (a) => a.key === 'service.instance.id',
+  );
+  if (!attribute) throw new Error('the push carries no service.instance.id');
+  return attribute.value.stringValue;
+}
+
+describe('the Body telemetry resource (decision 0353)', () => {
+  it('gives each started process its own random service.instance.id', async () => {
+    const first: string[] = [];
+    const second: string[] = [];
+    const options = { service: 'geldar-golem-player', log: quiet, intervalMs: 60_000 };
+    const a = startGolemTelemetry(
+      { GELDAR_TELEMETRY_URL: INSTANCE_URL },
+      { ...options, fetch: recordingFetch(first) },
+    );
+    const b = startGolemTelemetry(
+      { GELDAR_TELEMETRY_URL: INSTANCE_URL },
+      { ...options, fetch: recordingFetch(second) },
+    );
+    await a.stop();
+    await b.stop();
+    expect(instanceIdOf(first[0] ?? '')).toMatch(UUID);
+    expect(instanceIdOf(second[0] ?? '')).toMatch(UUID);
+    expect(instanceIdOf(first[0] ?? '')).not.toBe(instanceIdOf(second[0] ?? ''));
+  });
+
+  it('draws the id at random: no life or player id from the env reaches the push', async () => {
+    const bodies: string[] = [];
+    const handle = startGolemTelemetry(
+      {
+        GELDAR_TELEMETRY_URL: INSTANCE_URL,
+        GELDAR_LIFE_ID: 'ag_jason_01',
+        GELDAR_PLAYER_ID: 'ag-jason-01',
+      },
+      {
+        service: 'geldar-golem-player',
+        log: quiet,
+        intervalMs: 60_000,
+        fetch: recordingFetch(bodies),
+      },
+    );
+    await handle.stop();
+    expect(instanceIdOf(bodies[0] ?? '')).toMatch(UUID);
+    expect(bodies[0]).not.toContain('ag_jason_01');
+    expect(bodies[0]).not.toContain('ag-jason-01');
+  });
+});
