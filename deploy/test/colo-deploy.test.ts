@@ -15,6 +15,7 @@ import {
   PROJECT_FILTER,
   posix,
   REAL,
+  REAL_BIN,
   release,
   run,
   SECRET_FILES,
@@ -151,6 +152,94 @@ describe('colo-up.sh (decision 0084)', () => {
     expect(r.code).not.toBe(0);
     expect(r.out).toContain('free disk');
   });
+
+  it('refuses when free inodes are below the threshold, though blocks are plentiful', () => {
+    const fx = fixture();
+    // A df stand-in: plenty of blocks, 50 free inodes of 1000.
+    writeFileSync(
+      join(fx.dir, 'bin', 'df'),
+      '#!/bin/sh\nif [ "$1" = -Pi ]; then printf "Filesystem Inodes IUsed IFree IUse%% Mounted\\nx 1000 950 50 95%% /\\n"; else printf "Filesystem 1024-blocks Used Available Capacity Mounted\\nx 999999999 1 999999999 1%% /\\n"; fi\n',
+      { mode: 0o755 },
+    );
+    const r = run('colo-up.sh', fx, { ...REAL, GELDAR_MIN_FREE_INODES: '100' });
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('free inodes 50 of the repo checkout');
+    expect(mutates(calls(fx))).toBe(false);
+  });
+
+  // df stand-in that is poor only for a path containing "poor" (50 free inodes, or 5 free blocks); plenty everywhere else.
+  const POOR_DF = (kind: 'inodes' | 'blocks') =>
+    `#!/bin/sh\nfor a; do p=$a; done\ncase "$p" in *poor*) poor=1;; *) poor=0;; esac\nif [ "$1" = -Pi ]; then n=900000; if [ $poor = 1 ] && [ ${kind === 'inodes' ? 1 : 0} = 1 ]; then n=50; fi; printf "F I U IF P M\nx 1000000 1 $n 1%% /\n"; else n=999999999; if [ $poor = 1 ] && [ ${kind === 'blocks' ? 1 : 0} = 1 ]; then n=5; fi; printf "F B U A C M\nx 999999999 1 $n 1%% /\n"; fi\n`;
+
+  it.each([
+    ['inodes', 'deploy volume', 'free inodes 50 of the deploy volume'],
+    ['blocks', 'deploy volume', 'blocks) of the deploy volume'],
+    ['inodes', 'docker data root', 'free inodes 50 of the docker data root'],
+  ] as const)('refuses on %s of the %s, not only of the repo checkout', (kind, which, msg) => {
+    const fx = fixture();
+    const poor = join(fx.dir, 'poor');
+    mkdirSync(poor);
+    writeFileSync(join(fx.dir, 'bin', 'df'), POOR_DF(kind), { mode: 0o755 });
+    const orig = readFileSync(join(fx.dir, 'bin', 'docker'), 'utf8');
+    writeFileSync(join(fx.dir, 'bin', 'docker.orig'), orig, { mode: 0o755 });
+    writeFileSync(
+      join(fx.dir, 'bin', 'docker'),
+      '#!/bin/sh\ncase "$*" in *"info --format"*) echo "$FAKE_DOCKER_ROOT"; exit 0;; esac\nexec "$(dirname "$0")/docker.orig" "$@"\n',
+      { mode: 0o755 },
+    );
+    const env =
+      which === 'deploy volume'
+        ? { GELDAR_DEPLOY_VOLUME: posix(poor), FAKE_DOCKER_ROOT: posix(fx.dir) }
+        : { GELDAR_DEPLOY_VOLUME: posix(fx.dir), FAKE_DOCKER_ROOT: posix(poor) };
+    const r = run('colo-up.sh', fx, {
+      ...REAL,
+      GELDAR_MIN_FREE_INODES: '100',
+      GELDAR_MIN_FREE_KB: '10',
+      ...env,
+    });
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain(msg);
+  });
+
+  it('a missing deploy volume or a silent docker info is skipped with a message, not a pass for another filesystem', () => {
+    const fx = fixture();
+    const r = run('colo-up.sh', fx, { ...REAL, GELDAR_DEPLOY_VOLUME: posix(join(fx.dir, 'nope')) });
+    expect(r.out).toContain('space check skipped for the deploy volume');
+    expect(r.out).toContain('space check skipped for the docker data root');
+  });
+
+  it('the floor fires before the first write: nothing calls mktemp when the deploy volume is out of inodes', () => {
+    const fx = fixture();
+    const poor = join(fx.dir, 'poor');
+    mkdirSync(poor);
+    writeFileSync(join(fx.dir, 'bin', 'df'), POOR_DF('inodes'), { mode: 0o755 });
+    const log = join(fx.dir, 'mktemp.log');
+    writeFileSync(
+      join(fx.dir, 'bin', 'mktemp'),
+      `#!/bin/sh\necho "$*" >> "${posix(log)}"\nexec "${REAL_BIN}/mktemp" "$@"\n`,
+      { mode: 0o755 },
+    );
+    const env = { GELDAR_MIN_FREE_INODES: '100', GELDAR_DEPLOY_VOLUME: posix(poor) };
+    const r = run('colo-up.sh', fx, { ...REAL, ...env });
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('free inodes 50 of the deploy volume');
+    expect(existsSync(log)).toBe(false);
+    // Control: with a healthy volume the same shim is reached, so the check above is not vacuous.
+    const ok = run('colo-up.sh', fx, { ...REAL, ...env, GELDAR_DEPLOY_VOLUME: posix(fx.dir) });
+    expect(ok.out).not.toContain('free inodes 50');
+    expect(existsSync(log)).toBe(true);
+  });
+
+  it('a filesystem that reports no inode count (total 0) is not refused on inodes', () => {
+    const fx = fixture();
+    writeFileSync(
+      join(fx.dir, 'bin', 'df'),
+      '#!/bin/sh\nif [ "$1" = -Pi ]; then printf "F I U IF P M\nx 0 0 0 - /\n"; else printf "F B U A C M\nx 999999999 1 999999999 1%% /\n"; fi\n',
+      { mode: 0o755 },
+    );
+    const r = run('colo-up.sh', fx, { ...REAL, GELDAR_MIN_FREE_INODES: '100' });
+    expect(r.out).not.toContain('free inodes');
+  });
 });
 
 describe('colo-rollback, colo-down, colo-status (decision 0084)', () => {
@@ -195,6 +284,38 @@ describe('colo-rollback, colo-down, colo-status (decision 0084)', () => {
   });
 });
 
+describe('colo-status inode warning', () => {
+  // A df stand-in first on PATH: the `df -Pi` table with the given IUse% for the deploy volume.
+  const withDf = (pct: number) => {
+    const fx = fixture();
+    const table = `Filesystem Inodes IUsed IFree IUse% Mounted
+fake 1000 ${pct * 10} ${1000 - pct * 10} ${pct}% /`;
+    writeFileSync(
+      join(fx.dir, 'bin', 'df'),
+      `#!/bin/sh
+cat <<'EOT'
+${table}
+EOT
+`,
+      { mode: 0o755 },
+    );
+    return { ...fx, env: { ...fx.env, GELDAR_INODE_PATH: posix(fx.dir) } };
+  };
+
+  it('warns when the inodes of the deploy volume are 80% used or more, and still exits 0', () => {
+    const r = run('colo-status.sh', withDf(95));
+    expect(r.code).toBe(0);
+    expect(r.out).toContain('inodes of the deploy volume are 95% used');
+    expect(r.out).toContain('prune-deploy-work.sh');
+  });
+
+  it('prints nothing about inodes below the threshold', () => {
+    const r = run('colo-status.sh', withDf(12));
+    expect(r.code).toBe(0);
+    expect(r.out).not.toContain('inodes');
+  });
+});
+
 describe('deploy scripts: docker scope and volumes (decision 0084)', () => {
   it('every docker call names the geldar-colo project or its label, and no script runs down -v', () => {
     const fx = fixture();
@@ -205,7 +326,9 @@ describe('deploy scripts: docker scope and volumes (decision 0084)', () => {
     expect(log.length).toBeGreaterThan(0);
     for (const c of log) {
       const allowed =
-        PROJECT_FILTER.test(c) || STATS_BY_ID.test(c) || /^(compose version|info)$/.test(c);
+        PROJECT_FILTER.test(c) ||
+        STATS_BY_ID.test(c) ||
+        /^(compose version|info( --format \{\{\.DockerRootDir\}\})?)$/.test(c);
       expect(allowed, `unscoped docker call: ${c}`).toBe(true);
       expect(c).not.toMatch(/\bdown\b.*(-v\b|--volumes)|--volumes/);
     }

@@ -19,6 +19,10 @@ RELEASE_FILE=${GELDAR_RELEASE_FILE:-/etc/geldar-colo/release.env}
 STATE_DIR=${GELDAR_STATE_DIR:-/var/lib/geldar-colo}
 export GELDAR_STATE_DIR=$STATE_DIR # compose mounts $GELDAR_STATE_DIR/bluemap/bluemap.jar into Paper (C2-07o)
 MIN_FREE_KB=${GELDAR_MIN_FREE_KB:-10485760}
+# The deploy volume (/var, about 9 GB) and Docker's data root are small, so their block floor is separate and lower (1 GiB).
+MIN_FREE_KB_DEPLOY=${GELDAR_MIN_FREE_KB_DEPLOY:-1048576}
+DEPLOY_VOLUME=${GELDAR_DEPLOY_VOLUME:-/var/lib/geldar-deploy}
+MIN_FREE_INODES=${GELDAR_MIN_FREE_INODES:-100000} # a deploy checkout is about 4,400 inodes
 BLUEMAP_LOCK=${GELDAR_BLUEMAP_LOCK:-$ROOT/plugins/bluemap/bluemap.lock.json}
 CHUNKY_LOCK=${GELDAR_CHUNKY_LOCK:-$ROOT/plugins/chunky/chunky.lock.json}
 COREPROTECT_LOCK=${GELDAR_COREPROTECT_LOCK:-$ROOT/plugins/coreprotect/coreprotect.lock.json}
@@ -28,9 +32,6 @@ DRY_RUN=${DEPLOY_DRY_RUN:-0}
 GELDAR_SERVICE_UID=${GELDAR_SERVICE_UID:-1000}
 export GELDAR_SERVICE_UID
 
-WORK=$(mktemp -d) || exit 1
-trap 'rm -rf "$WORK"' EXIT
-
 die() {
   echo "colo: error: $*" >&2
   exit 1
@@ -39,6 +40,15 @@ die() {
 say() {
   echo "colo: $*"
 }
+
+. "$DEPLOY_DIR/space-floor.sh"
+
+# A deploy script that sets COLO_SPACE_FLOOR_FIRST=1 before sourcing this file gets the floors checked BEFORE the first
+# write (the work directory below), so a full filesystem is named as inodes or blocks instead of dying at mktemp.
+if [ "${COLO_SPACE_FLOOR_FIRST:-0}" = 1 ]; then space_floors; fi
+
+WORK=$(mktemp -d) || die "cannot create a work directory; the temp filesystem may be out of inodes or blocks"
+trap 'rm -rf "$WORK"' EXIT
 
 need() {
   command -v "$1" >/dev/null 2>&1 || die "missing command: $1"
@@ -129,10 +139,7 @@ check_prereqs() {
   [ -f "$COMPOSE_FILE" ] || die "compose file not found: $COMPOSE_FILE"
   [ -f "$SECRETS_OVERLAY" ] || die "secrets overlay not found: $SECRETS_OVERLAY"
   [ -f "$NATS_OVERLAY" ] || die "NATS auth overlay not found: $NATS_OVERLAY"
-  free=$(df -Pk "$ROOT" | awk 'NR == 2 {print $4}')
-  if [ -z "$free" ] || [ "$free" -lt "$MIN_FREE_KB" ]; then
-    die "free disk ${free:-unknown} KiB is below the threshold of $MIN_FREE_KB KiB"
-  fi
+  prereq_space
 }
 
 # Writes the merged compose config (read-only) to $WORK/config.yml once. Every check below reads that file.

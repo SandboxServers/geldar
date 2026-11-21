@@ -5,6 +5,8 @@
 # cannot start before --set-role-password has run.
 # Touches only the geldar-colo project. Removes no volume. Set DEPLOY_DRY_RUN=1 to print the plan only.
 set -eu
+# Check the space floors before the first write (the work directory in common.sh).
+COLO_SPACE_FLOOR_FIRST=1
 . "$(dirname "$0")/common.sh"
 
 HOLD_PUBLIC=1

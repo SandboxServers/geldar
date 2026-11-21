@@ -133,9 +133,13 @@ describe('colo-admin.sh (decision 0133)', () => {
     expect(mintReal(fx).code).toBe(0);
     const log = calls(fx);
     expect(log.length).toBeGreaterThan(0);
-    expect(log.every((c) => PROJECT_FILTER.test(c) || /^(compose version|info)$/.test(c))).toBe(
-      true,
-    );
+    expect(
+      log.every(
+        (c) =>
+          PROJECT_FILTER.test(c) ||
+          /^(compose version|info( --format \{\{\.DockerRootDir\}\})?)$/.test(c),
+      ),
+    ).toBe(true);
     expect(log.some((c) => /\bdown\b|--volumes/.test(c))).toBe(false);
     const text = readFileSync(join(DEPLOY, 'colo-admin.sh'), 'utf8');
     expect(text).not.toMatch(/down -v|--volumes|volume rm|system prune/);

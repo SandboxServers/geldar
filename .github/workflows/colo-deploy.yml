@@ -239,6 +239,42 @@ jobs:
             echo "::error::the inbox is missing: $INBOX" >&2
             exit 1
           fi
+          # Space floor BEFORE the first write. A filesystem can be out of inodes with blocks to spare (2026-11-20: 100% inodes,
+          # 64% bytes, and 22 runs died at the mktemp below), so check both on the inbox's filesystem and on Docker's data root.
+          # This job has no checkout of the repo here, so deploy/space-floor.sh cannot be sourced; the same logic and the same
+          # variable names are repeated. The deploy volume floor is GELDAR_MIN_FREE_KB_DEPLOY (default 1 GiB: /var is small).
+          # The Docker-root half is best effort: the runner account is unprivileged and probably cannot run `docker info`, in which
+          # case it is an explicit warning, not a pass; the node-side scripts check Docker's root as the operator account.
+          min_kb="${GELDAR_MIN_FREE_KB_DEPLOY:-1048576}"
+          min_inodes="${GELDAR_MIN_FREE_INODES:-100000}"
+          floor() {
+            local label="$1" path="$2" kb total free
+            if [[ ! -d "$path" ]]; then
+              echo "::warning::space check skipped for the $label: $path is missing"
+              return 0
+            fi
+            kb="$(df -Pk "$path" | awk 'NR == 2 {print $4}')"
+            if [[ ! "$kb" =~ ^[0-9]+$ ]]; then
+              echo "::error::cannot read free blocks of the $label ($path)" >&2
+              exit 1
+            fi
+            if ((kb < min_kb)); then
+              echo "::error::out of BLOCKS on the $label ($path): $kb KiB free, the floor is $min_kb KiB" >&2
+              exit 1
+            fi
+            read -r total free < <(df -Pi "$path" | awk 'NR == 2 {print $2, $4}')
+            if [[ "$total" =~ ^[0-9]+$ && "$free" =~ ^[0-9]+$ ]] && ((total > 0 && free < min_inodes)); then
+              echo "::error::out of INODES on the $label ($path): $free free, the floor is $min_inodes (blocks are fine: $kb KiB free); run deploy/genesis/prune-deploy-work.sh on the node" >&2
+              exit 1
+            fi
+          }
+          floor "deploy volume" "$INBOX"
+          droot="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
+          if [[ -n "$droot" ]]; then
+            floor "docker data root" "$droot"
+          else
+            echo "::warning::Docker data root NOT checked here: docker info did not answer (this runner account is unprivileged and is not documented as able to reach docker); colo-up.sh and colo-cd.sh check it on the node as the operator account"
+          fi
           tmp="$(mktemp "$INBOX/.release.env.XXXXXX")"
           cat "$SRC" > "$tmp"
           chmod 0600 "$tmp"

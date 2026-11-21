@@ -29,7 +29,7 @@ Campaign: world operations (session geldar-worldops, decision block 0250-0259; 0
 
 **Parked for the owner**
 - MineSkin visibility of the Lewis, Clark, Chapman and MacDonald uploads is unconfirmed through the API (dashboard check needed).
-- Node /var has 5.6 GB free; 111 old deploy work dirs under /var/lib/geldar-deploy/work are never pruned. Cleanup needs the owner's word.
+- Old deploy work dirs under /var/lib/geldar-deploy/work are never pruned, and each holds about 4,400 inodes (the 2026-11-20 deploy failures were inode exhaustion). `deploy/genesis/prune-deploy-work.sh` is the tool: dry run first, then `--apply` with the owner's word. Not installed or run by the repo; `deploy/colo-status.sh` warns at 80% inodes.
 
 **Traps**
 - Ops agents run from stale worktrees: read runbooks with `git show origin/main:<path>`.

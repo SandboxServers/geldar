@@ -24,6 +24,8 @@ COLO_CD_ENV_FILE=${COLO_CD_ENV_FILE:-/home/claude/colo-env.sh}
 if [ -f "$COLO_CD_ENV_FILE" ]; then . "$COLO_CD_ENV_FILE"; fi
 GELDAR_COLO_ROOT=${GELDAR_COLO_ROOT:-/mnt/nvme/geldar-colo/src}
 export GELDAR_COLO_ROOT
+# Check the space floors before the first write (the work directory in common.sh).
+COLO_SPACE_FLOOR_FIRST=1
 . "$(dirname "$0")/common.sh"
 . "$DEPLOY_DIR/colo-cd-verify.sh"
 . "$DEPLOY_DIR/colo-cd-players.sh"

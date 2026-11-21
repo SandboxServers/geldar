@@ -12,6 +12,7 @@ The scripts are POSIX `sh`. The tests (`deploy/test/`) run on the desktop throug
 | File | What it does |
 | --- | --- |
 | `common.sh` | Shared checks, sourced by the other scripts. Holds every refusal listed below. |
+| `space-floor.sh` | Sourced by `common.sh`. The free-block and free-inode floors for the checkout, the deploy volume and Docker's data root (`GELDAR_MIN_FREE_KB`, `GELDAR_MIN_FREE_KB_DEPLOY`, `GELDAR_MIN_FREE_INODES`). Functions only. |
 | `colo-up.sh` | Checks, validates the merged config, verifies the BlueMap jar, records the release, then pulls and starts the project. |
 | `colo-rollback.sh` | Re-applies the previous recorded release with `--pull never`, and swaps the two records. |
 | `colo-cd-plan.sh` | Read-only. Prints the delta between two releases: changed image digests, sql yes or no, the files to refresh, and the `needs manual` items (plugin/, compose/, deploy/caddy/, NATS). |
@@ -46,6 +47,7 @@ with a cleared environment):
   The image must be under `ghcr.io/sandboxservers/geldar-<name>` and carry `org.opencontainers.image.revision` equal to
   the release sha. `mind` and `admin` are checked the same way.
 - The export has no `.git`, so a file deleted upstream is not detected; it stays in the src extract.
+- If a refresh of the src extract fails part-way (`cannot refresh <file>`), the extract can hold the new `common.sh` without the new `space-floor.sh` (the copy order follows the changed-file list, and `common.sh` can come first). A hand-run `colo-*.sh` then stops with a missing-file error before it writes anything, and the next successful `colo-cd.sh` run repairs it. To repair it at once, copy `deploy/space-floor.sh` from the export into the extract's `deploy/`.
 
 Every compose call names the project `geldar-colo` (`-p`), so the scripts reach only that project's containers,
 volumes and networks. No script runs `down`, and no script removes a volume.
@@ -56,6 +58,14 @@ volumes and networks. No script runs `down`, and no script removes a volume.
   daemon (the docker group, or root).
 - Free disk on the filesystem that holds the repo checkout: at least `GELDAR_MIN_FREE_KB` KiB (default `10485760`,
   which is 10 GiB). `colo-up.sh` refuses below it.
+- Free space on the deploy volume (`GELDAR_DEPLOY_VOLUME`, default `/var/lib/geldar-deploy`) and on Docker's data root
+  (`docker info`): at least `GELDAR_MIN_FREE_KB_DEPLOY` KiB of blocks (default `1048576`, 1 GiB; these volumes are small, so
+  this is separate from the 10 GiB checkout floor). The checkout, the deploy volume and Docker's root must each also have at
+  least `GELDAR_MIN_FREE_INODES` free inodes (default `100000`). `colo-up.sh` and `colo-cd.sh` check this before their first
+  write and refuse below it, printing the measured and the required value (an inode refusal names
+  `deploy/genesis/prune-deploy-work.sh`). A missing path, a `docker info` that says nothing, or a filesystem with no inode count
+  is skipped with a message. `colo-admin.sh` and `colo-rollback.sh` check the checkout block floor only. Confirm the
+  thresholds against `df -Pk` and `df -Pi` of those volumes on the node.
 - Secret files in the secrets directory (`GELDAR_SECRETS_DIR`, default `/etc/geldar-colo/secrets`):
   - the directory is root-only (`gen-secrets.sh` sets mode `0700`);
   - the required list is not kept by hand. The scripts read the secret names and their files from the merged compose
@@ -327,7 +337,7 @@ Until step 2 is done, `colo-notice.sh` publishes nothing and warns; `colo-up.sh`
 
 - docker or compose v2 is missing, or the daemon cannot be reached;
 - the compose file or the secrets overlay is missing;
-- free disk is below `GELDAR_MIN_FREE_KB`;
+- free disk is below `GELDAR_MIN_FREE_KB` (checkout) or `GELDAR_MIN_FREE_KB_DEPLOY` (deploy volume, Docker root), or free inodes are below `GELDAR_MIN_FREE_INODES`;
 - the secrets directory is missing, or a secret file is missing, empty, or not mode `0600`/`0400`;
 - the release manifest is missing, has a line that is not `KEY=VALUE`, has a key that does not end in `_IMAGE`,
   uses the `latest` tag, is not a digest reference, or lists no images;
@@ -404,14 +414,13 @@ Node env values (names only; set them in the deploy env on the node, never in th
 |---|---|
 | `GELDAR_MC_BIND` | the node's own interface address for the public Minecraft port. Set together with `GELDAR_MC_PORT`; the scripts merge `compose/colo-public.yml` only when both are set, refuse exactly one, and refuse anything but one strict IPv4 literal (`a.b.c.d`; no `0.0.0.0`, hostname, IPv6 or list). `colo-up.sh` merges the overlay only in its last step, after the whole stack is healthy, and prints `public Minecraft port published on <bind>:<port>` |
 | `GELDAR_MC_PORT` | the public Minecraft port: 1-65535, never 25565 or 25566 (decision 0082) |
-
-There is no `state/release.commit` record. The release record is `state/current.env` and `state/previous.env` (copies of the
-release manifest); the manifest carries no commit header, so nothing reads a commit from it.
 | `GELDAR_GLASS_TRUSTED_PROXIES` | the address Glass sees Caddy as, from inside its container: the .1 gateway of GELDAR_COLO_SUBNET, the colo bridge /24 you pin (a private range inside 172.16/12 private that nothing else on the node uses). colo-up.sh saves the three values in state/node.env and reloads them; colo-public.sh install refuses without the two proxy lists; colo-status.sh prints them |
 | `GELDAR_MCP_TRUSTED_PROXIES` | the same for the MCP service |
 | `GELDAR_ACT_BUDGET_ENFORCE` | the act budget is suspended by default and every act is metered (decision 0149). Set `1` on the MCP service to refuse acts again (`budget_exhausted`); any other value leaves it off |
 | `REGISTER_KILL_SWITCH`, `REGISTER_PUBLIC_URL`, `REGISTER_TRUSTED_PEERS`, `REGISTER_MS_CLIENT_ID` | the `register` service (C2-08c, profile `register`, decision 0135; Microsoft sign-in only). `REGISTER_PUBLIC_URL` is the Glass origin, `https://glass.<domain>`; the Entra redirect URI is that plus `/register/callback`. `REGISTER_MS_CLIENT_ID` is the Entra app id. The client secret is `register-ms-secret.txt` (owner-provided) and the session key `register-session-key.txt` (generated). OFF BY DEFAULT: the kill switch is true unless set to `false` (the sign-in kill switch: leave it true and recreate the register service), no default `up` starts the service, and `colo-public.sh` does not load `register.caddy`. Sign-up stays closed until the owner gate in `docs/runbooks/open-signup.md` is met; that runbook sets the order, and the kill switch stays true until its last step. `colo-up.sh` sets the `geldar_register` login password after the glass one. |
 | `GELDAR_MAP_UPSTREAM`, `GELDAR_GLASS_UPSTREAM`, `GELDAR_MCP_UPSTREAM` | the Caddy upstreams, in `GELDAR_PUBLIC_ENV` (each `127.0.0.1:<port>`) |
+
+Where the live commit is recorded: `colo-cd.sh` needs `<state dir>/release.commit` before a run (it stops with "no release.commit" without it) and writes it after a successful run. The release records are `state/release.env` (the installed manifest), `state/current.env` and `state/previous.env`, copies of the release manifest, and the manifest DOES name its commit: the first line the colo-images workflow writes is `# Release manifest for the Colo node (decision 0084). Commit <40 hex>.` (colo-up.sh skips it as a comment). The prune scripts (`deploy/genesis/prune-deploy-work.sh`, `prune-deploy-images.sh`) read every one of these records that exists and keep everything any of them names. A record that exists but cannot be read as a file, or does not name a valid commit (or lists no images), makes them refuse and remove nothing; only a record that does not exist is skipped. A directory the account cannot search also makes them refuse, because its records would look absent: the work prune checks the state directory and `GELDAR_DEPLOY_ROOT`'s `staged` and `inbox` directories, the image prune checks the state directory (the root-only `/etc/geldar-colo` directory of the manifest copy it also reads is the one exception, and it is skipped). The modes of `staged` and `inbox` are not set by anything in the repo, so if the operator account cannot search them, rerun the work prune with an account that can (for example with sudo, with the owner's word). On the real node the state directory is `/mnt/nvme/geldar-colo/state` (measured 2026-11-21; `GELDAR_STATE_DIR` is exported in the node-only deploy environment), not the default `/var/lib/geldar-colo`, and `release.commit` is there: so run both scripts as `GELDAR_STATE_DIR=/mnt/nvme/geldar-colo/state sh deploy/genesis/prune-deploy-work.sh` (and `prune-deploy-images.sh`), dry run first. They do not need the state directory and the deploy volume (`/var/lib/geldar-deploy`) to share a filesystem.
 
 Live check for the trusted proxies (do it once per node, after `install`): send one request through Caddy to the Glass
 site and one to the MCP site, then read each service log (`docker compose -p geldar-colo logs --tail 20 glass`, and

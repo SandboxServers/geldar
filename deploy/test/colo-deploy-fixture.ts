@@ -82,6 +82,15 @@ export function findSh(): string {
 }
 export const SH = findSh();
 
+/**
+ * The directory of the real coreutils for a shim that must hand over to the real tool: Git for Windows' usr/bin on a Windows
+ * desktop; /usr/bin elsewhere. `dirname(SH)` is NOT right on Linux, where SH is the bare word `sh` and its dirname is `.`.
+ */
+export const REAL_BIN =
+  SH.includes('/') || SH.includes(String.fromCharCode(92))
+    ? dirname(SH).replaceAll(String.fromCharCode(92), '/')
+    : '/usr/bin';
+
 // Every test starts several `sh` processes; on a Windows desktop beside the full suite a test took 5-11 s, against
 // vitest's 5 s default. 60 s is a bound for real work under full-suite load, not a retry or a skip.
 export const SPAWN_TEST_TIMEOUT_MS = 60_000;
@@ -253,6 +262,7 @@ export function fixture(publishedPort = '25567'): Fixture {
     GELDAR_COREPROTECT_LOCK: posix(coreprotectLock),
     GELDAR_DEPLOY_ALLOW_FILE_URL: '1',
     GELDAR_MIN_FREE_KB: '1',
+    GELDAR_MIN_FREE_INODES: '1',
     DEPLOY_DRY_RUN: '1',
     DOCKER_CALLS_LOG: posix(calls),
     DOCKER_CONFIG_FIXTURE: posix(config),
