@@ -30,11 +30,25 @@ const DEPLOY_CMD =
   '{GELDAR_PROJECT:-geldar-colo}" -f compose/colo.yml -f compose/nats-auth.yml -f deploy/compose.secrets.yml -f compose/opt-in/colo-nats-exporter.yml up -d --no-deps nats-exporter';
 /** The whole role script, statement by statement, in order. Any other statement (a GRANT in particular) fails the exact test. */
 const EXPECTED_SQL = [
-  '\\set otel_pg_password `cat "$GELDAR_SECRETS_DIR/otel-pg.txt"`',
+  'SET log_min_error_statement = panic;',
+  '\\if :{?otel_pg_password}',
+  '\\else',
+  "DO $$ BEGIN RAISE EXCEPTION 'psql variable otel_pg_password is not set, pipe the password in as that variable'; END $$;",
+  '\\quit',
+  '\\endif',
   "SELECT format('CREATE ROLE geldar_monitor LOGIN') WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'geldar_monitor') \\gexec",
   "SELECT format('ALTER ROLE geldar_monitor LOGIN PASSWORD %L', :'otel_pg_password') \\gexec",
   'GRANT pg_read_all_stats TO geldar_monitor;',
   'GRANT CONNECT ON DATABASE geldar TO geldar_monitor;',
+];
+
+/** The G2 pipeline (node request 08, section 9): the password reaches psql on stdin and never on a command line. Raw, so the quoting is literal. */
+const S2_PIPELINE = String.raw`{ printf '\\set otel_pg_password '"'"; sudo -n cat /mnt/nvme/geldar-telemetry/pg-secrets/otel-pg.txt; printf '%s\n' "'"; cat /mnt/nvme/geldar-telemetry/src.new-g2/deploy/telemetry/postgres-monitor.sql; } | docker exec -i geldar-colo-postgres-1 psql -q -v ON_ERROR_STOP=1 -U geldar -d geldar`;
+/** Every document that shows the S2 pipeline: the brief, the runbook and the one-page copy for ops. */
+const S2_DOCS = [
+  'docs/analysis/telemetry/node-requests/08-monitors-g2.md',
+  RUNBOOK,
+  'docs/analysis/telemetry/node-requests/08-s2-pipeline.md',
 ];
 
 /** Skips the render test without docker; in CI a missing docker fails the run instead. */
@@ -222,6 +236,36 @@ describe('docs/runbooks/telemetry-monitors.md (G2)', () => {
   });
 });
 
+describe('node request 08 and the runbook name the real colo containers (G2)', () => {
+  const BRIEF_08 = 'docs/analysis/telemetry/node-requests/08-monitors-g2.md';
+  // Node, 2026-11-20: the colo NATS container is geldar-colo-nats-1 (compose service nats); the exporter is geldar-colo-nats-exporter-1.
+  // A docker inspect, stats, port, logs or exec argument must name the container, so a bare `nats` or `nats-exporter` there is wrong.
+  const CONTAINER_CMD = /docker (inspect|stats|port|logs|exec)\b/;
+  const BARE_NAME = /^[`'"]?(nats|nats-exporter)[`'"]?$/;
+
+  it('names no bare nats or nats-exporter as the container in a docker command of request 08', () => {
+    const offenders = readText(BRIEF_08)
+      .split('\n')
+      .filter((line) => CONTAINER_CMD.test(line))
+      .filter((line) => line.split(/\s+/).some((token) => BARE_NAME.test(token)));
+    expect(offenders).toEqual([]);
+  });
+
+  it('names the verified colo containers in request 08 and in the runbook', () => {
+    for (const doc of [readText(BRIEF_08), readText(RUNBOOK)]) {
+      expect(doc).toContain('geldar-colo-nats-1');
+      expect(doc).toContain('geldar-colo-nats-exporter-1');
+    }
+  });
+
+  it('says the exporter covers the colo NATS only, and the NeoForge NATS has no exporter', () => {
+    for (const doc of [readText(BRIEF_08), readText(RUNBOOK)]) {
+      expect(doc).toContain('geldar-nf-nats-1');
+      expect(doc).toMatch(/NeoForge[^\n]*no exporter/);
+    }
+  });
+});
+
 describe('deploy/telemetry/README.md (G2)', () => {
   it('no longer calls the postgresql receiver a commented placeholder', () => {
     expect(readText(README)).not.toMatch(/postgresql[^\n]*placeholder/i);
@@ -331,8 +375,19 @@ describe('deploy/telemetry/postgres-monitor.sql (G2, T-10)', () => {
     expect(sqlCode()).toContain(":'otel_pg_password'");
   });
 
-  it('reads the password from the secret file in psql, not from argv', () => {
-    expect(sqlCode()).toContain('\\set otel_pg_password `cat "$GELDAR_SECRETS_DIR/otel-pg.txt"`');
+  it('takes the password from the preset psql variable, and stops when it is not set', () => {
+    expect(sqlCode()).toContain('\\if :{?otel_pg_password}');
+    expect(sqlCode()).toContain('\\quit');
+    expect(sqlCode()).not.toMatch(/\\set\s+otel_pg_password/);
+  });
+
+  it('reads no secret path and has no backtick, so the file runs in the container psql as it is', () => {
+    expect(readText(SQL)).not.toContain('GELDAR_SECRETS_DIR');
+    expect(readText(SQL)).not.toContain('`');
+  });
+
+  it('sets log_min_error_statement to panic, so a failing ALTER never logs the password', () => {
+    expect(sqlStatements()[0]).toBe('SET log_min_error_statement = panic;');
   });
 
   it('has exactly the expected statements, and no other GRANT', () => {
@@ -353,5 +408,30 @@ describe('deploy/telemetry/postgres-monitor.sql (G2, T-10)', () => {
       /\b(INSERT|UPDATE|DELETE|TRUNCATE|SUPERUSER|CREATEDB|CREATEROLE|OWNER|REPLICATION|BYPASSRLS|ALL)\b/i,
     );
     expect(sqlCode()).not.toMatch(/\bCREATE\s+(?!ROLE\b)/i);
+  });
+});
+
+describe('the S2 pipeline in node request 08, the runbook and the ops copy (G2)', () => {
+  it('is the exact pipeline in every document that shows S2', () => {
+    for (const doc of S2_DOCS) expect(readText(doc), doc).toContain(S2_PIPELINE);
+  });
+
+  it('runs the secret read with sudo -n and the container psql with -q -v ON_ERROR_STOP=1 -U geldar -d geldar', () => {
+    for (const doc of S2_DOCS) {
+      expect(readText(doc), doc).toContain('sudo -n cat');
+      expect(readText(doc), doc).toContain('-q -v ON_ERROR_STOP=1 -U geldar -d geldar');
+      expect(readText(doc), doc).toContain('docker exec -i geldar-colo-postgres-1 psql');
+    }
+  });
+
+  it('never shows the host psql route', () => {
+    for (const doc of S2_DOCS)
+      expect(readText(doc), doc).not.toContain('psql -v ON_ERROR_STOP=1 -d geldar -f');
+  });
+
+  it('adds no trace, no echo flag and no PGPASSWORD to the pipeline', () => {
+    expect(S2_PIPELINE).not.toMatch(/\s-[aebL]\s/);
+    expect(S2_PIPELINE).not.toContain('PGPASSWORD');
+    expect(S2_PIPELINE).not.toMatch(/set -x/);
   });
 });

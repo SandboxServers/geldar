@@ -5,8 +5,14 @@ packet's operator guide. Nothing here restarts NATS or Postgres, and nothing her
 
 ## Facts checked (2026-11-20)
 
-- **NATS monitor is already on.** Inside the running NATS container it listens on `127.0.0.1:8222` (read on the node, 2026-11-20).
-  The exporter needs no NATS change.
+- **NATS monitor is already on.** Inside the running NATS container (`geldar-colo-nats-1`, compose service `nats`) it listens on
+  `127.0.0.1:8222` (read on the node, 2026-11-20). The exporter needs no NATS change.
+- **Container names (verified on the node, 2026-11-20).** The colo NATS is `geldar-colo-nats-1` (compose project `geldar-colo`, service `nats`).
+  The exporter container will be `geldar-colo-nats-exporter-1` (the overlay sets no `container_name`; compose commands still name the
+  service `nats-exporter`). `geldar-gateway` is the gateway container.
+- **Scope: the exporter covers the colo NATS only.** The NeoForge NATS (`geldar-nf-nats-1`, a separate compose project) has no exporter
+  and no gateway scrape. Adding it would need its own overlay in that project and the gateway on that network: a separate packet and an
+  owner decision.
 - **Same network.** NATS is on the `geldar-colo` network, as the gateway is, so the gateway scrape `nats:7777` resolves.
 - **Exporter release.** `natsio/prometheus-nats-exporter` v0.20.3 was released 2026-10-21, more than two weeks before the pin.
   Source: the GitHub releases page of `nats-io/prometheus-nats-exporter` and its README, both read 2026-11-20.
@@ -20,7 +26,7 @@ packet's operator guide. Nothing here restarts NATS or Postgres, and nothing her
 | `compose/opt-in/colo-nats-exporter.yml` | Opt-in overlay: `nats-exporter` (natsio/prometheus-nats-exporter 0.20.3, pinned by digest), `network_mode: service:nats`, 0.1 CPU, 64m, 64 pids, no ports. Reads `/varz` and `/jsz` only. |
 | `deploy/telemetry/gateway.yaml` | Gateway scrape job `nats` (`nats:7777`, 30s) and a `postgresql` receiver on `postgres:5432` as `geldar_monitor`, password from `${file:/run/secrets/otel-pg.txt}`. |
 | `deploy/telemetry/compose.gateway.yml` | Top-level secret `otel-pg` from `${GELDAR_SECRETS_DIR:?set GELDAR_SECRETS_DIR to the telemetry pg-secrets directory}/otel-pg.txt` (required, no default), mounted read-only at `/run/secrets/otel-pg.txt` in `geldar-gateway`. |
-| `deploy/telemetry/postgres-monitor.sql` | Creates or re-keys the `geldar_monitor` role: LOGIN, `pg_read_all_stats`, CONNECT on `geldar`. psql reads the password from `$GELDAR_SECRETS_DIR/otel-pg.txt`. |
+| `deploy/telemetry/postgres-monitor.sql` | Creates or re-keys the `geldar_monitor` role: LOGIN, `pg_read_all_stats`, CONNECT on `geldar`. The password is a preset psql variable, passed on stdin by the S2 pipeline (step 2). |
 
 ## The secret file
 
@@ -28,7 +34,7 @@ packet's operator guide. Nothing here restarts NATS or Postgres, and nothing her
   `/mnt/nvme/geldar-telemetry/pg-secrets` (directly under `/mnt/nvme/geldar-telemetry/`, named by the orchestrator). That directory holds
   only this file (owner decision, option (a), settled 2026-11-21; brief `docs/analysis/telemetry/node-requests/08-monitors-g2.md`
   section 6). The colo stack's directory `/etc/geldar-colo/secrets` (`deploy/common.sh`) is not used for it. Use the same directory for
-  psql and for the gateway restage. The gateway compose refuses to render when `GELDAR_SECRETS_DIR` is unset, so always set it.
+  the gateway restage. The gateway compose refuses to render when `GELDAR_SECRETS_DIR` is unset, so always set it.
 - **Owner and mode.** `10001:10001`, mode `0400`. The gateway runs as uid 10001 (`compose.gateway.yml`), so that user can read the
   file through the secret mount. Root can read it too. Nothing else on the node needs read access.
 - **Not in git.** The file is never committed. The repo holds only the variable name and the path.
@@ -46,15 +52,17 @@ packet's operator guide. Nothing here restarts NATS or Postgres, and nothing her
    Without the auth and secrets overlays, `nats` would be recreated with open auth and no monitor. Never start the exporter with
    fewer files or without `--no-deps`.
 
-2. **Role.** Write the password to `$GELDAR_SECRETS_DIR/otel-pg.txt` with the owner and mode above, then run as the migration role:
+2. **Role.** Write the password to `$GELDAR_SECRETS_DIR/otel-pg.txt` with the owner and mode above (S1). Then run the pipeline ONCE,
+   never traced (`set -x` off), from `/mnt/nvme/geldar-telemetry`. It runs through the container psql (the migration role is `geldar`)
+   and reads the file with `sudo -n cat`:
 
    ```
-   GELDAR_SECRETS_DIR=/mnt/nvme/geldar-telemetry/pg-secrets psql -v ON_ERROR_STOP=1 -d geldar -f deploy/telemetry/postgres-monitor.sql
+   { printf '\\set otel_pg_password '"'"; sudo -n cat /mnt/nvme/geldar-telemetry/pg-secrets/otel-pg.txt; printf '%s\n' "'"; cat /mnt/nvme/geldar-telemetry/src.new-g2/deploy/telemetry/postgres-monitor.sql; } | docker exec -i geldar-colo-postgres-1 psql -q -v ON_ERROR_STOP=1 -U geldar -d geldar
    ```
 
-   The script reads the file with a psql `\set` backtick, so the password is never in the psql command line. The file is `0400`
-   owned by 10001, so the operator runs psql as root (or through sudo). The script is re-runnable: it creates the role only if it is
-   missing, sets the password on every run and re-grants the same two privileges.
+   The password reaches psql as the variable `otel_pg_password` on stdin: never on a command line, in a log or in operator output. A failed
+   or partial run means: regenerate the password (R1, then S1) and stop; never reuse it. The full rules, the two verification queries and the
+   rollback are in `docs/analysis/telemetry/node-requests/08-monitors-g2.md` section 9 and in `08-s2-pipeline.md`.
 
 3. **Validate, then gateway restage.** Validate the staged config on the node image before the restage. The `${file:...}` in the
    `postgresql` receiver is read when the config loads, so the secret is mounted here too. The command prints nothing and exits 0 on
