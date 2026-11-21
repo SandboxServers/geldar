@@ -15,30 +15,12 @@ The shard runs in its final Colo environment, reachable from the internet withou
 - **Conventions:** [packet-conventions.md](packet-conventions.md) (card format, contract-first order, shared-file owners, gates, briefs, decision numbers, index lines, pre-packet decisions).
 - **Packets:** [packets/](packets/): `c1-packets.md`, `c2-packets.md`, `c2b-packets.md`, `c3-packets.md`, `c4-packets.md`, `c5-goldar-packets.md`, `c7-user-management-packets.md`, `c7b-packets.md`, `c7c-packets.md`, `c7d-packets.md`, `c7e-packets.md`, `c7-wave-plan.md`.
 - **Ledger:** [ledger.md](ledger.md) (one row per packet: wave, lane, depends, status, decision numbers, owner-blocked).
-- **Decision numbers:** [packets/decision-number-registry.md](packets/decision-number-registry.md). Phase 1 blocks reserve 0081 to 0129. The next free number is **0199** (checked 2026-11-14: the highest file in `docs/decisions/` is `0198-proximity-chat-and-deaths.md`; the registry table has no row above 0180, so it is stale; 0174 to 0179 are reserved for C7 design points; 0185, 0186, 0188, 0189, 0191, 0193 and 0194 have no file and no registry row, not checked against in-flight branches).
+- **Wave C7:** plan and migrations in [packets/c7-wave-plan.md](packets/c7-wave-plan.md); owner questions Q1 to Q8 are answered in [0170](../../decisions/0170-owner-management-values-and-admin-flag.md), [0171](../../decisions/0171-account-erasure-rule.md) and [0172](../../decisions/0172-human-skin-upload-held-for-approval.md). Status: the C7 status section below. Sign-up stays closed until C7-11 and the owner approves. The 2026-11-11 campaign list was removed as stale; the ledger holds the current state.
+- **Decision numbers:** [packets/decision-number-registry.md](packets/decision-number-registry.md). Phase 1 blocks reserve 0081 to 0129. The next free number is not recorded here: check `docs/decisions/` and the registry, which is stale (on origin/main the highest file on 2026-11-20 was `0390-neoforge-hybrid-named-equals-and-nature-humans.md`). 0174 to 0179 are reserved for C7 design points; 0185, 0186, 0188, 0189, 0191, 0193 and 0194 have no file and no registry row, not checked against in-flight branches).
 
 ## Stop: do not open the public Minecraft port yet
 
 Do not set `GELDAR_MC_BIND` or `GELDAR_MC_PORT` on the node until C2-02c merges. On `main`, `compose/colo-public.yml` still publishes the offline-mode bot ingress, which has no authentication (C2-R2 finding R2-01; decision 0137). The UniFi forward exists, but nothing listens behind it until those variables are set.
-
-## Where the campaign is (2026-11-11, morning)
-
-1. **C1 code is merged.** Still open in C1: **C1-10**, the owner's run on the node. The first ranger is Jason, the Red Ranger (`ag-jason-01`), a sovereign player agent. His Claude Code session runs under the owner's login. The Colo stack on the node has been stopped since its last failed start; PR #78 fixed those failures, and a redeploy is still to do. Also open: the C1-01 leftovers (FX-SPAWN, PR #100).
-2. **C2 desktop work is merged:** C2-00 to C2-06, C2-02b, C2-07a1 to C2-07a3, C2-07b and C2-08a (PRs #79 to #99).
-   - In flight: C2-07c1 (#102), C2-07c2 (#101), and C2-07d (the admin Glass secret mount and pre-creating the BlueMap webroot).
-   - The edge is in place: the UniFi forward and the DNS names exist (owner-held values in `~/.config/geldar/colo-edge.md` on the owner's machine).
-3. **C2 wave review, round 1.** Findings and owners are in [worknotes/wave-c2-review-1.md](worknotes/wave-c2-review-1.md).
-   - R1 (MCP) fix slices: M1 merged, B2 merged, M2 running.
-   - R3 (Glass) fix slices: A1 merged, B merged, A2 running.
-   - Still to start: R2 (Velocity, including the ghost default-mode window) and R4 (node and Caddy, including the `colo-public.sh` re-install gap). Round 2 then targets the fix commits first.
-4. **Self-registration (0135)** is designed: GitHub and Discord sign-in, no manual approval. Its cards are in [packets/c2-register-packets.md](packets/c2-register-packets.md). C2-08a is merged; C2-08b and C2-08c come next. Turning registration on waits for the C2 gates and for C2-08d (the per-player Body lifecycle).
-5. **C2b:** C2b-00 and C2b-01 (session 1) are merged. Next: the C2b-01 load test (live lane), C2b-02 (the relay), and C2b-03a (the renderer).
-6. **Every ruling made tonight** is in [worknotes/orchestrator-2026-11-11.md](worknotes/orchestrator-2026-11-11.md) (R1 to R28, the owner answers, flakes).
-7. **Owner items still open:** the C1-10 run; creating the GitHub and Discord OAuth apps; the C2b questions (texture licence, audit retention, the feed load budget); 0079 (credits); and confirming R21 (Glass hides the prompt) or signing a privacy review.
-8. **Wave C5, Goldar learnings (drafted 2026-11-11, parallel to C1 to C4):** Body parity and the unavailable tools, from the review of the goldar repo. Cards: [packets/c5-goldar-packets.md](packets/c5-goldar-packets.md); review: [worknotes/goldar-review.md](worknotes/goldar-review.md); ledger section "Wave C5"; decisions 0141 to 0146 are Proposed or Open (owner to confirm); rulings R47 to R54. C5a (C5-00 first, then 01 to 04 in parallel) and C5b (05 then 06; 07 parallel) are Ready except C5-01; C5c (08 to 10) waits on 0146. (Its "next free 0147" was true on 2026-11-11 only; see line 18.)
-
-9. **Wave PX, perception for body and mind (drafted 2026-11-11):** what a player could see or hear, from the Jason play record (defects D1 to D11). Cards: [packets/px-perception-packets.md](packets/px-perception-packets.md); ledger section "Wave PX"; owner rulings in decision [0154](../../decisions/0154-perception-owner-rulings.md) (Decided; the seven rulings; spider is a conditional mob under ruling 1, settled by the orchestrator). PX-1 and PX-0 wait on C6-BODY-EVENTS merging; PX-2b is unblocked. Decision 0154 is the only number this wave uses; 0147 to 0153 are not free for it (0147 to 0149 are on in-flight branches, 0150 is on main, 0151 to 0153 are wave C7).
-10. **Wave C7, user management (replanned 2026-11-13):** plan, waves, migrations 0024 to 0033 and live lane in [packets/c7-wave-plan.md](packets/c7-wave-plan.md); cards in [packets/c7-user-management-packets.md](packets/c7-user-management-packets.md) and [packets/c7b-packets.md](packets/c7b-packets.md); ledger section "Wave C7". Owner questions Q1 to Q8 are answered: [0170](../../decisions/0170-owner-management-values-and-admin-flag.md) (values and the admin flag), [0171](../../decisions/0171-account-erasure-rule.md) (erasure), [0172](../../decisions/0172-human-skin-upload-held-for-approval.md) (skin upload held for approval). Merged: C7-01, C7-08, and wave 1 (see the C7 status below). Sign-up stays closed until C7-11 and the owner approves.
 
 ## Who does what
 
@@ -70,23 +52,24 @@ Every brief carries the list in [packet-conventions.md](packet-conventions.md) s
 
 - **Merged:** C7-01 to C7-08 waves 1 to 4 (#315, #321, #336, #346); C7-14 and C7-14b (#338, #359); C7-04d and its mount (#365, #380); C7-06c status line (#366) and C7-06d account page (#539); C7-03c1 to c3 (#415, #421, #447); C7-03b5 (#503); LEGAL-SERVE (#404); SIGNUP-RUNBOOK (#517); ROSTER-AUTO (#515, migration 0061); BH-1 (#525), BH-2 (#527), BH-3 (#530), BH-5a (#537), BH-5b (#573), BH-6 (#575); C7-09a2 (#470), C7-09b (#524, #541), C7-09c (#577); the sign-up gate C7-11 (#576).
 - **Open:** C7-03b2 (PR #522, held); C7-03b4-live; BH-4 (no merged PR found); C7-13a to c (skin upload); C7-07 rename; C7-10 operator console; the account-page export link and the PATCH visibility toggles; GX-05c turn_records (geldar-3b); CF-W4-1 to CF-W4-5.
-- **Not recorded here:** which merged migrations (0061 to 0065) are applied on geldar-93. Check the deploy record first.
+- **Not recorded here:** which merged migrations (0061, 0062, 0063 and 0065) are applied on geldar-93. Check the deploy record first.
 
 ## What is left to open sign-up (owner-facing)
 
 1. Rule on whether M1 waits for C7-09 and C7-13 (the open 0261 question).
 2. Legal review of the erasure rule (0171; gates C7-11).
 3. Ship or drop C7-03b2 (PR #522); give the geldar-93 node steps (helper, RCON whitelist verb, life key).
-4. BH-4 merged, and the BH-6 live check, before sign-up opens (row 25a, an owner decision).
-5. The account-page export link and the PATCH toggles, or an owner call to open without them.
-6. CF-W4-5 (`__Host-` cookie prefix) before sign-up opens.
-7. Open sign-up by `docs/runbooks/open-signup.md`, kill switch off, only after items 1 to 6.
+4. BH-4 must merge first: rows 14 to 18 of `docs/runbooks/open-signup.md` are blocked on it.
+5. Owner decision, row 25a: open sign-up before the BH-6 live check, or wait for it.
+6. The account-page export link and the PATCH toggles, or an owner call to open without them.
+7. CF-W4-5 (`__Host-` cookie prefix) before sign-up opens.
+8. Open sign-up by `docs/runbooks/open-signup.md`, kill switch off, only after items 1 to 7.
 
 ## For the owner
 
 - (a) Kept agent rows may carry a typed real name: anonymise on deletion, or accept.
 - (b) built (geldar-93 default, revertable before sign-up opens): `kino_audit` rows of the deleted identity are erased on deletion.
-- (c) Cleanup of accounts deleted before 0040 (under 0039): card `C7-09c` (merged #577; the operator run is still open).
+- (c) Cleanup of accounts deleted before 0040 (under 0039): card `C7-09c` (merged #577; whether the operator run has happened is not recorded).
 
 ## Open contradictions
 
