@@ -421,4 +421,86 @@ exec "${p(dirname(SH))}/ls" "$@"
       expect(r.err).toContain('/mnt/nvme/geldar-colo/state');
     });
   });
+
+  // The live commit is in a VALID release.commit here, so only the damaged record can trigger the refusal; the other manifests
+  // are absent. Each record is damaged in each mode, and the run must refuse naming that record and remove nothing.
+  describe('every record, damaged beside a valid release.commit, refuses the run', () => {
+    const canChmod = process.platform !== 'win32' && process.getuid?.() !== 0;
+    const RECORDS = [
+      'state/release.env',
+      'state/current.env',
+      'state/previous.env',
+      'staged/release.env',
+      'inbox/release.env',
+    ];
+    const damages: [string, (p: string, root: string) => void][] = [
+      ['a directory', (p) => mkdirSync(p)],
+      ['a dangling symlink', (p, root) => symlinkSync(join(root, 'nowhere'), p)],
+    ];
+    const setup = (rel: string, damage: (p: string, root: string) => void) => {
+      const root = fixture(8); // a valid release.commit naming sha(8)
+      mkdirSync(dirname(join(root, rel)), { recursive: true });
+      damage(join(root, rel), root);
+      return root;
+    };
+    const refused = (root: string, rel: string) => {
+      for (const args of [
+        ['--keep', '2'],
+        ['--keep', '2', '--apply'],
+      ]) {
+        const r = run(root, args);
+        expect(r.code, args.join(' ')).toBe(1);
+        expect(r.err).toContain(rel);
+      }
+      for (let i = 1; i <= 8; i++) expect(has(root, sha(i)), `sha ${i}`).toBe(true);
+    };
+
+    it('control: a valid release.commit alone proceeds', () => {
+      const root = fixture(8);
+      expect(run(root, ['--keep', '2', '--apply']).code).toBe(0);
+      expect(has(root, sha(1))).toBe(false);
+    });
+
+    it.each(RECORDS.flatMap((rel) => damages.map(([what, d]) => [rel, what, d] as const)))(
+      '%s that is %s',
+      (rel, _what, damage) => {
+        let root: string;
+        try {
+          root = setup(rel, damage);
+        } catch (e) {
+          if ((e as NodeJS.ErrnoException).code === 'EPERM') return; // no symlink right here; Linux CI covers it
+          throw e;
+        }
+        refused(root, rel);
+      },
+    );
+
+    it.skipIf(!canChmod).each(RECORDS)('%s with mode 000 (cannot be read)', (rel) => {
+      const root = setup(rel, (p) => {
+        writeFileSync(p, `${manifest(sha(1))}\n`);
+        chmodSync(p, 0);
+      });
+      refused(root, rel);
+    });
+
+    it.skipIf(!canChmod).each(['state/previous.env', 'staged/release.env', 'inbox/release.env'])(
+      'a record in a directory that cannot be searched (%s)',
+      (rel) => {
+        const root = fixture(8);
+        const p = join(root, rel);
+        mkdirSync(dirname(p), { recursive: true });
+        // The only record that names sha(1) is hidden behind a directory with no search permission.
+        writeFileSync(p, `${manifest(sha(1))}\n`);
+        chmodSync(dirname(p), 0o600);
+        try {
+          const r = run(root, ['--keep', '2', '--apply']);
+          expect(r.code).toBe(1);
+          expect(r.err).toContain(dirname(p));
+          expect(has(root, sha(1))).toBe(true);
+        } finally {
+          chmodSync(dirname(p), 0o700);
+        }
+      },
+    );
+  });
 });

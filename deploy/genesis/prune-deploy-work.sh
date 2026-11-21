@@ -6,8 +6,11 @@
 # Rules: only direct children of <root>/work that are real directories (never symlinks) named by exactly 40
 # lowercase hex characters are candidates. The newest N by modification time are kept (default 5; N must be 2 to 1000, so an
 # in-flight deploy's fresh checkout is never among the removed), and so is every commit a record of the live release names
-# (the node's state directory is GELDAR_STATE_DIR=/mnt/nvme/geldar-colo/state, not the default, so set it; dry run first; see "The live commit" below: release.commit, the manifests in the state directory, the staged and inbox manifests). With no
-# readable record of the live commit, nothing is removed and the exit code is 1. The deploy lock
+# (the node's state directory is GELDAR_STATE_DIR=/mnt/nvme/geldar-colo/state, not the default, so set it; dry run first; see
+# "The live commit" below: release.commit, the manifests in the state directory, the staged and inbox manifests). Fail closed:
+# a record that exists but cannot be read as a file, or whose first line names no valid commit, or whose directory exists but
+# cannot be searched, refuses the run; only a record that does not exist is skipped; with no live record, nothing is removed.
+# Either way the exit code is 1 and nothing is removed. The deploy lock
 # (<root>/channel.lock, the one the deploy channel takes) and the colo-cd lock directory ($GELDAR_STATE_DIR/cd.lock,
 # default /var/lib/geldar-colo) must both be free: they are held for the whole run, and a busy or unavailable lock refuses.
 # Output is names only. Nothing here touches docker. POSIX sh.
@@ -60,7 +63,13 @@ liveknown=0
 # A record that exists (a file, a directory, a symlink, even a dangling one) but cannot be read as a file, or whose first line
 # does not name a valid commit, REFUSES the run: skipping it would hide a commit that must be kept (fail closed). Only a record
 # that does not exist at all is skipped.
-exists() { [ -e "$1" ] || [ -L "$1" ]; }
+exists() { # <file>: 0 if the record exists, 1 if it does not; refuses when that cannot be told
+  if [ -e "$1" ] || [ -L "$1" ]; then return 0; fi
+  dir=$(dirname "$1")
+  # A directory the account cannot search hides its records: they would look absent. Refuse rather than skip.
+  if [ -d "$dir" ] && [ ! -x "$dir" ]; then fail "the directory $dir exists but cannot be searched, so its records cannot be checked; nothing removed"; fi
+  return 1
+}
 first_line_of() { # <file>: sets $first, or refuses
   [ -f "$1" ] && [ -r "$1" ] || fail "the record $1 exists but is not a readable file; nothing removed"
   first=

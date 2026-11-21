@@ -38,9 +38,19 @@ refs() {
 }
 # A manifest that EXISTS (a file, a directory, a symlink, even a dangling one) but cannot be read as a file, or lists no images,
 # REFUSES the run, dry run included: skipping it would hide an image that must be kept (fail closed). Only a manifest that does
-# not exist at all is skipped. (/etc/geldar-colo is a root-only directory on the node, so its copy does not "exist" to the
-# operator account, which cannot look inside it.)
-exists() { [ -e "$1" ] || [ -L "$1" ]; }
+# not exist at all is skipped, and so is a record in a directory that cannot be searched, with ONE exception: /etc/geldar-colo is
+# a root-only directory on the node, so the operator account cannot look inside it and its copy is skipped (the state directory
+# copies are the records that count there). A directory that cannot be searched is otherwise refused.
+exists() { # <file>: 0 if the record exists, 1 if it does not; refuses when that cannot be told
+  if [ -e "$1" ] || [ -L "$1" ]; then return 0; fi
+  dir=$(dirname "$1")
+  # A directory the account cannot search hides its records: they would look absent. The one exception is the root-only
+  # $RELEASE_FILE directory (/etc/geldar-colo), whose copy the operator account is not meant to read (see manifest_refs).
+  if [ "$1" != "$RELEASE_FILE" ] && [ -d "$dir" ] && [ ! -x "$dir" ]; then
+    fail "the directory $dir exists but cannot be searched, so its records cannot be checked; nothing removed"
+  fi
+  return 1
+}
 manifest_refs() { # <file>: prints its image references
   exists "$1" || return 0
   [ -f "$1" ] && [ -r "$1" ] || fail "the record $1 exists but is not a readable file; nothing removed"

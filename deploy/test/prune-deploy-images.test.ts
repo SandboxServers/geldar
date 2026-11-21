@@ -192,16 +192,22 @@ describe('prune-deploy-images.sh', () => {
       ['a directory', (p) => mkdirSync(p)],
       ['a dangling symlink', (p, root) => symlinkSync(join(root, 'nowhere'), p)],
     ];
-    // A valid live record exists (state/current.env, or release.env when that is the damaged one); one record is damaged.
+    // Every live record and previous.env are valid EXCEPT the one damaged, so only that record can trigger the refusal: the
+    // generic "no record exists" refusal must not be able to stand in for it.
     const setup = (rel: string, damage: (p: string, root: string) => void) => {
       const root = fixture(all, null, null);
       writeFileSync(join(root, 'state', 'release.env'), env(body('3'), mind('2')));
-      if (rel !== 'release.env') writeFileSync(join(root, 'state', 'current.env'), env(body('3')));
+      writeFileSync(join(root, 'state', 'current.env'), env(body('3'), mind('2')));
       writeFileSync(join(root, 'state', 'previous.env'), env(body('2'), mind('1')));
       rmSync(join(root, 'state', rel), { force: true });
       damage(join(root, 'state', rel), root);
       return root;
     };
+
+    it('control: with every record valid the run proceeds', () => {
+      const root = setup('previous.env', (p) => writeFileSync(p, env(body('2'), mind('1'))));
+      expect(run(root).code).toBe(0);
+    });
 
     it.each(records.flatMap((rel) => damages.map(([what, d]) => [rel, what, d] as const)))(
       '%s that is %s',
@@ -235,6 +241,22 @@ describe('prune-deploy-images.sh', () => {
         expect(r.calls).not.toContain('image rm');
       }
     });
+
+    it.skipIf(!canChmod)(
+      'a state directory that cannot be searched refuses, and so does a record inside it',
+      () => {
+        const root = fixture(all, null, null);
+        writeFileSync(join(root, 'state', 'current.env'), env(body('3'), mind('2')));
+        chmodSync(join(root, 'state'), 0o600);
+        try {
+          const r = run(root, ['--apply']);
+          expect(r.code).toBe(1);
+          expect(r.calls).not.toContain('image rm');
+        } finally {
+          chmodSync(join(root, 'state'), 0o700);
+        }
+      },
+    );
 
     it("a missing state directory names GELDAR_STATE_DIR and the node's path", () => {
       const root = fixture(all, env(body('3')), null);
