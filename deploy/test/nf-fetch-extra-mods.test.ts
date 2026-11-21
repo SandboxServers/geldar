@@ -213,6 +213,13 @@ describe('nf-fetch-extra-mods.sh: fetch and verify (stub curl, no network)', () 
     expect(placed(s)).toEqual([]);
   });
 
+  it('names UNSET as the reason for refusing a jar whose sha512 is UNSET', () => {
+    const s = setUp([{ jar: 'Alpha-1.0.jar', sha512: 'UNSET' }]);
+    const r = run(s);
+    expect(r.code).toBe(1);
+    expect(r.out).toContain('the sha512 for Alpha-1.0.jar is UNSET in the sources file');
+  });
+
   it('refuses an http URL before any download', () => {
     const s = setUp([
       { jar: 'Alpha-1.0.jar', url: 'http://downloads.example.invalid/mods/Alpha-1.0.jar' },
