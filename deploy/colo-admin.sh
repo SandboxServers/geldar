@@ -218,8 +218,12 @@ run_hosts() {
       done
       ;;
     player-start)
+      # A bare `-e GELDAR_TELEMETRY_URL` (no value) makes compose copy the value from this shell, so the value never
+      # reaches the command line, the logs or the dry run. It is passed only when the variable is set and non-empty.
+      telemetry_flag=
+      if [ -n "${GELDAR_TELEMETRY_URL:-}" ]; then telemetry_flag="-e GELDAR_TELEMETRY_URL"; fi
       if [ "$DRY_RUN" = 1 ]; then
-        say "dry-run, not run: docker compose -p $PROJECT ... --profile sovereign run -d --no-deps --name $hname -e GELDAR_PLAYER_ID=$player players-host --player $player; docker update --restart unless-stopped $hname"
+        say "dry-run, not run: docker compose -p $PROJECT ... --profile sovereign run -d --no-deps --name $hname -e GELDAR_PLAYER_ID=$player${telemetry_flag:+ $telemetry_flag} players-host --player $player; docker update --restart unless-stopped $hname"
         exit 0
       fi
       if [ -n "$(host_ps '' "$hname")" ]; then
@@ -227,8 +231,13 @@ run_hosts() {
         exit 0
       fi
       if [ -n "$(host_ps -a "$hname")" ]; then docker rm -f "$hname" >/dev/null || die "cannot remove the stopped $hname"; fi
-      GELDAR_PLAYER_ID=$player sov run -d --no-deps --name "$hname" -e "GELDAR_PLAYER_ID=$player" players-host --player "$player" ||
-        die "cannot start $hname"
+      if [ -n "$telemetry_flag" ]; then
+        GELDAR_PLAYER_ID=$player sov run -d --no-deps --name "$hname" -e "GELDAR_PLAYER_ID=$player" $telemetry_flag players-host --player "$player" ||
+          die "cannot start $hname"
+      else
+        GELDAR_PLAYER_ID=$player sov run -d --no-deps --name "$hname" -e "GELDAR_PLAYER_ID=$player" players-host --player "$player" ||
+          die "cannot start $hname"
+      fi
       # The host is up either way. A failed update leaves it without the policy (a crash or a reboot does not restart it), so
       # say so and exit 0: the CD must not treat a healthy host as failed and restore it.
       if docker update --restart unless-stopped "$hname" >/dev/null; then
