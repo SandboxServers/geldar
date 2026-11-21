@@ -96,7 +96,7 @@ Rollback: remove the env value and the secret file. Never delete the shared app.
 
 ## Section 2: Secret files, env and the register profile (node)
 
-Renders of the compose config (`config` output) are produced on the operator's machine. They are never written on the node. Rows 20 to 23 keep `REGISTER_KILL_SWITCH` at `true`. Node status of every row is UNKNOWN. The repo facts in this section were read from origin/main at a62ceb44 on 2026-11-20. The node itself was not checked.
+Renders of the compose config (`config` output) are produced on the operator's machine. They are never written on the node. Rows 20 to 23 keep `REGISTER_KILL_SWITCH` at `true`. Node status of every row is UNKNOWN. The repo facts in this section were read from origin/main at a62ceb44 on 2026-11-20 (unchanged; not re-read in the 2026-11-21 edit). The node itself was not checked.
 
 Secret files, by name only. Never print a value.
 
@@ -130,7 +130,7 @@ Render gate (read only; items 3 and 4 refer to it). Renders happen on the operat
 
 - (a) `config --quiet` passes with the same compose files and env names as the running project.
 - (b) The register block of the rendered config is compared with `docker inspect` of the running register container: image reference, env names and non-secret values, mounts, limits, user, and ports. Secret values are never printed; compare names only. The only allowed difference is the intended env value (for example `REGISTER_KILL_SWITCH` when the step 27 flip is intended). Image-level ENV (such as `NODE_ENV`, `NODE_VERSION`, `PATH` and `YARN_VERSION`) comes from the image: it is expected in `docker inspect` and absent from the render, and that is not a mismatch.
-- (c) The rendered `com.docker.compose.config-hash` label is compared with the running one for postgres, nats, paper, velocity and bluemap only. For eventsink, glass, geldar-mcp and players-host the render is UNPROVEN: the deploy script injects env that no file holds (for example `GELDAR_KINO_ENABLED` and `GELDAR_TELEMETRY_URL`), so their hash is not a gate. The register-only command does not touch them, so verify instead that their `StartedAt` times are unchanged before and after it (read only, `docker inspect`).
+- (c) The rendered `com.docker.compose.config-hash` label is compared with the running one for postgres, nats, paper, velocity, bluemap-alias and bluemap-web only. The bluemap-alias and bluemap-web blocks read only names that the compose files and the Section 2 command set (`GELDAR_STATE_DIR`, `GELDAR_SERVICE_UID`, the `GELDAR_COLO_*` limits and the bluemap ports) provide. For eventsink, glass, geldar-mcp and players-host the render is UNPROVEN: the node's deploy env file (sourced by `colo-cd.sh`) exports env, such as `GELDAR_TELEMETRY_URL` and `GELDAR_KINO_ENABLED`, that the compose env files do not hold, so their hash is not a gate. The register-only command does not touch them, so verify instead that their `StartedAt` times are unchanged before and after it (read only, `docker inspect`).
 
 A mismatch in any part means stop and report.
 
@@ -186,7 +186,15 @@ Before this section, every step from 1 to 25, except the optional row 23 and row
 6. Owner gives the word on NATS batch C (row 26a), or accepts the JetStream republish risk in writing.
 7. Owner answers the open 0261 question in writing.
 8. Owner gives an explicit yes for the open step.
-9. Node opens sign-up: runs the Section 2 item 4 register-only command with `REGISTER_KILL_SWITCH=false` on the command line (the re-flip rule below applies), then verifies the register log line `register listening killSwitch=false`.
+9. Node opens sign-up: runs the Section 2 item 4 register-only command with `REGISTER_KILL_SWITCH=false` on the command line (the re-flip rule below applies), then verifies the register log line `register listening killSwitch=false`. The command has the Section 2 item 4 shape, with the flip as a shell variable on the first line (the files, env files and profiles are copied from the running project's label, as in item 4):
+
+   ```
+   REGISTER_KILL_SWITCH=false GELDAR_STATE_DIR=<state dir> GELDAR_SECRETS_DIR=<secrets dir> GELDAR_SERVICE_UID=1001 \
+   GELDAR_KINO_PUBLIC_ORIGIN=<kino origin> \
+   docker compose -p geldar-colo <files from the label, each as -f> \
+     --env-file <state dir>/node.env --env-file <state dir>/current.env \
+     --profile register --profile sovereign up -d --no-deps register
+   ```
 10. Verify: sign-in works; terms consent is recorded; agent registration creates the roster entry; a token can be issued. This step does not verify a Body start: the only Body starts are step 19 and row 19a.
 
 Rollback: run the item 9 register-only command with `REGISTER_KILL_SWITCH=true` on the command line, and recreate the register service only. Other steps are not undone. Users who signed in during the open window keep their accounts; the deletion path in [account-deletion.md](account-deletion.md) handles removal.
