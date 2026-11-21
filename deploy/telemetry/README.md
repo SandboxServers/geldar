@@ -567,7 +567,7 @@ Files: `gateway.yaml` (collector config, first stage) and `compose.gateway.yml` 
 |---|---|---|---|---|---|
 | otel/opentelemetry-collector-contrib | 0.164.0 | sha256:340c9ca6a36617084c6661bdc4f0fe92b7cda5a805d61673ec8db375fddc522b | sha256:ac0bb9cdc844b55d2fd2655d03e596243787d6a8c52dd408b1dc96dd1bd372ee | 2026-10-26 | 10001:10001; scratch image, no shell, no wget, no healthcheck binary; entrypoint `/otelcol-contrib` |
 
-Scope of this stage: receiver `otlp` (traces, logs, metrics) and `prometheus`, which scrapes only the gateway's own metrics on `127.0.0.1:8888` (the N10 NATS scrape is added to it later). The `postgresql` (N11) and `host_metrics` receivers are commented placeholders in `gateway.yaml`. Content capture (decision 0350) means no truncation, size limit or sampling in the config; redaction is limited to IPv4 and IPv6 literals and credential-looking attribute keys (not free text), as in collector-design section 5.
+Scope of this stage: receiver `otlp` (traces, logs, metrics) and `prometheus`, which scrapes only the gateway's own metrics on `127.0.0.1:8888` (the N10 NATS scrape is added to it later). The `postgresql` receiver (G2, the Postgres monitoring role; `docs/runbooks/telemetry-monitors.md`) and the `nats` scrape (G2) are in `gateway.yaml`, not yet on the node. The `host_metrics` receiver is still commented out. Content capture (decision 0350) means no truncation, size limit or sampling in the config; redaction is limited to IPv4 and IPv6 literals and credential-looking attribute keys (not free text), as in collector-design section 5.
 
 Redaction scope (what runs, per OTTL context):
 

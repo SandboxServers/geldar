@@ -20,6 +20,12 @@ networks:
     external: true
     name: geldar-telemetry
 
+# G2 (T-10): the Postgres monitor password, read by the postgresql receiver (gateway.yaml). Same pattern as compose/colo.yml:741.
+# The default is the node's compose/secrets directory; GELDAR_SECRETS_DIR overrides it. Compose mounts it read-only at /run/secrets.
+secrets:
+  otel-pg:
+    file: ${GELDAR_SECRETS_DIR:-../../compose/secrets}/otel-pg.txt
+
 services:
   geldar-gateway:
     # OpenTelemetry Collector contrib 0.164.0, scratch image: no shell, no wget, no healthcheck binary. Runs as 10001:10001 [AUTH].
@@ -43,6 +49,8 @@ services:
     networks:
       geldar-colo:
       geldar-telemetry:
+    # G2: the postgresql receiver reads ${file:/run/secrets/otel-pg.txt}. Read-only, from the otel-pg secret above.
+    secrets: [{ source: otel-pg, target: otel-pg.txt }]
     ports:
       # Loopback only: the target of the Caddy ingest route (N14). 4320 was free on the node at N1. OTLP/HTTP only; 4317 and 13133 are not published.
       - "127.0.0.1:4320:4318"

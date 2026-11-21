@@ -36,9 +36,23 @@ receivers:
           scrape_interval: 30s
           static_configs:
             - targets: ['127.0.0.1:8888']
+        # G2 (T-09): the NATS monitor exporter (compose/opt-in/colo-nats-exporter.yml, port 7777, /varz and /jsz only). It shares the NATS namespace.
+        - job_name: nats
+          scrape_interval: 30s
+          static_configs:
+            - targets: ['nats:7777']
+  # G2 (T-10): the Postgres monitoring role (deploy/telemetry/postgres-monitor.sql). The password is read from a file, never written here.
+  # The gateway container must mount that secret at /run/secrets/otel-pg.txt before this receiver can start (node restage step).
+  postgresql:
+    endpoint: postgres:5432
+    transport: tcp
+    username: geldar_monitor
+    password: '${file:/run/secrets/otel-pg.txt}'
+    databases: [geldar]
+    tls:
+      insecure: true   # internal colo network only, as the NATS exporter scrape is
+    collection_interval: 30s
   # Later steps (not enabled now; exact receiver names for 0.164.0):
-  # prometheus:   # N10, NATS exporter scrape (nats:<exporter port>, 30s): add a second scrape_config job to the receiver above
-  # postgresql:   # N11, monitoring role, password from ${file:/run/secrets/otel-pg.txt}
   # host_metrics: # later step, the /mnt/nvme filesystem alarm (collector-design section 8)
 
 processors:
@@ -208,6 +222,6 @@ service:
       processors: [memory_limiter, resource, filter/noise, transform/redact, batch]
       exporters: [otlp_grpc/geldar_signoz]
     metrics:
-      receivers: [otlp, prometheus]   # prometheus: the gateway's own metrics (and later the N10 NATS scrape); add postgresql (N11), host_metrics (later) here when enabled
+      receivers: [otlp, prometheus, postgresql]   # prometheus: the gateway's own metrics and the NATS scrape (G2); postgresql (G2); add host_metrics (later) here when enabled
       processors: [memory_limiter, resource, transform/metric_labels, batch]
       exporters: [otlp_grpc/geldar_signoz]
