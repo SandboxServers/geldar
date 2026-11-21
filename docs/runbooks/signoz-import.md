@@ -24,7 +24,7 @@ The script reads both lists, and checks that no title or alert name matches twic
   a route). Until the owner creates the channel in the SigNoz UI with that exact name, import the dashboards only (section 3a).
   The rules are a later run without the flag (section 3b).
 - `bash`, `curl` (7.55 or later, for `-H @file`) and `jq` on the machine that runs the script. Check with
-  `command -v jq curl`, which must print two paths. On Windows, run the script in WSL or Git Bash, where both exist.
+  `command -v jq curl`, which must print two paths. On the Windows desktop, run the script from Git Bash, not WSL: a bare `bash` in PowerShell resolves to WSL, which does not see the desktop's `jq` or `curl`. From PowerShell, call Git Bash by its explicit path, `& 'C:\Program Files\Git\bin\bash.exe' <script path> ...`. Run the check in that same bash, the one that will run the script, before the run: `& 'C:\Program Files\Git\bin\bash.exe' -c 'command -v jq curl'` must print two paths.
 - Every Paper and NeoForge dashboard step needs a fresh owner OK with a window (the gap-plan rule). Run through the ops
   agent in that window.
 
@@ -73,8 +73,8 @@ mkdir -m 700 "$SCRATCH"
 git -C <repo> archive --format=tar -o "$SCRATCH/signoz.tar" <commit> deploy/signoz
 tar -x -f "$SCRATCH/signoz.tar" -C "$SCRATCH"
 ls "$SCRATCH/deploy/signoz"
-"$SCRATCH/deploy/signoz/import.sh" --token-file <path outside the repo> --dry-run
-"$SCRATCH/deploy/signoz/import.sh" --token-file <path outside the repo>
+& 'C:\Program Files\Git\bin\bash.exe' "$SCRATCH/deploy/signoz/import.sh" --token-file <path outside the repo> --dry-run
+& 'C:\Program Files\Git\bin\bash.exe' "$SCRATCH/deploy/signoz/import.sh" --token-file <path outside the repo>
 ```
 
 The archive is written to a file first and never piped into `tar`, so a failed export is not half-read. `signoz.tar` stays inside `<SCRATCH>`. The `ls` must list `import.sh` and the six JSON files (two dashboards, four alert files). When the import is done, remove `<SCRATCH>` with `rm -rf` on that one directory.
@@ -102,8 +102,8 @@ alert rules were skipped. The rules list is not read. `--replace` stays off by d
 The dry run takes the flag too and touches neither rules nor channels. Dry run first:
 
 ```
-"$SCRATCH/deploy/signoz/import.sh" --dry-run --dashboards-only
-"$SCRATCH/deploy/signoz/import.sh" --token-file <path outside the repo> --dashboards-only
+& 'C:\Program Files\Git\bin\bash.exe' "$SCRATCH/deploy/signoz/import.sh" --dry-run --dashboards-only
+& 'C:\Program Files\Git\bin\bash.exe' "$SCRATCH/deploy/signoz/import.sh" --token-file <path outside the repo> --dashboards-only
 ```
 
 The dry run prints one `dry-run:` line per dashboard file (2), the line `alert rules skipped (--dashboards-only): 4 alert
@@ -116,8 +116,8 @@ Run this only after the owner has created `geldar-owner-channel` in the SigNoz U
 Dry run first, then the real run, both without `--dashboards-only`:
 
 ```
-"$SCRATCH/deploy/signoz/import.sh" --dry-run
-"$SCRATCH/deploy/signoz/import.sh" --token-file <path outside the repo>
+& 'C:\Program Files\Git\bin\bash.exe' "$SCRATCH/deploy/signoz/import.sh" --dry-run
+& 'C:\Program Files\Git\bin\bash.exe' "$SCRATCH/deploy/signoz/import.sh" --token-file <path outside the repo>
 ```
 
 The real run lists the dashboards and the rules, reads both lists before its first write, skips the dashboards it already
