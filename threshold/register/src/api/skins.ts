@@ -6,7 +6,9 @@ import { checkSkinPng, SKIN_MAX_BYTES } from '../skin-validate.ts';
 import type { ApiContext, ApiRoute } from './route.ts';
 
 /** The result of register_skin_submit: the new upload id, or the stable refusal code the database raised. */
-export type SkinSubmitOutcome = { readonly ok: true; readonly uploadId: number } | { readonly ok: false; readonly code: string };
+export type SkinSubmitOutcome =
+  | { readonly ok: true; readonly uploadId: number }
+  | { readonly ok: false; readonly code: string };
 
 /** One row of register_skin_status: the reason code only, never the image or the decider (decision 0172 point 4). */
 export interface SkinStatusRow {
@@ -24,7 +26,12 @@ export type SkinStatusOutcome =
 
 /** The store methods the skin routes need. */
 export interface SkinStore {
-  submitSkin(identityHash: string, playerId: string, png: Buffer, sha256: Buffer): Promise<SkinSubmitOutcome>;
+  submitSkin(
+    identityHash: string,
+    playerId: string,
+    png: Buffer,
+    sha256: Buffer,
+  ): Promise<SkinSubmitOutcome>;
   skinStatus(identityHash: string, playerId: string): Promise<SkinStatusOutcome>;
 }
 
@@ -44,21 +51,33 @@ const SIZE_DETAIL = 'The skin image is larger than 32 KiB.';
 const REFUSED_DETAIL = 'The skin was refused:';
 
 /**
- * Reads the request body up to max bytes. Returns null as soon as the body is over the cap, without buffering the rest;
- * a declared Content-Length over the cap is refused before any byte is read.
+ * The most extra bytes read and discarded after an oversize body is seen, so the client still receives the 422
+ * instead of a connection reset. Beyond this the read gives up and the socket is closed (fail closed).
+ */
+const SKIN_DRAIN_LIMIT_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Reads the request body up to max bytes. Returns null when the body is over the cap; the bytes after the cap are
+ * discarded (up to SKIN_DRAIN_LIMIT_BYTES) and never buffered. A declared Content-Length over the cap is refused
+ * before any byte is read.
  */
 async function readCapped(req: IncomingMessage, max: number): Promise<Buffer | null> {
   const declared = Number(req.headers['content-length']);
   if (Number.isFinite(declared) && declared > max) return null;
   const chunks: Buffer[] = [];
   let total = 0;
+  let over = false;
   for await (const chunk of req) {
     const buf = typeof chunk === 'string' ? Buffer.from(chunk) : (chunk as Buffer);
     total += buf.length;
-    if (total > max) return null;
+    if (over || total > max) {
+      over = true;
+      if (total > SKIN_DRAIN_LIMIT_BYTES) return null;
+      continue;
+    }
     chunks.push(buf);
   }
-  return Buffer.concat(chunks, total);
+  return over ? null : Buffer.concat(chunks, total);
 }
 
 /** Maps a refused submit to its answer. Errors name no owner id and no bytes; each code is one fixed string. */
@@ -68,7 +87,12 @@ function sendSubmitRefusal(res: ServerResponse, code: string): void {
       sendProblem(res, 'conflict', {}, 'An upload for this agent is still pending.');
       return;
     case 'skin_upload_locked':
-      sendProblem(res, 'conflict', {}, 'Uploads are paused until the operator reviews the rejected skins.');
+      sendProblem(
+        res,
+        'conflict',
+        {},
+        'Uploads are paused until the operator reviews the rejected skins.',
+      );
       return;
     case 'skin_upload_wait':
       sendProblem(res, 'rate_limited', { 'retry-after': String(SKIN_REJECT_WAIT_SECONDS) });
@@ -118,9 +142,11 @@ export function skinRoutes(store: SkinStore): readonly ApiRoute[] {
           return sendProblem(ctx.res, 'invalid', {}, TYPE_DETAIL);
         }
         const png = await readCapped(ctx.req, SKIN_MAX_BYTES);
-        if (png === null) return sendProblem(ctx.res, 'invalid', { connection: 'close' }, SIZE_DETAIL);
+        if (png === null)
+          return sendProblem(ctx.res, 'invalid', { connection: 'close' }, SIZE_DETAIL);
         const check = checkSkinPng(png);
-        if (!check.ok) return sendProblem(ctx.res, 'invalid', {}, `${REFUSED_DETAIL} ${check.code}`);
+        if (!check.ok)
+          return sendProblem(ctx.res, 'invalid', {}, `${REFUSED_DETAIL} ${check.code}`);
         const sha256 = createHash('sha256').update(png).digest();
         const out = await store.submitSkin(ctx.identityHash, playerId, png, sha256);
         if (!out.ok) return sendSubmitRefusal(ctx.res, out.code);

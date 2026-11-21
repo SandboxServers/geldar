@@ -34,12 +34,29 @@ interface Chunk {
   data: Uint8Array;
 }
 
+/** The result of inflateSync with info: true (the bytes written and the output buffer). */
+interface InflateInfo {
+  buffer: Buffer;
+  engine: { bytesWritten: number };
+}
+
 function refuse(code: SkinRefusal): SkinCheck {
   return { ok: false, code };
 }
 
+/** The byte at i. Every caller checks the length first, so the 0 fallback is never read. */
+function byteAt(bytes: Uint8Array, i: number): number {
+  return bytes[i] ?? 0;
+}
+
 function readU32(bytes: Uint8Array, at: number): number {
-  return ((bytes[at] << 24) | (bytes[at + 1] << 16) | (bytes[at + 2] << 8) | bytes[at + 3]) >>> 0;
+  return (
+    ((byteAt(bytes, at) << 24) |
+      (byteAt(bytes, at + 1) << 16) |
+      (byteAt(bytes, at + 2) << 8) |
+      byteAt(bytes, at + 3)) >>>
+    0
+  );
 }
 
 /** Splits the file into chunks. Returns a refusal instead when the layout or a CRC is wrong. */
@@ -66,10 +83,12 @@ function readChunks(bytes: Uint8Array): Chunk[] | SkinRefusal {
 
 function checkOrder(chunks: Chunk[]): SkinRefusal | null {
   if (chunks.length < 3) return 'bad_chunk_order';
-  if (chunks[0].type !== 'IHDR' || chunks[chunks.length - 1].type !== 'IEND')
-    return 'bad_chunk_order';
-  if (chunks[0].data.length !== 13) return 'bad_header';
-  if (chunks[chunks.length - 1].data.length !== 0) return 'bad_chunk_order';
+  const first = chunks[0];
+  const last = chunks[chunks.length - 1];
+  if (!first || !last) return 'bad_chunk_order';
+  if (first.type !== 'IHDR' || last.type !== 'IEND') return 'bad_chunk_order';
+  if (first.data.length !== 13) return 'bad_header';
+  if (last.data.length !== 0) return 'bad_chunk_order';
   let idat = 0;
   for (const chunk of chunks.slice(1, -1)) {
     if (chunk.type === 'IHDR' || chunk.type === 'IEND') return 'bad_chunk_order';
@@ -94,7 +113,7 @@ export function checkSkinPng(bytes: Uint8Array): SkinCheck {
   const order = checkOrder(chunks);
   if (order) return refuse(order);
 
-  const header = chunks[0].data;
+  const header = chunks[0]?.data ?? new Uint8Array(0);
   const width = readU32(header, 0);
   const height = readU32(header, 4);
   const bitDepth = header[8];
@@ -112,7 +131,10 @@ export function checkSkinPng(bytes: Uint8Array): SkinCheck {
   );
   let pixels: Buffer;
   try {
-    const inflated = inflateSync(idatBytes, { maxOutputLength: expected + 1, info: true });
+    const inflated = inflateSync(idatBytes, {
+      maxOutputLength: expected + 1,
+      info: true,
+    }) as unknown as InflateInfo;
     // inflateSync stops at the end of the first zlib stream and ignores the rest. Any byte it
     // did not consume (trailing data, a second stream) is smuggled payload, so it is refused.
     if (inflated.engine.bytesWritten !== idatBytes.length) return refuse('bad_inflate');
@@ -125,7 +147,7 @@ export function checkSkinPng(bytes: Uint8Array): SkinCheck {
   // Each row starts with a filter type byte; only types 0 to 4 exist in the PNG specification.
   const stride = 1 + SKIN_SIZE * bytesPerPixel;
   for (let row = 0; row < SKIN_SIZE; row++) {
-    if (pixels[row * stride] > 4) return refuse('bad_filter');
+    if (byteAt(pixels, row * stride) > 4) return refuse('bad_filter');
   }
   return { ok: true };
 }

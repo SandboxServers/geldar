@@ -1,5 +1,6 @@
-import { createServer, type Server } from 'node:http';
+import { createServer, request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { connect } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { handleApi } from '../src/api/index.ts';
 import type { ApiDeps } from '../src/api/route.ts';
@@ -53,8 +54,17 @@ async function boot(store: SkinStore): Promise<string> {
   return start(baseDeps({ routes: mountSkinRoutes(store) }));
 }
 
-function post(base: string, body: BodyInit, headers: Record<string, string> = cookie, type = 'image/png') {
-  return fetch(`${base}${SKIN}`, { method: 'POST', headers: { ...headers, 'content-type': type }, body });
+function post(
+  base: string,
+  body: BodyInit,
+  headers: Record<string, string> = cookie,
+  type = 'image/png',
+) {
+  return fetch(`${base}${SKIN}`, {
+    method: 'POST',
+    headers: { ...headers, 'content-type': type },
+    body,
+  });
 }
 
 describe('POST /agents/{playerId}/skin (C7-13a)', () => {
@@ -64,7 +74,12 @@ describe('POST /agents/{playerId}/skin (C7-13a)', () => {
     expect(r.status).toBe(202);
     expect(await r.json()).toEqual({ uploadId: 7, status: 'pending' });
     expect(f.submitSkin).toHaveBeenCalledTimes(1);
-    const [identity, player, png, sha] = f.submitSkin.mock.calls[0] as unknown as [string, string, Buffer, Buffer];
+    const [identity, player, png, sha] = f.submitSkin.mock.calls[0] as unknown as [
+      string,
+      string,
+      Buffer,
+      Buffer,
+    ];
     expect(identity).toBe(IDENT);
     expect(player).toBe('p1');
     expect(png.equals(VALID)).toBe(true);
@@ -157,10 +172,93 @@ describe('POST /agents/{playerId}/skin (C7-13a)', () => {
   });
 
   it('the reject wait and the daily cap answer 429 with a Retry-After', async () => {
-    const wait = await post(await boot(fakeStore({ ok: false, code: 'skin_upload_wait' }).store), VALID);
+    const wait = await post(
+      await boot(fakeStore({ ok: false, code: 'skin_upload_wait' }).store),
+      VALID,
+    );
     expect(wait.headers.get('retry-after')).toBe('3600');
-    const daily = await post(await boot(fakeStore({ ok: false, code: 'skin_upload_daily' }).store), VALID);
+    const daily = await post(
+      await boot(fakeStore({ ok: false, code: 'skin_upload_daily' }).store),
+      VALID,
+    );
     expect(daily.headers.get('retry-after')).toBe('86400');
+  });
+});
+
+/** Sends `chunks` chunks of `size` bytes with no Content-Length (chunked), and resolves with the status and body. */
+function postChunked(
+  base: string,
+  chunks: number,
+  size: number,
+): Promise<{ status: number; body: string }> {
+  const url = new URL(`${base}${SKIN}`);
+  return new Promise((ok, fail) => {
+    const req = request(
+      {
+        host: url.hostname,
+        port: url.port,
+        path: url.pathname,
+        method: 'POST',
+        headers: { ...cookie, 'content-type': 'image/png' },
+      },
+      (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (d: string) => {
+          body += d;
+        });
+        res.on('end', () => ok({ status: res.statusCode ?? 0, body }));
+      },
+    );
+    req.on('error', fail);
+    for (let i = 0; i < chunks; i++) req.write(Buffer.alloc(size));
+    req.end();
+  });
+}
+
+/** Sends only the headers of a POST with the given Content-Length and no body; resolves with the status line. */
+function postDeclaredOnly(base: string, length: number): Promise<string> {
+  const url = new URL(base);
+  const lines = Object.entries({
+    ...cookie,
+    'content-type': 'image/png',
+    'content-length': String(length),
+  }).map(([k, v]) => `${k}: ${v}`);
+  return new Promise((ok, fail) => {
+    const socket = connect(Number(url.port), url.hostname, () => {
+      socket.write(`POST ${SKIN} HTTP/1.1\r\nHost: ${url.host}\r\n${lines.join('\r\n')}\r\n\r\n`);
+    });
+    socket.setEncoding('utf8');
+    socket.once('data', (d: string) => {
+      ok(d.split('\r\n')[0] ?? '');
+      socket.destroy();
+    });
+    socket.on('error', fail);
+  });
+}
+
+describe('skin body reads and route flags (C7-13a review fix 1)', () => {
+  it('a chunked body over 32 KiB is 422 problem, not a connection reset (40 chunks of 64 KiB)', async () => {
+    const f = fakeStore();
+    const r = await postChunked(await boot(f.store), 40, 64 * 1024);
+    expect(r.status).toBe(422);
+    expect(r.body).toContain('invalid');
+    expect(f.submitSkin).not.toHaveBeenCalled();
+  });
+
+  it('a declared Content-Length over 32 KiB is refused with 422 before any body byte is sent', async () => {
+    const f = fakeStore();
+    const statusLine = await postDeclaredOnly(await boot(f.store), 40_000);
+    expect(statusLine).toBe('HTTP/1.1 422 Unprocessable Entity');
+    expect(f.submitSkin).not.toHaveBeenCalled();
+  });
+
+  it('both skin routes are cookie-only, and only the POST writes', () => {
+    const f = fakeStore();
+    const routes = mountSkinRoutes(f.store);
+    expect(routes.every((r) => r.cookieOnly === true)).toBe(true);
+    expect(routes[0]?.write).toBe(true);
+    expect(routes[1]?.write).toBe(false);
   });
 });
 
@@ -192,7 +290,9 @@ describe('GET /agents/{playerId}/skin (C7-13a)', () => {
     const f = fakeStore(undefined, { ok: false, code: 'not_your_agent' });
     const base = await boot(f.store);
     expect((await fetch(`${base}${SKIN}`, { headers: cookie })).status).toBe(404);
-    expect((await fetch(`${base}${SKIN}`, { headers: { authorization: `Bearer ${KEY_ALL}` } })).status).toBe(401);
+    expect(
+      (await fetch(`${base}${SKIN}`, { headers: { authorization: `Bearer ${KEY_ALL}` } })).status,
+    ).toBe(401);
   });
 });
 

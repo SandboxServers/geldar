@@ -137,7 +137,8 @@ describe('checkSkinPng', () => {
 
   it('refuses a chunk with a bad CRC as bad_crc', () => {
     const iend = chunk('IEND', Buffer.alloc(0));
-    iend[iend.length - 1] ^= 0xff;
+    const last = iend.length - 1;
+    iend[last] = (iend[last] ?? 0) ^ 0xff;
     expect(refusalOf(png({ iend }))).toBe('bad_crc');
   });
 
@@ -205,7 +206,7 @@ describe('checkSkinPng', () => {
 
   it('refuses input that is not a PNG, including empty input', () => {
     expect(refusalOf(Buffer.alloc(0))).toBe('not_png');
-    expect(refusalOf(Buffer.from('GIF89a' + '\0'.repeat(40)))).toBe('not_png');
+    expect(refusalOf(Buffer.from(`GIF89a${'\0'.repeat(40)}`))).toBe('not_png');
   });
 
   it('refuses a file with no IEND, or with IEND before IDAT, as bad_chunk_order', () => {
