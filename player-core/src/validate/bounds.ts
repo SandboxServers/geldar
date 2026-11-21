@@ -22,7 +22,10 @@ export const PHASE0_VERBS: readonly string[] = [
   'use',
 ];
 
-/** The programs an intent may name. Everything else (skills, `build`, `trade_wait`) is refused. */
+/**
+ * The programs an intent may name. Everything else (skills, `trade_wait`, and `explore`, `farm`, `patrol` until
+ * the owner ships them, #865) is refused. The Body's registry may hold more names than this list.
+ */
 export const PHASE0_PROGRAMS: readonly string[] = [
   'travel',
   'gather',
@@ -31,9 +34,6 @@ export const PHASE0_PROGRAMS: readonly string[] = [
   'flee',
   'follow',
   'build',
-  'explore',
-  'farm',
-  'patrol',
 ];
 
 /** The largest output the validators read: the Thinker's `text` cap (threat model section 4). */

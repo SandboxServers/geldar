@@ -16,10 +16,10 @@ const check = (program: string, args: Record<string, unknown>) => {
 };
 const pt = (x: number) => ({ x, y: 64, z: 0 });
 
-describe('explore, farm and patrol are allowed, with bounded arguments (AN-45a)', () => {
-  it('names them in the allow-list and in PROGRAM_ARGS', () => {
+describe('explore, farm and patrol: argument shapes kept, not on the allow-list (AN-45a, #865)', () => {
+  it('keeps their shapes in PROGRAM_ARGS but leaves them off the allow-list', () => {
     for (const p of ['explore', 'farm', 'patrol']) {
-      expect(PHASE0_PROGRAMS, `${p} is allowed`).toContain(p);
+      expect(PHASE0_PROGRAMS, `${p} is not allowed`).not.toContain(p);
       expect(PROGRAM_ARGS[p]).toBeDefined();
     }
   });
@@ -86,7 +86,7 @@ describe('explore, farm and patrol are allowed, with bounded arguments (AN-45a)'
   });
 });
 
-describe('explore, farm and patrol through the whole output validator (AN-45a)', () => {
+describe('explore, farm and patrol through the whole output validator (AN-45a, #865)', () => {
   const validator = createOutputValidator();
   const thought = (program: string, args: Record<string, unknown>) =>
     validator.parseThought(
@@ -102,10 +102,18 @@ describe('explore, farm and patrol through the whole output validator (AN-45a)',
       }),
     );
 
-  it('accepts a valid intent for each program', () => {
-    expect(thought('explore', { legs: 3, leg_blocks: 24, avoid_water: true }).ok).toBe(true);
-    expect(thought('farm', { radius: 12, max_cells: 16, replant: true }).ok).toBe(true);
-    expect(thought('patrol', { route: [pt(0), pt(5)], laps: 2, loop: false }).ok).toBe(true);
+  it('refuses a well-formed intent for each program: not on the allow-list (#865)', () => {
+    const refused = [
+      thought('explore', { legs: 3, leg_blocks: 24, avoid_water: true }),
+      thought('farm', { radius: 12, max_cells: 16, replant: true }),
+      thought('patrol', { route: [pt(0), pt(5)], laps: 2, loop: false }),
+    ];
+    for (const r of refused) {
+      expect(r.ok).toBe(false);
+      expect(r.ok ? [] : r.errors).toContainEqual(
+        expect.objectContaining({ code: 'not_allowed', path: '/intent/program' }),
+      );
+    }
   });
 
   it('refuses bad arguments for each program', () => {

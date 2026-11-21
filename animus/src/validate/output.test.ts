@@ -480,11 +480,6 @@ describe('the allow-list and the MCP verb list', () => {
   });
 });
 
-// Registered and allowed by the validator (AN-45a), but listed by no body-api version and absent from the decode schema until
-// AN-45b selects them; like `use` for v8 (decision 0218), the tables are compared less these.
-const UNSELECTED_PROGRAMS = ['explore', 'farm', 'patrol'];
-const SELECTED_PROGRAMS = PHASE0_PROGRAMS.filter((p) => !UNSELECTED_PROGRAMS.includes(p));
-
 describe('the body-api table', () => {
   const file = JSON.parse(
     readFileSync(join(repoRoot(), 'prompts', 'body-api', 'v8.json'), 'utf8'),
@@ -507,7 +502,7 @@ describe('the body-api table', () => {
   });
 
   it('lists exactly the allow-list of programs', () => {
-    expect(file.programs.map((p) => p.program).sort()).toEqual([...SELECTED_PROGRAMS].sort());
+    expect(file.programs.map((p) => p.program).sort()).toEqual([...PHASE0_PROGRAMS].sort());
   });
 
   it('has one example per verb and program that the validator accepts', () => {
@@ -533,18 +528,7 @@ describe('the body-api table', () => {
       [...PHASE0_VERBS].sort(),
     );
     expect([...schema.properties.intent.properties.program.enum].sort()).toEqual(
-      [...SELECTED_PROGRAMS].sort(),
+      [...PHASE0_PROGRAMS].sort(),
     );
-  });
-
-  it('keeps explore, farm and patrol out of every table until a body-api version selects them', () => {
-    for (const p of UNSELECTED_PROGRAMS) {
-      expect(PHASE0_PROGRAMS).toContain(p);
-      expect(file.programs.map((x) => x.program)).not.toContain(p);
-      const schema = thoughtDecodeSchema() as {
-        properties: { intent: { properties: { program: { enum: string[] } } } };
-      };
-      expect(schema.properties.intent.properties.program.enum).not.toContain(p);
-    }
   });
 });
