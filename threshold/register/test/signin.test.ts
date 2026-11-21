@@ -19,6 +19,15 @@ describe('Microsoft sign-in (mocked endpoints)', () => {
     expect(h.signedIn[0]?.identityHash).toBe(identityHash('p'.repeat(40), 'microsoft', RAW_ID));
   });
 
+  it('sends the code exchange to exactly the consumers token endpoint, and nowhere else', async () => {
+    h = await harness();
+    const { state, cookie } = await h.begin();
+    expect((await h.callback(undefined, state, cookie)).status).toBe(200);
+    // begin() hits the sign-in route (no provider call); the callback makes the only provider call.
+    expect(h.idp.urls).toEqual(['https://login.microsoftonline.com/consumers/oauth2/v2.0/token']);
+    expect(h.idp.tokenCalls).toBe(1);
+  });
+
   it('refuses an id token for another audience or another tenant', async () => {
     h = await harness();
     h.idp.aud = 'someone-else';
@@ -81,8 +90,12 @@ describe('Microsoft sign-in (mocked endpoints)', () => {
     const res = await fetch(`${h.base}/register/login`, { redirect: 'manual' });
     const loc = new URL(res.headers.get('location') ?? '');
     expect(loc.origin + loc.pathname).toBe(
-      'https://login.microsoftonline.com/consumers/v2.0/authorize',
+      'https://login.microsoftonline.com/consumers/oauth2/v2.0/authorize',
     );
+    expect(loc.searchParams.get('response_type')).toBe('code');
+    expect(loc.searchParams.get('client_id')).toBe('ms-id');
+    expect(loc.searchParams.get('response_mode')).toBe('query');
+    expect(loc.searchParams.get('state')).toMatch(/^[A-Za-z0-9_-]+$/);
     expect(loc.searchParams.get('code_challenge_method')).toBe('S256');
     expect(loc.searchParams.get('code_challenge')).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(loc.searchParams.get('scope')).toBe('openid');

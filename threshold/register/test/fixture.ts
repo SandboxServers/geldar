@@ -48,6 +48,8 @@ export interface FakeIdp {
   tamperChallenge: boolean;
   challenge: string | null;
   tokenCalls: number;
+  /** Every URL the provider was asked for, in order: a test can assert the exact endpoint. */
+  urls: string[];
   /** The Microsoft subject the fake returns. */
   userId: string;
   fetch: (url: string, init?: RequestInit) => Promise<Response>;
@@ -61,10 +63,14 @@ export function fakeIdp(): FakeIdp {
     tamperChallenge: false,
     challenge: null,
     tokenCalls: 0,
+    urls: [],
     userId: RAW_ID,
     async fetch(url, init) {
+      idp.urls.push(url);
       const ok = (b: unknown) => new Response(JSON.stringify(b), { status: 200 });
-      if (url === `https://login.microsoftonline.com/consumers/v2.0/token`) {
+      // The real token endpoint (MS_AUTHORITY + /token). Written out here, not imported, so the test
+      // fails if the code points at any other path.
+      if (url === `https://login.microsoftonline.com/consumers/oauth2/v2.0/token`) {
         idp.tokenCalls += 1;
         const verifier = new URLSearchParams(String(init?.body ?? '')).get('code_verifier');
         const expected = idp.tamperChallenge ? 'other' : idp.challenge;

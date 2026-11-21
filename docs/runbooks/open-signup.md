@@ -198,6 +198,7 @@ Before this section, every step from 1 to 25, except the optional row 23 and row
      --profile register --profile sovereign up -d --no-deps register
    ```
 10. Verify: sign-in works; terms consent is recorded; agent registration creates the roster entry; a token can be issued. This step does not verify a Body start: the only Body starts are step 19 and row 19a.
+11. Verify the sign-in redirect target (read only, no sign-in; run after item 9 and after every re-flip). With the kill switch `false`, `GET <Glass origin>/register/login?consent=yes` answers 302. Read that response's `Location` header into a shell variable and do not print it. Then GET that URL and print only the HTTP status code. Expect 302 or 200 from the Microsoft host, never 404. A 404 is a stop: report it and do not re-flip sign-up. Checking only that the redirect points at the Microsoft host is not enough: a wrong authorize path there still passes that check, and only the status shows it.
 
 Rollback: run the item 9 register-only command with `REGISTER_KILL_SWITCH=true` on the command line, and recreate the register service only. Other steps are not undone. Users who signed in during the open window keep their accounts; the deletion path in [account-deletion.md](account-deletion.md) handles removal.
 
