@@ -12,9 +12,11 @@
 # Needs bash, jq and (for a real run) curl. Writes only under a temp dir that it removes on exit.
 set -euo pipefail
 umask 077
+# No proxy for the tunnel: a proxy in the environment would send the admin token to someone else's host.
+unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
 URL="http://127.0.0.1:8095"
 TOKEN_FILE=""
 DRY_RUN=0
@@ -60,13 +62,15 @@ trap 'rm -rf "$TMP"' EXIT
 if [ "$DRY_RUN" -eq 0 ]; then
   command -v curl >/dev/null || die "curl is required"
   [ -n "$TOKEN_FILE" ] && [ -r "$TOKEN_FILE" ] || die "--token-file PATH is required and must be readable"
-  token_dir="$(cd "$(dirname "$TOKEN_FILE")" && pwd)"
+  # pwd -P resolves symlinks, so a token file reached through a link into the checkout is still refused.
+  token_dir="$(cd "$(dirname "$TOKEN_FILE")" && pwd -P)"
   case "$token_dir/" in
     "$REPO_ROOT"/*) die "the token file must live outside the repo checkout" ;;
   esac
   TOKEN=""
-  IFS= read -r TOKEN < "$TOKEN_FILE" || [ -n "$TOKEN" ] || die "the token file is empty"
+  IFS= read -r TOKEN < "$TOKEN_FILE" || true
   TOKEN="${TOKEN%$'\r'}"
+  [ -n "$TOKEN" ] || die "the token file's first line is empty"
   printf 'Authorization: Bearer %s\n' "$TOKEN" > "$TMP/auth.hdr"
   TOKEN=""
 fi
@@ -75,10 +79,10 @@ fi
 api() {
   local method="$1" path="$2" body="${3:-}"
   if [ -n "$body" ]; then
-    curl -sS -f -X "$method" -H "@$TMP/auth.hdr" -H 'Accept: application/json' \
+    curl -sS -f --noproxy '*' -X "$method" -H "@$TMP/auth.hdr" -H 'Accept: application/json' \
       -H 'Content-Type: application/json' --data-binary "@$body" "$URL$path"
   else
-    curl -sS -f -X "$method" -H "@$TMP/auth.hdr" -H 'Accept: application/json' "$URL$path"
+    curl -sS -f --noproxy '*' -X "$method" -H "@$TMP/auth.hdr" -H 'Accept: application/json' "$URL$path"
   fi
 }
 
@@ -91,7 +95,7 @@ send_dashboard() {
     return
   fi
   api GET /api/v1/dashboards > "$TMP/dashboards.json"
-  id="$(jq -r --arg t "$title" '[.data[] | select(.data.title == $t) | .id] | if length > 1 then error("more than one dashboard titled " + $t) else (.[0] // "") end' "$TMP/dashboards.json")"
+  id="$(jq -r --arg t "$title" '[(.data // [])[] | select(.data.title == $t) | .id] | if length > 1 then error("more than one dashboard titled " + $t) else (.[0] // "") end' "$TMP/dashboards.json")"
   if [ -n "$id" ]; then
     api PUT "/api/v1/dashboards/$id" "$file" > /dev/null
     echo "updated dashboard \"$title\""

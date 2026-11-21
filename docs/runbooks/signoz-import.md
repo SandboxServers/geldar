@@ -21,6 +21,9 @@ step and sends nothing more. Record what the real shapes are here, then fix the 
 
 - A running `geldar-signoz` on the node (`docker inspect -f '{{.State.Health.Status}}' geldar-signoz` prints `healthy`).
 - An admin account in SigNoz. Its credentials are held by the owner, never in the repo.
+- The notification channel `geldar-owner-channel` (named in the alert files' `preferredChannels`) must exist in SigNoz
+  before the real run. The script imports rules, not channels, so a rule that names a missing channel is refused or
+  left without a route. Create the channel in the SigNoz UI with that exact name, then run the dry run.
 - `bash`, `curl` (7.55 or later, for `-H @file`) and `jq` on the machine that runs the script.
 - Every Paper and NeoForge dashboard step needs a fresh owner OK with a window (the gap-plan rule). Run through the ops
   agent in that window.
