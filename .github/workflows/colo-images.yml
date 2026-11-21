@@ -35,6 +35,9 @@ on:
       - pnpm-workspace.yaml
       - pnpm-lock.yaml
       - .github/workflows/colo-images.yml
+      # Test-only paths do not rebuild the images (AN-CI-2, #868): the negations come last, so they cover the golem/src/players/** line too.
+      - '!golem/test/**'
+      - '!**/*.test.ts'
   workflow_dispatch:
 
 permissions:

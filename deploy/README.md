@@ -479,7 +479,7 @@ To stop the project without losing data, run `deploy/colo-down.sh`. Start it aga
   hand. There is no shell equivalent yet.
 - **Image publish.** `colo-images` publishes the five images (`geldar-body`, `geldar-mind`, `geldar-eventsink`,
   `geldar-mcp`, `geldar-admin`) and writes `release.env` for its run. Take the manifest from the run for
-  `<release-commit>`; the publish itself is an ops step.
+  `<release-commit>`; the publish itself is an ops step. Its push \paths\ filter skips test-only files under golem (\golem/test/**\, \**/*.test.ts\), so a test edit does not recreate the player hosts; golem source still rebuilds the images.
 
 ## Owner actions
 
