@@ -186,6 +186,23 @@ describe('checkSkinPng', () => {
     expect(refusalOf(png({ idat: deflateSync(pixels) }))).toBe('ok');
   });
 
+  it('accepts an RGBA pixel stream whose alpha bytes are 255 and whose filters are 0', () => {
+    const stride = 1 + 64 * 4;
+    const pixels = Buffer.alloc(64 * stride, 255);
+    for (let row = 0; row < 64; row++) pixels[row * stride] = 0;
+    const bytes = png({ colorType: 6, ihdr: header(64, 64, 8, 6), idat: deflateSync(pixels) });
+    expect(refusalOf(bytes)).toBe('ok');
+  });
+
+  it('refuses an RGBA pixel stream with filter type 5 on the last row as bad_filter', () => {
+    const stride = 1 + 64 * 4;
+    const pixels = Buffer.alloc(64 * stride, 255);
+    for (let row = 0; row < 64; row++) pixels[row * stride] = 0;
+    pixels[63 * stride] = 5;
+    const bytes = png({ colorType: 6, ihdr: header(64, 64, 8, 6), idat: deflateSync(pixels) });
+    expect(refusalOf(bytes)).toBe('bad_filter');
+  });
+
   it('refuses input that is not a PNG, including empty input', () => {
     expect(refusalOf(Buffer.alloc(0))).toBe('not_png');
     expect(refusalOf(Buffer.from('GIF89a' + '\0'.repeat(40)))).toBe('not_png');
