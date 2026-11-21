@@ -8,8 +8,8 @@ Design and facts: `docs/runbooks/telemetry-monitors.md`, `docs/analysis/telemetr
 `compose/opt-in/colo-nats-exporter.yml`, `deploy/common.sh`, `deploy/README.md`, and the window log in `deploy/telemetry/README.md`.
 Labels: **UNVERIFIED** = not checked against the repo or the node; `[UNV]` marks one command or fact inside a step that has no repo source.
 No URL, address, password or secret value is written in this file. Placeholders: `<merge>` (the full sha of the merge that holds the G2 files;
-`1c0e0c60` is the base of this branch and holds them), `<TELEMETRY_PG_SECRETS_DIR>` (the telemetry secrets directory, owner option (a), settled 2026-11-21, section 6), `<colo checkout>`
-(the colo stack's compose directory on the node, **UNVERIFIED**), `<migration role>` (the database role that runs psql, **UNVERIFIED**), `<ts>` (UTC timestamp).
+`1c0e0c60` is the base of this branch and holds them), `<colo checkout>`
+(the colo stack's compose directory on the node, **UNVERIFIED**), `<migration role>` (the database role that runs psql, **UNVERIFIED**), `<ts>` (UTC timestamp). The telemetry secrets directory is `/mnt/nvme/geldar-telemetry/pg-secrets` (owner option (a), settled 2026-11-21, named by the orchestrator; section 6).
 
 Owner approval needed: yes. Each step below needs a fresh direct owner OK with a window from the orchestrator geldar-69
 before it runs. The steps are: S1 secret file, S2 monitoring role, S3 stage (extract, validate, swap), S4 gateway restage (window W1),
@@ -25,10 +25,11 @@ S5 exporter start (window W2). W1 and W2 are separate windows, never the same wi
 6. Never run anything that stops, removes or recreates containers or networks other than the one named.
 7. No secrets, account names or IPs in the document.
 8. Each step needs a fresh direct owner OK with a window from the orchestrator geldar-69 before it runs.
+9. `--replace` of the dashboard import (request 07) stays off unless the orchestrator says so.
 
 ## 1. What changes
 
-1. S1: a new file `<TELEMETRY_PG_SECRETS_DIR>/otel-pg.txt` (the Postgres monitor password), owner `10001`, group `10001`, mode `0400`.
+1. S1: a new file `/mnt/nvme/geldar-telemetry/pg-secrets/otel-pg.txt` (the Postgres monitor password), owner `10001`, group `10001`, mode `0400`.
 2. S2: the Postgres role `geldar_monitor` (LOGIN, `pg_read_all_stats`, CONNECT on the database `geldar`). The role owns nothing (the SQL file creates no object).
 3. S3: the telemetry tree `/mnt/nvme/geldar-telemetry/src` is replaced by one extracted from `<merge>` (the old tree is kept as `src.old-g2`).
    The new `gateway.yaml` adds the `nats` scrape (`nats:7777`, 30 s) and the `postgresql` receiver (`postgres:5432`, database `geldar`, user `geldar_monitor`).
@@ -49,9 +50,9 @@ S5 exporter start (window W2). W1 and W2 are separate windows, never the same wi
 
 ## 3. Named paths (the only places anything is written)
 
-- `<TELEMETRY_PG_SECRETS_DIR>/`: the directory (created by `sudo mkdir` in S1; root-owned; its mode is not set by this request). It holds only
-  `otel-pg.txt`. Nothing else is created in it.
-- `<TELEMETRY_PG_SECRETS_DIR>/otel-pg.txt`: the secret file (S1), owner `10001:10001`, mode `0400`. Removed only by rollback R1.
+- `/mnt/nvme/geldar-telemetry/pg-secrets/`: the directory (created by `sudo mkdir` in S1; owner `10001:10001`, mode `0750`). It holds only
+  `otel-pg.txt`. Nothing else may be placed in it.
+- `/mnt/nvme/geldar-telemetry/pg-secrets/otel-pg.txt`: the secret file (S1), owner `10001:10001`, mode `0400`. Removed only by rollback R1.
 - `/mnt/nvme/geldar-telemetry/`: `telemetry-<merge>.tar.gz` (the tarball, S3), `src.new-g2/` (the extracted tree, S3, becomes `src`),
   `src` renamed to `src.old-g2` (kept, S3). Nothing else in that directory is written.
 - `/mnt/nvme/geldar-telemetry/stage/`: `baseline-g2-<ts>.txt` (the baseline, section 5 step 1) and the W1 and W2 check outputs, named with `<ts>`.
@@ -92,30 +93,40 @@ the same for `nats-exporter` prints `100000000 67108864 64`. Measured usage: `do
 
 ## 6. Secrets directory (settled: owner option (a), geldar-69, 2026-11-21)
 
-- The Postgres monitor secret lives in its own telemetry secrets directory, `<TELEMETRY_PG_SECRETS_DIR>`, which holds only `otel-pg.txt`
+- The Postgres monitor secret lives in its own telemetry secrets directory, `/mnt/nvme/geldar-telemetry/pg-secrets`, which holds only `otel-pg.txt`
   (owner `10001`, mode `0400`). The colo secrets directory (`/etc/geldar-colo/secrets`, `deploy/common.sh`) and its ownership check
   (`deploy/README.md`, around line 156) are not touched, so the colo refusal does not apply to this file.
-- Placement: the placeholder stands for a directory under the telemetry state tree `/mnt/nvme/geldar-telemetry/` (`deploy/telemetry/README.md`,
-  "Host paths"). The existing `/mnt/nvme/geldar-telemetry/secrets/` is NOT used: it holds the ClickHouse passwords, so it would hold more than
-  `otel-pg.txt`. No path in that README names a directory for this file, so the name is left as the placeholder `<TELEMETRY_PG_SECRETS_DIR>`,
-  to be named by the orchestrator (a new directory directly under `/mnt/nvme/geldar-telemetry/`, which `sudo` may `mkdir` and `chown`).
-- `GELDAR_SECRETS_DIR` is set explicitly to `<TELEMETRY_PG_SECRETS_DIR>` on the psql run (section 9) and on the gateway compose commands
+- Placement: a directory under the telemetry state tree `/mnt/nvme/geldar-telemetry/` (`deploy/telemetry/README.md`,
+  "Host paths"), named by the orchestrator as `/mnt/nvme/geldar-telemetry/pg-secrets`. The existing `/mnt/nvme/geldar-telemetry/secrets/` is NOT used: it holds the ClickHouse passwords, so it would hold more than
+  `otel-pg.txt`. No path in that README names a directory for this file, so the orchestrator named a new directory directly under
+  `/mnt/nvme/geldar-telemetry/`, which S1 creates with `sudo`.
+- `GELDAR_SECRETS_DIR` is set explicitly to `/mnt/nvme/geldar-telemetry/pg-secrets` on the psql run (section 9) and on the gateway compose commands
   (sections 11 and 13). No colo command sets it (section 12, rollback R5). Nothing else is set in that variable.
-- The compose default `${GELDAR_SECRETS_DIR:-../../compose/secrets}` (`deploy/telemetry/compose.gateway.yml`) can still apply if the variable
-  is unset: it resolves to the repo's `compose/secrets`. So the variable is treated as required: a command that would run without it is not run,
-  and the operator stops. The code change that makes Compose refuse an unset variable is a follow-up (section 15, item 6), not made here.
+- `deploy/telemetry/compose.gateway.yml` has no default for `GELDAR_SECRETS_DIR`: an unset variable makes Compose refuse to render
+  (`${GELDAR_SECRETS_DIR:?...}`), so the repo's `compose/secrets` can never be used. A command that would run without the variable is not run,
+  and the operator stops.
 
 ## 7. S1: create the secret file (no output of the value)
 
-Owner OK and window for S1. First create the directory (inside `/mnt/nvme/geldar-telemetry`, the only tree the sudo scope allows): `sudo mkdir "<TELEMETRY_PG_SECRETS_DIR>"`.
+Owner OK and window for S1. First create the directory (inside `/mnt/nvme/geldar-telemetry`, the only tree the sudo scope allows). It is owned
+`10001:10001`, mode `0750`, and holds only `otel-pg.txt`; nothing else may be placed in it. `mkdir` without `-p` refuses an existing directory:
+```
+sudo mkdir /mnt/nvme/geldar-telemetry/pg-secrets
+sudo chown 10001:10001 /mnt/nvme/geldar-telemetry/pg-secrets
+sudo chmod 0750 /mnt/nvme/geldar-telemetry/pg-secrets
+```
+Then the file:
 Then run on the node as root, from one command, so the value is generated inside the shell and never printed or sent:
 ```
-sudo sh -c 'umask 077; head -c 24 /dev/urandom | od -An -tx1 | tr -d " \n" > "$1"' sh "<TELEMETRY_PG_SECRETS_DIR>/otel-pg.txt"
-sudo chown 10001:10001 "<TELEMETRY_PG_SECRETS_DIR>/otel-pg.txt"
-sudo chmod 0400 "<TELEMETRY_PG_SECRETS_DIR>/otel-pg.txt"
+sudo sh -c 'umask 077; head -c 24 /dev/urandom | od -An -tx1 | tr -d " \n" > "$1"' sh "/mnt/nvme/geldar-telemetry/pg-secrets/otel-pg.txt"
+sudo chown 10001:10001 "/mnt/nvme/geldar-telemetry/pg-secrets/otel-pg.txt"
+sudo chmod 0400 "/mnt/nvme/geldar-telemetry/pg-secrets/otel-pg.txt"
 ```
 - The value is 48 hex characters with no newline (`od` and `tr` remove the spaces and newlines). Nothing is printed. Do not echo, cat or `set -x`.
-- Verify without reading the value: `sudo stat -c '%U:%G %a %s' "<TELEMETRY_PG_SECRETS_DIR>/otel-pg.txt"` must print `10001:10001 400 48`.
+- Verify the directory, read-only: `sudo stat -c '%U:%G %a %n' /mnt/nvme/geldar-telemetry/pg-secrets` must print
+  `10001:10001 750 /mnt/nvme/geldar-telemetry/pg-secrets`, and `sudo ls -A /mnt/nvme/geldar-telemetry/pg-secrets` must print exactly one
+  entry, `otel-pg.txt`. Any other entry stops the step.
+- Verify without reading the value: `sudo stat -c '%U:%G %a %s' "/mnt/nvme/geldar-telemetry/pg-secrets/otel-pg.txt"` must print `10001:10001 400 48`.
   A size other than 48 means the file is wrong: delete it (R1) and stop.
 - The value is never put in a chat, a log, a command line or this repo. Rollback is section 13 (R1).
 
@@ -136,7 +147,7 @@ This is the only change to the order of the brief: S1, S3a, S2, S3b, S4, S5.
 Owner OK and window for S2. The SQL file is `src.new-g2/deploy/telemetry/postgres-monitor.sql` (from S3a). The psql run needs
 `GELDAR_SECRETS_DIR` in its environment, so the `\set` in the file reads the secret inside psql (the password is in no command line):
 ```
-cd /mnt/nvme/geldar-telemetry && sudo -u <migration role> env GELDAR_SECRETS_DIR=<TELEMETRY_PG_SECRETS_DIR> psql -v ON_ERROR_STOP=1 -d geldar -f src.new-g2/deploy/telemetry/postgres-monitor.sql
+cd /mnt/nvme/geldar-telemetry && sudo -u <migration role> env GELDAR_SECRETS_DIR=/mnt/nvme/geldar-telemetry/pg-secrets psql -v ON_ERROR_STOP=1 -d geldar -f src.new-g2/deploy/telemetry/postgres-monitor.sql
 ```
 [UNV: the migration role's OS user, how psql connects (socket or host), and whether the operator needs sudo for the secret file (it is owned by 10001, mode 0400, so root or the 10001 user reads it). The runbook says "as the migration role" and "as root (or through sudo)".]
 
@@ -153,7 +164,7 @@ Owner OK for S3b (the swap changes the tree the gateway reads at its next recrea
 
 1. Validate the NEW config before the swap, on the pinned collector image, with the secret mounted (the `${file:...}` is read at load):
    ```
-   docker run --rm --network none -e GELDAR_SIGNOZ_OTLP_ENDPOINT=geldar-signoz-otelcol:4317 --entrypoint /otelcol-contrib -v /mnt/nvme/geldar-telemetry/src.new-g2/deploy/telemetry/gateway.yaml:/etc/otelcol/gateway.yaml:ro -v /mnt/nvme/geldar-telemetry/queue:/var/lib/otelcol/queue -v "<TELEMETRY_PG_SECRETS_DIR>/otel-pg.txt:/run/secrets/otel-pg.txt:ro" otel/opentelemetry-collector-contrib@sha256:340c9ca6a36617084c6661bdc4f0fe92b7cda5a805d61673ec8db375fddc522b validate --config=/etc/otelcol/gateway.yaml
+   docker run --rm --network none -e GELDAR_SIGNOZ_OTLP_ENDPOINT=geldar-signoz-otelcol:4317 --entrypoint /otelcol-contrib -v /mnt/nvme/geldar-telemetry/src.new-g2/deploy/telemetry/gateway.yaml:/etc/otelcol/gateway.yaml:ro -v /mnt/nvme/geldar-telemetry/queue:/var/lib/otelcol/queue -v "/mnt/nvme/geldar-telemetry/pg-secrets/otel-pg.txt:/run/secrets/otel-pg.txt:ro" otel/opentelemetry-collector-contrib@sha256:340c9ca6a36617084c6661bdc4f0fe92b7cda5a805d61673ec8db375fddc522b validate --config=/etc/otelcol/gateway.yaml
    ```
    It must print nothing and exit 0 (the form of request 01 step 4, plus the secret mount). Any output: `rm -rf src.new-g2` and stop (nothing else has changed).
    The image digest is the one in `deploy/telemetry/compose.gateway.yml`. This command is not a compose command, so rule 1 does not apply to it.
@@ -168,30 +179,30 @@ Owner OK and window for W1. It must not share a window with S5 (W2).
 
 1. Render, before the recreate (rule 3). Into the temp dir `g2-tmp-<ts>`:
    ```
-   cd /mnt/nvme/geldar-telemetry/src && GELDAR_SERVICE_UID=1001 GELDAR_SECRETS_DIR=<TELEMETRY_PG_SECRETS_DIR> docker compose -f deploy/telemetry/compose.yml -f deploy/telemetry/compose.gateway.yml config --format json > /mnt/nvme/geldar-telemetry/stage/g2-tmp-<ts>/render-gateway.json
+   cd /mnt/nvme/geldar-telemetry/src && GELDAR_SERVICE_UID=1001 GELDAR_SECRETS_DIR=/mnt/nvme/geldar-telemetry/pg-secrets docker compose -f deploy/telemetry/compose.yml -f deploy/telemetry/compose.gateway.yml config --format json > /mnt/nvme/geldar-telemetry/stage/g2-tmp-<ts>/render-gateway.json
    docker inspect geldar-gateway > /mnt/nvme/geldar-telemetry/stage/g2-tmp-<ts>/inspect-gateway.json
    ```
    [UNV: `config --format json` on the node's Compose version; `deploy/telemetry/README.md` asks for Compose 2.24 or later for `--dry-run`, not checked here.]
 2. Diff the fields that must match (user, read_only, cap_drop, security_opt, image digest, networks, published ports, pids, memory, cpus,
    and the mount list minus the secret) with `jq` on both files [UNV: the jq paths]. The ONLY accepted differences are:
-   (a) one new read-only mount, the secret, `<TELEMETRY_PG_SECRETS_DIR>/otel-pg.txt` to `/run/secrets/otel-pg.txt`;
+   (a) one new read-only mount, the secret, `/mnt/nvme/geldar-telemetry/pg-secrets/otel-pg.txt` to `/run/secrets/otel-pg.txt`;
    (b) the `gateway.yaml` mount with the same source path and a new file (new inode after the S3b swap);
    (c) the gateway's config hash label changes (expected; it is the proof after the recreate, section 12).
    Any other difference stops the step. A difference in the image digest, in limits, in networks or in published ports stops it.
    [UNV: a non-jq method if jq is not on the node.]
-3. The dry run, to read the plan (names only): `GELDAR_SERVICE_UID=1001 GELDAR_SECRETS_DIR=<TELEMETRY_PG_SECRETS_DIR> docker compose -f deploy/telemetry/compose.yml -f deploy/telemetry/compose.gateway.yml up -d --no-deps --dry-run geldar-gateway`
+3. The dry run, to read the plan (names only): `GELDAR_SERVICE_UID=1001 GELDAR_SECRETS_DIR=/mnt/nvme/geldar-telemetry/pg-secrets docker compose -f deploy/telemetry/compose.yml -f deploy/telemetry/compose.gateway.yml up -d --no-deps --dry-run geldar-gateway`
    [UNV: `--dry-run` on the node's Compose]. The plan must name `geldar-gateway` only. Any other service named stops the step.
 4. The recreate (rule 2 applies. The telemetry stack has no colo env file of its own, so its explicit deploy environment is the two variables set on the command, `GELDAR_SERVICE_UID=1001` and `GELDAR_SECRETS_DIR`; [UNV] whether the colo release file must also be sourced for this project):
    ```
-   cd /mnt/nvme/geldar-telemetry/src && GELDAR_SERVICE_UID=1001 GELDAR_SECRETS_DIR=<TELEMETRY_PG_SECRETS_DIR> docker compose -f deploy/telemetry/compose.yml -f deploy/telemetry/compose.gateway.yml up -d --no-deps geldar-gateway
+   cd /mnt/nvme/geldar-telemetry/src && GELDAR_SERVICE_UID=1001 GELDAR_SECRETS_DIR=/mnt/nvme/geldar-telemetry/pg-secrets docker compose -f deploy/telemetry/compose.yml -f deploy/telemetry/compose.gateway.yml up -d --no-deps geldar-gateway
    ```
-   Under sudo: `sudo env GELDAR_SERVICE_UID=1001 GELDAR_SECRETS_DIR=<TELEMETRY_PG_SECRETS_DIR> docker compose ...` (the same arguments).
+   Under sudo: `sudo env GELDAR_SERVICE_UID=1001 GELDAR_SECRETS_DIR=/mnt/nvme/geldar-telemetry/pg-secrets docker compose ...` (the same arguments).
    The compose output must name `geldar-gateway` only.
 
 ### W1 verification (gateway)
 
 1. Config hash now equals the render: `docker inspect -f '{{index .Config.Labels "com.docker.compose.config-hash"}}' geldar-gateway` equals
-   `GELDAR_SERVICE_UID=1001 GELDAR_SECRETS_DIR=<TELEMETRY_PG_SECRETS_DIR> docker compose -f deploy/telemetry/compose.yml -f deploy/telemetry/compose.gateway.yml config --hash=geldar-gateway` (run in `src`) [UNV: the hash option on the node's Compose].
+   `GELDAR_SERVICE_UID=1001 GELDAR_SECRETS_DIR=/mnt/nvme/geldar-telemetry/pg-secrets docker compose -f deploy/telemetry/compose.yml -f deploy/telemetry/compose.gateway.yml config --hash=geldar-gateway` (run in `src`) [UNV: the hash option on the node's Compose].
 2. Running, restarts 0; `docker logs geldar-gateway --since <ts>`: no error line; `password authentication failed` absent (the postgresql receiver reads the secret);
    `connection refused` for `nats:7777` is expected until S5. The `postgresql` receiver logs no secret value (check the names only).
 3. Mount: `docker inspect -f '{{range .Mounts}}{{.Source}} -> {{.Destination}} {{.RW}}{{println}}{{end}}' geldar-gateway` lists the secret at `/run/secrets/otel-pg.txt` with RW false.
@@ -248,16 +259,17 @@ R1 (secret). Nothing is deleted except the named files and the named role.
   The gateway's `nats` scrape then logs `connection refused` (expected until R4).
 - **R4 gateway (after R3):** restore the previous tree and recreate the gateway from it:
   `cd /mnt/nvme/geldar-telemetry && mv src src.failed-g2 && mv src.old-g2 src`, then render-check as in section 11 (the expected difference is now the removed secret mount),
-  then `GELDAR_SERVICE_UID=1001 GELDAR_SECRETS_DIR=<TELEMETRY_PG_SECRETS_DIR> docker compose -f deploy/telemetry/compose.yml -f deploy/telemetry/compose.gateway.yml up -d --no-deps geldar-gateway`
+  then `GELDAR_SERVICE_UID=1001 GELDAR_SECRETS_DIR=/mnt/nvme/geldar-telemetry/pg-secrets docker compose -f deploy/telemetry/compose.yml -f deploy/telemetry/compose.gateway.yml up -d --no-deps geldar-gateway`
   from `src`. The queue persists across this (records queued under the new rules stay as they are). `src.failed-g2` is kept until the owner says.
   If `src.old-g2` is missing, extract `telemetry-1e4f2078.tar.gz` (checksum on file, `deploy/telemetry/README.md` window log N10) into a new directory and swap.
 - **R2 role:** the runbook's statements, through the same psql run as S2:
   `REVOKE pg_read_all_stats FROM geldar_monitor; REVOKE CONNECT ON DATABASE geldar FROM geldar_monitor; DROP ROLE geldar_monitor;`
   The role owns nothing (section 9). Run R2 after R4, because the gateway's `postgresql` receiver uses the role until then.
-- **R1 secret (last):** `sudo rm -f "<TELEMETRY_PG_SECRETS_DIR>/otel-pg.txt"`. Only after R4, so that no running gateway mounts it. Nothing else in the directory changes.
+- **R1 secret (last):** `sudo rm -f "/mnt/nvme/geldar-telemetry/pg-secrets/otel-pg.txt"`, then `sudo rmdir /mnt/nvme/geldar-telemetry/pg-secrets`.
+  `rmdir` refuses a directory that still holds anything, so a refusal stops the step. Only after R4, so that no running gateway mounts it.
 - **R3 swap:** part of R4 above (`mv src src.failed-g2 && mv src.old-g2 src`). The tarball `telemetry-<merge>.tar.gz` and `src.failed-g2` are kept.
 
-Verification after each rollback: the gateway is running with restarts 0 and no mount of the secret; `pg_roles` has no `geldar_monitor` row; the secret file is absent;
+Verification after each rollback: the gateway is running with restarts 0 and no mount of the secret; `pg_roles` has no `geldar_monitor` row; the secret file and its directory are absent;
 `nats` StartedAt unchanged; the other containers are unchanged (section 5 baseline).
 
 ## 14. Blast radius and risks (from the repo; the owner accepts them at each OK)
@@ -272,17 +284,16 @@ Verification after each rollback: the gateway is running with restarts 0 and no 
 ## 15. Owner decisions
 
 1. Settled: option (a), a telemetry secrets directory holding only `otel-pg.txt` (owner `10001`), by the owner via geldar-69 on 2026-11-21
-   (section 6). The directory's name is still the placeholder `<TELEMETRY_PG_SECRETS_DIR>`: S1 does not run until the orchestrator names it.
+   (section 6). The orchestrator named the directory `/mnt/nvme/geldar-telemetry/pg-secrets`.
 2. The migration role's OS user and the psql connection method (section 9). [UNV]
 3. The W1 window, and the W2 window (separate, after W1 has been quiet for 30 minutes).
 4. Accept the `pg_read_all_stats` risk and the `/jsz` exposure (section 14).
 5. Keep `src.old-g2` (the rollback tree) until the owner says it can go.
-6. Follow-up, code change (not made in this request): make `deploy/telemetry/compose.gateway.yml` refuse an unset `GELDAR_SECRETS_DIR`
-   (for example `${GELDAR_SECRETS_DIR:?...}`), so the `compose/secrets` default cannot apply. Until it lands, section 6 is the rule.
+6. Done in this change: `deploy/telemetry/compose.gateway.yml` refuses an unset `GELDAR_SECRETS_DIR` (`${GELDAR_SECRETS_DIR:?...}`, no default).
 
 ## 16. UNVERIFIED list
 
-- The name of the telemetry secrets directory `<TELEMETRY_PG_SECRETS_DIR>` (a placeholder; not chosen; section 6).
+- The telemetry secrets directory `/mnt/nvme/geldar-telemetry/pg-secrets` is not yet created on the node (S1).
 - The migration role's OS user and the psql connection method; whether root or the 10001 user reads the secret for psql.
 - The colo checkout path on the node; the sourcing of `/etc/geldar-colo/release.env`; the `nats` container name.
 - `docker compose ... config --format json`, `config --hash`, `up --dry-run` and `--no-deps` behaviour on the node's Compose version (Compose 2.24 or later is also an unchecked need).
