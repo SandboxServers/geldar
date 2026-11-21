@@ -21,7 +21,11 @@ export interface Provider {
   ): Promise<Profile>;
 }
 
-export const MS_AUTHORITY = 'https://login.microsoftonline.com/consumers/v2.0';
+/**
+ * The OAuth 2.0 base of the Microsoft personal-account (consumers) endpoints: authorize and token
+ * live under /oauth2/v2.0. The bare /consumers/v2.0 form is only the OIDC issuer base and is not an endpoint.
+ */
+export const MS_AUTHORITY = 'https://login.microsoftonline.com/consumers/oauth2/v2.0';
 /** The fixed tenant id of Microsoft personal accounts; an id token of any other tenant is refused. */
 const CONSUMERS_TENANT = '9188040d-6c67-4c5b-b112-36a304b66dad';
 

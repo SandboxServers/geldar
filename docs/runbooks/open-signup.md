@@ -198,12 +198,20 @@ Before this section, every step from 1 to 25, except the optional row 23 and row
      --profile register --profile sovereign up -d --no-deps register
    ```
 10. Verify: sign-in works; terms consent is recorded; agent registration creates the roster entry; a token can be issued. This step does not verify a Body start: the only Body starts are step 19 and row 19a.
+11. Verify the sign-in redirect target (read only, no sign-in; run after item 9 and after every re-flip). With the kill switch `false`, `GET <Glass origin>/register/login?consent=yes` answers 302. Capture that response's redirect target into a shell variable without printing it, then request only the status of that target. Use exactly these two commands, with no `-i`, `-v` or `-L` (`-i` and `-v` print the `Location` header, which carries `state` and `code_challenge`; `-L` follows the chain):
+
+   ```
+   AUTH_URL=$(curl -s -o /dev/null -w '%{redirect_url}' '<Glass origin>/register/login?consent=yes')
+   curl -s -o /dev/null -w '%{http_code}' "$AUTH_URL"
+   ```
+
+   Expect 302 or 200 from the Microsoft host, never 404. A 404 is a stop: close sign-up with the item 9 command and `REGISTER_KILL_SWITCH=true` (Rollback below), report it, and do not re-flip until the cause is fixed. Checking only that the redirect points at the Microsoft host is not enough: a wrong authorize path there still passes that check, and only the status shows it.
 
 Rollback: run the item 9 register-only command with `REGISTER_KILL_SWITCH=true` on the command line, and recreate the register service only. Other steps are not undone. Users who signed in during the open window keep their accounts; the deletion path in [account-deletion.md](account-deletion.md) handles removal.
 
 Re-flip rule (step 27). The flip is on the command line only, so any deploy that recreates the register service re-closes sign-up, because the compose default is `true`. That includes every register image change, even when the deploy window bundles other changes. Every `colo-images` deploy that rebuilds the images recreates every service, not only the ones whose code changed: each rebuild changes every image digest through the revision label. So register is recreated and sign-up re-closed by every such deploy, even one that does not touch register code. The node owner re-flips after the deploy finishes. Record the `StartedAt` of each service on the exact names just before the flip, then after it: only register's `StartedAt` may change (`docker inspect`, read only). A change to any other service's `StartedAt` across the flip is a finding to report.
 
-After such a deploy, the node owner re-runs the item 9 register-only command with `REGISTER_KILL_SWITCH=false` and verifies the log line `register listening killSwitch=false`. Log each re-flip in the change log.
+After such a deploy, the node owner re-runs the item 9 register-only command with `REGISTER_KILL_SWITCH=false` and verifies the log line `register listening killSwitch=false`. It then runs item 11 with the same stop rule: a 404 closes sign-up again, as above. Log each re-flip in the change log.
 
 A merge-queue run can be ejected on a transient Maven Central fetch failure in the plugin job. That is not a code problem: re-queue the run, and do not change the code or the runbook for it. Example, as reported by the node owner (not verified in this repo): the first flip was on 2026-11-21 at 02:19Z; a register recreate at 05:59Z the same day closed sign-up again; the re-flip was at 22:08Z.
 
