@@ -1,6 +1,6 @@
 // The deterministic tar mode of deploy/scratch/build-neoforge-bundle.sh (--tar and --out-sums). The tar step is the function
-// write_bundle_tar, which takes an already-built directory: the test extracts it from the script and runs it under `sh` on a
-// fixture tree, so no docker and no network. The argument checks run the script itself with a docker stub first on PATH: the
+// write_bundle_tar in the sourced library deploy/scratch/bundle-tar-lib.sh, which takes an already-built directory: the test
+// extracts it from the library and runs it under `sh` on a fixture tree, so no docker and no network. The argument checks run the script itself with a docker stub first on PATH: the
 // stub writes a marker and exits 99, so a marker means the script reached docker. Skipped where the shell has no GNU tar.
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -22,6 +22,10 @@ const SCRIPT = resolve(
   fileURLToPath(new URL('../../deploy/scratch/build-neoforge-bundle.sh', import.meta.url)),
 );
 const SCRIPT_TEXT = readFileSync(SCRIPT, 'utf8');
+const LIB = resolve(
+  fileURLToPath(new URL('../../deploy/scratch/bundle-tar-lib.sh', import.meta.url)),
+);
+const LIB_TEXT = readFileSync(LIB, 'utf8');
 
 function findSh(): string {
   if (process.env.GELDAR_TEST_SH) return process.env.GELDAR_TEST_SH;
@@ -60,12 +64,12 @@ const EXEC_KEPT = spawnSync(
   },
 ).stdout?.includes('yes');
 
-/** The tar step, cut out of the script by its function header and its closing brace. */
+/** The tar step, cut out of the sourced library by its function header and its closing brace. */
 function tarFunction(): string {
-  const start = SCRIPT_TEXT.indexOf('write_bundle_tar() {');
-  const end = SCRIPT_TEXT.indexOf('\n}\n', start);
-  if (start < 0 || end < 0) throw new Error('write_bundle_tar is not in the script');
-  return SCRIPT_TEXT.slice(start, end + 3);
+  const start = LIB_TEXT.indexOf('write_bundle_tar() {');
+  const end = LIB_TEXT.indexOf('\n}\n', start);
+  if (start < 0 || end < 0) throw new Error('write_bundle_tar is not in bundle-tar-lib.sh');
+  return LIB_TEXT.slice(start, end + 3);
 }
 
 /** The bundle's file set, the marker included, as the script's allow-list packs it. */
@@ -320,6 +324,13 @@ describe.skipIf(!CAN_RUN)('neoforge bundle tar mode (write_bundle_tar)', () => {
 });
 
 describe('neoforge bundle tar mode options', () => {
+  it('sources the library from the script directory, and the function lives only in the library', () => {
+    expect(SCRIPT_TEXT).toContain('. "$(cd "$(dirname "$0")" && pwd)/bundle-tar-lib.sh"');
+    expect(SCRIPT_TEXT).not.toContain('write_bundle_tar() {');
+    expect(LIB_TEXT).toContain('write_bundle_tar() {');
+    expect(LIB_TEXT).not.toMatch(/\/tmp|\r/);
+  });
+
   it('rejects --out-sums without --tar before any docker call', () => {
     const r = runScript((w) => ['--out-sums', join(w, 's.sums'), join(w, 'out')]);
     expect(r.status).toBe(2);
