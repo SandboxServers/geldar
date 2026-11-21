@@ -33,6 +33,8 @@ This request runs no compose command. Rule 1 still applies to the import script,
    `neoforge-alerts-capacity.json`, `neoforge-alerts-server.json`. A rule is matched by its alert name (`.rules[].alert`).
    Every rule names the notification channel `geldar-owner-channel` in `preferredChannels`.
 3. Running the import again skips a dashboard whose title is already listed (unless `--replace` is given, which deletes it by id and creates it again) and updates a rule whose alert name is listed. It does not duplicate (runbook).
+4. **Step A (this request): dashboards only.** `import.sh --dashboards-only` imports item 1 and nothing else. It makes no call to any `/api/v1/rules` route and reads no channel; it prints that the alert rules were skipped.
+5. **HELD: items 2 and 3 (the alert rules).** No notification channel exists in SigNoz today, so `geldar-owner-channel` is missing and a full run would stop on the rules step. The rules are a later request, run without the flag, after the owner creates the channel (section 6) and gives a separate OK for the rules step.
 
 Nothing else changes: no container is started, stopped, recreated or restarted; no compose file, no config and no data directory is touched.
 
@@ -79,7 +81,7 @@ Node: nothing is written. The node receives read-only verbs only (section 5, ste
    docker inspect -f '{{.State.Health.Status}} {{.RestartCount}} {{.Config.Image}}' geldar-signoz   # [UNV] expect healthy, restarts 0, image of v0.148.1
    docker ps --format '{{.Names}} {{.Status}}'                                                       # save the list
    ```
-2. The notification channel exists in the SigNoz UI (section 6 is the prerequisite; this checks it before the dry run).
+2. Operator machine: `command -v jq curl` prints two paths (the script needs `jq` and `curl`; on Windows run it in WSL or Git Bash). The notification channel is not checked in this step: the alert import is HELD (section 6).
 3. Open the SSH tunnel to the SigNoz API port named in `docs/runbooks/signoz-import.md` section 2, in its own terminal, and keep it open:
    `ssh -N -L <local port>:<loopback host>:<API port> <node ssh host alias>`, where the loopback host is the node's own loopback
    (**UNVERIFIED** for this host). Set `API` to the local end of the tunnel in the form that `import.sh --url` accepts (the runbook gives the form). Not written here.
@@ -119,56 +121,58 @@ Node: nothing is written. The node receives read-only verbs only (section 5, ste
    The archive is written to a file first and never piped into `tar`, so a failed export is not half-read. `signoz.tar` stays inside `<SCRATCH>` and is removed with it.
    `ls <SCRATCH>/deploy/signoz` must list `import.sh` and the six JSON files (two dashboards, four alert files). Any other file stops the step.
 
-Stop if `geldar-signoz` is not `healthy`, its restart count is not 0, or the channel is missing.
+Stop if `geldar-signoz` is not `healthy`, its restart count is not 0, or `command -v jq curl` does not print two paths.
 
-## 6. Notification channel prerequisite (owner decides the window)
+## 6. Notification channel prerequisite: alert import HELD (owner decides the window)
 
+- **Status: no notification channel exists in SigNoz today.** `geldar-owner-channel` is missing. The alert import (section 7 step 6) is HELD until the owner creates it. Step A (dashboards only, section 7 steps 1-4) does not need it.
 - The four alert files name `geldar-owner-channel` in `preferredChannels`. The import script imports rules, not channels. A rule that names a
   missing channel is refused or has no route (runbook section 1).
 - Create the channel in the SigNoz UI with exactly that name. **UNVERIFIED**: its type and receiver settings. The receiver target is the
   owner's and is entered by the owner in the UI; it is never written in this file, the repo or a log.
-- Check it exists in the UI (read-only) before section 7.
+- Check it exists in the UI (read-only) before section 7 step 6 (the rules step).
 
 ## 7. Dry run, list output, then the real run
 
 Run from the export in `<SCRATCH>/deploy/signoz` (section 5 step 5), on the operator machine. The script finds its files next to itself, so
 the export is all it needs; the token file in `<OP_TMP>` is outside `<SCRATCH>`, so the script accepts it.
 
-1. Dry run (sends nothing and reads no token):
+1. Dry run, dashboards only (sends nothing and reads no token; the flag keeps it off every rules and channel route):
    ```
-   GELDAR_SERVICE_UID=1001 <SCRATCH>/deploy/signoz/import.sh --dry-run
+   GELDAR_SERVICE_UID=1001 <SCRATCH>/deploy/signoz/import.sh --dry-run --dashboards-only
    ```
-   Expect one `dry-run:` line per dashboard file (2) and one per alert file (4), and the line `dry run against ...: nothing will be sent`.
+   Expect one `dry-run:` line per dashboard file (2), the line `alert rules skipped (--dashboards-only): 4 alert file(s) not imported ...`, and the line `dry run against ...: nothing will be sent`.
    Any other output stops the step.
-2. List what is there now (the list calls are the UNVERIFIED shape check):
+2. List the dashboards now (the list call is the UNVERIFIED shape check; no rules list is read in this step):
    ```
    curl -sS -H @<OP_TMP>/hdr.txt "$API/api/v2/dashboards" > <OP_TMP>/dashboards-before.json
-   curl -sS -H @<OP_TMP>/hdr.txt "$API/api/v1/rules" > <OP_TMP>/rules-before.json
    ```
    `$API` is the tunnel base URL (step 5.3). Routes and list shapes: verified in the SigNoz v0.148.1 source (section 13); the live shapes are still read here.
 3. Read the shape before the real run. Record the answers in the report (not in the repo):
    - dashboards: top-level keys; `.data.dashboards` is an array; each item has `.id` and `.spec.display.name`; how many items have the titles
      "Geldar Paper" or "Geldar NeoForge" (`jq -r '.data.dashboards[]?.spec.display.name'`).
-   - rules: `.data.rules` is an array; each item has `.id` and `.alert`; how many have a Geldar alert name.
-   - If a list call returns another shape, or is an error, stop. The script stops before its first write (it reads both lists first). The fix is a
+   - If the list call returns another shape, or is an error, stop. The script stops before its first write (it reads the list first). The fix is a
      new packet that changes the script and its test together (runbook section 1), not this request.
-4. The real run, only after the owner OK for this step:
+4. The real run, dashboards only, only after the owner OK for this step:
    ```
-   GELDAR_SERVICE_UID=1001 <SCRATCH>/deploy/signoz/import.sh --token-file <OP_TMP>/token.txt
+   GELDAR_SERVICE_UID=1001 <SCRATCH>/deploy/signoz/import.sh --token-file <OP_TMP>/token.txt --dashboards-only
    ```
-   Expect `created`, `skipped` or `replaced` per dashboard (`skipped` when the title is already listed), `created` or `updated` per rule, then `done: 2 dashboard file(s), 4 alert file(s)`. Any `error` line stops the step; do not re-run it blindly.
+   Expect `created` or `skipped` per dashboard (`skipped` when the title is already listed), the line `alert rules skipped (--dashboards-only): 4 alert file(s) ...`, then `done: 2 dashboard file(s), 0 alert file(s)`. Any `error` line stops the step; do not re-run it blindly.
+5. The dashboards are verified in section 8 (steps 1, 3, 6). The alert rules are not touched by this step.
+6. **Alert rules: HELD, a later request.** Only after the owner has created `geldar-owner-channel` (section 6) and the owner gives a separate OK for the rules step:
+   dry run without the flag (`<SCRATCH>/deploy/signoz/import.sh --dry-run`), then list the rules (`curl -sS -H @<OP_TMP>/hdr.txt "$API/api/v1/rules" > <OP_TMP>/rules-before.json`), then the real run without the flag (`GELDAR_SERVICE_UID=1001 <SCRATCH>/deploy/signoz/import.sh --token-file <OP_TMP>/token.txt`). Expect `created` or `updated` per rule, then `done: 2 dashboard file(s), 4 alert file(s)`. Sections 8 steps 2 and 4 apply to this step, and its rules rows must be recorded in its own report.
 
 ## 8. Verification (after the real run)
 
-1. Lists after the run (`dashboards-after.json`, `rules-after.json`): "Geldar Paper" and "Geldar NeoForge" each appear exactly once.
-   The script refuses to update when a title or alert name appears twice, so a second match is a finding.
-2. Each alert name in the four alert files appears exactly once in `rules-after.json`. The names come from the files:
+1. Dashboard list after the run (`dashboards-after.json`): "Geldar Paper" and "Geldar NeoForge" each appear exactly once.
+   The script refuses to update when a title appears twice, so a second match is a finding. (Rules list after the run, `rules-after.json`, only in the rules step, section 7 step 6.)
+2. (Rules step only.) Each alert name in the four alert files appears exactly once in `rules-after.json`. The names come from the files:
    `jq -r '.rules[].alert' <SCRATCH>/deploy/signoz/*-alerts-*.json`.
 3. In the SigNoz UI, through the tunnel, open "Geldar Paper" and "Geldar NeoForge". While the shard runs, panels with a live metric
    (for example `geldar_tps`, `geldar_tick_lag_ms`, `geldar_players_online`, runbook section 4) show points for the last hour.
    A panel empty on a stopped shard is expected; a panel empty while the shard runs is a finding.
-4. The rules list shows each Geldar rule once with a state. `inactive` is normal. A `firing` rule is reported to the owner at once.
-5. Second run, only if the owner OK covers it: `<SCRATCH>/deploy/signoz/import.sh --token-file <OP_TMP>/token.txt` prints `skipped` lines for the dashboards and `updated` lines for the rules, and
+4. (Rules step only.) The rules list shows each Geldar rule once with a state. `inactive` is normal. A `firing` rule is reported to the owner at once.
+5. (Rules step only.) Second run, only if the owner OK covers it: `<SCRATCH>/deploy/signoz/import.sh --token-file <OP_TMP>/token.txt` prints `skipped` lines for the dashboards and `updated` lines for the rules, and
    no `created` line, and the lists keep the same counts. (This shows idempotence; it writes the same content again.)
 6. Node, read-only: `docker ps --format '{{.Names}} {{.Status}}'` equals the list saved in section 5. The start times of
    `geldar-signoz`, `geldar-signoz-otelcol`, `geldar-ch`, `geldar-ch-keeper`, `geldar-gateway` and the Paper and NeoForge containers are
