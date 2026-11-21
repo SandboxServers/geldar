@@ -216,6 +216,12 @@ describe('release manifest: the node entrypoint line rule and size limit (mirror
     expect(r.out).toMatch(new RegExp(`\\blines? ${BAD_LINE_NO}\\b`));
   });
 
+  it('a CR byte on a comment line alone fails, and the error names that line', () => {
+    const r = manifest(['validate', withLine('# note\r')]);
+    expect(r.code).toBe(1);
+    expect(r.out).toMatch(new RegExp(`line\\(s\\) ${BAD_LINE_NO}\\b`));
+  });
+
   it('a comment line and an empty line pass', () => {
     const f = write(`${V2}# a comment with spaces "and quotes" = signs\n\n`);
     expect(manifest(['validate', f]).code).toBe(0);

@@ -67,7 +67,7 @@ manifest_validate() {
   cr_byte=$(printf '\001')
   bad=$(tr '\r' '\001' <"$f" | LC_ALL=C grep -aEn "$cr_byte" | cut -d: -f1 | tr '\n' ' ')
   if [ -n "$bad" ]; then
-    echo "genesis manifest: lines $bad contain a CR byte" >&2
+    echo "genesis manifest: the file contains a CR or 0x01 byte on line(s) $bad" >&2
     errors=1
   fi
   nv=$(manifest_count "$f" GELDAR_MANIFEST_VERSION)
