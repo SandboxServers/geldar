@@ -1,8 +1,8 @@
 // Tests for `manifest.sh from-lock <lock>` (GE-01w1a): the v2 plugin lines that a release manifest takes from
-// plugin/plugin-jars.lock. The lock digests here are fixtures. The committed lock is read too: it is PENDING, so it prints
-// nothing and exits 0 (the caller then writes a version 1 manifest).
+// plugin/plugin-jars.lock. The lock digests here are fixtures. The committed lock is read too: it holds the real digests
+// (GE-01w1d), so it prints the v2 lines and exits 0.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -86,11 +86,26 @@ describe('manifest.sh from-lock: a lock with a source commit', () => {
     expect(core.code).toBe(0);
     expect(core.stdout.trim()).toBe(CORE_HEX);
   });
+});
 
-  it('the committed lock (PENDING) prints nothing and exits 0', () => {
+describe('manifest.sh from-lock: the committed plugin/plugin-jars.lock', () => {
+  const REAL_CORE = 'a77c89c30906a07ea7cff2c82ca74f7f55b7fab138e11656d7fbb40ff3ade563';
+  const REAL_VELOCITY = '32c3a6d0030d1393144a19238ab8276b936828f55e69a1075c0d682657bcee34';
+
+  it('is not PENDING: its header names a 40-hex source commit', () => {
+    const header = readFileSync(COMMITTED_LOCK, 'utf8')
+      .split('\n')
+      .filter((l) => l.startsWith('# source commit: '));
+    expect(header).toEqual(['# source commit: 2725c5251c2c9c60e567b02adc40da2854422380']);
+  });
+
+  it('prints exactly the core digest, the velocity-identity digest and version 2, and exits 0', () => {
     const r = fromLock(posix(COMMITTED_LOCK));
     expect(r.code).toBe(0);
-    expect(r.stdout).toBe('');
+    expect(r.stderr).toBe('');
+    expect(r.stdout).toBe(
+      `GELDAR_PLUGIN_CORE_SHA256=${REAL_CORE}\nGELDAR_PLUGIN_VELOCITY_IDENTITY_SHA256=${REAL_VELOCITY}\nGELDAR_MANIFEST_VERSION=2\n`,
+    );
   });
 });
 
