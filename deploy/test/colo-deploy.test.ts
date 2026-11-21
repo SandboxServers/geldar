@@ -201,11 +201,16 @@ describe('colo-up.sh (decision 0084)', () => {
     expect(r.out).toContain(msg);
   });
 
-  it('a missing deploy volume or a silent docker info is skipped with a message, not a pass for another filesystem', () => {
+  it('a missing deploy volume is skipped with a message; a silent docker info refuses (fail closed, #866)', () => {
     const fx = fixture();
-    const r = run('colo-up.sh', fx, { ...REAL, GELDAR_DEPLOY_VOLUME: posix(join(fx.dir, 'nope')) });
+    const r = run('colo-up.sh', fx, {
+      ...REAL,
+      GELDAR_DEPLOY_VOLUME: posix(join(fx.dir, 'nope')),
+      GELDAR_DOCKER_DAEMON_JSON: posix(join(fx.dir, 'no-daemon.json')),
+      NO_DOCKER_ROOT: '1',
+    });
     expect(r.out).toContain('space check skipped for the deploy volume');
-    expect(r.out).toContain('space check skipped for the docker data root');
+    expect(r.out).toContain("cannot determine Docker's data root");
   });
 
   it('the floor fires before the first write: nothing calls mktemp when the deploy volume is out of inodes', () => {

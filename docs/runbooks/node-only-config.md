@@ -49,3 +49,12 @@ Items 6 to 15 are either owner-gated (6, 9), data (10 to 12), or outside Colo (1
 ## Maintenance
 
 Update this file whenever a node-only item is added or removed.
+
+## Docker data root for the deploy floor (DR-1, #866)
+
+The deploy floor reads Docker's data root from the `data-root` key of `/etc/docker/daemon.json` first (an absent or unreadable file falls through), then with `docker info --format '{{.DockerRootDir}}'`, then with `sudo -n docker info --format '{{.DockerRootDir}}'`. When none answers, the deploy refuses (it does not warn). The unprivileged deploy runner account usually cannot run `docker info`, so the runner needs one of these, decided by the owner:
+
+- A sudoers rule that lets the runner account run exactly `docker info --format {{.DockerRootDir}}` as root without a password, for example `<runner account> ALL=(root) NOPASSWD: /usr/bin/docker info --format {{.DockerRootDir}}`, placed in a file under `/etc/sudoers.d/` and checked with `visudo -c`. Node-side step, not in the repo.
+- Or a `data-root` key in `/etc/docker/daemon.json` that names the data root (readable by the runner).
+
+Without one of them the `colo-deploy.yml` inbox step fails with "cannot determine Docker's data root". No host names are recorded here.

@@ -2,7 +2,7 @@
 // Docker's data root have their own, lower block floor (GELDAR_MIN_FREE_KB_DEPLOY, default 1 GiB: /var is a small volume);
 // colo-rollback.sh does not refuse on volumes it does not write to.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { cdRun, cdSetup } from './colo-cd-fixture';
 import {
@@ -45,7 +45,17 @@ describe('colo-cd.sh checks the floors before its first write', () => {
     mkdirSync(poor);
     const log = join(cd.fx.dir, 'mktemp.log');
     shims(cd.fx.dir, log);
-    const env = { GELDAR_MIN_FREE_INODES: '100', POOR_INODES: '50' };
+    // Docker's root comes from the daemon config (docker info is silent here, and sudo cannot answer: no real sudo runs).
+    writeFileSync(
+      join(cd.fx.dir, 'daemon.json'),
+      JSON.stringify({ 'data-root': posix(cd.fx.dir) }),
+    );
+    writeFileSync(join(cd.fx.dir, 'bin', 'sudo'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+    const env = {
+      GELDAR_MIN_FREE_INODES: '100',
+      POOR_INODES: '50',
+      GELDAR_DOCKER_DAEMON_JSON: posix(join(cd.fx.dir, 'daemon.json')),
+    };
     const r = cdRun(cd, { env: { ...env, GELDAR_DEPLOY_VOLUME: posix(poor) } });
     expect(r.code).not.toBe(0);
     expect(r.out).toContain('free inodes 50 of the deploy volume');
@@ -120,6 +130,28 @@ describe('the Docker-root lookup', () => {
     const info = calls(fx).filter((c) => c.startsWith('info'));
     expect(info).toContain('info --format {{.DockerRootDir}}');
     for (const c of info) expect(c).toMatch(ALLOWED);
+  });
+});
+
+describe("Docker's data root is refused when it cannot be determined (fail closed, #866)", () => {
+  it('stops the deploy with a plain refusal when docker info, sudo and the daemon config all fail', () => {
+    const fx = fixture();
+    const bin = join(fx.dir, 'bin');
+    writeFileSync(join(bin, 'docker.orig'), readFileSync(join(bin, 'docker'), 'utf8'), {
+      mode: 0o755,
+    });
+    writeFileSync(
+      join(bin, 'docker'),
+      '#!/bin/sh\ncase "$*" in *"info --format"*) exit 1;; esac\nexec "$(dirname "$0")/docker.orig" "$@"\n',
+      { mode: 0o755 },
+    );
+    writeFileSync(join(bin, 'sudo'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+    const out = run('colo-up.sh', fx, {
+      ...REAL,
+      GELDAR_DOCKER_DAEMON_JSON: posix(join(fx.dir, 'no-daemon.json')),
+    }).out;
+    expect(out).toContain("cannot determine Docker's data root");
+    expect(out).not.toContain('compose config: valid');
   });
 });
 

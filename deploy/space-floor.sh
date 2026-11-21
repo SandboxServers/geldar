@@ -29,19 +29,29 @@ space_floor() {
 }
 
 # The three filesystems a deploy writes to: the checkout (MIN_FREE_KB), the deploy volume (/var/lib/geldar-deploy) and
-# Docker's data root (both MIN_FREE_KB_DEPLOY, much smaller: /var is a small volume). Docker's data root is read from
-# `docker info`; a failed or empty answer is said, not hidden. Runs once per process.
+# Docker's data root (both MIN_FREE_KB_DEPLOY, much smaller: /var is a small volume). Docker's data root is read by
+# docker_data_root, in this order: the data-root key of the daemon config (GELDAR_DOCKER_DAEMON_JSON, default
+# /etc/docker/daemon.json; an absent or unreadable file or a file without the key falls through), then `docker info`,
+# then `sudo -n docker info` (the node needs passwordless sudo for it, see docs/runbooks/node-only-config.md). Prints
+# nothing when none of them answers. Fail closed: space_floors refuses then (CI-DR1, #866).
+docker_data_root() {
+  local d
+  d=$(sed -n 's/.*"data-root"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${GELDAR_DOCKER_DAEMON_JSON:-/etc/docker/daemon.json}" 2>/dev/null | head -n 1) || d=
+  [ -n "$d" ] || d=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null) || d=
+  [ -n "$d" ] || d=$(sudo -n docker info --format '{{.DockerRootDir}}' 2>/dev/null) || d=
+  printf '%s' "$d"
+}
+
 space_floors() {
   if [ "${SPACE_FLOORS_DONE:-0}" = 1 ]; then return 0; fi
   SPACE_FLOORS_DONE=1
   space_floor "repo checkout" "$ROOT" "$MIN_FREE_KB" 1
   space_floor "deploy volume" "$DEPLOY_VOLUME" "$MIN_FREE_KB_DEPLOY" 1
-  droot=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null) || droot=
-  if [ -n "$droot" ]; then
-    space_floor "docker data root" "$droot" "$MIN_FREE_KB_DEPLOY" 1
-  else
-    say "space check skipped for the docker data root: docker info did not report it"
+  droot=$(docker_data_root)
+  if [ -z "$droot" ]; then
+    die "cannot determine Docker's data root: docker info, sudo -n docker info and the daemon config all failed; refusing"
   fi
+  space_floor "docker data root" "$droot" "$MIN_FREE_KB_DEPLOY" 1
 }
 
 # What check_prereqs runs. The deploy scripts (COLO_SPACE_FLOOR_FIRST=1, which also runs them before the first write) check all
