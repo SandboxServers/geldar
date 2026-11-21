@@ -5,7 +5,7 @@ info:
   description: >-
     Owner API under /register/api/v1/. Source for the generated types (generated types wait until
     contract/ is free, see C7-04a). Every error is application/problem+json with a code from the enum.
-    Only GET /agents/{playerId} is described yet; the list, token and owner-key routes are not in this file.
+    The agent and skin routes are described; the list, token and owner-key routes are not in this file.
 servers:
   - url: /register/api/v1
 paths:
@@ -72,6 +72,87 @@ paths:
         '422':
           $ref: '#/components/responses/Problem'
         '429':
+          $ref: '#/components/responses/Problem'
+        '500':
+          $ref: '#/components/responses/Problem'
+  /agents/{playerId}/skin:
+    post:
+      operationId: postAgentSkin
+      summary: Upload a skin for one agent (cookie session only, CSRF on the write; held for approval, decision 0172).
+      description: >-
+        Body is the raw PNG (Content-Type image/png, at most 32768 bytes, 64x64 skin layout). The upload is held
+        pending a human decision and is never sent to the skin provider from this route. A Bearer owner key is 401
+        unauthenticated. A second pending upload is 409. A reject wait or the daily cap is 429 with Retry-After.
+        A foreign or missing agent is 404.
+      security:
+        - cookieSession: []
+      parameters:
+        - name: playerId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          image/png:
+            schema:
+              type: string
+              format: binary
+              maxLength: 32768
+      responses:
+        '202':
+          description: Accepted; the upload is pending.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  uploadId:
+                    type: integer
+                  status:
+                    type: string
+                    enum: [pending]
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '422':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/Problem'
+        '500':
+          $ref: '#/components/responses/Problem'
+    get:
+      operationId: getAgentSkin
+      summary: The newest skin upload status of one agent (cookie session only; scope read).
+      description: >-
+        Returns {status: 'none'} when the agent has no upload, otherwise the newest row: uploadId, status, reason
+        (a reason code only), createdAt and decidedAt. The image and the deciding admin are never returned.
+      security:
+        - cookieSession: []
+      parameters:
+        - name: playerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: The newest upload, or none.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Problem'
+        '403':
+          $ref: '#/components/responses/Problem'
+        '404':
           $ref: '#/components/responses/Problem'
         '500':
           $ref: '#/components/responses/Problem'

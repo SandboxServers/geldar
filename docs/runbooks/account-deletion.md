@@ -62,9 +62,10 @@ Exact list of what stays (decision 0262):
 - shared world objects whose author lost the owner link: `skills.author`, `books.author`, `proposals.proposer` and
   `laws`. Other lives depend on them (skill library and books by foreign key; laws by enactment). The author is an agent
   row with no owner link, so nothing ties the object to a person;
+- the owner's skin upload rows (`skin_uploads`: pending and decided, with the PNG bytes and the sha256), deleted by
+  `register_account_delete` from migration 0067 (decision 0172, point 7). The `geldar-skins` KV key is not removed by
+  the function (see the manual steps below);
 - nothing else keyed by life.
-- Skin upload rows are not referenced by 0039. C7-13a adds them to the function. Until then a deletion does not remove
-  skin uploads, and the PNG data under the `geldar-skins` KV key is not removed (see the manual steps below).
 
 ## What a deletion does to live writes
 
@@ -119,7 +120,7 @@ subject in a shared channel.
    `node tools/players-cli/src/erase-owner.ts --owner <owner id> --lives <file> --execute --confirm <owner id>` (the owner
    id exactly). `--confirm` guards a typo in the command only. The script does not check the file's contents, and the
    file is the target, so check it against the step 3a query output before running. It purges every revision of:
-   - the `geldar-skins` key of each life (the PNG data; C7-13a adds the skin rows to the function);
+   - the `geldar-skins` key of each life (the PNG data in the KV store; the skin upload rows are erased by the function, 0067);
    - the `geldar-life-registry` key of each life's username (the Velocity admission entry).
    It does not remove the 0039 dead-life cleanup (open question (c) in decision 0262; the owner decides it).
 6. Record the request in the operator log by owner id and date only. Do not copy the identity hash or any provider data.
@@ -127,7 +128,7 @@ subject in a shared channel.
 Do not disable the append-only triggers by hand. The function does that inside its own transaction and turns them back
 on before it returns.
 
-C7-13a must extend `register_account_delete` (skin uploads) before C7-11 (the sign-up gate) is opened.
+Migration 0067 extends `register_account_delete` with the `skin_uploads` delete (decision 0172, point 7). The `geldar-skins` KV key stays a manual step above.
 
 ## After a self-serve deletion
 

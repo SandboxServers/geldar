@@ -139,7 +139,7 @@ Consent is asked only when a new owner is created. See [conflict 6](#conflicts-r
 
 ## Owner API
 
-Base path `/register/api/v1`. Errors are `application/problem+json` with `type`, `title`, `status`, `code` and an optional fixed `detail` (`src/problem.ts`). `src/api/owner-api-v1.yaml` describes only `GET` and `PATCH /agents/{playerId}`; the rest is read from code.
+Base path `/register/api/v1`. Errors are `application/problem+json` with `type`, `title`, `status`, `code` and an optional fixed `detail` (`src/problem.ts`). `src/api/owner-api-v1.yaml` describes the agent routes (`GET` and `PATCH /agents/{playerId}`) and the skin routes (`POST` and `GET /agents/{playerId}/skin`); the rest is read from code.
 
 Router order (`src/api/index.ts`): path (404 or 405), credential (401), cookie-only check (401), CSRF header for a cookie write (403), scope (403), owner limit for a write unless admin (429), handler (500 on an error; a banned owner is 401).
 

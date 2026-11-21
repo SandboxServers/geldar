@@ -43,6 +43,7 @@ describe('listMigrations', () => {
       '0025_admin_flag_and_register_audit.sql',
       '0026_owner_api_keys.sql',
       '0027_body_ops.sql',
+      '0031_skin_uploads.sql',
       '0032_token_lifecycle.sql',
       '0033_supervisor_display_name.sql',
       '0034_operator_player_flags.sql',
@@ -62,6 +63,7 @@ describe('listMigrations', () => {
       '0063_body_host_roles.sql',
       '0065_owner_export_budget.sql',
       '0066_events_trace_id.sql',
+      '0067_skin_upload_rules.sql',
     ]);
   });
 
