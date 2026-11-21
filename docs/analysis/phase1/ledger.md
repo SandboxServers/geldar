@@ -1,6 +1,6 @@
 # Phase 1 ledger
 
-Status as of 2026-11-20 for the C7 and BH rows (checked against origin/main a62ceb44); other rows as of 2026-11-11 (orchestrator night log: `worknotes/orchestrator-2026-11-11.md`); first written 2026-11-10 on branch `docs/phase1-reconcile`. One row per wave packet, taken from the ledger-row tables of the five wave files: `packets/c1-packets.md` (Ledger rows), `packets/c2-packets.md` (5.3), `packets/c2b-packets.md` (Ledger rows), `packets/c3-packets.md` (10.4), and `packets/c4-packets.md` (10.7). Where a table has no `depends` or `lane` column (c2b, c3), those come from the card's `depends-on` and `lane` lines.
+Status as of 2026-11-21 for the C7 and BH rows (checked against origin/main a62ceb44; the C7-13a row re-checked against origin/main 2aa29c3a, the other rows not re-checked since a62ceb44); other rows as of 2026-11-11 (orchestrator night log: `worknotes/orchestrator-2026-11-11.md`); first written 2026-11-10 on branch `docs/phase1-reconcile`. One row per wave packet, taken from the ledger-row tables of the five wave files: `packets/c1-packets.md` (Ledger rows), `packets/c2-packets.md` (5.3), `packets/c2b-packets.md` (Ledger rows), `packets/c3-packets.md` (10.4), and `packets/c4-packets.md` (10.7). Where a table has no `depends` or `lane` column (c2b, c3), those come from the card's `depends-on` and `lane` lines.
 
 Conventions:
 
@@ -163,7 +163,7 @@ Cards: [packets/c7-user-management-packets.md](packets/c7-user-management-packet
 | BH-5a | Admit-life add or remove mode (admission only), geldar.life label | W5 | Golem, admin and helper | BODY-HOST | Done (merged #537, 2026-11-15) | 0261 | none | N |
 | BH-5b | Helper stop removes the admission for managed Bodies | W5 | Golem, admin and helper | BODY-HOST | Done (merged #573, 2026-11-16) | 0261 | none | N |
 | BH-6 | Sweep removes an orphaned managed Body after two passes | W5 | Golem, admin and helper | BODY-HOST | Done (merged #575, 2026-11-16); live check open | 0261 | none | N |
-| C7-13a | Skin upload API and held store | W3 | D | C7-04b, C7-12 | Waiting | 0172 | 0031 | N |
+| C7-13a | Skin upload API and held store | W3 | D | C7-04b, C7-12 | Done (merged #850, 2026-11-21): migrations 0031 and 0067, the PNG validator, the owner skin routes, the held store and the OpenAPI paths. Not verified here: whether 0031 and 0067 are applied on the node; open items in `worknotes/C7-13a.md` | 0172 | 0031, 0067 | N |
 | C7-10 | Operator console, ban reasons | W3 | F | C7-03a, C7-04a, C7-12 | Waiting | 0171 | 0030 | N (reason codes are the owner's) |
 | C7-07 | Agent rename | W3 | D | C7-04b, C7-06 | Waiting | none | 0028 | N |
 | C7-13b | Skin moderation CLI, MineSkin, KV write | W4 | D | C7-13a | Waiting | 0172 | none | N (live: owner's MineSkin key, one call) |

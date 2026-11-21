@@ -122,6 +122,8 @@ Then ship with the `ship-pr` skill (§ 8 for the wave PR) and update the ledger 
 
 At every wave boundary rewrite `RESUME.md` and the ledger rows. The transcript is not the record: a compaction or a new session must be able to continue from the campaign folder alone.
 
+Refresh after every merge batch: bring the `RESUME.md` and the ledger rows the batch touched up to `origin/main` (merged PR numbers, baseline commit, date) in the same session. They go stale within hours, and a stale one sends a cold session to the wrong file.
+
 ## 6. Wave close
 
 Every wave ends with the wave close in `work-packets.md` § Wave close, in this order: (0) the wave test and ONE thorough wave review, split by area, up to 5 rounds with a fix round between them, after the last feature packet; (1) a docs sweep by a fresh `packet-coder`, from a list the wave reviewer writes; (2) the retro, `retro/wave-<N>.md`, with numbered Actions, each with an owner and a size; (3) a `W<N>-process` packet that applies the Actions that change the process or the agent and skill scaffolding, reviewed like any packet and merged into the wave branch; (4) the ledger: `README.md` records the retro and the process packet, and `RESUME.md` names the next wave; (5) remove the packet worktrees after copying useful reports to `worknotes/` (`ship-pr` § 7).

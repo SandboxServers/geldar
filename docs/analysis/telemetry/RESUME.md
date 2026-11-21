@@ -1,4 +1,6 @@
 # Telemetry campaign RESUME (geldar-telemetry), 2026-11-17
+
+> Stale banner (2026-11-21): not refreshed since 2026-11-17. Telemetry branches merged to origin/main since then include #837 to #840, #847, #848, #853, #855, #857 and #858 (first-parent merge list). This file does not record them: read those PRs and `docs/analysis/telemetry/gap-plan/` before acting.
 Owner: freeze exemption for this session; full-text capture, no opt-out, 1-year retention; outside players captured, erase on request; Paper telemetry via the plugin jar (name Ledger); bStats off; Paper limit 15 GiB (node step); option B (own ClickHouse+SigNoz); UI by SSH tunnel only; operator Claude may query read-only. Decision block 0350-0359.
 
 ## State (2026-11-17)
