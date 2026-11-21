@@ -460,3 +460,35 @@ BEGIN
   END IF;
 END
 $tr_erase$;
+
+-- Migration 0067 (C7-13a-sql, decision 0172): register_account_delete (the 0053 body) also deletes the skin_uploads rows
+-- of the owner, pending and decided, with their PNG bytes, and of no other owner. Owners skinerase-a and skinerase-b.
+DO $skin_erase$
+DECLARE
+  hash_a BYTEA := sha256(convert_to('skinerase-a', 'UTF8'));
+  hash_b BYTEA := sha256(convert_to('skinerase-b', 'UTF8'));
+  png BYTEA := decode('89504e470d0a1a0a', 'hex');
+  n INT;
+BEGIN
+  INSERT INTO mcp_owners (owner_id, display, player_cap) VALUES
+    ('skinerase-a', 'a', 5), ('skinerase-b', 'b', 5);
+  INSERT INTO mcp_identities (identity_hash, provider, owner_id, banned_at) VALUES
+    (hash_a, 'github', 'skinerase-a', NULL),
+    (hash_b, 'github', 'skinerase-b', NULL);
+  INSERT INTO skin_uploads (owner_id, player_id, png, sha256, status, reason_code, decided_at, decided_by) VALUES
+    ('skinerase-a', 'skinerase-p1', png, sha256(png), 'pending', NULL, NULL, NULL),
+    ('skinerase-a', 'skinerase-p2', png, sha256(png), 'rejected', 'other', now(), 'op'),
+    ('skinerase-b', 'skinerase-q', png, sha256(png), 'pending', NULL, NULL, NULL);
+
+  PERFORM register_account_delete(hash_a);
+
+  SELECT count(*) INTO n FROM skin_uploads WHERE owner_id = 'skinerase-a';
+  IF n <> 0 THEN
+    RAISE EXCEPTION 'skin erase: % skin upload row(s) of owner skinerase-a survive the account delete', n;
+  END IF;
+  SELECT count(*) INTO n FROM skin_uploads WHERE owner_id = 'skinerase-b';
+  IF n <> 1 THEN
+    RAISE EXCEPTION 'skin erase: owner skinerase-b lost its skin upload row (found %)', n;
+  END IF;
+END
+$skin_erase$;

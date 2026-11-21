@@ -35,7 +35,7 @@ Re-derive the migration list and the gaps:
 git ls-files sql | ForEach-Object { if ($_ -match '^sql/(\d{4})_') { $Matches[1] } }
 ```
 
-On 2026-11-20 at the C7-13a fix commit this prints 47 numbers from 0001 to 0066. Numbers 0028 to 0030, 0041 to 0049, 0054 to 0059 and 0064 have no file; 0065's header says 0064 is reserved for another branch.
+On 2026-11-20 at the C7-13a fix commit this prints 48 numbers from 0001 to 0067. Numbers 0028 to 0030, 0041 to 0049, 0054 to 0059 and 0064 have no file; 0065's header says 0064 is reserved for another branch.
 
 ## Migrations
 
@@ -87,7 +87,7 @@ On 2026-11-20 at the C7-13a fix commit this prints 47 numbers from 0001 to 0066.
 | 0063 | `0063_body_host_roles.sql` | `mcp_players.host_key`; role `geldar_body_host`; `managed_life_id`, `supervisor_player_life_id`, `player_host_config`; `geldar_mcp` narrowed to six `mcp_players` columns | 0260, 0261 (BH-1) |
 | 0065 | `0065_owner_export_budget.sql` | `register_owner_export` replaced with lower byte budget and row caps | C7-09b |
 | 0066 | `0066_events_trace_id.sql` | `events.trace_id TEXT` (nullable, no default, no index); hidden from `geldar_glass` and `geldar_mcp` | T-08 |
-| 0067 | `0067_skin_upload_rules.sql` | `register_skin_submit` (PNG and sha256 checked; one pending, 3 rejects in 30 days lock, 1 hour after a reject, 3 a day; admin exempt from the rate rules) and `register_skin_status`; `register_account_delete` (0040 body) also deletes the owner's `skin_uploads` rows | C7-13a |
+| 0067 | `0067_skin_upload_rules.sql` | `register_skin_submit` (PNG, sha256 and the 32768-byte cap checked; one pending per agent; the lock: 3 rejects of the owner within 30 days (decided_at), held until the operator sets `skin_uploads.lock_cleared_at` (0031 column); 1 hour after a reject per agent; 3 a day per agent; admin exempt from the rate rules and the lock) and `register_skin_status`; `register_account_delete` (0053 body, which also deletes turn_records) also deletes the owner's `skin_uploads` rows | C7-13a |
 
 ## Tables
 

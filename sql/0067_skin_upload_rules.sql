@@ -1,16 +1,18 @@
 -- Migration 0067 (C7-13a-sql, decision 0172): register definer functions for owner skin uploads, and account deletion
 -- reaches skin_uploads. Additive to 0031 (the table, not edited) and to 0040 (register_account_delete is recreated
--- with the same signature, SECURITY DEFINER, pinned search_path, grants and 3 s lock_timeout; the only new statement
--- is the skin_uploads delete).
+-- with the same signature, SECURITY DEFINER, pinned search_path, grants and 3 s lock_timeout; the body is the 0053 body,
+-- which also erases turn_records, and the only new statement is the skin_uploads delete).
 --
 -- register_skin_submit(identity hash, player id, PNG bytes, sha256): the owner id comes from the session identity
 -- (mcp_identities), and the agent must belong to that owner. Refused with a stable code, in this order:
 --   23505 skin_upload_pending   the agent already has a pending upload (one pending per agent, 0172 point 2)
---   42501 skin_upload_locked    3 or more rejects of this owner in the last 30 days (0172 point 5)
+--   42501 skin_upload_locked    the owner has 3 rejects within 30 days of each other (decided_at), none cleared by the
+--                               operator (0172 point 5). The lock does not lapse with time: it holds until the operator
+--                               sets lock_cleared_at on the owner's rejected rows (worknote C7-13a, one SQL statement).
 --   55000 skin_upload_wait      the agent's last decided upload was a reject less than 1 hour ago (0172 point 5)
---   53400 skin_upload_daily     3 uploads of this owner in the last 24 hours (0172 point 2)
+--   53400 skin_upload_daily     3 uploads of this agent in the last 24 hours (0172 point 2: the cap is per agent)
 -- The last three are rate rules: an admin owner (0170) is exempt from them, not from the owner check or the pending
--- check. The PNG signature and the sha256 are checked here too (fail closed); the size cap is the table check.
+-- check. The PNG signature, the 32768-byte cap and the sha256 are checked here too (fail closed), and by the table.
 -- The row is stored `pending` and nothing else happens: no approval, no MineSkin call, no KV write (principle 1).
 -- Each accepted submit writes one register_audit row (action skin.upload, outcome pending).
 --
@@ -48,6 +50,9 @@ BEGIN
      OR substring(p_png FROM 1 FOR 8) <> decode('89504e470d0a1a0a', 'hex') THEN
     RAISE EXCEPTION 'register_skin_submit: not a PNG' USING ERRCODE = '22023';
   END IF;
+  IF octet_length(p_png) > 32768 THEN
+    RAISE EXCEPTION 'register_skin_submit: image too large' USING ERRCODE = '22023';
+  END IF;
   IF p_sha256 IS NULL OR p_sha256 <> sha256(p_png) THEN
     RAISE EXCEPTION 'register_skin_submit: sha256 does not match the PNG' USING ERRCODE = '22023';
   END IF;
@@ -60,9 +65,15 @@ BEGIN
   END IF;
 
   IF NOT is_admin THEN
-    SELECT count(*) INTO n FROM public.skin_uploads s
-      WHERE s.owner_id = who AND s.status = 'rejected' AND s.created_at >= now() - interval '30 days';
-    IF n >= 3 THEN
+    -- the lock is anchored at a reject r that is not cleared: the owner's uncleared rejects decided within 30 days
+    -- before r number 3 or more. Nothing here depends on now(), so the lock holds until the operator clears it.
+    IF EXISTS (
+      SELECT 1 FROM public.skin_uploads r
+        WHERE r.owner_id = who AND r.status = 'rejected' AND r.lock_cleared_at IS NULL
+          AND (SELECT count(*) FROM public.skin_uploads s
+                 WHERE s.owner_id = who AND s.status = 'rejected' AND s.lock_cleared_at IS NULL
+                   AND s.decided_at BETWEEN r.decided_at - interval '30 days' AND r.decided_at) >= 3
+    ) THEN
       RAISE EXCEPTION 'skin_upload_locked' USING ERRCODE = '42501';
     END IF;
 
@@ -74,7 +85,7 @@ BEGIN
     END IF;
 
     SELECT count(*) INTO n FROM public.skin_uploads s
-      WHERE s.owner_id = who AND s.created_at > now() - interval '1 day';
+      WHERE s.player_id = p_player_id AND s.created_at > now() - interval '1 day';
     IF n >= 3 THEN
       RAISE EXCEPTION 'skin_upload_daily' USING ERRCODE = '53400';
     END IF;
@@ -85,7 +96,7 @@ BEGIN
     RETURNING id INTO new_id;
 
   INSERT INTO public.register_audit (actor, action, target, outcome, admin, detail)
-    VALUES (who, 'skin.upload', p_player_id, 'pending', is_admin, NULL);
+    VALUES (left(encode(sha256(convert_to(who, 'UTF8')), 'hex'), 16), 'skin.upload', p_player_id, 'pending', is_admin, '');
   RETURN new_id;
 END
 $skin_submit$;
@@ -123,7 +134,7 @@ REVOKE ALL ON FUNCTION register_skin_status(BYTEA, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION register_skin_submit(BYTEA, TEXT, BYTEA, BYTEA) TO geldar_register;
 GRANT EXECUTE ON FUNCTION register_skin_status(BYTEA, TEXT) TO geldar_register;
 
--- register_account_delete: the body of 0040, with one statement added (skin uploads of the owner, 0172 point 7).
+-- register_account_delete: the body of 0053 (turn_records erased too), with one statement added (skin uploads of the owner, 0172 point 7).
 CREATE OR REPLACE FUNCTION register_account_delete(p_identity_hash BYTEA)
 RETURNS BOOLEAN
 LANGUAGE plpgsql
@@ -170,6 +181,7 @@ BEGIN
   DELETE FROM public.actions WHERE life_id = ANY (lives);
   DELETE FROM public.intents WHERE life_id = ANY (lives);
   DELETE FROM public.skill_runs WHERE life_id = ANY (lives);
+  DELETE FROM public.turn_records WHERE life_id = ANY (lives);
   DELETE FROM public.memories WHERE agent_id = ANY (lives);
   DELETE FROM public.goals WHERE agent_id = ANY (lives);
   DELETE FROM public.skill_library WHERE agent_id = ANY (lives);

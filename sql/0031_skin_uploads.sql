@@ -18,8 +18,11 @@ CREATE TABLE IF NOT EXISTS skin_uploads (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   decided_at TIMESTAMPTZ,
   decided_by TEXT,
+  -- set by the operator (table owner role geldar, one statement, worknote C7-13a) to release the 3-rejects lock
+  lock_cleared_at TIMESTAMPTZ,
   CHECK ((status = 'pending') = (decided_at IS NULL)),
-  CHECK ((status = 'rejected') = (reason_code IS NOT NULL))
+  CHECK ((status = 'rejected') = (reason_code IS NOT NULL)),
+  CHECK (lock_cleared_at IS NULL OR status = 'rejected')
 );
 
 -- One pending upload per agent (0172 point 2).
