@@ -6,10 +6,12 @@ import { createHash } from 'node:crypto';
 import {
   chmodSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
+  readlinkSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -302,6 +304,57 @@ describe('place-plugin-jars.sh', () => {
     expect(read(VELOCITY)).toBe('velocity v2');
     expect(listTarget()).toEqual([CORE, `${CORE}.rolled-back`, VELOCITY].sort());
   });
+
+  itRuns(
+    'a run that places no jar keeps the .prev copies, so rollback still undoes the last placement',
+    () => {
+      expect(place(publish('core c1', 'velocity v1')).status).toBe(0);
+      expect(place(publish('core c2', 'velocity v2')).status).toBe(0);
+      const lock = publish('core c2', 'velocity v2');
+      const last = place(lock);
+      expect(last.status).toBe(0);
+      expect(last.stdout).toContain(`unchanged: ${CORE}`);
+      expect(last.stdout).toContain(`unchanged: ${VELOCITY}`);
+      expect(last.stdout).not.toContain('placed:');
+      expect(read(`${CORE}.prev`)).toBe('core c1');
+      expect(read(`${VELOCITY}.prev`)).toBe('velocity v1');
+      const result = runScript(['--rollback', target]);
+      expect(result.status).toBe(0);
+      expect(read(CORE)).toBe('core c1');
+      expect(read(VELOCITY)).toBe('velocity v1');
+    },
+  );
+
+  itRuns('refuses an unchanged jar whose .prev is a directory, and changes nothing', () => {
+    expect(place(publish('core v1', 'velocity v1')).status).toBe(0);
+    const lock = publish('core v1', 'velocity v2');
+    mkdirSync(join(target, `${CORE}.prev`));
+    writeFileSync(join(target, `${CORE}.prev`, 'keep.txt'), 'keep');
+    const result = place(lock);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(`refusing a non-file in the target dir: ${CORE}.prev`);
+    expect(read(VELOCITY)).toBe('velocity v1');
+    expect(readdirSync(join(target, `${CORE}.prev`))).toEqual(['keep.txt']);
+    expect(listTarget()).toEqual([CORE, `${CORE}.prev`, VELOCITY].sort());
+  });
+
+  itPosix(
+    'refuses an unchanged jar whose .prev is a symlink, and leaves the link and its target alone',
+    () => {
+      expect(place(publish('core v1', 'velocity v1')).status).toBe(0);
+      const lock = publish('core v1', 'velocity v2');
+      const outside = join(root, 'outside-unchanged-prev.bin');
+      writeFileSync(outside, 'outside bytes');
+      symlinkSync(outside, join(target, `${CORE}.prev`));
+      const result = place(lock);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toContain(`refusing a symbolic link in the target dir: ${CORE}.prev`);
+      expect(read(VELOCITY)).toBe('velocity v1');
+      expect(lstatSync(join(target, `${CORE}.prev`)).isSymbolicLink()).toBe(true);
+      expect(readlinkSync(join(target, `${CORE}.prev`))).toBe(outside);
+      expect(readFileSync(outside, 'utf8')).toBe('outside bytes');
+    },
+  );
 
   itRuns('removes every staged copy when cp fails on the second jar, and changes nothing', () => {
     expect(place(publish('core v1', 'velocity v1')).status).toBe(0);

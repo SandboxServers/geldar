@@ -4,8 +4,8 @@
 #   deploy/genesis/place-plugin-jars.sh <artifact-dir> <lock-file> <target-dir> [--allow-pending]
 #   deploy/genesis/place-plugin-jars.sh --rollback <target-dir>
 # Place mode runs verify-plugin-lock.sh first and changes nothing when it fails. A locked jar whose target copy already has
-# the locked sha256 is left alone (`unchanged: <name>`) and its old `<name>.prev`, if any, is removed, so a later rollback
-# undoes only the last placement. Every other jar is staged as `.<name>.XXXXXX` in the target dir before any jar is renamed;
+# the locked sha256 is left alone (`unchanged: <name>`) and, when the run places a jar, its old `<name>.prev`, if any, is
+# removed, so a later rollback undoes only the last placement. Every other jar is staged as `.<name>.XXXXXX` in the target dir before any jar is renamed;
 # each staged copy is re-hashed against the lock. Then the old jar moves to `<name>.prev` (replacing an older .prev) and the
 # staged file moves onto `<name>` (`placed: <name>`). Rollback mode moves each `<name>.prev` (only names ending in `.jar.prev`)
 # back over `<name>`, keeping the jar it replaces as `<name>.rolled-back` (`restored: <name>`). Exit 0 on success; 1 when
@@ -204,10 +204,13 @@ place() {
   done <<EOF
 $staged
 EOF
-  # An unchanged jar drops its older .prev, so --rollback cannot restore an earlier version of it.
-  for name in $unchanged; do
-    rm -f -- "$t/$name.prev"
-  done
+  # An unchanged jar drops its older .prev, so --rollback cannot restore an earlier version of it. A run that placed no
+  # jar keeps every .prev, so the last placement stays undoable.
+  if [ -n "$changed" ]; then
+    for name in $unchanged; do
+      rm -f -- "$t/$name.prev"
+    done
+  fi
 }
 
 if [ "${1-}" = --rollback ]; then
