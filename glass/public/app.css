@@ -416,6 +416,19 @@ mark {
   color: var(--accent);
 }
 
+/* The sign-in link under the banner: a 44px touch target, the accent colour, and the shared focus ring. */
+.account {
+  margin: 0 0 0.5rem;
+  font-size: 0.9375rem;
+}
+
+.account a {
+  display: inline-block;
+  min-height: 2.75rem;
+  line-height: 2.75rem;
+  color: var(--accent);
+}
+
 .meta .died {
   color: var(--muted);
   font-size: 0.8125rem;
