@@ -19,7 +19,6 @@ import { assertLoopbackNatsUrl, openRestartKv } from '../body/restart.ts';
 import { startProficiency } from '../character/proficiency-host.ts';
 import { loadStackConfig, readRconPassword, repoRoot } from '../config.ts';
 import { ConnectionManager } from '../connection.ts';
-import { type GolemTelemetry, startGolemTelemetry } from '../metrics.ts';
 import { natsRequestServer } from '../mind-link/server.ts';
 import { golemNatsAuth } from '../nats-credentials.ts';
 import { RconClient } from '../rcon.ts';
@@ -32,12 +31,20 @@ import {
   startPlayerBody,
 } from './body-host.ts';
 import { parsePlayerConfig } from './player-config.ts';
+import { startPlayerTelemetry } from './player-telemetry.ts';
 import { watchPresence } from './presence.ts';
 import { PlayerSession } from './session.ts';
 import { admitLifeOverRcon } from './whitelist.ts';
 
 // The Body wiring lives in body-host.ts (no RCON there); these names stay exported from this module.
-export { bookServe, type ExtraServe, installEntryHandlers, playerBodyEnv, startPlayerBody };
+export {
+  bookServe,
+  type ExtraServe,
+  installEntryHandlers,
+  playerBodyEnv,
+  startPlayerBody,
+  startPlayerTelemetry,
+};
 
 /** The player id after `--player`; throws with the usage line when it is missing. */
 export function playerIdFromArgs(argv: string[]): string {
@@ -52,19 +59,6 @@ export function playerIdFromArgs(argv: string[]): string {
 const jsonLog = (line: Record<string, unknown>): void => {
   console.log(JSON.stringify({ at: new Date().toISOString(), ...line }));
 };
-
-/**
- * The player host's Body metrics (decision 0088). Pushes only when `GELDAR_TELEMETRY_URL` is set; unset,
- * it starts no timer and makes no request, and the Body still records in memory. Labels stay aggregate:
- * no life and no player id reaches a metric.
- */
-export function startPlayerTelemetry(
-  env: Record<string, string | undefined>,
-  log: (line: Record<string, unknown>) => void,
-  options: { fetch?: typeof fetch; intervalMs?: number; timeoutMs?: number } = {},
-): GolemTelemetry {
-  return startGolemTelemetry(env, { service: 'geldar-golem-player', log, ...options });
-}
 
 /** The values of one life's presence key: the record text, or null for a deletion or purge. */
 async function* presenceEntries(kv: KV, lifeId: string): AsyncGenerator<string | null> {

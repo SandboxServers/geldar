@@ -31,10 +31,10 @@ import {
   openRegistryBucket,
 } from '../registry.ts';
 import { bookServe, installEntryHandlers, playerBodyEnv, startPlayerBody } from './body-host.ts';
-import { startPlayerTelemetry } from './main.ts';
 import { managedLifeId, NO_HOST_CONFIG_EXIT, parseManagedPlayerConfig } from './managed-config.ts';
 import { type HostDb, type HostDbOptions, openPgHostDb } from './managed-pg.ts';
 import type { PlayerConfig } from './player-config.ts';
+import { startPlayerTelemetry } from './player-telemetry.ts';
 import { watchPresence } from './presence.ts';
 import { PlayerSession } from './session.ts';
 
