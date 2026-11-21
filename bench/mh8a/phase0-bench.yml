@@ -1,0 +1,22 @@
+# MH-8a cost bench overlay (decision 0199, docs/analysis/muffled-hearing/packets.md). A throwaway,
+# loopback-only copy of the phase0 shard, so the bench never shares ports or a world with phase0.
+# Use it only through bench/mh8a/run.ps1, which sets the project name and the world volume:
+#   docker compose -p geldar-mh8a -f compose/phase0.yml -f compose/rcon-host.yml -f bench/mh8a/phase0-bench.yml up -d
+# The world volume is set by GELDAR_WORLD_VOLUME=geldar-mh8a_paper-data. Unset, phase0.yml names the phase0
+# world volume (geldar-phase0_paper-data), and this bench must never write to it. Host ports after this overlay:
+#   Minecraft (Velocity ingress) 127.0.0.1:26565, NATS 127.0.0.1:14222, RCON 127.0.0.1:26575.
+# Golem reaches the bench with GELDAR_MC_PORT=26565 GELDAR_RCON_PORT=26575 GELDAR_NATS_URL=nats://127.0.0.1:14222.
+services:
+  velocity:
+    ports: !override
+      - "127.0.0.1:26565:25565"
+  nats:
+    ports: !override
+      - "127.0.0.1:14222:4222"
+  paper:
+    ports: !override
+      - "127.0.0.1:26575:25575"
+  # Postgres is not in the brief's port list, but phase0 publishes 5432 and the two stacks cannot both bind it.
+  postgres:
+    ports: !override
+      - "127.0.0.1:15432:5432"
