@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
@@ -15,10 +15,10 @@ import {
   PROJECT_FILTER,
   posix,
   REAL,
+  REAL_BIN,
   release,
   run,
   SECRET_FILES,
-  SH,
   STATS_BY_ID,
   secretValue,
   setMode,
@@ -216,7 +216,7 @@ describe('colo-up.sh (decision 0084)', () => {
     const log = join(fx.dir, 'mktemp.log');
     writeFileSync(
       join(fx.dir, 'bin', 'mktemp'),
-      `#!/bin/sh\necho "$*" >> "${posix(log)}"\nexec "${posix(dirname(SH))}/mktemp" "$@"\n`,
+      `#!/bin/sh\necho "$*" >> "${posix(log)}"\nexec "${REAL_BIN}/mktemp" "$@"\n`,
       { mode: 0o755 },
     );
     const env = { GELDAR_MIN_FREE_INODES: '100', GELDAR_DEPLOY_VOLUME: posix(poor) };

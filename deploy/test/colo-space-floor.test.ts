@@ -5,7 +5,16 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { cdRun, cdSetup } from './colo-cd-fixture';
-import { calls, fixture, PREV_BODY, posix, REAL, release, run, SH } from './colo-deploy-fixture';
+import {
+  calls,
+  fixture,
+  PREV_BODY,
+  posix,
+  REAL,
+  REAL_BIN,
+  release,
+  run,
+} from './colo-deploy-fixture';
 
 // df: for a path containing "poor", POOR_KB free blocks and POOR_INODES free inodes; plenty elsewhere.
 const DF = `#!/bin/sh
@@ -24,7 +33,7 @@ function shims(dir: string, log: string) {
   writeFileSync(join(bin, 'df'), DF, { mode: 0o755 });
   writeFileSync(
     join(bin, 'mktemp'),
-    `#!/bin/sh\necho "$*" >> "${posix(log)}"\nexec "${posix(dirname(SH))}/mktemp" "$@"\n`,
+    `#!/bin/sh\necho "$*" >> "${posix(log)}"\nexec "${REAL_BIN}/mktemp" "$@"\n`,
     { mode: 0o755 },
   );
 }
@@ -148,5 +157,16 @@ describe("Docker's data root has the same block floor as the deploy volume", () 
 
   it('passes at 2 GiB, which the 10 GiB checkout floor would refuse', () => {
     expect(go(2 * GIB)).not.toContain('of the docker data root');
+  });
+});
+
+describe('the shim helper', () => {
+  // A mktemp shim that hands over to the real tool must find it: on Linux SH is the bare word `sh`, and dirname('sh') is '.',
+  // which made the first version of these shims fail to run mktemp there (CI: PR 863).
+  it('REAL_BIN is a directory that holds the real mktemp and ls', () => {
+    for (const tool of ['mktemp', 'ls']) {
+      const found = existsSync(join(REAL_BIN, tool)) || existsSync(join(REAL_BIN, `${tool}.exe`));
+      expect(found, `${tool} in ${REAL_BIN}`).toBe(true);
+    }
   });
 });

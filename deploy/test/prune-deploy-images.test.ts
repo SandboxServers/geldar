@@ -14,7 +14,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { SH } from './colo-deploy-fixture';
+import { REAL_BIN, SH } from './colo-deploy-fixture';
 
 const SCRIPT = fileURLToPath(new URL('../genesis/prune-deploy-images.sh', import.meta.url));
 const p = (s: string) => s.replaceAll(String.fromCharCode(92), '/');
@@ -54,7 +54,7 @@ function run(root: string, args: string[] = [], extraEnv: Record<string, string>
       GELDAR_STATE_DIR: p(join(root, 'state')),
       DOCKER_IMAGES: p(join(root, 'images.txt')),
       DOCKER_CALLS_LOG: p(join(root, 'calls.log')),
-      PATH: [p(join(root, 'bin')), dirname(SH), process.env.PATH ?? ''].join(delimiter),
+      PATH: [p(join(root, 'bin')), REAL_BIN, process.env.PATH ?? ''].join(delimiter),
       ...extraEnv,
     },
   });
@@ -327,7 +327,7 @@ describe('prune-deploy-images.sh', () => {
         ...process.env,
         GELDAR_RELEASE_FILE: p(join(root, 'release.env')),
         GELDAR_STATE_DIR: p(join(root, 'state')),
-        PATH: [p(join(root, 'bin')), dirname(SH), process.env.PATH ?? ''].join(delimiter),
+        PATH: [p(join(root, 'bin')), REAL_BIN, process.env.PATH ?? ''].join(delimiter),
       },
     });
     const removed = readFileSync(join(root, 'rm.log'), 'utf8').trim().split('\n');

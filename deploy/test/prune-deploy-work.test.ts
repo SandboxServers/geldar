@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import { SH } from './colo-deploy-fixture';
+import { REAL_BIN, SH } from './colo-deploy-fixture';
 
 const SCRIPT = fileURLToPath(new URL('../genesis/prune-deploy-work.sh', import.meta.url));
 const p = (s: string) => s.replaceAll(String.fromCharCode(92), '/');
@@ -61,7 +61,7 @@ function run(root: string, args: string[] = [], env: Record<string, string> = {}
       ...process.env,
       GELDAR_DEPLOY_ROOT: p(root),
       GELDAR_STATE_DIR: p(join(root, 'state')),
-      PATH: [p(join(root, 'shim')), dirname(SH), process.env.PATH ?? ''].join(delimiter),
+      PATH: [p(join(root, 'shim')), REAL_BIN, process.env.PATH ?? ''].join(delimiter),
       ...env,
     },
   });
@@ -245,7 +245,7 @@ describe('prune-deploy-work.sh', () => {
         `#!/bin/sh
 : > "${p(root)}/ls.started"
 sleep 3
-exec "${p(dirname(SH))}/ls" "$@"
+exec "${REAL_BIN}/ls" "$@"
 `,
         { mode: 0o755 },
       );
@@ -254,7 +254,7 @@ exec "${p(dirname(SH))}/ls" "$@"
           ...process.env,
           GELDAR_DEPLOY_ROOT: p(root),
           GELDAR_STATE_DIR: p(join(root, 'state')),
-          PATH: [p(join(root, 'shim')), dirname(SH), process.env.PATH ?? ''].join(delimiter),
+          PATH: [p(join(root, 'shim')), REAL_BIN, process.env.PATH ?? ''].join(delimiter),
         },
       });
       return new Promise<void>((resolve, reject) => {
