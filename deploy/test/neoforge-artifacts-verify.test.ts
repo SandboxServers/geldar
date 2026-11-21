@@ -3,7 +3,7 @@
 // are written here by a small stored-zip writer, so the test does not share code with what it tests.
 import { type SpawnSyncReturns, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -142,6 +142,24 @@ function verify(target: string): { status: number | null; stdout: string; stderr
 
 // Each run starts a Git for Windows sh and forks several tools; on Windows that takes seconds, so the default 5 s timeout is short.
 const itRuns = (name: string, fn: () => void): void => it(name, fn, 60_000);
+
+// Creating a symlink needs a privilege on some Windows hosts; the symlink case is skipped where the probe cannot create one.
+function canSymlink(): boolean {
+  const probe = mkdtempSync(join(tmpdir(), 'neoforge-symlink-probe-'));
+  try {
+    symlinkSync(join(probe, 'missing-target'), join(probe, 'link.jar'));
+    return true;
+  } catch {
+    return false;
+  } finally {
+    rmSync(probe, { recursive: true, force: true });
+  }
+}
+const SYMLINKS = canSymlink();
+const itSymlink = (name: string, fn: () => void): void => {
+  if (SYMLINKS) itRuns(name, fn);
+  else it.skip(name, fn);
+};
 
 beforeAll(() => {
   root = mkdtempSync(join(tmpdir(), 'neoforge-artifacts-verify-'));
@@ -298,6 +316,35 @@ describe('verify-neoforge-artifacts.sh', () => {
     expect(result.status, result.stderr).toBe(1);
     expect(result.stderr).toContain('unexpected file in');
     expect(result.stderr).toContain('.evil.jar');
+  });
+
+  itRuns(
+    'fails when a file named like both jars with a space between them sits in the directory',
+    () => {
+      publish();
+      writeFileSync(join(dir, `${GELDAR} ${LEDGER}`), 'not a jar');
+      const result = verify(dir);
+      expect(result.status, result.stderr).toBe(1);
+      expect(result.stderr).toContain('unexpected file in');
+    },
+  );
+
+  itRuns('fails when the directory holds a file whose name starts with two dots', () => {
+    publish();
+    writeFileSync(join(dir, '..x.jar'), 'not a jar');
+    const result = verify(dir);
+    expect(result.status, result.stderr).toBe(1);
+    expect(result.stderr).toContain('unexpected file in');
+    expect(result.stderr).toContain('..x.jar');
+  });
+
+  itSymlink('fails when the directory holds a dangling symlink named evil.jar', () => {
+    publish();
+    symlinkSync(join(dir, 'missing-target'), join(dir, 'evil.jar'));
+    const result = verify(dir);
+    expect(result.status, result.stderr).toBe(1);
+    expect(result.stderr).toContain('unexpected file in');
+    expect(result.stderr).toContain('evil.jar');
   });
 
   itRuns('exits 2 when a sha256 digest is shorter than 64 hex digits', () => {

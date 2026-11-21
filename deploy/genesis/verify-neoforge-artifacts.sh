@@ -142,9 +142,11 @@ done
 for f in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do
   [ -e "$f" ] || [ -L "$f" ] || continue
   base=${f##*/}
-  case " $REQUIRED_JARS " in
-    *" $base "*) continue ;;
-  esac
+  ok=
+  for want in $REQUIRED_JARS; do
+    if [ "$base" = "$want" ]; then ok=1; fi
+  done
+  if [ -n "$ok" ]; then continue; fi
   if [ "$base" != neoforge-artifacts.sha256 ]; then
     echo "unexpected file in $dir: $base" >&2
     status=1
