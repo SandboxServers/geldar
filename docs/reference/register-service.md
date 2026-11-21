@@ -83,12 +83,12 @@ The code signs in with Microsoft personal accounts only (`src/providers.ts`, `sr
 
 | Step | Behaviour | Source |
 |---|---|---|
-| Authority | The Microsoft identity platform's `consumers` OAuth 2.0 base, `https://login.microsoftonline.com/consumers/oauth2/v2.0` (`MS_AUTHORITY`); authorize and token are its `/authorize` and `/token` | `src/providers.ts` line 24 |
+| Authority | The Microsoft identity platform's `consumers` OAuth 2.0 base, `https://login.microsoftonline.com/consumers/oauth2/v2.0` (`MS_AUTHORITY`); authorize and token are its `/authorize` and `/token` | `src/providers.ts` line 28 (`MS_AUTHORITY`) |
 | Request | Authorization code, `response_mode=query`, scope `openid`, PKCE S256. Redirect URI `REGISTER_PUBLIC_URL` + `/register/callback` | `microsoftProvider.authorizeUrl` |
 | State | 24 random bytes, single use, 10 minutes, in process memory (a restart asks the user to retry), at most 5000 pending | `src/pkce.ts` |
 | State cookie | `__Host-gr_state`, `Max-Age=600; Path=/; HttpOnly; Secure; SameSite=Lax`; must equal the `state` query value | `src/server.ts` lines 93, 193 to 198 |
 | Token exchange | POST to the token endpoint with the client secret and verifier | `fetchProfile` |
-| Checks | The id token's `aud` equals `REGISTER_MS_CLIENT_ID`; `tid` equals the fixed consumers tenant; `sub` is non-empty. No signature check (id token taken straight from the token endpoint over TLS) | `src/providers.ts` lines 28 to 74 |
+| Checks | The id token's `aud` equals `REGISTER_MS_CLIENT_ID`; `tid` equals the fixed consumers tenant; `sub` is non-empty. No signature check (id token taken straight from the token endpoint over TLS) | `src/providers.ts` lines 73 to 77 (`microsoftProvider`) |
 | Kept | Only `sub`. Identity hash = `HMAC-SHA256(pepper, "microsoft:" + sub)`, hex. No email, name or access token | `src/identity.ts` |
 | Owner | Existing identity: its owner. New identity: refused unless the consent box was ticked; otherwise owner id `reg-` + the first 24 hex characters of the identity hash | `Account.signedIn` |
 | Refusals | Bad state, provider error, banned owner, deleted-account tombstone, missing consent: one 403 page that does not say which check failed | `REFUSED_PAGE`; `PgStore.findOwner` |
