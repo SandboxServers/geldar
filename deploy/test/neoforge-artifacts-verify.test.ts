@@ -161,7 +161,7 @@ describe('verify-neoforge-artifacts.sh', () => {
     () => {
       publish();
       const result = verify(dir);
-      expect(result.status).toBe(0);
+      expect(result.status, result.stderr).toBe(0);
       expect(result.stdout).toContain(`ok: ${GELDAR}`);
       expect(result.stdout).toContain(`ok: ${LEDGER}`);
     },
@@ -171,7 +171,7 @@ describe('verify-neoforge-artifacts.sh', () => {
     publish();
     writeFileSync(join(dir, GELDAR), Buffer.concat([geldarJar(), Buffer.from('!')]));
     const result = verify(dir);
-    expect(result.status).toBe(1);
+    expect(result.status, result.stderr).toBe(1);
     expect(result.stderr).toContain(`digest mismatch: ${GELDAR}`);
   });
 
@@ -179,7 +179,7 @@ describe('verify-neoforge-artifacts.sh', () => {
     publish();
     unlinkSync(join(dir, LEDGER));
     const result = verify(dir);
-    expect(result.status).toBe(1);
+    expect(result.status, result.stderr).toBe(1);
     expect(result.stderr).toContain(`missing jar: ${LEDGER}`);
   });
 
@@ -187,15 +187,15 @@ describe('verify-neoforge-artifacts.sh', () => {
     publish();
     writeFileSync(join(dir, 'geldar-neoforge-extra.jar'), geldarJar());
     const result = verify(dir);
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain('unexpected jar in');
+    expect(result.status, result.stderr).toBe(1);
+    expect(result.stderr).toContain('unexpected file in');
     expect(result.stderr).toContain('geldar-neoforge-extra.jar');
   });
 
   itRuns('fails when the geldar jar carries the ledger modId', () => {
     publish(geldarJar('ledger'));
     const result = verify(dir);
-    expect(result.status).toBe(1);
+    expect(result.status, result.stderr).toBe(1);
     expect(result.stderr).toContain(
       `wrong modId in ${GELDAR}: expected geldar_neoforge, got ledger`,
     );
@@ -204,7 +204,7 @@ describe('verify-neoforge-artifacts.sh', () => {
   itRuns('fails when the ledger jar carries another modId', () => {
     publish(geldarJar(), ledgerJar(NESTED, 'geldar_neoforge'));
     const result = verify(dir);
-    expect(result.status).toBe(1);
+    expect(result.status, result.stderr).toBe(1);
     expect(result.stderr).toContain(
       `wrong modId in ${LEDGER}: expected ledger, got geldar_neoforge`,
     );
@@ -213,14 +213,14 @@ describe('verify-neoforge-artifacts.sh', () => {
   itRuns('fails when the ledger jar is missing a jarjar entry', () => {
     publish(geldarJar(), ledgerJar(NESTED.slice(0, 3)));
     const result = verify(dir);
-    expect(result.status).toBe(1);
+    expect(result.status, result.stderr).toBe(1);
     expect(result.stderr).toContain(`${LEDGER} nests 3 jars under META-INF/jarjar/, expected 4`);
   });
 
   itRuns('fails when the ledger jar nests a fifth jar', () => {
     publish(geldarJar(), ledgerJar([...NESTED, 'META-INF/jarjar/io.nats-jnats-2.25.0.jar']));
     const result = verify(dir);
-    expect(result.status).toBe(1);
+    expect(result.status, result.stderr).toBe(1);
     expect(result.stderr).toContain(`${LEDGER} nests 5 jars under META-INF/jarjar/, expected 4`);
   });
 
@@ -230,7 +230,7 @@ describe('verify-neoforge-artifacts.sh', () => {
       ledgerJar([NESTED[0], NESTED[1], NESTED[2], 'META-INF/jarjar/opentelemetry-api-1.67.0.jar']),
     );
     const result = verify(dir);
-    expect(result.status).toBe(1);
+    expect(result.status, result.stderr).toBe(1);
     expect(result.stderr).toContain(`${LEDGER} does not nest opentelemetry-context`);
   });
 
@@ -238,7 +238,7 @@ describe('verify-neoforge-artifacts.sh', () => {
     const notZip = Buffer.from('not a zip');
     publish(notZip, ledgerJar());
     const result = verify(dir);
-    expect(result.status).toBe(1);
+    expect(result.status, result.stderr).toBe(1);
     expect(result.stderr).toContain(`not a zip: ${GELDAR}`);
   });
 
@@ -249,7 +249,7 @@ describe('verify-neoforge-artifacts.sh', () => {
       `${digest(geldarJar())}  ../${GELDAR}\n${digest(ledgerJar())}  ${LEDGER}\n`,
     );
     const result = verify(dir);
-    expect(result.status).toBe(2);
+    expect(result.status, result.stderr).toBe(2);
     expect(result.stderr).toContain('unsafe jar name');
   });
 
@@ -260,7 +260,7 @@ describe('verify-neoforge-artifacts.sh', () => {
       `${digest(geldarJar())}  geldar neoforge.jar\n${digest(ledgerJar())}  ${LEDGER}\n`,
     );
     const result = verify(dir);
-    expect(result.status).toBe(2);
+    expect(result.status, result.stderr).toBe(2);
     expect(result.stderr).toContain('unsafe jar name');
   });
 
@@ -268,7 +268,7 @@ describe('verify-neoforge-artifacts.sh', () => {
     publish();
     writeFileSync(join(dir, SUMS), `${digest(geldarJar())}  ${GELDAR}\n`);
     const result = verify(dir);
-    expect(result.status).toBe(2);
+    expect(result.status, result.stderr).toBe(2);
     expect(result.stderr).toContain('not listed');
   });
 
@@ -278,10 +278,71 @@ describe('verify-neoforge-artifacts.sh', () => {
       join(dir, SUMS),
       `${digest(geldarJar()).toUpperCase()}  ${GELDAR}\n${digest(ledgerJar())}  ${LEDGER}\n`,
     );
-    expect(verify(dir).status).toBe(2);
+    const result = verify(dir);
+    expect(result.status, result.stderr).toBe(2);
+  });
+
+  itRuns('fails when the directory holds an upper-case JAR', () => {
+    publish();
+    writeFileSync(join(dir, 'evil.JAR'), 'not a jar');
+    const result = verify(dir);
+    expect(result.status, result.stderr).toBe(1);
+    expect(result.stderr).toContain('unexpected file in');
+    expect(result.stderr).toContain('evil.JAR');
+  });
+
+  itRuns('fails when the directory holds a dotfile jar', () => {
+    publish();
+    writeFileSync(join(dir, '.evil.jar'), 'not a jar');
+    const result = verify(dir);
+    expect(result.status, result.stderr).toBe(1);
+    expect(result.stderr).toContain('unexpected file in');
+    expect(result.stderr).toContain('.evil.jar');
+  });
+
+  itRuns('exits 2 when a sha256 digest is shorter than 64 hex digits', () => {
+    publish();
+    writeFileSync(
+      join(dir, SUMS),
+      `${digest(geldarJar()).slice(0, 63)}  ${GELDAR}\n${digest(ledgerJar())}  ${LEDGER}\n`,
+    );
+    const result = verify(dir);
+    expect(result.status, result.stderr).toBe(2);
+    expect(result.stderr).toContain('malformed line');
+  });
+
+  itRuns('exits 2 when the sha256 file lists one jar twice', () => {
+    publish();
+    writeFileSync(
+      join(dir, SUMS),
+      `${digest(geldarJar())}  ${GELDAR}\n${digest(geldarJar())}  ${GELDAR}\n${digest(ledgerJar())}  ${LEDGER}\n`,
+    );
+    const result = verify(dir);
+    expect(result.status, result.stderr).toBe(2);
+    expect(result.stderr).toContain(`duplicate jar name in`);
+  });
+
+  itRuns('exits 2 when the sha256 file lists a name that is not one of the build jars', () => {
+    publish();
+    writeFileSync(
+      join(dir, SUMS),
+      `${digest(geldarJar())}  ${GELDAR}\n${digest(ledgerJar())}  ${LEDGER}\n${digest('x')}  other.jar\n`,
+    );
+    const result = verify(dir);
+    expect(result.status, result.stderr).toBe(2);
+    expect(result.stderr).toContain('unexpected jar name in');
+    expect(result.stderr).toContain('other.jar');
+  });
+
+  itRuns('fails with its own message when a jar has no META-INF/neoforge.mods.toml', () => {
+    publish(zipOf([['dev/geldar/neoforge/GeldarMod.class', 'class bytes']]), ledgerJar());
+    const result = verify(dir);
+    expect(result.status, result.stderr).toBe(1);
+    expect(result.stderr).toContain(`no META-INF/neoforge.mods.toml in ${GELDAR}`);
   });
 
   itRuns('exits 2 without exactly one directory argument', () => {
-    expect(runScript([]).status).toBe(2);
+    const result = runScript([]);
+    expect(result.status, result.stderr).toBe(2);
   });
 });

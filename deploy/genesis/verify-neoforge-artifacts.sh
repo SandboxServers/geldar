@@ -137,12 +137,17 @@ for jar in $REQUIRED_JARS; do
   esac
 done
 
-for f in "$dir"/*.jar; do
-  [ -f "$f" ] || continue
+# Every entry in <dir> must be the sums file or an expected jar. The globs take dotfiles and every case; a symlink or a directory
+# that is not one of the expected names is refused too.
+for f in "$dir"/* "$dir"/.[!.]* "$dir"/..?*; do
+  [ -e "$f" ] || [ -L "$f" ] || continue
   base=${f##*/}
   case " $REQUIRED_JARS " in
-    *" $base "*) ;;
-    *) echo "unexpected jar in $dir: $base" >&2; status=1 ;;
+    *" $base "*) continue ;;
   esac
+  if [ "$base" != neoforge-artifacts.sha256 ]; then
+    echo "unexpected file in $dir: $base" >&2
+    status=1
+  fi
 done
 exit "$status"
