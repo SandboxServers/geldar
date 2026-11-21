@@ -2,6 +2,7 @@
 // with a flock stand-in on PATH (flock is absent on Windows): FAKE_FLOCK_RC=1 makes the lock busy. Nothing real is touched.
 import { spawn, spawnSync } from 'node:child_process';
 import {
+  chmodSync,
   existsSync,
   lutimesSync,
   mkdirSync,
@@ -172,10 +173,10 @@ describe('prune-deploy-work.sh', () => {
     expect(has(root, sha(2))).toBe(false);
   });
 
-  it('a malformed staged manifest is ignored; release.commit alone decides', () => {
+  it('a malformed staged manifest refuses the run (it may name a commit that must be kept)', () => {
     const root = fixture(8, sha(8), 'garbage');
-    expect(run(root, ['--keep', '2', '--apply']).code).toBe(0);
-    expect(has(root, sha(1))).toBe(false);
+    expect(run(root, ['--keep', '2', '--apply']).code).toBe(1);
+    expect(has(root, sha(1))).toBe(true);
   });
 
   it('a held colo-cd lock directory removes nothing and exits 1', () => {
@@ -338,6 +339,86 @@ exec "${p(dirname(SH))}/ls" "$@"
       put(root, 'state/release.env', 'GELDAR_BODY_IMAGE=x\n');
       expect(run(root, ['--keep', '2', '--apply']).code).toBe(1);
       expect(has(root, sha(1))).toBe(true);
+    });
+  });
+
+  // Fail closed on a partial view: a record that EXISTS but cannot be used must refuse the run, never be skipped (a skipped
+  // record could be the only one naming the live checkout).
+  describe('a record that exists but is unusable refuses and removes nothing', () => {
+    const canChmod = process.platform !== 'win32' && process.getuid?.() !== 0;
+    const A = 'a'.repeat(40);
+    const damages: [string, (p: string, root: string) => void][] = [
+      ['truncated', (p) => writeFileSync(p, `${A.slice(0, 20)}\n`)],
+      ['quoted', (p) => writeFileSync(p, `"${A}"\n`)],
+      ['upper-case', (p) => writeFileSync(p, `${A.toUpperCase()}\n`)],
+      ['empty', (p) => writeFileSync(p, '')],
+      ['a directory', (p) => mkdirSync(p)],
+      ['a dangling symlink', (p, root) => symlinkSync(join(root, 'nowhere'), p)],
+    ];
+    // The live commit is named by a valid release.env; release.commit is the damaged record.
+    const setup = (damage: (p: string, root: string) => void, rel = 'state/release.commit') => {
+      const root = fixture(8, null);
+      writeFileSync(join(root, 'state', 'release.env'), `${manifest(sha(8))}\n`);
+      damage(join(root, rel), root);
+      return root;
+    };
+    const refused = (root: string, name: string) => {
+      const r = run(root, ['--keep', '2', '--apply']);
+      expect(r.code).toBe(1);
+      expect(r.err).toContain(name);
+      for (let i = 1; i <= 8; i++) expect(has(root, sha(i)), `sha ${i}`).toBe(true);
+    };
+
+    it.each(damages)('release.commit that is %s', (_what, damage) => {
+      try {
+        refused(setup(damage), 'release.commit');
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code === 'EPERM') return; // no symlink right on this machine; Linux CI covers it
+        throw e;
+      }
+    });
+
+    it.skipIf(!canChmod)('release.commit with mode 000 (cannot be read)', () => {
+      const root = setup((p) => {
+        writeFileSync(p, `${sha(1)}\n`);
+        chmodSync(p, 0);
+      });
+      refused(root, 'release.commit');
+    });
+
+    it.each(['state/previous.env', 'staged/release.env', 'inbox/release.env', 'state/current.env'])(
+      'a manifest at %s whose first line names no commit',
+      (rel) => {
+        const root = setup((p) => {
+          mkdirSync(dirname(p), { recursive: true });
+          writeFileSync(p, 'GELDAR_BODY_IMAGE=x\n');
+        }, rel);
+        refused(root, rel);
+      },
+    );
+
+    it.skipIf(!canChmod)('an unreadable previous.env (mode 000)', () => {
+      const root = setup((p) => {
+        writeFileSync(p, `${manifest(sha(2))}\n`);
+        chmodSync(p, 0);
+      }, 'state/previous.env');
+      refused(root, 'previous.env');
+    });
+
+    it('a record that does not exist at all is skipped, as before', () => {
+      const root = fixture(8, null);
+      writeFileSync(join(root, 'state', 'release.env'), `${manifest(sha(8))}\n`);
+      expect(run(root, ['--keep', '2', '--apply']).code).toBe(0);
+      expect(has(root, sha(1))).toBe(false);
+    });
+
+    it("a missing state directory names GELDAR_STATE_DIR and the node's path", () => {
+      const root = fixture(8, sha(8));
+      rmSync(join(root, 'state'), { recursive: true });
+      const r = run(root, ['--apply']);
+      expect(r.code).toBe(1);
+      expect(r.err).toContain('GELDAR_STATE_DIR');
+      expect(r.err).toContain('/mnt/nvme/geldar-colo/state');
     });
   });
 });

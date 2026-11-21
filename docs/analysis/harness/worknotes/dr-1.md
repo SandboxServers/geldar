@@ -105,6 +105,16 @@ Not verified locally: the `a TERM during --apply releases the colo-cd lock` test
 | image prune ignores the state `release.env` and `current.env` | `works with no /etc manifest ...`, `works with only current.env ...` |
 | image prune counts `previous.env` as live | `refuses when only previous.env lists images` |
 
+## Round 6: fail closed on a partial view
+
+The final review found both prune scripts SKIPPED a record that exists but cannot be read or names no valid commit (round 4 had dropped round 3's refusal on a bad `release.commit`): with a valid `release.env` but the live commit only in `release.commit`, an unreadable or malformed `release.commit` let `--apply` delete the live checkout (reproduced under WSL as uid 1000), and an unreadable `previous.env` let the image prune remove the rollback target.
+
+**Rule now, in both scripts:** only a record that does not exist at all (`-e` and `-L` both false) is skipped. A record that EXISTS but is not a readable regular file (mode, directory, dangling symlink), or whose first line does not name a valid commit (work prune), or that lists no images (image prune), refuses the run with a message naming the file, in dry run too, and removes nothing. On top of it, the work prune still needs at least one of `release.commit`, `release.env`, `current.env` to exist. (`/etc/geldar-colo` is a root-only directory, so its manifest does not "exist" to the operator account and is skipped; if that file were visible but unreadable, the image prune would refuse.) Consequence: a hand-installed first manifest with no commit comment line in `previous.env`, `staged` or `inbox` makes the work prune refuse until that file is fixed or removed, which is the intended fail-closed behaviour.
+
+**Evidence.** Tests per damage mode for `release.commit` (truncated, quoted, upper-case, empty, a directory, a dangling symlink, mode 000), for each other manifest (no commit on the first line; unreadable `previous.env`), and for the image manifests (empty, comment only, a directory, a dangling symlink, mode 000, each of `previous.env`, `current.env`, `release.env`; dry run and `--apply`), and for a missing state directory naming `GELDAR_STATE_DIR`. The mode-000 tests skip on Windows and as root (`chmod` cannot work there); I reproduced those cases by hand under WSL as uid 1000: a mode-000 `release.commit` refuses (exit 1, nothing removed), an unreadable `previous.env` or live manifest refuses in dry run and with `--apply` with no `docker image rm`, and a valid state proceeds. Revert-checks (mutation applied, tests run, file restored): the readable-file guard skipped instead of refusing fails the directory and dangling-symlink cases (work) ; the invalid-commit refusal turned into a skip fails 9 tests; the old file-only `exists` fails the directory and dangling-symlink cases in both scripts; allowing a manifest that lists no images fails 4. The HUP/INT/TERM trap of the WORK prune still has no test that runs on Windows (its test is skipped there); Linux CI runs it first.
+
+**Worktree warning from the reviewer:** I checked `git status` and `git diff` of this worktree before starting: it was clean at `21cdbdeb`, nothing was lost.
+
 ## Inode prune (option A), carried over
 
 ## What changed

@@ -36,13 +36,27 @@ refs() {
     sed -n 's/^[A-Z0-9_]*_IMAGE=\([^[:space:]]*@sha256:[0-9a-f]\{64\}\)$/\1/p' |
     sed 's#:[^/@]*@#@#'
 }
-# Every manifest that exists is read, and every image any of them names is kept. The records of what is live are the root-owned
-# $RELEASE_FILE (the operator account usually cannot read it), the copy colo-cd.sh keeps in the state directory
-# ($STATE_DIR/release.env) and current.env; previous.env is the rollback target. Nothing is removed unless a live record lists images.
-live=$(refs "$RELEASE_FILE"; refs "$STATE_DIR/release.env"; refs "$STATE_DIR/current.env")
-[ -n "$live" ] || fail "no readable record of the current release lists images (release.env, current.env in $STATE_DIR); nothing removed. Is GELDAR_STATE_DIR set to the node's state directory (/mnt/nvme/geldar-colo/state)?"
-keep=$(printf '%s
-' "$live"; refs "$STATE_DIR/previous.env")
+# A manifest that EXISTS (a file, a directory, a symlink, even a dangling one) but cannot be read as a file, or lists no images,
+# REFUSES the run, dry run included: skipping it would hide an image that must be kept (fail closed). Only a manifest that does
+# not exist at all is skipped. (/etc/geldar-colo is a root-only directory on the node, so its copy does not "exist" to the
+# operator account, which cannot look inside it.)
+exists() { [ -e "$1" ] || [ -L "$1" ]; }
+manifest_refs() { # <file>: prints its image references
+  exists "$1" || return 0
+  [ -f "$1" ] && [ -r "$1" ] || fail "the record $1 exists but is not a readable file; nothing removed"
+  found=$(refs "$1")
+  [ -n "$found" ] || fail "the record $1 lists no images; nothing removed"
+  printf '%s\n' "$found"
+}
+# The records of what is live are the root-owned $RELEASE_FILE, the copy colo-cd.sh keeps in the state directory
+# ($STATE_DIR/release.env) and current.env; previous.env is the rollback target. Nothing is removed unless a live record exists.
+live_a=$(manifest_refs "$RELEASE_FILE")
+live_b=$(manifest_refs "$STATE_DIR/release.env")
+live_c=$(manifest_refs "$STATE_DIR/current.env")
+prev=$(manifest_refs "$STATE_DIR/previous.env")
+live=$(printf '%s\n%s\n%s\n' "$live_a" "$live_b" "$live_c" | sed '/^$/d')
+[ -n "$live" ] || fail "no record of the current release exists (release.env, current.env in $STATE_DIR); nothing removed. Is GELDAR_STATE_DIR set to the node's state directory (/mnt/nvme/geldar-colo/state)?"
+keep=$(printf '%s\n%s\n' "$live" "$prev" | sed '/^$/d')
 repos=$(printf '%s\n' "$keep" | sed 's/@.*//' | sort -u)
 
 [ -d "$STATE_DIR" ] || fail "no state directory $STATE_DIR; set GELDAR_STATE_DIR to the node's state directory (/mnt/nvme/geldar-colo/state)"

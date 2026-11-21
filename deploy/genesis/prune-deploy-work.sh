@@ -51,41 +51,51 @@ WORKDIR=$ROOT/work
 #   <root>/staged/release.env, <root>/inbox/release.env   the manifest being staged or just written by the workflow
 # A manifest names its commit on its first line, written by the colo-images workflow: "# Release manifest for the Colo node
 # (decision 0084). Commit <40 hex>." Nothing is removed unless at least one of release.commit, release.env or current.env
-# (the records of what is live) yields a valid commit; CR is tolerated, anything but 40 lowercase hex is ignored.
+# (the records of what is live) exists. A record that EXISTS but cannot be read as a file (mode, directory, dangling symlink) or
+# whose first line is not a valid commit refuses the run (fail closed); only a record that does not exist is skipped. CR is tolerated.
 prefix='# Release manifest for the Colo node (decision 0084). Commit '
 cr=$(printf '\r')
 protected=
 liveknown=0
-add_commit() { # <candidate> <live: 1 if this record says what is live>
-  c=${1%"$cr"}
-  case $c in '' | *[!0-9a-f]*) return 0 ;; esac
-  [ "${#c}" -eq 40 ] || return 0
-  protected="$protected $c"
-  if [ "$2" = 1 ]; then liveknown=1; fi
-}
-manifest_commit() { # <file> <live>
-  [ -f "$1" ] && [ -r "$1" ] || return 0
+# A record that exists (a file, a directory, a symlink, even a dangling one) but cannot be read as a file, or whose first line
+# does not name a valid commit, REFUSES the run: skipping it would hide a commit that must be kept (fail closed). Only a record
+# that does not exist at all is skipped.
+exists() { [ -e "$1" ] || [ -L "$1" ]; }
+first_line_of() { # <file>: sets $first, or refuses
+  [ -f "$1" ] && [ -r "$1" ] || fail "the record $1 exists but is not a readable file; nothing removed"
   first=
   IFS= read -r first <"$1" || true
   first=${first%"$cr"}
-  case $first in
-    "$prefix"*.)
-      named=${first#"$prefix"}
-      add_commit "${named%.}" "$2"
-      ;;
-  esac
 }
-if [ -f "$STATE_DIR/release.commit" ] && [ -r "$STATE_DIR/release.commit" ]; then
-  one=
-  IFS= read -r one <"$STATE_DIR/release.commit" || true
-  add_commit "$one" 1
+valid_commit() { # <candidate>
+  case $1 in '' | *[!0-9a-f]*) return 1 ;; esac
+  [ "${#1}" -eq 40 ]
+}
+record_commit() { # <live: 1 if the record says what is live> <name>: adds $named
+  valid_commit "$named" || fail "the record $2 does not name a valid commit on its first line; nothing removed"
+  protected="$protected $named"
+  if [ "$1" = 1 ]; then liveknown=1; fi
+}
+manifest_commit() { # <file> <live>
+  exists "$1" || return 0
+  first_line_of "$1"
+  case $first in
+    "$prefix"*.) named=${first#"$prefix"}; named=${named%.} ;;
+    *) named= ;;
+  esac
+  record_commit "$2" "$1"
+}
+if exists "$STATE_DIR/release.commit"; then
+  first_line_of "$STATE_DIR/release.commit"
+  named=$first
+  record_commit 1 "$STATE_DIR/release.commit"
 fi
 manifest_commit "$STATE_DIR/release.env" 1
 manifest_commit "$STATE_DIR/current.env" 1
 manifest_commit "$STATE_DIR/previous.env" 0
 manifest_commit "$ROOT/staged/release.env" 0
 manifest_commit "$ROOT/inbox/release.env" 0
-[ "$liveknown" -eq 1 ] || fail "no record of the live commit could be read (release.commit, release.env, current.env in $STATE_DIR); nothing removed. Is GELDAR_STATE_DIR set to the node's state directory (/mnt/nvme/geldar-colo/state)?"
+[ "$liveknown" -eq 1 ] || fail "no record of the live commit exists (release.commit, release.env, current.env in $STATE_DIR); nothing removed. Is GELDAR_STATE_DIR set to the node's state directory (/mnt/nvme/geldar-colo/state)?"
 
 # One run at a time, and never beside a deploy. Two locks: the deploy channel's flock file, and the directory lock
 # deploy/colo-cd.sh takes (<state dir>/cd.lock, mkdir-atomic). The directory is taken here too, so a deploy cannot start

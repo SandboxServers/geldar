@@ -1,6 +1,15 @@
 // Tests for deploy/genesis/prune-deploy-images.sh against a docker stand-in that lists images from a file and records `image rm` calls.
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -170,6 +179,70 @@ describe('prune-deploy-images.sh', () => {
       const r = run(root, ['--apply']);
       expect(r.code).toBe(1);
       expect(r.calls).not.toContain('image rm');
+    });
+  });
+
+  // Fail closed on a partial view: a manifest that EXISTS but cannot be used refuses the run (dry run too), never skipped.
+  describe('a manifest that exists but is unusable refuses and removes nothing', () => {
+    const canChmod = process.platform !== 'win32' && process.getuid?.() !== 0;
+    const records = ['previous.env', 'current.env', 'release.env'];
+    const damages: [string, (p: string, root: string) => void][] = [
+      ['empty', (p) => writeFileSync(p, '')],
+      ['a comment only', (p) => writeFileSync(p, '# nothing\n')],
+      ['a directory', (p) => mkdirSync(p)],
+      ['a dangling symlink', (p, root) => symlinkSync(join(root, 'nowhere'), p)],
+    ];
+    // A valid live record exists (state/current.env, or release.env when that is the damaged one); one record is damaged.
+    const setup = (rel: string, damage: (p: string, root: string) => void) => {
+      const root = fixture(all, null, null);
+      writeFileSync(join(root, 'state', 'release.env'), env(body('3'), mind('2')));
+      if (rel !== 'release.env') writeFileSync(join(root, 'state', 'current.env'), env(body('3')));
+      writeFileSync(join(root, 'state', 'previous.env'), env(body('2'), mind('1')));
+      rmSync(join(root, 'state', rel), { force: true });
+      damage(join(root, 'state', rel), root);
+      return root;
+    };
+
+    it.each(records.flatMap((rel) => damages.map(([what, d]) => [rel, what, d] as const)))(
+      '%s that is %s',
+      (rel, _what, damage) => {
+        let root: string;
+        try {
+          root = setup(rel, damage);
+        } catch (e) {
+          if ((e as NodeJS.ErrnoException).code === 'EPERM') return; // no symlink right here; Linux CI covers it
+          throw e;
+        }
+        for (const args of [[], ['--apply']]) {
+          const r = run(root, args);
+          expect(r.code, args.join(' ')).toBe(1);
+          expect(r.err).toContain(rel);
+          expect(r.out).not.toContain('would remove');
+          expect(r.calls).not.toContain('image rm');
+        }
+      },
+    );
+
+    it.skipIf(!canChmod).each(records)('%s with mode 000 (cannot be read)', (rel) => {
+      const root = setup(rel, (p) => {
+        writeFileSync(p, env(body('2')));
+        chmodSync(p, 0);
+      });
+      for (const args of [[], ['--apply']]) {
+        const r = run(root, args);
+        expect(r.code, args.join(' ')).toBe(1);
+        expect(r.err).toContain(rel);
+        expect(r.calls).not.toContain('image rm');
+      }
+    });
+
+    it("a missing state directory names GELDAR_STATE_DIR and the node's path", () => {
+      const root = fixture(all, env(body('3')), null);
+      rmSync(join(root, 'state'), { recursive: true });
+      const r = run(root, ['--apply']);
+      expect(r.code).toBe(1);
+      expect(r.err).toContain('GELDAR_STATE_DIR');
+      expect(r.err).toContain('/mnt/nvme/geldar-colo/state');
     });
   });
 
