@@ -18,8 +18,25 @@ entry=${GELDAR_NF_ENTRYPOINT:-$root/compose/neoforge/neoforge-entrypoint.sh}
 # The Minecraft line of the NeoForge build (26.1.2 (build N)). The overlay builds NEOFORGE_VERSION from the same line.
 mc_version=26.1.2
 
-if [ $# -ne 1 ] || [ -z "$1" ]; then
-  echo "usage: sh deploy/scratch/build-neoforge-bundle.sh <output-dir>" >&2
+usage() {
+  echo "usage: sh deploy/scratch/build-neoforge-bundle.sh [--tar <file> --out-sums <file>] <output-dir>" >&2
+  exit 2
+}
+# --tar and --out-sums: the bundle goes to one uncompressed tar with fixed metadata, and its sha256 and sha512 lines go to the sums
+# file, instead of the default .tar.gz and bundle.sha256 in <output-dir>. The install and the checks run as before.
+tar_file=""
+sums_file=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --tar) [ -n "${2:-}" ] || usage; tar_file=$2; shift 2 ;;
+    --out-sums) [ -n "${2:-}" ] || usage; sums_file=$2; shift 2 ;;
+    --*) usage ;;
+    *) break ;;
+  esac
+done
+if [ $# -ne 1 ] || [ -z "$1" ]; then usage; fi
+if { [ -n "$tar_file" ] && [ -z "$sums_file" ]; } || { [ -z "$tar_file" ] && [ -n "$sums_file" ]; }; then
+  echo "build-neoforge-bundle: --tar and --out-sums go together; give both" >&2
   exit 2
 fi
 out=$1
@@ -139,12 +156,24 @@ if [ -n "$rcon" ]; then
   fi
 fi
 
+# The tar step, write_bundle_tar, is in the sourced library bundle-tar-lib.sh beside this script.
+. "$(cd "$(dirname "$0")" && pwd)/bundle-tar-lib.sh"
+
 # The marker lists each packed file with its sha256 and is itself in the tar, not in its own list. Git's sha256sum writes
 # "hash *name" (binary mode); the sed writes the text form, "hash  name", on every platform.
 (cd "$data" && while IFS= read -r f; do sha256sum -- "$f"; done < "$work/files.txt") |
   sed 's/^\([0-9a-f]\{64\}\) [* ]/\1  /' > "$work/hashes.txt"
 cp "$work/hashes.txt" "$data/.geldar-bundle.sha256"
 { cat "$work/files.txt"; echo .geldar-bundle.sha256; } > "$work/tar-list.txt"
+
+if [ -n "$tar_file" ]; then
+  write_bundle_tar "$data" "$work/tar-list.txt" "$tar_file" "$sums_file"
+  echo "bundle: $tar_file"
+  echo "size: $(wc -c < "$tar_file" | tr -d ' ') bytes"
+  echo "files: $(wc -l < "$work/hashes.txt" | tr -d ' ')"
+  echo "sums: $sums_file"
+  exit 0
+fi
 
 tgz_name="neoforge-$mc_version-build$build-bundle.tar.gz"
 # --verbatim-files-from (GNU tar) takes the list's names literally, so a name that starts with "-" is not an option. Other tars
