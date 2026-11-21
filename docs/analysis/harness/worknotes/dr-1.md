@@ -1,6 +1,29 @@
-# Inode prune (option A), card ID not yet assigned
+# DR-1: deploy inode floor, work-directory prune, image retention
 
-Branch `phase1/inode-prune`, off main c2cef18d. Inert: a repo-side script, tests and docs. Nothing is installed or run on the node.
+Branch `phase1/dr1-inode-floor`, off main c92d7451. Supersedes the draft inode-prune card (its two commits are carried here). Repo-side scripts, tests and docs; nothing is installed or run on the node.
+
+## DR-1 additions (on top of the prune script below)
+
+1. **Inode floor.** `deploy/common.sh` `check_prereqs` now also reads `df -Pi` for the checkout filesystem and dies below `GELDAR_MIN_FREE_INODES` (default 100000; a deploy checkout is about 4,400). A filesystem reporting no inode count is skipped. Root cause it closes: the block check (`df -Pk` against `MIN_FREE_KB`) passed while the manifest write failed 22 times. Test: `colo-deploy.test.ts` "refuses when free inodes are below the threshold, though blocks are plentiful" (df stand-in: huge free blocks, 50 free inodes). The fixture sets `GELDAR_MIN_FREE_INODES=1` so other tests do not depend on the host. Revert-check (threshold comparison replaced by `-lt 0`): that test fails.
+2. **Work-directory prune** is `prune-deploy-work.sh` below (keeps the live commit, the newest N, 40-hex real directories only, dry run by default). The directories are created by the untracked root-owned entrypoint, so the cleanup is a separate tool the operator runs; the entrypoint is NOT edited. A runbook step for the operator: dry run, read the list, then `--apply` (node-only-config row 14).
+3. **Image retention.** `deploy/genesis/prune-deploy-images.sh` (dry run by default, `--apply`). Keeps every reference in the current manifest (`GELDAR_RELEASE_FILE`) and the previous one (`$GELDAR_STATE_DIR/previous.env`). Removes, one named `docker image rm <repo>@<digest>` at a time, only references whose repository a kept manifest names. Never `docker system prune` or `docker image prune`; another tenant's images are never named. Takes the colo-cd lock. 8 tests in `prune-deploy-images.test.ts`.
+
+### Image-prune revert-checks
+
+| Mutation | Failing tests |
+|---|---|
+| repository filter removed | `dry run lists the old Geldar references and calls no rm`, `never touches another tenant's image, and never runs a global prune` |
+| keep check removed | `dry run ...`, `--apply removes only references outside the current and previous sets`, `works with no previous manifest ...` |
+| previous manifest ignored | `dry run ...`, `--apply removes only references outside ...` |
+| `docker image prune` instead of `image rm` | `--apply removes only ...`, `never touches another tenant's image, and never runs a global prune` |
+
+Not verified on the node: that the image references `docker images --digests` prints match the manifest digests (a dry run on the node first), and that the previous release is in `previous.env` there.
+
+## Deploy timing (DR-1 file list)
+
+`deploy/common.sh`, `deploy/genesis/*`, `deploy/test/*`, `deploy/README.md` and `docs/**` are all outside the colo-images `paths:` filter, so merging starts no image build. Caution: `colo-deploy` runs the repo's `deploy/common.sh` on the next deploy, so the inode floor takes effect then; the node has about 12% inodes used, far above the floor.
+
+## Inode prune (option A), carried over
 
 ## What changed
 

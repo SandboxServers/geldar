@@ -253,6 +253,7 @@ export function fixture(publishedPort = '25567'): Fixture {
     GELDAR_COREPROTECT_LOCK: posix(coreprotectLock),
     GELDAR_DEPLOY_ALLOW_FILE_URL: '1',
     GELDAR_MIN_FREE_KB: '1',
+    GELDAR_MIN_FREE_INODES: '1',
     DEPLOY_DRY_RUN: '1',
     DOCKER_CALLS_LOG: posix(calls),
     DOCKER_CONFIG_FIXTURE: posix(config),

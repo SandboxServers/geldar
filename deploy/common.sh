@@ -19,6 +19,7 @@ RELEASE_FILE=${GELDAR_RELEASE_FILE:-/etc/geldar-colo/release.env}
 STATE_DIR=${GELDAR_STATE_DIR:-/var/lib/geldar-colo}
 export GELDAR_STATE_DIR=$STATE_DIR # compose mounts $GELDAR_STATE_DIR/bluemap/bluemap.jar into Paper (C2-07o)
 MIN_FREE_KB=${GELDAR_MIN_FREE_KB:-10485760}
+MIN_FREE_INODES=${GELDAR_MIN_FREE_INODES:-100000} # a deploy checkout is about 4,400 inodes
 BLUEMAP_LOCK=${GELDAR_BLUEMAP_LOCK:-$ROOT/plugins/bluemap/bluemap.lock.json}
 CHUNKY_LOCK=${GELDAR_CHUNKY_LOCK:-$ROOT/plugins/chunky/chunky.lock.json}
 COREPROTECT_LOCK=${GELDAR_COREPROTECT_LOCK:-$ROOT/plugins/coreprotect/coreprotect.lock.json}
@@ -132,6 +133,15 @@ check_prereqs() {
   free=$(df -Pk "$ROOT" | awk 'NR == 2 {print $4}')
   if [ -z "$free" ] || [ "$free" -lt "$MIN_FREE_KB" ]; then
     die "free disk ${free:-unknown} KiB is below the threshold of $MIN_FREE_KB KiB"
+  fi
+  # Inodes run out independently of blocks (2026-11-20: /var at 100% inodes and 64% bytes, 22 failed deploys). A filesystem
+  # that reports no inode count is skipped.
+  inodes=$(df -Pi "$ROOT" | awk 'NR == 2 {print $2, $4}')
+  itotal=${inodes%% *}
+  ifree=${inodes#* }
+  case $itotal$ifree in *[!0-9]* | '') itotal=0 ;; esac
+  if [ "$itotal" -gt 0 ] && [ "$ifree" -lt "$MIN_FREE_INODES" ]; then
+    die "free inodes $ifree is below the threshold of $MIN_FREE_INODES; run deploy/genesis/prune-deploy-work.sh (dry run first)"
   fi
 }
 

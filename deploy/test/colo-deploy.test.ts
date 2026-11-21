@@ -151,6 +151,20 @@ describe('colo-up.sh (decision 0084)', () => {
     expect(r.code).not.toBe(0);
     expect(r.out).toContain('free disk');
   });
+
+  it('refuses when free inodes are below the threshold, though blocks are plentiful', () => {
+    const fx = fixture();
+    // A df stand-in: plenty of blocks, 50 free inodes of 1000.
+    writeFileSync(
+      join(fx.dir, 'bin', 'df'),
+      '#!/bin/sh\nif [ "$1" = -Pi ]; then printf "Filesystem Inodes IUsed IFree IUse%% Mounted\\nx 1000 950 50 95%% /\\n"; else printf "Filesystem 1024-blocks Used Available Capacity Mounted\\nx 999999999 1 999999999 1%% /\\n"; fi\n',
+      { mode: 0o755 },
+    );
+    const r = run('colo-up.sh', fx, { ...REAL, GELDAR_MIN_FREE_INODES: '100' });
+    expect(r.code).not.toBe(0);
+    expect(r.out).toContain('free inodes 50 is below the threshold of 100');
+    expect(mutates(calls(fx))).toBe(false);
+  });
 });
 
 describe('colo-rollback, colo-down, colo-status (decision 0084)', () => {
