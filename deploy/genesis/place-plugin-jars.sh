@@ -4,11 +4,13 @@
 #   deploy/genesis/place-plugin-jars.sh <artifact-dir> <lock-file> <target-dir> [--allow-pending]
 #   deploy/genesis/place-plugin-jars.sh --rollback <target-dir>
 # Place mode runs verify-plugin-lock.sh first and changes nothing when it fails. A locked jar whose target copy already has
-# the locked sha256 is left alone (`unchanged: <name>`). Every other jar is staged as `.<name>.XXXXXX` in the target dir
-# before any jar is renamed; then the old jar moves to `<name>.prev` (replacing an older .prev) and the staged file moves
-# onto `<name>` (`placed: <name>`). Rollback mode moves each `<name>.prev` back over `<name>`, keeping the jar it replaces
-# as `<name>.rolled-back` (`restored: <name>`). Exit 0 on success; 1 when verify fails, a slot is refused, or there is no
-# .prev to roll back to; 2 on a usage error, a missing or symlinked target dir, or an unsafe name.
+# the locked sha256 is left alone (`unchanged: <name>`) and its old `<name>.prev`, if any, is removed, so a later rollback
+# undoes only the last placement. Every other jar is staged as `.<name>.XXXXXX` in the target dir before any jar is renamed;
+# each staged copy is re-hashed against the lock. Then the old jar moves to `<name>.prev` (replacing an older .prev) and the
+# staged file moves onto `<name>` (`placed: <name>`). Rollback mode moves each `<name>.prev` (only names ending in `.jar.prev`)
+# back over `<name>`, keeping the jar it replaces as `<name>.rolled-back` (`restored: <name>`). Exit 0 on success; 1 when
+# verify fails, a slot is refused, a staged copy does not match, or there is no .prev to roll back to; 2 on a usage error, a
+# missing or symlinked target dir, or an unsafe name.
 set -eu
 
 here=$(dirname "$0")
@@ -53,6 +55,14 @@ check_slot() {
   fi
 }
 
+# True for a `<name>.jar.prev` path: the only .prev files that rollback manages.
+is_jar_prev() {
+  case "${1##*/}" in
+    *.jar.prev) return 0 ;;
+  esac
+  return 1
+}
+
 sha256_of() {
   if command -v sha256sum >/dev/null 2>&1; then
     out=$(sha256sum "$1")
@@ -83,6 +93,9 @@ rollback() {
     if [ ! -e "$prev" ] && [ ! -L "$prev" ]; then
       continue
     fi
+    if ! is_jar_prev "$prev"; then
+      continue
+    fi
     found=1
     base=${prev##*/}
     name=${base%.prev}
@@ -92,6 +105,7 @@ rollback() {
     fi
     check_slot "$prev"
     check_slot "$t/$name"
+    check_slot "$t/$name.rolled-back"
   done
   if [ "$found" -eq 0 ]; then
     echo "no .prev copy in the target dir, nothing to roll back" >&2
@@ -99,6 +113,9 @@ rollback() {
   fi
   for prev in "$t"/*.prev; do
     if [ ! -e "$prev" ] && [ ! -L "$prev" ]; then
+      continue
+    fi
+    if ! is_jar_prev "$prev"; then
       continue
     fi
     name=${prev##*/}
@@ -129,6 +146,7 @@ place() {
   trap cleanup EXIT
   # Pass 1: check every slot and collect the jars that differ. Nothing is written in this pass.
   changed=""
+  unchanged=""
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       ''|'#'*) continue ;;
@@ -136,11 +154,12 @@ place() {
     name=${line#*  }
     want=${line%%  *}
     check_slot "$t/$name"
+    check_slot "$t/$name.prev"
     if [ -f "$t/$name" ] && [ "$(sha256_of "$t/$name")" = "$want" ]; then
       echo "unchanged: $name"
+      unchanged="$unchanged $name"
       continue
     fi
-    check_slot "$t/$name.prev"
     changed="$changed $name"
   done <"$lock"
 
@@ -150,6 +169,7 @@ place() {
     case "$line" in
       ''|'#'*) continue ;;
     esac
+    want=${line%%  *}
     name=${line#*  }
     case " $changed " in
       *" $name "*) ;;
@@ -161,6 +181,11 @@ place() {
     staged="$staged$name $tmp
 "
     cp "$artifact/$name" "$tmp"
+    # Re-hash the copy: the artifact may have changed since verify ran. The message names the jar only.
+    if [ "$(sha256_of "$tmp")" != "$want" ]; then
+      echo "refusing: the staged copy of $name does not match its locked digest; the target dir is unchanged" >&2
+      exit 1
+    fi
     chmod 0644 "$tmp"
   done <"$lock"
 
@@ -179,6 +204,10 @@ place() {
   done <<EOF
 $staged
 EOF
+  # An unchanged jar drops its older .prev, so --rollback cannot restore an earlier version of it.
+  for name in $unchanged; do
+    rm -f -- "$t/$name.prev"
+  done
 }
 
 if [ "${1-}" = --rollback ]; then
