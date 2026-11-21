@@ -159,7 +159,7 @@ Cards: [packets/c7-user-management-packets.md](packets/c7-user-management-packet
 | BH-1 | BODY-HOST review fix: random per-agent key, ban and roster checks, tests | W5 | SQL and body helper | BODY-HOST | Done (merged #525, 2026-11-15); host_key, review fix pass 2 applied | 0260, 0261 | 0063 | N |
 | BH-2 | Managed player host: config from the database, no RCON | W5 | Golem, admin and helper | BODY-HOST | Done (merged #527, 2026-11-15) | 0261 | none | N |
 | BH-3 | Helper start runs a fixed admit one-shot, managed Body template | W5 | Golem, admin and helper | BODY-HOST | Done (merged #530, 2026-11-15) | 0260, 0261 | none | N |
-| BH-4 | Helper secret files for the managed host (names the two root-only secret files used by open-signup.md row 14) | W5 | Golem, admin and helper | BODY-HOST | Open: no merged PR found; no commit names it | 0261 | none | N |
+| BH-4 | No card: helper secret files for the managed host (named only in open-signup.md rows 14 to 18) | W5 | Golem, admin and helper | BODY-HOST | Open: named only in open-signup.md rows 14 to 18; no packet card, no merged PR, no commit | none | none | N |
 | BH-5a | Admit-life add or remove mode (admission only), geldar.life label | W5 | Golem, admin and helper | BODY-HOST | Done (merged #537, 2026-11-15) | 0261 | none | N |
 | BH-5b | Helper stop removes the admission for managed Bodies | W5 | Golem, admin and helper | BODY-HOST | Done (merged #573, 2026-11-16) | 0261 | none | N |
 | BH-6 | Sweep removes an orphaned managed Body after two passes | W5 | Golem, admin and helper | BODY-HOST | Done (merged #575, 2026-11-16); live check open | 0261 | none | N |

@@ -13,10 +13,9 @@ The shard runs in its final Colo environment, reachable from the internet withou
 - **Plan:** [plan.md](plan.md) (waves C1, C2, C2b, C3, C4; owner items in section (f); first-ranger lessons in section (g)).
 - **Retrospective:** [phase0-retrospective-for-phase1.md](phase0-retrospective-for-phase1.md).
 - **Conventions:** [packet-conventions.md](packet-conventions.md) (card format, contract-first order, shared-file owners, gates, briefs, decision numbers, index lines, pre-packet decisions).
-- **Packets:** [packets/](packets/): `c1-packets.md`, `c2-packets.md`, `c2b-packets.md`, `c3-packets.md`, `c4-packets.md`, `c5-goldar-packets.md`, `c7-user-management-packets.md`, `c7b-packets.md`, `c7c-packets.md`, `c7d-packets.md`, `c7e-packets.md`, `c7-wave-plan.md`.
+- **Packets:** [packets/](packets/): `c1-packets.md`, `c2-packets.md`, `c2b-packets.md`, `c3-packets.md`, `c4-packets.md`, `c5-goldar-packets.md`, `c7-user-management-packets.md`, `c7b-packets.md`, `c7c-packets.md`, `c7d-packets.md`, `c7e-packets.md`, `c7f-packets.md`, `c2-register-packets.md`, `px-perception-packets.md`, `c7-wave-plan.md`.
 - **Ledger:** [ledger.md](ledger.md) (one row per packet: wave, lane, depends, status, decision numbers, owner-blocked).
-- **Wave C7:** plan and migrations in [packets/c7-wave-plan.md](packets/c7-wave-plan.md); owner questions Q1 to Q8 are answered in [0170](../../decisions/0170-owner-management-values-and-admin-flag.md), [0171](../../decisions/0171-account-erasure-rule.md) and [0172](../../decisions/0172-human-skin-upload-held-for-approval.md). Status: the C7 status section below. Sign-up stays closed until C7-11 and the owner approves. The 2026-11-11 campaign list was removed as stale; the ledger holds the current state.
-- **Decision numbers:** [packets/decision-number-registry.md](packets/decision-number-registry.md). Phase 1 blocks reserve 0081 to 0129. The next free number is not recorded here: check `docs/decisions/` and the registry, which is stale (on origin/main the highest file on 2026-11-20 was `0390-neoforge-hybrid-named-equals-and-nature-humans.md`). 0174 to 0179 are reserved for C7 design points; 0185, 0186, 0188, 0189, 0191, 0193 and 0194 have no file and no registry row, not checked against in-flight branches).
+- **Wave C7:** plan and migrations in [packets/c7-wave-plan.md](packets/c7-wave-plan.md); owner questions Q1 to Q8 are answered in [0170](../../decisions/0170-owner-management-values-and-admin-flag.md), [0171](../../decisions/0171-account-erasure-rule.md) and [0172](../../decisions/0172-human-skin-upload-held-for-approval.md). Status: the C7 status section below. Sign-up stays closed until C7-11 and the owner approves.- **Decision numbers:** [packets/decision-number-registry.md](packets/decision-number-registry.md). Phase 1 blocks reserve 0081 to 0129. The next free number is not recorded here: check `docs/decisions/` and the registry, which is stale (on origin/main the highest file on 2026-11-20 was `0390-neoforge-hybrid-named-equals-and-nature-humans.md`). 0174 to 0179 are reserved for C7 design points. 0189 and 0193 have no file on origin/main as of 2026-11-20; not checked against in-flight branches.
 
 ## Stop: do not open the public Minecraft port yet
 
@@ -60,7 +59,7 @@ Every brief carries the list in [packet-conventions.md](packet-conventions.md) s
 2. Legal review of the erasure rule (0171; gates C7-11).
 3. Ship or drop C7-03b2 (PR #522); give the geldar-93 node steps (helper, RCON whitelist verb, life key).
 4. BH-4 must merge first: rows 14 to 18 of `docs/runbooks/open-signup.md` are blocked on it.
-5. Owner decision, row 25a: open sign-up before the BH-6 live check, or wait for it.
+5. Owner decision, open-signup.md row 25a: widen BH-6 with a whitelist source, or accept manual cleanup of lost-container life ids (row 4). BH-6 merged (#575) and removes the whitelist entry first, so check whether this is still open.
 6. The account-page export link and the PATCH toggles, or an owner call to open without them.
 7. CF-W4-5 (`__Host-` cookie prefix) before sign-up opens.
 8. Open sign-up by `docs/runbooks/open-signup.md`, kill switch off, only after items 1 to 7.
