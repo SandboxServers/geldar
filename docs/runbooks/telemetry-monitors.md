@@ -24,9 +24,12 @@ packet's operator guide. Nothing here restarts NATS or Postgres, and nothing her
 
 ## The secret file
 
-- **Where.** `$GELDAR_SECRETS_DIR/otel-pg.txt` on the node. Use the same directory for psql and for the gateway restage. The colo
-  stack's default is `/etc/geldar-colo/secrets` (`deploy/common.sh`). The gateway compose falls back to `compose/secrets` only when
-  `GELDAR_SECRETS_DIR` is unset, so always set it.
+- **Where.** `$GELDAR_SECRETS_DIR/otel-pg.txt` on the node, where `GELDAR_SECRETS_DIR` is the telemetry secrets directory
+  `<TELEMETRY_PG_SECRETS_DIR>` (a placeholder: the orchestrator names it, under `/mnt/nvme/geldar-telemetry/`). That directory holds
+  only this file (owner decision, option (a), settled 2026-11-21; brief `docs/analysis/telemetry/node-requests/08-monitors-g2.md`
+  section 6). The colo stack's directory `/etc/geldar-colo/secrets` (`deploy/common.sh`) is not used for it. Use the same directory for
+  psql and for the gateway restage. The gateway compose falls back to `compose/secrets` only when `GELDAR_SECRETS_DIR` is unset, so
+  always set it.
 - **Owner and mode.** `10001:10001`, mode `0400`. The gateway runs as uid 10001 (`compose.gateway.yml`), so that user can read the
   file through the secret mount. Root can read it too. Nothing else on the node needs read access.
 - **Not in git.** The file is never committed. The repo holds only the variable name and the path.
@@ -47,7 +50,7 @@ packet's operator guide. Nothing here restarts NATS or Postgres, and nothing her
 2. **Role.** Write the password to `$GELDAR_SECRETS_DIR/otel-pg.txt` with the owner and mode above, then run as the migration role:
 
    ```
-   GELDAR_SECRETS_DIR=<the node secrets directory> psql -v ON_ERROR_STOP=1 -d geldar -f deploy/telemetry/postgres-monitor.sql
+   GELDAR_SECRETS_DIR=<TELEMETRY_PG_SECRETS_DIR> psql -v ON_ERROR_STOP=1 -d geldar -f deploy/telemetry/postgres-monitor.sql
    ```
 
    The script reads the file with a psql `\set` backtick, so the password is never in the psql command line. The file is `0400`
@@ -65,7 +68,7 @@ packet's operator guide. Nothing here restarts NATS or Postgres, and nothing her
    Then restage the gateway only, with the same secrets directory:
 
    ```
-   cd /mnt/nvme/geldar-telemetry/src && GELDAR_SECRETS_DIR=<the node secrets directory> docker compose -f deploy/telemetry/compose.yml -f deploy/telemetry/compose.gateway.yml up -d geldar-gateway
+   cd /mnt/nvme/geldar-telemetry/src && GELDAR_SECRETS_DIR=<TELEMETRY_PG_SECRETS_DIR> docker compose -f deploy/telemetry/compose.yml -f deploy/telemetry/compose.gateway.yml up -d geldar-gateway
    ```
 
    The `otel-pg` secret must exist at the path above. Without it the container does not start, and the collector cannot expand
