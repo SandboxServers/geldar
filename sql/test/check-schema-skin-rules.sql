@@ -1,8 +1,9 @@
 -- Migration 0067 (C7-13a-sql, decision 0172): register_skin_submit and register_skin_status. Run after check-schema.sql
 -- and the migrations through 0067, once, on a fresh database (as ci.yml does): the fixtures are not removed, and the
--- owners and hashes are fixed. Owners skin-rules-a (the rate and lock cases), skin-rules-b (the 30-day window) and
--- skin-rules-c (an admin owner, 0170). Identity hashes are 7c..01, 02 and 03, used nowhere else. The account delete
--- of owner a is in check-schema-account-delete.sql.
+-- owners and hashes are fixed. Owners skin-rules-a (the rate and lock cases), skin-rules-b (the 30-day window),
+-- skin-rules-c (an admin owner, 0170), skin-rules-d (a banned owner) and skin-rules-e (an owner with no upload).
+-- Identity hashes are 7c..01 to 05, used nowhere else. The account delete of owner a is in
+-- check-schema-account-delete.sql.
 -- Every time-based rule is tested with now() fixed inside this one transaction, so 59:59 and 60:00 are exact.
 
 CREATE FUNCTION check_skin_try(h BYTEA, p TEXT, png BYTEA, sh BYTEA) RETURNS TEXT
@@ -15,6 +16,16 @@ EXCEPTION WHEN OTHERS THEN
 END
 $try$;
 
+CREATE FUNCTION check_skin_status_try(h BYTEA, p TEXT) RETURNS TEXT
+LANGUAGE plpgsql AS $status_try$
+BEGIN
+  PERFORM 1 FROM register_skin_status(h, p);
+  RETURN 'ok';
+EXCEPTION WHEN OTHERS THEN
+  RETURN SQLERRM;
+END
+$status_try$;
+
 DO $skin_rules$
 DECLARE
   png BYTEA := decode('89504e470d0a1a0a', 'hex');
@@ -22,13 +33,17 @@ DECLARE
   h_a BYTEA := decode(repeat('7c', 31) || '01', 'hex');
   h_b BYTEA := decode(repeat('7c', 31) || '02', 'hex');
   h_c BYTEA := decode(repeat('7c', 31) || '03', 'hex');
+  h_d BYTEA := decode(repeat('7c', 31) || '04', 'hex');
+  h_e BYTEA := decode(repeat('7c', 31) || '05', 'hex');
   got TEXT;
   n INT;
 BEGIN
   INSERT INTO mcp_owners (owner_id, display, player_cap) VALUES
-    ('skin-rules-a', 'a', 5), ('skin-rules-b', 'b', 5), ('skin-rules-c', 'c', 5);
+    ('skin-rules-a', 'a', 5), ('skin-rules-b', 'b', 5), ('skin-rules-c', 'c', 5),
+    ('skin-rules-d', 'd', 5), ('skin-rules-e', 'e', 5);
   INSERT INTO mcp_identities (identity_hash, provider, owner_id, banned_at) VALUES
-    (h_a, 'github', 'skin-rules-a', NULL), (h_b, 'github', 'skin-rules-b', NULL), (h_c, 'github', 'skin-rules-c', NULL);
+    (h_a, 'github', 'skin-rules-a', NULL), (h_b, 'github', 'skin-rules-b', NULL), (h_c, 'github', 'skin-rules-c', NULL),
+    (h_d, 'github', 'skin-rules-d', now()), (h_e, 'github', 'skin-rules-e', NULL);
   INSERT INTO mcp_players (player_id, owner_id, life_id, display_name, harness, status) VALUES
     ('skin-rules-p1', 'skin-rules-a', 'skin_rules_p1', 'rulesp1', 'claude-code', 'active'),
     ('skin-rules-p2', 'skin-rules-a', 'skin_rules_p2', 'rulesp2', 'claude-code', 'active'),
@@ -39,7 +54,9 @@ BEGIN
     ('skin-rules-k1', 'skin-rules-c', 'skin_rules_k1', 'rulesk1', 'claude-code', 'active'),
     ('skin-rules-k2', 'skin-rules-c', 'skin_rules_k2', 'rulesk2', 'claude-code', 'active'),
     ('skin-rules-k3', 'skin-rules-c', 'skin_rules_k3', 'rulesk3', 'claude-code', 'active'),
-    ('skin-rules-k4', 'skin-rules-c', 'skin_rules_k4', 'rulesk4', 'claude-code', 'active');
+    ('skin-rules-k4', 'skin-rules-c', 'skin_rules_k4', 'rulesk4', 'claude-code', 'active'),
+    ('skin-rules-d1', 'skin-rules-d', 'skin_rules_d1', 'rulesd1', 'claude-code', 'active'),
+    ('skin-rules-e1', 'skin-rules-e', 'skin_rules_e1', 'rulese1', 'claude-code', 'active');
 
   -- the daily cap is per agent (0172 point 2): owner a uploads on p1 to p4, four uploads of the owner, all accepted
   got := check_skin_try(h_a, 'skin-rules-p1', png, sha256(png));
@@ -78,6 +95,16 @@ BEGIN
   IF got <> 'register_skin_submit: sha256 does not match the PNG' THEN RAISE EXCEPTION 'skin rules: bad sha256 not refused: %', got; END IF;
   got := check_skin_try(h_a, 'skin-rules-p4', png, NULL);
   IF got <> 'register_skin_submit: sha256 does not match the PNG' THEN RAISE EXCEPTION 'skin rules: NULL sha256 not refused: %', got; END IF;
+  -- the PNG signature: 20 bytes without it (a valid sha256 of them), and 7 bytes of the signature prefix (too short)
+  got := check_skin_try(h_a, 'skin-rules-p4', decode(repeat('00', 20), 'hex'), sha256(decode(repeat('00', 20), 'hex')));
+  IF got <> 'register_skin_submit: not a PNG' THEN RAISE EXCEPTION 'skin rules: 20 bytes without the PNG signature not refused: %', got; END IF;
+  got := check_skin_try(h_a, 'skin-rules-p4', decode('89504e470d0a1a', 'hex'), sha256(decode('89504e470d0a1a', 'hex')));
+  IF got <> 'register_skin_submit: not a PNG' THEN RAISE EXCEPTION 'skin rules: 7-byte PNG prefix not refused: %', got; END IF;
+  -- a banned owner (0067 refuses it as not an owner, as the other owner write functions do): no row, no audit row
+  got := check_skin_try(h_d, 'skin-rules-d1', png, sha256(png));
+  IF got <> 'register_skin_submit: not an owner' THEN RAISE EXCEPTION 'skin rules: banned owner not refused: %', got; END IF;
+  SELECT count(*) INTO n FROM skin_uploads WHERE owner_id = 'skin-rules-d';
+  IF n <> 0 THEN RAISE EXCEPTION 'skin rules: banned owner wrote % skin upload row(s)', n; END IF;
   SELECT count(*) INTO n FROM skin_uploads WHERE player_id = 'skin-rules-p4';
   IF n <> 1 THEN RAISE EXCEPTION 'skin rules: refused uploads wrote rows (p4 has % rows, expected 1)', n; END IF;
 
@@ -170,6 +197,13 @@ BEGIN
   -- the status view: the newest row of the agent, its state and no bytes
   SELECT count(*) INTO n FROM register_skin_status(h_c, 'skin-rules-k1') WHERE upload_status = 'pending';
   IF n <> 1 THEN RAISE EXCEPTION 'skin rules: status of k1 must be the pending row, found % pending', n; END IF;
+  -- the status refusals: owner b reading owner a's agent, an identity that is no owner, and an agent with no upload (zero rows)
+  got := check_skin_status_try(h_b, 'skin-rules-p1');
+  IF got <> 'register_skin_status: not your agent' THEN RAISE EXCEPTION 'skin rules: status of another owner agent not refused: %', got; END IF;
+  got := check_skin_status_try(decode(repeat('00', 32), 'hex'), 'skin-rules-p1');
+  IF got <> 'register_skin_status: not an owner' THEN RAISE EXCEPTION 'skin rules: status by a non-owner not refused: %', got; END IF;
+  SELECT count(*) INTO n FROM register_skin_status(h_e, 'skin-rules-e1');
+  IF n <> 0 THEN RAISE EXCEPTION 'skin rules: agent with no upload must return zero status rows, found %', n; END IF;
 
   -- the admin daily exemption: approve the pending row of k1 and upload again, twice, so k1 holds 4 rows created today.
   -- A non-admin agent is refused at the third row of the day (case p1 above); the admin fourth upload must be accepted.
@@ -205,3 +239,4 @@ END
 $skin_rules$;
 
 DROP FUNCTION check_skin_try(BYTEA, TEXT, BYTEA, BYTEA);
+DROP FUNCTION check_skin_status_try(BYTEA, TEXT);

@@ -40,7 +40,9 @@ DECLARE
 BEGIN
   -- FOR SHARE: register_account_delete takes FOR UPDATE on this row. A submit that waits for a delete sees no identity
   -- row (or owner_id NULL, a ban tombstone) once the delete commits, and is refused, so no skin row outlives its owner.
-  SELECT i.owner_id INTO who FROM public.mcp_identities i WHERE i.identity_hash = p_identity_hash FOR SHARE;
+  -- a banned owner (banned_at set) is refused here, as in every other owner write function (0009 to 0035)
+  SELECT i.owner_id INTO who FROM public.mcp_identities i
+    WHERE i.identity_hash = p_identity_hash AND i.banned_at IS NULL FOR SHARE;
   IF NOT FOUND OR who IS NULL THEN
     RAISE EXCEPTION 'register_skin_submit: not an owner' USING ERRCODE = '42501';
   END IF;
