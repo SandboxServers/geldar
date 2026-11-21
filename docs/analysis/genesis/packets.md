@@ -2,7 +2,7 @@
 
 ## Ledger
 
-State at 2026-11-15. PR numbers are GitHub pull requests on `main`.
+State at 2026-11-20 (main at 46683287). PR numbers are GitHub pull requests on `main`.
 
 | Card | PR | State |
 |---|---|---|
@@ -27,8 +27,23 @@ State at 2026-11-15. PR numbers are GitHub pull requests on `main`.
 | G3-01 | #772 | Merged (#772) |
 | G3-04 | #770 | Merged (#770), script only, not run |
 | All other cards (G2-02, G2-05, G2-07, G3-03, G4-01 to G4-05, G5-01 to G5-04, G6-01 to G6-05, G7-01 to G7-04) | none | Not started |
-| GE-01 | none | Not started |
-| GE-02 | none | Not started |
+| GE-01 | none | Partly done (sub-rows below) |
+| GE-01a | #845 | Merged (#845); the committed lock holds placeholder digests marked PENDING until CI produces real ones (GE-01w1) |
+| GE-01b | #854 | Merged (#854) |
+| GE-01c | none | Done, held: branch phase1/gn-ge-01c a03c9f9d, not pushed; geldar-69 holds it until after the next deploy |
+| GE-01w1 | none | Not started; needs the owner's approval of each PR |
+| GE-01w2 | none | Not started; needs the owner's approval of each PR |
+| GE-02 | none | Partly done (sub-rows below) |
+| GE-02a | #842 | Merged (#842) |
+| GE-02b | #843 | Merged (#843) |
+| GE-02c | #852 | Merged (#852) |
+| GE-02d | none | Held: needs the CI publish workflow (GE-02w1) |
+| GE-02e | #846 | Merged (#846) |
+| GE-02f | #844 | Merged (#844) |
+| GE-02w1 | none | Not started; needs the owner's approval of each PR |
+| GE-02w2 | none | Not started; needs the owner's approval of each PR |
+| GE-02w3 | none | Not started; needs the owner's approval of each PR |
+| GE-02w4 | none | Not started; needs the owner's approval of each PR |
 | GE-03 | none | Not started |
 | GE-04 | none | partly done (wrapper, sudoers, key template, installer; entrypoint move is GE-04b) |
 | GE-04b | none | Not started |
@@ -125,6 +140,12 @@ Each card is wave GE, not started. These cards exist so that the scorched-earth 
 - **GE-09 Scorched-earth drill** (all). Run the drill from decision 0240 on the Hyper-V test VM first, production last.
 - **GE-10 Bootstrap outside the host** (G3-01). Decide where the stamp runs when the host and its runners are gone (a hosted runner or a separate bootstrap). Replace the node's hand-synced source snapshot and its `src.bak` copies with a CI-published bundle and an atomic switch. Replace the hand-staged NeoForge mod folders. Deferred (decided 2026-11-19): the CI source bundle and atomic switch are not in G3-01; see the Deferred list on G3-01.
 - **GE-11 NeoForge shard in the environment definition and stamp** (GE-02, GE-06 for the world). Decision 0242. Adds the environment schema field for the NeoForge shard to `envs/<name>.yaml`, so every stamp knows the shard exists. The mod and config folders come from the repo, not the node, with a hash for each file or a lock; the startup commands and gamerules are committed; the Velocity connection is part of the environment. **Prove**: a smoke test that a NeoForge player can join, and a test for the environment field that fails before the field exists. The world backup and restore is GE-06; whether the drill keeps the world is an open owner question (0242).
+- **GE-01w1 Plugin jar CI and v2 digests** (GE-01a, G1-01). Not started; needs the owner's approval of the PR. Files: `.github/workflows/plugin-jars.yml` and the manifest job of the colo-images workflow. `plugin-jars.yml` and the colo-images manifest job write the v2 digests and fail on a lock mismatch; the `manifest` job needs `plugin-jars`.
+- **GE-01w2 Plugin placement through the channel** (GE-01b, GE-01c, GE-01w1, GE-04b, GE-04 channel installed). Not started; needs the owner's approval of the PR; tell geldar-69 first. Files: the colo-deploy workflow and its deploy script. colo-deploy places the jars through the channel and the restart, so no operator `scp` or hand swap is needed.
+- **GE-02w1 NeoForge artifacts workflow** (GE-02a, GE-02b, GE-02e). Not started; needs the owner's approval of the PR. Files: new `.github/workflows/neoforge-artifacts.yml`. Builds both mods, runs `verify-neoforge-artifacts.sh`, and uploads the outputs with sha256 and sha512.
+- **GE-02w2 Offline NeoForge bundle publish** (GE-02f, GE-02w1). Not started; needs the owner's approval of the PR. Files: the bundle workflow and `bundle-tar-lib.sh`. Builds and publishes the offline server bundle using `bundle-tar-lib.sh`.
+- **GE-02w3 ci.yml lock checks** (GE-01a, GE-02a, GE-02b). Not started; needs the owner's approval of the PR. Files: `.github/workflows/ci.yml`. Adds the CI checks for the OTel agent lock, the extra-mods sources and the plugin lock.
+- **GE-02w4 NeoForge v2 manifest keys** (GE-02w1, GE-01w1). Not started; needs the owner's approval of the PR. Files: the manifest writer and `manifest.sh`; the `manifest.sh` half is repo-only. Adds the v2 manifest keys for the NeoForge digests.
 
 ## Open items
 
