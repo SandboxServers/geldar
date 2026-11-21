@@ -17,8 +17,8 @@ Status on the node: UNKNOWN for every step. No runbook or ledger records a node 
 ## Owner gate
 
 - Sign-up opens LAST, and only after C7-09 (account deletion and export), C7-11 (the sign-up gate: terms version approved by the owner in a committed file), C7-13a (skin uploads added to `register_account_delete`, see [account-deletion.md](account-deletion.md)) and BH-5 (unwhitelist on retire and delete) and BH-6 (managed host exit 78) are all built, deployed and live-checked. BH-5 and BH-6 must be deployed before sign-up opens.
-- Until the owner says yes in writing, `REGISTER_KILL_SWITCH` stays `true`.
-- Decision 0261 does not say whether M1 waits for C7-09 and C7-11 (0153 says it does). That question is open for the owner. The owner gate above is the answer used here.
+- Until the owner says yes in writing, `REGISTER_KILL_SWITCH` stays `true`. Decision 0153 item 3 says the kill switch "stays off". Read that as "sign-up stays closed": the env value stays `true`. Rows 20 to 23 never set it to `false`.
+- Decision 0261 does not say whether M1 waits for C7-09 and C7-11 (0153 says it does). That question is open for the owner. The owner gate above is the answer used here. Row 21 is not blocked on that question; row 27 is.
 - The final step needs an explicit owner yes in the same message thread as the go. A standing "later" is not a yes.
 
 ## Global rules (every step)
@@ -38,7 +38,7 @@ Status on the node: UNKNOWN for every step. No runbook or ledger records a node 
 
 | Resource | Rule |
 |---|---|
-| NATS live config | Edit in place only: write the new file with `cat new > live`, never `mv`. Then reload with SIGHUP to the NATS container. Keep a backup and its sha. Follow [nats-auth-inplace.md](nats-auth-inplace.md). |
+| NATS live config | Owner approval before any NATS change. Edit in place only: write the new file with `cat new > live`, never `mv`. Then reload with SIGHUP to the NATS container. Keep a backup and its sha. Follow [nats-auth-inplace.md](nats-auth-inplace.md). |
 | Compose stack | Recreate named services only. Never `down -v`. Tell the node operator and get the owner's window before touching Paper. |
 | Postgres | Schema changes only through the repo migrations (`deploy/colo-admin.sh migrate`). Use the role named in the step, never a shared admin password in a file. |
 | Caddy (public) | Validate before reload. One `board-proxy` restart per window. Use `deploy/colo-public.sh` only. |
@@ -46,11 +46,11 @@ Status on the node: UNKNOWN for every step. No runbook or ledger records a node 
 
 ## Ordered steps
 
-Who runs each step: "Owner" means the owner of the Microsoft account and the repo. "Node" means the node operator on the Colo node. "Orchestrator" means the campaign runner for live checks. "Blocked on" names the cards that must be done first; a step marked BLOCKED is not started.
+Who runs each step: "Owner" means the owner of the Microsoft account and the repo. "Node" means the node operator on the Colo node. "Orchestrator" means the campaign runner for live checks. "Ops" means the operations engineer who runs the Azure CLI. "Blocked on" names the cards that must be done first; a step marked BLOCKED is not started.
 
 | # | Step | Runs by | Owner provides | Blocked on | Rollback | Reference |
 |---|---|---|---|---|---|---|
-| 1 | Create the Entra app for sign-in | Owner | Client id (env) and client secret (file, never chat) | none | Delete the app registration; no node change | Section 1 |
+| 1 | Entra sign-in app: reuse the existing shared app (no new app for this cutover) | Ops | The existing app's client id (env) and client secret (file, never chat) | none | Remove the env value and the secret file; never delete the shared app | Section 1 |
 | 2 | Stage the body-helper bundle | Node | Yes to install the helper | none | As the helper rollback | [body-helper-node-steps.md](body-helper-node-steps.md) Step 0a |
 | 3 | Stage the pinned Node runtime | Node | Nothing | none | As the helper rollback | [body-helper-node-steps.md](body-helper-node-steps.md) Step 0a |
 | 4 | Decide how the helper gets its Postgres admin variables | Node | Nothing | none | None (decision only) | [body-helper-node-steps.md](body-helper-node-steps.md) open question 2 |
@@ -58,10 +58,10 @@ Who runs each step: "Owner" means the owner of the Microsoft account and the rep
 | 6 | Dry run the helper installer | Node | Nothing | Step 5 | None (dry run) | [body-helper-node-steps.md](body-helper-node-steps.md) Step 1 |
 | 7 | Apply the helper installer | Node | Go for the install | Step 6 | As the helper rollback | [body-helper-node-steps.md](body-helper-node-steps.md) Step 2 |
 | 8 | Maintenance notice for Body clients | Node | Agreed window | none | `back` ends the notice | [nats-auth-inplace.md](nats-auth-inplace.md) procedure 0: `deploy/colo-notice.sh pause bodies <seconds>`, then `back` |
-| 9 | NATS auth batch for the helper and supervisor users | Node | Go for the batch; separate go for the widened denies | PR #415 is merged to main (merge commit `4bab81b3`); BLOCKED on the node running its generator output | Restore the backup by `cat`, check the sha, SIGHUP | [nats-auth-inplace.md](nats-auth-inplace.md) and [body-helper-node-steps.md](body-helper-node-steps.md) Step 3 |
+| 9 | NATS auth batch for the helper and supervisor users | Node | Owner approval of the batch; a separate owner approval for the widened denies | PR #415 is merged to main (merge commit `4bab81b3`); BLOCKED on the node running its generator output | Restore the backup by `cat`, check the sha, SIGHUP | [nats-auth-inplace.md](nats-auth-inplace.md) and [body-helper-node-steps.md](body-helper-node-steps.md) Step 3 |
 | 10 | Verify the helper | Node | Nothing | Steps 7 and 9 | None (read only) | [body-helper-node-steps.md](body-helper-node-steps.md) Step 4 |
-| 11 | NATS user for the register service (its own batch) | Node | Go for this batch | BLOCKED on C7-03b2 (REG-NATS-COMPOSE) | Restore the backup by `cat`, check the sha, SIGHUP | Section 2 note; [nats-auth-inplace.md](nats-auth-inplace.md) |
-| 12 | Deploy the supervisor service and the register NATS env | Node | Go for the deploy window | BLOCKED on C7-03b2, C7-03c3 and C7-03b5; steps 7, 9, 10 and 11 | Recreate the previous service; no network recreate | Card C7-03b2 |
+| 11 | NATS user for the register service (its own batch) | Node | Owner approval of this NATS batch | BLOCKED on C7-03b2 (REG-NATS-COMPOSE) | Restore the backup by `cat`, check the sha, SIGHUP | Section 2 note; [nats-auth-inplace.md](nats-auth-inplace.md) |
+| 12 | Deploy the supervisor service and the register NATS env | Node | Owner approval; go for the deploy window | BLOCKED on C7-03b2, C7-03c3 and C7-03b5; steps 7, 9, 10 and 11 | Recreate the previous service; no network recreate | Card C7-03b2 |
 | 13 | BODY-HOST: apply the BH-1 SQL migration 0063 | Node | Go | BLOCKED on BH-1 | Restore from a pre-step `pg dump` only with the owner's go | Card BH-1; through `deploy/colo-admin.sh migrate` |
 | 14 | BODY-HOST: set the `geldar_body_host` role password and write the two root-only secret files | Node | Nothing | BLOCKED on BH-1 to BH-4 | Remove the two files; set a new role password | Cards BH-1 to BH-4 (names come from BH-4; no values) |
 | 15 | BODY-HOST: RCON secret path and the managed flag (default off) in the helper root config. The RCON path is read by the admit one-shot only, never by the helper process | Node | Nothing; the flag stays off until row 19a | BLOCKED on BH-1 to BH-4 and step 14 | Set the managed flag off; remove the path | Cards BH-1 to BH-4 |
@@ -73,39 +73,38 @@ Who runs each step: "Owner" means the owner of the Microsoft account and the rep
 | 20 | Register secret files and env | Node | Client id and secret from step 1 | Step 1 | Remove the env values; the kill switch stays `true` | Section 2 |
 | 21 | Start the register profile with the kill switch `true` | Node | Nothing | Step 20; ROSTER-AUTO migration; C7-09 route; steps 11 and 12 are not needed while register runs with NATS off (pending C7-03b2) | Recreate the register service only, with the kill switch `true` | Section 2 |
 | 22 | Public routes for Glass | Node | Nothing | Step 21; LEGAL-SERVE | Re-run the install with the upstream unset (503 block), then one `board-proxy` restart | Section 3 |
-| 23 | Roster seed (operator data) | Node | Go for the roster seed | Step 21 | Seeded rows are removed only with the owner's go | [mcp-tokens.md](mcp-tokens.md) |
+| 23 | Roster seed (optional operator data; not on the minimum path) | Node | Go for the roster seed, only if the owner wants existing agents rostered | none; ROSTER-AUTO covers new sign-ups | Seeded rows are removed only with the owner's go | Section 6; [mcp-tokens.md](mcp-tokens.md) |
 | 24 | Deletion follow-ups | Node | Decisions on kept agent rows and the kino audit | Card C7-09c | As [account-deletion.md](account-deletion.md) | [account-deletion.md](account-deletion.md) |
 | 25 | BH-5: unwhitelist on retire and delete, built and deployed | Node | Go for the deploy window | BLOCKED on BH-5 and steps 13 to 18 | Recreate the previous build; no network recreate | Card BH-5 |
-| 25a | BH-6: the sweep removes a managed Body whose roster row is gone after exit 78 on two consecutive passes, and its whitelist entry | Node | Go for the deploy window | BLOCKED on an owner decision: widen BH-6 with a whitelist source, or accept manual cleanup of lost-container life ids (row 4) | None; the managed flag stays off | Card BH-6 |
-| 26 | Gate check: C7-09, C7-11, C7-13a, BH-5 and BH-6 done | Owner | Answer to the 0261 question; approval of terms v1 (listed in `APPROVED_TERMS_VERSIONS` in `signup-gate.ts` in the register service source); the drift and batch C answers in Section 4 | Steps 24, 25 and 25a; row 26a; cards C7-09, C7-11, C7-13a; the drift in the Section 2 note closed or accepted | None | Section 4 |
-| 26a | NATS batch C: narrow `$JS.API.>` for the body, mind and mcp roles (deny STREAM.CREATE/UPDATE and KV creation), after a read-only startup check of which of them create streams or KV, with a throwaway-server test first. Reason: the PubDenys (hearing, state level, kino, ctl.body) can be bypassed by a deliberate JetStream republish stream; batch C stops bugs, not a forger | Node | The owner's word on batch C (owner: the world-operations coordinator), or an accepted risk in writing | Step 9 done; the throwaway-server test passed; the read-only startup check recorded | Restore the backup by `cat`, check the sha, SIGHUP | [nats-auth-inplace.md](nats-auth-inplace.md) Open questions (the JetStream republish caveat); [0199 muffled hearing](../decisions/0199-muffled-hearing.md), Decision item 9 (the hearing channel) |
+| 25a | BH-6: the sweep removes a managed Body whose roster row is gone after exit 78 on two consecutive passes, and its whitelist entry | Node | Go for the deploy window | None. The owner accepted manual cleanup of lost-container life ids for now (Section 4 item 4), so this row does not block the cutover | None; the managed flag stays off | Card BH-6 |
+| 26 | Gate check: C7-09, C7-11, C7-13a, BH-5 and BH-6 done | Owner | Answer to the 0261 question; approval of terms v1 (listed in `APPROVED_TERMS_VERSIONS` in `signup-gate.ts` in the register service source); the drift and batch C answers in Section 4 | Steps 24 and 25; row 26a; cards C7-09, C7-11, C7-13a; the drift in the Section 2 note closed or accepted | None | Section 4 |
+| 26a | NATS batch C: narrow `$JS.API.>` for the body, mind and mcp roles (deny STREAM.CREATE/UPDATE and KV creation), after a read-only startup check of which of them create streams or KV, with a throwaway-server test first. Reason: the PubDenys (hearing, state level, kino, ctl.body) can be bypassed by a deliberate JetStream republish stream; batch C stops bugs, not a forger | Node | The owner's approval of batch C (owner: the world-operations coordinator), or an accepted risk in writing | Step 9 done; the throwaway-server test passed; the read-only startup check recorded | Restore the backup by `cat`, check the sha, SIGHUP | [nats-auth-inplace.md](nats-auth-inplace.md) Open questions (the JetStream republish caveat); [0199 muffled hearing](../decisions/0199-muffled-hearing.md), Decision item 9 (the hearing channel) |
 | 27 | Open sign-up (kill switch `false`) | Node | Explicit yes, after step 26 | Step 26 | Kill switch `true`; recreate the register service only | Section 4 |
 | 28 | First admin, after the first owner sign-in | Node | The owner's sign-in | Step 27 (a first admin cannot sign in before sign-up opens) | Remove the admin role by hand only with the owner's go | [mcp-tokens.md](mcp-tokens.md) |
 
 Steps 1 to 12 are the helper and NATS work; steps 13 to 19 are BODY-HOST and the live Body check. Together they are prerequisites for live Bodies, not for the sign-in page. Steps 20 to 22 bring up the sign-in service with sign-up closed. Step 27 is the only step that opens sign-up. Step 28 happens after it.
 
-## Section 1: Entra app (owner)
+## Section 1: Entra app (shared app, reused)
 
-Done in the Microsoft Entra admin centre, by the owner, with the owner's account.
+No new Entra app is created for this cutover. The existing shared app is reused (decision 0135, R40 and R42). Tenant ids, the app id, account names and the secret never go into chat or this file.
 
-1. App registrations, then New registration.
-2. Supported account types: personal Microsoft accounts.
-3. Redirect URI: platform Web, with the Glass origin followed by `/register/callback`.
-4. Certificates and secrets: create a new client secret. Write its expiry date in the change log (the date only).
-5. Overview: copy the Application (client) ID.
-6. Give the node operator the client id as an env value, and the secret as the file `register-ms-secret.txt`. Never send either in chat.
+1. Check, do not create: the app's sign-in audience must be personal Microsoft accounts, and its redirect URI must be the Glass origin followed by `/register/callback`.
+2. The client secret's end date is 2027-11-11. Record that date (the date only) in the change log.
+3. The client id goes to the node env as `REGISTER_MS_CLIENT_ID`. The secret stays in the file `register-ms-secret.txt`. Never send either in chat.
 
-Rollback: delete the app registration. No node change is needed.
+Rollback: remove the env value and the secret file. Never delete the shared app.
 
 ## Section 2: Secret files, env and the register profile (node)
+
+Renders of the compose config (`config` output) are produced on the operator's machine. They are never written on the node. Rows 20 to 23 keep `REGISTER_KILL_SWITCH` at `true`. Node status of every row is UNKNOWN. The repo facts in this section were read from origin/main at a62ceb44 on 2026-11-20. The node itself was not checked.
 
 Secret files, by name only. Never print a value.
 
 - `register-ms-secret.txt`: owner-provided (step 1). Placed by hand, mode 0600, owned by the service uid. `gen-secrets.sh` never generates it.
-- `register-pepper.txt`: generated.
-- `register-session-key.txt`: generated. Shared with Glass by the Kino session overlay.
-- `mcp-token-pepper.txt`: generated.
-- `postgres-register.txt`: generated.
+- `register-pepper.txt`: generated. At least 32 characters after trim.
+- `register-session-key.txt`: generated. At least 32 characters. Shared with Glass by the Kino session overlay.
+- `mcp-token-pepper.txt`: generated only when it is missing. At least 32 bytes, no byte-order mark, at most one trailing LF or CRLF. The register service reads it strictly, and the MCP reads the same file. Never regenerate it and never delete it: a new value breaks the existing tokens.
+- `postgres-register.txt`: generated (the `geldar_register` login password).
 - `nats-register.txt`: created in step 11, by the same method as `nats-supervisor.txt` in [nats-auth-inplace.md](nats-auth-inplace.md) (umask 077 and `set -C`, so an existing file is never overwritten).
 
 Generated files come from `deploy/gen-secrets.sh`, run as root on the node (`sudo sh deploy/gen-secrets.sh`). The script creates only the missing files, prints file names only, and writes mode 0600 in a 0700 directory owned by the service uid. Do not create a generated file by hand.
@@ -117,7 +116,7 @@ Deploy values the operator sets in the node env. Compose reads them; their compo
 - `REGISTER_MCP_PUBLIC_URL`: the MCP origin. Default empty; MCP links stay broken until it is set.
 - `REGISTER_TRUSTED_PEERS`: the peer list from the release env. Default falls back to the MCP trusted proxies.
 - `REGISTER_KILL_SWITCH`: must be `true` in this section. Default `true`; only the exact value `false` opens sign-up (step 27).
-- `GELDAR_REGISTER_IMAGE`: the register image from the release env.
+- `GELDAR_REGISTER_IMAGE`: the register image from the release manifest (`current.env`, written by `colo-up.sh`). It must be pinned by digest and present on the node before any `up`.
 - `GELDAR_COLO_REGISTER_CPUS` and `GELDAR_COLO_REGISTER_MEM`: optional; compose defaults apply if unset.
 - `REGISTER_NATS_URL`, `REGISTER_NATS_USER`, `REGISTER_NATS_PASSWORD_FILE`: added by card C7-03b2 (pending C7-03b2). Compose does not set them yet, so the register service runs with NATS off, and setting them on the node does nothing until C7-03b2 merges. Only the register service gets these.
 
@@ -125,12 +124,24 @@ Compose sets these names itself. Do not set them on the node: `REGISTER_HOST`, `
 
 `GELDAR_REGISTER_UPSTREAM` is not a compose name. It is a key in the root-only `GELDAR_PUBLIC_ENV` file, set in Section 3.
 
+`GELDAR_SERVICE_UID=1001` is not read from the node env. `common.sh` defaults the uid to 1000, and compose uses `${GELDAR_SERVICE_UID:-1000}`. Put `GELDAR_SERVICE_UID=1001` on the command line of every compose command in this runbook, as shown in item 4.
+
 Order:
 
-1. Create the secret files above. Verify each exists with the right mode and owner, without printing contents.
-2. Set the deploy values above in the node env. Verify with the compose config check, without pasting its output.
-3. Migrations and role password. Read the migration table and confirm the register migrations, including the account-deletion migration, are applied. Confirm the `geldar_register` login password is set. If either is missing, run `deploy/colo-admin.sh migrate`, then `deploy/colo-admin.sh migrate --set-role-password geldar_register --password-file /run/secrets/postgres-register.txt`, the two commands `deploy/colo-up.sh` runs at its lines 55 and 58. Do not run `deploy/colo-up.sh` itself: it recreates Paper and runs a whole-stack `up`, which needs the owner's agreed window (global rule 5). Do not alter the migration table by hand.
-4. Start the register service only, with the kill switch `true`: `docker compose` with the Colo compose files and `up -d register`, the same command [kino.md](kino.md) uses. The kill switch is `true`, so no sign-in is possible. Do not run `deploy/colo-up.sh` (item 3).
+1. Create the secret files above. Verify each exists with the right mode and owner, without printing contents: `stat` for mode and owner, `wc -c` for length. The token pepper must have no byte-order mark.
+2. Set the deploy values above in the node env. Verify with the compose config check (`config --quiet`), without pasting its output.
+3. Migrations and role password. Read-only check first: `deploy/colo-admin.sh migrate --dry-run` prints `nothing to apply` when the migrations are current, and takes the lock without creating anything. A `would apply` line means a migration is missing: stop and report. Caution: the admin wrapper runs its one-shot without `--no-deps`, and that container depends on postgres. Run the render gate for postgres first (its config hash must match the running one); if it differs, stop. Confirm the `geldar_register` login password is set. If a migration or the password is missing, run `deploy/colo-admin.sh migrate`, then `deploy/colo-admin.sh migrate --set-role-password geldar_register --password-file /run/secrets/postgres-register.txt`. These are the two commands `deploy/colo-up.sh` runs at its lines 55 and 58. Each one changes the database and needs the owner's go. Do not run `deploy/colo-up.sh` itself: it recreates Paper and runs a whole-stack `up`, which needs the owner's agreed window (global rule 5). Do not alter the migration table by hand.
+4. Start the register service only, with the kill switch `true`. Pre-checks: the image is pinned by digest and present (`docker image inspect`), no `REGISTER_KILL_SWITCH=false` in either env file (check the name with `grep -c`, print no values), and the render gate passes. Then run the four compose files (`compose/colo.yml`, `compose/nats-auth.yml`, `deploy/compose.secrets.yml`, `compose/colo-kino.yml`, in the order of the running project's `com.docker.compose.project.config_files` label), with both env files and both profiles:
+
+```
+GELDAR_STATE_DIR=<state dir> GELDAR_SECRETS_DIR=<secrets dir> GELDAR_SERVICE_UID=1001 \
+GELDAR_KINO_PUBLIC_ORIGIN=<kino origin> \
+docker compose -p geldar-colo -f compose/colo.yml -f compose/nats-auth.yml -f deploy/compose.secrets.yml -f compose/colo-kino.yml \
+  --env-file <state dir>/node.env --env-file <state dir>/current.env \
+  --profile register --profile sovereign up -d --no-deps register
+```
+
+The `--no-deps` flag is required: the register service depends on postgres, and without it compose would also reconcile postgres. `--profile sovereign` is required so the rendered model matches what is running. `GELDAR_KINO_PUBLIC_ORIGIN` is read from the running glass container and is needed, or `config` fails. The kill switch is `true`, so no sign-in is possible. Do not run `deploy/colo-up.sh` (item 3).
 
 Rollback: remove the env values and recreate the register service with the kill switch `true`. Other steps are not undone.
 
@@ -142,13 +153,13 @@ The live `body` and `paper` users lack the PubDeny for `geldar.<s>.ctl.body.>` a
 
 ## Section 3: Public routes (node)
 
-1. Add `GELDAR_REGISTER_UPSTREAM` to the root-only `GELDAR_PUBLIC_ENV` file, before the install. Its value is the loopback address and port of the register service from compose (decision 0150). No other address.
-2. Dry run first: `DEPLOY_DRY_RUN=1 deploy/colo-public.sh install glass`. It prints every state change and changes nothing. Then run `deploy/colo-public.sh install glass` without the variable. The script validates before it reloads.
-3. Apply, one path only:
-   - Default (`GELDAR_PUBLIC_APPLY` unset or `reload`): the script reloads Caddy. No restart is needed.
-   - `GELDAR_PUBLIC_APPLY=restart`: the script restarts `board-proxy` once, and only with `GELDAR_PUBLIC_RESTART_OK=1`. Without that variable it prints `RESTART board-proxy once` and the operator restarts the container by hand, once.
-   Never do both. Record which path ran in the change log.
-4. Verify with the kill switch still `true`. `/register/` must return the register service's own 503 (its kill switch), not the text "the register service is not deployed" that `colo-public.sh` writes when the upstream is unset.
+1. Add `GELDAR_REGISTER_UPSTREAM` to the root-only `GELDAR_PUBLIC_ENV` file (`/etc/geldar-colo/public.env`, owner root, mode 600), before the install. Its value is the loopback address and port of the register service from compose (decision 0150): `127.0.0.1:<GELDAR_PORT_REGISTER>`, 18090 by default. `colo-public.sh` accepts only that form. The other keys (domain, glass and map upstreams) must already be in the file. No other address.
+2. Dry run first: `DEPLOY_DRY_RUN=1 deploy/colo-public.sh install glass`. It prints every state change, changes nothing, and names no other site. Then run `deploy/colo-public.sh install glass` without the variable. The script validates before it applies.
+3. Apply, one path only. The Colo node runs with the Caddy admin API off (ruling R39), so the default path (`GELDAR_PUBLIC_APPLY` unset or `reload`) does not apply there. Use `GELDAR_PUBLIC_APPLY=restart`:
+   - With `GELDAR_PUBLIC_RESTART_OK=1`, the script restarts `board-proxy` once and waits up to 30 s for a valid config.
+   - Without it, the script prints `RESTART board-proxy once`, and the operator restarts the container by hand, once.
+   Never do both. Record which path ran in the change log. A Caddy restart interrupts every site on the shared Caddy for a few seconds (unmeasured), including other tenants' sites. It needs the node owner's window, and it is one restart per window.
+4. Verify with the kill switch still `true`. `/register/` must return the register service's own 503 (its kill switch). It needs row 21 healthy and the register upstream in the Glass render. The text "the register service is not deployed" means the upstream is unset, so it is a failure. Legal pages also return 503 until row 27, because the kill switch comes before every route. Check that Glass `/` still answers after the restart (GET only).
    Open item: the signed-in check is not defined yet. A signed-in session is impossible while the kill switch is `true`, so the check needs a request the owner and the node operator name in writing before step 27. Record the result in the change log.
 
 Rollback, lighter first: re-run the install with `GELDAR_REGISTER_UPSTREAM` unset. The script writes the 503 block for `/register*` and `/roster*`, and the same one-restart rule of step 3 applies. Full rollback: `deploy/colo-public.sh off glass` takes the whole Glass site off (not only the register paths), so use it only for a Glass outage. See [maintenance-notice.md](maintenance-notice.md) if clients are affected.
@@ -162,7 +173,7 @@ Before this section, every step from 1 to 25, and row 19a, is recorded in the ch
 1. Owner confirms C7-09 (deletion and export) is deployed and live-checked.
 2. Owner confirms C7-11 (sign-up gate) is deployed, and that terms version 1 is listed in `APPROVED_TERMS_VERSIONS` in `signup-gate.ts` in the register service source.
 3. Owner confirms C7-13a is deployed: `register_account_delete` removes skin uploads.
-4. Owner confirms BH-5 is deployed: retire and delete unwhitelist the Body. Known gap: a managed container lost while its life stays admitted is not removed by the stop, because the supervisor sends no stop for an absent container. Its life id is left admitted with no automatic cleanup built; the operator removes it with the exact-name remove one-shot per [body-helper-node-steps](body-helper-node-steps.md). With the managed flag off, a lost container likewise leaves its life admitted until that manual removal.
+4. Owner confirms BH-5 is deployed: retire and delete unwhitelist the Body. Known gap: a managed container lost while its life stays admitted is not removed by the stop, because the supervisor sends no stop for an absent container. Its life id is left admitted with no automatic cleanup built; the operator removes it with the exact-name remove one-shot per [body-helper-node-steps](body-helper-node-steps.md). With the managed flag off, a lost container likewise leaves its life admitted until that manual removal. The owner has accepted this manual cleanup for now (row 25a), so it does not block step 27.
 5. Owner confirms the `body`/`paper` PubDeny drift (Section 2 note) is closed, or accepts it in writing.
 6. Owner gives the word on NATS batch C (row 26a), or accepts the JetStream republish risk in writing.
 7. Owner answers the open 0261 question in writing.
@@ -175,6 +186,21 @@ Rollback: set `REGISTER_KILL_SWITCH=true` and recreate the register service only
 ## Section 5: First admin (node, after step 27)
 
 Once the first owner has signed in, the sign-in creates the account. Make it the first admin by the steps in [mcp-tokens.md](mcp-tokens.md). This cannot be done before the open step: a first admin exists only after a human's first Microsoft sign-in, and the kill switch blocks every sign-in until step 27.
+
+## Section 6: Roster seed (row 23, optional)
+
+Row 23 is not on the minimum path to sign-up. ROSTER-AUTO rosters new sign-up agents in code. A seed only adds names for agents that already exist. Whether the seed must happen before step 27 is the owner's call; decision 0261 does not settle it.
+
+No node command runs `roster seed`. `deploy/colo-admin.sh` and `tools/admin/admin.sh` accept `roster-add` and `roster-list` only. The one wrapper path is one `roster-add` per name:
+
+- Read the names from the shard file's sovereign player list on the node. Do not list names in chat or in the change log.
+- Dry run: `DEPLOY_DRY_RUN=1 deploy/colo-admin.sh roster-add <name> --owner <owner>` prints the plan.
+- Apply, with the owner's go: `deploy/colo-admin.sh roster-add <name> --owner <owner>`.
+- Check before and after: `deploy/colo-admin.sh roster-list --owner <owner>`.
+
+Name rule: 1 to 16 letters, digits or underscores. The owner id must exist first (`deploy/colo-admin.sh owner-add`; its usage is UNVERIFIED). The wrapper runs the admin one-shot without `--no-deps`, so the Section 2 item 3 caution applies.
+
+Removal: the wrapper has no remove command. Removing a seeded row needs the owner's go and the direct CLI path. `register_audit` is append-only, so rows are not erased.
 
 ## Verify checklist (before the open step)
 
@@ -196,11 +222,11 @@ Once the first owner has signed in, the sign-in creates the account. Make it the
 | Helper | Follow [body-helper-node-steps.md](body-helper-node-steps.md) rollback |
 | BODY-HOST | Managed flag off; stop the helper unit; the cards BH-1 to BH-5 give the rest |
 | NATS | Restore the backup by `cat`, check the sha, SIGHUP, read the logs (see [nats-auth-inplace.md](nats-auth-inplace.md)) |
-| Entra app | Delete the app registration (owner) |
+| Entra app | The shared app is reused: remove the env value and the secret file; never delete the shared app |
 
 ## Pending (as first written; the "Merged on `main`" bullet lists what has merged since)
 
-- REG-NATS-COMPOSE (steps 11 and 12) is folded into card C7-03b2 (pending C7-03b2). The `REGISTER_NATS_*` names are not yet in `compose/colo.yml`.
+- REG-NATS-COMPOSE (steps 11 and 12) is folded into card C7-03b2 (pending C7-03b2). The `REGISTER_NATS_*` names are not yet in `compose/colo.yml`. The register config already reads the NATS names; compose sets none of them, so the register service runs with NATS off. The card's status was not re-checked in this edit (UNVERIFIED).
 - PR #415 (steps 9 and 10) is merged (merge commit `4bab81b3`, 2026-11-15). The NATS batch still waits for its own owner go and for the node to run the generator output.
 - NATS batch C (row 26a) is not built and has no card number yet. The JetStream republish caveat is in [nats-auth-inplace.md](nats-auth-inplace.md) Open questions.
 - Cards named in the table for steps 13 to 18 (BODY-HOST, cards BH-1 to BH-4), step 25 (BH-5) and step 19 (C7-03b4-live). BH-4 names the two root-only secret files that row 14 writes. Merge status is in the "Merged on `main`" bullet below.
