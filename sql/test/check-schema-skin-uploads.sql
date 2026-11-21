@@ -56,6 +56,45 @@ BEGIN
     RAISE EXCEPTION 'schema check: a skin upload over 32 KiB must be refused';
   END IF;
 
+  -- The cap is inclusive: exactly 32768 bytes is accepted (the PNG signature plus zero bytes).
+  INSERT INTO skin_uploads (owner_id, player_id, png, sha256, status) VALUES ('skin-check-owner', 'skin-check-e', png || decode(repeat('00', 32760), 'hex'), h, 'pending');
+
+  -- A pending row carries no decision: decided_at set on a pending row is refused.
+  refused := FALSE;
+  BEGIN
+    INSERT INTO skin_uploads (owner_id, player_id, png, sha256, status, decided_at, decided_by)
+      VALUES ('skin-check-owner', 'skin-check-f', png, h, 'pending', now(), 'op');
+  EXCEPTION WHEN check_violation THEN
+    refused := TRUE;
+  END;
+  IF NOT refused THEN
+    RAISE EXCEPTION 'schema check: a pending skin upload with decided_at set must be refused';
+  END IF;
+
+  -- A pending row carries no reason code: a reason code on a pending row is refused.
+  refused := FALSE;
+  BEGIN
+    INSERT INTO skin_uploads (owner_id, player_id, png, sha256, status, reason_code)
+      VALUES ('skin-check-owner', 'skin-check-g', png, h, 'pending', 'other');
+  EXCEPTION WHEN check_violation THEN
+    refused := TRUE;
+  END;
+  IF NOT refused THEN
+    RAISE EXCEPTION 'schema check: a pending skin upload with a reason code must be refused';
+  END IF;
+
+  -- The sha256 is exactly 32 bytes: 31 bytes is refused.
+  refused := FALSE;
+  BEGIN
+    INSERT INTO skin_uploads (owner_id, player_id, png, sha256, status)
+      VALUES ('skin-check-owner', 'skin-check-h', png, decode(repeat('5a', 31), 'hex'), 'pending');
+  EXCEPTION WHEN check_violation THEN
+    refused := TRUE;
+  END;
+  IF NOT refused THEN
+    RAISE EXCEPTION 'schema check: a sha256 that is not 32 bytes must be refused';
+  END IF;
+
   DELETE FROM skin_uploads WHERE owner_id = 'skin-check-owner';
 END
 $skin_uploads$;

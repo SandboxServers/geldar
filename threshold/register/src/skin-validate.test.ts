@@ -76,7 +76,10 @@ function noise(length: number, seed: number): Buffer {
 function exactCapPng(): Buffer {
   const target = SKIN_MAX_BYTES;
   for (let seed = 1; seed < 500; seed++) {
-    const comp = deflateSync(noise(pixelBytes(2).length, seed));
+    const raw = noise(pixelBytes(2).length, seed);
+    // Each row's filter type byte must be 0 to 4 for the image to be valid; the pixels stay noise.
+    for (let row = 0; row < 64; row++) raw[row * (1 + 64 * 3)] = 0;
+    const comp = deflateSync(raw);
     // file = 8 signature + 25 IHDR + 12n per IDAT overhead + comp + 12 IEND
     const rest = target - 45 - comp.length;
     if (rest <= 0 || rest % 12 !== 0) continue;
@@ -155,6 +158,32 @@ describe('checkSkinPng', () => {
   it('refuses a pixel stream one byte short as bad_pixel_data_size', () => {
     const short = deflateSync(Buffer.alloc(pixelBytes(2).length - 1));
     expect(refusalOf(png({ idat: short }))).toBe('bad_pixel_data_size');
+  });
+
+  it('refuses bytes after the end of the zlib stream in IDAT as bad_inflate', () => {
+    const smuggled = Buffer.concat([deflateSync(pixelBytes(2)), Buffer.from('SMUGGLED')]);
+    expect(refusalOf(png({ idat: smuggled }))).toBe('bad_inflate');
+  });
+
+  it('refuses two zlib streams concatenated in IDAT as bad_inflate', () => {
+    const twice = Buffer.concat([deflateSync(pixelBytes(2)), deflateSync(pixelBytes(2))]);
+    expect(refusalOf(png({ idat: twice }))).toBe('bad_inflate');
+  });
+
+  it('refuses a filter type above 4 on the first row and on the last row as bad_filter', () => {
+    const stride = 1 + 64 * 3;
+    for (const row of [0, 63]) {
+      const pixels = pixelBytes(2);
+      pixels[row * stride] = 5;
+      expect(refusalOf(png({ idat: deflateSync(pixels) }))).toBe('bad_filter');
+    }
+  });
+
+  it('accepts filter types 0 to 4 on every row', () => {
+    const stride = 1 + 64 * 3;
+    const pixels = pixelBytes(2);
+    for (let row = 0; row < 64; row++) pixels[row * stride] = row % 5;
+    expect(refusalOf(png({ idat: deflateSync(pixels) }))).toBe('ok');
   });
 
   it('refuses input that is not a PNG, including empty input', () => {

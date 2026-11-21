@@ -21,7 +21,8 @@ export type SkinRefusal =
   | 'bad_compression'
   | 'bad_inflate'
   | 'decompression_bomb'
-  | 'bad_pixel_data_size';
+  | 'bad_pixel_data_size'
+  | 'bad_filter';
 
 export type SkinCheck = { ok: true } | { ok: false; code: SkinRefusal };
 
@@ -111,11 +112,20 @@ export function checkSkinPng(bytes: Uint8Array): SkinCheck {
   );
   let pixels: Buffer;
   try {
-    pixels = inflateSync(idatBytes, { maxOutputLength: expected + 1 });
+    const inflated = inflateSync(idatBytes, { maxOutputLength: expected + 1, info: true });
+    // inflateSync stops at the end of the first zlib stream and ignores the rest. Any byte it
+    // did not consume (trailing data, a second stream) is smuggled payload, so it is refused.
+    if (inflated.engine.bytesWritten !== idatBytes.length) return refuse('bad_inflate');
+    pixels = inflated.buffer;
   } catch (error) {
     const code = (error as { code?: string }).code;
     return refuse(code === 'ERR_BUFFER_TOO_LARGE' ? 'decompression_bomb' : 'bad_inflate');
   }
   if (pixels.length !== expected) return refuse('bad_pixel_data_size');
+  // Each row starts with a filter type byte; only types 0 to 4 exist in the PNG specification.
+  const stride = 1 + SKIN_SIZE * bytesPerPixel;
+  for (let row = 0; row < SKIN_SIZE; row++) {
+    if (pixels[row * stride] > 4) return refuse('bad_filter');
+  }
   return { ok: true };
 }

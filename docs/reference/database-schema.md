@@ -35,7 +35,7 @@ Re-derive the migration list and the gaps:
 git ls-files sql | ForEach-Object { if ($_ -match '^sql/(\d{4})_') { $Matches[1] } }
 ```
 
-On 2026-11-16 at 1b114276 this prints 45 numbers from 0001 to 0066. Numbers 0028 to 0031, 0041 to 0049, 0053 to 0059 and 0064 have no file; 0065's header says 0064 is reserved for another branch.
+On 2026-11-20 at the C7-13a fix commit this prints 47 numbers from 0001 to 0066. Numbers 0028 to 0030, 0041 to 0049, 0054 to 0059 and 0064 have no file; 0065's header says 0064 is reserved for another branch.
 
 ## Migrations
 
