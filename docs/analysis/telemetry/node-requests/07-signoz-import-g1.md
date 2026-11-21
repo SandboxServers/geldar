@@ -6,7 +6,7 @@ Format: the step layout of `docs/analysis/telemetry/node-requests/01-gateway-res
 Facts come from `docs/runbooks/signoz-import.md` and `deploy/signoz/import.sh`, and from the SigNoz v0.148.1 source for the routes and list shapes (section 13 gives the paths; what is still UNVERIFIED is listed there too). Labels: **UNVERIFIED** = not checked
 against the repo or the node; `[UNV]` marks one command or fact inside a step that has no repo source.
 No URL, address, token, password or account name is written in this file. Placeholders: `<node ssh host alias>`,
-`<OP_TMP>` (the operator temp directory, section 2), `<merge>` (the commit that holds `deploy/signoz/`), `<ts>` (UTC timestamp).
+`<OP_TMP>` (the operator temp directory, section 2), `<SCRATCH>` (the export directory, section 2), `<merge>` (the commit that holds `deploy/signoz/`, `3821a376...` at the time of writing), `<ts>` (UTC timestamp).
 
 Owner approval needed: yes. Each step below needs a fresh direct owner OK with a window from the orchestrator geldar-69
 before it runs. Any step that is not named in that OK does not run.
@@ -17,7 +17,7 @@ before it runs. Any step that is not named in that OK does not run.
 2. Any compose command on the node carries the explicit deploy environment from the colo env files and always `up -d --no-deps <service>`.
 3. Prove that the render matches the RUNNING container before restarting anything (docker compose config diff against docker inspect of the running container).
 4. NOTHING may be written outside the named paths (list them explicitly in each document: the stage directory, the secrets file, a temp dir that is removed).
-5. No scratch files.
+5. No scratch files outside the named paths.
 6. Never run anything that stops, removes or recreates containers or networks other than the one named.
 7. No secrets, account names or IPs in the document.
 8. Each step needs a fresh direct owner OK with a window from the orchestrator geldar-69 before it runs.
@@ -45,7 +45,14 @@ Operator machine (outside the repo checkout; the import script refuses a token f
   `hdr.txt` (the `Authorization` header line for the list calls), and the list copies `dashboards-before.json`,
   `rules-before.json`, `dashboards-after.json`, `rules-after.json`.
 
-Repo checkout: read only (the import script and the alert and dashboard files are read from it; nothing is written).
+  The `login.json` keys used are `email`, `password` and `orgId` (the org id is `data.orgs[].id` from the context call, section 5 step 4).
+  The file lives only in `<OP_TMP>`, outside the repo checkout. It is never printed, echoed or copied; the commands in this request read
+  `email` and `orgId` from it into shell variables only.
+
+- `<SCRATCH>`: one new, empty directory outside the repo checkout, created before the export (section 5 step 5) and removed at the end
+  (section 10). It holds only the export of `deploy/signoz/` from the merge commit: `import.sh` and the six JSON files. Nothing else is written into it.
+
+Repo checkout: read only. The export is made with `git archive`, which reads the commit; nothing is written to the checkout and no commit is checked out.
 
 Node: nothing is written. The node receives read-only verbs only (section 5, step 4 and section 8).
 
@@ -76,15 +83,41 @@ Node: nothing is written. The node receives read-only verbs only (section 5, ste
 3. Open the SSH tunnel to the SigNoz API port named in `docs/runbooks/signoz-import.md` section 2, in its own terminal, and keep it open:
    `ssh -N -L <local port>:<loopback host>:<API port> <node ssh host alias>`, where the loopback host is the node's own loopback
    (**UNVERIFIED** for this host). Set `API` to the local end of the tunnel in the form that `import.sh --url` accepts (the runbook gives the form). Not written here.
-4. Token. Get it the way the runbook says (its section 2 and the retention window step 3 in `deploy/telemetry/README.md`, verified there
-   on a local run, round 9):
-   - `GET /api/v2/sessions/context` for the organisation id.
-   - `POST /api/v2/sessions/email_password` with the body in `<OP_TMP>/login.json` (email, password and the organisation id). The owner
-     types the account values into that file; nothing is printed, and the file is deleted once the token is written.
-   - Take `data.accessToken` from the answer. Write only the token, on its first line, to `<OP_TMP>/token.txt`, with `umask 077`.
-   - Write `Authorization: Bearer <token>` to `<OP_TMP>/hdr.txt`, the same way. Never put the token in a command line or a chat.
-5. Repo checkout at `<merge>`: `git -C <repo> rev-parse <merge>` matches the merge that holds `deploy/signoz/`. Read `deploy/signoz/` file names
-   (six files: two dashboards, four alert files).
+4. Token. Get it the way the runbook says (its section 2). The owner types the account values into `<OP_TMP>/login.json` (keys `email`,
+   `password`, `orgId`); nothing is printed, and the file is deleted once the token is written. `API` is the tunnel base URL (step 3).
+   - Check the account and the org id with `GET /api/v2/sessions/context`. It needs the query parameters `email` (a valid address, read from
+     `login.json`) and `ref` (the site URL; the loopback tunnel URL is accepted). Without `email` it returns 400 `invalid email`. The answer is
+     `{status, data: {exists, orgs: [{id, name, authNSupport}]}}`. The check below prints nothing and stops the step unless the account exists
+     and its org id is the `orgId` in `login.json`:
+     ```
+     EMAIL="$(jq -r '.email' <OP_TMP>/login.json)"
+     ORG="$(jq -r '.orgId' <OP_TMP>/login.json)"
+     curl -sSf -G --data-urlencode "email=$EMAIL" --data-urlencode "ref=$API" "$API/api/v2/sessions/context" \
+       | jq -e --arg o "$ORG" '.data.exists == true and any(.data.orgs[]?; .id == $o)' > /dev/null
+     ```
+   - Log in with `POST /api/v2/sessions/email_password`, body `{email, password, orgId}` from `<OP_TMP>/login.json`. Pipe the answer and
+     keep only the token; the answer is not saved:
+     ```
+     umask 077
+     curl -sSf -X POST -H 'Content-Type: application/json' --data-binary @<OP_TMP>/login.json "$API/api/v2/sessions/email_password" \
+       | jq -er '.data.accessToken' | head -n 1 > <OP_TMP>/token.txt
+     test -s <OP_TMP>/token.txt
+     ```
+   - Write `Authorization: Bearer <token>` to `<OP_TMP>/hdr.txt` without putting the token in a command line:
+     ```
+     { printf 'Authorization: Bearer '; tr -d '\r\n' < <OP_TMP>/token.txt; printf '\n'; } > <OP_TMP>/hdr.txt
+     ```
+     Then delete `<OP_TMP>/login.json`. Never put the token in a command line or a chat.
+5. Export the deploy directory from the merge commit into `<SCRATCH>`. Nobody checks out a commit. `<merge>` is `3821a376ddbcdefa0e0a05cd55765f522d25fc28`,
+   the newest commit on `origin/main` that changes `deploy/signoz/import.sh` (`git -C <repo> log --format=%H -1 origin/main -- deploy/signoz/import.sh`
+   gives it). Run this on the operator machine, from any directory:
+   ```
+   mkdir -m 700 <SCRATCH>
+   git -C <repo> archive --format=tar -o <SCRATCH>/signoz.tar <merge> deploy/signoz
+   tar -x -f <SCRATCH>/signoz.tar -C <SCRATCH>
+   ```
+   The archive is written to a file first and never piped into `tar`, so a failed export is not half-read. `signoz.tar` stays inside `<SCRATCH>` and is removed with it.
+   `ls <SCRATCH>/deploy/signoz` must list `import.sh` and the six JSON files (two dashboards, four alert files). Any other file stops the step.
 
 Stop if `geldar-signoz` is not `healthy`, its restart count is not 0, or the channel is missing.
 
@@ -98,11 +131,12 @@ Stop if `geldar-signoz` is not `healthy`, its restart count is not 0, or the cha
 
 ## 7. Dry run, list output, then the real run
 
-Run from the repo checkout at `<merge>`, on the operator machine:
+Run from the export in `<SCRATCH>/deploy/signoz` (section 5 step 5), on the operator machine. The script finds its files next to itself, so
+the export is all it needs; the token file in `<OP_TMP>` is outside `<SCRATCH>`, so the script accepts it.
 
 1. Dry run (sends nothing and reads no token):
    ```
-   GELDAR_SERVICE_UID=1001 deploy/signoz/import.sh --dry-run
+   GELDAR_SERVICE_UID=1001 <SCRATCH>/deploy/signoz/import.sh --dry-run
    ```
    Expect one `dry-run:` line per dashboard file (2) and one per alert file (4), and the line `dry run against ...: nothing will be sent`.
    Any other output stops the step.
@@ -120,7 +154,7 @@ Run from the repo checkout at `<merge>`, on the operator machine:
      new packet that changes the script and its test together (runbook section 1), not this request.
 4. The real run, only after the owner OK for this step:
    ```
-   GELDAR_SERVICE_UID=1001 deploy/signoz/import.sh --token-file <OP_TMP>/token.txt
+   GELDAR_SERVICE_UID=1001 <SCRATCH>/deploy/signoz/import.sh --token-file <OP_TMP>/token.txt
    ```
    Expect `created`, `skipped` or `replaced` per dashboard (`skipped` when the title is already listed), `created` or `updated` per rule, then `done: 2 dashboard file(s), 4 alert file(s)`. Any `error` line stops the step; do not re-run it blindly.
 
@@ -129,12 +163,12 @@ Run from the repo checkout at `<merge>`, on the operator machine:
 1. Lists after the run (`dashboards-after.json`, `rules-after.json`): "Geldar Paper" and "Geldar NeoForge" each appear exactly once.
    The script refuses to update when a title or alert name appears twice, so a second match is a finding.
 2. Each alert name in the four alert files appears exactly once in `rules-after.json`. The names come from the files:
-   `jq -r '.rules[].alert' deploy/signoz/*-alerts-*.json`.
+   `jq -r '.rules[].alert' <SCRATCH>/deploy/signoz/*-alerts-*.json`.
 3. In the SigNoz UI, through the tunnel, open "Geldar Paper" and "Geldar NeoForge". While the shard runs, panels with a live metric
    (for example `geldar_tps`, `geldar_tick_lag_ms`, `geldar_players_online`, runbook section 4) show points for the last hour.
    A panel empty on a stopped shard is expected; a panel empty while the shard runs is a finding.
 4. The rules list shows each Geldar rule once with a state. `inactive` is normal. A `firing` rule is reported to the owner at once.
-5. Second run, only if the owner OK covers it: `deploy/signoz/import.sh --token-file <OP_TMP>/token.txt` prints `skipped` lines for the dashboards and `updated` lines for the rules, and
+5. Second run, only if the owner OK covers it: `<SCRATCH>/deploy/signoz/import.sh --token-file <OP_TMP>/token.txt` prints `skipped` lines for the dashboards and `updated` lines for the rules, and
    no `created` line, and the lists keep the same counts. (This shows idempotence; it writes the same content again.)
 6. Node, read-only: `docker ps --format '{{.Names}} {{.Status}}'` equals the list saved in section 5. The start times of
    `geldar-signoz`, `geldar-signoz-otelcol`, `geldar-ch`, `geldar-ch-keeper`, `geldar-gateway` and the Paper and NeoForge containers are
@@ -159,6 +193,7 @@ pre-run copy is put back (step 3 below). Rollback needs the owner's OK in the sa
 
 - Remove `<OP_TMP>` with all its files (`Remove-Item -Recurse -Force` or `rm -rf` on that one directory only), once the report is written.
 - Remove `login.json` as soon as `token.txt` exists (step 4 of section 5).
+- Remove `<SCRATCH>` (the export of `deploy/signoz/`) with `rm -rf` on that one directory, once the report is written.
 - Close the tunnel.
 - The token is not revoked by this step. **UNVERIFIED**: whether a token can be revoked through the API; the owner decides.
 
@@ -181,6 +216,10 @@ pre-run copy is put back (step 3 below). Rollback needs the owner's OK in the sa
 
 Verified in the SigNoz v0.148.1 source (`gh api repos/SigNoz/signoz/contents/<path>?ref=v0.148.1`; the paths are relative to the repo root):
 
+- Login: `GET /api/v2/sessions/context` reads the query parameters `email` (a valid address) and `ref` (the site URL), and answers
+  `{status, data: {exists, orgs: [{id, name, authNSupport}]}}` (`pkg/modules/session/implsession/handler.go`, `GetSessionContext`;
+  `pkg/types/authtypes/session.go`). `POST /api/v2/sessions/email_password` reads the body fields `email`, `password` and `orgId`
+  (`pkg/types/authtypes/email_password.go`, `PostableEmailPasswordSession`). Without `email` the context call returns 400 `invalid email`.
 - Rule routes: GET and POST `/api/v1/rules`, GET, PUT, DELETE and PATCH `/api/v1/rules/{id}`. `pkg/query-service/app/http_handler.go` lines 363-368 (`RegisterRoutes`).
 - Rule list: `listRules` answers with `aH.Respond(w, rules)`, which writes `{status, data}` (`writeHttpResponse`, same file). `ListRuleStates` returns `GettableRules` (`pkg/query-service/rules/manager.go`, line 853), so `data` is `{rules: [...]}`; each `GettableRule` has `id` and embeds `PostableRule`, whose name field is `json:"alert"` (`pkg/types/ruletypes/api_params.go`, lines 643-660).
 - Dashboard routes are v2: GET and POST `/api/v2/dashboards`, GET, PUT, PATCH and DELETE `/api/v2/dashboards/{id}` (`pkg/apiserver/signozapiserver/dashboard.go`). That the v1 dashboard routes are gone is the finding the brief records; this session did not re-read the v1 routes.

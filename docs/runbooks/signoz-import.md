@@ -33,18 +33,48 @@ The SigNoz API listens on the node's loopback port 8095 (the port `deploy/teleme
 ssh -N -L 8095:127.0.0.1:8095 <node ssh host alias>
 ```
 
-Get an admin token the way the retention runbook does (`deploy/telemetry/README.md`, "Retention window", step 3): `GET
-/api/v2/sessions/context` for the org id, then `POST /api/v2/sessions/email_password` with `email`, `password` and
-`orgId`. Read `data.accessToken` from the answer. That route is verified in the repo (round 9, local run). Write only the
-token, on its first line, to a file outside the repo checkout, owner-only (`umask 077`). Never paste the token into a
-chat, a log or a command line. Delete the file when the import is done.
+Get an admin token. The login takes three keys from the owner's `login.json`: `email`, `password` and `orgId`. The file
+lives in the operator temp dir, outside the repo checkout; nothing prints or copies it, and the commands below read `email`
+and `orgId` from it into shell variables only. `$API` is the tunnel base URL (`http://127.0.0.1:8095`).
+
+1. `GET /api/v2/sessions/context` needs the query parameters `email` (a valid address) and `ref` (the site URL; the loopback
+   tunnel URL is accepted). Without `email` it returns 400 `invalid email`. The answer is `{status, data: {exists, orgs: [{id, name,
+   authNSupport}]}}`; the org id is `data.orgs[].id`. This check prints nothing and fails unless the account exists and its
+   org id is the `orgId` in `login.json`:
+   ```
+   EMAIL="$(jq -r '.email' "$OP_TMP/login.json")"
+   ORG="$(jq -r '.orgId' "$OP_TMP/login.json")"
+   curl -sSf -G --data-urlencode "email=$EMAIL" --data-urlencode "ref=$API" "$API/api/v2/sessions/context" \
+     | jq -e --arg o "$ORG" '.data.exists == true and any(.data.orgs[]?; .id == $o)' > /dev/null
+   ```
+2. `POST /api/v2/sessions/email_password` takes the body `{email, password, orgId}` from `login.json`. Pipe the answer and keep
+   only the token; read `data.accessToken` from it:
+   ```
+   umask 077
+   curl -sSf -X POST -H 'Content-Type: application/json' --data-binary "@$OP_TMP/login.json" "$API/api/v2/sessions/email_password" \
+     | jq -er '.data.accessToken' | head -n 1 > "$OP_TMP/token.txt"
+   ```
+
+Write only the token, on its first line, to a file outside the repo checkout, owner-only (`umask 077`). Never paste the token
+into a chat, a log or a command line. Delete `login.json` as soon as the token file exists, and delete the token file when the
+import is done. The request `docs/analysis/telemetry/node-requests/07-signoz-import-g1.md` (section 5, step 4) has the same
+calls with the header file written without a command-line token.
 
 ## 3. Dry run, then the real run
 
+Run the script from an export, not from the checkout. `<commit>` is the commit that holds `deploy/signoz/` (the merge commit), and `<SCRATCH>` is one new, empty directory outside the repo checkout:
+
 ```
-deploy/signoz/import.sh --token-file <path outside the repo> --dry-run
-deploy/signoz/import.sh --token-file <path outside the repo>
+SCRATCH=<SCRATCH>
+mkdir -m 700 "$SCRATCH"
+git -C <repo> archive --format=tar -o "$SCRATCH/signoz.tar" <commit> deploy/signoz
+tar -x -f "$SCRATCH/signoz.tar" -C "$SCRATCH"
+ls "$SCRATCH/deploy/signoz"
+"$SCRATCH/deploy/signoz/import.sh" --token-file <path outside the repo> --dry-run
+"$SCRATCH/deploy/signoz/import.sh" --token-file <path outside the repo>
 ```
+
+The archive is written to a file first and never piped into `tar`, so a failed export is not half-read. `signoz.tar` stays inside `<SCRATCH>`. The `ls` must list `import.sh` and the six JSON files (two dashboards, four alert files). When the import is done, remove `<SCRATCH>` with `rm -rf` on that one directory.
 
 The dry run prints one line per file: the PUT or POST it would send. It sends nothing and reads no token. The real run
 prints `created`, `skipped` or `replaced` per dashboard, `created` or `updated` per rule, then `done`. Before the real run, list what is there so you can
