@@ -2,20 +2,17 @@
 
 `deploy/signoz/import.sh` posts the Geldar dashboards (`deploy/signoz/*-dashboard.json`) and alert rules
 (`deploy/signoz/*-alerts-*.json`) to the SigNoz v0.148.1 API on the node, through an SSH tunnel to its loopback port.
-Running it again updates what is there: a dashboard is matched by title, a rule by alert name, and nothing is duplicated.
+Running it again skips a dashboard whose title is already listed (`--replace` deletes it by id and creates it again) and updates a rule whose alert name is listed. Nothing is duplicated.
 The script writes nothing outside a temp dir that it removes on exit.
 
-**UNVERIFIED.** This repo verifies the SigNoz login route and the TTL route (`deploy/telemetry/README.md`, retention
-section). It does not verify the dashboard and rule routes, their request bodies or their list shapes. The script uses:
+**Verified against the SigNoz v0.148.1 source** (tag `v0.148.1` of `SigNoz/signoz`). The dashboard routes are v2 and the rule routes are v1:
 
-- `GET /api/v1/dashboards` and `POST /api/v1/dashboards`, `PUT /api/v1/dashboards/<id>`, dashboard id at `.data[].id`,
-  title at `.data[].data.title`;
-- `GET /api/v1/rules` and `POST /api/v1/rules`, `PUT /api/v1/rules/<id>`, rule id at `.data.rules[].id` (or `.data[].id`),
-  alert name at `.alert`.
+- Dashboards: `GET /api/v2/dashboards` (list), `POST /api/v2/dashboards` (create; a body with `version` and no `schemaVersion`, as the repo files have, is converted from v1 by the server), `DELETE /api/v2/dashboards/<id>`. Source: `pkg/apiserver/signozapiserver/dashboard.go`, `pkg/modules/dashboard/impldashboard/v2_handler.go` (`CreateV2`). The list is `{status, data: {dashboards: [...], total}}`, paged (at most 200 per page; the script reads every page). A dashboard's title is `spec.display.name` and its id is `id`.
+- Rules: `GET /api/v1/rules`, `POST /api/v1/rules`, `PUT /api/v1/rules/<id>`, `DELETE /api/v1/rules/<id>` (`pkg/query-service/app/http_handler.go`, lines 363-368). The list is `{status, data: {rules: [...]}}`; a rule's id is `id` and its alert name is `alert` (`pkg/types/ruletypes/api_params.go`, `GettableRules`).
 
-These come from SigNoz source knowledge, not from this repo. The first run is the verification: run the dry run, then
-read the list output (step 3) before the real run. If a list call returns a different shape, the script fails on the jq
-step and sends nothing more. Record what the real shapes are here, then fix the script and the test together.
+The script reads both lists, and checks that no title or alert name matches twice, before its first write. A dashboard whose title is already listed is skipped and reported; `--replace` deletes it by id and creates it again. A rule whose alert name is listed is updated by its id.
+
+**UNVERIFIED** on a live node: that `POST /api/v1/rules` accepts the rule bodies in the alert files; that the v1 dashboard files convert to v2 as intended (the source shows that the title moves to `spec.display.name`; the panels, variables and queries are not checked); the paging on a node with more than 200 dashboards; and the notification channel. The first real run is the check on these. Record what the real responses are here, then fix the script and the test together.
 
 ## 1. Prerequisites (owner decides the window)
 
@@ -50,11 +47,11 @@ deploy/signoz/import.sh --token-file <path outside the repo>
 ```
 
 The dry run prints one line per file: the PUT or POST it would send. It sends nothing and reads no token. The real run
-prints `created` or `updated` per dashboard and per rule, then `done`. Before the real run, list what is there so you can
+prints `created`, `skipped` or `replaced` per dashboard, `created` or `updated` per rule, then `done`. Before the real run, list what is there so you can
 see the real shapes (this is also the UNVERIFIED check):
 
 ```
-curl -sS -H @hdr.txt http://127.0.0.1:8095/api/v1/dashboards
+curl -sS -H @hdr.txt http://127.0.0.1:8095/api/v2/dashboards
 curl -sS -H @hdr.txt http://127.0.0.1:8095/api/v1/rules
 ```
 
@@ -79,10 +76,10 @@ No panel acts in the world. The dashboards read metrics only.
 Rollback removes what the import created. It does not restore an earlier version of an updated dashboard or rule (keep
 a copy of the list output from step 3 for that).
 
-1. Find the ids: `curl -sS -H @hdr.txt http://127.0.0.1:8095/api/v1/dashboards` and `.../api/v1/rules`, matching the titles
+1. Find the ids: `curl -sS -H @hdr.txt http://127.0.0.1:8095/api/v2/dashboards` and `.../api/v1/rules`, matching the titles
    "Geldar Paper", "Geldar NeoForge" and the alert names in `deploy/signoz/*-alerts-*.json` (`.rules[].alert`).
-2. Delete each one: `curl -sS -X DELETE -H @hdr.txt http://127.0.0.1:8095/api/v1/dashboards/<id>` and
-   `curl -sS -X DELETE -H @hdr.txt http://127.0.0.1:8095/api/v1/rules/<id>`. **UNVERIFIED** route and method.
+2. Delete each one: `curl -sS -X DELETE -H @hdr.txt http://127.0.0.1:8095/api/v2/dashboards/<id>` and
+   `curl -sS -X DELETE -H @hdr.txt http://127.0.0.1:8095/api/v1/rules/<id>`. The route and method are verified in the source (above).
 3. Repeat the list call. No Geldar title or alert name remains.
 
 Rollback needs the owner's OK in the same way the import does.

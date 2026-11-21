@@ -254,7 +254,84 @@ describe.skipIf(!RUNNABLE)('import.sh run (fake curl on PATH)', () => {
       .filter((line) => line !== '');
     expect(calls.length).toBeGreaterThan(0);
     expect(calls.every((line) => /--noproxy \*/.test(line))).toBe(true);
-    expect(readLog()).toMatch(/-X POST .*\/api\/v1\/dashboards\n/);
+    expect(readLog()).toMatch(/-X POST .*\/api\/v2\/dashboards\n/);
+  });
+
+  const PAPER = (readJson('paper-dashboard.json') as { title: string }).title;
+  const PAPER_ID = '0c1f0000-0000-4000-8000-000000000001';
+
+  /** A v2 list body: each item is [id, display name]. Titles hold no single quote, so the fake curl can print them. */
+  const listBody = (items: [string, string][], total = items.length) =>
+    JSON.stringify({
+      status: 'success',
+      data: {
+        dashboards: items.map(([id, name]) => ({ id, name: 'x', spec: { display: { name } } })),
+        total,
+        tags: [],
+        reservedKeywords: [],
+      },
+    });
+
+  it('skips a dashboard whose title is already listed: no POST for it, and no PUT anywhere', () => {
+    setup(listBody([[PAPER_ID, PAPER]]));
+    writeFileSync(join(work, 'token.txt'), 'fake-token-for-test\n');
+    const run = runScript(work, ['--token-file', bashPath(join(work, 'token.txt'))]);
+    expect(run.status).toBe(0);
+    expect(run.stdout).toMatch(/skipped dashboard "Geldar Paper"/);
+    const log = readLog();
+    expect(log).not.toMatch(/-X PUT/);
+    expect(log).not.toMatch(/-X POST .*paper-dashboard\.json/);
+    expect(log).toMatch(/-X POST .*neoforge-dashboard\.json.*\/api\/v2\/dashboards\n/);
+  });
+
+  it('with --replace, deletes the listed dashboard by id before posting it again, and never PUTs', () => {
+    setup(listBody([[PAPER_ID, PAPER]]));
+    writeFileSync(join(work, 'token.txt'), 'fake-token-for-test\n');
+    const run = runScript(work, ['--token-file', bashPath(join(work, 'token.txt')), '--replace']);
+    expect(run.status).toBe(0);
+    const lines = readLog().split('\n');
+    const del = lines.findIndex((l) =>
+      new RegExp(`-X DELETE .*/api/v2/dashboards/${PAPER_ID}$`).test(l),
+    );
+    const post = lines.findIndex((l) =>
+      /-X POST .*paper-dashboard\.json.*\/api\/v2\/dashboards$/.test(l),
+    );
+    expect(del).toBeGreaterThan(-1);
+    expect(post).toBeGreaterThan(del);
+    expect(readLog()).not.toMatch(/-X PUT/);
+  });
+
+  it('refuses a dashboard list that is not the v2 shape, before any write', () => {
+    setup('{"status":"success","data":[{"id":"x","data":{"title":"Geldar Paper"}}]}');
+    writeFileSync(join(work, 'token.txt'), 'fake-token-for-test\n');
+    const run = runScript(work, ['--token-file', bashPath(join(work, 'token.txt'))]);
+    expect(run.status).not.toBe(0);
+    expect(run.stderr).toMatch(/not the v2 shape/);
+    expect(readLog()).not.toMatch(/-X (POST|PUT|DELETE)/);
+  });
+
+  it('refuses a title that two listed dashboards share, before any write', () => {
+    setup(
+      listBody([
+        ['a', PAPER],
+        ['b', PAPER],
+      ]),
+    );
+    writeFileSync(join(work, 'token.txt'), 'fake-token-for-test\n');
+    const run = runScript(work, ['--token-file', bashPath(join(work, 'token.txt'))]);
+    expect(run.status).not.toBe(0);
+    expect(run.stderr).toMatch(/more than one dashboard titled/);
+    expect(readLog()).not.toMatch(/-X (POST|PUT|DELETE)/);
+  });
+
+  it('pages the dashboard list until the total is reached', () => {
+    // The fake server returns the same one-item page for every offset; total 2 means two page requests.
+    setup(listBody([['c', 'Other']], 2));
+    writeFileSync(join(work, 'token.txt'), 'fake-token-for-test\n');
+    const run = runScript(work, ['--token-file', bashPath(join(work, 'token.txt'))]);
+    expect(run.status).toBe(0);
+    expect(readLog()).toMatch(/GET .*offset=0/);
+    expect(readLog()).toMatch(/GET .*offset=1/);
   });
 });
 

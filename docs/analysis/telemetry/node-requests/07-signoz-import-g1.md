@@ -3,7 +3,7 @@
 Status: DRAFT for the owner and the orchestrator geldar-69. Nothing here has been run. Nothing in this request runs on the node
 except read-only checks; the import itself is API calls made from the operator's machine through the SSH tunnel.
 Format: the step layout of `docs/analysis/telemetry/node-requests/01-gateway-restage-and-clickhouse-recreate.md`.
-Facts come from `docs/runbooks/signoz-import.md` and `deploy/signoz/import.sh`. Labels: **UNVERIFIED** = not checked
+Facts come from `docs/runbooks/signoz-import.md` and `deploy/signoz/import.sh`, and from the SigNoz v0.148.1 source for the routes and list shapes (section 13 gives the paths; what is still UNVERIFIED is listed there too). Labels: **UNVERIFIED** = not checked
 against the repo or the node; `[UNV]` marks one command or fact inside a step that has no repo source.
 No URL, address, token, password or account name is written in this file. Placeholders: `<node ssh host alias>`,
 `<OP_TMP>` (the operator temp directory, section 2), `<merge>` (the commit that holds `deploy/signoz/`), `<ts>` (UTC timestamp).
@@ -31,7 +31,7 @@ This request runs no compose command. Rule 1 still applies to the import script,
 2. SigNoz gets the alert rules of four files: `paper-alerts-capacity.json`, `paper-alerts-server.json`,
    `neoforge-alerts-capacity.json`, `neoforge-alerts-server.json`. A rule is matched by its alert name (`.rules[].alert`).
    Every rule names the notification channel `geldar-owner-channel` in `preferredChannels`.
-3. Running the import again updates what is there. It does not duplicate (runbook).
+3. Running the import again skips a dashboard whose title is already listed (unless `--replace` is given, which deletes it by id and creates it again) and updates a rule whose alert name is listed. It does not duplicate (runbook).
 
 Nothing else changes: no container is started, stopped, recreated or restarted; no compose file, no config and no data directory is touched.
 
@@ -107,21 +107,21 @@ Run from the repo checkout at `<merge>`, on the operator machine:
    Any other output stops the step.
 2. List what is there now (the list calls are the UNVERIFIED shape check):
    ```
-   curl -sS -H @<OP_TMP>/hdr.txt "$API/api/v1/dashboards" > <OP_TMP>/dashboards-before.json
+   curl -sS -H @<OP_TMP>/hdr.txt "$API/api/v2/dashboards" > <OP_TMP>/dashboards-before.json
    curl -sS -H @<OP_TMP>/hdr.txt "$API/api/v1/rules" > <OP_TMP>/rules-before.json
    ```
-   `$API` is the tunnel base URL (step 5.3). **UNVERIFIED** routes and shapes (runbook section 1: from SigNoz source knowledge, not the repo).
+   `$API` is the tunnel base URL (step 5.3). Routes and list shapes: verified in the SigNoz v0.148.1 source (section 13); the live shapes are still read here.
 3. Read the shape before the real run. Record the answers in the report (not in the repo):
-   - dashboards: top-level keys; `.data` is an array; each item has `.id` and `.data.title`; how many items have the titles
-     "Geldar Paper" or "Geldar NeoForge" (`jq -r '.data[]?.data.title'`).
-   - rules: whether `.data` is an array or an object with `.rules`; each item has `.id` and `.alert`; how many have a Geldar alert name.
-   - If a list call returns another shape, or is an error, stop. The script fails at its jq step and sends nothing more. The fix is a
+   - dashboards: top-level keys; `.data.dashboards` is an array; each item has `.id` and `.spec.display.name`; how many items have the titles
+     "Geldar Paper" or "Geldar NeoForge" (`jq -r '.data.dashboards[]?.spec.display.name'`).
+   - rules: `.data.rules` is an array; each item has `.id` and `.alert`; how many have a Geldar alert name.
+   - If a list call returns another shape, or is an error, stop. The script stops before its first write (it reads both lists first). The fix is a
      new packet that changes the script and its test together (runbook section 1), not this request.
 4. The real run, only after the owner OK for this step:
    ```
    GELDAR_SERVICE_UID=1001 deploy/signoz/import.sh --token-file <OP_TMP>/token.txt
    ```
-   Expect `created` or `updated` per dashboard and per rule, then `done: 2 dashboard file(s), 4 alert file(s)`. Any `error` line stops the step; do not re-run it blindly.
+   Expect `created`, `skipped` or `replaced` per dashboard (`skipped` when the title is already listed), `created` or `updated` per rule, then `done: 2 dashboard file(s), 4 alert file(s)`. Any `error` line stops the step; do not re-run it blindly.
 
 ## 8. Verification (after the real run)
 
@@ -133,7 +133,7 @@ Run from the repo checkout at `<merge>`, on the operator machine:
    (for example `geldar_tps`, `geldar_tick_lag_ms`, `geldar_players_online`, runbook section 4) show points for the last hour.
    A panel empty on a stopped shard is expected; a panel empty while the shard runs is a finding.
 4. The rules list shows each Geldar rule once with a state. `inactive` is normal. A `firing` rule is reported to the owner at once.
-5. Second run, only if the owner OK covers it: `deploy/signoz/import.sh --token-file <OP_TMP>/token.txt` prints `updated` lines only and
+5. Second run, only if the owner OK covers it: `deploy/signoz/import.sh --token-file <OP_TMP>/token.txt` prints `skipped` lines for the dashboards and `updated` lines for the rules, and
    no `created` line, and the lists keep the same counts. (This shows idempotence; it writes the same content again.)
 6. Node, read-only: `docker ps --format '{{.Names}} {{.Status}}'` equals the list saved in section 5. The start times of
    `geldar-signoz`, `geldar-signoz-otelcol`, `geldar-ch`, `geldar-ch-keeper`, `geldar-gateway` and the Paper and NeoForge containers are
@@ -148,10 +148,9 @@ pre-run copy is put back (step 3 below). Rollback needs the owner's OK in the sa
 
 1. From `dashboards-before.json` and `rules-before.json` (and the after copies), list the ids of the items that were NOT there before the import:
    the titles "Geldar Paper" and "Geldar NeoForge", and the alert names of the four files, found in the after copies but not the before copies.
-2. Delete each of those created items: `curl -sS -X DELETE -H @<OP_TMP>/hdr.txt "$API/api/v1/dashboards/<id>"` and
-   `curl -sS -X DELETE -H @<OP_TMP>/hdr.txt "$API/api/v1/rules/<id>"`. **UNVERIFIED** route and method (runbook section 5).
-3. For an item that was UPDATED (it was in the before copy): put back the body from the before copy with `PUT`. **UNVERIFIED**: whether
-   the list call returns the full dashboard or rule body. If it does not, the rollback of an update cannot be done from this file; say so to the owner.
+2. Delete each of those created items: `curl -sS -X DELETE -H @<OP_TMP>/hdr.txt "$API/api/v2/dashboards/<id>"` and
+   `curl -sS -X DELETE -H @<OP_TMP>/hdr.txt "$API/api/v1/rules/<id>"`. Route and method verified in the source (section 13).
+3. Dashboards: the default run never changes an existing dashboard (it skips a listed title). `--replace` deletes one by id and creates it again, and the v2 list row holds only the id, the name and the display title (no panels), so a replaced dashboard cannot be restored from `dashboards-before.json`; the repo JSON is the source for a new import. For a rule that was UPDATED (it was in the before copy): put back its body from the before copy with `PUT /api/v1/rules/<id>`. **UNVERIFIED**: whether the rule list row carries the whole rule body (`GettableRule` embeds `PostableRule`, so it is expected to; check the copy).
 4. List again. No created title or alert name remains; updated ones show the before content.
 5. Rules deleted by this rollback lose their history in SigNoz. That is an owner decision (section 11).
 
@@ -177,17 +176,26 @@ pre-run copy is put back (step 3 below). Rollback needs the owner's OK in the sa
 4. Accept the UNVERIFIED routes and list shapes for this run (the first real run is the check on them).
 5. Whether a rollback may delete rules and so their history.
 
-## 13. UNVERIFIED list
+## 13. Verified and UNVERIFIED
 
-- The dashboard and rule routes, their methods, the list shapes and the delete and update routes (runbook section 1 and 5; `deploy/signoz/import.sh`).
-- Where SigNoz v0.148.1 stores dashboards and rules (the brief says the SigNoz ClickHouse database; not checked).
-- The notification channel type and receiver settings for `geldar-owner-channel`.
-- That the import adds no measurable load on SigNoz or the Paper and NeoForge ticks.
-- Whether a token can be revoked through the API.
-- The `docker inspect` format strings in sections 5 and 8.
-- The local tunnel port choice and the `-L` form on the operator machine.
+Verified in the SigNoz v0.148.1 source (`gh api repos/SigNoz/signoz/contents/<path>?ref=v0.148.1`; the paths are relative to the repo root):
 
-## 14. Report-back (the orchestrator records it; this request edits no repo file)
+- Rule routes: GET and POST `/api/v1/rules`, GET, PUT, DELETE and PATCH `/api/v1/rules/{id}`. `pkg/query-service/app/http_handler.go` lines 363-368 (`RegisterRoutes`).
+- Rule list: `listRules` answers with `aH.Respond(w, rules)`, which writes `{status, data}` (`writeHttpResponse`, same file). `ListRuleStates` returns `GettableRules` (`pkg/query-service/rules/manager.go`, line 853), so `data` is `{rules: [...]}`; each `GettableRule` has `id` and embeds `PostableRule`, whose name field is `json:"alert"` (`pkg/types/ruletypes/api_params.go`, lines 643-660).
+- Dashboard routes are v2: GET and POST `/api/v2/dashboards`, GET, PUT, PATCH and DELETE `/api/v2/dashboards/{id}` (`pkg/apiserver/signozapiserver/dashboard.go`). That the v1 dashboard routes are gone is the finding the brief records; this session did not re-read the v1 routes.
+- Dashboard list: `ListV2` answers `{status, data: {dashboards, total, tags, reservedKeywords}}` (`pkg/modules/dashboard/impldashboard/v2_handler.go` line 143 and `pkg/types/dashboardtypes/list_v2.go`, `ListableDashboardV2`). Default page 20, capped at 200. Each row has `id` (`pkg/types/identity.go`, `Identifiable`), `name` (the DNS-1123 name, not the title) and `spec.display.name` (the title, `Display` in `pkg/types/dashboardtypes/perses_replicas.go`).
+- Create: `CreateV2` (`v2_handler.go` lines 23-80) converts a body with `version` and no `schemaVersion` from v1 (`ConvertV1ToV2`), then answers 201 with `{status, data}` (`render.Success`, `pkg/http/render/render.go`). The v1 title becomes `spec.display.name` (`pkg/types/dashboardtypes/perses_v1_to_v2.go`, line 65, clipped to the display-name limit).
+
+**UNVERIFIED** (still open after the source check):
+
+- That `POST /api/v1/rules` accepts the rule bodies in the four alert files. The script sends each `.rules[]` object unchanged; the server's validation was not read.
+- That the v1 dashboard files (`version: v4`, no `schemaVersion`) convert to v2 as intended. Only the title mapping is read here; panels, variables and queries are not checked.
+- The paging on a node with more than 200 dashboards (the test uses a fake two-page list).
+- The notification channel `geldar-owner-channel`: its type, its receiver settings, and whether `POST /api/v1/rules` accepts the `preferredChannels` field.
+- Where SigNoz v0.148.1 stores dashboards and rules.
+- The `--replace` path and the rule `PUT` on a live node.
+- Whether a token can be revoked through the API, the `docker inspect` format strings, and the tunnel form (carried over from sections 5 and 10).
+ (the orchestrator records it; this request edits no repo file)
 
 UTC start and end; the dry-run output; the shapes found in section 7 step 3; the import output lines; the result of each check in section 8;
 the rule and dashboard count before and after; whether the second run was done; the rollback used, if any; and the node's container list

@@ -1,14 +1,19 @@
 #!/usr/bin/env bash
 # G1: import deploy/signoz/*-dashboard.json and deploy/signoz/*-alerts-*.json into SigNoz v0.148.1 through the SSH tunnel
-# to the loopback API port. Idempotent: an existing dashboard (matched by title) or rule (matched by alert name) is
-# updated, never duplicated. Runbook: docs/runbooks/signoz-import.md.
-# UNVERIFIED: the dashboard and rule routes and their list shapes below come from SigNoz source knowledge, not from this
-# repo (the repo verifies only the login and TTL routes). Check them on the first run; the runbook says how.
-# Usage: import.sh --token-file PATH [--url http://127.0.0.1:PORT] [--dry-run]
+# to the loopback API port. Idempotent: a dashboard whose title is already listed is skipped (or, with --replace,
+# deleted and created again); a rule whose alert name is already listed is updated, never duplicated.
+# Runbook: docs/runbooks/signoz-import.md.
+# Routes, from SigNoz v0.148.1 source: dashboards are v2 (GET and POST /api/v2/dashboards, DELETE /api/v2/dashboards/{id});
+# the list is {status, data: {dashboards: [{id, spec: {display: {name}}}], total}}, paged (limit at most 200).
+# Rules are v1 (GET and POST /api/v1/rules, PUT /api/v1/rules/{id}); the list is {status, data: {rules: [{id, alert}]}}.
+# UNVERIFIED on a live node: that POST /api/v1/rules accepts the rule bodies in the alert files, that the v1 dashboard
+# bodies convert to v2 as intended, and the notification channel. The runbook says how to check them.
+# Usage: import.sh --token-file PATH [--url http://127.0.0.1:PORT] [--dry-run] [--replace]
 #   --token-file PATH  file whose first line is the admin API token. Read into a header file in a temp dir; never
 #                      printed, never in argv. The file must live outside the repo checkout.
 #   --url              the loopback end of the SSH tunnel (default http://127.0.0.1:8095). Anything else is refused.
 #   --dry-run          print what would be sent. Sends nothing and reads no token.
+#   --replace          a dashboard whose title is already listed is deleted by id and created again. Default: skip it.
 # Needs bash, jq and (for a real run) curl. Writes only under a temp dir that it removes on exit.
 set -euo pipefail
 umask 077
@@ -20,6 +25,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd -P)"
 URL="http://127.0.0.1:8095"
 TOKEN_FILE=""
 DRY_RUN=0
+REPLACE=0
 
 die() {
   echo "import.sh: $*" >&2
@@ -27,7 +33,7 @@ die() {
 }
 
 usage() {
-  echo "usage: import.sh --token-file PATH [--url http://127.0.0.1:PORT] [--dry-run]" >&2
+  echo "usage: import.sh --token-file PATH [--url http://127.0.0.1:PORT] [--dry-run] [--replace]" >&2
   exit 2
 }
 
@@ -45,6 +51,10 @@ while [ $# -gt 0 ]; do
       ;;
     --dry-run)
       DRY_RUN=1
+      shift
+      ;;
+    --replace)
+      REPLACE=1
       shift
       ;;
     *) usage ;;
@@ -86,22 +96,59 @@ api() {
   fi
 }
 
-# send_dashboard FILE: PUT the dashboard whose title matches, else POST it.
+# list_dashboards: GET every page of the v2 dashboard list into $TMP/dashboards.jsonl, one dashboard per line.
+list_dashboards() {
+  local offset=0 n total
+  : > "$TMP/dashboards.jsonl"
+  while :; do
+    api GET "/api/v2/dashboards?limit=200&offset=$offset" > "$TMP/page.json"
+    jq -e '(((.data // {}).dashboards // []) | type) == "array"' "$TMP/page.json" > /dev/null \
+      || die "the dashboard list is not the v2 shape (data.dashboards[]); nothing was sent"
+    n="$(jq '((.data // {}).dashboards // []) | length' "$TMP/page.json")"
+    jq -c '((.data // {}).dashboards // [])[]' "$TMP/page.json" >> "$TMP/dashboards.jsonl"
+    total="$(jq '(.data // {}).total // 0' "$TMP/page.json")"
+    offset=$((offset + n))
+    if [ "$n" -eq 0 ] || [ "$offset" -ge "$total" ]; then break; fi
+  done
+}
+
+# list_rules: GET the v1 rule list into $TMP/rules.json.
+list_rules() {
+  api GET /api/v1/rules > "$TMP/rules.json"
+  jq -e '(((.data // {}) | type) == "object") and ((((.data // {}).rules) // []) | type == "array")' "$TMP/rules.json" \
+    > /dev/null || die "the rule list is not the v1 shape (data.rules[]); nothing was sent"
+}
+
+# dashboard_ids TITLE: the ids of the listed dashboards whose display name is TITLE, one per line.
+dashboard_ids() {
+  jq -r --arg t "$1" 'select(.spec.display.name == $t) | .id' "$TMP/dashboards.jsonl"
+}
+
+# rule_ids ALERT: the ids of the listed rules whose alert name is ALERT, one per line.
+rule_ids() {
+  jq -r --arg t "$1" '((.data // {}).rules // [])[] | select(.alert == $t) | .id' "$TMP/rules.json"
+}
+
+# send_dashboard FILE: a title already listed is skipped (with --replace: deleted by id, then created); else POST.
 send_dashboard() {
-  local file="$1" title id
+  local file="$1" title
+  local -a ids=()
   title="$(jq -r '.title' "$file")"
   if [ "$DRY_RUN" -eq 1 ]; then
-    echo "dry-run: dashboard \"$title\" ($(basename "$file")): PUT /api/v1/dashboards/<id> if a dashboard has this title, else POST /api/v1/dashboards"
+    echo "dry-run: dashboard \"$title\" ($(basename "$file")): POST /api/v2/dashboards unless a dashboard has this title (then skip; with --replace: DELETE /api/v2/dashboards/<id>, then POST)"
     return
   fi
-  api GET /api/v1/dashboards > "$TMP/dashboards.json"
-  id="$(jq -r --arg t "$title" '[(.data // [])[] | select(.data.title == $t) | .id] | if length > 1 then error("more than one dashboard titled " + $t) else (.[0] // "") end' "$TMP/dashboards.json")"
-  if [ -n "$id" ]; then
-    api PUT "/api/v1/dashboards/$id" "$file" > /dev/null
-    echo "updated dashboard \"$title\""
-  else
-    api POST /api/v1/dashboards "$file" > /dev/null
+  mapfile -t ids < <(dashboard_ids "$title")
+  if [ "${#ids[@]}" -eq 0 ]; then
+    api POST /api/v2/dashboards "$file" > /dev/null
     echo "created dashboard \"$title\""
+  elif [ "$REPLACE" -eq 0 ]; then
+    echo "skipped dashboard \"$title\": already exists (id ${ids[0]}); run with --replace to delete it and create it again"
+  else
+    [[ "${ids[0]}" =~ ^[0-9a-fA-F-]+$ ]] || die "the id of \"$title\" is not a UUID"
+    api DELETE "/api/v2/dashboards/${ids[0]}" > /dev/null
+    api POST /api/v2/dashboards "$file" > /dev/null
+    echo "replaced dashboard \"$title\""
   fi
 }
 
@@ -113,12 +160,12 @@ send_rules() {
     echo "dry-run: $count rule(s) from $(basename "$file"): PUT /api/v1/rules/<id> if a rule has the same alert name, else POST /api/v1/rules"
     return
   fi
-  api GET /api/v1/rules > "$TMP/rules.json"
   for ((i = 0; i < count; i++)); do
     title="$(jq -r ".rules[$i].alert" "$file")"
     jq -c ".rules[$i]" "$file" > "$TMP/rule.json"
-    id="$(jq -r --arg t "$title" '(.data | if type == "array" then . else (.rules // []) end) as $rules | [$rules[] | select(.alert == $t) | .id] | if length > 1 then error("more than one rule named " + $t) else (.[0] // "") end' "$TMP/rules.json")"
+    id="$(rule_ids "$title")"
     if [ -n "$id" ]; then
+      [[ "$id" =~ ^[0-9a-zA-Z-]+$ ]] || die "the id of rule \"$title\" is not safe in a path"
       api PUT "/api/v1/rules/$id" "$TMP/rule.json" > /dev/null
       echo "updated rule \"$title\""
     else
@@ -149,6 +196,23 @@ done
 
 if [ "$DRY_RUN" -eq 1 ]; then
   echo "dry run against $URL: nothing will be sent"
+else
+  # Read both lists and check every name before the first write: a list of another shape, or a name that matches
+  # more than one listed item, stops the run before anything is sent.
+  list_dashboards
+  list_rules
+  for f in "${DASHBOARDS[@]}"; do
+    title="$(jq -r '.title' "$f")"
+    mapfile -t matches < <(dashboard_ids "$title")
+    [ "${#matches[@]}" -le 1 ] || die "more than one dashboard titled \"$title\""
+  done
+  for f in "${ALERTS[@]}"; do
+    for ((i = 0; i < $(jq '.rules | length' "$f"); i++)); do
+      title="$(jq -r ".rules[$i].alert" "$f")"
+      mapfile -t matches < <(rule_ids "$title")
+      [ "${#matches[@]}" -le 1 ] || die "more than one rule named \"$title\""
+    done
+  done
 fi
 for f in "${DASHBOARDS[@]}"; do
   send_dashboard "$f"
