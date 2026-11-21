@@ -281,4 +281,55 @@ exec "${p(dirname(SH))}/ls" "$@"
       });
     },
   );
+
+  describe('the live commit records (node fact: release.commit may not exist; the manifests name the commit)', () => {
+    const put = (root: string, rel: string, text: string) => {
+      mkdirSync(dirname(join(root, rel)), { recursive: true });
+      writeFileSync(join(root, rel), text);
+    };
+
+    it('works with no release.commit when current.env names the live commit, and keeps it', () => {
+      const root = fixture(8, null);
+      put(root, 'state/current.env', `${manifest(sha(1))}\n`);
+      expect(run(root, ['--keep', '2', '--apply']).code).toBe(0);
+      expect(has(root, sha(1))).toBe(true);
+      expect(has(root, sha(2))).toBe(false);
+    });
+
+    it('works with only the installed release.env of the state directory', () => {
+      const root = fixture(8, null);
+      put(root, 'state/release.env', `${manifest(sha(1))}\n`);
+      expect(run(root, ['--keep', '2', '--apply']).code).toBe(0);
+      expect(has(root, sha(1))).toBe(true);
+    });
+
+    it('keeps every commit any record names: release.commit, current, previous, staged and inbox', () => {
+      const root = fixture(10, sha(1));
+      put(root, 'state/current.env', `${manifest(sha(2))}\n`);
+      put(root, 'state/previous.env', `${manifest(sha(3))}\n`);
+      put(root, 'staged/release.env', `${manifest(sha(4))}\n`);
+      put(root, 'inbox/release.env', `${manifest(sha(5))}\n`);
+      run(root, ['--keep', '2', '--apply']);
+      for (const i of [1, 2, 3, 4, 5, 9, 10]) expect(has(root, sha(i)), `sha ${i}`).toBe(true);
+      for (const i of [6, 7, 8]) expect(has(root, sha(i)), `sha ${i}`).toBe(false);
+    });
+
+    it('refuses when only previous, staged or inbox name a commit: none of them says what is live', () => {
+      const root = fixture(8, null);
+      put(root, 'state/previous.env', `${manifest(sha(3))}\n`);
+      put(root, 'staged/release.env', `${manifest(sha(4))}\n`);
+      put(root, 'inbox/release.env', `${manifest(sha(5))}\n`);
+      const r = run(root, ['--keep', '2', '--apply']);
+      expect(r.code).toBe(1);
+      for (let i = 1; i <= 8; i++) expect(has(root, sha(i))).toBe(true);
+    });
+
+    it('refuses when every record is malformed (short, upper-case, no commit line)', () => {
+      const root = fixture(8, 'abc');
+      put(root, 'state/current.env', `${manifest('abc123')}\n`);
+      put(root, 'state/release.env', 'GELDAR_BODY_IMAGE=x\n');
+      expect(run(root, ['--keep', '2', '--apply']).code).toBe(1);
+      expect(has(root, sha(1))).toBe(true);
+    });
+  });
 });

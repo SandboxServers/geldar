@@ -80,6 +80,31 @@ Not verified locally: the two `a TERM during --apply releases the colo-cd lock` 
 5. **Docs:** `node-only-config.md` row 14 and the `deploy/README.md` file table (`space-floor.sh`) are current.
 6. **`refresh_src`** is not made atomic here (changing `colo-cd.sh` copy logic cannot be exercised on this desktop, where its tests do not run). The mixed state it can leave after a failed refresh is documented in `deploy/README.md` with its repair. **A missing `$ROOT`** is skipped with a message by `space_floor` (main died in `df`); this is intended: the checks that need `$ROOT` (the compose file, the secrets overlay) refuse right after, so nothing proceeds on a missing checkout, and the message names the path.
 
+## Round 4: the live commit on the real node
+
+**Node facts, measured 2026-11-21 (read-only, by the orchestrator):** /var is a 9.5 GB logical volume, 17% used, 7.2 GiB free, 13% of inodes used (533,941 free of 610,800); the nvme filesystem is 38% used; Docker's root is `/mnt/nvme/docker`, on the nvme filesystem; the work directory holds 8 entries; 19 player hosts are up. The old 10 GiB block floor would have refused on /var (7.2 GiB free), which confirms the review finding that it could never pass; the 1 GiB floor (`GELDAR_MIN_FREE_KB_DEPLOY`) passes with room, and so does the 100000-inode floor. Docker's root on nvme is covered by the same 1 GiB floor.
+
+**Finding:** `/var/lib/geldar-colo/release.commit` does NOT exist on the node, yet recent deploys succeeded and logged "delta: <from> -> <to>". `colo-cd.sh` stops without `release.commit` in its `$STATE_DIR`, so the path that runs today must use a state directory other than the default `/var/lib/geldar-colo` (`GELDAR_STATE_DIR` can be set in the node-only `colo-env.sh`, default `/home/claude/colo-env.sh`, which `colo-cd.sh` sources, or by the untracked entrypoint). **The repo cannot settle which directory that is.** Nothing here guesses it.
+
+**What I changed so the prune scripts do not depend on the guess:** both read every record that exists and keep everything any of them names.
+- `prune-deploy-work.sh`: `release.commit`, the manifests `release.env` and `current.env` in the state directory (all three are records of what is live), plus `previous.env`, `<root>/staged/release.env` and `<root>/inbox/release.env` (kept, but not a record of what is live). A manifest names its commit on its first line (`# Release manifest for the Colo node (decision 0084). Commit <40 hex>.`, written by `.github/workflows/colo-images.yml`, copied verbatim by `colo-cd.sh`). With none of the three live records readable, it removes nothing and exits 1.
+- `prune-deploy-images.sh`: the root-only `/etc` manifest, `release.env` and `current.env` in the state directory (live), and `previous.env`. With none of the live ones listing images, it removes nothing and exits 1 (the operator account usually cannot read the `/etc` copy).
+- `deploy/README.md` no longer says "there is no `state/release.commit` record, the manifest carries no commit header": both halves were wrong (the manifest does carry the commit; `colo-cd.sh` does use `release.commit`).
+
+**Needed from the node (read-only) to close this, please:** (1) the value of `GELDAR_STATE_DIR` the deploy really uses (names and paths only: from `/home/claude/colo-env.sh` and from the entrypoint's environment, and which one wins); (2) a listing of that directory (`ls -l`, no file contents) to see `release.commit`, `release.env`, `current.env`, `previous.env`, `cd.log`; (3) the first line only of its `current.env` (it is the comment naming the commit; no image digests); (4) whether the `/var/lib/geldar-colo` directory exists at all. Run the prune scripts with `GELDAR_STATE_DIR` set to that directory (a dry run first); with the default and no record, they refuse.
+
+### Round 4 revert-checks (mutation applied, tests run, file restored)
+
+| Mutation | Failing tests |
+|---|---|
+| work prune ignores `current.env` | `works with no release.commit when current.env names the live commit`, `keeps every commit any record names` |
+| work prune ignores the state `release.env` | `works with only the installed release.env of the state directory` |
+| `previous.env` counts as a live record | `refuses when only previous, staged or inbox name a commit` |
+| work prune ignores the inbox manifest | `keeps every commit any record names` |
+| work prune reads `release.commit` only | three tests (current.env, release.env and the all-records case) |
+| image prune ignores the state `release.env` and `current.env` | `works with no /etc manifest ...`, `works with only current.env ...` |
+| image prune counts `previous.env` as live | `refuses when only previous.env lists images` |
+
 ## Inode prune (option A), carried over
 
 ## What changed

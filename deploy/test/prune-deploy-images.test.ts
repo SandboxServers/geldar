@@ -135,6 +135,36 @@ describe('prune-deploy-images.sh', () => {
     expect(run(root).out).toBe(`would remove ${body('1')}\n`);
   });
 
+  describe('the records of the current release (the /etc copy is root-only on the node)', () => {
+    const put = (root: string, rel: string, text: string) =>
+      writeFileSync(join(root, 'state', rel), text);
+
+    it('works with no /etc manifest when the state directory copy lists the images', () => {
+      const root = fixture(all, null, null);
+      put(root, 'release.env', env(body('3'), mind('2')));
+      const out = run(root).out;
+      for (const ref of [body('1'), body('2'), mind('1')])
+        expect(out).toContain(`would remove ${ref}`);
+      expect(out).not.toContain(body('3'));
+      expect(out).not.toContain(mind('2'));
+    });
+
+    it('works with only current.env, and keeps what previous.env names too', () => {
+      const root = fixture(all, null, null);
+      put(root, 'current.env', env(body('3'), mind('2')));
+      put(root, 'previous.env', env(body('2'), mind('1')));
+      expect(run(root).out).toBe(`would remove ${body('1')}\n`);
+    });
+
+    it('refuses when only previous.env lists images: it is not a record of what is live', () => {
+      const root = fixture(all, null, null);
+      put(root, 'previous.env', env(body('2')));
+      const r = run(root, ['--apply']);
+      expect(r.code).toBe(1);
+      expect(r.calls).not.toContain('image rm');
+    });
+  });
+
   // The signal is sent from a shell (`kill` of the script's own pid), so it is a real TERM on Windows (Git for Windows' sh)
   // as well as on Linux. The stub docker blocks for a second inside each `image rm`; the TERM arrives during the first.
   it('a TERM during the removal loop stops the loop and releases the colo-cd lock', () => {

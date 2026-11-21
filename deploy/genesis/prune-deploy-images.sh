@@ -4,10 +4,11 @@
 #   prune-deploy-images.sh [--apply]
 # The node is shared with another tenant, so this never runs a global prune (no `docker system prune`, no `docker image prune`).
 # It removes one named reference at a time, `docker image rm <repository>@<digest>`, and only a reference whose repository is
-# one the kept manifests name (the *_IMAGE repositories of $GELDAR_RELEASE_FILE, default /etc/geldar-colo/release.env) and
-# whose digest is in neither the current manifest nor the previous one ($GELDAR_STATE_DIR/previous.env, default
-# /var/lib/geldar-colo/previous.env; it may be missing on a first deploy). docker itself refuses an image a container uses;
-# that is reported and does not stop the run. A missing or empty current manifest refuses and removes nothing.
+# one the kept manifests name and whose digest is in none of them. The manifests are every one that exists of
+# $GELDAR_RELEASE_FILE (default /etc/geldar-colo/release.env, root-only on the node), $GELDAR_STATE_DIR/release.env and
+# current.env, and previous.env (the rollback target; it may be missing on a first deploy), with $GELDAR_STATE_DIR defaulting to
+# /var/lib/geldar-colo. docker itself refuses an image a container uses; that is reported and does not stop the run. If no
+# record of the current release lists images, nothing is removed and the exit code is 1.
 # The colo-cd lock directory ($GELDAR_STATE_DIR/cd.lock) must be free and is held for the run. Output is references only. POSIX sh.
 set -eu
 unset BASH_ENV ENV
@@ -27,7 +28,6 @@ for a in "$@"; do
   esac
 done
 
-[ -f "$RELEASE_FILE" ] && [ -r "$RELEASE_FILE" ] || fail "the current release manifest is not readable; nothing removed"
 # KEY=VALUE lines named *_IMAGE hold name@sha256:<64 hex>; nothing is sourced. CR and quotes are dropped, and a tag
 # (name:tag@sha256:...) is removed, because docker lists the repository without it.
 refs() {
@@ -36,8 +36,13 @@ refs() {
     sed -n 's/^[A-Z0-9_]*_IMAGE=\([^[:space:]]*@sha256:[0-9a-f]\{64\}\)$/\1/p' |
     sed 's#:[^/@]*@#@#'
 }
-keep=$(refs "$RELEASE_FILE"; refs "$STATE_DIR/previous.env")
-[ -n "$(refs "$RELEASE_FILE")" ] || fail "the current release manifest lists no images; nothing removed"
+# Every manifest that exists is read, and every image any of them names is kept. The records of what is live are the root-owned
+# $RELEASE_FILE (the operator account usually cannot read it), the copy colo-cd.sh keeps in the state directory
+# ($STATE_DIR/release.env) and current.env; previous.env is the rollback target. Nothing is removed unless a live record lists images.
+live=$(refs "$RELEASE_FILE"; refs "$STATE_DIR/release.env"; refs "$STATE_DIR/current.env")
+[ -n "$live" ] || fail "no readable record of the current release lists images (release.env, current.env); nothing removed"
+keep=$(printf '%s
+' "$live"; refs "$STATE_DIR/previous.env")
 repos=$(printf '%s\n' "$keep" | sed 's/@.*//' | sort -u)
 
 [ -d "$STATE_DIR" ] || fail "no state directory"
