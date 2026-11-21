@@ -47,7 +47,7 @@ exists() { # <file>: 0 if the record exists, 1 if it does not; refuses when that
   # A directory the account cannot search hides its records: they would look absent. The one exception is the root-only
   # $RELEASE_FILE directory (/etc/geldar-colo), whose copy the operator account is not meant to read (see manifest_refs).
   if [ "$1" != "$RELEASE_FILE" ] && [ -d "$dir" ] && [ ! -x "$dir" ]; then
-    fail "the directory $dir exists but cannot be searched, so its records cannot be checked; nothing removed"
+    fail "the directory $dir exists but cannot be searched, so its records cannot be checked; nothing removed. Rerun with an account that can search it (for example with sudo)"
   fi
   return 1
 }

@@ -495,7 +495,10 @@ exec "${p(dirname(SH))}/ls" "$@"
         try {
           const r = run(root, ['--keep', '2', '--apply']);
           expect(r.code).toBe(1);
+          // The new check's own message (the generic "no record" refusal also names the state directory).
+          expect(r.err).toContain('cannot be searched');
           expect(r.err).toContain(dirname(p));
+          expect(r.err).toContain('sudo');
           expect(has(root, sha(1))).toBe(true);
         } finally {
           chmodSync(dirname(p), 0o700);

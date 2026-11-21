@@ -67,7 +67,7 @@ exists() { # <file>: 0 if the record exists, 1 if it does not; refuses when that
   if [ -e "$1" ] || [ -L "$1" ]; then return 0; fi
   dir=$(dirname "$1")
   # A directory the account cannot search hides its records: they would look absent. Refuse rather than skip.
-  if [ -d "$dir" ] && [ ! -x "$dir" ]; then fail "the directory $dir exists but cannot be searched, so its records cannot be checked; nothing removed"; fi
+  if [ -d "$dir" ] && [ ! -x "$dir" ]; then fail "the directory $dir exists but cannot be searched, so its records cannot be checked; nothing removed. Rerun with an account that can search it (for example with sudo)"; fi
   return 1
 }
 first_line_of() { # <file>: sets $first, or refuses

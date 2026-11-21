@@ -45,7 +45,7 @@ function fixture(images: string[], current: string | null, previous: string | nu
   return root;
 }
 
-function run(root: string, args: string[] = []) {
+function run(root: string, args: string[] = [], extraEnv: Record<string, string> = {}) {
   const r = spawnSync(SH, [p(SCRIPT), ...args], {
     encoding: 'utf8',
     env: {
@@ -55,6 +55,7 @@ function run(root: string, args: string[] = []) {
       DOCKER_IMAGES: p(join(root, 'images.txt')),
       DOCKER_CALLS_LOG: p(join(root, 'calls.log')),
       PATH: [p(join(root, 'bin')), dirname(SH), process.env.PATH ?? ''].join(delimiter),
+      ...extraEnv,
     },
   });
   const calls = existsSync(join(root, 'calls.log'))
@@ -242,18 +243,45 @@ describe('prune-deploy-images.sh', () => {
       }
     });
 
+    // Isolated: a valid live record exists outside the state directory (release.env at the root), so the generic "no record"
+    // refusal cannot stand in; the state directory is the only thing unsearchable, and the message must be the new check's.
     it.skipIf(!canChmod)(
-      'a state directory that cannot be searched refuses, and so does a record inside it',
+      'a state directory that cannot be searched refuses with the search hint',
+      () => {
+        const root = fixture(all, env(body('3'), mind('2')), null);
+        chmodSync(join(root, 'state'), 0o600);
+        try {
+          for (const args of [[], ['--apply']]) {
+            const r = run(root, args);
+            expect(r.code, args.join(' ')).toBe(1);
+            expect(r.err).toContain('cannot be searched');
+            expect(r.err).toContain('sudo');
+            expect(r.calls).not.toContain('image rm');
+          }
+        } finally {
+          chmodSync(join(root, 'state'), 0o700);
+        }
+      },
+    );
+
+    // The one exception: the root-only /etc/geldar-colo directory (GELDAR_RELEASE_FILE) is skipped when it cannot be searched.
+    // Without the exception the image prune would refuse on every non-root run of the node.
+    it.skipIf(!canChmod)(
+      'the root-only manifest directory behind GELDAR_RELEASE_FILE is skipped, not refused',
       () => {
         const root = fixture(all, null, null);
         writeFileSync(join(root, 'state', 'current.env'), env(body('3'), mind('2')));
-        chmodSync(join(root, 'state'), 0o600);
+        const etc = join(root, 'etc-geldar-colo');
+        mkdirSync(etc);
+        writeFileSync(join(etc, 'release.env'), env(body('3')));
+        chmodSync(etc, 0);
         try {
-          const r = run(root, ['--apply']);
-          expect(r.code).toBe(1);
-          expect(r.calls).not.toContain('image rm');
+          const r = run(root, [], { GELDAR_RELEASE_FILE: p(join(etc, 'release.env')) });
+          expect(r.err).not.toContain('cannot be searched');
+          expect(r.code).toBe(0);
+          expect(r.out).toContain('would remove');
         } finally {
-          chmodSync(join(root, 'state'), 0o700);
+          chmodSync(etc, 0o700);
         }
       },
     );
