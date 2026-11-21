@@ -31,6 +31,9 @@ export const PHASE0_PROGRAMS: readonly string[] = [
   'flee',
   'follow',
   'build',
+  'explore',
+  'farm',
+  'patrol',
 ];
 
 /** The largest output the validators read: the Thinker's `text` cap (threat model section 4). */
@@ -132,7 +135,9 @@ type ArgSpec =
   | { kind: 'name'; required: boolean }
   | { kind: 'player'; required: boolean }
   | { kind: 'blueprint'; required: boolean }
-  | { kind: 'target'; required: boolean };
+  | { kind: 'target'; required: boolean }
+  | { kind: 'bool'; required: boolean }
+  | { kind: 'route'; min: number; max: number; required: boolean };
 
 /** Argument shapes of the Phase 0 programs, read from `golem/src/body/programs/*.ts`. */
 export const PROGRAM_ARGS: Record<string, Record<string, ArgSpec>> = {
@@ -163,6 +168,22 @@ export const PROGRAM_ARGS: Record<string, Record<string, ArgSpec>> = {
   build: {
     blueprint: { kind: 'blueprint', required: true },
     block: { kind: 'name', required: true },
+  },
+  // Bounds of the AN-44 shapes (contract/schemas/program-shapes.schema.json); program-shapes-drift.test.ts keeps them equal.
+  explore: {
+    legs: { kind: 'int', min: 1, max: 12, required: false },
+    leg_blocks: { kind: 'int', min: 8, max: 48, required: false },
+    avoid_water: { kind: 'bool', required: false },
+  },
+  farm: {
+    radius: { kind: 'int', min: 4, max: 24, required: false },
+    max_cells: { kind: 'int', min: 1, max: 32, required: false },
+    replant: { kind: 'bool', required: false },
+  },
+  patrol: {
+    route: { kind: 'route', min: 2, max: 8, required: true },
+    laps: { kind: 'int', min: 1, max: 5, required: false },
+    loop: { kind: 'bool', required: false },
   },
 };
 
@@ -196,6 +217,16 @@ export function checkProgramArguments(
         errors.add('schema', at, 'must be an integer');
       } else if (v < rule.min || v > rule.max) {
         errors.add('out_of_bounds', at, `must be from ${rule.min} to ${rule.max}`);
+      }
+    } else if (rule.kind === 'bool') {
+      if (typeof v !== 'boolean') errors.add('schema', at, 'must be true or false');
+    } else if (rule.kind === 'route') {
+      if (!Array.isArray(v)) {
+        errors.add('schema', at, 'must be a list of positions');
+      } else if (v.length < rule.min || v.length > rule.max) {
+        errors.add('out_of_bounds', at, `must hold ${rule.min} to ${rule.max} positions`);
+      } else {
+        for (const [i, point] of v.entries()) checkPosition(point, `${at}/${i}`, bounds, errors);
       }
     } else if (rule.kind === 'name') {
       if (typeof v !== 'string' || !/^[a-z0-9_]{1,64}$/.test(v)) {

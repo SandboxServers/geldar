@@ -4,14 +4,27 @@ import { ProgramRegistry } from '../program.ts';
 import { ProgramError } from './args.ts';
 import { BuildProgram } from './build.ts';
 import { CraftProgram } from './craft.ts';
+import { ExploreProgram } from './explore.ts';
+import { FarmProgram } from './farm.ts';
 import { FleeProgram } from './flee.ts';
 import { FollowProgram } from './follow.ts';
 import { GatherProgram } from './gather.ts';
+import { PatrolProgram } from './patrol.ts';
 import { RestProgram } from './rest.ts';
 import { TravelProgram } from './travel.ts';
 
 export { ProgramError, type ProgramErrorReason } from './args.ts';
-export { CraftProgram, FleeProgram, FollowProgram, GatherProgram, RestProgram, TravelProgram };
+export {
+  CraftProgram,
+  ExploreProgram,
+  FarmProgram,
+  FleeProgram,
+  FollowProgram,
+  GatherProgram,
+  PatrolProgram,
+  RestProgram,
+  TravelProgram,
+};
 
 /** Programs in the contract's `program` list that the Body does not run in Phase 0. */
 export const UNSUPPORTED_PROGRAMS = ['trade_wait'] as const;
@@ -42,8 +55,8 @@ class UnsupportedProgram implements IntentProgram {
 }
 
 /**
- * A registry with the six built-in programs, plus `build` and `trade_wait` which
- * refuse with `unsupported`. Skills register themselves later under their own names.
+ * A registry with the ten built-in programs (`explore`, `farm` and `patrol` among them), plus `trade_wait`, which
+ * refuses with `unsupported`. Skills register themselves later under their own names.
  */
 export function createProgramRegistry(): ProgramRegistry {
   const registry = new ProgramRegistry();
@@ -54,6 +67,9 @@ export function createProgramRegistry(): ProgramRegistry {
   registry.register('rest', () => new RestProgram());
   registry.register('flee', () => new FleeProgram());
   registry.register('follow', () => new FollowProgram());
+  registry.register('explore', () => new ExploreProgram());
+  registry.register('farm', () => new FarmProgram());
+  registry.register('patrol', () => new PatrolProgram());
   for (const name of UNSUPPORTED_PROGRAMS)
     registry.register(name, () => new UnsupportedProgram(name));
   return registry;
