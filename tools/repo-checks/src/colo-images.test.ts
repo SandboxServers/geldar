@@ -134,6 +134,12 @@ describe('colo-images.yml triggers', () => {
       expect(paths).toContain(required);
     }
   });
+
+  it('is not path-filtered to the plugin lock or deploy/, so a lock-only change starts no deploy run', () => {
+    const paths = workflow.on.push?.paths ?? [];
+    expect(paths).not.toContain('plugin/plugin-jars.lock');
+    expect(paths.filter((path) => path.startsWith('deploy/'))).toEqual([]);
+  });
 });
 
 describe('colo-images.yml pins and permissions', () => {
@@ -293,5 +299,40 @@ describe('colo-images.yml release manifest', () => {
       step.uses?.startsWith('actions/upload-artifact@'),
     );
     expect(upload?.with).toMatchObject({ name: 'release.env', path: 'release.env' });
+  });
+
+  it('checks out only the plugin lock and the genesis scripts, at the built commit', () => {
+    const checkout = manifest?.steps[0];
+    expect(checkout?.uses?.startsWith('actions/checkout@')).toBe(true);
+    expect(checkout?.uses).toMatch(/@[0-9a-f]{40}$/);
+    expect(checkout?.with?.ref).toBe(`\${{ github.sha }}`);
+    expect(checkout?.with?.['persist-credentials']).toBe(false);
+    expect(checkout?.with?.['sparse-checkout-cone-mode']).toBe(false);
+    const sparse = String(checkout?.with?.['sparse-checkout'] ?? '')
+      .split('\n')
+      .map((line) => line.trim());
+    expect(sparse).toEqual(
+      expect.arrayContaining(['/plugin/plugin-jars.lock', '/deploy/genesis/']),
+    );
+    expect(sparse.filter((line) => line !== '')).toHaveLength(2);
+  });
+
+  it('appends the plugin digests with from-lock, then validates release.env, before the upload', () => {
+    const steps = manifest?.steps ?? [];
+    const writer = steps.find((step) => step.run?.includes('} > release.env'));
+    const writerIndex = steps.indexOf(writer as Step);
+    const fromLock =
+      writer?.run?.indexOf('manifest.sh from-lock plugin/plugin-jars.lock >> release.env') ?? -1;
+    expect(fromLock).toBeGreaterThan(
+      writer?.run?.indexOf('} > release.env') ?? Number.MAX_SAFE_INTEGER,
+    );
+    const validateIndex = steps.findIndex(
+      (step) => step.run === 'sh deploy/genesis/manifest.sh validate release.env',
+    );
+    const uploadIndex = steps.findIndex((step) =>
+      step.uses?.startsWith('actions/upload-artifact@'),
+    );
+    expect(validateIndex).toBeGreaterThan(writerIndex);
+    expect(uploadIndex).toBeGreaterThan(validateIndex);
   });
 });

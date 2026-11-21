@@ -2,6 +2,9 @@
 # No pull_request trigger: pull requests and forks never publish. Each job also requires the upstream repository.
 # Each image is pushed, then its digest is read from the build-push output. The manifest job writes release.env
 # (the artifact `release.env`) with one digest reference per image: deploy/colo-up.sh reads it (decision 0084). The supervisor image is pushed but is not in release.env yet (C7-03b2 adds it).
+# The manifest job also writes, from the committed plugin/plugin-jars.lock, the two plugin jar digests (genesis manifest v2,
+# GELDAR_PLUGIN_*_SHA256); a PENDING lock leaves them out and the manifest stays v1. It validates release.env before the
+# upload. This workflow is not path-filtered to the lock or to deploy/.
 # Tags :main and :<12-char commit> are for humans; the deploy pins digests. Unsigned, no SBOM, no provenance
 # attestation (same as mcp-mock-image.yml). Packages are created private: making them public and linking them
 # to the repository are owner actions.
@@ -389,6 +392,14 @@ jobs:
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          sparse-checkout: |
+            /plugin/plugin-jars.lock
+            /deploy/genesis/
+          sparse-checkout-cone-mode: false
       - name: write release.env and the job summary
         env:
           BODY_DIGEST: ${{ needs.body.outputs.digest }}
@@ -418,6 +429,8 @@ jobs:
             echo "GELDAR_GLASS_IMAGE=ghcr.io/sandboxservers/geldar-glass@$GLASS_DIGEST"
             echo "GELDAR_REGISTER_IMAGE=ghcr.io/sandboxservers/geldar-register@$REGISTER_DIGEST"
           } > release.env
+          # The plugin digests (genesis v2). A PENDING lock prints nothing, so the manifest stays v1; a malformed lock exits 2.
+          sh deploy/genesis/manifest.sh from-lock plugin/plugin-jars.lock >> release.env
           {
             echo "## Colo release"
             echo ""
@@ -435,6 +448,20 @@ jobs:
             echo ""
             echo "The same values are in the \`release.env\` artifact of this run."
           } >> "$GITHUB_STEP_SUMMARY"
+          # Only present for a v2 manifest (the lock is not PENDING).
+          plugin_rows="$(grep -E '^GELDAR_PLUGIN_[A-Z_]*_SHA256=' release.env || true)"
+          if [ -n "$plugin_rows" ]; then
+            {
+              echo ""
+              echo "Plugin jars (plugin/plugin-jars.lock):"
+              echo ""
+              echo "| Variable | sha256 |"
+              echo "| --- | --- |"
+              printf '%s\n' "$plugin_rows" | sed 's/^\([^=]*\)=\(.*\)$/| \1 | \2 |/'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: validate release.env before the upload
+        run: sh deploy/genesis/manifest.sh validate release.env
       - name: publish release.env as a check-run annotation (fallback for the artifact blob host)
         run: |
           set -euo pipefail

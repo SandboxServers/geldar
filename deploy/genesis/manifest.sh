@@ -49,6 +49,27 @@ manifest_validate() {
     echo "genesis manifest: lines $bad are not KEY=VALUE with an upper-case name" >&2
     errors=1
   fi
+  # The size and line rules below mirror the node entrypoint's (the entrypoint is outside this repo): a plain file of at
+  # most 65536 bytes whose every line matches ^([A-Z][A-Z0-9_]*=[A-Za-z0-9_./:@+,=-]*|#.*|)$. Keep them in step with it.
+  # A CR byte is refused on every line, CRLF comment lines included, so a CRLF file fails here and not on the node.
+  # Each CR is mapped to byte 0x01 before grep: the Git for Windows grep drops CRs, and a CR in a grep pattern does not
+  # match. Messages name the line number only, never the line.
+  size=$(wc -c <"$f" | tr -d ' ')
+  if [ "$size" -gt 65536 ]; then
+    echo "genesis manifest: the file is larger than 65536 bytes" >&2
+    errors=1
+  fi
+  bad=$(tr '\r' '\001' <"$f" | LC_ALL=C grep -aEvn '^([A-Z][A-Z0-9_]*=[A-Za-z0-9_./:@+,=-]*|#.*|)$' | cut -d: -f1 | tr '\n' ' ')
+  if [ -n "$bad" ]; then
+    echo "genesis manifest: lines $bad do not match the node entrypoint's line rule" >&2
+    errors=1
+  fi
+  cr_byte=$(printf '\001')
+  bad=$(tr '\r' '\001' <"$f" | LC_ALL=C grep -aEn "$cr_byte" | cut -d: -f1 | tr '\n' ' ')
+  if [ -n "$bad" ]; then
+    echo "genesis manifest: the file contains a CR or 0x01 byte on line(s) $bad" >&2
+    errors=1
+  fi
   nv=$(manifest_count "$f" GELDAR_MANIFEST_VERSION)
   if [ "$nv" -gt 1 ]; then
     echo "genesis manifest: GELDAR_MANIFEST_VERSION is listed $nv times" >&2

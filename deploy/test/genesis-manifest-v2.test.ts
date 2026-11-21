@@ -182,3 +182,65 @@ describe("colo-cd's loader (deploy/common.sh load_release) with the v2 keys", ()
     expect(r.code).toBe(1);
   });
 });
+
+// The node entrypoint (outside this repo) accepts release.env only when it is at most 65536 bytes and every line matches
+// ^([A-Z][A-Z0-9_]*=[A-Za-z0-9_./:@+,=-]*|#.*|)$. validate must refuse the same files so CI fails first.
+describe('release manifest: the node entrypoint line rule and size limit (mirrored by validate)', () => {
+  const LOCK = join(DEPLOY, '..', 'plugin', 'plugin-jars.lock');
+  // V2 has 13 lines, so a line appended to it is line 14.
+  const BAD_LINE_NO = V2.split('\n').length;
+
+  function withLine(line: string): string {
+    return write(`${V2}${line}\n`);
+  }
+
+  it('a real release.env, as the manifest job writes it from the plugin lock, validates', () => {
+    const lock = manifest(['from-lock', posix(LOCK)]);
+    expect(lock.code).toBe(0);
+    expect(lock.out).toContain('GELDAR_MANIFEST_VERSION=2');
+    const f = write(`${V1}${lock.out}`);
+    expect(manifest(['validate', f]).code).toBe(0);
+  });
+
+  it.each([
+    ['a space in a value', 'GELDAR_NOTE=a b'],
+    ['a double quote in a value', 'GELDAR_NOTE="x"'],
+    ['a single quote in a value', "GELDAR_NOTE='x'"],
+    ['a semicolon in a value', 'GELDAR_NOTE=a;b'],
+    ['a lower-case key', 'geldar_note=x'],
+    ['a key with no equals sign', 'GELDAR_NOTE'],
+    ['a CRLF line', 'GELDAR_NOTE=x\r'],
+  ])('%s is refused, and the error names line 14 only', (_label, line) => {
+    const r = manifest(['validate', withLine(line)]);
+    expect(r.code).toBe(1);
+    expect(r.out).toMatch(new RegExp(`\\blines? ${BAD_LINE_NO}\\b`));
+  });
+
+  it('a CR byte on a comment line alone fails, and the error names that line', () => {
+    const r = manifest(['validate', withLine('# note\r')]);
+    expect(r.code).toBe(1);
+    expect(r.out).toMatch(new RegExp(`line\\(s\\) ${BAD_LINE_NO}\\b`));
+  });
+
+  it('a comment line and an empty line pass', () => {
+    const f = write(`${V2}# a comment with spaces "and quotes" = signs\n\n`);
+    expect(manifest(['validate', f]).code).toBe(0);
+  });
+
+  it('a file of exactly 65536 bytes passes and 65537 bytes is refused', () => {
+    const at = (total: number) => `${V2}#${'x'.repeat(total - Buffer.byteLength(V2) - 2)}\n`;
+    expect(Buffer.byteLength(at(65536))).toBe(65536);
+    expect(manifest(['validate', write(at(65536))]).code).toBe(0);
+    const big = manifest(['validate', write(at(65537))]);
+    expect(big.code).toBe(1);
+    expect(big.out).toContain('65536');
+  });
+
+  it('the error names the line number and never echoes the line', () => {
+    const r = manifest(['validate', withLine('GELDAR_NOTE=SECRETVALUE with a space')]);
+    expect(r.code).toBe(1);
+    expect(r.out).toMatch(new RegExp(`\\blines? ${BAD_LINE_NO}\\b`));
+    expect(r.out).not.toContain('SECRETVALUE');
+    expect(r.out).not.toContain('GELDAR_NOTE');
+  });
+});

@@ -1,8 +1,9 @@
 # Builds the two plugin jars (geldar-core and geldar-velocity-identity) on a push to main that changes plugin/, and on manual
 # dispatch. It publishes them as the GitHub Actions artifact `plugin-jars` (kept 30 days) with `plugin-jars.sha256`: the
 # commit and the sha256 of each jar. deploy/genesis/verify-plugin-jars.sh checks the digests before the upload. This
-# workflow deploys nothing, writes no release manifest (G1-04 does that once the config bundle exists), and needs no
-# secrets and no node access.
+# workflow deploys nothing and needs no secrets and no node access. It writes no release manifest: the colo-images manifest
+# job reads plugin/plugin-jars.lock, not this artifact. After the upload it checks the built jars against the committed
+# plugin/plugin-jars.lock (a mismatch fails the job; the artifact stays available).
 name: plugin-jars
 
 on:
@@ -58,3 +59,12 @@ jobs:
           path: plugin-jars/
           retention-days: 30
           if-no-files-found: error
+      # After the upload, so the artifact stays available when this check fails. The lock is read from the built commit
+      # (the checkout above); the check is strict, so a PENDING lock fails here too.
+      - name: check the committed plugin lock against the build
+        run: |
+          set -euo pipefail
+          if ! sh deploy/genesis/verify-plugin-lock.sh plugin-jars plugin/plugin-jars.lock; then
+            echo "::error::the committed plugin/plugin-jars.lock differs from this build (or is still PENDING). Update the lock to the digests of this build: the artifact plugin-jars has them." >&2
+            exit 1
+          fi
