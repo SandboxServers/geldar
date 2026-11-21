@@ -296,6 +296,37 @@ describe('GET /agents/{playerId}/skin (C7-13a)', () => {
   });
 });
 
+describe('skin store failures and logs (C7-13a review fix 2)', () => {
+  it('a store that throws is a stable 500 with no owner id, no PNG bytes and one call', async () => {
+    const f = fakeStore();
+    f.submitSkin.mockImplementationOnce(async () => {
+      throw new Error(`db failed for ${IDENT} with ${VALID.toString('hex')}`);
+    });
+    const r = await post(await boot(f.store), VALID);
+    const text = await r.text();
+    expect(r.status).toBe(500);
+    expect(text).toContain('internal');
+    expect(text).not.toContain(IDENT);
+    expect(text).not.toContain(VALID.toString('hex'));
+    expect(f.submitSkin).toHaveBeenCalledTimes(1);
+  });
+
+  it('nothing logged on a refused upload carries the identity hash or the PNG bytes', async () => {
+    const spies = [
+      vi.spyOn(console, 'log').mockImplementation(() => {}),
+      vi.spyOn(console, 'error').mockImplementation(() => {}),
+      vi.spyOn(console, 'warn').mockImplementation(() => {}),
+    ];
+    const f = fakeStore({ ok: false, code: 'skin_upload_pending' });
+    await post(await boot(f.store), VALID);
+    const logged = spies.flatMap((s) => s.mock.calls.map((c) => c.map(String).join(' ')));
+    for (const line of logged) {
+      expect(line).not.toContain(IDENT);
+      expect(line).not.toContain('valid-stand-in');
+    }
+  });
+});
+
 describe('mountSkinRoutes (C7-13a)', () => {
   it('mounts nothing unless the store has both methods', () => {
     const f = fakeStore();
