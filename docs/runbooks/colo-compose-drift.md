@@ -26,9 +26,22 @@ Values are from the node's compose file and the repo's. No secret values, no add
 7. Names and ports: the node has the literal project name, network name and loopback ports; the repo has
    `${GELDAR_PROJECT}`, `${GELDAR_NETWORK}` and `${GELDAR_PORT_*}`, with the same defaults.
 
-## Not yet checked
+## Sibling compose files, read 2026-11-20
 
-- `compose/nats-auth.yml`, `compose/colo-public.yml` and the kino overlays. A read-only diff by ops is pending.
+Read on the node by sha comparison against origin/main aa0c19ee. No secret values involved. Of the 18 sibling files
+in the repo's `compose/` (all but `colo.yml` and `.env.example`), 14 are on the node:
+
+- 12 are identical to the repo: `colo-kino-session.yml`, `colo-kino.yml`, `colo-notice.yml`, `colo-public.yml`,
+  `mcp.yml`, `nats-auth-mcp.yml`, `nats-auth.yml`, `nf-live-telemetry-off.yml`, `nf-live-telemetry.yml`,
+  `nf-live.yml`, `phase0.yml`, `rcon-host.yml`.
+- 2 differ:
+  - `nf-live-human.yml` differs functionally. The repo adds a `velocity-human-init` service, a chown one-shot, a
+    `depends_on`, and `restart: unless-stopped`; the node has the older revision.
+  - `nf-live-probe.yml` differs only in comments.
+- 4 are not on the node: `nf-live-bluemap-web.yml`, `nf-live-mod-bluemap.yml`, `nf-live-mod-chunky.yml`, `signcheck.yml`.
+
+`colo.yml` is the main divergence (items 1 to 7 above). The functional `nf-live-human.yml` divergence belongs in
+option c with the `colo.yml` items. `nf-live-probe.yml` is comments only and does not.
 
 ## Options
 
@@ -40,7 +53,8 @@ Values are from the node's compose file and the repo's. No secret values, no add
   (`player-start` after `player-stop`), which restarts the Bodies and needs an owner window.
 - **c. Repo as truth.** Port the node-only edits into the repo first; owners decide items 3, 4 and 5; then sync the
   node or point the deploy at the work checkout. Do it in one window, with a render-versus-running proof (render the
-  merged config from the repo, compare it with the running containers' config).
+  merged config from the repo, compare it with the running containers' config). The `nf-live-human.yml` drift goes
+  into this job too.
 
 ## Decision
 
