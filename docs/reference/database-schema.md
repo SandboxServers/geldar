@@ -10,7 +10,7 @@ sources: [sql, sql/README.md, sql/test, tools/migrate, .github/workflows/ci.yml,
 
 # Database schema
 
-Every table, column, role, grant, function and trigger the 45 migrations in `sql/` create, what each migration adds, and the retention and erasure rules the migrations and decisions state. Read from the migration files at 1b114276 on 2026-11-16. No database was queried (plan decision D8), so what a node has applied is unverified.
+Every table, column, role, grant, function and trigger the 48 migrations in `sql/` create, what each migration adds, and the retention and erasure rules the migrations and decisions state. Read from the migration files at 1b114276 on 2026-11-16. No database was queried (plan decision D8), so what a node has applied is unverified.
 
 Tables and functions that serve observation (thoughts, journals, the per-turn record, Kino) are marked **agents-never** and described at the level spec Appendix D and the decision titles state, with no visibility rule detail ([documentation style](../agents/documentation-style.md#agents-never-learn-they-are-watched)).
 
@@ -68,7 +68,7 @@ On 2026-11-20 at the C7-13a fix commit this prints 48 numbers from 0001 to 0067.
 | 0025 | `0025_admin_flag_and_register_audit.sql` | `mcp_owners.is_admin`; `register_is_admin`; `register_audit` with its append-only trigger | 0170 (C7-12) |
 | 0026 | `0026_owner_api_keys.sql` | `owner_api_keys`; `register_owner_key_resolve`, `register_mint_owner_key`, `register_revoke_owner_key`, `register_list_owner_keys` | 0170 point 2, 0152 (C7-02b) |
 | 0027 | `0027_body_ops.sql` | `body_ops`; role `geldar_supervisor`; `supervisor_is_admin` | 0170 (C7-03a) |
-| 0031 | `0031_skin_uploads.sql` | `skin_uploads`: owner skin uploads held as `pending` (PNG bytes, sha256, status, reason code); register may INSERT and SELECT, not UPDATE | C7-13a |
+| 0031 | `0031_skin_uploads.sql` | `skin_uploads`: owner skin uploads held as `pending` (PNG bytes, sha256, status, reason code); register may INSERT and SELECT, not UPDATE; column `lock_cleared_at` (set by the operator on rejected rows, releases the 3-rejects lock; CHECK: rejected rows only) | C7-13a |
 | 0032 | `0032_token_lifecycle.sql` | token life 90 days in `register_mint_token`; `register_renew_token`, `register_revoke_tokens`, `register_token_info` | 0170 point 1 (C7-02a) |
 | 0033 | `0033_supervisor_display_name.sql` | `supervisor_player_display_name` | C7-03b3 |
 | 0034 | `0034_operator_player_flags.sql` | `operator_set_player_flags`, EXECUTE for the operator role `geldar` | 0138, 0014 (C7-14) |
@@ -87,6 +87,7 @@ On 2026-11-20 at the C7-13a fix commit this prints 48 numbers from 0001 to 0067.
 | 0063 | `0063_body_host_roles.sql` | `mcp_players.host_key`; role `geldar_body_host`; `managed_life_id`, `supervisor_player_life_id`, `player_host_config`; `geldar_mcp` narrowed to six `mcp_players` columns | 0260, 0261 (BH-1) |
 | 0065 | `0065_owner_export_budget.sql` | `register_owner_export` replaced with lower byte budget and row caps | C7-09b |
 | 0066 | `0066_events_trace_id.sql` | `events.trace_id TEXT` (nullable, no default, no index); hidden from `geldar_glass` and `geldar_mcp` | T-08 |
+| 0067 | `0067_skin_upload_rules.sql` | `register_skin_submit` (pending only; one pending per agent, 3 a day per agent, 1 hour after a reject, a lock after 3 rejects in 30 days until the operator clears it; admin owners exempt from the rate rules) and `register_skin_status`, both SECURITY DEFINER; `register_account_delete` recreated from 0053 with the `skin_uploads` delete added | C7-13a, decision 0172 |
 | 0067 | `0067_skin_upload_rules.sql` | `register_skin_submit` (PNG, sha256 and the 32768-byte cap checked; one pending per agent; the lock: 3 rejects of the owner within 30 days (decided_at), held until the operator sets `skin_uploads.lock_cleared_at` (0031 column); 1 hour after a reject per agent; 3 a day per agent; admin exempt from the rate rules and the lock) and `register_skin_status`; `register_account_delete` (0053 body, which also deletes turn_records) also deletes the owner's `skin_uploads` rows | C7-13a |
 
 ## Tables

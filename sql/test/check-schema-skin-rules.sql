@@ -121,6 +121,22 @@ BEGIN
   got := check_skin_try(h_b, 'skin-rules-q', png, sha256(png));
   IF got <> 'skin_upload_locked' THEN RAISE EXCEPTION 'skin rules: three rejects within 30 days must lock owner b, got %', got; END IF;
 
+  -- the operator clear releases the three old rejects; after it, two new rejects do not lock owner b (the cleared rows
+  -- count for nothing), and a third new reject does. Without the clause on the inner count the two new rejects lock.
+  UPDATE skin_uploads SET lock_cleared_at = now() WHERE owner_id = 'skin-rules-b' AND status = 'rejected' AND lock_cleared_at IS NULL;
+  got := check_skin_try(h_b, 'skin-rules-q', png, sha256(png));
+  IF got <> 'ok' THEN RAISE EXCEPTION 'skin rules: owner b must be unlocked after the clear, got %', got; END IF;
+  UPDATE skin_uploads SET status = 'rejected', reason_code = 'other', decided_at = now() - interval '2 hours', decided_by = 'op'
+    WHERE player_id = 'skin-rules-q' AND status = 'pending';
+  UPDATE skin_uploads SET status = 'rejected', reason_code = 'other', decided_at = now() - interval '2 hours', decided_by = 'op'
+    WHERE player_id = 'skin-rules-s' AND status = 'pending';
+  got := check_skin_try(h_b, 'skin-rules-q', png, sha256(png));
+  IF got <> 'ok' THEN RAISE EXCEPTION 'skin rules: two new rejects after a clear must not lock owner b, got %', got; END IF;
+  UPDATE skin_uploads SET status = 'rejected', reason_code = 'other', decided_at = now() - interval '2 hours', decided_by = 'op'
+    WHERE player_id = 'skin-rules-q' AND status = 'pending';
+  got := check_skin_try(h_b, 'skin-rules-s', png, sha256(png));
+  IF got <> 'skin_upload_locked' THEN RAISE EXCEPTION 'skin rules: a third reject after a clear must lock owner b again, got %', got; END IF;
+
   -- admin owner c (0170): exempt from the wait, the lock and the daily cap, and from nothing else
   UPDATE mcp_owners SET is_admin = true WHERE owner_id = 'skin-rules-c';
   got := check_skin_try(h_c, 'skin-rules-k1', png, sha256(png));
@@ -154,6 +170,37 @@ BEGIN
   -- the status view: the newest row of the agent, its state and no bytes
   SELECT count(*) INTO n FROM register_skin_status(h_c, 'skin-rules-k1') WHERE upload_status = 'pending';
   IF n <> 1 THEN RAISE EXCEPTION 'skin rules: status of k1 must be the pending row, found % pending', n; END IF;
+
+  -- the admin daily exemption: approve the pending row of k1 and upload again, twice, so k1 holds 4 rows created today.
+  -- A non-admin agent is refused at the third row of the day (case p1 above); the admin fourth upload must be accepted.
+  UPDATE skin_uploads SET status = 'approved', decided_at = now(), decided_by = 'op'
+    WHERE player_id = 'skin-rules-k1' AND status = 'pending';
+  got := check_skin_try(h_c, 'skin-rules-k1', png, sha256(png));
+  IF got <> 'ok' THEN RAISE EXCEPTION 'skin rules: admin third upload of one agent today refused: %', got; END IF;
+  UPDATE skin_uploads SET status = 'approved', decided_at = now(), decided_by = 'op'
+    WHERE player_id = 'skin-rules-k1' AND status = 'pending';
+  got := check_skin_try(h_c, 'skin-rules-k1', png, sha256(png));
+  IF got <> 'ok' THEN RAISE EXCEPTION 'skin rules: admin fourth upload of one agent today refused (daily cap exempt): %', got; END IF;
+  SELECT count(*) INTO n FROM skin_uploads WHERE player_id = 'skin-rules-k1' AND created_at > now() - interval '1 day';
+  IF n <> 4 THEN RAISE EXCEPTION 'skin rules: admin agent k1 must hold 4 rows in the last 24 hours, found %', n; END IF;
+
+  -- the daily window is 24 hours on created_at and strict: three uploads of agent p5 created exactly 24 hours ago are
+  -- outside it, so the next upload is accepted; the same three at 23:59:59 ago are inside it, so the next is refused.
+  -- Owner a is not locked (its rejects are cleared above) and p5 has no reject, so only the daily rule is in play.
+  INSERT INTO mcp_players (player_id, owner_id, life_id, display_name, harness, status) VALUES
+    ('skin-rules-p5', 'skin-rules-a', 'skin_rules_p5', 'rulesp5', 'claude-code', 'active');
+  INSERT INTO skin_uploads (owner_id, player_id, png, sha256, status, reason_code, created_at, decided_at, decided_by) VALUES
+    ('skin-rules-a', 'skin-rules-p5', png, sha256(png), 'approved', NULL, now() - interval '24 hours', now() - interval '24 hours', 'op'),
+    ('skin-rules-a', 'skin-rules-p5', png, sha256(png), 'approved', NULL, now() - interval '24 hours', now() - interval '24 hours', 'op'),
+    ('skin-rules-a', 'skin-rules-p5', png, sha256(png), 'approved', NULL, now() - interval '24 hours', now() - interval '24 hours', 'op');
+  got := check_skin_try(h_a, 'skin-rules-p5', png, sha256(png));
+  IF got <> 'ok' THEN RAISE EXCEPTION 'skin rules: uploads 24 hours old are outside the daily window, must accept, got %', got; END IF;
+  UPDATE skin_uploads SET status = 'approved', decided_at = now(), decided_by = 'op'
+    WHERE player_id = 'skin-rules-p5' AND status = 'pending';
+  UPDATE skin_uploads SET created_at = now() - interval '23 hours 59 minutes 59 seconds'
+    WHERE player_id = 'skin-rules-p5' AND created_at = now() - interval '24 hours';
+  got := check_skin_try(h_a, 'skin-rules-p5', png, sha256(png));
+  IF got <> 'skin_upload_daily' THEN RAISE EXCEPTION 'skin rules: uploads 23:59:59 old are inside the daily window, must refuse, got %', got; END IF;
 END
 $skin_rules$;
 

@@ -1,5 +1,6 @@
 -- Migration 0067 (C7-13a-sql, decision 0172): register definer functions for owner skin uploads, and account deletion
--- reaches skin_uploads. Additive to 0031 (the table, not edited) and to 0040 (register_account_delete is recreated
+-- reaches skin_uploads. Additive to 0031 (the table; 0031 adds lock_cleared_at, which this migration reads) and to
+-- 0040 (register_account_delete is recreated
 -- with the same signature, SECURITY DEFINER, pinned search_path, grants and 3 s lock_timeout; the body is the 0053 body,
 -- which also erases turn_records, and the only new statement is the skin_uploads delete).
 --
@@ -19,8 +20,9 @@
 -- register_skin_status(identity hash, player id): the newest upload of the agent for the owner. No PNG, no sha256,
 -- no decided_by: the owner sees the status and the reason code only (0172 point 4). Zero rows = no upload yet.
 --
--- The rate counts read the skin_uploads_owner_created index (owner_id, created_at), as 0031 says. A pg_advisory_xact_lock
--- per owner serialises two submits of one owner, so the counts cannot be raced past.
+-- The 30-day reject count reads the owner's rows through skin_uploads_owner_created (owner_id, created_at), as 0031
+-- says. The daily and pending counts are per agent (player_id) and read no index. A pg_advisory_xact_lock per owner
+-- serialises two submits of one owner, so the counts cannot be raced past.
 
 CREATE OR REPLACE FUNCTION register_skin_submit(p_identity_hash BYTEA, p_player_id TEXT, p_png BYTEA, p_sha256 BYTEA)
 RETURNS BIGINT
@@ -36,7 +38,9 @@ DECLARE
   last_decided TIMESTAMPTZ;
   new_id BIGINT;
 BEGIN
-  SELECT i.owner_id INTO who FROM public.mcp_identities i WHERE i.identity_hash = p_identity_hash;
+  -- FOR SHARE: register_account_delete takes FOR UPDATE on this row. A submit that waits for a delete sees no identity
+  -- row (or owner_id NULL, a ban tombstone) once the delete commits, and is refused, so no skin row outlives its owner.
+  SELECT i.owner_id INTO who FROM public.mcp_identities i WHERE i.identity_hash = p_identity_hash FOR SHARE;
   IF NOT FOUND OR who IS NULL THEN
     RAISE EXCEPTION 'register_skin_submit: not an owner' USING ERRCODE = '42501';
   END IF;

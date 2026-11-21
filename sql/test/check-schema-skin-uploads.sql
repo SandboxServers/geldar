@@ -83,6 +83,18 @@ BEGIN
     RAISE EXCEPTION 'schema check: a pending skin upload with a reason code must be refused';
   END IF;
 
+  -- The lock release (lock_cleared_at, set by the operator) applies to rejected rows only: on a pending row it is refused.
+  refused := FALSE;
+  BEGIN
+    INSERT INTO skin_uploads (owner_id, player_id, png, sha256, status, lock_cleared_at)
+      VALUES ('skin-check-owner', 'skin-check-lock', png, h, 'pending', now());
+  EXCEPTION WHEN check_violation THEN
+    refused := TRUE;
+  END;
+  IF NOT refused THEN
+    RAISE EXCEPTION 'schema check: a pending skin upload with lock_cleared_at set must be refused';
+  END IF;
+
   -- The sha256 is exactly 32 bytes: 31 bytes is refused.
   refused := FALSE;
   BEGIN
