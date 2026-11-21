@@ -17,7 +17,7 @@ before it runs. Any step that is not named in that OK does not run.
 2. Any compose command on the node carries the explicit deploy environment from the colo env files and always `up -d --no-deps <service>`.
 3. Prove that the render matches the RUNNING container before restarting anything (docker compose config diff against docker inspect of the running container).
 4. NOTHING may be written outside the named paths (list them explicitly in each document: the stage directory, the secrets file, a temp dir that is removed).
-5. No scratch files.
+5. No scratch files outside the named paths.
 6. Never run anything that stops, removes or recreates containers or networks other than the one named.
 7. No secrets, account names or IPs in the document.
 8. Each step needs a fresh direct owner OK with a window from the orchestrator geldar-69 before it runs.

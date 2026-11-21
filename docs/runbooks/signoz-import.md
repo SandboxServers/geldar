@@ -62,10 +62,18 @@ calls with the header file written without a command-line token.
 
 ## 3. Dry run, then the real run
 
+Run the script from an export, not from the checkout. `<commit>` is the commit that holds `deploy/signoz/` (the merge commit), and `<SCRATCH>` is one new, empty directory outside the repo checkout:
+
 ```
-deploy/signoz/import.sh --token-file <path outside the repo> --dry-run
-deploy/signoz/import.sh --token-file <path outside the repo>
+SCRATCH=<SCRATCH>
+mkdir -m 700 "$SCRATCH"
+git -C <repo> archive <commit> deploy/signoz | tar -x -C "$SCRATCH"
+ls "$SCRATCH/deploy/signoz"
+"$SCRATCH/deploy/signoz/import.sh" --token-file <path outside the repo> --dry-run
+"$SCRATCH/deploy/signoz/import.sh" --token-file <path outside the repo>
 ```
+
+The `ls` must list `import.sh` and the six JSON files (two dashboards, four alert files). When the import is done, remove `<SCRATCH>` with `rm -rf` on that one directory.
 
 The dry run prints one line per file: the PUT or POST it would send. It sends nothing and reads no token. The real run
 prints `created`, `skipped` or `replaced` per dashboard, `created` or `updated` per rule, then `done`. Before the real run, list what is there so you can
