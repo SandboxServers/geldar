@@ -1,4 +1,4 @@
 # Locks the plugin jars that the plugin-jars workflow publishes (GE-01a). Checked by deploy/genesis/verify-plugin-lock.sh.
-# source commit: PENDING
-0000000000000000000000000000000000000000000000000000000000000000  geldar-core.jar
-1111111111111111111111111111111111111111111111111111111111111111  geldar-velocity-identity.jar
+# source commit: 2725c5251c2c9c60e567b02adc40da2854422380
+a77c89c30906a07ea7cff2c82ca74f7f55b7fab138e11656d7fbb40ff3ade563  geldar-core.jar
+32c3a6d0030d1393144a19238ab8276b936828f55e69a1075c0d682657bcee34  geldar-velocity-identity.jar

@@ -3,8 +3,9 @@
 #   deploy/genesis/verify-plugin-lock.sh <artifact-dir> <lock-file> [--allow-pending]
 # <artifact-dir> is the plugin-jars artifact (see verify-plugin-jars.sh). The lock has one `<64 lowercase hex>  <file name>`
 # line per jar, the plugin-jars.sha256 format, and one header line: `# source commit: <40 lowercase hex>` or
-# `# source commit: PENDING`. A PENDING lock is refused unless --allow-pending is given; that flag admits only the PENDING
-# header, the digests are checked either way. Jar names must match ^[A-Za-z0-9._-]+$. The lock, plugin-jars.sha256 and the
+# `# source commit: PENDING`. The commit is informational: it names the commit whose build produced the digests, and it is
+# not compared with the commit of the artifact (plugin-jars.sha256 names that one). A PENDING lock is refused unless
+# --allow-pending is given; that flag admits only the PENDING header, the digests are checked either way. Jar names must match ^[A-Za-z0-9._-]+$. The lock, plugin-jars.sha256 and the
 # jars in the directory must name the same jars, and every jar must hash to its locked digest. Exit 0 when they agree; 1 on
 # a mismatch, a missing or extra jar, or a refused PENDING lock; 2 on a usage or format error.
 set -eu
@@ -136,18 +137,8 @@ if [ "$lock_pairs" != "$pairs" ]; then
   echo "plugin-jars.sha256 does not list the same jars and digests as the lock" >&2
   status=1
 fi
-# plugin-jars.sha256 names the commit it was built from (plugin-jars.yml). The lock must name the same commit unless PENDING.
-if [ "$commit" != PENDING ]; then
-  built_line=$(grep '^# Geldar plugin jars, built from commit ' "$sums" || true)
-  if [ -n "$built_line" ]; then
-    built_commit=${built_line#'# Geldar plugin jars, built from commit '}
-    built_commit=${built_commit%%.*}
-    if [ "$built_commit" != "$commit" ]; then
-      echo "lock source commit differs from plugin-jars.sha256" >&2
-      status=1
-    fi
-  fi
-fi
+# The lock's source commit is informational: it is not compared with the built-from line of plugin-jars.sha256. A lock cannot
+# name the commit that contains it, so the build being verified may come from another commit with the same digests.
 for name in $sums_names; do
   case " $lock_names " in
     *" $name "*) ;;

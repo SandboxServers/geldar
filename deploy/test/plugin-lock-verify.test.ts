@@ -273,13 +273,23 @@ describe('verify-plugin-lock.sh', () => {
   });
 
   itRuns(
-    'fails when the lock source commit differs from the commit plugin-jars.sha256 was built from',
+    'accepts a lock whose source commit differs from the built-from commit when digests match',
     () => {
       publish();
       const lock = writeLock('f'.repeat(40));
       const result = runScript([dir, lock]);
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain('lock source commit differs from plugin-jars.sha256');
+      expect(result.status).toBe(0);
+      expect(result.stderr).not.toContain('differs');
+      expect(result.stdout).toContain(`ok: ${CORE}`);
+      expect(result.stdout).toContain(`ok: ${VELOCITY}`);
     },
   );
+
+  itRuns('still fails a different-commit lock when a digest differs', () => {
+    publish();
+    const lock = writeLock('f'.repeat(40), `${digest('other core bytes')}  ${CORE}`);
+    const result = runScript([dir, lock]);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('does not list the same jars and digests as the lock');
+  });
 });
