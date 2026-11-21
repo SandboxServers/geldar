@@ -79,3 +79,8 @@ NeoForge plan (additive; Paper stays supported, cards PT-N1 to PT-N14): `docs/an
 2. `git worktree list` and `gh pr list`.
 3. Read the "Rows pending a live scratch run" table in `paper-plugin/scratch-test-plan.md`.
 4. Never restart Bodies; announce every node step.
+## Gap plan 2026-11-20 (geldar-telemetry; owner approved steps 1-4; coders and PRs allowed)
+- Live: Ledger on Paper since 23:08:37Z (six default-on collectors, opt-ins off, jar 912d2841, core a77c89c3, agent 2.33.1; post-restart tick p95 4.9-5.3 ms, dropped 0). Console log lines ship via the agent's log4j appender (owner: fine).
+- Packets: `gap-plan/packets.md`. G1 SigNoz import (telemetry/g1-import), G2 NATS and Postgres monitors (telemetry/g2-monitors), G3 player host Body metrics and decision 0353 (telemetry/g3-body). Each reviewed once (fix-first), fixed; PRs pending. G3b (aggregate counters, managed host env) and G5 (host stats route) not started.
+- Step 4 blocked: scriptorium TM-10..13 and TM-31 not started; needs the Caddy ingest window and the owner's token.
+- Decision block 0353-0359 (0353 used by G3). Every node step needs the owner's fresh OK, run by geldar-69's ops from an exact brief; colo-images merges go to geldar-69 with the head sha first.
