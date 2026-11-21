@@ -10,13 +10,14 @@ The shard runs in its final Colo environment, reachable from the internet withou
 
 - **Phase 0:** closed as proof of life by [decision 0066](../../decisions/0066-phase0-closed-as-proof-of-life.md). The spec's exit criteria are waived by the owner, not met. The first ranger (a real client, operated by a person) has played on the Phase 0 shard.
 - **Status:** [phase0/RESUME.md](../phase0/RESUME.md) (Phase 0 state, open gaps, the Phase 1 backlog).
+- **Other campaigns** that run inside Phase 1 (sheet and harness, genesis, telemetry, world operations, NeoForge): the table in [AGENTS.md](../../../AGENTS.md), each with its own RESUME. Merged on 2026-11-21 (from `git log --first-parent`): the genesis, telemetry, DR-1 (#863) and sheet (#864) PRs, decision 0391 (#851); this file does not track them.
 - **Plan:** [plan.md](plan.md) (waves C1, C2, C2b, C3, C4; owner items in section (f); first-ranger lessons in section (g)).
 - **Retrospective:** [phase0-retrospective-for-phase1.md](phase0-retrospective-for-phase1.md).
 - **Conventions:** [packet-conventions.md](packet-conventions.md) (card format, contract-first order, shared-file owners, gates, briefs, decision numbers, index lines, pre-packet decisions).
 - **Packets:** [packets/](packets/): `c1-packets.md`, `c2-packets.md`, `c2b-packets.md`, `c3-packets.md`, `c4-packets.md`, `c5-goldar-packets.md`, `c7-user-management-packets.md`, `c7b-packets.md`, `c7c-packets.md`, `c7d-packets.md`, `c7e-packets.md`, `c7f-packets.md`, `c2-register-packets.md`, `px-perception-packets.md`, `c7-wave-plan.md`.
 - **Ledger:** [ledger.md](ledger.md) (one row per packet: wave, lane, depends, status, decision numbers, owner-blocked).
 - **Wave C7:** plan and migrations in [packets/c7-wave-plan.md](packets/c7-wave-plan.md); owner questions Q1 to Q8 are answered in [0170](../../decisions/0170-owner-management-values-and-admin-flag.md), [0171](../../decisions/0171-account-erasure-rule.md) and [0172](../../decisions/0172-human-skin-upload-held-for-approval.md). Status: the C7 status section below. Sign-up stays closed until C7-11 and the owner approves.
-- **Decision numbers:** [packets/decision-number-registry.md](packets/decision-number-registry.md). Phase 1 blocks reserve 0081 to 0129. The next free number is not recorded here: check `docs/decisions/` and the registry, which is stale (on origin/main the highest file on 2026-11-20 was `0390-neoforge-hybrid-named-equals-and-nature-humans.md`). 0174 to 0179 are reserved for C7 design points. 0189 and 0193 have no file on origin/main as of 2026-11-20; not checked against in-flight branches.
+- **Decision numbers:** [packets/decision-number-registry.md](packets/decision-number-registry.md). Phase 1 blocks reserve 0081 to 0129. The next free number is not recorded here: check `docs/decisions/` and the registry, which is stale (on origin/main 2aa29c3a the highest file on 2026-11-21 is `0391-operator-rulings-2026-11-20.md`). 0174 to 0179 are reserved for C7 design points. 0189 and 0193 have no file on origin/main as of 2026-11-20; not checked against in-flight branches.
 
 ## Stop: do not open the public Minecraft port yet
 
@@ -48,10 +49,10 @@ Every brief carries the list in [packet-conventions.md](packet-conventions.md) s
 - **Agents must not learn they are watched** (decisions [0059](../../decisions/0059-identity-mode-is-about-human-observation-not-agent-belief.md) and [0068](../../decisions/0068-prompt-v4-and-agent-visible-text.md)). Agent-visible text, including prompts and wake strings, passes the scans in the packet cards and never shows operator, Glass, BlueMap or observer data.
 - **Prompts are versioned and released versions are never edited.** v1 to v5 are released and not edited; v6 is reserved by C3-03 and v7 by C4-06 (neither released); each creates a new version.
 
-## C7 status (2026-11-20, checked against origin/main a62ceb44)
+## C7 status (2026-11-21; list checked against origin/main a62ceb44, C7-13a re-checked against 2aa29c3a)
 
-- **Merged:** C7-01 to C7-08 waves 1 to 4 (#315, #321, #336, #346); C7-14 and C7-14b (#338, #359); C7-04d and its mount (#365, #380); C7-06c status line (#366) and C7-06d account page (#539); C7-03c1 to c3 (#415, #421, #447); C7-03b5 (#503); LEGAL-SERVE (#404); SIGNUP-RUNBOOK (#517); ROSTER-AUTO (#515, migration 0061); BH-1 (#525), BH-2 (#527), BH-3 (#530), BH-5a (#537), BH-5b (#573), BH-6 (#575); C7-09a2 (#470), C7-09b (#524, #541), C7-09c (#577); the sign-up gate C7-11 (#576).
-- **Open:** C7-03b2 (PR #522, held); C7-03b4-live; BH-4 folded into BH-1 to BH-3 (no separate card); C7-13a to c (skin upload); C7-07 rename; C7-10 operator console; the account-page export link and the PATCH visibility toggles; GX-05c turn_records (geldar-3b); CF-W4-1 to CF-W4-5.
+- **Merged:** C7-01 to C7-08 waves 1 to 4 (#315, #321, #336, #346); C7-14 and C7-14b (#338, #359); C7-04d and its mount (#365, #380); C7-06c status line (#366) and C7-06d account page (#539); C7-03c1 to c3 (#415, #421, #447); C7-03b5 (#503); LEGAL-SERVE (#404); SIGNUP-RUNBOOK (#517); ROSTER-AUTO (#515, migration 0061); BH-1 (#525), BH-2 (#527), BH-3 (#530), BH-5a (#537), BH-5b (#573), BH-6 (#575); C7-09a2 (#470), C7-09b (#524, #541), C7-09c (#577); the sign-up gate C7-11 (#576); C7-13a (#850, 2026-11-21).
+- **Open:** C7-03b2 (PR #522, held); C7-03b4-live; BH-4 folded into BH-1 to BH-3 (no separate card); C7-13b and c (skin moderation, skin form); C7-07 rename; C7-10 operator console; the account-page export link and the PATCH visibility toggles; GX-05c turn_records (geldar-3b); CF-W4-1 to CF-W4-5.
 - **Not recorded here:** which merged migrations (0061, 0062, 0063 and 0065) are applied on geldar-93. Check the deploy record first.
 
 ## What is left to open sign-up (owner-facing)
@@ -61,7 +62,7 @@ Every brief carries the list in [packet-conventions.md](packet-conventions.md) s
 3. Ship or drop C7-03b2 (PR #522); give the geldar-93 node steps (helper, RCON whitelist verb, life key).
 4. BH-4 has no card (owner ruling): its helper secret-file scope is folded into BH-1 to BH-3 and `docs/runbooks/body-helper-node-steps.md`. Rows 14 to 18 of `docs/runbooks/open-signup.md` need BH-1 to BH-3 merged and those node steps run.
 5. Open-signup.md row 25a is accepted as manual cleanup of lost-container life ids (row 4). No whitelist source is needed; BH-6 (#575) removes the whitelist entry first.
-8. C7-13a (skin upload, [0172](../../decisions/0172-human-skin-upload-held-for-approval.md)) is a gate and is in progress. Open-signup.md row 20 is done; row 23 is dropped from the minimum path.
+8. C7-13a (skin upload, [0172](../../decisions/0172-human-skin-upload-held-for-approval.md)) merged as #850; C7-13b and C7-13c remain. Open-signup.md row 20 is done; row 23 is dropped from the minimum path.
 6. The account-page export link and the PATCH toggles, or an owner call to open without them.
 7. CF-W4-5 (`__Host-` cookie prefix) before sign-up opens.
 9. Open sign-up by `docs/runbooks/open-signup.md`, kill switch off, only after items 1 to 8.
@@ -75,4 +76,3 @@ Every brief carries the list in [packet-conventions.md](packet-conventions.md) s
 ## Open contradictions
 
 - The C3 cards and plan.md disagree on the soak length. Both are listed as O-soak; no packet states a duration as settled.
-- [phase0/RESUME.md](../phase0/RESUME.md) still says the campaign retro is pending, but `docs/analysis/phase0/retro/campaign.md` exists.

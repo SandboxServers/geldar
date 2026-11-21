@@ -1,5 +1,7 @@
 # World operations: resume card
 
+> Stale banner (2026-11-21): the content below is dated 2026-11-14 and 15 and has not been refreshed or re-verified. Treat the Open and Parked lists as unverified and check each against the merged PRs on origin/main and the node before acting. The inode-exhaustion note was addressed by DR-1 (#863, merged 2026-11-21); whether the prune tool has been run on the node is not recorded.
+
 Campaign: world operations (session geldar-worldops, decision block 0250-0259; 0250 is the skin upload visibility and export decision). Owner of live Colo shard operations and measurement. Docs and tools only in the repo.
 
 **Rules**

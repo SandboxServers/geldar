@@ -2,7 +2,7 @@
 
 ## Ledger
 
-State at 2026-11-20 (main at 46683287). PR numbers are GitHub pull requests on `main`.
+State at 2026-11-20 (main at 46683287); the GE-01w1 row refreshed 2026-11-21 at 2aa29c3a, other rows not re-checked since. PR numbers are GitHub pull requests on `main`.
 
 | Card | PR | State |
 |---|---|---|
@@ -31,7 +31,7 @@ State at 2026-11-20 (main at 46683287). PR numbers are GitHub pull requests on `
 | GE-01a | #845 | Merged (#845); the committed lock holds placeholder digests marked PENDING until CI produces real ones (GE-01w1) |
 | GE-01b | #854 | Merged (#854) |
 | GE-01c | none | Done, held: branch phase1/gn-ge-01c a03c9f9d, not pushed; geldar-69 holds it until after the next deploy |
-| GE-01w1 | none | Not started; needs the owner's approval of each PR |
+| GE-01w1 | #860, #861 | Partly merged: GE-01w1a (#860) and GE-01w1d (#861); the remaining parts are not verified (checked 2026-11-21 at 2aa29c3a); workflow changes still need the owner's approval of each PR |
 | GE-01w2 | none | Not started; needs the owner's approval of each PR |
 | GE-02 | none | Partly done (sub-rows below) |
 | GE-02a | #842 | Merged (#842) |

@@ -2,9 +2,9 @@
 
 Read this first, then [README.md](README.md) and [plan.md](plan.md). Card states are in the Ledger at the top of [packets.md](packets.md). Follow-ups: [followups.md](followups.md). Keep this under 40 lines; rewrite at each wave boundary.
 
-## Where it is (2026-11-20)
+## Where it is (2026-11-21, checked against origin/main 2aa29c3a)
 
-- Merged: G0 and G1 except the workflow packets (GE-01w1, GE-01w2, GE-02w1 to GE-02w4, not started); G2-01, G2-04, G2-06; G3-01, G3-02, G3-04; GE-01a, GE-01b, GE-02a, GE-02b, GE-02c, GE-02e, GE-02f.
+- Merged: G0 and G1 except the workflow packets (GE-01w2, GE-02w1 to GE-02w4 not started; GE-01w1 partly merged: GE-01w1a #860 reproducible plugin jars and manifest from-lock, GE-01w1d #861 real plugin jar lock and digest-only verifier; GE-01w1b and GE-01w1c are not named in the repo, so the rest of GE-01w1 is unverified); G2-01, G2-04, G2-06; G3-01, G3-02, G3-04; GE-01a, GE-01b, GE-02a, GE-02b, GE-02c, GE-02e, GE-02f.
 - Held: GE-01c (branch `phase1/gn-ge-01c`, a03c9f9d, not pushed; geldar-69 holds it until after the next deploy). GE-02d waits for GE-02w1.
 - Exit criterion ([0240](../../decisions/0240-genesis-exit-is-the-scorched-earth-drill.md)): the scorched-earth drill. Delete every Geldar-owned host, VM, volume, container, network, secret, DNS record, Entra app and runner; keep only GitHub and the owner's bootstrap credential; regenerate from pipelines; verify and the smoke suite pass; a ranger can join.
 - Decisions: [0240](../../decisions/0240-genesis-exit-is-the-scorched-earth-drill.md); [0241](../../decisions/0241-genesis-bootstrap-scope-cut.md) (bootstrap scope cut, GE-04b added); [0242](../../decisions/0242-genesis-includes-neoforge.md) (genesis includes NeoForge, GE-11 added); [0243](../../decisions/0243-genesis-drill-preserves-world-files.md) (drill preserves world files, burns the rest).

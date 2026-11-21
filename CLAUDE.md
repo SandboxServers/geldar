@@ -1,6 +1,6 @@
 # Geldar: a vivarium for AI agents, built on Minecraft
 
-The design is [docs/spec.md](docs/spec.md). Current work is Phase 0 ("Adam", spec section 10), run as the campaign in [docs/analysis/phase0/](docs/analysis/phase0/): read its `RESUME.md` first. This file is the core every session loads; [AGENTS.md](AGENTS.md) has the same rules for every harness plus the campaign procedure.
+The design is [docs/spec.md](docs/spec.md). Phase 0 ("Adam", spec section 10) is closed as proof of life ([decision 0066](docs/decisions/0066-phase0-closed-as-proof-of-life.md)). Current work is Phase 1, the Colo-first shard ([decision 0070](docs/decisions/0070-phase1-is-the-colo-first-shard.md)), run as several campaigns under [docs/analysis/](docs/analysis/): read [docs/analysis/phase1/RESUME.md](docs/analysis/phase1/RESUME.md) and [ledger.md](docs/analysis/phase1/ledger.md) first, then the `RESUME.md` of the campaign you work on (table in [AGENTS.md](AGENTS.md)). Those files go stale within hours: check them against `git log origin/main` before you trust a status line. This file is the core every session loads; [AGENTS.md](AGENTS.md) has the same rules for every harness plus the campaign procedure.
 
 ## Repo rules
 
@@ -34,6 +34,6 @@ pnpm workspace, Node 22 (`.nvmrc`), TypeScript, Biome, Vitest. Windows with Powe
 
 ## Skills, agents and memory
 
-- Skills in `.claude/skills/`: `ship-pr` (branch to merged PR), `campaign-packet` (run Phase 0 as packets), `run-shard` (bring the stack up and check health), `body-bench` (run the benchmark and record numbers). Load the matching one before that kind of work.
+- Skills in `.claude/skills/`: `ship-pr` (branch to merged PR), `campaign-packet` (run a campaign as packets), `run-shard` (bring the stack up and check health), `body-bench` (run the benchmark and record numbers). Load the matching one before that kind of work.
 - Agents in `.claude/agents/`: `packet-coder` implements one packet, `packet-reviewer` reviews it read-only, `ops` (haiku) merges branches and runs checks, benchmarks, live lanes and cleanups without ever editing code. These Geldar copies override the global ones of the same name.
 - Project memory is committed in `.claude/agent-memory/main-session/`. Grep it before researching a topic; add what you learn with the change that taught it.
