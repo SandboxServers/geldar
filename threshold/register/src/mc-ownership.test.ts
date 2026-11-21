@@ -3,6 +3,7 @@ import {
   checkJavaOwnership,
   FAILURE_MESSAGES,
   GAMEPASS_HINT,
+  MAX_BODY_BYTES,
   NOT_OWNED_MESSAGE,
 } from './mc-ownership.ts';
 
@@ -14,7 +15,11 @@ const UHS = 'UHS1';
 const SECRETS = [MS_TOKEN, XBL_TOKEN, XSTS_TOKEN, MC_TOKEN, UHS];
 
 type Step = 'user' | 'xsts' | 'login' | 'ent';
-type Reply = { status?: number; body?: unknown; text?: string } | 'reject' | 'hang';
+type Reply =
+  | { status?: number; body?: unknown; text?: string }
+  | { status?: number; stalledText: string }
+  | 'reject'
+  | 'hang';
 
 const URLS: Record<Step, string> = {
   user: 'https://user.auth.xboxlive.com/user/authenticate',
@@ -45,6 +50,15 @@ function mockFetch(overrides: Partial<Record<Step, Reply>> = {}) {
     const reply = overrides[step] ?? HAPPY[step];
     if (reply === 'reject') return Promise.reject(new TypeError('socket hang up'));
     if (reply === 'hang') return new Promise<Response>(() => {});
+    if ('stalledText' in reply) {
+      // Headers and the first chunk arrive, then the body never closes.
+      const stream = new ReadableStream<Uint8Array>({
+        start(c) {
+          c.enqueue(new TextEncoder().encode(reply.stalledText));
+        },
+      });
+      return Promise.resolve(new Response(stream, { status: reply.status ?? 200 }));
+    }
     const text = reply.text ?? JSON.stringify(reply.body ?? {});
     return Promise.resolve(new Response(text, { status: reply.status ?? 200 }));
   };
@@ -99,6 +113,13 @@ describe('checkJavaOwnership: owns', () => {
   it('owns when a Java item sits among unrelated items', async () => {
     const m = mockFetch({ ent: ownsItems('product_realms', 'product_minecraft') });
     expect(await checkJavaOwnership(MS_TOKEN, m.fetchFn)).toEqual({ status: 'owns' });
+  });
+
+  it('refuses redirects on every call, so the token is never re-sent to a redirect target', async () => {
+    const m = mockFetch();
+    await checkJavaOwnership(MS_TOKEN, m.fetchFn);
+    expect(m.calls).toHaveLength(4);
+    for (const call of m.calls) expect(call.init.redirect).toBe('error');
   });
 
   it('owns wins over Game Pass when both are present', async () => {
@@ -279,6 +300,39 @@ describe('checkJavaOwnership: network, timeouts and the empty token', () => {
     expect(await checkJavaOwnership(MS_TOKEN, m.fetchFn, 20)).toMatchObject({ code: 'timeout' });
   });
 
+  it('a body that stalls after headers ends at the timeout on the success path', async () => {
+    const m = mockFetch({ user: { status: 200, stalledText: '{"Token":' } });
+    const result = await checkJavaOwnership(MS_TOKEN, m.fetchFn, 20);
+    expect(result).toEqual({
+      status: 'failed',
+      code: 'timeout',
+      message: FAILURE_MESSAGES.timeout,
+    });
+    expect(m.steps()).toEqual(['user']);
+  });
+
+  it('a body that stalls after headers ends at the timeout on the XSTS error path', async () => {
+    const m = mockFetch({ xsts: { status: 401, stalledText: '{"XErr":' } });
+    const result = await checkJavaOwnership(MS_TOKEN, m.fetchFn, 20);
+    expect(result).toMatchObject({ status: 'failed', code: 'timeout' });
+    expect(m.steps()).toEqual(['user', 'xsts']);
+  });
+
+  it('a body over the size cap is malformed and stops the chain', async () => {
+    const oversized = `{"Token":"${'a'.repeat(MAX_BODY_BYTES)}"}`;
+    const m = mockFetch({ user: { status: 200, text: oversized } });
+    expect(await checkJavaOwnership(MS_TOKEN, m.fetchFn)).toMatchObject({ code: 'malformed' });
+    expect(m.steps()).toEqual(['user']);
+  });
+
+  it('a body just under the size cap is still read', async () => {
+    const pad = 'a'.repeat(MAX_BODY_BYTES - 64);
+    const m = mockFetch({
+      ent: { status: 200, body: { items: [{ name: 'product_minecraft', pad }] } },
+    });
+    expect(await checkJavaOwnership(MS_TOKEN, m.fetchFn)).toEqual({ status: 'owns' });
+  });
+
   it('an empty Microsoft token fails closed as unknown and makes no call', async () => {
     const m = mockFetch();
     expect(await checkJavaOwnership('', m.fetchFn)).toMatchObject({
@@ -297,6 +351,7 @@ describe('checkJavaOwnership: network, timeouts and the empty token', () => {
 });
 
 describe('checkJavaOwnership: secrets never leave the module', () => {
+  // Regression guard only: the module builds results from codes and FAILURE_MESSAGES, never from reply text.
   it('no failure result or message contains a token, even when the reply echoes one', async () => {
     const scenarios: Partial<Record<Step, Reply>>[] = [
       {

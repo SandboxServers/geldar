@@ -103,19 +103,49 @@ function tokenString(v: unknown): string {
   return v;
 }
 
-async function readJson(res: Response): Promise<unknown> {
+/** A reply whose body has been read in full (within the cap) before the timer stopped. */
+interface Reply {
+  readonly ok: boolean;
+  readonly status: number;
+  readonly text: string;
+}
+
+/** The largest reply body read. Every real reply here is far smaller; a larger one is malformed. */
+export const MAX_BODY_BYTES = 64 * 1024;
+
+/** Reads the body under the cap. An oversized body cancels the stream and fails as malformed. */
+async function readCapped(res: Response): Promise<string> {
+  if (res.body === null) return '';
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > MAX_BODY_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      throw new CheckFailure('malformed');
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  return text + decoder.decode();
+}
+
+function parseJson(text: string): unknown {
   try {
-    return await res.json();
+    return JSON.parse(text);
   } catch {
     throw new CheckFailure('malformed');
   }
 }
 
 /** An Xbox error reply: the XErr code maps to its typed failure; anything else is unknown. */
-async function xboxFailure(res: Response): Promise<never> {
+function xboxFailure(reply: Reply): never {
   let body: unknown;
   try {
-    body = await res.json();
+    body = JSON.parse(reply.text);
   } catch {
     body = undefined;
   }
@@ -125,17 +155,21 @@ async function xboxFailure(res: Response): Promise<never> {
 }
 
 /** Mojang answers 403 while the Azure app id is not approved: that is not a verdict on the account. */
-function mojangFailure(res: Response): never {
-  throw new CheckFailure(res.status === 403 ? 'check_unavailable' : 'unknown');
+function mojangFailure(reply: Reply): never {
+  throw new CheckFailure(reply.status === 403 ? 'check_unavailable' : 'unknown');
 }
 
-/** One HTTP call with a timeout. A fetch that ignores its signal still ends at the timeout. */
+/**
+ * One HTTP call with a timeout. The timer covers the headers and the body together, so a stalled body ends at
+ * the timeout as well. Redirects are refused: the token is in the POST body and must not follow a 307/308.
+ * A fetch that ignores its signal still ends at the timeout.
+ */
 async function call(
   fetchFn: FetchFn,
   url: string,
   init: RequestInit,
   timeoutMs: number,
-): Promise<Response> {
+): Promise<Reply> {
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timedOut = new Promise<never>((_, reject) => {
@@ -144,8 +178,12 @@ async function call(
       reject(new CheckFailure('timeout'));
     }, timeoutMs);
   });
+  const exchange = async (): Promise<Reply> => {
+    const res = await fetchFn(url, { ...init, redirect: 'error', signal: controller.signal });
+    return { ok: res.ok, status: res.status, text: await readCapped(res) };
+  };
   try {
-    return await Promise.race([fetchFn(url, { ...init, signal: controller.signal }), timedOut]);
+    return await Promise.race([exchange(), timedOut]);
   } catch (err) {
     if (err instanceof CheckFailure) throw err;
     throw new CheckFailure('network');
@@ -182,8 +220,8 @@ async function runChain(
     }),
     timeoutMs,
   );
-  if (!userRes.ok) await xboxFailure(userRes);
-  const xblToken = tokenString(asRecord(await readJson(userRes)).Token);
+  if (!userRes.ok) xboxFailure(userRes);
+  const xblToken = tokenString(asRecord(parseJson(userRes.text)).Token);
 
   const xstsRes = await call(
     fetchFn,
@@ -195,8 +233,8 @@ async function runChain(
     }),
     timeoutMs,
   );
-  if (!xstsRes.ok) await xboxFailure(xstsRes);
-  const xsts = asRecord(await readJson(xstsRes));
+  if (!xstsRes.ok) xboxFailure(xstsRes);
+  const xsts = asRecord(parseJson(xstsRes.text));
   const xstsToken = tokenString(xsts.Token);
   const xui = asRecord(xsts.DisplayClaims).xui;
   if (!Array.isArray(xui) || xui.length === 0) throw new CheckFailure('malformed');
@@ -209,7 +247,7 @@ async function runChain(
     timeoutMs,
   );
   if (!loginRes.ok) mojangFailure(loginRes);
-  const mcToken = tokenString(asRecord(await readJson(loginRes)).access_token);
+  const mcToken = tokenString(asRecord(parseJson(loginRes.text)).access_token);
 
   const entRes = await call(
     fetchFn,
@@ -218,7 +256,7 @@ async function runChain(
     timeoutMs,
   );
   if (!entRes.ok) mojangFailure(entRes);
-  const items = asRecord(await readJson(entRes)).items;
+  const items = asRecord(parseJson(entRes.text)).items;
   if (!Array.isArray(items)) throw new CheckFailure('malformed');
   const names = items.map((item) => {
     const name = asRecord(item).name;
