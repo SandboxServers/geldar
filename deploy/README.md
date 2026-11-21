@@ -12,6 +12,7 @@ The scripts are POSIX `sh`. The tests (`deploy/test/`) run on the desktop throug
 | File | What it does |
 | --- | --- |
 | `common.sh` | Shared checks, sourced by the other scripts. Holds every refusal listed below. |
+| `space-floor.sh` | Sourced by `common.sh`. The free-block and free-inode floors for the checkout, the deploy volume and Docker's data root (`GELDAR_MIN_FREE_KB`, `GELDAR_MIN_FREE_KB_DEPLOY`, `GELDAR_MIN_FREE_INODES`). Functions only. |
 | `colo-up.sh` | Checks, validates the merged config, verifies the BlueMap jar, records the release, then pulls and starts the project. |
 | `colo-rollback.sh` | Re-applies the previous recorded release with `--pull never`, and swaps the two records. |
 | `colo-cd-plan.sh` | Read-only. Prints the delta between two releases: changed image digests, sql yes or no, the files to refresh, and the `needs manual` items (plugin/, compose/, deploy/caddy/, NATS). |
@@ -46,6 +47,7 @@ with a cleared environment):
   The image must be under `ghcr.io/sandboxservers/geldar-<name>` and carry `org.opencontainers.image.revision` equal to
   the release sha. `mind` and `admin` are checked the same way.
 - The export has no `.git`, so a file deleted upstream is not detected; it stays in the src extract.
+- If a refresh of the src extract fails part-way (`cannot refresh <file>`), the extract can hold the new `common.sh` without the new `space-floor.sh` (or the reverse). A hand-run `colo-*.sh` then stops with a missing-file error before it writes anything, and the next successful `colo-cd.sh` run repairs it. To repair it at once, copy `deploy/space-floor.sh` from the export into the extract's `deploy/`.
 
 Every compose call names the project `geldar-colo` (`-p`), so the scripts reach only that project's containers,
 volumes and networks. No script runs `down`, and no script removes a volume.

@@ -71,6 +71,15 @@ Not verified locally: the two `a TERM during --apply releases the colo-cd lock` 
 | `COLO_SPACE_FLOOR_FIRST=1` removed from `colo-cd.sh` | `refuses a deploy volume out of inodes without calling mktemp, and reaches mktemp when healthy` |
 | (item 1) old allow-list regex | not demonstrable here: the two allow-list tests do not reach their loop on this desktop (no curl in the fixture PATH); see item 1 |
 
+## Review fixes, round 3
+
+1. **Docker-root block floor** is now locked by `colo-space-floor.test.ts` "Docker's data root has the same block floor as the deploy volume": refused at 512 MiB while the checkout is fine, passes at 2 GiB under a 10 GiB checkout floor. Revert-check (Docker root uses `MIN_FREE_KB`): both tests fail.
+2. **Workflow step defaults** are locked by `colo-inbox-floor.test.ts` "the block floor of the step": 1 GiB default, the variable name `GELDAR_MIN_FREE_KB_DEPLOY` (the checkout variable `GELDAR_MIN_FREE_KB` has no effect), and the same default for Docker's root. Revert-checks: the old variable and 10 GiB default back, and the old 10 GiB default under the new name, each fail three tests.
+3. **"Docker data root NOT checked here"** is locked by a test that makes `docker info` silent. Revert-check (warning text changed): that test fails.
+4. **Images-prune TERM test** now kills DURING the removal loop: a driver shell starts the script, waits until the stub `docker image rm` has begun (it blocks a second), sends a TERM to the script's pid and counts the removals. It runs on Windows too, because the signal is sent from a shell. Revert-check against the round-1 pipeline version of the script (`ed80713e`): 5 removals run after the TERM, the test fails ("expected 5 to be less than or equal to 2"); the current script stops after the one in flight.
+5. **Docs:** `node-only-config.md` row 14 and the `deploy/README.md` file table (`space-floor.sh`) are current.
+6. **`refresh_src`** is not made atomic here (changing `colo-cd.sh` copy logic cannot be exercised on this desktop, where its tests do not run). The mixed state it can leave after a failed refresh is documented in `deploy/README.md` with its repair. **A missing `$ROOT`** is skipped with a message by `space_floor` (main died in `df`); this is intended: the checks that need `$ROOT` (the compose file, the secrets overlay) refuse right after, so nothing proceeds on a missing checkout, and the message names the path.
+
 ## Inode prune (option A), carried over
 
 ## What changed

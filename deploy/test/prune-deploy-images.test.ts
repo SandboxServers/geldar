@@ -1,5 +1,5 @@
 // Tests for deploy/genesis/prune-deploy-images.sh against a docker stand-in that lists images from a file and records `image rm` calls.
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
@@ -135,44 +135,44 @@ describe('prune-deploy-images.sh', () => {
     expect(run(root).out).toBe(`would remove ${body('1')}\n`);
   });
 
-  // A fatal signal needs a POSIX kill; on Windows child.kill is a hard terminate, so the Linux CI run covers this.
-  it.skipIf(process.platform === 'win32')('a TERM during --apply releases the colo-cd lock', () => {
-    const root = fixture(all, env(body('3')), null);
+  // The signal is sent from a shell (`kill` of the script's own pid), so it is a real TERM on Windows (Git for Windows' sh)
+  // as well as on Linux. The stub docker blocks for a second inside each `image rm`; the TERM arrives during the first.
+  it('a TERM during the removal loop stops the loop and releases the colo-cd lock', () => {
+    const olds = ['1', '2', '3', '4', '5'].map(body);
+    const root = fixture([...olds, body('9')], env(body('9')), null);
     writeFileSync(
       join(root, 'bin', 'docker'),
-      `#!/bin/sh\n: > "${p(root)}/docker.started"\nsleep 3\ncat "$DOCKER_IMAGES"\n`,
+      [
+        '#!/bin/sh',
+        'case "$*" in',
+        `  "images "*) cat "${p(root)}/images.txt" ;;`,
+        `  "image rm"*) echo "$3" >> "${p(root)}/rm.log"; : > "${p(root)}/rm.started"; sleep 1 ;;`,
+        'esac',
+        '',
+      ].join('\n'),
       { mode: 0o755 },
     );
-    const child = spawn(SH, [p(SCRIPT), '--apply'], {
+    const driver = [
+      `sh "${p(SCRIPT)}" --apply >/dev/null 2>&1 &`,
+      'pid=$!',
+      `n=0; while [ ! -e "${p(root)}/rm.started" ] && [ $n -lt 200 ]; do sleep 0.1; n=$((n + 1)); done`,
+      'kill -TERM $pid',
+      'wait $pid',
+      'echo "rc=$?"',
+    ].join('\n');
+    const r = spawnSync(SH, ['-c', driver], {
+      encoding: 'utf8',
       env: {
         ...process.env,
         GELDAR_RELEASE_FILE: p(join(root, 'release.env')),
         GELDAR_STATE_DIR: p(join(root, 'state')),
-        DOCKER_IMAGES: p(join(root, 'images.txt')),
         PATH: [p(join(root, 'bin')), dirname(SH), process.env.PATH ?? ''].join(delimiter),
       },
     });
-    return new Promise<void>((resolve, reject) => {
-      const t0 = Date.now();
-      const poll = setInterval(() => {
-        if (existsSync(join(root, 'docker.started'))) {
-          clearInterval(poll);
-          child.kill('SIGTERM');
-        } else if (Date.now() - t0 > 20_000) {
-          clearInterval(poll);
-          child.kill('SIGKILL');
-          reject(new Error('the script never reached docker'));
-        }
-      }, 50);
-      child.on('exit', () => {
-        clearInterval(poll);
-        try {
-          expect(existsSync(join(root, 'state', 'cd.lock'))).toBe(false);
-          resolve();
-        } catch (e) {
-          reject(e);
-        }
-      });
-    });
+    const removed = readFileSync(join(root, 'rm.log'), 'utf8').trim().split('\n');
+    expect(r.stdout, r.stderr).toContain('rc=1');
+    // The first removal was running when the TERM came; at most one more may already have started. All five means no stop.
+    expect(removed.length).toBeLessThanOrEqual(2);
+    expect(existsSync(join(root, 'state', 'cd.lock'))).toBe(false);
   });
 });

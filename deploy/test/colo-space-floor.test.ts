@@ -1,7 +1,7 @@
 // Tests for deploy/space-floor.sh as used by the deploy scripts: colo-cd.sh checks before its first write; the deploy volume and
 // Docker's data root have their own, lower block floor (GELDAR_MIN_FREE_KB_DEPLOY, default 1 GiB: /var is a small volume);
 // colo-rollback.sh does not refuse on volumes it does not write to.
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { cdRun, cdSetup } from './colo-cd-fixture';
@@ -111,5 +111,42 @@ describe('the Docker-root lookup', () => {
     const info = calls(fx).filter((c) => c.startsWith('info'));
     expect(info).toContain('info --format {{.DockerRootDir}}');
     for (const c of info) expect(c).toMatch(ALLOWED);
+  });
+});
+
+describe("Docker's data root has the same block floor as the deploy volume", () => {
+  const GIB = 1048576;
+  // The fixture's docker answers `info` with nothing; this wrapper names a directory as Docker's data root.
+  const go = (kb: number) => {
+    const fx = fixture();
+    const poor = join(fx.dir, 'poor');
+    mkdirSync(poor);
+    shims(fx.dir, join(fx.dir, 'mktemp.log'));
+    const bin = join(fx.dir, 'bin');
+    writeFileSync(join(bin, 'docker.orig'), readFileSync(join(bin, 'docker'), 'utf8'), {
+      mode: 0o755,
+    });
+    writeFileSync(
+      join(bin, 'docker'),
+      '#!/bin/sh\ncase "$*" in *"info --format"*) echo "$FAKE_DOCKER_ROOT"; exit 0;; esac\nexec "$(dirname "$0")/docker.orig" "$@"\n',
+      { mode: 0o755 },
+    );
+    return run('colo-up.sh', fx, {
+      ...REAL,
+      GELDAR_MIN_FREE_KB: '10485760',
+      GELDAR_DEPLOY_VOLUME: posix(fx.dir),
+      FAKE_DOCKER_ROOT: posix(poor),
+      POOR_KB: String(kb),
+    }).out;
+  };
+
+  it('refuses below the deploy floor (the checkout is fine), printing measured and required', () => {
+    const out = go(GIB / 2);
+    expect(out).toContain('free disk 524288 KiB (blocks) of the docker data root');
+    expect(out).toContain('threshold of 1048576 KiB');
+  });
+
+  it('passes at 2 GiB, which the 10 GiB checkout floor would refuse', () => {
+    expect(go(2 * GIB)).not.toContain('of the docker data root');
   });
 });
