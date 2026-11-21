@@ -242,7 +242,7 @@ public final class RegistryClient implements AutoCloseable {
             Object identity = bucket.identity();
             AutoCloseable sub = bucket.watchAll(new RegistryWatch());
             watching.run();
-            log.info("Watching bucket {}", bucket);
+            log.info("Watching bucket {}", this.bucket);
             try {
                 long nextCheck = System.nanoTime() + checkMs * 1_000_000;
                 while (running && status.get() != Connection.Status.CLOSED && !disrupted.get()) {
