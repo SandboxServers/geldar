@@ -9,7 +9,7 @@ Design and facts: `docs/runbooks/telemetry-monitors.md`, `docs/analysis/telemetr
 Labels: **UNVERIFIED** = not checked against the repo or the node; `[UNV]` marks one command or fact inside a step that has no repo source.
 No URL, address, password or secret value is written in this file. Placeholders: `<merge>` (the full sha of the merge that holds the G2 files;
 `1c0e0c60` is the base of this branch and holds them), `<colo checkout>`
-(the colo stack's compose directory on the node, **UNVERIFIED**), `<migration role>` (the database role that runs psql, **UNVERIFIED**), `<ts>` (UTC timestamp). The telemetry secrets directory is `/mnt/nvme/geldar-telemetry/pg-secrets` (owner option (a), settled 2026-11-21, named by the orchestrator; section 6).
+(the colo stack's compose directory on the node, **UNVERIFIED**), `<ts>` (UTC timestamp). The telemetry secrets directory is `/mnt/nvme/geldar-telemetry/pg-secrets` (owner option (a), settled 2026-11-21, named by the orchestrator; section 6).
 
 Owner approval needed: yes. Each step below needs a fresh direct owner OK with a window from the orchestrator geldar-69
 before it runs. The steps are: S1 secret file, S2 monitoring role, S3 stage (extract, validate, swap), S4 gateway restage (window W1),
@@ -105,7 +105,7 @@ the same for `geldar-colo-nats-exporter-1` prints `100000000 67108864 64`. Measu
   "Host paths"), named by the orchestrator as `/mnt/nvme/geldar-telemetry/pg-secrets`. The existing `/mnt/nvme/geldar-telemetry/secrets/` is NOT used: it holds the ClickHouse passwords, so it would hold more than
   `otel-pg.txt`. No path in that README names a directory for this file, so the orchestrator named a new directory directly under
   `/mnt/nvme/geldar-telemetry/`, which S1 creates with `sudo`.
-- `GELDAR_SECRETS_DIR` is set explicitly to `/mnt/nvme/geldar-telemetry/pg-secrets` on the psql run (section 9) and on the gateway compose commands
+- `GELDAR_SECRETS_DIR` is set explicitly to `/mnt/nvme/geldar-telemetry/pg-secrets` on the gateway compose commands (the S2 psql run does not use it)
   (sections 11 and 13). No colo command sets it (section 12, rollback R5). Nothing else is set in that variable.
 - `deploy/telemetry/compose.gateway.yml` has no default for `GELDAR_SECRETS_DIR`: an unset variable makes Compose refuse to render
   (`${GELDAR_SECRETS_DIR:?...}`), so the repo's `compose/secrets` can never be used. A command that would run without the variable is not run,
@@ -145,23 +145,33 @@ This is the only change to the order of the brief: S1, S3a, S2, S3b, S4, S5.
    The route for copying it to `/mnt/nvme/geldar-telemetry/` is the one the first staging used (**UNVERIFIED**: not recorded in the repo).
 2. Node: `cd /mnt/nvme/geldar-telemetry && echo "<sha256>  telemetry-<merge>.tar.gz" | sha256sum -c -` must print `telemetry-<merge>.tar.gz: OK`.
    On any mismatch delete the tarball and stop.
-3. Node: `mkdir src.new-g2 && tar -xzf telemetry-<merge>.tar.gz -C src.new-g2`. No swap yet.
+3. Node: `rm -rf src.new-g2 && mkdir src.new-g2 && tar -xzf telemetry-<merge>.tar.gz -C src.new-g2`. No swap yet. A stale extract is removed first,
+   and `<merge>` is the merge commit of the PR that carries the fixed `postgres-monitor.sql` (not `1c0e0c60`), so S2 runs the fixed SQL.
 
-## 9. S2: the monitoring role (one psql run, as the migration role)
+## 9. S2: the monitoring role (one run, through the container psql on stdin)
 
-Owner OK and window for S2. The SQL file is `src.new-g2/deploy/telemetry/postgres-monitor.sql` (from S3a). The psql run needs
-`GELDAR_SECRETS_DIR` in its environment, so the `\set` in the file reads the secret inside psql (the password is in no command line):
+Owner OK and window for S2. The migration role is `geldar` (verified on the node 2026-11-20: the superuser of `geldar-colo-postgres-1`).
+The container's pg_hba has `local all all trust`, so the socket route needs no password (read from pg_hba, not executed).
+The SQL file must be the one from the merge of this PR (S3a re-extracted it). Preconditions, read-only: `sudo -n stat -c '%s' /mnt/nvme/geldar-telemetry/pg-secrets/otel-pg.txt`
+must print `48` (a failed `sudo -n` stops the step: the pipeline would otherwise set an empty password).
+
+Run ONCE, from `/mnt/nvme/geldar-telemetry`, never traced (`set -x` off):
 ```
-cd /mnt/nvme/geldar-telemetry && sudo -u <migration role> env GELDAR_SECRETS_DIR=/mnt/nvme/geldar-telemetry/pg-secrets psql -v ON_ERROR_STOP=1 -d geldar -f src.new-g2/deploy/telemetry/postgres-monitor.sql
+{ printf '\\set otel_pg_password '"'"; sudo -n cat /mnt/nvme/geldar-telemetry/pg-secrets/otel-pg.txt; printf '%s\n' "'"; cat /mnt/nvme/geldar-telemetry/src.new-g2/deploy/telemetry/postgres-monitor.sql; } | docker exec -i geldar-colo-postgres-1 psql -q -v ON_ERROR_STOP=1 -U geldar -d geldar
 ```
-[UNV: the migration role's OS user, how psql connects (socket or host), and whether the operator needs sudo for the secret file (it is owned by 10001, mode 0400, so root or the 10001 user reads it). The runbook says "as the migration role" and "as root (or through sudo)".]
+- The password reaches psql as a psql variable on stdin. It is never on a command line, in a log or in the operator's output.
+- Never add `psql -a`, `-e`, `-b` or `-L`. No `PGPASSWORD`.
+- A failed or partial run: regenerate the password (R1, then S1) and stop. Never reuse the password.
+- The script is re-runnable when it succeeds: it creates the role only when missing, sets the password on every run and re-grants the same two privileges.
+  Without the variable it stops with an error (the guard in the SQL file).
 
-- The script is re-runnable: it creates the role only when missing, sets the password on every run and re-grants the same two privileges.
-- Verify, read-only: `SELECT rolname, rolcanlogin FROM pg_roles WHERE rolname = 'geldar_monitor';` returns one row with `rolcanlogin` true.
-  `SELECT pg_has_role('geldar_monitor', 'pg_read_all_stats', 'member');` returns true. `SELECT has_database_privilege('geldar_monitor', 'geldar', 'CONNECT');` returns true.
-- Write check (must fail): connect as `geldar_monitor` (password passed only through an environment variable set for that one command, [UNV]) and run
-  `INSERT INTO <an existing table named by the owner> SELECT * FROM <same table> WHERE false;`. The expected result is `permission denied`. A success is a failure of this step: stop and roll back (R2).
-- The role owns nothing: `SELECT count(*) FROM pg_class c JOIN pg_roles r ON r.oid = c.relowner WHERE r.rolname = 'geldar_monitor';` returns 0 [UNV: the catalog query].
+After S2, only these two verification queries run:
+- `docker exec geldar-colo-postgres-1 psql -U geldar -d geldar -At -c "select rolname,rolcanlogin,rolsuper from pg_roles where rolname='geldar_monitor'"`
+  must print `geldar_monitor|t|f`.
+- `docker exec geldar-colo-postgres-1 psql -U geldar -d geldar -At -c "select roleid::regrole from pg_auth_members where member='geldar_monitor'::regrole"`
+  must print exactly `pg_read_all_stats`.
+
+The write-denied probe and the owns-nothing query of the earlier draft are dropped: the owner allowed only the two queries above. The role owns nothing by construction (the SQL creates no object).
 
 ## 10. S3b: swap and validate, then the restage
 
@@ -267,9 +277,9 @@ R1 (secret). Nothing is deleted except the named files and the named role.
   then `GELDAR_SERVICE_UID=1001 GELDAR_SECRETS_DIR=/mnt/nvme/geldar-telemetry/pg-secrets docker compose -f deploy/telemetry/compose.yml -f deploy/telemetry/compose.gateway.yml up -d --no-deps geldar-gateway`
   from `src`. The queue persists across this (records queued under the new rules stay as they are). `src.failed-g2` is kept until the owner says.
   If `src.old-g2` is missing, extract `telemetry-1e4f2078.tar.gz` (checksum on file, `deploy/telemetry/README.md` window log N10) into a new directory and swap.
-- **R2 role:** the runbook's statements, through the same psql run as S2:
-  `REVOKE pg_read_all_stats FROM geldar_monitor; REVOKE CONNECT ON DATABASE geldar FROM geldar_monitor; DROP ROLE geldar_monitor;`
-  The role owns nothing (section 9). Run R2 after R4, because the gateway's `postgresql` receiver uses the role until then.
+- **R2 role:** `docker exec -i geldar-colo-postgres-1 psql -U geldar -d geldar -c "REVOKE CONNECT ON DATABASE geldar FROM geldar_monitor" -c "DROP ROLE geldar_monitor"`.
+  The REVOKE is added to the spec's `DROP ROLE` alone because PostgreSQL refuses to drop a role that still holds a database privilege
+  (UNVERIFIED on this server: read from the DROP ROLE rules, not run). The role owns nothing (section 9). Run R2 after R4, because the gateway's `postgresql` receiver uses the role until then.
 - **R1 secret (last):** `sudo rm -f "/mnt/nvme/geldar-telemetry/pg-secrets/otel-pg.txt"`, then `sudo rmdir /mnt/nvme/geldar-telemetry/pg-secrets`.
   `rmdir` refuses a directory that still holds anything, so a refusal stops the step. Only after R4, so that no running gateway mounts it.
 - **R3 swap:** part of R4 above (`mv src src.failed-g2 && mv src.old-g2 src`). The tarball `telemetry-<merge>.tar.gz` and `src.failed-g2` are kept.
@@ -290,7 +300,7 @@ Verification after each rollback: the gateway is running with restarts 0 and no 
 
 1. Settled: option (a), a telemetry secrets directory holding only `otel-pg.txt` (owner `10001`), by the owner via geldar-69 on 2026-11-21
    (section 6). The orchestrator named the directory `/mnt/nvme/geldar-telemetry/pg-secrets`.
-2. The migration role's OS user and the psql connection method (section 9). [UNV]
+2. Settled by read-only checks on 2026-11-20: the migration role is `geldar`, and the route is the container psql on stdin (section 9).
 3. The W1 window, and the W2 window (separate, after W1 has been quiet for 30 minutes).
 4. Accept the `pg_read_all_stats` risk and the `/jsz` exposure (section 14).
 5. Keep `src.old-g2` (the rollback tree) until the owner says it can go.
@@ -299,14 +309,14 @@ Verification after each rollback: the gateway is running with restarts 0 and no 
 ## 16. UNVERIFIED list
 
 - The telemetry secrets directory `/mnt/nvme/geldar-telemetry/pg-secrets` is not yet created on the node (S1).
-- The migration role's OS user and the psql connection method; whether root or the 10001 user reads the secret for psql.
+- The `\if :{?otel_pg_password}` guard in the SQL file: its behaviour when the variable is unset is not run (psql 16 documented semantics only).
+- The container-socket route (`docker exec -i geldar-colo-postgres-1 psql -U geldar`, trust in pg_hba) was read from pg_hba and is not executed.
 - The colo checkout path on the node; the sourcing of `/etc/geldar-colo/release.env`.
 - `docker compose ... config --format json`, `config --hash`, `up --dry-run` and `--no-deps` behaviour on the node's Compose version (Compose 2.24 or later is also an unchecked need).
 - The jq paths of the render diff in section 11, and the non-jq method if jq is absent.
 - The exact `postgresql.*` and nats exporter series names in SigNoz.
 - The route for copying the tarball to the node (the first staging's route is not recorded in the repo).
 - That the telemetry compose and the colo compose both use the same `GELDAR_SERVICE_UID` semantics (only the file-owner check in `deploy/README.md` is read).
-- The Postgres catalog queries in section 9, and the password route for the write-denied check.
 - The memory and CPU effect of the new receivers and the exporter on the node.
 
 ## 17. Report-back (the orchestrator records it in the telemetry window log)
