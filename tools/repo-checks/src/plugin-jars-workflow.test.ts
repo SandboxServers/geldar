@@ -7,7 +7,14 @@ const WORKFLOW = '.github/workflows/plugin-jars.yml';
 const LOCK = 'plugin/plugin-jars.lock';
 const text = readFileSync(new URL(`../../../${WORKFLOW}`, import.meta.url), 'utf8');
 
-type Step = { name?: string; uses?: string; run?: string; with?: Record<string, unknown> };
+type Step = {
+  name?: string;
+  uses?: string;
+  run?: string;
+  with?: Record<string, unknown>;
+  if?: unknown;
+  'continue-on-error'?: unknown;
+};
 const workflow = parse(text) as { jobs: Record<string, { steps: Step[] }> };
 const steps = workflow.jobs['plugin-jars']?.steps ?? [];
 const uploadIndex = steps.findIndex((step) => step.uses?.startsWith('actions/upload-artifact@'));
@@ -29,6 +36,13 @@ describe('plugin-jars.yml committed lock check', () => {
     expect(uploadIndex).toBeGreaterThanOrEqual(0);
     expect(verifyIndex).toBeGreaterThan(uploadIndex);
     expect(verifyIndex).toBe(steps.length - 1);
+  });
+
+  it('cannot soft-fail: the verify step has no continue-on-error and no if condition', () => {
+    const verify = steps[verifyIndex];
+    expect(verify).toBeDefined();
+    expect(verify).not.toHaveProperty('continue-on-error');
+    expect(verify).not.toHaveProperty('if');
   });
 
   it('checks the uploaded directory against the committed lock, strictly', () => {

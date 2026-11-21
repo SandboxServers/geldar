@@ -1,8 +1,9 @@
 # Builds the two plugin jars (geldar-core and geldar-velocity-identity) on a push to main that changes plugin/, and on manual
 # dispatch. It publishes them as the GitHub Actions artifact `plugin-jars` (kept 30 days) with `plugin-jars.sha256`: the
 # commit and the sha256 of each jar. deploy/genesis/verify-plugin-jars.sh checks the digests before the upload. This
-# workflow deploys nothing, writes no release manifest (G1-04 does that once the config bundle exists), and needs no
-# secrets and no node access.
+# workflow deploys nothing and needs no secrets and no node access. It writes no release manifest: the colo-images manifest
+# job reads plugin/plugin-jars.lock, not this artifact. After the upload it checks the built jars against the committed
+# plugin/plugin-jars.lock (a mismatch fails the job; the artifact stays available).
 name: plugin-jars
 
 on:

@@ -306,6 +306,8 @@ describe('colo-images.yml release manifest', () => {
     expect(checkout?.uses?.startsWith('actions/checkout@')).toBe(true);
     expect(checkout?.uses).toMatch(/@[0-9a-f]{40}$/);
     expect(checkout?.with?.ref).toBe(`\${{ github.sha }}`);
+    expect(checkout?.with?.['persist-credentials']).toBe(false);
+    expect(checkout?.with?.['sparse-checkout-cone-mode']).toBe(false);
     const sparse = String(checkout?.with?.['sparse-checkout'] ?? '')
       .split('\n')
       .map((line) => line.trim());
