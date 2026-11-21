@@ -243,8 +243,8 @@ jobs:
           # 64% bytes, and 22 runs died at the mktemp below), so check both on the inbox's filesystem and on Docker's data root.
           # This job has no checkout of the repo here, so deploy/space-floor.sh cannot be sourced; the same logic and the same
           # variable names are repeated. The deploy volume floor is GELDAR_MIN_FREE_KB_DEPLOY (default 1 GiB: /var is small).
-          # The Docker-root half is best effort: the runner account is unprivileged and probably cannot run `docker info`, in which
-          # case it is an explicit warning, not a pass; the node-side scripts check Docker's root as the operator account.
+          # The Docker-root half (CI-DR1, #866): `docker info`, then `sudo -n docker info`, then the data-root key of the daemon config.
+          # If none answers the step refuses (fail closed). The runner needs passwordless sudo for `docker info`: see docs/runbooks/node-only-config.md.
           min_kb="${GELDAR_MIN_FREE_KB_DEPLOY:-1048576}"
           min_inodes="${GELDAR_MIN_FREE_INODES:-100000}"
           floor() {
@@ -270,11 +270,15 @@ jobs:
           }
           floor "deploy volume" "$INBOX"
           droot="$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"
-          if [[ -n "$droot" ]]; then
-            floor "docker data root" "$droot"
-          else
-            echo "::warning::Docker data root NOT checked here: docker info did not answer (this runner account is unprivileged and is not documented as able to reach docker); colo-up.sh and colo-cd.sh check it on the node as the operator account"
+          if [[ -z "$droot" ]]; then droot="$(sudo -n docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)"; fi
+          if [[ -z "$droot" ]]; then
+            droot="$(sed -n 's/.*"data-root"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${GELDAR_DOCKER_DAEMON_JSON:-/etc/docker/daemon.json}" 2>/dev/null | head -n 1 || true)"
           fi
+          if [[ -z "$droot" ]]; then
+            echo "::error::cannot determine Docker's data root (docker info, sudo -n docker info and the daemon config all failed): refusing" >&2
+            exit 1
+          fi
+          floor "docker data root" "$droot"
           tmp="$(mktemp "$INBOX/.release.env.XXXXXX")"
           cat "$SRC" > "$tmp"
           chmod 0600 "$tmp"

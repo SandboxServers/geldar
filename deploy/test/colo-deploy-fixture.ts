@@ -103,6 +103,7 @@ case "$*" in
   *"config --quiet"*) exit 0 ;;
   *"config"*) cat "$DOCKER_CONFIG_FIXTURE"; exit 0 ;;
   *"ps -q"*) echo c0ffee01 ;;
+  *"info --format"*) [ -n "$NO_DOCKER_ROOT" ] || dirname "$DOCKER_CALLS_LOG" ;;
 esac
 exit 0
 `;
@@ -203,6 +204,8 @@ export function fixture(publishedPort = '25567'): Fixture {
   const bin = join(dir, 'bin');
   mkdirSync(bin);
   writeShim(bin, 'docker', DOCKER_SHIM);
+  // A sudo that cannot answer, so `sudo -n docker info` never reaches the real sudo of the host running the tests.
+  writeShim(bin, 'sudo', '#!/bin/sh\nexit 1\n');
   writeShim(bin, 'stat', STAT_SHIM);
   writeShim(bin, 'id', ID_SHIM);
   const secrets = join(dir, 'secrets');

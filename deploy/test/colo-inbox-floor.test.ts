@@ -51,7 +51,7 @@ exit 0
 function setup(
   kind: 'inodes' | 'blocks' | 'none',
   where: 'inbox' | 'docker' | 'nowhere',
-  opts: { env?: Record<string, string | undefined>; dockerSilent?: boolean } = {},
+  opts: { env?: Record<string, string | undefined>; dockerSilent?: boolean; sudoRoot?: boolean } = {},
 ) {
   const dir = mkdtempSync(join(tmpdir(), 'inbox-floor-'));
   dirs.push(dir);
@@ -63,7 +63,10 @@ function setup(
   const droot = where === 'docker' ? poor : fine;
   // A silent docker stands for `docker info` failing or printing nothing (an unprivileged runner account).
   const say = opts.dockerSilent ? '' : `echo "${posix(droot)}"`;
+  // sudo -n docker info: silent unless the test says it answers, so CI never reaches the real sudo.
+  const sudoSay = opts.sudoRoot ? `echo "${posix(droot)}"` : 'exit 1';
   writeFileSync(join(bin, 'docker'), `#!/bin/bash\n${say}\n`, { mode: 0o755 });
+  writeFileSync(join(bin, 'sudo'), `#!/bin/bash\n${sudoSay}\n`, { mode: 0o755 });
   const log = join(dir, 'mktemp.log');
   writeFileSync(
     join(bin, 'mktemp'),
@@ -82,6 +85,7 @@ function setup(
       GELDAR_MIN_FREE_INODES: '100',
       GELDAR_MIN_FREE_KB_DEPLOY: '10',
       ...opts.env,
+      GELDAR_DOCKER_DAEMON_JSON: posix(join(dir, 'no-daemon.json')),
     },
   });
   return { code: r.status, err: r.stderr, out: r.stdout, log, inbox };
@@ -152,9 +156,16 @@ describe('colo-deploy.yml inbox write: the space floor runs before the mktemp', 
     });
   });
 
-  it("says plainly that Docker's data root was not checked when docker info is silent, and still passes", () => {
+  it("refuses, not warns, when Docker's data root cannot be determined (fail closed, #866)", () => {
     const r = setup('none', 'nowhere', { dockerSilent: true });
+    expect(r.code).not.toBe(0);
+    expect(r.err).toContain("cannot determine Docker's data root");
+    expect(existsSync(r.log)).toBe(false);
+  });
+
+  it("takes Docker's data root from sudo -n docker info when docker info is silent (#866)", () => {
+    const r = setup('none', 'nowhere', { dockerSilent: true, sudoRoot: true });
     expect(r.code).toBe(0);
-    expect(r.out).toContain('Docker data root NOT checked here');
+    expect(r.err).not.toContain("cannot determine Docker's data root");
   });
 });

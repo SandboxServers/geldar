@@ -35,6 +35,7 @@ export const FROM_SHA = 'b'.repeat(40);
 // FAKE_UPDATE_FAIL makes `update --restart` fail.
 export const CD_DOCKER_SHIM = `#!/bin/sh
 printf '%s\\n' "$*" >>"$DOCKER_CALLS_LOG"
+case "$*" in *"info --format"*) dirname "$DOCKER_CALLS_LOG"; exit 0 ;; esac
 hn=
 for a; do case $a in name=^*) hn=\${a#name=^}; hn=\${hn%\\$} ;; geldar-colo-players-host-*) hn=$a ;; esac; done
 prev=

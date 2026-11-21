@@ -63,7 +63,7 @@ volumes and networks. No script runs `down`, and no script removes a volume.
   this is separate from the 10 GiB checkout floor). The checkout, the deploy volume and Docker's root must each also have at
   least `GELDAR_MIN_FREE_INODES` free inodes (default `100000`). `colo-up.sh` and `colo-cd.sh` check this before their first
   write and refuse below it, printing the measured and the required value (an inode refusal names
-  `deploy/genesis/prune-deploy-work.sh`). A missing path, a `docker info` that says nothing, or a filesystem with no inode count
+  `deploy/genesis/prune-deploy-work.sh`). A missing path, a Docker data root that no lookup can name (`docker info`, then `sudo -n docker info`, then the daemon config: refused, #866), or a filesystem with no inode count
   is skipped with a message. `colo-admin.sh` and `colo-rollback.sh` check the checkout block floor only. Confirm the
   thresholds against `df -Pk` and `df -Pi` of those volumes on the node.
 - Secret files in the secrets directory (`GELDAR_SECRETS_DIR`, default `/etc/geldar-colo/secrets`):
