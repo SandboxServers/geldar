@@ -19,17 +19,16 @@ packet's operator guide. Nothing here restarts NATS or Postgres, and nothing her
 |---|---|
 | `compose/opt-in/colo-nats-exporter.yml` | Opt-in overlay: `nats-exporter` (natsio/prometheus-nats-exporter 0.20.3, pinned by digest), `network_mode: service:nats`, 0.1 CPU, 64m, 64 pids, no ports. Reads `/varz` and `/jsz` only. |
 | `deploy/telemetry/gateway.yaml` | Gateway scrape job `nats` (`nats:7777`, 30s) and a `postgresql` receiver on `postgres:5432` as `geldar_monitor`, password from `${file:/run/secrets/otel-pg.txt}`. |
-| `deploy/telemetry/compose.gateway.yml` | Top-level secret `otel-pg` from `${GELDAR_SECRETS_DIR:-../../compose/secrets}/otel-pg.txt`, mounted read-only at `/run/secrets/otel-pg.txt` in `geldar-gateway`. |
+| `deploy/telemetry/compose.gateway.yml` | Top-level secret `otel-pg` from `${GELDAR_SECRETS_DIR:?set GELDAR_SECRETS_DIR to the telemetry pg-secrets directory}/otel-pg.txt` (required, no default), mounted read-only at `/run/secrets/otel-pg.txt` in `geldar-gateway`. |
 | `deploy/telemetry/postgres-monitor.sql` | Creates or re-keys the `geldar_monitor` role: LOGIN, `pg_read_all_stats`, CONNECT on `geldar`. psql reads the password from `$GELDAR_SECRETS_DIR/otel-pg.txt`. |
 
 ## The secret file
 
 - **Where.** `$GELDAR_SECRETS_DIR/otel-pg.txt` on the node, where `GELDAR_SECRETS_DIR` is the telemetry secrets directory
-  `<TELEMETRY_PG_SECRETS_DIR>` (a placeholder: the orchestrator names it, under `/mnt/nvme/geldar-telemetry/`). That directory holds
+  `/mnt/nvme/geldar-telemetry/pg-secrets` (directly under `/mnt/nvme/geldar-telemetry/`, named by the orchestrator). That directory holds
   only this file (owner decision, option (a), settled 2026-11-21; brief `docs/analysis/telemetry/node-requests/08-monitors-g2.md`
   section 6). The colo stack's directory `/etc/geldar-colo/secrets` (`deploy/common.sh`) is not used for it. Use the same directory for
-  psql and for the gateway restage. The gateway compose falls back to `compose/secrets` only when `GELDAR_SECRETS_DIR` is unset, so
-  always set it.
+  psql and for the gateway restage. The gateway compose refuses to render when `GELDAR_SECRETS_DIR` is unset, so always set it.
 - **Owner and mode.** `10001:10001`, mode `0400`. The gateway runs as uid 10001 (`compose.gateway.yml`), so that user can read the
   file through the secret mount. Root can read it too. Nothing else on the node needs read access.
 - **Not in git.** The file is never committed. The repo holds only the variable name and the path.
@@ -50,7 +49,7 @@ packet's operator guide. Nothing here restarts NATS or Postgres, and nothing her
 2. **Role.** Write the password to `$GELDAR_SECRETS_DIR/otel-pg.txt` with the owner and mode above, then run as the migration role:
 
    ```
-   GELDAR_SECRETS_DIR=<TELEMETRY_PG_SECRETS_DIR> psql -v ON_ERROR_STOP=1 -d geldar -f deploy/telemetry/postgres-monitor.sql
+   GELDAR_SECRETS_DIR=/mnt/nvme/geldar-telemetry/pg-secrets psql -v ON_ERROR_STOP=1 -d geldar -f deploy/telemetry/postgres-monitor.sql
    ```
 
    The script reads the file with a psql `\set` backtick, so the password is never in the psql command line. The file is `0400`
@@ -68,7 +67,7 @@ packet's operator guide. Nothing here restarts NATS or Postgres, and nothing her
    Then restage the gateway only, with the same secrets directory:
 
    ```
-   cd /mnt/nvme/geldar-telemetry/src && GELDAR_SECRETS_DIR=<TELEMETRY_PG_SECRETS_DIR> docker compose -f deploy/telemetry/compose.yml -f deploy/telemetry/compose.gateway.yml up -d geldar-gateway
+   cd /mnt/nvme/geldar-telemetry/src && GELDAR_SECRETS_DIR=/mnt/nvme/geldar-telemetry/pg-secrets docker compose -f deploy/telemetry/compose.yml -f deploy/telemetry/compose.gateway.yml up -d geldar-gateway
    ```
 
    The `otel-pg` secret must exist at the path above. Without it the container does not start, and the collector cannot expand
@@ -106,4 +105,5 @@ packet's operator guide. Nothing here restarts NATS or Postgres, and nothing her
 - Role: `REVOKE pg_read_all_stats FROM geldar_monitor; REVOKE CONNECT ON DATABASE geldar FROM geldar_monitor; DROP ROLE geldar_monitor;`
   (the role owns nothing).
 - Gateway: remove the `nats` scrape job and the `postgresql` receiver from `deploy/telemetry/gateway.yaml`, remove the `otel-pg`
-  secret from `compose.gateway.yml`, and restage.
+  secret from `compose.gateway.yml`, and restage. Then remove the secret file, and then its directory (`rmdir` refuses a directory with
+  anything else in it), as in request 08, R1.

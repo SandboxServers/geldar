@@ -21,6 +21,7 @@ before it runs. Any step that is not named in that OK does not run.
 6. Never run anything that stops, removes or recreates containers or networks other than the one named.
 7. No secrets, account names or IPs in the document.
 8. Each step needs a fresh direct owner OK with a window from the orchestrator geldar-69 before it runs.
+9. `--replace` stays off unless the orchestrator says so.
 
 This request runs no compose command. Rule 1 still applies to the import script, which is a deploy script (`deploy/signoz/import.sh`).
 

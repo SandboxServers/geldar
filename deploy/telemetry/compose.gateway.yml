@@ -21,10 +21,10 @@ networks:
     name: geldar-telemetry
 
 # G2 (T-10): the Postgres monitor password, read by the postgresql receiver (gateway.yaml). Same pattern as compose/colo.yml:741.
-# The default is the node's compose/secrets directory; GELDAR_SECRETS_DIR overrides it. Compose mounts it read-only at /run/secrets.
+# GELDAR_SECRETS_DIR has no default: Compose refuses to render without it (the telemetry pg-secrets directory). Compose mounts the file read-only at /run/secrets.
 secrets:
   otel-pg:
-    file: ${GELDAR_SECRETS_DIR:-../../compose/secrets}/otel-pg.txt
+    file: ${GELDAR_SECRETS_DIR:?set GELDAR_SECRETS_DIR to the telemetry pg-secrets directory}/otel-pg.txt
 
 services:
   geldar-gateway:

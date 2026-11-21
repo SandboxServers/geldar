@@ -1,5 +1,7 @@
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
@@ -201,7 +203,11 @@ describe('docs/runbooks/telemetry-monitors.md (G2)', () => {
     expect(runbook).toMatch(/10001:10001/);
     expect(runbook).toMatch(/0400/);
     // Owner option (a): the secret lives in the telemetry secrets directory, never the colo one or a bare placeholder name.
-    expect(runbook).toContain('<TELEMETRY_PG_SECRETS_DIR>');
+    // The directory the orchestrator named (request 08, section 6): the literal path, and no placeholder left in the runbook.
+    expect(runbook).toContain(
+      'GELDAR_SECRETS_DIR=/mnt/nvme/geldar-telemetry/pg-secrets docker compose',
+    );
+    expect(runbook).not.toMatch(/<[A-Z][A-Z_]*>/);
     expect(runbook).not.toContain('<the node secrets directory>');
   });
 
@@ -267,11 +273,56 @@ describe('deploy/telemetry/compose.gateway.yml secret mount (G2)', () => {
     expect(mounts).toContainEqual({ source: 'otel-pg', target: 'otel-pg.txt' });
   });
 
-  it('takes the secret file from a node secrets path variable, with no literal path to a real secret', () => {
+  it('takes the secret file from GELDAR_SECRETS_DIR with no default, so an unset variable refuses to render', () => {
     const file = compose.secrets?.['otel-pg']?.file ?? '';
-    expect(file.startsWith(`$` + '{GELDAR_SECRETS_DIR')).toBe(true);
-    expect(file.endsWith('/otel-pg.txt')).toBe(true);
+    expect(file).toBe(
+      '$' +
+        '{GELDAR_SECRETS_DIR:?set GELDAR_SECRETS_DIR to the telemetry pg-secrets directory}/otel-pg.txt',
+    );
   });
+});
+
+describe('deploy/telemetry compose render without the secrets variable (G2)', () => {
+  const RENDER = [
+    'compose',
+    '-f',
+    'deploy/telemetry/compose.yml',
+    '-f',
+    'deploy/telemetry/compose.gateway.yml',
+    'config',
+    '--quiet',
+  ];
+  const render = (secretsDir?: string) => {
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    delete env.GELDAR_SECRETS_DIR;
+    if (secretsDir !== undefined) env.GELDAR_SECRETS_DIR = secretsDir;
+    return spawnSync('docker', RENDER, { cwd: ROOT, encoding: 'utf8', env });
+  };
+
+  it.skipIf(!DOCKER)(
+    'refuses to render the gateway overlay when GELDAR_SECRETS_DIR is unset',
+    () => {
+      const result = render();
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain(
+        'set GELDAR_SECRETS_DIR to the telemetry pg-secrets directory',
+      );
+    },
+  );
+
+  it.skipIf(!DOCKER)(
+    'renders when GELDAR_SECRETS_DIR names a directory holding otel-pg.txt',
+    () => {
+      const dir = mkdtempSync(join(tmpdir(), 'geldar-pg-secrets-'));
+      try {
+        writeFileSync(join(dir, 'otel-pg.txt'), '');
+        const result = render(dir);
+        expect(result.status, result.stderr).toBe(0);
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    },
+  );
 });
 
 describe('deploy/telemetry/postgres-monitor.sql (G2, T-10)', () => {
