@@ -1,6 +1,6 @@
-// Verbatim copy of animus/src/prompts/world-text.ts: MAX_ITEM_CHARS, the risky-code-point tables,
-// isRiskyCodePoint, escapeCodePoint and jsonString. Keep identical; animus keeps its copy under
-// prompts/** (frozen). threshold/mcp/src/json-string-parity.test.ts pins both.
+// jsonString and its helpers: MAX_ITEM_CHARS, the risky-code-point tables, isRiskyCodePoint,
+// escapeCodePoint and jsonString. Originally copied from the removed animus package (decision 0430);
+// no other copy exists, so this file is the only definition.
 
 export const MAX_ITEM_CHARS = 512;
 

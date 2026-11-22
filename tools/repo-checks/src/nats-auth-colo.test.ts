@@ -72,7 +72,7 @@ describe('colo NATS auth wiring, static (no docker needed)', () => {
     const named = Object.entries(services).filter(([, s]) => s.env.GELDAR_NATS_PASSWORD_FILE);
     // Names only: a failing expect prints the service names, never a value.
     expect(named.map(([n]) => n)).toEqual(
-      expect.arrayContaining(['golem-body', 'animus', 'paper', 'velocity', 'eventsink']),
+      expect.arrayContaining(['golem-body', 'paper', 'velocity', 'eventsink']),
     );
     const gaps = named
       .filter(([, s]) => !s.mounts.includes(s.env.GELDAR_NATS_PASSWORD_FILE ?? ''))
@@ -80,11 +80,12 @@ describe('colo NATS auth wiring, static (no docker needed)', () => {
     expect(gaps).toEqual([]);
   });
 
-  it('gives animus the mind user and a password file mounted from the nats-mind secret', () => {
-    const animus = mergeComposeFiles('colo.yml').animus;
-    expect(animus?.env.GELDAR_NATS_USER).toBe('mind');
-    expect(animus?.env.GELDAR_NATS_URL).toBe('nats://nats:4222');
-    expect(animus?.mounts).toContain('/run/secrets/nats-mind.txt');
+  // decision 0430: no colo service runs the mind user any more; the role stays in nats-auth.
+  it('no colo service is left on the mind user (animus was removed)', () => {
+    const services = mergeComposeFiles('colo.yml');
+    expect(services.animus).toBeUndefined();
+    const onMind = Object.entries(services).filter(([, s]) => s.env.GELDAR_NATS_USER === 'mind');
+    expect(onMind.map(([n]) => n)).toEqual([]);
   });
 
   it('merges nats-auth.yml into `shard up colo` in Invoke-Shard', () => {

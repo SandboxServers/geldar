@@ -1,6 +1,6 @@
 /**
  * BLD-19 fence (decision 0429): the reverse of the seen fence. No agent-facing module reads Glass plan activity.
- * The agent-facing roots are the MCP tools (`threshold/mcp`), `animus`, `golem` (the snapshot and wake text)
+ * The agent-facing roots are the MCP tools (`threshold/mcp`), `golem` (the snapshot and wake text)
  * and `player-core`. Each must not name the plan-activity module, import a Glass `kino` module, or spell the
  * Glass feed subject (`geldar.<shard>.kino.<agent>.feed`). Every `.ts` file under those roots counts, tests too.
  */
@@ -13,7 +13,7 @@ import { tsFilesUnder } from './seen-fence.ts';
 export const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 
 /** Repo-relative, forward slashes. */
-export const AGENT_ROOTS = ['animus', 'golem', 'player-core', 'threshold/mcp'];
+export const AGENT_ROOTS = ['golem', 'player-core', 'threshold/mcp'];
 
 /** Each pattern names one way an agent-facing file could reach Glass plan activity or the Glass feed. */
 const FORBIDDEN: Array<{ why: string; pattern: RegExp }> = [

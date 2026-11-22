@@ -278,49 +278,6 @@ services:
     profiles: ["adam"]
     restart: unless-stopped
 
-  # [C1-03] The Mind (Record/Mind host, decision 0078; animus/Dockerfile.mind). Built locally, as golem-body is; GELDAR_MIND_IMAGE
-  # follows the same rule (default geldar-mind:c1). The model endpoint (the Thinker gateway) is configuration.
-  animus:
-    # Decision 0134: a profile until a Thinker path exists (decision 0078): `shard up colo` and deploy/colo-up.sh skip it.
-    profiles: ["mind"]
-    # Budget: 1 CPU, 2048m (no swap, 256 pids). Measured in C1-10.
-    deploy:
-      resources:
-        limits:
-          cpus: "${GELDAR_COLO_ANIMUS_CPUS:-1}"
-          memory: "${GELDAR_COLO_ANIMUS_MEM:-2048m}"
-          pids: 256
-    memswap_limit: "${GELDAR_COLO_ANIMUS_MEM:-2048m}"
-    pids_limit: 256
-    logging: *logging
-    labels: *colo-labels
-    build:
-      context: ..
-      dockerfile: animus/Dockerfile.mind
-    image: ${GELDAR_MIND_IMAGE:-geldar-mind:c1}
-    entrypoint: ["node", "src/main.ts"]
-    user: "${GELDAR_SERVICE_UID:-1000}:${GELDAR_SERVICE_UID:-1000}"
-    environment:
-      GELDAR_SHARD: colo
-      GELDAR_IN_NETWORK_HOSTS: "1"
-      POSTGRES_HOST: postgres
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres
-      # Optional telemetry endpoint (C1-07), passed through from the host environment as for golem-body.
-      GELDAR_TELEMETRY_URL:
-      # NATS as the mind user (decision 0080): the password is a file, as golem-body's is. The URL is in-network.
-      GELDAR_NATS_URL: nats://nats:4222
-      GELDAR_NATS_USER: mind
-      GELDAR_NATS_PASSWORD_FILE: /run/secrets/nats-mind.txt
-    secrets: [postgres, { source: nats-mind, target: nats-mind.txt }]
-    volumes:
-      # The Mind's shard file, under the name the Mind reads (decision 0131). Not the budget file.
-      - ../shards/colo-mind.yaml:/opt/geldar/shards/colo.yaml:ro
-    networks: [colo]
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-
   # [C1-11a] The MCP server (threshold/mcp, spec 6.2; the image of compose/mcp.yml). The sovereign player's door: loopback 8788 only.
   # Token hashes live in Postgres (no token file). Postgres role geldar_mcp; password file postgres-mcp.txt.
   geldar-mcp:
@@ -722,7 +679,7 @@ secrets:
   # The Body's NATS password (C1-03). Written by the NATS-auth tooling (C1-06a), never stored in this file.
   nats-body:
     file: ./secrets/nats-body.txt
-  # The Mind's NATS password (animus, decision 0080). Written by `shard nats-auth colo` like nats-body.
+  # The Mind's NATS password (the `mind` user, decision 0080). Written by `shard nats-auth colo` like nats-body. No colo service mounts it since decision 0430 removed animus.
   nats-mind:
     file: ./secrets/nats-mind.txt
   # The MCP's Postgres password, pepper and NATS password (C1-11a). Written by `mcp-tokens init` and `shard nats-auth colo`.

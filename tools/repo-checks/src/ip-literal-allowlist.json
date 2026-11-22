@@ -1,9 +1,5 @@
 [
   {
-    "path": "animus/src/config.test.ts",
-    "reason": "Animus host and URL validation tests use a private address as a non-loopback host"
-  },
-  {
     "path": "glass/src/config.test.ts",
     "reason": "Glass config tests use a private address for the trusted-proxy and host checks"
   },

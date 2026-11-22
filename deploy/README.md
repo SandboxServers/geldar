@@ -263,8 +263,8 @@ deploy/colo-admin.sh player-start ag-jason-01
 
 ### (i) Known limits
 
-- The Adam Mind (`animus`) is under the compose profile `mind` (decision 0134). `colo-up.sh` does not start it; it cannot
-  think until the C4 gateway exists.
+- The former Adam Mind (`animus`) was removed (decision 0430). No compose service runs a Mind; the live Mind is the
+  scriptorium, which is not in this compose file.
 - The idle Adam Body (`golem-body`) is under the compose profile `adam` (decision 0212). `colo-up.sh` does not start it, and
   `colo-cd.sh` restarts it only when it is already running; a new body digest still refreshes the player hosts. To start it:
   `docker compose --profile adam up -d --wait golem-body`.
@@ -477,8 +477,8 @@ To stop the project without losing data, run `deploy/colo-down.sh`. Start it aga
 - **NATS auth config.** Generating the per-role NATS password files and the auth config is PowerShell-only:
   `./geldar.ps1 shard nats-auth` on the desktop. The secrets set is then copied to the node's secrets directory by
   hand. There is no shell equivalent yet.
-- **Image publish.** `colo-images` publishes the five images (`geldar-body`, `geldar-mind`, `geldar-eventsink`,
-  `geldar-mcp`, `geldar-admin`) and writes `release.env` for its run. Take the manifest from the run for
+- **Image publish.** `colo-images` publishes the six images in release.env (`geldar-body`, `geldar-eventsink`, `geldar-mcp`, `geldar-admin`, `geldar-glass`,
+  `geldar-register`) and pushes `supervisor` (not in release.env yet) and writes `release.env` for its run. Take the manifest from the run for
   `<release-commit>`; the publish itself is an ops step. Its push \paths\ filter skips test-only files under golem (\golem/test/**\, \**/*.test.ts\), so a test edit does not recreate the player hosts; golem source still rebuilds the images.
 
 ## Owner actions

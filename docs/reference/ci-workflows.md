@@ -66,7 +66,6 @@ Re-derive the image jobs with `git grep -nE '^\s+file: ' -- .github/workflows/co
 | Job | Dockerfile | GHCR package | Release manifest key |
 |---|---|---|---|
 | `body` | `golem/Dockerfile` | `geldar-body` | `GELDAR_BODY_IMAGE` |
-| `mind` | `animus/Dockerfile.mind` | `geldar-mind` | `GELDAR_MIND_IMAGE` |
 | `eventsink` | `eventsink/Dockerfile` | `geldar-eventsink` | `GELDAR_EVENTSINK_IMAGE` |
 | `mcp` | `threshold/mcp/Dockerfile` | `geldar-mcp` | `GELDAR_MCP_IMAGE` |
 | `admin` | `tools/admin/Dockerfile` | `geldar-admin` | `GELDAR_ADMIN_IMAGE` |

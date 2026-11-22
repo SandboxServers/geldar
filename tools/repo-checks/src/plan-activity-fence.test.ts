@@ -43,8 +43,8 @@ describe('scanPlanActivityReferences', () => {
 
   it('flags an import of a Glass kino module', () => {
     const src = "import { feedSubject } from '../../glass/src/kino/nats-feed.ts';\n";
-    expect(scanPlanActivityReferences('animus/src/y.ts', src)).toEqual([
-      expect.stringContaining('animus/src/y.ts:1: Glass kino module import:'),
+    expect(scanPlanActivityReferences('player-core/src/y.ts', src)).toEqual([
+      expect.stringContaining('player-core/src/y.ts:1: Glass kino module import:'),
     ]);
   });
 
@@ -73,11 +73,11 @@ describe('planActivityFenceReport on a fixture repo', () => {
 
   it('fails an agent-facing file that imports the plan-activity module (the revert fixture)', () => {
     const root = fakeRepo({
-      'animus/src/bad.ts': "import '../../glass/src/plan-activity/index.ts';\n",
+      'golem/src/bad.ts': "import '../../glass/src/plan-activity/index.ts';\n",
     });
     const hits = planActivityFenceReport(root).hits;
     expect(hits).toHaveLength(1);
-    expect(hits[0]).toContain('animus/src/bad.ts:1: plan-activity module');
+    expect(hits[0]).toContain('golem/src/bad.ts:1: plan-activity module');
   });
 
   it('exempts the ACL test up to its exact allowance of feed-subject lines', () => {

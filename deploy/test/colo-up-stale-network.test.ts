@@ -33,7 +33,7 @@ const SECRET_FILES = [
 ];
 const img = (name: string, c: string) =>
   `registry.example.invalid/geldar/${name}@sha256:${c.repeat(64)}`;
-const RELEASE = `GELDAR_BODY_IMAGE=${img('body', '1')}\nGELDAR_MIND_IMAGE=${img('mind', '2')}\nGELDAR_ADMIN_IMAGE=${img('admin', '6')}\nGELDAR_GLASS_IMAGE=${img('glass', '7')}\n`;
+const RELEASE = `GELDAR_BODY_IMAGE=${img('body', '1')}\nGELDAR_ADMIN_IMAGE=${img('admin', '6')}\nGELDAR_GLASS_IMAGE=${img('glass', '7')}\n`;
 const posix = (p: string) => p.replace(/\\/g, '/');
 
 function findSh(): string {

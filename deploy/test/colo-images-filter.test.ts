@@ -69,7 +69,6 @@ describe('colo-images push filter (CI-2, #868)', () => {
   });
 
   it('keeps the other images triggered and does not trigger on their tests alone', () => {
-    expect(triggers(patterns, 'animus/src/loop/plan.ts')).toBe(true);
     expect(triggers(patterns, 'player-core/src/validate/bounds.ts')).toBe(true);
     expect(triggers(patterns, 'player-core/src/validate/bounds.test.ts')).toBe(false);
   });

@@ -63,7 +63,6 @@ export const canSymlink = (() => {
   }
 })();
 export const BODY = `registry.example.invalid/geldar/body@sha256:${'1'.repeat(64)}`;
-export const MIND = `registry.example.invalid/geldar/mind@sha256:${'2'.repeat(64)}`;
 export const PREV_BODY = `registry.example.invalid/geldar/body@sha256:${'3'.repeat(64)}`;
 export const PROJECT_FILTER = /-p geldar-colo|label=com\.docker\.compose\.project=geldar-colo/;
 // `stats` takes container ids, not a filter. The ids come from the label-filtered `ps -q` call, so it is allowed.
@@ -170,8 +169,8 @@ export function writeConfig(
 export const NATS_BIND = (conf: string) =>
   `  nats:\n    volumes:\n      - type: bind\n        source: ${conf}\n        target: /etc/nats/nats-auth.conf\n`;
 
-export const release = (body: string, mind = MIND) =>
-  `# test manifest\nGELDAR_BODY_IMAGE=${body}\nGELDAR_MIND_IMAGE=${mind}\nGELDAR_ADMIN_IMAGE=registry.example.invalid/geldar/admin@sha256:${'6'.repeat(64)}\nGELDAR_GLASS_IMAGE=registry.example.invalid/geldar/glass@sha256:${'7'.repeat(64)}\n`;
+export const release = (body: string) =>
+  `# test manifest\nGELDAR_BODY_IMAGE=${body}\nGELDAR_ADMIN_IMAGE=registry.example.invalid/geldar/admin@sha256:${'6'.repeat(64)}\nGELDAR_GLASS_IMAGE=registry.example.invalid/geldar/glass@sha256:${'7'.repeat(64)}\n`;
 // Paths reach sh as forward slashes: MSYS sh on Windows reads C:/ paths reliably.
 export const posix = (p: string) => p.replace(/\\/g, '/');
 export const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');

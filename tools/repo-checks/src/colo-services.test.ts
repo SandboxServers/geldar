@@ -1,4 +1,5 @@
-// The C1-03 wiring in compose/colo.yml: the Body (golem-body) and the Mind (animus) services. Parsed, not grepped,
+// The C1-03 wiring in compose/colo.yml: the Body (golem-body) service. The Mind service (animus) was removed by
+// decision 0430. Parsed, not grepped,
 // so a change to a key or a value fails here, not in a deploy. Decisions 0078 (Mind placement) and 0083 (images).
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -22,18 +23,16 @@ const colo = parse(readFileSync(`${ROOT}compose/colo.yml`, 'utf8'), { merge: tru
   secrets: Record<string, unknown>;
 };
 const body = colo.services['golem-body'] ?? {};
-const mind = colo.services.animus ?? {};
 
 function env(service: Service): Record<string, unknown> {
   return (service.environment ?? {}) as Record<string, unknown>;
 }
 
-describe('compose/colo.yml: the Body and Mind services (C1-03)', () => {
-  it('defines golem-body and animus, both on the colo network', () => {
+describe('compose/colo.yml: the Body service (C1-03)', () => {
+  it('defines golem-body on the colo network and no animus service (decision 0430)', () => {
     expect(colo.services['golem-body']).toBeDefined();
-    expect(colo.services.animus).toBeDefined();
+    expect(colo.services.animus).toBeUndefined();
     expect(body.networks).toEqual(['colo']);
-    expect(mind.networks).toEqual(['colo']);
   });
 
   it('puts golem-body (the idle Adam) under the adam profile only (decision 0212)', () => {
@@ -42,7 +41,6 @@ describe('compose/colo.yml: the Body and Mind services (C1-03)', () => {
 
   it('takes each image from a deploy variable, with the local tag as the offline default', () => {
     expect(body.image).toBe(composeDefault('GELDAR_BODY_IMAGE', 'geldar-body:c1'));
-    expect(mind.image).toBe(composeDefault('GELDAR_MIND_IMAGE', 'geldar-mind:c1'));
     expect(colo.services.eventsink?.image).toBe(
       composeDefault('GELDAR_EVENTSINK_IMAGE', 'geldar-eventsink:c1'),
     );
@@ -56,23 +54,19 @@ describe('compose/colo.yml: the Body and Mind services (C1-03)', () => {
 
   it('builds each image locally from the repo root, so the digest rule treats it as a local build', () => {
     expect(body.build).toEqual({ context: '..', dockerfile: 'golem/Dockerfile' });
-    expect(mind.build).toEqual({ context: '..', dockerfile: 'animus/Dockerfile.mind' });
   });
 
-  it('runs the entry points the images define (golem/Dockerfile and animus/Dockerfile.mind)', () => {
+  it('runs the entry point the image defines (golem/Dockerfile)', () => {
     expect(body.entrypoint).toEqual(['node', 'src/adam/main.ts']);
-    expect(mind.entrypoint).toEqual(['node', 'src/main.ts']);
   });
 
-  it('publishes no port, so neither service is reachable from outside the node', () => {
+  it('publishes no port, so the service is not reachable from outside the node', () => {
     expect(body).not.toHaveProperty('ports');
-    expect(mind).not.toHaveProperty('ports');
   });
 
   it('mounts the Mind shard file read only at /opt/geldar/shards/colo.yaml (decision 0131)', () => {
     // The budget file shards/colo.yaml is never mounted: the Body and the Mind read the Mind's blocks.
     expect(body.volumes).toContain('../shards/colo-mind.yaml:/opt/geldar/shards/colo.yaml:ro');
-    expect(mind.volumes).toContain('../shards/colo-mind.yaml:/opt/geldar/shards/colo.yaml:ro');
   });
 
   it('gives the Body its NATS user and a password file, and declares that secret', () => {
@@ -83,15 +77,8 @@ describe('compose/colo.yml: the Body and Mind services (C1-03)', () => {
     expect(colo.secrets['nats-body']).toEqual({ file: './secrets/nats-body.txt' });
   });
 
-  it('gives the Mind its Postgres password from a file (the postgres secret)', () => {
-    expect(env(mind).POSTGRES_PASSWORD_FILE).toBe('/run/secrets/postgres');
-    // The Mind also takes its NATS password as a file (decision 0080), declared like the Body's.
-    expect(mind.secrets).toEqual(['postgres', { source: 'nats-mind', target: 'nats-mind.txt' }]);
-    expect(colo.secrets['nats-mind']).toEqual({ file: './secrets/nats-mind.txt' });
-  });
-
   it('bakes in no credential: every PASSWORD or TOKEN variable is a *_FILE path', () => {
-    for (const service of [body, mind]) {
+    for (const service of [body]) {
       for (const key of Object.keys(env(service))) {
         if (/PASSWORD|TOKEN/.test(key)) expect(key).toMatch(/_FILE$/);
       }
@@ -101,7 +88,6 @@ describe('compose/colo.yml: the Body and Mind services (C1-03)', () => {
   it('passes GELDAR_TELEMETRY_URL through from the host, unset by default (C1-07)', () => {
     // A null value in the map form is resolved from the host environment; with no host value it stays unset.
     expect(env(body)).toHaveProperty('GELDAR_TELEMETRY_URL', null);
-    expect(env(mind)).toHaveProperty('GELDAR_TELEMETRY_URL', null);
     // The sink and the MCP read it too: dropping the line turns their telemetry off with no error.
     expect(env(colo.services.eventsink ?? {})).toHaveProperty('GELDAR_TELEMETRY_URL', null);
     expect(env(colo.services['geldar-mcp'] ?? {})).toHaveProperty('GELDAR_TELEMETRY_URL', null);
@@ -121,7 +107,6 @@ describe('compose/colo.yml: the Body and Mind services (C1-03)', () => {
   it('caps each service with its own budget, no swap, a pids limit and log rotation (decision 0082)', () => {
     const budgets: [Service, string, string, string][] = [
       [body, 'GOLEM_BODY', '1', '2048m'],
-      [mind, 'ANIMUS', '1', '2048m'],
     ];
     for (const [service, name, cpus, memory] of budgets) {
       expect(service.deploy).toEqual({
@@ -152,7 +137,6 @@ const SHARED_CAPS: Record<string, [string, string, string, number]> = {
   nats: ['NATS', '0.5', '512m', 256],
   eventsink: ['EVENTSINK', '0.5', '512m', 256],
   'golem-body': ['GOLEM_BODY', '1', '2048m', 256],
-  animus: ['ANIMUS', '1', '2048m', 256],
   'geldar-mcp': ['GELDAR_MCP', '0.5', '512m', 128],
   'players-host': ['PLAYERS_HOST', '1', '2048m', 256],
   admin: ['ADMIN', '0.5', '512m', 128],
@@ -163,7 +147,7 @@ const SHARED_CAPS: Record<string, [string, string, string, number]> = {
 };
 
 describe('compose/colo.yml: every service has its caps (decision 0082)', () => {
-  it('names exactly the fourteen services the budget totals cover', () => {
+  it('names exactly the thirteen services the budget totals cover', () => {
     expect(Object.keys(colo.services).sort()).toEqual(Object.keys(SHARED_CAPS).sort());
   });
 
@@ -254,8 +238,8 @@ describe('compose/colo.yml: the player host (C1-11a)', () => {
     expect(players.image).toBe(composeDefault('GELDAR_BODY_IMAGE', 'geldar-body:c1'));
   });
 
-  it('keeps the Mind out of the default start: animus is under the mind profile, which colo-up.sh never names (C2-07j, decision 0134)', () => {
-    expect(mind.profiles).toEqual(['mind']);
+  it('has no Mind in the colo file and no animus in the deploy scripts (decision 0430)', () => {
+    expect(Object.values(colo.services).filter((s) => s.profiles?.includes('mind'))).toEqual([]);
     const up = readFileSync(`${ROOT}deploy/colo-up.sh`, 'utf8');
     expect(up).not.toMatch(/--profile mind|animus/);
     const status = readFileSync(`${ROOT}deploy/colo-status.sh`, 'utf8');
@@ -453,7 +437,6 @@ describe('compose/colo.yml: the service uid (GELDAR_SERVICE_UID)', () => {
   const uidServices = [
     'golem-body',
     'players-host',
-    'animus',
     'geldar-mcp',
     'admin',
     'eventsink',
