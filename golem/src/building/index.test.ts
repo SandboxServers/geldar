@@ -4,7 +4,6 @@ import * as building from './index.ts';
 const STUBS = [
   'doCell',
   'countMaterials',
-  'standFor',
   'laneStateOf',
   'enqueuePlan',
   'contendFor',
