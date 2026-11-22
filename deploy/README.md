@@ -191,7 +191,7 @@ deploy/colo-up.sh                    # the real deploy; prints "deployed: projec
 
 ### (f) Admin steps (one-shot container, decision 0133)
 
-Each step runs in a container started with `run --rm`. Nothing is kept running afterwards. Set the tokens directory
+Each step runs in a container started with `run --rm --no-deps`. Nothing is kept running afterwards. Set the tokens directory
 first. It must be outside the checkout and mode `0700`. `colo-up.sh` already runs the first two lines; run them again
 only to repair:
 
@@ -276,7 +276,7 @@ deploy/colo-admin.sh player-start ag-jason-01
   `migrate --set-role-password` step reads the second one. Both files must exist before the first `up`.
 - `token-mint` needs `GELDAR_TOKENS_DIR` writable by uid 1000 (the admin container's user) and readable by the
   operator. The script requires mode `0700` on that directory, so the owner decides how to satisfy both.
-- `run --rm` starts the admin service's dependencies (Postgres) if they are not already running. It removes nothing.
+- The one-shot runs `run --rm --no-deps`: it starts only its own container, removes it when the run ends, and never starts or recreates Postgres. The script refuses while the project's Postgres container is not running. It removes nothing.
 - `colo-up.sh` runs `colo-admin.sh ensure-skins-bucket` before the full `up`: the body NATS user creates the `geldar-skins`
   bucket (a no-op when it exists), because Velocity is read-only on it (decision 0087 correction). The admin service
   therefore also mounts `nats-body.txt`.

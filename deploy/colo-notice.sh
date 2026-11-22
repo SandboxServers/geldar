@@ -82,7 +82,7 @@ publish() {
     echo "colo: warning: $NOTICE_SECRET is missing; copy the deploy NATS password file there (deploy/README.md)" >&2
     return 1
   }
-  docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" -f "$NOTICE_OVERLAY" --profile admin run --rm \
+  docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" -f "$NOTICE_OVERLAY" --profile admin run --rm --no-deps \
     -e GELDAR_NATS_USER=deploy -e GELDAR_NATS_PASSWORD_FILE=/run/secrets/nats-deploy.txt \
     -e "GELDAR_NOTICE_SHARD=$SHARD" admin notice "$PAYLOAD" >/dev/null
 }

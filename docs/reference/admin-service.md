@@ -16,7 +16,7 @@ The Colo admin service: a one-shot container, `admin`, that runs one administrat
 |---|---|---|
 | Compose service | `admin` in `compose/colo.yml` | Container definition under the profile `admin`. |
 | Image entrypoint | `tools/admin/admin.sh` (in the image built from `tools/admin/Dockerfile`) | Maps one subcommand to one existing CLI. |
-| Node wrapper | `deploy/colo-admin.sh` | Checks arguments, prerequisites and secrets on the node, then runs the container with `run --rm`. Also manages per-player host containers. |
+| Node wrapper | `deploy/colo-admin.sh` | Checks arguments, prerequisites and secrets on the node, then runs the container with `run --rm --no-deps`. Also manages per-player host containers. |
 
 Decision [0133](../decisions/0133-colo-admin-by-one-shot-container.md) (Accepted, 2026-11-10) chose this design: the node has no Node or pnpm, and Postgres is not published, so the CLIs run inside the compose network. For the deploy scripts as a whole see the [deploy-scripts](deploy-scripts.md) reference; for the compose stacks, the [compose-stacks](compose-stacks.md) reference. For step-by-step use see [colo-deploy](../runbooks/colo-deploy.md) and [mcp-tokens](../runbooks/mcp-tokens.md).
 
@@ -29,8 +29,8 @@ flowchart LR
   op[Operator shell on the node] --> ca[deploy/colo-admin.sh]
   cu[deploy/colo-up.sh] --> ca
   cd[deploy/colo-cd.sh] --> ca
-  ca -->|docker compose run --rm admin| ad[admin.sh in the admin container]
-  cn[deploy/colo-notice.sh] -->|docker compose run --rm admin notice| ad
+  ca -->|docker compose run --rm --no-deps admin| ad[admin.sh in the admin container]
+  cn[deploy/colo-notice.sh] -->|docker compose run --rm --no-deps admin notice| ad
   ad --> mig[tools/migrate]
   ad --> tok[tools/mcp-tokens]
   ad --> pcli[tools/players-cli skin import]
@@ -57,7 +57,7 @@ From `compose/colo.yml` (service `admin`, around lines 642 to 690).
 | `user` | `${GELDAR_SERVICE_UID:-1000}` for uid and gid | |
 | Hardening | `read_only: true`, `tmpfs: /tmp`, `cap_drop: [ALL]`, `no-new-privileges:true` | |
 | Network | `colo` | Publishes no port. |
-| `depends_on` | `postgres` healthy | `run --rm` starts Postgres if it is not running and removes nothing (`deploy/README.md`). |
+| `depends_on` | `postgres` healthy | `run --rm --no-deps` starts only the admin container and does not start Postgres. `colo-admin.sh` refuses, with nothing changed, when Postgres is not running; `colo-up.sh` starts it first. Removes nothing (`deploy/README.md`). |
 | Volume | `shards/colo-mind.yaml` read-only, at the path `GELDAR_SHARD_FILE` names | The Mind's shard file, which carries the `sovereign` block. |
 
 ### Environment (names only)

@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { POSTGRES_RUNNING_CASE } from './colo-deploy-fixture';
 
 // colo-up.sh makes the BlueMap webroot (bluemap/web in the Paper volume) before `up`, because bluemap-web mounts it as a
 // volume subpath (ruling R28, C2-07d). Its own small fixture; colo-up-order.test.ts has the order of the other steps.
@@ -52,6 +53,7 @@ vi.setConfig({ testTimeout: 60_000 });
 const DOCKER_SHIM = `#!/bin/sh
 printf '%s\\n' "$*" >> "$DOCKER_CALLS_LOG"
 case "$*" in
+${POSTGRES_RUNNING_CASE}
   *"config --quiet"*) exit 0 ;;
   *"config"*) cat "$DOCKER_CONFIG_FIXTURE"; exit 0 ;;
 esac

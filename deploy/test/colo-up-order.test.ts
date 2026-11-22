@@ -38,7 +38,7 @@ const MIND = `registry.example.invalid/geldar/mind@sha256:${'2'.repeat(64)}`;
 const ADMIN = `registry.example.invalid/geldar/admin@sha256:${'6'.repeat(64)}`;
 const GLASS = `registry.example.invalid/geldar/glass@sha256:${'7'.repeat(64)}`;
 const RELEASE = `# test manifest\nGELDAR_BODY_IMAGE=${BODY}\nGELDAR_MIND_IMAGE=${MIND}\nGELDAR_ADMIN_IMAGE=${ADMIN}\nGELDAR_GLASS_IMAGE=${GLASS}\n`;
-const GLASS_LOGIN_STEP = / run --rm admin migrate --set-role-password geldar_glass /;
+const GLASS_LOGIN_STEP = / run --rm --no-deps admin migrate --set-role-password geldar_glass /;
 const posix = (p: string) => p.replace(/\\/g, '/');
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
 
@@ -63,6 +63,7 @@ const DOCKER_SHIM = `#!/bin/sh
 printf '%s\\n' "$*" >> "$DOCKER_CALLS_LOG"
 case "$*" in
   *"config --quiet"*) exit 0 ;;
+  *"service=postgres"*) echo geldar-colo-postgres-1; exit 0 ;;
   *"config"*) cat "$DOCKER_CONFIG_FIXTURE"; exit 0 ;;
   *"ps -q"*) echo c0ffee01 ;;
 esac
@@ -208,8 +209,8 @@ describe('colo-up.sh order (decision 0084, decision 0133)', () => {
     const at = (re: RegExp) => log.findIndex((c) => re.test(c));
     const pull = at(/ pull$/);
     const natsUp = at(/ up -d --wait postgres nats$/);
-    const migrate = at(/ run --rm admin migrate$/);
-    const roleLogin = at(/ run --rm admin migrate --set-role-password geldar_mcp /);
+    const migrate = at(/ run --rm --no-deps admin migrate$/);
+    const roleLogin = at(/ run --rm --no-deps admin migrate --set-role-password geldar_mcp /);
     const fullUp = at(/ up -d --wait$/);
     expect(pull).toBeGreaterThanOrEqual(0);
     expect(natsUp).toBeGreaterThan(pull);
@@ -222,7 +223,9 @@ describe('colo-up.sh order (decision 0084, decision 0133)', () => {
     expect(fullUp).toBeGreaterThan(glassLogin);
     expect(log[glassLogin]).toContain('--password-file /run/secrets/postgres-glass.txt');
     // The register login (C2-08c) runs after the glass one, before the full core.
-    const registerLogin = at(/ run --rm admin migrate --set-role-password geldar_register /);
+    const registerLogin = at(
+      / run --rm --no-deps admin migrate --set-role-password geldar_register /,
+    );
     expect(registerLogin).toBeGreaterThan(glassLogin);
     expect(fullUp).toBeGreaterThan(registerLogin);
     expect(log[registerLogin]).toContain('--password-file /run/secrets/postgres-register.txt');
@@ -236,9 +239,9 @@ describe('colo-up.sh order (decision 0084, decision 0133)', () => {
     const log = composeCalls(fx);
     const at = (re: RegExp) => log.findIndex((c) => re.test(c));
     const paperUp = at(/ up -d --wait paper$/);
-    const whitelist = at(/ run --rm admin whitelist-house-body$/);
+    const whitelist = at(/ run --rm --no-deps admin whitelist-house-body$/);
     const fullUp = at(/ up -d --wait$/);
-    const skins = at(/ run --rm admin ensure-skins-bucket$/);
+    const skins = at(/ run --rm --no-deps admin ensure-skins-bucket$/);
     expect(paperUp).toBeGreaterThan(skins);
     expect(whitelist).toBeGreaterThan(paperUp);
     expect(fullUp).toBeGreaterThan(whitelist);
@@ -279,7 +282,7 @@ describe('colo-up.sh order (decision 0084, decision 0133)', () => {
     const log = composeCalls(fx);
     // A real deploy issues the config checks, the pulls, the admin runs and the core: well over five calls.
     expect(log.length).toBeGreaterThan(5);
-    expect(log.some((c) => / run --rm admin /.test(c))).toBe(true);
+    expect(log.some((c) => / run --rm --no-deps admin /.test(c))).toBe(true);
     for (const c of log) expect(c).toContain('/nats-auth.yml');
   });
 });

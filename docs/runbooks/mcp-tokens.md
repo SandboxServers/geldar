@@ -39,6 +39,8 @@ deploy/colo-admin.sh roster-list [--owner <owner>]        # read-only
 - A successful move writes one `register_audit` row (action `player.set_owner`, detail with the owner ids only). Its `actor` is the first 16 hex characters of the sha256 of the word `operator`, not the plain word `operator` the other operator rows use. Filter on `action = 'player.set_owner'`, not on the actor.
 - The target owner's cap must be at least its player count after the move. `deploy/colo-admin.sh owner-set-cap <owner-id> 20` (range 0 to 50) is enough for 20 players; the cap default is 3.
 
+The wrapper runs each one-shot with `run --rm --no-deps admin` (incident admin-no-deps): it starts only its own container and never starts, stops or recreates postgres. It refuses while postgres is not running. Until that fix is deployed to the node, run the render gate for postgres first (compare `config --hash postgres` with the running container's config-hash label), because the older wrapper can recreate postgres when the render differs.
+
 Note on the 0 to 50 range (unresolved, flagged 2026-11-16 at `03c1f5de`): three sources say different things. The code
 enforces 0 to 50 (`deploy/colo-admin.sh` lines 136 to 145, whose comment cites decision 0052; the `player_cap` CHECK in
 `sql/0002_sovereign_mcp.sql`). Decision 0052 raises the owner's cap to 20 and states no range. Spec section 5.15.6 sets a
