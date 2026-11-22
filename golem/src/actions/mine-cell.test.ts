@@ -116,17 +116,13 @@ describe('mineAction with an exact cell', () => {
     expect(bot.dig).not.toHaveBeenCalled();
   });
 
-  it('fails would drop you when the cell is the block under the feet', async () => {
+  it('digs the exact cell under the feet, and the agent takes the fall (decision 0428)', async () => {
     const under = block(OAK_LOG, new Vec3(0, 63, 0), [OAK_LOG]);
     const bot = fakeBot([under]);
     bot.canDigBlock.mockReturnValue(true);
     const outcome = await mineCell(bot, { x: 0, y: 63, z: 0 });
-    expect(outcome).toMatchObject({
-      status: 'failed',
-      reason: 'not_possible',
-      message: 'would drop you',
-    });
-    expect(bot.dig).not.toHaveBeenCalled();
+    expect(outcome).toMatchObject({ status: 'completed' });
+    expect(bot.dig).toHaveBeenCalledTimes(1);
   });
 
   it('fails not_possible with the refusal text when the cell holds an unbreakable block', async () => {
