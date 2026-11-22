@@ -1,6 +1,8 @@
 import { connectNats } from '@geldar/contract/nats';
 import { jetstream } from '@nats-io/jetstream';
 import { Kvm } from '@nats-io/kv';
+import { PLAN_BUCKET, SEEN_BUCKET } from '../building/names.ts';
+import { PlanPersistence, planKvOf, resumePlanLane } from '../building/wire-plan-store.ts';
 import { hostAllowed } from '../config.ts';
 import { golemNatsAuth } from '../nats-credentials.ts';
 import {
@@ -45,7 +47,7 @@ export type RestartOutcome =
 export interface RestartBodyOptions
   extends Omit<CreateBodyOptions, 'bodyGeneration' | 'checkpoints'> {
   /** The two buckets. */
-  kv: { generations: BodyKv; checkpoints: BodyKv };
+  kv: { generations: BodyKv; checkpoints: BodyKv; plans?: BodyKv; seen?: BodyKv };
   /** Wait before the `no_plan` wake, in ms. Default `NO_PLAN_WAIT_MS` (45 s). */
   noPlanWaitMs?: number;
   /** Starts a timer and returns its cancel function; default `setTimeout`. */
@@ -118,7 +120,12 @@ export async function openRestartKv(
     const kvm = new Kvm(jetstream(nc));
     const generations = natsBodyKv(await kvm.create(GENERATION_BUCKET));
     const checkpoints = natsBodyKv(await kvm.create(CHECKPOINT_BUCKET));
-    return { kv: { generations, checkpoints }, close: () => nc.close().then(() => undefined) };
+    const plans = natsBodyKv(await kvm.create(PLAN_BUCKET));
+    const seen = natsBodyKv(await kvm.create(SEEN_BUCKET));
+    return {
+      kv: { generations, checkpoints, plans, seen },
+      close: () => nc.close().then(() => undefined),
+    };
   } catch (error) {
     await nc.close().catch(() => undefined);
     throw error;
@@ -142,14 +149,30 @@ export async function restartBody(options: RestartBodyOptions): Promise<Restarte
   const { kv, noPlanWaitMs, schedule, generation: _g, log, bindThreat, ...bodyOptions } = options;
   // The policy is bound to this generation's draws before the Body is built, so nothing decides first.
   const threat = bindThreat?.(generation);
+  // The plan store is kept only with body_actions.building on (BLD-05 wiring); off, nothing is stored.
+  const persistence =
+    options.building === true && kv.plans !== undefined
+      ? new PlanPersistence({
+          lifeId: options.lifeId,
+          plans: planKvOf(kv.plans),
+          checkpoints: planKvOf(kv.checkpoints),
+          ...(log === undefined ? {} : { log }),
+        })
+      : null;
   const body = createBody({
     ...bodyOptions,
     bodyGeneration: generation,
     checkpoints: { kv: kv.checkpoints, ...(log === undefined ? {} : { log }) },
     ...(threat === undefined ? {} : { threat }),
+    ...(persistence === null ? {} : { planStore: persistence }),
   });
   body.runtime.start();
   body.executor.start();
+  // A plan saved before the restart is put back on the lane from its cursor (BLD-13 resume).
+  const resumed =
+    persistence !== null && body.plan !== null
+      ? await resumePlanLane(body.plan.queue, persistence, log)
+      : 'none';
   // A give the previous run left open is closed before anything resumes (inflight.ts). A failure is
   // logged by the store and the key stays for the next start.
   await new InflightStore({
@@ -163,7 +186,7 @@ export async function restartBody(options: RestartBodyOptions): Promise<Restarte
     .catch(() => undefined);
   const outcome = await recover(body, options.lifeId, options.tickWaitMs ?? TICK_WAIT_MS, log);
   let cancel: () => void = () => undefined;
-  if (outcome.kind === 'idle') {
+  if (outcome.kind === 'idle' && resumed !== 'resumed') {
     const plansBefore = body.executor.plansReceived;
     cancel = (schedule ?? afterMs)(() => {
       if (body.executor.plansReceived > plansBefore || body.executor.intentId !== null) return;
