@@ -14,6 +14,7 @@ import {
   placeAgainst,
   sideDigCell,
 } from './pillar.ts';
+import { type Footprint, footprintOf, upperCell } from './place-footprint.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 
 /** Cells a placement may replace: the target cell must hold one of these. */
@@ -25,6 +26,38 @@ export const REPLACEABLE = new Set([
   'short_grass',
   'tall_grass',
   'fern',
+  'large_fern',
+  'dead_bush',
+  'seagrass',
+  'tall_seagrass',
+  'vine',
+  'glow_lichen',
+  'short_dry_grass',
+  'tall_dry_grass',
+  'dandelion',
+  'poppy',
+  'blue_orchid',
+  'allium',
+  'azure_bluet',
+  'red_tulip',
+  'orange_tulip',
+  'white_tulip',
+  'pink_tulip',
+  'oxeye_daisy',
+  'cornflower',
+  'lily_of_the_valley',
+  'wither_rose',
+  'torchflower',
+  'open_eyeblossom',
+  'closed_eyeblossom',
+  'pink_petals',
+  'brown_mushroom',
+  'red_mushroom',
+  'sunflower',
+  'lilac',
+  'rose_bush',
+  'peony',
+  'pitcher_plant',
   'snow',
 ]);
 /**
@@ -126,19 +159,34 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
   let target = named === null || atFeet ? feet : named;
   const targetCell = bot.blockAt(target);
   if (!targetCell) return failed('not_possible', MESSAGE.notLoaded);
+  // A two-cell item whose halves already stand is done: the second pass sends nothing.
+  const above = upperCell(block, target);
+  if (
+    above !== null &&
+    confirmsPlacement(targetCell.name, block) &&
+    confirmsPlacement(bot.blockAt(above)?.name ?? '', block)
+  ) {
+    return completed({ block, at: spot(target), already: true });
+  }
   if (!REPLACEABLE.has(targetCell.name)) {
     return failed('blocked', inBody(bot, target) ? MESSAGE.standing : MESSAGE.occupied);
   }
 
   // A solid block at feet is a pillar: the bot jumps and places it in the cell its feet were in
-  // (decision 0160). A bed keeps the beside path.
-  const pillarAtFeet = atFeet && boundingBox !== 'empty' && !block.endsWith('_bed');
+  // (decision 0160). A bed or a two-cell item keeps the beside path.
+  const pillarAtFeet = atFeet && boundingBox !== 'empty' && footprintOf(block) === 'single';
   // A solid block on the bot's own cells moves to the first free cell beside the bot.
   let beside: { target: Vec3; step: Vec3 } | null = null;
   if (!pillarAtFeet && boundingBox !== 'empty' && inBody(bot, target)) {
-    beside = freeBeside(bot, feetCell(bot), block.endsWith('_bed'));
+    beside = freeBeside(bot, feetCell(bot), footprintOf(block));
     if (!beside) return failed('blocked', MESSAGE.noSpace);
     target = beside.target;
+  }
+
+  // The second half of a two-cell item needs its cell clear too; a bed's is checked by freeBeside.
+  const second = upperCell(block, target);
+  if (second !== null && !REPLACEABLE.has(bot.blockAt(second)?.name ?? '')) {
+    return failed('blocked', MESSAGE.occupied);
   }
 
   const walked = await reachTarget(ctx, target);
@@ -212,7 +260,9 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
 
     // Only the target block is checked: a bed placed here also makes a second block.
     const placed = bot.blockAt(target)?.name ?? '';
-    if (!confirmsPlacement(placed, block)) {
+    const placedAbove =
+      second === null || confirmsPlacement(bot.blockAt(second)?.name ?? '', block);
+    if (!confirmsPlacement(placed, block) || !placedAbove) {
       last = failed('blocked', MESSAGE.unconfirmed);
       continue;
     }
@@ -443,11 +493,16 @@ function inBody(bot: Bot, cell: Vec3): boolean {
  * The first cell beside the bot, in facing order, that is open and has a solid neighbor. A bed
  * also needs the cell one further on, where its second half goes.
  */
-function freeBeside(bot: Bot, body: Vec3, bed: boolean): { target: Vec3; step: Vec3 } | null {
+function freeBeside(
+  bot: Bot,
+  body: Vec3,
+  footprint: Footprint,
+): { target: Vec3; step: Vec3 } | null {
   for (const step of stepsFromFacing(bot.entity.yaw)) {
     const cell = body.plus(step);
     if (!isFree(bot, cell)) continue;
-    if (bed && !isOpen(bot, cell.plus(step))) continue;
+    if (footprint === 'bed' && !isOpen(bot, cell.plus(step))) continue;
+    if (footprint === 'up' && !isOpen(bot, cell.offset(0, 1, 0))) continue;
     return { target: cell, step };
   }
   return null;
