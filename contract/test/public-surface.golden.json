@@ -36,6 +36,7 @@
   "provenanceTakeSubject",
   "provenanceWildcard",
   "snapshotSubject",
+  "surveySubject",
   "validateActionOutcomePayload",
   "validateActionRecord",
   "validateBlockOwner",

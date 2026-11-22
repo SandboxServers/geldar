@@ -11,6 +11,7 @@ import {
   planSubject,
   type Snapshot,
   snapshotSubject,
+  surveySubject,
   type ViewInput,
   validatePlanAck,
   validatePlanMessage,
@@ -49,6 +50,9 @@ const THOUGHT_ID = /^th_[0-9A-HJKMNP-TV-Z]{26}$/;
 
 /** The view reply when a view is refused or cannot be read: a typed failure, never a bare throw. */
 const VIEW_UNAVAILABLE = JSON.stringify({ error: 'unavailable' });
+
+/** The survey reply when no survey is wired (the building flag is off) or the request is not JSON. */
+const SURVEY_NOT_AVAILABLE = JSON.stringify({ error: 'not_available' });
 
 /** The `ViewInput` of a view request, or null when the request is not one the contract accepts. */
 function parseViewRequest(data: string): ViewInput | null {
@@ -112,6 +116,8 @@ export interface MindLinkServerOptions {
   buildSnapshot: (options: SnapshotOptions) => Snapshot;
   /** The text viewport of the bot at the size asked; throws when it cannot be read. Without it `view` is refused. */
   view?: (size: ViewInput) => Promise<string>;
+  /** Answers a survey request from the seen map (BLD-38e). Without it `survey` is refused as not_available. */
+  survey?: (request: unknown) => unknown;
   /** World age now. */
   tick: () => number;
   /** Where `plan_result` events go (JetStream in production). */
@@ -145,7 +151,22 @@ export class MindLinkServer {
         Promise.resolve(this.onPlan(data, reply)),
       ),
       server.serve(viewSubject(shard, lifeId), (data, reply) => this.onViewRequest(data, reply)),
+      server.serve(surveySubject(shard, lifeId), (data, reply) =>
+        Promise.resolve(this.onSurveyRequest(data, reply)),
+      ),
     );
+  }
+
+  /** Answers a survey request with the seen map's read, or `{"error":"not_available"}` when none is wired. */
+  private onSurveyRequest(data: string, reply: (body: string) => void): void {
+    if (this.opts.survey === undefined) return reply(SURVEY_NOT_AVAILABLE);
+    let request: unknown;
+    try {
+      request = JSON.parse(data) as unknown;
+    } catch {
+      return reply(SURVEY_NOT_AVAILABLE);
+    }
+    reply(JSON.stringify(this.opts.survey(request)));
   }
 
   /**

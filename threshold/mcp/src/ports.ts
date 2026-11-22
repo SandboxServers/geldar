@@ -118,6 +118,11 @@ export interface BodyGateway {
     lifeId: string,
     size: { width?: number; height?: number },
   ): Promise<{ png: string } | { error: 'view_unavailable'; detail: string }>;
+  /**
+   * The Body's survey of a box from its seen map (BLD-38e). The reply is `{ text, truncated }`, checked by
+   * the tool; a Body that does not answer rejects with `BodyUnavailable`.
+   */
+  survey(lifeId: string, request: { box: unknown; layers?: number }): Promise<unknown>;
   /** The Body's text viewport from where its body looks; `unavailable` when the Body cannot read it. */
   view(
     lifeId: string,

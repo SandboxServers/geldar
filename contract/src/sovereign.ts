@@ -40,6 +40,7 @@ export {
   kinoFeedSubject,
   maintenanceSubject,
   PRESENCE_BUCKET,
+  surveySubject,
   viewSubject,
 } from './subjects.ts';
 

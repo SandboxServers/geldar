@@ -38,6 +38,7 @@ export class FakeBody implements BodyGateway {
   /** Every event emitted, in order, whether or not a log took it. */
   readonly emitted: { lifeId: string; event: SimEvent }[] = [];
   private readonly books = new Map<string, BookReply>();
+  private readonly surveys = new Map<string, unknown>();
   private readonly offline = new Set<string>();
   private readonly rejections = new Map<string, ScriptedRejection[]>();
   private readonly revisions = new Map<string, number>();
@@ -72,6 +73,20 @@ export class FakeBody implements BodyGateway {
   async emit(lifeId: string, event: SimEvent): Promise<void> {
     this.emitted.push({ lifeId, event });
     await this.log?.append(lifeId, event);
+  }
+
+  /** Every survey request, in order, as the gateway received it. */
+  readonly surveyRequests: { lifeId: string; request: { box: unknown; layers?: number } }[] = [];
+
+  /** Sets the survey reply a life's Body answers with (the contract shape `{ text, truncated }`). */
+  setSurvey(lifeId: string, reply: unknown): void {
+    this.surveys.set(lifeId, reply);
+  }
+
+  async survey(lifeId: string, request: { box: unknown; layers?: number }): Promise<unknown> {
+    this.requireOnline(lifeId);
+    this.surveyRequests.push({ lifeId, request });
+    return this.surveys.get(lifeId) ?? { text: 'legend ?=unknown', truncated: false };
   }
 
   async snapshot(lifeId: string): Promise<Snapshot> {
