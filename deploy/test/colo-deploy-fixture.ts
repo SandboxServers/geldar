@@ -68,6 +68,9 @@ export const PREV_BODY = `registry.example.invalid/geldar/body@sha256:${'3'.repe
 export const PROJECT_FILTER = /-p geldar-colo|label=com\.docker\.compose\.project=geldar-colo/;
 // `stats` takes container ids, not a filter. The ids come from the label-filtered `ps -q` call, so it is allowed.
 export const STATS_BY_ID = /^stats --no-stream [0-9a-f]+$/;
+// The preflight of `colo-admin.sh migrate` (postgres_running): the project's postgres container is running. Every fake
+// docker shim in deploy/test that serves a real colo-up/colo-cd run puts this case first, so the preflight passes.
+export const POSTGRES_RUNNING_CASE = `  *"ps --filter label=com.docker.compose.project="*"service=postgres"*) echo geldar-colo-postgres-1; exit 0 ;;`;
 
 export function findSh(): string {
   if (process.env.GELDAR_TEST_SH) return process.env.GELDAR_TEST_SH;
@@ -100,6 +103,7 @@ vi.setConfig({ testTimeout: SPAWN_TEST_TIMEOUT_MS });
 export const DOCKER_SHIM = `#!/bin/sh
 printf '%s\\n' "$*" >> "$DOCKER_CALLS_LOG"
 case "$*" in
+${POSTGRES_RUNNING_CASE}
   *"config --quiet"*) exit 0 ;;
   *"config"*) cat "$DOCKER_CONFIG_FIXTURE"; exit 0 ;;
   *"ps -q"*) echo c0ffee01 ;;

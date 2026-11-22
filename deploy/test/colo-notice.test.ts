@@ -159,6 +159,17 @@ describe('colo-notice.sh', { timeout: 30_000 }, () => {
     expect(payload).toMatchObject({ kind: 'restart', scope: 'bodies', reason: 'config' });
   });
 
+  it('runs the admin one-shot with --no-deps, so a notice never converges postgres (incident admin-no-deps)', () => {
+    const r = run(['restart', 'bodies', '-', 'config']);
+    expect(r.status).toBe(0);
+    const args = readFileSync(log, 'utf8').split('\n');
+    const rm = args.indexOf('--rm');
+    expect(rm).toBeGreaterThan(-1);
+    expect(args[rm + 1]).toBe('--no-deps');
+    // `--profile admin` also names the word, so the service name is looked for after the `run --rm` flags.
+    expect(args.indexOf('admin', rm)).toBeGreaterThan(rm + 1);
+  });
+
   it('exits 0 with a warning when NATS is unreachable', () => {
     const r = run(['restart', 'bodies'], { FAKE_DOCKER_FAIL: '1' });
     expect(r.status).toBe(0);

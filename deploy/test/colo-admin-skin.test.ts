@@ -42,6 +42,7 @@ printf '%s\\n' "$*" >> "$DOCKER_CALLS_LOG"
 for a in "$@"; do case $a in *.override.yml) cp "$a" "$DOCKER_CALLS_LOG.overlay" ;; esac; done
 case "$*" in
   *"config --quiet"*) exit 0 ;;
+  *"service=postgres"*) echo geldar-colo-postgres-1; exit 0 ;;
   *"config"*) cat "$DOCKER_CONFIG_FIXTURE"; exit 0 ;;
 esac
 exit 0
@@ -152,7 +153,7 @@ describe('colo-admin.sh skin-import', () => {
     const started = starts(calls(fx));
     expect(started).toHaveLength(1);
     expect(started[0]).toMatch(
-      /--profile admin run --rm admin skin-import ag-jason-01 \/run\/skins\/ranger-skins\.json$/,
+      /--profile admin run --rm --no-deps admin skin-import ag-jason-01 \/run\/skins\/ranger-skins\.json$/,
     );
     expect(calls(fx).join('\n')).not.toContain(SENTINEL);
     expect(r.out).not.toContain(SENTINEL);

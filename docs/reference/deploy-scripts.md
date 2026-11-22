@@ -184,7 +184,7 @@ Publishes one maintenance notice on `geldar.<shard>.maintenance`.
 
 ## colo-admin.sh
 
-Runs one administration subcommand in the one-shot admin container (`run --rm`, profile `admin`, decision [0133](../decisions/0133-colo-admin-by-one-shot-container.md)). Nothing is brought up, stopped or removed except the per-player hosts. The [admin service](admin-service.md) reference covers the container's own commands.
+Runs one administration subcommand in the one-shot admin container (`run --rm --no-deps`, profile `admin`, decision [0133](../decisions/0133-colo-admin-by-one-shot-container.md)). The one-shot starts only its own container (`--no-deps`), so it never converges Postgres, and it refuses, with nothing changed, while the project's Postgres container is not running. Only the per-player hosts are started or stopped here; nothing is removed. The [admin service](admin-service.md) reference covers the container's own commands.
 
 Re-derive the subcommand list with `git grep -n 'migrate | owner-add' -- deploy/colo-admin.sh`.
 
