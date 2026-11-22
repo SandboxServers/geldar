@@ -57,17 +57,33 @@ function toLaneCell(
 ): PlanCell {
   const at = { x: cell.x, y: cell.y, z: cell.z };
   if (cell.pal === null) return { at, prior: null, target: 'air' };
-  const entry = palette[cell.pal] as { block?: unknown } | undefined;
+  const entry = palette[cell.pal] as { block?: unknown; state?: unknown } | undefined;
   if (entry === undefined || typeof entry.block !== 'string') {
     throw new PlanNotRunnable(`palette key ${cell.pal} names no block`);
   }
+  const reference = referenceOf(cell.pal, entry.block, entry.state);
   let target: string;
   try {
-    target = canonicalBlockRef(parseBlockRef(entry.block));
+    target = canonicalBlockRef(parseBlockRef(reference));
   } catch {
     throw new PlanNotRunnable(`palette key ${cell.pal} names no block`);
   }
   return { at, prior: cell.replaces ? null : 'air', target };
+}
+
+/** The palette entry as one block reference: the block, then its state as properties (`name[k=v]`). */
+function referenceOf(key: string, block: string, state: unknown): string {
+  if (state === undefined) return block;
+  if (typeof state !== 'object' || state === null || Array.isArray(state)) {
+    throw new PlanNotRunnable(`palette key ${key} has a state that is not a property map`);
+  }
+  const pairs = Object.entries(state).map(([name, value]) => {
+    if (typeof value !== 'string') {
+      throw new PlanNotRunnable(`palette key ${key} has a state value that is not a string`);
+    }
+    return `${name}=${value}`;
+  });
+  return pairs.length === 0 ? block : `${block}[${pairs.join(',')}]`;
 }
 
 /** The shift of the plan: zero when none is given, the feet for `here`, else the given cell. */

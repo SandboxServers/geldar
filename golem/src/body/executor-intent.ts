@@ -37,6 +37,8 @@ export interface IntentStartDeps {
   ): Promise<void>;
   current(): ActiveIntent | null;
   install(a: ActiveIntent): void;
+  /** Holds the plan lane for the installed intent (BLD-14): it pauses until the intent ends. */
+  holdLane(a: ActiveIntent): Promise<void>;
   /** The death floor (decision 0191): a change while the start runs means the Body died during it. */
   deathFloor(): number | null;
 }
@@ -148,6 +150,10 @@ export async function startIntentRun(
     return 'skipped';
   }
   deps.install(a);
+  // The hold is taken on the call, before the first await, so an end that comes later releases it.
+  await deps.holdLane(a);
+  // A death or a stop during the hold has ended the intent: its state is already final.
+  if (a.ended) return 'skipped';
   deps.setState(a, 'running');
   return 'started';
 }

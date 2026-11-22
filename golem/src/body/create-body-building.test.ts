@@ -111,6 +111,32 @@ describe('the plan queue and lane on the Body (BLD-38b)', () => {
     await made.runtime.stop();
   }, 20_000);
 
+  it('a palette state (stairs half top) reaches the place handler through the lane (BLD-fix5 F1)', async () => {
+    const made = buildingBody({ building: true });
+    airWorld(made.bot, mutableView(made));
+    // The cell preflight needs the stairs in hand; airWorld holds stone only.
+    const held = made.bot as unknown as {
+      inventory: { items: () => { name: string; count: number }[] };
+    };
+    held.inventory = { items: () => [{ name: 'oak_stairs', count: 64 }] };
+    const spy = vi.spyOn(made.runtime, 'runAction');
+    made.runtime.start();
+    const reply = await made.runtime.runAction({
+      do: 'plan',
+      op: 'add',
+      plan_id: 'p1',
+      palette: { s: { block: 'oak_stairs', state: { half: 'top' } } },
+      steps: [{ op: 'place', pal: 's', at: { x: 0, y: 64, z: 5 } }],
+    });
+    expect(reply.state).toBe('completed');
+    const places = () =>
+      spy.mock.calls.filter((call) => (call[0] as { do?: string } | undefined)?.do === 'place');
+    for (let age = 1; age <= 10 && places().length === 0; age++) await tickAt(made, age);
+    expect(places()).toHaveLength(1);
+    expect(places()[0]?.[2]).toEqual({ placeState: { half: 'top' } });
+    await made.runtime.stop();
+  }, 20_000);
+
   it('a reflex tick pauses the lane, and the lane resumes on the next tick without one', async () => {
     const made = buildingBody({ building: true });
     airWorld(made.bot, mutableView(made));

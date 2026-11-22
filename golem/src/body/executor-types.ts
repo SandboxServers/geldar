@@ -99,6 +99,17 @@ export interface ExecutorOptions {
   maxRememberedActions?: number;
   /** Told about each step and each end of the intent. Default: none. */
   observer?: IntentObserver;
+  /**
+   * The plan lane's holds (contention.ts, BLD-14): a running intent holds it under `intent:<id>`
+   * and releases it when the intent ends. Absent when body_actions.building is off.
+   */
+  foreground?: ForegroundGate;
+}
+
+/** The hold and release the executor calls on the plan lane's contention. */
+export interface ForegroundGate {
+  hold(holder: string): Promise<void>;
+  release(holder: string): void;
 }
 
 /** One running intent. `executor-intent.ts` builds it; the executor drives it. */

@@ -232,6 +232,8 @@ export function createBody(options: CreateBodyOptions): Body {
     ticks: options.ticks,
     currentRevision: options.currentRevision,
     wakeTap: tap,
+    // A running intent pauses the plan lane (BLD-14); nothing is held when building is off.
+    ...(plan === null ? {} : { foreground: plan.contention }),
     ...(checkpoints === null ? {} : { observer: checkpoints }),
     ...(options.snapshotWindow === undefined ? {} : { snapshotWindow: options.snapshotWindow }),
     ...(options.nearbyAgents === undefined ? {} : { nearbyAgents: options.nearbyAgents }),

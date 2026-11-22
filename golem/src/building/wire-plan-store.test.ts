@@ -65,6 +65,18 @@ function setup(
   return { plans, checkpoints, persistence, lane, queue, lines };
 }
 
+/** The encoded checkpoint of this life at cursor 4 of the given plan. */
+function checkpointOf(planId: string, chunks: number): string {
+  return encodeCheckpoint({
+    life_id: LIFE,
+    plan_id: planId,
+    chunks,
+    cursor: 4,
+    counts: {},
+    skipped: [],
+  });
+}
+
 /** A plan body whose fake expander returns the given cells. */
 function body(cells: PlanCell[]) {
   return { palette: {}, steps: [], cells } as unknown as {
@@ -164,6 +176,29 @@ describe('resumePlanLane', () => {
     expect(await resumePlanLane(second.queue, second.persistence)).toBe('resumed');
     expect(second.lane.state).toBe('running');
     expect(second.lane.checkpointState()).toMatchObject({ plan_id: 'p1', cursor: 4 });
+  });
+
+  it('keeps the active plan checkpoint when a waiting plan is cancelled', async () => {
+    const first = setup();
+    await first.queue.submit({ planId: 'p1', op: 'add', final: true, body: body(cellsOf(10)) });
+    const chunks = first.plans.data.size;
+    await first.queue.submit({ planId: 'p2', op: 'add', final: true, body: body(cellsOf(10)) });
+    const key = `${LIFE}.plan`;
+    first.checkpoints.data.set(key, checkpointOf('p1', chunks));
+    expect(await first.queue.cancel('p2')).toBe(1);
+    expect(first.checkpoints.data.get(key)).toBe(checkpointOf('p1', chunks));
+    const second = setup({ plans: first.plans, checkpoints: first.checkpoints });
+    expect(await resumePlanLane(second.queue, second.persistence)).toBe('resumed');
+    expect(second.lane.checkpointState()).toMatchObject({ plan_id: 'p1' });
+  });
+
+  it('removes the checkpoint when the active plan itself is cancelled', async () => {
+    const first = setup();
+    await first.queue.submit({ planId: 'p1', op: 'add', final: true, body: body(cellsOf(10)) });
+    const key = `${LIFE}.plan`;
+    first.checkpoints.data.set(key, checkpointOf('p1', first.plans.data.size));
+    expect(await first.queue.cancel('p1')).toBe(1);
+    expect(first.checkpoints.data.has(key)).toBe(false);
   });
 
   it('fails without running anything when a chunk of the plan is missing', async () => {
