@@ -43,6 +43,7 @@ import { bestEffortPresence, causeOf, rateLimitedPresenceLog } from './presence-
 import { type ActArgs, ActToolError, actTool } from './tools/act.ts';
 import { JOURNAL_LINE_LIMIT, journalTool } from './tools/journal.ts';
 import { lookTool, type ToolCall } from './tools/look.ts';
+import { PLAN_CHECK_MESSAGES, planCheckTool } from './tools/plan-check.ts';
 import { readBookTool } from './tools/read-book.ts';
 import { sayTool } from './tools/say.ts';
 import { SEE_REFUSALS, type SeeDeps, type SeeOutcome, seeTool } from './tools/see.ts';
@@ -55,11 +56,7 @@ import {
   type SurveyRead,
   surveyTool,
 } from './tools/survey.ts';
-import {
-  NOT_AVAILABLE_MESSAGE,
-  type NotAvailableTool,
-  notAvailableTool,
-} from './tools/unavailable.ts';
+import { type NotAvailableTool, notAvailableTool } from './tools/unavailable.ts';
 import { viewTool } from './tools/view.ts';
 import {
   createWaitState,
@@ -415,9 +412,19 @@ export function createWorld(deps: WorldDeps): World {
         input,
       ),
     ),
-    // BLD-22 wires the contract tool; the Body read of the pack and seen map is not in this world yet, so it refuses.
-    plan_check: bound(wired, async () => {
-      throw new ToolError('not_available', NOT_AVAILABLE_MESSAGE);
+    // Hidden and refused while the building flag is off (unavailable.ts); on, the Body runs the dry run.
+    plan_check: bound(wired, async (call, input, ctx) => {
+      const outcome = await planCheckTool(
+        {
+          check: (lifeId, request) => wired.body.planCheck(lifeId, request),
+          isOpen: () => !ctx.signal.aborted,
+        },
+        call,
+        input,
+      );
+      if ('error' in outcome)
+        throw new ToolError(outcome.error, PLAN_CHECK_MESSAGES[outcome.error]);
+      return outcome.check;
     }),
     wait: bound(wired, (call, input, ctx) => waitTool(wired, call, input as WaitInput, ctx)),
     look: bound(wired, (call) => lookTool(wired, call), true),

@@ -1,6 +1,7 @@
 import {
   type PlanAck,
   type PlanMessage,
+  planCheckSubject,
   planSubject,
   type Snapshot,
   snapshotSubject,
@@ -83,7 +84,7 @@ describe('SnapshotRevision', () => {
 });
 
 describe('MindLinkServer snapshots', () => {
-  it('serves exactly the snapshot, plan, view and survey subjects of its life', () => {
+  it('serves exactly the snapshot, plan, view, survey and plan_check subjects of its life', () => {
     const { transport } = rig();
     expect(transport.subjects.sort()).toEqual(
       [
@@ -91,6 +92,7 @@ describe('MindLinkServer snapshots', () => {
         planSubject(SHARD, LIFE),
         viewSubject(SHARD, LIFE),
         surveySubject(SHARD, LIFE),
+        planCheckSubject(SHARD, LIFE),
       ].sort(),
     );
   });

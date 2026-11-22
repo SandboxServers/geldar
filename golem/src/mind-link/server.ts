@@ -8,6 +8,7 @@ import {
   type PlanAck,
   type PlanMessage,
   type PlanResultPayload,
+  planCheckSubject,
   planSubject,
   type Snapshot,
   snapshotSubject,
@@ -53,6 +54,25 @@ const VIEW_UNAVAILABLE = JSON.stringify({ error: 'unavailable' });
 
 /** The survey reply when no survey is wired (the building flag is off) or the request is not JSON. */
 const SURVEY_NOT_AVAILABLE = JSON.stringify({ error: 'not_available' });
+
+/**
+ * Replies to a building request (survey, plan_check) with `answer`'s result for its JSON request, or the
+ * `not_available` refusal when no answer is wired or the request is not JSON.
+ */
+function answerFrom(
+  answer: ((request: unknown) => unknown) | undefined,
+  data: string,
+  reply: (body: string) => void,
+): void {
+  let request: unknown;
+  try {
+    request = JSON.parse(data) as unknown;
+  } catch {
+    request = undefined;
+  }
+  if (answer === undefined || request === undefined) reply(SURVEY_NOT_AVAILABLE);
+  else reply(JSON.stringify(answer(request)));
+}
 
 /** The `ViewInput` of a view request, or null when the request is not one the contract accepts. */
 function parseViewRequest(data: string): ViewInput | null {
@@ -118,6 +138,8 @@ export interface MindLinkServerOptions {
   view?: (size: ViewInput) => Promise<string>;
   /** Answers a survey request from the seen map (BLD-38e). Without it `survey` is refused as not_available. */
   survey?: (request: unknown) => unknown;
+  /** Answers a plan_check request with the dry run (BLD-22b). Without it `plan_check` is refused as not_available. */
+  planCheck?: (request: unknown) => unknown;
   /** World age now. */
   tick: () => number;
   /** Where `plan_result` events go (JetStream in production). */
@@ -154,19 +176,15 @@ export class MindLinkServer {
       server.serve(surveySubject(shard, lifeId), (data, reply) =>
         Promise.resolve(this.onSurveyRequest(data, reply)),
       ),
+      server.serve(planCheckSubject(shard, lifeId), (data, reply) =>
+        Promise.resolve(answerFrom(this.opts.planCheck, data, reply)),
+      ),
     );
   }
 
   /** Answers a survey request with the seen map's read, or `{"error":"not_available"}` when none is wired. */
   private onSurveyRequest(data: string, reply: (body: string) => void): void {
-    if (this.opts.survey === undefined) return reply(SURVEY_NOT_AVAILABLE);
-    let request: unknown;
-    try {
-      request = JSON.parse(data) as unknown;
-    } catch {
-      return reply(SURVEY_NOT_AVAILABLE);
-    }
-    reply(JSON.stringify(this.opts.survey(request)));
+    answerFrom(this.opts.survey, data, reply);
   }
 
   /**
