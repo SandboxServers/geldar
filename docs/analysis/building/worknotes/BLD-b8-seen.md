@@ -12,7 +12,7 @@ Branch `phase1/b8-seen-privacy`, base `building/integration` at b014adde. Coordi
 ## Not done, and why
 
 - Ruling 3(b), the mismatch report carrying no block name: no report path in golem carries a block name today. `cell-do.ts` returns cell codes only (`codeOf` drops the handler message), and `plan_check` returns counts (`unknown_cells`). Nothing was changed there; no test was written for a path that does not exist.
-- Inherited mark across a flush: a predecessor cell is tracked as a change and written through `SeenStore.record`, which takes no inherited argument and so stores it as not inherited. This is the open finding "inheritance writes marks wrongly" (RESUME item 13). Left as is: it needs a `store.ts` change outside this packet's file list.
+- Inherited mark across a flush (finding 4, closed in `phase1/b8-seen-inherit-flush`): a predecessor cell is tracked as a change with its inherited flag, and `SeenStore.record(..., inherited)` stores that flag per cell; a reload keeps it, and a section written before the flag reads as not inherited. This closes RESUME item 13.
 
 ## Tests
 

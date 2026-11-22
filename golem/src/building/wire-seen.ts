@@ -41,6 +41,7 @@ interface Change {
   z: number;
   name: string;
   tick: number;
+  inherited: boolean;
 }
 
 /** A seen map that also keeps the cells recorded since the last flush (when a store is kept). */
@@ -62,7 +63,7 @@ class TrackedSeenMap extends SeenMap {
     inherited = false,
   ): void {
     super.record(x, y, z, name, tick, inherited);
-    if (this.track) this.changed.set(`${x},${y},${z}`, { x, y, z, name, tick });
+    if (this.track) this.changed.set(`${x},${y},${z}`, { x, y, z, name, tick, inherited });
   }
 
   /** Puts back a stored cell of this life without marking it changed: nothing is written for it again. */
@@ -137,7 +138,14 @@ export function createSeenWiring(opts: SeenWiringOptions): SeenWiring {
     map.changed.clear();
     for (const [key, change] of batch) {
       try {
-        await store.record(change.x, change.y, change.z, change.name, change.tick);
+        await store.record(
+          change.x,
+          change.y,
+          change.z,
+          change.name,
+          change.tick,
+          change.inherited,
+        );
       } catch {
         // Kept for the next flush unless a newer change to the same cell is already waiting.
         if (!map.changed.has(key)) map.changed.set(key, change);

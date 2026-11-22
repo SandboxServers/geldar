@@ -44,7 +44,7 @@ Factual list at `d87221c4`. Each item is either a code gap or an owner call; non
 10. **Dig-safety still applies outside plans.** The refusal still runs in `unstick`, `unstick-up`, `pillar`, the escape ladder and stairs, and the reflex dig (decision 0428 limits the removal to `break`, `mine` and plans).
 11. **Seen view cone is a constant.** `golem/src/perception/view/viewport.ts` sets `H_FOV` 90 and `V_FOV` 45 degrees. No `seen_fov` config key exists in golem, the contract or the shards.
 12. **Unbounded eager plan expansion.** `createPlanExpand` (`golem/src/building/wire-expand.ts`) builds every cell of a plan before the lane runs, and the plan action has no size bound. The lazy and bounded options are in `docs/analysis/building/worknotes/BLD-fix6.md`; none is implemented.
-13. **Inheritance writes marks wrongly.** Inherited cells are written back as not inherited, and the survey never prints an inherited mark (review-code-4 F6, reported at `6fe2448b`; dormant until a predecessor source exists).
+13. **Inheritance writes marks wrongly.** Closed on `phase1/b8-seen-inherit-flush`: the store round-trips the inherited bit through flush and reload (review-code-4 F6, reported at `6fe2448b`).
 14. **Bot listeners not removed.** `wire-seen.ts` adds three `bot.on` listeners that `stop()` does not remove; each Body restart on the same bot adds more (review-code-4 F7, reported at `6fe2448b`).
 15. **Metrics reach SigNoz only with `GELDAR_TELEMETRY_URL`.** Without it the series are computed and not pushed.
 16. **Flag path for the node is unverified.** The runbook says the node checkout must carry the shard change; the mechanism (`colo-images.yml` paths, bind mount) is not verified here.
