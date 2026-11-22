@@ -4,6 +4,7 @@ import type { ActionContext } from '../actions/registry.ts';
 import type { BodyRuntime } from '../body/runtime.ts';
 import type { GolemMetrics } from '../metrics.ts';
 import type { PlanCell } from './cell-do.ts';
+import { arrayCellSource } from './cell-source.ts';
 import { cellEnvOf, cellHandlersOf, createLaneWiring } from './wire-lane.ts';
 
 /** A bot whose block at any cell has the name and properties given (or no block when `block` is null). */
@@ -91,10 +92,14 @@ describe('createLaneWiring plan metrics (BLD-fix1c D)', () => {
       lifeId: 'ag_test_01',
       bot: STONE_BOT,
       runtime,
-      expand: () => [],
+      expand: () => arrayCellSource([]),
       metrics: metrics as unknown as GolemMetrics,
     });
-    wiring.lane.start({ planId: 'p-metrics', cells: [DONE_CELL] } as never);
+    wiring.lane.start({
+      planId: 'p-metrics',
+      source: arrayCellSource([DONE_CELL]),
+      total: 1,
+    } as never);
     await wiring.onTick(1, false);
     expect(planCell).toHaveBeenCalledWith('done_already');
     expect(planQueueDepth).toHaveBeenLastCalledWith(0);
@@ -117,9 +122,13 @@ describe('createLaneWiring unexpected throw (BLD-fix1c E)', () => {
       lifeId: 'ag_test_01',
       bot: STONE_BOT,
       runtime,
-      expand: () => [],
+      expand: () => arrayCellSource([]),
     });
-    wiring.lane.start({ planId: 'p-throw', cells: [DONE_CELL] } as never);
+    wiring.lane.start({
+      planId: 'p-throw',
+      source: arrayCellSource([DONE_CELL]),
+      total: 1,
+    } as never);
     await expect(wiring.onTick(7, false)).rejects.toThrow('view unreadable');
     expect(wiring.lane.snapshot()?.phase).toBe('failed');
     const failedEvents = planProgress.mock.calls.filter((call) => call[0]?.phase === 'failed');
@@ -150,7 +159,7 @@ describe('createLaneWiring metrics: throttle verdicts and plan seconds (fix2c F4
       lifeId: 'ag_test_01',
       bot: STONE_BOT,
       runtime,
-      expand: () => [],
+      expand: () => arrayCellSource([]),
       metrics: metrics as unknown as GolemMetrics,
       wallClock: () => clock.now,
     });
@@ -160,7 +169,7 @@ describe('createLaneWiring metrics: throttle verdicts and plan seconds (fix2c F4
 
   it('counts a paused lane (TPS below 12) as a throttle wait with verdict tps', async () => {
     const { metrics, wiring } = rigWith(5, { now: 0 });
-    wiring.lane.start({ planId: 'p-tps', cells: [DONE_CELL] } as never);
+    wiring.lane.start({ planId: 'p-tps', source: arrayCellSource([DONE_CELL]), total: 1 } as never);
     await wiring.onTick(1, false);
     expect(metrics.planThrottleWait).toHaveBeenCalledWith(true);
     expect(metrics.planThrottleWait).not.toHaveBeenCalledWith(false);
@@ -169,7 +178,11 @@ describe('createLaneWiring metrics: throttle verdicts and plan seconds (fix2c F4
 
   it('counts a gap between cells (TPS at full speed) as a throttle wait with verdict gap', async () => {
     const { metrics, view, wiring } = rigWith(20, { now: 0 });
-    wiring.lane.start({ planId: 'p-gap', cells: [DONE_CELL, SECOND_DONE] } as never);
+    wiring.lane.start({
+      planId: 'p-gap',
+      source: arrayCellSource([DONE_CELL, SECOND_DONE]),
+      total: 2,
+    } as never);
     await wiring.onTick(1, false);
     view.tick = 1;
     await wiring.onTick(2, false);
@@ -180,7 +193,11 @@ describe('createLaneWiring metrics: throttle verdicts and plan seconds (fix2c F4
   it('reports the wall seconds between two open ticks, not milliseconds', async () => {
     const clock = { now: 1000 };
     const { metrics, view, wiring } = rigWith(5, clock);
-    wiring.lane.start({ planId: 'p-seconds', cells: [DONE_CELL] } as never);
+    wiring.lane.start({
+      planId: 'p-seconds',
+      source: arrayCellSource([DONE_CELL]),
+      total: 1,
+    } as never);
     await wiring.onTick(1, false);
     clock.now = 2500;
     view.tick = 2;

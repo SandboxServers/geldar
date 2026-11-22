@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { completed } from '../actions/outcome.ts';
 import type { ActionContext, ActionHandler } from '../actions/registry.ts';
 import type { CellEnv, CellHandlers, PlanCell } from './cell-do.ts';
+import { arrayCellSource } from './cell-source.ts';
 import { type LanePlan, PlanLane } from './lane.ts';
 import { PLAN_WAKE_REASON } from './names.ts';
 import { materialsWakeText } from './progress.ts';
@@ -40,7 +41,8 @@ function stoneCells(n: number): PlanCell[] {
 }
 
 function plan(n: number): LanePlan {
-  return { lifeId: 'life', planId: 'p1', chunks: 1, cells: stoneCells(n) };
+  const cells = stoneCells(n);
+  return { lifeId: 'life', planId: 'p1', chunks: 1, source: arrayCellSource(cells), total: n };
 }
 
 function ctx(): ActionContext {

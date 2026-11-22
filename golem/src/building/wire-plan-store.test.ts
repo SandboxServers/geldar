@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PlanCell } from './cell-do.ts';
+import { arrayCellSource } from './cell-source.ts';
 import { contendFor } from './contention.ts';
 import { PlanLane } from './lane.ts';
 import { encodeCheckpoint } from './plan-checkpoint.ts';
@@ -55,7 +56,7 @@ function setup(
     lifeId: LIFE,
     lane,
     contention: contendFor(lane),
-    expand: (body) => (body as unknown as { cells: PlanCell[] }).cells,
+    expand: (body) => arrayCellSource((body as unknown as { cells: PlanCell[] }).cells),
     ...(options.store === undefined
       ? { store: persistence }
       : options.store === null

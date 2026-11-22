@@ -8,9 +8,11 @@
 import { errorText } from '../actions/outcome.ts';
 import type { ActionContext } from '../actions/registry.ts';
 import type { PlanCell } from './cell-do.ts';
+import { arrayCellSource, type CellSource, cellsOf, filteredCellSource } from './cell-source.ts';
 import type { Contention } from './contention.ts';
 import type { LaneDeps, LanePlan, PlanLane } from './lane.ts';
 import type { SkippedCell } from './plan-checkpoint.ts';
+import { countPlanCells } from './wire-expand.ts';
 
 /** The plan body a chunk carries: the palette and steps, and where and in what order they go. */
 export interface PlanBody {
@@ -20,8 +22,11 @@ export interface PlanBody {
   order?: unknown;
 }
 
-/** Turns a whole plan body into the cells the lane runs. The geometry lives outside this module. */
-export type PlanExpand = (body: PlanBody) => readonly PlanCell[];
+/**
+ * Turns a plan body into a source of the cells the lane runs. Each call returns a fresh source (a
+ * source is read forward only and a count uses it up). The geometry lives outside this module.
+ */
+export type PlanExpand = (body: PlanBody) => CellSource;
 
 /** One `plan` add or replace message. `seq` is absent on a single message; `final` marks the last chunk. */
 export interface PlanChunk {
@@ -71,14 +76,27 @@ interface Upload {
   steps: unknown[];
 }
 
+/** A queued or active plan: a factory for fresh sources of its cells, its exact count and its chunks. */
 interface Entry {
   planId: string;
-  cells: readonly PlanCell[];
+  make: () => CellSource;
+  total: number;
   chunks: number;
 }
 
 function cellKey(c: PlanCell): string {
   return `${c.at.x},${c.at.y},${c.at.z}`;
+}
+
+/** The keys of the first `count` cells of a source (the cells a lane has placed or passed). */
+function keysBefore(source: CellSource, count: number): Set<string> {
+  const keys = new Set<string>();
+  for (let i = 0; i < count; i++) {
+    const cell = source.at(i);
+    if (cell === undefined) break;
+    keys.add(cellKey(cell));
+  }
+  return keys;
 }
 
 /** The plan queue of one life, in front of the plan lane. */
@@ -185,17 +203,20 @@ export class PlanQueue {
     saved?: { counts: Record<string, number>; skipped: SkippedCell[] },
   ): boolean {
     if (this.active !== null || this.lane.state !== 'idle') return false;
+    const total = entry.cells.length;
+    const make = () => arrayCellSource(entry.cells);
     const started = this.lane.start(
       {
         lifeId: this.lifeId,
         planId: entry.planId,
         chunks: entry.chunks,
-        cells: entry.cells,
+        source: make(),
+        total,
         cursor,
       },
       saved,
     );
-    if (started) this.active = { planId: entry.planId, cells: entry.cells, chunks: entry.chunks };
+    if (started) this.active = { planId: entry.planId, make, total, chunks: entry.chunks };
     return started;
   }
 
@@ -205,47 +226,52 @@ export class PlanQueue {
     body: PlanBody,
     chunks: number,
   ): Promise<SubmitReply> {
-    let cells: readonly PlanCell[];
+    const make = () => this.expand(body);
+    let total: number;
     try {
-      cells = this.expand(body);
+      total = await countPlanCells(make());
     } catch (error) {
       return { kind: 'refused', message: `plan ${planId} does not expand: ${errorText(error)}` };
     }
     if (op === 'add') {
       if (this.isKnown(planId))
         return { kind: 'refused', message: `plan ${planId} already exists` };
-      const kept = await this.keep(planId, cells, chunks);
+      const kept = await this.keep(planId, make, chunks);
       if (typeof kept !== 'number') return kept;
-      this.waiting.push({ planId, cells, chunks: kept });
-      return { kind: 'queued', cells: cells.length, position: this.waiting.length };
+      this.waiting.push({ planId, make, total, chunks: kept });
+      return { kind: 'queued', cells: total, position: this.waiting.length };
     }
     if (this.active?.planId === planId) {
       const cursor = this.lane.checkpointState()?.cursor ?? 0;
-      const placed = new Set(this.active.cells.slice(0, cursor).map(cellKey));
-      const rest = cells.filter((c) => !placed.has(cellKey(c)));
+      const placed = keysBefore(this.active.make(), cursor);
+      const rest = () => filteredCellSource(make(), (c) => !placed.has(cellKey(c)));
+      const restTotal = await countPlanCells(rest());
       const kept = await this.keep(planId, rest, chunks);
       if (typeof kept !== 'number') return kept;
       await this.dropActive();
-      this.waiting.unshift({ planId, cells: rest, chunks: kept });
-      return { kind: 'queued', cells: rest.length, position: 1 };
+      this.waiting.unshift({ planId, make: rest, total: restTotal, chunks: kept });
+      return { kind: 'queued', cells: restTotal, position: 1 };
     }
     const idx = this.waiting.findIndex((e) => e.planId === planId);
     if (idx < 0) return { kind: 'refused', message: `no plan ${planId} to replace` };
-    const kept = await this.keep(planId, cells, chunks);
+    const kept = await this.keep(planId, make, chunks);
     if (typeof kept !== 'number') return kept;
-    this.waiting[idx] = { planId, cells, chunks: kept };
-    return { kind: 'queued', cells: cells.length, position: idx + 1 };
+    this.waiting[idx] = { planId, make, total, chunks: kept };
+    return { kind: 'queued', cells: total, position: idx + 1 };
   }
 
-  /** Stores a plan through the store, if any. Returns its chunk count, or a refusal when the store fails. */
+  /**
+   * Stores a plan through the store, if any. Returns its chunk count, or a refusal when the store fails.
+   * The store takes an array (its format is unchanged), so a stored plan is read whole here.
+   */
   private async keep(
     planId: string,
-    cells: readonly PlanCell[],
+    make: () => CellSource,
     chunks: number,
   ): Promise<number | SubmitReply> {
     if (this.store === null) return chunks;
     try {
-      return await this.store.stored(planId, cells);
+      return await this.store.stored(planId, cellsOf(make()));
     } catch (error) {
       return { kind: 'refused', message: `plan ${planId} not stored: ${errorText(error)}` };
     }
@@ -269,7 +295,9 @@ export class PlanQueue {
       lifeId: this.lifeId,
       planId: entry.planId,
       chunks: entry.chunks,
-      cells: entry.cells,
+      source: entry.make(),
+      fresh: entry.make,
+      total: entry.total,
     };
     this.lane.start(plan);
   }

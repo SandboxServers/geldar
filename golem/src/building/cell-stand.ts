@@ -75,7 +75,7 @@ export async function doCellAt(
   cell: PlanCell,
   env: CellEnv,
   handlers: CellHandlers,
-  planCells: readonly PlanCell[],
+  onPlan: (c: Cell) => boolean,
 ): Promise<CellCode> {
   const port = handlers.stand;
   if (port === undefined) return doCell(ctx, cell, env, handlers);
@@ -86,7 +86,7 @@ export async function doCellAt(
     return doCell(ctx, cell, env, handlers);
   }
   const stand = pickStand(cell.at, port, env.held());
-  if (stand === 'none') return withScaffold(ctx, cell, env, handlers, port, planCells);
+  if (stand === 'none') return withScaffold(ctx, cell, env, handlers, port, onPlan);
   if (!sameCell(stand, port.feet())) {
     const walked = await walkTo(ctx, handlers.goto, stand);
     if (walked !== null) return walked;
@@ -119,14 +119,14 @@ async function withScaffold(
   env: CellEnv,
   handlers: CellHandlers,
   port: StandPort,
-  planCells: readonly PlanCell[],
+  onPlan: (c: Cell) => boolean,
 ): Promise<CellCode> {
   const sc = scaffoldFor({
     target: cell.at,
     at: port.feet(),
     stand: 'none',
     held: env.held(),
-    plan: planCells.map((p) => p.at),
+    onPlan,
     solid: (c) => port.world(c.x, c.y, c.z)?.boundingBox === 'block',
   });
   if (sc.kind === 'missing_materials') return 'missing_materials';

@@ -35,8 +35,8 @@ export interface ScaffoldInput {
   stand: Cell | 'none';
   /** Placeable blocks the agent holds. */
   held: HeldBlock[];
-  /** Every cell the plan works. */
-  plan: Cell[];
+  /** True when the cell is one the plan works. Asked per scaffold cell, so the plan is never listed. */
+  onPlan: (c: Cell) => boolean;
   /** True when a cell is solid; a bridge crosses the cells that are not. */
   solid: (c: Cell) => boolean;
 }
@@ -52,8 +52,6 @@ export const CHEAP_FIRST = [
   'diorite',
   'granite',
 ] as const;
-
-const same = (a: Cell, b: Cell): boolean => a.x === b.x && a.y === b.y && a.z === b.z;
 
 /** The cheapest placeable block the agent holds, or null when it holds none. */
 export function cheapestHeld(held: HeldBlock[]): HeldBlock | null {
@@ -111,6 +109,6 @@ export function scaffoldFor(input: ScaffoldInput): ScaffoldOutcome {
   if (block === null || block.count < place.length) {
     return { kind: 'missing_materials', needed: place.length };
   }
-  const remove = place.filter((c) => input.plan.some((p) => same(p, c)));
+  const remove = place.filter((c) => input.onPlan(c));
   return { kind: 'scaffold', block: block.name, method, place, remove };
 }

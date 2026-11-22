@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { completed } from '../actions/outcome.ts';
 import type { ActionContext, ActionHandler } from '../actions/registry.ts';
 import type { CellEnv, CellHandlers, PlanCell } from './cell-do.ts';
+import { arrayCellSource } from './cell-source.ts';
 import { type LaneDeps, type LanePlan, PlanLane } from './lane.ts';
 import { TickThrottle } from './throttle.ts';
 
@@ -33,7 +34,8 @@ function plan(n: number, cursor?: number): LanePlan {
     lifeId: 'life',
     planId: 'p1',
     chunks: 1,
-    cells: cells(n),
+    source: arrayCellSource(cells(n)),
+    total: n,
     ...(cursor === undefined ? {} : { cursor }),
   };
 }

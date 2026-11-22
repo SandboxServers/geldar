@@ -98,6 +98,10 @@ const ctx = {
 } as unknown as ActionContext;
 
 const stone = (at: Cell): PlanCell => ({ at, prior: 'air', target: 'stone' });
+const noPlan = (): boolean => false;
+/** Membership over a plan array: the cells the plan works, as the lane answers them. */
+const onPlanOf = (plan: PlanCell[]) => (c: Cell) =>
+  plan.some((p) => p.at.x === c.x && p.at.y === c.y && p.at.z === c.z);
 
 describe('doCellAt: the stand path', () => {
   it('walks to the stand the solver picks when the target is out of reach from the feet', async () => {
@@ -107,7 +111,7 @@ describe('doCellAt: the stand path', () => {
       stone({ x: 10, y: 64, z: 0 }),
       yard.env(),
       yard.handlers(yard.port()),
-      [],
+      noPlan,
     );
     // The stand solver's cell: the nearest cell within reach 4.5 of (10,64,0), with fewest moves from (0,64,0).
     expect(yard.log).toEqual(['goto 6,64,0', 'place 10,64,0 stone']);
@@ -122,7 +126,7 @@ describe('doCellAt: the stand path', () => {
       stone({ x: 10, y: 64, z: 0 }),
       yard.env(),
       yard.handlers(yard.port()),
-      [],
+      noPlan,
     );
     // (6,64,0) touches the lava at (5,64,0); the solver's next best, (6,64,-1), is the walk target.
     expect(yard.log).toEqual(['goto 6,64,-1', 'place 10,64,0 stone']);
@@ -140,7 +144,7 @@ describe('doCellAt: the stand path', () => {
       plan[0] as PlanCell,
       yard.env(),
       yard.handlers(yard.port()),
-      plan,
+      onPlanOf(plan),
     );
     expect(yard.log).toEqual([
       'place 0,64,0 dirt',
@@ -166,7 +170,7 @@ describe('doCellAt: the stand path', () => {
       plan[0] as PlanCell,
       yard.env(),
       yard.handlers(yard.port()),
-      plan,
+      onPlanOf(plan),
     );
     expect(code).toBe('missing_materials');
     expect(yard.log).toEqual([]);
@@ -179,7 +183,7 @@ describe('doCellAt: the stand path', () => {
       stone({ x: 10, y: 64, z: 0 }),
       yard.env(),
       yard.handlers(yard.port(), cancelled()),
-      [],
+      noPlan,
     );
     expect(code).toBe('cancelled');
     expect(yard.log).toEqual(['goto 6,64,0']);
@@ -192,7 +196,7 @@ describe('doCellAt: the stand path', () => {
       stone({ x: 10, y: 64, z: 0 }),
       yard.env(),
       yard.handlers(yard.port(), failed('blocked', 'no path')),
-      [],
+      noPlan,
     );
     expect(code).toBe('out_of_reach');
     expect(yard.log).toEqual(['goto 6,64,0']);
@@ -205,7 +209,7 @@ describe('doCellAt: the stand path', () => {
       stone({ x: 10, y: 64, z: 0 }),
       yard.env(),
       yard.handlers(undefined),
-      [],
+      noPlan,
     );
     expect(yard.log).toEqual(['place 10,64,0 stone']);
     expect(code).toBe('placed');
