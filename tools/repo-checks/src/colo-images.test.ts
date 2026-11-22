@@ -13,12 +13,6 @@ const text = readFileSync(new URL(`../../../${WORKFLOW}`, import.meta.url), 'utf
 const IMAGES = [
   { job: 'body', file: 'golem/Dockerfile', repository: 'geldar-body', key: 'GELDAR_BODY_IMAGE' },
   {
-    job: 'mind',
-    file: 'animus/Dockerfile.mind',
-    repository: 'geldar-mind',
-    key: 'GELDAR_MIND_IMAGE',
-  },
-  {
     job: 'eventsink',
     file: 'eventsink/Dockerfile',
     repository: 'geldar-eventsink',
@@ -120,7 +114,6 @@ describe('colo-images.yml triggers', () => {
     const paths = workflow.on.push?.paths ?? [];
     for (const required of [
       'golem/**',
-      'animus/**',
       'eventsink/**',
       'threshold/mcp/**',
       'tools/admin/**',
@@ -278,7 +271,7 @@ describe('colo-images.yml release manifest', () => {
     }
   });
 
-  it('keeps the example manifest in step with the seven keys, each a digest reference', () => {
+  it('keeps the example manifest in step with the six keys, each a digest reference', () => {
     const example = readFileSync(new URL(`../../../${RELEASE_EXAMPLE}`, import.meta.url), 'utf8');
     const digestRef = /^[A-Za-z0-9./:_-]+@sha256:[0-9a-f]{64}$/;
     const values = new Map(

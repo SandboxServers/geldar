@@ -263,8 +263,8 @@ deploy/colo-admin.sh player-start ag-jason-01
 
 ### (i) Known limits
 
-- The Adam Mind (`animus`) is under the compose profile `mind` (decision 0134). `colo-up.sh` does not start it; it cannot
-  think until the C4 gateway exists.
+- The former Adam Mind (`animus`) was removed (decision 0430). No compose service runs a Mind; the live Mind is the
+  scriptorium, which is not in this compose file.
 - The idle Adam Body (`golem-body`) is under the compose profile `adam` (decision 0212). `colo-up.sh` does not start it, and
   `colo-cd.sh` restarts it only when it is already running; a new body digest still refreshes the player hosts. To start it:
   `docker compose --profile adam up -d --wait golem-body`.
