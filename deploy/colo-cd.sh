@@ -6,7 +6,8 @@
 # previous release is re-applied to the services already changed, the player hosts are recreated, and the script exits 1.
 # Never restarted: Paper, Velocity, Caddy, Postgres, NATS. Never started: mind, and golem-body (the idle Adam, profile adam,
 # decision 0212) unless it is already running. Plugin, compose and Caddy/NATS changes are
-# printed as "needs manual" and not applied. REGISTER_KILL_SWITCH is never read or written here.
+# printed as "needs manual" and not applied. REGISTER_KILL_SWITCH is read from the node env file (load_node_env, exported
+# for compose) and never written here; a value other than exactly true or false stops the deploy before anything changes.
 # Usage: colo-cd.sh [--dry-run] [<release.env path> <release sha> <export dir>]
 #   With no positional args, the inputs come from the environment: GELDAR_RELEASE_MANIFEST (a validated copy of the
 #   release manifest), GELDAR_RELEASE_SHA (the 40-character main sha) and the working directory (the git-less export).
@@ -354,6 +355,11 @@ done
 for id in $STALE_HOSTS; do say "plan: refresh player host $id (after the shared services, one at a time)"; done
 say "plan: animus (mind) is never started; its digest is recorded only"
 
+# Read-only: the node env values (REGISTER_KILL_SWITCH included) are loaded and printed before the dry-run exit, so every
+# log, dry run or not, shows the value in force.
+load_node_env
+say_node_env
+
 if [ "$DRY_RUN" = 1 ]; then
   say "dry-run complete: nothing was changed (no lock, no manifest, no copies, no dump, no restart)"
   exit 0
@@ -362,7 +368,6 @@ fi
 acquire_lock
 trap 'rm -rf "$WORK"; release_lock' EXIT
 log "start: $FROM -> $SHA_FULL"
-load_node_env
 load_release "$NEW"
 check_merged_config
 check_secrets
