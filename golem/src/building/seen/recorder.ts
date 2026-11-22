@@ -145,6 +145,26 @@ export function cellInView(
   return false;
 }
 
+/**
+ * Writes one cell's block name to the map only when the cell is in view now (decision 0424, 2026-11-22 addendum):
+ * a live read or a change of a cell out of sight is never recorded, so a verification read cannot map unseen
+ * blocks. Returns whether the cell was recorded.
+ */
+export function recordIfInView(
+  map: SeenMap,
+  world: ViewWorld,
+  pose: ViewPose,
+  x: number,
+  y: number,
+  z: number,
+  name: string,
+  tick: number,
+): boolean {
+  if (!cellInView(world, pose, x, y, z)) return false;
+  map.record(x, y, z, name, tick);
+  return true;
+}
+
 /** Walks one cone ray as walkRay does; true when it reaches the cell before any opaque or unloaded block. */
 function rayReaches(
   world: ViewWorld,

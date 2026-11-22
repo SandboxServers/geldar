@@ -2,8 +2,8 @@ import type { Bot } from 'mineflayer';
 import { describe, expect, it } from 'vitest';
 import { type ActionOutcome, cancelled, completed } from '../actions/outcome.ts';
 import type { ActionContext } from '../actions/registry.ts';
-import type { CellEnv, CellHandlers } from './cell-do.ts';
-import { arrayCellSource } from './cell-source.ts';
+import type { CellEnv, CellHandlers, PlanCell } from './cell-do.ts';
+import { arrayCellSource, lazyCellSource } from './cell-source.ts';
 import { contendFor } from './contention.ts';
 import { type LaneDeps, type LanePlan, PlanLane, SLICE_TICKS } from './lane.ts';
 import { PlanQueue } from './queue.ts';
@@ -220,6 +220,62 @@ describe('plan lane on a lazy source (B8-lazy)', () => {
     });
     await lane.step(ctxOf(), depsFor(world, run));
     expect(run.placed).toHaveLength(SLICE_TICKS);
+  });
+});
+
+describe('stand path on a lazy source (B8-lazy)', () => {
+  it('scaffold removal breaks only the scaffold cells that sit on a plan cell, read from the lazy source', async () => {
+    // Target (3,70,0) from feet (0,64,0) has no stand: the pillar is 0,64..69. Only (0,65,0) is a
+    // plan cell (the second cell of the lazy source), so only that scaffold cell is broken.
+    const world = new World();
+    world.items = [
+      { name: 'dirt', count: 10 },
+      { name: 'stone', count: 1 },
+    ];
+    for (let x = -2; x <= 16; x++) {
+      for (let z = -6; z <= 6; z++) world.grid.set(keyOf({ x, y: 63, z }), 'stone');
+    }
+    const cells: PlanCell[] = [
+      { at: { x: 3, y: 70, z: 0 }, prior: 'air', target: 'stone' },
+      { at: { x: 0, y: 65, z: 0 }, prior: 'air', target: 'stone' },
+    ];
+    const lazy = () => lazyCellSource(() => cells[Symbol.iterator]());
+    const port = {
+      feet: (): Coords => ({ x: 0, y: 64, z: 0 }),
+      world: (x: number, y: number, z: number) => {
+        const name = world.blockAt({ x, y, z }) ?? 'air';
+        return { name, boundingBox: name === 'air' ? 'empty' : 'block' };
+      },
+    };
+    const broken: string[] = [];
+    const run = newRun();
+    const base = depsFor(world, run);
+    const dig = {
+      kind: 'break',
+      timeoutMs: 1000,
+      run: async (_ctx: ActionContext, action: { at: Coords }) => {
+        broken.push(keyOf(action.at));
+        world.grid.set(keyOf(action.at), 'air');
+        return completed();
+      },
+    };
+    const handlers = { ...base.handlers, dig, stand: port } as unknown as CellHandlers;
+    const deps: LaneDeps = { ...base, handlers };
+    const lane = new PlanLane();
+    expect(
+      lane.start({
+        lifeId: 'life',
+        planId: 'stand',
+        chunks: 1,
+        source: lazy(),
+        fresh: lazy,
+        total: 2,
+      }),
+    ).toBe(true);
+    await runToIdle(lane, deps);
+    expect(broken).toEqual(['0,65,0']);
+    expect(world.blockAt({ x: 0, y: 66, z: 0 })).toBe('dirt');
+    expect(run.codes[0]).toBe('placed');
   });
 });
 

@@ -5,7 +5,7 @@
 //   geldar-plans:       `<life_id>.<plan_id>.<seq>`  (golem/src/building/plan-store.ts, chunkKey)
 //   geldar-checkpoints: `<life_id>.plan`             (golem/src/building/plan-checkpoint.ts, checkpointKey)
 // The checkpoint bucket also holds the body checkpoint, keyed by the bare life id (golem/src/body/checkpoint.ts).
-// Only the exact plan key is erased there; the body checkpoint is left for a separate decision (see the worknote).
+// Both keys of an erased life are erased there: the exact plan key and the exact bare life id (an exact match, no prefix).
 // Life ids hold no dot (LIFE_ID in erase-owner.ts), so the prefix `<life_id>.` matches one life only.
 // A bucket that does not exist (the building flag was never on) has nothing to erase and is not an error.
 import type { KvPort } from './erase-owner.ts';
@@ -56,9 +56,9 @@ export function lifeKeys(all: string[], lifeIds: string[]): string[] {
   return all.filter((key) => lifeIds.some((id) => key.startsWith(`${id}.`)));
 }
 
-/** The plan checkpoint key of each life. */
+/** The checkpoint keys of each life: the plan checkpoint `<life_id>.plan` and the body checkpoint `<life_id>`. */
 export function checkpointKeys(lifeIds: string[]): string[] {
-  return lifeIds.map((id) => `${id}.plan`);
+  return lifeIds.flatMap((id) => [`${id}.plan`, id]);
 }
 
 async function bucketFound(

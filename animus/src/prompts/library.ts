@@ -134,6 +134,14 @@ export const DEFAULT_THOUGHT_VERSION = 5;
 /** The body-api template a new Mind renders: `body-api/v10.json`. `v1` to `v9` stay loadable. */
 export const DEFAULT_BODY_API_VERSION = 10;
 
+/** The body-api template a Mind renders when `body_actions.building` is on: `body-api/v12.json` (break and plan). */
+export const BUILDING_BODY_API_VERSION = 12;
+
+/** The body-api version for a shard: v12 while `body_actions.building` is on, else the default v10. */
+export function bodyApiVersionFor(buildingOn: boolean): number {
+  return buildingOn ? BUILDING_BODY_API_VERSION : DEFAULT_BODY_API_VERSION;
+}
+
 /** The reflection template a new Mind renders: `reflection/v2.md`. `reflection/v1.md` stays loadable. */
 export const DEFAULT_REFLECTION_VERSION = 2;
 

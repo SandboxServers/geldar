@@ -439,6 +439,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       keepaliveMs: config.sovereign.keepaliveSeconds * 1000,
       maxResultBytes: config.sovereign.maxResultBytes,
       showUnavailableTools: config.sovereign.showUnavailableTools,
+      buildingOn: config.buildingOn,
       log,
     };
     const front = (ports.frontDoor ?? createFrontDoor)({

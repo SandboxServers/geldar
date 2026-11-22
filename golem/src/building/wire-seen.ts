@@ -7,7 +7,7 @@ import type { Bot } from 'mineflayer';
 import type { TickSource } from '../body/runtime.ts';
 import type { GolemMetrics } from '../metrics.ts';
 import { viewFromBot } from '../perception/view/viewport.ts';
-import { cellInView, newRecorder, recordSeen } from './seen/recorder.ts';
+import { newRecorder, recordIfInView, recordSeen } from './seen/recorder.ts';
 import { SECTION_SIZE, SeenMap, sectionOf } from './seen/section.ts';
 import {
   eraseLife as eraseStoredLife,
@@ -53,14 +53,21 @@ class TrackedSeenMap extends SeenMap {
     this.track = track;
   }
 
-  override record(x: number, y: number, z: number, name: string, tick: number): void {
-    super.record(x, y, z, name, tick);
+  override record(
+    x: number,
+    y: number,
+    z: number,
+    name: string,
+    tick: number,
+    inherited = false,
+  ): void {
+    super.record(x, y, z, name, tick, inherited);
     if (this.track) this.changed.set(`${x},${y},${z}`, { x, y, z, name, tick });
   }
 
   /** Puts back a stored cell of this life without marking it changed: nothing is written for it again. */
-  restore(x: number, y: number, z: number, name: string, tick: number): void {
-    super.record(x, y, z, name, tick);
+  restore(x: number, y: number, z: number, name: string, tick: number, inherited = false): void {
+    super.record(x, y, z, name, tick, inherited);
   }
 }
 
@@ -87,7 +94,7 @@ async function loadLifeInto(
   kv: SeenKv,
   lifeId: string,
   map: SeenMap,
-  put: (x: number, y: number, z: number, name: string, tick: number) => void,
+  put: (x: number, y: number, z: number, name: string, tick: number, inherited: boolean) => void,
 ): Promise<number> {
   const prefix = `${lifeId}.`;
   let count = 0;
@@ -106,7 +113,7 @@ async function loadLifeInto(
       const y = sy * SECTION_SIZE + (Math.floor(local / SECTION_SIZE) % SECTION_SIZE);
       const z = sz * SECTION_SIZE + Math.floor(local / (SECTION_SIZE * SECTION_SIZE));
       if (map.read(x, y, z) !== undefined) continue;
-      put(x, y, z, cell.name, cell.lastSeen);
+      put(x, y, z, cell.name, cell.lastSeen, cell.inherited);
       count++;
     }
   }
@@ -185,12 +192,10 @@ export function createSeenWiring(opts: SeenWiringOptions): SeenWiring {
       // Out of view it stays as the Body last saw it, stale, and the plan verifies it live.
       try {
         const { world, pose } = viewFromBot(opts.bot);
-        if (!cellInView(world, pose, x, y, z)) return;
+        recordIfInView(map, world, pose, x, y, z, block.name, lastTick);
       } catch (error) {
         log(`seen change not read: ${String(error)}`);
-        return;
       }
-      map.record(x, y, z, block.name, lastTick);
     });
     emitter.on('death', () => {
       flush().catch((error: unknown) => log(`seen flush on death failed: ${String(error)}`));
@@ -207,8 +212,8 @@ export function createSeenWiring(opts: SeenWiringOptions): SeenWiring {
   const ready: Promise<void> = (
     kv === undefined
       ? Promise.resolve()
-      : loadLifeInto(kv, opts.lifeId, map, (x, y, z, name, tick) =>
-          map.restore(x, y, z, name, tick),
+      : loadLifeInto(kv, opts.lifeId, map, (x, y, z, name, tick, inherited) =>
+          map.restore(x, y, z, name, tick, inherited),
         )
   )
     .then(
@@ -225,8 +230,9 @@ export function createSeenWiring(opts: SeenWiringOptions): SeenWiring {
       ) {
         return undefined;
       }
+      // Inherited cells keep their last-seen tick and carry the inherited mark (decision 0424).
       return loadLifeInto(kv, pred.lifeId, map, (x, y, z, name, tick) =>
-        map.record(x, y, z, name, tick),
+        map.record(x, y, z, name, tick, true),
       ).then(
         () => undefined,
         (error: unknown) => log(`seen inheritance failed: ${String(error)}`),

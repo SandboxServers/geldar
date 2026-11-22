@@ -4,11 +4,13 @@
 // time; a second `start` is refused (BLD-14 adds the queue).
 import type { ActionContext } from '../actions/registry.ts';
 import { parseBlockRef } from './block-ref.ts';
-import { type CellCode, type CellEnv, type CellHandlers, doCell } from './cell-do.ts';
+import type { CellCode, CellEnv, CellHandlers } from './cell-do.ts';
 import type { CellSource } from './cell-source.ts';
+import { doCellAt } from './cell-stand.ts';
 import type { LaneStateName } from './lane-state.ts';
 import { countMaterials } from './materials.ts';
 import type { PlanCheckpointState, SkippedCell } from './plan-checkpoint.ts';
+import type { Cell } from './stand.ts';
 import type { ThrottleVerdict } from './throttle.ts';
 
 /** World ticks one `step` may run before it returns; the Body loop calls again on a later tick. */
@@ -39,9 +41,24 @@ export interface LanePlan {
   planId: string;
   chunks: number;
   source: CellSource;
+  /**
+   * A factory for a fresh source of the same cells. The stand path asks which cells sit on a layer
+   * (scaffold removal), which reads a fresh source once per layer; without it no scaffold is removed.
+   */
+  fresh?: () => CellSource;
   total: number;
   /** Index of the next cell to run; a restart passes the checkpoint's cursor. Default 0. */
   cursor?: number;
+}
+
+/** The keys of the plan's cells on one y layer, read from a fresh source. */
+function layerKeys(source: CellSource, y: number): Set<string> {
+  const keys = new Set<string>();
+  for (let i = 0; ; i++) {
+    const cell = source.at(i);
+    if (cell === undefined) return keys;
+    if (cell.at.y === y) keys.add(`${cell.at.x},${cell.at.y},${cell.at.z}`);
+  }
 }
 
 /** What `step` reads from the world: the cell env, the cell handlers and the world tick. */
@@ -83,6 +100,8 @@ export class PlanLane {
   private failed = false;
   /** Set while the cursor waits on missing materials; cleared when the cell is counted or the plan ends. */
   private shortfall: MaterialsShortfall | null = null;
+  /** The plan cells of one layer, read once per layer for the stand path (see `onPlan`). */
+  private layer: { planId: string; y: number; keys: Set<string> } | null = null;
 
   /**
    * Starts a plan from its cursor, with the counts and skipped cells a checkpoint saved (empty for
@@ -241,7 +260,13 @@ export class PlanLane {
       this.inFlight = ctl;
       let code: CellCode;
       try {
-        code = await doCell({ ...ctx, signal: ctl.signal }, cell, deps.env, deps.handlers);
+        code = await doCellAt(
+          { ...ctx, signal: ctl.signal },
+          cell,
+          deps.env,
+          deps.handlers,
+          this.onPlan(plan),
+        );
       } finally {
         ctx.signal.removeEventListener('abort', stop);
         this.inFlight = null;
@@ -269,6 +294,22 @@ export class PlanLane {
         return;
       }
     }
+  }
+
+  /**
+   * Whether a cell is one the plan works, for scaffold removal. Reads the plan's layer of that cell
+   * from a fresh source and keeps only that layer's keys. A plan without `fresh` answers no.
+   */
+  private onPlan(plan: LanePlan): (c: Cell) => boolean {
+    return (c) => {
+      if (plan.fresh === undefined) return false;
+      let layer = this.layer;
+      if (layer === null || layer.planId !== plan.planId || layer.y !== c.y) {
+        layer = { planId: plan.planId, y: c.y, keys: layerKeys(plan.fresh(), c.y) };
+        this.layer = layer;
+      }
+      return layer.keys.has(`${c.x},${c.y},${c.z}`);
+    };
   }
 
   /** The throttle's verdict for the next cell; a throw is `error` (the cell is cancelled). */

@@ -30,20 +30,25 @@ export function sectionOf(x: number, y: number, z: number): CellRef {
   };
 }
 
-/** A seen cell as read back: the block name it was seen as and the game tick it was last seen. */
+/**
+ * A seen cell as read back: the block name it was seen as, the game tick it was last seen, and whether that
+ * sighting came from a predecessor life (`inherited`, decision 0424) rather than this life's own view.
+ */
 export interface SeenCell {
   name: string;
   lastSeen: number;
+  inherited: boolean;
 }
 
-/** One section: a palette (index 0 means unseen) and, per cell, a palette index and a last-seen tick. */
+/** One section: a palette (index 0 means unseen) and, per cell, a palette index, a last-seen tick and an inherited bit. */
 export class Section {
   private readonly palette: string[] = [];
   private readonly paletteIndex = new Map<string, number>();
   private readonly blocks = new Uint16Array(CELLS);
   private readonly lastSeen = new Uint32Array(CELLS);
+  private readonly inherited = new Uint8Array(CELLS);
 
-  set(local: number, name: string, tick: number): void {
+  set(local: number, name: string, tick: number, inherited = false): void {
     let slot = this.paletteIndex.get(name);
     if (slot === undefined) {
       if (this.palette.length >= 0xffff) throw new RangeError('section palette is full');
@@ -53,12 +58,17 @@ export class Section {
     }
     this.blocks[local] = slot;
     this.lastSeen[local] = tick;
+    this.inherited[local] = inherited ? 1 : 0;
   }
 
   get(local: number): SeenCell | undefined {
     const slot = this.blocks[local] ?? 0;
     if (slot === 0) return undefined;
-    return { name: this.palette[slot - 1] as string, lastSeen: this.lastSeen[local] as number };
+    return {
+      name: this.palette[slot - 1] as string,
+      lastSeen: this.lastSeen[local] as number,
+      inherited: this.inherited[local] === 1,
+    };
   }
 }
 
@@ -66,14 +76,15 @@ export class Section {
 export class SeenMap {
   private readonly sections = new Map<string, Section>();
 
-  record(x: number, y: number, z: number, name: string, tick: number): void {
+  /** Records a cell. A sighting by this life clears any inherited mark; `inherited` is set only by inheritance. */
+  record(x: number, y: number, z: number, name: string, tick: number, inherited = false): void {
     const ref = sectionOf(x, y, z);
     let section = this.sections.get(ref.key);
     if (section === undefined) {
       section = new Section();
       this.sections.set(ref.key, section);
     }
-    section.set(ref.local, name, tick);
+    section.set(ref.local, name, tick, inherited);
   }
 
   read(x: number, y: number, z: number): SeenCell | undefined {

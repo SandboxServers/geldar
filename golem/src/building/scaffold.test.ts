@@ -4,6 +4,7 @@ import { type Cell, cheapestHeld, scaffoldFor } from './scaffold.ts';
 const at: Cell = { x: 0, y: 64, z: 0 };
 const key = (c: Cell): string => `${c.x},${c.y},${c.z}`;
 const noSolid = (): boolean => false;
+const noPlan = (): boolean => false;
 
 describe('scaffoldFor', () => {
   it('pillars a cell 6 high with no stand, and removes the scaffold that sits on the plan', () => {
@@ -14,7 +15,7 @@ describe('scaffoldFor', () => {
       at,
       stand: 'none',
       held: [{ name: 'dirt', count: 10 }],
-      plan: [target, onPlan],
+      onPlan: (c) => key(c) === key(target) || key(c) === key(onPlan),
       solid: noSolid,
     });
     expect(out.kind).toBe('scaffold');
@@ -38,7 +39,7 @@ describe('scaffoldFor', () => {
       at,
       stand: 'none',
       held: [{ name: 'dirt', count: 6 }],
-      plan: [{ x: 2, y: 70, z: 0 }],
+      onPlan: (c) => key(c) === key({ x: 2, y: 70, z: 0 }),
       solid: noSolid,
     });
     expect(out.kind === 'scaffold' && out.remove).toEqual([]);
@@ -50,7 +51,7 @@ describe('scaffoldFor', () => {
       at,
       stand: { x: 1, y: 70, z: 0 },
       held: [{ name: 'dirt', count: 64 }],
-      plan: [],
+      onPlan: noPlan,
       solid: noSolid,
     });
     expect(out).toEqual({ kind: 'not_needed' });
@@ -63,11 +64,18 @@ describe('scaffoldFor', () => {
       at,
       stand: 'none',
       held: [{ name: 'dirt', count: 5 }],
-      plan: [],
+      onPlan: noPlan,
       solid: noSolid,
     });
     expect(short).toEqual({ kind: 'missing_materials', needed: 6 });
-    const none = scaffoldFor({ target, at, stand: 'none', held: [], plan: [], solid: noSolid });
+    const none = scaffoldFor({
+      target,
+      at,
+      stand: 'none',
+      held: [],
+      onPlan: noPlan,
+      solid: noSolid,
+    });
     expect(none).toEqual({ kind: 'missing_materials', needed: 6 });
   });
 
@@ -81,7 +89,7 @@ describe('scaffoldFor', () => {
         { name: 'stone', count: 9 },
         { name: 'dirt', count: 9 },
       ],
-      plan: [],
+      onPlan: noPlan,
       solid: noSolid,
     });
     expect(out.kind === 'scaffold' && out.block).toBe('dirt');
@@ -95,7 +103,7 @@ describe('scaffoldFor', () => {
       at,
       stand: 'none',
       held: [{ name: 'dirt', count: 8 }],
-      plan: [],
+      onPlan: noPlan,
       solid,
     });
     expect(east.kind === 'scaffold' && east.method).toBe('bridge');
@@ -106,7 +114,7 @@ describe('scaffoldFor', () => {
       at,
       stand: 'none',
       held: [{ name: 'dirt', count: 8 }],
-      plan: [],
+      onPlan: noPlan,
       solid,
     });
     expect(west.kind === 'scaffold' && west.place.map(key)).toEqual(['-1,63,0', '-2,63,0']);
@@ -116,7 +124,7 @@ describe('scaffoldFor', () => {
       at,
       stand: 'none',
       held: [{ name: 'dirt', count: 8 }],
-      plan: [],
+      onPlan: noPlan,
       solid: (c) => c.y === 63 && c.x === 0 && c.z === 0,
     });
     expect(north.kind === 'scaffold' && north.place.map(key)).toEqual(['0,63,-1', '0,63,-2']);
@@ -128,7 +136,7 @@ describe('scaffoldFor', () => {
       at,
       stand: 'none',
       held: [{ name: 'dirt', count: 8 }],
-      plan: [],
+      onPlan: noPlan,
       solid: noSolid,
     });
     expect(out).toEqual({ kind: 'not_needed' });

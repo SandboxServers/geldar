@@ -296,6 +296,7 @@ export class PlanQueue {
       planId: entry.planId,
       chunks: entry.chunks,
       source: entry.make(),
+      fresh: entry.make,
       total: entry.total,
     };
     this.lane.start(plan);

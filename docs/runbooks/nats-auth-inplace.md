@@ -78,6 +78,15 @@ Owner step, done by hand on the node. This campaign does not make it. The buildi
 
 **Ordering for a scoped-auth stack (BLD fix7b).** Adding `$KV.geldar-plans.>` and `$KV.geldar-seen.>` to the `body` user is a NATS config change. The owner applies it on the Colo node (the in-place edit above, or a regenerate and NATS reload), and checks the conf. Until it is applied, `body_actions.building` must stay off in any scoped-auth stack: a Body with the flag on cannot write plan chunks or seen sections there. Turn the flag on only after this step is done.
 
+### MANUAL: create order for the building buckets (B8)
+
+Owner step on the Colo node, in this order. Do not skip a step or change the order.
+
+1. (a) Apply the NATS conf or role change: add `$KV.geldar-plans.>` and `$KV.geldar-seen.>` to the `body` Pub list, in place (as in this runbook) or by a regenerate from a checkout that has BLD fix7b. Check the file, then reload NATS. `body_actions.building` is still off.
+2. (b) Create the buckets with an admin identity, plans first, then seen: `geldar-plans`, then `geldar-seen`. Use the default KV settings only (no TTL, no history change), the same plain create the Body uses in `openRestartKv` (`golem/src/body/restart.ts`, lines 152 and 153), so the Body's own create at start finds the same configuration. Check both exist.
+3. (c) Only then set `body_actions.building: true` on the shard file and make sure the node checkout carries it.
+4. (d) Restart order: the Bodies first (one window, all 19); check each Body log for a failed bucket create or denied publish. Then the Minds (they render body-api v12 at start). Then the MCP (it lists `survey` and `plan_check` at start). Check `tools/list` after the MCP restart.
+
 ## Procedure
 
 Run on the Colo node, as the account that owns the secrets directory. Never print the contents of `secrets/` or any password file. Use `sed` to redact before any diff.

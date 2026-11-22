@@ -1,8 +1,9 @@
 // Survey reader (BLD-20): a box of the seen map as layered run-length text for the Body reply.
 // Reply: `{ text, truncated }`, no owner field. Text is one legend line, then one block per Y layer
 // (`y=<y>`), then one line per Z row (`  z=<z> <run> <run> ...`). A run is `<count><symbol>[@<minutes>]`:
-// the symbol is a legend entry, `@<minutes>` is the last-seen age in game minutes. `?` is unseen
-// (legend `?=unknown`) and carries no age. Layers go nearest to `anchorY` first, so a box that does
+// the symbol is a legend entry, `@<minutes>` is the last-seen age in game minutes. A cell inherited from a
+// predecessor life (decision 0424) carries an `i` after its age (`@<minutes>i`); a fresh sighting never does.
+// `?` is unseen (legend `?=unknown`) and carries no age. Layers go nearest to `anchorY` first, so a box that does
 // not fit answers with the nearest slice and `truncated` set.
 import type { SeenMap } from './section.ts';
 
@@ -13,6 +14,8 @@ export const TICKS_PER_MINUTE = 1200;
 
 const UNSEEN = '?';
 const OVERFLOW = '*';
+/** The mark after a run's age for a cell inherited from a predecessor life. */
+const INHERITED = 'i';
 const SYMBOLS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
 
 /** An inclusive box of block coordinates. */
@@ -88,7 +91,7 @@ function renderLayer(
       const next =
         cell === undefined
           ? UNSEEN
-          : `${symbolFor(legend, cell.name)}@${ageMinutes(nowTick, cell.lastSeen)}`;
+          : `${symbolFor(legend, cell.name)}@${ageMinutes(nowTick, cell.lastSeen)}${cell.inherited ? INHERITED : ''}`;
       if (next === token) {
         count++;
         continue;
@@ -156,10 +159,11 @@ export function surveyBox(
   return { text: assemble(legend, chosen), truncated };
 }
 
-/** One decoded cell: its block name (undefined for unseen) and age in game minutes (undefined for unseen). */
+/** One decoded cell: its block name (undefined for unseen), its age in game minutes (undefined for unseen) and its inherited mark. */
 export interface DecodedCell {
   name: string | undefined;
   ageMinutes: number | undefined;
+  inherited: boolean;
 }
 
 /** A decoded survey: the legend and the layers, each row's cells in ascending X order. */
@@ -168,7 +172,7 @@ export interface DecodedSurvey {
   layers: { y: number; rows: { z: number; cells: DecodedCell[] }[] }[];
 }
 
-const RUN = /^(\d+)([A-Za-z?*])(?:@(\d+))?$/;
+const RUN = /^(\d+)([A-Za-z?*])(?:@(\d+)(i)?)?$/;
 
 /** Reads a survey text back into cells. Inverse of `surveyBox` for the cells it kept. */
 export function decodeSurvey(text: string): DecodedSurvey {
@@ -195,8 +199,12 @@ export function decodeSurvey(text: string): DecodedSurvey {
       const symbol = match[2] as string;
       const cell: DecodedCell =
         symbol === UNSEEN
-          ? { name: undefined, ageMinutes: undefined }
-          : { name: legend.get(symbol), ageMinutes: Number(match[3]) };
+          ? { name: undefined, ageMinutes: undefined, inherited: false }
+          : {
+              name: legend.get(symbol),
+              ageMinutes: Number(match[3]),
+              inherited: match[4] === INHERITED,
+            };
       for (let i = 0; i < count; i++) cells.push(cell);
     }
     layer.rows.push({ z: Number(zPart.slice(2)), cells });

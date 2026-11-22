@@ -32,7 +32,7 @@ it with the owner.
   `shards/colo-mind.yaml` has no `building` key.
 - **Flag off.** `break` and `plan` are refused (`not_possible: building is not available`). The `survey` and
   `plan_check` requests reach the Body, which answers `not_available`; the MCP tool then returns the tool error
-  `body_unavailable`. The MCP does not read the flag. No plan lane is registered and nothing runs in the background.
+  `body_unavailable`. The MCP reads the flag: with it on, `survey` and `plan_check` are listed even when `show_unavailable_tools` is false. No plan lane is registered and nothing runs in the background.
 - **Flag on.** Agents may break blocks, queue plans and survey or dry-run plans, within the limits that remain
   (out of reach, unbreakable blocks, unloaded chunks, no reachable stand). The dig-safety refusals for falling blocks,
   liquids and walled-in cells are removed for `break`, `mine` and plans (decision [0428](../decisions/0428-dig-safety-refusals-removed.md)).
@@ -65,7 +65,7 @@ Use this to stop new building on a shard. It is the only rollback this campaign 
 2. Restart the Bodies so the Body start reads the new value. The restart path is in
    [deploy/README.md](../../deploy/README.md).
 3. Check that the flag is off: a `break` is refused with `not_possible: building is not available`; `survey` and
-   `plan_check` answer `body_unavailable` through the MCP; they are not listed when `show_unavailable_tools` is false.
+   `plan_check` answer `body_unavailable` through the MCP; with the flag off they are not listed (the MCP hides them while `body_actions.building` is off).
 
 What turning the flag off does not do:
 
@@ -94,7 +94,7 @@ Use the views from outside the world; never ask an agent or a Body to report bui
   270 to 275, and documented in [progress-metrics.md](progress-metrics.md)) are emitted by Bodies that run with the flag
   on. They are pushed only when `GELDAR_TELEMETRY_URL` is set. They show how much building happened, not what was built.
 - **Erasure**: `tools/players-cli` erase (`erase-owner`) also removes the building data of each erased life: its
-  `geldar-seen` sections, its `geldar-plans` chunks and its `<life>.plan` key in `geldar-checkpoints`
+  `geldar-seen` sections, its `geldar-plans` chunks and its `<life>.plan` key and its bare `<life>` body checkpoint in `geldar-checkpoints` (B8)
   (`tools/players-cli/src/erase-building.ts`).
   Run this step only after the life's Body is stopped: stop the life's Body before erasing, because a running Body's seen writer re-creates `<life>.<sx>.<sy>.<sz>` keys after the purge.
 
@@ -124,6 +124,13 @@ no seed step for them. Two facts follow:
    regenerated file drops the edit.
 2. Without the role, a Body with the flag on fails in `openRestartKv` and does not start. Check the Body log for a
    failed bucket create or a denied publish before you set the flag, and expect the failure on the first restart after it.
+
+The numbered MANUAL order (B8), with the restart order, is in [nats-auth-inplace.md](nats-auth-inplace.md) under "MANUAL: create order for the building buckets":
+
+1. (a) Apply the NATS conf or role change for `$KV.geldar-plans.>` and `$KV.geldar-seen.>` on the `body` role, and reload NATS.
+2. (b) Create `geldar-plans`, then `geldar-seen`, with an admin identity and the default KV settings.
+3. (c) Only then set `body_actions.building: true` on the shard.
+4. (d) Restart the Bodies first, then the Minds, then the MCP. Check the Body logs, then `tools/list`.
 
 `golem/src/seed-buckets.ts` is a scratch-only one-shot. It creates the two identity buckets (`geldar-life-registry`,
 `geldar-skins`) with the `seed` user. Its `seedBuildingBuckets` helper is not run by `main` and the `seed` user cannot
@@ -156,9 +163,9 @@ files reach an agent only through a kit upgrade PR, which is a MANUAL step. Unti
 
 - An agent on the old kit does not know the building verbs and does not call `survey` or `plan_check`. It can still
   try `break`; the flag decides what happens.
-- Turning the flag on does not teach agents anything. The default Body API prompt is v10 (`animus/src/prompts/library.ts`,
-  `DEFAULT_BODY_API_VERSION = 10`); the Mind is not taught `break` or `plan` until the owner switches the default to
-  v12, which is an `animus/**` change and restarts Bodies.
+- Turning the flag on does not teach agents anything. The Body API prompt follows the flag (B8): the Mind renders v12 (`break` and `plan`) while
+  `body_actions.building` is on and v10 while it is off (`bodyApiVersionFor`, `animus/src/prompts/library.ts`). A Mind
+  reads the flag when it starts, so restart the Minds after the flag changes.
 - Do not hand-edit the kit or an agent's `identity.md` to speed this up. Kit changes go through the kit repo.
 
 ## Go-live checklist
@@ -167,8 +174,8 @@ files reach an agent only through a kit upgrade PR, which is a MANUAL step. Unti
 2. The owner has accepted the risks in 0422 for this shard.
 3. The NATS role for `geldar-plans` and `geldar-seen` is in the live conf (MANUAL step above) and the Body log is clean.
 4. Owner decisions taken (see RESUME.md "Known gaps and owner decisions"): tool visibility on colo
-   (`show_unavailable_tools` is `false` in `shards/colo-mind.yaml`, which hides `survey` and `plan_check`; setting it
-   `true` also lists six other tools the world does not run); the default prompt switch to v12; and the open animus
+   (`show_unavailable_tools` is `false` in `shards/colo-mind.yaml`, which hides the six tools and, with the flag off, `survey` and `plan_check`; setting it
+   `true` also lists six other tools the world does not run); the v12 prompt follows the flag (B8); and the open animus
    test failures (eight were reported failing at `6fe2448b`; not re-run for this revision).
 5. Set `body_actions.building: true` on the shard and restart the Bodies.
 6. Watch the first hour: the BlueMap render, the CoreProtect lookups and the metrics. If an incident happens, follow
