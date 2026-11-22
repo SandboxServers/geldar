@@ -13,7 +13,6 @@ const ENTRY = 'src/adam/main.ts';
 const STARTED = '2026-11-10T00:00:00.000Z';
 const ENV = { GELDAR_SHARD: 'phase0', OLLAMA_URL: 'http://127.0.0.1:11434' };
 const BODY_PID = 100;
-const ANIMUS_PID = 200;
 const LANTERN_PID = 300;
 const FRESH_PID = 400;
 const OPTS: RestartOptions = { graceMs: 1_000, readyMs: 5_000, pollMs: 100 };
@@ -56,8 +55,8 @@ describe('ownershipProblem', () => {
   });
 
   it('refuses a process that is not the Body entry point', () => {
-    const animus = facts(BODY_PID, { commandLine: 'node C:/repo/animus/src/main.ts' });
-    expect(ownershipProblem(owner(), animus, ENTRY)).toMatch(/is not running src\/adam\/main.ts/);
+    const lantern = facts(BODY_PID, { commandLine: 'node C:/repo/lantern-local/src/main.ts' });
+    expect(ownershipProblem(owner(), lantern, ENTRY)).toMatch(/is not running src\/adam\/main.ts/);
   });
 
   it('matches the entry point with Windows separators too', () => {
@@ -97,10 +96,9 @@ function fake(
   const spawns: Fake['spawns'] = [];
   const table = new Map<number, ProcessFacts>([
     [BODY_PID, facts(BODY_PID)],
-    [ANIMUS_PID, facts(ANIMUS_PID, { commandLine: 'node C:/repo/animus/src/main.ts' })],
     [LANTERN_PID, facts(LANTERN_PID, { commandLine: 'node C:/repo/lantern-local/src/main.ts' })],
   ]);
-  const alive = new Set([BODY_PID, ANIMUS_PID, LANTERN_PID]);
+  const alive = new Set([BODY_PID, LANTERN_PID]);
   let log = opts.log ?? '';
   let clock = 0;
   const deps: RestartDeps = {
@@ -147,7 +145,10 @@ describe('restartBody', () => {
 
   it('refuses a PID that now belongs to another process, and signals nothing', async () => {
     const f = fake();
-    f.table.set(BODY_PID, facts(BODY_PID, { commandLine: 'node C:/repo/animus/src/main.ts' }));
+    f.table.set(
+      BODY_PID,
+      facts(BODY_PID, { commandLine: 'node C:/repo/lantern-local/src/main.ts' }),
+    );
     await expect(restartBody(f.deps, OPTS)).rejects.toThrow(/refusing to restart the Body/);
     expect(f.signals).toEqual([]);
     expect(f.spawns).toEqual([]);
@@ -160,11 +161,10 @@ describe('restartBody', () => {
     expect(f.signals).toEqual([]);
   });
 
-  it('signals only the Body PID, and never animus or lantern-local', async () => {
+  it('signals only the Body PID, and never lantern-local', async () => {
     const f = fake({ exit: 'term' });
     await restartBody(f.deps, OPTS);
     expect(f.signals).toEqual([[BODY_PID, 'SIGTERM']]);
-    expect(f.alive.has(ANIMUS_PID)).toBe(true);
     expect(f.alive.has(LANTERN_PID)).toBe(true);
   });
 

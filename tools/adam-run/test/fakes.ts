@@ -143,7 +143,6 @@ export class FakeSampler implements Sampler {
       atMs: now,
       lifeId: this.s.lifeId,
       alive: {
-        animus: stackUp,
         body: bodyUp,
         'lantern-local': stackUp,
         ollama: this.s.ollamaUp,

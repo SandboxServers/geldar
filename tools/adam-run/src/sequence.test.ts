@@ -155,7 +155,7 @@ describe('runSequence', () => {
   });
 
   it('refuses to start when the precheck fails, and writes and starts nothing', async () => {
-    const r = rig('smoke', {}, {}, { otherChanges: ['animus/src/x.ts'] });
+    const r = rig('smoke', {}, {}, { otherChanges: ['golem/src/x.ts'] });
     const out = await runSequence(r.deps, r.run);
     expect(out).toMatchObject({ status: 'refused' });
     expect(r.sup.calls).toEqual([]);
@@ -185,7 +185,7 @@ describe('runSequence', () => {
       rule: 'restart_not_recovered',
       safeStopExit: 0,
     });
-    expect(r.sup.calls.slice(-3)).toEqual(['stop:lantern-local', 'stop:animus', 'stop:body']);
+    expect(r.sup.calls.slice(-2)).toEqual(['stop:lantern-local', 'stop:body']);
     expect(r.reporter.runs).toEqual(['run-1']);
     expect(r.lines().at(-1)).toMatchObject({ event: 'abort', minute: 20 });
   });
@@ -194,7 +194,7 @@ describe('runSequence', () => {
     const r = rig('smoke', from(5, { deaths: 1 }), { durationMs: 60 * MIN });
     const out = await runSequence(r.deps, r.run);
     expect(out).toMatchObject({ status: 'ended', reason: 'life_ended', safeStopExit: 0 });
-    expect(r.sup.calls.slice(-3)).toEqual(['stop:lantern-local', 'stop:animus', 'stop:body']);
+    expect(r.sup.calls.slice(-2)).toEqual(['stop:lantern-local', 'stop:body']);
     expect(r.reporter.runs).toEqual(['run-1']);
     expect(r.lines().at(-1)).toMatchObject({ event: 'ended', minute: 5 });
     expect(r.lines().some((l) => l.event === 'abort')).toBe(false);
@@ -215,7 +215,7 @@ describe('runSequence', () => {
     const r = rig('smoke', { sampleFailsFrom: START_MS + 5 * MIN }, { durationMs: 60 * MIN });
     const out = await runSequence(r.deps, r.run);
     expect(out).toMatchObject({ status: 'aborted', rule: 'error', safeStopExit: 0 });
-    expect(r.sup.calls.slice(-3)).toEqual(['stop:lantern-local', 'stop:animus', 'stop:body']);
+    expect(r.sup.calls.slice(-2)).toEqual(['stop:lantern-local', 'stop:body']);
     expect(r.reporter.runs).toEqual(['run-1']);
     expect(r.lines().at(-1)).toMatchObject({ event: 'abort' });
   });
@@ -276,7 +276,7 @@ describe('runSequence', () => {
       const r = rig('smoke', from(minute, patch), { durationMs: 60 * MIN });
       const out = await runSequence(r.deps, r.run);
       expect(out).toMatchObject({ status: 'aborted', rule, safeStopExit: 0 });
-      expect(r.sup.calls.slice(-3)).toEqual(['stop:lantern-local', 'stop:animus', 'stop:body']);
+      expect(r.sup.calls.slice(-2)).toEqual(['stop:lantern-local', 'stop:body']);
       expect(r.reporter.runs).toEqual(['run-1']);
       expect(JSON.parse(r.files.read(runPaths(RUN_DIR).abort) ?? '{}')).toMatchObject({ rule });
       const lines = r.lines();

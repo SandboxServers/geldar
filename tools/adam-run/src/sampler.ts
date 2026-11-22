@@ -108,7 +108,6 @@ export function createSampler(deps: SamplerDeps): Sampler {
       const lastAt = sql.t?.last;
       const p95 = sql.p95?.p;
       const alive: Record<Probe, boolean> = {
-        animus: running('animus'),
         body: running('body'),
         'lantern-local': running('lantern-local'),
         ollama: await ollamaUp(),
