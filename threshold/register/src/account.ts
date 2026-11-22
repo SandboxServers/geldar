@@ -9,11 +9,12 @@ import type { AccountDeleteDeps } from './api/account-data-delete.ts';
 import type { RegisterConfig } from './config.ts';
 import { errorPage } from './errors.ts';
 import type { Identity } from './identity.ts';
-import { ownershipRefusedPage } from './mc-ownership-pages.ts';
+import { gamepassSignedInPage, ownershipRefusedPage } from './mc-ownership-pages.ts';
 import {
   decideOwnership,
   isRefusal,
   type OwnershipCheck,
+  recordErrorLabel,
   UNRECORDED_REFUSAL,
 } from './mc-signup-gate.ts';
 import {
@@ -165,6 +166,8 @@ export class Account {
     const needsCheck =
       config.requireMcOwnership && consent && !(await store.findOwner(identity.identityHash));
     const verdict = needsCheck ? await decideOwnership(verify, identity.provider, log) : undefined;
+    // Set inside the lock only when this sign-up created the owner: the Game Pass hint is shown once, on that page.
+    let newHint: string | undefined;
     const outcome = await this.serial(async () => {
       const found = await store.findOwner(identity.identityHash);
       if (found?.banned) return 'banned' as const;
@@ -181,10 +184,11 @@ export class Account {
       // The answer is written in the owner's own transaction: a refused or failed record commits nothing.
       try {
         await store.createOwner(identity, ownerId, TERMS_VERSION, true);
-      } catch {
-        log('sign-up ownership record not stored; nothing was written');
+      } catch (error) {
+        log(`sign-up ownership record failed; owner write rolled back ${recordErrorLabel(error)}`);
         return { refused: UNRECORDED_REFUSAL };
       }
+      newHint = verdict?.status === 'owns_via_gamepass' ? verdict.hint : undefined;
       return ownerId;
     });
     const clearState = `${STATE_COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax`;
@@ -212,20 +216,25 @@ export class Account {
       lastSeenMs: nowMs,
       expiresMs: slideExpiry(nowMs, nowMs),
     });
+    const cookies = [
+      clearState,
+      ...LEGACY_CLEARS,
+      sessionCookie(id, SESSION_CAP_MS / 1000),
+      kinoCookieHeader(
+        signKinoSession(config.sessionKey, {
+          identityHash: identity.identityHash,
+          expiresAt: nowMs + KINO_COOKIE_TTL_MS,
+        }),
+        KINO_COOKIE_TTL_MS / 1000,
+      ),
+    ];
+    if (newHint !== undefined) {
+      // A new Game Pass owner gets the launcher hint on a page; the same cookies as the plain redirect below.
+      return html(res, 200, gamepassSignedInPage(newHint), { 'set-cookie': cookies });
+    }
     res.writeHead(302, {
       location: `${BASE}/account`,
-      'set-cookie': [
-        clearState,
-        ...LEGACY_CLEARS,
-        sessionCookie(id, SESSION_CAP_MS / 1000),
-        kinoCookieHeader(
-          signKinoSession(config.sessionKey, {
-            identityHash: identity.identityHash,
-            expiresAt: nowMs + KINO_COOKIE_TTL_MS,
-          }),
-          KINO_COOKIE_TTL_MS / 1000,
-        ),
-      ],
+      'set-cookie': cookies,
       ...SECURITY_HEADERS,
     });
     res.end();

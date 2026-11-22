@@ -1,4 +1,4 @@
-import type { ProviderCredentials } from './config.ts';
+import type { ProviderCredentials, RegisterConfig } from './config.ts';
 import type { ProviderName } from './identity.ts';
 import { challengeOf } from './pkce.ts';
 
@@ -44,6 +44,20 @@ function claimsOf(idToken: unknown): Record<string, unknown> {
   const v: unknown = JSON.parse(Buffer.from(part, 'base64url').toString('utf8'));
   if (typeof v !== 'object' || v === null || Array.isArray(v)) throw new Error('bad id token');
   return v as Record<string, unknown>;
+}
+
+/**
+ * The providers the server runs, built from one config: the gate flag reaches the Microsoft provider only here.
+ * main.ts calls this and nothing else, so the scope and the token keep to one switch.
+ */
+export function providersFor(config: Pick<RegisterConfig, 'microsoft' | 'requireMcOwnership'>): {
+  readonly microsoft: Provider;
+} {
+  return {
+    microsoft: microsoftProvider(config.microsoft, {
+      requireMcOwnership: config.requireMcOwnership,
+    }),
+  };
 }
 
 export function microsoftProvider(

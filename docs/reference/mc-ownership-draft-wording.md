@@ -11,12 +11,15 @@ When you sign up, we check once whether your Microsoft account owns Minecraft: J
 ## Proposed refusal wording (shown on the sign-up page)
 
 - Bedrock-only account: "This Microsoft account does not own Minecraft: Java Edition. Bedrock-only accounts cannot register here."
-- Game Pass account: "Game Pass counts for this check. Launch the Minecraft Launcher once with this account before you play."
 - Check not available: "The ownership check is not available yet, so new sign-ups are paused. Existing accounts are not affected. Please try again later."
+
+## Proposed wording shown after sign-up (not a refusal)
+
+- Game Pass account, admitted: "Game Pass counts for this check. Launch the Minecraft Launcher once with this account before you play." It is shown on a "Signed in" page with a link to the account page, once, after the sign-up that created the owner. Existing owners do not see it again.
 
 ## Points for the owner to decide
 
-1. Whether a Game Pass account (no Java purchase) is admitted. The code admits it. The launcher hint is not shown yet: the sign-up page has no place for it in this change, so it is an open item to close before the flag is enabled. The owner may choose to refuse Game Pass instead.
+1. Whether a Game Pass account (no Java purchase) is admitted. The code admits it and shows the launcher hint after sign-up (see above). The owner may choose to refuse Game Pass instead.
 2. Whether the three stored fields are the right minimum. The code stores only a yes (a refused sign-up stores nothing), the check time and no profile identifier yet (no profile lookup exists).
 3. Whether the paragraph above goes into the live privacy notice as a new version. A new version needs a new terms version bump; this draft does not do that.
 4. Bedrock accounts are not verified by this check. The register does not claim to check Bedrock.

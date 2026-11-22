@@ -14,3 +14,11 @@ export function ownershipRefusedPage(refusal: OwnershipRefusal): string {
         : 'Sign-up could not be completed';
   return page('Not available', `<h1>${heading}</h1><p>${refusal.message}</p>`);
 }
+
+/** The page after a new Game Pass sign-up: the launcher hint (a fixed text of mc-ownership.ts), then the account link. */
+export function gamepassSignedInPage(hint: string): string {
+  return page(
+    'Signed in',
+    `<h1>Signed in</h1><p>${hint}</p><p><a href="/register/account">Continue to your account</a></p>`,
+  );
+}

@@ -39,3 +39,13 @@ export async function decideOwnership(
 export function isRefusal(result: OwnershipResult): result is OwnershipRefusal {
   return result.status === 'failed' || result.status === 'not_owned';
 }
+
+/**
+ * The log label for a failed record write: the error's class name and a string code (a SQLSTATE), never its message.
+ * A database outage and a refused record then read differently in the log.
+ */
+export function recordErrorLabel(error: unknown): string {
+  if (!(error instanceof Error)) return 'error=unknown';
+  const code = (error as { code?: unknown }).code;
+  return typeof code === 'string' ? `error=${error.name} code=${code}` : `error=${error.name}`;
+}

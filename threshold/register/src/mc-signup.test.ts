@@ -114,15 +114,34 @@ describe('flag on, new sign-up', () => {
     expect(lines).toContain('sign-up ownership outcome=owns provider=microsoft');
   });
 
-  it('admits a Game Pass account', async () => {
+  it('admits a Game Pass account and shows the launcher hint on a page with the same cookies', async () => {
     const store = fakeStore();
-    const { account, lines } = harness(true, store);
+    const { account, lines, sessions } = harness(true, store);
     const res = await signUp(account, async () => ({
       status: 'owns_via_gamepass',
       hint: 'launch once',
     }));
-    expect(res.status).toBe(302);
+    expect(res.status).toBe(200);
+    expect(res.body).toContain('launch once');
+    expect(res.body).toContain('href="/register/account"');
+    expect(sessions.create).toHaveBeenCalledOnce();
+    expect(store.createOwner.mock.calls[0]?.[3]).toBe(true);
+    const cookies = res.headers['set-cookie'];
+    expect(Array.isArray(cookies)).toBe(true);
+    expect((cookies as string[]).some((c) => c.startsWith('__Host-gr_session='))).toBe(true);
     expect(lines).toContain('sign-up ownership outcome=owns_via_gamepass provider=microsoft');
+  });
+
+  it('a Game Pass answer that is not stored gets the refusal page, never the hint', async () => {
+    const store = fakeStore(null, async () => false);
+    const { account, sessions } = harness(true, store);
+    const res = await signUp(account, async () => ({
+      status: 'owns_via_gamepass',
+      hint: 'launch once',
+    }));
+    expect(res.status).toBe(403);
+    expect(res.body).not.toContain('launch once');
+    expect(sessions.create).not.toHaveBeenCalled();
   });
 
   it('refuses a Bedrock-only account with a page and creates nothing', async () => {
@@ -209,19 +228,22 @@ describe('flag on, new sign-up', () => {
     );
     expect(sessions.create).not.toHaveBeenCalled();
     expect(res.headers['set-cookie']).toContain('Max-Age=0');
-    expect(lines).toContain('sign-up ownership record not stored; nothing was written');
+    expect(lines).toContain('sign-up ownership record failed; owner write rolled back error=Error');
   });
 
   it('refuses and creates no session when the record throws (the owner write is rolled back)', async () => {
     const store = fakeStore(null, async () => {
-      throw new Error('db down');
+      throw Object.assign(new Error('db down'), { code: '57P01' });
     });
     const { account, lines, sessions } = harness(true, store);
     const res = await signUp(account, owns);
     expect(res.status).toBe(403);
     expect(res.body).toContain('Sign-up could not be completed');
     expect(sessions.create).not.toHaveBeenCalled();
-    expect(lines).toContain('sign-up ownership record not stored; nothing was written');
+    // The log names the error class and its SQLSTATE code, never the message text.
+    expect(lines).toContain(
+      'sign-up ownership record failed; owner write rolled back error=Error code=57P01',
+    );
     expect(lines.join('\n')).not.toContain('db down');
   });
 
