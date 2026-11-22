@@ -2,7 +2,15 @@
 // must be exactly true or false when set, and is exported so that compose sees it. Sign-up stays closed when it is unset.
 // These tests source common.sh in a POSIX shell; they run in CI on Linux (on a Windows host the shell may be missing).
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -67,11 +75,17 @@ function sh(script: string, state: string, env: Record<string, string> = {}) {
 
 describe('REGISTER_KILL_SWITCH from the node env file', () => {
   it('honours a file value of true or false and exports it', () => {
-    expect(sh('load_node_env; printf %s "${REGISTER_KILL_SWITCH-unset}"', sandbox('REGISTER_KILL_SWITCH=true\n')).out).toBe(
-      'true',
-    );
     expect(
-      sh('load_node_env; printf %s "${REGISTER_KILL_SWITCH-unset}"', sandbox('REGISTER_KILL_SWITCH=false\n')).out,
+      sh(
+        'load_node_env; printf %s "${REGISTER_KILL_SWITCH-unset}"',
+        sandbox('REGISTER_KILL_SWITCH=true\n'),
+      ).out,
+    ).toBe('true');
+    expect(
+      sh(
+        'load_node_env; printf %s "${REGISTER_KILL_SWITCH-unset}"',
+        sandbox('REGISTER_KILL_SWITCH=false\n'),
+      ).out,
     ).toBe('false');
   });
 
@@ -92,7 +106,9 @@ describe('REGISTER_KILL_SWITCH from the node env file', () => {
   });
 
   it('rejects a shell value that is not exactly true or false, even when the file is fine', () => {
-    const r = sh('load_node_env; printf reached', sandbox('REGISTER_KILL_SWITCH=false\n'), { REGISTER_KILL_SWITCH: 'no' });
+    const r = sh('load_node_env; printf reached', sandbox('REGISTER_KILL_SWITCH=false\n'), {
+      REGISTER_KILL_SWITCH: 'no',
+    });
     expect(r.code).not.toBe(0);
     expect(r.out).toContain('must be exactly true or false');
     expect(r.out).not.toContain('reached');
@@ -100,14 +116,20 @@ describe('REGISTER_KILL_SWITCH from the node env file', () => {
 
   it('lets a shell value win over the file (the command-line emergency close)', () => {
     const read = 'load_node_env; printf %s "${REGISTER_KILL_SWITCH-unset}"';
-    expect(sh(read, sandbox('REGISTER_KILL_SWITCH=false\n'), { REGISTER_KILL_SWITCH: 'true' }).out).toBe('true');
-    expect(sh(read, sandbox('REGISTER_KILL_SWITCH=true\n'), { REGISTER_KILL_SWITCH: 'false' }).out).toBe('false');
+    expect(
+      sh(read, sandbox('REGISTER_KILL_SWITCH=false\n'), { REGISTER_KILL_SWITCH: 'true' }).out,
+    ).toBe('true');
+    expect(
+      sh(read, sandbox('REGISTER_KILL_SWITCH=true\n'), { REGISTER_KILL_SWITCH: 'false' }).out,
+    ).toBe('false');
   });
 
   it('treats an empty value, in the shell or in the file, as unset (compose default true)', () => {
     const read = 'load_node_env; printf %s "${REGISTER_KILL_SWITCH:-unset}"';
     expect(sh(read, sandbox('REGISTER_KILL_SWITCH=\n')).out).toBe('unset');
-    expect(sh(read, sandbox('REGISTER_KILL_SWITCH=false\n'), { REGISTER_KILL_SWITCH: '' }).out).toBe('false');
+    expect(
+      sh(read, sandbox('REGISTER_KILL_SWITCH=false\n'), { REGISTER_KILL_SWITCH: '' }).out,
+    ).toBe('false');
     expect(sh(read, sandbox(), { REGISTER_KILL_SWITCH: '' }).out).toBe('unset');
   });
 
@@ -125,7 +147,9 @@ describe('REGISTER_KILL_SWITCH from the node env file', () => {
     expect(sh(say, sandbox('REGISTER_KILL_SWITCH=false\n'), { DEPLOY_DRY_RUN: '1' }).out).toContain(
       'register kill switch: false',
     );
-    expect(sh(say, sandbox('REGISTER_KILL_SWITCH=true\n')).out).toContain('register kill switch: true');
+    expect(sh(say, sandbox('REGISTER_KILL_SWITCH=true\n')).out).toContain(
+      'register kill switch: true',
+    );
     expect(sh(say, sandbox()).out).toContain('register kill switch: unset');
   });
 
@@ -151,8 +175,9 @@ describe('REGISTER_KILL_SWITCH wiring in the deploy scripts', () => {
 
   it('colo-up.sh and colo-cd.sh both load the node env; colo-up.sh saves it after loading', () => {
     const up = read('colo-up.sh');
-    expect(up.indexOf('load_node_env')).toBeGreaterThan(-1);
-    expect(up.indexOf('load_node_env')).toBeLessThan(up.indexOf('save_node_env'));
+    const upLoad = up.search(/^load_node_env$/m);
+    expect(upLoad).toBeGreaterThan(-1);
+    expect(upLoad).toBeLessThan(up.search(/^save_node_env$/m));
     const cd = read('colo-cd.sh');
     expect(cd).toMatch(/^load_node_env$/m);
     expect(cd).toMatch(/^say_node_env$/m);

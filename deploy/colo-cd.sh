@@ -356,7 +356,8 @@ for id in $STALE_HOSTS; do say "plan: refresh player host $id (after the shared 
 say "plan: animus (mind) is never started; its digest is recorded only"
 
 # Read-only: the node env values (REGISTER_KILL_SWITCH included) are loaded and printed before the dry-run exit, so every
-# log, dry run or not, shows the value in force.
+# log, dry run or not, shows the value in force. The read happens before the lock by design: a node.env change made
+# after this point (for example by a colo-up.sh run that holds the lock) is not seen by this run.
 load_node_env
 say_node_env
 

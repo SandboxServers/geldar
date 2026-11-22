@@ -98,7 +98,7 @@ Re-derive with `git grep -nE '^[a-z_0-9]+\(\) \{' -- deploy/common.sh` (26 funct
 | `check_merged_config` | Refuses a merged config that publishes 25565 or 25566, has an image not pinned by digest, or has a service with `build:` and no `image:` | none |
 | `fetch_bluemap`, `fetch_chunky`, `fetch_coreprotect` | Download the jar named in `plugins/<name>/<name>.lock.json` (https only; `file://` only with `GELDAR_DEPLOY_ALLOW_FILE_URL=1` in tests), check sha256 (and sha512 when the lock has one), store it under the state directory. A missing lock is skipped with a message. | writes `<state dir>/<name>/<name>.jar` (not in dry run) |
 | `check_lock_sha512` | Optional sha512 check of a downloaded jar | none |
-| `load_node_env`, `save_node_env`, `say_node_env`, `proxies_set` | Load, save (mode 0600, as data, never sourced) and print `GELDAR_GLASS_TRUSTED_PROXIES`, `GELDAR_MCP_TRUSTED_PROXIES`, `GELDAR_COLO_SUBNET`, `REGISTER_TRUSTED_PEERS` in `<state dir>/node.env` | writes `node.env` |
+| `load_node_env`, `save_node_env`, `say_node_env`, `proxies_set` | Load, save (mode 0600, as data, never sourced) and print `GELDAR_GLASS_TRUSTED_PROXIES`, `GELDAR_MCP_TRUSTED_PROXIES`, `GELDAR_COLO_SUBNET`, `REGISTER_TRUSTED_PEERS`, `REGISTER_KILL_SWITCH` in `<state dir>/node.env`. `REGISTER_KILL_SWITCH` must be exactly `true` or `false` (file or shell), otherwise the script dies before anything changes; a shell value wins over the file, and `save_node_env` writes the value in force, so a shell value is persisted too. `colo-status.sh` and `colo-public.sh` also load it and die on an invalid value; `colo-rollback.sh` does not load `node.env`. | writes `node.env` |
 | `record_release` | Copies the current record to `previous.env` (when it differs) and the manifest to `current.env` before any pull. Refuses to deploy without a record. | writes `previous.env`, `current.env` |
 
 ## colo-up.sh
@@ -150,7 +150,7 @@ Applies only what changed between the installed release and a new one. Runs on t
   8. Restart each changed service in the order `eventsink register glass geldar-mcp golem-body` (line 69), one at a time with `up -d --no-deps --wait` and a health check. A `pause` maintenance notice and a wait of `COLO_CD_NOTICE_SECONDS` come before `golem-body` and `geldar-mcp`, a `back` notice after. `golem-body` is restarted only if it is already running (decision 0212). A body digest change recreates the running player hosts.
   9. Refresh each player host that is not current (`refresh_hosts`), one at a time.
   10. Write `<state dir>/release.commit`.
-- **Never restarts** Paper, Velocity, Caddy, Postgres or NATS; never starts the Mind; never reads or writes `REGISTER_KILL_SWITCH` (header, lines 7 to 9).
+- **Never restarts** Paper, Velocity, Caddy, Postgres or NATS; never starts the Mind. `REGISTER_KILL_SWITCH` is read from `node.env` (or the shell, which wins) and printed in every run, dry run included, but never written here; an invalid value stops the run before anything changes. A persisted `false` takes effect only once a release with this change is deployed; before that the CD ignores the file line.
 - **Needs manual:** changes under `plugin/`, `compose/`, `deploy/caddy/` and NATS config are printed as `needs manual: ...` and not applied (`colo-cd-plan.sh` lines 76 to 93). `colo-deploy.yml` copies those lines into the job summary.
 - **Failure handling:** a failed pull, src refresh, dump or migration before any restart restores the previous manifest and exits 1 with nothing restarted (`abort_untouched`). A failed health check re-applies the previous release to every service already restarted with `--pull never`, recreates the player hosts when the body changed, and exits 1 (`rollback`, lines 233 to 258). Migrations are forward-only and not reversed. A failed player host refresh stops the loop, restores that host on its previous image when known, records the new commit, and exits 1 "needs manual" (lines 420 to 426).
 - **Log:** `<state dir>/cd.log`, UTC-stamped lines, no secrets or addresses (lines 79 to 84).
@@ -278,7 +278,7 @@ All under the state directory (`GELDAR_STATE_DIR`, default at `common.sh` line 1
 | `release.commit` | `colo-cd.sh` | The commit the node runs; must exist before the first CD run |
 | `cd.lock`, `cd.log` | `colo-cd.sh` | The run lock and the CD log |
 | `backups/pre-cd-<UTC>.sql` | `colo-cd.sh` | A database dump before migrations |
-| `node.env` | `save_node_env` | Trusted proxies, colo subnet, register peers (mode 0600) |
+| `node.env` | `save_node_env` | Trusted proxies, colo subnet, register peers, `REGISTER_KILL_SWITCH` when a valid value is in force (mode 0600) |
 | `bluemap/`, `chunky/`, `coreprotect/` | `fetch_*` | Verified plugin jars |
 | `admin-tokens.override.yml`, `admin-skins.override.yml` | `colo-admin.sh` | Temporary mount overlays, removed on exit |
 | `<src extract>/<path>.bak-<UTC>` | `colo-cd.sh` | Copies of files the CD replaced (in `GELDAR_COLO_ROOT`) |
