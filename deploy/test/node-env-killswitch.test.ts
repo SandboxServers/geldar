@@ -96,7 +96,18 @@ describe('REGISTER_KILL_SWITCH from the node env file', () => {
   });
 
   it('rejects any other file value and exports nothing', () => {
-    for (const bad of ['False', 'FALSE', '0', 'no', 'true ', ' false', 'off']) {
+    for (const bad of [
+      'False',
+      'FALSE',
+      '0',
+      'no',
+      'true ',
+      ' false',
+      'off',
+      '$(id)',
+      '`id`',
+      'false;true',
+    ]) {
       const r = sh('load_node_env; printf reached', sandbox(`REGISTER_KILL_SWITCH=${bad}\n`));
       expect(r.code, bad).not.toBe(0);
       expect(r.out, bad).toContain('REGISTER_KILL_SWITCH in');
@@ -144,16 +155,22 @@ describe('REGISTER_KILL_SWITCH from the node env file', () => {
 
   it('a shell value is never persisted: shell false creates no line in an empty file', () => {
     const bare = sandbox();
-    expect(sh('load_node_env; save_node_env', bare, { REGISTER_KILL_SWITCH: 'false' }).code).toBe(0);
+    expect(sh('load_node_env; save_node_env', bare, { REGISTER_KILL_SWITCH: 'false' }).code).toBe(
+      0,
+    );
     expect(readFileSync(join(bare, 'node.env'), 'utf8')).not.toContain('REGISTER_KILL_SWITCH');
   });
 
   it('a shell override leaves the file line as it was (the file value is kept, not the shell one)', () => {
     const state = sandbox('REGISTER_KILL_SWITCH=false\n');
-    expect(sh('load_node_env; save_node_env', state, { REGISTER_KILL_SWITCH: 'true' }).code).toBe(0);
+    expect(sh('load_node_env; save_node_env', state, { REGISTER_KILL_SWITCH: 'true' }).code).toBe(
+      0,
+    );
     expect(readFileSync(join(state, 'node.env'), 'utf8')).toBe('REGISTER_KILL_SWITCH=false\n');
     const again = sandbox('REGISTER_KILL_SWITCH=true\n');
-    expect(sh('load_node_env; save_node_env', again, { REGISTER_KILL_SWITCH: 'false' }).code).toBe(0);
+    expect(sh('load_node_env; save_node_env', again, { REGISTER_KILL_SWITCH: 'false' }).code).toBe(
+      0,
+    );
     expect(readFileSync(join(again, 'node.env'), 'utf8')).toBe('REGISTER_KILL_SWITCH=true\n');
   });
 
@@ -195,7 +212,7 @@ describe('REGISTER_KILL_SWITCH wiring in the deploy scripts', () => {
     );
     const files = readdirSync(DEPLOY).filter((n) => /\.(sh|env|example)$/.test(n));
     for (const f of files) {
-      expect(read(f), f).not.toMatch(/REGISTER_KILL_SWITCH[=:-]+false/);
+      expect(read(f), f).not.toMatch(/REGISTER_KILL_SWITCH["']?\s*[=:-]+\s*["']?false/);
     }
   });
 

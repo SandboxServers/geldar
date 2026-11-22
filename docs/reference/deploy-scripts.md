@@ -27,7 +27,7 @@ These hold for every Colo script that sources `deploy/common.sh` (`colo-up`, `co
 | Every compose call merges `compose/colo.yml`, then `compose/nats-auth.yml`, then `deploy/compose.secrets.yml`; then `compose/colo-public.yml` when the public port is set, then `GELDAR_COLO_EXTRA_OVERLAY` when set. The secrets overlay comes after the NATS overlay so its paths win. | `common.sh` lines 10 to 15, 57 to 70 |
 | `DEPLOY_DRY_RUN=1` runs the read-only checks and prints each state-changing step as `dry-run, not run: ...`. | `common.sh` lines 25, 47 to 54 |
 | A refusal prints `colo: error: <reason>` and exits 1. | `common.sh` `die`, lines 34 to 37 |
-| Not every script checks the uid. `colo-up.sh`, `colo-rollback.sh`, `colo-cd.sh` and `colo-admin.sh` call `check_prereqs`, which refuses to run as uid 0 and refuses `GELDAR_SERVICE_UID` 0 or non-numeric. `colo-down.sh`, `colo-status.sh`, `colo-notice.sh` and `colo-public.sh` make no uid check. `gen-secrets.sh` has its own check: it runs as root or as the `GELDAR_SERVICE_UID` account and refuses any other. | `common.sh` `check_service_uid`, lines 115 to 122, called by `check_prereqs` (line 125); callers: `colo-up.sh` line 14, `colo-rollback.sh` line 12, `colo-cd.sh` line 300, `colo-admin.sh` line 278 (`grep -n check_prereqs deploy/*.sh`, 2026-11-16); `gen-secrets.sh` lines 18 to 26 |
+| Not every script checks the uid. `colo-up.sh`, `colo-rollback.sh`, `colo-cd.sh` and `colo-admin.sh` call `check_prereqs`, which refuses to run as uid 0 and refuses `GELDAR_SERVICE_UID` 0 or non-numeric. `colo-down.sh`, `colo-status.sh`, `colo-notice.sh` and `colo-public.sh` make no uid check. `gen-secrets.sh` has its own check: it runs as root or as the `GELDAR_SERVICE_UID` account and refuses any other. | `common.sh` `check_service_uid`, lines 115 to 122, called by `check_prereqs` (line 125); callers: `colo-up.sh` line 14, `colo-rollback.sh` line 12, `colo-cd.sh` line 303, `colo-admin.sh` line 278 (`grep -n check_prereqs deploy/*.sh`, 2026-11-16); `gen-secrets.sh` lines 18 to 26 |
 | No Colo script removes a volume or runs `down`. | decision 0084 item 3; `colo-down.sh` line 9 runs `stop`. `deploy/scratch/scratch.sh` does run `down -v`, on its own `scratch-<suffix>` project only (see [scratch stack](#scratch-stack)). |
 
 ## Script index
@@ -141,7 +141,7 @@ Applies only what changed between the installed release and a new one. Runs on t
 - **Preconditions:** an installed manifest at `COLO_CD_RELEASE_FILE`, and `<state dir>/release.commit` naming the commit the node runs (lines 313 to 314). The sha must be 40 lowercase hex.
 - **Order:**
   1. `verify_images` from `colo-cd-verify.sh`: before anything changes (line 318).
-  2. The delta from `colo-cd-plan.sh` (line 322). In dry run it prints the plan and exits 0 (lines 364 to 365).
+  2. The delta from `colo-cd-plan.sh` (line 322). In dry run it prints the plan and exits 0 (lines 364 to 366).
   3. Take the lock `<state dir>/cd.lock` (a second run is refused), re-run the config, secret and jar checks.
   4. Back up the installed manifest as `.bak-<UTC>`, record `previous.env` and `current.env`, install the new manifest (lines 377 to 384).
   5. Copy each changed file into the src extract, keeping `.bak-<UTC>` copies (`refresh_src`).
