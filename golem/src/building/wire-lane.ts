@@ -14,9 +14,10 @@ import type { StandPort } from './cell-stand.ts';
 import { type Contention, contendFor } from './contention.ts';
 import { PlanLane } from './lane.ts';
 import { PlanProgressEmitter } from './progress-emitter.ts';
-import { type PlanExpand, PlanQueue, type PlanQueueStore } from './queue.ts';
+import { type PlanBody, type PlanExpand, PlanQueue, type PlanQueueStore } from './queue.ts';
 import { TickThrottle } from './throttle.ts';
 import { TpsEstimator, type WallClock } from './tps-estimate.ts';
+import { countSliceFor } from './wire-expand.ts';
 
 /** The holder name a reflex's tick takes on the lane's contention. */
 const REFLEX_HOLDER = 'reflex';
@@ -27,6 +28,8 @@ export interface LaneWiringOptions {
   bot: Bot;
   runtime: BodyRuntime;
   expand: PlanExpand;
+  /** Resolves a body's origin before it is stored (queue.ts `pin`); default: as given. */
+  pin?: (body: PlanBody) => PlanBody;
   /** Persists queued plans and progress (wire-plan-store); left out, in memory only. */
   store?: PlanQueueStore;
   /** Wall-clock ms for the TPS estimate and the progress cadence; default Date.now. */
@@ -51,18 +54,21 @@ export function createLaneWiring(options: LaneWiringOptions): LaneWiring {
   const { bot, runtime } = options;
   const lane = new PlanLane();
   const contention = contendFor(lane);
+  const clock: WallClock = options.wallClock ?? (() => Date.now());
+  const tps = new TpsEstimator(clock);
   const queue = new PlanQueue({
     lifeId: options.lifeId,
     lane,
     contention,
     expand: options.expand,
+    ...(options.pin === undefined ? {} : { pin: options.pin }),
     ...(options.store === undefined ? {} : { store: options.store }),
+    // The add-time count yields on the same TPS reading the lane's throttle uses (throttle.ts).
+    sliceFor: () => countSliceFor(tps.tps()),
   });
   const env = cellEnvOf(bot);
   // The stand path (cell-stand.ts) is part of the cell executor only here, where the building flag is on.
   const handlers: CellHandlers = { ...cellHandlersOf(runtime), stand: standPortOf(bot) };
-  const clock: WallClock = options.wallClock ?? (() => Date.now());
-  const tps = new TpsEstimator(clock);
   // The throttle asks before each cell, in world ticks, with the Body's own TPS estimate (throttle.ts).
   const throttle = new TickThrottle(() => tps.tps());
   const metrics = options.metrics;

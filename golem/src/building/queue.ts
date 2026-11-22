@@ -12,7 +12,7 @@ import { arrayCellSource, type CellSource, cellsOf, filteredCellSource } from '.
 import type { Contention } from './contention.ts';
 import type { LaneDeps, LanePlan, PlanLane } from './lane.ts';
 import type { SkippedCell } from './plan-checkpoint.ts';
-import { countPlanCells } from './wire-expand.ts';
+import { COUNT_SLICE, countPlanCells } from './wire-expand.ts';
 
 /** The plan body a chunk carries: the palette and steps, and where and in what order they go. */
 export interface PlanBody {
@@ -50,12 +50,19 @@ export type QueueLane = Pick<
 >;
 
 /**
+ * What the store keeps for a plan. Format 2 is the body (steps, palette, origin, order), so a
+ * stored plan is small whatever its cell count; the lane regenerates the cells from it. Format 1 is
+ * the cells themselves, kept only for an active plan's replace (its placed cells are filtered out).
+ */
+export type StoredPlan = { format: 1; cells: readonly PlanCell[] } | { format: 2; body: PlanBody };
+
+/**
  * Optional persistence the queue calls (BLD-05 wiring). `stored` runs before a plan is queued or
  * replaces one, and returns how many chunks it was kept in; a throw refuses the message. `dropped`
  * runs when a plan leaves the queue (cancel, or finished). `progressed` runs after each lane slice.
  */
 export interface PlanQueueStore {
-  stored(planId: string, cells: readonly PlanCell[]): Promise<number>;
+  stored(planId: string, plan: StoredPlan): Promise<number>;
   dropped(planId: string): Promise<void>;
   progressed(lane: QueueLane): void;
 }
@@ -65,8 +72,15 @@ export interface PlanQueueOptions {
   lane: QueueLane;
   contention: Contention;
   expand: PlanExpand;
+  /**
+   * Resolves what a stored body must not leave open (the origin `here`, which is the feet at add
+   * time). Default: the body as given.
+   */
+  pin?: (body: PlanBody) => PlanBody;
   /** Persists plans and progress; left out, the queue is in memory only (as before). */
   store?: PlanQueueStore;
+  /** Cells counted between two yields to the event loop, read before each slice (TPS-aware). Default: COUNT_SLICE. */
+  sliceFor?: () => number;
 }
 
 interface Upload {
@@ -105,7 +119,9 @@ export class PlanQueue {
   private readonly lane: QueueLane;
   private readonly contention: Contention;
   private readonly expand: PlanExpand;
+  private readonly pin: (body: PlanBody) => PlanBody;
   private readonly store: PlanQueueStore | null;
+  private readonly sliceFor: () => number;
   private readonly uploads = new Map<string, Upload>();
   private readonly waiting: Entry[] = [];
   private active: Entry | null = null;
@@ -115,7 +131,9 @@ export class PlanQueue {
     this.lane = options.lane;
     this.contention = options.contention;
     this.expand = options.expand;
+    this.pin = options.pin ?? ((body) => body);
     this.store = options.store ?? null;
+    this.sliceFor = options.sliceFor ?? (() => COUNT_SLICE);
   }
 
   /** Takes one plan message. A final chunk is joined with its earlier chunks and then queued or replaced. */
@@ -195,16 +213,23 @@ export class PlanQueue {
 
   /**
    * Puts back a plan saved before a restart, from its cursor, as the active plan. Refused (false)
-   * when a plan is already active. The cells come from the store; nothing is re-expanded.
+   * when a plan is already active. A format 2 plan is expanded again from its stored body (the total
+   * is a streamed count); a format 1 plan's cells are read from the store. A body that does not
+   * expand throws, and nothing is started.
    */
-  restore(
-    entry: { planId: string; cells: readonly PlanCell[]; chunks: number },
+  async restore(
+    entry: { planId: string; plan: StoredPlan; chunks: number },
     cursor: number,
     saved?: { counts: Record<string, number>; skipped: SkippedCell[] },
-  ): boolean {
+  ): Promise<boolean> {
     if (this.active !== null || this.lane.state !== 'idle') return false;
-    const total = entry.cells.length;
-    const make = () => arrayCellSource(entry.cells);
+    const { plan } = entry;
+    const make: () => CellSource =
+      plan.format === 1 ? () => arrayCellSource(plan.cells) : () => this.expand(plan.body);
+    const total =
+      plan.format === 1 ? plan.cells.length : await countPlanCells(make(), this.sliceFor);
+    // The count yields to the event loop, so the lane is checked again before it starts.
+    if (this.active !== null || this.lane.state !== 'idle') return false;
     const started = this.lane.start(
       {
         lifeId: this.lifeId,
@@ -223,30 +248,34 @@ export class PlanQueue {
   private async apply(
     op: 'add' | 'replace',
     planId: string,
-    body: PlanBody,
+    raw: PlanBody,
     chunks: number,
   ): Promise<SubmitReply> {
+    // The origin is pinned first, so a stored body and the cells expanded from it agree after a restart.
+    const body = this.pin(raw);
     const make = () => this.expand(body);
     let total: number;
     try {
-      total = await countPlanCells(make());
+      total = await countPlanCells(make(), this.sliceFor);
     } catch (error) {
       return { kind: 'refused', message: `plan ${planId} does not expand: ${errorText(error)}` };
     }
     if (op === 'add') {
       if (this.isKnown(planId))
         return { kind: 'refused', message: `plan ${planId} already exists` };
-      const kept = await this.keep(planId, make, chunks);
+      const kept = await this.keep(planId, () => ({ format: 2, body }), chunks);
       if (typeof kept !== 'number') return kept;
       this.waiting.push({ planId, make, total, chunks: kept });
       return { kind: 'queued', cells: total, position: this.waiting.length };
     }
     if (this.active?.planId === planId) {
+      // Known gap (B8-lazy6a): an active plan's replace still stores cells, because the rest of the plan
+      // is the cells not yet placed, and a steps record cannot say which those are without the placed keys.
       const cursor = this.lane.checkpointState()?.cursor ?? 0;
       const placed = keysBefore(this.active.make(), cursor);
       const rest = () => filteredCellSource(make(), (c) => !placed.has(cellKey(c)));
-      const restTotal = await countPlanCells(rest());
-      const kept = await this.keep(planId, rest, chunks);
+      const restTotal = await countPlanCells(rest(), this.sliceFor);
+      const kept = await this.keep(planId, () => ({ format: 1, cells: cellsOf(rest()) }), chunks);
       if (typeof kept !== 'number') return kept;
       await this.dropActive();
       this.waiting.unshift({ planId, make: rest, total: restTotal, chunks: kept });
@@ -254,24 +283,24 @@ export class PlanQueue {
     }
     const idx = this.waiting.findIndex((e) => e.planId === planId);
     if (idx < 0) return { kind: 'refused', message: `no plan ${planId} to replace` };
-    const kept = await this.keep(planId, make, chunks);
+    const kept = await this.keep(planId, () => ({ format: 2, body }), chunks);
     if (typeof kept !== 'number') return kept;
     this.waiting[idx] = { planId, make, total, chunks: kept };
     return { kind: 'queued', cells: total, position: idx + 1 };
   }
 
   /**
-   * Stores a plan through the store, if any. Returns its chunk count, or a refusal when the store fails.
-   * The store takes an array (its format is unchanged), so a stored plan is read whole here.
+   * Stores a plan through the store, if any. `plan` is read only when there is a store. Returns the
+   * chunk count, or a refusal when the store fails.
    */
   private async keep(
     planId: string,
-    make: () => CellSource,
+    plan: () => StoredPlan,
     chunks: number,
   ): Promise<number | SubmitReply> {
     if (this.store === null) return chunks;
     try {
-      return await this.store.stored(planId, cellsOf(make()));
+      return await this.store.stored(planId, plan());
     } catch (error) {
       return { kind: 'refused', message: `plan ${planId} not stored: ${errorText(error)}` };
     }

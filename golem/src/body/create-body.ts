@@ -10,7 +10,7 @@ import { setSwimEnabled } from '../actions/water-rules.ts';
 import type { PlanQueueStore } from '../building/queue.ts';
 import { planHandler } from '../building/queue-action.ts';
 import type { WallClock } from '../building/tps-estimate.ts';
-import { createPlanSource } from '../building/wire-expand.ts';
+import { createPlanSource, pinOrigin } from '../building/wire-expand.ts';
 import { createLaneWiring, type LaneWiring } from '../building/wire-lane.ts';
 import {
   createSeenWiring,
@@ -221,6 +221,7 @@ export function createBody(options: CreateBodyOptions): Body {
       bot: options.bot,
       runtime: built,
       expand: createPlanSource(feet),
+      pin: (body) => pinOrigin(body, feet),
       ...(options.planStore === undefined ? {} : { store: options.planStore }),
       ...(options.wallClock === undefined ? {} : { wallClock: options.wallClock }),
       ...(options.metrics === undefined ? {} : { metrics: options.metrics }),

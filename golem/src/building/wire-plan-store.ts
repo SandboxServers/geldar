@@ -1,8 +1,10 @@
-// Plan persistence for one Body (BLD-05 wiring, BLD-13 resume). A queued plan is stored as its cells
-// (JSON, chunked under the KV value limit) in the plan bucket, and the lane's cursor is saved to the
-// checkpoint bucket in the background. After a restart `resumePlanLane` puts the saved plan back as
-// the active plan, from its cursor. Cells are stored, not the plan body, so `origin: "here"` is not
-// resolved again at restart.
+// Plan persistence for one Body (BLD-05 wiring, BLD-13 resume). A queued plan is stored in the plan
+// bucket (JSON, chunked under the KV value limit) and the lane's cursor is saved to the checkpoint
+// bucket in the background. Format 2 (the default for an added plan) is the plan body: its steps,
+// palette, origin and order, so the record is small whatever the cell count. Format 1 is the cell
+// array, still read and run (an active plan's replace stores it). After a restart `resumePlanLane`
+// puts the saved plan back as the active plan, from its cursor. The origin is pinned before storing
+// (queue.ts `pin`), so `origin: "here"` is never resolved again at restart.
 import { errorText } from '../actions/outcome.ts';
 import type { BodyKv } from '../body/checkpoint.ts';
 import type { PlanCell } from './cell-do.ts';
@@ -13,7 +15,29 @@ import {
   PlanCheckpointWriter,
 } from './plan-checkpoint.ts';
 import { chunkKey, deletePlan, type PlanKv, readPlan, writePlan } from './plan-store.ts';
-import type { PlanQueue, PlanQueueStore, QueueLane } from './queue.ts';
+import type { PlanBody, PlanQueue, PlanQueueStore, QueueLane, StoredPlan } from './queue.ts';
+
+/** The text one stored plan is written as: format 1 is the cell array, format 2 `{format, body}`. */
+export function encodePlan(plan: StoredPlan): string {
+  return JSON.stringify(plan.format === 1 ? plan.cells : { format: 2, body: plan.body });
+}
+
+/**
+ * Reads a stored plan's text back. A list is format 1 (its cells); `{format: 2, body}` is format 2.
+ * Anything else throws, so a plan that is not a stored plan is not run.
+ */
+export function decodePlan(planId: string, text: string): StoredPlan {
+  const parsed: unknown = JSON.parse(text);
+  if (Array.isArray(parsed)) return { format: 1, cells: parsed as PlanCell[] };
+  const record = parsed as { format?: unknown; body?: unknown } | null;
+  const body = record?.body as Partial<PlanBody> | null | undefined;
+  if (record?.format === 2 && typeof body === 'object' && body !== null) {
+    if (typeof body.palette === 'object' && body.palette !== null && Array.isArray(body.steps)) {
+      return { format: 2, body: body as PlanBody };
+    }
+  }
+  throw new Error(`plan ${planId} is not a stored plan`);
+}
 
 /** Adapts a restart bucket to the plan store's KV surface (create or update on put). */
 export function planKvOf(kv: BodyKv): PlanKv {
@@ -62,9 +86,9 @@ export class PlanPersistence implements PlanQueueStore {
     });
   }
 
-  /** Writes the cells as chunks; a surplus of older chunks is removed. Throws when the write fails. */
-  async stored(planId: string, cells: readonly PlanCell[]): Promise<number> {
-    const count = await writePlan(this.plans, this.lifeId, planId, JSON.stringify(cells));
+  /** Writes the plan as chunks; a surplus of older chunks is removed. Throws when the write fails. */
+  async stored(planId: string, plan: StoredPlan): Promise<number> {
+    const count = await writePlan(this.plans, this.lifeId, planId, encodePlan(plan));
     const prev = this.counts.get(planId) ?? 0;
     this.counts.set(planId, count);
     for (let seq = count; seq < prev; seq++) {
@@ -120,11 +144,9 @@ export class PlanPersistence implements PlanQueueStore {
     }
   }
 
-  /** Reads a stored plan's cells back. Throws when a chunk is missing or the cells do not parse. */
-  async readCells(planId: string, chunks: number): Promise<PlanCell[]> {
-    const cells: unknown = JSON.parse(await readPlan(this.plans, this.lifeId, planId, chunks));
-    if (!Array.isArray(cells)) throw new Error(`plan ${planId} is not a list of cells`);
-    return cells as PlanCell[];
+  /** Reads a stored plan back, in either format. Throws when a chunk is missing or the text does not parse. */
+  async readRecord(planId: string, chunks: number): Promise<StoredPlan> {
+    return decodePlan(planId, await readPlan(this.plans, this.lifeId, planId, chunks));
   }
 
   /** Records a plan found in the store, so a later drop removes its chunks. */
@@ -149,10 +171,10 @@ export async function resumePlanLane(
   const saved = await persistence.readCheckpoint();
   if (saved === null) return 'none';
   try {
-    const cells = await persistence.readCells(saved.plan_id, saved.chunks);
-    const entry = { planId: saved.plan_id, cells, chunks: saved.chunks };
+    const plan = await persistence.readRecord(saved.plan_id, saved.chunks);
+    const entry = { planId: saved.plan_id, plan, chunks: saved.chunks };
     const counts = { counts: saved.counts, skipped: saved.skipped };
-    if (!queue.restore(entry, saved.cursor, counts)) return 'failed';
+    if (!(await queue.restore(entry, saved.cursor, counts))) return 'failed';
     persistence.adopt(saved.plan_id, saved.chunks);
     return 'resumed';
   } catch (error) {
