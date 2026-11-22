@@ -8,7 +8,6 @@ const STUBS = [
   'saveCheckpoint',
   'doCell',
   'countMaterials',
-  'standFor',
   'scaffoldFor',
   'hazardAt',
   'laneStateOf',
