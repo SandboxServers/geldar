@@ -3,7 +3,7 @@
  * Nothing restarts a killed Body by itself: the supervisor in `golem/src/adam/main.ts` only sees faults raised inside
  * its own process, so a killed process stays down until this command starts another. It signals only the PID in its
  * owner record, and only when the live process still matches that record (PID, start time and command line). A
- * process it cannot verify is never signalled. The animus and lantern-local processes are never touched.
+ * process it cannot verify is never signalled. The lantern-local process is never touched.
  */
 import { BODY, type Service } from './procs.ts';
 

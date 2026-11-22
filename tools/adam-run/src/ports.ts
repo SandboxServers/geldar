@@ -4,20 +4,12 @@
  */
 import { posix } from 'node:path';
 
-/** The services the protocol watches and stops. Start order: body, animus, lantern-local (as `./geldar.ps1 adam up`). */
-export const PROBES = [
-  'animus',
-  'body',
-  'lantern-local',
-  'ollama',
-  'postgres',
-  'nats',
-  'paper',
-] as const;
+/** The services the protocol watches and stops. Start order: body, lantern-local (as `./geldar.ps1 adam up`). */
+export const PROBES = ['body', 'lantern-local', 'ollama', 'postgres', 'nats', 'paper'] as const;
 export type Probe = (typeof PROBES)[number];
 
 /** The Golem-side services the protocol stops, in stop order: the reverse of the start order, so the Body is last. */
-export type Service = 'body' | 'animus' | 'lantern-local';
+export type Service = 'body' | 'lantern-local';
 
 export interface Clock {
   nowMs(): number;

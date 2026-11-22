@@ -309,10 +309,7 @@ export async function runSequence(deps: SequenceDeps, input: RunInput): Promise<
 
     if (restartDeadline !== null) {
       const recovered =
-        obs.lifeId === lifeBeforeRestart &&
-        obs.alive.animus &&
-        obs.alive['lantern-local'] &&
-        obs.alive.body;
+        obs.lifeId === lifeBeforeRestart && obs.alive['lantern-local'] && obs.alive.body;
       if (recovered) restartDeadline = null;
       else if (now >= restartDeadline)
         return abortWith(

@@ -39,7 +39,13 @@ describe('entry point', () => {
 describe('start and stop order', () => {
   it('stops in reverse start order with the Body last', () => {
     expect(SERVICES[0]?.name).toBe('body');
-    expect(stopOrder().map((s) => s.name)).toEqual(['lantern-local', 'animus', 'body']);
+    expect(stopOrder().map((s) => s.name)).toEqual(['lantern-local', 'body']);
+  });
+
+  // Revert-check: an animus entry reappearing in the process list fails here.
+  it('lists only the Body and lantern-local: no Mind process is started or tracked', () => {
+    expect(SERVICES.map((s) => s.name)).toEqual(['body', 'lantern-local']);
+    expect(SERVICES.some((s) => s.dir === 'animus' || s.name.includes('animus'))).toBe(false);
   });
 });
 
@@ -51,17 +57,16 @@ describe('status', () => {
   });
 
   it('prints down and names stale PID files', () => {
-    const rows = [{ name: 'animus', state: 'stale' as const, pid: null }, ...stopped.slice(2)];
+    const rows = [{ name: 'body', state: 'stale' as const, pid: null }, ...stopped.slice(1)];
     const lines = formatStatus(rows, 'ag_adam_01', null);
     expect(lines[0]).toBe('down');
-    expect(lines[1]).toContain('animus');
+    expect(lines[1]).toContain('body');
   });
 
   it('prints each process and the last latency when something runs', () => {
     const rows = [{ name: 'body', state: 'running' as const, pid: 10 }, ...stopped.slice(1)];
     expect(formatStatus(rows, 'ag_adam_01', 1830)).toEqual([
       'body: running (pid 10)',
-      'animus: stopped',
       'lantern-local: stopped',
       'life: ag_adam_01',
       'last thought latency: 1830 ms',

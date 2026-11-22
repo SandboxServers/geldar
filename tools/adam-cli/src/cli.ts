@@ -8,17 +8,14 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parse } from 'yaml';
 import { restartBody } from './body-restart.ts';
-import { adamEnv, loopbackProblems, parseComposePs, parseEnvFile, shardProblems } from './env.ts';
+import { adamEnv, loopbackProblems, parseEnvFile } from './env.ts';
 import {
   compare,
   installedFromTags,
   type LifeKey,
   type PinRow,
-  preflightProblems,
   readLives,
   readPins,
-  readSeed,
-  readTierTags,
   type Tier,
 } from './pins.ts';
 import { BODY, formatStatus, isLifeId, latencySql, parseLatency, SERVICES } from './procs.ts';
@@ -34,7 +31,6 @@ import {
   ROOT,
   readOwner,
   readRows,
-  startAll,
   startService,
   stopAll,
   tailLines,
@@ -42,7 +38,11 @@ import {
 import { recordDigests, selectLife } from './yaml-edit.ts';
 
 const USAGE =
-  'usage: ./geldar.ps1 adam up [--model strong|fast] | select --model strong|fast|smoke | down | status | logs [body|animus|lantern-local] [--follow] | models [--record] | restart-body';
+  'usage: ./geldar.ps1 adam select --model strong|fast|smoke | down | status | logs [body|lantern-local] [--follow] | models [--record] | restart-body';
+
+/** `adam up` has no Mind to start: animus was removed (decision 0430); the live Mind is the scriptorium. */
+export const ADAM_UP_REFUSAL =
+  'adam up needs a Mind; animus was removed (decision 0430); the live Mind is the scriptorium';
 
 class Refusal extends Error {}
 
@@ -109,56 +109,6 @@ export function selectInFile(file: string, key: LifeKey): string {
   applyLife(file, source, key === 'smoke' ? 'fast' : key, life);
   console.log(`selected: life ${life} (${key})`);
   return life;
-}
-
-async function up(args: string[]): Promise<void> {
-  const running = readRows().filter((r) => r.state === 'running');
-  if (running.length > 0) {
-    throw new Refusal(
-      `already running (${running.map((r) => r.name).join(', ')}); run ./geldar.ps1 adam down first`,
-    );
-  }
-  const env = runEnv();
-  const file = shardFile(env);
-  const source = readFileSync(file, 'utf8');
-  const doc: unknown = parse(source);
-  const wanted = argValue(args, '--model');
-  if (args.includes('--model') && wanted !== 'strong' && wanted !== 'fast') {
-    throw new Refusal('--model takes strong or fast');
-  }
-  const lives = readLives(doc);
-  const agent = (doc as { mind: { agent: { tier: Tier } } }).mind.agent;
-  const tier: Tier = (wanted as Tier | undefined) ?? agent.tier;
-  const shard = env.GELDAR_SHARD ?? (doc as { shard: string }).shard;
-  try {
-    const rows = parseComposePs(await compose(shard, ['ps', '--format', 'json']));
-    const problems = shardProblems(rows, shard);
-    if (problems.length > 0) throw new Refusal(`the shard is not healthy:\n${problems.join('\n')}`);
-  } catch (error) {
-    if (error instanceof Refusal) throw error;
-    throw new Refusal(
-      `could not read the shard state with docker compose (${String(error)}); is Docker running?`,
-    );
-  }
-  const rows = compare(readPins(doc), await installedModels(env));
-  const problems = preflightProblems(rows, readTierTags(doc, tier), readSeed(doc));
-  if (problems.length > 0) throw new Refusal(`refusing to start:\n${problems.join('\n')}`);
-  const life = lives[tier];
-  if (wanted !== undefined) applyLife(file, source, tier, life);
-  if (tier === 'fast') {
-    console.log(`${life} is the 8B life: it needs a fresh world volume (decision 0051)`);
-  }
-  const dead = await startAll(env);
-  if (dead.length > 0) {
-    for (const name of dead) {
-      const service = SERVICES.find((s) => s.name === name);
-      if (service)
-        console.log(`--- ${name} (last lines of ${logFile(service)})\n${tailLines(service, 15)}`);
-    }
-    await stopAll();
-    throw new Refusal(`${dead.join(', ')} exited at start; the rest was stopped`);
-  }
-  console.log(upLine(readFileSync(file, 'utf8')));
 }
 
 /** The last line of `up`: the life the Mind selects now (its username), which is not always a `mind.lives` entry. */
@@ -262,7 +212,7 @@ async function logs(args: string[]): Promise<void> {
 
 /**
  * `restart-body`: ends only the Body (verified by its owner record) and starts a fresh one with the command and the
- * environment `adam up` gives it. animus and lantern-local keep running.
+ * environment the Body was started with. lantern-local keeps running.
  */
 async function restartBodyCommand(): Promise<void> {
   const env = runEnv();
@@ -291,8 +241,7 @@ export async function run(argv: string[]): Promise<number> {
   try {
     switch (command) {
       case 'up':
-        await up(args);
-        return 0;
+        throw new Refusal(ADAM_UP_REFUSAL);
       case 'select':
         select(args);
         return 0;

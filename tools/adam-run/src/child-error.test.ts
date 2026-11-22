@@ -22,7 +22,7 @@ describe('stderrTail: the end of a failed child stderr for an abort reason', () 
         'rcon password: rcon-secret-9',
         'api_key=abc123def',
         'Authorization: Bearer eyJhbGciOi.payload.sig',
-        'adam up: animus.log fatal ENOENT',
+        'adam logs: lantern-local.log fatal ENOENT',
       ].join('\n'),
     );
     expect(tail).not.toContain('hunter2-real');

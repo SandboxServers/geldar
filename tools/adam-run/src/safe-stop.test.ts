@@ -63,15 +63,14 @@ describe('serviceAlive', () => {
       ),
     ];
     expect(serviceAlive('body', table)).toBe(true);
-    expect(serviceAlive('animus', table)).toBe(false);
+    expect(serviceAlive('lantern-local', table)).toBe(false);
   });
 
-  it('finds the Mind and the Lantern by their entries too', () => {
+  it('finds the Lantern by its entry, and does not know a Mind process', () => {
     const table = [
       proc(2, OWNED_AT, 'node C:/repo/animus/src/main.ts'),
       proc(3, OWNED_AT, 'node C:/repo/lantern-local/src/main.ts'),
     ];
-    expect(serviceAlive('animus', table)).toBe(true);
     expect(serviceAlive('lantern-local', table)).toBe(true);
     expect(serviceAlive('body', table)).toBe(false);
   });
@@ -81,7 +80,7 @@ describe('ownership', () => {
   const cases: [string, ProcessView, 'other' | 'owned' | 'unverifiable'][] = [
     [
       'a service entry file started during the run',
-      proc(1, OWNED_AT, 'node C:\\repo\\animus\\src\\main.ts'),
+      proc(1, OWNED_AT, 'node C:\\repo\\golem\\src\\adam\\main.ts'),
       'owned',
     ],
     [
@@ -91,16 +90,22 @@ describe('ownership', () => {
     ],
     [
       'the same entry file started before the run',
-      proc(3, BEFORE_RUN, 'node animus/src/main.ts'),
+      proc(3, BEFORE_RUN, 'node golem/src/adam/main.ts'),
       'other',
     ],
     [
       'a marker with an unreadable start time',
-      proc(4, '', 'node animus/src/main.ts'),
+      proc(4, '', 'node golem/src/adam/main.ts'),
       'unverifiable',
     ],
     ['an unrelated process', proc(5, OWNED_AT, 'node server.js'), 'other'],
     ['a process with an unreadable command line', proc(6, OWNED_AT, ''), 'other'],
+    // Revert-check: an animus entry restored to the stop markers would make this 'owned' and fail here.
+    [
+      'an animus entry file: the stop knows no Mind process, so it is left alone',
+      proc(7, OWNED_AT, 'node C:\\repo\\animus\\src\\main.ts'),
+      'other',
+    ],
   ];
   it.each(cases)('%s', (_name, p, want) => {
     expect(ownership(p, START_MS)).toBe(want);
@@ -108,10 +113,10 @@ describe('ownership', () => {
 });
 
 describe('safeStop', () => {
-  it('stops lantern-local, animus and the Body, in that order', async () => {
+  it('stops lantern-local and the Body, in that order, and never a Mind process', async () => {
     const r = rig();
     const out = await safeStop(r.deps, r.input);
-    expect(r.sup.calls).toEqual(['stop:lantern-local', 'stop:animus', 'stop:body']);
+    expect(r.sup.calls).toEqual(['stop:lantern-local', 'stop:body']);
     expect(out).toMatchObject({ orphans: 'pass', exitCode: 0, alreadyStopped: false });
   });
 
@@ -133,7 +138,6 @@ describe('safeStop', () => {
       atMs: START_MS + 9 * MIN,
       lifeId: 'ag_smoke_01',
       alive: {
-        animus: true,
         body: true,
         'lantern-local': true,
         ollama: false,
@@ -191,7 +195,7 @@ describe('safeStop', () => {
 
   it('does not signal a process it cannot verify, and exits non-zero', async () => {
     const r = rig();
-    r.procs.table = [proc(42, '', 'node animus/src/main.ts')];
+    r.procs.table = [proc(42, '', 'node lantern-local/src/main.ts')];
     r.procs.survives.add(42);
     const out = await safeStop(r.deps, r.input);
     expect(r.procs.signals).toEqual([]);
@@ -201,7 +205,7 @@ describe('safeStop', () => {
 
   it('leaves a process from before the run alone', async () => {
     const r = rig();
-    r.procs.table = [proc(43, BEFORE_RUN, 'node animus/src/main.ts')];
+    r.procs.table = [proc(43, BEFORE_RUN, 'node lantern-local/src/main.ts')];
     const out = await safeStop(r.deps, r.input);
     expect(r.procs.signals).toEqual([]);
     expect(out.orphans).toBe('pass');
@@ -209,10 +213,10 @@ describe('safeStop', () => {
 
   it('records a stop error and still stops the other services', async () => {
     const r = rig();
-    (r.sup as FakeSupervisor).failStop = 'animus';
+    (r.sup as FakeSupervisor).failStop = 'lantern-local';
     const out = await safeStop(r.deps, r.input);
-    expect(r.sup.calls).toEqual(['stop:lantern-local', 'stop:animus', 'stop:body']);
-    expect(out.stopErrors).toEqual(['animus: animus would not stop']);
+    expect(r.sup.calls).toEqual(['stop:lantern-local', 'stop:body']);
+    expect(out.stopErrors).toEqual(['lantern-local: lantern-local would not stop']);
     expect(out.exitCode).toBe(1);
   });
 

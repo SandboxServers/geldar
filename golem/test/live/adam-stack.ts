@@ -1,6 +1,6 @@
 /**
  * Shared pieces of the Mind live cases (P0-33b): start and stop the three host processes of
- * decision 0050 (Adam's Body, animus, lantern-local), poll Postgres for what the Mind recorded, and
+ * decision 0050 (Adam's Body and lantern-local; animus was removed, decision 0430, so no Mind process is started here), poll Postgres for what the Mind recorded, and
  * the pure checks the cases use. Nothing here needs Ollama: the unit test runs it with fakes and a
  * trivial child process.
  */
@@ -32,8 +32,7 @@ export interface ProcessSpec {
 }
 
 /**
- * The three process specs, in the start order of `./geldar.ps1 adam up`: the Body, animus, then
- * lantern-local, after which the stack waits for animus to log `thinker_connected`. They get the
+ * The process specs, in the start order of `./geldar.ps1 adam up`: the Body, then lantern-local. They get the
  * environment `adam up` gives them: the shard name and the loopback defaults the processes read
  * themselves; secrets are read by the processes from `compose/secrets/*.txt`, never passed here.
  */
@@ -48,19 +47,11 @@ export function adamProcessSpecs(root: string, base: NodeJS.ProcessEnv): Process
       ready: /"event":"body_started"/,
     },
     {
-      name: 'animus',
-      script: join(root, 'animus', 'src', 'main.ts'),
-      cwd: root,
-      env,
-      ready: /"event":"mind_started"/,
-    },
-    {
       name: 'lantern-local',
       script: join(root, 'lantern-local', 'src', 'main.ts'),
       cwd: root,
       env,
       ready: /serving /,
-      awaits: { process: 'animus', pattern: /"event":"thinker_connected"/ },
     },
   ];
 }
@@ -249,7 +240,7 @@ export class AdamStack {
 
   /** Stops the Mind first, then the local Thinker, and the Body last (it leaves its checkpoint). */
   async stop(): Promise<void> {
-    const order = ['animus', 'lantern-local', 'adam-body'];
+    const order = ['lantern-local', 'adam-body'];
     const ranked = [...this.processes].sort(
       (a, b) => order.indexOf(a.spec.name) - order.indexOf(b.spec.name),
     );

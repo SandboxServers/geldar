@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { parse } from 'yaml';
-import { run, selectInFile, upLine } from './cli.ts';
+import { ADAM_UP_REFUSAL, run, selectInFile, upLine } from './cli.ts';
 
 /**
  * The select keys of the committed strong life, written inline. The test never reads the live shard
@@ -39,6 +39,16 @@ describe('adam up prints the life the Mind selects', () => {
     expect(upLine(readFileSync(file, 'utf8'))).toBe(
       'up: life ag_adam_04; see ./geldar.ps1 adam status',
     );
+  });
+});
+
+describe('adam up is refused: there is no Mind process to start', () => {
+  // Revert-check: restoring the old `up` dispatch (which starts the Body and lantern-local) makes this fail.
+  it('exits 1 with ADAM_UP_REFUSAL and starts nothing', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    expect(await run(['up'])).toBe(1);
+    expect(error.mock.calls.flat().join('\n')).toContain(ADAM_UP_REFUSAL);
+    expect(ADAM_UP_REFUSAL).toContain('animus was removed (decision 0430)');
   });
 });
 

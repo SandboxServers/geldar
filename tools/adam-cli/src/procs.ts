@@ -7,7 +7,7 @@ import { join } from 'node:path';
 /** One host process of the run. */
 export interface Service {
   /** The name `adam logs <service>` and the PID and log file names use. */
-  name: 'body' | 'animus' | 'lantern-local';
+  name: 'body' | 'lantern-local';
   /** The package directory it runs from, relative to the repository root. */
   dir: string;
   /** The TypeScript entry point, relative to `dir`. */
@@ -24,7 +24,6 @@ export const BODY: Service = { name: 'body', dir: 'golem', entry: 'src/adam/main
  */
 export const SERVICES: readonly Service[] = [
   BODY,
-  { name: 'animus', dir: 'animus', entry: 'src/main.ts' },
   { name: 'lantern-local', dir: 'lantern-local', entry: 'src/main.ts' },
 ];
 
