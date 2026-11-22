@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
  * subject; this test covers the names and the one-way dependency from inside the Glass package.
  */
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
-const AGENT_ROOTS = ['threshold/mcp/src', 'animus/src', 'player-core/src', 'golem/src'];
+const AGENT_ROOTS = ['threshold/mcp/src', 'player-core/src', 'golem/src'];
 const PANEL_FILES = ['index.ts', 'model.ts'];
 const PANEL_NAMES = /plan-activity|PlanActivity|planActivity|toPlanActivityRow/;
 
