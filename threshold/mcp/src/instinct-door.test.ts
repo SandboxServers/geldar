@@ -30,7 +30,8 @@ const NOT_CALLED: Partial<Record<McpToolName, string>> = {
   wait: 'blocks until the world moves (max_seconds 1 ran past 60 s in the fake world)',
   sleep: 'starts a sleep plan on the Body; the door rig has no quick fixture for it',
   survey: 'the door rig has no Body survey fixture, and the world does not wire the tool yet',
-  plan_check: 'the door rig has no Body read fixture for the pack and seen map, and the world does not wire the tool yet',
+  plan_check:
+    'the door rig has no Body read fixture for the pack and seen map, and the world does not wire the tool yet',
 };
 
 /** Valid minimal inputs (from each tool's own tests), so the scan runs the success path of these tools. */
