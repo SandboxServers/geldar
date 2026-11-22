@@ -5,6 +5,8 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { describe, expect, it, vi } from 'vitest';
 import type { RestartBodyOptions, RestartedBody } from '../body/restart.ts';
+import { SeenMap } from '../building/seen/section.ts';
+import { surveyBox } from '../building/seen/survey.ts';
 import type { LifeCharacter } from '../character/character-config.ts';
 import { RecentEvents } from '../mind-link/recent-events.ts';
 import { planOf } from '../mind-link/server.fakes.ts';
@@ -148,6 +150,7 @@ function rig(): Rig {
         generation: 4,
         outcome: { kind: 'idle', reason: 'no_checkpoint' },
         body: {
+          seen: null,
           executor: {
             notifyAddressed: async (from: string) => {
               addressed.push(from);
@@ -170,6 +173,46 @@ function rig(): Rig {
   };
   return { env, options, inner, addressed, stops, served, deliver };
 }
+
+describe('the survey reaches the Body, with the building flag (BLD-38g)', () => {
+  const SURVEY = { box: { from: { x: 1, y: 64, z: 1 }, to: { x: 2, y: 64, z: 1 } } };
+
+  it('serves the survey from the Body seen map, and passes the life agent to restartBody', async () => {
+    const r = rig();
+    const restart = r.env.restart as NonNullable<AdamBodyEnv['restart']>;
+    const map = new SeenMap();
+    map.record(1, 64, 1, 'stone', 10);
+    r.env.config = { ...config(), building: true };
+    r.env.restart = async (o) => {
+      const restarted = await restart(o);
+      restarted.body.seen = {
+        map,
+        ready: Promise.resolve(),
+        survey: (box, nowTick) => surveyBox(map, box, nowTick),
+        flush: async () => null,
+        eraseLife: async () => 0,
+        stop: () => undefined,
+      };
+      return restarted;
+    };
+    linkOptions.length = 0;
+    const running = await startAdamBody(r.env, fakeBot());
+    expect(r.options[0]).toMatchObject({ building: true, agentId: config().lifeId });
+    const survey = (linkOptions[0] as unknown as { survey?: (request: unknown) => unknown }).survey;
+    expect(survey).toBeDefined();
+    const reply = survey?.(SURVEY) as { text: string; truncated: boolean };
+    expect(reply.text).toContain('stone');
+    await running.stop();
+  });
+
+  it('wires no survey while the building flag is off', async () => {
+    const r = rig();
+    linkOptions.length = 0;
+    const running = await startAdamBody(r.env, fakeBot());
+    expect((linkOptions[0] as unknown as { survey?: unknown }).survey).toBeUndefined();
+    await running.stop();
+  });
+});
 
 describe('the action span wiring in a Body (T-07)', () => {
   const done = { action_id: 'w1', state: 'done', result: { status: 'completed' } };
@@ -467,8 +510,8 @@ describe('startAdamBody', () => {
     expect(o?.timeScale).toBe(2);
     expect(typeof o?.currentRevision).toBe('function');
     expect(running.generation).toBe(4);
-    // The three Body subjects of the link, and the image subject of VP-2 (decision 0156).
-    expect(r.served).toHaveLength(4);
+    // The four Body subjects of the link (snapshot, plan, view, survey), and the image subject of VP-2 (decision 0156).
+    expect(r.served).toHaveLength(5);
     expect(r.served.filter((s) => s.endsWith('.image'))).toHaveLength(1);
     await running.stop();
   });
@@ -606,6 +649,7 @@ describe('startAdamBody', () => {
       `unserve ${r.served[1]}`,
       `unserve ${r.served[2]}`,
       `unserve ${r.served[3]}`,
+      `unserve ${r.served[4]}`,
       'executor.stop',
       'runtime.cancelAction',
       'restarted.stop',

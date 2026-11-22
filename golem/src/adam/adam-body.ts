@@ -24,6 +24,7 @@ import { placeFields } from '../body/where.ts';
 import { serveBodyImages } from '../body-image/image-serve.ts';
 import { ImageLimiter } from '../body-image/limiter.ts';
 import { RenderHost } from '../body-image/render-host.ts';
+import { surveyFrom } from '../building/survey-reply.ts';
 import { AuditPublisher } from '../character/audit-publisher.ts';
 import type { LifeCharacter } from '../character/character-config.ts';
 import type { ProficiencyCache } from '../character/proficiency-cache.ts';
@@ -201,6 +202,8 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     editSign: config.editSign,
     use: config.use,
     swim: config.swim,
+    building: config.building,
+    agentId: config.lifeId,
     timeScale: config.timeScale,
     // Only a sheet from config is bound (AN-07 and AN-12a): the standard fallback and off build no policy.
     bindThreat: (generation) => {
@@ -380,6 +383,8 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
       tick,
       publisher,
       log,
+      // The survey answers from this Body's seen map (BLD-38e/38g); absent with the building flag off.
+      ...(restarted.body.seen === null ? {} : { survey: surveyFrom(restarted.body.seen, tick) }),
     });
     link.start();
     // The image server (decision 0156, VP-2): its own renderer worker and rate limiter, per run.
