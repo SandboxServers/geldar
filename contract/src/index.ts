@@ -19,10 +19,12 @@ export type {
   PatrolArguments,
   PatrolCheckpoint,
   PatrolDetail,
+  PlanProgressPayload,
   ProgramBlock,
   ProgramChunk,
   Snapshot,
 } from './generated/types.ts';
+export { validatePlanProgressPayload } from './generated/validators.js';
 export * from './mcp.ts';
 export * from './mind-channel.ts';
 export * from './perception-events.ts';

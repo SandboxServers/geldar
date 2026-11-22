@@ -1,15 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import * as building from './index.ts';
 
-const STUBS = [
-  'enqueuePlan',
-  'contendFor',
-  'throttleWait',
-  'progressSentence',
-  'surveyBox',
-] as const;
+const STUBS = ['enqueuePlan', 'contendFor', 'throttleWait', 'surveyBox'] as const;
 
 describe('building scaffold (BLD-S3a)', () => {
+  it('progressSentence is implemented and exported (BLD-16)', () => {
+    expect(typeof building.progressSentence).toBe('function');
+    expect(building.progressSentence.length).toBe(1);
+  });
+
   it('doCell and countMaterials are implemented and exported (BLD-11)', () => {
     expect(typeof building.doCell).toBe('function');
     expect(typeof building.countMaterials).toBe('function');
