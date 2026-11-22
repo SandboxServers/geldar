@@ -18,7 +18,13 @@ import { footprintOf, upperCell } from './place-footprint.ts';
 
 export { REPLACEABLE } from './place-beside.ts';
 
-import { planSentClick, STATE_UNACHIEVABLE, stateMatches, yawToward } from './place-state.ts';
+import {
+  planSentClick,
+  STATE_UNACHIEVABLE,
+  stateMatches,
+  takesState,
+  yawToward,
+} from './place-state.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 
 /**
@@ -133,6 +139,11 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
   const second = upperCell(block, target);
   if (second !== null && !REPLACEABLE.has(bot.blockAt(second)?.name ?? '')) {
     return failed('blocked', MESSAGE.occupied);
+  }
+
+  // A state the block does not take is refused before any walk or click.
+  if (ctx.placeState !== undefined && !takesState(block, ctx.placeState)) {
+    return failed(STATE_UNACHIEVABLE, MESSAGE.stateUnachievable);
   }
 
   const walked = await reachTarget(ctx, target);

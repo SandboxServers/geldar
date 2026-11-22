@@ -7,6 +7,7 @@ import { MINE_CELL_MESSAGE } from '../actions/mine-cell.ts';
 import type { ActionOutcome } from '../actions/outcome.ts';
 import { recordOwnPlacement } from '../actions/own-placements.ts';
 import { confirmsPlacement, MESSAGE } from '../actions/place.ts';
+import { takesState } from '../actions/place-state.ts';
 import type { ActionContext, ActionHandler } from '../actions/registry.ts';
 import { type BlockRef, parseBlockRef, placeStateOf, propsHold } from './block-ref.ts';
 import { countMaterials, dropOf, holdsToolKind, type ToolKind, toolFor } from './materials.ts';
@@ -77,6 +78,10 @@ export async function doCell(
   const prior = cell.prior ?? live;
   if (live !== prior) return 'changed';
 
+  // A state the block does not take can never be placed: refuse it before anything is broken.
+  const state = placeStateOf(want);
+  if (state !== undefined && !takesState(want.name, state)) return 'state_unachievable';
+
   const refused = preflight(want, prior, env);
   if (refused !== null) return refused;
 
@@ -87,7 +92,6 @@ export async function doCell(
   }
   if (want.name === 'air') return 'broken';
 
-  const state = placeStateOf(want);
   const placeCtx = state === undefined ? ctx : { ...ctx, placeState: state };
   const placed = await handlers.place.run(placeCtx, {
     do: 'place',

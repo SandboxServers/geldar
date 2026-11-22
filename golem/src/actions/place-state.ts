@@ -118,6 +118,12 @@ export function clickedProperties(
   return properties;
 }
 
+/** True when the block takes every key the state asks for (`allowedKeys`); false means no click can place it. */
+export function takesState(block: string, state: PlaceState): boolean {
+  const takes = allowedKeys(block);
+  return (Object.keys(state) as (keyof PlaceState)[]).every((key) => takes.includes(key));
+}
+
 /** True when the block's properties hold every key the state asks for. */
 export function stateMatches(
   block: string,
@@ -162,10 +168,7 @@ export function planSentClick(
 }
 
 function planAt(block: string, want: PlaceState, references: readonly Vec3[]): ClickPlan | null {
-  const takes = allowedKeys(block);
-  if ((Object.keys(want) as (keyof PlaceState)[]).some((key) => !takes.includes(key))) {
-    return null;
-  }
+  if (!takesState(block, want)) return null;
   const yaw = want.facing !== undefined ? yawForFacing(want.facing) : 0;
   const cursorY = want.half === 'top' ? 0.75 : want.half === 'bottom' ? 0.25 : 0.5;
   for (const reference of references) {

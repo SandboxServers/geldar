@@ -198,14 +198,14 @@ describe('doCell codes', () => {
   });
 });
 
-/** A place that sets the block and the one state property `facing` it was given, whatever was asked. */
-function placingFacing(env: FakeEnv, facing: string): CellHandlers {
+/** A place that sets the block and the state properties it was given, whatever was asked. */
+function placingProps(env: FakeEnv, props: Record<string, string>): CellHandlers {
   const place = {
     kind: 'place',
     timeoutMs: 1000,
     run: vi.fn(async (_ctx: unknown, action: Act) => {
       env.set(AT.x, AT.y, AT.z, action.block ?? 'air');
-      env.props.set(`${AT.x},${AT.y},${AT.z}`, { facing });
+      env.props.set(`${AT.x},${AT.y},${AT.z}`, props);
       return completed();
     }),
   } as never;
@@ -240,11 +240,11 @@ describe('doCell stateful targets and live priors (BLD-38b2)', () => {
     const env = new FakeEnv();
     env.set(AT.x, AT.y, AT.z, 'air');
     env.items = [{ name: 'oak_stairs', count: 1 }];
-    const handlers = placingFacing(env, 'north');
-    const target = 'oak_stairs[facing=north]';
+    const handlers = placingProps(env, { half: 'top' });
+    const target = 'oak_stairs[half=top]';
     expect(await doCell(ctx, { at: AT, prior: 'air', target }, env, handlers)).toBe('placed');
     const sent = vi.mocked(handlers.place.run).mock.calls[0] as unknown[];
-    expect((sent[0] as ActionContext).placeState).toEqual({ facing: 'north' });
+    expect((sent[0] as ActionContext).placeState).toEqual({ half: 'top' });
     expect((sent[1] as Act).block).toBe('oak_stairs');
   });
 
@@ -252,9 +252,36 @@ describe('doCell stateful targets and live priors (BLD-38b2)', () => {
     const env = new FakeEnv();
     env.set(AT.x, AT.y, AT.z, 'air');
     env.items = [{ name: 'oak_stairs', count: 1 }];
-    const handlers = placingFacing(env, 'south');
-    const target = 'oak_stairs[facing=north]';
+    const handlers = placingProps(env, { half: 'bottom' });
+    const target = 'oak_stairs[half=top]';
     expect(await doCell(ctx, { at: AT, prior: 'air', target }, env, handlers)).toBe('blocked');
+  });
+
+  it('refuses a replace to a state the block does not take before any dig', async () => {
+    const env = new FakeEnv();
+    env.set(AT.x, AT.y, AT.z, 'stone');
+    env.items = [{ name: 'oak_stairs', count: 1 }];
+    env.names = ['iron_pickaxe'];
+    const handlers = working(env);
+    const target = 'oak_stairs[facing=north]';
+    expect(await doCell(ctx, { at: AT, prior: null, target }, env, handlers)).toBe(
+      'state_unachievable',
+    );
+    expect(handlers.dig.run).not.toHaveBeenCalled();
+    expect(handlers.place.run).not.toHaveBeenCalled();
+    expect(env.blockAt(AT)).toBe('stone');
+  });
+
+  it('digs and places a replace to a state the block takes', async () => {
+    const env = new FakeEnv();
+    env.set(AT.x, AT.y, AT.z, 'stone');
+    env.items = [{ name: 'oak_stairs', count: 1 }];
+    env.names = ['iron_pickaxe'];
+    const handlers = { ...working(env), place: placingProps(env, { half: 'top' }).place };
+    const target = 'oak_stairs[half=top]';
+    expect(await doCell(ctx, { at: AT, prior: null, target }, env, handlers)).toBe('placed');
+    expect(handlers.dig.run).toHaveBeenCalledTimes(1);
+    expect(handlers.place.run).toHaveBeenCalledTimes(1);
   });
 
   it('a break cell with no planned prior digs the block it finds there, read live', async () => {
