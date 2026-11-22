@@ -248,6 +248,10 @@
           "minimum": 0
         },
         "days_since_sleep": { "type": "integer", "minimum": 0 },
+        "active_plan": {
+          "description": "The building plan in progress, or null when none is active.",
+          "anyOf": [{ "$ref": "plan-progress-event.schema.json" }, { "type": "null" }]
+        },
         "untrusted_world_text": { "$ref": "mcp-common.schema.json#/$defs/UntrustedWorldText" },
         "note": { "$ref": "mcp-common.schema.json#/$defs/UntrustedNote" }
       }

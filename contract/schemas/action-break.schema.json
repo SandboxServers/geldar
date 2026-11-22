@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/action-break.schema.json",
+  "title": "BreakAction",
+  "description": "The break action: dig the one block cell named by at. The body walks in reach, equips a tool and digs; it refuses only what is physically impossible.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["do", "at"],
+  "properties": {
+    "do": { "const": "break" },
+    "at": {
+      "description": "The absolute position of the block to dig.",
+      "$ref": "build-plan.schema.json#/$defs/BuildBlockCell"
+    }
+  }
+}

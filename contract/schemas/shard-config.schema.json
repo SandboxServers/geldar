@@ -37,6 +37,18 @@
       "type": "string",
       "format": "uri",
       "maxLength": 2048
+    },
+    "body_actions": {
+      "description": "Body action flags. Each is off unless the shard turns it on.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "building": {
+          "description": "Turns on the break and plan actions, the plan lane and the survey and plan_check tools. Off by default.",
+          "type": "boolean",
+          "default": false
+        }
+      }
     }
   }
 }

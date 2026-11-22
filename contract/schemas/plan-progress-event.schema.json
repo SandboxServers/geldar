@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://geldar.dev/schemas/plan-progress-event.schema.json",
+  "title": "PlanProgressPayload",
+  "description": "The payload of the plan_progress event, sent by the body every 25 cells or 30 seconds, and the active_plan block of the status tool. Counts only: no unseen block data. Sample indexes are the plan's own cell numbers, not world coordinates.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["plan_id", "total", "done", "placed", "broken", "skipped_by_code", "phase"],
+  "properties": {
+    "plan_id": { "$ref": "build-plan.schema.json#/$defs/BuildPlanId" },
+    "total": { "type": "integer", "minimum": 0, "description": "The number of cells in the plan." },
+    "done": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "The cells finished, by any outcome."
+    },
+    "placed": { "type": "integer", "minimum": 0 },
+    "broken": { "type": "integer", "minimum": 0 },
+    "skipped_by_code": {
+      "type": "object",
+      "description": "Skipped cells counted by their failure code.",
+      "propertyNames": { "$ref": "build-plan.schema.json#/$defs/BuildCellFailureCode" },
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+    "phase": {
+      "type": "string",
+      "enum": [
+        "running",
+        "paused",
+        "waiting_materials",
+        "waiting_tps",
+        "idle",
+        "completed",
+        "failed"
+      ]
+    },
+    "next_need": {
+      "description": "The item the plan waits for next, when it waits for materials.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["block", "count"],
+      "properties": {
+        "block": { "$ref": "common.schema.json#/$defs/ItemName" },
+        "count": { "type": "integer", "minimum": 1 }
+      }
+    }
+  }
+}
