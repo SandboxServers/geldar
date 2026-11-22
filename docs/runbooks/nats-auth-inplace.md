@@ -72,6 +72,10 @@ Names and subjects only:
 
 The password files must exist before step 2: `nats-supervisor.txt` is created by step 0, and `nats-helper.txt` by the helper install script. The new users go into the conf only after both files exist. A batch change that adds only these lines is the one the diff in step 3 must show.
 
+## Batch: building KV buckets (`geldar-plans`, `geldar-seen`)
+
+Owner step, done by hand on the node. This campaign does not make it. The building buckets are `geldar-plans` (plan chunks) and `geldar-seen` (the seen-block map), named in `golem/src/building/names.ts`. The Body (`body` role) opens both at every start through `openRestartKv` (`golem/src/body/restart.ts`, lines 149 to 150), whether the building flag is on or off. The `body` role in `geldar.ps1` (line 397) grants `$KV.` publish only for the life registry, checkpoints, body generation and skins. It does not yet grant `geldar-plans` or `geldar-seen`, so the live conf needs both before the Bodies restart. Add `$KV.geldar-plans.>` and `$KV.geldar-seen.>` to the `body` Pub list, check the file with the golden test, then reload NATS. The generator line is not changed by this runbook, so a regenerate would drop the in-place edit until the repo change lands. The owner seeds both buckets by hand. `golem/src/seed-buckets.ts` does not seed either bucket, so do not treat it as the seed step; a later code packet decides whether it does.
+
 ## Procedure
 
 Run on the Colo node, as the account that owns the secrets directory. Never print the contents of `secrets/` or any password file. Use `sed` to redact before any diff.

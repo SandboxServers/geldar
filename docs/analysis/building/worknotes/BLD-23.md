@@ -1,6 +1,6 @@
 # BLD-23 worknote
 
-Status: Partial (act text and status block done; the plan_progress presenter not done)
+Status: Partial (wiring open: the plan_progress presenter is in df27bb82; status.active_plan has no source, so live status still omits it; refreshed by BLD-docsfix-1)
 Branch: phase1/bld-23-presenter (the packet text names phase1/bld-23-mcp-present; the brief names this branch)
 Worktree: C:\Users\Steve\source\projects\geldar-wt-bld-23
 Base sha: 17645554 (building/integration at session start)

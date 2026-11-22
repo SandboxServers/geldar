@@ -1,6 +1,6 @@
 # Building campaign resume
 
-Refreshed 2026-11-22. State: nothing merged to main; integration branch `building/integration` only (local, never pushed). `building/integration` = `ecae177c` (BLD-38h merged). `origin/main` = `5828b498` carries the campaign docs only; no building packet is on `main`.
+Refreshed 2026-11-22. State: nothing merged to main; integration branch `building/integration` only (local, never pushed). `building/integration` = `727109a3` at the time of the docs packet BLD-docsfix-1 (BLD-38h merged; the docs packet lands on top). `origin/main` = `5828b498` carries the campaign docs only; no building packet is on `main`.
 
 ## Read in order
 1. [README.md](README.md): purpose, exit criteria, decisions, packet table, risks, open questions.
@@ -21,10 +21,13 @@ Break anything; nothing protected; no dig-safety refusals; next life inherits th
 ## Open items
 1. Reviews not yet run on the merged packets (BLD-26 is marked "review pending" in its worknote).
 2. Survey `plan` and seen predecessor on restart has no source. `restartBody` only runs for the same life; a predecessor exists only for a newborn life after a death, and no life registry exists in golem (BLD-38g). The same-life restart now reloads its own map (BLD-38h). Until a source exists, `seen` has no `predecessor` and nothing is inherited.
-3. Dockerfile change for golem is unbuilt. BLD-38b2 notes the existing `golem/Dockerfile` copy of `player-core`; the new change is not made.
-4. Manual NATS bucket seeding for `geldar-plans` and `geldar-seen` is not done: the NATS role for both buckets and the seed (`docs/runbooks/nats-auth-inplace.md`, `golem/src/seed-buckets.ts`). BLD-18 and BLD-38c depend on it.
+3. `golem/Dockerfile` copies `player-core` (BLD-38b2, already in the file). The golem image is not built and not verified.
+4. Owner step, not done: the NATS role for `geldar-plans` and `geldar-seen` (the `body` role needs `$KV.geldar-plans.>` and `$KV.geldar-seen.>`) and the bucket seed, by hand. The runbook section is in `docs/runbooks/nats-auth-inplace.md`. `golem/src/seed-buckets.ts` does not seed either bucket. BLD-18 and BLD-38c depend on it.
 5. BLD-38f behaviour change: an unexpected throw from `queue.step` now fails the plan (`wire-lane.ts` calls `lane.fail()`, emits the `failed` event once, then rethrows). The unexpected-throw path has no test yet (BLD-38f worknote).
-6. BLD-23 is merged but its worknote says the `plan_progress` presenter is not done.
+6. BLD-23 is Partial (wiring open): the `plan_progress` presenter is in `df27bb82`, but `status.active_plan` has no source (`threshold/mcp/src/world.ts` calls `statusTool` without `activePlan`). Its worknote still says the presenter is not done.
+6a. Partial (wiring open), reported as Done in the packet table before this docs packet: BLD-22 `plan_check` refuses (`world.ts` registers an unconditional `not_available`; no caller of `planCheckTool`); BLD-37 Glass plan panel is off, the feed and the flag gate are not wired; BLD-18 inheritance has no predecessor source (see item 2); BLD-27 metrics methods (`planCell`, `planSeconds`, `seenFlush`, and the rest in `golem/src/metrics.ts`) have no call sites, so no `geldar_plan_*` or `geldar_seen_*` series is emitted.
+6b. The default Body API prompt stays v10 (`animus/src/prompts/library.ts`, `DEFAULT_BODY_API_VERSION = 10`). The Mind is not taught `break` or `plan` until the owner switches the default to v12; that change is in `animus/**` and restarts Bodies.
+6c. Reported by review-docs-1 (not re-run in this packet): 8 animus tests fail at HEAD (`animus/src/validate`, `animus/src/prompts`) because `PHASE0_VERBS` has `break` and `plan` while the default v10 and the token budget do not follow. Owner or code packet to decide.
 7. BLD-38's own worknote reads "Blocked before any code change"; the packet was then split into 38b to 38h, which are merged.
 8. `tools/repo-checks`: `nats-human-grants-nf.test.ts` (5 failures) and `scratch-human.test.ts` (1 failure) fail on the base worktree too (BLD-38f worknote). Not ours; not fixed.
 9. Many worknotes still say "Writing" for merged packets; the ledger in README.md is the status source until they are updated.
