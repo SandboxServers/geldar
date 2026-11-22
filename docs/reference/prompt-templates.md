@@ -24,14 +24,14 @@ Related: [animus-mind](animus-mind.md), [character-and-memory](../concepts/chara
 |---|---|---|---|---|
 | `thought` | `thought/v1.md` to `v5.md` | The Mind's prompt for one thought: system message (blocks 1 to 4) and user message (blocks 5 and 6). | Appendix B.1 | v5 (`DEFAULT_THOUGHT_VERSION` in `animus/src/prompts/library.ts`) |
 | `reflection` | `reflection/v1.md`, `v2.md` | The sleep reflection: system message (blocks 1 and 2), user message (block 3), and a `degraded` variant used when the Mind is tired. | Appendix B.2 | v2 (`DEFAULT_REFLECTION_VERSION`) |
-| `body-api` | `body-api/v1.json` to `v10.json` | The allow-list of verbs and programs the Mind may ask the Body for, one example each; rendered into the thought prompt's `{{body_api_table}}` slot. | Appendix B.1 (the `body_api_table` slot) | v10 (`DEFAULT_BODY_API_VERSION`) |
+| `body-api` | `body-api/v1.json` to `v10.json`, `v12.json` (no `v11.json`) | The allow-list of verbs and programs the Mind may ask the Body for, one example each; rendered into the thought prompt's `{{body_api_table}}` slot. | Appendix B.1 (the `body_api_table` slot) | v10 (`DEFAULT_BODY_API_VERSION`); v12 (`BUILDING_BODY_API_VERSION`) while `body_actions.building` is on |
 
-17 templates and a README: `git ls-files prompts`, 2026-11-16 at 1b114276.
+18 templates and a README at 784b4f27: thought v1 to v5, reflection v1 and v2, body-api v1 to v10 and v12 (`git ls-files prompts`).
 
 ## Who reads them
 
 - The Mind (`animus/`) loads them at start through `createPromptLibrary` (`animus/src/prompts/library.ts`); the parser is `animus/src/prompts/template.ts`. Nothing is built or served (`prompts/README.md`).
-- `animus/src/main.ts` passes only `thoughtVersion`, from `mind.thought_version` in the shard file (`5` in `shards/phase0.yaml` and `shards/colo-mind.yaml`; `animus/src/config.ts` line 222 reads it with `optionalInt(mind, 'thought_version', 'mind', 5, 1)`: default 5, minimum 1, no maximum; a version with no file fails when the library loads it, see [release-a-prompt-version](../runbooks/release-a-prompt-version.md) conflict 2). The body-api and reflection versions are the library defaults; no config key selects them (`git grep -n reflection_version -- shards animus/src` finds nothing).
+- `animus/src/main.ts` passes `thoughtVersion`, from `mind.thought_version` in the shard file (`5` in `shards/phase0.yaml` and `shards/colo-mind.yaml`; `animus/src/config.ts` line 222 reads it with `optionalInt(mind, 'thought_version', 'mind', 5, 1)`: default 5, minimum 1, no maximum; a version with no file fails when the library loads it, see [release-a-prompt-version](../runbooks/release-a-prompt-version.md) conflict 2). The reflection version is the library default; no config key selects it (`git grep -n reflection_version -- shards animus/src` finds nothing). The body-api version is `DEFAULT_BODY_API_VERSION` (10), or v12 while `body_actions.building` is on: `bodyApiVersionFor` in `animus/src/prompts/library.ts` takes `buildingOn` from `animus/src/config.ts`, and `animus/src/main.ts` passes the result to `createPromptLibrary`.
 - `golem/src/mind-link/body-api.test.ts` checks a body-api file against the Body.
 - The Mind of our own is off on the Colo until a Thinker path exists (decision [0134](../decisions/0134-mind-is-a-profile-until-a-thinker-exists.md)). Sovereign players do not read these files; the MCP prompts they use are separate (`threshold/mcp-mock/src/prompts.ts`, served by `threshold/mcp`).
 
@@ -51,7 +51,7 @@ Every `body-api/vN.json` has the same top-level keys: `version` (number, equal t
 
 ## Version identity
 
-A template's version id is `<kind>@<n>+sha256:<12 hex>`: the number from the file name and the first 12 hex characters of the SHA-256 of the file's bytes. The library computes it on load and every thought records it in `prompt_template_version` (`prompts/README.md`; spec Appendix D). `animus/src/prompts/library.test.ts` pins the full SHA-256 of all 17 files; a byte change to any released file fails that test. On 2026-11-16 the `sha256sum` of `thought/v1.md`, `thought/v5.md`, `body-api/v8.json` and `body-api/v10.json` matched their pins.
+A template's version id is `<kind>@<n>+sha256:<12 hex>`: the number from the file name and the first 12 hex characters of the SHA-256 of the file's bytes. The library computes it on load and every thought records it in `prompt_template_version` (`prompts/README.md`; spec Appendix D). `animus/src/prompts/library.test.ts` pins the SHA-256 of the released files it lists; a byte change to any released file fails that test. On 2026-11-16 the `sha256sum` of `thought/v1.md`, `thought/v5.md`, `body-api/v8.json` and `body-api/v10.json` matched their pins.
 
 ## Version history
 
@@ -94,6 +94,7 @@ Verb and program names are read from the `do` and `program` fields. "Reworded" m
 | v8 | 19e9ae01, 2026-11-14 | adds `edit_sign` (17) | same | One verb added. | [0192](../decisions/0192-edit-sign-action.md) |
 | v9 | 955c675a, 2026-11-15 | adds `use` (18) | same | One verb added. | [0218](../decisions/0218-use-mount-dismount-verbs.md) |
 | v10 (default) | c1fe2094, 2026-11-15 | same (18) | same | Only the `use` entry reworded. | `prompts/README.md` |
+| v12 | 1831ba2b, 2026-11-22 | adds `break` and `plan` (20) | same | Two verbs added and their wording; not the default. Rendered while `body_actions.building` is on (`bodyApiVersionFor`). | BLD-24 (`prompts/README.md`); decision 0425 |
 
 ## Release rules
 
@@ -128,6 +129,6 @@ git ls-files prompts                                                        # 17
 $env:TZ = 'UTC'; foreach ($f in git ls-files prompts | Where-Object { $_ -ne 'prompts/README.md' }) { "$f $(git log --diff-filter=A --format='%h %ad' --date=format-local:%Y-%m-%d -- $f)" }   # UTC add dates
 git diff --no-index -U0 prompts/reflection/v1.md prompts/reflection/v2.md    # reflection v2 change (exit code 1 means a difference)
 foreach ($f in git ls-files prompts | Where-Object { $_ -ne 'prompts/README.md' }) { "$f $((git log --format=%h -- $f).Count)" }   # commits per file
-node -e "for (let i=1;i<=10;i++){const j=require('./prompts/body-api/v'+i+'.json');console.log(i,j.verbs.map(v=>v.do).join(','),'|',j.programs.map(p=>p.program).join(','))}"
+node -e "for (let i=1;i<=12;i++){if(i===11)continue;const j=require('./prompts/body-api/v'+i+'.json');console.log(i,j.verbs.map(v=>v.do).join(','),'|',j.programs.map(p=>p.program).join(','))}"
 Select-String -Path prompts/thought/*.md, prompts/reflection/*.md -Pattern '^<<'
 ```

@@ -1,6 +1,6 @@
 # Building campaign (free-form block placement and removal for agents)
 
-Ledger. Schedule, file ownership and packet specs: [work-packets.md](work-packets.md). Resume: [RESUME.md](RESUME.md). Updated 2026-11-22 to the integration state: `building/integration` = `d87221c4` (merge of `phase1/bld-fix5-lane`; fixes 1 to 5 merged; fix6 not implemented). `origin/main` = `5828b498` carries the campaign docs only; no building packet is on `main`. Only the orchestrator edits this file; each packet reports in `worknotes/BLD-NN.md`.
+Ledger. Schedule, file ownership and packet specs: [work-packets.md](work-packets.md). Resume: [RESUME.md](RESUME.md). Updated 2026-11-22 (docs packet B8-docs2) to the integration state: `building/integration` = `a72acaac` (merge of `phase1/b8-fix12-codes`; fixes 1 to 5 merged; B8 follow-up packets through B8-prompt2 merged; the fix6 items are covered by B8-fix6a and B8-fix6b). `origin/main` = `5828b498` carries the campaign docs only; no building packet is on `main`. Only the orchestrator edits this file; each packet reports in `worknotes/BLD-NN.md`.
 
 ## Purpose
 
@@ -50,8 +50,8 @@ Size S, M. Restarts = merging to `main` restarts the 19 Bodies (colo-images path
 | BLD-06 | `break` action | 1 | M | Y | S3a | Done |
 | BLD-07 | Place: plants, snow, two-block items | 1 | S | Y | S3a | Done |
 | BLD-08 | Place: blockstate and orientation | 1 | M | Y | S3a, after 07 on `place.ts` | Partial (facing refused for every kind: `FACING_VERIFIED` is empty in `place-state.ts`; half and axis only; fix3a) |
-| BLD-09 | Standing-position solver | 1 | M | Y | S3a | Partial (module built; not wired to production: no production import) |
-| BLD-10 | Scaffolding, falling blocks, fluids | 1 | M | Y | S3a | Partial (module built; not wired to production: no production import) |
+| BLD-09 | Standing-position solver | 1 | M | Y | S3a | Partial (wired behind the flag through `cell-stand.ts`; retainBlock and orderCells open) |
+| BLD-10 | Scaffolding, falling blocks, fluids | 1 | M | Y | S3a | Partial (wired behind the flag through `cell-stand.ts`; retainBlock and orderCells open) |
 | BLD-12 | Own breaks raise no observation | 1 | S | Y | none | Done |
 | BLD-36 | Remove dig-safety refusals (0428) | 1 | S | Y | S3a | Done |
 | BLD-17 | Seen-block recorder | 1 | M | Y | S3a | Done |
@@ -90,6 +90,18 @@ Size S, M. Restarts = merging to `main` restarts the 19 Bodies (colo-images path
 | BLD-38h | Restart reloads the life's own seen map | 3a | - | Y | 38 family (merge order) | Done |
 | BLD-22b | Plan check on the Body (`plan-check-reply.ts`), survey box cap, flag-gated reply | 5 | - | Y | 22 | Done (merged); the live run is not done |
 | BLD-fix1 | Review fixes 1 (worknote `BLD-fix1.md`) | fix | - | Y | - | Done (merged) |
+| B8-wire(2) | Stand, scaffold and hazard wiring into the cell executor (`BLD-b8-wire.md`) | b8 | - | Y | BLD-09, 10 | Merged; branch tip `b35bba5f` |
+| B8-cfg | v12 default, `survey` and `plan_check` visible with the flag, erasure removes the bare checkpoint, manual NATS order (`BLD-b8-cfg.md`) | b8 | - | Y | B8-wire(2) | Merged; branch tip `e4a4403d` |
+| B8-seen | Seen map privacy and stale cells (`BLD-b8-seen.md`) | b8 | - | Y | B8-cfg | Merged; branch tip `f91464a9` |
+| B8-lazy | Lane and queue lazy plan source, plan store format 2, yielding, flag-off refusal (`BLD-b8-lazy.md`) | b8 | - | Y | B8-seen | Merged; branch tip `52bc5b08` |
+| B8-pcheck | `plan_check` streams its dry run with no cell cap (`BLD-b8-pcheck.md`) | b8 | - | Y | B8-lazy | Merged; branch tip `a1493f5a` |
+| B8-inherit | Inherited seen flag kept through flush and reload | b8 | - | Y | B8-seen | Merged; branch tip `2bb9500a` |
+| B8-lazy7 | Lazy line, circle, wall and list steps: layer streams for box, sphere, wall, line, place, replace, break; circle keeps one sorted outline index (O(radius)), list keeps one sorted index (O(list)); stated, no cap (`BLD-b8-lazy7`) | b8 | - | Y | B8-lazy | Merged; branch tip `db02ba79`; circle and list not fully streamed (see RESUME) |
+| B8-fix6a | Lane and queue fixes: scaffold cache reset per plan start; restored lanes keep scaffold removal (`fresh`); yielding layer scan and resume walk; active-replace race guard; `prime()` cursor-past-end guard (`BLD-b8-fix6a`) | b8 | - | Y | B8-lazy7 | Merged; branch tip `02c96eeb`; scaffold removal under the agent unverified live |
+| B8-fix6b | Small review fixes: `plan_too_large` removed from the tool files; survey callback errors logged; erasure removes `<life>.inflight` keys (`BLD-b8-fix6b`) | b8 | - | Y | B8-lazy7 (both fix6 packets cut from `784b4f27`) | Merged; branch tip `8297a30b`; `plan_too_large` leftovers in the gateway and ports (RESUME open item 9) |
+| B8-fix7 | `plan_check` streams progress: idle timeout resets per chunk; cancel on the same subject; no new subject or permission (`BLD-b8-fix7`) | b8 | - | Y | B8-fix6b | Merged; branch tip `a2e25fe6`; NATS stream transport covered only by the live lane |
+| B8-fix12 | Out-of-view cells report one code (`changed`); in-view cells keep the detailed code (`BLD-b8-fix12`) | b8 | - | Y | B8-prompt2 (cut from `e40bb80d`) | Merged; branch tip `da86ca3f`; integration merge `a72acaac` |
+| B8-prompt2 | Survey description sentence in the contract: the `@<minutes>` mark and the trailing `i`; no body-api v13, `BUILDING_BODY_API_VERSION` stays 12 (`BLD-b8-prompt2`) | b8 | - | N | B8-prompt | Merged; branch tip `c6b49737` |
 | BLD-fix2a | Review fixes 2a (worknote `BLD-fix2a.md`) | fix | - | Y | - | Done (merged) |
 | BLD-fix2b | Review fixes 2b (worknote `BLD-fix2b.md`) | fix | - | Y | - | Done (merged) |
 | BLD-fix2d | Review fixes 2d (worknote `BLD-fix2d.md`) | fix | - | Y | - | Done (merged) |
