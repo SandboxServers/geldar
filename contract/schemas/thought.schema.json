@@ -405,7 +405,9 @@
           },
           "required": ["do"],
           "additionalProperties": false
-        }
+        },
+        { "$ref": "action-break.schema.json" },
+        { "$ref": "action-plan.schema.json" }
       ]
     }
   }
