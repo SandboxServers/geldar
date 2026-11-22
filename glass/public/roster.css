@@ -35,6 +35,11 @@
   content: "";
 }
 
+/* The status line takes no room while it has nothing to say. */
+.roster-status:empty {
+  display: none;
+}
+
 .roster-head {
   padding-bottom: 12px;
   border-bottom: 1px solid var(--rule);
@@ -120,6 +125,23 @@
 }
 
 @media (min-width: 700px) {
+  /*
+   * A wide screen has four slots, as the design has: Glass, Kino, Map, Roster. Kino is not built yet and its
+   * slot stays empty. With three equal columns the middle label would sit on a foldable's hinge.
+   */
+  .tabs {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  #tab-map {
+    grid-column: 3;
+  }
+
+  #tab-roster {
+    grid-column: 4;
+  }
+
   .roster-row[aria-current="true"] {
     background: var(--field);
   }

@@ -31,7 +31,15 @@ const latest = (id: string) => `/api/thoughts?agent=${id}&limit=6`;
 const profileRequests = () => page.fetchUrls.filter((url) => url.includes('limit=6'));
 const profile = '#roster-profile';
 
-function click(win: Window, selector: string, modifiers: { ctrlKey?: boolean } = {}): boolean {
+interface Modifiers {
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  altKey?: boolean;
+  shiftKey?: boolean;
+  button?: number;
+}
+
+function click(win: Window, selector: string, modifiers: Modifiers = {}): boolean {
   const event = new win.MouseEvent('click', { bubbles: true, cancelable: true, ...modifiers });
   const el = win.document.querySelector(selector);
   expect(el, selector).not.toBeNull();
@@ -95,9 +103,18 @@ describe('the bottom navigation', () => {
       passThrough.push(!event.defaultPrevented);
       event.preventDefault(); // These links would otherwise navigate the fake browser.
     });
-    click(win, '#tab-roster', { ctrlKey: true });
-    click(win, '.tabs a:nth-child(2)');
-    expect(passThrough).toEqual([true, true]);
+    // Each of these asks the browser for a new tab or window, or is not the main button: none is taken over.
+    for (const modifier of [
+      { ctrlKey: true },
+      { metaKey: true },
+      { altKey: true },
+      { shiftKey: true },
+      { button: 1 },
+    ]) {
+      click(win, '#tab-roster', modifier);
+    }
+    click(win, '#tab-map');
+    expect(passThrough).toEqual([true, true, true, true, true, true]);
     expect(active(win)).toBe('tab-glass');
     expect(win.location.search).toBe('');
   });
@@ -167,6 +184,44 @@ describe('Roster', () => {
     ).toHaveLength(2);
     expect(win.document.querySelectorAll('#roster-dead canvas.sigil-roster.dead')).toHaveLength(2);
     expect(page.fetchUrls).toEqual(['/api/agents', '/api/thoughts?limit=50']);
+  });
+
+  it('writes a dash for a life field the reply lacks, and "died" alone for a death time that is no time', async () => {
+    const win = await boot({
+      ...pages,
+      agents: [
+        { agent_id: 'x1', name: 'Bare' },
+        { agent_id: 'x2', name: 'Odd', died_at: 'not a time', death_cause: 'void' },
+        { agent_id: 'x3', name: 'Mute', died_at: 'not a time' },
+      ],
+    });
+    expect(text(win, '#roster-alive .roster-meta')).toEqual(['life — · — · born day —']);
+    expect(text(win, '#roster-dead .roster-note')).toEqual(['died — void', 'died']);
+  });
+
+  it('starts each profile at its top, wherever the last one was scrolled to', async () => {
+    const win = await boot(pages, { search: '?view=roster', wide: wideScreen() });
+    const pane = win.document.querySelector(profile) as unknown as { scrollTop: number };
+    click(win, '#roster-alive button:first-child');
+    await settle();
+    pane.scrollTop = 240;
+    click(win, '#roster-alive button:last-child');
+    expect(pane.scrollTop).toBe(0);
+  });
+
+  it('tells a screen reader the short status only: the entries are outside the live region', async () => {
+    const win = await boot(pages, { search: '?view=roster', wide: wideScreen() });
+    click(win, '#roster-alive button:first-child');
+    const live = [...win.document.querySelectorAll(`${profile} [aria-live]`)];
+    expect(live.map((el) => el.className)).toEqual(['note roster-status']);
+    expect(live[0]?.textContent).toBe('Loading entries…');
+    await settle();
+    // Loaded: the status has nothing more to say, and no entry sits inside it.
+    expect(live[0]?.textContent).toBe('');
+    expect(win.document.querySelector(`${profile} [aria-live] li`)).toBeNull();
+    expect(win.document.querySelectorAll(`${profile} .roster-results li`).length).toBeGreaterThan(
+      0,
+    );
   });
 
   it('on a phone opens the filtered Glass feed, clears search and lets Back restore it', async () => {
@@ -265,7 +320,7 @@ describe('Roster', () => {
         },
       });
       click(win, '#roster-alive button:first-child');
-      expect(text(win, '.roster-results')).toEqual(['Loading entries…']);
+      expect(text(win, '.roster-status')).toEqual(['Loading entries…']);
       click(win, '#roster-alive button:last-child');
       await settle();
       finish();
@@ -299,11 +354,15 @@ describe('Roster', () => {
     });
     click(win, '#roster-alive button');
     await settle();
-    expect(text(win, '.roster-results')).toEqual(['Could not load the latest entries.']);
+    expect(text(win, '.roster-status')).toEqual(['Could not load the latest entries.']);
     click(win, '#roster-alive button');
     await settle();
-    expect(text(win, '.roster-results')).toEqual(['No entries yet.']);
+    expect(text(win, '.roster-status')).toEqual(['No entries yet.']);
     expect(profileRequests()).toEqual([latest('l2'), latest('l2')]);
+    // The retry worked, so the row is settled again: one more press asks for nothing.
+    click(win, '#roster-alive button');
+    await settle();
+    expect(profileRequests()).toHaveLength(2);
   });
 
   it('reports an unavailable agents list without a misleading zero count', async () => {

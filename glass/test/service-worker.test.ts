@@ -124,7 +124,7 @@ describe('the service worker file list', () => {
     }
     // The source names no such path anywhere but its comments.
     const code = SOURCE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-    expect(code).not.toMatch(/['"]\/(?:api|kino|register|roster)/);
+    expect(code).not.toMatch(/['"`]\/(?:api|kino|register|roster)/);
   });
 });
 

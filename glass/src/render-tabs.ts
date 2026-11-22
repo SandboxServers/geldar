@@ -10,11 +10,17 @@ interface TabDeps {
   links: Record<View, HTMLAnchorElement>;
   panes: Record<View, HTMLElement>;
   win: Pick<Window, 'location' | 'history' | 'addEventListener'>;
+  /** The document, whose title names the view: a screen reader and the tab strip both read it. */
+  doc: { title: string };
   onChange(view: View, restoreFilters: boolean): void;
 }
 
-export function createTabs({ links, panes, win, onChange }: TabDeps) {
+/** The title while the Roster shows. The Glass view keeps the title the page came with. */
+export const ROSTER_TITLE = 'Glass: Roster';
+
+export function createTabs({ links, panes, win, doc, onChange }: TabDeps) {
   let view = readView(win.location.search);
+  const glassTitle = doc.title;
 
   function draw(restoreFilters: boolean): void {
     view = readView(win.location.search);
@@ -23,6 +29,7 @@ export function createTabs({ links, panes, win, onChange }: TabDeps) {
       if (name === view) links[name].setAttribute('aria-current', 'page');
       else links[name].removeAttribute('aria-current');
     }
+    doc.title = view === 'roster' ? ROSTER_TITLE : glassTitle;
     onChange(view, restoreFilters);
   }
 

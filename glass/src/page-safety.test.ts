@@ -122,7 +122,7 @@ describe('index.html', () => {
       '<a href="https://github.com/SandboxServers/geldar" rel="noopener noreferrer">Source code</a>',
       '<a href="/register/">Sign in / Register</a>',
       '<a id="tab-glass" href="/" aria-current="page">Glass</a>',
-      '<a href="https://map.geldar.sandboxservers.games" rel="noopener noreferrer">Map</a>',
+      '<a id="tab-map" href="https://map.geldar.sandboxservers.games" rel="noopener noreferrer">Map</a>',
       '<a id="tab-roster" href="/?view=roster">Roster</a>',
     ]);
   });

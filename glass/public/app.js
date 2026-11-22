@@ -197,7 +197,8 @@ async function loadFacts(view) {
 const reader = createReader({
   doc: document,
   pane: els.reader,
-  isWide: () => isWide() && !glassView.hidden,
+  isWide,
+  suspended: () => glassView.hidden,
   rowOf: (id) => state.rows.get(id),
   shown: () => state.shown,
   options: (view) => entryOptions(view, state.drawnKeyword),
@@ -223,6 +224,7 @@ const tabs = createTabs({
   links: { glass: byId('tab-glass'), roster: byId('tab-roster') },
   panes: { glass: glassView, roster: byId('roster-view') },
   win: window,
+  doc: document,
   onChange(view, restoreFilters) {
     if (view === 'glass') roster.clear();
     if (restoreFilters && filters.restore()) {

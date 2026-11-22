@@ -41,12 +41,22 @@ A review of the first version of this change, before it was offered for merge, c
 - **A count that was announced twice.** Entries that arrived above while the reader was scrolled away were still counted after a pause and a return to the top. Back at the top, the count is now forgotten whether or not the feed is paused.
 - **The death date has the month as a word** ("Nov 14, 2026"). A date written as 11/14 or 14/11 reads differently in different places.
 
+A second, independent review then found no fault in how world text, addresses or requests are handled, and these smaller things, all changed:
+
+- **No tab label on the hinge.** With three equal columns the middle label, "Map", sat in the middle 30px of an unfolded screen (362px to 387px of 750). A wide screen now has the design's four slots, with Kino's left empty until it is built: Glass, a gap, Map, Roster. Measured at 750px, the labels are at 81 to 122, 454 to 478 and 624 to 673. A phone keeps equal columns.
+- **The reader pane keeps what it has behind the Roster.** Each return to Glass on a wide screen fetched the selected entry again, so a dozen quick trips ran into the rate limit. The reader now does nothing while another view covers it. Twelve trips cost no request.
+- **A screen reader hears the short status, not six entries.** The live region was the box the entries were put in, so a selection announced all of them. The status line ("Loading entries…", "No entries yet.", the error) is now the only live region.
+- **The document title names the view**: "Glass: Roster" while the Roster shows.
+- **Tests for eight behaviours that had none**: the heading that takes focus, clicks with a modifier key or another button, the fallback when the browser refuses a history entry, "/" on the Roster, the dash for a missing life field, a death time that is no time, a settled row not asking again, and a profile starting at its top.
+
+Not changed, and recorded as a doubt: after Back or Forward the keyboard focus is on the page body, not on the view that came back.
+
 ## Open questions for the owner
 
 1. Keep the current privacy rule for hidden living sovereign agents, or consider a new visibility ruling for their names?
 2. Keep the localized death date, or extend the API with the world day of death?
 3. Keep the current count line, qualify it as a count of visible agents, or remove the numbers?
-4. Keep three tabs until Kino ships?
+4. Keep three tabs until Kino ships? On a wide screen Kino's slot is an empty gap between Glass and Map until then.
 5. Keep Map as a link? Embedding and drawing the map in Glass are still open options in #908 and would need separate policy and privacy decisions.
 
 ## Validation

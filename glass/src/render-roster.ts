@@ -79,8 +79,13 @@ interface RosterDeps {
 
 export function createRoster(deps: RosterDeps) {
   const { doc, profile } = deps;
+  // A screen reader is told the short status only. The entries are outside it: read, not announced.
+  const status = make(doc, 'p', 'note roster-status', '');
+  status.setAttribute('aria-live', 'polite');
   const results = make(doc, 'div', 'roster-results', '');
-  results.setAttribute('aria-live', 'polite');
+  const say = (message: string): void => {
+    status.textContent = message;
+  };
   let selected: RosterRow | null = null;
   let failed = false;
   let turn = 0;
@@ -110,13 +115,15 @@ export function createRoster(deps: RosterDeps) {
       make(doc, 'h3', 'eyebrow', 'Latest entries'),
       action(doc, 'roster-open', 'Open in Glass', () => deps.openInGlass(id)),
     );
-    results.replaceChildren(renderNote(doc, 'Loading entries…'));
+    say('Loading entries…');
+    results.replaceChildren();
     profile.replaceChildren(
       badge(doc, agent, 'profile'),
       make(doc, 'h2', 'roster-profile-name', agentName(agent)),
       make(doc, 'p', 'roster-meta', lifeLine(agent)),
       lifeNote(doc, 'p', agent),
       heading,
+      status,
       results,
     );
     profile.scrollTop = 0;
@@ -126,7 +133,7 @@ export function createRoster(deps: RosterDeps) {
       const { thoughts } = await deps.loadLatest(`/api/thoughts?${query}`);
       if (mine !== turn) return;
       if (thoughts.length === 0) {
-        results.replaceChildren(renderNote(doc, 'No entries yet.'));
+        say('No entries yet.');
         return;
       }
       const list = make(doc, 'ol', 'roster-entries', '');
@@ -134,12 +141,13 @@ export function createRoster(deps: RosterDeps) {
       list.append(
         ...thoughts.slice(0, LATEST_LIMIT).map((entry) => latestEntry(doc, toView(entry), now)),
       );
+      say('');
       results.replaceChildren(list);
     } catch {
       if (mine !== turn) return;
       // Another press can retry this selection after a failed request.
       failed = true;
-      results.replaceChildren(renderNote(doc, 'Could not load the latest entries.'));
+      say('Could not load the latest entries.');
     }
   }
 
