@@ -57,6 +57,8 @@ export interface FlushResult {
 
 /** One cell as stored: local index, block name, last-seen tick, inherited flag (1 or 0). */
 type Cell = [local: number, name: string, tick: number, inherited: 0 | 1];
+/** A cell as read: the inherited flag is absent in a section written before the flag existed (read as 0). */
+type StoredTuple = [local: number, name: string, tick: number, inherited?: 0 | 1];
 
 interface Entry {
   section: Section;
@@ -81,8 +83,8 @@ function newEntry(): Entry {
   };
 }
 
-function isCell(value: unknown): value is Cell {
-  if (!Array.isArray(value) || value.length !== 4) return false;
+function isCell(value: unknown): value is StoredTuple {
+  if (!Array.isArray(value) || (value.length !== 3 && value.length !== 4)) return false;
   const [local, name, tick, inherited] = value;
   return (
     Number.isInteger(local) &&
@@ -93,7 +95,7 @@ function isCell(value: unknown): value is Cell {
     Number.isInteger(tick) &&
     (tick as number) >= 0 &&
     (tick as number) <= MAX_TICK &&
-    (inherited === 0 || inherited === 1)
+    (inherited === undefined || inherited === 0 || inherited === 1)
   );
 }
 
@@ -105,7 +107,10 @@ function decodeCells(value: string): Cell[] | null {
       cells?: unknown;
     };
     if (parsed.v !== 1 || !Array.isArray(parsed.cells)) return null;
-    return parsed.cells.every(isCell) ? (parsed.cells as Cell[]) : null;
+    if (!parsed.cells.every(isCell)) return null;
+    return parsed.cells.map(
+      ([local, name, tick, inherited]): Cell => [local, name, tick, inherited === 1 ? 1 : 0],
+    );
   } catch {
     return null;
   }
@@ -127,7 +132,7 @@ function encodeEntry(entry: Entry): string {
 }
 
 function absorb(entry: Entry, local: number, name: string, tick: number, inherited: 0 | 1): void {
-  entry.section.set(local, name, tick);
+  entry.section.set(local, name, tick, inherited === 1);
   entry.inherited[local] = inherited;
   entry.latest = Math.max(entry.latest, tick);
   entry.dirty = true;
@@ -188,11 +193,21 @@ export class SeenStore {
     return entryFromCells(cells);
   }
 
-  /** Records a block seen (or placed or broken) by this life. A fresh sighting clears an inherited mark. */
-  async record(x: number, y: number, z: number, name: string, tick: number): Promise<void> {
+  /**
+   * Records a block seen (or placed or broken) by this life. A sighting by this life is not inherited; `inherited` is
+   * set only when a predecessor's cell is recorded, and it is stored with the cell so a reload keeps the mark.
+   */
+  async record(
+    x: number,
+    y: number,
+    z: number,
+    name: string,
+    tick: number,
+    inherited = false,
+  ): Promise<void> {
     const ref = sectionOf(x, y, z);
     const entry = await this.entryFor(sectionKey(this.lifeId, ref));
-    absorb(entry, ref.local, name, tick, 0);
+    absorb(entry, ref.local, name, tick, inherited ? 1 : 0);
   }
 
   /** Reads one cell of this life, from memory or KV. Undefined when the cell is unseen. */

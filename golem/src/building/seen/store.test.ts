@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { deflateSync } from 'node:zlib';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { sectionOf } from './section.ts';
 import {
@@ -245,6 +246,63 @@ describe('death and inheritance', () => {
     };
     await expect(eraseLife(kv, 'L1')).rejects.toThrow('1 section(s) not deleted');
     expect(kv.values.size).toBe(1);
+  });
+});
+
+describe('the inherited mark through flush and reload (B8 finding 4)', () => {
+  it('an inherited cell recorded with the mark is stored with it and reads inherited after a reload', async () => {
+    const kv = new FakeKv();
+    const life2 = storeFor(kv, 'L2');
+    await life2.record(5, 64, 5, 'oak_planks', 100, true);
+    await life2.flush();
+    expect(await storeFor(kv, 'L2').read(5, 64, 5)).toEqual({
+      name: 'oak_planks',
+      lastSeen: 100,
+      inherited: true,
+    });
+  });
+
+  it('a cell this life saw itself reads not inherited after a flush and reload', async () => {
+    const kv = new FakeKv();
+    const life2 = storeFor(kv, 'L2');
+    await life2.record(6, 64, 5, 'cobblestone', 200);
+    await life2.flush();
+    expect(await storeFor(kv, 'L2').read(6, 64, 5)).toEqual({
+      name: 'cobblestone',
+      lastSeen: 200,
+      inherited: false,
+    });
+  });
+
+  it('a fresh sighting of an inherited cell clears the mark once flushed', async () => {
+    const kv = new FakeKv();
+    const life2 = storeFor(kv, 'L2');
+    await life2.record(5, 64, 5, 'oak_planks', 100, true);
+    await life2.flush();
+    await life2.record(5, 64, 5, 'oak_planks', 150);
+    await life2.flush();
+    expect(await storeFor(kv, 'L2').read(5, 64, 5)).toEqual({
+      name: 'oak_planks',
+      lastSeen: 150,
+      inherited: false,
+    });
+  });
+
+  it('a section stored without the inherited bit loads with every cell not inherited', async () => {
+    const kv = new FakeKv();
+    const ref = sectionOf(5, 64, 5);
+    const value = deflateSync(JSON.stringify({ v: 1, cells: [[ref.local, 'oak_planks', 100]] }));
+    kv.values.set(K('L1', 5, 64, 5), value.toString('base64'));
+    expect(await storeFor(kv, 'L1').read(5, 64, 5)).toEqual({
+      name: 'oak_planks',
+      lastSeen: 100,
+      inherited: false,
+    });
+    expect((await loadSection(kv, 'L1', ref))?.get(ref.local)).toEqual({
+      name: 'oak_planks',
+      lastSeen: 100,
+      inherited: false,
+    });
   });
 });
 
