@@ -1,16 +1,24 @@
 /**
- * The plan-activity panel on Glass (decision 0429). This file is the registry stub: the panel is off and
- * draws nothing. BLD-37 fills the files under glass/src/plan-activity/ and turns the panel on.
+ * The plan-activity panel on Glass (decision 0429): a read-only list of plan counts for human viewers, one
+ * line per builder. It is off until the body_actions.building gate and the operator feed turn it on; while
+ * off it returns without touching `host`.
  */
+import { type PlanActivityRow, planActivityLines } from './model.ts';
 
-/** Off until BLD-37 ships the panel. */
+/** Off until the feed is wired to the building gate. */
 export const PLAN_ACTIVITY_ENABLED = false;
 
-/** Draws the plan-activity panel into `host`. While the panel is off it returns without touching `host`. */
+/**
+ * Draws the panel into `host`. Text is set with textContent, so a label or code can never become markup.
+ * While `enabled` is false the host is not read or written.
+ */
 export function renderPlanActivity(
   host: HTMLElement,
   enabled: boolean = PLAN_ACTIVITY_ENABLED,
+  rows: readonly PlanActivityRow[] = [],
 ): void {
   if (!enabled) return;
-  host.textContent = '';
+  host.textContent = planActivityLines(rows).join('\n');
 }
+
+export { type PlanActivityRow, toPlanActivityRow } from './model.ts';
