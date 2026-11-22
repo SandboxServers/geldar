@@ -24,7 +24,12 @@ const inputs: Record<McpToolName, unknown> = {
   view: undefined,
   see: undefined,
   survey: { box: { from: { x: 0, y: 64, z: 0 }, to: { x: 1, y: 65, z: 1 } } },
-  plan_check: { plan: { palette: { s: { block: 'stone' } }, steps: [{ op: 'place', pal: 's', at: { x: 0, y: 64, z: 0 } }] } },
+  plan_check: {
+    plan: {
+      palette: { s: { block: 'stone' } },
+      steps: [{ op: 'place', pal: 's', at: { x: 0, y: 64, z: 0 } }],
+    },
+  },
   write_book: { title: 'T', text: 'body' },
   define_skill: { name: 'chop', description: 'chops', code: 'return 1;' },
   use_skill: { name: 'chop', args: {} },
