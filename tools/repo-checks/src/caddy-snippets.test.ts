@@ -22,9 +22,16 @@ const SITES = [
       '/register',
       '/roster/*',
       '/',
+      '/fonts.css',
       '/app.css',
+      '/entries.css',
+      '/reader.css',
       '/app.js',
+      '/sw.js',
+      '/manifest.webmanifest',
       '/js/*',
+      '/fonts/*',
+      '/icons/*',
     ],
   },
   { site: 'mcp', methods: 'POST GET DELETE', paths: ['^/p/[a-z][a-z0-9-]{1,38}$'] },
@@ -138,7 +145,7 @@ describe('deploy/caddy site files', () => {
 
   it('routes GET and HEAD for the page and its assets to Glass', () => {
     expect(read('glass.caddy')).toMatch(
-      /@glass_page path \/ \/app\.css \/app\.js \/js\/\*\s+handle @glass_page \{\s+reverse_proxy/,
+      /@glass_page path \/ \/fonts\.css \/app\.css \/entries\.css \/reader\.css \/app\.js \/sw\.js \/manifest\.webmanifest \/js\/\* \/fonts\/\* \/icons\/\*\s+handle @glass_page \{\s+reverse_proxy/,
     );
   });
 
