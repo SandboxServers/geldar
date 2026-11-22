@@ -6,8 +6,8 @@
 
 ## Decision
 
-1. Add the Action `{do: "break", at: {x, y, z}}`. The Body digs exactly that cell or fails with a typed reason (`not_found`, `out_of_reach`, `unbreakable`, `unsafe`, `no_tool`, `not_loaded`); it never digs another block. `at` is an integer Position as in `place`.
-2. `break` is built on the `mineAt` run option of 0349 and reuses the existing unbreakable list, the dig-safety refusal (a self-preservation rule, not a protection: falling columns, liquid, walled-in cells) and the tool choice.
+1. Add the Action `{do: "break", at: {x, y, z}}`. The Body digs exactly that cell or fails with a typed reason (`not_found`, `out_of_reach`, `unbreakable`, `no_tool`, `not_loaded`); it never digs another block. `at` is an integer Position as in `place`.
+2. `break` is built on the `mineAt` run option of 0349 and reuses the existing unbreakable list and the tool choice. The dig-safety refusals are removed (0428).
 3. `mine` (by name, nearest) is unchanged.
 4. A block operation is counted for `break` as 1, like `place`.
 

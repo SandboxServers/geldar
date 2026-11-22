@@ -19,10 +19,11 @@ Ledger: [README.md](README.md). Rules: decisions [0420](../../decisions/0420-age
   - `op:add|replace` fields: `palette` (map key to `{block, state?}`), `steps` (array of step objects), `origin` (Position or `"here"`, resolved once at add time; steps are absolute or relative to it), `final` (boolean, default true; false lets a plan arrive in several `act` calls), `seq` (integer, order of chunks), `order` (`bottom_up` default | `given`).
   - Step objects: `{op:"place",pal,at}`, `{op:"break",at}`, `{op:"replace",pal,at}` (break then place), and geometry helpers `{op:"box"|"hollow_box",pal,from,to}`, `{op:"line",pal,from,to}`, `{op:"wall",pal,from,to,height}`, `{op:"circle",pal,center,radius,axis}`, `{op:"sphere",pal,center,radius,hollow}`, `{op:"list",pal,cells:[[x,y,z],...]}`, each with an optional `break:true` form. No maximum on counts (0423); the only bounds are integer coordinates inside the border and the 32 KiB per thought text cap, which chunked upload (`final`, `seq`) avoids.
   - `op:cancel`: `plan_id` or `"all"`.
-- Cell failure codes: `done_already`, `changed` (stale), `blocked`, `no_reference`, `out_of_reach`, `not_loaded`, `missing_materials`, `no_tool`, `unbreakable`, `unsafe`, `state_unachievable`, `timeout`, `refused`.
+- Cell failure codes: `done_already`, `changed` (stale), `blocked`, `no_reference`, `out_of_reach`, `not_loaded`, `missing_materials`, `no_tool`, `unbreakable`, `state_unachievable`, `timeout`, `refused`.
 - Event `plan_progress`: `{plan_id, total, done, placed, broken, skipped_by_code{}, phase, next_need?:{block,count}}`; no unseen-block data; sample indexes are the plan's own cell numbers.
 - MCP tools (free, rate limited like `see`): `survey {box, layers?}` and `plan_check {plan}`; `status` gains an `active_plan` block. All three are hidden and refused while the flag is off (`threshold/mcp/src/tools/unavailable.ts`).
-- Survey reply: layers by Y, each a list of run-length rows over a legend `{key: block name}`, a last-seen age per run in game minutes, the key `unknown` for any cell not seen. No owner field.
+- Dig-safety refusals (falling column, liquid, walled-in) are removed for `break`, plan and `mine` (0428, BLD-36); deaths are part of the experiment. Only physically impossible refusals remain: `out_of_reach`, `unbreakable` (bedrock and the like), `not_loaded`, `no_tool`.
+- Survey reply (the next life's read includes the predecessor's inherited map, 0424; inherited runs carry their last-seen ages and an `inherited` mark): layers by Y, each a list of run-length rows over a legend `{key: block name}`, a last-seen age per run in game minutes, the key `unknown` for any cell not seen. No owner field.
 - Flag: `body_actions.building`, default false, plumbed like `body_actions.use` (decision 0218: `golem/src/body/create-body.ts` options, `golem/src/adam/adam-config.ts`, the shard config files, the MCP flag read).
 - KV buckets: `geldar-plans` (key `<life_id>.<plan_id>.<seq>`, value at most 64 KiB), `geldar-seen` (key `<life_id>.<sx>.<sy>.<sz>`, a 16-cube section). The running cursor lives in the existing `geldar-checkpoints` entry.
 
@@ -30,9 +31,9 @@ Ledger: [README.md](README.md). Rules: decisions [0420](../../decisions/0420-age
 
 | Window | Waves | Why one window | MANUAL |
 |---|---|---|---|
-| R1 | 1 and 2 | contract, validator, pure libraries and cell code, all dormant (flag off, lane unregistered) | none |
+| R1 | 0, 1 and 2 (incl. BLD-36) | contract, validator, pure libraries and cell code, all dormant (flag off, lane unregistered) | none |
 | R2 | 3, 4 and BLD-26 | lane, seen map, the Body survey endpoint; flag still off | NATS role and bucket seed (BLD-05, BLD-18) before the flag goes on |
-| R3 | 5 (BLD-21 to 23), BLD-27 | MCP tools, descriptions, metrics | none; prompts (BLD-24) and kit (BLD-25) do not restart Bodies |
+| R3 | 5 (BLD-21 to 23), BLD-27, BLD-37 | MCP tools, descriptions, metrics, the Glass plan-activity view (`glass/**`) | none; prompts (BLD-24) and kit (BLD-25) do not restart Bodies |
 
 Paper go-live (BLD-31) is a config flip plus one restart, after R3 and the quality packets. Nothing needs a Paper plugin or jar: there is no enforcement (0420), and recording already exists.
 
@@ -61,11 +62,13 @@ Goal: after one small serial gate (Wave 0), every other packet creates or edits 
 | Ledger, `README.md` packet table | every packet | Only the orchestrator edits `README.md`. Each packet writes its status to its own `worknotes/BLD-NN.md` (stubs exist in this commit). No shared append-only file. |
 | Test fixtures and goldens | BLD-04, 11, 17, 20, 28 | Each packet owns `.../fixtures/<packet>/` and its own `*.test.ts`; no shared golden. |
 | Flag key `body_actions.building` | BLD-03, 17, 21 | Declared once in S1 (schema) and S3 (plumbing, default off). |
+| `glass/**` registry | BLD-37 | S3c adds the one registry line; BLD-37 owns `glass/src/plan-activity/**`. |
+| `golem/src/actions/dig-safety.ts`, `mine.ts` | BLD-06, 10, 36 | BLD-36 alone edits them; BLD-06 and BLD-10 import nothing from dig-safety. |
 | Plugin config | none | No plugin change in this campaign (0420). |
 
 ### Wave 0: scaffold (the only serial gate)
 
-All four packets are S, disjoint, and run in parallel; they merge into the integration branch `phase1/building` in the order S1, then S2, S3, S4 (S2 and S3 import S1's generated types). Dormant: flag off, stubs refuse or return null.
+All five packets (S1, S2, S3a, S3b, S3c, S4: six counting S3c) are S or M, disjoint, and run in parallel; they merge into the integration branch `phase1/building` in the order S1, then S2, S3, S4 (S2, S3a, S3b and S3c import S1's generated types). Dormant: flag off, stubs refuse or return null.
 
 #### BLD-S1 Contract scaffold (absorbs BLD-01 and BLD-02)
 - Size S to M (it carries the full shapes of BLD-01 and BLD-02 below, but no behavior). Restarts: Y when it reaches main. Branch `phase1/bld-s1-contract`; commit `BLD-S1: contract shapes for break, plan, plan_progress, survey and plan_check`.
@@ -82,6 +85,10 @@ All four packets are S, disjoint, and run in parallel; they merge into the integ
 - S3b files: `threshold/mcp/src/tools/survey.ts`, `plan-check.ts` (stubs), registry and `unavailable.ts` entries, `events/mapper.ts` entry and `events/handlers/plan-progress.ts` stub, `play-view/active-plan.ts` stub, the `body-gateway.ts` message names.
 - Tests: with the flag off every stub verb is refused with the one neutral message; every stub module is imported by an `index` test; revert any registration line and that test fails.
 
+#### BLD-S3c Glass scaffold
+- Size S. Branch `phase1/bld-s3c-glass`; commit `BLD-S3c: Glass plan-activity registry stub`. Restarts: Y (`glass/**`).
+- Files: one registry line in the Glass page or tab registry (find it from decisions 0410 and 0411) and a stub module `glass/src/plan-activity/index.ts` that renders nothing and is off by default; BLD-37 fills only files under `glass/src/plan-activity/`. Test: the registry lists the stub and renders nothing while off.
+
 #### BLD-S4 Docs scaffold
 - Size S. Branch `phase1/bld-s4-docs`. Files: `docs/decisions/README.md` rows (0420 to 0427, once; this commit already adds them: S4 only verifies), the status line of 0349, the nats-auth paragraph. May be done by the orchestrator in this commit chain; counts as done when verified.
 
@@ -92,13 +99,13 @@ Only Wave 0 (S1) regenerates `contract/src/generated/*`. Two later packets chang
 ### Dependency graph and width
 
 ```
-Wave 0:  S1 -> (S2 || S3a || S3b || S4)                                   width 4
-Wave 1:  BLD-04 || BLD-05 || BLD-06 || BLD-07 || BLD-08 || BLD-09 || BLD-10 || BLD-12 || BLD-17   width 9
-Wave 2:  BLD-11 (needs 06-10) || BLD-18 (needs 17) || BLD-24 || BLD-26*    width 4
+Wave 0:  S1 -> (S2 || S3a || S3b || S3c || S4)                              width 5
+Wave 1:  BLD-04 || BLD-05 || BLD-06 || BLD-07 || BLD-08 || BLD-09 || BLD-10 || BLD-12 || BLD-17 || BLD-36   width 10
+Wave 2:  BLD-11 (needs 06-10) || BLD-18 (needs 17) || BLD-24    width 3
 Wave 3:  BLD-13 (needs 04,05,11) || BLD-20 (needs 17)                      width 2
 Wave 4:  BLD-14 || BLD-15 || BLD-16 (all need 13) || BLD-19 (needs 17,20) || BLD-21 (needs 20)   width 5
 Wave 5:  BLD-22 (needs 04,20,21) || BLD-23 (needs 16) || BLD-27 (needs 16) || BLD-30 (needs 14)  width 4
-Wave 6:  BLD-25 (kit; needs 21-23) || BLD-28 (integration test, needs all code)
+Wave 6:  BLD-25 (kit; needs 21-23) || BLD-28 (integration test, needs all code) || BLD-37 (Glass; needs S3c, 27, 16) || BLD-26* (needs 23; owner side unblocked)   width 4
 Wave 7:  BLD-29 evidence, then BLD-31 go-live
 NeoForge: BLD-32 may start in Wave 1 (docs only, BlockedDecision), 33 after 32, 34 after 32 is accepted, 35 last
 ```
@@ -114,10 +121,13 @@ The wave numbers below (Wave 1 to Wave 7 headings) are topic groups, not the mer
 | S2 | `player-core/src/validate/{bounds,action-shapes,thought-output}.ts`, `player-core/src/building/index.ts`, stub files there |
 | S3a | `golem/src/building/**` stubs, `golem/src/actions/{index,registry}.ts` lines, `create-body.ts`, `restart.ts`, `wake.ts`, `metrics.ts`, `seed-buckets.ts`, erase coverage list |
 | S3b | `threshold/mcp/src/{tools,events,play-view,body-gateway}` stub files and registry lines |
+| S3c | `glass/src/plan-activity/index.ts` stub and one Glass registry line |
+| BLD-36 | `golem/src/actions/dig-safety.ts` and its call sites in `mine.ts` and `mine-cell.ts` (not goto tier-2), their tests |
+| BLD-37 | `glass/src/plan-activity/**` (own files only), its tests |
 | S4 | `docs/decisions/README.md`, `0349` status, nats-auth paragraph |
 | BLD-04 | `player-core/src/building/{expand,geometry,order,tally}.ts` and their tests and `fixtures/bld-04/` |
 | BLD-05 | `golem/src/building/{plan-store,plan-checkpoint}.ts` (+ tests, fakes) |
-| BLD-06 | `golem/src/actions/break.ts`, `break.test.ts` |
+| BLD-06 | `golem/src/actions/break.ts`, `break.test.ts` (imports no dig-safety; BLD-36 owns that module) |
 | BLD-07 | `golem/src/actions/place.ts` (REPLACEABLE), `place-footprint.ts`, tests |
 | BLD-08 | `golem/src/actions/place-state.ts`, and the single `placeState` option line in `place.ts` (BLD-07 edits another region of `place.ts`: the two packets are ordered, see check rule) |
 | BLD-09 | `golem/src/building/stand.ts`, tests |
@@ -130,7 +140,7 @@ The wave numbers below (Wave 1 to Wave 7 headings) are topic groups, not the mer
 | BLD-16 | `golem/src/building/progress.ts`, tests |
 | BLD-17 | `golem/src/building/seen/{recorder,section}.ts`, tests |
 | BLD-18 | `golem/src/building/seen/store.ts`, tests, the erase coverage test body |
-| BLD-19 | `golem/src/building/seen/leak.test.ts`, `tools/repo-checks/src/seen-fence.ts` and test |
+| BLD-19 | `golem/src/building/seen/leak.test.ts`, `tools/repo-checks/src/{seen-fence,plan-activity-fence}.ts` and tests |
 | BLD-20 | `golem/src/building/seen/survey.ts`, tests |
 | BLD-21 | `threshold/mcp/src/tools/survey.ts` and test |
 | BLD-22 | `threshold/mcp/src/tools/plan-check.ts` and test |
@@ -194,6 +204,13 @@ Packets merge into the integration branch `phase1/building` as they finish, in a
 - Tests: a plan of one million cells in chunks has no value over 64 KiB (this is the 1 MB risk test of 0423); a chunk lost in the middle makes the plan `failed: store`, not a silent partial; delete leaves no key; a checkpoint over 4 KiB is refused in the test (the summary truncates and counts the dropped).
 - Checks: lint, golem typecheck, golem test.
 
+### BLD-36 Remove the dig-safety refusals
+- Size S. Restarts: Y (R1). Depends: S3a. Owner ruling 2026-11-22 (decision 0428).
+- Branch `phase1/bld-36-dig-safety-off`; commit `BLD-36: mine and break no longer refuse falling columns, liquid or walled-in cells`.
+- Files: `golem/src/actions/dig-safety.ts` (find `digSafetyRefusal` and its callers by symbol: `mine.ts`, `mine-cell.ts`, the `mineAt` path), `dig-safety.test.ts`, the tests of `mine` that expect those refusals. Delete the refusal for falling-block stacks overhead, liquid touching the cell and walled-in cells, and the "would drop you" refusal for the block under the feet in `mine`, `mineAt` and so `break`. Keep the helpers (`isFalling`) that ordering code reads. Keep refusals that are physically impossible: out of reach, unbreakable (bedrock, barrier, `diggable === false`), unloaded chunk, no reachable stand. Goto tier-2 pathing rules (decision 0164) are unchanged; flag in the PR that the owner scoped this to plan, `break` and `mine`.
+- Tests that fail on revert: a gravel column overhead is dug and the agent takes the fall; a block next to water is dug; a walled-in cell is dug; bedrock still refuses (`unbreakable`); restoring the refusal fails the first three.
+- Checks: golem typecheck and test.
+
 ## Wave 2: Body cell operations (R1, dormant)
 
 Fan-out: BLD-06, 07, 08, 09 and 10 run side by side (they touch different files); BLD-11 integrates and owns the shared interface (`cell-do.ts`).
@@ -203,7 +220,7 @@ Fan-out: BLD-06, 07, 08, 09 and 10 run side by side (they touch different files)
 - Branch `phase1/bld-06-break-action`; commit `BLD-06: break action digs one named cell`.
 - Files: new `golem/src/actions/break.ts` (reuse the `mineAt` path in `mine.ts` and `mine-cell.ts`; typed reasons from 0421), register in `golem/src/actions/index.ts` and `registry.ts`, `golem/src/actions/break.test.ts`, `docs/decisions/0349-a-program-mines-one-exact-cell.md` status line becomes `Superseded by 0421` and its README row (only that line). No ownership check: do not import `protected-blocks.ts` or the block-owner cache.
 - Behavior: refuse when the flag is off (`not_possible: building is off`); walk within reach (existing `moveNear`, tier-1, no digging); equip the best tool (`bestHarvestTool`); dig; verify the cell is air; walk onto the drop and pick it up (existing pickup constants).
-- Tests: breaks the named cell and not the nearest of its kind; refuses bedrock (`unbreakable`); refuses with the block under the feet (`unsafe: would drop you`); an out-of-reach cell walks then breaks; a cell owned by another player IS broken (this test pins 0420: reverting to a gate fails it).
+- Tests: breaks the named cell and not the nearest of its kind; refuses bedrock (`unbreakable`); digs a block with lava or a falling column next to it without refusal (0428); an out-of-reach cell walks then breaks; a cell owned by another player IS broken (this test pins 0420: reverting to a gate fails it).
 - Checks: lint, golem typecheck and test.
 
 ### BLD-07 Place: wider replaceable set and two-block items
@@ -230,8 +247,8 @@ Fan-out: BLD-06, 07, 08, 09 and 10 run side by side (they touch different files)
 ### BLD-10 Scaffolding, support and falling or fluid handling
 - Size M. Restarts: Y (R1). Depends: BLD-04, BLD-09.
 - Branch `phase1/bld-10-scaffold-hazards`; commit `BLD-10: scaffold, support and falling-block and fluid rules for the plan lane`.
-- Files: `golem/src/building/scaffold.ts` (when no stand cell exists, pillar up or bridge with the agent's own cheapest placeable block, as a human would; remove it afterwards if it blocks the plan), `golem/src/building/hazards.ts` (reuse `isFalling` and `digSafetyRefusal` from `golem/src/actions/dig-safety.ts`: break top-down under a falling column, place sand and gravel bottom-up, do not stand under one; a cell touching lava or source water: place a retaining block first or report `unsafe`), tests with `escape-ladder.fakes.ts`-style fakes. No scaffold is placed unless the agent holds the block.
-- Tests: a cell 6 high with no stand gets a scaffold and the scaffold is removed; a sand column is broken top-down; a cell next to lava is `unsafe` when the agent holds no retaining block; no scaffold without material (`missing_materials`).
+- Files: `golem/src/building/scaffold.ts` (when no stand cell exists, pillar up or bridge with the agent's own cheapest placeable block, as a human would; remove it afterwards if it blocks the plan), `golem/src/building/hazards.ts` (ordering mechanics only, never a refusal (0428): place sand and gravel bottom-up and break top-down where that keeps the work possible; a cell touching lava or source water is worked as a human would, with a retaining block first if the agent holds one; do not import `digSafetyRefusal`), tests with `escape-ladder.fakes.ts`-style fakes. No scaffold is placed unless the agent holds the block.
+- Tests: a cell 6 high with no stand gets a scaffold and the scaffold is removed; a sand column is broken top-down; a cell next to lava is worked, with a retaining block first when held, and never refused; no scaffold without material (`missing_materials`).
 - Checks: as BLD-09.
 
 ### BLD-11 Cell executor
@@ -261,9 +278,9 @@ BLD-12 is small and independent; BLD-13 then BLD-14 are serial; BLD-15 and BLD-1
 
 ### BLD-14 Lane versus foreground intents; queue operations; resume
 - Size M. Restarts: Y (R2). Depends: BLD-13.
-- Branch `phase1/bld-14-lane-queue`; commit `BLD-14: add, replace and cancel plans; resume after restart; no starvation`.
-- Files: `golem/src/building/queue.ts` (`plan` action handler: add with `seq` chunks until `final`, replace, cancel; one active plan at a time per life, others queued in order), `golem/src/building/contention.ts` (the rule: a foreground intent step or immediate action runs first; the lane runs when the slot is free; a long foreground intent such as `gather` yields the slot to the lane for one slice every N foreground steps, N configurable, default 4, so a plan cannot starve and neither can the intent), `golem/src/body/restart.ts` hook (resume the lane from `geldar-checkpoints` and `geldar-plans`; a missing chunk fails the plan with a wake), tests.
-- Tests: add in three chunks then a final starts the plan; replace discards unexecuted cells and keeps the placed ones; cancel stops within one slice; restart mid-plan resumes at the cursor (fake KV); neither side starves over 1000 slices (fake clock).
+- Branch `phase1/bld-14-lane-queue`; commit `BLD-14: add, replace and cancel plans; resume after restart; a foreground intent pauses the plan and it resumes after`.
+- Files: `golem/src/building/queue.ts` (`plan` action handler: add with `seq` chunks until `final`, replace, cancel; one active plan at a time per life, others queued in order), `golem/src/building/contention.ts` (owner ruling 2026-11-22, 0423: a foreground intent such as `gather` or `travel` PAUSES the plan exactly as a reflex does, and the plan resumes after the intent ends; the plan has no priority and no slice share), `golem/src/body/restart.ts` hook (resume the lane from `geldar-checkpoints` and `geldar-plans`; a missing chunk fails the plan with a wake), tests.
+- Tests: add in three chunks then a final starts the plan; replace discards unexecuted cells and keeps the placed ones; cancel stops within one slice; restart mid-plan resumes at the cursor (fake KV); a `gather` intent pauses the lane at once, the lane resumes when the intent ends, and a reflex still outranks both.
 - Checks: golem typecheck and test.
 
 ### BLD-15 Tick budget and TPS throttle
@@ -287,21 +304,21 @@ BLD-17 then BLD-18 are serial; BLD-19 and BLD-20 follow in parallel.
 ### BLD-17 Recorder
 - Size M. Restarts: Y (R2). Depends: BLD-03 (flag).
 - Branch `phase1/bld-17-seen-recorder`; commit `BLD-17: record the blocks the character has seen`.
-- Files: `golem/src/building/seen/recorder.ts` (every N ticks, default 10, cast the same rays as the viewport, `golem/src/perception/view/viewport.ts` with `MAX_RANGE` 24 and `DARK_RANGE` 6, from the eyes and in the facing field of view; record the first opaque block hit and the transparent blocks before it; add cells the Body placed or broke; a cell in an unloaded chunk is never recorded), `golem/src/building/seen/section.ts` (a 16-cube section: palette plus a last-seen value per cell), bounded work per tick (a ray budget), tests.
+- Files: `golem/src/building/seen/recorder.ts` (every N ticks, default 10, cast the same rays as the viewport, `golem/src/perception/view/viewport.ts` with `MAX_RANGE` 24 and `DARK_RANGE` 6, from the eyes and in the facing view cone (config `building.seen_fov`, default 90 by 45 degrees; a head turn reveals more; line of sight only); record the first opaque block hit and the transparent blocks before it; add cells the Body placed or broke; a cell in an unloaded chunk is never recorded), `golem/src/building/seen/section.ts` (a 16-cube section: palette plus a last-seen value per cell), bounded work per tick (a ray budget), tests.
 - Tests: a block behind a wall is not recorded (the leak test, first half); a block in an unloaded chunk is not recorded; a block in the dark beyond 6 is not recorded; looking at a cell twice updates its last-seen time; the work per tick never exceeds the ray budget.
 - Checks: golem typecheck and test.
 
 ### BLD-18 Storage, death retention, size and write rate
 - Size M. Restarts: Y (R2). Depends: BLD-17, BLD-05 (bucket seed pattern). MANUAL: NATS role and bucket (as BLD-05).
 - Branch `phase1/bld-18-seen-store`; commit `BLD-18: persist seen sections per life, kept across death`.
-- Files: `golem/src/building/seen/store.ts` (dirty sections flushed on an interval, default 30 s, coalesced, retried; section values compressed and under 64 KiB; evict least-recently-seen sections from memory only), death handling (nothing erased; the successor life reads the predecessor's map only once the owner answers open question Q1; the default is not read), the erase coverage: add the bucket to the account-erasure path and its coverage test (`docs/runbooks/account-deletion.md`, decision 0323), `golem/src/building/seen/store.test.ts`, a measurement script note for BLD-29 (bytes per section, flushes per minute).
-- Tests: a flush after 30 s writes only dirty sections; the death of a life leaves its sections readable under that `life_id`; the successor does not read them while Q1 is open; an erasure deletes them; a corrupt section is dropped and re-seen later, not fatal.
+- Files: `golem/src/building/seen/store.ts` (dirty sections flushed on an interval, default 30 s, coalesced, retried; section values compressed and under 64 KiB; evict least-recently-seen sections from memory only), death handling (nothing erased; the NEXT life of the same agent READS its predecessor's map: owner ruling 2026-11-22, an explicit deviation from the spec's read-only-archive rule, 0424; the successor finds the predecessor through the life registry and merges its sections under its own `life_id`, keeping each cell's original last-seen time; a different agent's map is never read), the erase coverage: add the bucket to the account-erasure path and its coverage test (`docs/runbooks/account-deletion.md`, decision 0323), `golem/src/building/seen/store.test.ts`, a measurement script note for BLD-29 (bytes per section, flushes per minute).
+- Tests: a flush after 30 s writes only dirty sections; the death of a life leaves its sections readable under that `life_id`; the successor life's `survey` read includes the inherited cells with their last-seen ages and the `inherited` mark; an inherited map never contains a cell the predecessor did not see, and a different agent's sections are not read; an erasure deletes them; a corrupt section is dropped and re-seen later, not fatal.
 - Checks: golem typecheck and test; repo-checks erase coverage test.
 
 ### BLD-19 Leak tests and the telemetry fence
 - Size S. Restarts: N (test files only: `**/*.test.ts` are excluded; confirm in the PR) or Y if a source file changes. Depends: BLD-17, BLD-20.
 - Branch `phase1/bld-19-seen-fence`; commit `BLD-19: the seen map never leaks unseen blocks or reaches telemetry`.
-- Files: `golem/src/building/seen/leak.test.ts` (a world with a wall, a sealed cave and an unloaded chunk: the map and the survey reply contain none of them), `tools/repo-checks/src/` check (a static test) that `eventsink/`, `telemetry/` and `glass/` never import `golem/src/building/seen` nor subscribe to the seen subjects or bucket, a NATS permission note: the MCP role does not read `geldar-seen` (it asks the Body through the gateway).
+- Files: `golem/src/building/seen/leak.test.ts` (a world with a wall, a sealed cave and an unloaded chunk: the map and the survey reply contain none of them), `tools/repo-checks/src/` check (a static test) that `eventsink/`, `telemetry/` and `glass/` never import `golem/src/building/seen` nor subscribe to the seen subjects or bucket (the seen map is never shown on Glass), and the reverse fence for plan activity (0429): no agent-facing module (`threshold/mcp` tool replies, `animus`, `golem` snapshot and wake text, `player-core`) imports a Glass plan-activity module or reads the Glass feed subject, a NATS permission note: the MCP role does not read `geldar-seen` (it asks the Body through the gateway).
 - Tests: as named; reverting the fence (adding such an import in a fixture) fails the static check.
 - Checks: repo checks, golem test.
 
@@ -347,18 +364,25 @@ Fan-out: BLD-21, 22, 23 run side by side after BLD-20; BLD-24 and BLD-25 need no
 ### BLD-25 Kit skills and twins (kit repo, MANUAL release)
 - Size M. Restarts: N. Depends: BLD-23, BLD-21, BLD-22. Repo: the scriptorium kit, not this one. The packet brief names that repo; the scriptorium orchestrator gives the go.
 - Branch `phase1/bld-25-kit-building`; commit `BLD-25: kit teaches the break, plan and survey tools`.
-- Files (kit repo): new `template/.claude/skills/building/SKILL.md` (the verbs, survival rules, how to read `survey` and `plan_check`, how to read progress and recover from `changed` and `missing_materials`; no nudge, no goal), `template/.claude/skills/intents-and-limits/SKILL.md` (mention the plan lane is separate from intents), `template/.claude/settings.json` (a `Skill(building)` line and allow lines for the two new MCP tools, unless the owner prefers folding the reads into `view`/`status`; ask), `template/CLAUDE.md` and `template-src/instructions.md` (twins, identical, one pointer line), template tests.
-- Release: one kit tag (`docs/release.md` in the kit), then the per-player `geldar-play upgrade` PRs the owner merges; a running Mind reloads skills on restart. What reaches agents when: MCP descriptions and `prompts/` on MCP/animus redeploy (R3), kit skills only after the tag plus each upgrade merge. Until a player upgrades, that agent sees the new tool descriptions but not the skill.
+- Files (kit repo): new `template/.claude/skills/building/SKILL.md` (the verbs, survival rules, how to read `survey` and `plan_check`, how to read progress and recover from `changed` and `missing_materials`; no nudge, no goal), `template/.claude/skills/intents-and-limits/SKILL.md` (mention the plan lane is separate from intents), `template/.claude/settings.json` (a `Skill(building)` line and allow lines for the two new MCP tools, owner ruling 2026-11-22: `survey` and `plan_check` are NEW kit tools, so `mcp__geldar__survey` and `mcp__geldar__plan_check` get allow entries; the kit runs in dontAsk mode, so an agent whose kit lacks them cannot call them), `template/CLAUDE.md` and `template-src/instructions.md` (twins, identical, one pointer line), template tests.
+- Release: one kit tag (`docs/release.md` in the kit), then the per-player `geldar-play upgrade` PRs the owner merges; a running Mind reloads skills on restart. What reaches agents when: MCP descriptions and `prompts/` on MCP/animus redeploy (R3), kit skills only after the tag plus each upgrade merge. The `break` and `plan` actions work for every agent at R3 (they ride `act`). `survey` and `plan_check` are callable only after that player's upgrade PR is merged (allow lines) and its Mind restarted; until then the agent can build from what it sees with `look`, `view` and `see`, and has no seen-map read. Order: ship R3, then the kit tag, then the owner merges the upgrade PRs; go-live (BLD-31) may precede some upgrades.
 - Tests: the kit's skill-list and instruction-twin tests; a text test for no nudge words.
 
 ### BLD-26 Delete the dead inline `build` action (0427)
-- Size S. Restarts: Y (R2). Depends: BLD-23 (the text change lands together). Status BlockedDecision until the owner accepts 0427.
+- Size S. Restarts: Y (R2). Depends: BLD-23 (the text change lands together). Owner accepted 0427 (2026-11-22): unblocked on the owner side; it still waits for BLD-23 and the contract merge order.
 - Branch `phase1/bld-26-delete-inline-build`; commit `BLD-26: remove the unused inline build action`.
 - Files: `contract/schemas/thought.schema.json` (remove the `build` Action), `golem/src/body/limits.ts` (the `build` cost line), regenerated code, tests that name it, `docs/spec.md` untouched (the owner edits it; list the line in the PR).
 - Tests: the schema rejects `do:"build"`; the `build` program still runs (`programs/build.test.ts`).
 - Checks: contract and golem.
 
 ## Wave 6: quality, operations, rollout
+
+### BLD-37 Glass plan-activity view (human-facing)
+- Size M. Restarts: Y (`glass/**`, R3). Depends: S3c, BLD-27, BLD-16. Owner ruling 2026-11-22 (decision 0429): plan activity may be shown to humans on Glass; there is no building XP.
+- Branch `phase1/bld-37-glass-plans`; commit `BLD-37: Glass shows plan activity to humans`.
+- Files: only `glass/src/plan-activity/**` (a read-only panel fed by the eventsink `plan_progress` rows: agent label, plan name, counts by failure code, phase; not the seen map, not unseen blocks), its tests. Follow the Glass rules of 0410 to 0412 (CSP, self-hosted fonts, mobile layout).
+- Tests (hard): a static and a runtime test that no plan or seen-map datum reaches an agent-readable path: no `threshold/mcp` reply, snapshot, wake text or `animus` input contains a Glass field; the Glass feed subject and route are not readable with the agent NATS role or the MCP token (a fixture of both roles is refused); Glass text contains no coordinates of unseen cells; the panel is off when `body_actions.building` is off. BLD-19's plan-activity fence runs in the same check.
+- Checks: glass typecheck and test; repo checks.
 
 ### BLD-27 Metrics and telemetry for plans
 - Size S. Restarts: Y (R3). Depends: BLD-16.

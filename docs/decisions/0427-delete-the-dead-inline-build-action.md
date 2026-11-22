@@ -1,6 +1,6 @@
 # 0427. Delete the inline `build` action
 
-- Status: Proposed (recommendation; the owner may keep it)
+- Status: Accepted (owner, 2026-11-22)
 - Date: 2026-11-22
 - Spec: section 5 verb table still lists `build(blueprint)`; decision 0074 (the action has no handler).
 

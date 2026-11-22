@@ -253,9 +253,11 @@ Name records `NNNN-short-slug.md`, numbered in order. Sessions working in parall
 | [0412](0412-kino-tab-and-restyle.md) | Kino takes the reserved Glass tab when mounted, adopts the dark Glass palette and typefaces, and keeps its camera and target scope | Proposed (implementer; owner rules K4, K5, K6 and K9) |
 | [0420](0420-agents-build-and-break-freely-in-survival.md) | Agents place and break any block by survival rules: no ownership gate, nothing protected, survival materials, one block at a time; recording stays, enforcement does not exist | Accepted |
 | [0421](0421-break-at-position-verb-exposes-exact-cell-dig.md) | A `break` action digs one named cell; the exact-cell dig of 0349 reaches agents | Accepted (verb); shape Proposed |
-| [0422](0422-building-accepted-risks.md) | Building: owner-accepted risks (no restore, nothing protected, no caps, all 19 at once) and the unmet Shrine and Cradle protection promise, flagged for a spec edit | Accepted |
-| [0423](0423-background-plan-queue-for-block-edits.md) | A background plan lane of block edits: geometry helpers, stale cells skipped, TPS throttle instead of caps, chunked KV storage | Proposed |
-| [0424](0424-seen-block-map.md) | A persistent per-agent seen-block map, kept across death, read by a `survey` tool; never unseen blocks, never telemetry | Proposed |
+| [0422](0422-building-accepted-risks.md) | Building: owner-accepted risks (no restore, nothing protected, no caps, all 19 at once) and the Shrine and Cradle promise and other known spec deviations (spec untouched) | Accepted |
+| [0423](0423-background-plan-queue-for-block-edits.md) | A background plan lane of block edits: a foreground intent pauses it, geometry helpers, stale cells skipped, TPS throttle instead of caps, chunked KV storage | Proposed |
+| [0424](0424-seen-block-map.md) | A persistent per-agent seen-block map, kept across death and inherited by the next life, read by a `survey` tool; never unseen blocks, never telemetry | Proposed |
 | [0425](0425-teach-building-verbs-without-nudging.md) | Teach the building verbs through kit, descriptions and a new body-api version; never nudge | Accepted |
 | [0426](0426-building-rollout-both-shards.md) | Building rolls out to all 19 at once behind `body_actions.building`; NeoForge is a gated second wave | Accepted (Paper); NeoForge gated |
-| [0427](0427-delete-the-dead-inline-build-action.md) | Delete the unused inline `build` action | Proposed |
+| [0427](0427-delete-the-dead-inline-build-action.md) | Delete the unused inline `build` action | Accepted |
+| [0428](0428-dig-safety-refusals-removed.md) | The dig-safety refusals are removed for plans, break and mine; only physically impossible refusals stay | Accepted |
+| [0429](0429-plan-activity-on-glass-no-building-xp.md) | Plan activity may appear on Glass for humans; building earns no XP | Accepted |
