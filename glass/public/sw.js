@@ -33,6 +33,7 @@ const SHELL = [
   '/js/render-install.ts',
   '/js/render-reader.ts',
   '/js/render-filters.ts',
+  '/js/render-fresh.ts',
   '/js/render-roster.ts',
   '/js/render-tabs.ts',
   '/js/manifest.webmanifest',

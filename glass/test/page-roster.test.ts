@@ -3,6 +3,7 @@ import type { HTMLInputElement, HTMLSelectElement, Window } from 'happy-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { HOSTILE } from '../src/render-fixtures.ts';
 import { display, whenLabel } from '../src/render-model.ts';
+import { DEATH_DATE } from '../src/render-roster.ts';
 import { auditTree } from './audit.ts';
 import { CORPUS } from './corpus.ts';
 import { boot, cleanUp, fire, PAGES, type Pages, page, settle, thought } from './page-boot.ts';
@@ -148,13 +149,18 @@ describe('Roster', () => {
       'life 1 · headless · born day 0',
       'alive',
     ]);
+    // The month is a word, so the date reads the same everywhere: never 11/14 or 14/11.
+    expect(DEATH_DATE).toEqual({ day: 'numeric', month: 'short', year: 'numeric' });
+    expect(new Date(DIED).toLocaleDateString('en-US', DEATH_DATE)).toMatch(
+      /^[A-Z][a-z]{2} \d{1,2}, \d{4}$/,
+    );
     expect(text(win, '#roster-dead button:first-child .roster-text > span')).toEqual([
       'Tess',
       'life 2 · sovereign · born day 4',
-      `died ${new Date(DIED).toLocaleDateString()} — fall`,
+      `died ${new Date(DIED).toLocaleDateString(undefined, DEATH_DATE)} — fall`,
     ]);
     expect(text(win, '#roster-dead button:last-child .roster-note')).toEqual([
-      `died ${new Date(DIED).toLocaleDateString()}`,
+      `died ${new Date(DIED).toLocaleDateString(undefined, DEATH_DATE)}`,
     ]);
     expect(
       win.document.querySelectorAll('#roster-alive canvas.sigil-roster:not(.dead)'),
@@ -209,7 +215,7 @@ describe('Roster', () => {
     ).toEqual([
       'Tess',
       'life 2 · sovereign · born day 4',
-      `died ${new Date(DIED).toLocaleDateString()} — fall`,
+      `died ${new Date(DIED).toLocaleDateString(undefined, DEATH_DATE)} — fall`,
       'Latest entries',
     ]);
     expect(text(win, '.roster-entry-text')).toEqual([
@@ -386,7 +392,7 @@ describe('Roster', () => {
     if (!list || !pane) throw new Error('Missing Roster panes');
     auditTree(list);
     expect(text(win, '#roster-dead .roster-name')).toEqual(values.map(display));
-    const date = new Date(DIED).toLocaleDateString();
+    const date = new Date(DIED).toLocaleDateString(undefined, DEATH_DATE);
     for (const [i, value] of values.entries()) {
       const row = list.children[i];
       expect(row?.querySelector('.roster-meta')?.textContent).toBe(

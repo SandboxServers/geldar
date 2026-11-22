@@ -236,6 +236,9 @@ describe('the phone layout', () => {
   it('fills the screen and never scrolls the page itself: the list scrolls under a fixed header', () => {
     expect(declarations(base, 'body')).toMatch(/height: 100dvh;/);
     expect(declarations(base, 'body')).toMatch(/overflow: hidden;/);
+    // A screen-reader label is placed inside its button, so a row far down the list cannot stretch the page.
+    expect(declarations(base, 'button')).toMatch(/position: relative;/);
+    expect(declarations(base, '.sr')).toMatch(/position: absolute;/);
     expect(declarations(base, '.head')).toMatch(/flex: none;/);
     expect(declarations(ENTRIES, '.list')).toMatch(/overflow-y: auto;/);
     expect(declarations(base, '.reader')).toBe(' display: none; ');

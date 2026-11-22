@@ -4,6 +4,8 @@ import { makeSigil } from './render-sigil.ts';
 import { action, type Doc, type El, make, renderNote } from './render-view.ts';
 
 const LATEST_LIMIT = 6;
+/** How a death date is written: the day, the month as a short word, the year. */
+export const DEATH_DATE = { day: 'numeric', month: 'short', year: 'numeric' } as const;
 const dead = (agent: Row): boolean => agent.died_at != null;
 const agentId = (agent: Row): string => String(agent.agent_id);
 const agentName = (agent: Row): string => String(agent.name ?? '');
@@ -15,7 +17,10 @@ function lifeLine(agent: Row): string {
 function lifeNote(doc: Doc, tag: string, agent: Row): El {
   if (!dead(agent)) return make(doc, tag, 'roster-note alive', 'alive');
   const at = new Date(String(agent.died_at));
-  const date = Number.isFinite(at.getTime()) ? ` ${at.toLocaleDateString()}` : '';
+  // A date with the month as a word: 11/14 and 14/11 read differently in different places.
+  const date = Number.isFinite(at.getTime())
+    ? ` ${at.toLocaleDateString(undefined, DEATH_DATE)}`
+    : '';
   const cause = agent.death_cause ? ` — ${agent.death_cause}` : '';
   return make(doc, tag, 'roster-note dead', `died${date}${cause}`);
 }

@@ -32,6 +32,15 @@ The Glass mobile design reserves space for navigation between the Observatory's 
 - The tab row allows space for the bottom safe-area inset. Counts and other metadata can wrap in narrow panes. The worker uses the existing shell cache key because this change only adds files to the shell.
 - Format profile entry times as in the Glass list and use the same thought view model and text limit. A missing life field uses an em dash. An invalid death timestamp shows “died” and the cause if available.
 
+### Changed in review
+
+A review of the first version of this change, before it was offered for merge, changed four things.
+
+- **The page script kept its comments.** The first version stayed under the 500-line cap by deleting 34 lines of comments from `glass/public/app.js`, the file header among them. They are back. The room came from moving the "new entries" control into its own module, `glass/src/render-fresh.ts`, and the storage helper next to the install code.
+- **The page can no longer grow taller than the screen.** This was a fault in the live redesign (decision 0410), found here by measuring. A screen-reader label (`.sr`) is placed absolutely; inside a row far down the list it was placed in the page, outside the list that scrolls. On the live site the document was 11,391px taller than the screen. A reader could not drag it, but anything that scrolls by itself (find-in-page, a focus change) could slide the whole layout away. A button is now the box its label is placed in.
+- **A count that was announced twice.** Entries that arrived above while the reader was scrolled away were still counted after a pause and a return to the top. Back at the top, the count is now forgotten whether or not the feed is paused.
+- **The death date has the month as a word** ("Nov 14, 2026"). A date written as 11/14 or 14/11 reads differently in different places.
+
 ## Open questions for the owner
 
 1. Keep the current privacy rule for hidden living sovereign agents, or consider a new visibility ruling for their names?
@@ -42,6 +51,6 @@ The Glass mobile design reserves space for navigation between the Observatory's 
 
 ## Validation
 
-Local Chromium used the preview handler with invented data. The 360 × 776 and 750 × 768 viewports were compared with the handoff in light and dark, and a 780 × 360 viewport was checked with More and the install strip open. A cold load used the shipped limits, with no refusals and 29 shell files. Automated tests cover history, profile races, text rendering, and the static and worker file lists.
+Local Chromium used the preview handler with invented data. The 360 × 776 and 750 × 768 viewports were compared with the handoff in light and dark, and a 780 × 360 viewport was checked with More and the install strip open. A cold load used the shipped limits, with no refusals. Automated tests cover history, profile races, text rendering, and the static and worker file lists. After the review changes the cold load is 56 replies on the cover size and 58 unfolded, none refused, with 30 shell files.
 
 A physical Fold, real home-screen installation, live BlueMap navigation, production data and deployment, and a roster of 500 agents were outside local validation. Rapid presses across different agents can still exhaust the existing API bucket. An error is shown in the profile.

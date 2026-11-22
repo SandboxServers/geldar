@@ -39,6 +39,7 @@ export const RENDER_MODULES = [
   'render-detail',
   'render-reader',
   'render-filters',
+  'render-fresh',
   'render-install',
   'render-roster',
   'render-tabs',
