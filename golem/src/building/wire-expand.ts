@@ -15,6 +15,7 @@ import type { PlanCell } from './cell-do.ts';
 import { arrayCellSource, type CellSource, lazyCellSource } from './cell-source.ts';
 import type { PlanBody } from './queue.ts';
 import type { Cell } from './stand.ts';
+import { BASE_GAP_TICKS, gapTicksFor, SLOW_GAP_TICKS } from './throttle.ts';
 
 /** Thrown for a plan the lane cannot run yet; the queue refuses the plan with this message. */
 export class PlanNotRunnable extends Error {
@@ -93,8 +94,18 @@ function referenceOf(key: string, block: string, state: unknown): string {
   return pairs.length === 0 ? block : `${block}[${pairs.join(',')}]`;
 }
 
-/** Cells counted between two yields to the event loop, so the count pass never holds it for long. */
+/** Cells counted between two yields to the event loop, at the base tick gap (throttle.ts). */
 export const COUNT_SLICE = 512;
+
+/**
+ * Cells counted between two yields at a TPS reading: COUNT_SLICE at the base gap, scaled down as the
+ * lane's gap widens (throttle.ts `gapTicksFor`). A paused reading (below 12 TPS) takes the slow gap:
+ * the count still runs, it only yields more often. Never below 1, so a count always makes progress.
+ */
+export function countSliceFor(tps: number | undefined): number {
+  const gap = gapTicksFor(tps) ?? SLOW_GAP_TICKS;
+  return Math.max(1, Math.floor((COUNT_SLICE * BASE_GAP_TICKS) / gap));
+}
 
 /**
  * The lazy source of a plan's cells in the lane's order (B8-lazy): the same cells, in the same order,
@@ -114,6 +125,16 @@ export function createPlanSource(feet: () => Cell): (body: PlanBody) => CellSour
         : orderedCells(steps, palette, base),
     );
   };
+}
+
+/**
+ * The body with `origin: "here"` replaced by the feet now. A stored body is expanded again after a
+ * restart, so it must not keep the word: the feet then are not the feet when the plan was added.
+ * Any other origin is returned as it is (a bad one is refused when the plan is expanded).
+ */
+export function pinOrigin(body: PlanBody, feet: () => Cell): PlanBody {
+  if (body.origin !== 'here') return body;
+  return { ...body, origin: feet() };
 }
 
 /** Bottom-up order, one layer at a time (`lazyBottomUp`); a falling block is not a plan kind here. */
@@ -148,16 +169,34 @@ function* givenCells(
 }
 
 /**
- * Counts a source's cells by reading it to its end, yielding to the event loop every `slice` cells.
- * The read uses up the source: count one source and run another (`createPlanSource` makes one per call).
+ * Counts a source's cells by reading it to its end, yielding to the event loop after each slice of
+ * cells. `sliceFor` is read before each slice (so a TPS-aware caller narrows it as TPS falls); a
+ * value below 1, or not a number, counts as 1. The read uses up the source: count one source and
+ * run another (`createPlanSource` makes one per call).
  */
-export async function countPlanCells(source: CellSource, slice = COUNT_SLICE): Promise<number> {
+export async function countPlanCells(
+  source: CellSource,
+  slice: number | (() => number) = COUNT_SLICE,
+): Promise<number> {
+  const sliceFor = typeof slice === 'number' ? () => slice : slice;
   let count = 0;
+  let limit = sliceLimit(sliceFor);
+  let inSlice = 0;
   while (source.at(count) !== undefined) {
     count++;
-    if (count % slice === 0) await new Promise<void>((resolve) => setImmediate(resolve));
+    inSlice++;
+    if (inSlice >= limit) {
+      inSlice = 0;
+      limit = sliceLimit(sliceFor);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
   }
   return count;
+}
+
+function sliceLimit(sliceFor: () => number): number {
+  const n = sliceFor();
+  return Number.isFinite(n) ? Math.max(1, Math.floor(n)) : 1;
 }
 
 /** The shift of the plan: zero when none is given, the feet for `here`, else the given cell. */

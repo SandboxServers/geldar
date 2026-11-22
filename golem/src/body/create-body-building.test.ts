@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import { describe, expect, it, vi } from 'vitest';
 import * as cellStand from '../building/cell-stand.ts';
 import { BUILDING_REFUSAL } from '../building/names.ts';
+import type { PlanQueueStore } from '../building/queue.ts';
 import * as laneWiring from '../building/wire-lane.ts';
 import type { GolemMetrics } from '../metrics.ts';
 import { fakeBot, fakeView, manualTicks } from './body.fakes.ts';
@@ -34,7 +35,12 @@ function spyMetrics() {
 }
 
 /** A body over fakes with the building flag set. The bot's world is air, and it holds stone. */
-function buildingBody(opts: { building: boolean; bot?: Bot; metrics?: GolemMetrics }) {
+function buildingBody(opts: {
+  building: boolean;
+  bot?: Bot;
+  metrics?: GolemMetrics;
+  planStore?: PlanQueueStore;
+}) {
   const ticks = manualTicks();
   const view = fakeView();
   const bot = opts.bot ?? fakeBot();
@@ -48,6 +54,7 @@ function buildingBody(opts: { building: boolean; bot?: Bot; metrics?: GolemMetri
     currentRevision: () => 1,
     view,
     building: opts.building,
+    ...(opts.planStore === undefined ? {} : { planStore: opts.planStore }),
     wallClock: () => wall.ms,
     ...(opts.metrics === undefined ? {} : { metrics: opts.metrics }),
   });
@@ -220,6 +227,24 @@ describe('the plan queue and lane on the Body (BLD-38b)', () => {
     await tickAt(made, 1);
     await tickAt(made, 2);
     expect(blockAt).not.toHaveBeenCalled();
+    await made.runtime.stop();
+  });
+
+  it('with body_actions.building off a plan add is refused, stores nothing and expands nothing', async () => {
+    const planStore = {
+      stored: vi.fn(async () => 1),
+      dropped: vi.fn(async () => {}),
+      progressed: vi.fn(),
+    };
+    const made = buildingBody({ building: false, planStore });
+    made.runtime.start();
+    const reply = await made.runtime.runAction(row(4));
+    expect(reply.state).toBe('failed');
+    expect(reply.result.message).toBe(BUILDING_REFUSAL);
+    await tickAt(made, 1);
+    expect(planStore.stored).not.toHaveBeenCalled();
+    expect(planStore.progressed).not.toHaveBeenCalled();
+    expect(made.plan).toBeNull();
     await made.runtime.stop();
   });
 });
