@@ -35,3 +35,7 @@ Base: `727109a3` (`building/integration`).
 - `threshold/mcp/src/instinct-door.test.ts` still lists `plan_check` in `NOT_CALLED` with the reason "the world does not wire the tool yet". The reason is stale; the packet did not name that file, so it is unchanged.
 - `world.ts` stays above the 500-line soft cap, as it was before this packet (it was 547 at base; it is smaller now).
 - The ToolError message for `body_unavailable` in `PLAN_CHECK_MESSAGES` reuses the wording the other tools use; it is a fixed string, not the shared constant from `world.ts`.
+
+## Correction (2026-11-22)
+
+- The Findings item on `threshold/mcp/src/instinct-door.test.ts` is still open (that file is unchanged), but its reason is stale. Its `NOT_CALLED` entry for `plan_check` (line 33) says "the world does not wire the tool yet"; `threshold/mcp/src/world.ts:416` wires `plan_check` to `planCheckTool`. Not changed here: the file is outside this packet's scope.

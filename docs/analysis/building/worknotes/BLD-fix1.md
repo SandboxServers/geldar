@@ -23,3 +23,8 @@ Review fixes 1 on building/integration (review-code-1). Base 727109a3.
 ## Open findings from review-code-1 (unchanged)
 
 - Finding 1 (plan_stopped wake), 4 (predecessor/inheritance flag), 7 (seen map eviction), 8 (survey and plan_check listed with the flag off), 9 (waiting_materials has no cap), 10 (abort signal, TPS estimate), 11, 12, 13, 14.
+
+## Correction (2026-11-22)
+
+- "Players mains keep the default (they read no building flag)" is stale (fix A1): `golem/src/players/main.ts:89-90` calls `restartKvFor(config, natsUrl)`, which opens the plan and seen buckets when `body_actions.building` is on (`golem/src/adam/main.ts:194-195`).
+- "Tests for the throttle wait, plan seconds and seen flush metrics are not written" is stale: `golem/src/building/wire-lane.test.ts` covers `planThrottleWait` and `planSeconds`; `golem/src/building/wire-seen.test.ts` covers `seenFlush` (added in fix2b).

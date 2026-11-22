@@ -43,3 +43,8 @@ Branch: `phase1/bld-38e-survey-gateway`.
 
 - `layers` is accepted by the contract input but `surveyBox` has no layers parameter. `answerSurvey` ignores it. Needs a decision before the subject lands.
 - No direct test of the `world.ts` wiring: the round trip test drives `surveyTool` with the gateway fake, not `createWorld`.
+
+## Correction (2026-11-22)
+
+- The status line ("partial ... reaches no live Body") is superseded by BLD-38g (ledger: Done).
+- The "Not wired" item ("No production caller passes `survey` to `MindLinkServer`") is stale: `golem/src/adam/adam-body.ts:392` passes `survey: surveyFrom(restarted.body.seen, tick)`. Code-level only; no live run is claimed here.

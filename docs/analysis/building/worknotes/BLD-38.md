@@ -15,3 +15,8 @@ Blocked before any code change. The audit (grep over `golem/src`, non-test, outs
 - The plan expander (`PlanExpand`, the BLD-04 geometry) has no implementation in `golem/src/building/`.
 
 No code changed.
+
+## Correction (2026-11-22)
+
+- Superseded by BLD-38e, BLD-38g and the rest of the BLD-38 family (ledger: Done). "Blocked before any code change" and the audit above describe base `df15d856` only.
+- On this branch `golem/src/body/create-body.ts:229` registers `planHandler` with the plan queue, and `golem/src/adam/adam-body.ts:392-393` passes `survey` and `planCheck` to the Body's MindLink server. The audit's "no caller" list is not current; re-audit before quoting it.

@@ -15,3 +15,8 @@ Notes:
 - The plan lane has no progress emitter, throttle caller or seen-map flusher in this branch yet, so the new methods
   have no call sites. They are for the lane and seen flush to call when they land.
 - `plan_progress` events are stored by the generic `events` path (not projected); no new table.
+
+## Correction (2026-11-22)
+
+- The Status line ("Checks running") and the "no call sites" note are stale. Superseded by the merged packet (ledger row: Done).
+- The metrics are wired: `golem/src/building/wire-lane.ts` calls `planCell`, `planThrottleWait`, `planSeconds` and `planQueueDepth`; `golem/src/building/wire-seen.ts:140` calls `seenFlush`.
