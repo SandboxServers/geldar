@@ -420,16 +420,33 @@ fetch_coreprotect() {
 }
 
 # Trusted proxies (ruling R32): Glass and the MCP trust the colo bridge gateway, which is the peer address a host-network
-# Caddy shows. The two lists live in the node env file (STATE_DIR/node.env, mode 0600, KEY=VALUE as data, never sourced).
-# load_node_env fills an unset variable from the file and exports both; save_node_env writes the values in force.
+# Caddy shows. The lists live in the node env file (STATE_DIR/node.env, mode 0600, KEY=VALUE as data, never sourced).
+# load_node_env fills an unset variable from the file and exports it; save_node_env writes the values in force.
+# REGISTER_KILL_SWITCH (compose/colo.yml, default true = sign-up closed) is also a node env name: the file value and a
+# shell value must be exactly true or false, anything else dies before anything is deployed. A shell value wins over the file
+# for this run, but save_node_env never persists it: it writes back the file's own REGISTER_KILL_SWITCH line, if it has one.
 NODE_PROXY_VARS="GELDAR_GLASS_TRUSTED_PROXIES GELDAR_MCP_TRUSTED_PROXIES"
-NODE_ENV_VARS="$NODE_PROXY_VARS GELDAR_COLO_SUBNET REGISTER_TRUSTED_PEERS"
+NODE_ENV_VARS="$NODE_PROXY_VARS GELDAR_COLO_SUBNET REGISTER_TRUSTED_PEERS REGISTER_KILL_SWITCH"
+# node_env_check NAME VALUE SOURCE: dies unless VALUE is allowed for NAME (SOURCE names where it came from).
+node_env_check() {
+  case "$1" in
+    REGISTER_KILL_SWITCH)
+      case "$2" in
+        true | false) return 0 ;;
+      esac
+      die "REGISTER_KILL_SWITCH in $3 must be exactly true or false; nothing deployed" ;;
+    *)
+      printf '%s' "$2" | grep -Eq '^[0-9A-Fa-f:.,/]*$' || die "$1 in $3 has characters that are not an address list" ;;
+  esac
+}
 load_node_env() {
   for v in $NODE_ENV_VARS; do
     eval "cur=\${$v:-}"
     if [ -z "$cur" ] && [ -f "$STATE_DIR/node.env" ]; then
       cur=$(sed -n "s/^$v=//p" "$STATE_DIR/node.env" | tail -n 1)
-      [ -z "$cur" ] || printf '%s' "$cur" | grep -Eq '^[0-9A-Fa-f:.,/]*$' || die "$v in $STATE_DIR/node.env has characters that are not an address list"
+      [ -z "$cur" ] || node_env_check "$v" "$cur" "$STATE_DIR/node.env"
+    elif [ "$v" = REGISTER_KILL_SWITCH ]; then
+      [ -z "$cur" ] || node_env_check "$v" "$cur" "the shell"
     fi
     if [ -n "$cur" ]; then
       eval "$v=\$cur"
@@ -443,12 +460,19 @@ save_node_env() {
     say "dry-run, not run: persist the trusted proxy lists in $STATE_DIR/node.env"
     return 0
   fi
+  # The kill switch is re-read from the file, never taken from the shell: a one-off override is not persisted.
+  ks_file=$(sed -n "s/^REGISTER_KILL_SWITCH=//p" "$STATE_DIR/node.env" 2>/dev/null | tail -n 1)
+  [ -z "$ks_file" ] || node_env_check REGISTER_KILL_SWITCH "$ks_file" "$STATE_DIR/node.env"
   (
     umask 077
     mkdir -p "$STATE_DIR" || exit 1
     : >"$STATE_DIR/node.env.new"
     for v in $NODE_ENV_VARS; do
-      eval "cur=\${$v:-}"
+      if [ "$v" = REGISTER_KILL_SWITCH ]; then
+        cur=$ks_file
+      else
+        eval "cur=\${$v:-}"
+      fi
       [ -z "$cur" ] || echo "$v=$cur" >>"$STATE_DIR/node.env.new"
     done
     mv "$STATE_DIR/node.env.new" "$STATE_DIR/node.env"
@@ -459,6 +483,7 @@ save_node_env() {
 say_node_env() {
   say "trusted proxies: glass=${GELDAR_GLASS_TRUSTED_PROXIES:-unset} mcp=${GELDAR_MCP_TRUSTED_PROXIES:-unset}"
   say "colo subnet: ${GELDAR_COLO_SUBNET:-unset (compose default, the gateway trust will not match)}"
+  say "register kill switch: ${REGISTER_KILL_SWITCH:-unset (compose default true: sign-up closed)}"
 }
 
 # True when every proxy list is set to something other than the loopback default.

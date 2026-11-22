@@ -1,7 +1,7 @@
 // Tests for the CD-2a delta deploy (deploy/colo-cd.sh and deploy/colo-cd-plan.sh): only the changed services restart, in
 // order; a failed health check rolls back; a plugin change is never applied; --dry-run changes nothing; the lock refuses an
 // overlapping run; a sql change is dumped before the migrations. The fixture is in colo-cd-fixture.ts.
-import { existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -104,6 +104,26 @@ describe('colo-cd.sh delta deploy', () => {
     expect(existsSync(join(cd.state, 'cd.lock'))).toBe(false);
     expect(existsSync(join(cd.state, 'cd.log'))).toBe(false);
     expect(existsSync(join(cd.state, 'backups'))).toBe(false);
+  });
+
+  it('--dry-run prints the register kill switch from node.env before the dry-run exit', () => {
+    const cd = cdSetup(EDITS, CHANGED);
+    writeFileSync(join(cd.state, 'node.env'), 'REGISTER_KILL_SWITCH=false\n');
+    const r = cdRun(cd, { dryRun: true });
+    expect(r.code, r.out).toBe(0);
+    const line = r.out.indexOf('register kill switch: false');
+    expect(line, r.out).toBeGreaterThan(-1);
+    expect(line).toBeLessThan(r.out.indexOf('dry-run complete'));
+  });
+
+  it('refuses a node.env REGISTER_KILL_SWITCH other than true or false before anything changes', () => {
+    const cd = cdSetup(EDITS, CHANGED);
+    writeFileSync(join(cd.state, 'node.env'), 'REGISTER_KILL_SWITCH=maybe\n');
+    const r = cdRun(cd, { dryRun: true });
+    expect(r.code, r.out).not.toBe(0);
+    expect(r.out).toContain('must be exactly true or false');
+    expect(r.out).not.toContain('dry-run complete');
+    expect(mutating(cdCalls(cd))).toEqual([]);
   });
 
   it('refuses a second run while the first holds the lock', () => {
