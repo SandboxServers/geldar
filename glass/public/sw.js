@@ -35,6 +35,7 @@ const SHELL = [
   '/js/render-filters.ts',
   '/js/render-fresh.ts',
   '/js/render-roster.ts',
+  '/js/plan-activity/index.ts',
   '/js/render-tabs.ts',
   '/js/manifest.webmanifest',
   '/js/icons/icon-192.png',

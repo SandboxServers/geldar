@@ -16,6 +16,9 @@ import {
 } from './render-model.ts';
 import { makeSigil } from './render-sigil.ts';
 
+// The plan-activity panel (BLD-37) is served from this page's module list; it draws nothing while off.
+export { renderPlanActivity } from './plan-activity/index.ts';
+
 /** The DOM members this page uses. A string given to append or replaceChildren becomes a text node. */
 export interface El {
   className: string;

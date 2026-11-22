@@ -30,14 +30,12 @@ const JS = 'text/javascript; charset=utf-8';
 const CHECKED = 'no-cache';
 const KEPT = 'public, max-age=604800';
 
-/**
- * The plan-activity stub (decision 0429), registered by name. It is not in RENDER_MODULES: nothing imports it
- * yet, and the table's dead-file check would fail. BLD-37 moves it into the served list with its panel.
- */
-export const PLAN_ACTIVITY_MODULE = 'plan-activity/index';
+/** The plan-activity panel (decision 0429), a human-only view. It is served with the render modules; render-view re-exports it. */
+export const PLAN_ACTIVITY_MODULE = 'plan-activity/index' as const;
 
 /** The render modules, served under /js/ as JavaScript with their types stripped. */
 export const RENDER_MODULES = [
+  PLAN_ACTIVITY_MODULE,
   'render-model',
   'render-view',
   'render-stream',
