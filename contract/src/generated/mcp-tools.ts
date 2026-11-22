@@ -3308,7 +3308,8 @@ export const mcpToolSchemas: Record<
                 "gift_received",
                 "property_broken",
                 "fight_seen",
-                "container_taken"
+                "container_taken",
+                "plan_progress"
               ]
             },
             "actor": {
@@ -4220,7 +4221,8 @@ export const mcpToolSchemas: Record<
                 "gift_received",
                 "property_broken",
                 "fight_seen",
-                "container_taken"
+                "container_taken",
+                "plan_progress"
               ]
             },
             "actor": {

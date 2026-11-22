@@ -1204,7 +1204,8 @@ export interface McpPlayerEvent {
     | "gift_received"
     | "property_broken"
     | "fight_seen"
-    | "container_taken";
+    | "container_taken"
+    | "plan_progress";
   /**
    * Observation events: the visible actor, when the event is attributed (AN-24).
    */
