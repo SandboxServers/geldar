@@ -3800,7 +3800,7 @@ export const mcpToolSchemas: Record<
     "result": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "object",
-      "description": "The survey as text: layers by height, each a list of run-length rows over a legend of block names, with the age in game minutes of each run. The name unknown marks cells not seen.",
+      "description": "The survey as text: layers by height, each a list of run-length rows over a legend of block names, with the age in game minutes of each run. The name unknown marks cells not seen. A run marked @<minutes> was last seen that many game minutes ago, and a trailing i means that sighting was inherited from a previous life; the cells are not re-checked.",
       "additionalProperties": false,
       "required": [
         "text",
