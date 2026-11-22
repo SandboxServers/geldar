@@ -87,7 +87,8 @@ The page can be installed from Chrome ("Add to Home screen"), and then opens ful
 
 - `manifest.webmanifest` names the app, its colours and three icons. The icons are generated: the sigil
   of the name "Glass" (`node glass/test/app-icon.ts` writes them; `glass/test/app-icon.test.ts` holds
-  the committed files to the generator).
+  the committed files to the generator). The leak scan excuses these three PNGs by path and SHA-256
+  (`tools/players-cli/src/leak-scan.ts`); new icon art needs its hashes there.
 - `sw.js` is a service worker that keeps a copy of the page's own files, so the installed app opens
   without a network. It answers only a `GET` for one of those files. It never answers for `/api/*`,
   the stream, Kino or the register service's pages, and never stores their replies: thoughts are live

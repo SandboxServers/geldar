@@ -53,7 +53,7 @@ The fallback, if the owner does not want a worker on a public origin with no log
 
 ### 5. The app icon (owner call)
 
-**Assumption A5: the icon is generated, not drawn.** The issue asks who supplies it. Until the owner supplies art, the icon is the sigil of the name "Glass" from the page's own generator, in the design's amber on its dark ground: 192px, 512px and a maskable 512px whose sigil stays inside the middle 80% circle. `glass/test/app-icon.ts` writes the three PNGs with no image library, and a test holds the committed files to it pixel for pixel. They are the first image files in the repository; the test that forbids game textures under `glass/` now allows exactly these three.
+**Assumption A5: the icon is generated, not drawn.** The issue asks who supplies it. Until the owner supplies art, the icon is the sigil of the name "Glass" from the page's own generator, in the design's amber on its dark ground: 192px, 512px and a maskable 512px whose sigil stays inside the middle 80% circle. `glass/test/app-icon.ts` writes the three PNGs with no image library, and a test holds the committed files to it pixel for pixel. They are the first image files outside `docs/`. Two checks forbid such files, and each now excuses exactly these three: the test that forbids game textures under `glass/`, and the leak scan that treats any PNG outside `docs/` as a skin (`tools/players-cli/src/leak-scan.ts`). The leak scan excuses them by path and by the SHA-256 of their bytes, so another picture under the same name is flagged again. New icon art means new hashes there, in a reviewed change.
 
 ### 6. The service worker
 

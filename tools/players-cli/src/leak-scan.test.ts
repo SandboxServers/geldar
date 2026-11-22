@@ -1,9 +1,10 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { REPO_ROOT } from './cli.ts';
-import { findLeaks, type TrackedFile } from './leak-scan.ts';
+import { findLeaks, GENERATED_PNGS, type TrackedFile } from './leak-scan.ts';
 
 /** Built at run time, so this file never contains a key-shaped string. */
 const FAKE_KEY = `msk_${'Z'.repeat(22)}`;
@@ -27,6 +28,33 @@ describe('findLeaks', () => {
       'tools/players-cli/assets/jason.png',
       'threshold/mcp/face.PNG',
     ]);
+  });
+
+  it('passes a generated PNG only at its own path and with its own bytes', () => {
+    const [path, sha256] = [...GENERATED_PNGS][0] as [string, string];
+    expect(findLeaks([{ path, content: null, sha256 }])).toEqual([]);
+    // Another picture under the same name is a PNG outside docs/ like any other.
+    const other = 'f'.repeat(64);
+    expect(findLeaks([{ path, content: null, sha256: other }])).toEqual([
+      { path, rule: 'skin-png' },
+    ]);
+    expect(findLeaks([{ path, content: null }])).toEqual([{ path, rule: 'skin-png' }]);
+    // The same bytes anywhere else are not excused, and neither is a neighbour of the generated file.
+    const moved = [
+      { path: 'tools/players-cli/assets/icon-192.png', content: null, sha256 },
+      { path: 'glass/public/icons/jason.png', content: null, sha256 },
+      { path: 'glass/public/icons/skins/icon-192.png', content: null, sha256 },
+    ];
+    expect(findLeaks(moved).map((leak) => leak.path)).toEqual(moved.map((file) => file.path));
+  });
+
+  it('excuses exactly the three icons of the installable Glass page', () => {
+    expect([...GENERATED_PNGS.keys()]).toEqual([
+      'glass/public/icons/icon-192.png',
+      'glass/public/icons/icon-512.png',
+      'glass/public/icons/maskable-512.png',
+    ]);
+    for (const hash of GENERATED_PNGS.values()) expect(hash).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it('flags a tracked file whose content holds a MineSkin key', () => {
@@ -59,7 +87,9 @@ describe('the repository as tracked by git', () => {
         }
         const bytes = readFileSync(full);
         const binary = bytes.length > 2 * 1024 * 1024 || bytes.includes(0);
-        return { path, content: binary ? null : bytes.toString('utf8') };
+        const content = binary ? null : bytes.toString('utf8');
+        if (!/\.png$/i.test(path)) return { path, content };
+        return { path, content, sha256: createHash('sha256').update(bytes).digest('hex') };
       });
     const leaks = findLeaks(files);
     expect(

@@ -5,6 +5,10 @@
  *
  *   node glass/test/app-icon.ts        # writes glass/public/icons/*.png
  *
+ * The repository's leak scan treats a PNG outside docs/ as a skin unless its path and SHA-256 are listed in
+ * tools/players-cli/src/leak-scan.ts (GENERATED_PNGS). After changing what this file draws, put the new
+ * hashes there.
+ *
  * No image library: a PNG here is one zlib stream of unfiltered RGBA rows. Test-only: nothing in the
  * Glass runtime imports this file.
  */
