@@ -71,6 +71,8 @@ function roleAllows(shard: string): Record<Role, Allow> {
         kv('geldar-checkpoints'),
         kv('geldar-body-generation'),
         kv('geldar-skins'),
+        kv('geldar-plans'),
+        kv('geldar-seen'),
       ],
       // Kino (decision 0075, review fix A): the body never publishes, and so never forges, the Kino subjects.
       // Provenance (AN-28c): the body hears provenance and cannot forge it.
