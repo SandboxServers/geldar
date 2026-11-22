@@ -102,7 +102,7 @@ describe('atlas and face textures', () => {
 });
 
 describe('repo hygiene', () => {
-  it('commits no texture image under glass/', () => {
+  it('commits no texture image under glass/: the only images are the three generated app icons', () => {
     const root = join(import.meta.dirname, '../..');
     const found: string[] = [];
     const walk = (d: string) => {
@@ -114,6 +114,11 @@ describe('repo hygiene', () => {
       }
     };
     walk(root);
-    expect(found).toEqual([]);
+    // The installable page's icons are drawn by glass/test/app-icon.ts (the sigil of "Glass"), not taken from a game.
+    expect(found.map((p) => p.replaceAll('\\', '/')).sort()).toEqual([
+      'public/icons/icon-192.png',
+      'public/icons/icon-512.png',
+      'public/icons/maskable-512.png',
+    ]);
   });
 });

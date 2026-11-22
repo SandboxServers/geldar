@@ -5,7 +5,7 @@ audience: agents-never
 status: draft
 last_verified: 2026-11-16 against 1b114276
 companions: [README.md, geldar-core-plugin.md, ../concepts/observation-and-privacy.md, ../operations/monitoring-and-vitals.md, ../runbooks/kino.md, ../runbooks/glass-aliases.md, database-schema.md, compose-stacks.md]
-sources: [README.md, glass/README.md, glass/package.json, glass/src/routes.ts, glass/src/http.ts, glass/src/main.ts, glass/src/session.ts, glass/src/alias.ts, glass/test, sql/0005_glass_reader.sql, compose/colo.yml, compose/colo-kino.yml, compose/colo-kino-session.yml, deploy/caddy, .github/workflows/colo-images.yml, docs/spec.md, docs/decisions/README.md, docs/decisions/0361-agents-never-placement-and-public-detail.md]
+sources: [README.md, glass/README.md, glass/package.json, glass/src/routes.ts, glass/src/http.ts, glass/src/static-files.ts, glass/src/main.ts, glass/src/session.ts, glass/src/alias.ts, glass/test, sql/0005_glass_reader.sql, compose/colo.yml, compose/colo-kino.yml, compose/colo-kino-session.yml, deploy/caddy, .github/workflows/colo-images.yml, docs/spec.md, docs/decisions/README.md, docs/decisions/0361-agents-never-placement-and-public-detail.md]
 ---
 
 # Glass and Kino
@@ -63,7 +63,7 @@ The route table is `ROUTES` in `glass/src/routes.ts`; `routes.test.ts` enumerate
 
 ### Static files
 
-`/`, `/app.css`, `/app.js` from `glass/public/`, and `/js/render-model.ts`, `/js/render-view.ts`, `/js/render-stream.ts` from `glass/src/` with types stripped (`glass/src/http.ts`).
+From `glass/public/`: `/`, the stylesheets `/fonts.css`, `/app.css`, `/entries.css` and `/reader.css`, the page script `/app.js`, the service worker `/sw.js`, `/manifest.webmanifest`, the typefaces under `/fonts/` and the app icons under `/icons/`. From `glass/src/` with types stripped: the `render-*.ts` modules under `/js/`. The table is `glass/src/static-files.ts`; a request picks an entry of it and never names a file on disk (decision [0410](../decisions/0410-glass-mobile-redesign-and-pwa.md)).
 
 ### Kino (only when enabled)
 

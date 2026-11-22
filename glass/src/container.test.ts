@@ -118,9 +118,17 @@ describe('the image holds everything Glass reads or imports', () => {
     expect(reached.has('glass/src/http.ts')).toBe(true);
     expect(reached.size).toBeGreaterThan(8);
     for (const file of reached) expect(excluded(file), file).toBe(false);
-    for (const page of ['index.html', 'app.js', 'app.css']) {
-      expect(read('glass/src/http.ts')).toContain(page);
+    expect(reached.has('glass/src/static-files.ts')).toBe(true);
+    for (const page of ['index.html', 'app.js', 'app.css', 'sw.js', 'manifest.webmanifest']) {
+      expect(read('glass/src/static-files.ts')).toContain(page);
       expect(excluded(`glass/public/${page}`), page).toBe(false);
+    }
+    // The typefaces and icons are read at start too: a missing one stops the container.
+    for (const file of [
+      'glass/public/fonts/dm-mono-latin-400-normal.woff2',
+      'glass/public/icons/icon-192.png',
+    ]) {
+      expect(excluded(file), file).toBe(false);
     }
   });
 

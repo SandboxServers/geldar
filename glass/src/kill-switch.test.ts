@@ -103,6 +103,11 @@ describe('the kill switch (0072 item 6)', () => {
       ...ROUTES.map((r) => ['GET', r.path.replace(':id', 'th-1')] as const),
       ['GET', '/'],
       ['GET', '/app.js'],
+      // The installable app's files too: a switched-off Glass hands out no worker, manifest or typeface.
+      ['GET', '/sw.js'],
+      ['GET', '/manifest.webmanifest'],
+      ['GET', '/fonts/dm-mono-latin-400-normal.woff2'],
+      ['GET', '/icons/icon-192.png'],
       ['POST', '/api/thoughts'],
       ['GET', '/nowhere'],
     ] as const;

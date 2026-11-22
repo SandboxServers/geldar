@@ -56,8 +56,10 @@ glass.{$GELDAR_DOMAIN} {
 		}
 	}
 
-	# The page and its assets (glass/src/http.ts serves exactly these files).
-	@glass_page path / /app.css /app.js /js/*
+	# The page and its assets (glass/src/static-files.ts serves exactly these files): the markup, the stylesheets,
+	# the page script and its modules, the service worker and manifest of the installable app, the two typefaces
+	# and the app icons. glass/test/caddy-paths.test.ts holds this line to that table.
+	@glass_page path / /fonts.css /app.css /entries.css /reader.css /app.js /sw.js /manifest.webmanifest /js/* /fonts/* /icons/*
 	handle @glass_page {
 		reverse_proxy {$GELDAR_GLASS_UPSTREAM} {
 			header_up Host localhost

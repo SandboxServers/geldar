@@ -1,46 +1,71 @@
 /*
- * The Thought Stream page. One reading column at every width, system fonts, no images.
- * Colours are tokens, set once for light and once for dark. Amber is the only accent.
+ * The Thought Stream page. A phone gets one column: a fixed header, then the list, which scrolls. From
+ * 700px (an unfolded foldable, a tablet, a desktop) the list shares the screen with a reader pane: that
+ * layout is in reader.css, and the entries of the list are in entries.css. Colours are tokens, set once for light and once for dark. Amber is the only
+ * accent. The two typefaces are served from this origin (fonts.css); no image is loaded, and the agent
+ * sigils are drawn on canvas.
  */
 :root {
   color-scheme: light dark;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  line-height: 1.5;
   --bg: #ffffff;
   --fg: #111827;
   --muted: #4b5563;
   --rule: #d1d5db;
-  --field: #ffffff;
+  --field: #f3f4f6;
   --field-rule: #6b7280;
+  --pressed: #e5e7eb;
   --accent: #b45309;
+  --accent-hover: #92400e;
+  --accent-fg: #ffffff;
+  --accent-wash: rgba(180, 83, 9, 0.1);
   --mark: #fde68a;
   --mark-fg: #111827;
   --bad: #991b1b;
   --live: #15803d;
+  --shade: rgba(17, 24, 39, 0.25);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #111315;
-    --fg: #e5e7eb;
-    --muted: #a1a8b3;
-    --rule: #30353c;
-    --field: #1a1d21;
-    --field-rule: #6b7280;
-    --accent: #f59e0b;
+    --bg: #0c0f0b;
+    --fg: #e9e4d4;
+    --muted: #969c86;
+    --rule: #283124;
+    --field: #151a12;
+    --field-rule: #283124;
+    --pressed: #1d2419;
+    --accent: #f5a524;
+    --accent-hover: #ffc35c;
+    --accent-fg: #0c0f0b;
+    --accent-wash: rgba(245, 165, 36, 0.12);
     --mark: #7c4a03;
     --mark-fg: #ffffff;
-    --bad: #fca5a5;
-    --live: #4ade80;
+    --bad: #f09a8f;
+    --live: #7bd88f;
+    --shade: rgba(0, 0, 0, 0.6);
   }
 }
 
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
 body {
-  margin: 0 auto;
-  max-width: 42rem;
-  padding: 1.5rem 1rem 4rem;
+  height: 100%;
+}
+
+/* The page is as tall as the screen and never scrolls itself: the list and the reader scroll. */
+body {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  margin: 0;
+  overflow: hidden;
   background: var(--bg);
   color: var(--fg);
+  font: 400 12px/1.5 "DM Mono", ui-monospace, monospace;
 }
 
 :focus-visible {
@@ -48,256 +73,28 @@ body {
   outline-offset: 2px;
 }
 
-/* Header: the name, and the state of the live feed with its one control. */
-.top {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem 1rem;
+a {
+  color: var(--accent);
 }
 
-h1 {
-  margin: 0;
-  font-size: 1.25rem;
-  line-height: 1.3;
+a:hover {
+  color: var(--accent-hover);
 }
 
-h1 .sub {
-  margin-left: 0.25rem;
-  color: var(--muted);
-  font-weight: 400;
-}
-
-.feed {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.status {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.875rem;
-}
-
-.status::before {
-  content: "";
-  display: inline-block;
-  width: 0.5rem;
-  height: 0.5rem;
-  margin-right: 0.4rem;
-  border-radius: 50%;
-  background: var(--muted);
-}
-
-.status.live::before {
-  background: var(--live);
-}
-
-.status.connecting::before,
-.status.reconnecting::before {
-  background: var(--accent);
-}
-
-.banner {
-  margin: 0.75rem 0 1.5rem;
-  padding-left: 0.75rem;
-  border-left: 3px solid var(--accent);
-  color: var(--muted);
-  font-size: 0.875rem;
-}
-
-/* Controls. Fields are 16px so a phone does not zoom on focus. */
 button,
 input,
 select {
-  box-sizing: border-box;
-  border: 1px solid var(--field-rule);
-  border-radius: 6px;
-  background: var(--field);
-  color: var(--fg);
   font: inherit;
-}
-
-input,
-select {
-  width: 100%;
-  min-height: 2.5rem;
-  padding: 0.4rem 0.6rem;
-  font-size: 1rem;
-}
-
-input::placeholder {
-  color: var(--muted);
-  opacity: 1;
+  color: var(--fg);
 }
 
 button {
-  min-height: 2.25rem;
-  padding: 0.3rem 0.8rem;
-  font-size: 0.875rem;
   cursor: pointer;
-}
-
-button:hover:not(:disabled) {
-  border-color: var(--fg);
 }
 
 button:disabled {
   opacity: 0.5;
   cursor: default;
-}
-
-/* Filters: search first and widest; the debugging filters fold away. */
-.filters {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
-}
-
-.filters label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  min-width: 0;
-  color: var(--muted);
-  font-size: 0.8125rem;
-}
-
-.filters .search,
-.filters .more,
-.filters .hint {
-  grid-column: 1 / -1;
-}
-
-.more summary {
-  width: fit-content;
-  color: var(--muted);
-  font-size: 0.8125rem;
-  cursor: pointer;
-}
-
-.more-fields {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.75rem;
-  margin-top: 0.5rem;
-}
-
-.hint {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.8125rem;
-}
-
-@media (min-width: 700px) {
-  .filters {
-    grid-template-columns: minmax(0, 1fr) 11rem 9rem;
-  }
-
-  .filters .search {
-    grid-column: auto;
-  }
-}
-
-/* The list: one entry is a line of facts, then the text. */
-ol {
-  margin: 1rem 0 0;
-  padding: 0;
-  border-top: 1px solid var(--rule);
-  list-style: none;
-}
-
-ol > li {
-  min-width: 0;
-  padding: 1rem 0;
-  border-bottom: 1px solid var(--rule);
-}
-
-.meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0 0.4rem;
-  color: var(--muted);
-  font-size: 0.875rem;
-}
-
-.meta span {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.meta .agent {
-  margin-right: 0.2rem;
-  color: var(--fg);
-  font-size: 1rem;
-  font-weight: 600;
-}
-
-/* The facts after the name are set apart by a dot; the wake reason says what it is. */
-.meta .outcome::before,
-.meta .wake::before {
-  content: "\00b7\00a0";
-}
-
-.meta .wake::before {
-  content: "\00b7\00a0woke: ";
-}
-
-.meta .wake:empty {
-  display: none;
-}
-
-.outcome.unparsed {
-  color: var(--bad);
-}
-
-/* The entry's controls, kept together at the end of the line. */
-.meta .acts {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.75rem;
-  margin-left: auto;
-  white-space: nowrap;
-}
-
-/* A phone: the tier gives its place to the controls, so they stay on the name's line. It is in the detail. */
-@media (max-width: 480px) {
-  .meta .tier {
-    display: none;
-  }
-}
-
-/* The time is the button that opens the detail under the entry; "Show more" opens a long journal line. */
-button.when,
-button.copy,
-button.more {
-  min-height: 1.5rem;
-  padding: 0;
-  border: 0;
-  border-radius: 2px;
-  background: none;
-  color: var(--muted);
-  text-decoration: underline dotted;
-  text-underline-offset: 3px;
-}
-
-button.when:hover,
-button.copy:hover,
-button.more:hover {
-  color: var(--fg);
-  text-decoration-style: solid;
-}
-
-button.when {
-  font-variant-numeric: tabular-nums;
-}
-
-button.more {
-  margin-top: 0.25rem;
-  font-size: 0.8125rem;
 }
 
 /* Text for a screen reader only. */
@@ -310,143 +107,339 @@ button.more {
   white-space: nowrap;
 }
 
-.row .plan {
-  display: block;
-  margin-top: 0.35rem;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+/* The install strip, above everything, in a browser tab only. */
+.install {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px 6px 18px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--field);
 }
 
-.row .plan:empty {
+.install[hidden] {
   display: none;
 }
 
-mark {
-  border-radius: 2px;
-  background: var(--mark);
-  color: var(--mark-fg);
-}
-
-/* The detail opens under its entry. */
-.detail {
-  margin-top: 0.75rem;
-  padding-left: 0.75rem;
-  border-left: 2px solid var(--rule);
-  font-size: 0.875rem;
-}
-
-.detail dl {
-  display: grid;
-  grid-template-columns: max-content minmax(0, 1fr);
-  gap: 0.2rem 1rem;
+.install p {
+  flex: 1;
+  min-width: 0;
   margin: 0;
+  font-size: 11.5px;
+  text-wrap: pretty;
 }
 
-.detail dt {
+.primary {
+  flex: none;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 22px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 500;
+}
+
+.primary:hover {
+  background: var(--accent-hover);
+}
+
+.quiet {
+  flex: none;
+  min-height: 44px;
+  padding: 0 8px;
+  border: 0;
+  background: none;
   color: var(--muted);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
 }
 
-.detail dd {
+/* The two panes. On a phone only the first shows. */
+.app {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.stream {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.reader {
+  display: none;
+}
+
+/* Header: the name, and the state of the live feed in its one control. */
+.head {
+  flex: none;
+  padding: 14px 18px 0;
+}
+
+.top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* The eyebrow has the full width to itself, so it stays on one line on the narrowest cover screen. */
+.eyebrow {
   margin: 0;
-  overflow-wrap: anywhere;
-}
-
-.detail h3 {
-  margin: 0.75rem 0 0.25rem;
+  overflow: hidden;
   color: var(--muted);
-  font-size: 0.8125rem;
-  font-weight: 400;
-}
-
-.receipts {
-  max-width: 100%;
-  overflow-x: auto;
-}
-
-.receipts table {
-  width: max-content;
-  min-width: 100%;
-  border-collapse: collapse;
-  text-align: left;
-}
-
-.receipts th,
-.receipts td {
-  padding: 0.25rem 0.5rem;
-  border-bottom: 1px solid var(--rule);
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
-.receipts th {
+h1 {
+  margin: 0;
+  font: 400 54px/0.95 "Instrument Serif", serif;
+  letter-spacing: -0.01em;
+}
+
+.pill {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--rule);
+  border-radius: 22px;
+  background: var(--field);
+  white-space: nowrap;
+}
+
+.pill:active {
+  background: var(--pressed);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.pill.live .dot {
+  background: var(--live);
+}
+
+.pill.closed .dot {
+  background: var(--muted);
+}
+
+.banner {
+  margin: 10px 0 12px;
   color: var(--muted);
-  font-weight: 400;
+  font-size: 11.5px;
+  text-wrap: pretty;
 }
 
-.receipts th:nth-child(n + 4),
-.receipts td:nth-child(n + 4) {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
+/*
+ * "More" sits at the end of the banner's last line and costs the header no height. Its padding gives a
+ * 44px touch target; an inline box's padding does not move the lines around it.
+ */
+.more {
+  display: inline;
 }
 
-.note {
-  margin: 0.75rem 0 0;
-  color: var(--muted);
-  font-size: 0.875rem;
+.more > summary {
+  display: inline;
+  margin: -14px -6px;
+  padding: 14px 6px;
+  color: var(--fg);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  white-space: nowrap;
+  list-style: none;
+  cursor: pointer;
 }
 
-#older {
-  display: block;
-  margin: 1.5rem auto 0;
+.more > summary::-webkit-details-marker {
+  display: none;
+}
+
+.more[open] > summary,
+.more.set > summary {
+  color: var(--accent);
+}
+
+.more-panel {
+  margin: 10px 0 0;
+  padding: 12px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--field);
+}
+
+.more-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.more-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.more-fields .wide {
+  grid-column: 1 / -1;
 }
 
 .about {
-  margin: -0.5rem 0 1.5rem;
-  color: var(--muted);
-  font-size: 0.875rem;
+  margin: 12px 0 0;
   overflow-wrap: anywhere;
 }
 
 .about summary {
   width: fit-content;
+  min-height: 44px;
+  line-height: 44px;
   cursor: pointer;
 }
 
-.about a {
-  color: var(--accent);
+.about p {
+  margin: 0 0 8px;
 }
 
-/* The sign-in link under the banner: a 44px touch target, the accent colour, and the shared focus ring. */
+/* The sign-in link: a 44px touch target, the accent colour, and the shared focus ring. */
 .account {
-  margin: 0 0 0.5rem;
-  font-size: 0.9375rem;
+  margin: 0;
 }
 
 .account a {
   display: inline-block;
   min-height: 2.75rem;
   line-height: 2.75rem;
-  color: var(--accent);
 }
 
-.meta .died {
+/* Fields are 16px so a phone does not zoom on focus. */
+input,
+select {
+  width: 100%;
+  height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--field-rule);
+  border-radius: 10px;
+  background: var(--field);
+  font-size: 16px;
+}
+
+.more-panel input,
+.more-panel select {
+  background: var(--bg);
+}
+
+input::placeholder {
   color: var(--muted);
-  font-size: 0.8125rem;
+  opacity: 1;
 }
 
-/* "died" follows the name; the same dot as between the other facts sets the tier apart from it. */
-.meta .died + .tier::before {
-  content: "\00b7\00a0";
-}
-
-#fresh {
-  position: fixed;
-  top: 0.75rem;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 1;
-  max-width: calc(100% - 2rem);
+input:focus-visible,
+select:focus-visible {
   border-color: var(--accent);
-  border-radius: 2rem;
+  outline-width: 1px;
+  outline-offset: 0;
+}
+
+/* The agent filter: one row of chips that scrolls sideways. */
+.chips {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  padding: 10px 18px 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.chip {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--rule);
+  border-radius: 22px;
+  background: none;
+  white-space: nowrap;
+}
+
+.chip.on {
+  border-color: var(--accent);
+  background: var(--accent-wash);
   color: var(--accent);
+}
+
+.count {
+  flex: none;
+  margin: 0;
+  padding: 8px 18px;
+  border-bottom: 1px solid var(--rule);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/*
+ * A short screen (a phone on its side), or the "More" panel open: the fixed header would leave the list
+ * no room, so the whole pane scrolls and the header goes with it.
+ */
+@media (max-height: 540px) {
+  .stream {
+    display: block;
+    overflow-y: auto;
+  }
+
+  .list {
+    overflow: visible;
+  }
+}
+
+.stream:has(.more[open]) {
+  display: block;
+  overflow-y: auto;
+}
+
+.stream:has(.more[open]) .list {
+  overflow: visible;
+}
+
+/* Motion: the live dot breathes and a new entry settles in. Neither runs for a reader who asked for less. */
+@media (prefers-reduced-motion: no-preference) {
+  .pill.live .dot {
+    animation: pulse 2s infinite;
+  }
+
+  .entry.arrive {
+    animation: arrive 0.9s ease-out;
+  }
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@keyframes arrive {
+  from {
+    opacity: 0;
+    filter: blur(10px);
+    transform: translateY(-6px);
+  }
 }

@@ -2,9 +2,7 @@
  * The HTTP handler: security headers on every response, the route table, the query parameters, and
  * the JSON bodies. Agent-authored text leaves as JSON data; the page (a later packet) escapes it.
  */
-import { readFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { stripTypeScriptTypes } from 'node:module';
 import { CLIENT_IP_HEADER, clientAddress, clientKey } from './guard.ts';
 import { listThoughtsWithJournal } from './journal.ts';
 import { ownedAgentsOf } from './owner-view.ts';
@@ -22,6 +20,7 @@ import {
 import { resolveRoute } from './routes.ts';
 import { resolveViewer } from './session.ts';
 import type { SseHub } from './sse.ts';
+import { pageWithDelay, STATIC_FILES } from './static-files.ts';
 
 /** The longest request target (path and query) Glass reads, in characters (0072 item 4). */
 export const MAX_TARGET_CHARS = 2048;
@@ -32,38 +31,10 @@ export const MAX_BODY_BYTES = 1024;
 /** Headers on every response, the API and the stream alike, including 404 and 405. */
 export const SECURITY_HEADERS: Record<string, string> = {
   'Content-Security-Policy':
-    "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'none'; font-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
   'X-Content-Type-Options': 'nosniff',
   'Referrer-Policy': 'no-referrer',
 };
-
-interface StaticFile {
-  body: string;
-  type: string;
-}
-
-const JS = 'text/javascript; charset=utf-8';
-const PUBLIC = new URL('../public/', import.meta.url);
-const SOURCE = new URL('./', import.meta.url);
-
-/** Reads one page file at load. The browser gets the render modules as JavaScript, types stripped. */
-function staticFile(dir: URL, name: string, type: string, strip = false): StaticFile {
-  const raw = readFileSync(new URL(name, dir), 'utf8');
-  return { body: strip ? stripTypeScriptTypes(raw) : raw, type };
-}
-
-/**
- * The page and its scripts, keyed by URL path. A request selects an entry here; no path from the
- * request names a file. Writes to these paths get 405.
- */
-const STATIC_FILES: ReadonlyMap<string, StaticFile> = new Map([
-  ['/', staticFile(PUBLIC, 'index.html', 'text/html; charset=utf-8')],
-  ['/app.css', staticFile(PUBLIC, 'app.css', 'text/css; charset=utf-8')],
-  ['/app.js', staticFile(PUBLIC, 'app.js', JS)],
-  ['/js/render-model.ts', staticFile(SOURCE, 'render-model.ts', JS, true)],
-  ['/js/render-view.ts', staticFile(SOURCE, 'render-view.ts', JS, true)],
-  ['/js/render-stream.ts', staticFile(SOURCE, 'render-stream.ts', JS, true)],
-]);
 
 /** The path of a request target, or an empty string when it does not parse. */
 function pathOf(url: string | undefined): string {
@@ -240,6 +211,8 @@ export function createHandler(deps: GlassHandlerDeps) {
   const policy: PublicPolicy = { ...OPEN_POLICY, ...deps.policy };
   const log = deps.log ?? ((entry) => console.log(JSON.stringify(entry)));
   const loggedPeers = new Set<string>();
+  // The page says how old the newest thought it shows is: the configured delay is written into it once.
+  const page = pageWithDelay(policy.delaySeconds);
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
     // The kill switch answers before anything else is read: no route, page or stream is served.
@@ -288,14 +261,15 @@ export function createHandler(deps: GlassHandlerDeps) {
     if (deps.extra?.(req, res) === true) return;
     // HEAD is a GET without a body; Node drops the body bytes of a HEAD response.
     const readMethod = req.method === 'GET' || req.method === 'HEAD';
-    const file = STATIC_FILES.get(pathOf(req.url));
+    const path = pathOf(req.url);
+    const file = path === '/' ? page : STATIC_FILES.get(path);
     if (file !== undefined) {
       if (!readMethod) {
         res.setHeader('Allow', 'GET, HEAD');
         sendJson(res, 405, { error: 'method not allowed' });
         return;
       }
-      res.writeHead(200, { 'Content-Type': file.type, 'Cache-Control': 'no-cache' });
+      res.writeHead(200, { 'Content-Type': file.type, 'Cache-Control': file.cache });
       res.end(file.body);
       return;
     }

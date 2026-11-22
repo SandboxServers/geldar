@@ -1,61 +1,16 @@
 import { Window } from 'happy-dom';
 import { describe, expect, it } from 'vitest';
+import { auditTree, freshDoc } from '../test/audit.ts';
 import { HOSTILE, hostileRow, plainRow } from './render-fixtures.ts';
-import { copyText, display, toView } from './render-model.ts';
-import { type Doc, type El, fillAgentOptions, renderDetail, renderRow } from './render-view.ts';
-
-/** Every tag the page builds itself. A data value can never add a tag outside this list. */
-const ALLOWED_TAGS = new Set([
-  'UL',
-  'LI',
-  'BUTTON',
-  'SPAN',
-  'DL',
-  'DT',
-  'DD',
-  'SECTION',
-  'H3',
-  'PRE',
-  'P',
-  'SELECT',
-  'OPTION',
-  'DIV',
-  'MARK',
-  'TABLE',
-  'THEAD',
-  'TBODY',
-  'TR',
-  'TH',
-  'TD',
-]);
-/** Attributes the page sets. `value` on an option holds an index, never data. */
-const ALLOWED_ATTRS = new Set(['class', 'type', 'value']);
-
-interface AuditNode {
-  tagName: string;
-  attributes: ArrayLike<{ name: string }>;
-}
-
-/** Lists every element under a root, failing on any tag or attribute the page does not build. */
-function auditTree(root: { querySelectorAll(selector: string): ArrayLike<AuditNode> }): string[] {
-  const tags: string[] = [];
-  for (const node of Array.from(root.querySelectorAll('*'))) {
-    expect(ALLOWED_TAGS.has(node.tagName), `unexpected element ${node.tagName}`).toBe(true);
-    for (const attr of Array.from(node.attributes)) {
-      expect(
-        ALLOWED_ATTRS.has(attr.name),
-        `unexpected attribute ${attr.name} on ${node.tagName}`,
-      ).toBe(true);
-    }
-    tags.push(node.tagName);
-  }
-  return tags;
-}
-
-function freshDoc() {
-  const win = new Window();
-  return win.document;
-}
+import { display, toView } from './render-model.ts';
+import {
+  type Doc,
+  type El,
+  JOURNAL_LINE,
+  renderChips,
+  renderRow,
+  UNPARSED_LINE,
+} from './render-view.ts';
 
 /** The row for a fixture, appended to a fresh body. Returns the body for auditing. */
 function bodyWithRow(value: string, index: number) {
@@ -86,7 +41,7 @@ describe('renderRow with hostile data', () => {
     expect(doc2.body.querySelector('li')?.textContent).toContain('<img src=x onerror="alert(1)">');
   });
 
-  it('fires the open callback with the thought id when the row is pressed', () => {
+  it('fires the open callback with the thought id when the time is pressed', () => {
     const doc = freshDoc();
     const seen: string[] = [];
     const row = renderRow(doc as unknown as Doc, toView(hostileRow('<b>x</b>', 7)), (id) =>
@@ -95,6 +50,31 @@ describe('renderRow with hostile data', () => {
     (doc.body as unknown as El).append(row as unknown as El);
     doc.body.querySelector('button')?.click();
     expect(seen).toEqual(['t-7']);
+  });
+
+  it('fires the select callback on a press anywhere in the row, and has none without one', () => {
+    const doc = freshDoc();
+    const selected: string[] = [];
+    const row = renderRow(doc as unknown as Doc, toView(plainRow(7)), () => {}, {
+      onSelect: (id) => selected.push(id),
+    });
+    (doc.body as unknown as El).append(row as unknown as El);
+    (doc.body.querySelector('.plan') as unknown as { click(): void }).click();
+    expect(selected).toEqual(['t-7']);
+    // The time is inside the row: its press selects too.
+    doc.body.querySelector('button')?.click();
+    expect(selected).toEqual(['t-7', 't-7']);
+  });
+
+  it('draws the sigil of the agent as a hidden canvas of fixed size: the name is hashed, never written', () => {
+    for (const [index, value] of HOSTILE.entries()) {
+      const canvas = bodyWithRow(value, index).body.querySelector('canvas');
+      expect(canvas?.getAttribute('class')).toBe('sigil sigil-row');
+      expect(canvas?.getAttribute('aria-hidden')).toBe('true');
+      expect(canvas?.getAttribute('width')).toBe('7');
+      expect(canvas?.getAttribute('height')).toBe('7');
+      expect(canvas?.attributes.length).toBe(4);
+    }
   });
 });
 
@@ -113,7 +93,7 @@ describe('renderRow with a search keyword', () => {
     const marks = Array.from(doc.body.querySelectorAll('mark')).map((m) => m.textContent);
     expect(marks).toEqual(['Pit', 'pit', 'PIT', 'pit']);
     expect(doc.body.querySelector('.plan')?.textContent).toBe('Leave the PIT. Avoid pits.');
-    expect(doc.body.querySelector('.tier mark, .outcome mark, .when mark')).toBeNull();
+    expect(doc.body.querySelector('.mode mark, .when mark')).toBeNull();
   });
 
   it('builds no mark without a keyword', () => {
@@ -140,7 +120,7 @@ describe('renderRow with a search keyword', () => {
 });
 
 describe('renderRow layout', () => {
-  it('shows the time in the button that opens the detail, and leaves the debugging fields to the detail', () => {
+  it('shows the time in the one button, which opens the detail, and leaves the debugging fields out', () => {
     const doc = freshDoc();
     const view = toView({ ...plainRow(2), prompt_template_version: 'v-template', latency_ms: 812 });
     const row = renderRow(doc as unknown as Doc, view, () => {}, {
@@ -153,10 +133,6 @@ describe('renderRow layout', () => {
     expect(doc.body.querySelector('button .plan')).toBeNull();
     expect(doc.body.textContent).not.toContain('v-template');
     expect(doc.body.textContent).not.toContain('812');
-    const detail = renderDetail(doc as unknown as Doc, view, []);
-    (doc.body as unknown as El).append(detail as unknown as El);
-    expect(doc.body.querySelector('.detail')?.textContent).toContain('v-template');
-    expect(doc.body.querySelector('.detail')?.textContent).toContain('812 ms');
   });
 
   it('shows a time that did not parse as it came', () => {
@@ -170,7 +146,7 @@ describe('renderRow layout', () => {
     expect(doc.body.querySelector('button.when')?.textContent).toContain('not a time');
   });
 
-  it('labels a parsed thought "thought" and an unparsed one "unparsed"', () => {
+  it('says what woke a thought, and for a reply that did not parse, that the body could not read it', () => {
     const doc = freshDoc();
     const parsed = renderRow(doc as unknown as Doc, toView(plainRow(1)), () => {});
     const unparsed = renderRow(
@@ -179,90 +155,115 @@ describe('renderRow layout', () => {
       () => {},
     );
     (doc.body as unknown as El).append(parsed as unknown as El, unparsed as unknown as El);
-    const labels = Array.from(doc.body.querySelectorAll('.outcome')).map((n) => n.textContent);
-    expect(labels).toEqual(['thought', 'unparsed']);
-    expect(doc.body.querySelector('.outcome.unparsed')).not.toBeNull();
-  });
-});
-
-describe('renderRow with a copy button', () => {
-  it('has no "Copy" button unless the page can copy', () => {
-    const doc = bodyWithRow('plain', 0);
-    expect(doc.querySelector('button.copy')).toBeNull();
+    const rows = Array.from(doc.body.querySelectorAll('li'));
+    expect(rows[0]?.querySelector('.wake')?.textContent).toBe('woke: plain');
+    expect(rows[0]?.querySelector('.unparsed')).toBeNull();
+    expect(rows[0]?.querySelector('.plan')?.textContent).toBe('plain');
+    // An unparsed thought has no text: the fixed sentence stands where the text would be.
+    expect(rows[1]?.querySelector('.wake')?.textContent).toBe('woke: plain');
+    expect(rows[1]?.querySelector('.unparsed')?.textContent).toBe(UNPARSED_LINE);
+    expect(rows[1]?.querySelector('.plan')).toBeNull();
   });
 
-  it('hands the entry as plain text to the callback on a press, and shows the label it is told', () => {
+  it('says a journal entry was written for the agent itself, and gives it no wake line', () => {
     const doc = freshDoc();
-    const view = toView(plainRow(4));
-    const copied: string[] = [];
-    let say: (label: string) => void = () => {};
-    const row = renderRow(doc as unknown as Doc, view, () => {}, {
-      onCopy: (text, setLabel) => {
-        copied.push(text);
-        say = setLabel;
-      },
+    const view = toView({ thought_id: 'j', name: 'Vesper', kind: 'journal', text: 'a note' });
+    (doc.body as unknown as El).append(renderRow(doc as unknown as Doc, view, () => {}));
+    expect(doc.body.querySelector('.kind')?.textContent).toBe(JOURNAL_LINE);
+    expect(doc.body.querySelector('.wake')).toBeNull();
+    expect(doc.body.querySelector('.plan')?.className).toBe('plan journal-text');
+  });
+
+  it('shows how the mind is run beside the name: the mode from the agents list, else the tier', () => {
+    const word = (options: Parameters<typeof renderRow>[3]): string | null => {
+      const doc = freshDoc();
+      const row = renderRow(doc as unknown as Doc, toView(plainRow(1)), () => {}, options);
+      (doc.body as unknown as El).append(row as unknown as El);
+      return doc.body.querySelector('.mode')?.textContent ?? null;
+    };
+    expect(word({ mode: 'headless' })).toBe('headless');
+    expect(word({})).toBe('local');
+  });
+
+  it('tags a dead agent beside its name and greys its sigil', () => {
+    const doc = freshDoc();
+    const row = renderRow(doc as unknown as Doc, toView(plainRow(1)), () => {}, {
+      death: { died_at: '2026-11-11' },
     });
     (doc.body as unknown as El).append(row as unknown as El);
-    auditTree(doc.body);
-    const copy = doc.body.querySelector('button.copy');
-    expect(copy?.textContent).toBe('Copy');
-    expect(copied).toEqual([]);
-    (copy as unknown as { click(): void }).click();
-    expect(copied).toEqual([copyText(view)]);
-    say('Copied');
-    expect(copy?.textContent).toBe('Copied');
-    // The controls sit together: "Copy", then the time.
-    const acts = Array.from(doc.body.querySelectorAll('.acts > button')).map((b) => b.className);
-    expect(acts).toEqual(['copy', 'when']);
-  });
-
-  it('copies hostile text as the text on the page, never as markup', () => {
-    for (const [index, value] of HOSTILE.entries()) {
-      const doc = freshDoc();
-      const copied: string[] = [];
-      const row = renderRow(doc as unknown as Doc, toView(hostileRow(value, index)), () => {}, {
-        onCopy: (text) => copied.push(text),
-      });
-      (doc.body as unknown as El).append(row as unknown as El);
-      auditTree(doc.body);
-      (doc.body.querySelector('button.copy') as unknown as { click(): void }).click();
-      expect(copied).toHaveLength(1);
-      expect(copied[0]).toContain(display(value));
-    }
+    expect(doc.body.querySelector('.agent + .died')?.textContent).toBe('† died');
+    expect(doc.body.querySelector('canvas')?.className).toBe('sigil sigil-row dead');
+    expect(bodyWithRow('plain', 0).body.querySelector('.died')).toBeNull();
   });
 });
 
-describe('renderDetail with hostile data', () => {
-  it('shows the receipts as text, with the same element set', () => {
-    for (const [index, value] of HOSTILE.entries()) {
-      const doc = freshDoc();
-      const receipts = [{ kind: value, phase: value, item: value, count: 1, credits: 2 }];
-      const section = renderDetail(
-        doc as unknown as Doc,
-        toView(hostileRow(value, index)),
-        receipts,
-      );
-      (doc.body as unknown as El).append(section as unknown as El);
-      auditTree(doc.body);
-      expect(doc.body.innerHTML).not.toMatch(/<(script|img|svg|iframe|a|style)[\s>]/i);
-      expect(doc.body.querySelector('pre')).toBeNull();
-      expect(doc.body.textContent).toContain(display(value).slice(0, 40));
+describe('renderChips', () => {
+  function chipsFor(names: string[], selected: number, dead: boolean[] = []) {
+    const doc = new Window().document;
+    const row = doc.createElement('div');
+    const picked: number[] = [];
+    const on = renderChips(
+      doc as unknown as Doc,
+      row as unknown as El,
+      names.map((name, index) => ({ name, dead: dead[index] === true })),
+      selected,
+      (index) => picked.push(index),
+    );
+    return { row, picked, on };
+  }
+
+  it('puts "Everyone" first and then one chip per agent, with the name only as text', () => {
+    const { row } = chipsFor(HOSTILE, -1);
+    auditTree(row);
+    const chips = Array.from(row.querySelectorAll('button.chip'));
+    expect(chips.length).toBe(HOSTILE.length + 1);
+    expect(chips[0]?.textContent).toBe('Everyone');
+    expect(chips[0]?.querySelector('canvas')).toBeNull();
+    expect(chips[1]?.querySelector('.chip-name')?.textContent).toBe(display(HOSTILE[0] ?? ''));
+    expect(chips[1]?.querySelector('canvas')?.className).toBe('sigil sigil-chip');
+    expect(row.innerHTML).not.toMatch(/<(script|img|svg|iframe|a|style)[\s>]/i);
+    // No name or id is an attribute: a chip carries its class, its type and whether it is on.
+    for (const chip of chips) {
+      expect(Array.from(chip.attributes).map((a) => a.name)).toEqual([
+        'type',
+        'class',
+        'aria-pressed',
+      ]);
     }
   });
-});
 
-describe('fillAgentOptions', () => {
-  it('uses an index as each option value and the name only as text', () => {
-    const doc = freshDoc();
-    const select = doc.createElement('select');
-    fillAgentOptions(doc as unknown as Doc, select as unknown as El, HOSTILE);
-    const options = Array.from(select.querySelectorAll('option'));
-    expect(options.length).toBe(HOSTILE.length + 1);
-    for (const option of options.slice(1)) {
-      expect(option.getAttribute('value')).toMatch(/^\d+$/);
-    }
-    expect(options[1]?.textContent).toBe(display(HOSTILE[0] ?? ''));
-    auditTree(select as unknown as { querySelectorAll(s: string): ArrayLike<AuditNode> });
+  it('marks the one chip that is on, and returns it', () => {
+    const { row, on } = chipsFor(['Ada', 'Bo'], 1);
+    const pressed = Array.from(row.querySelectorAll('button')).map((b) => [
+      b.className,
+      b.getAttribute('aria-pressed'),
+    ]);
+    expect(pressed).toEqual([
+      ['chip', 'false'],
+      ['chip', 'false'],
+      ['chip on', 'true'],
+    ]);
+    expect((on as unknown as { textContent: string }).textContent).toBe('Bo');
+    const none = chipsFor(['Ada'], -1);
+    expect(none.row.querySelector('button.on')?.textContent).toBe('Everyone');
+    expect((none.on as unknown as { textContent: string }).textContent).toBe('Everyone');
+  });
+
+  it('calls back with the position of the pressed chip, and -1 for "Everyone"', () => {
+    const { row, picked } = chipsFor(['Ada', 'Bo'], -1);
+    const chips = Array.from(row.querySelectorAll('button'));
+    chips[2]?.click();
+    chips[0]?.click();
+    expect(picked).toEqual([1, -1]);
+  });
+
+  it('marks a dead agent with a dagger, says "died" to a screen reader and greys its sigil', () => {
+    const { row } = chipsFor(['Ada', 'Mote'], -1, [false, true]);
+    const chips = Array.from(row.querySelectorAll('button'));
+    expect(chips[1]?.querySelector('.died')).toBeNull();
+    expect(chips[2]?.querySelector('.died')?.textContent).toBe('†');
+    expect(chips[2]?.querySelector('.sr')?.textContent).toBe(' died');
+    expect(chips[2]?.querySelector('canvas')?.className).toBe('sigil sigil-chip dead');
   });
 });
 
@@ -270,30 +271,4 @@ describe('plainRow', () => {
   it('is the baseline shape for the audit', () => {
     expect(plainRow(3).thought_id).toBe('t-3');
   });
-});
-
-it('renders receipt headers and five text cells per row, with empty nulls', () => {
-  const doc = freshDoc();
-  const detail = renderDetail(doc as unknown as Doc, toView(plainRow(1)), [
-    { kind: 'place', phase: 'committed', item: '<img>\u202E', count: 4, credits: 0 },
-    { kind: 'move', phase: 'aborted', item: null, count: null, credits: null },
-  ]);
-  (doc.body as unknown as El).append(detail);
-  auditTree(doc.body);
-  expect([...doc.querySelectorAll('thead th')].map((n) => n.textContent)).toEqual([
-    'Kind',
-    'Phase',
-    'Item',
-    'Count',
-    'Credits',
-  ]);
-  expect(
-    [...doc.querySelectorAll('tbody tr')].map((row) =>
-      [...row.querySelectorAll('td')].map((n) => n.textContent),
-    ),
-  ).toEqual([
-    ['place', 'committed', '<img>[U+202E]', '4', '0'],
-    ['move', 'aborted', '', '', ''],
-  ]);
-  expect(doc.querySelector('img')).toBeNull();
 });

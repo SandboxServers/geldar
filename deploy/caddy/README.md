@@ -18,7 +18,7 @@ The live and kill-switch files stay in this directory, `deploy/caddy/<site>.cadd
 
 The Glass host also carries the register service: `/register*` and `/roster*` (GET, HEAD and POST, 8 KiB body) go to `{$GELDAR_REGISTER_UPSTREAM}` before Glass handles the rest, so one host and one host-only `gk_session` cookie serve both (decision 0135, amendment R42). There is no separate register site; `glass-off.caddy` switches both off, and the service has its own kill switch. The Entra redirect URI is `https://glass.<domain>/register/callback`.
 
-Glass's proxy blocks set `header_up Host localhost`, because Glass answers 421 to any other Host. Glass serves the page (`/`, `/app.css`, `/app.js`, `/js/*`) and the API through Caddy; `/api/stats` is not routed.
+Glass's proxy blocks set `header_up Host localhost`, because Glass answers 421 to any other Host. Glass serves the page (`/`, its four stylesheets, `/app.js`, `/js/*`, the service worker `/sw.js`, `/manifest.webmanifest`, `/fonts/*` and `/icons/*`) and the API through Caddy. The page paths on the `@glass_page` line must match the files Glass serves (`glass/src/static-files.ts`; `glass/test/caddy-paths.test.ts` checks it): a page file Caddy does not route is a 404, and the page loses its styles or its script. Load a changed `glass.caddy` with the Glass image that needs it. `/api/stats` is not routed.
 
 Placeholders are read from the environment by Caddy: `GELDAR_DOMAIN` is the project domain, and each upstream is a service address set by the integration packet C2-07. No real domain or IP address is in these files.
 
