@@ -81,7 +81,7 @@ describe('flush', () => {
     }
     expect(put).toHaveBeenCalledTimes(1);
     expect(put.mock.calls[0]?.[0]).toBe(K('L1', 0, 0, 0));
-    expect(await store.flush()).toEqual({ written: 0, failed: 0 });
+    expect(await store.flush()).toEqual({ written: 0, failed: 0, bytes: 0 });
   });
 
   it('coalesces a flush asked for while one is running into the same run', async () => {
@@ -99,9 +99,11 @@ describe('flush', () => {
     const store = storeFor(kv, 'L1');
     await store.record(0, 0, 0, 'stone', 1);
     kv.failPuts = 1;
-    expect(await store.flush()).toEqual({ written: 0, failed: 1 });
+    expect(await store.flush()).toEqual({ written: 0, failed: 1, bytes: 0 });
     expect(kv.values.has(K('L1', 0, 0, 0))).toBe(false);
-    expect(await store.flush()).toEqual({ written: 1, failed: 0 });
+    const retried = await store.flush();
+    expect(retried).toMatchObject({ written: 1, failed: 0 });
+    expect(retried.bytes).toBeGreaterThan(0);
     expect(kv.values.has(K('L1', 0, 0, 0))).toBe(true);
   });
 
@@ -117,10 +119,10 @@ describe('flush', () => {
         1,
       );
     }
-    expect(await store.flush()).toEqual({ written: 0, failed: 1 });
+    expect(await store.flush()).toEqual({ written: 0, failed: 1, bytes: 0 });
     expect(kv.values.size).toBe(0);
     expect(SECTION_BYTE_LIMIT).toBe(65536);
-    expect(await store.flush()).toEqual({ written: 0, failed: 1 });
+    expect(await store.flush()).toEqual({ written: 0, failed: 1, bytes: 0 });
   });
 });
 

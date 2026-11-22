@@ -17,6 +17,7 @@ import {
   type SeenWiring,
   type SeenWiringOptions,
 } from '../building/wire-seen.ts';
+import type { GolemMetrics } from '../metrics.ts';
 import { type BodyKv, CheckpointStore } from './checkpoint.ts';
 import { cancelForDeath, type DeathTarget } from './death-cancel.ts';
 import { type ExecutorOptions, IntentExecutor } from './executor.ts';
@@ -63,6 +64,8 @@ export interface CreateBodyOptions {
   planStore?: PlanQueueStore;
   /** Wall-clock ms for the plan's TPS estimate and progress cadence. Default: Date.now. Tests inject one. */
   wallClock?: WallClock;
+  /** The Body's metrics (metrics.ts); the plan and seen counters are fed from them. Default: none kept. */
+  metrics?: GolemMetrics;
   /** The shard's `body_actions.swim` flag; the goto swim and the bank exit are off while off. Default: off (decision 0194). */
   swim?: boolean;
   /**
@@ -220,6 +223,7 @@ export function createBody(options: CreateBodyOptions): Body {
       expand: createPlanExpand(feet),
       ...(options.planStore === undefined ? {} : { store: options.planStore }),
       ...(options.wallClock === undefined ? {} : { wallClock: options.wallClock }),
+      ...(options.metrics === undefined ? {} : { metrics: options.metrics }),
     });
   }
   built.actions.register(planHandler(options.building ?? false, plan?.queue ?? null));
@@ -298,6 +302,7 @@ export function createBody(options: CreateBodyOptions): Body {
           ticks: options.ticks,
           lifeId: options.lifeId,
           ...(options.seen ?? {}),
+          ...(options.metrics === undefined ? {} : { metrics: options.metrics }),
         })
       : null;
   return { runtime: built, executor, tap, records, checkpoints, plan, seen };

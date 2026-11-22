@@ -82,4 +82,55 @@ describe('answerSurvey', () => {
     );
     expect('text' in answer && answer.text).toContain('unknown');
   });
+
+  it('refuses a box over the cell cap as box_too_large without asking the map (review fix 2)', () => {
+    const { seen, asked } = fakeSeen();
+    const huge = { box: { from: { x: 0, y: -64, z: 0 }, to: { x: 999, y: 319, z: 299 } } };
+    expect(answerSurvey(seen, huge, 1, true)).toEqual({ error: 'box_too_large' });
+    expect(
+      answerSurvey(
+        seen,
+        { box: { from: { x: -30000000, y: 0, z: 0 }, to: { x: 30000000, y: 0, z: 0 } } },
+        1,
+        true,
+      ),
+    ).toEqual({ error: 'box_too_large' });
+    expect(asked).toEqual([]);
+  });
+
+  it('answers a box of exactly the cap and refuses one cell more', () => {
+    const { seen, asked } = fakeSeen();
+    const atCap = { box: { from: { x: 0, y: 0, z: 0 }, to: { x: 31, y: 31, z: 31 } } };
+    const overCap = { box: { from: { x: 0, y: 0, z: 0 }, to: { x: 32, y: 31, z: 31 } } };
+    expect(answerSurvey(seen, atCap, 1, true)).toEqual({
+      text: 'legend a=stone',
+      truncated: false,
+    });
+    expect(answerSurvey(seen, overCap, 1, true)).toEqual({ error: 'box_too_large' });
+    expect(asked).toHaveLength(1);
+  });
+
+  it('clamps layers before the cap: a tall box read as one layer is answered', () => {
+    const { seen, asked } = fakeSeen();
+    const tall = { box: { from: { x: 0, y: -64, z: 0 }, to: { x: 199, y: 320, z: 99 } } };
+    expect(answerSurvey(seen, tall, 1, true)).toEqual({ error: 'box_too_large' });
+    expect(answerSurvey(seen, { ...tall, layers: 1 }, 1, true)).toEqual({
+      text: 'legend a=stone',
+      truncated: false,
+    });
+    expect(asked).toHaveLength(1);
+    expect(asked[0]?.box.max.y).toBe(-64);
+  });
+
+  it('refuses hostile coordinates and layers (NaN, fractions, infinity) as invalid_input without asking', () => {
+    const { seen, asked } = fakeSeen();
+    const corner = (x: number) => ({ box: { from: { x, y: 0, z: 0 }, to: { x: 1, y: 1, z: 1 } } });
+    for (const x of [Number.NaN, 0.5, Number.POSITIVE_INFINITY]) {
+      expect(answerSurvey(seen, corner(x), 1, true)).toEqual({ error: 'invalid_input' });
+    }
+    expect(answerSurvey(seen, { ...request, layers: 1.5 }, 1, true)).toEqual({
+      error: 'invalid_input',
+    });
+    expect(asked).toEqual([]);
+  });
 });

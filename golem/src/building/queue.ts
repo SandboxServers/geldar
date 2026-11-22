@@ -251,6 +251,11 @@ export class PlanQueue {
     }
   }
 
+  /** Plans held now: the active one and those waiting (the queue depth metric). */
+  depth(): number {
+    return (this.active === null ? 0 : 1) + this.waiting.length;
+  }
+
   private isKnown(planId: string): boolean {
     return this.active?.planId === planId || this.waiting.some((e) => e.planId === planId);
   }

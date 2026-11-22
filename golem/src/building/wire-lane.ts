@@ -8,7 +8,8 @@ import { Vec3 } from 'vec3';
 import { type ActionOutcome, cancelled, completed, failed } from '../actions/outcome.ts';
 import type { ActionContext, ActionRun } from '../actions/registry.ts';
 import type { BodyRuntime } from '../body/runtime.ts';
-import type { CellEnv, CellHandlers } from './cell-do.ts';
+import type { GolemMetrics } from '../metrics.ts';
+import type { CellCode, CellEnv, CellHandlers } from './cell-do.ts';
 import { type Contention, contendFor } from './contention.ts';
 import { PlanLane } from './lane.ts';
 import { PlanProgressEmitter } from './progress-emitter.ts';
@@ -29,6 +30,8 @@ export interface LaneWiringOptions {
   store?: PlanQueueStore;
   /** Wall-clock ms for the TPS estimate and the progress cadence; default Date.now. */
   wallClock?: WallClock;
+  /** The Body's metrics (metrics.ts): plan cells, throttle waits, queue depth and plan seconds. Absent: none kept. */
+  metrics?: GolemMetrics;
 }
 
 /** The parts of one Body's plan work. */
@@ -60,7 +63,16 @@ export function createLaneWiring(options: LaneWiringOptions): LaneWiring {
   const tps = new TpsEstimator(clock);
   // The throttle asks before each cell, in world ticks, with the Body's own TPS estimate (throttle.ts).
   const throttle = new TickThrottle(() => tps.tps());
-  const beforeCell = (now: number) => throttle.before(now);
+  const metrics = options.metrics;
+  // A wait is a verdict other than `go`: one per world tick the cell is held (`tps` is a paused lane).
+  const beforeCell = (now: number) => {
+    const verdict = throttle.before(now);
+    if (verdict !== 'go') metrics?.planThrottleWait(verdict === 'tps');
+    return verdict;
+  };
+  const onCell = (code: CellCode) => metrics?.planCell(code);
+  // Plan seconds: the wall time between two ticks on which a plan is still open (not idle, completed or failed).
+  let lastAt: number | null = null;
   // The plan's progress events and wakes (progress-emitter.ts) go through the Body's record sink.
   const progress = new PlanProgressEmitter(runtime.sink, clock);
   return {
@@ -78,12 +90,26 @@ export function createLaneWiring(options: LaneWiringOptions): LaneWiring {
         timeScale: runtime.timeScale,
       };
       try {
-        await queue.step(ctx, { env, handlers, now: () => runtime.view.tick ?? 0, beforeCell });
+        await queue.step(ctx, {
+          env,
+          handlers,
+          now: () => runtime.view.tick ?? 0,
+          beforeCell,
+          onCell,
+        });
       } catch (error) {
         // An unexpected throw fails the plan: its `failed` phase goes out once, then the error is rethrown.
         lane.fail();
         progress.observe(lane.snapshot(), tick);
         throw error;
+      }
+      if (metrics !== undefined) {
+        const at = clock();
+        const snap = lane.snapshot();
+        const open = snap !== null && !['idle', 'completed', 'failed'].includes(snap.phase);
+        if (open && lastAt !== null) metrics.planSeconds((at - lastAt) / 1000);
+        lastAt = open ? at : null;
+        metrics.planQueueDepth(queue.depth());
       }
       progress.observe(lane.snapshot(), tick);
       progress.observeShortfall(lane.materialsShortfall(), tick);

@@ -113,3 +113,53 @@ export function recordChange(
 ): void {
   map.record(x, y, z, name, tick);
 }
+
+/**
+ * True when the cell is in view now (review fix 3, decision 0424): inside the outermost rays of the
+ * facing cone, within the view range, and reached with no opaque or unloaded block before it. A changed
+ * cell that is not in view is not recorded; it stays as the Body last saw it.
+ */
+export function cellInView(
+  world: ViewWorld,
+  pose: ViewPose,
+  x: number,
+  y: number,
+  z: number,
+): boolean {
+  // The same rays the recorder casts, so a cell is in view exactly when a sampled ray records it.
+  for (let index = 0; index < CONE_RAYS; index++) {
+    const col = index % DEFAULT_COLS;
+    const row = Math.floor(index / DEFAULT_COLS);
+    const [yaw, pitch] = rayAngles(pose, DEFAULT_COLS, DEFAULT_ROWS, col, row);
+    if (rayReaches(world, pose, yaw, pitch, x, y, z)) return true;
+  }
+  return false;
+}
+
+/** Walks one cone ray as walkRay does; true when it reaches the cell before any opaque or unloaded block. */
+function rayReaches(
+  world: ViewWorld,
+  pose: ViewPose,
+  yaw: number,
+  pitch: number,
+  x: number,
+  y: number,
+  z: number,
+): boolean {
+  const [dx, dy, dz] = lookVector(yaw, pitch);
+  const limit = world.dark ? DARK_RANGE : MAX_RANGE;
+  let lastKey = '';
+  for (let t = STEP; t <= limit; t += STEP) {
+    const bx = Math.floor(pose.x + dx * t);
+    const by = Math.floor(pose.y + dy * t);
+    const bz = Math.floor(pose.z + dz * t);
+    const key = `${bx},${by},${bz}`;
+    if (key === lastKey) continue;
+    lastKey = key;
+    const sample = world.block(bx, by, bz);
+    if (sample.kind === 'unknown') return false;
+    if (bx === x && by === y && bz === z) return true;
+    if (sample.kind === 'solid') return false;
+  }
+  return false;
+}

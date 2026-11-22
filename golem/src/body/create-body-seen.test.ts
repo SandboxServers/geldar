@@ -93,17 +93,35 @@ describe('createBody with body_actions.building on: the seen map', () => {
     expect(made.seen?.survey(BOX, 50).text).not.toContain('diamond_ore');
   });
 
-  it('an observed change updates a seen cell, and a change to an unseen cell is not recorded', () => {
+  it('an observed change to a seen cell in view updates it', () => {
+    const made = seenBody({ building: true });
+    sweep(made.ticks);
+    expect(made.seen?.map.read(0, 64, -3)?.name).toBe('stone');
+    const emitter = made.bot as unknown as { emit(event: string, ...args: unknown[]): boolean };
+    emitter.emit('blockUpdate', { name: 'stone' }, { name: 'air', position: new Vec3(0, 64, -3) });
+    expect(made.seen?.map.read(0, 64, -3)?.name).toBe('air');
+  });
+
+  it('a change to a seen cell out of view leaves the cell as the Body last saw it', () => {
+    const made = seenBody({ building: true });
+    sweep(made.ticks);
+    expect(made.seen?.map.read(0, 64, -3)?.name).toBe('stone');
+    // Facing +z turns the wall at z -3 behind the eyes, out of the cone.
+    (made.bot.entity as unknown as { yaw: number }).yaw = Math.PI;
+    const emitter = made.bot as unknown as { emit(event: string, ...args: unknown[]): boolean };
+    emitter.emit('blockUpdate', { name: 'stone' }, { name: 'air', position: new Vec3(0, 64, -3) });
+    expect(made.seen?.map.read(0, 64, -3)?.name).toBe('stone');
+  });
+
+  it('a change to an unseen cell is not recorded', () => {
     const made = seenBody({ building: true });
     sweep(made.ticks);
     const emitter = made.bot as unknown as { emit(event: string, ...args: unknown[]): boolean };
-    emitter.emit('blockUpdate', { name: 'stone' }, { name: 'air', position: new Vec3(0, 64, -3) });
     emitter.emit(
       'blockUpdate',
       { name: 'air' },
       { name: 'iron_block', position: new Vec3(0, 64, -6) },
     );
-    expect(made.seen?.map.read(0, 64, -3)?.name).toBe('air');
     expect(made.seen?.map.read(0, 64, -6)).toBeUndefined();
   });
 

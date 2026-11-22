@@ -5,8 +5,9 @@
 // life inherits the predecessor's sections when they match.
 import type { Bot } from 'mineflayer';
 import type { TickSource } from '../body/runtime.ts';
+import type { GolemMetrics } from '../metrics.ts';
 import { viewFromBot } from '../perception/view/viewport.ts';
-import { newRecorder, recordSeen } from './seen/recorder.ts';
+import { cellInView, newRecorder, recordSeen } from './seen/recorder.ts';
 import { SECTION_SIZE, SeenMap, sectionOf } from './seen/section.ts';
 import {
   eraseLife as eraseStoredLife,
@@ -23,6 +24,8 @@ export interface SeenWiringOptions {
   bot: Bot;
   ticks: TickSource;
   lifeId: string;
+  /** The Body's metrics: one seen flush and its bytes per store flush. Absent: none kept. */
+  metrics?: GolemMetrics;
   /** The seen KV bucket. Absent: the map is kept in memory and nothing is written. */
   kv?: SeenKv;
   agentId?: string;
@@ -133,7 +136,9 @@ export function createSeenWiring(opts: SeenWiringOptions): SeenWiring {
         if (!map.changed.has(key)) map.changed.set(key, change);
       }
     }
-    return store.flush();
+    const result = await store.flush();
+    opts.metrics?.seenFlush(result.bytes);
+    return result;
   }
 
   const offTicks = opts.ticks((tick) => {
@@ -176,6 +181,15 @@ export function createSeenWiring(opts: SeenWiringOptions): SeenWiring {
       const y = Math.floor(block.position.y);
       const z = Math.floor(block.position.z);
       if (map.read(x, y, z) === undefined) return;
+      // A change to an already-seen cell is taken only while the cell is in view now (review fix 3).
+      // Out of view it stays as the Body last saw it, stale, and the plan verifies it live.
+      try {
+        const { world, pose } = viewFromBot(opts.bot);
+        if (!cellInView(world, pose, x, y, z)) return;
+      } catch (error) {
+        log(`seen change not read: ${String(error)}`);
+        return;
+      }
       map.record(x, y, z, block.name, lastTick);
     });
     emitter.on('death', () => {

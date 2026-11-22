@@ -1,3 +1,4 @@
+import { validateWakePayload } from '@geldar/contract';
 import { describe, expect, it, vi } from 'vitest';
 import { completed } from '../actions/outcome.ts';
 import type { ActionContext, ActionHandler } from '../actions/registry.ts';
@@ -134,6 +135,20 @@ describe('PlanProgressEmitter materials wake and failed event (BLD-38f3)', () =>
     tick,
     intentId: null,
     detail: materialsWakeText('stone', 0, 1),
+  });
+
+  it('the materials wake passes the contract wake validator (review fix 1)', () => {
+    const { sink, emitter } = setup();
+    emitter.observeShortfall(shortfall, 7);
+    const sent = sink.wake.mock.calls[0]?.[0];
+    expect(sent).toBeDefined();
+    const verdict = validateWakePayload({
+      reason: sent?.reason,
+      tick: sent?.tick,
+      intent_id: null,
+      detail: sent?.detail,
+    });
+    expect(verdict.ok).toBe(true);
   });
 
   it('wakes the Mind once per wait, through sink.wake, not once per slice', () => {

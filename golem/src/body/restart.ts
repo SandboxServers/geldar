@@ -123,12 +123,15 @@ export function natsSeenKv(kv: KV): SeenKv {
 }
 
 /**
- * Opens NATS and the two buckets (created when missing); `close` drops the connection. The URL
- * must be on loopback. The connection reconnects without end, waiting 1 s, 2 s, ... up to 15 s
+ * Opens NATS and the buckets (created when missing); `close` drops the connection. The URL
+ * must be on loopback. The generation and checkpoint buckets are always opened. The plan and seen
+ * buckets are opened only with body_actions.building on (`building`); off, they are not touched.
+ * The connection reconnects without end, waiting 1 s, 2 s, ... up to 15 s
  * between tries (the wait starts over after a successful reconnect).
  */
 export async function openRestartKv(
   natsUrl: string,
+  building = false,
 ): Promise<{ kv: RestartBodyOptions['kv']; close(): Promise<void> }> {
   assertLoopbackNatsUrl(natsUrl);
   let tries = 0;
@@ -146,10 +149,15 @@ export async function openRestartKv(
     const kvm = new Kvm(jetstream(nc));
     const generations = natsBodyKv(await kvm.create(GENERATION_BUCKET));
     const checkpoints = natsBodyKv(await kvm.create(CHECKPOINT_BUCKET));
-    const plans = natsBodyKv(await kvm.create(PLAN_BUCKET));
-    const seen = natsSeenKv(await kvm.create(SEEN_BUCKET));
+    const plans = building ? natsBodyKv(await kvm.create(PLAN_BUCKET)) : undefined;
+    const seen = building ? natsSeenKv(await kvm.create(SEEN_BUCKET)) : undefined;
     return {
-      kv: { generations, checkpoints, plans, seen },
+      kv: {
+        generations,
+        checkpoints,
+        ...(plans === undefined ? {} : { plans }),
+        ...(seen === undefined ? {} : { seen }),
+      },
       close: () => nc.close().then(() => undefined),
     };
   } catch (error) {
@@ -249,6 +257,14 @@ export async function restartBody(options: RestartBodyOptions): Promise<Restarte
       await body.executor.stop();
       await body.runtime.stop();
       await body.checkpoints?.flush();
+      // The seen wiring's flush timer stops here and its queued cells are written once; the plan writer is flushed.
+      body.seen?.stop();
+      await body.seen?.flush().catch((error: unknown) => {
+        (log ?? ((line: string) => console.error(line)))(
+          `restart: seen flush failed: ${String(error)}`,
+        );
+      });
+      await persistence?.flush();
       const timeoutMs = options.flushTimeoutMs ?? FLUSH_TIMEOUT_MS;
       if (!(await flushSink(body.records, timeoutMs))) {
         // The records still queued (the interrupted event among them) are lost with this process.
