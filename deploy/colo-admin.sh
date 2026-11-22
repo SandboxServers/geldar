@@ -153,6 +153,16 @@ owner_set_cap_args() {
   owner_cap=$2
 }
 
+# player-set-owner <player id> <owner id> (assign-cmd): the player id as player-flags checks it, the owner id as
+# roster_owner_ok checks it. The CLI does the move in one transaction and refuses a retired player or a full owner.
+player_set_owner_args() {
+  [ $# -eq 2 ] || die "player-set-owner takes <player-id> <owner-id>"
+  printf '%s' "$1" | grep -Eq '^ag-[a-z0-9-]{1,40}$' || die "player id must match ^ag-[a-z0-9-]{1,40}\$: $1"
+  roster_owner_ok "$2"
+  set_owner_player=$1
+  set_owner_owner=$2
+}
+
 # Writes the overlay that mounts a host directory into the admin service only: $1 is the target, $2 is "" or
 # "read_only: true", $3 names the file (tokens or skins). It is written with mode 0600.
 write_overlay() {
@@ -274,8 +284,8 @@ run_hosts() {
 
 cmd=${1:-}
 case $cmd in
-  migrate | owner-add | owner-set-cap | owner-admin | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body | skin-import | player-start | player-stop | player-list | roster-add | roster-list | player-flags) shift ;;
-  *) die "unknown subcommand '$cmd'; use migrate, owner-add, owner-set-cap, owner-admin, player-add, token-mint, token-revoke, players-status, ensure-skins-bucket, whitelist-house-body, skin-import, player-start, player-stop, player-list, roster-add, roster-list or player-flags" ;;
+  migrate | owner-add | owner-set-cap | owner-admin | player-add | token-mint | token-revoke | players-status | ensure-skins-bucket | whitelist-house-body | skin-import | player-start | player-stop | player-list | roster-add | roster-list | player-flags | player-set-owner) shift ;;
+  *) die "unknown subcommand '$cmd'; use migrate, owner-add, owner-set-cap, owner-admin, player-add, token-mint, token-revoke, players-status, ensure-skins-bucket, whitelist-house-body, skin-import, player-start, player-stop, player-list, roster-add, roster-list, player-flags or player-set-owner" ;;
 esac
 if [ "$cmd" = token-mint ]; then
   mint_args "$@"
@@ -290,6 +300,7 @@ case $cmd in
   owner-admin) owner_admin_args "$@" ;;
   roster-add) roster_add_args "$@" ;;
   roster-list) roster_list_args "$@" ;;
+  player-set-owner) player_set_owner_args "$@" ;;
   player-flags) [ "$#" -ge 2 ] && player_flags_id_ok "$1" || die "player-flags takes <player-id> (ag-...) and --public-camera on|off and/or --thoughts-delayed-public on|off" ;;
 esac
 
@@ -317,6 +328,7 @@ if [ "$DRY_RUN" = 1 ]; then
   case $cmd in
     roster-add) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm --no-deps admin roster add $roster_name --owner $roster_owner" ;;
     roster-list) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm --no-deps admin roster list${roster_owner:+ --owner $roster_owner}" ;;
+    player-set-owner) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm --no-deps admin player-set-owner $set_owner_player $set_owner_owner" ;;
     *) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm --no-deps admin $cmd $*" ;;
   esac
   if [ "$cmd" = token-mint ]; then
@@ -348,6 +360,10 @@ elif [ "$cmd" = roster-add ]; then
   adm config --quiet || die "admin service config does not validate"
   adm run --rm --no-deps admin roster add "$roster_name" --owner "$roster_owner" || die "roster-add failed"
   say "roster-add: done for $roster_name on the roster of $roster_owner (the admin container was removed)"
+elif [ "$cmd" = player-set-owner ]; then
+  adm config --quiet || die "admin service config does not validate"
+  adm run --rm --no-deps admin player-set-owner "$set_owner_player" "$set_owner_owner" || die "player-set-owner refused or failed; a refused move writes nothing"
+  say "player-set-owner: done for $set_owner_player to owner $set_owner_owner (ids only; the admin container was removed)"
 elif [ "$cmd" = roster-list ]; then
   adm config --quiet || die "admin service config does not validate"
   if [ -n "$roster_owner" ]; then

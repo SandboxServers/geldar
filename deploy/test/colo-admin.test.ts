@@ -262,6 +262,42 @@ describe('colo-admin.sh (decision 0133)', () => {
     });
   });
 
+  // assign-cmd: player-set-owner maps to `mcp-tokens player set-owner` in the admin container; ids only, no names.
+  describe('player-set-owner verb (assign-cmd)', () => {
+    it('runs player set-owner with the player id and the owner id as separate arguments', () => {
+      const fx = fixture();
+      const r = run(fx, REAL, ['player-set-owner', 'ag-ranger-01', 'bob']);
+      expect(r.code).toBe(0);
+      expect(
+        calls(fx).some((c) =>
+          c.endsWith('--profile admin run --rm --no-deps admin player-set-owner ag-ranger-01 bob'),
+        ),
+      ).toBe(true);
+      expect(existsSync(`${fx.callsLog}.overlay`)).toBe(false);
+    });
+
+    it('dry run prints the move command and starts no container', () => {
+      const fx = fixture();
+      const r = run(fx, { DEPLOY_DRY_RUN: '1' }, ['player-set-owner', 'ag-ranger-01', 'bob']);
+      expect(r.code).toBe(0);
+      expect(r.out).toContain('dry-run, not run');
+      expect(r.out).toContain('admin player-set-owner ag-ranger-01 bob');
+      expect(starts(calls(fx))).toEqual([]);
+    });
+
+    it.each([
+      ['a player id without the ag- prefix', ['player-set-owner', 'ranger-01', 'bob']],
+      ['an upper-case owner id', ['player-set-owner', 'ag-ranger-01', 'Bob']],
+      ['a missing owner id', ['player-set-owner', 'ag-ranger-01']],
+      ['an extra argument', ['player-set-owner', 'ag-ranger-01', 'bob', 'extra']],
+    ])('refuses %s and runs nothing', (_label, args) => {
+      const fx = fixture();
+      const r = run(fx, REAL, args);
+      expect(r.code).not.toBe(0);
+      expect(calls(fx).some((c) => c.includes('admin player-set-owner'))).toBe(false);
+    });
+  });
+
   // The roster (decision 0108): roster-add and roster-list map to `mcp-tokens roster add|list` in the admin container.
   describe('roster verbs (decision 0108)', () => {
     it('runs roster-add as mcp-tokens roster add, name and owner passed as separate arguments', () => {

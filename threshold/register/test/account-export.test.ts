@@ -427,6 +427,7 @@ describe('the Pg adapter and the mount (C7-09b)', () => {
       findOwner: async () => null,
       listPlayers: async () => [],
       eraseAccount: async () => false,
+      movedInPlayers: async () => [],
     };
     const body = { link: null, routes: [] as readonly ApiRoute[] };
     const without = mountAccountDelete(store, body, {}, () => undefined);

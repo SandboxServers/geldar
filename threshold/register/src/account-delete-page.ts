@@ -4,6 +4,7 @@ import {
   type AccountDeleteDeps,
   DELETE_PHRASE,
   deleteAccountData,
+  MOVED_IN_DETAIL,
 } from './api/account-data-delete.ts';
 import { UNAVAILABLE_RETRY_SECONDS } from './api/body.ts';
 import { errorPage } from './errors.ts';
@@ -17,7 +18,7 @@ export function deleteAccountPage(csrf: string, notice = ''): string {
   const note = notice === '' ? '' : `<p>${esc(notice)}</p>`;
   return page(
     'Delete your account',
-    `<h1>Delete your account</h1>${note}<p>This removes your account and your players. Each player's body is stopped first. This cannot be undone.</p><p>Event history is kept, as the rules require.</p>${form(
+    `<h1>Delete your account</h1>${note}<p>This removes your account and your players. Each player's body is stopped first. This cannot be undone.</p><p>If the operator moved a player to your account, the delete is refused until that player is moved away.</p><p>Event history is kept, as the rules require.</p>${form(
       '/register/account/delete',
       csrf,
       `<label>Type &quot;${esc(DELETE_PHRASE)}&quot; to confirm <input name="phrase" autocomplete="off" required></label><button type="submit">Delete my account</button>`,
@@ -78,6 +79,10 @@ export async function runAccountDelete(
   }
   if (outcome === 'conflict') {
     send(res, 409, deleteAccountPage(s.csrf, 'An agent is busy. Try again shortly.'));
+    return;
+  }
+  if (outcome === 'moved_in') {
+    send(res, 409, deleteAccountPage(s.csrf, MOVED_IN_DETAIL));
     return;
   }
   send(
