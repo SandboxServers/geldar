@@ -1,6 +1,7 @@
 import { Vec3 } from 'vec3';
 import { describe, expect, it, vi } from 'vitest';
 import type { SeenKv } from '../building/seen/store.ts';
+import type { GolemMetrics } from '../metrics.ts';
 import { fakeBot, fakeView, manualTicks } from './body.fakes.ts';
 import { createBody } from './create-body.ts';
 
@@ -47,6 +48,7 @@ function seenBody(opts: {
   kv?: SeenKv;
   lifeId?: string;
   predecessor?: { lifeId: string; agentId: string } | null;
+  metrics?: GolemMetrics;
 }) {
   const ticks = manualTicks();
   const bot = fakeBot();
@@ -68,6 +70,7 @@ function seenBody(opts: {
       ...(opts.kv === undefined ? {} : { kv: opts.kv }),
       ...(opts.predecessor === undefined ? {} : { predecessor: opts.predecessor }),
     },
+    ...(opts.metrics === undefined ? {} : { metrics: opts.metrics }),
   });
   return { ...made, ticks, bot, world };
 }
@@ -189,6 +192,18 @@ describe('createBody with body_actions.building on: the seen map', () => {
     });
     await second.seen?.ready;
     expect(second.seen?.survey(BOX, 50).text).not.toContain('stone');
+  });
+});
+
+describe('createBody hands its metrics to the seen map (BLD-38d)', () => {
+  it('a seen flush is counted on the metrics the Body was given', async () => {
+    const spy = { seenFlush: vi.fn() };
+    const kv = memoryKv();
+    const made = seenBody({ building: true, kv, metrics: spy as unknown as GolemMetrics });
+    sweep(made.ticks);
+    await made.seen?.flush();
+    expect(spy.seenFlush).toHaveBeenCalledWith(expect.any(Number));
+    made.seen?.stop();
   });
 });
 

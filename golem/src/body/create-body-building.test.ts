@@ -1,13 +1,26 @@
 import type { Bot } from 'mineflayer';
 import { describe, expect, it, vi } from 'vitest';
 import { BUILDING_REFUSAL } from '../building/names.ts';
+import type { GolemMetrics } from '../metrics.ts';
 import { fakeBot, fakeView, manualTicks } from './body.fakes.ts';
 import { createBody } from './create-body.ts';
 
 const LIFE = 'ag_test_building';
 
+/** A metrics object whose plan counters are spies; the Body is handed it as its GolemMetrics. */
+function spyMetrics() {
+  const spy = {
+    planCell: vi.fn(),
+    planSeconds: vi.fn(),
+    planThrottleWait: vi.fn(),
+    planQueueDepth: vi.fn(),
+    seenFlush: vi.fn(),
+  };
+  return { spy, metrics: spy as unknown as GolemMetrics };
+}
+
 /** A body over fakes with the building flag set. The bot's world is air, and it holds stone. */
-function buildingBody(opts: { building: boolean; bot?: Bot }) {
+function buildingBody(opts: { building: boolean; bot?: Bot; metrics?: GolemMetrics }) {
   const ticks = manualTicks();
   const view = fakeView();
   const bot = opts.bot ?? fakeBot();
@@ -22,6 +35,7 @@ function buildingBody(opts: { building: boolean; bot?: Bot }) {
     view,
     building: opts.building,
     wallClock: () => wall.ms,
+    ...(opts.metrics === undefined ? {} : { metrics: opts.metrics }),
   });
   return { ...made, ticks, view, bot, wall };
 }
@@ -148,6 +162,28 @@ describe('the plan queue and lane on the Body (BLD-38b)', () => {
     await tickAt(made, 1);
     await tickAt(made, 2);
     expect(blockAt).not.toHaveBeenCalled();
+    await made.runtime.stop();
+  });
+});
+
+describe('createBody hands its metrics to the plan lane (BLD-38b)', () => {
+  it('a plan cell is counted on the metrics the Body was given', async () => {
+    const { spy, metrics } = spyMetrics();
+    const made = buildingBody({ building: true, metrics });
+    airWorld(made.bot, mutableView(made));
+    made.runtime.start();
+    await made.runtime.runAction(row(3));
+    await tickAt(made, 1);
+    expect(spy.planCell).toHaveBeenCalled();
+    await made.runtime.stop();
+  });
+
+  it('with the flag off the lane is not built, so no plan metric is written', async () => {
+    const { spy, metrics } = spyMetrics();
+    const made = buildingBody({ building: false, metrics });
+    made.runtime.start();
+    await tickAt(made, 1);
+    expect(spy.planCell).not.toHaveBeenCalled();
     await made.runtime.stop();
   });
 });
