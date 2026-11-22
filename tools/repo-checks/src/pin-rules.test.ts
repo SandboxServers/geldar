@@ -17,7 +17,7 @@ const SHA = 'b'.repeat(40);
 describe('checkExactDependencies', () => {
   it('accepts exact versions and workspace links', () => {
     const text = JSON.stringify({
-      dependencies: { pg: '8.23.1', '@geldar/animus': 'workspace:*' },
+      dependencies: { pg: '8.23.1', '@geldar/ghost': 'workspace:*' },
       devDependencies: { vitest: '5.0.5-beta.1' },
     });
     expect(checkExactDependencies('package.json', text)).toEqual([]);

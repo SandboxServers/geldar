@@ -1,4 +1,3 @@
-import { MIND_EVENT_TYPES } from '@geldar/animus/src/link/mind-event.ts';
 import { validateWorldEvent } from '@geldar/contract';
 import { describe, expect, it, vi } from 'vitest';
 import type { PlayerEventLog } from '../ports.ts';
@@ -6,9 +5,29 @@ import { handleStreamMessage, type StreamContext, streamSubjects } from './strea
 
 /**
  * The audit types (AN-02a, AN-06): these are WorldEvents the sink projects, and the MCP stream must
- * never hand them to an agent. The stream reads MIND_EVENT_TYPES, so they must stay out of it.
+ * never hand them to an agent. The stream's subjects come from the Mind event list, so they must
+ * stay out of it.
  */
 const AUDIT_TYPES = ['roll', 'decision', 'sheet_adopted', 'chunk_visited'];
+
+/**
+ * A local copy of the Mind event types (player-core's MIND_EVENT_TYPES, copied when animus was
+ * removed). Kept literal so a leaked audit type fails this test without importing another package.
+ */
+const MIND_EVENT_TYPES: readonly string[] = [
+  'wake',
+  'intent',
+  'action',
+  'plan_result',
+  'action_outcome',
+  'reflex_fired',
+  'speech',
+  'damage',
+  'death',
+  'sleep',
+  'heard_sound',
+  'observation',
+];
 
 /** A valid WorldEvent envelope (the contract's field set, a real ev_ ULID) of one type. */
 function envelope(type: string) {

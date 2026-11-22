@@ -127,10 +127,10 @@ describe('the Glass import graph', () => {
     SCAN_TIMEOUT_MS,
   );
 
-  it('rejects a planted import of animus, golem, threshold or a write-capable package', () => {
+  it('rejects a planted import of an unlisted package, golem, threshold or a write-capable package', () => {
     const planted = [
       "import { x } from '../../golem/src/x.ts';",
-      "import { y } from '@geldar/animus';",
+      "import { y } from '@geldar/ghost';",
       "import z from 'threshold';",
       "import nats from 'nats';",
       "import pg from 'pg';\nimport { q } from '../../tools/migrate/src/migrate.ts';",
@@ -138,7 +138,7 @@ describe('the Glass import graph', () => {
     const violations = importViolations('src/planted.ts', planted);
     expect(violations).toEqual([
       '../../golem/src/x.ts: leaves glass',
-      '@geldar/animus: not an allowed package',
+      '@geldar/ghost: not an allowed package',
       'threshold: not an allowed package',
       'nats: not an allowed package',
       '../../tools/migrate/src/migrate.ts: leaves glass',

@@ -392,10 +392,8 @@ jobs:
           threshold/mcp/test/it/scratch-pool.it.test.ts
           tools/mcp-tokens/test/cli.it.test.ts
           tools/mcp-tokens/test/owner-cap.it.test.ts
-          animus/src/memory/memory.it.test.ts
           glass/test/glass.it.test.ts
           tools/adam-report/test/report.it.test.ts
-          animus/src/link/link.it.test.ts
           eventsink/test/eventsink.it.test.ts
           eventsink/test/projection.it.test.ts
           eventsink/test/audit.it.test.ts

@@ -21,13 +21,12 @@ SRC=$4
 # A missing src extract would make every file look changed; refuse instead.
 [ -d "$SRC" ] || { echo "colo-cd-plan: src extract dir not found: $SRC" >&2; exit 1; }
 
-# The image keys the manifest carries, and the compose service each one starts (mind and admin never run as services here).
-IMAGE_KEYS="GELDAR_BODY_IMAGE GELDAR_MIND_IMAGE GELDAR_EVENTSINK_IMAGE GELDAR_MCP_IMAGE GELDAR_ADMIN_IMAGE GELDAR_GLASS_IMAGE GELDAR_REGISTER_IMAGE"
+# The image keys the manifest carries, and the compose service each one starts (admin never runs as a service here).
+IMAGE_KEYS="GELDAR_BODY_IMAGE GELDAR_EVENTSINK_IMAGE GELDAR_MCP_IMAGE GELDAR_ADMIN_IMAGE GELDAR_GLASS_IMAGE GELDAR_REGISTER_IMAGE"
 
 svc_of() {
   case $1 in
     GELDAR_BODY_IMAGE) echo golem-body ;;
-    GELDAR_MIND_IMAGE) echo animus ;;
     GELDAR_EVENTSINK_IMAGE) echo eventsink ;;
     GELDAR_MCP_IMAGE) echo geldar-mcp ;;
     GELDAR_ADMIN_IMAGE) echo admin ;;
