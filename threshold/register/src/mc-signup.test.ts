@@ -235,6 +235,27 @@ describe('flag on, existing owner', () => {
     expect(store.createOwner).not.toHaveBeenCalled();
   });
 
+  it('does not queue an existing owner behind a new sign-up whose check never returns', async () => {
+    const owner = 'b'.repeat(64);
+    const store = fakeStore(null);
+    store.findOwner = vi.fn(async (h?: string) =>
+      h === owner ? { ownerId: 'reg-b', banned: false } : null,
+    );
+    const { account } = harness(true, store);
+    const hang: OwnershipCheck = () => new Promise<never>(() => undefined);
+    // A NEW sign-up is parked in its check and never resolves; it must not hold the sign-in lock.
+    void signUp(account, hang);
+    const res = fakeRes();
+    await account.signedIn(
+      { ...identity, identityHash: owner },
+      res as unknown as ServerResponse,
+      true,
+      hang,
+    );
+    expect(res.status).toBe(302);
+    expect(store.createOwner).not.toHaveBeenCalled();
+  });
+
   it('exempts an admin, who always holds an owner row', async () => {
     const store = fakeStore({ ownerId: 'reg-admin', banned: false });
     const { account } = harness(true, store);

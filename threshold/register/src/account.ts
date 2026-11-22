@@ -161,17 +161,19 @@ export class Account {
     verify?: OwnershipCheck,
   ): Promise<void> => {
     const { store, sessions, config, now, log } = this.deps;
+    // The Minecraft Java check (NEW sign-ups only, flag on) can wait on Xbox and Mojang for about 40 s, so it runs
+    // before the lock: existing owners and admins never queue behind it. The owner lookup is repeated inside the lock.
+    const needsCheck =
+      config.requireMcOwnership && consent && !(await store.findOwner(identity.identityHash));
+    const verdict = needsCheck ? await decideOwnership(verify, identity.provider, log) : undefined;
     const outcome = await this.serial(async () => {
       const found = await store.findOwner(identity.identityHash);
       if (found?.banned) return 'banned' as const;
       if (found) return found.ownerId;
       // Sign-up needs the consent box (C7-08): no owner row without it.
       if (!consent) return 'consent' as const;
-      // The Minecraft Java gate runs for a NEW sign-up only, before the owner row exists (flag off: skipped).
-      if (config.requireMcOwnership) {
-        const result = await decideOwnership(verify, identity.provider, log);
-        if (isRefusal(result)) return { refused: result };
-      }
+      // The gate's verdict for a NEW sign-up. It is only ever set when the flag is on (flag off: never).
+      if (verdict && isRefusal(verdict)) return { refused: verdict };
       const ownerId = `reg-${identity.identityHash.slice(0, 24)}`;
       await store.createOwner(identity, ownerId, TERMS_VERSION);
       if (config.requireMcOwnership && !(await recordOwnership(store, identity.identityHash, log)))
