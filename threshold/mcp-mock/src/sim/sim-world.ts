@@ -50,6 +50,7 @@ export function createSimWorld(opts: SimWorldOptions): McpWorld & { hub: SimHub 
   });
   const tools: ToolHandlers = {
     look: (_input, ctx) => lookTool(hub, ctx),
+    survey: () => ({ text: 'legend ?=unknown', truncated: false }),
     wait: (input, ctx) => waitTool(hub, ctx, input as WaitInput & { max_seconds: number }),
     act: (input, ctx) => actTool(hub, ctx, input as Parameters<typeof actTool>[2]),
     say: (input, ctx) => sayTool(hub, ctx, input as SayInput),

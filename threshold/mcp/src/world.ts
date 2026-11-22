@@ -48,7 +48,11 @@ import { sayTool } from './tools/say.ts';
 import { SEE_REFUSALS, type SeeDeps, type SeeOutcome, seeTool } from './tools/see.ts';
 import { type SleepDeps, sleepTool } from './tools/sleep.ts';
 import { statusTool } from './tools/status.ts';
-import { type NotAvailableTool, notAvailableTool } from './tools/unavailable.ts';
+import {
+  NOT_AVAILABLE_MESSAGE,
+  type NotAvailableTool,
+  notAvailableTool,
+} from './tools/unavailable.ts';
 import { viewTool } from './tools/view.ts';
 import {
   createWaitState,
@@ -375,6 +379,10 @@ export function createWorld(deps: WorldDeps): World {
     act: bound(wired, (call, input) => actTool(wired, call, input as ActArgs)),
     say: bound(wired, (call, input) => sayTool(wired, call, (input as SayInput).text)),
     sleep: bound(wired, (call) => sleepTool(sleepDeps, call)),
+    // BLD-21 wires the contract tool; the Body survey request is not in this world yet, so it refuses.
+    survey: bound(wired, async () => {
+      throw new ToolError('not_available', NOT_AVAILABLE_MESSAGE);
+    }),
     wait: bound(wired, (call, input, ctx) => waitTool(wired, call, input as WaitInput, ctx)),
     look: bound(wired, (call) => lookTool(wired, call), true),
     status: bound(wired, (call) => statusTool(wired, call), true),

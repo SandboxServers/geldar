@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import { MIND_HANDLERS } from '../events/handlers/index.ts';
 import { activePlanView } from '../play-view/active-plan.ts';
 import { planCheckTool } from './plan-check.ts';
-import { surveyTool } from './survey.ts';
 import {
   hiddenToolsFor,
   NOT_AVAILABLE_MESSAGE,
@@ -32,8 +31,7 @@ describe('BLD-S3b survey and plan_check stubs', () => {
     expect(hiddenToolsFor(true)).toEqual([]);
   });
 
-  it('the survey and plan_check bodies refuse with not_available', async () => {
-    await expect(surveyTool()).rejects.toThrow(NOT_AVAILABLE_MESSAGE);
+  it('the plan_check body refuses with not_available (the survey body is BLD-21, see survey.test.ts)', async () => {
     await expect(planCheckTool()).rejects.toThrow(NOT_AVAILABLE_MESSAGE);
   });
 
