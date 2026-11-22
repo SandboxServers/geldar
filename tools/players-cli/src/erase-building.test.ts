@@ -39,6 +39,10 @@ const CHECKPOINT_KEYS = [
   'life-alphabet',
   'life-beta.plan',
   'life-beta',
+  // The in-flight record of each life is keyed `<life_id>.inflight` in the same bucket.
+  'life-alpha.inflight',
+  'life-altar.inflight',
+  'life-beta.inflight',
 ];
 
 /** A fake bucket: `data` holds the live keys. `failOn` makes one purge throw. */
@@ -82,17 +86,19 @@ describe('building erasure: seen maps, plan chunks and checkpoints', () => {
     expect(outcome.status).toBe('purged');
     expect([...seen.data].sort()).toEqual(['life-alphabet.0.0.0', 'life-beta.0.0.0']);
     expect([...plans.data].sort()).toEqual(['life-alphabet.plan-q.0', 'life-beta.plan-z.0']);
-    // Both the plan checkpoint and the bare body checkpoint of each erased life are gone.
+    // The plan checkpoint, the bare body checkpoint and the in-flight record of each erased life are gone;
+    // the in-flight record of the kept life stays.
     expect([...checkpoints.data].sort()).toEqual([
       'life-alphabet',
       'life-alphabet.plan',
       'life-beta',
+      'life-beta.inflight',
       'life-beta.plan',
     ]);
     expect(outcome.building.map((c) => [c.name, c.found, c.purged])).toEqual([
       ['geldar-seen', 3, 3],
       ['geldar-plans', 3, 3],
-      ['geldar-checkpoints', 4, 4],
+      ['geldar-checkpoints', 6, 6],
     ]);
   });
 
@@ -147,7 +153,7 @@ describe('building erasure: seen maps, plan chunks and checkpoints', () => {
     );
 
     expect(outcome.status).toBe('dry-run');
-    expect(outcome.building.map((c) => c.found)).toEqual([3, 3, 4]);
+    expect(outcome.building.map((c) => c.found)).toEqual([3, 3, 6]);
     expect(seen.data.size).toBe(SEEN_KEYS.length);
     expect(plans.data.size).toBe(PLAN_KEYS.length);
     expect(checkpoints.data.size).toBe(CHECKPOINT_KEYS.length);

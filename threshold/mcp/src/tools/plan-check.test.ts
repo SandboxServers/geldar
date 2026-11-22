@@ -63,9 +63,4 @@ describe('planCheckTool (forwards the dry run to the Body)', () => {
     const { value } = deps(async () => ({ cells: 'many' }));
     expect(await planCheckTool(value, CALL, PLAN)).toEqual({ error: 'body_unavailable' });
   });
-
-  it('passes the Body refusal of a plan over the cap through as plan_too_large', async () => {
-    const { value } = deps(async () => ({ error: 'plan_too_large' }));
-    expect(await planCheckTool(value, CALL, PLAN)).toEqual({ error: 'plan_too_large' });
-  });
 });

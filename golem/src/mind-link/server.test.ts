@@ -207,6 +207,35 @@ describe('MindLinkServer snapshots', () => {
   });
 });
 
+describe('MindLinkServer survey', () => {
+  it('logs a survey callback that throws instead of leaving an unhandled rejection', async () => {
+    const transport = new FakeRequestServer();
+    const logs: string[] = [];
+    const server = new MindLinkServer({
+      shard: SHARD,
+      lifeId: LIFE,
+      bodyGeneration: GENERATION,
+      revision: new SnapshotRevision(),
+      server: transport,
+      executor: new StubExecutor(),
+      perception: new FakePerception(),
+      ears: new FakeEars(),
+      voice: new FakeVoice(),
+      buildSnapshot: snapshotFrom,
+      tick: () => 10,
+      publisher: new MemoryPublisher(),
+      log: (line) => logs.push(line),
+      survey: () => {
+        throw new Error('map gone');
+      },
+    });
+    server.start();
+    const reply = await transport.request(surveySubject(SHARD, LIFE), JSON.stringify({ box: {} }));
+    expect(reply).toBeNull();
+    expect(logs).toContainEqual(expect.stringContaining('survey not answered: Error: map gone'));
+  });
+});
+
 describe('MindLinkServer plans', () => {
   it('refuses a plan made before the Body died as stale_snapshot, and accepts one made after', async () => {
     const t = rig();
