@@ -1,11 +1,3 @@
-/**
- * The Thought Stream page: the first page of thoughts, the live feed, the search and filters, pause
- * and resume, the detail under an entry, "copy" and "load older". On a wide screen the selected entry
- * is shown in the reader pane (render-reader.ts). Plain browser JavaScript. The render modules come from /js/
- * with their types stripped. Every value from the API reaches the page through the escaped view in
- * render-view.ts and render-detail.ts, and nothing here parses markup.
- */
-
 import { copier, renderDetail } from '/js/render-detail.ts';
 import { createFilters } from '/js/render-filters.ts';
 import { registerWorker, setUpInstall } from '/js/render-install.ts';
@@ -22,18 +14,20 @@ import {
   toView,
 } from '/js/render-model.ts';
 import { createReader } from '/js/render-reader.ts';
+import { createRoster } from '/js/render-roster.ts';
 import { createStreamClient } from '/js/render-stream.ts';
+import { createTabs } from '/js/render-tabs.ts';
 import { renderNote, renderRow } from '/js/render-view.ts';
 
 const PAGE_SIZE = 50;
 /** An older page is the largest the API gives, so a search reaches back faster. */
 const OLDER_PAGE_SIZE = 100;
-/** The stream states the status control has a colour for. Each is a class name on it. */
 const STATES = ['connecting', 'live', 'reconnecting', 'paused', 'closed'];
 /** From this width the list shares the screen with the reader pane (reader.css has the same number). */
 const WIDE = '(min-width: 700px)';
 
 const byId = (id) => document.getElementById(id);
+const glassView = byId('glass-view');
 const els = {
   fresh: byId('fresh'),
   status: byId('status'),
@@ -78,7 +72,6 @@ const state = {
 const wideQuery = typeof window.matchMedia === 'function' ? window.matchMedia(WIDE) : null;
 const isWide = () => wideQuery?.matches === true;
 
-/** The search, the agent chips, the filters under "More" and the URL that remembers them. */
 const filters = createFilters({
   doc: document,
   keyword: els.keyword,
@@ -106,7 +99,6 @@ async function getJson(path) {
   return res.json();
 }
 
-/** The first page, or the page after `cursor`, with the server-side filters applied. */
 function thoughtsPath(cursor) {
   const params = new URLSearchParams({
     limit: String(cursor === null ? PAGE_SIZE : OLDER_PAGE_SIZE),
@@ -116,7 +108,6 @@ function thoughtsPath(cursor) {
   return `/api/thoughts?${params.toString()}`;
 }
 
-/** The one control for the feed: its dot and words say the state, and a press pauses or resumes. */
 function updateStatus() {
   const name = state.paused ? 'paused' : state.stream;
   els.pause.className = STATES.includes(name) ? `pill ${name}` : 'pill';
@@ -132,7 +123,6 @@ function sayFailed(message) {
   els.status.textContent = message;
 }
 
-/** The line under the filters: how many entries are shown, and how far a search has reached. */
 function updateCount(shown) {
   els.count.textContent = countLabel(
     shown,
@@ -153,12 +143,10 @@ function refreshKept(keyword) {
   state.drawnDay = day;
 }
 
-/** Puts an entry on the clipboard on a press of "Copy entry"; undefined where the browser gives no clipboard. */
 const copyEntry = copier(typeof navigator === 'object' ? navigator.clipboard : undefined, {
   setTimeout: (fn, ms) => window.setTimeout(fn, ms),
 });
 
-/** What a row, a detail and the reader need to know about an entry's agent, and the page's own callbacks. */
 function entryOptions(view, keyword) {
   const agent = filters.agent(view.agentId);
   return {
@@ -177,7 +165,6 @@ function drawRow(view, keyword) {
   return renderRow(document, view, toggleDetail, entryOptions(view, keyword));
 }
 
-/** The facts of one thought and the receipts of its action, fresh from the API. */
 async function loadFacts(view) {
   // A journal line has no thought record to fetch: its facts are the row already loaded.
   if (view.kind === 'journal') return { view, receipts: [] };
@@ -194,7 +181,7 @@ async function loadFacts(view) {
 const reader = createReader({
   doc: document,
   pane: els.reader,
-  isWide,
+  isWide: () => isWide() && !glassView.hidden,
   rowOf: (id) => state.rows.get(id),
   shown: () => state.shown,
   options: (view) => entryOptions(view, state.drawnKeyword),
@@ -205,7 +192,30 @@ const reader = createReader({
   },
 });
 
-/** Draws the list: the loaded thoughts that pass every filter, newest first. */
+const roster = createRoster({
+  doc: document,
+  count: byId('roster-count'),
+  alive: byId('roster-alive'),
+  dead: byId('roster-dead'),
+  profile: byId('roster-profile'),
+  isWide,
+  openInGlass: (id) => tabs.openInGlass(id),
+  loadLatest: getJson,
+  now: Date.now,
+});
+const tabs = createTabs({
+  links: { glass: byId('tab-glass'), roster: byId('tab-roster') },
+  panes: { glass: glassView, roster: byId('roster-view') },
+  win: window,
+  onChange(view, restoreFilters) {
+    if (view === 'glass') roster.clear();
+    if (restoreFilters && filters.restore()) {
+      render();
+      reload();
+    } else reader.draw();
+  },
+});
+
 function render() {
   const filter = filters.current();
   const keyword = filter.keyword ?? '';
@@ -224,10 +234,7 @@ function render() {
   reader.draw();
 }
 
-/**
- * Adds one live thought at the top without redrawing the rest, so the reader's place, selection and
- * open entries stay put. False when the list needs the full redraw instead.
- */
+// Add a thought without redrawing open entries or moving the reader's place.
 function drawLive(view) {
   const filter = filters.current();
   const keyword = filter.keyword ?? '';
@@ -247,10 +254,7 @@ function drawLive(view) {
   return true;
 }
 
-/**
- * Replaces the list with the first page, using the current server-side filters. Two quick changes of a
- * filter send two requests, and the slower reply may be the older one: only the latest is used.
- */
+// Only the latest first-page request can replace the list.
 async function reload() {
   clearFresh();
   state.asked += 1;
@@ -271,7 +275,6 @@ async function reload() {
   }
 }
 
-/** How many times a first page that failed is asked for again on a timer: after 0.5, 1, 2, 4 and 8 seconds. */
 const FIRST_TRIES = 5;
 
 /** Asks again for a failed first page a few times, then only when the feed comes back: never for ever. */
@@ -288,21 +291,23 @@ function retryFirst() {
   loadFirst();
 }
 
-/** The agents, then the first page. A bookmark's filters are read from the URL in between. */
-function loadFirst() {
-  return getJson('/api/agents')
-    .then(({ agents }) => filters.setAgents(agents))
-    .catch(() => {
-      sayFailed('Could not load the agents.');
+let agentsReady;
+async function loadFirst() {
+  agentsReady ??= getJson('/api/agents')
+    .then(({ agents }) => {
+      filters.setAgents(agents);
+      roster.setAgents(agents);
     })
-    .then(() => {
-      // A bookmarked agent may sit far along the row: bring its chip into view.
-      filters.restore().scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
-      return reload();
+    .catch(() => {
+      agentsReady = undefined;
+      sayFailed('Could not load the agents.');
+      roster.unavailable();
     });
+  await agentsReady;
+  filters.restore();
+  return reload();
 }
 
-/** Adds the next page after the cursor. The list stays capped; the oldest rows drop off. */
 async function loadOlder() {
   if (state.next === null) return;
   els.older.disabled = true;
@@ -320,7 +325,6 @@ async function loadOlder() {
   }
 }
 
-/** The detail of one thought: its facts and the receipts of its action, or a note when it fails. */
 async function loadDetail(id) {
   const loaded = state.list.find((view) => view.id === id);
   if (loaded === undefined) return renderNote(document, 'Could not load this thought.');
@@ -352,17 +356,17 @@ async function toggleDetail(id) {
   row.append(detail);
 }
 
-/** Crossing the breakpoint (a fold or an unfold): details open in place give way to the reader, and back. */
 function onLayout() {
   if (isWide()) {
     for (const detail of state.details.values()) detail.remove();
     state.details.clear();
-  }
+  } else roster.clear();
   reader.draw();
 }
 
 /** True when the top of the list is out of sight: scrolled under the header, or off the screen. */
 function away() {
+  if (glassView.hidden) return true;
   const top = els.list.getBoundingClientRect().top;
   return top < 0 || top < els.scroller.getBoundingClientRect().top - 1;
 }
@@ -372,7 +376,6 @@ function toTop() {
   els.pane.scrollTop = 0;
 }
 
-/** The "new entries" control: what waits behind a pause, or what arrived above while the reader was away. */
 function updateFresh() {
   const count = state.paused
     ? filterThoughts(state.pending, filters.current()).length
@@ -381,7 +384,6 @@ function updateFresh() {
   els.fresh.hidden = count === 0;
 }
 
-/** Only newly drawn, matching entries count while the list top is out of sight. */
 function countFresh(view) {
   if (!away()) return clearFresh();
   if (state.list.some((entry) => entry.id === view.id)) return;
@@ -395,7 +397,6 @@ function clearFresh() {
   updateFresh();
 }
 
-/** A live thought: shown at once, or held (capped) while the feed is paused. */
 function onThought(data) {
   if (typeof data !== 'object' || data === null) return;
   const view = toView(data);
@@ -413,7 +414,6 @@ function onThought(data) {
   render();
 }
 
-/** Pause holds new thoughts in a capped buffer; resume puts them in the list, oldest first. */
 function togglePause() {
   state.paused = !state.paused;
   if (!state.paused) {
@@ -429,7 +429,8 @@ function togglePause() {
 
 /** "/" puts the cursor in the search field, unless the reader is already typing in a field. */
 function onKey(event) {
-  if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return;
+  if (glassView.hidden || event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey)
+    return;
   const tag = document.activeElement?.tagName ?? '';
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
   event.preventDefault();
@@ -446,6 +447,7 @@ function storage() {
 }
 
 function start() {
+  tabs.start();
   // Pressing "new entries" shows them: it resumes a paused feed, and goes to the top of the list.
   els.fresh.addEventListener('click', () => {
     if (state.paused) togglePause();

@@ -91,7 +91,7 @@ export function paintSigil(ctx: SigilContext, sigil: Sigil): void {
 export function makeSigil(
   doc: SigilDoc,
   name: string,
-  size: 'chip' | 'row' | 'reader',
+  size: 'chip' | 'row' | 'reader' | 'roster' | 'profile',
   dead = false,
 ): SigilCanvas {
   const canvas = doc.createElement('canvas') as SigilCanvas;

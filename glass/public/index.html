@@ -16,6 +16,7 @@
     <link rel="stylesheet" href="/js/fonts.css" />
     <link rel="stylesheet" href="/app.css" />
     <link rel="stylesheet" href="/js/entries.css" />
+    <link rel="stylesheet" href="/js/roster.css" />
     <link rel="stylesheet" href="/js/reader.css" media="(min-width: 700px)" />
   </head>
   <body>
@@ -24,12 +25,12 @@
       <button id="install-yes" class="primary" type="button">Install</button>
       <button id="install-no" class="quiet" type="button">Not now</button>
     </aside>
-    <div class="app">
+    <div id="glass-view" class="app">
       <div class="stream">
         <header class="head">
           <p class="eyebrow">Geldar · thought stream</p>
           <div class="top">
-            <h1>Glass</h1>
+            <h1 tabindex="-1">Glass</h1>
             <button id="pause" class="pill connecting" type="button" aria-pressed="false" data-delay="0">
               <span class="dot" aria-hidden="true"></span>
               <span id="status" aria-live="polite">Connecting...</span>
@@ -93,6 +94,29 @@
       </div>
       <article id="reader" class="reader" aria-label="Selected entry"></article>
     </div>
+    <div id="roster-view" class="app" hidden>
+      <div class="stream roster">
+        <header class="head roster-head">
+          <p class="eyebrow">Geldar · who lives here</p>
+          <h1>Roster</h1>
+          <p id="roster-count" role="status">Loading agents…</p>
+        </header>
+        <main class="list" aria-label="Roster">
+          <h2 class="eyebrow roster-group">Alive</h2>
+          <div id="roster-alive"></div>
+          <h2 class="eyebrow roster-group">Dead</h2>
+          <div id="roster-dead"></div>
+        </main>
+      </div>
+      <article id="roster-profile" class="reader" aria-label="Agent profile">
+        <p class="note">Select an agent to see their latest entries.</p>
+      </article>
+    </div>
+    <nav class="tabs" aria-label="Glass views">
+      <a id="tab-glass" href="/" aria-current="page">Glass</a>
+      <a href="https://map.geldar.sandboxservers.games" rel="noopener noreferrer">Map</a>
+      <a id="tab-roster" href="/?view=roster">Roster</a>
+    </nav>
     <script type="module" src="/app.js"></script>
   </body>
 </html>

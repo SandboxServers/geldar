@@ -80,6 +80,7 @@ describe('the static files', () => {
         '/js/fonts.css',
         '/js/manifest.webmanifest',
         '/js/reader.css',
+        '/js/roster.css',
         '/js/sw.js',
         ...RENDER_MODULES.map((name) => `/js/${name}.ts`),
         ...FONT_FILES.map((name) => `/js/fonts/${name}.woff2`),
@@ -241,14 +242,14 @@ describe('the page', () => {
   it('asks only for files in the table: every link, script, import, typeface and icon', () => {
     const text = (path: string): string => String(STATIC_FILES.get(path)?.body);
     const wanted = new Set<string>();
-    for (const m of text('/').matchAll(/(?:href|src)="(\/[^"]*)"/g)) wanted.add(m[1] as string);
+    for (const m of text('/').matchAll(/<(?:link|script)\b[^>]*?(?:href|src)="(\/[^"]*)"/g)) {
+      wanted.add(m[1] as string);
+    }
     for (const m of text('/app.js').matchAll(/from '(\/[^']+)'/g)) wanted.add(m[1] as string);
     for (const m of text('/js/fonts.css').matchAll(/url\("([^"]+)"\)/g)) wanted.add(m[1] as string);
     const manifest = JSON.parse(text('/js/manifest.webmanifest')) as { icons: { src: string }[] };
     for (const icon of manifest.icons) wanted.add(icon.src);
     wanted.add(WORKER_PATH);
-    // The sign-in link goes to the register service, which Caddy routes; it is not a Glass file.
-    wanted.delete('/register/');
     expect(wanted.size).toBeGreaterThan(20);
     for (const path of wanted) expect(STATIC_FILES.has(path), path).toBe(true);
     // And nothing in the table is dead: each file is asked for by the page, or imported by a module that is.

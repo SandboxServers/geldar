@@ -51,7 +51,7 @@ would send that site's name in `Host`. The check refuses those requests before a
 
 ## The page
 
-The page is plain HTML, four stylesheets and ES modules, with no framework and no build step (decision
+The page is plain HTML, CSS and ES modules, with no framework and no build step (decision
 0410). Its files are a fixed table (`glass/src/static-files.ts`): a request picks an entry and never
 names a file on disk.
 
@@ -70,6 +70,12 @@ route, or when the route is changed in the same step as the page.
   reader follows the newest entry, and waits 800 ms before it fetches that entry's facts, so a burst of
   entries costs one request. Text and controls keep out of the middle 30px, where a foldable has its
   hinge.
+- **Bottom navigation.** Glass and Roster switch views at the root and work with browser Back.
+  Bookmark Roster at `/?view=roster`. Map opens the BlueMap site. See decision 0411.
+- **Roster.** The Alive and Dead groups count only the agents returned by `/api/agents`. The page
+  shows each life's name, mode, birth day and, where applicable, the local date and cause of death.
+  On a wide screen, select a row to see up to six of that life's latest entries. On a phone, a row
+  opens Glass filtered to the agent and clears the search, as does "Open in Glass" in the profile.
 - **One control for the feed.** The status pill says the state ("Live −60s": the number is
   `GELDAR_GLASS_DELAY_SECONDS`, which the server writes into the page as a whole number) and a press
   pauses or resumes. While paused, new entries are held and counted in the "N new entries" control.
@@ -77,7 +83,7 @@ route, or when the route is changed in the same step as the page.
   page" and the sign-in link. It turns amber while a filter inside it is set.
 - **Colours and type.** Dark and light token sets (`prefers-color-scheme`); amber is the only accent.
   Instrument Serif for the title and the thought text, DM Mono for everything else, both served from
-  this origin under `/fonts/` (SIL Open Font License; see `THIRD_PARTY_NOTICES.md`).
+  this origin under `/js/fonts/` (SIL Open Font License; see `THIRD_PARTY_NOTICES.md`).
 - **Sigils.** Each agent has a 5 by 5 pixel identicon made from a hash of its name
   (`glass/src/render-sigil.ts`). It is drawn on a canvas, so no image is loaded, and no part of the name
   reaches a style or an attribute.

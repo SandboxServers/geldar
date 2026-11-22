@@ -24,6 +24,7 @@ const flat = (name: string): string =>
 const APP = flat('app.css');
 const ENTRIES = flat('entries.css');
 const READER = flat('reader.css');
+const ROSTER = flat('roster.css');
 const FONTS = flat('fonts.css');
 
 /** The part of the stylesheet outside every @media block: the rules that hold at every width. */
@@ -165,7 +166,7 @@ describe('the colours', () => {
   it('gives the dark and light colours one token set, and uses no colour outside it', () => {
     expect(tokens(light).length).toBeGreaterThan(10);
     expect(tokens(dark)).toEqual(tokens(light));
-    const rest = [APP.replace(/:root \{[^}]*\}/g, ''), ENTRIES, READER, FONTS].join(' ');
+    const rest = [APP.replace(/:root \{[^}]*\}/g, ''), ENTRIES, READER, ROSTER, FONTS].join(' ');
     expect(rest).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
     expect(rest).not.toMatch(/\brgba?\(|\bhsla?\(/);
   });
@@ -222,7 +223,7 @@ describe('the typefaces', () => {
       ...Array(4).fill('Instrument Serif'),
     ]);
     // No stylesheet reaches another origin: no absolute URL, no @import.
-    for (const css of [APP, ENTRIES, READER, FONTS]) {
+    for (const css of [APP, ENTRIES, READER, ROSTER, FONTS]) {
       expect(css).not.toMatch(/https?:|\/\/[a-z]|@import/i);
     }
     expect(FONTS).toContain('font-display: swap;');
@@ -311,7 +312,7 @@ describe('the phone layout', () => {
   });
 
   it('moves only for a reader who has not asked for less motion', () => {
-    for (const css of [APP, ENTRIES, READER]) {
+    for (const css of [APP, ENTRIES, READER, ROSTER]) {
       const outside = css.replace(mediaBlock(css, '(prefers-reduced-motion: no-preference)'), '');
       expect(outside).not.toMatch(/animation:|transition:/);
     }
@@ -407,8 +408,56 @@ describe('index.html', () => {
     expect(HTML).toMatch(/<aside id="install" class="install" aria-label="Install Glass" hidden>/);
   });
 
-  it('has no tab bar: the other tabs are not built', () => {
-    expect(HTML).not.toMatch(/<nav\b|role="tablist"|Kino|Roster/);
+  it('puts a labeled navigation row after both views, without shrinking it to fit', () => {
+    const nav = HTML.indexOf('<nav class="tabs" aria-label="Glass views">');
+    expect(nav).toBeGreaterThan(HTML.indexOf('id="roster-profile"'));
+    expect(nav).toBeGreaterThan(HTML.indexOf('id="install"'));
+    expect(declarations(ROSTER, '.app[hidden]')).toContain('display: none;');
+    const bar = declarations(ROSTER, '.tabs');
+    for (const rule of [
+      'display: grid;',
+      'flex: none;',
+      'grid-auto-flow: column;',
+      'grid-auto-columns: minmax(0, 1fr);',
+      'padding: 0 10px calc(6px + env(safe-area-inset-bottom, 0px));',
+      'border-top: 1px solid var(--rule);',
+      'background: var(--bg);',
+    ])
+      expect(bar).toContain(rule);
+  });
+
+  it('sizes the tabs and roster controls for touch, with a marked active tab', () => {
+    const tab = declarations(ROSTER, '.tabs a');
+    for (const rule of [
+      'height: 54px;',
+      'font: 500 12px "DM Mono"',
+      'letter-spacing: 0.08em;',
+      'text-transform: uppercase;',
+    ])
+      expect(tab).toContain(rule);
+    expect(declarations(ROSTER, '.tabs a[aria-current="page"]::before')).toMatch(
+      /left: 28%; height: 2px; background: var\(--accent\);/,
+    );
+    expect(declarations(APP, ':focus-visible')).toContain('outline: 2px solid var(--accent);');
+    expect(declarations(ROSTER, '.roster-row')).toContain('min-height: 44px;');
+    const wide = mediaBlock(ROSTER, '(min-width: 700px)');
+    expect(declarations(wide, '.roster-open')).toContain('min-height: 44px;');
+    expect(declarations(wide, '.roster-row[aria-current="true"]')).toContain(
+      'background: var(--field);',
+    );
+  });
+
+  it('reuses the two scrollable panes and adds both Roster sigil sizes', () => {
+    expect(HTML).toContain('<main class="list" aria-label="Roster">');
+    expect(HTML).toContain(
+      '<article id="roster-profile" class="reader" aria-label="Agent profile">',
+    );
+    expect(declarations(ROSTER, '.sigil-roster')).toMatch(
+      /width: 48px; height: 48px; border-radius: 4px;/,
+    );
+    expect(declarations(ROSTER, '.sigil-profile')).toMatch(
+      /width: 84px; height: 84px; border-radius: 6px;/,
+    );
   });
 });
 
@@ -420,13 +469,11 @@ it('offers a closed About disclosure under "More" with only two fixed links', ()
   expect(HTML.indexOf('<details class="about">')).toBeGreaterThan(HTML.indexOf('class="banner"'));
   expect(about).toContain('some living agents are not shown');
   expect(
-    [...HTML.matchAll(/<a href="([^"]+)" rel="([^"]+)">([^<]+)<\/a>/g)].map((m) => m.slice(1)),
+    [...about.matchAll(/<a href="([^"]+)" rel="([^"]+)">([^<]+)<\/a>/g)].map((m) => m.slice(1)),
   ).toEqual([
     ['https://map.geldar.sandboxservers.games', 'noopener noreferrer', 'Live map'],
     ['https://github.com/SandboxServers/geldar', 'noopener noreferrer', 'Source code'],
   ]);
-  // Two About links, plus the sign-in link beside them (checked in register-link.test.ts).
-  expect(HTML.match(/<a\s/g)).toHaveLength(3);
 });
 
 it('provides text-only link preview metadata, and the colours a browser frames the page with', () => {

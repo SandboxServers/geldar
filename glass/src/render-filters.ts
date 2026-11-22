@@ -7,6 +7,7 @@
  * This file is served to the browser after type stripping, so it stays erasable TypeScript.
  */
 import { filterQuery, type Row, readFilters, type ThoughtFilter } from './render-model.ts';
+import { readView } from './render-tabs.ts';
 import { type Doc, type El, renderChips } from './render-view.ts';
 
 interface Field {
@@ -39,8 +40,8 @@ export interface Filters {
   setAgents(agents: Row[]): void;
   /** The agent with this id, when the agents list has it. */
   agent(id: string): Row | undefined;
-  /** Reads a bookmark from the page URL into the controls and draws the chips. Returns the chip that is on. */
-  restore(): El;
+  /** Restores the controls from the URL and reports whether any filter changed. */
+  restore(): boolean;
   /** Every filter as the page has it now. */
   current(): ThoughtFilter;
   /** True while the search or the template narrows the loaded list. */
@@ -72,15 +73,22 @@ export function createFilters(deps: FilterDeps): Filters {
     deps.more.classList.toggle('set', set);
   }
 
-  function save(): void {
-    markMore();
-    const query = filterQuery({
+  function bookmark(): string {
+    return filterQuery({
       q: deps.keyword.value.trim(),
       agent: agentId,
       range: deps.range.value,
       outcome: deps.outcome.value,
       template: deps.template.value.trim(),
     });
+  }
+
+  function save(): void {
+    markMore();
+    let query = bookmark();
+    if (readView(deps.location.search) === 'roster') {
+      query += query === '' ? '?view=roster' : '&view=roster';
+    }
     // A browser may refuse a burst of URL updates (Safari throws past 100 in 30 seconds). The filter
     // still applies; only the address bar lags.
     try {
@@ -135,7 +143,8 @@ export function createFilters(deps: FilterDeps): Filters {
       order = [...positions.filter((index) => !dead(index)), ...positions.filter(dead)];
     },
     agent: (id: string) => agents.get(id),
-    restore(): El {
+    restore(): boolean {
+      const before = bookmark();
       // URL values are validated before they reach form controls.
       const filter = readFilters(deps.location.search, agentIds);
       deps.keyword.value = filter.q;
@@ -144,7 +153,10 @@ export function createFilters(deps: FilterDeps): Filters {
       deps.range.value = filter.range;
       agentId = filter.agent === '' ? '' : (agentIds[Number(filter.agent)] ?? '');
       markMore();
-      return drawChips();
+      // A bookmarked agent can be offscreen in the chip row.
+      const chip = drawChips() as El & Partial<Pick<HTMLElement, 'scrollIntoView'>>;
+      chip.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+      return bookmark() !== before;
     },
     current(): ThoughtFilter {
       const filter: ThoughtFilter = {};

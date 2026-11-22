@@ -71,14 +71,22 @@ describe('the rate limit and the page', () => {
     const port = await start();
     const refused: string[] = [];
     // The page asks for its files; the worker, installing, asks for the shell again; a second visit repeats it.
-    for (const path of [...STATIC_FILES.keys(), ...SHELL, ...STATIC_FILES.keys(), ...SHELL]) {
+    const rosterFiles = [...STATIC_FILES.keys()].map((path) =>
+      path === '/' ? '/?view=roster' : path,
+    );
+    for (const path of [...rosterFiles, ...SHELL, ...STATIC_FILES.keys(), ...SHELL]) {
       if ((await status(port, path)) !== 200) refused.push(path);
     }
     expect(refused).toEqual([]);
     // The API the page then calls is charged to the general bucket, which the page's files did not touch.
-    for (const path of ['/api/agents', '/api/thoughts?limit=50', '/api/thoughts/th-1']) {
-      expect(await status(port, path), path).not.toBe(429);
+    for (const path of [
+      '/api/agents',
+      '/api/thoughts?limit=50',
+      '/api/thoughts?agent=ag_1&limit=6',
+    ]) {
+      expect(await status(port, path), path).toBe(200);
     }
+    expect(await status(port, '/api/thoughts/th-1')).toBe(404);
   });
 
   it('still caps the page files for one client: 200 at once, and the 201st is refused', async () => {

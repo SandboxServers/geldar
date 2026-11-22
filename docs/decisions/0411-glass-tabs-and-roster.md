@@ -26,9 +26,11 @@ The Glass mobile design reserves space for navigation between the Observatory's 
 ### Implementation choices
 
 - Keep the order from the API within each group, Alive first. Always show both group headings. The Roster has no search of its own.
-- Keep Glass's filter query when switching tabs. Opening an agent in Glass sets the agent, clears the keyword and retains the filters under More. Back restores the previous view and filters. Both promotion paths move focus to the Glass heading.
-- A wide Roster starts with a prompt to select an agent. Closing the view or folding clears the selection, so unfolding again leaves a fresh prompt. Pressing the selected row again does not repeat the request. An error or empty list has a text status.
-- Format profile entry times as in the Glass list and use the same thought view model. An invalid death timestamp shows “died” and the cause if available.
+- Keep Glass's filter query when switching tabs. Opening an agent in Glass sets the agent, clears the keyword and retains the filters under More. Back restores the previous view and filters. Both ways of opening an agent in Glass move focus to the Glass heading. Back between views with identical filters does not fetch the first page again.
+- A wide Roster starts with a prompt to select an agent. Closing the view or folding clears the selection, so unfolding again leaves a fresh prompt. Pressing the selected row again does not repeat the request. An error or empty list has a text status. Press the row again to retry after an error. The hidden thought reader does not fetch details while Roster is open.
+- Share a pending or successful agents request even if the first thought page is retried. A failed agents request shows an unavailable status. The next first-page retry also retries the agents request. If thoughts loaded successfully, reload the page to retry the agents request.
+- The tab row allows space for the bottom safe-area inset. Counts and other metadata can wrap in narrow panes. The worker uses the existing shell cache key because this change only adds files to the shell.
+- Format profile entry times as in the Glass list and use the same thought view model and text limit. A missing life field uses an em dash. An invalid death timestamp shows “died” and the cause if available.
 
 ## Open questions for the owner
 
@@ -40,4 +42,6 @@ The Glass mobile design reserves space for navigation between the Observatory's 
 
 ## Validation
 
-See the implementation handoff for the local checks. A physical Fold, a real install and the live deployment are outside local validation.
+Local Chromium used the preview handler with invented data. The 360 × 776 and 750 × 768 viewports were compared with the handoff in light and dark, and a 780 × 360 viewport was checked with More and the install strip open. A cold load used the shipped limits, with no refusals and 29 shell files. Automated tests cover history, profile races, text rendering, and the static and worker file lists.
+
+A physical Fold, real home-screen installation, live BlueMap navigation, production data and deployment, and a roster of 500 agents were outside local validation. Rapid presses across different agents can still exhaust the existing API bucket. An error is shown in the profile.

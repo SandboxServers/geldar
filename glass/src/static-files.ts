@@ -40,6 +40,8 @@ export const RENDER_MODULES = [
   'render-reader',
   'render-filters',
   'render-install',
+  'render-roster',
+  'render-tabs',
 ] as const;
 
 /** Where the service worker is served. */
@@ -73,6 +75,7 @@ export const STATIC_FILES: ReadonlyMap<string, StaticFile> = new Map<string, Sta
   ['/app.css', text(PUBLIC, 'app.css', CSS)],
   ['/js/fonts.css', text(PUBLIC, 'fonts.css', CSS)],
   ['/js/entries.css', text(PUBLIC, 'entries.css', CSS)],
+  ['/js/roster.css', text(PUBLIC, 'roster.css', CSS)],
   ['/js/reader.css', text(PUBLIC, 'reader.css', CSS)],
   ['/app.js', text(PUBLIC, 'app.js', JS)],
   // A worker's scope is its own folder unless the server says otherwise. This one file may take the whole

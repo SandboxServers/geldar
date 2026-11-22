@@ -30,6 +30,7 @@ describe('no board on Glass', () => {
       'index.html',
       'manifest.webmanifest',
       'reader.css',
+      'roster.css',
       'sw.js',
     ]);
   });
