@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { runAccountDelete } from '../src/account-delete-page.ts';
 import {
   type AccountDeleteDeps,
@@ -10,7 +10,15 @@ import {
   deleteAccountData,
   MOVED_IN_DETAIL,
 } from '../src/api/account-data-delete.ts';
+import type { BodyStopLink } from '../src/api/body-retire.ts';
 import type { ApiContext } from '../src/api/route.ts';
+import { requestBodyOp } from '../src/nats-ctl.ts';
+
+vi.mock('../src/nats-ctl.ts', () => ({
+  requestBodyOp: vi.fn(),
+  BodyUnavailable: class BodyUnavailable extends Error {},
+  MalformedReply: class MalformedReply extends Error {},
+}));
 
 /** A response that records the status, the headers and the body. */
 function fakeRes() {
@@ -154,5 +162,59 @@ describe('account delete refuses while a player was moved in by the operator', (
     expect(seen.body).toContain(MOVED_IN_DETAIL);
     expect(seen.headers['set-cookie']).toBeUndefined();
     expect(h.erased).toEqual([]);
+  });
+});
+
+/** A body link with a plain Set as the slot, so a test can see whether the slot was released. */
+function linkWithSet(slot: Set<string>): BodyStopLink {
+  return { conn: {} as never, shard: 'shard-1', timeoutMs: 1000, slot } as unknown as BodyStopLink;
+}
+
+describe('account delete guard reads that fail (fail closed)', () => {
+  it('a database error on the first guard read rejects and erases nothing', async () => {
+    const h = harness([{ name: 'ag-own-03', status: 'active' }], []);
+    const deps: AccountDeleteDeps = {
+      ...h.deps,
+      movedInPlayers: async () => {
+        throw new Error('db down');
+      },
+    };
+    await expect(deleteAccountData(deps, OWNER, 'owner-1')).rejects.toThrow('db down');
+    expect(h.erased).toEqual([]);
+  });
+
+  it('a database error on the second guard read rejects, erases nothing and releases the slot', async () => {
+    vi.mocked(requestBodyOp).mockReset();
+    vi.mocked(requestBodyOp).mockResolvedValue({ ok: true, code: 'stopped' } as never);
+    const h = harness([{ name: 'ag_own_04', status: 'active' }], []);
+    const slot = new Set<string>();
+    let reads = 0;
+    const deps: AccountDeleteDeps = {
+      ...h.deps,
+      body: linkWithSet(slot),
+      movedInPlayers: async () => {
+        if (reads++ === 1) throw new Error('db down');
+        return [];
+      },
+    };
+    await expect(deleteAccountData(deps, OWNER, 'owner-1')).rejects.toThrow('db down');
+    expect(reads).toBe(2);
+    expect(requestBodyOp).toHaveBeenCalledTimes(1);
+    expect(h.erased).toEqual([]);
+    expect(slot.has('owner-1')).toBe(false);
+  });
+});
+
+describe('a refused delete stops no body', () => {
+  it('a live moved-in owner is refused before any body stop, with no erase', async () => {
+    vi.mocked(requestBodyOp).mockReset();
+    vi.mocked(requestBodyOp).mockResolvedValue({ ok: true, code: 'stopped' } as never);
+    const h = harness([{ name: 'ag_own_05', status: 'active' }], [{ status: 'active' }]);
+    const slot = new Set<string>();
+    const deps: AccountDeleteDeps = { ...h.deps, body: linkWithSet(slot) };
+    expect(await deleteAccountData(deps, OWNER, 'owner-1')).toBe('moved_in');
+    expect(requestBodyOp).not.toHaveBeenCalled();
+    expect(h.erased).toEqual([]);
+    expect(slot.has('owner-1')).toBe(false);
   });
 });

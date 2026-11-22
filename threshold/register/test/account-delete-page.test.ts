@@ -3,6 +3,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it } from 'vitest';
 import { SESSION_COOKIE, TERMS_VERSION } from '../src/account.ts';
+import { deleteAccountPage } from '../src/account-delete-page.ts';
 import {
   type AccountDeleteDeps,
   accountDeleteRoutes,
@@ -27,6 +28,14 @@ const identity: Identity = {
 
 afterEach(() => {
   for (const s of servers.splice(0)) s.close();
+});
+
+describe('account delete page notice (delete-guard)', () => {
+  it('the page tells the owner that a moved-in player blocks the delete', () => {
+    expect(deleteAccountPage('csrf-value')).toContain(
+      'If the operator moved a player to your account',
+    );
+  });
 });
 const servers: Server[] = [];
 
