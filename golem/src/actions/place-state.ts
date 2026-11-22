@@ -25,10 +25,16 @@ export const STATE_UNACHIEVABLE = 'state_unachievable';
 
 /** Tier 1: logs and pillars take an axis. */
 const AXIS_BLOCK = /_(log|wood)$|^(hay_block|bone_block)$|_pillar$/;
-/** Tier 1: stairs take a facing (and a half, tier 2). */
+/** Tier 1: stairs take a half (tier 2), and a facing once their facing is in `FACING_VERIFIED`. */
 const STAIRS = /_stairs$/;
-/** Tier 1: doors, furnaces and chests take a facing. */
-const FACING_BLOCK = /_door$|^(furnace|chest|trapped_chest|ender_chest)$/;
+/**
+ * The blocks whose placed facing is verified against a source: none is. The repo has no placement-rule
+ * data (minecraft-data holds state values, mineflayer none) and its notes disagree on the facing of
+ * stairs and doors (BLD-08 says the block faces back toward the bot, BLD-fix2b says it faces the look).
+ * Doors, furnaces, chests, trapped and ender chests and stairs refuse a facing (state_unachievable)
+ * rather than place it the wrong way round. A kind joins this list only with a source and a test.
+ */
+const FACING_VERIFIED: readonly string[] = [];
 /** Tier 2: slabs take a half, stored as `type`. */
 const SLAB = /_slab$/;
 
@@ -43,8 +49,9 @@ const LOOK_VECTOR: Record<Cardinal, Vec3> = {
 /** The keys of `PlaceState` a block takes; an empty list for a block with no state we place. */
 export function allowedKeys(block: string): (keyof PlaceState)[] {
   if (AXIS_BLOCK.test(block)) return ['axis'];
-  if (STAIRS.test(block)) return ['facing', 'half'];
-  if (FACING_BLOCK.test(block)) return ['facing'];
+  const facing = FACING_VERIFIED.includes(block);
+  if (STAIRS.test(block)) return facing ? ['facing', 'half'] : ['half'];
+  if (facing) return ['facing'];
   if (SLAB.test(block)) return ['half'];
   return [];
 }

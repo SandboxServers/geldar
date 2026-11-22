@@ -32,13 +32,18 @@ export async function seedBuildingBuckets(kvm: SeedKvm): Promise<string[]> {
   return [PLAN_BUCKET, SEEN_BUCKET];
 }
 
+/** Creates every bucket the seed owns: the identity buckets, then the building buckets. Returns all four names. */
+export async function seedAllBuckets(kvm: SeedKvm): Promise<string[]> {
+  return [...(await seedIdentityBuckets(kvm)), ...(await seedBuildingBuckets(kvm))];
+}
+
 async function main(): Promise<void> {
   const url = process.env.GELDAR_NATS_URL;
   if (!url) throw new Error('GELDAR_NATS_URL is not set');
   const nc = await connectNats({ servers: url, name: 'seed-identity-buckets', ...golemNatsAuth() });
   try {
     const kvm = new Kvm(jetstream(nc));
-    const names = [...(await seedIdentityBuckets(kvm)), ...(await seedBuildingBuckets(kvm))];
+    const names = await seedAllBuckets(kvm);
     console.log(`buckets ${names.join(', ')}: present`);
   } finally {
     await nc.close().catch(() => undefined);
