@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import * as building from './index.ts';
 
-const STUBS = ['enqueuePlan', 'contendFor', 'throttleWait', 'surveyBox'] as const;
+// throttleWait (BLD-15) and progressSentence (BLD-16) are implemented, and surveyBox (BLD-20) is too,
+// so only the still-unimplemented stubs remain here.
+const STUBS = ['enqueuePlan', 'contendFor'] as const;
 
 describe('building scaffold (BLD-S3a)', () => {
   it('progressSentence is implemented and exported (BLD-16)', () => {
