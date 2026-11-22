@@ -95,6 +95,7 @@ const SPEC_TOOLS = [
   'define_skill',
   'use_skill',
   'offer',
+  'plan_check',
   'propose',
   'vote',
   'sleep',
