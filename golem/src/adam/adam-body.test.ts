@@ -510,8 +510,9 @@ describe('startAdamBody', () => {
     expect(o?.timeScale).toBe(2);
     expect(typeof o?.currentRevision).toBe('function');
     expect(running.generation).toBe(4);
-    // The four Body subjects of the link (snapshot, plan, view, survey), and the image subject of VP-2 (decision 0156).
-    expect(r.served).toHaveLength(5);
+    // The Body subjects of the link (snapshot, plan, view, survey, plan_check: the last two answer not_available with the
+    // building flag off, by design, see server.test.ts) and the image subject of VP-2 (decision 0156).
+    expect(r.served).toHaveLength(6);
     expect(r.served.filter((s) => s.endsWith('.image'))).toHaveLength(1);
     await running.stop();
   });
@@ -645,11 +646,7 @@ describe('startAdamBody', () => {
     const running = await startAdamBody(r.env, fakeBot());
     await running.stop();
     expect(r.stops).toEqual([
-      `unserve ${r.served[0]}`,
-      `unserve ${r.served[1]}`,
-      `unserve ${r.served[2]}`,
-      `unserve ${r.served[3]}`,
-      `unserve ${r.served[4]}`,
+      ...r.served.map((subject) => `unserve ${subject}`),
       'executor.stop',
       'runtime.cancelAction',
       'restarted.stop',

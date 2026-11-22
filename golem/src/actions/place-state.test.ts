@@ -1,5 +1,7 @@
 import { Vec3 } from 'vec3';
 import { describe, expect, it } from 'vitest';
+import { lookVector } from '../perception/view/viewport.ts';
+import { stepsFromFacing } from './place-beside.ts';
 import {
   allowedKeys,
   cardinalOfYaw,
@@ -8,6 +10,7 @@ import {
   planPlaceState,
   stateMatches,
   yawForFacing,
+  yawToward,
 } from './place-state.ts';
 
 const UP = new Vec3(0, 1, 0);
@@ -47,11 +50,11 @@ describe('place state: log axis', () => {
 });
 
 describe('place state: stair facing and half', () => {
-  it('faces a stair back toward the bot, which looks the other way', () => {
+  it('faces a stair the way the bot looks, so a south stair is placed looking south', () => {
     const plan = planPlaceState('oak_stairs', { facing: 'south', half: 'top' }, [UP]);
     expect(plan).not.toBeNull();
-    // The stair faces south, so the bot looks north: yaw pi looks at -z.
-    expect(cardinalOfYaw(plan?.yaw ?? 0)).toBe('north');
+    // Yaw pi looks at +z (south), the facing the stair takes.
+    expect(cardinalOfYaw(plan?.yaw ?? 0)).toBe('south');
     expect(Math.cos(plan?.yaw ?? 0)).toBeCloseTo(-1);
     expect(
       stateMatches(
@@ -92,13 +95,23 @@ describe('place state: slab half', () => {
 });
 
 describe('place state: yaw and pitch', () => {
-  it('turns the bot to face each cardinal, one at a time', () => {
+  it('turns the bot to look along each facing, by mineflayer look vector', () => {
+    const offsets = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] } as const;
     for (const facing of ['north', 'south', 'east', 'west'] as const) {
-      const yaw = yawForFacing(facing);
-      const lookedAt = cardinalOfYaw(yaw);
-      // The bot looks the opposite way to the facing it places.
-      const opposite = { north: 'south', south: 'north', east: 'west', west: 'east' }[facing];
-      expect(lookedAt).toBe(opposite);
+      const [dx, , dz] = lookVector(yawForFacing(facing), 0);
+      expect(dx).toBeCloseTo(offsets[facing][0]);
+      expect(dz).toBeCloseTo(offsets[facing][1]);
+      expect(cardinalOfYaw(yawForFacing(facing))).toBe(facing);
+    }
+  });
+
+  it('looks along any horizontal step, and lists the cell the bot faces first', () => {
+    const steps = { north: new Vec3(0, 0, -1), south: SOUTH, east: EAST, west: WEST };
+    for (const facing of ['north', 'south', 'east', 'west'] as const) {
+      const [dx, , dz] = lookVector(yawToward(steps[facing]), 0);
+      expect(dx).toBeCloseTo(steps[facing].x);
+      expect(dz).toBeCloseTo(steps[facing].z);
+      expect(stepsFromFacing(yawForFacing(facing))[0]).toEqual(steps[facing]);
     }
   });
 
