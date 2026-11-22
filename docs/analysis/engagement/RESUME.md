@@ -4,14 +4,14 @@ Source: owner-supplied review "Why the agents only eat" (v3, 2026-11-18). It is 
 
 ## Current wave: U0 (unblock the gate)
 
-- Decision 0389 is accepted (owner, Cadacious): `use { item }` with no target holds the item, and agents read "<item> in hand". It amends 0218's no-target clause. No new verb, no contract shape change, agents not told.
+- Decision 0389 is accepted (owner and the operator): `use { item }` with no target holds the item, and agents read "<item> in hand". It amends 0218's no-target clause. No new verb, no contract shape change, agents not told.
 - U0-00: Done. At least 29 item-only sword `use` actions, 178 item+at and 11 item+entity, from at least one agent (spans do not name agents). This was a one-off read through `docker exec` as ClickHouse `default` at `readonly=1`, by owner ruling on 2026-11-18. It is not a standing route: D-EN-03 is.
-- U0-01 (Body): In review on PR #756. Cadacious asked for changes on 2026-11-18. Fix pass 1: a packet-coder takes items 1, 7 and 8; the orchestrator takes the docs and the PR body.
+- U0-01 (Body): In review on PR #756. The owner asked for changes on 2026-11-18. Fix pass 1: a packet-coder takes items 1, 7 and 8; the orchestrator takes the docs and the PR body.
 - U0-02 (live check plus a 48-hour watch): waits for U0-01 to merge. Merging deploys: new images, a service restart, each Body in turn.
 
 ## Next action
 
-After fix pass 1: merge `origin/main`, push, wait for `ci gate`, answer the review point by point, and ask Cadacious to review again.
+After fix pass 1: merge `origin/main`, push, wait for `ci gate`, answer the review point by point, and ask the owner to review again.
 
 ## Open for the owner
 

@@ -8,7 +8,7 @@ Ledger for v1 of the progression system on the colo shard. Design source: `docs/
 
 **Exit criteria.** X1 to X4 merged with the flag off; D-PR-01 accepted; the flag set on colo at the owner's dated start (D-PR-02); X5's live check passed and its before/after measurement written. What agents then do is data, not a target (Principle 5).
 
-**Merge rule (owner, 2026-11-19).** Packets may be written and reviewed now. No progression code merges before Cadacious accepts revised 0385 (D-PR-01).
+**Merge rule (owner, 2026-11-19).** Packets may be written and reviewed now. No progression code merges before the owner accepts revised 0385 (D-PR-01).
 
 ## Facts found while planning (2026-11-19, Plan agent, checked by the orchestrator)
 
@@ -25,7 +25,7 @@ Ledger for v1 of the progression system on the colo shard. Design source: `docs/
 
 | Id | Question | Status | Record |
 |---|---|---|---|
-| D-PR-01 | Accept revised 0385 (colo may set the flag by a dated owner act; colo v1 scope) | Open (Cadacious) | [0385](../../decisions/0385-progression-flag-relaxes-principle-2-per-shard.md) |
+| D-PR-01 | Accept revised 0385 (colo may set the flag by a dated owner act; colo v1 scope) | Open (owner) | [0385](../../decisions/0385-progression-flag-relaxes-principle-2-per-shard.md) |
 | D-PR-02 | The start date for the flag on colo | Open; not before the U0-02 watch closes (about 2026-11-21 01:03Z) | - |
 | D-PR-03 | Measurement: before/after on the same agents (needs a before-period baseline, which overlaps engagement C0 and D-EN-03), or a second unflagged colo world as control | Open | - |
 | D-PR-04 | The sheet held-live ruling: (a) exempt the XP that progression needs from it, (b) run progression on a sheet test shard first, as that ruling asks, or (c) give progression its own counter outside the sheet (against default B2) | Open (owner) | - |

@@ -12,7 +12,7 @@ Add a few residents whose own lives bring needs and pulls into the world (explor
 2. **Equal abilities.** Same tools, limits and starting kit as every other agent. No special knowledge, items or powers.
 3. **Public-domain or original.** Real historical figures are written factually and respectfully; fictional ones are original characters (no Star Trek, Harry Potter or Bob the Builder names or copies). Player repos are public, so fan skins and trademarked names are a risk.
 4. **Same text rules as the kit** (decisions 0058/0059/0068): persona text carries no coaching and no "you are watched".
-5. **Cost.** About $0.14 an hour per agent on Haiku at low effort: about $3.4 a day each, about $20 a day for six. Colo Body cap is 40 (15 running now). The `cadacious` player cap is 9 and full; it must be raised with `owner-set-cap` (geldar-worldops or geldar-93).
+5. **Cost.** About $0.14 an hour per agent on Haiku at low effort: about $3.4 a day each, about $20 a day for six. Colo Body cap is 40 (15 running now). The owner's player cap is 9 and full; it must be raised with `owner-set-cap` (geldar-worldops or geldar-93).
 6. **Format.** Today's kit persona format: `ag-<name>-01/memory/identity.md` and `goals.md`. Character-sheet conversion is a later, separate job.
 
 ## Gates
