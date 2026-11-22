@@ -1,6 +1,6 @@
 # Building campaign (free-form block placement and removal for agents)
 
-Ledger. Schedule, file ownership and packet specs: [work-packets.md](work-packets.md). Resume: [RESUME.md](RESUME.md). Updated 2026-11-22 to the integration state: `building/integration` = `727109a3` at the time of docs packet BLD-docsfix-1 (BLD-38h merged). `origin/main` = `5828b498` carries the campaign docs only; no building packet is on `main`. Only the orchestrator edits this file; each packet reports in `worknotes/BLD-NN.md`.
+Ledger. Schedule, file ownership and packet specs: [work-packets.md](work-packets.md). Resume: [RESUME.md](RESUME.md). Updated 2026-11-22 to the integration state: `building/integration` = `d87221c4` (merge of `phase1/bld-fix5-lane`; fixes 1 to 5 merged; fix6 not implemented). `origin/main` = `5828b498` carries the campaign docs only; no building packet is on `main`. Only the orchestrator edits this file; each packet reports in `worknotes/BLD-NN.md`.
 
 ## Purpose
 
@@ -8,8 +8,8 @@ Let an agent place and break any block, one at a time, with ordinary survival me
 
 ## Exit criteria
 
-1. The `break` and `plan` verbs, and the `survey` and `plan_check` tools, work on the Paper autonomous shard for all 19 agents behind `body_actions.building` (default off).
-2. A plan of any size runs between thoughts, pauses for reflexes and resumes, survives a Body restart, and stays under the KV value limit.
+1. The `break` and `plan` verbs, and the `survey` and `plan_check` tools, work on the Paper autonomous shard for all 19 agents behind `body_actions.building` (default off). Status: code merged; flag off; colo hides `survey` and `plan_check` (`show_unavailable_tools: false` in `shards/colo-mind.yaml`); live run not done (BLD-28); the 19-agent switch-on is BLD-31 (MANUAL, not run).
+2. A plan of any size runs between thoughts, pauses for reflexes and resumes, survives a Body restart, and stays under the KV value limit. Status: met in code for Adam's Body and the player hosts with the flag on (fix1, fix2d, fix4b); the live restart test is not run (BLD-28).
 3. Every edit is a survival action: no server command, no creative supply.
 4. The seen-block map never leaks an unseen block (test) and never reaches a telemetry path to an agent (test).
 5. Each behavior change has a test that fails on revert; the Paper integration test passes; the test-shard evidence note exists (or the owner waives it).
@@ -49,14 +49,14 @@ Size S, M. Restarts = merging to `main` restarts the 19 Bodies (colo-images path
 | BLD-05 | Chunked plan store and cursor checkpoint | 1 | M | Y | S3a | Done |
 | BLD-06 | `break` action | 1 | M | Y | S3a | Done |
 | BLD-07 | Place: plants, snow, two-block items | 1 | S | Y | S3a | Done |
-| BLD-08 | Place: blockstate and orientation | 1 | M | Y | S3a, after 07 on `place.ts` | Done |
-| BLD-09 | Standing-position solver | 1 | M | Y | S3a | Done |
-| BLD-10 | Scaffolding, falling blocks, fluids | 1 | M | Y | S3a | Done |
+| BLD-08 | Place: blockstate and orientation | 1 | M | Y | S3a, after 07 on `place.ts` | Partial (facing refused for every kind: `FACING_VERIFIED` is empty in `place-state.ts`; half and axis only; fix3a) |
+| BLD-09 | Standing-position solver | 1 | M | Y | S3a | Partial (module built; not wired to production: no production import) |
+| BLD-10 | Scaffolding, falling blocks, fluids | 1 | M | Y | S3a | Partial (module built; not wired to production: no production import) |
 | BLD-12 | Own breaks raise no observation | 1 | S | Y | none | Done |
 | BLD-36 | Remove dig-safety refusals (0428) | 1 | S | Y | S3a | Done |
 | BLD-17 | Seen-block recorder | 1 | M | Y | S3a | Done |
 | BLD-11 | Cell executor (verify, codes, stale rule) | 2 | M | Y | 06, 07, 08, 09, 10 | Done |
-| BLD-18 | Seen storage, death retention and inheritance by the next life, erase coverage | 2 | M | Y (+ MANUAL NATS) | 17 | Partial (wiring open): no predecessor source, nothing inherited; MANUAL NATS role and seed open |
+| BLD-18 | Seen storage, death retention and inheritance by the next life, erase coverage | 2 | M | Y (+ MANUAL NATS) | 17 | Partial (wiring open): no predecessor source, nothing inherited; erase covers seen, plan chunks and checkpoint (fix4b); MANUAL NATS role open (the Body creates the buckets; no seed step) |
 | BLD-24 | prompts body-api v12 | 2 | S | N | S1, S2 | Done |
 | BLD-26 | Delete inline `build` action | 6 | S | Y | 23 (0427 accepted) | Done (review pending) |
 | BLD-13 | Plan lane core, reflex pause | 3 | M | Y | 04, 05, 11 | Done |
@@ -66,12 +66,12 @@ Size S, M. Restarts = merging to `main` restarts the 19 Bodies (colo-images path
 | BLD-16 | Progress events, materials wake | 4 | M | Y | 13 | Done |
 | BLD-19 | Leak tests, both fences (seen map to telemetry; Glass plan data to agents) | 4 | S | N or Y | 17, 20 | Done |
 | BLD-21 | MCP `survey` tool | 4 | M | Y | S3b, 20 | Done |
-| BLD-22 | MCP `plan_check` | 5 | M | Y | 04, 20, 21 | Partial (wiring open): `plan_check` refuses in `world.ts`; no caller of `planCheckTool` |
+| BLD-22 | MCP `plan_check` | 5 | M | Y | 04, 20, 21 | Done (wired by BLD-22b: dry run on the Body, MCP forwards; hidden on colo by `show_unavailable_tools: false`; cap 8192 cells) |
 | BLD-23 | Presenter, status block, `act` text | 5 | M | Y | S3b, 16 | Partial (wiring open): presenter in df27bb82; `status.active_plan` has no source |
-| BLD-27 | Metrics and telemetry | 5 | S | Y | 16 | Partial (wiring open): plan and seen metric methods have no call sites; no series emitted |
+| BLD-27 | Metrics and telemetry | 5 | S | Y | 16 | Done (wired in fix1 and fix2b: series emitted for Bodies built with the flag on; pushed only when `GELDAR_TELEMETRY_URL` is set) |
 | BLD-30 | Operator runbook | 5 | S | N | 14 | Done |
 | BLD-37 | Glass plan-activity view and the hard no-agent-path test | 6 | M | Y (`glass/**`) | S3c, 27, 16 | Partial (wiring open): panel off; Glass feed and flag gate not wired |
-| BLD-25 | Kit skills, twins and allow entries for `survey` and `plan_check` (kit repo, MANUAL tag and upgrade PRs) | 6 | M | N | 21, 22, 23 | Done in kit repo (kit PR 137; tag and upgrades MANUAL) |
+| BLD-25 | Kit skills, twins and allow entries for `survey` and `plan_check` (kit repo, MANUAL tag and upgrade PRs) | 6 | M | N | 21, 22, 23 | Done in kit repo (kit PR 137; tag and per-player upgrades MANUAL, not run) |
 | BLD-28 | Paper integration test | 6 | M | N | all code | Done (live test written, NOT run) |
 | BLD-29 | Test-shard agent evidence | 7 | M | N | 28 | Manual (not run) |
 | BLD-31 | Paper go-live (MANUAL) | 7 | S | Y (config) | 29 or owner go | Manual (not run) |
@@ -82,12 +82,23 @@ Size S, M. Restarts = merging to `main` restarts the 19 Bodies (colo-images path
 | BLD-38 | Wire the building modules into the Body (wiring audit; work continued in 38b to 38h) | 3a | - | Y | see worknote | Done |
 | BLD-38b | Plan queue and lane wired into the Body tick (flag on only) | 3a | - | Y | 38 family (merge order) | Done |
 | BLD-38b2 | Wiring fixes: break and replace, stateful targets, shared import | 3a | - | Y | 38 family (merge order) | Done |
-| BLD-38c | Plan store: cells as chunks in `geldar-plans`, cursor in the checkpoint | 3a | - | Y | 38 family (merge order) | Done (MANUAL NATS role and seed open) |
-| BLD-38d | Seen map and survey wired into the Body (flag on only) | 3a | - | Y | 38 family (merge order) | Done |
+| BLD-38c | Plan store: cells as chunks in `geldar-plans`, cursor in the checkpoint | 3a | - | Y | 38 family (merge order) | Done for Adam's Body and player hosts (flag on; MANUAL NATS role open) |
+| BLD-38d | Seen map and survey wired into the Body (flag on only) | 3a | - | Y | 38 family (merge order) | Done for Adam's Body and player hosts (flag on) |
 | BLD-38e | Survey through the gateway and the golem responder | 3a | - | Y | 38 family (merge order) | Done |
 | BLD-38f | Tick-based progress throttle; failed phase on an unexpected throw | 3a | - | Y | 38 family (merge order) | Done |
 | BLD-38g | Survey reaches the production Body; seen map survives restart | 3a | - | Y | 38 family (merge order) | Done |
 | BLD-38h | Restart reloads the life's own seen map | 3a | - | Y | 38 family (merge order) | Done |
+| BLD-22b | Plan check on the Body (`plan-check-reply.ts`), survey box cap, flag-gated reply | 5 | - | Y | 22 | Done (merged); the live run is not done |
+| BLD-fix1 | Review fixes 1 (worknote `BLD-fix1.md`) | fix | - | Y | - | Done (merged) |
+| BLD-fix2a | Review fixes 2a (worknote `BLD-fix2a.md`) | fix | - | Y | - | Done (merged) |
+| BLD-fix2b | Review fixes 2b (worknote `BLD-fix2b.md`) | fix | - | Y | - | Done (merged) |
+| BLD-fix2d | Review fixes 2d (worknote `BLD-fix2d.md`) | fix | - | Y | - | Done (merged) |
+| BLD-fix3a | Review fixes 3a (worknote `BLD-fix3a.md`) | fix | - | Y | - | Done (merged) |
+| BLD-fix3b | Review fixes 3b (worknote `BLD-fix3b.md`) | fix | - | Y | - | Done (merged) |
+| BLD-fix4a | Review fixes 4a (worknote `BLD-fix4a.md`) | fix | - | Y | - | Done (merged) |
+| BLD-fix4b | Review fixes 4b (worknote `BLD-fix4b.md`); NATS operator grants still manual | fix | - | Y | - | Done (merged) |
+| BLD-fix5 | Review fixes 5 (palette state, checkpoint on cancel, intents pause the lane) | fix | - | Y | - | Done (merged in d87221c4) |
+| BLD-fix6 | Not implemented (worknote `BLD-fix6.md` holds the plan) | fix | - | - | - | Not implemented |
 
 BLD-01, 02, 03 are delivered by S1 and S2 (their sections in the packet file are the content specs).
 
