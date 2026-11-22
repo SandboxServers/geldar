@@ -26,6 +26,8 @@ Base 2a40c947 (building/integration). Branch phase1/bld-fix2b-facing.
 - F4: wire-lane.test.ts asserts planThrottleWait(true) for a 'tps' verdict, planThrottleWait(false) for a 'gap' verdict, and planSeconds(1.5) for 1500 ms. New wire-seen.test.ts asserts seenFlush(bytes) after a flush and no call without a store. Revert-checked: `/ 1000` removed and the seenFlush call removed; both tests fail.
 - Open: F5 (restart stop flush awaited), F6 (main passes config.building to openRestartKv), F7 (seed step from main), F8 (adam-body plan_check answered with the flag on), and the facing per-kind check (see below).
 
-## Facing per kind (not yet fixed)
+## Facing per kind (superseded, stale)
 
-The code applies one rule to stairs, doors, furnaces and chests: the placed facing is the bot's look direction (place-state.ts, FACING_BLOCK). From vanilla behaviour as recalled (not checked against a server jar in this session): stairs and doors take the player's look direction; chest, trapped chest, ender chest and furnace take the opposite direction. If that holds, chests and furnaces are placed reversed. Not verified: the live run, and the per-kind values for doors and furnaces. Fix to make: an opposite mapping for chest-like blocks and furnace in clickedProperties, with a test per kind.
+~~The code applies one rule to stairs, doors, furnaces and chests: the placed facing is the bot's look direction (place-state.ts, FACING_BLOCK). From vanilla behaviour as recalled: stairs and doors take the player's look direction; chest, trapped chest, ender chest and furnace take the opposite direction. Fix to make: an opposite mapping for chest-like blocks and furnace in clickedProperties, with a test per kind.~~
+
+Superseded: fix2d replaced the facing rule with a refusal. `FACING_VERIFIED` is empty, so a block ref with `facing` returns `state_unachievable` and nothing is placed. See `BLD-fix2d.md`. The F2 facing convention above is stale for placement: `clickedProperties` no longer writes a facing for any kind.
