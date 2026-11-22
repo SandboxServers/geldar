@@ -127,6 +127,37 @@ describe('createBody with body_actions.building on: the seen map', () => {
     expect([...kv.data.keys()].some((key) => key.startsWith(`${LIFE}.`))).toBe(false);
   });
 
+  it('a restart of the same life reloads its own stored cells, and the survey reports them', async () => {
+    const kv = memoryKv();
+    const first = seenBody({ building: true, kv });
+    sweep(first.ticks);
+    await first.seen?.flush();
+    first.seen?.stop();
+    const restarted = seenBody({ building: true, kv });
+    await restarted.seen?.ready;
+    const text = restarted.seen?.survey(BOX, 50).text ?? '';
+    expect(text).toContain('stone');
+    // Only stored cells come back: the diamond behind the wall was never seen, so it is not stored.
+    expect(text).not.toContain('diamond_ore');
+  });
+
+  it('a restart whose stored cells cannot be listed starts with an empty map and does not throw', async () => {
+    const kv = memoryKv();
+    const first = seenBody({ building: true, kv });
+    sweep(first.ticks);
+    await first.seen?.flush();
+    first.seen?.stop();
+    const failing: SeenKv = {
+      ...kv,
+      list: async () => {
+        throw new Error('bucket unavailable');
+      },
+    };
+    const restarted = seenBody({ building: true, kv: failing });
+    await expect(restarted.seen?.ready).resolves.toBeUndefined();
+    expect(restarted.seen?.survey(BOX, 50).text).not.toContain('stone');
+  });
+
   it('a predecessor of another agent is never read', async () => {
     const kv = memoryKv();
     const first = seenBody({ building: true, kv });
