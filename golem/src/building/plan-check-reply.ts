@@ -21,6 +21,17 @@ export const PLAN_CHECK_CELL_CAP = 8_192;
 
 const MAX_REASON = 120;
 
+/** Most invalid steps one reply lists; the rest are dropped (the count of cells is still exact). */
+export const MAX_INVALID_STEPS = 256;
+
+/**
+ * Most rows or cells one step may span before it is refused as `plan_too_large`, checked before the step is
+ * expanded. A step over it always has more than PLAN_CHECK_CELL_CAP cells (a box has at least one cell per
+ * x-y column, a wall has its length times its height, a sphere of this face has a shell over 4 pi r^2 cells),
+ * so no answer that the cap would give changes.
+ */
+const WORK_BOUND = 4 * PLAN_CHECK_CELL_CAP;
+
 /** What a dry run reads from the Body: the seen map, the pack by item name, and the feet cell. */
 export interface PlanCheckBody {
   seen: SeenMap;
@@ -94,6 +105,7 @@ function dryRun(plan: PlanSpec, body: PlanCheckBody): PlanCheckResult {
       invalid.push({ index, reason: 'unknown_palette_key' });
       return;
     }
+    if (overWorkBound(step)) throw new PlanTooLarge('work bound');
     let stepCells = 0;
     let stepUnknown = 0;
     const visit = (cell: Cell): void => {
@@ -124,8 +136,29 @@ function dryRun(plan: PlanSpec, body: PlanCheckBody): PlanCheckResult {
     material_needs,
     unknown_cells: unknown,
     estimated_ticks: cells * PLAN_CHECK_TICKS_PER_CELL,
-    invalid_steps: invalid.sort((a, b) => a.index - b.index),
+    invalid_steps: invalid.sort((a, b) => a.index - b.index).slice(0, MAX_INVALID_STEPS),
   };
+}
+
+/**
+ * True when a step's geometry would walk more than WORK_BOUND rows or cells. Only the shapes that could be
+ * large are read (a step with a missing field is left to the expansion, which lists it as invalid).
+ */
+function overWorkBound(step: PlanStep): boolean {
+  if ((step.op === 'box' || step.op === 'hollow_box') && step.from && step.to) {
+    const columns =
+      (Math.abs(step.to.x - step.from.x) + 1) * (Math.abs(step.to.y - step.from.y) + 1);
+    return columns > WORK_BOUND;
+  }
+  if (step.op === 'wall' && step.from && step.to && step.height !== undefined) {
+    const length =
+      Math.max(Math.abs(step.to.x - step.from.x), Math.abs(step.to.z - step.from.z)) + 1;
+    return length * step.height > WORK_BOUND;
+  }
+  if (step.op === 'sphere' && step.radius !== undefined) {
+    return (2 * step.radius + 1) ** 2 > WORK_BOUND;
+  }
+  return false;
 }
 
 /** The offset relative cells are measured from: none, a coordinate, or the feet cell for `here`. */

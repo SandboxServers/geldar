@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { answerPlanCheck, PLAN_CHECK_CELL_CAP, type PlanCheckBody } from './plan-check-reply.ts';
+import {
+  answerPlanCheck,
+  PLAN_CHECK_CELL_CAP,
+  type PlanCheckBody,
+  planCheckFrom,
+} from './plan-check-reply.ts';
 import { SeenMap } from './seen/section.ts';
 
 const PACK = { stone: 4 };
@@ -12,6 +17,18 @@ const BOX_2X2 = {
     steps: [{ op: 'box', pal: 'stone', from: { x: 0, y: 64, z: 0 }, to: { x: 1, y: 64, z: 1 } }],
   },
 };
+
+/** A single-row stone box along x at y 64, `count` cells long. */
+function lineBox(count: number) {
+  return {
+    plan: {
+      palette: { stone: { block: 'stone' } },
+      steps: [
+        { op: 'box', pal: 'stone', from: { x: 0, y: 64, z: 0 }, to: { x: count - 1, y: 64, z: 0 } },
+      ],
+    },
+  };
+}
 
 /** A body whose map records the given cells as seen; the map's reads are spied on. */
 function bodyWith(seenCells: [number, number, number][]): PlanCheckBody & { seen: SeenMap } {
@@ -78,6 +95,82 @@ describe('answerPlanCheck (the Body dry run)', () => {
       cells: 0,
       invalid_steps: [{ index: 0, reason: 'unknown_palette_key' }],
     });
+  });
+
+  it('answers a plan of exactly the cell cap, and refuses one cell more as plan_too_large', () => {
+    expect(answerPlanCheck(bodyWith([]), lineBox(PLAN_CHECK_CELL_CAP), true)).toMatchObject({
+      cells: PLAN_CHECK_CELL_CAP,
+    });
+    expect(answerPlanCheck(bodyWith([]), lineBox(PLAN_CHECK_CELL_CAP + 1), true)).toEqual({
+      error: 'plan_too_large',
+    });
+  });
+
+  it('resolves origin here from the feet cell by floor: x 10.7 and z -0.3 are cell (10, -1)', () => {
+    const seen = new SeenMap();
+    seen.record(10, 64, -1, 'stone', 10);
+    const bot = {
+      inventory: { items: () => [] },
+      entity: { position: { x: 10.7, y: 64.2, z: -0.3 } },
+    };
+    const plan = {
+      plan: {
+        palette: { stone: { block: 'stone' } },
+        origin: 'here',
+        steps: [{ op: 'place', pal: 'stone', at: { x: 0, y: 0, z: 0 } }],
+      },
+    };
+    expect(planCheckFrom(seen, bot)(plan)).toMatchObject({ cells: 1, unknown_cells: 0 });
+    expect(planCheckFrom(new SeenMap(), bot)(plan)).toMatchObject({
+      unknown_cells: 1,
+    });
+  });
+
+  it('lists at most 256 invalid steps, the first by index, and still counts every cell', () => {
+    const steps = Array.from({ length: 300 }, () => ({
+      op: 'place',
+      pal: 'glass',
+      at: { x: 0, y: 64, z: 0 },
+    }));
+    const answer = answerPlanCheck(
+      bodyWith([]),
+      { plan: { palette: { stone: { block: 'stone' } }, steps } },
+      true,
+    );
+    expect(answer).toMatchObject({ cells: 0 });
+    expect((answer as { invalid_steps: { index: number }[] }).invalid_steps).toHaveLength(256);
+    expect((answer as { invalid_steps: { index: number }[] }).invalid_steps[255]?.index).toBe(255);
+  });
+
+  it('refuses a sphere of radius 1,000,000 and a wall of length 60,000,000 at once, as plan_too_large', () => {
+    // Relative steps (an origin is given), so the validator's absolute height and border limits do not apply.
+    const sphere = {
+      plan: {
+        palette: { stone: { block: 'stone' } },
+        origin: { x: 0, y: 64, z: 0 },
+        steps: [{ op: 'sphere', pal: 'stone', center: { x: 0, y: 0, z: 0 }, radius: 1_000_000 }],
+      },
+    };
+    const wall = {
+      plan: {
+        palette: { stone: { block: 'stone' } },
+        origin: { x: 0, y: 64, z: 0 },
+        steps: [
+          {
+            op: 'wall',
+            pal: 'stone',
+            from: { x: -30_000_000, y: 0, z: 0 },
+            to: { x: 30_000_000, y: 0, z: 0 },
+            height: 1,
+          },
+        ],
+      },
+    };
+    for (const request of [sphere, wall]) {
+      const started = performance.now();
+      expect(answerPlanCheck(bodyWith([]), request, true)).toEqual({ error: 'plan_too_large' });
+      expect(performance.now() - started).toBeLessThan(200);
+    }
   });
 
   it('refuses an input the contract does not accept as invalid_input', () => {

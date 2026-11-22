@@ -21,6 +21,8 @@ export const RAY_BUDGET = 64;
 /** The march step along a ray, in blocks (the viewport's step). */
 const STEP = 0.25;
 const CONE_RAYS = DEFAULT_COLS * DEFAULT_ROWS;
+/** Half the diagonal of a unit block: the most a block's centre can lie from a point inside the block. */
+const HALF_DIAGONAL = Math.sqrt(3) / 2;
 
 export interface RecorderOptions {
   everyTicks?: number;
@@ -126,6 +128,13 @@ export function cellInView(
   y: number,
   z: number,
 ): boolean {
+  // A cell whose centre is past the range plus half a cell's diagonal cannot be reached by a sample within
+  // the range, so no ray can record it: refused before any ray is cast (the same range the rays use).
+  const limit = (world.dark ? DARK_RANGE : MAX_RANGE) + HALF_DIAGONAL;
+  const ex = x + 0.5 - pose.x;
+  const ey = y + 0.5 - pose.y;
+  const ez = z + 0.5 - pose.z;
+  if (ex * ex + ey * ey + ez * ez > limit * limit) return false;
   // The same rays the recorder casts, so a cell is in view exactly when a sampled ray records it.
   for (let index = 0; index < CONE_RAYS; index++) {
     const col = index % DEFAULT_COLS;
