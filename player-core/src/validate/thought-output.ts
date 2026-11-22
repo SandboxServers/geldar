@@ -9,8 +9,8 @@ import {
   isObject,
   MAX_CHECKPOINT_BYTES,
   PHASE0_PROGRAMS,
-  PHASE0_VERBS,
   safeName,
+  verbAllowed,
 } from './bounds.ts';
 import { type InputOptions, readJson, splitSchemaMessage } from './json-input.ts';
 
@@ -32,13 +32,13 @@ const ACTION_POSITION_FIELD: Record<string, string> = {
  * program gets the reason `not_allowed` rather than a wall of schema errors. Skills, `build`,
  * `follow`, `give`, signs, books, `offer`, governance and `note` all stop here.
  */
-function checkAllowList(value: unknown, errors: ErrorList): void {
+function checkAllowList(value: unknown, errors: ErrorList, bounds: Bounds): void {
   if (!isObject(value)) return;
   if (Array.isArray(value.actions)) {
     value.actions.forEach((action: unknown, i: number) => {
       if (!isObject(action)) return;
       const verb = action.do;
-      if (typeof verb === 'string' && !PHASE0_VERBS.includes(verb)) {
+      if (typeof verb === 'string' && !verbAllowed(verb, bounds)) {
         errors.add(
           'not_allowed',
           `/actions/${i}/do`,
@@ -142,7 +142,7 @@ export function parseThoughtOutput(
   const read = readJson(text, input);
   if (!read.ok) return read;
   const errors = new ErrorList();
-  checkAllowList(read.value, errors);
+  checkAllowList(read.value, errors, bounds);
   if (!errors.empty) return { ok: false, errors: errors.errors };
   const schema = validateThought(read.value);
   if (!schema.ok) {

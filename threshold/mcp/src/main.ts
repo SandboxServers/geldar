@@ -402,7 +402,7 @@ export async function startMcp(config: McpConfig, ports: McpPorts): Promise<Runn
       events,
       presence,
       limiter,
-      validator: createOutputValidator(),
+      validator: createOutputValidator({ buildingOn: config.buildingOn }),
       clock: ports.clock,
       runs,
       wake,
