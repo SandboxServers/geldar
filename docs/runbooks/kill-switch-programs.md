@@ -3,7 +3,7 @@ title: "Turn off a Body program (explore, farm or patrol)"
 type: how-to
 audience: operators
 status: draft
-last_verified: 2026-11-21 against b6bfcfa0
+last_verified: 2026-11-21 against f03537ee (dry run, 11 tests) and b6bfcfa0 (12th test, read from the ACT-3 merge; a patrol-removal run on the bundle in the PR #916 review failed it)
 companions: [README.md, incident-response.md, add-a-contract-schema.md]
 sources: [player-core/src/validate/bounds.ts, golem/src/body/programs/index.ts, golem/src/body/restart.ts, player-core/src/validate/thought-output.ts, contract/schemas/mcp-play.schema.json, contract/schemas/program-shapes.schema.json, .github/workflows/colo-images.yml, .github/workflows/colo-deploy.yml]
 ---
@@ -54,12 +54,16 @@ with no separate step.
 - Wait for `colo-deploy` to finish for the merged commit.
 - Ask the Mind for an act that names `<P>`. The reply is refused with reason `not_allowed` at `/intent/program`.
   Any other reason means the validator change did not reach the shard; check the deployed commit.
-- Confirm a checkpoint that names `<P>` does not resume: the Body reports the program as not registered.
+- Confirm a checkpoint that names `<P>` does not resume. On restart the Body logs this line to its stderr (the
+  Body process's log on the node): `restart: the checkpoint's program "<P>" is not registered; the Body starts idle`.
+  The line is written by `recover()` in `golem/src/body/restart.ts`. The checkpoint is discarded and the Body starts
+  idle. If the line is absent, the checkpoint did not name `<P>`, or the Body did not restart; check the deployed
+  commit before trusting the result.
 
 ## Dry run record (patrol)
 
-The dry run applied items 1 to 3 for `patrol` on a scratch branch off `origin/main`, then ran `check`. The tests
-that failed, and so had to change for item 4, were:
+The dry run applied items 1 to 3 for `patrol` on a scratch branch off `origin/main` (f03537ee, before the ACT-3
+merge), then ran `check`. The 11 tests that failed, and so had to change for item 4, were:
 
 - `player-core/src/validate/program-args.test.ts` (7 tests): `names them in the allow-list and in PROGRAM_ARGS`;
   `requires a route of 2 to 8 positions for patrol, and bounds laps`; `checks each route point as a position:
@@ -72,6 +76,13 @@ that failed, and so had to change for item 4, were:
 - `golem/src/body/programs/index.test.ts` (1 test): `registers the ten programs and the unsupported names`.
 - `animus/src/validate/output.test.ts` (1 test): `keeps explore, farm and patrol out of every table until a
   body-api version selects them`.
+- `golem/src/body/restart-programs.test.ts` (1 test, the 12th): `restartBody resumes a checkpoint whose program is
+  registered > the Body the live code builds registers explore, farm and patrol`. The ACT-3 merge (b6bfcfa0) added
+  this file, so the origin/main dry run did not run it. Its `arrayContaining` list names the program; drop `<P>` from
+  that list. The 12th test was found by reading the file on the bundle branch, and a patrol-removal run on the bundle
+  in the PR #916 review failed it; the dry run itself did not run it.
+
+With the 12th test, the list is 12 tests in 5 files.
 
 The dry run did not edit these tests. The list is the set of tests that failed under the edits, not a set of
 edited and re-passing tests.
@@ -80,5 +91,5 @@ The same `check` run on an unmodified `origin/main` (the baseline) failed the sa
 dry run: `bluemap-web-nf`, `bluemap-web`, `nats-human-grants-nf`, `scratch-human`, `caddy-adapt` and `colo-params`.
 Those need Docker volume paths and Caddy, which the Windows host does not provide. The baseline also failed many
 `deploy/test` bash suites, as the dry run did. No `player-core`, `golem` or `animus` test failed on the baseline, so
-the four files above are the failures the edits caused. The `deploy/test` and `tools/repo-checks` failures are
+the files listed above are the failures the edits caused. The `deploy/test` and `tools/repo-checks` failures are
 environmental on the Windows host; they were not compared test by test.
