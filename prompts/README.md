@@ -21,6 +21,7 @@ prompts/
   body-api/v8.json    v7 with the edit_sign verb (decision 0192); kept loadable
   body-api/v9.json    v8 with the use verb (decision 0218); kept loadable
   body-api/v10.json   the default allow-list: v9 with only the use entry reworded (the summary names the doors, seeds and crops it works on, and what refuses); kept loadable
+  body-api/v12.json   v10 plus the break and plan verbs (decision 0425; v11 is reserved by AN-45b); taught, never nudged; kept loadable, not the default
 ```
 
 ## Rules
