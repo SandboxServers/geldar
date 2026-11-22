@@ -2,29 +2,20 @@ import { describe, expect, it } from 'vitest';
 import * as building from './index.ts';
 
 const STUBS = [
-  'putPlanChunk',
-  'readPlanChunk',
-  'deletePlan',
-  'saveCheckpoint',
   'doCell',
   'countMaterials',
-  'standFor',
-  'scaffoldFor',
-  'hazardAt',
   'laneStateOf',
   'enqueuePlan',
   'contendFor',
   'throttleWait',
   'progressSentence',
-  'recordSeen',
-  'sectionOf',
   'loadSection',
   'surveyBox',
 ] as const;
 
 describe('building scaffold (BLD-S3a)', () => {
   it.each(STUBS)('%s is exported and refuses with not_implemented', (name) => {
-    const stub = building[name] as unknown as () => unknown;
+    const stub = (building as Record<string, unknown>)[name] as () => unknown;
     expect(() => stub()).toThrow(`not_implemented: ${name}`);
   });
 

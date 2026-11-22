@@ -3,18 +3,27 @@ import * as building from './index.ts';
 
 const c = { x: 0, y: 64, z: 0 };
 
-describe('building library stubs (BLD-04 fills them)', () => {
-  it('every shape helper throws not_implemented', () => {
-    expect(() => building.boxCells(c, c, true)).toThrow('not_implemented');
-    expect(() => building.lineCells(c, c)).toThrow('not_implemented');
-    expect(() => building.wallCells(c, c)).toThrow('not_implemented');
-    expect(() => building.circleCells(c, 2, 'y')).toThrow('not_implemented');
-    expect(() => building.sphereCells(c, 2)).toThrow('not_implemented');
+describe('building library barrel (BLD-04)', () => {
+  it('exports working shape helpers', () => {
+    expect([...building.boxCells(c, c, true)]).toEqual([c]);
+    expect([...building.lineCells(c, c)]).toEqual([c]);
+    expect([...building.wallCells(c, c, 1)]).toEqual([c]);
+    expect([...building.circleCells(c, 2, 'y')]).toHaveLength(12);
+    expect([...building.sphereCells(c, 1)]).toHaveLength(7);
   });
 
-  it('expansion, ordering and tally throw not_implemented', () => {
-    expect(() => building.expandPlan({} as never)).toThrow('not_implemented');
-    expect(() => building.orderCells([c], 'bottom_up')).toThrow('not_implemented');
-    expect(() => building.tallyMaterials([])).toThrow('not_implemented');
+  it('exports expansion, ordering and tally', () => {
+    const cells = [
+      ...building.expandPlan({
+        palette: { s: {} },
+        steps: [{ op: 'place', pal: 's', at: c }],
+      }),
+    ];
+    expect(cells).toEqual([{ ...c, pal: 's' }]);
+    expect(building.orderCells([c], 'bottom_up')).toEqual([c]);
+    expect(building.orderPlanCells([{ ...c, pal: 's' }], 'bottom_up')).toEqual([
+      { ...c, pal: 's' },
+    ]);
+    expect(building.tallyMaterials(cells)).toEqual({ s: 1 });
   });
 });

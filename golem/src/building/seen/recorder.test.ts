@@ -47,22 +47,29 @@ function fakeWorld(opts: FakeOptions = {}): ViewWorld & { calls: number } {
   return world;
 }
 
-/** A stone wall across the view at z = -3, and a stone block behind it at z = -6. */
+/**
+ * A stone wall at z = -3 wide enough to cover the whole cone at that depth (the cone is +-45 degrees
+ * horizontally and +-22.5 degrees vertically from the eyes at z = 0.5), and a stone block directly behind
+ * the wall on the centre ray, at z = -6. Every ray of the cone crosses the wall plane, so no ray may
+ * record anything beyond it.
+ */
 function wallWorld(): ViewWorld {
   const wall: Array<[number, number, number]> = [];
-  for (let x = -10; x <= 10; x++) for (let y = 62; y <= 68; y++) wall.push([x, y, -3]);
+  for (let x = -30; x <= 30; x++) for (let y = 60; y <= 70; y++) wall.push([x, y, -3]);
   wall.push([0, 64, -6]);
   return fakeWorld({ stone: wall });
 }
 
 describe('recordSeen: line of sight', () => {
-  it('records the first opaque block and stops; a block behind a wall is not recorded', () => {
+  it('records the first opaque block and stops; nothing behind a wall in the cone is recorded', () => {
     const map = new SeenMap();
-    const rec = newRecorder(map);
-    recordSeen(rec, wallWorld(), EYE, 0);
+    // A full sweep of the cone, so the centre ray (which crosses the target at z = -6) is cast.
+    sweep(newRecorder(map), wallWorld(), EYE, 0);
     expect(map.read(0, 64, -3)?.name).toBe('stone');
     expect(map.read(0, 64, -6)).toBeUndefined();
-    for (let z = -4; z >= -24; z--) expect(map.read(0, 64, z)).toBeUndefined();
+    for (let x = -30; x <= 30; x++)
+      for (let y = 60; y <= 70; y++)
+        for (let z = -4; z >= -24; z--) expect(map.read(x, y, z)).toBeUndefined();
   });
 
   it('records the transparent blocks in front of the wall as air', () => {
