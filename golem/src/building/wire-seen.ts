@@ -1,7 +1,8 @@
 // Seen-block wiring (BLD-38d). Built only with body_actions.building on. Each sampled tick the recorder reads the
 // bot's own view (the viewport cone, line of sight only: no wall-hack). An observed block change updates only a
 // cell this life has already seen, so a change behind a wall reveals nothing new. The map is kept for the life;
-// death flushes it and leaves it in place; the next life inherits the predecessor's sections when they match.
+// death flushes it and leaves it in place; a restart of the same life reloads its own stored sections; the next
+// life inherits the predecessor's sections when they match.
 import type { Bot } from 'mineflayer';
 import type { TickSource } from '../body/runtime.ts';
 import { viewFromBot } from '../perception/view/viewport.ts';
@@ -53,6 +54,11 @@ class TrackedSeenMap extends SeenMap {
     super.record(x, y, z, name, tick);
     if (this.track) this.changed.set(`${x},${y},${z}`, { x, y, z, name, tick });
   }
+
+  /** Puts back a stored cell of this life without marking it changed: nothing is written for it again. */
+  restore(x: number, y: number, z: number, name: string, tick: number): void {
+    super.record(x, y, z, name, tick);
+  }
 }
 
 export interface SeenWiring {
@@ -70,9 +76,17 @@ export interface SeenWiring {
   stop(): void;
 }
 
-/** Copies the predecessor's stored cells into the map, where this life has no cell of its own. */
-async function inheritInto(kv: SeenKv, pred: Predecessor, map: SeenMap): Promise<number> {
-  const prefix = `${pred.lifeId}.`;
+/**
+ * Copies the stored cells of one life into the map, where the map has no cell there yet. `put` writes each cell:
+ * an inherited cell is tracked as a change, a life's own cell reloaded on restart is not.
+ */
+async function loadLifeInto(
+  kv: SeenKv,
+  lifeId: string,
+  map: SeenMap,
+  put: (x: number, y: number, z: number, name: string, tick: number) => void,
+): Promise<number> {
+  const prefix = `${lifeId}.`;
   let count = 0;
   for (const key of await kv.list(prefix)) {
     const parts = key.slice(prefix.length).split('.').map(Number);
@@ -80,7 +94,7 @@ async function inheritInto(kv: SeenKv, pred: Predecessor, map: SeenMap): Promise
     const [sx, sy, sz] = parts as [number, number, number];
     const cells = await loadSection(
       kv,
-      pred.lifeId,
+      lifeId,
       sectionOf(sx * SECTION_SIZE, sy * SECTION_SIZE, sz * SECTION_SIZE),
     );
     if (cells === null) continue;
@@ -89,7 +103,7 @@ async function inheritInto(kv: SeenKv, pred: Predecessor, map: SeenMap): Promise
       const y = sy * SECTION_SIZE + (Math.floor(local / SECTION_SIZE) % SECTION_SIZE);
       const z = sz * SECTION_SIZE + Math.floor(local / (SECTION_SIZE * SECTION_SIZE));
       if (map.read(x, y, z) !== undefined) continue;
-      map.record(x, y, z, cell.name, cell.lastSeen);
+      put(x, y, z, cell.name, cell.lastSeen);
       count++;
     }
   }
@@ -173,18 +187,37 @@ export function createSeenWiring(opts: SeenWiringOptions): SeenWiring {
     });
   }
 
+  // This life's own stored cells come first (a restart of the same life), then the predecessor fills the gaps.
   const pred = opts.predecessor;
-  const ready: Promise<void> =
-    opts.kv === undefined ||
-    !pred ||
-    opts.agentId === undefined ||
-    pred.agentId !== opts.agentId ||
-    pred.lifeId === opts.lifeId
+  const kv = opts.kv;
+  const ready: Promise<void> = (
+    kv === undefined
       ? Promise.resolve()
-      : inheritInto(opts.kv, pred, map).then(
-          () => undefined,
-          (error: unknown) => log(`seen inheritance failed: ${String(error)}`),
-        );
+      : loadLifeInto(kv, opts.lifeId, map, (x, y, z, name, tick) =>
+          map.restore(x, y, z, name, tick),
+        )
+  )
+    .then(
+      () => undefined,
+      (error: unknown) => log(`seen reload failed: ${String(error)}`),
+    )
+    .then(() => {
+      if (
+        kv === undefined ||
+        !pred ||
+        opts.agentId === undefined ||
+        pred.agentId !== opts.agentId ||
+        pred.lifeId === opts.lifeId
+      ) {
+        return undefined;
+      }
+      return loadLifeInto(kv, pred.lifeId, map, (x, y, z, name, tick) =>
+        map.record(x, y, z, name, tick),
+      ).then(
+        () => undefined,
+        (error: unknown) => log(`seen inheritance failed: ${String(error)}`),
+      );
+    });
 
   return {
     map,
