@@ -240,17 +240,17 @@ git grep -nE '^GRANT EXECUTE|^\s+GRANT EXECUTE' -- 'sql/*.sql'
 | `operator_set_player_flags(TEXT, BOOLEAN, BOOLEAN)` | 0034 | operator sets a player's two flags; returns `ok`, `unknown-player`, `retired-player`, `no-flags` or `too-soon`; one audit row per call |
 | `register_session_mint_owner_key(...)`, `register_session_list_owner_keys(BYTEA)`, `register_session_revoke_owner_key(BYTEA, TEXT)` | 0035 | owner API keys by cookie session |
 | `register_owner_list_players(TEXT)`, `register_owner_get_player(TEXT, TEXT)` | 0036 | owner's players by owner id |
-| `register_account_delete(BYTEA)` | 0039, 0040, 0053, 0067 | account deletion ([below](#data-retention-and-erasure)) |
+| `register_account_delete(BYTEA)` | 0039, 0040, 0053, 0067, 0068 | account deletion ([below](#data-retention-and-erasure)) |
 | `register_skin_submit(BYTEA, TEXT, BYTEA, BYTEA)` | 0067 | owner skin upload, held as `pending` (decision 0172); refused for a banned owner, a foreign agent, a bad PNG or sha256, and by the pending, lock, wait and daily rules |
 | `register_skin_status(BYTEA, TEXT)` | 0067 | the newest skin upload of the owner's agent: status and reason code only, no bytes |
-| `register_mc_ownership_record(BYTEA, BOOLEAN, TEXT)` | 0068 | records the one-time sign-up Minecraft ownership answer on the identity; returns false and writes nothing for a NULL answer, a malformed profile id, an unknown or tombstoned identity, or an identity already checked; one `mc.ownership` audit row per recorded answer (`owns-java` or `no-java`, actor the hashed owner id). Callable by `geldar_register` only. No SQL gate on the age of the identity: the sign-up path is the only gate (owner decision pending; a caller bug can stamp a legacy owner) |
+| `register_mc_ownership_record(BYTEA, BOOLEAN, TEXT)` | 0068 | records the one-time sign-up Minecraft ownership answer on the identity; returns false and writes nothing for a NULL answer, a malformed profile id, an unknown or tombstoned identity, or an identity already checked; one `mc.ownership` audit row per recorded answer (outcome `recorded`, empty detail, actor the hashed owner id; the audit never carries the answer). Callable by `geldar_register` only. Caller-only: the new-sign-ups-only rule is enforced in the register service layer, not in SQL (decided by the owner); a stored answer is final |
 | `character_sheet_group_valid(JSONB, TEXT[])`, `character_sheet_valid(JSONB)` | 0050 | shape check of `agents.character_sheet` |
 | `agents_sheet_immutable()` | 0050 | trigger: the first non-NULL sheet is the baseline; a change raises |
 | `proficiency_monotonic()` | 0050 | trigger: `xp` and `level` never decrease |
 | `sheet_append_only()` | 0051 | trigger: refuses UPDATE and TRUNCATE, and DELETE unless the transaction names the row's life in `geldar.erase_life` |
 | `sheet_erase_life(TEXT)` | 0051 | erases one life's rows from `rolls`, `decisions`, `xp_evidence`, `character_sheet_adoptions`, `proficiency`, `proficiency_outbox` |
 | `register_roster_add(BYTEA, TEXT)` | 0061 | writes the roster row for a new agent; one audit row per success |
-| `register_owner_export(BYTEA)` | 0062, 0065 | the owner's own rows as one JSON document (`geldar-owner-export/1`) |
+| `register_owner_export(BYTEA)` | 0062, 0065, 0068 | the owner's own rows as one JSON document (`geldar-owner-export/1`) |
 | `managed_life_id(TEXT)` | 0063 | `ag_` plus the first 12 hex digits of SHA-256 of a host key; granted to no one |
 | `supervisor_player_life_id(TEXT, TEXT)` | 0063 | the life id of a live roster player, or NULL |
 | `player_host_config(TEXT)` | 0063 | a managed Body's `display_name`, `harness`, `model`, `character_sheet`, or NULL |
