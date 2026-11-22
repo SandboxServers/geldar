@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { repoRoot } from '../config.ts';
 import type { MemoryRow, ReflectionPromptVars } from '../ports/index.ts';
+import { createOutputValidator, PHASE0_PROGRAMS, PHASE0_VERBS } from '../validate/index.ts';
 import {
   CONTEXT_TOKENS,
   createPromptLibrary,
@@ -184,6 +185,63 @@ describe('prompt library', () => {
     expect(createHash('sha256').update(bytes).digest('hex')).toBe(
       'ee0e1f9750324ba567890ded5bf85ee05da869443cb6f69df112d014860369da',
     );
+  });
+
+  describe('body-api v12 (decision 0425: teach break and plan, never nudge)', () => {
+    const validator = createOutputValidator();
+    const v12 = JSON.parse(
+      readFileSync(join(repoRoot(), 'prompts', 'body-api', 'v12.json'), 'utf8'),
+    ) as {
+      version: number;
+      say: { example: unknown };
+      verbs: { do: string; example: unknown }[];
+      programs: { program: string; example: unknown }[];
+    };
+
+    it('lists exactly the allow-list of verbs, break and plan included, and stays loadable as v12', () => {
+      expect(v12.version).toBe(12);
+      expect(v12.verbs.map((v) => v.do).sort()).toEqual([...PHASE0_VERBS].sort());
+      expect(v12.verbs.map((v) => v.do)).toEqual(expect.arrayContaining(['break', 'plan']));
+      expect(v12.programs.map((p) => p.program).sort()).toEqual(
+        ['travel', 'gather', 'craft', 'rest', 'flee', 'follow', 'build'].sort(),
+      );
+      expect(PHASE0_PROGRAMS).toContain('build');
+      expect(createPromptLibrary({ version: 12 }).bodyApiVersion).toMatch(
+        /^body-api@12\+sha256:[0-9a-f]{12}$/,
+      );
+      expect(DEFAULT_BODY_API_VERSION).toBe(10);
+    });
+
+    it('has one example per verb and program, and each one is accepted by the output validator', () => {
+      for (const v of v12.verbs) {
+        const r = validator.parseThought(JSON.stringify({ reasoning: 'ok', actions: [v.example] }));
+        expect(r.ok ? 'ok' : JSON.stringify(r.errors), v.do).toBe('ok');
+      }
+      for (const p of v12.programs) {
+        const r = validator.parseThought(JSON.stringify({ reasoning: 'ok', intent: p.example }));
+        expect(r.ok ? 'ok' : JSON.stringify(r.errors), p.program).toBe('ok');
+      }
+      expect(validator.parseThought(JSON.stringify(v12.say.example)).ok).toBe(true);
+    });
+
+    it('never suggests building, sets no goal to build and names no observer', () => {
+      const strings = (value: unknown): string[] =>
+        typeof value === 'string'
+          ? [value]
+          : Array.isArray(value)
+            ? value.flatMap(strings)
+            : value && typeof value === 'object'
+              ? Object.values(value).flatMap(strings)
+              : [];
+      const text = strings(v12);
+      expect(text.length).toBeGreaterThan(20);
+      for (const s of text) {
+        if (/build/i.test(s)) {
+          expect(s, s).not.toMatch(/\b(should|must|need|needs|try|consider|ought|goal|want)\b/i);
+        }
+      }
+      expect(text.join('\n')).not.toMatch(/observ|watch|record|stream|credit|maker|harness/i);
+    });
   });
 
   it('keeps the bytes of the released templates unchanged (their SHA-256s are pinned)', () => {
