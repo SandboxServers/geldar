@@ -16,6 +16,14 @@ export interface SurveyAsk {
   survey(box: SurveyBox, nowTick: number): SurveyReply;
 }
 
+/**
+ * The Mind-link server's `survey` option for a Body whose seen wiring exists (the building flag is on):
+ * each request is answered from that map at the tick `now` returns.
+ */
+export function surveyFrom(seen: SurveyAsk, now: () => number): (request: unknown) => unknown {
+  return (request) => answerSurvey(seen, request, now(), true);
+}
+
 /** The survey reply, or a refusal: the building flag is off, or the request is outside the contract. */
 export type SurveyAnswer = SurveyReply | { error: 'invalid_input' | 'not_available' };
 

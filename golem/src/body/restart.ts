@@ -1,7 +1,8 @@
 import { connectNats } from '@geldar/contract/nats';
 import { jetstream } from '@nats-io/jetstream';
-import { Kvm } from '@nats-io/kv';
+import { type KV, Kvm } from '@nats-io/kv';
 import { PLAN_BUCKET, SEEN_BUCKET } from '../building/names.ts';
+import type { SeenKv } from '../building/seen/store.ts';
 import { PlanPersistence, planKvOf, resumePlanLane } from '../building/wire-plan-store.ts';
 import { hostAllowed } from '../config.ts';
 import { golemNatsAuth } from '../nats-credentials.ts';
@@ -47,7 +48,12 @@ export type RestartOutcome =
 export interface RestartBodyOptions
   extends Omit<CreateBodyOptions, 'bodyGeneration' | 'checkpoints'> {
   /** The two buckets. */
-  kv: { generations: BodyKv; checkpoints: BodyKv; plans?: BodyKv; seen?: BodyKv };
+  kv: { generations: BodyKv; checkpoints: BodyKv; plans?: BodyKv; seen?: SeenKv };
+  /**
+   * The agent whose seen map this Body keeps (BLD-38g): the seen KV is read and written under it. The
+   * caller passes the life's own agent; a restart never reads another agent's map.
+   */
+  agentId?: string;
   /** Wait before the `no_plan` wake, in ms. Default `NO_PLAN_WAIT_MS` (45 s). */
   noPlanWaitMs?: number;
   /** Starts a timer and returns its cancel function; default `setTimeout`. */
@@ -97,6 +103,26 @@ export function assertLoopbackNatsUrl(
 }
 
 /**
+ * Adapts a JetStream KV bucket to the seen store's `SeenKv` (BLD-38g). `list` returns the live keys
+ * under `prefix`, using the subject filter `prefix>`; a deleted key is not listed.
+ */
+export function natsSeenKv(kv: KV): SeenKv {
+  return {
+    put: (key, value) => kv.put(key, value),
+    get: async (key) => {
+      const entry = await kv.get(key);
+      return entry === null || entry.operation !== 'PUT' ? null : entry.string();
+    },
+    delete: (key) => kv.delete(key),
+    list: async (prefix) => {
+      const keys: string[] = [];
+      for await (const key of await kv.keys(`${prefix}>`)) keys.push(key);
+      return keys;
+    },
+  };
+}
+
+/**
  * Opens NATS and the two buckets (created when missing); `close` drops the connection. The URL
  * must be on loopback. The connection reconnects without end, waiting 1 s, 2 s, ... up to 15 s
  * between tries (the wait starts over after a successful reconnect).
@@ -121,7 +147,7 @@ export async function openRestartKv(
     const generations = natsBodyKv(await kvm.create(GENERATION_BUCKET));
     const checkpoints = natsBodyKv(await kvm.create(CHECKPOINT_BUCKET));
     const plans = natsBodyKv(await kvm.create(PLAN_BUCKET));
-    const seen = natsBodyKv(await kvm.create(SEEN_BUCKET));
+    const seen = natsSeenKv(await kvm.create(SEEN_BUCKET));
     return {
       kv: { generations, checkpoints, plans, seen },
       close: () => nc.close().then(() => undefined),
@@ -146,7 +172,16 @@ export async function restartBody(options: RestartBodyOptions): Promise<Restarte
     options.lifeId,
     options.generation,
   );
-  const { kv, noPlanWaitMs, schedule, generation: _g, log, bindThreat, ...bodyOptions } = options;
+  const {
+    kv,
+    noPlanWaitMs,
+    schedule,
+    generation: _g,
+    log,
+    bindThreat,
+    agentId,
+    ...bodyOptions
+  } = options;
   // The policy is bound to this generation's draws before the Body is built, so nothing decides first.
   const threat = bindThreat?.(generation);
   // The plan store is kept only with body_actions.building on (BLD-05 wiring); off, nothing is stored.
@@ -163,6 +198,13 @@ export async function restartBody(options: RestartBodyOptions): Promise<Restarte
     ...bodyOptions,
     bodyGeneration: generation,
     checkpoints: { kv: kv.checkpoints, ...(log === undefined ? {} : { log }) },
+    // The seen map is kept under this life's agent. No predecessor is passed: a restart is the same
+    // life (lifeId is the account), and no source for a predecessor life id exists yet (see the report).
+    seen: {
+      ...(kv.seen === undefined ? {} : { kv: kv.seen }),
+      ...(agentId === undefined ? {} : { agentId }),
+      ...(log === undefined ? {} : { log }),
+    },
     ...(threat === undefined ? {} : { threat }),
     ...(persistence === null ? {} : { planStore: persistence }),
   });
