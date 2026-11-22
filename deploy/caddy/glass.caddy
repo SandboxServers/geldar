@@ -58,7 +58,9 @@ glass.{$GELDAR_DOMAIN} {
 
 	# The page and its assets (glass/src/static-files.ts serves exactly these files): the markup, the stylesheets,
 	# the page script and its modules, the service worker and manifest of the installable app, the two typefaces
-	# and the app icons. glass/test/caddy-paths.test.ts holds this line to that table.
+	# and the app icons. glass/test/caddy-paths.test.ts holds this line to that table. The route went to main ahead
+	# of the page (PR #893), because the deploy pipeline rolls a Glass image by itself and never applies a Caddy
+	# change: load this file on the node before a Glass image with a new page file is deployed.
 	@glass_page path / /fonts.css /app.css /entries.css /reader.css /app.js /sw.js /manifest.webmanifest /js/* /fonts/* /icons/*
 	handle @glass_page {
 		reverse_proxy {$GELDAR_GLASS_UPSTREAM} {

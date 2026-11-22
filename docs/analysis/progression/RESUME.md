@@ -10,11 +10,11 @@ Ledger: `README.md`. Packets: `work-packets.md`. Record: `docs/decisions/0385-pr
 
 ## Next action
 
-Open the X0 PR (docs only) and request Cadacious's review of revised 0385. Ask the owner D-PR-04 (sheet held-live ruling) and D-PR-05 (levels) first: X2c onward needs both. Dispatch X1, X2a and X2b when the owner says to.
+Open the X0 PR (docs only) and request the owner's review of revised 0385. Ask the owner D-PR-04 (sheet held-live ruling) and D-PR-05 (levels) first: X2c onward needs both. Dispatch X1, X2a and X2b when the owner says to.
 
 ## Open for the owner
 
-- D-PR-01 accept revised 0385 (Cadacious).
+- D-PR-01 accept revised 0385 (owner).
 - D-PR-04 the sheet held-live ruling (2026-11-15) blocks XP on colo.
 - D-PR-02 to D-PR-09 in the ledger.
 

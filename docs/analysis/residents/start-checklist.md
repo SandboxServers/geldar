@@ -15,7 +15,7 @@ Persona folders: `docs/analysis/residents/personas/<id>/memory/` (identity.md, g
 
 ## Steps (as run for Lewis, Clark, Chapman and MacDonald)
 
-1. Owner approval of the resident and its skin (unlisted upload), and the cap: cadacious is at 13 of 15 players, the cap needs about 20 for all six.
+1. Owner approval of the resident and its skin (unlisted upload), and the cap: the owner's account is at 13 of 15 players, the cap needs about 20 for all six.
 2. geldar-residents asks scriptorium-orchestrator for the public repo SandboxServers/player-<name> (the owner's yes must be given in scriptorium's own session).
 3. geldar-worldops (with geldar-93's go): roster-add, player record, bare token file at the owner's config folder named <id>.token, public camera and delayed public thoughts on, Glass alias, shard config PR (colo.yaml and colo-mind.yaml), skin upload and import, whitelist, Glass restart.
 4. scriptorium builds the host (`geldar-play new`) once the token exists, reports ready.

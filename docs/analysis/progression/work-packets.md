@@ -3,7 +3,7 @@
 ## Dispatch rules
 
 - One `packet-coder` per packet, in its own worktree from `origin/main`. One-packet waves: no integration branch.
-- **No progression code merges before D-PR-01** (Cadacious accepts revised 0385). Packets may be written, committed, pushed and reviewed; their PRs stay open.
+- **No progression code merges before D-PR-01** (the owner accepts revised 0385). Packets may be written, committed, pushed and reviewed; their PRs stay open.
 - Rules inlined here, since the coder does not read CLAUDE.md:
   - A behaviour change needs a test that fails when the change is reverted. Check that it does.
   - Files: soft cap 500 lines, hard cap 700 (JSON counts). Near the cap now: `threshold/mcp/src/config.ts` 474, `contract/src/index.ts` 595, `golem/src/body/executor.ts` 501, `contract/schemas/thought.schema.json` 412. Put new logic in new files.
