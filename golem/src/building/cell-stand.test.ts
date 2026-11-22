@@ -98,10 +98,10 @@ const ctx = {
 } as unknown as ActionContext;
 
 const stone = (at: Cell): PlanCell => ({ at, prior: 'air', target: 'stone' });
-const noPlan = (): boolean => false;
+const noPlan = async (): Promise<Cell[]> => [];
 /** Membership over a plan array: the cells the plan works, as the lane answers them. */
-const onPlanOf = (plan: PlanCell[]) => (c: Cell) =>
-  plan.some((p) => p.at.x === c.x && p.at.y === c.y && p.at.z === c.z);
+const onPlanOf = (plan: PlanCell[]) => async (cells: readonly Cell[]) =>
+  cells.filter((c) => plan.some((p) => p.at.x === c.x && p.at.y === c.y && p.at.z === c.z));
 
 describe('doCellAt: the stand path', () => {
   it('walks to the stand the solver picks when the target is out of reach from the feet', async () => {

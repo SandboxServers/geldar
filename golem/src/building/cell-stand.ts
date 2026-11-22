@@ -69,13 +69,19 @@ export function pickStand(target: Cell, port: StandPort, held: HeldBlock[]): Sta
   return 'none';
 }
 
+/**
+ * Of the scaffold cells given, the ones that sit on a plan cell (removed after the cell is worked).
+ * Async so the plan's layers can be read in slices (see layer-keys.ts).
+ */
+export type Removals = (cells: readonly Cell[]) => Promise<Cell[]>;
+
 /** Works one planned cell through the stand path. Without a `stand` port this is doCell alone. */
 export async function doCellAt(
   ctx: ActionContext,
   cell: PlanCell,
   env: CellEnv,
   handlers: CellHandlers,
-  onPlan: (c: Cell) => boolean,
+  removals: Removals,
 ): Promise<CellCode> {
   const port = handlers.stand;
   if (port === undefined) return doCell(ctx, cell, env, handlers);
@@ -86,7 +92,7 @@ export async function doCellAt(
     return doCell(ctx, cell, env, handlers);
   }
   const stand = pickStand(cell.at, port, env.held());
-  if (stand === 'none') return withScaffold(ctx, cell, env, handlers, port, onPlan);
+  if (stand === 'none') return withScaffold(ctx, cell, env, handlers, port, removals);
   if (!sameCell(stand, port.feet())) {
     const walked = await walkTo(ctx, handlers.goto, stand);
     if (walked !== null) return walked;
@@ -119,18 +125,20 @@ async function withScaffold(
   env: CellEnv,
   handlers: CellHandlers,
   port: StandPort,
-  onPlan: (c: Cell) => boolean,
+  removals: Removals,
 ): Promise<CellCode> {
+  // `onPlan` is not asked here: the removals are read once the placed cells are known (see below).
   const sc = scaffoldFor({
     target: cell.at,
     at: port.feet(),
     stand: 'none',
     held: env.held(),
-    onPlan,
+    onPlan: () => false,
     solid: (c) => port.world(c.x, c.y, c.z)?.boundingBox === 'block',
   });
   if (sc.kind === 'missing_materials') return 'missing_materials';
   if (sc.kind !== 'scaffold') return doCell(ctx, cell, env, handlers);
+  const remove = await removals(sc.place);
   for (const at of sc.place) {
     const placed = await handlers.place.run(ctx, { do: 'place', block: sc.block, at });
     const failed = failedCode(placed, () => confirmsPlacement(env.blockAt(at) ?? '', sc.block));
@@ -138,7 +146,7 @@ async function withScaffold(
     recordOwnPlacement(ctx.bot, at, sc.block);
   }
   const code = await doCell(ctx, cell, env, handlers);
-  for (const at of [...sc.remove].reverse()) {
+  for (const at of [...remove].reverse()) {
     await handlers.dig.run(ctx, { do: 'break', at });
   }
   return code;
