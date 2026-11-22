@@ -29,7 +29,20 @@ export interface PlanCheckBody {
   sliceFor?: () => number;
   /** Told each layer as the walk materializes it (a measuring hook; the answer does not use it). */
   layers?: LayerObserver;
+  /** Told the walk's progress about every PROGRESS_EVERY_MS while it runs (a chunk on the reply inbox). */
+  progress?: (report: PlanCheckProgress) => void;
+  /** The clock progress is paced by, in ms; default Date.now. */
+  clock?: () => number;
 }
+
+/** A progress chunk: the layers the walk has materialized and the cells it has counted so far. */
+export interface PlanCheckProgress {
+  layers_done: number;
+  cells_checked: number;
+}
+
+/** How often a running walk reports progress, in ms; the gateway's stall window is longer. */
+export const PROGRESS_EVERY_MS = 1_000;
 
 /** The part of the Body's bot a dry run reads: its inventory and its position. */
 export interface PlanCheckBot {
@@ -62,16 +75,21 @@ export function planCheckFrom(
   seen: SeenMap,
   bot: PlanCheckBot,
   lifeSignal?: AbortSignal,
-): (request: unknown) => Promise<unknown> {
+): (request: unknown, progress?: (report: PlanCheckProgress) => void) => Promise<unknown> {
   let running: AbortController | null = null;
-  return (request) => {
+  return (request, progress) => {
     running?.abort();
     const walk = new AbortController();
     running = walk;
     const signal =
       lifeSignal === undefined ? walk.signal : AbortSignal.any([walk.signal, lifeSignal]);
     return answerPlanCheck(
-      { seen, pack: () => packOf(bot), feet: () => feetOf(bot) },
+      {
+        seen,
+        pack: () => packOf(bot),
+        feet: () => feetOf(bot),
+        ...(progress === undefined ? {} : { progress }),
+      },
       request,
       true,
       signal,
@@ -119,6 +137,15 @@ async function dryRun(
   let unknown = 0;
   let inSlice = 0;
   let limit = sliceLimit(sliceFor);
+  const clock = body.clock ?? Date.now;
+  let lastReport = clock();
+  let layersDone = 0;
+  const layerCount: LayerObserver = {
+    onLayer: (y, size) => {
+      layersDone++;
+      body.layers?.onLayer?.(y, size);
+    },
+  };
   for (const [index, step] of plan.steps.entries()) {
     if (signal?.aborted) throw new WalkAborted('superseded');
     if (namesMissingKey(step, plan)) {
@@ -132,7 +159,7 @@ async function dryRun(
       const layers = lazyBottomUp(
         { palette: plan.palette, steps: [step] } as PlanSpec,
         base,
-        body.layers,
+        layerCount,
       );
       for (const cell of layers) {
         stepCells++;
@@ -142,6 +169,10 @@ async function dryRun(
           inSlice = 0;
           limit = sliceLimit(sliceFor);
           await pause(signal);
+          if (body.progress !== undefined && clock() - lastReport >= PROGRESS_EVERY_MS) {
+            lastReport = clock();
+            body.progress({ layers_done: layersDone, cells_checked: cells + stepCells });
+          }
         }
       }
     } catch (error) {

@@ -11,6 +11,7 @@ import {
   viewSubject,
 } from '@geldar/contract';
 import {
+  type ChunkStream,
   NatsBodyLink,
   REQUEST_TIMEOUT_MS,
   type RequestTransport,
@@ -37,8 +38,36 @@ const VIEW_TIMEOUT_MS = 5_000;
 /** How long a `survey` request waits for the Body's reply (the packet's 5 s). */
 const SURVEY_TIMEOUT_MS = 5_000;
 
-/** How long a `plan_check` request waits for the Body's dry run (the packet's 5 s). */
-const PLAN_CHECK_TIMEOUT_MS = 5_000;
+/**
+ * How long a `plan_check` may go without a chunk (a progress report or the final reply) before it is
+ * stalled. There is no cap on the plan's size (decision 0423): a long walk that keeps reporting is not cut off.
+ */
+export const PLAN_CHECK_IDLE_MS = 5_000;
+
+/** The request a requester that gave up sends so the Body stops its walk; the Body answers it as invalid input. */
+const PLAN_CHECK_CANCEL = JSON.stringify({ cancel: true });
+
+/** True for a progress chunk (an object with a `progress` key). Any other chunk is the final reply. */
+function isProgressChunk(text: string): boolean {
+  try {
+    const value = JSON.parse(text) as unknown;
+    return typeof value === 'object' && value !== null && 'progress' in value;
+  } catch {
+    return false;
+  }
+}
+
+/** The next chunk of a stream; rejects as stalled when none arrives within `ms`. */
+function nextChunk(stream: ChunkStream, ms: number): Promise<string | null> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const idle = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`plan check stalled: no progress or reply for ${ms} ms`)),
+      ms,
+    );
+  });
+  return Promise.race([stream.next(), idle]).finally(() => clearTimeout(timer));
+}
 
 /** How long a `see` request waits for the Body's picture (the packet's 5 s). */
 const SEE_TIMEOUT_MS = 5_000;
@@ -85,6 +114,8 @@ export class NatsBodyGateway implements BodyGateway {
   private readonly shard: string;
   private readonly timeoutMs: number;
   private readonly links = new Map<string, NatsBodyLink>();
+  private readonly checks = new Map<string, number>();
+  private checkSeq = 0;
 
   constructor(options: NatsBodyGatewayOptions) {
     this.transport = options.transport;
@@ -140,16 +171,17 @@ export class NatsBodyGateway implements BodyGateway {
   }
 
   /**
-   * The Body's dry run of a plan (BLD-22b). The Body's `plan_too_large` refusal comes back as data; any
-   * other reply the contract does not accept (the flag-off `not_available` included) rejects with `BodyUnavailable`.
+   * The Body's dry run of a plan (BLD-22b). The Body streams progress chunks on the request's reply inbox;
+   * each one resets the idle timer, and the first other chunk is the final reply. A plan with no chunk for
+   * `PLAN_CHECK_IDLE_MS` is stalled: the gateway cancels the Body's walk and rejects. The Body's `plan_too_large`
+   * refusal comes back as data; any other reply the contract does not accept (the flag-off `not_available` included)
+   * rejects with `BodyUnavailable`.
    */
   planCheck(lifeId: string, request: { plan: unknown }): Promise<unknown> {
     return this.guard(lifeId, 'plan_check', async (): Promise<unknown> => {
-      const text = await this.transport.request(
-        planCheckSubject(this.shard, lifeId),
-        JSON.stringify(request),
-        PLAN_CHECK_TIMEOUT_MS,
-      );
+      const subject = planCheckSubject(this.shard, lifeId);
+      const token = this.nextCheck(lifeId);
+      const text = await this.readCheck(subject, JSON.stringify(request), lifeId, token);
       const reply = JSON.parse(text) as unknown;
       if (
         typeof reply === 'object' &&
@@ -195,6 +227,51 @@ export class NatsBodyGateway implements BodyGateway {
       if (!verdict.ok) throw new Error('see reply failed validation');
       return { png: verdict.value.png };
     });
+  }
+
+  /** Marks `lifeId`'s newest plan_check; returns its token so a failed one is cancelled only if still newest. */
+  private nextCheck(lifeId: string): number {
+    this.checkSeq += 1;
+    this.checks.set(lifeId, this.checkSeq);
+    return this.checkSeq;
+  }
+
+  /**
+   * Reads one plan_check's chunks until the final reply. A stall, or any failure, closes the stream and, when
+   * this is still the life's newest plan_check, sends the Body a cancel so its walk stops.
+   */
+  private async readCheck(subject: string, body: string, lifeId: string, token: number) {
+    const stream = this.openStream(subject, body);
+    try {
+      for (;;) {
+        const chunk = await nextChunk(stream, PLAN_CHECK_IDLE_MS);
+        if (chunk === null) throw new Error('plan check ended without a reply');
+        if (!isProgressChunk(chunk)) return chunk;
+      }
+    } catch (cause) {
+      if (this.checks.get(lifeId) === token) {
+        this.transport
+          .request(subject, PLAN_CHECK_CANCEL, PLAN_CHECK_IDLE_MS)
+          .catch(() => undefined);
+      }
+      throw cause;
+    } finally {
+      stream.close();
+    }
+  }
+
+  /** The chunk stream of a request; a transport without streaming gets its one reply as the only chunk. */
+  private openStream(subject: string, body: string): ChunkStream {
+    if (this.transport.stream !== undefined) return this.transport.stream(subject, body);
+    let pending: Promise<string> | null = this.transport.request(subject, body, PLAN_CHECK_IDLE_MS);
+    return {
+      next: () => {
+        const first = pending;
+        pending = null;
+        return first ?? Promise.resolve(null);
+      },
+      close: () => undefined,
+    };
   }
 
   /** Runs one request; every failure, a timeout or an invalid reply included, is unavailability. */

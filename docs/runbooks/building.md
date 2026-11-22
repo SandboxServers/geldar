@@ -48,8 +48,10 @@ it with the owner.
 - **Survey box:** a box over 32768 cells is refused as `box_too_large`; the MCP tool returns `invalid_input`.
 - **plan_check:** no cell cap (decision 0423). The dry run streams the plan one step and one layer at a time,
   yields to the event loop between slices, and counts every cell; a new `plan_check` or the Body ending stops the
-  walk in progress (it answers `not_available`). At most 256 `invalid_steps` are returned. The contract has no
-  `maxItems` on `invalid_steps`.
+  walk in progress (it answers `not_available`). The walk streams `{"progress":{layers_done, cells_checked}}` chunks
+  on the request's reply about once a second; the gateway's idle timer (5 s with no chunk) resets on each chunk, so
+  a long plan is not cut off, and a stall fails as `plan check stalled` with a cancel sent to the Body. No size cap
+  applies (decision 0423). At most 256 `invalid_steps` are returned. The contract has no `maxItems` on `invalid_steps`.
 - **plan:** no size cap. A very large plan (for example a sphere of radius 60 or more) is expanded in full before it
   runs; see the known gaps in RESUME.md. Only the lane throttle limits the work per tick.
 - **Facing:** a block state is accepted only as stairs `half`. `facing`, `axis` and other keys are refused by name

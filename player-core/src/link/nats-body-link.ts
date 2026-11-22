@@ -12,7 +12,12 @@ import {
   validatePlanAck,
   validateSnapshot,
 } from '@geldar/contract';
-import { type NatsConnection, NoRespondersError, TimeoutError } from '@nats-io/transport-node';
+import {
+  createInbox,
+  type NatsConnection,
+  NoRespondersError,
+  TimeoutError,
+} from '@nats-io/transport-node';
 import { type BodyLink, BodyLinkError } from '../ports/index.ts';
 
 /** How long a request waits for the Body's reply (spec 5.3.2: the Body's ack is due within 2 s). */
@@ -27,11 +32,39 @@ const REASON_LIMIT = 64;
  */
 export interface RequestTransport {
   request(subject: string, body: string, timeoutMs: number): Promise<string>;
+  /**
+   * Optional. Sends one request and yields every message its responder sends to the request's reply
+   * inbox, so a responder may send progress chunks before its final reply. The caller reads with
+   * `next` (its own idle timer) and must call `close`, which ends the inbox subscription.
+   */
+  stream?(subject: string, body: string): ChunkStream;
+}
+
+/** The reply chunks of one streamed request. `next` resolves null once the stream is closed. */
+export interface ChunkStream {
+  next(): Promise<string | null>;
+  close(): void;
 }
 
 /** A `RequestTransport` over a NATS connection. */
 export function natsRequestTransport(nc: NatsConnection): RequestTransport {
   return {
+    stream(subject, body) {
+      // A fresh inbox per request, subscribed before the request is published, so no chunk is missed.
+      const inbox = createInbox();
+      const sub = nc.subscribe(inbox);
+      const messages = sub[Symbol.asyncIterator]();
+      nc.publish(subject, body, { reply: inbox });
+      return {
+        async next() {
+          const step = await messages.next();
+          return step.done ? null : step.value.string();
+        },
+        close() {
+          sub.unsubscribe();
+        },
+      };
+    },
     async request(subject, body, timeoutMs) {
       try {
         const reply = await nc.request(subject, body, { timeout: timeoutMs });

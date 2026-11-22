@@ -60,7 +60,7 @@ const SURVEY_NOT_AVAILABLE = JSON.stringify({ error: 'not_available' });
  * `not_available` refusal when no answer is wired or the request is not JSON.
  */
 async function answerFrom(
-  answer: ((request: unknown) => unknown) | undefined,
+  answer: ((request: unknown, send: (body: string) => void) => unknown) | undefined,
   data: string,
   reply: (body: string) => void,
 ): Promise<void> {
@@ -71,7 +71,7 @@ async function answerFrom(
     request = undefined;
   }
   if (answer === undefined || request === undefined) reply(SURVEY_NOT_AVAILABLE);
-  else reply(JSON.stringify(await answer(request)));
+  else reply(JSON.stringify(await answer(request, reply)));
 }
 
 /** The `ViewInput` of a view request, or null when the request is not one the contract accepts. */
@@ -86,7 +86,8 @@ function parseViewRequest(data: string): ViewInput | null {
 
 /**
  * Where requests arrive: `serve` calls `handler` for each message on `subject`; `reply` sends the
- * answer (it may be called once, or not at all). Returns the function that stops serving.
+ * answer. It may be called several times for one request (progress chunks, then the final answer), or not
+ * at all. Returns the function that stops serving.
  */
 export interface RequestServer {
   serve(
@@ -139,7 +140,10 @@ export interface MindLinkServerOptions {
   /** Answers a survey request from the seen map (BLD-38e). Without it `survey` is refused as not_available. */
   survey?: (request: unknown) => unknown;
   /** Answers a plan_check request with the dry run (BLD-22b). Without it `plan_check` is refused as not_available. */
-  planCheck?: (request: unknown) => unknown;
+  planCheck?: (
+    request: unknown,
+    progress: (report: { layers_done: number; cells_checked: number }) => void,
+  ) => unknown;
   /** World age now. */
   tick: () => number;
   /** Where `plan_result` events go (JetStream in production). */
@@ -177,9 +181,23 @@ export class MindLinkServer {
         Promise.resolve(this.onSurveyRequest(data, reply)),
       ),
       server.serve(planCheckSubject(shard, lifeId), (data, reply) =>
-        Promise.resolve(answerFrom(this.opts.planCheck, data, reply)),
+        this.onPlanCheckRequest(data, reply),
       ),
     );
+  }
+
+  /**
+   * Answers a plan_check request. A running walk sends `{"progress":{...}}` chunks on the same reply
+   * inbox, then the final answer; the requester's idle timer resets on each chunk.
+   */
+  private onPlanCheckRequest(data: string, reply: (body: string) => void): Promise<void> {
+    const check = this.opts.planCheck;
+    const answer =
+      check === undefined
+        ? undefined
+        : (request: unknown, send: (body: string) => void) =>
+            check(request, (report) => send(JSON.stringify({ progress: report })));
+    return answerFrom(answer, data, reply);
   }
 
   /** Answers a survey request with the seen map's read, or `{"error":"not_available"}` when none is wired. */
