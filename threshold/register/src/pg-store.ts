@@ -286,6 +286,15 @@ export class PgStore implements Store, SessionStore {
     return r.rows[0]?.ok === true;
   }
 
+  /** Stores the one-time Minecraft Java answer (register_mc_ownership_record, 0068). False when the function refuses. */
+  async recordMcOwnership(identityHash: string, ownsJava: boolean): Promise<boolean> {
+    const r = await this.pool.query('SELECT register_mc_ownership_record($1, $2, NULL) AS ok', [
+      hex(identityHash),
+      ownsJava,
+    ]);
+    return r.rows[0]?.ok === true;
+  }
+
   /**
    * The owner's data export (register_owner_export, migrations 0062 and 0065): the document as JSON text, or null when
    * the identity has no owner row. The text is cast in SQL, so the driver does not parse it and the route writes it as

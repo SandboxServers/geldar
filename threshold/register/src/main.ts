@@ -31,7 +31,11 @@ const server = createRegisterServer({
   config,
   store,
   sessions: store,
-  providers: { microsoft: microsoftProvider(config.microsoft) },
+  providers: {
+    microsoft: microsoftProvider(config.microsoft, {
+      requireMcOwnership: config.requireMcOwnership,
+    }),
+  },
   fetch: (url, init) => fetch(url, init),
   now: () => Date.now(),
   log,

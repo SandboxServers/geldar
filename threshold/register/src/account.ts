@@ -9,6 +9,14 @@ import type { AccountDeleteDeps } from './api/account-data-delete.ts';
 import type { RegisterConfig } from './config.ts';
 import { errorPage } from './errors.ts';
 import type { Identity } from './identity.ts';
+import { ownershipRefusedPage } from './mc-ownership-pages.ts';
+import {
+  decideOwnership,
+  isRefusal,
+  type OwnershipCheck,
+  recordOwnership,
+  UNRECORDED_REFUSAL,
+} from './mc-signup-gate.ts';
 import {
   mcpBaseFor,
   ONBOARDING_CSP,
@@ -150,6 +158,7 @@ export class Account {
     identity: Identity,
     res: ServerResponse,
     consent = false,
+    verify?: OwnershipCheck,
   ): Promise<void> => {
     const { store, sessions, config, now, log } = this.deps;
     const outcome = await this.serial(async () => {
@@ -158,11 +167,22 @@ export class Account {
       if (found) return found.ownerId;
       // Sign-up needs the consent box (C7-08): no owner row without it.
       if (!consent) return 'consent' as const;
+      // The Minecraft Java gate runs for a NEW sign-up only, before the owner row exists (flag off: skipped).
+      if (config.requireMcOwnership) {
+        const result = await decideOwnership(verify, identity.provider, log);
+        if (isRefusal(result)) return { refused: result };
+      }
       const ownerId = `reg-${identity.identityHash.slice(0, 24)}`;
       await store.createOwner(identity, ownerId, TERMS_VERSION);
+      if (config.requireMcOwnership && !(await recordOwnership(store, identity.identityHash, log)))
+        return { refused: UNRECORDED_REFUSAL };
       return ownerId;
     });
     const clearState = `${STATE_COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax`;
+    if (typeof outcome === 'object') {
+      log(`sign-up refused provider=${identity.provider} reason=ownership`);
+      return html(res, 403, ownershipRefusedPage(outcome.refused), { 'set-cookie': clearState });
+    }
     if (outcome === 'banned') {
       log(`sign-in refused provider=${identity.provider} reason=banned`);
       return html(res, 403, REFUSED_PAGE, { 'set-cookie': clearState });

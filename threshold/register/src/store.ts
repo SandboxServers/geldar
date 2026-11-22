@@ -43,6 +43,10 @@ export interface Store {
     ownerId: string,
     termsVersion: string,
   ): Promise<void>;
+  /** Records the one-time Minecraft Java answer through register_mc_ownership_record (0068). Optional: absent means the gate fails closed. */
+  recordMcOwnership?(identityHash: string, ownsJava: boolean): Promise<boolean>;
+  /** Removes an account (register_account_delete). Optional: used only to undo a sign-up whose ownership record failed. */
+  eraseAccount?(identityHash: string): Promise<boolean>;
   listPlayers(identityHash: string): Promise<PlayerRow[]>;
   /** Creates the life, player, budget and first token in register_create_player; limit is the lifetime cap of 10 (R36). */
   createPlayer(
