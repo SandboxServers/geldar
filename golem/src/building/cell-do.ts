@@ -7,9 +7,15 @@ import { MINE_CELL_MESSAGE } from '../actions/mine-cell.ts';
 import type { ActionOutcome } from '../actions/outcome.ts';
 import { recordOwnPlacement } from '../actions/own-placements.ts';
 import { confirmsPlacement, MESSAGE } from '../actions/place.ts';
-import { takesState } from '../actions/place-state.ts';
 import type { ActionContext, ActionHandler } from '../actions/registry.ts';
-import { type BlockRef, parseBlockRef, placeStateOf, propsHold } from './block-ref.ts';
+import {
+  type BlockRef,
+  parseBlockRef,
+  placeStateOf,
+  propsHold,
+  storedProps,
+  takesProps,
+} from './block-ref.ts';
 import { countMaterials, dropOf, holdsToolKind, type ToolKind, toolFor } from './materials.ts';
 import type { HeldBlock } from './scaffold.ts';
 import type { Cell } from './stand.ts';
@@ -73,14 +79,17 @@ export async function doCell(
   const live = env.blockAt(cell.at);
   if (live === null) return 'not_loaded';
   const want = parseBlockRef(cell.target);
-  if (live === want.name && propsHold(env.propsAt(cell.at), want.props)) return 'done_already';
+  if (live === want.name && propsHold(env.propsAt(cell.at), storedProps(want))) {
+    return 'done_already';
+  }
   // A break or a replace has no planned prior: the block there now is the prior, read live.
   const prior = cell.prior ?? live;
   if (live !== prior) return 'changed';
 
-  // A state the block does not take can never be placed: refuse it before anything is broken.
+  // A key the block cannot take (not one the place action sets, nor its stored name) can never be
+  // placed: refuse it before anything is broken, dug, walked to or placed.
+  if (!takesProps(want)) return 'state_unachievable';
   const state = placeStateOf(want);
-  if (state !== undefined && !takesState(want.name, state)) return 'state_unachievable';
 
   const refused = preflight(want, prior, env);
   if (refused !== null) return refused;
@@ -100,7 +109,7 @@ export async function doCell(
   });
   const code = settle(placed, () =>
     confirmsPlacement(env.blockAt(cell.at) ?? '', want.name) &&
-    propsHold(env.propsAt(cell.at), want.props)
+    propsHold(env.propsAt(cell.at), storedProps(want))
       ? null
       : 'blocked',
   );

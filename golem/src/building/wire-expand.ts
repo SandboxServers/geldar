@@ -58,18 +58,23 @@ function toLaneCell(
   const at = { x: cell.x, y: cell.y, z: cell.z };
   if (cell.pal === null) return { at, prior: null, target: 'air' };
   const entry = palette[cell.pal] as { block?: unknown; state?: unknown } | undefined;
-  if (entry === undefined || typeof entry.block !== 'string') {
+  const name = typeof entry?.block === 'string' ? (entry.block.split('[')[0] ?? '') : '';
+  if (entry === undefined || typeof entry.block !== 'string' || !BLOCK_NAME.test(name)) {
     throw new PlanNotRunnable(`palette key ${cell.pal} names no block`);
   }
+  // The state is built outside the try below, so a bad state is reported as one, not as no block.
   const reference = referenceOf(cell.pal, entry.block, entry.state);
   let target: string;
   try {
     target = canonicalBlockRef(parseBlockRef(reference));
   } catch {
-    throw new PlanNotRunnable(`palette key ${cell.pal} names no block`);
+    throw new PlanNotRunnable(`palette key ${cell.pal} has an invalid state`);
   }
   return { at, prior: cell.replaces ? null : 'air', target };
 }
+
+/** A block name as the block reference grammar reads it (lowercase letters, digits, underscore). */
+const BLOCK_NAME = /^[a-z0-9_]+$/;
 
 /** The palette entry as one block reference: the block, then its state as properties (`name[k=v]`). */
 function referenceOf(key: string, block: string, state: unknown): string {
