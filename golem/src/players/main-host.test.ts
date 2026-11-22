@@ -9,6 +9,8 @@ const state = vi.hoisted(() => ({
   failKv: false,
   failPresence: false,
   failProficiency: false,
+  building: false,
+  restartArgs: [] as unknown[][],
 }));
 
 vi.mock('node:fs/promises', async (importOriginal) => ({
@@ -21,6 +23,7 @@ vi.mock('./player-config.ts', () => ({
     shard: 'phase0',
     start: 'never',
     character: undefined,
+    building: state.building,
   }),
 }));
 vi.mock('@geldar/contract/nats', () => ({
@@ -52,7 +55,8 @@ vi.mock('./session.ts', () => ({
 }));
 vi.mock('../body/restart.ts', () => ({
   assertLoopbackNatsUrl: () => undefined,
-  openRestartKv: async () => {
+  openRestartKv: async (...args: unknown[]) => {
+    state.restartArgs.push(args);
     if (state.failKv) throw new Error('kv open failed');
     return {
       kv: {},
@@ -94,6 +98,19 @@ describe('runPlayer shutdown and the connections (AN-12a)', () => {
     state.failKv = false;
     state.failPresence = false;
     state.failProficiency = false;
+    state.building = false;
+    state.restartArgs.length = 0;
+  });
+
+  it('opens the plan and seen buckets when the player config has body_actions.building on (A1)', async () => {
+    state.building = true;
+    await runPlayer('ag-jason-01', undefined, ENV);
+    expect(state.restartArgs).toEqual([['', true]]);
+  });
+
+  it('does not open the plan and seen buckets when body_actions.building is off (A1)', async () => {
+    await runPlayer('ag-jason-01', undefined, ENV);
+    expect(state.restartArgs).toEqual([['', false]]);
   });
 
   it('stops the proficiency cache after the session, before the KV and the connection close', async () => {

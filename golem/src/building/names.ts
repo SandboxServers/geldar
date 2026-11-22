@@ -14,13 +14,3 @@ export const SEEN_BUCKET = 'geldar-seen';
  * materials) is missing (review fix 1).
  */
 export const PLAN_WAKE_REASON = 'precondition_failed';
-/** Metric names for operators (BLD-27); all `geldar_` prefixed, labels carry codes only. */
-export const PLAN_METRICS = {
-  cellsPlaced: 'geldar_plan_cells_placed_total',
-  cellsBroken: 'geldar_plan_cells_broken_total',
-  planSeconds: 'geldar_plan_seconds_total',
-  throttleWaits: 'geldar_plan_throttle_waits_total',
-  seenFlushBytes: 'geldar_seen_flush_bytes_total',
-  seenFlushes: 'geldar_seen_flushes_total',
-  queueDepth: 'geldar_plan_queue_depth',
-} as const;

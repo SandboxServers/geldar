@@ -1,5 +1,7 @@
 // Creates the two identity buckets the Velocity plugin only reads, before velocity starts (scratch stack, the
-// `identity-seed` service of compose/opt-in/scratch.yml). It runs as the scratch-only `seed` NATS user, never as body.
+// `identity-seed` service of compose/opt-in/scratch.yml). It runs as the scratch-only `seed` NATS user, never as body,
+// and that user may create only the two identity streams. The building buckets (geldar-plans, geldar-seen) are not
+// created here: the body creates them itself at each start with body_actions.building on (BLD-fix4a).
 // The bucket configs are golem's own: createRegistryBucket (the life registry, with REGISTRY_TTL_MS) and
 // ensureSkinsBucket (defaults), so a later golem or players-cli run finds the same streams.
 import { connectNats } from '@geldar/contract/nats';
@@ -24,7 +26,8 @@ export async function seedIdentityBuckets(kvm: SeedKvm): Promise<string[]> {
 
 /**
  * Creates the two building buckets (review fix 6) with the same plain create the Body uses at each
- * start, so the settings match and a later Body start finds them. Stops at the first failure.
+ * start, so the settings match and a later Body start finds them. Stops at the first failure. Not
+ * part of `main`: the seed user cannot create these streams, so this is for an explicit use only.
  */
 export async function seedBuildingBuckets(kvm: SeedKvm): Promise<string[]> {
   await kvm.create(PLAN_BUCKET);
@@ -32,18 +35,13 @@ export async function seedBuildingBuckets(kvm: SeedKvm): Promise<string[]> {
   return [PLAN_BUCKET, SEEN_BUCKET];
 }
 
-/** Creates every bucket the seed owns: the identity buckets, then the building buckets. Returns all four names. */
-export async function seedAllBuckets(kvm: SeedKvm): Promise<string[]> {
-  return [...(await seedIdentityBuckets(kvm)), ...(await seedBuildingBuckets(kvm))];
-}
-
-async function main(): Promise<void> {
+/** The seed one-shot: creates the identity buckets only, and logs their names. */
+export async function main(): Promise<void> {
   const url = process.env.GELDAR_NATS_URL;
   if (!url) throw new Error('GELDAR_NATS_URL is not set');
   const nc = await connectNats({ servers: url, name: 'seed-identity-buckets', ...golemNatsAuth() });
   try {
-    const kvm = new Kvm(jetstream(nc));
-    const names = await seedAllBuckets(kvm);
+    const names = await seedIdentityBuckets(new Kvm(jetstream(nc)));
     console.log(`buckets ${names.join(', ')}: present`);
   } finally {
     await nc.close().catch(() => undefined);
