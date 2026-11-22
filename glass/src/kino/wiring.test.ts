@@ -2,13 +2,15 @@ import type { AddressInfo } from 'node:net';
 import { connect } from 'node:net';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { GlassConfig } from '../config.ts';
+import { SECURITY_HEADERS } from '../http.ts';
 import { buildGlass, type GlassParts } from '../server.ts';
+import { STATIC_FILES } from '../static-files.ts';
 import { controlSubject } from './control.ts';
 import { KinoMetrics } from './metrics.ts';
 import { feedSubject } from './nats-feed.ts';
 import { otlpBody, startOtlpExporter } from './otlp.ts';
 import type { FeedSource } from './relay.ts';
-import { loadKinoEnv } from './wiring.ts';
+import { kinoCsp, loadKinoEnv } from './wiring.ts';
 
 const CONFIG: GlassConfig = {
   host: '127.0.0.1',
@@ -82,6 +84,42 @@ describe('Kino default off', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/html');
     expect((await fetch(`http://127.0.0.1:${on.port}/kino/`, { method: 'POST' })).status).toBe(405);
+  });
+
+  it('writes the Kino tab only when the server mounted Kino', async () => {
+    vi.stubEnv('GELDAR_KINO_ENABLED', '1');
+    vi.stubEnv('GELDAR_SHARD', 'colo');
+    const off = await listen();
+    const on = await listen(FEED);
+    const tab = '      <a id="tab-kino" href="/kino/">Kino</a>\n';
+    const offPage = await fetch(`http://127.0.0.1:${off.port}/`);
+    const onPage = await fetch(`http://127.0.0.1:${on.port}/`);
+    const html = String(STATIC_FILES.get('/')?.body);
+    const start = '      <a id="tab-glass" href="/" aria-current="page">Glass</a>\n';
+    expect(await offPage.text()).toBe(html.replace('      <!-- kino-tab -->\n', ''));
+    expect(await onPage.text()).toContain(`${start}${tab}      <a id="tab-map"`);
+    expect(onPage.headers.get('content-security-policy')).toBe(
+      SECURITY_HEADERS['Content-Security-Policy'],
+    );
+  });
+
+  it('adds only self-hosted fonts to the Kino policy and serves the shared assets', async () => {
+    const expected =
+      "default-src 'none'; script-src 'self' 'sha256-example'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data: blob:; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
+    expect(kinoCsp(['example'])).toBe(expected);
+    const { port } = await listen(FEED);
+    const root = `http://127.0.0.1:${port}`;
+    const res = await fetch(`${root}/kino/`);
+    expect(res.headers.get('content-security-policy')?.replace(/ 'sha256-[^']+'/g, '')).toBe(
+      expected.replace(" 'sha256-example'", ''),
+    );
+    for (const path of [
+      '/js/fonts.css',
+      '/js/fonts/dm-mono-latin-400-normal.woff2',
+      '/js/roster.css',
+      '/js/render-sigil.ts',
+    ])
+      expect((await fetch(root + path)).status, path).toBe(200);
   });
 
   it('serves the production entry at /kino/ and keeps the mock feed on /kino/dev.html', async () => {

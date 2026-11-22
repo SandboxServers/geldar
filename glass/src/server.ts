@@ -112,6 +112,7 @@ export function buildGlass(
       db: pool,
       hub,
       policy,
+      kinoMounted: kino !== undefined,
       ...(config.sessionKey === undefined ? {} : { sessionKey: config.sessionKey }),
       ...(kino === undefined ? {} : { extra: (req, res) => kino.http(req, res) }),
     }),

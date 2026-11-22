@@ -31,6 +31,7 @@ describe('the tab bar on a wide screen', () => {
     expect(WIDE).toContain(
       '.tabs { grid-auto-flow: row; grid-template-columns: repeat(4, minmax(0, 1fr)); }',
     );
+    expect(WIDE).toContain('#tab-kino { grid-column: 2; }');
     expect(WIDE).toContain('#tab-map { grid-column: 3; }');
     expect(WIDE).toContain('#tab-roster { grid-column: 4; }');
   });

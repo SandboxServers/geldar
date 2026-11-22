@@ -20,7 +20,7 @@ import {
 import { resolveRoute } from './routes.ts';
 import { resolveViewer } from './session.ts';
 import type { SseHub } from './sse.ts';
-import { pageWithDelay, STATIC_FILES } from './static-files.ts';
+import { pageWithOptions, STATIC_FILES } from './static-files.ts';
 
 /** The longest request target (path and query) Glass reads, in characters (0072 item 4). */
 export const MAX_TARGET_CHARS = 2048;
@@ -56,6 +56,8 @@ export interface GlassHandlerDeps {
   policy?: Partial<PublicPolicy>;
   /** Receives the `glass_untrusted_peer_header` line. Left out: one JSON line on stdout. */
   log?: (entry: { event: string; peer: string }) => void;
+  /** True when this server mounted the Kino page. */
+  kinoMounted?: boolean;
   /** Runs after the kill switch, Host check, size caps and rate limit; true means it answered the request. */
   extra?: (req: IncomingMessage, res: ServerResponse) => boolean;
 }
@@ -212,7 +214,7 @@ export function createHandler(deps: GlassHandlerDeps) {
   const log = deps.log ?? ((entry) => console.log(JSON.stringify(entry)));
   const loggedPeers = new Set<string>();
   // The page says how old the newest thought it shows is: the configured delay is written into it once.
-  const page = pageWithDelay(policy.delaySeconds);
+  const page = pageWithOptions(policy.delaySeconds, deps.kinoMounted === true);
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     for (const [name, value] of Object.entries(SECURITY_HEADERS)) res.setHeader(name, value);
     // The kill switch answers before anything else is read: no route, page or stream is served.

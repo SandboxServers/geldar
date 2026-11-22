@@ -111,6 +111,19 @@ export function withDelay(html: string, delaySeconds: number): string {
   return html.replace(DELAY_SLOT, `data-delay="${seconds}"`);
 }
 
+/** The literal slot includes its line ending so the off page keeps the original markup. */
+const KINO_TAB_SLOT = '      <!-- kino-tab -->\n';
+const KINO_TAB = '      <a id="tab-kino" href="/kino/">Kino</a>\n';
+
+/** The page entry with the configured delay and the link to Kino, if mounted. */
+export function pageWithOptions(delaySeconds: number, kinoMounted: boolean): StaticFile {
+  const page = pageWithDelay(delaySeconds);
+  const html = String(page.body);
+  if (html.split(KINO_TAB_SLOT).length !== 2)
+    throw new Error('index.html has no single Kino tab slot');
+  return { ...page, body: html.replace(KINO_TAB_SLOT, kinoMounted ? KINO_TAB : '') };
+}
+
 /** The page entry of the table with the configured delay in it. */
 export function pageWithDelay(delaySeconds: number): StaticFile {
   const page = STATIC_FILES.get('/') as StaticFile;
