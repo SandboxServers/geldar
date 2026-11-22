@@ -184,7 +184,9 @@ export class MindLinkServer {
 
   /** Answers a survey request with the seen map's read, or `{"error":"not_available"}` when none is wired. */
   private onSurveyRequest(data: string, reply: (body: string) => void): void {
-    answerFrom(this.opts.survey, data, reply);
+    void answerFrom(this.opts.survey, data, reply).catch((error: unknown) =>
+      this.log(`survey not answered: ${String(error)}`),
+    );
   }
 
   /**

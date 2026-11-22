@@ -56,9 +56,12 @@ export function lifeKeys(all: string[], lifeIds: string[]): string[] {
   return all.filter((key) => lifeIds.some((id) => key.startsWith(`${id}.`)));
 }
 
-/** The checkpoint keys of each life: the plan checkpoint `<life_id>.plan` and the body checkpoint `<life_id>`. */
+/**
+ * The checkpoint keys of each life: the plan checkpoint `<life_id>.plan`, the body checkpoint `<life_id>`
+ * and the in-flight record `<life_id>.inflight` (golem/src/body/inflight.ts).
+ */
 export function checkpointKeys(lifeIds: string[]): string[] {
-  return lifeIds.flatMap((id) => [`${id}.plan`, id]);
+  return lifeIds.flatMap((id) => [`${id}.plan`, id, `${id}.inflight`]);
 }
 
 async function bucketFound(

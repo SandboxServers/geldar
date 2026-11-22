@@ -30,6 +30,23 @@ function bodyWith(seenCells: [number, number, number][]): PlanCheckBody & { seen
   return { seen, pack: () => PACK, feet: () => FEET };
 }
 
+/** Lattice points of the solid disc at height dy of a sphere of radius r (x and z, counted per column). */
+function solidSphereLayerCells(r: number, dy: number): number {
+  let count = 0;
+  for (let dx = -r; dx <= r; dx++) {
+    const rest = r * r - dx * dx - dy * dy;
+    if (rest >= 0) count += 2 * Math.floor(Math.sqrt(rest)) + 1;
+  }
+  return count;
+}
+
+/** Lattice points of a solid sphere of radius r: the closed-form sum of its layers. */
+function solidSphereCells(r: number): number {
+  let total = 0;
+  for (let dy = -r; dy <= r; dy++) total += solidSphereLayerCells(r, dy);
+  return total;
+}
+
 /** A map that answers "never seen" for every cell and counts its reads (no allocation per cell). */
 function countingBody(extra: Partial<PlanCheckBody> = {}): {
   body: PlanCheckBody;
@@ -133,14 +150,25 @@ describe('answerPlanCheck (the Body dry run)', () => {
 
   it('answers a radius-120 sphere, never holding more than one layer, and yields between slices', async () => {
     const layers: number[] = [];
-    const { body, reads } = countingBody({ layers: { onLayer: (y) => layers.push(y) } });
+    const sizes: number[] = [];
+    const { body, reads } = countingBody({
+      layers: {
+        onLayer: (y, size) => {
+          layers.push(y);
+          sizes.push(size);
+        },
+      },
+    });
     const yields = vi.spyOn(globalThis, 'setImmediate');
     try {
       const answer = await answerPlanCheck(body, SPHERE_120, true);
-      expect(answer).toMatchObject({ unknown_cells: reads() });
-      expect(reads()).toBeGreaterThan(0);
+      expect(answer).toMatchObject({ cells: solidSphereCells(120), unknown_cells: reads() });
+      expect(reads()).toBe(solidSphereCells(120));
       expect(layers).toHaveLength(241);
       expect(layers.every((y, i) => i === 0 || y === (layers[i - 1] ?? 0) + 1)).toBe(true);
+      expect(sizes.reduce((sum, size) => sum + size, 0)).toBe(solidSphereCells(120));
+      // The widest layer is the equator; the walk never holds more than that one layer at a time.
+      expect(Math.max(...sizes)).toBe(solidSphereLayerCells(120, 0));
       expect(yields.mock.calls.length).toBeGreaterThan(0);
     } finally {
       yields.mockRestore();

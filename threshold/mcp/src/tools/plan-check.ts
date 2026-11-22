@@ -3,21 +3,14 @@ import type { ToolCall } from './look.ts';
 
 /**
  * The closed failures a `plan_check` call can end with; the world turns each into a tool error.
- * `plan_too_large` is the Body's refusal of a plan over its expansion cap (BLD-22b).
  */
-export type PlanCheckError =
-  | 'invalid_input'
-  | 'session_closed'
-  | 'body_unavailable'
-  | 'plan_too_large';
+export type PlanCheckError = 'invalid_input' | 'session_closed' | 'body_unavailable';
 
 /** The fixed message for each `plan_check` failure (the body's own failure is the caller's message). */
 export const PLAN_CHECK_MESSAGES: Record<PlanCheckError, string> = {
   invalid_input: 'plan_check takes a plan of a palette and steps, and no other input.',
   session_closed: 'The session ended, so no plan was checked.',
   body_unavailable: 'Your body is waking. Try again in a moment.',
-  plan_too_large:
-    'The plan has more cells than one check expands. Split it into smaller plans and check each.',
 };
 
 export interface PlanCheckDeps {
@@ -57,14 +50,6 @@ export async function planCheckTool(
   } catch {
     return { error: 'body_unavailable' };
   }
-  if (isRefusal(reply, 'plan_too_large')) return { error: 'plan_too_large' };
   if (!validateToolResult('plan_check', reply).ok) return { error: 'body_unavailable' };
   return { check: reply as PlanCheckResult };
-}
-
-/** True for the Body's typed refusal `{ "error": code }`. */
-function isRefusal(reply: unknown, code: string): boolean {
-  return (
-    typeof reply === 'object' && reply !== null && (reply as { error?: unknown }).error === code
-  );
 }
