@@ -21,6 +21,10 @@ class World implements CellEnv {
     return this.grid.get(`${at.x},${at.y},${at.z}`) ?? 'air';
   }
 
+  propsAt(): Record<string, string> | null {
+    return {};
+  }
+
   held(): HeldBlock[] {
     return this.items;
   }

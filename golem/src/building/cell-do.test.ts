@@ -10,6 +10,7 @@ import type { HeldBlock } from './scaffold.ts';
 /** A world and inventory the executor reads; the handlers below change it the way the game would. */
 class FakeEnv implements CellEnv {
   readonly grid = new Map<string, string>();
+  readonly props = new Map<string, Record<string, string>>();
   items: HeldBlock[] = [];
   names: string[] = [];
 
@@ -19,6 +20,11 @@ class FakeEnv implements CellEnv {
 
   blockAt(at: { x: number; y: number; z: number }): string | null {
     return this.grid.get(`${at.x},${at.y},${at.z}`) ?? null;
+  }
+
+  propsAt(at: { x: number; y: number; z: number }): Record<string, string> | null {
+    if (this.grid.get(`${at.x},${at.y},${at.z}`) === undefined) return null;
+    return this.props.get(`${at.x},${at.y},${at.z}`) ?? {};
   }
 
   held(): HeldBlock[] {
@@ -189,6 +195,89 @@ describe('doCell codes', () => {
     const handlers = { ...working(env), dig: handler('break', () => completed()) };
     const code = await doCell(ctx, { at: AT, prior: 'stone', target: 'air' }, env, handlers);
     expect(code).toBe('blocked');
+  });
+});
+
+/** A place that sets the block and the one state property `facing` it was given, whatever was asked. */
+function placingFacing(env: FakeEnv, facing: string): CellHandlers {
+  const place = {
+    kind: 'place',
+    timeoutMs: 1000,
+    run: vi.fn(async (_ctx: unknown, action: Act) => {
+      env.set(AT.x, AT.y, AT.z, action.block ?? 'air');
+      env.props.set(`${AT.x},${AT.y},${AT.z}`, { facing });
+      return completed();
+    }),
+  } as never;
+  return { place, dig: handler('break', () => completed()) } as CellHandlers;
+}
+
+describe('doCell stateful targets and live priors (BLD-38b2)', () => {
+  const stairs = (env: FakeEnv, facing: string): void => {
+    env.set(AT.x, AT.y, AT.z, 'oak_stairs');
+    env.props.set(`${AT.x},${AT.y},${AT.z}`, { facing, half: 'bottom' });
+  };
+
+  it('a stateful target is done when the live block holds each listed property', async () => {
+    const env = new FakeEnv();
+    stairs(env, 'north');
+    const handlers = working(env);
+    const target = 'oak_stairs[facing=north]';
+    expect(await doCell(ctx, { at: AT, prior: 'air', target }, env, handlers)).toBe('done_already');
+    expect(handlers.place.run).not.toHaveBeenCalled();
+  });
+
+  it('a stateful target whose listed property differs is not done', async () => {
+    const env = new FakeEnv();
+    stairs(env, 'south');
+    const handlers = working(env);
+    const target = 'oak_stairs[facing=north]';
+    expect(await doCell(ctx, { at: AT, prior: 'air', target }, env, handlers)).toBe('changed');
+    expect(handlers.place.run).not.toHaveBeenCalled();
+  });
+
+  it('places a stateful target with the state it asks for, and verifies that state', async () => {
+    const env = new FakeEnv();
+    env.set(AT.x, AT.y, AT.z, 'air');
+    env.items = [{ name: 'oak_stairs', count: 1 }];
+    const handlers = placingFacing(env, 'north');
+    const target = 'oak_stairs[facing=north]';
+    expect(await doCell(ctx, { at: AT, prior: 'air', target }, env, handlers)).toBe('placed');
+    const sent = vi.mocked(handlers.place.run).mock.calls[0] as unknown[];
+    expect((sent[0] as ActionContext).placeState).toEqual({ facing: 'north' });
+    expect((sent[1] as Act).block).toBe('oak_stairs');
+  });
+
+  it('reports blocked when the placed block does not hold the state asked for', async () => {
+    const env = new FakeEnv();
+    env.set(AT.x, AT.y, AT.z, 'air');
+    env.items = [{ name: 'oak_stairs', count: 1 }];
+    const handlers = placingFacing(env, 'south');
+    const target = 'oak_stairs[facing=north]';
+    expect(await doCell(ctx, { at: AT, prior: 'air', target }, env, handlers)).toBe('blocked');
+  });
+
+  it('a break cell with no planned prior digs the block it finds there, read live', async () => {
+    const env = new FakeEnv();
+    env.set(AT.x, AT.y, AT.z, 'stone');
+    env.names = ['iron_pickaxe'];
+    const handlers = working(env);
+    expect(await doCell(ctx, { at: AT, prior: null, target: 'air' }, env, handlers)).toBe('broken');
+    expect(handlers.dig.run).toHaveBeenCalledTimes(1);
+    expect(env.blockAt(AT)).toBe('air');
+  });
+
+  it('a replace cell with no planned prior digs the live block, then places its target', async () => {
+    const env = new FakeEnv();
+    env.set(AT.x, AT.y, AT.z, 'stone');
+    env.items = [{ name: 'dirt', count: 1 }];
+    env.names = ['iron_pickaxe'];
+    const handlers = working(env);
+    expect(await doCell(ctx, { at: AT, prior: null, target: 'dirt' }, env, handlers)).toBe(
+      'placed',
+    );
+    expect(handlers.dig.run).toHaveBeenCalledTimes(1);
+    expect(handlers.place.run).toHaveBeenCalledTimes(1);
   });
 });
 

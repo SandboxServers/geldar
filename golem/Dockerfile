@@ -9,6 +9,7 @@ WORKDIR /opt/geldar
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY contract ./contract
 COPY psyche ./psyche
+COPY player-core ./player-core
 COPY telemetry ./telemetry
 COPY golem ./golem
 # --ignore-scripts: no dependency runs an install script (no native module), so none runs in the image build.

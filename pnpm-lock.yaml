@@ -310,6 +310,9 @@ importers:
       '@geldar/contract':
         specifier: workspace:*
         version: link:../contract
+      '@geldar/player-core':
+        specifier: workspace:*
+        version: link:../player-core
       '@geldar/psyche':
         specifier: workspace:*
         version: link:../psyche

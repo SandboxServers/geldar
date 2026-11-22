@@ -42,14 +42,29 @@ describe('the plan expander the queue is built with (BLD-38b)', () => {
     expect(given.map((c) => c.at.y)).toEqual([65, 64]);
   });
 
-  it('refuses a break or a replace step, since the prior block is not known at submit time', () => {
+  it('expands a break and a replace to cells with no planned prior, read live at run time', () => {
     const expand = createPlanExpand(feet);
-    expect(() => expand({ palette, steps: [{ op: 'break', at: { x: 0, y: 64, z: 0 } }] })).toThrow(
-      PlanNotRunnable,
-    );
-    expect(() =>
-      expand({ palette, steps: [{ op: 'replace', pal: 's', at: { x: 0, y: 64, z: 0 } }] }),
-    ).toThrow(PlanNotRunnable);
+    const at = { x: 0, y: 64, z: 0 };
+    expect(expand({ palette, steps: [{ op: 'break', at }], order: 'given' })).toEqual([
+      { at, prior: null, target: 'air' },
+    ]);
+    expect(expand({ palette, steps: [{ op: 'replace', pal: 's', at }], order: 'given' })).toEqual([
+      { at, prior: null, target: 'stone' },
+    ]);
+    expect(expand({ palette, steps: [{ op: 'break', at }], origin: 'here' })).toEqual([
+      { at: { x: 10, y: 134, z: -4 }, prior: null, target: 'air' },
+    ]);
+  });
+
+  it('writes a stateful palette block in one spelling: the name, then the properties sorted', () => {
+    const expand = createPlanExpand(feet);
+    const stairs = { s: { block: 'oak_stairs[half=bottom,facing=north]' } };
+    const cells = expand({
+      palette: stairs,
+      steps: [{ op: 'place', pal: 's', at: { x: 0, y: 64, z: 0 } }],
+      order: 'given',
+    });
+    expect(cells[0]?.target).toBe('oak_stairs[facing=north,half=bottom]');
   });
 
   it('refuses a palette key that names no block, and an origin that is not a cell', () => {
