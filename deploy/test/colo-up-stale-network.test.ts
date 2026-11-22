@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os';
 import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { POSTGRES_RUNNING_CASE } from './colo-deploy-fixture';
 
 // colo-up.sh passes --force-recreate to `up` only when a container of the geldar-colo project is attached to a network id
 // that no longer exists (C2-07h: compose recreated the network, the stopped containers kept the old id). The fake docker
@@ -54,6 +55,7 @@ vi.setConfig({ testTimeout: 60_000 });
 const DOCKER_SHIM = `#!/bin/sh
 printf '%s\\n' "$*" >> "$DOCKER_CALLS_LOG"
 case "$*" in
+${POSTGRES_RUNNING_CASE}
   *"config --quiet"*) exit 0 ;;
   "ps -aq --filter label=com.docker.compose.project=geldar-colo") for c in $FAKE_CONTAINERS; do echo "$c"; done; exit 0 ;;
   "inspect -f"*) echo "$FAKE_NET_OF "; exit 0 ;;

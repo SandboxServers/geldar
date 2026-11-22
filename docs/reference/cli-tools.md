@@ -227,7 +227,7 @@ Fourteen folders under `tools/`, measured at `1b114276` on 2026-11-16. Thirteen 
 - **Entry:** `tools/admin/admin.sh`, the entrypoint of the admin image built from `tools/admin/Dockerfile` (decision 0133). No `package.json`.
 - **Subcommands** (usage lines 9 to 18, dispatch lines 24 to 74): `migrate`, `owner-add`, `owner-set-cap`, `owner-admin`, `player-add`, `player-flags`, `token-mint`, `token-revoke`, `players-status`, `roster`, `skin-import`, `ensure-skins-bucket`, `whitelist-house-body`, and `notice <payload-json>`. Each runs one existing CLI (`tools/migrate`, `tools/mcp-tokens`, `tools/players-cli`, or a `golem/src` script) with its arguments passed through. `notice` publishes one maintenance notice as the deploy NATS user and reads no Postgres password.
 - **Environment (names):** `GELDAR_ADMIN_PG_PASSWORD_FILE` (the Postgres password file, read into `PGPASSWORD` for this process only), `PGHOST`, `PGUSER`, `PGDATABASE` (lines 7, 54 to 57).
-- **Run by:** `deploy/colo-admin.sh` on the node, as a one-shot `docker compose ... --profile admin run --rm admin <cmd>` (`deploy/colo-admin.sh` lines 3 and 296 to 298). See the [admin-service](admin-service.md) and [deploy-scripts](deploy-scripts.md).
+- **Run by:** `deploy/colo-admin.sh` on the node, as a one-shot `docker compose ... --profile admin run --rm --no-deps admin <cmd>` (`deploy/colo-admin.sh` lines 2 to 10 and 316 to 361). See the [admin-service](admin-service.md) and [deploy-scripts](deploy-scripts.md).
 - **Tests:** none in the folder; the image closure is checked by `tools/repo-checks/src/admin-image.test.ts`.
 
 ### genesis-env

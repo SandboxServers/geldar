@@ -11,6 +11,7 @@ import {
   DEPLOY,
   type Fixture,
   fixture,
+  POSTGRES_RUNNING_CASE,
   posix,
   REAL,
   calls as readCalls,
@@ -47,6 +48,7 @@ st_of() {
   if [ -f "$FAKE_HOSTS_DIR/$1.state" ]; then read -r hs hc hr <"$FAKE_HOSTS_DIR/$1.state"; fi
 }
 case "$*" in
+${POSTGRES_RUNNING_CASE}
   *"ps "*"name=^geldar-colo-players-host-"*)
     if [ -f "$FAKE_HOSTS_DIR/$hn" ]; then
       st_of "$hn"
