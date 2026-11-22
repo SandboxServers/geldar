@@ -1,6 +1,6 @@
 # Building campaign (free-form block placement and removal for agents)
 
-Ledger. Schedule, file ownership and packet specs: [work-packets.md](work-packets.md). Resume: [RESUME.md](RESUME.md). Written 2026-11-22 against `origin/main` = `c05574a6`. Only the orchestrator edits this file; each packet reports in `worknotes/BLD-NN.md`.
+Ledger. Schedule, file ownership and packet specs: [work-packets.md](work-packets.md). Resume: [RESUME.md](RESUME.md). Updated 2026-11-22 to the integration state: `building/integration` = `ecae177c` (BLD-38h merged). `origin/main` = `5828b498` carries the campaign docs only; no building packet is on `main`. Only the orchestrator edits this file; each packet reports in `worknotes/BLD-NN.md`.
 
 ## Purpose
 
@@ -35,7 +35,7 @@ Numbers 0420 to 0429 are all used. Verified on `origin/main` and every remote br
 
 ## Packets
 
-Size S, M. Restarts = merging to `main` restarts the 19 Bodies (colo-images paths). Windows R1 to R3 are in the packet file. Status values: Ready, BlockedDependency, BlockedDecision, Writing, Review, Done.
+Size S, M. Restarts = merging to `main` restarts the 19 Bodies (colo-images paths). Windows R1 to R3 are in the packet file. Status values: Ready, BlockedDependency, BlockedDecision, Writing, Review, Done, Manual (not run). Wave 3a rows (BLD-38 family) have no entry in the packet file; their scope is the one-line summary in their worknote.
 
 | ID | Title | Wave (graph) | Size | Restarts | Depends | Status |
 |---|---|---|---|---|---|---|
@@ -44,41 +44,50 @@ Size S, M. Restarts = merging to `main` restarts the 19 Bodies (colo-images path
 | BLD-S3a | Body scaffold (stubs, hooks, flag) | 0 | M | Y | S1 | Done |
 | BLD-S3b | MCP scaffold (stub tools, mapper) | 0 | S | Y | S1 | Done |
 | BLD-S3c | Glass scaffold (registry stub) | 0 | S | Y | S1 | Done |
-| BLD-S4 | Docs scaffold | 0 | S | N | none | Ready |
-| BLD-04 | Plan expansion, geometry helpers, ordering | 1 | M | Y | S2 | BlockedDependency |
-| BLD-05 | Chunked plan store and cursor checkpoint | 1 | M | Y | S3a | BlockedDependency |
-| BLD-06 | `break` action | 1 | M | Y | S3a | BlockedDependency |
-| BLD-07 | Place: plants, snow, two-block items | 1 | S | Y | S3a | BlockedDependency |
-| BLD-08 | Place: blockstate and orientation | 1 | M | Y | S3a, after 07 on `place.ts` | BlockedDependency |
-| BLD-09 | Standing-position solver | 1 | M | Y | S3a | BlockedDependency |
-| BLD-10 | Scaffolding, falling blocks, fluids | 1 | M | Y | S3a | BlockedDependency |
+| BLD-S4 | Docs scaffold | 0 | S | N | none | Ready (unverified) |
+| BLD-04 | Plan expansion, geometry helpers, ordering | 1 | M | Y | S2 | Done |
+| BLD-05 | Chunked plan store and cursor checkpoint | 1 | M | Y | S3a | Done |
+| BLD-06 | `break` action | 1 | M | Y | S3a | Done |
+| BLD-07 | Place: plants, snow, two-block items | 1 | S | Y | S3a | Done |
+| BLD-08 | Place: blockstate and orientation | 1 | M | Y | S3a, after 07 on `place.ts` | Done |
+| BLD-09 | Standing-position solver | 1 | M | Y | S3a | Done |
+| BLD-10 | Scaffolding, falling blocks, fluids | 1 | M | Y | S3a | Done |
 | BLD-12 | Own breaks raise no observation | 1 | S | Y | none | Done |
-| BLD-36 | Remove dig-safety refusals (0428) | 1 | S | Y | S3a | BlockedDependency |
-| BLD-17 | Seen-block recorder | 1 | M | Y | S3a | BlockedDependency |
-| BLD-11 | Cell executor (verify, codes, stale rule) | 2 | M | Y | 06, 07, 08, 09, 10 | BlockedDependency |
-| BLD-18 | Seen storage, death retention and inheritance by the next life, erase coverage | 2 | M | Y (+ MANUAL NATS) | 17 | BlockedDependency |
-| BLD-24 | prompts body-api v12 | 2 | S | N | S1, S2 | BlockedDependency |
-| BLD-26 | Delete inline `build` action | 6 | S | Y | 23 (0427 accepted) | BlockedDependency |
-| BLD-13 | Plan lane core, reflex pause | 3 | M | Y | 04, 05, 11 | BlockedDependency |
-| BLD-20 | Body survey endpoint | 3 | M | Y | 17 | BlockedDependency |
-| BLD-14 | Queue ops, a foreground intent pauses the plan, resume | 4 | M | Y | 13 | BlockedDependency |
-| BLD-15 | TPS throttle | 4 | S | Y | 13 | BlockedDependency |
-| BLD-16 | Progress events, materials wake | 4 | M | Y | 13 | BlockedDependency |
-| BLD-19 | Leak tests, both fences (seen map to telemetry; Glass plan data to agents) | 4 | S | N or Y | 17, 20 | BlockedDependency |
-| BLD-21 | MCP `survey` tool | 4 | M | Y | S3b, 20 | BlockedDependency |
-| BLD-22 | MCP `plan_check` | 5 | M | Y | 04, 20, 21 | BlockedDependency |
-| BLD-23 | Presenter, status block, `act` text | 5 | M | Y | S3b, 16 | BlockedDependency |
-| BLD-27 | Metrics and telemetry | 5 | S | Y | 16 | BlockedDependency |
-| BLD-30 | Operator runbook | 5 | S | N | 14 | BlockedDependency |
-| BLD-37 | Glass plan-activity view and the hard no-agent-path test | 6 | M | Y (`glass/**`) | S3c, 27, 16 | BlockedDependency |
-| BLD-25 | Kit skills, twins and allow entries for `survey` and `plan_check` (kit repo, MANUAL tag and upgrade PRs) | 6 | M | N | 21, 22, 23 | BlockedDependency |
-| BLD-28 | Paper integration test | 6 | M | N | all code | BlockedDependency |
-| BLD-29 | Test-shard agent evidence | 7 | M | N | 28 | BlockedDependency |
-| BLD-31 | Paper go-live (MANUAL) | 7 | S | Y (config) | 29 or owner go | BlockedDependency |
+| BLD-36 | Remove dig-safety refusals (0428) | 1 | S | Y | S3a | Done |
+| BLD-17 | Seen-block recorder | 1 | M | Y | S3a | Done |
+| BLD-11 | Cell executor (verify, codes, stale rule) | 2 | M | Y | 06, 07, 08, 09, 10 | Done |
+| BLD-18 | Seen storage, death retention and inheritance by the next life, erase coverage | 2 | M | Y (+ MANUAL NATS) | 17 | Done (MANUAL NATS role and seed open) |
+| BLD-24 | prompts body-api v12 | 2 | S | N | S1, S2 | Done |
+| BLD-26 | Delete inline `build` action | 6 | S | Y | 23 (0427 accepted) | Done (review pending) |
+| BLD-13 | Plan lane core, reflex pause | 3 | M | Y | 04, 05, 11 | Done |
+| BLD-20 | Body survey endpoint | 3 | M | Y | 17 | Done |
+| BLD-14 | Queue ops, a foreground intent pauses the plan, resume | 4 | M | Y | 13 | Done |
+| BLD-15 | TPS throttle | 4 | S | Y | 13 | Done |
+| BLD-16 | Progress events, materials wake | 4 | M | Y | 13 | Done |
+| BLD-19 | Leak tests, both fences (seen map to telemetry; Glass plan data to agents) | 4 | S | N or Y | 17, 20 | Done |
+| BLD-21 | MCP `survey` tool | 4 | M | Y | S3b, 20 | Done |
+| BLD-22 | MCP `plan_check` | 5 | M | Y | 04, 20, 21 | Done |
+| BLD-23 | Presenter, status block, `act` text | 5 | M | Y | S3b, 16 | Done (worknote: plan_progress presenter not done) |
+| BLD-27 | Metrics and telemetry | 5 | S | Y | 16 | Done |
+| BLD-30 | Operator runbook | 5 | S | N | 14 | Done |
+| BLD-37 | Glass plan-activity view and the hard no-agent-path test | 6 | M | Y (`glass/**`) | S3c, 27, 16 | Done |
+| BLD-25 | Kit skills, twins and allow entries for `survey` and `plan_check` (kit repo, MANUAL tag and upgrade PRs) | 6 | M | N | 21, 22, 23 | Done in kit repo (kit PR 137; tag and upgrades MANUAL) |
+| BLD-28 | Paper integration test | 6 | M | N | all code | Done (live test written, NOT run) |
+| BLD-29 | Test-shard agent evidence | 7 | M | N | 28 | Manual (not run) |
+| BLD-31 | Paper go-live (MANUAL) | 7 | S | Y (config) | 29 or owner go | Manual (not run) |
 | BLD-32 | NeoForge: attribution design | NF | S | N | owner on 0387, 0390 | BlockedDecision |
 | BLD-33 | NeoForge port assessment | NF | S | N | 32 | BlockedDecision |
 | BLD-34 | NeoForge edit-provenance listener | NF | M | manual mod jar | 32 accepted | BlockedDecision |
 | BLD-35 | NeoForge enablement | NF | M | MANUAL | 33, 34 | BlockedDecision |
+| BLD-38 | Wire the building modules into the Body (wiring audit; work continued in 38b to 38h) | 3a | - | Y | see worknote | Done |
+| BLD-38b | Plan queue and lane wired into the Body tick (flag on only) | 3a | - | Y | 38 family (merge order) | Done |
+| BLD-38b2 | Wiring fixes: break and replace, stateful targets, shared import | 3a | - | Y | 38 family (merge order) | Done |
+| BLD-38c | Plan store: cells as chunks in `geldar-plans`, cursor in the checkpoint | 3a | - | Y | 38 family (merge order) | Done (MANUAL NATS role and seed open) |
+| BLD-38d | Seen map and survey wired into the Body (flag on only) | 3a | - | Y | 38 family (merge order) | Done |
+| BLD-38e | Survey through the gateway and the golem responder | 3a | - | Y | 38 family (merge order) | Done |
+| BLD-38f | Tick-based progress throttle; failed phase on an unexpected throw | 3a | - | Y | 38 family (merge order) | Done |
+| BLD-38g | Survey reaches the production Body; seen map survives restart | 3a | - | Y | 38 family (merge order) | Done |
+| BLD-38h | Restart reloads the life's own seen map | 3a | - | Y | 38 family (merge order) | Done |
 
 BLD-01, 02, 03 are delivered by S1 and S2 (their sections in the packet file are the content specs).
 
