@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest';
 import * as building from './index.ts';
 
 const STUBS = [
-  'doCell',
-  'countMaterials',
   'laneStateOf',
   'enqueuePlan',
   'contendFor',
@@ -14,6 +12,11 @@ const STUBS = [
 ] as const;
 
 describe('building scaffold (BLD-S3a)', () => {
+  it('doCell and countMaterials are implemented and exported (BLD-11)', () => {
+    expect(typeof building.doCell).toBe('function');
+    expect(typeof building.countMaterials).toBe('function');
+  });
+
   it.each(STUBS)('%s is exported and refuses with not_implemented', (name) => {
     const stub = (building as Record<string, unknown>)[name] as () => unknown;
     expect(() => stub()).toThrow(`not_implemented: ${name}`);
