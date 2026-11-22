@@ -123,6 +123,11 @@ export interface BodyGateway {
    * the tool; a Body that does not answer rejects with `BodyUnavailable`.
    */
   survey(lifeId: string, request: { box: unknown; layers?: number }): Promise<unknown>;
+  /**
+   * The Body's dry run of a plan against its pack and seen map (BLD-22b). The reply is the plan_check
+   * result, or `{ error: 'plan_too_large' }` as data; a Body that does not answer rejects with `BodyUnavailable`.
+   */
+  planCheck(lifeId: string, request: { plan: unknown }): Promise<unknown>;
   /** The Body's text viewport from where its body looks; `unavailable` when the Body cannot read it. */
   view(
     lifeId: string,

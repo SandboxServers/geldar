@@ -24,6 +24,7 @@ import { placeFields } from '../body/where.ts';
 import { serveBodyImages } from '../body-image/image-serve.ts';
 import { ImageLimiter } from '../body-image/limiter.ts';
 import { RenderHost } from '../body-image/render-host.ts';
+import { planCheckFrom } from '../building/plan-check-reply.ts';
 import { surveyFrom } from '../building/survey-reply.ts';
 import { AuditPublisher } from '../character/audit-publisher.ts';
 import type { LifeCharacter } from '../character/character-config.ts';
@@ -384,7 +385,12 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
       publisher,
       log,
       // The survey answers from this Body's seen map (BLD-38e/38g); absent with the building flag off.
-      ...(restarted.body.seen === null ? {} : { survey: surveyFrom(restarted.body.seen, tick) }),
+      ...(restarted.body.seen === null
+        ? {}
+        : {
+            survey: surveyFrom(restarted.body.seen, tick),
+            planCheck: planCheckFrom(restarted.body.seen.map, bot),
+          }),
     });
     link.start();
     // The image server (decision 0156, VP-2): its own renderer worker and rate limiter, per run.

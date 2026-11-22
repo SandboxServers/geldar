@@ -89,6 +89,30 @@ export class FakeBody implements BodyGateway {
     return this.surveys.get(lifeId) ?? { text: 'legend ?=unknown', truncated: false };
   }
 
+  /** Every plan_check request, in order, as the gateway received it. */
+  readonly planCheckRequests: { lifeId: string; request: { plan: unknown } }[] = [];
+
+  private readonly planChecks = new Map<string, unknown>();
+
+  /** Sets the plan_check reply a life's Body answers with (the contract's plan_check result). */
+  setPlanCheck(lifeId: string, reply: unknown): void {
+    this.planChecks.set(lifeId, reply);
+  }
+
+  async planCheck(lifeId: string, request: { plan: unknown }): Promise<unknown> {
+    this.requireOnline(lifeId);
+    this.planCheckRequests.push({ lifeId, request });
+    return (
+      this.planChecks.get(lifeId) ?? {
+        cells: 0,
+        material_needs: {},
+        unknown_cells: 0,
+        estimated_ticks: 0,
+        invalid_steps: [],
+      }
+    );
+  }
+
   async snapshot(lifeId: string): Promise<Snapshot> {
     this.requireOnline(lifeId);
     const revision = (this.revisions.get(lifeId) ?? 0) + 1;

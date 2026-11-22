@@ -66,6 +66,17 @@ export function viewSubject(shard: string, lifeId: string): string {
 }
 
 /**
+ * Where the Body listens for a `plan_check` request (BLD-22b): `geldar.<shard>.body.<life_id>.plan_check`.
+ * The request is a PlanCheckInput (mcp-plan-check.schema.json); the reply is a PlanCheckResult, or a
+ * refusal the gateway reads as data. Five tokens, so it is outside the sink's `geldar.*.*` filter.
+ * Throws on a shard or life id the contract rejects.
+ */
+export function planCheckSubject(shard: string, lifeId: string): string {
+  checked(shard, lifeId);
+  return `geldar.${shard}.body.${lifeId}.plan_check`;
+}
+
+/**
  * Where the Body listens for a `survey` request (BLD-38e): `geldar.<shard>.body.<life_id>.survey`.
  * The request is a SurveyInput (mcp-survey.schema.json); the reply is a SurveyResult. Five tokens, so
  * it is outside the sink's `geldar.*.*` filter. Throws on a shard or life id the contract rejects.

@@ -1,6 +1,7 @@
 import type { BookReply, PlanAck, PlanMessage, Snapshot } from '@geldar/contract';
 import {
   bookSubject,
+  planCheckSubject,
   surveySubject,
   validateBookReply,
   validateSeeResult,
@@ -35,6 +36,9 @@ const VIEW_TIMEOUT_MS = 5_000;
 
 /** How long a `survey` request waits for the Body's reply (the packet's 5 s). */
 const SURVEY_TIMEOUT_MS = 5_000;
+
+/** How long a `plan_check` request waits for the Body's dry run (the packet's 5 s). */
+const PLAN_CHECK_TIMEOUT_MS = 5_000;
 
 /** How long a `see` request waits for the Body's picture (the packet's 5 s). */
 const SEE_TIMEOUT_MS = 5_000;
@@ -124,6 +128,30 @@ export class NatsBodyGateway implements BodyGateway {
       const reply = JSON.parse(text) as unknown;
       if (!validateToolResult('survey', reply).ok)
         throw new Error('survey reply failed validation');
+      return reply;
+    });
+  }
+
+  /**
+   * The Body's dry run of a plan (BLD-22b). The Body's `plan_too_large` refusal comes back as data; any
+   * other reply the contract does not accept (the flag-off `not_available` included) rejects with `BodyUnavailable`.
+   */
+  planCheck(lifeId: string, request: { plan: unknown }): Promise<unknown> {
+    return this.guard(lifeId, 'plan_check', async (): Promise<unknown> => {
+      const text = await this.transport.request(
+        planCheckSubject(this.shard, lifeId),
+        JSON.stringify(request),
+        PLAN_CHECK_TIMEOUT_MS,
+      );
+      const reply = JSON.parse(text) as unknown;
+      if (
+        typeof reply === 'object' &&
+        reply !== null &&
+        (reply as { error?: unknown }).error === 'plan_too_large'
+      )
+        return reply;
+      if (!validateToolResult('plan_check', reply).ok)
+        throw new Error('plan_check reply failed validation');
       return reply;
     });
   }
