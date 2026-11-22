@@ -73,6 +73,8 @@ export function blockOperationsOf(action: Action): number {
       return action.count;
     case 'place':
       return 1;
+    case 'break':
+      return 1;
     case 'build':
       return action.blueprint.blocks.length;
     default:

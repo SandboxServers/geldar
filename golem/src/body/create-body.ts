@@ -1,11 +1,14 @@
 import type { Action } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
+import { breakHandler } from '../actions/break.ts';
 import { editSignHandler } from '../actions/edit-sign.ts';
 import { targetOf } from '../actions/goto.ts';
 import { allActions } from '../actions/index.ts';
 import type { ActionRun } from '../actions/registry.ts';
 import { useHandler } from '../actions/use.ts';
 import { setSwimEnabled } from '../actions/water-rules.ts';
+import { createPlanLane } from '../building/lane.ts';
+import { planHandler } from '../building/queue-action.ts';
 import { type BodyKv, CheckpointStore } from './checkpoint.ts';
 import { cancelForDeath } from './death-cancel.ts';
 import { type ExecutorOptions, IntentExecutor } from './executor.ts';
@@ -44,6 +47,8 @@ export interface CreateBodyOptions {
   editSign?: boolean;
   /** The shard's `body_actions.use` flag; the verb is refused while off. Default: off (decision 0218). */
   use?: boolean;
+  /** The shard's `body_actions.building` flag; break and plan are refused while off. Default: off. */
+  building?: boolean;
   /** The shard's `body_actions.swim` flag; the goto swim and the bank exit are off while off. Default: off (decision 0194). */
   swim?: boolean;
   /**
@@ -160,10 +165,21 @@ export function createBody(options: CreateBodyOptions): Body {
   setSwimEnabled(options.bot, options.swim ?? false);
   // edit_sign is registered with the shard's flag (`body_actions.edit_sign`, default off).
   for (const handler of allActions) {
-    if (handler.kind !== 'edit_sign' && handler.kind !== 'use') built.actions.register(handler);
+    if (
+      handler.kind !== 'edit_sign' &&
+      handler.kind !== 'use' &&
+      handler.kind !== 'break' &&
+      handler.kind !== 'plan'
+    ) {
+      built.actions.register(handler);
+    }
   }
   built.actions.register(editSignHandler(options.editSign ?? false));
   built.actions.register(useHandler(options.use ?? false));
+  // break and plan follow body_actions.building (BLD-S3a, decision 0218 plumbing; default off).
+  built.actions.register(breakHandler(options.building ?? false));
+  built.actions.register(planHandler(options.building ?? false));
+  createPlanLane(options.building ?? false);
   const executor = new IntentExecutor({
     runtime: built,
     ticks: options.ticks,
