@@ -16,6 +16,41 @@ function actSchemaText(showUnavailable: boolean): string {
   return JSON.stringify(act.inputSchema);
 }
 
+describe('the building tools under body_actions.building', () => {
+  it('are listed with show_unavailable_tools false when the building flag is on', () => {
+    const names = listTools(hiddenToolsFor(false, true)).map((tool) => tool.name);
+    expect(names).toContain('survey');
+    expect(names).toContain('plan_check');
+    for (const tool of SIX) expect(names).not.toContain(tool);
+  });
+
+  it('stay hidden with show_unavailable_tools false when the building flag is off', () => {
+    const names = listTools(hiddenToolsFor(false, false)).map((tool) => tool.name);
+    expect(names).not.toContain('survey');
+    expect(names).not.toContain('plan_check');
+    expect(names).toContain('read_book');
+    expect(hiddenToolsFor(false)).toEqual(hiddenToolsFor(false, false));
+  });
+
+  it('are not refused by name when the building flag is on', () => {
+    const hidden = hiddenToolsFor(false, true);
+    expect(refuseHiddenCall('survey', {}, hidden)).toBeUndefined();
+    expect(refuseHiddenCall('plan_check', {}, hidden)).toBeUndefined();
+    expect(refuseHiddenCall('write_book', {}, hidden)).toEqual({
+      isError: true,
+      content: [NOT_AVAILABLE_TEXT],
+    });
+  });
+
+  it('are refused by name when the building flag is off', () => {
+    const hidden = hiddenToolsFor(false, false);
+    expect(refuseHiddenCall('survey', {}, hidden)).toEqual({
+      isError: true,
+      content: [NOT_AVAILABLE_TEXT],
+    });
+  });
+});
+
 describe('the tools this world does not run', () => {
   it('are the six named in the spec, and read_book is not one of them', () => {
     expect([...NOT_AVAILABLE_TOOLS].sort()).toEqual([...SIX].sort());

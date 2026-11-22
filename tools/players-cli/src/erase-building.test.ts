@@ -32,10 +32,13 @@ const PLAN_KEYS = [
 const CHECKPOINT_KEYS = [
   'life-alpha.plan',
   'life-altar.plan',
-  // The body checkpoint of an erased life is keyed by the bare life id in this bucket. It is out of scope here.
+  // The body checkpoint of each life is keyed by the bare life id in this bucket.
   'life-alpha',
+  'life-altar',
   'life-alphabet.plan',
+  'life-alphabet',
   'life-beta.plan',
+  'life-beta',
 ];
 
 /** A fake bucket: `data` holds the live keys. `failOn` makes one purge throw. */
@@ -79,16 +82,30 @@ describe('building erasure: seen maps, plan chunks and checkpoints', () => {
     expect(outcome.status).toBe('purged');
     expect([...seen.data].sort()).toEqual(['life-alphabet.0.0.0', 'life-beta.0.0.0']);
     expect([...plans.data].sort()).toEqual(['life-alphabet.plan-q.0', 'life-beta.plan-z.0']);
+    // Both the plan checkpoint and the bare body checkpoint of each erased life are gone.
     expect([...checkpoints.data].sort()).toEqual([
-      'life-alpha',
+      'life-alphabet',
       'life-alphabet.plan',
+      'life-beta',
       'life-beta.plan',
     ]);
     expect(outcome.building.map((c) => [c.name, c.found, c.purged])).toEqual([
       ['geldar-seen', 3, 3],
       ['geldar-plans', 3, 3],
-      ['geldar-checkpoints', 2, 2],
+      ['geldar-checkpoints', 4, 4],
     ]);
+  });
+
+  it('erases the bare body checkpoint of an erased life and leaves the bare key of another life that starts with its id', async () => {
+    const checkpoints = bucket(['life-alpha', 'life-alphabet', 'life-beta', 'life-alpha.plan']);
+    const outcome = await runErasure(REQUEST, { ...core(), checkpoints: checkpoints.port });
+
+    expect(outcome.status).toBe('purged');
+    expect([...checkpoints.data].sort()).toEqual(['life-alphabet', 'life-beta']);
+    expect(outcome.building.find((c) => c.name === 'geldar-checkpoints')).toMatchObject({
+      found: 2,
+      purged: 2,
+    });
   });
 
   it('a second run after a full erase finds nothing left to purge', async () => {
@@ -130,7 +147,7 @@ describe('building erasure: seen maps, plan chunks and checkpoints', () => {
     );
 
     expect(outcome.status).toBe('dry-run');
-    expect(outcome.building.map((c) => c.found)).toEqual([3, 3, 2]);
+    expect(outcome.building.map((c) => c.found)).toEqual([3, 3, 4]);
     expect(seen.data.size).toBe(SEEN_KEYS.length);
     expect(plans.data.size).toBe(PLAN_KEYS.length);
     expect(checkpoints.data.size).toBe(CHECKPOINT_KEYS.length);

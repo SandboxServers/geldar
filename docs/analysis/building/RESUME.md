@@ -35,8 +35,8 @@ Factual list at `d87221c4`. Each item is either a code gap or an owner call; non
 1. **Facing refused for every block kind.** `FACING_VERIFIED` is empty (`golem/src/actions/place-state.ts`), so stairs take `half` only and doors, furnaces, chests and trapped chests take no state. A `facing` or `axis` key is refused as `state_unachievable`. BLD-08 tier 1 is unmet. Its live test (`place.live.test.ts`) is written and not run.
 2. **Seen-map privacy for already-seen cells.** Open: nothing settles what the seen map may reveal about cells another agent saw. Owner decision.
 3. **NATS `seed` role cannot create `geldar-plans` or `geldar-seen`.** `seed-buckets.ts` creates only the identity buckets; the building buckets need the `body` role in the live conf before the flag-on restart. `geldar.ps1` has no entry for them.
-4. **Default prompt v10, not v12.** `DEFAULT_BODY_API_VERSION` is `10` (`animus/src/prompts/library.ts`). The Mind is not taught `break` or `plan` until the owner switches it; the switch is an `animus/**` change that restarts Bodies. Eight animus tests (`animus/src/validate`, `animus/src/prompts`) were reported failing at `6fe2448b`; not re-run for this packet.
-5. **colo hides `survey` and `plan_check`.** `shards/colo-mind.yaml` sets `show_unavailable_tools: false`. Setting it `true` lists these two and six other tools the world does not run (`write_book`, `define_skill`, `use_skill`, `offer`, `propose`, `vote`). Owner decision.
+4. **Prompt follows the flag (B8).** The Mind renders body-api v12 (`break` and `plan`) while `body_actions.building` is on and v10 while it is off (`bodyApiVersionFor`, `animus/src/prompts/library.ts`). The Minds read the flag when they start. Eight animus tests (`animus/src/validate`, `animus/src/prompts`) were reported failing at `6fe2448b`; not re-run for this packet.
+5. **colo lists `survey` and `plan_check` while the flag is on (B8).** `shards/colo-mind.yaml` sets `show_unavailable_tools: false`; with `body_actions.building` on, the MCP lists `survey` and `plan_check` anyway (`hiddenToolsFor`, `threshold/mcp/src/tools/unavailable.ts`). Setting `show_unavailable_tools` to `true` would also list six other tools the world does not run (`write_book`, `define_skill`, `use_skill`, `offer`, `propose`, `vote`). Owner decision.
 6. **Sources not wired.** Glass plan-activity is merged with `PLAN_ACTIVITY_ENABLED = false` and no feed route. The seen predecessor has no source (item 2 above). `status.active_plan` has no source (item 6 above).
 7. **Caps.** `plan_check` refuses over 8192 cells (`PLAN_CHECK_CELL_CAP`, `plan_too_large`) and returns at most 256 `invalid_steps`; the contract has no `maxItems` on `invalid_steps`. The survey box is capped at 32768 cells (`box_too_large`). Decisions and the runbook say "no caps"; these are health bounds in code.
 8. **Flag-off answers.** `survey` and `plan_check` answer `not_available` from the Body with the flag off; the MCP tool returns `body_unavailable`, not `not_available`.
@@ -59,3 +59,17 @@ Factual list at `d87221c4`. Each item is either a code gap or an owner call; non
 5. Run BLD-28 (`GELDAR_IT=1`) on the test shard, then BLD-29 evidence; BLD-31 go-live waits on the owner.
 6. Kit half: BLD-25 tag and upgrades are manual; the kit session tracks them.
 7. NeoForge: owner settles 0387 and 0390 before BLD-32 can start.
+8. Erasure (B8): erasing a life also removes its bare `<life_id>` body checkpoint in `geldar-checkpoints` (`tools/players-cli/src/erase-building.ts`). Test-covered; the runbook line is in `building.md`.
+
+### Config lines that change (B8)
+
+| File and line | What changes | Manual? |
+| --- | --- | --- |
+| `animus/src/prompts/library.ts` (`BUILDING_BODY_API_VERSION`, `bodyApiVersionFor`) | New: the Mind renders body-api v12 while the flag is on, v10 while off. `DEFAULT_BODY_API_VERSION` stays 10. | No (code). Restart the Minds after the flag changes. |
+| `animus/src/main.ts`, `animus/src/config.ts` (`buildingOn`) | New: read `body_actions.building` from the shard file. | No (code). |
+| `threshold/mcp/src/tools/unavailable.ts`, `config.ts`, `main.ts`, `world-session.ts` | `survey` and `plan_check` listed while `body_actions.building` is on, even with `show_unavailable_tools: false`. | No (code). Restart the MCP. |
+| `shards/colo-mind.yaml` line 63, `show_unavailable_tools: false` | Unchanged. Not needed for survey and plan_check now. | No edit. |
+| `shards/colo-mind.yaml` line 29, `body_actions` | Not changed here. Owner adds `building: true` at go-live (BLD-31). | Yes, manual, after the NATS steps below. |
+| Live NATS conf, `body` role Pub list | Add `$KV.geldar-plans.>` and `$KV.geldar-seen.>`, then reload. | Yes, manual (`nats-auth-inplace.md`, MANUAL create order). |
+| Live NATS buckets `geldar-plans`, `geldar-seen` | Create in that order, with an admin identity, default settings. | Yes, manual. |
+| `tools/players-cli/src/erase-building.ts` | Erasure also removes the bare `<life_id>` body checkpoint. | No (code). |

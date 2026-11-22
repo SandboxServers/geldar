@@ -66,6 +66,21 @@ describe('loadMcpConfig', () => {
     );
   });
 
+  it('reads body_actions.building: off when left out, on only when true, refused when not a boolean', () => {
+    expect(parseMcpConfig(shardDoc(), { env: ENV }).buildingOn).toBe(false);
+    const on = shardDoc();
+    on.body_actions = { edit_sign: false, building: true };
+    expect(parseMcpConfig(on, { env: ENV }).buildingOn).toBe(true);
+    const off = shardDoc();
+    off.body_actions = { building: false };
+    expect(parseMcpConfig(off, { env: ENV }).buildingOn).toBe(false);
+    const bad = shardDoc();
+    bad.body_actions = { building: 'yes' };
+    expect(() => parseMcpConfig(bad, { env: ENV })).toThrow(
+      'body_actions.building must be true or false',
+    );
+  });
+
   it('shows the unavailable tools when show_unavailable_tools is absent or true', () => {
     expect(parseMcpConfig(shardDoc(), { env: ENV }).sovereign.showUnavailableTools).toBe(true);
     const doc = shardDoc();

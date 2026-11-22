@@ -30,7 +30,7 @@ import type {
   MemoryStore,
   ModelClient,
 } from './ports/index.ts';
-import { createPromptLibrary } from './prompts/library.ts';
+import { bodyApiVersionFor, createPromptLibrary } from './prompts/library.ts';
 import { ThinkerHub } from './thinker/hub.ts';
 import { LocalThinkerClient } from './thinker/local-client.ts';
 import { createOutputValidator } from './validate/index.ts';
@@ -203,6 +203,7 @@ export async function startMind(
       journal: db.journal,
       embedder,
       prompts: createPromptLibrary({
+        version: bodyApiVersionFor(config.buildingOn),
         thoughtBudgetTokens: config.mind.promptBudgetTokens,
         maxBeliefs: config.mind.maxBeliefs,
         thoughtVersion: config.mind.thoughtVersion,

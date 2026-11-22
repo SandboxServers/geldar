@@ -52,6 +52,8 @@ export interface WorldSessionDeps {
   maxResultBytes?: number | undefined;
   /** `sovereign.mcp.show_unavailable_tools`: false hides the tools this world does not run. Default true. */
   showUnavailableTools?: boolean | undefined;
+  /** `body_actions.building`: survey and plan_check are listed while it is on, even when the tools are hidden. */
+  buildingOn?: boolean | undefined;
   log?: (line: Record<string, unknown>) => void;
 }
 
@@ -243,7 +245,7 @@ export function createWorldSession(
   // A random id per MCP session. It keys what `wait` remembers about what this session was sent; it
   // carries no token, life id or secret, and is never logged.
   const session = newSessionId();
-  const hidden = hiddenToolsFor(deps.showUnavailableTools ?? true);
+  const hidden = hiddenToolsFor(deps.showUnavailableTools ?? true, deps.buildingOn ?? false);
   const mcp = new McpServer(
     { name: 'geldar-mcp', version: '0.0.0' },
     { capabilities: { tools: {}, resources: {}, prompts: {}, logging: {} } },
