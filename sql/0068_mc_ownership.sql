@@ -3,6 +3,9 @@
 -- mc_profile_uuid (32 lowercase hex, when the check returned one). No token, gamertag, XUID, email or entitlement is
 -- stored. Existing owners keep NULL in all three (= not checked); the gate never blocks an existing owner.
 -- The check itself runs in the server (not here); this migration only records its answer.
+-- Who may call the record: the sign-up path is the only gate. The function does not test the age of the identity or
+-- its ban state beyond the tombstone rule, so a legacy owner whose columns are NULL can be stamped by a caller bug.
+-- Owner decision pending (see the database-schema docs row for 0068); no SQL gate is added here.
 --
 -- 1. mcp_identities gets the three columns. owns_java and mc_checked_at are NULL together (the CHECK below).
 -- 2. register_mc_ownership_record(identity_hash, owns_java, profile_uuid): records the answer once per identity.

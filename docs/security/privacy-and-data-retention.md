@@ -98,7 +98,7 @@ An owner deletes the account from the account page or the API. One transaction, 
 
 **Removed** (decisions [0171](../decisions/0171-account-erasure-rule.md) item 1 and [0262](../decisions/0262-account-deletion-erases-dead-lives-too.md) items 1, 2 and 4; `sql/0040_account_deletion_all_lives.sql` header):
 
-- the identity, unless banned; the owner; owner keys; sessions; consent rows; the Kino admin row;
+- the identity, unless banned; the Minecraft ownership columns (`owns_java`, `mc_checked_at`, `mc_profile_uuid`, 0068) of a banned identity, which are cleared; the owner; owner keys; sessions; consent rows; the Kino admin row;
 - the owner's players, roster rows, body operations and every player token;
 - for every life of the owner, dead or alive: character sheet rows (decision [0282](../decisions/0282-sheet-erasure-covers-dead-lives.md)), sleep marks, budget, death records, journal, thoughts, receipts, suppressed wakeups, actions, intents, skill runs, memories, goals, skill library, relationships on both sides, ledger, votes and events;
 - the identity's own `kino_audit` rows.
