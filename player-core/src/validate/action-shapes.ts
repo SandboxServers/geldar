@@ -23,6 +23,8 @@ export const ACTION_FIELDS: Readonly<Record<string, readonly string[]>> = {
   till: ['do', 'at'],
   edit_sign: ['do', 'at', 'text'],
   use: ['do', 'item', 'at', 'entity'],
+  break: ['do', 'at'],
+  plan: ['do', 'op', 'plan_id', 'palette', 'steps', 'origin', 'order', 'final', 'seq'],
 };
 
 /**
@@ -32,4 +34,5 @@ export const ACTION_FIELDS: Readonly<Record<string, readonly string[]>> = {
  */
 export const ACTION_OPTIONAL: Readonly<Record<string, readonly string[]>> = {
   use: ['item', 'at', 'entity'],
+  plan: ['origin', 'order', 'final', 'seq'],
 };
