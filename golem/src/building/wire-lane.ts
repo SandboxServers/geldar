@@ -10,6 +10,7 @@ import type { ActionContext, ActionRun } from '../actions/registry.ts';
 import type { BodyRuntime } from '../body/runtime.ts';
 import type { GolemMetrics } from '../metrics.ts';
 import type { CellCode, CellEnv, CellHandlers } from './cell-do.ts';
+import type { StandPort } from './cell-stand.ts';
 import { type Contention, contendFor } from './contention.ts';
 import { PlanLane } from './lane.ts';
 import { PlanProgressEmitter } from './progress-emitter.ts';
@@ -58,7 +59,8 @@ export function createLaneWiring(options: LaneWiringOptions): LaneWiring {
     ...(options.store === undefined ? {} : { store: options.store }),
   });
   const env = cellEnvOf(bot);
-  const handlers = cellHandlersOf(runtime);
+  // The stand path (cell-stand.ts) is part of the cell executor only here, where the building flag is on.
+  const handlers: CellHandlers = { ...cellHandlersOf(runtime), stand: standPortOf(bot) };
   const clock: WallClock = options.wallClock ?? (() => Date.now());
   const tps = new TpsEstimator(clock);
   // The throttle asks before each cell, in world ticks, with the Body's own TPS estimate (throttle.ts).
@@ -137,6 +139,20 @@ export function cellEnvOf(bot: Bot): CellEnv {
   };
 }
 
+/** The bot's feet cell and the block reader the stand solver needs (cell-stand.ts), from the live bot. */
+export function standPortOf(bot: Bot): StandPort {
+  return {
+    feet: () => {
+      const p = bot.entity.position;
+      return { x: Math.floor(p.x), y: Math.floor(p.y + 1e-3), z: Math.floor(p.z) };
+    },
+    world: (x, y, z) => {
+      const block = bot.blockAt(new Vec3(x, y, z));
+      return block === null ? null : { name: block.name, boundingBox: block.boundingBox };
+    },
+  };
+}
+
 /**
  * The place and break handlers the cells drive: each one runs through the runtime, so it takes the
  * action slot. A busy slot or a stopping runtime ends the cell as `cancelled`: the cursor stays and
@@ -155,6 +171,11 @@ export function cellHandlersOf(runtime: BodyRuntime): CellHandlers {
     return outcomeOf(run);
   };
   return {
+    goto: {
+      kind: 'goto',
+      timeoutMs: runtime.actions.get('goto')?.timeoutMs ?? 0,
+      run: (ctx, action) => runCell(ctx, action),
+    },
     place: {
       kind: 'place',
       timeoutMs: runtime.actions.get('place')?.timeoutMs ?? 0,
