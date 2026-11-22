@@ -177,6 +177,8 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
   const ended = new Promise<string>((resolve) => {
     end = resolve;
   });
+  // Ends the plan_check dry run still walking when this Body ends (plan-check-reply.ts).
+  const planLife = new AbortController();
   // The server's world age comes with each time packet: the TPS and tick-lag metrics read it here.
   const onTime = (): void => {
     const age = worldAge(bot);
@@ -185,6 +187,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
   bot.on('time', onTime);
   const onEnd = (reason?: string): void => {
     gone = true;
+    planLife.abort();
     stopSounds();
     bot.off('time', onTime);
     end(`bot ended: ${reason ?? 'unknown'}`);
@@ -390,7 +393,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
         ? {}
         : {
             survey: surveyFrom(restarted.body.seen, tick),
-            planCheck: planCheckFrom(restarted.body.seen.map, bot),
+            planCheck: planCheckFrom(restarted.body.seen.map, bot, planLife.signal),
           }),
     });
     link.start();
@@ -428,6 +431,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
     fail: (reason) => end(reason),
     async stop() {
       bot.off('end', onEnd);
+      planLife.abort();
       if (onHealth !== undefined) bot.off('health', onHealth);
       detachHurts();
       detachChunks();

@@ -1,10 +1,6 @@
+import { expandPlan, tallyMaterials } from '@geldar/player-core/src/building/index.ts';
 import { describe, expect, it, vi } from 'vitest';
-import {
-  answerPlanCheck,
-  PLAN_CHECK_CELL_CAP,
-  type PlanCheckBody,
-  planCheckFrom,
-} from './plan-check-reply.ts';
+import { answerPlanCheck, type PlanCheckBody, planCheckFrom } from './plan-check-reply.ts';
 import { SeenMap } from './seen/section.ts';
 
 const PACK = { stone: 4 };
@@ -18,34 +14,49 @@ const BOX_2X2 = {
   },
 };
 
-/** A single-row stone box along x at y 64, `count` cells long. */
-function lineBox(count: number) {
-  return {
-    plan: {
-      palette: { stone: { block: 'stone' } },
-      steps: [
-        { op: 'box', pal: 'stone', from: { x: 0, y: 64, z: 0 }, to: { x: count - 1, y: 64, z: 0 } },
-      ],
-    },
-  };
-}
+/** A sphere of radius 120 about (0, 64, 0): the large plan the walk must stream. */
+const SPHERE_120 = {
+  plan: {
+    palette: { stone: { block: 'stone' } },
+    origin: { x: 0, y: 64, z: 0 },
+    steps: [{ op: 'sphere', pal: 'stone', center: { x: 0, y: 0, z: 0 }, radius: 120 }],
+  },
+};
 
-/** A body whose map records the given cells as seen; the map's reads are spied on. */
+/** A body whose map records the given cells as seen. */
 function bodyWith(seenCells: [number, number, number][]): PlanCheckBody & { seen: SeenMap } {
   const seen = new SeenMap();
   for (const [x, y, z] of seenCells) seen.record(x, y, z, 'stone', 10);
   return { seen, pack: () => PACK, feet: () => FEET };
 }
 
+/** A map that answers "never seen" for every cell and counts its reads (no allocation per cell). */
+function countingBody(extra: Partial<PlanCheckBody> = {}): {
+  body: PlanCheckBody;
+  reads: () => number;
+} {
+  let count = 0;
+  const seen = {
+    read: () => {
+      count++;
+      return undefined;
+    },
+  } as unknown as SeenMap;
+  return {
+    body: { seen, pack: () => PACK, feet: () => FEET, ...extra },
+    reads: () => count,
+  };
+}
+
 describe('answerPlanCheck (the Body dry run)', () => {
-  it('counts the cells and the material needs from the seen map and the pack', () => {
+  it('counts the cells and the material needs from the seen map and the pack', async () => {
     const body = bodyWith([
       [0, 64, 0],
       [1, 64, 0],
       [0, 64, 1],
       [1, 64, 1],
     ]);
-    expect(answerPlanCheck(body, BOX_2X2, true)).toEqual({
+    expect(await answerPlanCheck(body, BOX_2X2, true)).toEqual({
       cells: 4,
       material_needs: { stone: { need: 4, have: 4 } },
       unknown_cells: 0,
@@ -54,59 +65,33 @@ describe('answerPlanCheck (the Body dry run)', () => {
     });
   });
 
-  it('refuses with not_available when the building flag is off, and never reads the map', () => {
-    const body = bodyWith([[0, 64, 0]]);
-    const read = vi.spyOn(body.seen, 'read');
-    expect(answerPlanCheck(body, BOX_2X2, false)).toEqual({ error: 'not_available' });
-    expect(read).not.toHaveBeenCalled();
+  it('refuses with not_available when the building flag is off, and never reads the map', async () => {
+    const { body, reads } = countingBody();
+    expect(await answerPlanCheck(body, BOX_2X2, false)).toEqual({ error: 'not_available' });
+    expect(reads()).toBe(0);
   });
 
-  it('counts a cell never seen as unknown, and the reply carries no coordinates', () => {
+  it('counts a cell never seen as unknown, and the reply carries no coordinates', async () => {
     const body = bodyWith([[0, 64, 0]]);
-    const answer = answerPlanCheck(body, BOX_2X2, true);
+    const answer = await answerPlanCheck(body, BOX_2X2, true);
     expect(answer).toMatchObject({ cells: 4, unknown_cells: 3 });
     expect(JSON.stringify(answer)).not.toMatch(/"x"|"y"|"z"/);
   });
 
-  it('refuses a plan over the cell cap as plan_too_large, and stops expanding at the cap', () => {
-    const body = bodyWith([]);
-    const read = vi.spyOn(body.seen, 'read');
-    const huge = {
-      plan: {
-        palette: { stone: { block: 'stone' } },
-        steps: [
-          { op: 'box', pal: 'stone', from: { x: 0, y: 64, z: 0 }, to: { x: 999, y: 64, z: 999 } },
-        ],
-      },
-    };
-    expect(answerPlanCheck(body, huge, true)).toEqual({ error: 'plan_too_large' });
-    expect(read.mock.calls.length).toBeLessThanOrEqual(PLAN_CHECK_CELL_CAP + 1);
-  });
-
-  it('lists a step that names a missing palette key as invalid, without counting it', () => {
-    const body = bodyWith([]);
+  it('lists a step that names a missing palette key as invalid, without counting it', async () => {
     const plan = {
       plan: {
         palette: { stone: { block: 'stone' } },
         steps: [{ op: 'place', pal: 'glass', at: { x: 0, y: 64, z: 0 } }],
       },
     };
-    expect(answerPlanCheck(body, plan, true)).toMatchObject({
+    expect(await answerPlanCheck(bodyWith([]), plan, true)).toMatchObject({
       cells: 0,
       invalid_steps: [{ index: 0, reason: 'unknown_palette_key' }],
     });
   });
 
-  it('answers a plan of exactly the cell cap, and refuses one cell more as plan_too_large', () => {
-    expect(answerPlanCheck(bodyWith([]), lineBox(PLAN_CHECK_CELL_CAP), true)).toMatchObject({
-      cells: PLAN_CHECK_CELL_CAP,
-    });
-    expect(answerPlanCheck(bodyWith([]), lineBox(PLAN_CHECK_CELL_CAP + 1), true)).toEqual({
-      error: 'plan_too_large',
-    });
-  });
-
-  it('resolves origin here from the feet cell by floor: x 10.7 and z -0.3 are cell (10, -1)', () => {
+  it('resolves origin here from the feet cell by floor: x 10.7 and z -0.3 are cell (10, -1)', async () => {
     const seen = new SeenMap();
     seen.record(10, 64, -1, 'stone', 10);
     const bot = {
@@ -120,19 +105,17 @@ describe('answerPlanCheck (the Body dry run)', () => {
         steps: [{ op: 'place', pal: 'stone', at: { x: 0, y: 0, z: 0 } }],
       },
     };
-    expect(planCheckFrom(seen, bot)(plan)).toMatchObject({ cells: 1, unknown_cells: 0 });
-    expect(planCheckFrom(new SeenMap(), bot)(plan)).toMatchObject({
-      unknown_cells: 1,
-    });
+    expect(await planCheckFrom(seen, bot)(plan)).toMatchObject({ cells: 1, unknown_cells: 0 });
+    expect(await planCheckFrom(new SeenMap(), bot)(plan)).toMatchObject({ unknown_cells: 1 });
   });
 
-  it('lists at most 256 invalid steps, the first by index, and still counts every cell', () => {
+  it('lists at most 256 invalid steps, the first by index, and still counts every cell', async () => {
     const steps = Array.from({ length: 300 }, () => ({
       op: 'place',
       pal: 'glass',
       at: { x: 0, y: 64, z: 0 },
     }));
-    const answer = answerPlanCheck(
+    const answer = await answerPlanCheck(
       bodyWith([]),
       { plan: { palette: { stone: { block: 'stone' } }, steps } },
       true,
@@ -142,40 +125,112 @@ describe('answerPlanCheck (the Body dry run)', () => {
     expect((answer as { invalid_steps: { index: number }[] }).invalid_steps[255]?.index).toBe(255);
   });
 
-  it('refuses a sphere of radius 1,000,000 and a wall of length 60,000,000 at once, as plan_too_large', () => {
-    // Relative steps (an origin is given), so the validator's absolute height and border limits do not apply.
-    const sphere = {
-      plan: {
-        palette: { stone: { block: 'stone' } },
-        origin: { x: 0, y: 64, z: 0 },
-        steps: [{ op: 'sphere', pal: 'stone', center: { x: 0, y: 0, z: 0 }, radius: 1_000_000 }],
-      },
-    };
-    const wall = {
-      plan: {
-        palette: { stone: { block: 'stone' } },
-        origin: { x: 0, y: 64, z: 0 },
-        steps: [
-          {
-            op: 'wall',
-            pal: 'stone',
-            from: { x: -30_000_000, y: 0, z: 0 },
-            to: { x: 30_000_000, y: 0, z: 0 },
-            height: 1,
-          },
-        ],
-      },
-    };
-    for (const request of [sphere, wall]) {
-      const started = performance.now();
-      expect(answerPlanCheck(bodyWith([]), request, true)).toEqual({ error: 'plan_too_large' });
-      expect(performance.now() - started).toBeLessThan(200);
-    }
-  });
-
-  it('refuses an input the contract does not accept as invalid_input', () => {
-    expect(answerPlanCheck(bodyWith([]), { plan: 'nope' }, true)).toEqual({
+  it('refuses an input the contract does not accept as invalid_input', async () => {
+    expect(await answerPlanCheck(bodyWith([]), { plan: 'nope' }, true)).toEqual({
       error: 'invalid_input',
     });
+  });
+
+  it('answers a radius-120 sphere, never holding more than one layer, and yields between slices', async () => {
+    const layers: number[] = [];
+    const { body, reads } = countingBody({ layers: { onLayer: (y) => layers.push(y) } });
+    const yields = vi.spyOn(globalThis, 'setImmediate');
+    try {
+      const answer = await answerPlanCheck(body, SPHERE_120, true);
+      expect(answer).toMatchObject({ unknown_cells: reads() });
+      expect(reads()).toBeGreaterThan(0);
+      expect(layers).toHaveLength(241);
+      expect(layers.every((y, i) => i === 0 || y === (layers[i - 1] ?? 0) + 1)).toBe(true);
+      expect(yields.mock.calls.length).toBeGreaterThan(0);
+    } finally {
+      yields.mockRestore();
+    }
+  }, 60_000);
+
+  it('reports the exact counts of an eager expansion on a small plan', async () => {
+    const plan = {
+      palette: { stone: { block: 'stone' }, glass: { block: 'glass' } },
+      steps: [
+        { op: 'box', pal: 'stone', from: { x: -2, y: 64, z: -2 }, to: { x: 2, y: 66, z: 2 } },
+        { op: 'sphere', pal: 'glass', center: { x: 0, y: 65, z: 0 }, radius: 3 },
+        {
+          op: 'wall',
+          pal: 'stone',
+          from: { x: -4, y: 64, z: 4 },
+          to: { x: 4, y: 64, z: 4 },
+          height: 2,
+        },
+      ],
+    };
+    const seen = bodyWith([
+      [0, 64, 0],
+      [1, 65, 1],
+      [-4, 64, 4],
+    ]);
+    const eager = [...expandPlan(plan as unknown as Parameters<typeof expandPlan>[0])];
+    const tally = tallyMaterials(eager);
+    const expectedUnknown = eager.filter((c) => seen.seen.read(c.x, c.y, c.z) === undefined).length;
+    const answer = await answerPlanCheck(seen, { plan }, true);
+    expect(answer).toEqual({
+      cells: eager.length,
+      material_needs: {
+        stone: { need: tally.stone ?? 0, have: 4 },
+        glass: { need: tally.glass ?? 0, have: 0 },
+      },
+      unknown_cells: expectedUnknown,
+      estimated_ticks: eager.length,
+      invalid_steps: [],
+    });
+  });
+
+  it('stops the walk when its signal aborts, and answers not_available', async () => {
+    const controller = new AbortController();
+    let slices = 0;
+    const { body, reads } = countingBody({
+      sliceFor: () => {
+        slices++;
+        if (slices === 3) controller.abort();
+        return 100;
+      },
+    });
+    expect(await answerPlanCheck(body, SPHERE_120, true, controller.signal)).toEqual({
+      error: 'not_available',
+    });
+    expect(reads()).toBeLessThanOrEqual(300);
+  });
+
+  it('a newer plan_check supersedes the walk still running: the older one is not_available', async () => {
+    const check = planCheckFrom(new SeenMap(), {
+      inventory: { items: () => [] },
+      entity: { position: FEET },
+    });
+    const first = check(SPHERE_120);
+    const second = check(BOX_2X2);
+    expect(await first).toEqual({ error: 'not_available' });
+    expect(await second).toMatchObject({ cells: 4 });
+  });
+
+  it('the Body ending aborts its walk: not_available, and no later walk is started', async () => {
+    const life = new AbortController();
+    const check = planCheckFrom(
+      new SeenMap(),
+      { inventory: { items: () => [] }, entity: { position: FEET } },
+      life.signal,
+    );
+    const pending = check(SPHERE_120);
+    life.abort();
+    expect(await pending).toEqual({ error: 'not_available' });
+  });
+
+  it('a bot with no position refuses as not_available, and the answer names no cell', async () => {
+    const bot = { inventory: { items: () => [] } };
+    const plan = {
+      plan: {
+        palette: { stone: { block: 'stone' } },
+        origin: 'here',
+        steps: [{ op: 'place', pal: 'stone', at: { x: 0, y: 0, z: 0 } }],
+      },
+    };
+    expect(await planCheckFrom(new SeenMap(), bot)(plan)).toEqual({ error: 'not_available' });
   });
 });

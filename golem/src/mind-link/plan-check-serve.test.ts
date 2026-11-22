@@ -100,11 +100,11 @@ describe('MindLinkServer plan_check (round trip with the seen map)', () => {
     expect(asked).toBe(0);
   });
 
-  it('answers not_available when the bot has no position, so the gateway fails closed', () => {
+  it('answers not_available when the bot has no position, so the gateway fails closed', async () => {
     const map = new SeenMap();
     const bot = { inventory: { items: () => [] } };
     expect(
-      answerPlanCheck(
+      await answerPlanCheck(
         {
           seen: map,
           pack: () => ({}),
@@ -118,6 +118,6 @@ describe('MindLinkServer plan_check (round trip with the seen map)', () => {
     ).toEqual({
       error: 'not_available',
     });
-    expect(planCheckFrom(map, bot)(PLAN)).toEqual({ error: 'not_available' });
+    expect(await planCheckFrom(map, bot)(PLAN)).toEqual({ error: 'not_available' });
   });
 });
