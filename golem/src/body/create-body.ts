@@ -7,6 +7,7 @@ import { allActions } from '../actions/index.ts';
 import type { ActionRun } from '../actions/registry.ts';
 import { useHandler } from '../actions/use.ts';
 import { setSwimEnabled } from '../actions/water-rules.ts';
+import type { PlanQueueStore } from '../building/queue.ts';
 import { planHandler } from '../building/queue-action.ts';
 import { createPlanExpand } from '../building/wire-expand.ts';
 import { createLaneWiring, type LaneWiring } from '../building/wire-lane.ts';
@@ -57,6 +58,8 @@ export interface CreateBodyOptions {
   building?: boolean;
   /** The seen store's bucket and the predecessor life; with the building flag on only. Left out: in memory. */
   seen?: Partial<Pick<SeenWiringOptions, 'kv' | 'agentId' | 'predecessor' | 'log'>>;
+  /** Where queued plans and plan progress are stored (wire-plan-store); with the building flag on only. */
+  planStore?: PlanQueueStore;
   /** The shard's `body_actions.swim` flag; the goto swim and the bank exit are off while off. Default: off (decision 0194). */
   swim?: boolean;
   /**
@@ -212,6 +215,7 @@ export function createBody(options: CreateBodyOptions): Body {
       bot: options.bot,
       runtime: built,
       expand: createPlanExpand(feet),
+      ...(options.planStore === undefined ? {} : { store: options.planStore }),
     });
   }
   built.actions.register(planHandler(options.building ?? false, plan?.queue ?? null));

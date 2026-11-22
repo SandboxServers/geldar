@@ -43,11 +43,24 @@ export type QueueLane = Pick<
   'state' | 'start' | 'step' | 'pauseForReflex' | 'resume' | 'endForDeath' | 'checkpointState'
 >;
 
+/**
+ * Optional persistence the queue calls (BLD-05 wiring). `stored` runs before a plan is queued or
+ * replaces one, and returns how many chunks it was kept in; a throw refuses the message. `dropped`
+ * runs when a plan leaves the queue (cancel, or finished). `progressed` runs after each lane slice.
+ */
+export interface PlanQueueStore {
+  stored(planId: string, cells: readonly PlanCell[]): Promise<number>;
+  dropped(planId: string): Promise<void>;
+  progressed(lane: QueueLane): void;
+}
+
 export interface PlanQueueOptions {
   lifeId: string;
   lane: QueueLane;
   contention: Contention;
   expand: PlanExpand;
+  /** Persists plans and progress; left out, the queue is in memory only (as before). */
+  store?: PlanQueueStore;
 }
 
 interface Upload {
@@ -73,6 +86,7 @@ export class PlanQueue {
   private readonly lane: QueueLane;
   private readonly contention: Contention;
   private readonly expand: PlanExpand;
+  private readonly store: PlanQueueStore | null;
   private readonly uploads = new Map<string, Upload>();
   private readonly waiting: Entry[] = [];
   private active: Entry | null = null;
@@ -82,6 +96,7 @@ export class PlanQueue {
     this.lane = options.lane;
     this.contention = options.contention;
     this.expand = options.expand;
+    this.store = options.store ?? null;
   }
 
   /** Takes one plan message. A final chunk is joined with its earlier chunks and then queued or replaced. */
@@ -124,13 +139,16 @@ export class PlanQueue {
     }
     let dropped = 0;
     if (this.active !== null && match(this.active.planId)) {
+      const id = this.active.planId;
       await this.dropActive();
+      await this.store?.dropped(id);
       dropped++;
     }
     for (let i = this.waiting.length - 1; i >= 0; i--) {
       const entry = this.waiting[i];
       if (entry !== undefined && match(entry.planId)) {
         this.waiting.splice(i, 1);
+        await this.store?.dropped(entry.planId);
         dropped++;
       }
     }
@@ -148,7 +166,32 @@ export class PlanQueue {
       return;
     }
     await this.lane.step(ctx, deps);
-    if (this.lane.state === 'idle') this.active = null;
+    this.store?.progressed(this.lane);
+    if (this.lane.state === 'idle' && this.active !== null) {
+      const id = this.active.planId;
+      this.active = null;
+      await this.store?.dropped(id);
+    }
+  }
+
+  /**
+   * Puts back a plan saved before a restart, from its cursor, as the active plan. Refused (false)
+   * when a plan is already active. The cells come from the store; nothing is re-expanded.
+   */
+  restore(
+    entry: { planId: string; cells: readonly PlanCell[]; chunks: number },
+    cursor: number,
+  ): boolean {
+    if (this.active !== null || this.lane.state !== 'idle') return false;
+    const started = this.lane.start({
+      lifeId: this.lifeId,
+      planId: entry.planId,
+      chunks: entry.chunks,
+      cells: entry.cells,
+      cursor,
+    });
+    if (started) this.active = { planId: entry.planId, cells: entry.cells, chunks: entry.chunks };
+    return started;
   }
 
   private async apply(
@@ -166,21 +209,41 @@ export class PlanQueue {
     if (op === 'add') {
       if (this.isKnown(planId))
         return { kind: 'refused', message: `plan ${planId} already exists` };
-      this.waiting.push({ planId, cells, chunks });
+      const kept = await this.keep(planId, cells, chunks);
+      if (typeof kept !== 'number') return kept;
+      this.waiting.push({ planId, cells, chunks: kept });
       return { kind: 'queued', cells: cells.length, position: this.waiting.length };
     }
     if (this.active?.planId === planId) {
       const cursor = this.lane.checkpointState()?.cursor ?? 0;
       const placed = new Set(this.active.cells.slice(0, cursor).map(cellKey));
-      await this.dropActive();
       const rest = cells.filter((c) => !placed.has(cellKey(c)));
-      this.waiting.unshift({ planId, cells: rest, chunks });
+      const kept = await this.keep(planId, rest, chunks);
+      if (typeof kept !== 'number') return kept;
+      await this.dropActive();
+      this.waiting.unshift({ planId, cells: rest, chunks: kept });
       return { kind: 'queued', cells: rest.length, position: 1 };
     }
     const idx = this.waiting.findIndex((e) => e.planId === planId);
     if (idx < 0) return { kind: 'refused', message: `no plan ${planId} to replace` };
-    this.waiting[idx] = { planId, cells, chunks };
+    const kept = await this.keep(planId, cells, chunks);
+    if (typeof kept !== 'number') return kept;
+    this.waiting[idx] = { planId, cells, chunks: kept };
     return { kind: 'queued', cells: cells.length, position: idx + 1 };
+  }
+
+  /** Stores a plan through the store, if any. Returns its chunk count, or a refusal when the store fails. */
+  private async keep(
+    planId: string,
+    cells: readonly PlanCell[],
+    chunks: number,
+  ): Promise<number | SubmitReply> {
+    if (this.store === null) return chunks;
+    try {
+      return await this.store.stored(planId, cells);
+    } catch (error) {
+      return { kind: 'refused', message: `plan ${planId} not stored: ${errorText(error)}` };
+    }
   }
 
   private isKnown(planId: string): boolean {

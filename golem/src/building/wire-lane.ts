@@ -11,7 +11,8 @@ import type { BodyRuntime } from '../body/runtime.ts';
 import type { CellEnv, CellHandlers } from './cell-do.ts';
 import { type Contention, contendFor } from './contention.ts';
 import { PlanLane } from './lane.ts';
-import { type PlanExpand, PlanQueue } from './queue.ts';
+import { type PlanExpand, PlanQueue, type PlanQueueStore } from './queue.ts';
+import { TpsEstimator } from './tps-estimate.ts';
 
 /** The holder name a reflex's tick takes on the lane's contention. */
 const REFLEX_HOLDER = 'reflex';
@@ -22,6 +23,8 @@ export interface LaneWiringOptions {
   bot: Bot;
   runtime: BodyRuntime;
   expand: PlanExpand;
+  /** Persists queued plans and progress (wire-plan-store); left out, in memory only. */
+  store?: PlanQueueStore;
 }
 
 /** The parts of one Body's plan work. */
@@ -29,6 +32,8 @@ export interface LaneWiring {
   queue: PlanQueue;
   lane: PlanLane;
   contention: Contention;
+  /** The Body-side TPS estimate, from this Body's own tick times (tps-estimate.ts); undefined until measured. */
+  tps: TpsEstimator;
   /** One world tick, after the reflexes: `reflexBusy` holds the lane, else it is released and stepped. */
   onTick(tick: number, reflexBusy: boolean): Promise<void>;
 }
@@ -43,14 +48,18 @@ export function createLaneWiring(options: LaneWiringOptions): LaneWiring {
     lane,
     contention,
     expand: options.expand,
+    ...(options.store === undefined ? {} : { store: options.store }),
   });
   const env = cellEnvOf(bot);
   const handlers = cellHandlersOf(runtime);
+  const tps = new TpsEstimator();
   return {
     queue,
     lane,
     contention,
+    tps,
     async onTick(_tick: number, reflexBusy: boolean): Promise<void> {
+      tps.onTick();
       if (reflexBusy) await contention.hold(REFLEX_HOLDER);
       else contention.release(REFLEX_HOLDER);
       const ctx: ActionContext = {

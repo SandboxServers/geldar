@@ -184,8 +184,3 @@ export class PlanLane {
 export function createPlanLane(enabled: boolean): PlanLane | null {
   return enabled ? new PlanLane() : null;
 }
-
-/** Resumes a saved plan after a restart. Stub: no-op until BLD-14 wires restart.ts. */
-export function resumePlanLane(): void {
-  // BLD-14 fills this in.
-}
