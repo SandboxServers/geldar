@@ -50,6 +50,7 @@ export const DOCKER_SHIM = `#!/bin/sh
 printf '%s\\n' "$*" >> "$DOCKER_CALLS_LOG"
 for a in "$@"; do case $a in *.override.yml) cp "$a" "$DOCKER_CALLS_LOG.overlay" ;; esac; done
 case "$*" in
+  "ps "*"service=postgres"*) v="\${FAKE_POSTGRES_RUN-geldar-colo-postgres-1}"; [ -z "$v" ] || echo "$v"; exit 0 ;;
   "ps -a "*) [ -z "\${FAKE_PS_ALL:-}" ] || echo "$FAKE_PS_ALL"; exit 0 ;;
   "ps "*) [ -z "\${FAKE_PS_RUN:-}" ] || echo "$FAKE_PS_RUN"; exit 0 ;;
   "inspect "*) echo "\${FAKE_STATUS:-exited}"; exit 0 ;;

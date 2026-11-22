@@ -119,7 +119,7 @@ describe('colo-admin.sh (decision 0133)', () => {
     expect(r.out).not.toContain(SENTINEL);
     expect(
       calls(fx).some((c) =>
-        c.endsWith('run --rm admin token-mint alice --out /run/tokens/alice.token'),
+        c.endsWith('run --rm --no-deps admin token-mint alice --out /run/tokens/alice.token'),
       ),
     ).toBe(true);
     const overlay = readFileSync(`${fx.callsLog}.overlay`, 'utf8');
@@ -167,7 +167,9 @@ describe('colo-admin.sh (decision 0133)', () => {
     const r = run(fx, REAL, args);
     expect(r.code).toBe(0);
     expect(
-      calls(fx).some((c) => c.endsWith(`--profile admin run --rm admin ${args.join(' ')}`)),
+      calls(fx).some((c) =>
+        c.endsWith(`--profile admin run --rm --no-deps admin ${args.join(' ')}`),
+      ),
     ).toBe(true);
     expect(existsSync(`${fx.callsLog}.overlay`)).toBe(false);
   });
@@ -186,7 +188,9 @@ describe('colo-admin.sh (decision 0133)', () => {
     const r = run(fx, REAL, ['player-add', 'ag-clara-01']);
     expect(r.code).toBe(0);
     expect(
-      calls(fx).some((c) => c.endsWith('--profile admin run --rm admin player-add ag-clara-01')),
+      calls(fx).some((c) =>
+        c.endsWith('--profile admin run --rm --no-deps admin player-add ag-clara-01'),
+      ),
     ).toBe(true);
     expect(starts(calls(fx))).toHaveLength(1);
   });
@@ -208,7 +212,9 @@ describe('colo-admin.sh (decision 0133)', () => {
       const r = run(fx, REAL, ['owner-set-cap', 'jason', '20']);
       expect(r.code).toBe(0);
       expect(
-        calls(fx).some((c) => c.endsWith('--profile admin run --rm admin owner-set-cap jason 20')),
+        calls(fx).some((c) =>
+          c.endsWith('--profile admin run --rm --no-deps admin owner-set-cap jason 20'),
+        ),
       ).toBe(true);
       expect(existsSync(`${fx.callsLog}.overlay`)).toBe(false);
     });
@@ -264,7 +270,7 @@ describe('colo-admin.sh (decision 0133)', () => {
       expect(r.code).toBe(0);
       expect(
         calls(fx).some((c) =>
-          c.endsWith('--profile admin run --rm admin roster add Picard --owner steve'),
+          c.endsWith('--profile admin run --rm --no-deps admin roster add Picard --owner steve'),
         ),
       ).toBe(true);
       expect(existsSync(`${fx.callsLog}.overlay`)).toBe(false);
@@ -275,9 +281,13 @@ describe('colo-admin.sh (decision 0133)', () => {
       expect(run(fx, REAL, ['roster-list']).code).toBe(0);
       expect(run(fx, REAL, ['roster-list', '--owner', 'steve']).code).toBe(0);
       const log = calls(fx);
-      expect(log.some((c) => c.endsWith('--profile admin run --rm admin roster list'))).toBe(true);
       expect(
-        log.some((c) => c.endsWith('--profile admin run --rm admin roster list --owner steve')),
+        log.some((c) => c.endsWith('--profile admin run --rm --no-deps admin roster list')),
+      ).toBe(true);
+      expect(
+        log.some((c) =>
+          c.endsWith('--profile admin run --rm --no-deps admin roster list --owner steve'),
+        ),
       ).toBe(true);
     });
 

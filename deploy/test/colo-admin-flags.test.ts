@@ -56,7 +56,9 @@ describe('colo-admin.sh (decision 0133): owner-admin and player-flags', () => {
       const r = run(fx, REAL, args);
       expect(r.code).toBe(0);
       expect(
-        calls(fx).some((c) => c.endsWith(`--profile admin run --rm admin ${args.join(' ')}`)),
+        calls(fx).some((c) =>
+          c.endsWith(`--profile admin run --rm --no-deps admin ${args.join(' ')}`),
+        ),
       ).toBe(true);
       expect(existsSync(`${fx.callsLog}.overlay`)).toBe(false);
     });

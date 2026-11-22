@@ -1,7 +1,10 @@
 #!/bin/sh
-# Runs one administration subcommand in the one-shot admin container (decision 0133). The container starts with
-# `run --rm` under the profile admin. Nothing is brought up, stopped or removed, and no volume is touched. Every
-# compose call names the geldar-colo project. Only token-mint mounts a host directory: GELDAR_TOKENS_DIR, outside the
+# Runs one administration subcommand in the one-shot admin container (decision 0133): `docker compose run --rm --no-deps
+# admin` under the profile admin. Only that container is started, and it is removed when the run ends. --no-deps stops
+# compose from converging the admin service's depends_on (postgres), so a render that differs from the running postgres
+# never recreates it. The postgres container of this project must already be running: the script refuses otherwise and
+# starts nothing itself (colo-up.sh starts postgres before its migrate calls). No volume is touched. Every compose call
+# names the geldar-colo project. Only token-mint mounts a host directory: GELDAR_TOKENS_DIR, outside the
 # repo and mode 0700, bound at /run/tokens by an overlay written to the state directory and removed when the run ends.
 # The token value is never printed: the script prints the path and the byte length of the file, and nothing else.
 # Set DEPLOY_DRY_RUN=1 to print the plan; it runs only the read-only checks and `config --quiet`.
@@ -26,6 +29,12 @@ adm() {
   else
     docker compose -p "$PROJECT" -f "$COMPOSE_FILE" -f "$NATS_OVERLAY" -f "$SECRETS_OVERLAY" --profile admin "$@"
   fi
+}
+
+# Prints the name of the running postgres container of this project, or nothing. The one-shot never starts postgres.
+postgres_running() {
+  docker ps --filter "label=com.docker.compose.project=$PROJECT" --filter "label=com.docker.compose.service=postgres" \
+    --filter status=running --format '{{.Names}}'
 }
 
 # Checks the token-mint arguments: <player> [--out /run/tokens/<name>.token]. Sets player, out and TOKEN_REL.
@@ -306,9 +315,9 @@ case $cmd in player-start | player-stop | player-list) run_hosts ;; esac
 
 if [ "$DRY_RUN" = 1 ]; then
   case $cmd in
-    roster-add) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm admin roster add $roster_name --owner $roster_owner" ;;
-    roster-list) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm admin roster list${roster_owner:+ --owner $roster_owner}" ;;
-    *) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm admin $cmd $*" ;;
+    roster-add) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm --no-deps admin roster add $roster_name --owner $roster_owner" ;;
+    roster-list) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm --no-deps admin roster list${roster_owner:+ --owner $roster_owner}" ;;
+    *) say "dry-run, not run: docker compose -p $PROJECT ... --profile admin run --rm --no-deps admin $cmd $*" ;;
   esac
   if [ "$cmd" = token-mint ]; then
     say "dry-run, not run: write $STATE_DIR/admin-tokens.override.yml (mount $TOKENS_REAL at /run/tokens)"
@@ -320,29 +329,34 @@ if [ "$DRY_RUN" = 1 ]; then
   exit 0
 fi
 
+# Refuses before anything is written or run. Nothing has changed when this stops the script.
+if [ -z "$(postgres_running)" ]; then
+  die "postgres is not running in $PROJECT; start it first (colo-up.sh starts it before its migrate calls). This one-shot never starts it. Nothing was changed."
+fi
+
 if [ "$cmd" = skin-import ]; then
   write_overlay /run/skins "read_only: true" skins
   adm config --quiet || die "admin service config does not validate"
-  adm run --rm admin skin-import "$player" "$SKIN_REL_PATH" || die "skin-import failed; nothing is shown of the signed value"
+  adm run --rm --no-deps admin skin-import "$player" "$SKIN_REL_PATH" || die "skin-import failed; nothing is shown of the signed value"
   say "skin-import: done for $player (the signed value is not printed)"
 elif [ "$cmd" = token-mint ]; then
   write_overlay /run/tokens "" tokens
   adm config --quiet || die "admin service config does not validate"
-  adm run --rm admin token-mint "$player" --out "$out" || die "token-mint failed"
+  adm run --rm --no-deps admin token-mint "$player" --out "$out" || die "token-mint failed"
   verify_token
 elif [ "$cmd" = roster-add ]; then
   adm config --quiet || die "admin service config does not validate"
-  adm run --rm admin roster add "$roster_name" --owner "$roster_owner" || die "roster-add failed"
+  adm run --rm --no-deps admin roster add "$roster_name" --owner "$roster_owner" || die "roster-add failed"
   say "roster-add: done for $roster_name on the roster of $roster_owner (the admin container was removed)"
 elif [ "$cmd" = roster-list ]; then
   adm config --quiet || die "admin service config does not validate"
   if [ -n "$roster_owner" ]; then
-    adm run --rm admin roster list --owner "$roster_owner" || die "roster-list failed"
+    adm run --rm --no-deps admin roster list --owner "$roster_owner" || die "roster-list failed"
   else
-    adm run --rm admin roster list || die "roster-list failed"
+    adm run --rm --no-deps admin roster list || die "roster-list failed"
   fi
 else
   adm config --quiet || die "admin service config does not validate"
-  adm run --rm admin "$cmd" "$@" || die "admin $cmd failed"
+  adm run --rm --no-deps admin "$cmd" "$@" || die "admin $cmd failed"
   say "admin $cmd: done (the admin container was removed; no volume was touched)"
 fi

@@ -45,6 +45,7 @@ const DOCKER_SHIM = `#!/bin/sh
 printf '%s\\n' "$*" >> "$DOCKER_CALLS_LOG"
 case "$*" in
   *"config --quiet"*) exit 0 ;;
+  *"service=postgres"*) echo geldar-colo-postgres-1; exit 0 ;;
   *"config"*) cat "$DOCKER_CONFIG_FIXTURE"; exit 0 ;;
 esac
 exit 0
@@ -145,7 +146,9 @@ describe('public port overlay (GELDAR_MC_BIND, GELDAR_MC_PORT)', () => {
     const r = up(fx, { GELDAR_MC_BIND: '192.0.2.10', GELDAR_MC_PORT: '25999' });
     expect(r.code).toBe(0);
     expect(r.out).toContain('public Minecraft port published on 192.0.2.10:25999');
-    const log = composeCalls(fx).filter((c) => !/ run --rm admin|--profile admin config/.test(c));
+    const log = composeCalls(fx).filter(
+      (c) => !/ run --rm --no-deps admin|--profile admin config/.test(c),
+    );
     const withOverlay = log.filter((c) => c.includes(OVERLAY));
     // Exactly the validation and the velocity up carry the overlay, and they are the last two compose calls.
     expect(withOverlay).toHaveLength(2);
