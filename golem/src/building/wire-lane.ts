@@ -9,12 +9,14 @@ import { type ActionOutcome, cancelled, completed, failed } from '../actions/out
 import type { ActionContext, ActionRun } from '../actions/registry.ts';
 import type { BodyRuntime } from '../body/runtime.ts';
 import type { GolemMetrics } from '../metrics.ts';
+import { viewFromBot } from '../perception/view/viewport.ts';
 import type { CellCode, CellEnv, CellHandlers } from './cell-do.ts';
 import type { StandPort } from './cell-stand.ts';
 import { type Contention, contendFor } from './contention.ts';
 import { PlanLane } from './lane.ts';
 import { PlanProgressEmitter } from './progress-emitter.ts';
 import { type PlanBody, type PlanExpand, PlanQueue, type PlanQueueStore } from './queue.ts';
+import { cellInView } from './seen/recorder.ts';
 import { TickThrottle } from './throttle.ts';
 import { TpsEstimator, type WallClock } from './tps-estimate.ts';
 import { countSliceFor } from './wire-expand.ts';
@@ -79,6 +81,15 @@ export function createLaneWiring(options: LaneWiringOptions): LaneWiring {
     return verdict;
   };
   const onCell = (code: CellCode) => metrics?.planCell(code);
+  // Read from the bot's view when the cell has run. A failed read counts as out of view (the agent is told less).
+  const inView = (at: { x: number; y: number; z: number }): boolean => {
+    try {
+      const { world, pose } = viewFromBot(bot);
+      return cellInView(world, pose, at.x, at.y, at.z);
+    } catch {
+      return false;
+    }
+  };
   // Plan seconds: the wall time between two ticks on which a plan is still open (not idle, completed or failed).
   let lastAt: number | null = null;
   // The plan's progress events and wakes (progress-emitter.ts) go through the Body's record sink.
@@ -104,6 +115,7 @@ export function createLaneWiring(options: LaneWiringOptions): LaneWiring {
           now: () => runtime.view.tick ?? 0,
           beforeCell,
           onCell,
+          inView,
         });
       } catch (error) {
         // An unexpected throw fails the plan: its `failed` phase goes out once, then the error is rethrown.

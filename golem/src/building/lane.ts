@@ -10,6 +10,7 @@ import { doCellAt } from './cell-stand.ts';
 import type { LaneStateName } from './lane-state.ts';
 import { LayerKeys } from './layer-keys.ts';
 import { countMaterials } from './materials.ts';
+import { reportedCode } from './out-of-view.ts';
 import type { PlanCheckpointState, SkippedCell } from './plan-checkpoint.ts';
 import type { Cell } from './stand.ts';
 import type { ThrottleVerdict } from './throttle.ts';
@@ -67,6 +68,11 @@ export interface LaneDeps {
   beforeCell?: (now: number) => ThrottleVerdict;
   /** Told each cell's code once it is counted (the plan cell metric, wire-lane). */
   onCell?: (code: CellCode) => void;
+  /**
+   * Whether the cell is in the agent's seen view, read when the cell has run (wire-lane). A cell out of
+   * view reports one code (out-of-view.ts). Left out, the fine code is reported.
+   */
+  inView?: (at: Cell) => boolean;
 }
 
 /** Codes that leave the cell right: the cursor moves on. Every other code is skipped and recorded. */
@@ -289,10 +295,12 @@ export class PlanLane {
         return;
       }
       this.shortfall = null;
-      this.count(code);
+      // The collapse applies to what is counted and recorded as skipped; the cursor moves on as before.
+      const reported = reportedCode(code, deps.inView?.(cell.at));
+      this.count(reported);
       deps.onCell?.(code);
-      if (!DONE.has(code)) {
-        this.skipped.push({ at: [cell.at.x, cell.at.y, cell.at.z], code });
+      if (!DONE.has(reported)) {
+        this.skipped.push({ at: [cell.at.x, cell.at.y, cell.at.z], code: reported });
       }
       this.cursor++;
       this.state = 'running';
