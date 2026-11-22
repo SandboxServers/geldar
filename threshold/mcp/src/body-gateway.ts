@@ -1,8 +1,10 @@
 import type { BookReply, PlanAck, PlanMessage, Snapshot } from '@geldar/contract';
 import {
   bookSubject,
+  surveySubject,
   validateBookReply,
   validateSeeResult,
+  validateToolResult,
   validateViewResult,
   viewImageSubject,
   viewSubject,
@@ -30,6 +32,9 @@ export const BOOK_TIMEOUT_MS = 5_000;
 
 /** How long a `view` request waits for the Body's reply (the packet's 5 s). */
 const VIEW_TIMEOUT_MS = 5_000;
+
+/** How long a `survey` request waits for the Body's reply (the packet's 5 s). */
+const SURVEY_TIMEOUT_MS = 5_000;
 
 /** How long a `see` request waits for the Body's picture (the packet's 5 s). */
 const SEE_TIMEOUT_MS = 5_000;
@@ -101,6 +106,25 @@ export class NatsBodyGateway implements BodyGateway {
       const verdict = validateBookReply(JSON.parse(text) as unknown);
       if (!verdict.ok) throw new Error('book reply failed validation');
       return verdict.value;
+    });
+  }
+
+  /**
+   * The Body's survey of a box (BLD-38e). The Body answers `{ text, truncated }`; a refusal such as
+   * `{"error":"not_available"}` (the building flag is off) or any reply the contract does not accept
+   * is a failure, so it rejects with `BodyUnavailable` and the tool never returns it as data.
+   */
+  survey(lifeId: string, request: { box: unknown; layers?: number }): Promise<unknown> {
+    return this.guard(lifeId, 'survey', async (): Promise<unknown> => {
+      const text = await this.transport.request(
+        surveySubject(this.shard, lifeId),
+        JSON.stringify(request),
+        SURVEY_TIMEOUT_MS,
+      );
+      const reply = JSON.parse(text) as unknown;
+      if (!validateToolResult('survey', reply).ok)
+        throw new Error('survey reply failed validation');
+      return reply;
     });
   }
 

@@ -49,6 +49,13 @@ import { SEE_REFUSALS, type SeeDeps, type SeeOutcome, seeTool } from './tools/se
 import { type SleepDeps, sleepTool } from './tools/sleep.ts';
 import { statusTool } from './tools/status.ts';
 import {
+  createSurveyLimiter,
+  type SurveyDeps,
+  type SurveyError,
+  type SurveyRead,
+  surveyTool,
+} from './tools/survey.ts';
+import {
   NOT_AVAILABLE_MESSAGE,
   type NotAvailableTool,
   notAvailableTool,
@@ -165,6 +172,22 @@ const SEE_MESSAGES = {
   session_closed: 'The session ended, so no picture was taken.',
   body_unavailable: BODY_UNAVAILABLE_MESSAGE,
 } as const;
+
+/** The fixed messages for the `survey` codes (the body's own failure reuses BODY_UNAVAILABLE_MESSAGE). */
+const SURVEY_MESSAGES: Record<SurveyError, string> = {
+  invalid_input:
+    'survey takes a box of two corners and layers from 1 to 384 when given, and no other input.',
+  session_closed: 'The session ended, so no survey was read.',
+  rate_limited: 'Surveys are limited to one every 5 seconds. Survey again shortly.',
+  body_unavailable: BODY_UNAVAILABLE_MESSAGE,
+};
+
+/** The survey read, or a typed ToolError for each failure: a failed `survey` is never returned as data. */
+async function surveyOf(deps: SurveyDeps, call: ToolCall, input: unknown): Promise<SurveyRead> {
+  const outcome = await surveyTool(deps, call, input);
+  if ('error' in outcome) throw new ToolError(outcome.error, SURVEY_MESSAGES[outcome.error]);
+  return outcome.survey;
+}
 
 /** The picture, or a typed ToolError for each failure: a failed `see` is never returned as data. */
 async function seeOf(deps: SeeDeps, call: ToolCall, input: unknown): Promise<ImageToolResult> {
@@ -375,14 +398,23 @@ export function createWorld(deps: WorldDeps): World {
     buildSleepPlan: sleepPlanOf(wired.expiresAfterTicks),
   };
   const stopSettle = startSettle(wired);
+  const surveys = createSurveyLimiter(wired.now);
   const tools: ToolHandlers = {
     act: bound(wired, (call, input) => actTool(wired, call, input as ActArgs)),
     say: bound(wired, (call, input) => sayTool(wired, call, (input as SayInput).text)),
     sleep: bound(wired, (call) => sleepTool(sleepDeps, call)),
-    // BLD-21 wires the contract tool; the Body survey request is not in this world yet, so it refuses.
-    survey: bound(wired, async () => {
-      throw new ToolError('not_available', NOT_AVAILABLE_MESSAGE);
-    }),
+    // Hidden and refused while the building flag is off (unavailable.ts); on, it reads the Body's seen map.
+    survey: bound(wired, (call, input, ctx) =>
+      surveyOf(
+        {
+          survey: (lifeId, request) => wired.body.survey(lifeId, request),
+          isOpen: () => !ctx.signal.aborted,
+          limiter: surveys,
+        },
+        call,
+        input,
+      ),
+    ),
     // BLD-22 wires the contract tool; the Body read of the pack and seen map is not in this world yet, so it refuses.
     plan_check: bound(wired, async () => {
       throw new ToolError('not_available', NOT_AVAILABLE_MESSAGE);
