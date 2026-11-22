@@ -2,6 +2,7 @@ import type { Bot } from 'mineflayer';
 import { Vec3 } from 'vec3';
 import { vi } from 'vitest';
 import { placeAction } from './place.ts';
+import { upperCell } from './place-footprint.ts';
 
 /** Bounding box of each block the fake knows: `empty` cells are passable, `block` cells are solid. */
 export const BOXES: Record<string, 'block' | 'empty'> = {
@@ -16,6 +17,11 @@ export const BOXES: Record<string, 'block' | 'empty'> = {
   cobblestone: 'block',
   crafting_table: 'block',
   white_bed: 'block',
+  oak_door: 'block',
+  lava: 'empty',
+  poppy: 'empty',
+  sunflower: 'empty',
+  snow: 'empty',
 };
 
 export const SHAPES: Record<string, number[][]> = { dirt_path: [[0, 0, 0, 1, 0.9375, 1]] };
@@ -81,7 +87,12 @@ export function fakeBot(options: FakeOptions = {}): FakeBot {
     placeBlock: vi.fn(async (reference: { position: Vec3 }, face: Vec3) => {
       if (options.placeError) throw new Error(options.placeError);
       if (attempts++ < (options.refuseFirst ?? 0)) throw new Error('server refused to place');
-      world.set(key(reference.position.plus(face)), options.placedAs ?? held?.name ?? 'air');
+      const cell = reference.position.plus(face);
+      const name = options.placedAs ?? held?.name ?? 'air';
+      world.set(key(cell), name);
+      // A two-cell item (door, tall plant) fills the cell above too, as the server does.
+      const upper = upperCell(name, cell);
+      if (upper !== null) world.set(key(upper), name);
     }),
   };
   return {
