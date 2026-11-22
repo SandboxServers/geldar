@@ -123,8 +123,11 @@ describe('act description build facts', () => {
     }
   });
 
-  it('names the exact item id and that free-form build is unavailable', () => {
+  it('names the exact item id and the break and plan verbs, not free-form build', () => {
     expect(text).toContain('oak_planks, not planks');
-    expect(text).toContain('Free-form build actions are not available');
+    expect(text).toContain('break removes one block');
+    expect(text).toContain('plan adds, replaces or cancels');
+    expect(text).not.toContain('Free-form build actions are not available');
+    expect(text).not.toMatch(/you should build|you must build|try building/i);
   });
 });
