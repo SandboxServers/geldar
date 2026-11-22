@@ -8,6 +8,7 @@ import type { ActionOutcome } from '../actions/outcome.ts';
 import { recordOwnPlacement } from '../actions/own-placements.ts';
 import { confirmsPlacement, MESSAGE } from '../actions/place.ts';
 import type { ActionContext, ActionHandler } from '../actions/registry.ts';
+import { type BlockRef, parseBlockRef, placeStateOf, propsHold } from './block-ref.ts';
 import { countMaterials, dropOf, holdsToolKind, type ToolKind, toolFor } from './materials.ts';
 import type { HeldBlock } from './scaffold.ts';
 import type { Cell } from './stand.ts';
@@ -32,10 +33,14 @@ export type CellFailure = (typeof CELL_FAILURES)[number];
 /** What a cell ends with: a failure code, a success, or the caller's cancel. */
 export type CellCode = CellFailure | 'placed' | 'broken' | 'cancelled';
 
-/** One planned cell. `prior` is the block planned to be there first; `target` is the block to leave, or `air` to break it. */
+/**
+ * One planned cell. `prior` is the block planned to be there first, or null when the executor reads
+ * it from the live world (a break or a replace, BLD-38b2). `target` is a block reference (a name,
+ * or a name with state in brackets), or `air` to break the cell.
+ */
 export interface PlanCell {
   at: Cell;
-  prior: string;
+  prior: string | null;
   target: string;
 }
 
@@ -43,6 +48,8 @@ export interface PlanCell {
 export interface CellEnv {
   /** Block name at the cell, `air` for empty; null when the chunk is not loaded. */
   blockAt(at: Cell): string | null;
+  /** The state properties of the block at the cell (as strings); null when the chunk is not loaded. */
+  propsAt(at: Cell): Record<string, string> | null;
   /** Placeable items the agent holds. */
   held(): HeldBlock[];
   /** Names of every item the agent holds (tools included). */
@@ -64,25 +71,37 @@ export async function doCell(
 ): Promise<CellCode> {
   const live = env.blockAt(cell.at);
   if (live === null) return 'not_loaded';
-  if (live === cell.target) return 'done_already';
-  if (live !== cell.prior) return 'changed';
+  const want = parseBlockRef(cell.target);
+  if (live === want.name && propsHold(env.propsAt(cell.at), want.props)) return 'done_already';
+  // A break or a replace has no planned prior: the block there now is the prior, read live.
+  const prior = cell.prior ?? live;
+  if (live !== prior) return 'changed';
 
-  const refused = preflight(cell, env);
+  const refused = preflight(want, prior, env);
   if (refused !== null) return refused;
 
-  if (cell.prior !== 'air') {
+  if (prior !== 'air') {
     const dug = await handlers.dig.run(ctx, { do: 'break', at: cell.at });
     const code = settle(dug, () => (env.blockAt(cell.at) === 'air' ? null : 'blocked'));
     if (code !== null) return code;
   }
-  if (cell.target === 'air') return 'broken';
+  if (want.name === 'air') return 'broken';
 
-  const placed = await handlers.place.run(ctx, { do: 'place', block: cell.target, at: cell.at });
+  const state = placeStateOf(want);
+  const placeCtx = state === undefined ? ctx : { ...ctx, placeState: state };
+  const placed = await handlers.place.run(placeCtx, {
+    do: 'place',
+    block: want.name,
+    at: cell.at,
+  });
   const code = settle(placed, () =>
-    confirmsPlacement(env.blockAt(cell.at) ?? '', cell.target) ? null : 'blocked',
+    confirmsPlacement(env.blockAt(cell.at) ?? '', want.name) &&
+    propsHold(env.propsAt(cell.at), want.props)
+      ? null
+      : 'blocked',
   );
   if (code !== null) return code;
-  recordOwnPlacement(ctx.bot, cell.at, cell.target);
+  recordOwnPlacement(ctx.bot, cell.at, want.name);
   return 'placed';
 }
 
@@ -90,13 +109,13 @@ export async function doCell(
  * The checks before anything is broken: the target item must be held, or the break must yield it
  * (a replace); a prior block must be breakable with a tool the agent holds. Null when all hold.
  */
-function preflight(cell: PlanCell, env: CellEnv): CellFailure | null {
-  if (cell.target !== 'air') {
-    const yielded = cell.prior === 'air' ? 0 : Number(dropOf(cell.prior) === cell.target);
-    if (countMaterials(env.held(), cell.target) + yielded < 1) return 'missing_materials';
+function preflight(target: BlockRef, prior: string, env: CellEnv): CellFailure | null {
+  if (target.name !== 'air') {
+    const yielded = prior === 'air' ? 0 : Number(dropOf(prior) === target.name);
+    if (countMaterials(env.held(), target.name) + yielded < 1) return 'missing_materials';
   }
-  if (cell.prior !== 'air') {
-    const tool: ToolKind = toolFor(cell.prior);
+  if (prior !== 'air') {
+    const tool: ToolKind = toolFor(prior);
     if (!holdsToolKind(env.heldNames(), tool)) return 'no_tool';
   }
   return null;

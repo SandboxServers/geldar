@@ -70,6 +70,14 @@ export function cellEnvOf(bot: Bot): CellEnv {
       const block = bot.blockAt(new Vec3(at.x, at.y, at.z));
       return block === null ? null : block.name;
     },
+    propsAt: (at) => {
+      const block = bot.blockAt(new Vec3(at.x, at.y, at.z)) as {
+        getProperties?: () => Record<string, unknown>;
+      } | null;
+      if (block === null) return null;
+      const props = block.getProperties?.() ?? {};
+      return Object.fromEntries(Object.entries(props).map(([key, value]) => [key, String(value)]));
+    },
     held: () => bot.inventory.items().map((item) => ({ name: item.name, count: item.count })),
     heldNames: () => bot.inventory.items().map((item) => item.name),
   };
@@ -83,8 +91,10 @@ export function cellEnvOf(bot: Bot): CellEnv {
 export function cellHandlersOf(runtime: BodyRuntime): CellHandlers {
   const runCell = async (ctx: ActionContext, action: unknown): Promise<ActionOutcome> => {
     let run: ActionRun;
+    // A place that asks for a block state hands it to the runtime, as a program's place does.
+    const opts = ctx.placeState === undefined ? {} : { placeState: ctx.placeState };
     try {
-      run = await runtime.runAction(action, ctx.signal);
+      run = await runtime.runAction(action, ctx.signal, opts);
     } catch (error) {
       return cancelled({ error: error instanceof Error ? error.message : String(error) });
     }

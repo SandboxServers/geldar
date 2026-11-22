@@ -213,6 +213,7 @@ export class BodyRuntime {
       signal: controller.signal,
       receipts: this.receipts,
       ...(opts.mineAt === undefined ? {} : { mineAt: opts.mineAt }),
+      ...(opts.placeState === undefined ? {} : { placeState: opts.placeState }),
       // Called before runAction's first await, so it is set before the slot is filled.
       onHandler: (ended) => {
         handlerEnded = ended;

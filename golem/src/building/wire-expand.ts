@@ -1,14 +1,15 @@
 // The plan expander the queue needs (BLD-38b). It adapts the player-core expansion (BLD-04) to the
 // cells the lane runs: the origin shifts each cell, the order is applied, and every cell becomes a
-// `place` into air. Break and replace steps are refused for now: a cell that breaks needs the block
-// that is there first, and the expansion does not know it (no prior is read at submit time).
+// place (its palette block into the cell) or a break (to air). A break or a replace has no planned
+// prior (`prior: null`): the cell executor reads the block that is there when the cell runs (BLD-38b2).
 
 import {
   expandPlan,
   type PlanSpec,
   type PlanStep,
-} from '../../../player-core/src/building/expand.ts';
-import { orderPlanCells } from '../../../player-core/src/building/order.ts';
+} from '@geldar/player-core/src/building/expand.ts';
+import { orderPlanCells } from '@geldar/player-core/src/building/order.ts';
+import { canonicalBlockRef, parseBlockRef } from './block-ref.ts';
 import type { PlanCell } from './cell-do.ts';
 import type { PlanExpand } from './queue.ts';
 import type { Cell } from './stand.ts';
@@ -29,39 +30,44 @@ export function createPlanExpand(feet: () => Cell): PlanExpand {
   return (body) => {
     const steps = body.steps as readonly PlanStep[];
     if (steps.length === 0) return [];
-    for (const step of steps) {
-      if (step.op === 'replace') throw new PlanNotRunnable('replace steps are not run yet');
-      if (step.op === 'break' || step.break === true) {
-        throw new PlanNotRunnable('break steps are not run yet');
-      }
-    }
-    const spec: PlanSpec = {
-      palette: body.palette,
-      steps: steps as [PlanStep, ...PlanStep[]],
-    };
     const base = originOf(body.origin, feet);
-    const shifted = [...expandPlan(spec)].map((cell) => ({
-      x: cell.x + base.x,
-      y: cell.y + base.y,
-      z: cell.z + base.z,
-      pal: cell.pal,
-    }));
+    // One step at a time, so each cell keeps whether its step replaces (its prior is read live).
+    const shifted = steps.flatMap((step) =>
+      [...expandPlan({ palette: body.palette, steps: [step] } as PlanSpec)].map((cell) => ({
+        x: cell.x + base.x,
+        y: cell.y + base.y,
+        z: cell.z + base.z,
+        pal: cell.pal,
+        replaces: step.op === 'replace',
+      })),
+    );
     const ordered = orderPlanCells(shifted, body.order === 'given' ? 'given' : 'bottom_up');
     return ordered.map((cell) => toLaneCell(cell, body.palette));
   };
 }
 
-/** The cell the lane runs: an empty cell that the plan's block goes into. */
+/**
+ * The cell the lane runs. A placing cell's prior is air; a break (no palette key) and a replace have
+ * no planned prior, so the executor reads it live. The target is the palette block, written in one
+ * spelling (name, then sorted properties) so the executor compares it the same way every time.
+ */
 function toLaneCell(
-  cell: { x: number; y: number; z: number; pal: string | null },
+  cell: { x: number; y: number; z: number; pal: string | null; replaces: boolean },
   palette: Readonly<Record<string, unknown>>,
 ): PlanCell {
-  if (cell.pal === null) throw new PlanNotRunnable('break steps are not run yet');
+  const at = { x: cell.x, y: cell.y, z: cell.z };
+  if (cell.pal === null) return { at, prior: null, target: 'air' };
   const entry = palette[cell.pal] as { block?: unknown } | undefined;
   if (entry === undefined || typeof entry.block !== 'string') {
     throw new PlanNotRunnable(`palette key ${cell.pal} names no block`);
   }
-  return { at: { x: cell.x, y: cell.y, z: cell.z }, prior: 'air', target: entry.block };
+  let target: string;
+  try {
+    target = canonicalBlockRef(parseBlockRef(entry.block));
+  } catch {
+    throw new PlanNotRunnable(`palette key ${cell.pal} names no block`);
+  }
+  return { at, prior: cell.replaces ? null : 'air', target };
 }
 
 /** The shift of the plan: zero when none is given, the feet for `here`, else the given cell. */

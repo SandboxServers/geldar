@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@geldar/contract": "workspace:*",
+    "@geldar/player-core": "workspace:*",
     "@geldar/psyche": "workspace:*",
     "@geldar/telemetry": "workspace:*",
     "@nats-io/jetstream": "3.4.0",

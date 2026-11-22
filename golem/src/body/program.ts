@@ -2,6 +2,7 @@ import type { Action, Intent } from '@geldar/contract';
 import type { Bot } from 'mineflayer';
 import type { Position } from '../actions/bot-types.ts';
 import type { JsonValue } from '../actions/outcome.ts';
+import type { PlaceState } from '../actions/place-state.ts';
 import type { ActionRegistry, ActionRun } from '../actions/registry.ts';
 import type { RecordSink } from './records.ts';
 import type { BodyView } from './view.ts';
@@ -11,6 +12,8 @@ import type { WakeReason } from './wake.ts';
 export interface StepActionOptions {
   /** The one cell a `mine` digs: the action fails rather than dig any other block. */
   mineAt?: Position;
+  /** The block state a `place` asks for (BLD-38b2): only the building cells set it. */
+  placeState?: PlaceState;
 }
 
 /** What a program gets: the bot to act through, the view to read, and the Body's identity. */
