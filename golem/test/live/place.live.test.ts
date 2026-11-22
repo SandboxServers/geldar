@@ -32,6 +32,25 @@ describe('place: the place action against a real server', () => {
     });
   });
 
+  it('places a stair facing east, the way the bot looks', async () => {
+    await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena }) => {
+      const { x: cx, z: cz } = arena.center;
+      await ctl.command(`kill @e[type=item,x=${cx},y=200,z=${cz},distance=..40]`);
+      await ctl.give(BOT, 'oak_stairs', 1);
+      const target = { x: cx + 2, y: 200, z: cz };
+      const run = await runAction(
+        registry,
+        bot,
+        { do: 'place', block: 'oak_stairs', at: target },
+        { placeState: { facing: 'east', half: 'bottom' } },
+      );
+      expect(run.state).toBe('completed');
+      const placed = bot.blockAt(new Vec3(target.x, target.y, target.z));
+      expect(placed?.name).toBe('oak_stairs');
+      expect(placed?.getProperties().facing).toBe('east');
+    });
+  });
+
   it('places dirt on top of a placed block', async () => {
     await withLiveBot({ name: BOT, slot: SLOT }, async ({ bot, ctl, arena }) => {
       const { x: cx, z: cz } = arena.center;

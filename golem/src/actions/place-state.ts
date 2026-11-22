@@ -32,14 +32,7 @@ const FACING_BLOCK = /_door$|^(furnace|chest|trapped_chest|ender_chest)$/;
 /** Tier 2: slabs take a half, stored as `type`. */
 const SLAB = /_slab$/;
 
-const OPPOSITE: Record<Cardinal, Cardinal> = {
-  north: 'south',
-  south: 'north',
-  east: 'west',
-  west: 'east',
-};
-
-/** The look direction (not the facing) that each cardinal name stands for. */
+/** The look direction that each cardinal name stands for (mineflayer: yaw 0 looks at -z). */
 const LOOK_VECTOR: Record<Cardinal, Vec3> = {
   north: new Vec3(0, 0, -1),
   south: new Vec3(0, 0, 1),
@@ -61,18 +54,28 @@ function propertyOf(block: string, key: keyof PlaceState): string {
   return key === 'half' && SLAB.test(block) ? 'type' : key;
 }
 
-/** The cardinal a yaw looks toward (yaw 0 looks at +z, the same convention as `stepsFromFacing`). */
+/**
+ * The cardinal a yaw looks toward. mineflayer's look vector is (-sin yaw, sin pitch, -cos yaw), so
+ * yaw 0 looks at -z (north) and yaw pi/2 at -x (west), the same convention as `stepsFromFacing`.
+ */
 export function cardinalOfYaw(yaw: number): Cardinal {
   const dx = -Math.sin(yaw);
-  const dz = Math.cos(yaw);
+  const dz = -Math.cos(yaw);
   if (Math.abs(dx) > Math.abs(dz)) return dx > 0 ? 'east' : 'west';
   return dz > 0 ? 'south' : 'north';
 }
 
-/** The yaw that makes a placed stair, chest or door face `facing`: they face back toward the bot. */
+/**
+ * The yaw that looks along `facing`, which is the facing a placed stair, chest or door takes from
+ * the bot's look (`clickedProperties`). Inverse of mineflayer's look vector: yaw = atan2(-dx, -dz).
+ */
 export function yawForFacing(facing: Cardinal): number {
-  const look = LOOK_VECTOR[OPPOSITE[facing]];
-  return Math.atan2(-look.x, look.z);
+  return yawToward(LOOK_VECTOR[facing]);
+}
+
+/** The yaw that looks along a horizontal direction (the inverse of mineflayer's look vector). */
+export function yawToward(direction: Vec3): number {
+  return Math.atan2(-direction.x, -direction.z);
 }
 
 /** The pitch that looks at a reference: up for a cell above, down for one below, level beside. */
@@ -85,7 +88,7 @@ export function pitchFor(reference: Vec3): number {
 /**
  * The click rule the planner models: the clicked face fixes the axis (and, for a slab or stair,
  * the half: a top face gives a bottom half, a bottom face a top half, a side face the cursor's
- * height); the bot's look fixes the facing (the placed block faces back toward the bot).
+ * height); the bot's look fixes the facing (the placed block faces the way the bot looks).
  */
 export function clickedProperties(
   block: string,
@@ -99,7 +102,7 @@ export function clickedProperties(
     if (key === 'axis') {
       properties[propertyOf(block, key)] = face.x !== 0 ? 'x' : face.y !== 0 ? 'y' : 'z';
     } else if (key === 'facing') {
-      properties[propertyOf(block, key)] = OPPOSITE[cardinalOfYaw(yaw)];
+      properties[propertyOf(block, key)] = cardinalOfYaw(yaw);
     } else {
       const top = face.y !== 0 ? face.y < 0 : cursorY > 0.5;
       properties[propertyOf(block, key)] = top ? 'top' : 'bottom';

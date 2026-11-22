@@ -8,59 +8,19 @@ import { moveNear } from './pathing.ts';
 import {
   digSideCell,
   edgeCell,
-  entityInCell,
   entityOverlapsCell,
   pillarStep,
   placeAgainst,
   sideDigCell,
 } from './pillar.ts';
-import { type Footprint, footprintOf, upperCell } from './place-footprint.ts';
-import { planSentClick, STATE_UNACHIEVABLE, stateMatches } from './place-state.ts';
+import { freeBeside, inBody, NEIGHBOR_OFFSETS, REPLACEABLE } from './place-beside.ts';
+import { footprintOf, upperCell } from './place-footprint.ts';
+
+export { REPLACEABLE } from './place-beside.ts';
+
+import { planSentClick, STATE_UNACHIEVABLE, stateMatches, yawToward } from './place-state.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 
-/** Cells a placement may replace: the target cell must hold one of these. */
-export const REPLACEABLE = new Set([
-  'air',
-  'cave_air',
-  'void_air',
-  'water',
-  'short_grass',
-  'tall_grass',
-  'fern',
-  'large_fern',
-  'dead_bush',
-  'seagrass',
-  'tall_seagrass',
-  'vine',
-  'glow_lichen',
-  'short_dry_grass',
-  'tall_dry_grass',
-  'dandelion',
-  'poppy',
-  'blue_orchid',
-  'allium',
-  'azure_bluet',
-  'red_tulip',
-  'orange_tulip',
-  'white_tulip',
-  'pink_tulip',
-  'oxeye_daisy',
-  'cornflower',
-  'lily_of_the_valley',
-  'wither_rose',
-  'torchflower',
-  'open_eyeblossom',
-  'closed_eyeblossom',
-  'pink_petals',
-  'brown_mushroom',
-  'red_mushroom',
-  'sunflower',
-  'lilac',
-  'rose_bush',
-  'peony',
-  'pitcher_plant',
-  'snow',
-]);
 /**
  * Seed items and the crop block each plants on farmland (minecraft-data 26.1). Nether wart is left
  * out: it grows on soul sand, not farmland.
@@ -83,22 +43,6 @@ const WALK_RANGE = 3;
 const LAND_WAIT_MS = 1000;
 /** Wall-clock bound on the step onto a block's edge before a pillar, scaled by `timeScale`. */
 const EDGE_WAIT_MS = 1000;
-/** Reference candidates for a block at a position, in the order they are tried. */
-const NEIGHBOR_OFFSETS: readonly Vec3[] = [
-  new Vec3(0, -1, 0),
-  new Vec3(1, 0, 0),
-  new Vec3(-1, 0, 0),
-  new Vec3(0, 0, 1),
-  new Vec3(0, 0, -1),
-  new Vec3(0, 1, 0),
-];
-/** The four horizontal steps, in a fixed order. */
-const CARDINALS: readonly Vec3[] = [
-  new Vec3(1, 0, 0),
-  new Vec3(0, 0, 1),
-  new Vec3(-1, 0, 0),
-  new Vec3(0, 0, -1),
-];
 /** Fixed failure texts shown to the model: each states what happened, without advice (decision 0154: facts, never advice). */
 export const MESSAGE = {
   noSpace: 'no free space next to you',
@@ -241,7 +185,7 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
 
   // A bed's head goes the way the bot faces, so the bot turns toward the cell it moved to.
   if (beside && block.endsWith('_bed')) {
-    await bot.look(Math.atan2(-beside.step.x, beside.step.z), 0, true);
+    await bot.look(yawToward(beside.step), 0, true);
     if (ctx.signal.aborted) return cancelled();
   }
 
@@ -516,40 +460,6 @@ async function stepToEdge(
   return reached.equals(edge) && bot.entity.onGround ? edge : null;
 }
 
-/** True when the cell is the bot's feet cell or the cell above it. */
-function inBody(bot: Bot, cell: Vec3): boolean {
-  const feet = feetCell(bot);
-  return cell.equals(feet) || cell.equals(feet.offset(0, 1, 0));
-}
-
-/**
- * The first cell beside the bot, in facing order, that is open and has a solid neighbor. A bed
- * also needs the cell one further on, where its second half goes.
- */
-function freeBeside(
-  bot: Bot,
-  body: Vec3,
-  footprint: Footprint,
-): { target: Vec3; step: Vec3 } | null {
-  for (const step of stepsFromFacing(bot.entity.yaw)) {
-    const cell = body.plus(step);
-    if (!isFree(bot, cell)) continue;
-    if (footprint === 'bed' && !isOpen(bot, cell.plus(step))) continue;
-    if (footprint === 'up' && !isOpen(bot, cell.offset(0, 1, 0))) continue;
-    return { target: cell, step };
-  }
-  return null;
-}
-
-/** The cardinal step the bot faces, then the other three in their fixed order. */
-function stepsFromFacing(yaw: number): Vec3[] {
-  const dx = -Math.sin(yaw);
-  const dz = Math.cos(yaw);
-  const facing =
-    Math.abs(dx) > Math.abs(dz) ? new Vec3(Math.sign(dx), 0, 0) : new Vec3(0, 0, Math.sign(dz));
-  return [facing, ...CARDINALS.filter((step) => !step.equals(facing))];
-}
-
 /** Dropped items and XP orbs lie in the world without blocking a placement. */
 const LOOSE_ENTITY_NAMES: ReadonlySet<string> = new Set(['item', 'experience_orb']);
 
@@ -564,20 +474,6 @@ function occupantText(bot: Bot, cell: Vec3): string | null {
   );
   if (occupant === undefined) return null;
   return occupant.type === 'player' ? MESSAGE.somePlayer : MESSAGE.someEntity;
-}
-
-/** True when a block may replace the cell and no entity's box overlaps it. */
-function isOpen(bot: Bot, cell: Vec3): boolean {
-  const name = bot.blockAt(cell)?.name;
-  return name !== undefined && REPLACEABLE.has(name) && !entityInCell(bot, cell);
-}
-
-/** True when the cell is open and one of its neighbors is solid to place against. */
-function isFree(bot: Bot, cell: Vec3): boolean {
-  return (
-    isOpen(bot, cell) &&
-    NEIGHBOR_OFFSETS.some((o) => bot.blockAt(cell.plus(o))?.boundingBox === 'block')
-  );
 }
 
 /** A plain position for the outcome detail. */

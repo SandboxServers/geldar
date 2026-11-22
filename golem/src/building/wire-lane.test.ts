@@ -126,3 +126,66 @@ describe('createLaneWiring unexpected throw (BLD-fix1c E)', () => {
     expect(failedEvents).toHaveLength(1);
   });
 });
+
+/** A second done cell, one block east of the first. */
+const SECOND_DONE: PlanCell = { at: { x: 1, y: 64, z: 0 }, prior: 'stone', target: 'stone' };
+
+describe('createLaneWiring metrics: throttle verdicts and plan seconds (fix2c F4)', () => {
+  /** A wiring whose TPS reading is `tps` and whose wall clock is `clock.now`; the world tick is `view.tick`. */
+  function rigWith(tps: number | undefined, clock: { now: number }) {
+    const metrics = {
+      planCell: vi.fn(),
+      planQueueDepth: vi.fn(),
+      planThrottleWait: vi.fn(),
+      planSeconds: vi.fn(),
+    };
+    const view: { tick?: number } = { tick: 0 };
+    const runtime = {
+      sink: { wake: vi.fn(), planProgress: vi.fn() },
+      timeScale: 1,
+      actions: { get: () => undefined },
+      view,
+    } as unknown as BodyRuntime;
+    const wiring = createLaneWiring({
+      lifeId: 'ag_test_01',
+      bot: STONE_BOT,
+      runtime,
+      expand: () => [],
+      metrics: metrics as unknown as GolemMetrics,
+      wallClock: () => clock.now,
+    });
+    vi.spyOn(wiring.tps, 'tps').mockReturnValue(tps);
+    return { metrics, view, wiring };
+  }
+
+  it('counts a paused lane (TPS below 12) as a throttle wait with verdict tps', async () => {
+    const { metrics, wiring } = rigWith(5, { now: 0 });
+    wiring.lane.start({ planId: 'p-tps', cells: [DONE_CELL] } as never);
+    await wiring.onTick(1, false);
+    expect(metrics.planThrottleWait).toHaveBeenCalledWith(true);
+    expect(metrics.planThrottleWait).not.toHaveBeenCalledWith(false);
+    expect(metrics.planCell).not.toHaveBeenCalled();
+  });
+
+  it('counts a gap between cells (TPS at full speed) as a throttle wait with verdict gap', async () => {
+    const { metrics, view, wiring } = rigWith(20, { now: 0 });
+    wiring.lane.start({ planId: 'p-gap', cells: [DONE_CELL, SECOND_DONE] } as never);
+    await wiring.onTick(1, false);
+    view.tick = 1;
+    await wiring.onTick(2, false);
+    expect(metrics.planThrottleWait).toHaveBeenCalledWith(false);
+    expect(metrics.planThrottleWait).not.toHaveBeenCalledWith(true);
+  });
+
+  it('reports the wall seconds between two open ticks, not milliseconds', async () => {
+    const clock = { now: 1000 };
+    const { metrics, view, wiring } = rigWith(5, clock);
+    wiring.lane.start({ planId: 'p-seconds', cells: [DONE_CELL] } as never);
+    await wiring.onTick(1, false);
+    clock.now = 2500;
+    view.tick = 2;
+    await wiring.onTick(2, false);
+    expect(metrics.planSeconds).toHaveBeenCalledTimes(1);
+    expect(metrics.planSeconds).toHaveBeenCalledWith(1.5);
+  });
+});

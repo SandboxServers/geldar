@@ -386,7 +386,7 @@ export async function startAdamBody(env: AdamBodyEnv, bot: Bot): Promise<Running
       publisher,
       log,
       // The survey answers from this Body's seen map (BLD-38e/38g); absent with the building flag off.
-      ...(restarted.body.seen === null
+      ...(restarted.body.seen === null || restarted.body.seen === undefined
         ? {}
         : {
             survey: surveyFrom(restarted.body.seen, tick),
