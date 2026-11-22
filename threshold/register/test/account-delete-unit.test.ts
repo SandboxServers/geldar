@@ -41,6 +41,7 @@ function depsWith(
     eraseAccount: async () => true,
     clearCookies: ['__Host-gr_session=; Max-Age=0'],
     body: link,
+    movedInPlayers: async () => [],
     ...over,
   };
 }
@@ -184,6 +185,7 @@ describe('the production mount (C7-09a review fix 2)', () => {
     const store = {
       findOwner: async () => ({ banned: false }),
       listPlayers: async () => [],
+      movedInPlayers: async () => [],
       eraseAccount: async () => {
         erased.push('erase');
         return true;

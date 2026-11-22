@@ -24,10 +24,10 @@ export interface AccountDeleteDeps {
   readonly listPlayers: (identityHash: string) => Promise<readonly DeletablePlayer[]>;
   /**
    * The owner's players that the operator moved in (a register_audit row 'player.set_owner' names them), one entry
-   * each with its status. A live one refuses the delete (C7 delete-guard). Optional only for test fakes: the production
-   * deps (accountDeleteDeps) always carry it, and a missing one skips the check.
+   * each with its status. A live one refuses the delete (C7 delete-guard). Required: a deps object without it cannot
+   * compile, so the guard cannot be dropped by wiring. It is read again just before the erase.
    */
-  readonly movedInPlayers?: (
+  readonly movedInPlayers: (
     identityHash: string,
   ) => Promise<readonly { readonly status: string }[]>;
   /** register_account_delete: true when the account was removed, false when there was nothing to remove (a no-op). */
@@ -76,6 +76,18 @@ async function readConfirm(req: IncomingMessage): Promise<string | null> {
 }
 
 /**
+ * True when the owner has a moved-in player that is not retired. Logs one line, with no name or id, when it is true.
+ * Fails closed: a read that throws propagates to the caller, so nothing is erased.
+ */
+async function hasLiveMovedIn(deps: AccountDeleteDeps, identityHash: string): Promise<boolean> {
+  const moved = await deps.movedInPlayers(identityHash);
+  if (!moved.some((player) => player.status !== 'retired')) return false;
+  // The log line names no player and no owner (the operator reads the register audit for the ids).
+  deps.log?.('account delete refused reason=moved-in');
+  return true;
+}
+
+/**
  * The shared delete (C7-09a). The caller has checked the typed phrase and the credential. Order: the owner (missing or
  * banned is 'unauthenticated' with nothing read further), a live moved-in player ('moved_in', nothing stopped or removed),
  * the owner's body slot (held by a body operation is 'conflict'),
@@ -90,12 +102,7 @@ export async function deleteAccountData(
 ): Promise<AccountDeleteOutcome> {
   const owner = await deps.findOwner(identityHash);
   if (owner === null || owner.banned) return 'unauthenticated';
-  const moved = deps.movedInPlayers ? await deps.movedInPlayers(identityHash) : [];
-  if (moved.some((player) => player.status !== 'retired')) {
-    // The log line names no player and no owner (the operator reads the register audit for the ids).
-    deps.log?.('account delete refused reason=moved-in');
-    return 'moved_in';
-  }
+  if (await hasLiveMovedIn(deps, identityHash)) return 'moved_in';
   const link = deps.body;
   if (link?.slot.has(ownerId)) return 'conflict';
   link?.slot.add(ownerId);
@@ -113,6 +120,9 @@ export async function deleteAccountData(
         if (!(await stopPlayerBody(link, ownerId, player.name))) return 'body_unavailable';
       }
     }
+    // The stops above can take seconds: the guard is read again here, so a move made during them is still refused.
+    // A move that lands after this read is not covered (that needs the SQL function to check it; see the runbook).
+    if (await hasLiveMovedIn(deps, identityHash)) return 'moved_in';
     await deps.eraseAccount(identityHash);
   } finally {
     link?.slot.delete(ownerId);

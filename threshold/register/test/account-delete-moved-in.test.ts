@@ -1,5 +1,40 @@
+import type { IncomingMessage, ServerResponse } from 'node:http';
+import { Readable } from 'node:stream';
 import { describe, expect, it } from 'vitest';
-import { type AccountDeleteDeps, deleteAccountData } from '../src/api/account-data-delete.ts';
+import { runAccountDelete } from '../src/account-delete-page.ts';
+import {
+  type AccountDeleteDeps,
+  accountDeleteDeps,
+  accountDeleteRoutes,
+  DELETE_PHRASE,
+  deleteAccountData,
+  MOVED_IN_DETAIL,
+} from '../src/api/account-data-delete.ts';
+import type { ApiContext } from '../src/api/route.ts';
+
+/** A response that records the status, the headers and the body. */
+function fakeRes() {
+  const seen = { status: 0, headers: {} as Record<string, unknown>, body: '' };
+  const res = {
+    writeHead(code: number, h: Record<string, unknown>) {
+      seen.status = code;
+      seen.headers = h;
+      return this;
+    },
+    end(body?: string) {
+      seen.body = body ?? '';
+    },
+  } as unknown as ServerResponse;
+  return { res, seen };
+}
+
+/** A route context with the typed phrase as the JSON body, a cookie session owner and no other fields. */
+function routeCtx(res: ServerResponse): ApiContext {
+  const req = Readable.from([
+    Buffer.from(JSON.stringify({ confirm: DELETE_PHRASE })),
+  ]) as unknown as IncomingMessage;
+  return { req, res, identityHash: 'a'.repeat(64), ownerId: 'owner-1' } as unknown as ApiContext;
+}
 
 interface Harness {
   readonly deps: AccountDeleteDeps;
@@ -57,5 +92,67 @@ describe('account delete refuses while a player was moved in by the operator', (
     const h = harness([{ name: 'ag-old-01', status: 'retired' }], [{ status: 'retired' }]);
     expect(await deleteAccountData(h.deps, OWNER, 'owner-1')).toBe('deleted');
     expect(h.erased).toHaveLength(1);
+  });
+
+  it('a move made during the body stops is refused before the erase (the guard is read twice)', async () => {
+    const h = harness([{ name: 'ag-own-02', status: 'active' }], []);
+    let reads = 0;
+    const deps: AccountDeleteDeps = {
+      ...h.deps,
+      movedInPlayers: async () => (reads++ === 0 ? [] : [{ status: 'active' }]),
+    };
+    expect(await deleteAccountData(deps, OWNER, 'owner-1')).toBe('moved_in');
+    expect(reads).toBe(2);
+    expect(h.erased).toEqual([]);
+    expect(h.logs).toEqual(['account delete refused reason=moved-in']);
+  });
+
+  it('the production deps ask the store, so a moved-in row refuses the delete', async () => {
+    const erased: string[] = [];
+    const asked: string[] = [];
+    const store = {
+      findOwner: async () => ({ banned: false }),
+      listPlayers: async () => [],
+      eraseAccount: async (h: string) => {
+        erased.push(h);
+        return true;
+      },
+      movedInPlayers: async (h: string) => {
+        asked.push(h);
+        return [{ status: 'active' }];
+      },
+    };
+    const deps = accountDeleteDeps(store, null, []);
+    expect(await deleteAccountData(deps, OWNER, 'owner-1')).toBe('moved_in');
+    expect(asked).toEqual([OWNER]);
+    expect(erased).toEqual([]);
+  });
+
+  it('the API route answers 409 problem, sets no session cookie and erases nothing', async () => {
+    const h = harness([{ name: 'ag-moved-03', status: 'active' }], [{ status: 'active' }]);
+    const { res, seen } = fakeRes();
+    const [route] = accountDeleteRoutes(h.deps);
+    await route?.handler(routeCtx(res));
+    expect(seen.status).toBe(409);
+    expect(seen.headers['content-type']).toBe('application/problem+json');
+    expect(seen.body).toContain(MOVED_IN_DETAIL);
+    expect(seen.headers['set-cookie']).toBeUndefined();
+    expect(h.erased).toEqual([]);
+  });
+
+  it('the account page answers 409 with the refusal text, clears no cookie and erases nothing', async () => {
+    const h = harness([{ name: 'ag-moved-04', status: 'active' }], [{ status: 'active' }]);
+    const { res, seen } = fakeRes();
+    await runAccountDelete(
+      res,
+      h.deps,
+      { csrf: 'csrf-value', identityHash: OWNER, ownerId: 'owner-1' },
+      new URLSearchParams({ phrase: DELETE_PHRASE }),
+      () => undefined,
+    );
+    expect(seen.status).toBe(409);
+    expect(seen.body).toContain(MOVED_IN_DETAIL);
+    expect(seen.headers['set-cookie']).toBeUndefined();
+    expect(h.erased).toEqual([]);
   });
 });

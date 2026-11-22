@@ -81,6 +81,7 @@ function fakeDeps(
     },
     clearCookies: CLEARS,
     body: null,
+    movedInPlayers: async () => [],
     ...over,
   };
 }

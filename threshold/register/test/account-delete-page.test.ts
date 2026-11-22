@@ -57,6 +57,7 @@ async function boot(body: BodyStopLink | null = null) {
     },
     clearCookies: ['__Host-gr_session=; Max-Age=0; Path=/', 'gr_session=; Max-Age=0; Path=/'],
     body,
+    movedInPlayers: async () => [],
   };
   // The production shape: the delete route is one of the API routes, next to the body routes (main.ts).
   const server = createRegisterServer({

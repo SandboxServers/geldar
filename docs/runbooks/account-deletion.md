@@ -54,6 +54,19 @@ audit row), or the owner asks the operator to retire it. The register audit rows
 The check does not cover players the operator added with `player-add` for an owner (no move row). The operator must
 check those by hand before the owner deletes.
 
+The guard stops an accidental one-click delete. It does not stop a deliberate act: the owner can retire the moved-in
+player (a retired player does not block) and then delete. Say so when the move is made.
+
+The block is keyed on the audit row and the player id, not on the owner. It can block a delete the owner expects to
+work in two cases: a player id reused after an earlier erase (the old row still names the id), and a player moved to
+this owner, moved away and moved back (the row stays on the live player). The only clearing is a move of the player to
+another owner, which writes its own row; the old row stays. A tighter match needs the identity-to-owner join, which is
+not in this change.
+
+The check is read twice: before the body stops and again just before the erase. A move that lands between the second
+read and the erase is not seen. Closing that window needs the erase function to check the same rule (database change,
+not in this change). Until then, an operator does not move a player to an owner while that owner is being deleted.
+
 ## Accounts deleted under 0039 (before 0040)
 
 Deletions made under 0039 removed the owner link and the player rows of the owner's dead lives. Those dead lives
