@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MIND_HANDLERS } from '../events/handlers/index.ts';
 import { activePlanView } from '../play-view/active-plan.ts';
-import { planCheckTool } from './plan-check.ts';
 import {
   hiddenToolsFor,
   NOT_AVAILABLE_MESSAGE,
@@ -29,10 +28,6 @@ describe('BLD-S3b survey and plan_check stubs', () => {
 
   it('leaves survey and plan_check out of the hidden list when the flag is on', () => {
     expect(hiddenToolsFor(true)).toEqual([]);
-  });
-
-  it('the plan_check body refuses with not_available (the survey body is BLD-21, see survey.test.ts)', async () => {
-    await expect(planCheckTool()).rejects.toThrow(NOT_AVAILABLE_MESSAGE);
   });
 
   it('maps plan_progress through a registered stub handler that emits no player event', () => {

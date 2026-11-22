@@ -383,6 +383,10 @@ export function createWorld(deps: WorldDeps): World {
     survey: bound(wired, async () => {
       throw new ToolError('not_available', NOT_AVAILABLE_MESSAGE);
     }),
+    // BLD-22 wires the contract tool; the Body read of the pack and seen map is not in this world yet, so it refuses.
+    plan_check: bound(wired, async () => {
+      throw new ToolError('not_available', NOT_AVAILABLE_MESSAGE);
+    }),
     wait: bound(wired, (call, input, ctx) => waitTool(wired, call, input as WaitInput, ctx)),
     look: bound(wired, (call) => lookTool(wired, call), true),
     status: bound(wired, (call) => statusTool(wired, call), true),

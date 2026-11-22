@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import * as building from './index.ts';
 
-const STUBS = ['throttleWait', 'progressSentence'] as const;
-
 describe('building scaffold (BLD-S3a)', () => {
+  it('progressSentence is implemented and exported (BLD-16)', () => {
+    expect(typeof building.progressSentence).toBe('function');
+    expect(building.progressSentence.length).toBe(1);
+  });
+
   it('doCell and countMaterials are implemented and exported (BLD-11)', () => {
     expect(typeof building.doCell).toBe('function');
     expect(typeof building.countMaterials).toBe('function');
@@ -12,11 +15,6 @@ describe('building scaffold (BLD-S3a)', () => {
   it('the plan queue and the contention gate are implemented and exported (BLD-14)', () => {
     expect(typeof building.PlanQueue).toBe('function');
     expect(typeof building.contendFor).toBe('function');
-  });
-
-  it.each(STUBS)('%s is exported and refuses with not_implemented', (name) => {
-    const stub = (building as Record<string, unknown>)[name] as () => unknown;
-    expect(() => stub()).toThrow(`not_implemented: ${name}`);
   });
 
   it('the plan lane is absent with the flag off and with it on (stub)', () => {
