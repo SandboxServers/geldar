@@ -3,15 +3,16 @@
 -- mc_profile_uuid (32 lowercase hex, when the check returned one). No token, gamertag, XUID, email or entitlement is
 -- stored. Existing owners keep NULL in all three (= not checked); the gate never blocks an existing owner.
 -- The check itself runs in the server (not here); this migration only records its answer.
--- Who may call the record: the sign-up path is the only gate. The function does not test the age of the identity or
--- its ban state beyond the tombstone rule, so a legacy owner whose columns are NULL can be stamped by a caller bug.
--- Owner decision pending (see the database-schema docs row for 0068); no SQL gate is added here.
+-- Who may call the record: only geldar_register, on the sign-up path (decided by the owner: caller-only). The function
+-- does not test the age of the identity or its ban state beyond the tombstone rule; the new-sign-ups-only rule is
+-- enforced in the register service layer, not in SQL. A stored answer is final (the write is once only).
 --
 -- 1. mcp_identities gets the three columns. owns_java and mc_checked_at are NULL together (the CHECK below).
 -- 2. register_mc_ownership_record(identity_hash, owns_java, profile_uuid): records the answer once per identity.
 --    Fail closed: a NULL answer or a malformed profile id writes nothing and returns false; an unknown identity, a
 --    banned tombstone (owner link gone) and an identity already checked return false and write nothing.
---    Each recorded answer writes one register_audit row (action mc.ownership, actor = the owner id hash, non-empty detail).
+--    Each recorded answer writes one register_audit row (action mc.ownership, actor = the owner id hash, outcome
+--    'recorded', empty detail). The audit row never carries the ownership answer: that lives only in the owner row.
 -- 3. register_account_delete (latest: 0067) is recreated unchanged except the banned branch, which clears the three
 --    new columns with the owner link (the tombstone keeps only the identity hash and the ban time).
 -- 4. register_owner_export (latest: 0065) is recreated unchanged except that the identity object lists
@@ -57,8 +58,7 @@ BEGIN
 
   INSERT INTO public.register_audit (actor, action, target, outcome, admin, detail)
     VALUES (left(encode(sha256(convert_to(who, 'UTF8')), 'hex'), 16), 'mc.ownership', 'account',
-            CASE WHEN p_owns_java THEN 'owns-java' ELSE 'no-java' END, public.register_is_admin(who),
-            'one-time sign-up check');
+            'recorded', public.register_is_admin(who), '');
   RETURN true;
 END
 $mc_record$;

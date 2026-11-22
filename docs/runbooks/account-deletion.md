@@ -57,7 +57,7 @@ Exact list of what stays (decision 0262):
   decision 0085 applies the same append-only pattern to `receipts`, `thoughts`, `suppressed_wakeups` and `mcp_journal`,
   not to `register_audit`). The deletion writes one row with a random
   erasure id as actor and no owner id;
-- the ban tombstone (the identity hash and the ban, nothing else), when the identity is banned (0171, point 4); from 0068 the tombstone's Minecraft ownership columns `owns_java`, `mc_checked_at` and `mc_profile_uuid` are cleared with the owner link;
+- the ban tombstone (the identity hash and the ban, nothing else), when the identity is banned (0171, point 4); from 0068 the tombstone's Minecraft ownership columns `owns_java`, `mc_checked_at` and `mc_profile_uuid` are cleared with the owner link (the `mc.ownership` audit row keeps no answer, only the action, outcome `recorded` and an empty detail, so nothing about the answer outlives the deletion);
 - `kino_audit` rows of the deleted identity (the viewer's own Glass pane audit; the login hash is the identity hash as hex) are erased at deletion (the node operator's default, revertable before sign-up opens). Other owners' rows stay under their 90-day retention (`kino_audit_purge`);
 - shared world objects whose author lost the owner link: `skills.author`, `books.author`, `proposals.proposer` and
   `laws`. Other lives depend on them (skill library and books by foreign key; laws by enactment). The author is an agent

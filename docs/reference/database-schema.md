@@ -26,7 +26,7 @@ For how to add a migration, see [add-a-migration](../runbooks/add-a-migration.md
 | A live database is migrated by `tools/migrate` (`--dry-run` lists, a plain run applies each pending file in its own transaction, under an advisory lock) and recorded in `schema_migrations` | `sql/README.md` "Runner" |
 | Each migration from 0003 on inserts its own `schema_migrations` row; 0002 inserts `0001` and `0002` | `sql/README.md`; `sql/0002_sovereign_mcp.sql` line 11 |
 | `tools/migrate --set-role-password <role> --password-file <file>` sets a role's password and lets it log in; migrations create roles NOLOGIN | `sql/README.md`; 0002, 0005 headers |
-| CI applies every `sql/[0-9]*.sql` with `psql -v ON_ERROR_STOP=1`, then runs the 23 files in `sql/test/` | `.github/workflows/ci.yml` lines 136 to 178 |
+| CI applies every `sql/[0-9]*.sql` with `psql -v ON_ERROR_STOP=1`, then runs the 27 files in `sql/test/` | `.github/workflows/ci.yml` (the psql step list) |
 | A deviation from spec Appendix D is marked in the file by a comment starting `differs from spec Appendix D` | `sql/README.md` |
 
 Re-derive the migration list and the gaps:
@@ -35,7 +35,7 @@ Re-derive the migration list and the gaps:
 git ls-files sql | ForEach-Object { if ($_ -match '^sql/(\d{4})_') { $Matches[1] } }
 ```
 
-On 2026-11-20 at the C7-13a fix commit this prints 48 numbers from 0001 to 0067. Numbers 0028 to 0030, 0041 to 0049, 0054 to 0059 and 0064 have no file; 0065's header says 0064 is reserved for another branch.
+On 2026-11-21 at the mc-sql fix 2 commit this prints 49 numbers from 0001 to 0068. Numbers 0028 to 0030, 0041 to 0049, 0054 to 0059 and 0064 have no file; 0065's header says 0064 is reserved for another branch.
 
 ## Migrations
 
@@ -88,7 +88,7 @@ On 2026-11-20 at the C7-13a fix commit this prints 48 numbers from 0001 to 0067.
 | 0065 | `0065_owner_export_budget.sql` | `register_owner_export` replaced with lower byte budget and row caps | C7-09b |
 | 0066 | `0066_events_trace_id.sql` | `events.trace_id TEXT` (nullable, no default, no index); hidden from `geldar_glass` and `geldar_mcp` | T-08 |
 | 0067 | `0067_skin_upload_rules.sql` | `register_skin_submit` (PNG signature, sha256 and the 32768-byte cap checked; a banned owner is refused; one pending per agent; the lock: 3 rejects of the owner within 30 days (decided_at), held until the operator sets `skin_uploads.lock_cleared_at` (0031 column); 1 hour after a reject per agent; 3 a day per agent; admin exempt from the rate rules and the lock; audit `skin.upload` with the hashed owner id) and `register_skin_status`, both SECURITY DEFINER; `register_account_delete` recreated from 0053 (which also deletes turn_records) with the `skin_uploads` delete added | C7-13a, decision 0172 |
-| 0068 | `0068_mc_ownership.sql` | `mcp_identities` gets `owns_java`, `mc_checked_at`, `mc_profile_uuid` (NULL = not checked; the pair CHECK; the profile id is 32 lowercase hex); `register_mc_ownership_record` (SECURITY DEFINER, one-time record of the sign-up Minecraft ownership answer); `register_account_delete` recreated from 0067 (the ban tombstone clears the three columns); `register_owner_export` recreated from 0065 (`identity.mc_ownership`) | mc-sql (owner-approved design) |
+| 0068 | `0068_mc_ownership.sql` | `mcp_identities` gets `owns_java`, `mc_checked_at`, `mc_profile_uuid` (NULL = not checked; the pair CHECK; the profile id is 32 lowercase hex); `register_mc_ownership_record` (SECURITY DEFINER, one-time record of the sign-up Minecraft ownership answer; callable only by `geldar_register`, caller-only: the new-sign-ups-only rule is enforced in the register service layer, decided by the owner; the audit row holds the action `mc.ownership`, outcome `recorded` and an empty detail, never the answer); `register_account_delete` recreated from 0067 (the ban tombstone clears the three columns); `register_owner_export` recreated from 0065 (`identity.mc_ownership`) | mc-sql (owner-approved design) |
 
 ## Tables
 

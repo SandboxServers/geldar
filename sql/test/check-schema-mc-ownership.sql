@@ -1,17 +1,18 @@
 -- Migration 0068 (mc-sql): the Minecraft Java ownership columns on mcp_identities, register_mc_ownership_record, and the
 -- erase (account delete) and export of the three columns. Run after check-schema.sql and the migrations through 0068,
--- once, on a fresh database (as ci.yml does). Owners mc-own-a to mc-own-e; identity hashes be..01 to be..05,
--- used nowhere else. Failures are raised with the step name.
+-- once, on a fresh database (as ci.yml does). Owners mc-own-a to mc-own-f; identity hashes be..01 to be..06,
+-- used nowhere else. Owner f is the admin case. Failures are raised with the step name.
 
 INSERT INTO mcp_owners (owner_id, display) VALUES
   ('mc-own-a', 'mc-own-a'), ('mc-own-b', 'mc-own-b'), ('mc-own-c', 'mc-own-c'),
-  ('mc-own-d', 'mc-own-d'), ('mc-own-e', 'mc-own-e');
+  ('mc-own-d', 'mc-own-d'), ('mc-own-e', 'mc-own-e'), ('mc-own-f', 'mc-own-f');
 INSERT INTO mcp_identities (identity_hash, provider, owner_id) VALUES
   (decode(repeat('be', 31) || '01', 'hex'), 'github', 'mc-own-a'),
   (decode(repeat('be', 31) || '02', 'hex'), 'github', 'mc-own-b'),
   (decode(repeat('be', 31) || '03', 'hex'), 'github', 'mc-own-c'),
   (decode(repeat('be', 31) || '04', 'hex'), 'github', 'mc-own-d'),
-  (decode(repeat('be', 31) || '05', 'hex'), 'github', 'mc-own-e');
+  (decode(repeat('be', 31) || '05', 'hex'), 'github', 'mc-own-e'),
+  (decode(repeat('be', 31) || '06', 'hex'), 'github', 'mc-own-f');
 
 DO $mc_cols$
 DECLARE
@@ -106,16 +107,37 @@ BEGIN
   IF register_mc_ownership_record(hd, true, NULL) THEN
     RAISE EXCEPTION 'mc-sql false: a checked identity was written again';
   END IF;
+  -- the audit row carries no answer: outcome 'recorded', empty detail, for a false answer as for a true one
   SELECT count(*) INTO n FROM register_audit
     WHERE action = 'mc.ownership' AND actor = left(encode(sha256(convert_to('mc-own-d', 'UTF8')), 'hex'), 16)
-      AND outcome = 'no-java' AND detail <> '';
-  IF n <> 1 THEN RAISE EXCEPTION 'mc-sql false: owner d has % no-java audit rows, expected 1', n; END IF;
-  -- the audit admin column is false for an owner who is not an admin
-  IF EXISTS (SELECT 1 FROM register_audit WHERE action = 'mc.ownership' AND admin) THEN
+      AND outcome = 'recorded' AND detail = '';
+  IF n <> 1 THEN RAISE EXCEPTION 'mc-sql false: owner d has % recorded audit rows, expected 1', n; END IF;
+  -- the audit admin column is false for the plain owner d (owner f, below, is the admin case)
+  IF EXISTS (SELECT 1 FROM register_audit
+             WHERE action = 'mc.ownership' AND admin
+               AND actor = left(encode(sha256(convert_to('mc-own-d', 'UTF8')), 'hex'), 16)) THEN
     RAISE EXCEPTION 'mc-sql false: a plain owner has an mc.ownership audit row marked admin';
   END IF;
 END
 $mc_record_false$;
+
+DO $mc_admin$
+DECLARE
+  hf BYTEA := decode(repeat('be', 31) || '06', 'hex');
+  n INT;
+BEGIN
+  -- an admin owner (owner f): the audit row for its record carries admin = true, so the admin column is not a constant
+  UPDATE mcp_owners SET is_admin = true WHERE owner_id = 'mc-own-f';
+  IF NOT register_mc_ownership_record(hf, false, NULL) THEN
+    RAISE EXCEPTION 'mc-sql admin: the answer of the admin owner f was not stored';
+  END IF;
+  SELECT count(*) INTO n FROM register_audit
+    WHERE action = 'mc.ownership' AND admin
+      AND actor = left(encode(sha256(convert_to('mc-own-f', 'UTF8')), 'hex'), 16)
+      AND outcome = 'recorded' AND detail = '';
+  IF n <> 1 THEN RAISE EXCEPTION 'mc-sql admin: owner f has % admin audit rows, expected 1', n; END IF;
+END
+$mc_admin$;
 
 DO $mc_audit$
 DECLARE
@@ -123,17 +145,18 @@ DECLARE
   n_b INT;
   n_c INT;
 BEGIN
-  -- one audit row per recorded answer, under the hashed owner id, with a non-empty detail; refused writes add none
+  -- one audit row per recorded answer, under the hashed owner id, outcome 'recorded' and an empty detail (no answer
+  -- in the audit); refused writes add none
   SELECT count(*) INTO n_a FROM register_audit
     WHERE action = 'mc.ownership' AND actor = left(encode(sha256(convert_to('mc-own-a', 'UTF8')), 'hex'), 16)
-      AND outcome = 'owns-java' AND detail <> '';
+      AND outcome = 'recorded' AND detail = '';
   IF n_a <> 1 THEN RAISE EXCEPTION 'mc-sql audit: owner a has % audit rows, expected 1', n_a; END IF;
   SELECT count(*) INTO n_b FROM register_audit
     WHERE action = 'mc.ownership' AND actor = left(encode(sha256(convert_to('mc-own-b', 'UTF8')), 'hex'), 16);
   IF n_b <> 0 THEN RAISE EXCEPTION 'mc-sql audit: refused writes for owner b left % audit rows', n_b; END IF;
   SELECT count(*) INTO n_c FROM register_audit
     WHERE action = 'mc.ownership' AND actor = left(encode(sha256(convert_to('mc-own-c', 'UTF8')), 'hex'), 16)
-      AND outcome = 'owns-java';
+      AND outcome = 'recorded' AND detail = '';
   IF n_c <> 1 THEN RAISE EXCEPTION 'mc-sql audit: owner c has % audit rows, expected 1', n_c; END IF;
   IF EXISTS (SELECT 1 FROM register_audit WHERE action = 'mc.ownership' AND actor LIKE 'mc-own%') THEN
     RAISE EXCEPTION 'mc-sql audit: an owner id appears in the audit actor';
@@ -256,3 +279,49 @@ BEGIN
   END LOOP;
 END
 $mc_grants$;
+
+DO $mc_checks$
+DECLARE
+  he BYTEA := decode(repeat('be', 31) || '05', 'hex');
+  cname TEXT;
+  v TEXT;
+BEGIN
+  -- owner e is still unchecked here; the constraints are tested directly, with the function out of the path.
+  -- The pair CHECK: owns_java and mc_checked_at are NULL together, so either one alone is refused
+  BEGIN
+    UPDATE mcp_identities SET owns_java = true WHERE identity_hash = he;
+    RAISE EXCEPTION 'mc-sql check: owns_java without mc_checked_at was accepted';
+  EXCEPTION WHEN check_violation THEN
+    GET STACKED DIAGNOSTICS cname = CONSTRAINT_NAME;
+    IF cname <> 'mcp_identities_mc_check_pair' THEN
+      RAISE EXCEPTION 'mc-sql check: owns_java without mc_checked_at was refused by %', cname;
+    END IF;
+  END;
+  BEGIN
+    UPDATE mcp_identities SET mc_checked_at = now() WHERE identity_hash = he;
+    RAISE EXCEPTION 'mc-sql check: mc_checked_at without owns_java was accepted';
+  EXCEPTION WHEN check_violation THEN
+    GET STACKED DIAGNOSTICS cname = CONSTRAINT_NAME;
+    IF cname <> 'mcp_identities_mc_check_pair' THEN
+      RAISE EXCEPTION 'mc-sql check: mc_checked_at without owns_java was refused by %', cname;
+    END IF;
+  END;
+  -- the profile-id CHECK: 32 lowercase hex only (a pair-valid write, so only the regex can refuse it)
+  FOREACH v IN ARRAY ARRAY['X', repeat('A', 32), repeat('a', 31), repeat('a', 33), 'g' || repeat('a', 31)] LOOP
+    BEGIN
+      UPDATE mcp_identities SET owns_java = true, mc_checked_at = now(), mc_profile_uuid = v
+        WHERE identity_hash = he;
+      RAISE EXCEPTION 'mc-sql check: the profile id % was accepted', v;
+    EXCEPTION WHEN check_violation THEN
+      GET STACKED DIAGNOSTICS cname = CONSTRAINT_NAME;
+      IF cname <> 'mcp_identities_mc_profile_uuid_check' THEN
+        RAISE EXCEPTION 'mc-sql check: the profile id % was refused by %', v, cname;
+      END IF;
+    END;
+  END LOOP;
+  -- nothing was written by the refused updates
+  IF EXISTS (SELECT 1 FROM mcp_identities WHERE identity_hash = he AND owns_java IS NOT NULL) THEN
+    RAISE EXCEPTION 'mc-sql check: a refused update left a value on owner e';
+  END IF;
+END
+$mc_checks$;
