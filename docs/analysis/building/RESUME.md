@@ -73,14 +73,18 @@ Factual list at `a72acaac`. Each item is a code gap or an owner call, or is mark
 
 Owner and operator steps, in the order RESUME has always listed them. None has been run.
 
-1. **NATS role for the building buckets (owner, by hand).** The `body` role needs `$KV.geldar-plans.>` and `$KV.geldar-seen.>` in the Pub list of the live conf, then a reload. Procedure: `docs/runbooks/nats-auth-inplace.md`; the runbook is in `docs/runbooks/building.md`.
-2. **Bucket creation order.** Create `geldar-plans`, then `geldar-seen`, with an admin identity and default settings. Player Bodies and Adam's Body both create the buckets at start with the flag on, so this step must come before the flag-on restart.
+1. **NATS role for the building buckets (owner, by hand, BEFORE the flag).** The `body` role needs `$KV.geldar-plans.>` and `$KV.geldar-seen.>` in the Pub list of the live conf, then a NATS reload. Procedure: `docs/runbooks/nats-auth-inplace.md`, section "Batch: building KV buckets" and its "MANUAL: create order for the building buckets (B8)" step (a). The building runbook `docs/runbooks/building.md` does not exist yet (BLD-30 writes it), so do not look for it.
+2. **Bucket creation order (owner, by hand, BEFORE the flag).** Create `geldar-plans`, then `geldar-seen`, with an admin identity and default settings only (runbook step (b)). Player Bodies and Adam's Body both create the buckets at start with the flag on, so this step must come before the flag-on restart. The seed script does not create them.
 3. **Image rebuild.** `golem/Dockerfile` copies `player-core` (BLD-38b2). Rebuild the golem image and verify it; neither has been done.
 4. **BLD-31 flag (owner, Paper go-live).** Owner adds `building: true` under `body_actions` in `shards/colo-mind.yaml` (line 29), after steps 1 and 2. Then restart the Minds and the MCP. The go-live waits on the owner; BLD-29 test-shard evidence is not run.
 5. **BLD-29 and BLD-31 (not run).** BLD-29 (test-shard evidence) is manual and not run. BLD-31 (Paper go-live) is manual and not run.
 6. **BLD-28 live test (not run).** `GELDAR_IT=1` on the test shard.
 7. **BLD-25 kit tag and upgrades (manual).** Kit PR 137 is merged in the kit repo. Its tag and the per-player upgrades are manual and not run; the kit session tracks them.
 8. **Owner decision pending: animus change (body-api v12 selection).** When the flag is on, the choice of body-api v12 is made in animus code (`bodyApiVersionFor`, `animus/src/prompts/library.ts`). The owner has questioned whether animus is the live Mind; the live Mind is the scriptorium. Decision: revert the animus change or keep it. If animus is not live, selecting v12 is a manual scriptorium step. This packet does not decide it.
+
+## Open follow-ups
+
+Optional later, NOT now, and not a go-live step: `restartBody` refuses to resume a checkpoint whose program is no longer in `PHASE0_PROGRAMS`. Today such a checkpoint ends idle on restart (decision 0426, Consequences).
 
 ## Next steps
 1. Run the reviews for the merged packets, starting with BLD-26 and the BLD-38 family, and the B8 packets (open item 1).

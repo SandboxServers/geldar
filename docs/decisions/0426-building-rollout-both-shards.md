@@ -14,3 +14,12 @@
 ## Consequences
 
 - Rollback: flag off and restart; or revert the bundle and redeploy the previous image. A saved checkpoint with an unknown program ends idle on restart (existing behavior).
+
+## Addendum, 2026-11-22: PR #932 merges as one PR in one window
+
+Owner ruling, 2026-11-22. The decision above is not edited. For PR #932 this addendum replaces consequence 4's three bundles (windows R1 to R3) with a single rollout.
+
+- PR #932 merges whole, as one PR, in one deploy window. It is not split into bundles.
+- The PR stays a draft and does not merge until the release owner (Sam) posts the go. The go waits on the 24-hour kit rc23 report and on the `geldar-v0.1.0` and `kit-v0.1.0` tags.
+- After that merge, PR #932 is the first change in 0.2.0.
+- The NATS role and bucket steps (`docs/analysis/building/RESUME.md`, manual steps 1 and 2) still come before `body_actions.building` is turned on. This addendum does not change them.
