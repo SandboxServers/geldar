@@ -88,7 +88,13 @@ select {
   color: var(--fg);
 }
 
+/*
+ * A button is the box its screen-reader label (.sr) is placed in. Without this the label is placed in the
+ * page, outside the list that scrolls, and every row far down the list makes the page itself taller than
+ * the screen.
+ */
 button {
+  position: relative;
   cursor: pointer;
 }
 
@@ -97,7 +103,7 @@ button:disabled {
   cursor: default;
 }
 
-/* Text for a screen reader only. */
+/* Text for a screen reader only. It must sit inside a positioned box (a button is one), or it escapes its scroller. */
 .sr {
   position: absolute;
   width: 1px;

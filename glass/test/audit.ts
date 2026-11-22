@@ -9,6 +9,7 @@ import { expect } from 'vitest';
 /** Every tag the render modules build. */
 export const ALLOWED_TAGS = new Set([
   'LI',
+  'OL',
   'BUTTON',
   'SPAN',
   'DL',
@@ -33,6 +34,8 @@ export const ALLOWED_ATTRS = new Set([
   'width',
   'height',
   'aria-hidden',
+  'aria-current',
+  'aria-live',
   'aria-pressed',
 ]);
 

@@ -124,7 +124,7 @@ describe('the service worker file list', () => {
     }
     // The source names no such path anywhere but its comments.
     const code = SOURCE.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-    expect(code).not.toMatch(/\/api|\/kino|\/register|\/roster/);
+    expect(code).not.toMatch(/['"`]\/(?:api|kino|register|roster)/);
   });
 });
 
@@ -150,6 +150,7 @@ describe('the service worker', () => {
 
   it.each([
     '/api/thoughts?limit=50',
+    '/api/thoughts?agent=ag_1&limit=6',
     '/api/thoughts/th-1',
     '/api/agents',
     '/api/receipts?action_id=a',
@@ -196,6 +197,7 @@ describe('the service worker', () => {
   it('treats a bookmarked page as the page: the query is not part of the copy', async () => {
     const worker = load(online);
     await worker.request('/?agent=ag_1&q=secret+search');
+    await worker.request('/?view=roster');
     expect([...(worker.stores.get(worker.cacheName)?.entries.keys() ?? [])]).toEqual(['/']);
   });
 

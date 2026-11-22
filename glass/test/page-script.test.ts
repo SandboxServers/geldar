@@ -204,6 +204,25 @@ describe('the page script', () => {
     expect(fresh.hidden).toBe(true);
   });
 
+  it('forgets what arrived above once the reader is back at the top, also while paused', async () => {
+    const win = await boot(PAGES);
+    const list = win.document.getElementById('thoughts');
+    const fresh = win.document.getElementById('fresh') as HTMLButtonElement;
+    const pause = win.document.getElementById('pause') as HTMLButtonElement;
+    let top = -100;
+    if (list) list.getBoundingClientRect = () => new win.DOMRect(0, top, 300, 1000);
+    page.sources[0]?.emit('thought', thought(40));
+    expect(fresh.textContent).toBe('1 new entry');
+    // Paused with nothing held: the control has nothing to count. The reader scrolls back to the top.
+    fire(win, pause, 'click');
+    expect(fresh.hidden).toBe(true);
+    top = 0;
+    fire(win, win.document.getElementById('scroller'), 'scroll');
+    fire(win, pause, 'click');
+    // The entry that arrived before the pause is in sight now: it is not announced again.
+    expect(fresh.hidden).toBe(true);
+  });
+
   it('counts only the waiting entries the filters would show, and shows them on a press of the count', async () => {
     const win = await boot(PAGES);
     const pause = win.document.getElementById('pause') as HTMLButtonElement;

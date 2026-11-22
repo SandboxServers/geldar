@@ -23,6 +23,7 @@ const SHELL = [
   '/app.css',
   '/js/entries.css',
   '/js/reader.css',
+  '/js/roster.css',
   '/app.js',
   '/js/render-model.ts',
   '/js/render-view.ts',
@@ -32,6 +33,9 @@ const SHELL = [
   '/js/render-install.ts',
   '/js/render-reader.ts',
   '/js/render-filters.ts',
+  '/js/render-fresh.ts',
+  '/js/render-roster.ts',
+  '/js/render-tabs.ts',
   '/js/manifest.webmanifest',
   '/js/icons/icon-192.png',
   '/js/icons/icon-512.png',
@@ -99,6 +103,6 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin || !SHELL_PATHS.has(url.pathname)) return;
-  // The query is not part of the key: "/?agent=..." is the same page as "/".
+  // The query is not part of the key: "/?view=roster" is the same page as "/".
   event.respondWith(shellFile(request, url.pathname));
 });

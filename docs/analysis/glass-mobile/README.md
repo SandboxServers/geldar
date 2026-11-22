@@ -85,6 +85,31 @@ This is the result after a fix. The first version of this change charged the pag
 
 Not checked: adding the app to a real home screen, the splash screen, and the icon as a launcher draws it. `beforeinstallprompt` does not fire in headless Chromium, so the install strip in shots 03 and 04 was shown by sending the page that event by hand; the strip's logic is covered by `glass/src/render-install.test.ts`.
 
+## The tab bar and the Roster (decision 0411)
+
+Added after the redesign, checked the same way: the preview with invented data, headless Chromium, the same sizes.
+
+| File | What it shows |
+|---|---|
+| `18-glass-cover-with-tabs.png` | Cover screen: the Glass view with the tab bar under it. |
+| `19-glass-unfolded-with-tabs.png` | Unfolded: the bar has four slots, and Kino's is empty until it is built, so no label sits on the hinge. |
+| `20-roster-cover.png` | Cover screen: the Roster, living agents first, then the dead. |
+| `21-roster-unfolded.png` | Unfolded: a living agent selected, with its latest entries. |
+| `22-roster-unfolded-dead.png` | Unfolded: a dead agent selected, with when and how it died. |
+| `23-roster-cover-light.png`, `24-roster-unfolded-light.png` | The Roster in the light theme. |
+| `25-roster-unfolded-prompt.png` | Unfolded, before any agent is selected. |
+| `26-landscape-with-tabs.png` | A phone on its side: the bar takes 61 of 360 pixels. |
+
+Measured in Chromium:
+
+- A first visit under the shipped rate limits is 56 replies on the cover size and 58 unfolded, none refused; three visits in a row are 152, none refused. The worker copies 30 files.
+- The bar is 61px tall with 54px tabs at all three sizes. At 750px the labels sit at 81 to 122, 454 to 478 and 624 to 673: none in the middle 30px.
+- A tab press, Back and Forward keep the address and the marked tab right. A row press on a phone lands on Glass with the agent's chip on.
+- Twelve trips to the Roster and back with an entry selected cost no request.
+- The document is no taller than the screen on either view. On the live redesign it was 11,391px taller (see decision 0411, "Changed in review").
+
+Not checked: a real device, the live map behind the Map tab, real data, a roster of hundreds of agents.
+
 ## Tests
 
 `glass/` has 945 passing tests with this change. Each new behaviour was reverted by hand, one at a time (57 reverts: the worker's file list and its refusal to answer for the API, the policy line, the delay slot, the reader's wait, the breakpoint behaviour, the pause control, the chips, the sigil hash, the receipts cells, the design tokens, the hinge padding, touch targets, reduced motion, the Caddy route, the manifest and the icons, the page's rate bucket and its cap, the retry of a failed first page and its cap, stale replies, the worker's cache write), and a test failed for every one. Two reverts were not caught at first; their tests were tightened until they were.

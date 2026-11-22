@@ -35,6 +35,11 @@ export interface ReaderDeps {
   pane: El & { scrollTop: number };
   /** True while the wide layout is showing. On a phone the pane is empty and nothing is fetched. */
   isWide(): boolean;
+  /**
+   * True while another view covers the page. The reader then does nothing and keeps what it has, so coming
+   * back costs no request. Left out: never suspended.
+   */
+  suspended?: () => boolean;
   rowOf(id: string): ReaderRow | undefined;
   /** The entries on the page, newest first. */
   shown(): ThoughtView[];
@@ -118,6 +123,7 @@ export function createReader(deps: ReaderDeps): Reader {
   }
 
   function draw(): void {
+    if (deps.suspended?.() === true) return;
     if (!deps.isWide()) {
       if (current !== null) deps.pane.replaceChildren();
       mark(null);

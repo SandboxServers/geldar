@@ -1,0 +1,215 @@
+/* The views share the viewport with the install strip and the bottom navigation. */
+.app[hidden] {
+  display: none;
+}
+
+.tabs {
+  display: grid;
+  flex: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  padding: 0 10px calc(6px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--rule);
+  background: var(--bg);
+}
+
+.tabs a {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 54px;
+  color: var(--fg);
+  font: 500 12px "DM Mono", ui-monospace, monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.tabs a[aria-current="page"]::before {
+  position: absolute;
+  top: -1px;
+  right: 28%;
+  left: 28%;
+  height: 2px;
+  background: var(--accent);
+  content: "";
+}
+
+/* The status line takes no room while it has nothing to say. */
+.roster-status:empty {
+  display: none;
+}
+
+.roster-head {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--rule);
+}
+
+#roster-count {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.roster-group {
+  margin: 18px 0 4px;
+  color: var(--accent);
+  font-weight: 400;
+}
+
+.roster-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: calc(100% + 36px);
+  min-height: 44px;
+  margin: 0 -18px;
+  padding: 14px 18px;
+  border: 0;
+  border-bottom: 1px solid var(--rule);
+  background: none;
+  text-align: left;
+}
+
+/* The full-width row's outline stays inside the clipped pane. */
+.roster-row:focus-visible {
+  outline-offset: -2px;
+}
+
+.roster-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.roster-name,
+.roster-meta,
+.roster-note {
+  display: block;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.roster-name {
+  font: 400 30px/1.05 "Instrument Serif", serif;
+}
+
+.roster-meta,
+.roster-entry-meta {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.roster-note {
+  font-size: 11px;
+}
+
+.roster-note.alive {
+  color: var(--live);
+}
+
+.roster-note.dead,
+.roster-entry-text.bad {
+  color: var(--bad);
+}
+
+.sigil-roster {
+  width: 48px;
+  height: 48px;
+  border-radius: 4px;
+}
+
+.sigil-profile {
+  width: 84px;
+  height: 84px;
+  border-radius: 6px;
+}
+
+@media (min-width: 700px) {
+  /*
+   * A wide screen has four slots, as the design has: Glass, Kino, Map, Roster. Kino is not built yet and its
+   * slot stays empty. With three equal columns the middle label would sit on a foldable's hinge.
+   */
+  .tabs {
+    grid-auto-flow: row;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  #tab-map {
+    grid-column: 3;
+  }
+
+  #tab-roster {
+    grid-column: 4;
+  }
+
+  .roster-row[aria-current="true"] {
+    background: var(--field);
+  }
+
+  .roster-profile-name {
+    margin: 14px 0 0;
+    font: 400 64px/0.95 "Instrument Serif", serif;
+    overflow-wrap: anywhere;
+  }
+
+  #roster-profile .roster-meta {
+    margin-top: 6px;
+  }
+
+  #roster-profile .roster-note {
+    margin-top: 2px;
+    font-size: 12px;
+  }
+
+  .roster-latest {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 26px;
+    padding-top: 14px;
+    border-top: 1px solid var(--rule);
+  }
+
+  .roster-latest .eyebrow {
+    color: var(--accent);
+    font-weight: 400;
+  }
+
+  .roster-open {
+    flex: none;
+    min-height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--rule);
+    border-radius: 22px;
+    background: none;
+  }
+
+  .roster-entries {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .roster-entry {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .roster-entry-meta {
+    margin: 0;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+
+  .roster-entry-text {
+    margin: 4px 0 0;
+    font: 400 21px/1.3 "Instrument Serif", serif;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+  }
+
+  .roster-entry-text.journal {
+    font-style: italic;
+  }
+}

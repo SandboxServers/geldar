@@ -45,6 +45,18 @@ export interface InstallParts {
   store: InstallStore | null;
 }
 
+/**
+ * The page's storage, or null where the browser refuses it (a private window). Reading the property can
+ * throw. Only the install strip uses it.
+ */
+export function pageStore(win: { localStorage?: InstallStore }): InstallStore | null {
+  try {
+    return win.localStorage ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** True when the page already runs as an installed app. */
 function standalone(win: InstallWindow): boolean {
   try {

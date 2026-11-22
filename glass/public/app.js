@@ -1,20 +1,21 @@
 /**
  * The Thought Stream page: the first page of thoughts, the live feed, the search and filters, pause
  * and resume, the detail under an entry, "copy" and "load older". On a wide screen the selected entry
- * is shown in the reader pane (render-reader.ts). Plain browser JavaScript. The render modules come from /js/
+ * is shown in the reader pane (render-reader.ts). The tab bar and the Roster view are in render-tabs.ts
+ * and render-roster.ts. Plain browser JavaScript. The render modules come from /js/
  * with their types stripped. Every value from the API reaches the page through the escaped view in
  * render-view.ts and render-detail.ts, and nothing here parses markup.
  */
 
 import { copier, renderDetail } from '/js/render-detail.ts';
 import { createFilters } from '/js/render-filters.ts';
-import { registerWorker, setUpInstall } from '/js/render-install.ts';
+import { createFresh } from '/js/render-fresh.ts';
+import { pageStore, registerWorker, setUpInstall } from '/js/render-install.ts';
 import {
   appendOlder,
   backoffMs,
   countLabel,
   filterThoughts,
-  freshLabel,
   LIST_CAP,
   pushThought,
   readDelay,
@@ -22,7 +23,9 @@ import {
   toView,
 } from '/js/render-model.ts';
 import { createReader } from '/js/render-reader.ts';
+import { createRoster } from '/js/render-roster.ts';
 import { createStreamClient } from '/js/render-stream.ts';
+import { createTabs } from '/js/render-tabs.ts';
 import { renderNote, renderRow } from '/js/render-view.ts';
 
 const PAGE_SIZE = 50;
@@ -34,6 +37,7 @@ const STATES = ['connecting', 'live', 'reconnecting', 'paused', 'closed'];
 const WIDE = '(min-width: 700px)';
 
 const byId = (id) => document.getElementById(id);
+const glassView = byId('glass-view');
 const els = {
   fresh: byId('fresh'),
   status: byId('status'),
@@ -55,7 +59,6 @@ const els = {
 };
 
 const state = {
-  fresh: 0,
   list: [], // thoughts, newest first, at most LIST_CAP
   shown: [], // the thoughts of `list` that pass every filter, as drawn
   pending: [], // thoughts that arrived while paused, newest first, at most LIST_CAP
@@ -91,11 +94,11 @@ const filters = createFilters({
   history: window.history,
   now: () => Date.now(),
   onReload: () => {
-    clearFresh();
+    fresh.clear();
     reload();
   },
   onNarrow: () => {
-    clearFresh();
+    fresh.clear();
     render();
   },
 });
@@ -123,7 +126,7 @@ function updateStatus() {
   els.pause.setAttribute('aria-pressed', state.paused ? 'true' : 'false');
   els.status.textContent = statusLabel(name, state.delay);
   els.pauseHint.textContent = state.paused ? '. Press to resume.' : '. Press to pause.';
-  updateFresh();
+  fresh.update();
 }
 
 /** Says that a request failed, unless the feed is down too: "Reconnecting..." is then the truer word. */
@@ -195,6 +198,7 @@ const reader = createReader({
   doc: document,
   pane: els.reader,
   isWide,
+  suspended: () => glassView.hidden,
   rowOf: (id) => state.rows.get(id),
   shown: () => state.shown,
   options: (view) => entryOptions(view, state.drawnKeyword),
@@ -202,6 +206,31 @@ const reader = createReader({
   timers: {
     setTimeout: (fn, ms) => window.setTimeout(fn, ms),
     clearTimeout: (id) => window.clearTimeout(id),
+  },
+});
+
+const roster = createRoster({
+  doc: document,
+  count: byId('roster-count'),
+  alive: byId('roster-alive'),
+  dead: byId('roster-dead'),
+  profile: byId('roster-profile'),
+  isWide,
+  openInGlass: (id) => tabs.openInGlass(id),
+  loadLatest: getJson,
+  now: Date.now,
+});
+const tabs = createTabs({
+  links: { glass: byId('tab-glass'), roster: byId('tab-roster') },
+  panes: { glass: glassView, roster: byId('roster-view') },
+  win: window,
+  doc: document,
+  onChange(view, restoreFilters) {
+    if (view === 'glass') roster.clear();
+    if (restoreFilters && filters.restore()) {
+      render();
+      reload();
+    } else reader.draw();
   },
 });
 
@@ -252,11 +281,12 @@ function drawLive(view) {
  * filter send two requests, and the slower reply may be the older one: only the latest is used.
  */
 async function reload() {
-  clearFresh();
+  fresh.clear();
   state.asked += 1;
   const mine = state.asked;
   try {
     const page = await getJson(thoughtsPath(null));
+    // The filters changed while the older page was on its way: it belongs to a list that is gone.
     if (mine !== state.asked) return;
     state.list = page.thoughts.map(toView).slice(0, LIST_CAP);
     state.next = page.next;
@@ -265,6 +295,7 @@ async function reload() {
     state.details.clear();
     render();
   } catch {
+    // The filters changed while the older page was on its way: it belongs to a list that is gone.
     if (mine !== state.asked) return;
     sayFailed('Could not load thoughts.');
     if (!state.loaded) retryFirstLater();
@@ -288,18 +319,21 @@ function retryFirst() {
   loadFirst();
 }
 
-/** The agents, then the first page. A bookmark's filters are read from the URL in between. */
-function loadFirst() {
-  return getJson('/api/agents')
-    .then(({ agents }) => filters.setAgents(agents))
-    .catch(() => {
-      sayFailed('Could not load the agents.');
+let agentsReady;
+async function loadFirst() {
+  agentsReady ??= getJson('/api/agents')
+    .then(({ agents }) => {
+      filters.setAgents(agents);
+      roster.setAgents(agents);
     })
-    .then(() => {
-      // A bookmarked agent may sit far along the row: bring its chip into view.
-      filters.restore().scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
-      return reload();
+    .catch(() => {
+      agentsReady = undefined;
+      sayFailed('Could not load the agents.');
+      roster.unavailable();
     });
+  await agentsReady;
+  filters.restore();
+  return reload();
 }
 
 /** Adds the next page after the cursor. The list stays capped; the oldest rows drop off. */
@@ -357,43 +391,23 @@ function onLayout() {
   if (isWide()) {
     for (const detail of state.details.values()) detail.remove();
     state.details.clear();
-  }
+  } else roster.clear();
   reader.draw();
 }
 
-/** True when the top of the list is out of sight: scrolled under the header, or off the screen. */
-function away() {
-  const top = els.list.getBoundingClientRect().top;
-  return top < 0 || top < els.scroller.getBoundingClientRect().top - 1;
-}
-
-function toTop() {
-  els.scroller.scrollTop = 0;
-  els.pane.scrollTop = 0;
-}
-
 /** The "new entries" control: what waits behind a pause, or what arrived above while the reader was away. */
-function updateFresh() {
-  const count = state.paused
-    ? filterThoughts(state.pending, filters.current()).length
-    : state.fresh;
-  els.fresh.textContent = freshLabel(count);
-  els.fresh.hidden = count === 0;
-}
-
-/** Only newly drawn, matching entries count while the list top is out of sight. */
-function countFresh(view) {
-  if (!away()) return clearFresh();
-  if (state.list.some((entry) => entry.id === view.id)) return;
-  if (filterThoughts([view], filters.current()).length === 0) return;
-  state.fresh += 1;
-  updateFresh();
-}
-
-function clearFresh() {
-  state.fresh = 0;
-  updateFresh();
-}
+const fresh = createFresh({
+  button: els.fresh,
+  list: els.list,
+  scroller: els.scroller,
+  pane: els.pane,
+  win: window,
+  hidden: () => glassView.hidden,
+  waiting: () => (state.paused ? filterThoughts(state.pending, filters.current()).length : null),
+  onPress: () => {
+    if (state.paused) togglePause();
+  },
+});
 
 /** A live thought: shown at once, or held (capped) while the feed is paused. */
 function onThought(data) {
@@ -401,10 +415,15 @@ function onThought(data) {
   const view = toView(data);
   if (state.paused) {
     state.pending = pushThought(state.pending, view);
-    updateFresh();
+    fresh.update();
     return;
   }
-  countFresh(view);
+  // Only a new entry the filters show counts, and only while the top of the list is out of sight.
+  fresh.arrived(
+    () =>
+      !state.list.some((entry) => entry.id === view.id) &&
+      filterThoughts([view], filters.current()).length === 1,
+  );
   state.list = pushThought(state.list, view);
   if (drawLive(view)) return;
   // A second copy of a thought replaces the first, so its kept row is stale.
@@ -429,35 +448,16 @@ function togglePause() {
 
 /** "/" puts the cursor in the search field, unless the reader is already typing in a field. */
 function onKey(event) {
-  if (event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey) return;
+  if (glassView.hidden || event.key !== '/' || event.ctrlKey || event.metaKey || event.altKey)
+    return;
   const tag = document.activeElement?.tagName ?? '';
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
   event.preventDefault();
   els.keyword.focus();
 }
 
-/** The page's storage, or null where the browser refuses it (a private window). Only the install strip uses it. */
-function storage() {
-  try {
-    return window.localStorage ?? null;
-  } catch {
-    return null;
-  }
-}
-
 function start() {
-  // Pressing "new entries" shows them: it resumes a paused feed, and goes to the top of the list.
-  els.fresh.addEventListener('click', () => {
-    if (state.paused) togglePause();
-    toTop();
-    clearFresh();
-  });
-  const onScroll = () => {
-    if (!state.paused && !away()) clearFresh();
-  };
-  for (const target of [els.scroller, els.pane, window]) {
-    target.addEventListener('scroll', onScroll, { passive: true });
-  }
+  tabs.start();
   wideQuery?.addEventListener?.('change', onLayout);
 
   const live = createStreamClient({
@@ -486,7 +486,7 @@ function start() {
     yes: byId('install-yes'),
     no: byId('install-no'),
     win: window,
-    store: storage(),
+    store: pageStore(window),
   });
   registerWorker(typeof navigator === 'object' ? navigator : undefined);
 

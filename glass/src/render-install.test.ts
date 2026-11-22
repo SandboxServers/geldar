@@ -3,6 +3,7 @@ import {
   DISMISSED_KEY,
   type InstallParts,
   type InstallStore,
+  pageStore,
   registerWorker,
   setUpInstall,
   WORKER_SCOPE,
@@ -149,6 +150,20 @@ describe('the install strip', () => {
     expect(strip.hidden).toBe(false);
     expect(() => yes.click()).not.toThrow();
     expect(strip.hidden).toBe(true);
+  });
+});
+
+describe('the page storage', () => {
+  it('is the browser storage, or nothing where the browser has none or refuses it', () => {
+    const store = memory();
+    expect(pageStore({ localStorage: store })).toBe(store);
+    expect(pageStore({})).toBeNull();
+    const refusing = {
+      get localStorage(): InstallStore {
+        throw new Error('SecurityError');
+      },
+    };
+    expect(pageStore(refusing)).toBeNull();
   });
 });
 
