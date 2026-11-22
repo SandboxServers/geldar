@@ -107,10 +107,9 @@ esac
 exit 0
 `;
 
-// The seven manifest keys, each with its GHCR package name (colo-images.yml pushes geldar-<name>) and a digest.
+// The six manifest keys, each with its GHCR package name (colo-images.yml pushes geldar-<name>) and a digest.
 const IMAGES = [
   'GELDAR_BODY_IMAGE',
-  'GELDAR_MIND_IMAGE',
   'GELDAR_EVENTSINK_IMAGE',
   'GELDAR_MCP_IMAGE',
   'GELDAR_ADMIN_IMAGE',
