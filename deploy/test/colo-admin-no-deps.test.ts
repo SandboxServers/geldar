@@ -2,7 +2,7 @@
 // converges its depends_on (postgres) unless it is given --no-deps, so every one-shot run must carry --no-deps, and a real
 // run refuses while the project's postgres container is not running. The fake docker of colo-admin-fixture.ts answers the
 // postgres query (FAKE_POSTGRES_RUN, default running; empty means not running). No real docker is used.
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -27,10 +27,28 @@ const NO_DEPS_RUN = 'run --rm --no-deps admin';
 const NOT_RUNNING = { ...REAL, FAKE_POSTGRES_RUN: '' };
 
 describe('colo-admin.sh one-shot runs use --no-deps (incident admin-no-deps)', () => {
-  it('has no admin one-shot run without --no-deps (grep-style over the script)', () => {
+  it('has no admin one-shot run without --no-deps in colo-admin.sh (grep-style over the script)', () => {
     const text = readFileSync(SCRIPT, 'utf8');
     expect(text).not.toMatch(/run --rm (?!--no-deps )admin/);
     expect(text.match(/run --rm --no-deps admin/g)?.length ?? 0).toBeGreaterThanOrEqual(9);
+  });
+
+  it('every deploy/*.sh one-shot admin run carries --no-deps (colo-notice.sh included)', () => {
+    // Backslash continuations are joined first, so a run split over lines (colo-notice.sh) is one logical line.
+    const runs: string[] = [];
+    const violations: string[] = [];
+    for (const name of readdirSync(DEPLOY).filter((f) => f.endsWith('.sh'))) {
+      const text = readFileSync(join(DEPLOY, name), 'utf8').replace(/\\\r?\n\s*/g, ' ');
+      for (const line of text.split('\n')) {
+        if (!/\brun\b[^|;&#]*--rm\b[^|;&#]*\badmin\b/.test(line)) continue;
+        runs.push(name);
+        if (!/--no-deps/.test(line)) violations.push(`${name}: ${line.trim()}`);
+      }
+    }
+    expect(violations).toEqual([]);
+    // The scan must reach the notice script too, not only colo-admin.sh (9 lines there, 1 in colo-notice.sh).
+    expect(runs).toContain('colo-notice.sh');
+    expect(runs.length).toBeGreaterThanOrEqual(10);
   });
 
   it.each([
@@ -56,6 +74,15 @@ describe('colo-admin.sh one-shot runs use --no-deps (incident admin-no-deps)', (
     expect(runs).toHaveLength(1);
     expect(runs[0]).toContain(NO_DEPS_RUN);
     expect(log.filter((c) => / up | stop | rm -f /.test(c))).toEqual([]);
+  });
+
+  it('a real roster-list starts only the one-shot, with --no-deps', () => {
+    const fx = fixture();
+    const r = run(fx, REAL, ['roster-list']);
+    expect(r.code).toBe(0);
+    const runs = starts(calls(fx));
+    expect(runs).toHaveLength(1);
+    expect(runs[0]).toContain(NO_DEPS_RUN);
   });
 
   it('checks that the postgres container of the project is running before a real run', () => {
