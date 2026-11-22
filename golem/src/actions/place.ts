@@ -15,6 +15,7 @@ import {
   sideDigCell,
 } from './pillar.ts';
 import { type Footprint, footprintOf, upperCell } from './place-footprint.ts';
+import { planSentClick, STATE_UNACHIEVABLE, stateMatches } from './place-state.ts';
 import type { ActionContext, ActionHandler } from './registry.ts';
 
 /** Cells a placement may replace: the target cell must hold one of these. */
@@ -107,6 +108,7 @@ export const MESSAGE = {
   noFarmland: 'seeds need farmland below',
   notLoaded: 'target is not loaded',
   noReference: 'no solid block to place against',
+  stateUnachievable: 'no click on a solid neighbour gives that block state',
   noGround: 'no solid block under your feet to build on',
   notGrounded: 'you are not on the ground',
   headroom: 'no headroom for a pillar: the two cells above your head are not clear',
@@ -212,9 +214,24 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
       : NEIGHBOR_OFFSETS.map((o) => target.offset(o.x, o.y, o.z));
   const cells = candidates.map((position) => bot.blockAt(position));
   // Every solid neighbour is a reference in turn: one can be out of sight or refused by the server.
-  const solidAt = cells.flatMap((cell, i) => (cell?.boundingBox === 'block' ? [i] : []));
+  let solidAt = cells.flatMap((cell, i) => (cell?.boundingBox === 'block' ? [i] : []));
   if (pickReference(cells.map((cell) => cell?.boundingBox === 'block')) === null) {
     return failed('blocked', MESSAGE.noReference);
+  }
+  // A block state picks the one reference whose click gives it; when no click does, nothing is placed.
+  const state = ctx.placeState;
+  const plan =
+    state === undefined
+      ? null
+      : planSentClick(
+          block,
+          state,
+          solidAt.map((i) => (candidates[i] ?? target).minus(target)),
+        );
+  if (state !== undefined) {
+    if (plan === null) return failed(STATE_UNACHIEVABLE, MESSAGE.stateUnachievable);
+    const chosen = target.plus(plan.reference);
+    solidAt = solidAt.filter((i) => candidates[i]?.equals(chosen) === true);
   }
 
   if (bot.heldItem?.name !== block) {
@@ -225,6 +242,12 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
   // A bed's head goes the way the bot faces, so the bot turns toward the cell it moved to.
   if (beside && block.endsWith('_bed')) {
     await bot.look(Math.atan2(-beside.step.x, beside.step.z), 0, true);
+    if (ctx.signal.aborted) return cancelled();
+  }
+
+  // The bot turns to the look that gives the state before the click (decision 0349).
+  if (plan !== null) {
+    await bot.look(plan.yaw, plan.pitch, true);
     if (ctx.signal.aborted) return cancelled();
   }
 
@@ -266,9 +289,19 @@ async function place(ctx: ActionContext, block: string, at: Spot): Promise<Actio
       last = failed('blocked', MESSAGE.unconfirmed);
       continue;
     }
+    // The placed block must carry the state asked for; a mismatch is reported, not called placed.
+    if (state !== undefined && !stateMatches(block, state, propertiesAt(bot, target))) {
+      return failed(STATE_UNACHIEVABLE, MESSAGE.stateUnachievable);
+    }
     return completed({ block, at: spot(target), reference: spot(referencePos) });
   }
   return last;
+}
+
+/** The properties the block at the cell reports; empty when it reports none. */
+function propertiesAt(bot: Bot, cell: Vec3): Record<string, string> {
+  const block = bot.blockAt(cell) as { getProperties?: () => Record<string, string> } | null;
+  return block?.getProperties?.() ?? {};
 }
 
 type Stack = ReturnType<Bot['inventory']['items']>[number];
