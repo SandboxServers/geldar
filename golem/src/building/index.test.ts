@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as building from './index.ts';
 
-const STUBS = [
-  'enqueuePlan',
-  'contendFor',
-  'throttleWait',
-  'progressSentence',
-  'surveyBox',
-] as const;
+const STUBS = ['enqueuePlan', 'contendFor', 'progressSentence', 'surveyBox'] as const;
 
 describe('building scaffold (BLD-S3a)', () => {
   it('doCell and countMaterials are implemented and exported (BLD-11)', () => {
