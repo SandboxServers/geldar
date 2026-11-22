@@ -1,7 +1,15 @@
-// Plan lane state (BLD-13).
-// BLD-S3a stub: the agreed name, refused until its content packet lands.
+// Plan lane state (BLD-13): where the lane is in its one plan.
 
-/** Stub: throws `not_implemented` until the owning content packet fills it in. */
-export function laneStateOf(): never {
-  throw new Error('not_implemented: laneStateOf');
+/** The lane's states: `idle` (no plan), `running`, `paused` (a reflex holds it), `waiting_materials`. */
+export const LANE_STATES = ['idle', 'running', 'paused', 'waiting_materials'] as const;
+export type LaneStateName = (typeof LANE_STATES)[number];
+
+/** Anything that reports its lane state (the plan lane). */
+export interface HasLaneState {
+  readonly state: LaneStateName;
+}
+
+/** The lane's state name. */
+export function laneStateOf(lane: HasLaneState): LaneStateName {
+  return lane.state;
 }

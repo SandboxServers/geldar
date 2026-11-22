@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import * as building from './index.ts';
 
 const STUBS = [
-  'laneStateOf',
   'enqueuePlan',
   'contendFor',
   'throttleWait',
@@ -23,7 +22,7 @@ describe('building scaffold (BLD-S3a)', () => {
 
   it('the plan lane is absent with the flag off and with it on (stub)', () => {
     expect(building.createPlanLane(false)).toBeNull();
-    expect(building.createPlanLane(true)).toBeNull();
+    expect(building.createPlanLane(true)).not.toBeNull();
   });
 
   it('the shared names keep their agreed values', () => {
