@@ -167,7 +167,6 @@ describe('compose/mcp.yml', () => {
 
 /** Workspace package name to its directory, read from each package.json (the runtime resolves these by name). */
 const workspaceDirs = [
-  'animus',
   'contract',
   'player-core',
   'telemetry',

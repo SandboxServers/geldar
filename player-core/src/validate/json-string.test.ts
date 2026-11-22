@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_ITEM_CHARS, isRiskyCodePoint, jsonString } from './json-string';
+import { isRiskyCodePoint, jsonString, MAX_ITEM_CHARS } from './json-string.ts';
 
 describe('jsonString escaping', () => {
   it('wraps plain text in quotes and leaves it unchanged', () => {
@@ -60,9 +60,7 @@ describe('jsonString escaping', () => {
 
   it('keeps a string of exactly the limit whole and cuts one character over it', () => {
     expect(jsonString('x'.repeat(MAX_ITEM_CHARS))).toBe(`"${'x'.repeat(MAX_ITEM_CHARS)}"`);
-    expect(jsonString('x'.repeat(MAX_ITEM_CHARS + 1))).toBe(
-      `"${'x'.repeat(MAX_ITEM_CHARS - 1)}…"`,
-    );
+    expect(jsonString('x'.repeat(MAX_ITEM_CHARS + 1))).toBe(`"${'x'.repeat(MAX_ITEM_CHARS - 1)}…"`);
   });
 
   it('reports risky code points for the same classes it escapes', () => {
