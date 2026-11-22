@@ -55,6 +55,22 @@ Checked in the same Chromium, with the real policy header (`img-src 'none'` incl
 - The cache holds the 25 shell files and nothing under `/api/`.
 - Offline, a reload shows the shell with "Reconnecting..." and no entry. Back online, the feed reconnects, the pill says "Live −60s" and the list fills.
 
+## The deploy, and why the files are under `/js/`
+
+Caddy routes the Glass page by an explicit list, and the deploy pipeline never applies a Caddy change. The first version of this work served its new files at the root and changed the route with them; that would have put an unstyled page live until an operator restarted the shared Caddy. The page now serves every new file under `/js/`, which the live route already passes (decision 0410, section 11).
+
+Checked against the live site on 2026-11-22, with plain GETs:
+
+| Path | Reply | Meaning |
+|---|---|---|
+| `/js/render-model.ts` | 200, with Glass's policy header | routed to Glass |
+| `/js/nested/deeper/x.woff2` | 404, Glass's JSON body and policy header | nested paths under `/js/` reach Glass |
+| `/fonts.css`, `/fonts/x.woff2`, `/sw.js` | 404, empty, no policy header | stopped at Caddy |
+
+In Chromium, with the worker at `/js/sw.js` and Glass's `Service-Worker-Allowed: /` header: the worker's scope is the whole origin, it activates, the manifest loads from `/js/manifest.webmanifest` with no error, and the installability audit is empty.
+
+Not checked: that the live Caddy passes the `Service-Worker-Allowed` response header through unchanged. It passes Glass's other headers, and its site file removes only `Server`. If it were dropped, the worker would fail to register and the page would work as it does today, without install or offline.
+
 ## The rate limit
 
 A first visit is about 48 requests on the cover screen and 49 unfolded: the page's files, the service worker asking for each again, and the API. Under the limits Glass ships with (the preview with no `unlimited`), in Chromium:
@@ -71,7 +87,7 @@ Not checked: adding the app to a real home screen, the splash screen, and the ic
 
 ## Tests
 
-`glass/` has 945 passing tests with this change. Each new behaviour was reverted by hand, one at a time (52 reverts: the worker's file list and its refusal to answer for the API, the policy line, the delay slot, the reader's wait, the breakpoint behaviour, the pause control, the chips, the sigil hash, the receipts cells, the design tokens, the hinge padding, touch targets, reduced motion, the Caddy route, the manifest and the icons, the page's rate bucket and its cap, the retry of a failed first page and its cap, stale replies, the worker's cache write), and a test failed for every one. Two reverts were not caught at first; their tests were tightened until they were.
+`glass/` has 945 passing tests with this change. Each new behaviour was reverted by hand, one at a time (57 reverts: the worker's file list and its refusal to answer for the API, the policy line, the delay slot, the reader's wait, the breakpoint behaviour, the pause control, the chips, the sigil hash, the receipts cells, the design tokens, the hinge padding, touch targets, reduced motion, the Caddy route, the manifest and the icons, the page's rate bucket and its cap, the retry of a failed first page and its cap, stale replies, the worker's cache write), and a test failed for every one. Two reverts were not caught at first; their tests were tightened until they were.
 
 ## Review
 

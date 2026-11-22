@@ -18,6 +18,7 @@ import {
   pageWithDelay,
   RENDER_MODULES,
   STATIC_FILES,
+  WORKER_PATH,
   withDelay,
 } from '../src/static-files.ts';
 
@@ -75,18 +76,43 @@ describe('the static files', () => {
         '/',
         '/app.css',
         '/app.js',
-        '/entries.css',
-        '/fonts.css',
-        '/manifest.webmanifest',
-        '/reader.css',
-        '/sw.js',
+        '/js/entries.css',
+        '/js/fonts.css',
+        '/js/manifest.webmanifest',
+        '/js/reader.css',
+        '/js/sw.js',
         ...RENDER_MODULES.map((name) => `/js/${name}.ts`),
-        ...FONT_FILES.map((name) => `/fonts/${name}.woff2`),
-        ...ICON_FILES.map((name) => `/icons/${name}.png`),
+        ...FONT_FILES.map((name) => `/js/fonts/${name}.woff2`),
+        ...ICON_FILES.map((name) => `/js/icons/${name}.png`),
       ].sort(),
     );
     expect(FONT_FILES).toHaveLength(8);
     expect(ICON_FILES).toEqual(['icon-192', 'icon-512', 'maskable-512']);
+  });
+
+  it('all sit at /, /app.css, /app.js or under /js/: the only page paths the live Caddy routes', () => {
+    for (const path of STATIC_FILES.keys()) {
+      expect(
+        path === '/' || path === '/app.css' || path === '/app.js' || path.startsWith('/js/'),
+        path,
+      ).toBe(true);
+    }
+  });
+
+  it('lets the worker, and no other file, take the whole origin as its scope', async () => {
+    const port = await start();
+    expect(WORKER_PATH).toBe('/js/sw.js');
+    for (const path of STATIC_FILES.keys()) {
+      const reply = await send(port, 'GET', path);
+      expect(reply.headers['service-worker-allowed'], path).toBe(
+        path === WORKER_PATH ? '/' : undefined,
+      );
+    }
+    // An unknown path under /js/ gets no such header: only the one fixed file does.
+    expect(
+      (await send(port, 'GET', '/js/evil.js')).headers['service-worker-allowed'],
+    ).toBeUndefined();
+    expect((await send(port, 'HEAD', WORKER_PATH)).headers['service-worker-allowed']).toBe('/');
   });
 
   it('each answer 200 with its type, the security headers and a cache rule', async () => {
@@ -100,7 +126,7 @@ describe('the static files', () => {
         expect(reply.headers[name.toLowerCase()], `${path} ${name}`).toBe(value);
       }
       // The page's own code is checked with the server on every load; a typeface or an icon is kept a week.
-      const kept = path.startsWith('/fonts/') || path.startsWith('/icons/');
+      const kept = path.startsWith('/js/fonts/') || path.startsWith('/js/icons/');
       expect(reply.headers['cache-control'], path).toBe(
         kept ? 'public, max-age=604800' : 'no-cache',
       );
@@ -110,14 +136,14 @@ describe('the static files', () => {
   it('send the typefaces and the icons byte for byte', async () => {
     const port = await start();
     for (const name of FONT_FILES) {
-      const reply = await send(port, 'GET', `/fonts/${name}.woff2`);
+      const reply = await send(port, 'GET', `/js/fonts/${name}.woff2`);
       expect(reply.body.subarray(0, 4).toString('latin1'), name).toBe('wOF2');
       expect(reply.body.equals(readFileSync(new URL(`fonts/${name}.woff2`, PUBLIC))), name).toBe(
         true,
       );
     }
     for (const name of ICON_FILES) {
-      const reply = await send(port, 'GET', `/icons/${name}.png`);
+      const reply = await send(port, 'GET', `/js/icons/${name}.png`);
       expect(reply.body.subarray(1, 4).toString('latin1'), name).toBe('PNG');
       expect(reply.body.equals(readFileSync(new URL(`icons/${name}.png`, PUBLIC))), name).toBe(
         true,
@@ -148,9 +174,9 @@ describe('the static files', () => {
   it('answer a HEAD without a body and refuse a write with 405', async () => {
     const port = await start();
     for (const path of [
-      '/sw.js',
-      '/manifest.webmanifest',
-      '/fonts/dm-mono-latin-400-normal.woff2',
+      '/js/sw.js',
+      '/js/manifest.webmanifest',
+      '/js/fonts/dm-mono-latin-400-normal.woff2',
     ]) {
       const head = await send(port, 'HEAD', path);
       expect([head.status, head.body.length], path).toEqual([200, 0]);
@@ -162,15 +188,21 @@ describe('the static files', () => {
   it('serve no other file: a path picks an entry of the table and never names a file on disk', async () => {
     const port = await start();
     for (const path of [
-      '/fonts/',
-      '/fonts/OFL-dm-mono.txt',
-      '/fonts/dm-mono-latin-400-normal.woff',
-      '/fonts/../../package.json',
-      '/fonts/..%2f..%2fpackage.json',
-      '/icons/icon-1024.png',
-      '/icons/../index.html',
-      '/manifest.json',
-      '/sw.js.map',
+      '/js/fonts/',
+      '/js/fonts/OFL-dm-mono.txt',
+      '/js/fonts/dm-mono-latin-400-normal.woff',
+      '/js/fonts/../../../package.json',
+      '/js/fonts/..%2f..%2fpackage.json',
+      '/js/icons/icon-1024.png',
+      '/js/icons/../index.html',
+      '/js/manifest.json',
+      '/js/sw.js.map',
+      // The same files at the root, where the folders on disk might suggest they are: not served there.
+      '/sw.js',
+      '/fonts.css',
+      '/manifest.webmanifest',
+      '/fonts/dm-mono-latin-400-normal.woff2',
+      '/icons/icon-192.png',
       '/js/render-install.test.ts',
       '/js/static-files.ts',
     ]) {
@@ -211,10 +243,10 @@ describe('the page', () => {
     const wanted = new Set<string>();
     for (const m of text('/').matchAll(/(?:href|src)="(\/[^"]*)"/g)) wanted.add(m[1] as string);
     for (const m of text('/app.js').matchAll(/from '(\/[^']+)'/g)) wanted.add(m[1] as string);
-    for (const m of text('/fonts.css').matchAll(/url\("([^"]+)"\)/g)) wanted.add(m[1] as string);
-    const manifest = JSON.parse(text('/manifest.webmanifest')) as { icons: { src: string }[] };
+    for (const m of text('/js/fonts.css').matchAll(/url\("([^"]+)"\)/g)) wanted.add(m[1] as string);
+    const manifest = JSON.parse(text('/js/manifest.webmanifest')) as { icons: { src: string }[] };
     for (const icon of manifest.icons) wanted.add(icon.src);
-    wanted.add('/sw.js');
+    wanted.add(WORKER_PATH);
     // The sign-in link goes to the register service, which Caddy routes; it is not a Glass file.
     wanted.delete('/register/');
     expect(wanted.size).toBeGreaterThan(20);
@@ -232,7 +264,7 @@ describe('the page', () => {
 });
 
 describe('the app manifest', () => {
-  const manifest = JSON.parse(String(STATIC_FILES.get('/manifest.webmanifest')?.body)) as Record<
+  const manifest = JSON.parse(String(STATIC_FILES.get('/js/manifest.webmanifest')?.body)) as Record<
     string,
     unknown
   >;
@@ -252,9 +284,14 @@ describe('the app manifest', () => {
 
   it('lists a 192 and a 512 icon and a maskable one, all from this origin', () => {
     expect(manifest.icons).toEqual([
-      { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-      { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
-      { src: '/icons/maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+      { src: '/js/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/js/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      {
+        src: '/js/icons/maskable-512.png',
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'maskable',
+      },
     ]);
   });
 

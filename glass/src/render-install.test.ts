@@ -5,6 +5,7 @@ import {
   type InstallStore,
   registerWorker,
   setUpInstall,
+  WORKER_SCOPE,
   WORKER_URL,
 } from './render-install.ts';
 
@@ -152,11 +153,12 @@ describe('the install strip', () => {
 });
 
 describe('the worker registration', () => {
-  it('registers /sw.js, whose place at the root makes the origin its scope', () => {
+  it('registers the worker under /js/ and asks for the whole origin as its scope', () => {
     const register = vi.fn(async () => undefined);
     registerWorker({ serviceWorker: { register } });
-    expect(WORKER_URL).toBe('/sw.js');
-    expect(register.mock.calls).toEqual([['/sw.js']]);
+    // The script is under /js/, the one folder Caddy routes; the page it serves is at the root.
+    expect([WORKER_URL, WORKER_SCOPE]).toEqual(['/js/sw.js', '/']);
+    expect(register.mock.calls).toEqual([['/js/sw.js', { scope: '/' }]]);
   });
 
   it('does nothing where the browser has no worker, and ignores a refusal', async () => {

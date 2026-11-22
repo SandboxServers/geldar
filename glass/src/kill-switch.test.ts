@@ -104,10 +104,10 @@ describe('the kill switch (0072 item 6)', () => {
       ['GET', '/'],
       ['GET', '/app.js'],
       // The installable app's files too: a switched-off Glass hands out no worker, manifest or typeface.
-      ['GET', '/sw.js'],
-      ['GET', '/manifest.webmanifest'],
-      ['GET', '/fonts/dm-mono-latin-400-normal.woff2'],
-      ['GET', '/icons/icon-192.png'],
+      ['GET', '/js/sw.js'],
+      ['GET', '/js/manifest.webmanifest'],
+      ['GET', '/js/fonts/dm-mono-latin-400-normal.woff2'],
+      ['GET', '/js/icons/icon-192.png'],
       ['POST', '/api/thoughts'],
       ['GET', '/nowhere'],
     ] as const;

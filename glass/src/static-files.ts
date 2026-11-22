@@ -3,6 +3,12 @@
  * the installable app, and the two typefaces and the icons it loads from this origin. They are read once
  * at load and keyed by URL path. A request selects an entry in this table; no path from a request names a
  * file on disk.
+ *
+ * Every path here is `/`, `/app.css`, `/app.js` or under `/js/`. Those are the only page paths Caddy routes
+ * to Glass (deploy/caddy/glass.caddy), and the deploy pipeline rolls a Glass image by itself but never
+ * applies a Caddy change. A file anywhere else would be a 404 in production until an operator restarted the
+ * shared Caddy by hand. So the stylesheets, typefaces, icons, manifest and worker added by the redesign live
+ * under `/js/` too, whatever they are. glass/test/caddy-paths.test.ts holds this table to that route.
  */
 import { readFileSync } from 'node:fs';
 import { stripTypeScriptTypes } from 'node:module';
@@ -12,6 +18,8 @@ export interface StaticFile {
   type: string;
   /** The Cache-Control value. The page's own code is checked on every load; typefaces and icons are kept a week. */
   cache: string;
+  /** Headers this one file needs besides its type and cache rule. */
+  headers?: Record<string, string>;
 }
 
 const PUBLIC = new URL('../public/', import.meta.url);
@@ -34,7 +42,10 @@ export const RENDER_MODULES = [
   'render-install',
 ] as const;
 
-/** The typeface files under /fonts/: two faces of each family, each split in Latin and Latin Extended. */
+/** Where the service worker is served. */
+export const WORKER_PATH = '/js/sw.js';
+
+/** The typeface files under /js/fonts/: two faces of each family, each split in Latin and Latin Extended. */
 export const FONT_FILES = [
   'instrument-serif-latin-400-normal',
   'instrument-serif-latin-400-italic',
@@ -46,7 +57,7 @@ export const FONT_FILES = [
   'dm-mono-latin-ext-500-normal',
 ] as const;
 
-/** The app icons under /icons/, named by the manifest. */
+/** The app icons under /js/icons/, named by the manifest. */
 export const ICON_FILES = ['icon-192', 'icon-512', 'maskable-512'] as const;
 
 function text(dir: URL, name: string, type: string): StaticFile {
@@ -59,24 +70,25 @@ function bytes(name: string, type: string): StaticFile {
 
 export const STATIC_FILES: ReadonlyMap<string, StaticFile> = new Map<string, StaticFile>([
   ['/', text(PUBLIC, 'index.html', 'text/html; charset=utf-8')],
-  ['/fonts.css', text(PUBLIC, 'fonts.css', CSS)],
   ['/app.css', text(PUBLIC, 'app.css', CSS)],
-  ['/entries.css', text(PUBLIC, 'entries.css', CSS)],
-  ['/reader.css', text(PUBLIC, 'reader.css', CSS)],
+  ['/js/fonts.css', text(PUBLIC, 'fonts.css', CSS)],
+  ['/js/entries.css', text(PUBLIC, 'entries.css', CSS)],
+  ['/js/reader.css', text(PUBLIC, 'reader.css', CSS)],
   ['/app.js', text(PUBLIC, 'app.js', JS)],
-  // The worker is served from the root, so its scope is the origin; it answers only for the files here.
-  ['/sw.js', text(PUBLIC, 'sw.js', JS)],
-  ['/manifest.webmanifest', text(PUBLIC, 'manifest.webmanifest', 'application/manifest+json')],
+  // A worker's scope is its own folder unless the server says otherwise. This one file may take the whole
+  // origin, which the page at `/` needs; it answers only for the files of this table.
+  [WORKER_PATH, { ...text(PUBLIC, 'sw.js', JS), headers: { 'Service-Worker-Allowed': '/' } }],
+  ['/js/manifest.webmanifest', text(PUBLIC, 'manifest.webmanifest', 'application/manifest+json')],
   ...RENDER_MODULES.map((name): [string, StaticFile] => {
     const file = text(SOURCE, `${name}.ts`, JS);
     return [`/js/${name}.ts`, { ...file, body: stripTypeScriptTypes(String(file.body)) }];
   }),
   ...FONT_FILES.map((name): [string, StaticFile] => [
-    `/fonts/${name}.woff2`,
+    `/js/fonts/${name}.woff2`,
     bytes(`fonts/${name}.woff2`, 'font/woff2'),
   ]),
   ...ICON_FILES.map((name): [string, StaticFile] => [
-    `/icons/${name}.png`,
+    `/js/icons/${name}.png`,
     bytes(`icons/${name}.png`, 'image/png'),
   ]),
 ]);

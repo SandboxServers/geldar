@@ -269,7 +269,11 @@ export function createHandler(deps: GlassHandlerDeps) {
         sendJson(res, 405, { error: 'method not allowed' });
         return;
       }
-      res.writeHead(200, { 'Content-Type': file.type, 'Cache-Control': file.cache });
+      res.writeHead(200, {
+        'Content-Type': file.type,
+        'Cache-Control': file.cache,
+        ...file.headers,
+      });
       res.end(file.body);
       return;
     }

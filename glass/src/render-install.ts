@@ -6,8 +6,12 @@
  * This file is served to the browser after type stripping, so it stays erasable TypeScript.
  */
 
-/** Where the worker script is served. Its place at the root makes the whole origin its scope. */
-export const WORKER_URL = '/sw.js';
+/**
+ * Where the worker script is served, and the scope it asks for. The script sits under /js/ with the page's
+ * other files; Glass sends `Service-Worker-Allowed: /` with it, so it may take the page at `/`.
+ */
+export const WORKER_URL = '/js/sw.js';
+export const WORKER_SCOPE = '/';
 
 /** The storage key that remembers "Not now". Its value is the fixed text "1". */
 export const DISMISSED_KEY = 'glass.install.dismissed';
@@ -103,7 +107,7 @@ export function setUpInstall(parts: InstallParts): void {
 
 /** The part of `navigator` the registration uses. */
 export interface WorkerHost {
-  serviceWorker?: { register(url: string): Promise<unknown> };
+  serviceWorker?: { register(url: string, options: { scope: string }): Promise<unknown> };
 }
 
 /**
@@ -112,7 +116,7 @@ export interface WorkerHost {
  */
 export function registerWorker(host: WorkerHost | undefined): void {
   try {
-    host?.serviceWorker?.register(WORKER_URL).catch(() => undefined);
+    host?.serviceWorker?.register(WORKER_URL, { scope: WORKER_SCOPE }).catch(() => undefined);
   } catch {
     // No worker here.
   }

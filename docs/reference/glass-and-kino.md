@@ -63,7 +63,7 @@ The route table is `ROUTES` in `glass/src/routes.ts`; `routes.test.ts` enumerate
 
 ### Static files
 
-From `glass/public/`: `/`, the stylesheets `/fonts.css`, `/app.css`, `/entries.css` and `/reader.css`, the page script `/app.js`, the service worker `/sw.js`, `/manifest.webmanifest`, the typefaces under `/fonts/` and the app icons under `/icons/`. From `glass/src/` with types stripped: the `render-*.ts` modules under `/js/`. The table is `glass/src/static-files.ts`; a request picks an entry of it and never names a file on disk (decision [0410](../decisions/0410-glass-mobile-redesign-and-pwa.md)).
+From `glass/public/`: `/`, `/app.css` and the page script `/app.js`, and under `/js/` the other stylesheets (`fonts.css`, `entries.css`, `reader.css`), the service worker `sw.js`, `manifest.webmanifest`, the typefaces (`fonts/`) and the app icons (`icons/`). From `glass/src/` with types stripped: the `render-*.ts` modules, also under `/js/`. Everything but the first three is under `/js/` because that is the one folder Caddy routes. The table is `glass/src/static-files.ts`; a request picks an entry of it and never names a file on disk (decision [0410](../decisions/0410-glass-mobile-redesign-and-pwa.md)).
 
 ### Kino (only when enabled)
 

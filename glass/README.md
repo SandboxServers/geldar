@@ -53,8 +53,14 @@ would send that site's name in `Host`. The check refuses those requests before a
 
 The page is plain HTML, four stylesheets and ES modules, with no framework and no build step (decision
 0410). Its files are a fixed table (`glass/src/static-files.ts`): a request picks an entry and never
-names a file on disk. Caddy routes the same list (`deploy/caddy/glass.caddy`;
-`glass/test/caddy-paths.test.ts` holds the two together).
+names a file on disk.
+
+**Every page file is served at `/`, `/app.css`, `/app.js` or under `/js/`**, the typefaces, icons,
+manifest and service worker included (`/js/fonts/...`, `/js/sw.js`). Those are the only page paths
+Caddy routes (`deploy/caddy/glass.caddy`), and the deploy pipeline rolls a Glass image by itself but
+never applies a Caddy change. A page file anywhere else is a 404 in production until an operator
+restarts the shared Caddy. `glass/test/caddy-paths.test.ts` fails when a file is added outside the
+route, or when the route is changed in the same step as the page.
 
 - **A phone** (under 700px) gets one column: a header that stays put (the title, the status control,
   search, a row of agent chips, the count) and the list, which scrolls. Pressing an entry's time opens
@@ -89,8 +95,9 @@ The page can be installed from Chrome ("Add to Home screen"), and then opens ful
   of the name "Glass" (`node glass/test/app-icon.ts` writes them; `glass/test/app-icon.test.ts` holds
   the committed files to the generator). The leak scan excuses these three PNGs by path and SHA-256
   (`tools/players-cli/src/leak-scan.ts`); new icon art needs its hashes there.
-- `sw.js` is a service worker that keeps a copy of the page's own files, so the installed app opens
-  without a network. It answers only a `GET` for one of those files. It never answers for `/api/*`,
+- `sw.js` (served at `/js/sw.js`) is a service worker that keeps a copy of the page's own files, so the
+  installed app opens without a network. Glass sends `Service-Worker-Allowed: /` with that one file, so
+  it can serve the page at `/` from its place under `/js/`. It answers only a `GET` for one of those files. It never answers for `/api/*`,
   the stream, Kino or the register service's pages, and never stores their replies: thoughts are live
   and delayed by policy, and none is cached. It asks the network first and passes on whatever the
   server answers, so a refusal (the kill switch's `503`) reaches the reader. The copy is used only when
@@ -216,8 +223,9 @@ a SCRAM-SHA-256 verifier. The password itself is never printed.
   attribute or tag cannot run. The page builds its rows from text only: `textContent` and text nodes, with a
   search match inside a `<mark>` (`glass/src/render-view.ts`).
   The adversarial corpus (`glass/test/corpus.ts`) runs through the API, the stream and the page.
-- **The service worker.** A worker at the root has the whole origin as its scope, and the register
-  service's pages and forms (`/register*`, `/roster*`) and Kino live on that origin too. The worker
+- **The service worker.** The worker has the whole origin as its scope (Glass sends
+  `Service-Worker-Allowed: /` with `/js/sw.js`, and with nothing else; a test holds that), and the
+  register service's pages and forms (`/register*`, `/roster*`) and Kino live on that origin too. The worker
   answers only for the page's own files, by an exact list that a test holds equal to the files Glass
   serves (`glass/test/service-worker.test.ts`); every other request passes it untouched. It stores no
   API reply, so an installed app holds no thought after the delay or the sovereign filter would have

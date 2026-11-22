@@ -106,11 +106,11 @@ describe('index.html', () => {
   it('links only its own manifest and stylesheets, all from this origin', () => {
     const links = html.match(/<link\b[^>]*>/gi) ?? [];
     expect(links).toEqual([
-      '<link rel="manifest" href="/manifest.webmanifest" />',
-      '<link rel="stylesheet" href="/fonts.css" />',
+      '<link rel="manifest" href="/js/manifest.webmanifest" />',
+      '<link rel="stylesheet" href="/js/fonts.css" />',
       '<link rel="stylesheet" href="/app.css" />',
-      '<link rel="stylesheet" href="/entries.css" />',
-      '<link rel="stylesheet" href="/reader.css" media="(min-width: 700px)" />',
+      '<link rel="stylesheet" href="/js/entries.css" />',
+      '<link rel="stylesheet" href="/js/reader.css" media="(min-width: 700px)" />',
     ]);
   });
 });

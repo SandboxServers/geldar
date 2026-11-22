@@ -266,10 +266,10 @@ describe('the installable app', () => {
     expect(status?.textContent).toBe('Live');
   });
 
-  it('registers the service worker from the root of this origin, and works the same where there is none', async () => {
+  it('registers the service worker for the whole origin, and works the same where there is none', async () => {
     const register = vi.fn(async () => undefined);
     await boot(PAGES, { navigator: { serviceWorker: { register } } });
-    expect(register.mock.calls).toEqual([['/sw.js']]);
+    expect(register.mock.calls).toEqual([['/js/sw.js', { scope: '/' }]]);
     const refused = vi.fn(() => Promise.reject(new Error('not allowed')));
     const win = await boot(PAGES, { navigator: { serviceWorker: { register: refused } } });
     expect(refused).toHaveBeenCalledTimes(1);

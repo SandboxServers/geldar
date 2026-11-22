@@ -98,7 +98,19 @@ The design shows "receipts — what the body actually did" as rows of action, ou
 
 Fonts and icons are served with `Cache-Control: public, max-age=604800`; the page's own code stays `no-cache`.
 
-### 11. Storage
+### 11. Where the files are served: under `/js/`, so no Caddy change
+
+Caddy routes the Glass page by an explicit list: `/`, `/app.css`, `/app.js` and everything under `/js/`. The deploy pipeline rolls a new Glass image by itself on a merge to main, but it never applies a Caddy change: that is an operator's restart of the shared Caddy, which interrupts every site behind it and needs the node owner's window. A new page file outside the live route is a 404 in production until that restart.
+
+**Assumption A15: every file the redesign adds is served under `/js/`.** The three new stylesheets, the typefaces, the icons, the manifest and the service worker are at `/js/fonts.css`, `/js/fonts/...`, `/js/icons/...`, `/js/manifest.webmanifest`, `/js/sw.js`, whatever they are. The folder name is wrong for most of them; it is the one folder the live route already passes. Checked against the live site on 2026-11-22: a nested path under `/js/` reaches Glass (its own JSON 404), and `/fonts.css` or `/sw.js` at the root stops at Caddy. With this, the page deploys by itself with nothing to do on the node. `deploy/caddy/` is byte for byte what it was before this work.
+
+The service worker needs one more thing there. A worker's scope is its own folder unless the server says otherwise, and the page is at `/`. Glass sends `Service-Worker-Allowed: /` with `/js/sw.js`, and with no other file, so that one fixed script may take the whole origin. The header gives it nothing a worker served from the root would not have; a test holds it to the one path.
+
+How this was reached: the first version served the files at the root and changed the Caddy route with them. A check of the deploy pipeline showed that would put the new page live behind the old route, unstyled, until an operator acted. The route was then merged ahead of the page (PR #893) so it could be loaded on the node first. No operator was available to do that, so the page was changed to fit the live route instead, and this change takes #893's route back out. The node never had it.
+
+A later change may move the files to better paths. It must change the Caddy route in a step of its own, loaded on the node before the page that needs it. `glass/test/caddy-paths.test.ts` fails if the page and the route change together.
+
+### 12. Storage
 
 **Assumption A14: the page stores one flag.** "Not now" on the install strip is remembered in `localStorage` as `glass.install.dismissed`. It is the first thing the Glass page stores. It says nothing about the reader or what they read.
 
@@ -108,7 +120,7 @@ Glass is the public window on the vivarium (Principle 1: humans watch, and only 
 
 ## Consequences
 
-- `deploy/caddy/glass.caddy` routes the new page paths. A Glass image with this change needs the changed Caddy file loaded with it, or the page's stylesheets, typefaces, manifest and worker are 404. A test holds the Caddy list to the static table.
+- No Caddy change and nothing to do on the node: every page file is under the route that is already live (section 11). A test holds the page to that route and the route to what the node has.
 - The first image files in the repository (three generated icons) and the first font files.
 - The receipts list will show on live data only after the API links a thought to its action (A8).
 - A first page that fails is asked for again five times with a growing wait (0.5 to 8 seconds), and after that only when the feed comes back. A reply to an older filter change is dropped, so a slow reply cannot overwrite a newer one.

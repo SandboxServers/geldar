@@ -87,7 +87,7 @@ describe('the rate limit and the page', () => {
     for (let i = 1; i <= 199; i += 1) await status(port, '/app.css');
     expect(await status(port, '/app.css')).toBe(200);
     expect(await status(port, '/app.css')).toBe(429);
-    expect(await status(port, '/fonts/dm-mono-latin-400-normal.woff2')).toBe(429);
+    expect(await status(port, '/js/fonts/dm-mono-latin-400-normal.woff2')).toBe(429);
     // A spent static bucket does not spend the API's.
     expect(await status(port, '/api/agents')).toBe(200);
   });
@@ -100,7 +100,7 @@ describe('the rate limit and the page', () => {
     // The page still loads for a client whose API bucket is spent.
     expect(await status(port, '/')).toBe(200);
     // An unknown path is charged to the general bucket, not the generous one.
-    expect(await status(port, '/fonts/nope.woff2')).toBe(429);
+    expect(await status(port, '/js/fonts/nope.woff2')).toBe(429);
   });
 
   it('charges only the files of the table to the page bucket', () => {
@@ -109,7 +109,13 @@ describe('the rate limit and the page', () => {
     for (const path of STATIC_FILES.keys()) {
       expect(limiterFor(policy, path), path).toBe(limits.pageStaticLimiter);
     }
-    for (const path of ['/api/agents', '/api/stream', '/nowhere', '/fonts/x.woff2', '/js/x.ts']) {
+    for (const path of [
+      '/api/agents',
+      '/api/stream',
+      '/nowhere',
+      '/js/fonts/x.woff2',
+      '/js/x.ts',
+    ]) {
       expect(limiterFor(policy, path), path).toBe(limits.limiter);
     }
     expect(limiterFor(policy, '/kino/main.ts')).toBe(limits.kinoStaticLimiter);

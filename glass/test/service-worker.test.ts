@@ -7,7 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it, vi } from 'vitest';
-import { STATIC_FILES } from '../src/static-files.ts';
+import { STATIC_FILES, WORKER_PATH } from '../src/static-files.ts';
 
 const SOURCE = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8');
 const ORIGIN = 'https://glass.example.test';
@@ -112,7 +112,7 @@ describe('the service worker file list', () => {
   it('is every file Glass serves except the worker itself', () => {
     const { shell } = load(online);
     expect([...shell].sort()).toEqual(
-      [...STATIC_FILES.keys()].filter((path) => path !== '/sw.js').sort(),
+      [...STATIC_FILES.keys()].filter((path) => path !== WORKER_PATH).sort(),
     );
     expect(new Set(shell).size).toBe(shell.length);
   });
@@ -162,6 +162,8 @@ describe('the service worker', () => {
     '/register/callback?code=x',
     '/roster',
     '/nowhere',
+    '/js/sw.js',
+    '/js/render-model.test.ts',
     '/sw.js',
   ])('leaves %s alone: no answer, no copy', async (path) => {
     const worker = load(online);
@@ -211,8 +213,8 @@ describe('the service worker', () => {
     await worker.lifecycle('install');
     expect((await worker.request('/'))?.body).toBe('precached /');
     expect((await worker.request('/?agent=ag_1'))?.body).toBe('precached /');
-    expect((await worker.request('/fonts/dm-mono-latin-400-normal.woff2'))?.body).toBe(
-      'precached /fonts/dm-mono-latin-400-normal.woff2',
+    expect((await worker.request('/js/fonts/dm-mono-latin-400-normal.woff2'))?.body).toBe(
+      'precached /js/fonts/dm-mono-latin-400-normal.woff2',
     );
     // Offline, the API still has no answer from the worker: the page shows no thoughts.
     expect(await worker.request('/api/thoughts?limit=50')).toBeUndefined();

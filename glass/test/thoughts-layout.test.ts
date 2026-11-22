@@ -216,7 +216,7 @@ describe('the typefaces', () => {
 
   it('loads every typeface file from this origin, and each one is a file Glass serves', () => {
     const urls = [...FONTS.matchAll(/url\(([^)]*)\)/g)].map((m) => m[1]);
-    expect(urls.sort()).toEqual(FONT_FILES.map((name) => `"/fonts/${name}.woff2"`).sort());
+    expect(urls.sort()).toEqual(FONT_FILES.map((name) => `"/js/fonts/${name}.woff2"`).sort());
     expect([...FONTS.matchAll(/font-family: "([^"]+)"/g)].map((m) => m[1]).sort()).toEqual([
       ...Array(4).fill('DM Mono'),
       ...Array(4).fill('Instrument Serif'),
@@ -328,7 +328,7 @@ describe('the wide layout', () => {
     expect(wide).not.toBe('');
     expect(read('app.js')).toContain("const WIDE = '(min-width: 700px)';");
     expect(HTML).toContain(
-      '<link rel="stylesheet" href="/reader.css" media="(min-width: 700px)" />',
+      '<link rel="stylesheet" href="/js/reader.css" media="(min-width: 700px)" />',
     );
   });
 

@@ -2,6 +2,10 @@
  * The Thought Stream's service worker. It keeps a copy of the page's own files (the shell) so the installed
  * app opens without a network, and it does nothing else.
  *
+ * It is served at /js/sw.js, with the page's other files, and Glass sends `Service-Worker-Allowed: /` with
+ * it, so it can serve the page at `/`. That makes the whole origin its scope, which is why the rules below
+ * are strict.
+ *
  * - It answers only a GET for one of the paths in SHELL, on this origin. Every other request (the API, the
  *   stream, Kino, the register service's pages and forms) is left alone: the worker does not answer it,
  *   does not read it and never stores its reply. Thoughts are live and delayed by policy; none is cached.
@@ -15,10 +19,10 @@ const CACHE = 'glass-shell-v1';
 
 const SHELL = [
   '/',
-  '/fonts.css',
+  '/js/fonts.css',
   '/app.css',
-  '/entries.css',
-  '/reader.css',
+  '/js/entries.css',
+  '/js/reader.css',
   '/app.js',
   '/js/render-model.ts',
   '/js/render-view.ts',
@@ -28,18 +32,18 @@ const SHELL = [
   '/js/render-install.ts',
   '/js/render-reader.ts',
   '/js/render-filters.ts',
-  '/manifest.webmanifest',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  '/icons/maskable-512.png',
-  '/fonts/instrument-serif-latin-400-normal.woff2',
-  '/fonts/instrument-serif-latin-400-italic.woff2',
-  '/fonts/instrument-serif-latin-ext-400-normal.woff2',
-  '/fonts/instrument-serif-latin-ext-400-italic.woff2',
-  '/fonts/dm-mono-latin-400-normal.woff2',
-  '/fonts/dm-mono-latin-500-normal.woff2',
-  '/fonts/dm-mono-latin-ext-400-normal.woff2',
-  '/fonts/dm-mono-latin-ext-500-normal.woff2',
+  '/js/manifest.webmanifest',
+  '/js/icons/icon-192.png',
+  '/js/icons/icon-512.png',
+  '/js/icons/maskable-512.png',
+  '/js/fonts/instrument-serif-latin-400-normal.woff2',
+  '/js/fonts/instrument-serif-latin-400-italic.woff2',
+  '/js/fonts/instrument-serif-latin-ext-400-normal.woff2',
+  '/js/fonts/instrument-serif-latin-ext-400-italic.woff2',
+  '/js/fonts/dm-mono-latin-400-normal.woff2',
+  '/js/fonts/dm-mono-latin-500-normal.woff2',
+  '/js/fonts/dm-mono-latin-ext-400-normal.woff2',
+  '/js/fonts/dm-mono-latin-ext-500-normal.woff2',
 ];
 
 const SHELL_PATHS = new Set(SHELL);
