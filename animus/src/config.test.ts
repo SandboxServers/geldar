@@ -92,6 +92,21 @@ describe('animus config: the start-up waits', () => {
 });
 
 describe('animus config', () => {
+  it('reads body_actions.building: off when left out, on only when true, refused when not a boolean', async () => {
+    const committed = await loadCommittedConfig({ env: {}, allowPlaceholders: true });
+    expect(committed.buildingOn).toBe(false);
+    const doc = approvedDoc();
+    const opts = { env: {}, allowPlaceholders: true };
+    doc.body_actions = { building: true };
+    expect(parseAnimusConfig(doc, opts).buildingOn).toBe(true);
+    doc.body_actions = { building: false };
+    expect(parseAnimusConfig(doc, opts).buildingOn).toBe(false);
+    doc.body_actions = { building: 'yes' };
+    expect(() => parseAnimusConfig(doc, opts)).toThrow(
+      'body_actions.building must be true or false',
+    );
+  });
+
   it('reads the output validator bounds from the shard file, so a shard value changes them', async () => {
     const config = await loadCommittedConfig({ env: {}, allowPlaceholders: true });
     expect(config.bounds).toEqual({

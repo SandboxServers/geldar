@@ -38,6 +38,8 @@ export interface JobSettings {
 /** Everything the Mind reads at startup. */
 export interface AnimusConfig {
   shard: string;
+  /** `body_actions.building` of the shard file (off when left out). On selects the body-api v12 template. */
+  buildingOn: boolean;
   tickRate: number;
   /** The output validator's bounds, from the shard file (`validate/bounds.ts` has the defaults). */
   bounds: { worldBorderRadius: number; maxWorldTicks: number; maxBlockOperations: number };
@@ -177,6 +179,7 @@ export function parseAnimusConfig(doc: unknown, options: LoadOptions = {}): Anim
   const thought = jobSettings(mind, 'thought');
   return {
     shard,
+    buildingOn: buildingFlag(root),
     tickRate: int(root, 'tick_rate', 'shard file', 1),
     bounds: {
       worldBorderRadius: int(root, 'world_border_radius', 'shard file', 1),
@@ -331,6 +334,13 @@ function list(block: Record<string, unknown>, key: string, where: string): strin
     throw new Error(`${where}.${key} must be a non-empty list of texts`);
   }
   return value as string[];
+}
+
+/** `body_actions.building`: off when the body_actions block or the key is left out. */
+function buildingFlag(root: Record<string, unknown>): boolean {
+  if (root.body_actions === undefined) return false;
+  const block = map(root.body_actions, 'body_actions');
+  return block.building === undefined ? false : bool(block, 'building', 'body_actions');
 }
 
 function bool(block: Record<string, unknown>, key: string, where: string): boolean {
