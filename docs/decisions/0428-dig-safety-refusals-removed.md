@@ -6,7 +6,7 @@
 
 ## Decision
 
-`mine`, `break` and the plan lane no longer refuse a dig because a falling-block column is overhead, liquid touches the cell, the cell is walled in, or the block is under the agent's feet. Only physically impossible refusals stay: out of reach, an unbreakable block (bedrock, barrier and the like), an unloaded chunk, no reachable position. Goto tier-2 pathing is unchanged.
+`mine`, `break` and the plan lane no longer refuse a dig because a falling-block column is overhead, liquid touches the cell, the cell is walled in, or the block is under the agent's feet (the "would drop you" refusal in `mine`, owner ruling 2026-11-22; listed explicitly). Only physically impossible refusals stay: out of reach, an unbreakable block (bedrock, barrier and the like), an unloaded chunk, no reachable position. Goto tier-2 pathing is unchanged.
 
 ## Why
 

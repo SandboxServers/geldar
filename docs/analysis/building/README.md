@@ -114,10 +114,8 @@ BLD-01, 02, 03 are delivered by S1 and S2 (their sections in the packet file are
 
 ## Answered by the owner (2026-11-22)
 
-Q1 the next life reads the predecessor's seen map (0424). Q2 the spec stays untouched; the deviations are recorded in 0422. Q3 0427 accepted. Q4 `survey` and `plan_check` are new kit tools with allow entries (0425, BLD-25). Q5 the facing 90 by 45 degree cone, config default. Q6 a foreground intent pauses the plan (0423). Q8 no XP; plan activity may show on Glass (0429). Q9 dig-safety refusals removed (0428).
+Q10 the "block under your feet" refusal in `mine` is removed too (0428, BLD-36). Q11 the Glass plan panel uses the same agent label Glass already shows, no new identity data (0429, BLD-37). Q1 the next life reads the predecessor's seen map (0424). Q2 the spec stays untouched; the deviations are recorded in 0422. Q3 0427 accepted. Q4 `survey` and `plan_check` are new kit tools with allow entries (0425, BLD-25). Q5 the facing 90 by 45 degree cone, config default. Q6 a foreground intent pauses the plan (0423). Q8 no XP; plan activity may show on Glass (0429). Q9 dig-safety refusals removed (0428).
 
 ## Open questions for the owner (not decided here)
 
 1. The NeoForge human model (0387, 0390), and who may break a human's block there (gates BLD-32 to BLD-35).
-2. Whether the "block under the feet" refusal in `mine` goes with the other dig-safety refusals (BLD-36 removes it; confirm).
-3. Whether the Glass plan-activity panel names the agent or only its label (BLD-37 uses the label Glass already shows).

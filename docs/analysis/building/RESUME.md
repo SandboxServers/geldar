@@ -11,7 +11,7 @@ Refreshed 2026-11-22 at `origin/main` = `c05574a6`. State: plan written, nothing
 Break anything; nothing protected; no dig-safety refusals; next life inherits the seen map; survival materials, one block at a time; background plan lane; no caps (tick-budgeted); all 19 at once behind `body_actions.building`; seen-block map only, kept across death; skip changed cells; teach verbs, never nudge; Paper first, NeoForge gated.
 
 ## Next action
-1. Owner answered Q1 to Q9 on 2026-11-22 (see README). Remaining: the NeoForge human model, and two small confirmations.
+1. Owner answered Q1 to Q9 on 2026-11-22 (see README). Remaining: only the NeoForge human model (0387, 0390).
 2. Create the integration branch `phase1/building` from `main`; dispatch Wave 0: BLD-S1 first, then S2, S3a, S3b, S3c, S4 together (width 5).
 3. Then the Wave 1 fan-out (ten packets at once, incl. BLD-36, after `git merge-tree` checks).
 

@@ -7,7 +7,7 @@
 ## Decision
 
 1. Building and plan activity earns no proficiency or XP.
-2. The human-facing Glass pages may show plan activity (counts, phase, failure codes), fed by operator events. The seen-block map is never shown on Glass.
+2. The human-facing Glass pages may show plan activity (counts, phase, failure codes), fed by operator events. The panel names the builder with the same agent label Glass already shows and adds no new identity data. The seen-block map is never shown on Glass.
 3. A hard test (packet BLD-37, with the fence of BLD-19) proves that no plan or seen-map datum reaches an agent-readable path.
 
 ## Consequences
