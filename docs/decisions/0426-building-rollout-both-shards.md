@@ -31,3 +31,10 @@ Owner ruling, 2026-11-22. This addendum supersedes the hold sentence in the adde
 - PR #932 may merge once it is ready. It does not wait for the 24-hour kit rc23 report or for the `geldar-v0.1.0` and `kit-v0.1.0` tags.
 - The PR stays draft until the final readiness report and the merge-queue owner's own check of the head sha and green CI. The merge-queue owner runs the merge on that exact head and warns the owner about the Body restart first.
 - It is still one PR in one deploy window, not split into bundles.
+
+## Addendum, 2026-11-22: no body-api v13
+
+- After the animus removal (decision 0430), nothing in this repo renders `prompts/body-api/*.json`. `git grep -n -E "prompts/body-api|createPromptLibrary" -- '*.ts' ':!*.test.ts'` finds nothing.
+- body-api v12 (v10 plus `break` and `plan`) is unused by live code.
+- `break` and `plan` are gated on `body_actions.building`: the Body refuses them with the flag off (golem), the MCP act description and refusal use the same gate (`threshold/mcp/src/tools/building-verbs.ts`), and so does the player-core validator (`Bounds.buildingOn`).
+- So no v13 was added. A Mind that teaches the verbs per shard flag is scriptorium work.
