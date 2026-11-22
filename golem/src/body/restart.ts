@@ -161,7 +161,7 @@ export async function restartBody(options: RestartBodyOptions): Promise<Restarte
   })
     .recover()
     .catch(() => undefined);
-  const outcome = await recover(body, options.lifeId, options.tickWaitMs ?? TICK_WAIT_MS);
+  const outcome = await recover(body, options.lifeId, options.tickWaitMs ?? TICK_WAIT_MS, log);
   let cancel: () => void = () => undefined;
   if (outcome.kind === 'idle') {
     const plansBefore = body.executor.plansReceived;
@@ -196,7 +196,12 @@ export async function restartBody(options: RestartBodyOptions): Promise<Restarte
 }
 
 /** Loads the checkpoint and resumes it when it is usable; says why not otherwise. */
-async function recover(body: Body, lifeId: string, tickWaitMs: number): Promise<RestartOutcome> {
+async function recover(
+  body: Body,
+  lifeId: string,
+  tickWaitMs: number,
+  log?: (line: string) => void,
+): Promise<RestartOutcome> {
   const store = body.checkpoints;
   let entry: CheckpointEntry | null = null;
   try {
@@ -218,7 +223,11 @@ async function recover(body: Body, lifeId: string, tickWaitMs: number): Promise<
     await store.discard();
     return { kind: 'idle', reason: 'expired' };
   }
+  // The Body's own registry decides (not the player-core allow-list): a program it does not register cannot run.
   if (!body.runtime.programs.names().includes(entry.program)) {
+    (log ?? ((line: string) => console.error(line)))(
+      `restart: the checkpoint's program ${JSON.stringify(entry.program)} is not registered; the Body starts idle`,
+    );
     closeLostIntent(body, entry, tick);
     await store.discard();
     return { kind: 'idle', reason: 'unknown_program' };
