@@ -45,24 +45,21 @@ afterEach(async () => {
 });
 
 describe('adamProcessSpecs', () => {
-  it('lists the Body, animus and lantern-local in the start order of `adam up` with the shard env', () => {
+  it('lists the Body and lantern-local in the start order of `adam up` with the shard env', () => {
     const specs = adamProcessSpecs('/repo', {});
-    expect(specs.map((s) => s.name)).toEqual(['adam-body', 'animus', 'lantern-local']);
+    expect(specs.map((s) => s.name)).toEqual(['adam-body', 'lantern-local']);
     expect(specs.map((s) => s.script.replaceAll('\\', '/'))).toEqual([
       '/repo/golem/src/adam/main.ts',
-      '/repo/animus/src/main.ts',
       '/repo/lantern-local/src/main.ts',
     ]);
     expect(specs.every((s) => s.env.GELDAR_SHARD === 'phase0')).toBe(true);
     expect(adamProcessSpecs('/repo', { GELDAR_SHARD: 'other' })[0]?.env.GELDAR_SHARD).toBe('other');
   });
 
-  it('makes lantern-local wait for animus to log thinker_connected', () => {
-    const lantern = adamProcessSpecs('/repo', {}).find((s) => s.name === 'lantern-local');
-    expect(lantern?.awaits?.process).toBe('animus');
-    expect(
-      lantern?.awaits?.pattern.test('{"event":"thinker_connected","models":["qwen3:8b"]}'),
-    ).toBe(true);
+  it('starts no Mind process, so lantern-local waits on no other process (decision 0430)', () => {
+    const specs = adamProcessSpecs('/repo', {});
+    expect(specs.some((s) => s.script.includes('mind'))).toBe(false);
+    expect(specs.find((s) => s.name === 'lantern-local')?.awaits).toBeUndefined();
   });
 });
 
@@ -140,18 +137,10 @@ describe('HostProcess', () => {
 
 describe('AdamStack', () => {
   it('starts in order, restarts the Body and stops the Mind first and the Body last', async () => {
-    const stack = new AdamStack([
-      specFor('adam-body'),
-      specFor('animus'),
-      specFor('lantern-local'),
-    ]);
+    const stack = new AdamStack([specFor('adam-body'), specFor('mind'), specFor('lantern-local')]);
     await stack.start(10_000);
     running.push(...stack.processes);
-    expect(stack.processes.map((p) => p.spec.name)).toEqual([
-      'adam-body',
-      'animus',
-      'lantern-local',
-    ]);
+    expect(stack.processes.map((p) => p.spec.name)).toEqual(['adam-body', 'mind', 'lantern-local']);
     const first = stack.body;
     const fresh = await stack.restartBody(10_000);
     running.push(fresh);
@@ -163,16 +152,12 @@ describe('AdamStack', () => {
     for (const p of stack.processes) void p.exited.then(() => stops.push(p.spec.name));
     await stack.stop();
     expect(stack.processes.every((p) => !p.running)).toBe(true);
-    expect(stops[0]).toBe('animus');
+    expect(stops[0]).toBe('mind');
     expect(stops.at(-1)).toBe('adam-body');
   });
 
-  it('runs afterBody after the Body is ready and before animus starts', async () => {
-    const stack = new AdamStack([
-      specFor('adam-body'),
-      specFor('animus'),
-      specFor('lantern-local'),
-    ]);
+  it('runs afterBody after the Body is ready and before mind starts', async () => {
+    const stack = new AdamStack([specFor('adam-body'), specFor('mind'), specFor('lantern-local')]);
     const calls: string[] = [];
     await stack.start(10_000, async () => {
       // Body start, then setup: only the Body has been started when the setup runs.
@@ -182,15 +167,11 @@ describe('AdamStack', () => {
     });
     running.push(...stack.processes);
     expect(calls).toEqual(['setup with adam-body:true']);
-    expect(stack.processes.map((p) => p.spec.name)).toEqual([
-      'adam-body',
-      'animus',
-      'lantern-local',
-    ]);
+    expect(stack.processes.map((p) => p.spec.name)).toEqual(['adam-body', 'mind', 'lantern-local']);
   });
 
   it('starts no Mind process when afterBody fails, and stops the Body', async () => {
-    const stack = new AdamStack([specFor('adam-body'), specFor('animus')]);
+    const stack = new AdamStack([specFor('adam-body'), specFor('mind')]);
     await expect(
       stack.start(10_000, async () => {
         throw new Error('the bed is missing');
@@ -205,10 +186,10 @@ describe('AdamStack', () => {
     async () => {
       const stack = new AdamStack([
         specFor('adam-body'),
-        { ...specFor('animus'), ready: /never printed/ },
+        { ...specFor('mind'), ready: /never printed/ },
       ]);
       await expect(stack.start(READY_BOUND_MS)).rejects.toThrow(
-        new RegExp(`timed out after ${READY_BOUND_MS} ms waiting for animus`),
+        new RegExp(`timed out after ${READY_BOUND_MS} ms waiting for mind`),
       );
       expect(stack.processes.every((p) => !p.running)).toBe(true);
     },
@@ -216,27 +197,27 @@ describe('AdamStack', () => {
   );
 
   it(
-    'waits for animus to log thinker_connected before it counts as started',
+    'waits for the Mind to log its ready line before lantern-local counts as started',
     async () => {
       const lantern = {
         ...specFor('lantern-local'),
-        awaits: { process: 'animus', pattern: /ready never-logged/ },
+        awaits: { process: 'mind', pattern: /ready never-logged/ },
       };
-      const stack = new AdamStack([specFor('adam-body'), specFor('animus'), lantern]);
+      const stack = new AdamStack([specFor('adam-body'), specFor('mind'), lantern]);
       await expect(stack.start(READY_BOUND_MS)).rejects.toThrow(
-        new RegExp(`timed out after ${READY_BOUND_MS} ms waiting for animus`),
+        new RegExp(`timed out after ${READY_BOUND_MS} ms waiting for mind`),
       );
       expect(stack.processes.map((p) => p.spec.name)).toEqual([
         'adam-body',
-        'animus',
+        'mind',
         'lantern-local',
       ]);
       expect(stack.processes.every((p) => !p.running)).toBe(true);
 
       const ok = new AdamStack([
         specFor('adam-body'),
-        specFor('animus'),
-        { ...lantern, awaits: { process: 'animus', pattern: /ready animus/ } },
+        specFor('mind'),
+        { ...lantern, awaits: { process: 'mind', pattern: /ready mind/ } },
       ]);
       await ok.start(10_000);
       running.push(...ok.processes);

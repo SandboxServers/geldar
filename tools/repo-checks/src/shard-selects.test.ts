@@ -4,10 +4,10 @@ import { describe, expect, it } from 'vitest';
 
 // Static guard: `adam select` rewrites mind.agent.username, mind.agent.tier and mind.run_tier in the
 // working tree, so a test that reads the live shard file must not assert those keys (a run tree
-// would fail). Such a test reads them through fixtures instead (animus/src/phase0-shard.fixture.ts).
+// would fail). Such a test reads them through fixtures instead.
 
 const ROOT = join(import.meta.dirname, '..', '..', '..');
-const SCANNED = ['animus', 'golem', 'tools'];
+const SCANNED = ['golem', 'tools'];
 const SELF = 'tools/repo-checks/src/shard-selects.test.ts';
 /** A test that reads the shard file by a path built with join(..., 'shards', 'phase0.yaml'). */
 const LIVE_READ = /['"]shards['"],\s*['"]phase0\.yaml['"]/;
@@ -37,9 +37,10 @@ function testFiles(): string[] {
 describe('the live shard file is read without asserting select-rewritten keys', () => {
   const files = testFiles();
 
-  it('scans the test files of animus, golem and tools', () => {
+  it('scans the test files of golem and tools', () => {
     expect(files.length).toBeGreaterThan(100);
-    expect(files).toContain('animus/src/config.test.ts');
+    expect(files).toContain('golem/src/adam/adam-config.stamp.test.ts');
+    expect(files.some((file) => file.startsWith('tools/'))).toBe(true);
   });
 
   it('no test reads shards/phase0.yaml and asserts agent.username, agent.tier or run_tier', () => {

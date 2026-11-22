@@ -71,10 +71,7 @@ describe.skipIf(!mindLiveEnabled)('Adam and the chatter bot', () => {
 
   it('keeps hostile corpus lines quoted in the prompt, and every resulting thought is valid or rejected and recorded', async () => {
     const corpus = JSON.parse(
-      await readFile(
-        join(repoRoot(), 'animus', 'src', 'prompts', 'hostile-text.corpus.json'),
-        'utf8',
-      ),
+      await readFile(join(repoRoot(), 'golem', 'test', 'live', 'hostile-text.corpus.json'), 'utf8'),
     ) as { items: { name: string; text?: string }[] };
     const lines = HOSTILE.map((h) => {
       const item = corpus.items.find((i) => i.name === h.name);

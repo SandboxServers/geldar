@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
 /**
- * The animus modules the MCP server reuses (validator, plan builder, speech classifier, Mind
+ * The player-core modules the MCP server reuses (validator, plan builder, speech classifier, Mind
  * event link, Body link, ids) and the mock's package must resolve from this package. A rename
- * in animus or the mock fails here, not at the first tool call.
+ * in player-core or the mock fails here, not at the first tool call.
  */
 const PATHS = [
   '@geldar/player-core/src/validate/index.ts',
@@ -15,10 +15,10 @@ const PATHS = [
   '@geldar/mcp-mock',
 ] as const;
 
-/** A first import transforms the animus sources cold; under parallel load that outruns the 5 s default. */
+/** A first import transforms the player-core sources cold; under parallel load that outruns the 5 s default. */
 const IMPORT_TIMEOUT_MS = 30_000;
 
-describe('animus and mock imports', () => {
+describe('player-core and mock imports', () => {
   for (const path of PATHS) {
     it(
       `resolves ${path}`,
