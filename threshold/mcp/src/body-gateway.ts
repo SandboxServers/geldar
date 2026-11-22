@@ -21,8 +21,8 @@ import type { SeeRead } from './tools/see.ts';
 import type { ViewRead } from './tools/view.ts';
 
 /**
- * Message names the building packets (BLD-S3b) reserve on the gateway. No method sends them yet: the
- * survey and plan_check tools are hidden stubs, and plan_progress arrives as a Body event.
+ * Message names the building packets (BLD-S3b) reserve on the gateway. The survey and plan_check methods
+ * send their messages; plan_progress arrives as a Body event.
  */
 export const SURVEY_MESSAGE = 'survey';
 export const PLAN_CHECK_MESSAGE = 'plan_check';
@@ -116,7 +116,8 @@ export class NatsBodyGateway implements BodyGateway {
   /**
    * The Body's survey of a box (BLD-38e). The Body answers `{ text, truncated }`; a refusal such as
    * `{"error":"not_available"}` (the building flag is off) or any reply the contract does not accept
-   * is a failure, so it rejects with `BodyUnavailable` and the tool never returns it as data.
+   * is a failure, so it rejects with `BodyUnavailable` and the tool never returns it as data. The Body's
+   * `box_too_large` refusal (a box over its cell cap) comes back as data; the tool turns it into an error.
    */
   survey(lifeId: string, request: { box: unknown; layers?: number }): Promise<unknown> {
     return this.guard(lifeId, 'survey', async (): Promise<unknown> => {
@@ -126,6 +127,12 @@ export class NatsBodyGateway implements BodyGateway {
         SURVEY_TIMEOUT_MS,
       );
       const reply = JSON.parse(text) as unknown;
+      if (
+        typeof reply === 'object' &&
+        reply !== null &&
+        (reply as { error?: unknown }).error === 'box_too_large'
+      )
+        return reply;
       if (!validateToolResult('survey', reply).ok)
         throw new Error('survey reply failed validation');
       return reply;

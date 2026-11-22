@@ -65,6 +65,10 @@ export async function surveyTool(
   } catch {
     return { error: 'body_unavailable' };
   }
+  // The Body refuses a box over its cell cap: the agent asked for too much, so it is an input error (A3).
+  if ((reply as { error?: unknown } | null)?.error === 'box_too_large') {
+    return { error: 'invalid_input' };
+  }
   if (!validateToolResult('survey', reply).ok) return { error: 'body_unavailable' };
   const { text, truncated } = reply as SurveyRead;
   return { survey: { text, truncated } };

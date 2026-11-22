@@ -101,4 +101,27 @@ describe('NatsBodyGateway.survey (the Body side over NATS)', () => {
     });
     await expect(timedOut.survey(LIFE, INPUT)).rejects.toBeInstanceOf(BodyUnavailable);
   });
+
+  it('returns the Body box_too_large refusal as data, not as BodyUnavailable (A3)', async () => {
+    const { transport } = surveyTransport('{"error":"box_too_large"}');
+    const gateway = new NatsBodyGateway({ transport, shard: 'phase0' });
+    expect(await gateway.survey(LIFE, INPUT)).toEqual({ error: 'box_too_large' });
+  });
+});
+
+describe('survey: a box over the cell cap, tool -> gateway -> Body round trip (A3)', () => {
+  it('reaches the agent as invalid_input, not body_unavailable', async () => {
+    const { transport } = surveyTransport('{"error":"box_too_large"}');
+    const gateway = new NatsBodyGateway({ transport, shard: 'phase0' });
+    const outcome = await surveyTool(
+      {
+        survey: (lifeId, request) => gateway.survey(lifeId, request),
+        isOpen: () => true,
+        limiter: createSurveyLimiter(() => 0),
+      },
+      CALL,
+      INPUT,
+    );
+    expect(outcome).toEqual({ error: 'invalid_input' });
+  });
 });
